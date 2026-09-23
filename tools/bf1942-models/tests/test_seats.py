@@ -33,6 +33,12 @@ HARNESS = Path(__file__).resolve().parent / "test_seats_harness.mjs"
 
 MODULES = {
     "seats.js": VIEWER / "seats.js",
+    "seat-survey.js": VIEWER / "seat-survey.js",
+    "turret-rig.js": VIEWER / "turret-rig.js",
+    "vehicle-occupancy.js": VIEWER / "vehicle-occupancy.js",
+    "entry-points.js": VIEWER / "entry-points.js",
+    "spawned-craft.js": VIEWER / "spawned-craft.js",
+    "fire-state.js": VIEWER / "fire-state.js",
     # `bomb-release.js` (the salvo arithmetic, the release speed and the
     # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
     # both reached through gunfire.js / seats.js.

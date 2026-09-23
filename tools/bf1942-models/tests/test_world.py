@@ -56,6 +56,8 @@ _MODULE_NAMES = [
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
+    # seats.js re-exports its split modules.
+    "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     # Reached through seats.js: the salvo arithmetic and the HUD
     # weapon-slot order, and an aircraft torpedo's water run.
