@@ -29,6 +29,18 @@
  * strip frame for the viewing azimuth, and a per-render pass swaps geometry
  * for card at the template's distance.
  *
+ * The engine's swap is a hard cut at `billboardDistance`, and drawn here it
+ * read as a pop: the sprite canopy is sparser than the pre-rendered card, so
+ * a tree walking through 50 m visibly thickens in one frame. The swap is a
+ * fade instead, over a band centred on the template's distance (`FADE_SPAN`
+ * of it, 40..60 m for a 50 m tree): the geometry stays opaque through the
+ * band while the card blends in over it, from clear at the near edge to
+ * solid at the far edge, where the geometry is then dropped underneath it.
+ * Nothing ever pops in view: the card is invisible when the geometry goes
+ * on and covers it when the geometry goes off. Each placed tree has its own
+ * card material so the opacity is per tree; the card's alpha test scales
+ * with the opacity so its coverage holds while it fades.   [HOUSE RULES]
+ *
  * The swap runs from `scene.onBeforeRender`, which `WebGLRenderer.render`
  * calls before it collects visible objects, so nothing in the page's frame
  * loop has to know about trees. Only the meshes under a tree are toggled,
@@ -40,6 +52,23 @@ import * as THREE from 'three';
 const SPRITE_MATERIAL = /^sprite_\d+$/;
 const TREE_PART = /^(sprite|trunk|branch)_\d+$/;
 const EIGHTH_TURN = Math.PI / 4;
+/** Width of the dissolve band as a fraction of `billboardDistance`, centred on
+ *  it. Not an engine number: the engine cuts. 0.4 is the narrowest band that
+ *  still reads as a fade at walking pace. */
+export const FADE_SPAN = 0.4;
+/** The strip's edge coverage; the fade scales it so a fading card keeps its
+ *  outline instead of eroding to nothing under a fixed cutoff. */
+const CARD_ALPHA_TEST = 0.5;
+
+/** Put a tree's card at `opacity`: solid cards draw opaque (depth-written,
+ *  sorted with the scenery); a fading one blends over the geometry beneath. */
+function setCardOpacity(material, opacity) {
+  const solid = opacity >= 1;
+  material.transparent = !solid;
+  material.depthWrite = solid;
+  material.opacity = opacity;
+  material.alphaTest = solid ? CARD_ALPHA_TEST : Math.max(0.01, CARD_ALPHA_TEST * opacity);
+}
 
 const manifestByBase = new Map();
 const textureByUrl = new Map();
@@ -124,22 +153,31 @@ function patchSpriteMaterial(material) {
   material.needsUpdate = true;
 }
 
-/** The far card: a quad the tree's height on a side, standing on the trunk
- *  base, turned about Y toward the camera, showing the strip frame nearest the
- *  camera's azimuth. `bounds` are `.tm` order and handedness (see
- *  extract_tree_billboards.py); the exporter negates z, and so does the
- *  azimuth here. */
+/** The far card: a quad the tree's height tall and its footprint's diagonal
+ *  wide, standing on the trunk base, turned about Y toward the camera,
+ *  showing the strip frame nearest the camera's azimuth. `bounds` are `.tm`
+ *  order and handedness (see extract_tree_billboards.py); the exporter
+ *  negates z, and so does the azimuth here.
+ *
+ *  The width is measured, not read: a frame's alpha spans ~96% of its height
+ *  and 55..73% of its width, and drawn square the card came out 1.41x wider
+ *  than the same tree's geometry at every bearing (Bocage's EU_Birtch2_M1,
+ *  eight azimuths, 2026-09-23) while matching its height to 2%. The XZ
+ *  diagonal of the bounding box is the one width that holds the tree from
+ *  every azimuth, and it is what the strip's fill implies (17.9 m x 0.71 =
+ *  12.7 m against a 12.4 m diagonal). */
 function impostorGeometry(entry) {
-  const [, y0, , , y1] = entry.bounds;
+  const [x0, y0, z0, x1, y1, z1] = entry.bounds;
   const h = y1 - y0;
+  const w = Math.hypot(x1 - x0, z1 - z0);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute([
-    -h / 2, y0, 0, h / 2, y0, 0, h / 2, y1, 0, -h / 2, y1, 0,
+    -w / 2, y0, 0, w / 2, y0, 0, w / 2, y1, 0, -w / 2, y1, 0,
   ], 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
   geometry.setIndex([0, 1, 2, 0, 2, 3]);
   // A flat quad's sphere already holds every rotation of it about its own
-  // centre line: the corners stay h/sqrt(2) from (0, mid, 0).
+  // centre line: the corners stay hypot(w, h) / 2 from (0, mid, 0).
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -149,7 +187,7 @@ function impostorMaterial(texture, frames) {
     map: texture,
     // The strip's edges are anti-aliased against transparent; half is the
     // coverage the pre-render meant.
-    alphaTest: 0.5,
+    alphaTest: CARD_ALPHA_TEST,
     side: THREE.DoubleSide,
   });
   material.name = 'tree impostor';
@@ -162,7 +200,12 @@ function impostorMaterial(texture, frames) {
          vec3 bfRight = vec3( bfDir.y, 0.0, -bfDir.x );
          // .tm azimuth: atan2( x, z_tm ), with z_tm = -z.
          float bfAz = atan( bfDir.x, -bfDir.y );
-         float bfFrame = mod( floor( bfAz / ${EIGHTH_TURN.toFixed(8)} + 0.5 ) + 4.0,
+         // Frame f is the camera at azimuth 45 f: scored in the viewer against
+         // the same tree's own geometry from eight bearings (2026-09-23, Bocage
+         // birch and asp), phase 0 reaches IoU 0.80 / 0.68 and the previous
+         // 180-degree phase 0.56 / 0.55; every other phase and the mirrored
+         // sense score between.
+         float bfFrame = mod( floor( bfAz / ${EIGHTH_TURN.toFixed(8)} + 0.5 ),
                               ${frames.toFixed(1)} );
          #include <uv_vertex>
          vMapUv.x = ( vMapUv.x + bfFrame ) / ${frames.toFixed(1)};`)
@@ -222,11 +265,20 @@ function installHook(scene, state) {
     for (const tree of trees) {
       const e = tree.group.matrixWorld.elements;
       const dx = e[12] - camPos.x, dy = e[13] - camPos.y, dz = e[14] - camPos.z;
-      const far = dx * dx + dy * dy + dz * dz > tree.threshold2;
-      if (far === tree.far) continue;
-      tree.far = far;
-      for (const mesh of tree.near) mesh.visible = !far;
-      tree.impostor.visible = far;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // 1 this side of the band, 0 past it, the fade between.
+      const fade = d <= tree.fadeStart ? 1
+        : d >= tree.fadeEnd ? 0
+        : 1 - (d - tree.fadeStart) / (tree.fadeEnd - tree.fadeStart);
+      if (fade === tree.fade) continue;
+      tree.fade = fade;
+      const nearOn = fade > 0;
+      if (nearOn !== tree.nearOn) {
+        tree.nearOn = nearOn;
+        for (const mesh of tree.near) mesh.visible = nearOn;
+      }
+      tree.impostor.visible = fade < 1;
+      if (fade < 1) setCardOpacity(tree.impostor.material, 1 - fade);
     }
   };
 }
@@ -294,7 +346,13 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
         material = impostorMaterial(tex, entry.frames || 8);
         materials.set(entry, material);
       }
-      const impostor = new THREE.Mesh(geometry, material);
+      // The tree's own card material: `Material.clone` keeps the map and
+      // flags but drops `onBeforeCompile` and the cache key, so both are
+      // carried across by hand.
+      const cardMaterial = material.clone();
+      cardMaterial.onBeforeCompile = material.onBeforeCompile;
+      cardMaterial.customProgramCacheKey = material.customProgramCacheKey;
+      const impostor = new THREE.Mesh(geometry, cardMaterial);
       impostor.name = `${rec.group.name} billboard`;
       impostor.userData.treeImpostor = true;
       impostor.visible = false;
@@ -304,8 +362,9 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
       // new child), so the card's world matrix is composed here, once.
       impostor.updateMatrixWorld(true);
       state.trees.push({
-        group: rec.group, near: rec.near, impostor,
-        threshold2: entry.distance * entry.distance, far: false,
+        group: rec.group, near: rec.near, impostor, fade: 1, nearOn: true,
+        fadeStart: entry.distance * (1 - FADE_SPAN / 2),
+        fadeEnd: entry.distance * (1 + FADE_SPAN / 2),
       });
       impostors++;
     }
