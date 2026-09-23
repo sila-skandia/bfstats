@@ -154,6 +154,9 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   stage.hullBodies = hullBodies;
   const vehicleHits = S.createVehicleHits({
     applyDamage: (...a) => stage.referee.applyDamage(...a), applyDamageToPlayer: noop,
+    // Where a round can meet a man: the referee's stand-in body, and no drawn
+    // skeleton to test (nothing draws here), so every round meets the sphere.
+    bodyAt: id => stage.referee.bodyAt(id), capsulesOf: () => null,
     get bots() { return stage.referee?.bots ?? []; }, get camera() { return camera; },
     get collider() { return terrain.collider; }, get currentRoot() { return root; },
     damageLanded: (...a) => stage.referee.damageLanded(...a), get damageVisuals() { return wrecks.damageVisuals; },

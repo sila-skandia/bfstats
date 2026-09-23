@@ -11,12 +11,14 @@ import { classifyRoot } from './seats.js';
 import { soldierExposure, worldBlocker } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT } from './bot-referee.js';
+import { roundHit } from './soldier-death.js';
+import { skeletonHit } from './skeleton-hit.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `applyDamage`, `applyDamageToPlayer`, `bots`, `camera`, `collider`,
+ * `applyDamage`, `applyDamageToPlayer`, `bodyAt`, `bots`, `camera`, `capsulesOf`, `collider`,
  * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`, `guns`,
  * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
@@ -297,14 +299,20 @@ export function createVehicleHits(page) {
   /** `MaterialManager.material 40` — the soldier's defending material. */
   const BOT_SOLDIER_MATERIAL = 40;
 
-  /** The damage one bot round does, from the engine's direct-hit formula. */
-  function botRoundDamage(stats = null) {
+  /** The damage one bot round does, from the engine's direct-hit formula,
+   *  against the soldier material it met (head 40, chest 41, limbs 42: each
+   *  its own defence group, `setSkeletonCollisionBone`'s last word). */
+  function botRoundDamage(stats = null, defender = BOT_SOLDIER_MATERIAL) {
     // `fireArms.projectile` names the round's template; its attacker material
     // comes from `damage.json`'s projectile table, as for the human's rounds.
-    const attacker = page.guns.attackerMaterial(stats?.projectile ? { template: stats.projectile } : null);
+    // A bot's weapon data names the projectile template; a hand weapon's gun
+    // group carries the projectile spec itself (`{ template, material, ... }`).
+    const projectile = stats?.projectile;
+    const attacker = page.guns.attackerMaterial(
+      typeof projectile === 'string' ? { template: projectile } : projectile ?? null);
     const base = page.guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
     const attGroup = page.guns.materials?.[attacker]?.attGroup ?? attacker;
-    const defGroup = page.guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
+    const defGroup = page.guns.materials?.[defender]?.defGroup ?? defender;
     const mod = page.guns.modifiers?.[attGroup]?.[defGroup] ?? null;
     return base * (mod === null ? 1 : mod);
   }
@@ -317,17 +325,22 @@ export function createVehicleHits(page) {
 
   /**
    * `guns.bodyCast`: the first soldier a round's segment meets inside `maxDist`.
-   * The body is the same stand-in sphere the hand weapons and the bots already
-   * resolve against (`BOT_BODY_RADIUS` about `BOT_BODY_HEIGHT` over the feet),
-   * so a man is exactly as hard to hit with a tank's MG as with a rifle.
+   * A drawn body is met through the engine's own capsules (`skeleton-hit.js`),
+   * and the capsule's material is the defending material the round is priced
+   * against; one nobody draws is the stand-in sphere the hand weapons and the
+   * bots also fall back to (`BOT_BODY_RADIUS` about `BOT_BODY_HEIGHT` over the
+   * feet), so a man is exactly as hard to hit with a tank's MG as with a rifle.
    *
-   * A seated man is not a body here — his hull is, and the collider has it. The
-   * firer's own side is passed through, the rule every other round path in this
-   * file keeps.
+   * A seated man is a body only where his seat draws him (`referee.bodyAt`: a
+   * gunner behind a bare MG, a jeep's passengers); elsewhere his hull is, and
+   * the collider has it. The firer's own side is passed through, the rule every
+   * other round path in this file keeps. A group no seat holds is the human's
+   * hand weapon -- `applyRoundToSoldier` already bills it to him -- so it is
+   * his side that is passed through, and his own body.
    */
   function roundBodyCast(ox, oy, oz, dx, dy, dz, maxDist, group) {
     if (!page.world) return null;
-    const firer = roundFirer(group);
+    const firer = roundFirer(group) ?? page.LOCAL_PLAYER;
     const firerTeam = firer ? page.world.player(firer)?.team ?? null : null;
     const r2 = BOT_BODY_RADIUS * BOT_BODY_RADIUS;
     let best = null;
@@ -335,28 +348,44 @@ export function createVehicleHits(page) {
     for (const [id, player] of page.world.players) {
       if (id === firer) continue;
       if (firerTeam != null && player.team === firerTeam) continue;
-      if (player.occupancy?.root || page.world.armorOf(id)?.destroyed) continue;
-      let s = player.soldier;
-      if (id === page.LOCAL_PLAYER) {
-        if (!page.optOnFoot.checked || page.optPilot.checked || page.soldierDead) continue;
+      if (page.world.armorOf(id)?.destroyed) continue;
+      if (id === page.LOCAL_PLAYER && page.soldierDead) continue;
+      let s = page.bodyAt(id);
+      if (id === page.LOCAL_PLAYER && !player.occupancy?.root) {
+        if (!page.optOnFoot.checked || page.optPilot.checked) continue;
         s = page.soldier;
       }
       if (!s) continue;
-      // Ray against sphere: the entry point is where the round meets him.
-      const cx = s.x - ox, cy = s.y + BOT_BODY_HEIGHT - oy, cz = s.z - oz;
-      const along = cx * dx + cy * dy + cz * dz;
-      const miss2 = cx * cx + cy * cy + cz * cz - along * along;
-      if (miss2 > r2) continue;
-      const t = along - Math.sqrt(r2 - miss2);
-      if (t < 0 || t >= bestT) continue;
+      const caps = page.capsulesOf(id);
+      let t, x, y, z, nx, ny, nz, material = BOT_SOLDIER_MATERIAL, bone = null;
+      if (caps) {
+        const met = skeletonHit([ox, oy, oz], [dx, dy, dz], bestT, caps);
+        if (!met) continue;
+        ({ t, bone } = met);
+        [x, y, z] = met.at;
+        // A capsule has no entry face worth the name: the impact faces the round.
+        nx = -dx; ny = -dy; nz = -dz;
+        material = met.material;
+      } else {
+        // Ray against sphere: the entry point is where the round meets him.
+        const cx = s.x - ox, cy = s.y + BOT_BODY_HEIGHT - oy, cz = s.z - oz;
+        const along = cx * dx + cy * dy + cz * dz;
+        const miss2 = cx * cx + cy * cy + cz * cz - along * along;
+        if (miss2 > r2) continue;
+        t = along - Math.sqrt(r2 - miss2);
+        if (t < 0 || t >= bestT) continue;
+        x = ox + dx * t; y = oy + dy * t; z = oz + dz * t;
+        nx = (x - s.x) / BOT_BODY_RADIUS;
+        ny = (y - s.y - BOT_BODY_HEIGHT) / BOT_BODY_RADIUS;
+        nz = (z - s.z) / BOT_BODY_RADIUS;
+      }
       bestT = t;
-      const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
       best = {
-        kind: 'soldier', t, x, y, z,
-        nx: (x - s.x) / BOT_BODY_RADIUS,
-        ny: (y - s.y - BOT_BODY_HEIGHT) / BOT_BODY_RADIUS,
-        nz: (z - s.z) / BOT_BODY_RADIUS,
-        material: BOT_SOLDIER_MATERIAL, owner: -1, target: id,
+        kind: 'soldier', t, x, y, z, nx, ny, nz,
+        material, owner: -1, target: id,
+        // The round's direction, the man's feet and the bone it met, for his
+        // latest collision (`soldier-death.js` `roundHit`).
+        travel: [dx, dy, dz], feetY: s.y, seated: !!s.seated, bone,
       };
     }
     return best;
@@ -423,11 +452,17 @@ export function createVehicleHits(page) {
     if (firer && firer !== page.LOCAL_PLAYER) {
       page.bots.find(b => b.playerId === firer)?.recordHit(id);
     }
+    const [px, py, pz] = record.point ?? [];
+    const hit = record.travel && Number.isFinite(py)
+      ? roundHit([px - record.travel[0], py - record.travel[1], pz - record.travel[2]],
+                 record.point, record.feetY, record.seated, record.bone)
+      : null;
     if (id === page.LOCAL_PLAYER) {
       page.applyDamageToPlayer(record.damage,
-        from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam);
+        from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam, hit);
     } else {
-      page.applyDamage(id, record.damage, firer ?? page.LOCAL_PLAYER, from, { via: `round ${record.gun ?? ''}` });
+      page.applyDamage(id, record.damage, firer ?? page.LOCAL_PLAYER, from,
+                       { via: `round ${record.gun ?? ''}`, hit });
     }
   }
 

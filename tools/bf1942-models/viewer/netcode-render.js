@@ -22,6 +22,8 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
 import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
+import { createSeatBodies } from './seat-body.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -101,7 +103,8 @@ export function createRemoteRenderer(ctx) {
       upper = await gaitBundle('gaits/Colt.gait.glb');
     }
     const lower = await gaitBundle(manifest.lower);
-    return [...lower, ...upper];
+    const die = manifest.die ? await gaitBundle(manifest.die) : [];
+    return [...lower, ...upper, ...die];
   }
 
   function posePair(soldier, weapon) {
@@ -126,7 +129,8 @@ export function createRemoteRenderer(ctx) {
     const pair = await posePair(soldier, PLACEHOLDER_WEAPON);
     if (!pair) return null;
     const gaits = await gaitClipsFor(PLACEHOLDER_WEAPON);
-    return { pair, gaits, soldier };
+    const soldierBody = (await gaitsManifest())?.soldierBody ?? null;
+    return { pair, gaits, soldier, soldierBody };
   }
 
   // --- per-replica state ------------------------------------------------------
@@ -144,6 +148,7 @@ export function createRemoteRenderer(ctx) {
     if (s && s.team === team) return s;
     if (s) {
       root.remove(s.group);
+      dropSeatBody(s);
       soldiers.delete(slot);
     }
     const group = new THREE.Group();
@@ -151,7 +156,8 @@ export function createRemoteRenderer(ctx) {
     group.visible = false;
     root.add(group);
     s = { slot, team, group, rig: null, standIn: null, want: null,
-          lastPos: null, lastSpeed: 0, seq: 0 };
+          lastPos: null, lastSpeed: 0, seq: 0, lastAlive: null, corpseLeft: 0,
+          assets: null, seat: null, seatLoading: null };
     soldiers.set(slot, s);
     const seq = ++s.seq;
     soldierAssets(team).then(assets => {
@@ -165,6 +171,7 @@ export function createRemoteRenderer(ctx) {
         });
         return;
       }
+      s.assets = assets;
       const scene = skeletonClone(assets.pair.scene);
       s.rig = { scene, mixer: null, families: null };
       buildGaitRig(s, scene, assets.pair.animations, assets.gaits);
@@ -181,11 +188,12 @@ export function createRemoteRenderer(ctx) {
    *  honest source; the crossfade discipline is the same. */
   function buildGaitRig(s, scene, poseClips, gaitClips) {
     const mixer = new THREE.AnimationMixer(scene);
-    const action = (name, clips) => {
+    const action = (name, clips, once = false) => {
       const clip = THREE.AnimationClip.findByName(clips, name);
       if (!clip) return null;
       const a = mixer.clipAction(clip);
-      a.setLoop(THREE.LoopRepeat, Infinity);
+      if (once) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      else a.setLoop(THREE.LoopRepeat, Infinity);
       a.play();
       a.setEffectiveWeight(0);
       a.paused = true;
@@ -205,6 +213,12 @@ export function createRemoteRenderer(ctx) {
       // A gait only counts when both halves resolved (replay.js's law).
       const lower = action(spec.lower, gaitClips);
       const upper = action(spec.upper, gaitClips);
+      if (lower && upper) families[family] = [lower, upper];
+    }
+    // The deaths (`soldier-death.js`): one-shots that hold the last frame.
+    for (const [family, spec] of Object.entries(DIE_CLIPS)) {
+      const lower = action(spec.lower, gaitClips, true);
+      const upper = action(spec.upper, gaitClips, true);
       if (lower && upper) families[family] = [lower, upper];
     }
     s.rig.mixer = mixer;
@@ -237,6 +251,59 @@ export function createRemoteRenderer(ctx) {
     return v;
   }
 
+  /** The seat record a snapshot's `seatIndex` names on a replica, or null. */
+  function seatFor(v, seatIndex) {
+    if (!v?.survey || !Number.isInteger(seatIndex) || seatIndex < 0) return null;
+    const id = v.survey.order[seatIndex];
+    return id == null ? null : v.survey.seats.get(id) ?? null;
+  }
+
+  // Seated remotes are drawn the way seated bots are (`seat-body.js`): the
+  // seat's pose glb, hands on the gun, the slump when they die there.
+  const seatBodies = createSeatBodies({
+    loader: ctx.loader,
+    url: (soldierName, pose) => `${ctx.modelsBase}/poses/${soldierName}__${pose}.pose.glb${ctx.bust()}`,
+    shade: scene => ctx.shadeModel?.(scene),
+    get parent() { return root; },
+  });
+
+  /** Keep `s.seat` on the seat `seat` of hull `v`; true while it is drawn. */
+  function syncSeatBody(s, v, seat, dt) {
+    if (s.seat && s.seat.seat !== seat) { seatBodies.dispose(s.seat); s.seat = null; }
+    if (!s.seat) {
+      if (s.seatLoading !== seat && s.assets) {
+        s.seatLoading = seat;
+        seatBodies.load(s.assets.soldier, seat, {
+          dieClips: s.assets.gaits, rootId: v.survey.order[0],
+        }).then(sb => {
+          if (!sb) return;
+          if (s.seatLoading !== seat || soldiers.get(s.slot) !== s) { seatBodies.dispose(sb); return; }
+          s.seat = sb;
+          s.seatLoading = null;
+        });
+      }
+      return false;
+    }
+    s.seat.scene.visible = true;
+    seatBodies.step(s.seat, dt);
+    // A live man in the seat: whoever slumped there is gone (the rule
+    // `bot-visuals.js` keeps for its seat corpses).
+    for (const other of soldiers.values()) {
+      if (other.seatCorpse?.seat === seat) {
+        seatBodies.dispose(other.seatCorpse);
+        other.seatCorpse = null;
+        other.seatCorpseLeft = null;
+      }
+    }
+    return true;
+  }
+
+  function dropSeatBody(s) {
+    if (s.seat) seatBodies.dispose(s.seat);
+    s.seat = null;
+    s.seatLoading = null;
+  }
+
   function seatNodeFor(v, seatIndex) {
     if (!v.survey || !Number.isInteger(seatIndex) || seatIndex < 0) return null;
     const id = v.survey.order[seatIndex];
@@ -254,14 +321,26 @@ export function createRemoteRenderer(ctx) {
       const state = client.remotePlayer(slot, nowMs);
       if (!state || !state.alive || !Number.isFinite(state.x)) {
         const s = soldiers.get(slot);
-        if (s) s.group.visible = false;
+        if (s) corpse(s, dt);
         continue;
       }
       const s = soldierFor(slot, state.team);
       s.group.visible = true;
+      s.lastAlive = state;
+      s.corpseLeft = 0;
+      if (s.seatCorpse) stepSeatCorpse(s, dt);
       const seated = state.seated && state.vehicleId != null;
       const vehicle = seated ? vehicles.get(state.vehicleId) : null;
       const seatNode = seated && vehicle ? seatNodeFor(vehicle, state.seatIndex) : null;
+      // A seat that draws a body draws the seat's own; the foot rig stands in
+      // while it loads, and for a seat whose pose never arrives.
+      const seatRec = seatNode ? seatFor(vehicle, state.seatIndex) : null;
+      if (seatRec && syncSeatBody(s, vehicle, seatRec, dt)) {
+        s.group.visible = false;
+        s.lastAlive = state;
+        continue;
+      }
+      if (!seatRec) dropSeatBody(s);
       if (seatNode) {
         // Seated: the seat node owns the body's transform entirely — the
         // same parenting replay.js gives an entered vehicle's lives.
@@ -326,6 +405,64 @@ export function createRemoteRenderer(ctx) {
     }
   }
 
+  /**
+   * A remote who was alive last frame and is not now: his body plays the death
+   * `soldier-death.js` picks for the pose he was last seen in, where he was,
+   * for the template's `timeToLiveAfterDeath`. The snapshot carries no round,
+   * so there is no chest/back or head test to make and the pick is the one
+   * `handleDamage` makes with no collision: chest, or the 1-in-4 slow death.
+   * A seated man is hidden as before -- his body here is the foot rig parented
+   * into the seat, which has no seat legs for `Ub_DieInVehicle` to sit on.
+   */
+  function corpse(s, dt) {
+    const was = s.lastAlive;
+    s.lastAlive = null;
+    if (was && s.seat) {
+      // Died in a drawn seat: slump there (`handleDamage`'s first branch).
+      seatBodies.slump(s.seat);
+      s.seatCorpse = s.seat;
+      s.seat = null;
+      s.corpseLeft = corpseSeconds(s.assets?.soldierBody);
+    }
+    if (s.seatCorpse) {
+      stepSeatCorpse(s, dt);
+      s.group.visible = false;
+      return;
+    }
+    if (was) {
+      const want = was.seated ? null : resolveDeathFamily(deathFamily({
+        stance: was.prone ? 'prone' : was.crouch ? 'crouch' : 'stand',
+      }), family => !!s.rig?.families?.[family]);
+      if (want) {
+        s.want = want;
+        for (const [family, actions] of Object.entries(s.rig.families)) {
+          for (const a of actions) {
+            a.setEffectiveWeight(family === want ? 1 : 0);
+            if (family === want) { a.paused = false; a.reset(); a.play(); }
+          }
+        }
+        s.corpseLeft = corpseSeconds(s.assets?.soldierBody);
+      }
+    }
+    if (s.corpseLeft > 0) {
+      s.corpseLeft -= dt;
+      s.group.visible = s.corpseLeft > 0;
+      s.rig?.mixer?.update(dt);
+      return;
+    }
+    s.group.visible = false;
+  }
+
+  /** A seated corpse runs its own clock, through a respawn if need be: the
+   *  engine's corpse is its own object. */
+  function stepSeatCorpse(s, dt) {
+    s.seatCorpseLeft = (s.seatCorpseLeft ?? s.corpseLeft) - dt;
+    if (s.seatCorpseLeft > 0) { seatBodies.step(s.seatCorpse, dt); return; }
+    seatBodies.dispose(s.seatCorpse);
+    s.seatCorpse = null;
+    s.seatCorpseLeft = null;
+  }
+
   /** The gait/pose blend for one remote, per frame: stance via the state
    *  flags (crouch/prone press their own pose clips when the pair ships
    *  them, stand otherwise), gait via the speed estimate above — the
@@ -356,7 +493,11 @@ export function createRemoteRenderer(ctx) {
   }
 
   function reset() {
-    for (const s of soldiers.values()) root.remove(s.group);
+    for (const s of soldiers.values()) {
+      root.remove(s.group);
+      dropSeatBody(s);
+      if (s.seatCorpse) seatBodies.dispose(s.seatCorpse);
+    }
     for (const v of vehicles.values()) root.remove(v.group);
     soldiers.clear();
     vehicles.clear();

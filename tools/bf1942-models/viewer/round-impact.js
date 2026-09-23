@@ -53,6 +53,10 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
     owner: hit.owner,
     // The soldier `bodyCast` put in the round's way, when that is what it met.
     target: hit.target ?? null,
+    travel: hit.travel ?? null,
+    feetY: hit.feetY ?? null,
+    seated: !!hit.seated,
+    bone: hit.bone ?? null,
     firer: group.owner,
     // The group itself, so a page with more than one seat on a hull can
     // say which seat's gun it was (a bot driver and a bot gunner share the

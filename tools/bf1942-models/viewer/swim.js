@@ -220,8 +220,11 @@ export const SWIM_CLIPS = Object.freeze({
  * `animations/AnimationStatesSwim.con` and `AnimationStatesDie.con`.
  *
  * All five swim states declare `setFlag c_AsmHideWeapon` **and**
- * `setFlag c_AsmIsSwimming`, in that order, and `Lb_DieSwim` declares neither —
- * it is in the death file and carries no flags at all. The upper five declare
+ * `setFlag c_AsmIsSwimming`, in that order. `Lb_DieSwim` is in the death file
+ * and declares `c_AsmHideWeapon` and `c_AsmLockFreeLook` like every other
+ * lower death state there (`AnimationStatesDie.con` lines 124-125), and not
+ * `c_AsmIsSwimming`: a corpse is not swimming. `c_AsmLockFreeLook` (0x80) is
+ * left out of the word because nothing here reads it. The upper five declare
  * nothing, which is consistent with every reader in the binary looking at
  * `this+0x294`, the lower machine.
  *
@@ -234,7 +237,7 @@ export const SWIM_STATE_FLAGS = Object.freeze({
   swimForward: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
   swimBackward: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
   swimEnd: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
-  swimDie: 0,
+  swimDie: ASM_HIDE_WEAPON,
 });
 
 /**
