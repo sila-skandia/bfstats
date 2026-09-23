@@ -278,13 +278,18 @@ export function createBotUnits(env) {
         // doctrine-landing.js): `isTouchingLand` (0x085ebd80 -> 0x085d6700)
         // is the hull's terrain contact this tick (`Ship.aground`, the
         // `ResponsePhysics+0xd0` latch) while its AI physics runs, and off its
-        // own map while it does not (parked, or its driver bailed); taken as
-        // "someone drives it" (INFERRED). The tip test's two forms read the
-        // water and the terrain under the hull.
+        // own map while it does not. A helm's move switches it on
+        // (`EntryBoatMoveTo` 0x08614023, bot-plans.js `steerBoat` sets
+        // `aiPhysics` on the drive), a driver's bail off (0x08560958,
+        // bot-mount.js); a parked hull has it off. The tip test's two forms
+        // read the water and the terrain under the hull.
         let touchingLand = null, tipped = null;
         if (kind === 'ship') {
-          const drive = driver ? env.vehicles.instanceOf?.(node)?.drive ?? null : null;
-          touchingLand = drive && typeof drive.aground === 'boolean' ? drive.aground : !onOwnMap;
+          const drive = env.vehicles.instanceOf?.(node)?.drive ?? null;
+          // No one at the helm reads as off too: a craft's driver leaves only
+          // by that bail (or dies), and the beach order's executor may press
+          // his Use before his own Change runs.
+          touchingLand = driver && drive?.aiPhysics && typeof drive.aground === 'boolean' ? drive.aground : !onOwnMap;
           const hf = collider?.heightfield ?? null;
           const terrainNormal = hf ? hf.normal(pos[0], pos[2], [0, 0, 0]) : null;
           tipped = craftTipped({ up: [_up.x, _up.y, _up.z], waterLevel: collider?.waterLevel ?? null,

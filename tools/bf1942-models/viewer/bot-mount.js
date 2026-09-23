@@ -132,6 +132,10 @@ export function urgencyChange(bot, mod, now) {
         touchingLand: mine?.touchingLand ?? undefined, tipped: mine?.tipped ?? undefined, upright: mine?.upright,
       });
       if (reason) {
+        // A driver who bails switches the craft's AI physics off
+        // (`AIObjectPhysical::disablePhysics` at 0x08560958): its
+        // `isTouchingLand` is its own map's test again (bot-units.js).
+        if (m.drives && m.drive) m.drive.aiPhysics = false;
         const r = { urgency: LANDING_BAIL_URGENCY * mod, best: { id: 'foot', u: 0, dist: 0, cand: null }, bail: true,
                     teleport: false, landing: reason };
         bot.changedTarget.Change = (bot._changeResult?.best?.id ?? null) !== 'foot';
