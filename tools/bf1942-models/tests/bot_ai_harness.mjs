@@ -17,7 +17,7 @@ import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { towardsPoint, boatControl, boatSpeedControl, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
-import { scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -530,6 +530,26 @@ const results = {
     const turnSlow = boatControl({ forward: [0, -1], velocity: [0, -2], toTarget: [50, 0], maxSpeed: 10, prevThrottle: 0 });
     return { open, oneClear, tight, reg, rudder, want, turnFast: [turnFast.throttle, turnFast.steer],
              turnSlow: [turnSlow.throttle, turnSlow.steer] };
+  })(),
+  leftRamp: (() => {
+    // The 15 s ramp keys on the hull the bot left, the candidates' `vehicleId`.
+    const b = Object.create(BotController.prototype);
+    b.vehicle = { id: 'hull-uuid:ShermanGunner', vehicleId: 'hull-uuid' };
+    b.weapons = []; b._footWeapons = null; b._execInfantryResetControls = () => {};
+    b.dismount(10);
+    return b._leftVehicle;
+  })(),
+  fireArea: (() => {
+    // `BBFire::calculateUrgency` 0x08563570: one factor F, 0.5 in range, the
+    // area factor beyond it, applied to the strength and to the score.
+    const w = [{ name: 'K98', maxRange: 100, minRange: 0, ammo: 10, strength: { Infantry: 4 } }];
+    const score = (x, inside, targetInside = true) => scoreTargets({
+      spotted: [{ id: 't', pos: [x, 0, 0], seen: true }], position: [0, 0, 0], weapons: w, now: 0,
+      typeOf: () => 'Infantry', insideOrderedArea: inside,
+      insideArea: () => targetInside,
+    }).score;
+    return { inRange: score(50, false) / score(50, true), beyond: score(110, false) / score(110, true),
+             beyondBoth: score(110, false, false) / score(110, true) };
   })(),
   freeLevel: (() => {
     // `getLevel`: the largest aligned free block holding the point.

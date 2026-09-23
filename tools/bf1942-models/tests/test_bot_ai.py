@@ -97,6 +97,15 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(b["turnFast"], [-1, 1])
         self.assertEqual(b["turnSlow"], [1, 1])
 
+    def test_the_left_vehicle_ramp_keys_on_the_hull(self) -> None:
+        self.assertEqual(self.results["leftRamp"], {"id": "hull-uuid", "at": 10})
+
+    def test_the_fire_area_factor_is_one_factor_counted_twice(self) -> None:
+        f = self.results["fireArea"]
+        self.assertAlmostEqual(f["inRange"], 1.0, places=9)
+        self.assertAlmostEqual(f["beyond"], 0.75 ** 2, places=9)
+        self.assertAlmostEqual(f["beyondBoth"], 0.5625 ** 2, places=9)
+
     def test_free_level_is_the_largest_aligned_free_block(self) -> None:
         f = self.results["freeLevel"]
         self.assertEqual(f["onIt"], -1)

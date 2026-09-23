@@ -105,6 +105,17 @@ class StrategicFixtureTests(unittest.TestCase):
         self.assertEqual(a["high"], 1)
         self.assertFalse(a["arrived"])
 
+    def test_a_passing_required_condition_adds_its_value(self) -> None:
+        # `StrategyPrerequisite::evaluate` 0x0863aa50: 3 (Required) + 2.
+        p = self.results["pins"]["prereq"]
+        self.assertEqual(p["passing"], 5)
+        self.assertEqual(p["failing"], 0)
+
+    def test_an_area_without_a_control_point_is_held_by_presence(self) -> None:
+        # Axis-authored pass: Allies alone take it and keep it while it is
+        # empty or contested; a base Allies may not take stays Axis.
+        self.assertEqual(self.results["pins"]["presence"], [1, 2, 2, 2, 1])
+
     def test_every_order_carries_the_area_test(self) -> None:
         # bot.js calls `wp.inside` for Fire's outside-area factor and the
         # medic; an order without it threw every frame (ee729113).
