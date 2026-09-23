@@ -118,6 +118,20 @@ class ControlPointTemplate:
     object_spawner_id: int | None = None
     unable_to_change_team: bool = False
     time_to_get_control: float | None = None
+    # The rest of what `ControlPoint::handleFrameUpdate` 0x08283b00 and its
+    # transitions read off the template, None where the level leaves the
+    # `ControlPointTemplate` ctor's default (0x082846d0): the setters are
+    # ConsoleClass636..640, 649, 650 (`executeObjectMethod` 0x083060d0
+    # +0x1f8 lose time 5.0, 0x083064e0 +0x1fc, 0x083068f0 +0x1fd,
+    # 0x08306d00 +0x1fe (default 1), 0x08307110 +0x1ff, 0x083093d0 +0x214,
+    # 0x083097e0 +0x204 (default 1)).
+    time_to_lose_control: float | None = None
+    disable_if_enemy_inside_radius: bool | None = None
+    disable_when_losing_control: bool | None = None
+    lose_control_when_enemy_close: bool | None = None
+    lose_control_when_not_close: bool | None = None
+    min_nr_to_take_control: int | None = None
+    only_takeable_by_team: int | None = None
     geometry: str | None = None         # the pole
     flag_child: str | None = None       # addTemplate, normally `AnimatedFlag`
     flag_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -715,6 +729,17 @@ def _opt_int(tokens: list[str]) -> int | None:
         return None
 
 
+def _opt_bool(tokens: list[str]) -> bool | None:
+    """A console bool: `1` / `0`, or the words; None when there is none."""
+    if not tokens:
+        return None
+    word = tokens[0].lower()
+    if word in ("true", "false"):
+        return word == "true"
+    value = _opt_int(tokens)
+    return None if value is None else bool(value)
+
+
 def _opt_float(tokens: list[str]) -> float | None:
     try:
         return float(tokens[0])
@@ -762,6 +787,20 @@ def parse_control_point_templates(text: str) -> dict[str, ControlPointTemplate]:
             current.time_to_get_control = _opt_float(tokens)
         elif cmd == "unabletochangeteam":
             current.unable_to_change_team = bool(_opt_int(tokens))
+        elif cmd == "timetolosecontrol":
+            current.time_to_lose_control = _opt_float(tokens)
+        elif cmd == "disableifenemyinsideradius":
+            current.disable_if_enemy_inside_radius = _opt_bool(tokens)
+        elif cmd == "disablewhenlosingcontrol":
+            current.disable_when_losing_control = _opt_bool(tokens)
+        elif cmd == "losecontrolwhenenemyclose":
+            current.lose_control_when_enemy_close = _opt_bool(tokens)
+        elif cmd == "losecontrolwhennotclose":
+            current.lose_control_when_not_close = _opt_bool(tokens)
+        elif cmd == "minnrtotakecontrol":
+            current.min_nr_to_take_control = _opt_int(tokens)
+        elif cmd == "onlytakeablebyteam":
+            current.only_takeable_by_team = _opt_int(tokens)
         elif cmd == "geometry":
             # Kept even when it will not resolve: `visible` needs to tell a
             # level that wrote `null` from one that wrote nothing at all.

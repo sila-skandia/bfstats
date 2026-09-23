@@ -63,6 +63,17 @@ class ControlPointLawTests(unittest.TestCase):
         self.assertEqual(self.r["tooFew"]["team"], 0)
         self.assertEqual(self.r["onlyAxis"]["team"], 0)
 
+    def test_the_level_lose_time_reaches_the_law(self) -> None:
+        # The exporter's `timeToLoseControl` (vanilla 10 on 85 of 115 placed
+        # points) through spawn-flags.js into `controlPointSettings`.
+        lf = self.r["levelFlag"]
+        self.assertEqual(lf["settings"]["timeToLose"], 10)
+        events = lf["events"]
+        self.assertEqual([("lost" in e, "got" in e) for e in events], [(True, False), (False, True)])
+        self.assertAlmostEqual(events[0]["t"], 10.0, delta=0.1)
+        self.assertAlmostEqual(events[1]["t"], 20.0, delta=0.2)
+        self.assertEqual(self.r["oldScene"]["timeToLose"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()
