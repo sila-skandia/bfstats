@@ -79,23 +79,43 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(p["bayApproachZ"], -925)
 
     def test_the_sai_sends_a_landing_craft_to_the_beach_of_its_target(self) -> None:
+        # `orderNormalBot` 0x08640bd0 over the engine's route
+        # (`getDistances` 0x0863f530): from SeaArea1 every target's route
+        # starts SeaArea1 -> CrossRoads, and the first zone user on it ends
+        # the order: `WPMoveToBeachLanding` on SouthLanding, no route point
+        # between, radius 5 (1.0 raised to the ctor's 5).
         t = self.r["targets"]
-        self.assertEqual(t["crossRoads"], {"kind": "WPBeachLanding", "zone": "SouthLanding", "via": "CrossRoads", "radius": 10})
-        self.assertEqual(t["southernBase"]["zone"], "SouthBayLanding")
-        # MainBase expels landing craft: the first zone user on the way.
-        self.assertEqual(t["mainBase"], {"kind": "WPMoveToBeachLanding", "zone": "SouthLanding", "via": "CrossRoads", "radius": 5})
-        self.assertEqual(t["defGun1"]["via"], "CrossRoads")
-        self.assertIsNone(t["seaArea3"])                          # a sea area: an ordinary WPMoveTo
+        leg = {"kind": "WPMoveToBeachLanding", "zone": "SouthLanding", "via": "CrossRoads", "radius": 5, "route": []}
+        self.assertEqual(t["crossRoads"], leg)
+        self.assertEqual(t["southernBase"], leg)                  # CrossRoads comes first on the way
+        self.assertEqual(t["mainBase"], leg)                      # MainBase expels landing craft
+        self.assertEqual(t["defGun1"], leg)
+        self.assertIsNone(t["seaArea3"])                          # no zone user: the routed WPMoveTo
         self.assertIsNone(t["infantry"])                          # only the LandingCraft unit
         self.assertEqual(t["craftArea"], "SeaArea1")
         self.assertEqual(t["craftAreaOnBeach"], "WesternMainBaseExit")
-        # WesternMainBaseExit lists SeaArea3 as a neighbour (Wake's own line).
+        # The search runs from the target over each area's own neighbours:
+        # WesternMainBaseExit lists SeaArea3 (Wake's own line).
         self.assertEqual(t["path"], ["SeaArea3", "WesternMainBaseExit", "MainBase"])
+        # From SeaArea3: one route point in SeaArea1, whose 0.25 x side
+        # radius (|p2 - p1| = 303) + 2 x 10 is the route's radius; the
+        # approach leg keeps 5 (INVENTION, doctrine-landing.js).
         f = t["fromSeaArea3"]
-        self.assertEqual(f, {"kind": "WPMoveToBeachLanding", "via": "CrossRoads", "radius": 5})
-        # No zone user on that way (this copy gives WesternMainBaseExit no
-        # zone): the ordinary WPMoveTo.
+        self.assertEqual((f["kind"], f["via"], f["route"], f["radius"]), ("WPMoveToBeachLanding", "CrossRoads", ["SeaArea1"], 5))
+        self.assertAlmostEqual(f["routeRadius"], 0.25 * (265 ** 2 + 147 ** 2) ** 0.5 + 20, places=2)
         self.assertIsNone(t["mainBaseFromSeaArea3"])
+
+    def test_the_route_point_is_driven_first_and_popped_in_its_area(self) -> None:
+        # `WPMoveToBeachLanding::getUrgency` 0x08537e50 / `getGoalPoint`
+        # 0x08538070: the goal is the first route point until the craft is
+        # within round(R) + its path radius of it or inside its area; then the
+        # approach point, 10 m in from the seaward edge.
+        r = self.r["route"]
+        self.assertEqual((r["first"]["left"], r["first"]["direct"]), (1, False))
+        self.assertGreater(r["first"]["radius"], 90)
+        self.assertTrue(r["far"])
+        e = r["entered"]
+        self.assertEqual((e["left"], e["radius"], e["direct"], e["approachZ"], e["insideZone"]), (0, 5, False, -603, False))
 
     def test_the_command_flips_the_leg_in_the_zone_and_bails_everyone_at_the_beach(self) -> None:
         c = self.r["command"]

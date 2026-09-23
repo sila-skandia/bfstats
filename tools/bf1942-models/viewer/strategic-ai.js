@@ -572,14 +572,16 @@ export class StrategicAI {
   /**
    * `orderNormalBot` 0x08640bd0 for a landing craft (the unit type
    * `LandingCraft`): the area's own beach when it uses a zone for the unit
-   * (`WPBeachLanding`), else the beach of the first zone-using area on the
-   * way to it (`WPMoveToBeachLanding`); null when neither applies, and the
+   * with no route or already in it (`WPBeachLanding`), else the beach of
+   * the first zone-using area on the engine's route to it, with the route's
+   * points (`WPMoveToBeachLanding`); null when neither applies, and the
    * order is the ordinary `WPMoveTo`. doctrine-landing.js has the laws.
    */
   _orderBeach(bot, area, side, unit) {
     const p = this._alive?.get(bot.id);
     if (!p) return null;
-    const target = beachTarget({ layer: this.layer, zones: this.zones, area, side, unit, x: p[0], z: p[2] });
+    const target = beachTarget({ layer: this.layer, zones: this.zones, area, side, unit, x: p[0], z: p[2],
+                                 ai: this.layer.ai, random: this.random, isValid: unit?.isWalkable ?? null });
     if (!target) return null;
     const order = beachLandingOrder({ target, area, side, layer: this.layer, isValid: unit?.isWalkable ?? null,
                                       random: this.random, zones: this.zones });
