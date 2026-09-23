@@ -154,6 +154,51 @@ class MaterialExtrasTests(unittest.TestCase):
         self.assertTrue(material["extras"]["additive"])
         self.assertTrue(material["extras"]["envmap"])
 
+    def test_envmap_keeps_blend(self) -> None:
+        # `1p_Willy_Hul_M1_Material1` verbatim: `transparent true; envmap true;`
+        # on the katy_window_I windscreen. Exported without BLEND the dirty
+        # glass paints solid over the road.
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="katy_window_I.png")
+        mat_idx = builder.add_material(
+            name="1p_Willy_Hul_M1_Material1",
+            texture=texture_idx,
+            blend=True,
+            envmap=True,
+        )
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+
+        material = doc["materials"][mat_idx]
+        self.assertEqual("BLEND", material["alphaMode"])
+        self.assertTrue(material["extras"]["envmap"])
+
+    def test_envmap_keeps_mask(self) -> None:
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="test.png")
+        mat_idx = builder.add_material(
+            name="cutout_with_envmap",
+            texture=texture_idx,
+            alpha_cutoff=0.5,
+            envmap=True,
+        )
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+
+        material = doc["materials"][mat_idx]
+        self.assertEqual("MASK", material["alphaMode"])
+        self.assertEqual(0.5, material["alphaCutoff"])
+        self.assertTrue(material["extras"]["envmap"])
+
+    def test_envmap_alone_stays_opaque(self) -> None:
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="test.png")
+        mat_idx = builder.add_material(
+            name="1p_yak9_M1_Material0", texture=texture_idx, envmap=True)
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+        self.assertNotIn("alphaMode", doc["materials"][mat_idx])
+
 
 if __name__ == "__main__":
     unittest.main()
