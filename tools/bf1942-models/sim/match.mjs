@@ -172,7 +172,7 @@ export class Match {
         this.stats.set(bot.playerId, {
           side: bot.team, kit: bot.kit, kills: 0, deaths: 0, shots: 0, hits: 0, captures: 0, routeFailures: 0,
           redeploys: 0, mounts: 0, aliveSeconds: 0, mountedSeconds: 0, behaviourSeconds: {},
-          vehicleKills: 0,
+          vehicleRounds: 0, vehicleKills: 0,
         });
         this.instrument(bot);
       },
@@ -292,6 +292,25 @@ export class Match {
       if (killer) killer.vehicleKills = (killer.vehicleKills ?? 0) + 1;
       this.pendingEvents.push({ type: 'vehicle_destroyed', vehicle: node?.name ?? String(owner), template: templateOf(node),
                                 killer: attackerId ?? null, killerSide: killer?.side ?? null });
+    };
+    // A seat's gun fired (`guns.onShot`, the pull and its projectile count):
+    // counted per bot, and the first pull of each seating is an event.
+    this.vehicleFire = { rounds: 0, byKind: {}, byTemplate: {} };
+    stage.hooks.onRounds = (group, rounds, firerId) => {
+      const bot = firerId ? this.bots.find(b => b.playerId === firerId) : null;
+      const m = bot?.vehicle;
+      if (!m) return;
+      const st = this.stats.get(firerId);
+      st.vehicleRounds += rounds;
+      const vf = this.vehicleFire;
+      vf.rounds += rounds;
+      vf.byKind[m.kind] = (vf.byKind[m.kind] ?? 0) + rounds;
+      vf.byTemplate[m.template] = (vf.byTemplate[m.template] ?? 0) + rounds;
+      if (bot._simFiredMount === m) return;
+      bot._simFiredMount = m;
+      this.pendingEvents.push({ type: 'vehicle_fire', bot: firerId, side: bot.team, vehicle: this.vehicleLabel(m),
+                                template: m.template, kind: m.kind, seat: m.seatId,
+                                gun: group?.node?.name ?? null });
     };
     stage.hooks.onRespawn = owner => {
       const node = stage.wrecks.damageVisuals.get(owner)?.node ?? null;
@@ -559,6 +578,7 @@ export class Match {
         // Hulls destroyed, by the side of the lethal hit's attacker (the page's
         // `killedBy`; a crash or a burn-down has none: unattributed).
         vehicleKills,
+        vehicleFire: this.vehicleFire ?? null,
         routeFailures: { total: routeFailures, perBot: Object.fromEntries([...this.stats].map(([id, s]) => [id, s.routeFailures])) },
         redeploys: this.events.filter(e => e.type === 'redeploy').length,
         strategyChanges: this.events.filter(e => e.type === 'strategy').length,

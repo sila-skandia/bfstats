@@ -108,8 +108,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     classes: { Aircraft: S.Aircraft, GroundVehicle: S.GroundVehicle, TrackedVehicle: S.TrackedVehicle, Ship: S.Ship },
     buildDrive: instance => buildHullDrive(instance),
     world: () => world,
-    // The seats' guns are not collected yet (the next step).
-    guns: null,
+    guns,
     adopt: drive => hullBodies.adoptDrivenBody(drive),
     release: drive => hullBodies.releaseDrivenBody(drive),
     thaw: node => statics.thawVehicle(node),
@@ -196,7 +195,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   };
 
   world = new M.World({
-    extras, guns: null, groundHeight: terrain.groundHeight, fireStates: new WeakMap(),
+    extras, guns, groundHeight: terrain.groundHeight, fireStates: new WeakMap(),
     onCrash: (...a) => hullBodies.onCrashDamage(...a),
     isWrecked: owner => {
       const visual = wrecks.damageVisuals.get(owner);
