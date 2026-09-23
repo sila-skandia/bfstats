@@ -10,6 +10,7 @@ import { buildCollisionIndex } from './static-index.js';
 import { buildDrivableMask } from './drivable-mask.js';
 import { WorldCollider } from './world-collider.js';
 import { kindOf } from './level-statics.js';
+import { loadSearchMaps as loadBakedSearchMaps } from './nav-baked.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -178,6 +179,14 @@ export function createLevelTerrain(page) {
   terrain.terrainMaterials = null;
   terrain.damageTables = null;
 
+  /** The level's baked search maps (`nav-baked.js`), or null: `show()`
+   *  fetches them beside the tables and keeps them on the level's extras
+   *  (`bakedSearchMaps`, as the headless runner's `level.mjs` does), and
+   *  `buildCollider` hands them to the collider, where `buildNavMap` looks. */
+  async function loadSearchMaps(dir) {
+    return loadBakedSearchMaps(`${page.MAPS_BASE}/${dir}`, { suffix: page.bust() });
+  }
+
   async function loadDamageTables(dir) {
     const ref = page.extras?.damage;
     if (!ref?.path) return null;
@@ -256,6 +265,7 @@ export function createLevelTerrain(page) {
       ? new WorldCollider({ heightfield, statics, waterLevel: page.extras?.waterLevel,
                             drivableMask })
       : null;
+    if (terrain.collider) terrain.collider.searchMaps = page.extras?.bakedSearchMaps ?? null;
     page.world.setCollider(terrain.collider);
     page.world.damageTables = terrain.damageTables;
     // The `damageMod` matrix rides in with the tables. Without it a round's
@@ -285,6 +295,7 @@ export function createLevelTerrain(page) {
     getFloorAltitude,
     groundHeight,
     loadDamageTables,
+    loadSearchMaps,
     loadTerrainMaterials,
     setTables,
     surfaceFriction,

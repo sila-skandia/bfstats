@@ -420,6 +420,13 @@ export async function realLevel(M, { maps, models, map }) {
     return base * (mod === null ? 1 : mod);
   };
 
+  // The level's baked search maps (`pathfinding/`), which `level-terrain.js
+  // buildCollider` hands the collider as the page's `show()` does.
+  Object.defineProperty(extras, 'bakedSearchMaps', {
+    value: M.readSearchMaps(dir, f => (existsSync(f) ? readFileSync(f) : null)),
+    configurable: true, writable: true, enumerable: false,
+  });
+
   const vehicleFile = path.join(maps, '_shared', 'vehicle-ai.json');
   const vehicleJson = existsSync(vehicleFile) ? JSON.parse(readFileSync(vehicleFile, 'utf8')) : null;
   const vehicleByName = new Map(Object.entries(vehicleJson?.vehicles ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
