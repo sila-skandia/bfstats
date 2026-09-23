@@ -247,3 +247,35 @@ which the bot tests then covered.
    Shokaku's deck (620..660, -1420..-1460): a ship is not on the baked
    infantry map (it was not on the engine's either), so a soldier standing
    on the carrier fails every route; the painted map had the deck.
+
+7. **What the runner found in the page (Brief K, 2026-09-24).**
+   ~~No bot takes a fixed gun~~ fixed (AI-92): a seat's value in the Change
+   score is its `aiTemplate.basicTemp` (`Information+0x14`; AA 9, Sherman
+   12, Spitfire 15, B17 35), not strategic strength index 0 (0 on every
+   gun); a record is found by any of its PCOs (`flak38` is `Flak_38`'s);
+   the stationary MGs are units; a secondary seat's whole urgency is scaled
+   by `modifyForDriver`'s root-type factor; the reach test is `BBChange`'s
+   (12 m free, the unit's own cell beyond, a line 12 m behind a
+   no-pathfinding gun). Live and in the runner a bot 30 m from El Alamein's
+   AA gun with a Bf 109 in view takes it in 5 s and fires. In matches no
+   bot takes one yet: the tanks, planes and B17 near the spawns outbid it.
+   ~~Spitfires collide in pairs~~ mostly fixed (AI-95): `runwayClear` (a
+   plane is taken only with no mobile hull 0.6..12 spans ahead) and the
+   pilot's `BBAvoid` (collision predicted 5 s out, a turn 45 deg away);
+   seeds 1..4 keep one same-tick pair, an enemy Spitfire and Bf 109 head-on
+   in a mutual attack run, predicted only 1.4 s out. ~~Tanks trade a flag
+   every 10 s~~ fixed (AI-100): the control point's own law (the owner's
+   player holds, an enemy with him runs it down to neutral, one side alone
+   takes it). ~~The redeploy keeps its best distance across orders~~ fixed
+   (AI-101): the engine has no such test; the page's is measured per order.
+   Open: (a) the extractor exports only `timeToGetControl` and
+   `unableToChangeTeam` of a control point, so vanilla's `timeToLoseControl
+   10` reads as the ctor's 5 and the 26 flags with `loseControlWhenEnemyClose
+   0` run down anyway (an exporter change and a full level re-bake); (b)
+   the human's capture (`capture.js`) still runs the old per-player timer;
+   (c) two tanks out of each other's line of fire sit in Fire indefinitely
+   on an unspotted target (`getEnemyObjects`, 850 m): the engine's fire plan
+   builds a `MoveToObjectFinding` under `Not(canFire)` (0x085a9e6b) that is
+   read in part and not ported; (d) the Mobile plug-in's look-ahead is 5 s
+   for soldiers too (both ctors), not the 0 `bot-route.js` assumes, so the
+   soldier's avoid is still the zero look-ahead one.
