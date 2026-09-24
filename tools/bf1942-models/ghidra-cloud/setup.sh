@@ -59,15 +59,14 @@ export GHIDRA_INSTALL_DIR="$GHIDRA_HOME"
 # --- 4. Game binaries from the release -----------------------------------------
 cd "$WORK"
 echo "[setup] downloading binaries from release $RELEASE_TAG"
-# The repo is public: no auth, no gh CLI needed. Plain API + asset fetch.
-api="https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
-curl -fsSL --retry 5 --retry-all-errors "$api" \
-  | python3 -c 'import json,sys; [print(a["name"], a["url"]) for a in json.load(sys.stdin)["assets"]]' \
-  | while read -r name asset_url; do
-      echo "[setup] fetching $name"
-      curl -fSL --retry 5 --retry-all-errors -H "Accept: application/octet-stream" \
-        -o "$name" "$asset_url"
-    done
+# Direct asset URLs, not the api.github.com listing: the anonymous API is
+# rate-limited to 60 req/h per IP and cloud datacenter IPs share it (403s).
+# github.com download URLs are unauthenticated and rate-limit-free.
+base="https://github.com/$REPO/releases/download/$RELEASE_TAG"
+for name in bf1942_lnxded.static BF1942.exe bf1942-client.rep.zip linux-server.rep.zip; do
+  echo "[setup] fetching $name"
+  curl -fSL --retry 5 --retry-all-errors -o "$name" "$base/$name"
+done
 
 sha256sum bf1942_lnxded.static BF1942.exe
 # expected:
