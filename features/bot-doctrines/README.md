@@ -95,6 +95,15 @@ as the squad play does for its leaders; the areas were already counted with
 everyone. Name it on the runner with `--doctrine <name>` (both sides) or
 `--doctrine axis=<name>` / `allies=<name>`.
 
+## The garrison (the page's default)
+
+`doctrine-garrison.js`, 'garrison': the SAI's strategy and targets with one
+busy guard a held flag (a post that mans the flag's gun or walks a ring round
+it) and every other bot attacking; bots not on a post take a fixed gun only
+for an enemy they have spotted in its reach. The page runs it unless
+`?doctrine=sai`; the runner's default stays the SAI. See
+[features/bot-garrison](../bot-garrison/README.md).
+
 ## The engine's follow waypoint (ledger AI-77)
 
 The engine has a waypoint on an object: `WPCloseTo` (and `WPAltitudeCloseTo`).
