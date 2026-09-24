@@ -16,7 +16,8 @@
 //   doctrine 'squad'  doctrine-squad.js: bots in fours, the leaders ordered
 //                     by the SAI, the rest following them.
 //   doctrine 'garrison'  doctrine-garrison.js: the SAI's picture with one
-//                     busy guard a held flag and everyone else attacking;
+//                     busy guard on each flag the side has taken and
+//                     everyone else pushing;
 //                     the page's default (`map.html ?doctrine=`).
 //
 // ## The contract a doctrine meets
