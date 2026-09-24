@@ -202,6 +202,13 @@ export function approachesByFinding(bot) {
  * up: the Sherman's -20 .. 5 is 20 deg up to 5 deg down). The engine aims
  * along `internalAiming`'s ballistic lead (0x085527d0); the straight line
  * stands for it here (INFERRED). No window, no limit.
+ *
+ * The pitch is taken in the hull's frame, not the world's:
+ * `validateCameraDirectionPitch` 0x085d4570 (and the pitch half of
+ * `validateCameraDirection` 0x085d4170) dots the aim with the second row of
+ * `getCameraBaseTransformation` (the base's up axis) and tests -asin of that
+ * against +0x6c / +0x78, so a hull nosed down a slope still reaches a target
+ * below the horizon (read 2026-09-24, ledger AI-128).
  */
 export function approachAimValid(bot, targetPos) {
   const c = bot.vehicle?.controlInfo;
@@ -209,8 +216,30 @@ export function approachAimValid(bot, targetPos) {
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return true;
   const o = bot._aimOrigin?.() ?? bot.position;
   const dx = targetPos[0] - o[0], dy = targetPos[1] + 1.0 - o[1], dz = targetPos[2] - o[2];
-  const up = Math.atan2(dy, Math.hypot(dx, dz)) * 180 / Math.PI;
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1e-6) return true;
+  const u = hullUp(bot);
+  const s = Math.max(-1, Math.min(1, (dx * u[0] + dy * u[1] + dz * u[2]) / len));
+  const up = Math.asin(s) * 180 / Math.PI;
+  bot._approachPitch = up;
   return up >= -hi && up <= -lo;
+}
+
+/** The hull's up axis in the world: its drive's orientation, else the seat
+ *  node's world matrix (the y column), else straight up. */
+export function hullUp(bot) {
+  const q = bot.vehicle?.drive?.state?.orientation;
+  if (q) {
+    // q * (0, 1, 0)
+    const { x, y, z, w } = q;
+    return [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)];
+  }
+  const e = bot.vehicle?.node?.matrixWorld?.elements;
+  if (e) {
+    const l = Math.hypot(e[4], e[5], e[6]) || 1;
+    return [e[4] / l, e[5] / l, e[6] / l];
+  }
+  return [0, 1, 0];
 }
 
 /**
@@ -222,7 +251,27 @@ export function approachAimValid(bot, targetPos) {
  * to the target with the finding's goal radius; the path is searched again
  * when S is lost after holding (`update` 0x08546df0, its +0xb4 latch).
  * The finding's 0.5 maxSpeed arrival speed is not ported.
+ *
+ * Two departures (INVENTION, 2026-09-24, features/bot-stalemates):
+ *  - S also asks for a clear line from the barrel to the target
+ *    (`muzzleClear`). The engine's S reads only the memory record, which the
+ *    sensing sets from the seat's camera; a hull pressed against a building
+ *    with its camera over the roof line held S and shelled the wall (Bocage,
+ *    an M10 at the lumber mill).
+ *  - Inside `mid` the engine's tank holds wherever S fails, and nothing in
+ *    its fire state machine gives a tank another firing point
+ *    (`BBPFireInfantery::createPlan` 0x085a3870: state 1 keeps the bot's own
+ *    position; the portal states need the soldier flag). A tank looking
+ *    down at a target below its 5 deg depression, or at one it cannot see,
+ *    sat there for minutes, and so did the target. After `FIRE_UNBLOCK.grace`
+ *    seconds without S (kept on the bot: the plan is rebuilt every few
+ *    seconds by the urge curve) the tank moves: toward the target when the
+ *    target is too low, unseen or behind cover (down a slope the hull noses
+ *    over and its gun reaches), away from it when it is above the gun's
+ *    elevation, until S holds again.
  */
+export const FIRE_UNBLOCK = { grace: 2.0, backOffMargin: 2.0 };
+
 export function execFireApproach(bot, action, dt) {
   const p = bot.world?.players?.get(action.targetId);
   const pos = playerPosition(p) ?? action.targetPos;
@@ -232,7 +281,15 @@ export function execFireApproach(bot, action, dt) {
   const dist = Math.hypot(pos[0] - x, pos[1] - y, pos[2] - z);
   const min = weapon?.minRange ?? 0, max = weapon?.maxRange ?? 0;
   const seen = !!bot.senses?.memory?.get(action.targetId)?.seen;
-  const holds = dist >= min && dist <= FIRE_APPROACH.inRangeFraction * max && seen && approachAimValid(bot, pos);
+  const inRange = dist >= min && dist <= FIRE_APPROACH.inRangeFraction * max;
+  const aim = approachAimValid(bot, pos);
+  const muzzle = inRange && seen && aim ? muzzleClear(bot, pos) : null;
+  const holds = inRange && seen && aim && muzzle !== false;
+  const now = bot._now ?? 0;
+  if (holds || bot._approachBlock?.targetId !== action.targetId) {
+    bot._approachBlock = holds ? null : { targetId: action.targetId, since: now };
+  }
+  const blockedFor = bot._approachBlock ? now - bot._approachBlock.since : 0;
   // The firing point: here, or `calculateAwayPosition` when the target is
   // inside minRange + 1 (bot-fire.js `firePlanFor`'s back-off radius).
   let point = [x, y, z];
@@ -245,9 +302,17 @@ export function execFireApproach(bot, action, dt) {
   const near = Math.hypot(pos[0] - point[0], pos[1] - point[1], pos[2] - point[2])
     <= FIRE_APPROACH.nearPointScale * min + FIRE_APPROACH.nearPointPad;
   const ext = bot._unitInfo?.(action.targetId)?.extents ?? [0.6, 1.8, 0.6];
-  const step = fireApproachStep({ dist, holds, weapon, nearFiringPoint: near,
-                                  targetRadius: 0.5 * Math.hypot(ext[0], ext[1], ext[2]) });
-  bot._fireApproachDbg = { move: step.move, dist, seen, holds };
+  const targetRadius = 0.5 * Math.hypot(ext[0], ext[1], ext[2]);
+  let step = fireApproachStep({ dist, holds, weapon, nearFiringPoint: near, targetRadius });
+  // The unblocking move (header): inside `mid`, S lost for the grace period.
+  let unblock = null;
+  if (!holds && step.move !== 'find' && blockedFor >= FIRE_UNBLOCK.grace && dist >= min + FIRE.tooClose) {
+    const tooHigh = inRange && seen && !aim && approachTooHigh(bot);
+    unblock = tooHigh ? 'back' : 'close';
+    step = { move: 'find', arrive: FIRE_APPROACH.arriveTargetScale * targetRadius };
+  }
+  bot._fireApproachDbg = { move: unblock ? `unblock-${unblock}` : step.move, dist, seen, holds, inRange, aim,
+                           muzzle, pitch: bot._approachPitch };
   action.holds = holds;
   if (step.move === 'end') { action.ended = true; return true; }
   if (step.move === 'hold' || (step.move === 'point' && point[0] === x && point[2] === z)) {
@@ -255,17 +320,63 @@ export function execFireApproach(bot, action, dt) {
     bot.moveForward = 0; bot.moveStrafe = 0; bot._lastThrottle = 0;
     return false;
   }
-  if (step.move === 'find' && action.held) { bot.route = null; action.held = false; }
+  if (step.move === 'find' && (action.held || action.unblock !== unblock)) { bot.route = null; action.held = false; }
+  action.unblock = unblock;
   let goal = point;
-  if (step.move === 'find') {
+  if (unblock === 'back') {
+    goal = backOffGoal(bot, pos, FIRE_APPROACH.inRangeFraction * max);
+    if (!goal) { action.ended = true; action.noGoal = true; return true; }
+  } else if (step.move === 'find') {
     goal = approachGoal(bot._nav?.(), pos, bot.position, FIRE_APPROACH.inRangeFraction * max);
     if (!goal) { action.ended = true; action.noGoal = true; return true; }
   }
   action.move ??= {};
   action.move.waypoint = goal;
-  action.move.arrive = step.move === 'find' ? step.arrive : undefined;
+  action.move.arrive = unblock === 'back' ? FIRE_UNBLOCK.backOffMargin : step.move === 'find' ? step.arrive : undefined;
   bot._execInfantryMoveTo(action.move, dt);
   return false;
+}
+
+/** Whether the barrel's straight line to the target's aim point is clear
+ *  of everything but the bot's own hull and the target's (INVENTION, the
+ *  approach's header); null when the bot has no barrel to cast from. */
+export function muzzleClear(bot, targetPos) {
+  const o = bot._aimOrigin?.();
+  if (!o || !bot._lineClear) return null;
+  return bot._lineClear(o, [targetPos[0], targetPos[1] + 1.0, targetPos[2]]);
+}
+
+/** The last `approachAimValid` failed above the window's top (the target
+ *  higher than the gun elevates) rather than below its bottom. */
+function approachTooHigh(bot) {
+  const hi = bot.vehicle?.controlInfo?.cameraMinDeg?.[1];
+  return Number.isFinite(bot._approachPitch) && Number.isFinite(hi) && bot._approachPitch > -hi;
+}
+
+/**
+ * Where a tank backs off to for a target above its elevation (INVENTION,
+ * `FIRE_UNBLOCK`): along the line from the target through the tank, at the
+ * horizontal distance where the rise is `backOffMargin` degrees inside the
+ * window's top, no further than `radius` (0.9 maxRange); the first walkable
+ * point back toward the tank from there, or null.
+ */
+export function backOffGoal(bot, targetPos, radius) {
+  const c = bot.vehicle?.controlInfo;
+  const top = -(c?.cameraMinDeg?.[1] ?? -20) - FIRE_UNBLOCK.backOffMargin;
+  const o = bot._aimOrigin?.() ?? bot.position;
+  const rise = targetPos[1] + 1.0 - o[1];
+  const dx = bot.position[0] - targetPos[0], dz = bot.position[2] - targetPos[2];
+  const h = Math.hypot(dx, dz);
+  if (!(h > 1e-3) || !(top > 1)) return null;
+  const want = Math.min(radius, Math.max(h + 5, rise / Math.tan(top * Math.PI / 180)));
+  const ux = dx / h, uz = dz / h;
+  const nav = bot._nav?.();
+  const cell = nav?.cellSize ?? 1;
+  for (let d = want; d > h; d -= cell) {
+    const gx = targetPos[0] + ux * d, gz = targetPos[2] + uz * d;
+    if (!nav || isWalkable(nav, gx, gz)) return [gx, bot.position[1], gz];
+  }
+  return null;
 }
 
 /**
@@ -637,6 +748,16 @@ export function execMouseTurretAimAt(bot, action) {
 
 /** `MouseTurretLookAt` (`BAPALookInDir` / `LookAtObject`): a direction or a point. */
 export function execMouseTurretLookAt(bot, action) {
+  if (action.ahead && bot.firingTarget && bot.senses?.memory?.get(bot.firingTarget)?.seen) {
+    // INVENTION (2026-09-24, features/bot-stalemates): a tank that holds a
+    // firing target it sees keeps its gun on it while MoveTo drives, where
+    // the engine's `BAPALookAhead` turns it down the hull. The urge curve
+    // hands a firing tank to MoveTo for a tick every few seconds; the look
+    // ahead swung the turret off by a few degrees each time, which a slow
+    // turret (the M10's scale 1 count) never won back, and it never fired.
+    execMouseTurretAimAt(bot, { targetId: bot.firingTarget, targetPos: bot.targetPosition });
+    return true;
+  }
   if (action.ahead) {
     const f = bot._unitForward3?.();
     if (f) bot._aimLook(Math.atan2(f[0], f[2]), Math.atan2(f[1], Math.hypot(f[0], f[2])), AIM_COUNTS_MAX);
