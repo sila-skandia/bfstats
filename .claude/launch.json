@@ -44,6 +44,16 @@
       ],
       "autoPort": false,
       "port": 8100
+    },
+    {
+      "name": "radio-chat-viewer",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "python3 -m http.server \"$PORT\" --directory ../bfstats-radio-chat/tools/bf1942-models/viewer"
+      ],
+      "autoPort": true,
+      "port": 5485
     }
   ]
 }
