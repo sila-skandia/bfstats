@@ -445,7 +445,11 @@ recorded. Settled, each narrated in full under `subsystems/`:
   (ledger FF-1…8): a round meets any soldier but its firer and his own
   hull's crew, a same-team hit is scaled by the server's percentages (100 in
   the shipped `ServerSettings.con`), and a retail bot never holds fire for a
-  teammate.
+  teammate. Damage parity (DMG-3, DMG-4,
+  [features/damage-parity](../damage-parity/README.md)): a round costs a
+  soldier the struck capsule's price, falling off with range for pistols and
+  SMGs, at any angle. An object that authors no `angleMod` has 0 and takes
+  `sin(abs(cos) pi/2)`.
 - **Seats and entry points** ([subsystems/seats-and-entry-points.md](subsystems/seats-and-entry-points.md))
   — entry is `c_PIUse` behind two independent gates, `validateBFEntryPoint`
   adds a second team/hostility check beyond the obvious one, and the
