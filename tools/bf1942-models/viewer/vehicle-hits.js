@@ -530,8 +530,13 @@ export function createVehicleHits(page) {
                  record.point, record.feetY, record.seated, record.bone)
       : null;
     if (id === page.LOCAL_PLAYER) {
+      // His damage arc points at the round's own start, the engine's `Pos3`
+      // (ledger HFD-4). The record does not carry it, so the firer's gun as it
+      // stands now: the barrel a bot's `aimRay` casts from.
+      const gun = firer && firer !== page.LOCAL_PLAYER
+        ? page.bots.find(b => b.playerId === firer)?.aimRay?.().origin ?? from : from;
       page.applyDamageToPlayer(damage,
-        from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam, hit);
+        gun ? { x: gun[0], y: gun[1], z: gun[2] } : null, firerTeam, hit);
     } else {
       page.applyDamage(id, damage, firer ?? page.LOCAL_PLAYER, from,
                        { via: `round ${record.gun ?? ''}`, hit });

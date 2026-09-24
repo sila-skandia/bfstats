@@ -371,8 +371,8 @@
    "kind": "function",
    "subsystem": "game",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "dice::bf::Setup::initInputDevices() twin of lnxded 0x080be490. Setup+0x220 = FUN_0049d610(g_simulationFps, 0x400) (input manager, 1024-sample ring); Setup+0x184 = 1.0f / inputManager+0x1c = 1/30 s, the tick dt mainLoop passes to Game::update."
+   "source": "ghidra; extended research-2026-09-24-hit-direction-wash",
+   "note": "dice::bf::Setup::initInputDevices() twin of lnxded 0x080be490. Setup+0x220 = FUN_0049d610(g_simulationFps, 0x400) (input manager, 1024-sample ring); Setup+0x184 = 1.0f / inputManager+0x1c = 1/30 s, the tick dt mainLoop passes to Game::update. 2026-09-24: BfMenu::paint passes the same Setup+0x184 to its menu screen's update, so every menu TimeoutActionNode counts painted frames at 1/30 each (ledger HFD-6)."
   },
   {
    "address": "0x004452c0",
@@ -578,8 +578,8 @@
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-15-minimap",
-   "note": "Despite the name, BfMenu's top-level screen-path switch ('Battlefield' / 'InGame' / 'LoadMenu', with BFMenu::paint() path-not-found logging, cursor-texture swaps and chat/scoreboard toggles). Its only map work is installing the level's map picture into the MapPath placeholder: getMap() vtable +0x4c(0, picture). No colour, blend, texture-stage or rectangle code anywhere in it, so the spawn-screen dimming (ledger MEME-10) is not set here. Name kept from minimap-and-fullmap.md."
+   "source": "research-2026-09-15-minimap; extended research-2026-09-24-hit-direction-wash",
+   "note": "Despite the name, BfMenu's top-level screen-path switch ('Battlefield' / 'InGame' / 'LoadMenu', with BFMenu::paint() path-not-found logging, cursor-texture swaps and chat/scoreboard toggles). Its only map work is installing the level's map picture into the MapPath placeholder: getMap() vtable +0x4c(0, picture). No colour, blend, texture-stage or rectangle code anywhere in it, so the spawn-screen dimming (ledger MEME-10) is not set here. Name kept from minimap-and-fullmap.md. 2026-09-24: it ends (0x0045ddd1-0x0045dde5) with [BfMenu+0x144]->update(Setup+0x184) then ->draw(): the HUD menu tree steps 1/30 per paint, whatever the frame rate. Ledger HFD-6."
   },
   {
    "address": "0x0045dd69",
@@ -1244,8 +1244,8 @@
    "kind": "function",
    "subsystem": "gameevent",
    "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: GameClient Event Processing"
+   "source": "bf42plus; extended research-2026-09-24-hit-direction-wash",
+   "note": "bf42plus section: GameClient Event Processing 2026-09-24: event type 0x3c (HitFromPosEvent) case at 0x00494db5: if BfMenu (0x973ab8): setHitFromDir([ev+0xc]+1, [ev+0xd] * 1/255). Ledger HFD-2."
   },
   {
    "address": "0x00493b07",
@@ -1282,6 +1282,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x00494db5",
+   "name": "GameClient::processEvent HitFromPosEvent case",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "movzx edx,[esi+0xd]; al=[esi+0xc]+1; fild; fmul 1/255 (0x008d5bc8); call BfMenu::setHitFromDir 0x006acb60 at 0x00494de1. Ledger HFD-2."
   },
   {
    "address": "0x00494dfa",
@@ -1410,6 +1419,15 @@
    "note": "Input-manager constructor (this, float fps, int ringSize): +0xc produced, +0x10 consumed, +0x14 ringSize (0x400), +0x18 timeGetTime-ish base (FUN_00804af0), +0x1c fps (= g_simulationFps 30), +0x20 ring of ringSize x 0xd0-byte samples. Class name not recoverable from the client; the lnxded twin keeps the fps in Setup+0xcc as 1/fps instead."
   },
   {
+   "address": "0x004a4a60",
+   "name": "HitFromPosEvent::HitFromPosEvent(char octant, char alphaByte)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "vptr 0x008db444; [+0xc] = octant, [+0xd] = alpha byte; getType at 0x004a4a80 returns 0x3c. Twin of lnxded 0x0811e6c0 (3-bit octant, 8-bit alpha on the wire). Ledger HFD-2."
+  },
+  {
    "address": "0x004a55e0",
    "name": "Level__func_4A55E0",
    "kind": "function",
@@ -1471,6 +1489,15 @@
    "confidence": "verified",
    "source": "ghidra",
    "note": "twin of lnxded GameServer::checkPlayerTriggers 0x0814f2c0, by call position in GameClient__simulatePlayerUpdate 0x004b6a30 (immediately before handleInput on the playing path)."
+  },
+  {
+   "address": "0x004b0330",
+   "name": "GameServer::_giveDamage (client twin)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Twin of lnxded GameServer::_giveDamage 0x0814b870, ret 0x30 (12 args: obj, damage, attacker, int, statId, Pos3, int, bool x3). Alpha = clamp(damage / armor.getMaxHitPoints(), 0, 0.75) at 0x004b0439-0x004b0473; octant from calcLookAtMatrix(objPos, Pos3) row 2 dotted with the obj's rows 2 and 0 at 0x004b08a2-0x004b09f2; local player -> BfMenu::setHitFromDir(octant+1, alpha) at 0x004b0a17, others -> HitFromPosEvent(octant, trunc(alpha*255)). Ledger HFD-2, HFD-3."
   },
   {
    "address": "0x004b34b0",
@@ -3309,6 +3336,24 @@
    "note": "Reads Red/Green/Blue/Alpha Data (unbound channel = 1.0) and SETS the quad's four vertex colours (0x004677a0, plain store). Twin 0x00601870. See ledger XHIT-7."
   },
   {
+   "address": "0x00601e50",
+   "name": "BfMenu screen update (dt > 1 becomes 0)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "vtable 0x00914a08 +0x4c: if dt > 1.0 then dt = 0, then jmp Menu::update 0x007eb5d0."
+  },
+  {
+   "address": "0x00603770",
+   "name": "BfMenu screen ctor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Stores vptr 0x00914a08 at 0x00603794. BfMenu builds it at 0x0045edf0 with (800.0, 600.0) and keeps it at BfMenu+0x144, the object BfMenu::paint updates and draws. Ledger HFD-6."
+  },
+  {
    "address": "0x006038c0",
    "name": "RendPCDX8_pushStateBlock",
    "kind": "function",
@@ -4060,9 +4105,9 @@
    "name": "BfMenu__func_6ACB60",
    "kind": "function",
    "subsystem": "ui",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Kill/Score Messages"
+   "confidence": "verified",
+   "source": "bf42plus; extended research-2026-09-24-hit-direction-wash",
+   "note": "bf42plus section: Kill/Score Messages 2026-09-24: this is BfMenu::setHitFromDir(byte dir, float alpha): [this+0x360] = alpha; [this+0x358] = dir (movzx), ret 8. The only writer of HitFromDir/HitFromDirAlpha; callers 0x004b0a17 (listen server) and 0x00494de1 (HitFromPosEvent). bf42plus files it under Kill/Score Messages. Ledger HFD-1."
   },
   {
    "address": "0x006ad0a0",
@@ -4461,6 +4506,15 @@
    "note": "bf42plus section: Nametag / HUD Patches"
   },
   {
+   "address": "0x006e10b0",
+   "name": "BfMenu HUD variable registrar (name unknown)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Registers BfMenu's HUD groups into [this+0x144]: among them HitFromDir/HitFromDir (int, +0x358, 0x006e2166) and HitFromDir/HitFromDirAlpha (float, +0x360, 0x006e21aa), and CrossHair/HitIndicationTime (0x006e24ba). Ledger HFD-1, XHIT-2."
+  },
+  {
    "address": "0x006e2013",
    "name": "IconLookRotation float-registration call site",
    "kind": "patch_site",
@@ -4848,6 +4902,24 @@
    "note": "Client. Reads Angle into this+4 and 'Angle multiplyer' (string 0x00940570) into this+8. hud-layout.json holds exactly 7 rotation blocks: six static angles (3.9, -3.14, 1.57, 2.5, 0.8, -0.8) and one bound to IconLookRotation with angle 0.0 - all seven with angleMultiplier 0."
   },
   {
+   "address": "0x007e38c0",
+   "name": "TimeoutActionNode::read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Node::read, then 'Action' at +0x8 and 'Timeout time' (float) at +0x10. vtable slot +0x30 of 0x00941028."
+  },
+  {
+   "address": "0x007e3920",
+   "name": "TimeoutActionNode::update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "vtable 0x00941028 +0x64, reached from the base chain update 0x007ec020 only while every CullNode above it shows: elapsed(+0xc) += dt; if (elapsed >= timeout(+0x10)) { elapsed = 0; action(+0x8)->vt[0x40](...) }. Nothing else resets elapsed. Ledger HFD-5."
+  },
+  {
    "address": "0x007e3a80",
    "name": "meme_CullEventActionNode__read",
    "kind": "function",
@@ -4873,6 +4945,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-menu-actions",
    "note": "Real vtable 0x00940f60 +0x30; createInstance 0x007e40f0 (0x14 bytes). Next node, Action (+0x68), Variable (+0x6c), Event (+0x64) - the Event field meme.py's schema lacks."
+  },
+  {
+   "address": "0x007e4730",
+   "name": "HUD float-variable binder ctor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "RegisterFloatVariable 0x006b3ae0 constructs through it (0x14-byte object, call at 0x006b3b08); HitFromDir/HitFromDirAlpha binds through it at 0x006e21b8."
   },
   {
    "address": "0x007e5210",
@@ -4948,12 +5029,12 @@
   },
   {
    "address": "0x007e9be0",
-   "name": "HUD picture-variable binder ctor",
+   "name": "HUD int-variable binder ctor",
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-16-soldier-hud",
-   "note": ""
+   "source": "research-2026-09-16-soldier-hud; extended research-2026-09-24-hit-direction-wash",
+   "note": "Corrected 2026-09-24: RegisterIntVariable 0x0069eb50 constructs through it (a 0x14-byte object, call at 0x0069eb78), while RegisterPictureVariable 0x0069b880 uses 0x007e9e20 (0xc bytes). HitFromDir/HitFromDir binds through it at 0x006e2174. It was labelled 'HUD picture-variable binder ctor'."
   },
   {
    "address": "0x007ea3f0",
@@ -4983,6 +5064,15 @@
    "note": "Node::read then 'Picture' handle (+0x4c, u8-length string). An empty picture draws a solid quad in the current colour"
   },
   {
+   "address": "0x007eb5d0",
+   "name": "meme Menu::update(dt)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "At 0x00943e4c in the menu base class's vtable (and reached through 0x00601e50's jmp): vt[0xb0](dt), 0x007f4710(this, 0, 0, this+4, dt, 1, 1), then root(+0x18)->vt[0x58](this, this+0x24, this+4, dt), then 0x007f78e0 and vt[0xb4](dt). The dt it is given is the dt every node's update receives."
+  },
+  {
    "address": "0x007ebab0",
    "name": "HUD variable register()",
    "kind": "function",
@@ -4999,6 +5089,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-soldier-hud",
    "note": "69 xrefs confirmed."
+  },
+  {
+   "address": "0x007ec020",
+   "name": "meme Node update chain",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Base +0x58: if (!this->vt[0x64](a, b, c, dt)) return 0; return next ? next->vt[0x58](a, b, c, dt) : 1."
   },
   {
    "address": "0x007ec100",
@@ -5089,6 +5188,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-menu-actions",
    "note": "Real vtable 0x00945118 +0x30; createInstance 0x007ef680 (0x10 bytes). Data and Index object frames: the element of Data chosen by an index variable, such as a navigation button's Current mouseover index."
+  },
+  {
+   "address": "0x007efef0",
+   "name": "CullNode::draw",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Draws its chain whole when the fraction the update left is 1, scales the draw context's alpha by it between 0 and 1, and draws nothing at 0. It reads the fraction, not the variable, so a variable cleared later in the same update still draws that frame. Ledger HFD-5."
+  },
+  {
+   "address": "0x007effe0",
+   "name": "CullNode::update (fade fraction and chain gate)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Variable->getFloat() (vt+0x5c) == 0 eases the fraction at +0x14 down by dt/OutTime (+0x10), otherwise up by dt/InTime (+0xc), clamped 0..1 (a zero time snaps). It walks on down its chain (next->vt[0x58]) only while the fraction is non-zero, so a bare IntData gate is 'non-zero shows'. Ledger HFD-5."
   },
   {
    "address": "0x007f00d0",
@@ -5424,6 +5541,15 @@
    "note": "bf42plus section: Hit Indicator Patches"
   },
   {
+   "address": "0x008d5bc8",
+   "name": "1/255 (float)",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "0.003921569: the HitFromPosEvent alpha byte back to a float (0x00494dd7). Ledger HFD-2."
+  },
+  {
    "address": "0x008d5c30",
    "name": "str_SubShaderBuilder_StandardMesh",
    "kind": "string",
@@ -5440,6 +5566,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-minimap",
    "note": "50 slots, 0x008d6700-0x008d67c4, installed by BfMap__BfMap. Diffed against TransformNode's table (0x00943208, also 50 slots), exactly three slots differ: +0x00 the destructor (0x0046e7c0, unread), +0x68 BfMap__update (0x0046a680), +0x74 minimap_screenTransform (0x00469360)."
+  },
+  {
+   "address": "0x008dbf78",
+   "name": "hit octant thresholds 0.9238 / 0.3826 / -0.3826 / -0.9238",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Doubles at 0x008dbf78, 0x008dbf70, 0x008dbf68, 0x008dbf60: cos 22.5 deg and cos 67.5 deg, compared with d.forward in _giveDamage 0x004b096b..0x004b09cc. Ledger HFD-3."
+  },
+  {
+   "address": "0x008dbfa0",
+   "name": "hit-from-dir alpha cap 0.75",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "Double 0.75, _giveDamage 0x004b044b. Ledger HFD-2."
   },
   {
    "address": "0x008dc7a8",
@@ -5892,6 +6036,15 @@
    "note": "Read as raw bytes directly; slot1 = RTTI class-name accessor 0x7dd630."
   },
   {
+   "address": "0x00941028",
+   "name": "vtable for TimeoutActionNode",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "The vptr the ctor stores at 0x007e4008. +0x04 class 0x007e4180, +0x30 read 0x007e38c0, +0x54 draw chain 0x007ebfd0, +0x58 update chain 0x007ec020, +0x64 update 0x007e3920."
+  },
+  {
    "address": "0x00943208",
    "name": "vtable for TransformNode",
    "kind": "vtable",
@@ -5908,6 +6061,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-soldier-hud",
    "note": "+0x54=0x007ebfd0 (draw), read directly."
+  },
+  {
+   "address": "0x00945498",
+   "name": "vtable for CullNode",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hit-direction-wash",
+   "note": "The vptr stored at 0x007f0198. +0x30 read 0x007f00d0, +0x54 draw 0x007efef0, +0x58 update 0x007effe0."
   },
   {
    "address": "0x00947288",

@@ -1,4 +1,4 @@
-import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
+import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
 
 /**
  * The in-game HUD's soldier side: health, stance, kit and nation art, the
@@ -99,17 +99,30 @@ export function createSoldierHud(page) {
     'Ammo/SoldierAmmo/SoldierAmmoBarSize',
   ];
 
-  // The damage-direction arc, and the HP it last saw so a drop can raise it.
-  // Written here and nowhere else.
-  soldierHud.hitIndicatorTimer = 0;
-  soldierHud.hitIndicatorDir = 0;
+  // The damage indicator: the red wash over the whole screen and the arc on
+  // the side the damage came from (ledger HFD-1..HFD-6). The game keeps two
+  // HUD fields, `HitFromDir` (0 is off, 1..8 the octant) and
+  // `HitFromDirAlpha`, and only ever writes them together, on a hit. Nothing
+  // fades them: the alpha holds until the layout's own `TimeoutActionNode`
+  // puts `HitFromDir` back to 0, 0.2 s of menu time later. The menu's time
+  // is not the frame's -- `BfMenu::paint` steps it 1/30 per painted frame,
+  // whatever the frame rate -- so the flash is exactly six painted frames.
+  // Written here and nowhere else, as is the HP the poll below last saw.
+  const MENU_STEP = Math.fround(1 / 30);         // `Setup+0x184`, 1 / g_simulationFps
+  const HIT_FROM_DIR_TIMEOUT = Math.fround(0.2);  // menu/InGame TimeoutActionNode
+  soldierHud.hitFromDir = 0;
+  soldierHud.hitFromDirClock = 0;
   soldierHud.lastSoldierHp = null;
 
-  function triggerHitIndicator(direction, intensity = 1.0) {
-    soldierHud.hitIndicatorDir = direction;
-    soldierHud.hitIndicatorTimer = 1.0;
+  /** `BfMenu::setHitFromDir` (client 0x006acb60): both fields, and nothing
+   *  else -- the timeout's clock keeps running through a second hit, so a
+   *  burst does not stretch the flash. `alpha` is `hitFromDirAlpha`'s. The
+   *  HP this hit took is marked seen, so the poll does not raise it again. */
+  function triggerHitIndicator(direction, alpha) {
+    soldierHud.hitFromDir = direction;
     page.gameHud.vars['HitFromDir/HitFromDir'] = direction;
-    page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
+    page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = alpha;
+    if (page.soldierArmor) soldierHud.lastSoldierHp = page.soldierArmor.hitPoints;
     page.gameHud.requestRepaint();
   }
 
@@ -139,10 +152,12 @@ export function createSoldierHud(page) {
     return has;
   }
 
-  /** Put the arc out and forget the HP it was tracking (the body is gone). */
+  /** Put the wash and the arc out and forget the HP they were tracking (the
+   *  body is gone). The game has no such reset; this one leaves its clock at
+   *  zero, where every one of the game's own flashes starts. */
   function clearHitIndicator() {
-    soldierHud.hitIndicatorTimer = 0;
-    soldierHud.hitIndicatorDir = 0;
+    soldierHud.hitFromDir = 0;
+    soldierHud.hitFromDirClock = 0;
     if (page.gameHud?.vars) {
       page.gameHud.vars['HitFromDir/HitFromDir'] = 0;
       page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
@@ -157,28 +172,36 @@ export function createSoldierHud(page) {
     soldierHud.hitIndicationTime = Math.max(0, soldierHud.hitIndicationTime - dt);
     vars['CrossHair/HitIndicationTime'] = soldierHud.hitIndicationTime;
 
-    if (soldierHud.hitIndicatorTimer > 0) {
-      soldierHud.hitIndicatorTimer = Math.max(0, soldierHud.hitIndicatorTimer - dt);
-      if (soldierHud.hitIndicatorTimer <= 0) {
-        vars['HitFromDir/HitFromDir'] = 0;
-        vars['HitFromDir/HitFromDirAlpha'] = 0;
-      } else {
-        vars['HitFromDir/HitFromDir'] = soldierHud.hitIndicatorDir;
-        vars['HitFromDir/HitFromDirAlpha'] = soldierHud.hitIndicatorTimer;
-      }
-    }
-
     if (page.soldierArmor && !page.soldierDead && !inVehicle) {
       if (soldierHud.lastSoldierHp !== null && page.soldierArmor.hitPoints < soldierHud.lastSoldierHp - 0.01) {
         const drop = soldierHud.lastSoldierHp - page.soldierArmor.hitPoints;
         page.playSoldierHurtSound(false);
-        if (soldierHud.hitIndicatorTimer <= 0) {
-          triggerHitIndicator(1, drop / (page.soldierArmor.maxHitPoints || 100));
-        }
+        // HP lost outside `applyDamageToPlayer` -- a fall, drowning, the
+        // combat area, a room's snapshot. The game washes the screen for
+        // every one of them (they all reach `_giveDamage`, HFD-4), but points
+        // the arc at a source this poll cannot name: the landing's contact
+        // point, or the world's origin. So it raises 1, whose arc the data
+        // never draws (MEME-14): the wash alone, which every octant shares.
+        triggerHitIndicator(1, hitFromDirAlpha(drop, page.soldierArmor.maxHitPoints));
       }
       soldierHud.lastSoldierHp = page.soldierArmor.hitPoints;
     } else {
       soldierHud.lastSoldierHp = page.soldierArmor?.hitPoints ?? null;
+    }
+
+    // The layout's `TimeoutActionNode`, once per painted frame (HFD-5,
+    // HFD-6). It runs only while its CullNode shows the group, and it fires
+    // in the same update that still draws the frame, so the sixth frame
+    // shows and the seventh does not. The clock is float32, as the game's is.
+    if (soldierHud.hitFromDir !== 0) {
+      vars['HitFromDir/HitFromDir'] = soldierHud.hitFromDir;
+      soldierHud.hitFromDirClock = Math.fround(soldierHud.hitFromDirClock + MENU_STEP);
+      if (soldierHud.hitFromDirClock >= HIT_FROM_DIR_TIMEOUT) {
+        soldierHud.hitFromDirClock = 0;
+        soldierHud.hitFromDir = 0;
+      }
+    } else if (vars['HitFromDir/HitFromDir']) {
+      vars['HitFromDir/HitFromDir'] = 0;
     }
     // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
     // from the moment `setPilot` seats someone until `leaveVehicle` /
