@@ -923,13 +923,16 @@ export function createBotReferee(env) {
     if (record) { record.vehicleStrType = null; record.position = null; }
     const soldier = record?.soldier;
     if (soldier) {
-      // Out through the side: the soldier is re-spawned beside the hull (its
-      // position is the body's, `Soldier.spawn` is the placement API).
+      // Out where the seat says (`setSoldierExitLocation`, `units.leave`), as
+      // the human steps out; without one, through the side: re-spawned beside
+      // the hull (its position is the body's, `Soldier.spawn` is the
+      // placement API). The side step put a soldier leaving Bocage's Allied
+      // AA gun inside its sandbag ring, where the route out crossed the bags.
       const f = bot._vehicleForward();
-      const x = p.x + f[1] * BOT_EXIT_OFFSET, z = p.z - f[0] * BOT_EXIT_OFFSET;
-      const y = env.groundAt(x, z, p.y + 3);
-      const yy = Number.isFinite(y) ? y + 0.05 : p.y;
-      soldier.spawn(x, yy, z, Math.atan2(f[0], f[1]));
+      const x = p.exit ? p.exit.x : p.x + f[1] * BOT_EXIT_OFFSET, z = p.exit ? p.exit.z : p.z - f[0] * BOT_EXIT_OFFSET;
+      const y = env.groundAt(x, z, (p.exit?.y ?? p.y) + 3);
+      const yy = Number.isFinite(y) ? y + 0.05 : (p.exit?.y ?? p.y);
+      soldier.spawn(x, yy, z, p.exit ? p.exit.yaw : Math.atan2(f[0], f[1]));
       bot.setPosition(x, yy, z);
     }
     bot.dismount(referee.clock);

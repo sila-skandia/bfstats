@@ -380,9 +380,45 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
 }
 
 /**
+ * Where a soldier walks to reach a door (INVENTION, 2026-09-24).
+ * `BBPChange::createPlan` 0x0858b5c0 walks to the vehicle itself
+ * (`BAPAMoveToObjectFinding`, goal radius 6.25) and holds Use while within
+ * 12.375 m of it (`BAPConObjectDistance`, 0x41460000); the page seats a
+ * soldier only inside the door's own radius, and a hull's door stands on its
+ * centreline, where the hull's body stops a soldier who comes at it from the
+ * front or the back (Bocage seed 1: two Axis soldiers pressed against a
+ * Tiger's tail at 4.4 m from its 3.5 m door for 170 s). So the walk ends
+ * beside the hull: `offset` along the hull's right axis from the door, on
+ * the soldier's side, first stepping out to that line when he is ahead of
+ * or behind the door. Null (walk to the door) without a node or with a door
+ * too small to stand off from; only a land hull's door is walked to this way
+ * (a fixed gun has no body around its door).
+ */
+export const DOOR_APPROACH = { margin: 0.75, maxOffset: 3.0, minOffset: 1.0, arrive: 0.75 };
+
+export function doorApproach(entry, radius, node, from) {
+  const e = node?.matrixWorld?.elements;
+  if (!e) return null;
+  const len = Math.hypot(e[0], e[2]);
+  if (len < 1e-6) return null;
+  const rx = e[0] / len, rz = e[2] / len;
+  const s = Math.min(DOOR_APPROACH.maxOffset, radius - DOOR_APPROACH.margin);
+  if (s < DOOR_APPROACH.minOffset) return null;
+  const dx = from[0] - entry[0], dz = from[2] - entry[1];
+  const lat = dx * rx + dz * rz;
+  const sign = lat >= 0 ? 1 : -1;
+  const fx = -rz, fz = rx;
+  const lon = dx * fx + dz * fz;
+  const goal = [entry[0] + rx * sign * s, entry[1] + rz * sign * s];
+  const pre = Math.abs(lat) < s && Math.abs(lon) > s ? [goal[0] + fx * lon, goal[1] + fz * lon] : null;
+  return { goal, pre };
+}
+
+/**
  * `BBPChange::createPlan`: walk to the unit's door (12.5 m -> 6.25 m by
- * the finding move, the door's own radius here), then the Use trigger
- * until the seat is taken (`EnterVehicle` asks the page to seat the bot).
+ * the finding move; beside the door here, `doorApproach`), then the Use
+ * trigger until the seat is taken (`EnterVehicle` asks the page to seat the
+ * bot).
  */
 export function planChange(bot, now) {
   const r = bot._changeResult;
@@ -407,9 +443,15 @@ export function planChange(bot, now) {
   if (bot.planBehaviour === BEHAVIOUR.Change && cur.length && cur.vehicleId === best.id && !best.occupiedBy) return cur;
   const entry = best.entry ?? [best.pos[0], best.pos[2]];
   const radius = Math.max(best.entryRadius ?? 4, 2.0);
+  const side = best.kind === 'tank' || best.kind === 'ground' ? doorApproach(entry, radius, best.node, bot.position) : null;
+  const walk = side
+    ? [...(side.pre ? [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [side.pre[0], bot.position[1], side.pre[1]],
+                         arrive: DOOR_APPROACH.arrive }] : []),
+       { type: PLAN_ACTION.InfantryMoveTo, waypoint: [side.goal[0], bot.position[1], side.goal[1]], arrive: DOOR_APPROACH.arrive }]
+    : [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], bot.position[1], entry[1]], arrive: radius }];
   const plan = [
     { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
-    { type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], bot.position[1], entry[1]], arrive: radius },
+    ...walk,
     { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, entry, radius, afterMove: true },
   ];
   plan.vehicleId = best.id;
