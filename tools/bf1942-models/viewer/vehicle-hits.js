@@ -23,8 +23,10 @@ import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-f
  * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`,
  * `friendlyFire` (optional: the server's friendly-fire percentages, the shipped
  * `ServerSettings.con`'s when absent), `guns`,
- * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `raiseHitIndication`
- * (optional: a headless runner has no crosshair), `showDamageTier`,
+ * `LOCAL_PLAYER`, `noteLocalAttack` (optional: the message log's record of
+ * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
+ * `raiseHitIndication` (optional: a headless runner has no crosshair),
+ * `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
  * `vehicles`, `world`, `wreckVehicle`.
  */
@@ -287,14 +289,19 @@ export function createVehicleHits(page) {
       // has is a figure that should stop standing there. The player's own death
       // is already handled where every other cause of it is.
       if (hit.target?.soldier) {
+        // Area damage names no weapon on the kill line: `[killed]`.
         if (hit.target.armor === page.soldierArmor) {
+          page.noteLocalAttack?.(roundFirer(record?.firerGroup) ?? attacker, { splash: true });
           page.applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
         } else if (hit.target.botId) {
           // `applySplash` has already taken `hit.lost` off the bot's Armor;
           // what is left is the bot's side of it (the log, the incoming-fire
           // event, a death).
           const at = record.splashPoint ?? record.point ?? null;
-          page.damageLanded(hit.target.botId, hit.lost, attacker, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
+          page.damageLanded(hit.target.botId, hit.lost, attacker, at, {
+            via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}`,
+            splash: true, weapon: record.firerGroup?.weapon ?? null,
+          });
         }
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
         continue;
@@ -529,7 +536,11 @@ export function createVehicleHits(page) {
       ? roundHit([px - record.travel[0], py - record.travel[1], pz - record.travel[2]],
                  record.point, record.feetY, record.seated, record.bone)
       : null;
+    // The hand weapon behind the round, for the kill line (a seat's gun
+    // carries none: a seated killer's word is his vehicle).
+    const weapon = record.firerGroup?.weapon ?? null;
     if (id === page.LOCAL_PLAYER) {
+      if (firer != null) page.noteLocalAttack?.(firer, { weapon });
       // His damage arc points at the round's own start, the engine's `Pos3`
       // (ledger HFD-4). The record does not carry it, so the firer's gun as it
       // stands now: the barrel a bot's `aimRay` casts from.
@@ -539,7 +550,7 @@ export function createVehicleHits(page) {
         gun ? { x: gun[0], y: gun[1], z: gun[2] } : null, firerTeam, hit);
     } else {
       page.applyDamage(id, damage, firer ?? page.LOCAL_PLAYER, from,
-                       { via: `round ${record.gun ?? ''}`, hit });
+                       { via: `round ${record.gun ?? ''}`, hit, weapon });
     }
   }
 
