@@ -1016,3 +1016,40 @@ Only the three mod packs' `pack.json` and their new PNGs change; vanilla's
 pack is untouched (confirmed by the byte-identical diff above, so a
 re-extract is not required for correctness, only to pick up any drift
 between rounds).
+
+## 13. A taken point flies the taker's flag on the map (2026-09-24)
+
+The owner: "When you cap a flag off an enemy, the flagpole shows your team
+flag, but the mini map / spawn map does not. It shows the enemy flag, even
+though you can spawn into it."
+
+`drawControlPoint` picked the sprite with `cpNation(cp)`, and `cpNation`
+reads the point's `flagMesh` -- the mesh the level baked for the side that
+held the point when the level loaded. A capture changes `cp.team`
+(`capture.js` `hoistCaptureFlag` syncs `extras.controlPoints`), never the
+mesh, so Gazala's Dabir (`AXIS_village`, `flagge_m1`) went on drawing
+`conp_ger` for the British who had just taken it. Two more faults of the same
+kind came with it:
+
+- `teamNation` tallied the live `cp.team`, so a side's nation could move with
+  its captures: Omaha's Americans taking one German bunker counted a German
+  vote and could start flying German cloth, ticket art and fallback sleeves.
+- `hoistCaptureFlag` returned before syncing the map entry when the point had
+  no pole (Kasserine's flagless zones), so their markers never changed hands.
+
+The fix is one idea: a point's mesh belongs to its **founding** owner.
+`hoistCaptureFlag` stamps `foundingTeam` on the entry before its first write
+(and syncs the map before the pole lookup); `nation.js` gained `meshTeam(cp)`
+(`foundingTeam ?? team`) and `heldNation(cp, nations, nationOf)` -- the mesh's
+nation while its founding side holds the point, else the holder's own
+`teamNation` -- and `teamNation` counts each mesh for the side it was made
+for. `map-surfaces.js` draws `heldNation`. So a neutral El Alamein outpost the
+British take flies the British flag (not the founding pair's American one),
+and the pole's cloth (`flagUvCellFor`, through `teamNation`) keeps agreeing
+with the map.
+
+Verified headless on Gazala (`botCount=0`, the human on Allies standing on
+Dabir): neutralised at t+15 s, captured at t+21 s, and `__mapMarks().points`
+(new: the sprite each point draws) reads `conp_ger` -> `conp_neutral` ->
+`conp_brit`. `tests/test_nation_js.py` covers the taken, retaken, neutralised
+and untouched cases and a capture leaving both sides' nations alone.

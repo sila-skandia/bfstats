@@ -147,6 +147,25 @@ class NationJsTests(unittest.TestCase):
         self.assertEqual("ger", n["flaglessZonesOnly"])
         self.assertEqual("unknown", n["noTeam"])
 
+    def test_a_taken_point_flies_the_taker_s_flag_on_the_map(self) -> None:
+        # The owner's report: the pole flew his side's cloth, the minimap and
+        # the spawn map still drew the enemy's flag over a point he could
+        # spawn on, because the sprite was read off the founding mesh.
+        c = self.results["captured"]
+        self.assertEqual("us", c["takenByAllies"])
+        self.assertEqual("ger", c["stillAxis"])
+        self.assertEqual("ger", c["retaken"])
+        self.assertEqual("brit", c["neutralTakenByBritish"])
+        self.assertIsNone(c["neutralised"])
+        self.assertEqual("brit", c["untouched"])
+
+    def test_a_capture_does_not_move_either_side_s_nation(self) -> None:
+        # Counted by the side each mesh was made for, not by the live owner:
+        # the Americans holding a German bunker are still American.
+        c = self.results["captured"]
+        self.assertEqual("ger", c["axisNation"])
+        self.assertEqual("us", c["alliedNation"])
+
 
 class NationParityTests(unittest.TestCase):
     """The round's own requirement: the flag-mesh table and the rule built

@@ -11,7 +11,7 @@
 
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
-import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
+import { heldNation, teamNation as teamNationRule } from './nation.js';
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
@@ -98,14 +98,16 @@ export function createMapSurfaces(page) {
     get sprite() { return page.sprite; },
   });
 
-  /** `cpNation`/`teamNation` proper live in `nation.js`, free of this file's
+  /** `heldNation`/`teamNation` proper live in `nation.js`, free of this file's
    *  `three` scene state so they can be tested under node
    *  (`tests/nation_harness.mjs`) and shared byte-for-byte with the rule
    *  `extract_menu_layout.py` runs when it writes `menu-levels.json`. These
    *  two feed them this page's own state: the mod's flag-mesh table and, for
-   *  a side with no control point of its own, the vehicle-based guess. */
+   *  a side with no control point of its own, the vehicle-based guess. A
+   *  point's sprite is the flag it flies now: its own mesh's nation for its
+   *  founding owner, the taker's nation once it has changed hands. */
   function cpNation(cp) {
-    return cpNationRule(cp, page.hudPack.nations);
+    return heldNation(cp, page.hudPack.nations, teamNation);
   }
 
   function teamNation(team) {
@@ -224,11 +226,14 @@ export function createMapSurfaces(page) {
    *  this pack has no art for (`cpNation` -> `'unknown'`, Pathet Lao's
    *  `flagpl_m1`) gets the same neutral plate rather than another nation's
    *  flag — the pack's own stand-in for a team it cannot draw. */
-  function drawControlPoint(ctx, cp, px, py, sc) {
+  function controlPointSprite(cp) {
     const raw = cp.team ? cpNation(cp) : null;
     const nation = raw && raw !== 'unknown' ? raw : null;
-    const name = !nation ? 'conp_neutral'
+    return !nation ? 'conp_neutral'
       : cp.unableToChangeTeam ? `baseflag_conp_${nation}` : `conp_${nation}`;
+  }
+  function drawControlPoint(ctx, cp, px, py, sc) {
+    const name = controlPointSprite(cp);
     if (drawSprite(ctx, name, px, py, sc)) return;
     ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
     ctx.beginPath();
@@ -715,6 +720,9 @@ export function createMapSurfaces(page) {
     localMapTeam,
     projectToArt,
     teamNation,
+    /** Every control point's sprite as the surfaces draw it, for the hooks. */
+    controlPointSprites: () => (page.extras.controlPoints || [])
+      .map(cp => ({ name: cp.name, team: cp.team, sprite: controlPointSprite(cp) })),
     toggleFullMap,
   });
   return mapSurfaces;
