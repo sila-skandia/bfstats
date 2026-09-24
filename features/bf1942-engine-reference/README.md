@@ -441,7 +441,11 @@ recorded. Settled, each narrated in full under `subsystems/`:
   — Armor's clamp/death chain, `handleDamage`'s real
   find-nearest-Armor-then-sign-dispatch shape (not a parent/root split), and
   the soldier explosion-exposure sampling, where standing is deliberately
-  capped at half of prone/crouch's maximum exposure (HP-1…13).
+  capped at half of prone/crouch's maximum exposure (HP-1…13). Friendly fire
+  (ledger FF-1…8): a round meets any soldier but its firer and his own
+  hull's crew, a same-team hit is scaled by the server's percentages (100 in
+  the shipped `ServerSettings.con`), and a retail bot never holds fire for a
+  teammate.
 - **Seats and entry points** ([subsystems/seats-and-entry-points.md](subsystems/seats-and-entry-points.md))
   — entry is `c_PIUse` behind two independent gates, `validateBFEntryPoint`
   adds a second team/hostility check beyond the obvious one, and the
