@@ -93,13 +93,9 @@ bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
 
 ## Pitfalls
 
-- `gh` is NOT pre-installed in cloud sandboxes, and `GH_TOKEN` is usually
-  unset inside the setup script (env settings reach the session shell only).
-  setup.sh discovers a token via env vars, then `git credential fill` (the
-  credential the container used to clone this private repo); if none is
-  found it fails with instructions to add `GH_TOKEN` to the environment
-  settings. Release assets are private — public downloads are not possible
-  while the repo is private.
+- `gh` is NOT pre-installed in cloud sandboxes and no token is needed — the
+  `bf1942-binaries` repo is public, so setup.sh downloads release assets
+  with plain unauthenticated GitHub API + curl.
 - Do not pass `-noanalysis` on a fresh `-import` of BF1942.exe — the label
   script addresses point at post-analysis function bodies.
 - If a project is locked (`*.lock` files in `~/ghidra/`), delete the stale
