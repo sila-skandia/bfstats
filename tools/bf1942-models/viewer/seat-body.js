@@ -164,7 +164,10 @@ function applyWorldDelta(bone, quat) {
 /**
  * Seated bodies for soldiers the page does not own (bots, remote players).
  * `ctx`: `loader` (a GLTFLoader), `url(soldierName, poseName)`, `shade(scene)`,
- * `parent` (the group they hang off), `dispose(scene)` (GPU release).
+ * `parent` (the group they hang off), `dispose(scene)` (GPU release), and
+ * optionally `dresser` (`soldier-dress.js`), which hangs the occupant's kit on
+ * the seated body -- helmet and all, the way the engine draws a jeep's
+ * passenger.
  */
 export function createSeatBodies(ctx) {
   const cache = new Map();
@@ -181,10 +184,11 @@ export function createSeatBodies(ctx) {
   /**
    * Load `soldierName` seated in `seat`: the seat's own pose glb (its fallback
    * when the seat names a state no glb was written for), half a body where the
-   * seat says so, the arm IK for `rootId`'s hull, and `Ub_DieInVehicle` out of
-   * `dieClips`. Resolves null for a seat that draws nobody.
+   * seat says so, the arm IK for `rootId`'s hull, `Ub_DieInVehicle` out of
+   * `dieClips`, and `kit`'s worn parts. Resolves null for a seat that draws
+   * nobody.
    */
-  async function load(soldierName, seat, { dieClips = [], rootId = null } = {}) {
+  async function load(soldierName, seat, { dieClips = [], rootId = null, kit = null } = {}) {
     const anchor = seatAnchor(seat);
     const body = seatBody(seat?.seatObjects);
     if (!anchor || !body.draw) return null;
@@ -211,12 +215,17 @@ export function createSeatBodies(ctx) {
     if (dieUpper) { dieUpper.setEffectiveWeight(0); dieUpper.paused = true; }
     scene.visible = false;
     ctx.parent.add(scene);
-    return {
+    const sb = {
       scene, mixer, lower, upper, dieUpper, anchor, seat,
       halfBody: body.halfBody, spine: findBone(scene, 'Bip01 Spine'),
       ik: bindSeatIkChains(seat, scene, found.animations, rootId),
-      body: null, dead: false,
+      body: null, dead: false, disposed: false,
     };
+    if (kit && ctx.dresser) {
+      ctx.dresser.dress(scene, kit, () => !sb.disposed)
+        .catch(err => console.warn('seat kit:', err));
+    }
+    return sb;
   }
 
   const _spine = new THREE.Vector3();
@@ -251,6 +260,7 @@ export function createSeatBodies(ctx) {
 
   function dispose(sb) {
     if (!sb) return;
+    sb.disposed = true;
     sb.mixer.stopAllAction();
     sb.mixer.uncacheRoot(sb.scene);
     sb.scene.parent?.remove(sb.scene);

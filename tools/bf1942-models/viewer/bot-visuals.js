@@ -4,6 +4,19 @@
 // skinned mesh and an AnimationMixer, drawn where the bot's controller is,
 // interpolated between world ticks like the local body.
 //
+// The body is the engine's two half-body machines (`soldier-actions.js`):
+// the legs play the gait, the stance transitions between standing, crouching
+// and lying (the dive, the long way down through the crouch, getting up), and
+// the torso the same transitions' upper halves, the fire on every round and
+// the reload while the magazine goes in, each state entered with the engine's
+// morph from wherever the bones stood (features/bot-body-animation).
+//
+// He wears his side's uniform and his kit: the level's soldier template for
+// his team (`kit-loadout.js` `soldierTemplateFor`: British on El Alamein's
+// Allied side, Japanese on Wake's Axis) holding his kit's primary, with the
+// kit's helmet and packs on his bones (`soldier-dress.js`) -- on foot, in his
+// seat and as a corpse.
+//
 // A seated bot is drawn in his seat the way the human's own seat draws him
 // (`seat-body.js`, shared with `seat-pose.js`): the seat's pose glb, at the
 // SeatObject, hands on the wheel or the gun by the seat's IK, and only where
@@ -23,17 +36,20 @@ import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { PARA_FALLING } from './parachute.js';
-import { DIE_CLIPS, DIE_IN_VEHICLE_UPPER, corpseSeconds, deathFamily,
-         resolveDeathFamily } from './soldier-death.js';
+import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { rigCapsules } from './rig-capsules.js';
+import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
+import { weaponNodeOf, wornSlots } from './soldier-dress.js';
+import { outfitCandidates } from './kit-graft.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bindDynamicShading`, `bots`, `bust`, `disposeFootBodyScene`,
- * `footBodyClips`, `footBodyLoader`, `MODELS_BASE`, `presentAlpha`, `scene`,
- * `soldierBody`, `vehicles`, `world`.
+ * `footBodyClips`, `footBodyLoader`, `footStateMachine`, `MODELS_BASE`,
+ * `presentAlpha`, `scene`, `soldierBody`, `soldierDress`,
+ * `soldierTemplateFor`, `vehicles`, `world`.
  */
 export function createBotVisuals(page) {
   const botBodies = {};
@@ -43,6 +59,9 @@ export function createBotVisuals(page) {
   // (netcode-render.js). Each bot is a THREE.Group with a cloned skinned mesh
   // and an AnimationMixer, positioned at the bot controller's position.
 
+  // The templates the bots wore before they wore the level's: the fallback
+  // for a maps tree whose `_shared/loadouts.json` does not know the level, and
+  // for a level template with no pose glb for the kit's weapon.
   const BOT_SOLDIER = { 1: 'GermanSoldier', 2: 'USMarineSoldier' };
   const BOT_WEAPON = 'Colt';
 
@@ -102,7 +121,135 @@ export function createBotVisuals(page) {
     return page.footBodyClips(weapon);
   }
 
-  function buildBotGaitRig(scene, poseClips, gaitClips) {
+  /**
+   * The soldier template a bot of `team` wears on this level: the level's own
+   * `game.setTeamSkin` (`kit-loadout.js` `soldierTemplateFor`, which falls
+   * back by nation where the loadouts do not know the level), else the
+   * template the bots always wore.
+   */
+  function soldierFor(team) {
+    return page.soldierTemplateFor?.({ team }) ?? BOT_SOLDIER[team] ?? BOT_SOLDIER[2];
+  }
+
+  // --- the two half-bodies ---------------------------------------------------
+
+  /** The nodes a clip's tracks drive, found on `scene`. */
+  function trackNodes(scene, clip) {
+    const nodes = [];
+    const seen = new Set();
+    for (const track of clip?.tracks ?? []) {
+      const { nodeName } = THREE.PropertyBinding.parseTrackName(track.name);
+      if (seen.has(nodeName)) continue;
+      seen.add(nodeName);
+      const node = THREE.PropertyBinding.findNode(scene, nodeName);
+      if (node) nodes.push(node);
+    }
+    return nodes;
+  }
+
+  /**
+   * The engine's body: one action per baked clip, two halves with a current
+   * action each and the engine's morph over their own bones, and the
+   * `SoldierActions` machine choosing what each half plays. `weapon` is the
+   * one welded into the hand, whose own rate a grip's clip is scaled to
+   * (`gaits.json` `stateMachine.weaponSpeeds`). Null when the tree carries no
+   * stance halves (`stand.lower` / `stand.upper`), which `buildStillRig`
+   * then draws the way the bots always were.
+   */
+  function buildHalfBodyRig(scene, clips, weapon, stateMachine) {
+    const byName = new Map(clips.map(c => [c.name, c]));
+    const standLower = byName.get(FAMILY_HALVES.stand.lower);
+    const standUpper = byName.get(FAMILY_HALVES.stand.upper);
+    if (!standLower || !standUpper) return null;
+    const mixer = new THREE.AnimationMixer(scene);
+    const speeds = stateMachine?.weaponSpeeds?.[weapon] ?? {};
+    const clipless = stateMachine?.clipless ?? {};
+
+    /** A clip's time scale for this weapon: its baked length times the rate
+     *  the weapon's own state plays it at. */
+    const timeScale = name => {
+      const clip = byName.get(name);
+      const speed = speeds[name] ?? clip?.userData?.speed;
+      return clip && Number.isFinite(speed) && speed !== 0 && clip.duration > 0
+        ? clip.duration * Math.abs(speed) : 1;
+    };
+    const info = name => {
+      const data = byName.get(name)?.userData;
+      if (data && Object.keys(data).length) return data;
+      return clipless[name] ?? VANILLA_STATES[name] ?? null;
+    };
+
+    const actions = new Map();
+    for (const clip of clips) {
+      if (actions.has(clip.name)) continue;
+      const a = mixer.clipAction(clip);
+      const loops = info(clip.name)?.loop ?? /\.(lower|upper)$/.test(clip.name);
+      if (loops) a.setLoop(THREE.LoopRepeat, Infinity);
+      else { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      a.play();
+      a.setEffectiveWeight(0);
+      a.paused = true;
+      actions.set(clip.name, a);
+    }
+
+    const halves = {
+      lower: { action: null, blend: new MorphBlend(trackNodes(scene, standLower)) },
+      upper: { action: null, blend: new MorphBlend(trackNodes(scene, standUpper)) },
+    };
+    const anim = new SoldierActions({
+      has: name => actions.has(name),
+      info,
+      duration: name => {
+        const clip = byName.get(name);
+        return clip ? clip.duration / timeScale(name) : 0;
+      },
+    });
+
+    /** Switch a half to `name`: the old action out, the new one from its
+     *  first frame at the weapon's rate, the morph started from the bones as
+     *  they stand. */
+    function enter(halfName, name, morph) {
+      const half = halves[halfName];
+      const next = actions.get(name);
+      if (!next) return;
+      half.blend.enter(morph);
+      if (half.action && half.action !== next) {
+        half.action.setEffectiveWeight(0);
+        half.action.paused = true;
+      }
+      next.reset();
+      next.paused = false;
+      next.timeScale = timeScale(name);
+      next.setEffectiveWeight(1);
+      next.play();
+      half.action = next;
+    }
+
+    /** One frame: the machine's entries, the mixer, the morph. */
+    function step(input, dt) {
+      for (const e of anim.update(input, dt)) enter(e.half, e.name, e.morph);
+      mixer.update(dt);
+      halves.lower.blend.update(dt);
+      halves.upper.blend.update(dt);
+    }
+
+    return {
+      kind: 'halves', scene, mixer, actions, halves, anim, step,
+      families: Object.fromEntries(Object.entries(FAMILY_HALVES)
+        .filter(([, h]) => actions.has(h.lower) && actions.has(h.upper))
+        .map(([family, h]) => [family, [actions.get(h.lower), actions.get(h.upper)]])),
+      hasDeath: family => !!DIE_CLIPS[family]
+        && actions.has(DIE_CLIPS[family].lower) && actions.has(DIE_CLIPS[family].upper),
+    };
+  }
+
+  /**
+   * The body as the bots were drawn before the stance halves were baked:
+   * whole-body families switched at full weight, the static poses of the
+   * pose glb for standing, crouching and lying. What a tree with no gait
+   * bundles (a mod's) still gets.
+   */
+  function buildStillRig(scene, poseClips, gaitClips) {
     const mixer = new THREE.AnimationMixer(scene);
     const action = (name, clips, once = false) => {
       const clip = THREE.AnimationClip.findByName(clips, name);
@@ -132,11 +279,17 @@ export function createBotVisuals(page) {
       const upper = action(spec.upper, gaitClips, true);
       if (lower && upper) families[family] = [lower, upper];
     }
-    return { mixer, families };
+    const rig = { kind: 'still', scene, mixer, families, want: null,
+                  hasDeath: family => !!families[family] };
+    rig.step = ({ family }, dt) => {
+      if (family && family !== rig.want) { rig.want = family; playFamily(rig, family); }
+      mixer.update(dt);
+    };
+    return rig;
   }
 
   /** Put `want` on at full weight from its first frame and everything else at
-   *  zero -- the same switch the gait families take. */
+   *  zero -- the still rig's whole switch. */
   function playFamily(rig, want) {
     for (const [family, actions] of Object.entries(rig.families)) {
       for (const a of actions) {
@@ -162,7 +315,6 @@ export function createBotVisuals(page) {
 
   async function ensureBotVisual(bot) {
     const team = page.world?.player(bot.playerId)?.team ?? 2;
-    const soldierName = BOT_SOLDIER[team] ?? BOT_SOLDIER[2];
     let vis = botVisuals.get(bot.playerId);
     if (vis) return vis;
 
@@ -179,27 +331,45 @@ export function createBotVisuals(page) {
       bot, group, rig: null, want: null, lastSpeed: 0, lastPos: null,
       feetPrev: { x: 0, y: 0, z: 0 }, feetCur: { x: 0, y: 0, z: 0 },
       yawPrev: 0, yawCur: 0, snapped: false,
-      soldierName, clips: [], seat: null, seatLoading: null,
+      soldierName: soldierFor(team), weapon: null, kit: bot.kit ?? null,
+      clips: [], seat: null, seatLoading: null,
+      // The stance the last world tick left, and the changes since the frame
+      // last looked (`captureBotPresentationTick`).
+      stanceTick: null, stanceEvents: [], reloading: false, reloadLeft: 0, shots: 0,
     };
     botVisuals.set(bot.playerId, vis);
 
-    const weapon = bot.kitPrimary ?? BOT_WEAPON;
-    let [pair, gaits] = await Promise.all([
-      botPosePair(soldierName, weapon),
-      botGaitClips(weapon),
-    ]);
-    if (!pair && weapon !== BOT_WEAPON) {
-      [pair, gaits] = await Promise.all([botPosePair(soldierName, BOT_WEAPON), botGaitClips(BOT_WEAPON)]);
+    // The level's soldier holding the kit's primary; the old template for a
+    // pair the tree has no pose for; the pistol last, as it always was.
+    const tries = outfitCandidates({
+      levelSoldier: vis.soldierName, fallbackSoldier: BOT_SOLDIER[team] ?? BOT_SOLDIER[2],
+      primary: bot.kitPrimary ?? BOT_WEAPON, pistol: BOT_WEAPON,
+    });
+    let pair = null;
+    let weapon = null;
+    for (const [soldier, held] of tries) {
+      pair = await botPosePair(soldier, held);
+      if (pair) { vis.soldierName = soldier; weapon = held; break; }
     }
-    if (!pair) return vis;
+    if (!pair || botVisuals.get(bot.playerId) !== vis) return vis;
+    const [gaits, stateMachine] = await Promise.all([
+      botGaitClips(weapon),
+      page.footStateMachine?.() ?? null,
+    ]);
+    if (botVisuals.get(bot.playerId) !== vis) return vis;
 
     const scene = skeletonClone(pair.scene);
     page.bindDynamicShading(scene);
-    const rig = buildBotGaitRig(scene, pair.animations, gaits);
+    const rig = buildHalfBodyRig(scene, gaits, weapon, stateMachine)
+      ?? buildStillRig(scene, pair.animations, gaits);
     group.add(scene);
-    const weaponNode = scene.getObjectByName(pair.weaponName ?? weapon) ?? null;
-    vis.rig = { scene, mixer: rig.mixer, families: rig.families, weaponNode };
+    rig.weaponNode = weaponNodeOf(scene, pair.weaponName ?? weapon);
+    vis.rig = rig;
+    vis.weapon = weapon;
     vis.clips = gaits;
+    // The kit on his bones, and on nobody else's if he is gone by then.
+    page.soldierDress?.dress(scene, vis.kit, () => vis.rig?.scene === scene)
+      .catch(err => console.warn(`bot kit for ${bot.name}:`, err));
 
     return vis;
   }
@@ -217,6 +387,7 @@ export function createBotVisuals(page) {
     shade: scene => page.bindDynamicShading(scene),
     get parent() { return botBodies.botRoot; },
     dispose: scene => page.disposeFootBodyScene(scene),
+    get dresser() { return page.soldierDress ?? null; },
   });
 
   /** The seat `bot` holds, as `{ seat, anchor, rootId }`, or null. */
@@ -241,7 +412,7 @@ export function createBotVisuals(page) {
       if (vis.seatLoading !== held.anchor) {
         vis.seatLoading = held.anchor;
         seatBodies.load(vis.soldierName, held.seat,
-                        { dieClips: vis.clips, rootId: held.rootId }).then(seat => {
+                        { dieClips: vis.clips, rootId: held.rootId, kit: vis.kit }).then(seat => {
           const still = seatOfBot(bot);
           if (!seat) return;
           if (vis.seatLoading !== held.anchor || still?.anchor !== held.anchor
@@ -288,6 +459,39 @@ export function createBotVisuals(page) {
     return vis.seat.body;
   };
 
+  // --- fire and reload ----------------------------------------------------
+
+  /**
+   * A round left `bot`'s weapon (the referee's `onShot`, once per round). The
+   * torso plays the fire -- when the weapon firing is the one in his drawn
+   * hands; a grenade thrown by a man drawn holding his rifle would swing the
+   * rifle.
+   */
+  botBodies.botFired = bot => {
+    const vis = botVisuals.get(bot?.playerId);
+    if (!vis?.rig?.anim || bot.vehicle) return;
+    const firing = bot.weaponAi?.name ?? null;
+    if (firing && vis.weapon && firing.toLowerCase() !== vis.weapon.toLowerCase()) return;
+    vis.shots++;
+    vis.rig.anim.fire();
+  };
+
+  /** The bot's magazine for the weapon in his hands (`bot-referee.js`
+   *  `magazineTick`): a reload that has just begun starts the torso's -- the
+   *  clock coming off zero, or starting over (a fresh magazine change begun
+   *  on the frame the last one ended). */
+  function watchReload(vis, bot) {
+    const name = bot.weaponAi?.name ?? null;
+    const mag = name ? bot._mags?.get?.(name) : null;
+    const left = mag && mag.reloadLeft > 0 ? mag.reloadLeft : 0;
+    const began = left > 0 && (!vis.reloading || left > vis.reloadLeft + 1e-6);
+    if (began && (!vis.weapon || name.toLowerCase() === vis.weapon.toLowerCase())) {
+      vis.rig.anim?.reload();
+    }
+    vis.reloading = left > 0;
+    vis.reloadLeft = left;
+  }
+
   // --- corpses ----------------------------------------------------------------
 
   /** Bodies left behind: `{ name, family, scene, mixer, ttl, anchor, dispose }`.
@@ -331,15 +535,19 @@ export function createBotVisuals(page) {
 
     disposeSeat(vis.seat);
     vis.seat = null;
-    const played = vis.rig ? resolveDeathFamily(family, f => !!vis.rig.families[f]) : null;
+    const played = vis.rig ? resolveDeathFamily(family, f => vis.rig.hasDeath(f)) : null;
     if (!played) return family;
     // The body stays where it was drawn, on the heading it fell on; the group
     // goes to the corpse list and the bot gets a fresh one for the respawn.
-    playFamily(vis.rig, played);
-    if (vis.rig.weaponNode) vis.rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
-    vis.group.visible = true;
+    // The half-body rig carries the fall in from wherever the bones stood
+    // (`setMorphFactor 20` on the die states), the still rig cuts to it.
     const { group, rig } = vis;
+    if (rig.anim) rig.anim.die(DIE_CLIPS[played].lower, DIE_CLIPS[played].upper);
+    else playFamily(rig, played);
+    if (rig.weaponNode) rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
+    vis.group.visible = true;
     corpses.push({ name: bot.playerId, family: played, scene: group, mixer: rig.mixer,
+                   step: dt => rig.step({}, dt),
                    ttl: corpseSeconds(page.soldierBody), anchor: null,
                    dispose: () => {
                      rig.mixer.stopAllAction();
@@ -377,7 +585,8 @@ export function createBotVisuals(page) {
         c.anchor.getWorldPosition(c.scene.position);
         c.anchor.getWorldQuaternion(c.scene.quaternion);
       }
-      c.mixer.update(dt);
+      if (c.step) c.step(dt);
+      else c.mixer.update(dt);
     }
   }
 
@@ -399,6 +608,7 @@ export function createBotVisuals(page) {
       }
       if (bot.vehicle) {
         vis.group.visible = false;
+        vis.stanceEvents.length = 0;
         syncSeated(vis, bot, dt);
         continue;
       }
@@ -437,13 +647,23 @@ export function createBotVisuals(page) {
 
       // The gait family follows the bot's live speed and stance, the same rule
       // remote soldiers use (`remoteClipFamily`), resolved against what bound.
-      const want = botClipFamily(vis.lastSpeed, bot.stance ?? 'stand',
+      const stance = vis.stanceTick ?? bot.stance ?? 'stand';
+      const want = botClipFamily(vis.lastSpeed, stance,
                                  family => !!vis.rig.families[family]);
-      if (want !== vis.want) {
-        vis.want = want;
-        playFamily(vis.rig, want);
+      vis.want = want;
+      if (vis.rig.anim) {
+        // The stance changes the ticks caught, in order: each starts the
+        // engine's transition on both halves.
+        for (const e of vis.stanceEvents) {
+          vis.rig.anim.stanceChanged(e.from, e.to, {
+            backward: e.backward,
+            family: botClipFamily(0, e.to, family => !!vis.rig.families[family]),
+          });
+        }
+        watchReload(vis, bot);
       }
-      vis.rig.mixer.update(dt);
+      vis.stanceEvents.length = 0;
+      vis.rig.step({ stance, family: want, trigger: !!bot.isFiring }, dt);
     }
   }
 
@@ -458,6 +678,11 @@ export function createBotVisuals(page) {
    * so `updateBotVisuals` can blend by the frame's alpha. A bot that has just
    * (re)spawned snaps rather than sliding across the level from its last
    * position.
+   *
+   * The stance is read here too, at the tick that changed it: `soldier.js`
+   * `#applyStance` decides a stand-to-prone is the dive (`setStateSpeed 6`)
+   * unless the forward input was negative, and the body's `stateSpeed` still
+   * says which on the tick it happened.
    */
   function captureBotPresentationTick(snap) {
     if (!page.bots?.length) return;
@@ -479,6 +704,16 @@ export function createBotVisuals(page) {
         vis.yawPrev = vis.yawCur;
       }
       vis.snapped = true;
+
+      const stance = s.stance ?? 'stand';
+      if (vis.stanceTick && stance !== vis.stanceTick && !snap && !jump) {
+        const dive = (s.body?.stateSpeed ?? 1) > 1;
+        vis.stanceEvents.push({
+          from: vis.stanceTick, to: stance,
+          backward: vis.stanceTick === 'stand' && stance === 'prone' && !dive,
+        });
+      }
+      vis.stanceTick = stance;
     }
   }
 
@@ -498,11 +733,18 @@ export function createBotVisuals(page) {
     return {
       live: [...botVisuals.values()].map(vis => ({
         id: vis.bot?.playerId ?? null, visible: vis.group.visible, want: vis.want,
+        soldier: vis.soldierName, weapon: vis.weapon, kit: vis.kit,
+        rig: vis.rig?.kind ?? null,
+        lower: vis.rig?.anim?.lower.name ?? null, upper: vis.rig?.anim?.upper.name ?? null,
+        stance: vis.stanceTick, shots: vis.shots, reloading: vis.reloading,
+        worn: vis.rig ? wornSlots(vis.rig.scene) : {},
         seated: !!vis.seat, seatVisible: !!vis.seat?.scene.visible,
+        seatWorn: vis.seat ? wornSlots(vis.seat.scene) : null,
         seatBody: vis.seat?.body ?? null,
       })),
       corpses: corpses.map(c => ({
         name: c.name, family: c.family, ttl: +c.ttl.toFixed(2), seated: !!c.anchor,
+        worn: wornSlots(c.scene),
         at: c.scene.getWorldPosition(new THREE.Vector3()).toArray().map(v => +v.toFixed(2)),
       })),
     };

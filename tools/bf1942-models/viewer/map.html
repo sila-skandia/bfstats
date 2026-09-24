@@ -1062,7 +1062,10 @@ const referee = createBotReferee({
   // ...and the page hears a bot's round from where the shooter stands: the
   // world path, which plays the fire patch's near/far hand-over rather than
   // the muzzle pick alone (the player's own keep `playHandFire`).
-  onShot: (bot, at) => pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]),
+  onShot: (bot, at) => {
+    pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
+    botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
+  },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot));
@@ -1303,7 +1306,9 @@ function loadBotWeapons(bot) {
   })));
 }
 const botBodies = createBotVisuals(bag(
-  from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader soldierBody`),
+  from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
+    soldierBody soldierDress`),
+  from(() => soldierKit, `soldierTemplateFor`),
   from(() => level, `bindDynamicShading world`),
   from(() => localLook, `presentAlpha`),
   from(() => referee, `bots`),
@@ -1336,6 +1341,8 @@ const soldierView = createSoldierView(bag(
 ));
 const footBodies = createFootBody(bag(
   from(() => level, `bindDynamicShading`),
+  from(() => soldierKit, `kitLoadout`),
+  from(() => spawning, `deployKit deployTeamId`),
   from(() => localLook, `footFeetCur footFeetPrev footView presentAlpha`),
   from(() => localPlayer, `deathFamily deathYaw soldier soldierDead`),
   from(() => soldierView, `footView3p`),
@@ -1348,7 +1355,7 @@ const footBodies = createFootBody(bag(
 const seatPose = createSeatPose(bag(
   from(() => botBodies, `addCorpse`),
   from(() => flagCapture, `flags`),
-  from(() => footBodies, `dieClips soldierBody`),
+  from(() => footBodies, `dieClips soldierBody soldierDress`),
   from(() => localPlayer, `occupancy`),
   from(() => seatCamera, `view`),
   from(() => soldierKit, `kitLoadout soldierTemplateFor`),
