@@ -46,6 +46,9 @@ export function mount(bot, m, now = bot._now ?? 0) {
   bot._execInfantryResetControls();
   bot.currentPlan = []; bot.currentBehaviour = null; bot.planBehaviour = null;
   bot.route = null;
+  // A seat has no soldier poses; the pose request starts over when he steps
+  // out (INFERRED: the `BotMain` ctor's state, bot-pose.js).
+  bot.poseRequest?.reset(); bot.stanceInput = 'stand';
 }
 
 /** The page unseats the bot (destroyed, or bailed). */
@@ -63,6 +66,7 @@ export function dismount(bot, now = bot._now ?? 0) {
   bot._execInfantryResetControls();
   bot.currentPlan = []; bot.currentBehaviour = null; bot.planBehaviour = null;
   bot.route = null;
+  bot.poseRequest?.reset(); bot.stanceInput = 'stand';
 }
 
 /**
@@ -441,10 +445,14 @@ export function doorApproach(entry, radius, node, from) {
 }
 
 /**
- * `BBPChange::createPlan`: walk to the unit's door (12.5 m -> 6.25 m by
- * the finding move; beside the door here, `doorApproach`), then the Use
- * trigger until the seat is taken (`EnterVehicle` asks the page to seat the
- * bot).
+ * `BBPChange::createPlan` 0x0858b5c0: walk to the unit's door (12.5 m ->
+ * 6.25 m by the finding move; beside the door here, `doorApproach`), then
+ * the Use trigger until the seat is taken (`EnterVehicle` asks the page to
+ * seat the bot). There is no pose statement: the moves' own poses decide
+ * (bot-pose.js `movePose`). The stand statement this plan opened with stood
+ * a prone bot up for the one tick Change wins in a fight (the Fire urge
+ * curve hands the contest over every few seconds), the flicker of
+ * features/bot-stance-variety.
  */
 export function planChange(bot, now) {
   const r = bot._changeResult;
@@ -476,7 +484,6 @@ export function planChange(bot, now) {
        { type: PLAN_ACTION.InfantryMoveTo, waypoint: [side.goal[0], bot.position[1], side.goal[1]], arrive: DOOR_APPROACH.arrive }]
     : [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], bot.position[1], entry[1]], arrive: radius }];
   const plan = [
-    { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
     ...walk,
     { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, entry, radius, afterMove: true },
   ];

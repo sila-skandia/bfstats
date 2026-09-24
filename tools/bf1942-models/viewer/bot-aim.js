@@ -17,6 +17,7 @@
 
 import { sCurveExact } from './bot-sense.js';
 import { weaponGroup, gunBallistics } from './bot-pilot.js';
+import { POSE_EYE } from './bot-pose.js';
 
 /** The 55-channel PlayerInputMap indices, from the research document §1.2. */
 export const PI = {
@@ -49,9 +50,11 @@ const AXIS_MAX = 16;
 const RAD2DEG = 180 / Math.PI;
 /** `mouseControlLookAtDirection` caps a tick's mouse counts at 4.0. */
 export const AIM_COUNTS_MAX = 4.0;
-/** Head/eye offset above the feet, for LOS and fire origins (standing). */
-const EYE_HEIGHT = 1.6;
-const EYE_BY_STANCE = { stand: 1.6, walk: 1.6, crouch: 1.1, prone: 0.4 };
+/** The eye over the feet, for LOS and fire origins: the soldier's pose
+ *  camera (`setPoseCameraPos`, bot-pose.js `POSE_EYE`: 1.65 / 1.12 / 0.30 m),
+ *  where the sense rays start (`AIPlayer::getCameraTransformation`). */
+const EYE_HEIGHT = POSE_EYE.stand;
+const EYE_BY_STANCE = POSE_EYE;
 
 /** `mouseControlLookAtDirection` 0x08627b90: each count is clamped to
  *  `[-4, 4]` (`ds:0x86c0304` 4.0, `ds:0x86e9be0` -4.0) before it is written. */
@@ -177,10 +180,12 @@ export function turretCanPoint(bot, dir) {
   return want >= limits[0] && want <= limits[1];
 }
 
+/** A tick's input starts cleared, all but the pose: the soldier holds the
+ *  pose `pollRequestedSoldierPose` last gave him (bot-pose.js). */
 export function resetInput(bot) {
   bot.moveForward = 0;
   bot.moveStrafe = 0;
-  bot.stanceInput = 'stand';
+  bot.walkInput = false;
   bot.jumpRequest = false;
   bot.lookX = 0;
   bot.lookY = 0;
@@ -197,7 +202,7 @@ export function writeInput(bot) {
   const input = {
     forward: clamp(bot.moveForward, -1, 1),
     strafe: clamp(bot.moveStrafe, -1, 1),
-    walk: bot.stanceInput === 'walk',
+    walk: !!bot.walkInput,
     crouch: bot.stanceInput === 'crouch',
     prone: bot.stanceInput === 'prone',
     jump: bot.jumpRequest === true,

@@ -22,6 +22,7 @@ import { weaponAiOf, FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
 import { REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
 import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
+import { PoseRequests, POSE_CONTROL, waterDepthAt } from './bot-pose.js';
 import * as aiming from './bot-aim.js';
 import * as perception from './bot-perception.js';
 import * as routing from './bot-route.js';
@@ -113,7 +114,12 @@ export class BotController {
     // --- Input fields written by the plan and flushed by `_writeInput` ---
     this.moveForward = 0;
     this.moveStrafe = 0;
+    /** The pose the soldier holds, set once a tick by the poll (bot-pose.js
+     *  `PoseRequests`); `walkInput` is a move's walking gait. */
     this.stanceInput = 'stand';
+    this.walkInput = false;
+    /** `BotMain`'s pose request, its last change and in-flight flag. */
+    this.poseRequest = new PoseRequests();
     this.jumpRequest = false;
     this.lookX = 0;
     this.lookY = 0;
@@ -290,6 +296,8 @@ export class BotController {
 
     // --- Plan execution ---
     this._runPlan(dt, now);
+    // `pollRequestedSoldierPose`, the last step of `planExecution`.
+    this._pollPose(now);
 
     // --- Deviation: dynamic channels + the AI term (`setBotSkill`) ---
     this.deviation.update(dt, {
@@ -347,6 +355,31 @@ export class BotController {
     this.medic = new MedicState();
     this.isUnderFire = false; this.timeSinceNearbyShot = Infinity;
     this._bestGoalDist = null; this._noProgress = 0;
+    // A new body stands (INFERRED: the `BotMain` ctor's state, 0x0851d46e..).
+    this.poseRequest.reset(); this.stanceInput = 'stand';
+  }
+
+  // -----------------------------------------------------------------------
+  // The pose: bot-pose.js
+  // -----------------------------------------------------------------------
+
+  /** `requestSoldierPose` 0x0852e910. */
+  _requestPose(pose) { this.poseRequest.request(pose); }
+
+  /** A pose component's pose now: the attacker strength, the statement's
+   *  control input (`'security'` for a SoldierPose statement, `'control'`
+   *  for a move; bot-pose.js `POSE_CONTROL`) and the water under the bot. */
+  _poseOf(component, now, control = 'security') {
+    const fire = this.senses.attackerStrength(now);
+    const water = waterDepthAt(this.world?.collider, this.position[0], this.position[2]);
+    return component.computeCurrentPose(fire, POSE_CONTROL[control] ?? 0, now, water);
+  }
+
+  /** `pollRequestedSoldierPose` 0x0852e930: the held pose for this tick. A
+   *  seated bot's is left alone (a seat has no soldier poses). */
+  _pollPose(now) {
+    if (this.vehicle) return;
+    this.stanceInput = this.poseRequest.poll(now, this.stance);
   }
 
   // -----------------------------------------------------------------------
