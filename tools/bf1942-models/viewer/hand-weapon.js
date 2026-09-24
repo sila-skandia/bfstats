@@ -381,8 +381,13 @@ export function createHandWeapon(page) {
       // fires a hand weapon through `gunfire.js` (the bots' are the referee's),
       // and a round still flying after a weapon swap has to answer too --
       // `vehicle-hits.js` `roundFirer`, which the crosshair's hit marks and the
-      // teammates a round may meet both read.
-      if (hw.group) hw.group.firer = page.LOCAL_PLAYER;
+      // teammates a round may meet both read. The template rides with it: the
+      // kill line names the weapon that fired the killing round
+      // (`chat-log.js` `killStamp`).
+      if (hw.group) {
+        hw.group.firer = page.LOCAL_PLAYER;
+        hw.group.weapon = name;
+      }
     }
     soldierKit.handWeapon = hw;
     if (mixer && actions.idle) {
