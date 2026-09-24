@@ -335,3 +335,11 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | page | hull lift on a deck | the floor rises until every col0 hull vertex is 0.05 m over the deck at the drive's attitude | none (the engine's gear) (AI-122) | `hull-bodies.js hullLift`, `HULL_DECK_MARGIN` | INVENTION |
 | page | soldier hit points | the kit's `maxHitpoints` (30 in vanilla), 30 fallback | `_shared/loadouts.json` | `map.html soldierMaxHp` | CON |
 | page | bot count | 0 .. 32 (`?botCount=`) | | `map.html BOT_COUNT` | UNSOURCED |
+| fire | tank aim window frame | the approach's pitch window in the hull's frame (the base's up axis) | `validateCameraDirectionPitch` 0x085d4570 (AI-128) | `bot-plans.js approachAimValid`, `hullUp` | ENGINE |
+| fire | single-shot settle | a miss closing by at most 0.002 m in a tick counts as the closest approach | none: stands in for the engine's jitter (AI-129) | `bot-aim.js PRECISION_SETTLE` | INVENTION |
+| fire | tank muzzle line | S also needs a clear straight line from the barrel to the target's aim point (own and target's hulls skipped) | none (AI-129) | `bot-plans.js muzzleClear` | INVENTION |
+| fire | tank unblock grace | 2.0 s without S inside `mid`, then the tank closes on the target (too low, unseen, blocked) or backs off (too high) | none (AI-129) | `bot-plans.js FIRE_UNBLOCK.grace` | INVENTION |
+| fire | tank back-off margin | back off until the rise is 2 deg inside the window's top; arrive within 2 m | none | `bot-plans.js FIRE_UNBLOCK.backOffMargin`, `backOffGoal` | INVENTION |
+| move | tank look-ahead with a target | a tank holding a seen firing target aims at it in MoveTo instead of looking down the hull | `BAPALookAhead` looks down the hull (AI-123) | `bot-plans.js execMouseTurretLookAt` | INVENTION |
+| change | door approach | the walk ends 2.75 m (door radius - 0.75, at most 3, at least 1) beside the door on the hull's right axis, the soldier's side, stepping out to that line first; arrive 0.75 m | `BBPChange::createPlan` 0x0858b5c0 walks to 6.25 m of the vehicle and holds Use within 12.375 m | `bot-mount.js DOOR_APPROACH`, `doorApproach` | INVENTION |
+| change | bot exit point | the seat's (or hull's) `setSoldierExitLocation`, as the human's; beside the hull without one | the vehicle's own data | `bot-units.js units.leave`, `bot-referee.js leaveVehicle` | CON |
