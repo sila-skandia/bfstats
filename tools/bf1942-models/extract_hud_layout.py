@@ -44,6 +44,18 @@ Every element carries a `kind`:
                     default X/Y plus the bindings that move it (`posVar`).
   crosshair         the `BfCrosshairNode` leaf's own bindings.
 
+Three optional fields ride on picture, variable-picture and fill leaves:
+
+  rotation   a `RotateEffect` in force: `angle` (radians) and its binding.
+             Fills carry it too -- the crosshair's hit marks are four 1x3
+             fills turned 0.8 rad into diagonals (XHIT-1).
+  colorVars  the live bindings of the `VariableColorEffect` in force, per
+             channel `r`/`g`/`b`/`a`: `{"var"}` or `{"var", "div"}`. `color`
+             still holds the defaults they resolve to.
+  alphaVars  bound `BfMultiplyColorEffect2` alphas above the leaf; the engine
+             multiplies the quad's alpha by each (only
+             `CrossHair/HitIndicationTime`, in every install).
+
 `when` is the list of `CullNode` conditions gating an element, same shape
 `extract_spawn_layout.py`'s `spawn-layout.json` uses: `{"var","op","value"}`
 (`value` is a literal or `{"var": name}` for a variable-vs-variable
@@ -130,10 +142,17 @@ NOTES = [
     "element as `rotation`); the back plate and barrel pictures next to it "
     "do not. Units (radians vs. degrees), sign and pivot are not resolved "
     "here.",
-    "The crosshair's CrossHair/CrossHairRed/Green/Blue feed one "
-    "VariableColorEffect through a DivData by 256 (a 0-255 storage "
-    "convention there) but CrossHair/CrossHairAlpha is a plain 0-1 float; "
-    "both are recorded as observed, not reconciled.",
+    "The crosshair's CrossHair/CrossHairRed/Green/Blue feed its "
+    "VariableColorEffects through a DivData by 256 (`colorVars` records "
+    "`div: 256`): the profile's `game.setCrossHairColor r g b` in 0-255. "
+    "CrossHair/CrossHairAlpha is never registered by the client, so it keeps "
+    "the file's 1.0 (ledger XHIT-7).",
+    "The crosshair group's last four fills are the hit marks, not ticks: "
+    "each is turned by its own `rotation` (0.8 rad about the quad's centre) "
+    "and its alpha is multiplied by CrossHair/HitIndicationTime "
+    "(`alphaVars`), a timer the game sets to 1 when the local player's round "
+    "hits a soldier or a manned vehicle and runs down at 1/s. At rest it is "
+    "0 and nothing shows (ledger XHIT-1..XHIT-4).",
     "Vehicle/VehiclePlayers/VehiclePlayersText1-6's default strings "
     "('(1) CannonFodderwwww sgdgkjs', ...) read as leftover editor-preview "
     "text, not real defaults meant for a player to ever see; kept verbatim.",
@@ -262,6 +281,73 @@ def mul_color(a: list[float], b: list[float]) -> list[float]:
     return [round(x * y, 4) for x, y in zip(a, b)]
 
 
+COLOR_CHANNELS = (("r", "Red"), ("g", "Green"), ("b", "Blue"), ("a", "Alpha"))
+
+
+def resolve_color_vars(obj) -> dict | None:
+    """A `VariableColorEffect`'s live bindings, per channel: `{"var": name}`
+    for a named Data, `{"var": name, "div": d}` for the `DivData(name, d)`
+    form the crosshair's 0-255 channels use. `resolve_color` keeps only the
+    defaults these resolve to, which is all a static layout can hold; this is
+    what lets the viewer feed the real value.
+
+    The engine SETS the quad's colours here (`VariableColorEffect::apply`,
+    client `0x006017c0` -> `0x004677a0`, a plain store), so a bound channel's
+    live value replaces that channel outright -- see XHIT-7."""
+    if not isinstance(obj, meme.Obj) or obj.cls != "VariableColorEffect":
+        return None
+    out: dict = {}
+    for ch, key in COLOR_CHANNELS:
+        data = obj[key]
+        if not isinstance(data, meme.Obj):
+            continue
+        if data.name:
+            out[ch] = {"var": data.name}
+        elif data.cls == "DivData" and named(data["Data 1"]) and not named(data["Data 2"]):
+            div = default_value(data["Data 2"])
+            if div:
+                out[ch] = {"var": data["Data 1"].name, "div": div}
+    return out or None
+
+
+def resolve_alpha_var(obj) -> str | None:
+    """A `BfMultiplyColorEffect2`'s bound Alpha: the value the engine
+    MULTIPLIES the quad's alpha by at draw time (`apply`, client `0x007d5990`
+    -> `0x007d5420`). In `menu/InGame` its only use in all 18 installs is the
+    crosshair's hit marks, bound to `CrossHair/HitIndicationTime` (XHIT-1);
+    the radio menu binds it to `Radio/RadioAlpha` (`extract_radio.py`, which
+    records it under the same `alphaVars` name)."""
+    if not isinstance(obj, meme.Obj) or obj.cls != "BfMultiplyColorEffect2":
+        return None
+    return named(obj["Alpha"])
+
+
+def live_color(live: dict | None, effect) -> dict | None:
+    """`live` after one more EffectNode on the path: the element fields
+    `colorVars` (the VariableColorEffect in force) and `alphaVars` (every
+    bound BfMultiplyColorEffect2 above the leaf, multiplied in).
+
+    What the viewer does with them: start from the static `color`, replace
+    each bound `colorVars` channel with its live value (`var / div`), then
+    multiply alpha by each `alphaVars` value. That is exact for the only
+    shape the data uses -- a multiply outside a VariableColorEffect, the
+    crosshair's hit marks (XHIT-7) -- because the engine applies effects
+    innermost first, so the multiply lands after the set. A second colour
+    effect *inside* a VariableColorEffect would be overwritten by its set in
+    the engine but multiplied into `color` here; nothing in the 18 installs
+    does that, and `test_hud_layout.py` pins it."""
+    vars_ = resolve_color_vars(effect)
+    alpha = resolve_alpha_var(effect)
+    if not vars_ and not alpha:
+        return live
+    out = dict(live or {})
+    if vars_:
+        out["colorVars"] = vars_
+    if alpha:
+        out["alphaVars"] = [*out.get("alphaVars", []), alpha]
+    return out
+
+
 def resolve_rotation(obj) -> dict | None:
     """A `RotateEffect`/`RotateAroundCoordinateEffect`'s angle binding --
     only the turret-icon body currently carries one. Units (radians vs.
@@ -301,7 +387,10 @@ class Flattener:
         self.elements: list[dict] = []
 
     def run(self, nodes, ox=0.0, oy=0.0, rect=None, color=None, when=None, posvar=None,
-            tag=None, on_enter=None, rotation=None) -> None:
+            tag=None, on_enter=None, rotation=None, live=None) -> None:
+        """`live` is the colour bindings in force -- `{"colorVars": ...,
+        "alphaVars": [...]}`, see `live_color` -- carried down the tree the
+        same way `color` and `rotation` are."""
         color = color or [1.0, 1.0, 1.0, 1.0]
         when = list(when or [])
         rect = rect or [0, 0, *VIRTUAL]
@@ -319,25 +408,26 @@ class Flattener:
                 c = resolve_color(node["Effect"])
                 if c:
                     color = mul_color(color, c)
+                live = live_color(live, node["Effect"])
                 r = resolve_rotation(node["Effect"])
                 if r:
                     rotation = r
             elif cls == "TransformNode":
                 x, y, w, h = ox + node["X"], oy + node["Y"], node["Width"], node["Height"]
-                self.run(node.children(), x, y, [x, y, w, h], color, when, posvar, tag, on_enter, rotation)
+                self.run(node.children(), x, y, [x, y, w, h], color, when, posvar, tag, on_enter, rotation, live)
             elif cls == "BfTransformNode":
                 xv, xvar = default_value(node["X"]), named(node["X"])
                 yv, yvar = default_value(node["Y"]), named(node["Y"])
                 x, y = ox + (xv or 0), oy + (yv or 0)
                 w, h = node["Width"], node["Height"]
                 pv = {"x": xvar, "xDefault": xv, "y": yvar, "yDefault": yv}
-                self.run(node.children(), x, y, [x, y, w, h], color, when, pv, tag, on_enter, rotation)
+                self.run(node.children(), x, y, [x, y, w, h], color, when, pv, tag, on_enter, rotation, live)
             elif cls == "SplitNode":
-                self.run(node.children(), ox, oy, rect, color, when, posvar, tag, on_enter, rotation)
+                self.run(node.children(), ox, oy, rect, color, when, posvar, tag, on_enter, rotation, live)
             elif cls == "PictureNode":
-                self.emit_picture(node, rect, color, when, tag, rotation)
+                self.emit_picture(node, rect, color, when, tag, rotation, live)
             elif cls in ("VariablePictureNode", "BfVariablePictureNode"):
-                self.emit_variable_picture(node, rect, color, when, tag, rotation)
+                self.emit_variable_picture(node, rect, color, when, tag, rotation, live)
             elif cls in ("BfVariablePictureFillNode", "BfVariablePictureFillNode2"):
                 self.emit_fill_picture(node, rect, color, when, tag)
             elif cls == "TextNode":
@@ -347,7 +437,7 @@ class Flattener:
             elif cls == "BfCrosshairNode":
                 self.emit_crosshair(node, rect, color, when, tag)
             else:
-                self.run(node.children(), ox, oy, rect, color, when, posvar, tag, on_enter, rotation)
+                self.run(node.children(), ox, oy, rect, color, when, posvar, tag, on_enter, rotation, live)
 
     def leaf(self, kind, rect, color, when, tag=None, **extra) -> dict:
         el = {"kind": kind, "rect": [round(v, 2) for v in rect]}
@@ -371,18 +461,20 @@ class Flattener:
         self.elements.append(el)
         return el
 
-    def emit_picture(self, node, rect, color, when, tag=None, rotation=None) -> None:
+    def emit_picture(self, node, rect, color, when, tag=None, rotation=None, live=None) -> None:
         name = node["Picture"]
-        if not name:
-            # An empty picture is a solid quad in the current colour.
-            self.leaf("fill", rect, color, when, tag)
-            return
-        extra = {"texture": texture_key(name)}
+        extra: dict = {"texture": texture_key(name)} if name else {}
         if rotation:
+            # A RotateEffect turns an empty-picture quad exactly as it turns a
+            # textured one -- the crosshair's hit marks are four 1x3 fills
+            # that only read as diagonals because of it (XHIT-1).
             extra["rotation"] = rotation
-        self.leaf("picture", rect, color, when, tag, **extra)
+        # An empty picture is a solid quad in the current colour. The live
+        # bindings ride in `extra`, so a subclass's own `leaf` (the radio
+        # menu's) passes them through untouched.
+        self.leaf("picture" if name else "fill", rect, color, when, tag, **(live or {}), **extra)
 
-    def emit_variable_picture(self, node, rect, color, when, tag=None, rotation=None) -> None:
+    def emit_variable_picture(self, node, rect, color, when, tag=None, rotation=None, live=None) -> None:
         src = node["First part"] if node.cls == "VariablePictureNode" else node["picture str"]
         default = default_value(src)
         extra: dict = {}
@@ -397,7 +489,7 @@ class Flattener:
                 extra["redrawVar"] = rv
         if rotation:
             extra["rotation"] = rotation
-        self.leaf("variable-picture", rect, color, when, tag, **extra)
+        self.leaf("variable-picture", rect, color, when, tag, **(live or {}), **extra)
 
     def _bound(self, field):
         """A fill-picture field that is either a plain literal (str/int,

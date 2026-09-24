@@ -20,7 +20,8 @@ import { skeletonHit } from './skeleton-hit.js';
  * reassigns is read live):
  * `applyDamage`, `applyDamageToPlayer`, `bodyAt`, `bots`, `camera`, `capsulesOf`, `collider`,
  * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`, `guns`,
- * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `showDamageTier`,
+ * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `raiseHitIndication`
+ * (optional: a headless runner has no crosshair), `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
  * `vehicles`, `world`, `wreckVehicle`.
  */
@@ -205,11 +206,36 @@ export function createVehicleHits(page) {
   }
 
   /**
+   * Whether a round's landing raises the local player's hit marks
+   * (`CrossHair/HitIndicationTime`, ledger XHIT-4 and XHIT-5).
+   *
+   * `GameServer::giveDamage` (lnxded 0x0814b2e0) raises them before it prices
+   * any damage, when the round is the local player's own and the object it
+   * met has a `PlayerControlObject` for its root whose team is not 0: every
+   * soldier, and a hull only while someone sits in it -- `setTeam` counts the
+   * crew in and `clearTeam` zeroes the team when the last one leaves, so an
+   * empty vehicle or gun never marks. There is no team comparison (a friendly
+   * marks) and no damage floor. Only a direct hit: the engine's explosions
+   * never pass through `giveDamage`, so the splash pass never marks.
+   */
+  function marksTheCrosshair(record) {
+    if (!record || roundFirer(record.firerGroup) !== page.LOCAL_PLAYER) return false;
+    if (record.target != null) return true;
+    if (record.kind !== 'object' || !(record.owner >= 0)) return false;
+    const node = page.damageVisuals.get(record.owner)?.node;
+    return !!node && !!page.vehicles.instanceOf(node)
+      && !page.vehicleDamage.get(record.owner)?.destroyed;
+  }
+
+  /**
    * A round landed. Apply the direct hit, then the area pass if the round has
    * one (`damageType 1`: shells, bombs, grenades, the bazooka), and reconcile
    * every tier that moved on the same frame.
    */
   function applyVehicleHit(record) {
+    // Asked before any damage lands, as the engine asks before it prices the
+    // round: the hit that wrecks a manned hull still marks.
+    const marks = marksTheCrosshair(record);
     if (record?.target != null) applyRoundToSoldier(record);
     // Whose round it is: the seat's holder, else the human's own hand weapon
     // (bots resolve their hand weapons in the referee and never fire a
@@ -217,6 +243,7 @@ export function createVehicleHits(page) {
     const attacker = botFiringGroup(record) ?? page.LOCAL_PLAYER;
     const landed = page.vehicleDamage.applyHit(record, attacker);
     if (landed) reconcileDamaged(landed.vehicle);
+    if (marks) page.raiseHitIndication?.();
     if (!(record?.splashRadius > 0)) return;
     const splashed = page.vehicleDamage.applySplash(record, splashTargets(), {
       materials: page.guns.materials, modifiers: page.guns.modifiers,
@@ -317,10 +344,14 @@ export function createVehicleHits(page) {
     return base * (mod === null ? 1 : mod);
   }
 
-  /** Who fired `group`: the local player (his drivetrain's or seat's guns) or
-   *  the bot whose seat it is. Null for a gun nobody is holding. */
+  /** Whose round it is: the player in the seat that fired `group`, else the
+   *  player a hand weapon's group was tagged with when it was built
+   *  (`hand-weapon.js`), else null -- a replayed round, or one still in the
+   *  air from a seat since vacated. The tag rides on the group object, which
+   *  every round keeps, so a weapon swapped while its round flies still
+   *  answers. */
   function roundFirer(group) {
-    return page.vehicles.firerOf(group);
+    return page.vehicles.firerOf(group) ?? group?.firer ?? null;
   }
 
   /**
@@ -340,14 +371,22 @@ export function createVehicleHits(page) {
    */
   function roundBodyCast(ox, oy, oz, dx, dy, dz, maxDist, group) {
     if (!page.world) return null;
-    const firer = roundFirer(group) ?? page.LOCAL_PLAYER;
-    const firerTeam = firer ? page.world.player(firer)?.team ?? null : null;
+    const known = roundFirer(group);
+    const firer = known ?? page.LOCAL_PLAYER;
+    // The human's own rounds meet his teammates. The engine's round hits any
+    // soldier in its path, and `GameServer::giveDamage` raises the hit marks
+    // before it compares a team or prices the damage (XHIT-4): the owner sees
+    // them on a friendly exactly as on an enemy, and the shipped
+    // `ServerSettings.con` has friendly fire at 100. A bot's rounds still pass
+    // through his own side, as they always have here.
+    const passTeam = known === page.LOCAL_PLAYER ? null
+      : firer ? page.world.player(firer)?.team ?? null : null;
     const r2 = BOT_BODY_RADIUS * BOT_BODY_RADIUS;
     let best = null;
     let bestT = maxDist;
     for (const [id, player] of page.world.players) {
       if (id === firer) continue;
-      if (firerTeam != null && player.team === firerTeam) continue;
+      if (passTeam != null && player.team === passTeam) continue;
       if (page.world.armorOf(id)?.destroyed) continue;
       if (id === page.LOCAL_PLAYER && page.soldierDead) continue;
       let s = page.bodyAt(id);

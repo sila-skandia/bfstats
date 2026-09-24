@@ -140,12 +140,52 @@ function contentVarsOf(el) {
   if (el.kind === 'text' && el.var) out.push(el.var);
   if (el.kind === 'fill-picture' && el.valueVar) out.push(el.valueVar);
   if (el.kind === 'occupied-seat' && el.dataRef) out.push(el.dataRef);
+  // A `BfMultiplyColorEffect2` alpha is required, not tolerant: its authored
+  // default is an editor preview (the crosshair's `HitIndicationTime` ships
+  // as 1.0), and falling back on it would leave the hit marks on screen for
+  // good. Unfed, the leaf culls -- the engine's own resting value is 0.
+  if (el.alphaVars) out.push(...el.alphaVars);
+  return out;
+}
+
+const WHITE = [1, 1, 1, 1];
+const CHANNELS = ['r', 'g', 'b', 'a'];
+
+/** `el.color` with the leaf's live colour bindings applied, written into
+ *  `out` (no allocation per paint). The engine SETS the quad's colour at a
+ *  `VariableColorEffect` (client `0x006017c0`), so each bound channel's live
+ *  value replaces that channel -- `var / div` for the crosshair's 0-255
+ *  channels -- and an unfed channel keeps the layout's own default, as every
+ *  other tolerant binding here does (HUD-1). Then each `BfMultiplyColorEffect2`
+ *  alpha multiplies in: effects apply innermost first, so the multiply lands
+ *  after the set (XHIT-7). A `hud-layout.json` older than these fields has
+ *  neither and paints exactly as it always did. */
+export function liveColor(el, vars, out) {
+  const base = el.color || WHITE;
+  for (let i = 0; i < 4; i++) out[i] = base[i];
+  const bound = el.colorVars;
+  if (bound) {
+    for (let i = 0; i < 4; i++) {
+      const b = bound[CHANNELS[i]];
+      const v = b && vars[b.var];
+      if (v === undefined || v === null || v === '') continue;
+      const n = Number(v) / (b.div || 1);
+      if (Number.isFinite(n)) out[i] = n;
+    }
+  }
+  if (el.alphaVars) {
+    for (const name of el.alphaVars) {
+      const n = Number(vars[name]);
+      out[3] *= Number.isFinite(n) ? n : 0;
+    }
+  }
+  for (let i = 0; i < 4; i++) out[i] = Math.max(0, Math.min(1, out[i]));
   return out;
 }
 
 /** Every variable name a leaf's `when` list or drawn content can reference,
  *  gathered once at load so `_visible` never walks the tree at paint time. */
-function prepareElement(el) {
+export function prepareElement(el) {
   const set = new Set();
   collectWhenVars(el.when || [], set);
   for (const name of contentVarsOf(el)) set.add(name);
@@ -164,6 +204,8 @@ function trackedVarsOf(el, out) {
     if (el[key]) out.add(el[key]);
   }
   if (el.rotation?.angleVar) out.add(el.rotation.angleVar);
+  for (const b of Object.values(el.colorVars || {})) out.add(b.var);
+  for (const name of el.alphaVars || []) out.add(name);
   if (el.posVar) {
     if (el.posVar.x) out.add(el.posVar.x);
     if (el.posVar.y) out.add(el.posVar.y);
@@ -341,6 +383,7 @@ export class Hud {
     this._lastW = 0;
     this._lastH = 0;
     this._lastDpr = 0;
+    this._rgba = [1, 1, 1, 1];         // liveColor's scratch, reused per leaf
   }
 
   /** A sprite finishing its own async decode, or a font landing, changed
@@ -497,11 +540,18 @@ export class Hud {
    */
   _drawPicture(ctx, el, x, y, w, h, img) {
     if (!img) return;
-    const color = el.color;
-    let alpha = color ? color[3] : 1;
-    if (this.vars['HitFromDir/HitFromDirAlpha'] != null && el.texture === 'ingame_hit_indicator_64x128') {
-      alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+    let alpha;
+    if (el.colorVars || el.alphaVars) {
+      alpha = liveColor(el, this.vars, this._rgba)[3];
+    } else {
+      // A layout from before `colorVars`: the damage arc's alpha binding was
+      // not in the file, so it was keyed on the sprite instead.
+      alpha = el.color ? el.color[3] : 1;
+      if (this.vars['HitFromDir/HitFromDirAlpha'] != null && el.texture === 'ingame_hit_indicator_64x128') {
+        alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+      }
     }
+    if (alpha <= 0) return;
     ctx.globalAlpha = alpha;
     const angle = rotationAngle(el, this.vars);
     if (angle) {
@@ -626,18 +676,33 @@ export class Hud {
     drawBitmapText(ctx, font, text, Math.round(tx), y, rgb);
   }
 
+  /** A solid quad (an empty `PictureNode`), in the live colour, turned about
+   *  its own centre by a `RotateEffect` the same way `_drawPicture` turns a
+   *  sprite: counter-clockwise, hence `-angle`. The crosshair's hit marks are
+   *  the leaves that need both -- four 1x3 quads turned 0.8 rad into
+   *  diagonals, at alpha `CrossHair/HitIndicationTime` (XHIT-1, XHIT-7). */
   _drawFill(ctx, el) {
     const [x, y, w, h] = el.rect;
     // Skip full-screen fills (the 800x600 quad artifact in hitIndicator)
     if (w >= 800 && h >= 600) return;
-    const color = el.color || [1, 1, 1, 1];
-    let alpha = color[3];
-    if (this.vars['HitFromDir/HitFromDirAlpha'] != null && (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
-      alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+    const color = liveColor(el, this.vars, this._rgba);
+    if (!el.colorVars && this.vars['HitFromDir/HitFromDirAlpha'] != null
+        && (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
+      color[3] *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
     }
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = `rgb(${color.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
-    ctx.fillRect(x, y, w, h);
+    if (color[3] <= 0) return;
+    ctx.globalAlpha = color[3];
+    ctx.fillStyle = `rgb(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)})`;
+    const angle = rotationAngle(el, this.vars);
+    if (angle) {
+      ctx.save();
+      ctx.translate(x + w / 2, y + h / 2);
+      ctx.rotate(-angle);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.restore();
+    } else {
+      ctx.fillRect(x, y, w, h);
+    }
     ctx.globalAlpha = 1;
   }
 

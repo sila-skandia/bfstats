@@ -377,6 +377,12 @@ export function createHandWeapon(page) {
         spreadDeg: () => (soldierKit.handWeapon ? soldierKit.handWeapon.model.current() : 0),
       });
       hw.group = found[0] || null;
+      // Whose rounds these are, on the group every round keeps: only the human
+      // fires a hand weapon through `gunfire.js` (the bots' are the referee's),
+      // and a round still flying after a weapon swap has to answer too --
+      // `vehicle-hits.js` `roundFirer`, which the crosshair's hit marks and the
+      // teammates a round may meet both read.
+      if (hw.group) hw.group.firer = page.LOCAL_PLAYER;
     }
     soldierKit.handWeapon = hw;
     if (mixer && actions.idle) {

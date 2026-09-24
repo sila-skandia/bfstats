@@ -5,13 +5,24 @@
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `bust`, `camera`, `car`, `crosshairEl`, `DEG_TO_RAD`,
+ * `aircraft`, `bust`, `camera`, `car`, `crossHairColor`, `crosshairEl`, `DEG_TO_RAD`,
  * `fireStateFor`, `forgetOccupiedVehicle`, `fullmapBox`, `gameHud`,
  * `handWeapon`, `hudPaths`, `isZoomed`, `itemsLocked`, `LOCAL_PLAYER`,
  * `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
  * `occupiedVehicleDamage`, `occupiedVehicleIdFor`, `optOnFoot`, `renderer`,
  * `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
  */
+
+/** The HUD's virtual screen, the frame the cross is measured in. */
+const CROSSHAIR_VIRTUAL = [800, 600];
+
+/** `game.serverCrossHairCenterPoint` -- 1 in the shipped
+ *  `Settings/ServerSettings.con` -- which the owner's recording shows as a
+ *  1x1-unit dot below and right of centre, the layout's `ShowCenterPoint`
+ *  fill at (400,300). The Wake footage the cross was first measured on had
+ *  none, so that server ran with it off. */
+const SERVER_CROSSHAIR_CENTER_POINT = true;
+
 export function createVehicleHud(page) {
   const vehicleHud = {};
 
@@ -466,6 +477,13 @@ export function createVehicleHud(page) {
     if (page.crosshairEl.classList.contains('ch-icon') !== icon) {
       page.crosshairEl.classList.toggle('ch-icon', icon);
     }
+    // `serverCrossHairCenterPoint`: the layout's own 1x1 fill at (400,300),
+    // gated on the CHTCrossHair branch (XHIT-11).
+    const centre = !icon && SERVER_CROSSHAIR_CENTER_POINT;
+    if (page.crosshairEl.classList.contains('ch-centre') !== centre) {
+      page.crosshairEl.classList.toggle('ch-centre', centre);
+    }
+    setCrosshairInk(page.crossHairColor());
     // The renderer's own backing store, not `stageHeight`: a headless capture
     // resizes the renderer through `__renderOnce` and never touches the page,
     // so the cached page height is stale there and the crosshair gap came out
@@ -473,25 +491,49 @@ export function createVehicleHud(page) {
     // source, as the HUD canvas's own size in `frame()`.
     const ratio = page.renderer.getPixelRatio();
     const height = page.renderer.domElement.height / ratio || 800;
+    const width = page.renderer.domElement.width / ratio || 1280;
+    // The cross is drawn in the HUD's 800x600 virtual screen, stretched on each
+    // axis like the rest of it (hud.js `_scaleFor`, VHUD-11), so its sizes are
+    // per-axis units: the owner's 2560x1440 recording measures every arm 10
+    // units long and 1 unit thick, and the gap 3.75 units on both axes (XHIT-11).
+    const ux = width / CROSSHAIR_VIRTUAL[0];
+    const uy = height / CROSSHAIR_VIRTUAL[1];
+    setCrosshairVar('--ch-ux', ux);
+    setCrosshairVar('--ch-uy', uy);
     if (icon) {
       const leaf = crosshairIconLeaf();
       if (!leaf) return;
-      // The HUD stretches its virtual screen independently on each axis
-      // (hud.js `_scaleFor`), so the icon does too.
-      const width = page.renderer.domElement.width / ratio || 1280;
       setCrosshairVar('--ch-icon-w', leaf.rect[2] * width / leaf.virtual[0]);
       setCrosshairVar('--ch-icon-h', leaf.rect[3] * height / leaf.virtual[1]);
       return;
     }
-    const px = 0.5 * height * Math.tan(deviation) / Math.tan(page.camera.fov * page.DEG_TO_RAD / 2);
-    setCrosshairVar('--ch-gap', px);
+    // The deviation still reaches the gap through the camera projection (the
+    // endpoints were pinned on footage; the engine's own mapping is OPEN), read
+    // off as vertical pixels and taken back to units, so that the horizontal
+    // arms part by the same number of units, not of pixels.
+    const gapUnits = 0.5 * height * Math.tan(deviation)
+      / Math.tan(page.camera.fov * page.DEG_TO_RAD / 2) / uy;
+    setCrosshairVar('--ch-gap-x', gapUnits * ux);
+    setCrosshairVar('--ch-gap-y', gapUnits * uy);
   }
 
   function setCrosshairVar(name, px) {
-    const value = `${px.toFixed(1)}px`;
+    const value = `${px.toFixed(2)}px`;
     if (page.crosshairEl.style.getPropertyValue(name) !== value) {
       page.crosshairEl.style.setProperty(name, value);
     }
+  }
+
+  /** `--ch-ink` from the profile's `game.setCrossHairColor` (0-255), divided
+   *  by 256 the way the layout's `VariableColorEffect` divides it, so the
+   *  cross and the hit marks the HUD canvas paints are one colour (XHIT-7). */
+  vehicleHud.inkFor = null;   // the [r, g, b] the ink was last written for
+  function setCrosshairInk(rgb) {
+    const last = vehicleHud.inkFor;
+    if (last && last[0] === rgb[0] && last[1] === rgb[1] && last[2] === rgb[2]) return;
+    vehicleHud.inkFor = [rgb[0], rgb[1], rgb[2]];
+    const byte = v => Math.round(Math.max(0, Math.min(1, v / 256)) * 255);
+    page.crosshairEl.style.setProperty('--ch-ink', `rgb(${byte(rgb[0])}, ${byte(rgb[1])}, ${byte(rgb[2])})`);
   }
 
   Object.assign(vehicleHud, {

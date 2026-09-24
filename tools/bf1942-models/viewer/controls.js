@@ -172,6 +172,25 @@ export function classifyCon(text) {
   return 'infantry';
 }
 
+/** The shipped default profile's crosshair colour,
+ *  `Mods/bf1942/Settings/Profiles/Default/GeneralOptions.con`:
+ *  `game.setCrossHairColor 255.000000 255.000000 0.000000`, yellow. A player's
+ *  own profile says otherwise (the owner's is red, `255 0 0`) and an imported
+ *  one wins. */
+export const DEFAULT_CROSSHAIR_COLOR = Object.freeze([255, 255, 0]);
+
+/** `[r, g, b]` when every channel is a finite number, else null. */
+export function validCrossHairColor(rgb) {
+  return Array.isArray(rgb) && rgb.length === 3 && rgb.every(Number.isFinite) ? rgb : null;
+}
+
+/** `game.setCrossHairColor r g b` out of a `GeneralOptions.con`, in the
+ *  file's own 0-255 units (the game writes them as `%f`), or null. */
+export function parseCrossHairColor(text) {
+  const m = /^game\.setCrossHairColor\s+(\S+)\s+(\S+)\s+(\S+)/m.exec(String(text ?? ''));
+  return m ? validCrossHairColor([Number(m[1]), Number(m[2]), Number(m[3])]) : null;
+}
+
 /** The identity a binding dedupes on: the context files restate the common
  *  section verbatim, and a summed axis must not be paid twice. */
 function bindingKey(b) {
@@ -268,6 +287,10 @@ export function createControls(page) {
   // else the folder the files came from) — what the options screen's
   // profile plate shows. Null under the shipped maps.
   let profileName = null;
+  // The profile's crosshair colour, `GeneralOptions.con`'s
+  // `game.setCrossHairColor r g b` in 0-255: what the cross and its hit marks
+  // are drawn in (ledger XHIT-7). Null under the shipped maps.
+  let crossHairColor = null;
   // Per context: deduped binding lists, and the indexes the queries read.
   let buckets = null;        // { game: [], common: [], infantry: [], air: [], land: [] }
   let vars = {};
@@ -658,6 +681,7 @@ export function createControls(page) {
         files = { ...CONTROLS_DEFAULTS.files, ...saved.files };
         source = saved.source || 'profile';
         profileName = saved.profileName || null;
+        crossHairColor = validCrossHairColor(saved.crossHairColor);
         return true;
       }
     } catch { /* a corrupt entry is a fresh start, not a crash */ }
@@ -666,7 +690,7 @@ export function createControls(page) {
 
   const save = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName, crossHairColor }));
     } catch { /* private mode or a full quota: the session keeps its maps */ }
   };
 
@@ -676,10 +700,11 @@ export function createControls(page) {
    *  import carries is merged over the defaults so a partial folder still
    *  yields a complete map. A whole profile folder is fine: the files that
    *  are not control maps are skipped, bar `GeneralOptions.con`'s player
-   *  name. */
+   *  name and crosshair colour. */
   controls.importFiles = async items => {
     const applied = [];
     let name = null;
+    let color = null;
     for (const item of items) {
       let body = null;
       try {
@@ -688,6 +713,7 @@ export function createControls(page) {
       if (!body) continue;
       const player = /^game\.setPlayerName\s+"([^"]*)"/m.exec(body);
       if (player) name = player[1];
+      color = parseCrossHairColor(body) ?? color;
       // `Profiles/<name>/Controls/Air.con`, when a folder was picked.
       const path = item.webkitRelativePath?.split('/') ?? [];
       if (!name && path.length > 2) name = path[path.length - 3];
@@ -699,6 +725,7 @@ export function createControls(page) {
     if (!applied.length) return { applied, source };
     source = 'profile';
     profileName = name || profileName;
+    crossHairColor = color ?? crossHairColor;
     rebuild();
     save();
     return { applied, source };
@@ -708,9 +735,15 @@ export function createControls(page) {
     files = { ...CONTROLS_DEFAULTS.files };
     source = 'defaults';
     profileName = null;
+    crossHairColor = null;
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* as above */ }
     rebuild();
   };
+
+  /** The crosshair colour in the profile's own 0-255 units: the imported
+   *  profile's `game.setCrossHairColor`, else the shipped default profile's.
+   *  The HUD divides it by 256, as the game's layout does. */
+  controls.crossHairColor = () => crossHairColor ?? DEFAULT_CROSSHAIR_COLOR;
 
   /** What the sidebar paints: where the maps came from, and every player
    *  trigger's bindings in the game's own display wording. */
