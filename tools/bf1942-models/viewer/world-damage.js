@@ -12,11 +12,16 @@ import { touchesWater } from './body-world.js';
 export function onBodyDamage(world, owner, result, at, other) {
   const vehicle = world.vehicleDamage.get(owner);
   if (world.onCrash) world.onCrash(owner, result, at, other);
+  let lost = 0;
   if (vehicle && !vehicle.destroyed) {
-    vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
+    lost = vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
   }
+  // `lost` and `water` are for the crew's wash (`vehicle-hits.js`): a hull
+  // already dead takes no `_giveDamage`, and ground and water give the
+  // engine different `Pos3`s (ledger HFD-4, HFD-13).
   world.report.crashes.push({
     owner, other, damage: result.damage, kill: result.kill,
+    water: !!result.water, lost,
     cell: result.effectCell, at: [at[0], at[1], at[2]],
     hp: vehicle?.hitPoints ?? null,
   });
@@ -31,6 +36,7 @@ export function onBodyDamage(world, owner, result, at, other) {
 export function damageTick(world, dt) {
   const changes = world.vehicleDamage.update(dt, {
     inWaterOwners: inWaterOwners(world),
+    ticks: world.report.timedDamage,
   });
   for (const change of changes) world.report.damage.push(change);
 }

@@ -244,6 +244,15 @@ class BombReleaseTests(unittest.TestCase):
         self.assertEqual(202, fall["splashMaterial2"])
         self.assertEqual(2.0, fall["splashYMod"])
 
+    def test_the_impact_record_carries_where_the_bomb_left_the_rack(self) -> None:
+        # `Projectile+0x134`: the barrel's world position when it fired, the
+        # `Pos3` a direct hit hands `giveDamage` and the victim's damage arc
+        # points at (ledger HFD-4) -- not where it landed 1.2 km down range.
+        # The rack stands at (1024, 500, 0) with its barrels at x +-3.3,
+        # y -0.199.
+        origin = self.results["fall"]["origin"]
+        self.assertIn(origin, ([1027.3, 499.801, 0], [1020.7, 499.801, 0]))
+
     def test_drag_shortens_the_throw_slightly(self) -> None:
         # The measurement, not an assertion of importance: 250 kg at drag 0.08
         # over a ~1 m bounding radius is a correction of a few metres in 1,200,

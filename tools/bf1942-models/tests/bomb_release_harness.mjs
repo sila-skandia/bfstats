@@ -389,6 +389,9 @@ function drop({ drag = true, height = 500, speed = 150 } = {}) {
     splashYMod: hit?.splashYMod ?? null,
     from: [round3(start.x), round3(start.y), round3(start.z)],
     to: hit ? hit.point.map(round3) : null,
+    // Where the record says the bomb left: `Projectile+0x134`, the `Pos3` a
+    // direct hit hands `giveDamage` (ledger HFD-4).
+    origin: hit?.origin ? hit.origin.map(round3) : null,
     // Range along track, which is the number a pilot aims with.
     throwMetres: hit ? round3(Math.abs(hit.point[2] - start.z)) : null,
     impactSpeed: hit ? round3(Math.hypot(...(hit.normal || [0, 0, 0]))) : null,

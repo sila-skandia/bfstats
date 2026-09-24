@@ -13,7 +13,7 @@ import { boardRows } from './scoreboard.js';
  * `localMapTeam`, `mapGate`, `mapVehicleMarks`, `MINIMAP_TEAM_TINT`, `modeNote`,
  * `paintScoreboard`, `params`, `roomClient`, `roomJoined`, `scoreboardOpen`,
  * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `setMapGate`,
- * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`.
+ * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`, `vehicleDamage`.
  */
 export function installWorldHooks(page) {
   // microseconds-per-query number the feature doc quotes.
@@ -213,6 +213,18 @@ export function installWorldHooks(page) {
     });
     const after = window.__soldiers(point);
     return after.map((row, i) => ({ ...row, lost: before[i] - row.hp }));
+  };
+  // A round's direct hit on a hull, by owner id, through the page's own
+  // `applyVehicleHit` (the `guns.onImpact` path): what `__blast` is for a
+  // splash. The tier, the crew's wash and the rest run as a real round's do;
+  // only the ballistics are skipped. `from` is where it was fired, the
+  // record's `origin` (`Projectile+0x134`, ledger HFD-4); without it the wash
+  // has no arc.
+  window.__roundHit = (owner, damage, from = null) => {
+    const vehicle = page.vehicleDamage.get(owner);
+    if (!vehicle) return null;
+    page.applyVehicleHit({ kind: 'object', owner, damage, origin: from });
+    return { hp: vehicle.hitPoints, destroyed: vehicle.destroyed };
   };
   // Every soldier a blast can reach, and what HP-10 would give him from a
   // given point. The exposure is the thing worth reading back: it is the one

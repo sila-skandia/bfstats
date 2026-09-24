@@ -13,7 +13,7 @@
 
 import {
   Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant, prepareElement,
-  hitFromDirAlpha, hitFromDirOctant, paintOrder, PAINT_ORDER,
+  hitFromDirAlpha, hitFromDirOctant, hitFromDirOctantAxes, paintOrder, PAINT_ORDER,
 } from './hud.js';
 import { createSoldierHud } from './soldier-hud.js';
 
@@ -470,6 +470,44 @@ results.hitFromDir = {
   coincidentFacingMinusZ: hitFromDirOctant(o, Math.PI, at(0, 0, 0)),
   // Not at the origin: the direction is the difference, not the source alone.
   offOrigin: hitFromDirOctant(at(100, 5, -40), 0, at(90, 5, -40)),
+};
+
+// A hull framed by its own axes (HFD-11): at rest its nose is -z and its
+// right +x, as the exporter leaves every vehicle.
+const N = at(0, 0, -1), R = at(1, 0, 0);
+const DOWN45 = at(0, -Math.SQRT1_2, -Math.SQRT1_2);
+let seed = 12345;
+const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+let disagree = 0;
+for (let i = 0; i < 2000; i++) {
+  // The yaw form is this one with forward (sin yaw, 0, cos yaw) and right
+  // (-cos yaw, 0, sin yaw), and must answer the same for any case.
+  const yaw = rand() * 2 * Math.PI;
+  const victim = at(rand() * 200 - 100, rand() * 20, rand() * 200 - 100);
+  const source = at(rand() * 200 - 100, rand() * 20, rand() * 200 - 100);
+  const s = Math.sin(yaw), c = Math.cos(yaw);
+  if (hitFromDirOctant(victim, yaw, source)
+      !== hitFromDirOctantAxes(victim, at(s, 0, c), at(-c, 0, s), source)) disagree++;
+}
+results.hitFromDirAxes = {
+  atRest: {
+    front: hitFromDirOctantAxes(o, N, R, at(0, 0, -10)),
+    frontRight: hitFromDirOctantAxes(o, N, R, at(7, 0, -7)),
+    right: hitFromDirOctantAxes(o, N, R, at(10, 0, 0)),
+    rearRight: hitFromDirOctantAxes(o, N, R, at(7, 0, 7)),
+    rear: hitFromDirOctantAxes(o, N, R, at(0, 0, 10)),
+    rearLeft: hitFromDirOctantAxes(o, N, R, at(-7, 0, 7)),
+    left: hitFromDirOctantAxes(o, N, R, at(-10, 0, 0)),
+    frontLeft: hitFromDirOctantAxes(o, N, R, at(-7, 0, -7)),
+  },
+  // Nose 45 degrees down: along the nose is the front, level ahead is 45
+  // degrees off it, and a right dot of 0 is the right.
+  pitchedAlongNose: hitFromDirOctantAxes(o, DOWN45, R, at(0, -10, -10)),
+  pitchedLevelAhead: hitFromDirOctantAxes(o, DOWN45, R, at(0, 0, -10)),
+  // On the hull's own origin: the identity look-at, this frame's -z, which
+  // is a hull at rest's nose.
+  coincident: hitFromDirOctantAxes(at(3, 4, 5), N, R, at(3, 4, 5)),
+  disagreeWithYaw: disagree,
 };
 
 results.hitFromDirAlpha = {

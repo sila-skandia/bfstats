@@ -495,6 +495,16 @@ export function installVehicleHooks(page) {
       drive: seat.drive ? seat.drive.constructor.name : null,
       pos: s ? [s.position.x, s.position.y, s.position.z] : null,
       speed: s ? Math.hypot(s.velocity.x, s.velocity.z) : null,
+      // The root's world frame, the one a hit hull's wash is measured in
+      // (ledger HFD-11): its origin, and its nose (-z) and right (+x).
+      axes: (() => {
+        const q = seat.root.getWorldQuaternion(new THREE.Quaternion());
+        return {
+          origin: seat.root.getWorldPosition(new THREE.Vector3()).toArray(),
+          forward: new THREE.Vector3(0, 0, -1).applyQuaternion(q).toArray(),
+          right: new THREE.Vector3(1, 0, 0).applyQuaternion(q).toArray(),
+        };
+      })(),
       guns: [...seat.groups.driven, ...seat.groups.manned]
         .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots })),
     };

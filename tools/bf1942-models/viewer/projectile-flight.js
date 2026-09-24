@@ -375,7 +375,7 @@ export function advanceTracers(guns, dt) {
       // Distance flown to the surface itself: the frame's step overshoots
       // it, and a slow frame at 1000 m/s overshoots it by tens of metres.
       impact(guns, tracer.group, tracer.group.stats.projectile, struck,
-                   tracer.velocity, tracer.travelled - step + struck.t);
+                   tracer.velocity, tracer.travelled - step + struck.t, tracer.origin);
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);
@@ -440,7 +440,7 @@ export function advanceProjectiles(guns, dt) {
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
-                     shot.velocity, shot.travelled - step + struck.t);
+                     shot.velocity, shot.travelled - step + struck.t, shot.origin);
         recycle(guns, shot, i);
         continue;
       }
@@ -481,7 +481,7 @@ export function advanceProjectiles(guns, dt) {
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
-                     shot.velocity, shot.travelled - step + struck.t);
+                     shot.velocity, shot.travelled - step + struck.t, shot.origin);
         recycle(guns, shot, i);
         continue;
       }
