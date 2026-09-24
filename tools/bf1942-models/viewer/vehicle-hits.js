@@ -194,11 +194,6 @@ export function createVehicleHits(page) {
     return targets;
   }
 
-  /** The bot whose seat fired the round behind `record` (`record.firerGroup`). */
-  function botFiringGroup(record) {
-    return page.vehicles.firerOf(record?.firerGroup);
-  }
-
   /** `playerId`'s side, or null for nobody the world knows. */
   function teamOf(playerId) {
     return playerId != null ? page.world?.player(playerId)?.team ?? null : null;
@@ -263,10 +258,12 @@ export function createVehicleHits(page) {
     // round: the hit that wrecks a manned hull still marks.
     const marks = marksTheCrosshair(record);
     if (record?.target != null) applyRoundToSoldier(record);
-    // Whose round it is: the seat's holder, else the human's own hand weapon
-    // (bots resolve their hand weapons in the referee and never fire a
-    // `gunfire.js` round). The hull keeps it, so its crew's deaths name him.
-    const attacker = botFiringGroup(record) ?? page.LOCAL_PLAYER;
+    // Whose round it is (`roundFirer`): the seat's holder, else the hand
+    // weapon's own tag -- the human's, or a bot's rocket launcher
+    // (`bot-rounds.js`) -- else the human's, as a round nobody can name has
+    // always been billed. The hull keeps it, so its crew's deaths name him,
+    // and a bot's blast is his kill.
+    const attacker = roundFirer(record?.firerGroup) ?? page.LOCAL_PLAYER;
     // The round's side, for `calcDamage` (`friendly-fire.js`): a hull of its
     // own side's is priced by the vehicle ratio, a blast by the splash pair.
     // A round nobody can name has no side and is never scaled.
@@ -386,7 +383,8 @@ export function createVehicleHits(page) {
 
   /** Whose round it is: the player in the seat that fired `group`, else the
    *  player a hand weapon's group was tagged with when it was built
-   *  (`hand-weapon.js`), else null -- a replayed round, or one still in the
+   *  (`hand-weapon.js`; a bot's rocket launcher, `bot-rounds.js`), else null
+   *  -- a replayed round, or one still in the
    *  air from a seat since vacated. The tag rides on the group object, which
    *  every round keeps, so a weapon swapped while its round flies still
    *  answers. */
