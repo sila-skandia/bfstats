@@ -94,6 +94,29 @@ for proj in bf1942-client linux-server; do
     "$PROJECTS_DIR/$proj.rep/project.prp"
 done
 
+# --- 5b. Viewer map assets (vanilla; Berlin + Bocage) ---------------------------
+# The viewer/sim code is committed, but the baked asset trees are gitignored:
+# viewer/models (vanilla only — the mods/ tree is not shipped) and
+# viewer/maps/{berlin,bocage,_shared}. They live on the same release.
+VIEWER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/viewer"
+ASSET_BASE="https://github.com/$REPO/releases/download/$RELEASE_TAG"
+for name in viewer-vanilla.zip map-berlin.zip map-bocage.zip; do
+  if ! [ -f "$WORK/$name" ]; then
+    echo "[setup] fetching $name"
+    curl -fSL --retry 5 --retry-all-errors -o "$WORK/$name" "$ASSET_BASE/$name"
+  fi
+done
+if ! [ -d "$VIEWER_DIR/models" ]; then
+  echo "[setup] restoring viewer models"
+  unzip -q -o "$WORK/viewer-vanilla.zip" -d "$VIEWER_DIR"
+fi
+for map in berlin bocage; do
+  if ! [ -d "$VIEWER_DIR/maps/$map" ]; then
+    echo "[setup] restoring map $map"
+    unzip -q -o "$WORK/map-$map.zip" -d "$VIEWER_DIR"
+  fi
+done
+
 # --- 6. Summary -----------------------------------------------------------------
 cat <<EOF
 
