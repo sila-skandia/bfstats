@@ -75,7 +75,10 @@ later bot-behaviours §7 calls the default unread. Each pass, for both sides:
 
 For every alive bot, its area (`areaAt` its position) gains it in `present`,
 `friendly += 1` for its side and `enemy += 1` for the other (`SAI.unitValue`
-1 per soldier, INVENTION). Then per area and side:
+1 per soldier, INVENTION). A bot in an aircraft's own seat is not counted in
+`present` (the hold): `AIStrategicArea::update` 0x0863d6d0 skips an object with
+the air bit in both counts (0x0863e182, 0x0863e1e5) and counts its secondary
+seats without the test (AI-127). Then per area and side:
 
 ```
 status      = Owned | Hostile | Neutral           (ownerOf vs side)

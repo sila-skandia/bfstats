@@ -396,6 +396,41 @@ which the bot tests then covered.
    Brief P's re-bake (161 of 238 levels; the live copies are intact); EoD is
    parked, and its next publish must restore them first (`extract_search_maps.py`
    on main writes them).
+   Brief R (item 10) closed (a) (AI-127) and (c) for the runner's seeds:
+   El Alamein seed 9 has 0 failures, seed 10 has 4.
+
+10. **The tank that sees, scores and fires like the engine's (Brief R,
+   2026-09-24; AI-123..AI-127).** ~~The sense rays aim at a soldier's
+   heights on a hull~~ fixed (AI-123): a mounted bot's rays start at its
+   seat's camera and go to the hull's position and random points on its
+   collision triangles, and a tank in MoveTo turns its turret down the hull
+   (`BAPALookAhead`; on the page nothing turned it, so the pair met with
+   their turrets away). ~~Tanks score on the large-bore rule~~ fixed (AI-124,
+   corrects AI-54): Tank, Fixed and LandingCraftFixed units run `BBFire`
+   (`equipmentType`, now in `vehicle-ai.json`, live): the spotted list only,
+   so an unseen enemy inside 850 m no longer holds a tank in Fire. ~~The
+   trigger's own line test~~ gone for tanks (AI-125): the fire plan runs only
+   while S holds and fires on the precision. ~~The approach aims at blocked
+   pixels~~ fixed (AI-126): the first valid pixel toward the bot within 0.9
+   maxRange. ~~An orbiting aircraft holds an area~~ fixed (AI-127). The live
+   pair (the worktree's page, K's placement): both sense the other at 20 /
+   21 s, 51 m apart, and hold; run 1 the PanzerIV's first round at 23 s, 3
+   rounds in 45 s, the Sherman 100 -> 62.5 HP; run 2 the Sherman killed by
+   38 s. Runner, SAI, 8 a side, 600 s, seeds 1..10 (Axis / Allies), before ->
+   after: El Alamein captures 1.7 / 1.9 -> 2.4 / 1.3, deaths 3.2 / 7.7 ->
+   3.7 / 9.4, route failures 1 / 67 -> 1 / 1; Bocage captures 1.4 / 2.2 ->
+   1.2 / 2.3, deaths 8.2 / 6.9 -> 3.9 / 3.1, route failures 6 / 11 -> 10 / 2.
+   Open: (a) live the Sherman holds S with a 10.7 m miss and never fires at
+   the PanzerIV 9 m above it: S takes the ControlInfo camera window, not the
+   barrel's own limits (`approachAimValid`, INFERRED); (b) the firing point's
+   decision table read in part (a tank is taken never to take a portal
+   decision, INFERRED); (c) a soldier's sense point is still the height
+   spread, not the engine's random bone; (d) the approach's goal leaves out
+   the target's last valid position and the strategic fallback; (e) a fixed
+   AA gun in El Alamein's pits never sees a soldier on the flat (its camera
+   is under the sandbag lip) and so, now, never fires at one: the engine's
+   rule, unconfirmed in game; (f) Bocage seeds 2 and 3 keep 37 and 42 route
+   failures (not traced).
 
 ## Brief Q (2026-09-24): a carrier's deck aircraft is a unit of its own
 
