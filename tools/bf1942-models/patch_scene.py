@@ -122,6 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"layers:   {' '.join(layers)} (with what reads them)", file=sys.stderr)
     game_dir = args.game_dir.expanduser()
     tree = args.tree or scene_layers.tree_for(args.out, args.mod)
+    if not tree.is_dir():
+        # A fresh worktree has no maps tree of its own (`link_viewer_assets.sh`
+        # links the shared one); say so rather than trace back.
+        sys.exit(f"no maps tree at {tree}; pass --out or --tree")
     wanted = [*args.levels, *args.more_levels]
     if args.all:
         wanted = [p.name for p in sorted(tree.iterdir()) if (p / "scene.json").is_file()]
