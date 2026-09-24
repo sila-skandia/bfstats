@@ -107,15 +107,34 @@ export class ChatLog {
 
 // --- the lines the game writes ----------------------------------------------
 
-/** The bracketed word of a kill line: the lexicon string for the killer's
- *  vehicle template when he was in one (`[Tiger]`), else the lexicon's
- *  `DEFAULT_KILL_TEXT`. The server stamps the event with the root vehicle's
- *  template for a seated shooter (`FireArms::fireBarrel`); every on-foot kill
- *  in the retail captures reads `[killed]`, so a hand weapon's name is not
- *  printed here (the client's lookup for it is still an open question). */
-export function killWord(vehicleTemplate, strings, names) {
-  if (vehicleTemplate) return names?.[vehicleTemplate] ?? vehicleTemplate;
+/** The bracketed word of a kill line: the lexicon string for the template the
+ *  server stamped on the kill (`stamp`), else the lexicon's
+ *  `DEFAULT_KILL_TEXT`. The client (`FUN_004933d0` case 3, 0x00494342) starts
+ *  from the key `"DEFAULT_KILL_TEXT"`, replaces it with the stamped template's
+ *  name when the template manager resolves the id (`DAT_0097d768` vt+0x1c,
+ *  the name vt+0x14), and localises whichever key it holds through
+ *  `Locale::getWide` 0x005815b0 -- which, on a key no lexicon has, widens the
+ *  key itself (0x00581470). So `Sg44` prints `[StG 44]`, `K98` `[K 98]`, and a
+ *  `K98Sniper`, which no vanilla lexicon names, prints `[K98Sniper]`. */
+export function killWord(stamp, strings, names) {
+  if (stamp) return names?.[stamp] ?? stamp;
   return strings?.DEFAULT_KILL_TEXT ?? 'killed';
+}
+
+/** The template a kill is stamped with, `null` for none. A seated killer's is
+ *  his root vehicle's (`FireArms::fireBarrel`: `[Tiger]`), whatever the round
+ *  did. On foot it is the hand weapon that fired the killing round
+ *  (`[Thompson]`); a death by an explosion's area damage or under a vehicle
+ *  carries none and prints `[killed]` (the owner's reading of retail play,
+ *  2026-09-24: on-foot kills always name the weapon, `[killed]` is a man run
+ *  over or caught by splash). `how` is `{ weapon, splash, roadkill }` from the
+ *  damage that killed him; `killer.weapon`, the weapon he holds now, stands in
+ *  when the damage path did not say which. */
+export function killStamp(killer, how = null) {
+  if (how?.roadkill) return null;
+  if (killer?.vehicle) return killer.vehicle;
+  if (how?.splash) return null;
+  return how?.weapon ?? killer?.weapon ?? null;
 }
 
 /** Kill (score event 3): `killer [word] victim`, the killer's team and flag. */
@@ -139,8 +158,9 @@ export function deathLine(name, strings) {
  * The kill-section lines one death writes, and the text the victim sees in
  * the centre of his screen: `[{ text, team, who }]` plus `centre`, `who`
  * being `'killer'` or `'victim'` (whose buddy colour the line takes).
- * `victim` and `killer` are `{ id, name, team, vehicle }`, `killer` null for
- * a death nobody caused.
+ * `victim` and `killer` are `{ id, name, team, vehicle, weapon }`, `killer`
+ * null for a death nobody caused; `how` is the killing damage's
+ * `{ weapon, splash, roadkill }` (`killStamp`).
  *
  * A death is the same event whatever killed him: a soldier shot on foot and a
  * crewman who dies with his hull both come off the server as score event 3
@@ -150,7 +170,7 @@ export function deathLine(name, strings) {
  * 0x008d96b0 around the lexicon word). A team kill is 6 then 4, both team 0;
  * no killer, or his own hand, is 4, `is no more`.
  */
-export function deathLines(victim, killer, strings, names) {
+export function deathLines(victim, killer, strings, names, how = null) {
   if (killer && killer.id !== victim.id) {
     if (killer.team && killer.team === victim.team) {
       const tk = teamKillLine(killer.name, strings);
@@ -160,7 +180,7 @@ export function deathLines(victim, killer, strings, names) {
         centre: tk,
       };
     }
-    const text = killLine(killer.name, victim.name, killWord(killer.vehicle, strings, names));
+    const text = killLine(killer.name, victim.name, killWord(killStamp(killer, how), strings, names));
     return { lines: [{ text, team: killer.team, who: 'killer' }], centre: text };
   }
   const text = deathLine(victim.name, strings);

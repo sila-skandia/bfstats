@@ -335,8 +335,10 @@ export function createComms(page) {
 
   /**
    * A soldier died. `victim` and `killer` are `{ id, name, team, local,
-   * vehicle }` (`vehicle` the template the killer sat in, if any); `killer`
-   * null for a death nobody caused.
+   * vehicle, weapon }` (`vehicle` the template the killer sat in, if any,
+   * `weapon` the hand weapon he holds); `killer` null for a death nobody
+   * caused. `how` is the killing damage's `{ weapon, splash, roadkill }`,
+   * which picks the kill line's bracketed word (`chat-log.js` `killStamp`).
    *
    * An ordinary kill prints the killer's line in his colour under his flag
    * (score event 3); the victim's own death is the no-message kind (5). A team
@@ -345,8 +347,8 @@ export function createComms(page) {
    * `is no more` (4). The victim also gets the line in the centre of his
    * screen (0x006A88E0) when he is the local player.
    */
-  comms.onKill = (victim, killer) => {
-    const { lines, centre: centreText } = deathLines(victim, killer, strings(), chatLayout?.names);
+  comms.onKill = (victim, killer, how = null) => {
+    const { lines, centre: centreText } = deathLines(victim, killer, strings(), chatLayout?.names, how);
     for (const { text, team, who } of lines) {
       chat.add(SECTION_KILL, { text, team, buddy: isBuddy(who === 'killer' ? killer : victim) });
     }
@@ -356,15 +358,18 @@ export function createComms(page) {
     dirty = true;
   };
 
-  /** Remember who last hit a player, so a death the page only notices later
-   *  (the local soldier's Armor running out) still names its killer. */
-  comms.noteAttack = (victimId, killer) => {
-    lastAttack.set(victimId, { killer, at: performance.now() });
+  /** Remember who last hit a player and with what (`how`, as `onKill` takes
+   *  it), so a death the page only notices later (the local soldier's Armor
+   *  running out) still names its killer and his weapon. */
+  comms.noteAttack = (victimId, killer, how = null) => {
+    lastAttack.set(victimId, { killer, how, at: performance.now() });
   };
-  comms.lastAttacker = (victimId, withinMs = 5000) => {
+  /** The last attack on `victimId` inside `withinMs`: `{ killer, how }`. */
+  comms.lastAttack = (victimId, withinMs = 5000) => {
     const hit = lastAttack.get(victimId);
-    return hit && performance.now() - hit.at <= withinMs ? hit.killer : null;
+    return hit && performance.now() - hit.at <= withinMs ? hit : null;
   };
+  comms.lastAttacker = (victimId, withinMs = 5000) => comms.lastAttack(victimId, withinMs)?.killer ?? null;
 
   /** A control point changed hands: the game-information line, to everyone,
    *  and the all-points line when one side now holds every point. */
