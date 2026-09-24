@@ -572,8 +572,8 @@ export function createBotReferee(env) {
    * (the shared `BAPConWeaponMagAmmo(weapon, 0, false)`) only for a weapon
    * without `autoReload` (`hasAutoReload` 0x085ee890) whose `getNMags`
    * (0x085ef650, the magazines it carries) is not 1. A Bazooka's plan
-   * therefore rides its 5.6 s reload out aiming, as the engine's does
-   * (ledger AI-130).
+   * therefore rides its round's fire cycle and 5.6 s reload out aiming, as
+   * the engine's does (ledger AI-130).
    *
    * PARITY DEPARTURE, measured (features/bot-weapons, ledger AI-132): `BBFire::
    * calculateUrgency` 0x08563570 divides a weapon's strength by `(20 (shots
