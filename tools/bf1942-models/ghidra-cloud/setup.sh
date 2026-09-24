@@ -59,7 +59,40 @@ export GHIDRA_INSTALL_DIR="$GHIDRA_HOME"
 # --- 4. Game binaries from the release -----------------------------------------
 cd "$WORK"
 echo "[setup] downloading binaries from release $RELEASE_TAG"
-gh release download "$RELEASE_TAG" --repo "$REPO" --clobber
+
+# Release assets live on a PRIVATE repo, so downloading needs auth. Try gh
+# first (github.com CLI); then apt; then raw API calls with a session token.
+download_release_assets() {
+  local out_dir="$1"
+  if command -v gh >/dev/null 2>&1; then
+    gh release download "$RELEASE_TAG" --repo "$REPO" --clobber -D "$out_dir" && return 0
+  fi
+  echo "[setup] gh not found; trying apt-get install gh"
+  if command -v apt-get >/dev/null 2>&1; then
+    (sudo apt-get update -qq && sudo apt-get install -y -qq gh) \
+      && gh release download "$RELEASE_TAG" --repo "$REPO" --clobber -D "$out_dir" && return 0
+  fi
+  echo "[setup] falling back to the GitHub REST API"
+  # The cloud sandbox's GitHub proxy substitutes real credentials for the
+  # GH_TOKEN placeholder on outbound GitHub requests, so the header below
+  # works whether GH_TOKEN is a real PAT or the proxy placeholder.
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  if [ -z "$token" ]; then
+    echo "ERROR: no gh CLI and no GH_TOKEN/GITHUB_TOKEN to fetch private release assets" >&2
+    return 1
+  fi
+  local api="https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
+  local asset_url name
+  curl -fsSL --retry 5 --retry-all-errors -H "Authorization: Bearer $token" "$api" \
+    | python3 -c 'import json,sys; [print(a["name"], a["url"]) for a in json.load(sys.stdin)["assets"]]' \
+    | while read -r name asset_url; do
+        echo "[setup] fetching $name"
+        curl -fSL --retry 5 --retry-all-errors -H "Authorization: Bearer $token" \
+          -H "Accept: application/octet-stream" -o "$out_dir/$name" "$asset_url"
+      done
+}
+download_release_assets "$WORK"
+
 sha256sum bf1942_lnxded.static BF1942.exe
 # expected:
 #   496672374c27c62490bdc7ad93ae225a2195d1de0a4a3516e07060dccc447cf2  bf1942_lnxded.static
