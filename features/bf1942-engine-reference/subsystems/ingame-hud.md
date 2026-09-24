@@ -356,6 +356,87 @@ vehicle-health bar must bind to the vehicle **root**, not the occupied seat;
 switching seats within one vehicle never changes the displayed HP (see also
 [hitpoints-and-damage.md](hitpoints-and-damage.md) HP-12).
 
+## 7. Crosshair hit indication (XHIT-1..XHIT-10, 2026-09-24)
+
+The four short diagonals that flash at the corners of the crosshair when the
+local player's round hits someone. Asked from the owner's recording (Berlin,
+DP on foot, 1280×720 of a 2560×1440 game) and traced end to end through both
+binaries.
+
+**It is data, not code.** `menu/InGame`'s crosshair top has a third branch
+beside the crosshair itself and the scope overlay: a `TransformNode`
+(390,290,20,20) whose children are three effects and four quads.
+
+```
+BfMultiplyColorEffect2 { Alpha = CrossHair/HitIndicationTime }
+VariableColorEffect    { CrossHairRed/256, CrossHairGreen/256, CrossHairBlue/256, CrossHairAlpha }
+RotateEffect           { Angle 0.8, multiplier 0 }
+PictureNode '' at (-3,-2) 1x3     top-left, turns into  \
+PictureNode '' at (18,-1) 3x1     top-right             /
+PictureNode '' at (-3,20) 3x1     bottom-left           /
+PictureNode '' at (19,19) 1x3     bottom-right          \
+```
+
+Its only gates are the group's `ShowCrossHair` and not-periscope — no
+`CrossHairType`, no `ScopeIndex` — so it draws over a scope, an icon crosshair
+or no crosshair at all, which is why the owner sees it in a plane, a tank and
+on foot alike. 17 of 18 installs carry it byte for byte; bfheroes draws a
+96×96 picture instead. The flattener used to lose both the rotation and the
+alpha binding, so the four quads came out as always-on near-black ticks and
+the viewer had to hide the whole group in hip fire to keep them off screen.
+
+**Colour and alpha.** `VariableColorEffect::apply` (`0x006017c0`) *sets* the
+quad's four vertex colours; `BfMultiplyColorEffect2::apply` (`0x007d5990`)
+*multiplies* them. The effect list is walked innermost first (`0x007ed780`),
+so the multiply lands last and the marks are
+`(R/256, G/256, B/256, CrossHairAlpha × t)`. `CrossHairAlpha` is never
+registered by the client and keeps the file's 1.0. R/G/B are the profile's
+`game.setCrossHairColor` (0–255): the shipped default profile is yellow
+`255 255 0`, the owner's is red `255 0 0`.
+
+**The timer.** `HitIndicationTime` is a HUD float at `+0x26c`, copied once per
+rendered frame from the local player's `+0x1cc` (`0x006aeba1`). A hit sets it
+to 1.0; `BFPlayer::update` (`0x00406890`, lnxded `0x080522d0`) runs it down
+`t = max(0, t − dt)`. One hit is one second from full to nothing; another hit
+resets it to 1.0, so an automatic weapon holds the marks at full for the
+length of the burst — the capture's DP bursts do exactly that.
+
+**What raises it — the server decides.** `GameServer::giveDamage` (lnxded
+`0x0814b2e0`), before any damage is computed:
+
+- `game.serverHitIndication` is on (`setup+0x324`; the shipped
+  `ServerSettings.con` says `1`);
+- the attacker id is not −1 and the firing weapon's stat id is ≥ 0;
+- the attacker has a `BFPlayer`;
+- the damaged object's root parent is a `PlayerControlObject` whose
+  `getTeam()` is non-zero.
+
+There is no team comparison, so a friendly hit marks exactly like an enemy one
+(the owner's observation), and it runs before `calcDamage`, so a friendly-fire
+setting that zeroes the damage does not suppress it. Only
+`handleCollisionForProjectile` passes a real attacker and stat id (the round's
+owner and `FireArms::fireBarrel`'s stat id). Vehicle rams, falls, `killPlayer`
+and the combat-area damage all pass −1. Explosions never reach `giveDamage`:
+`handleExplosionOnObject` queues the damage and `gameStatusPlaying` applies it
+through `_giveDamage`, which has no hit-indication code. **So: a direct
+projectile hit, never splash.** A vehicle's team is its occupants'
+(`setTeam` counts them in, `clearTeam` zeroes the team when the last leaves),
+so an empty vehicle or emplacement never marks.
+
+**Delivery** (XHIT-6): a listen server writes its own player's timer
+directly; a remote shooter's connection gets a `GhostManager` flag, sent as
+one bool of the next control-object state and cleared once sent, which the
+client turns into `timer = 1.0`.
+
+**Geometry** (XHIT-8, inferred from the capture): each quad turns about its
+own centre, in the 800×600 frame, before the HUD's per-axis stretch; the four
+predicted mark centres land within a pixel of the capture's.
+
+**Still open:** XHIT-9, whether the HUD batch alpha-tests (which would cut the
+marks off before `t` reaches 0 — the capture cannot say through its H.264 skip
+blocks); XHIT-5's keep-team template flag; XHIT-10's callers of the
+`CrossHair` group's `show()`/`hide()`.
+
 ## Open
 
 - **HUD-1**: `RegisterPictureVariable`'s third argument — a real field
