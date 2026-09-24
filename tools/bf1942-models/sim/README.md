@@ -207,6 +207,7 @@ nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
 | `target` | the firing target's id |
 | `veh` | `{id, template, seat, drives}` when mounted; `id` is the hull's scene node name on a real level (`sherman_2`) |
 | `route` | `{points, failed}` of the followed route |
+| `fa` | a tank's fire approach this tick (`bot-plans.js execFireApproach`): `move` (`hold`, `point`, `find`, `end`, `unblock-close`, `unblock-back`), `dist`, the S terms `inRange` / `seen` / `aim`, `muzzle` (the barrel's line, null when not tested) and `pitch` (the aim's pitch in the hull's frame, deg) |
 | `terms` | the winning behaviour's inputs (`moveTo`: `dist`, `radius`, `factor`, `q` = d²/4(R+r)², `shaped`; `scout`: `dir`, `accum`, `quad`; `takeCover`: `danger`, `cover`, `goal`; `special`: `target`, `arrive`; `change`: `best`, `u`, `bail`, `teleport`; `avoid`: `threat`), plus `fire` (`target`, `score`, `weapon`, `dist`, `visible`) whenever a target is held |
 
 `{"k":"ev", "t", "type", ...}` — events:
@@ -243,7 +244,7 @@ in header order (control points only).
 bot-seconds / alive bot-seconds, `mounts`, `mountsByTemplate`, `destroyed`),
 `vehicleKills` (hulls destroyed: `total`, by the killer's side `1` / `2`,
 `unattributed`, `byTemplate`), `vehicleFire` (projectiles the bots' seats
-fired: `rounds`, `byKind`, `byTemplate`; null on the synthetic level),
+fired: `rounds`, `byKind`, `byTemplate`, `byGun` keyed `<template>/<gun node>`; null on the synthetic level),
 `routeFailures` (total and per bot), `redeploys`, `strategyChanges`,
 `botErrors`, `behaviourShare` (bot-seconds per active behaviour); `perBot`
 (kills, deaths, shots, hits, captures, route failures, redeploys, mounts,

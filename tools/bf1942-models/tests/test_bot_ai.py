@@ -719,3 +719,45 @@ class BriefLTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StalemateTests(unittest.TestCase):
+    """features/bot-stalemates: the rules that kept Bocage's tanks and
+    soldiers standing (bot_ai_harness.mjs `stalemateScenario`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.s = run_harness()["stalemate"]
+
+    def test_a_settled_single_shot_aim_fires(self) -> None:
+        # 1.0 -> 0.999 closes by 1 mm: the closest approach, 1.0 m inside 2 m.
+        self.assertEqual(self.s["settle"], [False, False, False, False, True, False])
+        # Settled outside the precision: no round.
+        self.assertEqual(self.s["outside"], [False, False, False])
+
+    def test_the_aim_window_is_the_hull_frame(self) -> None:
+        # 12 deg down is past the 5 deg depression on the flat...
+        self.assertFalse(self.s["flatDown12"])
+        # ...and 2 deg down for a hull nosed 10 deg down a slope.
+        self.assertTrue(self.s["noseDown10Down12"])
+        self.assertTrue(self.s["flatUp11"])
+        self.assertFalse(self.s["flatUp25"])
+
+    def test_the_door_walk_ends_beside_the_hull(self) -> None:
+        b = self.s["behind"]
+        # From behind: out to the side line first, then abreast of the door,
+        # 2.75 m (3.5 - 0.75) to the soldier's side.
+        self.assertAlmostEqual(b["goal"][0], 2.75, places=6)
+        self.assertAlmostEqual(b["goal"][1], 0.0, places=6)
+        self.assertAlmostEqual(b["pre"][0], 2.75, places=6)
+        self.assertAlmostEqual(b["pre"][1], 6.0, places=6)
+        side = self.s["beside"]
+        self.assertAlmostEqual(side["goal"][0], -2.75, places=6)
+        self.assertIsNone(side["pre"])
+        # A door too small to stand off from: walk to the door.
+        self.assertIsNone(self.s["tiny"])
+
+    def test_a_tank_under_a_high_target_backs_off(self) -> None:
+        # 20 m of rise (the aim point 1 m up the target, the barrel 2 m up
+        # the tank) inside 18 deg (the 20 deg top less 2): 61.6 m out.
+        self.assertAlmostEqual(self.s["backDist"], 20 / math.tan(math.radians(18)), places=3)
