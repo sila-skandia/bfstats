@@ -29,16 +29,13 @@ the crouch (PHY-8, BODY-1). The prone was right. The snap was the bug.
 The variety the owner remembers has two sources, and neither is random tie-breaking:
 
 - **Terrain and cover.** The engine's prone eye is 0.30 m over the feet. A rise, a sandbag or a wall edge
-  blocks that line, and the bot kneels or stands. The viewer's prone eye is 0.40 m, which sees over more.
-  Its line also runs to the target's feet + 1.0 m, where the engine's runs to the point the bot sensed on
-  the target (BODY-5).
-- **Bots that are not firing.** Scout and TakeCover pick their pose with a variable component (BODY-6).
-  A bot stands where his side holds the ground and crouches where it does not. He lies down only once the
-  fire at him passes his own random threshold, and the pose is re-decided every 5 s. The viewer's Scout
-  lies down under fire and otherwise stands.
+  blocks that line, and the bot kneels or stands (BODY-5).
+- **Bots that are not firing.** Moves, Scout and TakeCover's walk to cover pick their pose with a
+  variable component (BODY-6, BODY-12). It stands, and lies down once the fire at the bot passes his own
+  random threshold. Its crouch branch never fires in the retail game. A pose change other than going
+  prone waits 10 s after the last one (BODY-10).
 
-Both are sim changes in `bot-fire.js` and `bot-plans.js`, outside this work's files. They are listed
-under Open.
+[`bot-stance-variety`](../bot-stance-variety/README.md) builds both.
 
 ## What was wrong
 
@@ -206,13 +203,14 @@ The full suite after the rebase is 3,227 tests, all OK.
 
 ## Open
 
-1. **The stance flicker is still in the sim.** `bot-decision.js` lets Change win a single tick of a
-   fight, and the Change plan (`bot-mount.js` `planChange`) starts with `SoldierPose` 'stand'. The body
-   hides it, but the sim still flips.
-2. **Firing pose.** `bot-fire.js` `firingPose` uses eyes of 0.4 / 1.1 / 1.6 m, where the engine's are
-   0.30 / 1.12 / 1.65 m. It aims at the target's feet + 1.0 m, not the sensed point, and nothing passes
-   the LOD force (BODY-5).
-3. **Scout and TakeCover.** The variable pose (BODY-6) is not built.
+1. **The stance flicker.** Fixed by [`bot-stance-variety`](../bot-stance-variety/README.md). The
+   one-tick behaviour flips are the engine's, but the stance no longer follows them: Change has no pose
+   statement, nothing resets the stance, and pose changes pass the 10 s gate (BODY-10, BODY-14).
+2. **Firing pose.** Fixed by `bot-stance-variety`: the eyes are the pose cameras, 0.30 / 1.12 / 1.65 m,
+   and the line runs to the sensed point. The LOD force is not passed, because the viewer has no bot
+   LOD (BODY-5).
+3. **Scout and TakeCover.** Fixed by `bot-stance-variety`: the variable pose (BODY-6), with the moves'
+   own (BODY-12) and TakeCover's two plans (BODY-13).
 4. **The Bazooka's shot.** Fixed by features/bot-weapons: the referee starts the reload once the
    round's fire cycle is spent (BODY-7, AI-133), so the fire clip plays for its second first.
 5. **The local player's stance timings.** `soldier.js` `STANCE_TRANSITION` and
