@@ -174,7 +174,13 @@ export function chooseFiringTarget(bot, now) {
       const v = s.body?.body?.velocity;
       return v ? [v.x, v.y, v.z] : [Math.sin(s.yaw) * (s.speed ?? 0), 0, Math.cos(s.yaw) * (s.speed ?? 0)];
     },
-    typeOf: () => 'Infantry',
+    // The target's own class, a seated man's his hull's (`unitInfo`): the
+    // weapon is chosen on each weapon's `strength[type]` (`BBFire::
+    // calculateUrgency` 0x08563570 indexes the strength table by the
+    // target's type, ledger AI-132). Read as Infantry for every target, a
+    // German AT soldier's WalterP38 (3) outscored his Panzershreck (2)
+    // against a tank, so he never fired it at one (features/bot-weapons).
+    typeOf: id => bot._unitInfo(id)?.type ?? 'Infantry',
     currentTarget: bot.firingTarget,
     currentScore: bot.targetScore,
     insideOrderedArea: bot._insideOrderedArea(),
