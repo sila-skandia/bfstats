@@ -488,3 +488,29 @@ time of the report, so none of these is a stale deploy.
   (`world-fire.js`, `vehicle-hits.js`). Recipe to build first: the human
   in the AA gun or a Browning, a bot plane on a scripted pass, the round
   cast's miss distance logged against the hull's live bounds.
+
+## Tanks stopped at the wire (2026-09-24, owner report)
+
+Report: El Alamein's panzers roll up to the outside of an enemy flag and
+never take it; Bocage's tanks reach their bridge flags and go no further;
+stopped tanks sit with the turret pointing up.
+
+Cause: barbed wire. Every El Alamein outpost, both bases and Bocage's
+Bridge flag are ringed with `stebarbwire_m1`, an `Obstacle` class object.
+`Obstacle::handleCollision` 0x08315e10 returns true only for a soldier;
+against anything else it messages itself (vt+0x9c, `handleMessage(0, 0)`)
+and returns false, which vetoes the response (collision-response.md §6.2),
+so the engine's hulls roll through wire. The levels' own Tank0 maps paint
+the wire free for the same reason (Infantry1 blocks it). The viewer's
+hull-against-statics pass (`body-statics.js`) had no static handler, so a
+hull stopped dead on the wire the route drew straight through. The stall
+rule's 1.5 m circle 1 m ahead lies inside the hull and the rebuilt route
+went the same way, and the look-ahead pinned a barrel against its elevation
+stop on the hull's tilt (up to 176 s in one run).
+
+Fix: `WorldCollider.staticProbe().obstacle(owner)` reads the placed
+object's `templateKind`, and `collideWithStatics` skips the response for an
+Obstacle above the 0.1 threshold, after the body's own handler. Soldiers do
+not use that pass, so the wire still stops them. `sim/match.mjs` traces a
+driven hull's `drv` (`actionStatusDecision` state, drive, angle, steering
+point, speed).

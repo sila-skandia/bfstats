@@ -164,6 +164,19 @@ class BodyStaticsTests(unittest.TestCase):
         self.assertEqual(h["slowApplied"], 1)
         self.assertGreater(h["slowPosAdjust"][2], 0)
 
+    def test_a_hull_at_speed_passes_an_obstacle(self) -> None:
+        o = self.results["obstacle"]
+        # `Obstacle::handleCollision` is asked about the hit's owner and
+        # vetoes the response; barbed wire does not stop a hull.
+        self.assertEqual(o["fastApplied"], 0)
+        self.assertEqual(o["fastAsked"], [7])
+        self.assertVec(o["fastPosAdjust"], [0, 0, 0])
+        # Below the 0.1 threshold no handler runs and the wire pushes.
+        self.assertEqual(o["slowAsked"], 0)
+        self.assertEqual(o["slowApplied"], 1)
+        # Anything that is not an Obstacle still stops it.
+        self.assertEqual(o["wallApplied"], 1)
+
     # --- vertex accounting (5.5, 6.3) -------------------------------------
 
     def test_every_vertex_is_probed_and_contacts_do_not_stack(self) -> None:
