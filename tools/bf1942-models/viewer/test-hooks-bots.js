@@ -6,7 +6,7 @@ import { findPath, gridAt } from './nav-grid.js';
  * installed by it under `?shots`.
  *
  * `page` is the test hooks' own bag; this part reads:
- * `botBodies`, `botUnits`, `collectEntryPoints`, `entryPoints`, `referee`,
+ * `botBodies`, `botRounds`, `botUnits`, `collectEntryPoints`, `entryPoints`, `referee`,
  * `vehicleSpawnActive`, `world`.
  */
 export function installBotHooks(page) {
@@ -35,6 +35,9 @@ export function installBotHooks(page) {
   // every corpse still down (`bot-visuals.js`), so a headless check can tell a
   // death that played from one that was hidden.
   window.__botBodies = () => page.botBodies.debug();
+  // The bots' flown rounds (`bot-rounds.js`): the rocket launchers loaded and
+  // each bot's gun group, its shots and rounds in the air.
+  window.__botRounds = () => page.botRounds?.debug() ?? null;
   // A player's hit capsules this frame (`skeleton-hit.js`), as the referee
   // resolves rounds against them: null where nobody is drawn.
   window.__capsules = id => page.referee.capsulesOf(id);

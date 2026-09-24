@@ -432,7 +432,13 @@ export function firePlanDone(bot, plan, now) {
   if (!trigger) return true;
   if (now - plan.startedAt > trigger.timeout) return true;
   if (trigger.shots > 0 && (bot._shotsThisPlan ?? 0) >= trigger.shots) return true;
-  if (bot.magazineEmpty) return true;                 // an empty magazine
+  // An empty magazine breaks the loop only where `createFirePlan` 0x085ac240
+  // adds the break (the referee's `magazineEndsPlan`: no `autoReload`, more
+  // than one magazine), and here only a magazine this plan ran dry
+  // (INVENTION: a plan made while the reload runs rides it out aiming;
+  // ended at once, it was rebuilt, its route dropped, every frame of a 4 s
+  // reload). A Bazooka's plan never ends on it: it waits out the reload.
+  if (bot.magazineEmpty && bot.magazineEndsPlan !== false && (bot._shotsThisPlan ?? 0) > 0) return true;
   if (bot.world?.armorOf?.(plan.targetId)?.destroyed) return true;
   return false;
 }
