@@ -181,6 +181,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   // (hand-fire.js's `chainOnShot` pair).
   guns.onImpact = record => vehicleHits.applyVehicleHit(record);
   guns.bodyCast = vehicleHits.roundBodyCast;
+  guns.angleModOf = vehicleHits.angleModOf;
   guns.nearObjects = vehicleHits.proximityObjects;
   S.chainOnShot(guns, (group, rounds) => world?.fireStates.get(group.node)?.registerShot(rounds));
   // The runner's count is projectiles: a pull charges an unlimited gun

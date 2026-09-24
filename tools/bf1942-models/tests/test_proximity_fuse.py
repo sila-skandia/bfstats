@@ -38,7 +38,8 @@ MODULES = {name: VIEWER / name for name in (
     "bomb-release.js", "torpedo-run.js", "idle-vehicle.js",
     "world-collider.js", "static-index.js", "collision-meshes.js",
     "drivable-mask.js", "collision-materials.js", "heightfield.js",
-    "effects-core.js", "projectile-damage.js", "physics.js", "walking-body.js",
+    "effects-core.js", "projectile-damage.js", "crash-damage.js", "physics.js",
+    "walking-body.js",
     "soldier-resolve.js", "soldier-pose.js", "soldier-locomotion.js",
     "point-body.js", "fixed-step.js", "parachute.js", "contact-response.js",
 )}
