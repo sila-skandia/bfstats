@@ -289,6 +289,10 @@ export class MouseInput {
      *  a 0, so both default to false. */
     this.invertX = !!invertX;
     this.invertY = !!invertY;
+    /** `game.set{Inf,LandSea,Air}MouseInvert`: the options screen's INVERT
+     *  MOUSE box, one per profile, turning the look axis's up and down round
+     *  on that profile only. Off in every shipped profile. */
+    this.invertProfile = { common: false, infantry: false, landSea: false, air: false };
     this._pixelsX = 0;
     this._pixelsY = 0;
     this._x = 0;
@@ -339,6 +343,17 @@ export class MouseInput {
     const v = Number(value);
     if (Number.isFinite(v)) this.sensitivity[profile] = v;
     return this.sensitivity[profile];
+  }
+
+  /** `game.set*MouseInvert`. Returns what took effect. */
+  setInvert(profile, on) {
+    if (!PROFILES.includes(profile)) return undefined;
+    this.invertProfile[profile] = Boolean(Number(on));
+    return this.invertProfile[profile] ? 1 : 0;
+  }
+
+  invertFor(profile) {
+    return this.invertProfile[profile] ? 1 : 0;
   }
 
   /** Browser pixels, in the browser's own sense: `dx` right, `dy` down —
@@ -417,8 +432,9 @@ export class MouseInput {
     const countsY = this._pixelsY * this.countsPerPixel;
     const rateX = RATE_FACTOR * countsX * scale / elapsedSeconds;
     const rateY = RATE_FACTOR * countsY * scale / elapsedSeconds;
+    const flipY = this.invertY !== Boolean(this.invertProfile[use]);
     out.x = quantiseAxis(this.invertX ? -rateX : rateX);
-    out.y = quantiseAxis(this.invertY ? -rateY : rateY);
+    out.y = quantiseAxis(flipY ? -rateY : rateY);
     return out;
   }
 

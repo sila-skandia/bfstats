@@ -15,8 +15,12 @@ html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hi
 <canvas class="screen" id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
 <canvas class="screen" id="screen-mp" tabindex="0" aria-label="Multiplayer" hidden></canvas>
 <canvas class="screen" id="screen-cg" tabindex="0" aria-label="Custom Game" hidden></canvas>
+<canvas class="screen" id="screen-opt" tabindex="0" aria-label="Controls" hidden></canvas>
 <p id="status">Loading…</p>
 
+<script type="importmap">
+{ "imports": { "three": "../vendor/three.module.js" } }
+</script>
 <script type="module" src="./front-end.js"></script>
 </body>
 </html>

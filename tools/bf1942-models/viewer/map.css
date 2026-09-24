@@ -170,12 +170,15 @@ label.opt {
    screen at 11 included, though Escape takes that down before it gets
    here. The arrow cursor is the pointer's own, as it is on the way-in
    screen. */
-#menu-canvas {
+#menu-canvas, #menu-canvas-opt {
   z-index: 12;
   touch-action: manipulation;
 }
-#menu-canvas[hidden] { display: none !important; }
-#menu-canvas:focus-visible { outline: none; }
+#menu-canvas[hidden], #menu-canvas-opt[hidden] { display: none !important; }
+#menu-canvas:focus-visible, #menu-canvas-opt:focus-visible { outline: none; }
+/* The controls screen's preview (controls-preview.js) sits over its frame;
+   its place and size are set inline from the menu's stage. */
+.controls-preview[hidden] { display: none !important; }
 
 /* The debug gate. Everything in `#side` -- the level picker, fog,
    wireframe, vehicles, render-entire-map, pilot, spawn-on-foot and sound --
@@ -803,45 +806,3 @@ a { color: var(--accent); }
 }
 #roomIssue button:hover { border-color: var(--accent); color: var(--accent); }
 #roomIssue .ri-solo { color: var(--muted); }
-
-/* The control-map block: the player's own bindings, shipped defaults or an
-   imported profile's. Rows are trigger -> display strings in the game's own
-   wording (joystick buttons 1-based, as the options screen shows them). */
-#controls-profile {
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 12px;
-}
-#controls-profile .cp-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-}
-#controls-profile button {
-  cursor: pointer;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--text);
-  font-size: 11px;
-  letter-spacing: .04em;
-  padding: 3px 8px;
-}
-#controls-profile button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-#controls-details summary {
-  cursor: pointer;
-  margin-top: 6px;
-  user-select: none;
-}
-#controls-table { margin-top: 4px; max-height: 180px; overflow-y: auto; }
-.cp-bind {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 2px;
-}
-.cp-trigger { color: var(--muted); white-space: nowrap; }
-.cp-keys { color: var(--text); text-align: right; }
