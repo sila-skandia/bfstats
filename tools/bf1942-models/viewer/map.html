@@ -1318,7 +1318,7 @@ const soldierView = createSoldierView(bag(
   from(() => freeCamera, `applyLook setLook`),
   from(() => level, `collectSupplyDepots collider currentRoot world`),
   from(() => localLook, `footEyeCur footEyePrev footLookPending footPending footView presentAlpha`),
-  from(() => localPlayer, `deathCamAt deathCamPos deathCamShot deathCamTarget deathCamTimer
+  from(() => localPlayer, `deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
     dieOnFoot frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
   from(() => seatCamera, `serverSettings`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
@@ -1327,6 +1327,9 @@ const soldierView = createSoldierView(bag(
   {
     get camera() { return camera; }, get hudBridge() { return hudBridge; },
     get params() { return params; },
+    // Where the last man to hit the human stood (the message log's record of
+    // the attack): the side the corpse cam looks from.
+    lastAttackerAt: () => comms.lastAttack(LOCAL_PLAYER)?.killer?.position ?? null,
   },
 ));
 const footBodies = createFootBody(bag(
@@ -1472,10 +1475,10 @@ function localSpeaker() {
     id: LOCAL_PLAYER, name: room.roomName, local: true,
     team: room.roomJoined ? (room.roomClient?.hello?.team === 1 ? 1 : 2) : spawning.deployTeamId,
     vehicle: seat ? wrecks.templateNameOf(seat.root) || null : null,
+    weapon: soldierKit.handWeapon?.name ?? null,
     position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
   };
 }
-    weapon: soldierKit.handWeapon?.name ?? null,
 /** The message log's speaker for a player id: the human, a bot, or null. */
 function speakerOf(id) {
   if (id == null) return null;
@@ -1487,10 +1490,10 @@ function botSpeaker(bot) {
   return {
     id: bot.playerId, name: bot.name, team: bot.team, local: false,
     vehicle: bot.vehicle ? (bot.vehicle.template ?? null) : null,
+    weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null,
     position: at ? { x: at[0], y: at[1], z: at[2] } : null,
   };
 }
-    weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null,
 /** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
 const comms = createComms(bag(
   from(() => controls, `radioNumberOf`),

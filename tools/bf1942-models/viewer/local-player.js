@@ -361,20 +361,26 @@ export function createLocalPlayer(page) {
   // Measured on flat ground at g = -14.73, 30 HP, no kit damping: nothing below
   // 3.97 m, 1.2 HP at 4 m, 10.9 at 6 m, 21.7 at 7 m, lethal at 7.55 m.
 
-  // The death cam: on the on-foot soldier's death (HP ≤ 0) the game holds the
-  // camera floating above/by the corpse for a short beat before the deploy
-  // screen opens (see hitpoints-and-damage.md §7 'Client: local-player death' —
-  // `FUN_004933d0` → `SpawnScreenStuff::setVisible(true)`; the float is a brief
-  // beat, not a decoded client animation). `soldierDead` latches until respawn
-  // so a follow-up `__damage` on an already-dead body does not re-fire the flow.
+  // The death cam: on the on-foot soldier's death (HP ≤ 0) the camera holds on
+  // the corpse for a beat before the deploy screen opens (see
+  // hitpoints-and-damage.md §7 'Client: local-player death' — `FUN_004933d0` →
+  // `SpawnScreenStuff::setVisible(true)`; the beat is not a decoded client
+  // animation). `soldierDead` latches until respawn so a follow-up `__damage`
+  // on an already-dead body does not re-fire the flow.
   localPlayer.soldierDead = false;
-  localPlayer.deathCamTimer = 0;    // seconds left floating over the corpse before openDeploy
-  const DEATH_CAM_BEAT = 1.2;  // s — short float over the corpse before deploy shows
+  localPlayer.deathCamTimer = 0;    // seconds left on the corpse before openDeploy
+  // Long enough to watch the body go down: the deaths run 0.7 .. 1.6 s, and a
+  // man killed by a player should see that he was, and from where. The spawn
+  // screen covers the whole stage once it opens (`spawn-layout.json`: the kit
+  // column and the 512 px map pane), so this beat is the only look he gets.
+  const DEATH_CAM_BEAT = 3.0;
   const deathCamPos = new THREE.Vector3();
 
-  // How the death cam is framed, and for how long. Two settings, because the two
+  // How the death cam is framed, and for how long. Three settings, because the
   // deaths are showing different things: on foot the subject is the body that
-  // just fell over, and the camera floats right above it; killed inside a
+  // just fell over, framed from behind and above on the far side from the man
+  // who killed him (`soldier-view.js` `corpseCam`: `back` along the ground,
+  // `lift` over the pelvis, the look on the pelvis); killed inside a
   // vehicle the subject is the **burning hull**, and retail's shot of it (owner's
   // capture, 2026-09-23: a plane crash, a tank kill) is a plain overhead — the
   // camera snaps to a point straight above the wreck and looks straight down,
@@ -388,7 +394,10 @@ export function createLocalPlayer(page) {
   // (the client's own death cam was never decoded past `FUN_004933d0` opening
   // the spawn screen); they are framing.   [HOUSE RULES]
   const DEATH_CAM = {
-    foot:    { lift: 3.5, back: 0, pitch: -0.9,  beat: DEATH_CAM_BEAT },
+    // 4.6 m off the pelvis, 23 deg down: at the soldier's 57.3 deg the frame's
+    // top edge sits 5.6 deg above the horizon, so the ground out to the man
+    // who fired is in the picture behind the body.
+    foot:    { lift: 1.8, back: 4.2, beat: DEATH_CAM_BEAT },
     vehicle: { lift: 30,  back: 0, pitch: -Math.PI / 2 + 0.035, beat: 3.0 },
     // Killed in a seat by a round: a short float behind and above the man
     // slumped in his seat, pitched straight onto him (atan(3 / 2.5) = 0.876):
@@ -396,11 +405,9 @@ export function createLocalPlayer(page) {
     seat:    { lift: 3, back: 2.5, pitch: -0.876, beat: DEATH_CAM_BEAT },
   };
   localPlayer.deathCamShot = DEATH_CAM.foot;
-  /** What the death cam is framed on: `null` for the corpse's own eye — the
+  /** What the death cam is framed on: `null` for the corpse itself — the
    *  on-foot death — or `{ x, y, z, yaw }`, the burning hull the player was in. */
   localPlayer.deathCamTarget = null;
-  /** Reused so the death cam costs no allocation per frame. */
-  const deathCamAt = { x: 0, y: 0, z: 0, yaw: 0 };
 
   // The body's life and the death cam are written here and nowhere else;
   // the modules that see a death or a spawn say which one happened.
@@ -749,7 +756,6 @@ export function createLocalPlayer(page) {
     MANNED_GUN_FOV,
     SOLDIER_MAX_HP_FALLBACK,
     applyDamageToPlayer,
-    deathCamAt,
     deathCamPos,
     leavePilot,
     leaveSeat,
