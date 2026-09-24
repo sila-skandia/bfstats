@@ -5,7 +5,8 @@
 // delegates its methods here.
 
 import { isWalkable } from './nav-grid.js';
-import { playerPosition } from './bot-sense.js';
+import { playerPosition, sensedPoint } from './bot-sense.js';
+import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
 import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
@@ -169,15 +170,33 @@ export function planFire(bot, now) {
     bot._shotsThisPlan = 0;
     return plan;
   }
-  const pose = firingPose(bot.position, bot.targetPosition, (a, b) => bot._lineClear(a, b));
+  // `getFiringPose` 0x085a26f0 against the point the bot sensed on the
+  // target (bot-sense.js `sensedPoint`); no LOD in the viewer, so no force.
+  const pose = firingPose(bot.position, firingPoint(bot), (a, b) => bot._lineClear(a, b));
   const plan = firePlanFor({
     position: bot.position, targetPos: bot.targetPosition, targetId: bot.firingTarget,
-    weapon, pose: pose ?? 'stand', now,
+    weapon, pose, now,
   });
   plan.targetId = bot.firingTarget;
   plan.startedAt = now;
   bot._shotsThisPlan = 0;
   return plan;
+}
+
+/**
+ * The point `createPlan` hands `getFiringPose`: the bot's memory record of
+ * its target, its sense point (+4..+0xc) through the target's matrix
+ * (0x085a4145..0x085a41c1). Without a record, the target's position 1 m up.
+ */
+export function firingPoint(bot) {
+  const id = bot.firingTarget;
+  const p = id != null ? bot.world?.players?.get?.(id) : null;
+  const rec = id != null ? bot.senses?.memory?.get(id) : null;
+  const owner = p ? (bot.senses?.unitOwnerOf?.(p) ?? -1) : -1;
+  const point = rec ? sensedPoint(bot.world?.collider, rec, p, owner) : null;
+  if (point) return point;
+  const t = bot.targetPosition;
+  return [t[0], t[1] + 1.0, t[2]];
 }
 
 /**
@@ -443,7 +462,13 @@ export function firePlanDone(bot, plan, now) {
   return false;
 }
 
-/** `BBPScoutInfantery::createPlan`: look along the direction, sense, pose. */
+/**
+ * `BBPScoutInfantery::createPlan` 0x085c5070: look along the direction,
+ * sense, and the variable pose `BAPASoldierPose(stand, prone, trunc(1 + 9 x
+ * rand), crouch, 0)` (bot-pose.js `scoutPose`). The plan is kept while the
+ * direction holds (cos 0.95), and with it the pose's own random threshold
+ * and its 5 s decision; a new direction draws a new one.
+ */
 export function planScout(bot, now) {
   const dir = bot._scoutDir;
   if (!dir) return bot._planIdle();
@@ -453,7 +478,7 @@ export function planScout(bot, now) {
     if (dot > SCOUT.planReuseCos) return cur;
   }
   const plan = [
-    { type: PLAN_ACTION.SoldierPose, pose: bot.isUnderFire ? 'prone' : 'stand' },
+    { type: PLAN_ACTION.SoldierPose, component: scoutPose(bot.random) },
     { type: PLAN_ACTION.MouseTurretLookAt, dir, persistent: true },
     { type: PLAN_ACTION.Sense, dir, deviation: SCOUT.senseDeviation },
   ];
@@ -462,9 +487,17 @@ export function planScout(bot, now) {
 }
 
 /**
- * `BBPTakeCoverInfantry::createPlan`: walk behind the cover (or to the
- * lowest ground away from the danger), then the pose ladder and a look at
- * the danger.
+ * `BBPTakeCoverInfantry::createPlan` 0x085c97d0 (read 2026-09-24, ledger
+ * BODY-13). With a cover object: the variable pose `BAPASoldierPose(stand,
+ * prone, 5, crouch, 0)` (bot-pose.js `takeCoverPose`) in a parallel with the
+ * move behind the cover, which ends when the move arrives (the combiner's
+ * any-done mode, `BAPCombinerParallel::execute` 0x0854c810); then, once, the
+ * ladder `If(LineOfFire(danger, stand), stand, If(LineOfFire(danger,
+ * crouch), crouch, prone))`; then the look at the danger. The move's own
+ * pose asks after the statement's in the parallel, so while he walks it is
+ * the move's that reaches the soldier. Without one (0x085cd3c7..): prone,
+ * the move to the lowest ground in a 100 m box on the far side, prone again,
+ * and the look. The plan's first look at the danger is not ported.
  */
 export function planTakeCover(bot, now) {
   const r = bot._coverResult;
@@ -488,9 +521,18 @@ export function planTakeCover(bot, now) {
     arrive = TAKE_COVER.arriveMin;
     prone = true;
   }
-  const plan = [
-    { type: PLAN_ACTION.InfantryMoveTo, waypoint: [goal[0], bot.position[1], goal[1]], arrive, stance: prone ? 'prone' : 'stand' },
-    { type: PLAN_ACTION.SoldierPose, pose: prone ? 'prone' : 'ladder', danger: r.dangerPos, afterMove: true },
+  const waypoint = [goal[0], bot.position[1], goal[1]];
+  const plan = prone ? [
+    // The move waits for the prone statement (a serial statement); its own
+    // pose then asks to stand, which the 10 s gate holds back first.
+    { type: PLAN_ACTION.SoldierPose, component: fixedPose('prone', bot.random), serial: true },
+    { type: PLAN_ACTION.InfantryMoveTo, waypoint, arrive, afterPose: true },
+    { type: PLAN_ACTION.SoldierPose, component: fixedPose('prone', bot.random), afterMove: true },
+    { type: PLAN_ACTION.MouseTurretLookAt, target: r.dangerPos, afterMove: true, persistent: true },
+  ] : [
+    { type: PLAN_ACTION.SoldierPose, component: takeCoverPose(bot.random), whileMoving: true },
+    { type: PLAN_ACTION.InfantryMoveTo, waypoint, arrive },
+    { type: PLAN_ACTION.SoldierPose, ladder: true, danger: r.dangerPos, afterMove: true },
     { type: PLAN_ACTION.MouseTurretLookAt, target: r.dangerPos, afterMove: true, persistent: true },
   ];
   plan.danger = r.dangerPos;
@@ -537,8 +579,9 @@ export function planSpecial(bot, now) {
     return cur;
   }
   bot.weaponIndex = r.weaponIndex;
+  // No pose statement: `BBPMedicAssist::createPlan` 0x085bf350 builds none,
+  // and the move's own pose decides (bot-pose.js `movePose`).
   const plan = [
-    { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
     { type: PLAN_ACTION.InfantryMoveToObject, targetId: r.targetId, arrive: r.arrive },
     { type: PLAN_ACTION.MouseTurretAimAt, targetId: r.targetId, afterMove: true },
     { type: PLAN_ACTION.TriggerContinously, targetId: r.targetId, tolerance: MEDIC.lookTolerance,
@@ -655,6 +698,11 @@ export function runPlan(bot, dt, now) {
       allComplete = false;
       continue;
     }
+    // A serial pose statement ahead of a move: the move waits for the pose.
+    if (action.afterPose && bot.currentPlan.some(a => a.type === PLAN_ACTION.SoldierPose && a.serial && !a.reached)) {
+      allComplete = false;
+      continue;
+    }
     const complete = bot._executeAction(action, dt, now);
     if (complete) action.done = true;
     if (!complete && !action.persistent) allComplete = false;
@@ -726,12 +774,19 @@ export function execInfantryMoveToObject(bot, action, dt) {
   return bot._execInfantryMoveTo(action, dt);
 }
 
-/** `InfanteryMoveToDirection`: walk a direction for a while. */
+/** `InfanteryMoveToDirection`: walk a direction for a while, with the
+ *  move's own pose (`BAPAMoveToDirection`'s component, bot-pose.js
+ *  `directionPose`), asked on every tick it steers
+ *  (`EntryInfanteryMoveToDirection::execute` 0x08616780). */
 export function execInfantryMoveToDirection(bot, action, dt, now) {
   if (now >= action.until) return true;
   const [dx, dz] = action.direction;
   bot._steerToward(bot.position[0] + dx * action.distance, bot.position[2] + dz * action.distance, 1);
   bot._lastThrottle = bot.moveForward;
+  if (!bot.vehicle) {
+    action._pose ??= directionPose(bot.random);
+    bot._requestPose(bot._poseOf(action._pose, now, 'control'));
+  }
   return false;
 }
 
@@ -832,11 +887,13 @@ export function execTrigger(bot, action, now) {
   return false;
 }
 
-/** `InfanteryResetControls`: clear every movement/aim input. */
+/** `InfanteryResetControls`: clear every movement/aim input. Not the pose:
+ *  `infanteryResetControls` 0x08627740 never writes the crouch or lie
+ *  channel (bot-pose.js); the pose request and its hold are the bot's. */
 export function execInfantryResetControls(bot) {
   bot.moveForward = 0;
   bot.moveStrafe = 0;
-  bot.stanceInput = 'stand';
+  bot.walkInput = false;
   bot.isFiring = false;
   bot.lookX = 0;
   bot.lookY = 0;
@@ -861,22 +918,50 @@ export function execSense(bot, action) {
   return false;
 }
 
-/** `SoldierPose`: a stance, or the TakeCover ladder (stand if the danger is
- *  in the line of fire, else crouch, else prone). */
-export function execSoldierPose(bot, action) {
+/**
+ * `SoldierPose` (`EntrySoldierPose::execute` 0x08622bb0): the statement's
+ * component (bot-pose.js) computes the pose from the attacker strength, the
+ * security (`getSecurity`, IAIEnvironment vt+0x70) and the water under the
+ * bot; the pose is requested (`requestSoldierPose`, vt+0x178) while the
+ * soldier's differs, and the statement is done once it matches. A fixed
+ * pose is the one-pose component (`fixedPose`, the water rule alone moves
+ * it). The TakeCover ladder is decided once, when the bot reaches the cover
+ * (INFERRED: its `If`s are built with a last argument of 0, where the fire
+ * approach's re-evaluated statement passes 1, bot-fire.js): stand when the
+ * line from the standing eye to the danger is clear, else crouch when the
+ * crouching eye's is, else prone (`BAPConLineOfFire::evaluate` 0x0854ec50:
+ * the pose's camera position through the bot's matrix, POSE_EYE, to the
+ * danger's point, 1 m over its feet, the bot's unit ignored).
+ */
+export function execSoldierPose(bot, action, now = bot._now ?? 0) {
   if (bot.vehicle) return true;
-  let pose = action.pose;
-  if (pose === 'ladder') {
-    const danger = action.danger;
-    pose = 'prone';
-    if (danger) {
-      const to = [danger[0], danger[1] + 1.0, danger[2]];
-      for (const [name, eye] of [['stand', 1.6], ['crouch', 1.1]]) {
-        if (bot._lineClear([bot.position[0], bot.position[1] + eye, bot.position[2]], to)) { pose = name; break; }
-      }
-    }
+  // A serial statement is behind the plan once reached; the variable pose
+  // beside a move ends with the move.
+  if (action.serial && action.reached) return true;
+  if (action.whileMoving && !movesPending(bot.currentPlan)) return true;
+  if (!action.component) {
+    const pose = action.ladder ? ladderPose(bot, action.danger)
+      : (action.pose === 'crouch' || action.pose === 'prone') ? action.pose : 'stand';
+    action.component = fixedPose(pose, bot.random);
   }
-  if (pose === 'walk' || pose === 'stand' || pose === 'crouch' || pose === 'prone') bot.stanceInput = pose;
+  const pose = bot._poseOf(action.component, now, 'security');
+  action.reached = bot.stance === pose;
+  if (!action.reached) bot._requestPose(pose);
   action.persistent = true;
   return true;
+}
+
+/** The TakeCover ladder's pick, from where the bot stands. */
+export function ladderPose(bot, danger) {
+  if (!danger) return 'prone';
+  const to = [danger[0], danger[1] + 1.0, danger[2]];
+  for (const name of ['stand', 'crouch']) {
+    if (bot._lineClear([bot.position[0], bot.position[1] + POSE_EYE[name], bot.position[2]], to)) return name;
+  }
+  return 'prone';
+}
+
+/** Whether a walk of the plan is still under way. */
+export function movesPending(plan) {
+  return !!plan?.some?.(a => (a.type === PLAN_ACTION.InfantryMoveTo || a.type === PLAN_ACTION.InfantryMoveToObject) && !a.done);
 }

@@ -4,7 +4,7 @@
 // on foot and mounted. Plain functions of the `BotController` (bot.js),
 // which delegates its methods here.
 
-import { lineClear, playerPosition, bakedToWorld } from './bot-sense.js';
+import { lineClear, playerPosition, sensedPoint, sCurveExact } from './bot-sense.js';
 import { scoreTargets, scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
@@ -54,11 +54,90 @@ export function onShotFired(bot, shooterId, shooterTeam, pos, now, weaponRadius 
     bot.lastHeardPosition = [...pos];
     bot.timeSinceHeard = 0;
   }
+  nearShot(bot, shooterId, shooterTeam, pos, now);
 }
 
-/** A round from `attackerId` at `pos` landed on (or near) this bot. */
+/**
+ * The fire objects a round makes for a bot it did not hit (read 2026-09-24,
+ * ledger BODY-11). `FireArms::fireBarrel` hands every projectile to
+ * `AICollisionHandler::handleProjectileFire` (0x0828b365 -> 0x084647c0 ->
+ * 0x08464820): each living bot of another team whose unit is within 50 m (3D)
+ * of the shooter's gets one. Where the round lands, `handleIndirectProjectileHit`
+ * 0x08464500 gives one to each such bot within 10 m of the fire line
+ * (`objFireLineDist` 0x084637c0: the flat distance to the segment from the
+ * shooter to the impact). Both carry the shooter's unit strengths, no hit,
+ * and go to the attacker map's shared entry (`event_projectile(fo,
+ * 0xffffffff)`). The viewer's hearing hook carries no impact point: the line
+ * is the shooter's facing, from him onward past the bot (INFERRED: a round
+ * that reached the bot's side of the line landed beyond him), and a seated
+ * shooter's facing is not read (no line test).
+ */
+export const NEAR_FIRE = { radius: 50.0, lineRadius: 10.0 };
+
+export function nearShot(bot, shooterId, shooterTeam, pos, now) {
+  if (!pos || shooterId === bot.playerId || shooterTeam == null || shooterTeam === bot.team) return;
+  if (bot.world?.armorOf?.(bot.playerId)?.destroyed) return;
+  const dx = bot.position[0] - pos[0], dy = bot.position[1] - pos[1], dz = bot.position[2] - pos[2];
+  let fired = 0;
+  if (Math.hypot(dx, dy, dz) < NEAR_FIRE.radius) fired++;
+  const shooter = bot.world?.players?.get?.(shooterId);
+  const s = shooter && !shooter.occupancy?.root ? shooter.soldier : null;
+  if (s && Number.isFinite(s.yaw)) {
+    const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+    const along = dx * fx + dz * fz;
+    if (along > 0 && Math.abs(dx * fz - dz * fx) < NEAR_FIRE.lineRadius) fired++;
+  }
+  if (!fired) return;
+  const strength = fireObjectStrength(bot, shooterId);
+  for (let i = 0; i < fired; i++) bot.senses.onNearFire(now, strength, pos);
+}
+
+const SHOOTER_TABLES = new WeakMap();
+
+/** A shooter's strength table, looked up once a clock tick per world: a
+ *  seated shooter's is his seat's (`units.unitInfo`, which measures the hull),
+ *  and one round is heard by every bot. */
+function shooterTable(bot, shooterId) {
+  const world = bot.world;
+  const now = bot._now ?? 0;
+  let cache = SHOOTER_TABLES.get(world);
+  if (!cache || cache.now !== now) { cache = { now, tables: new Map() }; SHOOTER_TABLES.set(world, cache); }
+  let table = cache.tables.get(shooterId);
+  if (!table) {
+    table = bot._unitInfo?.(shooterId)?.table ?? SOLDIER_BATTLE_STRENGTH;
+    cache.tables.set(shooterId, table);
+  }
+  return table;
+}
+
+/**
+ * A fire object's strength against this bot: the shooter's `IPIUnit`
+ * strengths (`calculateStrengths` 0x085ec3c0), his unit's battle strength
+ * against the bot's class times his condition, `0.25 + 0.5 SCurve(ammo) +
+ * 0.25 SCurve(health)` (`IPIUnit::setTime` 0x085ec330). Every creator gives
+ * it rate 1.0 and the time of the event. The ammunition is taken as full
+ * (INVENTION: the referee's magazines are not read here). A shooter the
+ * world does not know gives `fallback`.
+ */
+export function fireObjectStrength(bot, shooterId, fallback = 1) {
+  const p = shooterId != null ? bot.world?.players?.get?.(shooterId) : null;
+  if (!p) return fallback;
+  const table = shooterTable(bot, shooterId);
+  const base = table[bot._myType?.() ?? 'Infantry'] ?? 0;
+  const armor = bot.world?.armorOf?.(shooterId);
+  const health = armor?.maxHitPoints > 0 ? Math.max(0, armor.hitPoints / armor.maxHitPoints) : 1;
+  return base * (0.25 + 0.5 * sCurveExact(1) + 0.25 * sCurveExact(health));
+}
+
+/**
+ * A round from `attackerId` at `pos` landed on (or near) this bot. A direct
+ * hit (`AICollisionHandler::handleCollision` 0x084640c0) carries the
+ * attacker's unit strengths (`fireObjectStrength`); its 1.0 is the fire
+ * object's decay rate (the ledger's FF-8 read it as the strength). The
+ * caller's `strength` stands only for an attacker the world does not know.
+ */
 export function onIncomingFire(bot, attackerId, pos, now, hit = false, strength = 1) {
-  bot.senses.onIncomingFire(now, attackerId, strength, hit, pos);
+  bot.senses.onIncomingFire(now, attackerId, fireObjectStrength(bot, attackerId, strength), hit, pos);
   bot.isUnderFire = true;
   bot.timeSinceNearbyShot = 0;
 }
@@ -249,11 +328,8 @@ export function chooseVehicleTarget(bot, now) {
       const p = bot.world?.players?.get(rec.id);
       const owner = p ? bot.senses?.unitOwnerOf?.(p) ?? -1 : -1;
       // The memory record's sense point (+4..+0xc, the one that saw it),
-      // through the target's live transform; a soldier's as its offset
-      // from his feet (the engine keeps a bone index, +0x10).
-      const off = rec.offset ?? [0, 1.0, 0];
-      const to = rec.local && owner >= 0 ? bakedToWorld(bot.world?.collider, owner, rec.local)
-        : [rec.pos[0] + off[0], rec.pos[1] + off[1], rec.pos[2] + off[2]];
+      // through the target's live transform (bot-sense.js `sensedPoint`).
+      const to = sensedPoint(bot.world?.collider, rec, p, owner) ?? [rec.pos[0], rec.pos[1] + 1.0, rec.pos[2]];
       return lineClear(bot.world?.collider, sensingEye(bot), to, [bot._selfOwner(), owner]);
     },
   });

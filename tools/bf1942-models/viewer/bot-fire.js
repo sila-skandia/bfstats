@@ -26,7 +26,8 @@
 //    fire. A target the plan gave up on is vetoed for `20` s unless someone
 //    is moving at `2` m/s.
 //  * The plan: `getFiringPose` tries prone, crouch, stand — the first pose
-//    whose eye still sees the target wins; the weapon is changed to the
+//    whose eye still sees the point the bot sensed on the target wins
+//    (`firingPose`, ledger BODY-5); the weapon is changed to the
 //    chosen one; out of `0.9 * maxRange` it walks closer, inside `minRange +
 //    1` it backs off to `2 * minRange + 5`; `BAPALookAtObject` turns the
 //    view within `5` deg, the aim condition's tolerance is `0.25 * the
@@ -108,6 +109,7 @@
 const DEG = Math.PI / 180;
 
 import { decleiningSlope } from './bot-behaviours.js';
+import { POSE_EYE } from './bot-pose.js';
 
 export const FIRE = {
   waterGate: 0.75,
@@ -146,13 +148,16 @@ export const SOLDIER_BATTLE_STRENGTH = {
   Infantry: 4.0, LightArmour: 2.0, HeavyArmour: 1.0, NavalArmour: 0.0, Submarine: 0.0, Air: 1.0,
 };
 
-/** The eye heights `getSoldierPoseCameraPosition` reports per pose,
- *  tried in the engine's order: prone, crouch, stand. */
-export const FIRING_POSES = [
-  { pose: 'prone', eye: 0.4 },
-  { pose: 'crouch', eye: 1.1 },
-  { pose: 'stand', eye: 1.6 },
-];
+/** The eye heights `getSoldierPoseCameraPosition` 0x085d2200 reports per
+ *  pose (the soldier template's `setPoseCameraPos` through his matrix,
+ *  `template + 0x1a4 + 12 x pose`: 1.65 / 1.12 / 0.30 m over the feet,
+ *  soldier-pose.js `EYE_HEIGHT`), tried in the engine's order: the static
+ *  `postures` [3, 2, 1] (0x08760434), prone, crouch, stand. */
+export const FIRING_POSES = Object.freeze([
+  Object.freeze({ pose: 'prone', eye: POSE_EYE.prone }),
+  Object.freeze({ pose: 'crouch', eye: POSE_EYE.crouch }),
+  Object.freeze({ pose: 'stand', eye: POSE_EYE.stand }),
+]);
 
 /** A weapon's AI template with the engine's defaults filled in. */
 export function weaponAiOf(entry) {
@@ -313,17 +318,27 @@ function hashId(id) {
 }
 
 /**
- * `getFiringPose`: the first of prone, crouch, stand whose eye still sees
- * the target. `lineClear(from, to)` is the world's ray. Returns the pose
- * name, or null when none sees it (the plan then aims at the last known
- * point from where it stands).
+ * `getFiringPose` 0x085a26f0 (read 2026-09-24, ledger BODY-5): the first of
+ * prone, crouch, stand whose eye has a clear line to `targetPoint`, the point
+ * the bot sensed on the target: its memory record's +4..+0xc taken through
+ * the target's matrix (`BBPFireInfantery::createPlan` 0x085a4145..
+ * 0x085a41c1; bot-sense.js `sensedPoint`), not a height over his feet.
+ * `lineClear(from, to)` is `collideLineWithWorld` with its bool false (the
+ * plain line; the 0.75 it is handed is never read) and both units in the
+ * ignore list. Returns the pose name, or null when none sees it: the plan
+ * then builds no pose statement (`createFirePlan` 0x085ac240 adds
+ * `BAPASoldierPose` only when the pose was found) and the soldier keeps his.
+ *
+ * `force` is the engine's last argument, set when the target is a bot whose
+ * `BotMain::getLodLevel` 0x0852c7f0 is above 0 (`AILODManager::updateBot`
+ * 0x08475fe0: a bot far from every human player); it returns prone with no
+ * test. The viewer runs every bot at full detail and never passes it.
  */
-export function firingPose(position, targetPos, lineClear, force = false) {
+export function firingPose(position, targetPoint, lineClear, force = false) {
   if (force) return FIRING_POSES[0].pose;
   for (const { pose, eye } of FIRING_POSES) {
     const from = [position[0], position[1] + eye, position[2]];
-    const to = [targetPos[0], targetPos[1] + 1.0, targetPos[2]];
-    if (lineClear(from, to)) return pose;
+    if (lineClear(from, targetPoint)) return pose;
   }
   return null;
 }
@@ -346,7 +361,6 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
   const dx = targetPos[0] - position[0], dz = targetPos[2] - position[2];
   const dist = Math.hypot(dx, dz);
   const plan = [];
-  if (pose) plan.push({ type: 'SoldierPose', pose });
   if (dist > FIRE.approachRange * weapon.maxRange) {
     // `BAPAMoveToObjectFinding(bot, target, 0.9 * maxRange)`: close in.
     plan.push({ type: 'InfanteryMoveToObject', targetId, targetPos: [...targetPos],
@@ -357,6 +371,12 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
     const ux = dist > 1e-3 ? dx / dist : 0, uz = dist > 1e-3 ? dz / dist : 1;
     plan.push({ type: 'InfanteryMoveTo', waypoint: [targetPos[0] - ux * r, position[1], targetPos[2] - uz * r] });
   }
+  // The pose is a statement of the fire plan's parallel beside the look and
+  // the trigger (`createFirePlan` 0x085ac240 adds the fixed `BAPASoldierPose`
+  // only when `getFiringPose` found one), so while the bot closes in or backs
+  // off the move's own pose decides (bot-pose.js `movePose`; INFERRED order:
+  // the fire plan after the move, as below). No pose found: no statement.
+  if (pose) plan.push({ type: 'SoldierPose', pose, afterMove: true });
   // A plan is a sequence: the look and the trigger wait for the approach or
   // the back-off to finish (`afterMove`), as the engine's entries run in order.
   plan.push({ type: 'MouseTurretAimAt', targetId, targetPos: [...targetPos], afterMove: true });
