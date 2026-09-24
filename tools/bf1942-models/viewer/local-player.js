@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
-import { calculateHitOctant } from './hud.js';
+import { hitFromDirAlpha, hitFromDirOctant } from './hud.js';
 import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
@@ -545,7 +545,9 @@ export function createLocalPlayer(page) {
 
 
   /** `hit` is the round's meeting with the body (`soldier-death.js`
-   *  `roundHit`), when the damage was a round that met him. */
+   *  `roundHit`), when the damage was a round that met him. `attackerPos` is
+   *  the damage's own point, which the arc points at: where the round left
+   *  the muzzle, or a blast's centre (ledger HFD-4). */
   function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null, hit = null) {
     if (!localPlayer.soldierArmor || localPlayer.soldierDead) return;
     if (hit) localPlayer.soldierArmor.lastHit = hit;
@@ -553,26 +555,20 @@ export function createLocalPlayer(page) {
 
     // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
     if (page.optPilot.checked || localPlayer.occupancy) return;
+    // A heal (the test hook's negative damage) is no hit: the game heals
+    // through `Armor::heal`, never `_giveDamage`.
+    if (!(damage >= 0)) return;
 
     const isFriendlyFire = attackerTeam != null && attackerTeam === page.deployTeamId;
     page.playSoldierHurtSound(isFriendlyFire);
 
-    let dir = 1;
-    if (attackerPos && localPlayer.soldier) {
-      const dx = attackerPos.x - localPlayer.soldier.x;
-      const dz = attackerPos.z - localPlayer.soldier.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist > 0.01) {
-        const fwdX = Math.sin(localPlayer.soldier.yaw);
-        const fwdZ = Math.cos(localPlayer.soldier.yaw);
-        const rightX = Math.cos(localPlayer.soldier.yaw);
-        const rightZ = -Math.sin(localPlayer.soldier.yaw);
-        const forwardDot = (dx / dist) * fwdX + (dz / dist) * fwdZ;
-        const rightDot = (dx / dist) * rightX + (dz / dist) * rightZ;
-        dir = calculateHitOctant(forwardDot, rightDot);
-      }
-    }
-    page.triggerHitIndicator(dir, damage / (localPlayer.soldierArmor.maxHitPoints || 100));
+    // `_giveDamage`'s wash and arc (HFD-2, HFD-3): the octant from the
+    // soldier toward that point, in 3-D, the alpha this damage's share of
+    // his max HP. A caller that names no point gets 1, whose arc the data
+    // never draws (MEME-14): the wash alone.
+    const soldier = localPlayer.soldier;
+    const dir = attackerPos && soldier ? hitFromDirOctant(soldier, soldier.yaw, attackerPos) : 1;
+    page.triggerHitIndicator(dir, hitFromDirAlpha(damage, localPlayer.soldierArmor.maxHitPoints));
   }
 
   // The stick spring itself lives in world.js next to the aircraft path that

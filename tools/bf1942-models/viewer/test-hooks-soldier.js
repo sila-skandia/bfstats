@@ -402,10 +402,13 @@ export function installSoldierHooks(page) {
   // for, so a test can take the soldier's HP down without waiting on fall
   // damage's own approximate trigger. `hit` is an optional round meeting
   // (`soldier-death.js` `roundHit`: `{ travel, height }`), which is what the
-  // death the body then plays is picked by.
-  window.__damage = (n, hit = null) => {
+  // death the body then plays is picked by. `from` is where the damage came
+  // from, `[x, y, z]` or `{ x, y, z }` -- the point the damage arc points at
+  // (ledger HFD-4); without one it raises the wash alone.
+  window.__damage = (n, hit = null, from = null) => {
     if (!page.soldierArmor) return false;
-    page.applyDamageToPlayer(Number(n) || 0, null, null, hit);
+    const at = Array.isArray(from) ? { x: from[0], y: from[1], z: from[2] } : from;
+    page.applyDamageToPlayer(Number(n) || 0, at, null, hit);
     return true;
   };
   // Exercise the fall-damage integration itself (the `onFoot` hook above),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -510,6 +511,103 @@ class HudLayoutGoldenTests(unittest.TestCase):
         from extract_spawn_layout import font_handles
         handles = font_handles(self.hud)
         self.assertEqual(set(self.hud["fonts"]), set(handles))
+
+
+@unittest.skipUnless(GAME_MENU.exists(), "needs the BF1942 install")
+class DamageIndicatorGoldenTests(unittest.TestCase):
+    """The damage indicator's own data in vanilla `menu/InGame`, and the two
+    viewer constants that stand in for parts of it the painter does not read
+    (ledger HFD-5, HFD-8): the timeout that ends the flash, which
+    `soldier-hud.js` runs, and the root chain's order, which `hud.js` paints
+    its groups in."""
+
+    VIEWER = Path(__file__).resolve().parents[1] / "viewer"
+
+    # decode_hud's own grouping of the raw tops.
+    GROUP_TOPS = {
+        "soldierIcon": ["soldierIcon"], "soldierAmmo": ["soldierAmmo"],
+        "vehicleIcon": ["vehiclePanel", "vehicleTurret"], "vehicleHealth": ["vehiclePanel"],
+        "vehicleSeats": ["vehiclePanel", "vehiclePlayers"],
+        "primaryAmmo": ["vehicleAmmo"], "secondaryAmmo": ["vehicleAmmo"],
+        "supplyIcon": list(hud.SUPPLY_KEYS), "hitIndicator": ["hitIndicator"],
+        "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"],
+        "outside": ["outside"],
+    }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from bf42.rfa import RfaArchive
+        with RfaArchive(GAME_MENU) as arch:
+            entry = next(e for e in arch.entries if e.lower() == "menu/ingame")
+            data = arch.read(entry)
+        cls.root, _ = meme.load(data)
+        cls.hud = hud.decode_hud(data, lexicon={})
+        cls.tops = {key: hud.find_top(cls.root, sig, rect, True)[0]
+                    for key, (sig, rect) in hud.RAW_TOPS.items()}
+
+    def hit_chain(self) -> list:
+        return self.tops["hitIndicator"]["Split node"].chain()
+
+    def every_object(self):
+        """Every object in the file, actions and data included --
+        `meme.walk_all` visits the node tree only."""
+        seen, stack = set(), [self.root]
+        while stack:
+            obj = stack.pop()
+            if isinstance(obj, list):
+                stack.extend(obj)
+            elif isinstance(obj, meme.Obj) and id(obj) not in seen:
+                seen.add(id(obj))
+                yield obj
+                stack.extend(obj.fields.values())
+
+    def test_the_wash_is_a_full_screen_quad_in_red_at_the_alpha_variable(self) -> None:
+        [wash] = [e for e in self.hud["groups"]["hitIndicator"]["elements"] if e["kind"] == "fill"]
+        self.assertEqual([0.0, 0.0, 800.0, 600.0], wash["rect"])
+        self.assertEqual([1.0, 0.0, 0.0, 0.5], wash["color"])
+        self.assertEqual({"a": {"var": "HitFromDir/HitFromDirAlpha"}}, wash["colorVars"])
+        self.assertEqual([("HitFromDir/HitFromDir", "ne", 0)],
+                         [(c["var"], c["op"], c["value"]) for c in wash["when"]])
+
+    def test_the_group_is_culled_on_the_direction_with_no_fade(self) -> None:
+        # CullNode's update (client 0x007effe0) eases its fraction over the
+        # In/Out times; both are 0, so the flash snaps on and off.
+        cull = self.hit_chain()[0]
+        self.assertEqual("CullNode", cull.cls)
+        self.assertEqual("HitFromDir/HitFromDir", cull["Variable"].name)
+        self.assertEqual((0.0, 0.0), (cull["In time"], cull["Out time"]))
+
+    def test_a_timeout_ends_the_flash_and_is_the_only_writer_of_the_direction(self) -> None:
+        timeout = self.hit_chain()[-1]
+        self.assertEqual("TimeoutActionNode", timeout.cls)
+        self.assertAlmostEqual(0.2, timeout["Timeout time"], places=6)
+        action = timeout["Action"]
+        self.assertEqual("SetVariableAction", action.cls)
+        self.assertEqual("HitFromDir/HitFromDir", action["Variable"].name)
+        self.assertEqual(0, action["Value"]["Value"])
+        writers = [o for o in self.every_object()
+                   if o.cls == "SetVariableAction" and isinstance(o.get("Variable"), meme.Obj)
+                   and o["Variable"].name.startswith("HitFromDir/")]
+        self.assertEqual([action], writers)
+        # ...and the viewer's stand-in for it runs the same timeout.
+        src = (self.VIEWER / "soldier-hud.js").read_text()
+        match = re.search(r"HIT_FROM_DIR_TIMEOUT = Math\.fround\(([0-9.]+)\)", src)
+        self.assertIsNotNone(match)
+        self.assertAlmostEqual(timeout["Timeout time"], float(match.group(1)), places=6)
+
+    def test_the_painter_follows_the_root_chain(self) -> None:
+        # The wash tints what the chain drew before it (index 37) and nothing
+        # after, so the order hud.js paints its groups in is part of the look.
+        self.assertEqual(set(self.GROUP_TOPS), set(self.hud["groups"]))
+        index = {id(node): i for i, node in enumerate(self.root.chain())}
+        first = {group: min(index[id(self.tops[key])] for key in keys)
+                 for group, keys in self.GROUP_TOPS.items()}
+        self.assertEqual(37, first["hitIndicator"])
+        src = (self.VIEWER / "hud.js").read_text()
+        body = re.search(r"export const PAINT_ORDER = \[(.*?)\];", src, re.S).group(1)
+        order = re.findall(r"'(\w+)'", body)
+        self.assertEqual(sorted(self.GROUP_TOPS), sorted(order))
+        self.assertEqual(sorted(order, key=first.__getitem__), order)
 
 
 class ConditionOperatorCoverageTests(unittest.TestCase):
