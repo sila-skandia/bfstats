@@ -437,6 +437,79 @@ marks off before `t` reaches 0 — the capture cannot say through its H.264 skip
 blocks); XHIT-5's keep-team template flag; XHIT-10's callers of the
 `CrossHair` group's `show()`/`hide()`.
 
+## 8. Hit direction and the red wash (HFD-1..HFD-9, 2026-09-24)
+
+The victim's side of a hit: the whole screen washes red, and an arc marks the
+side the damage came from. The viewer used to skip the full-screen quad as an
+"artifact". The owner's recording shows it at 9.93 s.
+
+**Two fields, one setter.** `BfMenu` holds `HitFromDir` (an int at `+0x358`,
+0 off, 1..8 the octant) and `HitFromDirAlpha` (a float at `+0x360`), and
+`BfMenu::setHitFromDir` (`0x006acb60`) is the only code that writes them. It
+writes both at once. Nothing in code fades the alpha.
+
+**What the layout does with them.** The `hitIndicator` top (root chain index
+37) is:
+
+```
+CullNode(HitFromDir)                 draws while HitFromDir != 0, no fade
+  TransformNode 0,0,800,600          the wash
+    VariableColorEffect {1, 0, 0, HitFromDirAlpha}
+    PictureNode ''
+  TransformNode ... x8               the arcs; direction 1 behind BoolData{False}
+  TimeoutActionNode 0.2              then SetVariableAction HitFromDir := 0
+```
+
+So the wash and the arc are one alpha, held until the timeout puts the
+direction back to 0. The timer only counts while the chain is shown and fires
+in the same update that still draws the frame. Nothing restarts it on a second
+hit, so a burst turns the arc and sets a new alpha but ends when the first
+hit's flash would have.
+
+**The menu's clock is not wall time.** `BfMenu::paint` updates its menu screen
+with `Setup+0x184` once per rendered frame, and that is `1 / g_simulationFps`
+= 1/30, a constant. Every `TimeoutActionNode` in `menu/InGame` therefore counts
+painted frames: the 0.2 timeout is **six painted frames** (it fires on the
+sixth, which still draws), 0.1 s at 60 fps and about 55 ms at the owner's
+~110 fps. The recording's three washes last three to four 60 fps frames, and
+two hits 0.13 s apart show as two separate flashes, which a wall-clock 0.2 s
+could not produce.
+
+**The alpha** is `damage / victimMaxHitPoints`, held to 0..0.75 (a remote
+client receives it as `trunc(a × 255) / 255`). The recording's first wash
+measures 0.545 on the sky.
+
+**The octant.** The engine looks from the victim's own position at the
+damage's point `Pos3` (a 3-D unit direction, so height counts), and dots that
+with the victim's forward and right rows at cos 22.5° (0.9238) and cos 67.5°
+(0.3826). A right dot of exactly 0 counts as the right side. `Pos3` is:
+
+| Damage | `Pos3` |
+|---|---|
+| a round, direct | the barrel's world position when it fired (`Projectile+0x134`) |
+| splash | the blast's centre |
+| a landing | the contact point |
+| water, the combat area, `Armor::update`'s drowning / upside-down / critical bleed | the world origin |
+
+Every one of those goes through `_giveDamage`, so any damage the player takes
+washes his screen.
+
+**Draw order.** The wash is drawn after the crosshair, supply icons, map, weapon
+bar, soldier and vehicle panels and the tickets, and before chat, kill
+messages and the combat-area warning. It tints the first set and not the
+second, as the recording shows for the chat lines.
+
+**In the viewer.** `hud.js` draws the quad and paints its groups in this chain
+order (`PAINT_ORDER`). `soldier-hud.js` runs the timeout as six painted frames
+at a float32 `1/30` step. `local-player.js` takes the octant from the
+soldier's position toward the damage's point, with his screen-right
+`(−cos yaw, 0, sin yaw)`: the old `(cos yaw, 0, −sin yaw)` was his left and
+mirrored every arc. The page's HP poll catches damage that never passes
+through `applyDamageToPlayer`, and raises direction 1: the wash with no arc,
+because it cannot name the source. The viewer's minimap and DOM crosshair are
+separate layers above the HUD canvas, so the wash does not tint them, where
+the engine's does.
+
 ## Open
 
 - **HUD-1**: `RegisterPictureVariable`'s third argument — a real field
@@ -463,3 +536,7 @@ blocks); XHIT-5's keep-team template flag; XHIT-10's callers of the
   traced.
 - `RotateEffect`'s `drawCtx[+0x18]` — the scalar `angleMultiplier` multiplies.
   Moot for vanilla, which authors the multiplier as 0 everywhere.
+- **HFD-9**: the object-vs-object collision's `Pos3` (being run over); where a
+  soldier object's `getPosition()` sits (the octant's eye, taken as his feet);
+  and which players a hit hull's `PlayerControlObject` sends the wash to
+  (`pco->vt[0x40]`'s set; its crew, by the loop's shape).

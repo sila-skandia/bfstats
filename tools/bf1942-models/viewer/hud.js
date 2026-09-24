@@ -48,6 +48,27 @@
 
 const DEFAULT_VIRTUAL = [800, 600];
 
+/** The groups in the order `menu/InGame` draws them: its root chain, each
+ *  group at its first top's index (ledger HFD-8) -- crosshair 3, supply 6-13,
+ *  weaponBar 19, soldierIcon 21, soldierAmmo 22, the vehicle panel 23-26,
+ *  tickets 27, hitIndicator 37, outside 42. `hud-layout.json` lists them in
+ *  its own order, which put the weapon bar, the crosshair group and the
+ *  tickets after the hit indicator; that only mattered once the indicator's
+ *  full-screen wash was drawn, because the wash tints everything under it.
+ *  A group this list does not name paints last, in file order. */
+export const PAINT_ORDER = [
+  'crosshair', 'supplyIcon', 'weaponBar', 'soldierIcon', 'soldierAmmo',
+  'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
+  'tickets', 'hitIndicator', 'outside',
+];
+
+/** `groups` in `PAINT_ORDER`, then whatever else the file has. */
+export function paintOrder(groups) {
+  const known = PAINT_ORDER.filter(key => groups[key]);
+  const rest = Object.keys(groups).filter(key => !PAINT_ORDER.includes(key));
+  return [...known, ...rest].map(key => groups[key]);
+}
+
 /** `Vehicle/Icon_defgun.tga` -> `icon_defgun`, matching how `hud.json` keys
  *  every packed sprite (basename, extension stripped, lowercased) -- the
  *  same convention `extract_hud_pack.py` used, so a live path value and a
@@ -375,6 +396,7 @@ export class Hud {
     this.bust = bust;
     this.vars = Object.create(null);   // the published contract surface
     this.layout = null;
+    this._groups = [];                 // layout.groups in PAINT_ORDER
     this.fonts = new Map();            // id -> { meta, img, tinted }
     this.ready = false;
     this._trackedVars = [];
@@ -409,6 +431,7 @@ export class Hud {
     }
     this._trackedVars = [...tracked];
     this.layout = data;
+    this._groups = paintOrder(data.groups);
     await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
       let meta;
       try {
@@ -473,7 +496,7 @@ export class Hud {
     const s = this._scaleFor(stageW, stageH);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
     ctx.imageSmoothingEnabled = false;   // every asset here is point art
-    for (const group of Object.values(this.layout.groups)) {
+    for (const group of this._groups) {
       for (const el of group.elements) this._paintElement(ctx, el);
     }
     ctx.globalAlpha = 1;
@@ -545,10 +568,11 @@ export class Hud {
       alpha = liveColor(el, this.vars, this._rgba)[3];
     } else {
       // A layout from before `colorVars`: the damage arc's alpha binding was
-      // not in the file, so it was keyed on the sprite instead.
+      // not in the file, so it is keyed on the sprite instead. It replaces
+      // the file's 0.5 rather than scaling it, as `liveColor` does (XHIT-7).
       alpha = el.color ? el.color[3] : 1;
       if (this.vars['HitFromDir/HitFromDirAlpha'] != null && el.texture === 'ingame_hit_indicator_64x128') {
-        alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+        alpha = Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
       }
     }
     if (alpha <= 0) return;
@@ -680,15 +704,20 @@ export class Hud {
    *  its own centre by a `RotateEffect` the same way `_drawPicture` turns a
    *  sprite: counter-clockwise, hence `-angle`. The crosshair's hit marks are
    *  the leaves that need both -- four 1x3 quads turned 0.8 rad into
-   *  diagonals, at alpha `CrossHair/HitIndicationTime` (XHIT-1, XHIT-7). */
+   *  diagonals, at alpha `CrossHair/HitIndicationTime` (XHIT-1, XHIT-7).
+   *
+   *  The hit indicator's 800x600 quad is not an artifact: it is the red wash
+   *  the whole screen takes when the player is hurt, `(1, 0, 0,
+   *  HitFromDir/HitFromDirAlpha)` over everything the chain drew before it
+   *  (ledger HFD-5, HFD-8; the owner's recording at 9.93 s). */
   _drawFill(ctx, el) {
     const [x, y, w, h] = el.rect;
-    // Skip full-screen fills (the 800x600 quad artifact in hitIndicator)
-    if (w >= 800 && h >= 600) return;
     const color = liveColor(el, this.vars, this._rgba);
     if (!el.colorVars && this.vars['HitFromDir/HitFromDirAlpha'] != null
         && (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
-      color[3] *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+      // A layout from before `colorVars`: the wash's alpha is the variable
+      // itself, not the file's 0.5 scaled by it (XHIT-7).
+      color[3] = Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
     }
     if (color[3] <= 0) return;
     ctx.globalAlpha = color[3];
@@ -804,8 +833,9 @@ export class Hud {
  * Calculate the 1..8 compass octant for directional damage indicator from
  * forwardDot and rightDot in the player's view frame.
  *
- * Ground truth: BF1942.exe at 0x004b0967.
- * Boundaries: cos(22.5 deg) = 0.9238, cos(67.5 deg) = 0.3826.
+ * Ground truth: BF1942.exe at 0x004b0967 (the client's `_giveDamage`, ledger
+ * HFD-3), the doubles 0.9238 / 0.3826 at 0x008dbf78..60. A right dot of
+ * exactly 0 is the right side: the engine tests `0.0 <= r`.
  * Returns:
  *   1: Front (12:00)
  *   2: Front-Right (1:30)
@@ -818,9 +848,48 @@ export class Hud {
  */
 export function calculateHitOctant(forwardDot, rightDot) {
   if (forwardDot > 0.9238) return 1;
-  if (forwardDot > 0.3826) return rightDot > 0 ? 2 : 8;
-  if (forwardDot > -0.3826) return rightDot > 0 ? 3 : 7;
-  if (forwardDot > -0.9238) return rightDot > 0 ? 4 : 6;
+  if (forwardDot > 0.3826) return rightDot >= 0 ? 2 : 8;
+  if (forwardDot > -0.3826) return rightDot >= 0 ? 3 : 7;
+  if (forwardDot > -0.9238) return rightDot >= 0 ? 4 : 6;
   return 5;
+}
+
+/**
+ * The octant `GameServer::_giveDamage` sends a hurt soldier (ledger HFD-3),
+ * in this page's frame. `victim` is his position and `yaw` his heading, whose
+ * forward is `(sin yaw, 0, cos yaw)`; `source` is the damage's own point,
+ * the engine's `Pos3` (HFD-4): where the round left the muzzle, or the
+ * blast's centre.
+ *
+ * The engine looks from the victim at the source (`calcLookAtMatrix`, row 2
+ * is the unit 3-D direction, so height counts) and dots that with his
+ * forward and right rows. His right, on this page, is `(-cos yaw, 0,
+ * sin yaw)` -- the screen's right, the engine's +x through the exporter's
+ * z mirror. `(cos yaw, 0, -sin yaw)`, which this page used to dot with, is
+ * his left, and it put every arc on the wrong side. A source on the victim's
+ * own origin is the engine's identity look-at, whose row 2 is its +z: this
+ * page's -z.
+ */
+export function hitFromDirOctant(victim, yaw, source) {
+  let dx = source.x - victim.x, dy = source.y - victim.y, dz = source.z - victim.z;
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1.1920929e-7) {
+    dx = 0; dy = 0; dz = -1;
+  } else {
+    dx /= len; dy /= len; dz /= len;
+  }
+  const s = Math.sin(yaw), c = Math.cos(yaw);
+  return calculateHitOctant(dx * s + dz * c, dz * s - dx * c);
+}
+
+/** `HitFromDir/HitFromDirAlpha` for one hit (ledger HFD-2): the damage as a
+ *  share of the victim's own max HP, above 0.75 held at 0.75 and below 0 at
+ *  0 -- client `0x004b0439`..`0x004b0473`. The engine keeps a NaN (a zero
+ *  over a zero max); this returns 0 for it rather than a colour nobody can
+ *  name. */
+export function hitFromDirAlpha(damage, maxHitPoints) {
+  const alpha = damage / maxHitPoints;
+  if (alpha > 0.75) return 0.75;
+  return alpha >= 0 ? alpha : 0;
 }
 
