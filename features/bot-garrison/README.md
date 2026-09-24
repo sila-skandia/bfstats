@@ -61,7 +61,9 @@ engine's SAI alone). The runner's default is still the SAI, the baseline:
 ## Measured
 
 Bocage, 8 a side, 420 s, seeds 1..4, the SAI against the garrison (same
-code otherwise):
+code otherwise). Measured before bots' rounds met their own side
+([features/bot-friendly-fire](../bot-friendly-fire/README.md)); re-run
+before comparing against it:
 
 | | SAI | garrison |
 |---|---:|---:|
