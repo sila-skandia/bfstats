@@ -40,6 +40,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { rigCapsules } from './rig-capsules.js';
 import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
+import { loadFirst, poseUrls } from './pose-bases.js';
 import { outfitCandidates } from './kit-graft.js';
 
 /**
@@ -87,8 +88,9 @@ export function createBotVisuals(page) {
   async function botPosePair(soldierName, weapon) {
     const key = `${soldierName}__${weapon}`;
     if (!botPoseCache.has(key)) {
-      botPoseCache.set(key, page.footBodyLoader
-        .loadAsync(`${page.MODELS_BASE}/poses/${key}.pose.glb${page.bust()}`)
+      // The mod's own pose tree, then vanilla's (`pose-bases.js`).
+      botPoseCache.set(key, loadFirst(page.footBodyLoader,
+        poseUrls(page.MODELS_BASE, `${key}.pose.glb`, page.bust()))
         .then(gltf => {
           gltf.scene.traverse(obj => {
             const data = obj.userData || {};
@@ -383,7 +385,7 @@ export function createBotVisuals(page) {
   const seatBodies = createSeatBodies({
     get loader() { return page.footBodyLoader; },
     url: (soldierName, pose) =>
-      `${page.MODELS_BASE}/poses/${soldierName}__${pose}.pose.glb${page.bust()}`,
+      poseUrls(page.MODELS_BASE, `${soldierName}__${pose}.pose.glb`, page.bust()),
     shade: scene => page.bindDynamicShading(scene),
     get parent() { return botBodies.botRoot; },
     dispose: scene => page.disposeFootBodyScene(scene),

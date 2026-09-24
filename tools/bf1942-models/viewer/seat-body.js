@@ -163,7 +163,8 @@ function applyWorldDelta(bone, quat) {
 
 /**
  * Seated bodies for soldiers the page does not own (bots, remote players).
- * `ctx`: `loader` (a GLTFLoader), `url(soldierName, poseName)`, `shade(scene)`,
+ * `ctx`: `loader` (a GLTFLoader), `url(soldierName, poseName)` (a url, or
+ * the urls to try in order), `shade(scene)`,
  * `parent` (the group they hang off), `dispose(scene)` (GPU release), and
  * optionally `dresser` (`soldier-dress.js`), which hangs the occupant's kit on
  * the seated body -- helmet and all, the way the engine draws a jeep's
@@ -172,13 +173,23 @@ function applyWorldDelta(bone, quat) {
 export function createSeatBodies(ctx) {
   const cache = new Map();
 
-  function asset(url) {
-    if (!cache.has(url)) {
-      cache.set(url, ctx.loader.loadAsync(url)
-        .then(gltf => ({ scene: gltf.scene, animations: gltf.animations ?? [] }),
-              () => null));
+  /** The first of `urls` (one url, or the model roots to try in order,
+   *  `pose-bases.js`) that loads, else null. */
+  function asset(urls) {
+    const list = [urls].flat();
+    const key = list.join('|');
+    if (!cache.has(key)) {
+      cache.set(key, (async () => {
+        for (const url of list) {
+          try {
+            const gltf = await ctx.loader.loadAsync(url);
+            return { scene: gltf.scene, animations: gltf.animations ?? [] };
+          } catch { /* the next root */ }
+        }
+        return null;
+      })());
     }
-    return cache.get(url);
+    return cache.get(key);
   }
 
   /**
