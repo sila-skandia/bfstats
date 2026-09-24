@@ -328,7 +328,7 @@ export class Match {
     };
     // A seat's gun fired (`guns.onShot`, the pull and its projectile count):
     // counted per bot, and the first pull of each seating is an event.
-    this.vehicleFire = { rounds: 0, byKind: {}, byTemplate: {} };
+    this.vehicleFire = { rounds: 0, byKind: {}, byTemplate: {}, byGun: {} };
     stage.hooks.onRounds = (group, rounds, firerId) => {
       const bot = firerId ? this.bots.find(b => b.playerId === firerId) : null;
       const m = bot?.vehicle;
@@ -339,6 +339,8 @@ export class Match {
       vf.rounds += rounds;
       vf.byKind[m.kind] = (vf.byKind[m.kind] ?? 0) + rounds;
       vf.byTemplate[m.template] = (vf.byTemplate[m.template] ?? 0) + rounds;
+      const gun = `${m.template}/${group?.node?.name ?? '?'}`;
+      vf.byGun[gun] = (vf.byGun[gun] ?? 0) + rounds;
       if (bot._simFiredMount === m) return;
       bot._simFiredMount = m;
       this.pendingEvents.push({ type: 'vehicle_fire', bot: firerId, side: bot.team, vehicle: this.vehicleLabel(m),
@@ -508,6 +510,11 @@ export class Match {
           st: bot._dbgMoveStatus ?? null, drive: bot._dbgDrive ?? null, ang: r4(bot._dbgSteerAngle ?? 0),
           steer: bot._dbgSteer ? v2(bot._dbgSteer.slice(0, 2)) : null,
           v: r2(Math.hypot(bot.vehicle.drive?.state?.velocity?.x ?? 0, bot.vehicle.drive?.state?.velocity?.z ?? 0)) } } : {}),
+        // The fire plan's approach this tick (bot-plans.js execFireApproach):
+        // its move and the three terms of S.
+        ...(head?.type === 'FireApproach' && bot._fireApproachDbg ? { fa: {
+          move: bot._fireApproachDbg.move, dist: r2(bot._fireApproachDbg.dist), inRange: bot._fireApproachDbg.inRange,
+          seen: bot._fireApproachDbg.seen, aim: bot._fireApproachDbg.aim, pitch: r2(bot._fireApproachDbg.pitch ?? 0) } } : {}),
         terms: this.terms(bot),
       });
     }
