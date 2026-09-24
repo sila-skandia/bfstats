@@ -215,8 +215,16 @@ more than 25 m): not scored.
 
 ## Fire (mounted)
 
-`scoreVehicleTargets`, `mode 'largeBore'` for a hull's or seat's guns,
-`'air'` for an aircraft (`bot.js _chooseVehicleTarget`).
+`scoreVehicleTargets`, by the unit's `AIbehaviours.con` row (its
+`equipmentType`; `bot-perception.js fireMode`, AI-124): `mode 'infantry'`
+(`scoreMountedInfantry`, `BBFire::calculateUrgency` 0x08563570) for Tank,
+Fixed and LandingCraftFixed units: the spotted list only, no minRange cut,
+the range factor from the chosen weapon, a fixed gun only what its camera
+points at and, in range, sees; `mode 'largeBore'` (below) for Boat,
+BoatFixed and FixedLargeBore; `'air'` for an aircraft. A tank's trigger runs
+only while the approach's S holds, with the precision alone (AI-125), and its
+approach closes on the first valid pixel toward it when the target stands on
+a blocked one (AI-126). The large-bore rule:
 
 - Same weapon value; a weapon whose `minRange` the target is inside scores 0
   (large bore); a fixed weapon must be able to point at the target

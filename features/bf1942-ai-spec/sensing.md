@@ -8,10 +8,13 @@ this is the later reading.
 
 ## Vision (`sense`)
 
-The eye is the soldier's position plus 1.6 / 1.1 / 0.4 m by stance, or the
-hull's position plus 2 m when mounted (`bot.js _eye`; VEHICLE_EYE_HEIGHT
-INVENTION). The look direction is the soldier's yaw, or the turret's heading
-when mounted.
+The eye is the soldier's position plus 1.6 / 1.1 / 0.4 m by stance, or,
+mounted, the seat's camera node (`bot-perception.js sensingEye`: the engine's
+ray origin is the camera the player's PCO carries, `getCameraTransformation`
+0x085dcdb0 / `_setVehicle` 0x080523d0; AI-123), 2 m over the hull origin only
+for a seat with no camera (INVENTION). The look direction is the soldier's
+yaw, or the turret's heading when mounted; a tank in MoveTo turns its turret
+down the hull (`BAPALookAhead`, AI-123).
 
 Three sub-states cycle one per tick, each a band of the view distance `V`
 and a full field of view:
@@ -58,8 +61,14 @@ memory is left to the memory update. Otherwise it gets
 n = clamp(round(30 * radius / distance), 1, 10)      radius 1.0 (INVENTION)
 ```
 
-rays from the eye to points on its body (heights 0.3, 0.8, 1.2, 1.55 m capped
-by stance, the first at 1.0 m, jittered +-0.25 m sideways: INVENTION), each a
+rays from the eye to points on its body. On a soldier: heights 0.3, 0.8, 1.2,
+1.55 m capped by stance, the first at 1.0 m, jittered +-0.25 m sideways
+(INVENTION; the engine picks a random skeleton bone,
+`pickSoldierRandomSensePosition` 0x085e3d20). On a hull (AI-123), with the
+hull's own radius in `n`: the first of several at the hull's position, every
+other at a uniform point on a random collision triangle of the hull
+(`pickRandomSensePosition` 0x085e4080; one pool per hull, INVENTION of
+weighting), and the point that saw it is kept in the hull's frame. Each is a
 `lineClear` through the collider that skips the bot's own hull and the
 target's (AI-62), re-casting past up to 32 faces of a skipped hull (a ray to
 a plane's seat meets several of its faces; the limit was 4 and a line to a
@@ -84,8 +93,9 @@ Every tick, for every record:
 - its position is the live one (the engine re-projects a body-fixed point
   through the live transform: a bot knows where a lost enemy is);
 - if inside the view distance and the widest field's frustum (100 deg, 75
-  mounted), the rays are cast again: seen refreshes it; the first miss marks
-  it lost at `now`;
+  mounted), the rays are cast again (a hull: its position, then the kept
+  point, then a new random one, `updateMemory` 0x085244e0): seen refreshes
+  it; the first miss marks it lost at `now`;
   a lost record is erased **60 s** after it was lost.
 
 The spotted list every behaviour scores is every record, seen or lost
