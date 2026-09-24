@@ -163,7 +163,7 @@ export class StrategicAI {
 
   /** Register a bot (`{ id, side, position() }`) with the strategic layer. */
   addBot(id, side, positionOf) {
-    this.bots.set(id, { id, side, positionOf, area: null, assignedTo: null, isAttack: false, orderedAt: -Infinity, waypoints: null, free: true, post: null });
+    this.bots.set(id, { id, side, positionOf, area: null, assignedTo: null, isAttack: false, orderedAt: -Infinity, waypoints: null, free: true, post: null, lastPost: null });
   }
 
   removeBot(id) {
@@ -174,7 +174,7 @@ export class StrategicAI {
   botDied(id) {
     const b = this.bots.get(id);
     if (!b) return;
-    b.assignedTo = null; b.waypoints = null; b.free = true; b.area = null; b.post = null;
+    b.assignedTo = null; b.waypoints = null; b.free = true; b.area = null; b.post = null; b.lastPost = null;
   }
 
   /**
@@ -188,6 +188,9 @@ export class StrategicAI {
     const b = this.bots.get(id);
     if (!b) return;
     b.assignedTo = null; b.waypoints = null; b.free = true;
+    // A garrison post (doctrine-garrison.js) is given up with the rest; the
+    // flag keeps him as its last guard, for the next pass.
+    if (b.post) { b.lastPost = b.post; b.post = null; }
   }
 
   /** The order a bot currently holds, or null. */
@@ -376,8 +379,13 @@ export class StrategicAI {
       S.active = chosen;
       chosen.chosenAt = this.time;
       chosen.count = 1;
-      // A change frees every bot of the side.
-      for (const b of this.bots.values()) if (b.side === side) { b.assignedTo = null; b.free = true; }
+      // A change frees every bot of the side (a garrison post too: `post` is
+      // set only while a bot is posted, `lastPost` keeps the flag's guard).
+      for (const b of this.bots.values()) {
+        if (b.side !== side) continue;
+        b.assignedTo = null; b.free = true;
+        if (b.post) { b.lastPost = b.post; b.post = null; }
+      }
       for (const [, st] of this.areaState) { st[side].assigned.clear(); st[side].isAttack = false; }
     }
   }

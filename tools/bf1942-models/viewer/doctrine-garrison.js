@@ -1,6 +1,6 @@
 // The garrison play (INVENTION, 2026-09-24, features/bot-garrison): one bot
-// on each flag worth guarding, and that one busy at it; everyone else
-// attacks. The page's default doctrine (`map.html`, `?doctrine=sai` for the
+// hangs back on each flag the side has taken, and keeps busy at it; everyone
+// else pushes. The page's default doctrine (`map.html`, `?doctrine=sai` for the
 // engine's own); the runner's is still the SAI (`--doctrine garrison`).
 //
 // The engine's SAI splits its free bots into attackers and defenders by the
@@ -17,11 +17,13 @@
 // with `opts.garrison`):
 //
 //  - Posts: each flag the side holds and the enemy can take gets at most one
-//    bot, the front's first (a flag whose area has a neighbour the side does
-//    not hold), no more than `GARRISON.share` of the side's alive bots. The
-//    post goes to the flag's last guard when he is free again, else the
-//    nearest free bot on foot or in a fixed gun; a bot at the wheel of a
-//    hull is left to attack.
+//    bot, no more than `GARRISON.share` of the side's alive bots, the flags
+//    the SAI's `_defenceNeed` rates highest first (its temperature with the
+//    hostile and neutral neighbour factors). A post stands while the side
+//    holds its flag. It goes to the flag's last guard when he is free again
+//    (`lastPost`), else the nearest free bot on foot or in a fixed gun; a bot
+//    at the wheel of a hull is left to attack. A record's `post` is set only
+//    while the bot is posted.
 //  - Everyone else attacks: a free bot is an attacker whatever the
 //    aggression, and one the attack targets did not collect joins the
 //    nearest of them instead of holding where it is.
@@ -74,12 +76,18 @@ function postable(sai, b) {
   return !u?.mounted || !!u?.fixed;
 }
 
-/** The areas whose flag the side guards, the front's first. */
-export function guardedAreas(layer, side) {
+/**
+ * The areas whose flag the side may guard (held, with a control point the
+ * enemy can take), the most needed first: `needOf(area)` (the SAI's
+ * `_defenceNeed`), else the front's first (an area with a neighbour the side
+ * does not hold).
+ */
+export function guardedAreas(layer, side, needOf = null) {
   const enemy = side === 1 ? 2 : 1;
   const areas = layer.areas.filter(a => a.controlPoints.length && layer.ownerOf(a) === side && layer.takeableBy(a, enemy));
   const front = a => layer.neighboursOf(a).some(n => layer.ownerOf(n) !== side);
-  return areas.map((a, i) => ({ a, i, f: front(a) ? 0 : 1 })).sort((x, y) => x.f - y.f || x.i - y.i).map(x => x.a);
+  return areas.map((a, i) => ({ a, i, need: needOf ? needOf(a) : 0, f: front(a) ? 0 : 1 }))
+    .sort((x, y) => y.need - x.need || x.f - y.f || x.i - y.i).map(x => x.a);
 }
 
 /** The cap on the side's posts for `n` alive bots. */
@@ -90,17 +98,19 @@ export function postCap(n) {
 /**
  * `opts.garrison.post` for `StrategicAI._distribute`: release the posts that
  * no longer stand (the flag lost, or the guard at the wheel of a hull), then
- * post the free bots on the flags still unguarded, up to the cap. A posted
+ * post free bots on the most needed flags still unguarded, up to the cap. A
+ * standing post is kept where it is though another flag has come to need
+ * one more. A posted
  * record is not free, not an attacker, assigned to the flag's area, with no
  * SAI order (the play gives it a `WPPost`).
  */
 export function assignPosts({ sai, side, bots, alive }) {
   const layer = sai.layer;
-  const areas = guardedAreas(layer, side);
+  const areas = guardedAreas(layer, side, a => sai._defenceNeed(a, side));
   for (const b of bots) {
     if (b.free || !b.post) continue;
     if (!areas.includes(b.post) || !postable(sai, b)) {
-      b.free = true; b.assignedTo = null; b.isAttack = true; b.post = null;
+      b.free = true; b.assignedTo = null; b.isAttack = true; b.lastPost = b.post; b.post = null;
     }
   }
   const cap = postCap(bots.length);
@@ -116,7 +126,7 @@ export function assignPosts({ sai, side, bots, alive }) {
       if (!p) continue;
       // The flag's last guard first (a bot who has just sat down at its gun
       // is freed by the unit change and comes back here).
-      const d = b.post === area ? -1 : Math.hypot(p[0] - fp[0], p[2] - fp[2]);
+      const d = b.lastPost === area ? -1 : Math.hypot(p[0] - fp[0], p[2] - fp[2]);
       if (d < bestD) { bestD = d; best = b; }
     }
     if (!best) continue;
@@ -124,6 +134,7 @@ export function assignPosts({ sai, side, bots, alive }) {
     best.isAttack = false;
     best.assignedTo = area;
     best.post = area;
+    best.lastPost = area;
     best.waypoints = null;
     best.orderedAt = sai.time;
     n++;

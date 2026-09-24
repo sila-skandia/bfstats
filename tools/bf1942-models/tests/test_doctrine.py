@@ -206,3 +206,12 @@ class GarrisonTests(unittest.TestCase):
         self.assertEqual(g["manned"], {"phase": "man", "gunId": "G:gun", "urgency": 0})
         # A post sitting in a gun away from its flag gets out.
         self.assertEqual(g["farExit"], ["x"])
+
+    def test_a_guard_freed_holds_no_post(self) -> None:
+        u = self.g["unitChange"]
+        self.assertEqual(u["freed"], {"free": True, "post": None, "lastPost": "West"})
+        self.assertEqual(u["reposted"], ["WPPost:West"] + ["WPMoveTo:East:engaged"] * 7)
+        # One flag guarded: never two posts, never a post order on a record
+        # that is not posted.
+        self.assertLessEqual(u["worstPosts"], 1)
+        self.assertEqual(u["strayPosts"], 0)
