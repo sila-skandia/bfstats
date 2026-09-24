@@ -783,6 +783,16 @@ Acceptance: the live tank pair firing with numbers, pins for 1 to 5, the
 El Alamein and Bocage runner numbers before and after (SAI, 8 a side,
 600 s, seeds 1..10), ledger and KNOBS rows, the status file updated.
 
+Done 2026-09-24 (ledger AI-123..AI-127; PARITY_STATUS item 10). 1: the
+camera origin and the hull sense points, plus the tank's look-ahead in
+MoveTo. 2: Tank, Fixed and LandingCraftFixed run `BBFire` (AI-54
+corrected; `equipmentType` extracted and live). 3: the trigger is gated on
+S alone; the firing point is the tank's own position (read in part). 4: the
+approach's goal is the first valid pixel toward the bot; El Alamein route
+failures 1 / 67 -> 1 / 1. 5: an aircraft's own seat holds no area. Live:
+both tanks sense each other at 51 m and one fires. Open items in
+PARITY_STATUS item 10.
+
 ## Brief S: the level bake in layers
 
 Added 2026-09-24 at the user's request: "I'm surprised we can't layer the
