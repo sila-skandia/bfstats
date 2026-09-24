@@ -10,6 +10,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
+import { loadFirst, poseBases, poseUrls } from './pose-bases.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -83,13 +84,27 @@ export function createFootBody(page) {
   const footBodyQuat = new THREE.Quaternion();
   const footBodyEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
+  /** The model root whose `gaits.json` answered: its bundles are read from
+   *  the same root (`footBundle`, the canopy). */
+  footBodies.gaitsBase = null;
+
   function footGaits() {
     if (!footBodies.footGaitsManifest) {
-      footBodies.footGaitsManifest =
-        fetch(`${page.MODELS_BASE}/poses/gaits/gaits.json${page.bust()}`)
-          .then(r => (r.ok ? r.json() : null))
-          .then(json => { footBodies.soldierBody = json?.soldierBody ?? null; return json; })
-          .catch(() => null);
+      // The mod's own gait tree, then vanilla's (`pose-bases.js`): a mod
+      // extracted before its tree carried bundles still walks.
+      footBodies.footGaitsManifest = (async () => {
+        for (const base of poseBases(page.MODELS_BASE)) {
+          try {
+            const r = await fetch(`${base}/poses/gaits/gaits.json${page.bust()}`);
+            if (!r.ok) continue;
+            const json = await r.json();
+            footBodies.gaitsBase = base;
+            footBodies.soldierBody = json?.soldierBody ?? null;
+            return json;
+          } catch { /* the next root */ }
+        }
+        return null;
+      })();
     }
     return footBodies.footGaitsManifest;
   }
@@ -103,7 +118,7 @@ export function createFootBody(page) {
     if (!relative) return Promise.resolve([]);
     if (!footBundleCache.has(relative)) {
       footBundleCache.set(relative, footBodyLoader
-        .loadAsync(`${page.MODELS_BASE}/poses/${relative}${page.bust()}`)
+        .loadAsync(`${footBodies.gaitsBase ?? page.MODELS_BASE}/poses/${relative}${page.bust()}`)
         .then(g => {
           const states = g.userData?.states ?? namedStates(g.userData);
           for (const clip of g.animations ?? []) clip.userData = { ...(states[clip.name] ?? {}) };
@@ -169,8 +184,8 @@ export function createFootBody(page) {
   function footPosePair(soldierName, weapon) {
     const key = `${soldierName}|${weapon}`;
     if (!footBodyCache.has(key)) {
-      footBodyCache.set(key, footBodyLoader
-        .loadAsync(`${page.MODELS_BASE}/poses/${soldierName}__${weapon}.pose.glb${page.bust()}`)
+      footBodyCache.set(key, loadFirst(footBodyLoader,
+        poseUrls(page.MODELS_BASE, `${soldierName}__${weapon}.pose.glb`, page.bust()))
         .then(gltf => {
           gltf.scene.traverse(obj => {
             const data = obj.userData || {};
@@ -194,7 +209,7 @@ export function createFootBody(page) {
       footBodyCache.set('__canopy', footGaits().then(manifest => {
         if (!manifest?.canopy) return null;
         return footBodyLoader
-          .loadAsync(`${page.MODELS_BASE}/poses/${manifest.canopy}${page.bust()}`)
+          .loadAsync(`${footBodies.gaitsBase ?? page.MODELS_BASE}/poses/${manifest.canopy}${page.bust()}`)
           .then(gltf => {
             gltf.scene.traverse(obj => {
               if (obj.isSkinnedMesh) obj.frustumCulled = false;

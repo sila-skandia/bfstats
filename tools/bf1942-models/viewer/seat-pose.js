@@ -12,6 +12,7 @@ import { undress } from './soldier-dress.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { DIE_IN_VEHICLE_UPPER, corpseSeconds } from './soldier-death.js';
+import { loadFirst, poseUrls } from './pose-bases.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -66,18 +67,19 @@ export function createSeatPose(page) {
     const states = resolveSeatStates(seat.seatObjects);
     const soldierName = page.soldierTemplateFor(
       page.flags.find(f => f.team === page.deployTeamId) || { team: page.deployTeamId });
+    // The mod's own pose tree, then vanilla's (`pose-bases.js`).
     const assetFor = name =>
-      `${page.MODELS_BASE}/poses/${soldierName}__${name}.pose.glb${page.bust()}`;
+      poseUrls(page.MODELS_BASE, `${soldierName}__${name}.pose.glb`, page.bust());
     let gltf;
     try {
-      gltf = await seatPoseLoader.loadAsync(
+      gltf = await loadFirst(seatPoseLoader,
         assetFor(seatPoseName(states.upperBody, states.lowerBody)));
     } catch {
       // The seat names a state the game never declared, so no glb was written
       // for it. The engine still draws the occupant — see `defaultSeatPoseName`.
       const fallback = defaultSeatPoseName(body.mask);
       try {
-        gltf = await seatPoseLoader.loadAsync(assetFor(fallback));
+        gltf = await loadFirst(seatPoseLoader, assetFor(fallback));
       } catch {
         return;
       }

@@ -221,8 +221,15 @@ The full suite after the rebase is 3,227 tests, all OK.
    for 0.625 s, not 0.216 s, and lie to stand for 0.333 s plus 0.1 s, not 0.115 s.
 6. **The fire-timer half of BODY-2 is not modelled.** A stance change while firing swaps the torso to
    the transition.
-7. **Mods.** XPack1, XPack2 and EoD have no gait trees, so their bots keep the old still rig. The kit
-   dresser reads the mod's own `kits.json` first.
+7. **Mods.** Done for XPack1 and XPack2 (2026-09-24): `extract_pose.py --mod XPack1 --shared-assets
+   --out viewer/models/mods/xpack1/poses` (and XPack2) wrote their gait, die, swim and parachute
+   sidecars, 31 and 37 files, published and checked byte for byte on mesh.bfstats.io. The same check
+   found that a mod level drew no body at all for a soldier/weapon pair the mod inherits
+   (`USSoldier__Thompson` on Anzio, every pair on Telemark): the pose loaders now try the mod's tree,
+   then vanilla's (`viewer/pose-bases.js`, the kit dresser's own rule), and every bot on Anzio and
+   Telemark has a body, a gait and its kit. EoD is parked and still has no gait tree; its soldiers now
+   read vanilla's `gaits.json` as a fallback. XPack1's `3PCrouchBreathUpperStengun.baf` is unreadable
+   in its archive, so the Stengun's crouch torso is the one clip that grip lacks.
 8. **Remote players.** `netcode-render.js` bodies are neither dressed nor driven by `SoldierActions`.
 9. **The human's own body** is dressed but plays no stance transitions (`soldier-body.js`).
 10. **Grenades.** A bot is drawn holding his primary, so a thrown grenade plays no torso action.
