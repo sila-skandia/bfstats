@@ -48,6 +48,18 @@
     <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
+    <div id="controls-profile">
+      <div class="cp-row"><span id="controls-profile-label">controls: shipped defaults</span></div>
+      <div class="cp-row cp-actions">
+        <button type="button" id="controls-import-btn">Import profile .con</button>
+        <button type="button" id="controls-reset-btn" hidden>Defaults</button>
+        <input type="file" id="controls-import" accept=".con,text/plain" multiple hidden>
+      </div>
+      <details id="controls-details">
+        <summary>bindings</summary>
+        <div id="controls-table"></div>
+      </details>
+    </div>
   </aside>
   <button type="button" class="map-controls-fab" id="map-controls-fab" aria-label="Show map controls" hidden>
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h9M15 12h-1M9 2.5v3M4 6.5v3M11 10.5v3"/></svg>
@@ -206,6 +218,7 @@ import { createLocalLook } from './local-look.js';
 import { createVehicleEntry } from './vehicle-entry.js';
 import { createPageConsole } from './page-console.js';
 import { createPageInput } from './page-input.js';
+import { createControls } from './controls.js';
 import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
@@ -237,14 +250,6 @@ const LOOK_SENS = 0.0022;
 const FLY_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
   'ShiftLeft', 'ShiftRight',
-]);
-// On foot the keys are the game's own, from Settings/Default/Controls/Infantry.con:
-// W/S c_PIThrottle, A/D c_PIYaw (strafe), Shift c_PIWalk (the *slower* gait),
-// LeftCtrl c_PICrouch, Z c_PILie, Space c_PIAction. Space and Ctrl both scroll
-// or shortcut the page otherwise, which is why they are preventDefault'ed.
-const FOOT_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight',
-  'ControlLeft', 'ControlRight', 'KeyZ', 'Space',
 ]);
 
 // ?shots keeps the drawing buffer so canvas.toDataURL() works for external
@@ -446,8 +451,65 @@ const level = createLevel(bag(
     get vehicles() { return vehicles; },
   },
 ));
+// The control map: the player's own bindings, defaults first (the game's
+// shipped maps, baked by extract_profile_controls.py), an imported profile
+// over them. Created before pageInput because the keydown router reads it
+// per event; its own bag reads pageInput through thunks, so the order is
+// only about who parses first.
+const controls = createControls(bag(
+  from(() => pageInput, `captured keys padTriggerDown padTriggerUp`),
+  from(() => localPlayer, `occupancy soldier`),
+  {
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  },
+));
+
+// The sidebar's control-map block: import a real profile's Controls/*.con
+// (the four files the game writes), see what the map now says in the game's
+// own wording, and go back to the shipped defaults. Everything is local —
+// the profile is 273 lines of text and the parse is the same one the
+// defaults went through.
+const controlsProfileLabel = document.getElementById('controls-profile-label');
+const controlsImportBtn = document.getElementById('controls-import-btn');
+const controlsImport = document.getElementById('controls-import');
+const controlsResetBtn = document.getElementById('controls-reset-btn');
+const controlsTable = document.getElementById('controls-table');
+
+function paintControlsProfile() {
+  const { source, rows } = controls.describe();
+  controlsProfileLabel.textContent = source === 'defaults'
+    ? 'controls: shipped defaults' : `controls: imported profile`;
+  controlsResetBtn.hidden = source === 'defaults';
+  controlsTable.replaceChildren(...rows.map(row => {
+    const line = document.createElement('div');
+    line.className = 'cp-bind';
+    const name = document.createElement('span');
+    name.className = 'cp-trigger';
+    name.textContent = row.trigger.replace(/^c_PI/, '');
+    const binds = document.createElement('span');
+    binds.className = 'cp-keys';
+    binds.textContent = row.labels.join(' \u00b7 ');
+    line.append(name, binds);
+    return line;
+  }));
+}
+controlsImportBtn.addEventListener('click', () => controlsImport.click());
+controlsImport.addEventListener('change', async () => {
+  if (!controlsImport.files?.length) return;
+  const { applied } = await controls.importFiles(controlsImport.files);
+  controlsProfileLabel.textContent = applied.length
+    ? '' : 'controls: import found no map files';
+  paintControlsProfile();
+  controlsImport.value = '';
+});
+controlsResetBtn.addEventListener('click', () => {
+  controls.resetDefaults();
+  paintControlsProfile();
+});
+paintControlsProfile();
 const pageInput = createPageInput(bag(
   from(() => comms, `keydown:radioKeydown`),
+  from(() => controls, `activeCodes codeTriggers kblockKeys`),
   from(() => deployScreen, `deployActive`),
   from(() => freeCamera, `clampAltitude dollyCamera isSlow navMode panCamera resetCamera`),
   from(() => level, `world`),
@@ -464,10 +526,9 @@ const pageInput = createPageInput(bag(
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
-  from(() => vehicleHits, `AIR_KEYS`),
   {
     get camera() { return camera; }, get FLY_KEYS() { return FLY_KEYS; },
-    get FLY_SLOW() { return FLY_SLOW; }, get FOOT_KEYS() { return FOOT_KEYS; },
+    get FLY_SLOW() { return FLY_SLOW; },
     get hud() { return hud; }, get isTouchDevice() { return isTouchDevice; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
@@ -598,6 +659,7 @@ const vehicles = new VehicleRegistry({
 const seatWorldPos = new THREE.Vector3();
 const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${playerId}`);
 const localPlayer = createLocalPlayer(bag(
+  from(() => controls, `axis held`),
   from(() => deployScreen, `deployActive`),
   from(() => flagCapture, `resetCaptureUi`),
   from(() => footBodies, `syncFootBody`),
@@ -1459,6 +1521,7 @@ function botSpeaker(bot) {
 }
 /** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
 const comms = createComms(bag(
+  from(() => controls, `radioNumberOf`),
   from(() => flagCapture, `flags`),
   from(() => hudFeed, `sprite`),
   from(() => level, `extras`),
@@ -1584,6 +1647,11 @@ function commsWatchLocalDeath() {
 // are this page's wiring of several owners, in the order the page has always
 // run them. The order below is load-bearing: see each phase's own comments.
 function frame(dt) {
+  // The joystick is sampled once a frame with the rest of the devices: its
+  // button edges dispatch through pageInput's trigger bodies, and its axes
+  // are read by `controls.axis` from the sampling below. Absent pad, absent
+  // cost.
+  controls.pollGamepad();
   // Every drawn hull back on its last tick's pose before any of the frame's
   // simulation reads it (the bots' AI after the step, on a frame that ran no
   // tick); `localLook.present` below draws them between ticks again.
