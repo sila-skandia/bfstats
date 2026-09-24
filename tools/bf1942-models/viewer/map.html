@@ -815,7 +815,7 @@ const vehicleHits = createVehicleHits(bag(
   from(() => level, `collider currentRoot vehicleDamage world`),
   from(() => localPlayer, `applyDamageToPlayer occupancy soldier soldierArmor soldierDead`),
   from(() => referee, `applyDamage bodyAt bots capsulesOf damageLanded`),
-  from(() => soldierHud, `raiseHitIndication`),
+  from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
   from(() => vehicleHud, `feedVehicleHud`),
   from(() => wrecks, `damageVisuals showDamageTier stepWrecks wreckVehicle`),
   {

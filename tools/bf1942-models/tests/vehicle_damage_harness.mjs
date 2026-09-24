@@ -483,4 +483,55 @@ out.waterDeathFallback = deathTier(
   };
 }
 
+// Each timed tick is its own `giveDamage` in the engine, and so its own wash
+// for whoever sits in the hull (ledger HFD-11, HFD-13): `update` says what the
+// last tick of the step took, and the set lists every vehicle that ticked.
+{
+  const v = new DamageableVehicle(SHERMAN, { name: 'Sherman' });
+  v.damage(89);                                        // 11 HP: critical
+  const half = v.update(0.5).tick;                     // no whole second yet
+  const burn = v.update(0.5).tick;                     // one burn tick
+  const wet = v.update(1.0, { inWater: true }).tick;   // burn, then water: the water's
+  // The tick that kills reports what it asked for, not the HP that was left.
+  const last = new DamageableVehicle(SHERMAN, { name: 'Last' });
+  last.damage(99);                                     // 1 HP
+  const lastBurn = last.update(1.0, { inWater: true }).tick;
+  const set = new VehicleDamageSet();
+  set.add(3, SHERMAN, { name: 'Sherman' });
+  set.add(4, SPITFIRE, { name: 'Spitfire' });
+  set.get(3).damage(90);                               // 10 HP: critical
+  const ticks = [];
+  set.update(1.0, { ticks });
+  const early = [];
+  set.update(0.25, { ticks: early });
+  out.ticks = {
+    half, burn, wet, lastBurn, lastDestroyed: last.destroyed,
+    set: ticks.map(t => ({ owner: t.owner, amount: t.amount, name: t.vehicle.name })),
+    early: early.length,
+  };
+}
+
+// `applyHit` and `applySplash` hand back the priced damage beside the HP it
+// cost: the wash divides the former by the max (HFD-2).
+{
+  const set = new VehicleDamageSet();
+  set.add(3, { ...SHERMAN, splashMaterial: 50 }, { name: 'Sherman' });
+  set.get(3).damage(70);                               // 30 left
+  const halved = set.applyHit({ owner: 3, damage: 80 }, null, d => d / 2);
+  const tables = {
+    materials: { 236: { attGroup: 236, defGroup: 236, damage: 10 },
+                 50: { attGroup: 50, defGroup: 50, damage: 0 } },
+    modifiers: { 236: { 50: 2 } },
+  };
+  const fresh = new VehicleDamageSet();
+  fresh.add(2, { ...SHERMAN, splashMaterial: 50 }, { name: 'Near' });
+  const [splashed] = fresh.applySplash(
+    { point: [0, 0, 0], firer: 1, splashMaterial2: 236, splashRadius: 10 },
+    [{ owner: 2, x: 5, y: 0, z: 0 }], tables);
+  out.amounts = {
+    hit: { amount: halved.amount, lost: halved.lost },
+    splash: { amount: splashed.amount, lost: splashed.lost },
+  };
+}
+
 process.stdout.write(JSON.stringify(out, null, 1));

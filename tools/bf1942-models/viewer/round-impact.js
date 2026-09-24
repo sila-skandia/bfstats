@@ -9,8 +9,9 @@ import { damageFactor, IMPACT_BLAST_OFFSET, splashSpec } from './effects-core.js
 import { angleFactor } from './crash-damage.js';
 import { spawnImpact } from './round-visuals.js';
 
-/** Record a hit, name the effect the game would play, and play or mark it. */
-export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
+/** Record a hit, name the effect the game would play, and play or mark it.
+ *  `origin` is where the round left the barrel, when the caller kept it. */
+export function impact(guns, group, spec, hit, velocity = null, travelled = 0, origin = null) {
   const attacker = guns.attackerMaterial(spec);
   const family = materialFamily(hit.material);
   // `Projectile::getDamage`: the attacker material's `materialDamage`, then
@@ -52,6 +53,10 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
     effect: impactEffect(guns.damageEffects, attacker, hit.material),
     point: [hit.x, hit.y, hit.z],
     normal: [hit.nx, hit.ny, hit.nz],
+    // `Projectile+0x134`, the barrel's world position when it fired: the
+    // `Pos3` a direct hit hands `giveDamage`, which the victim's damage arc
+    // points at (ledger HFD-4). Null for a round launched without one.
+    origin: origin ? [origin[0], origin[1], origin[2]] : null,
     gun: group.node.name,
     distance: hit.t,
     // Which placed object was struck, against the firer's own. They must

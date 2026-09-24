@@ -341,6 +341,20 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual(5, got["coincidentFacingPlusZ"])
         self.assertEqual(1, got["coincidentFacingMinusZ"])
 
+    def test_a_hull_is_framed_by_its_own_nose_and_right_side(self) -> None:
+        # HFD-11: a seated player's octant is the hull root's, its -z the nose
+        # and +x the right through the exporter's z mirror.
+        axes = self.results["hitFromDirAxes"]
+        self.assertEqual(
+            {"front": 1, "frontRight": 2, "right": 3, "rearRight": 4,
+             "rear": 5, "rearLeft": 6, "left": 7, "frontLeft": 8}, axes["atRest"])
+        self.assertEqual(1, axes["pitchedAlongNose"])
+        self.assertEqual(2, axes["pitchedLevelAhead"])
+        self.assertEqual(1, axes["coincident"])
+
+    def test_the_yaw_form_is_the_axes_form_with_a_soldiers_axes(self) -> None:
+        self.assertEqual(0, self.results["hitFromDirAxes"]["disagreeWithYaw"])
+
     def test_the_alpha_is_the_damages_share_capped_at_three_quarters(self) -> None:
         a = self.results["hitFromDirAlpha"]
         self.assertAlmostEqual(1 / 3, a["third"])

@@ -581,7 +581,8 @@ export class CrashDamage {
         : null,
     }, this.tables);
 
-    return { damage, kill: false, effectCell: this._effectCell(matTerrain, matSelf) };
+    return { damage, kill: false, water: matTerrain === WATER_MATERIAL,
+             effectCell: this._effectCell(matTerrain, matSelf) };
   }
 
   _effectCell(matAttacker, matVictim) {

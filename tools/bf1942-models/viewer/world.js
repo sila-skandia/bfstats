@@ -430,7 +430,7 @@ export class World {
   get alpha() { return this.clock.alpha; }
 
   #emptyReport() {
-    return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [] };
+    return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [], timedDamage: [] };
   }
 
   #tick() {

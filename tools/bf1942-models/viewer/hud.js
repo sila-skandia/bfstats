@@ -871,6 +871,29 @@ export function calculateHitOctant(forwardDot, rightDot) {
  * page's -z.
  */
 export function hitFromDirOctant(victim, yaw, source) {
+  const s = Math.sin(yaw), c = Math.cos(yaw);
+  return octantToward(victim, source, s, 0, c, -c, 0, s);
+}
+
+/**
+ * The same octant for a victim framed by its own axes rather than a heading:
+ * the hull a seated player's wash is measured from. `_giveDamage` sends every
+ * occupant of a hit vehicle the octant of the damaged object itself, and in
+ * vanilla and both expansions that object is always the hull's root (ledger
+ * HFD-10, HFD-11), so a gunner facing backwards still reads the arc against
+ * the hull's nose. `forward` and `right` are the hull's unit axes in this
+ * page's frame: its local -z and +x in world space, the engine's rows 2 and 0
+ * through the exporter's z mirror, which leaves every dot product unchanged.
+ */
+export function hitFromDirOctantAxes(victim, forward, right, source) {
+  return octantToward(victim, source, forward.x, forward.y, forward.z,
+                      right.x, right.y, right.z);
+}
+
+/** `calcLookAtMatrix(victim, source)`'s row 2, dotted with the victim's
+ *  forward and right. A source on the victim's own origin is the engine's
+ *  identity look-at, whose row 2 is its +z: this page's -z. */
+function octantToward(victim, source, fx, fy, fz, rx, ry, rz) {
   let dx = source.x - victim.x, dy = source.y - victim.y, dz = source.z - victim.z;
   const len = Math.hypot(dx, dy, dz);
   if (len < 1.1920929e-7) {
@@ -878,8 +901,7 @@ export function hitFromDirOctant(victim, yaw, source) {
   } else {
     dx /= len; dy /= len; dz /= len;
   }
-  const s = Math.sin(yaw), c = Math.cos(yaw);
-  return calculateHitOctant(dx * s + dz * c, dz * s - dx * c);
+  return calculateHitOctant(dx * fx + dy * fy + dz * fz, dx * rx + dy * ry + dz * rz);
 }
 
 /** `HitFromDir/HitFromDirAlpha` for one hit (ledger HFD-2): the damage as a
