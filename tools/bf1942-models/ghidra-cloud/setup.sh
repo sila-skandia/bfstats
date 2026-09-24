@@ -85,6 +85,12 @@ for proj in bf1942-client linux-server; do
     echo "[setup] restoring $proj.rep"
     unzip -q -o "$WORK/$proj.rep.zip" -d "$PROJECTS_DIR"
   fi
+  # The zips record whoever built them as OWNER, and Ghidra refuses to open a
+  # project owned by another user (NotOwnerException) -- cloud sessions run as
+  # root. Re-own to the current user; runs every time so restores made by an
+  # earlier copy of this script get fixed too.
+  sed -i -E "s/(NAME=\"OWNER\" TYPE=\"string\" VALUE=\")[^\"]*/\1$(id -un)/" \
+    "$PROJECTS_DIR/$proj.rep/project.prp"
 done
 
 # --- 6. Summary -----------------------------------------------------------------
