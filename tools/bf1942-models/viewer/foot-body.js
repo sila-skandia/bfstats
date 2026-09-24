@@ -9,14 +9,16 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
+import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `deathFamily`, `deathYaw`, `footFeetCur`,
- * `footFeetPrev`, `footView`, `footView3p`, `MODELS_BASE`, `optOnFoot`,
- * `optPilot`, `presentAlpha`, `scene`, `soldier`, `soldierDead`.
+ * `bindDynamicShading`, `bust`, `deathFamily`, `deathYaw`, `deployKit`,
+ * `deployTeamId`, `footFeetCur`, `footFeetPrev`, `footView`, `footView3p`,
+ * `kitLoadout`, `MODELS_BASE`, `optOnFoot`, `optPilot`, `presentAlpha`,
+ * `scene`, `soldier`, `soldierDead`.
  */
 export function createFootBody(page) {
   const footBodies = {};
@@ -92,15 +94,44 @@ export function createFootBody(page) {
     return footBodies.footGaitsManifest;
   }
 
-  /** One shared clip sidecar's animations, by its path relative to `poses/`. */
+  /** One shared clip sidecar's animations, by its path relative to `poses/`.
+   *  A bundle's `extras.states` (`extract_pose.py` `state_meta`: the rate,
+   *  loop, morph factor and follow-on state of each clip, as the engine plays
+   *  it) rides on each clip as `clip.userData`, so whoever binds the clip has
+   *  it; a bundle baked before that carries none and the clips an empty one. */
   function footBundle(relative) {
     if (!relative) return Promise.resolve([]);
     if (!footBundleCache.has(relative)) {
       footBundleCache.set(relative, footBodyLoader
         .loadAsync(`${page.MODELS_BASE}/poses/${relative}${page.bust()}`)
-        .then(g => g.animations ?? [], () => []));
+        .then(g => {
+          const states = g.userData?.states ?? namedStates(g.userData);
+          for (const clip of g.animations ?? []) clip.userData = { ...(states[clip.name] ?? {}) };
+          return g.animations ?? [];
+        }, () => []));
     }
     return footBundleCache.get(relative);
+  }
+
+  /** The named-state bundles (`die`, `swim`, `parachute`) describe their clips
+   *  in the older shape, `{ speed, loop, morphFactor, returnTo }` under the
+   *  bundle's own key; read as the same `{ speed, loop, morph, then }`. */
+  function namedStates(extras) {
+    const out = {};
+    for (const key of ['die', 'swim', 'parachute']) {
+      for (const [name, meta] of Object.entries(extras?.[key] ?? {})) {
+        out[name] = { speed: meta.speed, loop: meta.loop, morph: meta.morphFactor,
+                      then: meta.returnTo ?? undefined };
+      }
+    }
+    return out;
+  }
+
+  /** `gaits.json` `stateMachine`: the torso transitions with no clip of their
+   *  own, and the weapons whose rate differs from their grip's bake. Null on a
+   *  tree that predates it. */
+  async function footStateMachine() {
+    return (await footGaits())?.stateMachine ?? null;
   }
 
   /** Every clip the body can play: the grip's upper half, the shared lower half,
@@ -221,6 +252,10 @@ export function createFootBody(page) {
   }
 
   function disposeFootBodyScene(root) {
+    // The kit's worn parts are clones of the dresser's cache, sharing its
+    // geometry and textures with every other wearer: off first, then free
+    // only what is the figure's own.
+    undress(root);
     root.traverse(obj => {
       obj.geometry?.dispose();
       obj.skeleton?.dispose?.();
@@ -247,6 +282,36 @@ export function createFootBody(page) {
     footBodies.footCanopy = null;
   }
 
+  // What the soldiers the page draws wear (`soldier-dress.js`): one dresser,
+  // one cache of kit parts, for this body and the bots' and the seats'.
+  footBodies.soldierDress = createSoldierDress({
+    loader: footBodyLoader,
+    bases: () => [...new Set([page.MODELS_BASE, 'models'])],
+    bust: () => page.bust(),
+    shade: node => page.bindDynamicShading(node),
+  });
+
+  /** The deploy kit this body wears (`kit-loadout.js` `kitLoadout`), or null. */
+  function footKit() {
+    return page.kitLoadout?.(page.deployTeamId, page.deployKit)?.kit ?? null;
+  }
+
+  /** Hang the deploy kit's parts on the body, and change them when the kit
+   *  changes under a body that stays (a new kit with the same weapon). The
+   *  corpse under the death cam wears them too: it is the same scene. */
+  function dressFootBody() {
+    const held = footBodies.footBody;
+    if (!held) return;
+    const kit = footKit();
+    if (held.kit === kit) return;
+    undress(held.scene);
+    held.kit = kit;
+    if (!kit) return;
+    footBodies.soldierDress.dress(held.scene, kit,
+      () => footBodies.footBody === held && held.kit === kit)
+      .catch(err => console.warn('3P body kit:', err));
+  }
+
   /** (Re)build the third-person body for `soldierName` holding `weapon`.
    *
    * Called wherever the weapon in hand changes, because the pose glb carries the
@@ -256,7 +321,10 @@ export function createFootBody(page) {
   async function ensureFootBody(soldierName, weapon) {
     if (!soldierName || !weapon) return null;
     if (footBodies.footBody && footBodies.footBody.soldier === soldierName
-        && footBodies.footBody.weapon === weapon) return footBodies.footBody;
+        && footBodies.footBody.weapon === weapon) {
+      dressFootBody();
+      return footBodies.footBody;
+    }
     const mine = ++footBodies.footBodyToken;
     const [pair, clips, canopy] = await Promise.all([
       footPosePair(soldierName, weapon),
@@ -274,9 +342,10 @@ export function createFootBody(page) {
     // The welded weapon, so the swim states can stow it. The pose export names
     // that subtree after the weapon template and records the name in
     // `extras.weapon`, so this is read out of the file rather than guessed.
-    const weaponNode = body.getObjectByName(pair.weaponName ?? weapon) ?? null;
+    const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-                 want: null, soldier: soldierName, weapon, weaponNode };
+                 want: null, soldier: soldierName, weapon, weaponNode, kit: null };
+    dressFootBody();
     if (canopy) {
       const chute = skeletonClone(canopy.scene);
       page.bindDynamicShading(chute);
@@ -399,6 +468,7 @@ export function createFootBody(page) {
     ensureFootBody,
     footBodyClips,
     footBodyLoader,
+    footStateMachine,
     syncFootBody,
   });
   return footBodies;
