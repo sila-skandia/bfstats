@@ -98,8 +98,8 @@ everyone. Name it on the runner with `--doctrine <name>` (both sides) or
 ## The garrison (the page's default)
 
 `doctrine-garrison.js`, 'garrison': the SAI's strategy and targets with one
-busy guard a held flag (a post that mans the flag's gun or walks a ring round
-it) and every other bot attacking; bots not on a post take a fixed gun only
+bot hanging back on each flag the side has taken (a post that mans the flag's
+gun or walks a ring round it) and every other bot pushing; bots not on a post take a fixed gun only
 for an enemy they have spotted in its reach. The page runs it unless
 `?doctrine=sai`; the runner's default stays the SAI. See
 [features/bot-garrison](../bot-garrison/README.md).
