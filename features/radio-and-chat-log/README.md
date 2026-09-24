@@ -93,7 +93,7 @@ MINES, ...).
 | Item | Status |
 |---|---|
 | `Radio/RadioGameMode` for conquest is 1 or 3 by `BfMenu+0x6DC`, a field nobody has named | 3 used: the retail conquest capture shows the page items at half alpha |
-| On-foot kills print `[killed]` in every retail capture, though the server stamps the hand weapon's template and the lexicon has names for some | `[killed]` on foot, the vehicle's name seated; why the client's lookup misses is open |
+| The kill line's bracketed word | Settled 2026-09-24 (the owner, from retail play): an on-foot kill names the weapon, `[killed]` is a man run over or caught by splash. The client localises the stamped template's name (`FUN_004933d0` 0x00494342: `DEFAULT_KILL_TEXT` unless the template id resolves, then `Locale::getWide` 0x005815b0, which widens the key itself on a miss, 0x00581470), so `[StG 44]`, `[K 98]`, `[K98Sniper]`. Built: `chat-log.js` `killStamp` (seated: the vehicle; roadkill and splash: none; else the killing damage's `weapon`, else the killer's held one); the damage paths carry `{ weapon, splash }` (`hand-fire.js`, the referee's `fireTick`, the splash pass in `vehicle-hits.js`), the speakers carry `weapon`, `comms.noteAttack` keeps `how` for the local player's death. A roadkill path does not exist yet (PHY-6); `killStamp` takes `roadkill` for when it does |
 | `BfOutlineStyle` alignment | centred, inferred from the file pairing it with `BfLeftOutlineStyle` |
 | Bots reacting to radio (`AIRadio` strengths: decay 1/a, gain b; shouts x 70/d) | not wired; the bot behaviours still take "no radio" |
 | Bots never send radio | verified: `AIRadio::sendMessage` has one caller, the server's relay |

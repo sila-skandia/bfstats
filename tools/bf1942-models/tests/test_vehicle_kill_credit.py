@@ -133,8 +133,31 @@ class DeathLineTests(unittest.TestCase):
         self.assertEqual([("Hans [PanzerIV] Player", 1)], self.line("botTankKillsHuman"))
         self.assertEqual("Hans [PanzerIV] Player", self.r["lines"]["botTankKillsHuman"]["centre"])
 
-    def test_an_on_foot_kill_prints_the_default_word(self) -> None:
-        self.assertEqual([("Player [killed] Hans", 2)], self.line("onFootKill"))
+    def test_an_on_foot_kill_prints_the_weapon(self) -> None:
+        # The owner, 2026-09-24: an on-foot kill always names the weapon in
+        # retail; `[killed]` is a man run over or caught by splash. The client
+        # prints the stamped template's lexicon string (0x00494342).
+        self.assertEqual([("Player [Thompson] Hans", 2)], self.line("onFootKill"))
+        self.assertEqual([("Hans [K 98] Player", 1)], self.line("botRifleKillsHuman"))
+
+    def test_the_killing_damage_names_the_weapon_over_the_one_held(self) -> None:
+        # A pistol drawn after the killing burst does not rename the kill.
+        self.assertEqual([("Player [Thompson] Hans", 2)], self.line("onFootNamedByDamage"))
+
+    def test_a_lexicon_miss_prints_the_template_name(self) -> None:
+        # `Locale::getWide` 0x005815b0 widens the key itself when no lexicon
+        # has it (0x00581470): vanilla's lexicon names no K98Sniper.
+        self.assertEqual([("Player [K98Sniper] Hans", 2)], self.line("onFootLexiconMiss"))
+
+    def test_splash_and_roadkill_print_the_default_word(self) -> None:
+        self.assertEqual([("Player [killed] Hans", 2)], self.line("onFootSplash"))
+        self.assertEqual([("Player [killed] Hans", 2)], self.line("runOver"))
+        # Nothing known about the killing damage or the weapon: the default.
+        self.assertEqual([("Player [killed] Hans", 2)], self.line("onFootNothingKnown"))
+
+    def test_a_seated_killer_names_his_vehicle_even_by_splash(self) -> None:
+        # The owner: tank kills already read right, shell splash included.
+        self.assertEqual([("Hans [PanzerIV] Player", 1)], self.line("tankSplashKillsHuman"))
 
     def test_no_killer_or_his_own_hand_is_no_more(self) -> None:
         self.assertEqual([("Hans is no more", 0)], self.line("hullDiedWithNobody"))
