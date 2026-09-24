@@ -7,15 +7,23 @@
 // The wiring is checked at percentages that are not the shipped 100, so a
 // ratio picked from the wrong pair shows: soldier 50, vehicle 25, soldier
 // splash 10, vehicle splash 5. The modules are imported from the viewer tree
-// in place. One JSON blob on stdout; run by `tests/test_friendly_fire.py`.
+// in place, through the runner's hooks (`sim/env.mjs`: `three` is the vendored
+// build). One JSON blob on stdout; run by `tests/test_friendly_fire.py`.
 
-import {
-  FRIENDLY_FIRE_SHIPPED, friendlyDamage, friendlyFireRatio, roundPasses,
-} from '../viewer/friendly-fire.js';
-import { createVehicleHits } from '../viewer/vehicle-hits.js';
-import { VehicleDamageSet } from '../viewer/vehicle-damage.js';
-import { BOT_BODY_HEIGHT, createBotReferee } from '../viewer/bot-referee.js';
-import { Armor } from '../viewer/armor.js';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { installModuleHooks, viewerDir } from '../sim/env.mjs';
+
+const viewer = viewerDir();
+installModuleHooks(viewer);
+const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
+const [
+  { FRIENDLY_FIRE_SHIPPED, friendlyDamage, friendlyFireRatio, roundPasses },
+  { createVehicleHits }, { VehicleDamageSet }, { BOT_BODY_HEIGHT, createBotReferee }, { Armor },
+] = await Promise.all([
+  imp('friendly-fire.js'), imp('vehicle-hits.js'), imp('vehicle-damage.js'), imp('bot-referee.js'),
+  imp('armor.js'),
+]);
 
 const PERCENT = { soldier: 50, vehicle: 25, soldierSplash: 10, vehicleSplash: 5 };
 const out = {};
