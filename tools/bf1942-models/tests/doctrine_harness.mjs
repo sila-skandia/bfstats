@@ -330,6 +330,41 @@ const garrison = {
   stats: gw.cmd.stats()[1],
 };
 
+// A guard's unit change frees him with the rest; the next pass gives the
+// flag back to him (its last guard) and to nobody else, and his record holds
+// no post while he is free.
+const uw = garrisonWorld('axis=garrison');
+uw.cmd.update(2, galive());
+uw.cmd.botChangedUnit('g1_0');
+const freed = { ...(({ free, post, lastPost }) => ({ free, post: post?.name ?? null, lastPost: lastPost?.name ?? null }))(uw.sai.bots.get('g1_0')) };
+uw.cmd.update(2, galive());
+const reposted = summary(axisOrders(uw.cmd));
+// Over two minutes of moving, dying and changing bots the side never holds
+// more posts than flags it guards, and every post order is a posted record.
+const pw = garrisonWorld('axis=garrison');
+let worstPosts = 0, strayPosts = 0;
+for (let n = 1; n <= 120 * 30; n++) {
+  const t = n / 30;
+  if (n === 30 * 30) pw.cmd.botDied('g1_0');
+  if (n === 45 * 30) pw.cmd.botChangedUnit('g1_1');
+  const alive = galive();
+  if (n >= 30 * 30 && n < 40 * 30) alive.delete('g1_0');   // dead for ten seconds
+  for (let i = 1; i < 8; i++) { const p = alive.get(`g1_${i}`); alive.set(`g1_${i}`, [p[0] + Math.min(1, t / 120) * 250, 0, p[2] - Math.min(1, t / 120) * 250]); }
+  pw.cmd.update(1 / 30, alive);
+  if (n % 60 === 0) {
+    let posts = 0;
+    for (let i = 0; i < 8; i++) {
+      const o = pw.cmd.waypointsOf(`g1_${i}`);
+      if (o?.kind !== 'WPPost') continue;
+      posts++;
+      const r = pw.sai.bots.get(`g1_${i}`);
+      if (r.free || r.post !== o.post.area) strayPosts++;
+    }
+    worstPosts = Math.max(worstPosts, posts);
+  }
+}
+garrison.unitChange = { freed, reposted, worstPosts, strayPosts };
+
 // The gun by the flag: the post walks to its door, presses Use there, and
 // mans it once seated.
 const gun = { id: 'G:gun', vehicleId: 'G', seatId: 'gun', isRoot: true, drives: false, kind: 'gun', pos: [410, 0, -410],
