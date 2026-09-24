@@ -22,6 +22,17 @@
 // Attenuation is then the viewer's approximation rather than the script's own
 // curve; the entry is marked `fallback: true` in the snapshot so a test can
 // tell the two apart. Re-extract the armoury to get the real ramps.
+//
+// A pooled slot is held for as long as its round sounds: one cycle of a Fire
+// Loop patch (every layer authored `loop`, the automatic weapons, whose cycle
+// is one round of the rattle: `mp40mlp` 0.089 s against the Mp40's 0.111 s
+// between rounds), a second for anything else (a report and its tail). The
+// hold used to be a second for every patch, and `prime` never built a slot
+// past the first, so a weapon was heard once a second however fast it fired:
+// a bot's Mp40 fired 86 rounds in 9.8 s and 76 were dropped, which is the
+// "bots fire one bullet at a time" of features/bot-weapons. Held for a cycle,
+// one bot's burst plays every round out of one slot, and the pool grows to
+// `PER_WEAPON` for that many shooters of the weapon at once.
 
 import { loadEngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
 
@@ -37,9 +48,13 @@ import { loadEngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
 export const FALLBACK_RAMP = { dest: 'volume', source: 'distance',
                                envelope: 'ramp', params: [0, 80, 1, -1] };
 
-/** How many pooled shots per weapon. Three is a short burst without a voice
- *  left dangling when the magazine empties. */
+/** How many pooled shots per weapon: that many shooters of one weapon heard
+ *  at once (a slot plays one shooter's rounds back to back). */
 const PER_WEAPON = 3;
+
+/** How long a slot is held after a round of a patch with any one-shot layer:
+ *  a report's tail. A Fire Loop patch is held for its own cycle instead. */
+const ONE_SHOT_HOLD = 1.0;
 
 /** Past this, `play` drops the shot rather than steal. A firefight of ten
  *  bots must not stack thirty patches through the page's limiter. */
@@ -65,11 +80,13 @@ export class WorldFire {
    * @param {() => number} [opts.rand]
    */
   constructor({ listener, getBuffer, manifest = null, master = () => 1,
-                rand = Math.random }) {
+                rand = Math.random, now = null }) {
     this.getListener = listener;
     this.getBuffer = getBuffer;
     this.getMaster = master;
     this.rand = rand;
+    // Seconds, for the slots' holds; a test hands in its own clock.
+    this.now = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()) * 0.001);
     this.manifest = null;
     this.weapons = new Map();     // name -> { layers, fallback, slots, pending }
     this.shots = 0;
@@ -109,6 +126,9 @@ export class WorldFire {
         layers,
         fallback: !spec?.layers?.length,
         delay: spec?.delay ?? 0,
+        // A Fire Loop patch: its slot is held one cycle, not a second.
+        loopPatch: raw.every(layer => !!layer.loop),
+        hold: null,
         slots: [],
         pending: null,
       });
@@ -125,6 +145,11 @@ export class WorldFire {
     if (!entry || entry.slots.length || entry.pending || this.disposed) {
       return entry?.pending ?? Promise.resolve(entry ?? null);
     }
+    return this.#extend(entry);
+  }
+
+  /** One more pool slot for `entry`, up to `PER_WEAPON`. */
+  #extend(entry) {
     entry.pending = this.#grow(entry)
       .then(() => entry, () => null)
       .finally(() => { entry.pending = null; });
@@ -157,6 +182,17 @@ export class WorldFire {
       audio.dispose();
       return null;
     }
+    // The hold: a Fire Loop patch's longest cycle at its slowest start pitch
+    // (`randomStartPitch` down), plus the patch's delay.
+    if (entry.hold === null) {
+      let cycle = 0;
+      for (const layer of layers) {
+        const down = layer.randomStartPitch?.[1] ?? 0;
+        const duration = buffers.get(layer.file)?.duration ?? 0;
+        cycle = Math.max(cycle, duration / Math.max(0.5, 1 - down));
+      }
+      entry.hold = (entry.loopPatch && cycle > 0 ? cycle : ONE_SHOT_HOLD) + (entry.delay || 0);
+    }
     audio.setMaster(0);   // silent until a round asks for it
     // `start` is what primes the one-shot pool without playing anything: with
     // `oneShotsOnTrigger` every layer is non-loop after the force-off above,
@@ -180,11 +216,11 @@ export class WorldFire {
     const entry = this.weapons.get(name);
     if (!entry) return false;
     this.shots += 1;
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) * 0.001;
+    const now = this.now();
     let slot = entry.slots.find(s => s.busyUntil <= now);
     if (!slot) {
       if (entry.slots.length < PER_WEAPON && !entry.pending) {
-        this.prime(name);
+        this.#extend(entry);
       }
       this.dropped += 1;
       return false;
@@ -206,16 +242,15 @@ export class WorldFire {
       listenerPosition: this.listenerPosition ?? position ?? slot._pos,
     });
     const started = slot.audio.trigger();
-    // A patch is busy for the length of its longest layer plus its delay.
-    // The layers are short (a report is 100 ms to a second); a second of
-    // hold is enough to keep a burst from stealing its own tail and cheap
-    // enough that the pool recycles mid-firefight.
-    slot.busyUntil = now + 1.0 + (entry.delay || 0);
+    // Held while the round sounds (the header): a Fire Loop patch for one
+    // cycle, so the shooter's next round takes the same slot; anything else
+    // for a second, enough to keep a report's tail from being stolen.
+    slot.busyUntil = now + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
     return started > 0;
   }
 
   liveShots() {
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) * 0.001;
+    const now = this.now();
     let n = 0;
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) if (slot.busyUntil > now) n += 1;
@@ -262,6 +297,7 @@ export class WorldFire {
         name: entry.name,
         fallback: entry.fallback,
         layers: entry.layers.length,
+        hold: entry.hold,
         slots: entry.slots.length,
         voices: entry.slots.reduce((n, s) => n + s.audio.voices, 0),
       });
