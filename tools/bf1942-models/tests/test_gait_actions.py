@@ -89,6 +89,16 @@ UPPER_MOVES = {
     # it: a reload nobody draws.
     "Ub_FireEnd{w}": ("t/missing_fireend_colt.baf", 2.0, "c_AsmPlayOnce", 12.0, "_POSE_"),
 }
+# The pose flags the scripts give the lower transitions (`Lb_LieToCrouch`
+# rems out its `c_AsmIsLying`).
+FLAGS = {
+    "Lb_StandToCrouch": ["c_AsmIsCrouching"],
+    "Lb_StandToLie": ["c_AsmIsLying"],
+    "Lb_CrouchToLie": ["c_AsmIsLying"],
+    "Lb_LieToCrouch": ["c_AsmIsCrouching"],
+    "Lb_LieToStand": ["c_AsmIsLying"],
+    "Lb_RunStandToLie": ["c_AsmIsLying"],
+}
 CLIPLESS = {
     "Ub_StandToCrouch": (None, 2.0, "Ub_Crouch"),
     "Ub_CrouchToStand": (None, 2.0, "Ub_StandAim"),
@@ -102,7 +112,8 @@ def machine() -> animstates.StateMachine:
     m = animstates.StateMachine()
 
     def add(name, clip, speed, looping, morph, then):
-        state = animstates.State(name, morph_factor=morph, return_to=then)
+        state = animstates.State(name, morph_factor=morph, return_to=then,
+                                 flags=list(FLAGS.get(name, [])))
         if clip:
             state.clips.append(animstates.ClipRef(clip, speed, looping))
         m.states[name.lower()] = state
@@ -233,8 +244,14 @@ class ExportActionsTests(unittest.TestCase):
             self.assertEqual(
                 {"state": "Lb_LieToStand", "clip": "t/crouch2lie_lower.baf",
                  "speed": -3.0, "loop": False, "morph": 2.0,
-                 "then": "Lb_CrouchToStand", "frames": 4, "period": 0.3333},
+                 "then": "Lb_CrouchToStand", "pose": "prone", "frames": 4,
+                 "period": 0.3333},
                 lower["Lb_LieToStand"])
+            # `getPose` reads the lower state's flags: getting up still lies,
+            # getting up to the crouch already crouches, standing up from the
+            # crouch stands.
+            self.assertEqual("crouch", lower["Lb_LieToCrouch"]["pose"])
+            self.assertNotIn("pose", lower["Lb_CrouchToStand"])
             self.assertEqual(12.0, lower["Lb_StandToCrouch"]["speed"])
             # The torso's `then` loses the weapon, so a renderer follows it by
             # the names it binds: `Ub_LieColt` is `Ub_Lie`.

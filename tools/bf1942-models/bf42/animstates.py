@@ -102,6 +102,12 @@ class State:
     # `setUserRandomStartTime` — a looping clip starts at a random phase
     # (rand & 0xff) / 255 instead of 0 (lnxded 0x0832b413).
     random_start: bool = False
+    # `setFlag c_AsmIsCrouching` / `c_AsmIsLying` / `c_AsmHideWeapon` ... —
+    # the state's flag words, in declaration order. `BFSoldier::getPose()`
+    # (lnxded 0x0827ddc0) is the LOWER machine's current state's crouch and
+    # lie flags and nothing else, so a transition's flags are the pose the
+    # soldier is in while it plays: `Lb_LieToStand` still lies.
+    flags: list[str] = field(default_factory=list)
 
     def clip_3p(self) -> ClipRef | None:
         for clip in self.clips:
@@ -169,7 +175,7 @@ class StateMachine:
                 return None
         new_name = _substitute(latest.name, src_weapon, new_weapon)
         clone = State(new_name, morph_factor=latest.morph_factor,
-                      random_start=latest.random_start)
+                      random_start=latest.random_start, flags=list(latest.flags))
         if latest.return_to:
             clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon)
         # The aim states carry their fidget registrations into the clone the
@@ -303,6 +309,8 @@ def parse(read: Callable[[str], str | None],
                 latest.idles.append(args[0])
             elif command == "setuserrandomstarttime" and latest is not None:
                 latest.random_start = True
+            elif command == "setflag" and latest is not None and args:
+                latest.flags.append(args[0])
             elif command == "copystate2" and len(args) >= 2:
                 machine._copy_latest(latest, args[0], args[1])
             elif command == "copystate" and len(args) >= 2:
