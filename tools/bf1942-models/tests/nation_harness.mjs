@@ -8,7 +8,7 @@
 // `team_nation_from_level` is fed in the Python-side test that runs
 // alongside this one.
 
-import { flagMeshNation, cpNation, teamNation } from './nation.js';
+import { flagMeshNation, cpNation, heldNation, teamNation } from './nation.js';
 
 const results = {};
 
@@ -138,6 +138,35 @@ results.noControlPoints = {
   alliedWithoutVehicleGuess: teamNation([], 2, VANILLA, null),
   flaglessZonesOnly: teamNation([{ team: 1 }, { team: 1 }], 1, VANILLA, null),
   noTeam: teamNation([], 0, VANILLA, null),
+};
+
+// --- a point that has changed hands --------------------------------------------
+
+// A captured point keeps its founding owner's mesh (`capture.js` stamps
+// `foundingTeam` before it writes the taker into `team`). The map draws the
+// flag the point flies NOW, which is the taker's own nation, and neither
+// side's nation may move because a mesh changed hands. Omaha: the Germans
+// hold the bunkers, the Americans hold nothing and have taken one.
+const omahaTaken = [
+  { team: 2, foundingTeam: 1, flagMesh: 'flagge_m1' },
+  { team: 1, flagMesh: 'flagge_m1' },
+];
+const omahaNation = team => teamNation(omahaTaken, team, VANILLA, null);
+results.captured = {
+  takenByAllies: heldNation(omahaTaken[0], VANILLA, omahaNation),
+  stillAxis: heldNation(omahaTaken[1], VANILLA, omahaNation),
+  axisNation: omahaNation(1),
+  alliedNation: omahaNation(2),
+  // Taken back by the side it was made for: its own mesh again.
+  retaken: heldNation({ team: 1, foundingTeam: 1, flagMesh: 'flagge_m1' }, VANILLA, () => 'x'),
+  // El Alamein's outposts start neutral with no mesh: the British take one
+  // and it flies the British flag, not the founding pair's American one.
+  neutralTakenByBritish: heldNation({ team: 2, foundingTeam: 0, flagMesh: null }, VANILLA,
+                                    team => (team === 2 ? 'brit' : 'ger')),
+  // Run down to neutral: no flag at all.
+  neutralised: heldNation({ team: 0, foundingTeam: 1, flagMesh: 'flagge_m1' }, VANILLA, () => 'x'),
+  // An entry no capture has touched carries no `foundingTeam`: its own mesh.
+  untouched: heldNation({ team: 2, flagMesh: 'flaguk_m1' }, VANILLA, () => 'x'),
 };
 
 console.log(JSON.stringify(results, null, 1));

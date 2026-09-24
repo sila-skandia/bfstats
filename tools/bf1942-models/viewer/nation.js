@@ -39,6 +39,26 @@ export function cpNation(cp, nations) {
   return flagMeshNation(cp.flagMesh, nations) || 'unknown';
 }
 
+/** The side a point's flag mesh was made for: whoever held it when the level
+ *  loaded. A capture writes the live owner into `cp.team` (`capture.js`
+ *  `hoistCaptureFlag`) and stamps `foundingTeam` first, so the mesh keeps
+ *  naming its own side however often the point changes hands. */
+export function meshTeam(cp) {
+  return cp.foundingTeam ?? cp.team;
+}
+
+/** The flag a point flies now, for the map's sprite: its own mesh's nation
+ *  while the side it was made for holds it, else the holder's own nation on
+ *  this level (`nationOf(team)`, `teamNation` fed the page's state). The mesh
+ *  names the founding owner only, so reading it for a taken point drew the
+ *  enemy's flag on the minimap and the spawn map over a point the taker
+ *  could already spawn on, while the pole flew the taker's cloth. `null`
+ *  for a point nobody holds. */
+export function heldNation(cp, nations, nationOf) {
+  if (!cp.team) return null;
+  return cp.team === meshTeam(cp) ? cpNation(cp, nations) : nationOf(cp.team);
+}
+
 /** The nation a whole side flies on this level: the flag most of its
  *  control points hoist. Wake's Axis are Japanese, Kharkov's Allies Soviet.
  *
@@ -55,11 +75,16 @@ export function cpNation(cp, nations) {
  *  hold no flag at the start of Omaha Beach, Iwo Jima, Coral Sea, Midway or
  *  Truk, the Germans none on Kasserine Pass (its zones are flagless), and
  *  `vehicleNation` only ever names jp, rus or brit -- so without this the
- *  US and German ticket flags vanish from six vanilla levels. */
+ *  US and German ticket flags vanish from six vanilla levels.
+ *
+ *  The vote is the level's, counted by the side each mesh was made for
+ *  (`meshTeam`), not by who holds the point now: Omaha's Americans taking a
+ *  German bunker must not start flying German flags, sleeves and ticket
+ *  art. */
 export function teamNation(controlPoints, team, nations, vehicleNation) {
   const tally = new Map();
   for (const cp of controlPoints || []) {
-    if (cp.team !== team || !cp.flagMesh) continue;
+    if (meshTeam(cp) !== team || !cp.flagMesh) continue;
     const n = cpNation(cp, nations);
     if (n) tally.set(n, (tally.get(n) || 0) + 1);
   }
