@@ -698,10 +698,21 @@ export class GameConsole {
    * an AZERTY `²` and a QWERTZ `^` open it and a `~` typed elsewhere does not.
    * A remote-desktop session, some on-screen keyboards and browser automation
    * send keys with an empty `code`; only then does the character decide.
+   *
+   * The key (or keys) come from the control map — `c_GIToggleConsole` is
+   * bound to `IDKey_Grave` in the shipped maps (the engine's own
+   * `IDKey_Capital` line is dropped by `controls.js`: in the retail game
+   * Caps Lock is the spawn screen, and it is the viewer's spawn toggle too),
+   * and an imported profile may rebind or add to it. `controls.js` writes
+   * `toggleCodes` from the map once it is built; until then the built-in
+   * Grave stands in.
    */
+  static toggleCodes = null;
+
   static isToggleKey(event) {
     const grave = event.code
-      ? event.code === 'Backquote'
+      ? (this.toggleCodes ? this.toggleCodes.has(event.code)
+                          : event.code === 'Backquote')
       : event.key === '`' || event.key === '~';
     return grave && !event.ctrlKey && !event.metaKey
       && !event.altKey && !event.repeat;
