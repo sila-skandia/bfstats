@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.PlayerRelationships.Models;
 using Microsoft.Extensions.Logging;
 using Neo4j.Driver;
@@ -298,6 +299,7 @@ public class PlayerRelationshipService(
         CancellationToken cancellationToken = default)
     {
         logger.LogDebug("Getting network graph for {PlayerName} with depth {Depth}", playerName, depth);
+        var totalSw = Stopwatch.StartNew();
 
         return await neo4jService.ExecuteReadAsync(async tx =>
         {
@@ -317,7 +319,7 @@ public class PlayerRelationshipService(
                 {
                     [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
                 };
-                var edges = new List<NetworkEdge>();
+                var directEdges = new List<NetworkEdge>();
 
                 await foreach (var record in cursor)
                 {
@@ -332,7 +334,7 @@ public class PlayerRelationshipService(
                         nodes[other] = new NetworkNode { Id = other, Label = other, Degree = 1, Weight = weight };
                     }
 
-                    edges.Add(new NetworkEdge
+                    directEdges.Add(new NetworkEdge
                     {
                         Source = player1,
                         Target = player2,
@@ -345,28 +347,43 @@ public class PlayerRelationshipService(
                 {
                     CenterPlayer = playerName,
                     Nodes = nodes.Values.ToList(),
-                    Edges = edges,
+                    Edges = directEdges,
                     Depth = depth
                 };
             }
 
-            var allyLimit = Math.Clamp(maxNodes / 6, 8, 15);
-            var fofPerAlly = 5;
-
-            var alliesQuery = @"
-                MATCH (p:Player {name: $playerName})-[r:PLAYED_WITH]-(ally:Player)
-                RETURN ally.name AS allyName,
-                       r.sessionCount AS allyWeight
-                ORDER BY r.sessionCount DESC
-                LIMIT $allyLimit";
+            var allyLimit = PlayerNetworkGraphQueries.AllyLimit(maxNodes);
+            const int fofPerAlly = PlayerNetworkGraphQueries.FofPerAlly;
 
             var nodesMap = new Dictionary<string, NetworkNode>(StringComparer.OrdinalIgnoreCase)
             {
                 [playerName] = new NetworkNode { Id = playerName, Label = playerName, Degree = 0, Weight = 0 }
             };
             var allyNames = new List<string>();
+            var edges = new List<NetworkEdge>();
+            var edgeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var alliesCursor = await tx.RunAsync(alliesQuery, new { playerName, allyLimit });
+            void AddEdge(string source, string target, int weight, DateTime lastInteraction)
+            {
+                if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
+                    return;
+                if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (!edgeKeys.Add(PlayerNetworkGraphQueries.EdgeKey(source, target)))
+                    return;
+
+                edges.Add(new NetworkEdge
+                {
+                    Source = source,
+                    Target = target,
+                    Weight = weight,
+                    LastInteraction = lastInteraction
+                });
+            }
+
+            var alliesSw = Stopwatch.StartNew();
+            var alliesCursor = await tx.RunAsync(
+                PlayerNetworkGraphQueries.Allies, new { playerName, allyLimit });
             await foreach (var rec in alliesCursor)
             {
                 var allyName = rec["allyName"].As<string>();
@@ -380,75 +397,80 @@ public class PlayerRelationshipService(
                     Weight = rec["allyWeight"].As<int>()
                 };
                 allyNames.Add(allyName);
+                AddEdge(
+                    playerName,
+                    allyName,
+                    rec["allyWeight"].As<int>(),
+                    ToNullableDateTime(rec["lastPlayed"]) ?? DateTime.MinValue);
             }
+            alliesSw.Stop();
 
+            var fofSw = Stopwatch.StartNew();
             if (allyNames.Count > 0)
             {
-                var fofQuery = @"
-                    UNWIND $allyNames AS allyName
-                    MATCH (ally:Player {name: allyName})
-                    CALL {
-                        WITH ally
-                        MATCH (ally)-[r2:PLAYED_WITH]-(fof:Player)
-                        WHERE fof.name <> $playerName AND NOT fof.name IN $allyNames
-                        RETURN fof.name AS fofName,
-                               r2.sessionCount AS fofWeight
-                        ORDER BY r2.sessionCount DESC
-                        LIMIT $fofPerAlly
-                    }
-                    RETURN allyName, fofName, fofWeight";
-
-                var fofCursor = await tx.RunAsync(fofQuery, new { playerName, allyNames, fofPerAlly });
+                var fofCursor = await tx.RunAsync(
+                    PlayerNetworkGraphQueries.FriendsOfFriends,
+                    new { playerName, allyNames, fofPerAlly });
                 await foreach (var rec in fofCursor)
                 {
                     var fofName = rec["fofName"].As<string>();
-                    if (string.IsNullOrWhiteSpace(fofName) || nodesMap.ContainsKey(fofName))
-                        continue;
+                    var allyName = rec["allyName"].As<string>();
+                    if (string.IsNullOrWhiteSpace(fofName)) continue;
 
-                    nodesMap[fofName] = new NetworkNode
+                    if (!nodesMap.ContainsKey(fofName))
                     {
-                        Id = fofName,
-                        Label = fofName,
-                        Degree = 2,
-                        Weight = rec["fofWeight"].As<int>()
-                    };
+                        nodesMap[fofName] = new NetworkNode
+                        {
+                            Id = fofName,
+                            Label = fofName,
+                            Degree = 2,
+                            Weight = rec["fofWeight"].As<int>()
+                        };
+                    }
+
+                    AddEdge(
+                        allyName,
+                        fofName,
+                        rec["fofWeight"].As<int>(),
+                        ToNullableDateTime(rec["lastPlayed"]) ?? DateTime.MinValue);
                 }
             }
+            fofSw.Stop();
 
-            // Pairwise seeks on the unique Player.name constraint. Expanding every
-            // PLAYED_WITH neighbour and filtering with IN is what 10s+ cache misses did.
-            var finalEdges = new List<NetworkEdge>();
-            var names = nodesMap.Keys.ToList();
-            if (names.Count > 1)
+            // Clique among the top allies only. A pairwise seek on every discovered
+            // name (allies + FoF) is C(n,2) Expand(Into) hops; veterans page at 20-47s.
+            var cliqueSw = Stopwatch.StartNew();
+            if (allyNames.Count > 1)
             {
-                var edgesQuery = @"
-                    UNWIND $names AS a
-                    UNWIND $names AS b
-                    WITH a, b WHERE a < b
-                    MATCH (p1:Player {name: a})-[r:PLAYED_WITH]-(p2:Player {name: b})
-                    RETURN p1.name AS player1,
-                           p2.name AS player2,
-                           r.sessionCount AS sessionCount,
-                           r.lastPlayedTogether AS lastPlayed";
-
-                var edgeCursor = await tx.RunAsync(edgesQuery, new { names });
+                var edgeCursor = await tx.RunAsync(
+                    PlayerNetworkGraphQueries.AllyClique, new { allyNames });
                 await foreach (var edgeRecord in edgeCursor)
                 {
-                    finalEdges.Add(new NetworkEdge
-                    {
-                        Source = edgeRecord["player1"].As<string>(),
-                        Target = edgeRecord["player2"].As<string>(),
-                        Weight = edgeRecord["sessionCount"].As<int>(),
-                        LastInteraction = ToNullableDateTime(edgeRecord["lastPlayed"]) ?? DateTime.MinValue
-                    });
+                    AddEdge(
+                        edgeRecord["player1"].As<string>(),
+                        edgeRecord["player2"].As<string>(),
+                        edgeRecord["sessionCount"].As<int>(),
+                        ToNullableDateTime(edgeRecord["lastPlayed"]) ?? DateTime.MinValue);
                 }
             }
+            cliqueSw.Stop();
+
+            logger.LogInformation(
+                "Network graph {PlayerName} depth {Depth}: {NodeCount} nodes, {EdgeCount} edges in {ElapsedMs}ms (allies {AlliesMs}ms, fof {FofMs}ms, clique {CliqueMs}ms)",
+                playerName,
+                depth,
+                nodesMap.Count,
+                edges.Count,
+                totalSw.ElapsedMilliseconds,
+                alliesSw.ElapsedMilliseconds,
+                fofSw.ElapsedMilliseconds,
+                cliqueSw.ElapsedMilliseconds);
 
             return new PlayerNetworkGraph
             {
                 CenterPlayer = playerName,
                 Nodes = nodesMap.Values.ToList(),
-                Edges = finalEdges,
+                Edges = edges,
                 Depth = depth
             };
         });
