@@ -11,7 +11,7 @@
  * `deployKit`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
  * `detonatorTemplate`, `effects`, `explosivesTemplate`, `flags`,
  * `foot3pRel`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
- * `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
+ * `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
  * `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
  * `kbSession`, `kitLoadout`, `KITS`, `kitWeaponSlots`, `lastCaptureVoice`,
  * `loadouts`, `loadoutsLoad`, `lookDelta`, `mouseInput`, `optOnFoot`,
@@ -210,7 +210,13 @@ export function installSoldierHooks(page) {
     crosshairStyle: page.crosshairAim().style,
     crosshairIcon: page.crosshairEl.classList.contains('ch-icon'),
     crosshairArt: page.crosshairEl.classList.contains('ch-art'),
-    crosshairGap: page.crosshairEl.style.getPropertyValue('--ch-gap') || null,
+    // The gap on each axis, in CSS px: the cross parts by the same number of
+    // HUD units both ways, so the two differ by the stage's own aspect.
+    crosshairGap: page.crosshairEl.style.getPropertyValue('--ch-gap-y') || null,
+    crosshairGapX: page.crosshairEl.style.getPropertyValue('--ch-gap-x') || null,
+    crosshairCentre: page.crosshairEl.classList.contains('ch-centre'),
+    crosshairInk: page.crosshairEl.style.getPropertyValue('--ch-ink') || null,
+    hitIndicationTime: page.gameHud?.vars?.['CrossHair/HitIndicationTime'] ?? null,
     fov: page.camera.fov,
     // The idle-fidget state, so a headless check can step past the 4-7 s
     // dwell and read which one-shot owns the arms.

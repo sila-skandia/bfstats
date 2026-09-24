@@ -228,6 +228,39 @@ class ProfileImportTests(_Harness):
         self.assertEqual("defaults", p["afterResetSource"])
 
 
+class CrossHairColorTests(_Harness):
+    """`game.setCrossHairColor`: what the cross and its hit marks are drawn in
+    (ledger XHIT-7), the shipped default profile's until one is imported."""
+
+    SHIPPED_PROFILE = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+                       / "Mods/bf1942/Settings/Profiles/Default/GeneralOptions.con")
+
+    def test_the_default_is_the_shipped_default_profiles_yellow(self) -> None:
+        c = self.results["crossHair"]
+        self.assertEqual([255, 255, 0], c["defaultColor"])
+        self.assertEqual(c["shippedDefault"], c["defaultColor"])
+
+    def test_the_default_is_read_off_the_install_when_there_is_one(self) -> None:
+        if not self.SHIPPED_PROFILE.is_file():
+            self.skipTest("no BF1942 install")
+        line = next(l for l in self.SHIPPED_PROFILE.read_text(errors="replace").splitlines()
+                    if l.startswith("game.setCrossHairColor"))
+        self.assertEqual(self.results["crossHair"]["shippedDefault"],
+                         [float(v) for v in line.split()[1:4]])
+
+    def test_the_game_line_parses_and_anything_else_does_not(self) -> None:
+        c = self.results["crossHair"]
+        self.assertEqual([255, 0, 0], c["parsed"])
+        self.assertIsNone(c["parsedAbsent"])
+        self.assertIsNone(c["parsedGarbage"])
+
+    def test_a_profile_folder_brings_its_colour_and_a_reset_drops_it(self) -> None:
+        c = self.results["crossHair"]
+        self.assertEqual(["common"], [a["context"] for a in c["import"]["applied"]])
+        self.assertEqual([255, 0, 0], c["afterImport"])
+        self.assertEqual([255, 255, 0], c["afterReset"])
+
+
 class DescribeTests(_Harness):
     """What the sidebar paints."""
 

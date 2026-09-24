@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseCon, classifyCon, keyIdToCode, describeBinding, createControls,
+  DEFAULT_CROSSHAIR_COLOR, parseCrossHairColor,
 } from '../viewer/controls.js';
 import { GameConsole } from '../viewer/console.js';
 import { CONTROLS_DEFAULTS } from '../viewer/controls-defaults.js';
@@ -255,6 +256,28 @@ results.parse.describeKeyboard = describeBinding(
   controls.resetDefaults();
   p.afterResetMap = controls.codeTriggers('KeyM');
   p.afterResetSource = controls.describe().source;
+}
+
+// --- the crosshair colour (GeneralOptions.con's `game.setCrossHairColor`) ----
+
+{
+  const controls = createControls(makePage());
+  const c = results.crossHair = {};
+  // The owner's own line, as the game writes it (`%f`).
+  const general = 'game.setPlayerName "skandia"\ngame.setCrossHairColor 255.000000 0.000000 0.000000\n';
+  c.defaultColor = controls.crossHairColor();
+  c.shippedDefault = [...DEFAULT_CROSSHAIR_COLOR];
+  c.parsed = parseCrossHairColor(general);
+  c.parsedAbsent = parseCrossHairColor('game.setPlayerName "skandia"\n');
+  c.parsedGarbage = parseCrossHairColor('game.setCrossHairColor red green blue\n');
+  // A whole profile folder: the colour rides in with the control maps.
+  c.import = await controls.importFiles([
+    { name: 'GeneralOptions.con', text: general },
+    { name: 'Common.con', text: readFileSync(new URL('./fixtures/controls-profile-skandia/Common.con', import.meta.url), 'utf8') },
+  ]);
+  c.afterImport = controls.crossHairColor();
+  controls.resetDefaults();
+  c.afterReset = controls.crossHairColor();
 }
 
 // --- describe, for the sidebar ----------------------------------------------
