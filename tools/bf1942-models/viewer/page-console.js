@@ -5,6 +5,7 @@
 
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
 import { createSkirmishScreen } from './play/skirmish.js';
+import { createControlsScreen } from './play/controls-screen.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -111,6 +112,39 @@ export function createPageConsole(page) {
         ? page.mouseInput.setSensitivity(profile, args[0])
         : page.mouseInput.sensitivityFor(profile)),
     });
+  }
+
+  /** The INVERT MOUSE box, one word per profile, as the profile's Controls
+   *  files call them (`game.setAirMouseInvert 1`). One int, read back with
+   *  no argument. */
+  const MOUSE_INVERT_WORDS = {
+    setInfMouseInvert: 'infantry',
+    setLandSeaMouseInvert: 'landSea',
+    setAirMouseInvert: 'air',
+  };
+  for (const [method, profile] of Object.entries(MOUSE_INVERT_WORDS)) {
+    gameConsole.register({
+      object: 'game', method,
+      minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+      run: args => (args.length
+        ? page.mouseInput.setInvert(profile, args[0])
+        : page.mouseInput.invertFor(profile)),
+    });
+  }
+
+  /** The player's profile, the way the game applies it: its Controls files'
+   *  `game.set*` lines run as console words — the mouse sensitivities and
+   *  the invert boxes above. A word this page does not have (the keyboard
+   *  sensitivities) is skipped quietly, as a line of a `.con` file the page
+   *  cannot honour. Run once the look stage exists, and again after every
+   *  import or DEFAULT. */
+  function applyControlProfile() {
+    const vars = page.controls?.describe().vars ?? {};
+    for (const [verb, value] of Object.entries(vars)) {
+      const method = verb.replace(/^game\./, '');
+      if (!(method in MOUSE_SENSITIVITY_WORDS) && !(method in MOUSE_INVERT_WORDS)) continue;
+      gameConsole.executeLine(`${verb} ${value}`, { echo: false, echoErrors: false });
+    }
   }
 
   /** `game.setStaticMinimap` is the engine's own word — every stock
@@ -229,8 +263,78 @@ export function createPageConsole(page) {
   // no front end behind a running level to tab to, nor anything for it to do
   // here: the mod is the one this level is running in.
   const menuCanvas = document.getElementById('menu-canvas');
+  const optionsCanvas = document.getElementById('menu-canvas-opt');
   pageConsole.escMenu = null;
   pageConsole.escMenuUp = false;
+  // Which of the menu's two tabs is up: SINGLEPLAY (Instant Battle) or
+  // OPTIONS (the controls screen, `play/controls-screen.js`, on the page's
+  // own control map, so an import there is the one the game plays on).
+  pageConsole.escTab = 'singleplay';
+  pageConsole.optionsScreen = null;
+  const ESC_TABS = [
+    { page: 'mainNav',
+      items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
+              { key: 'MENU_OPTIONS', id: 'options' }] },
+  ];
+  const OPTIONS_TABS = [
+    ...ESC_TABS,
+    { page: 'optionsNav', items: [{ key: 'MENU_CONTROLS', id: 'options' }] },
+  ];
+
+  function optionsScreen() {
+    if (pageConsole.optionsScreen) return pageConsole.optionsScreen;
+    pageConsole.optionsScreen = createControlsScreen({
+      canvas: optionsCanvas,
+      controls: page.controls,
+      root: '',
+      params: page.params,
+      tabs: OPTIONS_TABS,
+      onTab: showEscTab,
+      onStatus: text => { if (text) console.warn(text); },
+      onBindingsChanged: refreshHint,
+    });
+    pageConsole.optionsLoaded = pageConsole.optionsScreen.load()
+      .catch(error => console.error('Controls screen unavailable', error));
+    return pageConsole.optionsScreen;
+  }
+
+  // The HUD hints name the profile's keys. The one up when the menu opened is
+  // swapped for its new wording when an import or DEFAULT changes them.
+  const HINTS = ['HUD_FLY', 'HUD_FOOT', 'HUD_PILOT', 'HUD_DRIVE', 'HUD_MANNED'];
+  let hintsBefore = {};
+  const snapshotHints = () => {
+    hintsBefore = Object.fromEntries(HINTS.map(name => [name, page[name]]));
+  };
+  function refreshHint() {
+    applyControlProfile();
+    const up = HINTS.find(name => hintsBefore[name] === page.hud.textContent);
+    if (up) page.hud.textContent = page[up];
+    snapshotHints();
+  }
+
+  /** Switch the menu's tab. The two screens are two canvases, one up. */
+  function showEscTab(id) {
+    pageConsole.escTab = id === 'options' ? 'options' : 'singleplay';
+    if (!pageConsole.escMenuUp) return;
+    const options = pageConsole.escTab === 'options';
+    menuCanvas.hidden = options;
+    optionsCanvas.hidden = !options;
+    pageConsole.escMenu?.strip?.setActive(pageConsole.escTab);
+    if (options) {
+      const screen = optionsScreen();
+      screen.setActive('options');
+      pageConsole.optionsLoaded.then(() => {
+        if (!pageConsole.escMenuUp || pageConsole.escTab !== 'options') return;
+        screen.paint();
+        screen.start();
+      });
+      optionsCanvas.focus();
+    } else {
+      pageConsole.optionsScreen?.stop();
+      pageConsole.escMenu?.paint();
+      menuCanvas.focus();
+    }
+  }
 
   /** The screen, built and loading on first need. Warmed once the level is,
    *  so the first Escape is a paint and not a fetch. */
@@ -247,6 +351,8 @@ export function createPageConsole(page) {
       // movie the moment there is a game behind the menu.
       music: false,
       inGame: true,
+      tabs: ESC_TABS,
+      onTab: showEscTab,
       onDisconnect: () => location.assign(page.MENU_URL),
       onStatus: text => { if (text) console.warn(text); },
     });
@@ -276,6 +382,8 @@ export function createPageConsole(page) {
     if (on === pageConsole.escMenuUp) return;
     pageConsole.escMenuUp = on;
     menuCanvas.hidden = !on;
+    optionsCanvas.hidden = true;
+    if (!on) pageConsole.optionsScreen?.stop();
     if (on) {
       // A menu you cannot click is no menu: the pointer comes back with it.
       // (The browser has usually taken the lock off already — this is what
@@ -284,8 +392,11 @@ export function createPageConsole(page) {
       // Whatever was held when the menu came up must not still be held under
       // it — the same rule the console follows.
       page.keys.clear();
+      snapshotHints();
       escMenuScreen().paint();
       menuCanvas.focus();
+      // The menu comes back on the tab it was left on.
+      if (pageConsole.escTab === 'options') showEscTab('options');
       return;
     }
     // Down is back to the game, with the mouse: that is what the menu does in
@@ -299,6 +410,17 @@ export function createPageConsole(page) {
 
   /** Whether the menu owns the keyboard and the pointer. */
   function escMenuCaptures() { return pageConsole.escMenuUp; }
+
+  /** A key under the menu, to whichever tab is up: the level list, or the
+   *  controls screen trying the key out. True when the menu used it. */
+  function escMenuKeydown(e) {
+    if (pageConsole.escTab === 'options') return pageConsole.optionsScreen?.keydown(e) ?? false;
+    return pageConsole.escMenu?.keydown(e) ?? false;
+  }
+  function escMenuKeyup(e) {
+    if (pageConsole.escTab === 'options') return pageConsole.optionsScreen?.keyup(e) ?? false;
+    return false;
+  }
 
   // The handle, beside `__console`'s: a headless check drives the screen and
   // reads its state back rather than screen-scraping a canvas, the same shape
@@ -316,11 +438,18 @@ export function createPageConsole(page) {
     launchUrl: () => pageConsole.escMenu?.launchUrl() ?? null,
     start: () => pageConsole.escMenu?.start(),
     paint: () => pageConsole.escMenu?.paint(),
+    get tab() { return pageConsole.escTab; },
+    showTab: showEscTab,
+    get options() { return pageConsole.optionsScreen?.state ?? null; },
+    get optionsScreen() { return pageConsole.optionsScreen; },
   };
 
   Object.assign(pageConsole, {
+    applyControlProfile,
     consoleCaptures,
     escMenuCaptures,
+    escMenuKeydown,
+    escMenuKeyup,
     escMenuScreen,
     gameConsole,
     logToConsole,

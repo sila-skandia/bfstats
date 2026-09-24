@@ -1,26 +1,35 @@
 // The front end `play/index.html` mounts: SINGLEPLAY (Instant Battle),
-// MULTIPLAY (the room server's lobby) and CUSTOM GAME (the mod list), one
-// canvas each, switched by the nav strip every screen draws. Moved out of the
+// MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings)
+// and CUSTOM GAME (the mod list), one canvas each, switched by the nav strip
+// every screen draws. Moved out of the
 // page's inline module script; `window.__menu` is the page's test hook.
 
 import { createSkirmishScreen } from './skirmish.js';
 import { createMultiplayScreen } from './multiplay.js';
 import { createModPicker } from './mod-picker-screen.js';
+import { createControlsScreen } from './controls-screen.js';
+import { createControls } from '../controls.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
 const canvasCg = document.getElementById('screen-cg');
+const canvasOpt = document.getElementById('screen-opt');
 const status = document.getElementById('status');
 
-// SINGLEPLAY, MULTIPLAY and CUSTOM GAME on the main nav, in that order.
-// CUSTOM GAME is `mainNav`'s own fourth button moved one slot left, into
-// OPTIONS' place, so it sits directly right of MULTIPLAY with no gap where
-// the tabs this site does not answer for would be.
+// SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
+// its own slot; INTRO and CREDITS, which this site does not answer for, are
+// not drawn.
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
             { key: 'MENU_MULTIPLAY', id: 'multiplay' },
-            { key: 'MENU_CUSTOM_GAME', id: 'customgame', slot: 2 }] },
+            { key: 'MENU_OPTIONS', id: 'options' },
+            { key: 'MENU_CUSTOM_GAME', id: 'customgame' }] },
+];
+// OPTIONS' own row: CONTROLS is the one of its four this site has.
+const OPTIONS_TABS = [
+  ...TABS,
+  { page: 'optionsNav', items: [{ key: 'MENU_CONTROLS', id: 'options' }] },
 ];
 const MULTIPLAY_TABS = [
   ...TABS,
@@ -79,9 +88,24 @@ const customGame = createModPicker({
   onStatus: text => { status.textContent = text; },
 });
 
+// OPTIONS > CONTROLS: the profile's bindings, over the shipped maps, and a
+// preview to try them on. Its own control map, fed by the same stored
+// profile the viewer loads.
+const controls = createControls({ keys: new Set() });
+const options = createControlsScreen({
+  canvas: canvasOpt,
+  controls,
+  root: '../',
+  tabs: OPTIONS_TABS,
+  onTab: id => show(id),
+  onStatus: text => { status.textContent = text; },
+  pollPad: true,
+});
+
 let tab = 'singleplay';
 let multiplayLoaded = null;
 let customGameLoaded = null;
+let optionsLoaded = null;
 
 function show(id) {
   if (id === tab) return;
@@ -89,9 +113,12 @@ function show(id) {
   canvas.hidden = id !== 'singleplay';
   canvasMp.hidden = id !== 'multiplay';
   canvasCg.hidden = id !== 'customgame';
+  canvasOpt.hidden = id !== 'options';
   screen.strip?.setActive(id);
   multiplay.strip?.setActive(id);
   customGame.strip?.setActive(id);
+  options.strip?.setActive(id);
+  if (id !== 'options') options.stop();
   if (id === 'singleplay') {
     multiplay.stop();
     screen.paint();
@@ -120,6 +147,16 @@ function show(id) {
     canvasCg.focus();
     return;
   }
+  if (id === 'options') {
+    status.textContent = '';
+    optionsLoaded ??= options.load().catch(error => {
+      status.textContent = `Controls screen unavailable: ${error.message}. `
+        + 'From tools/bf1942-models run: python3 extract_controls_menu_layout.py';
+      console.error(error);
+    });
+    optionsLoaded.then(() => { options.paint(); options.start(); });
+    canvasOpt.focus();
+  }
 }
 
 canvas.addEventListener('keydown', event => {
@@ -131,9 +168,16 @@ canvasMp.addEventListener('keydown', event => {
 canvasCg.addEventListener('keydown', event => {
   if (customGame.keydown(event)) event.preventDefault();
 });
+canvasOpt.addEventListener('keydown', event => {
+  if (options.keydown(event)) event.preventDefault();
+});
+canvasOpt.addEventListener('keyup', event => {
+  if (options.keyup(event)) event.preventDefault();
+});
 
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
+if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
 
 window.__menu = {
   get state() { return screen.state; },
@@ -153,6 +197,8 @@ window.__menu = {
   get tab() { return tab; },
   get customGame() { return customGame.mod; },
   chooseCustomGame: id => customGame.chooseMod(id),
+  get options() { return options.state; },
+  optionsScreen: options,
   show,
 };
 

@@ -46,6 +46,7 @@ const KEY_IDS = {
   IDKey_LeftBracket: 'BracketLeft', IDKey_RightBracket: 'BracketRight',
   IDKey_Backslash: 'Backslash', IDKey_Home: 'Home', IDKey_End: 'End',
   IDKey_Pause: 'Pause', IDKey_Scroll: 'ScrollLock', IDKey_Numlock: 'NumLock',
+  IDKey_PrintScreen: 'PrintScreen',
 };
 
 /** A DirectInput key name → the browser's physical `event.code`. The names
@@ -162,6 +163,9 @@ export function parseCon(text) {
  *  the game-input (`c_GI*`) bindings; the context maps name themselves. */
 export function classifyCon(text) {
   const t = String(text ?? '');
+  // A profile folder carries more than the four maps (GeneralOptions.con,
+  // Video.con, ...). A file that creates no control map feeds none of them.
+  if (!/^ControlMap\.create /m.test(t)) return null;
   if (/^ControlMap\.create AirPlayerInputControlMap/m.test(t)) return 'air';
   if (/^ControlMap\.create LandSeaPlayerInputControlMap/m.test(t)) return 'land';
   if (/\bc_GI[A-Z]/.test(t)) return 'common';
@@ -190,10 +194,45 @@ export function describeBinding(b) {
   if (b.kind === 'trigger') {
     if (b.device === 'keyboard') return prettyCode(b.code);
     if (b.device === 'controller') return `Joystick ${b.button + 1}`;
+    // DirectInput's order: 0 left, 1 right, 2 middle.
     if (b.device === 'mouse') return b.button === 0 ? 'LMB'
-      : b.button === 1 ? 'MMB' : b.button === 2 ? 'RMB' : `Mouse ${b.button}`;
+      : b.button === 1 ? 'RMB' : b.button === 2 ? 'MMB' : `Mouse ${b.button + 1}`;
   }
   if (b.kind === 'axistrigger') return 'Mouse wheel';
+  return '';
+}
+
+/** A key the way the game's CONTROLS screen prints it: capitals, sides
+ *  spelled out (LEFT ALT, as the retail options screen shows it). */
+function gameKeyName(code) {
+  return {
+    AltLeft: 'LEFT ALT', AltRight: 'RIGHT ALT', ControlLeft: 'LEFT CTRL',
+    ControlRight: 'RIGHT CTRL', ShiftLeft: 'LEFT SHIFT', ShiftRight: 'RIGHT SHIFT',
+    CapsLock: 'CAPS LOCK', Backquote: 'GRAVE', PrintScreen: 'PRINT SCREEN',
+    Escape: 'ESC', PageUp: 'PAGE UP', PageDown: 'PAGE DOWN', NumLock: 'NUM LOCK',
+    ScrollLock: 'SCROLL LOCK', BracketLeft: '[', BracketRight: ']',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/',
+    Backslash: '\\', Minus: '-', Equals: '=',
+  }[code] ?? code.replace(/^Key(?=[A-Z]$)/, '').replace(/^Digit([0-9])$/, '$1')
+    .replace(/^Arrow(\w+)$/, '$1 ARROW').replace(/^Numpad/, 'NUM ').toUpperCase();
+}
+
+/** One binding for one row of the game's CONTROLS screen. `sign` is the
+ *  half of an axis the row stands for (FORWARD is `c_PIThrottle` +1); a
+ *  joystick axis says which way to push it, the profile's invert flag
+ *  applied, so the text is the physical direction. */
+export function rowLabel(b, sign = 1) {
+  if (b.kind === 'axis') {
+    if (b.device === 'keyboard') return gameKeyName(b.codes[sign > 0 ? 0 : 1]);
+    const dir = sign * (b.invert ? -1 : 1) > 0 ? '+' : '-';
+    return `JOYSTICK AXIS ${b.axis + 1}${dir}`;
+  }
+  if (b.kind === 'trigger') {
+    if (b.device === 'keyboard') return gameKeyName(b.code);
+    if (b.device === 'controller') return `JOYSTICK ${b.button + 1}`;
+    if (b.device === 'mouse') return `MOUSE ${b.button + 1}`;
+  }
+  if (b.kind === 'axistrigger') return sign > 0 ? 'MOUSE WHEEL UP' : 'MOUSE WHEEL DOWN';
   return '';
 }
 
@@ -225,6 +264,10 @@ export function createControls(page) {
 
   let source = 'defaults';
   let files = { ...CONTROLS_DEFAULTS.files };
+  // The profile's player name (`GeneralOptions.con`'s `game.setPlayerName`,
+  // else the folder the files came from) — what the options screen's
+  // profile plate shows. Null under the shipped maps.
+  let profileName = null;
   // Per context: deduped binding lists, and the indexes the queries read.
   let buckets = null;        // { game: [], common: [], infantry: [], air: [], land: [] }
   let vars = {};
@@ -298,10 +341,16 @@ export function createControls(page) {
    *  VCAir the Air one, only a pilot flies on Air, and the soldier keeps
    *  Infantry. */
   controls.context = () => {
-    if (page.optOnFoot?.checked && page.soldier) return 'infantry';
+    // The seat first: a soldier who climbed in keeps his on-foot flag (he is
+    // suspended in the seat, rifle slung), and a pilot read as infantry flew
+    // on the Infantry map — the keys still drove, since both maps bind WASD,
+    // but a profile's stick and its joystick fire, bound only on Air, did
+    // nothing. Local-look's `lookProfile` has always asked in this order.
     if (page.optPilot?.checked && page.occupancy) {
-      return page.occupancy.rootKind === 'air' ? 'air' : 'land';
+      const pilot = page.occupancy.isActiveRoot?.() ?? true;
+      return page.occupancy.rootKind === 'air' && pilot ? 'air' : 'land';
     }
+    if (page.optOnFoot?.checked && page.soldier) return 'infantry';
     return null;    // free camera: the game map and common still answer
   };
 
@@ -322,14 +371,16 @@ export function createControls(page) {
    *  stage's and never come through here. Zero unless the page is captured:
    *  the input word is the device stage's, and the free camera's WASD is not
    *  the player's. */
-  controls.axis = trigger => {
-    if (!page.captured) return 0;
+  controls.axis = trigger => (page.captured
+    ? axisIn(trigger, controls.context(), heldKeys()) : 0);
+
+  function axisIn(trigger, context, keys) {
     let v = 0;
-    for (const b of bindingsFor(trigger)) {
+    for (const b of bindingsFor(trigger, context)) {
       if (b.kind !== 'axis') continue;
       if (b.device === 'keyboard') {
-        if (heldKeys().has(b.codes[0])) v += 1;
-        if (heldKeys().has(b.codes[1])) v -= 1;
+        if (keys.has(b.codes[0])) v += 1;
+        if (keys.has(b.codes[1])) v -= 1;
       } else if (b.device === 'controller' && b.index === 0) {
         const raw = padAxes[b.axis] ?? 0;
         const mag = Math.abs(raw) < JOY_DEADZONE
@@ -338,21 +389,121 @@ export function createControls(page) {
       }
     }
     return Math.max(-1, Math.min(1, v));
-  };
+  }
 
   /** Whether a trigger is held at level: any of its keyboard bindings down,
    *  or any of its controller buttons down. Mouse buttons stay the page's
    *  own latches (`seatFire`, `triggerHeld`) — they already funnel through
    *  `buttonChange` with the zoom/chord semantics a raw level lacks. */
-  controls.held = trigger => {
-    if (!page.captured) return false;
-    const keys = heldKeys();
-    for (const b of bindingsFor(trigger)) {
-      if (b.device === 'keyboard' && b.kind === 'trigger' && keys.has(b.code)) return true;
-      if (b.device === 'controller' && b.kind === 'trigger' && b.index === 0
-          && padButtons[b.button]) return true;
+  controls.held = trigger => (page.captured
+    ? heldIn(trigger, controls.context(), heldKeys(), null) : false);
+
+  function heldIn(trigger, context, keys, mouse) {
+    for (const b of bindingsFor(trigger, context)) {
+      if (b.kind !== 'trigger') continue;
+      if (b.device === 'keyboard' && keys.has(b.code)) return true;
+      if (b.device === 'controller' && b.index === 0 && padButtons[b.button]) return true;
+      if (b.device === 'mouse' && mouse?.has(b.button)) return true;
     }
     return false;
+  }
+
+  /** The same two questions for a caller that is not the in-game capture —
+   *  the OPTIONS > CONTROLS screen trying a profile out on its preview. The
+   *  context is named rather than read off the player, the held keys and
+   *  mouse buttons are the caller's own, and the pad is whatever the last
+   *  `pollGamepad` saw. */
+  controls.probe = (context, keys, mouse = new Set()) => ({
+    axis: trigger => axisIn(trigger, context, keys),
+    held: trigger => heldIn(trigger, context, keys, mouse),
+  });
+
+  /** A CONTROLS screen row's bindings in the game's own words: every
+   *  binding the maps give the row, in file order, the first two being what
+   *  its primary and alternate boxes show. `row` is a `controls-rows.js`
+   *  entry. */
+  controls.rowLabels = (row, context) => controls.rowEntries(row, context).map(e => e.label);
+
+  /** The same, with each binding's own "is it pressed" test —
+   *  `active(keys, mouse, wheel)`, `wheel` being +1/-1 for a wheel step in
+   *  flight — so the screen lights the box of the binding being used, not
+   *  the whole row. */
+  controls.rowEntries = (row, context) => {
+    const entries = [];
+    const add = (label, active) => {
+      if (label && !entries.some(e => e.label === label)) entries.push({ label, active });
+    };
+    if (row.axis) {
+      for (const b of bindingsFor(row.axis, context)) {
+        if (b.kind !== 'axis') continue;
+        if (b.device === 'keyboard') {
+          const code = b.codes[row.sign > 0 ? 0 : 1];
+          add(rowLabel(b, row.sign), keys => keys.has(code));
+        } else if (b.device === 'controller' && b.index === 0) {
+          const s = row.sign * (b.invert ? -1 : 1);
+          add(rowLabel(b, row.sign), () => (padAxes[b.axis] ?? 0) * s > 0.5);
+        }
+      }
+      return entries;
+    }
+    for (const b of bindingsFor(row.trigger, context)) {
+      if (b.kind !== 'trigger') continue;
+      if (b.device === 'keyboard') add(rowLabel(b), keys => keys.has(b.code));
+      else if (b.device === 'mouse') add(rowLabel(b), (keys, mouse) => mouse.has(b.button));
+      else if (b.device === 'controller' && b.index === 0) {
+        add(rowLabel(b), () => Boolean(padButtons[b.button]));
+      }
+    }
+    // The wheel pair (`addAxisToTriggerMapping c_PINextItem c_PIPrevItem`)
+    // is one line for two rows: the first trigger is the wheel going up.
+    for (const bucket of ['game', 'common', ...(context ? [context] : [])]) {
+      for (const b of buckets[bucket]) {
+        if (b.kind !== 'axistrigger') continue;
+        if (b.trigger === row.trigger) add(rowLabel(b, 1), (k, m, wheel) => wheel > 0);
+        if (b.triggerNeg === row.trigger) add(rowLabel(b, -1), (k, m, wheel) => wheel < 0);
+      }
+    }
+    return entries;
+  };
+
+  /** A hint line with its keys filled in from the map: `{c_PIMap}` is the
+   *  trigger's first key (or mouse button), `{c_PIThrottle+}` one half of an
+   *  axis, `{move}` the four movement keys ("WASD" when they are four
+   *  letters). The HUD's hints say what the player's own profile binds. */
+  controls.hintText = (template, context) => template.replace(/\{(\w+)([+-])?\}/g,
+    (whole, name, sign) => (name === 'move' ? moveKeys(context)
+      : hintKey(name, sign === '-' ? -1 : sign === '+' ? 1 : 0, context)));
+
+  function hintKey(trigger, sign, context) {
+    // A trigger the context's own map leaves out (the viewer's R reset is
+    // `c_PIReload`, which only Infantry binds) answers from any map.
+    let found = bindingsFor(trigger, context);
+    if (!found.length) found = Object.values(buckets).flat().filter(b => b.trigger === trigger);
+    if (sign) {
+      const b = found.find(x => x.kind === 'axis' && x.device === 'keyboard');
+      return b ? prettyCode(b.codes[sign > 0 ? 0 : 1]) : '?';
+    }
+    const b = found.find(x => x.kind === 'trigger'
+      && (x.device === 'keyboard' || x.device === 'mouse'));
+    return b ? describeBinding(b) : '?';
+  }
+
+  function moveKeys(context) {
+    const keys = [['c_PIThrottle', 1], ['c_PIYaw', -1], ['c_PIThrottle', -1], ['c_PIYaw', 1]]
+      .map(([axis, sign]) => hintKey(axis, sign, context));
+    return keys.every(k => k.length === 1) ? keys.join('') : keys.join('/');
+  }
+
+  /** The triggers one wheel step fires in a context: up is each pair's
+   *  first trigger, down its second. */
+  controls.wheelTriggers = (up, context) => {
+    const out = [];
+    for (const bucket of ['game', 'common', ...(context ? [context] : [])]) {
+      for (const b of buckets[bucket]) {
+        if (b.kind === 'axistrigger') out.push(up ? b.trigger : b.triggerNeg);
+      }
+    }
+    return out;
   };
 
   /** Triggers a keyboard code is bound to, over every bucket — the keydown
@@ -413,18 +564,90 @@ export function createControls(page) {
         levels[i] = !!(btn && (btn.pressed || btn.value > 0.5));
       }
       padAxes = pad.axes.slice();
+      // The hat, as the game numbers it: four more buttons after the
+      // physical ones (see `hatDirection`).
+      const dir = hatDirection(pad);
+      const base = pad.buttons.length;
+      for (let i = 0; i < 4; i++) levels[base + i] = dir === i;
     } else {
       padAxes = [];
+      hatSeen = new Map();
     }
     const top = Math.max(levels.length, padButtons.length);
     for (let i = 0; i < top; i++) {
-      if (levels[i] === padButtons[i]) continue;
+      if (Boolean(levels[i]) === Boolean(padButtons[i])) continue;
       const triggers = controls.buttonTriggers(i);
       if (levels[i]) for (const t of triggers) page.padTriggerDown?.(t);
       else for (const t of triggers) page.padTriggerUp?.(t);
     }
     padButtons = levels;
   };
+
+  // --- the POV hat -----------------------------------------------------------
+  //
+  // BF1942's joystick device (`0x0066e8c9` `GetDeviceState(0x110)`, the
+  // DIJOYSTATE2 read, and the loop at `0x0066ea28`) folds each POV hat into
+  // four buttons numbered straight after the stick's physical ones: for hat
+  // p, base = numButtons + 4p, and the angle sets bit base+0 at 0 (up),
+  // base+1 at 9000 (right), base+2 at 18000 (down), base+3 at 27000 (left).
+  // Any other angle — the four diagonals, and centred — sets nothing. So on a
+  // twelve-button Extreme 3D Pro the hat is JOYSTICK 13-16 in the options
+  // screen, which is what a profile that binds it says.
+  //
+  // The browser never reports a hat as buttons. It arrives as axes, in one of
+  // two shapes: two axes that only ever read -1, 0 or 1 (Linux, both engines:
+  // joydev/evdev ABS_HAT0X/Y, y -1 is up), or one axis stepping through eight
+  // positions from -1 (up) clockwise in 2/7 steps and resting above 1
+  // (Chrome on Windows). An axis the profile binds as an axis is never a hat.
+
+  // Per axis index: false once it has read anything but -1, 0 or 1.
+  let hatSeen = new Map();
+
+  function boundAxes() {
+    const out = new Set();
+    for (const bucket of Object.values(buckets)) {
+      for (const b of bucket) {
+        if (b.kind === 'axis' && b.device === 'controller' && b.index === 0) out.add(b.axis);
+      }
+    }
+    return out;
+  }
+
+  /** The hat's cardinal direction, 0 up / 1 right / 2 down / 3 left, or -1. */
+  function hatDirection(pad) {
+    const axes = pad.axes;
+    const bound = boundAxes();
+    for (let i = 0; i < axes.length; i++) {
+      const v = axes[i];
+      const discrete = [-1, 0, 1].some(k => Math.abs(v - k) < 1e-6);
+      if (!discrete) hatSeen.set(i, false);
+      else if (!hatSeen.has(i)) hatSeen.set(i, true);
+    }
+    // One stepped axis: the only kind that reads past 1, at rest.
+    for (let i = 0; i < axes.length; i++) {
+      if (bound.has(i) || !(Math.abs(axes[i]) > 1.05) && !povAxes.has(i)) continue;
+      povAxes.add(i);
+      const v = axes[i];
+      if (v > 1.05) return -1;
+      const step = Math.round((v + 1) / (2 / 7));    // 0 up, 1 up-right, ... 7 up-left
+      return step % 2 === 0 ? step / 2 : -1;
+    }
+    // Two discrete axes: the last pair still reading only -1/0/1.
+    const pair = [];
+    for (let i = axes.length - 1; i >= 0 && pair.length < 2; i--) {
+      if (bound.has(i) || hatSeen.get(i) !== true) { if (pair.length) break; continue; }
+      pair.unshift(i);
+    }
+    if (pair.length !== 2) return -1;
+    const x = Math.round(axes[pair[0]]);
+    const y = Math.round(axes[pair[1]]);
+    if (x === 0 && y === -1) return 0;
+    if (x === 1 && y === 0) return 1;
+    if (x === 0 && y === 1) return 2;
+    if (x === -1 && y === 0) return 3;
+    return -1;
+  }
+  const povAxes = new Set();
 
   // --- profile import -------------------------------------------------------
 
@@ -434,6 +657,7 @@ export function createControls(page) {
       if (saved && saved.files && Object.keys(saved.files).length) {
         files = { ...CONTROLS_DEFAULTS.files, ...saved.files };
         source = saved.source || 'profile';
+        profileName = saved.profileName || null;
         return true;
       }
     } catch { /* a corrupt entry is a fresh start, not a crash */ }
@@ -442,7 +666,7 @@ export function createControls(page) {
 
   const save = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName }));
     } catch { /* private mode or a full quota: the session keeps its maps */ }
   };
 
@@ -450,23 +674,31 @@ export function createControls(page) {
    *  classified by content (`classifyCon`), unknown names included; the four
    *  contexts the game writes are the ones accepted, and everything the
    *  import carries is merged over the defaults so a partial folder still
-   *  yields a complete map. */
+   *  yields a complete map. A whole profile folder is fine: the files that
+   *  are not control maps are skipped, bar `GeneralOptions.con`'s player
+   *  name. */
   controls.importFiles = async items => {
     const applied = [];
+    let name = null;
     for (const item of items) {
       let body = null;
       try {
         body = typeof item.text === 'string' ? item.text : await item.text();
       } catch { /* an unreadable file is skipped, not a crash */ }
       if (!body) continue;
-      const name = item.name ?? '';
+      const player = /^game\.setPlayerName\s+"([^"]*)"/m.exec(body);
+      if (player) name = player[1];
+      // `Profiles/<name>/Controls/Air.con`, when a folder was picked.
+      const path = item.webkitRelativePath?.split('/') ?? [];
+      if (!name && path.length > 2) name = path[path.length - 3];
       const context = classifyCon(body);
       if (!CONTEXTS.includes(context)) continue;
       files[context] = body;
-      applied.push({ name, context });
+      applied.push({ name: item.name ?? '', context });
     }
     if (!applied.length) return { applied, source };
     source = 'profile';
+    profileName = name || profileName;
     rebuild();
     save();
     return { applied, source };
@@ -475,6 +707,7 @@ export function createControls(page) {
   controls.resetDefaults = () => {
     files = { ...CONTROLS_DEFAULTS.files };
     source = 'defaults';
+    profileName = null;
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* as above */ }
     rebuild();
   };
@@ -502,7 +735,7 @@ export function createControls(page) {
       }
       if (labels.size) rows.push({ trigger, labels: [...labels] });
     }
-    return { source, vars: { ...vars }, rows };
+    return { source, profileName, vars: { ...vars }, rows };
   };
 
   load();

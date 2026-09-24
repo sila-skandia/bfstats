@@ -48,18 +48,6 @@
     <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
-    <div id="controls-profile">
-      <div class="cp-row"><span id="controls-profile-label">controls: shipped defaults</span></div>
-      <div class="cp-row cp-actions">
-        <button type="button" id="controls-import-btn">Import profile .con</button>
-        <button type="button" id="controls-reset-btn" hidden>Defaults</button>
-        <input type="file" id="controls-import" accept=".con,text/plain" multiple hidden>
-      </div>
-      <details id="controls-details">
-        <summary>bindings</summary>
-        <div id="controls-table"></div>
-      </details>
-    </div>
   </aside>
   <button type="button" class="map-controls-fab" id="map-controls-fab" aria-label="Show map controls" hidden>
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h9M15 12h-1M9 2.5v3M4 6.5v3M11 10.5v3"/></svg>
@@ -167,6 +155,7 @@
        Same controller as `play/index.html` (`play/skirmish.js`); focusable
        so the keyboard reaches the level list the way the game's does. -->
   <canvas id="menu-canvas" tabindex="-1" aria-label="Menu" hidden></canvas>
+  <canvas id="menu-canvas-opt" tabindex="-1" aria-label="Controls" hidden></canvas>
 </div>
 
 <script type="importmap">
@@ -401,7 +390,11 @@ const optOnFoot = document.getElementById('onfoot');
 const spawnFlagSelect = document.getElementById('spawn-flag');
 const hud = document.getElementById('hud');
 const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
-const HUD_FLY = hud.textContent;
+// The free camera's hint: its fly keys are the viewer's own, the map key the
+// profile's. Read through `hudFly()` so an import lands in it.
+const HUD_FLY_TEMPLATE = 'WASD fly · QE or scroll vertical · mouse look · Shift slow · '
+  + 'CapsLock spawn · {c_PIMap} map · Esc menu';
+const hudFly = () => controls.hintText(HUD_FLY_TEMPLATE, null);
 // `?shots&noaudio` takes Web Audio out at the source, for the perf harness's
 // audio-on/audio-off A/B: no AudioContext is ever created, so no listener
 // rides the camera, no loop is decoded, no engine or gun patch is built, and
@@ -464,52 +457,12 @@ const controls = createControls(bag(
   },
 ));
 
-// The sidebar's control-map block: import a real profile's Controls/*.con
-// (the four files the game writes), see what the map now says in the game's
-// own wording, and go back to the shipped defaults. Everything is local —
-// the profile is 273 lines of text and the parse is the same one the
-// defaults went through.
-const controlsProfileLabel = document.getElementById('controls-profile-label');
-const controlsImportBtn = document.getElementById('controls-import-btn');
-const controlsImport = document.getElementById('controls-import');
-const controlsResetBtn = document.getElementById('controls-reset-btn');
-const controlsTable = document.getElementById('controls-table');
-
-function paintControlsProfile() {
-  const { source, rows } = controls.describe();
-  controlsProfileLabel.textContent = source === 'defaults'
-    ? 'controls: shipped defaults' : `controls: imported profile`;
-  controlsResetBtn.hidden = source === 'defaults';
-  controlsTable.replaceChildren(...rows.map(row => {
-    const line = document.createElement('div');
-    line.className = 'cp-bind';
-    const name = document.createElement('span');
-    name.className = 'cp-trigger';
-    name.textContent = row.trigger.replace(/^c_PI/, '');
-    const binds = document.createElement('span');
-    binds.className = 'cp-keys';
-    binds.textContent = row.labels.join(' \u00b7 ');
-    line.append(name, binds);
-    return line;
-  }));
-}
-controlsImportBtn.addEventListener('click', () => controlsImport.click());
-controlsImport.addEventListener('change', async () => {
-  if (!controlsImport.files?.length) return;
-  const { applied } = await controls.importFiles(controlsImport.files);
-  controlsProfileLabel.textContent = applied.length
-    ? '' : 'controls: import found no map files';
-  paintControlsProfile();
-  controlsImport.value = '';
-});
-controlsResetBtn.addEventListener('click', () => {
-  controls.resetDefaults();
-  paintControlsProfile();
-});
-paintControlsProfile();
+// The hint painted before anything else writes the HUD carries the
+// profile's map key, not the page's default.
+hud.textContent = hudFly();
 const pageInput = createPageInput(bag(
   from(() => comms, `keydown:radioKeydown`),
-  from(() => controls, `activeCodes codeTriggers kblockKeys`),
+  from(() => controls, `activeCodes codeTriggers hintText kblockKeys`),
   from(() => deployScreen, `deployActive`),
   from(() => freeCamera, `clampAltitude dollyCamera isSlow navMode panCamera resetCamera`),
   from(() => level, `world`),
@@ -517,10 +470,10 @@ const pageInput = createPageInput(bag(
   from(() => localPlayer, `aircraft car occupancy soldier switchSeat toggleProne`),
   from(() => mapSurfaces, `bfmap fullmapBox toggleFullMap`),
   from(() => pageAudio, `ensureAudioContext`),
-  from(() => pageConsole, `consoleCaptures escMenu escMenuCaptures gameConsole setConsoleOpen
-    setEscMenu`),
+  from(() => pageConsole, `consoleCaptures escMenu escMenuCaptures escMenuKeydown escMenuKeyup
+    gameConsole setConsoleOpen setEscMenu`),
   from(() => scoreboard, `scoreboardOpen scoreFromSpawn setScoreboard`),
-  from(() => seatCamera, `cycleView`),
+  from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload`),
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
@@ -567,12 +520,14 @@ const pageConsole = createPageConsole(bag(
   from(() => level, `extras`),
   from(() => localLook, `mouseInput`),
   from(() => mapSurfaces, `bfmap`),
-  from(() => pageInput, `capture keys release releaseButtons setSideCollapsed`),
+  from(() => pageInput, `capture HUD_FOOT keys release releaseButtons setSideCollapsed`),
   from(() => scoreboard, `scoreboardOpen scoreFromSpawn setScoreboard`),
+  from(() => seatCamera, `HUD_DRIVE HUD_MANNED HUD_PILOT`),
   from(() => spawning, `launchTeam`),
   {
     get hudPaths() { return hudPaths; }, get MENU_URL() { return MENU_URL; },
-    get params() { return params; },
+    get params() { return params; }, get controls() { return controls; },
+    get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
   },
 ));
 
@@ -684,13 +639,14 @@ const localPlayer = createLocalPlayer(bag(
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
   from(() => wrecks, `killOccupantInSeat`),
   {
-    get camera() { return camera; }, get hud() { return hud; }, get HUD_FLY() { return HUD_FLY; },
+    get camera() { return camera; }, get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
     get hudBridge() { return hudBridge; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get vehicles() { return vehicles; },
   },
 ));
 const seatCamera = createSeatCamera(bag(
+  from(() => controls, `hintText`),
   from(() => hudFeed, `showView`),
   from(() => hullBodies, `hullCollisionMaterial`),
   from(() => level, `collider damageTables groundHeight isCollision`),
@@ -717,6 +673,8 @@ const localLook = createLocalLook(bag(
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
   },
 ));
+// The profile's mouse settings, once there is a look stage to take them.
+pageConsole.applyControlProfile();
 const vehicleEntry = createVehicleEntry(bag(
   from(() => botUnits, `seatHolder`),
   from(() => freeCamera, `placeCamera`),
@@ -1011,7 +969,7 @@ const hudFeed = createHudFeed(bag(
   from(() => seatCamera, `HUD_DRIVE HUD_PILOT mannedActive`),
   from(() => seatPose, `updateSeatPoseVisibility`),
   {
-    get bust() { return bust; }, get hud() { return hud; }, get HUD_FLY() { return HUD_FLY; },
+    get bust() { return bust; }, get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
     get hudPaths() { return hudPaths; }, get isTouchDevice() { return isTouchDevice; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   },

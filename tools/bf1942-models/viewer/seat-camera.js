@@ -134,6 +134,31 @@ export function createSeatCamera(page) {
     }
   }
 
+  /** F9-F12, the common map's `c_PICameraMode1..4` — INSIDE, CHASE REAR,
+   *  CHASE FRONT and FLY BY on the options screen: straight to that view
+   *  rather than round the C cycle. A view the seat or the server does not
+   *  allow is refused (the cycle's own gate). INSIDE pressed again inside a
+   *  cockpit goes to the nose cam where the seat has one: the retail key is
+   *  one "inside" key for both first-person views (unverified in the binary;
+   *  see features/viewer-profile-controls §7). On foot the soldier's own
+   *  cycle gates it — first person, and chase/front where it allows them. */
+  const SEAT_VIEW_FOR = { 1: 'cockpit', 2: 'chase', 3: 'front', 4: 'flyby' };
+  const FOOT_VIEW_FOR = { 1: 'inside', 2: 'chase', 3: 'front', 4: 'flyby' };
+  function cameraMode(n) {
+    if (page.optPilot.checked && seatCamera.view) {
+      const view = seatCamera.view;
+      let want = SEAT_VIEW_FOR[n];
+      if (n === 1 && view.mode === 'cockpit' && view.modes.includes('nose')) want = 'nose';
+      if (!want || !view.modes.includes(want)) return;
+      page.showView(view.setMode(want));
+    } else if (page.optOnFoot.checked && page.soldier) {
+      const want = FOOT_VIEW_FOR[n];
+      const was = page.footView3p.mode;
+      const now = page.footView3p.setMode(want);
+      if (now !== was) page.showView(now);
+    }
+  }
+
   // --- the external view's law (chase-camera.js) -----------------------------
   //
   // `chase-camera.js` is the arithmetic of `Camera::getTransformation` for
@@ -287,11 +312,16 @@ export function createSeatCamera(page) {
     if (Number.isFinite(n) && n > 0) page.mouseInput.countsPerPixel = n;
   }
 
-  const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB guns · RMB bombs · '
-    + 'C view · mouse look around · R reset · 1-9 seats · E out on the ground · Esc';
-  const HUD_DRIVE = 'W/S drive and brake · A/D steer · mouse aims · LMB main gun · RMB coax · C view · '
-    + 'R reset · 1-9 seats · E get out · Esc';
-  const HUD_MANNED = 'Mouse aims · LMB fires · C view · 1-9 seats · E get out · Esc';
+  // The seat hints, keys filled in from the player's profile.
+  const HUD_PILOT_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} throttle · {c_PIYaw-}/{c_PIYaw+} rudder · '
+    + '{c_PIPitch-}/{c_PIPitch+} pitch · {c_PIRoll-}/{c_PIRoll+} roll · {c_PIFire} guns · '
+    + '{c_PIAltFire} bombs · {c_PIToggleCameraMode} view · mouse look around · {c_PIReload} reset · '
+    + '1-9 seats · {c_PIUse} out on the ground · Esc';
+  const HUD_DRIVE_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} drive and brake · {c_PIYaw-}/{c_PIYaw+} steer · '
+    + 'mouse aims · {c_PIFire} main gun · {c_PIAltFire} coax · {c_PIToggleCameraMode} view · '
+    + '{c_PIReload} reset · 1-9 seats · {c_PIUse} get out · Esc';
+  const HUD_MANNED_TEMPLATE = 'Mouse aims · {c_PIFire} fires · {c_PIToggleCameraMode} view · '
+    + '1-9 seats · {c_PIUse} get out · Esc';
 
   /**
    * Read the keyboard into the car and step the drive model.
@@ -530,11 +560,14 @@ export function createSeatCamera(page) {
     }
   };
 
+  Object.defineProperties(seatCamera, {
+    HUD_DRIVE: { get: () => page.hintText(HUD_DRIVE_TEMPLATE, 'land'), enumerable: true },
+    HUD_MANNED: { get: () => page.hintText(HUD_MANNED_TEMPLATE, 'land'), enumerable: true },
+    HUD_PILOT: { get: () => page.hintText(HUD_PILOT_TEMPLATE, 'air'), enumerable: true },
+  });
   Object.assign(seatCamera, {
     CHASE_OPTION,
-    HUD_DRIVE,
-    HUD_MANNED,
-    HUD_PILOT,
+    cameraMode,
     buildSeatView,
     cameraRidesTurret,
     chaseExternalLaw,
