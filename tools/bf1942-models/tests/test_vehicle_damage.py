@@ -536,5 +536,41 @@ class SoldierSplashTests(unittest.TestCase):
 
 
 
+
+class CrewWashFeedTests(unittest.TestCase):
+    """What `vehicle-hits.js` needs to wash a seated crew: each timed tick, and
+    the priced damage beside the HP it cost (ledger HFD-2, HFD-11, HFD-13)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_update_reports_the_last_tick_it_took(self) -> None:
+        ticks = self.results["ticks"]
+        self.assertEqual(0, ticks["half"])
+        self.assertEqual(1.5, ticks["burn"])
+        # Burn and water both tick in one step; the water's is the last.
+        self.assertEqual(10, ticks["wet"])
+
+    def test_a_killing_tick_reports_what_it_asked_for(self) -> None:
+        ticks = self.results["ticks"]
+        self.assertEqual(1.5, ticks["lastBurn"])
+        self.assertTrue(ticks["lastDestroyed"])
+
+    def test_the_set_lists_every_vehicle_that_ticked(self) -> None:
+        ticks = self.results["ticks"]
+        self.assertEqual([{"owner": 3, "amount": 1.5, "name": "Sherman"}], ticks["set"])
+        self.assertEqual(0, ticks["early"])
+
+    def test_a_hit_and_a_blast_hand_back_the_priced_damage(self) -> None:
+        amounts = self.results["amounts"]
+        # 80 halved by the scale to 40, on a hull with 30 left.
+        self.assertEqual({"amount": 40, "lost": 30}, amounts["hit"])
+        # 10 x 2 x (1 - 5/10): the splash, all of it taken.
+        self.assertEqual({"amount": 10, "lost": 10}, amounts["splash"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -240,6 +240,9 @@ function spawnTracer(guns, muzzle, group, bright) {
     maxRange: group.maxRange,
     age: 0,
     travelled: 0,
+    // Where the round left: `FireArms::fireBarrel`'s `Projectile+0x134`,
+    // the point a hit's damage arc looks at (ledger HFD-4).
+    origin: [_origin.x, _origin.y, _origin.z],
   });
 }
 
@@ -353,6 +356,8 @@ function spawnProjectile(guns, muzzle, group, spec) {
     run: null,
     age: 0,
     travelled: 0,
+    // `Projectile+0x134`, as on a tracer (ledger HFD-4).
+    origin: [_origin.x, _origin.y, _origin.z],
     sincePuff: 0,
     fuse,
     // Set when a fuse round has come to rest on a surface; see `advance`.
