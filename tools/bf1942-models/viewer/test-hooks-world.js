@@ -66,6 +66,8 @@ export function installWorldHooks(page) {
   // whether a missing arrow is a culled marker or an empty list; this can.
   window.__mapMarks = () => ({
     team: page.localMapTeam(),
+    // The flag sprite each control point draws: the flag it flies now.
+    points: page.controlPointSprites(),
     tint: page.MINIMAP_TEAM_TINT[page.localMapTeam()] || null,
     onFoot: page.friendlyMapUnits(),
     crewed: [...page.friendlyVehicleNodes()].map(node => node.name),
