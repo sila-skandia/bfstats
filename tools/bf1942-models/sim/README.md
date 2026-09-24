@@ -269,11 +269,12 @@ refereeEnv`): the units (on a real level the page's `bot-units.js` from the
 stage, a seated bot's hand-weapon hit on his hull billed as the page bills
 it; on the synthetic level the stand-ins, `SimVehicles`), an Armor from the
 kit's hit points, a round's damage (the page's `botRoundDamage` on a real
-level), and a hook per event: each becomes a trace line and a statistic
-(`kill`, `respawn`, `redeploy`, `capture`, `mount` / `dismount`,
-`strategy`, shots and hits), `tickBot` wraps each bot's tick in the error
-catch below, and, on the synthetic level only, `mountedFire` is the
-runner's stand-in gun.
+level; every body here is the stand-in, priced as the torso with the round's
+falloff, features/damage-parity), and a hook per event: each becomes a
+trace line and a statistic (`kill`, `respawn`, `redeploy`, `capture`,
+`mount` / `dismount`, `strategy`, shots and hits), `tickBot` wraps each
+bot's tick in the error catch below, and, on the synthetic level only,
+`mountedFire` is the runner's stand-in gun.
 
 A seat swap (`BBPChangeTeleport`) moves the bot within the hull without
 stepping out, as the page's does: one `mount` event, no `dismount` (before
