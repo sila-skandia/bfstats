@@ -78,3 +78,38 @@ screen, R, or the browser reset) clears the death cam. `deploySpawn()` →
   the client runs when it is server-instructed to show a killer/death cam.
   The current viewer beat is a documented approximation of the float; settle
   it against the client if a specific mode's camera motion is wanted.
+## 2026-09-24: the corpse cam frames the body
+
+The owner: "When you die from a player, it should show your dead body in the
+death cam. Otherwise it feels like you're dieing randomly."
+
+The on-foot shot above -- `lift 3.5`, `back 0`, pitch -0.9 rad -- parked the
+camera straight over the eye and looked 52 degrees down *ahead* of it. At the
+soldier's 57.3 degree field of view the bottom edge of that frame is 81
+degrees down, so the body, lying directly underneath, was never in it: the
+player saw a patch of ground and then the spawn screen, and the spawn screen
+covers the whole stage (`spawn-layout.json`: the kit column and the 512 px
+map pane), so there was no later look either.
+
+Now (`soldier-view.js` `corpseCam`, `local-player.js` `DEATH_CAM.foot`):
+
+- The side of the shot is chosen on the frame of the death: the far side of
+  the body from whoever last hit the player (`comms.lastAttack`'s speaker
+  position, the message log's own record of the attack), so the body lies in
+  the middle of the frame with the killer beyond it. No attacker (a fall, his
+  own grenade): behind the body along the heading it fell on.
+- Every frame the camera stands `back 4.2` along that side and `lift 1.8`
+  above the drawn body's `Bip01_Pelvis`, looking at the pelvis: 23 degrees
+  down, so the frame's top edge sits 5.6 degrees above the horizon and the
+  ground out to the shooter is in the picture. Pulled in to whatever stands
+  between the body and the camera (`collider.cast`), never below the ground.
+- The beat is 3.0 s (was 1.2): the deaths run 0.7 .. 1.6 s, and this is the
+  only look the player gets before the spawn screen.
+
+Hull and seat deaths keep their own shots (`DEATH_CAM.vehicle`, `.seat`).
+[HOUSE RULES, as before: the client's death cam is not decoded.]
+
+Verified headless on El Alamein: an Axis bot with an MP 40 placed 20 m from
+the human killed him (`Hans [Mp 40] Player`); the human's pelvis projected to
+NDC (0.00, 0.00) at 0.2 s, 1.0 s and 2.5 s after the death, and the killer to
+(0.00, 0.62 .. 0.68), in frame behind the body.
