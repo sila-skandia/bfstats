@@ -1017,6 +1017,9 @@ const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0))
 const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /** `?botDebug`: log every hit on a bot. */
 const BOT_DEBUG = params.has('botDebug');
+/** `?doctrine=`: who orders the bots (doctrine.js `parseDoctrineSpec`):
+ *  the garrison by default (doctrine-garrison.js), `sai` for the engine's. */
+const BOT_DOCTRINE = params.get('doctrine') || 'garrison';
 /**
  * The bots' referee (bot-referee.js, the same copy `sim/match.mjs` runs): the
  * bots, their clock, nav map, strategic AI and covers, and everything a
@@ -1036,6 +1039,7 @@ const referee = createBotReferee({
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
   roundDamage: (stats, material) => vehicleHits.botRoundDamage(stats, material),
   debug: BOT_DEBUG,
+  doctrine: BOT_DOCTRINE,
   // The player's shot, heard inside his weapon's sound radius, and incoming
   // fire when it lands nearby: the edge of his fire input this frame.
   beforeBots: () => {

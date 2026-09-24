@@ -112,8 +112,9 @@ export function planMoveTo(bot, now) {
     // shore), `BAPATriggerContinously(PIPitch) }`: the ramp held.
     return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true, ramp: true }];
   }
+  // `gait`: the garrison's patrol walks (doctrine-garrison.js, INVENTION).
   const plan = [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
-                  stance: 'stand' }];
+                  stance: wp.gait === 'walk' && !bot.vehicle ? 'walk' : 'stand' }];
   // `BBPGotoWaypoint2d::createPlan` 0x085b5490 runs a `BAPALookAhead(bot,
   // 5 deg)` beside the move (0x085b5531..) when the unit's ControlInfo looks
   // on other controls than it drives with (the +0x64 / +0x54 words, 0x085b54fb):

@@ -72,6 +72,13 @@ export function dismount(bot, now = bot._now ?? 0) {
  * unseats a bot whose vehicle is destroyed).
  */
 export function urgencyChange(bot, mod, now) {
+  // A garrison post (doctrine-garrison.js, INVENTION) does not Change: the
+  // post seats him at the flag's gun, or keeps him on foot at the flag.
+  if (bot.waypoints?.kind === 'WPPost') {
+    bot._changeResult = null;
+    bot.changedTarget.Change = false;
+    return 0;
+  }
   const cands = bot.vehicleCandidates;
   const world = bot.world;
   const split = orderSplit(bot.waypoints?.attack ?? 0, bot.waypoints?.defence ?? 0);
@@ -112,6 +119,16 @@ export function urgencyChange(bot, mod, now) {
     if (mine && mine.upright === false) staying = 0;
     const nav = bot.navGrid;
     let bailAllowed = !nav || isWalkable(nav, bot.position[0], bot.position[2]);
+    // Under the garrison (doctrine-garrison.js, INVENTION) a bot not on a post
+    // sitting in a fixed gun with no enemy he has spotted in its reach gets
+    // out: his own gun counts him as its occupant, so the fixed weapon's test
+    // above never applied to it, and a gun on a blocked cell (Bocage's hill
+    // bunker MG42) refused the bail. He steps out at the gun's own
+    // `setSoldierExitLocation` (bot-units.js `units.leave`).
+    if (bot.waypoints?.guns === 'engaged' && m.kind === 'gun' && !bot._fixedAimable()) {
+      staying = 0;
+      bailAllowed = true;
+    }
     // A landing craft's crew runs `BBChangeLandingCraft` 0x085602b0, not
     // `BBChange` (`Game/AIbehaviours.con`: the Change row of the
     // `LandingCraft`, `LandingCraftPassenger` and `LandingCraftFixed` units):
@@ -326,9 +343,18 @@ export function fixedAimable(bot, c = null) {
     return [dx / d, 0, dz / d];
   };
   const spotted = bot.senses.spottedEnemies();
-  if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos))) ? 'enemy' : false;
   let range = 0;
   for (const w of (c ? c.weapons : bot.weapons) ?? []) range = Math.max(range, w.maxRange ?? 0);
+  // Under the garrison (doctrine-garrison.js, INVENTION) a bot not on a post
+  // gives a gun something only for an enemy he has spotted inside its range
+  // and traverse: not for one somewhere in range he has not seen (the
+  // engine's `getEnemyObjects` branch below, which on Bocage covered most of
+  // the map from the bridges' AA guns), nor for the strategic direction.
+  if (bot.waypoints?.guns === 'engaged') {
+    return spotted.some(m => canPoint(dirTo(m.pos)) && Math.hypot(m.pos[0] - from[0], m.pos[2] - from[2]) <= range)
+      ? 'enemy' : false;
+  }
+  if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos))) ? 'enemy' : false;
   for (const [id, p] of bot.world?.players ?? []) {
     if (id === bot.playerId || p.team === bot.team || bot.world.armorOf?.(id)?.destroyed) continue;
     const pos = playerPosition(p);

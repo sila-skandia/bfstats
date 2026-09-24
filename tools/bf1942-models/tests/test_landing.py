@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "landing_harness.mjs"
 MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js",
-           "doctrine-landing.js")
+           "doctrine-garrison.js", "doctrine-landing.js")
 
 
 def run_harness() -> dict:
