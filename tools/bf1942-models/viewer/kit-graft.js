@@ -120,3 +120,27 @@ export function kitsByTemplate(manifest) {
   }
   return index;
 }
+
+/**
+ * Which `<Soldier>__<Weapon>.pose.glb` a drawn soldier wears, best first: the
+ * level's template for his team (`game.setTeamSkin`, the uniform and head)
+ * holding his kit's primary, then `fallbackSoldier` holding it (a tree with
+ * no pose for the level's template and that weapon), then each holding
+ * `pistol`, which every soldier has a pose for. The weapon is the kit's, so
+ * a bot with a Bazooka is drawn with one whatever uniform he wears.
+ */
+export function outfitCandidates({ levelSoldier = null, fallbackSoldier = null,
+                                   primary = null, pistol = 'Colt' } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const weapon of [primary, pistol]) {
+    for (const soldier of [levelSoldier, fallbackSoldier]) {
+      if (!soldier || !weapon) continue;
+      const key = `${soldier}__${weapon}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([soldier, weapon]);
+    }
+  }
+  return out;
+}
