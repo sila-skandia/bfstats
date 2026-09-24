@@ -90,6 +90,11 @@ export class GunFire {
     // `owner`) plus the page's own `target`. Only asked inside the collider's
     // own distance, so a wall still stops the round first.
     this.bodyCast = null;
+    // The struck object's own `angleMod`, for the angle term of the direct-hit
+    // law (`round-impact.js`): `(owner) => number | null`, null where the
+    // object authors none and keeps the template's 0. Null (the model
+    // browser) prices every object at 0.
+    this.angleModOf = null;
     // What a proximity-fused round can burst on (`proximity-fuse.js`):
     // `(x, y, z, radius) => [{ x, y, z, mass, vx, vy, vz, owner }]`, every
     // vehicle hull whose origin might be within `radius`, whoever drives it.

@@ -6,6 +6,7 @@
 
 import { impactEffect, materialFamily } from './collision-materials.js';
 import { damageFactor, IMPACT_BLAST_OFFSET, splashSpec } from './effects-core.js';
+import { angleFactor } from './crash-damage.js';
 import { spawnImpact } from './round-visuals.js';
 
 /** Record a hit, name the effect the game would play, and play or mark it. */
@@ -23,18 +24,24 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
   const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
   const defGroup = guns.materials?.[hit.material]?.defGroup ?? hit.material;
   const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
-  // `cos(angle)`: a round that arrives square on does full damage, one that
-  // grazes does almost none. The engine's own term is the cosine between the
-  // round's path and the face normal, so take the absolute dot of the two
-  // unit vectors — the sign only says which side of the face we came from.
-  let incidence = 1;
+  // The angle term, `angleMod + (1 - angleMod) sin(abs(cos) pi/2)` with the
+  // struck object's own `angleMod` (`handleCollisionForProjectile`, ledger
+  // DMG-3 and DMG-4; the same term the crash law uses). `cos` is between the
+  // round's path and the face normal, its sign only the side of the face. A
+  // soldier and an aircraft author `angleMod 1`, so a round costs them the
+  // same at any angle; everything else is left at the template's 0 and takes
+  // the bare sine, 0.71 of full at 60 deg off square. (This was a bare
+  // `abs(cos)`, 0.5 there, and it docked a glancing hit on a plane too.)
+  let cos = 1;
   if (velocity) {
     const len = velocity.length();
     if (len > 0) {
-      incidence = Math.abs((velocity.x * hit.nx + velocity.y * hit.ny
-                            + velocity.z * hit.nz) / len);
+      cos = Math.abs((velocity.x * hit.nx + velocity.y * hit.ny
+                      + velocity.z * hit.nz) / len);
     }
   }
+  const angleMod = hit.kind === 'soldier' ? 1 : (guns.angleModOf?.(hit.owner) ?? 0);
+  const incidence = angleFactor(cos, angleMod);
   const record = {
     kind: hit.kind,
     material: hit.material,

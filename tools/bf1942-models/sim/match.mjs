@@ -209,8 +209,11 @@ export class Match {
       get units() { return stage ? stage.units : match.vehicles; },
       groundAt: (x, z, fromY) => this.groundAt(x, z, fromY),
       armorFor: (bot) => new this.M.Armor(level.kits.maxHp(bot.kit)),
-      // The page's `botRoundDamage` on a real level.
-      roundDamage: stats => (stage ? stage.vehicleHits.botRoundDamage(stats) : level.roundDamage(stats)),
+      // The page's `botRoundDamage` on a real level: the struck material and
+      // the distance the round flew price it (ledger DMG-3).
+      roundDamage: (stats, material, distance) => (stage
+        ? stage.vehicleHits.botRoundDamage(stats, material, distance)
+        : level.roundDamage(stats, material, distance)),
       onBotCreated: bot => {
         const names = new Set((bot.weapons ?? []).map(w => w.name).filter(Boolean));
         if (bot.kitPrimary) names.add(bot.kitPrimary);

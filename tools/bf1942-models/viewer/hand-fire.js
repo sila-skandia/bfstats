@@ -12,6 +12,7 @@ import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
+import { friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -38,7 +39,7 @@ export function createHandFire(page) {
   /**
    * The human's half of the same parity departure `resolveBotShot` documents
    * below: one hitscan round from the eye down the view axis, rolled into the
-   * hand weapon's live deviation cone, against the enemy soldier capsules. The
+   * hand weapon's live deviation cone, against the soldier capsules. The
    * engine resolves a real projectile against a soldier body the viewer's
    * collider does not carry, so without this the player's rounds pass through
    * every bot and only the bots' rounds land.
@@ -74,7 +75,9 @@ export function createHandFire(page) {
     let bestHit = null;
     let bestMaterial = null;
     for (const bot of page.bots) {
-      if (bot.team === myTeam) continue;                       // never a teammate
+      // Friend or foe (ledger FF-1): only a man in the hull the round is
+      // fired from is passed.
+      if (roundPasses(page.world, page.LOCAL_PLAYER, bot.playerId)) continue;
       // His body: on foot his soldier, in a seat that draws him the seat's
       // (`referee.bodyAt`), in one that does not, nothing to hit.
       const s = page.bodyAt(bot.playerId);
@@ -94,10 +97,13 @@ export function createHandFire(page) {
     }
     if (best) {
       // The held weapon's own round (`fireArms.projectile`), priced against the
-      // capsule's material: head, chest and limbs are each their own defence
-      // group.
+      // capsule's material (head, chest and limbs are each their own defence
+      // group) at the distance it flew, and by `calcDamage` on a friend.
       const stats = page.handWeapon?.group?.stats ?? null;
-      page.applyDamage(best, page.botRoundDamage(stats, bestMaterial ?? undefined),
+      const damage = friendlyDamage(page.botRoundDamage(stats, bestMaterial ?? undefined, bestT), {
+        attackerTeam: myTeam, victimTeam: page.world.player(best)?.team ?? null,
+      });
+      page.applyDamage(best, damage,
                        page.LOCAL_PLAYER, origin, { hit: bestHit, weapon: page.handWeapon?.name ?? null });
     }
   }
