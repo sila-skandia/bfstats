@@ -904,12 +904,22 @@ export function precisionFor(extents, air = false) {
  * seen (`state.best`, from FLT_MAX) and firing on the tick it grows again
  * while that minimum was inside. Returns whether the trigger may go down.
  */
+/** Metres a tick a single-shot aim must still close by to keep waiting. */
+export const PRECISION_SETTLE = 0.002;
+
 export function precisionHolds(miss, precision, burst, state) {
   const p2 = Math.max(0.01, precision * precision);
   const m2 = miss * miss;
   if (burst) return m2 < p2;
   const best = state.best ?? Number.MAX_VALUE;
-  if (best > 0.01 && m2 <= best) { state.best = m2; return false; }
+  // `PRECISION_SETTLE` (INVENTION): an improvement smaller than this reads as
+  // the closest approach. The engine's miss jitters (float positions, hulls
+  // on their springs, a velocity sampled from positions), so a converging
+  // turret's miss grows within moments of the minimum; the viewer's shrinks
+  // without end as the S-curve count fades, and a Tiger 0.7 m inside its
+  // 2.9 m precision held its round until the plan was rebuilt (Bocage).
+  const improving = best === Number.MAX_VALUE || Math.sqrt(best) - miss > PRECISION_SETTLE;
+  if (best > 0.01 && m2 <= best && improving) { state.best = m2; return false; }
   state.best = Number.MAX_VALUE;
   return best <= p2;
 }
