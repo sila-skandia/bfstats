@@ -106,9 +106,11 @@ for name in viewer-vanilla.zip map-berlin.zip map-bocage.zip; do
     curl -fSL --retry 5 --retry-all-errors -o "$WORK/$name" "$ASSET_BASE/$name"
   fi
 done
-if ! [ -d "$VIEWER_DIR/models" ]; then
+# viewer/models always exists in a clone (the tracked viewmodels/ fixtures), so
+# key off a file only the zip carries; -n keeps those tracked fixtures untouched.
+if ! [ -f "$VIEWER_DIR/models/models.json" ]; then
   echo "[setup] restoring viewer models"
-  unzip -q -o "$WORK/viewer-vanilla.zip" -d "$VIEWER_DIR"
+  unzip -q -n "$WORK/viewer-vanilla.zip" -d "$VIEWER_DIR"
 fi
 for map in berlin bocage; do
   if ! [ -d "$VIEWER_DIR/maps/$map" ]; then
