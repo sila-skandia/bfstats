@@ -13,13 +13,16 @@ import { CHARACTER_HEIGHT } from './physics.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT } from './bot-referee.js';
 import { roundHit } from './soldier-death.js';
 import { skeletonHit } from './skeleton-hit.js';
+import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `applyDamage`, `applyDamageToPlayer`, `bodyAt`, `bots`, `camera`, `capsulesOf`, `collider`,
- * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`, `guns`,
+ * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`,
+ * `friendlyFire` (optional: the server's friendly-fire percentages, the shipped
+ * `ServerSettings.con`'s when absent), `guns`,
  * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `raiseHitIndication`
  * (optional: a headless runner has no crosshair), `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
@@ -27,6 +30,10 @@ import { skeletonHit } from './skeleton-hit.js';
  */
 export function createVehicleHits(page) {
   const vehicleHits = {};
+
+  /** `calcDamage` (`friendly-fire.js`) at the page's percentages. */
+  const priceFriendly = (damage, opts) =>
+    friendlyDamage(damage, { ...opts, settings: page.friendlyFire ?? FRIENDLY_FIRE_SHIPPED });
 
   /* The DamageableVehicle the player is sitting in.
    *
@@ -166,7 +173,7 @@ export function createVehicleHits(page) {
     if (page.soldier && page.soldierArmor && !page.soldierDead && page.optOnFoot.checked) {
       targets.push({
         owner: -1, armor: page.soldierArmor, soldier: true, pose: page.soldier.pose,
-        splashMaterial: SOLDIER_SPLASH_MATERIAL,
+        playerId: page.LOCAL_PLAYER, splashMaterial: SOLDIER_SPLASH_MATERIAL,
         x: page.soldier.x, y: page.soldier.y + CHARACTER_HEIGHT, z: page.soldier.z,
       });
     }
@@ -178,7 +185,7 @@ export function createVehicleHits(page) {
       if (!armor || armor.destroyed || !s) continue;
       targets.push({
         owner: -1, armor, soldier: true, pose: s.pose ?? 0, botId: bot.playerId,
-        splashMaterial: SOLDIER_SPLASH_MATERIAL,
+        playerId: bot.playerId, splashMaterial: SOLDIER_SPLASH_MATERIAL,
         x: s.x, y: s.y + CHARACTER_HEIGHT, z: s.z,
       });
     }
@@ -188,6 +195,23 @@ export function createVehicleHits(page) {
   /** The bot whose seat fired the round behind `record` (`record.firerGroup`). */
   function botFiringGroup(record) {
     return page.vehicles.firerOf(record?.firerGroup);
+  }
+
+  /** `playerId`'s side, or null for nobody the world knows. */
+  function teamOf(playerId) {
+    return playerId != null ? page.world?.player(playerId)?.team ?? null : null;
+  }
+
+  /** The team a hull's PlayerControlObject reports: its crew's, and 0 once
+   *  the last of them leaves (`clearTeam`, ledger XHIT-5). */
+  function hullTeam(owner) {
+    const node = page.damageVisuals.get(owner)?.node;
+    const instance = node ? page.vehicles.instanceOf(node) : null;
+    for (const playerId of instance?.seats.values() ?? []) {
+      const team = teamOf(playerId);
+      if (team) return team;
+    }
+    return 0;
   }
 
   /**
@@ -241,13 +265,22 @@ export function createVehicleHits(page) {
     // (bots resolve their hand weapons in the referee and never fire a
     // `gunfire.js` round). The hull keeps it, so its crew's deaths name him.
     const attacker = botFiringGroup(record) ?? page.LOCAL_PLAYER;
-    const landed = page.vehicleDamage.applyHit(record, attacker);
+    // The round's side, for `calcDamage` (`friendly-fire.js`): a hull of its
+    // own side's is priced by the vehicle ratio, a blast by the splash pair.
+    // A round nobody can name has no side and is never scaled.
+    const attackerTeam = teamOf(roundFirer(record?.firerGroup));
+    const landed = page.vehicleDamage.applyHit(record, attacker, (damage, owner) =>
+      priceFriendly(damage, { attackerTeam, victimTeam: hullTeam(owner), soldier: false }));
     if (landed) reconcileDamaged(landed.vehicle);
     if (marks) page.raiseHitIndication?.();
     if (!(record?.splashRadius > 0)) return;
     const splashed = page.vehicleDamage.applySplash(record, splashTargets(), {
       materials: page.guns.materials, modifiers: page.guns.modifiers,
       exposure: soldierExposureFor, attacker,
+      scale: (amount, target) => priceFriendly(amount, {
+        attackerTeam, splash: true, soldier: !!target.soldier,
+        victimTeam: target.soldier ? teamOf(target.playerId) : hullTeam(target.owner),
+      }),
     });
     for (const hit of splashed) {
       // A soldier target has no tier to re-pick and no wreck to build; what it
@@ -364,29 +397,23 @@ export function createVehicleHits(page) {
    *
    * A seated man is a body only where his seat draws him (`referee.bodyAt`: a
    * gunner behind a bare MG, a jeep's passengers); elsewhere his hull is, and
-   * the collider has it. The firer's own side is passed through, the rule every
-   * other round path in this file keeps. A group no seat holds is the human's
-   * hand weapon -- `applyRoundToSoldier` already bills it to him -- so it is
-   * his side that is passed through, and his own body.
+   * the collider has it.
+   *
+   * Every soldier in the round's path is met, friend or foe, whoever fired it
+   * (ledger FF-1): nothing in the engine's contact test compares teams. It
+   * passes exactly the firer's own body and anyone seated in the hull he fires
+   * from (`roundPasses`). What a friend's hit costs is `applyRoundToSoldier`'s.
+   * A round nobody can name -- replayed, or still flying from a seat since
+   * vacated -- is taken for the human's, as `applyVehicleHit` bills it.
    */
   function roundBodyCast(ox, oy, oz, dx, dy, dz, maxDist, group) {
     if (!page.world) return null;
-    const known = roundFirer(group);
-    const firer = known ?? page.LOCAL_PLAYER;
-    // The human's own rounds meet his teammates. The engine's round hits any
-    // soldier in its path, and `GameServer::giveDamage` raises the hit marks
-    // before it compares a team or prices the damage (XHIT-4): the owner sees
-    // them on a friendly exactly as on an enemy, and the shipped
-    // `ServerSettings.con` has friendly fire at 100. A bot's rounds still pass
-    // through his own side, as they always have here.
-    const passTeam = known === page.LOCAL_PLAYER ? null
-      : firer ? page.world.player(firer)?.team ?? null : null;
+    const firer = roundFirer(group) ?? page.LOCAL_PLAYER;
     const r2 = BOT_BODY_RADIUS * BOT_BODY_RADIUS;
     let best = null;
     let bestT = maxDist;
     for (const [id, player] of page.world.players) {
-      if (id === firer) continue;
-      if (passTeam != null && player.team === passTeam) continue;
+      if (roundPasses(page.world, firer, id)) continue;
       if (page.world.armorOf(id)?.destroyed) continue;
       if (id === page.LOCAL_PLAYER && page.soldierDead) continue;
       let s = page.bodyAt(id);
@@ -480,12 +507,18 @@ export function createVehicleHits(page) {
     return out;
   }
 
-  /** A vehicle round that met a soldier: its direct-hit HP, on him. */
+  /** A vehicle round that met a soldier: its direct-hit HP, on him, priced by
+   *  `calcDamage` when he is on the firer's side (`friendly-fire.js`). */
   function applyRoundToSoldier(record) {
     const id = record.target;
-    if (!(record.damage > 0)) return;
     const firer = roundFirer(record.firerGroup);
-    const firerTeam = firer ? page.world?.player(firer)?.team ?? null : null;
+    const firerTeam = teamOf(firer);
+    // A man seated in a hull has the hull for his root, and the engine prices
+    // him as one: the vehicle ratio.
+    const damage = priceFriendly(record.damage, {
+      attackerTeam: firerTeam, victimTeam: teamOf(id), soldier: !record.seated,
+    });
+    if (!(damage > 0)) return;
     const from = firer === page.LOCAL_PLAYER ? page.camera.position.toArray()
       : firer ? page.bots.find(b => b.playerId === firer)?.getPosition() ?? null : null;
     if (firer && firer !== page.LOCAL_PLAYER) {
@@ -497,10 +530,10 @@ export function createVehicleHits(page) {
                  record.point, record.feetY, record.seated, record.bone)
       : null;
     if (id === page.LOCAL_PLAYER) {
-      page.applyDamageToPlayer(record.damage,
+      page.applyDamageToPlayer(damage,
         from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam, hit);
     } else {
-      page.applyDamage(id, record.damage, firer ?? page.LOCAL_PLAYER, from,
+      page.applyDamage(id, damage, firer ?? page.LOCAL_PLAYER, from,
                        { via: `round ${record.gun ?? ''}`, hit });
     }
   }

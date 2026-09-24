@@ -170,6 +170,13 @@ and `allies=squad` (the play on one side against the SAI). 60 matches, 13
 at a time, about 40 minutes wall clock on a 20-core machine shared with
 other runs.
 
+**Measured before friendly fire.** Until 2026-09-24 a bot's rounds passed
+through its own side; now they meet whoever is in the way, as the engine's
+do ([features/bot-friendly-fire](../bot-friendly-fire/README.md)). Deaths,
+kills and everything downstream of them may move, so re-run the table
+before comparing a change against these numbers. The runner's summary now
+counts `metrics.friendlyFire`.
+
 ```sh
 V=/home/dylan/projects/skandia/bfstats/tools/bf1942-models/viewer
 node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600 \
