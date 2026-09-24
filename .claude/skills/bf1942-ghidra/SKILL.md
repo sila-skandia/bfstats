@@ -44,12 +44,12 @@ Python against an existing analyzed program use `apply_labels.py`, which
 opens the program already in the project by name:
 
 ```bash
-# Run Ghidra python script(s) against the analyzed program (writable, saved):
+# Run Ghidra python script(s) against the analyzed program. Scripts get
+# currentProgram, println, monitor and the flat API (toAddr, getFunctionAt,
+# getReferencesTo, ...). The program is saved only if a script changed it, so
+# print-only query scripts are read-only:
 python3 tools/bf1942-models/ghidra-cloud/apply_labels.py \
   ~/ghidra bf1942-client BF1942.exe my_query.py
-
-# Read-only ad-hoc queries: write a script that only prints (no save) and
-# run it the same way, or use pyghidra.open_project() in a plain python file.
 
 # Java scripts (ghidra_types.java / ghidra_enhance.java) use plain headless:
 ~/ghidra-installs/ghidra_12.1.2_PUBLIC/support/analyzeHeadless \
@@ -100,6 +100,15 @@ bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
   script addresses point at post-analysis function bodies.
 - If a project is locked (`*.lock` files in `~/ghidra/`), delete the stale
   lock files before running headless commands.
+- The `.rep` zips record whoever built them as the project OWNER, and Ghidra
+  refuses to open another user's project (`NotOwnerException: Project is
+  owned by ...`) — cloud sessions run as root. setup.sh re-owns both projects
+  on every run; after restoring a `.rep` by hand, re-run it.
+- If `apply_labels.py` prints `never auto-analyzed`, that project is a raw
+  import: symbol names only (mangled), no xrefs, no DWARF types. Re-import
+  with full analysis:
+  `rm -rf ~/ghidra/linux-server.*` then the fresh-import command above with
+  `linux-server` and `tools/bf1942-models/ghidra-cloud/.work/bf1942_lnxded.static`.
 - Ghidra must be 12.1.2 or newer to open the shipped `.rep` projects
   (layout version 3), with the matching `pyghidra` module (3.1.0) installed.
 - `-process` on `analyzeHeadless` needs `-noanalysis` or it re-analyzes the
