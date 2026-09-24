@@ -32,10 +32,30 @@
 //    view within `5` deg, the aim condition's tolerance is `0.25 * the
 //    target's extents` (at least `0.4` m); a single-shot weapon
 //    (`burst 0`) fires one one-tick pulse per `BAPATrigger` and the plan
-//    loops a shot counter of up to `10`; a burst weapon holds the trigger
-//    (`BAPATriggerContinously`) while the aim condition holds. The plan ends
+//    loops a shot counter (2 to 5 pulses, 1 to 10 rounds for a burst weapon:
+//    ledger AI-131; the viewer keeps 1 to 10 and no limit, below); a burst
+//    weapon holds the trigger (`BAPATriggerContinously`) while the aim
+//    condition holds. The plan ends
 //    on the target's death, an empty magazine, an overheated barrel, or a
 //    `3.0` s timer.
+//  * Re-read 2026-09-24 (features/bot-weapons, ledger AI-130): both
+//    triggers end their statement on `Or(BAPConWeaponMagAmmo(weapon, count,
+//    1), BAPConWeaponMagAmmo(weapon, 0, 0))` -- a round has left (the
+//    magazine differs from the count `BAPWrapperWeapon` recorded) or the
+//    magazine is empty -- and the plan loops them, one round an iteration,
+//    for the firing state's round budget (AI-131). The continuous
+//    one (`EntryTriggerContinously::execute` 0x08625ff0: its +0x18 the aim
+//    precision, +0x1c none, +0x20 that Or) holds the trigger down across
+//    ticks until the round leaves, so an automatic weapon fires at its own
+//    `roundOfFire` while the aim holds: a burst. The empty-magazine break of
+//    the loop is only added for a weapon without `autoReload` carrying more
+//    than one magazine (bot-referee.js `magazineTick`).
+//  * The round budget is not ported: the viewer rebuilds a finished plan in
+//    the same frame (the engine's waits on `actionDecisionMaking`'s
+//    budgeted queue, AI-129), so a 1..10 budget cannot show as a pause
+//    between bursts, and every rebuild drops the bot's route. On the
+//    runner's seed-1 Bocage match it took the route failures from 13 to 123
+//    (features/bot-weapons).
 //  * `EntryTrigger` hands the weapon `setBotSkill(botSkill, firingTargetTime,
 //    extra)` on every pull: `extra` is 0 against infantry, 30 (or 10 for a
 //    primary/occupied vehicle) against a vehicle — the deviation model
