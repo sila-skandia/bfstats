@@ -23,6 +23,7 @@ PAGE_FILES = [
     "bot-referee.js",
     "bot-units.js",
     "bot-visuals.js",
+    "bot-rounds.js",
     "test-hooks.js",
     "net-room.js",
     "scoreboard-screen.js",

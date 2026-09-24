@@ -179,6 +179,7 @@ import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
 import { createBotReferee } from './bot-referee.js';
+import { createBotRounds } from './bot-rounds.js';
 import { createBotUnits } from './bot-units.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { installTestHooks } from './test-hooks.js';
@@ -1043,6 +1044,9 @@ const referee = createBotReferee({
   groundAt: (x, z, fromY) => level.groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
   roundDamage: (stats, material) => vehicleHits.botRoundDamage(stats, material),
+  // A rocket launcher's round flies (`bot-rounds.js`); the rest are resolved
+  // as rays in the referee.
+  launchRound: (bot, stats) => botRounds.launch(bot, stats),
   debug: BOT_DEBUG,
   doctrine: BOT_DOCTRINE,
   // The player's shot, heard inside his weapon's sound radius, and incoming
@@ -1199,6 +1203,7 @@ function resetBots() {
   referee.reset();
   botUnits.reset();
   botBodies.disposeBotVisuals();
+  botRounds.reset();
 }
 
 /**
@@ -1282,6 +1287,9 @@ function botWeaponData(name) {
       const chunkType = head.getUint32(16, true);
       if (chunkType !== 0x4e4f534a) return null;                    // 'JSON'
       const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, chunkLen)));
+      // A rocket launcher's round is flown (`bot-rounds.js`): its FireArms
+      // says so, and its glb is loaded for the round.
+      botRounds.noteWeapon(name, json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms ?? null);
       return json?.extras?.weapon ?? null;
     })
     .catch(() => null);
@@ -1315,6 +1323,15 @@ const botBodies = createBotVisuals(bag(
   {
     get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
     get scene() { return scene; }, get vehicles() { return vehicles; },
+  },
+));
+/** A bot's rocket launcher fires the gunfire.js round the human's does. */
+const botRounds = createBotRounds(bag(
+  from(() => botBodies, `botVisuals`),
+  from(() => level, `bindDynamicShading isCollision world`),
+  {
+    get bust() { return bust; }, get guns() { return guns; }, get loader() { return loader; },
+    get MODELS_BASE() { return MODELS_BASE; }, get scene() { return scene; },
   },
 ));
 /** The edge of the human's fire input last frame, for the bots' hearing. */
@@ -1898,7 +1915,8 @@ const testHooks = installTestHooks(bag(
   from(() => vehicleHud, `crosshairAim`),
   from(() => wrecks, `damageVisuals showDamageTier wreckVehicle`),
   {
-    get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
+    get botBodies() { return botBodies; }, get botRounds() { return botRounds; },
+    get botUnits() { return botUnits; },
     get camera() { return camera; }, get comms() { return comms; }, get combatFrame() { return combatFrameNow(); },
     get effectAudio() { return effectAudio; }, get effects() { return effects; },
     get effectSoundsLoad() { return effectSoundsLoad; },
