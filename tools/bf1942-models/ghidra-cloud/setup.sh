@@ -60,8 +60,30 @@ export GHIDRA_INSTALL_DIR="$GHIDRA_HOME"
 cd "$WORK"
 echo "[setup] downloading binaries from release $RELEASE_TAG"
 
-# Release assets live on a PRIVATE repo, so downloading needs auth. Try gh
-# first (github.com CLI); then apt; then raw API calls with a session token.
+# Release assets are on a PRIVATE repo, so they need auth. gh is not
+# pre-installed in the sandbox and GH_TOKEN may be unset in the setup-script
+# environment, so discover a token: env -> the git credential helper the
+# container used to clone this private repo.
+find_github_token() {
+  if [ -n "${GH_TOKEN:-}" ] && [ "$GH_TOKEN" != "proxy-injected" ]; then echo "$GH_TOKEN"; return 0; fi
+  if [ -n "${GITHUB_TOKEN:-}" ] && [ "$GITHUB_TOKEN" != "proxy-injected" ]; then echo "$GITHUB_TOKEN"; return 0; fi
+  local cred
+  cred=$(printf 'protocol=https\nhost=github.com\n\n' \
+    | GIT_TERMINAL_PROMPT=0 timeout 15 git credential fill 2>/dev/null \
+    | sed -n 's/^password=//p')
+  if [ -n "$cred" ] && [ "$cred" != "proxy-injected" ]; then echo "$cred"; return 0; fi
+  return 1
+}
+
+GH_TOKEN="$(find_github_token)" || {
+  echo "ERROR: could not find a GitHub token to fetch private release assets." >&2
+  echo "Fix: add GH_TOKEN=<a PAT with repo scope on sila-skandia/bfstats> to the" >&2
+  echo "cloud environment's environment-variable settings and start a new session." >&2
+  exit 1
+}
+export GH_TOKEN
+
+# gh -> apt gh -> raw REST calls, all authenticated with the found token.
 download_release_assets() {
   local out_dir="$1"
   if command -v gh >/dev/null 2>&1; then
@@ -73,21 +95,13 @@ download_release_assets() {
       && gh release download "$RELEASE_TAG" --repo "$REPO" --clobber -D "$out_dir" && return 0
   fi
   echo "[setup] falling back to the GitHub REST API"
-  # The cloud sandbox's GitHub proxy substitutes real credentials for the
-  # GH_TOKEN placeholder on outbound GitHub requests, so the header below
-  # works whether GH_TOKEN is a real PAT or the proxy placeholder.
-  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-  if [ -z "$token" ]; then
-    echo "ERROR: no gh CLI and no GH_TOKEN/GITHUB_TOKEN to fetch private release assets" >&2
-    return 1
-  fi
   local api="https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG"
   local asset_url name
-  curl -fsSL --retry 5 --retry-all-errors -H "Authorization: Bearer $token" "$api" \
+  curl -fsSL --retry 5 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" "$api" \
     | python3 -c 'import json,sys; [print(a["name"], a["url"]) for a in json.load(sys.stdin)["assets"]]' \
     | while read -r name asset_url; do
         echo "[setup] fetching $name"
-        curl -fSL --retry 5 --retry-all-errors -H "Authorization: Bearer $token" \
+        curl -fSL --retry 5 --retry-all-errors -H "Authorization: Bearer $GH_TOKEN" \
           -H "Accept: application/octet-stream" -o "$out_dir/$name" "$asset_url"
       done
 }
