@@ -122,4 +122,22 @@ out.cast.localSeatRound = firstMet(localSeatGroup);
 out.cast.botSeatRound = firstMet(botSeatGroup);
 out.cast.untaggedRound = firstMet(untaggedGroup);
 
+// The one soldier a round passes besides its firer: one seated in the hull
+// the firer fires from (ledger FF-1). b3's hull carries a teammate 5 m down
+// the line, another hull a teammate at 10 m.
+const hullA = { name: 'hullA' };
+const hullB = { name: 'hullB' };
+const crewPlayers = new Map([
+  ['b3', { team: 2, soldier: body(-5), occupancy: { root: hullA } }],
+  ['mate', { team: 2, soldier: body(5), occupancy: { root: hullA } }],
+  ['rider', { team: 2, soldier: body(10), occupancy: { root: hullB } }],
+  ['enemy', { team: 1, soldier: body(20) }],
+]);
+function firstMetAmong(group) {
+  const { hits } = makePage({ ...world, players: crewPlayers });
+  return hits.roundBodyCast(0, BOT_BODY_HEIGHT, 0, 0, 0, 1, 100, group)?.target ?? null;
+}
+out.cast.seatRoundPastOwnCrew = firstMetAmong(botSeatGroup);
+out.cast.handRoundOnACrew = firstMetAmong(handGroup);
+
 console.log(JSON.stringify(out));
