@@ -157,6 +157,105 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await new Promise(
   fire.dispose();
 }
 
+// --- a Fire Loop patch plays every round of a burst ------------------------
+//
+// features/bot-weapons: a bot's Mp40 fired 86 rounds in 9.8 s and 76 were
+// dropped, because a slot was held a second after every round and the pool
+// never grew past one slot. An automatic weapon's patch (every layer authored
+// `loop`) is held for one cycle of its sample instead, so one shooter's burst
+// plays every round out of one slot.
+
+function loopFire(ctx, clock, duration = 0.09) {
+  const listener = fakeListener(ctx);
+  return new WorldFire({
+    listener: () => listener,
+    getBuffer: async () => ({ ...fakeBuffer(), duration }),
+    manifest: {
+      weapons: {
+        Mp40: { file: 'Mp40.mp3', loop: true, volume: 1, layers: [
+          LAYER('mp40lrlp.wav'),
+          LAYER('mp40mlp.wav', [{ dest: 'volume', source: 'distance', envelope: 'ramp',
+                                  params: [10, 150, 1, -1] }]),
+        ] },
+      },
+    },
+    master: () => 1,
+    rand: () => 0.5,
+    now: () => clock.t,
+  });
+}
+
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const fire = loopFire(ctx, clock);
+  await fire.prime('Mp40');
+  await settle();
+  const before = ctx.started.length;
+  // Nine rounds a second, the Mp40's `roundOfFire`, for one second.
+  const played = [];
+  for (let i = 0; i < 9; i++) {
+    played.push(fire.play('Mp40', { x: 30, y: 0, z: 0 }));
+    clock.t += 1 / 9;
+  }
+  assert.ok(played.every(Boolean), `every round of the burst plays: ${played}`);
+  assert.equal(ctx.started.length - before, 9 * 2, 'both layers, every round');
+  const snap = fire.snapshot();
+  assert.equal(snap.dropped, 0, 'nothing dropped');
+  assert.equal(snap.weapons[0].slots, 1, 'one shooter needs one slot');
+  // The hold is the cycle at the slowest start pitch (`randomStartPitch`
+  // 0.05 down): 0.09 / 0.95.
+  assert.ok(Math.abs(snap.weapons[0].hold - 0.09 / 0.95) < 1e-9, `hold ${snap.weapons[0].hold}`);
+  fire.dispose();
+}
+
+// --- the pool grows for three shooters of one weapon -----------------------
+
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const fire = loopFire(ctx, clock);
+  await fire.prime('Mp40');
+  await settle();
+  // Three bots fire the same instant: the first round of the second and
+  // third finds the pool full and grows it; from the next volley on all
+  // three are heard.
+  const volley = () => [0, 1, 2].map(i => fire.play('Mp40', { x: 10 * i, y: 0, z: 0 }));
+  const first = volley();
+  assert.deepEqual(first, [true, false, false], 'the first volley has one slot');
+  await settle(24);
+  clock.t += 1 / 9;
+  const second = volley();
+  await settle(24);
+  clock.t += 1 / 9;
+  const third = volley();
+  assert.equal(fire.snapshot().weapons[0].slots, 3, 'the pool grew to three');
+  assert.deepEqual(third, [true, true, true], `three shooters heard at once: ${second} then ${third}`);
+  fire.dispose();
+}
+
+// --- a one-shot patch keeps its second of hold -----------------------------
+
+{
+  const ctx = stubCtx();
+  const clock = { t: 100 };
+  const listener = fakeListener(ctx);
+  const fire = new WorldFire({
+    listener: () => listener,
+    getBuffer: async () => fakeBuffer(),
+    manifest: { weapons: { Colt: { file: 'Colt.mp3', loop: false, volume: 1,
+                                   layers: [{ ...LAYER('colt.wav'), loop: false }] } } },
+    master: () => 1, rand: () => 0.5, now: () => clock.t,
+  });
+  await fire.prime('Colt');
+  await settle();
+  assert.equal(fire.snapshot().weapons[0].hold, 1.0, 'a report is held a second');
+  assert.ok(fire.play('Colt', { x: 0, y: 0, z: 0 }));
+  clock.t += 0.5;
+  assert.equal(fire.play('Colt', { x: 0, y: 0, z: 0 }), false, 'and its slot is busy half a second on');
+  fire.dispose();
+}
+
 // --- dispose stops everything ---------------------------------------------
 
 {
