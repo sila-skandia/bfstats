@@ -85,7 +85,7 @@ export function installWorldHooks(page) {
     paint: (w, h) => page.comms.paint(w, h),
     press: code => page.comms.keydown(new KeyboardEvent('keydown', { code, cancelable: true })),
     receive: (id, speaker) => page.comms.receive(id, speaker),
-    onKill: (victim, killer) => page.comms.onKill(victim, killer),
+    onKill: (victim, killer, how = null) => page.comms.onKill(victim, killer, how),
     onCapture: (flag, team) => page.comms.onCapture(flag, team),
     // The referee's own damage path, so the kill line comes from the real hook.
     killBot: (id, attackerId = null, opts = {}) => page.referee.applyDamage(id, 1e6, attackerId, null, opts),

@@ -98,7 +98,7 @@ export function createHandFire(page) {
       // group.
       const stats = page.handWeapon?.group?.stats ?? null;
       page.applyDamage(best, page.botRoundDamage(stats, bestMaterial ?? undefined),
-                       page.LOCAL_PLAYER, origin, { hit: bestHit });
+                       page.LOCAL_PLAYER, origin, { hit: bestHit, weapon: page.handWeapon?.name ?? null });
     }
   }
 

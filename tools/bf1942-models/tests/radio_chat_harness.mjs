@@ -123,6 +123,7 @@ const cs = { DEFAULT_KILL_TEXT: 'killed', TEAM_KILL: 'killed a teammate', DEATH:
   ALLIES_CAPTURED: 'Allies captured the control point', AXIS_HOLD_ALL_CONTROLPOINTS: 'Axis now hold all controlpoints!' };
 out.lines = {
   onFoot: killLine('Steffen Schneider', 'Robbie Pastriani', killWord(null, cs, {})),
+  onFootThompson: killLine('Steffen Schneider', 'Robbie Pastriani', killWord('Thompson', cs, { Thompson: 'Thompson' })),
   tank: killLine('Johannes Werner', 'Larry Vaughn', killWord('Tiger', cs, { Tiger: 'Tiger' })),
   unnamedVehicle: killWord('Willys', cs, {}),
   tk: teamKillLine('skandia', cs),

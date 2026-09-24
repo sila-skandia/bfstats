@@ -150,6 +150,7 @@ class ChatLogTests(unittest.TestCase):
     def test_the_retail_lines(self) -> None:
         l = self.r["lines"]
         self.assertEqual("Steffen Schneider [killed] Robbie Pastriani", l["onFoot"])
+        self.assertEqual("Steffen Schneider [Thompson] Robbie Pastriani", l["onFootThompson"])
         self.assertEqual("Johannes Werner [Tiger] Larry Vaughn", l["tank"])
         self.assertEqual("Willys", l["unnamedVehicle"])
         self.assertEqual("skandia killed a teammate", l["tk"])
