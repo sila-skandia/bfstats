@@ -343,18 +343,30 @@ export function createFlagCapture(page) {
     cloth.geometry.userData.flagUvCell = cell.slice();
   }
   function hoistCaptureFlag(flag) {
-    const nodes = captureSceneNodes(flag);
-    if (!nodes) return;
     // The map surfaces read `extras.controlPoints`, not the world's live flags
     // — so the team write alone leaves the minimap's marker neutral. Sync the
     // entry by control-point name (`flags[].controlPointName` is the scene
     // node's name; the deploy label in `flags[].name` is not);
     // `drawControlPoint` then resolves the taker's own `conp_<nation>` sprite
-    // (or the neutral plate for `unknown`) and the cpbar strip takes the
-    // holder's colour on the same repaint.
+    // (`nation.js` `heldNation`, or the neutral plate for `unknown`) and the
+    // cpbar strip takes the holder's colour on the same repaint. The founding
+    // owner is stamped before the first write: the entry's `flagMesh` is that
+    // side's, and every nation read (`meshTeam`) needs to know it. Before the
+    // pole lookup, because a flagless zone (Kasserine's five) has no pole and
+    // its map marker must still change hands.
     const listed = page.extras.controlPoints || [];
     const entry = listed.find(e => e.name === flag.controlPointName);
-    if (entry) entry.team = flag.team;
+    if (entry) {
+      if (entry.foundingTeam === undefined) entry.foundingTeam = entry.team ?? 0;
+      entry.team = flag.team;
+    }
+    const nodes = captureSceneNodes(flag);
+    if (!nodes) {
+      page.drawMinimap(true);
+      page.drawFullMap(true);
+      if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
+      return;
+    }
     const cell = flagUvCellFor(flag.team);
     if (cell && nodes.cloth) {
       // The cloth is already skinned to this pole's own joints -- baked for
