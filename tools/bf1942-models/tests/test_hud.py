@@ -1,9 +1,10 @@
-"""`viewer/hud.js`'s fill-picture geometry, driven headless by `hud_harness.mjs`.
+"""`viewer/hud.js`, and the damage indicator's clock in `viewer/soldier-hud.js`,
+driven headless by `hud_harness.mjs`.
 
-Only the bar-window arithmetic is covered here -- the part that decides which
-band of a `fill-picture` leaf the fill layer is clipped to. Everything else in
-that module needs a real canvas, a sprite pack and a font atlas; this needs
-none of them, and it is where the bug was.
+Only what needs no canvas, sprite pack or font atlas: the fill-picture bar
+window (which band of a `fill-picture` leaf the fill layer is clipped to, where
+the first bug was), wrapping, the seat dots, the crosshair's hit marks, and the
+damage indicator -- its wash, its octant and its six-frame clock.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("hud_harness.mjs")
-MODULES = {"hud.js": VIEWER / "hud.js"}
+MODULES = {"hud.js": VIEWER / "hud.js", "soldier-hud.js": VIEWER / "soldier-hud.js"}
 
 
 def run_harness() -> dict:
@@ -305,6 +306,112 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual([387.5, 288], legacy["a"])
         self.assertEqual([387.5, 291], legacy["b"])
         self.assertEqual("rgb(1,1,1)", legacy["style"])
+
+    # -- the damage indicator: wash, arc, octant and clock (HFD-1..HFD-8) -------
+
+    def test_a_zero_right_dot_is_the_right_side(self) -> None:
+        # Client 0x004b0993: `fcomp 0.0; test ah,5; jp` -- r >= 0 is right.
+        octants = self.results["hitOctants"]
+        self.assertEqual([2, 3, 4, 8], [octants["zeroRightFront"], octants["zeroRightSide"],
+                                        octants["zeroRightRear"], octants["justLeft"]])
+
+    def test_the_octant_puts_the_right_side_on_the_screens_right(self) -> None:
+        # At yaw 0 a soldier faces +z and the camera's right is -x
+        # (`free-camera.js`: rx = -cos yaw, rz = sin yaw). The page used to
+        # dot with +x, which mirrored every arc.
+        yaw0 = self.results["hitFromDir"]["yaw0"]
+        self.assertEqual(
+            {"front": 1, "frontRight": 2, "right": 3, "rearRight": 4,
+             "rear": 5, "rearLeft": 6, "left": 7, "frontLeft": 8}, yaw0)
+        self.assertEqual({"front": 1, "right": 3, "left": 7},
+                         self.results["hitFromDir"]["yawQuarter"])
+        self.assertEqual(3, self.results["hitFromDir"]["offOrigin"])
+
+    def test_the_octant_is_three_dimensional(self) -> None:
+        # `calcLookAtMatrix` row 2 is the unit 3-D direction: a muzzle 1.5 m
+        # up at 2 m is 0.8 forward, past cos 22.5 deg; at 40 m it is not.
+        got = self.results["hitFromDir"]
+        self.assertEqual(2, got["closeAndHigh"])
+        self.assertEqual(1, got["farAndHigh"])
+        self.assertEqual(3, got["overhead"])
+
+    def test_a_source_on_the_victim_is_the_identity_look_at(self) -> None:
+        # Row 2 of an identity is the engine's +z, this frame's -z.
+        got = self.results["hitFromDir"]
+        self.assertEqual(5, got["coincidentFacingPlusZ"])
+        self.assertEqual(1, got["coincidentFacingMinusZ"])
+
+    def test_the_alpha_is_the_damages_share_capped_at_three_quarters(self) -> None:
+        a = self.results["hitFromDirAlpha"]
+        self.assertAlmostEqual(1 / 3, a["third"])
+        self.assertEqual(0.75, a["exactCap"])
+        self.assertEqual(0.75, a["overCap"])
+        self.assertEqual(0, a["none"])
+        self.assertEqual(0, a["negative"])
+        self.assertEqual(0, a["zeroOverZero"])
+        self.assertEqual(0.75, a["overZero"])
+
+    def test_the_wash_covers_the_screen_in_red_at_the_variables_alpha(self) -> None:
+        wash = self.results["wash"]
+        self.assertEqual([{"fill": [0, 0, 800, 600], "alpha": 0.545, "style": "rgb(255,0,0)"}],
+                         wash["fed"])
+        # Direction 1 has no arc, but the wash is not gated on the direction.
+        self.assertEqual(0.3, wash["frontHit"][0]["alpha"])
+        self.assertEqual([], wash["off"])
+        self.assertEqual([], wash["unfed"])
+
+    def test_a_layout_without_colour_bindings_sets_the_alpha_rather_than_halving_it(self) -> None:
+        # `VariableColorEffect` sets the colour (XHIT-7); the file's 0.5 is
+        # only its default.
+        wash = self.results["wash"]
+        self.assertEqual(0.545, wash["legacy"][0]["alpha"])
+        self.assertEqual(0.545, wash["legacyArc"][0]["alpha"])
+        self.assertEqual(0.545, wash["arc"][0]["alpha"])
+        self.assertEqual([], wash["arcOtherSide"])
+
+    def test_groups_paint_in_the_engines_chain_order(self) -> None:
+        order = self.results["paintOrder"]["painted"]
+        # The wash tints everything drawn before it and nothing after it.
+        wash = order.index("hitIndicator")
+        for key in ("crosshair", "supplyIcon", "weaponBar", "soldierIcon", "soldierAmmo",
+                    "vehicleIcon", "vehicleHealth", "vehicleSeats", "primaryAmmo",
+                    "secondaryAmmo", "tickets"):
+            self.assertLess(order.index(key), wash, key)
+        self.assertGreater(order.index("outside"), wash)
+        # A group the constant does not know still paints, last.
+        self.assertEqual("someModGroup", order[-1])
+
+    def test_the_flash_is_six_painted_frames_at_a_constant_alpha(self) -> None:
+        single = self.results["hitClock"]["single"]
+        self.assertEqual([3, 3, 3, 3, 3, 3, 0, 0], single["dirs"])
+        self.assertEqual([0.4] * 8, single["alphas"])
+
+    def test_the_flash_counts_frames_not_seconds(self) -> None:
+        # `BfMenu::paint` steps the menu 1/30 a frame whatever the frame
+        # rate, so the flash is six frames at 144 Hz and at 20 Hz alike.
+        clock = self.results["hitClock"]
+        self.assertEqual([3, 3, 3, 3, 3, 3, 0, 0], clock["at144"])
+        self.assertEqual([3, 3, 3, 3, 3, 3, 0, 0], clock["at20"])
+
+    def test_a_second_hit_turns_the_arc_but_does_not_stretch_the_flash(self) -> None:
+        burst = self.results["hitClock"]["burst"]
+        self.assertEqual([3, 3, 5, 5, 5, 5, 0, 0], burst["dirs"])
+        self.assertEqual([0.4, 0.4] + [0.2] * 6, burst["alphas"])
+        self.assertEqual([7, 7, 7, 7, 7, 7, 0, 0], self.results["hitClock"]["again"])
+
+    def test_hp_lost_unraised_washes_the_screen_without_an_arc(self) -> None:
+        poll = self.results["hitClock"]["poll"]
+        self.assertEqual([1] * 6 + [0, 0], poll["dirs"])
+        self.assertAlmostEqual(0.3, poll["alphas"][0])
+
+    def test_hp_a_hit_already_raised_is_not_raised_again(self) -> None:
+        self.assertEqual([4] * 6 + [0, 0], self.results["hitClock"]["raisedOnce"])
+
+    def test_putting_it_out_is_immediate_and_the_next_hit_gets_all_six(self) -> None:
+        cleared = self.results["hitClock"]["cleared"]
+        self.assertEqual([3, 3, 3], cleared["before"])
+        self.assertEqual([0], cleared["cleared"])
+        self.assertEqual([6] * 6 + [0, 0], cleared["after"])
 
 
 if __name__ == "__main__":

@@ -1064,7 +1064,10 @@ const referee = createBotReferee({
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot));
-    localPlayer.applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team, hit.hit);
+    // The damage arc points at where the round left the muzzle, the engine's
+    // `Pos3` (ledger HFD-4): the ray `resolveShot` just cast, from its origin.
+    const [ox, oy, oz] = bot.aimRay().origin;
+    localPlayer.applyDamageToPlayer(hit.damage, { x: ox, y: oy, z: oz }, bot.team, hit.hit);
     return true;
   },
   damageHull: (bot, damage, { attackerId = null } = {}) => {

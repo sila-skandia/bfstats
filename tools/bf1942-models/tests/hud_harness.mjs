@@ -7,9 +7,15 @@
 // `_drawFillPicture` only ever touches the 2D context through `drawImage` and
 // a `save`/`beginPath`/`rect`/`clip`/`restore` quartet -- so a recording stub
 // is enough to read back exactly which band of the picture the fill was
-// clipped to, which is the whole of what the bug was about.
+// clipped to, which is the whole of what the bug was about. `soldier-hud.js`
+// is copied in beside it (it imports only `hud.js`) for the damage
+// indicator's clock.
 
-import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant, prepareElement } from './hud.js';
+import {
+  Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant, prepareElement,
+  hitFromDirAlpha, hitFromDirOctant, paintOrder, PAINT_ORDER,
+} from './hud.js';
+import { createSoldierHud } from './soldier-hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -423,6 +429,195 @@ results.hitOctants = {
   rearLeft: calculateHitOctant(-0.7, -0.7),
   left: calculateHitOctant(0.0, -1.0),
   frontLeft: calculateHitOctant(0.7, -0.7),
+  // The engine tests `0.0 <= r`: a right dot of exactly zero is the right.
+  zeroRightFront: calculateHitOctant(0.5, 0),
+  zeroRightSide: calculateHitOctant(0, 0),
+  zeroRightRear: calculateHitOctant(-0.5, 0),
+  justLeft: calculateHitOctant(0.5, -1e-9),
 };
+
+// --- the damage indicator: its wash, its arc and its clock (HFD-1..HFD-8) ----
+
+// The octant from a soldier toward the damage's own point. He stands at the
+// origin; at yaw 0 he faces +z and the screen's right is -x.
+const at = (x, y, z) => ({ x, y, z });
+const o = at(0, 0, 0);
+results.hitFromDir = {
+  yaw0: {
+    front: hitFromDirOctant(o, 0, at(0, 0, 10)),
+    frontRight: hitFromDirOctant(o, 0, at(-7, 0, 7)),
+    right: hitFromDirOctant(o, 0, at(-10, 0, 0)),
+    rearRight: hitFromDirOctant(o, 0, at(-7, 0, -7)),
+    rear: hitFromDirOctant(o, 0, at(0, 0, -10)),
+    rearLeft: hitFromDirOctant(o, 0, at(7, 0, -7)),
+    left: hitFromDirOctant(o, 0, at(10, 0, 0)),
+    frontLeft: hitFromDirOctant(o, 0, at(7, 0, 7)),
+  },
+  // Turned a quarter: facing +x, right is +z.
+  yawQuarter: {
+    front: hitFromDirOctant(o, Math.PI / 2, at(10, 0, 0)),
+    right: hitFromDirOctant(o, Math.PI / 2, at(0, 0, 10)),
+    left: hitFromDirOctant(o, Math.PI / 2, at(0, 0, -10)),
+  },
+  // Height counts: a muzzle 1.5 m up and 2 m ahead is 0.8 forward, so the
+  // front-right arc, not the front; one straight overhead is the right side.
+  closeAndHigh: hitFromDirOctant(o, 0, at(0, 1.5, 2)),
+  farAndHigh: hitFromDirOctant(o, 0, at(0, 1.5, 40)),
+  overhead: hitFromDirOctant(o, 0, at(0, 10, 0)),
+  // On his own origin: the engine's identity look-at, whose +z is this frame's
+  // -z -- behind a man facing +z, ahead of one facing -z.
+  coincidentFacingPlusZ: hitFromDirOctant(o, 0, at(0, 0, 0)),
+  coincidentFacingMinusZ: hitFromDirOctant(o, Math.PI, at(0, 0, 0)),
+  // Not at the origin: the direction is the difference, not the source alone.
+  offOrigin: hitFromDirOctant(at(100, 5, -40), 0, at(90, 5, -40)),
+};
+
+results.hitFromDirAlpha = {
+  third: hitFromDirAlpha(10, 30),
+  exactCap: hitFromDirAlpha(22.5, 30),
+  overCap: hitFromDirAlpha(100, 30),
+  none: hitFromDirAlpha(0, 30),
+  negative: hitFromDirAlpha(-5, 30),
+  zeroOverZero: hitFromDirAlpha(0, 0),
+  overZero: hitFromDirAlpha(5, 0),
+};
+
+// The wash, verbatim from `hud-layout.json`, and the arc for direction 3.
+const WASH_WHEN = [{ var: 'HitFromDir/HitFromDir', op: 'ne', value: 0 }];
+const washLeaf = () => ({
+  kind: 'fill', rect: [0, 0, 800, 600], color: [1, 0, 0, 0.5], when: WASH_WHEN,
+  colorVars: { a: { var: 'HitFromDir/HitFromDirAlpha' } },
+});
+const arcLeaf = () => ({
+  kind: 'picture', rect: [621, -7, 175, 500], color: [1, 0, 0, 0.5],
+  when: [...WASH_WHEN, { var: 'HitFromDir/HitFromDir', op: 'eq', value: 3 }],
+  colorVars: { a: { var: 'HitFromDir/HitFromDirAlpha' } },
+  texture: 'ingame_hit_indicator_64x128',
+  rotation: { angle: -3.140000104904175, angleMultiplier: 0 },
+});
+/** Every fill and picture one leaf paints, with the alpha it was painted at. */
+function paintLeaf(el, vars) {
+  const hud = new Hud({ canvas: null, sprite: () => ({ width: 64, height: 128 }) });
+  Object.assign(hud.vars, vars);
+  const drawn = [];
+  const ctx = {
+    globalAlpha: 1, fillStyle: '',
+    save() {}, restore() {}, translate() {}, rotate() {},
+    fillRect(x, y, w, h) { drawn.push({ fill: [x, y, w, h], alpha: Number(this.globalAlpha.toFixed(4)), style: this.fillStyle }); },
+    drawImage(img, x, y, w, h) { drawn.push({ image: [w, h], alpha: Number(this.globalAlpha.toFixed(4)) }); },
+  };
+  hud._paintElement(ctx, prepareElement(el));
+  return drawn;
+}
+const hit = (dir, alpha) => ({ 'HitFromDir/HitFromDir': dir, 'HitFromDir/HitFromDirAlpha': alpha });
+const legacy = el => { delete el.colorVars; return el; };
+results.wash = {
+  fed: paintLeaf(washLeaf(), hit(3, 0.545)),
+  frontHit: paintLeaf(washLeaf(), hit(1, 0.3)),
+  off: paintLeaf(washLeaf(), hit(0, 0.545)),
+  unfed: paintLeaf(washLeaf(), {}),
+  // A layout from before `colorVars`: the variable replaces the file's 0.5.
+  legacy: paintLeaf(legacy(washLeaf()), hit(3, 0.545)),
+  arc: paintLeaf(arcLeaf(), hit(3, 0.545)),
+  arcOtherSide: paintLeaf(arcLeaf(), hit(7, 0.545)),
+  legacyArc: paintLeaf(legacy(arcLeaf()), hit(3, 0.545)),
+};
+
+// The groups in the engine's chain order, whatever order the file lists.
+const fileOrder = ['soldierIcon', 'soldierAmmo', 'vehicleIcon', 'vehicleHealth', 'vehicleSeats',
+  'primaryAmmo', 'secondaryAmmo', 'supplyIcon', 'hitIndicator', 'weaponBar', 'crosshair',
+  'tickets', 'outside', 'someModGroup'];
+const groups = Object.fromEntries(fileOrder.map(key => [key, { key, elements: [] }]));
+results.paintOrder = {
+  constant: PAINT_ORDER,
+  painted: paintOrder(groups).map(g => g.key),
+};
+
+// The clock: `soldier-hud.js` driven frame by frame over a page stub that has
+// a body's Armor but no body, so `updateSoldierHud` stops before the stance
+// art. Each call is one painted frame, as `frame()` makes it; each entry of a
+// run is the `HitFromDir` that frame's paint reads.
+function soldierPage() {
+  const vars = Object.create(null);
+  const page = {
+    gameHud: { vars, layout: null, requestRepaint() {} },
+    optPilot: { checked: false }, optOnFoot: { checked: true },
+    occupancy: null, soldier: null, soldierDead: false,
+    soldierArmor: { hitPoints: 30, maxHitPoints: 30 },
+    crossHairColor: () => [255, 255, 0],
+    feedTicketVars() {}, feedFlagIconVars() {},
+    combatArea: { feed() {} }, combatFrame: null,
+    handWeapon: null, weaponBarUntil: 0, WEAPON_ICON_VARS: [],
+    playSoldierHurtSound() {},
+  };
+  return { page, vars, hud: createSoldierHud(page) };
+}
+function run(s, n, dt = 1 / 60) {
+  const dirs = [], alphas = [];
+  for (let i = 0; i < n; i++) {
+    s.hud.updateSoldierHud(dt);
+    dirs.push(s.vars['HitFromDir/HitFromDir'] ?? 0);
+    alphas.push(s.vars['HitFromDir/HitFromDirAlpha'] ?? null);
+  }
+  return { dirs, alphas };
+}
+const clock = {};
+{
+  const s = soldierPage();
+  s.hud.triggerHitIndicator(3, 0.4);
+  clock.single = run(s, 8);
+}
+for (const [name, dt] of [['at144', 1 / 144], ['at20', 1 / 20]]) {
+  const s = soldierPage();
+  s.hud.triggerHitIndicator(3, 0.4);
+  clock[name] = run(s, 8, dt).dirs;
+}
+{
+  // A second hit two frames in turns the arc and sets the alpha, and the
+  // flash still ends six frames after the first.
+  const s = soldierPage();
+  s.hud.triggerHitIndicator(3, 0.4);
+  const first = run(s, 2);
+  s.hud.triggerHitIndicator(5, 0.2);
+  const rest = run(s, 6);
+  clock.burst = { dirs: [...first.dirs, ...rest.dirs], alphas: [...first.alphas, ...rest.alphas] };
+}
+{
+  // After the flash, a new hit gets all six frames again.
+  const s = soldierPage();
+  s.hud.triggerHitIndicator(3, 0.4);
+  run(s, 7);
+  s.hud.triggerHitIndicator(7, 0.1);
+  clock.again = run(s, 8).dirs;
+}
+{
+  // HP lost with nobody raising it (a fall, the combat area): the poll
+  // washes the screen at that loss's share of the max, direction 1.
+  const s = soldierPage();
+  run(s, 1);
+  s.page.soldierArmor.hitPoints = 21;
+  clock.poll = run(s, 8);
+}
+{
+  // HP lost through `applyDamageToPlayer`, which raised it itself: the poll
+  // leaves the arc it chose alone.
+  const s = soldierPage();
+  run(s, 1);
+  s.page.soldierArmor.hitPoints = 20;
+  s.hud.triggerHitIndicator(4, 10 / 30);
+  clock.raisedOnce = run(s, 8).dirs;
+}
+{
+  // Put out mid-flash (the body is gone): off at once, and the next hit
+  // starts its own six frames.
+  const s = soldierPage();
+  s.hud.triggerHitIndicator(3, 0.4);
+  const before = run(s, 3).dirs;
+  s.hud.clearHitIndicator();
+  const cleared = run(s, 1).dirs;
+  s.hud.triggerHitIndicator(6, 0.4);
+  clock.cleared = { before, cleared, after: run(s, 8).dirs };
+}
+results.hitClock = clock;
 
 console.log(JSON.stringify(results));
