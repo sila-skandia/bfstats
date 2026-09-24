@@ -82,15 +82,26 @@
 //    x)` (the fistp runs under a truncating control word, 0x08658457;
 //    Ghidra shows ROUND).
 //
+//  * The attacker strength (`BotMain::getAttackerStrength` 0x0852f1c0,
+//    +0x128; read 2026-09-24, ledger BODY-11): `updateMemory` sums, over the
+//    attacker map (+0x12c: each attacker's newest fire object, kept `max(300
+//    / n, 10)` s), `strength[own armour class] / ((now - t) * rate + 1)`
+//    (0x08525270..0x085252c7: no x10 for a hit, unlike the list's totals).
+//    Every fire object that is not a direct hit is keyed 0xffffffff, so the
+//    map holds one entry for all the near misses together, the newest. The
+//    variable pose reads it (bot-pose.js).
+//
 // INVENTION, labelled: the environment grid is a scan of `world.players`;
 // sense points are a fixed spread of heights on the body with a small lateral
-// jitter; a hearing radius for a weapon is its AI template's
+// jitter (kept in the target's own frame, as the engine keeps its bone's
+// point, and turned with him); a hearing radius for a weapon is its AI template's
 // `setSoundSphereRadius` when the page supplies it, else the soldier's 15 m;
-// the FireObject decay rate is 1.0 (the collision handler's value was not
-// read); a side's knowledge is keyed by player, not by AI object, so a
+// a side's knowledge is keyed by player, not by AI object, so a
 // soldier who boards a hull stays known as himself (the engine would ask
 // about the seat's own object), and a player's record is dropped when he
 // dies (the engine deletes the dead object's informations with it).
+
+import { POSE_EYE } from './bot-pose.js';
 
 const DEG = Math.PI / 180;
 
@@ -132,12 +143,26 @@ export const FIRE_LIST_TTL = 5.0;
 export const FIRE_LIST_BUDGET = 60.0;
 export const ATTACKER_TTL = 10.0;
 export const ATTACKER_BUDGET = 300.0;
+/** A fire object's decay rate: all three creators pass 1.0 (`handleCollision`
+ *  0x084640c0, `handleProjectileFire` 0x08464820, `handleIndirectProjectileHit`
+ *  0x08464500; ledger BODY-11). */
 export const FIRE_DECAY_RATE = 1.0;
 /** Heights on a standing body the sense rays aim at (INVENTION). */
 const SENSE_HEIGHTS = [0.3, 0.8, 1.2, 1.55];
 const SENSE_JITTER = 0.25;
-/** The eye above the feet, per stance. */
-const EYE = { stand: 1.6, crouch: 1.1, prone: 0.4, walk: 1.6 };
+/** The eye above the feet, per stance: the soldier's pose camera
+ *  (bot-pose.js `POSE_EYE`, 1.65 / 1.12 / 0.30 m). */
+const EYE = POSE_EYE;
+/** A soldier's body frame: `r` to his right, `f` ahead, for a yaw whose
+ *  forward is (sin, cos). */
+export function toBodyFrame(yaw, dx, dz) {
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+export function fromBodyFrame(yaw, r, f) {
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  return [r * c + f * s, f * c - r * s];
+}
 
 /** `SCurve::init` 0x08658030: `SCurve::curveValues`, 101 floats. */
 export const SCURVE_TABLE = [
@@ -410,6 +435,31 @@ export function bakedToWorld(collider, owner, p) {
 }
 
 /**
+ * The point a memory record's sense ray reached, where the target is now:
+ * the record's +4..+0xc, kept in the target's own frame and taken through its
+ * live matrix, as `BBPFireInfantery::createPlan` 0x085a3870 hands it to
+ * `getFiringPose` (0x085a4145..0x085a41c1) and `updateMemory` re-tests it.
+ * A hull's is its baked-frame point through the moved owner (`owner`); a
+ * soldier's is an offset from his feet in his body frame (`toBodyFrame`),
+ * turned by his yaw now. A record with neither (seen at the object's own
+ * position, `local: null`) answers the position, a soldier's 1 m over his
+ * feet (the object's origin: `setCharacterHeight -1.00`, soldier-pose.js).
+ */
+export function sensedPoint(collider, rec, player, owner = -1) {
+  const pos = playerPosition(player) ?? rec?.pos;
+  if (!pos) return null;
+  if (rec?.local && owner !== null && owner !== undefined && owner >= 0) {
+    return bakedToWorld(collider, owner, rec.local);
+  }
+  if (player?.occupancy?.root) return [pos[0], pos[1], pos[2]];
+  const off = rec?.offset;
+  if (!off) return [pos[0], pos[1] + 1.0, pos[2]];
+  const yaw = player?.soldier?.yaw ?? 0;
+  const [dx, dz] = fromBodyFrame(yaw, off[0], off[2]);
+  return [pos[0] + dx, pos[1] + off[1], pos[2] + dz];
+}
+
+/**
  * The frustum test of `BotMain::sense` 0x08521cf0: `Frustum::setupFrustum
  * (fov, 1.0, 0.01, viewDistance)` 0x08440c70 transformed by
  * `AIPlayer::getCameraTransformation`, so a SQUARE frustum (aspect 1.0) about
@@ -443,6 +493,11 @@ export class BotSenses {
     this.incoming = [];
     /** Attacker map: id -> last FireObject. */
     this.attackers = new Map();
+    /** The attacker map's 0xffffffff entry: the newest fire object that was
+     *  not a direct hit (`event_projectile(fo, 0xffffffff)` from
+     *  `handleProjectileFire` 0x08464820 and `handleIndirectProjectileHit`
+     *  0x08464500). Kept apart so `attackers` stays keyed by players. */
+    this.nearFire = null;
     /** `+0x118`: the bot's own last shot. */
     this.lastOwnFire = -Infinity;
     /** `+0x10c`: the frustum sub-state this pass. */
@@ -578,13 +633,19 @@ export class BotSenses {
     const n = Math.max(1, Math.min(RAYS_MAX, Math.round(RAYS_PER_METRE_RADIUS * radius / Math.max(dist, 0.1))));
     const stance = player.soldier?.stance ?? 'stand';
     const top = stance === 'prone' ? 0.5 : stance === 'crouch' ? 1.1 : 1.7;
+    const yaw = player.soldier?.yaw ?? 0;
     for (let i = 0; i < n; i++) {
       const h = (i === 0 && n > 1) ? Math.min(top, 1.0)
         : Math.min(top, SENSE_HEIGHTS[i % SENSE_HEIGHTS.length]);
       const jx = (this.random() * 2 - 1) * SENSE_JITTER;
       const jz = (this.random() * 2 - 1) * SENSE_JITTER;
       const point = [pos[0] + jx, pos[1] + h, pos[2] + jz];
-      if (lineClear(collider, eye, point, skip)) return { local: null, offset: [jx, h, jz] };
+      if (lineClear(collider, eye, point, skip)) {
+        // Kept in his body frame (the engine keeps the point in the object's
+        // frame and a bone index, +0x10) and turned with him when it is used.
+        const [r, f] = toBodyFrame(yaw, jx, jz);
+        return { local: null, offset: [r, h, f] };
+      }
     }
     return null;
   }
@@ -710,11 +771,38 @@ export class BotSenses {
     if (attackerId != null) this.attackers.set(attackerId, f);
   }
 
+  /** `event_projectile(fo, 0xffffffff)`: a round that was not a direct hit
+   *  on this bot -- fired within 50 m of it, or flown past it (bot-perception
+   *  .js `nearShot`). Into the list, and the attacker map's one shared entry. */
+  onNearFire(now, strength, pos = null) {
+    const f = { time: now, strength, attacker: null, hit: false, rate: FIRE_DECAY_RATE,
+                pos: pos ? [...pos] : null, aimed: false, near: true };
+    this.incoming.push(f);
+    this.nearFire = f;
+  }
+
   _expireIncoming(now) {
     const listTtl = Math.min(FIRE_LIST_BUDGET / Math.max(1, this.incoming.length), FIRE_LIST_TTL);
     this.incoming = this.incoming.filter(f => now - f.time <= listTtl);
-    const mapTtl = Math.max(ATTACKER_BUDGET / Math.max(1, this.attackers.size), ATTACKER_TTL);
+    const n = this.attackers.size + (this.nearFire ? 1 : 0);
+    const mapTtl = Math.max(ATTACKER_BUDGET / Math.max(1, n), ATTACKER_TTL);
     for (const [id, f] of this.attackers) if (now - f.time > mapTtl) this.attackers.delete(id);
+    if (this.nearFire && now - this.nearFire.time > mapTtl) this.nearFire = null;
+  }
+
+  /**
+   * `BotMain::getAttackerStrength` 0x0852f1c0 (+0x128, summed by
+   * `updateMemory` 0x085244e0 at 0x08525270..0x085252c7): over the attacker
+   * map, each entry's `strength / ((now - t) * rate + 1)`. A hit counts once
+   * here (the x10 is the list's). The map's expiry runs first, as
+   * `updateMemory` erases before it sums.
+   */
+  attackerStrength(now) {
+    this._expireIncoming(now);
+    let total = 0;
+    for (const f of this.attackers.values()) total += f.strength / ((now - f.time) * f.rate + 1);
+    if (this.nearFire) total += this.nearFire.strength / ((now - this.nearFire.time) * this.nearFire.rate + 1);
+    return total;
   }
 
   /** `getIncommingFireTotalStrengthAgainstSelf`: the decayed sum. */

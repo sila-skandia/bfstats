@@ -32,6 +32,7 @@ import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from '.
 import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
 import { friendlyHulls } from './bot-pilot.js';
 import { wrapAngle } from './bot-aim.js';
+import { movePose } from './bot-pose.js';
 
 /** How close to a plain waypoint before it counts as reached. */
 const WAYPOINT_REACH_RADIUS = 3.0;
@@ -666,9 +667,10 @@ export function execInfantryMoveTo(bot, action, dt) {
   // A ship without a water map holds a straight line; with one it routes
   // like a hull, the helm in `_steerToward`.
   if (bot.vehicle?.kind === 'ship' && !bot._nav()) return bot._execBoatMoveTo(target, action);
-  const speed = action.crouch ? 0.5 : 1;
-  if (action.crouch) bot.stanceInput = 'crouch';
-  else if (action.stance) bot.stanceInput = action.stance;
+  const speed = 1;
+  // `walk` is the garrison patrol's gait (doctrine-garrison.js, INVENTION),
+  // not a pose.
+  if (action.stance === 'walk') bot.walkInput = true;
   // The move's own `actionStatusDecision` state (`BAPAMoveTo` +0x60): each
   // move starts at 0 (the ctor 0x08540350).
   if (bot.vehicle) bot._asd = action._asd ?? (action._asd = { state: 0 });
@@ -686,6 +688,22 @@ export function execInfantryMoveTo(bot, action, dt) {
     return r.done;
   }
   if (arrived) { bot.moveForward = 0; bot._lastThrottle = 0; return true; }
+  if (!bot.vehicle) {
+    // The move's own pose (`BAPAMoveTo`'s component, bot-pose.js `movePose`:
+    // stand, prone once the attacker strength passes its own threshold),
+    // asked on every tick the move steers (`EntryInfanteryMoveTo::execute`
+    // 0x08616270 with `getControl`, vt+0x78; not on the arriving tick). The
+    // entries ask only once the move hands them a point
+    // (`EntryMoveToObjectMediumSoldier::execute` 0x0861ecc0 returns before
+    // the pose while the move's `getSecondPoint` flag is clear), and a
+    // finding move's point is the budgeted search's (`getNewIntermediatePathPos`
+    // 0x0852ab60 after `BotMain::updatePathfinding`): a move made this tick
+    // asks nothing yet (INFERRED; the viewer's route is found at once). So
+    // the one tick another behaviour wins in a fight stands nobody up.
+    action._pose ??= movePose(bot.random);
+    action._poseTicks = (action._poseTicks ?? 0) + 1;
+    if (action._poseTicks > 1) bot._requestPose(bot._poseOf(action._pose, bot._now ?? 0, 'control'));
+  }
 
   // `_resetInput` has zeroed this tick's word; the stall test wants the
   // throttle the body was given last tick.
