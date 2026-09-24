@@ -44,6 +44,8 @@ export function createBotUnits(env) {
   const kinds = new Map();
   const seatSurveys = new WeakMap();
   const _entryWorld = new THREE.Vector3();
+  const _exitPos = new THREE.Vector3(), _exitLocal = new THREE.Vector3(), _exitFwd = new THREE.Vector3();
+  const _exitQuat = new THREE.Quaternion();
   const _up = new THREE.Vector3();
   const _quat = new THREE.Quaternion();
   const clock = () => env.referee()?.clock ?? 0;
@@ -504,6 +506,19 @@ export function createBotUnits(env) {
     } else {
       bot.vehicle.node.getWorldPosition(_entryWorld);
       p = { x: _entryWorld.x, y: _entryWorld.y, z: _entryWorld.z };
+    }
+    // Where the soldier steps out: the seat's (or its hull's)
+    // `setSoldierExitLocation`, in that node's frame with Refractor's z
+    // negated, as the human's `exitPoseManned` (vehicle-entry.js) places him.
+    // Read before the seat is given back. Null when nothing declares one.
+    const exitNode = seat?.exitLocationNode?.() ?? null;
+    const declared = exitNode?.userData?.physics?.soldierExitLocation;
+    if (declared?.position) {
+      exitNode.getWorldPosition(_exitPos);
+      exitNode.getWorldQuaternion(_exitQuat);
+      const local = _exitLocal.set(declared.position[0], declared.position[1], -declared.position[2]).applyQuaternion(_exitQuat);
+      const fwd = _exitFwd.set(0, 0, -1).applyQuaternion(_exitQuat);
+      p.exit = { x: _exitPos.x + local.x, y: _exitPos.y + local.y, z: _exitPos.z + local.z, yaw: Math.atan2(fwd.x, fwd.z) };
     }
     // The seat goes back to the hull: its guns released, the world's record
     // cleared, the audio claim dropped; the last one out parks the hull where
