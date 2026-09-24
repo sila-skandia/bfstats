@@ -4,7 +4,7 @@
 #
 # Installs: JDK 21 (if missing), Ghidra 12.1.2 (headless zip), PyGhidra 3.1.0 (pip)
 # Downloads: bf1942_lnxded.static + BF1942.exe from the bf1942-binaries GitHub release
-# Restores: pre-analyzed Ghidra projects (client exe fully labeled, server with DWARF)
+# Restores: pre-analyzed Ghidra projects (client exe fully labeled, server demangled)
 #
 # Run from anywhere -- paths resolve relative to this script.
 
@@ -76,8 +76,9 @@ sha256sum bf1942_lnxded.static BF1942.exe
 # --- 5. Pre-analyzed projects ---------------------------------------------------
 # bf1942-client.rep: BF1942.exe imported, analyzed, and the label/type/enhance
 #   scripts already applied (known globals, function names, structs).
-# linux-server.rep: bf1942_lnxded.static analyzed with full DWARF (named
-#   functions, structs, types).
+# linux-server.rep: bf1942_lnxded.static analyzed; its unstripped symbols are
+#   demangled into named engine classes/functions (DWARF covers only the GCC
+#   runtime, not the engine).
 for proj in bf1942-client linux-server; do
   if [ -d "$PROJECTS_DIR/$proj.rep" ]; then
     echo "[setup] $proj.rep already present"
