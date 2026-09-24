@@ -10,7 +10,8 @@ import { findVehicle, findVehicles } from './vehicle-discovery.js';
 import { classifyRoot } from './seats.js';
 import { soldierExposure, worldBlocker } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
-import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT } from './bot-referee.js';
+import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_BODY_MATERIAL } from './bot-referee.js';
+import { damageFactor } from './projectile-damage.js';
 import { roundHit } from './soldier-death.js';
 import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
@@ -194,6 +195,14 @@ export function createVehicleHits(page) {
     return targets;
   }
 
+  /** `guns.angleModOf`: the `angleMod` a placed object's template authors
+   *  (the glb's physics extras), or null where it authors none and keeps the
+   *  template's 0 (ledger DMG-4). Only the aircraft author one, always 1. */
+  function angleModOf(owner) {
+    const value = Number(page.damageVisuals.get(owner)?.node?.userData?.physics?.angleMod ?? NaN);
+    return Number.isFinite(value) ? value : null;
+  }
+
   /** `playerId`'s side, or null for nobody the world knows. */
   function teamOf(playerId) {
     return playerId != null ? page.world?.player(playerId)?.team ?? null : null;
@@ -354,31 +363,37 @@ export function createVehicleHits(page) {
   // So the referee (bot-referee.js) keeps the half of parity that is exact and
   // resolves the other half itself: the bot's live facing, the engine's
   // deviation cone and the engine's own direct-hit formula (base material
-  // damage x the attacker/defender damageMod pair, `botRoundDamage` below).
+  // damage x its falloff x the attacker/defender damageMod pair,
+  // `botRoundDamage` below).
   // Only the hit test against a soldier body is an INVENTION stand-in. Recorded
   // as a departure in features/bf1942-ai-research-2026-09-21/IMPLEMENTATION_PLAN.md.
 
   /** `damage.json`'s default material damage, used until a projectile resolves. */
   const BOT_FALLBACK_DAMAGE = 30;
-  /** `MaterialManager.material 40` — the soldier's defending material. */
-  const BOT_SOLDIER_MATERIAL = 40;
 
-  /** The damage one bot round does, from the engine's direct-hit formula,
-   *  against the soldier material it met (head 40, chest 41, limbs 42: each
-   *  its own defence group, `setSkeletonCollisionBone`'s last word). */
-  function botRoundDamage(stats = null, defender = BOT_SOLDIER_MATERIAL) {
-    // `fireArms.projectile` names the round's template; its attacker material
-    // comes from `damage.json`'s projectile table, as for the human's rounds.
-    // A bot's weapon data names the projectile template; a hand weapon's gun
-    // group carries the projectile spec itself (`{ template, material, ... }`).
-    const projectile = stats?.projectile;
-    const attacker = page.guns.attackerMaterial(
-      typeof projectile === 'string' ? { template: projectile } : projectile ?? null);
+  /**
+   * The damage one round does to a soldier, the engine's direct-hit law
+   * (ledger DMG-3): the round's material damage, its falloff over `distance`
+   * (`Projectile::getDamage`, IMP-6: the pistols lose half between 20 and
+   * 40 m, the SMGs between 40 and 80 m), and the damageMod of its attacker
+   * group against the struck capsule's material (head 40, chest 41, limbs 42:
+   * each its own defence group, `setSkeletonCollisionBone`'s last word). A
+   * soldier's `angleMod 1` makes the angle term 1. `defender` defaults to the
+   * stand-in body's torso (`BOT_BODY_MATERIAL`).
+   */
+  function botRoundDamage(stats = null, defender = BOT_BODY_MATERIAL, distance = 0) {
+    // The round: a bot's weapon data carries the fired projectile's spec as
+    // `round` (the glb's `fireArms.projectile`: material and falloff) beside
+    // the template name its weapon block gives; a hand weapon's gun group
+    // carries the spec itself (`{ template, material, damage, ... }`).
+    const projectile = stats?.round ?? stats?.projectile;
+    const spec = typeof projectile === 'string' ? { template: projectile } : projectile ?? null;
+    const attacker = page.guns.attackerMaterial(spec);
     const base = page.guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
     const attGroup = page.guns.materials?.[attacker]?.attGroup ?? attacker;
     const defGroup = page.guns.materials?.[defender]?.defGroup ?? defender;
     const mod = page.guns.modifiers?.[attGroup]?.[defGroup] ?? null;
-    return base * (mod === null ? 1 : mod);
+    return base * (mod === null ? 1 : mod) * damageFactor(spec?.damage, distance);
   }
 
   /** Whose round it is: the player in the seat that fired `group`, else the
@@ -399,6 +414,8 @@ export function createVehicleHits(page) {
    * against; one nobody draws is the stand-in sphere the hand weapons and the
    * bots also fall back to (`BOT_BODY_RADIUS` about `BOT_BODY_HEIGHT` over the
    * feet), so a man is exactly as hard to hit with a tank's MG as with a rifle.
+   * The stand-in has no capsules and is priced as the torso
+   * (`BOT_BODY_MATERIAL`), not as the head.
    *
    * A seated man is a body only where his seat draws him (`referee.bodyAt`: a
    * gunner behind a bare MG, a jeep's passengers); elsewhere his hull is, and
@@ -428,7 +445,7 @@ export function createVehicleHits(page) {
       }
       if (!s) continue;
       const caps = page.capsulesOf(id);
-      let t, x, y, z, nx, ny, nz, material = BOT_SOLDIER_MATERIAL, bone = null;
+      let t, x, y, z, nx, ny, nz, material = BOT_BODY_MATERIAL, bone = null;
       if (caps) {
         const met = skeletonHit([ox, oy, oz], [dx, dy, dz], bestT, caps);
         if (!met) continue;
@@ -554,6 +571,7 @@ export function createVehicleHits(page) {
 
   Object.assign(vehicleHits, {
     AIR_KEYS,
+    angleModOf,
     applyVehicleHit,
     botRoundDamage,
     occupiedVehicleDamage,

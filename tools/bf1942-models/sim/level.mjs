@@ -46,9 +46,11 @@ export const SYNTHETIC = {
 };
 
 /** Vanilla values copied from `_shared/loadouts.json` `aiWeapons` and the
- *  weapon glbs' `extras.weapon` (2026-09-23), so the synthetic level needs no
- *  assets. `damage` is `damage.json` material damage x the soldier's modifier
- *  (`botRoundDamage`): K98 5 x 10, Thompson 5 x 3, Colt 5 x 3.5. */
+ *  weapon glbs' `extras.weapon` and `fireArms.projectile` (2026-09-24), so the
+ *  synthetic level needs no assets. `damage` is `damage.json` material damage
+ *  x the modifier against each soldier material, head 40 / torso 41 / limbs 42
+ *  (`botRoundDamage`, ledger DMG-3): K98 5 x 10/4/2, Thompson 5 x 3/1.8/1,
+ *  Colt 5 x 3.5/2/1. `fire.round.damage` is the round's falloff. */
 const SYNTHETIC_WEAPONS = {
   K98: {
     ai: { aiTemplate: 'K98AI', burst: 0, deviation: 5.0, deviationCorrectionTime: 10.0, minRange: 0, maxRange: 200,
@@ -56,30 +58,32 @@ const SYNTHETIC_WEAPONS = {
           soundSphereRadius: 150, healing: false },
     fire: { roundOfFire: 0.37, velocity: 1000, projectile: 'k98Projectile', magazine: { size: 5, magazines: 5, reloadTime: 1.6 },
             deviation: { min: 0.25, fire: [0, 0, 0], mod: [1.0, 0.7, 0.5], speed: [1.5, 0.4, 0.4, 0.1], misc: [2.5, 2.5, 0.1] } },
-    damage: 50,
+    damage: { 40: 50, 41: 20, 42: 10 },
   },
   Thompson: {
     ai: { aiTemplate: 'ThompsonSMG', burst: 1, deviation: 5.0, deviationCorrectionTime: 10.0, minRange: 0, maxRange: 100,
           weaponFire: 'PIFire', strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 },
           soundSphereRadius: 100, healing: false },
     fire: { roundOfFire: 10, velocity: 1000, projectile: 'ThomsonProjectile', magazine: { size: 30, magazines: 5, reloadTime: 4.8 },
-            deviation: { min: 0.4, fire: [2.0, 0.35, 0.06], mod: [1.2, 1.05, 0.9], speed: [0.8, 0.2, 0.2, 0.1], misc: [2.5, 2.5, 0.1] } },
-    damage: 15,
+            deviation: { min: 0.4, fire: [2.0, 0.35, 0.06], mod: [1.2, 1.05, 0.9], speed: [0.8, 0.2, 0.2, 0.1], misc: [2.5, 2.5, 0.1] },
+            round: { template: 'ThomsonProjectile', damage: { minDamage: 0.5, distToStartLoseDamage: 40, distToMinDamage: 80 } } },
+    damage: { 40: 15, 41: 9, 42: 5 },
   },
   Colt: {
     ai: { aiTemplate: 'ColtAI', burst: 0, deviation: 5.0, deviationCorrectionTime: 10.0, minRange: 0, maxRange: 60,
           weaponFire: 'PIFire', strength: { Infantry: 2, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 },
           soundSphereRadius: 80, healing: false },
     fire: { roundOfFire: 6, velocity: 400, projectile: 'coltProjectile', magazine: { size: 8, magazines: 4, reloadTime: 4.0 },
-            deviation: { min: 0.2, fire: [2.5, 1.5, 0.07], speed: [1.5, 0.2, 0.2, 0.1], misc: [2.5, 2.5, 0.1] } },
-    damage: 17.5,
+            deviation: { min: 0.2, fire: [2.5, 1.5, 0.07], speed: [1.5, 0.2, 0.2, 0.1], misc: [2.5, 2.5, 0.1] },
+            round: { template: 'coltProjectile', damage: { minDamage: 0.5, distToStartLoseDamage: 20, distToMinDamage: 40 } } },
+    damage: { 40: 17.5, 41: 10, 42: 5 },
   },
   MedPack: {
     ai: { aiTemplate: 'MedPackAI', burst: 0, deviation: 5.0, deviationCorrectionTime: 10.0, minRange: 0, maxRange: 2.5,
           weaponFire: 'PIFire', strength: { Infantry: 2, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 },
           soundSphereRadius: null, healing: true },
     fire: { roundOfFire: 10, velocity: null, projectile: null, magazine: { size: 1800, magazines: 1, reloadTime: 1.5 }, deviation: null },
-    damage: 0,
+    damage: {},
   },
 };
 
@@ -242,8 +246,12 @@ export function syntheticLevel(M, { vehicles = true } = {}) {
       maxHp: () => 30,
     },
     weaponFire: (name) => weaponFire.get(name) ?? null,
-    roundDamage: (fire) => {
-      for (const [k, v] of weaponFire) if (v === fire) return damageOf.get(k);
+    roundDamage: (fire, material = M.BOT_BODY_MATERIAL, distance = 0) => {
+      for (const [k, v] of weaponFire) {
+        if (v !== fire) continue;
+        const table = damageOf.get(k);
+        return (table[material] ?? table[M.BOT_BODY_MATERIAL] ?? 0) * M.damageFactor(fire.round?.damage, distance);
+      }
       return 30;
     },
     vehicleAi: (template) => SYNTHETIC_VEHICLE_AI[template] ?? SYNTHETIC_VEHICLE_AI[
@@ -269,12 +277,12 @@ function readGlb(file) {
 }
 
 /** A glb's document `extras`, JSON chunk only (the page's `botWeaponData`). */
-function glbExtras(file) {
+function glbJson(file) {
   const buf = readFileSync(file);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (buf.length < 20 || dv.getUint32(0, true) !== 0x46546c67 || dv.getUint32(16, true) !== 0x4e4f534a) return null;
   const len = dv.getUint32(12, true);
-  return JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + len)))?.extras ?? null;
+  return JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + len)));
 }
 
 /** Rebuild a glb with no images, textures or samplers (node decodes none). */
@@ -399,25 +407,37 @@ export async function realLevel(M, { maps, models, map }) {
     if (fireCache.has(name)) return fireCache.get(name);
     const file = modelIndex.get(String(name).toLowerCase());
     let fire = null;
-    try { fire = file ? (glbExtras(file)?.weapon ?? null) : null; } catch { fire = null; }
+    try {
+      const json = file ? glbJson(file) : null;
+      fire = json?.extras?.weapon ?? null;
+      // The round's own material and falloff, beside the template name the
+      // weapon block gives (map.html `botWeaponData`).
+      const round = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms?.projectile;
+      if (fire && round && typeof round === 'object') fire = { ...fire, round };
+    } catch { fire = null; }
     fireCache.set(name, fire);
     return fire;
   };
 
-  // `botRoundDamage`: the projectile's material damage x the soldier's
-  // modifier (material 40), 30 until a projectile resolves. A match on a
-  // real level bills the stage's copy (`vehicle-hits.js botRoundDamage`, the
-  // page's); this one is the same law over the same tables.
+  // `botRoundDamage`, the same law over the same tables (ledger DMG-3): the
+  // round's material damage, x the modifier of its attacker group against
+  // the struck material's defence group (the stand-in body's torso unless a
+  // capsule says otherwise), x its falloff over `distance`. 30 until a
+  // projectile resolves. A match with a stage bills the stage's copy
+  // (`vehicle-hits.js botRoundDamage`, the page's).
   const damage = damageTables;
-  const roundDamage = (fire) => {
-    const proj = fire?.projectile ? damage?.projectiles?.[String(fire.projectile).toLowerCase()] : null;
-    const attacker = Number.isFinite(proj?.material) ? proj.material : null;
+  const roundDamage = (fire, material = M.BOT_BODY_MATERIAL, distance = 0) => {
+    const spec = fire?.round && typeof fire.round === 'object' ? fire.round : null;
+    const template = spec?.template ?? fire?.projectile;
+    const proj = template ? damage?.projectiles?.[String(template).toLowerCase()] : null;
+    const attacker = Number.isFinite(spec?.material) ? spec.material
+      : Number.isFinite(proj?.material) ? proj.material : null;
     const mat = attacker !== null ? damage?.materials?.[attacker] : null;
     const base = mat?.damage ?? 30;
     const attGroup = mat?.attGroup ?? attacker;
-    const defGroup = damage?.materials?.[40]?.defGroup ?? 40;
+    const defGroup = damage?.materials?.[material]?.defGroup ?? material;
     const mod = damage?.modifiers?.[attGroup]?.[defGroup] ?? null;
-    return base * (mod === null ? 1 : mod);
+    return base * (mod === null ? 1 : mod) * M.damageFactor(spec?.damage, distance);
   };
 
   // The level's baked search maps (`pathfinding/`), which `level-terrain.js

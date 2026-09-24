@@ -75,6 +75,7 @@ MODULES = {
     "parachute.js": VIEWER / "parachute.js",
     "effects-core.js": VIEWER / "effects-core.js",
     "projectile-damage.js": VIEWER / "projectile-damage.js",
+    "crash-damage.js": VIEWER / "crash-damage.js",
     "contact-response.js": VIEWER / "contact-response.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }

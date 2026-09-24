@@ -880,6 +880,8 @@ vehicles.env.guns = guns;
 // anything in this engine).
 guns.onImpact = record => vehicleHits.applyVehicleHit(record);
 guns.bodyCast = vehicleHits.roundBodyCast;
+// The struck hull's own `angleMod`, for the direct hit's angle term.
+guns.angleModOf = vehicleHits.angleModOf;
 // The proximity fuse's candidates: every hull, whoever drives it.
 guns.nearObjects = vehicleHits.proximityObjects;
 // The game's own impact, trail and explosion bundles. Loaded once per mod
@@ -1043,7 +1045,7 @@ const referee = createBotReferee({
   get units() { return botUnits; },
   groundAt: (x, z, fromY) => level.groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
-  roundDamage: (stats, material) => vehicleHits.botRoundDamage(stats, material),
+  roundDamage: (stats, material, distance) => vehicleHits.botRoundDamage(stats, material, distance),
   // A rocket launcher's round flies (`bot-rounds.js`); the rest are resolved
   // as rays in the referee.
   launchRound: (bot, stats) => botRounds.launch(bot, stats),
@@ -1289,8 +1291,14 @@ function botWeaponData(name) {
       const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, chunkLen)));
       // A rocket launcher's round is flown (`bot-rounds.js`): its FireArms
       // says so, and its glb is loaded for the round.
-      botRounds.noteWeapon(name, json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms ?? null);
-      return json?.extras?.weapon ?? null;
+      const fireArms = json?.nodes?.find(n => n?.extras?.fireArms)?.extras?.fireArms ?? null;
+      botRounds.noteWeapon(name, fireArms);
+      // The weapon block names its round only by template; the round's own
+      // material and falloff ride beside it as `round`, for
+      // `vehicleHits.botRoundDamage` (ledger DMG-3).
+      const weapon = json?.extras?.weapon ?? null;
+      const round = fireArms?.projectile;
+      return weapon && round && typeof round === 'object' ? { ...weapon, round } : weapon;
     })
     .catch(() => null);
   botWeaponDataCache.set(name, p);

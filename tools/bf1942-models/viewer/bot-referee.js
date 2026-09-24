@@ -52,6 +52,13 @@ export const BOT_FALLBACK_ROF = 8;
  *  is physics.js `CHARACTER_HEIGHT`. */
 export const BOT_BODY_RADIUS = 0.6;
 export const BOT_BODY_HEIGHT = 1.0;
+/** The material a round is priced against when it meets the stand-in body,
+ *  which has no capsules: the torso's (`Bip01_Spine2`, 41), the largest of the
+ *  eight and the one most rounds meet (INVENTION: the engine always has the
+ *  capsules, ledger DIE-10). Not the soldier object's own material 40, which is
+ *  the head capsule's: pricing every stand-in hit as a head shot made a Colt
+ *  round 17.5 where the torso's is 10 (DMG-3). */
+export const BOT_BODY_MATERIAL = 41;
 /** A bot's rounds stop after this far, matching the hand weapon's own range. */
 export const BOT_FIRE_RANGE = 600;
 /** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`): the
@@ -309,7 +316,9 @@ export function rollCone(r, spreadRad) {
  *    `invalidate()`, `tick()`; absent: no vehicles;
  *  - `groundAt(x, z, fromY)`: the floor a body stands up on;
  *  - `armorFor(bot, flag)`: a fresh Armor for a (re)spawned body;
- *  - `roundDamage(stats)`: one round's direct-hit HP from a weapon's fire data;
+ *  - `roundDamage(stats, material, distance)`: one round's direct-hit HP from a
+ *    weapon's fire data, on the capsule material it met, at the distance it
+ *    flew (the falloff);
  *  - `debug`: log hits, heals and seats to the console (the page's `?botDebug`);
  *  - `friendlyFire`: the server's friendly-fire percentages
  *    (`friendly-fire.js`); absent, the shipped `ServerSettings.con`'s;
@@ -661,8 +670,10 @@ export function createBotReferee(env) {
    * Resolve a round against the world's players. A drawn body is met through
    * the engine's own capsules (`skeleton-hit.js`), first capsule in
    * declaration order; one nobody draws through the stand-in sphere.
-   * `damageFor(material)`, when given, re-prices the round for the capsule's
-   * material -- head 40, chest 41, limbs 42, each its own defence group.
+   * `damageFor(material, distance)`, when given, prices the round for the
+   * capsule's material -- head 40, chest 41, limbs 42, each its own defence
+   * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
+   * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
    */
   referee.resolveShot = (bot, damage, aimAt = null, damageFor = null) => {
     const w = world();
@@ -691,7 +702,7 @@ export function createBotReferee(env) {
       if (!met || met.t >= bestT) continue;
       if (!lineOfSight(w.collider, origin, met.at)) continue;
       bestT = met.t;
-      const priced = met.material != null && damageFor ? damageFor(met.material) : damage;
+      const priced = damageFor ? damageFor(met.material ?? BOT_BODY_MATERIAL, met.t) : damage;
       best = {
         targetId: id, dist: met.t, material: met.material,
         // A man seated in a hull is priced as the hull (his root) is.
@@ -801,7 +812,7 @@ export function createBotReferee(env) {
       // hit, the splash, a hull -- and billed from there, not here.
       if (env.launchRound?.(bot, stats)) continue;
       const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                      material => env.roundDamage(stats, material));
+                                      (material, distance) => env.roundDamage(stats, material, distance));
       if (!hit) continue;
       bot.recordHit(hit.targetId);
       env.onHit?.(bot, hit);
