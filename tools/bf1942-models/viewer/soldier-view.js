@@ -15,11 +15,11 @@ import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADI
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `applyLook`, `camera`, `collectSupplyDepots`, `collider`, `currentRoot`,
- * `deathCamAt`, `deathCamPos`, `deathCamShot`, `deathCamTarget`,
- * `deathCamTimer`, `DEG_TO_RAD`, `deployActive`, `deployTeamId`,
+ * `deathCamPos`, `deathCamShot`, `deathCamTarget`,
+ * `deathCamTimer`, `deathYaw`, `DEG_TO_RAD`, `deployActive`, `deployTeamId`,
  * `dieOnFoot`, `footBody`, `footCanopy`, `footEyeCur`, `footEyePrev`,
  * `footFire`, `footLookPending`, `footPending`, `footView`,
- * `frameInputLast`, `hudBridge`, `openDeploy`, `params`, `presentAlpha`,
+ * `frameInputLast`, `hudBridge`, `lastAttackerAt`, `openDeploy`, `params`, `presentAlpha`,
  * `runDeathCam`, `scanForEntry`, `serverSettings`, `setLook`, `soldier`,
  * `soldierArmor`, `soldierDead`, `supplyTarget`, `world`.
  */
@@ -32,6 +32,75 @@ export function createSoldierView(page) {
    *  one hook into the per-frame loop. */
   soldierView.supplyField = null;
   soldierView.supplyDepotsRoot = null;
+
+  // --- the corpse cam -----------------------------------------------------------
+  //
+  // A man killed on foot sees his own body: the side of the shot is chosen
+  // on the frame he dies -- the far side from whoever last hit him
+  // (`lastAttackerAt`, the message log's own record of the attack), so the
+  // body lies in the middle of the frame with his killer beyond it -- and
+  // the camera then keeps `back` metres off the body's pelvis on that side
+  // and `lift` above it while the death plays, looking at the pelvis. With
+  // no attacker (a fall, his own grenade) the camera stands behind him along
+  // the heading he fell on. The shot is kept out of walls and hills: pulled
+  // in to whatever stands between the body and the camera, and never below
+  // the ground. [HOUSE RULES: the client's death cam was never decoded past
+  // `FUN_004933d0` opening the spawn screen (hitpoints-and-damage.md §7); the
+  // numbers are framing, `local-player.js` `DEATH_CAM.foot`.]
+  const corpseShot = { yaw: null, x: 0, y: 0, z: 0 };
+  const corpseAt = new THREE.Vector3();
+  let pelvisOf = null;
+  let pelvisNode = null;
+
+  /** The drawn corpse's pelvis this frame, else the eye's point. */
+  function corpseCentre(fallback) {
+    const scene = page.footBody?.scene ?? null;
+    if (scene !== pelvisOf) {
+      pelvisOf = scene;
+      pelvisNode = scene?.getObjectByName('Bip01_Pelvis') ?? scene?.getObjectByName('Bip01 Pelvis') ?? null;
+    }
+    if (pelvisNode && scene.visible) return pelvisNode.getWorldPosition(corpseAt);
+    return corpseAt.set(fallback.x, fallback.y, fallback.z);
+  }
+
+  /** The heading the shot looks along: toward the killer, else the fall's. */
+  function corpseShotYaw(centre) {
+    const from = page.lastAttackerAt?.() ?? null;
+    if (from) {
+      const dx = from.x - centre.x;
+      const dz = from.z - centre.z;
+      if (Math.hypot(dx, dz) > 1) return Math.atan2(dx, dz);
+    }
+    return page.deathYaw ?? page.soldier.viewYaw;
+  }
+
+  function placeCorpseShot(centre, yaw) {
+    const shot = page.deathCamShot;
+    const bx = -Math.sin(yaw) * shot.back;
+    const bz = -Math.cos(yaw) * shot.back;
+    const by = shot.lift;
+    const reach = Math.hypot(bx, by, bz);
+    let t = reach;
+    const hit = page.collider?.cast?.(centre.x, centre.y, centre.z,
+                                      bx / reach, by / reach, bz / reach, reach, -1);
+    if (hit && hit.t < reach) t = Math.max(0.5, hit.t - 0.3);
+    corpseShot.x = centre.x + bx * (t / reach);
+    corpseShot.y = centre.y + by * (t / reach);
+    corpseShot.z = centre.z + bz * (t / reach);
+    const floor = page.collider?.surfaceHeight?.(corpseShot.x, corpseShot.z, corpseShot.y + 2);
+    if (Number.isFinite(floor)) corpseShot.y = Math.max(corpseShot.y, floor + 0.4);
+  }
+
+  function corpseCam(eye) {
+    const centre = corpseCentre(eye);
+    if (corpseShot.yaw === null) corpseShot.yaw = corpseShotYaw(centre);
+    placeCorpseShot(centre, corpseShot.yaw);
+    page.camera.position.set(corpseShot.x, corpseShot.y, corpseShot.z);
+    const dx = centre.x - corpseShot.x;
+    const dy = centre.y - corpseShot.y;
+    const dz = centre.z - corpseShot.z;
+    page.setLook(Math.atan2(dx, dz), Math.atan2(dy, Math.hypot(dx, dz)));
+  }
 
   /**
    * The on-foot camera half of the old `onFoot()` — the sim half went to the
@@ -125,14 +194,15 @@ export function createSoldierView(page) {
     page.footLookPending(page.footPending);
     const per = soldierLookDegrees(page.footPending.x, page.footPending.y);
     page.soldier.lookPreview(-per.yaw * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
-    if (page.soldierDead) {
-      // Behind the subject along its own facing and above it, by `deathCamShot`.
-      // The subject is the corpse's eye for a death on foot and the hull for one
-      // inside a vehicle (`deathCamTarget`). Forward is `(sin yaw, 0, cos yaw)` —
-      // the soldier's convention throughout this file — so "behind" is minus that.
-      const at = page.deathCamTarget || Object.assign(page.deathCamAt, {
-        x: footEye.x, y: footEye.y, z: footEye.z, yaw: page.soldier.viewYaw,
-      });
+    if (!page.soldierDead) corpseShot.yaw = null;
+    if (page.soldierDead && !page.deathCamTarget) {
+      corpseCam(footEye);
+    } else if (page.soldierDead) {
+      // Behind the subject along its own facing and above it, by `deathCamShot`:
+      // the hull for a death inside a vehicle, the man slumped in his seat for
+      // one in it (`deathCamTarget`). Forward is `(sin yaw, 0, cos yaw)` — the
+      // soldier's convention throughout this file — so "behind" is minus that.
+      const at = page.deathCamTarget;
       const camYaw = at.yaw;
       page.deathCamPos.set(
         at.x - Math.sin(camYaw) * page.deathCamShot.back,
