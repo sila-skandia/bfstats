@@ -8,7 +8,8 @@
 //               pass, the enemy tables, the seat requests, each bot's respawn
 //               timer, order, tick and no-progress redeploy, then the rounds
 //   fireTick    rate of fire, magazine and reload, the deviation cone, the
-//               hit test against the soldier capsules, heals, damage
+//               hit test against the soldier capsules (or the round handed
+//               to the caller to fly, `env.launchRound`), heals, damage
 //   damage      HP, incoming fire, death, the order freed, the respawn timer
 //   capture     the control point's own law (`ControlPoint::handleFrameUpdate`
 //               0x08283b00), per flag over every living player on it
@@ -30,6 +31,9 @@
 // and the engine's direct-hit damage, against a stand-in soldier body -- a
 // vertical capsule at the world's object origin, `setCharacterHeight -1.00`
 // above the feet (INVENTION). The viewer's collider carries no soldier body.
+// The exception is a round the caller can fly: the page launches a rocket
+// launcher's round through `gunfire.js` (`env.launchRound`, bot-rounds.js),
+// and it meets, explodes and splashes as the human's does.
 
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
@@ -311,7 +315,10 @@ export function rollCone(r, spreadRad) {
  *    (`friendly-fire.js`); absent, the shipped `ServerSettings.con`'s;
  *  - hooks, all optional: `beforeBots()`, `tickBot(bot, dt, now)` (replaces
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
- *    `onRespawned(bot, flag)`, `onShot(bot, at)`, `onHit(bot, hit)`,
+ *    `onRespawned(bot, flag)`, `onShot(bot, at)` (once per round, a flown
+ *    one included), `launchRound(bot, stats)` (true: the caller put this
+ *    round in flight and bills its landing, so it is not resolved here; the
+ *    page's rocket launchers, the runner has none), `onHit(bot, hit)`,
  *    `damageTarget(hit, bot, at)` (true: the caller billed a non-bot target),
  *    `damageHull(bot, damage, opts)` (true: a mounted bot's hull took it),
  *    `defaultAttackerPos()`, `onHurt(bot, lost)`, `onDeath(bot, attackerId,
@@ -510,6 +517,9 @@ export function createBotReferee(env) {
     const record = w.player(bot.playerId);
     w.setPlayerArmor(bot.playerId, env.armorFor(bot, record?.flag ?? flag));
     if (record?.soldier) bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
+    // A new soldier is a new kit, full (the human's own rule, `kit-ammo.js`):
+    // the magazines are made again from the data on the next frame.
+    bot._mags?.clear();
     bot._respawnIn = 0;
     bot.onRespawn();
     env.onRespawned?.(bot, record?.flag ?? flag);
@@ -525,34 +535,87 @@ export function createBotReferee(env) {
   };
 
   /**
-   * The bot's magazine for the weapon it holds: rounds in the magazine, spare
-   * magazines, and the reload in progress (`fireArms.magazine`). The AI
-   * weapon entry's `ammo` follows it, so `BBFire` drops a dry weapon and the
-   * fire plan ends on an empty magazine (`bot.magazineEmpty`).
+   * `name`'s magazine on this bot, `{ rounds, spare, size, reloadTime,
+   * reloadLeft, autoReload }` (`fireArms.magazine`: the loaded magazine, the
+   * spares, the reload in progress), or null while the weapon's fire data has
+   * not arrived. An entry is only ever made FROM the data: the page hands it
+   * over asynchronously (map.html `loadBotWeapons` fetches each weapon's glb),
+   * and an entry made on the bot's first tick, before it landed, read the
+   * missing size as unlimited and was kept for good -- no bot on the page ever
+   * reloaded, and a Bazooka (`magSize 1`, `reloadTime 5.6`) fired once a
+   * second, at its `roundOfFire 1.0`, for as long as it was held. A size of 0
+   * or below is the engine's unlimited magazine (the knife's -1).
+   */
+  referee.magazineOf = (bot, name) => {
+    if (!name) return null;
+    if (!bot._mags) bot._mags = new Map();
+    let mag = bot._mags.get(name);
+    if (mag) return mag;
+    const m = bot.weaponData?.[name]?.magazine;
+    if (!m) return null;
+    const size = m.size > 0 ? m.size : 0;
+    mag = size
+      ? { rounds: size, spare: Math.max(0, (m.magazines ?? 1) - 1), size, reloadTime: m.reloadTime ?? 0,
+          reloadLeft: 0, autoReload: !!m.autoReload }
+      : { rounds: Infinity, spare: 0, size: 0, reloadTime: 0, reloadLeft: 0, autoReload: false };
+    bot._mags.set(name, mag);
+    return mag;
+  };
+
+  /**
+   * The bot's magazines, once a frame: every carried weapon's rounds left
+   * (`w.rounds`, the sum over its magazines, `FireArms::getTotalAmmo`
+   * 0x0828cb60), and the held one's reload. Its magazine answers whether a
+   * round can leave, and the two words the fire plan reads:
+   * `bot.magazineEmpty`, and `bot.magazineEndsPlan`, whether an empty
+   * magazine ends the plan -- `createFirePlan` 0x085ac240 adds that break
+   * (the shared `BAPConWeaponMagAmmo(weapon, 0, false)`) only for a weapon
+   * without `autoReload` (`hasAutoReload` 0x085ee890) whose `getNMags`
+   * (0x085ef650, the magazines it carries) is not 1. A Bazooka's plan
+   * therefore rides its 5.6 s reload out aiming, as the engine's does
+   * (ledger AI-130).
+   *
+   * PARITY DEPARTURE, measured (features/bot-weapons, ledger AI-132): `BBFire::
+   * calculateUrgency` 0x08563570 divides a weapon's strength by `(20 (shots
+   * - hits) + 10) / getAmmo` (`WeaponFireArmReal::getAmmo`, the same total).
+   * Handed the kit's real counts, the page's bots -- who land about 5 % of
+   * their rounds at 40 m -- ran a few seconds of misses on one target up
+   * against an SMG's 150 rounds (about 22 misses) or a pistol's 32 (two) and
+   * took their knives, unlimited at 1.0: in a 30 s squad fight seven of the
+   * eight drew them, the two AT soldiers for 98 % and 93 % of it. The
+   * AI entry's `ammo` keeps the reading the page always had, unlimited
+   * (-1) while the weapon has a round, and 0 when it is dry, so `BBFire`
+   * drops a dry weapon; open until the bots' accuracy is held against the
+   * engine's.
    */
   referee.magazineTick = (bot, dt) => {
-    const stats = referee.weaponDataOf(bot);
-    const name = bot.weaponAi?.name ?? null;
-    const size = stats?.magazine?.size > 0 ? stats.magazine.size : 0;
-    if (!bot._mags) bot._mags = new Map();
-    let mag = name ? bot._mags.get(name) : null;
-    if (!mag && name) {
-      mag = { rounds: size || Infinity, spare: size ? Math.max(0, (stats?.magazine?.magazines ?? 1) - 1) : 0,
-              size, reloadTime: stats?.magazine?.reloadTime ?? 0, reloadLeft: 0 };
-      bot._mags.set(name, mag);
+    for (const w of bot.weapons ?? []) {
+      const m = referee.magazineOf(bot, w?.name);
+      if (!m || !Number.isFinite(m.rounds)) continue;
+      w.rounds = m.rounds + m.spare * m.size;
+      w.ammo = w.rounds > 0 ? -1 : 0;
     }
-    if (!mag) return { canFire: true };
+    const mag = referee.magazineOf(bot, bot.weaponAi?.name ?? null);
+    if (!mag) {
+      bot.magazineEmpty = false;
+      bot.magazineEndsPlan = false;
+      return { canFire: true };
+    }
     if (mag.reloadLeft > 0) {
       mag.reloadLeft = Math.max(0, mag.reloadLeft - dt);
       if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; }
-    } else if (mag.rounds <= 0 && mag.spare > 0) {
+    } else if (mag.rounds <= 0 && mag.spare > 0 && !(bot._fireCooldown > 0)) {
+      // Not before the last round's fire cycle has run out: the engine's
+      // reload message (`FireArms::handleMessage` 9, 0x082895c0), whoever
+      // sends it, starts `Reload` only once `timeToFireFinished` is spent,
+      // and `Fire` 0x0828a090 sets that to 1 / roundOfFire (ledger AI-133).
+      // A Bazooka's reload starts a second after its round, so it fires one
+      // every 6.6 s, and the round's fire clip plays out before the reload's.
       mag.reloadLeft = mag.reloadTime > 0 ? mag.reloadTime : 1e-6;
     }
     const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
     bot.magazineEmpty = mag.rounds <= 0;
-    if (bot.weaponAi && Number.isFinite(mag.rounds)) {
-      bot.weaponAi.ammo = mag.rounds + mag.spare * mag.size;
-    }
+    bot.magazineEndsPlan = !mag.autoReload && mag.spare > 0;
     mag.canFire = canFire;
     return mag;
   };
@@ -693,18 +756,30 @@ export function createBotReferee(env) {
       bot._wasFiring = bot.isFiring;
       // A mounted bot's guns are the hull's: the page's world fires them
       // from the bot's input word and each round meets whoever is in its way;
-      // the runner fires its stand-in guns here.
+      // the runner fires its stand-in guns here. His hand weapon's magazine
+      // is not the seat's: a plane's attack plan reads `magazineEmpty` too.
       if (bot.vehicle) {
+        bot.magazineEmpty = false;
         env.mountedFire?.(bot, dt);
         continue;
       }
-      bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
+      // The rate-of-fire timer runs down whether or not the trigger is held
+      // and keeps its fraction across a held burst, as the human's gun does
+      // (gun-cycle.js `advanceGroups`): an idle gun owes nothing (floored
+      // at 0), a held one fires at its own `roundOfFire` whatever the frame
+      // rate. Restarted from a full period each round, a 9 rps Mp40 fired
+      // 8.57 rounds a second at 60 fps (7 frames a round) and 7.5 at 30.
+      // It is the engine's `timeToFireFinished`, and it runs down before the
+      // magazine's tick, whose reload waits for it, as `FireArms::
+      // handleUpdate` 0x08288890 counts it down before it asks for one.
+      bot._fireCooldown = (bot._fireCooldown ?? 0) - dt;
       const mag = referee.magazineTick(bot, dt);
+      if (!bot.isFiring || !mag.canFire) bot._fireCooldown = Math.max(0, bot._fireCooldown);
       if (!bot.isFiring || bot._fireCooldown > 0 || !mag.canFire) continue;
       // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
       const stats = referee.weaponDataOf(bot);
       const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
-      bot._fireCooldown = 1 / rof;
+      bot._fireCooldown = Math.max(-1 / rof, bot._fireCooldown) + 1 / rof;
       referee.magazineShot(bot, mag);
       bot.deviation.onShot();
       bot.onShot(referee.clock);
@@ -721,6 +796,10 @@ export function createBotReferee(env) {
         if (friend) referee.applyHeal(friend, BOT_HEAL_PER_ROUND);
         continue;
       }
+      // A round the caller flies (`env.launchRound`: the page's rocket
+      // launchers, `bot-rounds.js`) is resolved where it lands -- the direct
+      // hit, the splash, a hull -- and billed from there, not here.
+      if (env.launchRound?.(bot, stats)) continue;
       const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
                                       material => env.roundDamage(stats, material));
       if (!hit) continue;
