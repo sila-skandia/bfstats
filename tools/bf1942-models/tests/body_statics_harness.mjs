@@ -280,6 +280,39 @@ out.share = {
   };
 }
 
+// --- 6b. an Obstacle's own handler (section 6.2, `Obstacle::handleCollision`
+// 0x08315e10): against anything but a soldier it returns false, so a hull
+// at speed passes barbed wire; at rest the handlers are skipped and the
+// wire still pushes, as any static does.
+{
+  const obstacleStatics = (obstacle) => {
+    const s = new FakeStatics({ plane: { axis: 2, at: -2.1, sign: 1 } });
+    s.asked = [];
+    s.obstacle = owner => { s.asked.push(owner); return obstacle; };
+    return s;
+  };
+  const fast = new FakeBody({ pos: [0, 0, -0.2], v: [0, 0, -10] });
+  const fp = part(fast, [0, 0, -2]);
+  const fs = obstacleStatics(true);
+  const fastApplied = collideWithStatics([fp], fs, TICK, handlers({ onStatic: () => true }));
+
+  const slow = new FakeBody({ pos: [0, 0, -2.05], v: [0, 0, -0.3] });
+  const sp = part(slow, [0, 0, -0.1]);
+  const ss = obstacleStatics(true);
+  const slowApplied = collideWithStatics([sp], ss, TICK, handlers());
+
+  const wall = new FakeBody({ pos: [0, 0, -0.2], v: [0, 0, -10] });
+  const wp = part(wall, [0, 0, -2]);
+  const ws = obstacleStatics(false);
+  const wallApplied = collideWithStatics([wp], ws, TICK, handlers());
+
+  out.obstacle = {
+    fastApplied, fastAsked: fs.asked, fastPosAdjust: fp.response.posAdjust.slice(),
+    slowApplied, slowAsked: ss.asked.length,
+    wallApplied,
+  };
+}
+
 // --- 7. every vertex is probed, and one hit per vertex accumulates --------
 //
 // `setAdjust` keeps the larger of two same-sign contributions rather than

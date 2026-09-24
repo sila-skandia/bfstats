@@ -391,6 +391,8 @@ export class WorldCollider {
     // tight.
     const candidates = new Int32Array(capacity);
     let count = 0;
+    // Per owner: 0 not asked yet, 1 not an Obstacle, 2 an Obstacle.
+    const obstacleOf = { statics: null, kind: null };
     return {
       near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) {
         const s = world.statics;
@@ -407,6 +409,22 @@ export class WorldCollider {
         const s = world.statics;
         if (!s || !count) return null;
         return s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit);
+      },
+      /** Whether `owner` is an `Obstacle` (`templateKind`, the class
+       *  `ObjectTemplate.create Obstacle` makes: barbed wire). */
+      obstacle(owner) {
+        const s = world.statics;
+        if (!s || owner < 0) return false;
+        if (obstacleOf.statics !== s) {
+          obstacleOf.statics = s;
+          obstacleOf.kind = new Uint8Array(s.ownerNodes.length);
+        }
+        let k = obstacleOf.kind[owner];
+        if (!k) {
+          k = s.ownerNodes[owner]?.userData?.templateKind === 'Obstacle' ? 2 : 1;
+          obstacleOf.kind[owner] = k;
+        }
+        return k === 2;
       },
       supportY(x, z, fromY) {
         return world.surfaceHeight(x, z, fromY);

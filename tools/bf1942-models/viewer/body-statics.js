@@ -44,6 +44,9 @@
 //       `near` still has them. The hit carries `x/y/z` (the crossing),
 //       `nx/ny/nz` (the face normal **oriented back toward the ray's start**)
 //       and `material`.
+//   obstacle(owner) -> boolean
+//       Optional. Whether the hit's `owner` is an `Obstacle` (the class
+//       barbed wire is), whose handler vetoes a hull's response (§6.2).
 //   supportY(x, z, fromY) -> number
 //       Optional. The height of the surface the body is standing on, terrain
 //       or drivable deck. `stepTop` is that plus `KERB_STEP`: a drivable
@@ -206,12 +209,19 @@ function probePart(part, body, statics, handlers, owner, stepTop, share) {
     body.tangentSpeed(_P, _vRel);
     const matVertex = layer.vertexMaterials ? layer.vertexMaterials[vi] : 0;
     const matFace = hit.material ?? 0;
+    const hitOwner = hit.owner ?? -1;
 
     if (_vRel[0] * _vRel[0] + _vRel[1] * _vRel[1] + _vRel[2] * _vRel[2]
-        > HANDLER_SPEED_THRESHOLD_SQ && handlers.onStatic) {
-      // §6.2: the static has no handler of its own to consult, so one veto is
-      // the whole test.
-      if (!handlers.onStatic(part, _vRel, _n, _P, matVertex, matFace)) continue;
+        > HANDLER_SPEED_THRESHOLD_SQ) {
+      // §6.2: the body's handler, then the static's. A static's only handler
+      // of its own is `Obstacle::handleCollision` 0x08315e10 (barbed wire):
+      // against anything but a soldier it messages itself (vt+0x9c,
+      // `handleMessage(0, 0)`) and returns false, so a hull rolls through the
+      // wire. The level's own Tank maps paint the wire free for the same
+      // reason; a hull stopped by it wedges against a route the map drew
+      // straight through.
+      if (handlers.onStatic && !handlers.onStatic(part, _vRel, _n, _P, matVertex, matFace)) continue;
+      if (statics.obstacle?.(hitOwner)) continue;
     }
 
     const mv = handlers.materialValues(matVertex, matFace);

@@ -14,6 +14,7 @@ checkout's (a worktree's git common dir), and skips when there is none.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -161,17 +162,21 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreater(r["closest"], 20.0)
         self.assertEqual(r["destroyed"], [])
 
-    def test_the_tank_pair_on_north_outpost_have_no_line(self) -> None:
-        # Brief K item 3 (ledger AI-100): the eye and the gun see the same:
-        # every sample while both are near the flag is blocked both ways, so
-        # the eye / aim-origin split is not why they never fire.
+    def test_the_tank_pair_both_reach_north_outpost(self) -> None:
+        # Brief K item 3 (ledger AI-100) sampled this pair with no line at
+        # the flag; since then the Sherman had stopped reaching it at all,
+        # wedged on the barbed wire round the British base. The viewer
+        # stopped a hull on wire, where `Obstacle::handleCollision`
+        # 0x08315e10 vetoes the response for anything but a soldier (and
+        # the level's Tank0 map paints the wire free). Rolling through it,
+        # the Sherman leaves its base and both hulls meet near the outpost
+        # the PanzerIV takes.
         r = recipe("tankDuel")
-        b = r["blockedShare"]
-        n = r["samples"]
-        if n == 0:
-            self.skipTest("the pair never met near the flag")
-        self.assertEqual(b["axisEye"], b["axisGun"])
-        self.assertEqual(b["alliedEye"], b["alliedGun"])
+        self.assertGreater(r["samples"], 0, r["end"])
+        flag = (874.005, -1815.98)
+        allied = r["end"]["allied"]
+        self.assertLess(math.hypot(allied[0] - flag[0], allied[2] - flag[1]), 250.0, r["end"])
+        self.assertIn("144.67 North_outpost 0->1 bot_0", r["captures"])
 
     def test_the_tank_pair_close_until_one_can_fire(self) -> None:
         # Brief P item 3 (ledger AI-116) and Brief R (AI-123..AI-125): K's
