@@ -160,6 +160,35 @@ class SwimClipBundleTests(unittest.TestCase):
             self.assertEqual(3, counts["Lb_EndSwim"])
             self.assertEqual(3, counts["Lb_DieSwim"])
 
+    def test_the_exit_starts_where_the_entry_ends(self) -> None:
+        # A backwards one-shot starts at phase 1.0 (`updateState` 0x0832b270),
+        # so the exit is the entry clip from its last frame to its first. The
+        # loop's reversal, which kept frame 0 first, opened the exit on the
+        # entry's first frame and jumped to the swimming end one key later.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(out)
+            blob = (out / "gaits" / "swim.gait.glb").read_bytes()
+            length, = struct.unpack_from("<I", blob, 12)
+            doc = json.loads(blob[20:20 + length])
+            binary = blob[20 + length + 8:]
+            names = [n["name"] for n in doc["nodes"]]
+
+            def root_heights(clip: str) -> list[float]:
+                anim = next(a for a in doc["animations"] if a["name"] == clip)
+                for ch in anim["channels"]:
+                    if (names[ch["target"]["node"]] == "Bip01"
+                            and ch["target"]["path"] == "translation"):
+                        acc = doc["accessors"][anim["samplers"][ch["sampler"]]["output"]]
+                        view = doc["bufferViews"][acc["bufferView"]]
+                        flat = struct.unpack_from(f"<{acc['count'] * 3}f", binary,
+                                                  view.get("byteOffset", 0))
+                        return [round(flat[i * 3 + 2], 3) for i in range(acc["count"])]
+                raise KeyError(clip)
+
+            entry, exit_ = root_heights("Lb_StartSwim"), root_heights("Lb_EndSwim")
+            self.assertEqual(list(reversed(entry)), exit_)
+
     def test_the_death_pair_is_in_the_same_bundle(self) -> None:
         # `AnimationStatesDie.con`, not the swim file -- but selected by
         # `handleDamage`'s `c_AsmIsSwimming` test (`0x08270c63`), so it belongs
