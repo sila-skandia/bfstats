@@ -40,7 +40,7 @@ node sim/run.mjs --why bot_4 312.5 --trace sim/out/el_alamein-s3/trace.jsonl
 | `--no-vehicles` | | leave the level's vehicles and fixed guns out (the spawners group) |
 | `--no-trace` | | the summary only |
 | `--seat B=T[:S]` | | seat bot B in the nearest free unit of template T (its seat S, else the driver's) before the first tick, the page's `__botMount` law; repeatable; real level |
-| `--doctrine D` | `sai` | each side's doctrine (`viewer/doctrine.js`): `sai` the engine's SAI, `squad` the squad play, `garrison` the page's default (one busy guard a flag, [features/bot-garrison](../../../features/bot-garrison/README.md)), or per side `axis=squad,allies=sai`; see [features/bot-doctrines](../../../features/bot-doctrines/README.md) |
+| `--doctrine D` | `sai` | each side's doctrine (`viewer/doctrine.js`): `sai` the engine's SAI, `squad` the squad play, `garrison` the page's default (one busy guard on each flag the side has taken, the rest pushing, [features/bot-garrison](../../../features/bot-garrison/README.md)), or per side `axis=squad,allies=sai`; see [features/bot-doctrines](../../../features/bot-doctrines/README.md) |
 | `--out DIR` | `sim/out/<level>-s<seed>` | writes `trace.jsonl` and `summary.json` |
 | `--maps DIR`, `--models DIR` | `<viewer>/maps`, `<viewer>/models` | the extracted trees |
 | `--viewer DIR` | `../viewer` | the viewer the AI is loaded from |
