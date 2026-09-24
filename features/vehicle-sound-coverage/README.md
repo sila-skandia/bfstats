@@ -313,6 +313,10 @@ Each was checked template by template with `find_engine_script` and
 
 ## Getting the fix into a 15 GB shared tree
 
+(Since 2026-09-24 `--sounds-only` is an alias for `patch_scene.py --layer
+sounds`, which rebuilds the whole `sounds` block the same way; see
+`features/level-bake-layers/README.md`.)
+
 `extract_map.py --sounds-only` recomputes **only** the `sounds.vehicles` key of
 an already-published `<out>/<level>/scene.json`, writing any newly needed samples
 into the shared directory through the same `sample_writer` (lifted out of
