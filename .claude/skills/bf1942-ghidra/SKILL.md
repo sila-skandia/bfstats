@@ -93,6 +93,10 @@ bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
 
 ## Pitfalls
 
+- `gh` is NOT pre-installed in cloud sandboxes, and `GH_TOKEN` may be the
+  proxy placeholder — setup.sh handles release downloads via gh, then apt,
+  then raw GitHub API calls (the proxy substitutes real credentials for the
+  placeholder token).
 - Do not pass `-noanalysis` on a fresh `-import` of BF1942.exe — the label
   script addresses point at post-analysis function bodies.
 - If a project is locked (`*.lock` files in `~/ghidra/`), delete the stale
