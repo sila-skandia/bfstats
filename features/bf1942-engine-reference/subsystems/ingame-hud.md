@@ -437,7 +437,7 @@ marks off before `t` reaches 0 — the capture cannot say through its H.264 skip
 blocks); XHIT-5's keep-team template flag; XHIT-10's callers of the
 `CrossHair` group's `show()`/`hide()`.
 
-## 8. Hit direction and the red wash (HFD-1..HFD-9, 2026-09-24)
+## 8. Hit direction and the red wash (HFD-1..HFD-13, 2026-09-24)
 
 The victim's side of a hit: the whole screen washes red, and an arc marks the
 side the damage came from. The viewer used to skip the full-screen quad as an
@@ -494,6 +494,39 @@ with the victim's forward and right rows at cos 22.5° (0.9238) and cos 67.5°
 Every one of those goes through `_giveDamage`, so any damage the player takes
 washes his screen.
 
+**In a vehicle (HFD-10..HFD-13).** `_giveDamage` walks up from the damaged
+object to the first `PlayerControlObject` and washes every player that PCO's
+`getPcos()` names. That is the seat map SEAT-7's number keys use. Only a root
+PCO fills it, with itself and every seat under it. A child seat's map stays
+empty, because its `init()` runs after it has been attached. A soldier's map is
+himself. So a hit soldier washes only his own screen, and a hit hull washes
+everyone seated anywhere in the vehicle.
+
+The frame is the damaged object's own: its absolute position is the eye, and
+its absolute forward and right rows are the axes. In vanilla, XPack1 and XPack2
+that object is always the hull's root. A round, a crash and `Armor::update`
+all damage the owner of the nearest Armor, a landing damages the root, and a
+splash only finds roots. Every vehicle declares `hasArmor 1` on its root PCO and
+on nothing under it (`surveys/hull_armor_owner.py`). So the gunner in a
+Sherman's MG seat sees the arc relative to the hull's nose, not to his gun or
+his view. The alpha is the damage over the hull's max HP, which is 100 for a
+Sherman: one 40-point shell washes the whole crew at 0.4.
+
+The hull's `Pos3`s:
+
+| Hull damage | `Pos3` |
+|---|---|
+| a round, direct | where it was fired from |
+| splash | the blast's centre (queued as the point on the hull's bounding sphere along the same ray, so the same octant) |
+| a crash into the ground | the contact point |
+| a crash into water, or into another object | the world origin |
+| `Armor::update` (critical burn, water, upside-down, one tick a second) | the world origin |
+
+A splash also hits each seated man whose object flag bit 0 is clear
+(`handleExplosion`'s second pass). That is his own damage, so it washes him from
+his own frame. Being run over points the arc at the world origin, as any
+object-vs-object crash does.
+
 **Draw order.** The wash is drawn after the crosshair, supply icons, map, weapon
 bar, soldier and vehicle panels and the tickets, and before chat, kill
 messages and the combat-area warning. It tints the first set and not the
@@ -536,7 +569,9 @@ the engine's does.
   traced.
 - `RotateEffect`'s `drawCtx[+0x18]` — the scalar `angleMultiplier` multiplies.
   Moot for vanilla, which authors the multiplier as 0 everywhere.
-- **HFD-9**: the object-vs-object collision's `Pos3` (being run over); where a
-  soldier object's `getPosition()` sits (the octant's eye, taken as his feet);
-  and which players a hit hull's `PlayerControlObject` sends the wash to
-  (`pco->vt[0x40]`'s set; its crew, by the loop's shape).
+- **HFD-9**: where a soldier object's `getPosition()` sits (the octant's eye,
+  taken as his feet here, 1 m above them in `soldier-pose.js`).
+  ~~The object-vs-object collision's `Pos3`~~ (the world origin, HFD-13) and
+  ~~which players a hit hull's `PlayerControlObject` sends the wash to~~
+  (everyone seated in the vehicle, framed by the hull, HFD-10/HFD-11) closed
+  2026-09-24.

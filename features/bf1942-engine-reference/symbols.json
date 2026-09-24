@@ -1496,8 +1496,8 @@
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-24-hit-direction-wash",
-   "note": "Twin of lnxded GameServer::_giveDamage 0x0814b870, ret 0x30 (12 args: obj, damage, attacker, int, statId, Pos3, int, bool x3). Alpha = clamp(damage / armor.getMaxHitPoints(), 0, 0.75) at 0x004b0439-0x004b0473; octant from calcLookAtMatrix(objPos, Pos3) row 2 dotted with the obj's rows 2 and 0 at 0x004b08a2-0x004b09f2; local player -> BfMenu::setHitFromDir(octant+1, alpha) at 0x004b0a17, others -> HitFromPosEvent(octant, trunc(alpha*255)). Ledger HFD-2, HFD-3."
+   "source": "research-2026-09-24-hit-direction-wash; research-2026-09-24-hull-wash",
+   "note": "Twin of lnxded GameServer::_giveDamage 0x0814b870, ret 0x30 (12 args: obj, damage, attacker, int, statId, Pos3, int, bool x3). Alpha = clamp(damage / armor.getMaxHitPoints(), 0, 0.75) at 0x004b0439-0x004b0473; octant from calcLookAtMatrix(objPos, Pos3) row 2 dotted with the obj's rows 2 and 0 at 0x004b08a2-0x004b09f2; local player -> BfMenu::setHitFromDir(octant+1, alpha) at 0x004b0a17, others -> HitFromPosEvent(octant, trunc(alpha*255)). Ledger HFD-2, HFD-3. [2026-09-24] The player set is pco->vt[0x40] = getPcos (client PCO IPCO vtable 0x008f85b8 +0x40 = 0x007daef0, this+0x154): walked as an MSVC map from *(map+4), node[4]->vt[0xc] (getOccupingPlayer) per seat. Filled for a root PCO only (init 0x0054b420). Ledger HFD-10."
   },
   {
    "address": "0x004b34b0",
@@ -2031,6 +2031,15 @@
    "note": "Writes identity into soldier+0x54c (the camera-shake / externCameraTrans matrix S that updateAnimations composes into the 1P rig), then resets the animation machines and looks up 'Bip01 Pelvis'. A (re)initialisation path of BFSoldier; exact name open."
   },
   {
+   "address": "0x004fe6d0",
+   "name": "findPlayerControlObjects (client)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "inferred",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "Client twin of lnxded 0x08280880: fills the seat map at PCO+0x154 for a root; reads IID_IPlayerControlObject twice (0x004fe7a5, 0x004fe841), as lnxded's two insert_unique sites. Ledger HFD-10."
+  },
+  {
    "address": "0x004ff440",
    "name": "BFSoldier::BFSoldier(BFSoldierTemplate const*)",
    "kind": "function",
@@ -2389,6 +2398,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Other Functions"
+  },
+  {
+   "address": "0x0054a6f0",
+   "name": "PlayerControlObject::queryInterface (client)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "Client twin of lnxded 0x0831ad50: IIDs at 0x900ed8, 0x8dcbc4, 0x8dcbe0 and 0xc378 -> this; 0x3709a4ff (ds:0x8fef94) -> this+0x6c; 0xc4c5 (ds:0x8de484) -> this+0x11c. Primary vtable slot +8 at 0x008f8678. Ledger HFD-10."
+  },
+  {
+   "address": "0x0054b420",
+   "name": "PlayerControlObject::init (client)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "Client twin of lnxded 0x08316790 (primary vtable +0x10: MSVC has one deleting dtor where gcc has two). SimpleObject::init 0x005367d0, then only when [ebp+0x50] == 0 (0x0054b42b): 0x0054afb0, 0x004ff310, findPlayerControlObjects 0x004fe6d0(this, this+0x154) at 0x0054b448, 0x0054a250(this, this+0x194). Ledger HFD-10."
   },
   {
    "address": "0x0054bb10",
@@ -5649,6 +5676,15 @@
    "note": "client. [R5] matches lnxded 0x0872df00 slot-for-slot"
   },
   {
+   "address": "0x008f85b8",
+   "name": "PlayerControlObject IPlayerControlObject vtable (client)",
+   "kind": "vtable",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "Client. Stored at this+0x11c by the PCO ctor (0x0054a536; primary vptr 0x008f8670 at 0x0054a529). +0xc = 0x007eb7e0 (mov eax,[ecx+0x20]: getOccupingPlayer); +0x40 = 0x007daef0 (lea eax,[ecx+0x38]: getPcos, this+0x154). The slot order matches lnxded's. Ledger HFD-10."
+  },
+  {
    "address": "0x008f9750",
    "name": "HandFireArms::vtable",
    "kind": "data",
@@ -6945,6 +6981,15 @@
    "note": "lnxded. [lead] friendly-fire factors only: GameServer +0x2c8 soldier / +0x2cc vehicle (+0x2d0 / +0x2d4 splash variant), applied when attacker team == victim PCO team; otherwise damage unchanged."
   },
   {
+   "address": "0x0814b870",
+   "name": "dice::bf::GameServer::_giveDamage(IObject*, float, int, int, int, Pos3, int, bool, bool, bool)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded twin of client 0x004b0330. Nearest Armor up from the object (queryComponent 0xc4a4, +0x50 parents); isDestroyed (Armor vt+0xc8) returns; template queryImplementation(0x947e) == 0 returns before any damage. alpha = clamp(damage / armor.getMaxHitPoints(), 0, 0.75). Walks up to the first IPlayerControlObject (0xc4c5), takes getPcos (IPCO vt+0x40) and for every seat's getOccupingPlayer (vt+0xc) that resolves to a BFPlayer: the kill bookkeeping when this damage kills, then the octant from the damaged object's getAbsolutePosition (vt+0x38) and getAbsoluteTransformation (vt+0x40, rows +0x20/+0) toward Pos3 (calcLookAtMatrix 0x08159b80), HitFromPosEvent to his client. Finally the object's handleDamage (vt+0xd8). Ledger HFD-2, HFD-3, HFD-10, HFD-11."
+  },
+  {
    "address": "0x0814e67b",
    "name": "exitVehicle enterVehicle call site (the only force = true)",
    "kind": "patch_site",
@@ -7022,8 +7067,8 @@
    "kind": "function",
    "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-21-parachute",
-   "note": "lnxded. Reached by tail-jump from GameServer::handleCollision 0x08156020 at 0x08156080 (args shifted one slot). Soldier arm gated on CID 0x9493 at 0x08154a81; |v| taken 0x081549e2-0x081549f8; 0x08155189 fsub 8.0f (ds:0x86c08c0) then fldz/fucomp st(1)/test ah,0x45/je 0x08154c78, and 0x08154c78 is the function's ret -- so |v| <= 8.0 returns before Q^2. Ledger PARA-10, HP-14."
+   "source": "research-2026-09-21-parachute; research-2026-09-24-hull-wash",
+   "note": "lnxded. Reached by tail-jump from GameServer::handleCollision 0x08156020 at 0x08156080 (args shifted one slot). Soldier arm gated on CID 0x9493 at 0x08154a81; |v| taken 0x081549e2-0x081549f8; 0x08155189 fsub 8.0f (ds:0x86c08c0) then fldz/fucomp st(1)/test ah,0x45/je 0x08154c78, and 0x08154c78 is the function's ret -- so |v| <= 8.0 returns before Q^2. Ledger PARA-10, HP-14. [2026-09-24] The damaged object is getRootParent(self) (0x08154a49, kept at [ebp-0x184]) at both giveDamage calls 0x08154d12 (land, Pos3 = contact + position) and 0x0815505b (water, Pos3 zeroed at 0x0815500e). Ledger HFD-11."
   },
   {
    "address": "0x08154e4f",
@@ -7049,8 +7094,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded, 3673 bytes. Same shape and same dead end as handleCollisionLandOrWater. Its three indirect calls at offsets +0x18/+0x1c (Armor's setHitPoints/getHitPoints slots) resolve by data flow to the playerManager singleton and an IPlayerControlObject from the self-collision gate chain -- coincidental offset collisions, not Armor. See ledger HP-6. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] pre-existing decomp, read this track; the damage formula, cross-confirmed vs L0 C8 | lnxded. [lead] damage for object-vs-object contacts: attackerArmor.damageMod x angleFactor x victim speedMod x |v|^2 x getDamageMod(matAtt,matVic) x getDamageForMaterial(matAtt); > 1.0 -> this->giveDamage via vtable +0x15c. Soldier victim: separate branch. collision-response.md 9.3. SUPERSEDES the 2026-09-17 note that called this a dead end."
+   "source": "research-2026-09-17-collision-damage; research-2026-09-24-hull-wash",
+   "note": "lnxded, 3673 bytes. Same shape and same dead end as handleCollisionLandOrWater. Its three indirect calls at offsets +0x18/+0x1c (Armor's setHitPoints/getHitPoints slots) resolve by data flow to the playerManager singleton and an IPlayerControlObject from the self-collision gate chain -- coincidental offset collisions, not Armor. See ledger HP-6. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] pre-existing decomp, read this track; the damage formula, cross-confirmed vs L0 C8 | lnxded. [lead] damage for object-vs-object contacts: attackerArmor.damageMod x angleFactor x victim speedMod x |v|^2 x getDamageMod(matAtt,matVic) x getDamageForMaterial(matAtt); > 1.0 -> this->giveDamage via vtable +0x15c. Soldier victim: separate branch. collision-response.md 9.3. SUPERSEDES the 2026-09-17 note that called this a dead end. [2026-09-24] Victim = victimArmor->getObject() (vt+0x8c at 0x081558c9); Pos3 is zeroed at 0x08155870-0x08155884 after the contact point was used for playCollisionEffect, and the soldier (run-over) branch 0x081558e1 rejoins at 0x08155770, so both push the world origin to the one giveDamage 0x081558d6. Ledger HFD-11, HFD-13."
   },
   {
    "address": "0x08156020",
@@ -7085,8 +7130,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded, signature pulled from nm -C debug info. Sweeps a spatial index, calls handleExplosionOnObject once per found object."
+   "source": "research-2026-09-16-hitpoints; research-2026-09-24-hull-wash",
+   "note": "lnxded, signature pulled from nm -C debug info. Sweeps a spatial index, calls handleExplosionOnObject once per found object. [2026-09-24] The index query is objectManager+0x30 through ObjectFlagPredicator(0x2000000) (0x08156f2d): roots only. After handleExplosionOnObject(root) 0x081570ed it walks the root's getPcos (0x08157167) and, for each seat's getOccupingObject (IPCO +0x10, 0x08157189) whose [obj+4] & 1 is clear (0x08157198) and that has an Armor up its parents (0x081571f6), calls handleExplosionOnObject(occupant) 0x08157271. Ledger HFD-11, HFD-12."
   },
   {
    "address": "0x0815b5e0",
@@ -7242,6 +7287,15 @@
    "note": "lnxded. [R3] child leaves / rejoins the manager list"
   },
   {
+   "address": "0x08166050",
+   "name": "dice::ref2::world::BCompositeObject<IPlayerObject>::setParent(ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. Writes the parent at +0x50 (0x08166083) and zeroes +0x54. A real parent clears object flag 0x2000000 (and ebx,0xfdffffff at 0x081660a3); a null parent sets it (0x081660eb). addChild (vt+0x80) calls it (vt+0x90). Ledger HFD-10, HFD-11."
+  },
+  {
    "address": "0x0816af60",
    "name": "dice::ref2::world::ObjectTemplate::getId() const",
    "kind": "function",
@@ -7319,8 +7373,8 @@
    "kind": "function",
    "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-21-parachute",
-   "note": "lnxded. Writes Armor+0x28 (lastCollisionHeight) INLINE at its tail, 0x081730b0-0x081730e7, guarded by Armor+0x129 == 0 (the per-tick contact byte Armor::collision() 0x08174470 sets): every tick out of contact it RAISES the field to the current y. A running maximum of altitude, reset only by contact -- so the engine does NOT damp HP-14's F for a parachutist. Ledger PARA-8."
+   "source": "research-2026-09-21-parachute; research-2026-09-24-hull-wash",
+   "note": "lnxded. Writes Armor+0x28 (lastCollisionHeight) INLINE at its tail, 0x081730b0-0x081730e7, guarded by Armor+0x129 == 0 (the per-tick contact byte Armor::collision() 0x08174470 sets): every tick out of contact it RAISES the field to the current y. A running maximum of altitude, reset only by contact -- so the engine does NOT damp HP-14's F for a parachutist. Ledger PARA-8. [2026-09-24] All four IGameServer+0xf4 (giveDamage) calls push [edi+0x34], the Armor's own object: 0x0817322a, 0x081732af, 0x081734bd, 0x08173657; their Pos3 is (0,0,0) -- fldz at 0x081731aa/0x0817316a/0x0817330a, explicit zeros 0x08173465-0x08173479. Ledger HFD-11, HFD-13."
   },
   {
    "address": "0x08173680",
@@ -7393,6 +7447,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [lead] Armor vtable +0x4c; .con ObjectTemplate.speedMod, default 0.05. The VICTIM's value scales collision damage by |v|^2. [2026-09-19 parity round, verified V1: lnxded, Armor vtable +0x4c, reads Armor+0x4c. The .con word ObjectTemplate.speedMod, one of setArmorComponent's 23 copied setters (setter at vtable +0x48); the VICTIM's value scales fall and collision severity by |v|^2. Vanilla soldier 0.5 (CommonSoldierData.inc). Called at 0x08154c06.]"
+  },
+  {
+   "address": "0x08174180",
+   "name": "dice::ref2::world::Armor::getObject()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. Returns [this+0x34], written by Armor::init(IObject*) 0x08173f10. Armor vtable 0x0871d220 +0x8c. The object a direct round, an object-vs-object crash and Armor::update hand giveDamage. Ledger HFD-11."
   },
   {
    "address": "0x081741c0",
@@ -7670,8 +7733,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R3] (flags & mask) == mask"
+   "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash",
+   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11."
   },
   {
    "address": "0x0818df50",
@@ -7774,12 +7837,12 @@
   },
   {
    "address": "0x081a8300",
-   "name": "dice::ref2::world::AnimatedBundle::addBundleChilds",
+   "name": "dice::ref2::world::BundleTemplate::addBundleChilds(IPlayerObject*) const",
    "kind": "function",
    "subsystem": "anim",
    "confidence": "verified",
-   "source": "research-2026-09-19-occupant",
-   "note": "lnxded. Walks the template vector forward and calls addChild, which sets [this+0xd8] when empty and otherwise addSiblings onto the TAIL (0x8165ea0 walks +0x54 to the end), skipping no template -- so the runtime child index equals template declaration order, which is what IK-1's index arithmetic depends on."
+   "source": "research-2026-09-19-occupant; research-2026-09-24-hull-wash",
+   "note": "lnxded. Walks the template vector forward and calls addChild, which sets [this+0xd8] when empty and otherwise addSiblings onto the TAIL (0x8165ea0 walks +0x54 to the end), skipping no template -- so the runtime child index equals template declaration order, which is what IK-1's index arithmetic depends on. [2026-09-24] The name is BundleTemplate::addBundleChilds(IPlayerObject*) const (nm; PlayerControlObjectTemplate vtable +0x7c, called by Bundle::Bundle 0x081a7300 on itself). Per child: createObject 0x081a83eb, setChildId 0x081a8416, parent->addChild 0x081a8425 (child->setParent writes +0x50), setRelativeTransformation 0x081a843c, THEN child->init() 0x081a8444 -- so a child PlayerControlObject always has a parent when its init runs and never fills its own seat map. Ledger HFD-10."
   },
   {
    "address": "0x081a8e70",
@@ -7870,6 +7933,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Unconditionally returns 1."
+  },
+  {
+   "address": "0x081c0fd0",
+   "name": "ConsoleClass101::executeObjectMethod (ObjectTemplate.hasArmor)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. Console word 'hasArmor' (string 0x086c581f, registered at 0x081b7b1e). Set: getActiveTemplate(0x947e)->[+0x7c] = arg (0x081c100e); get reads the same byte. SimpleObject::SimpleObject 0x081da450 calls setArmorComponent (template vt+0x74) only when that byte is set. Ledger HFD-11."
   },
   {
    "address": "0x081d4c90",
@@ -9483,6 +9555,15 @@
    "note": "lnxded. An EMPTY function: push ebp; mov ebp,esp; pop ebp; ret. A soldier on foot has no view cycling in the engine. PlayerControlObject::nextCamera 0x083186b0 is the one that walks and wraps a camera list. Ledger CAM-1."
   },
   {
+   "address": "0x0827f810",
+   "name": "dice::ref2::world::BFSoldier::getPcos()",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. Returns this+0x3f4, into which the BFSoldier ctor inserts (0, queryInterface(0xc4c5)) at 0x0826bbdd: a soldier's seat map is himself. Ledger HFD-10."
+  },
+  {
    "address": "0x08280590",
    "name": "postInitCameras(IObject*)",
    "kind": "function",
@@ -9834,6 +9915,24 @@
    "note": "lnxded, field +0x170; also bumps a +0x174 change counter."
   },
   {
+   "address": "0x0831ad50",
+   "name": "dice::ref2::world::PlayerControlObject::queryInterface(unsigned int) const",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. 1 and 0xc378 -> this; 0x3709a4ff -> this+0x6c; 0xc4c5 (IPlayerControlObject) -> this+0x104. Ledger HFD-10."
+  },
+  {
+   "address": "0x0831add0",
+   "name": "dice::ref2::world::PlayerControlObject::getOccupingPlayer() const",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-24-hull-wash",
+   "note": "lnxded. Returns [this+0x124]. IPlayerControlObject vptr+0xc through the thunk 0x0831ade0 ([ipco+0x20]). The per-seat call in _giveDamage's wash loop. Ledger HFD-10."
+  },
+  {
    "address": "0x0831ae10",
    "name": "PlayerControlObject::isOccupied() const",
    "kind": "function",
@@ -9857,8 +9956,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded, returns this+0x134 (list head)."
+   "source": "research-2026-09-16-seats; research-2026-09-24-hull-wash",
+   "note": "lnxded, returns this+0x134 (list head). [2026-09-24] Not a list: this+0x134 is the std::map<int, IPlayerControlObject*> seat map (0x18-byte _Rb_tree nodes, key +0x10, seat +0x14; ctor 0x083162b0) that init() fills through findPlayerControlObjects for a ROOT PCO only (SEAT-7). IPlayerControlObject vptr+0x40, thunk 0x0831af00 (ipco+0x30). GameServer::_giveDamage 0x0814b870 and handleExplosion 0x08157167 walk it. Ledger HFD-10."
   },
   {
    "address": "0x0831afd0",
