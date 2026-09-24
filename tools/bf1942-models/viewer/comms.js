@@ -26,7 +26,6 @@ import {
 
 const VIRTUAL_W = 800;
 const VIRTUAL_H = 600;
-const FKEYS = { F1: 1, F2: 2, F3: 3, F4: 4, F5: 5, F6: 6, F7: 7, F8: 8 };
 
 /** The eight 1-px copies the chat outline draws in black under each line
  *  (`chatOutline`, list data +0x1E, on at 0x0045F190). */
@@ -141,9 +140,12 @@ export function createComms(page) {
     return showToolTip;
   };
 
-  /** F1..F8. True when the key was the radio's (and was eaten). */
+  /** The radio keys, `c_PIRadio1..8` in the control map — F1..F8 in the
+   *  shipped maps, whatever an imported profile made them. The map hands
+   *  the number over (`radioNumberOf`); comms only knows the radio's side.
+   *  True when the key was the radio's (and was eaten). */
   comms.keydown = event => {
-    const key = FKEYS[event.code];
+    const key = page.radioNumberOf?.(event.code) ?? 0;
     if (!key || event.ctrlKey || event.metaKey || event.altKey) return false;
     event.preventDefault();
     if (event.repeat || !radioLayout) return true;
