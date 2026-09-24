@@ -61,7 +61,9 @@ bot's BF109 lands on it (material 60, 17.2 HP). What was missing:
   projectile rows, with `mass` for a fused round. The baked
   `fireArms.projectile` block carries neither, and the side table avoids
   re-baking every level. `--damage-only` rewrites a mod's shared
-  `damage.json` and nothing else.
+  `damage.json` and nothing else (since 2026-09-24 an alias for
+  `patch_scene.py --layer damage`, which also refreshes the level's `damage`
+  key; see `features/level-bake-layers/README.md`).
 - `viewer/proximity-fuse.js`: the law. `projectile-flight.js` asks it once
   per advance, after the contact test. `round-launch.js` attaches the fuse
   and draws `timeToLive` from the CRD. `vehicle-hits.js proximityObjects`
