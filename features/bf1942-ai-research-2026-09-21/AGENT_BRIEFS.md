@@ -857,3 +857,45 @@ checking `ps` for other extractors.
 Acceptance: the layer tests, the determinism pin, item 5's two runs with
 their output, the docs and the CLAUDE.md sentence, and a timing table
 (full bake vs each layer) for vanilla.
+
+## Brief T: a valid aim is the gun's own limits
+
+Added 2026-09-24 after Brief R. Depends on: R (landed: AI-123..AI-127).
+Conflicts with: nothing running. HOLD THE PUSH: the owner is testing the
+live site, which deploys from main; land everything on your worktree
+branch, verified, and push to main only when the coordinator says so.
+Not in scope, by the owner's instruction: the enemy vehicle map markers,
+the blurry soldiers, rounds against aircraft.
+
+Status: R's live pair on El Alamein: the PanzerIV fires, the Sherman below
+it holds S with a 10.7 m miss and never fires at the PanzerIV 9 m above
+it at about 45 m (about 11 deg up, inside a Sherman's elevation). The
+viewer's "valid aim" in S is the seat camera's window test
+(`validateCameraDirection` 0x085d4170, ported as `aimable(dir)` in
+bot-fire.js), not the gun's traverse and elevation limits.
+
+Do:
+1. Read what the engine's S tests for "a valid aim": P cited 0x0854fce0,
+   0x08552710 and 0x08551890 (in range, aim within the gun's limits, seen
+   in memory). Follow the aim-limits one to the function that compares
+   the wanted direction against the weapon's RotationalBundle limits
+   (yaw and pitch, min/max per axis; the ControlInfo yaw window L read
+   under AI-106 is the mouse count law's, not this) and to whether the
+   hull's own pitch and roll enter the comparison (a tank on a slope).
+2. Port it: a mounted bot's valid-aim test uses the seat's gun axes'
+   real limits (`turret-rig.js` has `yawLimitsRadians`; add the pitch
+   pair), in the hull's frame, and the camera window stays only where
+   the engine uses it (the fixed weapon's candidate test, AI-5x rows).
+3. Pins: the harness with a Sherman turret and a target 11 deg up at
+   45 m (valid), 25 deg up (invalid, above the Sherman's max elevation),
+   and 8 deg down (invalid, below its depression); the runner's tank
+   pair (`test_the_tank_pair_close_until_one_can_fire`): both fire.
+4. Live on El Alamein, R's placement: the Sherman fires at the PanzerIV
+   above it; report rounds and time of the first for both tanks.
+
+Files: viewer/bot-fire.js, viewer/bot-plans.js, viewer/bot-aim.js,
+viewer/turret-rig.js, tests, the ledger, KNOBS, the spec's behaviours and
+controls pages, PARITY_STATUS_2026-09-23.md.
+
+Acceptance: the pins, the live numbers, ledger and KNOBS rows, and a
+branch ready to push (say its name and the commit range).
