@@ -714,12 +714,26 @@ def generic_state(name: str | None, weapon: str) -> str | None:
     return name
 
 
+def state_pose(state: animstates.State) -> str | None:
+    """The pose a lower-body state holds the soldier in: `BFSoldier::getPose`
+    (lnxded 0x0827ddc0) is `flags & 0x20 ? crouch : flags & 0x40 ? lie`, the
+    `c_AsmIsCrouching` / `c_AsmIsLying` words of the lower machine's current
+    state. None for a standing state."""
+    flags = {f.lower() for f in state.flags}
+    if "c_asmiscrouching" in flags:
+        return "crouch"
+    if "c_asmislying" in flags:
+        return "prone"
+    return None
+
+
 def state_meta(state: animstates.State, weapon: str = "") -> dict:
     """What a renderer needs to play one state the engine's way: its rate
     (`speed`, cycles per second, negative backwards), whether it loops, its
-    morph factor (the weight ramp in per second on entry, ledger ANIM-4), and
-    the state it hands over to when a one-shot finishes (`then`, the
-    `addTransitionWhenDone` / `returnToState` target without the weapon)."""
+    morph factor (the weight ramp in per second on entry, ledger ANIM-4), the
+    state it hands over to when a one-shot finishes (`then`, the
+    `addTransitionWhenDone` / `returnToState` target without the weapon), and
+    for a lower-body state the pose its flags hold the soldier in (`pose`)."""
     ref = state.clip_3p()
     meta: dict = {"state": state.name}
     if ref is not None:
@@ -728,6 +742,10 @@ def state_meta(state: animstates.State, weapon: str = "") -> dict:
     then = generic_state(state.return_to, weapon)
     if then:
         meta["then"] = then
+    if state.name.lower().startswith("lb_"):
+        pose = state_pose(state)
+        if pose:
+            meta["pose"] = pose
     return meta
 
 
