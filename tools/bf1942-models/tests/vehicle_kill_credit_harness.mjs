@@ -85,7 +85,7 @@ const SHERMAN = {
 // --- the death lines ----------------------------------------------------------
 
 const strings = { DEFAULT_KILL_TEXT: 'killed', DEATH: 'is no more', TEAM_KILL: 'killed a teammate' };
-const names = { Sherman: 'Sherman', PanzerIV: 'PanzerIV' };
+const names = { Sherman: 'Sherman', PanzerIV: 'PanzerIV', Thompson: 'Thompson', K98: 'K 98' };
 const human = { id: 'local', name: 'Player', team: 2, vehicle: 'Sherman' };
 const hans = { id: 'bot_1', name: 'Hans', team: 1, vehicle: null };
 const hansInTank = { ...hans, vehicle: 'PanzerIV' };
@@ -94,7 +94,19 @@ out.lines = {
   humanTankKillsCrew: deathLines(hans, human, strings, names),
   botTankKillsCrew: deathLines(hans, davis, strings, names),
   botTankKillsHuman: deathLines(human, hansInTank, strings, names),
-  onFootKill: deathLines(hans, { ...human, vehicle: null }, strings, names),
+  // On foot the word is the hand weapon that killed (`killStamp`): the
+  // damage's own `weapon`, else the one he holds; splash and a man run over
+  // carry no stamp. A weapon the lexicon lacks prints its template name.
+  onFootKill: deathLines(hans, { ...human, vehicle: null, weapon: 'Thompson' }, strings, names),
+  onFootNamedByDamage: deathLines(hans, { ...human, vehicle: null, weapon: 'Colt' }, strings, names,
+                                  { weapon: 'Thompson' }),
+  onFootSplash: deathLines(hans, { ...human, vehicle: null, weapon: 'GrenadeAllies' }, strings, names,
+                           { splash: true, weapon: 'GrenadeAllies' }),
+  onFootLexiconMiss: deathLines(hans, { ...human, vehicle: null }, strings, names, { weapon: 'K98Sniper' }),
+  onFootNothingKnown: deathLines(hans, { ...human, vehicle: null }, strings, names),
+  botRifleKillsHuman: deathLines(human, { ...hans, weapon: 'K98' }, strings, names, { weapon: 'K98' }),
+  tankSplashKillsHuman: deathLines(human, hansInTank, strings, names, { splash: true }),
+  runOver: deathLines(hans, human, strings, names, { roadkill: true }),
   hullDiedWithNobody: deathLines(hans, null, strings, names),
   ownHand: deathLines(human, human, strings, names),
   teamKill: deathLines({ ...hans, team: 2 }, davis, strings, names),

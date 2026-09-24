@@ -1096,7 +1096,7 @@ const referee = createBotReferee({
     // The corpse: the engine's death for how he was standing, sitting or
     // swimming and where the round came from (`soldier-death.js`).
     botBodies.killBot(bot, opts);
-    comms.onKill(botSpeaker(bot), speakerOf(attackerId));
+    comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);
   },
   onRespawned: bot => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -1461,7 +1461,9 @@ const room = createNetRoom(bag(
 ));
 
 /** A player as the message log and the radio name him: `{ id, name, team,
- *  local, vehicle, position }`, `vehicle` the template he sits in. */
+ *  local, vehicle, weapon, position }`, `vehicle` the template he sits in,
+ *  `weapon` the hand weapon he holds (the kill line's word when the damage
+ *  that killed did not name one). */
 function localSpeaker() {
   const seat = localPlayer.occupancy;
   const s = localPlayer.soldier;
@@ -1473,6 +1475,7 @@ function localSpeaker() {
     position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
   };
 }
+    weapon: soldierKit.handWeapon?.name ?? null,
 /** The message log's speaker for a player id: the human, a bot, or null. */
 function speakerOf(id) {
   if (id == null) return null;
@@ -1487,6 +1490,7 @@ function botSpeaker(bot) {
     position: at ? { x: at[0], y: at[1], z: at[2] } : null,
   };
 }
+    weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null,
 /** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
 const comms = createComms(bag(
   from(() => controls, `radioNumberOf`),
@@ -1606,7 +1610,8 @@ let commsWasAlive = false;
 function commsWatchLocalDeath() {
   const alive = !!(localPlayer.soldierArmor && !localPlayer.soldierDead);
   if (commsWasAlive && !alive && !room.roomJoined) {
-    comms.onKill(localSpeaker(), comms.lastAttacker(LOCAL_PLAYER));
+    const last = comms.lastAttack(LOCAL_PLAYER);
+    comms.onKill(localSpeaker(), last?.killer ?? null, last?.how ?? null);
   }
   commsWasAlive = alive;
 }

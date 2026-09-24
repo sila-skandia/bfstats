@@ -2805,6 +2805,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x00581470",
+   "name": "Locale__widenKey",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Locale::getWide 0x005815b0's miss path: no lexicon has the key, so the key's own bytes are widened through the table at 0x00959368 and returned. So a kill line whose stamped template (FUN_004933d0 case 3, 0x00494342) has no lexicon entry prints the template's name, e.g. [K98Sniper]. Read 2026-09-24."
+  },
+  {
    "address": "0x00581520",
    "name": "Locale__getAnsi",
    "kind": "function",
