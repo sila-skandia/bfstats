@@ -12,11 +12,11 @@ import { GameConsole } from './console.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AIR_KEYS`, `aircraft`, `altFireDemolitions`, `bfmap`, `camera`,
- * `cancelDeploy`, `car`, `clampAltitude`, `consoleCaptures`,
+ * `aircraft`, `altFireDemolitions`, `bfmap`, `camera`, `activeCodes`,
+ * `cancelDeploy`, `car`, `clampAltitude`, `consoleCaptures`, `codeTriggers`,
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`, `escMenu`,
- * `escMenuCaptures`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`, `FOOT_KEYS`,
+ * `escMenuCaptures`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
  * `fullmapBox`, `gameConsole`, `handWeapon`, `hud`, `isSlow`,
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
@@ -80,8 +80,9 @@ export function createPageInput(page) {
       else if (!e.repeat) page.setEscMenu(true);
       return;
     }
-    // Caps Lock toggles the spawn menu even while a sidebar control is focused,
-    // matching Escape's privilege over form focus.
+    // Caps Lock is the spawn screen — the retail game's own arrangement, and
+    // the one key the page has for it; the console never takes it (the
+    // control map's Capital line is dropped in controls.js).
     if (e.code === 'CapsLock' && !e.repeat) {
       if (page.deployActive()) page.cancelDeploy();
       else if (!page.optPilot.checked) page.openDeploy();
@@ -107,130 +108,187 @@ export function createPageInput(page) {
       }
     }
     if (page.uiFocused()) return;
+    // The control map speaks first: what this keypress is, in the game's own
+    // trigger vocabulary (`c_PIMap`, `c_PIShowScoreBoard`, ...), read from
+    // the merged map — game, common and all three contexts, because a key's
+    // meaning rarely changes context (Tab is the scoreboard everywhere).
+    // Only the `e.code` literals are gone; the engine's own gating stays,
+    // branch by branch. features/viewer-profile-controls.
+    const triggers = page.codeTriggers(e.code);
     // F1..F8 are the radio (`c_PIRadio1..8`, input 0x22..0x29, handled by
     // the menu's key handler 0x006D42A0): comms.js takes them, and they never
-    // reach the browser (F1 help, F5 reload).
+    // reach the browser (F1 help, F5 reload). The numbers come from the
+    // control map too — an imported profile may move them.
     if (!page.deployActive() && page.radioKeydown?.(e)) return;
-    // Caps Lock is also handled above; M is `c_PIMap` in the game's own maps.
-    // On foot the map opens in its deploy state — the game's own map is also
-    // its spawn screen — and Escape or M again puts it away without moving you.
-    if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (page.deployActive()) page.cancelDeploy();
-      else if (page.fullmapBox.hidden && page.optOnFoot.checked && page.soldier
-               && !page.optPilot.checked) {
-        // On foot, but not merely suspended in a seat: a driver's M is the
-        // plain map, because his soldier is still ticked and still alive.
-        page.openDeploy();
-      } else page.toggleFullMap();
-      return;
-    }
-    // Tab is `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control
-    // map: the board is up for as long as the key is down. Not over the spawn
-    // screen, whose own SCORE BOARD button is the way in there.
-    if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      if (!e.repeat && !page.deployActive() && !page.scoreboardOpen()) page.setScoreboard(true, false);
-      return;
-    }
-    // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
-    // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
-    // a focused form control have all returned above.
-    if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      page.bfmap.zoomIn();
-      return;
-    }
-    // Seated in anything, the same row switches seats instead (SEAT-23/24,
-    // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
-    // own use of these keys above, since the two are never active together.
-    if (page.optPilot.checked && page.occupancy && !e.repeat
+    // `c_PIMap`. On foot the map opens in its deploy state — the game's own
+    // map is also its spawn screen — and Escape or the map key again puts it
+    // away without moving you.
+    if (triggers.includes('c_PIMap') && !e.repeat
         && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const seatDigit = /^Digit([1-9])$/.exec(e.code);
-      if (seatDigit) {
-        page.switchSeat(Number(seatDigit[1]) - 1);
+      mapKey();
+      return;
+    }
+    // `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control map:
+    // the board is up for as long as the key is down. Not over the spawn
+    // screen, whose own SCORE BOARD button is the way in there.
+    if (triggers.includes('c_PIShowScoreBoard')
+        && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (!e.repeat && !page.deployActive() && !page.scoreboardOpen()) {
+        page.setScoreboard(true, false);
+      }
+      return;
+    }
+    // `c_PIZoomMap`: it steps the minimap's three-level zoom counter
+    // (bfmap.js). Behind the same gates as the map key — the console, the
+    // Escape menu and a focused form control have all returned above.
+    if (triggers.includes('c_PIZoomMap') && !e.repeat
+        && !e.ctrlKey && !e.metaKey) {
+      zoomMapKey();
+      return;
+    }
+    // The menu-select row (`c_PIMenuSelect1..9`): seated, it switches seats
+    // (SEAT-23/24, verify-r5.md); on foot it raises kit weapons —
+    // `ObjectTemplate.itemIndex` is the inventory slot and the number key
+    // that selects it (1 knife .. 3 primary .. 5 special), so a key with no
+    // such slot in the spawned kit's inventory does nothing, exactly as in
+    // the game. Only the slots the map binds answer: in the shipped maps
+    // that is 1-6 and 9 — 7 and 8 are the vote keys (`c_PIVoteYes/No`).
+    // Recorded in `keys` as well as acted on, and the reason is slot 9: the
+    // engine gives `c_PIMenuSelect9` a second job on a falling soldier (the
+    // ripcord, `parachute.js`), and the per-frame input word reads it through
+    // `controls.held`, which reads `keys`. This branch used to return before
+    // `keys.add` and the ripcord never reached it.
+    const menu = triggers.map(t => /^c_PIMenuSelect([1-9])$/.exec(t)).find(Boolean);
+    if (menu && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      keys.add(e.code);
+      if (page.optPilot.checked && page.occupancy) {
+        page.switchSeat(Number(menu[1]) - 1);
         return;
       }
-    }
-    // On foot the row raises kit weapons instead: `ObjectTemplate.itemIndex` is
-    // the inventory slot and the number key that selects it (1 knife .. 3
-    // primary .. 5 special), so a key with no such slot in the spawned kit's
-    // inventory does nothing, exactly as in the game.
-    if (page.optOnFoot.checked && page.soldier && !e.repeat
-        && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const kitDigit = /^Digit([1-9])$/.exec(e.code);
-      if (kitDigit) {
-        // Recorded in `keys` as well as acted on, and the reason is slot 9:
-        // the engine gives `c_PIMenuSelect9` a second job on a falling soldier
-        // (TemplateMessage 18 -> `setIsParachuting(true)`, `parachute.js`), and
-        // the per-frame input word reads `keys`. This branch used to return
-        // before `keys.add` and the ripcord never reached it.
-        keys.add(e.code);
-        page.selectKitWeapon(Number(kitDigit[1]));
+      if (page.optOnFoot.checked && page.soldier) {
+        kitDigit(Number(menu[1]));
         return;
       }
     }
     keys.add(e.code);
-    if (e.code === 'KeyR') {
-      // The seat is checked before the soldier: a driver who walked in on foot
-      // still has his rifle slung, and R must reset the vehicle he is actually
-      // holding the wheel of, not work the bolt.
-      if (page.optPilot.checked && (page.aircraft || page.car)) {
-        (page.aircraft || page.car).reset();
-        page.world?.resetStick(page.LOCAL_PLAYER);
-      } else if (page.optOnFoot.checked && page.soldier) {
-        // R is the reload once there is a magazine to reload — the game's own
-        // binding — and stays the respawn only for a soldier holding nothing
-        // (a weapon glb that failed to load). Shift+R is the deliberate road
-        // back: it reopens the deploy screen rather than guessing a flag.
-        if (e.shiftKey) {
-          if (!page.deployActive()) page.openDeploy();
-        } else if (page.handWeapon?.data?.magazine) page.startReload();
-        else page.spawnAtFlag(true);
-      } else if (!page.optPilot.checked) {
-        page.resetCamera();
-      }
-    }
-    // E is `c_PIUse` (SEAT-2, verify-r5.md — the report's own correction: there
+    if (triggers.includes('c_PIReload') && !e.repeat) reloadKey(e.shiftKey);
+    // `c_PIUse` (SEAT-2, verify-r5.md — the report's own correction: there
     // is no distinctly-named "enter/exit" enum value, vehicle use shares the
-    // same trigger a real Use-key bind would), mapped to the physical E key.
-    // In free fly E is already the vertical thrust, so both branches ask for a
-    // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
-    // branch, same as the real `toggleEntryPoint`.
-    if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
-        && pageInput.seatToggleReady()) {
-      // `exitSeat` picks the exit: the hull's own for a driver or a passenger
-      // of a drivetrain, the seat's for a gunner or a seat of a hull with no
-      // drive (`mannedActive()` is the check that is right either way).
-      if (page.optPilot.checked && page.occupancy) {
-        page.exitSeat();
-        pageInput.noteSeatToggle();
-      } else if (page.optOnFoot.checked && page.soldier && pageInput.captured && page.nearEntry) {
-        page.enterVehicle(page.nearEntry);
-        pageInput.noteSeatToggle();
-      }
+    // same trigger a real Use-key bind would). In free fly E is already the
+    // vertical thrust, so both branches ask for a mode first. The 1.0s
+    // per-player cooldown (SEAT-6) below gates the whole branch, same as the
+    // real `toggleEntryPoint`.
+    if (triggers.includes('c_PIUse') && !e.repeat && !e.ctrlKey && !e.metaKey
+        && !e.altKey && pageInput.seatToggleReady()) {
+      useKey();
     }
-    // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
-    // bound to IDKey_C in every one of the game's own control maps -- Infantry's
-    // included, which is why it reaches a soldier at all. In a seat the seat's
-    // own `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
-    // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past the
-    // engine's set of one by the server's soldier switch (server-settings.js).
-    if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) page.cycleView();
-    // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
-    if (e.code === 'KeyZ' && !e.repeat && page.optOnFoot.checked && page.soldier) page.toggleProne();
+    // `c_PIToggleCameraMode` is input channel 26, bound to IDKey_C in every
+    // one of the game's own control maps -- Infantry's included, which is
+    // why it reaches a soldier at all. In a seat the seat's own
+    // `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
+    // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past
+    // the engine's set of one by the server's soldier switch
+    // (server-settings.js).
+    if (triggers.includes('c_PIToggleCameraMode') && !e.repeat
+        && !e.ctrlKey && !e.metaKey) page.cycleView();
+    // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
+    if (triggers.includes('c_PILie') && !e.repeat
+        && page.optOnFoot.checked && page.soldier) page.toggleProne();
+    // Every key any context binds stops being the browser's while the page
+    // is captured: the control map's set, not a hand-written list. The free
+    // camera's `FLY_KEYS` is the viewer's own and rides along.
     if (pageInput.captured && (page.FLY_KEYS.has(e.code)
-        || (page.optOnFoot.checked && page.FOOT_KEYS.has(e.code))
-        || (page.optPilot.checked && page.AIR_KEYS.has(e.code)))) e.preventDefault();
+        || page.activeCodes().has(e.code))) e.preventDefault();
   });
   addEventListener('keyup', e => {
-    // Push-and-hold: the board held up on Tab goes with the key, whatever else
-    // has the keyboard by then. One opened from the spawn screen stays.
-    if (e.code === 'Tab' && page.scoreboardOpen() && !page.scoreFromSpawn) page.setScoreboard(false);
+    // Push-and-hold: the board held up on the scoreboard key goes with the
+    // key, whatever else has the keyboard by then. One opened from the spawn
+    // screen stays.
+    if (page.codeTriggers(e.code).includes('c_PIShowScoreBoard')
+        && page.scoreboardOpen() && !page.scoreFromSpawn) page.setScoreboard(false);
     // A key released under an open console must not reach `keys` either: the
     // set is only ever read for movement, and the console has the keyboard.
     // The Escape menu has it on the same terms.
     if (page.consoleCaptures() || page.escMenuCaptures()) return;
     keys.delete(e.code);
   });
+
+  // The trigger bodies the keyboard branches and the joystick's dispatched
+  // edges share. None of them may name a key: the binding is the control
+  // map's, and these are only what the triggers *do*.
+  function mapKey() {
+    if (page.deployActive()) page.cancelDeploy();
+    else if (page.fullmapBox.hidden && page.optOnFoot.checked && page.soldier
+             && !page.optPilot.checked) {
+      // On foot, but not merely suspended in a seat: a driver's map key is
+      // the plain map, because his soldier is still ticked and still alive.
+      page.openDeploy();
+    } else page.toggleFullMap();
+  }
+  function zoomMapKey() { page.bfmap.zoomIn(); }
+  function kitDigit(slot) { page.selectKitWeapon(slot); }
+  function reloadKey(shift) {
+    // The seat is checked before the soldier: a driver who walked in on foot
+    // still has his rifle slung, and reload must reset the vehicle he is
+    // actually holding the wheel of, not work the bolt.
+    if (page.optPilot.checked && (page.aircraft || page.car)) {
+      (page.aircraft || page.car).reset();
+      page.world?.resetStick(page.LOCAL_PLAYER);
+    } else if (page.optOnFoot.checked && page.soldier) {
+      // Reload once there is a magazine to reload — the game's own binding —
+      // and it stays the respawn only for a soldier holding nothing (a
+      // weapon glb that failed to load). Shift is the deliberate road back:
+      // it reopens the deploy screen rather than guessing a flag.
+      if (shift) {
+        if (!page.deployActive()) page.openDeploy();
+      } else if (page.handWeapon?.data?.magazine) page.startReload();
+      else page.spawnAtFlag(true);
+    } else if (!page.optPilot.checked) {
+      page.resetCamera();
+    }
+  }
+  function useKey() {
+    // `exitSeat` picks the exit: the hull's own for a driver or a passenger
+    // of a drivetrain, the seat's for a gunner or a seat of a hull with no
+    // drive (`mannedActive()` is the check that is right either way).
+    if (page.optPilot.checked && page.occupancy) {
+      page.exitSeat();
+      pageInput.noteSeatToggle();
+    } else if (page.optOnFoot.checked && page.soldier && pageInput.captured
+               && page.nearEntry) {
+      page.enterVehicle(page.nearEntry);
+      pageInput.noteSeatToggle();
+    }
+  }
+
+  /** The joystick's triggers, dispatched by `controls.pollGamepad`'s edge
+   *  detection onto the same bodies the keyboard branches run. Only triggers
+   *  the control map actually binds arrive (the poller looks each button up
+   *  in the active overlay); the F9-F12 direct camera modes
+   *  (`c_PICameraMode1..4`) have no viewer implementation yet, so their
+   *  buttons do nothing — as those keys do on the keyboard today. */
+  pageInput.padTriggerDown = trigger => {
+    if (trigger === 'c_PIMap') mapKey();
+    else if (trigger === 'c_PIZoomMap') zoomMapKey();
+    else if (trigger === 'c_PIUse' && pageInput.seatToggleReady()) useKey();
+    else if (trigger === 'c_PIToggleCameraMode') page.cycleView();
+    else if (trigger === 'c_PILie') {
+      if (page.optOnFoot.checked && page.soldier) page.toggleProne();
+    } else if (trigger === 'c_PIReload') reloadKey(false);
+    else if (trigger === 'c_PIShowScoreBoard') {
+      if (!page.deployActive() && !page.scoreboardOpen()) page.setScoreboard(true, false);
+    } else {
+      const menu = /^c_PIMenuSelect([1-9])$/.exec(trigger);
+      if (menu && page.optOnFoot.checked && page.soldier) kitDigit(Number(menu[1]));
+    }
+  };
+  pageInput.padTriggerUp = trigger => {
+    // Push-and-hold: the board held up on the pad button goes with it, the
+    // way the keyboard's keyup does.
+    if (trigger === 'c_PIShowScoreBoard' && page.scoreboardOpen()
+        && !page.scoreFromSpawn) page.setScoreboard(false);
+  };
 
   // Crouch is left Ctrl, for game parity with `c_PICrouch` -- but the browser
   // owns Ctrl+W outright by default, so firing while crouching still closes
@@ -400,12 +458,15 @@ export function createPageInput(page) {
   // beforeunload prompt above is the only guard.
   const KBLOCK = page.params.has('kblock') && typeof navigator.keyboard?.lock === 'function'
     && !page.isTouchDevice;
-  // Every key on-foot play holds Ctrl with -- walking, strafing, a crouched
-  // reload (Ctrl+R reloads the page), E, Z, M, jump -- and Escape, so its short
-  // press stays the page's. Keys the game does not bind stay the browser's: a
-  // deliberate Ctrl+T still opens a tab.
-  const KBLOCK_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyE', 'KeyZ',
-                       'KeyM', 'Space', 'Escape'];
+  // On-foot play holds Ctrl with -- walking, strafing, a crouched reload
+  // (Ctrl+R reloads the page), E, Z, the map keys, jump -- and Escape, so its
+  // short press stays the page's. The list is derived from the control map at
+  // lock time, not hardcoded: the shipped player bindings carry W A S D R E Z
+  // M Space Shift Ctrl, the zoom map's Alt, the chute's 9 and the rest, and
+  // an imported profile moves all of them, so the lock has to follow. Keys
+  // the game does not bind stay the browser's: a deliberate Ctrl+T still
+  // opens a tab.
+  const kblockKeys = () => ['Escape', ...page.kblockKeys()];
   pageInput.kbSession = false;        // inside the fullscreen this page asked for
   pageInput.kbLockState = 'idle';     // what lock() last said; the ?shots hook reads it
 
@@ -414,7 +475,7 @@ export function createPageInput(page) {
     if (document.fullscreenElement !== page.stage) page.stage.requestFullscreen().catch(() => {});
     // Asked again on every capture: the session's own `fullscreenchange`
     // handler unlocks when the fullscreen ends, however it ends.
-    navigator.keyboard.lock(KBLOCK_KEYS).then(
+    navigator.keyboard.lock(kblockKeys()).then(
       () => { pageInput.kbLockState = 'requested'; },
       error => { pageInput.kbLockState = `rejected: ${error.name}`; });
   }
@@ -771,13 +832,18 @@ export function createPageInput(page) {
 
   Object.assign(pageInput, {
     KBLOCK,
-    KBLOCK_KEYS,
     capture,
     kbLockLeave,
     keys,
     release,
     setFly,
     setSideCollapsed,
+  });
+  // `KBLOCK_KEYS` keeps its name for the `?kblock` hooks, but it is now the
+  // control map's player bindings read live — an import moves it.
+  Object.defineProperty(pageInput, 'KBLOCK_KEYS', {
+    get: () => kblockKeys(),
+    enumerable: true,
   });
   return pageInput;
 }

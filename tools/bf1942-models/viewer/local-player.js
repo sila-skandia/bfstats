@@ -20,7 +20,8 @@ import { PARA_FALLING } from './parachute.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `applyLook`, `buildSeatView`, `buildSpawnFlags`, `camera`, `captured`,
- * `clampMobileInput`, `clearVehicleHud`, `deployActive`, `deployTeamId`,
+ * `clampMobileInput`, `clearVehicleHud`, `axis`, `deployActive`,
+ * `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
  * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
  * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
@@ -587,63 +588,69 @@ export function createLocalPlayer(page) {
   localPlayer.sampleInput = (seated, onFoot, lookTicks, dt) => {
     let input = null;
     let look = null;
+    // The control map folds the devices into the engine's channels: the
+    // keyboard's key pairs and the joystick's axes are bindings of the same
+    // triggers (`c_PIThrottle`, `c_PIRoll`, ...), and `controls.axis` sums
+    // them. The touch pad stays the page's own override, exactly as before.
+    const axis = t => page.axis(t);
+    const heldTrigger = t => page.held(t);
     if (seated) {
       // The pad's deflection must land in the device stage BEFORE the pump
       // turns the counts into an axis, or this frame's pad aim arrives a
       // frame late (the page's original feed-then-pump order).
       page.feedMobileTurretAim(dt);
       page.pumpLook(lookTicks);
-      const held = page.captured ? page.keys : page.EMPTY_KEYS;
-      // The engine's PlayerInput, named by action: the same keys, mouse
-      // latches and mobile pad this page has always folded. `forwardKeys` and
-      // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
-      // ground vehicles steer and throttle with the pad folded in
-      // (`forward`/`strafe`), while the plane's roll and pitch arrive from the
-      // pad separately.
+      // The engine's PlayerInput, named by action. `forwardKeys` and
+      // `rudder` are the aircraft's throttle latch and rudder spring — raw
+      // key pairs on the keyboard, but the profile's joystick axes land on
+      // the same channels, so the stick flies the plane through them. Ground
+      // vehicles steer and throttle with the pad folded in
+      // (`forward`/`strafe`), while the plane's roll and pitch arrive from
+      // the stick axes separately.
       input = {
         forward: page.clampMobileInput(
-          ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-          + page.mobilePadAxis('y')),
-        forwardKeys: (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
+          axis('c_PIThrottle') + page.mobilePadAxis('y')),
+        forwardKeys: axis('c_PIThrottle'),
         strafe: page.clampMobileInput(
-          ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-          + page.mobilePadAxis('x')),
-        rudder: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
-        fire: held.has('Space') || page.seatFire,
-        altFire: page.seatAltFire,
-        roll: page.mobilePadHeld ? page.mobilePadVector.x
-          : (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0),
-        pitch: page.mobilePadHeld ? page.mobilePadVector.y
-          : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
+          axis('c_PIYaw') + page.mobilePadAxis('x')),
+        rudder: axis('c_PIYaw'),
+        fire: heldTrigger('c_PIFire') || page.seatFire,
+        altFire: page.seatAltFire || heldTrigger('c_PIAltFire'),
+        roll: page.mobilePadHeld ? page.mobilePadVector.x : axis('c_PIRoll'),
+        pitch: page.mobilePadHeld ? page.mobilePadVector.y : axis('c_PIPitch'),
         pad: page.mobilePadHeld,
       };
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
     } else if (onFoot) {
       page.pumpLook(lookTicks);
       const held = page.captured ? page.keys : page.EMPTY_KEYS;
-      // Hoisted so footFire can hand the deviation model the same
-      // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
-      // gates read the *input*, not the achieved velocity.
+      // The touch drag forwards like a held W (`touchFlying`), but only into
+      // neutral: a held S still brakes, and two held keys cancel as they
+      // always did. `axis` carries the W-S pair; the touch term adds only
+      // when the pair is not already speaking.
+      const throttle = axis('c_PIThrottle');
       input = {
         forward: page.clampMobileInput(
-          ((held.has('KeyW') || page.touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+          throttle + (page.touchFlying && throttle === 0 ? 1 : 0)
           + page.mobilePadAxis('y')),
         strafe: page.clampMobileInput(
-          ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-          + page.mobilePadAxis('x')),
-        walk: held.has('ShiftLeft') || held.has('ShiftRight'),
-        crouch: held.has('ControlLeft') || held.has('ControlRight'),
+          axis('c_PIYaw') + page.mobilePadAxis('x')),
+        walk: heldTrigger('c_PIWalk'),
+        crouch: heldTrigger('c_PICrouch'),
         prone: localPlayer.prone,
-        jump: held.has('Space') || page.mobileJumpHeld,
+        jump: heldTrigger('c_PIAction') || page.mobileJumpHeld,
         // `c_PIMenuSelect9`, input bit 22 -> TemplateMessage 18 ->
         // `BFSoldier::setIsParachuting(true)`. It is the kit's ninth item slot
         // and the engine gives it a second job on a falling soldier; see
-        // `parachute.js`. Both the digit row and the numpad, because a bail-out
-        // is a two-second window. On a touch device the JUMP button doubles as
-        // the ripcord while the state machine says you are falling — a jump is
-        // worth nothing in mid-air, and a bail-out is no time to hunt for a
-        // control that would otherwise have to be added to the pad.
-        deploy: held.has('Digit9') || held.has('Numpad9') || localPlayer.debugDeployHeld
+        // `parachute.js`. The numpad's 9 rides along because a bail-out is a
+        // two-second window and the digit row may be far from WASD — the
+        // viewer's own kindness, not a control-map binding. On a touch device
+        // the JUMP button doubles as the ripcord while the state machine says
+        // you are falling — a jump is worth nothing in mid-air, and a
+        // bail-out is no time to hunt for a control that would otherwise
+        // have to be added to the pad.
+        deploy: heldTrigger('c_PIMenuSelect9') || held.has('Numpad9')
+          || localPlayer.debugDeployHeld
           || (page.mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
         dead: localPlayer.soldierDead,
       };
