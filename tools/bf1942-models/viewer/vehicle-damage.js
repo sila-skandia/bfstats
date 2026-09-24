@@ -218,6 +218,12 @@ export class DamageableVehicle {
    * fire for the one case that matters and the explosion would never play.
    */
   update(dt, { inWater = false, upsideDown = false } = {}) {
+    // Each tick below is its own `giveDamage` in the engine (`Armor::update`
+    // hands it the Armor's own object and the world origin for `Pos3`), so
+    // each washes the screen of whoever sits in this hull (ledger HFD-11,
+    // HFD-13). `tick` is the HP the last of this step's ticks took, 0 when
+    // none fired: a second tick in the same step replaces the first's flash.
+    let tick = 0;
     if (!this.armor.destroyed && this.critical
         && this.hpLostWhileCriticalDamage !== null) {
       this.criticalAccumulator += dt;
@@ -226,6 +232,7 @@ export class DamageableVehicle {
       while (this.criticalAccumulator >= 1 && !this.armor.destroyed) {
         this.criticalAccumulator -= 1;
         this.armor.damage(this.hpLostWhileCriticalDamage);
+        tick = this.hpLostWhileCriticalDamage;
       }
     } else if (!this.critical) {
       // Recovered above the threshold: the next burn starts its second over.
@@ -241,6 +248,7 @@ export class DamageableVehicle {
       while (this.waterAccumulator >= 1 && !this.armor.destroyed) {
         this.waterAccumulator -= 1;
         this.armor.damage(this.hpLostWhileDamageFromWater);
+        tick = this.hpLostWhileDamageFromWater;
       }
     } else if (!inWater) {
       this.waterAccumulator = 0;
@@ -253,6 +261,7 @@ export class DamageableVehicle {
       while (this.upsideDownAccumulator >= 1 && !this.armor.destroyed) {
         this.upsideDownAccumulator -= 1;
         this.armor.damage(this.hpLostWhileUpSideDown);
+        tick = this.hpLostWhileUpSideDown;
       }
     } else if (!upsideDown) {
       this.upsideDownAccumulator = 0;
@@ -267,13 +276,13 @@ export class DamageableVehicle {
     // the one thing the engine's `+0x128` latch actually buys, reproduced here
     // by not asking again rather than by keeping a latch.
     if (this.armor.destroyed && this.deathAnnounced) {
-      return { tier: this.shown, changed: false, died };
+      return { tier: this.shown, changed: false, died, tick };
     }
 
     const changed = tierKey(tier) !== tierKey(this.shown);
     if (changed) this.shown = tier;
     if (this.armor.destroyed) this.deathAnnounced = true;
-    return { tier, changed, died };
+    return { tier, changed, died, tick };
   }
 }
 
@@ -376,6 +385,9 @@ export class VehicleDamageSet {
    *
    * `scale(damage, owner)`, when given, is the server's last word on the
    * amount: `calcDamage`'s friendly-fire scaling (`friendly-fire.js`).
+   *
+   * `amount` is that priced damage, which can exceed the HP `lost`: it is
+   * what `_giveDamage` divides by the max HP for the crew's wash (HFD-2).
    */
   applyHit(record, attacker = null, scale = null) {
     if (!record || !(record.damage > 0)) return null;
@@ -384,7 +396,7 @@ export class VehicleDamageSet {
     const amount = scale ? scale(record.damage, record.owner) : record.damage;
     if (!(amount > 0)) return null;
     const lost = vehicle.damage(amount, attacker);
-    return lost > 0 ? { vehicle, lost } : null;
+    return lost > 0 ? { vehicle, lost, amount } : null;
   }
 
   /**
@@ -481,14 +493,16 @@ export class VehicleDamageSet {
       // A soldier's own Armor takes no attacker; a hull records who hit it.
       const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);
       if (lost > 0) {
-        out.push({ vehicle: victim, target, lost, distance, exposure: seen });
+        out.push({ vehicle: victim, target, lost, amount, distance, exposure: seen });
       }
     }
     return out;
   }
 
-  /** Step every vehicle. Returns only those whose drawing needs to change. */
-  update(dt, { inWaterOwners = null } = {}) {
+  /** Step every vehicle. Returns only those whose drawing needs to change.
+   *  `ticks`, when given, collects `{ vehicle, owner, amount }` for every
+   *  vehicle whose own damage clocks took HP this step (`update`'s `tick`). */
+  update(dt, { inWaterOwners = null, ticks = null } = {}) {
     const changes = [];
     for (const [owner, vehicle] of this.byOwner) {
       // A destroyed vehicle with nothing left to announce costs one branch.
@@ -496,6 +510,7 @@ export class VehicleDamageSet {
       const inWater = inWaterOwners?.has(owner) ?? false;
       const result = vehicle.update(dt, { inWater });
       if (result.changed || result.died) changes.push({ vehicle, ...result });
+      if (result.tick > 0) ticks?.push({ vehicle, owner, amount: result.tick });
     }
     return changes;
   }

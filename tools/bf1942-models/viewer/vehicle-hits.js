@@ -15,6 +15,7 @@ import { damageFactor } from './projectile-damage.js';
 import { roundHit } from './soldier-death.js';
 import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
+import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -28,8 +29,9 @@ import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-f
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
  * `raiseHitIndication` (optional: a headless runner has no crosshair),
  * `showDamageTier`,
- * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
- * `vehicles`, `world`, `wreckVehicle`.
+ * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`,
+ * `triggerHitIndicator` (optional: the HUD's damage wash, as on foot),
+ * `vehicleDamage`, `vehicles`, `world`, `wreckVehicle`.
  */
 export function createVehicleHits(page) {
   const vehicleHits = {};
@@ -112,6 +114,21 @@ export function createVehicleHits(page) {
    */
   function stepVehicleDamage(step, dt) {
     if (!page.vehicleDamage.size) return;
+    // The world's own damage this step, each a `giveDamage` on the hull's
+    // root: a crash (object or water: the world origin; the ground: the
+    // contact point; the kill material's `Pos3` is unread, so no arc), and
+    // the Armor's own clocks, which push the world origin (HFD-13).
+    for (const crash of step.crashes ?? []) {
+      if (!(crash.lost > 0)) continue;
+      const source = crash.kill ? null
+        : crash.other != null || crash.water ? WORLD_ORIGIN
+          : { x: crash.at[0], y: crash.at[1], z: crash.at[2] };
+      // A kill's `damage` is already the engine's 1e10 (`KILL_DAMAGE`).
+      washSeatedCrew(page.vehicleDamage.get(crash.owner), crash.damage, source);
+    }
+    for (const tick of step.timedDamage ?? []) {
+      washSeatedCrew(tick.vehicle, tick.amount, WORLD_ORIGIN);
+    }
     for (const change of step.damage) {
       if (change.changed) page.showDamageTier(change.vehicle, change.tier);
       if (change.died) page.wreckVehicle(change.vehicle);
@@ -126,6 +143,50 @@ export function createVehicleHits(page) {
       vehicleHits.fedVehicleHp = hp;
       if (live) page.feedVehicleHud();
     }
+  }
+
+  /** The engine's world origin, which the exporter's z mirror leaves where it is. */
+  const WORLD_ORIGIN = Object.freeze({ x: 0, y: 0, z: 0 });
+  // Scratch for `washSeatedCrew`'s reading of the hull's frame.
+  const hullPos = new THREE.Vector3();
+  const hullQuat = new THREE.Quaternion();
+  const hullForward = new THREE.Vector3();
+  const hullRight = new THREE.Vector3();
+
+  /**
+   * The red wash `_giveDamage` gives everyone seated in a hull that takes
+   * damage, for the local player when `vehicle` is the hull he sits in.
+   *
+   * `_giveDamage` walks up from the damaged object to its first
+   * PlayerControlObject and washes every seat in that PCO's `getPcos()` map,
+   * which a root PCO fills with itself and every seat under it (ledger HFD-10).
+   * In vanilla and both expansions the damaged object is always the hull's
+   * root, whatever part was struck, so any seat washes (HFD-11). So does the
+   * octant's frame: the hull's own origin and its forward and right, never
+   * the seat's or the view's. The alpha is the priced damage over the hull's
+   * max HP. `source` is the damage's `Pos3`, in this page's frame, or null
+   * for one this page cannot name: direction 1, the wash with no arc.
+   */
+  function washSeatedCrew(vehicle, amount, source) {
+    const root = page.occupancy?.root;
+    if (!root || !vehicle || !page.triggerHitIndicator) return;
+    if (vehicle !== occupiedVehicleDamage()) return;
+    let dir = 1;
+    if (source) {
+      root.getWorldPosition(hullPos);
+      root.getWorldQuaternion(hullQuat);
+      hullForward.set(0, 0, -1).applyQuaternion(hullQuat);
+      hullRight.set(1, 0, 0).applyQuaternion(hullQuat);
+      dir = hitFromDirOctantAxes(hullPos, hullForward, hullRight, source);
+    }
+    page.triggerHitIndicator(dir, hitFromDirAlpha(amount, vehicle.maxHitPoints));
+  }
+
+  /** Where a round's damage arc points: where it left the barrel
+   *  (`Projectile+0x134`, HFD-4), which the hit record carries. */
+  function roundSource(record) {
+    const at = record?.origin;
+    return at ? { x: at[0], y: at[1], z: at[2] } : null;
   }
 
   /** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
@@ -279,7 +340,11 @@ export function createVehicleHits(page) {
     const attackerTeam = teamOf(roundFirer(record?.firerGroup));
     const landed = page.vehicleDamage.applyHit(record, attacker, (damage, owner) =>
       priceFriendly(damage, { attackerTeam, victimTeam: hullTeam(owner), soldier: false }));
-    if (landed) reconcileDamaged(landed.vehicle);
+    if (landed) {
+      // Before the tier pass, which may wreck the hull and unseat him.
+      washSeatedCrew(landed.vehicle, landed.amount, roundSource(record));
+      reconcileDamaged(landed.vehicle);
+    }
     if (marks) page.raiseHitIndication?.();
     if (!(record?.splashRadius > 0)) return;
     const splashed = page.vehicleDamage.applySplash(record, splashTargets(), {
@@ -312,6 +377,9 @@ export function createVehicleHits(page) {
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
         continue;
       }
+      // A splash hands `_giveDamage` the blast's centre (HFD-4).
+      const [bx, by, bz] = record.splashPoint ?? record.point;
+      washSeatedCrew(hit.vehicle, hit.amount, { x: bx, y: by, z: bz });
       reconcileDamaged(hit.vehicle);
     }
   }
@@ -557,10 +625,11 @@ export function createVehicleHits(page) {
     if (id === page.LOCAL_PLAYER) {
       if (firer != null) page.noteLocalAttack?.(firer, { weapon });
       // His damage arc points at the round's own start, the engine's `Pos3`
-      // (ledger HFD-4). The record does not carry it, so the firer's gun as it
-      // stands now: the barrel a bot's `aimRay` casts from.
-      const gun = firer && firer !== page.LOCAL_PLAYER
-        ? page.bots.find(b => b.playerId === firer)?.aimRay?.().origin ?? from : from;
+      // (ledger HFD-4), which the record carries. One without it falls back
+      // to the firer's gun as it stands now: the barrel a bot's `aimRay`
+      // casts from.
+      const gun = record.origin ?? (firer && firer !== page.LOCAL_PLAYER
+        ? page.bots.find(b => b.playerId === firer)?.aimRay?.().origin ?? from : from);
       page.applyDamageToPlayer(damage,
         gun ? { x: gun[0], y: gun[1], z: gun[2] } : null, firerTeam, hit);
     } else {
