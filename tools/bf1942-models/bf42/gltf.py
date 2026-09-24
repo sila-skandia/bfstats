@@ -195,6 +195,8 @@ class GlbBuilder:
         self._nodes: list[Node] = []
         self._skins: list[dict] = []
         self._animations: list[dict] = []
+        # `add_animation(compact=True)`'s accessors, by content.
+        self._compact_accessors: dict[tuple[str, bytes], int] = {}
         self._extensions_used: set[str] = set()
         self._generator = generator
 
@@ -419,6 +421,7 @@ class GlbBuilder:
                       tracks: list[tuple[int, tuple[float, ...],
                                          list[tuple[tuple[tuple[float, float, float], ...],
                                                     tuple[float, float, float]]]]],
+                      compact: bool = False,
                       ) -> int:
         """A keyframed animation over existing nodes.
 
@@ -428,7 +431,17 @@ class GlbBuilder:
         `Node` takes. The Z-mirror conjugation into glTF space happens here,
         exactly matching how `build` exports the node's static transform, so
         a clip whose values equal the node's transform is a no-op.
+
+        `compact` writes the same animation smaller: one time accessor per
+        distinct key layout rather than one per node, and a channel whose
+        every key holds the same value as two keys at the first and last
+        time. A soldier's clip moves few of its bones -- every translation
+        but the root's and the pelvis's is the bone's length, and a fire clip
+        leaves the fingers alone -- so this roughly halves a torso clip while
+        a sampler still reads the identical value at every time.
         """
+        if compact:
+            return self._add_compact_animation(name, tracks)
         samplers: list[dict] = []
         channels: list[dict] = []
         for node, times, transforms in tracks:
@@ -453,6 +466,55 @@ class GlbBuilder:
                              "interpolation": "LINEAR"})
             channels.append({"sampler": len(samplers) - 1,
                              "target": {"node": node, "path": "translation"}})
+        self._animations.append(
+            {"name": name, "samplers": samplers, "channels": channels})
+        return len(self._animations) - 1
+
+    def _add_compact_animation(self, name: str, tracks) -> int:
+        """`add_animation(compact=True)`: the same channels, fewer bytes.
+
+        Accessors are shared by content across every compact animation in the
+        file -- a finger that holds still in one clip holds the same rotation
+        in the next -- and a sampler leaves `interpolation` at the spec's
+        default, `LINEAR`, rather than spelling it out.
+        """
+        samplers: list[dict] = []
+        channels: list[dict] = []
+        cache = self._compact_accessors
+
+        def accessor(data: bytes, count: int, kind: str, bounds=None) -> int:
+            key = (kind, data)
+            if key not in cache:
+                lo, hi = bounds if bounds else (None, None)
+                cache[key] = self._accessor(
+                    self._view(data), COMPONENT_FLOAT, count, kind, lo, hi)
+            return cache[key]
+
+        def constant(values: list[tuple[float, ...]]) -> bool:
+            first = values[0]
+            return all(max(abs(a - b) for a, b in zip(v, first)) <= 1e-7
+                       for v in values[1:])
+
+        for node, times, transforms in tracks:
+            quats = _hemisphere_align(
+                [quat_from_matrix(rotation) for rotation, _ in transforms])
+            positions = [(x, y, -z) for _, (x, y, z) in transforms]
+            for path, values, kind, fmt in (
+                    ("rotation", quats, "VEC4", "<4f"),
+                    ("translation", positions, "VEC3", "<3f")):
+                keys = tuple(times)
+                if len(values) > 2 and constant(values):
+                    keys = (times[0], times[-1])
+                    values = [values[0], values[0]]
+                time_acc = accessor(
+                    b"".join(struct.pack("<f", t) for t in keys), len(keys),
+                    "SCALAR", ([min(keys)], [max(keys)]))
+                out_acc = accessor(
+                    b"".join(struct.pack(fmt, *v) for v in values), len(values),
+                    kind)
+                samplers.append({"input": time_acc, "output": out_acc})
+                channels.append({"sampler": len(samplers) - 1,
+                                 "target": {"node": node, "path": path}})
         self._animations.append(
             {"name": name, "samplers": samplers, "channels": channels})
         return len(self._animations) - 1

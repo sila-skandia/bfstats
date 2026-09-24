@@ -42,6 +42,13 @@ default) writes them once into `gaits/lower.gait.glb` and
 for a viewer to retarget by bone name. `--gaits embed` puts a private copy
 in every pose file instead, and `--gaits none` skips locomotion entirely.
 
+The same two sidecars carry what a soldier plays between and over his gaits:
+the stance transitions (`Lb_StandToCrouch`, `Lb_RunStandToLie`, ... in the
+lower bundle, by engine state name) and each grip's torso halves of them,
+fire and reload (`Ub_CrouchToLie`, `Ub_Fire`, `Ub_StandReload`, ... in the
+grip bundle). `--gaits-only` rewrites exactly those files and their keys in
+`gaits/gaits.json`, and touches nothing else in the pose tree.
+
 `--matrix` runs every vanilla soldier against every weapon the animation
 state machine knows, measures how far each palm is from the weapon surface,
 and writes `poses-matrix.json`.
@@ -242,6 +249,71 @@ DIE_STATES: tuple[str, ...] = (
 )
 DIE_ASSET = "die"
 
+# The stance transitions: the lower-body one-shots between standing, crouching
+# and lying, baked into `gaits/lower.gait.glb` beside the gaits under the
+# engine's own state names.
+#
+# `BFSoldier::handlePlayerInput` (lnxded `0x08273c70`) enters the first state
+# of each chain by name, on both machines, when the crouch or the lie channel
+# is pressed, off the lower state's pose flags (`c_AsmIsCrouching` 0x20,
+# `c_AsmIsLying` 0x40); each state's own `addTransitionWhenDone` does the rest,
+# and crouch -> stand is `Lb_Crouch`'s `returnToState` once the crouch channel
+# lets go:
+#
+#   stand  -> crouch  Lb_StandToCrouch                  Ub_StandToCrouch
+#   stand  -> lie     Lb_RunStandToLie (forward >= 0)   Ub_RunStandToLie
+#                     Lb_StandToLie -> Lb_CrouchToLie   Ub_StandToLie (backward)
+#   crouch -> lie     Lb_CrouchToLie                    Ub_CrouchToLie
+#   lie    -> crouch  Lb_LieToCrouch                    Ub_LieToCrouch
+#   lie    -> stand   Lb_LieToStand -> Lb_CrouchToStand Ub_LieToStand
+#   crouch -> stand   Lb_CrouchToStand                  Ub_CrouchToStand
+#
+# (string VAs 0x086d1ee8..0x086d1f8f; the dive's forward test is ledger
+# PHY-8.) The upper state is set only when the soldier's byte `+0x268` is clear
+# (INFERRED: nothing in hand) or the held weapon's `HandFireArms::isReadyToUse`
+# (vt+0x120) answers true, so a reload in progress keeps the torso while the
+# legs go down. Every one of these is `c_AsmPlayOnce`, and three
+# play their clip backwards: `updateState` (`0x0832b270`) starts a
+# negative-rate one-shot at phase 1.0, which is why `clip_timeline` reverses a
+# one-shot end to end. The rates are the machine's finished ones:
+# `3pAnimationsTweaking.con` puts `Lb_StandToCrouch` at 12 over the file's 4.
+STANCE_TRANSITIONS: tuple[str, ...] = (
+    "Lb_StandToCrouch", "Lb_CrouchToStand",
+    "Lb_StandToLie", "Lb_CrouchToLie",
+    "Lb_LieToCrouch", "Lb_LieToStand",
+    "Lb_RunStandToLie",
+)
+
+# The upper-body states each grip's bundle carries beside its gaits: the
+# transitions' torso halves, the fire and the reload. The engine's per-weapon
+# state is `Ub_<family><Weapon>`; the bundle names each clip after the state
+# without the weapon (`Ub_Fire`, `Ub_StandReload`), which is itself an engine
+# state -- an `addTransitionItem` that appends the item in hand -- and the name
+# `handlePlayerInput` and the weapon code pass to `setAnimationState`. So a
+# renderer binds one name whatever the weapon, the way it binds `run.upper`.
+#
+# Rates can differ between the weapons that share a grip where the gaits never
+# do (the WalterP38 fires the Colt's clip at 2.0 against the Colt's 2.43, the
+# Panzershreck reloads prone at 0.4 against the Bazooka's 0.3, the two sniper
+# rifles dive at 1.5), so the bundle is baked at its first weapon's rate and
+# `gaits.json` `stateMachine.weaponSpeeds` lists every weapon whose own rate
+# differs; the clip's length times that rate is the renderer's time scale.
+UPPER_ACTIONS: tuple[str, ...] = (
+    "CrouchToLie", "LieToCrouch", "LieToStand", "RunStandToLie",
+    "Fire", "FireEnd", "LieFire", "LieFireEnd",
+    "StandReload", "LieReload",
+)
+
+# The upper transition states with no clip to bake, which still decide what
+# the torso does next. `Ub_StandToCrouch` and `Ub_CrouchToStand` rem out their
+# `addAnimation`; `Ub_StandToLie` names `Animations/Crouch/3P/
+# 3PStand2CrouchUpper.baf`, which no vanilla archive ships (only the Bazooka's
+# and the Thompson's `3PStand2CrouchUpper<W>.baf` exist, and no state names
+# them). Their morph factors and `addTransitionWhenDone` go in the manifest.
+UPPER_CLIPLESS: tuple[str, ...] = (
+    "Ub_StandToCrouch", "Ub_CrouchToStand", "Ub_StandToLie",
+)
+
 # Where the shared gait clips live, relative to the pose directory. The clips
 # are not baked into the 224 pose files because neither half of a gait varies
 # per pose: the lower body is weapon- *and* soldier-independent (one set for
@@ -417,7 +489,7 @@ def collect_stances(machine: animstates.StateMachine, meshes: ArchivePool,
 # -- locomotion timelines ---------------------------------------------------- #
 
 def clip_timeline(animation: baf.Animation, speed: float,
-                  skeleton: ske_mod.Skeleton,
+                  skeleton: ske_mod.Skeleton, loop: bool = True,
                   ) -> tuple[list[dict], float]:
     """Every frame of a clip, aligned into mesh space, plus its period.
 
@@ -429,14 +501,26 @@ def clip_timeline(animation: baf.Animation, speed: float,
     stride; 24-frame `3PWalkLower` at 1.00 is a 1 s one — the frame count
     sets resolution, not duration.
 
-    A negative speed runs the phase backwards (`Lb_RunBackward` is the
-    forward run clip at -1.60), which is the same frames in reverse with
-    frame 0 still the cycle's start.
+    A negative speed runs the phase backwards. For a **looping** clip
+    (`Lb_RunBackward` is the forward run clip at -1.60) that is the same
+    frames in reverse with frame 0 still the cycle's start. A **one-shot**
+    (`loop` false: `c_AsmPlayOnce`) is different: on entry `updateState`
+    (lnxded `0x0832b270`) sets the phase to 1.0 when the clip's rate is
+    negative and 0.0 otherwise, `AnimationState::update` (`0x08329f00`)
+    leaves the state once the phase drops below 0, and `applyOnSkeleton`
+    (`0x0832ed60`) spreads a one-shot's phase over `frames - 1` intervals. So
+    a backwards one-shot runs from its LAST frame to its first --
+    `Lb_LieToCrouch` is `3PCrouch2LieLower.baf` from lying back up to the
+    crouch -- and is reversed end to end. (The loop's reversal on a one-shot
+    kept the forward pass's first frame as the backward pass's first key, one
+    interval ahead of the frame it should start on: `Lb_EndSwim` opened on the
+    frame `Lb_StartSwim` opens on, then jumped to the swimming end.)
     """
     frames = [pose_mod.align_clip_roots(skeleton, animation.local_pose(f))
               for f in range(animation.frames)]
     if speed < 0 and len(frames) > 1:
-        frames = [frames[0], *reversed(frames[1:])]
+        frames = ([frames[0], *reversed(frames[1:])] if loop
+                  else list(reversed(frames)))
     return frames, 1.0 / abs(speed)
 
 
@@ -592,8 +676,11 @@ def _write_clip_bundle(skeleton: ske_mod.Skeleton,
     """One clips-only `.glb`: the joint hierarchy plus `clips`, nothing else.
 
     A clip entry is `(name, frames, period)`, or `(name, frames, period, loop)`
-    where the bake must honour a one-shot's own frame layout. Looping is the
-    default because every locomotion and stance state in the game loops.
+    where the bake must honour a one-shot's own frame layout, or `(..., loop,
+    compact)` for a clip written with `add_animation(compact=True)`. Looping
+    is the default because every locomotion and stance state in the game
+    loops. The clips the bundles have always carried keep their layout; the
+    stance transitions, fire and reload are written compact.
     """
     builder = gltf.GlbBuilder()
     joint_nodes, roots = _joint_hierarchy(builder, skeleton)
@@ -601,13 +688,47 @@ def _write_clip_bundle(skeleton: ske_mod.Skeleton,
     for entry in clips:
         name, frames, period = entry[0], entry[1], entry[2]
         loop = entry[3] if len(entry) > 3 else True
+        compact = entry[4] if len(entry) > 4 else False
         tracks = timeline_tracks(frames, period, joint_nodes, loop)
         if tracks:
-            builder.add_animation(name, tracks)
+            builder.add_animation(name, tracks, compact=compact)
             written += 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(builder.build(roots, extras=extras))
     return written
+
+
+def generic_state(name: str | None, weapon: str) -> str | None:
+    """A per-weapon state's name without its weapon: `Ub_LieK98Sniper` ->
+    `Ub_Lie` for the K98Sniper, `_POSE_` and `Ub_CrouchToStand` unchanged.
+
+    The weapon is the suffix `copyState` wrote (case-insensitively, since the
+    scripts spell `Ub_FireEndJohnsonLmg` for the `JohnsonLMG`), and the result
+    is the `addTransitionItem` state the engine enters by name, which is also
+    the name a grip bundle files the clip under.
+    """
+    if not name or not weapon:
+        return name
+    if len(name) > len(weapon) and name.lower().endswith(weapon.lower()):
+        return name[: len(name) - len(weapon)]
+    return name
+
+
+def state_meta(state: animstates.State, weapon: str = "") -> dict:
+    """What a renderer needs to play one state the engine's way: its rate
+    (`speed`, cycles per second, negative backwards), whether it loops, its
+    morph factor (the weight ramp in per second on entry, ledger ANIM-4), and
+    the state it hands over to when a one-shot finishes (`then`, the
+    `addTransitionWhenDone` / `returnToState` target without the weapon)."""
+    ref = state.clip_3p()
+    meta: dict = {"state": state.name}
+    if ref is not None:
+        meta.update(clip=ref.path, speed=ref.speed, loop=ref.loops)
+    meta["morph"] = state.morph_factor
+    then = generic_state(state.return_to, weapon)
+    if then:
+        meta["then"] = then
+    return meta
 
 
 def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -628,13 +749,23 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
 
     A pose file then names its two sidecars in `extras.gaitAssets` and the
     viewer retargets the clips onto its own skeleton by bone name.
+
+    Beside the gaits the same two files carry the rest of what a
+    third-person soldier plays: the stance transitions in the lower bundle
+    (`STANCE_TRANSITIONS`, by engine state name) and each grip's torso halves
+    of them plus its fire and reload (`UPPER_ACTIONS`, as `Ub_<family>`).
+    Every bundle's `extras.states` describes each clip it holds (`state_meta`),
+    and `gaits.json` `stateMachine` the clipless upper transitions and the
+    weapons whose rate differs from their grip's bake.
     """
     manifest: dict = {"lower": None, "grips": {}, "weaponGrip": {}, "errors": {}}
+    machine_meta: dict = {"clipless": {}, "weaponSpeeds": {}, "absent": {}}
     root = out / GAIT_ASSET_DIR
 
     # -- the weapon-independent lower half, once ---------------------------- #
-    lower_clips: list[tuple[str, list, float, bool]] = []
+    lower_clips: list[tuple] = []
     lower_meta: dict[str, dict] = {}
+    lower_states: dict[str, dict] = {}
     for key, lower_state, _family in SHARED_TIMELINES:
         state = machine.state(lower_state)
         ref = state.clip_3p() if state else None
@@ -645,18 +776,45 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
         if animation is None:
             manifest["errors"][key] = f"lower clip unreadable: {ref.path}"
             continue
-        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
         lower_clips.append((f"{key}.lower", frames, period, ref.loops))
         lower_meta[key] = {"state": state.name, "clip": ref.path,
                            "speed": ref.speed, "frames": animation.frames,
                            "period": round(period, 4), "loop": ref.loops}
+        lower_states[f"{key}.lower"] = {
+            **state_meta(state), "frames": animation.frames,
+            "period": round(period, 4)}
+    moves, _meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, STANCE_TRANSITIONS)
+    lower_clips.extend((*move, True) for move in moves)
+    for name, _frames, period, _loop in moves:
+        state = machine.state(name)
+        lower_states[name] = {**state_meta(state),
+                              "frames": _meta[name]["frames"],
+                              "period": round(period, 4)}
+    for name, why in {**absent, **errors}.items():
+        manifest["errors"][name] = why
     if lower_clips:
         _write_clip_bundle(
             skeleton, lower_clips,
             root / f"{GAIT_LOWER_ASSET}.gait.glb",
             {"gaitHalf": "lower", "gaits": lower_meta,
-             "skeleton": skeleton.source})
+             "states": lower_states, "skeleton": skeleton.source})
         manifest["lower"] = f"{GAIT_ASSET_DIR}/{GAIT_LOWER_ASSET}.gait.glb"
+
+    # The torso transitions with nothing to bake still say what comes next.
+    for name in UPPER_CLIPLESS:
+        state = machine.state(name)
+        if state is None:
+            continue
+        entry = state_meta(state)
+        ref = state.clip_3p()
+        if ref is not None:
+            # Declared, and absent from every archive (`Ub_StandToLie`).
+            entry["absent"] = (
+                "clip absent from the archives" if meshes.find(ref.path) is None
+                else "clip present but unparseable")
+        machine_meta["clipless"][name] = entry
 
     # -- one upper bundle per grip ------------------------------------------ #
     by_grip: dict[str, list[str]] = {}
@@ -670,8 +828,9 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
 
     for grip, sharing in sorted(by_grip.items()):
         representative = sharing[0]
-        clips: list[tuple[str, list, float, bool]] = []
+        clips: list[tuple] = []
         meta: dict[str, dict] = {}
+        states: dict[str, dict] = {}
         for key, _lower_state, family in SHARED_TIMELINES:
             ref = machine.clip_3p(f"{UPPER_PREFIX}{family}", representative)
             if ref is None:
@@ -681,19 +840,58 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 manifest["errors"][f"{grip}/{key}"] = (
                     f"upper clip unreadable: {ref.path}")
                 continue
-            frames, period = clip_timeline(animation, ref.speed, skeleton)
+            frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
             clips.append((f"{key}.upper", frames, period, ref.loops))
             meta[key] = {"clip": ref.path, "speed": ref.speed,
                          "frames": animation.frames,
                          "period": round(period, 4), "loop": ref.loops}
+            states[f"{key}.upper"] = {
+                **state_meta(machine.state(f"{UPPER_PREFIX}{family}{representative}"),
+                             representative),
+                "frames": animation.frames, "period": round(period, 4)}
+        missing: list[str] = []
+        for family in UPPER_ACTIONS:
+            name = f"{UPPER_PREFIX}{family}"
+            state = machine.state(f"{name}{representative}")
+            ref = state.clip_3p() if state else None
+            if ref is None:
+                continue                  # no such state for this grip (a knife's Fire)
+            animation = read_clip(meshes, ref.path)
+            if animation is None:
+                # Declared by `copyToAllWeapons` and never drawn: nobody
+                # reloads binoculars. Data, not a bug; listed, not raised.
+                missing.append(name)
+                continue
+            frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
+            clips.append((name, frames, period, ref.loops, True))
+            states[name] = {**state_meta(state, representative),
+                            "frames": animation.frames,
+                            "period": round(period, 4)}
+            # A weapon sharing the grip whose own state plays the same clip at
+            # another rate: the renderer scales the one bake to it.
+            for weapon in sharing[1:]:
+                other = machine.state(f"{name}{weapon}")
+                other_ref = other.clip_3p() if other else None
+                if other_ref is None:
+                    continue
+                if other_ref.path.lower() != ref.path.lower():
+                    manifest["errors"][f"{weapon}/{name}"] = (
+                        f"plays {other_ref.path}, not the grip's {ref.path}")
+                    continue
+                if other_ref.speed != ref.speed:
+                    machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = (
+                        other_ref.speed)
+        if missing:
+            machine_meta["absent"][grip] = missing
         if not clips:
             continue
         _write_clip_bundle(
             skeleton, clips, root / f"{grip}.gait.glb",
             {"gaitHalf": "upper", "grip": grip, "weapons": sorted(sharing),
-             "gaits": meta, "skeleton": skeleton.source})
+             "gaits": meta, "states": states, "skeleton": skeleton.source})
         manifest["grips"][grip] = f"{GAIT_ASSET_DIR}/{grip}.gait.glb"
 
+    manifest["stateMachine"] = machine_meta
     write_gaits_manifest(out, manifest)
     return manifest
 
@@ -706,8 +904,9 @@ def write_gaits_manifest(out: Path, changed: dict) -> dict:
     browse manifest to only the templates it touched and every other entry, and
     every thumbnail, vanished from the live site. The parachute and canopy pass
     (`--parachute`) is exactly such a subset run — it knows nothing about the 23
-    grips — so the two dict-valued keys are merged key by key and every scalar
-    key the caller did not supply is kept.
+    grips — so the dict-valued keys are merged key by key, all the way down
+    (`stateMachine.weaponSpeeds` from a one-weapon run must not drop the
+    others'), and every scalar key the caller did not supply is kept.
     """
     root = out / GAIT_ASSET_DIR
     root.mkdir(parents=True, exist_ok=True)
@@ -720,11 +919,16 @@ def write_gaits_manifest(out: Path, changed: dict) -> dict:
             previous = {}
         if isinstance(previous, dict):
             merged = previous
-    for key, value in changed.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = {**merged[key], **value}
-        else:
-            merged[key] = value
+
+    def merge(into: dict, update: dict) -> dict:
+        for key, value in update.items():
+            if isinstance(value, dict) and isinstance(into.get(key), dict):
+                into[key] = merge(dict(into[key]), value)
+            else:
+                into[key] = value
+        return into
+
+    merged = merge(merged, changed)
     target.write_text(json.dumps(merged, indent=2))
     return merged
 
@@ -755,7 +959,7 @@ def _bake_named_states(machine: animstates.StateMachine, meshes: ArchivePool,
                 f"clip {'absent from the archives' if meshes.find(ref.path) is None else 'present but unparseable'}"
                 f": {ref.path}")
             continue
-        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
         clips.append((name, frames, period, ref.loops))
         meta[name] = {"clip": ref.path, "speed": ref.speed,
                       "frames": animation.frames, "period": round(period, 4),
@@ -973,7 +1177,7 @@ def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
         if animation is None:
             result["errors"][key] = f"clip unreadable: {ref.path}"
             continue
-        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
         tracks = timeline_tracks(frames, period, joint_nodes, ref.loops)
         if not tracks:
             result["errors"][key] = f"clip animates no bone of {template.skeleton}"
@@ -1793,6 +1997,14 @@ def main() -> int:
                          "poses-matrix.json are not touched, which makes this "
                          "the whole re-extraction a change to the shared "
                          "timelines needs.")
+    ap.add_argument("--gaits-only", action="store_true",
+                    help="write only the gait sidecars: gaits/lower.gait.glb "
+                         "(the locomotion and stance loops and the stance "
+                         "transitions), one bundle per grip (the torso halves, "
+                         "the transitions' torsos, fire and reload) and their "
+                         "keys merged into gaits/gaits.json. The pose .glb "
+                         "files, the parachute, canopy, swim and death bundles "
+                         "and poses-matrix.json are not touched.")
     ap.add_argument("--parachute", action="store_true",
                     help="write only the parachute shared assets — the body "
                          "clip bundle (gaits/parachute.gait.glb) and the canopy "
@@ -1820,10 +2032,12 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.matrix and not args.seat_poses and not args.parachute \
-            and not args.swim and not args.die and not args.shared_assets and (
+            and not args.swim and not args.die and not args.shared_assets \
+            and not args.gaits_only and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses, "
-                 "or --parachute, or --swim, or --die, or --shared-assets")
+                 "or --parachute, or --swim, or --die, or --shared-assets, "
+                 "or --gaits-only")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -1883,6 +2097,34 @@ def main() -> int:
                      and chute["canopy"].get("asset")
                      and swim_body.get("asset")
                      and die_body.get("asset")) else 1
+
+    if args.gaits_only:
+        args.out.mkdir(parents=True, exist_ok=True)
+        soldiers = soldier_templates(library)
+        if args.soldiers is not None:
+            keep = {s.lower() for s in args.soldiers}
+            soldiers = [s for s in soldiers if s.lower() in keep]
+        weapons = [w for w in machine.weapons(f"{UPPER_PREFIX}{args.state}")
+                   if library.object(w) is not None]
+        if args.weapons is not None:
+            keep = {w.lower() for w in args.weapons}
+            weapons = [w for w in weapons if w.lower() in keep]
+        shared = write_shared_gaits(machine, meshes, library, soldiers,
+                                   weapons, args.out)
+        if not shared:
+            return 1
+        machine_meta = shared.get("stateMachine", {})
+        print(f"gait sidecars: 1 lower + {len(shared['grips'])} grips for "
+              f"{len(shared['weaponGrip'])} weapons; transitions "
+              f"{list(STANCE_TRANSITIONS)}; actions "
+              f"{[UPPER_PREFIX + f for f in UPPER_ACTIONS]}", file=sys.stderr)
+        for weapon, speeds in sorted(machine_meta.get("weaponSpeeds", {}).items()):
+            print(f"  rate of its own: {weapon} {speeds}", file=sys.stderr)
+        for grip, names in sorted(machine_meta.get("absent", {}).items()):
+            print(f"  declared, no clip: {grip} {names}", file=sys.stderr)
+        for key, why in sorted(shared["errors"].items()):
+            print(f"  error:  {key}: {why}", file=sys.stderr)
+        return 0
 
     if args.die:
         args.out.mkdir(parents=True, exist_ok=True)
