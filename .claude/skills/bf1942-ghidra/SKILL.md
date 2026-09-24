@@ -96,6 +96,24 @@ bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
 5. Deterministic behaviors belong in `tools/bf1942-models/viewer/` sim code,
    grounded in what the binary actually shows.
 
+## Headless sim (map runs)
+
+The baked asset trees (gitignored) ship on the `bf1942-binaries` release:
+`viewer-vanilla.zip` (models, vanilla only — no `mods/`), `map-berlin.zip`,
+`map-bocage.zip`. setup.sh restores them into `tools/bf1942-models/viewer/`.
+Run a headless bot match from `tools/bf1942-models/`:
+
+```bash
+node sim/run.mjs --map bocage --maps viewer/maps --models viewer/models \
+  --bots 8 --time 600 --seed 3
+node sim/run.mjs --map berlin --maps viewer/maps --models viewer/models ...
+node sim/run.mjs --synthetic --bots 4 --time 120 --seed 1   # no assets needed
+```
+
+Only Berlin and Bocage ship. If a run needs another map, it must be baked
+locally and uploaded as a `map-<name>.zip` release asset (zip the
+`viewer/maps/<name>` directory).
+
 ## Pitfalls
 
 - `gh` is NOT pre-installed in cloud sandboxes and no token is needed — the
