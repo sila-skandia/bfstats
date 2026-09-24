@@ -821,6 +821,8 @@ const vehicleHits = createVehicleHits(bag(
     get camera() { return camera; }, get guns() { return guns; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
+    // Who last hit the human and with what, so his death names them.
+    noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how),
   },
 ));
 
