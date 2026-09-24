@@ -26,7 +26,7 @@ import * as THREE from 'three';
 import { TurretRig } from './turret-rig.js';
 import * as aiming from './bot-aim.js';
 import { approachAimValid, backOffGoal } from './bot-plans.js';
-import { doorApproach } from './bot-mount.js';
+import { doorApproach, fixedAimable } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1224,8 +1224,28 @@ function stalemateScenario() {
   const tankBelow = { position: [0, 0, 30], _aimOrigin: () => [0, 2, 30], _nav: () => null,
     vehicle: { controlInfo: ctl } };
   const back = backOffGoal(tankBelow, [0, 21, 0], 225);
+  // The garrison's gun rule (bot-mount.js `fixedAimable`): an enemy 200 m off
+  // that nobody has spotted keeps a gun 'enemy' for the engine's law, and is
+  // nothing to a bot whose order says `guns: 'engaged'`; a spotted one inside
+  // the gun's 300 m counts for both, one at 400 m for the engine alone.
+  const gunBot = (guns, spotted) => ({
+    playerId: 'me', team: 1, position: [0, 0, 0], yaw: 0, weapons: [{ maxRange: 300 }],
+    waypoints: guns ? { guns } : null,
+    senses: { spottedEnemies: () => spotted.map(pos => ({ pos })) },
+    world: { players: new Map([['foe', { team: 2, position: [0, 0, 200] }]]), armorOf: () => null },
+    _nearestEnemyFlag: () => ({ position: [0, 0, 500] }),
+  });
+  const gunCand = { pos: [0, 0, 0], weapons: [{ maxRange: 300 }], yawLimits: null, hullYaw: 0 };
+  const quietBot = (guns) => ({ ...gunBot(guns, []), world: { players: new Map(), armorOf: () => null } });
+  const guns = {
+    unseenEngine: fixedAimable(gunBot(null, []), gunCand),
+    unseenEngaged: fixedAimable(gunBot('engaged', []), gunCand),
+    spottedNear: [fixedAimable(gunBot(null, [[0, 0, 200]]), gunCand), fixedAimable(gunBot('engaged', [[0, 0, 200]]), gunCand)],
+    spottedFar: [fixedAimable(gunBot(null, [[0, 0, 400]]), gunCand), fixedAimable(gunBot('engaged', [[0, 0, 400]]), gunCand)],
+    quiet: [fixedAimable(quietBot(null), gunCand), fixedAimable(quietBot('engaged'), gunCand)],
+  };
   return {
-    settle, outside,
+    settle, outside, guns,
     flatDown12: approachAimValid(botAt(null), down12),
     noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
     flatUp11: approachAimValid(botAt(null), up11),
