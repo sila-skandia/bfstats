@@ -52,7 +52,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-landing.js"):
+for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js"):
     MODULES[_m] = VIEWER / _m
 # `actionStatusDecision` against the binary (the x87 emulator's answers).
 MODULES["action_status_cases.json"] = Path(__file__).resolve().parent / "fixtures" / "action_status_cases.json"
@@ -761,3 +761,13 @@ class StalemateTests(unittest.TestCase):
         # 20 m of rise (the aim point 1 m up the target, the barrel 2 m up
         # the tank) inside 18 deg (the 20 deg top less 2): 61.6 m out.
         self.assertAlmostEqual(self.s["backDist"], 20 / math.tan(math.radians(18)), places=3)
+
+    def test_the_garrison_gun_rule(self) -> None:
+        g = self.s["guns"]
+        self.assertEqual(g["unseenEngine"], "enemy")
+        self.assertFalse(g["unseenEngaged"])
+        self.assertEqual(g["spottedNear"], ["enemy", "enemy"])
+        self.assertEqual(g["spottedFar"][0], "enemy")
+        self.assertFalse(g["spottedFar"][1])
+        self.assertEqual(g["quiet"][0], "strategic")
+        self.assertFalse(g["quiet"][1])

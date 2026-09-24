@@ -163,7 +163,7 @@ export class StrategicAI {
 
   /** Register a bot (`{ id, side, position() }`) with the strategic layer. */
   addBot(id, side, positionOf) {
-    this.bots.set(id, { id, side, positionOf, area: null, assignedTo: null, isAttack: false, orderedAt: -Infinity, waypoints: null, free: true });
+    this.bots.set(id, { id, side, positionOf, area: null, assignedTo: null, isAttack: false, orderedAt: -Infinity, waypoints: null, free: true, post: null });
   }
 
   removeBot(id) {
@@ -174,7 +174,7 @@ export class StrategicAI {
   botDied(id) {
     const b = this.bots.get(id);
     if (!b) return;
-    b.assignedTo = null; b.waypoints = null; b.free = true; b.area = null;
+    b.assignedTo = null; b.waypoints = null; b.free = true; b.area = null; b.post = null;
   }
 
   /**
@@ -225,13 +225,15 @@ export class StrategicAI {
    * and the distribution of the side's bots in `alive`. A doctrine that
    * hands only some of its bots to the SAI (doctrine-squad.js: the squad
    * leaders) passes those alone; the areas were counted with everyone in
-   * `beginPass`.
+   * `beginPass`. `opts.garrison` is the garrison play's hook
+   * (doctrine-garrison.js, INVENTION): see `_distribute`; the 'sai' doctrine
+   * passes none, and without it nothing here changes.
    */
-  sidePass(side, alive) {
+  sidePass(side, alive, opts = null) {
     this._updateStates(side);
     this._chooseStrategy(side);
     this._updateTemperatures(side);
-    this._distribute(side, alive);
+    this._distribute(side, alive, opts);
   }
 
   // --- the area pass --------------------------------------------------------
@@ -420,7 +422,17 @@ export class StrategicAI {
     return v;
   }
 
-  _distribute(side, alive) {
+  /**
+   * `opts.garrison` (the garrison play, doctrine-garrison.js; INVENTION,
+   * labelled at each branch): every free bot attacks whatever the strategy's
+   * aggression; the strategy's defence targets are not collected; before the
+   * collection `garrison.post({ sai, side, bots, alive })` posts at most one
+   * bot on each flag it chooses (the record's `post`, not free, no SAI
+   * order: the play gives the post its own); and after it a free bot joins
+   * the nearest attack target instead of holding where it is.
+   */
+  _distribute(side, alive, opts = null) {
+    const garrison = opts?.garrison ?? null;
     this._alive = alive;
     const S = this.sides[side];
     const strategy = S.active?.strategy;
@@ -435,7 +447,8 @@ export class StrategicAI {
     for (const b of myBots) {
       if (!b.free) continue;
       const total = attackers + defenders;
-      const attack = total === 0 ? aggression >= 0.5
+      // The garrison: a free bot attacks (its posts are its own).
+      const attack = garrison ? true : total === 0 ? aggression >= 0.5
         : aggression > 0 && ((1 - aggression) <= 0 || attackers / total <= aggression);
       b.isAttack = attack;
       if (attack) attackers++; else defenders++;
@@ -448,16 +461,19 @@ export class StrategicAI {
     const defenceCands = this.layer.areas.map(a => ({ area: a, value: this._defenceNeed(a, side) }))
       .filter(c => c.value > SAI.candidateMin).sort((x, y) => y.value - x.value);
     const attacks = attackCands.slice(0, Math.max(0, nAttacks));
-    const defences = defenceCands.slice(0, Math.max(0, nDefences));
+    // The garrison collects no defenders: one post a flag stands for them.
+    const defences = garrison ? [] : defenceCands.slice(0, Math.max(0, nDefences));
     S.attacks = attacks.map(c => c.area);
     S.defences = defences.map(c => c.area);
     for (const [area, st] of this.areaState) st[side].isAttack = S.attacks.includes(area);
     // Release bots assigned to areas no longer targeted.
     for (const b of myBots) {
+      if (b.post && !b.free) continue;   // a garrison post: the play releases it
       if (b.assignedTo && !S.attacks.includes(b.assignedTo) && !S.defences.includes(b.assignedTo)) {
         b.assignedTo = null; b.free = true;
       }
     }
+    if (garrison) garrison.post({ sai: this, side, bots: myBots, alive });
     // Collect: each target takes the nearest free bots of its kind until
     // present >= wanted; one bot per target per round so several targets
     // share the pool (`collectAdditionalResources(1)` round-robin).
@@ -483,6 +499,25 @@ export class StrategicAI {
         best.free = false;
         best.assignedTo = t.area;
         progressed = true;
+      }
+    }
+    // The garrison: a free bot left over joins the nearest attack target
+    // rather than holding where it is (the base it spawned at, the flag it
+    // just took).
+    if (garrison && attacks.length) {
+      for (const b of myBots) {
+        if (!b.free) continue;
+        const p = alive.get(b.id);
+        let best = null, bestD = Infinity;
+        for (const t of attacks) {
+          const c = this.layer.orderPosition(t.area);
+          const d = Math.hypot(p[0] - c[0], p[2] - c[1]);
+          if (d < bestD) { bestD = d; best = t.area; }
+        }
+        this._order(b, best, side);
+        b.free = false;
+        b.isAttack = true;
+        b.assignedTo = best;
       }
     }
     // Free bots hold where they are (`retainBot`: an empty route = this

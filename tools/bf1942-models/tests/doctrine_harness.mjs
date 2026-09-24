@@ -7,6 +7,7 @@
 
 import {
   StrategicLayer, StrategicAI, StrategicCommand, closeToOrder, checkOrder, parseDoctrineSpec, ORDER_KINDS, SQUAD,
+  GARRISON, postCap, postOrder,
 } from './strategic.js';
 
 const AI = {
@@ -249,4 +250,109 @@ const leave = { kind: w7.cmd.waypointsOf('s1_1')?.kind, exited: exited.slice(),
                 leader2: w7.cmd.doctrines[1].squads[1].leader, leader2Kind: w7.cmd.waypointsOf('s1_4')?.kind,
                 leaves: w7.cmd.doctrines[1].counts.leaveOrders };
 
-process.stdout.write(JSON.stringify({ saiEquivalent, closeTo, contract, spec, squad, hold, board, driverLeads, air, leave }));
+
+// --- 5. the garrison -----------------------------------------------------------
+//
+// Four areas in a line: the Axis base (the Allies cannot take it), West (an
+// Axis flag), East (neutral), the Allied base. The strategy asks for one
+// attack and one defence at aggression 0.5.
+
+const GAI = {
+  strategicAreas: [
+    { name: 'AxisBase', min: [50, -150], max: [150, -50], radius: 50, neighbours: ['West'], flags: ['Base'], orderPositions: { Infantery: [100, -100] }, side: 1, takeable: { 2: false } },
+    { name: 'West', min: [350, -450], max: [450, -350], radius: 100, neighbours: ['AxisBase', 'East'], flags: ['ControlPoint'], orderPositions: { Infantery: [400, -400] }, side: null, takeable: {} },
+    { name: 'East', min: [650, -750], max: [750, -650], radius: 100, neighbours: ['West', 'AlliedBase'], flags: ['ControlPoint'], orderPositions: { Infantery: [700, -700] }, side: null, takeable: {} },
+    { name: 'AlliedBase', min: [850, -950], max: [950, -850], radius: 50, neighbours: ['East'], flags: ['Base'], orderPositions: { Infantery: [900, -900] }, side: 2, takeable: { 1: false } },
+  ],
+  conditions: AI.conditions,
+  prerequisites: AI.prerequisites,
+  strategies: [{ name: 'push', aggression: 0.5, attacks: 1, defences: 1, timeLimit: 400, prerequisite: 'broadPrereq', modifiers: [] }],
+  sideStrategies: { 1: ['push'], 2: ['push'] },
+};
+const GFLAGS = () => [
+  { name: 'AxisBase', position: [100, 0, -100], team: 1, uncapturable: true, radius: 20 },
+  { name: 'West', position: [400, 0, -400], team: 1, radius: 20 },
+  { name: 'East', position: [700, 0, -700], team: 0, radius: 20 },
+  { name: 'AlliedBase', position: [900, 0, -900], team: 2, uncapturable: true, radius: 20 },
+];
+
+function garrisonWorld(doctrine, seats = [], units = new Map()) {
+  const unitOf = id => units.get(id) ?? { type: 'Infantery', radius: 1.0, mounted: false };
+  const sai = new StrategicAI(new StrategicLayer(GAI, GFLAGS()), { random: rng(5), unitOf });
+  const entered = [], exited = [];
+  const cmd = new StrategicCommand(sai, {
+    doctrine, unitOf, random: rng(9), candidatesOf: () => seats,
+    actuators: { enter: (id, c) => entered.push([id, c]), exit: id => exited.push(id) },
+  });
+  for (const side of [1, 2]) for (let i = 0; i < 8; i++) cmd.addBot(`g${side}_${i}`, side);
+  return { sai, cmd, entered, exited, seats, units };
+}
+// The Axis strung out east of the West flag, g1_0 nearest it.
+const galive = (over = {}) => {
+  const m = new Map();
+  for (let i = 0; i < 8; i++) m.set(`g1_${i}`, [405 + 10 * i, 0, -400 - 3 * i]);
+  for (let i = 0; i < 8; i++) m.set(`g2_${i}`, [900 + i, 0, -900]);
+  for (const [k, v] of Object.entries(over)) m.set(k, v);
+  return m;
+};
+const axisOrders = (cmd) => Array.from({ length: 8 }, (_, i) => cmd.waypointsOf(`g1_${i}`));
+const summary = (orders) => orders.map(o => (o ? `${o.kind}:${o.area?.name ?? '-'}${o.guns ? ':' + o.guns : ''}` : null));
+
+const gw = garrisonWorld('axis=garrison');
+gw.cmd.update(2, galive());
+const gOrders = axisOrders(gw.cmd);
+const post0 = gw.cmd.waypointsOf('g1_0');
+const flagW = [400, -400];
+const ringR = Math.min(GARRISON.ringMax, Math.max(GARRISON.ringMin, GARRISON.ringFraction * 20));
+// The same world under the engine's SAI: its defence wants two on West.
+const sw = garrisonWorld('sai');
+sw.cmd.update(2, galive());
+
+const urgencyFar = post0.urgency(post0.point[0] + 10, post0.point[1]);
+// The patrol: at the leg's point it stops, then after its pause the next leg.
+const legs = [post0];
+let at = post0.point;
+const trail = [];
+for (let n = 0; n < 30 * 20 && legs.length < 4; n++) {
+  const cur = gw.cmd.waypointsOf('g1_0');
+  if (cur !== legs[legs.length - 1]) { legs.push(cur); at = cur.point; trail.push(round(gw.sai.time)); }
+  cur.urgency(at[0], at[1]);
+  gw.cmd.update(1 / 30, galive({ g1_0: [at[0], 0, at[1]] }));
+}
+const garrison = {
+  cap: [postCap(2), postCap(3), postCap(8), postCap(12)],
+  orders: summary(gOrders),
+  sai: summary(axisOrders(sw.cmd)),
+  post: { phase: post0.phase, gait: post0.gait ?? null, ringDist: round(Math.hypot(post0.point[0] - flagW[0], post0.point[1] - flagW[1])),
+          ringR, urgencyFar },
+  legs: legs.map(l => ({ phase: l.phase, leg: l.leg, dist: round(Math.hypot(l.point[0] - flagW[0], l.point[1] - flagW[1])) })),
+  legTimes: trail,
+  stats: gw.cmd.stats()[1],
+};
+
+// The gun by the flag: the post walks to its door, presses Use there, and
+// mans it once seated.
+const gun = { id: 'G:gun', vehicleId: 'G', seatId: 'gun', isRoot: true, drives: false, kind: 'gun', pos: [410, 0, -410],
+              entry: [411, -410], entryRadius: 2.5, occupiedBy: null };
+const ggw = garrisonWorld('axis=garrison', [gun]);
+ggw.cmd.update(2, galive());
+const gunLeg = ggw.cmd.waypointsOf('g1_0');
+ggw.cmd.update(1 / 30, galive({ g1_0: [411.5, 0, -410] }));
+const boarded = ggw.entered.slice();
+gun.occupiedBy = 'g1_0';
+ggw.cmd.update(1 / 30, galive({ g1_0: [410, 0, -410] }));
+const manned = ggw.cmd.waypointsOf('g1_0');
+// A post sitting in a gun away from its flag gets out.
+const far = postOrder({ area: gw.sai.layer.byName.get('west'), side: 1, layer: gw.sai.layer, random: rng(1) });
+const farExit = [];
+ORDER_KINDS.get('WPPost').tick(far, { id: 'x', position: [100, 0, -100], command: { sai: { time: 0 } },
+  candidates: () => [{ id: 'B:gun', kind: 'gun', pos: [100, 0, -100], entry: [101, -100], occupiedBy: 'x' }],
+  actuators: { exit: id => farExit.push(id) } });
+garrison.gun = {
+  first: gunLeg ? { phase: gunLeg.phase, point: gunLeg.point.map(round), gunId: gunLeg.gunId } : null,
+  entered: boarded,
+  manned: manned ? { phase: manned.phase, gunId: manned.gunId, urgency: manned.urgency(0, 0) } : null,
+  farExit,
+};
+
+process.stdout.write(JSON.stringify({ saiEquivalent, closeTo, contract, spec, squad, hold, board, driverLeads, air, leave, garrison }));

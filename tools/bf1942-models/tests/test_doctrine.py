@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "doctrine_harness.mjs"
-MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-landing.js")
+MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js")
 
 
 def run_harness() -> dict:
@@ -85,7 +85,7 @@ class DoctrineTests(unittest.TestCase):
         self.assertTrue(c["areaWithoutInside"])
         self.assertTrue(c["nullIsNoOrder"])
         self.assertEqual(c["kinds"], ["WPAltitudeMoveTo", "WPBeachLanding", "WPBoard", "WPFollow", "WPHold", "WPLeave", "WPMoveTo",
-                                      "WPMoveToBeachLanding"])
+                                      "WPMoveToBeachLanding", "WPPost"])
 
     def test_the_doctrine_spec_names_each_side(self) -> None:
         s = self.r["spec"]
@@ -163,3 +163,46 @@ class DoctrineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GarrisonTests(unittest.TestCase):
+    """doctrine-garrison.js: one busy guard a flag, everyone else attacking
+    (doctrine_harness.mjs section 5)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.g = DoctrineTests.r["garrison"] if hasattr(DoctrineTests, "r") else run_harness()["garrison"]
+
+    def test_the_post_cap(self) -> None:
+        # None under three bots, then a third of them.
+        self.assertEqual(self.g["cap"], [0, 1, 2, 4])
+
+    def test_one_guard_and_the_rest_attack(self) -> None:
+        # The Axis holds West (the base cannot be taken): the bot nearest its
+        # flag guards it, every other one attacks East and takes no idle gun.
+        self.assertEqual(self.g["orders"], ["WPPost:West"] + ["WPMoveTo:East:engaged"] * 7)
+        # The engine's SAI on the same world leaves more than one on West.
+        self.assertGreater(self.g["sai"].count("WPMoveTo:West"), 1)
+
+    def test_the_post_walks_its_ring(self) -> None:
+        p = self.g["post"]
+        self.assertEqual(p["phase"], "patrol")
+        self.assertEqual(p["gait"], "walk")
+        self.assertAlmostEqual(p["ringDist"], p["ringR"], places=3)
+        self.assertEqual(p["urgencyFar"], 1)
+        # Leg after leg round the ring, each after its stop (3..7 s).
+        self.assertEqual([l["leg"] for l in self.g["legs"]], [0, 1, 2, 3])
+        for l in self.g["legs"]:
+            self.assertAlmostEqual(l["dist"], p["ringR"], places=3)
+        t = self.g["legTimes"]
+        for a, b in zip(t, t[1:]):
+            self.assertGreaterEqual(b - a, 3.0)
+            self.assertLessEqual(b - a, 7.5)
+
+    def test_the_post_mans_the_flags_gun(self) -> None:
+        g = self.g["gun"]
+        self.assertEqual(g["first"], {"phase": "board", "point": [411, -410], "gunId": "G:gun"})
+        self.assertEqual(g["entered"], [["g1_0", "G:gun"]])
+        self.assertEqual(g["manned"], {"phase": "man", "gunId": "G:gun", "urgency": 0})
+        # A post sitting in a gun away from its flag gets out.
+        self.assertEqual(g["farExit"], ["x"])

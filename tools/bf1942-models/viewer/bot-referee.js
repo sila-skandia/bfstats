@@ -889,7 +889,7 @@ export function createBotReferee(env) {
       : m.kind === 'air' ? 'Plane' : 'Infantery';
     const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? units()?.vehicleNav() ?? null : null);
     return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true,
-             air: m.kind === 'air', root: !!m.isRoot, groundAt: (x, z) => bot._groundAt(x, z) };
+             air: m.kind === 'air', root: !!m.isRoot, fixed: m.kind === 'gun', groundAt: (x, z) => bot._groundAt(x, z) };
   };
 
   // --- seating ------------------------------------------------------------------

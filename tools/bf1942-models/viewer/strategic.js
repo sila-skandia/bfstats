@@ -13,6 +13,8 @@
 //                         registries, the engine's SAI as the 'sai' doctrine
 //                         and the `WPCloseTo`-law orders
 //   `doctrine-squad.js`   the first play, 'squad' (registers itself)
+//   `doctrine-garrison.js` the garrison, 'garrison': one busy guard a flag,
+//                         everyone else attacking (the page's default)
 //   `doctrine-landing.js` the SAI's beach orders for a landing craft
 //                         (`WPBeachLanding`, `WPMoveToBeachLanding`) and the
 //                         bail at the beach; doctrine.js registers the kinds
@@ -27,6 +29,7 @@ export {
   parseDoctrineSpec, closeToOrder, boardOrder, leaveOrder, CLOSE_TO,
 } from './doctrine.js';
 export { SQUAD } from './doctrine-squad.js';
+export { GARRISON, guardedAreas, postCap, assignPosts, patrolRing, postGun, postLeg, postOrder } from './doctrine-garrison.js';
 export {
   LANDING, landingZonesOf, zoneDistanceSqr, beachTarget, beachLandingOrder, landingTick, craftArea, strategicRoutes,
   vehicleGroupOf,
