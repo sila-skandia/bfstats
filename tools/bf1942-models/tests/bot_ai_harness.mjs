@@ -25,6 +25,8 @@ import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js
 import * as THREE from 'three';
 import { TurretRig } from './turret-rig.js';
 import * as aiming from './bot-aim.js';
+import { approachAimValid, backOffGoal } from './bot-plans.js';
+import { doorApproach } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1188,7 +1190,53 @@ const results = {
   look: lookScenario(),
 };
 
+// --- The stalemates (features/bot-stalemates) -------------------------------
+
+function stalemateScenario() {
+  // The single-shot trigger settles: a miss closing by less than 2 mm a tick
+  // is the closest approach, inside the precision it fires.
+  const settle = (() => {
+    const st = {};
+    return [3, 2, 1.2, 1.0, 0.999, 0.998].map(m => aiming.precisionHolds(m, 2, false, st));
+  })();
+  const outside = (() => {
+    const st = {};
+    return [6, 5.999, 5.998].map(m => aiming.precisionHolds(m, 2, false, st));
+  })();
+  // The approach's aim window in the hull's frame: a Sherman's -20 .. 5 deg
+  // (20 up, 5 down), a target 12 deg below the horizon.
+  const ctl = { cameraMinDeg: [-360, -20, 0], cameraMaxDeg: [360, 5, 0] };
+  const pitched = deg => {
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg * Math.PI / 180);
+    return { x: q.x, y: q.y, z: q.z, w: q.w };
+  };
+  const botAt = orientation => ({ position: [0, 0, 0], _aimOrigin: () => [0, 0, 0],
+    vehicle: { controlInfo: ctl, drive: orientation ? { state: { orientation } } : null } });
+  const down12 = [0, -Math.tan(12 * Math.PI / 180) * 100 - 1, -100];
+  const up25 = [0, Math.tan(25 * Math.PI / 180) * 100 - 1, -100];
+  const up11 = [0, Math.tan(11 * Math.PI / 180) * 45 - 1, -45];
+  // The door walk: a Tiger's door on its centreline, a soldier behind the hull.
+  const node = { matrixWorld: new THREE.Matrix4() };
+  const behind = doorApproach([0, 0], 3.5, node, [0.5, 0, 6]);
+  const beside = doorApproach([0, 0], 3.5, node, [-5, 0, 0.5]);
+  const tiny = doorApproach([0, 0], 1.5, node, [0, 0, 6]);
+  // The back-off for a target above the gun: 20 m up at 30 m.
+  const tankBelow = { position: [0, 0, 30], _aimOrigin: () => [0, 2, 30], _nav: () => null,
+    vehicle: { controlInfo: ctl } };
+  const back = backOffGoal(tankBelow, [0, 21, 0], 225);
+  return {
+    settle, outside,
+    flatDown12: approachAimValid(botAt(null), down12),
+    noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
+    flatUp11: approachAimValid(botAt(null), up11),
+    flatUp25: approachAimValid(botAt(null), up25),
+    behind, beside, tiny,
+    backDist: back ? Math.hypot(back[0], back[2]) : null,
+  };
+}
+
 results.gunner = gunnerScenarios();
+results.stalemate = stalemateScenario();
 results.briefL = {
   soldier: soldierLawScenario(),
   yawWindow: yawWindowScenario(),
