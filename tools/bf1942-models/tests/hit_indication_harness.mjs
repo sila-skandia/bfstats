@@ -2,11 +2,20 @@
 // a browser and prints one JSON blob: which landings raise the local player's
 // `CrossHair/HitIndicationTime` (ledger XHIT-4, XHIT-5), and which soldiers a
 // round may meet on its way (`roundBodyCast`). The module is imported from the
-// viewer tree in place, the way the headless runner (`sim/env.mjs`) loads it,
-// so the file under test is the file the page loads.
+// viewer tree in place, the way the headless runner (`sim/env.mjs`) loads it
+// (its hooks resolve `three` to the vendored build), so the file under test is
+// the file the page loads.
 
-import { createVehicleHits } from '../viewer/vehicle-hits.js';
-import { BOT_BODY_HEIGHT } from '../viewer/bot-referee.js';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { installModuleHooks, viewerDir } from '../sim/env.mjs';
+
+const viewer = viewerDir();
+installModuleHooks(viewer);
+const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
+const [{ createVehicleHits }, { BOT_BODY_HEIGHT }] = await Promise.all([
+  imp('vehicle-hits.js'), imp('bot-referee.js'),
+]);
 
 const LOCAL = 'local';
 
