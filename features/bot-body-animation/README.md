@@ -163,7 +163,7 @@ Every state lasts 1/|rate| to within a frame. For example, the dive's 42 frames 
 | Sg44 | magazine change prone | `Ub_LieReload`, 109 frames (1/0.55 = 1.82 s) |
 | Sg44 | round fired prone | `Ub_LieFire` |
 | No4 | one round | `Ub_Fire` for 1.0 s, then the bolt (`Ub_StandReload`) for 1.92 s, then the aim |
-| Bazooka | the round | `Ub_Fire` for one frame, then `Ub_StandReload` for 2.86 s (1/0.35). The referee starts the reload on the round's own tick (Open) |
+| Bazooka | the round | `Ub_Fire` for one frame, then `Ub_StandReload` for 2.86 s (1/0.35), when the referee started the reload on the round's own tick. It now waits for the fire cycle: prone, `Ub_LieFire` holds for the round's 1.0 s, then `Ub_LieReload` (features/bot-weapons) |
 
 ![Fire: an automatic, a bolt rifle, the Bazooka's reload](fire.jpg)
 ![Reload standing and prone](reload.jpg)
@@ -213,8 +213,8 @@ The full suite after the rebase is 3,227 tests, all OK.
    0.30 / 1.12 / 1.65 m. It aims at the target's feet + 1.0 m, not the sensed point, and nothing passes
    the LOD force (BODY-5).
 3. **Scout and TakeCover.** The variable pose (BODY-6) is not built.
-4. **The Bazooka's shot is cut after one frame.** The referee starts the reload on the round's tick. The
-   engine waits for the fire cycle (BODY-7). This is the bot-fire work's.
+4. **The Bazooka's shot.** Fixed by features/bot-weapons: the referee starts the reload once the
+   round's fire cycle is spent (BODY-7, AI-133), so the fire clip plays for its second first.
 5. **The local player's stance timings.** `soldier.js` `STANCE_TRANSITION` and
    `soldier-locomotion.js` `DIVE_DURATION` use a 26 fps frame count that ANIM-2 refutes, and the files'
    untweaked rates. The machine plays the dive for 1/1.4 = 0.714 s, not 0.282 s. It plays crouch to lie
