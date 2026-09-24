@@ -814,6 +814,7 @@ const vehicleHits = createVehicleHits(bag(
   from(() => level, `collider currentRoot vehicleDamage world`),
   from(() => localPlayer, `applyDamageToPlayer occupancy soldier soldierArmor soldierDead`),
   from(() => referee, `applyDamage bodyAt bots capsulesOf damageLanded`),
+  from(() => soldierHud, `raiseHitIndication`),
   from(() => vehicleHud, `feedVehicleHud`),
   from(() => wrecks, `damageVisuals showDamageTier stepWrecks wreckVehicle`),
   {
@@ -978,6 +979,7 @@ const hudFeed = createHudFeed(bag(
 // until the HUD's own feed exists (above the modules it threw on every phone).
 if (isTouchDevice) hudFeed.updateHud();
 const vehicleHud = createVehicleHud(bag(
+  from(() => controls, `crossHairColor`),
   from(() => hudFeed, `gameHud`),
   from(() => level, `world`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
@@ -995,6 +997,7 @@ const vehicleHud = createVehicleHud(bag(
   },
 ));
 const soldierHud = createSoldierHud(bag(
+  from(() => controls, `crossHairColor`),
   from(() => hudFeed, `gameHud`),
   from(() => level, `combatArea currentDir`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),

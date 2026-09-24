@@ -94,26 +94,38 @@ label.opt {
    as the fallback for a pack that has no `hk` in it.
 
    The look is measured off retail footage, not styled: no crosshair
-   texture exists in any archive (the engine draws it), so a 960-wide
-   capture of the Thompson on Wake is the reference — bars 2px thick and
-   13px long at that width, colour rgb(176,32,16), no centre dot, and the
-   arms MEET at centre when the shooter stands still. Sizes are locked in
-   px of the reference capture; a hidpi pass can scale them later. */
+   texture exists in any archive (the engine draws it, `BfCrosshairNode`).
+   Two captures agree once they are read in the HUD's 800x600 virtual
+   screen, stretched per axis like the rest of the HUD (VHUD-11): a 960-wide
+   one of the Thompson on Wake (bars 13 px long, 10.8 units) and the owner's
+   2560x1440 one (every arm 10 units long, 1 unit thick -- the node's own
+   `Thickness 1` -- and the gap 3.75 units on both axes while moving; ledger
+   XHIT-11). So the sizes below are units, `--ch-ux`/`--ch-uy` px each, set
+   per frame by updateCrosshair(), and the arms MEET at centre when the
+   shooter stands still. Each arm, and the 1x1 centre point the owner's
+   server draws (`serverCrossHairCenterPoint`, the layout's fill at
+   (400,300)), sits on the (400..401) line, just below and right of the
+   exact centre. The ink is the profile's `game.setCrossHairColor` / 256,
+   written by updateCrosshair(); the fallback here is the shipped profile's. */
 #crosshair {
   position: absolute;
   z-index: 2;
   left: 50%; top: 50%;
   width: 0; height: 0;
   pointer-events: none;
-  --ch-gap: 0px;
-  --ch-ink: rgb(176, 32, 16);
+  --ch-ux: 1.2px;
+  --ch-uy: 1.2px;
+  --ch-gap-x: 0px;
+  --ch-gap-y: 0px;
+  --ch-ink: rgb(254, 254, 0);
 }
 #crosshair[hidden] { display: none; }
 #crosshair span {
   position: absolute;
   background: var(--ch-ink);
 }
-#crosshair .ch-dot { display: none; width: 2px; height: 2px; left: -1px; top: -1px; }
+#crosshair .ch-dot { display: none; width: var(--ch-ux); height: var(--ch-uy); left: 0; top: 0; }
+#crosshair.ch-centre .ch-dot { display: block; }
 #crosshair.ch-icon .ch-dot { display: block; }
 #crosshair.ch-art .ch-dot { display: none; }
 /* The CHTIcon picture. Sized per frame from the layout's own rect through
@@ -130,10 +142,10 @@ label.opt {
   top: calc(var(--ch-icon-h, 20px) / -2);
 }
 #crosshair.ch-icon.ch-art .ch-pic { display: block; }
-#crosshair .ch-n { width: 2px; height: 13px; left: -1px; bottom: var(--ch-gap); }
-#crosshair .ch-s { width: 2px; height: 13px; left: -1px; top: var(--ch-gap); }
-#crosshair .ch-w { height: 2px; width: 13px; top: -1px; right: var(--ch-gap); }
-#crosshair .ch-e { height: 2px; width: 13px; top: -1px; left: var(--ch-gap); }
+#crosshair .ch-n { width: var(--ch-ux); height: calc(10 * var(--ch-uy)); left: 0; bottom: var(--ch-gap-y); }
+#crosshair .ch-s { width: var(--ch-ux); height: calc(10 * var(--ch-uy)); left: 0; top: var(--ch-gap-y); }
+#crosshair .ch-w { height: var(--ch-uy); width: calc(10 * var(--ch-ux)); top: 0; right: var(--ch-gap-x); }
+#crosshair .ch-e { height: var(--ch-uy); width: calc(10 * var(--ch-ux)); top: 0; left: var(--ch-gap-x); }
 #crosshair.ch-icon .ch-n, #crosshair.ch-icon .ch-s,
 #crosshair.ch-icon .ch-w, #crosshair.ch-icon .ch-e { display: none; }
 /* The in-game HUD proper -- health bar, stance figure, magazine picture,

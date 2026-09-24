@@ -254,6 +254,58 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual(7, octants["left"])
         self.assertEqual(8, octants["frontLeft"])
 
+    # -- the crosshair's hit marks (XHIT-1, XHIT-7, XHIT-8) ---------------------
+
+    def slope(self, seg: dict) -> str:
+        """`\\` when the segment runs top-left to bottom-right on the y-down
+        frame, `/` the other way -- how the capture's marks read."""
+        (ax, ay), (bx, by) = sorted([seg["a"], seg["b"]])
+        return "\\" if by > ay else "/"
+
+    def test_the_marks_are_radial_diagonals_like_the_capture(self) -> None:
+        # Top-left `\`, top-right `/`, bottom-left `/`, bottom-right `\`: each
+        # points away from the crosshair, as in the owner's recording.
+        marks = self.results["hitMarks"]["atHit"]
+        self.assertEqual(["\\", "/", "/", "\\"], [self.slope(m) for m in marks])
+
+    def test_each_mark_turns_about_its_own_centre(self) -> None:
+        # XHIT-8: the rotated quad's midpoint is the unrotated rect's centre.
+        rects = [[387, 288, 1, 3], [408, 289, 3, 1], [387, 310, 3, 1], [409, 309, 1, 3]]
+        for seg, (x, y, w, h) in zip(self.results["hitMarks"]["atHit"], rects):
+            mid = [(seg["a"][i] + seg["b"][i]) / 2 for i in (0, 1)]
+            self.assertAlmostEqual(x + w / 2, mid[0], places=3)
+            self.assertAlmostEqual(y + h / 2, mid[1], places=3)
+
+    def test_the_marks_turn_counter_clockwise_by_the_datas_angle(self) -> None:
+        # The vertical top-left quad: its top end goes LEFT (RotateEffect is
+        # counter-clockwise, VHUD-9), by 0.8 rad from vertical.
+        import math
+        seg = self.results["hitMarks"]["atHit"][0]
+        top = min(seg["a"], seg["b"], key=lambda p: p[1])
+        bottom = max(seg["a"], seg["b"], key=lambda p: p[1])
+        self.assertLess(top[0], bottom[0])
+        angle = math.atan2(bottom[0] - top[0], bottom[1] - top[1])
+        self.assertAlmostEqual(0.8, angle, places=4)   # endpoints are rounded to 1e-3
+
+    def test_the_marks_are_the_crosshair_colour_at_the_timers_alpha(self) -> None:
+        marks = self.results["hitMarks"]
+        # 255/256, as the engine divides it -- not 255/255.
+        self.assertEqual("rgb(254,0,0)", marks["atHit"][0]["style"])
+        self.assertEqual("rgb(254,254,0)", marks["yellow"]["style"])
+        self.assertEqual(1, marks["atHit"][0]["alpha"])
+        self.assertEqual(0.5, marks["halfWay"]["alpha"])
+
+    def test_nothing_draws_at_rest_unfed_hidden_or_under_a_periscope(self) -> None:
+        marks = self.results["hitMarks"]
+        for case in ("atRest", "unfedTimer", "groupHidden", "periscope"):
+            self.assertIsNone(marks[case], case)
+
+    def test_a_layout_without_the_new_fields_paints_as_before(self) -> None:
+        legacy = self.results["hitMarks"]["legacyLeaf"]
+        self.assertEqual([387.5, 288], legacy["a"])
+        self.assertEqual([387.5, 291], legacy["b"])
+        self.assertEqual("rgb(1,1,1)", legacy["style"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
+import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant, prepareElement } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -337,6 +337,81 @@ results.ammoType = {
   roundsTextAdmits: [0, 1, 2, 3, 4, 5, 6, 7]
     .filter(n => visibleUnder(ROUNDS_TEXT_WHEN, { 'Ammo/AmmoType': n })),
   roundsTextWhen: ROUNDS_TEXT_WHEN,
+};
+
+// --- the crosshair's hit marks (XHIT-1, XHIT-7) ------------------------------
+//
+// Four 1x3 / 3x1 fills at the corners of the 20x20 crosshair box, turned 0.8
+// rad counter-clockwise about their own centres, in the crosshair colour, at
+// alpha `CrossHair/HitIndicationTime`. The leaves are verbatim from
+// `hud-layout.json`. A recording context composes the painter's own
+// translate/rotate and reports each quad's long axis as a segment in the
+// 800x600 frame, which is what the capture's diagonals are.
+
+const MARK_BINDINGS = {
+  colorVars: {
+    r: { var: 'CrossHair/CrossHairRed', div: 256 },
+    g: { var: 'CrossHair/CrossHairGreen', div: 256 },
+    b: { var: 'CrossHair/CrossHairBlue', div: 256 },
+    a: { var: 'CrossHair/CrossHairAlpha' },
+  },
+  alphaVars: ['CrossHair/HitIndicationTime'],
+  rotation: { angle: 0.800000011920929, angleMultiplier: 0 },
+};
+const MARK_WHEN = [
+  { var: 'CrossHair/ShowCrossHair', op: 'eq', value: true },
+  { var: 'Submarine/ShowPeriscope', op: 'ne', value: true },
+];
+const hitMarks = [[387, 288, 1, 3], [408, 289, 3, 1], [387, 310, 3, 1], [409, 309, 1, 3]]
+  .map(rect => ({ kind: 'fill', rect, color: [0.0039, 0.0039, 0.0039, 1], when: MARK_WHEN, ...MARK_BINDINGS }));
+
+function paintMark(el, vars) {
+  const hud = new Hud({ canvas: null, sprite: () => null });
+  Object.assign(hud.vars, vars);
+  const drawn = [];
+  let tx = 0, ty = 0, theta = 0;
+  const ctx = {
+    globalAlpha: 1, fillStyle: '',
+    save() {}, restore() { tx = 0; ty = 0; theta = 0; },
+    translate(x, y) { tx = x; ty = y; },
+    rotate(a) { theta = a; },
+    fillRect(x, y, w, h) {
+      // Long axis through the quad's centre, mapped back to the frame.
+      const cx = x + w / 2, cy = y + h / 2;
+      const half = w > h ? [w / 2, 0] : [0, h / 2];
+      const map = (px, py) => [
+        Number((px * Math.cos(theta) - py * Math.sin(theta) + tx).toFixed(3)),
+        Number((px * Math.sin(theta) + py * Math.cos(theta) + ty).toFixed(3)),
+      ];
+      drawn.push({
+        a: map(cx - half[0], cy - half[1]), b: map(cx + half[0], cy + half[1]),
+        alpha: Number(this.globalAlpha.toFixed(4)), style: this.fillStyle,
+      });
+    },
+  };
+  // `_paintElement` culls through `_visible`, which reads the required list
+  // `load()` builds with `prepareElement`.
+  hud._paintElement(ctx, prepareElement(el));
+  return drawn[0] ?? null;
+}
+
+const RED_PROFILE = {
+  'CrossHair/ShowCrossHair': true, 'Submarine/ShowPeriscope': false,
+  'CrossHair/CrossHairRed': 255, 'CrossHair/CrossHairGreen': 0, 'CrossHair/CrossHairBlue': 0,
+};
+results.hitMarks = {
+  atHit: hitMarks.map(el => paintMark(el, { ...RED_PROFILE, 'CrossHair/HitIndicationTime': 1 })),
+  halfWay: paintMark(hitMarks[0], { ...RED_PROFILE, 'CrossHair/HitIndicationTime': 0.5 }),
+  atRest: paintMark(hitMarks[0], { ...RED_PROFILE, 'CrossHair/HitIndicationTime': 0 }),
+  unfedTimer: paintMark(hitMarks[0], { ...RED_PROFILE }),
+  groupHidden: paintMark(hitMarks[0], { ...RED_PROFILE, 'CrossHair/ShowCrossHair': false, 'CrossHair/HitIndicationTime': 1 }),
+  periscope: paintMark(hitMarks[0], { ...RED_PROFILE, 'Submarine/ShowPeriscope': true, 'CrossHair/HitIndicationTime': 1 }),
+  // The shipped default profile's yellow, unfed alpha channel (never
+  // registered by the client, so the file's 1.0).
+  yellow: paintMark(hitMarks[0], { ...RED_PROFILE, 'CrossHair/CrossHairGreen': 255, 'CrossHair/HitIndicationTime': 1 }),
+  // A layout from before the new fields: a plain unrotated fill in `color`.
+  legacyLeaf: paintMark({ kind: 'fill', rect: [387, 288, 1, 3], color: [0.0039, 0.0039, 0.0039, 1], when: MARK_WHEN },
+                        { ...RED_PROFILE }),
 };
 
 results.hitOctants = {

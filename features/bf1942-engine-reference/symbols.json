@@ -78,6 +78,15 @@
    "note": "Walks IID_IPlayerObject (0xc378) up the +0x50 parents and returns the first queryInterface(0xc4c5 IID_IPlayerControlObject), else 0. Used by BfMap__update's vehicle pass (0x0046b6b6) and the client ObjectSpawner (0x0054710c). Ledger MMAP-3."
   },
   {
+   "address": "0x00406890",
+   "name": "BFPlayer::update (hit-indication timer decay)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Client twin of lnxded BFPlayer::update(float) 0x080522d0: t=[player+0x1cc]; t-=dt; if (t<0) t=0. The crosshair hit-indication timer (lnxded field +0x184). See ledger XHIT-3."
+  },
+  {
    "address": "0x00406a20",
    "name": "GameClient__func_406A20",
    "kind": "function",
@@ -1293,6 +1302,24 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x00495616",
+   "name": "SpecialGameEvent type 1 handler (hit indication)",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Client: event type byte [esi+0xc]==1 -> local BFPlayer [+0x1cc] = 1.0f. See ledger XHIT-6."
+  },
+  {
+   "address": "0x00495a09",
+   "name": "GhostManager hit-indication flag consume",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Client: al=[ghost+0x118]; [ghost+0x118]=0; if al and local player: [player+0x1cc] = 1.0f (0x00495a24). The flag lnxded's writeControlObjectState sends as one bool (server GhostManager +0x128). See ledger XHIT-6."
+  },
+  {
    "address": "0x00495a24",
    "name": "patch__hit_indicator_time",
    "kind": "patch_site",
@@ -1417,6 +1444,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: GameEvent System"
+  },
+  {
+   "address": "0x004a8890",
+   "name": "triggerSpecialGameEvent type 1 (listen-server hit indication)",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Client twin of lnxded GameServer::triggerSpecialGameEvent 0x081591a0: attacker == local player -> [attacker+0x1cc] = 1.0f. See ledger XHIT-6."
   },
   {
    "address": "0x004a9e60",
@@ -3264,6 +3300,15 @@
    "note": "bf42plus section: System"
   },
   {
+   "address": "0x006017c0",
+   "name": "VariableColorEffect::apply",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Reads Red/Green/Blue/Alpha Data (unbound channel = 1.0) and SETS the quad's four vertex colours (0x004677a0, plain store). Twin 0x00601870. See ledger XHIT-7."
+  },
+  {
    "address": "0x006038c0",
    "name": "RendPCDX8_pushStateBlock",
    "kind": "function",
@@ -4056,6 +4101,15 @@
    "note": "Client. FSTP float ptr [EBP+0x320] after FPATAN (0x006ae612) and FCHS: IconLookRotation = +atan2(dot(pcoRight, camForward), dot(pcoForward, camForward)), in RADIANS, positive to the PCO's right, pivoted on the controlled PCO's own axes (the hull for a tank driver). The rows are identified at 0x006ad5df - first getAbsoluteTransformation call then ADD EAX,0x20 into [ESP+0x30..0x38] = row 2 = forward; second call with no offset into [ESP+0x3c..0x44] = row 0 = right; third with +0x30 = translation. The layout's own variable name is the unqualified 'IconLookRotation'. See ledger VHUD-9."
   },
   {
+   "address": "0x006aeba1",
+   "name": "HUD updater: HitIndicationTime copy",
+   "kind": "address",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "In FUN_006ad0a0: fld [player+0x1cc] (player = arg 3, [esp+0x228]); fstp [hud+0x26c] = CrossHair/HitIndicationTime, once per rendered frame. Registered in FUN_006e10b0 at 0x006e24ba. See ledger XHIT-2."
+  },
+  {
    "address": "0x006aeba8",
    "name": "patch__hit_indicator_alpha",
    "kind": "patch_site",
@@ -4542,6 +4596,15 @@
    "note": "Client. Group name string 0x008deab4 = 'CrossHair'; registers SniperSight bool +0x84 at 0x006e9a98. An earlier reading filed SniperSight under the Overheat group, which is wrong. See ledger VHUD-10."
   },
   {
+   "address": "0x006e9d30",
+   "name": "CrossHair group ctor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "vtable 0x0092604c; ShowCrossHair (+0x8) = 1 and ShowCenterPoint (+0x85) = 1 at construction, ScopeIndex (+0x30) = 0. Stored at HUD +0x1c (0x006a9921). See ledger XHIT-10/XHIT-11."
+  },
+  {
    "address": "0x006e9f30",
    "name": "AmmoHud::registerVariables",
    "kind": "function",
@@ -4558,6 +4621,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-vehicle-hud",
    "note": "Ammo/PrimaryAmmo, MaxPrimaryAmmo, PrimaryMag, all via the int registrar 0x0069eb50."
+  },
+  {
+   "address": "0x006ea960",
+   "name": "CrossHair group show()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "mov byte [ecx+8],1 -- CrossHair/ShowCrossHair. hide() is 0x006ea690. Vtable 0x0092604c slots 4/5. See ledger XHIT-10."
   },
   {
    "address": "0x006ee610",
@@ -4605,6 +4677,15 @@
    "note": "bf42plus section: Server List"
   },
   {
+   "address": "0x007d5990",
+   "name": "BfMultiplyColorEffect2::apply",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "alpha = Alpha Data ->getFloat (vt+0x5c) into color.a (+0x10); then 0x007d5420 multiplies the quad's four vertex colours by (r,g,b,a). Twin 0x007d59e0. Factory create 0x007d5e90, vtable 0x0093d118. See ledger XHIT-7."
+  },
+  {
    "address": "0x007d9b50",
    "name": "meme_BfButtonNode__read",
    "kind": "function",
@@ -4621,6 +4702,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-menu-actions",
    "note": "Real vtable 0x0093e078 +0x30; base ctor 0x007d9d50, createInstance 0x007da550 (0x5c bytes). Next node; Picture, Mouse over picture, Clicked picture; Action; MouseOver button (bool); Index (int); Current mouseover index, Current clicked index, MouseOver active (object frames); Width and Height (floats, read last). A three-state tab or row selector, not a BfButtonNode."
+  },
+  {
+   "address": "0x007db970",
+   "name": "BfCrosshairNode draw (vtable +0x68)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "vtable 0x0093e998 (factory 0x007dc0e0, class-name string 0x0093ea60). Reads Radius/Thickness/outline thickness/Deviation Data (+0x8/+0xc/+0x10/+0x14) and the two BfColorData (+0x18 colour, +0x1c outline); builds eight quads through the effect chain (0x007ed7e0): four arms, four outline. Function created in Ghidra 2026-09-24; its x87 stack is lost in the decompile, so the gap law is not read. See ledger XHIT-11."
   },
   {
    "address": "0x007dc170",
@@ -4963,6 +5053,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15",
    "note": "The object-pointer reader: tell, Ulong size, name string, class string, create+read (vtable+0x34), seek start+size. Empty class with a name = reference to a registered object or another menu/<name> file"
+  },
+  {
+   "address": "0x007ed780",
+   "name": "meme effect chain: continue to next (outer) effect",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Walks the effect list ([node]=next, [node+4]=effect); when exhausted calls renderer vt+0x70 to draw the quad. Effects apply innermost first. Twin 0x007ed7e0 (vt+0x88). See ledger XHIT-7."
   },
   {
    "address": "0x007ed7e0",
@@ -5755,6 +5854,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-menu-actions",
    "note": "Sixteen code pointers at +0x00..+0x3c: +0x00 an unrelated array-count helper (0x0065b120, (end - start) >> 4 over +0x80 / +0x84), +0x20 Font__loadFontFile 0x0065d1a0, +0x24 Font__buildQuads 0x0065ce10. Whether +0x40 (0x00412370, a one-line getter referenced from 2,251 places) is a seventeenth slot is unresolved; the row format string '%c %f %f %f' starts at 0x009190dc."
+  },
+  {
+   "address": "0x00923cc8",
+   "name": "game.setCrossHairColor format string",
+   "kind": "string",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-crosshair-hit-indication",
+   "note": "Profile writer. CrossHairRed/Green/Blue floats +0x30/+0x34/+0x38 of the options object, registered near 0x006d4f9c. Shipped default profile 255 255 0. See ledger XHIT-7."
   },
   {
    "address": "0x00925f54",

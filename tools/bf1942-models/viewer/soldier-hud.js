@@ -2,12 +2,13 @@ import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 
 /**
  * The in-game HUD's soldier side: health, stance, kit and nation art, the
- * soldier ammo bars, the combat-area warning and the damage-direction arc.
- * Split out of `hud-feed.js`, which keeps the HUD itself and the sprite pack.
+ * soldier ammo bars, the combat-area warning, the damage-direction arc and the
+ * crosshair group (its hit marks and scope). Split out of `hud-feed.js`, which
+ * keeps the HUD itself and the sprite pack.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `combatArea`, `combatFrame`, `currentDir`, `deployKit`, `deployTeamId`,
+ * `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
  * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handSlot`, `handWeapon`,
  * `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
  * `optOnFoot`, `optPilot`, `playSoldierHurtSound`, `soldier`,
@@ -112,6 +113,32 @@ export function createSoldierHud(page) {
     page.gameHud.requestRepaint();
   }
 
+  // The crosshair's hit marks (ledger XHIT-1..XHIT-4): the local player's own
+  // `CrossHair/HitIndicationTime`. The game sets it to 1.0 when his round lands
+  // directly on a soldier or on a manned hull -- friend or foe, the server never
+  // compares teams -- and runs it down `t = max(0, t - dt)` every frame
+  // (`BFPlayer::update`, client 0x00406890). The layout multiplies the four
+  // marks' alpha by it, so they flash at full and are gone a second later; a
+  // new hit starts them at full again rather than adding. `vehicle-hits.js`
+  // raises it, where every round's impact is resolved.
+  soldierHud.hitIndicationTime = 0;
+  function raiseHitIndication() {
+    soldierHud.hitIndicationTime = 1.0;
+  }
+
+  // Whether the loaded layout carries the marks' own alpha binding. A
+  // `hud-layout.json` from before it has the four quads as plain unrotated
+  // fills in near-black, which is why hip fire used to keep the group down;
+  // until the file is re-extracted it still has to.
+  soldierHud.hitMarksLayout = null;
+  function layoutHasHitMarks() {
+    if (soldierHud.hitMarksLayout?.layout === page.gameHud.layout) return soldierHud.hitMarksLayout.has;
+    const has = (page.gameHud.layout?.groups?.crosshair?.elements || [])
+      .some(el => el.alphaVars?.includes('CrossHair/HitIndicationTime'));
+    soldierHud.hitMarksLayout = { layout: page.gameHud.layout, has };
+    return has;
+  }
+
   /** Put the arc out and forget the HP it was tracking (the body is gone). */
   function clearHitIndicator() {
     soldierHud.hitIndicatorTimer = 0;
@@ -126,6 +153,9 @@ export function createSoldierHud(page) {
   function updateSoldierHud(dt = 0.016) {
     const vars = page.gameHud.vars;
     const inVehicle = page.optPilot.checked && !!page.occupancy;
+
+    soldierHud.hitIndicationTime = Math.max(0, soldierHud.hitIndicationTime - dt);
+    vars['CrossHair/HitIndicationTime'] = soldierHud.hitIndicationTime;
 
     if (soldierHud.hitIndicatorTimer > 0) {
       soldierHud.hitIndicatorTimer = Math.max(0, soldierHud.hitIndicatorTimer - dt);
@@ -167,6 +197,25 @@ export function createSoldierHud(page) {
     // ticket feed gates on `onFootActive`, which a death clears.
     const inWorld = page.optOnFoot.checked && !!page.soldier && !inVehicle;
     const onFootActive = inWorld && !page.soldierDead;
+    // The `CrossHair` group itself (XHIT-10). The client builds it shown and
+    // only a generic HUD show()/hide() moves it: `CrossHairType` and
+    // `ScopeIndex` decide what it draws, not whether it is up. So it is up
+    // whenever the player is in the world, on foot or in any seat, and it
+    // stays up through the death cam -- the owner's recording draws the cross
+    // over the dropped helmet -- which is what lets a hit landed in the last
+    // instant finish its fade. No periscope is modelled, and that gate has to
+    // read false, not unfed, or the whole group culls. Nothing feeds
+    // `CrossHairType`: the DOM `#crosshair` draws the cross (updateCrosshair),
+    // so the layout's share is the hit marks and, below, the scope.
+    vars['CrossHair/ShowCrossHair'] = (inWorld || inVehicle) && layoutHasHitMarks();
+    vars['Submarine/ShowPeriscope'] = false;
+    vars['CrossHair/ScopeIndex'] = 0;
+    // `game.setCrossHairColor`, in the profile's 0-255: the layout divides by
+    // 256 itself, as the game's does (XHIT-7).
+    const crossHairRgb = page.crossHairColor();
+    vars['CrossHair/CrossHairRed'] = crossHairRgb[0];
+    vars['CrossHair/CrossHairGreen'] = crossHairRgb[1];
+    vars['CrossHair/CrossHairBlue'] = crossHairRgb[2];
     // The ticket counter is not the soldier's, and its own `when` is only
     // `ShowTicket`, so it would otherwise ride over a free-fly camera — where
     // this viewer deliberately shows no HUD chrome at all and the game would
@@ -214,11 +263,7 @@ export function createSoldierHud(page) {
       vars['Weapon/WeaponSelect'] = null;
     }
 
-    if (!page.soldier) {
-      vars['CrossHair/ShowCrossHair'] = false;
-      vars['CrossHair/ScopeIndex'] = 0;
-      return;
-    }
+    if (!page.soldier) return;
 
     const iconNation = stanceNation(page.deployTeamId);
     const stanceWord = STANCE_TEXTURE[page.soldier.stance] || 'standing';
@@ -241,16 +286,10 @@ export function createSoldierHud(page) {
     vars['Soldier/SoldierMaxHitPoints'] ??= 30;
     vars['Soldier/SoldierHitPoints'] ??= 30;
 
-    // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, drop the overlay
-    // so ScopeIndex cannot stick into a seat; Submarine/ShowPeriscope stays
-    // untouched for whatever later feeds a real periscope. Soldier art above
-    // already ran for the seated case (T4a).
-    if (!onFootActive) {
-      vars['CrossHair/ShowCrossHair'] = false;
-      vars['CrossHair/ScopeIndex'] = 0;
-      return;
-    }
-    vars['Submarine/ShowPeriscope'] = false;
+    // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, `ScopeIndex`
+    // stays at the 0 written above so the overlay cannot stick into a seat.
+    // Soldier art above already ran for the seated case (T4a).
+    if (!onFootActive) return;
 
     // The weapon bar's own contents while it is up: the spawned kit's
     // inventory — one icon per `addWeaponIcon` entry (slot order, loadouts'
@@ -268,17 +307,12 @@ export function createSoldierHud(page) {
     }
 
     const hw = page.handWeapon;
-    if (!hw) {
-      vars['CrossHair/ShowCrossHair'] = false;
-      vars['CrossHair/ScopeIndex'] = 0;
-      return;
-    }
+    if (!hw) return;
     // SCOPE-1 / V-R5: FireArms::setZoom writes ScopeIndex 0/1 when useScope;
     // weapon sync copies ScopeIcon / SniperSight / SightIcon. spriteKeyFromRef
-    // in hud.js turns `sniper.tga` into atlas key `sniper`.
-    // Hip fire keeps ShowCrossHair false so layout leaves 10–13 (four fill
-    // ticks gated only on ShowCrossHair) do not draw a black box over the DOM
-    // `#crosshair`; the scope overlay is the only layout CrossHair consumer.
+    // in hud.js turns `sniper.tga` into atlas key `sniper`. The group is forced
+    // up here for the one layout that could not otherwise show it: one from
+    // before the hit marks' binding, whose group stays down in hip fire.
     const zoom = hw.data?.zoom;
     const scoped = !!(zoom?.scope && page.isZoomed());
     if (scoped) {
@@ -291,9 +325,6 @@ export function createSoldierHud(page) {
         // extracted on weaponStats — fall back to the layout's authored default.
         vars['CrossHair/SightIcon'] = zoom.sightIcon || 'scout_ring_128x128.tga';
       }
-    } else {
-      vars['CrossHair/ShowCrossHair'] = false;
-      vars['CrossHair/ScopeIndex'] = 0;
     }
     const magazine = hw.data?.magazine;
     const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
@@ -364,6 +395,7 @@ export function createSoldierHud(page) {
   Object.assign(soldierHud, {
     clearHitIndicator,
     kitHealthArt,
+    raiseHitIndication,
     stanceNation,
     triggerHitIndicator,
     updateSoldierHud,

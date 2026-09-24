@@ -415,6 +415,66 @@ class HudLayoutGoldenTests(unittest.TestCase):
         self.assertEqual("CrossHair/Deviation", ch["deviationVar"])
         self.assertAlmostEqual(0.9, ch["crosshairColor"][3])
 
+    def hit_marks(self) -> list[dict]:
+        return [e for e in self.elements_of_kind("crosshair", "fill")
+                if "CrossHair/HitIndicationTime" in e.get("alphaVars", [])]
+
+    def test_the_crosshair_hit_marks_are_four_turned_quads_at_the_box_corners(self) -> None:
+        # XHIT-1: TransformNode (390,290,20,20) -> four empty pictures at
+        # (-3,-2,1,3) (18,-1,3,1) (-3,20,3,1) (19,19,1,3), under one
+        # RotateEffect of 0.8 rad with a zero multiplier.
+        marks = self.hit_marks()
+        self.assertEqual([[387, 288, 1, 3], [408, 289, 3, 1], [387, 310, 3, 1], [409, 309, 1, 3]],
+                         [e["rect"] for e in marks])
+        for e in marks:
+            self.assertAlmostEqual(0.8, e["rotation"]["angle"], places=6)
+            self.assertEqual(0, e["rotation"]["angleMultiplier"])
+            self.assertNotIn("angleVar", e["rotation"])
+
+    def test_the_hit_marks_take_the_crosshair_colour_and_fade_with_the_timer(self) -> None:
+        # XHIT-7: VariableColorEffect(Red/256, Green/256, Blue/256, Alpha),
+        # then BfMultiplyColorEffect2 multiplies alpha by HitIndicationTime.
+        for e in self.hit_marks():
+            self.assertEqual(["CrossHair/HitIndicationTime"], e["alphaVars"])
+            self.assertEqual({"var": "CrossHair/CrossHairRed", "div": 256.0}, e["colorVars"]["r"])
+            self.assertEqual({"var": "CrossHair/CrossHairGreen", "div": 256.0}, e["colorVars"]["g"])
+            self.assertEqual({"var": "CrossHair/CrossHairBlue", "div": 256.0}, e["colorVars"]["b"])
+            self.assertEqual({"var": "CrossHair/CrossHairAlpha"}, e["colorVars"]["a"])
+
+    def test_the_hit_marks_are_gated_by_the_group_alone(self) -> None:
+        # No CrossHairType and no ScopeIndex gate: they draw over a scope,
+        # an icon crosshair or none at all.
+        for e in self.hit_marks():
+            self.assertEqual([("CrossHair/ShowCrossHair", "eq", True), ("Submarine/ShowPeriscope", "ne", True)],
+                             [(c["var"], c["op"], c["value"]) for c in e["when"]])
+
+    def test_the_timer_is_the_only_multiply_binding_in_the_file(self) -> None:
+        bound = {v for g in self.hud["groups"].values() for e in g["elements"]
+                 for v in e.get("alphaVars", [])}
+        self.assertEqual({"CrossHair/HitIndicationTime"}, bound)
+
+    def test_no_colour_effect_sits_inside_a_variable_colour_effect(self) -> None:
+        # `live_color`'s contract: a bound channel's static value is exactly
+        # the VariableColorEffect's own default, so replacing it with the
+        # live value is what the engine's set does. A colour effect inside
+        # the set would break that and fail here.
+        defaults = {"CrossHair/CrossHairRed": 1.0, "CrossHair/CrossHairGreen": 1.0,
+                    "CrossHair/CrossHairBlue": 1.0, "CrossHair/CrossHairAlpha": 1.0,
+                    "HitFromDir/HitFromDirAlpha": 0.5, "CrossHair/HitIndicationTime": 1.0}
+        checked = 0
+        for g in self.hud["groups"].values():
+            for e in g["elements"]:
+                for i, ch in enumerate("rgba"):
+                    b = e.get("colorVars", {}).get(ch)
+                    if not b or b["var"] not in defaults:
+                        continue
+                    want = defaults[b["var"]] / b.get("div", 1)
+                    for m in e.get("alphaVars", []) if ch == "a" else []:
+                        want *= defaults[m]
+                    self.assertAlmostEqual(want, e["color"][i] if "color" in e else 1.0, places=4)
+                    checked += 1
+        self.assertGreater(checked, 20)
+
     def test_hit_indicator_has_seven_wired_up_directions(self) -> None:
         # Not 8: direction 1 is permanently disabled by an unnamed
         # `BoolData{False}` gate ahead of its own HitFromDir/HitFromDir==1
