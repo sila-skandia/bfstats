@@ -502,6 +502,12 @@ export class Match {
         veh: bot.vehicle ? { id: this.vehicleLabel(bot.vehicle), template: bot.vehicle.template, seat: bot.vehicle.seatId,
                              drives: !!bot.vehicle.drives } : null,
         route: bot.route ? { points: bot.route.points?.length ?? 0, failed: !!bot.route.failed } : null,
+        // The hull's drive: `actionStatusDecision`'s state, its drive and
+        // angle, the steering point and the hull's speed.
+        ...(bot.vehicle?.drives && bot.vehicle.kind !== 'air' ? { drv: {
+          st: bot._dbgMoveStatus ?? null, drive: bot._dbgDrive ?? null, ang: r4(bot._dbgSteerAngle ?? 0),
+          steer: bot._dbgSteer ? v2(bot._dbgSteer.slice(0, 2)) : null,
+          v: r2(Math.hypot(bot.vehicle.drive?.state?.velocity?.x ?? 0, bot.vehicle.drive?.state?.velocity?.z ?? 0)) } } : {}),
         terms: this.terms(bot),
       });
     }
