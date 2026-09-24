@@ -12,11 +12,12 @@ import { GameConsole } from './console.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aircraft`, `altFireDemolitions`, `bfmap`, `camera`, `activeCodes`,
+ * `aircraft`, `altFireDemolitions`, `bfmap`, `camera`, `cameraMode`, `activeCodes`,
  * `cancelDeploy`, `car`, `clampAltitude`, `consoleCaptures`, `codeTriggers`,
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
- * `dollyCamera`, `ensureAudioContext`, `enterVehicle`, `escMenu`,
- * `escMenuCaptures`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
+ * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
+ * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
+ * `hintText`,
  * `fullmapBox`, `gameConsole`, `handWeapon`, `hud`, `isSlow`,
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
@@ -57,7 +58,7 @@ export function createPageInput(page) {
     // it moves. Escape is the way back to the game.
     if (page.escMenuCaptures()) {
       if (e.code === 'Escape') { page.setEscMenu(false); return; }
-      if (page.escMenu?.keydown(e)) e.preventDefault();
+      if (page.escMenuKeydown(e)) e.preventDefault();
       return;
     }
     if (e.code === 'Escape') {
@@ -195,6 +196,9 @@ export function createPageInput(page) {
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
     if (triggers.includes('c_PILie') && !e.repeat
         && page.optOnFoot.checked && page.soldier) page.toggleProne();
+    if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      for (const t of triggers) if (cameraOrSpawnTrigger(t)) break;
+    }
     // Every key any context binds stops being the browser's while the page
     // is captured: the control map's set, not a hand-written list. The free
     // camera's `FLY_KEYS` is the viewer's own and rides along.
@@ -210,6 +214,7 @@ export function createPageInput(page) {
     // A key released under an open console must not reach `keys` either: the
     // set is only ever read for movement, and the console has the keyboard.
     // The Escape menu has it on the same terms.
+    if (page.escMenuCaptures() && page.escMenuKeyup(e)) e.preventDefault();
     if (page.consoleCaptures() || page.escMenuCaptures()) return;
     keys.delete(e.code);
   });
@@ -268,7 +273,23 @@ export function createPageInput(page) {
    *  in the active overlay); the F9-F12 direct camera modes
    *  (`c_PICameraMode1..4`) have no viewer implementation yet, so their
    *  buttons do nothing — as those keys do on the keyboard today. */
+  /** F9-F12 (`c_PICameraMode1..4`: INSIDE, CHASE REAR, CHASE FRONT, FLY BY)
+   *  straight to that view, and SHOW SPAWNINTERFACE (`c_GIInGameMenu`, Enter
+   *  in every shipped map) up — the Caps Lock branch's job, from the binding
+   *  the profile gives it. Key and pad both come through here. True when the
+   *  trigger was one of these. */
+  function cameraOrSpawnTrigger(trigger) {
+    const camera = /^c_PICameraMode([1-4])$/.exec(trigger);
+    if (camera) { page.cameraMode(Number(camera[1])); return true; }
+    if (trigger === 'c_GIInGameMenu') {
+      if (!page.deployActive() && !page.optPilot.checked) page.openDeploy();
+      return true;
+    }
+    return false;
+  }
+
   pageInput.padTriggerDown = trigger => {
+    if (cameraOrSpawnTrigger(trigger)) return;
     if (trigger === 'c_PIMap') mapKey();
     else if (trigger === 'c_PIZoomMap') zoomMapKey();
     else if (trigger === 'c_PIUse' && pageInput.seatToggleReady()) useKey();
@@ -279,8 +300,11 @@ export function createPageInput(page) {
     else if (trigger === 'c_PIShowScoreBoard') {
       if (!page.deployActive() && !page.scoreboardOpen()) page.setScoreboard(true, false);
     } else {
+      // The menu row as the keyboard has it: seated it switches seats, on
+      // foot it raises a kit slot.
       const menu = /^c_PIMenuSelect([1-9])$/.exec(trigger);
-      if (menu && page.optOnFoot.checked && page.soldier) kitDigit(Number(menu[1]));
+      if (menu && page.optPilot.checked && page.occupancy) page.switchSeat(Number(menu[1]) - 1);
+      else if (menu && page.optOnFoot.checked && page.soldier) kitDigit(Number(menu[1]));
     }
   };
   pageInput.padTriggerUp = trigger => {
@@ -343,12 +367,17 @@ export function createPageInput(page) {
   const SEAT_TOGGLE_COOLDOWN_MS = 1000;
   pageInput.lastSeatToggle = -Infinity;
 
-  // Rewritten under `?kblock` the Escape hint changes for as long as the
-  // fullscreen session lasts (kbLockEnter). Without it this never changes.
-  pageInput.HUD_FOOT = 'WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-    + 'LMB fire · RMB aim · R reload · C view · 9 chute · CapsLock / M redeploy · Esc menu';
-  const HUD_FOOT_PLAIN = pageInput.HUD_FOOT;
-  const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
+  // The keys are the profile's (`controls.hintText`); under `?kblock` the
+  // Escape hint grows for as long as the fullscreen session lasts.
+  const HUD_FOOT_TEMPLATE = '{move} move · {c_PIWalk} walk · {c_PICrouch} crouch · '
+    + '{c_PILie} prone · {c_PIAction} jump · {c_PIFire} fire · {c_PIAltFire} aim · '
+    + '{c_PIReload} reload · {c_PIToggleCameraMode} view · {c_PIMenuSelect9} chute · '
+    + 'CapsLock / {c_PIMap} redeploy · Esc menu';
+  Object.defineProperty(pageInput, 'HUD_FOOT', {
+    get: () => page.hintText(HUD_FOOT_TEMPLATE, 'infantry')
+      + (pageInput.kbSession ? ' · hold Esc exits full screen' : ''),
+    enumerable: true,
+  });
 
   // The soldier's two buttons, while pointer-locked on foot: the left held,
   // one queued semi-auto shot per press (the hand weapon spends it with
@@ -493,13 +522,12 @@ export function createPageInput(page) {
     document.addEventListener('fullscreenchange', () => {
       const inside = document.fullscreenElement === page.stage;
       if (inside === pageInput.kbSession) return;
+      const was = pageInput.HUD_FOOT;
       pageInput.kbSession = inside;
       if (!inside) {
         navigator.keyboard.unlock();
         pageInput.kbLockState = 'unlocked';
       }
-      const was = pageInput.HUD_FOOT;
-      pageInput.HUD_FOOT = inside ? HUD_FOOT_KBLOCK : HUD_FOOT_PLAIN;
       if (page.hud.textContent === was) page.hud.textContent = pageInput.HUD_FOOT;
     });
   }
