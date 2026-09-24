@@ -373,12 +373,17 @@ export class VehicleDamageSet {
    * Apply a `gunfire.js` hit record. `attacker` is the player who fired it.
    * Returns the vehicle and the HP it lost, or null when the round hit
    * something that cannot be damaged (terrain, a building, a tree).
+   *
+   * `scale(damage, owner)`, when given, is the server's last word on the
+   * amount: `calcDamage`'s friendly-fire scaling (`friendly-fire.js`).
    */
-  applyHit(record, attacker = null) {
+  applyHit(record, attacker = null, scale = null) {
     if (!record || !(record.damage > 0)) return null;
     const vehicle = this.get(record.owner);
     if (!vehicle || vehicle.destroyed) return null;
-    const lost = vehicle.damage(record.damage, attacker);
+    const amount = scale ? scale(record.damage, record.owner) : record.damage;
+    if (!(amount > 0)) return null;
+    const lost = vehicle.damage(amount, attacker);
     return lost > 0 ? { vehicle, lost } : null;
   }
 
@@ -414,9 +419,14 @@ export class VehicleDamageSet {
    * damage mod. Everything that is not a soldier keeps exposure 1: there is no
    * occlusion at all for a non-soldier victim, so a tank behind a wall really
    * does take the full falloff.
+   *
+   * `options.scale(amount, target)`, when given, is `calcDamage`'s
+   * friendly-fire scaling, applied last as the engine applies it before it
+   * queues the damage (HP-9, HP-9b; `friendly-fire.js`).
    */
   applySplash(record, targets,
-              { materials = null, modifiers = null, exposure = null, attacker = null } = {}) {
+              { materials = null, modifiers = null, exposure = null, attacker = null,
+                scale = null } = {}) {
     const material2 = record?.splashMaterial2;
     const radius = record?.splashRadius;
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
@@ -464,8 +474,9 @@ export class VehicleDamageSet {
         seen = exposure(target, [bx, by, bz]);
         if (!(seen > 0)) continue;
       }
-      const amount = splashHp(material2, splashMaterial, distance, radius,
-                              materials, modifiers, seen);
+      const raw = splashHp(material2, splashMaterial, distance, radius,
+                           materials, modifiers, seen);
+      const amount = scale ? scale(raw, target) : raw;
       if (!(amount > 0)) continue;
       // A soldier's own Armor takes no attacker; a hull records who hit it.
       const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);

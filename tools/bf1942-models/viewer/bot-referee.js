@@ -38,6 +38,7 @@ import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
+import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
 export const BOT_RESPAWN_DELAY = 8;
@@ -306,6 +307,8 @@ export function rollCone(r, spreadRad) {
  *  - `armorFor(bot, flag)`: a fresh Armor for a (re)spawned body;
  *  - `roundDamage(stats)`: one round's direct-hit HP from a weapon's fire data;
  *  - `debug`: log hits, heals and seats to the console (the page's `?botDebug`);
+ *  - `friendlyFire`: the server's friendly-fire percentages
+ *    (`friendly-fire.js`); absent, the shipped `ServerSettings.con`'s;
  *  - hooks, all optional: `beforeBots()`, `tickBot(bot, dt, now)` (replaces
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
  *    `onRespawned(bot, flag)`, `onShot(bot, at)`, `onHit(bot, hit)`,
@@ -561,11 +564,13 @@ export function createBotReferee(env) {
 
   /**
    * Resolve one bot round against the world's players: down the aim, rolled
-   * into the deviation cone, against the enemy soldier capsules, with a
+   * into the deviation cone, against the first soldier in its way, with a
    * terrain line of sight. `aimAt` lays the round on a point's height (the
    * runner's stand-in turret). Returns `{ targetId, damage, dist }` or null.
-   * The friendly test is the one `sense()` applies, with no local-player
-   * exception: a round never resolves against a soldier on the shooter's side.
+   * Friend or foe: the engine's round meets anyone but its shooter and the
+   * crew of the hull he fires from (ledger FF-1, `roundPasses`), and a
+   * friend's hit is priced by `calcDamage` (FF-3, `friendlyDamage`). Only the
+   * bot's choice of target is his own side's business (`SideFilter`).
    */
   /**
    * Where `playerId`'s stand-in body is: `{ x, y, z }` at the feet, or null
@@ -612,8 +617,7 @@ export function createBotReferee(env) {
     const me = w.player(bot.playerId);
     let best = null, bestT = Infinity;
     for (const [id, player] of w.players) {
-      if (id === bot.playerId) continue;
-      if (me && player.team === me.team) continue;
+      if (roundPasses(w, bot.playerId, id)) continue;
       if (w.armorOf(id)?.destroyed) continue;
       const s = referee.bodyAt(id);
       if (!s) continue;
@@ -624,9 +628,14 @@ export function createBotReferee(env) {
       if (!met || met.t >= bestT) continue;
       if (!lineOfSight(w.collider, origin, met.at)) continue;
       bestT = met.t;
+      const priced = met.material != null && damageFor ? damageFor(met.material) : damage;
       best = {
         targetId: id, dist: met.t, material: met.material,
-        damage: met.material != null && damageFor ? damageFor(met.material) : damage,
+        // A man seated in a hull is priced as the hull (his root) is.
+        damage: friendlyDamage(priced, {
+          attackerTeam: me?.team ?? null, victimTeam: player.team ?? null, soldier: !s.seated,
+          settings: env.friendlyFire ?? FRIENDLY_FIRE_SHIPPED,
+        }),
         hit: roundHit(origin, met.at, s.y, s.seated, met.bone),
       };
     }

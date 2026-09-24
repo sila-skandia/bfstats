@@ -111,6 +111,7 @@ export class Match {
     this.world = world;
     const worldSize = extras?.worldSize || 2048;
     this.referee = M.createBotReferee(this.refereeEnv());
+    this.countFriendlyFire();
     if (this.stage) {
       this.stage.referee = this.referee;
       this.stageHooks();
@@ -149,6 +150,26 @@ export class Match {
     });
     this.sample();
     this.seatByHand();
+  }
+
+  /** Friendly fire, counted where every soldier's damage lands (the
+   *  referee's `damageLanded`: a hand-weapon round, a hull's round, a blast):
+   *  a hit on a soldier of the attacker's own side and the HP it took. A round
+   *  meets anyone in its path (`viewer/friendly-fire.js`), so this is the
+   *  number to watch when a change moves where the bots stand or shoot. */
+  countFriendlyFire() {
+    const referee = this.referee;
+    const landed = referee.damageLanded;
+    this.friendlyFire = { hits: 0, damage: 0 };
+    referee.damageLanded = (playerId, lost, attackerId = null, ...rest) => {
+      const side = this.world.player(playerId)?.team ?? null;
+      if (attackerId != null && attackerId !== playerId && lost > 0 && side != null
+          && this.world.player(attackerId)?.team === side) {
+        this.friendlyFire.hits++;
+        this.friendlyFire.damage += lost;
+      }
+      return landed(playerId, lost, attackerId, ...rest);
+    };
   }
 
   /** `--seat`: each named bot takes the nearest free seat of a template
@@ -647,6 +668,12 @@ export class Match {
         // `killedBy`; a crash or a burn-down has none: unattributed).
         vehicleKills,
         vehicleFire: this.vehicleFire ?? null,
+        // Hits on the attacker's own side, and the deaths among them.
+        friendlyFire: {
+          hits: this.friendlyFire.hits, damage: r2(this.friendlyFire.damage),
+          teamKills: this.events.filter(e => e.type === 'kill' && e.killer && e.killer !== e.victim
+                                             && e.killerSide === e.victimSide).length,
+        },
         routeFailures: { total: routeFailures, perBot: Object.fromEntries([...this.stats].map(([id, s]) => [id, s.routeFailures])) },
         redeploys: this.events.filter(e => e.type === 'redeploy').length,
         strategyChanges: this.events.filter(e => e.type === 'strategy').length,

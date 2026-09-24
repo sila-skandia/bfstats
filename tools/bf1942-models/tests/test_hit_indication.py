@@ -64,10 +64,17 @@ class HitIndicationTests(unittest.TestCase):
         self.assertEqual("friend", cast["handRound"])
         self.assertEqual("friend", cast["localSeatRound"])
 
-    def test_a_bots_rounds_still_pass_through_his_own_side(self) -> None:
+    def test_every_round_meets_the_first_soldier_in_its_way(self) -> None:
+        # Ledger FF-1: nothing in the engine's contact test compares teams, so
+        # a bot's round meets his teammate as the human's does.
         cast = self.results["cast"]
-        self.assertEqual("enemy", cast["botSeatRound"])
-        self.assertEqual("enemy", cast["untaggedRound"])
+        self.assertEqual("friend", cast["botSeatRound"])
+        self.assertEqual("friend", cast["untaggedRound"])
+
+    def test_a_round_passes_the_crew_of_the_hull_it_is_fired_from(self) -> None:
+        cast = self.results["cast"]
+        self.assertEqual("rider", cast["seatRoundPastOwnCrew"])
+        self.assertEqual("mate", cast["handRoundOnACrew"])
 
 
 if __name__ == "__main__":
