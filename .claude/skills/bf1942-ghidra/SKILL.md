@@ -15,20 +15,25 @@ projects.
 
 ## The two binaries
 
-- **`bf1942_lnxded.static`** — ELF i386 dedicated server, ~15MB, built with
-  **full DWARF debug info and not stripped** (~54k symbols, ~40k functions).
-  Ghidra's DWARF analyzer recovers real function names, structs and types
-  from it. This is the primary source of engine truth: function names, data
-  structures, constants, call flow.
+- **`bf1942_lnxded.static`** — ELF i386 dedicated server, ~15MB, **not
+  stripped** (~40k functions). Its symbol table, demangled by Ghidra, names
+  ~33k engine functions (`dice::bf::BFPlayer::setVehicle(IObject*, int)`)
+  across 3k+ classes, with parameter types. Return types, struct layouts
+  and field names are not recorded — infer them from the code. Its DWARF
+  covers only the statically linked GCC 3.2.3 runtime (libstdc++, libsupc++,
+  libgcc), none of the engine. This is the primary source of engine truth:
+  function names, class structure, constants, call flow.
 - **`BF1942.exe`** — PE32 client, ~5.4MB, no symbols. The import table's
   external names are the only anchors. It does NOT need its imported DLLs:
   Ghidra analyzes the exe standalone and only records import names as
   External locations. A fully analyzed project for it ships with setup (the
   label/type/enhance scripts were already applied to it).
 
-Cross-reference both: the same engine code runs in both binaries, so
-names/types recovered from the symbol-rich server binary transfer to the
-client at the same addresses.
+Cross-reference both: the same engine code runs in both binaries, so a
+function named in the server identifies its counterpart in the client. Match
+by strings, constants and call structure — they were built by different
+compilers (GCC ELF at 0x08048000, MSVC PE at 0x00400000), so addresses never
+carry over.
 
 ## How to run
 
@@ -105,8 +110,8 @@ bf42plus mod's reverse engineering (they target `BF1942.exe` addresses):
   owned by ...`) — cloud sessions run as root. setup.sh re-owns both projects
   on every run; after restoring a `.rep` by hand, re-run it.
 - If `apply_labels.py` prints `never auto-analyzed`, that project is a raw
-  import: symbol names only (mangled), no xrefs, no DWARF types. Re-import
-  with full analysis:
+  import: symbol names only (mangled), no xrefs, no types. Re-import
+  with full analysis (well over 8 min on a 4-core cloud session):
   `rm -rf ~/ghidra/linux-server.*` then the fresh-import command above with
   `linux-server` and `tools/bf1942-models/ghidra-cloud/.work/bf1942_lnxded.static`.
 - Ghidra must be 12.1.2 or newer to open the shipped `.rep` projects
