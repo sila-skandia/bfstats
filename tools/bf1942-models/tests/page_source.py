@@ -48,6 +48,7 @@ PAGE_FILES = [
     "hand-fire.js",
     "page-audio.js",
     "hull-bodies.js",
+    "airborne.js",
     "vehicle-wrecks.js",
     "vehicle-hits.js",
     "level-load.js",

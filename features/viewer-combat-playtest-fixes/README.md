@@ -96,7 +96,7 @@ level's visuals.
 
 Files: `viewer/vehicle-wrecks.js`, `viewer/world-vehicle-tick.js`,
 `viewer/world.js`, `viewer/hull-bodies.js`, `viewer/level-statics.js`,
-`viewer/map.html`.
+`viewer/vehicle-instance.js`, `viewer/airborne.js`, `viewer/map.html`.
 
 Test: `tests/test_world.py` pins the cadence (one integration per world tick,
 none on a frame that owes no tick, none when the list is empty) and the zeroed
@@ -206,6 +206,82 @@ does.
 
 Files: `viewer/page-input.js`, `viewer/touch-controls.js`, `viewer/map.html`.
 
+## 5. The enemy plane did not do what the player's plane did
+
+The owner's retest: his own Mustang fell and wrecked, and the BF109 he rammed
+did not change to wreckage at all. Both planes were killed by the collision, so
+the difference was not the damage, it was who was flying them.
+
+`fallingDriveFor` read the drive out of the seat registry, and the registry
+drops a hull's instance when its last occupant leaves. For the player's own
+death that happens inside `wreckVehicle`, after the drive has been read, so his
+plane fell. For anyone else it happens a tick earlier: the referee handles an
+AI pilot's death out of `damageLanded` (`bot-referee.js`, `leaveVehicle` with
+`{killed: true}`), and the wreck pass reads the hull afterwards. The drive was
+simply absent, so `wreckVehicle` took the parked branch: `retireVehicleBody`
+and the wreck where the hull was hit, with the hull frozen as level scenery by
+the same `leave`. That is a plane hanging in the air with whatever model it was
+carrying, which is what he saw.
+
+What landed:
+
+- `VehicleRegistry.rootFlights` and `lastFlightOf(root)`, the drive and seat
+  kind a hull was last flown by, written when its root seat is taken and kept
+  after the crew is gone (`vehicle-instance.js`).
+- `fallingDriveFor` reads the registry's instance while someone is in the hull
+  and its record when the crew is already gone, so the same fall runs for a
+  plane the player did not kill himself.
+- `leave` no longer parks a hull whose last man leaves while it is still in the
+  air: the body stays adopted, the drive stays the hull's, and the node is left
+  unfrozen so the fall is drawn where the aeroplane actually is. A hull that
+  taxis, parks, or is abandoned on the ground parks exactly as before.
+- `viewer/airborne.js` holds the one height test (`airborneDrive`, with
+  `AIRBORNE_MARGIN`), asked by the wreck pass and by the registry's `leave`, so
+  the two cannot drift apart. It reads the drive's own state rather than the
+  node's matrix, because a released hull's node can be a frame stale.
+
+The BF109's own wreck glb was never in question: on every level its node
+carries the template `BF109` and `models/BF109.wreck.glb` exists. (The AI table
+`maps/_shared/vehicle-ai.json` spells it `bf109`, which is the AI's own
+spelling; the wreck URL is composed from the hull's scene node name, not from
+that table.)
+
+Files: `viewer/vehicle-instance.js`, `viewer/airborne.js`,
+`viewer/vehicle-wrecks.js`.
+
+Test: `tests/test_sim_vehicles.py` flies a Spitfire with an AI pilot to 120 m
+(`recipes.downedAir`, `tests/sim_vehicles_harness.mjs`), shoots it down, and
+asserts the hull joins `world.falling`, is not frozen, comes down 106 m over
+11 s, ends on the ground at its own ride height, and wrecks under its own
+template. The same test asserts a wreck glb exists for every plane that level
+places, and `test_every_aircraft_the_game_fields_has_a_wreck_model` sweeps the
+game's aircraft list for one.
+
+## 6. The Ju88A had no wreck model to show
+
+Found while checking the same question for every plane: Battle of Britain's
+Ju88A has no `models/Ju88A.wreck.glb` and never had one. The game declares the
+wreck (`lodJu88A` carries `Ju88AComplex`, `Ju88ASimple` and `Ju88AWreck`), but
+the Ju88A is defined inside the level archive
+(`bf1942/Levels/Battle_of_Britain/Objects/Ju88A/`), not in the mod's object
+archives, and `extract_models.py` built its object library from the mod chain
+alone. The template resolved to nothing, so no configuration of it could be
+exported.
+
+What landed: the level archives named by `--level`/`--level-all` are added to
+the object, mesh and texture pools, after the mod chain so they only fill gaps
+(a level-local object exists nowhere else). With Battle of Britain in the pools,
+`Ju88A` resolves with a `wreck` configuration and exports in 7 s. `Ju88A.glb`,
+`Ju88A.wreck.glb` and their level-labelled variants are extracted and published;
+`https://mesh.bfstats.io/models/Ju88A.wreck.glb` serves the new file's hash.
+
+The corpus check behind "every plane", over all 23 extracted levels: 59 distinct
+vehicle templates are placed by spawners, 33 have a wreck glb at the URL the
+viewer composes, and after this extraction every one of them that is an aircraft
+does. The 26 without one declare no wreck configuration in the game at all
+(ships, the static guns, radar towers and destroyable buildings), so there is
+nothing to extract for them.
+
 ## What was not run
 
 `./scripts/verify.sh` has not been run. It covers the API and the bfstats.io UI
@@ -266,6 +342,22 @@ report ("it does not use the wreck model, it uses the normal undamaged model")
 was two separate faults: the crash could fail to fire at all on anything held up
 by a deck or a building, and when it did fire after a long fall its clock had
 already run out.
+
+The enemy-plane path was found in the headless runner rather than the browser,
+because a bot has to be flown to altitude first and the runner steps the real
+modules a tick at a time (`recipes.downedAir`). What it printed before the fix
+and after it, on El Alamein:
+
+| | before | after |
+|---|---|---|
+| hull in `world.falling` after the kill | false | true |
+| node frozen as parked scenery | true | false |
+| fell from the kill point | nothing, the wreck was placed in place | 106 m over 11.0 s |
+| height above ground at the crash | 120 m | 1.1 m (its ride height is 1.03) |
+| wreck template | `Spitfire` (placed at the kill) | `Spitfire` (placed at the crash) |
+
+The live equivalent needs the mesh image rebuilt with this code, so it is the
+runner's own numbers above that establish it, not a browser run.
 
 The viewer's own suite (3.4 k tests, `python3 -m unittest` over
 `tests/test_*.py`) is green apart from `test_meme`'s clean-page floor, which

@@ -35,6 +35,7 @@
 // empty enemy tank is the game, climbing into a crewed one is not.
 
 import { VehicleOccupancy, DRIVE_KINDS } from './seats.js';
+import { airborneDrive } from './airborne.js';
 
 /**
  * The engine's entry rule: a player may take a seat of a hull whose team is
@@ -186,10 +187,19 @@ export class VehicleRegistry {
     this.instances = new Map();
     /** playerId -> SeatHandle */
     this.seated = new Map();
+    /**
+     * root node -> { drive, kind }: the hull's last flight, kept after the last
+     * man leaves it. `instances` is gone by then, and the wreck of a plane whose
+     * crew the referee stood up first (an AI pilot's death out of `damageLanded`)
+     * still has to fly itself down — its drive is the only thing that can.
+     */
+    this.rootFlights = new Map();
   }
 
   /** The hull whose root is `root`, if anyone sits in it. */
   instanceOf(root) { return this.instances.get(root) ?? null; }
+  /** The drive this hull was last flown by, with its seat kind, or null. */
+  lastFlightOf(root) { return this.rootFlights.get(root) ?? null; }
   /** The seat `playerId` holds, or null. */
   seatOf(playerId) { return this.seated.get(playerId) ?? null; }
   /** Who holds `seatId` of the hull at `root`. */
@@ -244,6 +254,7 @@ export class VehicleRegistry {
       this.leave(playerId);
       return null;
     }
+    if (inst.drive) this.rootFlights.set(root, { drive: inst.drive, kind: inst.rootKind });
     inst.occupancy.rigFor(seat);
     this.#collect(inst, seat);
     this.#mountAll(inst);
@@ -280,6 +291,14 @@ export class VehicleRegistry {
    * controls released, its pose written, the body world given a parked body
    * carrying the drive's velocity, and the node frozen again. Returns
    * `{ instance, seatId, drive, emptied }`, or null when not seated.
+   *
+   * A hull whose last man leaves while it is still in the air is the exception:
+   * nothing parks it. Its drive stays the hull's own (`rootFlights`, which the
+   * wreck pass reads to fly it down), its body stays adopted, and the node is
+   * left unfrozen so the fall is drawn where the aeroplane actually is. This is
+   * the path a plane takes when it is destroyed with an AI pilot aboard — the
+   * referee stands him up the tick before the wreck sees the hull — as well as
+   * when a live pilot bails out mid-flight.
    */
   leave(playerId) {
     const handle = this.seated.get(playerId);
@@ -295,13 +314,19 @@ export class VehicleRegistry {
     this.env.releaseAudio?.(playerId, inst.root);
     const emptied = inst.empty;
     if (emptied) {
+      const flying = !!drive && inst.rootKind === 'air' && airborneDrive(drive);
       if (drive) {
-        drive.applyTransform?.();
-        drive.applyRig?.();
-        restWheels(drive);
-        this.env.release?.(drive);
+        if (flying) {
+          this.rootFlights.set(inst.root, { drive, kind: inst.rootKind });
+        } else {
+          drive.applyTransform?.();
+          drive.applyRig?.();
+          restWheels(drive);
+          this.env.release?.(drive);
+        }
       }
-      this.env.freeze?.(inst.root);
+      // A flying hull is not frozen: the fall composes through its own node.
+      if (!flying) this.env.freeze?.(inst.root);
       this.instances.delete(inst.root);
     }
     this.env.onChange?.(inst);
@@ -326,6 +351,7 @@ export class VehicleRegistry {
   clear() {
     this.instances.clear();
     this.seated.clear();
+    this.rootFlights.clear();
   }
 
   // --- internals -------------------------------------------------------------

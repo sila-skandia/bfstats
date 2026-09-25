@@ -232,5 +232,65 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["remounts"], [])
 
 
+    def test_an_ai_plane_shot_down_in_the_air_flies_itself_down_and_wrecks(self) -> None:
+        # The other half of the player's own plane: an AI pilot's death is
+        # handled by the referee a tick before the wreck pass reads the hull, so
+        # the seat registry has already dropped the instance and the drive has
+        # to come from the hull's recorded last flight (`VehicleRegistry
+        # .lastFlightOf`). Without it the plane kept the intact model where it
+        # was killed — the "my Mustang falls, the BF109 does not" report.
+        assets = ASSETS
+        assert assets is not None
+        r = recipe("downedAir")
+        self.assertEqual(r["template"], "Spitfire")
+        self.assertGreater(r["deathAgl"], 100.0, f"killed in the air: {r}")
+        self.assertTrue(r["flying"], "the destroyed hull joins the wreck list (world.falling)")
+        self.assertFalse(r["frozen"], "a flying hull is not frozen as a parked static")
+        self.assertFalse(r["stillMounted"], "the AI pilot is out of it")
+        self.assertGreater(r["fellBy"], 80.0, f"it comes down: {r}")
+        self.assertIsNotNone(r["crashAfter"])
+        self.assertGreater(r["crashAfter"], 2.0, "the fall is flown, not a one-tick drop")
+        self.assertLess(r["crashAgl"], 5.0, "and it ends on the ground, not in the air")
+        self.assertEqual(len(r["wrecked"]), 1)
+        self.assertEqual(r["wrecked"][0]["template"], "Spitfire", "the wreck is the hull's own template")
+        self.assertIsNotNone(r["wrecked"][0]["killer"])
+        # The model the viewer fetches for that wreck, and for every plane the
+        # level places: `vehicle-wrecks.js placeWreck` composes
+        # `models/<template>.wreck.glb` off the wrecked hull's own template and
+        # a missing file leaves the intact mesh up for the whole wreck.
+        self.assertTrue(r["airTemplates"], f"no air templates reported: {r}")
+        # The wrecked hull's own template is the node name the URL is built from,
+        # so that one has to match a file exactly (a case difference is a 404 on
+        # the volume). The AI table's spellings may differ in case (`bf109` for
+        # `BF109`), and are matched case-insensitively.
+        wrecked_template = r["wrecked"][0]["template"]
+        self.assertTrue((assets / "models" / f"{wrecked_template}.wreck.glb").is_file(),
+                        f"{wrecked_template} has no wreck glb for its own URL")
+        files = {p.name.lower() for p in (assets / "models").glob("*.wreck.glb")}
+        missing = [t for t in set(r["airTemplates"]) if f"{t}.wreck.glb".lower() not in files]
+        self.assertEqual(missing, [], f"planes the level places with no wreck glb: {missing}")
+
+    def test_every_aircraft_the_game_fields_has_a_wreck_model(self) -> None:
+        # `maps/_shared/vehicle-ai.json` is the extracted AI table for the mod's
+        # own vehicles — its air class is the list of aircraft a player can meet.
+        # (A level-local plane the table does not list, Battle of Britain's
+        # Ju88A, is not covered here; the per-level sweep is the check for
+        # those.) The names are the AI's spelling, which is not always the
+        # template's (`bf109` for `BF109`), so they are matched case-insensitively
+        # against the files — the wreck URL itself is composed from the hull's
+        # scene node name, which is the template's.
+        assets = ASSETS
+        assert assets is not None
+        table = assets / "maps" / "_shared" / "vehicle-ai.json"
+        if not table.is_file():
+            self.skipTest("no vehicle-ai.json in the assets tree")
+        vehicles = json.loads(table.read_text()).get("vehicles", {})
+        air = sorted(name for name, row in vehicles.items() if row.get("class") == "Air")
+        self.assertGreater(len(air), 5, "the game's aircraft list came back empty")
+        files = {p.name.lower() for p in (assets / "models").glob("*.wreck.glb")}
+        unresolved = [name for name in air if f"{name}.wreck.glb".lower() not in files]
+        self.assertEqual(unresolved, [], f"aircraft without a wreck glb: {unresolved}")
+
+
 if __name__ == "__main__":
     unittest.main()
