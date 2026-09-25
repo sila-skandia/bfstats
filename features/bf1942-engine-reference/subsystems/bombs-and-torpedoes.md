@@ -112,7 +112,9 @@ enum.
 
 The B17's pilot `PlayerControlObject` carries `B17BombRack` and no gun, so its
 bombs occupy the *primary* HUD slot. Which weapon fills primary versus secondary
-is ledger VHUD-10, still open.
+is ledger VHUD-10 (found 2026-09-25: ordinal position in the seat's own
+FireArms range — first node found is primary, second is secondary — not
+weapon type).
 
 ---
 
