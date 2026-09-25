@@ -40,6 +40,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
+# The skill is also checked in at the repo root; that copy wins, so a fresh
+# clone or worktree needs nothing installed under ~/.claude.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / ".claude/skills/bf1942-map-images/scripts"))
 
 try:
     from extract_map_images import RfaArchive as _SkillRfaArchive

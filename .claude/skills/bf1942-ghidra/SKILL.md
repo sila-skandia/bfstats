@@ -116,9 +116,11 @@ locally and uploaded as a `map-<name>.zip` release asset (zip the
 
 ## Extracting from the game archives
 
-setup.sh restores the vanilla and Secret Weapons `.rfa` archives (Movies/
-Music/eReg dropped) to `~/bf1942-game/` — a self-contained game dir. Point
-the extractors at it; SW is the `XPack2` mod (lowercase `xpack2` in args):
+setup.sh does NOT restore the game archives: most tasks never need them.
+When one does, restore them on demand per the `bf1942-game-archives` skill,
+which unpacks the `.rfa` archives (Movies/Music/eReg dropped) to
+`~/bf1942-game/`, a self-contained game dir. Point the extractors at it; SW is
+the `XPack2` mod (lowercase `xpack2` in args):
 
 ```bash
 python3 tools/bf1942-models/extract_map.py berlin \

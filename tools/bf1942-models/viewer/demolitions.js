@@ -90,9 +90,10 @@ export function createDemolitions(page) {
   }
 
   /** Re-read which pack/plunger pair this kit carries. Called wherever the kit
-   *  is (re)armed, next to `kitWeaponSlots`. */
-  function armDemolitions(flag) {
-    const { kit } = page.kitLoadout(flag?.team, page.deployKit);
+   *  is (re)armed, next to `kitWeaponSlots`: a spawn names the deploy row's
+   *  kit, a pickup (`kit-drops-page.js`) the template it took up. */
+  function armDemolitions(flag, kitName = null) {
+    const kit = kitName ?? page.kitLoadout(flag?.team, page.deployKit).kit;
     const items = page.loadouts?.kits?.[kit]?.items;
     demolitions.explosivesTemplate = Array.isArray(items)
       ? items.find(isExplosives) || null : null;

@@ -16,8 +16,8 @@ import { effectNameFor } from './crash-damage.js';
  * `aircraft`, `camera`, `car`, `collider`, `damageTables`, `effects`,
  * `FLY_FOV`, `footView3p`, `groundHeight`, `guns`, `hullCollisionMaterial`,
  * `isCollision`, `MANNED_GUN_FOV`, `mouseInput`, `occupancy`, `optOnFoot`,
- * `optPilot`, `params`, `showView`, `soldier`, `syncFootView`,
- * `updateSeatPoseVisibility`, `vehicleInput`.
+ * `optPilot`, `params`, `showView`, `soldier`, `stepMouseLookKey`,
+ * `syncFootView`, `updateSeatPoseVisibility`, `vehicleInput`.
  */
 export function createSeatCamera(page) {
   const seatCamera = {};
@@ -315,7 +315,7 @@ export function createSeatCamera(page) {
   // The seat hints, keys filled in from the player's profile.
   const HUD_PILOT_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} throttle · {c_PIYaw-}/{c_PIYaw+} rudder · '
     + '{c_PIPitch-}/{c_PIPitch+} pitch · {c_PIRoll-}/{c_PIRoll+} roll · {c_PIFire} guns · '
-    + '{c_PIAltFire} bombs · {c_PIToggleCameraMode} view · mouse look around · {c_PIReload} reset · '
+    + '{c_PIAltFire} bombs · {c_PIToggleCameraMode} view · {c_PIMouseLook}+mouse look around · {c_PIReload} reset · '
     + '1-9 seats · {c_PIUse} out on the ground · Esc';
   const HUD_DRIVE_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} drive and brake · {c_PIYaw-}/{c_PIYaw+} steer · '
     + 'mouse aims · {c_PIFire} main gun · {c_PIAltFire} coax · {c_PIToggleCameraMode} view · '
@@ -459,6 +459,9 @@ export function createSeatCamera(page) {
    */
   function pilot(dt) {
     if (!page.aircraft) return;
+    // The pilot's look with the mouse-look key up eases back to straight
+    // ahead before any view below is posed from it (`local-look.js`).
+    page.stepMouseLookKey(dt);
     // The world has already run this function's old sim half (world.js
     // #vehicleTick) with its own copy of every rule and comment above: the
     // HP-15 gate is read and `driving`/`flying` below reads its answer; the
