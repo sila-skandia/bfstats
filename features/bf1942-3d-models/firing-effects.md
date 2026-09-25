@@ -89,3 +89,25 @@ sprites overshoot ~3x even after the clamp. Settle against the
 
 Tests: `tests/test_con.py` (new-command parsing), `tests/test_assemble.py`
 (`ProjectileBakeTests`, `EmitterMotionBakeTests`, bullet/shell/rocket typing).
+
+## 2026-09-25: `poses.html` firing gap re-checked — the data is already there
+
+Investigated the corpus-sweep backlog item "Hand weapons in `poses.html`: no
+muzzle nodes, no `GunFire` import". The muzzle-node half is stale: every
+`.pose.glb` `poses.html` loads already carries a `<Weapon> muzzle N` node
+(`templateKind: Muzzle`) and a `HandFireArms` node stamped with a full
+`fireArms` extras block (`roundOfFire`, `magSize`, `numOfMag`, `velocity`,
+`projectile`, `muzzles`) — verified directly on
+`viewer/models/poses/GermanSoldier__K98.pose.glb`. That is exactly the
+`obj.userData.fireArms` shape `gun-groups.js`'s `collectGroups()` scans for,
+and `gunfire.js`'s `GunFire` needs only `{scene, camera}`, which `poses.html`
+already exposes at module scope. The remaining gap is UI wiring only:
+`poses.html`'s inline script never imports `GunFire` or `model-guns.js`'s
+`createGunTriggers` — the same lightweight pattern `index.html` already uses
+for its stationary-model turntable guns (not the heavier bot-oriented
+`hand-fire.js` / `hand-weapon.js` / `arms-rig.js` stack `map.html` uses for
+soldiers in the world). Re-scoped from **M** to **S**: import
+`GunFire`/`createGunTriggers`, call it on `current` after each model load
+(`poses.html:215-239`), step it in the render loop (`poses.html:250-273`),
+add a fire trigger. See `features/bf1942-corpus-sweep-2026-09-18/README.md`
+for the tracked backlog row.
