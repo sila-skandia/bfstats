@@ -322,17 +322,22 @@ class ScoreboardTests(unittest.TestCase):
         by_name = {t[0]: t for t in p["texts"]}
         axis = [float(v) for v in p["colors"]["axis"]]
         # The dead row's whole line, name and numbers, is the side's colour
-        # dimmed; the live one is the side's colour flat.
-        self.assertEqual([round(v * dim, 6) for v in axis],
-                         [float(v) for v in by_name["Axis Bot"][3].split(",")])
-        self.assertEqual(axis, [float(v) for v in by_name["Axis One"][3].split(",")])
+        # dimmed; the live one is the side's colour flat. Compared to six
+        # places, since the painted values come back through a string and a
+        # product of two floats does not always print back to itself.
+        dead = [float(v) for v in by_name["Axis Bot"][3].split(",")]
+        live = [float(v) for v in by_name["Axis One"][3].split(",")]
+        for want, got in zip((v * dim for v in axis), dead):
+            self.assertAlmostEqual(want, got, places=6)
+        for want, got in zip(axis, live):
+            self.assertAlmostEqual(want, got, places=6)
         row_y = by_name["Axis Bot"][2]
         self.assertTrue(all(t[3] == by_name["Axis Bot"][3] for t in p["texts"] if t[2] == row_y))
 
     def test_the_row_colour_is_the_sides_own_and_the_locals_row_is_green(self) -> None:
         c = self.results["rowColors"]
-        self.assertEqual([1, 0.35, 0.35], c["axis"])
-        self.assertEqual([0.4, 0.6, 1], c["allies"])
+        self.assertEqual([0.84, 0.33, 0.33], c["axis"])
+        self.assertEqual([0.33, 0.67, 0.83], c["allies"])
         self.assertEqual([0, 1, 0], c["local"])
         # A row on neither side is left to the leaf's own colour.
         self.assertIsNone(c["none"])
@@ -340,7 +345,7 @@ class ScoreboardTests(unittest.TestCase):
         # A pack's own table wins, and a null entry in it falls back.
         self.assertEqual([0.1, 0.2, 0.3], c["pack"])
         self.assertEqual([0.4, 0.5, 0.6], c["packAllies"])
-        self.assertEqual([1, 0.35, 0.35], c["packNullAxis"])
+        self.assertEqual([0.84, 0.33, 0.33], c["packNullAxis"])
 
     def test_an_unloaded_glyph_or_no_manifest_leaves_the_column_empty(self) -> None:
         n = self.results["paintNoIcons"]
