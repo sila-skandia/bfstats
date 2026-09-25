@@ -179,6 +179,8 @@ export function createVehicleWrecks(page) {
   // airborne, the second is the contact that ends the fall.   [HOUSE RULE]
   const AIRBORNE_MARGIN = 1.5;   // metres
   const LANDING_MARGIN = 0.25;   // metres
+  const LANDING_SPEED = 1.5;     // m/s: quiet enough to be down
+  const LANDING_HOLD = 1.0;      // seconds of stillness that mean it
 
   // Wreck glbs, by template name, shared across every vehicle of that type.
   const wreckModels = new Map();
@@ -214,6 +216,7 @@ export function createVehicleWrecks(page) {
     const drive = fallingDriveFor(visual.node);
     visual.wrecked = true;
     visual.wreckAge = 0;
+    visual.landingQuiet = 0;
     visual.hidden = [];
 
     visual.node.updateWorldMatrix(true, false);
@@ -234,7 +237,7 @@ export function createVehicleWrecks(page) {
     // A plane shot down in the air does not stop where it was hit. It keeps its
     // body, gets no input, and comes down under the flight model it already had;
     // the crash — the wreck model, the second explosion, the linger and the fade
-    // — runs where it lands (`landWreck`), or never, if the fade beats it there.
+    // — runs where it lands, on a clock that starts with the impact (`landWreck`).
     if (drive) {
       visual.falling = drive;
       visual.fallingOwner = vehicle.owner;
@@ -263,7 +266,7 @@ export function createVehicleWrecks(page) {
     const inst = page.vehicles?.instanceOf?.(node);
     const drive = inst?.drive;
     if (!inst || !drive || inst.rootKind !== 'air') return null;
-    const ride = drive.spec?.groundClearance ?? 1.5;
+    const ride = drive.spec?.groundClearance ?? 1.2;
     node.updateWorldMatrix(true, false);
     const y = node.matrixWorld.elements[13];
     return y - surfaceUnder(node.matrixWorld.elements[12], node.matrixWorld.elements[14])
@@ -277,30 +280,52 @@ export function createVehicleWrecks(page) {
     return Number.isFinite(water) ? Math.max(ground, water) : ground;
   }
 
-  /** Is the falling wreck down? True once its origin is back at its own ride
-   *  height over whatever is under it — the contact the flight model's own
-   *  floor clamp settles it at (`Aircraft.integrate`). */
-  function onSurface(visual) {
-    const ride = visual.falling?.spec?.groundClearance ?? 1.5;
-    const node = visual.node;
-    node.updateWorldMatrix(true, false);
-    const e = node.matrixWorld.elements;
-    return e[13] - surfaceUnder(e[12], e[14]) <= ride + LANDING_MARGIN;
+  /** Is the falling wreck down?
+   *
+   * Two ways to be down, because a hull can be held up by something the
+   * heightfield does not describe. The first is the flight model's own floor:
+   * `Aircraft.integrate` clamps a hull to `floor + groundClearance` and a drop
+   * onto terrain or sea settles at exactly its ride height, where this catches
+   * it. The second is coming to rest. A carrier deck, a building, another hull
+   * are floors to `hull-bodies.js`'s rigid-body world and nothing at all to the
+   * flight model, which under a wreck on the Shokaku's deck reports no contact
+   * and a `grounded` of false; what gives the crash away there is that a hull
+   * nobody flies and nobody thrusts has stopped. It takes a moment of stillness
+   * to mean it, because a vertical climb's stall passes through zero on its way
+   * back down and a crash fired there would leave a wreck in the air — the
+   * thing this whole path exists to stop. */
+  function hasLanded(visual, dt) {
+    const drive = visual.falling;
+    const s = drive?.state;
+    if (!s?.position) return true;
+    const ride = drive.spec?.groundClearance ?? 1.2;
+    if (s.position.y - surfaceUnder(s.position.x, s.position.z) <= ride + LANDING_MARGIN) return true;
+    const speed = Math.hypot(s.velocity.x, s.velocity.y, s.velocity.z);
+    visual.landingQuiet = speed <= LANDING_SPEED ? (visual.landingQuiet ?? 0) + dt : 0;
+    return visual.landingQuiet >= LANDING_HOLD;
   }
 
   /**
    * The plane has met the ground (or the water): the crash happens here.
    *
-   * The wreck's own clock started at the kill, so a fall that outlasts the
-   * linger-and-fade is faded out in the air (`stepWrecks`) and never reaches
-   * this. What is left when it does is the impact: the second explosion at the
-   * point it came down, the wreck model in place of the flying one, the body
-   * retired so the hull is scenery, and the node frozen again with the rest of
-   * the level.
+   * The wreck's clock restarts on impact. It has been running since the kill,
+   * but nothing on it happens while the hull is in the air (a flying wreck has
+   * no linger and no fade to give), so a fall that outlasts the linger would
+   * otherwise arrive with the clock already expired: the fade would run on the
+   * next tick, before the wreck model's glb is back from the loader, and remove
+   * a wreck that had not been placed yet -- the crash site showing the intact
+   * mesh's last state instead of a wreck. Starting the crash's own clock here
+   * gives the wreck the whole linger wherever it came down, which is what
+   * "interact with the ground and then fade out" means.
+   *
+   * What follows is the impact: the second explosion at the point it came down,
+   * the wreck model in place of the flying one, the body retired so the hull is
+   * scenery, and the node frozen again with the rest of the level.
    */
   function landWreck(owner, visual) {
     const drive = visual.falling;
     visual.falling = null;
+    visual.wreckAge = 0;
     if (drive) {
       drive.fallingWreck = false;
       page.world.falling.delete(drive);
@@ -503,11 +528,11 @@ export function createVehicleWrecks(page) {
       if (!visual.wrecked || visual.removed) continue;
       visual.wreckAge += dt;
       // A plane that died in the air is still flying: its crash waits for the
-      // ground. This clock keeps running meanwhile, so a fall long enough to
-      // outlive the linger is faded out in the air — the other half of what the
-      // owner sees in retail — and a fall that lands first crashes there and
-      // spends the rest of the same clock as a wreck on the ground.
-      if (visual.falling && !onSurface(visual)) continue;
+      // ground, and nothing on this clock runs until it gets there — no linger,
+      // no fade, the intact mesh the whole way down. The crash restarts the
+      // clock (`landWreck`), so a fall longer than the linger still leaves the
+      // wreck its own full linger at the crash site.
+      if (visual.falling && !hasLanded(visual, dt)) continue;
       if (visual.falling) { landWreck(owner, visual); continue; }
       const into = visual.wreckAge - WRECK_LINGER;
       if (into <= 0) continue;

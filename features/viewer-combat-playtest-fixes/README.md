@@ -63,17 +63,32 @@ What landed:
   at the kill position again.
 - The crash runs where the hull comes down. `landWreck` plays the impact
   effect at the landing point, retires the body, frees the hull back into the
-  level's frozen scenery and puts the wreck model in place.
-- The wreck's own clock still starts at the kill, so a fall that outlasts the
-  10 s linger and 2.5 s fade is faded out in the air. That is the other half of
-  what the owner described: sometimes it drifts down and fades, sometimes it
-  reaches the ground and fades there.
+  level's frozen scenery and puts the wreck model in place. The crash restarts
+  the wreck's clock, so a fall that outlasts the linger still gets the wreck a
+  full linger at the crash site rather than arriving with the clock expired.
+- Nothing on the wreck's clock runs while the hull is in the air: no linger, no
+  fade, the intact mesh the whole way down. It is the crash that starts the
+  clock.
 
-Two house constants frame the flight model's own floor clamp
-(`Aircraft.integrate` settles a hull at `floor + groundClearance`):
-`AIRBORNE_MARGIN` of 1.5 m decides whether a death is a fall or a wreck in
-place, so a plane taxiing or parked on a strip is never read as airborne, and
-`LANDING_MARGIN` of 0.25 m is the contact that ends the fall.
+The fall ends two ways, because a hull can be held up by something the
+heightfield does not describe. The first is the flight model's own floor
+(`Aircraft.integrate` clamps a hull to `floor + groundClearance`, and a drop
+onto terrain or sea settles at exactly its ride height): `LANDING_MARGIN` of
+0.25 m over that ride height is contact. The second is coming to rest. A
+carrier deck, a building, another hull are floors to `hull-bodies.js`'s
+rigid-body world and nothing to the flight model, which under a wreck on the
+Shokaku's deck reports no contact and a `grounded` of false. That was the
+second bug the owner hit: a plane shot down over the Japanese base came to rest
+on the deck, the heightfield said it was still 14 m in the air, and the crash
+never fired, so the intact mesh's last pose was the wreck. What gives a hull
+away there is that a hull nobody flies and nobody thrusts has stopped:
+`LANDING_SPEED` of 1.5 m/s held for `LANDING_HOLD` of 1 s. The hold is what
+keeps a vertical climb's stall, which passes through zero on the way back down,
+from firing the crash in the air.
+
+`AIRBORNE_MARGIN` of 1.5 m is the other side of the same coin: it decides
+whether a death is a fall or a wreck in place, so a plane taxiing or parked on
+a strip is never read as airborne.
 
 Water counts as a surface, so a plane that comes down at sea has its crash at
 the waterline. A level change clears the falling list with the rest of the
@@ -234,6 +249,23 @@ The control run for the first table (the same probe with `releaseFireTrigger`
 taken back out) did not complete. The deploy screen would not hold a spawn long
 enough to place a man, so the "shots keep climbing" half of the pair is
 established by the code path rather than measured.
+
+The falling wreck, killed in the air with `__damageVehicle` and watched on the
+scene node the hull owns (`world.falling` joins it, `userData.fallingWreck`
+marks it, and `models/<Template>.wreck.glb` is what the crash must parent):
+
+| observed | result |
+|---|---|
+| Corsair killed 200 m up, watched down | y falls 316 to 91.5, the node carries `fallingWreck`, `lodCorsair` stays visible throughout |
+| SBD killed 25 m up (short fall) | lands, `wreck:SBD` is parented and the intact `lodSBD` goes invisible (`placeWreck`) |
+| Zero killed 200 m up over the Japanese base | first build: came to rest on the carrier deck at y 108.8 with the terrain at 95, the flag stayed set and no wreck model ever appeared. After the fix: `wreck:Zero` is parented at the deck, `lodZero` goes invisible, the wreck lingers its 10 s and fades, and the pad respawns. |
+| Corsair, fall longer than the linger | first build: reached the ground with the clock already expired, so the crash fired, the fade removed the wreck a tick later and the intact mesh stayed up. After the clock restart: the wreck gets its full linger at the crash site. |
+
+That is what the two bugs looked like from outside, and it is why the second
+report ("it does not use the wreck model, it uses the normal undamaged model")
+was two separate faults: the crash could fail to fire at all on anything held up
+by a deck or a building, and when it did fire after a long fall its clock had
+already run out.
 
 The viewer's own suite (3.4 k tests, `python3 -m unittest` over
 `tests/test_*.py`) is green apart from `test_meme`'s clean-page floor, which
