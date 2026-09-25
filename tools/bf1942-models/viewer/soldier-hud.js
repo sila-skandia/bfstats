@@ -8,7 +8,7 @@ import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
+ * `carriedKit`, `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
  * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handSlot`, `handWeapon`,
  * `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
  * `optOnFoot`, `optPilot`, `playSoldierHurtSound`, `soldier`,
@@ -38,16 +38,24 @@ export function createSoldierHud(page) {
   // (features/mesh-viewer-performance, rule 5). Compared field by field, not
   // via a joined-string key: a template literal built fresh every call to
   // throw away immediately is itself the per-frame allocation rule 5 rules out.
+  // The kit is the one the soldier CARRIES: the client reads the art off the
+  // template of the kit object his soldier holds (`getKitId` -> the object ->
+  // its template's `+0x238` / `+0x254`, BF1942.exe 0x006ad7c4..0x006ad810),
+  // so a kit picked up off the ground (`carried`, `kit-drops-page.js`) brings
+  // its own bar with it.
   soldierHud.kitArtDir = null;
   soldierHud.kitArtTeam = null;
   soldierHud.kitArtKitName = null;
+  soldierHud.kitArtCarried = null;
   soldierHud.kitArtCache = null;
-  function kitHealthArt(team, kitName) {
-    if (team !== soldierHud.kitArtTeam || kitName !== soldierHud.kitArtKitName || page.currentDir !== soldierHud.kitArtDir) {
+  function kitHealthArt(team, kitName, carried = null) {
+    if (team !== soldierHud.kitArtTeam || kitName !== soldierHud.kitArtKitName
+        || carried !== soldierHud.kitArtCarried || page.currentDir !== soldierHud.kitArtDir) {
       soldierHud.kitArtDir = page.currentDir;
       soldierHud.kitArtTeam = team;
       soldierHud.kitArtKitName = kitName;
-      const resolved = page.kitLoadout(team, kitName).kit;
+      soldierHud.kitArtCarried = carried;
+      const resolved = carried ?? page.kitLoadout(team, kitName).kit;
       soldierHud.kitArtCache = (resolved && page.loadouts?.kits?.[resolved]) || null;
     }
     return soldierHud.kitArtCache;
@@ -296,7 +304,7 @@ export function createSoldierHud(page) {
     // healthbar_full_scout_64x64.png directly: the scout scope icon sits in the
     // art itself), not a separate layout element — feeding these two is the
     // whole of "the health bar and its kit art".
-    const art = kitHealthArt(page.deployTeamId, page.deployKit);
+    const art = kitHealthArt(page.deployTeamId, page.deployKit, page.carriedKit ?? null);
     vars['Soldier/SoldierHealthBarIcon'] = art?.healthBarIcon;
     vars['Soldier/SoldierHealthBarFullIcon'] = art?.healthBarFullIcon;
 
