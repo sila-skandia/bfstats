@@ -15,7 +15,9 @@
 # pointing through them. Extract into your own scratch directory instead.
 set -euo pipefail
 
-MAIN=/home/dylan/projects/skandia/bfstats/tools/bf1942-models/viewer
+# The checkout holding the extracted trees. A cloud session restores them into
+# its own clone (ghidra-cloud/setup.sh), so it points this at that clone.
+MAIN=${BF_VIEWER_MAIN:-/home/dylan/projects/skandia/bfstats/tools/bf1942-models/viewer}
 WORKTREE=${1:-$(git rev-parse --show-toplevel)}
 VIEWER="$WORKTREE/tools/bf1942-models/viewer"
 
