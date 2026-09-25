@@ -38,7 +38,7 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`, `packsLeft`,
  * `paintScoreboard`, `parachuteLog`, `params`, `playCaptureVoice`,
  * `pressTrigger`, `recordCrashes`, `referee`, `renderer`, `roomClient`,
- * `roomJoined`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
+ * `roomJoined`, `round`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
  * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
  * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
  * `setAim`, `setFly`, `setMapGate`, `setScoreboard`, `setSeatTriggers`,

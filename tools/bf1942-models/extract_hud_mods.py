@@ -62,6 +62,7 @@ STEPS: list[tuple[str, str]] = [
     ("extract_menu_layout.py", "menu"),
     ("extract_console_font.py", "console"),
     ("extract_radio.py", ""),
+    ("extract_score_settings.py", ""),
 ]
 
 #: Arguments a step needs beyond `--mod/--game-dir/--out`.
