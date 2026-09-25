@@ -221,8 +221,54 @@ export function createKitLoadout(page) {
 
   /** The human's current weapon's AI sound radius, for the bots' hearing. */
   function localWeaponSoundRadius() {
-    const template = page.handWeapon?.template ?? page.handWeapon?.group?.template ?? null;
-    return loadout.loadouts?.aiWeapons?.[template]?.soundSphereRadius ?? null;
+    const ai = localAiWeapon();
+    return ai?.soundSphereRadius ?? null;
+  }
+
+  /** The hand weapon's AI entry (`_shared/loadouts.json`'s `aiWeapons`, read
+   *  from the weapon's own `Ai/Weapons.con` `weaponTemplate.create` block).
+   *  The weapon in hand names the entry: `hw.name` is the template the kit
+   *  files carry. Null when the file is absent or does not know the weapon. */
+  function localAiWeapon() {
+    const template = page.handWeapon?.name ?? null;
+    return (template && loadout.loadouts?.aiWeapons?.[template]) || null;
+  }
+
+  /** `BFSoldier::useMedPack`'s parameters, from the soldier template's own
+   *  registered properties (supply-depots.md §6): the heal sweep's reach
+   *  (`healDistance`, +0x2f4 — vanilla `CommonSoldierData.inc` 10.0) and the
+   *  HP per invocation (each round of the held trigger is one invocation, at
+   *  the pack's `roundOfFire` 10/s): allies take `healFactor` (+0x2d8, 0.25),
+   *  the holder himself takes `selfHealFactor` (+0x2dc, 0.15). A mod kit may
+   *  re-register the three, and the viewer does not extract them yet — these
+   *  are the vanilla numbers, the same stand-in `FALLBACK_PRIMARIES` is. */
+  const MEDIC_PACK = { radius: 10.0, allyHeal: 0.25, selfHeal: 0.15 };
+
+  /** `BFSoldier::useRepairPack`'s parameters (supply-depots.md §6, the
+   *  function at `0x08276100`): the reach past a target's hull
+   *  (`repairDistance`, +0x2ec — vanilla 2.0), and the HP per invocation
+   *  (`repairFactor`, +0x2e0 — vanilla 0.15). The function itself gates each
+   *  candidate on `distanceSqr <= (target.getRadius() + repairDistance)²`
+   *  (`0x08276762`, the `+0x2ec` add; the pose branch adds `+0x2f0`, which
+   *  vanilla registers at the same 2.0), keeps only wounded, undestroyed
+   *  armour, and heals the closest one it kept — so a wounded vehicle at
+   *  0.15 HP/round, 10 rounds/s: 1.5 HP/s. As with the medic bag the
+   *  registered numbers are engine properties the extractor does not carry
+   *  yet, so these are the vanilla values. */
+  const REPAIR_PACK = { radius: 2.0, repairHeal: 0.15 };
+
+  /** The healing pack in hand, with its use parameters — or null. The game's
+   *  own discriminator between the medic bag and the wrench is the AI
+   *  weapon's target typing (`weaponTemplate.healing 1` on both; the MedPack's
+   *  `strength` table is Infantry 2 alone, the RepairPack's is every armour
+   *  class and Infantry 0 — `loadouts.json`'s `aiWeapons`) — the same gate
+   *  the engine's `useMedPack` applies with its soldier-template class test,
+   *  and the bots' MedicAssist with its own. */
+  function healingPack() {
+    const ai = localAiWeapon();
+    if (!ai?.healing) return null;
+    if ((ai.strength?.Infantry ?? 0) > 0) return { ...MEDIC_PACK, kind: 'medic' };
+    return { ...REPAIR_PACK, kind: 'repair' };
   }
 
   Object.assign(loadout, {
@@ -234,6 +280,7 @@ export function createKitLoadout(page) {
     kitRowLayoutText,
     kitSlotsFor,
     loadoutsLoad,
+    healingPack,
     localWeaponSoundRadius,
     slotOf,
     soldierMaxHp,

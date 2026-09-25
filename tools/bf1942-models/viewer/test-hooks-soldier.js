@@ -193,6 +193,7 @@ export function installSoldierHooks(page) {
     rounds: page.handWeapon.rounds,
     mags: page.handWeapon.mags,
     reloading: page.handWeapon.reload > 0,
+    fireLoop: !!page.handFireLoop,
     deviationDeg: page.handWeapon.model.current(),
     zoomed: page.isZoomed(),
     fovFactor: page.handWeapon.fovCur,

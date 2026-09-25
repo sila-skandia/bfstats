@@ -32,15 +32,15 @@ import { createHandFire } from './hand-fire.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aimHeld`, `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
+ * `aimHeld`, `aircraft`, `applyDamage`, `applyHeal`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
- * `clickQueued`, `currentDir`, `deployKit`, `deployTeamId`, `dropClick`,
+ * `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
  * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
  * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierDead`, `spawnLayout`, `sun`,
- * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`,
+ * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`, `vehicleDamage`,
  * `warmSubtree`, `warmups`, `world`.
  */
 export function createHandWeapon(page) {
@@ -480,16 +480,19 @@ export function createHandWeapon(page) {
   // the depot's refill, and before the chained hooks it sets up itself.
   const fire = createHandFire({
     get aimHeld() { return page.aimHeld; }, get applyDamage() { return page.applyDamage; },
+    get applyHeal() { return page.applyHeal; },
     get bodyAt() { return page.bodyAt; }, get capsulesOf() { return page.capsulesOf; },
     get botRoundDamage() { return page.botRoundDamage; }, get bots() { return page.bots; },
     get camera() { return page.camera; }, get captured() { return page.captured; },
     get clickQueued() { return page.clickQueued; },
+    get damageVisuals() { return page.damageVisuals; },
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
     get fireDetonator() { return fireDetonator; }, get fireStates() { return page.fireStates; },
     get guns() { return page.guns; }, get handWeapon() { return soldierKit.handWeapon; },
     get isDetonator() { return isDetonator; }, get isExplosives() { return isExplosives; },
     get itemsLocked() { return itemsLocked; }, get lineOfSight() { return page.lineOfSight; },
     get LOCAL_PLAYER() { return page.LOCAL_PLAYER; },
+    get healingPack() { return soldierKit.healingPack; },
     get packThrown() { return demolitions.packThrown; }, get params() { return page.params; },
     get playHandFire() { return playHandFire; },
     get playViewmodelClip() { return playViewmodelClip; },
@@ -497,7 +500,8 @@ export function createHandWeapon(page) {
     get releaseHandFireLoop() { return releaseHandFireLoop; },
     get soldier() { return page.soldier; }, get triggerHeld() { return page.triggerHeld; },
     get updateViewmodelAnimation() { return updateViewmodelAnimation; },
-    get vehicleAudio() { return page.vehicleAudio; }, get world() { return page.world; },
+    get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
+    get world() { return page.world; },
   });
   const { footFire, isZoomed, startReload } = fire;
   // Summed from the page's look (`addFootLook`), drained by `footFire`.
@@ -641,6 +645,7 @@ export function createHandWeapon(page) {
     kitRowLayoutText: loadout.kitRowLayoutText,
     loadoutsLoad: loadout.loadoutsLoad,
     localWeaponSoundRadius: loadout.localWeaponSoundRadius,
+    healingPack: loadout.healingPack,
     packAmmo,
     packsLeft,
     playHandFire,

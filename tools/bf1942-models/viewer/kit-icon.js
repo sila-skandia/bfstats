@@ -33,7 +33,7 @@
  *  (nothing ever qualifies with `kits` itself, so only the second candidate
  *  is ever real, but computing it uniformly needs no special case for the
  *  root). Case-insensitive and extension-blind throughout, matching
- *  `hud.js`'s `spriteKeyFromRef` and `extract_hud_pack.py`'s own basenaming
+ *  `hud.js`'s `spriteKeyCandidates` and `extract_hud_pack.py`'s own basenaming
  *  -- backslashes are normalised the same way `icon_key()` does there.
  */
 export function kitIconCandidates(iconPath) {
