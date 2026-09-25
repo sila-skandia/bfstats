@@ -453,6 +453,42 @@ bytes, and the messages reach child bundles because
 `PlayerControlObject::handleMessage` tail-calls `Bundle::handleMessage`
 (`0x081a74b0`), which invokes `+0x9c` on each child.
 
+**Closed 2026-09-25: there is no client HUD/sound/camera handler for these
+ids, on either binary, because a remote client never receives them.** The
+client's own `Armor::status` (`0x004bbad0`) is byte-identical to the server's
+— same field offsets, same `getComponent(IID_IPlayerObject)` dispatch of
+`0x13`/`0x14`/`0x15` (client vtable slot `+0x98`, one slot earlier than
+lnxded's `+0x9c`, a GCC/MSVC layout difference, not a different mechanism) —
+which extends ARM-4's "field-for-field port" finding to the message-send side.
+Neither binary ever puts `0x13`/`0x14`/`0x15` on a network path; the only
+consumer of the id is `IPlayerObject::handleMessage`, the local in-process bus.
+So a remote client's view of another object's damage state comes entirely from
+ordinary field replication of the *receiver's* resulting state — `+0xed`/`+0xee`
+through `EngineNetworkable::updateStateMask` (HP-15) — never from the message
+itself. A search of the client binary for a handler keyed on these ids (every
+function checked for a `CMP`/switch on `0x13`/`0x14`/`0x15`, and independently
+every function touching offsets `+0xed`/`+0xee`) found none beyond the mirrored
+`Armor::status`/`SimpleObject::handleMessage` pair.
+
+One receiver-side effect not previously recorded here: the `0x15` branch
+(`0x081db9d9`–`0x081db9e7`) also calls
+`SimpleObject`'s own vtable `+0x2c` — `BCompositeObject<IPlayerObject>::updateFlags`
+(`0x08164570`, base vtable `0x08725028`, slot `0x08725054`) — with
+`updateFlags(0, 0x200)`, clearing object flag `0x200`, gated on `Armor+0x104`
+being non-zero. That is the same flag `collision-response.md` §5.2 names as the
+collidability gate (`shouldCheckCollision` requires flag `0x200`): a destroyed
+object can be made non-collidable, conditionally — a second writer of that bit,
+partially answering that doc's own open item on how flag `0x200` relates to
+`hasCollisionPhysics`. Which console property drives `Armor+0x104` is not
+pinned down (the literal string `noCollisionsAsDestroyed` is not present in
+`bf1942_lnxded.static`).
+
+The player-visible "critical" smoke/fire is unrelated to these messages: it is
+the independent per-tick `Armor::playEffect()` (ARM-1, confirmed identical on
+the client at `0x004bc3d0`), and the death flash/sound is `status()`'s own
+on-death explosion call right after `0x15` — both run unconditionally, not
+gated on whether `isSendingMessage()` lets `0x15` through.
+
 ### `+0xed` and `+0xee`: persistent wreck state (HP-15)
 
 These two bytes are what §9's ARM-6 could not see, and they are **not**
@@ -653,11 +689,15 @@ call `setLastCollisionHeight` (`+0xf8`).
   What that gate measures — G-force, roll angle, something else — is unread.
   It is the best remaining candidate for why a burning vehicle *feels*
   undriveable: its crew keeps taking damage and the player bails.
-- **HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`. Still
-  unread after three rounds; the client budget went to the Armor class and the
-  entry gates. The **server** side is closed (§7): they are in-process
-  TemplateMessages, `0x15` is destruction, and the two bytes they write gate
-  driving and traverse.
+- ~~**HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`.~~
+  **Closed 2026-09-25 (§7):** nothing — a remote client never receives these
+  ids (they never leave the process that runs `Armor::status`, confirmed
+  identical on the client at `0x004bbad0`), and there is no HUD/sound/camera
+  handler for them on either binary. The receiver-side effects are input
+  gating (`+0xed`/`+0xee`, HP-15), weapon/AI removal, and — newly found —
+  a conditional clear of collidability flag `0x200` on death. The visible
+  smoke/fire and death effects are unrelated, driven by ARM-1's `playEffect()`
+  and `status()`'s own explosion call.
 - **HP-9b**: who drains the six-vector deferred damage queue
   `handleExplosionOnObject` appends to (`GameServer + [this+0x2b4]*12 +
   0x224/…`). Next step: find readers of `GameServer+0x224`.
