@@ -342,11 +342,14 @@ def convert_ui_chrome_dds(
     crop_active: bool = True,
     overwrite: bool = False,
     dry_run: bool = False,
+    crop_to_content: bool = False,
 ) -> tuple[int, int]:
     """Decode UI chrome DDS and save as PNG.
 
     If crop_active is True and image is 512x64, crops to (0, 0, 290, 64) to
-    discard the 222px transparent power-of-two padding.
+    discard the 222px transparent power-of-two padding. If crop_to_content is
+    True the image is cropped to its alpha bounding box instead — the briefing
+    dialog plate is drawn 512x512 but paints only its top 334 rows.
     """
     out_png_path = Path(out_png_path)
     if out_png_path.is_file() and not overwrite and not dry_run:
@@ -356,6 +359,10 @@ def convert_ui_chrome_dds(
     im = decode_image_bytes(dds_bytes).convert("RGBA")
     if crop_active and im.size == (512, 64):
         im = im.crop((0, 0, 290, 64))
+    elif crop_to_content:
+        bbox = im.getchannel("A").getbbox()
+        if bbox:
+            im = im.crop(bbox)
 
     final_size = im.size
     if not dry_run:
@@ -645,6 +652,25 @@ class LoadingAssetExtractor:
                         dry_run=self.dry_run,
                     )
                     logger.info("[%s] Extracted loading_bar.png (%dx%d) -> %s", mod, size[0], size[1], dest_bar)
+                    self.summary.chrome_extracted += 1
+
+                # 3. The mission-briefing dialog plate: the screen the game
+                # puts up over the loaded level, with the map name, teams,
+                # settings and the objectives/comments boxes on it. Painted
+                # 1:1 in the 800x600 stage; only its top 334 rows carry pixels.
+                plate_entry = reader.find("mp_briefing_512x512.dds")
+                if plate_entry:
+                    raw_plate = reader.read(plate_entry)
+                    dest_plate = dest_dir / "mp_briefing.png"
+                    size = convert_ui_chrome_dds(
+                        raw_plate,
+                        dest_plate,
+                        crop_active=False,
+                        overwrite=True,
+                        dry_run=self.dry_run,
+                        crop_to_content=True,
+                    )
+                    logger.info("[%s] Extracted mp_briefing.png (%dx%d) -> %s", mod, size[0], size[1], dest_plate)
                     self.summary.chrome_extracted += 1
 
     def extract_theater_backgrounds(self) -> None:

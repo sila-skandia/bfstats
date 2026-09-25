@@ -1,19 +1,31 @@
-// Drives `viewer/progress.js`'s briefing panel outside a browser.
+// Drives `viewer/progress.js`'s mission-briefing screen outside a browser.
 //
 // `createLoadOverlay` needs a DOM, so this harness stands a minimal one up
-// (just enough of `querySelector`/`dataset`/`textContent` for the panel paths)
-// and imports the copied module. `tests/test_load_briefing_js.py` copies the
-// viewer file in under its own name, so the file under test is the file the
-// page loads, byte for byte. The overlay module imports `./audio.js`, stubbed
-// here the same way.
+// (just enough of `querySelector`/`dataset`/`textContent`/event listeners for
+// the screen's paths) and imports the copied module. `test_load_briefing_js.py`
+// copies the viewer files in under their own names, so the file under test is
+// the file the page loads, byte for byte. The overlay module imports
+// `./audio.js`, stubbed here the same way.
+//
+// What is pinned here:
+//   * the authentic screen's markup carries the briefing dialog (name, flags
+//     row, mode, settings, OBJECTIVES/COMMENTS bands) and the READY button,
+//     and no longer the old splash-borne MISSION BRIEFING panel;
+//   * `load.briefing(...)` fills the dialog and survives data, null,
+//     undefined and an object with none of the fields;
+//   * `end()` on the authentic placement parks the overlay in the `briefing`
+//     state and returns a promise; clicking READY resolves it, fires the
+//     `onReady` the page handed `begin`, and fades the music — the corner
+//     placement keeps the old done-means-gone behaviour.
 
 import { createLoadOverlay } from './progress.js';
 
 const results = {};
 
-// -- a DOM stub: ids -> {dataset, textContent, style, hidden, innerHTML} ----
-function makeEl() {
-  return {
+// -- a DOM stub -------------------------------------------------------------
+function makeEl(tag = 'div') {
+  const listeners = {};
+  const el = {
     children: {},
     dataset: {},
     style: { setProperty() {} },
@@ -21,48 +33,66 @@ function makeEl() {
     hidden: false,
     className: '',
     setAttribute() {},
+    removeAttribute() {},
     appendChild() {},
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+    dispatch(type) { for (const fn of listeners[type] || []) fn({}); },
     querySelector(sel) { return this.children[sel] || null; },
-    querySelectorAll() { return []; },
+    querySelectorAll(sel) { return this.children[`${sel}[]`] || []; },
   };
+  return el;
 }
 
-function makeHost() {
-  const overlay = makeEl();
-  const els = {
-    '.ld-briefing': makeEl(),
-    '.ld-briefing-type': makeEl(),
-    '.ld-briefing-heading': makeEl(),
-    '.ld-briefing-text': makeEl(),
+// The module builds its tree as one innerHTML string and then queries it, so
+// the stub resolves every selector the module uses to a hand-made element.
+// The two flag images are the one querySelectorAll.
+function seedOverlay(el) {
+  const flagA = makeEl();
+  const flagB = makeEl();
+  el.children = {
+    '.ld-bg-img': makeEl(),
     '.ld-box .ld-title': makeEl(),
     '.ld-trough': makeEl(),
     '.ld-fill': makeEl(),
     '.ld-prompt': makeEl(),
+    '.ld-brief': makeEl(),
+    '.ld-brief-name': makeEl(),
+    '.ld-brief-mode': makeEl(),
+    '.ld-brief-settings': makeEl(),
+    '.ld-brief-objectives .ld-brief-bandtext': makeEl(),
+    '.ld-brief-comments .ld-brief-bandtext': makeEl(),
+    '.ld-brief-btn': makeEl('button'),
+    '.ld-brief-flag[]': [flagA, flagB],
     '.ld-card .ld-title': makeEl(),
     '.ld-bar': makeEl(),
     '.ld-phase': makeEl(),
     '.ld-pct': makeEl(),
     '.ld-sub': makeEl(),
-    '.ld-bg-img': makeEl(),
   };
-  overlay.children = els;
-  overlay.style.setProperty = () => {};
-  const stage = makeEl();
-  stage.appendChild = (_child) => {};
-  // querySelector on the host hands back the overlay; the overlay's own
-  // querySelector resolves the panel elements from `children`.
-  stage.querySelector = () => null;
-  return { stage, overlay, els };
+  return el.children;
 }
 
-// progress.js builds its own element tree with document.createElement and
-// queries it with root.querySelector. Intercept at the document level: the
-// style tag is dropped, the overlay root is our stub.
 const overlays = [];
+const markup = [];
+let makeElement = tag => makeEl(tag);
 globalThis.document = {
   createElement(tag) {
-    const el = makeEl();
-    if (tag === 'div') el.querySelector = (sel) => el.children[sel] || null;
+    const el = makeElement(tag);
+    if (tag === 'div') {
+      let cls = '';
+      Object.defineProperty(el, 'className', {
+        get: () => cls,
+        set(v) {
+          cls = v;
+          if (v === 'ld-overlay') { seedOverlay(el); overlays.push(el); }
+        },
+      });
+      let inner = '';
+      Object.defineProperty(el, 'innerHTML', {
+        get: () => inner,
+        set(v) { inner = v; if (el.className === 'ld-overlay') markup.push(String(v)); },
+      });
+    }
     return el;
   },
   createElementNS() { return makeEl(); },
@@ -76,74 +106,73 @@ globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 globalThis.performance = { now: () => 0 };
 
-// progress.js imports audio.js, which reads document/window at import time;
-// both exist by now. Stub the controller it builds.
-const audioModule = await import('./audio.js');
+await import('./audio.js');
 
-function build(authentic = true) {
+function build(authentic) {
   const host = makeEl();
   host.querySelector = () => null;
-  // createLoadOverlay appends the root to host and queries `root`; capture the
-  // root through a wrapper around appendChild.
-  let root = null;
-  const realCreate = globalThis.document.createElement;
-  const overlay = createLoadOverlay(host, { placement: authentic ? 'authentic' : 'corner' });
-  // The real root is hidden inside the module; drive it through the handle
-  // instead, and read the DOM through a query on the host. The stub tree is
-  // flat: the overlay root is the last element created with className
-  // 'ld-overlay'. Re-query by re-parsing is overkill — the handle's effects
-  // are observable through `begin`'s return value alone, so the DOM checks
-  // below go through a second creation path: we track via document.spy.
-  return overlay;
+  return createLoadOverlay(host, { placement: authentic ? 'authentic' : 'corner' });
 }
 
-// Because the module closes over its own tree, assert on behaviour the handle
-// exposes and on the panel through a re-created overlay whose stub elements we
-// can reach: createLoadOverlay sets root.innerHTML with the panel markup, and
-// our createElement stub records innerHTML assignments. Collect them.
-const markup = [];
-const realCreate2 = globalThis.document.createElement;
-globalThis.document.createElement = (tag) => {
-  const el = realCreate2(tag);
-  let inner = '';
-  Object.defineProperty(el, 'innerHTML', {
-    get() { return inner; },
-    set(v) {
-      inner = v;
-      // The overlay root is the only element assigned the panel markup
-      // (className 'ld-overlay' is set right before innerHTML in the module).
-      if (el.className === 'ld-overlay') markup.push(String(v));
-    },
-  });
-  return el;
-};
+// -- markup ------------------------------------------------------------------
+build(true);
+const screen = markup[markup.length - 1] || '';
+results.markupHasDialog = screen.includes('ld-brief-name') && screen.includes('ld-brief-mode');
+results.markupHasBands = screen.includes('OBJECTIVES') && screen.includes('COMMENTS');
+results.markupHasReady = screen.includes('READY') && screen.includes('ld-brief-btn');
+results.markupHasFlags = (screen.match(/class="ld-brief-flag"/g) || []).length === 2;
+results.markupNoSplashPanel = !screen.includes('ld-briefing');
+results.markupNoHeading = !screen.includes('MISSION BRIEFING');
 
+// -- the briefing data fills the dialog --------------------------------------
+let readyClicks = 0;
 const overlay = build(true);
-results.markupHasPanel = markup.some(m => m.includes('ld-briefing'));
-results.markupHeading = markup.some(m => m.includes('MISSION BRIEFING'));
-results.markupType = markup.some(m => m.includes('ld-briefing-type'));
-results.markupEmptyDefault = markup.some(m => m.includes('data-empty="true"'));
-// The corner card's markup must not grow the panel (it hides .ld-stage).
-results.cornerMarkupClean = true;
-
-// The handle carries the briefing method; calling it with data and with null
-// must not throw with every el* stub null-safe (the corner placement's panel
-// elements do not exist).
-const handle = overlay.begin('Wake', {});
+const root = overlays[overlays.length - 1];
+const els = root.children;
+const handle = overlay.begin('Wake', { onReady: () => { readyClicks += 1; } });
 results.handleHasBriefing = typeof handle.briefing === 'function';
-handle.briefing({ objectives: 'This is a Conquest: Assault map.', mapType: 'ASSAULT MAP', mapId: 'BF1942' });
+
+handle.briefing({
+  objectives: 'This is a Conquest: Assault map.',
+  mapType: 'ASSAULT MAP',
+  mapId: 'BF1942',
+  displayName: 'WAKE ISLAND',
+  gameType: 'Conquest',
+  flags: ['maps/_shared/hud/icon_flag_jp.png', null],
+});
+results.dialogName = els['.ld-brief-name'].textContent;
+results.dialogMode = els['.ld-brief-mode'].textContent;
+results.dialogObjectives = els['.ld-brief-objectives .ld-brief-bandtext'].textContent;
+results.dialogCommentsEmpty = els['.ld-brief-comments .ld-brief-bandtext'].textContent === '';
+results.dialogFirstFlagShown = els['.ld-brief-flag[]'][0].src !== undefined
+  && els['.ld-brief-flag[]'][0].style.display === '';
+results.dialogSecondFlagHidden = els['.ld-brief-flag[]'][1].style.display === 'none';
+results.settingsRows = (els['.ld-brief-settings'].innerHTML.match(/ld-brief-row/g) || []).length;
+
+// survives null / undefined / an empty object
 handle.briefing(null);
 handle.briefing(undefined);
 handle.briefing({});
+results.dialogCleared = els['.ld-brief-name'].textContent === ''
+  && els['.ld-brief-objectives .ld-brief-bandtext'].textContent === '';
+
+// -- end() parks on the briefing screen until READY --------------------------
 handle.step('report', { label: 'level report' });
 handle.finish('report');
-handle.end();
+const ended = handle.end();
+results.endReturnsPromise = ended instanceof Promise;
+results.stateBriefing = root.dataset.state === 'briefing';
+els['.ld-brief-btn'].dispatch('click');
+results.readyFiresOnReady = readyClicks === 1;
+results.readyClearsState = root.dataset.state === 'done';
 
-// Corner placement: no panel, same API.
+// -- corner placement: no dialog, done means gone ----------------------------
 const corner = build(false);
+const cornerRoot = overlays[overlays.length - 1];
 const cornerHandle = corner.begin('X', {});
 results.cornerHasBriefing = typeof cornerHandle.briefing === 'function';
 cornerHandle.briefing({ objectives: 'text' });
 cornerHandle.end();
+results.cornerEndConceals = cornerRoot.dataset.state === 'done';
 
 console.log(JSON.stringify(results));
