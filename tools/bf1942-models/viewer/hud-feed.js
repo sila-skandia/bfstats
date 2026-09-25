@@ -1,6 +1,6 @@
 // What the HUD reads each frame: the engine's own MemeFile variables
 // (`Vehicle/*`, `Ammo/*`, `Overheat/*`, the seat dots, the soldier's health,
-// stance, ammo and weapon bar, the crosshair, the view blurb), written into
+// stance, ammo and weapon bar, the crosshair), written into
 // `gameHud.vars` from the local player's seat and soldier, plus the HUD
 // painter itself and its sprite pack. `hud.js` stays the renderer. Lifted
 // out of map.html (features/vehicle-instance-refactor Part 2).
@@ -11,10 +11,7 @@ import { Hud } from './hud.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aircraft`, `bust`, `car`, `deployActive`, `drawFullMap`, `hud`,
- * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_PILOT`, `hudPaths`,
- * `isTouchDevice`, `mannedActive`, `navMode`, `occupancy`, `optOnFoot`,
- * `optPilot`, `paintDeploySoon`, `soldier`, `updateSeatPoseVisibility`.
+ * `bust`, `deployActive`, `drawFullMap`, `hudPaths`, `paintDeploySoon`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -32,66 +29,6 @@ export function createHudFeed(page) {
   // primaryAmmo/secondaryAmmo) and, once it lands, the finer-grained seated
   // state that boolean really needs — see the note on `inVehicle` below.
 
-
-  /** Announce the view C just selected, then fall back to the control list. */
-  const VIEW_BLURB = {
-    cockpit: 'cockpit · first person, from the seat\'s own eye point',
-    nose: 'nose cam · past the propeller, no cockpit, reticle over open air',
-    chase: 'chase · behind and above, horizon held level',
-    front: 'front · ahead of the nose, looking back',
-    flyby: 'fly-by · planted in the world, re-plants as you pull away',
-    // The soldier's own names (`soldier-camera.js`).
-    inside: 'first person · through the soldier\'s own eyes',
-  };
-  // The HUD line: the mode's own hint, the touch hint on a touch device, and
-  // a flash that hands the line back to them (`flashHud`).
-  function getTouchHudText() {
-    if (page.optPilot.checked && page.occupancy) {
-      if (page.mannedActive()) return 'Pad aims · FIRE shoots · ENTER exits';
-      if (page.car) return 'Pad drives · FIRE main gun · ENTER exits';
-      if (page.aircraft) return 'Pad pitch/roll · THR power · FIRE guns · ENTER exits';
-    }
-    if (page.optOnFoot.checked && page.soldier) {
-      return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
-    }
-    return page.navMode === 'fly'
-      ? 'Hold to fly · Drag to steer · 2-finger pan'
-      : 'Drag to pan · Pinch to zoom';
-  }
-  function updateHud() {
-    if (page.isTouchDevice) {
-      page.hud.textContent = getTouchHudText();
-      return;
-    }
-    if (page.optPilot.checked) {
-      page.hud.textContent = page.car ? page.HUD_DRIVE : page.HUD_PILOT;
-    } else if (page.optOnFoot.checked) {
-      page.hud.textContent = page.HUD_FOOT;
-    } else if (page.isTouchDevice) {
-      page.hud.textContent = getTouchHudText();
-    } else {
-      page.hud.textContent = page.HUD_FLY;
-    }
-  }
-  /** The line for a mode whose desktop hint is `text` (the touch hint on a
-   *  touch device). */
-  function showHint(text) {
-    page.hud.textContent = page.isTouchDevice ? getTouchHudText() : text;
-  }
-
-  let hudViewTimer = 0;
-  /** Put `text` on the HUD line for a beat, then give it back to `updateHud`. */
-  function flashHud(text) {
-    page.hud.textContent = text;
-    clearTimeout(hudViewTimer);
-    hudViewTimer = setTimeout(updateHud, 2200);
-  }
-  function showView(mode) {
-    flashHud(`view: ${VIEW_BLURB[mode]}`);
-    // Seat poses only draw in external views — hide in the cockpit (CVMInside),
-    // since the player is looking out from the pilot's eyes, not at the seat.
-    page.updateSeatPoseVisibility();
-  }
 
   // --- the sprite pack --------------------------------------------------------
   //
@@ -178,8 +115,7 @@ export function createHudFeed(page) {
   const sprite = name => hudPack.sprites.get(name) || null;
 
   // The in-game HUD painter (hud.js), sharing this same sprite pack rather than
-  // fetching its own copy. `gameHud`, not `hud`: that name is already the
-  // `#hud` hint-line DOM element throughout this file. Published unconditionally
+  // fetching its own copy. Published unconditionally
   // on `window.__hud` — not only under `?shots` — because that is the whole of
   // the round-2 contract other tracks (seats.js, supply.js, armor.js) write
   // their own variables through: `window.__hud.vars['Vehicle/VehicleIcon'] =
@@ -191,13 +127,8 @@ export function createHudFeed(page) {
   window.__hud = gameHud;
 
   Object.assign(hudFeed, {
-    getTouchHudText,
-    showHint,
-    updateHud,
-    flashHud,
     gameHud,
     hudPack,
-    showView,
     sprite,
   });
   return hudFeed;

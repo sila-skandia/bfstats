@@ -26,16 +26,15 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
  * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
- * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
- * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`,
+ * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`,
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `lookKeyHeld`, `lookNeedsKey`,
- * `mannedActive`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
+ * `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `remoteCrewTeam`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
- * `seatedCamera`, `seatFire`, `showFlagPicker`, `showHint`, `spawnAtFlag`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `roomJoined`, `seatAltFire`,
+ * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
  * `stepSeatIk`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
  * `viewFor`, `warmSubtree`, `world`.
@@ -129,9 +128,6 @@ export function createLocalPlayer(page) {
     // the nodes a tick poses and start a fresh pair (the render-interpolation
     // block, beside `footLookPending`).
     page.rebuildVehicleInterp();
-    page.showHint(localPlayer.occupancy
-      ? (page.mannedActive() ? page.HUD_MANNED : localPlayer.car ? page.HUD_DRIVE : page.HUD_PILOT)
-      : (page.optOnFoot.checked && localPlayer.soldier ? page.HUD_FOOT : page.HUD_FLY));
     page.updateMobileControls();
   }
 
@@ -240,7 +236,6 @@ export function createLocalPlayer(page) {
     page.rebuildVehicleInterp();
     page.warmSubtree(seat.root);
     page.feedVehicleHud();
-    page.showHint(page.mannedActive() ? page.HUD_MANNED : localPlayer.car ? page.HUD_DRIVE : page.HUD_PILOT);
     page.loadSeatPose();
     page.updateMobileControls();
     // The room's control channel: seat switches are rows, not input words.
@@ -439,8 +434,17 @@ export function createLocalPlayer(page) {
   localPlayer.deathYaw = 0;
 
   /** The body on foot has died: latch it, pick the death the engine would, and
-   *  float the camera over it. */
+   *  float the camera over it.
+   *
+   *  The trigger lets go here, once, for the same reason `holster` does it on
+   *  the way into a seat: `onFootCamera` stops calling `footFire` the moment
+   *  `soldierDead` latches (a dead body fires nothing), and the Fire Loop's
+   *  `stop FinishSample` is an event on the *trigger's* release — so without
+   *  this the loop voice started by the trigger he was holding when he died
+   *  outlives both the trigger and the body, and rings until the weapon is
+   *  torn down at respawn. */
   localPlayer.dieOnFoot = () => {
+    page.releaseFireTrigger();
     const s = localPlayer.soldier;
     localPlayer.deathYaw = s?.yaw ?? 0;
     localPlayer.deathFamily = s ? deathFamily({
@@ -515,7 +519,6 @@ export function createLocalPlayer(page) {
     // current level's gun index (a map switch has just cleared `guns.groups`),
     // leaving must not park a rifle on the free-fly camera.
     page.disposeHandWeapon();
-    if (!on) page.resetCaptureUi();
     if (on) {
       // The soldier is the world's: `addPlayer` builds it the engine's way (a
       // fresh Soldier on the collider, spawned at the team's first flag) and
@@ -530,7 +533,6 @@ export function createLocalPlayer(page) {
         localPlayer.soldier = null;
         page.optOnFoot.checked = false;
         page.showFlagPicker(false);
-        page.hud.textContent = 'this level declares no flag with soldier spawns';
         return;
       }
       // The world's own FOV (`renderer.fieldOfView 1`, not `set1pFov` — the
@@ -539,7 +541,6 @@ export function createLocalPlayer(page) {
       // rather than clipped through.
       localPlayer.useLens('foot');
       page.showFlagPicker(true);
-      page.showHint(page.HUD_FOOT);
     } else {
       // The deploy screen cannot outlive the mode it selects for: the pilot
       // checkbox's exclusivity and the on-foot box both land here with the
@@ -560,9 +561,6 @@ export function createLocalPlayer(page) {
       delete page.hudBridge.vars['ShowFlagIcon'];
       page.showFlagPicker(false);
       localPlayer.useLens('fly');
-      // `getTouchHudText()`, not the `HUD_TOUCH` this file once believed in —
-      // that name was never declared, and reading it would throw on a phone.
-      page.showHint(page.HUD_FLY);
       // The fullscreen `?kblock` took for on-foot play goes with it.
       page.kbLockLeave();
     }

@@ -17,8 +17,7 @@ import { GameConsole } from './console.js';
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
  * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
- * `hintText`,
- * `fullmapBox`, `gameConsole`, `handWeapon`, `hud`, `isSlow`,
+ * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`,
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
@@ -265,10 +264,22 @@ export function createPageInput(page) {
     if (page.optPilot.checked && page.occupancy) {
       page.exitSeat();
       pageInput.noteSeatToggle();
-    } else if (page.optOnFoot.checked && page.soldier && pageInput.captured
-               && page.nearEntry) {
-      page.enterVehicle(page.nearEntry);
-      pageInput.noteSeatToggle();
+    } else if (page.optOnFoot.checked && page.soldier && pageInput.captured) {
+      // The door is looked up on the PRESS, not read off the HUD's offer.
+      // `c_PIUse`'s rising edge runs `checkPlayerTriggers` -> `toggleEntryPoint`
+      // -> `BFfindEntryPoint` (lnxded 0x0831d770; ledger SEAT-1/SEAT-2), with the
+      // player's position as it stands when the key goes down. The hint line is
+      // driven by a 4 Hz proximity sweep (`vehicle-entry.js` `scanForEntry`), so
+      // entering the cached offer makes E depend on standing in the right place
+      // long enough for a sweep to latch it — and it can seat him in a door he
+      // has already walked away from. `nearestEntry()` asks the same question
+      // the sweep asks, at the instant of the press; the cached offer is only
+      // the fallback for a page whose door list has not been indexed yet.
+      const entry = page.nearestEntry() ?? page.nearEntry;
+      if (entry) {
+        page.enterVehicle(entry);
+        pageInput.noteSeatToggle();
+      }
     }
   }
 
@@ -373,18 +384,6 @@ export function createPageInput(page) {
   // correct for this page's single soldier.
   const SEAT_TOGGLE_COOLDOWN_MS = 1000;
   pageInput.lastSeatToggle = -Infinity;
-
-  // The keys are the profile's (`controls.hintText`); under `?kblock` the
-  // Escape hint grows for as long as the fullscreen session lasts.
-  const HUD_FOOT_TEMPLATE = '{move} move · {c_PIWalk} walk · {c_PICrouch} crouch · '
-    + '{c_PILie} prone · {c_PIAction} jump · {c_PIFire} fire · {c_PIAltFire} aim · '
-    + '{c_PIReload} reload · {c_PIToggleCameraMode} view · {c_PIMenuSelect9} chute · '
-    + 'CapsLock / {c_PIMap} redeploy · Esc menu';
-  Object.defineProperty(pageInput, 'HUD_FOOT', {
-    get: () => page.hintText(HUD_FOOT_TEMPLATE, 'infantry')
-      + (pageInput.kbSession ? ' · hold Esc exits full screen' : ''),
-    enumerable: true,
-  });
 
   // The soldier's two buttons, while pointer-locked on foot: the left held,
   // one queued semi-auto shot per press (the hand weapon spends it with
@@ -529,13 +528,11 @@ export function createPageInput(page) {
     document.addEventListener('fullscreenchange', () => {
       const inside = document.fullscreenElement === page.stage;
       if (inside === pageInput.kbSession) return;
-      const was = pageInput.HUD_FOOT;
       pageInput.kbSession = inside;
       if (!inside) {
         navigator.keyboard.unlock();
         pageInput.kbLockState = 'unlocked';
       }
-      if (page.hud.textContent === was) page.hud.textContent = pageInput.HUD_FOOT;
     });
   }
   pageInput.touchFlying = false;

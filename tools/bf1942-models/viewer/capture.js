@@ -1,77 +1,27 @@
 // The flags: the level's control points as the spawn picker lists them, the
 // human's capture (the law is bot-referee.js's, the same the bots take a
-// flag by), the capture HUD, the taker's cloth hoisted on the pole, and the
-// radio line each side hears. Lifted out of map.html (features/vehicle-
-// instance-refactor Part 2).
+// flag by), the taker's cloth hoisted on the pole, and the radio line each
+// side hears. Lifted out of map.html (features/vehicle-instance-refactor
+// Part 2).
 
 import * as THREE from 'three';
-import { captureRadius, controlPointSettings, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
-import { playerPosition } from './bot-sense.js';
-
-/**
- * Where the human stands on a flag, read off the flag's one state (the
- * `flag._cp` bot-referee.js `controlPointStep` keeps: `ControlPoint::
- * handleFrameUpdate` 0x08283b00, run by `captureTick` over every living
- * player on the point, the human included). `team` is the human's side;
- * `others` whether a player of another side is inside the radius too.
- *  - `capturing`: the point is neutral and `team` is getting it (state 3,
- *    `gettingControl` 0x08283f20): progress is the get timer's.
- *  - `neutralising`: another side's point run down under him (state 2,
- *    `losingControl` 0x08284030): progress is the lose timer's.
- *  - `contested`: nothing moves for his side while another side is there
- *    (a defender without `loseControlWhenEnemyClose`, or two attackers).
- *  - else `capturing` at 0: he has just stepped on, or is short of
- *    `minNrToTakeControl`.
- * The phrasing is the page's (the retail HUD has no capture bar).
- */
-export function captureStateFor(flag, team, others = false) {
-  const cfg = controlPointSettings(flag);
-  const cp = flag?._cp;
-  const frac = (left, total) => Math.min(1, Math.max(0, 1 - left / Math.max(total, 1e-6)));
-  if (cp?.state === 3 && cp.getting === team) return { phase: 'capturing', progress: frac(cp.get, cfg.timeToGet) };
-  if (cp?.state === 2 && flag.team && flag.team !== team) return { phase: 'neutralising', progress: frac(cp.lose, cfg.timeToLose) };
-  return { phase: others ? 'contested' : 'capturing', progress: 0 };
-}
-
-/** The HUD line for `captureStateFor`'s answer. */
-export function captureHudText(name, state) {
-  if (state.phase === 'contested') return `CONTESTED ${name}`;
-  const pct = Math.min(100, Math.round(state.progress * 100));
-  return `${state.phase === 'neutralising' ? 'NEUTRALISING' : 'CAPTURING'} ${name} · ${pct}%`;
-}
+import { nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
- * `cull`, `currentRoot`, `deployTeamId`, `drawFullMap`, `drawMinimap`,
- * `ensureAudioContext`, `ensureFlagMixer`, `extras`, `flashHud`,
- * `flattenCull`, `hud`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`,
- * `logToConsole`, `MAPS_BASE`, `masterVolume`, `optOnFoot`,
- * `paintDeployChrome`, `playSoldierOneShot`, `roomJoined`, `soldier`,
- * `soldierDead`, `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`,
- * `thaw`, `updateHud`, `world`.
+ * `AUDIO_OFF`, `LOCAL_PLAYER`, `MAPS_BASE`, `audioBufferCache`,
+ * `audioListener`, `audioLoader`, `bust`, `cull`, `currentRoot`,
+ * `drawFullMap`, `drawMinimap`, `ensureAudioContext`, `ensureFlagMixer`,
+ * `extras`, `flattenCull`, `levelClips`, `localMapTeam`, `masterVolume`,
+ * `paintDeployChrome`, `playSoldierOneShot`, `tagCull`, `teamNation`,
+ * `thaw`, `world`.
  */
 export function createFlagCapture(page) {
   const flagCapture = {};
 
-  flagCapture.localCapture = null;
-  flagCapture.roomCapture = null;
   flagCapture.flags = [];
-
-  // The room's capture banner, by decree from the server.
-  flagCapture.roomCaptureStarted = (name, duration) => {
-    flagCapture.roomCapture = { name, elapsed: 0, duration, contested: false, done: false };
-  };
-  flagCapture.roomCaptureContested = () => {
-    if (flagCapture.roomCapture) flagCapture.roomCapture.contested = true;
-  };
-  flagCapture.roomCaptureCancelled = () => { flagCapture.roomCapture = null; };
-  flagCapture.roomCaptureDone = name => {
-    flagCapture.roomCapture = { name, elapsed: 0, duration: 0, contested: false, done: true,
-      until: performance.now() + 2200 };
-  };
 
   /** The world owns the flags (world.js builds them from the level data the
    *  engine's way); the deploy screen reads the same array it always read.
@@ -88,32 +38,11 @@ export function createFlagCapture(page) {
   }
 
 
-  /** A living player of a side other than `team` inside the flag's radius:
-   *  the law's own input (bot-referee.js `captureTick`), for the HUD word. */
-  function otherSideInside(flag, team) {
-    const w = page.world;
-    if (!w?.players || !flag.position) return false;
-    const r = captureRadius(flag);
-    for (const [id, p] of w.players) {
-      if (!p?.team || p.team === team || w.armorOf?.(id)?.destroyed) continue;
-      const q = playerPosition(p);
-      if (!q) continue;
-      const dy = Number.isFinite(q[1]) ? q[1] - flag.position[1] : 0;
-      if (Math.hypot(q[0] - flag.position[0], dy, q[2] - flag.position[2]) <= r) return true;
-    }
-    return false;
-  }
-
   function capturePosition() {
     const player = page.world?.player(page.LOCAL_PLAYER);
     if (player?.soldier) return player.soldier;
     if (player?.vehicle?.state?.position) return player.vehicle.state.position;
     return null;
-  }
-
-  function resetCaptureUi() {
-    flagCapture.localCapture = null;
-    flagCapture.roomCapture = null;
   }
 
   /** Hoist the taker's cloth over a captured point: swap the pole's flag-anchor
@@ -403,53 +332,6 @@ export function createFlagCapture(page) {
     if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
   }
 
-  function updateCaptureHud(ticks) {
-    if (!page.optOnFoot.checked || !page.soldier || page.soldierDead) {
-      if (!flagCapture.roomCapture && !flagCapture.localCapture) return;
-      resetCaptureUi();
-      page.updateHud();
-      return;
-    }
-
-    // Solo play has no server authority: the flag's own law runs locally in
-    // bot-referee.js `captureTick`, over the human and the bots alike, so one
-    // flag has one state and the take (hoist, spawns, radio) is its
-    // `onCapture`. This only shows where the human stands on it. Room play
-    // only displays the authoritative lifecycle below.
-    if (!page.roomJoined) {
-      const player = page.world?.player(page.LOCAL_PLAYER);
-      const team = player?.team ?? page.deployTeamId;
-      const target = nearestEnemyFlag(team, capturePosition());
-      const prev = flagCapture.localCapture;
-      if (prev && prev.flag !== target && prev.flag.team === team) page.flashHud(`${prev.flag.name} captured`);
-      if (!target) {
-        if (prev) { flagCapture.localCapture = null; page.updateHud(); }
-        return;
-      }
-      const state = captureStateFor(target, team, otherSideInside(target, team));
-      flagCapture.localCapture = { flag: target, ...state };
-      page.hud.textContent = captureHudText(target.name, state);
-      return;
-    }
-
-    if (!flagCapture.roomCapture) return;
-    if (flagCapture.roomCapture.until && performance.now() >= flagCapture.roomCapture.until) {
-      flagCapture.roomCapture = null;
-      page.updateHud();
-      return;
-    }
-    if (!flagCapture.roomCapture.contested && !flagCapture.roomCapture.done) {
-      flagCapture.roomCapture.elapsed += ticks * (1 / 30);
-      const progress = Math.min(100, Math.round(
-        flagCapture.roomCapture.elapsed / flagCapture.roomCapture.duration * 100));
-      page.hud.textContent = `CAPTURING ${flagCapture.roomCapture.name} · ${progress}%`;
-    } else if (flagCapture.roomCapture.contested) {
-      page.hud.textContent = `CONTESTED ${flagCapture.roomCapture.name}`;
-    } else if (flagCapture.roomCapture.done) {
-      page.hud.textContent = `${flagCapture.roomCapture.name} captured`;
-    }
-  }
-
   // --- control-point capture voice -------------------------------------------
   //
   // `Bf1942/Game/GamePlay.ssc` (bf1942/Game.rfa): `GainControlPoint` plays one
@@ -555,9 +437,7 @@ export function createFlagCapture(page) {
     hoistCaptureFlag,
     nearestEnemyFlag,
     playCaptureVoice,
-    resetCaptureUi,
     unitRectOf,
-    updateCaptureHud,
   });
   return flagCapture;
 }

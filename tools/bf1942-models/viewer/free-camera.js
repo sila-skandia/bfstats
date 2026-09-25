@@ -8,7 +8,7 @@
  * `aircraft`, `camera`, `captured`, `car`, `extras`, `FLY_SLOW`,
  * `FLY_SPEED`, `getFloorAltitude`, `groundHeight`, `keys`, `leavePilot`,
  * `optOnFoot`, `optPilot`, `params`, `soldier`, `spawnAtFlag`,
- * `touchFlying`, `updateHud`.
+ * `touchFlying`.
  */
 export function createFreeCamera(page) {
   const freeCamera = {};
@@ -149,7 +149,6 @@ export function createFreeCamera(page) {
       if (badge) badge.textContent = mode.toUpperCase();
       if (hint) hint.textContent = mode === 'fly' ? 'Tap for pan' : 'Tap for fly';
     }
-    page.updateHud();
   }
 
   modeToggleBtn?.addEventListener('click', e => {

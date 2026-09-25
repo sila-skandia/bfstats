@@ -83,7 +83,7 @@ def census_map(
 
 def main():
     # Vanilla BF1942 archives
-    bf1942_base = Path.home() / ".wine" / "drive_c" / "EAGames" / "Battlefield 1942" / "Mods" / "bf1942" / "Archives"
+    bf1942_base = Path.home() / ".wine" / "drive_c" / "EA Games" / "Battlefield 1942" / "Mods" / "bf1942" / "Archives"
     if not bf1942_base.exists():
         print(f"Error: {bf1942_base} not found. Install BF1942 first.", file=sys.stderr)
         sys.exit(1)

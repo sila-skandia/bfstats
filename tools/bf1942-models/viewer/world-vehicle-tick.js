@@ -7,6 +7,43 @@ import { inputGate } from './vehicle-damage.js';
 import { axisToward, consume } from './world-input.js';
 
 /**
+ * One hull nobody is in any more, one integration a tick: the wreck of an
+ * aircraft that was destroyed in the air.
+ *
+ * This is HP-15's own rule, run by the only thing left to run it. A destroyed
+ * `PlayerControlObject` receives no input at all
+ * (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920) — the gate
+ * `vehicleTick` below forces false for a live occupant — and the hull still
+ * integrates and coasts. A plane whose crew is dead has no occupant left to
+ * run that gate, so the wreck list (`world.falling`, filled by
+ * `vehicle-wrecks.js`) is the driver: every control word is forced to the
+ * engine's zero, the throttle spool is pinned at 0, and the flight model gets
+ * the same one `integrate` a tick the pilot's tick gave it. What brings it
+ * down is therefore the aerodynamics it already had — a hull with no thrust
+ * whose speed bleeds off until the wing makes no lift — rather than gravity
+ * alone, and the descent is the airframe's, not a falling brick's.
+ *
+ * The inputs are forced every tick rather than once, because the surfaces are
+ * servos with their own rates: a stick left where it was at the moment of the
+ * kill would hold that deflection until the wreck hit the ground.
+ */
+export function stepFallingWrecks(world, dt) {
+  for (const vehicle of world.falling) {
+    if (!vehicle?.state) continue;
+    vehicle.setInput?.('c_PIThrottle', 0);
+    vehicle.setInput?.('c_PIRoll', 0);
+    vehicle.setInput?.('c_PIPitch', 0);
+    vehicle.setInput?.('c_PIYaw', 0);
+    vehicle.setInput?.('c_PIFire', 0);
+    vehicle.setInput?.('c_PIAltFire', 0);
+    // The spool state itself, not just its target: `#vacate` pinned it when
+    // the seat emptied, and a wreck's engine is dead rather than idling.
+    vehicle.state.throttle = 0;
+    vehicle.integrate(dt);
+  }
+}
+
+/**
  * One drivetrain, one integration a tick. Every occupant of a hull holds the
  * hull's single drive (`vehicle-instance.js`), so the drive is stepped in
  * the tick of whoever holds its root seat (their input reaches it first), or

@@ -120,6 +120,11 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     bindDynamicShading: noop, bust: () => '', clearHitIndicator: noop, get collider() { return terrain.collider; },
     dieInWreck: noop, disposeEngineAudio: noop, get effects() { return effects; }, exitPoseManned: () => null,
     get extras() { return extras; }, get fireStates() { return world?.fireStates; }, hud: {},
+    // The scene half of the page's contract a wreck uses once it is on the
+    // ground: the level's own freeze, and the terrain's height under a hull a
+    // plane killed in the air is still falling over (`vehicle-wrecks.js`).
+    freezeVehicle: node => statics.freezeVehicle(node),
+    groundHeight: (x, z) => terrain.groundHeight(x, z),
     isCollision: S.isCollision, leaveSeat: noop, get loader() { return loader; }, markPilot: noop,
     MODELS_BASE: '', occupancy: null, optOnFoot: unchecked, placeCamera: noop, resetMobileControls: noop,
     respawnVehicleBody: owner => { hullBodies.respawnVehicleBody(owner); stage.hooks.onRespawn?.(owner); },

@@ -237,6 +237,10 @@ export function createLevelStatics(page) {
   }
   function freezeVehicle(node) {
     const vehicle = vehicleRootOf(node);
+    // A hull destroyed in the air is still being flown by the wreck's own tick
+    // (`vehicle-wrecks.js`): freezing it swaps `updateMatrixWorld` for a no-op,
+    // and the fall would then be drawn where the kill left it.
+    if (vehicle && vehicle.userData?.fallingWreck) return;
     if (vehicle && !neverFrozen.has(vehicle)) freeze(vehicle);
   }
   /** Take every level subtree that nothing animates out of the per-frame

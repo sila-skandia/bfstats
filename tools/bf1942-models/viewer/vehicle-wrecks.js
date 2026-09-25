@@ -15,10 +15,10 @@ import { spawnerWindow } from './game-modes.js';
  * reassigns is read live):
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
  * `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
- * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
+ * `fireStates`, `freezeVehicle`, `groundHeight`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
  * `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
- * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `updateHud`, `useLens`,
+ * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `useLens`,
  * `vehicleDamage`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
@@ -106,6 +106,10 @@ export function createVehicleWrecks(page) {
 
   /** Drop every running tier effect. Call on a level change. */
   function clearDamageVisuals() {
+    // The level's flying wrecks go with the level: `damageVisuals` is what
+    // holds them (`visual.falling`), and the world would otherwise keep
+    // integrating drives whose scene graph is gone.
+    page.world.falling.clear();
     for (const visual of damageVisuals.values()) {
       for (const handle of visual.handles) handle.stop?.();
       visual.handles.length = 0;
@@ -167,6 +171,15 @@ export function createVehicleWrecks(page) {
   const WRECK_LINGER = 10;  // seconds of wreck before the fade starts
   const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
 
+  // How far off its own ride height a plane has to be before its death is a
+  // fall rather than a wreck in place, and how close back to it the fall has to
+  // come before the crash. Both are framing around the flight model's own floor
+  // clamp (`Aircraft.integrate` settles a hull at `floor + groundClearance`):
+  // the first keeps a plane taxiing or parked on a strip from being read as
+  // airborne, the second is the contact that ends the fall.   [HOUSE RULE]
+  const AIRBORNE_MARGIN = 1.5;   // metres
+  const LANDING_MARGIN = 0.25;   // metres
+
   // Wreck glbs, by template name, shared across every vehicle of that type.
   const wreckModels = new Map();
 
@@ -196,6 +209,9 @@ export function createVehicleWrecks(page) {
   async function wreckVehicle(vehicle) {
     const visual = damageVisuals.get(vehicle.owner);
     if (!visual?.node || visual.wrecked) return;
+    // Read before the crew dies: the seat is emptied and the drive released the
+    // moment `killOccupantInWreck` has run, and the fall needs the drive.
+    const drive = fallingDriveFor(visual.node);
     visual.wrecked = true;
     visual.wreckAge = 0;
     visual.hidden = [];
@@ -215,7 +231,109 @@ export function createVehicleWrecks(page) {
     // seat is torn down below — because this is the one place a vehicle dies,
     // whatever killed it (a shell, the burn-down, drowning, the combat area).
     killOccupantInWreck(visual.node, vehicle.killedBy);
+    // A plane shot down in the air does not stop where it was hit. It keeps its
+    // body, gets no input, and comes down under the flight model it already had;
+    // the crash — the wreck model, the second explosion, the linger and the fade
+    // — runs where it lands (`landWreck`), or never, if the fade beats it there.
+    if (drive) {
+      visual.falling = drive;
+      visual.fallingOwner = vehicle.owner;
+      drive.fallingWreck = true;
+      visual.node.userData.fallingWreck = true;
+      page.world.falling.add(drive);
+      return;
+    }
     page.retireVehicleBody(vehicle.owner);
+    await placeWreck(visual, vehicle);
+  }
+
+  /**
+   * The drive of a plane that was destroyed in the AIR, or null for anything
+   * else — a tank on a ridge, a plane burning on its pad, a hull with nobody in
+   * it at all.
+   *
+   * Read off the seat registry before the crew dies, because that is the only
+   * place the drive and the hull's kind live together: `instances` drops the
+   * instance when the last occupant leaves. The height test then separates a
+   * plane that was taxiing (its origin sits at its own ride height over the
+   * strip) from one with air under it, with a margin so a hull still on its
+   * wheels is never mistaken for one in flight.
+   */
+  function fallingDriveFor(node) {
+    const inst = page.vehicles?.instanceOf?.(node);
+    const drive = inst?.drive;
+    if (!inst || !drive || inst.rootKind !== 'air') return null;
+    const ride = drive.spec?.groundClearance ?? 1.5;
+    node.updateWorldMatrix(true, false);
+    const y = node.matrixWorld.elements[13];
+    return y - surfaceUnder(node.matrixWorld.elements[12], node.matrixWorld.elements[14])
+      > ride + AIRBORNE_MARGIN ? drive : null;
+  }
+
+  /** The ground or the water under `(x, z)`, whichever is higher. */
+  function surfaceUnder(x, z) {
+    const ground = page.groundHeight ? page.groundHeight(x, z) : -Infinity;
+    const water = page.collider?.waterLevel;
+    return Number.isFinite(water) ? Math.max(ground, water) : ground;
+  }
+
+  /** Is the falling wreck down? True once its origin is back at its own ride
+   *  height over whatever is under it — the contact the flight model's own
+   *  floor clamp settles it at (`Aircraft.integrate`). */
+  function onSurface(visual) {
+    const ride = visual.falling?.spec?.groundClearance ?? 1.5;
+    const node = visual.node;
+    node.updateWorldMatrix(true, false);
+    const e = node.matrixWorld.elements;
+    return e[13] - surfaceUnder(e[12], e[14]) <= ride + LANDING_MARGIN;
+  }
+
+  /**
+   * The plane has met the ground (or the water): the crash happens here.
+   *
+   * The wreck's own clock started at the kill, so a fall that outlasts the
+   * linger-and-fade is faded out in the air (`stepWrecks`) and never reaches
+   * this. What is left when it does is the impact: the second explosion at the
+   * point it came down, the wreck model in place of the flying one, the body
+   * retired so the hull is scenery, and the node frozen again with the rest of
+   * the level.
+   */
+  function landWreck(owner, visual) {
+    const drive = visual.falling;
+    visual.falling = null;
+    if (drive) {
+      drive.fallingWreck = false;
+      page.world.falling.delete(drive);
+    }
+    delete visual.node.userData.fallingWreck;
+    visual.node.updateWorldMatrix(true, false);
+    visual.node.getWorldPosition(wreckDeathPos);
+    const inWater = Number.isFinite(page.collider?.waterLevel)
+      && wreckDeathPos.y <= page.collider.waterLevel + 0.5;
+    const vehicle = page.vehicleDamage.get(owner);
+    const death = deathTier(vehicle?.effects, { inWater });
+    if (death?.names?.length) {
+      for (const name of death.names) {
+        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
+      }
+    } else {
+      page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
+    }
+    page.retireVehicleBody(owner);
+    // Back with the level's frozen scenery: the hull is where it came down, and
+    // nothing is going to move it again until its spawner puts a fresh one on
+    // the pad.
+    page.freezeVehicle(visual.node);
+    placeWreck(visual, vehicle);
+  }
+
+  /**
+   * Put the wreck model where the hull stands now and hide the live mesh under
+   * it. The body has already been retired by both callers: this is the scene
+   * half only, and it is the same code for a crash on the ground at the kill
+   * and one that flew first.
+   */
+  async function placeWreck(visual, vehicle) {
     const template = templateNameOf(visual.node);
     try {
       if (!wreckModels.has(template)) {
@@ -225,7 +343,7 @@ export function createVehicleWrecks(page) {
       const scene = await wreckModels.get(template);
       // The vehicle may have been cleared (level change) while the glb was in
       // flight, and `damageVisuals` is rebuilt per level — so re-check.
-      if (!scene || damageVisuals.get(vehicle.owner) !== visual) return;
+      if (!scene || damageVisuals.get(vehicle?.owner) !== visual) return;
       const wreck = scene.clone(true);
       wreck.name = `wreck:${template}`;
       // Wreck GLBs ship the same armour-region collision hulls as the live
@@ -309,7 +427,6 @@ export function createVehicleWrecks(page) {
     page.resetMobileControls();
     if (!(page.optOnFoot.checked && page.soldier)) {
       page.placeCamera();
-      page.updateHud();
       return;
     }
     page.soldier.collider = page.collider;
@@ -322,7 +439,6 @@ export function createVehicleWrecks(page) {
     // raises it again with the fresh body.
     // The wreck, not the corpse, is what this shot is of.
     page.dieInWreck({ x: wreckDeathPos.x, y: wreckDeathPos.y, z: wreckDeathPos.z, yaw: hullYaw });
-    page.hud.textContent = 'killed in action';
   }
 
   /**
@@ -359,7 +475,6 @@ export function createVehicleWrecks(page) {
     page.resetMobileControls();
     if (!(page.optOnFoot.checked && page.soldier)) {
       page.placeCamera();
-      page.updateHud();
       return true;
     }
     page.soldier.collider = page.collider;
@@ -367,7 +482,6 @@ export function createVehicleWrecks(page) {
     page.standUp();
     page.useLens('foot');
     page.dieInSeat({ x: corpse.x, y: corpse.y + 1, z: corpse.z, yaw });
-    page.hud.textContent = 'killed in action';
     return true;
   }
 
@@ -388,6 +502,13 @@ export function createVehicleWrecks(page) {
       }
       if (!visual.wrecked || visual.removed) continue;
       visual.wreckAge += dt;
+      // A plane that died in the air is still flying: its crash waits for the
+      // ground. This clock keeps running meanwhile, so a fall long enough to
+      // outlive the linger is faded out in the air — the other half of what the
+      // owner sees in retail — and a fall that lands first crashes there and
+      // spends the rest of the same clock as a wreck on the ground.
+      if (visual.falling && !onSurface(visual)) continue;
+      if (visual.falling) { landWreck(owner, visual); continue; }
       const into = visual.wreckAge - WRECK_LINGER;
       if (into <= 0) continue;
       const opacity = Math.max(0, 1 - into / WRECK_FADE);
@@ -446,6 +567,14 @@ export function createVehicleWrecks(page) {
     visual.wrecked = false;
     visual.removed = false;
     visual.wreckAge = 0;
+    // A pad that came back while its last hull was still falling: the fall is
+    // over, and the fresh hull on it is a parked vehicle again.
+    if (visual.falling) {
+      visual.falling.fallingWreck = false;
+      page.world.falling.delete(visual.falling);
+      visual.falling = null;
+    }
+    delete visual.node.userData.fallingWreck;
     if (visual.wreck) {
       visual.node.remove(visual.wreck);
       visual.wreck = null;

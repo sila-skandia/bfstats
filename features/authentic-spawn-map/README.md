@@ -1053,3 +1053,68 @@ Dabir): neutralised at t+15 s, captured at t+21 s, and `__mapMarks().points`
 (new: the sprite each point draws) reads `conp_ger` -> `conp_neutral` ->
 `conp_brit`. `tests/test_nation_js.py` covers the taken, retaken, neutralised
 and untouched cases and a capture leaving both sides' nations alone.
+
+## 14. The remaining nine interface packs (2026-09-25)
+
+Section 9's "Still open" closed: every installed mod that ships a `menu.rfa`
+now has its pack, and all twelve are published to the assets volume.
+
+The install carries 16 mods. `bf1942` is the baseline the packs are the
+difference from (the builder refuses it). `FHSWEurope` (level rfAs only, no
+`init.con`, no `menu.rfa`) and `STFHSWE` (an empty `Archives/`) are hollow
+installs — nothing to extract. That leaves nine new packs:
+
+| mod | files of its own | identical to vanilla | sprites overridden / added / inherited | spawn strings changed |
+|---|---|---|---|---|
+| BattleGroup 42 (`bg42`) | 1324 | 178 | 110 / 934 / 148 | 0 |
+| Forgotten Hope (`fh`) | 967 | 161 | 149 / 685 / 108 | 3 (`ASSAULT` -> `RIFLEMAN`) |
+| BF1918 (`bf1918`) | 931 | 243 | 61 / 656 / 199 | 7 |
+| Galactic Conquest (`gcmod`) | 337 | 200 | 110 / 119 / 150 | 0 |
+| FinnWars (`finnwars`) | 280 | 316 | 48 / 142 / 211 | 0 |
+| DC Final (`dc_final`) | 227 | 320 | 40 / 130 / 220 | 2 (`ALLIED`/`AXIS` -> `Coalition`/`Opposition`) |
+| Desert Combat (`desertcombat`) | 208 | 322 | 39 / 122 / 221 | 2 (same) |
+| Pirates (`pirates`) | 170 | 301 | 48 / 51 / 212 | 1 (`SUICIDE` -> `MUTINY`) |
+| Interstate (`interstate`) | 118 | 308 | 58 / 26 / 201 | 2 (`ALLIED`/`AXIS` -> `Vigilante`/`Kingpin`) |
+
+Every `pack.json` carries the same key set as eod's (`mod`, `chain`, `menu`,
+`font`, `lexicon`, `inherits`, `generator`, `skipped`, `identical`, `files`,
+`sprites`, `strings`); every listed file is on disk and every packed file
+really differs from its vanilla twin byte for byte (census run over all
+twelve packs; zero missing, zero byte-identical). The lexicon spot-checks
+above are read out of the packs themselves — FH, DC and interstate genuinely
+relabel the spawn screen.
+
+### Three mods stopped the extractor: editor droppings in the archives
+
+FinnWars, Pirates and interstate ship Windows junk inside the
+`menu/Texture/{Soldier,Ammo,Weapon,Vehicle,Kits}/` directories of their
+`menu.rfa` — `Thumbs.db` in ten directories across the three, FinnWars also
+`Kits/ger_MG42.xcf` and `Kits/varjo.png`. `extract_sprites`'s glob loops fed
+every entry in those directories to the decoder on the extension-guess rule
+(`.dds` -> DDS, anything else -> TGA), so `decode_tga` read the OLE header of
+a `Thumbs.db` as a TGA header and died on `unsupported TGA image type 17`
+(image type 17 is the OLE compound-file signature byte, not an image type).
+`extract_hud_pack.py` is a non-optional step, so the whole pack aborted.
+
+Fix: both glob loops skip entries that are not `.dds`/`.tga` — nothing
+references the junk and no decoder reads it. Vanilla regression-checked:
+a fresh `--mod bf1942` extraction reproduces the committed pack exactly
+(260 sprites, same keys, same manifest entries, all 260 PNGs byte-identical).
+`tests/test_extract_hud_pack.py` pins the skip.
+
+### Publishing and the viewer index
+
+`scripts/publish-mesh-delta.py` needs no HUD-specific path — it walks all of
+`viewer/maps`, and the dry run confirmed the send list was exclusively the
+nine `mods/<id>/_shared/` subtrees (4571 files, 0.06 GB; eod/xpack1/xpack2
+and vanilla untouched). Published 2026-09-25, 2 min, live sizes confirmed on
+the volume: bg42 1325, fh 968, bf1918 932, gcmod 338, finnwars 281,
+dc_final 228, desertcombat 209, pirates 171, interstate 119 files under
+`/mnt/assets/mesh/maps/mods/<id>/_shared/hud/`.
+
+What does NOT follow automatically: `viewer/models/mods.json` (the mod
+selector's index, written by `build_mods_manifest.py`) still lists only
+`bf1942/eod/xpack1/xpack2`, so the pages do not offer the nine new mods
+until that index is rebuilt and the packs' level trees exist. The HUD packs
+themselves are live and `viewer/hud-pack.js` will resolve them the moment a
+`?mod=` names one.

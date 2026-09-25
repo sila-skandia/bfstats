@@ -23,7 +23,7 @@ import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `activeDeployGroup`, `aircraft`, `applyDeployFrame`, `bust`, `camera`,
- * `captured`, `car`, `currentDir`, `deployActive`, `deployFlagIndices`,
+ * `capture`, `captured`, `car`, `currentDir`, `deployActive`, `deployFlagIndices`,
  * `deployRejoin`, `deployTeamId`, `deployUnchosen`, `deployZ`,
  * `easeDeployClose`, `easeDeployOpen`, `extras`, `finishDeployClose`,
  * `flags`, `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`,
@@ -660,6 +660,12 @@ export function createMapSurfaces(page) {
     });
   }
 
+  /** Whether opening the plain map took the capture away, so that closing it
+   *  gives the pointer back. See `toggleFullMap`. The deploy state keeps its
+   *  own books: its exits (RESUME, a spawn, the free-roam leave) take the
+   *  capture themselves, and `spawning.js` is where that lives. */
+  let mapTookCapture = false;
+
   function toggleFullMap(on) {
     const want = on ?? fullmapBox.hidden;
     // Deploy state: the game's own open/close — BfMap__animate easing the map
@@ -690,10 +696,24 @@ export function createMapSurfaces(page) {
       fullmapBox.classList.remove('deploy');
       page.fullmapFrame.removeAttribute('style');
     }
-    // Holding the map is not flying. Releasing the pointer lock also stops the
-    // movement keys running under the overlay.
-    if (want && page.captured) page.release();
-    if (want) drawFullMap(true);
+    // Holding the map is not flying, and the map borrows the capture rather
+    // than keeping it. Every channel the world reads is gated on `captured`
+    // (`controls.js` `axis`/`held`), so letting the pointer go on the way in is
+    // what keeps the keys held when the map opened from flying the plane under
+    // it. Closing gives the pointer straight back: the M press, the Escape and
+    // the click on the overlay are all user gestures, which is the only
+    // currency pointer lock accepts (`capture`), so the seat is live again
+    // without the click on the stage the player used to need. Only what the
+    // open took is handed back: a map opened from the flythrough, with nothing
+    // captured, still closes to a free cursor.
+    if (want) {
+      mapTookCapture = page.captured;
+      if (mapTookCapture) page.release();
+      drawFullMap(true);
+    } else if (mapTookCapture) {
+      mapTookCapture = false;
+      page.capture();
+    }
   }
   fullmapBox.addEventListener('click', () => {
     // The plain map closes on any click; the deploy state does not — its

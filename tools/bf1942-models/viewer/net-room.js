@@ -18,10 +18,9 @@ import { createReconciler } from './netcode-reconcile.js';
  * `exitSeat`, `extras`, `flags`, `hoistCaptureFlag`, `loader`, `lockHeld`,
  * `logToConsole`, `manifest`, `MODELS_BASE`, `nearEntry`, `occupancy`,
  * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
- * `renderer`, `roomCaptureCancelled`, `roomCaptureContested`,
- * `roomCaptureDone`, `roomCaptureStarted`, `scene`, `setDeployTeam`,
+ * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
- * `templateNameOf`, `updateHud`.
+ * `templateNameOf`.
  */
 export function createNetRoom(page) {
   const room = {};
@@ -277,15 +276,6 @@ export function createNetRoom(page) {
       room.roomClient.onevent = row => {
         if (row?.text) page.logToConsole(row.text);
         roomRowToComms(row);
-        if (row?.type === 'capturing') {
-          page.roomCaptureStarted(row.name || 'flag',
-            Number(row.duration) > 0 ? Number(row.duration) : 8);
-        } else if (row?.type === 'captureContested') {
-          page.roomCaptureContested();
-        } else if (row?.type === 'captureCancelled') {
-          page.roomCaptureCancelled();
-          page.updateHud();
-        }
         // P3: death by server decree. The page's own death loop
         // (`soldierDead` latch on a destroyed Armor) is the cam, the deploy
         // screen and the spectator work — the decree only has to make the
@@ -303,7 +293,6 @@ export function createNetRoom(page) {
           page.flags[row.flag].team = row.team;
           page.hoistCaptureFlag(page.flags[row.flag]);
           page.announceCapture(prevTeam, row.team);
-          page.roomCaptureDone(row.name || page.flags[row.flag].name);
           page.syncVehicleSpawnOwnership();
           page.applyVisibility();
           if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
