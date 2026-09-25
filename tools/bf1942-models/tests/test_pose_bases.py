@@ -50,6 +50,19 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(["models/mods/xpack2/poses/GermanSoldier__K98.pose.glb?t=1",
                           "models/poses/GermanSoldier__K98.pose.glb?t=1"], self.r["urls"])
 
+    def test_a_split_pose_asks_each_half_of_each_tree(self) -> None:
+        # A mod can supply any one of the three documents a split pose needs:
+        # its recipe, its rig or its weapon. Each is asked for on its own, so a
+        # mod recipe naming a vanilla soldier gets vanilla's rig.
+        self.assertEqual(["models/mods/xpack1/poses/rigs/USSoldier.rig.glb",
+                          "models/poses/rigs/USSoldier.rig.glb"], self.r["rigUrls"])
+        self.assertEqual(["models/mods/xpack1/K98.glb", "models/K98.glb"],
+                         self.r["weaponUrls"])
+        self.assertEqual(["models/mods/xpack1/poses/USSoldier__K98.pose.json",
+                          "models/poses/USSoldier__K98.pose.json"], self.r["recipeUrls"])
+        self.assertEqual(["models/poses/rigs/USSoldier.rig.glb"],
+                         self.r["rigUrlsVanilla"])
+
     def test_an_inherited_pair_falls_back_to_vanilla(self) -> None:
         f = self.r["fallsBack"]
         self.assertEqual("models/poses/USSoldier__Thompson.pose.glb", f["got"])

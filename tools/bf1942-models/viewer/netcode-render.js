@@ -24,6 +24,7 @@ import { surveyVehicle } from './seats.js';
 import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
+import { createPoseComposer } from './pose-compose.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -52,9 +53,19 @@ export function createRemoteRenderer(ctx) {
   //     never double-fetch) ---------------------------------------------------
 
   const modelCache = new Map();
-  const poseCache = new Map();
   const gaitBundleCache = new Map();
   let gaitsManifestPromise = null;
+
+  /** Remote soldiers' poses: the split tree's recipe + rig + weapon where the
+   *  tree has them, the monolithic `.pose.glb` where it does not
+   *  (`pose-compose.js`). The rigs and the weapons behind it are cached for
+   *  the whole page, so this renderer and the recording one share them. */
+  const poses = createPoseComposer({
+    loader: ctx.loader,
+    modelsBase: ctx.modelsBase,
+    bust: ctx.bust,
+    shade: scene => ctx.shadeModel?.(scene),
+  });
 
   function model(name) {
     if (!modelCache.has(name)) {
@@ -108,20 +119,7 @@ export function createRemoteRenderer(ctx) {
   }
 
   function posePair(soldier, weapon) {
-    const key = `${soldier}|${weapon}`;
-    if (!poseCache.has(key)) {
-      const url = `${ctx.modelsBase}/poses/${soldier}__${weapon}.pose.glb${ctx.bust()}`;
-      poseCache.set(key, ctx.loader.loadAsync(url).then(gltf => {
-        gltf.scene.traverse(obj => {
-          const data = obj.userData || {};
-          if (data.effect || data.projectileMesh || data.projectileTrail
-              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
-        });
-        ctx.shadeModel?.(gltf.scene);
-        return { scene: gltf.scene, animations: gltf.animations ?? [] };
-      }).catch(() => null));
-    }
-    return poseCache.get(key);
+    return poses.pose(soldier, weapon);
   }
 
   async function soldierAssets(team) {
@@ -261,8 +259,7 @@ export function createRemoteRenderer(ctx) {
   // Seated remotes are drawn the way seated bots are (`seat-body.js`): the
   // seat's pose glb, hands on the gun, the slump when they die there.
   const seatBodies = createSeatBodies({
-    loader: ctx.loader,
-    url: (soldierName, pose) => `${ctx.modelsBase}/poses/${soldierName}__${pose}.pose.glb${ctx.bust()}`,
+    pose: (soldierName, pose) => poses.seat(soldierName, pose),
     shade: scene => ctx.shadeModel?.(scene),
     get parent() { return root; },
   });

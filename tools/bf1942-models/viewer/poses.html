@@ -116,6 +116,7 @@ import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
 import { createCameraGlide } from './camera-glide.js';
 import { createPoseMotion } from './pose-motion.js';
+import { createPoseComposer } from './pose-compose.js';
 import { createPosePairs } from './pose-pairs.js';
 import { createPoseView } from './pose-view.js';
 import { installPoseTestHooks } from './pose-test-hooks.js';
@@ -164,6 +165,16 @@ helpers.add(new THREE.GridHelper(4, 8, 0x333333, 0x1c1c1c), new THREE.AxesHelper
 scene.add(helpers);
 
 const loader = new GLTFLoader();
+/** Where a pose comes from: the split tree's recipe + rig + weapon where the
+ *  tree has them, the monolithic `.pose.glb` where it does not
+ *  (`pose-compose.js`). Uncached -- this page disposes the figure it replaces,
+ *  and the rig is shared with the playable map. */
+const poses = createPoseComposer({
+  loader: () => loader,
+  modelsBase: () => activeMod.paths.models,
+  bust: () => bust(),
+  cache: false,
+});
 let current = null;
 let skeletonHelper = null;
 let loadSequence = 0;
@@ -192,15 +203,12 @@ function applyWireframe() {
 async function loadPair(pair) {
   const sequence = ++loadSequence;
   statusLine.textContent = `loading ${pair.soldier} + ${pair.weapon}…`;
-  const url = `${POSES_BASE}/${pair.soldier}__${pair.weapon}.pose.glb${bust()}`;
   // The manifest carries `gaitAssets` too, so the sidecars start downloading
   // beside the pose rather than after it. Both are cached for the session,
   // so this is one round trip on the first pose and none after.
   let gaitClipsPromise = pair.gaitAssets ? poseMotion.loadGaitClips(pair.gaitAssets) : null;
-  let gltf;
-  try {
-    gltf = await loader.loadAsync(url);
-  } catch {
+  const gltf = await poses.pose(pair.soldier, pair.weapon);
+  if (!gltf) {
     if (sequence === loadSequence)
       statusLine.textContent = `failed to load ${pair.soldier}__${pair.weapon}.pose.glb`;
     return;

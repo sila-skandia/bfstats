@@ -62,6 +62,9 @@ _VIEWER_MODULES = [
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "collision-materials", "heightfield", "static-index", "collision-meshes",
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
+    # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
+    # enterable; it re-exports seats.js's occupancy.
+    "vehicle-instance",
     "aircraft", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",
     # Reached through seats.js: the salvo arithmetic and the HUD weapon-slot

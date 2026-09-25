@@ -104,6 +104,7 @@ import { createKitPanels } from './kit-panels.js';
 import { createKitPicker } from './kit-picker.js';
 import { createKitView } from './kit-view.js';
 import { createKitWorn } from './kit-worn.js';
+import { createPoseComposer } from './pose-compose.js';
 import { installControlsCollapse } from './controls-collapse.js';
 
 // Vanilla reads 'models' + 'models/poses'; a mod reads its own subtree. Same
@@ -146,6 +147,15 @@ helpers.add(new THREE.GridHelper(4, 8, 0x333333, 0x1c1c1c), new THREE.AxesHelper
 scene.add(helpers);
 
 const loader = new GLTFLoader();
+/** Where a posed figure comes from: the split tree's recipe + rig + weapon
+ *  where the tree has them, the monolithic `.pose.glb` where it does not
+ *  (`pose-compose.js`). Uncached -- this page disposes the figure it replaces. */
+const poses = createPoseComposer({
+  loader: () => loader,
+  modelsBase: () => MODEL_BASES[0],
+  bust: () => bust(),
+  cache: false,
+});
 
 // --- Manifests --------------------------------------------------------------
 const catalogue = await createKitCatalogue({
@@ -226,23 +236,26 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   // armoury figure so the worn parts and the rack still read.
   const figure = modelByName.get(String(state.soldier || '').toLowerCase());
   const pair = posedPair(state.soldier, state.held);
-  const url = pair
-    ? `${pair.base}/${pair.soldier}__${pair.weapon}.pose.glb${bust()}`
-    : figure?.glb && `${figure.base}/${figure.glb}${bust()}`;
+  const staticUrl = !pair && figure?.glb
+    ? `${figure.base}/${figure.glb}${bust()}` : null;
 
-  if (!url) {
+  if (!pair && !staticUrl) {
     statusLine.hidden = false;
     statusLine.textContent = `${kit.template}: no figure extracted for ${state.soldier}`;
     return;
   }
 
-  let gltf;
-  try {
-    gltf = await loader.loadAsync(url);
-  } catch {
+  let gltf = pair ? await poses.pose(pair.soldier, pair.weapon) : null;
+  if (!gltf && staticUrl) {
+    try {
+      gltf = await loader.loadAsync(staticUrl);
+    } catch { gltf = null; }
+  }
+  if (!gltf) {
     if (sequence === loadSequence) {
       statusLine.hidden = false;
-      statusLine.textContent = `failed to load ${url.split('/').pop()}`;
+      const shown = pair ? `${pair.soldier}__${pair.weapon}.pose.glb` : staticUrl.split('/').pop();
+      statusLine.textContent = `failed to load ${shown}`;
     }
     return;
   }
