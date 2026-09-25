@@ -6,6 +6,7 @@
 
 import { RADIO_LOCAL_RANGE, SPAWN_INDEX_MAX } from './room-rules.mjs';
 import { encodeJsonMsg, eventRow } from './room-wire.mjs';
+import { mayEnterHull } from '../viewer/vehicle-instance.js';
 
 /**
  * @param {object} options
@@ -91,9 +92,25 @@ export function createControlChannel({ room, event }) {
     event('spawn', connection, {});
   }
 
+  /** The team of the room's players seated in `vehicle`, `slot` left out: the
+   *  hull's team (the root PCO's, `PlayerControlObject+0x170`), 0 when nobody
+   *  else sits in it. The entry rule keeps a crew to one side, so the first
+   *  one found answers. */
+  function crewTeamOf(vehicle, slot) {
+    for (const [other, crewman] of room.players) {
+      if (other === slot) continue;
+      if (room.world.player(other)?.occupancy?.root === vehicle.root) return crewman.team ?? 0;
+    }
+    return 0;
+  }
+
   /** The engine's control channel rows (netcode.js): enter/exit/switch.
    *  The seat index is the occupancy survey's order position, 0 = root —
-   *  the same index the snapshot's seatIndex carries. */
+   *  the same index the snapshot's seatIndex carries. An enter into a hull
+   *  the other side crews is refused, as `GameServer::toggleEntryPoint`
+   *  (lnxded 0x0814f13d..0x0814f15e) refuses it: the hull's team must be
+   *  none or the player's (`vehicle-instance.js mayEnterHull`). A switch
+   *  stays inside the player's own hull and passes no such test. */
   function onSeat(connection, row) {
     const slot = connection.slot;
     const world = room.world;
@@ -106,6 +123,10 @@ export function createControlChannel({ room, event }) {
     const current = player?.occupancy?.root;
 
     if (action === 'enter') {
+      if (current !== vehicle.root && !mayEnterHull(crewTeamOf(vehicle, slot), connection.team)) {
+        console.error(`room ${room.code}: slot ${slot} (team ${connection.team}) refused ${vehicle.template}: crewed by team ${crewTeamOf(vehicle, slot)}`);
+        return;
+      }
       if (current) unmount(connection);
       let mounted = null;
       try {
