@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -83,6 +84,58 @@ class SpritesListTests(unittest.TestCase):
         # resulting collision at run time — catch it here instead.
         for prefix in ehp.SPRITE_DIR_GLOBS:
             self.assertNotIn(prefix.lower(), (p.lower() for p in ehp.SPRITES))
+
+
+class _StubMenu:
+    """The slice of the layered menu view `extract_sprites` needs."""
+
+    labels = ["test"]
+
+    def __init__(self, entries: list[str]) -> None:
+        self.entries = entries
+
+    def read(self, entry: str) -> bytes:
+        return b"raw entry bytes"
+
+
+class EditorDroppingSkipTests(unittest.TestCase):
+    """Pirates, interstate and FinnWars ship Windows editor droppings inside
+    the `SPRITE_DIR_GLOBS` directories of their `menu.rfa` — `Thumbs.db` in
+    ten directories across the three, FinnWars also `Kits/ger_MG42.xcf` and
+    `Kits/varjo.png`. The glob loops must leave every non-`.dds`/`.tga`
+    entry alone: the decoder is chosen by extension (`decode_tga` for
+    anything that is not `.dds`), so a `Thumbs.db` reached `decode_tga`,
+    whose OLE compound-file signature byte read as TGA image type 17, and
+    the whole pack aborted (2026-09-25)."""
+
+    ENTRIES = [
+        "menu/Texture/Soldier/Icon_Scout.dds",
+        "menu/Texture/Ammo/Thumbs.db",
+        "menu/Texture/Kits/ger_MG42.xcf",
+        "menu/Texture/Kits/varjo.png",
+        "menu/Texture/Vehicle/Icon_Willy.tga",
+        "menu/Texture/Thumbs.db",
+    ]
+
+    def test_junk_entries_are_skipped_and_images_still_decoded(self) -> None:
+        menu = _StubMenu(self.ENTRIES)
+        originals = {name: getattr(ehp, name)
+                     for name in ("decode_dds", "decode_tga", "encode_png")}
+        try:
+            ehp.decode_dds = lambda raw: (1, 1, bytes(4))
+            ehp.decode_tga = lambda raw: (2, 2, bytes(16))
+            ehp.encode_png = lambda w, h, rgba, drop_alpha=True: b"png"
+            with tempfile.TemporaryDirectory() as tmp:
+                manifest = ehp.extract_sprites(menu, Path(tmp), force=False)
+        finally:
+            for name, fn in originals.items():
+                setattr(ehp, name, fn)
+        self.assertEqual({"icon_scout", "icon_willy"}, set(manifest))
+        self.assertEqual({"icon_scout": [1, 1], "icon_willy": [2, 2]},
+                         {k: v["size"] for k, v in manifest.items()})
+        self.assertEqual(["menu/Texture/Soldier/Icon_Scout.dds",
+                          "menu/Texture/Vehicle/Icon_Willy.tga"],
+                         [v["source"] for v in manifest.values()])
 
 
 class IconKeyTests(unittest.TestCase):
