@@ -126,6 +126,17 @@ SPIN_DISPLAY_SCALE = 3.0
 SPIN_MIN_DEG_PER_SEC = 120.0
 SPIN_MAX_DEG_PER_SEC = 2160.0
 
+# Gap 11: the fallback swap distances for a geometry whose `.con` declares no
+# `GeometryTemplate.setLodDistance` table. The `.sm` file itself carries no
+# distances (standardmesh-vertex-format.md: the header is version/bounds/
+# collision/lod-count only), so these are derived from the shipped data: the
+# per-index MEDIANS of the 780 vanilla `Geometries.con` tables that declare
+# exactly six bands (census 2026-09-26 over Objects.rfa, 0/15/35/60/100/200).
+# Vanilla ships a real table for the meshes that matter; this only covers the
+# residue (level-local geometries, mod templates without the word) so their
+# chains still switch rather than all drawing LOD 0 to the far plane.
+FALLBACK_LOD_DISTANCES = (0.0, 15.0, 35.0, 60.0, 100.0, 200.0)
+
 
 def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
     """Axes an Engine visibly spins, as display deg/s — or an empty dict.
@@ -223,7 +234,9 @@ class Report:
     # Third-person exports only: which LodObject kept both propeller meshes
     # instead of picking one, and the throttle threshold a viewer swaps at.
     propeller_blurs: list[str] = field(default_factory=list)
-    mesh_lods: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Per unique `.sm`: selected/available level counts, and (Gap 11) the
+    # levels actually emitted as sibling meshes plus their triangle counts.
+    mesh_lods: dict[str, dict] = field(default_factory=dict)
     part_tree: list[str] = field(default_factory=list)
     rigged_parts: list[str] = field(default_factory=list)
     animated_parts: list[str] = field(default_factory=list)
@@ -395,6 +408,10 @@ class Assembler:
         self._texture_cache: dict[str, int | None] = {}
         self._material_cache: dict[tuple, int] = {}
         self._geom_mesh: dict[str, tuple[int | None, int]] = {}
+        # Gap 11: per geometry, the LOD rungs emitted below LOD 0 as
+        # `[(level, mesh index), ...]` plus the distance table used. Shared by
+        # every placement of the geometry; read by `_lod_children_for`.
+        self._geom_lod_chain: dict[str, tuple[list[tuple[int, int]], list[float]]] = {}
         self._geom_collisions: dict[str, list[tuple[int, int, str]]] = {}
         # Face counts per geometry, for ranking a LodObject's alternatives
         # against each other before any of them is built.
@@ -911,6 +928,60 @@ class Assembler:
             key=lambda ref: self._collision_triangles(
                 con_mod.instance_template_name(ref, self.library.object) or ""))
 
+    def _lod_distances_for(self, geometry_name: str,
+                           template: con_mod.GeometryTemplate) -> list[float]:
+        """The distance table a viewer swaps this geometry's chain by.
+
+        The `.sm` carries the rungs but no distances, so the numbers come from
+        the geometry's own `GeometryTemplate.setLodDistance` lines when the
+        `.con` declares them (1,133 vanilla geometries do), and from
+        `FALLBACK_LOD_DISTANCES` when it does not. A short declared table is
+        padded by repeating its last band, so a 3-band declaration still swaps
+        the 4th..6th rungs instead of sending them all at LOD 0's threshold.
+        """
+        declared = list(template.lod_distances) if template else []
+        if not declared:
+            return list(FALLBACK_LOD_DISTANCES)
+        while len(declared) < len(FALLBACK_LOD_DISTANCES):
+            declared.append(declared[-1] if declared else 0.0)
+        return declared
+
+    def _lod_children_for(self, builder: gltf.GlbBuilder, geometry_name: str,
+                          mesh_file: str) -> list[int]:
+        """Child nodes carrying the emitted LOD rungs for one geometry.
+
+        Emits at most one node per placement call but reuses per-geometry
+        caches where glTF allows it: the rung MESH indices are shared (the
+        geometry cache guarantees one buffer each), while the NODES are fresh
+        per call because glTF forbids one node under many parents and a
+        placement's LOD rungs are per-geometry identity, carrying no placement
+        transform of their own — the viewer lifts them onto a `THREE.LOD`
+        under the placement node, so they inherit its pose from there. Extras
+        name the level and its swap distance
+        (`extras.lod = {level, distance}`), keyed on the geometry so the
+        viewer can group them.
+        """
+        cache_key = geometry_name.lower()
+        chain = self._geom_lod_chain.get(cache_key)
+        if not chain:
+            return []
+        rungs, distances = chain
+        children: list[int] = []
+        for level, mesh_index in rungs:
+            children.append(builder.add_node(gltf.Node(
+                name=f"{mesh_file}_lod{level}",
+                mesh=mesh_index,
+                extras={
+                    "lod": {
+                        "geometry": geometry_name,
+                        "level": level,
+                        "distance": (distances[level] if level < len(distances)
+                                     else distances[-1]),
+                    },
+                },
+            )))
+        return children
+
     def _mesh_index(self, builder: gltf.GlbBuilder, geometry_name: str,
                     report: Report) -> tuple[int | None, int]:
         cache_key = geometry_name.lower()
@@ -981,6 +1052,60 @@ class Assembler:
         elif not self.include_collision:
             self._geom_collisions[cache_key] = []
         shaders = self._shaders_for(mesh_file, geometry_name)
+
+        # The chain, per unique geometry: every level below the selected one
+        # becomes a sibling glTF mesh (`Chain_m1_lod1`, ...) so a placement can
+        # swap detail by distance. LOD 0 keeps the original mesh index under
+        # its plain name — everything that names a mesh today (vehicle part
+        # nodes, extras, tests) keeps reading it. A level whose material set
+        # collapses to the previous one's (some mods ship identical top rungs)
+        # would draw the same thing twice, so it is dropped and the emitted
+        # level list is what lands on the node.
+        # Emit every DISTINCT level. The signature is the per-material
+        # (name, triangle count, vertex count) tuple: material names alone
+        # cannot discriminate — DICE reuses one material across every level
+        # of a prop (the crank ships 53/48/43/31/20/2 triangles under
+        # `Material2` six times) and reorders the list between levels on
+        # multi-material meshes — while counts do, and geometry that did not
+        # change must not be shipped twice.
+        emitted: list[tuple[int, int]] = []      # (lod level, mesh index)
+        emitted_tris: list[int] = []
+        emitted_signatures: list[tuple] = []
+        for level in range(selected_lod + 1, len(mesh.lods)):
+            level_lod = mesh.lods[level]
+            level_prims: list[gltf.Primitive] = []
+            level_tris = 0
+            for material in level_lod.materials:
+                tris = material.triangles()
+                if not tris:
+                    continue
+                level_tris += len(tris)
+                shader = rs.lookup(shaders, material.name)
+                level_prims.append(gltf.Primitive(
+                    positions=material.positions(),
+                    normals=material.normals(),
+                    uvs=material.uvs(),
+                    uvs2=material.uvs2(),
+                    indices=[i for tri in tris for i in tri],
+                    material=self._material_index(builder, shader, material.name, report),
+                ))
+            if not level_prims or level_tris == 0:
+                continue
+            signature = tuple(
+                (m.name, len(m.triangles()), m.vertex_count)
+                for m in level_lod.materials)
+            if emitted and signature == emitted_signatures[-1]:
+                continue
+            emitted.append((level, builder.add_mesh(
+                f"{mesh_file}_lod{level}", level_prims)))
+            emitted_tris.append(level_tris)
+            emitted_signatures.append(signature)
+        if emitted:
+            report.mesh_lods[mesh_file]["emittedLevels"] = [
+                level for level, _ in emitted]
+            report.mesh_lods[mesh_file]["lodTriangles"] = emitted_tris
+            self._geom_lod_chain[cache_key] = (
+                emitted, self._lod_distances_for(geometry_name, template))
 
         primitives: list[gltf.Primitive] = []
         triangles = 0
@@ -2720,6 +2845,19 @@ class Assembler:
             extras["animatedTextureSpeed"] = [-u, v]
         if rel := self._lightmap_rel(template, world_origin):
             extras["lightmap"] = rel
+
+        # Gap 11: a StandardMesh part whose geometry emitted LOD rungs carries
+        # them as child nodes (extras.lod), for the viewer to swap by
+        # distance. Skinned parts are excluded: their rungs would have to
+        # follow the skeleton, and a swap that detaches them mid-pose would
+        # need joints the lower rungs do not carry.
+        if (mesh_index is not None and not template.skeleton
+                and template.geometry
+                and geometry_is_first_person(template.geometry) == self.first_person):
+            geom_template = self.library.geometry(template.geometry)
+            child_indices.extend(self._lod_children_for(
+                builder, template.geometry,
+                geom_template.mesh_file if geom_template else template.geometry))
 
         node_index = builder.add_node(gltf.Node(
             name=template.name,
