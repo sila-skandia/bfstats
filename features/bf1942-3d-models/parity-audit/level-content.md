@@ -1213,6 +1213,28 @@ against vanilla + XPack1/XPack2 archives (`bf1942-game-archives` skill):
   screen — cheapest integration point, and the objectives text is exactly
   the kind of flavor content players read while waiting.
 
+**Built 2026-09-25.** Shipped as recommended. `bf42/level.py` gained
+`parse_briefing`/`resolve_briefing`/`load_briefing`: the multiplayer trio
+(`setMultiplayerBriefingObjectives/MapType`, `setMapId`) read from
+`Menu/Init.con` via `LevelFiles.find` (case-insensitive, so `Init.con` matches),
+values quoted or bare, SP-only campaign/skirmish/debriefing verbs untouched.
+`scene_layers.py` resolves bare keys through the mod chain's merged
+`lexiconAll.dat` (`LevelContext.lexicon`, cached; nearest mod wins) and emits a
+top-level `briefing` object — `{objectives, mapType, mapId}` — owned by the
+`game` layer, so `patch_scene.py --layer game --mod M --all` rewrites it with no
+glb touched. Quoted text stays literal (the per-value signal; Kasserine_Pass and
+Truk ship `Game.setLocalized 0` but quoted values, not the flag, decide).
+Patched live: 23 vanilla + 6 XPack1 + 9 XPack2 scenes, 38/38 carrying resolved
+English objectives. Viewer: the authentic loading overlay (`progress.js`) grew a
+`MISSION BRIEFING` panel (heading, map-type badge, objectives text, hidden while
+empty via `data-empty`), fed by a `load.briefing(...)` method on the load handle
+that `level-load.js` calls with the report's `briefing` when the report lands
+and clears at the start of each load. Briefing text is extracted verbatim
+English — no player-name-style decoding applies. Tests: `tests/test_level.py`
+(`BriefingTests`), `tests/test_scene_layers.py` (game-layer ownership +
+merge), `tests/test_load_briefing_js.py` + `load_briefing_harness.mjs` (panel
+markup + handle null-safety under a DOM stub).
+
 ---
 
 ### Gap 15 — the combat-area boundary is never drawn in the 3D scene, and 12 levels declare none
