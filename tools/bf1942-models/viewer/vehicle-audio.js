@@ -41,6 +41,7 @@ import {
   loadEngineAudio, findEngineSpec, findWeaponSpecs,
   findWeaponSpecsByFireArms, WEAPON_HEADROOM,
 } from './engine-audio.js';
+import { attachesToListener } from './ssc-specs.js';
 
 /**
  * How many occupied hulls keep a sounding graph at once.
@@ -137,6 +138,7 @@ class VehicleAudio {
     this.accel = 0;
     this.worldPos = null;
     this.worldQuat = null;
+    this.engineSpec = null;
   }
 
   get drive() {
@@ -295,10 +297,33 @@ export class VehicleAudioRack {
   }
 
   _listenerPos() {
+    // The world point: three's AudioListener rides the camera, so its own
+    // `position` is its offset from the camera -- always the origin.
     const listener = this.getListener?.();
+    const e = listener?.matrixWorld?.elements;
+    if (e) return { x: e[12], y: e[13], z: e[14] };
     const pos = listener?.position ?? listener?.context?.listener?.position;
     if (!pos) return null;
     return { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 };
+  }
+
+  /**
+   * Is this part's sound attached to the listener this frame? The client's
+   * `SimpleObject::attachToListener` (BF1942.exe 0x00536390, lnxded
+   * 0x081db610; ledger SND-2): the part's template carries the flag, the
+   * local player is in a vehicle, the nearest PlayerControlObject up from his
+   * vehicle is the nearest one up from the part (a part's `control` extra
+   * names exactly that PCO; the hull is checked first so two T-34s are two
+   * answers), and his camera is in view mode 3, Inside (CAM-1). So a tank's
+   * engine stops following the turret round for its driver in first person,
+   * and is spatialised again for him in the chase view, for a passenger in a
+   * nested seat, and for anyone outside.
+   */
+  _attached(entry, part, spec, kind) {
+    const seat = this.listenerSeat;
+    if (!seat?.inside || !part || seat.root !== entry.node) return false;
+    if (!attachesToListener(spec, kind)) return false;
+    return (part.userData?.control ?? seat.rootId) === seat.seatId;
   }
 
   _distance(entry, at) {
@@ -405,6 +430,7 @@ export class VehicleAudioRack {
       }
       entry.engineAudio = engineAudio;
       entry.engineNode = engineNode;
+      entry.engineSpec = engineAudio ? findEngineSpec(report, template) : null;
       entry.engineMissing = engineMissing;
       entry.weapons = weapons;
       entry.built = true;
@@ -451,8 +477,9 @@ export class VehicleAudioRack {
     this.weaponFor(groupNode)?.audio.trigger();
   }
 
-  /** One frame. `listenerPosition` is the camera. */
-  update(dt, listenerPosition) {
+  /** One frame. `listenerPosition` and `listenerForward` are the camera's;
+   *  `listenerSeat` (set by the page) is the seat it belongs to. */
+  update(dt, listenerPosition, listenerForward = null) {
     if (this.disposed) return;
     const master = this.getMaster();
     const at = listenerPosition
@@ -464,7 +491,11 @@ export class VehicleAudioRack {
       const entryMaster = near ? master : 0;
       if (entry.engineAudio) {
         entry.engineAudio.setMaster(entryMaster);
-        entry.engineAudio.update(this._engineControl(entry, dt, listenerPosition));
+        entry.engineAudio.setAttachedToListener(
+          this._attached(entry, entry.engineNode, entry.engineSpec, 'engine'));
+        const control = this._engineControl(entry, dt, listenerPosition);
+        control.listenerForward = listenerForward;
+        entry.engineAudio.update(control);
       }
       for (const weapon of entry.weapons) {
         const group = this._firingGroup(entry, weapon.spec.fireArms);
@@ -473,7 +504,9 @@ export class VehicleAudioRack {
         // between rounds on its own.
         weapon.audio.setMaster(
           weapon.audio.hasLoops && !group?.firing ? 0 : entryMaster);
-        this._weaponControl(weapon, dt, listenerPosition);
+        weapon.audio.setAttachedToListener(
+          this._attached(entry, weapon.node, weapon.spec, 'weapon'));
+        this._weaponControl(weapon, dt, listenerPosition, listenerForward);
       }
     }
   }
@@ -534,7 +567,7 @@ export class VehicleAudioRack {
   }
 
   /** A gun patch needs none of the engine's rpm/speed/dive plumbing. */
-  _weaponControl(weapon, dt, listenerPosition) {
+  _weaponControl(weapon, dt, listenerPosition, listenerForward = null) {
     if (!weapon._pos) {
       weapon._pos = { x: 0, y: 0, z: 0 };
       weapon._quat = { x: 0, y: 0, z: 0, w: 1 };
@@ -550,6 +583,7 @@ export class VehicleAudioRack {
       position: weapon._pos,
       quaternion: weapon._quat,
       listenerPosition,
+      listenerForward,
     });
   }
 
@@ -580,6 +614,7 @@ export class VehicleAudioRack {
         driven: !!entry.drive,
         claims: entry.claims.size,
         engine: entry.engineAudio ? entry.engineAudio.snapshot() : null,
+        engineControl: entry.engineNode?.userData?.control ?? null,
         weapons: entry.weapons.map(w => ({
           fireArms: w.spec.fireArms,
           node: w.node?.name ?? null,

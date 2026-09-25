@@ -24,7 +24,7 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `combatFrame`, `crosshairAim`, `crosshairEl`, `currentDir`,
  * `cycleKitWeapon`, `damageVisuals`, `deployActive`, `deployKit`,
  * `deploySpawn`, `deployTeamId`, `deployUnchosen`, `detonatorTemplate`,
- * `effectAudio`, `effects`, `effectSoundsLoad`, `enterVehicle`,
+ * `effectAudio`, `effects`, `effectSoundsLoad`, `ensureWorldFire`, `enterVehicle`,
  * `entryPoints`, `exitSeat`, `exitVehicle`, `explosivesTemplate`, `extras`,
  * `fireStateFor`, `flags`, `floatHosts`, `foot3pRel`, `footBody`,
  * `footCanopy`, `footView3p`, `forceHideFootBody`, `frame`,
@@ -184,6 +184,21 @@ export function installTestHooks(page) {
       // first-person pick under a stand-in Distance ramp.
       worldFire: page.worldFire ? page.worldFire.snapshot() : null,
     });
+    // The audio graphs themselves, for a check that taps one patch's bus or
+    // reads its panners against the listener: the bystanders' gunfire pool
+    // (`world-fire.js`), the vehicle rack, and the seat the listener sits in
+    // (the live object; `__occupancy` is its summary).
+    // `__playWorldShot` is the call a bot's `onShot` makes, at any point, so a
+    // K98 can be heard from 5, 50 or 200 m without waiting on a bot to aim.
+    window.__worldFire = () => page.worldFire;
+    window.__vehicleAudio = () => page.vehicleAudio;
+    window.__seatOccupancy = () => page.localPlayer?.occupancy ?? null;
+    window.__playWorldShot = async (name, position) => {
+      const fire = await page.ensureWorldFire();
+      if (!fire) return false;
+      await fire.prime(name);
+      return fire.play(name, position);
+    };
   }
   return testHooks;
 }
