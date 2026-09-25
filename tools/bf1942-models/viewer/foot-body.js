@@ -16,10 +16,10 @@ import { loadFirst, poseBases, poseUrls } from './pose-bases.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `deathFamily`, `deathYaw`, `deployKit`,
- * `deployTeamId`, `footFeetCur`, `footFeetPrev`, `footView`, `footView3p`,
- * `kitLoadout`, `MODELS_BASE`, `optOnFoot`, `optPilot`, `presentAlpha`,
- * `scene`, `soldier`, `soldierDead`.
+ * `bindDynamicShading`, `bust`, `currentKit`, `deathFamily`, `deathYaw`,
+ * `deployKit`, `deployTeamId`, `footFeetCur`, `footFeetPrev`, `footView`,
+ * `footView3p`, `kitLoadout`, `MODELS_BASE`, `optOnFoot`, `optPilot`,
+ * `presentAlpha`, `scene`, `soldier`, `soldierDead`.
  */
 export function createFootBody(page) {
   const footBodies = {};
@@ -306,8 +306,10 @@ export function createFootBody(page) {
     shade: node => page.bindDynamicShading(node),
   });
 
-  /** The deploy kit this body wears (`kit-loadout.js` `kitLoadout`), or null. */
+  /** The kit this body wears (`kit-loadout.js` `currentKit`: the one he
+   *  picked up off the ground, else the deploy row's), or null. */
   function footKit() {
+    if (page.currentKit) return page.currentKit(page.deployTeamId) ?? null;
     return page.kitLoadout?.(page.deployTeamId, page.deployKit)?.kit ?? null;
   }
 

@@ -14,6 +14,8 @@ import { hitFromDirAlpha, hitFromDirOctant } from './hud.js';
 import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
+import { routeFlightInput } from './mouse-look-key.js';
+import { mayEnterHull } from './vehicle-instance.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -27,11 +29,12 @@ import { PARA_FALLING } from './parachute.js';
  * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
  * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`,
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
+ * `lookKeyHeld`, `lookNeedsKey`,
  * `mannedActive`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `showHint`, `spawnAtFlag`,
  * `stepSeatIk`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
@@ -131,6 +134,22 @@ export function createLocalPlayer(page) {
       : (page.optOnFoot.checked && localPlayer.soldier ? page.HUD_FOOT : page.HUD_FLY));
     page.updateMobileControls();
   }
+
+  /**
+   * Whether the human may take a seat of the hull at `root`: the engine's
+   * entry rule (`vehicle-instance.js mayEnterHull`) against the hull's crew
+   * on this page -- bots, and himself when he is already aboard -- and, in a
+   * room, against the room's players seated in it, who are replicas here and
+   * never in the registry (`remoteCrewTeam`). The room refuses the same seat
+   * (`server/room-control.mjs`), so a door the room would refuse is not
+   * offered either.
+   */
+  localPlayer.mayEnterHull = root => {
+    const vehicles = page.vehicles;
+    if (vehicles.seatOf(page.LOCAL_PLAYER)?.root === root) return true;
+    const team = vehicles.playerTeam(page.LOCAL_PLAYER);
+    return mayEnterHull(vehicles.teamOf(root), team) && mayEnterHull(page.remoteCrewTeam?.(root) ?? 0, team);
+  };
 
   function mountLocalSeat(seat) {
     // After the seats exist: this seat's own view rig, and its law -- which
@@ -623,6 +642,11 @@ export function createLocalPlayer(page) {
         pitch: page.mobilePadHeld ? page.mobilePadVector.y : axis('c_PIPitch'),
         pad: page.mobilePadHeld,
       };
+      // A pilot holding the mouse-look key flies hands off: the engine's
+      // router zeroes c_PIYaw, c_PIPitch and c_PIRoll for every tick the key
+      // is down (`BFPlayer::handleInput`, `mouse-look-key.js`). The throttle
+      // and the triggers still reach the aircraft.
+      routeFlightInput(input, page.lookNeedsKey() && page.lookKeyHeld());
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
     } else if (onFoot) {
       page.pumpLook(lookTicks);

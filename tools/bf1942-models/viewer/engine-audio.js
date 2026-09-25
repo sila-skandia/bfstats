@@ -78,6 +78,50 @@ const BUS_HEADROOM = 1;
 // rather than under it.
 export const WEAPON_HEADROOM = 0.75;
 
+// DirectSound's own distance law, which the client leaves on for every
+// spatialised voice (ledger SND-6, features/sound-listener-parity). A voice is
+// created with `SetMinDistance(1.0)` and `SetMaxDistance(1e9)` (BF1942.exe
+// 0x007fefee / 0x007feffa; 1e9 is DS3D_DEFAULTMAXDISTANCE, so nothing caps the
+// fall-off), its minimum distance is set again from its layer every frame
+// (0x00802444), and the listener's rolloff factor is 1.0 (its constructor,
+// 0x00663eb0, and `Sound.setRolloffFactor 1` in the shipped defaults). Past
+// its minimum distance a voice falls 6 dB per doubling, `(min / d) ^ rolloff`,
+// and the script's `Volume <- Distance` ramps multiply on top of that.
+//
+// The ramps alone cannot be the whole law, and the data says as much. The
+// K98's far report is flat from 1 m to 100 m and its echo shells differ only in
+// `minDistance` (6 / 5.5 / 5 / 4); the distant explosion layers carry 80..200 m
+// so that a blast across the map is not attenuated to a whisper. The viewer
+// used to play every spatialised layer at its ramp's gain whatever the
+// distance (panner rolloff 0), so a rifle 99 m away was as loud as one at 2 m.
+//
+// Which layer field the client hands `SetMinDistance` is inferred: `minDistance`
+// is the only distance-valued `.ssc` word, but the offsets from the parser's
+// store (descriptor +0x2c, 0x007ffcb0) to the update's read (+0x24, 0x0080243c)
+// were not joined up.
+export const ROLLOFF_FACTOR = 1;
+
+/**
+ * DirectSound's attenuation of one voice at `distance` metres: unity inside
+ * its minimum distance, `(min / d) ^ factor` beyond it. A layer that names no
+ * `minDistance` keeps the voice's own default, 1 m.
+ */
+export function distanceRolloff(distance, minDistance, factor = ROLLOFF_FACTOR) {
+  const min = minDistance > 0 ? minDistance : 1;
+  if (!(distance > min) || !(factor > 0)) return 1;
+  return (min / distance) ** factor;
+}
+
+// Where an attached voice's panner stands: this far along the listener's own
+// facing, i.e. dead ahead. The client puts an attached voice AT the listener
+// (SND-4), which DirectSound hears from no side at all; a Web Audio panner at
+// the listener has no direction to take, so it is put straight ahead instead,
+// where the HRTF answers identically in both ears (measured in Chromium: 0.564
+// of a mono input on each channel, against 0.858 / 0.219 at 90 degrees). Far
+// enough ahead that a frame's worth of listener movement cannot swing it off
+// axis; the distance itself is inert, because the panner's own rolloff is 0.
+const ATTACHED_AHEAD = 10;
+
 // Speed of sound, m/s, for the doppler shift the engine loops keep (they are
 // the samples that pointedly do *not* set `dopplerOff`; gunfire and the
 // start/stop one-shots do). Clamped hard: a hard manoeuvre past the listener
@@ -114,6 +158,11 @@ class Voice {
     this.jitter = 1 + (Math.random() * (up + down) - down);
     this.targetGain = 0;
     this.targetRate = 1;
+    // DirectSound's distance attenuation this frame (`distanceRolloff`). Kept
+    // apart from `targetGain`, which is the script's own answer: the
+    // `trigger Volume` gate and the coherent-duplicate contest both read the
+    // script, and the node plays the product.
+    this.rolloff = 1;
     // Set per frame by `#resolveCoherent`, and reported by `snapshot()` so a
     // headless check can tell "the ramp put this layer at zero" apart from
     // "this layer lost a coherent-duplicate arbitration".
@@ -177,6 +226,15 @@ export class EngineAudio {
     // it sees the context running.
     this.pendingLoops = new Set();
     this.suspended = 0;
+    // `ObjectTemplate.setAttachToListener`, as the client applies it each frame
+    // (SND-2..SND-4): true while the listener sits in the Inside view of the
+    // PlayerControlObject this patch's owner belongs to. The caller decides
+    // that (`vehicle-audio.js`); this module only knows what it does to the
+    // voices -- see `setAttachedToListener`.
+    this.attached = false;
+    // DirectSound's rolloff factor (`ROLLOFF_FACTOR`). A measurement that wants
+    // the pre-2026-09-25 behaviour sets 0: every voice at its ramp's gain.
+    this.rolloffFactor = ROLLOFF_FACTOR;
 
     this.bus = this.ctx.createGain();
     this.bus.gain.value = 0;
@@ -219,11 +277,13 @@ export class EngineAudio {
           panner.panningModel = 'HRTF';
           panner.distanceModel = 'inverse';
           panner.refDistance = layer.minDistance || 1;
-          // The script's own `Volume <- Distance` ramp owns distance volume
-          // exclusively, exactly as the map's area sounds do. Leaving the
-          // panner's inverse curve on would attenuate a second time, on a
-          // different law, and the two would disagree about where a plane
-          // becomes inaudible. Panning is for direction only.
+          // Panning is for direction only. Distance attenuation is
+          // DirectSound's law (`distanceRolloff`) times the script's own
+          // `Volume <- Distance` ramps, and it is applied per voice in
+          // `update()`: the client sets each voice's minimum distance from
+          // its own layer, and a panner here is shared by every layer at one
+          // offset (the K98's four far layers, minimum distances 6, 5.5, 5
+          // and 4 m, share one), so the panner's own curve cannot carry it.
           panner.rolloffFactor = 0;
           panner.connect(this.bus);
         }
@@ -231,7 +291,7 @@ export class EngineAudio {
         this.groups.set(key, group);
       }
       // refDistance tracks the nearest layer in the group; inert while
-      // rolloffFactor is 0, but it keeps the node honest if that ever changes.
+      // rolloffFactor is 0 (see above), kept so the node reads sensibly.
       if (group.panner) {
         group.panner.refDistance = Math.min(group.panner.refDistance,
                                             layer.minDistance || 1);
@@ -506,6 +566,24 @@ export class EngineAudio {
   }
 
   /**
+   * `ObjectTemplate.setAttachToListener`, applied (ledger SND-1..SND-4).
+   *
+   * Every frame the client's `Engine`, `RotationalBundle` and `FireArms`
+   * `updateSound` hand their sound the answer of `SimpleObject::attachToListener`
+   * (BF1942.exe 0x00536390, lnxded 0x081db610), and each sample stores it
+   * (0x008020e0). An attached sample's voices are placed AT the listener
+   * (0x0080237a) -- its `relativePosition` ignored, heard from no side and
+   * with no distance of its own -- while the script's `Distance` control is
+   * still read from where the voice really is (0x008028c0). The panners go
+   * dead ahead (`ATTACHED_AHEAD`), DirectSound's fall-off and the doppler
+   * shift drop out, and the ramps carry on unchanged. Takes effect on the
+   * next `update()`.
+   */
+  setAttachedToListener(on) {
+    this.attached = !!on;
+  }
+
+  /**
    * Start whatever loops piled up while the context could not render them.
    *
    * Polled from `update()`, which already runs every simulation tick, rather
@@ -530,6 +608,12 @@ export class EngineAudio {
    * and m/s^2, `diveAngle` normalised, and the source and listener positions in
    * world space. Land `.ssc` scripts bind the same rpm channel as `Default`
    * (see `controlValue`); air scripts use `Engine::Rpm` explicitly.
+   *
+   * `listenerForward` is the listener's unit facing, which only an attached
+   * patch reads (see `setAttachedToListener`). `snap` puts the panners where
+   * they belong this instant instead of ramping them over a frame: a pooled
+   * one-shot moving from the last shooter to this one must not sweep across
+   * the stereo field under its own transient.
    */
   update(control) {
     if (this.disposed) return;
@@ -539,6 +623,8 @@ export class EngineAudio {
     if (this.released) this.sinceRelease += dt;
 
     const { position, quaternion, listenerPosition } = control;
+    const facing = this.attached ? control.listenerForward : null;
+    const snap = !!control.snap;
     const now = this.ctx.currentTime;
 
     for (const group of this.groups.values()) {
@@ -569,8 +655,20 @@ export class EngineAudio {
       // below pitch, which is audible as a lurch on engine start.
       group.radial = dt > 0 && group.primed ? (distance - group.distance) / dt : 0;
       group.primed = true;
+      // The script's `Distance` stays the true one when attached: the client
+      // feeds it from the voice's own world point (0x00802950 -> 0x008028c0),
+      // not from where it put the voice.
       group.distance = distance;
-      if (group.panner) this.#placePanner(group.panner, wx, wy, wz, now);
+      if (!group.panner) continue;
+      if (this.attached) {
+        const ahead = facing ? ATTACHED_AHEAD : 0;
+        this.#placePanner(group.panner,
+          listenerPosition.x + (facing?.x ?? 0) * ahead,
+          listenerPosition.y + (facing?.y ?? 0) * ahead,
+          listenerPosition.z + (facing?.z ?? 0) * ahead, now, snap);
+      } else {
+        this.#placePanner(group.panner, wx, wy, wz, now, snap);
+      }
     }
 
     const base = {
@@ -589,7 +687,10 @@ export class EngineAudio {
       base.distance = voice.group.distance;
       const volume = modulate(voice.volumeMods, base, voice.layer.volume ?? 1);
       let rate = modulate(voice.pitchMods, base, 1) * voice.jitter;
-      if (voice.layer.doppler) {
+      // An attached voice stands at the listener, where there is no line of
+      // approach for a doppler shift to act along. Inferred: the client sets
+      // its velocity as usual (0x008023dd) and leaves the rest to DirectSound.
+      if (voice.layer.doppler && !this.attached) {
         const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial);
         rate *= Math.min(DOPPLER_MAX, Math.max(DOPPLER_MIN, shift));
       }
@@ -614,6 +715,10 @@ export class EngineAudio {
       voice.targetGain = Math.min(1, Math.max(0, volume));
       voice.targetRate = Math.max(0.05, rate);
       voice.suppressed = false;
+      // DirectSound's own fall-off. A `stereo` layer is a 2D buffer and an
+      // attached one stands at the listener: neither is attenuated.
+      voice.rolloff = voice.layer.stereo || this.attached ? 1
+        : distanceRolloff(voice.group.distance, voice.layer.minDistance, this.rolloffFactor);
     }
 
     // Both passes read `targetGain`, and the arbitration has to land between
@@ -651,12 +756,23 @@ export class EngineAudio {
         }
       }
 
-      this.#ramp(voice.gain.gain, voice.targetGain, now, GAIN_TAU);
+      // A snapped update is a new round from a new place: its gains are this
+      // round's, now. Eased from the last round's, a close shot's stereo crack
+      // leaked into the first 50 ms of the next one fired 200 m away.
+      const out = voice.targetGain * voice.rolloff;
+      if (snap) this.#set(voice.gain.gain, out, now);
+      else this.#ramp(voice.gain.gain, out, now, GAIN_TAU);
       if (voice.source) {
         this.#ramp(voice.source.playbackRate, voice.targetRate, now, PITCH_TAU);
       }
     }
-    this.#ramp(this.bus.gain, master * this.headroom, now, GAIN_TAU);
+    if (snap) this.#set(this.bus.gain, master * this.headroom, now);
+    else this.#ramp(this.bus.gain, master * this.headroom, now, GAIN_TAU);
+  }
+
+  #set(param, value, now) {
+    param.cancelScheduledValues?.(now);
+    param.setValueAtTime(value, now);
   }
 
   #resolveCoherent() { resolveCoherent(this.coherent); }
@@ -669,8 +785,17 @@ export class EngineAudio {
     param.setTargetAtTime(value, now, tau);
   }
 
-  #placePanner(panner, x, y, z, now) {
-    if (panner.positionX) {
+  #placePanner(panner, x, y, z, now, snap = false) {
+    if (panner.positionX && snap) {
+      // A new source, not a moving one: the pooled slot's last shooter was
+      // somewhere else, and a one-frame ramp from there would sweep the
+      // report's own transient across the field.
+      for (const [param, value] of [[panner.positionX, x], [panner.positionY, y],
+                                    [panner.positionZ, z]]) {
+        param.cancelScheduledValues?.(now);
+        param.setValueAtTime(value, now);
+      }
+    } else if (panner.positionX) {
       // A ramp over one frame rather than a jump, matching three.js's
       // PositionalAudio. Web Audio's panner has no doppler of its own, so
       // moving it discontinuously costs nothing but a click in the HRTF
@@ -750,12 +875,18 @@ export class EngineAudio {
       suspended: this.suspended,
       pendingLoops: this.pendingLoops.size,
       panners: this.groups.size,
+      attached: this.attached,
+      rolloffFactor: this.rolloffFactor,
       layers: this.voices.map(v => ({
         file: v.layer.file,
         loop: !!v.layer.loop,
         playing: v.playing,
         distance: v.group.distance,
         gain: v.targetGain,
+        // DirectSound's fall-off, and what the node is asked to play: the
+        // script's gain times it.
+        rolloff: v.rolloff,
+        output: v.targetGain * v.rolloff,
         // Zeroed by `#resolveCoherent` rather than by its own curves: the
         // headless check for the car horn asserts on this.
         suppressed: v.suppressed,

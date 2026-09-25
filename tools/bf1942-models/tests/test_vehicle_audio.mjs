@@ -307,4 +307,49 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   assert.ok(ctx.started.every(s => s.stopped), 'and stops every source');
 }
 
+// --- bug B: `setAttachToListener` -- the driver's own engine, inside only ---
+//
+// SND-2: attached while the listener's camera is Inside (mode 3) in the
+// PlayerControlObject the part belongs to. An old scene.json has no field, so
+// a land engine's script path answers (every land Engine carries the flag,
+// no aircraft or ship one does).
+
+{
+  const T34 = { template: 'T34', engine: 'T34Engine', script: 'Objects/Vehicles/Land/T34/Sounds/T34Engine.ssc',
+                layers: [LAYER('t34.wav')], weapons: [] };
+  const PLANE = { template: 'bf109', engine: 'BF109Engine', script: 'Objects/Vehicles/Air/BF109/Sounds/BF109Engine.ssc',
+                  layers: [LAYER('bf.wav')], weapons: [] };
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([T34, PLANE]));
+  const own = sceneNode('T34', 3);
+  childNode(own, 'T34Engine').userData = { control: 'T34' };
+  const other = sceneNode('T34_1', 30);
+  childNode(other, 'T34Engine_1').userData = { control: 'T34' };
+  const plane = sceneNode('bf109', 60);
+  childNode(plane, 'BF109Engine').userData = { control: 'bf109' };
+  rack.claim({ seatKey: 'me', node: own, template: 'T34', drive: drive(3), groups: [] });
+  rack.claim({ seatKey: 'bot', node: other, template: 'T34', drive: drive(30), groups: [] });
+  rack.claim({ seatKey: 'pilot', node: plane, template: 'bf109', drive: drive(60), groups: [] });
+  await settle();
+  const attached = () => Object.fromEntries(rack.snapshot().vehicles.map(v => [v.key, v.engine?.attached]));
+  const forward = { x: 0, y: 0, z: -1 };
+  rack.listenerSeat = { root: own, rootId: 'T34', seatId: 'T34', inside: true };
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 }, forward);
+  assert.deepEqual(attached(), { T34: true, T34_1: false, bf109: false },
+    'only the listener\'s own hull attaches, inside');
+  const panner = [...rack.vehicles.get('T34').engineAudio.groups.values()][0].panner;
+  assert.deepEqual([panner.positionX.value, panner.positionY.value, panner.positionZ.value], [0, 0, -10],
+    'and its voices stand dead ahead of the listener, not at the engine');
+  rack.listenerSeat = { root: own, rootId: 'T34', seatId: 'T34', inside: false };
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 }, forward);
+  assert.equal(attached().T34, false, 'the chase view hears the hull from outside');
+  rack.listenerSeat = { root: own, rootId: 'T34', seatId: 'T34_PCO_MG', inside: true };
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 }, forward);
+  assert.equal(attached().T34, false, 'a nested seat is another PlayerControlObject');
+  rack.listenerSeat = { root: plane, rootId: 'bf109', seatId: 'bf109', inside: true };
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 }, forward);
+  assert.equal(attached().bf109, false, 'no aircraft engine carries the flag');
+  rack.dispose();
+}
+
 console.log('vehicle-audio: all assertions passed');

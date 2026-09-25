@@ -106,9 +106,11 @@ for name in viewer-vanilla.zip map-berlin.zip map-bocage.zip; do
     curl -fSL --retry 5 --retry-all-errors -o "$WORK/$name" "$ASSET_BASE/$name"
   fi
 done
-if ! [ -d "$VIEWER_DIR/models" ]; then
+# viewer/models always exists in a clone (the tracked viewmodels/ fixtures), so
+# key off a file only the zip carries; -n keeps those tracked fixtures untouched.
+if ! [ -f "$VIEWER_DIR/models/models.json" ]; then
   echo "[setup] restoring viewer models"
-  unzip -q -o "$WORK/viewer-vanilla.zip" -d "$VIEWER_DIR"
+  unzip -q -n "$WORK/viewer-vanilla.zip" -d "$VIEWER_DIR"
 fi
 for map in berlin bocage; do
   if ! [ -d "$VIEWER_DIR/maps/$map" ]; then
@@ -116,6 +118,18 @@ for map in berlin bocage; do
     unzip -q -o "$WORK/map-$map.zip" -d "$VIEWER_DIR"
   fi
 done
+# map.html lists levels from maps/maps.json, which no zip carries: take the live
+# index and keep only the levels restored here (the sim does not need it).
+if ! [ -f "$VIEWER_DIR/maps/maps.json" ]; then
+  echo "[setup] writing maps/maps.json for the restored levels"
+  curl -fsSL --retry 3 https://mesh.bfstats.io/maps/maps.json | python3 -c "
+import json, os, sys
+maps = sys.argv[1]
+keep = [e for e in json.load(sys.stdin) if os.path.isdir(os.path.join(maps, e['glb'].split('/')[0]))]
+json.dump(keep, open(os.path.join(maps, 'maps.json'), 'w'), indent=1)
+print('[setup]', len(keep), 'levels:', ', '.join(e['name'] for e in keep))
+" "$VIEWER_DIR/maps" || echo "[setup] WARNING: could not write maps/maps.json; map.html will say 'No levels'"
+fi
 
 # --- 5c. Game archives -----------------------------------------------------------
 # NOT downloaded here: the vanilla + SW .rfa archives (~1.4GB) ship on the

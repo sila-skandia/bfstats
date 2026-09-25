@@ -111,6 +111,23 @@ export function installVehicleHooks(page) {
       }),
     },
   });
+  // Lay the active seat's gun, for a check that has to put a round exactly
+  // where it wants it: each named aim axis (`yaw`, `pitch`) goes to that many
+  // degrees from its rest pose (the servo's `+0x104`) and stops there, as if
+  // the servo had arrived. Returns every axis's angle afterwards.
+  window.__aimSeat = (angles = {}) => {
+    const rig = page.localPlayer.occupancy?.turret;
+    if (!rig) return null;
+    for (const axis of rig.axes) {
+      const want = Number(angles[axis.axisName]);
+      if (!Number.isFinite(want)) continue;
+      axis.angle = want;
+      axis.speed = 0;
+      axis.setInput(0);
+    }
+    rig.apply();
+    return rig.axes.map(a => ({ axis: a.axisName, angle: a.angle }));
+  };
   window.__nearEntry = () => page.nearEntry
     && { control: page.nearEntry.control, seatId: page.nearEntry.seatId };
   // The seated occupant and the arms the IK is driving this frame: which bone
