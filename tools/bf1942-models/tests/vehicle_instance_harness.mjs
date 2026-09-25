@@ -6,7 +6,8 @@
 
 import * as THREE from 'three';
 import { World } from './world.mjs';
-import { VehicleRegistry } from './vehicle-instance.js';
+import { VehicleRegistry, mayEnterHull } from './vehicle-instance.js';
+import { mannedByEnemy } from './bot-vehicle.js';
 
 const results = {};
 
@@ -185,5 +186,64 @@ const alone = registry.enter(tank, 'shermanBrowning_PCO1', 'human');
 results.gunnerAlone = { drive: !!alone.drive, built: drivesBuilt };
 const driver = registry.enter(tank, null, 'bot');
 results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === driver.drive, built: drivesBuilt };
+
+// 10. The entry rule (features/vehicle-entry-team-rule, ledger SEAT-26/27):
+//     the hull is its crew's side, nobody's when empty. `ghost` has no world
+//     record, so no side: the page's free camera flying a vehicle.
+{
+  // Both sides need a flag: a player is spawned on one of his own team's,
+  // and takes the flag's team when his has none (world-players.js).
+  const w = new World({ collider, extras: {
+    ...EXTRAS,
+    controlPoints: [...EXTRAS.controlPoints, { name: 'South', spawnGroupId: 2, team: 2, position: [-10, 0, -10] }],
+    soldierSpawns: [...EXTRAS.soldierSpawns, { name: 'S1', group: 2, team: 2, position: [-10, 0, -10], rotation: [0, 0, 0] }],
+  } });
+  w.addPlayer('ally', { team: 2 });
+  w.addBotPlayer('ally2', { team: 2 });
+  w.addBotPlayer('axis', { team: 1 });
+  const reg = new VehicleRegistry({
+    classes: { TrackedVehicle: StubTank, GroundVehicle: StubTank },
+    buildDrive: inst => inst.occupancy.ensureDrive(null, {}),
+    world: () => w,
+  });
+  const hull = sherman();
+  const seats = () => Object.fromEntries(reg.instanceOf(hull)?.seats ?? []);
+  const r = {};
+  r.emptyTeam = reg.teamOf(hull);
+  r.allyDrives = !!reg.enter(hull, null, 'ally');
+  r.crewedTeam = reg.teamOf(hull);
+  // The enemy at the free gunner's door: refused, and nothing moved.
+  r.axisIntoGunner = reg.enter(hull, 'shermanBrowning_PCO1', 'axis') !== null;
+  r.axisSeated = reg.seatOf('axis') !== null;
+  r.seatsAfterRefusal = seats();
+  r.friendIntoGunner = !!reg.enter(hull, 'shermanBrowning_PCO1', 'ally2');
+  // The driver steps out: the gunner still crews it, the wheel stays barred.
+  reg.leave('ally');
+  r.teamWithGunnerOnly = reg.teamOf(hull);
+  r.axisIntoFreeWheel = reg.enter(hull, null, 'axis') !== null;
+  // The last one out: nobody's again, and the enemy may take it.
+  const out = reg.leave('ally2');
+  r.emptiedTeam = { emptied: out?.emptied ?? null, team: reg.teamOf(hull) };
+  r.axisSteals = !!reg.enter(hull, null, 'axis');
+  r.stolenTeam = reg.teamOf(hull);
+  r.allyIntoStolen = reg.enter(hull, 'shermanBrowning_PCO1', 'ally') !== null;
+  // No side passes and stamps nothing.
+  r.ghostIntoGunner = !!reg.enter(hull, 'shermanBrowning_PCO1', 'ghost');
+  r.teamAfterGhost = reg.teamOf(hull);
+  // A refusal leaves the refused player where he sits.
+  reg.leave('ghost');
+  const other = sherman();
+  reg.enter(other, null, 'ally');
+  r.refusedFromAnotherHull = reg.enter(hull, 'shermanBrowning_PCO1', 'ally') !== null;
+  r.stillInOther = reg.seatOf('ally')?.root === other;
+  // A seat switch inside his own hull is not an entry: no rule.
+  r.axisSwitchesInOwnHull = reg.switchSeat('axis', 'shermanBrowning_PCO1')?.seatId ?? null;
+  results.team = r;
+  results.teamRule = {
+    mayEnterHull: [[0, 1], [0, 2], [2, 2], [2, 1], [1, 2], [2, 0], [0, 0]].map(([h, t]) => mayEnterHull(h, t)),
+    mannedByEnemy: [[{ hullTeam: 2 }, 1], [{ hullTeam: 2 }, 2], [{ hullTeam: 0 }, 1], [{ hullTeam: 2 }, 0], [{}, 1]]
+      .map(([c, t]) => mannedByEnemy(c, t)),
+  };
+}
 
 process.stdout.write(JSON.stringify(results));

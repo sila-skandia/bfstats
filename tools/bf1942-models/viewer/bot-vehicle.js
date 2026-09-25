@@ -38,14 +38,16 @@
 //    apply after the bot left that unit and after the unit spawned. On foot
 //    the bot's own urgency x1.25 (x `modifyForDriver`) is "staying"; every
 //    enterable unit in the environment's radius that is not manned by the
-//    enemy, not upside down (up . normal < 0.6914), and standing on a valid
-//    cell of the bot's map scores `u * (f + 0.5)` with `f = min(0.5, (R^2 -
-//    d^2) / R^2)`; the winner gives `Declein(0.5 * best / staying) * k * 4`,
-//    times a 10 s ramp after the last change and the outside-area factor.
+//    enemy (`mannedByEnemy`), not upside down (up . normal < 0.6914), and
+//    standing on a valid cell of the bot's map scores `u * (f + 0.5)` with
+//    `f = min(0.5, (R^2 - d^2) / R^2)`; the winner gives
+//    `Declein(0.5 * best / staying) * k * 4`, times a 10 s ramp after the
+//    last change and the outside-area factor.
 //  * `BBPChange::createPlan` 0x0858b5c0: farther than 12.5 m a
-//    `MoveToObjectFinding` to 6.25 m (broken when the unit is taken or
-//    moves), then within 12.375 m the Use trigger held until `ObjectOccupied`,
-//    `UpdateVehicle`, and the `ChangeVehicle` instruction.
+//    `MoveToObjectFinding` to 6.25 m (broken when the unit is taken, moves,
+//    or the enemy mans it: `BAPConObjectEnemyOccupied`, built at
+//    0x0858bf85), then within 12.375 m the Use trigger held until
+//    `ObjectOccupied`, `UpdateVehicle`, and the `ChangeVehicle` instruction.
 
 import { sCurve, decleiningSlope } from './bot-behaviours.js';
 
@@ -72,6 +74,22 @@ export const TANK = {
   /** A soldier's `maxSpeed` term. */
   soldierMaxSpeed: 5.0,
 };
+
+/**
+ * `BBChange::isMannedByEnemy` 0x0855fcb0: the unit's side (`Information`
+ * vt+0x30) is not the bot's and `vehicleOccupied` 0x08658ef0 finds someone in
+ * the hull, its root or any seat under it. `BBChange::calculateUrgency` skips
+ * such a unit before it is scored (the call at 0x0855ea07, the next unit on
+ * true at 0x0855ea11), so a bot neither weighs nor walks to a hull the enemy
+ * crews. The side is the one the hull's last occupant stamped on it
+ * (`PlayerControlObject::enter` hands the root's AI object his team, vt+0x24
+ * `AIObject*::setSide`), which is the hull's team the entry rule reads
+ * (`vehicle-instance.js mayEnterHull`); `cand.hullTeam` carries it, 0 for an
+ * empty hull.
+ */
+export function mannedByEnemy(cand, team) {
+  return !!cand?.hullTeam && !!team && cand.hullTeam !== team;
+}
 
 /** `BBChangeTeleport::calculateUrgency` factors, by where the bot sits. */
 export const TELEPORT = {
