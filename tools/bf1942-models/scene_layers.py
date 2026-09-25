@@ -39,16 +39,17 @@ from pathlib import Path
 
 import extract_map as em
 from bf42.ai_level import add_cover_values, load_level_ai, write_level_search_maps
-from bf42.level import discover_level_sounds, load_tickets
+from bf42.level import discover_level_sounds, load_briefing, load_tickets
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_models import build_library, build_pools, load_damage_tables, mod_chain
+from extract_spawn_layout import load_chain_lexicon
 
 # name -> (top-level keys, keys inside each `modes[<mode>]` entry)
 LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "controlPoints": (("controlPoints",), ("controlPoints",)),
     "spawns": (("soldierSpawns", "vehicleSoldierSpawns", "objectSpawns"),
                ("soldierSpawns", "objectSpawns", "vehicleSoldierSpawns")),
-    "game": (("gameplayMode", "combatArea", "tickets", "gameTypes"),
+    "game": (("gameplayMode", "combatArea", "tickets", "gameTypes", "briefing"),
              ("gameTypes", "tickets", "combatArea")),
     "environment": (("waterLevel", "fogColor", "fogStart", "fogEnd",
                      "sunDirection", "camera", "lighting", "drawDistance"), ()),
@@ -71,8 +72,8 @@ REPORT_ORDER = (
     "sunDirection", "camera", "combatArea", "terrain", "objects", "skybox",
     "sky", "water", "lighting", "drawDistance", "gameplayMode",
     "controlPoints", "soldierSpawns", "vehicleSoldierSpawns", "objectSpawns",
-    "tickets", "modes", "gameTypes", "minimap", "envmap", "lensFlare",
-    "damage", "sounds", "ai",
+    "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
+    "lensFlare", "damage", "sounds", "ai",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -135,6 +136,7 @@ class LevelContext:
         self._damage_tables = None
         self._damage_done = False
         self._by_mode = None
+        self._lexicon = None
 
     # -- the level itself ------------------------------------------------
     def _load(self) -> None:
@@ -172,6 +174,22 @@ class LevelContext:
 
     def level_dir(self) -> Path:
         return self.out / self.info.name.lower()
+
+    @property
+    def lexicon(self) -> dict[str, str]:
+        """The mod chain's merged `lexiconAll.dat` (nearest mod's record wins,
+        the parent's files fill the rest). The briefing keys of `Menu/Init.con`
+        resolve through it. An empty dict when the chain ships no lexicon:
+        the keys then stay as the con wrote them."""
+        self._load()
+        if self._lexicon is None:
+            from bf42.modmenu import MenuSources
+            try:
+                self._lexicon = load_chain_lexicon(
+                    MenuSources(self._chain).lexicon_paths)
+            except Exception:
+                self._lexicon = {}
+        return self._lexicon
 
     def final_level_dir(self) -> Path:
         return self.final_out / self.info.name.lower()
@@ -300,6 +318,21 @@ def layer_spawns(ctx: LevelContext):
     return top, modes
 
 
+def _briefing_report(briefing) -> dict | None:
+    """A resolved `BriefingInfo` as scene.json carries it, or None when the
+    level ships none. A field the level does not declare is left out."""
+    if briefing is None:
+        return None
+    out: dict = {}
+    if briefing.objectives is not None:
+        out["objectives"] = briefing.objectives
+    if briefing.map_type is not None:
+        out["mapType"] = briefing.map_type
+    if briefing.map_id is not None:
+        out["mapId"] = briefing.map_id
+    return out or None
+
+
 def layer_game(ctx: LevelContext):
     info, files = ctx.info, ctx.files
     area = _combat_area(info)
@@ -309,6 +342,11 @@ def layer_game(ctx: LevelContext):
         "tickets": em._tickets_report(load_tickets(files, info.gameplay.mode)),
         "gameTypes": {gt.name: {"mode": gt.mode, "tickets": em._tickets_report(gt.tickets)}
                       for gt in info.game_types.values()},
+        # The loading screen's mission-briefing text: the multiplayer trio of
+        # `Menu/Init.con` (a file the rest of the pipeline never opens), with
+        # its lexicon keys resolved through the chain's merged lexiconAll.dat.
+        # One string per level, no mode scoping anywhere in the data.
+        "briefing": _briefing_report(load_briefing(files, ctx.lexicon)),
     }
     modes = {name: {
         # Which of the menu's game types load this layer. Empty for a layer

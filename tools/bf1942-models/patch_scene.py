@@ -11,7 +11,8 @@ each kind of change to one):
 
     controlPoints   the flags' settings (implies spawns, which reads them)
     spawns          soldier, vehicle soldier and object spawn lists
-    game            tickets, modes' game types, gameplayMode, combatArea
+    game            tickets, modes' game types, gameplayMode, combatArea,
+                    the loading screen's briefing text
     environment     fog, sun, lighting, water level, draw distance
     damage          the `damage` key and the mod's _shared/damage.json
     sounds          the `sounds` key; new samples into _shared/sounds

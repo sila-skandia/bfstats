@@ -1333,6 +1333,102 @@ def load_tickets(files: LevelFiles, mode: str | None = None) -> TicketInfo | Non
     return None
 
 
+@dataclass
+class BriefingInfo:
+    """The multiplayer trio of `Menu/Init.con` (`level-content.md` Gap 14).
+
+    `objectives` and `map_type` hold the raw con values: a localisation key
+    (`MULTIPLAYER_BRIEFING_WAKE`, `MULTIPLAYER_MAP_TYPE_ASSAULT_MAP`) or, on
+    Kasserine_Pass and Truk, the literal English sentence. `map_id` is the
+    quoted `game.setMapId` string. Resolving the keys against the mod chain's
+    merged lexicon is the caller's job (`resolve_briefing`), because the
+    lexicon is a menu-side file and a test feeds these dataclasses directly.
+    """
+
+    objectives: str | None = None
+    map_type: str | None = None
+    map_id: str | None = None
+
+
+def parse_briefing(text: str) -> BriefingInfo:
+    """Read `game.setMultiplayerBriefingObjectives/MapType` and `setMapId`.
+
+    Only the multiplayer trio is read. The file's other verbs
+    (`setAlliedCampaign`, `setAxisSkirmish`, the eight debriefings, ...) are
+    single-player screens with no multiplayer role.
+
+    `game.setLocalized` is deliberately not consulted to decide key versus
+    literal text: Kasserine_Pass and Truk ship `setLocalized 0` and quote
+    their objectives sentence, but their `mapType` values are still bare
+    lexicon keys, so what decides is the quoting itself (a quoted arg is the
+    literal, a bare word is a key).
+    """
+    out = BriefingInfo()
+    for ns, cmd, args in _commands(text):
+        if ns != "game":
+            continue
+        arg = args.strip()
+        if cmd == "setmultiplayerbriefingobjectives" and arg:
+            out.objectives = arg
+        elif cmd == "setmultiplayerbriefingmaptype" and arg:
+            out.map_type = arg
+        elif cmd == "setmapid" and arg:
+            out.map_id = arg.strip('"')
+    return out
+
+
+def _unquote(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
+def resolve_briefing(briefing: BriefingInfo,
+                     lexicon: dict[str, str] | None) -> BriefingInfo:
+    """Resolve the briefing's lexicon keys in place.
+
+    A value that arrived quoted (Kasserine_Pass, Truk) is the text itself and
+    is only unquoted. A bare word is a `menu.rfa`/`lexiconAll.dat` key and is
+    looked up in `lexicon`; a key the lexicon does not answer stays the key so
+    the gap is visible in the file rather than silently dropped.
+    """
+    resolved = BriefingInfo(
+        objectives=_unquote(briefing.objectives),
+        map_type=_unquote(briefing.map_type),
+        map_id=briefing.map_id,
+    )
+    if lexicon:
+        if resolved.objectives and resolved.objectives not in lexicon:
+            pass  # literal text (or an unresolved key): keep it
+        elif resolved.objectives:
+            resolved.objectives = lexicon[resolved.objectives]
+        if resolved.map_type and resolved.map_type in lexicon:
+            resolved.map_type = lexicon[resolved.map_type]
+    return resolved
+
+
+def load_briefing(files: LevelFiles,
+                  lexicon: dict[str, str] | None) -> BriefingInfo | None:
+    """Read `Menu/Init.con` and resolve it against the chain lexicon.
+
+    Returns None when the level ships no Menu/Init.con and no lexicon record
+    names it — every installed vanilla level ships the trio, but the lookup is
+    level-relative and case-insensitive through `LevelFiles` either way.
+    """
+    hit = files.find("Menu/Init.con")
+    if not hit:
+        return None
+    text = files.read(hit).decode("latin-1", "replace")
+    briefing = parse_briefing(text)
+    if briefing.objectives is None and briefing.map_type is None \
+            and briefing.map_id is None:
+        return None
+    return resolve_briefing(briefing, lexicon)
+
+
 def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
     """`ObjectSpawner` name -> the vehicle each team gets from it."""
     out: dict[str, SpawnTemplate] = {}
