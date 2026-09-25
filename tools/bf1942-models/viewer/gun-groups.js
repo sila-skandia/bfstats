@@ -6,9 +6,45 @@
 
 import * as THREE from 'three';
 import { launchesADrawnBody } from './bomb-release.js';
+import { firesFromCamera, seatCameraOf } from './camera-dof.js';
 import { TRACER_MAX_RANGE, TRACER_SPEED_SCALE } from './round-launch.js';
 
 const _extent = new THREE.Vector3();
+const _relative = new THREE.Matrix4();
+const _relPos = new THREE.Vector3();
+const _relQuat = new THREE.Quaternion();
+const _relScale = new THREE.Vector3();
+const _camQuat = new THREE.Quaternion();
+
+/**
+ * The launch of a `fireInCameraDof` gun (`camera-dof.js`): `FireArms::Fire`
+ * swaps the gun's own matrix for the seat camera's, and `fireBarrel` then
+ * applies the barrel's own offset and turn in that frame -- so the round
+ * leaves `projectilePosition` ahead of the eye (the coax MG42's 0.2 m) down
+ * the view axis, whatever the gun's own mount says. `muzzle` is the barrel
+ * the shot leaves from; its transform relative to the FireArms node is that
+ * offset and turn. Returns the `aimRay` contract `round-launch.js` reads.
+ */
+function cameraLaunch(node, camera) {
+  const origin = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  const ray = { origin, dir };
+  return muzzle => {
+    camera.updateWorldMatrix(true, false);
+    camera.getWorldPosition(origin);
+    camera.getWorldQuaternion(_camQuat);
+    _relPos.set(0, 0, 0);
+    _relQuat.identity();
+    if (muzzle && muzzle !== node) {
+      muzzle.updateWorldMatrix(true, false);
+      _relative.copy(node.matrixWorld).invert().multiply(muzzle.matrixWorld);
+      _relative.decompose(_relPos, _relQuat, _relScale);
+    }
+    origin.add(_relPos.applyQuaternion(_camQuat));
+    dir.set(0, 0, -1).applyQuaternion(_relQuat).applyQuaternion(_camQuat);
+    return ray;
+  };
+}
 
 /** `GunFire.collect`, which documents the options: index every FireArms under `root`. */
 export function collectGroups(guns, root, options = {}) {
@@ -139,6 +175,11 @@ export function collectGroups(guns, root, options = {}) {
     // The model browser stamps `home` on every node at load for its explode
     // slider; the map path does not, so take it here when it is missing.
     if (!obj.userData.home) obj.userData.home = obj.position.clone();
+    // A vehicle gun that fires from the seat's camera (`fireInCameraDof`):
+    // the coaxial and pintle MGs, which is why their rounds land under the
+    // crosshair while the main gun's land off it. A caller's own `aimRay` (a
+    // hand weapon's eye, a bot's) always wins.
+    const cameraNode = !aimRay && firesFromCamera(stats, obj.name) ? seatCameraOf(obj) : null;
     const group = {
       node: obj,
       stats,
@@ -170,13 +211,16 @@ export function collectGroups(guns, root, options = {}) {
       roundLifetime,
       tracerLength,
       platformVelocity,
-      // Both null on every vehicle. `aimRay` is the hand-weapon contract:
-      // 25 of 28 hand weapons declare `fireInCameraDof 1` with
-      // `projectilePosition 0/0/0`, meaning the round is spawned on the
-      // camera's line of fire and the muzzle node only places the flash
-      // (`first-person-soldier.md` §2.7). `spreadDeg` is the deviation
-      // cone's half-angle, asked per shot so a blooming burst walks.
-      aimRay,
+      // `aimRay` is the `fireInCameraDof` contract: 25 of 28 hand weapons
+      // declare it with `projectilePosition 0/0/0`, meaning the round is
+      // spawned on the camera's line of fire and the muzzle node only places
+      // the flash (`first-person-soldier.md` §2.7); on a vehicle it is the
+      // seat camera's (`cameraLaunch` above), and null on every gun that
+      // fires from its own barrel. It is handed the barrel the shot leaves
+      // from. `spreadDeg` is the deviation cone's half-angle, asked per shot
+      // so a blooming burst walks.
+      aimRay: aimRay ?? (cameraNode ? cameraLaunch(obj, cameraNode) : null),
+      cameraNode,
       spreadDeg,
       // 1 = barrel home; a shot resets to 0 and it eases forward again.
       recoil: stats.recoil ? 1 : null,
