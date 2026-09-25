@@ -1062,13 +1062,14 @@ now has its pack, and all twelve are published to the assets volume.
 The install carries 16 mods. `bf1942` is the baseline the packs are the
 difference from (the builder refuses it). `FHSWEurope` (level rfAs only, no
 `init.con`, no `menu.rfa`) and `STFHSWE` (an empty `Archives/`) are hollow
-installs — nothing to extract. That leaves nine new packs:
+installs — nothing to extract. That leaves ten new packs:
 
 | mod | files of its own | identical to vanilla | sprites overridden / added / inherited | spawn strings changed |
 |---|---|---|---|---|
 | BattleGroup 42 (`bg42`) | 1324 | 178 | 110 / 934 / 148 | 0 |
 | Forgotten Hope (`fh`) | 967 | 161 | 149 / 685 / 108 | 3 (`ASSAULT` -> `RIFLEMAN`) |
 | BF1918 (`bf1918`) | 931 | 243 | 61 / 656 / 199 | 7 |
+| FHSW (`fhsw`) | 3565 | 118 | 155 / 3299 / 101 | 3 |
 | Galactic Conquest (`gcmod`) | 337 | 200 | 110 / 119 / 150 | 0 |
 | FinnWars (`finnwars`) | 280 | 316 | 48 / 142 / 211 | 0 |
 | DC Final (`dc_final`) | 227 | 320 | 40 / 130 / 220 | 2 (`ALLIED`/`AXIS` -> `Coalition`/`Opposition`) |
@@ -1076,11 +1077,19 @@ installs — nothing to extract. That leaves nine new packs:
 | Pirates (`pirates`) | 170 | 301 | 48 / 51 / 212 | 1 (`SUICIDE` -> `MUTINY`) |
 | Interstate (`interstate`) | 118 | 308 | 58 / 26 / 201 | 2 (`ALLIED`/`AXIS` -> `Vigilante`/`Kingpin`) |
 
+FHSW (chain `FHSW -> FH -> bf1942`) is the one pack with a `skipped` step:
+`extract_menu_layout.py` died reading one of its level rfAs
+(`struct.error` on a truncated archive header in `RfaArchive._read_index`),
+which is the designed survivable failure — the pack leaves that file out and
+the viewer falls back to vanilla's `menu/InGame` layout for FHSW levels. Its
+other 3565 files (sprites, fonts, lexicon, radio, score settings) are all
+present.
+
 Every `pack.json` carries the same key set as eod's (`mod`, `chain`, `menu`,
 `font`, `lexicon`, `inherits`, `generator`, `skipped`, `identical`, `files`,
 `sprites`, `strings`); every listed file is on disk and every packed file
 really differs from its vanilla twin byte for byte (census run over all
-twelve packs; zero missing, zero byte-identical). The lexicon spot-checks
+thirteen packs; zero missing, zero byte-identical). The lexicon spot-checks
 above are read out of the packs themselves — FH, DC and interstate genuinely
 relabel the spawn screen.
 
@@ -1105,11 +1114,12 @@ a fresh `--mod bf1942` extraction reproduces the committed pack exactly
 ### Publishing and the viewer index
 
 `scripts/publish-mesh-delta.py` needs no HUD-specific path — it walks all of
-`viewer/maps`, and the dry run confirmed the send list was exclusively the
-nine `mods/<id>/_shared/` subtrees (4571 files, 0.06 GB; eod/xpack1/xpack2
-and vanilla untouched). Published 2026-09-25, 2 min, live sizes confirmed on
-the volume: bg42 1325, fh 968, bf1918 932, gcmod 338, finnwars 281,
-dc_final 228, desertcombat 209, pirates 171, interstate 119 files under
+`viewer/maps`, and the dry runs confirmed the send lists were exclusively the
+ten `mods/<id>/_shared/` subtrees (4571 + 3566 files, 0.12 GB; eod/xpack1/
+xpack2 and vanilla untouched). Published 2026-09-25 in two runs (2 min each),
+live sizes confirmed on the volume: bg42 1325, fh 968, bf1918 932,
+fhsw 3566 (64.5M), gcmod 338, finnwars 281, dc_final 228, desertcombat 209,
+pirates 171, interstate 119 files under
 `/mnt/assets/mesh/maps/mods/<id>/_shared/hud/`.
 
 What does NOT follow automatically: `viewer/models/mods.json` (the mod
