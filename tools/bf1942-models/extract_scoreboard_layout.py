@@ -86,7 +86,7 @@ from extract_menu_layout import (  # noqa: E402
 )
 from bf42 import meme  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
-from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
+from bf42.rfa import RfaArchive  # noqa: E402
 
 #: The variable the board's top-level group culls on.
 BOARD_VAR = "Scoreboard/SpawnScoreBoard"
@@ -139,45 +139,32 @@ ROW_ICONS = {
     "botDead": "bot_dead_16x16",
 }
 
-#: The game's own per-team row colours, and where it sets them: the client's
-#: `Bf1942/Game/Init/Menu.con` runs `Game.setAxisRadioColor 1/0.35/0.35` and
-#: `Game.setAlliedRadioColor 0.4/0.6/1`, and the board draws a row's name and
-#: its numbers in them, and a retail capture's ink cores are #d65454 on the Axis
-#: panel and #54aed8 on the Allied one, which is those two through the face's
-#: own coverage. The buddy green is the one the chat settings use for a buddy
-#: (the client's own literal, `extract_radio.py` records it the same way), and
-#: the local player's own row is drawn in it.
-MENU_CON = "Bf1942/Game/Init/Menu.con"
-TEAM_COLOR_KEYS = {"axis": "AxisRadioColor", "allies": "AlliedRadioColor"}
-TEAM_COLORS_SOURCE = ("Bf1942/Game/Init/Menu.con: Game.setAxisRadioColor and "
-                      "Game.setAlliedRadioColor")
+#: The board's own per-team row colours, measured off a retail capture.
+#:
+#: The engine paints a row's name and its numbers itself, and the pair is in no
+#: con the client ships. `Bf1942/Game/Init/Menu.con` sets the chat and radio
+#: text colours (`setAxisRadioColor 1/0.35/0.35`, `setAlliedRadioColor
+#: 0.4/0.6/1`) and the board's Axis rows are wider than that red while its
+#: Allied rows are a cyan the radio blue never is, no level's `Init.con` sets a
+#: team colour, and the client binary holds no literal triple for one. What is
+#: left is the capture: a 2556x1441 shot of the stock game measures the Axis
+#: rows' name ink core at (214,84,84) and the Allied rows' at (84,174,215), the
+#: local player's own row at (1,243,1), and a dead row at 0.49 to 0.60 of a
+#: live one per channel. The values here are those cores rounded, which is what
+#: our own renderer needs to land on the same screen colour, since it draws a
+#: glyph at full coverage where the capture has the panel showing through.
+BOARD_ROW_COLORS = {"axis": [0.84, 0.33, 0.33], "allies": [0.33, 0.67, 0.83]}
 BUDDY_COLOR = [0.0, 1.0, 0.0]
+BOARD_COLORS_SOURCE = ("retail capture, stock game at 2556x1441: name ink cores "
+                       "(214,84,84) Axis and (84,174,215) Allies, local row "
+                       "(1,243,1); no con sets the board's pair and the client "
+                       "binary holds no literal for one")
 
 
-def read_team_colors(game_dir: Path, mod: str) -> dict:
-    """The sides' row colours, read out of the chain's `Menu.con`.
-
-    `Menu.con` sits in the `bf1942` archive of the chain, the same file
-    `extract_radio.py` takes the chat colours from. A chain whose archive is
-    missing leaves both sides null, which `rowColor` in the viewer then falls
-    back for."""
-    pool = ArchivePool()
-    for step in mod_chain(game_dir, mod):
-        archives = find_archives_dir(step)
-        if archives is not None and (archives / "bf1942").is_dir():
-            pool.add_dir(archives / "bf1942", ("game",))
-    raw = pool.try_read(MENU_CON)
-    settings: dict[str, str] = {}
-    if raw is not None:
-        for line in raw.decode("latin-1").splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[0].lower().startswith("game.set"):
-                settings[parts[0][len("Game.set"):].lower()] = parts[1]
-    colors: dict[str, list[float] | None] = {}
-    for side, key in TEAM_COLOR_KEYS.items():
-        value = settings.get(key.lower())
-        rgb = [float(v) for v in value.split("/")] if value else []
-        colors[side] = rgb if len(rgb) == 3 else None
+def board_colors() -> dict:
+    """The sides' row colours, plus the local player's own."""
+    colors: dict[str, list[float] | None] = {side: list(rgb)
+                                             for side, rgb in BOARD_ROW_COLORS.items()}
     colors["buddy"] = list(BUDDY_COLOR)
     return colors
 
@@ -243,7 +230,7 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
         },
         "rowIcons": ROW_ICONS,
         "colors": colors if colors is not None else {},
-        "colorsSource": TEAM_COLORS_SOURCE,
+        "colorsSource": BOARD_COLORS_SOURCE,
         "fonts": sorted(fonts),
         "strings": dict(sorted(flat.strings.items())),
         "variables": dict(sorted(flat.variables.items())),
@@ -300,7 +287,7 @@ def main() -> None:
             menu.read(entry), lexicon,
             f"menu/InGame (MemeFile 2.0) in "
             f"Mods/{menu.owner(entry) or sources.mod_id}/Archives/menu.rfa",
-            read_team_colors(game_dir, args.mod))
+            board_colors())
         layout["textures"] = extract_textures(menu, layout_textures(layout),
                                               out / "textures", args.force)
     with sources.open_font() as fonts:
