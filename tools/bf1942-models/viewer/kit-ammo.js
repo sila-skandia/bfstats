@@ -7,7 +7,8 @@
 // does not touch the one put away, so a pouch thrown empty is still empty
 // when the "4" key brings it back. Only two things ever put rounds back:
 // a spawn (a new soldier is a new kit, full) and a `SupplyDepot`'s
-// `reloadAmmo` (`supply.js`).
+// `reloadAmmo` (`supply.js`). A kit picked up off the ground replaces the
+// lot with the counts its last owner left (`adopt`, `kit-drops.js`).
 //
 // `map.html` used to mint the counts on the viewmodel rig instead — every
 // `loadHandWeapon` started a full magazine — so a slot switch away and back
@@ -94,6 +95,25 @@ export class KitAmmo {
   /** The counts for an item that may never have been raised: null then. */
   peek(name) {
     return this.#entries.get(KitAmmo.key(name)) ?? null;
+  }
+
+  /** A kit picked up off the ground: its items come with whatever their last
+   *  owner left in them. `BFSoldier::pickupKit` (lnxded 0x08279390) moves the
+   *  dropped kit's own `FireArms` onto the soldier and `addItem` (0x08277bd0)
+   *  refills nothing (`kit-drops.js`). `rows` are `snapshot()` rows; an item
+   *  with no row is one its owner never raised, and comes up full on its first
+   *  raise here as it would have there. */
+  adopt(rows) {
+    this.#entries.clear();
+    for (const row of rows ?? []) {
+      if (!row?.name) continue;
+      const entry = new AmmoEntry(row.name, null);
+      entry.size = Number.isFinite(row.size) ? row.size : Infinity;
+      entry.spares = Number.isFinite(row.spares) ? row.spares : 0;
+      entry.rounds = Number.isFinite(row.rounds) ? row.rounds : entry.size;
+      entry.mags = Number.isFinite(row.mags) ? row.mags : entry.spares;
+      this.#entries.set(KitAmmo.key(row.name), entry);
+    }
   }
 
   /** A depot's give: every item in the kit back to full. True if any item

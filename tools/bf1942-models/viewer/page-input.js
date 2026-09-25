@@ -21,7 +21,7 @@ import { GameConsole } from './console.js';
  * `fullmapBox`, `gameConsole`, `handWeapon`, `hud`, `isSlow`,
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
- * `panCamera`, `params`, `radioKeydown`, `renderer`, `resetCamera`,
+ * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
@@ -196,6 +196,11 @@ export function createPageInput(page) {
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
     if (triggers.includes('c_PILie') && !e.repeat
         && page.optOnFoot.checked && page.soldier) page.toggleProne();
+    // `c_PIDrop` (DROP / PICK-UP KIT, G in the shipped Infantry.con), also
+    // non-repetitive: the kit at his feet, if one is in reach
+    // (`kit-drops-page.js`; input bit 25 in `checkPlayerTriggers`).
+    if (triggers.includes('c_PIDrop') && !e.repeat && !e.ctrlKey && !e.metaKey
+        && !e.altKey && page.optOnFoot.checked && page.soldier) page.pickupKit?.();
     if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
       for (const t of triggers) if (cameraOrSpawnTrigger(t)) break;
     }
@@ -296,6 +301,8 @@ export function createPageInput(page) {
     else if (trigger === 'c_PIToggleCameraMode') page.cycleView();
     else if (trigger === 'c_PILie') {
       if (page.optOnFoot.checked && page.soldier) page.toggleProne();
+    } else if (trigger === 'c_PIDrop') {
+      if (page.optOnFoot.checked && page.soldier) page.pickupKit?.();
     } else if (trigger === 'c_PIReload') reloadKey(false);
     else if (trigger === 'c_PIShowScoreBoard') {
       if (!page.deployActive() && !page.scoreboardOpen()) page.setScoreboard(true, false);
