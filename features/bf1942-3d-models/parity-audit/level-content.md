@@ -1276,6 +1276,127 @@ inventory) are separately *placed* statics, not runtime states. Flagged mainly
 so the conclusion is on record rather than assumed. **UNVERIFIED for FH/FHSW**,
 which do have destructible bridges and buildings.
 
+#### Investigation 2026-09-25
+
+Re-checked against the restored vanilla archives (`Objects.rfa` + all 23
+level archives with their official `_000`/`_003` patches layered via the
+project's own `find_level_archives`/`load_level_files`) and a Ghidra pass on
+`bf1942_lnxded.static` (`tools/bf1942-models/ghidra-cloud/apply_labels.py`).
+Destroyed-state **LOD selectors** are no longer part of this gap — they are
+now handled by `bf42/con.py`'s `LodSelector.has_destroyed_lod` /
+`destroyed_alternative()` and driven in the viewer by
+`viewer/vehicle-wrecks.js`. What is still open splits into two independent
+halves.
+
+**(a) Ladders.** `addToCollisionGroup c_CGLadders` is on exactly **18**
+vanilla templates (confirmed by name, correcting the original list's
+`ShipLadder01-03` to **01-04**): 9 free-standing statics —
+`bunker2Ladder`, `Ladder_5m_m1`, `Ladder_10m`, `Boat_RepairLadder_M1`,
+`ladder_10m_m1`, `ladder_20m_m1`, `ladder_5m_m1`, `repport_ladder04_m1`,
+`Woodladder_4m_m1` — and 9 ship-mounted ones — `ClimbingNet_6m`,
+`ClimbingNet_6mx11m`, `ClimbingNet_3m`, `ClimbingNet_3mx4m`, `ShipLadder01-04`,
+`PT_Ladder` — bundled as child geometry of the Sea/Common ship templates and
+the Elco80 PT boat. Three of the free-standing nine are themselves nested
+child templates of a bigger bundle rather than top-level level placements:
+`bunker2Ladder` under `bunker2_M1` (every Bunker2 pillbox), `Ladder_10m` under
+`guardtow_M1` (every guard tower), `Boat_RepairLadder_M1` under
+`dockrepair_supply`. Counting both placement styles across the 23 levels'
+merged `StaticObjects.con`: **13 direct ladder-template placements in 5 of 23
+levels** (Aberdeen 1, Kasserine_Pass 1, Liberation_of_Caen 3, Stalingrad 6,
+Truk 2) plus **70 bunker/guard-tower/dock-repair placements — each carrying
+exactly one nested ladder — across 12 of 23 levels** (Aberdeen,
+Battle_of_Britain, Battle_of_the_Bulge, El_Alamein, Gazala, GuadalCanal,
+Invasion_of_the_Philippines, Liberation_of_Caen, Midway, Tobruk, Truk, Wake).
+Union: **14 of 23 vanilla levels (61%)** place at least one ladder-bearing
+object. They sit on genuinely important routes: every guard tower in the game
+(up to 12 in one level, El Alamein) and every Bunker2 pillbox is
+ladder-accessed, and every ship/PT-boat carries a boarding ladder or net.
+
+Engine mechanics (Ghidra, `bf1942_lnxded.static`, confirmed — not previously
+in `features/bf1942-engine-reference/`): the collision-group test
+(`BFSoldier::handleCollision` against face materials 192-195 while in
+`c_CGLadders`, ledger FF-2) is one half of a fuller, named subsystem:
+`BFSoldier::startClimbing` (`0x08281b20`) joins collision group 4 via
+`IResponsePhysics` vt+0x30, snaps the soldier onto the ladder's plane through
+`getLadderClosestPosition` (`0x08280b40`, a fixed **-0.48 m** perpendicular
+standoff), and plays animation state `Ub_ClimbLadder1`.
+`BFSoldier::handleClimbAction` (`0x08281080`) reads the forward/back throttle
+axis each tick to drive the animation-state machine and detect ladder-top/
+ladder-bottom exit. `BFSoldier::stopClimbing` (`0x08281ca0`) leaves the
+collision group, tests the exit height against the ladder top, and restores
+default animation state. `BFSoldier::updateClimbing` (`0x08280f10`) is a
+literal no-op (`return;`) — **climbing has no coded speed constant; motion is
+entirely animation-driven.** `animations.rfa`'s
+`animations/AnimationStatesClimb.con` (22 `.baf` clips under
+`3P_NoWeapon/`, split Lower/Upper body) confirms this: climbing is a state
+machine of discrete one-rung `c_AsmPlayOnce` clips
+(`Lb_ClimbLadder1`/`2`/`1B`/`2B`, 4.8 s forward / -5.6 s reversed at
+`setSpeed 0.7`) alternating with looping idle holds, gated by `c_PIThrottle`
+thresholds, plus dedicated start/end/exit states and a `c_SstClimbLadder`
+sound trigger. Exact climb speed in m/s is **UNVERIFIED** (would need
+`extract_pose.py` root-motion measurement on the `.baf` clips, out of
+timebox).
+
+Current viewer behaviour: `tools/bf1942-models/viewer/` has **zero**
+ladder-aware code (case-insensitive grep for "ladder" across the whole tree
+matches only unrelated LOD-ladder/dune-climbing comments), and `bf42/con.py`
+does not parse `addToCollisionGroup` at all. Since collision groups are
+invisible to the exporter, a placed ladder is baked as ordinary static
+collision geometry like any fence or wall: **a player walks into it and is
+blocked by its physical mesh, exactly as with any other static prop — it
+cannot be climbed, but it is also not walked through.**
+
+**(b) Terminal `ObjectTemplate.destroyed 1` props.** Confirmed **34** vanilla
+`Objects.rfa` templates (Gibb_concret/Mroof/wood ×9, Wreck_B17/Spitfire/
+Mustang/Corsair/aichi ×7, scrap_metal1-3 ×3, e_GibbPlaneSm's Planepart1-4 ×4,
+Ilyushin's wing wreck ×1, AA_Allies toss-parts ×4, Flak_38 base + toss-parts
+×5 — the Flak_38 file's own comment reads "Tosses from Explosions") plus
+**exactly 11 level-local lines in exactly 2 levels** — Battle_of_Britain (7:
+`Britain_Factory` ×2, `Ju88A` ×2, `RadarTower` ×3) and Liberation_of_Caen (4:
+`Pak40` ×4) — matching the original count precisely. Grepping the same
+23 levels' merged `StaticObjects.con` for all 45 template names found **zero
+placements**: none of these templates is ever authored as level content: they
+are spawned only at runtime as blast-thrown debris when their parent
+vehicle/building/gun dies (per the "Tosses from Explosions" comment), never
+placed by a level designer. No console-word ledger entry exists for
+`ObjectTemplate.destroyed` itself (only for the unrelated runtime
+`Armor::isDestroyed()` hitpoint predicate); the C++ spawn path for these toss
+pieces was not traced — **UNVERIFIED** what triggers instantiation.
+`viewer/effects.js` has a generic particle-based tumbling-debris system
+(`rotationalSpeed`-driven mesh particles) for generic explosion chunks, but
+grepping it for any of the 45 template names (Gibb/Wreck/scrap_metal/Toss)
+finds **no references** — the specific named debris meshes are not drawn,
+generically or otherwise.
+
+**Recommendation.**
+- **Ladders: Fix, Size M.** Extraction: parse
+  `ObjectTemplate.addToCollisionGroup` in `bf42/con.py` (new boolean field
+  alongside the existing `hasDestroyedLod`-style flags) and have
+  `bf42/assemble.py` write `extras.isLadder` (plus the ladder's local up axis
+  and length) onto matching placement nodes — like the existing
+  `extras.spawner` field, this is glb-node metadata, so it needs the `scene`
+  bake layer (full re-bake) per `features/level-bake-layers/README.md`'s
+  "anything the viewer reads off a placed node" rule, not a `--layer`
+  metadata-only patch. Viewer: add a climb state to the local player
+  (`walking-body.js`/`soldier-resolve.js`/`local-player.js`) that detects
+  proximity + a "climb" input against `isLadder` nodes, snaps the player onto
+  the ladder axis, and moves them along it at a chosen fixed rate (the engine
+  gives no usable coded speed to copy — animation root-motion is the honest
+  source but out of scope to extract here); a plain constant rate is a
+  reasonable placeholder. Worth doing: 14 of 23 levels, guard towers and
+  bunkers specifically.
+- **`destroyed 1` props: Won't-fix (for the level exporter).** Zero of the 45
+  templates are level content — there is nothing for `extract_map.py` to
+  place, so this is not a level-content gap at all; it is a real-time
+  damage-effect feature (spawn N toss-part meshes when a matching vehicle/gun/
+  building dies) that lives entirely in the viewer's death/explosion path, not
+  in any bake layer. If wanted as a Size S viewer-only enhancement: extract
+  the 45 meshes once as free-standing glbs (same pattern as `<template>.wreck.glb`)
+  and have `effects.js`/`vehicle-wrecks.js` spawn 2-4 of them as tumbling
+  debris on a matching parent's death — but the existing generic
+  particle-based tumbling-debris system already gives comparable visual
+  coverage for the untargeted case, so the marginal value is low.
+
 ---
 
 ### Gap 17 — water and wave directives beyond the main `water.*` block
