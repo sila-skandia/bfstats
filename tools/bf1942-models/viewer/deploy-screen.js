@@ -6,6 +6,7 @@
 // and commits it is `spawning.js`.
 
 import { kitIconCandidates } from './kit-icon.js';
+import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -191,55 +192,6 @@ export function createDeployScreen(page) {
     if (deployActive()) layoutDeploy();
   }
   loadSpawnLayout();
-
-  /** The glyph atlas in one colour, made once per (font, colour). */
-  function tintedAtlas(font, rgb) {
-    const key = rgb.join(',');
-    let c = font.tinted.get(key);
-    if (c) return c;
-    c = document.createElement('canvas');
-    c.width = font.img.width;
-    c.height = font.img.height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(font.img, 0, 0);
-    ctx.globalCompositeOperation = 'source-in';
-    ctx.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
-    ctx.fillRect(0, 0, c.width, c.height);
-    font.tinted.set(key, c);
-    return c;
-  }
-
-  function measureText(font, text) {
-    let w = 0;
-    for (const ch of text) {
-      const g = font.meta.glyphs[ch.charCodeAt(0)];
-      if (g) w += g[0] + g[1] + g[2];
-    }
-    return w;
-  }
-
-  /** Text in a bitmap font at virtual (x, y), the line's top at y: each glyph
-   *  drawn at `left` past the pen and `ascent` above the baseline, the pen
-   *  advancing by left + width + right, as `bf42/font.py` reads the `.dif`. */
-  function drawBitmapText(ctx, fontId, text, x, y, rgb, fonts = spawnLayout.fonts) {
-    const font = fonts.get(fontId);
-    if (!font) return;
-    const atlas = tintedAtlas(font, rgb);
-    const base = font.meta.baseline;
-    let pen = x;
-    for (const ch of text) {
-      const g = font.meta.glyphs[ch.charCodeAt(0)];
-      if (!g) continue;
-      const [left, width, right, ascent, x0, y0, x1, y1] = g;
-      // The space glyph's rectangle is an opaque corner texel; it only
-      // advances the pen.
-      if (ch !== ' ' && width > 0 && y1 > y0) {
-        ctx.drawImage(atlas, x0, y0, x1 - x0, y1 - y0,
-                      pen + left, y + base - ascent, x1 - x0, y1 - y0);
-      }
-      pen += left + width + right;
-    }
-  }
 
   // --- the game's variables and conditions -------------------------------------
 
@@ -441,11 +393,11 @@ export function createDeployScreen(page) {
           const font = spawnLayout.fonts.get(el.font);
           if (!font) break;
           const text = deployText(el, vars);
-          const width = measureText(font, text);
+          const width = measureBitmapText(font, text);
           const tx = el.align === 'center' ? x + (w - width) / 2
             : el.align === 'right' ? x + w - width : x;
           ctx.imageSmoothingEnabled = false;
-          drawBitmapText(ctx, el.font, text, Math.round(tx), y, color.slice(0, 3));
+          drawBitmapText(ctx, font, text, Math.round(tx), y, { rgb: color.slice(0, 3) });
           break;
         }
         default:
@@ -483,7 +435,7 @@ export function createDeployScreen(page) {
     finishDeployClose,
     fullmapFrame,
     layoutDeploy,
-    measureText,
+    measureText: measureBitmapText,
     paintDeployChrome,
     paintDeploySoon,
     placeHit,
