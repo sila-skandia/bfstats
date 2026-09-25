@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vue-tsc *)",
+      "Bash(awk *)",
+      "Bash(grep -v \"v4/admin/\\\\|admin-data/.*\\\\.vue$\")",
+      "Bash(rm views/AdminDataManagement.vue views/AdminDataManagement.vue.css components/admin-data/AdminQueryTab.vue components/admin-data/AdminQueryTab.vue.css components/admin-data/AdminAuditTab.vue components/admin-data/AdminCronTab.vue components/admin-data/AdminMergeTab.vue components/admin-data/AdminAccessTab.vue components/admin-data/AdminNoticeTab.vue components/admin-data/AdminAIFeedbackTab.vue components/admin-data/RoundDetailPanel.vue components/admin-data/RoundAchievementsPanel.vue components/admin-data/DeleteConfirmationModal.vue)",
+      "Bash(rmdir components/admin-data/)",
+      "Bash(git fetch *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git pull *)",
+      "Bash(git push *)",
+      "Bash(sort -u -k2)",
+      "Bash(git config *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter ' *)",
+      "Bash(git show-ref *)",
+      "Bash(npx tsx -e ' *)",
+      "Bash(./scripts/verify.sh --skip-e2e)",
+      "Bash(python3 -c ' *)",
+      "Bash(sort -t' ' -k4 -n)",
+      "Bash(identify fx_drift.png fx_rise.png)",
+      "Bash(node -e \"const s=require\\('sharp'\\); console.log\\('sharp ok', s.versions?.sharp || ''\\)\")",
+      "Bash(ffmpeg -hide_banner -encoders)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(./scripts/verify.sh e2e/responsive-mobile.spec.ts --project=chromium)",
+      "Bash(./scripts/upload-mesh-assets.sh:*)",
+      "Bash(*./scripts/upload-mesh-assets.sh:*)",
+      "Bash(mkdir *)",
+        "Bash(base64 *)",
+        "Bash(chmod *)",
+        "Bash(curl *)",
+        "Bash(kubectl *)"
+    ]
+  }
+}
