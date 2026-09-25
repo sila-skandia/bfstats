@@ -20,22 +20,9 @@ const RATE_WINDOW_MS = 3000;
 const DEFAULT_CHROME = {
   plate: '_shared/load/menu_loading.png',
   bar: '_shared/load/loading_bar.png',
-  briefing: '_shared/load/mp_briefing.png',
-  knapp: '_shared/hud/knapp3_n.png',
-  knappHover: '_shared/hud/knapp3_mo.png',
   music: '_shared/music/vehicle4.mp3',
   background: '_shared/load/western.webp',
 };
-
-// The briefing screen's settings block. Server-side values, and the viewer is
-// the server: these are the stock `Mods/bf1942/Settings/ServerSettings.con`
-// defaults (`serverSoldierFriendlyFire 100`, `serverAllowNoseCam 1`,
-// `serverTicketRatio 1000`), which is exactly what a local game shows.
-const BRIEFING_SETTINGS = [
-  ['FRIENDLY FIRE :', '100%'],
-  ['ALLOW NOSE CAM :', 'ON'],
-  ['TICKET RATIO :', '100%'],
-];
 
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -237,168 +224,43 @@ function injectStyle() {
 /* --- the mission briefing screen (post-load, READY-gated) ----------------
    The game's second phase: over the live 3D scene, the mp_briefing plate
    with the map name, the teams, the game type, the settings block and the
-   objectives/comments boxes, then the READY row. Measured against a stock
-   Wake capture and mapped 1:1 into the 800x600 stage: the plate sits at
-   (144, 81), its texture's own rule rows land on the capture's rules, and
-   the READY row runs 421..458. */
+   objectives/comments boxes, then the READY row. The pixels are the
+   briefing-screen module's canvas (the game's own plate, faces and knapp
+   plates); the overlay only hosts it and keeps the READY hit area, an
+   invisible button laid over the drawn plate by the module's layout(). */
 .ld-overlay[data-state="briefing"] { background: transparent; }
 .ld-overlay[data-state="briefing"] .ld-bg-layer,
 .ld-overlay[data-state="briefing"] .ld-box,
 .ld-overlay[data-state="briefing"] .ld-prompt { display: none; }
-.ld-brief {
+.ld-brief-canvas {
   position: absolute;
-  left: 144px;
-  top: 81px;
-  width: 512px;
-  height: 334px;
-  background-image: var(--ld-briefing-img);
-  background-size: 512px 334px;
-  background-repeat: no-repeat;
-  box-sizing: border-box;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: none;
-  color: #131309;
-  font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+  pointer-events: none;
+  z-index: 1;
 }
-.ld-overlay[data-state="briefing"] .ld-brief { display: block; }
-.ld-brief-name {
+.ld-overlay[data-state="briefing"] .ld-brief-canvas { display: block; }
+.ld-brief-btn {
+  /* The drawn READY button is canvas; this is its hit area. */
   position: absolute;
   left: 0;
   top: 0;
-  width: 100%;
-  height: 24px;
-  line-height: 22px;
-  text-align: center;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.ld-brief-flags {
-  position: absolute;
-  left: 0;
-  top: 31px;
-  width: 100%;
-  height: 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 44px;
-}
-.ld-brief-flags img { height: 14px; width: auto; }
-.ld-brief-flags .ld-brief-vs { font-size: 11px; font-weight: 700; letter-spacing: 2px; }
-.ld-brief-mode {
-  position: absolute;
-  left: 0;
-  top: 55px;
-  width: 100%;
-  height: 21px;
-  line-height: 20px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 2.5px;
-}
-.ld-brief-settings {
-  position: absolute;
-  left: 0;
-  top: 76px;
-  width: 100%;
-  height: 43px;
-  box-sizing: border-box;
-  padding: 5px 14px 0;
-}
-.ld-brief-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  line-height: 12.5px;
-  color: #f4f2e8;
-  text-transform: uppercase;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
-}
-.ld-brief-bandhd {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  height: 13px;
-  box-sizing: border-box;
-  border: 1px solid #3c3a2c;
-  background: #847d4c;
-  padding-left: 5px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  line-height: 12px;
-  color: #26251a;
-}
-.ld-brief-objectives .ld-brief-bandhd { top: 133px; }
-.ld-brief-comments .ld-brief-bandhd { top: 231px; }
-.ld-brief-bandtext {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  font-size: 10px;
-  line-height: 13.5px;
-  letter-spacing: 0.4px;
-  color: #ffffff;
-  white-space: pre-line;
-  overflow: hidden;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
-}
-.ld-brief-objectives .ld-brief-bandtext { top: 149px; height: 80px; }
-.ld-brief-comments .ld-brief-bandtext { top: 247px; height: 84px; }
-.ld-brief-readyrow {
-  position: absolute;
-  left: 144px;
-  top: 421px;
-  width: 512px;
-  height: 37px;
-  box-sizing: border-box;
-  border-top: 2px solid rgba(168, 166, 158, 0.85);
-  border-bottom: 2px solid rgba(168, 166, 158, 0.85);
-  background: rgba(62, 62, 58, 0.88);
-  display: none;
-  pointer-events: auto;
-  align-items: center;
-  justify-content: center;
-}
-.ld-overlay[data-state="briefing"] .ld-brief-readyrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ld-brief-btn {
-  width: 110px;
-  height: 28px;
+  width: 108px;
+  height: 25px;
   border: 0;
   padding: 0;
+  background: transparent;
+  color: transparent;
   cursor: pointer;
   outline: none;
-  /* The knapp plate paints 107x25 at (3,1) inside its 128x128 canvas; this
-     maps that content box onto the button so the plate fills it edge to
-     edge instead of shrinking into the top quarter. */
-  background-image: var(--ld-knapp-img);
-  background-size: 131.6px 143.4px;
-  background-position: -3.1px -1.1px;
-  background-repeat: no-repeat;
-  color: #ffffff;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+  display: none;
+  pointer-events: auto;
+  z-index: 2;
+  font-size: 0;
 }
-.ld-brief-btn:hover,
-.ld-brief-btn:focus-visible {
-  background-image: var(--ld-knapp-hover-img);
-  background-size: 125.7px 132.7px;
-  background-position: 0 0;
-}
+.ld-overlay[data-state="briefing"] .ld-brief-btn { display: block; }
 
 body.is-portrait .ld-overlay { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -449,12 +311,16 @@ function loadingTitle(name, explicit) {
   return `LOADING ${clean}`;
 }
 
-/** `placement`: 'corner' for the models page, otherwise authentic map load. */
+/** `placement`: 'corner' for the models page, otherwise authentic map load.
+ *  `briefing` hosts the mission-briefing screen ({ canvas, paint, layout,
+ *  hover } — `briefing-screen.js`); the overlay parks on it once the level is
+ *  up and the player has not accepted the briefing yet. */
 export function createLoadOverlay(host, {
   placement = 'authentic',
   assetBase = 'maps',
   audioController = null,
   audioOptions = undefined,
+  briefing = null,
 } = {}) {
   injectStyle();
 
@@ -476,28 +342,8 @@ export function createLoadOverlay(host, {
       '<div class="ld-fill"></div>' +
       '</div></div>' +
       '<div class="ld-prompt">PRESS ESCAPE TO CANCEL</div>' +
-      '<div class="ld-brief" role="dialog" aria-label="Mission briefing">' +
-      '<div class="ld-brief-name"></div>' +
-      '<div class="ld-brief-flags">' +
-      '<img class="ld-brief-flag" alt="">' +
-      '<span class="ld-brief-vs">VS</span>' +
-      '<img class="ld-brief-flag" alt="">' +
       '</div>' +
-      '<div class="ld-brief-mode"></div>' +
-      '<div class="ld-brief-settings"></div>' +
-      '<div class="ld-brief-objectives">' +
-      '<div class="ld-brief-bandhd">OBJECTIVES</div>' +
-      '<div class="ld-brief-bandtext"></div>' +
-      '</div>' +
-      '<div class="ld-brief-comments">' +
-      '<div class="ld-brief-bandhd">COMMENTS</div>' +
-      '<div class="ld-brief-bandtext"></div>' +
-      '</div>' +
-      '</div>' +
-      '<div class="ld-brief-readyrow">' +
-      '<button class="ld-brief-btn" type="button">READY</button>' +
-      '</div>' +
-      '</div>' +
+      '<button class="ld-brief-btn" type="button" aria-label="Ready" hidden></button>' +
       '<div class="ld-card" hidden>' +
       '<div class="ld-title"></div>' +
       '<div class="ld-bar"><i></i></div>' +
@@ -518,13 +364,6 @@ export function createLoadOverlay(host, {
   const elBg = root.querySelector('.ld-bg-img');
   const elStage = root.querySelector('.ld-stage');
   const elAuthTitle = authentic ? root.querySelector('.ld-box .ld-title') : null;
-  const elBrief = authentic ? root.querySelector('.ld-brief') : null;
-  const elBriefName = authentic ? root.querySelector('.ld-brief-name') : null;
-  const elBriefFlags = authentic ? root.querySelectorAll('.ld-brief-flag') : [];
-  const elBriefMode = authentic ? root.querySelector('.ld-brief-mode') : null;
-  const elBriefSettings = authentic ? root.querySelector('.ld-brief-settings') : null;
-  const elBriefObjectives = authentic ? root.querySelector('.ld-brief-objectives .ld-brief-bandtext') : null;
-  const elBriefComments = authentic ? root.querySelector('.ld-brief-comments .ld-brief-bandtext') : null;
   const elReadyBtn = authentic ? root.querySelector('.ld-brief-btn') : null;
   const elTrough = root.querySelector('.ld-trough');
   const elFill = root.querySelector('.ld-fill');
@@ -535,6 +374,15 @@ export function createLoadOverlay(host, {
   const elPhase = root.querySelector('.ld-phase');
   const elPct = root.querySelector('.ld-pct');
   const elSub = root.querySelector('.ld-sub');
+
+  // The briefing module and its last payload; declared here so the canvas
+  // can be hosted before the state machinery below assigns the rest.
+  let briefingScreen = null;
+  let lastBriefing = null;
+  if (authentic && briefing?.canvas) {
+    elStage.after(briefing.canvas);
+    briefingScreen = briefing;
+  }
 
   /** @type {Map<string, {label: string, weight: number, fraction: number|null, done: boolean, loaded: number, total: number, started: boolean}>} */
   const steps = new Map();
@@ -578,6 +426,9 @@ export function createLoadOverlay(host, {
       if (callback) { try { callback(); } catch (_) { /* the page's problem */ } }
       if (settle) (fade || Promise.resolve()).then(settle, settle);
     });
+    // The knapp hover lives on the canvas; the transparent hit area relays it.
+    elReadyBtn.addEventListener('mouseenter', () => briefing?.hover?.(true));
+    elReadyBtn.addEventListener('mouseleave', () => briefing?.hover?.(false));
   }
 
   function clearTimers() {
@@ -593,6 +444,12 @@ export function createLoadOverlay(host, {
     const h = host.clientHeight || 600;
     const s = Math.min(w / 800, h / 600);
     elStage.style.setProperty('--ld-scale', String(s > 0 ? s : 1));
+    // The briefing canvas fills the pane itself and maps the virtual space
+    // onto it at the current size (deploy-screen's trick), so it needs its
+    // own layout pass — and the READY hit area rides along.
+    if (briefing && visible && root.dataset.state === 'briefing') {
+      briefing.layout(w, h, globalThis.devicePixelRatio || 1, elReadyBtn);
+    }
   }
 
   let resizeObs = null;
@@ -720,55 +577,23 @@ export function createLoadOverlay(host, {
     const bar = resolveUrl(base, opts.bar || DEFAULT_CHROME.bar);
     root.style.setProperty('--ld-menu-loading-img', cssUrl(plate));
     root.style.setProperty('--ld-loading-bar-img', cssUrl(bar));
-    if (authentic) {
-      root.style.setProperty('--ld-briefing-img',
-        cssUrl(resolveUrl(base, opts.briefingPlate || DEFAULT_CHROME.briefing)));
-      root.style.setProperty('--ld-knapp-img',
-        cssUrl(resolveUrl(base, opts.knapp || DEFAULT_CHROME.knapp)));
-      root.style.setProperty('--ld-knapp-hover-img',
-        cssUrl(resolveUrl(base, opts.knappHover || DEFAULT_CHROME.knappHover)));
-    }
     if (elBg) {
       const bg = resolveUrl(base, opts.background || DEFAULT_CHROME.background);
       elBg.src = bg;
     }
   }
 
-  /** Fill the mission-briefing screen. `briefing` is the report's
-   *  `briefing` object (objectives/mapType/mapId — extracted, plain English
-   *  from Menu/Init.con + the chain lexicon, so no player-name decoding
-   *  applies) plus what the page composes at worldReady: `displayName`
-   *  (maps.json's canonical title), `gameType` (the level's gameplay mode)
-   *  and `flags` (the two sides' hud-pack flag URLs, null where a side has
-   *  no drawable nation). A level that ships no trio shows the screen with
-   *  empty boxes, the way the game does. */
-  function setBriefing(briefing) {
-    if (!elBrief) return;
-    const data = (briefing && typeof briefing === 'object') ? briefing : {};
-    const text = typeof data.objectives === 'string' ? data.objectives.trim() : '';
-    if (elBriefName) elBriefName.textContent = (data.displayName || '').trim();
-    if (elBriefMode) {
-      const mode = [data.gameType, data.mapType]
-        .map(part => (typeof part === 'string' ? part.trim().toUpperCase() : ''))
-        .filter(Boolean);
-      elBriefMode.textContent = mode.join(' - ');
-    }
-    if (elBriefSettings) {
-      elBriefSettings.innerHTML = BRIEFING_SETTINGS
-        .map(([label, value]) =>
-          `<div class="ld-brief-row"><span>${label}</span><span>${value}</span></div>`)
-        .join('');
-    }
-    if (elBriefFlags) {
-      const flags = Array.isArray(data.flags) ? data.flags : [null, null];
-      elBriefFlags.forEach((img, i) => {
-        const url = flags[i];
-        if (url) { img.src = url; img.style.display = ''; }
-        else { img.removeAttribute('src'); img.style.display = 'none'; }
-      });
-    }
-    if (elBriefObjectives) elBriefObjectives.textContent = text;
-    if (elBriefComments) elBriefComments.textContent = '';
+  /** Fill the mission-briefing screen. `data` is the report's `briefing`
+   *  object (objectives/mapType/mapId — extracted, plain English from
+   *  Menu/Init.con + the chain lexicon, so no player-name decoding applies)
+   *  plus what the page composes at worldReady: `displayName` (maps.json's
+   *  canonical title), `gameType` (the level's gameplay mode) and `flags`
+   *  (the two sides' hud-pack flag URLs, null where a side has no drawable
+   *  nation). A level that ships no trio shows the screen with empty boxes,
+   *  the way the game does. `null` clears it between levels. */
+  function setBriefing(data) {
+    lastBriefing = (data && typeof data === 'object') ? data : null;
+    if (briefingScreen) briefingScreen.paint(lastBriefing);
   }
 
   function handle(gen) {
@@ -842,13 +667,17 @@ export function createLoadOverlay(host, {
         clearTimeout(showTimer);
         showTimer = null;
         stopAnim();
-        if (elBrief) {
+        if (briefingScreen) {
           // The game's second phase: the splash goes down, the briefing
           // screen comes up over the live level, and the loading music keeps
           // playing until the player accepts it. READY fades the music and
           // conceals the overlay (and settles the promise below).
           root.dataset.state = 'briefing';
           if (!visible) reveal();
+          briefingScreen.layout(
+            host?.clientWidth || 800, host?.clientHeight || 600,
+            globalThis.devicePixelRatio || 1, elReadyBtn);
+          briefingScreen.paint(lastBriefing);
           return new Promise(resolve => { readyResolve = resolve; });
         }
         // Corner placement has no briefing screen: done means gone.

@@ -666,7 +666,9 @@ export function createLevel(page) {
     const briefingFlag = nation => {
       if (!nation || nation === 'unknown') return null;
       try {
-        return `${page.hudPaths.url(`icon_flag_${nation}.png`)}${page.bust()}`;
+        // The briefing screen's own flag: the ticket counter's waving sprite,
+        // not the spawn screen's pole flag (icon_flag_*).
+        return `${page.hudPaths.url(`flag_ticket_${nation}.png`)}${page.bust()}`;
       } catch (_) {
         return null;
       }
