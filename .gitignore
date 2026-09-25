@@ -322,7 +322,6 @@ keys/
 
 
 # Claude Code local session state
-.claude/settings.local.json
 .claude/scheduled_tasks.lock
 
 # reference screenshots dropped into the repo root for a chat, not assets
