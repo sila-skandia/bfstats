@@ -279,6 +279,11 @@ and steer with the mouse at the same time. Keys 1-6 switch position, E
 (`c_PIUse`, in the Common section of Air.con) exits/bails, C and F9-F12 change
 camera, Numpad4/6/8/2 nudge the free camera (`c_PICameraX/Y`).
 
+> **Settled 2026-09-25, see `features/pilot-mouse-look` (ledger MLK-2).** Read in
+> both binaries, `BFPlayer::handleInput` (lnxded `0x08052530`, client `0x00407ec0`):
+> with the key held it zeroes `c_PIYaw`, `c_PIPitch` and `c_PIRoll` from every
+> device, keyboard and stick included, and with it up it zeroes the look axes.
+
 ---
 
 ## 5. First-person / cockpit rendering
@@ -331,6 +336,10 @@ per-station 1P meshes for gunner PCOs (`1p_B17_Bellygun_m1`, `1p_Aichi_Val_Gunne
   — it marks the camera as consuming the shift-held mouse-look rerouting
   (`strong inference`; the constants only ever co-occur with `c_PIMouseLookX/Y`
   bindings).
+  > **Settled 2026-09-25, see `features/pilot-mouse-look` (ledger MLK-1, MLK-3,
+  > MLK-5).** A Camera-template byte read by `Camera::getToggleMouseLook`. With it
+  > set and the key up, the view eases back at 0.75 a tick. It sits on exactly the
+  > 13 vanilla pilot cameras, never a gunner's.
 - **3P**: `ObjectTemplate.OutsideHudOffset 0/-0.4/4.45` (Corsair) — offset applied to
   the outside/chase view (every plane declares one; name says it positions the HUD
   reticle anchor in outside view; `strong inference` on exact semantics). There is no

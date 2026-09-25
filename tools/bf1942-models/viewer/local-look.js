@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MouseInput, profileFor } from './mouse-input.js';
+import { MOUSE_LOOK_TRIGGER, seatNeedsMouseLookKey, recentreLook } from './mouse-look-key.js';
 
 /**
  * The human's mouse look on the engine's own tick, and the render
@@ -9,9 +10,10 @@ import { MouseInput, profileFor } from './mouse-input.js';
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `captureBotPresentationTick`, `car`, `handWeapon`, `isZoomed`,
- * `LOOK_SENS`, `mannedActive`, `netTickPoses`, `occupancy`, `optOnFoot`,
- * `optPilot`, `roomJoined`, `soldier`, `turnLook`, `vehicles`, `view`.
+ * `aircraft`, `captureBotPresentationTick`, `car`, `handWeapon`, `held`,
+ * `isZoomed`, `LOOK_SENS`, `mannedActive`, `netTickPoses`, `occupancy`,
+ * `optOnFoot`, `optPilot`, `roomJoined`, `soldier`, `touchFlying`,
+ * `turnLook`, `vehicles`, `view`.
  */
 export function createLocalLook(page) {
   const localLook = {};
@@ -511,6 +513,13 @@ export function createLocalLook(page) {
       // outside it, and nothing at all in fly-by, which is a camera standing in
       // the world. `VehicleCamera` owns that distinction and the per-mode clamps
       // that go with it.
+      //
+      // A pilot's head turns only while the mouse-look key is held: his
+      // Camera's `toggleMouseLook` makes the engine drop the look axes for
+      // every tick the key is up, in every view (`mouse-look-key.js`). A knock
+      // of the mouse does nothing, and the released view eases back
+      // (`stepMouseLookKey`).
+      if (lookNeedsKey() && !lookKeyHeld()) return;
       page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
       return;
     }
@@ -529,6 +538,41 @@ export function createLocalLook(page) {
   // resets delegate to `world.resetStick`.
   const HEAD_SENS = 0.0022;
 
+  // --- the mouse-look key (`c_PIMouseLook`) ---------------------------------
+  //
+  // `mouse-look-key.js` has the engine's read. The page's three uses: the gate
+  // in `lookDelta` above, the recentre below (the seat's camera calls it once
+  // a frame, before it is posed), and the router's held branch on the input
+  // word (`local-player.js` `sampleInput`).
+
+  /** Does the seat the player holds need the key to look around? Only a
+   *  pilot's does: his Camera's `toggleMouseLook`. A gunner's (the B17's
+   *  turrets, a Stuka's rear gun) and every seat of a hull that is not an
+   *  aircraft look freely, as they always did. */
+  function lookNeedsKey() {
+    const seat = page.optPilot.checked ? page.occupancy : null;
+    return !!seat && seatNeedsMouseLookKey({ rootKind: seat.rootKind, root: seat.isActiveRoot() });
+  }
+
+  /** Is the look held: the key the profile binds to `c_PIMouseLook` (Left
+   *  Shift in the shipped Air map; a joystick button if the profile says so),
+   *  or a finger dragging the view on a touch screen, which has no such key
+   *  (the viewer's own choice: the game has no touch input). */
+  function lookKeyHeld() {
+    return !!page.held(MOUSE_LOOK_TRIGGER) || !!page.touchFlying;
+  }
+
+  /** Once a frame, before the seat's camera is posed: a pilot's look with the
+   *  key up eases back to straight ahead, 0.75 of it kept per 30 Hz tick
+   *  (`Camera::handlePlayerInput`). Inside the cockpit that is the head
+   *  turning back to the gunsight; outside it, the orbit swinging back
+   *  behind the tail. */
+  function stepMouseLookKey(dt) {
+    const view = page.view;
+    if (!view || !lookNeedsKey() || lookKeyHeld()) return;
+    recentreLook(view.look, dt);
+  }
+
   Object.assign(localLook, {
     applyVehicleInterp,
     capturePresentationTick,
@@ -543,12 +587,15 @@ export function createLocalLook(page) {
     footView,
     footZoomFactor,
     lookDelta,
+    lookKeyHeld,
+    lookNeedsKey,
     lookProfile,
     mouseInput,
     pumpLook,
     rebuildVehicleInterp,
     restoreTickPose,
     snapPresentation,
+    stepMouseLookKey,
   });
   return localLook;
 }
