@@ -233,6 +233,87 @@ main canvas { display: block; width: 100%; height: 100%; }
 }
 .stage-controls-fab[hidden] { display: none !important; }
 
+/* --- Fire panel ----------------------------------------------------------
+   The hold-to-fire trigger, styled from index.html's crew console's .trigger
+   (this page loads the same tokens.css vars but not index.css, so the rule
+   and its kbd styling are carried here rather than shared). */
+#fire:empty { display: none; }
+kbd {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font: 10px/1.5 var(--mm-font-mono);
+  letter-spacing: .05em;
+}
+.trigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1px 10px;
+  width: 100%;
+  padding: 6px 10px 6px 0;
+  background: transparent;
+  border: 1px solid var(--mm-load-busy);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transition: background-color .08s ease, color .08s ease;
+}
+.trigger:hover,
+.trigger:focus-visible { background: rgba(197, 162, 58, .1); outline: none; }
+.trigger-word {
+  grid-row: span 2;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid rgba(197, 162, 58, .35);
+  color: var(--mm-load-busy);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .14em;
+}
+.trigger-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.trigger-name span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.trigger-kind {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8.5px;
+  letter-spacing: .12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+.trigger-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trigger-stats { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.trigger[aria-pressed="true"] { background: var(--mm-load-busy); color: var(--mm-highlight-ink); }
+.trigger[aria-pressed="true"] .trigger-word { color: var(--mm-highlight-ink); border-right-color: rgba(0, 0, 0, .3); }
+.trigger[aria-pressed="true"] .trigger-meta,
+.trigger[aria-pressed="true"] .trigger-kind,
+.trigger[aria-pressed="true"] kbd { color: var(--mm-highlight-ink); border-color: rgba(0, 0, 0, .35); }
+
 @media (max-width: 720px) {
   body {
     grid-template-columns: minmax(0, 1fr);
