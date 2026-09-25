@@ -632,11 +632,15 @@ def main() -> int:
     chain = mod_chain(game_dir, args.mod)
     fallbacks = [game_dir / "Mods" / name for name in args.texture_fallback]
     meshes, base_textures, objects, game = build_pools(chain, fallbacks)
-    library = build_library(objects)
-    damage_tables = load_damage_tables(game)
-    weapons = collect_weapons(objects)
 
-    # -- level archives with vehicle textures --------------------------------
+    # -- level archives ------------------------------------------------------
+    # A level can define its own objects (`bf1942/Levels/<L>/Objects/<Name>/`)
+    # and carry their meshes and textures, and those templates exist nowhere
+    # else. Battle of Britain's Ju88A is one: the mod's object archives have no
+    # such template, so without the level archive the library cannot see it,
+    # `available_configurations` answers for nothing, and no model of it — live
+    # or wreck — can be exported. Added after the mod chain and the fallbacks,
+    # so a level only fills gaps they left.
     if args.level_all:
         level_sources = discover_level_textures(chain)
     else:
@@ -654,6 +658,15 @@ def main() -> int:
                     level_sources.append((name, path))
                 else:
                     print(f"WARNING: level archive not found: {path}", file=sys.stderr)
+
+    for name, path in level_sources:
+        objects.add(path, label=name)
+        meshes.add(path, label=name)
+        base_textures.add(path, label=name)
+
+    library = build_library(objects)
+    damage_tables = load_damage_tables(game)
+    weapons = collect_weapons(objects)
 
     print(f"mod chain:  {' -> '.join(d.name for d in chain)}", file=sys.stderr)
     print(f"archives:   {len(meshes.names())} mesh, {len(base_textures.names())} texture, "

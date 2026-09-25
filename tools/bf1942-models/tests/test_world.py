@@ -58,6 +58,8 @@ _MODULE_NAMES = [
     # seats.js re-exports its split modules.
     "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
     # world.js's World delegates to its split modules.
+    # vehicle-instance.js and vehicle-wrecks.js share the one height test.
+    "airborne",
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
