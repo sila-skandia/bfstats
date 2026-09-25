@@ -1,5 +1,277 @@
 # Audio parity gaps: what BF1942 plays that the extractor/viewer does not
 
+**SUPERSEDED below this banner.** The 2026-09-26 census at the top of this file
+is current; everything under "The 2026-09-14 audit" is kept for its ground-truth
+detail (script paths, directive semantics, spatialisation table) but its gap
+list, priority table and counts predate four extraction rounds and no longer
+describe the tree. Read the census first.
+
+---
+
+# Sound corpus census, 2026-09-26
+
+Census date 2026-09-26, against the installed archives of all three in-scope
+mods (`~/.wine/drive_c/EA Games/Battlefield 1942/Mods/{bf1942,XPack1,XPack2}`,
+per the owner's mod-scope rule: only the three vanilla packs are counted, other
+mods' archives are ignored), the extracted trees under
+`tools/bf1942-models/viewer/`, and HEAD `01d9671c`. Every number below came off
+the live archives with `bf42.rfa.RfaArchive` or off the shipped trees with
+`find`/`stat`; the reproducing commands are in the last section.
+
+**The verdict in one line.** Of the things the engine plays, the viewer now
+plays most of what a person on the map page can hear, and the residue is two
+runtime-event families (round whizz-by/distant fire, and the non-bail-out
+soldier state sounds) plus the deliberately-unextracted dead weight, not
+extraction reach. Complete in-scope audio parity is within roughly 4 MB of MP3
+of where the trees stand today.
+
+## What the game ships
+
+`RfaArchive.entries` keyed counts, per mod, distinct `.wav` paths (the three
+rate tiers carry the same names three times; the 44 kHz tier is the corpus the
+engine plays at desktop quality):
+
+| mod | sound archives | distinct wavs | non-voice stems | voice (44 kHz) | total bytes |
+|---|---|---|---|---|---|
+| bf1942 | `sound.rfa` + `sound_001.rfa` | 4,227 | 712 (55.3 MB @44k) | 6 packs x 116-117 | 254.2 MB |
+| XPack1 | `Sound.rfa` | 1,017 | 107 (23.7 MB @44k) | none | 89.7 MB |
+| XPack2 | `sound.rfa` | 480 | 160 (30.3 MB @44k) | none | 53.1 MB |
+
+The two expansion packs share 2 of XPack1's 107 non-voice stems with vanilla
+and 16 of XPack2's 160; the rest are new recordings (XPack1's birds, crickets,
+church bells and two-prop engines; XPack2's Bren, FG42, G43, shotgun, jetpack
+and generator). The expansion packs ship no `@Language` directories: their
+soldiers reuse vanilla's packs through the mod chain.
+
+Every `.ssc` in the three mods parses: 988 vanilla (re-verified this census;
+the 988/981 drift from the old audit is filename count vs script count, not a
+parser gap), 178 XPack1, 351 XPack2. `parse_ssc` handles the block-comment law
+since the G16 fix (`tests/test_sound.py` covers `/* */` directly), so the old
+audit's "parser gaps" column is empty now.
+
+`@Language` voice: vanilla's scripts reference 105 distinct `@Language` stems;
+all 105 exist in all six packs. XPack scripts reference none.
+
+Referenced vs dead, against a union of every `load` line in the three mods'
+`.ssc` (block-comment aware):
+
+| mod | non-voice stems | referenced by some `.ssc` | unreferenced |
+|---|---|---|---|
+| bf1942 | 712 | 634 | 75 (9 of them level-local ambience resolved from level archives) |
+| XPack1 | 107 | 54 | 53 (birds, crickets, seagulls, church bell, harbour ambience) |
+| XPack2 | 160 | 90 | 69 (jetpack, generator, BMW idle out-takes, Bren alt takes) |
+
+Two XPack1 references resolve only against the other mods' archives or not at
+all: `Aircraft_2prop_engine_medRPM.wav` (the extractor's per-layer rate
+fallback handles it; the bare `medRPM` name is genuinely absent, only the
+`_left/_mid/_right` variants ship) and `100voco.wav` (loaded by
+`SturmGeschutzTower.ssc`, present in no archive: a dead reference in shipped
+data).
+
+Category census, vanilla 44 kHz tier (the classification is the owning
+`.ssc`'s directory, same method as the 2026-09-14 audit):
+
+| category | files | MB | state in the viewer |
+|---|---|---|---|
+| Effect (explosion / impact / ricochet / debris / fire) | 213 | 15.12 | extracted (`extract_effects.py` -> `_shared/effects.sounds.json` + `_shared/sounds`), played by `effect-audio.js` |
+| Hand weapon | 106 | 3.79 | extracted (`extract_weapon_sounds.py` -> `models/sounds/`), played |
+| Soldier movement (footsteps/swim/chute) | 104 | 4.06 | extracted (footsteps + run/walk + bail-out set), played |
+| Vehicle land / air / sea + stationary + common | 162 | 18.65 | extracted per map into `_shared/sounds`, played by `vehicle-audio.js` |
+| Building ambience (windmill, factory, guardtow, radar, depot) | 6 | 2.01 | harvested per level into `scene.json` `sounds.areas` (`bf42/level.py` §4 of `discover_level_sounds`), played by the area pool |
+| Menu / UI | 12 | 0.51 | not extracted, nothing plays it (no menu chrome for it) |
+| Game / HUD (radio crackle) | 1 (`radiomess`) | 0.03 | extracted to `voices/radiomess.mp3`, played as the radio open |
+| Projectile whizz-by / distant MG / shell bounce | 29 | 2.0 | **not extracted, not played** |
+| `@Language` voice | 105 x 6 | 13.8-17.2/pack @44k | 80 of 105 stems extracted (see below); 23 radio + 22 local + 6 capture per nation play |
+
+Music: the 6 vanilla `.bik` files are outside the rfAs. The viewer ships two of
+them transcoded (`_shared/music/menu.mp3` 3.7 MB from `Slaughter4.bik`,
+`vehicle4.mp3` 5.7 MB from `Vehicle4.bik` as load music), played by
+`play/index.html` and `progress.js`; the other four are unshipped.
+
+## What the viewer trees carry
+
+Measured 2026-09-26, MP3 only (the extracted payload; `collision-meshes.json`
+and friends excluded):
+
+| tree | files | MB | what put it there |
+|---|---|---|---|
+| `maps/_shared/sounds/` | 360 | 5.64 | `extract_map.py` (vehicle + ambient + area + flag), `extract_effects.py` (the 192 effect samples, 2.18 MB of it) |
+| `maps/_shared/voices/` | 369 | 5.48 | `extract_capture_voices.py` (6 stems x 6 nations) + `extract_radio.py` (54 stems x 6 nations + `radiomess`) |
+| `maps/_shared/music/` | 2 | 9.40 | `extract_menu_music.py` + `extract_loading_assets.py` |
+| `models/sounds/` | 151 | 1.22 | `extract_weapon_sounds.py` (27 weapons, 113 firing-patch layers) + `extract_soldier_sounds.py` (77 soldier samples, `soldier.json`) |
+| `maps/mods/xpack1/_shared/` | 879 | 23.51 | same extractors with `--mod xpack1` (6 levels) |
+| `maps/mods/xpack2/_shared/` | 765 | 21.57 | same, `--mod xpack2` (9 levels) |
+| `models/mods/xpack1/sounds/` | 30 + manifest | 0.32 | `extract_weapon_sounds.py --mod xpack1` (Breda, K98Bayonet, No4Bayonet, Stengun) |
+| `models/mods/xpack2/sounds/` | 34 + manifest | 0.33 | `--mod xpack2` (BrenLMG, CommandoKnife, EliteKnife, Gewehr42/43, K98RifleGrenade, Shotgun) |
+
+`_shared/sounds` decomposes as: 153 files (3.14 MB) referenced by the 23
+vanilla `scene.json` sound blocks, 192 (2.18 MB) referenced by
+`effects.sounds.json`, 15 (0.36 MB) orphaned on disk
+(`Ammorefill` moved to the depot give sound, parachute/bail-out samples now
+served from `models/sounds/`, two Garand reverb takes and `brownmlp_dist`,
+`dingy_idle`, `rifle-distance1` dropped by extractor choices). The 348 MP3s the
+two xpack trees share with vanilla are byte-identical re-transcodes of the same
+sources; each xpack `_shared/sounds` also carries its mod's genuinely new
+recordings. EoD's `mods/eod/_shared` (74.32 MB) predates the mod-scope rule and
+is excluded from this census.
+
+## What plays, and what is wired
+
+The runtime paths, with the categories each one owns:
+
+- `page-audio.js` — listener + limiter, level ambience (`cfg.ambient`),
+  area/flag pool (`cfg.areas` + `cfg.flags`, which the building harvest feeds),
+  the SupplyDepot give sound (`playSupplyGive`), bot footsteps
+  (`botFootstepTick` -> `handleSoldierFootstep` -> `soldier.json`, surface-picked
+  per `collision-materials.js`), hurt grunts (`playSoldierHurtSound`, 2D for
+  the local player, positional for a bot via `onHurt`), and `playWorldShot`
+  into `world-fire.js`.
+- `vehicle-audio.js` — every occupied hull's engine and gun patches
+  (`MAX_LIVE_VEHICLES = 5`, `AUDIBLE_RANGE = 300`); the G3 world of one-aircraft
+  audio is gone, a bot convoy sounds.
+- `world-fire.js` — a bot's hand-weapon fire patch, near/far layers handing
+  over on `Volume <- Distance`, one cycle per round.
+- `effect-audio.js` — the impact/explosion/debris pool off
+  `effects.sounds.json`, triggered by `round-impact.js`/`effects.js` at the
+  collision point; pooled per script, budget 32-6 voices, `randomPlay`
+  pick-one honoured per patch.
+- `engine-audio.js` — the generic `.ssc` player underneath all of the above;
+  honours `stereo` (G5 fixed), `randomPlay`, per-layer `Volume <- Distance`.
+- `comms.js` + `capture.js` — radio (`MenuRadioSoundHigh.ssc` patches, 2D) and
+  shouted (`SoldierVoice.ssc`, 3D on the speaker) voice, both per-nation, plus
+  the capture announcer (`WeNowHaveControlOver*` / `WeHaveLostControlOf*`) on
+  `onCapture`.
+- `parachute.js` — names the `c_SstFallingHigh` / `c_SstOpenParachute` /
+  `c_SstParachuteLand` triggers per state, and `soldier.json` + `models/sounds`
+  carry the samples; the events surface through
+  `soldier.drainParachuteEvents()` into `localPlayer.parachuteLog`, which the
+  test hooks read — **the sample plumbing exists but no page code plays the
+  bail-out triggers yet** (see the delta below).
+
+Extracted but silent, the honest list:
+
+1. **The bail-out triggers do not play.** `extract_soldier_sounds.py` ships
+   `SoldierFallingHigh` / `SoldierOpenParachute` (77 samples incl. the
+   11.5 s `soprupp` easter egg and the `@Language` scream) and `parachute.js`
+   emits the triggers, but nothing consumes them into `playSoldierOneShot` —
+   the samples and the events never met. S of runtime work, zero extraction.
+2. **Round whizz-by and distant MG** (`bulletair1..7`, `mgdist1..20`,
+   `patronrelease1..3`, 2.0 MB) are extracted by nothing and played by nothing.
+   The old G8's size call stands: closest-approach per round against the
+   camera, S-M.
+3. **The remaining soldier states** (jump, jump-land, crouch, crawl, swim,
+   ladder, death `Dying1..8`, medic, exertion `charge`) are extracted by
+   nothing. Of these only death has an event to hang it on (`onDeath`).
+4. **Menu/UI SFX** (`menucancel`, `menuchange`, the cloth rustles) — extracted
+   by nothing; the play front-end has music but no click layer.
+5. **`Vehicle` classes beyond Engine/FireArms** (turret traverse, tracks,
+   landing gear, airframe creak, sonar, torpedo launch) — extracted by nothing.
+   Unchanged from the old G4, still M.
+6. **Weapon reload/bolt/shell-bounce patches** — the weapon extractor ships the
+   firing patch only (G7's 60 dropped patches); `viewer/models/sounds` carries
+   `patron1..5` and the Garand ping already, but no manifest entry names them
+   for a runtime event.
+7. **Music, four of six tracks** — no briefing/vehicle/theme layer beyond load
+   and menu.
+
+## The delta, and the build list
+
+What stands between the trees and in-scope parity, with size-ranked order by
+audible impact:
+
+| # | item | extraction | runtime | audible payoff |
+|---|---|---|---|---|
+| 1 | Wire the bail-out triggers (`c_SstFallingHigh`/`OpenParachute`) into `playSoldierOneShot` | none — shipped | S | the parachute jump gets its wind, whoosh, scream and canopy |
+| 2 | Round whizz-by + distant MG from `Projectile_High.ssc` / `mgdist_High.ssc` | S (two shared scripts) | S-M (closest-approach per round in `round-impact.js`/`gunfire.js`) | a firefight has geometry you can hear |
+| 3 | Death sounds (`SoldierKilled.ssc`, `Dying1..8` per nation) | S (one `@Language` script, the substitution `extract_soldier_sounds.py` already knows) | S (`onDeath` exists) | kills stop being only visual |
+| 4 | The 15 orphaned `_shared/sounds` files: repoint or drop (`Ammorefill` is the depot give now; `dingy_idle` belongs to an unextracted XPack2 boat script) | S (a `--prune` on the extractor or a repoint) | none | tree hygiene, ~0.36 MB |
+| 5 | XPack dead references: `100voco.wav` (SturmGeschütz turret) has no sample anywhere; `Aircraft_2prop_engine_medRPM` needs the extractor's `_left/_mid/_right` variant fallback | S | none | one silent SturmGeschütz turret |
+| 6 | Jump/land/crouch/crawl/swim states | M (12 scripts, all plain movement samples) | M (needs the corresponding soldier states surfaced as events) | fuller first-person footwork |
+| 7 | Weapon reload/bolt/bounce patches into `weapons.json` | S (emit all sounding patches) | M (needs reload events in the gun model) | the Garand pings |
+| 8 | Menu UI click layer | S | S-M | only worth it with more menu chrome |
+| 9 | Landing gear / turret traverse / tracks (`RotationalBundle` etc.) | M | M | polish on the driven surface |
+| 10 | The other four music tracks | S | S | context, not gameplay |
+
+Not gaps, re-confirmed by this census: the 75+53+69 unreferenced wavs (dead
+assets in shipped data, do not extract), the menu `addGroup Volume` mixer
+group, the six language packs' missing 36 stems (they are the CTF flag lines,
+`Dying`/`charge`/`incoming`/`grenade` families — extractable on demand per
+item 3, but 2.9 MB per pack if taken whole), and music beyond the two shipped
+tracks.
+
+## Census reproducing commands
+
+Run from `/home/dylan/projects/skandia/bfstats/tools/bf1942-models` (the
+archive ones read the live install; note `RfaArchive.entries` is a dict keyed
+by lowered path and each value is `(c_size, uc_size, offset)`):
+
+```bash
+# Per-mod wav census (distinct paths, 44 kHz non-voice, voice packs)
+python3 - <<'EOF'
+from bf42.rfa import RfaArchive
+from pathlib import Path
+import collections
+B = Path.home()/'.wine/drive_c/EA Games/Battlefield 1942/Mods'
+for mod, names in [('bf1942', ['sound.rfa','sound_001.rfa']),
+                   ('XPack1', ['Sound.rfa']), ('XPack2', ['sound.rfa'])]:
+    seen = {}
+    for n in names:
+        a = RfaArchive(B/mod/'Archives'/n)
+        for name, (c, u, o) in a.entries.items():
+            ln = name.lower()
+            if ln.endswith('.wav'): seen[ln] = u
+    rates = collections.Counter(p.split('/')[1] for p in seen)
+    voice = sum(1 for p in seen if len(p.split('/')) == 4)
+    print(mod, len(seen), dict(rates), 'voice:', voice)
+EOF
+
+# Every .ssc load line, block-comment aware, against the union corpus
+# (the census script: walk all three mods' Objects/Game/Menu rfAs, strip /* */,
+# collect `load` paths, resolve @ROOT/@RTD/@Language, diff against wavs)
+
+# Effect sound manifest coverage: damage-table templates vs sounding bundles
+python3 - <<'EOF'
+import json
+from pathlib import Path
+ed = json.loads(Path('viewer/maps/_shared/effects.sounds.json').read_text())
+print(len(ed['bundles']), 'bundles,', len(ed['scripts']), 'scripts,',
+      len(ed['silent']), 'silent,', ed['level'])
+EOF
+
+# What scene.json actually references vs what _shared/sounds holds
+python3 - <<'EOF'
+import json, glob
+from pathlib import Path
+ref = set()
+for p in glob.glob('viewer/maps/*/scene.json'):
+    s = json.loads(Path(p).read_text()).get('sounds') or {}
+    if s.get('ambient'): ref.add(s['ambient']['file'].split('/')[-1])
+    for a in s.get('areas') or []:
+        if a.get('file'): ref.add(a['file'].split('/')[-1])
+    for v in s.get('vehicles') or []:
+        for l in v.get('layers') or []: ref.add(l['file'].split('/')[-1])
+        for w in v.get('weapons') or []:
+            for l in w.get('layers') or []: ref.add(l['file'].split('/')[-1])
+    if s.get('flags'): ref.add(s['flags']['file'].split('/')[-1])
+ed = json.loads(Path('viewer/maps/_shared/effects.sounds.json').read_text())
+eff = {l['file'].split('/')[-1] for s in ed['scripts'].values() for l in s['layers']}
+disk = {q.name for q in Path('viewer/maps/_shared/sounds').glob('*.mp3')}
+print('scene refs:', len(ref), 'effect refs:', len(eff), 'on disk:', len(disk),
+      'orphans:', sorted(disk - {x.replace('.mp3','') for x in ref} - eff))
+EOF
+```
+
+Spot-check extractions this census ran, all into scratch, nothing published:
+`extract_weapon_sounds.py Thompson K98 M1Garand --out <scratch>` (3 weapons,
+0 quiet), `extract_soldier_sounds.py --out <scratch>` (77 samples, manifest
+records `c_SstParachuteLand` as genuinely absent from the mod), and
+`extract_capture_voices.py` + `extract_radio.py --out <scratch>` (6x6 capture,
+23+22 patches x 54 stems per nation).
+
+---
+
+# The 2026-09-14 audit
+
 Audit date 2026-09-14, against vanilla `bf1942` under
 `~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/`, the 23 extracted maps
 in `tools/bf1942-models/viewer/maps/`, and HEAD `0380713`.
