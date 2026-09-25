@@ -114,6 +114,25 @@ Only Berlin and Bocage ship. If a run needs another map, it must be baked
 locally and uploaded as a `map-<name>.zip` release asset (zip the
 `viewer/maps/<name>` directory).
 
+## Extracting from the game archives
+
+setup.sh restores the vanilla and Secret Weapons `.rfa` archives (Movies/
+Music/eReg dropped) to `~/bf1942-game/` — a self-contained game dir. Point
+the extractors at it; SW is the `XPack2` mod (lowercase `xpack2` in args):
+
+```bash
+python3 tools/bf1942-models/extract_map.py berlin \
+  --game-dir ~/bf1942-game --mod bf1942 --out /tmp/bakes/berlin
+python3 tools/bf1942-models/extract_map.py <sw-level> \
+  --game-dir ~/bf1942-game --mod xpack2 ...
+```
+
+The archives are the complete vanilla + XPack2 source — every
+`extract_*.py` in `tools/bf1942-models/` works against this game dir.
+Extracting and uploading resulting assets is routine work in this repo
+(proceed without asking); the `bf1942-map-images` skill covers rfa decoding
+for map images.
+
 ## Pitfalls
 
 - `gh` is NOT pre-installed in cloud sandboxes and no token is needed — the
