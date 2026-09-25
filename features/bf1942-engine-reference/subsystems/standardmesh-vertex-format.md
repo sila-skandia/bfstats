@@ -69,7 +69,7 @@ when consecutive materials of one mesh differ.
 | 0 | `0x00000001` | 12 | `D3DFVF_XYZ` `0x002` | position, 3 floats |
 | 2 | `0x00000004` | 16 | `D3DFVF_XYZRHW` `0x004` | transformed position, 4 floats — engine bit, unseen in any `.sm` |
 | 21..24 | `0x00200000`..`0x01000000` | 4 / 8 / 12 / 16 | `D3DFVF_XYZB1..B4` `0x006..0x00c` | blend weights, 1..4 floats — unseen in `.sm` |
-| 29 | `0x20000000` | 16 | FVF `\|= 4`, +4 | **inconsistent between the two functions**; unseen. Do not name it |
+| 29 | `0x20000000` | 16 (bug — see below) | FVF `\|= 4`, +4 | a packed 4-byte `D3DCOLOR` at vertex-declaration register 13 (narrowed 2026-09-25, SM-10); unseen in `.sm`, no authoring name recoverable |
 | 4 | `0x00000010` | 12 | `D3DFVF_NORMAL` `0x010` | normal, 3 floats |
 | 6 | `0x00000040` | 4 | `D3DFVF_DIFFUSE` `0x040` | packed colour — unseen in `.sm` |
 | 8 | `0x00000100` | 4 | `D3DFVF_SPECULAR` `0x080` | packed colour — unseen in `.sm` |
@@ -228,17 +228,36 @@ not a reading.
 
 ## Open items
 
-- **Bit 29 (`0x20000000`).** `getStride` adds 16, the FVF builder adds 4 and
-  ORs `4` into the FVF. Never seen in data; left unnamed. Resume at
-  `0x00672a40` / `0x00640f20`.
+- **Bit 29 (`0x20000000`) — narrowed 2026-09-25 (SM-10).** A third function
+  that tests this same bit set was found: the programmable-pipeline
+  vertex-declaration builder (client `0x006746d0`, called from `0x00674ce0`,
+  called from `0x00674f90` — the path the "vertex-shader declaration" open
+  item below was looking for). It emits one `D3DVSD_TOKEN_STREAMDATA` /
+  `D3DVSD_REG(register, type)` token per set bit; bit 29's token is
+  `0x4004000d` = register 13, `D3DVSDT_D3DCOLOR` — a single packed 4-byte
+  color, matching `toFVF`'s `+4` byte count, not `getStride`'s `+16`.
+  `getStride` (`0x00640f20` client, `0x084451d0` lnxded) is therefore the
+  outlier: it adds 16 bytes as if the bit were a `FLOAT4` like bit 2, but two
+  of the three readers of this bit agree it is 4 bytes. `toFVF`'s `FVF |= 4`
+  is a separate loose end — it reuses the `D3DFVF_XYZRHW` bit pattern, which
+  has no fixed-function slot for "packed color at register 13", so it does
+  not actually encode what `toFVF`'s own stride count says was added; this
+  is harmless only because the bit is unseen in any of 234,144 vanilla-plus-mod
+  `.sm` descriptors (SM-1). The field's code-level shape is now pinned down
+  (4-byte packed `D3DCOLOR`, declaration register 13, programmable-pipeline
+  only); its authoring intent is not — no shipped asset ever sets it, so
+  there is nothing to recover it from. Still open: what register 13
+  corresponds to, if anything, in the fixed-function `D3DFVF` register table.
 - **The static DX8 vertex block's `CreateVertexBuffer` site** (class of ctor
   `0x006773d0`, vtable `0x0091b5d8`) was not isolated; `0x00676e60` calls its
   own slot `+0x5c` after `0x006728a0`. Only the dynamic block's site
   (`0x00675520`) is read. The FVF stored at `+0x2c` is the same word either way.
-- **The programmable-pipeline declaration.** `0x00675520` passes `FVF = 0` when
-  `+0x20 & 0x10`; the `D3DVSD_*` stream declaration that replaces it is built
-  elsewhere — the two undefined callers of `0x00672a40` at `0x00667d6c` and
-  `0x00675c0e` are the place to start.
+- **The programmable-pipeline declaration — found 2026-09-25 (SM-10).**
+  `0x00675520` passes `FVF = 0` when `+0x20 & 0x10`; the `D3DVSD_*` stream
+  declaration that replaces it is built by `0x006746d0`/`0x00674ce0`, called
+  from `0x00674f90` (callers `0x00667666` and `0x00679e36`, both unnamed),
+  which then calls `0x00697360` — plausibly `CreateVertexShader` — but that
+  call and its two callers were not traced further.
 - **Which texcoord set the lightmap stage samples** — mostly settled
   2026-09-16 (ledger LM-1…LM-4) and **narrowed 2026-09-19**. The lightmap is
   stage 1 and nothing on its path writes stage 1's `D3DTSS_TEXCOORDINDEX`, so
