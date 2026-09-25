@@ -127,6 +127,7 @@ import { createPoseMotion } from './pose-motion.js';
 import { createPoseComposer } from './pose-compose.js';
 import { createPosePairs } from './pose-pairs.js';
 import { createPoseView } from './pose-view.js';
+import { createGunTriggers } from './model-guns.js';
 import { installPoseTestHooks } from './pose-test-hooks.js';
 import { installControlsCollapse } from './controls-collapse.js';
 
@@ -200,6 +201,41 @@ const poseView = createPoseView({
   get current() { return current; }, get moveCamera() { return cameraGlide.moveCamera; },
 });
 
+// Firing the held weapon. Every `.pose.glb` bakes a `HandFireArms` node stamped
+// with the template's `fireArms` extras and a `<Weapon> muzzle N` node under it
+// (features/bf1942-3d-models/firing-effects.md), which is the shape
+// `GunFire.collect` indexes — so the turntable-gun wiring of `index.html`
+// (`model-guns.js`, not the heavier on-foot stack `map.html` uses) drives this
+// page's figure too. `attr` is index.html's HTML-escaping of the template's own
+// words into the trigger's labels.
+function attr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+const firePanel = document.getElementById('fire');
+const fireNote = document.getElementById('fire-note');
+const gunTriggers = createGunTriggers({
+  get attr() { return attr; }, get camera() { return camera; },
+  // The poses page has no texture-toggle bookkeeping (wireframe works the
+  // materials directly), so cloning an emitter's flash material needs no note.
+  get rememberMap() { return null; },
+  get scene() { return scene; }, get startAnimating() { return startAnimating; },
+});
+
+/** Rebuild the Fire panel for the loaded model's guns, or retire it. */
+function refreshFirePanel() {
+  firePanel.textContent = '';
+  const groups = gunTriggers.fireGroups;
+  for (const group of groups) {
+    if (group.firing) gunTriggers.stopFiring(group);
+    firePanel.appendChild(gunTriggers.buildTrigger(group, group.node, 'Space'));
+  }
+  if (!groups.length) fireNote.textContent = 'This extract carries no fireable weapon.';
+  fireNote.hidden = groups.length > 0;
+}
+
 function applyWireframe() {
   const on = document.getElementById('wireframe').checked;
   current?.traverse(obj => {
@@ -251,6 +287,11 @@ async function loadPair(pair) {
   }
 
   applyWireframe();
+  // Index the weapon's FireArms and rebuild the Fire panel. `collect` replaces
+  // by default, so the previous model's gun (and any rounds still in the air)
+  // drops with the figure it belonged to.
+  gunTriggers.guns.collect(current);
+  refreshFirePanel();
   statusLine.textContent = `${pair.soldier} holding ${pair.weapon}`;
   if (poseMotion.activeGait()) startAnimating();
 }
@@ -279,6 +320,10 @@ function startAnimating() {
     last = now;
     const blendLanded = poseMotion.advancePoseBlend(now);
     if (poseMotion.mixer) poseMotion.mixer.update(delta);
+    // Muzzle flashes, recoil, the rate-of-fire clock, and rounds in the air.
+    // True while any of those is still moving, so the loop stays hot until the
+    // last tracer dies — the same `hasFire` term index.html's loop carries.
+    const hasFire = gunTriggers.guns.advance(delta);
     // A gait is motion, so the frame loop has to stay hot while one plays;
     // the still stances leave it on-demand as before. Re-fitting is still
     // once-per-landing, not per-frame — the bounds breathe with the stride
@@ -287,8 +332,8 @@ function startAnimating() {
     cameraGlide.advanceCamera(now);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate || poseMotion.blending || cameraGlide.moving
-        || poseMotion.activeGait())
+    if (hasFire || controlsMoving || controls.autoRotate || poseMotion.blending
+        || cameraGlide.moving || poseMotion.activeGait())
       requestAnimationFrame(tick);
     else animating = false;
   })();
@@ -364,6 +409,66 @@ if (manifest) {
     get stanceActions() { return poseMotion.stanceActions; },
     get startAnimating() { return startAnimating; }, get statusLine() { return statusLine; },
   });
+
+  // The firing half of the test hooks: `__poseInspector` reads the stance and
+  // the gait, this reads the gun — the live-pass check's one JSON blob.
+  window.__poseGuns = {
+    get groups() { return gunTriggers.fireGroups.map(group => ({
+      node: group.node.name, stats: group.stats,
+      muzzles: group.muzzles.map(muzzle => muzzle.name),
+      firing: group.firing, shots: group.shots, emitters: group.emitters.length,
+      tracerMesh: !!group.tracerMesh, projectileMesh: !!group.projectileMesh,
+      trailQuad: !!group.trailQuad, tracerWidth: group.tracerWidth,
+      roundLifetime: group.roundLifetime, speedScale: group.speedScale,
+    })); },
+    get live() { return gunTriggers.fireGroups[0]
+      ? gunTriggers.guns.liveProjectiles(gunTriggers.fireGroups[0]) : 0; },
+    get tracers() { return gunTriggers.guns.tracers.length; },
+    get tracerHeads() { return gunTriggers.guns.tracers
+      .map(tracer => tracer.mesh.position.toArray().map(v => +v.toFixed(3))); },
+    tracerRecords() { return gunTriggers.guns.tracers.map(tracer => ({
+      position: tracer.mesh.position.toArray().map(v => +v.toFixed(3)),
+      velocity: tracer.velocity.toArray().map(v => +v.toFixed(3)),
+      lead: tracer.lead, age: +tracer.age.toFixed(3), bright: tracer.bright,
+    })); },
+    get hits() { return gunTriggers.guns.hits; },
+    muzzleWorld(index = 0) {
+      const muzzle = gunTriggers.fireGroups[0]?.muzzles[index];
+      return muzzle
+        ? muzzle.getWorldPosition(new THREE.Vector3()).toArray().map(v => +v.toFixed(4))
+        : null;
+    },
+    startFiring: () => { const g = gunTriggers.fireGroups[0]; return g ? gunTriggers.startFiring(g) : false; },
+    stopFiring: () => { const g = gunTriggers.fireGroups[0]; return g ? gunTriggers.stopFiring(g) : false; },
+  };
+
+  // Space (and F) fire the weapon, mirroring the crew console's hold-to-fire
+  // keys. The page's other bindings sit in pose-pairs.js on the same event —
+  // arrows, 1/2/3, Q/W/E — none of which collide. Guards copied from
+  // model-crew.js: a focused control outside the Fire panel keeps its own
+  // Space, keys are released when focus leaves the window, and a keyup lost to
+  // a backgrounded tab cannot latch the trigger on.
+  const fireKeyGroups = () => gunTriggers.fireGroups.filter(group => group.firing
+    || group.ui?.button.matches(':focus-visible'));
+  function releaseFireKey() {
+    for (const group of fireKeyGroups()) gunTriggers.stopFiring(group);
+  }
+  addEventListener('keydown', event => {
+    if (event.repeat || (event.key !== ' ' && event.key !== 'f' && event.key !== 'F')) return;
+    if (event.target.closest?.('#fire')) return;   // the trigger button keys itself
+    if (event.key === ' ' && event.target.tagName === 'BUTTON'
+        && !firePanel.contains(event.target)) return;
+    event.preventDefault();
+    const group = gunTriggers.fireGroups[0];
+    if (!group) return;
+    gunTriggers.startFiring(group);
+  });
+  addEventListener('keyup', event => {
+    if (event.key !== ' ' && event.key !== 'f' && event.key !== 'F') return;
+    event.preventDefault();
+    releaseFireKey();
+  });
+  addEventListener('blur', releaseFireKey);
 }
 </script>
 </body>
