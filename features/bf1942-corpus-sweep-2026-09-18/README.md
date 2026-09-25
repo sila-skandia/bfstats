@@ -6,9 +6,9 @@ Date: 2026-09-18. Scope: `features/bf1942-engine-reference/`, `features/bf1942-3
 
 Every open row was re-verified against the ledger, feature docs, code and git history; each row now carries an inline **RESOLVED** / **PARTIAL** / **UNRESOLVED** marker with evidence. Nothing was fixed in this pass.
 
-- **Still unresolved:** SM-5, bit 29, VHUD-10, HP-13, LM-3 (binary RE); Gap 10 (terrain LOD), 11 (per-object LOD / draw distance), 12 (terrain default-patch fallback), 17 (water directives); the `parity-gaps.md` doc fixes for fog aliases, sniper rifles, EoD schema, stereo and `setFogColorVec` (the fixes landed, the doc still says open).
+- **Still unresolved:** SM-5, bit 29, VHUD-10, HP-13, LM-3 (binary RE); Gap 10 (terrain LOD), 11 (per-object LOD / draw distance), 12 (terrain default-patch fallback), 17 (water directives).
 - **Partial:** Gap 14 (briefing text), Gap 16 (ladders), hand weapons in `poses.html`, scope overlay art, mod HUD chrome (3 of 16 mod packs built), 643 WAVs (no fresh census), in-game HUD (13 of ~50 groups), collision (soldiers aren't bodies in `BodyWorld`, so they still pass through vehicles; debris has no collision).
-- **Resolved:** everything else, including Gap 1, the EoD re-extract, soldiers/kits/animation, drivable ground vehicles, envmap, non-Conquest modes, tickets, lens flare, building ambience and EffectBundle play.
+- **Resolved:** the five stale `parity-gaps.md` rows (fixed in a follow-up the same day), and everything else, including Gap 1, the EoD re-extract, soldiers/kits/animation, drivable ground vehicles, envmap, non-Conquest modes, tickets, lens flare, building ambience and EffectBundle play.
 
 ## What was consumed
 
@@ -107,13 +107,13 @@ Every open row was re-verified against the ledger, feature docs, code and git hi
 
 `parity-gaps.md` "still open" rows are STALE for:
 - Collision off (now on by default) — **doc now fixed (re-checked 2026-09-25)**: `parity-gaps.md` row 158 already reads "Now on by default (`--no-collision` opts out)"; no longer stale.
-- Fog aliases (now CLOSED — dead spellings correctly ignored) — **UNRESOLVED: parity-gaps.md still stale (re-checked 2026-09-25)**: `parity-gaps.md:60,187` still present the second fog spelling as an unparsed gap ("Fog directives exist under a second spelling nobody parses" / "Both missed fog spellings"); `gap-research-status-2026-09-17.md:14,40-42` already marks it CLOSED by design and names these exact rows stale. Code check confirms closure: `tools/bf1942-models/bf42/level.py:1584-1601` parses only live `fogstart`/`fogend`/`fogcolorvec`, ignoring dead `fogLinearStart/End`/`setFogColorVec` on purpose.
-- Sniper rifles (now CLOSED — `CATALOGUE_KINDS` handles nested `HandFireArms`) — **UNRESOLVED: parity-gaps.md still stale (re-checked 2026-09-25)**: `parity-gaps.md:188` still reads "Sniper rifles absent from the armoury" / "`K98Sniper` and `No4Sniper` are declared inside their parent's `Objects.con`, so a folder walk misses them", with no CLOSED marker.
-- EoD schema (now CLOSED — all 239 maps re-extracted with full schema) — **UNRESOLVED: parity-gaps.md still stale (re-checked 2026-09-25)**: features/bf1942-3d-models/parity-gaps.md:192
+- Fog aliases (now CLOSED — dead spellings correctly ignored) — **RESOLVED 2026-09-25**: `parity-gaps.md` row struck through and marked Closed.
+- Sniper rifles (now CLOSED — `CATALOGUE_KINDS` handles nested `HandFireArms`) — **RESOLVED 2026-09-25**: `parity-gaps.md` row struck through and marked Closed.
+- EoD schema (now CLOSED — all 239 maps re-extracted with full schema) — **RESOLVED 2026-09-25**: `parity-gaps.md` row struck through and marked Closed.
 - EffectBundles selected but not played (now CLOSED for selection; **play is still OPEN**) — **RESOLVED 2026-09-25**: `viewer/effects.js`/`effects-core.js` is a full playback runtime (particle sim, mesh/debris tumbling, decals, blend modes); bake path now feeds it smoke/dust/debris geometry too.
 - Spawn-soldier decoration (PARTIAL — decoration ships, no AI/idle anim) — **RESOLVED 2026-09-25**: `tools/bf1942-models/viewer/bot-decision.js`, `bot-behaviours.js`, `bot-plans.js`, `bot-perception.js` etc. give spawned soldiers full AI, and `extract_pose.py:113` `GAITS` plus its stance breathing loops (`extract_pose.py:131`) give them idle/locomotion animation; parity-gaps.md still stale (features/bf1942-3d-models/parity-gaps.md:200) — the original row is gone, superseded by "No soldier anywhere in a level" / "Soldier animation is three frozen stills" (parity-gaps.md:199-200), which contradict the AI+animation now in code and carry no CLOSED marker.
-- Stereo audio (CLOSED) — **UNRESOLVED: parity-gaps.md still stale (re-checked 2026-09-25)**: `parity-gaps.md:191` still lists "`stereo` extracted then ignored" / "HRTF-panned at 1.2 m when the data says 2D. Wrong on the one surface that ships", with no CLOSED marker.
-- Fog `setFogColorVec` (CLOSED — confirmed dead spelling) — **UNRESOLVED: parity-gaps.md still stale (re-checked 2026-09-25)**: `parity-gaps.md:106` still presents `renderer.setFogColorVec` as a live gap ("Midway and Truk write `renderer.setFogColorVec` and so ship the grey `(0.7, 0.7, 0.7)` fallback instead of their declared" colors), with no CLOSED marker, despite `tools/bf1942-models/bf42/level.py:1584-1601` confirming the spelling is dead and ignored on purpose.
+- Stereo audio (CLOSED) — **RESOLVED 2026-09-25**: `parity-gaps.md` row struck through and marked Closed.
+- Fog `setFogColorVec` (CLOSED — confirmed dead spelling) — **RESOLVED 2026-09-25**: `parity-gaps.md` row struck through and marked Closed.
 
 ## Proposed work streams for parallel agents
 
