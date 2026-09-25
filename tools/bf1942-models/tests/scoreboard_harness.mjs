@@ -41,6 +41,26 @@ const players = [
 ];
 results.rows = boardRows(players, feed);
 
+// --- the rows, with the round's own tally behind the simulated players -------
+//
+// A row without a room slot reads all three numbers from the tally
+// (`round-state.js` `counts`, keyed by player id); one with a slot reads the
+// room's feed. The odd row here is 'Local': he has both a slot (a room) and an
+// id, and the slot wins, because in a room the server is the authority.
+
+const tallyPlayers = [
+  { slot: null, id: 0, name: 'Local', team: 2, local: true, kit: 'engineer' },
+  { slot: null, id: 5, name: 'Axis Bot', team: 1, bot: true, kit: 'Scout' },
+  { slot: null, id: 6, name: 'Untouched', team: 1, bot: true },
+  { slot: 2, id: 0, name: 'Local In A Room', team: 2, local: true },
+  { slot: 3, name: 'Ally Two', team: 2 },
+];
+const tally = new Map([
+  [0, { score: 12, kills: 3, deaths: 1, captures: 1 }],
+  [5, { score: -2, kills: 0, deaths: 4, captures: 0 }],
+]);
+results.tallyRows = boardRows(tallyPlayers, feed, tally);
+
 // --- the kit glyph -----------------------------------------------------------
 
 const rowIcons = {

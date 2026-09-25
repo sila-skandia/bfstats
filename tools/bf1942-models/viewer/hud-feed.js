@@ -106,7 +106,7 @@ export function createHudFeed(page) {
   // `ObjectTemplate.setMinimapIcon` per vehicle template, read from the mod's
   // own `Objects.rfa` chain. They are point art and are drawn unsmoothed at
   // whole multiples where the surface allows.
-  const hudPack = { sprites: new Map(), icons: {}, nations: {} };
+  const hudPack = { sprites: new Map(), icons: {}, nations: {}, scoreSettings: null };
 
   /** The player marker ships as a black cut-out — a solid arrowhead inside a
    *  translucent disc, colour left to the engine. Painted once the way the HUD
@@ -134,6 +134,15 @@ export function createHudFeed(page) {
   }
 
   async function loadHudPack() {
+    // The score table (`extract_score_settings.py`), on its own request: a
+    // tree that predates the file leaves the page on the `ScoreManager`
+    // constructor's own numbers (`round-state.js`), which is what the engine
+    // does for a mod that ships no settings file. Not awaited by the sprites
+    // below and not lost with them.
+    fetch(`${page.hudPaths.url('score-settings.json')}${page.bust()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(settings => { hudPack.scoreSettings = settings || null; })
+      .catch(() => {});
     let manifest, icons;
     try {
       [manifest, icons] = await Promise.all([

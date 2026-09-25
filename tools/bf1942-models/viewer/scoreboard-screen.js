@@ -11,9 +11,9 @@ import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './sc
  * reassigns is read live):
  * `bots`, `bust`, `currentDir`, `deployKit`, `deployRejoin`, `deployTeamId`,
  * `deployVars`, `drawBitmapText`, `extras`, `fullmapBox`, `hudPack`,
- * `hudPaths`, `loadouts`, `measureText`, `optOnFoot`, `placeHit`,
- * `roomClient`, `roomJoined`, `roomName`, `soldier`, `soldierDead`,
- * `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
+ * `hudPaths`, `LOCAL_PLAYER`, `loadouts`, `measureText`, `optOnFoot`,
+ * `placeHit`, `roomClient`, `roomJoined`, `roomName`, `round`, `soldier`,
+ * `soldierDead`, `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
  */
 export function createScoreboardScreen(page) {
   const scoreboard = {};
@@ -85,6 +85,10 @@ export function createScoreboardScreen(page) {
     const inRoom = page.roomJoined && page.roomClient;
     const players = [{
       slot: inRoom ? page.roomClient.slot : null,
+      // The round's own key for this player (`round-state.js`), which is what
+      // `boardRows` reads his score and his counters by. A room's rows are
+      // the server's, so they carry no id.
+      id: page.LOCAL_PLAYER,
       name: page.roomName,
       team: inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId,
       local: true,
@@ -94,6 +98,7 @@ export function createScoreboardScreen(page) {
     for (const bot of page.bots) {
       players.push({
         slot: null,
+        id: bot.playerId,
         name: bot.name,
         team: bot.team,
         bot: true,
@@ -141,7 +146,8 @@ export function createScoreboardScreen(page) {
     const data = scoreLayout.data;
     if (!data || !scoreboardOpen()) return;
     const inRoom = !!(page.roomJoined && page.roomClient);
-    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : []);
+    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
+                           inRoom ? null : page.round?.counts ?? null);
     const s = scoreboardScale();
     const key = JSON.stringify([rows, s.W, s.H, scoreboard.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
                                 page.currentDir, page.hudPack.sprites.size]);

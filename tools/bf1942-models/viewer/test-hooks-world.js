@@ -90,6 +90,21 @@ export function installWorldHooks(page) {
     // The referee's own damage path, so the kill line comes from the real hook.
     killBot: (id, attackerId = null, opts = {}) => page.referee.applyDamage(id, 1e6, attackerId, null, opts),
   };
+  // The round (`round-state.js`): its two counters, what each side holds, and
+  // one line per player it has counted something for.
+  window.__round = () => {
+    const round = page.round;
+    if (!round) return null;
+    return {
+      tickets: { ...round.tickets },
+      bleeding: { ...round.bleeding },
+      held: { ...round.held },
+      over: round.over,
+      lossPerDeath: round.lossPerDeath,
+      table: { ...round.table },
+      counts: [...round.counts].map(([id, row]) => ({ id, ...row })),
+    };
+  };
   // The score board: open/close it, and read back what it lists.
   window.__scoreboard = {
     open: (fromSpawn = false) => page.setScoreboard(true, fromSpawn),
@@ -97,7 +112,9 @@ export function installWorldHooks(page) {
     get isOpen() { return page.scoreboardOpen(); },
     get fromSpawn() { return page.scoreFromSpawn; },
     ready: () => !!page.scoreLayout.data,
-    rows: () => boardRows(page.scoreboardPlayers(), page.roomJoined && page.roomClient ? page.roomClient.feed : []),
+    rows: () => boardRows(page.scoreboardPlayers(),
+                          page.roomJoined && page.roomClient ? page.roomClient.feed : [],
+                          page.roomJoined ? null : page.round?.counts ?? null),
     paint: () => page.paintScoreboard(true),
   };
   // Which gameplay layer `?mode=` landed on, and what else the level ships —
