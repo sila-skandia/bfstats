@@ -93,6 +93,9 @@ was drawn 18 units tall where retail's is 16.
   The local player's row measured `#008a00` in that pass because the row was
   dead at the time, which is the green at the dead dim, and the colour and the
   dim are covered by the suite rather than by that frame.
+- The same pass against `https://mesh.bfstats.io` after the rollout (served
+  `scoreboard.js` hash-equal to `HEAD`) measures the same `#d35353` and
+  `#53a9d2`, so the live board carries the pair and not just the local one.
 - The two claims a test can hold are in the suite: a dead row is the side's
   colour times the dim to six places, and the glyph draws at `16x16` one unit
   into the row.
