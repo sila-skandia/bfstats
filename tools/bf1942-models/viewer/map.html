@@ -164,6 +164,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
+import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod } from './mods.js';
 import { Aircraft } from './aircraft.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
@@ -299,10 +300,23 @@ renderer.domElement.addEventListener('webglcontextlost', e => {
   pageInput.release();
   contextLost = true;
   showGraphicsCard('Graphics context lost',
-    'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...');
+    'The GPU dropped the WebGL context mid-frame. Trying to bring it back...');
+  // Chrome does not always restore on its own after a GPU process crash: one
+  // twelve-bot run saw the process exit unexpectedly and the context sit
+  // lost for nine minutes (the browser reinitialised its GPU process 1.6 s
+  // in and still nothing). `WEBGL_lose_context`'s restoreContext() forces
+  // the browser's own restore path; three re-initialises its GL state on the
+  // restored event and textures re-upload as they are drawn. If Chrome does
+  // restore on its own first, this is a no-op.
+  const lc = renderer.getContext().getExtension('WEBGL_lose_context');
+  if (lc) setTimeout(() => { try { lc.restoreContext(); } catch (_) {} }, 1500);
 }, false);
 renderer.domElement.addEventListener('webglcontextrestored', () => {
-  glLostBody.textContent = 'The context came back, but nothing it was holding did -- reload to keep playing.';
+  // three has re-initialised its GL state by the time this fires; the frame
+  // loop (which parks while `contextLost` or the card is up) resumes. If
+  // the re-init went wrong, the frame watchdog below re-raises a card.
+  contextLost = false;
+  glLostEl.hidden = true;
 }, false);
 
 const scene = new THREE.Scene();
@@ -351,7 +365,11 @@ const hudPaths = await loadHudPaths(activeMod.id, { bust });
 // Hosted on the stage, not the body: .ld-overlay is inset:0 absolute, and
 // body is unpositioned, so on the body it would resolve against the viewport
 // and paint over the shared nav bar. #stage is the 3D view's positioned box.
-const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE });
+// The mission-briefing screen rides along: the overlay parks on it once the
+// level is up, and its pixels (the game's plate, faces and knapp plates) come
+// out of the hud pack and the load pack through `hudPaths`.
+const briefingScreen = createBriefingScreen({ hudPaths, mapsBase: MAPS_BASE, bust });
+const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE, briefing: briefingScreen });
 // The local player's combat-area frame (`level.combatArea`), read back from
 // the last world step in frame() below, and the world that stepped it. A new
 // level's world has stepped nothing yet, so a frame the old one left reads as
