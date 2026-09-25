@@ -749,12 +749,17 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 layers = _sound_layers(samples, sounds, write,
                                        level_files)
                 if layers:
+                    engine_tmpl = library.objects.get(engine_name.lower())
                     entry = {
                         "template": template,
                         "engine": engine_name,
                         "script": script_path,
                         "level": VEHICLE_SOUND_LEVEL,
                         "layers": layers,
+                        # SND-1: heard at the listener while he sits Inside
+                        # this hull's PlayerControlObject.
+                        "attachToListener": bool(
+                            engine_tmpl and engine_tmpl.attach_to_listener),
                     }
         # The guns ride along with the vehicle that carries them — or alone,
         # for a furniture mount that has no drivetrain voice of its own.
@@ -772,10 +777,13 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 sounds, write, level_files)
             if not arms_layers:
                 continue
+            arms_tmpl = library.objects.get(arms_name.lower())
             weapons.append({
                 "fireArms": arms_name,
                 "script": arms_script,
                 "layers": arms_layers,
+                "attachToListener": bool(
+                    arms_tmpl and arms_tmpl.attach_to_listener),
             })
         if entry is None and weapons:
             entry = {
