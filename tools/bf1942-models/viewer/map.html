@@ -193,6 +193,7 @@ import { createHudFeed } from './hud-feed.js';
 import { createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
 import { createHandWeapon } from './hand-weapon.js';
+import { createKitDropsPage } from './kit-drops-page.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
@@ -477,6 +478,7 @@ const pageInput = createPageInput(bag(
   from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload`),
+  from(() => kitDrops, `pickup:pickupKit`),
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
@@ -1008,7 +1010,7 @@ const soldierHud = createSoldierHud(bag(
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `playSoldierHurtSound`),
-  from(() => soldierKit, `handSlot handWeapon isZoomed kitLoadout kitWeaponSlots loadouts
+  from(() => soldierKit, `carriedKit handSlot handWeapon isZoomed kitLoadout kitWeaponSlots loadouts
     WEAPON_ICON_VARS weaponBarUntil`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => ticketFeed, `feedFlagIconVars feedTicketVars`),
@@ -1107,6 +1109,8 @@ const referee = createBotReferee({
     // The corpse: the engine's death for how he was standing, sitting or
     // swimming and where the round came from (`soldier-death.js`).
     botBodies.killBot(bot, opts);
+    // His kit where he fell, when he fell on foot (`kit-drops-page.js`).
+    kitDrops.botDied(bot, opts);
     comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);
   },
   onRespawned: bot => {
@@ -1206,6 +1210,8 @@ function resetBots() {
   botUnits.reset();
   botBodies.disposeBotVisuals();
   botRounds.reset();
+  // The kits lying about are the old level's too.
+  kitDrops.reset();
 }
 
 /**
@@ -1265,6 +1271,21 @@ const soldierKit = createHandWeapon(bag(
     get MODELS_BASE() { return MODELS_BASE; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
     get renderer() { return renderer; }, get scene() { return scene; }, get sun() { return sun; },
+  },
+));
+/** The kits the dead leave on the ground, and the human's key for them. */
+const kitDrops = createKitDropsPage(bag(
+  from(() => footBodies, `soldierDress`),
+  from(() => level, `bindDynamicShading collider groundHeight`),
+  from(() => localPlayer, `occupancy soldier soldierDead`),
+  from(() => room, `roomJoined`),
+  from(() => soldierKit, `carriedAmmo currentKit equipKit handWeapon`),
+  from(() => spawning, `deployTeamId`),
+  {
+    get bust() { return bust; }, get loader() { return loader; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
+    get optPilot() { return optPilot; }, get params() { return params; },
+    get scene() { return scene; },
   },
 ));
 
@@ -1351,7 +1372,7 @@ const soldierView = createSoldierView(bag(
   from(() => level, `collectSupplyDepots collider currentRoot world`),
   from(() => localLook, `footEyeCur footEyePrev footLookPending footPending footView presentAlpha`),
   from(() => localPlayer, `deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
-    dieOnFoot frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
+    frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
   from(() => seatCamera, `serverSettings`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
   from(() => spawning, `deployTeamId openDeploy`),
@@ -1359,6 +1380,12 @@ const soldierView = createSoldierView(bag(
   {
     get camera() { return camera; }, get hudBridge() { return hudBridge; },
     get params() { return params; },
+    // The body on foot has died: the death, then the kit he carried on the
+    // ground where he fell (`kit-drops-page.js`).
+    dieOnFoot: () => {
+      localPlayer.dieOnFoot();
+      kitDrops.localDied();
+    },
     // Where the last man to hit the human stood (the message log's record of
     // the attack): the side the corpse cam looks from.
     lastAttackerAt: () => comms.lastAttack(LOCAL_PLAYER)?.killer?.position ?? null,
@@ -1366,7 +1393,7 @@ const soldierView = createSoldierView(bag(
 ));
 const footBodies = createFootBody(bag(
   from(() => level, `bindDynamicShading`),
-  from(() => soldierKit, `kitLoadout`),
+  from(() => soldierKit, `currentKit kitLoadout`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => localLook, `footFeetCur footFeetPrev footView presentAlpha`),
   from(() => localPlayer, `deathFamily deathYaw soldier soldierDead`),
@@ -1383,7 +1410,7 @@ const seatPose = createSeatPose(bag(
   from(() => footBodies, `dieClips soldierBody soldierDress`),
   from(() => localPlayer, `occupancy`),
   from(() => seatCamera, `view`),
-  from(() => soldierKit, `kitLoadout soldierTemplateFor`),
+  from(() => soldierKit, `currentKit kitLoadout soldierTemplateFor`),
   from(() => spawning, `deployKit deployTeamId`),
   {
     get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
@@ -1688,6 +1715,9 @@ function simulate(dt, input, look) {
   const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   // Bot AI runs after the world step, so bots read the player's post-step pose.
   referee.tick(dt);
+  // The kits on the ground turn and time out on the world's own ticks: one
+  // `Item::handleUpdate` and one message-clock step per world update.
+  kitDrops.tick(step.ticks / 30);
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
   flagCapture.updateCaptureHud(step.ticks);
