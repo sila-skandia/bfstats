@@ -23,8 +23,37 @@
 //
 // Nothing here knows about the page: the drive options, the body world, the
 // guns, the audio rack and the scene freeze are handed in as `env`.
+//
+// A hull has a team, and only that team gets in (`mayEnterHull`, ledger
+// SEAT-26..SEAT-28, features/vehicle-entry-team-rule). The engine keeps it on
+// the root `PlayerControlObject` (+0x170, a reference count beside it at
+// +0x174): every occupant who takes any seat stamps his team on the root
+// (`PlayerControlObject::enter` 0x0831714d -> `setTeam` 0x0831a5f0) and every
+// one who leaves takes his count back (`exit` 0x08318233 / `exitPlayer`
+// 0x083185fa -> `clearTeam` 0x0831a610), the last one out leaving it 0. So a
+// crewed hull is its crew's side and an empty one is nobody's: stealing an
+// empty enemy tank is the game, climbing into a crewed one is not.
 
 import { VehicleOccupancy, DRIVE_KINDS } from './seats.js';
+
+/**
+ * The engine's entry rule: a player may take a seat of a hull whose team is
+ * none (0) or his own. `GameServer::toggleEntryPoint` (lnxded 0x0814ee70) reads
+ * the root PCO's `getTeam` (IPlayerControlObject vt+0x74) against the player's
+ * team (`BFPlayer+0x7c`) and returns on a mismatch with a non-zero team
+ * (0x0814f13d..0x0814f15e), after whichever finder ran, and `BFfindEntryPoint`
+ * 0x0831d770 already skips such a hull's doors (0x0831da58..0x0831da71), so the
+ * nearest door that may be taken wins. `GameServer::enterVehicle` 0x0814e860
+ * itself compares nothing: the seat switch inside a hull (`checkPlayerTriggers`)
+ * reaches it without the rule, and needs none.
+ *
+ * `team` 0 or absent is a player with no side, which the engine never seats:
+ * the viewer's free camera flying a vehicle (the pilot box), not a soldier. It
+ * passes and stamps nothing.
+ */
+export function mayEnterHull(hullTeam, team) {
+  return !hullTeam || !team || hullTeam === team;
+}
 
 /** The options every seat's gun groups are collected with (the page's). */
 export const SEAT_GUN_OPTIONS = {
@@ -91,6 +120,11 @@ export class VehicleInstance {
     this.handles = new Map();
     /** seatId -> { driven, manned } gun groups, while the seat is held. */
     this.guns = new Map();
+    /** The root PCO's team (`PlayerControlObject+0x170`): the side of the
+     *  last occupant who took a seat, 0 while nobody has. The instance lives
+     *  exactly as long as someone sits in the hull, which is the life of the
+     *  engine's count at +0x174; its end is `clearTeam` reaching 0. */
+    this.team = 0;
   }
 
   get drive() { return this.occupancy.drive; }
@@ -162,6 +196,10 @@ export class VehicleRegistry {
   holder(root, seatId) { return this.instances.get(root)?.holder(seatId) ?? null; }
   /** Who drives the hull at `root`. */
   driverOf(root) { return this.instances.get(root)?.driver ?? null; }
+  /** The hull's team (`VehicleInstance.team`): its crew's side, 0 empty. */
+  teamOf(root) { return this.instances.get(root)?.team ?? 0; }
+  /** A player's side, as the world records it (0: none, see `mayEnterHull`). */
+  playerTeam(playerId) { return this.env.world?.()?.player(playerId)?.team ?? 0; }
 
   /** The player whose seat fired `group`, or null. */
   firerOf(group) {
@@ -175,23 +213,27 @@ export class VehicleRegistry {
 
   /**
    * `playerId` takes `seatId` (the root seat when omitted) of the hull at
-   * `root`. Returns the SeatHandle, or null when the seat is held, or when it
-   * is the root seat of a drivable hull whose drive cannot be built and
-   * `requireDrive` is set.
+   * `root`. Returns the SeatHandle, or null when the seat is held, when the
+   * hull is another side's (`mayEnterHull`: a crewed enemy hull refuses every
+   * door, the human's and every bot's), or when it is the root seat of a
+   * drivable hull whose drive cannot be built and `requireDrive` is set. The
+   * one who gets in stamps his side on the hull (`PlayerControlObject::enter`
+   * 0x0831714d).
    */
   enter(root, seatId, playerId, { requireDrive = false } = {}) {
     if (!root || playerId == null) return null;
     const current = this.seated.get(playerId);
-    if (current) {
-      if (current.root === root) return this.switchSeat(playerId, seatId ?? current.rootId);
-      this.leave(playerId);
-    }
+    if (current?.root === root) return this.switchSeat(playerId, seatId ?? current.rootId);
+    const team = this.playerTeam(playerId);
+    if (!mayEnterHull(this.teamOf(root), team)) return null;
+    if (current) this.leave(playerId);
     let inst = this.instances.get(root);
     const fresh = !inst;
     if (fresh) inst = new VehicleInstance(root, this.env.classes ?? {});
     const seat = seatId || inst.rootId;
     if (inst.holder(seat) != null) return null;
     if (fresh) this.instances.set(root, inst);
+    if (team) inst.team = team;
     inst.seats.set(seat, playerId);
     const handle = new SeatHandle(inst, seat, playerId);
     inst.handles.set(playerId, handle);

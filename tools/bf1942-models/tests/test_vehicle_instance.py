@@ -28,6 +28,9 @@ def run_harness() -> dict:
     original_modules = dict(test_world.MODULES)
     test_world.HARNESS = HARNESS
     test_world.MODULES["vehicle-instance.js"] = test_world.VIEWER / "vehicle-instance.js"
+    # `mannedByEnemy`, the bots' side of the entry rule, and its one import.
+    test_world.MODULES["bot-vehicle.js"] = test_world.VIEWER / "bot-vehicle.js"
+    test_world.MODULES["bot-behaviours.js"] = test_world.VIEWER / "bot-behaviours.js"
     try:
         return test_world.run_harness()
     finally:
@@ -110,6 +113,69 @@ class VehicleInstanceTests(unittest.TestCase):
         self.assertTrue(r["drive"])
         self.assertTrue(r["gunnerSeesIt"])
         self.assertEqual(r["built"], 2)
+
+
+class HullTeamTests(unittest.TestCase):
+    """The entry rule (ledger SEAT-26/27): a hull is its crew's side and an
+    empty one nobody's. `GameServer::toggleEntryPoint` (lnxded 0x0814f13d)
+    lets a player in only when the root PCO's team is 0 or his own, and
+    every occupant stamps his team on it (`PlayerControlObject::enter`
+    0x0831714d) until the last one out clears it (`clearTeam` 0x0831a610).
+    The owner's report: an enemy bot climbed into the T-34 he was driving."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_an_empty_hull_is_nobodys_and_its_driver_stamps_his_side(self) -> None:
+        r = self.results["team"]
+        self.assertEqual(r["emptyTeam"], 0)
+        self.assertTrue(r["allyDrives"])
+        self.assertEqual(r["crewedTeam"], 2)
+
+    def test_the_enemy_is_refused_a_free_seat_of_a_crewed_hull(self) -> None:
+        r = self.results["team"]
+        self.assertFalse(r["axisIntoGunner"])
+        self.assertFalse(r["axisSeated"])
+        self.assertEqual(r["seatsAfterRefusal"], {"Sherman": "ally"})
+
+    def test_a_friend_takes_the_free_seat(self) -> None:
+        self.assertTrue(self.results["team"]["friendIntoGunner"])
+
+    def test_a_hull_crewed_only_by_its_gunner_is_still_barred(self) -> None:
+        r = self.results["team"]
+        self.assertEqual(r["teamWithGunnerOnly"], 2)
+        self.assertFalse(r["axisIntoFreeWheel"])
+
+    def test_the_last_one_out_clears_the_team_and_the_enemy_may_steal_it(self) -> None:
+        r = self.results["team"]
+        self.assertEqual(r["emptiedTeam"], {"emptied": True, "team": 0})
+        self.assertTrue(r["axisSteals"])
+        self.assertEqual(r["stolenTeam"], 1)
+        self.assertFalse(r["allyIntoStolen"], "the stolen hull is now the Axis crew's")
+
+    def test_a_player_with_no_side_passes_and_stamps_nothing(self) -> None:
+        r = self.results["team"]
+        self.assertTrue(r["ghostIntoGunner"])
+        self.assertEqual(r["teamAfterGhost"], 1)
+
+    def test_a_refusal_leaves_the_player_where_he_sits(self) -> None:
+        r = self.results["team"]
+        self.assertFalse(r["refusedFromAnotherHull"])
+        self.assertTrue(r["stillInOther"])
+
+    def test_a_seat_switch_inside_his_own_hull_takes_no_rule(self) -> None:
+        self.assertEqual(self.results["team"]["axisSwitchesInOwnHull"], "shermanBrowning_PCO1")
+
+    def test_the_rule_and_the_bots_filter(self) -> None:
+        r = self.results["teamRule"]
+        # hull team, player team: none, none, own, other, other, no side, both none.
+        self.assertEqual(r["mayEnterHull"], [True, True, True, False, False, True, True])
+        # `BBChange::isMannedByEnemy` 0x0855fcb0: an enemy crew, a friendly one,
+        # an empty hull, a bot with no side, a candidate with no team field.
+        self.assertEqual(r["mannedByEnemy"], [True, False, False, False, False])
 
 
 if __name__ == "__main__":
