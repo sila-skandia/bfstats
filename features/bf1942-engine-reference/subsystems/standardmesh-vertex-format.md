@@ -256,7 +256,19 @@ not a reading.
   **What is left is only the call-site pairing** of vtable `+0x10` with `+0x14`
   — a byte scan found 116 candidate pairs across the image and none in the
   StandardMesh renderer was the right vtable.
-- The 12-byte POD before `primitive` and the trailing u32 are read and, on the
-  server, dropped (SM-5 stays open with that evidence). `primitive` is read as
-  a signed `int` and is the Direct3D `D3DPRIMITIVETYPE` (SM-3, confirmed
-  2026-09-16).
+- The 12-byte POD before `primitive` — narrowed 2026-09-25 (SM-5). On lnxded
+  it is still read into a stack local and dropped, as before. In the client's
+  `readMaterials` (`0x005b42d0`) it is read at **two** call sites gated by
+  `DAT_009ab660` (a per-LOD "build real GPU buffers or not" flag set in
+  `readLods` `0x005b54e0`): when the flag is clear (`0x005b43a4`) it lands in a
+  throwaway stack scratch, same as the server; when it is set (`0x005b45ae`)
+  it is copied into the **persistent per-material record** (the LOD's
+  `0x98`-stride materials array) at record offset `+0x3C..+0x47` — so the
+  client does *not* always discard it. That record's only other reader we
+  found, the draw loop `StandardMesh_drawLod` (`0x005aeec0`, same array),
+  touches `+0x1c`, `+0x20` (`primitive`), `+0x24`/`+0x30` (vertex/index
+  buffer interfaces) and `+0x48` (the trailing `unknown7`, used there as a
+  flag byte), but never `+0x3C..+0x47`. So the bytes are dead in both
+  binaries — kept in memory on one client path, but never read back by
+  anything located. `primitive` is read as a signed `int` and is the Direct3D
+  `D3DPRIMITIVETYPE` (SM-3, confirmed 2026-09-16).
