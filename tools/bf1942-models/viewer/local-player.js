@@ -14,6 +14,7 @@ import { hitFromDirAlpha, hitFromDirOctant } from './hud.js';
 import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
+import { routeFlightInput } from './mouse-look-key.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -27,6 +28,7 @@ import { PARA_FALLING } from './parachute.js';
  * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
  * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`,
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
+ * `lookKeyHeld`, `lookNeedsKey`,
  * `mannedActive`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
@@ -623,6 +625,11 @@ export function createLocalPlayer(page) {
         pitch: page.mobilePadHeld ? page.mobilePadVector.y : axis('c_PIPitch'),
         pad: page.mobilePadHeld,
       };
+      // A pilot holding the mouse-look key flies hands off: the engine's
+      // router zeroes c_PIYaw, c_PIPitch and c_PIRoll for every tick the key
+      // is down (`BFPlayer::handleInput`, `mouse-look-key.js`). The throttle
+      // and the triggers still reach the aircraft.
+      routeFlightInput(input, page.lookNeedsKey() && page.lookKeyHeld());
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
     } else if (onFoot) {
       page.pumpLook(lookTicks);
