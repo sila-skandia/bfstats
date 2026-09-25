@@ -252,6 +252,9 @@ class Report:
     # One line per child ObjectSpawner resolved to its held vehicle
     # (`Enterprise_corsairSpawner -> corsair`), in declaration order.
     held_spawners: list[str] = field(default_factory=list)
+    # One line per node carrying an `extras.isLadder` block (Gap 16): the
+    # template, its up-axis length and across-rungs width.
+    ladders: list[str] = field(default_factory=list)
     # One line per part carrying an `extras.physics` block, so a glance at the
     # report says whether a vehicle came out simulatable or came out scenery.
     physics_parts: list[str] = field(default_factory=list)
@@ -296,6 +299,7 @@ class Report:
             "supplyDepots": self.supply_depots,
             "vehicleHud": self.vehicle_hud,
             "heldSpawners": self.held_spawners,
+            "ladders": self.ladders,
             "physicsParts": self.physics_parts,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
@@ -363,6 +367,67 @@ def _armor_effect_offset(offset: tuple[float, float, float]) -> list[float]:
     return [x, y, -z]
 
 
+# Gap 16 (`features/ladder-climbing/README.md`): how a ladder's geometry is
+# read into the spec a viewer climbs by. The `.con` carries no ladder words
+# beyond the collision group, so the shape comes from the mesh itself:
+#
+#   * the UP axis is the longest extent of the bounding box — a ladder is by
+#     construction the one long thin thing on its own template — expressed in
+#     glTF space (the exporter's Z mirror applies to directions as to points);
+#   * LENGTH is the extent along that axis, BOTTOM and TOP are the box's centre
+#     line ends (the axis coordinate at its min and max, the two perpendicular
+#     coordinates at the centre, so the climbed line is the middle of the
+#     rungs, not a box corner);
+#   * WIDTH is the larger of the two perpendicular extents — across the rungs;
+#   * FACE is the unit vector along the *smaller* perpendicular extent — the
+#     ladder plane's own normal, the direction a climbing soldier stands off
+#     in. Its sign is arbitrary until someone grabs the ladder, when the
+#     viewer orients it toward the side the soldier approached from.
+#
+# A degenerate box (a missing or single-point mesh) yields None, which is
+# cached like any other reading rather than re-derived per placement.
+def ladder_spec_from_positions(
+        positions: list[tuple[float, float, float]]) -> dict | None:
+    """`extras.isLadder` for one mesh's vertex cloud, or None."""
+    if not positions:
+        return None
+    lo = [min(p[i] for p in positions) for i in range(3)]
+    hi = [max(p[i] for p in positions) for i in range(3)]
+    extents = [hi[i] - lo[i] for i in range(3)]
+    axis = max(range(3), key=lambda i: extents[i])
+    length = extents[axis]
+    if length <= 0.0:
+        return None
+    others = [i for i in range(3) if i != axis]
+    width = max(extents[i] for i in others)
+    face = min(others, key=lambda i: extents[i])
+    centre = [(lo[i] + hi[i]) * 0.5 for i in range(3)]
+    bottom = list(centre)
+    bottom[axis] = lo[axis]
+    top = list(centre)
+    top[axis] = hi[axis]
+    # The viewer climbs in glTF space, and the exporter mirrors Refractor's Z
+    # on every vertex — the box's bottom and top go through the same mirror.
+    bottom[2], top[2] = -bottom[2], -top[2]
+
+    def unit_axis(index: int) -> list[float]:
+        vector = [0.0, 0.0, 0.0]
+        vector[index] = 1.0
+        return [vector[0], vector[1], -vector[2]]
+
+    def rounded(point: list[float]) -> list[float]:
+        return [round(value, 4) for value in point]
+
+    return {
+        "axis": unit_axis(axis),
+        "length": round(length, 4),
+        "bottom": rounded(bottom),
+        "top": rounded(top),
+        "width": round(width, 4),
+        "face": unit_axis(face),
+    }
+
+
 class Assembler:
     def __init__(self, meshes: ArchivePool, textures: ArchivePool,
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -408,6 +473,10 @@ class Assembler:
         self._texture_cache: dict[str, int | None] = {}
         self._material_cache: dict[tuple, int] = {}
         self._geom_mesh: dict[str, tuple[int | None, int]] = {}
+        # Gap 16: per geometry, the ladder spec (`extras.isLadder`) derived
+        # from the mesh bounds — axis, length, bottom/top, face. Shared by
+        # every placement of the geometry; `None` caches a non-ladder reading.
+        self._geom_ladder: dict[str, dict | None] = {}
         # Gap 11: per geometry, the LOD rungs emitted below LOD 0 as
         # `[(level, mesh index), ...]` plus the distance table used. Shared by
         # every placement of the geometry; read by `_lod_children_for`.
@@ -981,6 +1050,42 @@ class Assembler:
                 },
             )))
         return children
+
+    def _ladder_spec_for(self, geometry_name: str) -> dict | None:
+        """`extras.isLadder` for one geometry's mesh, or None.
+
+        Re-reads the `.sm` on first ask (the draw pass kept only the built
+        meshes, not their vertex clouds) and caches the reading per geometry,
+        `None` included, so a bundle of fifty guard towers parses
+        `Ladder_10m.sm` once. A missing mesh file or a degenerate bounding box
+        is a None like any other: a ladder the geometry cannot measure is
+        emitted without the block rather than with a guessed one.
+        """
+        cache_key = geometry_name.lower()
+        if cache_key in self._geom_ladder:
+            return self._geom_ladder[cache_key]
+        self._geom_ladder[cache_key] = None
+        template = self.library.geometry(geometry_name)
+        if template is None or template.kind.lower() == "treemesh":
+            return None
+        entry = self.meshes.resolve_ext(
+            f"standardMesh/{template.mesh_file}", (".sm",))
+        if not entry:
+            return None
+        try:
+            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+        except stdmesh.MeshError:
+            return None
+        if not mesh.lods:
+            return None
+        # The drawn rung: the same index `_mesh_index` selects, so the spec
+        # describes the mesh the level actually ships.
+        lod = mesh.lods[min(self.lod, len(mesh.lods) - 1)]
+        positions = [p for material in lod.materials
+                     for p in material.positions()]
+        spec = ladder_spec_from_positions(positions)
+        self._geom_ladder[cache_key] = spec
+        return spec
 
     def _mesh_index(self, builder: gltf.GlbBuilder, geometry_name: str,
                     report: Report) -> tuple[int | None, int]:
@@ -2845,6 +2950,22 @@ class Assembler:
             extras["animatedTextureSpeed"] = [-u, v]
         if rel := self._lightmap_rel(template, world_origin):
             extras["lightmap"] = rel
+
+        # Gap 16: a template in the engine's `c_CGLadders` group carries the
+        # spec a viewer climbs by, on the node the ladder is PLACED at —
+        # top-level for the direct placements, a bundle child for the
+        # guard-tower/bunker/dock-repair ones. The spec is in that node's own
+        # frame, so a viewer resolves it to world space through the node's
+        # world matrix and the bundle's transform composes itself; it rides
+        # the part node, so the Gap 11 LOD splice (which takes the rungs, not
+        # the part) leaves it where the climb needs it.
+        if template.is_ladder and mesh_index is not None and template.geometry:
+            spec = self._ladder_spec_for(template.geometry)
+            if spec is not None:
+                extras["isLadder"] = spec
+                report.ladders.append(
+                    f"{template.name} [{template.geometry}] "
+                    f"length={spec['length']:g} width={spec['width']:g}")
 
         # Gap 11: a StandardMesh part whose geometry emitted LOD rungs carries
         # them as child nodes (extras.lod), for the viewer to swap by

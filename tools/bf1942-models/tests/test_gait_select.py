@@ -29,6 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
+    ROOT / "viewer" / "ladder-climb.js",
     ROOT / "viewer" / "gait-select.js",
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "spawn-flags.js",
