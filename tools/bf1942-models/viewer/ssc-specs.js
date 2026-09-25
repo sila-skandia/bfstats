@@ -16,6 +16,23 @@ export function findEngineSpec(report, template) {
 }
 
 /**
+ * Does this patch's owner carry `ObjectTemplate.setAttachToListener 1`?
+ *
+ * The extractor writes `attachToListener` on each engine and weapon entry. A
+ * `scene.json` from before it did is answered from the engine's script path:
+ * across vanilla, XPack1 and XPack2 every sound-bearing Engine under
+ * `Objects/Vehicles/Land/` carries the flag (19 + 4 + 22, the only exception a
+ * Katyusha rocket's projectile engine) and no aircraft or ship Engine, and no
+ * FireArms in any of them, does (ledger SND-7). So a gun is never attached on
+ * old data. Inferred for a mod tree, which is why the field wins when present.
+ */
+export function attachesToListener(spec, kind = 'engine') {
+  if (typeof spec?.attachToListener === 'boolean') return spec.attachToListener;
+  if (kind !== 'engine') return false;
+  return /(^|\/)objects\/vehicles\/land\//i.test(spec?.script || '');
+}
+
+/**
  * The gun patches for one vehicle, in the same shape `loadEngineAudio` takes.
  *
  * The extractor hangs weapons off the vehicle that carries them, so this is the
@@ -33,6 +50,7 @@ export function findWeaponSpecs(report, template) {
     script: weapon.script,
     level: vehicle.level,
     layers: weapon.layers,
+    attachToListener: weapon.attachToListener,
   }));
 }
 
@@ -61,6 +79,7 @@ export function findWeaponSpecsByFireArms(report, names) {
           script: weapon.script,
           level: vehicle.level,
           layers: weapon.layers,
+          attachToListener: weapon.attachToListener,
         });
       }
     }
