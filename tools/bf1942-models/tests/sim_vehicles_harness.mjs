@@ -630,6 +630,72 @@ const recipes = {
   },
 };
 
+/** A plane with an AI pilot — which is what an enemy plane is — killed in the
+ *  air. The crew dies with the hull, so nothing is left on the stick: the wreck
+ *  has to fly itself down on the zeroed control word (`world.falling`, one
+ *  integration a tick, HP-15) and the crash at the bottom is what places the
+ *  wreck, under the hull's own template name — the model the viewer will fetch
+ *  as `models/<Template>.wreck.glb`. The list of air templates the level places
+ *  comes back with it, so the test can check that file exists for every one. */
+recipes.downedAir = async function downedAir() {
+  const match = await start('el_alamein');
+  const b = bot(match, 'bot_1');
+  const attacker = match.bots.find(o => o.team !== b.team) ?? b;
+  const cand = mount(match, b, 'Spitfire');
+  freezeOthers(match, [b.playerId]);
+  const node = cand.node;
+  const wrecked = [];
+  match.stage.hooks.onWreck = (owner, n, killer) => wrecked.push({
+    owner, template: n.userData?.control ?? n.name, killer, t: round(match.clock),
+  });
+  // The drive the hull was last flown by, which is where its position is read
+  // from once the crew has left it (the instance is gone with them).
+  const drive = () => match.stage.vehicles.lastFlightOf(node)?.drive ?? b.vehicle?.drive ?? null;
+  const at = () => drive()?.state?.position ?? null;
+
+  // Fly until there is real air under the hull, then shoot it down.
+  let topAgl = -Infinity;
+  run(match, 120, () => {
+    const p = at();
+    if (!p) return false;
+    topAgl = Math.max(topAgl, p.y - match.groundAt(p.x, p.z));
+    return topAgl > 120;
+  });
+  const death = at() ? { x: at().x, y: at().y, z: at().z } : null;
+  match.stage.damageHull(b, 1e6, { attackerId: attacker.playerId });
+  match.step();
+  const flying = !!drive() && match.world.falling.has(drive());
+  const frozen = Object.hasOwn(node, 'updateMatrixWorld');
+
+  // Until the fall ends: the wreck list hands the drive back on the crash.
+  let minY = Infinity, crashAfter = null, crashY = null, crashX = null, crashZ = null;
+  const span = match.clock;
+  run(match, 300, () => {
+    const d = drive();
+    const p = at();
+    if (p) minY = Math.min(minY, p.y);
+    if (!d || !match.world.falling.has(d)) {
+      crashAfter = round(match.clock - span);
+      if (p) { crashY = round(p.y); crashX = p.x; crashZ = p.z; }
+      return true;
+    }
+    return false;
+  });
+
+  return {
+    template: cand.template, topAgl: round(topAgl), stillMounted: !!b.vehicle, flying, frozen,
+    deathY: death ? round(death.y) : null,
+    deathAgl: death ? round(death.y - match.groundAt(death.x, death.z)) : null,
+    fellBy: death && Number.isFinite(minY) ? round(death.y - minY) : null,
+    crashAfter, crashY,
+    crashAgl: crashY === null ? null : round(crashY - match.groundAt(crashX, crashZ)),
+    wrecked,
+    // Every plane this level places, off the page's own candidate scan.
+    airTemplates: [...new Set(match.stage.units.candidates().filter(c => c.isRoot && c.kind === 'air').map(c => c.template))],
+    destroyed: eventsOf(match, 'vehicle_destroyed').map(e => `${round(e.t)} ${e.vehicle} by ${e.killer}`),
+  };
+};
+
 /** Brief Q on Midway, seed 1: a bot takes each carrier's first deck plane
  *  (the Corsair on the Enterprise, the Zero on the Shokaku) and takes off; the
  *  carriers do not move. Then a frozen bot drives the Enterprise at full

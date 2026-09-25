@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
+import { AIRBORNE_MARGIN } from './airborne.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -177,7 +178,6 @@ export function createVehicleWrecks(page) {
   // clamp (`Aircraft.integrate` settles a hull at `floor + groundClearance`):
   // the first keeps a plane taxiing or parked on a strip from being read as
   // airborne, the second is the contact that ends the fall.   [HOUSE RULE]
-  const AIRBORNE_MARGIN = 1.5;   // metres
   const LANDING_MARGIN = 0.25;   // metres
   const LANDING_SPEED = 1.5;     // m/s: quiet enough to be down
   const LANDING_HOLD = 1.0;      // seconds of stillness that mean it
@@ -255,17 +255,24 @@ export function createVehicleWrecks(page) {
    * else — a tank on a ridge, a plane burning on its pad, a hull with nobody in
    * it at all.
    *
-   * Read off the seat registry before the crew dies, because that is the only
-   * place the drive and the hull's kind live together: `instances` drops the
-   * instance when the last occupant leaves. The height test then separates a
-   * plane that was taxiing (its origin sits at its own ride height over the
-   * strip) from one with air under it, with a margin so a hull still on its
-   * wheels is never mistaken for one in flight.
+   * The drive comes from the seat registry while someone holds a seat, and from
+   * the registry's record of the hull's last flight when the crew is already
+   * gone — which is every crew the player did not kill himself. An AI pilot's
+   * death is handled by the referee a tick before the wreck pass reads the hull
+   * (`bot-referee.js` `damageLanded` -> `leaveVehicle`), and the instance is
+   * dropped with him; without that record the drive was simply absent and the
+   * wreck stayed where the hull was killed instead of coming down.
+   *
+   * The height test then separates a plane that was taxiing (its origin sits at
+   * its own ride height over the strip) from one with air under it, with a
+   * margin so a hull still on its wheels is never mistaken for one in flight.
    */
   function fallingDriveFor(node) {
     const inst = page.vehicles?.instanceOf?.(node);
-    const drive = inst?.drive;
-    if (!inst || !drive || inst.rootKind !== 'air') return null;
+    const last = page.vehicles?.lastFlightOf?.(node) ?? null;
+    const drive = inst?.drive ?? last?.drive ?? null;
+    const kind = inst?.rootKind ?? last?.kind ?? null;
+    if (!drive || kind !== 'air') return null;
     const ride = drive.spec?.groundClearance ?? 1.2;
     node.updateWorldMatrix(true, false);
     const y = node.matrixWorld.elements[13];
