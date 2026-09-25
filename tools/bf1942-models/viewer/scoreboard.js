@@ -42,16 +42,27 @@
  *  box's top (ctor 0x007d1222 stores 12.0; draw 0x007d1390 adds it twice). */
 export const LIST_TOP_INSET = 24;
 
-/** What stands in where the engine was not read. Rows are limited to the ones
+/** What stands in where the engine was not read: rows are limited to the ones
  *  that end above the panel's lower olive strip (the next thing the file draws
- *  under the list); text is the leaf's own colour multiplier, white, except
- *  that a dead player's row is dimmed to the dark red the capture shows; rows
- *  sort by score, then kills, then fewest deaths, then roster order. */
-export const ROW_LIMIT_NOTE = 'viewer choice: row count, text colour, sort';
+ *  under the list), and rows sort by score, then kills, then fewest deaths,
+ *  then roster order. A row's colour is not a choice: see `rowColor`. */
+export const ROW_LIMIT_NOTE = 'viewer choice: row count, sort';
 
-/** The text colour of a dead player's row (the capture's dimmed red), as a
- *  multiplier on the list leaf's own colour. */
-export const DEAD_ROW_COLOR = [0.62, 0.16, 0.16];
+/** The game's own per-team row colours, the ones `Menu.con` sets with
+ *  `Game.setAxisRadioColor 1/0.35/0.35` and `Game.setAlliedRadioColor
+ *  0.4/0.6/1`, plus the buddy green (`extract_radio` records them all in the
+ *  chat layout; the board's own layout carries them too). Retail's board draws
+ *  both the name and the numbers in them: a 2556x1441 capture's name ink cores
+ *  are #d65454 on the Axis panel and #54aed8 on the Allied one, which is
+ *  these two colours through the face's own coverage. The fallback here covers
+ *  a board pack extracted before the colours were recorded in it. */
+export const ROW_COLORS = { axis: [1, 0.35, 0.35], allies: [0.4, 0.6, 1], buddy: [0, 1, 0] };
+
+/** The dim a dead player's row is drawn at, for the whole row and its numbers.
+ *  Retail's dead rows measure 0.49 to 0.59 of a live row's colour per channel
+ *  (the Allied panel of a 2556x1441 capture: #54aed8 live against #29627f
+ *  dead), so the side's own colour, dimmed by this. */
+export const DEAD_ROW_DIM = 0.55;
 
 /** The five classes a row's `kit` may name, as the layout's `rowIcons` key
  *  them; anything else (a mod's `Rocket pack`, an unknown kit) draws nothing. */
@@ -76,6 +87,23 @@ export function rowIcon(row, icons) {
   if (row.dead) return (row.bot ? icons.botDead : icons.dead) || null;
   const set = row.bot ? icons.bot : icons.human;
   return (row.kit && set && set[row.kit]) || null;
+}
+
+/** The colour a row's text is drawn in. A row takes its side's colour, and the
+ *  local player's own row takes the buddy green (retail draws it that way; the
+ *  capture's ink core for it is #01f301, which is the pure green at the face's
+ *  own coverage). A row on neither side returns null, and the leaf's own
+ *  colour stands. `colors` is the board layout's table when the pack has one,
+ *  and any entry in it may be null. */
+export function rowColor(row, colors) {
+  if (!row) return null;
+  const c = colors || {};
+  const pick = (key, fallback) =>
+    (Array.isArray(c[key]) && c[key].length >= 3 ? c[key] : fallback);
+  if (row.local) return pick('buddy', ROW_COLORS.buddy);
+  if (row.team === 1) return pick('axis', ROW_COLORS.axis);
+  if (row.team === 2) return pick('allies', ROW_COLORS.allies);
+  return null;
 }
 
 /** Kills and deaths per slot from the room's event feed. A `killed` row names
@@ -125,6 +153,7 @@ export function boardRows(players, feed, tally = null) {
     rows[p.team].push({
       slot: p.slot ?? null,
       name: String(p.name ?? ''),
+      team: p.team,
       local: !!p.local,
       kit: kitClassKey(p.kit),
       bot: !!p.bot,
@@ -193,10 +222,13 @@ export function boardVars(layoutVars, state) {
  *  `lineHeight` the face's, `floor` the y the rows must end above (the top of
  *  the olive strip under the list; see `ROW_LIMIT_NOTE`). Returns
  *  `{ visibleRows, cells(rowIndex, row) }`, each cell `{ x, y, text }` with
- *  `y` the text line's top. `icon(rowIndex)` is the square the row's kit
- *  glyph fills, `{ x, y, size }`: the `icon` column's x, the row's own top,
- *  and the row height a side (the capture's square is the row's height, not
- *  the glyph's 16); null when the columns name no `icon`. */
+ *  `y` the text line's top. `icon(rowIndex)` is the square a row's kit glyph
+ *  sits in, `{ x, y, size }`: the `icon` column's x, the row's own top, and
+ *  the row height a side. The glyph itself is drawn at its own size, centred
+ *  in that square, which is what retail's 16x16 row icons do (measured: an
+ *  icon's ink is 12.5 units tall against the row's eighteen, and its ink top
+ *  sits 3.4 units into the row, where a 16-unit glyph one unit into an
+ *  18-unit square puts it). Null when the columns name no `icon`. */
 export function listGeometry(box, columns, lineHeight, floor) {
   const [bx, by, , bh] = box.rect;
   const pitch = box.rowHeight;
@@ -215,8 +247,12 @@ export function listGeometry(box, columns, lineHeight, floor) {
       return { x: bx + inset + iconCol.x, y: top + index * pitch, size: pitch };
     },
     cells(index, row) {
-      const bottom = top + (index + 1) * pitch;
-      const y = bottom - lineHeight;
+      // The row's line box, centred in the row: the engine draws a list row's
+      // text with the row's own height as the pitch and the face's line height
+      // inside it, so a standard6 row (8) in an 18-unit row starts 5 units
+      // down. Retail measures the first row's ink top at 93.3 virtual against
+      // the list's own 89, and 89 + 5 is that to within the capture.
+      const y = top + index * pitch + (pitch - lineHeight) / 2;
       const out = [];
       for (const col of named) {
         const value = col.field === 'id' ? row.slot : row[col.field];
@@ -292,11 +328,14 @@ export function leafText(el, vars) {
  *   drawText(ctx, fontId, text, x, y, rgb)
  *   lineHeight(fontId)                 -> the face's line height
  *   hover(el)                          -> true when the pointer is over a button
+ *   rowColor(row)                      -> the row's own text colour, or null
  * `rows` maps a list box's `data` name to its rows; `floor(box)` is the y its
  * rows must end above. A row's kit glyph is `layout.rowIcons` resolved by
  * `rowIcon` and fetched through `texture` like any plate; one the page has not
- * loaded (or a row with no known kit) leaves the column empty. Returns the
- * visible-row count per list, for the caller's scroll-bar variables.
+ * loaded (or a row with no known kit) leaves the column empty. A row's text is
+ * drawn in its side's colour (`rowColor`), dimmed while the player is down.
+ * Returns the visible-row count per list, for the caller's scroll-bar
+ * variables.
  */
 export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
   const visible = {};
@@ -347,13 +386,17 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
           const square = icon ? geo.icon(index) : null;
           const img = square ? res.texture(icon) : null;
           if (img) {
+            // The glyph at its own size, centred in the row's square: retail's
+            // 16x16 row icons are not stretched to the row height (measured:
+            // an icon's ink is 12.5 units tall; ours read 15 while it was
+            // scaled by 18/16).
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(img, Math.round(square.x), Math.round(square.y),
-                          square.size, square.size);
+            ctx.drawImage(img, Math.round(square.x + (square.size - img.width) / 2),
+                          Math.round(square.y + (square.size - img.height) / 2),
+                          img.width, img.height);
           }
-          const rgb = row.dead
-            ? color.slice(0, 3).map((v, i) => v * DEAD_ROW_COLOR[i])
-            : color.slice(0, 3);
+          const base = res.rowColor?.(row) || color.slice(0, 3);
+          const rgb = row.dead ? base.map(v => v * DEAD_ROW_DIM) : base;
           ctx.imageSmoothingEnabled = false;
           for (const cell of geo.cells(index, row)) {
             let text = cell.text;

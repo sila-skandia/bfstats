@@ -4,9 +4,9 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { LIST_TOP_INSET, DEAD_ROW_COLOR, tallyFeed, boardRows, boardVars, listGeometry,
-          fitText, condOk, leafVisible, textureKey, leafText, paintLeaves, listFloor,
-          kitClassKey, rowIcon }
+import { LIST_TOP_INSET, DEAD_ROW_DIM, ROW_COLORS, tallyFeed, boardRows, boardVars,
+          listGeometry, fitText, condOk, leafVisible, textureKey, leafText, paintLeaves,
+          listFloor, kitClassKey, rowIcon, rowColor }
   from './scoreboard.js';
 
 const results = {};
@@ -91,6 +91,26 @@ results.icons = {
 // A lone page: no slot, no feed.
 results.lone = boardRows([{ slot: null, name: 'Player', team: 1, local: true }], []);
 results.nobody = boardRows([], []);
+
+// --- the row colour ----------------------------------------------------------
+
+// The sides' own colours, the local player's row in the buddy green, and a row
+// on neither side left to the leaf. A pack's own table wins where it has one;
+// a null entry in it (a chain with no Menu.con) falls back.
+const axisRow = results.rows[1][0];
+const allyRow = results.rows[2].find(r => r.name === 'Ally Two');
+const localRow = results.rows[2].find(r => r.name === 'Local');
+results.rowColors = {
+  axis: rowColor(axisRow, undefined),
+  allies: rowColor(allyRow, undefined),
+  local: rowColor(localRow, undefined),
+  none: rowColor({ name: 'Teamless', team: 0 }, undefined),
+  noRow: rowColor(null, undefined),
+  pack: rowColor(axisRow, { axis: [0.1, 0.2, 0.3], allies: [0.4, 0.5, 0.6] }),
+  packAllies: rowColor(allyRow, { axis: [0.1, 0.2, 0.3], allies: [0.4, 0.5, 0.6] }),
+  packNullAxis: rowColor(axisRow, { axis: null, allies: [0.4, 0.5, 0.6] }),
+  defaults: ROW_COLORS,
+};
 
 // --- the variables -----------------------------------------------------------
 
@@ -186,23 +206,30 @@ const elements = [
   { kind: 'fill', rect: [388, 89, 10, 372], color: [0, 0, 0, 0.8] },
   { kind: 'fill', rect: [14, 465, 371, 18], color: [0, 0, 0, 1] },
 ];
+// The pack's own colours, as the board reads them out of the layout.
+const packColors = { axis: [1, 0.35, 0.35], allies: [0.4, 0.6, 1], buddy: [0, 1, 0] };
+// A plate draws at its texture's own size; the row glyphs are 16x16, which is
+// what tells the row's centring apart from stretching to the row height.
+const glyphOrPlate = name =>
+  ({ name, width: /_16x16$/.test(name) ? 16 : 128, height: /_16x16$/.test(name) ? 16 : 128 });
 results.floor = listFloor(elements, box);
 {
   const { ctx, calls } = recorder();
   const texts = [];
   const res = {
-    texture: name => ({ name, width: 128, height: 128 }),
+    texture: name => glyphOrPlate(name),
     measure: (font, text) => text.length * 6,
     drawText: (c, font, text, x, y, rgb) => texts.push([text, x, y, rgb.join(',')]),
     lineHeight: () => 8,
     hover: el => el.texture === 'knappext_n',
+    rowColor: row => rowColor(row, packColors),
     floor: el => listFloor(elements, el),
   };
   const vars = boardVars({}, { fromSpawn: true, rows: results.rows, visibleRows: 20,
                                axisFlag: 'flag_ticket_jp.tga' });
   const visibleRows = paintLeaves(ctx, { listColumns: columns, rowIcons }, elements, vars, res,
                                   { 'Scoreboard/AxisScoreboardList': results.rows[1] });
-  results.paint = { calls, texts, visibleRows, deadColor: DEAD_ROW_COLOR };
+  results.paint = { calls, texts, visibleRows, deadDim: DEAD_ROW_DIM, colors: packColors };
 }
 // The same list with a glyph the page never loaded, and no `rowIcons` at all:
 // the column stays empty and the text still lands.

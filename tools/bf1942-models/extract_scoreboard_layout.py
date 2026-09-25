@@ -58,7 +58,8 @@ its own so no other extractor's manifest is touched):
 
   scoreboard-layout.json   the flat draw list, the variables with the file's
                            own sample values, the resolved strings, the list
-                           columns, and manifests for:
+                           columns, the per-team row colours `Menu.con` sets,
+                           and manifests for:
   textures/*.png           every plate, button and icon the page names
   fonts/*.png + *.json     the bitmap faces its text nodes name
 
@@ -85,6 +86,7 @@ from extract_menu_layout import (  # noqa: E402
 )
 from bf42 import meme  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
+from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 
 #: The variable the board's top-level group culls on.
 BOARD_VAR = "Scoreboard/SpawnScoreBoard"
@@ -137,6 +139,48 @@ ROW_ICONS = {
     "botDead": "bot_dead_16x16",
 }
 
+#: The game's own per-team row colours, and where it sets them: the client's
+#: `Bf1942/Game/Init/Menu.con` runs `Game.setAxisRadioColor 1/0.35/0.35` and
+#: `Game.setAlliedRadioColor 0.4/0.6/1`, and the board draws a row's name and
+#: its numbers in them, and a retail capture's ink cores are #d65454 on the Axis
+#: panel and #54aed8 on the Allied one, which is those two through the face's
+#: own coverage. The buddy green is the one the chat settings use for a buddy
+#: (the client's own literal, `extract_radio.py` records it the same way), and
+#: the local player's own row is drawn in it.
+MENU_CON = "Bf1942/Game/Init/Menu.con"
+TEAM_COLOR_KEYS = {"axis": "AxisRadioColor", "allies": "AlliedRadioColor"}
+TEAM_COLORS_SOURCE = ("Bf1942/Game/Init/Menu.con: Game.setAxisRadioColor and "
+                      "Game.setAlliedRadioColor")
+BUDDY_COLOR = [0.0, 1.0, 0.0]
+
+
+def read_team_colors(game_dir: Path, mod: str) -> dict:
+    """The sides' row colours, read out of the chain's `Menu.con`.
+
+    `Menu.con` sits in the `bf1942` archive of the chain, the same file
+    `extract_radio.py` takes the chat colours from. A chain whose archive is
+    missing leaves both sides null, which `rowColor` in the viewer then falls
+    back for."""
+    pool = ArchivePool()
+    for step in mod_chain(game_dir, mod):
+        archives = find_archives_dir(step)
+        if archives is not None and (archives / "bf1942").is_dir():
+            pool.add_dir(archives / "bf1942", ("game",))
+    raw = pool.try_read(MENU_CON)
+    settings: dict[str, str] = {}
+    if raw is not None:
+        for line in raw.decode("latin-1").splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0].lower().startswith("game.set"):
+                settings[parts[0][len("Game.set"):].lower()] = parts[1]
+    colors: dict[str, list[float] | None] = {}
+    for side, key in TEAM_COLOR_KEYS.items():
+        value = settings.get(key.lower())
+        rgb = [float(v) for v in value.split("/")] if value else []
+        colors[side] = rgb if len(rgb) == 3 else None
+    colors["buddy"] = list(BUDDY_COLOR)
+    return colors
+
 
 class BoardFlattener(MenuFlattener):
     """`MenuFlattener` plus the one class the board adds.
@@ -175,7 +219,8 @@ class BoardFlattener(MenuFlattener):
 
 
 def decode_layout(ingame: bytes, lexicon: dict[str, str],
-                  source: str | None = None) -> dict:
+                  source: str | None = None,
+                  colors: dict | None = None) -> dict:
     root, reader = meme.load(ingame)
     top = find_group(root, BOARD_VAR)
     if top is None:
@@ -197,6 +242,8 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
             "columns": LIST_COLUMNS,
         },
         "rowIcons": ROW_ICONS,
+        "colors": colors if colors is not None else {},
+        "colorsSource": TEAM_COLORS_SOURCE,
         "fonts": sorted(fonts),
         "strings": dict(sorted(flat.strings.items())),
         "variables": dict(sorted(flat.variables.items())),
@@ -252,7 +299,8 @@ def main() -> None:
         layout = decode_layout(
             menu.read(entry), lexicon,
             f"menu/InGame (MemeFile 2.0) in "
-            f"Mods/{menu.owner(entry) or sources.mod_id}/Archives/menu.rfa")
+            f"Mods/{menu.owner(entry) or sources.mod_id}/Archives/menu.rfa",
+            read_team_colors(game_dir, args.mod))
         layout["textures"] = extract_textures(menu, layout_textures(layout),
                                               out / "textures", args.force)
     with sources.open_font() as fonts:

@@ -234,11 +234,13 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(5 + 10 + 310, cells["id"]["x"])
         self.assertEqual("7", cells["id"]["text"])
 
-    def test_text_is_set_up_from_the_rows_bottom_edge(self) -> None:
+    def test_a_rows_line_box_is_centred_in_the_row(self) -> None:
         row0 = self.results["geo"]["row0"][0]
         row1 = self.results["geo"]["row1"][0]
-        self.assertEqual(89 + 18 - 8, row0["y"])
-        self.assertEqual(89 + 36 - 8, row1["y"])
+        # The face's line height (8) inside the row's own (18): retail's first
+        # row puts its ink top at 93.3 virtual against the list's 89.
+        self.assertEqual(89 + (18 - 8) // 2, row0["y"])
+        self.assertEqual(89 + 18 + (18 - 8) // 2, row1["y"])
 
     def test_a_player_with_no_slot_has_no_id_cell(self) -> None:
         fields = [c["field"] for c in self.results["geo"]["row1"]]
@@ -305,22 +307,40 @@ class ScoreboardTests(unittest.TestCase):
         self.assertNotIn("LOCK", texts)
         self.assertNotIn("9999", texts)
 
-    def test_the_row_glyphs_are_drawn_in_the_first_column_at_row_height(self) -> None:
+    def test_the_row_glyphs_are_drawn_at_their_own_size_centred_in_the_row(self) -> None:
         p = self.results["paint"]
         glyphs = [c for c in p["calls"] if c[0] == "drawImage" and "16x16" in c[1]]
         # Axis One (a live anti-tank bot) in row 0, the dead Axis bot in row 1.
-        self.assertEqual([["drawImage", "class_bot_at_16x16", 15, 89, 18, 18],
-                          ["drawImage", "bot_dead_16x16", 15, 107, 18, 18]], glyphs)
+        # A 16x16 glyph one unit into an 18-unit row, not stretched to it.
+        self.assertEqual([["drawImage", "class_bot_at_16x16", 16, 90, 16, 16],
+                          ["drawImage", "bot_dead_16x16", 16, 108, 16, 16]], glyphs)
 
-    def test_a_dead_rows_text_is_dimmed_red_and_a_live_ones_is_not(self) -> None:
+    def test_a_dead_rows_text_is_dimmed_and_a_live_ones_takes_its_sides_colour(self) -> None:
         p = self.results["paint"]
-        dead = ",".join(str(v) for v in p["deadColor"])
+        dim = float(p["deadDim"])
+        self.assertAlmostEqual(0.55, dim)
         by_name = {t[0]: t for t in p["texts"]}
-        self.assertEqual(dead, by_name["Axis Bot"][3])
-        self.assertEqual("1,1,1", by_name["Axis One"][3])
-        # Every cell of the dead row, not just the name.
+        axis = [float(v) for v in p["colors"]["axis"]]
+        # The dead row's whole line, name and numbers, is the side's colour
+        # dimmed; the live one is the side's colour flat.
+        self.assertEqual([round(v * dim, 6) for v in axis],
+                         [float(v) for v in by_name["Axis Bot"][3].split(",")])
+        self.assertEqual(axis, [float(v) for v in by_name["Axis One"][3].split(",")])
         row_y = by_name["Axis Bot"][2]
-        self.assertTrue(all(t[3] == dead for t in p["texts"] if t[2] == row_y))
+        self.assertTrue(all(t[3] == by_name["Axis Bot"][3] for t in p["texts"] if t[2] == row_y))
+
+    def test_the_row_colour_is_the_sides_own_and_the_locals_row_is_green(self) -> None:
+        c = self.results["rowColors"]
+        self.assertEqual([1, 0.35, 0.35], c["axis"])
+        self.assertEqual([0.4, 0.6, 1], c["allies"])
+        self.assertEqual([0, 1, 0], c["local"])
+        # A row on neither side is left to the leaf's own colour.
+        self.assertIsNone(c["none"])
+        self.assertIsNone(c["noRow"])
+        # A pack's own table wins, and a null entry in it falls back.
+        self.assertEqual([0.1, 0.2, 0.3], c["pack"])
+        self.assertEqual([0.4, 0.5, 0.6], c["packAllies"])
+        self.assertEqual([1, 0.35, 0.35], c["packNullAxis"])
 
     def test_an_unloaded_glyph_or_no_manifest_leaves_the_column_empty(self) -> None:
         n = self.results["paintNoIcons"]
@@ -346,7 +366,7 @@ class ScoreboardTests(unittest.TestCase):
         names = [t for t in p["texts"] if t[0] == "Axis One"]
         self.assertEqual(1, len(names))
         self.assertEqual(40, names[0][1])
-        self.assertEqual(99, names[0][2])
+        self.assertEqual(94, names[0][2])
 
 
 if __name__ == "__main__":
