@@ -58,6 +58,10 @@ import { attachesToListener } from './ssc-specs.js';
  */
 export const MAX_LIVE_VEHICLES = 5;
 
+/** Seconds a demoted hull's shut-down tail runs before its graph goes away:
+ *  the release ramps are 0.2 s; twice that clears them. */
+export const DEMOTE_TAIL_S = 0.4;
+
 /**
  * Past this a hull is held at master 0 even when it has a live graph.
  *
@@ -139,6 +143,8 @@ class VehicleAudio {
     this.worldPos = null;
     this.worldQuat = null;
     this.engineSpec = null;
+    this.demoting = false;
+    this.demoteIn = 0;
   }
 
   get drive() {
@@ -164,6 +170,8 @@ class VehicleAudio {
     this.weapons = [];
     this.engineNode = null;
     this.built = false;
+    this.demoting = false;
+    this.demoteIn = 0;
     this.prevVelocity = null;
     this.accel = 0;
   }
@@ -171,6 +179,19 @@ class VehicleAudio {
   release() {
     this.engineAudio?.release();
     for (const weapon of this.weapons) weapon.audio.release();
+  }
+
+  /**
+   * Give up the graph: the shut-down tail plays, then the rack tears the
+   * patches down and the entry waits unbuilt for `_rebalance` to re-arm it.
+   * Same primitives a crew leaving uses (`release` + timed `dispose`), so a
+   * returning hull rebuilds exactly the way a fresh claim does.
+   */
+  demote() {
+    if (!this.built || this.demoting) return;
+    this.demoting = true;
+    this.demoteIn = DEMOTE_TAIL_S;
+    this.release();
   }
 }
 
@@ -272,21 +293,23 @@ export class VehicleAudioRack {
 
   /**
    * Give the nearest `MAX_LIVE_VEHICLES` wanted hulls a graph and hold the
-   * rest. Called on every claim/release. A hull that has already been built
-   * and falls out of the front of the queue is held at master 0 rather than
-   * torn down — starting and stopping a loop re-rolls its phase against the
-   * other layers of the same patch — so the budget caps *new* graphs and a
-   * returning neighbour comes up without a rebuild.
+   * rest unbuilt. Called on every claim and release, and on a slow beat from
+   * `update` -- churn (bots boarding and leaving hulls all over the map) has
+   * to be able to demote a built hull that has drifted out of the front of
+   * the queue, not only cap new builds. A demoted hull plays its shut-down
+   * tail and then loses its graph; when it comes near again `_build` re-arms
+   * it, which re-rolls the loop phases the way any fresh claim does. That
+   * matters only when the hull is far away, which is the only time a demote
+   * fires.
    */
   _rebalance(listenerPos = null) {
     if (this.disposed) return;
-    const want = [...this.vehicles.values()].filter(v => v.want);
-    const at = listenerPos ?? this._listenerPos();
-    want.sort((a, b) => this._distance(a, at) - this._distance(b, at));
+    const want = this._sortedWanted(listenerPos);
     let slot = 0;
     for (const entry of want) {
-      if (entry.built || entry.building) {
-        slot += 1;
+      if (entry.built || entry.building || entry.demoting) {
+        if (slot >= MAX_LIVE_VEHICLES) entry.demote();
+        else slot += 1;
         continue;
       }
       if (slot < MAX_LIVE_VEHICLES) {
@@ -294,6 +317,14 @@ export class VehicleAudioRack {
         slot += 1;
       }
     }
+  }
+
+  /** The wanted hulls, nearest first. */
+  _sortedWanted(listenerPos = null) {
+    const want = [...this.vehicles.values()].filter(v => v.want);
+    const at = listenerPos ?? this._listenerPos();
+    want.sort((a, b) => this._distance(a, at) - this._distance(b, at));
+    return want;
   }
 
   _listenerPos() {
@@ -481,11 +512,26 @@ export class VehicleAudioRack {
    *  `listenerSeat` (set by the page) is the seat it belongs to. */
   update(dt, listenerPosition, listenerForward = null) {
     if (this.disposed) return;
+    // Churn beat: claims and releases used to be the only rebalances, and a
+    // hull crewed for minutes could keep its graph long after it fell out of
+    // the budget (measured at nine live hulls with twelve bots on Bocage).
+    this.rebalanceIn = (this.rebalanceIn ?? 0) - dt;
+    if (this.rebalanceIn <= 0) {
+      this._rebalance(listenerPosition
+        ? { x: listenerPosition.x, y: listenerPosition.y, z: listenerPosition.z }
+        : null);
+      this.rebalanceIn = 0.5;
+    }
     const master = this.getMaster();
     const at = listenerPosition
       ? { x: listenerPosition.x, y: listenerPosition.y, z: listenerPosition.z }
       : this._listenerPos();
     for (const entry of this.vehicles.values()) {
+      if (entry.demoting) {
+        entry.demoteIn -= dt;
+        if (entry.demoteIn <= 0) entry.dispose();
+        continue;
+      }
       if (!entry.built) continue;
       const near = at ? this._distance(entry, at) <= AUDIBLE_RANGE : true;
       const entryMaster = near ? master : 0;
@@ -610,6 +656,7 @@ export class VehicleAudioRack {
         want: entry.want,
         built: entry.built,
         building: entry.building,
+        demoting: entry.demoting,
         template: entry.node?.userData?.control || entry.node?.name || null,
         driven: !!entry.drive,
         claims: entry.claims.size,

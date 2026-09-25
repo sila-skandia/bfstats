@@ -352,4 +352,46 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   rack.dispose();
 }
 
+// --- churn keeps live graphs within the budget ------------------------------
+// Twelve bots boarding and leaving hulls all over the map used to pile up
+// live graphs past `MAX_LIVE_VEHICLES`: the cap only gated *new* builds, and
+// a hull built while near kept its graph forever while its crew stayed
+// aboard (measured at nine live hulls on Bocage). A built hull that churns
+// out of the front of the queue is demoted now: shut-down tail, then the
+// graph goes away, and the next rebalance re-arms it if it comes near again.
+
+{
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([WILLY]));
+  const nodes = [];
+  for (let i = 0; i < 3; i++) {
+    const node = sceneNode(i === 0 ? 'willy' : `willy_${i}`, i * 10);
+    childNode(node, 'WillyEngine');
+    nodes.push(node);
+    rack.claim({ seatKey: `a:${i}`, node, template: 'willy', drive: drive(i * 10), groups: [] });
+  }
+  await settle();
+  assert.equal(rack.snapshot().vehicles.filter(v => v.built).length, 3,
+    'the first crew builds within the budget');
+  // Those hulls drive away; three fresh hulls arrive near and claim.
+  nodes.forEach((n, i) => { n.matrixWorld.elements[12] = 4000 + i * 50; });
+  for (let i = 0; i < 3; i++) {
+    const node = sceneNode(`willy_n${i}`, 5 + i * 10);
+    childNode(node, 'WillyEngine');
+    nodes.push(node);
+    rack.claim({ seatKey: `b:${i}`, node, template: 'willy', drive: drive(5 + i * 10), groups: [] });
+  }
+  await settle();
+  assert.equal(rack.snapshot().live, MAX_LIVE_VEHICLES + 1,
+    'churn has pushed one hull past the budget, demote pending');
+  // The rebalance beat and the demote tails run off `update`.
+  for (let i = 0; i < 8; i++) rack.update(0.1, { x: 0, y: 0, z: 0 });
+  const after = rack.snapshot();
+  assert.equal(after.live, MAX_LIVE_VEHICLES,
+    `live graphs come back inside the budget, got ${after.live}`);
+  const near = after.vehicles.filter(v => v.built && v.key.startsWith('willy_n'));
+  assert.equal(near.length, 3, 'the fresh near hulls all sound');
+  rack.dispose();
+}
+
 console.log('vehicle-audio: all assertions passed');

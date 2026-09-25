@@ -587,6 +587,16 @@ export function createPageAudio(page) {
     if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return;
     const ctx = pageAudio.audioListener.context;
     if (ctx.state === 'suspended') return;
+    if (position) {
+      // Beyond the panner's own 40 m cut a bot's foley is ~-32 dB; skip the
+      // voice entirely. Twelve bots walking was a hundred one-shot panners a
+      // second, most of them built for nobody.
+      const e = pageAudio.audioListener.matrixWorld?.elements;
+      if (e) {
+        const dx = e[12] - position.x, dy = e[13] - position.y, dz = e[14] - position.z;
+        if (dx * dx + dy * dy + dz * dz > 1600) return;
+      }
+    }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     if (pitchJitter > 0) {
