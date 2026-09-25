@@ -59,6 +59,13 @@ The splice collects candidates before mutating: `traverse` walks a live
 children snapshot, and `addLevel` re-parents the part node under the LOD, so
 `obj.parent` is captured before the splice.
 
+The transform handoff, found by the Stalingrad ladder pass (2026-09-26): the
+LOD copies the part's local transform and the part must go to IDENTITY inside
+it, or the placement composes twice (a ladder baked at (541.6, 43.2, -393.9)
+read (-1.2, 82, -1.7) after the lift, T applied twice). The copy happens
+before `buildLodLevels` resets the part; the rungs keep their own locals, which
+were authored relative to the part.
+
 ## Measured (bocage)
 
 - 216 chains / 964 rungs / ~164k rung triangles across 284 placements.
