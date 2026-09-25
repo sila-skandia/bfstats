@@ -258,23 +258,38 @@ not a reading.
   from `0x00674f90` (callers `0x00667666` and `0x00679e36`, both unnamed),
   which then calls `0x00697360` — plausibly `CreateVertexShader` — but that
   call and its two callers were not traced further.
-- **Which texcoord set the lightmap stage samples** — mostly settled
-  2026-09-16 (ledger LM-1…LM-4) and **narrowed 2026-09-19**. The lightmap is
-  stage 1 and nothing on its path writes stage 1's `D3DTSS_TEXCOORDINDEX`, so
-  it samples set 1 (`uvs2()`) by Direct3D's default. The override and the
-  restore are now known to be keyed off **the same `+0x30` envmap byte on the
-  same object**: the envmap branch writes `0x30000` at `0x005bfaf7`, and the
-  sibling reset `0x005bee20` restores `TEXTURETRANSFORMFLAGS = 0` at
-  **`0x005beef3`** (guard read `0x005beedb`) and `TEXCOORDINDEX = 1` at
-  `0x005bef17` (guard `0x005bef06`), all gated on that byte read at
-  `0x005beed4`. (An earlier note named `0x005bef06` as the transform-flags
-  write; that is the *guard* for the other restore, one operand out.) The
-  stage-1 TEXCOORDINDEX shadow cache `0x009c93b0` has exactly three writers in
-  the image: those two, and the generic state-block applier `FUN_00604750` at
-  `0x00605829`, which applies whatever a block says rather than restoring.
-  **What is left is only the call-site pairing** of vtable `+0x10` with `+0x14`
-  — a byte scan found 116 candidate pairs across the image and none in the
-  StandardMesh renderer was the right vtable.
+- **Which texcoord set the lightmap stage samples** — settled 2026-09-16
+  (ledger LM-1…LM-4), narrowed 2026-09-19, **confirmed 2026-09-25 (LM-3)**.
+  The lightmap is stage 1 and nothing on its path writes stage 1's
+  `D3DTSS_TEXCOORDINDEX`, so it samples set 1 (`uvs2()`) by Direct3D's
+  default. The override and the restore are keyed off **the same `+0x30`
+  envmap byte on the same object**: the envmap branch writes `0x30000` at
+  `0x005bfaf7`, and the sibling reset `0x005bee20` restores
+  `TEXTURETRANSFORMFLAGS = 0` at **`0x005beef3`** (guard read `0x005beedb`)
+  and `TEXCOORDINDEX = 1` at `0x005bef17` (guard `0x005bef06`), all gated on
+  that byte read at `0x005beed4`. (An earlier note named `0x005bef06` as the
+  transform-flags write; that is the *guard* for the other restore, one
+  operand out.) The stage-1 TEXCOORDINDEX shadow cache `0x009c93b0` has
+  exactly three writers in the image: those two, and the generic
+  state-block applier `FUN_00604750` at `0x00605829`, which applies whatever
+  a block says rather than restoring. **The call-site pairing of vtable
+  `+0x10` with `+0x14` is now found.** `StandardMesh_drawLod` (`0x005aeec0`,
+  the same per-material draw loop the 12-byte-POD note below reads) loads
+  the per-material `StandardMeshSubShader` (vtable `0x009061a4`, constructed
+  at `0x005c051e`/`0x005c0c17`/`0x005c1039`) from the `0x98`-stride material
+  record's `+0x1c` into `esi` (`0x005af068`); its inner per-pass loop is
+  `call [esi+0xc]` (pass count) → `call [esi+0x10]` (`applyRenderState`,
+  `0x005af3f6`) → `call [RendPCDX8+0x88]` (the draw call, `0x005af409`,
+  using the same record's `+0x20`) → `call [esi+0x14]` (the reset,
+  `0x005af414`) → `call [esi+0xc]` again for the loop test (`0x005af41c`),
+  before the record pointer advances by `0x98` to the next material
+  (`0x005af42a`). So `+0x10`/`+0x14` bracket every draw call of every
+  material, unconditionally, once per pass. The earlier 116-candidate byte
+  scan missed this site because the subshader pointer is dereferenced
+  through its own register (`esi`, loaded from `[ebx+0x1c]`), not through
+  the same register (`ebx`) the surrounding `+0x20`/`+0x24`/`+0x30` field
+  reads use, so a same-register `[reg+0x10]` … `[reg+0x14]` pattern never
+  matched it.
 - The 12-byte POD before `primitive` — narrowed 2026-09-25 (SM-5). On lnxded
   it is still read into a stack local and dropped, as before. In the client's
   `readMaterials` (`0x005b42d0`) it is read at **two** call sites gated by
