@@ -97,17 +97,31 @@ export function tallyFeed(feed) {
 }
 
 /** The two teams' rows. `players` is every real player the page knows:
- *  `{ slot, name, team, local, kit, bot, dead }`, team 1 Axis and 2 Allied;
- *  anyone on neither side (a roster row whose team has not arrived yet) is on
- *  no list. `kit` is the player's class as `kitClassKey` spells it (null when
- *  the page does not know it: a room's roster carries none), `bot` marks the
- *  viewer's own bots, `dead` a player currently down. */
-export function boardRows(players, feed) {
-  const tally = tallyFeed(feed);
+ *  `{ slot, name, team, local, kit, bot, dead }` plus `id` for the ones the
+ *  page simulates (`round-state.js`'s player id: the local player, or a bot),
+ *  team 1 Axis and 2 Allied; anyone on neither side (a roster row whose team
+ *  has not arrived yet) is on no list. `kit` is the player's class as
+ *  `kitClassKey` spells it (null when the page does not know it: a room's
+ *  roster carries none), `bot` marks the viewer's own bots, `dead` a player
+ *  currently down.
+ *
+ *  `feed` is a room's event feed and `tally` the round's own counts
+ *  (`round-state.js` `counts`, a Map by player id, or null in a room). A row
+ *  with a room slot takes its kills and deaths from the feed, which is the
+ *  server's word; a row without one takes all three numbers from the tally.
+ *  A player nothing tracked shows zeroes, and the round's `score` is the
+ *  layout's own column, not a viewer invention. */
+export function boardRows(players, feed, tally = null) {
+  const feedTally = tallyFeed(feed);
   const rows = { 1: [], 2: [] };
   (players || []).forEach((p, order) => {
     if (p.team !== 1 && p.team !== 2) return;
-    const t = (p.slot != null && tally.get(p.slot)) || { kills: 0, deaths: 0 };
+    // Where a row's numbers come from. A player the page simulates (the local
+    // one, or a bot: no room slot) has the round's own tally behind him
+    // (`round-state.js`), which is where his score lives; a room player's are
+    // the server's `killed` rows, and a room carries no score at all.
+    const own = p.slot == null && p.id != null ? tally?.get?.(p.id) ?? null : null;
+    const t = own ?? (p.slot != null ? feedTally.get(p.slot) : null) ?? { kills: 0, deaths: 0 };
     rows[p.team].push({
       slot: p.slot ?? null,
       name: String(p.name ?? ''),
@@ -115,7 +129,7 @@ export function boardRows(players, feed) {
       kit: kitClassKey(p.kit),
       bot: !!p.bot,
       dead: !!p.dead,
-      score: 0,
+      score: own?.score ?? 0,
       kills: t.kills,
       deaths: t.deaths,
       ping: 0,

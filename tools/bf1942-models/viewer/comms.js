@@ -360,11 +360,14 @@ export function createComms(page) {
 
   /** Remember who last hit a player and with what (`how`, as `onKill` takes
    *  it), so a death the page only notices later (the local soldier's Armor
-   *  running out) still names its killer and his weapon. */
-  comms.noteAttack = (victimId, killer, how = null) => {
-    lastAttack.set(victimId, { killer, how, at: performance.now() });
+   *  running out) still names its killer and his weapon. `killerId` is the
+   *  same attacker as the page's player ids, which is what the round's score
+   *  needs to credit him (`round-state.js` `kill`). */
+  comms.noteAttack = (victimId, killer, how = null, killerId = null) => {
+    lastAttack.set(victimId, { killer, killerId, how, at: performance.now() });
   };
-  /** The last attack on `victimId` inside `withinMs`: `{ killer, how }`. */
+  /** The last attack on `victimId` inside `withinMs`: `{ killer, killerId,
+   *  how }`. */
   comms.lastAttack = (victimId, withinMs = 5000) => {
     const hit = lastAttack.get(victimId);
     return hit && performance.now() - hit.at <= withinMs ? hit : null;

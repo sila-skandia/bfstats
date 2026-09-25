@@ -189,6 +189,7 @@ import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
+import { createRoundState } from './round-state.js';
 import { createHudFeed } from './hud-feed.js';
 import { createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
@@ -803,7 +804,7 @@ const wrecks = createVehicleWrecks(bag(
     get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
     // The human died in his hull: whoever killed it killed him (the message
     // log reads it when the death latches, `commsWatchLocalDeath`).
-    noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id)),
+    noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), null, id),
   },
 ));
 const hullBodies = createHullBodies(bag(
@@ -829,7 +830,7 @@ const vehicleHits = createVehicleHits(bag(
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
     // Who last hit the human and with what, so his death names them.
-    noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how),
+    noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how, id),
   },
 ));
 
@@ -1080,7 +1081,7 @@ const referee = createBotReferee({
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
-    comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot));
+    comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot), null, bot.playerId);
     // The damage arc points at where the round left the muzzle, the engine's
     // `Pos3` (ledger HFD-4): the ray `resolveShot` just cast, from its origin.
     const [ox, oy, oz] = bot.aimRay().origin;
@@ -1116,6 +1117,17 @@ const referee = createBotReferee({
     // His kit where he fell, when he fell on foot (`kit-drops-page.js`).
     kitDrops.botDied(bot, opts);
     comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);
+    // The round's own tally: the killer's kill (a team kill when the two are
+    // on one side, or when he shot himself), and the dead player's death,
+    // which also costs his team a ticket.
+    if (round && !room.roomJoined) {
+      round.kill({
+        killer: attackerId,
+        killerTeam: playerTeamOf(attackerId),
+        victim: bot.playerId,
+        victimTeam: bot.team,
+      });
+    }
   },
   onRespawned: bot => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -1123,13 +1135,18 @@ const referee = createBotReferee({
   },
   // Room play stays authoritative: no local bot capture.
   captureEnabled: () => !room.roomJoined,
-  onCapture: (bot, target, prevTeam) => {
+  onCapture: (bot, target, prevTeam, takers = []) => {
     flagCapture.hoistCaptureFlag(target);
     hullBodies.syncVehicleSpawnOwnership();
     pageConsole.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     comms.onCapture(target, target.team);
     if (bot) console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
     flagCapture.announceCapture(prevTeam, target.team);
+    // The capture score: everyone of the taking team who was inside the
+    // radius when it turned, the human included. INFERRED — the engine's own
+    // recipient set is behind a vtable call, see
+    // `features/viewer-score-and-bleed/README.md`.
+    if (round && !room.roomJoined) for (const id of takers) round.capture({ player: id });
   },
   // `ControlPoint::lostControl`: the point run down to neutral (bot-referee.js).
   onNeutralise: (bot, target, prevTeam) => {
@@ -1204,6 +1221,51 @@ const flagCapture = createFlagCapture(bag(
 ));
 
 /**
+ * The round's score and its tickets (`round-state.js`): what a kill, a death
+ * and a capture pay, and the bleed that spends a side's tickets while the
+ * enemy holds more than 99 weight of the map.
+ *
+ * Rebuilt per level, from the level's own data: `scene.json.tickets` carries
+ * the starting counts and the `setTicketLostPerMin` rates, and the gameplay
+ * mode picks which `ScoreManagerSettings*.con` answers. Both the score
+ * settings and the mode are read live, because the HUD pack (which carries the
+ * settings file) is fetched in parallel with the level.
+ *
+ * In a room none of it runs: the server owns the round there, the same gate
+ * the capture law uses (`captureEnabled: () => !room.roomJoined`), and the
+ * board's rows come from the room's own `killed` rows instead.
+ */
+let round = null;
+
+/** The HUD's two counters are the layout's own `ShowTicket` group over
+ *  `extras.tickets`, and its memo re-runs when that object CHANGES
+ *  (`ticket-feed.js`; `net-room.js` writes a room's counts the same way). So
+ *  the round's live counts are written back here, and only when they move: a
+ *  fresh object per frame would recompute the flag textures every frame.
+ *
+ *  A room is skipped: there the server's own `ticket` rows are the counts. */
+let ticketsWritten = null;
+function syncTickets() {
+  if (!round || room.roomJoined || !level.extras) return;
+  const team1 = round.tickets[1];
+  const team2 = round.tickets[2];
+  if (ticketsWritten && ticketsWritten.team1 === team1 && ticketsWritten.team2 === team2) return;
+  ticketsWritten = { team1, team2 };
+  level.extras.tickets = { ...level.extras.tickets, team1, team2 };
+}
+
+function startRound() {
+  const tickets = level.extras?.tickets ?? null;
+  ticketsWritten = null;
+  round = createRoundState({
+    settings: () => hudFeed.hudPack.scoreSettings,
+    mode: () => level.extras?.gameplayMode,
+    tickets,
+    rates: tickets?.lossPerMin ?? null,
+  });
+}
+
+/**
  * The level is going (`level-load.js` `show()`): the bots, their maps, the
  * strategic AI and the doors they could take are all the old level's. The
  * next `spawnBotsForLevel` builds the new level's; the vehicle and water maps
@@ -1216,6 +1278,9 @@ function resetBots() {
   botRounds.reset();
   // The kits lying about are the old level's too.
   kitDrops.reset();
+  // And so is the round: its tickets, its tallies and its bleed belong to the
+  // level that just went.
+  startRound();
 }
 
 /**
@@ -1447,6 +1512,9 @@ const ticketFeed = createTicketFeed(bag(
   from(() => spawning, `deployTeamId`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
+    // The live counts, once the round has one (`round-state.js`): the level's
+    // own numbers until then.
+    get round() { return round; },
   },
 ));
 const deployScreen = createDeployScreen(bag(
@@ -1475,7 +1543,10 @@ const scoreboard = createScoreboardScreen(bag(
   from(() => ticketFeed, `ticketFlagTexture`),
   {
     get bust() { return bust; }, get hudPaths() { return hudPaths; },
-    get optOnFoot() { return optOnFoot; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
+    // The round's own tallies, which is where a single-player row's score,
+    // kills and deaths come from (`round-state.js`).
+    get round() { return round; },
   },
 ));
 const spawning = createSpawning(bag(
@@ -1558,6 +1629,12 @@ function botSpeaker(bot) {
     weapon: bot.weaponAi?.name ?? bot.kitPrimary ?? null,
     position: at ? { x: at[0], y: at[1], z: at[2] } : null,
   };
+}
+/** A player's team, for the round's friendly-fire test (`round-state.js`
+ *  `kill`): the same read the message log's speaker makes, so the two agree
+ *  about who was on whose side. */
+function playerTeamOf(id) {
+  return speakerOf(id)?.team ?? 0;
 }
 /** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
 const comms = createComms(bag(
@@ -1680,6 +1757,23 @@ function commsWatchLocalDeath() {
   if (commsWasAlive && !alive && !room.roomJoined) {
     const last = comms.lastAttack(LOCAL_PLAYER);
     comms.onKill(localSpeaker(), last?.killer ?? null, last?.how ?? null);
+    // The same death on the round's tally. `last` names an attacker only
+    // inside its five-second window, so a death with nobody in it is the
+    // engine's own `is no more`: a suicide, which pays the death and no kill
+    // to anyone (`round-state.js` `suicide`).
+    if (round) {
+      const killer = last?.killerId ?? null;
+      if (killer == null || killer === LOCAL_PLAYER) {
+        round.suicide({ player: LOCAL_PLAYER, team: playerTeamOf(LOCAL_PLAYER) });
+      } else {
+        round.kill({
+          killer,
+          killerTeam: playerTeamOf(killer),
+          victim: LOCAL_PLAYER,
+          victimTeam: playerTeamOf(LOCAL_PLAYER),
+        });
+      }
+    }
   }
   commsWasAlive = alive;
 }
@@ -1726,6 +1820,12 @@ function simulate(dt, input, look) {
   hullBodies.syncVehicleSpawnOwnership();
   flagCapture.updateCaptureHud(step.ticks);
   referee.captureTick(step.ticks / 30);
+  // The round's bleed, on the same tick count: a side loses a ticket every
+  // `60 / rate` seconds while the enemy holds more than 99 weight of the map
+  // (`round-state.js`). The weights come from `extras.controlPoints`, which
+  // `hoistCaptureFlag` keeps in step with the world's flags.
+  if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
+  syncTickets();
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
@@ -1967,6 +2067,7 @@ const testHooks = installTestHooks(bag(
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get localPlayer() { return localPlayer; },
     get optOnFoot() { return optOnFoot; }, get params() { return params; },
     get referee() { return referee; }, get renderer() { return renderer; },
+    get round() { return round; },
     get scene() { return scene; }, get spawnFlagSelect() { return spawnFlagSelect; },
     get stage() { return stage; },
   },

@@ -120,11 +120,42 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual("bot_dead_16x16", i["botDead"])
         self.assertEqual("bot_dead_16x16", i["fromRows"]["Axis Bot"])
 
-    def test_score_and_ping_are_zero_because_nothing_tracks_them(self) -> None:
+    def test_ping_is_zero_because_nothing_tracks_it(self) -> None:
+        # `score` was the other one of these until the round learned to count
+        # (`round-state.js`, and the rows below): a room carries no score, so
+        # every row in this feed-driven list is still zero.
         for side in self.results["rows"].values():
             for row in side:
                 self.assertEqual(0, row["score"])
                 self.assertEqual(0, row["ping"])
+
+    def test_a_row_without_a_room_slot_takes_his_numbers_from_the_tally(self) -> None:
+        rows = self.results["tallyRows"]
+        local = next(r for r in rows["2"] if r["name"] == "Local")
+        self.assertEqual(12, local["score"])
+        self.assertEqual(3, local["kills"])
+        self.assertEqual(1, local["deaths"])
+        bot = next(r for r in rows["1"] if r["name"] == "Axis Bot")
+        self.assertEqual(-2, bot["score"])
+        self.assertEqual(4, bot["deaths"])
+
+    def test_a_row_a_room_owns_ignores_the_tally(self) -> None:
+        # 'Local In A Room' carries the same player id as the tally's 12-point
+        # row, and his slot means the server's feed answers instead: the feed's
+        # two `killed` rows for slot 2 are his deaths, and a room carries no
+        # score.
+        rows = self.results["tallyRows"]
+        room = next(r for r in rows["2"] if r["name"] == "Local In A Room")
+        self.assertEqual(0, room["score"])
+        self.assertEqual(0, room["kills"])
+        self.assertEqual(2, room["deaths"])
+
+    def test_a_player_nothing_tracked_shows_zeroes(self) -> None:
+        rows = self.results["tallyRows"]
+        untouched = next(r for r in rows["1"] if r["name"] == "Untouched")
+        self.assertEqual(0, untouched["score"])
+        self.assertEqual(0, untouched["kills"])
+        self.assertEqual(0, untouched["deaths"])
 
     def test_a_lone_page_lists_the_local_player_and_nobody_else(self) -> None:
         lone = self.results["lone"]

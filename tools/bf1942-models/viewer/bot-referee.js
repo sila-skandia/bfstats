@@ -889,9 +889,10 @@ export function createBotReferee(env) {
    * vanilla flags), lets it run down to neutral; a neutral point is taken
    * only by one team alone on it. Before, each bot ran its own timer and
    * took the flag from under its defenders: two enemies on one flag traded
-   * it every `timeToGetControl` for minutes. `onCapture(bot, flag, prevTeam)`
-   * fires for a flag taken (`bot` the taking team's first bot on it, null
-   * when only the human was) and `onNeutralise(bot, flag, prevTeam)` for one
+   * it every `timeToGetControl` for minutes. `onCapture(bot, flag, prevTeam,
+   * takers)` fires for a flag taken (`bot` the taking team's first bot on it,
+   * null when only the human was; `takers` every player id of that team
+   * inside the radius) and `onNeutralise(bot, flag, prevTeam)` for one
    * lost to neutral. The engine counts only a player with its +0x79 byte set
    * (INFERRED: alive); a dead bot's body no longer counts.
    */
@@ -920,7 +921,11 @@ export function createBotReferee(env) {
       if (!ev) continue;
       const team = ev.got ?? ev.by;
       const bot = inside.find(q => q.team === team && q.bot)?.bot ?? null;
-      if (ev.got) env.onCapture?.(bot, flag, prevTeam);
+      // The takers are everyone of the taking team inside the radius at the
+      // moment it turned, which is who the page pays the capture score to
+      // (INFERRED: the engine's own recipient set is behind a vtable call).
+      const takers = inside.filter(q => q.team === team).map(q => q.id);
+      if (ev.got) env.onCapture?.(bot, flag, prevTeam, takers);
       else env.onNeutralise?.(bot, flag, prevTeam);
     }
   };

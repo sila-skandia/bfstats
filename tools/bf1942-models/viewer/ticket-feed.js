@@ -1,12 +1,12 @@
 /**
  * The ticket counter's HUD variables and the flag icons beside them, fed
- * from the level's round-start tickets. Split out of `map-surfaces.js`.
+ * from the live round (`round-state.js`). Split out of `map-surfaces.js`.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `capturePosition`, `currentDir`, `deployTeamId`, `extras`, `hudPack`,
- * `LOCAL_PLAYER`, `nearestEnemyFlag`, `optOnFoot`, `soldier`, `soldierDead`,
- * `spawnersRoot`, `teamNation`, `world`.
+ * `LOCAL_PLAYER`, `nearestEnemyFlag`, `optOnFoot`, `round`, `soldier`,
+ * `soldierDead`, `spawnersRoot`, `teamNation`, `world`.
  */
 export function createTicketFeed(page) {
   const ticketFeed = {};
@@ -25,12 +25,14 @@ export function createTicketFeed(page) {
    * Axis and team 2 Allied, the reading this file already uses everywhere else
    * (`flag.team === 1 ? 'Axis' : ...`).
    *
-   * These are ROUND-START values and they do not move. What a live bleed would
-   * need is in `features/bf1942-3d-models/tickets-hud.md`; the short of it is
-   * that a ticket is lost per death and per `Game.setTicketLostPerMin` while the
-   * other side holds more than half the flags, neither of which this viewer
-   * simulates — so a counting-down number here would be a fiction, and a frozen
-   * one is at least the number the round genuinely starts at.
+   * They MOVE now. The page's round (`round-state.js`, wired in `map.html`)
+   * spends a ticket per death and bleeds one per `60 / rate` seconds while the
+   * enemy holds more than 99 weight of the map, and writes the result back
+   * into `extras.tickets` on every change (`syncTickets`) — which is the
+   * update path the memo below and `net-room.js` both use, and the reason the
+   * key is the extras object's identity. A room is the server's: there its own
+   * `ticket` rows are what lands in `extras.tickets`, and the round is not run
+   * at all.
    */
   function ticketFlagTexture(team) {
     // The layout's own literal is `flag_ticket_ger.tga` and the pack ships
@@ -41,13 +43,15 @@ export function createTicketFeed(page) {
   /* The four strings the group needs, memoised on the level.
    *
    * `feedTicketVars` runs from `updateSoldierHud` BEFORE every one of its early
-   * returns, so it is on the frame path in every mode — and every input it reads
-   * is level data that cannot move under it. The counts are the ROUND-START
-   * values the comment above describes (nothing in this page writes
-   * `extras.tickets`; a future bleed would replace the `extras` object, which is
-   * part of the key below, but one that mutated the counts IN PLACE would have to
-   * bump the key here too). The two flag textures are `teamNation`, which is the
-   * flag a side's control points fly.
+   * returns, so it is on the frame path in every mode — and every input but the
+   * counts is level data that cannot move under it. The counts are the round's
+   * live ones (`round-state.js`): the page writes them back into
+   * `extras.tickets` as a FRESH object whenever they move (`map.html`
+   * `syncTickets`), and a room's server does the same with its `ticket` rows
+   * (`net-room.js`), so the key below — the extras object's identity — is
+   * exactly the change signal. One that mutated the counts IN PLACE would have
+   * to bump the key here too. The two flag textures are `teamNation`, which is
+   * the flag a side's control points fly.
    *
    * Unmemoised that cost, twice per frame: `nationFromVehicles` lowercasing all
    * 32 of Wake's spawner names into a Set, spreading that Set into a fresh array
@@ -76,20 +80,29 @@ export function createTicketFeed(page) {
   ticketFeed.ticketMemoExtras = null;
   ticketFeed.ticketMemoNations = null;
   ticketFeed.ticketMemoSpawners = null;
+  ticketFeed.ticketMemoCounts = null;
   const ticketMemo = {
     show: false, axis: '', allied: '', axisFlag: '', alliedFlag: '',
   };
   function ticketMemoFor() {
+    // The counts are the LEVEL's object, replaced (never mutated in place) by
+    // whoever moves them: the page's round (`map.html` `syncTickets`) or a
+    // room's own `ticket` rows (`net-room.js`). Its identity is therefore the
+    // change signal, and the reason this is a key of its own rather than part
+    // of the `extras` one.
+    const counts = page.extras.tickets;
     if (ticketFeed.ticketMemoDir === page.currentDir && ticketFeed.ticketMemoExtras === page.extras
         && ticketFeed.ticketMemoNations === page.hudPack.nations
-        && ticketFeed.ticketMemoSpawners === page.spawnersRoot) {
+        && ticketFeed.ticketMemoSpawners === page.spawnersRoot
+        && ticketFeed.ticketMemoCounts === counts) {
       return ticketMemo;
     }
     ticketFeed.ticketMemoDir = page.currentDir;
     ticketFeed.ticketMemoExtras = page.extras;
     ticketFeed.ticketMemoNations = page.hudPack.nations;
     ticketFeed.ticketMemoSpawners = page.spawnersRoot;
-    const t = page.extras.tickets;
+    ticketFeed.ticketMemoCounts = counts;
+    const t = counts;
     // Both counts or none: the group draws two numbers side by side and a lone
     // one would leave the layout's own sample literal ("300"/"500") showing
     // next to a real value, which reads as data rather than as a gap.
@@ -134,8 +147,8 @@ export function createTicketFeed(page) {
    *  point's radius? — answered from the same `nearestEnemyFlag` the capture
    *  loop runs, over the same `flags` it reads. A stale true would leave the
    *  white flag up after walking away or after the take, so every path that
-   *  clears capture state (leave radius, take, death, mode switch) clears this
-   *  too, through the same `updateSoldierHud` frame path. CTF leaves
+   *  takes the player off a flag (leave radius, take, death, mode switch)
+   *  clears this too, through the same `updateSoldierHud` frame path. CTF leaves
    *  (`AxisFlagIcon`, `AlliedFlagIcon`, `ShowNonTakeableFlagIcon`) are fed false
    *  rather than left unfed so they cull deterministically. */
   function feedFlagIconVars(vars) {
