@@ -2129,5 +2129,102 @@ ObjectTemplate.team 1
         self.assertIsNone(sherman.spawner_record())
 
 
+class LadderCollisionGroupParseTests(unittest.TestCase):
+    """`ObjectTemplate.addToCollisionGroup c_CGLadders` — Gap 16.
+
+    Every snippet is verbatim from vanilla's `objects.rfa`. A template may
+    join several groups (`c_CGLadders` and `c_CGProjectiles` on the same
+    ladder), and the words may come in any order relative to
+    `setHasCollisionPhysics` — both real shapes below. The flag the exporter
+    needs is "this template is climbable", which is "any addToCollisionGroup
+    call named c_CGLadders", not "the last call named c_CGLadders".
+    """
+
+    def library(self, path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    def test_ladder_10m_template_carries_the_flag(self) -> None:
+        # Objects/MOVE_FILES/ladder_10m_m1/Objects.con, verbatim.
+        library = self.library(
+            "Objects/MOVE_FILES/ladder_10m_m1/Objects.con",
+            """
+ObjectTemplate.create SimpleObject ladder_10m_m1
+ObjectTemplate.geometry ladder_10m_m1
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.setHasCollisionPhysics 1
+""")
+        ladder = library.object("ladder_10m_m1")
+        self.assertTrue(ladder.is_ladder)
+
+    def test_the_flag_takes_regardless_of_word_order(self) -> None:
+        # Objects/MOVE_FILES/Woodladder_4m_m1/Objects.con, verbatim: the
+        # collision group is declared before `setHasCollisionPhysics` here.
+        library = self.library(
+            "Objects/MOVE_FILES/Woodladder_4m_m1/Objects.con",
+            """
+ObjectTemplate.create SimpleObject Woodladder_4m_m1
+ObjectTemplate.geometry Woodladder_4m_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+""")
+        self.assertTrue(library.object("Woodladder_4m_m1").is_ladder)
+
+    def test_other_collision_groups_leave_the_flag_false(self) -> None:
+        library = self.library(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create SimpleObject not_a_ladder
+ObjectTemplate.geometry not_a_ladder
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+""")
+        self.assertFalse(library.object("not_a_ladder").is_ladder)
+
+    def test_a_template_without_the_word_at_all_is_not_a_ladder(self) -> None:
+        library = self.library(
+            "Objects/Test/Objects.con",
+            "ObjectTemplate.create SimpleObject plain\n")
+        self.assertFalse(library.object("plain").is_ladder)
+
+    def test_the_guard_tower_bundle_is_not_a_ladder_but_its_child_is(self) -> None:
+        # Objects/Buildings/Common/guardtow/Objects.con, verbatim: the bundle
+        # holds one child (`Ladder_10m`, a level-local template whose
+        # geometry is `ladder_10m_m1`), placed at 0/6/1.9 turned 180/1/0.
+        # The flag belongs to the child alone — the tower's mesh is not
+        # climbable, and the nested check walks the child templates.
+        library = self.library(
+            "Objects/Buildings/Common/guardtow/Objects.con",
+            """
+ObjectTemplate.create Bundle guardtow_M1
+ObjectTemplate.geometry guardtow_M1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.setHasResponsePhysics 1
+ObjectTemplate.addTemplate Ladder_10m
+ObjectTemplate.setPosition 0/6/1.9
+ObjectTemplate.setRotation 180/1/0
+objectTemplate.aiTemplate guardtow_M1
+objectTemplate.loadSoundScript Sounds/guardtow.ssc
+
+ObjectTemplate.create SimpleObject Ladder_10m
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.setHasResponsePhysics 1
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.geometry ladder_10m_m1
+""")
+        tower = library.object("guardtow_M1")
+        ladder = library.object("Ladder_10m")
+        self.assertFalse(tower.is_ladder)
+        self.assertTrue(ladder.is_ladder)
+        children = tower.children
+        self.assertEqual(1, len(children))
+        self.assertEqual("Ladder_10m", children[0].template)
+        self.assertTrue(library.object(children[0].template).is_ladder)
+
+
 if __name__ == "__main__":
     unittest.main()
