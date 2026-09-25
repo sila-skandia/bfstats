@@ -549,7 +549,8 @@ new ResizeObserver(resize).observe(stage);
 resize();
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),
-  from(() => localPlayer, `aircraft car mannedGuns soldier vehicleGuns`),
+  from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
+  from(() => seatCamera, `view`),
   from(() => soldierKit, `ensureHandFireBus handFireBus weaponSoundsManifest`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
@@ -1900,8 +1901,8 @@ const testHooks = installTestHooks(bag(
     soldierDead supplyTarget switchSeat`),
   from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes
     localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT setMapGate`),
-  from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener vehicleAudio
-    worldFire`),
+  from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener ensureWorldFire
+    vehicleAudio worldFire`),
   from(() => pageInput, `aimHeld KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
     seatAltFire seatFire setAim setFly setSeatTriggers triggerHeld`),
   from(() => room, `roomClient roomJoined`),

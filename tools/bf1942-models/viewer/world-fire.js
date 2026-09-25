@@ -88,6 +88,9 @@ export class WorldFire {
     // Seconds, for the slots' holds; a test hands in its own clock.
     this.now = now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()) * 0.001);
     this.manifest = null;
+    // The camera's world point and facing, handed in by `update()`.
+    this.listenerPosition = null;
+    this.listenerForward = null;
     this.weapons = new Map();     // name -> { layers, fallback, slots, pending }
     this.shots = 0;
     this.dropped = 0;
@@ -235,11 +238,15 @@ export class WorldFire {
       slot._pos.x = position.x; slot._pos.y = position.y; slot._pos.z = position.z;
     }
     slot.audio.setMaster(this.getMaster());
+    // Snapped: this round's panners and gains, now, not eased over from
+    // wherever this slot's last shooter stood.
     slot.audio.update({
       dt: 0,
       position: slot._pos,
       quaternion: slot._quat,
-      listenerPosition: this.listenerPosition ?? position ?? slot._pos,
+      listenerPosition: this.#ear(listener),
+      listenerForward: this.listenerForward,
+      snap: true,
     });
     const started = slot.audio.trigger();
     // Held while the round sounds (the header): a Fire Loop patch for one
@@ -258,14 +265,26 @@ export class WorldFire {
     return n;
   }
 
-  /** One frame: pan every idle pool slot to its shooter and track the listener. */
-  update(dt, listenerPosition) {
+  /**
+   * One frame: track the listener, and run every pooled patch's clock against
+   * it. The page calls this once a frame with the camera's world point and
+   * facing; without it a round's `Time`-gated layers never come due -- the
+   * K98's bolt at 1.18 s, its casings, and the echo shells a 150 m listener
+   * hears 0.33 s late -- because a patch only advances when it is updated.
+   */
+  update(dt, listenerPosition, listenerForward = null) {
     if (this.disposed) return;
     if (listenerPosition) {
       this.listenerPosition = {
         x: listenerPosition.x, y: listenerPosition.y, z: listenerPosition.z,
       };
     }
+    if (listenerForward) {
+      this.listenerForward = {
+        x: listenerForward.x, y: listenerForward.y, z: listenerForward.z,
+      };
+    }
+    const ear = this.#ear(this.getListener?.());
     const master = this.getMaster();
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) {
@@ -274,10 +293,30 @@ export class WorldFire {
           dt,
           position: slot._pos,
           quaternion: slot._quat,
-          listenerPosition: this.listenerPosition ?? slot._pos,
+          listenerPosition: ear,
+          listenerForward: this.listenerForward,
         });
       }
     }
+  }
+
+  /**
+   * Where the listener is: the camera point `update()` is handed every frame,
+   * or, before the first frame, the listener's own world matrix.
+   *
+   * Never the shooter. `play` used to fall back to the round's own position,
+   * and the page never called `update()`, so every bot's round was measured
+   * from zero metres: the patch's near layers -- the K98's `stereo` report,
+   * its bolt and casings, all unpanned -- at full gain in both ears and its
+   * far layers silent. A rifle across the map played as if it were fired
+   * from the listener's own shoulder.
+   */
+  #ear(listener) {
+    if (this.listenerPosition) return this.listenerPosition;
+    const e = listener?.matrixWorld?.elements;
+    if (e) return { x: e[12], y: e[13], z: e[14] };
+    const p = listener?.position;
+    return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 };
   }
 
   dispose() {

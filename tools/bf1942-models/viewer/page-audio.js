@@ -18,8 +18,8 @@ import { footstepMaterial } from './collision-materials.js';
  * reassigns is read live):
  * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
  * `currentRoot`, `effectAudio`, `ensureHandFireBus`, `extras`,
- * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `optPilot`,
- * `optSound`, `optSoundVol`, `scene`, `soldier`, `vehicleGuns`,
+ * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`, `optPilot`,
+ * `optSound`, `optSoundVol`, `scene`, `soldier`, `vehicleGuns`, `view`,
  * `weaponSoundsManifest`.
  */
 export function createPageAudio(page) {
@@ -418,19 +418,39 @@ export function createPageAudio(page) {
   const AMBIENT_DUCK = 0.12;
   const AMBIENT_DUCK_TAU = 0.4;
   pageAudio.ambientDuck = 1;
+  const _ear = new THREE.Vector3();
+  const _facing = new THREE.Vector3();
+
+  /** The seat the listener's camera belongs to, for the rack's
+   *  `setAttachToListener` test (SND-2): the hull, the PlayerControlObject
+   *  the player sits in, and whether the view is the Inside one (mode 3). */
+  function listenerSeat() {
+    const seat = page.occupancy;
+    const view = page.view;
+    if (!seat || !view) return null;
+    return { root: seat.root, rootId: seat.rootId, seatId: seat.activeSeatId, inside: !!view.inside };
+  }
 
   function updateAudio(dt = 0) {
     const master = masterVolume();
     const duckTarget = (page.optPilot.checked && (page.aircraft || page.car)) ? AMBIENT_DUCK : 1;
     pageAudio.ambientDuck += (duckTarget - pageAudio.ambientDuck)
       * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
+    // The listener is the camera (the client's own rule, SND-5: 0x00537390
+    // places DirectSound's listener on the local player's camera transform).
+    const ear = page.camera.getWorldPosition(_ear);
+    const facing = page.camera.getWorldDirection(_facing);
     // Every claimed hull at once: the player's own, and every bot-driven one
     // within earshot. The rack holds the far ones at master 0 and evaluates
     // each patch's own `Volume <- Distance` ramps against the camera.
     if (pageAudio.vehicleAudio) {
       pageAudio.vehicleAudio.playerGroups = [...(page.vehicleGuns ?? []), ...(page.mannedGuns ?? [])];
-      pageAudio.vehicleAudio.update(dt, page.camera.position);
+      pageAudio.vehicleAudio.listenerSeat = listenerSeat();
+      pageAudio.vehicleAudio.update(dt, ear, facing);
     }
+    // Bots' rounds: every pooled patch measured from the camera, and its clock
+    // run, which is what brings a round's delayed layers due (bug A).
+    pageAudio.worldFire?.update(dt, ear, facing);
     if (page.handFireBus) {
       // The hand-shot bus tracks the master like the engine bus does, and is
       // deliberately not ducked: the duck exists so a cockpit engine drowns the
