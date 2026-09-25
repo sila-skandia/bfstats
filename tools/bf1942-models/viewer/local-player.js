@@ -15,6 +15,7 @@ import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
 import { routeFlightInput } from './mouse-look-key.js';
+import { mayEnterHull } from './vehicle-instance.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -33,7 +34,7 @@ import { routeFlightInput } from './mouse-look-key.js';
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `showHint`, `spawnAtFlag`,
  * `stepSeatIk`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
@@ -133,6 +134,22 @@ export function createLocalPlayer(page) {
       : (page.optOnFoot.checked && localPlayer.soldier ? page.HUD_FOOT : page.HUD_FLY));
     page.updateMobileControls();
   }
+
+  /**
+   * Whether the human may take a seat of the hull at `root`: the engine's
+   * entry rule (`vehicle-instance.js mayEnterHull`) against the hull's crew
+   * on this page -- bots, and himself when he is already aboard -- and, in a
+   * room, against the room's players seated in it, who are replicas here and
+   * never in the registry (`remoteCrewTeam`). The room refuses the same seat
+   * (`server/room-control.mjs`), so a door the room would refuse is not
+   * offered either.
+   */
+  localPlayer.mayEnterHull = root => {
+    const vehicles = page.vehicles;
+    if (vehicles.seatOf(page.LOCAL_PLAYER)?.root === root) return true;
+    const team = vehicles.playerTeam(page.LOCAL_PLAYER);
+    return mayEnterHull(vehicles.teamOf(root), team) && mayEnterHull(page.remoteCrewTeam?.(root) ?? 0, team);
+  };
 
   function mountLocalSeat(seat) {
     // After the seats exist: this seat's own view rig, and its law -- which

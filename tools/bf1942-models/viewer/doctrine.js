@@ -111,6 +111,7 @@
 
 import { SAI } from './strategic-ai.js';
 import { landingTick } from './doctrine-landing.js';
+import { mannedByEnemy } from './bot-vehicle.js';
 
 // ---------------------------------------------------------------------------
 // Order kinds
@@ -273,9 +274,12 @@ export function boardOrder(cand, candidatesOf, inherit = null) {
 }
 
 registerOrderKind('WPBoard', {
-  tick(order, { id, position, candidates, actuators }) {
+  tick(order, { id, position, command, candidates, actuators }) {
     const c = candidates().find(x => x.id === order.candId);
     if (!c || c.occupiedBy) return null;         // taken or gone: the next pass re-plans
+    // The other side got in first: the entry rule refuses him at the door
+    // (bot-vehicle.js `mannedByEnemy`), so he stops pressing Use for it.
+    if (mannedByEnemy(c, command?.roster?.get(id))) return null;
     const e = c.entry ?? [c.pos[0], c.pos[2]];
     const d = Math.hypot(e[0] - position[0], e[1] - position[2]);
     if (d <= order.radius) { actuators?.enter?.(id, c.id); return null; }
