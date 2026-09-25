@@ -173,8 +173,8 @@ const AIRPLANE_AMMO = { radius: 20.0, team: 2,
   };
 }
 
-// --- out of scope this round: a vehicle-only depot never fires for a
-// soldier target, whatever its ammo/team data says. -------------------------
+// --- a vehicle-only depot never fires for a soldier target, whatever its
+// ammo/team data says. -------------------------------------------------------
 
 {
   const d = new SupplyDepot({ x: 0, y: 0, z: 0 }, AIRPLANE_AMMO);
@@ -183,6 +183,58 @@ const AIRPLANE_AMMO = { radius: 20.0, team: 2,
   out.vehicleOnlyIgnoresSoldier = {
     eligible: d.eligibleForSoldier(t),
     refillCalls: t.refillCount,
+  };
+}
+
+// --- vehicle supply: `workOnVehicles` depots serve a mounted player's hull
+// (the airstrip rearm) on the same team/radius/cadence rules. ---------------
+
+{
+  // A hybrid depot (soldier AND vehicle capable, the vehicle ammoboxes')
+  // must serve each kind only its own half.
+  const hybrid = new SupplyDepot({ x: 0, y: 0, z: 0 },
+    { ...AMMOBOX, workOnVehicles: true });
+  const foot = withCounter(target({ team: 2 }));
+  const seated = withCounter(target({ team: 2, vehicle: true }));
+  runCycles(hybrid, foot, 2);
+  runCycles(hybrid, seated, 2);
+  out.hybridServesBothKinds = {
+    foot: { refillCalls: foot.refillCount },
+    seated: { refillCalls: seated.refillCount },
+  };
+
+  // The airstrip's own depot, verbatim: team 2, radius 20, ammo-only. A
+  // mounted allied player inside 20 m gets a refill on the depot's 0.5 s
+  // cadence; the same player on foot gets nothing; an enemy hull none.
+  const strip = new SupplyDepot({ x: 0, y: 0, z: 0 }, AIRPLANE_AMMO,
+    'AlliedAirplaneSupplyDepot');
+  const hull = withCounter(target({ team: 2, vehicle: true }));
+  const results = runCycles(strip, hull, 20);
+  out.airplaneDepotRearmsHull = {
+    firedEveryTick: results.every(r => r.gaveAmmo === true),
+    healedAny: results.some(r => r.healed),
+    refillCalls: hull.refillCount,
+  };
+  const enemyHull = withCounter(target({ team: 1, vehicle: true }));
+  runCycles(strip, enemyHull, 4);
+  out.airplaneDepotTeamGate = {
+    refillCalls: enemyHull.refillCount,
+    eligible: strip.eligibleForVehicle(enemyHull),
+  };
+  // Same depot, soldier standing under the pad: still nothing.
+  const footUnder = withCounter(target({ team: 2 }));
+  runCycles(strip, footUnder, 4);
+  out.airplaneDepotIgnoresFoot = {
+    refillCalls: footUnder.refillCount,
+  };
+
+  // The kind gates are mutually exclusive at the predicate level, hybrid or
+  // not: a vehicle target is not also a soldier, and the other way.
+  const both = new SupplyDepot({ x: 0, y: 0, z: 0 },
+    { ...M3A1_HYBRID, workOnVehicles: true, workOnSoldiers: true });
+  out.kindGates = {
+    vehiclePredicateOnFootTarget: both.eligibleForVehicle(target({ team: 2 })),
+    soldierPredicateOnVehicleTarget: both.eligibleForSoldier(target({ team: 2, vehicle: true })),
   };
 }
 
