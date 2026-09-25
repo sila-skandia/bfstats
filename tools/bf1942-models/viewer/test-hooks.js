@@ -10,6 +10,7 @@ import { installBotHooks } from './test-hooks-bots.js';
 import { installVehicleHooks } from './test-hooks-vehicles.js';
 import { installSoldierHooks } from './test-hooks-soldier.js';
 import { installWorldHooks } from './test-hooks-world.js';
+import { installLadderHooks } from './test-hooks-ladder.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -98,6 +99,7 @@ export function installTestHooks(page) {
     installVehicleHooks(page);
     installSoldierHooks(page);
     installWorldHooks(page);
+    installLadderHooks(page);
     window.__look = page.look;
     // The view rig, which the mouse and the C key drive and a headless run cannot.
     // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40

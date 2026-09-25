@@ -42,6 +42,7 @@ import {
   SWIM_ENTER_DEPTH, SWIM_LEAVE_DEPTH, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN,
   WATER_DAMAGE_DELAY, HP_LOST_WHILE_DAMAGE_FROM_WATER, WATER_DAMAGE_INTERVAL,
 } from './swim.js';
+import { ClimbState, climbStart, climbTick } from './ladder-climb.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
 // past it for a number it is about to compare against. Every one of these is
@@ -402,6 +403,11 @@ export class Soldier {
     // `parachute.js`; this owns the pitch the free-fall term steers on and the
     // tick loop the whole thing runs in.
     this.chute = new Parachute();
+    // Ladders (Gap 16): the state machine and the climb law live in
+    // `ladder-climb.js`; the collider carries the level's ladder index
+    // (`collider.ladders`, built from the exported `extras.isLadder` nodes)
+    // and the body reads it duck-typed the way it reads `collider.statics`.
+    this.climb = new ClimbState();
     /** Sound and animation events the last `step()` produced, oldest first. */
     this.parachuteEvents = [];
     /** Footstep cadence events produced by movement, drained with `drainFootstepEvents()`. */
@@ -450,6 +456,7 @@ export class Soldier {
     this.parachuteEvents.length = 0;
     this.footstepEvents.length = 0;
     this.body.setParachute(false);
+    this.climb.reset();
     this.settle();
     return this;
   }
@@ -495,6 +502,7 @@ export class Soldier {
     this.drownDamage = 0;
     this.parachuteEvents.length = 0;
     this.body.setParachute(false);
+    this.climb.reset();
     return this;
   }
 
@@ -678,6 +686,10 @@ export class Soldier {
     const forward = clamp(input.forward || 0, -1, 1);
     const strafe = clamp(input.strafe || 0, -1, 1);
     this.gait = this.#gaitFor(input, forward, strafe);
+    // A climbing body owns its own motion (ladder-climb.js) and owns nothing
+    // of the gait: hang it at 'stand' so the run bob and the walk-cycle
+    // readout stay quiet while his hands are full.
+    if (this.climb.active) this.gait = 'stand';
     this._tickInput.forward = forward;
     this._tickInput.strafe = strafe;
     this._tickInput.walk = !!input.walk;
@@ -692,7 +704,13 @@ export class Soldier {
     // Space: landing with the key still down leaves you on the floor until
     // it is released and pressed again. (An earlier build re-latched every
     // frame, which read as the soldier bouncing whenever Space was held.)
-    if (input.jump && !this._jumpHeld) this.body.jump();
+    // On a ladder the press is `stopClimbing`'s other way out: the climb
+    // ends and the queued impulse below fires on the next tick, which is
+    // the leap off the ladder.
+    if (input.jump && !this._jumpHeld) {
+      if (this.climb.active) this.climb.reset();
+      this.body.jump();
+    }
     this._jumpHeld = !!input.jump;
 
     const startX = this.x, startZ = this.z;
@@ -716,7 +734,14 @@ export class Soldier {
       // and clears `+0x3e6` bit `0x10`, and `handleCollision` reads it during
       // the resolve that `body.step` is about to do.
       const underCanopy = this.chute.open;
-      this.body.step(this.clock.dt, this._tickInput);
+      // Ladders first: a climbing tick is handled whole by `#stepLadder`
+      // (`startClimbing`/`updateClimbing` replace the walk-and-resolve, the
+      // engine's collision-group swap standing in here for skipping
+      // `body.step`), and only a tick the climb does not take runs the
+      // ordinary body.
+      if (!this.#stepLadder(this.clock.dt, input)) {
+        this.body.step(this.clock.dt, this._tickInput);
+      }
       // `Armor::update`'s water-damage timer, on the same tick the body just
       // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
       // in belongs to the page, which is where `Armor::update` would apply it.
@@ -815,6 +840,60 @@ export class Soldier {
       this._tickInput.forward = this._inputForward ?? 0;
       this._tickInput.strafe = this._inputStrafe ?? 0;
     }
+  }
+
+  /**
+   * One tick of the ladder state (Gap 16, `ladder-climb.js`). True when the
+   * tick was a climb tick and the ordinary body step must not run.
+   *
+   * A climb tick replaces the whole walk-and-resolve: the engine puts the
+   * climbing soldier in collision group 4 (`startClimbing` 0x08281b20) and
+   * out of the ordinary physics, and the motion along the ladder is a
+   * constant rate (see the module header for why it must be). The dead body
+   * falls out of the climb, and a jump press has already torn the climb off
+   * at the queue site above — this method only moves, exits and grabs.
+   */
+  #stepLadder(dt, input) {
+    const climb = this.climb;
+    if (climb.active) {
+      if (input.dead) {
+        climb.reset();
+        return false;   // a dead body falls the ordinary way
+      }
+      const ended = climbTick(climb, this.body, dt, clamp(input.forward || 0, -1, 1));
+      // 'bottom' resumes the walk on the ground under the ladder; 'top' has
+      // already been stepped through onto the deck. Both let the next tick
+      // settle the feet the ordinary way.
+      if (ended !== null) return false;
+      return true;
+    }
+    // The grab. Forward into the ladder from the ground is the engine's own
+    // start; backward out of it only takes near the TOP, which is stepping
+    // backwards off a deck onto the ladder to climb down. Neither fires in
+    // the air, in the water or under a canopy.
+    if (!this.body.grounded || this.chute.open || this.swim.swimming) {
+      return false;
+    }
+    const ladders = this.body.world?.ladders;
+    if (!ladders || !ladders.length) return false;
+    const forward = clamp(input.forward || 0, -1, 1);
+    if (forward === 0) return false;
+    if (forward > 0) return climbStart(climb, this.body, ladders);
+    // Backward grab: only where the feet are beside the ladder's top rungs.
+    const p = this.body.position;
+    for (const ladder of ladders) {
+      const atTop = ladder.ty - 0.5 <= p.y && p.y <= ladder.ty + 1.0;
+      if (!atTop) continue;
+      const dx = p.x - ladder.x, dz = p.z - ladder.z;
+      const ax = ladder.tx - ladder.x, az = ladder.tz - ladder.z;
+      const span2 = ax * ax + az * az;
+      const horizontal2 = span2 > 0
+        ? Math.max(0, dx * dx + dz * dz
+            - (dx * ax + dz * az) ** 2 / span2)
+        : dx * dx + dz * dz;
+      if (horizontal2 <= 1.0 * 1.0) return climbStart(climb, this.body, ladders);
+    }
+    return false;
   }
 
   /**

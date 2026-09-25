@@ -16,6 +16,7 @@ from bf42.assemble import (  # noqa: E402
     Report,
     browse_rig,
     is_foreign_skeleton_part,
+    ladder_spec_from_positions,
     reaches_first_person,
 )
 from bf42.con import (  # noqa: E402
@@ -2652,6 +2653,189 @@ GeometryTemplate.create StandardMesh Plain_m1
         document = glb_document(builder.build([node]))
         self.assertEqual([], document["nodes"][node].get("children", []))
         self.assertNotIn("emittedLevels", report.mesh_lods["Chain_m1"])
+
+
+class LadderSpecTests(unittest.TestCase):
+    """`ladder_spec_from_positions` — the mesh-bounds reading behind
+    `extras.isLadder` (Gap 16).
+
+    The `.con` carries no ladder words beyond the collision group, so the
+    spec is read off the mesh itself: the longest bounding-box axis is the
+    climb axis, the longest of the two remaining extents is the across-rungs
+    width, and the shortest is the face — the ladder plane's normal, which is
+    the direction the engine's -0.48 m standoff points in. Bottom and top are
+    the box's centre lines at the axis extremes, in the node's own frame —
+    glTF space, so Refractor's Z has been mirrored.
+    """
+
+    def ladder_positions(self, *, z_centre: float = 0.0) -> list[tuple]:
+        # A 10 m vertical ladder: 0.6 m across the rungs, 0.1 m thick.
+        return [
+            (-0.3, 0.0, z_centre - 0.05), (0.3, 0.0, z_centre - 0.05),
+            (-0.3, 10.0, z_centre + 0.05), (0.3, 10.0, z_centre + 0.05),
+        ]
+
+    def test_a_vertical_ladder_reads_axis_length_and_bottom(self) -> None:
+        spec = ladder_spec_from_positions(self.ladder_positions())
+        self.assertEqual([0.0, 1.0, 0.0], spec["axis"])
+        self.assertEqual(10.0, spec["length"])
+        self.assertEqual([0.0, 0.0, 0.0], spec["bottom"])
+        self.assertEqual([0.0, 10.0, 0.0], spec["top"])
+
+    def test_width_is_across_the_rungs_and_face_is_the_thin_axis(self) -> None:
+        # Extents: x 0.6 (rungs), y 10 (up), z 0.1 (thickness). Width is the
+        # longer of the two non-axis extents; face is the shorter, unit and
+        # Z-mirrored (which leaves a z-axis unit vector pointing the other
+        # way — the sign is arbitrary, the viewer orients it at grab time).
+        spec = ladder_spec_from_positions(self.ladder_positions())
+        self.assertEqual(0.6, spec["width"])
+        self.assertEqual([0.0, 0.0, -1.0], spec["face"])
+
+    def test_the_box_offsets_survive_the_z_mirror(self) -> None:
+        # A ladder whose geometry is centred at Refractor z = 5 emits its
+        # bottom and top at glTF z = -5 — the mirror the exporter applies to
+        # every vertex, applied to the box too.
+        spec = ladder_spec_from_positions(self.ladder_positions(z_centre=5.0))
+        self.assertEqual([0.0, 0.0, -5.0], spec["bottom"])
+        self.assertEqual([0.0, 10.0, -5.0], spec["top"])
+
+    def test_empty_and_degenerate_clouds_read_none(self) -> None:
+        self.assertIsNone(ladder_spec_from_positions([]))
+        # Zero extent on every axis: a point, not a ladder. (A flat plate
+        # still measures — the `.con` flag is what decides climbability;
+        # this function only measures what the flag pointed at.)
+        self.assertIsNone(ladder_spec_from_positions(
+            [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]))
+
+
+class LadderBakeTests(unittest.TestCase):
+    """`extras.isLadder` on the node the ladder is placed at (Gap 16).
+
+    The vanilla shapes are the two the census counted: the direct placement
+    (`Objects/MOVE_FILES/ladder_10m_m1/Objects.con`, placed straight into a
+    level's StaticObjects.con) and the nested one (`guardtow_M1`'s child
+    `Ladder_10m`, Objects/Buildings/Common/guardtow/Objects.con verbatim).
+    The spec rides the ladder's own node in the ladder's own frame — a
+    viewer resolves it to world space through that node's world matrix, and
+    the tower's pose composes itself.
+    """
+
+    GUARDTOW_CON = """
+ObjectTemplate.create Bundle guardtow_M1
+ObjectTemplate.geometry guardtow_M1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.setHasResponsePhysics 1
+ObjectTemplate.addTemplate Ladder_10m
+ObjectTemplate.setPosition 0/6/1.9
+ObjectTemplate.setRotation 180/1/0
+objectTemplate.aiTemplate guardtow_M1
+objectTemplate.loadSoundScript Sounds/guardtow.ssc
+
+ObjectTemplate.create SimpleObject Ladder_10m
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.setHasResponsePhysics 1
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.geometry ladder_10m_m1
+
+GeometryTemplate.create StandardMesh guardtow_M1
+GeometryTemplate.create StandardMesh ladder_10m_m1
+"""
+
+    DIRECT_CON = """
+ObjectTemplate.create SimpleObject ladder_10m_m1
+ObjectTemplate.geometry ladder_10m_m1
+ObjectTemplate.addToCollisionGroup c_CGLadders
+ObjectTemplate.addToCollisionGroup c_CGProjectiles
+ObjectTemplate.setHasCollisionPhysics 1
+
+GeometryTemplate.create StandardMesh ladder_10m_m1
+"""
+
+    NON_LADDER_CON = """
+ObjectTemplate.create SimpleObject plain_wall
+ObjectTemplate.geometry plain_wall
+ObjectTemplate.setHasCollisionPhysics 1
+
+GeometryTemplate.create StandardMesh plain_wall
+"""
+
+    LADDER_SPEC = {
+        "axis": [0.0, 1.0, 0.0], "length": 10.0,
+        "bottom": [0.0, 0.0, 0.0], "top": [0.0, 10.0, 0.0],
+        "width": 0.6, "face": [0.0, 0.0, -1.0],
+    }
+
+    def _assemble(self, con_text: str, root_template: str, *, seed_spec: bool = True):
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "guardtow_M1", "ladder_10m_m1", "plain_wall")
+        if seed_spec:
+            assembler._geom_ladder["ladder_10m_m1"] = dict(self.LADDER_SPEC)
+        report = Report(root=root_template, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root_template, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    @staticmethod
+    def _ladder_nodes(document: dict) -> list[dict]:
+        return [node for node in document["nodes"]
+                if "isLadder" in node.get("extras", {})]
+
+    def test_a_direct_placement_carries_the_spec(self) -> None:
+        document, report = self._assemble(self.DIRECT_CON, "ladder_10m_m1")
+        ladders = self._ladder_nodes(document)
+        self.assertEqual(1, len(ladders))
+        self.assertEqual(self.LADDER_SPEC, ladders[0]["extras"]["isLadder"])
+        self.assertEqual(1, len(report.ladders))
+        self.assertIn("ladder_10m_m1", report.ladders[0])
+
+    def test_a_nested_ladder_rides_its_own_node_not_the_towers(self) -> None:
+        document, report = self._assemble(self.GUARDTOW_CON, "guardtow_M1")
+        ladders = self._ladder_nodes(document)
+        self.assertEqual(1, len(ladders))
+        self.assertEqual(self.LADDER_SPEC, ladders[0]["extras"]["isLadder"])
+        self.assertEqual("Ladder_10m", ladders[0]["name"])
+        # The tower itself: no isLadder — its mesh is not climbable.
+        tower = next(node for node in document["nodes"]
+                     if node["name"] == "guardtow_M1")
+        self.assertNotIn("isLadder", tower.get("extras", {}))
+        self.assertEqual(1, len(report.ladders))
+
+    def test_a_non_ladder_carries_nothing(self) -> None:
+        document, report = self._assemble(self.NON_LADDER_CON, "plain_wall")
+        self.assertEqual([], self._ladder_nodes(document))
+        self.assertEqual([], report.ladders)
+
+    def test_an_unmeasurable_ladder_is_emitted_without_the_block(self) -> None:
+        # A ladder geometry the archive cannot produce a spec for (here: no
+        # cached reading, no mesh file behind it) exports silently clean —
+        # no block, no report line, no crash.
+        document, report = self._assemble(self.DIRECT_CON, "ladder_10m_m1", seed_spec=False)
+        self.assertEqual([], self._ladder_nodes(document))
+        self.assertEqual([], report.ladders)
+
+    def test_the_spec_cache_is_consulted_once_per_geometry(self) -> None:
+        # Fifty guard towers parse one `Ladder_10m.sm` — the per-geometry
+        # cache the census relies on. A hit returns the cached dict, and the
+        # archive is never asked.
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", self.DIRECT_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        seeded = dict(self.LADDER_SPEC)
+        assembler._geom_ladder["ladder_10m_m1"] = seeded
+        self.assertEqual(seeded, assembler._ladder_spec_for("ladder_10m_m1"))
+
+    def test_a_missing_geometry_reads_none_and_caches_it(self) -> None:
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, ObjectLibrary(),
+                              include_collision=False)
+        self.assertIsNone(assembler._ladder_spec_for("not_a_geometry"))
+        self.assertIsNone(assembler._geom_ladder["not_a_geometry"])
 
 
 if __name__ == "__main__":
