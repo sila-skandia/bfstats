@@ -8,7 +8,7 @@
 import { isWalkable } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE } from './bot-vehicle.js';
+import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
 import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
@@ -179,6 +179,9 @@ export function urgencyChange(bot, mod, now) {
     // (A Spitfire bot left its plane at 66 m for a Wespe passing below.)
     for (const c of bailAllowed ? (cands ?? []) : []) {
       if (c.occupiedBy || c.upright === false || c.id === m.id) continue;
+      // `isMannedByEnemy` 0x0855fcb0 (bot-vehicle.js): an enemy crew's hull
+      // is no alternative, any of its seats.
+      if (mannedByEnemy(c, bot.team)) continue;
       // The hull's root is off its own map (0x0855ee25 -> 0x0855f0f0).
       if (c.onOwnMap === false) continue;
       const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
@@ -211,6 +214,11 @@ export function urgencyChange(bot, mod, now) {
   const list = [];
   for (const c of cands) {
     if (c.occupiedBy) continue;
+    // `BBChange::isMannedByEnemy` 0x0855fcb0, tested at 0x0855ea07 before
+    // anything else is scored: the free seat of a hull the enemy crews is
+    // not offered (the gunner's seat of a tank the enemy drives), so the bot
+    // never walks to a door the entry rule would refuse it at.
+    if (mannedByEnemy(c, bot.team)) continue;
     if (c.upright === false) continue;
     // `BBChange` 0x0855ee25 -> 0x0855f0f0: a mobile root (not an aircraft)
     // is offered, seats and all, only where its own map holds it

@@ -9,7 +9,7 @@ import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
  * `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`, `leaveSeat`,
- * `mannedActive`, `markPilot`, `netSeatRow`, `netSendAction`, `occupancy`,
+ * `mannedActive`, `markPilot`, `mayEnterHull`, `netSeatRow`, `netSendAction`, `occupancy`,
  * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
  * `seatHolder`, `setPilot`, `showHint`, `soldier`, `updateHud`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
@@ -69,10 +69,16 @@ export function createVehicleEntry(page) {
   /**
    * The closest entry point whose declared radius reaches the soldier.
    *
-   * Not reproduced: SEAT-13/13b's team/hostility gates (`BFfindEntryPoint`'s
-   * own team check, and `validateBFEntryPoint`'s separate component check) —
-   * this page has exactly one soldier and no second team's vehicles ever
-   * appear as hostile, so there is nothing here for either gate to reject.
+   * A door of a hull the other side crews is not one: `BFfindEntryPoint`
+   * (lnxded 0x0831d770) skips every entry point whose root PCO's team is
+   * neither 0 nor the player's (0x0831da58..0x0831da71) before it compares
+   * distances, so the nearest door that may be taken wins and the HUD never
+   * offers the enemy's tank. `mayEnterHull` (local-player.js) asks the
+   * hull's instance (`vehicle-instance.js`) and, in a room, the room's
+   * players seated in it. The other gate both finders apply
+   * (`queryComponent(0xc4a4)` up the parents, then vt+0xc8) is
+   * `Armor::isDestroyed` 0x08174300: the wreck test below, not a second team
+   * test (ledger SEAT-28).
    *
    * Round 3's second disclosed gap: `pickNearest` (`seats.js`), not a bare
    * `distance < best` compare, because more than one `EntryPoint` can sit at
@@ -92,6 +98,7 @@ export function createVehicleEntry(page) {
     if (!vehicleEntry.entryPoints) collectEntryPoints();
     return pickNearest(vehicleEntry.entryPoints, entry => {
       if (page.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
+      if (!page.mayEnterHull(entry.vehicle)) return Infinity;
       // A wreck has no doors. The bots' candidate list skips a destroyed hull
       // (bot-units.js); the human's did not, and E seated him in a burning one.
       const owner = page.collider?.statics?.ownerOf(entry.vehicle) ?? -1;
@@ -141,11 +148,12 @@ export function createVehicleEntry(page) {
     page.markPilot(true);
     page.setPilot(true, entry.vehicle, entry.seatId);
     if (!page.occupancy) {
-      // The seat refused (a null root; `pickVehicle`-less path). Back on foot
-      // as if nothing happened. Every real `PlayerControlObject` root now
-      // classifies to something (`seats.js`'s `classifyRoot` never returns
-      // null for one), so this is defensive rather than a real refusal path
-      // any of the vehicles this round targets can hit.
+      // The seat refused: held, or the hull is the other side's (the entry
+      // rule, `vehicle-instance.js mayEnterHull`, which the scan above
+      // already keeps off the HUD; a caller that names a seat directly can
+      // still reach it). Back on foot as if nothing happened, the pilot box
+      // with him.
+      page.markPilot(false);
       page.useLens('foot');
       page.drawWeapon();
       page.showHint(page.HUD_FOOT);

@@ -237,6 +237,8 @@ export function createBotUnits(env) {
   /** Who holds a seat, human or bot: the hull's instance answers. */
   units.seatHolder = (node, seatId) => env.vehicles.holder(node, seatId);
   units.driverOf = node => env.vehicles.driverOf(node);
+  /** The hull's team, its crew's side (0: nobody aboard). */
+  units.hullTeam = node => env.vehicles.teamOf?.(node) ?? 0;
 
   /**
    * A hull's local bounding box, `{ min, max }` in its own frame, measured
@@ -321,6 +323,9 @@ export function createBotUnits(env) {
         const hullYaw = Math.atan2(-node.matrixWorld.elements[8], -node.matrixWorld.elements[10]);
         const rootId = node.userData?.control || node.name || 'vehicle';
         const driver = units.driverOf(node);
+        // The hull's team: its crew's side, 0 empty (vehicle-instance.js
+        // `mayEnterHull`), which `isMannedByEnemy` reads (bot-vehicle.js).
+        const hullTeam = units.hullTeam(node);
         const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
         // `BBChange::calculateUrgency` 0x0855e0c0 offers a mobile root that
         // is not an aircraft (`Information+0x10` bit 2 set, `+4 & 0x10`
@@ -418,7 +423,7 @@ export function createBotUnits(env) {
             noPathfinding: !!(seatAi?.useNoPathfinding ?? (isRoot && ai.useNoPathfinding)),
             occupiedBy: holder,
             strType: ai.strType ?? 'LightArmour',
-            driver,
+            driver, hullTeam,
             // `validateCameraDirection` for this seat: its own traverse.
             hullYaw, yawLimits: units.seatYawLimits(node, door.seatId),
             // The hull's AI type words (`aiTemplate.addType`), its local box
@@ -481,10 +486,12 @@ export function createBotUnits(env) {
   }
 
   /**
-   * Seat a bot. The hull's instance does the rest: the drive built when he
-   * takes the root seat of a drivable hull (a helm that builds none refuses
-   * him), the body adopted, the seat's guns collected, the world's record
-   * mounted and the hull sounding, exactly as for the human.
+   * Seat a bot. The hull's instance does the rest: the entry rule (a hull
+   * the other side crews refuses him, `vehicle-instance.js mayEnterHull`),
+   * the drive built when he takes the root seat of a drivable hull (a helm
+   * that builds none refuses him), the body adopted, the seat's guns
+   * collected, the world's record mounted and the hull sounding, exactly as
+   * for the human.
    */
   units.enter = (bot, cand) => {
     const node = cand.node;

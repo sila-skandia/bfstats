@@ -244,6 +244,17 @@ export class SimVehicles {
 
   hullOf(vehicleId) { return this.hulls.find(h => h.id === vehicleId) ?? null; }
 
+  /** The hull's team, its crew's side, 0 empty: what the page's registry
+   *  keeps as `VehicleInstance.team` (vehicle-instance.js `mayEnterHull`,
+   *  the engine's root PCO team). A crew is one side by that rule. */
+  _hullTeam(h) {
+    for (const pid of h.seatHolders.values()) {
+      const team = this.world.player(pid)?.team ?? 0;
+      if (team) return team;
+    }
+    return 0;
+  }
+
   /** `botVehicleCandidates`: every seat of every live hull, rebuilt twice a second. */
   candidates() {
     const now = this.clock();
@@ -255,6 +266,7 @@ export class SimVehicles {
       const p = h.position;
       const fx = Math.sin(h.drive.yaw), fz = Math.cos(h.drive.yaw);
       const driver = h.driver();
+      const hullTeam = this._hullTeam(h);
       const health = h.armor.maxHitPoints > 0 ? h.armor.hitPoints / h.armor.maxHitPoints : 1;
       const hullYaw = Math.atan2(-h.node.matrixWorld.elements[8], -h.node.matrixWorld.elements[10]);
       const seats = [];
@@ -286,7 +298,7 @@ export class SimVehicles {
           // (bot-units.js); the synthetic records carry none, so the vanilla
           // con's numbers stand in (SYNTHETIC_BASIC_TEMP).
           value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? SYNTHETIC_BASIC_TEMP[seatId] ?? 0,
-          seatFactor, occupiedBy: holder, strType: h.strType, driver, hullYaw, yawLimits: null,
+          seatFactor, occupiedBy: holder, strType: h.strType, driver, hullTeam, hullYaw, yawLimits: null,
           spawnAge: now - h.spawnedAt,
         });
         void i;
@@ -324,10 +336,14 @@ export class SimVehicles {
     };
   }
 
-  /** The referee's `units.enter` (bot-referee.js): seat him, return his mount. */
+  /** The referee's `units.enter` (bot-referee.js): seat him, return his mount.
+   *  A hull the other side crews refuses him, as the page's registry does. */
   enter(bot, cand) {
     const h = this.hullOf(cand.vehicleId);
     if (!h || h.destroyed || h.seatHolders.get(cand.seatId)) return null;
+    const team = this.world.player(bot.playerId)?.team ?? 0;
+    const hullTeam = this._hullTeam(h);
+    if (hullTeam && team && hullTeam !== team) return null;
     h.seatHolders.set(cand.seatId, bot.playerId);
     return this._mount(bot, h, cand);
   }

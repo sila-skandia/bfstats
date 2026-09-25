@@ -20,7 +20,7 @@ export function installBotHooks(page) {
         kind: page.botUnits.kindOf(n), active: page.vehicleSpawnActive(n), ai: page.botUnits.aiOf(n)?.name ?? null })),
     };
   };
-  window.__botVehicles = () => page.botUnits.candidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, upright: c.upright, strengths: c.strengths, value: c.value }));
+  window.__botVehicles = () => page.botUnits.candidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, hullTeam: c.hullTeam ?? 0, upright: c.upright, strengths: c.strengths, value: c.value }));
   window.__botMount = (id, template = null, seat = 'driver') => {
     const bot = page.referee.bots.find(b => b.playerId === id);
     const cands = page.botUnits.candidates().filter(c => !c.occupiedBy && (!template || c.template === template)
