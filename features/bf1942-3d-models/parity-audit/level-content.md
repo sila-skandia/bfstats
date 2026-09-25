@@ -1127,6 +1127,93 @@ text also needs the localisation table from `menu.rfa`.
 rate, assault side, per-level kit loadout and team skins. It is the natural
 next layer on top of the shipped map HUD.
 
+**Investigation 2026-09-25.** Tickets, kits and team skins are done and no
+longer part of this gap: `bf42/level.py:load_tickets` parses `Conquest.con`
+and ships in the `game` scene layer; `extract_loadouts.py` + `bf42/kit.py`
+replay `game.setKit`/`game.setTeamSkin` from `Init.con`; `bf42/roster.py` and
+`extract_menu_layout.py` use the result for nation flags; the `menu.rfa`
+lexicon reader (`extract_spawn_layout.load_chain_lexicon`) now exists and is
+used broadly. **What remains is briefing text only.** Re-checked directly
+against vanilla + XPack1/XPack2 archives (`bf1942-game-archives` skill):
+
+- *Census.* Every one of the 23 vanilla levels' `Menu/Init.con` carries
+  `game.setMultiplayerBriefingObjectives`, `game.setMultiplayerBriefingMapType`
+  and `game.setMapId` (23/23 each, 410 briefing-shaped lines total across the
+  file). 20 of the 23 additionally carry the single-player-only
+  `setAlliedCampaign/Hints/Objectives/Skirmish` + `setAxisCampaign/Hints/
+  Objectives/Skirmish` (8 verbs) and the 8 `set{Allied,Axis}Debriefing{Major,
+  Minor}{Victory,Defeat}` verbs (22/23 — Aberdeen, the MP-only proving-ground
+  map, has no SP campaign so ships none of these, and its
+  `BRIEFING_ALLIED_OBJECTIVES_ABERDEEN`-shaped keys are genuinely absent from
+  the lexicon, not just unresolved by us). No code anywhere in
+  `tools/bf1942-models/` parses any of these verbs; `extract_loading_assets.py`
+  only ever matches `setLoadPicture|setBackgroundMusic|setLoadMusicFilename`.
+  Only the multiplayer trio (`setMultiplayerBriefingObjectives/MapType`,
+  `setMapId`) matters for a server-hosted viewer — the campaign/skirmish/
+  debriefing strings are single-player-mode-only text with no multiplayer
+  role.
+  Values are almost always localisation keys resolved through
+  `menu.rfa`/`lexiconAll.dat` (21 of 23 levels), not literal text — but 2 of
+  23 (**Kasserine_Pass**, **Truk**) inline the actual English sentence
+  straight in the `.con` file instead of a key, so both forms must be
+  handled. Resolved end-to-end examples (`load_chain_lexicon` over vanilla's
+  1,656-record `lexiconAll.dat`):
+  - Aberdeen: `MULTIPLAYER_BRIEFING_ABERDEEN` -> "This is a Conquest: Hybrid
+    Head-on map. Your team will win if you cause your opponents' tickets to
+    reach zero. ... SPECIAL: Both bases can be captured on this map."
+  - Battle of Britain: `MULTIPLAYER_BRIEFING_BRITAIN` -> "The Germans have
+    launched a massive bombing campaign against Britain as a prelude to
+    Operation Sealion. ... while the British must defend the objectives until
+    the German tickets run out."
+  - `MULTIPLAYER_MAP_TYPE_ASSAULT_MAP` -> `"ASSAULT MAP"` (the map-type
+    badge shown with the objectives text).
+  - Truk (literal, no lexicon lookup needed): "While the unsuspecting natives
+    are out snorkeling for precious seashells, both the Axis and Allied teams
+    have decided to come along and ravage this tiny island. ..."
+  Total English text for the multiplayer objectives string across all 23
+  levels: ~6.6 KB (287 chars average) — confirms **Size S**.
+- *Where it is shown.* UNVERIFIED by fresh disassembly in this pass (timeboxed;
+  no Ghidra run). Circumstantial evidence points at a screen distinct from
+  both the loading screen and the spawn/kit-select screen: the reverse-engineered
+  patch sites `patch__skip_briefing` / `patch__skip_briefing_jmp`
+  (`features/bf1942-engine-reference/symbols.json`, sourced from the bf42plus
+  community patcher) sit under that ledger's "Spawn Screen Patches" section
+  alongside `patch__skip_spawn_screen*`, i.e. a "skip briefing" toggle
+  bf42plus ships next to its "skip spawn screen" one. The lexicon itself
+  carries the screen's own chrome strings — `BRIEFING_HEADING` -> "BRIEFING",
+  `BRIEFING_OBJECTIVES_HEADING` -> "OBJECTIVES", `BRIEFING_HINTS_HEADING` ->
+  "HINTS", `BRIEFING_PLAY`/`BRIEFING_ABORT`/`BRIEFING_LOAD` -> "PLAY"/"ABORT"/
+  "LOAD", `BRIEFING_CONNECT` -> "CONNECTING TO" — consistent with the
+  well-documented vanilla client flow (connect -> a "Mission Briefing" panel
+  with the objectives text and Play/Abort buttons -> the `setLoadPicture`
+  loading screen -> the spawn/kit-select screen). `features/
+  bf1942-engine-reference/` and `in-game-hud.md`/`authentic-spawn-map`
+  docs have no existing entry for this screen. UNVERIFIED: exact ordering
+  relative to the loading screen, and whether it is skippable/optional
+  server-side.
+- *Viewer today.* No, there is no briefing-panel surface. The viewer's only
+  pre-spawn screen is the authentic loading overlay
+  (`viewer/progress.js:createLoadOverlay`, driven by `viewer/level-load.js:show`
+  off `entry.loading.{title,background,music,theme}` from `maps.json`); its
+  `.ld-box`/`.ld-stage` markup is title + progress bar + "PRESS ESCAPE TO
+  CANCEL" only, no text region. `viewer/spawning.js`/`kit-panels.js` are the
+  kit-select screen, also with no objectives text.
+- *Recommendation.* Extract only the multiplayer trio (skip the SP-only
+  campaign/skirmish/debriefing verbs — no multiplayer role, no viewer
+  surface for them). Add a `briefing` object (`objectives`, `mapType`,
+  `mapId`) read from `Menu/Init.con` + the chain lexicon (reusing
+  `load_chain_lexicon`, handling both the key and Kasserine/Truk's literal-text
+  form) next to `tickets`/`gameTypes` in the **`game` scene-json layer**
+  (`features/level-bake-layers/README.md`) — it already reads `Init.con` for
+  the same per-level rules, this is one more small con file plus a lexicon
+  merge already implemented elsewhere. **Size S** (~7 KB of new text across
+  all 23 levels, patchable via `patch_scene.py --layer game --mod M --all`,
+  no glb touched). Viewer surface: a small "MISSION BRIEFING" text panel
+  added to the existing authentic loading overlay (`progress.js`'s `.ld-box`,
+  shown while the progress bar runs) rather than a whole new pre-loading
+  screen — cheapest integration point, and the objectives text is exactly
+  the kind of flavor content players read while waiting.
+
 ---
 
 ### Gap 15 — the combat-area boundary is never drawn in the 3D scene, and 12 levels declare none
