@@ -221,6 +221,56 @@ function injectStyle() {
   text-transform: uppercase;
 }
 .ld-overlay[data-state="error"] .ld-prompt { color: #c5a23a; }
+.ld-briefing {
+  position: absolute;
+  left: 150px;
+  top: 96px;
+  width: 500px;
+  height: 330px;
+  box-sizing: border-box;
+  padding: 22px 30px;
+  overflow: hidden;
+  color: #d7d2c4;
+  font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+  text-align: center;
+}
+.ld-briefing[data-empty="true"] { display: none; }
+.ld-briefing-type {
+  display: inline-block;
+  padding: 3px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #8c8c8c;
+  color: #e8e3d4;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.ld-briefing-heading {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #f0ead6;
+  text-transform: uppercase;
+}
+.ld-briefing-heading::before,
+.ld-briefing-heading::after {
+  content: "";
+  display: inline-block;
+  width: 40px;
+  height: 1px;
+  margin: 0 10px;
+  vertical-align: middle;
+  background: #8c8c8c;
+}
+.ld-briefing-text {
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: left;
+  white-space: pre-line;
+  overflow: hidden;
+}
 
 body.is-portrait .ld-overlay { display: none; }
 @media (prefers-reduced-motion: reduce) {
@@ -292,6 +342,11 @@ export function createLoadOverlay(host, {
     root.innerHTML =
       '<div class="ld-bg-layer" aria-hidden="true"><img class="ld-bg-img" alt=""></div>' +
       '<div class="ld-stage">' +
+      '<div class="ld-briefing" data-empty="true" aria-hidden="true">' +
+      '<div class="ld-briefing-type"></div>' +
+      '<div class="ld-briefing-heading">MISSION BRIEFING</div>' +
+      '<div class="ld-briefing-text"></div>' +
+      '</div>' +
       '<div class="ld-box">' +
       '<div class="ld-title"></div>' +
       '<div class="ld-trough" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
@@ -319,6 +374,9 @@ export function createLoadOverlay(host, {
   const elBg = root.querySelector('.ld-bg-img');
   const elStage = root.querySelector('.ld-stage');
   const elAuthTitle = authentic ? root.querySelector('.ld-box .ld-title') : null;
+  const elBriefing = authentic ? root.querySelector('.ld-briefing') : null;
+  const elBriefingType = authentic ? root.querySelector('.ld-briefing-type') : null;
+  const elBriefingText = authentic ? root.querySelector('.ld-briefing-text') : null;
   const elTrough = root.querySelector('.ld-trough');
   const elFill = root.querySelector('.ld-fill');
   const elPrompt = root.querySelector('.ld-prompt');
@@ -497,9 +555,32 @@ export function createLoadOverlay(host, {
     }
   }
 
+  function setBriefing(briefing) {
+    if (!elBriefing) return;
+    const text = briefing && typeof briefing.objectives === 'string'
+      ? briefing.objectives.trim() : '';
+    const type = briefing && typeof briefing.mapType === 'string'
+      ? briefing.mapType.trim() : '';
+    elBriefing.dataset.empty = String(!text);
+    if (elBriefingText) elBriefingText.textContent = text;
+    if (elBriefingType) {
+      elBriefingType.textContent = type;
+      elBriefingType.style.display = type ? '' : 'none';
+    }
+  }
+
   function handle(gen) {
     const live = () => gen === generation;
     return {
+      /** The level's `briefing` from scene.json (objectives/mapType/mapId);
+       *  paints the MISSION BRIEFING panel onto the loading screen. The text
+       *  is stored as extracted, plain English from Menu/Init.con + the chain
+       *  lexicon, so no player-name decoding applies. */
+      briefing(data) {
+        if (!live()) return;
+        setBriefing(data);
+      },
+
       step(key, { label, weight = 1 } = {}) {
         if (!live()) return;
         steps.set(key, {

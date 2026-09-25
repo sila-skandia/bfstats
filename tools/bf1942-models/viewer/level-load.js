@@ -311,6 +311,9 @@ export function createLevel(page) {
     // of MB of loose textures and a 2 KB report.
     load.step('scene', { label: 'scene geometry', weight: 88 });
     load.step('textures', { label: 'textures', weight: 11 });
+    // The last level's briefing must not survive into this one's load screen;
+    // the report below puts this level's own text up when it lands.
+    load.briefing(null);
     tex.baseTotal = tex.total;
     tex.baseLoaded = tex.loaded;
     tex.load = load;
@@ -319,6 +322,10 @@ export function createLevel(page) {
     let gltf;
     try {
       report = await fetch(`${page.MAPS_BASE}/${entry.report}${page.bust()}`).then(r => r.json());
+      // The mission-briefing text rides in the report's `game` layer
+      // (`scene.json` top-level `briefing`, from Menu/Init.con). Shown while
+      // the geometry streams; absent on a report written before it.
+      load.briefing(report.briefing);
       load.finish('report');
       gltf = await page.loader.loadAsync(
         `${page.MAPS_BASE}/${entry.glb}${page.bust()}`,
