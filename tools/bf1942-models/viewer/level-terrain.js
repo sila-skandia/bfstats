@@ -9,6 +9,7 @@ import { buildHeightfield } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { buildDrivableMask } from './drivable-mask.js';
 import { WorldCollider } from './world-collider.js';
+import { collectLadders } from './ladder-climb.js';
 import { kindOf } from './level-statics.js';
 import { loadSearchMaps as loadBakedSearchMaps } from './nav-baked.js';
 
@@ -250,6 +251,11 @@ export function createLevelTerrain(page) {
     page.floatPlacedVehicles(ownerRoots, page.extras?.waterLevel);
     page.rebaseDeckSpawns();
     const statics = buildCollisionIndex(root, { ownerRoots });
+    // Gap 16: the climbable ladders. `indexScene` has already composed every
+    // matrix where the extract put it, so the `extras.isLadder` nodes read out
+    // in world space; ship ladders ride the parked-vehicle subtrees and are
+    // covered by the same walk.
+    const ladders = collectLadders(root);
     // Every damageable thing in the level, keyed by the same owner id the
     // collision index just handed out — which is what a hit record names, so a
     // round that lands resolves to the vehicle it landed on with one lookup and
@@ -263,7 +269,7 @@ export function createLevelTerrain(page) {
     const drivableMask = buildDrivableMask(root);
     terrain.collider = (heightfield || statics || Number.isFinite(page.extras?.waterLevel))
       ? new WorldCollider({ heightfield, statics, waterLevel: page.extras?.waterLevel,
-                            drivableMask })
+                            drivableMask, ladders })
       : null;
     if (terrain.collider) terrain.collider.searchMaps = page.extras?.bakedSearchMaps ?? null;
     page.world.setCollider(terrain.collider);

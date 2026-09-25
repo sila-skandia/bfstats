@@ -33,7 +33,7 @@ HARNESS = Path(__file__).resolve().parent / "bot_ai_harness.mjs"
 # bot.js's own imports. Every dependency keeps its own name so the unmodified
 # imports resolve; the world is copied as `world.mjs` for the harness.
 _MODULE_NAMES = [
-    "physics", "parachute", "swim", "soldier", "spawn-flags", "spawn-safety", "mouse-input",
+    "physics", "parachute", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety", "mouse-input",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",

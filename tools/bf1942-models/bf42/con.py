@@ -593,6 +593,18 @@ class ObjectTemplate:
     # the `.tm` carries a SimpleCollisionMesh; HCP=0+SCM bushes stay
     # fly-through.
     has_collision_physics: bool = False
+    # `ObjectTemplate.addToCollisionGroup c_CGLadders` — the word that makes a
+    # placed static a ladder instead of a fence (level-content.md Gap 16). The
+    # engine's BFSoldier joins the group's collision set to climb:
+    # `startClimbing` (0x08281b20) enters collision group 4 through
+    # `getLadderClosestPosition` (0x08280b40, a fixed -0.48 m perpendicular
+    # standoff), `handleClimbAction` (0x08281080) reads the throttle axis for
+    # the state machine, and `stopClimbing` (0x08281ca0) leaves again.
+    # Exactly 18 vanilla templates declare it (9 free-standing ladders and 9
+    # ship-mounted nets/ladders), and it accumulates: a template may join
+    # several groups, so a call naming any other group is read and dropped
+    # while one naming the ladder group sets the flag for good.
+    is_ladder: bool = False
     # `setContinousRotationSpeed y/p/r` — ambient deg/s the engine applies
     # unconditionally (windmill wings, radar dishes, the CH-47's parked rotor).
     continuous_rotation: tuple[float, float, float] | None = None
@@ -1927,6 +1939,18 @@ class ObjectLibrary:
                     # TM-5: bit1 of template +0x70; palms are 1, Afri_bush1 is 0
                     # even when the `.tm` still embeds an SCM.
                     obj.has_collision_physics = args.strip().startswith("1")
+                elif cmd == "addtocollisiongroup":
+                    # Gap 16: which collision group the placed object joins.
+                    # `c_CGLadders` is the only group anything reads today —
+                    # it is what makes a ladder climbable rather than a wall
+                    # you are stopped by — so the flag is set for good when
+                    # any declaration names it and a declaration naming any
+                    # other group is read and dropped. Template-scoped, like
+                    # `setTeamGeometry`: written into the template's own block
+                    # in all 18 vanilla declarations.
+                    tokens = args.split()
+                    if tokens and tokens[0].lower() == "c_cgladders":
+                        obj.is_ladder = True
                 elif cmd == "setcontinousrotationspeed":
                     try:
                         obj.continuous_rotation = vec3_lenient(args.split()[0])

@@ -77,12 +77,17 @@ function reachesSphere(ox, oy, oz, dx, dy, dz, maxDist, m, radius) {
  */
 export class WorldCollider {
   constructor({ heightfield = null, waterLevel = null, statics = null,
-               drivableMask = null } = {}) {
+               drivableMask = null, ladders = null } = {}) {
     this.heightfield = heightfield;
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
     /** The drivable-deck broadphase gate (`buildDrivableMask`), or null. */
     this.drivableMask = drivableMask;
+    /** Gap 16: the level's climbable ladders, world space
+     *  (`ladder-climb.js` `collectLadders`), or null for a level that shipped
+     *  none. The soldier's climb state reads it duck-typed, so a collider
+     *  without the field simply has nothing to climb. */
+    this.ladders = ladders;
     this.dynamicCast = null;
     /**
      * Where the last `deckHeight` found a deck, and the triangle it found: a
