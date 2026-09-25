@@ -31,10 +31,12 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         if (!string.IsNullOrWhiteSpace(filters.MapName))
         {
-            // MapName.Contains compiles to instr() and cannot use IX_Rounds_MapName
-            // or (ServerGuid, StartTime). Callers (map drill-in, sessions filter,
-            // tournament link) send the stored map name, so equality keeps COUNT
-            // on the B-tree. Substring search would scan Rounds on the volume.
+            // MapName.Contains compiles to instr() and cannot use any MapName
+            // index. Callers (map drill-in, sessions filter, tournament link)
+            // send the stored map name, so equality is the right predicate.
+            // COUNT of ServerGuid + MapName needs IX_Rounds_ServerGuid_MapName;
+            // IX_Rounds_MapName alone still walks every worldwide row of a
+            // popular map (~18s on the volume).
             query = query.Where(r => r.MapName == filters.MapName);
         }
 
@@ -118,7 +120,14 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             }
         }
 
-        // Apply sorting
+        // Count before OrderBy so the listing COUNT cannot pick up a sort
+        // that would walk (ServerGuid, StartTime) instead of the MapName range.
+        var countSw = Stopwatch.StartNew();
+        var totalCount = await query.CountAsync();
+        logger.LogInformation(
+            "Rounds listing count: {TotalCount} rows in {ElapsedMs}ms (serverGuid {ServerGuid}, mapName {MapName})",
+            totalCount, countSw.ElapsedMilliseconds, filters.ServerGuid, filters.MapName);
+
         query = sortBy.ToLowerInvariant() switch
         {
             "roundid" => sortOrder.ToLowerInvariant() == "asc"
@@ -150,10 +159,6 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 : query.OrderByDescending(r => r.StartTime)
         };
 
-        // Get total count
-        var totalCount = await query.CountAsync();
-
-        // Apply pagination and get rounds
         var rounds = await query
             .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)

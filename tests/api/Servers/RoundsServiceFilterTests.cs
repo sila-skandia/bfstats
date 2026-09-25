@@ -3,6 +3,7 @@ using api.Servers;
 using api.Servers.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace api.tests.Servers;
@@ -12,6 +13,7 @@ public sealed class RoundsServiceFilterTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly PlayerTrackerDbContext _dbContext;
     private readonly RoundsService _service;
+    private readonly List<string> _sql = [];
 
     public RoundsServiceFilterTests()
     {
@@ -20,6 +22,10 @@ public sealed class RoundsServiceFilterTests : IDisposable
 
         var options = new DbContextOptionsBuilder<PlayerTrackerDbContext>()
             .UseSqlite(_connection)
+            .LogTo(
+                _sql.Add,
+                [DbLoggerCategory.Database.Command.Name],
+                LogLevel.Information)
             .Options;
 
         _dbContext = new PlayerTrackerDbContext(options);
@@ -172,12 +178,20 @@ public sealed class RoundsServiceFilterTests : IDisposable
         SeedRound("r-wake", "simple-guid", "*NEW* SiMPLE | BF1942", new DateTime(2026, 9, 6, 7, 0, 0, DateTimeKind.Utc), "Wake Island");
         await _dbContext.SaveChangesAsync();
 
+        _sql.Clear();
         var exact = await _service.GetRounds(
             1, 5, "startTime", "desc",
             new RoundFilters { ServerGuid = "simple-guid", MapName = "battle of britain" });
 
         Assert.Equal(1, exact.TotalItems);
         Assert.Equal("r-britain", Assert.Single(exact.Items).RoundId);
+        Assert.Contains(_sql, s =>
+            s.Contains("COUNT(*)", StringComparison.OrdinalIgnoreCase)
+            && s.Contains("\"ServerGuid\" = ", StringComparison.Ordinal)
+            && s.Contains("\"MapName\" = ", StringComparison.Ordinal));
+        Assert.DoesNotContain(_sql, s => s.Contains("instr(", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(_sql, s => s.Contains("ORDER BY", StringComparison.OrdinalIgnoreCase)
+            && s.Contains("COUNT(*)", StringComparison.OrdinalIgnoreCase));
 
         var substring = await _service.GetRounds(
             1, 5, "startTime", "desc",
@@ -185,6 +199,15 @@ public sealed class RoundsServiceFilterTests : IDisposable
 
         Assert.Equal(0, substring.TotalItems);
         Assert.Empty(substring.Items);
+    }
+
+    [Fact]
+    public void Model_CreatesServerGuidMapNameIndex()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'IX_Rounds_ServerGuid_MapName'";
+        Assert.Equal("IX_Rounds_ServerGuid_MapName", cmd.ExecuteScalar() as string);
     }
 
     [Fact]

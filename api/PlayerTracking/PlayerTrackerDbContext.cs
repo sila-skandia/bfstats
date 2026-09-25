@@ -188,6 +188,19 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => new { r.ServerGuid, r.StartTime });
 
+        // Serves the map-drill-in listing COUNT:
+        //   SELECT COUNT(*) FROM Rounds WHERE ServerGuid = @g AND MapName = @m
+        // IX_Rounds_MapName looks selective to the planner (dozens of map names) but
+        // popular maps are huge, so SQLite walks every worldwide battleaxe/midway
+        // row and heap-fetches ServerGuid — 18s on the volume (2026-09-25T01:38Z).
+        // (ServerGuid, StartTime) is cheap for LIMIT 5 and for ServerGuid-only
+        // COUNT, but adding MapName makes the planner abandon it. This composite
+        // lets COUNT stay on a B-tree range. Do not drop IX_Rounds_MapName; map-only
+        // callers still need it.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.ServerGuid, r.MapName })
+            .HasDatabaseName("IX_Rounds_ServerGuid_MapName");
+
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.MapName);
 
