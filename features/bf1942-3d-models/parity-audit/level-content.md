@@ -674,6 +674,78 @@ carries 2 M terrain triangles with no falloff, and map-parity.md already records
 Wake going 131 k → 524 k triangles / 28.8 → 38.1 MB from the default-patch fill
 alone.
 
+#### Investigation 2026-09-25
+
+**Census (vanilla, 23/23 levels, `Init/Terrain.con` under `GeometryTemplate.*`).**
+Fetched vanilla + XPack1/XPack2 archives per `bf1942-game-archives` skill and
+parsed every level's `Terrain.con` directly (script:
+`scratchpad/census_terrain.py`, not committed).
+
+| directive | levels | values | parsed today? |
+|---|---|---|---|
+| `create` (terrain type) | 23/23 | **`PatchTerrain`** in every single level (case varies) — `RoamTerrain` never appears in a shipped `.con` | not read (type assumed) |
+| `file`, `worldSize`, `yScale`, `materialSize`, `materialMap`, `waterLevel`, `seaFloorLevel`, `texBaseName`, `texOffsetX/Y`, `detailTexName` | 23/23 each | as before | PARSED (materialSize/materialMap parsed-but-unused, Gap 9) |
+| `targetTriCount` | **23/23** | `4000` (Aberdeen, GuadalCanal, Kursk, Midway — the four 1024 m/4096 m levels) or `5000` (the nineteen 2048 m levels) | IGNORED |
+| `lodDistance` | **22/23** (missing only on **Coral_Sea**, not Bocage as the original ground-truth note said — corrected) | 350–600, tracking `Game.setViewDistance` closely but not exactly | IGNORED |
+| `waveHeight` / `waveScale` | 5/23 (always `0`/`0.0`) / 1/23 (`0.01`, GuadalCanal) | already tracked as **Gap 17** (water), not this gap — noted here only to avoid double-counting | IGNORED, but out of scope for Gap 10 |
+
+No other terrain-related `.con` file exists per level (no separate LOD/tessellation
+file); `Init/Terrain.con` is the only source.
+
+**Engine check.** `features/bf1942-engine-reference/` has no subsystem doc for
+terrain rendering (the dedicated server, `lnxded`, does not render terrain at
+all — no client-rendering code is linked into it — so it cannot answer this).
+Checked the client instead (`BF1942.exe`, pre-analyzed Ghidra project,
+`bf1942-ghidra` skill):
+
+- `GeometryTemplate.targetTriCount` — string exists once in the binary
+  (`0091889c`), with **two** call sites (`0x65191f`, `0x655cbf`), one next to
+  the `GeometryTemplate.create PatchTerrain` string's own reference
+  (`0x651794`) and one next to `GeometryTemplate.create RoamTerrain`'s
+  (`0x655c63`). **Verified: the token is read by the client**, and the
+  PatchTerrain-side reference means it is consulted even though every vanilla
+  level uses PatchTerrain, not RoamTerrain. What exactly it drives inside
+  PatchTerrain's simplification (a global triangle budget vs. a per-patch
+  threshold) is **UNVERIFIED** — would need deeper RE of `0x651700`-ish to
+  pin down, out of the 45-minute budget for this pass.
+- `GeometryTemplate.lodDistance` — **no such string exists anywhere in
+  `BF1942.exe`** (`strings -a BF1942.exe | grep -i loddistance` finds only
+  `ObjectTemplate.lodDistance`, `setLodDistance`, `addLodDistance`,
+  `getLodDistance`, `alphaLodDistance`, `triangleSortLodDistance` — all
+  `ObjectTemplate`/`LodSelectorTemplate` object-mesh LOD, a different
+  subsystem entirely (see Gap 11), not terrain). Refractor's `.con` parser
+  matches directives by literal string, so a token with no registered string
+  has no consumer. **Verified (by absence): `GeometryTemplate.lodDistance` is
+  dead data in every level's `Terrain.con` — the retail client never reads
+  it.** It most likely comes from the level-editor/authoring pipeline (its
+  near-tracking of `Game.setViewDistance` suggests a designer aid), not a
+  runtime knob.
+
+**Viewer impact.** `viewer/heightfield.js` (`buildHeightfield`) and
+`viewer/level-terrain.js` confirm the doc's original read: no `lod`/`patch`/
+`distance` logic anywhere in the terrain path — one uniform-resolution mesh at
+a fixed 4 m/sample spacing for the whole level, no falloff. So: **`lodDistance`
+ignoring has zero visual or engine-parity impact** (it never affected the
+original client either). **`targetTriCount` ignoring is real but payload-only**
+in the direction of *more* detail, not less — consistent with the existing
+doc's read.
+
+**Recommendation.**
+- **`lodDistance`: close as won't-fix.** Confirmed dead in the retail engine;
+  there is nothing to reproduce. Not a parity gap.
+- **`targetTriCount`: fix, Size S, `environment` bake layer.** Record the raw
+  value into `scene.json` (`Init/Terrain.con` is already an `environment`-layer
+  input) as informational metadata — cheap, no glb change, and documents that
+  the viewer is intentionally more detailed than the engine's budget. **Do not**
+  build actual terrain decimation/LOD on top of it now: that is a real geometry
+  change (`scene` layer, full re-bake, size M-L per the exact approach), the
+  visual direction is already correct (more detail, not less), and the payload
+  cost is better addressed alongside Gap 11's broader per-object LOD work if it
+  is ever prioritized, rather than as a terrain-only special case.
+- Net effect on Gap 10: split into two — one won't-fix, one small metadata fix
+  that does not touch geometry. Overall gap stays open (nothing shipped yet)
+  but the scope shrinks from "M, terrain LOD system" to "S, one metadata field."
+
 ---
 
 ### Gap 11 — no per-object draw distance or LOD; one global cull radius for everything
