@@ -48,19 +48,23 @@ export const LIST_TOP_INSET = 24;
  *  then roster order. A row's colour is not a choice: see `rowColor`. */
 export const ROW_LIMIT_NOTE = 'viewer choice: row count, sort';
 
-/** The game's own per-team row colours, the ones `Menu.con` sets with
- *  `Game.setAxisRadioColor 1/0.35/0.35` and `Game.setAlliedRadioColor
- *  0.4/0.6/1`, plus the buddy green (`extract_radio` records them all in the
- *  chat layout; the board's own layout carries them too). Retail's board draws
- *  both the name and the numbers in them: a 2556x1441 capture's name ink cores
- *  are #d65454 on the Axis panel and #54aed8 on the Allied one, which is
- *  these two colours through the face's own coverage. The fallback here covers
- *  a board pack extracted before the colours were recorded in it. */
-export const ROW_COLORS = { axis: [1, 0.35, 0.35], allies: [0.4, 0.6, 1], buddy: [0, 1, 0] };
+/** The board's own per-team row colours, at the values a retail capture shows,
+ *  plus the local player's own green. The engine paints a row's name and its
+ *  numbers itself and no con it ships carries the pair: `Menu.con`'s
+ *  `Game.setAxisRadioColor` and `Game.setAlliedRadioColor` are the chat and
+ *  radio text colours, a wider red on the Axis and a blue the board's Allies
+ *  never are. A 2556x1441 capture of the stock game measures the name ink
+ *  cores at (214,84,84) and (84,174,215), so those rounded are what our own
+ *  renderer needs to land on the same screen colour (it draws a glyph at full
+ *  coverage where the capture has the panel showing through). The values also
+ *  stand in for a board pack extracted before the colours were recorded in it.
+ *  Retailed source and the negative results behind it:
+ *  `extract_scoreboard_layout.py`'s `BOARD_ROW_COLORS`. */
+export const ROW_COLORS = { axis: [0.84, 0.33, 0.33], allies: [0.33, 0.67, 0.83], buddy: [0, 1, 0] };
 
 /** The dim a dead player's row is drawn at, for the whole row and its numbers.
- *  Retail's dead rows measure 0.49 to 0.59 of a live row's colour per channel
- *  (the Allied panel of a 2556x1441 capture: #54aed8 live against #29627f
+ *  Retail's dead rows measure 0.49 to 0.60 of a live row per channel (the
+ *  Allied panel of a 2556x1441 capture: (84,174,215) live against (41,98,127)
  *  dead), so the side's own colour, dimmed by this. */
 export const DEAD_ROW_DIM = 0.55;
 

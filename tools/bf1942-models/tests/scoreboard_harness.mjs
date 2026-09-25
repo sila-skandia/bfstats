@@ -207,7 +207,7 @@ const elements = [
   { kind: 'fill', rect: [14, 465, 371, 18], color: [0, 0, 0, 1] },
 ];
 // The pack's own colours, as the board reads them out of the layout.
-const packColors = { axis: [1, 0.35, 0.35], allies: [0.4, 0.6, 1], buddy: [0, 1, 0] };
+const packColors = { axis: [0.84, 0.33, 0.33], allies: [0.33, 0.67, 0.83], buddy: [0, 1, 0] };
 // A plate draws at its texture's own size; the row glyphs are 16x16, which is
 // what tells the row's centring apart from stretching to the row height.
 const glyphOrPlate = name =>
