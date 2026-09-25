@@ -1246,6 +1246,11 @@ def write_water_assets(info: LevelInfo, heightmap, textures, out_dir: Path,
     base = w.color or w.shallow_color or info.water_color
     return {
         "level": info.terrain.water_level,
+        # Gap 17: `water.envmapColor` tints the reflected cube and
+        # `GeometryTemplate.waveHeight` drives the vertical swell (level-sky.js).
+        # Null/0 when undeclared; nonzero only on Santo_Croce and Eagles_Nest.
+        "envmapColor": list(w.envmap_color) if w.envmap_color else None,
+        "waveHeight": info.terrain.wave_height,
         "color": list(base),
         "deepColor": list(w.deep_color or base),
         "shallowColor": list(w.shallow_color or base),
