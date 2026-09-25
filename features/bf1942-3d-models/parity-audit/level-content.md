@@ -1215,6 +1215,148 @@ reflection term the water shader already has.
 is owed. `envmapcolor` would visibly green the reflection on three European
 maps. The El Alamein typo is a one-line fix with a visible shoreline result.
 
+#### Investigation 2026-09-25
+
+**Re-censused against every restored vanilla + XPack1 + XPack2 `.con`**
+(`bf42.rfa.RfaArchive`, case-insensitive regex over every `.con` in every
+level archive — 56 vanilla + XPack2 + XPack1 levels scanned, 59 archive
+entries carry a `water.*` or `GeometryTemplate.wave*` line, several counted
+twice because the same level ships an alt-mode `.rfa` with an `_003` suffix).
+The doc's per-level lists above were stale on several counts — corrected
+numbers:
+
+| directive | ns.cmd (lowercased) | levels | sample values | parsed today? |
+|---|---|---|---|---|
+| `Water.baseTex` | `water.basetex` | **32** (not 16) | `texture/Water` (always) | no |
+| `water.envmapcolor` | `water.envmapcolor` | **8 distinct levels** (10 archive rows incl. `_003` dupes): Battle_of_Britain, Invasion_of_the_Philippines, Liberation_of_Caen, Anzio, baytown, Peenemunde, Raid_on_Agheila, Telemark | `0.70/0.80/0.70` on 6 of them, `0.5/0.4/0.3` on Raid_on_Agheila (desert, warm), `0.7/0.8/0.7` on Telemark | no |
+| `water.wateShallowAlpha` (typo) | `water.wateshallowalpha` | **1** — El_Alamein only | `0.5` | no |
+| `GeometryTemplate.waveHeight` | `geometrytemplate.waveheight` | **11** (not 5): Coral_sea, El_Alamein, GuadalCanal, Omaha_Beach, Wake, husky, Santo_Croce, Eagles_Nest, Essen, Gothic_Line, Kbely_Airfield | `0.0` on 9 of them; **nonzero on 2**: Santo_Croce `0.1`, Eagles_Nest `0.1` | no (namespace not dispatched at all — `parse_terrain_con` only handles `geometrytemplate.create`/`.file`) |
+| `GeometryTemplate.waveScale` | `geometrytemplate.wavescale` | **1** — El_Alamein only | `0.01` | no |
+| `Water.bumpTex`/`bumpTile`/`specularBumpMapFactor`/`envIntensity` | `water.{bumptex,bumptile,specularbumpmapfactor,envintensity}` | **1** — GuadalCanal only | `texture/normalMap`, `0.4`, `0.01`, `0.6` | no |
+| `water.addBlendEnable` | `water.addblendenable` | **2** — Eagles_Nest, Essen | `0` (both) | no |
+
+The 22-command list `_parse_water` already handles (`bf42/level.py:1669-1720`,
+confirmed unchanged) covers `color`/`deepcolor`/`shallowcolor`/`texlayer1-2`/
+`normalmap`/`scroll*`/`tile*`/`specular*` (except `specularbumpmapfactor`)/
+`lightdirection`/`watershallowalpha`/`wateralphadepth`/`watercolordepth` — all
+correctly spelled and reachable from `ns == "water"`. It is dispatched only
+from `Init.con`'s `water.` namespace; nothing in `parse_terrain_con` forwards
+`Terrain.con`'s `Water.*`/`GeometryTemplate.wave*` lines to it, which is why
+`baseTex` and the GuadalCanal-only fields never had a chance regardless of
+spelling.
+
+**Engine verification (Ghidra-free — `strings` on both restored retail
+binaries was sufficient and cheaper).** `strings -a` on
+`ghidra-cloud/.work/BF1942.exe` finds an intact, contiguous property-name
+table for `GeometryTemplate.PatchTerrain` (`worldSize`, `yScale`,
+`waterLevel`, **`waveHeight`**, `waterTexName`, `waterTexScale`,
+`seaFloorLevel`, ..., `deepColor`, `shallowColor`, `Color`,
+`waterAlphaDepth`, **`waterShallowAlpha`** (correct spelling, exact case),
+`waterColorDepth`, `scrollLayer1/2`, `scrollNormalmap`, `scrollDirection1/2`,
+`scrollDirectionNormalmap`, `lightDirection`, `tileLayer1/2`,
+`tileNormalmap`, **`addBlendEnable`**, `specularEnable`, `envMapEnable`,
+**`envmapColor`**, `specularStreakFactor`, `texLayer1/2`, `normalmap`,
+`renderMethod`). The same table exists verbatim in
+`bf1942_lnxded.static` (dedicated server). Every currently-*parsed* command
+name in `bf42/level.py` matches an entry in this table one-for-one.
+
+Searched the same two binaries (`strings -a -n 3`, case-insensitive) for
+`baseTex`, `wateShallowAlpha`, `waveScale`, `bumpTex`, `bumpTile`,
+`specularBumpMapFactor`, `envIntensity` — **none of the seven strings occur in
+either binary**, in any case. `setBumpTexture` does exist, but as the C++
+method name `dice::ref2::geom::SkidMarkTemplate::setBumpTexture` /
+`WheelTrackDB::setBumpTexture` (vehicle skid-mark/wheel-track system) — an
+unrelated subsystem, not a `Water`/`PatchTerrain` property. This is strong
+(not just absence-of-evidence) verification: the retail 1.6 property table is
+a fixed, contiguous block of literal strings the reflection-based `.con`
+setter walks linearly, and a property whose name string isn't compiled into
+the binary has no way to be matched, case-insensitively or otherwise.
+
+**Per-directive verdict:**
+
+- **`Water.baseTex` — UNVERIFIED-turned-VERIFIED dead.** Not a live texture
+  slot in retail 1.6: the string does not exist in either binary, so the
+  `.con` setter never finds a match for it (Refractor's `.con` property
+  dispatch is a linear name lookup with a documented "no match -> ignored,
+  optionally a console warning" behaviour on this engine — level authoring
+  cruft/leftover from an earlier build, not a wired feature). The real
+  diffuse layers are `texLayer1`/`texLayer2`, already parsed. **Won't-fix.**
+- **`water.envmapcolor` — live, verified.** `envmapColor` exists in the
+  binary immediately after `envMapEnable` in the same property block, so it
+  is a real, registered field of the water material and (by table position
+  and name) tints the reflected environment-cube colour before it's
+  composited — exactly the role the viewer's `sky.value` term plays in
+  `level-sky.js`'s water fragment shader today (currently un-tinted, straight
+  `textureLod(tEnv, R, 4.0).rgb`). **Implement.**
+- **`water.wateShallowAlpha` typo (El_Alamein) — confirmed silently
+  dropped, not applied.** Case-insensitive matching cannot rescue this: the
+  typo drops a letter (`wate` vs `water`), so `wateshallowalpha` never equals
+  `watershallowalpha` under any case transform, and the literal string
+  `wateShallowAlpha` is absent from both binaries. El Alamein's shoreline
+  really does render with the water shader's built-in default shallow alpha
+  in retail, not the author's intended `0.5`. **Won't-fix as a "typo fix"** —
+  honouring the misspelled value for fidelity would make our shoreline
+  *more* correct-looking than the shipped game, which is the wrong kind of
+  parity. If Gap 17 is closed for `envmapcolor`/`waveHeight`, note in the
+  same patch that El Alamein's shallow alpha is intentionally left at the
+  parser's default, with a one-line comment citing this finding, so a future
+  reader doesn't "fix" the typo.
+- **`GeometryTemplate.waveHeight` — live, verified, mostly inert.**
+  Registered field, real vertical wave-amplitude driver for `PatchTerrain`.
+  9 of 11 levels ship `0.0` (no visible effect regardless of implementation).
+  Only **Santo_Croce** (XPack1, Sicily) and **Eagles_Nest** (XPack2) ship a
+  nonzero `0.1`. **Implement for those 2 levels only** — low value elsewhere.
+- **`GeometryTemplate.waveScale`** — not found in either binary; El_Alamein
+  is the only level that ships it, and its paired `waveHeight` there is `0`
+  anyway. **Won't-fix (dead + moot).**
+- **`Water.bumpTex`/`bumpTile`/`specularBumpMapFactor`/`envIntensity`
+  (GuadalCanal only)** — none of the four strings exist in either binary.
+  Reads as an abandoned pre-retail water-bump variant left in one map's
+  `Terrain.con`. **Won't-fix.**
+- **`water.addBlendEnable`** — registered, real field (additive vs alpha
+  blend for the water surface), but both levels that set it ship `0`
+  (disabled = the engine's own default, and the viewer's water material is
+  already non-additive alpha blend). **Won't-fix (no observable delta at
+  today's values)** — revisit only if a future level ships `1`.
+
+**Viewer impact if `envmapcolor` and the 2-level `waveHeight` are
+implemented.** `envmapcolor` changes the *tint* of the reflection term
+(`sky` in `level-sky.js`'s fragment shader) on 8 levels — most visibly on
+Raid_on_Agheila (warm `0.5/0.4/0.3` vs. the shared green
+`0.70/0.80/0.70` used on 6 of the others) and subtly on the rest (green cast
+already close to the shader's untinted cube colour, so low-contrast but
+present at grazing angles where the fresnel term dominates). `waveHeight`
+would add visible vertical ripple motion to Santo_Croce and Eagles_Nest's
+water surface (currently perfectly flat); everywhere else it is a no-op by
+the level's own data.
+
+**Recommendation.** Implement two live directives, drop the rest as
+won't-fix (three are dead-in-engine strings, one is a typo the engine itself
+never honoured, one has no observable value in the data that ships it):
+1. `_parse_water`: add `envmapcolor` (parse as `_color3`, store
+   `w.envmap_color`), thread it into `scene_layers.py`'s water dict and
+   `extract_map.py:write_water_assets` output, and add a `uEnvColor`
+   uniform in `level-sky.js` multiplying the `sky` term before the fresnel
+   mix. **Size S.** Bake layer: **`environment`** (con-derived value only,
+   `patch_scene.py --layer environment --mod <bf1942|xpack1|xpack2> --all`
+   rewrites `scene.json`'s `water.envmapColor` field with no glb touched —
+   confirmed the water mesh/material lives in the glb but its colour
+   uniforms are scene.json-driven per `write_water_assets`'s already-existing
+   `color`/`deepColor`/`shallowColor` fields, which this follows exactly).
+2. Dispatch `geometrytemplate.waveheight` in `parse_terrain_con` into
+   `info.water.wave_height` (or a new `info.terrain.wave_height`), thread
+   through `scene_layers.py`/`write_water_assets`, add a `uWaveHeight`
+   uniform and a small vertical sine displacement in the water vertex
+   shader keyed off `uTime` and world position. **Size S**, same
+   `environment` bake layer, and — because it only ever matters for 2 of 23
+   vanilla+XPack levels — worth doing in the same patch as `envmapcolor`
+   rather than its own pass.
+3. Leave `baseTex`, the `wateShallowAlpha` typo, `waveScale`,
+   `bumpTex`/`bumpTile`/`specularBumpMapFactor`/`envIntensity`, and
+   `addBlendEnable` unimplemented, each with the one-line reason above (dead
+   string in both binaries, or — for the typo and `addBlendEnable` — a
+   verified no-op at today's shipped values).
+
 ---
 
 ### Gap 18 — vegetation: no billboard/LOD falloff, and `TreeRenderer.billboardlightscale` ignored
