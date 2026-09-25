@@ -28,8 +28,8 @@ done
 ```
 
 The zips already contain the `bf1942/` and `XPack2/` top-level folders.
-Only vanilla (`bf1942`) and Secret Weapons (`XPack2`) ship — every other mod
-was deliberately excluded. Movies/Music/eReg were dropped when the zips were
+Only vanilla (`bf1942`), Road to Rome (`XPack1`) and Secret Weapons
+(`XPack2`) ship — every other mod was deliberately excluded. Movies/Music/eReg were dropped when the zips were
 built; extractors never touch them.
 
 ## Running extractors
