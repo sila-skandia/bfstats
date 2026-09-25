@@ -196,6 +196,17 @@ database.
   suggestion. Replacing files under the mesh asset tree (`/mnt/assets/mesh/{models,maps}`)
   with re-baked ones is part of this and needs no confirmation either. Scaling
   deployments, applying manifests, and deleting volume content are still confirm-first.
+  - **Mod scope — extract only the three vanilla packs unless asked.** Asset
+    extraction covers `bf1942` (vanilla), `xpack1` (Road to Rome) and `xpack2`
+    (Secret Weapons) only. The other installed mods (EoD, FH, FHSW, DC, BG42,
+    bf1918, GCMOD, FinnWars, Pirates, Interstate, ...) are out of extraction
+    scope: their trees already exist where built, but re-extracting them takes
+    hours (EoD alone is ~1.5 h per full pass) and they are not part of routine
+    work. Reading other mods' archives to check the exporter *supports* their
+    assets (a census, a parse survey, a spot extraction to prove a code path)
+    is in scope and needs no permission — building out their trees is not.
+    Work on a non-vanilla mod happens only when the owner explicitly requests
+    that mod by name.
   - **A fix to the exporter is not done until every layer it touches is rebuilt in
     every tree and live.** A change that only moves con-derived values in `scene.json`
     (control points, spawns, tickets and modes, fog and lighting, damage, sounds, AI)
