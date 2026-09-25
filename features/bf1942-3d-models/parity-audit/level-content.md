@@ -951,6 +951,104 @@ European maps with no sea at all, where 30 and 28 patches of forested ground
 simply end. Worth settling against the engine before or instead of building the
 fallback.
 
+#### Investigation 2026-09-25
+
+**Re-verified against real archives (not just the doc's prior numbers):**
+`bf42/rfa.py` against every level `.rfa` in the restored vanilla install
+confirms `Textures/terrainDefault.dds` exists in exactly the same **3**
+archives claimed above — `Invasion_of_the_Philippines`, `Omaha_Beach`, `Wake`
+— nothing else ships it. `extract_map.py`'s gate is now at lines ~2144-2165
+(moved from the 1264-1273 cited above; logic unchanged: the whole
+`default_patches` fill loop is skipped when `_load_level_dds(...,
+"terrainDefault")` raises, no fallback branch exists anywhere in the file).
+
+**What a "default patch" is.** Confirmed from `bf42/terrain.py`: the world is
+tiled into `worldSize / 256m` patches; `default_patches()` returns every
+`(col, row)` in that full grid that has no shipped `TxCCxRR.dds` file. It is
+purely about *texture* coverage — the heightmap itself (`Heightmap`,
+`heightmap.height_at`) is one continuous grid the whole 256m-patch mesh
+function (`_grid_mesh`) samples from regardless of whether a Tx tile or a
+default-fill exists for that patch. There is no code path, ours or evidence of
+the engine's, where terrain *geometry* stops at the tile boundary — only the
+material/texture assignment is data-driven per patch.
+
+**Where the 84 dry patches actually sit — verified against real `.con`
+files, not inferred.** Read `Init.con` / `Init/Terrain.con` for the three
+affected levels directly out of the restored archives:
+
+| level | `worldSize` | `game.setActiveCombatArea` (origin, size) | combat-area box (x, z) |
+|---|---|---|---|
+| Battle_of_the_Bulge | 2048 (8x8 patches) | `0 0 1280 1280` | x 0-1280, z 0-1280 |
+| Liberation_of_Caen | 2048 (8x8 patches) | `360 460 1229 1229` | x 360-1589, z 460-1689 |
+| Tobruk | 4096 (16x16 patches) | `1024 0 2048 2048` | x 1024-3072, z 0-2048 |
+
+Every one of the "dry" unpainted patches falls **outside** the level's own
+`setActiveCombatArea` box — for Battle_of_the_Bulge and Tobruk that is a
+border strip against the world edge; for Liberation_of_Caen the combat area
+sits inset from all four world edges (360m/459m and 460m/359m margins), so
+the unpainted ring surrounds it on every side rather than only touching one
+edge. This is the same "outside the box" condition the engine reference
+ledger documents independently at `CA-1`/`CA-5`
+(`features/bf1942-engine-reference/ledger.md:911-915`): leaving that box
+already changes engine behaviour (bleed-out damage via
+`GameServer::materialToGiveDamage`), so DICE had no reason to spend Tx tile
+budget dressing ground players are actively punished for standing on.
+**Visibility from normal viewpoints is plausible but UNVERIFIED** — these are
+open inland/desert margins on rolling terrain, so they are very likely visible
+at a distance from inside the combat area on all three levels, but no
+line-of-sight/prop-occlusion check was done in this pass.
+
+**How the engine textures a patch with no `terrainDefault.dds` — partially
+verified via Ghidra, partially UNVERIFIED.** The client exe (`BF1942.exe`)
+ships a **generic, level-independent** fallback texture at
+`texture/defaultTexture.dds` inside the shared `texture.rfa` (not a per-level
+file) — confirmed present: 128x128, flat mid-grey, average RGB
+`(76, 72, 74)`. The literal strings `"texture/defaultTexture"` and
+`"defaultTexture"` are both referenced from the client binary (xrefs at
+`0x00642f09`/`0x0064316d` and `0x00697796`), consistent with a generic
+"texture failed to load, substitute this" path in the texture/material
+loading system. **UNVERIFIED:** tracing `PatchTerrain`'s own texture-stage
+setup to confirm it calls into this same fallback for a patch with no Tx tile
+and no level `terrainDefault.dds` was not completed in this pass (the
+dedicated-server binary, which is fully symbolized, carries no rendering code
+at all — `PatchTerrain` methods there are geometry/collision only — so this
+requires client-exe-only tracing, unstarted here). What *is* fairly solid,
+from the geometry argument above plus the CA-1/CA-5 evidence that the engine
+already treats combat-area-exterior terrain as ordinary, walkable ground: the
+real engine almost certainly renders continuous, generically-grey-textured
+ground there, not a hole — contradicting map-parity.md's "nothing visible"
+framing for Tobruk and confirming this doc's own skepticism about
+extrapolating that framing to Battle of the Bulge/Caen.
+
+**How the viewer renders it today — verified from code, not inferred.** When
+`default_image` is `None`, the entire `Fill{col}x{row}` node-emission loop in
+`extract_map.py` is skipped — **zero mesh geometry** is written for those
+patches, not merely a missing-texture material. The exported glb has a literal
+hole in the terrain mesh at every one of the 84 dry patches; the viewer shows
+whatever scene background/sky is behind it. This is a stronger gap than
+"wrong texture" — it is missing polygons — and is a self-inflicted exporter
+artifact, since the heightmap data needed to build that geometry is already
+available (the same data `patch_mesh` uses on the 3 levels that do ship
+`terrainDefault.dds`).
+
+**Recommendation.** Fix, Size **S**. Use the shared, engine-shipped
+`texture/defaultTexture.dds` (from `texture.rfa`) as the fallback material
+whenever a level's own `Textures/terrainDefault.dds` is absent, instead of
+the previously-suggested `Detail.dds` or nearest-tile-average guesses — both
+of those are inventions with no engine grounding, while `defaultTexture.dds`
+is the one fallback texture the engine itself ships and references in its
+texture-loading code. This still leaves the PatchTerrain-specific tracing as
+UNVERIFIED, so treat the fix as "engine-plausible," not "engine-proven."
+Bake layer: **`scene`** — this adds glb-drawn geometry and materials (Fill
+mesh nodes), not a con-derived metadata field, so it needs the full re-bake
+per `features/level-bake-layers/README.md`, not a `--layer` patch. Blast
+radius is exactly the 3 vanilla-tree bakes with 0 `defaultTiles` today
+(Battle_of_the_Bulge, Liberation_of_Caen, Tobruk) — no mod trees are
+affected (no mod level was surveyed here). Because the affected ground sits
+outside every one of these levels' combat areas, the value is real but
+modest: it removes a visible void at the map periphery rather than fixing
+anything players walk on.
+
 ---
 
 ### Gap 13 — mod coverage: 262 of 1,399 levels extracted, and all 239 mod scenes are schema-stale
