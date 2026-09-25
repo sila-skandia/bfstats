@@ -2070,6 +2070,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  out_dir: Path | None = None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
                  sky_faces: list | None = None,
+                 textures=None,
                  ) -> tuple[bytes, dict]:
     """The glb, and the `scene` layer of the report: what the geometry pass
     itself found (`terrain`, `objects`, `minimap`). Every con-derived key is
@@ -2140,18 +2141,28 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             name=f"Tx{col:02d}x{row:02d}", mesh=mesh, extras={"kind": "terrain"})))
 
     # Patches with no shipped tile are sea floor and out-of-area ground the
-    # engine paints with the level's default texture, not holes.
+    # engine paints with the level's default texture, not holes. A level
+    # shipping its own terrainDefault.dds fills everything with it; a level
+    # that ships none borrows the shared texture/defaultTexture.dds from the
+    # texture pool (engine xrefs 0x00642f09/0x0064316d) and fills DRY ground
+    # only (level-content.md Gap 12): the wet sea floor stays unrendered,
+    # invisible under the water plane.
     default_image = None
+    default_kind = "terrainDefault"
     try:
         default_image = _load_level_dds(files, "terrainDefault")
     except Exception:
         default_image = None
+    if default_image is None and textures is not None:
+        default_image = _decode_pool_image(textures, "texture/defaultTexture")
+        if default_image is not None:
+            default_kind = "textureDefault"
     if default_image is not None:
         width, height, rgba = default_image
         tex = builder.add_image_png(
-            encode_png(width, height, rgba, drop_alpha=False), name="terrainDefault")
+            encode_png(width, height, rgba, drop_alpha=False), name=default_kind)
         default_material = builder.add_material(
-            name="terrainDefault", texture=tex, double_sided=False)
+            name=default_kind, texture=tex, double_sided=False)
         dry_only = default_kind == "textureDefault"
         for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles]):
             primitive = patch_mesh(heightmap, col, row)
@@ -2519,6 +2530,7 @@ def main() -> int:
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
         lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
+        textures=textures,
     )
     if sky_faces:
         extras["sky"] = {
