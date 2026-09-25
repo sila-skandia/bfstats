@@ -583,6 +583,11 @@ class ObjectTemplate:
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
     has_mobile_physics: bool = False
+    # `setAttachToListener 1`: a bool at SimpleSoundTemplate +4 (lnxded
+    # 0x081de9c0/0x081de9d0, ledger SND-1). Its sound is placed at the listener
+    # while he sits Inside the PlayerControlObject this part belongs to: every
+    # land vehicle's Engine carries it, no aircraft or ship Engine does.
+    attach_to_listener: bool = False
     # `setHasCollisionPhysics 1` — template +0x70 bit1 → instance flag 0x200
     # (TM-5 / V-R1). TreeMesh hulls are exported only when this is set **and**
     # the `.tm` carries a SimpleCollisionMesh; HCP=0+SCM bushes stay
@@ -1907,6 +1912,11 @@ class ObjectLibrary:
                     obj.invisible = args.strip().startswith("1")
                 elif cmd == "hasmobilephysics":
                     obj.has_mobile_physics = args.strip().startswith("1")
+                elif cmd == "setattachtolistener":
+                    try:
+                        obj.attach_to_listener = int(args.split()[0]) != 0
+                    except (ValueError, IndexError):
+                        pass
                 elif cmd == "sethascollisionphysics":
                     # TM-5: bit1 of template +0x70; palms are 1, Afri_bush1 is 0
                     # even when the `.tm` still embeds an SCM.
