@@ -19,7 +19,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 |---|---|---|---|
 | `controlPoints` | `controlPoints`; `modes.*.controlPoints` | none | `<mode>/ControlPoint*.con`, the placed-flag list from `objects.placedControlPoints` |
 | `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the ships' `Objects.con`, `Game/GlobalSpawnGroups.con`, the control points |
-| `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`; `modes.*.gameTypes/tickets/combatArea` | none | `GameTypes/*.con`, `Init.con` |
+| `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | `GameTypes/*.con`, `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting`, `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds` | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |

@@ -118,6 +118,26 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(sorted(out["modes"]), ["Conquest", "Ctf"])
         self.assertEqual(list(out["modes"]["Ctf"]), list(scene_layers.MODE_KEY_ORDER))
 
+    def test_the_game_layer_owns_the_briefing(self) -> None:
+        # `briefing` sits with the game layer's con-derived keys: patching
+        # `game` rewrites it, patching anything else leaves it alone.
+        self.assertIn("briefing", scene_layers.LAYERS["game"][0])
+        self.assertIn("briefing", scene_layers.REPORT_ORDER)
+        report = {**self.report, "briefing": {"objectives": "old", "mapType": "OLD"}}
+        top = {"briefing": {"objectives": "new text", "mapType": "ASSAULT MAP",
+                            "mapId": "BF1942"}}
+        out = scene_layers.merge(report, ["game"], top, {"Conquest": {}})
+        self.assertEqual(top["briefing"], out["briefing"])
+        # A level with no Menu/Init.con reports no briefing. Like
+        # `combatArea: null` on a level with no combat box, the layer still
+        # owns the key and writes it null rather than leaving the old value.
+        out = scene_layers.merge(report, ["game"], {"briefing": None},
+                                 {"Conquest": {}})
+        self.assertIsNone(out["briefing"])
+        # Patching a layer that does not own it leaves it untouched.
+        out = scene_layers.merge(report, ["sounds"], {}, {"Conquest": {}})
+        self.assertEqual({"objectives": "old", "mapType": "OLD"}, out["briefing"])
+
     def test_control_points_bring_the_spawns_that_read_them(self) -> None:
         self.assertEqual(scene_layers.expand(["controlPoints"]), ["controlPoints", "spawns"])
         self.assertEqual(scene_layers.expand(["ai", "game"]), ["game", "ai"])
