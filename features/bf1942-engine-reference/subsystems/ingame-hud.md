@@ -556,10 +556,16 @@ the engine's does.
 - **VHUD-2**: `BfOccupiedVehicleData`'s live per-seat state selector — the
   table is read, the code that indexes into it per seat is not. (The dots'
   *positions* are no longer open: VHUD-11, §6.)
-- **VHUD-10**: the client instruction that writes `Ammo/PrimaryAmmoText` for a
+- ~~**VHUD-10**: the client instruction that writes `Ammo/PrimaryAmmoText` for a
   drivetrain root, which FireArm fills primary versus secondary under
-  `NumberOfWeaponIcons 2`, and the identity of `[this+0x14]` in
-  `FUN_006d6af0`. The registrar tables themselves are closed (§6).
+  `NumberOfWeaponIcons 2`~~ (found 2026-09-25: `FUN_006e9180` writes
+  `PrimaryAmmoText`/`SecondaryAmmoText` from `FireArms::getAmmoInActiveMag()`
+  — the active magazine's round count, not reserve total — for whichever
+  FireArm node is first/second in the occupied seat's own FireArms range;
+  see ledger VHUD-10). Still open: the identity of `[this+0x14]` in
+  `FUN_006d6af0`, and of the `DAT_008dcd14` type filter and `FUN_006ea490`
+  bar helper the writer's caller uses. The registrar tables themselves are
+  closed (§6).
 - **From the R2 verifier, not yet promoted to their own ledger rows**:
   ~~`IconLookRotation`'s writer and unit~~ (closed, VHUD-9);
   ~~`Overheat/OverHeat`'s own registration function~~ (`0x006e9820`, §6);
