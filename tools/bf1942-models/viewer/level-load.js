@@ -305,6 +305,13 @@ export function createLevel(page) {
       music: loading.music,
       theme: loading.theme,
       assetBase: page.MAPS_BASE,
+      // The briefing screen's READY is what lets the player into the level:
+      // the game opens its spawn screen off the same click, and a level with
+      // no soldier spawn starts free roam armed instead (the old join block's
+      // rule, moved behind READY with the screen).
+      onReady: () => {
+        if (!page.optPilot.checked && !page.openDeploy()) page.capture();
+      },
     });
     load.step('report', { label: 'level report', weight: 1 });
     // Weighted by what the bytes actually are: one ~70 MB scene against a couple
@@ -322,10 +329,6 @@ export function createLevel(page) {
     let gltf;
     try {
       report = await fetch(`${page.MAPS_BASE}/${entry.report}${page.bust()}`).then(r => r.json());
-      // The mission-briefing text rides in the report's `game` layer
-      // (`scene.json` top-level `briefing`, from Menu/Init.con). Shown while
-      // the geometry streams; absent on a report written before it.
-      load.briefing(report.briefing);
       load.finish('report');
       gltf = await page.loader.loadAsync(
         `${page.MAPS_BASE}/${entry.glb}${page.bust()}`,
@@ -652,11 +655,28 @@ export function createLevel(page) {
     level.worldReady = true;
     timing.worldReady = performance.now();
     page.syncDeployReady();
-    // Direct-to-spawn: skip the briefing dialog and land on the deploy screen.
-    // A level that declares no soldier spawn has no screen to open, and with
-    // the "click to fly" plate gone there would be nothing to tell the player
-    // the controls are live — so free roam starts armed instead.
-    if (!page.optPilot.checked && !page.openDeploy()) page.capture();
+    // The briefing screen's data, composed now that this level's own state is
+    // in: the report's `briefing` (scene.json's `game` layer, from
+    // Menu/Init.con) plus the name the game shows (maps.json's canonical
+    // title, the same string the lexicon records for the level), the game
+    // type, and the two sides' flags (`teamNation`, the deploy screen's own
+    // answer, drawn from the hud pack with its mod overrides). The screen
+    // itself goes up at `load.end()`, over the live level.
+    const brief = report.briefing || {};
+    const briefingFlag = nation => {
+      if (!nation || nation === 'unknown') return null;
+      try {
+        return `${page.hudPaths.url(`icon_flag_${nation}.png`)}${page.bust()}`;
+      } catch (_) {
+        return null;
+      }
+    };
+    load.briefing({
+      ...brief,
+      displayName: loading.title || level.extras.level || entry.name,
+      gameType: level.extras.gameplayMode || 'Conquest',
+      flags: [briefingFlag(page.teamNation(1)), briefingFlag(page.teamNation(2))],
+    });
 
     // Every texture this level needs has been queued by now, so a queue that is
     // already drained (or was never filled) means the load is done — texReport
