@@ -32,9 +32,9 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         if (!string.IsNullOrWhiteSpace(filters.MapName))
         {
             // MapName.Contains compiles to instr() and cannot use IX_Rounds_MapName
-            // or (ServerGuid, StartTime). Callers (map drill-in, sessions filter,
+            // or (ServerGuid, MapName). Callers (map drill-in, sessions filter,
             // tournament link) send the stored map name, so equality keeps COUNT
-            // on the B-tree. Substring search would scan Rounds on the volume.
+            // on the composite. Substring search would scan Rounds on the volume.
             query = query.Where(r => r.MapName == filters.MapName);
         }
 
@@ -118,7 +118,13 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             }
         }
 
-        // Apply sorting
+        var countSw = Stopwatch.StartNew();
+        var totalCount = await query.CountAsync();
+        countSw.Stop();
+        logger.LogInformation(
+            "Rounds listing count for {ServerGuid} map {MapName}: {TotalCount} rows in {ElapsedMs}ms",
+            filters.ServerGuid, filters.MapName, totalCount, countSw.ElapsedMilliseconds);
+
         query = sortBy.ToLowerInvariant() switch
         {
             "roundid" => sortOrder.ToLowerInvariant() == "asc"
@@ -149,9 +155,6 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 ? query.OrderBy(r => r.StartTime)
                 : query.OrderByDescending(r => r.StartTime)
         };
-
-        // Get total count
-        var totalCount = await query.CountAsync();
 
         // Apply pagination and get rounds
         var rounds = await query

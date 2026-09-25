@@ -188,6 +188,33 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_ServerGuidAndMapName_CountsMatchingRoundsAcrossPages()
+    {
+        SeedServer("simple-guid", "*NEW* SiMPLE | BF1942");
+        for (var i = 0; i < 12; i++)
+        {
+            SeedRound($"r-axe-{i}", "simple-guid", "*NEW* SiMPLE | BF1942",
+                new DateTime(2026, 9, 6, 10, 0, 0, DateTimeKind.Utc).AddMinutes(i), "battleaxe");
+        }
+        for (var i = 0; i < 8; i++)
+        {
+            SeedRound($"r-mid-{i}", "simple-guid", "*NEW* SiMPLE | BF1942",
+                new DateTime(2026, 9, 6, 8, 0, 0, DateTimeKind.Utc).AddMinutes(i), "midway");
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var page = await _service.GetRounds(
+            1, 5, "startTime", "desc",
+            new RoundFilters { ServerGuid = "simple-guid", MapName = "battleaxe" });
+
+        Assert.Equal(12, page.TotalItems);
+        Assert.Equal(3, page.TotalPages);
+        Assert.Equal(5, page.Items.Count);
+        Assert.All(page.Items, item => Assert.Equal("battleaxe", item.MapName));
+        Assert.Equal("r-axe-11", page.Items[0].RoundId);
+    }
+
+    [Fact]
     public async Task GetRounds_PopulatesGameIdFromGameServer()
     {
         _dbContext.Servers.Add(new GameServer

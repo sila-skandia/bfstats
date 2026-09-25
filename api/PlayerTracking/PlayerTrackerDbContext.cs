@@ -188,6 +188,13 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<Round>()
             .HasIndex(r => new { r.ServerGuid, r.StartTime });
 
+        // Serves GET /stats/rounds?serverGuid=&mapName= COUNT(*). Equality on MapName
+        // still walks every round for that server via (ServerGuid, StartTime) — on the
+        // Hetzner volume that is 2-18s for a busy server. This pair lets COUNT stay
+        // on the B-tree without touching the heap.
+        modelBuilder.Entity<Round>()
+            .HasIndex(r => new { r.ServerGuid, r.MapName });
+
         modelBuilder.Entity<Round>()
             .HasIndex(r => r.MapName);
 
