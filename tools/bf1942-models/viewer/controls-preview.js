@@ -18,6 +18,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createPoseMotion } from './pose-motion.js';
 import { createModelRig, keyOf } from './model-rig.js';
 import { disposeModel } from './dispose-model.js';
+import { createPoseComposer } from './pose-compose.js';
 
 /** The pair the soldier preview wears, the first of these the manifest
  *  carries: a US rifleman, else whoever is first. */
@@ -71,6 +72,15 @@ export function createControlsPreview({ root = '' } = {}) {
   const soldier = { gltf: null, prone: false, lieWas: false, jumpWas: false,
                     jump: 0, yaw: 0, fireT: 0 };
   let posesBase = `${root}models/poses`;
+  /** The pose glb, or the split tree's recipe + rig + weapon where the tree
+   *  has one (`pose-compose.js`). Uncached: `stage()` frees what it replaces,
+   *  and the page-level rig cache is shared with the playable map. */
+  const poses = createPoseComposer({
+    loader: () => loader,
+    modelsBase: () => posesBase.replace(/\/poses$/, ''),
+    bust: () => bust(),
+    cache: false,
+  });
   const poseMotion = createPoseMotion({
     get bust() { return bust; }, get current() { return current; },
     get loader() { return loader; }, get POSES_BASE() { return posesBase; },
@@ -83,15 +93,16 @@ export function createControlsPreview({ root = '' } = {}) {
     const pair = SOLDIER_PICKS.map(([s, w]) => pairs.find(p => p.soldier === s && p.weapon === w))
       .find(Boolean) || pairs[0];
     if (!pair) return;
-    const [gltf, clips] = await Promise.all([
-      loader.loadAsync(`${posesBase}/${pair.soldier}__${pair.weapon}.pose.glb`),
+    const [figure, clips] = await Promise.all([
+      poses.pose(pair.soldier, pair.weapon),
       poseMotion.loadGaitClips(pair.gaitAssets),
     ]);
-    if (seq !== loadSeq) { disposeModel(gltf.scene); return; }
-    stage(gltf.scene);
+    if (!figure) return;
+    if (seq !== loadSeq) { disposeModel(figure.scene); return; }
+    stage(figure.scene);
     current.traverse(o => { if (o.isSkinnedMesh) o.frustumCulled = false; });
-    poseMotion.bindFigure(gltf, clips);
-    soldier.gltf = gltf;
+    poseMotion.bindFigure(figure, clips);
+    soldier.gltf = figure;
     frameCamera(new THREE.Vector3(0, 0.9, 0), 4.2, 0.35, 0.18);
   }
 

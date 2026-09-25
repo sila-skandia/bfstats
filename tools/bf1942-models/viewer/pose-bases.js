@@ -1,5 +1,5 @@
-// Where a soldier's pose glbs and gait bundles are: the active mod's own
-// model tree first, then vanilla's.
+// Where a soldier's pose assets are: the active mod's own model tree first,
+// then vanilla's.
 //
 // A mod's extraction writes only what the mod adds -- Road to Rome's
 // `ItalianSoldier__Breda.pose.glb`, Secret Weapons' `Gewehr43_zf4` grip --
@@ -8,6 +8,14 @@
 // the mod tree alone was never drawn: on Anzio every American bot, on
 // Telemark every bot, had no body at all. The kit parts already fall back the
 // same way (`soldier-dress.js`, `bases`).
+//
+// **The fallthrough is per half, not per pose.** A split pose is three
+// documents -- a recipe, a rig and a weapon -- and a mod can supply any one of
+// them: a mod pose that pairs a vanilla soldier with a mod weapon resolves its
+// recipe from the mod tree, its rig from vanilla's and its weapon from the
+// mod's. So each of `poseUrls`, `rigUrls` and `weaponUrls` is asked
+// separately, and a caller that gets its recipe from the mod tree still asks
+// both trees for the halves that recipe names.
 
 /** The model roots to try, in order: `modelsBase` (the active mod's,
  *  `models/mods/xpack1`, or vanilla's own `models`), then vanilla's. */
@@ -18,6 +26,18 @@ export function poseBases(modelsBase) {
 /** `rel` (a path under `poses/`) in each base, in order. */
 export function poseUrls(modelsBase, rel, bust = '') {
   return poseBases(modelsBase).map(base => `${base}/poses/${rel}${bust}`);
+}
+
+/** A soldier's rig, in each base, in order. */
+export function rigUrls(modelsBase, soldier, bust = '') {
+  return poseUrls(modelsBase, `rigs/${soldier}.rig.glb`, bust);
+}
+
+/** A weapon's own model, in each base, in order. Not under `poses/`: it is the
+ *  standalone asset the model extractor already publishes, which is the whole
+ *  point of the weapon half of a split pose. */
+export function weaponUrls(modelsBase, weapon, bust = '') {
+  return poseBases(modelsBase).map(base => `${base}/${weapon}.glb${bust}`);
 }
 
 /** The first of `urls` that `loader` loads; rejects with the last error when
