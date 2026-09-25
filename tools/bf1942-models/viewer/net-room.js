@@ -104,6 +104,21 @@ export function createNetRoom(page) {
     return best;
   }
 
+  /** The team of the room's other players seated in the LOCAL hull `root`,
+   *  0 when none is (or out of a room): the hull's team as the room sees it,
+   *  for the human's entry rule (local-player.js `mayEnterHull`). They share
+   *  one side by that same rule, so the first one found answers. */
+  room.remoteCrewTeam = root => {
+    if (!room.roomJoined || !room.roomClient || !root) return 0;
+    const id = netVehicleIdFor(root);
+    if (id == null) return 0;
+    for (const slot of room.roomClient.remoteSlots()) {
+      const p = room.roomClient.remotePlayer(slot);
+      if (p?.seated && p.inVehicle && p.vehicleId === id) return room.roomClient.teamOf(slot);
+    }
+    return 0;
+  };
+
   /** The active seat's position in the occupancy's own survey order, the same
    *  index the server's seat rows and the snapshot records carry (root = 0). */
   function netSeatIndex() {
