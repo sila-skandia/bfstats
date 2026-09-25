@@ -13,12 +13,16 @@
 // carry its own world translation) — that glue is a few lines there and
 // nowhere in this file.
 //
-// Scope: `workOnSoldiers` only. Wake ships two depots whose `workOnVehicles`
-// is also set (`AmmoboxVehicleSupplyDepot`, `M3A1VehicleSupplyDepot`,
-// `ShokakuAirplaneSupplyDepot`, `AlliedAirplaneSupplyDepot`) but vehicle
-// repair/rearm is out of scope this round (P2/P4 own vehicle Armor and entry;
-// see the feature doc's Open section) — `eligibleForSoldier` and `tick` both
-// gate on `workOnSoldiers`, so a vehicle-only depot simply never fires here.
+// Scope: soldiers and vehicles both. Wake ships five depots that
+// `workOnVehicles` — `AmmoboxVehicleSupplyDepot`, `M3A1VehicleSupplyDepot`,
+// `HoHaVehicleSupplyDepot`, `ShokakuAirplaneSupplyDepot`,
+// `AlliedAirplaneSupplyDepot` — and the last two are the airstrips': a plane
+// parked on (or low over) its own pad gets its guns topped off, which is the
+// "plane reload over the airstrip" rule. The capability gate is per target
+// kind (SUP-18's `workOnSoldiers` for a soldier, `workOnVehicles` for a
+// vehicle): the caller tags the target `vehicle: true` when the depot is
+// working on a mounted player's hull, and a vehicle-only depot never serves
+// an on-foot soldier, nor a hybrid depot's soldier half a seated one.
 
 // SUP-11/SUP-12: the engine only re-evaluates a depot every 0.5s of real
 // (wall-clock) time — the elapsed seconds since its own last evaluation, not
@@ -113,16 +117,27 @@ export class SupplyDepot {
    *  the give/heal actions but are not, themselves, paced by the depot's own
    *  0.5s clock (SUP-33/34). */
   eligibleForSoldier(target) {
-    return this.workOnSoldiers && this.inRange(target);
+    return this.workOnSoldiers && !target.vehicle && this.inRange(target);
+  }
+
+  /** `inRange` plus the `workOnVehicles` capability gate — the mounted
+   *  counterpart of `eligibleForSoldier`, on the same team/radius rule.
+   *  `target.vehicle` (set by the caller for a seated player's hull) keeps
+   *  the two kinds apart: a soldier standing beside a vehicle depot is not
+   *  a vehicle, and a hybrid depot serves each kind only its own half. */
+  eligibleForVehicle(target) {
+    return this.workOnVehicles && !!target.vehicle && this.inRange(target);
   }
 
   /**
    * Advance this depot's own real-time clock by `dt` seconds and, once 0.5s
    * has accumulated (SUP-11), run one give/heal cycle against `target`
    * (`{x,y,z,team,armor,refillAmmo}` — `armor` an `armor.js` `Armor`
-   * instance, `refillAmmo` a zero-arg callback). Returns `{gaveAmmo,
-   * healed}`; both false on a cycle that has not crossed 0.5s yet, or when
-   * `target` is out of range or the wrong team.
+   * instance, `refillAmmo` a zero-arg callback; `vehicle: true` marks the
+   * target as a mounted player's hull, which flips the capability gate to
+   * `workOnVehicles`). Returns `{gaveAmmo, healed}`; both false on a cycle
+   * that has not crossed 0.5s yet, or when `target` is out of range or the
+   * wrong team.
    *
    * SUP-18's dispatch is a priority if/else, not "do both": ammo firing this
    * cycle takes priority over heal. A depot with both capabilities (Wake's
@@ -154,7 +169,11 @@ export class SupplyDepot {
       }
     }
 
-    if (!this.eligibleForSoldier(target)) return NO_EFFECT;
+    // One capability gate for the whole cycle, picked by target kind: the
+    // soldier gates for a foot target, `workOnVehicles` for a mounted one.
+    if (!this.eligibleForSoldier(target) && !this.eligibleForVehicle(target)) {
+      return NO_EFFECT;
+    }
 
     if (ammoFired) {
       // SUP-22/23 (downgraded in verify-r3.md): `FireArms::reloadAmmo`'s
@@ -165,7 +184,10 @@ export class SupplyDepot {
       // a specific held weapon. Approximation, exactly verify-r3.md's own
       // "Viewer recipe" point 3: top the held weapon off in full on this one
       // call, rather than modelling per-magazine fill. Open question this
-      // stands on: SUP-23.
+      // stands on: SUP-23. A vehicle target's `refillAmmo` tops off every
+      // FireArms node the mounted player can fire — the whole hull's guns,
+      // which is what a supply radius actually reaches — under the same
+      // approximation.
       if (typeof target.refillAmmo === 'function') target.refillAmmo();
       return { gaveAmmo: true, healed: false };
     }
@@ -215,7 +237,8 @@ export class SupplyField {
    *  right now, that could give this target ammo. Un-throttled — checked
    *  every frame, unlike the give action's own 0.5s pacing. */
   canRearm(target) {
-    return this.depots.some(d => d.ammoEnabled && d.eligibleForSoldier(target));
+    return this.depots.some(d => d.ammoEnabled
+      && (target.vehicle ? d.eligibleForVehicle(target) : d.eligibleForSoldier(target)));
   }
 
   /** `ShowHealIcon` (SUP-33/showHealIconInMenu). Gated on `healRate > 0`
@@ -225,7 +248,8 @@ export class SupplyField {
    *  depot has a negative rate, so this choice does not change Wake's
    *  behaviour, only a mod's. */
   canHeal(target) {
-    return this.depots.some(d => d.healRate > 0 && d.eligibleForSoldier(target));
+    return this.depots.some(d => d.healRate > 0
+      && (target.vehicle ? d.eligibleForVehicle(target) : d.eligibleForSoldier(target)));
   }
 
   /** The closest depot to `target` and its straight-line distance, or null.

@@ -243,6 +243,22 @@ export function installWorldHooks(page) {
     page.applyVehicleHit({ kind: 'object', owner, damage, origin: from });
     return { hp: vehicle.hitPoints, destroyed: vehicle.destroyed };
   };
+  // The world's supply readback for the local player: what the last tick's
+  // depot pass reported (`world-fields.js` `supplyTick`), and the field's
+  // own shape. A headless check for the airstrip rearm reads `supply` off a
+  // parked, seated stretch — ammo-only depots report `gaveAmmo` on the
+  // cycles they fire.
+  window.__supply = () => {
+    const world = page.world ?? null;   // the level's world, via the hooks bag
+    const player = world ? world.players.get(page.LOCAL_PLAYER) : null;
+    return {
+      world: !!world,
+      result: player ? { ...player.supplyResult } : null,
+      seated: !!(player?.occupancy?.root),
+      hasSoldier: !!player?.soldier,
+      depots: world ? world.supplyField.depots.length : 0,
+    };
+  };
   // Every registered damageable object, with its world position and armor
   // state: the harness's stand-in for walking `page.damageVisuals`, which
   // repairs (`hand-fire.js`'s wrench sweep) and blast tests both read.

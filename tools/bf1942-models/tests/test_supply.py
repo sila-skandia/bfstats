@@ -128,12 +128,44 @@ class SupplyDepotTests(unittest.TestCase):
         self.assertAlmostEqual(24.0, r["hpAfter"], places=5)  # 30 - 1.5*4
 
     def test_vehicle_only_depot_never_serves_a_soldier(self) -> None:
-        # Out of scope this round (vehicle repair/rearm is P2/P4's): a
-        # workOnVehicles-only depot must never fire for a soldier target,
-        # regardless of team/ammo data.
+        # A workOnVehicles-only depot must never fire for a soldier target,
+        # regardless of team/ammo data — the capability gate is per kind.
         r = self.results["vehicleOnlyIgnoresSoldier"]
         self.assertFalse(r["eligible"])
         self.assertEqual(0, r["refillCalls"])
+
+    def test_hybrid_depot_serves_each_kind_only_its_own_half(self) -> None:
+        # A depot with both capability words serves a foot target through
+        # workOnSoldiers and a mounted one through workOnVehicles — the
+        # kind never leaks across the other's gate.
+        r = self.results["hybridServesBothKinds"]
+        self.assertEqual(2, r["foot"]["refillCalls"])
+        self.assertEqual(2, r["seated"]["refillCalls"])
+
+    def test_airplane_depot_rearms_an_allied_hull(self) -> None:
+        # The airstrip rearm: Wake's AlliedAirplaneSupplyDepot verbatim
+        # (team 2, radius 20, ammo-only) refills a mounted allied target
+        # every 0.5 s cycle, and never reports a heal (health [0,0,0]).
+        r = self.results["airplaneDepotRearmsHull"]
+        self.assertTrue(r["firedEveryTick"])
+        self.assertFalse(r["healedAny"])
+        self.assertEqual(20, r["refillCalls"])
+
+    def test_airplane_depot_team_and_kind_gates(self) -> None:
+        # The same depot turns an enemy hull away and ignores a foot
+        # soldier standing under it, predicates included.
+        r = self.results["airplaneDepotTeamGate"]
+        self.assertEqual(0, r["refillCalls"])
+        self.assertFalse(r["eligible"])
+        f = self.results["airplaneDepotIgnoresFoot"]
+        self.assertEqual(0, f["refillCalls"])
+
+    def test_kind_gates_are_mutually_exclusive(self) -> None:
+        # A vehicle target is never also a soldier target and the other
+        # way, at the predicate level — `tick`'s either-or is then exact.
+        k = self.results["kindGates"]
+        self.assertFalse(k["vehiclePredicateOnFootTarget"])
+        self.assertFalse(k["soldierPredicateOnVehicleTarget"])
 
     def test_icon_eligibility_is_continuous_and_per_depot_ranged(self) -> None:
         # SUP-33/34: the icon predicates share the team/distance gates but
