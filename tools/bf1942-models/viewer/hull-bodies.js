@@ -1129,6 +1129,12 @@ export function createHullBodies(page) {
   /** ... and has left it: it stands on its own springs again, where it was left. */
   function releaseDrivenBody(vehicle) {
     if (!hullBodies.bodyWorld || !vehicle) return;
+    // A hull that died in the air keeps its body: the wreck is still flying it
+    // (`vehicle-wrecks.js`), and the driver's-leaving path would park it —
+    // replacing the flight model with a body world drop, and freezing the node
+    // the fall has to keep drawing. The rules below are for a hull somebody
+    // got out of, not for one with nobody left to get out.
+    if (vehicle.fallingWreck) return;
     const owner = page.collider?.statics?.ownerOf(vehicle.node) ?? -1;
     const scene = bodyScene.get(owner);
     if (!scene || !hullBodies.bodyWorld.get(owner)?.driven) return;

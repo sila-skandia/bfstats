@@ -269,6 +269,43 @@ const water = {
   noWaterLevel: touchesWater(fakeEntry(0), 0, null),
 };
 
+// --- scenario 9: a wreck nobody is in still integrates ----------------------
+// `world.falling` is what a hull destroyed in the air joins when its crew dies
+// (`vehicle-wrecks.js`), and `stepFallingWrecks` (`world-vehicle-tick.js`) is
+// what flies it: one `integrate` per world tick, the same cadence an occupant's
+// hull gets, with every control word forced to the engine's zero and the
+// throttle spool pinned. A stub drive is enough — the rule under test is who
+// integrates it and with what, not the aerodynamics.
+const worldG = makeWorld();
+const driveCalls = [];
+const stubDrive = {
+  state: { throttle: 0.8 },
+  setInput(name, value) { driveCalls.push([name, value]); },
+  integrate(dt) { driveCalls.push(['integrate', dt]); },
+};
+worldG.falling.add(stubDrive);
+worldG.step(1 / 30);                             // one world tick
+const oneTick = {
+  integrates: driveCalls.filter(c => c[0] === 'integrate').length,
+  dt: driveCalls.find(c => c[0] === 'integrate')?.[1],
+  inputs: driveCalls.filter(c => c[0] !== 'integrate'),
+  throttle: stubDrive.state.throttle,
+};
+// A frame that owes no tick must not integrate it either.
+driveCalls.length = 0;
+worldG.step(1 / 120);
+const noTick = driveCalls.length;
+// Three more ticks: still exactly one integration each.
+worldG.step(3 / 30);
+const fourTicks = driveCalls.filter(c => c[0] === 'integrate').length;
+// Nothing in the list: the pass is skipped entirely rather than run over an
+// empty set (the world's own guard).
+worldG.falling.clear();
+driveCalls.length = 0;
+worldG.step(1 / 30);
+const afterClear = driveCalls.length;
+const falling = { oneTick, noTick, fourTicks, afterClear };
+
 console.log(JSON.stringify({
   tickRate: WORLD_TICK_RATE,
   tickDt: WORLD_TICK_DT,
@@ -322,4 +359,5 @@ console.log(JSON.stringify({
     movedOverTheSqueeze: dMoved,
   },
   water,
+  falling,
 }));

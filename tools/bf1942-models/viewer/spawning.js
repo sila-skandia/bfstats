@@ -14,11 +14,11 @@ import { Armor } from './armor.js';
  * `capture`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
  * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
  * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`,
- * `flags`, `flashHud`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
+ * `flags`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
  * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `LOCAL_PLAYER`,
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
- * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`, `resetCaptureUi`,
+ * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
  * `revive`, `roomJoined`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
  * `spawnFlagSelect`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
@@ -58,11 +58,10 @@ export function createSpawning(page) {
   /** Put the soldier at the selected flag, on the next of its spawn points.
    *  The pick itself is the world's (pickSpawn/spawnYaw inside world.js —
    *  `spawnPlayer` holds the per-player walk of the spawn list, so the page
-   *  never carries `spawnIndex`); this half is the kit, the latch resets and
-   *  the HUD line that always went with a spawn. */
+   *  never carries `spawnIndex`); this half is the kit coming up in his hands
+   *  and the latches a fresh body resets. */
   function spawnAtFlag(advance = false) {
     if (!page.soldier || !page.flags.length || !page.world) return false;
-    page.resetCaptureUi();
     // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
     // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
     // reached the ship's tree through `addTemplate` — so its world position is its
@@ -101,7 +100,6 @@ export function createSpawning(page) {
     page.drawWeapon();
     // A fresh body somewhere else entirely: the eye must not sweep there.
     page.snapPresentation();
-    page.flashHud(`${flag.name} · ${spawn.name}`);
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).
@@ -277,6 +275,12 @@ export function createSpawning(page) {
       // The life in progress resumes untouched; the flag he never committed
       // to goes back to the one he is actually standing at.
       if (kept !== '') page.spawnFlagSelect.value = kept;
+      // The map took the pointer on the way in (the deploy state is the
+      // in-game map on foot, `page-input.js` `mapKey`), so the way back out
+      // gives it again — the same gesture the spawn and the free-roam leave
+      // pay with. Without this the soldier resumes with nothing captured and
+      // every key dead until a click on the stage (`controls.js` `held`).
+      page.capture();
       return;
     }
     enterFreeCam();

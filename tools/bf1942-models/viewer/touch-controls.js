@@ -180,9 +180,13 @@ export function createTouchControls(page) {
 
   function mobileSeatToggle() {
     if (!page.seatToggleReady()) return;
-    if (page.optOnFoot.checked && page.soldier && page.nearEntry) {
+    // The same press-time lookup the keyboard's E does (`page-input.js`
+    // `useKey`): the engine's `c_PIUse` edge searches for a door where the
+    // player stands, rather than using the HUD's cached offer.
+    const entry = page.nearestEntry() ?? page.nearEntry;
+    if (page.optOnFoot.checked && page.soldier && entry) {
       page.setFly(true);
-      page.enterVehicle(page.nearEntry);
+      page.enterVehicle(entry);
       page.noteSeatToggle();
     } else if (page.optPilot.checked && page.occupancy) {
       page.exitSeat();

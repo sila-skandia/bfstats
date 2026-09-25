@@ -291,25 +291,11 @@ export function createPageConsole(page) {
       tabs: OPTIONS_TABS,
       onTab: showEscTab,
       onStatus: text => { if (text) console.warn(text); },
-      onBindingsChanged: refreshHint,
+      onBindingsChanged: applyControlProfile,
     });
     pageConsole.optionsLoaded = pageConsole.optionsScreen.load()
       .catch(error => console.error('Controls screen unavailable', error));
     return pageConsole.optionsScreen;
-  }
-
-  // The HUD hints name the profile's keys. The one up when the menu opened is
-  // swapped for its new wording when an import or DEFAULT changes them.
-  const HINTS = ['HUD_FLY', 'HUD_FOOT', 'HUD_PILOT', 'HUD_DRIVE', 'HUD_MANNED'];
-  let hintsBefore = {};
-  const snapshotHints = () => {
-    hintsBefore = Object.fromEntries(HINTS.map(name => [name, page[name]]));
-  };
-  function refreshHint() {
-    applyControlProfile();
-    const up = HINTS.find(name => hintsBefore[name] === page.hud.textContent);
-    if (up) page.hud.textContent = page[up];
-    snapshotHints();
   }
 
   /** Switch the menu's tab. The two screens are two canvases, one up. */
@@ -392,7 +378,6 @@ export function createPageConsole(page) {
       // Whatever was held when the menu came up must not still be held under
       // it — the same rule the console follows.
       page.keys.clear();
-      snapshotHints();
       escMenuScreen().paint();
       menuCanvas.focus();
       // The menu comes back on the tab it was left on.

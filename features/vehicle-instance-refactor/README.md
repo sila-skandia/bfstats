@@ -468,9 +468,9 @@ Each piece of state now has one owning module, and the others ask it by name:
 | the camera lens | `localPlayer` | `useLens('foot'\|'seat'\|'fly')`, `setFov` |
 | the mode boxes | `localPlayer` | `leavePilot`, `leaveOnFoot`, `markPilot`, `markOnFoot` |
 | the camera's look | `freeCamera` | `setLook`, `turnLook` |
-| the HUD line | `hudFeed` | `showHint`, `flashHud`, `updateHud` |
+| the HUD line (removed, see features/viewer-map-focus-and-hint-line) | `hudFeed` | `showHint`, `flashHud`, `updateHud` |
 | the hit indicator | `soldierHud` | `triggerHitIndicator`, `clearHitIndicator` |
-| the room's occupied hull, capture banner | `room`, `flagCapture` | `noteOccupiedVehicle`, `occupiedVehicleIdFor`, `forgetOccupiedVehicle`, `roomCapture*` |
+| the room's occupied hull, capture banner (banner removed, see features/viewer-map-focus-and-hint-line) | `room`, `flagCapture` | `noteOccupiedVehicle`, `occupiedVehicleIdFor`, `forgetOccupiedVehicle`, `roomCapture*` |
 | the door list | `vehicleEntry` | `dropEntryPoints`, `forgetEntryPoints` |
 | the seat's view rig | `seatCamera` | `forgetSeatViews` |
 | the hand weapon's presentation | `soldierKit` | `holster`, `drawWeapon`, `addFootLook` |
@@ -501,7 +501,7 @@ short lists; the keys are unchanged (every bag parsed before and after).
 |---|---|
 | `local-player.js` (1,916) | `local-player.js` (657): the seat mount, the soldier's life, the lens, the input word; `vehicle-entry.js`: doors, getting in and out; `local-look.js`: the mouse look, render interpolation; `seat-camera.js`: the view rig, the chase law, the seated cameras |
 | `page-input.js` (1,183) | `page-input.js` (780): keyboard, mouse, pointer lock, key lock; `touch-controls.js`; `free-camera.js` |
-| `hud-feed.js` (993) | `hud-feed.js`: the Hud, the sprite pack, the HUD line; `soldier-hud.js`; `vehicle-hud.js` |
+| `hud-feed.js` (993) | `hud-feed.js`: the Hud, the sprite pack (its `#hud` hint line has since been removed); `soldier-hud.js`; `vehicle-hud.js` |
 | `map-surfaces.js` | `map-surfaces.js`; `ticket-feed.js` |
 | `test-hooks.js` (1,494) | `test-hooks.js` plus `test-hooks-{bots,vehicles,soldier,world}.js`, the same 114 hooks |
 | `level-load.js` (2,305) | `level-load.js` (700), `level-{sky,shading,flare,statics,terrain,warmup}.js` |

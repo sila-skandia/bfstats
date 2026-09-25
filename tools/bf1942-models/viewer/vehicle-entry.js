@@ -8,10 +8,10 @@ import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
- * `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`, `leaveSeat`,
+ * `holster`, `leaveSeat`,
  * `mannedActive`, `markPilot`, `mayEnterHull`, `netSeatRow`, `netSendAction`, `occupancy`,
  * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
- * `seatHolder`, `setPilot`, `showHint`, `soldier`, `updateHud`,
+ * `seatHolder`, `setPilot`, `soldier`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
 export function createVehicleEntry(page) {
@@ -118,12 +118,7 @@ export function createVehicleEntry(page) {
     vehicleEntry.entryScan -= dt;
     if (vehicleEntry.entryScan > 0) return;
     vehicleEntry.entryScan = ENTRY_SCAN_PERIOD;
-    const near = nearestEntry();
-    if (near?.vehicle !== vehicleEntry.nearEntry?.vehicle) {
-      if (!near) page.showHint(page.HUD_FOOT);
-      else page.hud.textContent = page.isTouchDevice ? `ENTER ${near.control}` : `E — enter the ${near.control}`;
-    }
-    vehicleEntry.nearEntry = near;
+    vehicleEntry.nearEntry = nearestEntry();
     page.updateMobileControls();
   }
 
@@ -156,7 +151,6 @@ export function createVehicleEntry(page) {
       page.markPilot(false);
       page.useLens('foot');
       page.drawWeapon();
-      page.showHint(page.HUD_FOOT);
     }
     page.resetMobileControls();
   }
@@ -239,12 +233,10 @@ export function createVehicleEntry(page) {
       }
       page.useLens('foot');
       page.drawWeapon();
-      page.showHint(page.HUD_FOOT);
     } else {
       // Nobody was waiting in the seat — the pilot box was ticked from free
       // fly — so E hands back the free camera where the vehicle stopped.
       page.placeCamera();
-      page.updateHud();
     }
     page.resetMobileControls();
   }
@@ -304,10 +296,8 @@ export function createVehicleEntry(page) {
       page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       page.useLens('foot');
       page.drawWeapon();
-      page.showHint(page.HUD_FOOT);
     } else {
       page.placeCamera();
-      page.updateHud();
     }
     page.resetMobileControls();
   }
