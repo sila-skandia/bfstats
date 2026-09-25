@@ -110,11 +110,13 @@ export function fireBarrel(guns, group, muzzle) {
  * leaves the caller's origin along the caller's direction, which for a hand
  * weapon is the eye down the camera axis — `fireInCameraDof 1`, the reason
  * a BF1942 rifle hits what the crosshair covers regardless of where the
- * viewmodel's barrel points. `spreadDeg` then wanders the direction inside
- * the deviation cone, on either path.
+ * viewmodel's barrel points — and for a vehicle's coaxial or pintle MG the
+ * seat camera's, which is handed the barrel so its own offset rides along
+ * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then wanders the direction
+ * inside the deviation cone, on either path.
  */
 function muzzleVelocity(guns, muzzle, group, speed, out) {
-  const ray = group.aimRay?.();
+  const ray = group.aimRay?.(muzzle);
   if (ray) {
     _origin.set(ray.origin.x, ray.origin.y, ray.origin.z);
     out.set(ray.dir.x, ray.dir.y, ray.dir.z).normalize();
@@ -209,7 +211,14 @@ function spawnTracer(guns, muzzle, group, bright) {
     mesh.visible = true;   // recycled meshes are parked hidden
     mesh.material = bright ? tracerMaterial : shellMaterial;
     mesh.scale.set(1, 1, length);
-    mesh.position.copy(_origin).addScaledVector(direction, length / 2);
+    // Drawn centred, so its head -- the round, where `lead` below says the
+    // hit test is -- is half a length ahead of `mesh.position`. It goes BEHIND
+    // the launch point, as the baked streak's tail does, so the round starts
+    // where it leaves. Centred AHEAD of it, the round started a whole length
+    // out: at a seat's data length (`tracerScaler 50`) every round between
+    // tracers was tested from 50 m, and a coax burst could not meet a soldier
+    // nearer than that with anything but its tracers.
+    mesh.position.copy(_origin).addScaledVector(direction, -length / 2);
     mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
     pool = guns.tracerPool;
   }
