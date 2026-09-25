@@ -596,6 +596,126 @@ water.waterShallowAlpha 0.1
         self.assertEqual(100.0, info.game_view_distance)
 
 
+class TerrainDirectiveTests(unittest.TestCase):
+    """Gap 10 of level-content.md: what Terrain.con's LOD/wave words mean.
+
+    `targetTriCount` is read by the client (two call sites next to the
+    PatchTerrain/RoamTerrain init) and is recorded as metadata.
+    `lodDistance` has no string in BF1942.exe at all — dead in retail —
+    and must stay unparsed. `waveHeight` is a live PatchTerrain property
+    feeding the water surface (Gap 17); `waveScale` is dead.
+    """
+
+    def test_target_tri_count_is_read(self) -> None:
+        info = parse_terrain_con(
+            "GeometryTemplate.worldSize 2048\n"
+            "GeometryTemplate.targetTriCount 5000\n"
+        )
+        self.assertEqual(5000, info.target_tri_count)
+
+    def test_target_tri_count_4000_on_the_small_worlds(self) -> None:
+        info = parse_terrain_con("GeometryTemplate.targetTriCount 4000\n")
+        self.assertEqual(4000, info.target_tri_count)
+
+    def test_undeclared_target_tri_count_stays_none(self) -> None:
+        info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
+        self.assertIsNone(info.target_tri_count)
+
+    def test_lod_distance_is_dead_and_not_read(self) -> None:
+        # 22 levels author it; the retail client never reads it. Recording it
+        # would imply a viewer behaviour the engine never had.
+        info = parse_terrain_con(
+            "GeometryTemplate.worldSize 2048\n"
+            "GeometryTemplate.lodDistance 350\n"
+            "GeometryTemplate.targetTriCount 5000\n"
+        )
+        self.assertEqual(5000, info.target_tri_count)
+        self.assertFalse(any("lod" in field for field in vars(info)))
+
+    def test_wave_height_is_read(self) -> None:
+        info = parse_terrain_con(
+            "GeometryTemplate.worldSize 2048\n"
+            "GeometryTemplate.waveHeight 0.1\n"
+        )
+        self.assertEqual(0.1, info.wave_height)
+
+    def test_zero_wave_height_is_recorded_as_zero(self) -> None:
+        # Nine levels write waveHeight 0.0 explicitly; None would blur
+        # "declared zero" into "never declared".
+        info = parse_terrain_con("GeometryTemplate.waveHeight 0.0\n")
+        self.assertEqual(0.0, info.wave_height)
+
+    def test_undeclared_wave_height_stays_none(self) -> None:
+        info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
+        self.assertIsNone(info.wave_height)
+
+    def test_wave_scale_is_dead_and_not_read(self) -> None:
+        # El Alamein is the only level that ships it, and its paired
+        # waveHeight is 0 anyway; the string is absent from both binaries.
+        info = parse_terrain_con(
+            "GeometryTemplate.waveHeight 0\n"
+            "GeometryTemplate.waveScale 0.01\n"
+        )
+        self.assertEqual(0.0, info.wave_height)
+        self.assertFalse(hasattr(info, "wave_scale"))
+
+    def test_basetex_and_guadalcanals_bump_words_are_not_read(self) -> None:
+        # `Water.baseTex` (32 levels), `bumpTex`/`bumpTile`/
+        # `specularBumpMapFactor`/`envIntensity` (GuadalCanal): none of the
+        # strings exists in either binary. Terrain.con's `Water.*` lines are
+        # not dispatched to _parse_water at all, and none of these verbs may
+        # sneak in under the geometrytemplate namespace either.
+        info = LevelInfo(name="GuadalCanal", terrain=parse_terrain_con(
+            "Water.baseTex texture/Water\n"
+            "Water.bumpTex texture/normalMap\n"
+            "Water.envIntensity 0.6\n"
+        ))
+        parse_init_con(
+            "Water.baseTex texture/Water\n"
+            "Water.bumpTex texture/normalMap\n"
+            "Water.envIntensity 0.6\n",
+            info,
+        )
+        self.assertEqual("", info.water.tex_layer1)
+        self.assertIsNone(info.water.envmap_color)
+
+
+class WaterEnvmapColorTests(unittest.TestCase):
+    """Gap 17: `water.envmapColor`, live in the client's property table."""
+
+    def test_envmapcolor_is_a_registered_field(self) -> None:
+        info = LevelInfo(name="Battle_of_Britain", terrain=parse_terrain_con(""))
+        parse_init_con("water.envmapcolor 0.70/0.80/0.70\n", info)
+        self.assertEqual((0.7, 0.8, 0.7), info.water.envmap_color)
+
+    def test_raids_warm_desert_tint(self) -> None:
+        info = LevelInfo(name="Raid_on_Agheila", terrain=parse_terrain_con(""))
+        parse_init_con("water.envmapcolor 0.5/0.4/0.3\n", info)
+        self.assertEqual((0.5, 0.4, 0.3), info.water.envmap_color)
+
+    def test_telemarks_lowercase_spelling_parses_the_same(self) -> None:
+        # Telemark writes `0.7/0.8/0.7` lower-case; commands are already
+        # case-insensitive, so it lands on the same field.
+        info = LevelInfo(name="Telemark", terrain=parse_terrain_con(""))
+        parse_init_con("water.envmapcolor 0.7/0.8/0.7\n", info)
+        self.assertEqual((0.7, 0.8, 0.7), info.water.envmap_color)
+
+    def test_undeclared_envmapcolor_is_none(self) -> None:
+        info = LevelInfo(name="Wake", terrain=parse_terrain_con(""))
+        parse_init_con("water.waterShallowAlpha 0.1\n", info)
+        self.assertIsNone(info.water.envmap_color)
+
+    def test_el_alameins_typo_is_not_rescued(self) -> None:
+        # `water.wateShallowAlpha 0.5` — the engine's property table has no
+        # such string, so retail renders El Alamein's shoreline with the
+        # built-in default shallow alpha. Honoring the misspelled value would
+        # make the viewer more correct than the shipped game.
+        info = LevelInfo(name="El_Alamein", terrain=parse_terrain_con(""))
+        parse_init_con("water.wateShallowAlpha 0.5\n", info)
+        self.assertIsNone(info.water.envmap_color)
+        self.assertEqual(1.0, info.water.shallow_alpha)   # the ctor default
+
+
 class RenderSettingsTests(unittest.TestCase):
     def test_lighting_view_distance_and_alternative_path(self) -> None:
         info = LevelInfo(name="Tobruk", terrain=parse_terrain_con(""))
@@ -695,6 +815,62 @@ GeometryTemplate.texOffsetY 2
         xs = {p[0] for p in primitive.positions}
         self.assertEqual({0.0, 2048.0}, xs)
         self.assertEqual({95.0}, {p[1] for p in primitive.positions})
+
+
+    def test_combat_area_scopes_dry_fill_to_three_levels(self) -> None:
+        """Gap 12 of level-content.md, the counting rule.
+
+        The 84 patches in the audit are DRY fill patches outside the combat
+        area: 30 on Battle of the Bulge, 28 on Liberation of Caen, 26 on
+        Tobruk. `default_patches` alone is world-grid bookkeeping (Tobruk's
+        208 unpainted patches are mostly wet and count differently), so this
+        test pins the audit numbers the way the audit counts: on the 256 m
+        patch grid, a patch is dry when its MAXIMUM heightmap sample exceeds
+        `waterLevel + 0.5 m` (level-content.md, "Ground truth"), with the
+        shipped combat rect subtracted.
+        """
+        cases = {
+            "Battle_of_the_Bulge": 30,
+            "Liberation_of_Caen": 28,
+            "Tobruk": 26,
+        }
+        for level, expected in cases.items():
+            with self.subTest(level=level):
+                game_dir = Path.home() / "bf1942-game"
+                if not (game_dir / "Mods" / "bf1942").is_dir():
+                    self.skipTest("no BF1942 install")
+                files = load_level_files(
+                    find_level_archives(game_dir, "bf1942", level), level)
+                info = LevelInfo(
+                    name=level,
+                    terrain=parse_terrain_con(
+                        files.read("Init/Terrain.con").decode("latin-1")))
+                parse_init_con(files.read("Init.con").decode("latin-1"), info)
+                heightmap = decode_heightmap(
+                    files.read("Heightmap.raw"), info.terrain.world_size,
+                    info.terrain.y_scale)
+                fill = default_patches(info.terrain,
+                                       [(c, r) for c, r, _ in files.tiles()])
+                combat = info.combat
+                self.assertIsNotNone(combat, f"{level} must ship a combat area")
+                assert combat is not None
+                ps = 256.0  # PATCH_METERS: the audit's uniform 256 m patch grid
+                dry_outside = []
+                for col, row in fill:
+                    mesh = patch_mesh(heightmap, col, row, ps)
+                    if mesh is None:
+                        continue
+                    # Dry = the patch's MAX sample clears water + 0.5 m
+                    # (level-content.md "Ground truth"); a min-sample test
+                    # also counts patches that merely dip below the plane.
+                    if max(p[1] for p in mesh.positions) <= info.terrain.water_level + 0.5:
+                        continue                       # wet: sea floor, not Gap 12
+                    if (col * ps < combat.max_x and (col + 1) * ps > combat.min_x
+                            and row * ps < combat.max_z
+                            and (row + 1) * ps > combat.min_z):
+                        continue                       # inside the combat rect
+                    dry_outside.append((col, row))
+                self.assertEqual(expected, len(dry_outside))
 
 
 class DepthMapTests(unittest.TestCase):

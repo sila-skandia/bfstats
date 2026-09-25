@@ -2152,9 +2152,18 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             encode_png(width, height, rgba, drop_alpha=False), name="terrainDefault")
         default_material = builder.add_material(
             name="terrainDefault", texture=tex, double_sided=False)
+        dry_only = default_kind == "textureDefault"
         for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles]):
             primitive = patch_mesh(heightmap, col, row)
             if primitive is None:
+                continue
+            if dry_only and max(p[1] for p in primitive.positions) <= info.terrain.water_level + 0.5:
+                # The shared fallback texture fills DRY out-of-area ground only
+                # (level-content.md Gap 12: the 84 dry patches on Bulge, Caen
+                # and Tobruk). Wet sea floor stays unrendered, invisible under
+                # the water plane, and it keeps the payload off Berlin, Wake
+                # and the Pacific maps. Levels shipping their own
+                # terrainDefault.dds keep today's full fill.
                 continue
             primitive.material = default_material
             terrain_report["triangles"] += len(primitive.indices) // 3

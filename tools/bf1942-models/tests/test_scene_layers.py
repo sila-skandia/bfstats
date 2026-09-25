@@ -138,6 +138,25 @@ class MergeTests(unittest.TestCase):
         out = scene_layers.merge(report, ["sounds"], {}, {"Conquest": {}})
         self.assertEqual({"objectives": "old", "mapType": "OLD"}, out["briefing"])
 
+    def test_the_environment_layer_owns_the_terrain_budget(self) -> None:
+        # `targetTriCount` (level-content.md Gap 10) rides with the
+        # environment layer's con-derived keys: it is read out of
+        # `Init/Terrain.con`, so patching `environment` rewrites it and
+        # patching anything else leaves it alone.
+        self.assertIn("targetTriCount", scene_layers.LAYERS["environment"][0])
+        self.assertIn("targetTriCount", scene_layers.REPORT_ORDER)
+        report = {**self.report, "targetTriCount": 4000}
+        out = scene_layers.merge(report, ["environment"],
+                                 {"targetTriCount": 5000}, {"Conquest": {}})
+        self.assertEqual(5000, out["targetTriCount"])
+        # A level whose Terrain.con declares none writes None rather than
+        # leaving a stale value behind.
+        out = scene_layers.merge(report, ["environment"],
+                                 {"targetTriCount": None}, {"Conquest": {}})
+        self.assertIsNone(out["targetTriCount"])
+        out = scene_layers.merge(report, ["sounds"], {}, {"Conquest": {}})
+        self.assertEqual(4000, out["targetTriCount"])
+
     def test_control_points_bring_the_spawns_that_read_them(self) -> None:
         self.assertEqual(scene_layers.expand(["controlPoints"]), ["controlPoints", "spawns"])
         self.assertEqual(scene_layers.expand(["ai", "game"]), ["game", "ai"])
