@@ -119,12 +119,21 @@ for map in berlin bocage; do
   fi
 done
 
+# --- 5c. Game archives -----------------------------------------------------------
+# NOT downloaded here: the vanilla + SW .rfa archives (~1.4GB) ship on the
+# release but only tasks that run extract_*.py need them. The cloud agent
+# restores on demand via the bf1942-game-archives skill
+# (.claude/skills/bf1942-game-archives/SKILL.md).
+
 # --- 6. Summary -----------------------------------------------------------------
 cat <<EOF
 
 [setup] ready. Everything is pre-analyzed; query it with pyghidra scripts:
   client:  $PROJECTS_DIR/bf1942-client.rep   (program /BF1942.exe)
   server:  $PROJECTS_DIR/linux-server.rep    (program /bf1942_lnxded.static)
+
+Game archives are NOT installed: if this task runs extract_*.py, restore
+them on demand per .claude/skills/bf1942-game-archives/SKILL.md.
 
   pyghidra-style queries go through the shipped helper (opens the project
   program by name; never re-imports):
