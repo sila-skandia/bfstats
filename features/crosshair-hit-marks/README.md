@@ -73,8 +73,54 @@ group down in hip fire until the layout carries the marks' binding.
 - Seated in a Sherman: the group is up and the periscope gate reads false.
 - Page loads on desktop and mobile emulation with no errors.
 
+## Tank rounds and the cross (2026-09-25, owner's re-test)
+
+Reported: in a tank the marks do not show when a round hits, and the rounds
+land right of the cross.
+
+- **Engine rule (XHIT-12):** `FireArms::Fire` (lnxded `0x0828a090`) launches
+  from the player's camera (`BFPlayer::getCamera` `0x08054ce0`) only when the
+  template's `fireInCameraDof` byte (`+0x264`, tested at `0x0828a1c1`) is set,
+  else from the gun's own transform. The cross is at screen centre.
+- **Data (XHIT-13, retail archives):** the flag is on every coax and pintle MG
+  and never on a tank's main gun. `T34Camera` sits 0.789 m left of the barrel.
+- **Parity choice, flagged:** the main gun keeps retail's parallax. Its shell
+  lands 0.789 m right of the T-34's cross at every range (Sherman 0.304 m,
+  PanzerIV 0.685 m, Tiger 0.789 m). The owner expects them aligned; retail is
+  not, so the viewer is not.
+- **Fixed, alignment:** a `fireInCameraDof` vehicle gun now fires from the seat
+  camera plus its `projectilePosition` (`viewer/camera-dof.js`,
+  `gun-groups.js` `cameraLaunch`). Before, the T-34 coax fired from its own
+  muzzle, 1.29 m right of the eye. Bots aim such a gun from the same camera
+  (`bot-aim.js` `barrelFrame`), as the engine's AI does.
+- **Fixed, the marks:** the stand-in streak between tracers was centred
+  half a length AHEAD of the muzzle, and the hit test then added that half
+  again. So a seat MG's non-tracer rounds (`tracerLength: 'data'`, 50 m) were
+  tested from 50 m out. Measured live, a coax round solved onto a soldier's
+  torso at 20 m flew through him. It now starts at the launch point
+  (`round-launch.js` `spawnTracer`).
+- **Verified live, Berlin T-34, frozen bots, deterministic frames:** a direct
+  cannon hit on a soldier at 20 m and on the manned T-34-85 each read
+  `HitIndicationTime` 0.967 in the hit frame. The four marks are drawn around
+  the cross in the seated view. Splash 3 m from a soldier took 10.9 HP and left
+  the timer at 0. The page's own `setAnimationLoop` has to be stopped in a
+  headless check, or it keeps stepping the world between `__renderOnce` calls.
+- **Tests:** `test_camera_dof.py` (new) and the modules that load
+  `gun-groups.js`.
+
 ## Open
 
+- The exporter does not write `fireInCameraDof` on vehicle FireArms
+  (`bf42/assemble.py` `_fire_arms`), so the viewer names them from the
+  surveyed list. A mod outside vanilla/XPack1/XPack2 needs that word
+  exported and its trees re-baked.
+- Not yet re-run live after the two fixes (budget): the coax from the camera,
+  a coax direct hit raising the marks, and the before/after screen
+  projection of impacts at 10/30/100 m. The offsets above are node
+  positions measured live in the scene, not on screen. The rig is
+  `measure_b.cjs` / `repro_a.cjs` in the xhair scratch dir, and the
+  `__aimSeat` hook added to `test-hooks-vehicles.js`.
+- Vehicle guns still have no deviation cone (`spreadDeg` null on seats).
 - **XHIT-9:** whether the HUD batch alpha-tests, which would cut the marks off
   before `t` reaches 0.
 - **XHIT-11:** the crosshair gap law. `BfCrosshairNode`'s draw (`0x007db970`)

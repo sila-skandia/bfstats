@@ -266,7 +266,8 @@ export function noseReference(bot) {
 /**
  * The chosen weapon's barrel, as the round leaves it: the muzzle node of the
  * seat's gun group for that weapon (`weaponGroup`, keyed by its `weaponFire`
- * input), `-z` its direction (`round-launch.js muzzleVelocity`). `{ origin,
+ * input), `-z` its direction (`round-launch.js muzzleVelocity`), or the seat
+ * camera for a gun that fires from it. `{ origin,
  * f, r, u, group }`: world position, and the gun's forward, right and up in
  * the engine's sense (right = f x world up, level; up = r x f). Null on foot,
  * in an aircraft (the nose is its reference) or before the seat's guns are
@@ -280,14 +281,20 @@ export function barrelFrame(bot) {
   if (!node?.matrixWorld) return null;
   node.updateWorldMatrix?.(true, false);
   const e = node.matrixWorld.elements;
-  const f = unit3([-e[8], -e[9], -e[10]]);
+  // A gun that fires from the seat's camera (a coaxial or pintle MG,
+  // `camera-dof.js`) is aimed from there, as the engine's AI aims it:
+  // `WeaponFireArmReal::getPosition` / `getAbsoluteTransformation`
+  // (0x085ef6e0 / 0x085ef6c0) read the same camera the round leaves from.
+  const ray = group?.cameraNode ? group.aimRay?.(node) : null;
+  const f = ray ? unit3([ray.dir.x, ray.dir.y, ray.dir.z]) : unit3([-e[8], -e[9], -e[10]]);
   if (!f) return null;
   // Right is level: the world's up, not the node's, whose own axes a mount
   // may carry turned over (AA_Allies' muzzle node is), which read the
   // target's height with the wrong sign and drove the barrel to its stop.
   const r = unit3(cross3(f, [0, 1, 0])) ?? unit3(cross3(f, [e[4], e[5], e[6]])) ?? [1, 0, 0];
   const u = cross3(r, f);
-  return { origin: [e[12], e[13], e[14]], f, r, u, group };
+  const origin = ray ? [ray.origin.x, ray.origin.y, ray.origin.z] : [e[12], e[13], e[14]];
+  return { origin, f, r, u, group };
 }
 
 function cross3(a, b) {
