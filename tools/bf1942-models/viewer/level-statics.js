@@ -40,6 +40,16 @@ function buildLodLevels(lodNode, partNode, seen) {
   }
   if (levels.length < 2) return false;
   levels.sort((a, b) => a.distance - b.distance);
+  // The LOD carries the part's local transform (`liftLods` copies it before
+  // the splice), so the part itself must go to IDENTITY inside it: `addLevel`
+  // re-parents without touching the matrix, and a part that kept its own
+  // transform as well would compose it twice (a placement at (541, 43, -394)
+  // with a yaw renders at T(T) — measured: (-1.2, 82, -1.7)). The rungs keep
+  // their own locals: they were authored relative to the part, and the LOD
+  // supplies exactly what the part used to.
+  levels[0].object.position.set(0, 0, 0);
+  levels[0].object.quaternion.identity();
+  levels[0].object.scale.set(1, 1, 1);
   for (const level of levels) lodNode.addLevel(level.object, level.distance);
   return true;
 }
@@ -82,11 +92,13 @@ function liftLods(root) {
     const parent = obj.parent;
     if (!parent) continue;          // a collected part that lost its parent
     const lod = new THREE.LOD();
-    if (!buildLodLevels(lod, obj, seen)) continue;
-    lod.name = `${obj.name || 'part'}_LOD`;
+    // The LOD takes the part's local transform BEFORE `buildLodLevels` runs —
+    // which resets the part to identity inside it (see the comment there).
     lod.position.copy(obj.position);
     lod.quaternion.copy(obj.quaternion);
     lod.scale.copy(obj.scale);
+    if (!buildLodLevels(lod, obj, seen)) continue;
+    lod.name = `${obj.name || 'part'}_LOD`;
     parent.add(lod);
     // The LOD takes the part's slot in its parent; the part itself is inside
     // it already (`addLevel` re-parented it).
