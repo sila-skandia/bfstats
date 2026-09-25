@@ -265,9 +265,9 @@ export function createSoldierHud(page) {
     // The flag-status disc beneath the minimap: the layout's own `ShowFlagIcon`
     // leaf at (720,230) 64x64 (the neutral white flag while the local player
     // stands inside a neutral control point's radius; the screenshot's little
-    // white flag). Fed from the same capture state `updateCaptureHud` reads, so
-    // the disc and the CAPTURING line can never disagree. `AxisFlagIcon` /
-    // `AlliedFlagIcon` stay unfed — CTF-only leaves with no conquest meaning.
+    // white flag). One question, answered from `nearestEnemyFlag` over the same
+    // `flags` the capture law reads. `AxisFlagIcon` / `AlliedFlagIcon` stay
+    // unfed — CTF-only leaves with no conquest meaning.
     page.feedFlagIconVars(vars);
     // The combat-area warning, drawn by the layout's own `outside` group.
     // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine

@@ -99,7 +99,6 @@
   <!-- The radio strip and the message log (comms.js), over the HUD. -->
   <canvas id="comms-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
-  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc menu</div>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
@@ -382,6 +381,17 @@ if (!params.has('map') && !params.has('replay') && !params.has('shots')
   await new Promise(() => {});
 }
 
+/** A match, as against a level being looked at: `play/skirmish.js` launches
+ *  Instant Battle with a side on it and `play/multiplay.js` joins a room, while
+ *  a bare `map.html?map=` is the flythrough a visitor browses in. The first two
+ *  take the shell down for the whole match (`shell-playing` in map.css), the
+ *  third keeps it: the tabs above the stage are how you leave this page.
+ *  Set here, before the level loads, so a match never flashes a bar it is about
+ *  to drop; the spawn screen, which the flythrough can open too, refines it in
+ *  `paintPlayingShell` below. */
+const IN_MATCH = params.has('team') || params.has('room');
+document.documentElement.classList.toggle('shell-playing', IN_MATCH);
+
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
 const optVehicles = document.getElementById('vehicles');
@@ -391,13 +401,7 @@ const optSoundVol = document.getElementById('sound-vol');
 const optPilot = document.getElementById('pilot');
 const optOnFoot = document.getElementById('onfoot');
 const spawnFlagSelect = document.getElementById('spawn-flag');
-const hud = document.getElementById('hud');
 const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
-// The free camera's hint: its fly keys are the viewer's own, the map key the
-// profile's. Read through `hudFly()` so an import lands in it.
-const HUD_FLY_TEMPLATE = 'WASD fly · QE or scroll vertical · mouse look · Shift slow · '
-  + 'CapsLock spawn · {c_PIMap} map · Esc menu';
-const hudFly = () => controls.hintText(HUD_FLY_TEMPLATE, null);
 // `?shots&noaudio` takes Web Audio out at the source, for the perf harness's
 // audio-on/audio-off A/B: no AudioContext is ever created, so no listener
 // rides the camera, no loop is decoded, no engine or gun patch is built, and
@@ -460,12 +464,9 @@ const controls = createControls(bag(
   },
 ));
 
-// The hint painted before anything else writes the HUD carries the
-// profile's map key, not the page's default.
-hud.textContent = hudFly();
 const pageInput = createPageInput(bag(
   from(() => comms, `keydown:radioKeydown`),
-  from(() => controls, `activeCodes codeTriggers hintText kblockKeys`),
+  from(() => controls, `activeCodes codeTriggers kblockKeys`),
   from(() => deployScreen, `deployActive`),
   from(() => freeCamera, `clampAltitude dollyCamera isSlow navMode panCamera resetCamera`),
   from(() => level, `world`),
@@ -482,11 +483,11 @@ const pageInput = createPageInput(bag(
   from(() => kitDrops, `pickup:pickupKit`),
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
-  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
+  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
     get camera() { return camera; }, get FLY_KEYS() { return FLY_KEYS; },
     get FLY_SLOW() { return FLY_SLOW; },
-    get hud() { return hud; }, get isTouchDevice() { return isTouchDevice; },
+    get isTouchDevice() { return isTouchDevice; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
     get renderer() { return renderer; }, get stage() { return stage; },
@@ -494,7 +495,6 @@ const pageInput = createPageInput(bag(
   },
 ));
 const freeCamera = createFreeCamera(bag(
-  from(() => hudFeed, `updateHud`),
   from(() => level, `extras getFloorAltitude groundHeight`),
   from(() => localPlayer, `aircraft car leavePilot soldier`),
   from(() => pageInput, `captured keys touchFlying`),
@@ -513,7 +513,7 @@ const touchControls = createTouchControls(bag(
     setTouchTriggers`),
   from(() => seatCamera, `cycleView mannedActive view`),
   from(() => soldierView, `footView3p`),
-  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
+  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
     get isTouchDevice() { return isTouchDevice; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; },
@@ -524,14 +524,12 @@ const pageConsole = createPageConsole(bag(
   from(() => level, `extras`),
   from(() => localLook, `mouseInput`),
   from(() => mapSurfaces, `bfmap`),
-  from(() => pageInput, `capture HUD_FOOT keys release releaseButtons setSideCollapsed`),
+  from(() => pageInput, `capture keys release releaseButtons setSideCollapsed`),
   from(() => scoreboard, `scoreboardOpen scoreFromSpawn setScoreboard`),
-  from(() => seatCamera, `HUD_DRIVE HUD_MANNED HUD_PILOT`),
   from(() => spawning, `launchTeam`),
   {
     get hudPaths() { return hudPaths; }, get MENU_URL() { return MENU_URL; },
     get params() { return params; }, get controls() { return controls; },
-    get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
   },
 ));
 
@@ -621,22 +619,19 @@ const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${p
 const localPlayer = createLocalPlayer(bag(
   from(() => controls, `axis held`),
   from(() => deployScreen, `deployActive`),
-  from(() => flagCapture, `resetCaptureUi`),
   from(() => footBodies, `syncFootBody`),
   from(() => freeCamera, `applyLook fly:flyFreeCamera`),
-  from(() => hudFeed, `showHint`),
   from(() => level, `warmSubtree world`),
   from(() => localLook, `footLookPair lookKeyHeld lookNeedsKey mouseInput pumpLook
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
   from(() => pageAudio, `handleSoldierFootstep playSoldierHurtSound`),
-  from(() => pageInput, `captured HUD_FOOT kbLockLeave keys seatAltFire seatFire touchFlying`),
+  from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam roomJoined`),
-  from(() => seatCamera, `buildSeatView forgetSeatViews HUD_DRIVE HUD_MANNED HUD_PILOT
-    mannedActive seatedCamera view viewFor`),
+  from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
   from(() => seatPose, `disposeSeatPose followSeat loadSeatPose stepSeatIk`),
   from(() => soldierHud, `triggerHitIndicator`),
-  from(() => soldierKit, `disposeHandWeapon`),
+  from(() => soldierKit, `disposeHandWeapon releaseFireTrigger`),
   from(() => soldierView, `EMPTY_KEYS onFootCamera`),
   from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
   from(() => touchControls, `clampMobileInput feedMobileTurretAim mobileJumpHeld mobilePadAxis
@@ -645,15 +640,13 @@ const localPlayer = createLocalPlayer(bag(
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
   from(() => wrecks, `killOccupantInSeat`),
   {
-    get camera() { return camera; }, get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
+    get camera() { return camera; },
     get hudBridge() { return hudBridge; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get vehicles() { return vehicles; },
   },
 ));
 const seatCamera = createSeatCamera(bag(
-  from(() => controls, `hintText`),
-  from(() => hudFeed, `showView`),
   from(() => hullBodies, `hullCollisionMaterial`),
   from(() => level, `collider damageTables groundHeight isCollision`),
   from(() => localLook, `mouseInput stepMouseLookKey`),
@@ -686,16 +679,15 @@ pageConsole.applyControlProfile();
 const vehicleEntry = createVehicleEntry(bag(
   from(() => botUnits, `seatHolder`),
   from(() => freeCamera, `placeCamera`),
-  from(() => hudFeed, `showHint updateHud`),
   from(() => level, `collider currentRoot vehicleSpawnActive world`),
   from(() => localPlayer, `aircraft car leaveSeat markPilot mayEnterHull occupancy setPilot soldier useLens`),
-  from(() => pageInput, `HUD_FOOT releaseButtons`),
+  from(() => pageInput, `releaseButtons`),
   from(() => room, `netSeatRow netSendAction`),
   from(() => seatCamera, `driveFwd mannedActive`),
   from(() => soldierKit, `drawWeapon holster`),
   from(() => touchControls, `resetMobileControls updateMobileControls`),
   {
-    get hud() { return hud; }, get isTouchDevice() { return isTouchDevice; },
+    get isTouchDevice() { return isTouchDevice; },
     get optOnFoot() { return optOnFoot; },
   },
 ));
@@ -787,9 +779,9 @@ function buildHullDrive(instance) {
 
 const wrecks = createVehicleWrecks(bag(
   from(() => freeCamera, `placeCamera`),
-  from(() => hudFeed, `updateHud`),
   from(() => hullBodies, `respawnVehicleBody retireVehicleBody`),
-  from(() => level, `bindDynamicShading collider extras isCollision vehicleDamage world`),
+  from(() => level, `bindDynamicShading collider extras freezeVehicle groundHeight isCollision
+    vehicleDamage world`),
   from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
     soldierDead standUp useLens`),
   from(() => seatPose, `detachSeatCorpse`),
@@ -799,7 +791,7 @@ const wrecks = createVehicleWrecks(bag(
   from(() => vehicleEntry, `exitPoseManned`),
   {
     get bust() { return bust; }, get effects() { return effects; },
-    get fireStates() { return fireStates; }, get hud() { return hud; },
+    get fireStates() { return fireStates; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
     // The human died in his hull: whoever killed it killed him (the message
@@ -975,21 +967,12 @@ function fireStateFor(node) {
 }
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),
-  from(() => freeCamera, `navMode`),
-  from(() => localPlayer, `aircraft car occupancy soldier`),
   from(() => mapSurfaces, `drawFullMap`),
-  from(() => pageInput, `HUD_FOOT`),
-  from(() => seatCamera, `HUD_DRIVE HUD_PILOT mannedActive`),
-  from(() => seatPose, `updateSeatPoseVisibility`),
   {
-    get bust() { return bust; }, get hud() { return hud; }, get HUD_FLY() { return hudFly(); },
-    get hudPaths() { return hudPaths; }, get isTouchDevice() { return isTouchDevice; },
-    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get bust() { return bust; },
+    get hudPaths() { return hudPaths; },
   },
 ));
-// The touch HUD's opening line reads the input and the player, so it waits
-// until the HUD's own feed exists (above the modules it threw on every phone).
-if (isTouchDevice) hudFeed.updateHud();
 const vehicleHud = createVehicleHud(bag(
   from(() => controls, `crossHairColor`),
   from(() => hudFeed, `gameHud`),
@@ -1202,7 +1185,6 @@ const hudBridge = { get vars() { return hudFeed.gameHud.vars; } };
 const flagCapture = createFlagCapture(bag(
   from(() => deployScreen, `paintDeployChrome`),
   { get comms() { return comms; } },
-  from(() => hudFeed, `flashHud updateHud`),
   from(() => hullBodies, `syncVehicleSpawnOwnership`),
   from(() => level, `cull currentRoot ensureFlagMixer extras flattenCull levelClips tagCull thaw
     world`),
@@ -1214,7 +1196,7 @@ const flagCapture = createFlagCapture(bag(
   from(() => room, `roomJoined`),
   from(() => spawning, `deployTeamId`),
   {
-    get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; }, get hud() { return hud; },
+    get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
     get optOnFoot() { return optOnFoot; },
   },
@@ -1493,7 +1475,7 @@ const mapSurfaces = createMapSurfaces(bag(
   from(() => hudFeed, `hudPack sprite`),
   from(() => level, `currentDir extras mapVehicles spawnersRoot vehicleSpawnActive world`),
   from(() => localPlayer, `aircraft car occupancy`),
-  from(() => pageInput, `captured release`),
+  from(() => pageInput, `capture captured release`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => spawning, `activeDeployGroup deployFlagIndices deployRejoin deployTeamId
     deployUnchosen`),
@@ -1552,9 +1534,8 @@ const scoreboard = createScoreboardScreen(bag(
 const spawning = createSpawning(bag(
   from(() => deployScreen, `deployActive deployKitHits deployResumeBtn deployScoreBtn
     deploySuicideBtn deployTabs layoutDeploy paintDeployChrome paintDeploySoon spawnLayout`),
-  from(() => flagCapture, `flags refreshFlags resetCaptureUi`),
+  from(() => flagCapture, `flags refreshFlags`),
   from(() => freeCamera, `placeCamera`),
-  from(() => hudFeed, `flashHud`),
   from(() => hullBodies, `rebaseDeckSpawns shipFlagInactive`),
   from(() => level, `world worldReady`),
   from(() => localLook, `snapPresentation`),
@@ -1579,9 +1560,7 @@ const replayUrl = params.get('replay');
 let replayController = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
-  from(() => flagCapture, `announceCapture flags hoistCaptureFlag roomCaptureCancelled
-    roomCaptureContested roomCaptureDone roomCaptureStarted`),
-  from(() => hudFeed, `updateHud`),
+  from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading extras`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
@@ -1777,6 +1756,23 @@ function commsWatchLocalDeath() {
   }
   commsWasAlive = alive;
 }
+
+/** The shell, up or down. A match takes it down for its whole length; so does
+ *  the spawn screen, which Caps Lock opens from a flythrough as well, because
+ *  that screen is the game's and not this page's. One class on `<html>` carries
+ *  both cases — `shell-playing`, whose two rules in map.css are the bar and the
+ *  grid row it sits in. The stage's own `new ResizeObserver(resize)` sees the
+ *  row go and resizes the renderer, so nothing here has to.
+ *  Toggled on the edge only: a frame that changes nothing must not touch the
+ *  class list, or every frame of a match would invalidate style. */
+let shellPlaying = IN_MATCH;
+function paintPlayingShell() {
+  const want = IN_MATCH || deployScreen.deployActive();
+  if (want === shellPlaying) return;
+  shellPlaying = want;
+  document.documentElement.classList.toggle('shell-playing', want);
+}
+
 // The frame, in named phases. Each phase whose state one module owns lives in
 // that module (`localPlayer.frameInput`, `localPlayer.frameCameras`); the rest
 // are this page's wiring of several owners, in the order the page has always
@@ -1798,6 +1794,9 @@ function frame(dt) {
   presentWorld(step, dt);
   draw(dt);
   paintHud(dt);
+  // The shell last, with the HUD: the spawn screen can take it down mid-match
+  // or open it from a flythrough, and Esc puts it back.
+  paintPlayingShell();
 }
 
 /** The simulation phase: the world's tick, then the bots, the capture law and
@@ -1818,7 +1817,6 @@ function simulate(dt, input, look) {
   kitDrops.tick(step.ticks / 30);
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
-  flagCapture.updateCaptureHud(step.ticks);
   referee.captureTick(step.ticks / 30);
   // The round's bleed, on the same tick count: a side loses a ticket every
   // `60 / rate` seconds while the enemy holds more than 99 weight of the map
@@ -2024,25 +2022,25 @@ const testHooks = installTestHooks(bag(
     lastCaptureVoice playCaptureVoice`),
   from(() => footBodies, `footBody footCanopy forceHide:forceHideFootBody`),
   from(() => freeCamera, `look`),
-  from(() => hudFeed, `gameHud showView`),
+  from(() => hudFeed, `gameHud`),
   from(() => hullBodies, `bodyScene bodyWorld floatHosts recordCrashes shipFlagInactive
     stepVehicleBodies`),
   from(() => level, `collider combatArea currentDir extras frozenCount groundHeight modeNote
     spawnersRoot surfaceFriction vehicleDamage vehicleSpawnActive warmups world`),
   from(() => localLook, `lookDelta mouseInput snapPresentation`),
-  from(() => localPlayer, `applyDamageToPlayer holdDeploy parachuteLog soldier soldierArmor
+  from(() => localPlayer, `applyDamageToPlayer frameInputLast holdDeploy parachuteLog soldier soldierArmor
     soldierDead supplyTarget switchSeat`),
   from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes
     localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT setMapGate`),
   from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener ensureWorldFire
     vehicleAudio worldFire`),
-  from(() => pageInput, `aimHeld KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
+  from(() => pageInput, `aimHeld captured KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
     seatAltFire seatFire setAim setFly setSeatTriggers triggerHeld`),
   from(() => room, `roomClient roomJoined`),
   from(() => scoreboard, `paintScoreboard scoreboardOpen scoreboardPlayers scoreFromSpawn
     scoreLayout setScoreboard`),
   from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive view`),
-  from(() => seatPose, `seatIkChains seatSoldier`),
+  from(() => seatPose, `seatIkChains seatSoldier updateSeatPoseVisibility`),
   from(() => soldierKit, `altFireDemolitions crosshairEl cycleKitWeapon detonatorTemplate
     explosivesTemplate handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor thrownPackGroup
@@ -2063,7 +2061,7 @@ const testHooks = installTestHooks(bag(
     get effectAudio() { return effectAudio; }, get effects() { return effects; },
     get effectSoundsLoad() { return effectSoundsLoad; },
     get fireStateFor() { return fireStateFor; }, get frame() { return frame; },
-    get guns() { return guns; }, get hud() { return hud; },
+    get guns() { return guns; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get localPlayer() { return localPlayer; },
     get optOnFoot() { return optOnFoot; }, get params() { return params; },
     get referee() { return referee; }, get renderer() { return renderer; },

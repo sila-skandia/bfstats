@@ -16,7 +16,7 @@ import { effectNameFor } from './crash-damage.js';
  * `aircraft`, `camera`, `car`, `collider`, `damageTables`, `effects`,
  * `FLY_FOV`, `footView3p`, `groundHeight`, `guns`, `hullCollisionMaterial`,
  * `isCollision`, `MANNED_GUN_FOV`, `mouseInput`, `occupancy`, `optOnFoot`,
- * `optPilot`, `params`, `showView`, `soldier`, `stepMouseLookKey`,
+ * `optPilot`, `params`, `soldier`, `stepMouseLookKey`,
  * `syncFootView`, `updateSeatPoseVisibility`, `vehicleInput`.
  */
 export function createSeatCamera(page) {
@@ -128,10 +128,14 @@ export function createSeatCamera(page) {
 
   /** C: the next view of whatever the player is sitting in, or standing as. */
   function cycleView() {
-    if (page.optPilot.checked && seatCamera.view) page.showView(seatCamera.view.cycle());
+    if (page.optPilot.checked && seatCamera.view) seatCamera.view.cycle();
     else if (page.optOnFoot.checked && page.soldier && page.footView3p.modes.length > 1) {
-      page.showView(page.footView3p.cycle());
+      page.footView3p.cycle();
     }
+    // Seat poses only draw in external views, so every mode change re-gates
+    // them: hidden in the cockpit (CVMInside), where the player looks out
+    // from the pilot's own eyes rather than at the seat.
+    page.updateSeatPoseVisibility();
   }
 
   /** F9-F12, the common map's `c_PICameraMode1..4` — INSIDE, CHASE REAR,
@@ -150,12 +154,13 @@ export function createSeatCamera(page) {
       let want = SEAT_VIEW_FOR[n];
       if (n === 1 && view.mode === 'cockpit' && view.modes.includes('nose')) want = 'nose';
       if (!want || !view.modes.includes(want)) return;
-      page.showView(view.setMode(want));
+      view.setMode(want);
+      page.updateSeatPoseVisibility();
     } else if (page.optOnFoot.checked && page.soldier) {
       const want = FOOT_VIEW_FOR[n];
       const was = page.footView3p.mode;
       const now = page.footView3p.setMode(want);
-      if (now !== was) page.showView(now);
+      if (now !== was) page.updateSeatPoseVisibility();
     }
   }
 
@@ -312,17 +317,6 @@ export function createSeatCamera(page) {
     if (Number.isFinite(n) && n > 0) page.mouseInput.countsPerPixel = n;
   }
 
-  // The seat hints, keys filled in from the player's profile.
-  const HUD_PILOT_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} throttle · {c_PIYaw-}/{c_PIYaw+} rudder · '
-    + '{c_PIPitch-}/{c_PIPitch+} pitch · {c_PIRoll-}/{c_PIRoll+} roll · {c_PIFire} guns · '
-    + '{c_PIAltFire} bombs · {c_PIToggleCameraMode} view · {c_PIMouseLook}+mouse look around · {c_PIReload} reset · '
-    + '1-9 seats · {c_PIUse} out on the ground · Esc';
-  const HUD_DRIVE_TEMPLATE = '{c_PIThrottle+}/{c_PIThrottle-} drive and brake · {c_PIYaw-}/{c_PIYaw+} steer · '
-    + 'mouse aims · {c_PIFire} main gun · {c_PIAltFire} coax · {c_PIToggleCameraMode} view · '
-    + '{c_PIReload} reset · 1-9 seats · {c_PIUse} get out · Esc';
-  const HUD_MANNED_TEMPLATE = 'Mouse aims · {c_PIFire} fires · {c_PIToggleCameraMode} view · '
-    + '1-9 seats · {c_PIUse} get out · Esc';
-
   /**
    * Read the keyboard into the car and step the drive model.
    *
@@ -374,13 +368,9 @@ export function createSeatCamera(page) {
     page.camera.position.copy(pose.position);
     page.camera.quaternion.copy(pose.quaternion);
     // The dashboard readout this used to write into `#ammo` (road speed, gear)
-    // is dropped rather than folded into `#hud`: that line is a timed
-    // announcement (`showView`, the spawn/flag text) that overwrites itself on
-    // a 2.2s timer, and a per-tick dashboard string competing with that timer
-    // would either starve the announcements or itself flicker unreadably.
-    // `car.control`/`.gear` stay live on `__car` for a headless check that
-    // wants them; the vehicle HUD panel due from a future seats.js track is the
-    // real replacement.
+    // has no line to go to. `car.control`/`.gear` stay live on `__car` for a
+    // headless check that wants them; the vehicle HUD panel due from a future
+    // seats.js track is the real replacement.
   }
   const driveFwd = new THREE.Vector3();
 
@@ -563,11 +553,6 @@ export function createSeatCamera(page) {
     }
   };
 
-  Object.defineProperties(seatCamera, {
-    HUD_DRIVE: { get: () => page.hintText(HUD_DRIVE_TEMPLATE, 'land'), enumerable: true },
-    HUD_MANNED: { get: () => page.hintText(HUD_MANNED_TEMPLATE, 'land'), enumerable: true },
-    HUD_PILOT: { get: () => page.hintText(HUD_PILOT_TEMPLATE, 'air'), enumerable: true },
-  });
   Object.assign(seatCamera, {
     CHASE_OPTION,
     cameraMode,

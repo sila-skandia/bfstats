@@ -19,7 +19,7 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `announceCapture`, `applyDamageToPlayer`, `applyVehicleHit`,
  * `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`, `bodyWorld`,
  * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
- * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
+ * `captured`, `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
  * `chooseKit`, `chooseTeam`, `collectEntryPoints`, `collider`, `combatArea`, `comms`,
  * `combatFrame`, `crosshairAim`, `crosshairEl`, `currentDir`,
  * `cycleKitWeapon`, `damageVisuals`, `deployActive`, `deployKit`,
@@ -27,10 +27,10 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `effectAudio`, `effects`, `effectSoundsLoad`, `ensureWorldFire`, `enterVehicle`,
  * `entryPoints`, `exitSeat`, `exitVehicle`, `explosivesTemplate`, `extras`,
  * `fireStateFor`, `flags`, `floatHosts`, `foot3pRel`, `footBody`,
- * `footCanopy`, `footView3p`, `forceHideFootBody`, `frame`,
+ * `footCanopy`, `footView3p`, `forceHideFootBody`, `frame`, `frameInputLast`,
  * `friendlyMapUnits`, `friendlyVehicleNodes`, `frozenCount`, `gameHud`,
- * `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
- * `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
+ * `groundHeight`, `guns`, `handSlot`, `handWeapon`,
+ * `holdDeploy`, `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
  * `kbSession`, `keys`, `kitLoadout`, `KITS`, `kitWeaponSlots`,
  * `lastCaptureVoice`, `loadouts`, `loadoutsLoad`, `LOCAL_PLAYER`,
  * `localMapTeam`, `localPlayer`, `look`, `lookDelta`, `mannedActive`,
@@ -42,12 +42,13 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
  * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
  * `setAim`, `setFly`, `setMapGate`, `setScoreboard`, `setSeatTriggers`,
- * `shipFlagInactive`, `showDamageTier`, `showView`, `snapPresentation`,
+ * `shipFlagInactive`, `showDamageTier`, `snapPresentation`,
  * `soldier`, `soldier3pOnFoot`, `soldierArmor`, `soldierDead`,
  * `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
  * `spawnFlagSelect`, `splashPos`, `splashTargets`, `stage`,
  * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,
- * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `vehicleAudio`,
+ * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `updateSeatPoseVisibility`,
+ * `vehicleAudio`,
  * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `view`,
  * `viewmodelRigFor`, `vmCamera`, `vmRoot`, `vmScene`, `warmups`,
  * `weaponBarUntil`, `weaponTemplateFor`, `world`, `worldFire`,
@@ -113,13 +114,23 @@ export function installTestHooks(page) {
     window.__setView = mode => {
       if (!page.view) return null;
       const set = page.view.setMode(mode);
-      page.showView(set);
+      page.updateSeatPoseVisibility();
       return set;
     };
     // Headless checks fly through the real input path rather than poking the
     // aircraft: add key codes to __keys and open the gate with __setFly(true).
     window.__keys = page.keys;
     window.__setFly = page.setFly;
+    // The capture the world's input channels are gated on (`controls.js`
+    // `axis`/`held`): the map overlay lends it out on open and must hand it
+    // back on close (map-surfaces.js `toggleFullMap`). Invisible from outside
+    // except through movement, which is why it is readable here.
+    window.__captured = () => page.captured;
+    // The word the page handed the world on the last frame (`local-player.js`
+    // `frameInput`). The map overlay killed it by letting the capture go, so
+    // this is the read-out an overlay hand-back check wants — a wall or a bot
+    // cannot fake it the way a walk distance can.
+    window.__frameInput = () => page.frameInputLast ?? null;
     // Gun state, for headless checks. Muzzle world positions are what settles the
     // question the moving-vehicle port exists to answer: a tracer's position must
     // diverge from the muzzle it left, not travel with it.

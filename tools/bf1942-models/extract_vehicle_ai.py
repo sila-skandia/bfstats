@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42.rfa import RfaArchive  # noqa: E402
 
-GAME = Path.home() / ".wine/drive_c/EAGames/Battlefield 1942/Mods"
+GAME = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
 
 
 def _num(s: str) -> float | None:

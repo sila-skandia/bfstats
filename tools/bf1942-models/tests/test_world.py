@@ -240,6 +240,39 @@ class WorldTests(unittest.TestCase):
         water = self.results["water"]
         self.assertFalse(water["noWaterLevel"])
 
+    # --- a hull destroyed in the air is still flown ----------------------
+
+    def test_a_falling_wreck_integrates_once_per_world_tick(self) -> None:
+        """`world.falling` is a hull whose crew is dead, so no player's tick
+        integrates it any more. The wreck pass gives it the same one
+        `integrate` a tick an occupant's hull gets — and no more: a frame that
+        owes no tick must leave it alone."""
+        falling = self.results["falling"]
+        self.assertEqual(falling["oneTick"]["integrates"], 1)
+        self.assertAlmostEqual(falling["oneTick"]["dt"], self.results["tickDt"], places=9)
+        self.assertEqual(falling["noTick"], 0)
+        self.assertEqual(falling["fourTicks"], 3)
+
+    def test_a_falling_wreck_gets_the_engines_zero_word(self) -> None:
+        """HP-15: a destroyed `PlayerControlObject` receives no input at all
+        (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920), so the
+        gate is forced false — here for a hull with no player left to force it.
+        The stick, the rudder, the throttle and both triggers are written to
+        zero, and the throttle spool itself is pinned, because the surfaces are
+        servos and a kill mid-turn would otherwise hold its deflection all the
+        way down."""
+        falling = self.results["falling"]
+        self.assertEqual(falling["oneTick"]["inputs"], [
+            ["c_PIThrottle", 0], ["c_PIRoll", 0], ["c_PIPitch", 0],
+            ["c_PIYaw", 0], ["c_PIFire", 0], ["c_PIAltFire", 0],
+        ])
+        self.assertEqual(falling["oneTick"]["throttle"], 0)
+
+    def test_an_empty_falling_list_is_skipped(self) -> None:
+        # The world's own guard: the pass runs only when something is in the
+        # list, so a level with no wrecks in the air pays a length check.
+        self.assertEqual(self.results["falling"]["afterClear"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -79,7 +79,7 @@ import * as roster from './world-players.js';
 import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
 import { soldierTick } from './world-soldier-tick.js';
-import { assignIntegrators, vehicleTick } from './world-vehicle-tick.js';
+import { assignIntegrators, stepFallingWrecks, vehicleTick } from './world-vehicle-tick.js';
 import { combatTick, supplyTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
 
@@ -457,6 +457,10 @@ export class World {
     // several players, the reset only fires when NONE could have stepped the
     // area this tick (a dead or unmounted player must not clear a live one).
     if (!combatStepped && this.combatArea.active) this.combatArea.reset();
+    // Hulls nobody is in, still flying (`vehicle-wrecks.js`): the same per-tick
+    // integration an occupant's hull gets, run before the body world consumes
+    // the pose it leaves behind.
+    if (this.falling.size) stepFallingWrecks(this, dt);
     if (this.guns) this.guns.advance(dt);
     if (this.bodyWorld) this.bodyWorld.step(dt);
     damageTick(this, dt);
@@ -469,4 +473,11 @@ export class World {
   /** drive -> the player whose tick integrates it (`world-vehicle-tick.js`'s
    *  `assignIntegrators`). */
   #integrators = new Map();
+
+  /** The drives nobody is in any more: hulls destroyed in the air, which keep
+   *  integrating under the flight model until they meet the ground or the
+   *  water (`vehicle-wrecks.js` owns the list, `world-vehicle-tick.js` steps
+   *  it). A live occupant's hull is integrated by that occupant's own tick
+   *  instead, so nothing is in both. */
+  falling = new Set();
 }

@@ -19,6 +19,20 @@ body {
   font: 13px/1.5 var(--mm-font-mono);
   overflow: hidden;
 }
+/* A match owns the screen. The shell above the stage is a browser's chrome —
+   the tabs out of here and the mod strip under them — and `play/`'s Instant
+   Battle screen, which is the same game from the other page, has neither. So
+   the bar and its grid row both go while a match is up. Declared after
+   `shell.css`, where the mod strip grows `--nav-h` on the same selector.
+   All three rules are needed. `display: none` takes the bar out of the grid
+   entirely, so the row has to be written again by hand: left as
+   `var(--nav-h) 1fr` the stage would become the first grid item, land in that
+   now-empty `0px` row and lose the whole pane. One row is the whole layout
+   here, because the body holds exactly the bar and the stage — the spawn
+   screen and everything else the match draws are inside `#stage` already. */
+:root.shell-playing { --nav-h: 0px; }
+:root.shell-playing body { grid-template-rows: 1fr; }
+:root.shell-playing .shell-nav { display: none; }
 /* The flythrough owns everything below the bar. Positioning it makes the
    canvas and the three overlays resolve against the stage rather than the
    viewport, so nothing has to know the bar's height. */
@@ -36,7 +50,7 @@ canvas {
   z-index: 0;
   touch-action: none;
 }
-#hud, #side {
+#side {
   position: absolute;
   pointer-events: none;
 }
@@ -75,14 +89,6 @@ label.opt {
   margin-top: 8px;
   color: var(--muted);
   cursor: pointer;
-}
-#hud {
-  z-index: 2;
-  left: 50%; bottom: 18px;
-  transform: translateX(-50%);
-  color: var(--muted);
-  text-align: center;
-  text-shadow: 0 1px 4px #000;
 }
 /* On-foot fire control. The crosshair is DOM over the canvas rather than
    painted into it: four bars around a zero-size anchor at screen centre,
@@ -151,7 +157,7 @@ label.opt {
 /* The in-game HUD proper -- health bar, stance figure, magazine picture,
    vehicle panels -- painted by hud.js from the game's own hud-layout.json
    rects and sprites, not styled here. Sits above the 3D canvas (z-index 0)
-   and below the DOM crosshair/hint line (both z-index 2, untouched this
+   and below the DOM crosshair (both z-index 2, untouched this
    round); the generic `canvas` rule above already gives it position/inset/
    size, so only the stacking and click-through need overriding. */
 #hud-canvas {
@@ -246,8 +252,8 @@ body:not(.dev-on) .map-controls-fab {
   background: transparent;
   color: var(--text);
 }
-/* The map art, top right. That corner is free: #side is top left, #hud is
-   bottom centre. No CSS chrome: the game's own `icon_mapbar_small` bezel is
+/* The map art, top right. That corner is free: #side is top left and the
+   stage's bottom centre carries no UI of the page's. No CSS chrome: the game's own `icon_mapbar_small` bezel is
    drawn into the canvas, over the art, the way the engine composes it.
    Retail geometry (measured off the 2559x1441 capture): the ticket plate's
    LEAF rect is x 620..876 y 4..36, but `icon_ticketbar` only inks the first
@@ -259,7 +265,7 @@ body:not(.dev-on) .map-controls-fab {
    instead of sitting at a fixed corner. */
 #minimap {
   --mm-size: 196px;
-  /* Not covered by the `#hud, #side` positioning rule above. */
+  /* Not covered by the `#side` positioning rule above. */
   position: absolute;
   z-index: 3;
   top: 44px; right: 16px;
@@ -734,20 +740,6 @@ a { color: var(--accent); }
   }
   .controls-collapse-btn { display: inline-flex; }
   .map-controls-fab { display: inline-flex; }
-  #hud {
-    bottom: 64px;
-    font-size: 11px;
-    width: auto;
-    max-width: calc(100% - 24px);
-    padding: 4px 10px;
-    background: rgba(18, 17, 14, 0.82);
-    border: 1px solid var(--border-subtle);
-    border-radius: 4px;
-    pointer-events: none;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
   .speed-control,
   .map-actions {
     bottom: 18px;

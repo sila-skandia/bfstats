@@ -442,6 +442,11 @@ def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
         low = entry.lower()
         if not low.startswith(root) or "/" in entry[len(root):]:
             continue
+        if not low.endswith((".dds", ".tga")):
+            # Mods ship editor droppings in these directories (Pirates and
+            # interstate carry `Thumbs.db`, FinnWars an `.xcf` and a stray
+            # `.png`); nothing references them and no decoder reads them.
+            continue
         name = Path(entry).stem.lower()
         if name in manifest or not name.startswith(SPRITE_NATION_PREFIXES):
             continue
@@ -452,6 +457,10 @@ def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
         low_prefix = f"menu/{prefix}/".lower()
         for entry in menu.entries:
             if not entry.lower().startswith(low_prefix):
+                continue
+            if not entry.lower().endswith((".dds", ".tga")):
+                # Same editor droppings as the nation loop above: `Thumbs.db`
+                # in four of these directories in Pirates/interstate/FinnWars.
                 continue
             name = renames.get(entry.lower(), Path(entry).stem.lower())
             if name in manifest:

@@ -414,7 +414,7 @@ At her draft, and 3.5 m lower with the sea over her main deck line.
 | **A ship's own Wings have no angular drag.** | `Ship.applyDrag` implements the linear half of the box law only. The angular half would be a second unmeasured damper on top of the rudders, which is tuning rather than porting. |
 | **The `1 + 24f` anti-damping sliver is ported as written.** | It is the bytes. That it "reads like an intended `lerp(1, 25, |f|)` with a sign slip" is the research author's inference, not a read. |
 | **`settle()`'s escape is a ray, not a push-out.** | The engine ejects a soldier by resolving a penetrating capsule against the hull's col1 faces. A downward ray cannot ask that question, so the escape is gated on "the floor is a hull's" (§3.3). The exact version is a capsule push-out. |
-| **A ship's mouse profile and HUD line are an aircraft's.** | `Ship extends Aircraft` and lands in the page's `aircraft` slot, so `profileFor('air')` and `HUD_PILOT` follow. Cosmetic; the input mapping is keyed on `player.kind` in `world.js` and is correctly a ground vehicle's signed W/S. |
+| **A ship's mouse profile is an aircraft's.** | `Ship extends Aircraft` and lands in the page's `aircraft` slot, so `profileFor('air')` follows. Cosmetic; the input mapping is keyed on `player.kind` in `world.js` and is correctly a ground vehicle's signed W/S. (The `HUD_PILOT` key list this row used to cite with it has since been removed; see features/viewer-map-focus-and-hint-line.) |
 
 ---
 
