@@ -3,7 +3,8 @@
 // players, held open or toggled. Lifted out of map.html (features/vehicle-
 // instance-refactor Part 2); `scoreboard.js` stays the layout arithmetic.
 
-import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
+import { boardRows, boardVars, paintLeaves, listFloor, listGeometry, rowColor }
+  from './scoreboard.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -137,6 +138,7 @@ export function createScoreboardScreen(page) {
       page.drawBitmapText(ctx, fontId, text, x, y, rgb, scoreLayout.fonts),
     lineHeight: fontId => scoreLayout.data?.fontFiles?.[fontId]?.lineHeight || 8,
     hover: el => scoreboard.scoreHoverDone && el.texture === 'knappext_n',
+    rowColor: row => rowColor(row, scoreLayout.data?.colors),
     floor: el => listFloor(scoreLayout.data.elements, el),
   };
 
