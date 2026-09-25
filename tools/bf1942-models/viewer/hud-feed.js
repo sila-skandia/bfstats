@@ -99,12 +99,21 @@ export function createHudFeed(page) {
       img.onload = () => {
         hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
           ? tintPlayerRing(img) : img);
-        if (page.deployActive()) {
-          page.paintDeploySoon();
-          // The spawn rings draw with these sprites (with a stroked-circle
-          // fallback); once the real ring lands, put it on the map at once.
-          page.drawFullMap(true);
-        }
+        // A cached sprite can finish while the page module is still
+        // evaluating (its top-level awaits suspend it), before the module
+        // has reached `deployScreen`'s initialiser: reading the getter then
+        // throws a TDZ reference error and kills the boot. Skip the
+        // deploy-screen repaint in that window; the sprite is stored either
+        // way, and the next sprite's onload (or the deploy screen's own
+        // first paint) draws with the full pack.
+        try {
+          if (page.deployActive()) {
+            page.paintDeploySoon();
+            // The spawn rings draw with these sprites (with a stroked-circle
+            // fallback); once the real ring lands, put it on the map at once.
+            page.drawFullMap(true);
+          }
+        } catch (_) {}
       };
       img.onerror = () => {};
       img.src = `${page.hudPaths.url(entry.file)}${page.bust()}`;

@@ -143,11 +143,28 @@ scripted fall.
   cycle none of its ammo types fired — at 15 units/s against a 0.5s check,
   that is close to never. This is the engine's own dispatch order, proven in
   `test_ammo_before_heal_priority_starves_m3a1s_heal`, not a bug.
-- **Vehicle repair/rearm is out of scope this round**: `eligibleForSoldier`
-  and `tick` both gate on `workOnSoldiers`, so Wake's four `workOnVehicles`
-  depots (`AmmoboxVehicleSupplyDepot`, `M3A1VehicleSupplyDepot`,
-  `ShokakuAirplaneSupplyDepot`, `AlliedAirplaneSupplyDepot`) simply never
-  fire here — vehicle Armor and entry belong to P2/P4.
+- **Vehicle rearm — closed in the playtest-fixes round**: the capability
+  gate is now per target kind. `eligibleForSoldier` additionally requires
+  the target not be a vehicle, and `eligibleForVehicle` is its mirror
+  (`workOnVehicles` and the target tagged `vehicle: true`); `tick` takes
+  whichever gate the target's kind answers to, and `canHeal`/`canRearm`
+  follow the same rule. All five Wake `workOnVehicles` depots are ammo-only
+  (`health [0,0,0]`), so the seated path only ever refills guns: the world's
+  own `refillAmmo` for a mounted player resets the FireState of every
+  FireArms node that seat can fire (the drivetrain's groups plus the seat's
+  manned ones) — the page's kit-refill closure is on-foot-only and is not
+  reached seated. `world-fields.js`'s `supplyTick` builds the seated target
+  from the hull's damage record: the hull's Armor (so a depot with a repair
+  rate would heal it), the drive's position (the seat node's for a bare
+  gun), the player's supply team, and a destroyed-hull early-out that
+  mirrors the combat tick's own. This is the "plane reload over the
+  airstrip" rule: Wake's `AlliedAirplaneSupplyDepot` ring (radius 20, team
+  2, eight pads along the strip) rearm a parked or low Corsair's guns every
+  0.5 s cycle. Verified in the browser: a Corsair that had burned 8 rounds
+  sat on the strip for ~3 s of sim and its magazine came back to 900
+  (`window.__supply()`'s `gaveAmmo` fired on 5 of 8 cycles); the 14
+  `tests/test_supply.py` cases pin the kind gates, the team gate on an
+  enemy hull, and the airstrip depot's verbatim data.
 
 ### HUD icons are continuous, not throttled
 
