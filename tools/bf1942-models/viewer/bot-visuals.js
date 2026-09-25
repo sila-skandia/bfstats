@@ -40,7 +40,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { rigCapsules } from './rig-capsules.js';
 import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
-import { loadFirst, poseUrls } from './pose-bases.js';
+import { createPoseComposer } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
 
 /**
@@ -67,8 +67,16 @@ export function createBotVisuals(page) {
   const BOT_WEAPON = 'Colt';
 
 
-  /** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
-  const botPoseCache = new Map();
+  /** Bot poses: the split tree's recipe + rig + weapon where the tree has
+   *  them, the monolithic `.pose.glb` where it does not (`pose-compose.js`).
+   *  The composer caches, and the rigs and weapons behind it are cached for
+   *  the whole page, so the cache that used to live here is gone. */
+  const botPoses = createPoseComposer({
+    loader: () => page.footBodyLoader,
+    modelsBase: () => page.MODELS_BASE,
+    bust: () => page.bust(),
+    shade: node => page.bindDynamicShading(node),
+  });
 
   /** The root group all bot visuals hang off. Added to scene in show(). */
   botBodies.botRoot = null;
@@ -86,23 +94,7 @@ export function createBotVisuals(page) {
   const botVisuals = new Map();
 
   async function botPosePair(soldierName, weapon) {
-    const key = `${soldierName}__${weapon}`;
-    if (!botPoseCache.has(key)) {
-      // The mod's own pose tree, then vanilla's (`pose-bases.js`).
-      botPoseCache.set(key, loadFirst(page.footBodyLoader,
-        poseUrls(page.MODELS_BASE, `${key}.pose.glb`, page.bust()))
-        .then(gltf => {
-          gltf.scene.traverse(obj => {
-            const data = obj.userData || {};
-            if (data.effect || data.projectileMesh || data.projectileTrail
-                || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
-          });
-          // `extras.weapon` names the welded weapon subtree a death stows.
-          return { scene: gltf.scene, animations: gltf.animations ?? [],
-                   weaponName: gltf.userData?.weapon ?? null };
-        }).catch(() => null));
-    }
-    return botPoseCache.get(key);
+    return botPoses.pose(soldierName, weapon);
   }
 
   /**
@@ -380,12 +372,8 @@ export function createBotVisuals(page) {
 
   /** Seated bodies (`seat-body.js`): the seat's pose glb, the arm IK, the
    *  slump. The same loader draws remote players in their seats. */
-  // Every field read late: the page builds this module before the foot body
-  // whose loader it borrows.
   const seatBodies = createSeatBodies({
-    get loader() { return page.footBodyLoader; },
-    url: (soldierName, pose) =>
-      poseUrls(page.MODELS_BASE, `${soldierName}__${pose}.pose.glb`, page.bust()),
+    pose: (soldierName, pose) => botPoses.seat(soldierName, pose),
     shade: scene => page.bindDynamicShading(scene),
     get parent() { return botBodies.botRoot; },
     dispose: scene => page.disposeFootBodyScene(scene),

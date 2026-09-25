@@ -10,7 +10,8 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
-import { loadFirst, poseBases, poseUrls } from './pose-bases.js';
+import { poseBases } from './pose-bases.js';
+import { createPoseComposer, ungraft } from './pose-compose.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -77,6 +78,17 @@ export function createFootBody(page) {
   };
   const footBodyCache = new Map();
   const footBundleCache = new Map();
+  /** Where a pose comes from: the split tree's recipe + rig + weapon when the
+   *  tree has them, the monolithic `.pose.glb` when it does not
+   *  (`pose-compose.js`). One composer per module is cheap — the rigs and the
+   *  weapons are cached across the whole page — so this is not shared. */
+  const footPoses = createPoseComposer({
+    loader: footBodyLoader,
+    modelsBase: () => page.MODELS_BASE,
+    bust: () => page.bust(),
+    shade: node => page.bindDynamicShading(node),
+  });
+  footBodies.footPoses = footPoses;
   footBodies.footGaitsManifest = null;
   /** `gaits.json`'s `soldierBody` -- the hit capsules and the corpse time --
    *  once the manifest is in; null before, and on a tree that predates it. */
@@ -182,26 +194,7 @@ export function createFootBody(page) {
   }
 
   function footPosePair(soldierName, weapon) {
-    const key = `${soldierName}|${weapon}`;
-    if (!footBodyCache.has(key)) {
-      footBodyCache.set(key, loadFirst(footBodyLoader,
-        poseUrls(page.MODELS_BASE, `${soldierName}__${weapon}.pose.glb`, page.bust()))
-        .then(gltf => {
-          gltf.scene.traverse(obj => {
-            const data = obj.userData || {};
-            if (data.effect || data.projectileMesh || data.projectileTrail
-                || data.collision || /collision/i.test(obj.name || '')) {
-              obj.visible = false;
-            }
-            if (obj.isSkinnedMesh) obj.frustumCulled = false;
-          });
-          // Document-level extras land on `gltf.userData`. `extras.weapon` is the
-          // name of the welded weapon subtree, which the swim states have to stow.
-          return { scene: gltf.scene, animations: gltf.animations ?? [],
-                   weaponName: gltf.userData?.weapon ?? null };
-        }, () => null));
-    }
-    return footBodyCache.get(key);
+    return footPoses.pose(soldierName, weapon);
   }
 
   function footCanopyAsset() {
@@ -269,8 +262,10 @@ export function createFootBody(page) {
   function disposeFootBodyScene(root) {
     // The kit's worn parts are clones of the dresser's cache, sharing its
     // geometry and textures with every other wearer: off first, then free
-    // only what is the figure's own.
+    // only what is the figure's own. The grafted weapon is the same story --
+    // its meshes and materials belong to the page's cached weapon glb.
     undress(root);
+    ungraft(root);
     root.traverse(obj => {
       obj.geometry?.dispose();
       obj.skeleton?.dispose?.();
