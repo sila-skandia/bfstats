@@ -111,3 +111,36 @@ soldiers in the world). Re-scoped from **M** to **S**: import
 (`poses.html:215-239`), step it in the render loop (`poses.html:250-273`),
 add a fire trigger. See `features/bf1942-corpus-sweep-2026-09-18/README.md`
 for the tracked backlog row.
+
+## 2026-09-25: `poses.html` wired — hand weapons fire from the muzzle node
+
+The wiring landed the same day as the re-scope above, in `poses.html`'s inline
+script plus its own `.trigger` rules in `poses.css` (the page loads
+`tokens.css`, not `index.css`, so the crew console's trigger styling is carried
+over rather than shared). The turntable pattern, not the on-foot stack:
+`createGunTriggers` over the loaded model, `guns.collect(current)` after
+`scene.add(current)`, `guns.advance(delta)` stepped in `startAnimating` with
+its boolean keeping the loop hot, and a Fire panel rebuilt per model load with
+one hold-to-fire trigger per indexed gun. Space and F fire, with the crew
+console's guards (a focused control outside the panel keeps its Space; keys
+release on blur so a backgrounded keyup cannot latch the trigger on). Weapon
+packs that carry no FireArms (medic packs, passenger seats) get a
+"This extract carries no fireable weapon." note instead of a panel.
+
+Live-pass evidence, driven over `http.server` on the served tree
+(`window.__poseGuns` hook beside `__poseInspector`):
+
+- `GermanSoldier__K98`: one trusted Space tap -> one shot; the round's head
+  measured leaving `K98_muzzle_1` at 150 m/s (the turntable's 0.15 speed scale
+  over the template's 1000), 75 m -> 225 m from the muzzle across its 1.5 s
+  flight, then retired cleanly by `advanceTracers`. No page errors.
+- `GermanSoldier__Sg44`: pointer-held 2.7 s burst -> 25 shots at the
+  template's 9 rds/s, round counter climbing with each shot, everything
+  retired after. Stance/gait verified unaffected (`sampleCycle` walk cycle
+  still lands at period 1.0 s, weights 1.0).
+- Nothing baked draws on these poses — no flash emitters, no `tracerMesh` —
+  and the Bazooka's projectile declares a real `trail` bundle, which
+  `round-launch.js` treats as "no stand-in streak": its bursts are legible
+  through the counter and the pacing, exactly as the bullets' are. The knob
+  for eyes-on rounds is the extraction layer (bake the projectile body /
+  tracer streak into the pose glbs), not this wiring.
