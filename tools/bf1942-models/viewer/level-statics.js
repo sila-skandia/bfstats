@@ -1,5 +1,6 @@
 // The level's statics: the scene indexed once per level (the spawners
-// group, the parked vehicles, the collision nodes hidden), the static
+// group, the parked vehicles, the collision nodes hidden), the per-object
+// LOD chains the exporter ships lifted onto `THREE.LOD` (Gap 11), the static
 // subtrees frozen out of three's per-frame matrix walk, and the draw-distance
 // cull. Out of level-load.js; `show()` indexes each level through it.
 
@@ -7,6 +8,91 @@ import * as THREE from 'three';
 
 export function isCollision(obj) {
   return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
+}
+
+/**
+ * Build a `THREE.LOD` out of an exporter chain: the geometry's own LOD rungs
+ * (each carrying `extras.lod = { geometry, level, distance }`) are detached
+ * from the part node and re-parented under a LOD inserted in the part's
+ * place, with the part's own LOD0 mesh as level 0 at distance 0. Distances
+ * are the geometry's authored `setLodDistance` metres when the exporter had a
+ * table (1,133 vanilla geometries declare one) and the census fallback curve
+ * otherwise (`FALLBACK_LOD_DISTANCES` in bf42/assemble.py, 0/15/35/60/100/200).
+ *
+ * Runs on the whole subtree, because a placed vehicle nests several meshed
+ * parts (hull, turret, tracks, wheels) and each carries its own chain. All
+ * of this happens after the material passes and before `freezeStatics`, so
+ * the LOD sees the final materials and the freeze sees the final tree.
+ */
+function buildLodLevels(lodNode, partNode, seen) {
+  const levels = [];
+  // The part node is level 0 by definition: the exporter keeps LOD 0 on the
+  // placement's own mesh (untagged, under its plain name) and hangs the
+  // emitted rungs (extras.lod.level >= 1) beneath it. A part with no rung
+  // children gets no LOD at all and keeps today's behaviour exactly.
+  levels.push({ object: partNode, distance: 0 });
+  for (const child of [...partNode.children]) {
+    const info = child.userData?.lod;
+    if (!info || seen.has(info)) continue;
+    seen.add(info);
+    levels.push({ object: child, distance: Number(info.distance) || 0 });
+    partNode.remove(child);
+  }
+  if (levels.length < 2) return false;
+  levels.sort((a, b) => a.distance - b.distance);
+  for (const level of levels) lodNode.addLevel(level.object, level.distance);
+  return true;
+}
+
+/**
+ * Swap every exporter chain in the scene for a `THREE.LOD`: a part node that
+ * carries LOD rungs (its own `extras.lod` plus `_lod<N>` children) gets a LOD
+ * spliced in where the node stands — same parent, same local transform — with
+ * the part as level 0 and the rungs as the farther levels. Vehicles nest
+ * several meshed parts (hull, turret, tracks, wheels) and each carries its
+ * own chain, hence the whole-subtree walk. After the material passes (the
+ * LOD's rungs must carry the bound materials) and before `freezeStatics`
+ * (the freeze must see the final tree); `seen` keeps one rung — the same
+ * shared node can only ever hang under one parent, and the guard turns a
+ * duplicate visit into a no-op rather than a second LOD fighting for it.
+ */
+function liftLods(root) {
+  // Candidates are collected before any mutation: `traverse` walks a live
+  // snapshot of `children`, and `parent.add(lod)` (or an `addLevel` that
+  // re-parents a rung) inside the walk would revisit nodes and nest LODs
+  // inside LODs. Two passes: find the part nodes, then splice.
+  const parts = [];
+  // The owner of a chain is the part node the rungs hang beneath: the
+  // exporter keeps LOD 0 on the placement's own mesh node (no lod extras —
+  // everything that names a mesh today still reads it) and emits only the
+  // farther levels as children tagged `extras.lod.level >= 1`. A rung is
+  // never a chain owner of its own, and a node without rung children is
+  // untouched.
+  root.traverse(obj => {
+    if (obj.children?.some(c => c.userData?.lod && c.userData.lod.level > 0)) {
+      parts.push(obj);
+    }
+  });
+  const seen = new Set();
+  const inserted = [];
+  for (const obj of parts) {
+    // Capture the parent first: `buildLodLevels` runs `addLevel(partNode)`
+    // below, which re-parents the part node under the LOD — reading
+    // `obj.parent` afterwards would find the LOD itself.
+    const parent = obj.parent;
+    if (!parent) continue;          // a collected part that lost its parent
+    const lod = new THREE.LOD();
+    if (!buildLodLevels(lod, obj, seen)) continue;
+    lod.name = `${obj.name || 'part'}_LOD`;
+    lod.position.copy(obj.position);
+    lod.quaternion.copy(obj.quaternion);
+    lod.scale.copy(obj.scale);
+    parent.add(lod);
+    // The LOD takes the part's slot in its parent; the part itself is inside
+    // it already (`addLevel` re-parented it).
+    inserted.push(lod);
+  }
+  return inserted;
 }
 
 export function kindOf(obj) {
@@ -80,6 +166,11 @@ export function createLevelStatics(page) {
       cull.push(child);
     }
     tagVehicleControlPoints();
+    // The LODs go up before the cull spheres are read: `Box3.setFromObject`
+    // walks invisible children too, so a rung hidden by a distance switch
+    // would not change the sphere, but the swap itself must happen inside the
+    // frozen subtree the same pass builds.
+    statics.lodCount = liftLods(root).length;
     flattenCull();
     freezeStatics(root);
   }

@@ -1676,6 +1676,12 @@ class GeometryTemplate:
     file: str | None = None
     skin: str | None = None
     source: str = ""
+    # `GeometryTemplate.setLodDistance <lod> <metres>` in declaration order.
+    # This is the per-geometry distance table for the `.sm` file's own 6-level
+    # internal LOD chain (0.0 for LOD 0, rising to a final cull band), NOT the
+    # vehicle-part LodSelector thresholds (`LodSelector.addLodDistance`), which
+    # are a separate mechanism recorded on `LodSelector.distances`.
+    lod_distances: list[float] = field(default_factory=list)
 
     @property
     def mesh_file(self) -> str:
@@ -2607,6 +2613,18 @@ class ObjectLibrary:
                     geom.file = args.split()[0] if args else None
                 elif geom is not None and cmd == "setskin":
                     geom.skin = args.split()[0] if args else None
+                elif geom is not None and cmd == "setloddistance":
+                    # `setLodDistance <index> <metres>`; indexed so the table
+                    # lands in lod order whatever the file's line order.
+                    parts = args.split()
+                    try:
+                        index, metres = int(parts[0]), float(parts[1])
+                    except (ValueError, IndexError):
+                        continue
+                    if index >= 0:
+                        while len(geom.lod_distances) <= index:
+                            geom.lod_distances.append(0.0)
+                        geom.lod_distances[index] = metres
 
             elif ns == "weapontemplate":
                 if cmd == "create":
