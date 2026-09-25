@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42.level import (  # noqa: E402
     decode_heightmap,
     find_level_archives,
+    load_level_files,
+    parse_briefing,
     parse_cubemap_rcm,
     parse_init_con,
     parse_spawn_point_groups,
@@ -19,6 +21,7 @@ from bf42.level import (  # noqa: E402
     parse_static_objects,
     parse_terrain_con,
     parse_tickets,
+    resolve_briefing,
     spawn_vehicle,
     tile_world_origin,
     LevelInfo,
@@ -1166,3 +1169,136 @@ spawnPointManager.groupTeam 0
     def test_a_word_before_any_group_line_is_ignored(self) -> None:
         self.assertEqual(
             {}, parse_spawn_point_groups("spawnPointManager.OnlyForAI 1"))
+
+
+class BriefingTests(unittest.TestCase):
+    """`Menu/Init.con`'s multiplayer trio — the loading screen's text.
+
+    Shapes are the two the 23 vanilla levels actually ship: a bare
+    `lexiconAll.dat` key (21 of 23, e.g. Wake) and a quoted literal sentence
+    (Kasserine_Pass, Truk). Both carry a bare `mapType` key either way, which
+    is why the quoting decides key-versus-literal and `game.setLocalized`
+    does not.
+    """
+
+    WAKE = """
+Game.setLocalized 1
+
+rem ** Allied Briefing **
+game.setAlliedCampaign BRIEFING_ALLIED_CAMPAIGN_WAKE
+game.setAlliedObjectives BRIEFING_ALLIED_OBJECTIVES_WAKE
+
+rem ** Multiplayer Briefing **
+game.setMultiplayerBriefingObjectives MULTIPLAYER_BRIEFING_WAKE
+game.setMultiplayerBriefingMapType MULTIPLAYER_MAP_TYPE_ASSAULT_MAP
+
+game.setLoadPicture Load/Pacific.tga
+game.setMapId "BF1942"
+"""
+
+    KASSERINE = """Game.setLocalized 0
+rem ----- Multiplayer Briefing -----
+game.setMultiplayerBriefingObjectives "The 21st and 10th Panzer Divisions attacked into the US held Kasserine Pass from 20-23 February 1943."
+game.setMultiplayerBriefingMapType MULTIPLAYER_MAP_TYPE_HEADON_MAP
+game.setMapId "bf1942"
+"""
+
+    def test_a_lexicon_key_level_resolves_through_the_chain_lexicon(self) -> None:
+        info = parse_briefing(self.WAKE)
+        self.assertEqual("MULTIPLAYER_BRIEFING_WAKE", info.objectives)
+        self.assertEqual("MULTIPLAYER_MAP_TYPE_ASSAULT_MAP", info.map_type)
+        self.assertEqual("BF1942", info.map_id)
+
+        resolved = resolve_briefing(info, {
+            "MULTIPLAYER_BRIEFING_WAKE":
+                "This is a Conquest: Assault map.  Your team will win if you "
+                "cause your opponent's tickets to reach zero.",
+            "MULTIPLAYER_MAP_TYPE_ASSAULT_MAP": "ASSAULT MAP",
+        })
+        self.assertIsNotNone(resolved.objectives)
+        self.assertTrue(resolved.objectives.startswith("This is a Conquest"))
+        self.assertEqual("ASSAULT MAP", resolved.map_type)
+        self.assertEqual("BF1942", resolved.map_id)
+
+    def test_an_inline_text_level_keeps_its_sentence(self) -> None:
+        # Kasserine_Pass and Truk quote the objectives straight in the .con.
+        # The quoted value is the text, not a key: the lexicon never sees it,
+        # and the mapType beside it still resolves as a key.
+        info = parse_briefing(self.KASSERINE)
+        self.assertIsNotNone(info.objectives)
+        self.assertTrue(info.objectives.startswith('"The 21st'))
+
+        resolved = resolve_briefing(
+            info, {"MULTIPLAYER_MAP_TYPE_HEADON_MAP": "HEAD ON MAP"})
+        self.assertIsNotNone(resolved.objectives)
+        self.assertTrue(resolved.objectives.startswith("The 21st"))
+        self.assertFalse(resolved.objectives.startswith('"'))
+        self.assertEqual("HEAD ON MAP", resolved.map_type)
+        self.assertEqual("bf1942", resolved.map_id)
+
+    def test_single_player_verbs_are_not_read(self) -> None:
+        # The SP campaign/skirmish/debriefing screens have no multiplayer
+        # role; only the trio is parsed. The SP verbs' keys name the same
+        # BRIEFING_* family, so a stray read would show here.
+        text = self.WAKE + """
+game.setAlliedDebriefingMajorVictory DEBRIEFING_ALLIED_MAJOR_VICTORY_WAKE
+game.setAxisObjectives BRIEFING_AXIS_OBJECTIVES_WAKE
+"""
+        info = parse_briefing(text)
+        self.assertEqual("MULTIPLAYER_BRIEFING_WAKE", info.objectives)
+        self.assertEqual("MULTIPLAYER_MAP_TYPE_ASSAULT_MAP", info.map_type)
+        self.assertEqual("BF1942", info.map_id)
+
+    def test_an_unresolved_key_stays_a_key(self) -> None:
+        # A key the lexicon does not answer keeps its name so the gap is
+        # visible in scene.json rather than silently dropped.
+        resolved = resolve_briefing(parse_briefing(self.WAKE), {})
+        self.assertEqual("MULTIPLAYER_BRIEFING_WAKE", resolved.objectives)
+        self.assertEqual("MULTIPLAYER_MAP_TYPE_ASSAULT_MAP", resolved.map_type)
+
+    def test_an_empty_file_reads_none_everywhere(self) -> None:
+        info = parse_briefing("")
+        self.assertIsNone(info.objectives)
+        self.assertIsNone(info.map_type)
+        self.assertIsNone(info.map_id)
+
+    def test_a_mod_level_without_the_trio_reads_clean(self) -> None:
+        # Init.con alone (every level ships it) carries no briefing verbs;
+        # parse_briefing on it finds nothing and load_briefing answers None.
+        info = parse_briefing(
+            "Game.setViewDistance 300\ngame.setActiveCombatArea 0 0 512 512\n")
+        self.assertIsNone(info.objectives)
+        self.assertIsNone(info.map_type)
+        self.assertIsNone(info.map_id)
+
+    def test_load_briefing_reads_the_menu_init_con_out_of_the_archive(self) -> None:
+        # Real archives, real lexicon: Wake resolves end to end. A synthetic
+        # overlay archive (Battleaxe_999) with no Menu/Init.con inherits the
+        # parent's through LevelFiles, so the missing-file case is exercised
+        # on a scratch install instead.
+        from bf42.level import load_briefing
+
+        game_dir = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+        if not (game_dir / "Mods" / "bf1942").is_dir():
+            self.skipTest("no BF1942 install")
+
+        from extract_spawn_layout import load_chain_lexicon
+        from bf42.modmenu import MenuSources
+        from extract_models import mod_chain
+
+        files = load_level_files(
+            find_level_archives(game_dir, "bf1942", "Wake"), "Wake")
+        lexicon = load_chain_lexicon(
+            MenuSources(mod_chain(game_dir, "bf1942")).lexicon_paths)
+        briefing = load_briefing(files, lexicon)
+
+        self.assertIsNotNone(briefing)
+        assert briefing is not None
+        self.assertIsNotNone(briefing.objectives)
+        self.assertTrue(briefing.objectives.startswith("This is a Conquest"))
+        self.assertEqual("ASSAULT MAP", briefing.map_type)
+        self.assertEqual("BF1942", briefing.map_id)
+
+
+if __name__ == "__main__":
+    unittest.main()
