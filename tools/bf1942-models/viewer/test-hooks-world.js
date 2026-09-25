@@ -243,6 +243,21 @@ export function installWorldHooks(page) {
     page.applyVehicleHit({ kind: 'object', owner, damage, origin: from });
     return { hp: vehicle.hitPoints, destroyed: vehicle.destroyed };
   };
+  // Every registered damageable object, with its world position and armor
+  // state: the harness's stand-in for walking `page.damageVisuals`, which
+  // repairs (`hand-fire.js`'s wrench sweep) and blast tests both read.
+  window.__vehicles = () => [...page.damageVisuals].map(([owner, visual]) => {
+    const veh = page.vehicleDamage.get(owner);
+    // The node's world translation straight off its matrix (test hooks stay
+    // free of a three.js import).
+    const e = visual.node.matrixWorld.elements;
+    return {
+      owner, name: visual.node.name,
+      hp: veh ? veh.hitPoints : null, max: veh ? veh.maxHitPoints : null,
+      destroyed: veh ? veh.destroyed : null, wrecked: !!visual.wrecked,
+      x: e[12], y: e[13], z: e[14],
+    };
+  });
   // Every soldier a blast can reach, and what HP-10 would give him from a
   // given point. The exposure is the thing worth reading back: it is the one
   // term in the splash product that a screenshot cannot show, and a check that

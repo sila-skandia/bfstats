@@ -45,6 +45,12 @@
 // `vars` against it; the canvas is only cleared and redrawn when one of
 // those values, or the stage size, actually changed since the call before
 // (rule 7).
+//
+// FREE-STANDING: this file ships to a harness alone (`tests/test_hud.py`
+// copies it into a scratch dir), so it imports nothing — the dir-qualified
+// sprite rule below is a local restatement of `kit-icon.js`'s
+// `kitIconCandidates`, the reader half of `extract_hud_pack.py`'s
+// collision-qualification rule.
 
 const DEFAULT_VIRTUAL = [800, 600];
 
@@ -69,27 +75,37 @@ export function paintOrder(groups) {
   return [...known, ...rest].map(key => groups[key]);
 }
 
-/** `Vehicle/Icon_defgun.tga` -> `icon_defgun`, matching how `hud.json` keys
- *  every packed sprite (basename, extension stripped, lowercased) -- the
- *  same convention `extract_hud_pack.py` used, so a live path value and a
- *  layout literal resolve through the identical rule. */
-function spriteKeyFromRef(path) {
-  if (typeof path !== 'string' || !path) return null;
-  const base = path.slice(path.lastIndexOf('/') + 1);
+/** `Ammo/Icon_demokit.tga` -> `['ammo_icon_demokit', 'icon_demokit']`,
+ *  `Vehicle/Icon_defgun.tga` -> `['vehicle_icon_defgun', 'icon_defgun']` —
+ *  `kit-icon.js`'s `kitIconCandidates`, restated locally (this file ships to
+ *  a harness alone): most specific first, the dir-qualified name the pack
+ *  files a basename under when it collided, then the bare one. */
+function spriteKeyCandidates(path) {
+  if (typeof path !== 'string' || !path) return [];
+  const parts = path.replace(/\\/g, '/').toLowerCase().split('/').filter(Boolean);
+  if (!parts.length) return [];
+  const base = parts[parts.length - 1];
   const dot = base.lastIndexOf('.');
-  return (dot > 0 ? base.slice(0, dot) : base).toLowerCase();
+  const name = dot > 0 ? base.slice(0, dot) : base;
+  if (parts.length < 2) return [name];
+  return [`${parts[parts.length - 2]}_${name}`, name];
 }
 
 /** The picture a `variable-picture` or one layer of a `fill-picture` leaf
  *  shows: the live path's own art when the variable is bound and the sprite
  *  pack actually has it, else the layout's literal default -- a resolution
  *  failure (a mod's icon not yet packed) degrades to the authored fallback
- *  art rather than to nothing. */
+ *  art rather than to nothing. The live path is tried dir-qualified first:
+ *  a basename that collides across the pack's directories is filed
+ *  qualified, and a bare-basename lookup of vanilla's
+ *  `Ammo/Icon_demokit.tga` found nothing and dropped every demokit-armed
+ *  weapon -- ExpPack, Detonator -- onto the leaf's literal medkit art. */
 function resolveTexture(liveValue, literalKey, sprite) {
   if (liveValue !== undefined) {
-    const key = spriteKeyFromRef(liveValue);
-    const img = key && sprite(key);
-    if (img) return img;
+    for (const key of spriteKeyCandidates(liveValue)) {
+      const img = sprite(key);
+      if (img) return img;
+    }
   }
   return literalKey ? sprite(literalKey) : null;
 }
