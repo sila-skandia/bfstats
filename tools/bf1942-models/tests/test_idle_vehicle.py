@@ -45,6 +45,7 @@ MODULES = {
     "round-launch.js": VIEWER / "round-launch.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
+    "camera-dof.js": VIEWER / "camera-dof.js",
     "gun-cycle.js": VIEWER / "gun-cycle.js",
     # `bomb-release.js` (the salvo arithmetic, the release speed and the
     # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
