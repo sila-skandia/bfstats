@@ -787,6 +787,117 @@ detail out to `drawDistance`, then pop to nothing — is *more* faithful than
 LOD popping, so this is a perf/scale gap rather than a fidelity gap. Worth
 raising if the viewer ever needs the 4096 m maps at 60 fps on a laptop.
 
+#### Investigation 2026-09-25
+
+Re-baked Berlin (already on disk), Kursk and Truk with a scratch instrumentation
+patch on a copy of the pipeline (no repo files touched) that records, per
+unique `.sm` referenced by a level's placed statics, `mesh.lods` (`stdmesh.py`
+`StandardMesh.lods`) triangle counts at every level, not just the selected one.
+
+**1a. StandardMesh internal LOD chains — real and near-universal.**
+
+| level | placed statics | unique meshes referenced | meshes with 6 internal LODs | meshes with 1 (no chain) | Σ triangles at LOD0 | Σ triangles at lowest LOD | ratio |
+|---|---|---|---|---|---|---|---|
+| Berlin | 325 | 133 | 128 (96%) | 5 | 43,799 | 4,297 | 10.2x |
+| Kursk | 1,455 | 200 | 196 (98%) | 4 | 43,505 | 4,220 | 10.3x |
+| Truk | 2,723 | 222 | 214 (96%) | 8 | 75,023 | 6,521 | 11.5x |
+
+Every `.sm` that ships a chain ships exactly 6 (`lods` length 6, matching the
+6 `setLodDistance` lines DICE authored per geometry) — there is no level with a
+partial chain. The handful with 1 LOD are simple flat props (signs, small
+decals). Per-mesh LOD0-to-lowest triangle ratio is wide: heaviest vehicles seen
+in Kursk's placed set — `RiBro_Body_m1` 2,209 -> 161 (13.7x), `Ju87_Fuselage_M1`
+1,503 -> 123 (12.2x), `hanomag_Hull_M1` 1,673 -> 140 (12.0x) — average ratio
+across meshes with a chain is **22.7x** (Kursk sample). Shipping all 6 LODs
+instead of LOD0 alone roughly **triples to quadruples** the unique-geometry
+buffer size (Berlin 3.68x, Kursk 3.60x, Truk 3.70x, LOD0-sum to all-6-sum) —
+but that multiplier applies only to the *unique mesh pool* (tens of thousands
+of triangles), since glTF nodes reference shared mesh data; it does not
+multiply by placement count. Currently baked scene triangle totals at the
+hardcoded LOD0 (`extract_map.py` `--lod 0`): Berlin 206,502 / 325 objects,
+Kursk 4,260,596 / 1,455 objects, Truk 4,677,050 / 2,723 objects.
+
+**1b. Con-level `LodSelector`/`DistanceSelector` — a different mechanism than 1a.**
+Census of `Objects.rfa`'s 1,751 `.con` files: 151 `LodSelectorTemplate.create`
+blocks — `distanceSelector` 49, `distCompareSelector2` 49, `distCompareSelector`
+40 (138 distance-driven), `compareSelector` 13 (driven by an engine scalar
+input like a propeller's RPM, not distance — see `bf42/con.py` `LodSelector`).
+132 `addLodDistance` directives across those, range **0.5 m - 700 m**, median
+**70 m**. Per `bf42/assemble.py`'s own analysis (`_lod_swap`, `select_lod_alternative`),
+this is **not** a whole-object draw-distance LOD chain for placed statics — it
+is the mechanism vehicles use to swap a `LodObject`'s alternatives: cockpit
+exterior-vs-interior mesh, a wreck alternative (`hasDestroyedLod`), or (for
+`compareSelector`) a spinning-propeller-vs-blur-disc swap keyed to an engine
+scalar rather than distance. It reaches `assemble.py` already (picks which
+alternative to bake) but only one alternative is ever baked — no distance
+threshold reaches glTF or `scene.json` either way, so it shares Gap 11's
+"nothing reaches the viewer" problem but is a distinct system from the `.sm`
+LOD chain in 1a.
+
+**1c. Per-object draw/cull distance directive — confirmed as a single
+per-level constant, not a graded value.** `objectTemplate.cullRadiusScale` in
+each level's `CullRadius.con` is not a per-object distance — every line in a
+given level's file carries the *same* scalar: Berlin's 45 lines are all `1.0`,
+Kursk's 28 and El Alamein's 45 are all `5.0`. So `cullRadiusScale` is a flat
+per-level multiplier applied to whichever templates the file lists as
+`Objecttemplate.active`, not a per-object graded cull distance — confirming
+the gap's "one global cull radius" framing more precisely than the original
+writeup: it is one global cull radius *per level*, occasionally two (Berlin
+scales interiors differently — unconfirmed which subset gets `1.0` without
+reading every `active` selector). No other per-object draw-distance directive
+was found in the census (`objectTemplate.lodDistance`, 320 occurrences per the
+original table, was checked and is a `GeometryTemplate`-side alias feeding the
+same `.sm` LOD chain as 1a, not a separate knob).
+
+**2. Engine usage — UNVERIFIED.** `features/bf1942-engine-reference/ledger.md`
+and `symbols.json` (searched for `cull`, `lod`, `distanceselector`,
+`comparesele`) have no entry for `objectTemplate.cullRadiusScale`,
+`LodSelectorTemplate`/`addLodDistance`, or `GeometryTemplate.setLodDistance` —
+none of these three mechanisms has been reverse-engineered. A Ghidra pass
+(`StandardMesh_drawLod` at `0x005aeec0`, already labeled per ledger SM-5/LM-3,
+is the nearest confirmed neighbor — it walks a mesh's materials per LOD but
+the LOD-selection call above it was out of scope here) was not attempted
+given the timebox; **whether the engine ever actually switches `.sm` LOD by
+distance at all, and how `cullRadiusScale` combines with an object's bounding
+radius, remain UNVERIFIED.**
+
+**3. Current viewer cost.** The task brief's premise that `viewer/level-load.js`
+and `viewer/level-statics.js` use `THREE.LOD` does not hold today: neither
+file, nor any file under `tools/bf1942-models/viewer/`, references
+`THREE.LOD` anywhere (grepped the whole tree). There is also no per-object
+distance cull any more: the `map.html` `inRange` test the original writeup cites
+is gone. The only distance limit is the camera far plane, which
+`viewer/level-sky.js` `applyFar()` sets to the level's view distance (extended to
+`fogEnd` when that is further). Cost: every object inside the frustum is drawn
+at its full LOD0 triangle count out to the far plane, with no degradation and
+no draw-call reduction as distance increases. Rough estimate for Kursk/Truk: if a real LOD chain
+were implemented and, at any given camera position, roughly half the visible
+objects sit far enough to use the lowest LOD (a plausible split on 1-2 km
+levels, not measured), applying the measured ~10-23x per-mesh ratio to that
+half implies total rendered object triangles could fall by very roughly
+40-60% relative to today's flat 4.26M (Kursk) / 4.68M (Truk) LOD0-everywhere
+baseline — an order-of-magnitude planning number, not a profiled result.
+
+**4. Recommendation. Fix, Size M, `scene` bake layer (full re-bake).**
+Extraction: stop hardcoding `--lod 0`; emit all `mesh.lods` (up to 6) per
+unique geometry as sibling glTF meshes (or an `MSFT_lod`-style extras array)
+referenced by each placement node, plus the con `setLodDistance` bands (or a
+fixed viewer-chosen banding, since 1b shows the *con* distances that reach
+`assemble.py` are the unrelated vehicle-part selector, not per-static
+distances) as `extras.lodDistances`. Viewer: add `THREE.LOD` per placement or an instanced/level-of-detail
+swap keyed to the same distance bands. This is squarely the `scene` layer per
+`features/level-bake-layers/README.md` ("Anything drawn or placed... the
+exporter" -> full bake) — it touches `bf42/assemble.py`'s node graph, not a
+con-derived metadata field. Risks: glb geometry size grows ~3.6-3.7x for the
+*unique mesh* portion of the buffer only (confirmed above, not per-instance,
+so likely single-digit-MB to low tens-of-MB per level, not a multiple of the
+full 30-35 MB scene.glb); actual draw-call count could rise if LOD swapping
+is implemented as separate nodes rather than instanced meshes. Given the
+production node's tight CPU/memory budget (`CLAUDE.md` deployment
+constraints), this is asset-build-time and viewer-side work only — it does
+not touch the API or any production container, so the budget arithmetic there
+does not apply.
+
 ---
 
 ### Gap 12 — the default-patch terrain fill only works on the 3 levels that ship `terrainDefault.dds`
