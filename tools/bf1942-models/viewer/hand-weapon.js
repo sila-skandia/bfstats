@@ -415,6 +415,9 @@ export function createHandWeapon(page) {
    *  the slot in hand matching whatever `weaponTemplateFor` picked (slot 3 on
    *  a normal spawn, `?weapon=`'s own slot under the override). */
   function ensureHandWeapon(flag) {
+    // A new soldier carries the deploy row's kit, whatever the last one
+    // picked up (`BFSoldier::addKitByName` makes him a fresh one).
+    loadout.carriedKit = null;
     soldierKit.kitWeaponSlots = kitSlotsFor(flag);
     // A fresh kit: a fresh pouch, and a plunger wired to nothing. Charges left
     // over from the last life keep running their own 240 s fuse in the world,
@@ -444,6 +447,32 @@ export function createHandWeapon(page) {
       return;
     }
     loadHandWeapon(name, who);
+  }
+
+  /**
+   * Take up `kitName` off the ground (`kit-drops-page.js`): its inventory, the
+   * counts its last owner left in it (`ammo`, `kit-ammo.js` rows), its
+   * demolitions pair, and the weapon `BFSoldier::pickupKit` (lnxded
+   * 0x08279390) ends on -- `enableItem(2)`, `selectBestLoadedWeapon`,
+   * `enableItem(3)`: slot 3, the primary, whenever the kit has one. The body
+   * keeps its own uniform and sleeves (`soldierTemplateFor` is the team's); the
+   * kit's worn parts follow `currentKit`. Nothing here heals or refills.
+   * False when the level's loadouts do not know the kit.
+   */
+  function equipKit(kitName, ammo = [], flag = { team: page.deployTeamId }) {
+    const row = kitName ? loadout.loadouts?.kits?.[kitName] : null;
+    if (!row) return false;
+    loadout.carriedKit = kitName;
+    const weapons = Array.isArray(row.weapons) && row.weapons.length ? row.weapons.map(w => ({ ...w })) : null;
+    soldierKit.kitWeaponSlots = weapons;
+    demolitions.armDemolitions(flag, kitName);
+    kitAmmo.adopt(ammo);
+    const primarySlot = loadout.loadouts?.primaryItemIndex ?? 3;
+    const entry = weapons?.find(w => w.slot === primarySlot) ?? null;
+    const name = entry?.weapon ?? row.primary ?? weapons?.[0]?.weapon ?? row.items?.[0] ?? null;
+    soldierKit.handSlot = entry?.slot ?? (weapons && name ? slotOf(weapons, name) : null);
+    if (name) loadHandWeapon(name, soldierTemplateFor(flag));
+    return true;
   }
 
   // The fire loop (`hand-fire.js`): the trigger, the reload clock, zoom and the
@@ -566,17 +595,25 @@ export function createHandWeapon(page) {
     page.renderer.autoClear = true;
   };
 
+  Object.defineProperty(soldierKit, 'carriedKit', {
+    get: () => loadout.carriedKit, enumerable: true,
+  });
   Object.assign(soldierKit, {
     DEG_TO_RAD: fire.DEG_TO_RAD,
     KIT_ROW_KEYS: loadout.KIT_ROW_KEYS,
     WEAPON_ICON_VARS,
     altFireDemolitions,
     botKitFor: loadout.botKitFor,
+    // The rows the kit he drops carries away: every item he raised this life,
+    // as he left it (`kit-ammo.js` `snapshot`).
+    carriedAmmo: () => kitAmmo.snapshot(),
     crosshairEl,
+    currentKit: loadout.currentKit,
     cycleKitWeapon,
     disposeHandWeapon,
     ensureHandFireBus,
     ensureHandWeapon,
+    equipKit,
     fetchHandFireSound,
     footFire,
     isZoomed,

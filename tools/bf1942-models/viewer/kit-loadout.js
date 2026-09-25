@@ -78,6 +78,19 @@ export function createKitLoadout(page) {
     medic: 'Medic', engineer: 'Engineer',
   };
 
+  // The kit the human carries when it is not the one he spawned with: the
+  // template of the last kit he picked up off the ground (`kit-drops-page.js`),
+  // any side's. A spawn clears it (`hand-weapon.js` `ensureHandWeapon`): a new
+  // soldier gets the deploy row's kit again (`BFSoldier::addKitByName`).
+  loadout.carriedKit = null;
+
+  /** The kit template the human wears and holds: the one he picked up, else
+   *  the one the level binds to his deploy row. What his body is dressed in,
+   *  his health bar's art and the kit he drops come from here. */
+  function currentKit(team = page.deployTeamId) {
+    return loadout.carriedKit ?? kitLoadout(team, page.deployKit).kit;
+  }
+
   /** What the chosen kit hands a soldier of `team` on this level: the kit the
    *  level binds to that row (`game.setKit <team> <row> <kit>`), the weapon at
    *  its `itemIndex 3`, and the soldier template the team wears. Every field
@@ -215,6 +228,7 @@ export function createKitLoadout(page) {
   Object.assign(loadout, {
     KIT_ROW_KEYS,
     botKitFor,
+    currentKit,
     kitLoadout,
     kitRowLabelFor,
     kitRowLayoutText,
