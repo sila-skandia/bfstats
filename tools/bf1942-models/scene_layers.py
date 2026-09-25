@@ -52,7 +52,8 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "game": (("gameplayMode", "combatArea", "tickets", "gameTypes", "briefing"),
              ("gameTypes", "tickets", "combatArea")),
     "environment": (("waterLevel", "fogColor", "fogStart", "fogEnd",
-                     "sunDirection", "camera", "lighting", "drawDistance"), ()),
+                     "sunDirection", "camera", "lighting", "drawDistance",
+                     "targetTriCount"), ()),
     "damage": (("damage",), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
@@ -70,7 +71,8 @@ DEPENDENTS: dict[str, tuple[str, ...]] = {"controlPoints": ("spawns",)}
 REPORT_ORDER = (
     "level", "worldSize", "waterLevel", "fogColor", "fogStart", "fogEnd",
     "sunDirection", "camera", "combatArea", "terrain", "objects", "skybox",
-    "sky", "water", "lighting", "drawDistance", "gameplayMode",
+    "sky", "water", "lighting", "drawDistance", "targetTriCount",
+    "gameplayMode",
     "controlPoints", "soldierSpawns", "vehicleSoldierSpawns", "objectSpawns",
     "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
     "lensFlare", "damage", "sounds", "ai",
@@ -393,6 +395,13 @@ def layer_environment(ctx: LevelContext):
         "camera": em._to_gltf_vec(info.camera) if info.camera else None,
         "lighting": lighting or None,
         "drawDistance": view_distance,
+        # `GeometryTemplate.targetTriCount`, the client's terrain tessellation
+        # budget (read at PatchTerrain init; 4000 on the 1024 m levels, 5000
+        # on the 2048 m ones). Informational: the viewer ships the full
+        # heightmap grid, which is deliberately more detailed than the
+        # engine's budget. `lodDistance`, authored beside it, is dead in the
+        # retail binary and is not carried (level-content.md Gap 10).
+        "targetTriCount": info.terrain.target_tri_count,
     }, {}
 
 
