@@ -117,12 +117,31 @@ for map in berlin bocage; do
   fi
 done
 
+# --- 5c. Game archives (vanilla bf1942 + Secret Weapons) ------------------------
+# Source .rfa archives so the extract_*.py tools can run in the session.
+# Restored to a self-contained game dir; point extractors at it with
+# --game-dir. Movies/Music/eReg were dropped when the zips were built.
+GAME_DIR="${HOME}/bf1942-game"
+for name in game-bf1942.zip game-xpack2.zip; do
+  if ! [ -f "$WORK/$name" ]; then
+    echo "[setup] fetching $name"
+    curl -fSL --retry 5 --retry-all-errors -o "$WORK/$name" "$ASSET_BASE/$name"
+  fi
+done
+if ! [ -d "$GAME_DIR/Mods/bf1942/Archives" ]; then
+  echo "[setup] restoring game archives to $GAME_DIR"
+  mkdir -p "$GAME_DIR/Mods"
+  unzip -q -o "$WORK/game-bf1942.zip" -d "$GAME_DIR/Mods"
+  unzip -q -o "$WORK/game-xpack2.zip" -d "$GAME_DIR/Mods"
+fi
+
 # --- 6. Summary -----------------------------------------------------------------
 cat <<EOF
 
 [setup] ready. Everything is pre-analyzed; query it with pyghidra scripts:
   client:  $PROJECTS_DIR/bf1942-client.rep   (program /BF1942.exe)
   server:  $PROJECTS_DIR/linux-server.rep    (program /bf1942_lnxded.static)
+  game:    $GAME_DIR  (--game-dir for extract_*.py; mods: bf1942, XPack2)
 
   pyghidra-style queries go through the shipped helper (opens the project
   program by name; never re-imports):
