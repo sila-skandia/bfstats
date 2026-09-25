@@ -1305,15 +1305,16 @@ function spawnBotsForLevel() {
 const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
   from(() => footBodies, `ensureFootBody`),
-  from(() => level, `currentDir isCollision warmSubtree warmups world`),
+  from(() => level, `currentDir isCollision vehicleDamage warmSubtree warmups world`),
   from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive vehicleAudio`),
   from(() => pageInput, `aimHeld captured clickQueued dropClick triggerHeld`),
-  from(() => referee, `applyDamage bodyAt bots capsulesOf lineOfSight`),
+  from(() => referee, `applyDamage applyHeal bodyAt bots capsulesOf lineOfSight`),
   from(() => soldierView, `footView3p`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => vehicleHits, `botRoundDamage`),
+  from(() => wrecks, `damageVisuals`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get fireStates() { return fireStates; },
@@ -2042,7 +2043,7 @@ const testHooks = installTestHooks(bag(
   from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive view`),
   from(() => seatPose, `seatIkChains seatSoldier updateSeatPoseVisibility`),
   from(() => soldierKit, `altFireDemolitions crosshairEl cycleKitWeapon detonatorTemplate
-    explosivesTemplate handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
+    explosivesTemplate handFireLoop handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor thrownPackGroup
     viewmodelRigFor vmCamera vmRoot vmScene weaponBarUntil weaponTemplateFor`),
   from(() => soldierView, `canopySpan foot3pRel footView3p soldier3pOnFoot supplyField`),
