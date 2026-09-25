@@ -143,9 +143,15 @@ typedef struct {
  *                                                    of 33,038 real meshes]   */
 typedef struct {
     /* uint32_t name_len; char name[name_len]; */
-    uint8_t  reserved[12];     /* 0 across all 234,144 observed; both loaders read
-                                  it as ONE 12-byte raw read into a zeroed local and
-                                  the server never touches it again        [open] */
+    uint8_t  reserved[12];     /* 0 across all 234,144 observed; ONE 12-byte raw
+                                  read in both loaders. lnxded drops it into a
+                                  stack local. The client sometimes keeps it in
+                                  the persistent material record (offset +0x3C
+                                  of the 0x98-byte record, path gated by
+                                  DAT_009ab660), but that record's only found
+                                  reader (StandardMesh_drawLod 0x005aeec0)
+                                  never touches +0x3C..+0x47 - dead either way.
+                                  ledger SM-5, narrowed 2026-09-25     [verified] */
     uint32_t primitive;        /* BF42_PRIM_*                          [observed] */
     uint32_t flags;            /* the vertex format; layout comes from here [verified] */
     uint32_t vertex_stride;    /* bytes the loader reads per vertex; NOT the layout.
