@@ -12,7 +12,7 @@ import { undress } from './soldier-dress.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { DIE_IN_VEHICLE_UPPER, corpseSeconds } from './soldier-death.js';
-import { loadFirst, poseUrls } from './pose-bases.js';
+import { createPoseComposer, ungraft } from './pose-compose.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -49,6 +49,15 @@ export function createSeatPose(page) {
    * follows the camera mode: hidden in cockpit (first-person), shown in every
    * external view (C). */
   const seatPoseLoader = new GLTFLoader();
+  /** Where the seated body comes from: the split tree's recipe + rig when the
+   *  tree has them, the monolithic `.pose.glb` when it does not
+   *  (`pose-compose.js`). */
+  const seatPoses = createPoseComposer({
+    loader: seatPoseLoader,
+    modelsBase: () => page.MODELS_BASE,
+    bust: () => page.bust(),
+    shade: node => page.bindDynamicShading?.(node),
+  });
   seatPose.seatPoseMixer = null;
   seatPose.seatPoseActions = null;
   seatPose.seatPoseTarget = null;   // the seat node whose world pose we follow
@@ -67,23 +76,13 @@ export function createSeatPose(page) {
     const states = resolveSeatStates(seat.seatObjects);
     const soldierName = page.soldierTemplateFor(
       page.flags.find(f => f.team === page.deployTeamId) || { team: page.deployTeamId });
-    // The mod's own pose tree, then vanilla's (`pose-bases.js`).
-    const assetFor = name =>
-      poseUrls(page.MODELS_BASE, `${soldierName}__${name}.pose.glb`, page.bust());
-    let gltf;
-    try {
-      gltf = await loadFirst(seatPoseLoader,
-        assetFor(seatPoseName(states.upperBody, states.lowerBody)));
-    } catch {
-      // The seat names a state the game never declared, so no glb was written
-      // for it. The engine still draws the occupant — see `defaultSeatPoseName`.
-      const fallback = defaultSeatPoseName(body.mask);
-      try {
-        gltf = await loadFirst(seatPoseLoader, assetFor(fallback));
-      } catch {
-        return;
-      }
-    }
+    // The seat's own pose, then the engine's default for this body. Both
+    // resolve across the model roots and across the split tree's halves: a mod
+    // seat pose naming a vanilla soldier gets vanilla's rig.
+    const gltf = (await seatPoses.seat(
+      soldierName, seatPoseName(states.upperBody, states.lowerBody)))
+      ?? (await seatPoses.seat(soldierName, defaultSeatPoseName(body.mask)));
+    if (!gltf) return;
     // Leaving the seat, or switching to another, while the glb was in flight:
     // `disposeSeatPose` has already run and this scene must not be adopted, or
     // it hangs in the world for ever with nothing left holding a reference.
@@ -199,8 +198,10 @@ export function createSeatPose(page) {
     if (!root) return;
     // A grafted kit part is a `clone(true)` of the dresser's cached scene, so
     // its geometry and textures are still wanted by the next occupant. Unhook
-    // those first; only the pose's own meshes are freed.
+    // those first; only the pose's own meshes are freed. A split pose's grafted
+    // weapon is the same story — a clone of the page's cached weapon glb.
     undress(root);
+    ungraft(root);
     root.traverse(obj => {
       obj.geometry?.dispose();
       obj.skeleton?.dispose?.();

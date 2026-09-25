@@ -46,6 +46,11 @@ MODULES = {
     "replay-assets.js": VIEWER / "replay-assets.js",
     "replay-actors.js": VIEWER / "replay-actors.js",
     "replay-camera.js": VIEWER / "replay-camera.js",
+    # `replay-assets.js` resolves a soldier's pose through `pose-compose.js`,
+    # which needs the model-root resolution and the bone-name rule beside it.
+    "pose-compose.js": VIEWER / "pose-compose.js",
+    "pose-bases.js": VIEWER / "pose-bases.js",
+    "skeleton-hit.js": VIEWER / "skeleton-hit.js",
     "replay-gunfire.js": VIEWER / "replay-gunfire.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",

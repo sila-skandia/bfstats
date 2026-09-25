@@ -4,6 +4,7 @@
 // outlast any one recording and are never shared through module state.
 
 import { isPropellerBlurPair } from './vehicle-base.js';
+import { createPoseComposer } from './pose-compose.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -48,9 +49,19 @@ export class ReplayAssets {
   constructor(ctx) {
     this.ctx = ctx;
     this.modelCache = new Map();
-    this.posePairCache = new Map();     // "Soldier|Weapon" -> Promise<{scene, animations} | null>
     this.gaitBundleCache = new Map();   // relative sidecar path -> Promise<AnimationClip[]>
     this.gaitsManifestPromise = null;   // Promise<gaits.json>, fetched once and shared
+    /** Where a soldier's mesh comes from: the split tree's recipe + rig +
+     *  weapon where the tree has them, the monolithic `.pose.glb` where it
+     *  does not (`pose-compose.js`). The rigs and the weapons behind it are
+     *  cached per URL for the whole page, which is the point of the split
+     *  tree -- a replay and the level under it draw one rig, not two. */
+    this.poses = createPoseComposer({
+      loader: () => this.ctx.loader,
+      modelsBase: () => this.ctx.modelsBase,
+      bust: () => this.ctx.bust(),
+      shade: scene => this.ctx.shadeModel?.(scene),
+    });
   }
 
   model(name) {
@@ -134,24 +145,11 @@ export class ReplayAssets {
     return [...lower, ...upper];
   }
 
-  // Mesh + skeleton + stance clips for one (soldier, weapon) pair, cached --
-  // several lives sharing a pair (every soldier gets the same placeholder
-  // weapon today) fetch it once. Never thrown: a missing pair resolves to
-  // null so load() can fall back to the plain body model.
+  // Mesh + skeleton + stance clips for one (soldier, weapon) pair. Never
+  // thrown: a missing pair resolves to null so load() can fall back to the
+  // plain body model. The composer caches the pair, and the rigs and the
+  // weapons behind it for the whole page.
   posePair(soldier, weapon) {
-    const key = `${soldier}|${weapon}`;
-    if (!this.posePairCache.has(key)) {
-      const url = `${this.posesBase()}/${soldier}__${weapon}.pose.glb${this.ctx.bust()}`;
-      this.posePairCache.set(key, this.ctx.loader.loadAsync(url).then(gltf => {
-        gltf.scene.traverse(obj => {
-          const data = obj.userData || {};
-          if (data.effect || data.projectileMesh || data.projectileTrail
-              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
-        });
-        this.ctx.shadeModel?.(gltf.scene);
-        return { scene: gltf.scene, animations: gltf.animations ?? [] };
-      }).catch(() => null));
-    }
-    return this.posePairCache.get(key);
+    return this.poses.pose(soldier, weapon);
   }
 }

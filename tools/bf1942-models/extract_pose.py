@@ -53,6 +53,33 @@ grip bundle). `--gaits-only` rewrites exactly those files and their keys in
 state machine knows, measures how far each palm is from the weapon surface,
 and writes `poses-matrix.json`.
 
+`--split` writes the same poses as a *tree of shared documents* instead of
+one self-contained file per pose, because the bytes are the same ones over
+and over: 2.8 GB of pose glbs in which a soldier's body is stored once per
+pose he is ever drawn in (36 times for a vanilla soldier). Three documents
+replace them —
+
+    poses/rigs/<Soldier>.rig.glb        body, face, hands, skeleton, textures
+    <Weapon>.glb                        the weapon, already published
+    poses/<Soldier>__<Pose>.pose.json   the pose, in the glb's own numbers
+
+— and the viewer puts them back together (`viewer/pose-compose.js`), so the
+split is a second *container*, not a second rendering path. A recipe's
+numbers are the glb's numbers: `joints` is the joint nodes' static
+transform, `clips` is the glb's `animations`, `attach` is the grip node's
+own transform. `check_recipe.py` asserts that equality against a published
+pair; `tests/test_pose_recipe.py` asserts it against the builder.
+
+The `.glb` files are written as well, so both trees exist while the viewers
+migrate. `--split-only` writes the rigs and the recipes and no monolithic
+`.glb` at all — the cutover, safe once every reader takes the recipe path.
+`--split` implies `--gaits shared`: a recipe is the pose in data and the
+gaits are the sidecars a recipe names.
+
+Measured on one soldier, four weapon poses: 5.21 MB of pose glbs become
+0.84 MB (one 748 KB rig and four 17 KB recipes), the gaits sidecars
+unchanged. `features/pose-asset-dedup/README.md` has the whole picture.
+
 The pose is driven entirely by game data: the state machine names the clip,
 the clip poses the bones, the weapon skeleton's root bone names the hand it
 grafts onto. Nothing here is tuned per weapon.
@@ -68,10 +95,12 @@ import math
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
+from bf42 import recipe as recipe_mod
 from bf42 import roster as roster_mod
 from bf42 import ske as ske_mod, skin as skin_mod, stdmesh
 from bf42.assemble import (Assembler, Report, geometry_is_first_person,
@@ -1409,11 +1438,45 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
     ))
 
 
+def joint_nodes_of(builder: gltf.GlbBuilder, skeleton: ske_mod.Skeleton,
+                   locals_map: dict,
+                   ) -> tuple[dict[str, int], list[int]]:
+    """The skeleton's joint nodes at `locals_map`, plus the scene-root bones.
+
+    A bone the locals leave alone holds its `.ske` rest — which is exactly what
+    the static node transform falls back to, and what makes a recipe able to
+    name only the bones a pose actually moves. Shared by both pose exports and
+    by the rig; only the locals differ between them.
+    """
+    joint_nodes: dict[str, int] = {}
+    children_of: dict[int, list[int]] = {}
+    order: list[tuple[int, int]] = []  # (bone index, node index)
+    for index, bone in enumerate(skeleton.bones):
+        local = locals_map.get(ske_mod.canonical(bone.name),
+                               (bone.rotation, bone.translation))
+        node = builder.add_node(gltf.Node(
+            name=bone.name,
+            translation=local[1],
+            rotation=gltf.quat_from_matrix(local[0]),
+            extras={"joint": True},
+        ))
+        joint_nodes[ske_mod.canonical(bone.name)] = node
+        order.append((index, node))
+        if 0 <= bone.parent < index:
+            children_of.setdefault(bone.parent, []).append(node)
+    for bone_index, node_index in order:
+        builder._nodes[node_index].children = children_of.get(bone_index, [])
+    root_children = [node for (bone_index, node) in order
+                     if skeleton.bones[bone_index].parent < 0]
+    return joint_nodes, root_children
+
+
 # -- the export ------------------------------------------------------------- #
 
 def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
                 objects, library, state: str, frame: int, max_texture: int,
-                out: Path | None, gait_mode: str = "shared") -> dict:
+                out: Path | None, gait_mode: str = "shared",
+                split: bool = False, monolithic: bool = True) -> dict:
     result: dict = {"soldier": soldier, "weapon": weapon, "state": state}
 
     root_template = library.object(soldier)
@@ -1482,6 +1545,16 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
         attach = (pose_mod.CLIP_WORLD_YAW, (0.0, 0.0, 0.0))
         result["weaponSkeleton"] = "unreadable, attached at hand root"
 
+    # The weld, as the numbers that go into the file. It is otherwise only
+    # implicit in the baked node tree — a `K98 grip` node's own transform — and
+    # a split tree has to carry it as data, because the weapon is a separate
+    # document there. `recipe.trs` is the same conversion `gltf.Node` and
+    # `build()` perform, so these are the floats in the glb.
+    attach_trs = recipe_mod.trs(attach)
+    result["weaponTemplate"] = weapon
+    result["weaponAttach"] = {"bone": recipe_mod.WELD_BONE,
+                              "q": attach_trs[:4], "t": attach_trs[4:]}
+
     if posed.get("bip01 r hand") is None:
         raise PoseError("posed skeleton has no Bip01 R Hand")
     metrics_by_stance = weld_metrics(
@@ -1501,28 +1574,9 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     report = Report(root=f"{soldier}+{weapon}", configuration="pose", lod=0)
 
     # Joint hierarchy: local transforms are exactly the posed locals.
-    joint_nodes: dict[str, int] = {}
-    children_of: dict[int, list[int]] = {}
-    order: list[tuple[int, int]] = []  # (bone index, node index)
-    for index, bone in enumerate(skeleton.bones):
-        local = locals_map.get(ske_mod.canonical(bone.name),
-                               (bone.rotation, bone.translation))
-        node = builder.add_node(gltf.Node(
-            name=bone.name,
-            translation=local[1],
-            rotation=gltf.quat_from_matrix(local[0]),
-            extras={"joint": True},
-        ))
-        joint_nodes[ske_mod.canonical(bone.name)] = node
-        order.append((index, node))
-        if 0 <= bone.parent < index:
-            children_of.setdefault(bone.parent, []).append(node)
-    for bone_index, node_index in order:
-        builder._nodes[node_index].children = children_of.get(bone_index, [])
+    joint_nodes, root_children = joint_nodes_of(builder, skeleton, locals_map)
 
     part_report: dict = {}
-    root_children = [node for (bone_index, node) in order
-                     if skeleton.bones[bone_index].parent < 0]
     # Skinned meshes are deliberately NOT parented under the pitched root; see
     # the note on `skinned_roots` below.
     skinned_roots: list[int] = []
@@ -1547,8 +1601,13 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     # Bind-pose soldier meshes stand along +Z; pitch the root onto +Y the
     # same way the static soldier export does. The joints hang off this node,
     # so the pose is pitched through their world transforms.
+    #
+    # A recipe writes the same pitch as data, because the rig has a root of its
+    # own and a pose's root is the pose's: the seat poses pitch the other way.
+    root_name = f"{soldier} holding {weapon}"
+    root_rotation = list(gltf.quat_from_ypr(0.0, -90.0, 0.0))
     root = builder.add_node(gltf.Node(
-        name=f"{soldier} holding {weapon}",
+        name=root_name,
         rotation=gltf.quat_from_ypr(0.0, -90.0, 0.0),
         children=root_children,
         extras={"soldier": soldier, "weapon": weapon,
@@ -1564,22 +1623,26 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     # independent, so it needs no channels. The node hierarchy itself stays
     # posed at the primary stance: a viewer that ignores animations (or an
     # old deployed one) renders exactly the single-stance export.
-    if len(stance_locals) > 1:
-        rest_by_name = {
-            ske_mod.canonical(bone.name): (bone.rotation, bone.translation)
-            for bone in skeleton.bones}
-        animated = sorted(
-            {name for locals_a in stance_locals.values() for name in locals_a}
-            & set(joint_nodes))
-        for key, _lower, _upper in STANCES:
-            locals_a = stance_locals.get(key)
-            if locals_a is None:
-                continue
-            tracks = []
-            for name in animated:
-                value = locals_a.get(name, rest_by_name[name])
-                tracks.append((joint_nodes[name], (0.0, 1.0), [value, value]))
-            builder.add_animation(key, tracks)
+    rest_by_name = {
+        ske_mod.canonical(bone.name): (bone.rotation, bone.translation)
+        for bone in skeleton.bones}
+    animated = sorted(
+        {name for locals_a in stance_locals.values() for name in locals_a}
+        & set(joint_nodes))
+    # `stills` is the same data the glb's animation tracks carry, kept so a
+    # `--split` recipe can write it without re-deriving the fallback rule.
+    stills: dict[str, dict] = {}
+    for key, _lower, _upper in STANCES:
+        locals_a = stance_locals.get(key)
+        if locals_a is None:
+            continue
+        effective = {name: locals_a.get(name, rest_by_name[name])
+                     for name in animated}
+        stills[key] = effective
+        if len(stance_locals) > 1:
+            builder.add_animation(
+                key, [(joint_nodes[name], (0.0, 1.0),
+                       [effective[name], effective[name]]) for name in animated])
 
     # Locomotion, as real timelines. Each gait ships as `<gait>.lower` and
     # `<gait>.upper` — the engine's two independent state machines — so a
@@ -1633,11 +1696,117 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     if gait_clips_written:
         extras["gaitClips"] = gait_clips_written
         extras["gaitSource"] = gait_mode
-    target.write_bytes(builder.build(roots, extras=extras))
-    result["glb"] = target.name
+    if monolithic:
+        target = out / f"{soldier}__{weapon}.pose.glb"
+        target.write_bytes(builder.build(roots, extras=extras))
+        result["glb"] = target.name
+    if split:
+        # Everything a viewer reads out of the monolithic glb's extras, plus
+        # what only a split tree needs. The extractor's own report fields
+        # (`soldierParts`, `weaponParts`, `texturesMissing`) stay in the
+        # `.pose.report.json` beside it.
+        doc = recipe_mod.document(
+            kind="weapon", soldier=soldier, pose=weapon,
+            rig=recipe_mod.rig_rel(soldier),
+            root={"name": root_name, "q": root_rotation},
+            joints=recipe_mod.joints_of(locals_map, joint_nodes),
+            clips={key: recipe_mod.still_clip(effective, animated)
+                   for key, effective in stills.items()},
+            weapon=weapon,
+            attach=result["weaponAttach"],
+            state=state,
+            upperClip=result.get("upperClip"),
+            gaitAssets=result.get("gaitAssets"),
+            gaits=result.get("gaits"),
+            gaitClips=gait_clips_written or None,
+            gaitSource=gait_mode if gait_clips_written else None,
+        )
+        result["recipe"] = recipe_mod.write(out, soldier, weapon, doc).name
     (out / f"{soldier}__{weapon}.pose.report.json").write_text(
         json.dumps(result, indent=2))
     return result
+
+
+def export_rig(soldier: str, *, meshes, textures, objects, library,
+               max_texture: int, out: Path) -> dict:
+    """A soldier's rig: body, face, hands, skeleton, binds and textures.
+
+    The soldier half of every pose, written once. A recipe carries what varies
+    with the pose; this carries everything that does not — the skinned meshes
+    with their `.skn` bind matrices, the skeleton and the textures that dominate
+    the old files' bytes (578 KB of `USSoldier__K98.pose.glb`'s 995 KB bin chunk
+    is six body textures, re-embedded in each of that soldier's 36 poses).
+
+    Baked at `.ske` rest, which is exactly where a pose file fell back for every
+    bone its stance left alone — so a recipe's `joints` overwrite the bones a
+    pose moves and the rest of the body stands where it always did.
+
+    The root carries the *standing* pitch, so the rig renders upright on its own
+    in any glTF viewer. A recipe's `root` overrides it: the seat poses pitch the
+    other way (`export_seat_pose`).
+    """
+    root_template = library.object(soldier)
+    if root_template is None:
+        raise PoseError(f"no such template: {soldier}")
+    parts = soldier_parts(library, soldier)
+    if not root_template.skeleton:
+        raise PoseError(f"{soldier} declares no skeleton")
+    skeleton = read_skeleton(meshes, root_template.skeleton)
+    if skeleton is None:
+        raise PoseError(f"skeleton unreadable: {root_template.skeleton}")
+
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False,
+                          include_effects=False)
+    report = Report(root=soldier, configuration="rig", lod=0)
+
+    joint_nodes, root_children = joint_nodes_of(builder, skeleton, {})
+    part_report: dict = {}
+    skinned_roots: list[int] = []
+    for template in parts:
+        node = build_skinned_part(builder, assembler, meshes, skeleton,
+                                  template, joint_nodes, report, part_report)
+        if node is not None:
+            skinned_roots.append(node)
+
+    root = builder.add_node(gltf.Node(
+        name=soldier,
+        rotation=gltf.quat_from_ypr(0.0, -90.0, 0.0),
+        children=root_children,
+        extras={"soldier": soldier, "rig": True, "rigRoot": True},
+    ))
+
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / recipe_mod.rig_rel(soldier)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(builder.build([root] + skinned_roots, extras={
+        "soldier": soldier, "rig": True,
+        "soldierParts": part_report,
+        "texturesMissing": sorted(set(report.missing_textures)),
+    }))
+    return {"soldier": soldier, "rig": recipe_mod.rig_rel(soldier),
+            "bytes": target.stat().st_size,
+            "soldierParts": part_report,
+            "texturesMissing": sorted(set(report.missing_textures))}
+
+
+def write_rigs(soldiers: list[str], meshes, textures, objects, library,
+               out: Path, max_texture: int) -> dict[str, dict]:
+    """Every soldier's rig, once per run, before the poses that name them.
+
+    Idempotent and cheap next to the poses: eight rigs for vanilla's eight
+    soldiers, ~760 KB each, against the 327 MB of pose files that name them.
+    """
+    rigs: dict[str, dict] = {}
+    for soldier in soldiers:
+        try:
+            rigs[soldier] = export_rig(
+                soldier, meshes=meshes, textures=textures, objects=objects,
+                library=library, max_texture=max_texture, out=out)
+        except PoseError as exc:
+            rigs[soldier] = {"soldier": soldier, "error": str(exc)}
+    return rigs
 
 
 def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -1646,9 +1815,9 @@ def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
                                  str, str]:
     """One seat's bone locals plus the two clip paths that made them.
 
-    Unlike stances — which build the upper name as `Ub_<family><Weapon>` — seat
-    poses name their state explicitly (`Ub_PassengerInWilly`,
-    `Lb_PassengerInWilly`), so both halves are looked up directly on the state
+    A seat pose names its state explicitly (`Ub_PassengerInWilly`,
+    `Lb_PassengerInWilly`) where a stance builds an upper name from the
+    weapon's grip, so both halves are looked up directly on the state
     machine. A passenger seat that omits `seatAnimationLowerBody` (rare, but
     the data has it) falls back to `Lb_Stand` — the engine does the same, the
     lower body is just standing legs under the seated upper body.
@@ -1716,7 +1885,7 @@ def seat_root_offset(skeleton: ske_mod.Skeleton,
 def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
                      machine, meshes, textures, objects, library, frame: int,
                      max_texture: int, out: Path | None,
-                     ) -> dict:
+                     split: bool = False, monolithic: bool = True) -> dict:
     """A soldier posed in a seat — no weapon, one animation clip.
 
     The pose glb carries the soldier's body/head/hands skinned to the skeleton,
@@ -1759,28 +1928,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     report = Report(root=f"{soldier}+seat:{upper_state}", configuration="pose",
                     lod=0)
 
-    joint_nodes: dict[str, int] = {}
-    children_of: dict[int, list[int]] = {}
-    order: list[tuple[int, int]] = []
-    for index, bone in enumerate(skeleton.bones):
-        local = locals_map.get(ske_mod.canonical(bone.name),
-                               (bone.rotation, bone.translation))
-        node = builder.add_node(gltf.Node(
-            name=bone.name,
-            translation=local[1],
-            rotation=gltf.quat_from_matrix(local[0]),
-            extras={"joint": True},
-        ))
-        joint_nodes[ske_mod.canonical(bone.name)] = node
-        order.append((index, node))
-        if 0 <= bone.parent < index:
-            children_of.setdefault(bone.parent, []).append(node)
-    for bone_index, node_index in order:
-        builder._nodes[node_index].children = children_of.get(bone_index, [])
+    joint_nodes, root_children = joint_nodes_of(builder, skeleton, locals_map)
 
     part_report: dict = {}
-    root_children = [node for (bone_index, node) in order
-                     if skeleton.bones[bone_index].parent < 0]
     skinned_roots: list[int] = []
     for template in parts:
         node = build_skinned_part(builder, assembler, meshes, skeleton,
@@ -1808,6 +1958,7 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         extras={"soldier": soldier, "upperState": upper_state,
                 "lowerState": lower_state, "poseKind": "seat"},
     ))
+    root_rotation = list(gltf.quat_from_ypr(180.0, -90.0, 0.0))
 
     # One looping animation clip per half — the lower and upper clips are
     # independent state machines with independent periods, mirroring how gaits
@@ -1819,6 +1970,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     upper_ref = upper_st.clip_3p() if upper_st else None
     lower_clip = read_clip(meshes, lower_ref.path) if lower_ref else None
     upper_clip = read_clip(meshes, upper_ref.path) if upper_ref else None
+    # The same timelines, kept as recipe clips: a seat pose has no constant
+    # stance still, so these are the whole of its animation either way.
+    seat_clips: dict[str, dict] = {}
     for half, clip, ref, label in [
         ("lower", lower_clip, lower_ref, "seat.lower"),
         ("upper", upper_clip, upper_ref, "seat.upper"),
@@ -1833,18 +1987,33 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         tracks = timeline_tracks(frames, period, joint_nodes)
         if tracks:
             builder.add_animation(label, tracks)
+            seat_clips[label] = recipe_mod.timeline_clip(
+                frames, period, joint_nodes)
 
     result["soldierParts"] = part_report
     result["texturesMissing"] = sorted(set(report.missing_textures))
 
     out.mkdir(parents=True, exist_ok=True)
     pose_name = seat_pose_name(upper_state, lower_state)
-    target = out / f"{soldier}__{pose_name}.pose.glb"
     extras = {key: value for key, value in result.items()
               if key not in ("metrics", "stances")}
-    target.write_bytes(builder.build([root] + skinned_roots,
-                                     extras=extras))
-    result["glb"] = target.name
+    if monolithic:
+        target = out / f"{soldier}__{pose_name}.pose.glb"
+        target.write_bytes(builder.build([root] + skinned_roots,
+                                         extras=extras))
+        result["glb"] = target.name
+    if split:
+        doc = recipe_mod.document(
+            kind="seat", soldier=soldier, pose=pose_name,
+            rig=recipe_mod.rig_rel(soldier),
+            root={"name": f"{soldier} in {upper_state}", "q": root_rotation},
+            joints=recipe_mod.joints_of(locals_map, joint_nodes),
+            clips=seat_clips,
+            upperState=upper_state, lowerState=lower_state,
+            lowerClip=result.get("lowerClip"),
+            upperClip=result.get("upperClip"),
+        )
+        result["recipe"] = recipe_mod.write(out, soldier, pose_name, doc).name
     (out / f"{soldier}__{pose_name}.pose.report.json").write_text(
         json.dumps(result, indent=2))
     return result
@@ -1943,10 +2112,12 @@ def _init_pose_worker(chain_paths: list[str]) -> None:
 
 
 def _export_pose_task(task_args: tuple) -> dict:
-    soldier, weapon, out_str, state, frame, max_texture, gait_mode = task_args
+    (soldier, weapon, out_str, state, frame, max_texture, gait_mode,
+     split, monolithic) = task_args
     out = Path(out_str) if out_str else None
     ctx = {**_pose_worker_context, "state": state, "frame": frame,
-           "max_texture": max_texture, "gait_mode": gait_mode}
+           "max_texture": max_texture, "gait_mode": gait_mode,
+           "split": split, "monolithic": monolithic}
     try:
         row = export_pose(soldier, weapon, out=out, **ctx)
     except PoseError as exc:
@@ -1955,6 +2126,21 @@ def _export_pose_task(task_args: tuple) -> dict:
 
 
 # -- CLI -------------------------------------------------------------------- #
+
+def report_rigs(rigs: dict[str, dict]) -> dict[str, dict]:
+    """Print the rig pass's summary to stderr; return it."""
+    total = sum(rig.get("bytes", 0) for rig in rigs.values())
+    print(f"rigs: {len(rigs)} soldiers, {total / 1048576:.1f} MB "
+          f"(the poses that name them are what this replaces)",
+          file=sys.stderr)
+    for soldier, rig in sorted(rigs.items()):
+        if "error" in rig:
+            print(f"  error:  {soldier}: {rig['error']}", file=sys.stderr)
+        elif rig.get("texturesMissing"):
+            print(f"  {soldier}: {len(rig['texturesMissing'])} textures "
+                  f"missing", file=sys.stderr)
+    return rigs
+
 
 def report_body(label: str, body: dict | None) -> dict:
     """Print a shared body bundle's summary to stderr; return it (or `{}`)."""
@@ -2047,7 +2233,29 @@ def main() -> int:
                          "pose. Named after the seat, not a weapon — "
                          "USSoldier__PassengerInWilly.pose.glb — so map.html looks "
                          "them up straight off extras.seat.poseAnimation.")
+    ap.add_argument("--split", action="store_true",
+                    help="also write the split tree: one poses/rigs/<Soldier>."
+                         "rig.glb per soldier (the body, face, hands, skeleton, "
+                         "binds and textures — the half every pose of that "
+                         "soldier re-embeds) and one <Soldier>__<Pose>.pose.json "
+                         "recipe per pose (the rest pose, the stance clips, the "
+                         "weapon's hand attachment and the gait references). "
+                         "The monolithic .glb files are written as well, so both "
+                         "trees exist while the viewer migrates per consumer.")
+    ap.add_argument("--split-only", action="store_true",
+                    help="with --split: write the rigs and the recipes and no "
+                         "monolithic .glb at all. This is the cutover — it is "
+                         "only safe once every reader takes the recipe path.")
     args = ap.parse_args()
+    if args.split_only:
+        args.split = True
+    args.monolithic = not args.split_only
+    if args.split and args.gaits == "embed":
+        # A recipe is the pose in data; an embedded gait timeline is megabytes
+        # of it. The split tree's gaits are the shared sidecars, and the recipe
+        # names them the same way a monolithic glb's `gaitAssets` does.
+        ap.error("--split writes the gaits as sidecars: use --gaits shared "
+                 "(the default), or drop --split")
 
     if not args.matrix and not args.seat_poses and not args.parachute \
             and not args.swim and not args.die and not args.shared_assets \
@@ -2063,10 +2271,11 @@ def main() -> int:
     library = build_library(objects)
     machine = state_machine(meshes)
 
-    context = dict(machine=machine, meshes=meshes, textures=textures,
-                   objects=objects, library=library, state=args.state,
-                   frame=args.frame, max_texture=args.max_texture,
-                   gait_mode=args.gaits)
+    context: dict[str, Any] = dict(
+        machine=machine, meshes=meshes, textures=textures,
+        objects=objects, library=library, state=args.state,
+        frame=args.frame, max_texture=args.max_texture,
+        gait_mode=args.gaits, split=args.split, monolithic=args.monolithic)
 
     if args.shared_assets:
         args.out.mkdir(parents=True, exist_ok=True)
@@ -2227,9 +2436,16 @@ def main() -> int:
                 target_pairs.append((soldier, weapon))
 
         rows = []
+        if args.export and args.split:
+            # Before the poses that name them, once per soldier rather than once
+            # per pair: eight rigs for vanilla's eight soldiers against its 224
+            # pairs, and a `-j` worker writing the same bytes is wasted work.
+            report_rigs(write_rigs(soldiers, meshes, textures, objects, library,
+                                   args.out, args.max_texture))
         if args.jobs > 1 and len(target_pairs) > 1:
             tasks = [(s, w, str(args.out) if args.export else None, args.state,
-                      args.frame, args.max_texture, args.gaits)
+                      args.frame, args.max_texture, args.gaits, args.split,
+                      args.monolithic)
                      for s, w in target_pairs]
             chain_strs = [str(p) for p in chain]
             with ProcessPoolExecutor(
@@ -2316,6 +2532,10 @@ def main() -> int:
 
     failures = 0
     pairs = list(zip(args.pairs[::2], args.pairs[1::2]))
+    if args.split:
+        args.out.mkdir(parents=True, exist_ok=True)
+        report_rigs(write_rigs(sorted({s for s, _w in pairs}), meshes, textures,
+                               objects, library, args.out, args.max_texture))
     if args.gaits == "shared":
         # A one-pair run still has to leave the sidecars next to the pose, or
         # the viewer has a `gaitAssets` pointing at nothing.
@@ -2490,6 +2710,10 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
         keep = {s.lower() for s in args.soldiers}
         soldiers = [s for s in soldiers if s.lower() in keep]
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.split:
+        rigs = write_rigs(soldiers, meshes, textures, objects, library,
+                          args.out, args.max_texture)
+        report_rigs(rigs)
     failures = 0
     manifest = []
     for upper, lower in poses:
@@ -2500,16 +2724,22 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
                     soldier, upper, lower,
                     out=args.out, machine=machine, meshes=meshes,
                     textures=textures, objects=objects, library=library,
-                    frame=args.frame, max_texture=args.max_texture)
+                    frame=args.frame, max_texture=args.max_texture,
+                    split=args.split, monolithic=args.monolithic)
                 manifest.append({"soldier": soldier, "pose": pose_name,
                                  "upperState": upper, "lowerState": lower,
-                                 "glb": result.get("glb")})
+                                 "glb": result.get("glb"),
+                                 "recipe": result.get("recipe")})
                 if "error" in result:
                     failures += 1
                     print(f"{soldier} / {pose_name}: {result['error']}",
                           file=sys.stderr)
                 else:
-                    print(f"{soldier} / {pose_name} -> {result.get('glb')}",
+                    # A `--split-only` pass writes no glb, so name the recipe
+                    # instead: `-> None` on every line of a split run reads as a
+                    # failure and is not one.
+                    print(f"{soldier} / {pose_name} -> "
+                          f"{result.get('glb') or result.get('recipe')}",
                           file=sys.stderr)
             except PoseError as exc:
                 failures += 1

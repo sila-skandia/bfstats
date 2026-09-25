@@ -1,7 +1,7 @@
 // Drives `viewer/pose-bases.js` outside a browser and prints one JSON blob.
 // `tests/test_pose_bases.py` copies the module in under its own name.
 
-import { poseBases, poseUrls, loadFirst } from './pose-bases.js';
+import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst } from './pose-bases.js';
 
 const out = {};
 out.bases = {
@@ -10,6 +10,13 @@ out.bases = {
   unset: poseBases(undefined),
 };
 out.urls = poseUrls('models/mods/xpack2', 'GermanSoldier__K98.pose.glb', '?t=1');
+
+// A split pose is three documents and a mod can supply any one of them, so
+// each half is asked for separately (`pose-bases.js`).
+out.rigUrls = rigUrls('models/mods/xpack1', 'USSoldier');
+out.weaponUrls = weaponUrls('models/mods/xpack1', 'K98');
+out.recipeUrls = poseUrls('models/mods/xpack1', 'USSoldier__K98.pose.json');
+out.rigUrlsVanilla = rigUrls('models', 'USSoldier');
 
 // A loader that has only what `have` lists, recording what it was asked for.
 function fakeLoader(have) {

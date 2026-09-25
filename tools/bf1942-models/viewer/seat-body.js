@@ -14,15 +14,12 @@ import {
   seatPoseName, solveTwoBone,
 } from './seat-ik.js';
 import { DIE_IN_VEHICLE_UPPER } from './soldier-death.js';
+import { boneKey, findBone } from './pose-compose.js';
 
-/** A bone by name, tolerant of the underscore/space spellings the data mixes. */
-export const boneKey = name => String(name).toLowerCase().replace(/[_\s]+/g, ' ').trim();
-export function findBone(root, name) {
-  const want = boneKey(name);
-  let found = null;
-  root.traverse(obj => { if (!found && boneKey(obj.name) === want) found = obj; });
-  return found;
-}
+// The bone-name rule and the bone lookup are `pose-compose.js`'s: a seated
+// body's bones are the same skeleton a standing one has, and a split pose
+// resolves its joints by exactly this key.
+export { boneKey, findBone };
 
 /** `c_SeatShowHalfBodySoldier` — `setUseSeat` hides `Bip01 Pelvis` and its
  *  subtree. Scaling the bone to nothing is the closest a skinned mesh gets to
@@ -163,35 +160,14 @@ function applyWorldDelta(bone, quat) {
 
 /**
  * Seated bodies for soldiers the page does not own (bots, remote players).
- * `ctx`: `loader` (a GLTFLoader), `url(soldierName, poseName)` (a url, or
- * the urls to try in order), `shade(scene)`,
- * `parent` (the group they hang off), `dispose(scene)` (GPU release), and
- * optionally `dresser` (`soldier-dress.js`), which hangs the occupant's kit on
- * the seated body -- helmet and all, the way the engine draws a jeep's
- * passenger.
+ * `ctx`: `pose(soldierName, poseName)` (a `pose-compose.js` composer's `seat`,
+ * resolving the seat's recipe, rig and clips across the model roots and
+ * falling back to a monolithic pose glb), `shade(scene)`, `parent` (the group
+ * they hang off), `dispose(scene)` (GPU release), and optionally `dresser`
+ * (`soldier-dress.js`), which hangs the occupant's kit on the seated body --
+ * helmet and all, the way the engine draws a jeep's passenger.
  */
 export function createSeatBodies(ctx) {
-  const cache = new Map();
-
-  /** The first of `urls` (one url, or the model roots to try in order,
-   *  `pose-bases.js`) that loads, else null. */
-  function asset(urls) {
-    const list = [urls].flat();
-    const key = list.join('|');
-    if (!cache.has(key)) {
-      cache.set(key, (async () => {
-        for (const url of list) {
-          try {
-            const gltf = await ctx.loader.loadAsync(url);
-            return { scene: gltf.scene, animations: gltf.animations ?? [] };
-          } catch { /* the next root */ }
-        }
-        return null;
-      })());
-    }
-    return cache.get(key);
-  }
-
   /**
    * Load `soldierName` seated in `seat`: the seat's own pose glb (its fallback
    * when the seat names a state no glb was written for), half a body where the
@@ -204,8 +180,8 @@ export function createSeatBodies(ctx) {
     const body = seatBody(seat?.seatObjects);
     if (!anchor || !body.draw) return null;
     const states = resolveSeatStates(seat.seatObjects);
-    const found = await asset(ctx.url(soldierName, seatPoseName(states.upperBody, states.lowerBody)))
-      ?? await asset(ctx.url(soldierName, defaultSeatPoseName(body.mask)));
+    const found = await ctx.pose(soldierName, seatPoseName(states.upperBody, states.lowerBody))
+      ?? await ctx.pose(soldierName, defaultSeatPoseName(body.mask));
     if (!found) return null;
     const scene = skeletonClone(found.scene);
     scene.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
