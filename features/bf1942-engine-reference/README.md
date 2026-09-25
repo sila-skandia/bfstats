@@ -413,8 +413,13 @@ derived from it (`rend::getStride`, client `0x00640f20`) and the buffer is a
 Direct3D FVF buffer (`0x00672a40`), so the components sit in D3D order. The file's
 stride is only a byte count for the stream read. The reader now lays vertices out
 from `flags`; the one mesh in 234,144 descriptors where the two disagreed decodes
-to geometry whose bounds equal its header. Still open there: bit 29's meaning, the
-static DX8 block's `CreateVertexBuffer` site, and the vertex-shader declaration path.
+to geometry whose bounds equal its header. Bit 29 is narrowed (2026-09-25, SM-10):
+a third function, the programmable-pipeline vertex-declaration builder
+(`0x006746d0`), tests the same bit and treats it as a 4-byte packed `D3DCOLOR`
+at declaration register 13, agreeing with the FVF builder's byte count (4) and
+against `getStride`'s (16) — `getStride` is the outlier, but the bit is still
+unseen in any shipped `.sm` and so still unnamed. Still open there: the
+static DX8 block's `CreateVertexBuffer` site.
 
 **HUD, supply depots, hit points, seats, manned guns and tank driving,
 2026-09-16.** A second research pass read the client and lnxded binaries for
