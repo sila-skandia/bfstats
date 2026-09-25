@@ -4,13 +4,15 @@ import json
 import struct
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42 import gltf, skin, stdmesh  # noqa: E402
+from bf42 import gltf, rs, skin, stdmesh  # noqa: E402
 from bf42.assemble import (  # noqa: E402
     Assembler,
+    FALLBACK_LOD_DISTANCES,
     Report,
     browse_rig,
     is_foreign_skeleton_part,
@@ -2512,6 +2514,144 @@ GeometryTemplate.create StandardMesh Lcvp_Hull_M1
 
         self.assertIsNone(assembler.build_node(builder, "TestCarrier", report))
         self.assertEqual([], report.held_spawners)
+
+
+_STUB_SHADER = rs.Shader(
+    name="Chain_Material",
+    kind="shader",
+    textures=["texture/test"],
+)
+
+
+class LodChainEmissionTests(unittest.TestCase):
+    """Gap 11: a StandardMesh's internal LOD chain rides out per placement.
+
+    The `.sm` ships every level; the exporter used to keep only the selected
+    one. These pin what changed: rungs become sibling meshes named
+    `<mesh>_lod<N>`, the placement's node carries them as children tagged
+    `extras.lod = {geometry, level, distance}`, the distances come from the
+    geometry's own `GeometryTemplate.setLodDistance` table (the census
+    fallback curve when it declares none), and a geometry without a chain
+    emits nothing.
+    """
+
+    LIBRARY = """
+ObjectTemplate.create StaticObject TestBuilding
+ObjectTemplate.geometry Chain_m1
+
+ObjectTemplate.create StaticObject TestPlain
+ObjectTemplate.geometry Plain_m1
+
+GeometryTemplate.create StandardMesh Chain_m1
+GeometryTemplate.setLodDistance 0 0
+GeometryTemplate.setLodDistance 1 10
+GeometryTemplate.setLodDistance 2 50
+GeometryTemplate.setLodDistance 3 150
+
+GeometryTemplate.create StandardMesh Plain_m1
+"""
+
+    def assembler(self) -> tuple[Assembler, gltf.GlbBuilder]:
+        library = ObjectLibrary()
+        library.add_con("Objects/Buildings/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        # The `.sm` behind both geometries is supplied by patching the pool's
+        # resolve/read pair rather than building an archive: `_mesh_index`
+        # reads `standardMesh/<file>` through `resolve_ext`, and the mesh
+        # content is what varies per test below.
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        return assembler, builder
+
+    @staticmethod
+    def build(assembler: Assembler, builder: gltf.GlbBuilder, template: str,
+              levels: int) -> tuple[int | None, Report]:
+        lods = [stdmesh.Lod([stdmesh.Material(
+            name=f"Chain_Material{level}", primitive=stdmesh.PRIM_TRIANGLE_LIST,
+            flags=stdmesh.VF_STANDARD, stride=32,
+            vertex_count=3, index_count=3, unknown=(0, 0, 0, 0),
+            vertices=[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                      1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+                      0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+            indices=[0, 1, 2],
+        )]) for level in range(levels)]
+        mesh = stdmesh.StandardMesh(
+            name="Chain_m1", version=10,
+            bounds_min=(0.0, 0.0, 0.0), bounds_max=(1.0, 1.0, 1.0),
+            collision_layers=[], lods=lods)
+        # `resolve_ext` answers the archive lookup for both the `.sm` and its
+        # `.rs`; the material shader is then a stub in the `.rs` namespace.
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Chain_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read",
+                                        return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse", return_value=mesh), \
+             unittest.mock.patch("bf42.rs.parse", return_value={
+                 f"Chain_Material{level}": _STUB_SHADER
+                 for level in range(levels)
+             }), \
+             unittest.mock.patch.object(assembler, "_texture_index",
+                                        return_value=None):
+            report = Report(root="Test", configuration="complex", lod=0)
+            node = assembler.build_node(builder, template, report)
+        return node, report
+
+    def test_rungs_ship_as_tagged_children_of_the_placement(self) -> None:
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=4)
+
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        # The rungs were added first, so the placement is the LAST node.
+        placed = document["nodes"][node]
+        self.assertEqual(3, len(placed["children"]))
+        rungs = [document["nodes"][i] for i in placed["children"]]
+        self.assertEqual(
+            [("Chain_m1", 1, 10.0), ("Chain_m1", 2, 50.0), ("Chain_m1", 3, 150.0)],
+            [(r["name"].rsplit("_lod", 1)[0], r["extras"]["lod"]["level"],
+              r["extras"]["lod"]["distance"]) for r in rungs])
+        # Level 0 stays the part's own mesh, under its plain name.
+        self.assertEqual("Chain_m1", document["meshes"][placed["mesh"]]["name"])
+        self.assertEqual(
+            {"Chain_m1_lod1", "Chain_m1_lod2", "Chain_m1_lod3"},
+            {document["meshes"][r["mesh"]]["name"] for r in rungs})
+
+    def test_distances_come_from_the_geometry_template(self) -> None:
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=4)
+
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        distances = [document["nodes"][i]["extras"]["lod"]["distance"]
+                     for i in document["nodes"][node]["children"]]
+        self.assertEqual([10.0, 50.0, 150.0], distances)
+
+    def test_no_declared_table_falls_back_to_the_census_curve(self) -> None:
+        # `Plain_m1` declares no setLodDistance; a 2-level mesh on it swaps at
+        # FALLBACK_LOD_DISTANCES[1] rather than never.
+        assembler, builder = self.assembler()
+        node, _ = self.build(assembler, builder, "TestPlain", levels=2)
+
+        document = glb_document(builder.build([node]))
+        child = document["nodes"][document["nodes"][node]["children"][0]]
+        self.assertEqual(FALLBACK_LOD_DISTANCES[1], child["extras"]["lod"]["distance"])
+
+    def test_report_records_the_emitted_levels(self) -> None:
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=4)
+
+        entry = report.mesh_lods["Chain_m1"]
+        self.assertEqual(4, entry["available"])
+        self.assertEqual([1, 2, 3], entry["emittedLevels"])
+        self.assertEqual([1, 1, 1], entry["lodTriangles"])
+
+    def test_a_single_level_mesh_emits_nothing(self) -> None:
+        # The audit's "simple flat props" case: one LOD, no chain, no child
+        # nodes, and the placement keeps today's shape exactly.
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=1)
+
+        document = glb_document(builder.build([node]))
+        self.assertEqual([], document["nodes"][node].get("children", []))
+        self.assertNotIn("emittedLevels", report.mesh_lods["Chain_m1"])
 
 
 if __name__ == "__main__":
