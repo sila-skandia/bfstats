@@ -18,8 +18,8 @@ import { loadFirst, poseUrls } from './pose-bases.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `addCorpse`, `bust`, `deployKit`, `deployTeamId`, `dieClips`, `flags`,
- * `kitLoadout`, `MODELS_BASE`, `occupancy`, `optPilot`, `scene`,
+ * `addCorpse`, `bust`, `currentKit`, `deployKit`, `deployTeamId`, `dieClips`,
+ * `flags`, `kitLoadout`, `MODELS_BASE`, `occupancy`, `optPilot`, `scene`,
  * `soldierBody`, `soldierDress`, `soldierTemplateFor`, `view`.
  */
 export function createSeatPose(page) {
@@ -166,7 +166,10 @@ export function createSeatPose(page) {
    *  on-foot body, the bots and their seats wear theirs the same way. The seat
    *  may be left while a part is in flight, which the dresser asks after. */
   async function dressSeatOccupant(soldierScene) {
-    const { kit } = page.kitLoadout(page.deployTeamId, page.deployKit);
+    // The kit he carries: a picked-up one (`kit-loadout.js` `currentKit`),
+    // else the deploy row's.
+    const kit = page.currentKit ? page.currentKit(page.deployTeamId)
+      : page.kitLoadout(page.deployTeamId, page.deployKit).kit;
     if (!kit || !page.soldierDress) return;
     await page.soldierDress.dress(soldierScene, kit,
       () => soldierScene === seatPose.seatSoldier);

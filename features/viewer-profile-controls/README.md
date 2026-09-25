@@ -372,7 +372,7 @@ dispatcher (`page-input.js` `cameraOrSpawnTrigger` + the keydown router and
 | `c_GIToggleConsole` | — | wired (console, Caps Lock line dropped) |
 | `c_PINextItem/PrevItem` | NEXT/PREVIOUS WEAPON | the page's own wheel handler; the binding is displayed, not consulted |
 | `c_PISayAll/SayTeam` | SAY ALL, SAY TEAM | **nothing to drive**: the viewer has no chat input |
-| `c_PIDrop` | DROP / PICK-UP KIT | **nothing to drive**: no kit drop/pickup |
+| `c_PIDrop` | DROP / PICK-UP KIT | **new**: picks up the kit in reach and drops his own (`kit-drops-page.js`, features/kit-drops) |
 | `c_GITogglePause` | PAUSE GAME | **nothing to drive**: no pause |
 | `c_PIScreenShot` | SCREENSHOT | not wired (could save the canvas) |
 | `c_PIToolTip` | TOGGLE TOOLTIP | not wired: the viewer has radio tooltips only, and TOGGLE TOOLTIP is the game's help tooltips |
