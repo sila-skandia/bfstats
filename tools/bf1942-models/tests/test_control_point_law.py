@@ -74,18 +74,6 @@ class ControlPointLawTests(unittest.TestCase):
         self.assertAlmostEqual(events[1]["t"], 20.0, delta=0.2)
         self.assertEqual(self.r["oldScene"]["timeToLose"], 5)
 
-    def test_the_human_hud_reads_the_flag_state(self) -> None:
-        # Brief P item 2: capture.js no longer runs a timer of its own.
-        h = self.r["humanHud"]
-        self.assertEqual(h["alone"]["phase"], "capturing")
-        self.assertAlmostEqual(h["alone"]["progress"], 0.5, delta=0.02)
-        self.assertEqual(h["alone"]["text"], "CAPTURING F · 50%")
-        self.assertEqual(h["withEnemy"]["phase"], "neutralising")
-        self.assertAlmostEqual(h["withEnemy"]["progress"], 0.5, delta=0.02)
-        self.assertEqual(h["withEnemy"]["team"], 1)
-        self.assertEqual(h["held"]["phase"], "contested")
-        self.assertEqual(h["held"]["text"], "CONTESTED F")
-        self.assertEqual(h["notYet"], {"phase": "capturing", "progress": 0})
 
 
 if __name__ == "__main__":

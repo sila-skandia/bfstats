@@ -507,6 +507,24 @@ export function createHandWeapon(page) {
   });
   soldierKit.addFootLook = fire.addFootLook;
 
+  /** The trigger lets go without the viewmodel being packed away.
+   *
+   *  The .ssc's `stop FinishSample` is a *trigger* event, not a round event, so
+   *  a hand weapon whose trigger is released stops its Fire Loop while the rig
+   *  stays in hand. Two callers need it and neither runs `footFire`: the death
+   *  paths (`local-player.js` `dieOnFoot` — a dead body fires nothing, and it is
+   *  the rig that outlives the trigger there) and `holster` below. Without it the
+   *  loop voice outlives the trigger that started it and rings until the weapon
+   *  is next torn down — i.e. until respawn.
+   */
+  soldierKit.releaseFireTrigger = () => {
+    const hw = soldierKit.handWeapon;
+    releaseHandFireLoop();
+    if (hw?.group) page.guns.setFiring(hw.group, false);
+    if (hw) hw.pulse = false;
+    page.dropClick();
+  };
+
   /** Climbing into a seat: only the presentation is packed away. The trigger
    *  lets go and the viewmodel hides; holstering drops zoom
    *  (`HandFireArms::disable`, lnxded 0x08293da0, calls setZoom(false)) and
@@ -514,7 +532,7 @@ export function createHandWeapon(page) {
   soldierKit.holster = () => {
     const hw = soldierKit.handWeapon;
     if (!hw) return;
-    if (hw.group) page.guns.setFiring(hw.group, false);
+    soldierKit.releaseFireTrigger();
     hw.rig.visible = false;
     hw.zoomed = false;
     hw.rezoom = 0;

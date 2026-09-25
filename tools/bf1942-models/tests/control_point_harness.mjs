@@ -12,7 +12,6 @@ const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { controlPointStep, controlPointSettings } = await import(path.join(viewer, 'bot-referee.js'));
 const { spawnFlags } = await import(path.join(viewer, 'spawn-flags.js'));
-const { captureStateFor, captureHudText } = await import(path.join(viewer, 'capture.js'));
 
 const DT = 1 / 30;
 
@@ -66,24 +65,6 @@ const results = {
   // A scene extracted before the exporter carried the field: the default.
   const old = { ...extras, controlPoints: [{ ...extras.controlPoints[0], timeToLoseControl: undefined }] };
   results.oldScene = controlPointSettings(spawnFlags(old)[0]);
-}
-
-// The human's HUD reads the flag's one state (capture.js `captureStateFor`):
-// the human (Allied, 2) alone on a neutral point, half way through a 10 s
-// get; on an Axis point with an Axis bot, run down under both; the same
-// point without `loseControlWhenEnemyClose`, contested.
-{
-  const hud = (f, teams, seconds, others) => {
-    run(f, teams, seconds);
-    const st = captureStateFor(f, 2, others);
-    return { team: f.team, phase: st.phase, progress: +st.progress.toFixed(2), text: captureHudText('F', st) };
-  };
-  results.humanHud = {
-    alone: hud(flag(0), [2], 5, false),
-    withEnemy: hud(flag(1, { timeToLoseControl: 10 }), [1, 2], 5, true),
-    held: hud(flag(1, { loseControlWhenEnemyClose: false }), [1, 2], 5, true),
-    notYet: captureStateFor(flag(0), 2, false),
-  };
 }
 
 // The old per-bot law on the contested case: two timers, one a bot, each

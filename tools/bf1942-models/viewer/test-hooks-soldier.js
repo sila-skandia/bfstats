@@ -516,7 +516,6 @@ export function installSoldierHooks(page) {
   window.__kblock = () => ({
     enabled: page.KBLOCK, session: page.kbSession, lock: page.kbLockState, keys: page.KBLOCK_KEYS,
     fullscreen: document.fullscreenElement === page.stage,
-    hud: page.hud.textContent,
   });
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real

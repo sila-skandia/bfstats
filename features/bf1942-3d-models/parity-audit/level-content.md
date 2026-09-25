@@ -609,10 +609,10 @@ The pathfinding mips would let the viewer shade drivable/walkable ground.
 
 ---
 
-### Gap 9 — `Materialmap.raw` (surface types) is never read
+### Gap 9 — `Materialmap.raw` (surface types) — FIXED, shipped as `terrain/materials.png`
 
 **Gap.** Every level ships a per-cell terrain surface-material map; the
-extractor reads its declared *size* and never opens the file.
+extractor read its declared *size* and never opened the file.
 
 **Ground truth.** `Init/Terrain.con`, 23/23 levels:
 ```con
@@ -623,22 +623,21 @@ GeometryTemplate.materialSize 512
 65,536 B (256²) on the four 1024 m levels, 262,144 B (512²) on the sixteen
 2048 m levels, 1,048,576 B (1024²) on GuadalCanal / Midway / Tobruk.
 
-**Current state.** `bf42/level.py:517` sets `TerrainInfo.material_size`;
-`grep -rn material_size tools/bf1942-models/` returns the dataclass field
-(`level.py:34`) and that assignment and nothing else. The file itself is never
-in `LevelFiles.read`.
+**Current state — FIXED.** The map is decoded and shipped as
+`terrain/materials.png`; the viewer (`viewer/heightfield.js`,
+`level-terrain.js`) decodes it per level and samples it nearest, so a ground
+impact resolves the authored surface. Verified live on Wake: adjacent impacts
+returned "Juicy grass" and "Dry sand" (`parity-gaps.md` gap M-2). Evidence:
+extraction-table row Gap 9 in the
+[`corpus sweep`](../../bf1942-corpus-sweep-2026-09-18/README.md) (RESOLVED
+2026-09-25).
 
-**Size. M.** Reading it is trivial (raw byte grid at a known dimension); the
-work is deciding what to do with it and mapping material ids to meanings —
-`MaterialManager.attGroup/defGroup/damageMod` in `bf1942/Game/damage_system/*.con`
-is the id table. **UNVERIFIED:** whether the engine uses the material map for
-anything *visual* (my reading is that it drives footstep/impact effects,
-traction and damage, not shading) — worth settling against the decompiled corpus
-before building anything on it.
+**Size. S.** Reading it was trivial (raw byte grid at a known dimension); the
+id-to-meaning mapping comes from `MaterialManager.attGroup/defGroup/damageMod`
+in `bf1942/Game/damage_system/*.con`.
 
-**Impact. Low-medium and indirect.** It is the only data that says "this is
-sand, that is grass, that is concrete" — the prerequisite for correct footstep
-audio, tyre dust, impact effects and a material-shaded fullscreen map.
+**Impact. Realised.** It is the only data that says "this is sand, that is
+grass, that is concrete", and ground impacts now name it.
 
 ---
 
