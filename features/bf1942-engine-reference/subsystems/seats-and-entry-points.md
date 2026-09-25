@@ -51,6 +51,13 @@ point on failure. A viewer needs to reproduce **both** gates to match
 retail's filtering; passing only the team check that lives in
 `BFfindEntryPoint` will let a player enter entry points retail would refuse.
 
+> **Corrected 2026-09-25 (ledger SEAT-28):** that component gate is
+> `Armor::isDestroyed` (`0x08174300`), a wreck test; `validateBFEntryPoint`
+> has no team test. The team rule is the root PCO's team against the player's
+> (0 or equal), in `BFfindEntryPoint` and again in `toggleEntryPoint`, and the
+> hull's team is stamped by every occupant and cleared by the last one out
+> (SEAT-26, SEAT-27; `features/vehicle-entry-team-rule`).
+
 ## 3. Entering and the vestigial low-level calls
 
 `EntryPoint::enter`/`exit` (`0x081ae030`/`0x081ae070`, SEAT-6) are

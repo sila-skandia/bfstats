@@ -628,7 +628,7 @@ const localPlayer = createLocalPlayer(bag(
   from(() => mapSurfaces, `toggleFullMap`),
   from(() => pageAudio, `handleSoldierFootstep playSoldierHurtSound`),
   from(() => pageInput, `captured HUD_FOOT kbLockLeave keys seatAltFire seatFire touchFlying`),
-  from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle roomJoined`),
+  from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews HUD_DRIVE HUD_MANNED HUD_PILOT
     mannedActive seatedCamera view viewFor`),
   from(() => seatPose, `disposeSeatPose followSeat loadSeatPose stepSeatIk`),
@@ -685,7 +685,7 @@ const vehicleEntry = createVehicleEntry(bag(
   from(() => freeCamera, `placeCamera`),
   from(() => hudFeed, `showHint updateHud`),
   from(() => level, `collider currentRoot vehicleSpawnActive world`),
-  from(() => localPlayer, `aircraft car leaveSeat markPilot occupancy setPilot soldier useLens`),
+  from(() => localPlayer, `aircraft car leaveSeat markPilot mayEnterHull occupancy setPilot soldier useLens`),
   from(() => pageInput, `HUD_FOOT releaseButtons`),
   from(() => room, `netSeatRow netSendAction`),
   from(() => seatCamera, `driveFwd mannedActive`),
