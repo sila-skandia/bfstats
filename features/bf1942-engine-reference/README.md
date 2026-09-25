@@ -403,8 +403,8 @@ The corpus itself had five things wrong: +0x31 of a StandardMesh sub-shader is
 `textureFade`, not `transparent`; `FireArms::setZoom` sets flag bits through
 `updateFlags` and publishes no component 0x5000; `cameraShakeFactor` lies in
 zero-filled `.data`; a `BFSoldier` holds four animation machines, not three; and
-`c_SstJump` is sound trigger 4, not a name for the jump bit 0x80. Still open from the round: MEME-10, SM-5, LM-3's
-apply/reset pairing, jump velocity,
+`c_SstJump` is sound trigger 4, not a name for the jump bit 0x80. Still open from the round: MEME-10, SM-5 (narrowed 2026-09-25), LM-3's
+apply/reset pairing (confirmed 2026-09-25), jump velocity,
 and the blend-mode mapping (SPR-5).
 
 **SM-1/SM-2 are settled** ([subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md)):
