@@ -183,6 +183,15 @@ export function createLevelSky(page) {
     // level rather than one per consumer.
     const env = sky.levelEnvCube;
     const ld = w.lightDirection || [-0.3, 0.5, 0.65];
+    // `water.envmapColor` and `GeometryTemplate.waveHeight` (level-content.md
+    // Gap 17): both are registered client properties. The tint multiplies the
+    // reflected-cube term before the fresnel mix — Raid_on_Agheila's warm
+    // 0.5/0.4/0.3 versus the shared green 0.7/0.8/0.7 is the visible case —
+    // and the height drives a vertical swell, nonzero only on Santo_Croce and
+    // Eagles_Nest (0.1). A level that declares neither keys neither, so
+    // scenes extracted before this change read exactly as they did.
+    const envColor = w.envmapColor || null;
+    const waveHeight = w.waveHeight || 0;
     sky.waterUniforms = {
       tLayer1: { value: layer1 },
       tLayer2: { value: layer2 },
@@ -209,6 +218,8 @@ export function createLevelSky(page) {
       uShallowAlpha: { value: w.shallowAlpha ?? 0.5 },
       uAlphaDepth: { value: w.alphaDepth || 1.5 },
       uColorDepth: { value: w.colorDepth || 10 },
+      uEnvColor: { value: envColor ? srgb(envColor, [1, 1, 1]) : null },
+      uWaveHeight: { value: waveHeight },
       fogColor: { value: new THREE.Color(0x808080) },
       fogNear: { value: 400 },
       fogFar: { value: 900 },
@@ -219,9 +230,18 @@ export function createLevelSky(page) {
       depthWrite: false,
       side: THREE.DoubleSide,
       vertexShader: `
+      uniform float uTime, uWaveHeight, uWorldSize;
       varying vec3 vWorld;
       void main() {
         vec4 world = modelMatrix * vec4(position, 1.0);
+        // GeometryTemplate.waveHeight: a vertical swell across the plane,
+        // nonzero only where a level ships it (Santo_Croce, Eagles_Nest).
+        // One travelling sine in world space; 0.1 m is a swell, not surf.
+        if (uWaveHeight > 0.0) {
+          float k = 6.2831853 / 256.0;
+          world.y += uWaveHeight * sin(world.x * k + uTime * 1.1)
+                                  * cos(world.z * k * 0.63 - uTime * 0.7);
+        }
         vWorld = world.xyz;
         gl_Position = projectionMatrix * viewMatrix * world;
       }`,
@@ -231,8 +251,9 @@ export function createLevelSky(page) {
       uniform float uTime, uWorldSize, uMaxDepth;
       uniform vec2 uDir1, uDir2, uDirN;
       uniform float uScroll1, uScroll2, uScrollN, uTile1, uTile2, uTileN;
-      uniform vec3 uShallow, uDeep, uSpec, uLightDir;
+      uniform vec3 uShallow, uDeep, uSpec, uLightDir, uEnvColor;
       uniform float uShininess, uShallowAlpha, uAlphaDepth, uColorDepth;
+      uniform float uWaveHeight;
       uniform vec3 fogColor;
       uniform float fogNear, fogFar;
       varying vec3 vWorld;
@@ -290,6 +311,12 @@ export function createLevelSky(page) {
         // against the Wake defgun reference, same spirit as the fresnel
         // shaping below - not a decompiled engine behaviour.
         vec3 sky = textureLod(tEnv, R, 4.0).rgb;
+        #ifdef HAS_ENVCOLOR
+        // water.envmapColor tints the reflected cube (the engine's registered
+        // property between envMapEnable and specularStreakFactor). Multiplied
+        // before the fresnel mix so the rim term carries the same cast.
+        sky *= uEnvColor;
+        #endif
         // A plain Schlick fresnel (exponent 5, scaled to reach 1.0) turned the
         // lagoon into a near-perfect cloud mirror the moment the camera got low
         // and the view raked across open water -- exactly the case a flythrough
@@ -324,6 +351,7 @@ export function createLevelSky(page) {
         ...(normal ? { HAS_NORMAL: '' } : {}),
         ...(depth ? { HAS_DEPTH: '' } : {}),
         ...(env ? { HAS_ENV: '' } : {}),
+        ...(envColor ? { HAS_ENVCOLOR: '' } : {}),
       },
     });
     waterObj.material.dispose();
