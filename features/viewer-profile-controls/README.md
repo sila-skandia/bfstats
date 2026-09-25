@@ -377,7 +377,7 @@ dispatcher (`page-input.js` `cameraOrSpawnTrigger` + the keydown router and
 | `c_PIScreenShot` | SCREENSHOT | not wired (could save the canvas) |
 | `c_PIToolTip` | TOGGLE TOOLTIP | not wired: the viewer has radio tooltips only, and TOGGLE TOOLTIP is the game's help tooltips |
 | `c_PIShowMapVote/VoteYes/VoteNo` | MAP VOTE rows | **nothing to drive**: no vote |
-| `c_PIMouseLook` | TOGGLE MOUSELOOK (air) | not wired: the viewer's plane mouse is always look, the retail one flies unless this is held |
+| `c_PIMouseLook` | TOGGLE MOUSELOOK (air) | wired 2026-09-25 (`features/pilot-mouse-look`): a pilot's mouse looks only while it is held, the released view eases back, and holding it zeroes rudder and stick, as in retail. The retail mouse flies the plane when it is up; the viewer's does nothing |
 | `c_PICameraX/Y` | (numpad, no row) | not wired: rotating the external camera |
 | `c_PIRun`, `c_GIScript1-4` | (no row) | no known use |
 
