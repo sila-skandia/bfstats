@@ -38,6 +38,20 @@ class TerrainInfo:
     tex_offset_x: int = 0
     tex_offset_y: int = 0
     detail_tex: str = ""
+    # `GeometryTemplate.waveHeight` — the water plane's vertical swell
+    # amplitude (a registered PatchTerrain property in the retail client;
+    # nonzero only on Santo_Croce and Eagles_Nest, 0.0 everywhere else it is
+    # authored). `waveScale` ships once but is absent from both binaries —
+    # dead, not parsed (level-content.md Gap 17).
+    wave_height: float | None = None
+    # `GeometryTemplate.targetTriCount` — the client's terrain tessellation
+    # budget, read at PatchTerrain init next to the create string (4000 on the
+    # 1024 m levels, 5000 elsewhere). Recorded as metadata; the viewer keeps
+    # its own full-resolution grid, which is more detailed than the budget in
+    # the right direction. `lodDistance` ships alongside but no such string
+    # exists in BF1942.exe — dead in retail, not parsed (level-content.md
+    # Gap 10).
+    target_tri_count: int | None = None
 
 
 @dataclass
@@ -250,6 +264,14 @@ class WaterInfo:
     shallow_alpha: float = 1.0        # water.waterShallowAlpha
     alpha_depth: float = 0.0          # water.waterAlphaDepth, metres to full alpha
     color_depth: float = 10.0         # water.waterColordepth, metres to deep colour
+    # `water.envmapColor` — the tint of the reflected environment cube (a
+    # registered property in the retail binaries, read from Init.con; eight
+    # levels across the three packs set it, most visibly Raid_on_Agheila's
+    # warm 0.5/0.4/0.3). El Alamein's `water.wateShallowAlpha` typo is
+    # deliberately NOT rescued into a shallow-alpha here: the engine never
+    # honoured it either (the string is absent from both binaries), so the
+    # shipped default is the parity answer (level-content.md Gap 17).
+    envmap_color: tuple[float, float, float] | None = None
 
     @property
     def declared(self) -> bool:
@@ -679,6 +701,19 @@ def parse_terrain_con(text: str) -> TerrainInfo:
             info.tex_offset_y = int(float(token))
         elif cmd == "detailtexname":
             info.detail_tex = token.replace("\\", "/")
+        elif cmd == "waveheight":
+            try:
+                info.wave_height = float(token)
+            except ValueError:
+                pass
+        elif cmd == "targettricount":
+            try:
+                info.target_tri_count = int(float(token))
+            except ValueError:
+                pass
+        # `lodDistance` is deliberately not read: the string is absent from
+        # BF1942.exe, so the retail client never applied it (level-content.md
+        # Gap 10's investigation).
     return info
 
 
@@ -1814,6 +1849,11 @@ def _parse_water(info: LevelInfo, cmd: str, tokens: list[str]) -> None:
             w.alpha_depth = float(tokens[0])
         elif cmd == "watercolordepth":
             w.color_depth = float(tokens[0])
+        elif cmd == "envmapcolor":
+            w.envmap_color = _color3(tokens[0])
+        # `wateshallowalpha` (El Alamein's typo) falls through on purpose:
+        # the engine's own property table has no such string, so retail
+        # renders with the built-in default and parity keeps that.
     except ValueError:
         pass
 

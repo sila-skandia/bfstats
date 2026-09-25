@@ -1686,3 +1686,27 @@ Benign non-reads, confirmed correct and deliberately not listed as gaps:
 `objectTemplate.createNotInGrid`, `Object.setName`, and the 27 skipped
 `Allied/AxisAirplaneAmmo` placements (whose `geometry` line is `rem`'d out in
 `Objects.rfa` — invisible in the engine too).
+
+---
+
+## Built 2026-09-26
+
+- **Gap 12 — fixed.** The exporter falls back to the shared
+  `texture/defaultTexture.dds` (decoded from `texture.rfa`, engine xrefs
+  `0x00642f09`/`0x0064316d`) for levels that ship no `terrainDefault.dds`,
+  filling the DRY out-of-combat-area patches only (max sample >
+  `waterLevel + 0.5 m` on the 256 m grid — the audit's counting rule, pinned
+  by `DefaultTerrainTests.test_combat_area_scopes_dry_fill_to_three_levels`,
+  30/28/26). Wet sea floor stays unrendered. Levels shipping their own
+  `terrainDefault.dds` keep the full fill.
+- **Gap 10 — closed.** `targetTriCount` is recorded as environment-layer
+  metadata in `scene.json` (`scene_layers.py`); `lodDistance` stays
+  won't-fix (dead in retail). No decimation built, per the recommendation.
+- **Gap 17 — fixed.** `envmapColor` and `GeometryTemplate.waveHeight` parse
+  into the water/environment data and are wired in the viewer's water shader
+  (`level-sky.js`: a `uEnvColor` term on the reflected cube, a swell driven
+  by `uWaveHeight`; nonzero only on Santo_Croce and Eagles_Nest). The dead
+  directives stay unparsed.
+- **Gap 11 — built.** See `features/mesh-lod-chains/README.md` (chains
+  emitted, `THREE.LOD` in the viewer, bocage measured at 1.12x growth,
+  578 LODs live).
