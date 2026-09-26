@@ -18,6 +18,7 @@ import { GameConsole } from './console.js';
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
  * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
  * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`,
+ * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
@@ -58,6 +59,17 @@ export function createPageInput(page) {
     if (page.escMenuCaptures()) {
       if (e.code === 'Escape') { page.setEscMenu(false); return; }
       if (page.escMenuKeydown(e)) e.preventDefault();
+      return;
+    }
+    // The mission-briefing screen owns the keyboard while it is up, the way
+    // the console and the Escape menu own theirs: Enter accepts the briefing
+    // (the game's own READY key — `c_GIInGameMenu` opens the spawn interface
+    // only once the briefing is gone) and nothing else reaches the page.
+    if (page.overlay?.briefingCaptures?.()) {
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) {
+        e.preventDefault();
+        page.overlay.acceptBriefing();
+      }
       return;
     }
     if (e.code === 'Escape') {
@@ -298,6 +310,9 @@ export function createPageInput(page) {
     const camera = /^c_PICameraMode([1-4])$/.exec(trigger);
     if (camera) { page.cameraMode(Number(camera[1])); return true; }
     if (trigger === 'c_GIInGameMenu') {
+      // The pad's Enter too: while the briefing is up it accepts the
+      // briefing; once it is gone it opens the spawn interface.
+      if (page.overlay?.briefingCaptures?.()) { page.overlay.acceptBriefing(); return true; }
       if (!page.deployActive() && !page.optPilot.checked) page.openDeploy();
       return true;
     }
