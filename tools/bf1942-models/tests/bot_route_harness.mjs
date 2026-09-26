@@ -1,8 +1,13 @@
 // `viewer/bot-route.js predictObstacles` (a soldier's 5 s collision
-// look-ahead, `BBAvoid::calculateUrgency` 0x0855c650, ledger AI-119) under
-// node, for tests/test_bot_route.py. Prints one JSON object.
+// look-ahead, `BBAvoid::calculateUrgency` 0x0855c650, ledger AI-119) and the
+// route's leg widenings (one search a tick, `extendRoute`) under node, for
+// tests/test_bot_route.py. Prints one JSON object.
 
-import { predictObstacles, ageObstacles, subSpheres2d, SOLDIER_AVOID, BOT_RADIUS } from './bot-route.js';
+import {
+  predictObstacles, ageObstacles, subSpheres2d, SOLDIER_AVOID, BOT_RADIUS,
+  ensureRoute, extendRoute, popPassed, lookAhead, execInfantryMoveTo,
+} from './bot-route.js';
+import { CELL_FREE, CELL_OBJECT } from './nav-map.js';
 
 /** A soldier bot walking at `speed` along +z (yaw 0) from the origin. */
 function walker(speed = 5) {
@@ -92,5 +97,65 @@ b.currentPlan = [{ type: 'InfanteryMoveTo' }];
 b.currentPlan.vehicleId = 'gun:AA_Allies';
 ageObstacles(b, 0.1);
 out.boardTarget = { before, after: b.obstacles.map(o => o.id) };
+
+// --- A route's first leg, widened one search a tick -------------------------
+//
+// A flat 200 m map of 1 m cells. The hull stands at cell (100, 100) and is
+// ordered 20 m on, to (100, 120) -- under the two coarse cells, so the route
+// is the one leg. A wall across row 110 runs from x = 0 to 157: the way round
+// is its end, 58 cells over. The local search box is the start's cell +- the
+// radius, `10 + rand * 14 + 1` plus 16 m a widening, so the base box and the
+// first two widenings (at most 57 m) cannot reach the end of the wall and the
+// third (at least 59 m) always does, whatever the draw.
+function flatNav(size = 200) {
+  const n = size * size;
+  return { width: size, height: size, cellSize: 1, blocked: new Uint8Array(n).fill(CELL_FREE),
+           heights: new Float32Array(n), normalY: new Float32Array(n).fill(1) };
+}
+const wallNav = flatNav();
+for (let gx = 0; gx <= 157; gx++) wallNav.blocked[110 * wallNav.width + gx] = CELL_OBJECT;
+// The same map with the goal walled in on every side: no widening reaches it.
+const shutNav = flatNav();
+for (let gz = 117; gz <= 123; gz++) {
+  for (let gx = 97; gx <= 103; gx++) {
+    if (Math.max(Math.abs(gx - 100), Math.abs(gz - 120)) === 3) shutNav.blocked[gz * shutNav.width + gx] = CELL_OBJECT;
+  }
+}
+const cellCentre = (gx, gz) => [gx + 0.5, -(gz + 0.5)];
+
+/** A driven hull on `nav` whose bot methods are the module's own functions. */
+function hullBot(nav) {
+  const [x, z] = cellCentre(100, 100);
+  const bot = {
+    position: [x, 0, z], vehicle: { kind: 'tank', drive: { state: { velocity: { x: 0, y: 0, z: 0 } } } },
+    obstacles: [], route: null, _pathFailures: 0, _now: 0, moveForward: 0, moveStrafe: 0, steered: 0,
+    _nav: () => nav, _radius: () => 3, _player: () => null, _trackObstruction: () => false,
+    _ensureRoute: goal => ensureRoute(bot, goal), _extendRoute: () => extendRoute(bot),
+    _popPassed: () => popPassed(bot), _lookAhead: () => lookAhead(bot),
+    _steerToward: () => { bot.steered++; bot.moveForward = 1; },
+  };
+  return bot;
+}
+
+/** `execInfantryMoveTo` at 30 Hz for `ticks`: the first tick the hull was
+ *  given a point, the first tick its route stood failed, the widest search. */
+function driveTicks(nav, ticks = 90) {
+  const bot = hullBot(nav);
+  const [gx, gz] = cellCentre(100, 120);
+  const action = { type: 'InfanteryMoveTo', waypoint: [gx, 0, gz], arrive: 3 };
+  let steeredAt = null, failedAt = null, widest = 0;
+  for (let t = 0; t < ticks; t++) {
+    bot._now = t / 30;
+    const before = bot.steered;
+    execInfantryMoveTo(bot, action, 1 / 30);
+    if (steeredAt === null && bot.steered > before) steeredAt = t;
+    if (failedAt === null && bot.route?.failed) failedAt = t;
+    widest = Math.max(widest, bot.route?.widen ?? 0);
+  }
+  return { steeredAt, failedAt, widest, pathFailures: bot._pathFailures,
+           points: bot.route?.points?.length ?? 0, throttle: bot.moveForward };
+}
+out.firstLegWidening = driveTicks(wallNav);
+out.goalWalledIn = driveTicks(shutNav);
 
 console.log(JSON.stringify(out));

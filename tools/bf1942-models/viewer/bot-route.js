@@ -774,7 +774,12 @@ export function execInfantryMoveTo(bot, action, dt) {
       bot._lastThrottle = bot.moveForward;
       return false;
     }
-    route.failed = true;
+    // No point yet because the first leg is still being widened (one search
+    // a tick, `extendRoute`): the route stands and the next tick searches
+    // wider. Failing it here threw the widening away; the retry started again
+    // from the narrow box, so a first leg the third widening would have closed
+    // never was, and a hull held its throttle at 0 for good.
+    if (!route.widen) route.failed = true;
   }
   // No route: the map cannot see a way, or the level has no map. The
   // engine's bot stands still on state 3 until a re-plan; here a soldier
