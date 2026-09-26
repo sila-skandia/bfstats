@@ -182,6 +182,9 @@ label.opt {
   pointer-events: none;
 }
 #console-canvas[hidden] { display: none !important; }
+/* The briefing screen's gate hides the HUD and the radio strip through the
+   hidden attribute; the generic canvas rule would defeat it. */
+#hud-canvas[hidden], #comms-canvas[hidden] { display: none !important; }
 
 /* The Escape menu (viewer/play/skirmish.js): the front end, back up over
    the battle. Opaque, and over everything the level draws -- the spawn
