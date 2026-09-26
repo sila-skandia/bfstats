@@ -81,6 +81,7 @@ from bf42.level import (  # noqa: E402
     discover_level_sounds,
     find_gameplay_modes,
     find_level_archives,
+    is_gameplay_kind,
     load_game_types,
     load_gameplay_objects,
     load_level_files,
@@ -197,7 +198,6 @@ def load_level(game_dir: Path, mod: str, level: str,
     _load_extra_lens_flares(files, info)
     if files.find("StaticObjects.con"):
         info.static_objects = parse_static_objects(_read_text(files, "StaticObjects.con"))
-    info.sounds = discover_level_sounds(files, info.static_objects)
     # Conquest is what every stock level ships and what these paths assumed,
     # but a mod map may only carry Ctf or ObjectiveMode — asking for the mode
     # the level actually has is what gets those their vehicles and flags.
@@ -221,6 +221,11 @@ def load_level(game_dir: Path, mod: str, level: str,
     # uses. `load_gameplay_objects` reads these two files itself now.
     info.spawn_templates = info.modes[default].object_spawn_templates
     info.spawn_objects = info.modes[default].object_spawns
+    # After the layers, because a mode script's statics are tagged by them.
+    # Without the object library this can only match the level's own area
+    # sounds; `scene_layers.LevelContext.library` redoes it with the library.
+    info.sounds = discover_level_sounds(files, info.static_objects,
+                                        mode_statics=union_mode_statics(info))
     heightmap = decode_heightmap(
         files.read("Heightmap.raw"), info.terrain.world_size, info.terrain.y_scale,
     )
@@ -644,6 +649,11 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
             # started once and the field would change nothing it plays).
             if area.random_start_pitch is not None and not area.loop:
                 entry["randomStartPitch"] = list(area.random_start_pitch)
+            # An emitter on a static only some layers have (a mode script's,
+            # `union_mode_statics`) is heard only in those: the page drops it
+            # like `pruneToMode` drops the node (`viewer/game-modes.js`).
+            if area.modes:
+                entry["modes"] = list(area.modes)
             sound_report["areas"].append(entry)
 
     if library is not None and objects is not None and vehicles:
@@ -1891,6 +1901,68 @@ def spawned_vehicle_templates(info: LevelInfo, library=None) -> list[str]:
     return out
 
 
+def _static_key(inst) -> tuple:
+    return (inst.template.lower(), *_pose_key(inst), inst.scale, inst.color)
+
+
+def union_mode_statics(info: LevelInfo, library=None) -> list[tuple]:
+    """The statics a round's mode script places beyond `StaticObjects.con`,
+    once each, with the layers they stand in.
+
+    `StaticObjects.con` is what every mode shares. A mode script can add to
+    it through a file it runs (`GameType.objects`): Secret Weapons'
+    Hellendoorn, Kbely Airfield and Mimoyecques run
+    `Conquest/AdditionalStaticObjects` from their Conquest, CoOp, Ctf and Tdm
+    scripts (four V2s, two prototypes, three V3 shafts) and Telemark a
+    root-level `AdditionalStaticObjects` (its two turbines). Their
+    ObjectiveMode scripts run none of it: there the same spots hold the
+    destroyable objective an `ObjectiveSpawners` pad makes. So a static is
+    tagged with the layers whose game types create it, and a layer no game
+    type loads -- Hellendoorn's `SinglePlayer/`, which its composed CoOp
+    script only borrows spawns from -- gets none of them.
+
+    Yields `(inst, modes)`, in the order the game types make them. `modes`
+    lists layer names in `info.modes` order, or is None when the static is in
+    every layer (its node is then untagged, like a `StaticObjects.con` one).
+    Left out: a game type whose layer the level does not ship (the page falls
+    back to the default layer for it, and must not show its statics there), a
+    template of a gameplay kind (`is_gameplay_kind`: by what the chain
+    declares, else by the library's template), and a placement that repeats a
+    `StaticObjects.con` one exactly.
+    """
+    layers = list(info.modes)
+    by_lower = {name.lower(): name for name in layers}
+    shared = {_static_key(inst) for inst in info.static_objects}
+    order: list[tuple] = []
+    index: dict[tuple, int] = {}
+    for gt in info.game_types.values():
+        layer = by_lower.get(gt.mode.lower())
+        if layer is None:
+            continue
+        for inst in gt.objects:
+            name = inst.template.lower()
+            kind = gt.declared.get(name)
+            if kind is None and library is not None:
+                template = library.object(inst.template)
+                kind = template.kind if template is not None else None
+            if is_gameplay_kind(kind):
+                continue
+            key = _static_key(inst)
+            if key in shared:
+                continue
+            at = index.get(key)
+            if at is None:
+                index[key] = len(order)
+                order.append((inst, {layer}))
+            else:
+                order[at][1].add(layer)
+    out: list[tuple] = []
+    for inst, found in order:
+        modes = [name for name in layers if name in found]
+        out.append((inst, None if len(modes) == len(layers) else modes))
+    return out
+
+
 def union_control_points(info: LevelInfo) -> list[tuple]:
     """Every control point any mode places, once, tagged with its modes.
 
@@ -2443,6 +2515,28 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 continue
             roots.append(node)
             object_report["placed"] += 1
+        # And the ones a mode script adds, tagged with the layers that have
+        # them (`union_mode_statics`). Their count and files are reported on
+        # their own, so `placed` -- and every `maps.json` row -- stays the
+        # StaticObjects.con count it has always been.
+        mode_placed = 0
+        mode_files: list[str] = []
+        for inst, modes in union_mode_statics(info, assembler.library):
+            node = _place_template(
+                assembler, builder, inst.template, inst, report, seen_fail)
+            if node is None:
+                if inst.template not in object_report["skipped"]:
+                    object_report["skipped"].append(inst.template)
+                continue
+            if modes:
+                _tag_modes(builder, node, modes)
+            roots.append(node)
+            mode_placed += 1
+            if inst.source and inst.source not in mode_files:
+                mode_files.append(inst.source)
+        if mode_placed:
+            object_report["modeStatics"] = {"placed": mode_placed,
+                                            "files": mode_files}
         spawn_fail: set[str] = set()
         spawner_nodes: list[int] = []
         # How many layers there are, so a node in all of them stays untagged

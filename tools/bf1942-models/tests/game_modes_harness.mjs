@@ -4,7 +4,7 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { MODE_KEYS, gameTypes, isUnknownMode, modeNames, modeProblem,
+import { MODE_KEYS, entryInMode, gameTypes, isUnknownMode, modeNames, modeProblem,
          nodeInMode, pruneToMode, resolveMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 
@@ -241,6 +241,21 @@ results.nodeInMode = {
   other: nodeInMode(node('x', { modes: ['Ctf'] }), 'Tdm'),
   notAnArray: nodeInMode(node('x', { modes: 'Ctf' }), 'Tdm'),
   noNode: nodeInMode(null, 'Ctf'),
+};
+
+// `scene.json` data under the same rule: Telemark's turbine hum is tagged with
+// the layers whose scripts place the turbines, an ordinary emitter is not.
+const turbine = { name: 'Telemark_TurbinesOrginal_static', modes: ['Conquest', 'Ctf', 'Tdm', 'CoOp'] };
+const surf = { name: 'coast1' };
+results.entryInMode = {
+  taggedIn: entryInMode(turbine, 'CoOp'),
+  taggedOut: entryInMode(turbine, 'ObjectiveMode'),
+  caseInsensitive: entryInMode(turbine, 'coop'),
+  untagged: entryInMode(surf, 'ObjectiveMode'),
+  noMode: entryInMode(turbine, ''),
+  notAnArray: entryInMode({ modes: 'Ctf' }, 'Tdm'),
+  noEntry: entryInMode(null, 'Ctf'),
+  filtered: [turbine, surf].filter(a => entryInMode(a, 'ObjectiveMode')).map(a => a.name),
 };
 
 results.spawnerWindow = {

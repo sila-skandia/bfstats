@@ -173,13 +173,26 @@ export function selectGameMode(extras, wanted) {
   return out;
 }
 
-/** Does a scene node belong in `mode`? An untagged node is in every mode. */
-export function nodeInMode(node, mode) {
-  const tag = node && node.userData && node.userData.modes;
+function tagInMode(tag, mode) {
   if (!Array.isArray(tag)) return true;
   if (!mode) return true;
   const lowered = String(mode).toLowerCase();
   return tag.some(name => String(name).toLowerCase() === lowered);
+}
+
+/** Does a scene node belong in `mode`? An untagged node is in every mode. */
+export function nodeInMode(node, mode) {
+  return tagInMode(node && node.userData && node.userData.modes, mode);
+}
+
+/**
+ * Does a `scene.json` entry belong in `mode`? The same rule for data: an
+ * emitter in `sounds.areas` hanging off a static only some layers place (a
+ * mode script's `AdditionalStaticObjects`, like Telemark's turbines) carries
+ * `modes`, and one with no `modes` is in every mode.
+ */
+export function entryInMode(entry, mode) {
+  return tagInMode(entry && entry.modes, mode);
 }
 
 /**

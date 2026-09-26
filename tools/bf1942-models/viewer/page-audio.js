@@ -12,6 +12,7 @@ import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
 import { footstepMaterial } from './collision-materials.js';
 import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
+import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 
 /**
@@ -337,7 +338,9 @@ export function createPageAudio(page) {
     // anchored at whichever one is nearest — which is the same reason the
     // shorelines do it, and the reason five flags do not phase against each
     // other. `flag.ssc` supplies the near/far ramp the group already honours.
-    const areaList = [...(cfg.areas || [])];
+    // An emitter on a static this mode does not place (its `modes` leaves the
+    // mode out) went with the node in `pruneToMode`, so its sound goes too.
+    const areaList = (cfg.areas || []).filter(area => entryInMode(area, report.gameplayMode));
     const flags = cfg.flags;
     if (flags && flags.file && flags.positions?.length) {
       for (const point of flags.positions) {
