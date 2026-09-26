@@ -736,10 +736,13 @@ export function execInfantryMoveTo(bot, action, dt) {
   }
 
   // `_resetInput` has zeroed this tick's word; the stall test wants the
-  // throttle the body was given last tick.
+  // throttle the body was given last tick. A soldier's speed is the ground he
+  // covered, not his velocity: that is re-set to the command every grounded
+  // tick, so a body wedged under a ramp read a full run and never stalled.
   const soldier = bot._player()?.soldier;
   const hullV = bot.vehicle?.drive?.state?.velocity;
-  const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z) : (soldier?.speed ?? 0);
+  const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z)
+    : (soldier?.travelSpeed ?? soldier?.speed ?? 0);
   bot.moveForward = bot._lastThrottle ?? 0;
   if (!bot.vehicle) {
     predictObstacles(bot);

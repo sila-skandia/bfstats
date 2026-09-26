@@ -174,6 +174,13 @@ class BotAiTests(unittest.TestCase):
     def test_the_bot_never_stalls_on_the_wall(self) -> None:
         self.assertLess(self.results["avoid"]["maxStalled"], 30)
 
+    def test_a_wedged_body_stalls_even_while_its_velocity_reads_a_run(self) -> None:
+        # The ground covered is what counts, not the commanded velocity the
+        # grounded tick re-sets: the counter reaches the 150-tick obstruction.
+        wedged = self.results["wedged"]
+        self.assertGreater(wedged["speedWhileHeld"], 3.0)
+        self.assertGreaterEqual(wedged["maxStalled"], 150)
+
     # --- Steering: the engine's 31.5 degree throttle cone -------------------
 
     def test_a_point_behind_turns_without_throttle(self) -> None:

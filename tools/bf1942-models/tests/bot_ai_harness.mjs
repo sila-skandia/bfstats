@@ -210,6 +210,33 @@ function avoidScenario() {
   };
 }
 
+/** Wedged: the body is held (a plate through its middle, `soldier-resolve.js`
+ *  unable to strip the velocity the grounded tick re-sets to the command every
+ *  time) and the soldier reports a full run while covering no ground. The
+ *  stall counter must read the ground covered, or it never counts. */
+function wedgedScenario() {
+  const c = wallCollider();
+  const nav = buildNavMap(c, WORLD, { seeds: [[HOME[0], HOME[2]]] });
+  const world = new World({ collider: c, extras: EXTRAS });
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags[0] });
+  const bot = new BotController({ playerId: 'bot_0', world, botSkill: 0.75 });
+  bot.navGrid = nav;
+  let maxStalled = 0;
+  let speedWhileHeld = 0;
+  for (let i = 0; i < 400; i++) {
+    const soldier = world.player('bot_0').soldier;
+    if (i === 60) {
+      // From here the frame's ground covered reads zero whatever the body does.
+      Object.defineProperty(soldier, 'travelSpeed', { get: () => 0, set: () => {}, configurable: true });
+    }
+    bot.tick(WORLD_TICK_DT, i * WORLD_TICK_DT);
+    world.step(WORLD_TICK_DT);
+    if (i > 60) speedWhileHeld = Math.max(speedWhileHeld, soldier.speed);
+    maxStalled = Math.max(maxStalled, bot._stalledTicks);
+  }
+  return { maxStalled, speedWhileHeld };
+}
+
 /** The steering cone: a point behind the bot gets a turn and no throttle; a
  *  point ahead gets full throttle (`infanteryControlTowardsDirection`). */
 function steerScenario() {
@@ -1186,6 +1213,7 @@ const results = {
   friendly: friendlyScenario(),
   moveTo: moveToScenario(),
   avoid: avoidScenario(),
+  wedged: wedgedScenario(),
   steer: steerScenario(),
   look: lookScenario(),
 };

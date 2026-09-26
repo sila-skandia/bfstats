@@ -226,6 +226,14 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertAlmostEqual(6.0, reported["speed"], places=2)
         self.assertEqual("run", reported["gait"])
 
+    def test_the_ground_covered_is_kept_beside_the_speed(self) -> None:
+        # `travelSpeed` is the distance a frame's ticks moved the body, over
+        # their time: what the bots' obstruction counter reads, because a body
+        # held against geometry can keep the integrator's full run while it
+        # stands still. On open ground the two agree.
+        reported = self.results["reportedSpeed"]
+        self.assertAlmostEqual(6.0, reported["travelSpeed"], places=1)
+
     def test_shift_is_the_slower_gait_not_a_sprint(self) -> None:
         # `c_PIWalk` is bound to LeftShift and the state machine enters
         # `Lb_WalkForward` from it. BF1942 has no sprint.

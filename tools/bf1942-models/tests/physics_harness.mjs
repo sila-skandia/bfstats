@@ -258,6 +258,33 @@ const roofed = new WorldCollider({ statics: roof });
 const down = roofed.sweepSphere(5, 8, -5, 0, -1, 0, 10, 0.5);
 results.sweepRoof = down && { t: down.t, y: down.y, py: down.py, ny: down.ny };
 
+// An open plate, no thickness and no sides: a landing craft's lowered ramp.
+// Moving level with the plate slicing through the sphere, the motion runs
+// along the plane, so only the plate's edge can stop it.
+const plate = fakeMesh([10, 1, -2, 14, 1, -2, 14, 1, 2, 10, 1, 2],
+                       { index: [0, 1, 2, 0, 2, 3] });
+const plated = new WorldCollider({ statics: buildCollisionIndex(group([plate])) });
+const lip = plated.sweepSphere(8, 1.1, 0, 1, 0, 0, 4, 0.3);
+results.sweepPlateEdge = lip && { t: lip.t, px: lip.px, py: lip.py, nx: lip.nx, ny: lip.ny };
+// Its long edge, walked at level from the side.
+const flank = plated.sweepSphere(12, 0.9, 4, 0, 0, -1, 4, 0.3);
+results.sweepPlateSide = flank && { t: flank.t, pz: flank.pz };
+// Clear of the plate's slab by more than the radius: over it, untouched.
+results.sweepPlateClear = plated.sweepSphere(8, 1.35, 0, 1, 0, 0, 8, 0.3) === null;
+// Already overlapping the edge, no contact whichever way the sphere moves.
+results.sweepOverlapLetsGo = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 1, 0]]
+  .every(([dx, dy, dz]) => plated.sweepSphere(9.9, 1.1, 0, dx, dy, dz, 1, 0.3) === null);
+// A wall of two panels meeting on a diagonal seam. A sphere sunk 5 cm into it
+// slides the whole length without meeting the seam or the wall's far end;
+// walking into the wall's end, along its plane from beyond it, stops there.
+const panels = fakeMesh([0, 0, 0, 0, 0, 8, 0, 3, 8, 0, 3, 0], { index: [0, 1, 2, 0, 2, 3] });
+const paneled = new WorldCollider({ statics: buildCollisionIndex(group([panels])) });
+results.sweepSeam = {
+  along: paneled.sweepSphere(0.25, 1.2, 1, 0, 0, 1, 9, 0.3) === null,
+  diagonal: paneled.sweepSphere(0.25, 2.5, 0.5, 0, -0.3, 0.954, 8, 0.3) === null,
+  endOn: paneled.sweepSphere(0.25, 1.2, -2, 0, 0, 1, 4, 0.3)?.t ?? null,
+};
+
 // --- a body that walks -----------------------------------------------------
 
 const field = buildHeightfield([flatTile(0)], { worldSize: 64, dim: 16 });
@@ -545,6 +572,20 @@ const sliding = walk(corridor, { forward: 1 }, 2, { yaw: Math.PI / 4 });
 results.slidesAlongTheWall = {
   x: sliding.x, z: sliding.z, movedAlong: Math.abs(sliding.z + 32),
 };
+// An open plate at chest height across the path, near edge at x = 8: a lowered
+// landing-craft ramp met from the sand. It runs through the middle sphere
+// (1.125 m) just above its centre, so the body's settling drift carries that
+// sphere away from the plane and only the plate's edge can stop him; without
+// the edge test he walked on under it and wedged there.
+const ramp = fakeMesh(
+  [8, 1.18, -40, 16, 1.18, -40, 16, 1.18, -24, 8, 1.18, -24],
+  { index: [0, 1, 2, 0, 2, 3] });
+const beach = new WorldCollider({
+  heightfield: field,
+  statics: buildCollisionIndex(group([ramp])),
+});
+const underRamp = walk(beach, { forward: 1 }, 3);
+results.stopsAtThePlateEdge = { x: underRamp.x, contacts: underRamp.soldier.contacts };
 
 // A kerb the body steps onto, and a wall it does not.
 const stepUp = new WorldCollider({
