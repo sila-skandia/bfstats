@@ -38,6 +38,7 @@ MODULES = {
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
+    "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
     "body-float.js": VIEWER / "body-float.js",
     # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
