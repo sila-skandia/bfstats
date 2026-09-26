@@ -17,6 +17,7 @@ import { kdClass, MM_CHART } from '@/views/v4/mmTokens'
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
 import { parseUtc } from '@/utils/timeUtils'
+import MmPlayerFaceoff from '@/components/v4/armoury/MmPlayerFaceoff.vue'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -503,6 +504,14 @@ const formatDateShort = (iso: string): string => {
           >{{ $pn(srv.name) }}</button>
         </div>
       </section>
+
+      <!-- Each player in the uniform their service record opens on -->
+      <MmPlayerFaceoff
+        :player1="comparisonData.player1"
+        :player2="comparisonData.player2"
+        :leader="player1IsWinner ? 1 : player2IsWinner ? 2 : null"
+        style="margin-top: 28px"
+      />
 
       <!-- Summary cards -->
       <section style="margin-top: 28px">
