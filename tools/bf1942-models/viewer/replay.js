@@ -26,20 +26,25 @@
 // replay-recording.js (parsing, round clock, sampling), replay-kinematics.js,
 // replay-hulls.js, replay-bodies.js, replay-server-log.js, replay-assets.js
 // (models, pose pairs, gait clips), replay-gait.js and replay-actors.js (the
-// plain soldier fallback), replay-camera.js (follow), replay-gunfire.js and
-// replay-ui.js.
+// plain soldier fallback), replay-gunfire.js, and the viewing experience
+// (features/round-replay-ux): replay-camera.js (orbit, first person, free),
+// replay-chapters.js (the round's events), replay-feed.js (the game's own
+// message log), replay-timeline.js and replay-ui.js (the chrome and the
+// replay's input).
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, placeholderWeaponFor, controlledAt, lifeAt, rootOf,
+  parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
-import { followCamera } from './replay-camera.js';
+import { ReplayCamera, hullRadius } from './replay-camera.js';
+import { buildChapters, killsOf, recordingPlayer } from './replay-chapters.js';
+import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
@@ -88,25 +93,129 @@ class ReplayPlayer {
     this.root = new THREE.Group();
     this.root.name = 'replay';
     ctx.scene.add(this.root);
-    this.rows = [...rec.events, ...(log && alignment ? serverRows(rec, log, alignment) : [])]
-      .sort((a, b) => a.t - b.t);
+    this.serverRows = log && alignment ? serverRows(rec, log, alignment) : [];
+    this.rows = [...rec.events, ...this.serverRows].sort((a, b) => a.t - b.t);
+    // The round's kill lines (a v3 file's weapons filled from the server's
+    // log) and its chapters: the timeline's marks, the message log's lines,
+    // the scoreboard's tallies (replay-chapters.js).
+    this.kills = killsOf(rec, this.serverRows);
+    this.chapters = buildChapters(rec, this.serverRows, this.kills);
     const pids = [...new Set([...rec.players.keys(), ...rec.control.map(c => c.pid)])];
     // The recording's own player first: the one person in a bot round, and
     // the one whose view the recording was made from.
+    this.recordingPid = recordingPlayer(rec);
     const human = pids.find(pid => rec.players.get(pid) && !rec.players.get(pid).ai);
-    this.followPid = human ?? (pids.length ? pids[0] : null);
+    this.followPid = this.recordingPid ?? human ?? (pids.length ? pids[0] : null);
     this.v1 = new THREE.Vector3();
     this.v2 = new THREE.Vector3();
     this.v3 = new THREE.Vector3();
     this.q1 = new THREE.Quaternion();
-    this.followReady = false;
-    // Where the follow camera sits around its object: dragged or turned with
-    // the mouse, zoomed with the wheel.
-    this.orbit = { yaw: -Math.PI / 4, pitch: 0.35, zoom: 1 };
+    this.tagPoints = new Map();
     this.lastFiredTime = 0;
     this.soldiers = ctx.makeReplayBodies ? new ReplaySoldiers(this) : null;
     this.props = new ReplayProps(this);
-    this.ui = new ReplayUi(this, pids);
+    this.camera = new ReplayCamera(this);
+    if (this.followPid === null) this.camera.setMode('free');
+    this.feed = new ReplayFeed(this, this.kills);
+    this.ui = new ReplayUi(this);
+  }
+
+  /** Follow `pid` from now on: the camera eases over to him. */
+  follow(pid) {
+    if (pid === this.followPid || pid === null || pid === undefined || Number.isNaN(pid)) return;
+    this.followPid = pid;
+    this.camera.followChanged();
+  }
+
+  /** How fast the game's message log runs against the page's clock: the
+   *  replay's speed while it plays, still while it is paused or dragged. */
+  feedRate() {
+    return this.playing && !this.ui.scrubbing ? this.speed : 0;
+  }
+
+  /** After the frame is rendered: the timeline keeps a frame of it when it
+   *  asked for one (replay-timeline.js). */
+  afterRender(canvas) {
+    this.ui.timeline.capture(canvas);
+  }
+
+  /** A kit template's class as the game names it (`loadouts.json`). */
+  kitClass(kit) {
+    const kits = this.ctx.loadouts?.()?.kits;
+    if (!kits || !kit) return null;
+    const entry = kits[kit] ?? Object.entries(kits).find(([name]) => name.toLowerCase() === kit.toLowerCase())?.[1];
+    return entry?.class ?? null;
+  }
+
+  /** The weapon a soldier life holds at `t`: the item a v4 recording says
+   *  is in his hands, else his kit's primary. */
+  heldWeapon(life, t) {
+    const loadouts = this.ctx.loadouts?.() ?? null;
+    const item = bodyAt(this.rec, life.nid, t)?.item;
+    if (item && life.kitTemplate && loadouts?.kits) {
+      const kits = loadouts.kits;
+      const kit = kits[life.kitTemplate]
+        ?? Object.entries(kits).find(([name]) => name.toLowerCase() === life.kitTemplate.toLowerCase())?.[1];
+      const weapon = kit?.weapons?.find(w => w.slot === item)?.weapon;
+      if (weapon) return weapon;
+    }
+    return primaryWeaponFor(life, loadouts);
+  }
+
+  /** Where the name tags go this frame (replay-ui.js): every living soldier
+   *  on foot, and every crewed or damaged hull, as `{ key, pid, pids, name,
+   *  extra, team, at, hp }`. */
+  tagTargets() {
+    const out = [];
+    const point = key => {
+      let p = this.tagPoints.get(key);
+      if (!p) {
+        p = new THREE.Vector3();
+        this.tagPoints.set(key, p);
+      }
+      return p;
+    };
+    const name = pid => this.rec.players.get(pid)?.name ?? `player ${pid}`;
+    const names = this.ctx.comms?.lexicon?.()?.names ?? null;
+    if (this.soldiers?.available) {
+      for (const actor of this.soldiers.drawn) {
+        if (actor.state.dead || actor.seat) continue;
+        const s = actor.state.soldier;
+        const lift = actor.stance === 'prone' ? 0.9 : actor.stance === 'crouch' ? 1.6 : 2.1;
+        out.push({ key: actor.playerId, pid: actor.pid, pids: [actor.pid], name: actor.name, team: actor.team,
+                   at: point(actor.playerId).set(s.x, s.y + lift, s.z) });
+      }
+    } else {
+      for (const entity of this.entities) {
+        if (!entity.group.visible || entity.ghost || entity.life.pid === undefined) continue;
+        const at = point(entity).copy(entity.group.position);
+        at.y += 2.1;
+        out.push({ key: entity, pid: entity.life.pid, pids: [entity.life.pid], name: name(entity.life.pid),
+                   team: entity.life.team || this.rec.players.get(entity.life.pid)?.team || 0, at });
+      }
+    }
+    for (const hull of this.hulls.values()) {
+      if (!hull.group.visible || hull.ghost) continue;
+      const { life } = hull;
+      const crew = hull.crew ?? [];
+      const damaged = life.maxhp > 0 && hull.hp !== null && hull.hp < life.maxhp;
+      if (!crew.length && !damaged) continue;
+      const lead = crew.find(c => c.seat === 0) ?? crew[0] ?? null;
+      const at = hull.root.getWorldPosition(point(hull));
+      at.y += Math.min(hullRadius(hull), 12) * 0.9 + 1;
+      const vehicle = names?.[life.tmpl] ?? life.tmpl;
+      out.push({
+        key: hull,
+        pid: lead?.pid ?? null,
+        pids: crew.map(c => c.pid),
+        name: lead ? name(lead.pid) : vehicle,
+        extra: lead ? `${vehicle}${crew.length > 1 ? ` +${crew.length - 1}` : ''}` : '',
+        team: lead ? this.rec.players.get(lead.pid)?.team ?? life.team : life.team,
+        at,
+        hp: life.maxhp > 0 && hull.hp !== null ? { hp: hull.hp, max: life.maxhp, crit: life.crit } : null,
+      });
+    }
+    return out;
   }
 
   async load() {
@@ -213,6 +322,8 @@ class ReplayPlayer {
     const bodies = this.soldiers?.available ? ' · soldiers drawn by the map' : '';
     this.ui.status(`${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${bodies}${aligned}`);
     this.ui.renderFeed();
+    // The chrome shows itself for a while once the round is ready to watch.
+    this.ui.activity(4);
   }
 
   buildMarkers() {
@@ -248,6 +359,10 @@ class ReplayPlayer {
       if (age >= 0 && age <= SEEK_SHOT_WINDOW) this.fireShot(f);
     }
     this.lastFiredTime = this.time;
+    // The message log is rebuilt for the new instant, and the camera starts
+    // from wherever its target now is.
+    this.feed?.invalidate();
+    this.camera?.snap();
   }
 
   /**
@@ -282,6 +397,9 @@ class ReplayPlayer {
   }
 
   update(dt) {
+    // A drag along the timeline since the last frame lands first.
+    const scrub = this.ui.timeline.takeScrub();
+    if (scrub !== null) this.seek(scrub);
     const prevT = this.lastFiredTime;
     if (this.playing && !this.ui.scrubbing) {
       this.time = Math.min(this.rec.duration, this.time + dt * this.speed);
@@ -296,9 +414,12 @@ class ReplayPlayer {
     for (const entity of this.entities) place(this, entity, t);
     this.soldiers?.update(t, step, this.hulls);
     this.props.update(t);
+    // The server log's rings on the level are the replay log's, a debug
+    // overlay: up while that panel is.
+    const rings = this.showServer && this.ui.logOpen;
     for (const m of this.markers) {
       const age = t - m.row.t;
-      const on = this.showServer && age >= -MARKER_LEAD && age <= MARKER_TAIL;
+      const on = rings && age >= -MARKER_LEAD && age <= MARKER_TAIL;
       m.marker.visible = on;
       if (on) {
         const k = Math.max(0, age) / MARKER_TAIL;
@@ -312,8 +433,29 @@ class ReplayPlayer {
       }
     }
     this.lastFiredTime = t;
-    if (this.followPid !== null) followCamera(this, dt, t);
-    this.ui.update(t);
+    this.camera.update(dt, t);
+    this.hideOwnBody(this.camera.hidePid);
+    // The game's message log, and in the recording player's own first
+    // person his hits' red wash.
+    const ownView = this.camera.mode === 'pov' && this.camera.hidePid !== null
+      && this.followPid === this.recordingPid;
+    this.feed.update(t, ownView);
+    this.ui.timeline.plan(prevT, t, this.playing);
+    this.ui.update(t, dt);
+  }
+
+  /** First person looks out of the followed player's head: his own body,
+   *  standing or seated, is not drawn around the camera. */
+  hideOwnBody(pid) {
+    if (pid === null) return;
+    const vis = this.soldiers?.bodies?.botVisuals?.get(`replay:${pid}`);
+    if (vis) {
+      vis.group.visible = false;
+      if (vis.seat?.scene) vis.seat.scene.visible = false;
+    }
+    for (const entity of this.entities) {
+      if (entity.life.pid === pid) entity.group.visible = false;
+    }
   }
 
   /** What the labels float over this frame (replay-ui.js). */
@@ -332,12 +474,14 @@ class ReplayPlayer {
 
   dispose() {
     if (this.ctx.guns?.collider?.dynamicCast) this.ctx.guns.collider.dynamicCast = null;
+    this.camera.dispose();
     for (const hull of this.hulls.values()) hull.dispose();
     this.hulls.clear();
     this.soldiers?.dispose();
     this.props.dispose();
     this.ctx.guns?.clear();
     this.ctx.scene.remove(this.root);
+    this.feed.dispose();
     this.ui.dispose();
   }
 }
@@ -377,8 +521,14 @@ export async function recordingMode(url) {
  *        claimVehicleAudio(key, node, drive, groups), releaseVehicleAudio(key, node),
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
- *        playSoldierDeathSound(position, team), ensureAudio() }
- * Everything after `effects` is the map's own machinery and optional.
+ *        playSoldierDeathSound(position, team), ensureAudio(),
+ *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
+ *        keyboardTaken() }
+ * Everything after `effects` is the map's own machinery and optional: the
+ * last four are the page's message log (comms.js), a side's flag sprite, the
+ * HUD's hit-direction wash, and whether the console, the Escape menu or the
+ * briefing has the keyboard. The page calls `afterRender(canvas)` after each
+ * render and runs its message log at `feedRate()`.
  */
 export function createReplayController(ctx) {
   const assets = new ReplayAssets(ctx);
@@ -416,6 +566,17 @@ export function createReplayController(ctx) {
   return {
     update(dt) {
       player?.update(dt);
+    },
+    afterRender(canvas) {
+      player?.afterRender(canvas);
+    },
+    /** The page's message log runs at this rate: 1 with no replay open. */
+    feedRate() {
+      return player ? player.feedRate() : 1;
+    },
+    /** Whether a replay has the page (its input is the replay's). */
+    active() {
+      return player !== null;
     },
     async openFromUrl(url, logUrl) {
       const [recordingText, logText] = await Promise.all([
