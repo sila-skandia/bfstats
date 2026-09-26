@@ -130,6 +130,10 @@ above.)
   its lowest rung at 500 m via `update(camera)`; scene-wide drawn triangles
   fall near -> far; console clean.
 
+Re-measured after the retail keep rule (2026-09-26): bocage 3,652 -> 699 rung nodes,
+scene.glb 86.4 -> 78.9 MB; the Ju88A glb 98 -> 11 rungs. Every vanilla, XPack1 and XPack2
+level was re-baked and its `scene.glb` published.
+
 ## Discipline
 
 One level first (bocage), verified live, then the three vanilla trees
