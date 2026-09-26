@@ -111,6 +111,26 @@ function mount(match, b, template, seat = 'driver', { freePad = false } = {}) {
   return cands[0];
 }
 
+/** Point some bots' orders somewhere else, held the way the SAI holds an
+ *  order: one object per bot for as long as the SAI's own order stands. The
+ *  referee reads `waypointsOf` every tick and `planMoveTo` keeps its plan
+ *  only while that is the same object, so the fresh copy per read these
+ *  recipes used to return rebuilt the plan every tick, and its
+ *  `InfanteryResetControls` threw the route away with it. `goals` maps a
+ *  player id to the fields that replace the order's own. */
+function redirectOrders(match, goals) {
+  const sai = match.referee.strategy;
+  const waypointsOf = sai.waypointsOf.bind(sai);
+  const held = new Map();
+  sai.waypointsOf = id => {
+    const wp = waypointsOf(id);
+    if (!goals[id] || !wp) return wp;
+    let h = held.get(id);
+    if (h?.from !== wp) held.set(id, h = { from: wp, order: { ...wp, ...goals[id] } });
+    return h.order;
+  };
+}
+
 /** Every other bot stops thinking, out of the way (the recipes' freeze). */
 function freezeOthers(match, keep) {
   for (const b of match.bots) if (!keep.includes(b.playerId)) b.tick = () => {};
@@ -366,13 +386,8 @@ const recipes = {
     };
     place(a, cx - 300, cz, 1);
     place(b, cx + 300, cz, -1);
-    const sai = match.referee.strategy;
-    const waypointsOf = sai.waypointsOf.bind(sai);
-    const goal = { [a.playerId]: [cx + 600, cz], [b.playerId]: [cx - 600, cz] };
-    sai.waypointsOf = id => {
-      const wp = waypointsOf(id);
-      return goal[id] && wp ? { ...wp, point: goal[id], radius: 40 } : wp;
-    };
+    redirectOrders(match, { [a.playerId]: { point: [cx + 600, cz], radius: 40 },
+                            [b.playerId]: { point: [cx - 600, cz], radius: 40 } });
     // They fly their orders: nothing to shoot at, no seat to change to.
     for (const bot of [a, b]) { bot._urgencyFire = () => 0; bot._urgencyChange = () => 0; bot._urgencyScout = () => 0; }
     if (noAvoid) for (const bot of [a, b]) bot._urgencyAvoid = () => 0;
@@ -396,7 +411,7 @@ const recipes = {
    *  other as its target, and the line between them from the eye
    *  (`_eye()`, the sensing ray) and from the gun (`_aimOrigin()`): blocked
    *  by the terrain or a static. Reports the captures, the rounds each side
-   *  fired and who died. */
+   *  fired, who died and how close each hull came to the flag. */
   async tankDuel() {
     const match = await start('el_alamein');
     const axis = match.bots.find(o => o.team === 1);
@@ -405,12 +420,8 @@ const recipes = {
     mount(match, allied, 'Sherman', 'driver', { freePad: true });
     freezeOthers(match, [axis.playerId, allied.playerId]);
     const flag = [874.005, 51.59, -1815.98];
-    const sai = match.referee.strategy;
-    const waypointsOf = sai.waypointsOf.bind(sai);
-    sai.waypointsOf = id => {
-      const wp = waypointsOf(id);
-      return (id === axis.playerId || id === allied.playerId) && wp ? { ...wp, point: [flag[0], flag[2]], radius: 20 } : wp;
-    };
+    const onFlag = { point: [flag[0], flag[2]], radius: 20 };
+    redirectOrders(match, { [axis.playerId]: onFlag, [allied.playerId]: onFlag });
     const collider = match.stage.collider;
     const blocked = (from, to, self = -1) => {
       const d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
@@ -420,8 +431,12 @@ const recipes = {
     };
     const samples = [];
     let next = 0;
-    const near = b => b.vehicle && Math.hypot(b.position[0] - flag[0], b.position[2] - flag[2]) < 250;
+    const toFlag = b => Math.hypot(b.position[0] - flag[0], b.position[2] - flag[2]);
+    const near = b => b.vehicle && toFlag(b) < 250;
+    const nearest = { axis: Infinity, allied: Infinity };
     run(match, 240, () => {
+      if (axis.vehicle) nearest.axis = Math.min(nearest.axis, toFlag(axis));
+      if (allied.vehicle) nearest.allied = Math.min(nearest.allied, toFlag(allied));
       if (match.clock >= next && near(axis) && near(allied)) {
         next = match.clock + 1;
         const row = { t: round(match.clock), d: round(Math.hypot(axis.position[0] - allied.position[0], axis.position[2] - allied.position[2])) };
@@ -438,6 +453,7 @@ const recipes = {
     const stats = id => match.stats.get(id);
     return {
       samples: samples.length, first: samples[0] ?? null, last: samples[samples.length - 1] ?? null,
+      nearest: { axis: round(nearest.axis), allied: round(nearest.allied) },
       captures: eventsOf(match, 'capture').map(e => `${round(e.t)} ${e.flag} ${e.from}->${e.to} ${e.by}`),
       rounds: { axis: stats(axis.playerId).vehicleRounds, allied: stats(allied.playerId).vehicleRounds },
       destroyed: eventsOf(match, 'vehicle_destroyed').map(e => `${round(e.t)} ${e.vehicle} by ${e.killer}`),
@@ -476,12 +492,8 @@ const recipes = {
     mount(match, allied, 'Sherman', 'driver', { freePad: true });
     freezeOthers(match, [axis.playerId, allied.playerId]);
     const flag = [874.005, 51.59, -1815.98];
-    const sai = match.referee.strategy;
-    const waypointsOf = sai.waypointsOf.bind(sai);
-    sai.waypointsOf = id => {
-      const wp = waypointsOf(id);
-      return (id === axis.playerId || id === allied.playerId) && wp ? { ...wp, point: [flag[0], flag[2]], radius: 20 } : wp;
-    };
+    const onFlag = { point: [flag[0], flag[2]], radius: 20 };
+    redirectOrders(match, { [axis.playerId]: onFlag, [allied.playerId]: onFlag });
     const at = { [axis.playerId]: [869.492, -1806.509], [allied.playerId]: [987.678, -1700.602] };
     const place = (b, other) => {
       const [x, z] = at[b.playerId], [ox, oz] = at[other.playerId];
@@ -561,12 +573,7 @@ const recipes = {
       }
     }
     if (!point) throw new Error('no open water off the bow');
-    const sai = match.referee.strategy;
-    const waypointsOf = sai.waypointsOf.bind(sai);
-    sai.waypointsOf = id => {
-      const wp = waypointsOf(id);
-      return id === b.playerId && wp ? { ...wp, point, radius: 15 } : wp;
-    };
+    redirectOrders(match, { [b.playerId]: { point, radius: 15 } });
     let low = Infinity, high = -Infinity;
     run(match, 60, () => {
       const y = drive.state.position.y;
