@@ -145,10 +145,16 @@ export class ReplayUi {
     this.feed.append(head, this.list);
 
     this.labels = el('div', 'rp-labels');
+    this.labelNodes = new Map();
     for (const node of [this.bar, this.feed]) {
       // The view takes pointer-lock on a click; the replay's own controls must
       // not hand the mouse to the camera.
-      node.addEventListener('pointerdown', e => e.stopPropagation());
+      node.addEventListener('pointerdown', e => {
+        e.stopPropagation();
+        // A click on the replay's own controls is a gesture: the page's audio
+        // context may start on it (autoplay policy).
+        player.ctx.ensureAudio?.();
+      });
       node.addEventListener('mousedown', e => e.stopPropagation());
       node.addEventListener('keydown', e => e.stopPropagation());
     }
@@ -260,34 +266,30 @@ export class ReplayUi {
     const focus = player.followPid !== null ? focusLife(player, t) : null;
     const name = player.followPid !== null ? (player.rec.players.get(player.followPid)?.name ?? '') : '';
     const v = player.v2;
-    for (const entity of player.entities) {
-      const { life } = entity;
+    const seen = new Set();
+    for (const target of player.labelTargets()) {
+      const { life, hp, key } = target;
       const isFocus = focus === life;
-      const damaged = life.maxhp > 0 && entity.hp !== null && entity.hp < life.maxhp;
-      let show = entity.group.visible && !entity.ghost && (isFocus || damaged);
-      if (show) {
-        v.copy(entity.group.position);
-        v.y += life.soldier ? 2.2 : 4.5;
-        const distance = v.distanceTo(camera.position);
-        v.project(camera);
-        show = distance < LABEL_RANGE && v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      const damaged = life.maxhp > 0 && hp !== null && hp < life.maxhp;
+      if (!isFocus && !damaged) continue;
+      target.node.getWorldPosition(v);
+      v.y += target.lift;
+      const distance = v.distanceTo(camera.position);
+      v.project(camera);
+      if (!(distance < LABEL_RANGE && v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1)) continue;
+      seen.add(key);
+      let label = this.labelNodes.get(key);
+      if (!label) {
+        label = el('div', 'rp-label');
+        label.append(el('div', 'rp-label-text'), el('div', 'rp-hp'));
+        label.lastChild.appendChild(el('i'));
+        this.labels.appendChild(label);
+        this.labelNodes.set(key, label);
       }
-      if (!show) {
-        if (entity.label) entity.label.style.display = 'none';
-        continue;
-      }
-      if (!entity.label) {
-        entity.label = el('div', 'rp-label');
-        entity.label.append(el('div', 'rp-label-text'), el('div', 'rp-hp'));
-        entity.label.lastChild.appendChild(el('i'));
-        this.labels.appendChild(entity.label);
-      }
-      const label = entity.label;
       label.style.display = '';
       label.style.left = `${((v.x + 1) / 2) * width}px`;
       label.style.top = `${((1 - v.y) / 2) * height}px`;
       label.classList.toggle('player', isFocus);
-      const hp = entity.hp;
       const text = isFocus ? (life.soldier ? name : `${name} · ${life.tmpl}`) : life.tmpl;
       label.firstChild.textContent = life.maxhp > 0 && hp !== null
         ? `${text} ${hp <= 0 ? 'wreck' : `${fmtHp(Math.round(hp * 10) / 10)}/${fmtHp(life.maxhp)}`}`
@@ -302,6 +304,9 @@ export class ReplayUi {
         bar.classList.toggle('fire', life.crit > 0 && hp <= life.crit);
         bar.classList.toggle('smoke', hp <= life.maxhp / 2 && !(life.crit > 0 && hp <= life.crit));
       }
+    }
+    for (const [key, label] of this.labelNodes) {
+      if (!seen.has(key)) label.style.display = 'none';
     }
   }
 

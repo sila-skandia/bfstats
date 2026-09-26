@@ -775,16 +775,47 @@ export class Aircraft extends Vehicle {
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.step(h);
     s.airspeed = s.velocity.length();
+    this.autoGear();
 
-    // Gear is automatic in the real game, on altitude thresholds.
+    this.applyTransform();
+    this.applyRig();
+  }
+
+  /** Gear is automatic in the real game, on altitude thresholds: up past
+   *  `gearUpAltitude` over the ground, down again below `gearDownAltitude`. */
+  autoGear() {
+    const s = this.state;
+    const k = this.spec;
+    // Asked of a `Ship` too, whose floor query is not free of consequence
+    // (`hullFloor` records the bed contact `settle` reads), so `integrate`
+    // keeps asking it every step whatever the thresholds are.
     const floor = this.groundHeight(s.position.x, s.position.z);
     const agl = s.position.y - (Number.isFinite(floor) ? floor : 0);
     const gear = this.input('c_PILandingGear');
     if (gear < 1 && agl > k.gearUpAltitude) this.setInput('c_PILandingGear', 1);
     else if (gear > 0 && agl < k.gearDownAltitude) this.setInput('c_PILandingGear', 0);
+  }
 
-    this.applyTransform();
-    this.applyRig();
+  /** A replay's recorded flight (`Vehicle.presentKinematic`): the throttle
+   *  spooled at the airframe's own rate, the gear on its own thresholds, then
+   *  the propeller, the servos and the rig. */
+  presentKinematic(dt, throttle = 0) {
+    this.state.airspeed = this.state.velocity.length();
+    // A hull with no gear thresholds (a ship) has no gear to move, and a
+    // recorded pose needs no bed contact.
+    if (Number.isFinite(this.spec.gearUpAltitude) || Number.isFinite(this.spec.gearDownAltitude)) {
+      this.autoGear();
+    }
+    super.presentKinematic(dt, throttle);
+  }
+
+  spoolThrottle(dt, wanted) {
+    const s = this.state;
+    const k = this.spec;
+    const target = clamp(wanted, k.throttleMin ?? 0, 1);
+    const gap = target - s.throttle;
+    const spool = (k.throttleRate || 1) * dt;
+    s.throttle = Math.abs(gap) <= spool ? target : s.throttle + Math.sign(gap) * spool;
   }
 
   /** One sub-step of the rigid body. */

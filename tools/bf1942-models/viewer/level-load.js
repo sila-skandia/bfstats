@@ -310,6 +310,8 @@ export function createLevel(page) {
       // no soldier spawn starts free roam armed instead (the old join block's
       // rule, moved behind READY with the screen).
       onReady: () => {
+        // A round replay watches the level; nobody deploys into it.
+        if (page.params.has('replay')) return;
         if (!page.optPilot.checked && !page.openDeploy()) page.capture();
       },
     });
