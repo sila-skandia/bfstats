@@ -155,6 +155,9 @@ export function createHullBodies(page) {
   function shipFlagInactive(flag) {
     if (!flag?.vehicle || !flag.position) return false;
     for (const host of floatHosts) {
+      // A landing craft beside her stern is not the ship her decks belong to
+      // (`deckSpawnHost`).
+      if (host.launched) continue;
       if (host.sinking) {
         const p = host.sinking.body.pos;
         if (Math.hypot(flag.position[0] - p[0], flag.position[2] - p[2])
@@ -195,6 +198,11 @@ export function createHullBodies(page) {
         authored: [authored[12], authored[13], authored[14]],
         authoredInverse: node.matrixWorld.clone().invert(),
         radius: 0,
+        // What a deck spawn names its ship by (`vehicleSoldierSpawns[].vehicle`,
+        // the spawner's template), and whether this hull is a landing craft one
+        // of the ships launched (`detachSpawnedCraft`): never a deck spawn's host.
+        template: String(node.userData?.control ?? node.name ?? '').toLowerCase(),
+        launched: Boolean(node.userData?.heldSpawner),
       };
       for (const float of floats) {
         host.radius = Math.max(host.radius,
@@ -635,17 +643,9 @@ export function createHullBodies(page) {
       // Idempotent: the bake, kept, so a second index pass on the same `extras`
       // rebases from the authored point rather than from its own output.
       spawn.deckBake ??= spawn.position.slice();
-      const [x, , z] = spawn.deckBake;
-      let host = null, best = Infinity;
-      for (const candidate of floatHosts) {
-        const d = Math.hypot(x - candidate.authored[0], z - candidate.authored[2]);
-        // Inside the hull's own float-node footprint, generously: a deck point is
-        // on the ship it was authored on, and the fleet's pads are hundreds of
-        // metres apart.
-        if (d < best && d <= candidate.radius + 40) { best = d; host = candidate; }
-      }
+      const host = deckSpawnHost(spawn);
       if (!host) continue;
-      _deckPoint.set(x, spawn.deckBake[1], z)
+      _deckPoint.fromArray(spawn.deckBake)
         .applyMatrix4(host.authoredInverse).applyMatrix4(host.node.matrixWorld);
       // In place, not a fresh array: `new World(...)` has already run
       // `spawnFlags(extras)`, and a flag's own `position` (the ring the deploy
@@ -654,6 +654,38 @@ export function createHullBodies(page) {
       spawn.position[1] = +_deckPoint.y.toFixed(3);
       spawn.position[2] = +_deckPoint.z.toFixed(3);
     }
+  }
+
+  /**
+   * The hull a baked deck spawn belongs to: the ship it was authored on.
+   *
+   * A `SpawnPoint` is a child of its ship's template and nothing else, so the
+   * host is that ship, named by the spawn's own `vehicle` (the pad's template,
+   * the node's `control`). Nearest-origin alone picked the wrong hull: the
+   * Fletcher's fantail points (3/5/-43.699) sit 4 m from the LCVPs her stern
+   * spawners launch (7.2/0.3/-43.699) and 44 m from her own origin, so they
+   * rode the LCVP's float from its pad to its draft (-2.18 m against her
+   * -0.21) and came out 0.68 m under the deck, and the soldier spawned into
+   * the sea below it. The Hatsuzukis' Daihatsus did the same by -8.04 m.
+   *
+   * By position only when no hull carries the spawn's name, and then never a
+   * launched landing craft: inside the hull's own float-node footprint,
+   * generously, since the fleet's pads are hundreds of metres apart.
+   */
+  function deckSpawnHost(spawn) {
+    const [x, , z] = spawn.deckBake;
+    const named = String(spawn.vehicle ?? '').toLowerCase();
+    let host = null, best = Infinity, byName = false;
+    for (const candidate of floatHosts) {
+      if (candidate.launched) continue;
+      const d = Math.hypot(x - candidate.authored[0], z - candidate.authored[2]);
+      if (d > candidate.radius + 40) continue;
+      const match = named !== '' && candidate.template === named;
+      if (byName && !match) continue;
+      if (match && !byName) { byName = true; best = Infinity; }
+      if (d < best) { best = d; host = candidate; }
+    }
+    return host;
   }
 
   /** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */

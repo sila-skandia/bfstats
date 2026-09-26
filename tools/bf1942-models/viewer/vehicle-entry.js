@@ -179,6 +179,61 @@ export function createVehicleEntry(page) {
     };
   }
 
+  /** Metres above the ground past which stepping out is a bail-out, not a
+   *  step down. The engine has no such number — it simply never teleports —
+   *  and this exists only because `spawn()`'s floor probe is the viewer's
+   *  normal exit. Half a metre under the free-fall state's own 10 m gate, so a
+   *  door on a hangar roof is still a step and not a drop. */
+  const BAIL_OUT_HEIGHT = 9.5;
+
+  /** Seconds a man who bails out of an aircraft passes through its airframe
+   *  (`SoldierBody.ignoreHull`). A viewer number: at the one g of relative
+   *  drop a flying plane leaves between them, 1.5 s puts him 16 m clear. */
+  const BAIL_OUT_HULL_GRACE = 1.5;
+
+  /**
+   * What the seat being left is doing, read **before** `leaveSeat` lets go of
+   * it: the hull's owner id and its velocity copied out (the drive keeps
+   * integrating the live vector).
+   */
+  function hullMotion(drive, root, aircraft) {
+    const v = drive?.state?.velocity;
+    return {
+      owner: root ? (page.collider?.statics?.ownerOf?.(root) ?? -1) : -1,
+      vx: v?.x ?? 0, vy: v?.y ?? 0, vz: v?.z ?? 0,
+      aircraft,
+    };
+  }
+
+  /**
+   * Put the waiting soldier down at `exit`, moving the way the hull was.
+   *
+   * High above the ground (`BAIL_OUT_HEIGHT`) the exit goes through
+   * `Soldier.bailOut`: placed where the seat was, handed the hull's velocity,
+   * and left to `parachute.js` to fall (key 9 opens the canopy). Out of an
+   * aircraft he also passes through its airframe for a moment, or the wing he
+   * was put on stops him dead. A manned seat bails only out of an aircraft
+   * (`bailAnywhere` false): a carrier's AA gun sits high over the sea and its
+   * exit is onto the deck, which `spawn`'s floor probe finds.
+   *
+   * Lower down it is `spawn` and its floor probe, as always, plus the hull's
+   * speed carried onto the ground (`Soldier.carry`): out of a moving jeep he
+   * stumbles on a few metres rather than planting where the door was.
+   */
+  function stepOut(exit, hull, { bailAnywhere }) {
+    const soldier = page.soldier;
+    soldier.collider = page.collider;
+    const groundAt = page.collider?.surfaceHeight ? page.collider.surfaceHeight(exit.x, exit.z) : NaN;
+    const high = Number.isFinite(groundAt) && exit.y - groundAt > BAIL_OUT_HEIGHT;
+    if (high && (bailAnywhere || hull.aircraft)) {
+      soldier.bailOut(exit.x, exit.y, exit.z, exit.yaw, hull.vx, hull.vy, hull.vz,
+        hull.aircraft ? { hull: hull.owner, hullGrace: BAIL_OUT_HULL_GRACE } : {});
+    } else {
+      soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
+      soldier.carry(hull.vx, hull.vy, hull.vz);
+    }
+  }
+
   /**
    * E from a seat: back onto the ground beside it.
    *
@@ -193,30 +248,13 @@ export function createVehicleEntry(page) {
    * `exitPose`'s placement is trusted as-is, same as it already was on the
    * ground.
    *
-   * What was missing was everything *after* stepping out of something flying.
-   * `soldier.spawn()` ends in `settle()`, a 600 m probe to the floor, so a
-   * bail-out at 300 m put the pilot on the sand under the plane. Above the
-   * bail-out height below, the exit goes through `Soldier.bailOut` instead,
-   * which places the body where the aircraft was, hands it the aircraft's own
-   * velocity, and leaves `parachute.js` to run the fall (`viewer/parachute.js`
-   * for the engine side; key 9 opens the canopy).
+   * Where he lands and how fast he is going is `stepOut`'s.
    */
-  /** Metres above the ground past which stepping out is a bail-out, not a
-   *  step down. The engine has no such number — it simply never teleports —
-   *  and this exists only because `spawn()`'s floor probe is the viewer's
-   *  normal exit. Half a metre under the free-fall state's own 10 m gate, so a
-   *  door on a hangar roof is still a step and not a drop. */
-  const BAIL_OUT_HEIGHT = 9.5;
-
   function exitVehicle() {
     const vehicle = page.aircraft || page.car;
     if (!vehicle) return;
     const exit = exitPose(vehicle);
-    // Height above whatever the collider says is under the exit point, and the
-    // hull's own velocity — both read before `leaveSeat` lets go of it.
-    const groundAt = page.collider?.surfaceHeight ? page.collider.surfaceHeight(exit.x, exit.z) : NaN;
-    const bailing = Number.isFinite(groundAt) && exit.y - groundAt > BAIL_OUT_HEIGHT;
-    const hullVelocity = vehicle.state?.velocity;
+    const hull = hullMotion(vehicle, vehicle.node, vehicle === page.aircraft);
     // The room's control channel: capture the seat row before the seat is
     // given back.
     const netSeat = page.occupancy ? page.netSeatRow('exit') : null;
@@ -224,13 +262,7 @@ export function createVehicleEntry(page) {
     if (netSeat) page.netSendAction(netSeat);
     page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {
-      page.soldier.collider = page.collider;
-      if (bailing) {
-        page.soldier.bailOut(exit.x, exit.y, exit.z, exit.yaw,
-          hullVelocity?.x ?? 0, hullVelocity?.y ?? 0, hullVelocity?.z ?? 0);
-      } else {
-        page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
-      }
+      stepOut(exit, hull, { bailAnywhere: true });
       page.useLens('foot');
       page.drawWeapon();
     } else {
@@ -287,13 +319,14 @@ export function createVehicleEntry(page) {
   function exitManned() {
     if (!page.occupancy) return;
     const exit = exitPoseManned(page.occupancy);
+    const hull = hullMotion(page.occupancy.drive, page.occupancy.root,
+      page.occupancy.rootKind === 'air');
     const netSeat = page.netSeatRow('exit');
     page.leaveSeat();
     if (netSeat) page.netSendAction(netSeat);
     page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {
-      page.soldier.collider = page.collider;
-      page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
+      stepOut(exit, hull, { bailAnywhere: false });
       page.useLens('foot');
       page.drawWeapon();
     } else {
