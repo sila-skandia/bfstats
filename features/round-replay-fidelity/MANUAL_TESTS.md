@@ -65,12 +65,12 @@ In the viewer:
 | check | expected |
 |---|---|
 | bots shooting | flashes and tracers from bots' weapons, each shot's sound at the shooter |
-| the event feed | "fired the ..." rows from every player, not only you |
+| the replay log (L) | "fired the ..." rows from every player, not only you |
 | your pistol, your grenade | the pistol in your hand while you held it; the grenade in flight, then its explosion |
 | crouch, prone | your body in that stance |
 | the turret | turns as you turned it; the rounds leave along the barrel |
 | a Defgun or AA gun firing | the muzzle flash at the barrel and the round flying out, with no hit burst on the gun itself |
-| getting hit | a "hit from ..." row in the replay log for each hit you took |
+| getting hit | a "hit from ..." row in the replay log for each hit you took, and in your own first person (2) the game's red wash on that side |
 | the plane | the engine note follows the throttle you used |
 
 ## 3. If the new DLL misbehaves

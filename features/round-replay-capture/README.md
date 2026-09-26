@@ -742,7 +742,10 @@ gitignored; recordings are data.
 - **Name tags with hit-point bars** (half health and the recorded critical
   damage colour them), a follow camera on any player, including in vehicles
   and on the spawn screen, and an event feed of joins, spawns, vehicle entries
-  and exits, hits, kills, removals and chat.
+  and exits, hits, kills, removals and chat. (Since 2026-09-27 the watching
+  side is features/round-replay-ux: an orbit, first-person and free camera,
+  a timeline with the round's chapters, the game's own kill and chat log,
+  and this event feed as the replay log, L.)
 
 ### How the server log overlays it
 
