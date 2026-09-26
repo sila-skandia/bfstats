@@ -25,12 +25,12 @@ export function isCollision(obj) {
  * the LOD sees the final materials and the freeze sees the final tree.
  */
 function buildLodLevels(lodNode, partNode, seen) {
+  // The rungs move under the LOD; the part does NOT. Its local transform is
+  // load-bearing — vehicle rigs pose turret, wheels and propeller through it
+  // (`applyRig` writes `part.node.quaternion` off a captured base) — and its
+  // parent link is what the vehicle code reparents, so the LOD is a sibling,
+  // not a wrapper. A part with no rung children gets no LOD at all.
   const levels = [];
-  // The part node is level 0 by definition: the exporter keeps LOD 0 on the
-  // placement's own mesh (untagged, under its plain name) and hangs the
-  // emitted rungs (extras.lod.level >= 1) beneath it. A part with no rung
-  // children gets no LOD at all and keeps today's behaviour exactly.
-  levels.push({ object: partNode, distance: 0 });
   for (const child of [...partNode.children]) {
     const info = child.userData?.lod;
     if (!info || seen.has(info)) continue;
@@ -38,18 +38,8 @@ function buildLodLevels(lodNode, partNode, seen) {
     levels.push({ object: child, distance: Number(info.distance) || 0 });
     partNode.remove(child);
   }
-  if (levels.length < 2) return false;
+  if (!levels.length) return false;
   levels.sort((a, b) => a.distance - b.distance);
-  // The LOD carries the part's local transform (`liftLods` copies it before
-  // the splice), so the part itself must go to IDENTITY inside it: `addLevel`
-  // re-parents without touching the matrix, and a part that kept its own
-  // transform as well would compose it twice (a placement at (541, 43, -394)
-  // with a yaw renders at T(T) — measured: (-1.2, 82, -1.7)). The rungs keep
-  // their own locals: they were authored relative to the part, and the LOD
-  // supplies exactly what the part used to.
-  levels[0].object.position.set(0, 0, 0);
-  levels[0].object.quaternion.identity();
-  levels[0].object.scale.set(1, 1, 1);
   for (const level of levels) lodNode.addLevel(level.object, level.distance);
   return true;
 }
@@ -66,7 +56,7 @@ function buildLodLevels(lodNode, partNode, seen) {
  * shared node can only ever hang under one parent, and the guard turns a
  * duplicate visit into a no-op rather than a second LOD fighting for it.
  */
-function liftLods(root) {
+function liftLods(root, spawnersRoot) {
   // Candidates are collected before any mutation: `traverse` walks a live
   // snapshot of `children`, and `parent.add(lod)` (or an `addLevel` that
   // re-parents a rung) inside the walk would revisit nodes and nest LODs
@@ -85,23 +75,58 @@ function liftLods(root) {
   });
   const seen = new Set();
   const inserted = [];
+  const v1 = new THREE.Vector3();
+  const v2 = new THREE.Vector3();
   for (const obj of parts) {
-    // Capture the parent first: `buildLodLevels` runs `addLevel(partNode)`
-    // below, which re-parents the part node under the LOD — reading
-    // `obj.parent` afterwards would find the LOD itself.
+    // A parked vehicle's root is a chain owner too (the hull template's own
+    // rungs), but `Vehicle` reparents that node onto the level root the
+    // moment anyone drives it — a LOD holding its rungs would stay behind at
+    // the pad as a ghost shell, and a driven hull would leave its far rungs
+    // standing where it spawned. Keep vehicle-root chains unlifted and hide
+    // their rungs: parked hulls draw at full detail, exactly as they did
+    // before the rungs shipped. The parts INSIDE the vehicle (turret, wheels,
+    // propeller) lift normally — their LODs travel with the subtree.
+    if (spawnersRoot && obj.parent === spawnersRoot) {
+      for (const child of [...obj.children]) {
+        if (child.userData?.lod) child.visible = false;
+      }
+      continue;
+    }
+    // Capture the parent first: nothing below re-parents the part, but the
+    // rung `remove`s run against it and the guard keeps the slot explicit.
     const parent = obj.parent;
     if (!parent) continue;          // a collected part that lost its parent
     const lod = new THREE.LOD();
-    // The LOD takes the part's local transform BEFORE `buildLodLevels` runs —
-    // which resets the part to identity inside it (see the comment there).
+    // The LOD takes the part's local transform and sits beside it — both
+    // children of the same parent — so the LOD's world position IS the part's
+    // and the distance test measures the part from where the part is. The
+    // part itself is never touched.
     lod.position.copy(obj.position);
     lod.quaternion.copy(obj.quaternion);
     lod.scale.copy(obj.scale);
     if (!buildLodLevels(lod, obj, seen)) continue;
     lod.name = `${obj.name || 'part'}_LOD`;
     parent.add(lod);
-    // The LOD takes the part's slot in its parent; the part itself is inside
-    // it already (`addLevel` re-parented it).
+    // The stock `LOD.update` only toggles the levels it owns, so extend it:
+    // the part is the implicit level 0 and yields to the first rung past its
+    // threshold; the rungs yield back inside it. Hysteresis stays at its
+    // default 0 — nothing here sets one.
+    const part = obj;
+    lod.update = function (camera) {
+      v1.setFromMatrixPosition(camera.matrixWorld);
+      v2.setFromMatrixPosition(this.matrixWorld);
+      const distance = v1.distanceTo(v2) / camera.zoom;
+      let showing = -1;
+      for (let i = 0; i < this.levels.length; i++) {
+        if (distance >= this.levels[i].distance) showing = i;
+        else break;
+      }
+      this._currentLevel = showing + 1;
+      part.visible = showing === -1;
+      for (let i = 0; i < this.levels.length; i++) {
+        this.levels[i].object.visible = i === showing;
+      }
+    };
     inserted.push(lod);
   }
   return inserted;
@@ -168,6 +193,14 @@ export function createLevelStatics(page) {
       }
     });
     if (statics.spawnersRoot) statics.mapVehicles = [...statics.spawnersRoot.children];
+    // The LODs go up before the cull spheres are tagged: each splice leaves a
+    // part AND a LOD wrapper at the top level (both children of the same
+    // parent), and both need their own distance test — the part draws below
+    // the first rung threshold, the wrapper's rungs beyond it. `Box3
+    // .setFromObject` walks invisible children too, so the vehicle roots'
+    // hidden rungs do not distort their spheres. The swap itself must happen
+    // inside the frozen subtree the same pass builds.
+    statics.lodCount = liftLods(root, statics.spawnersRoot).length;
     for (const child of root.children) {
       if (child === statics.spawnersRoot) {
         for (const vehicle of child.children) tagCull(vehicle);
@@ -178,11 +211,6 @@ export function createLevelStatics(page) {
       cull.push(child);
     }
     tagVehicleControlPoints();
-    // The LODs go up before the cull spheres are read: `Box3.setFromObject`
-    // walks invisible children too, so a rung hidden by a distance switch
-    // would not change the sphere, but the swap itself must happen inside the
-    // frozen subtree the same pass builds.
-    statics.lodCount = liftLods(root).length;
     flattenCull();
     freezeStatics(root);
   }
