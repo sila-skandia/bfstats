@@ -150,7 +150,17 @@ export function serverRows(rec, log, alignment) {
       case 'roundstats': text = `round over: ${teamName(p.winner)} win (${p.tickets.join(', ')})`; break;
       default: text = p.player_id !== undefined ? `${e.name} (${who(p.player_id)})` : e.name;
     }
-    rows.push({ t, kind: e.name, text, source: 'server', at });
+    // What the replay's chapters and kill log read beside the text: who, whom,
+    // with what, and the destroyed template (replay-chapters.js).
+    rows.push({
+      t, kind: e.name, text, source: 'server', at,
+      pid: p.player_id ?? null,
+      victim: p.victim_id ?? null,
+      weapon: p.weapon && p.weapon !== '(none)' ? p.weapon : null,
+      vehicle: p.vehicle ?? null,
+      scoreType: p.score_type ?? null,
+      winner: e.name === 'roundstats' ? p.winner : null,
+    });
   }
   return rows;
 }

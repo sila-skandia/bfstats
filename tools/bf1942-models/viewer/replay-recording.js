@@ -119,7 +119,11 @@ export function parseRecording(text) {
     seats: new Map(),     // v4: pid -> [{ t, root, seat }]
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
+    kills: [],            // { t, kind, killer, victim, weapon } one per line the kill log printed
+    captures: [],         // { t, id, name, team, from } a control point taken during play
+    controlPoints: new Map(), // cp id -> { id, name, tmpl, pos, changes: [{ t, team }] }
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
+    roundStarted: null,   // the first round-playing status, or null for a join mid-round
     roundEnded: Infinity, // the first round-over status: the teardown after it is not play
   };
   const current = new Map();
@@ -130,6 +134,7 @@ export function parseRecording(text) {
   const deferred = [];
   const kitPickups = [];        // { t, pid, nid }
   const nidEvents = [];         // { t, pid, nid } every report of what a player controls
+  const plainDeaths = [];       // { t, victim } score DEATH (4): "is no more", unless a team kill wrote it
   let joined = -Infinity;
 
   const row = (t, kind, text) => {
@@ -300,9 +305,12 @@ export function parseRecording(text) {
         if (r.vehNetId) nidEvents.push({ t, pid: r.pid, nid: r.vehNetId });
         row(t, 'player', `${r.name} joined ${teamName(r.team)}`);
         return;
-      case 'destroyPlayer':
+      case 'destroyPlayer': {
         row(t, 'player', `${playerName(r.pid)} left`);
+        const player = rec.players.get(r.pid);
+        if (player && player.leftT === undefined) player.leftT = t;
         return;
+      }
       case 'setTeam': {
         const player = rec.players.get(r.pid);
         if (player) player.team = r.team;
@@ -312,8 +320,16 @@ export function parseRecording(text) {
       }
       case 'score':
         if (t < rec.roundEnded) {
-          if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) rec.deaths.push({ t, pid: r.victim, killer: r.pid, weapon: r.weaponName ?? null });
-          else if (r.kind === SCORE.DEATH || r.kind === SCORE.DEATH_NO_MSG) rec.deaths.push({ t, pid: r.pid, killer: null, weapon: null });
+          if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
+            rec.deaths.push({ t, pid: r.victim, killer: r.pid, weapon: r.weaponName ?? null });
+            // The kill log's line (chat-log.js `deathLines`): a kill names its
+            // killer and his weapon, a team kill only the killer.
+            rec.kills.push({ t, kind: r.kind === SCORE.TEAMKILL ? 'teamkill' : 'kill',
+                             killer: r.pid, victim: r.victim, weapon: r.weaponName ?? null });
+          } else if (r.kind === SCORE.DEATH || r.kind === SCORE.DEATH_NO_MSG) {
+            rec.deaths.push({ t, pid: r.pid, killer: null, weapon: null });
+            if (r.kind === SCORE.DEATH) plainDeaths.push({ t, victim: r.pid });
+          }
         }
         if (r.kind === SCORE.SPAWNED) {
           row(t, 'spawn', `${playerName(r.pid)} spawned`);
@@ -333,6 +349,7 @@ export function parseRecording(text) {
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
+        if (r.status === 1 && rec.roundStarted === null) rec.roundStarted = t;
         row(t, 'round', GAME_STATUS[r.status] ?? `game status ${r.status}`);
         return;
       case 'dbComplete':
@@ -490,8 +507,22 @@ export function parseRecording(text) {
         if (r.tmpl) cpTemplates.add(r.tmpl);
         const before = cpState.get(r.id);
         const name = r.name ?? before?.name ?? `control point ${r.id}`;
-        cpState.set(r.id, { name, team: r.team });
-        if (before && before.team > 0 && r.team > 0 && before.team !== r.team) {
+        // The first team a point reports (-1 until the server sets it) is
+        // where the round opened it; a change after that is play. A capture
+        // goes through neutral: 2, then 0 as the flag comes down, then 1 as
+        // the attackers raise theirs (Landing_Beach at 185.5 and 195.5 s in
+        // replay_20260927-075756), so a point turning to a side from neutral
+        // is taken as well as one turning from the other side.
+        const opened = Boolean(before?.opened) || r.team >= 0;
+        cpState.set(r.id, { name, team: r.team, opened });
+        if (!rec.controlPoints.has(r.id)) {
+          rec.controlPoints.set(r.id, { id: r.id, name, tmpl: r.tmpl ?? '', pos: r.pos ?? null, changes: [] });
+        }
+        const point = rec.controlPoints.get(r.id);
+        point.name = name;
+        if (r.team >= 0 && point.changes[point.changes.length - 1]?.team !== r.team) point.changes.push({ t, team: r.team });
+        if (before?.opened && r.team > 0 && before.team !== r.team) {
+          rec.captures.push({ t, id: r.id, name, team: r.team, from: before.team });
           row(t, 'flag', `${name} taken by ${teamName(r.team)}`);
         }
         break;
@@ -720,6 +751,16 @@ export function parseRecording(text) {
     row(c.t, 'chat', `${name}: ${c.body}`);
     rec.matchable.push({ t: c.t, kind: 'chat', text: c.body.trim() });
   }
+
+  // A death with its own message (4) is `is no more`: a suicide, a fall, a
+  // crewman lost with a hull nobody was credited for. A team kill sends one
+  // for its victim right after its own line (6, then 4), and the kill log
+  // prints both from the one death, so that one is the team kill's.
+  for (const d of plainDeaths) {
+    const own = rec.kills.some(k => k.victim === d.victim && k.kind === 'teamkill' && Math.abs(k.t - d.t) < 0.25);
+    if (!own) rec.kills.push({ t: d.t, kind: 'death', killer: null, victim: d.victim, weapon: null });
+  }
+  rec.kills.sort((a, b) => a.t - b.t);
 
   rec.events.sort((a, b) => a.t - b.t);
   rec.clocks.sort((a, b) => a.t - b.t);

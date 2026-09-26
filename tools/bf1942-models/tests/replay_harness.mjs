@@ -436,4 +436,158 @@ const read = scene => {
   ]);
 }
 
+// --- the viewing experience (features/round-replay-ux) -----------------------
+//
+// The round's chapters and kill lines, the players' states and tallies, the
+// page's message log driven from the recording, and the camera's three modes,
+// from one small v3 round: a kill with its weapon, a team kill (6 then 4, one
+// death), a plain death, two flags taken through neutral, a chat line, a
+// player leaving, and the recording player hit once.
+{
+  const [chapters, { ReplayFeed }, { ReplayCamera }] = await Promise.all([
+    imp('replay-chapters.js'), imp('replay-feed.js'), imp('replay-camera.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 3, start: '', hz: 10 }),
+    line({ k: 'e', t: 0.5, e: 'createPlayer', pid: 1, name: 'Axe', team: 1, ai: 1 }),
+    line({ k: 'e', t: 0.5, e: 'createPlayer', pid: 2, name: 'Bea', team: 2, ai: 1 }),
+    line({ k: 'e', t: 0.5, e: 'createPlayer', pid: 0, name: 'rec', team: 2, ai: 0 }),
+    line({ k: 'e', t: 1, e: 'gameStatus', status: 3 }),
+    line({ k: 'e', t: 2, e: 'gameStatus', status: 1 }),
+    line({ k: 'cp', t: 2, id: 10, name: 'Landing_Beach', tmpl: 'The_Beach', pos: [0, 0, 0], team: -1 }),
+    line({ k: 'cp', t: 2, id: 11, name: 'Village', tmpl: 'Village', pos: [50, 0, 0], team: -1 }),
+    line({ k: 'cp', t: 2.5, id: 10, team: 2 }),
+    line({ k: 'cp', t: 2.5, id: 11, team: 2 }),
+    line({ k: 'e', t: 3, e: 'createObject', tid: 100, netId: 600, tmpl: 'USMarineSoldier', pos: [10, 0, 20], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 3, e: 'control', pid: 0, netId: 600 }),
+    line({ k: 'o', t: 3.1, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2, maxhp: 30 }),
+    line({ k: 's', t: 3.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 5.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 'e', t: 10, e: 'score', kind: 3, pid: 1, victim: 2, weaponName: 'Type99' }),
+    line({ k: 'e', t: 10, e: 'score', kind: 5, pid: 2 }),
+    line({ k: 'e', t: 15, e: 'hitFrom', dir: 2, strength: 64 }),
+    line({ k: 'e', t: 20, e: 'score', kind: 6, pid: 2, victim: 0 }),
+    line({ k: 'e', t: 20, e: 'score', kind: 4, pid: 0 }),
+    line({ k: 'e', t: 20.2, e: 'createObject', tid: 102, netId: 700, tmpl: 'MultiPlayerFreeCamera', pos: [10, 30, 20], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 20.2, e: 'control', pid: 0, netId: 700 }),
+    line({ k: 'e', t: 30, e: 'score', kind: 4, pid: 1 }),
+    line({ k: 'cp', t: 40, id: 10, team: 0 }),
+    line({ k: 'chat', t: 45, pid: 1, team: 1, text: 'Axe: hello' }),
+    line({ k: 'cp', t: 50, id: 10, team: 1 }),
+    line({ k: 'cp', t: 55, id: 11, team: 0 }),
+    line({ k: 'cp', t: 60, id: 11, team: 1 }),
+    line({ k: 'e', t: 70, e: 'destroyPlayer', pid: 2 }),
+    line({ k: 'e', t: 80, e: 'gameStatus', status: 2 }),
+    line({ k: 'end', t: 90 }),
+  ].join('\n'));
+  // The server's log fills the team kill's weapon, and knows a hull the
+  // client never saw go.
+  const serverRows = [
+    { t: 20.3, kind: 'scoreEvent', source: 'server', pid: 2, victim: 0, weapon: 'Thompson', vehicle: null },
+    { t: 35, kind: 'destroyVehicle', source: 'server', pid: 1, victim: null, weapon: null, vehicle: 'Sherman' },
+  ];
+  const kills = chapters.killsOf(rec, serverRows);
+  const list = chapters.buildChapters(rec, serverRows, kills);
+  const lexicon = {
+    strings: { DEFAULT_KILL_TEXT: 'killed', TEAM_KILL: 'killed a teammate', DEATH: 'is no more',
+               AXIS_CAPTURED: 'Axis captured the control point' },
+    names: { Type99: 'Type 99', Landing_Beach: 'Landing Beach' },
+  };
+  const at = t => chapters.nextChapter(list, t);
+  const tally = chapters.tallyAt(kills, 100);
+  results.ux = {
+    kills: rec.kills.map(k => [k.t, k.kind, k.killer, k.victim, k.weapon]),
+    filled: kills.map(k => k.weapon),
+    captures: rec.captures.map(c => [c.t, c.name, c.team, c.from]),
+    flagRows: rec.events.filter(e => e.kind === 'flag').map(e => e.text),
+    roundStarted: rec.roundStarted,
+    leftT: rec.players.get(2).leftT,
+    recordingPlayer: chapters.recordingPlayer(rec),
+    chapters: list.map(ch => [ch.t, ch.kind, ch.lead]),
+    texts: list.map(ch => chapters.chapterText(rec, ch, lexicon)),
+    next: [at(0)?.kind, at(5)?.kind, at(7.1)?.kind],
+    prev: chapters.prevChapter(list, 17.5)?.kind ?? null,
+    nextOwn: chapters.nextChapter(list, 0, 0)?.kind ?? null,
+    status: [[0, 15], [0, 25], [2, 75], [1, 5]].map(([pid, t]) => {
+      const s = chapters.playerStatusAt(rec, pid, t, kills);
+      return [s.state, s.killedBy?.kind ?? null];
+    }),
+    tally: Object.fromEntries([...tally].map(([pid, v]) => [pid, [v.kills, v.deaths]])),
+    roster: chapters.rosterOf(rec).map(p => p.name),
+    feed: chapters.feedEvents(rec, kills).map(e => [e.t, e.type]),
+    pointsAt61: chapters.pointsAt(rec, 61).map(p => [p.name, p.team]),
+  };
+
+  // The page's message log, stood in for: every call, in order.
+  const calls = [];
+  const washes = [];
+  let ticked = 0;
+  const comms = {
+    onKill: (victim, killer, how) => calls.push(['kill', victim.name, killer?.name ?? null, how?.weapon ?? null, victim.local]),
+    onCapture: (point, team, points) => calls.push(['capture', point.name, team, points.every(p => p.team === team)]),
+    chatLine: (text, team) => calls.push(['chat', text, team]),
+    clear: () => calls.push(['clear']),
+    tick: dt => { ticked += dt; },
+    setRadioShown: on => calls.push(['radio', on]),
+  };
+  const player = { rec, followPid: 2, ctx: { comms, triggerHitIndicator: (octant, alpha) => washes.push([octant, +alpha.toFixed(3)]) } };
+  const feed = new ReplayFeed(player, kills);
+  const opened = calls.splice(0);
+  feed.update(0);
+  feed.update(9);
+  feed.update(11);
+  const forward = calls.splice(0);
+  feed.update(16, false);
+  const noWash = washes.length;
+  feed.invalidate();
+  feed.update(14);
+  feed.update(16, true);
+  const washed = washes.splice(0);
+  calls.length = 0;
+  ticked = 0;
+  feed.invalidate();
+  feed.update(52);
+  results.uxFeed = { opened, forward, noWash, washed, rebuilt: calls.splice(0), rebuiltTicks: +ticked.toFixed(2) };
+
+  // The camera's three modes, on the recording player standing at (10, 0,
+  // 20) facing the way his identity rotation points.
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const watcher = { rec, followPid: 0, time: 5, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
+  const camera = new ReplayCamera(watcher);
+  watcher.camera = camera;
+  const target = new THREE.Vector3(10, 1.2, -20);
+  for (let i = 0; i < 30; i++) camera.update(1 / 60, 5);
+  const orbit = { distance: +cam.position.distanceTo(target).toFixed(2), behind: cam.position.z < target.z };
+  camera.keys.add('KeyW');
+  for (let i = 0; i < 60; i++) camera.update(1 / 60, 5);
+  camera.keys.clear();
+  const zoomedIn = +cam.position.distanceTo(target).toFixed(2);
+  camera.wheel(100);
+  for (let i = 0; i < 60; i++) camera.update(1 / 60, 5);
+  const zoomedOut = +cam.position.distanceTo(target).toFixed(2);
+  camera.keys.add('KeyD');
+  const yaw0 = camera.yaw;
+  for (let i = 0; i < 30; i++) camera.update(1 / 60, 5);
+  camera.keys.clear();
+  const orbited = +(camera.yaw - yaw0).toFixed(3);
+  camera.setMode('pov');
+  camera.update(1 / 60, 5);
+  const look = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+  const pov = { eye: cam.position.toArray().map(v => +v.toFixed(2)), look: look.toArray().map(v => +v.toFixed(2)),
+                fov: cam.fov, near: cam.near, hides: camera.hidePid };
+  camera.setMode('free');
+  const from = cam.position.clone();
+  camera.keys.add('KeyW');
+  for (let i = 0; i < 60; i++) camera.update(1 / 60, 5);
+  camera.keys.clear();
+  const moved = cam.position.clone().sub(from);
+  const free = { moved: +moved.length().toFixed(1), along: +moved.normalize().dot(look).toFixed(3), fov: cam.fov };
+  // Dead at 25: first person has no eyes to look through, the orbit stands in
+  // over the body.
+  camera.setMode('pov');
+  camera.update(1 / 60, 25);
+  results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, deadPov: camera.hidePid };
+}
+
 console.log(JSON.stringify(results));

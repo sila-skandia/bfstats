@@ -407,7 +407,10 @@ if (!params.has('map') && !params.has('replay') && !params.has('shots')
  *  to drop; the spawn screen, which the flythrough can open too, refines it in
  *  `paintPlayingShell` below. */
 const IN_MATCH = params.has('team') || params.has('room');
-document.documentElement.classList.toggle('shell-playing', IN_MATCH);
+/** A recorded round to watch (`?replay=`) owns the screen the way a match does
+ *  (features/round-replay-ux), from its loading screen on. */
+const WATCHING = params.has('replay');
+document.documentElement.classList.toggle('shell-playing', IN_MATCH || WATCHING);
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -1791,6 +1794,19 @@ replayController = createReplayController({
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
   ensureAudio: () => pageAudio.ensureAudioContext(),
+  // The viewing side (features/round-replay-ux): the round's kills, flags and
+  // chat go into this page's own message log, a side is drawn with its own
+  // flag sprite, the recording player's hits wash his first-person view the
+  // way the HUD washes the player's, and the replay's keys stand aside while
+  // the console, the Escape menu or the briefing has the keyboard.
+  comms,
+  teamFlag: team => hudFeed.sprite(`flag_ticket_${mapSurfaces.teamNation(team)}`)?.src ?? null,
+  triggerHitIndicator: (octant, alpha) => soldierHud.triggerHitIndicator(octant, alpha),
+  keyboardTaken: () => pageConsole.consoleCaptures() || pageConsole.escMenuCaptures()
+    || Boolean(overlay.briefingCaptures()),
+  // A click on the view while the level was loading took the pointer for the
+  // free-fly camera; the replay's own input layer gives it back.
+  releasePageInput: () => pageInput.release(),
 });
 if (replayUrl) {
   replayController.openFromUrl(replayUrl, params.get('serverlog'))
@@ -1876,9 +1892,9 @@ function commsWatchLocalDeath() {
  *  row go and resizes the renderer, so nothing here has to.
  *  Toggled on the edge only: a frame that changes nothing must not touch the
  *  class list, or every frame of a match would invalidate style. */
-let shellPlaying = IN_MATCH;
+let shellPlaying = IN_MATCH || WATCHING;
 function paintPlayingShell() {
-  const want = IN_MATCH || deployScreen.deployActive();
+  const want = IN_MATCH || WATCHING || deployScreen.deployActive();
   if (want === shellPlaying) return;
   shellPlaying = want;
   document.documentElement.classList.toggle('shell-playing', want);
@@ -1892,8 +1908,9 @@ function frame(dt) {
   // The joystick is sampled once a frame with the rest of the devices: its
   // button edges dispatch through pageInput's trigger bodies, and its axes
   // are read by `controls.axis` from the sampling below. Absent pad, absent
-  // cost.
-  controls.pollGamepad();
+  // cost. Not under a replay: its buttons would open the spawn screen and the
+  // score board over a round nobody is playing.
+  if (!replayController?.active()) controls.pollGamepad();
   // Every drawn hull back on its last tick's pose before any of the frame's
   // simulation reads it (the bots' AI after the step, on a frame that ran no
   // tick); `localLook.present` below draws them between ticks again.
@@ -2066,6 +2083,9 @@ function presentWorld(step, dt) {
 function draw(dt) {
   renderer.render(scene, camera);
   soldierKit.renderViewmodel();
+  // In the task that drew it, while the drawing buffer is whole: a replay's
+  // timeline keeps a small frame of the view as playback passes a chapter.
+  replayController?.afterRender(renderer.domElement);
   deployScreen.deployAnimate(dt);
   if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
   mapSurfaces.bfmap.update(dt);
@@ -2135,7 +2155,9 @@ function paintHud(dt) {
   // is `crosshairAim` that decides whose.
   vehicleHud.updateCrosshair();
   hudFeed.gameHud.paint(hudW, hudH);
-  comms.tick(dt);
+  // A replay runs the message log on the recording's clock: its speed while
+  // it plays, stopped while it is paused. Without one the rate is 1.
+  comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
   comms.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the

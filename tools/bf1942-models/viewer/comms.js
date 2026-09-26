@@ -54,6 +54,9 @@ export function createComms(page) {
    *  own profile turns it off, and his game shows the icons alone, so off is
    *  the page's default. The console word turns it back on. */
   let showToolTip = false;
+  /** Whether the F1..F8 strip is drawn. A replay has no radio of its own to
+   *  work (replay-feed.js turns it off); the message log still draws. */
+  let radioShown = true;
   let centre = null;           // { text, until }
   let dirty = true;
   let lastSig = '';
@@ -145,6 +148,11 @@ export function createComms(page) {
     showToolTip = !!on;
     dirty = true;
     return showToolTip;
+  };
+  comms.setRadioShown = on => {
+    radioShown = !!on;
+    dirty = true;
+    return radioShown;
   };
 
   /** The radio keys, `c_PIRadio1..8` in the control map — F1..F8 in the
@@ -382,11 +390,13 @@ export function createComms(page) {
   comms.lastAttacker = (victimId, withinMs = 5000) => comms.lastAttack(victimId, withinMs)?.killer ?? null;
 
   /** A control point changed hands: the game-information line, to everyone,
-   *  and the all-points line when one side now holds every point. */
-  comms.onCapture = (point, team) => {
+   *  and the all-points line when one side now holds every point. `flags`
+   *  is what "every point" is read from: the page's own, or a recorded
+   *  round's points as they stood (replay-feed.js). */
+  comms.onCapture = (point, team, flags = page.flags) => {
     if (team !== 1 && team !== 2) return;
     chat.add(SECTION_INFO, { text: captureLine(pointLabel(point), team, strings()), team });
-    const points = (page.flags || []).filter(f => f && f.controlPointName != null);
+    const points = (flags || []).filter(f => f && f.controlPointName != null);
     if (points.length && points.every(f => (f === point ? team : f.team) === team)) {
       chat.add(SECTION_INFO, { text: allPointsLine(team, strings()), team: 0 });
     }
@@ -398,6 +408,19 @@ export function createComms(page) {
     chat.add(SECTION_INFO, { text, team });
     dirty = true;
   };
+
+  /** A chat-section line exactly as it was shown -- a recorded round's chat
+   *  box (replay-feed.js), which already carries the `name: ` and any team
+   *  word -- in the team's colour under its flag. */
+  comms.chatLine = (text, team = 0) => {
+    chat.add(SECTION_CHAT, { text, team });
+    dirty = true;
+  };
+
+  /** The lexicon the log prints with, for anyone writing the same words
+   *  elsewhere (the replay's timeline): `{ strings, names }`, null until the
+   *  layout has loaded. */
+  comms.lexicon = () => (chatLayout ? { strings: chatLayout.strings ?? null, names: chatLayout.names ?? null } : null);
 
   comms.clear = () => {
     chat.clear();
@@ -531,7 +554,7 @@ export function createComms(page) {
     if (!canvas || !stageW || !stageH) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
-      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}`;
+      + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioShown}`;
     if (!dirty && sig === lastSig) return;
     dirty = false;
     lastSig = sig;
@@ -547,7 +570,7 @@ export function createComms(page) {
     ctx.setTransform(stageW / VIRTUAL_W * dpr, 0, 0, stageH / VIRTUAL_H * dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
     if (chatLayout) paintChat(ctx);
-    if (radioLayout) paintRadio(ctx);
+    if (radioLayout && radioShown) paintRadio(ctx);
   };
 
   /** For the test hooks: the log's rows and the menu's state. */
