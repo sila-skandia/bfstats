@@ -27,11 +27,13 @@
 // the runner's hitscan stand-in (`SIM_GUN`). Either way each event becomes a
 // trace line and a statistic.
 //
-// Runner-only (the page has no such thing, labelled SIM):
-//   tickets: one per death (`Game.setTicketLosePerDeath`, the Conquest
-//   default in features/bf1942-3d-models/tickets-hud.md), and `lossPerMin`
-//   while the other side holds more than half the control points (same
-//   document); the viewer's ticket counter does not move.
+// Runner-only, labelled SIM: the ticket bleed. A round starts from the page's
+// own arithmetic (`round-state.js` `scaleTickets`: the level's counts and
+// rates times the server's max players over 16, ledger TKT-1..TKT-4) and a
+// death costs a ticket as it does there, but a side bleeds `lossPerMin`
+// continuously while the other side holds more than half the control points
+// (features/bf1942-3d-models/tickets-hud.md), where the page bleeds a whole
+// ticket per interval while the enemy's summed `areaValue` is over 99.
 
 import { createHash } from 'node:crypto';
 import { SimVehicles, SIM_GUN } from './vehicles.mjs';
@@ -48,12 +50,18 @@ const v2 = (a) => (a ? a.map(r2) : null);
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
                 sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [],
-                wreckLoader = null }) {
+                wreckLoader = null, maxPlayers = null }) {
     this.M = M;
     /** `[{ bot, template, seat }]`: bots seated by hand at t = 0 (`--seat`). */
     this.seats = seats;
     this.level = level;
     this.botsPerSide = botsPerSide;
+    /** The slot count of the server the round is played on (`--max-players`),
+     *  which scales its tickets. Unset, it is the bots: the engine's top-up
+     *  fills every slot of a bot server, so its population is its slot count
+     *  (`map.html` `ROUND_MAX_PLAYERS`, whose population also counts the
+     *  local player; the runner has none). */
+    this.maxPlayers = M.clampMaxPlayers(maxPlayers, M.clampMaxPlayers(2 * botsPerSide));
     this.botSkill = botSkill;
     this.duration = duration;
     this.seed = seed;
@@ -129,23 +137,30 @@ export class Match {
       kitFor: (team, i) => level.kits.kitFor(team, i),
       viewDistance: extras?.ai?.settings?.viewDistance ?? null,
     }));
-    this.tickets = {
-      1: Number.isFinite(extras?.tickets?.team1) ? extras.tickets.team1 : 100,
-      2: Number.isFinite(extras?.tickets?.team2) ? extras.tickets.team2 : 100,
-    };
-    this.lossPerMin = { 1: extras?.tickets?.lossPerMin?.team1 ?? 0, 2: extras?.tickets?.lossPerMin?.team2 ?? 0 };
+    // The round as a `maxPlayers` server starts it (`round-state.js`
+    // `scaleTickets`): each side's count times max players over 16, truncated,
+    // and each bleed rate times the same. A level's own `tickets.maxPlayers`
+    // (a mode script's `game.maxNrOfPlayers`: Kasserine Pass co-op's 18)
+    // replaces the server's count for the start only. A side the level gives
+    // no count starts at 100, scaled the same way.
+    const own = extras?.tickets ?? {};
+    const count = v => (Number.isFinite(v) ? v : 100);
+    const round = M.scaleTickets({ ...own, team1: count(own.team1), team2: count(own.team2) }, this.maxPlayers);
+    this.startPlayers = M.roundPlayers(this.maxPlayers, own);
+    this.tickets = { 1: round.team1, 2: round.team2 };
+    this.lossPerMin = { 1: round.lossPerMin?.team1 ?? 0, 2: round.lossPerMin?.team2 ?? 0 };
     this.controlPoints = world.flags.filter(f => !f.standalone && f.controlPointName);
 
     this.emit({
       k: 'match', version: 1, level: level.name, seed: this.seed, botsPerSide: this.botsPerSide,
-      behaviours: BEHAVIOURS,
+      maxPlayers: this.maxPlayers, behaviours: BEHAVIOURS,
       botSkill: this.botSkill, duration: this.duration, tickHz: Math.round(1 / M.WORLD_TICK_DT),
       traceEvery: this.traceEvery, sampleEvery: this.sampleEvery, worldSize,
       nav: { width: this.nav.width, height: this.nav.height, cellSize: this.nav.cellSize },
       strategic: this.strategy ? this.strategy.layer.areas.map(a => a.name) : null,
       flags: world.flags.map(f => ({ name: f.name, team: f.team ?? 0, pos: v2(f.position), radius: f.radius,
                                      uncapturable: !!f.uncapturable, controlPoint: !!f.controlPointName })),
-      tickets: { ...this.tickets }, lossPerMin: { ...this.lossPerMin },
+      tickets: { ...this.tickets }, lossPerMin: { ...this.lossPerMin }, startPlayers: this.startPlayers,
       covers: this.covers.length, vehicles: this.vehicleCount(),
       bots: this.bots.map(b => ({ id: b.playerId, side: b.team, name: b.name, kit: b.kit,
                                   weapons: b.weapons.map(w => w.name) })),
@@ -469,8 +484,9 @@ export class Match {
 
   // --- tickets ----------------------------------------------------------------------
 
-  /** SIM: one ticket a death (the referee's `onDeath`), and the bleed while the other
-   *  side holds more than half the control points. */
+  /** SIM: one ticket a death (the referee's `onDeath`), and the bleed, at the
+   *  server's scaled rate, while the other side holds more than half the
+   *  control points. */
   ticketTick(dt) {
     const n = this.controlPoints.length;
     if (!n) return;
@@ -654,8 +670,8 @@ export class Match {
     const every = Math.max(1, Math.round(5 / this.sampleEvery));
     const series = this.samples.filter((_, i) => i % every === 0 || i === this.samples.length - 1);
     return {
-      level: this.level.name, seed: this.seed, botsPerSide: this.botsPerSide, botSkill: this.botSkill,
-      duration: r2(this.clock), requestedDuration: this.duration,
+      level: this.level.name, seed: this.seed, botsPerSide: this.botsPerSide, maxPlayers: this.maxPlayers,
+      botSkill: this.botSkill, duration: r2(this.clock), requestedDuration: this.duration,
       result: { reason: this.ended?.reason ?? 'unfinished', winner, tickets: { 1: r2(this.tickets[1]), 2: r2(this.tickets[2]) } },
       metrics: {
         ticketsOverTime: series.map(s => [s.t, s.tickets[1], s.tickets[2]]),

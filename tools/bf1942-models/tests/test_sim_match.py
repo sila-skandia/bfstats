@@ -91,7 +91,8 @@ class SimMatchTests(unittest.TestCase):
                     "deaths", "captures", "vehicleUtilisation", "routeFailures", "behaviourShare"):
             self.assertIn(key, m)
         self.assertGreater(len(m["ticketsOverTime"]), 2)
-        self.assertEqual(m["ticketsOverTime"][0], [0, 100, 100])
+        # 2 a side is a 4-slot server: a quarter of the level's 100 (test_sim_tickets).
+        self.assertEqual(m["ticketsOverTime"][0], [0, 25, 25])
         self.assertEqual(self.summary["duration"], SECONDS)
         self.assertEqual(self.summary["result"]["reason"], "time")
         self.assertEqual(m["vehicleUtilisation"]["vehicles"], 4)
