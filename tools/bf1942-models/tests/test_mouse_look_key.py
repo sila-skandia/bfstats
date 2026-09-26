@@ -36,7 +36,7 @@ FIXTURES = TESTS / "fixtures" / "controls-profile-skandia"
 
 MODULES = {
     f"viewer/{name}": VIEWER / name
-    for name in ("mouse-look-key.js", "mouse-input.js", "local-look.js", "vehicle-camera.js",
+    for name in ("mouse-look-key.js", "mouse-input.js", "local-look.js", "vehicle-camera.js", "camera-pivot.js",
                  "controls.js", "controls-defaults.js", "console.js", "console-view.js")
 }
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"

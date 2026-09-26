@@ -4,6 +4,7 @@
 // index.html (features/vehicle-instance-refactor, Part 2c).
 
 import * as THREE from 'three';
+import { applyCameraPivot } from './camera-pivot.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -79,7 +80,9 @@ export function createSeatCams(page) {
   function collectViews(root) {
     seatViews.length = 0;
     root.traverse(obj => {
-      if (obj.userData?.cameraView) seatViews.push(obj);
+      if (!obj.userData?.cameraView) return;
+      applyCameraPivot(obj);
+      seatViews.push(obj);
     });
   }
 

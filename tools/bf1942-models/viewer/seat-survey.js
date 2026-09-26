@@ -3,6 +3,8 @@
 // classification (SEAT-*/GUN-10) and the mouse-aim axes it is wired to.
 // Split out of `seats.js`, which re-exports everything here.
 
+import { applyCameraPivot } from './camera-pivot.js';
+
 // --- seat survey -------------------------------------------------------
 
 export const AXES = ['yaw', 'pitch', 'roll'];
@@ -167,6 +169,9 @@ export function surveyVehicle(root) {
         seat.poseAnimation = data.seat.poseAnimation;
       }
     } else if (kind === 'Camera') {
+      // Retail's eye is the node plus its `setPivotPosition` (camera-pivot.js):
+      // the half-track's ring-mount Browning backs out 1 m behind the receiver.
+      applyCameraPivot(obj);
       const seat = seatFor(owner);
       if (!seat.camera) seat.camera = obj;   // first one wins, same rule Vehicle.collect() uses
       // camera-modes.md §3: CVM* booleans say which views the seat offers.
