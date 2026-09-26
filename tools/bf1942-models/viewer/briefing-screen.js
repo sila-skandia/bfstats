@@ -133,6 +133,9 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
     const { s, ox, oy, w, h, dpr } = view;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Crisp pixels, the way the game draws at 800x600: smoothing the scaled
+    // glyphs softens every edge and reads as a bolder weight than the face is.
+    ctx.imageSmoothingEnabled = false;
     ctx.setTransform(s * dpr, 0, 0, s * dpr, ox * dpr, oy * dpr);
     if (assets.plate && assets.plate.complete && assets.plate.naturalWidth > 0) {
       ctx.drawImage(assets.plate, PLATE.x, PLATE.y, PLATE.w, PLATE.h);
@@ -203,7 +206,7 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
       ctx.drawImage(knapp, KNAPP_SRC.x, KNAPP_SRC.y, KNAPP_SRC.w, KNAPP_SRC.h,
                     READY_BTN.x, READY_BTN.y, READY_BTN.w, READY_BTN.h);
     }
-    text(ctx, 'trebuchet_ms8', 'READY', { align: 'center', x: 393, baselineY: 444, tracking: 6.5, rgb: [1, 1, 1] });
+    text(ctx, 'trebuchet_ms8', 'READY', { align: 'center', x: 393, baselineY: 444, tracking: 0, rgb: [1, 1, 1] });
   }
 
   function hexRgb(str) {
