@@ -28,6 +28,23 @@ const _contact = {
 /** Scratch for `Heightfield.normal`, which writes into a caller's array. */
 const _normal = [0, 1, 0];
 
+/** Scratch for `groundUnder`. */
+const _ground = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: -1, sea: NaN };
+
+/**
+ * How far a sphere may already be into an edge or a corner and still be
+ * stopped by it, in metres (`CollisionIndex.sweepSphere`'s `shell`).
+ *
+ * The sweep lets go of any edge a sphere overlaps, so that a body caught
+ * inside a parked jeep can push its way out. Left at that, a soldier who
+ * finished a glancing slide along the side edge of a beached Daihatsu's
+ * lowered ramp, his middle sphere tangent to it, was carried a hair into the
+ * edge by rounding and had lost it for good: every later sweep started inside
+ * it, and he walked on under the ramp with the plate through his waist. The
+ * shell keeps an edge solid to a sphere that is only grazing it.
+ */
+const EDGE_SHELL = 0.02;
+
 /**
  * Nearest contact for a stack of spheres swept together, or null.
  *
@@ -42,7 +59,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
   let best = -1;
   for (const offset of offsets) {
     let hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
-                                skipOwner);
+                                skipOwner, false, -Infinity, 2, false, EDGE_SHELL);
     if (!hit) continue;
     // Barbed wire (`BFSoldier::handleCollision` 0x0827d3b0's Obstacle
     // branch): above the handler gate the contact is recorded and vetoed,
@@ -52,7 +69,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
       if (obstacle >= 0) {
         noteObstacle(walker, obstacle, hit.px, hit.py, hit.pz);
         hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
-                                skipOwner, false, -Infinity, 2, true);
+                                skipOwner, false, -Infinity, 2, true, EDGE_SHELL);
         if (!hit) continue;
       }
     }
@@ -186,14 +203,26 @@ export function resolveMove(walker) {
       const flat = Math.hypot(nx, nz);
       if (flat > 1e-6) { nx /= flat; ny = 0; nz /= flat; }
     }
-    // What is left of the move, projected onto the contact plane.
+    // What is left of the move, projected onto the contact plane. A flattened
+    // plane is parallel to the vertical part of the move, which can still be
+    // closing on the contact itself: the tick of gravity, or the ground
+    // falling away under a slide along a plate's edge. Left alone it either
+    // carried the sphere into the edge by a hair, after which the sweep let
+    // go of it (a soldier ended up under a beached Daihatsu's ramp that way),
+    // or burnt every pass re-finding the edge at `t = 0` and froze the body.
+    // So the move is stripped against the contact too; after the flat strip
+    // that can only shrink the vertical part, by ny^2 of it, never turn it
+    // into a climb.
     const left = dist - advance;
     rx = dx * left; ry = dy * left; rz = dz * left;
-    const into = rx * nx + ry * ny + rz * nz;
-    if (into < 0) { rx -= nx * into; ry -= ny * into; rz -= nz * into; }
     const v = body.velocity;
-    const vInto = v.x * nx + v.y * ny + v.z * nz;
-    if (vInto < 0) { v.x -= nx * vInto; v.y -= ny * vInto; v.z -= nz * vInto; }
+    for (let k = ny === hit.ny ? 1 : 0; k < 2; k++) {
+      const mx = k ? hit.nx : nx, my = k ? hit.ny : ny, mz = k ? hit.nz : nz;
+      const into = rx * mx + ry * my + rz * mz;
+      if (into < 0) { rx -= mx * into; ry -= my * into; rz -= mz * into; }
+      const vInto = v.x * mx + v.y * my + v.z * mz;
+      if (vInto < 0) { v.x -= mx * vInto; v.y -= my * vInto; v.z -= mz * vInto; }
+    }
   }
   body.position.x = px;
   body.position.y = py;
@@ -267,8 +296,10 @@ function tooSteep(walker, x, z, y) {
 }
 
 /**
- * Put the feet on whatever is under them: the heightfield, the sea surface,
- * or a hull.
+ * What the feet stand on at (x, z), from height y: the heightfield, the sea
+ * bed, or a hull. Into `g`: `y` (-Infinity for nothing), its normal and
+ * material, and `sea`, the water level where the sea is the higher surface
+ * (NaN elsewhere).
  *
  * Terrain is a clamp rather than a sweep on purpose. The heightfield is a
  * function of (x, z) — `WorldCollider.surfaceHeight` is one bilinear sample
@@ -284,17 +315,16 @@ function tooSteep(walker, x, z, y) {
  * had been standing on, and it wedged there for good. A vertical ray can only
  * meet what is actually underneath.
  */
-export function settleFeet(walker) {
+function groundUnder(walker, x, y, z, g) {
   const world = walker.world;
-  const p = walker.body.position;
-  const v = walker.body.velocity;
   let ground = -Infinity;
   // The normal and material of whatever the feet end up on, for `#contact`.
   // Terrain answers with its own bilinear normal; the sea plane is flat and
   // is material 1, which is what keeps a jump from arming on open water.
   let groundNx = 0, groundNy = 1, groundNz = 0, groundMaterial = -1;
+  g.sea = NaN;
   if (world && world.surfaceHeight) {
-    const h = world.surfaceHeight(p.x, p.z);
+    const h = world.surfaceHeight(x, z);
     const level = world.waterLevel;
     // **A man does not stand on the sea**, and this is where he used to.
     // `WorldCollider.surfaceHeight` answers `max(heightfield, waterLevel)`,
@@ -311,26 +341,9 @@ export function settleFeet(walker) {
     // `#updateSwim`.
     const isSea = Number.isFinite(h) && level != null
       && Math.abs(h - level) <= 1e-6;
-    // The surface is not a floor, but it **is** a collision: HP-14's water
-    // landing damage comes from `GameServer::handleCollisionLandOrWater`'s
-    // `param_7 == 1` arm (`0x08154960`, and material 1 is hardcoded into all
-    // three of its lookups), so a man who falls in is billed for it -- about
-    // 67x more gently than the same drop onto land, because water's
-    // `damageMod` is 1.5e-05 against dirt's 0.001. Registered here as a
-    // one-tick contact on the crossing, with no clamp and no `grounded`.
-    if (isSea && p.y <= level + SKIN
-        && walker.body.previous.y > level + SKIN) {
-      walker._waterEntry = true;
-      // The drop is billed to the surface, not to wherever inside the tick's
-      // step the body ended up, so that the same 10 m fall is the same `F`
-      // whether it ends on dirt or in the sea and the only thing that differs
-      // is the material's own `damageMod`.
-      walker._waterEntryY = level;
-      walker.contacts++;
-      recordContact(walker, 0, 1, 0, MATERIAL_WATER);
-    }
+    g.sea = isSea ? level : NaN;
     const bed = isSea && world.heightfield && world.heightfield.height
-      ? world.heightfield.height(p.x, p.z) : NaN;
+      ? world.heightfield.height(x, z) : NaN;
     const solid = isSea ? bed : h;
     if (Number.isFinite(solid)) {
       ground = solid;
@@ -341,13 +354,13 @@ export function settleFeet(walker) {
         groundMaterial = MATERIAL_WATER;
       } else {
         if (world.heightfield && world.heightfield.normal) {
-          world.heightfield.normal(p.x, p.z, _normal);
+          world.heightfield.normal(x, z, _normal);
           if (Number.isFinite(_normal[1])) {
             groundNx = _normal[0]; groundNy = _normal[1]; groundNz = _normal[2];
           }
         }
         if (world.heightfield && world.heightfield.material) {
-          groundMaterial = world.heightfield.material(p.x, p.z);
+          groundMaterial = world.heightfield.material(x, z);
         }
       }
     }
@@ -358,7 +371,7 @@ export function settleFeet(walker) {
     // sea as well, which only agrees with `surfaceHeight` above — harmless,
     // and it costs one entry in the collider's cast meter per tick.
     const skipOwner = walker.ignoreOwner ?? -1;
-    let hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
+    let hit = world.cast(x, y + STEP_HEIGHT, z, 0, -1, 0,
                          STEP_HEIGHT + SNAP_DOWN, skipOwner);
     // Barbed wire is no floor to a body moving through it (the same veto as
     // the sweep's): the touch is recorded and the ray goes on below it.
@@ -367,8 +380,8 @@ export function settleFeet(walker) {
       if (obstacle >= 0) {
         noteObstacle(walker, obstacle, hit.x, hit.y, hit.z);
         const from = hit.y - 1e-3;
-        const reach = STEP_HEIGHT + SNAP_DOWN - (p.y + STEP_HEIGHT - from);
-        hit = reach > 0 ? world.cast(p.x, from, p.z, 0, -1, 0, reach, skipOwner) : null;
+        const reach = STEP_HEIGHT + SNAP_DOWN - (y + STEP_HEIGHT - from);
+        hit = reach > 0 ? world.cast(x, from, z, 0, -1, 0, reach, skipOwner) : null;
         if (hit && world.obstacleAt(hit) >= 0) hit = null;
       }
     }
@@ -384,6 +397,93 @@ export function settleFeet(walker) {
       groundMaterial = hit.material;
     }
   }
+  g.y = ground;
+  g.nx = groundNx; g.ny = groundNy; g.nz = groundNz;
+  g.material = groundMaterial;
+  return g;
+}
+
+/** The least a contact must face down to be a ceiling to a rise. */
+const CEILING_NY = 0.25;
+
+/**
+ * Is there no headroom for the lift `settleFeet` is about to make?
+ *
+ * The clamp onto the ground is a vertical move the sweep in `resolveMove`
+ * never saw, and a lift carries the head up into whatever is over it: the
+ * beach rising under a soldier's run put his head into the underside of a
+ * beached Daihatsu's bow and lowered ramp, a few centimetres a tick, until
+ * the sweep counted him inside the plate, let go of it, and walked him on
+ * underneath. So a lift is swept with the top sphere, and only up and only
+ * that sphere: the sides and the feet of a capsule rising are moving along
+ * or away from whatever they touch.
+ */
+function noHeadroom(walker, ground) {
+  const world = walker.world;
+  const p = walker.body.position;
+  const q = walker.body.previous;
+  if (!world || !world.sweepSphere || !(ground > p.y + 1e-4)) return false;
+  if (!(p.y <= ground + SKIN)) return false;
+  // Ground no higher than the feet stood last tick is not a rise, only the
+  // tick's millimetre of gravity being put back, which every grounded tick
+  // on the flat makes.
+  if (!(ground > q.y + 1e-4)) return false;
+  if (Math.abs(p.x - q.x) < 1e-6 && Math.abs(p.z - q.z) < 1e-6) return false;
+  const offsets = walker._offsets;
+  if (!offsets.length) return false;
+  const hit = world.sweepSphere(p.x, p.y + offsets[offsets.length - 1], p.z,
+                                0, 1, 0, ground - p.y, BODY_RADIUS,
+                                walker.ignoreOwner ?? -1, false, -Infinity, 2,
+                                false, EDGE_SHELL);
+  if (!hit || hit.ny >= -CEILING_NY) return false;
+  // As deep as the lift would put the head into it: a scrape inside the shell
+  // is allowed, as it is sideways. A head already further in than that was
+  // put there by something else (a spawn, a vehicle), and refusing the step
+  // would only hold it there.
+  const depth = hit.depth ?? 0;
+  return depth <= EDGE_SHELL && depth + (ground - p.y) - hit.t > EDGE_SHELL;
+}
+
+/**
+ * Put the feet on whatever is under them (`groundUnder`): the heightfield, the
+ * sea bed, or a hull.
+ */
+export function settleFeet(walker) {
+  const world = walker.world;
+  const p = walker.body.position;
+  const q = walker.body.previous;
+  const v = walker.body.velocity;
+  const g = groundUnder(walker, p.x, p.y, p.z, _ground);
+  // Rising into a ceiling: the step that asked for it is refused, as
+  // `refuseSteepGround` refuses one up a cliff.
+  if (noHeadroom(walker, g.y)) {
+    p.x = q.x;
+    p.z = q.z;
+    v.x = 0;
+    v.z = 0;
+    walker.contacts++;
+    groundUnder(walker, p.x, p.y, p.z, g);
+  }
+  // The surface is not a floor, but it **is** a collision: HP-14's water
+  // landing damage comes from `GameServer::handleCollisionLandOrWater`'s
+  // `param_7 == 1` arm (`0x08154960`, and material 1 is hardcoded into all
+  // three of its lookups), so a man who falls in is billed for it -- about
+  // 67x more gently than the same drop onto land, because water's
+  // `damageMod` is 1.5e-05 against dirt's 0.001. Registered here as a
+  // one-tick contact on the crossing, with no clamp and no `grounded`.
+  if (p.y <= g.sea + SKIN && q.y > g.sea + SKIN) {
+    walker._waterEntry = true;
+    // The drop is billed to the surface, not to wherever inside the tick's
+    // step the body ended up, so that the same 10 m fall is the same `F`
+    // whether it ends on dirt or in the sea and the only thing that differs
+    // is the material's own `damageMod`.
+    walker._waterEntryY = g.sea;
+    walker.contacts++;
+    recordContact(walker, 0, 1, 0, MATERIAL_WATER);
+  }
+  const ground = g.y;
+  const groundNx = g.nx, groundNy = g.ny, groundNz = g.nz;
+  const groundMaterial = g.material;
   if (Number.isFinite(ground)) {
     if (p.y <= ground + SKIN) {
       p.y = ground;
@@ -417,7 +517,7 @@ export function settleFeet(walker) {
   // demanding that much fall costs it nothing.
   const wedgeMinFall = 2 * Math.abs(GRAVITY) / TICK_RATE;
   if (!walker.grounded && v.y < -wedgeMinFall
-      && p.y >= walker.body.previous.y - 1e-4) {
+      && p.y >= q.y - 1e-4) {
     v.y = 0;
     walker.grounded = true;
   }

@@ -229,6 +229,28 @@ class PhysicsModuleTests(unittest.TestCase):
         # quadratic's far root is the sphere coming out, not a contact.
         self.assertTrue(self.results["sweepOverlapLetsGo"])
 
+    def test_a_shell_keeps_an_edge_solid_to_a_sphere_only_grazing_it(self) -> None:
+        # 5 mm into the plate's edge, as a glancing slide leaves a sphere: with
+        # no shell it is let go, so the next step walks through the edge; with
+        # a 2 cm shell closing on it stops at once, and leaving or running along
+        # it does not.
+        shell = self.results["sweepShell"]
+        self.assertTrue(shell["noShell"])
+        into = shell["into"]
+        self.assertIsNotNone(into)
+        self.assertEqual(0, into["t"])
+        self.assertAlmostEqual(-1.0, into["nx"], places=6)
+        self.assertAlmostEqual(0.005, into["depth"], places=6)
+        self.assertTrue(shell["away"])
+        self.assertTrue(shell["along"])
+
+    def test_a_shell_still_lets_a_buried_sphere_go(self) -> None:
+        # Deep in the edge itself, or sunk 20 cm into a wall beside it: the body
+        # is inside something and must be free to push its way out.
+        shell = self.results["sweepShell"]
+        self.assertTrue(shell["deep"])
+        self.assertTrue(shell["buried"])
+
     def test_a_seam_inside_a_flat_wall_is_not_an_edge(self) -> None:
         seam = self.results["sweepSeam"]
         self.assertTrue(seam["along"])
@@ -471,6 +493,16 @@ class PhysicsModuleTests(unittest.TestCase):
         blocked = self.results["doesNotClimbAWall"]
         self.assertLess(blocked["x"], 8.0)
         self.assertAlmostEqual(0.0, blocked["y"], places=6)
+
+    def test_a_step_up_is_refused_where_the_head_has_no_room(self) -> None:
+        # The kerb's 0.3 m lift would put the head 10 cm into a ceiling at
+        # 2.0 m: he stays on the ground short of it. At 2.2 m it fits.
+        low = self.results["kerbUnderACeiling"]["low"]
+        self.assertLess(low["x"], 8.0)
+        self.assertAlmostEqual(0.0, low["y"], places=6)
+        high = self.results["kerbUnderACeiling"]["high"]
+        self.assertGreater(high["x"], 10.0)
+        self.assertAlmostEqual(0.3, high["y"], places=3)
 
     # --- the jump (PHY-1) --------------------------------------------------
 
