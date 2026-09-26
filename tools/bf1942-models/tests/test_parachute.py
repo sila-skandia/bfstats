@@ -11,6 +11,7 @@ real `Soldier` is bailed out over a real heightfield and flown down.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -243,6 +244,42 @@ class ParachuteTests(unittest.TestCase):
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
                 self.assertIsNotNone(self.results[case]["trace"]["landedAt"])
+
+    def test_free_fall_steers_up_to_the_canopy_glide_and_no_further(self) -> None:
+        cap = self.results["trackSpeed"]
+        self.assertAlmostEqual(12.2805, cap, places=3)
+        rest = self.results["levelFallFromRest"]
+        self.assertEqual("falling", rest["state"])
+        # It used to reach 30 m/s of forward speed a second, without bound.
+        self.assertLessEqual(rest["peak"], cap + 1e-6)
+        self.assertGreater(rest["speed"], cap - 0.1)
+
+    def test_free_fall_keeps_the_planes_speed_without_adding_to_it(self) -> None:
+        plane = self.results["levelFallFromPlane"]
+        self.assertEqual("falling", plane["state"])
+        self.assertLessEqual(plane["peak"], 50.0 + 1e-6)
+        # The soldier's own drag 1.0 is all that takes anything off it:
+        # 50 * exp(-pi * 0.8^2 * 1.0 / 100 * 8 s) = 42.6.
+        self.assertAlmostEqual(50 * math.exp(-math.pi * 0.64 / 100 * 8), plane["speed"], delta=0.3)
+
+    def test_a_bail_out_passes_through_the_hull_it_left(self) -> None:
+        held = self.results["bailOntoHull"]["held"]
+        through = self.results["bailOntoHull"]["through"]
+        # Without the grace the wing stands him up and takes all 50 m/s.
+        self.assertTrue(held["grounded"])
+        self.assertLess(held["speed"], 1.0)
+        # With it he keeps the aircraft's speed and falls away from it.
+        self.assertFalse(through["grounded"])
+        self.assertGreater(through["speed"], 49.0)
+        self.assertLess(through["y"], 300.0)
+
+    def test_stepping_out_of_a_jeep_carries_its_speed(self) -> None:
+        carry = self.results["carryFromJeep"]
+        # 20 m/s bled at 4.8 * 9.82 m/s^2: 0.42 s and v^2 / 2a = 4.2 m.
+        self.assertTrue(carry["grounded"])
+        self.assertGreater(carry["slid"], 3.5)
+        self.assertLess(carry["slid"], 5.0)
+        self.assertLess(carry["stoppedAt"], 0.5)
 
 
 if __name__ == "__main__":

@@ -378,6 +378,7 @@ export function ensureRoute(bot, goal) {
     lastPassed: [bx, bz],
     failed: false,
     searches: 0,
+    widen: 0,
   };
   bot._stalledTicks = 0;
   bot._extendRoute();
@@ -409,23 +410,28 @@ export function extendRoute(bot) {
     const last = r.coarse.length === 1;
     const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
       ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
-    let leg = findLocalPath(nav, from[0], from[1], tx, tz,
-                            { radius, obstacles });
-    r.searches++;
     // A leg the box cannot close is searched again in a wider box (the
-    // engine's next decision pass draws a fresh radius; INVENTION: three
-    // widenings at once) before the route fails and waits for its retry.
-    for (let w = 1; !leg && w <= ROUTE_LEG_WIDENINGS; w++) {
-      leg = findLocalPath(nav, from[0], from[1], tx, tz,
-                          { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
-                            maxNodes: ROUTE_LEG_WIDE_NODES * w });
-      r.searches++;
-    }
+    // engine's next decision pass draws a fresh radius) before the route
+    // fails and waits for its retry: ONE search a tick, the widening carried
+    // on the route (`r.widen`). All the widenings used to run in the tick the
+    // first search failed in -- up to 428,000 node expansions in one 30 Hz
+    // tick, a 350 ms stall on Berlin with sixteen bots (INVENTION of the
+    // pacing either way; features/bot-fight-performance).
+    const w = r.widen ?? 0;
+    const leg = w === 0
+      ? findLocalPath(nav, from[0], from[1], tx, tz, { radius, obstacles })
+      : findLocalPath(nav, from[0], from[1], tx, tz,
+                      { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
+                        maxNodes: ROUTE_LEG_WIDE_NODES * w });
+    r.searches++;
     if (!leg) {
+      if (w < ROUTE_LEG_WIDENINGS) { r.widen = w + 1; return; }   // next tick, wider
+      r.widen = 0;
       r.failed = true;
       bot._pathFailures++;
       return;
     }
+    r.widen = 0;
     r.coarse.shift();
     bot._pathFailures = 0;
     for (let i = r.points.length ? 1 : 0; i < leg.length; i++) r.points.push(leg[i]);
