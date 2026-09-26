@@ -18,15 +18,33 @@ import { axisToward, consume } from './world-input.js';
  * run that gate, so the wreck list (`world.falling`, filled by
  * `vehicle-wrecks.js`) is the driver: every control word is forced to the
  * engine's zero, the throttle spool is pinned at 0, and the flight model gets
- * the same one `integrate` a tick the pilot's tick gave it. What brings it
- * down is therefore the aerodynamics it already had — a hull with no thrust
- * whose speed bleeds off until the wing makes no lift — rather than gravity
- * alone, and the descent is the airframe's, not a falling brick's.
+ * the same one `integrate` a tick the pilot's tick gave it.
+ *
+ * The airframe's own integration is kept — its attitude and momentum are its
+ * own, and the crash test reads the same state — but a destroyed hull is a
+ * dead object, so it is not allowed to fly: `FALL_MIN_SINK` forbids holding
+ * altitude or climbing. Zeroing the controls alone is not enough, which the
+ * report that prompted this settled: a downed BF109 over Bocage kept flying,
+ * climbing first and then gliding at 30-46 m/s for 45 s from 200 m, so the
+ * wreck landed a kilometre from where it was shot down and the intact model
+ * was the only thing anyone saw come down.
  *
  * The inputs are forced every tick rather than once, because the surfaces are
  * servos with their own rates: a stick left where it was at the moment of the
  * kill would hold that deflection until the wreck hit the ground.
  */
+
+/** The sink a dead hull is held to, m/s. Well past any glide the airframe can
+ *  hold, so a wreck comes down where it was killed; small enough that the
+ *  descent still carries its forward speed and reads as a falling aeroplane. */
+const FALL_MIN_SINK = 18;
+
+/** How fast a dead hull's forward speed bleeds off, per second. Not a glide:
+ *  a wreck that keeps 60 m/s for the whole descent still lands half a map
+ *  away, which is the same "it just flew away" the sink floor is there to
+ *  stop. */
+const FALL_DRAG = 0.25;
+
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
     if (!vehicle?.state) continue;
@@ -39,7 +57,22 @@ export function stepFallingWrecks(world, dt) {
     // The spool state itself, not just its target: `#vacate` pinned it when
     // the seat emptied, and a wreck's engine is dead rather than idling.
     vehicle.state.throttle = 0;
+    // Sink first, integrate second. `aircraft.js` computes lift from the flow
+    // over the wing, so a wreck already moving down gets its "lift" downward:
+    // clamping AFTER the integration left the airframe's own lift to fight the
+    // floor for the rest of the tick, and a 109 killed at 200 m still came down
+    // at 11 m/s instead of the 18 the floor asks for.
+    const velocity = vehicle.state.velocity;
+    const bleed = Math.max(0, 1 - FALL_DRAG * dt);
+    if (velocity) {
+      if (velocity.y > -FALL_MIN_SINK) velocity.y = -FALL_MIN_SINK;
+      velocity.x *= bleed;
+      velocity.z *= bleed;
+    }
     vehicle.integrate(dt);
+    // And again after: the floor holds even if the tick's own forces pushed the
+    // hull back up.
+    if (velocity && velocity.y > -FALL_MIN_SINK) velocity.y = -FALL_MIN_SINK;
   }
 }
 
@@ -134,7 +167,14 @@ export function vehicleTick(world, player, dt, integrators) {
     }
     // Once a tick, by the root seat's holder (or the first occupant of a
     // hull nobody drives): the drive is the hull's, not the seat's.
-    if (integrators.get(vehicle) === player) {
+    //
+    // A hull on the wreck list is stepped by `stepFallingWrecks` instead. The
+    // list is the driver for a hull nobody flies, and a dead pilot whose
+    // occupant entry is still standing (the player killed in his own plane)
+    // would otherwise integrate it a second time with the controls his death
+    // left behind: the two together hold a glide, and a 109 shot down at
+    // 200 m came down 650 m downrange in 19 s instead of dropping in 6 s.
+    if (integrators.get(vehicle) === player && !world.falling?.has(vehicle)) {
       vehicle.integrate(dt);
       // After `integrate`, never before: it ends in `applyRig`, which puts
       // every declared RotationalBundle back at hull-forward. Stepping the
