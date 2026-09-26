@@ -36,6 +36,14 @@ public sealed partial class MeshArmouryIndex(
     /// </summary>
     private const string ParachuteTwinSuffix = "_CHUTE";
 
+    /// <summary>
+    /// How far off its bone a part may hang and still be worn, in metres. Every part in every
+    /// tree sits within 0.1 m of its bone but Desert Combat Final's grenade, which
+    /// <c>SetPosition 0/0/5</c> puts five metres off the hip: drawn, it hangs in mid-air and
+    /// the stage shrinks the soldier to a speck to keep it in frame.
+    /// </summary>
+    private const double MaxWornOffset = 1.0;
+
     private static readonly TimeSpan IndexTtl = TimeSpan.FromMinutes(10);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly IReadOnlyList<double> Origin = [0, 0, 0];
@@ -196,6 +204,8 @@ public sealed partial class MeshArmouryIndex(
         foreach (var worn in kit.Worn ?? [])
         {
             if (worn is null || string.IsNullOrWhiteSpace(worn.Glb))
+                continue;
+            if (worn.Position is { Count: > 0 } offset && Math.Sqrt(offset.Sum(v => v * v)) > MaxWornOffset)
                 continue;
 
             // A mod kit borrows vanilla's radio and packs, so each part comes from the first

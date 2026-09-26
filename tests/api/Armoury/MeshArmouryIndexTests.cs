@@ -96,9 +96,15 @@ public sealed class MeshArmouryIndexTests : IDisposable
           { "template": "US_Medic", "primary": "m1carbine",
             "items": [ { "template": "Colt" }, { "template": "M1Carbine" } ], "worn": [] },
           { "template": "US_Engineer", "primary": "Shotgun",
-            "items": [ { "template": "Colt" }, { "template": "Shotgun" } ], "worn": [] }
+            "items": [ { "template": "Colt" }, { "template": "Shotgun" } ], "worn": [] },
+          { "template": "US_Grenadier", "primary": "M16", "items": [ { "template": "M16" } ], "worn": [
+            { "template": "Us_Helmet", "slot": "head", "bone": "A", "position": [0, -0.1, 0], "glb": "Us_Helmet.kit.glb" },
+            { "template": "US_Grenades", "slot": "hip", "bone": "hippack", "position": [0, 0, 5], "glb": "US_Grenades.kit.glb" }
+          ] }
         ] }
         """);
+        Touch("mesh/models/mods/eod/Us_Helmet.kit.glb");
+        Touch("mesh/models/mods/eod/US_Grenades.kit.glb");
         Touch("mesh/models/mods/eod/poses/USSoldier__M16.pose.glb");
         Touch("mesh/models/mods/eod/poses/USSoldier__Colt.pose.glb");
         Touch("mesh/models/mods/eod/poses/USSoldier__M1Carbine.pose.glb");
@@ -206,6 +212,16 @@ public sealed class MeshArmouryIndexTests : IDisposable
         Assert.Equal([0.0, 0.0, 0.0], worn[1].Position);
         Assert.Equal([0.0, 0.0, 0.0], worn[1].Rotation);
         Assert.Equal("backpack", worn[1].Bone);
+    }
+
+    [Fact]
+    public void ResolveFigure_LeavesOffAPartHungMetresFromItsBone()
+    {
+        // Desert Combat Final's grenade sits five metres off the hip; drawn, it floats in the
+        // air and the stage shrinks the soldier to keep it in frame.
+        var figure = index.ResolveFigure("USSoldier", ["US_Grenadier"], index.TreesFor("eod"));
+
+        Assert.Equal(["models/mods/eod/Us_Helmet.kit.glb"], Assert.Single(figure!.Kits).Worn.Select(part => part.Path));
     }
 
     [Fact]

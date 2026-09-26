@@ -115,8 +115,8 @@ from bf42.assemble import (Assembler, Report, geometry_is_first_person,
                           is_foreign_skeleton_part)
 from bf42.rfa import ArchivePool
 from bf42 import kit as kit_mod
-from extract_models import (DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools,
-                            discover_levels, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, add_level_objects, add_level_textures,
+                            build_library, build_pools, discover_levels, mod_chain)
 
 UPPER_PREFIX = "Ub_"
 
@@ -2144,13 +2144,15 @@ def weld_metrics(library, meshes, parts, posed_by_stance, attach, weapon,
 _pose_worker_context: dict = {}
 
 
-def _init_pose_worker(chain_paths: list[str], level_objects: bool = False) -> None:
+def _init_pose_worker(chain_paths: list[str], levels: bool = False) -> None:
     chain = [Path(p) for p in chain_paths]
     meshes, textures, objects, _game = build_pools(chain, [])
-    if level_objects:
-        # The parent's library had the levels' own templates in (`--kit-poses`);
-        # a worker's has to match it.
-        add_level_objects(objects, discover_levels(chain))
+    if levels:
+        # The parent's pools had the levels' own templates and textures in
+        # (`--kit-poses`); a worker's have to match them.
+        level_paths = discover_levels(chain)
+        add_level_objects(objects, level_paths)
+        add_level_textures(textures, level_paths)
     library = build_library(objects)
     machine = state_machine(meshes)
     _pose_worker_context["machine"] = machine
@@ -2185,13 +2187,13 @@ def print_pose_row(row: dict) -> None:
 
 def export_rows(pairs: list[tuple[str, str]], *, args, chain: list[Path],
                 context: dict, out: Path | None,
-                level_objects: bool = False) -> list[dict]:
+                levels: bool = False) -> list[dict]:
     """Export `(soldier, weapon)` pairs, one row each, failures included.
 
     In `args.jobs` worker processes when there is more than one pair, each
-    building its own pools from `chain` (plus every level's own templates when
-    `level_objects`, to match a parent that loaded them); in this process
-    otherwise, with `context`.
+    building its own pools from `chain` (plus every level's own templates and
+    textures when `levels`, to match a parent that loaded them); in this
+    process otherwise, with `context`.
     """
     rows: list[dict] = []
     if args.jobs > 1 and len(pairs) > 1:
@@ -2201,7 +2203,7 @@ def export_rows(pairs: list[tuple[str, str]], *, args, chain: list[Path],
         with ProcessPoolExecutor(
             max_workers=min(args.jobs, len(tasks)),
             initializer=_init_pose_worker,
-            initargs=([str(p) for p in chain], level_objects),
+            initargs=([str(p) for p in chain], levels),
         ) as executor:
             for row in executor.map(_export_pose_task, tasks):
                 rows.append(row)
@@ -2380,7 +2382,7 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
                                args.max_texture))
     chosen, rows = resolve_kit_poses(jobs, lambda pairs: export_rows(
         pairs, args=args, chain=chain, context=context, out=args.out,
-        level_objects=True))
+        levels=True))
 
     # The kits each exported pose stands for, so the matrix says why it exists.
     kits_of: dict[tuple[str, str], set[str]] = {}
@@ -2569,7 +2571,10 @@ def main() -> int:
     if args.kit_poses:
         # A level binds kits it declares in its own archive (FHSW 1,397 of
         # them); they have to be in the library before the kits are collected.
-        add_level_objects(objects, discover_levels(chain))
+        # The levels also hold the only copy of some weapons' textures.
+        level_paths = discover_levels(chain)
+        add_level_objects(objects, level_paths)
+        add_level_textures(textures, level_paths)
     library = build_library(objects)
     machine = state_machine(meshes)
 
