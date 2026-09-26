@@ -35,11 +35,13 @@ const _normal = [0, 1, 0];
  * 0.3 m spheres; the approximation's only error is the scalloping between
  * them, which is under a centimetre and is on the inside of the volume.
  */
-function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets) {
+function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
+                      skipOwner = -1) {
   if (!world || !world.sweepSphere) return null;
   let best = -1;
   for (const offset of offsets) {
-    const hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius);
+    const hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
+                                  skipOwner);
     if (!hit) continue;
     // A surface the motion is travelling *away* from cannot stop it. The sweep
     // reports one at `t = 0` for any sphere already resting against geometry,
@@ -128,7 +130,7 @@ export function resolveMove(walker) {
     if (dist < 1e-6) break;
     const dx = rx / dist, dy = ry / dist, dz = rz / dist;
     const hit = sweepCapsule(world, px, py, pz, dx, dy, dz, dist,
-                             BODY_RADIUS, offsets);
+                             BODY_RADIUS, offsets, walker.ignoreOwner ?? -1);
     if (!hit) {
       px += rx; py += ry; pz += rz;
       rx = 0; ry = 0; rz = 0;
@@ -325,7 +327,7 @@ export function settleFeet(walker) {
     // sea as well, which only agrees with `surfaceHeight` above — harmless,
     // and it costs one entry in the collider's cast meter per tick.
     const hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
-                           STEP_HEIGHT + SNAP_DOWN);
+                           STEP_HEIGHT + SNAP_DOWN, walker.ignoreOwner ?? -1);
     // The cast answers for the water plane too (`collision.js`'s `kind ===
     // 'water'` arm), and that answer is not a floor for a man: without this
     // the sea came straight back in through the hull probe the moment the
