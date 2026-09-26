@@ -23,6 +23,11 @@ data:
       # change, and the node keeps the 64Mi a second cloudflared would cost.
       - hostname: mesh.bfstats.io
         service: http://haproxy-service.haproxy:80
+      # play.bfstats.io — same shape as mesh above: one rule, HAProxy routes
+      # on the Host header and carries the play ACL. The DNS record is the
+      # CNAME play -> <tunnel-id>.cfargotunnel.com, proxied (see README).
+      - hostname: play.bfstats.io
+        service: http://haproxy-service.haproxy:80
       - hostname: seq.bfstats.io
         service: http://seq-service.seq:5341
       - service: http_status:404
