@@ -138,8 +138,6 @@ is this project's.
 - Spawner respawn windows (`objectSpawns[].minSpawnDelay`) are already in the
   vehicle table (`entry.window`) — P3's vehicle respawn loop reads them off
   the same rows the snapshot does.
-- Kill feed: MSG_EVENT's `killed`/`captured`/`ticket` rows (netcode.js) have
-  no emitter yet; `Room.#event` is the one place they will be raised from.
 - The `test` descriptor level is registered by server.mjs unconditionally —
   a production deployment may drop it with a one-line config if the lobby
   should not list it.
