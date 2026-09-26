@@ -570,8 +570,10 @@ resize();
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
+  from(() => mapSurfaces, `teamNation`),
   from(() => seatCamera, `view`),
   from(() => soldierKit, `ensureHandFireBus handFireBus weaponSoundsManifest`),
+  from(() => spawning, `deployTeamId`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
@@ -644,7 +646,8 @@ const localPlayer = createLocalPlayer(bag(
   from(() => localLook, `footLookPair lookKeyHeld lookNeedsKey mouseInput pumpLook
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
-  from(() => pageAudio, `handleSoldierFootstep playSoldierHurtSound`),
+  from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
+    playSoldierHurtSound stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
@@ -1117,14 +1120,20 @@ const referee = createBotReferee({
   // The grunt is the soldier's, not the shooter's: positional, so a bot hit
   // across the field is a distant cry rather than a 2D overlay. Same cooldown
   // as the player's own hurt sound so a burst does not stack.
+  // In his own side's tongue, like the player's (`soldierVoiceBuffer`).
   onHurt: bot => {
     const at = bot.getPosition();
-    pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
+    pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] },
+      mapSurfaces.teamNation(bot.team));
   },
   onDeath: (bot, attackerId, opts) => {
     // The corpse: the engine's death for how he was standing, sitting or
     // swimming and where the round came from (`soldier-death.js`).
     botBodies.killBot(bot, opts);
+    // `c_SstKilled`, from where he fell.
+    const at = bot.getPosition();
+    pageAudio.playSoldierDeathSound({ x: at[0], y: at[1] + 1.2, z: at[2] },
+      mapSurfaces.teamNation(bot.team));
     // His kit where he fell, when he fell on foot (`kit-drops-page.js`).
     kitDrops.botDied(bot, opts);
     comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);

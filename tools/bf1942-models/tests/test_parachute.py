@@ -244,6 +244,25 @@ class ParachuteTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertIsNotNone(self.results[case]["trace"]["landedAt"])
 
+    def test_a_bail_out_passes_through_the_hull_it_left(self) -> None:
+        held = self.results["bailOntoHull"]["held"]
+        through = self.results["bailOntoHull"]["through"]
+        # Without the grace the wing stands him up and takes all 50 m/s.
+        self.assertTrue(held["grounded"])
+        self.assertLess(held["speed"], 1.0)
+        # With it he keeps the aircraft's speed and falls away from it.
+        self.assertFalse(through["grounded"])
+        self.assertGreater(through["speed"], 49.0)
+        self.assertLess(through["y"], 300.0)
+
+    def test_stepping_out_of_a_jeep_carries_its_speed(self) -> None:
+        carry = self.results["carryFromJeep"]
+        # 20 m/s bled at 4.8 * 9.82 m/s^2: 0.42 s and v^2 / 2a = 4.2 m.
+        self.assertTrue(carry["grounded"])
+        self.assertGreater(carry["slid"], 3.5)
+        self.assertLess(carry["slid"], 5.0)
+        self.assertLess(carry["stoppedAt"], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

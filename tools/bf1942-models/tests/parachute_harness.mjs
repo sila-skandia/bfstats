@@ -241,4 +241,73 @@ results.chute = bail({ from: 400, deployAt: 2.0, pitch: 0 });
 // And opened promptly, from a lower altitude -- the ordinary bail-out.
 results.lowChute = bail({ from: 120, deployAt: 0.8, pitch: 0 });
 
+// --- stepping out of something moving ------------------------------------
+
+/**
+ * Flat ground at y = 0 with a stand-in hull: a flat deck at `deckY` owned by
+ * `owner`, answered by the collider's own two queries the soldier's resolve
+ * asks (`sweepSphere` and the downward `cast`) unless the caller skips that
+ * owner. Enough to stand a bailing man on the wing he stepped out onto.
+ */
+function hullWorld(owner, deckY) {
+  const world = flatWorld(WORLD);
+  const sweep = world.sweepSphere.bind(world);
+  const cast = world.cast.bind(world);
+  world.sweepSphere = (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, ...rest) => {
+    if (skipOwner !== owner && dy < 0 && oy - radius >= deckY - 1e-6) {
+      const t = (oy - radius - deckY) / -dy;
+      if (t <= maxDist) {
+        return {
+          t, nx: 0, ny: 1, nz: 0, x: ox + dx * t, y: deckY, z: oz + dz * t,
+          px: ox + dx * t, py: deckY, pz: oz + dz * t, material: 3, owner,
+        };
+      }
+    }
+    return sweep(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, ...rest);
+  };
+  world.cast = (ox, oy, oz, dx, dy, dz, maxDist, skipOwner = -1) => {
+    if (skipOwner !== owner && dy < 0 && oy >= deckY && oy - deckY <= maxDist) {
+      return {
+        t: oy - deckY, x: ox, y: deckY, z: oz, nx: 0, ny: 1, nz: 0,
+        material: 3, owner, kind: 'object',
+      };
+    }
+    return cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner);
+  };
+  return world;
+}
+
+/** Bail out onto a hull at 300 m doing 50 m/s and sinking at 2; half a second. */
+function bailOntoHull(options) {
+  const owner = 7;
+  const soldier = new Soldier({ collider: hullWorld(owner, 300), worldSize: WORLD });
+  soldier.bailOut(MID_X, 300, MID_Z, 0, 0, -2, 50, options);
+  for (let t = 0; t < 0.5; t += TICK_DT) soldier.step(TICK_DT, {});
+  const v = soldier.body.body.velocity;
+  return { speed: Math.hypot(v.x, v.z), vy: v.y, y: soldier.y, grounded: soldier.grounded };
+}
+results.bailOntoHull = {
+  // The old exit: the wing under his boots stops him dead.
+  held: bailOntoHull({}),
+  // Through the airframe he left, with the aircraft's speed.
+  through: bailOntoHull({ hull: 7, hullGrace: 1.5 }),
+};
+
+// Out of a jeep at 20 m/s onto flat ground: the speed comes with him and the
+// soldier's own friction takes it off.
+{
+  const soldier = new Soldier({ collider: flatWorld(WORLD), worldSize: WORLD });
+  soldier.spawn(MID_X, 0, MID_Z, 0);
+  soldier.carry(0, 0, 20);
+  const z0 = soldier.z;
+  let stoppedAt = null;
+  for (let t = 0; t < 2; t += TICK_DT) {
+    soldier.step(TICK_DT, {});
+    if (stoppedAt == null && Math.hypot(soldier.body.body.velocity.x, soldier.body.body.velocity.z) < 1e-9) {
+      stoppedAt = t + TICK_DT;
+    }
+  }
+  results.carryFromJeep = { slid: soldier.z - z0, stoppedAt, grounded: soldier.grounded };
+}
+
 process.stdout.write(JSON.stringify(results, null, 1));

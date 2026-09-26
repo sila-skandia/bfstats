@@ -21,6 +21,14 @@ import {
 import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
 /**
+ * PHY-2's soldier friction pair on flat ground with `A = 1`, as rates:
+ * `7.2 * 9.82` to break away and `4.8 * 9.82` while sliding (m/s^2; the
+ * ledger's 2.357 and 1.571 m/s per 30 Hz tick). See the ground arm of `step`.
+ */
+const SOLDIER_STATIC_GRIP = 7.2 * 9.82;
+const SOLDIER_KINETIC_GRIP = 4.8 * 9.82;
+
+/**
  * A walking body: the engine's speeds and integrator, our collision resolve.
  *
  * `position` is the **feet**, not the origin and not the eye — every other
@@ -107,6 +115,13 @@ export class SoldierBody {
     this.impactMaterial = -1;    // the material struck, the fall's attacker
     this.fallHeight = 0;         // lastCollisionHeight - y, the engine's `F`
     this.lastCollisionHeight = this.body.position.y;
+    // The hull just stepped out of, which the resolve looks straight through
+    // for `ignoreOwnerLeft` more seconds (`ignoreHull`). -1 is nobody.
+    this.ignoreOwner = -1;
+    this.ignoreOwnerLeft = 0;
+    // Carrying speed its own legs did not make, which the ground bleeds off
+    // rather than cancels (the ground arm of `step`).
+    this.sliding = false;
     this._offsets = [];
     this._jumpQueued = false;
     this._armed = false;
@@ -131,6 +146,9 @@ export class SoldierBody {
     this.body.setVelocity(0, 0, 0);
     this.yaw = yaw;
     this.grounded = false;
+    this.ignoreOwner = -1;
+    this.ignoreOwnerLeft = 0;
+    this.sliding = false;
     this.forwardRamp = 0;
     this.strafeRamp = 0;
     this.jumpArmed = false;
@@ -247,6 +265,22 @@ export class SoldierBody {
 
   /** Queued rather than applied, so a keypress between ticks is never lost. */
   jump() { this._jumpQueued = true; }
+
+  /**
+   * Let the resolve pass through one hull's collision for `seconds`.
+   *
+   * For a man stepping out of a moving aircraft. The exit location puts him
+   * on or against the airframe, which is still doing 50 m/s beside him, and
+   * the resolve sweeps against where the hull stands this tick rather than
+   * against its motion. So the first tick found the wing under his boots,
+   * called him grounded and handed him the ground arm's `v = vCmd`, which is
+   * zero: bailing out of a climbing plane stopped him dead in the air. The
+   * engine's own mechanism was not traced; this is the viewer's.
+   */
+  ignoreHull(owner, seconds) {
+    this.ignoreOwner = owner >= 0 && seconds > 0 ? owner : -1;
+    this.ignoreOwnerLeft = this.ignoreOwner >= 0 ? seconds : 0;
+  }
 
   /**
    * One fixed tick.
@@ -390,8 +424,26 @@ export class SoldierBody {
       // bite), and being shoved by a contact. Both need the contact solver in
       // `collision-response.md` §8, which is the collision round's, not this
       // module's. See `first-person-soldier.md` §8.
-      v.x = cmdX;
-      v.z = cmdZ;
+      //
+      //
+      // The one slip the budget does NOT cancel in a tick is a man handed
+      // more speed than it holds by something other than his own legs --
+      // stepping out of a jeep at 20 m/s (`sliding`, set by `Soldier.carry`).
+      // Then he slides, losing the kinetic budget a tick (PHY-2's latch at
+      // `A = 1` on flat ground), until the slip is back inside the static
+      // budget and the assignment takes over again. His own command steps --
+      // the dive handing over to the crawl -- stay the assignment, as above.
+      const sx = v.x - cmdX, sz = v.z - cmdZ;
+      const slip = Math.hypot(sx, sz);
+      if (!this.sliding || slip <= SOLDIER_STATIC_GRIP * dt) {
+        v.x = cmdX;
+        v.z = cmdZ;
+        this.sliding = false;
+      } else {
+        const keep = 1 - (SOLDIER_KINETIC_GRIP * dt) / slip;
+        v.x = cmdX + sx * keep;
+        v.z = cmdZ + sz * keep;
+      }
     } else if (!this.contacted) {
       // The engine's gate, and it is **"no contact impulse was resolved"**,
       // not "airborne". Those coincide for a body falling through clear air,
@@ -458,6 +510,7 @@ export class SoldierBody {
     }
     this.jumpArmed = this._armed;
     this.contacted = this._bestNormalY > -Infinity;
+    if (this.ignoreOwner >= 0 && (this.ignoreOwnerLeft -= dt) <= 0) this.ignoreHull(-1, 0);
     if (this.grounded) this.lastCollisionHeight = this.body.position.y;
 
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
