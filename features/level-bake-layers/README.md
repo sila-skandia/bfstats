@@ -19,7 +19,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 |---|---|---|---|
 | `controlPoints` | `controlPoints`; `modes.*.controlPoints` | none | `<mode>/ControlPoint*.con`, the placed-flag list from `objects.placedControlPoints` |
 | `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the ships' `Objects.con`, `Game/GlobalSpawnGroups.con`, the control points |
-| `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | `GameTypes/*.con`, `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
+| `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | each game type's script (the level's root `<Mode>.con`, which the server runs; `GameTypes/*.con` says which exist), `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting`, `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds` | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
@@ -41,6 +41,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | A control point setting the glb does not draw (`timeToGetControl`, `radius`, `team`, the capture law's fields) | each level's `scene.json` | `patch_scene.py --layer controlPoints --mod M --all` |
 | Soldier spawn points, their groups, `OnlyForAI` / `OnlyForHuman`, ship deck spawns | `scene.json` | `--layer spawns` |
 | Tickets, game types, combat area | `scene.json` | `--layer game` |
+| Which files a game type's script runs (a CoOp layer composed from two directories) | `modes.<type>.*` AND the glb's per-mode node tags | full bake of the levels whose composed layer moved (the 2026-09-27 root-script change: all 6 XPack1 levels, 5 XPack2) |
 | Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples | `--layer sounds` |

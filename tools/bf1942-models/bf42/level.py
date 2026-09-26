@@ -1152,11 +1152,12 @@ _RUN_LINE = re.compile(r"^\s*run\s+([^\s]+)", re.IGNORECASE)
 
 @dataclass
 class GameType:
-    """One `GameTypes/<name>.con`: the game type the menu offers.
+    """One game type the menu offers (`GameTypes/<name>.con`), read from the
+    script a round of it runs: the level's root `<name>.con` (`load_game_types`).
 
     `mode` is the layer *directory* the script runs, which is not always the
     file's own name — no vanilla level ships a `CoOp/` directory, because
-    `GameTypes/CoOp.con` runs `SinglePlayer/*`. Measured across the 1,302
+    `CoOp` runs `SinglePlayer/*`. Measured across the 1,302
     level archives of the 18 installed mods: `CoOp` runs `singleplayer` on 796
     of the 871 levels that offer it, and never runs a `coop` directory
     anywhere.
@@ -1166,6 +1167,9 @@ class GameType:
     mode: str = ""
     tickets: "TicketInfo | None" = None
     runs: list[str] = field(default_factory=list)
+    # The archive path this was read from: the level's root `<name>.con`, or
+    # `GameTypes/<name>.con` for the few game types that ship no root script.
+    source: str = ""
     # Which directory each of the seven layer files is run from, keyed by the
     # lowercased base name. `run` is per file, so this is the authority and
     # `mode` is only its majority answer: 35 of the 3,048 GameTypes scripts in
@@ -1181,7 +1185,7 @@ class GameType:
 
 
 def parse_game_type(text: str, name: str = "") -> GameType:
-    """The layer a `GameTypes/<x>.con` loads, and the tickets it sets.
+    """The layer a game type's script loads, and the tickets it sets.
 
     The layer is taken from the `run <dir>/<file>` lines: the most-run
     directory wins, so a script that runs four `SinglePlayer/*` files and one
@@ -1255,8 +1259,38 @@ def _canonical_mode(lowered: str) -> str:
     return lowered
 
 
+def game_type_script(files: LevelFiles, name: str) -> str | None:
+    """The script a round of game type `name` runs, as the archive path
+    `files.read` takes.
+
+    The dedicated server runs the level's ROOT `<name>.con`: `Setup::startHostGame`
+    (0x080c4080) hands `setGameStartup` the bare `coop.con` / `conquest.con` /
+    `ctf.con` / `tdm.con` / `ObjectiveMode.con`, and `Game::load` (0x0805b4b0)
+    runs the level path `bf1942/levels/<level>/` plus that name. `GameTypes/`
+    is only checked for existence when a map is queued (`Setup::setNextLevel`
+    0x080bf160). Ledger TKT-3. The two copies disagree: Wake's root `Coop.con`
+    sets 100 / 100 and `GameTypes/Coop.con` 140 / 100, and the parity lab
+    server starts a Wake co-op round at the root's.
+
+    A game type with no root script (17 across the installed mods, none in
+    vanilla or the two packs) falls back to its `GameTypes/` copy, the only
+    script the level has for it. None when the level ships neither.
+    """
+    return files.find(f"{name}.con") or files.find(f"GameTypes/{name}.con")
+
+
 def load_game_types(files: LevelFiles) -> dict[str, GameType]:
-    """Every `GameTypes/*.con` the level ships, keyed by the file's own name.
+    """Every game type the level offers, keyed by its `GameTypes/` file's own
+    name and read from the script a round of it runs (`game_type_script`).
+
+    `GameTypes/` says which game types exist: it is the menu's list, and the
+    server refuses to queue a mode whose `GameTypes/<mode>.con` is missing. The
+    content is the root script's. Across vanilla and the two packs the two
+    disagree on 22 game types' tickets, 25 bleed rates and 29 sets of layer
+    files, all of Road to Rome's CoOp among them (the root takes the flags from
+    `SinglePlayer/` and the vehicles from `Conquest/`, the reverse of
+    `GameTypes/`). The census is
+    `features/bf1942-engine-reference/surveys/mode_script_root_vs_gametypes.py`.
 
     A level with no `GameTypes/` directory yields an empty map; the caller
     then has only the layer directories to go on, which is what the extractor
@@ -1266,11 +1300,13 @@ def load_game_types(files: LevelFiles) -> dict[str, GameType]:
     for rel in sorted(files.under("GameTypes")):
         if not rel.lower().endswith(".con"):
             continue
-        name = _canonical_game_type(rel.rsplit("/", 1)[-1][:-4])
-        hit = files.find(rel)
+        stem = rel.rsplit("/", 1)[-1][:-4]
+        name = _canonical_game_type(stem)
+        hit = game_type_script(files, stem)
         if hit is None:
             continue
         gt = parse_game_type(files.read(hit).decode("latin-1", "replace"), name)
+        gt.source = hit
         if not gt.mode:
             # `GameTypes/Conquest.con` that only runs bare scripts still means
             # Conquest: the file name is the game type either way.
@@ -1323,9 +1359,9 @@ def tickets_for_mode(game_types: dict[str, GameType],
                      mode: str) -> "TicketInfo | None":
     """The ticket counts the game type that loads `mode` declares.
 
-    Needed because the file is not named after the layer: SinglePlayer's
-    tickets are in `GameTypes/CoOp.con`. Conquest first when two game types
-    load the same layer, else the first in `GAMEPLAY_MODES` order.
+    Needed because the script is not named after the layer: SinglePlayer's
+    tickets are the CoOp game type's (`Coop.con`). Conquest first when two game
+    types load the same layer, else the first in `GAMEPLAY_MODES` order.
     """
     if not mode:
         return None
@@ -1346,14 +1382,21 @@ class TicketInfo:
     team2: int | None = None
     loss_per_min_team1: int | None = None
     loss_per_min_team2: int | None = None
+    # The script's own `game.maxNrOfPlayers`, which replaces the server's max
+    # players before the round starts, and so the count the starting tickets
+    # scale by (ledger TKT-2). Two shipped scripts set it, both after their
+    # bleed lines: Kasserine Pass co-op (18) and EoD's cs_minimetzel co-op (32).
+    max_players: int | None = None
 
 
 def parse_tickets(text: str) -> TicketInfo:
-    """Parse ticket counts from a GameTypes/*.con file.
+    """Parse ticket counts from a game type's script.
 
     Returns starting tickets and ticket loss per minute for each team.
     The engine reads `Game.setNumberOfTickets <team> <count>` and
     `Game.setTicketLostPerMin <team> <rate>`. Team is typically 1 or 2.
+    These are a 16-player server's numbers: a round scales both by its max
+    players over 16 (`viewer/round-state.js`, ledger TKT-1, TKT-4).
     """
     out = TicketInfo()
     for ns, cmd, args in _commands(text):
@@ -1382,21 +1425,26 @@ def parse_tickets(text: str) -> TicketInfo:
                     out.loss_per_min_team2 = rate
             except (ValueError, IndexError):
                 pass
+        elif cmd == "maxnrofplayers" and tokens:
+            try:
+                out.max_players = int(float(tokens[0]))
+            except ValueError:
+                pass
     return out
 
 
 def load_tickets(files: LevelFiles, mode: str | None = None) -> TicketInfo | None:
-    """Read ticket configuration from a level's GameTypes/<mode>.con.
+    """Read ticket configuration from the script a round of `mode` runs: the
+    level's root `<mode>.con`, else `GameTypes/<mode>.con` (`game_type_script`).
 
-    Returns None if the file doesn't exist or contains no ticket data.
+    Returns None if there is no script or it declares no tickets.
     Falls back through GAMEPLAY_MODES if no mode is specified.
     """
     modes_to_try = [mode] if mode else GAMEPLAY_MODES
     for try_mode in modes_to_try:
         if not try_mode:
             continue
-        path = f"GameTypes/{try_mode}.con"
-        hit = files.find(path)
+        hit = game_type_script(files, try_mode)
         if not hit:
             continue
         try:

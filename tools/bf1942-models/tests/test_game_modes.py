@@ -188,10 +188,24 @@ class WakeArchiveTests(unittest.TestCase):
         self.assertEqual(len(load_gameplay_objects(self.files, "Tdm").control_points), 5)
 
     def test_singleplayer_tickets_come_from_the_coop_script(self) -> None:
+        # The root `Coop.con` the server runs (100 / 100, in both wake.rfa and
+        # the wake_003.rfa patch), not `GameTypes/Coop.con` (140 / 100). The
+        # parity lab's server starts a 32-player Wake co-op round at 200 / 200,
+        # which is the root's 100 scaled by 32 / 16 (ledger TKT-1, TKT-3).
         types = load_game_types(self.files)
         tickets = tickets_for_mode(types, "SinglePlayer")
-        self.assertEqual((tickets.team1, tickets.team2), (140, 100))
+        self.assertEqual((tickets.team1, tickets.team2), (100, 100))
+        self.assertEqual((tickets.loss_per_min_team1, tickets.loss_per_min_team2), (15, 10000))
         self.assertEqual(tickets.mode, "CoOp")
+        self.assertTrue(types["CoOp"].source.lower().endswith("/wake/coop.con"),
+                        types["CoOp"].source)
+
+    def test_the_gametypes_copy_is_not_what_runs(self) -> None:
+        # The file the old reading took, still in the archive with its own
+        # numbers: what `load_game_types` must not report.
+        hit = self.files.find("GameTypes/Coop.con")
+        stale = parse_game_type(self.files.read(hit).decode("latin-1"), "CoOp")
+        self.assertEqual((stale.tickets.team1, stale.tickets.team2), (140, 100))
 
     def test_a_layer_no_game_type_runs_has_no_tickets(self) -> None:
         self.assertIsNone(tickets_for_mode(load_game_types(self.files), "Tdm"))
@@ -571,7 +585,8 @@ def _spawn(name: str) -> str:
 
 
 class _FakeFiles:
-    """The two `LevelFiles` methods `load_gameplay_objects` uses."""
+    """The `LevelFiles` methods `load_gameplay_objects` and `load_game_types`
+    use."""
 
     def __init__(self, blobs: dict[str, str]) -> None:
         self._blobs = {k.lower(): v for k, v in blobs.items()}
@@ -581,6 +596,111 @@ class _FakeFiles:
 
     def read(self, key: str) -> bytes:
         return self._blobs[key].encode("latin-1")
+
+    def under(self, directory: str) -> list[str]:
+        prefix = directory.lower().strip("/") + "/"
+        return sorted(k for k in self._blobs
+                      if k.startswith(prefix) and "/" not in k[len(prefix):])
+
+
+class GameTypeScriptTests(unittest.TestCase):
+    """Which script a game type is read from: the level's root `<name>.con`,
+    because that is what the dedicated server runs (`Game::load` 0x0805b4b0
+    runs `bf1942/levels/<level>/` + the bare `coop.con` that
+    `Setup::startHostGame` hands it). `GameTypes/` only says the game type
+    exists. Ledger TKT-3."""
+
+    ROOT = WAKE_COOP.replace("1 140", "1 100")
+
+    def test_the_root_script_is_read(self) -> None:
+        files = _FakeFiles({"Coop.con": self.ROOT, "GameTypes/Coop.con": WAKE_COOP})
+        types = load_game_types(files)
+        self.assertEqual(list(types), ["CoOp"])
+        self.assertEqual((types["CoOp"].tickets.team1, types["CoOp"].tickets.team2), (100, 100))
+        self.assertEqual(types["CoOp"].source, "coop.con")
+
+    def test_gametypes_is_what_says_a_game_type_exists(self) -> None:
+        # A root script with no GameTypes/ entry is not a game type the level
+        # offers: the menu does not list it and the server will not queue it.
+        files = _FakeFiles({"Coop.con": self.ROOT, "Ctf.con": WAKE_CTF,
+                            "GameTypes/Coop.con": WAKE_COOP})
+        self.assertEqual(list(load_game_types(files)), ["CoOp"])
+
+    def test_no_root_script_falls_back_to_gametypes(self) -> None:
+        files = _FakeFiles({"GameTypes/Coop.con": WAKE_COOP})
+        types = load_game_types(files)
+        self.assertEqual(types["CoOp"].tickets.team1, 140)
+        self.assertEqual(types["CoOp"].source, "gametypes/coop.con")
+
+    def test_the_root_scripts_layer_files_are_the_ones_composed(self) -> None:
+        # Road to Rome's Anzio: the root `Coop.con` takes the vehicles from
+        # Conquest/ and the flags from SinglePlayer/, the reverse of its
+        # GameTypes/ copy (ANZIO_COOP).
+        root = ANZIO_COOP.replace("run SinglePlayer/ObjectSpawnTemplates",
+                                  "run Conquest/ObjectSpawnTemplates") \
+                         .replace("run SinglePlayer/ObjectSpawns", "run Conquest/ObjectSpawns") \
+                         .replace("run Conquest/ControlPointTemplates",
+                                  "run SinglePlayer/ControlPointTemplates") \
+                         .replace("run Conquest/ControlPoints", "run SinglePlayer/ControlPoints")
+        files = _FakeFiles({"Coop.con": root, "GameTypes/Coop.con": ANZIO_COOP})
+        gt = load_game_types(files)["CoOp"]
+        self.assertEqual(gt.files["objectspawns"], "Conquest")
+        self.assertEqual(gt.files["controlpoints"], "SinglePlayer")
+        self.assertTrue(gt.composed)
+
+    def test_load_tickets_reads_the_root_script(self) -> None:
+        from bf42.level import load_tickets
+        files = _FakeFiles({"Conquest.con": WAKE_CONQUEST.replace("2 100", "2 90"),
+                            "GameTypes/Conquest.con": WAKE_CONQUEST})
+        self.assertEqual(load_tickets(files, "Conquest").team2, 90)
+
+    def test_a_root_script_without_tickets_does_not_borrow_gametypes(self) -> None:
+        # The server runs the root script and nothing else, so its silence is
+        # the answer.
+        from bf42.level import load_tickets
+        files = _FakeFiles({"Conquest.con": WAKE_CTF, "GameTypes/Conquest.con": WAKE_CONQUEST})
+        self.assertIsNone(load_tickets(files, "Conquest"))
+
+    def test_a_script_s_own_max_players_is_read(self) -> None:
+        # Kasserine Pass co-op, after its bleed lines.
+        gt = parse_game_type(WAKE_COOP + "game.maxNrofPlayers 18\n", "CoOp")
+        self.assertEqual(gt.tickets.max_players, 18)
+        report = extract_map._tickets_report(gt.tickets)
+        self.assertEqual(report["maxPlayers"], 18)
+        self.assertNotIn("maxPlayers", extract_map._tickets_report(
+            parse_game_type(WAKE_COOP, "CoOp").tickets))
+
+
+class PackArchiveTests(unittest.TestCase):
+    """The root scripts of the shipped levels where the two copies differ."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not GAME_DIR.is_dir():
+            raise unittest.SkipTest("the game is not installed")
+        from extract_models import mod_chain
+        from bf42.level import find_level_archives, load_level_files
+
+        def level(mod: str, name: str):
+            paths = find_level_archives(GAME_DIR, mod, name, chain=mod_chain(GAME_DIR, mod))
+            if not paths:
+                raise unittest.SkipTest(f"{mod} {name} is not installed")
+            return load_level_files(paths, name)
+        cls.level = staticmethod(level)
+
+    def test_kasserine_coop_sets_its_own_max_players(self) -> None:
+        types = load_game_types(self.level("bf1942", "Kasserine_Pass"))
+        self.assertEqual(types["CoOp"].tickets.max_players, 18)
+
+    def test_berlin_coop_starts_the_axis_at_sixty(self) -> None:
+        # Root 60 / 100; GameTypes/ says 100 / 100.
+        tickets = load_game_types(self.level("bf1942", "Berlin"))["CoOp"].tickets
+        self.assertEqual((tickets.team1, tickets.team2), (60, 100))
+
+    def test_el_alamein_tdm_runs_its_own_directory(self) -> None:
+        # Its GameTypes/Tdm.con runs Ctf/*; the root Tdm.con runs Tdm/*.
+        gt = load_game_types(self.level("bf1942", "El_Alamein"))["Tdm"]
+        self.assertEqual(gt.mode, "Tdm")
 
 
 class TagModesTests(unittest.TestCase):
@@ -625,9 +745,12 @@ class TagModesTests(unittest.TestCase):
 
 
 class RoadToRomeArchiveTests(unittest.TestCase):
-    """Anzio, against the shipped Road to Rome archive: the CoOp script runs
-    `SinglePlayer/*` for the spawns and `Conquest/ControlPoints` for the
-    flags, so its layer is neither directory's."""
+    """Anzio, against the shipped Road to Rome archive: the root `Coop.con`
+    the server runs takes the soldier spawns and the flags from
+    `SinglePlayer/` and the vehicles from `Conquest/`, so its layer is neither
+    directory's. (Its `GameTypes/Coop.con` has it the other way round, flags
+    from `Conquest/` and vehicles from `SinglePlayer/`; that is the copy the
+    server does not run. Ledger TKT-3.)"""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -647,10 +770,12 @@ class RoadToRomeArchiveTests(unittest.TestCase):
     def test_the_coop_script_straddles_two_directories(self) -> None:
         gt = load_game_types(self.files)["CoOp"]
         self.assertTrue(gt.composed)
-        self.assertEqual(gt.files["controlpoints"].lower(), "conquest")
+        self.assertEqual(gt.files["controlpoints"].lower(), "singleplayer")
+        self.assertEqual(gt.files["objectspawns"].lower(), "conquest")
         self.assertEqual(gt.files["soldierspawns"].lower(), "singleplayer")
+        self.assertEqual((gt.tickets.team1, gt.tickets.team2), (100, 100))
 
-    def test_the_composed_layer_flies_conquest_s_flags(self) -> None:
+    def test_the_composed_layer_flies_singleplayer_s_flags_over_conquest_s_vehicles(self) -> None:
         types = load_game_types(self.files)
         layers = {m: load_gameplay_objects(self.files, m)
                   for m in find_gameplay_modes(self.files)}
@@ -659,7 +784,9 @@ class RoadToRomeArchiveTests(unittest.TestCase):
         conquest = layers["Conquest"]
         single = layers["SinglePlayer"]
         self.assertEqual([c.template for c in coop.control_points],
-                         [c.template for c in conquest.control_points])
+                         [c.template for c in single.control_points])
+        self.assertEqual([o.template for o in coop.object_spawns],
+                         [o.template for o in conquest.object_spawns])
         self.assertEqual(len(coop.soldier_spawns), len(single.soldier_spawns))
         self.assertEqual(types["CoOp"].mode, "CoOp")
 
