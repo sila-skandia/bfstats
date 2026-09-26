@@ -236,8 +236,11 @@ export function createBotVisuals(page) {
       half.action = next;
     }
 
-    /** One frame: the machine's entries, the mixer, the morph. */
+    /** One frame: the mixer's pose back on the bones a morph drew over
+     *  (`MorphBlend.restore`), the machine's entries, the mixer, the morph. */
     function step(input, dt) {
+      halves.lower.blend.restore();
+      halves.upper.blend.restore();
       for (const e of anim.update(input, dt)) enter(e.half, e.name, e.morph);
       mixer.update(dt);
       halves.lower.blend.update(dt);

@@ -237,4 +237,31 @@ function bone(angle, y) {
   results.cut = { w: blend.update(1 / 60), y: b.position.y };
 }
 
+// three's mixer writes a bone only when its own value changed: a clip that
+// holds a bone still writes it once, as the state starts. The morph must
+// still carry that bone onto the clip.
+{
+  const settle = restore => {
+    const b = bone(0, 1.0);
+    const blend = new MorphBlend([b]);
+    const target = bone(Math.PI / 2, 0.5);
+    let applied = null;
+    const mixer = () => {
+      const v = JSON.stringify([target.quaternion, target.position]);
+      if (v === applied) return;
+      applied = v;
+      b.quaternion = { ...target.quaternion };
+      b.position = { ...target.position };
+    };
+    blend.enter(2.0);
+    for (let i = 0; i < 40; i++) {
+      if (restore) blend.restore();
+      mixer();
+      blend.update(1 / 60);
+    }
+    return { angle: +(2 * Math.atan2(b.quaternion.y, b.quaternion.w) * 180 / Math.PI).toFixed(2), y: +b.position.y.toFixed(4) };
+  };
+  results.stillBone = { restored: settle(true), unrestored: settle(false) };
+}
+
 console.log(JSON.stringify(results));
