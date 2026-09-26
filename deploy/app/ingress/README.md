@@ -75,6 +75,29 @@ host 1033s, check which tunnel its CNAME points at before touching ingress
 rules; everything here forwards to the same HAProxy, so the backend config is
 shared and rarely the cause.
 
+## `play.bfstats.io` — the playable map page
+
+The mesh nginx answers both hosts, so this host needs no new pod and no nginx
+change (`mesh/nginx.conf` keeps its catch-all `server_name _`; HAProxy has
+already routed on Host by the time the request arrives). Three changes:
+
+1. `deployment.yaml`'s ConfigMap: `acl host_play_bfstats req.hdr(host) -i
+   play.bfstats.io`, `http-request set-path /map.html if host_play_bfstats
+   is_play_root` (so `/` serves the map page, the browser staying on `/`),
+   and `use_backend mesh_frontend if host_play_bfstats`. No new backend, so
+   no `init-addr` line and no ordering hazard.
+2. `cloudflared-tunnel.yml`: the hostname rule to the same haproxy service.
+3. DNS: CNAME `play` -> `<tunnel-id>.cfargotunnel.com`, proxied — same
+   `cert.pem` zone trap as `mesh` above.
+
+Apply order: both ConfigMaps (`kubectl --context hetzner apply -f` of this
+directory), then `kubectl --context hetzner -n haproxy rollout restart
+deployment/haproxy` and `kubectl --context hetzner -n cloudflared rollout
+restart deployment/cloudflared` — HAProxy resolves backend names once at boot
+and cloudflared reads its ingress rules from the ConfigMap at startup. The
+`/netcode` route is path-based and rides this host; it is written below and
+answers 503 until the netcode Deployment is applied.
+
 ## The netcode room server route (`/netcode`)
 
 The BF1942 multiplayer room server (P2 of
@@ -92,14 +115,16 @@ The deployment files exist (`deploy/app/netcode-deployment.yaml`,
 applying is the owner's call, per repo convention. The apply order is:
 
 1. Apply `deploy/app/netcode-deployment.yaml` (Deployment + Service in
-   `bf42-stats`). The Service must exist before step 2.
+   `bf42-stats`) — `kubectl --context hetzner apply -f`. The Service must
+   exist before step 2.
 2. Apply this `deployment.yaml`'s ConfigMap — a **manual step**: no Jenkins
    stage applies the ingress ConfigMap, and none ever has (mesh was manual
-   too).
-3. `kubectl -n haproxy rollout restart deployment/haproxy`. There is no
-   `resolvers` section, so `bfstats-netcode-service.bf42-stats` is resolved
-   once at boot: a server disabled at boot stays disabled, and a backends name
-   resolved before the Service exists answers 503 until this restart.
+   too). `kubectl --context hetzner apply -f deploy/app/ingress/deployment.yaml`
+3. `kubectl --context hetzner -n haproxy rollout restart deployment/haproxy`.
+   There is no `resolvers` section, so `bfstats-netcode-service.bf42-stats` is
+   resolved once at boot: a server disabled at boot stays disabled, and a
+   backends name resolved before the Service exists answers 503 until this
+   restart.
 
 The `netcode` backend carries `init-addr last,libc,none` because the Service
 may not exist when the ConfigMap is applied — without it HAProxy 3.2 treats an
