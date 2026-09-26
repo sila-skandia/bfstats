@@ -33,6 +33,9 @@ import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 // one bright additive pixel, so flooring the *apparent* width restores the
 // engine's picture rather than inventing one. Length is never touched — only
 // the cross-section, and only upward, so nothing shrinks below the real mesh.
+// What the floor must not do is add light: a widened streak is dimmed by the
+// widening (`advanceTracers`), so past convergence the pair fades to the faint
+// specks retail shows instead of running on as two bright lines.
 export const TRACER_MIN_SCREEN_PX = 2.5;
 // c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
 // kick without turning the rocket into a bullet.
@@ -391,6 +394,15 @@ export function advanceTracers(guns, dt) {
         / tracer.width;
       const across = Math.max(tracer.lengthScale, floor);
       tracer.mesh.scale.set(across, across, tracer.lengthScale);
+      // Widened, it is dimmed by the same factor, so the light it puts on
+      // screen stays what the real sub-pixel streak would. At full opacity the
+      // floor drew a converged stream as two bright 2.5 px lines carrying on
+      // hundreds of metres past the crossing; retail's real 0.3 m streak goes
+      // to faint specks there (a Zero's burst, owner capture 2026-09-26).
+      const coverage = tracer.lengthScale / across;
+      for (const fade of tracer.mesh.userData.tracerFade ?? []) {
+        fade.material.opacity = fade.opacity * coverage;
+      }
     }
     if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
       guns.scene.remove(tracer.mesh);
