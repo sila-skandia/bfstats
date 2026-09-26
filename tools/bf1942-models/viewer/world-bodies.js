@@ -6,6 +6,7 @@
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, collisionPartsFor, DrivenBody } from './vehicle-bodies.js';
 import { onBodyDamage } from './world-damage.js';
+import { obstacleOrigin } from './obstacle.js';
 
 /** The level's parked hulls, once the collider has handed out owner ids.
  *  `terrain` is the body world's ground (page's `bodyTerrain` glue); the
@@ -17,6 +18,13 @@ export function setupBodies(world, { tables, terrain, statics = null }) {
     terrain,
     statics,
     onDamage: (owner, result, at, other) => onBodyDamage(world, owner, result, at, other),
+    // A driven hull through barbed wire: no response and no damage, only the
+    // message (`PlayerControlObject::handleCollision` 0x08318b00).
+    onObstacle: (owner, obstacle, pos) => {
+      if (world.report.obstacles.length >= 256) return;
+      world.report.obstacles.push({ id: obstacle, x: pos[0], y: pos[1], z: pos[2],
+                                    origin: obstacleOrigin(world.collider, obstacle), owner });
+    },
   });
 }
 

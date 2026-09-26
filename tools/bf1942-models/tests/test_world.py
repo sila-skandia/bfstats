@@ -62,6 +62,8 @@ _MODULE_NAMES = [
     "airborne",
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
+    # world-soldier-tick.js and world-bodies.js bill barbed wire.
+    "obstacle",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     # Reached through seats.js: the salvo arithmetic and the HUD
     # weapon-slot order, and an aircraft torpedo's water run.

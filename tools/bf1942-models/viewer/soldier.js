@@ -384,6 +384,10 @@ export class Soldier {
     this.drown = new DrownTimer();
     /** HP the water owes the caller's `Armor`; drained with `drainDrowning()`. */
     this.drownDamage = 0;
+    /** The barbed wire the body passed through, `{ id, x, y, z }` per touch
+     *  per tick (`SoldierBody.obstacleContacts`), oldest first; the world's
+     *  soldier tick drains it with `drainObstacles()` and bills the Armor. */
+    this.obstacleTouches = [];
     /** True while the feet are on the water plane. Kept for the page's readout;
      *  it is now "he is swimming", because a man cannot stand on the sea. */
     this.onWater = false;
@@ -741,6 +745,11 @@ export class Soldier {
       // ordinary body.
       if (!this.#stepLadder(this.clock.dt, input)) {
         this.body.step(this.clock.dt, this._tickInput);
+        for (const c of this.body.obstacleContacts) {
+          this.obstacleTouches.push({ id: c.id, x: c.x, y: c.y, z: c.z });
+        }
+        // Bounded like `parachuteEvents`: a caller that never drains it.
+        if (this.obstacleTouches.length > 64) this.obstacleTouches.splice(0, this.obstacleTouches.length - 64);
       }
       // `Armor::update`'s water-damage timer, on the same tick the body just
       // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
@@ -1000,6 +1009,14 @@ export class Soldier {
    * soldier's `Armor` belongs to the page. A frame can run twelve ticks and the
    * timer can fire on more than one of them, so this is a sum and not a flag.
    */
+  /** The wire touched since the last drain (`obstacleTouches`), emptied. */
+  drainObstacles() {
+    if (!this.obstacleTouches.length) return [];
+    const out = this.obstacleTouches;
+    this.obstacleTouches = [];
+    return out;
+  }
+
   drainDrowning() {
     const owed = this.drownDamage;
     this.drownDamage = 0;

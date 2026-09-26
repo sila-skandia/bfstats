@@ -16,7 +16,7 @@ import {
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
   SOLDIER_MASS, SOLDIER_DRAG, SOLDIER_BOUNDING_RADIUS,
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
-  LOCOMOTION_GAIN,
+  LOCOMOTION_GAIN, SLOW_DOWN_MOD,
 } from './soldier-locomotion.js';
 import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
@@ -112,6 +112,16 @@ export class SoldierBody {
     this._armed = false;
     this._bestNormalY = -Infinity;
     this._waterEntry = false;
+    // Barbed wire (`obstacle.js`). The `Obstacle`s this tick's resolve passed
+    // through, `{ id, x, y, z }` each, for the world's soldier tick to bill;
+    // and the soldier's `+0x578` byte, which `BFSoldier::handleCollision`
+    // (0x0827dc81) sets on the touch and the NEXT `handlePlayerInput`
+    // (0x08274792) reads and clears, scaling the speed by the template's
+    // `slowDownMod`.
+    this.obstacleContacts = [];
+    this.obstacleSlow = false;
+    this.slowDownMod = SLOW_DOWN_MOD;
+    this._obstaclePass = false;
   }
 
   get position() { return this.body.position; }
@@ -139,6 +149,8 @@ export class SoldierBody {
     this.contactNormal.z = 0;
     this.contactMaterial = -1;
     this.contacted = false;
+    this.obstacleSlow = false;
+    this.obstacleContacts.length = 0;
     // A placed body has not fallen: the drop it would be judged on starts here,
     // so teleporting down a cliff never bills the arrival as a fall.
     this.lastCollisionHeight = y;
@@ -279,9 +291,14 @@ export class SoldierBody {
     // PHY-7: the lower body's current animation state multiplies the forward
     // table. Applied before the diagonal clamp below, or the dive's 6.0 would
     // be clamped straight back down to the prone table it is scaling.
+    // The wire's slow, read and cleared here as `handlePlayerInput` does
+    // (0x08274792-0x082747ae): 1.0, or `slowDownMod` the tick after a touch,
+    // multiplying both the forward and the strafe command (0x0827489c..).
+    const slow = this.obstacleSlow ? this.slowDownMod : 1;
+    this.obstacleSlow = false;
     const fwdSpeed = rampedDirectionalSpeed(this.pose, this.forwardRamp, walk)
-      * this.stateSpeed;
-    const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk);
+      * this.stateSpeed * slow;
+    const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk) * slow;
     if (this.stateSpeedLeft > 0) {
       this.stateSpeedLeft -= dt;
       // `addTransitionWhenDone`: the clip ends and the plain lie/stand state,
@@ -432,6 +449,7 @@ export class SoldierBody {
     this.#resolve();
     this.#refuseSteepGround();
     this.#settle();
+    if (this.obstacleContacts.length) this.obstacleSlow = true;
     // `handleUpdate`'s own place in the tick. The pin lands inside it.
     this.#updateSwim(dt, forward, input);
 

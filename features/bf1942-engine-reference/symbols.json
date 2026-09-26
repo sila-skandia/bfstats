@@ -3111,6 +3111,15 @@
    "note": "vtable +0x98. Loops the LOD count calling +0x9c (0x005b42d0) per LOD. Stops building LODs after the first whose last material has < 100 vertices (DAT_009ab664) or when template byte +0x100 is set; resizes the LOD vector to the kept count and moves the final distance onto the last kept slot. Ledger SM-11."
   },
   {
+   "address": "0x005b5b40",
+   "name": "StandardMeshTemplate_ctor",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-26-lod",
+   "note": "vtable 0x00905a90. LOD distance table +0xd8..+0xfc = 0,150,...,1350; +0x100 (object-lightmap flag) = 0. Ledger SM-12."
+  },
+  {
    "address": "0x005b5f50",
    "name": "StandardMeshTemplate_readStream",
    "kind": "function",
@@ -7391,8 +7400,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] 16-slot ring: objects +0x54, delta timers +0x94, head +0xd4, tail +0xd8; a new entry expires 1.0 s after insertion. The collision-damage rate limiter, one event per (Armor, other object) per second; terrain is the NULL entry."
+   "source": "research-2026-09-19-collision-response; research-2026-09-26-barbed-wire",
+   "note": "lnxded. [lead] 16-slot ring: objects +0x54, delta timers +0x94, head +0xd4, tail +0xd8; a new entry expires 1.0 s after insertion. The collision-damage rate limiter, one event per (Armor, other object) per second; terrain is the NULL entry. [2026-09-26, barbed wire] Ledger OBS-6: the list is also what bills barbed wire once a second (BFSoldier::handleCollision 0x0827dc81)."
   },
   {
    "address": "0x081737b0",
@@ -7553,8 +7562,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] linear scan of the ring head..tail. SimpleObject::handleCollision skips the damage dispatch when true."
+   "source": "research-2026-09-19-collision-response; research-2026-09-26-barbed-wire",
+   "note": "lnxded. [lead] linear scan of the ring head..tail. SimpleObject::handleCollision skips the damage dispatch when true. [2026-09-26, barbed wire] Ledger OBS-6: the wire test in BFSoldier::handleCollision (vt+0x12c at 0x0827dcdb)."
   },
   {
    "address": "0x08174550",
@@ -8194,6 +8203,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
    "note": "lnxded, 89 lines. Appends to three parallel per-template vectors -- +0x98 vector<string> (effect name), +0xa4 vector<Vec3> (attach offset), +0xb0 vector<int> (HP threshold) -- confirmed by the mangled _M_insert_aux callees. Separate from setArmorComponent's 23 fixed setters (HP-3). See ledger ARM-1."
+  },
+  {
+   "address": "0x081e1460",
+   "name": "dice::ref2::world::EffectBundle::handleMessage(TemplateMessage, IPlayer*)",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "working",
+   "source": "research-2026-09-26-barbed-wire",
+   "note": "lnxded. With the template +0x150 (timeToLive) < 0: message 0 calls the sound object (+0xf8) vt+0x14, then vt+0x1c(0, +0x110) and vt+0x1c(1, +0x10c); then Bundle::handleMessage. The start of e_Barbwire.ssc on a wire touch. What vt+0x14 does to a voice already playing is client-side and unread. Ledger OBS-8."
   },
   {
    "address": "0x081e2bb0",
@@ -9438,6 +9456,15 @@
    "note": "lnxded. Seat-flag -> animation/first-person dispatcher; camera-list value == literal 3 forces setFirstPerson(true), any other value explicitly forces it false. See ledger SEAT-9, SEAT-10. EXTENDED 2026-09-19 (occupant): the three animation-name fallbacks are named states, and none is Lb_Stand -- +0x294 Lb_SitInVehicle, +0x298 Ub_SitInVehicle, +0x29c Lb_StandInVehicle, resolved by name in BFSoldierTemplate::init at 0x0827acaf/0x0827acff/0x0827ad4f and spent here at 0x8271a02/0x8271a40/0x8271b43. For a half-body seat it skips the lower-body state entirely (0x8271a1d -> 0x8271b63) and calls disableBoneTree(getBoneNameIndex(\"Bip01 Pelvis\")) at 0x8271b63 instead. Ledger SEAT-9, SEAT-25."
   },
   {
+   "address": "0x08274792",
+   "name": "BFSoldier::handlePlayerInput slowDownMod read",
+   "kind": "patch_site",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "research-2026-09-26-barbed-wire",
+   "note": "lnxded. factor = 1.0 (0x08274787); if byte +0x578: clear it and factor = BFSoldierTemplate+0x2f8 (slowDownMod). Multiplies the forward and strafe commands. Ledger OBS-5."
+  },
+  {
    "address": "0x08276100",
    "name": "dice::bf::BFSoldier::useRepairPack()",
    "kind": "function",
@@ -9517,6 +9544,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-movement",
    "note": "or WORD PTR [edi+0x3e6],0x40, inside BFSoldier::handleCollision 0x0827d3b0, under the identical gate (N.y > 0.1 against 0x086b1ca0, and [ebp+0x20] != 1). Found by grepping all 60 accesses to +0x3e6; it is the only or-0x40 among them. THE SERVER'S JUMP BLOCK IS THEREFORE LIVE, not dead: the old 'dead code behind an always-equal 0.0 == 0.0 test' reading was the not-armed arm only, and the armed arm at 0x082741ad -> 0x08275f86 reaches the real PlayerInput[9] through getSoundTrigger() != c_SstJump. Cleared each tick at 0x08274d29. See ledger PHY-1."
+  },
+  {
+   "address": "0x0827dc81",
+   "name": "BFSoldier::handleCollision Obstacle branch",
+   "kind": "patch_site",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-26-barbed-wire",
+   "note": "lnxded, reached from the classID compare at 0x0827d415. +0x578 = 1 (the slow flag); obstacle->handleMessage(0,0); Armor (IID 0xc4a4) isInColList vt+0x12c, else addColObject vt+0x120 and IGameServer vt+0xf4 giveDamage(soldier, tmpl+0x150, -1, -1, -1, getAbsolutePosition, -1, false, true) at 0x0827dd37; returns 0 whatever the pose. Ledger OBS-4."
   },
   {
    "address": "0x0827e920",
@@ -9735,6 +9771,15 @@
    "note": "lnxded. -> getActiveTemplate(0x9493)+0x2e8. Registered at 0x082b1c06, name string 0x086d56dc. The field is an ACCELERATION, not a terminal speed. Ledger PARA-2."
   },
   {
+   "address": "0x082c0e50",
+   "name": "ConsoleClass206::executeObjectMethod (ObjectTemplate.slowDownMod)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "research-2026-09-26-barbed-wire",
+   "note": "lnxded. Reads/writes getActiveTemplate(CID_BFSoldierTemplate)+0x2f8; name string \"slowDownMod\" at 0x86d55ff, registered at 0x082b0e6e. BFSoldierTemplate ctor default 0x3ecccccd (0.4) at 0x0827a3ae. No pack sets it. Ledger OBS-5."
+  },
+  {
    "address": "0x082df7b0",
    "name": "ConsoleClass390::setArgFromString (ProjectileTemplate.radius)",
    "kind": "function",
@@ -9776,8 +9821,17 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded. Does NOT call the base. When otherObject's class IS CID_BFSoldierTemplate (0x086c2b88) it returns true immediately; when it is not (or otherObject / its +0x4c is null) it calls its own vtable+0x9c(0,0) and returns false. Touches no Armor either way."
+   "source": "research-2026-09-17-collision-damage; research-2026-09-26-barbed-wire",
+   "note": "lnxded. Does NOT call the base. When otherObject's class IS CID_BFSoldierTemplate (0x086c2b88) it returns true immediately; when it is not (or otherObject / its +0x4c is null) it calls its own vtable+0x9c(0,0) and returns false. Touches no Armor either way. [2026-09-26, barbed wire] Ledger OBS-2: the soldier arm returns 1, but BFSoldier::handleCollision (0x0827dc81) has already returned 0 for the same pair, so a soldier passes wire too; the veto for a vehicle is PlayerControlObject::handleCollision 0x08318b00."
+  },
+  {
+   "address": "0x08315e60",
+   "name": "dice::ref2::world::ObstacleTemplate::ObstacleTemplate()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-26-barbed-wire",
+   "note": "lnxded. BundleTemplate ctor, then +0x150 = 0x40a00000 (5.0f) at 0x08315e8a: ObjectTemplate.damage (ConsoleClass597::executeObjectMethod 0x08304950, name \"damage\" at 0x86d48c0). No vanilla, XPack1 or XPack2 template sets it. Ledger OBS-1."
   },
   {
    "address": "0x08316790",
@@ -9866,8 +9920,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] matOther 99 -> giveDamage 1e10; other is an ObstacleTemplate (0x94af) -> other->handleMessage(0,0), return 0; else SimpleObject::handleCollision."
+   "source": "research-2026-09-19-collision-response; research-2026-09-26-barbed-wire",
+   "note": "lnxded. [lead] matOther 99 -> giveDamage 1e10; other is an ObstacleTemplate (0x94af) -> other->handleMessage(0,0), return 0; else SimpleObject::handleCollision. [2026-09-26, barbed wire] Ledger OBS-3: every PlayerControlObject (land, sea, air, stationary) rolls through wire and messages it; the message is the scrape (OBS-8)."
   },
   {
    "address": "0x08318d20",
@@ -11965,15 +12019,6 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] global candidate vector"
-  },
-  {
-   "address": "0x005b5b40",
-   "name": "StandardMeshTemplate_ctor",
-   "kind": "function",
-   "subsystem": "geom",
-   "confidence": "verified",
-   "source": "research-2026-09-26-lod",
-   "note": "vtable 0x00905a90. LOD distance table +0xd8..+0xfc = 0,150,...,1350; +0x100 (object-lightmap flag) = 0. Ledger SM-12."
   }
  ]
 }

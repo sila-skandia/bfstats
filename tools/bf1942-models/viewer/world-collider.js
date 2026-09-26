@@ -200,12 +200,17 @@ export class WorldCollider {
    * two. The sea is not solid and never appears in a sweep at all.
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false,
-              deckStepTop = -Infinity, deckFloorCos = 2) {
+              deckStepTop = -Infinity, deckFloorCos = 2, passObstacles = false) {
     if (!this.statics) return null;
     const started = performance.now();
+    // `passObstacles`: the caller's contact with an `Obstacle` was vetoed by
+    // its handler (`BFSoldier::handleCollision` 0x0827d3b0 returns 0 for one),
+    // so the sweep looks past the wire to whatever stands behind it.
+    this.statics.passObstacles = !!passObstacles;
     let out = this.statics.sweepSphere(
       ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies,
       deckStepTop, deckFloorCos);
+    this.statics.passObstacles = false;
     // `skipBodies`: the caller is itself a simulated body, and what it does to
     // another one is the contact solver's business (a push, a spin, damage on
     // both sides), not a dead stop against a swept sphere.
@@ -247,6 +252,22 @@ export class WorldCollider {
     this.elapsed += (performance.now() - started) * 1000;
     this.casts++;
     return out;
+  }
+
+  /**
+   * The `Obstacle` (barbed wire) a hit record's triangle belongs to, as an
+   * id into `obstacleNode`, or -1. `ObjectTemplate.create Obstacle` is the
+   * only static class with a collision handler of its own
+   * (`Obstacle::handleCollision` lnxded 0x08315e10).
+   */
+  obstacleAt(hit) {
+    if (!hit || !this.statics?.obstacleOf) return -1;
+    return this.statics.obstacleOf(hit.triangle);
+  }
+
+  /** The scene node of obstacle `id`, or null. */
+  obstacleNode(id) {
+    return id >= 0 ? this.statics?.obstacleNodes?.[id] ?? null : null;
   }
 
   /**
@@ -556,6 +577,11 @@ export class WorldCollider {
           obstacleOf.kind[owner] = k;
         }
         return k === 2;
+      },
+      /** The `Obstacle` the hit's own triangle belongs to, or -1 (per
+       *  triangle: XPack2's fences carry the wire as a child of a `Bundle`). */
+      obstacleAt(record) {
+        return world.obstacleAt(record);
       },
       supportY(x, z, fromY) {
         return world.surfaceHeight(x, z, fromY);

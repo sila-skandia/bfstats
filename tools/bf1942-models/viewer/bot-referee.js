@@ -863,8 +863,12 @@ export function createBotReferee(env) {
     }
     if (bot) {
       // `event_projectile`: the hit is incoming fire, x10 for having landed.
-      const from = attackerPos ?? env.defaultAttackerPos?.() ?? null;
-      bot.onIncomingFire(attackerId, from, referee.clock, true, 1);
+      // Not for the world's own damage (`opts.environment`: barbed wire),
+      // which no projectile delivered and no shooter stands behind.
+      if (!opts.environment) {
+        const from = attackerPos ?? env.defaultAttackerPos?.() ?? null;
+        bot.onIncomingFire(attackerId, from, referee.clock, true, 1);
+      }
       if (!armor.destroyed && lost > 0) env.onHurt?.(bot, lost);
     }
     if (!armor.destroyed || !bot) return;

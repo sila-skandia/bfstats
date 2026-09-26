@@ -721,10 +721,14 @@ export class TrackedVehicle extends Vehicle {
         const support = this.groundHeight(prevX, prevZ, prevY);
         const stepTop = Number.isFinite(support)
           ? support + DECK_WALL_STEP : -Infinity;
+        // Barbed wire is no wall to a hull moving through it
+        // (`PlayerControlObject::handleCollision` 0x08318b00 vetoes the
+        // response above the handler gate, `|v|^2 > 0.1`; `obstacle.js`).
+        const v2 = s.velocity.x ** 2 + s.velocity.y ** 2 + s.velocity.z ** 2;
         const hit = this.collider.sweepSphere(
           prevX, prevY, prevZ, dx * len, dy * len, dz * len,
           dist, this._hullRadius, this._collisionOwner, false,
-          stepTop, DECK_FLOOR_COS);
+          stepTop, DECK_FLOOR_COS, v2 > 0.1);
         if (hit) {
           const backOff = Math.max(0, hit.t - 0.02);
           s.position.x = prevX + dx * len * backOff;
