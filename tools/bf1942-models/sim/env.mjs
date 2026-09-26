@@ -92,8 +92,9 @@ export async function loadViewerModules(viewer) {
     BOT_BODY_MATERIAL: referee.BOT_BODY_MATERIAL,
     // A round's falloff over the distance it flew (`Projectile::getDamage`).
     damageFactor: projectileDamage.damageFactor,
-    // A level's tickets as a server of max players starts and bleeds them
-    // (ledger TKT-1..TKT-4).
+    // The page's round: a level's tickets as a server of max players starts
+    // and bleeds them, a death's cost, the bleed (ledger TKT-1..TKT-4).
+    createRoundState: roundState.createRoundState,
     scaleTickets: roundState.scaleTickets, roundPlayers: roundState.roundPlayers,
     clampMaxPlayers: roundState.clampMaxPlayers,
     THREE: three,

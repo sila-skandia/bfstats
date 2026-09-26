@@ -53,20 +53,23 @@ tracing every third tick (longer on a loaded machine), after a load of about
 
 **Max players.** Each side starts at the level's count times the server's max
 players over 16, truncated, and bleeds at the level's rate times the same
-(`viewer/round-state.js` `scaleTickets`, ledger TKT-1..TKT-4): Wake's 100 is
-200 on a 32-slot server. A level's own `tickets.maxPlayers` (a mode script's
-`game.maxNrOfPlayers`, Kasserine Pass co-op's 18) sets the start and not the
-bleed. Without `--max-players` the server is the bots, 2 x `--bots`: the
-engine's top-up fills every slot of a bot server, so its population is its
-slot count, which is `map.html`'s rule too (there with the local player among
-them; the runner has none). `--bots 8` is the 16 the levels' numbers are
-written for. The parity lab's `wake-coop` fills 30 of 32 slots, so a run
-compared with it names its server: `--bots 15 --max-players 32`.
+(the page's round, `viewer/round-state.js` `createRoundState`, ledger
+TKT-1..TKT-4): Wake's 100 is 200 on a 32-slot server. A level's own
+`tickets.maxPlayers` (a mode script's `game.maxNrOfPlayers`, Kasserine Pass
+co-op's 18) sets the start and not the bleed. Without `--max-players` the
+server is the bots, 2 x `--bots`: the engine's top-up fills every slot of a
+bot server, so its population is its slot count, which is `map.html`'s rule
+too (there with the local player among them; the runner has none).
+`--bots 8` is the 16 the levels' numbers are written for. The parity lab's
+`wake-coop` fills 30 of 32 slots, so a run compared with it names its
+server: `--bots 15 --max-players 32`.
 
 Tests: `python3 -m unittest tests.test_sim_match` (a 20 s seeded match on the
 synthetic level, run twice for the same seed and once for another);
 `python3 -m unittest tests.test_sim_tickets` (the tickets above, from the
-command line and on matches set up with other levels' tickets);
+command line and on matches set up with other levels' tickets, and the
+bleed over other levels' control-point weights: Battle of Britain's and
+Wake's);
 `python3 -m unittest tests.test_sim_vehicles` (the vehicle recipes of
 `tests/sim_vehicles_harness.mjs` on El Alamein and Wake; it finds the
 untracked maps tree in `$BF42_VIEWER_ASSETS`, this checkout's `viewer/` or
@@ -102,8 +105,10 @@ own asymmetry out of the difference (the second table it prints).
 **The synthetic harness level** (`level.mjs syntheticLevel`): the frame and
 the two flags of `tests/bot_ai_harness.mjs` (Home at (100, -100), Enemy at
 (100, -220), 256 m world, flat ground), a neutral Middle flag between them,
-an uncapturable base behind each side, the harness's 1 m sandbag line across
-the Allied approach and its mirror across the Axis one (both cover objects),
+an uncapturable base behind each side (the flags weigh 50 and the bases
+nothing, El Alamein's weights, so a side holding two of the three flags
+bleeds the other), the harness's 1 m sandbag line across the Allied
+approach and its mirror across the Axis one (both cover objects),
 a Willy and a Sherman at each base, five strategic areas and two strategies
 a side, and three kits a side built from the vanilla K98 / Thompson / Colt /
 MedPack AI templates and fire data (values copied into `level.mjs`).
@@ -245,9 +250,9 @@ by: `maxPlayers`, or the level's own), `covers`, `vehicles`, `bots` (`id`,
 | `bot_error` | `bot`, `side`, `message`, `at` (the top stack frames), `beh`: a bot's tick threw; the first time per bot and message (the count is in `perBot.errors`) |
 
 `{"k":"sample", "t", "tickets":{1,2}, "flags":{0,1,2}, "alive":{1,2},
-"mounted":{1,2}, "owners":[...]}` — every `--sample-every` seconds; `flags`
-counts the control points each side holds (0 neutral), `owners` lists them
-in header order (control points only).
+"mounted":{1,2}, "owners":[...]}` — every `--sample-every` seconds; `tickets`
+are whole; `flags` counts the control points each side holds (0 neutral),
+`owners` lists them in header order (control points only).
 
 `{"k":"summary", ...}` — the summary below without `trace`, `runtime` and
 `level_info`.
@@ -280,7 +285,11 @@ rounds (`fireTick`, `resolveShot`, the magazine), damage and death
 a target's description (`unitInfo`), the SAI's unit (`strategicUnit`) and the
 seating (`vehicleTick`, `enterVehicle`, `leaveVehicle`, `switchSeat`) --
 and `map.html` and `match.mjs` import it (`env.mjs` loads it with the rest).
-A change to the referee lands in both.
+A change to the referee lands in both. So does one to the round: the
+tickets are the page's `viewer/round-state.js` `createRoundState` (the
+start, a death's `lossPerDeath`, the bleed), built from the level's
+`tickets` and ticked on the control points' weights; only the match's end
+is the runner's (below).
 
 What the runner hands the referee in place of the page's (`match.mjs
 refereeEnv`): the units (on a real level the page's `bot-units.js` from the
@@ -313,12 +322,17 @@ page as here; everything timed in seconds matches.
 
 Runner-only, labelled SIM in the code:
 
-- **The ticket bleed**: a side bleeds `lossPerMin` a minute, continuously,
-  while the other side holds more than half the control points
-  (`features/bf1942-3d-models/tickets-hud.md`); the page's round
-  (`viewer/round-state.js`) bleeds a whole ticket per interval while the
-  enemy's summed `areaValue` is over 99. The start, the rate and a ticket a
-  death are the page's (Max players, above).
+- **The end of the round**: a side at zero tickets (`round.over`) ends the
+  match, where the page's round plays on. The tickets themselves are the
+  page's round (`viewer/round-state.js` `createRoundState`): the start (Max
+  players, above), `lossPerDeath` a death, and a whole ticket every
+  `60 / (rate x maxPlayers / 16)` s while the enemy's summed `areaValue`
+  over the points it holds is over 99. Each point is its `scene.json`
+  `controlPoints` entry's weight and the owner of the world's flag of that
+  name; a point that owns no spawns is no flag and keeps its level team, as
+  on the page, so Battle of Britain's `Allied_Base` (150) bleeds the Axis
+  from the first frame. Neither builds the engine's end-of-round rules
+  (ledger TKT-5).
 - The synthetic level's vehicles (it has no vehicle nodes; a real level
   plays the page's):
 - **`SimDrive`** (`vehicles.mjs`): a kinematic hull driven by the bot's input

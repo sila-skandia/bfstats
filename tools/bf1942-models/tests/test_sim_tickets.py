@@ -1,15 +1,16 @@
 """The headless runner's round tickets: `sim/match.mjs` over `viewer/round-state.js`.
 
-A round starts each side at the level's count times the server's max players
-over 16, truncated, and bleeds at the level's rate times the same (ledger
-TKT-1..TKT-4); a level's own `tickets.maxPlayers` (Kasserine Pass co-op's 18)
-sets the start and not the bleed. `sim/run.mjs --max-players N` names the
-server. Without it the server is the bots, 2 x `--bots`: the engine's top-up
-fills every slot of a bot server, so its population is its slot count, which
-is `map.html`'s rule too.
+The runner plays the page's round (`createRoundState`). A round starts each
+side at the level's count times the server's max players over 16, truncated,
+and a side bleeds a whole ticket every `60 / (rate x maxPlayers / 16)` s while
+the enemy's summed `areaValue` is over 99 (ledger TKT-1..TKT-4); a level's own
+`tickets.maxPlayers` (Kasserine Pass co-op's 18) sets the start and not the
+bleed. `sim/run.mjs --max-players N` names the server. Without it the server
+is the bots, 2 x `--bots`: the engine's top-up fills every slot of a bot
+server, so its population is its slot count, which is `map.html`'s rule too.
 
 `tests/sim_tickets_harness.mjs` sets matches up on the synthetic level with
-other levels' tickets; the rest runs `sim/run.mjs`.
+other levels' tickets and control points; the rest runs `sim/run.mjs`.
 """
 
 from __future__ import annotations
@@ -81,15 +82,48 @@ class SimTicketTests(unittest.TestCase):
         self.assertEqual({"1": 200, "2": 200}, self.results["named"]["tickets"])
 
     def test_the_bleed_runs_at_the_servers_rate(self) -> None:
-        # A minute with every control point the Axis's: the Allies lose 5 x 8/16
-        # of their 50, or 5 x 32/16 of their 200, the same share either way.
+        # Every control point the Axis's, 150 of weight: the Allies lose a whole
+        # ticket every 60 / (5 x 8/16) = 24 s of their 50, or every 6 s of their
+        # 200, and run out in 1200 s either way.
         bleed = self.results["bleed"]
         self.assertEqual({"1": 50, "2": 50}, bleed["8"]["before"])
-        self.assertAlmostEqual(47.5, bleed["8"]["after"]["2"], places=6)
-        self.assertEqual(50, bleed["8"]["after"]["1"])
+        self.assertEqual({"1": 50, "2": 48}, bleed["8"]["minute"])
         self.assertEqual({"1": 200, "2": 200}, bleed["32"]["before"])
-        self.assertAlmostEqual(190, bleed["32"]["after"]["2"], places=6)
-        self.assertEqual(200, bleed["32"]["after"]["1"])
+        self.assertEqual({"1": 200, "2": 190}, bleed["32"]["minute"])
+        for players, start in (("8", 50), ("32", 200)):
+            self.assertEqual({"1": 150, "2": 0}, bleed[players]["weight"])
+            self.assertTrue(bleed[players]["over"])
+            self.assertEqual({"1": start, "2": 0}, bleed[players]["after"])
+            self.assertAlmostEqual(1200, bleed[players]["out"], delta=1 / 30 + 1e-9)
+
+    def test_half_the_points_bleed_the_enemy_when_they_weigh_over_99(self) -> None:
+        # Battle of Britain: the Allied_Base owns no spawns, so it is no flag,
+        # but it weighs 150. The Allies hold three of six points, no more than
+        # half, and the Axis bleeds its 4 a minute from the first tick: a ticket
+        # every 15 s, the first between the 14 s and 16 s samples.
+        britain = self.results["britain"]
+        self.assertEqual(6, britain["points"])
+        self.assertEqual(5, britain["flags"])
+        self.assertEqual({"0": 1, "1": 2, "2": 3}, britain["held"])
+        self.assertEqual({"1": 50, "2": 200}, britain["firstTick"]["weight"])
+        self.assertEqual({"1": True, "2": False}, britain["firstTick"]["bleeding"])
+        self.assertEqual({"1": 100, "2": 100}, britain["before"])
+        self.assertEqual(61, britain["clock"])
+        self.assertEqual({"1": 96, "2": 100}, britain["after"])
+        self.assertEqual([[14, 100, 100], [16, 99, 100]], britain["samples"])
+
+    def test_more_than_half_the_points_under_99_bleed_nobody(self) -> None:
+        # Wake: the US's five points weigh 100, and Japan bleeds 15 a minute x
+        # 32/16, a ticket every 2 s (the lab's measurement). Japan taking one
+        # point leaves the US four of five and 80: Japan's bleed stops.
+        wake = self.results["wake"]
+        self.assertEqual({"1": 0, "2": 100}, wake["allUs"]["weight"])
+        self.assertEqual({"1": 195, "2": 200}, wake["allUs"]["tickets"])
+        taken = wake["oneTaken"]
+        self.assertEqual({"0": 0, "1": 1, "2": 4}, taken["held"])
+        self.assertEqual({"1": 20, "2": 80}, taken["weight"])
+        self.assertEqual({"1": False, "2": False}, taken["bleeding"])
+        self.assertEqual({"1": 195, "2": 200}, taken["tickets"])
 
     def test_a_levels_own_max_players_sets_the_start_and_not_the_bleed(self) -> None:
         # Kasserine Pass co-op on a 32-slot server: 100 x 18 / 16 = 112.5 -> 112,
