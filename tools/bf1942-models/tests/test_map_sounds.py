@@ -249,6 +249,30 @@ class SpawnedVehicleListTests(unittest.TestCase):
             [("A", None), ("NotDeclared", None)])})
         self.assertEqual(extract_map.spawned_vehicle_templates(info), ["Willy"])
 
+    def test_a_vehicle_held_by_another_vehicles_spawner_is_listed(self) -> None:
+        # Wake's Daihatsus: no level pad names them, the Hatsuzuki carries them
+        # on its own `HatsuzukiDaihatsuSpawner` child, and the scene bakes them
+        # in as held hulls. Unlisted, the landing craft a bot drives off the
+        # destroyer had no engine sound.
+        info = self.level({"Conquest": gameplay(
+            {"FleetSpawner": spawn_template("FleetSpawner", {1: "hatsuzuki"})},
+            [("FleetSpawner", None)])})
+        ref = mock.Mock()
+        templates = {
+            "hatsuzuki": mock.Mock(is_spawner=False, children=[ref]),
+            "hatsuzukidaihatsuspawner": mock.Mock(
+                is_spawner=True, spawner_vehicles={1: "Daihatsu"}),
+            "daihatsu": mock.Mock(is_spawner=False, children=[]),
+        }
+        library = mock.Mock()
+        library.object = lambda name: templates.get(name.lower())
+        with mock.patch.object(extract_map.con_mod, "instance_template_name",
+                               return_value="HatsuzukiDaihatsuSpawner"):
+            self.assertEqual(extract_map.spawned_vehicle_templates(info, library),
+                             ["hatsuzuki", "Daihatsu"])
+        # Without the library the list is the level's pads alone, as before.
+        self.assertEqual(extract_map.spawned_vehicle_templates(info), ["hatsuzuki"])
+
 
 class LevelLocalSampleTests(unittest.TestCase):
     """A vehicle sample the level ships for itself must still resolve.
