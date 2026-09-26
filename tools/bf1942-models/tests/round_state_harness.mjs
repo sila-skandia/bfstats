@@ -121,6 +121,20 @@ const run = (round, seconds, points) => {
   results.bleed.gateClosed = { tickets: { ...round.tickets }, held: { ...round.held },
                                bleeding: { ...round.bleeding } };
 
+  // A shut gate refills the countdown (TKT-4). 18 s of Berlin's bleed spends
+  // a ticket at 12 s and leaves 6 s owed on the next; the Russians then hold
+  // an open point for one frame (the German weight drops to 80) and lose it,
+  // and the next ticket comes a whole 12 s after the gate opens again.
+  const again = fresh();
+  run(again, 18, berlin);
+  const owed = again.countdowns[2];
+  again.tick(1 / 30, berlin.map(p => (p.name === 'open_left' ? { ...p, team: 2 } : p)));
+  const shut = again.countdowns[2];
+  run(again, 11, berlin);
+  const reopenedEleven = { ...again.tickets };
+  run(again, 2, berlin);
+  results.bleed.reopened = { owed, shut, atEleven: reopenedEleven, atThirteen: { ...again.tickets } };
+
   // And the other side bleeds at its own 30/min once the Russians hold the
   // whole map: one ticket every two seconds.
   const heavy = fresh();
