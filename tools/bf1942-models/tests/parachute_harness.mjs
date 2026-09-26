@@ -13,7 +13,7 @@ import {
   PARACHUTE_ZEROES_IMPACT_SPEED,
   FALL_STATE_SPEED, FALL_STATE_HEIGHT, CHUTE_CLOSE_SPEED,
   PARACHUTE_DRAG, PARACHUTE_SPEED, PARACHUTE_DRAG_RADIUS,
-  FALL_SOUND_LAYERS, CHUTE_OPEN_SAMPLES, PARA_CLIPS,
+  FALL_SOUND_LAYERS, CHUTE_OPEN_SAMPLES, PARA_CLIPS, FREE_FALL_TRACK_SPEED,
   PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
   OPEN_CLIP_SECONDS, LANDED_CLIP_SECONDS,
 } from './parachute.js';
@@ -240,6 +240,28 @@ results.freeFall = bail({ from: 120, deployAt: null, pitch: -Math.PI / 2 });
 results.chute = bail({ from: 400, deployAt: 2.0, pitch: 0 });
 // And opened promptly, from a lower altitude -- the ordinary bail-out.
 results.lowChute = bail({ from: 120, deployAt: 0.8, pitch: 0 });
+
+// --- free fall looking level: steered, not flung --------------------------
+
+/** Horizontal speed after `seconds` of free fall from 2 km, looking level. */
+function levelFall(vz, seconds) {
+  const soldier = new Soldier({ collider: flatWorld(WORLD), worldSize: WORLD });
+  soldier.bailOut(MID_X, 2000, MID_Z, 0, 0, 0, vz);
+  soldier.pitch = 0;
+  let peak = 0;
+  for (let t = 0; t < seconds; t += TICK_DT) {
+    soldier.step(TICK_DT, {});
+    const v = soldier.body.body.velocity;
+    peak = Math.max(peak, Math.hypot(v.x, v.z));
+  }
+  const v = soldier.body.body.velocity;
+  return { state: soldier.parachuteState, speed: Math.hypot(v.x, v.z), peak, vy: v.y };
+}
+results.trackSpeed = FREE_FALL_TRACK_SPEED;
+// From rest the look steers him up to the canopy's glide and no further.
+results.levelFallFromRest = levelFall(0, 8);
+// Out of a plane doing 50 m/s the same look adds nothing: he keeps the 50.
+results.levelFallFromPlane = levelFall(50, 8);
 
 // --- stepping out of something moving ------------------------------------
 
