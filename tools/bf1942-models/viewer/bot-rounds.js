@@ -31,6 +31,12 @@
 // is the straight line to the target (bot-plans.js `execMouseTurretAimAt`),
 // so a rocket fired at range falls short by its gravity (`gravityModifier
 // 0.2`: about 0.5 m at 30 m, 1.5 m at 50 m). Open in features/bot-weapons.
+//
+// Every other hand weapon's round stays the referee's ray, but its muzzle is
+// drawn from the same clone (`botRounds.flash`): the weapon glb's baked
+// flash, casing and smoke emitters lit by `guns.flash`, with no round. The
+// pose glb carries none of them, so until this a bot's rifle fired with no
+// flash at all.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -58,8 +64,9 @@ export function launchesDrawnRound(fireArms) {
  */
 export function createBotRounds(page) {
   const botRounds = {};
-  /** Per weapon template: `{ fireArms, scene, failed }`, `scene` the loaded
-   *  glb's once it lands. Kept across levels: a weapon is a weapon. */
+  /** Per weapon template: `{ fireArms, launches, scene, failed }`, `scene`
+   *  the loaded glb's once it lands, `launches` whether its round is flown
+   *  here or only its muzzle drawn. Kept across levels: a weapon is a weapon. */
   const templates = new Map();
   /** Per bot and weapon: `{ root, group, ray }`. */
   const held = new Map();
@@ -67,18 +74,18 @@ export function createBotRounds(page) {
 
   /**
    * A bot weapon's fire data has been read (map.html `botWeaponData`):
-   * `fireArms` is its glb's FireArms block. A rocket launcher's glb is
-   * loaded now, so the bot's first round already flies.
+   * `fireArms` is its glb's FireArms block. The glb is loaded now, so the
+   * bot's first round already flies (a rocket launcher) or flashes (the rest).
    */
   botRounds.noteWeapon = (name, fireArms) => {
-    if (!name || templates.has(name) || !launchesDrawnRound(fireArms)) return;
-    const entry = { fireArms, scene: null, failed: false };
+    if (!name || templates.has(name) || !fireArms) return;
+    const entry = { fireArms, launches: launchesDrawnRound(fireArms), scene: null, failed: false };
     templates.set(name, entry);
     page.loader.loadAsync(`${page.MODELS_BASE}/${name}.glb${page.bust()}`)
       .then(gltf => { entry.scene = gltf.scene; })
       .catch(err => {
         entry.failed = true;
-        console.warn(`[bots] ${name}: no round to fly (${err?.message ?? err}); resolved as a ray`);
+        console.warn(`[bots] ${name}: no weapon glb (${err?.message ?? err}); resolved as a ray, no flash`);
       });
   };
 
@@ -121,6 +128,9 @@ export function createBotRounds(page) {
     if (!group) return null;
     group.firer = playerId;
     group.weapon = name;
+    // Seen from outside whatever the local player's camera is: never the
+    // `em_1P_*` sprite (round-launch.js `flashView`).
+    group.view = 'third';
     if (!holder) {
       holder = new THREE.Group();
       holder.name = 'bot rounds';
@@ -155,7 +165,7 @@ export function createBotRounds(page) {
   botRounds.launch = bot => {
     const name = bot.weaponAi?.name ?? null;
     const entry = name ? templates.get(name) : null;
-    if (!entry?.scene || !page.guns) return false;
+    if (!entry?.scene || !entry.launches || !page.guns) return false;
     const h = groupFor(bot, name, entry);
     if (!h) return false;
     const { origin, dir } = bot.aimRay();
@@ -166,6 +176,24 @@ export function createBotRounds(page) {
     place(h, bot);
     page.guns.fireShot(h.group);
     return true;
+  };
+
+  /**
+   * The muzzle of one round from `bot`'s held weapon (the referee's
+   * `onShot`), for a weapon whose round the referee resolves as a ray. A
+   * rocket launcher's is lit by its own `fireShot` in `launch`. Nothing for a
+   * bot the page is not drawing: there is no weapon to put the flash on.
+   */
+  botRounds.flash = bot => {
+    const name = bot?.weaponAi?.name ?? null;
+    const entry = name ? templates.get(name) : null;
+    if (!entry?.scene || entry.launches || !page.guns || bot.vehicle) return;
+    const vis = page.botVisuals?.get(bot.playerId);
+    if (!vis?.group?.visible || !vis.rig?.weaponNode?.visible) return;
+    const h = groupFor(bot, name, entry);
+    if (!h?.group.emitters.length) return;
+    place(h, bot);
+    page.guns.flash(h.group);
   };
 
   /** A level is going: every bot's group with it. Rounds in the air are the

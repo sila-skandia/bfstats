@@ -120,4 +120,50 @@ const again = guns.projectiles[0];
 out.secondRound = !!again;
 out.secondRoundWorldCameraSees = again ? drawable(again.mesh, 0) : [];
 
+// --- whose flash: the observer's view is his own guns' alone ---------------
+// `guns.firstPerson` is set every frame the human is on foot, and used to
+// pick the flash for every gun on the page: a bot's rifle or a bot-crewed
+// hull's coax got the 0.4 m `em_1P_*` sprite made for the seat's own eye.
+// `flash` lights a muzzle with no round (a bot's rifle round is the
+// referee's ray), and `group.view` / `guns.viewOf` pin the outside flash.
+{
+  const rifle = new THREE.Group();
+  rifle.name = 'K98';
+  rifle.userData.fireArms = { roundOfFire: 1, velocity: 800, muzzles: 1,
+                              projectile: { kind: 'bullet', damage: {} } };
+  const muzzle = new THREE.Object3D();
+  muzzle.name = 'K98 muzzle';
+  muzzle.userData.muzzle = true;
+  rifle.add(muzzle);
+  const flashFor = view => {
+    const node = new THREE.Object3D();
+    node.name = `flash ${view}`;
+    node.userData.effect = { kind: 'sprite', view, timeToLive: 0.1 };
+    muzzle.add(node);
+    return node;
+  };
+  flashFor('first');
+  flashFor('third');
+  const shots = [];
+  guns.onShot = group => shots.push(group);
+  const [group] = guns.collect(rifle, { replace: false });
+  const lit = () => group.emitters.filter(e => e.age === 0).map(e => e.spec.view).sort();
+  const before = guns.tracers.length + guns.projectiles.length;
+  guns.firstPerson = true;
+  guns.flash(group);
+  out.flashOwn = lit();
+  for (const e of group.emitters) e.age = Infinity;
+  group.view = 'third';
+  guns.flash(group);
+  out.flashPinned = lit();
+  for (const e of group.emitters) e.age = Infinity;
+  group.view = undefined;
+  guns.viewOf = g => (g === group ? 'third' : null);
+  guns.flash(group);
+  out.flashViewOf = lit();
+  guns.viewOf = null;
+  out.flashRounds = guns.tracers.length + guns.projectiles.length - before;
+  out.flashOnShot = shots.length;
+}
+
 console.log(JSON.stringify(out));
