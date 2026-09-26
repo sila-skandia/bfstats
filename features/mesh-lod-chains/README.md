@@ -71,12 +71,16 @@ Two transforms, learned the hard way (2026-09-26):
   part carrying the part's transform, the rungs move under it, and the
   part's local transform is never touched. The part is the implicit level 0;
   a patched `lod.update` swaps it against the rungs by threshold.
-* A parked vehicle's root chain stays unlifted. `Vehicle` reparents the
-  node onto the level root when driven; a LOD holding its rungs would stay
-  behind at the pad as a ghost shell. Vehicle-root rungs are hidden instead,
-  so parked hulls draw at full detail as they did before the rungs shipped.
-  The parts inside the vehicle (turret, wheels, propeller) lift normally.
-  Building-interior chains (`*Interior`, instance suffixes included) stay
+* Every chain under the spawners root stays unlifted — not just the root
+  chain. The game nests spawner vehicles one level deeper (spawners → M3A1 →
+  lodM3A1 → M3A1Complex), so a parent check against the spawners root missed
+  the chains and a lifted root hid its whole rig: the wheels, doors and MG
+  mount are CHILDREN of the root part, so the moment its rung showed, the
+  rig's parts vanished with it (wheels gone at 10-20 m, where their own rungs
+  were not yet due). The skip now walks the ancestors; `Vehicle` reparents the
+  root onto the level root when driven, so a LOD there would still strand
+  rungs at the pad.
+* Building-interior chains (`*Interior`, instance suffixes included) stay
   unlifted too: the engine ran one interior switch at 70 m and never applied
   the geometry's own setLodDistance table to an interior, and a decimated
   interior rung tears through the exterior walls when it swaps at 15 m.

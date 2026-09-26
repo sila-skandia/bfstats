@@ -87,6 +87,15 @@ function liftLods(root, spawnersRoot) {
     // before the rungs shipped. The parts INSIDE the vehicle (turret, wheels,
     // propeller) lift normally — their LODs travel with the subtree.
     //
+    // The game wraps every spawner vehicle one level deeper than the raw
+    // spawner root: spawners -> M3A1 -> lodM3A1 -> M3A1Complex. A parent
+    // check against the spawners root therefore misses the chain (measured:
+    // M3A1Complex_LOD was spliced anyway), and a lifted root is worse than
+    // an unlifted one — the wheels, doors and MG mount are CHILDREN of the
+    // root part, so the moment its rung shows, the rig's parts vanish with
+    // it (wheels gone at 10-20 m, where their own rungs are not yet due).
+    // Walk the ancestors instead: anything under a spawner skips the lift.
+    //
     // Building interiors (`*Interior`) skip the lift as well. The engine
     // never applied a geometry's own setLodDistance table to an interior — it
     // ran one interior switch at 70 m — and the interior shell is only ever
@@ -96,7 +105,11 @@ function liftLods(root, spawnersRoot) {
     // part; backface culling keeps it invisible from outside, the texture-fade
     // darkness planes handle the doorway sealing, and the draw-distance cull
     // covers the range.
-    if ((spawnersRoot && obj.parent === spawnersRoot) || /Interior(_\d+)?$/i.test(obj.name || '')) {
+    let underSpawner = false;
+    for (let a = obj.parent; a; a = a.parent) {
+      if (/spawner/i.test(a.name || '')) { underSpawner = true; break; }
+    }
+    if (underSpawner || /Interior(_\d+)?$/i.test(obj.name || '')) {
       for (const child of [...obj.children]) {
         if (child.userData?.lod) child.visible = false;
       }
