@@ -1,8 +1,8 @@
 # Round replay: manual checks
 
-The game folder has the v5 recorder: `dsound.dll` is bf42plus `1e45a5d`
+The game folder has the v5 recorder: `dsound.dll` is bf42plus `9451721`
 (pushed to `sila-skandia/bf42plus` master). `dsound_old.dll` in the same
-folder is the v4 build, `4fc0352`. To go back to it:
+folder is the previous v5 build, `1e45a5d`. To go back to it:
 
 ```bash
 cp ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound_old.dll ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound.dll
@@ -54,7 +54,7 @@ The file should say so itself:
 f=$(ls -t ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/replays/replay_*.ndjson | head -1); head -c 100 "$f"; echo; grep -o '"k":"[a-z]*"' "$f" | sort | uniq -c
 ```
 
-The header reads `"v":5,"plus":"99.0.0-0-g1e45a5d"`, and the counts include
+The header reads `"v":5,"plus":"99.0.0-0-g9451721"`, and the counts include
 `f` (every round fired: thousands, with 30 bots), `jn` and `j` (turrets), `g`
 (engines), `st` and `anim` (soldiers). If `f`, `j`, `g` or `st` is missing,
 the recorder turned that part off on purpose: `logs/bf42plus_debug.log` in
@@ -69,6 +69,8 @@ In the viewer:
 | your pistol, your grenade | the pistol in your hand while you held it; the grenade in flight, then its explosion |
 | crouch, prone | your body in that stance |
 | the turret | turns as you turned it; the rounds leave along the barrel |
+| a Defgun or AA gun firing | the muzzle flash at the barrel and the round flying out, with no hit burst on the gun itself |
+| getting hit | a "hit from ..." row in the replay log for each hit you took |
 | the plane | the engine note follows the throttle you used |
 
 ## 3. If the new DLL misbehaves
