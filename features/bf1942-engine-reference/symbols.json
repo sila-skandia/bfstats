@@ -6549,6 +6549,24 @@
    "note": "lnxded. Bound-checks > 0x36 and tests the 55-bit mask at +0xdc/+0xe0; 55*4 = 0xdc, so the mask starts immediately after the float array. Ledger AI-3."
   },
   {
+   "address": "0x08056b20",
+   "name": "dice::bf::EventLogger::beginRound()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Writes the event log's <bf:server> header (ServerSettings copy from Setup+0x270, map id); called first in gamaStatusFirstPreGame, before the tickets are set. The roundInit event is gameStatusFirstPlaying's (0x08150b20). Ledger TKT-6."
+  },
+  {
+   "address": "0x0805b4b0",
+   "name": "dice::bf::Game::load(std::string const&, std::string const&, std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Loads a level; runs `levelPath + startup` (the std::operator+ of params 2 and 3 at decompile line 430) through mainConsole vt+0x24 (`run`) with param 4 as v_arg1. GameServer::load passes (+0x1c0 levelPath, +0x1c4 startup, \"host\"), so a round runs the level's ROOT <mode>.con (`bf1942/levels/<level>/coop.con`), not GameTypes/. Ledger TKT-3."
+  },
+  {
    "address": "0x0805d9b0",
    "name": "dice::bf::Game::updateWorld(float)",
    "kind": "function",
@@ -6585,6 +6603,15 @@
    "note": "lnxded. The ONLY consumer of the collision-severity arithmetic computed by handleCollisionLandOrWater and handleCollisionObjectVsObject: an audio/visual effect spawn. 352-byte leaf; its own one direct call and indirect offsets {0x8,0xc,0x14,0x2c,0x3c,0x40,0x44,0x74,0x78,0x9c} include no Armor HP mutator. See ledger HP-6. [CORRECTED 2026-09-19] Not the only consumer: both handlers also pass the severity to GameServer::giveDamage 0x0814b2e0 through the GameServer's own vtable slot +0x15c. See ledger HP-6, COL-3, COL-4."
   },
   {
+   "address": "0x08060420",
+   "name": "dice::bf::Game::getNumberOfTickets(unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Returns the RAW configured count at +0xc0+4*team (team 1..2, else 0): the level's Game.setNumberOfTickets value before the round start scales it. Ledger TKT-1."
+  },
+  {
    "address": "0x08060d30",
    "name": "dice::ref2::setRotation<float>(Mat4&, float yaw, float pitch, float roll)",
    "kind": "function",
@@ -6592,6 +6619,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-occupant",
    "note": "lnxded. Refractor yaw/pitch/roll in DEGREES, composed as three rotateAboutLine 0x08061e10 calls about the matrix's OWN rows -- yaw about m+0x10, pitch about m+0x00, roll about m+0x20 (helpers 0x08061db0/0x08061dd0/0x08061df0) -- an intrinsic Y-X'-Z'' composition equal to the extrinsic Ry*Rx*Rz a quat_from_ypr builds. NOT rotateZDeg 0x080625f0, which is a different helper and is not on this path. The same helper BundleTemplate::setRotation 0x081a9050 calls at 0x081a9085, which is what makes ObjectTemplate.setRotation's degrees the unit for addSkeletonIK too. Ledger IK-2."
+  },
+  {
+   "address": "0x08061750",
+   "name": "dice::bf::Game::setGamePlayMode(dice::bf::GamePlayMode)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Writes +0x10, the GPM: 1 CTF, 2 CQ, 3 TDM, 4 COOP, 5 OBJECTIVEMODE (startHostGame's switch, 0x080c42bf). gamaStatusFirstPreGame and gameStatusPlaying branch on 5. Ledger TKT-1, TKT-3."
   },
   {
    "address": "0x08061800",
@@ -6657,6 +6693,42 @@
    "note": "lnxded. Multiplies the angle by pi/180 (0.01745329238, f32 at 0x086b1ca4) before fsincos: the angles it receives are degrees. Emitter startRotation reaches it through roll<float> (ledger EMT-3)."
   },
   {
+   "address": "0x08082a40",
+   "name": "ConsoleClass523::executeObjectMethod (game.serverMaxPlayers)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Writes Setup+0x280 (dice::bf::setup at ds:0x8716b64), clamped to <= 64 (signed jle at 0x08082a8c). The parity lab's server1 binary (sha 18237721...55b2e6, community-patched) clamps to 128 instead: `cmp eax,0x7f; jbe; mov eax,0x80`. Setup::initWorld hands Setup+0x280 to startHostGame as max players. Ledger TKT-2."
+  },
+  {
+   "address": "0x0808fef0",
+   "name": "ConsoleClass589::executeObjectMethod (game.maxNrOfPlayers)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. queryInterface(0x1d4c0) on dice::bf::game, then vt+0x108 = GameServer::setMaxNrOfPlayers(int) (set) / vt+0x10c getMaxNrOfPlayers (get). A level script's `game.maxNrofPlayers N` therefore replaces the server's max players: Kasserine_Pass Coop.con (18) and EoD cs_minimetzel Coop.con (32), both after their bleed lines. Ledger TKT-2."
+  },
+  {
+   "address": "0x080965b0",
+   "name": "ConsoleClass637::executeObjectMethod (game.setNumberOfTickets)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. queryInterface(0x1d4c1, IGameServer), vt+0x9c = GameServer::setNumberOfTickets (0x081538b0): the level script's count stored raw. Ledger TKT-1."
+  },
+  {
+   "address": "0x08098790",
+   "name": "ConsoleClass645::executeObjectMethod (game.setNumberOfTicketPerPlayer)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. IGameServer vt+0xa4 = GameServer::setNumberOfTicketPerPlayer (0x08153920). No shipped mode script uses the command (census of the 16 installs, 2026-09-27). Ledger TKT-7."
+  },
+  {
    "address": "0x080bc0b0",
    "name": "dice::bf::Setup::mainLoop",
    "kind": "function",
@@ -6673,6 +6745,42 @@
    "confidence": "inferred",
    "source": "research-2026-09-15-archives-anim",
    "note": "lnxded. Builds path strings and makes one 9-argument virtual call (vtable +0x24 at 0x080bde58, object from the global 0x087b8adc) that presumably mounts each mod path's archives through FileManager::addArchive; the callee was not read, so the step from the addModPath list to archive order is inferred."
+  },
+  {
+   "address": "0x080be4c0",
+   "name": "dice::bf::Setup::initWorld()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Calls startHostGame (0x080be8d6) with Setup+0x270 (level), +0x280 (serverMaxPlayers), +0x284, +0x27c, ints +0x294/+0x298 as floats, and +0x29c/+0x2a0/+0x2a4/+0x34c each divided by 100.0 (ds:0x86b01ac): +0x2a4 is serverTicketRatio (100 -> 1.0, setTicketRatio) and +0x34c objectiveAttackerTicketsMod (setAttackerTicketsMod). Ledger TKT-1, TKT-2."
+  },
+  {
+   "address": "0x080bf160",
+   "name": "dice::bf::Setup::setNextLevel(dice::bf::CampaignEntry const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Builds `bf1942/levels/<level>/gametypes/<mode>.con` (mode: 1 ctf, 3 tdm, 4 coop, 5 objectivemode, else conquest; jump table 0x86ba190) and asks a temporary IFileManager fileExists (vt+0x10 = FileManager::fileExists 0x0841e190, call at 0x080bf60b); a missing file is `error: couldn't set the game mode for the level`. It only checks: the script a round RUNS is the root <mode>.con (Game::load 0x0805b4b0). Ledger TKT-3."
+  },
+  {
+   "address": "0x080bfec0",
+   "name": "dice::bf::Setup::levelToPath(std::string)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Returns \"bf1942/levels/\" + level + \"/\" (0x86b9658, 0x86b9378): the level path Game::load prefixes to the startup script name. Ledger TKT-3."
+  },
+  {
+   "address": "0x080c4080",
+   "name": "dice::bf::Setup::startHostGame(std::string const&, int, int, int, float, float, float, float, float, float, int, int, std::string, bool)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. IGameServer = game->queryInterface: setGameInfo(60*ebx, arg3, 2, arg2 = max players) at 0x080c418c; setTicketRatio(arg9) vt+0xa8, setAttackerTicketsMod(arg10) vt+0xb0, setTeamRatio(Setup+0x2b0, Setup+0x2ac) vt+0x100; then switches on Setup+0x204 (GPM) and hands setGameStartup (vt+0x88) the bare name: 1 \"ctf.con\", 2 \"conquest.con\", 3 \"tdm.con\", 4 \"coop.con\" (after running Bf1942/Game/AIDefault.con and AIBehaviours.con), 5 \"ObjectiveMode.con\"; anything else logs \"The game type is not defined and is not default (GPM_CQ).\" Ledger TKT-2, TKT-3."
   },
   {
    "address": "0x080c8960",
@@ -6738,6 +6846,24 @@
    "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
   },
   {
+   "address": "0x08131cd0",
+   "name": "dice::bf::GameServer::init()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Writes +0x1c (max players) = 16 (0x08131d2d); a host's setGameInfo (0x08153a20) replaces it before the level loads. Ledger TKT-2."
+  },
+  {
+   "address": "0x08131de0",
+   "name": "dice::bf::GameServer::load()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. If the level path (+0x1c0) is set: Game::load(+0x1c0, +0x1c4 startup, \"host\"), then resets the spawn point manager and score manager networkables. Ledger TKT-3."
+  },
+  {
    "address": "0x08131ef0",
    "name": "dice::bf::GameServer::loadBots(int)",
    "kind": "function",
@@ -6754,6 +6880,42 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "Server per-frame order (D-1): processLocalPlayersInputs -> processReceivedPackets -> n x vtable+0x140 simulateFrame(0x0815c2a0) -> updateStateMasks/updateVoteSystem/updateBanList -> updateConnections -> processGameStateAndSendPackets -> clearPlayerActions. 9 < n -> n = 1 backlog collapse (D-4). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132ac0",
+   "name": "dice::bf::GameServer::getGameLevelPath() const",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Returns this+0x1c0 (std::string). Ledger TKT-3."
+  },
+  {
+   "address": "0x08132ad0",
+   "name": "dice::bf::GameServer::setGameLevelPath(std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Assigns this+0x1c0. Ledger TKT-3."
+  },
+  {
+   "address": "0x08132af0",
+   "name": "dice::bf::GameServer::getGameStartup() const",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Returns this+0x1c4, the mode script's bare name (\"coop.con\"). Ledger TKT-3."
+  },
+  {
+   "address": "0x08132b00",
+   "name": "dice::bf::GameServer::setGameStartup(std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Assigns this+0x1c4; IGameServer vt+0x88 (secondary vtable 0x0871b574). startHostGame's only setter: the bare <mode>.con name. Ledger TKT-3."
   },
   {
    "address": "0x08132c80",
@@ -6844,6 +7006,24 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. isInitialised/tick/action on IAIMain::instance. Reached from the cold block at 0x0815c449, i.e. first in the tick. Ledger AI-4, AI-5."
+  },
+  {
+   "address": "0x0813d940",
+   "name": "dice::bf::GameServer::setTeamRatio(float, float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x2bc = a, +0x2c0 = b (startHostGame passes Setup+0x2b0, Setup+0x2ac: the two serverXTeamRatio settings). Read only by setNumberOfTicketPerPlayer and the bot top-up (0x08150c9e). Ledger TKT-7."
+  },
+  {
+   "address": "0x0813d970",
+   "name": "dice::bf::GameServer::setTeamPercentage(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x2c4 = p (constructor default 1.0) and +0x1c = trunc(p * +0x1c): rescales max players. Ledger TKT-2."
   },
   {
    "address": "0x0813dbc0",
@@ -7053,13 +7233,112 @@
    "note": "lnxded, inside 0x0814f2c0. Input bits 14..22 (c_PIMenuSelect1..9) map onto TemplateMessage 10..18, each gated on the analog value > 0.5, posted through the player object's vtable +0x9c. Bit 22 -> message 18 is the parachute ripcord. Ledger PARA-4."
   },
   {
+   "address": "0x08150710",
+   "name": "dice::bf::GameServer::gamaStatusFirstPreGame()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. The round's starting tickets: ratio = +0x1f8 (attackerTicketsMod) in GPM 5, else +0x1f4 (ticketRatio); team2 = trunc(raw2 * ratio * (+0x1c * 0.0625)) and team1 = trunc(float(raw1 * ratio) * (+0x1c * 0.0625)) through TeamScore::setTickets, fistp under `mov ah,0xc` (round toward zero). 0.0625 is ds:0x86c08b4. GPM 5 then sets the team at ObjectiveManager+0x24 to 100 and records both counts in normalTicketCount. Measured on the parity lab: Wake co-op 100 -> 200 at 32 max players, 68 at 11. Ledger TKT-1."
+  },
+  {
+   "address": "0x08150b20",
+   "name": "dice::bf::GameServer::gameStatusFirstPlaying()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Writes the event log's roundInit with tickets_team1 AND tickets_team2 both from scoreManager->getTeamScore(1) (push 0x1 at 0x08150b9a and 0x08150bea): the log's team-2 figure is team 1's. The GameSpy \\status\\ reply's tickets1/tickets2 carry both. Ledger TKT-6."
+  },
+  {
    "address": "0x08150df0",
    "name": "dice::bf::GameServer::gameStatusPlaying(float)",
    "kind": "function",
    "subsystem": "game",
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
-   "note": "lnxded. Contains the per-tick bot top-up loop at +0x9b: while (getMaxNBots() != getBotCount()) create a player and IAIMain::activateBot. Ledger AI-7."
+   "note": "lnxded. Contains the per-tick bot top-up loop at +0x9b: while (getMaxNBots() != getBotCount()) create a player and IAIMain::activateBot. Ledger AI-7. [2026-09-27] The bleed (team 1's countdown at +0x1d4, team 2's at +0x1e0). While both sides have spawn groups (getGroupsForTeam, counts in ebx/edi), a side's countdown falls by dt while the enemy's summed areaValue is > 99 and refills 60/(+0x1d8 or +0x1e4) per ticket (subTicket(trunc(-c/interval)+1)); at <= 99 it is reset to that interval (0x08152100, 0x0815218c). +0x1d8/+0x1e4 = rate * max players / 16 (setTicketLostPerMin). When a side has no spawn groups, flags [ebp-0x1e1..0x1e4] (nowhere to spawn: !canTeamGetAnySpawnGroup 0x08167ba0; no live player: a player pass at 0x081521a6 testing BFPlayer +0x79/+0x7c) switch that side to an unconditional dt bleed refilled at the at-end rate +0x1ec (0x08151ce6, 0x08151d65), and its enemy, with a live player, to a weight*dt/100 countdown (0x081520da, 0x08152169). Ledger TKT-4, TKT-5."
+  },
+  {
+   "address": "0x08153790",
+   "name": "dice::bf::GameServer::setMaxNrOfPlayers(int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x1c = trunc(n * +0x2c4 teamPercentage), clamped to 64, then the connection manager (+0x18c vt+0x4c) is told. game.maxNrOfPlayers' setter (ConsoleClass589). Ledger TKT-2."
+  },
+  {
+   "address": "0x081537f0",
+   "name": "dice::bf::GameServer::setTicketLostAtEndPerMin(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x1f0 = r, +0x1ec = r * +0x1c * 0.0625 (the rate gameStatusPlaying's flagged branch refills the countdown with). Ledger TKT-4, TKT-5."
+  },
+  {
+   "address": "0x08153820",
+   "name": "dice::bf::GameServer::setTicketLostPerMin(unsigned int, float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Team 1: +0x1dc = r, +0x1d8 = +0x1c * 0.0625 * r, countdown +0x1d4 = 60 / that; team 2: +0x1e8, +0x1e4, +0x1e0. The bleed is scaled by max players when the level script runs (the host's count, set by setGameInfo before the load). Ledger TKT-4."
+  },
+  {
+   "address": "0x081538b0",
+   "name": "dice::bf::GameServer::setNumberOfTickets(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Team 1..2: +0xc0 + 4*team = count, raw (Game.setNumberOfTickets, ConsoleClass637). The round start scales it (gamaStatusFirstPreGame). Ledger TKT-1."
+  },
+  {
+   "address": "0x081538d0",
+   "name": "dice::bf::GameServer::setCurrentNumberOfTickets(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Sets TeamScore(team)+0x48 directly (clamped at 0): the live count, unscaled. Ledger TKT-1."
+  },
+  {
+   "address": "0x08153920",
+   "name": "dice::bf::GameServer::setNumberOfTicketPerPlayer(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Team 1: raw1 = trunc(n * (+0x2bc / +0x2c0) * (+0x1c / 2)); team 2 the inverse ratio; stored in the same raw field setNumberOfTickets writes, so the round start then multiplies by max players / 16 again. IGameServer vt+0xa4 (thunk 0x081599f0); console game.setNumberOfTicketPerPlayer. Unused by shipped scripts. Ledger TKT-7."
+  },
+  {
+   "address": "0x081539c0",
+   "name": "dice::bf::GameServer::setTicketRatio(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x1f4 (constructor 1.0): game.serverTicketRatio / 100 via initWorld and startHostGame. Ledger TKT-1."
+  },
+  {
+   "address": "0x081539f0",
+   "name": "dice::bf::GameServer::setAttackerTicketsMod(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0x1f8 (constructor 1.0): game.objectiveAttackerTicketsMod / 100; the ratio gamaStatusFirstPreGame uses in ObjectiveMode (GPM 5). Ledger TKT-1."
+  },
+  {
+   "address": "0x08153a20",
+   "name": "dice::bf::GameServer::setGameInfo(unsigned int, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. +0xe0 = a, +0x1c8 = b, +0x1cc = c, +0x1c = d (max players, unclamped), then broadcasts a GameRulesEvent. IGameServer vt+0x8c; startHostGame passes its own max-players argument as d. Ledger TKT-2."
   },
   {
    "address": "0x08153ea9",
@@ -7141,6 +7420,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints; research-2026-09-24-hull-wash",
    "note": "lnxded, signature pulled from nm -C debug info. Sweeps a spatial index, calls handleExplosionOnObject once per found object. [2026-09-24] The index query is objectManager+0x30 through ObjectFlagPredicator(0x2000000) (0x08156f2d): roots only. After handleExplosionOnObject(root) 0x081570ed it walks the root's getPcos (0x08157167) and, for each seat's getOccupingObject (IPCO +0x10, 0x08157189) whose [obj+4] & 1 is clear (0x08157198) and that has an Armor up its parents (0x081571f6), calls handleExplosionOnObject(occupant) 0x08157271. Ledger HFD-11, HFD-12."
+  },
+  {
+   "address": "0x08157cb0",
+   "name": "dice::bf::GameServer::restartMap()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Logs a roundInit whose two ticket params are both team 1's, as gameStatusFirstPlaying does (push 0x1 at 0x08157fab and 0x08157ff9). Ledger TKT-6."
   },
   {
    "address": "0x0815b5e0",
@@ -7240,6 +7528,24 @@
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
    "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 \u2014 the constant exists but never targets object flags."
+  },
+  {
+   "address": "0x081610a0",
+   "name": "dice::ref2::world::TeamScore::setTickets(int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. TeamScore+0x48 = max(0, n). Ledger TKT-1."
+  },
+  {
+   "address": "0x081610c0",
+   "name": "dice::ref2::world::TeamScore::subTicket(int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. TeamScore+0x48 = max(0, +0x48 - n). Ledger TKT-4."
   },
   {
    "address": "0x08164570",
@@ -10977,6 +11283,15 @@
    "note": "lnxded. Gets the name's candidate archives (findArchives 0x0841fe20), then walks that vector from begin() calling each archive's open() (vtable +0xc: FlatArchive::open 0x08421a00, ZipArchive::open 0x08428e60) and returns the first non-null result. Nothing sorts or reverses the vector, so the first-registered archive wins a name collision (ledger RFA-1)."
   },
   {
+   "address": "0x0841e190",
+   "name": "dice::ref2::io::FileManager::fileExists(std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. IFileManager vt+0x10. Setup::setNextLevel's GameTypes/<mode>.con check. Ledger TKT-3."
+  },
+  {
    "address": "0x0841f110",
    "name": "dice::ref2::io::FileManager::addArchive(std::string const&, std::string const&)",
    "kind": "function",
@@ -11713,6 +12028,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
    "note": "lnxded. Overrides dump+0x38/+0x3c with 0x08153ba0/0x08156020, which is why SimpleObject::handleCollision's virtual dispatch on the dice::bf::game global (0x0870d918) lands in GameServer. See ledger HP-6c. [2026-09-19 collision round, lead] lnxded. [lead] +0x30 handleCollisionForProjectile, +0x34 handleCollision, +0x38 handleExplosion, +0x15c giveDamage (offsets from the vptr = symbol + 8)."
+  },
+  {
+   "address": "0x0871b9e0",
+   "name": "dice::bf::normalTicketCount",
+   "kind": "data",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-tickets",
+   "note": "lnxded. Two ints, team 1's and team 2's counts, written by gamaStatusFirstPreGame right after an ObjectiveMode (GPM 5) round's start, and re-read from the TeamScores in gameStatusPlaying's GPM-5 block (0x08151f56..0x08152063), which then sets team 1 to trunc(normal1 * (1 - getRootObjective(2)->vt+0xf8())) and team 2 to trunc(normal2 * (1 - getRootObjective(1)->vt+0xf8())). When that block runs was not read. Ledger TKT-1."
   },
   {
    "address": "0x0871ba00",
