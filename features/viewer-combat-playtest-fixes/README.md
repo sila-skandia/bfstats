@@ -126,10 +126,18 @@ descent depends on the energy the aircraft had rather than on the AI's own
 climb, and assert the wreck lands within 400 m of the kill: 5.9-6.6 s and
 158-169 m in the runs.
 
-Live after the change the same kill wrecks in 18-20 s, half the glide and still
-twice the sink the floor asks. Something else still carries lift under the wreck
-path; that is the open question, and `__wrecks()` on the same experiment is how
-to answer it.
+The floor alone was not enough, measured: asking for 18 m/s of sink delivered
+11, and a probe at 100 m/s delivered 68 the same way. `aircraft.js` evaluates
+every surface's lift each tick and the wing out-voted the floor by whatever it
+still made. The lever the model reads is the surface's own coefficient, so a
+hull entering the wreck list has its surfaces' `coeff` zeroed (`killLift`), with
+the air value kept on the surface and put back by `restoreLift` when the wreck
+stops or the spawner returns a hull to its pad. The aero moments go with the
+lift, so the hull tumbles rather than flies.
+
+Measured live on Bocage, a BF109 killed at 200 m in cruise now comes down in
+4.5 s and carries `wreck:BF109` with the intact mesh hidden, where the same kill
+was 45 s and a kilometre before. Sim: 3.7-3.9 s and 50-74 m of drift.
 
 ## 3. The B17 takes off like a fighter
 
