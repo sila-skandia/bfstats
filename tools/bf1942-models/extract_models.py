@@ -240,6 +240,29 @@ def add_level_objects(objects: ArchivePool, levels: list[tuple[str, Path]]) -> i
     return added
 
 
+def add_level_textures(textures: ArchivePool, levels: list[tuple[str, Path]]) -> int:
+    """Every level's own textures, behind the chain's `Texture.rfa`.
+
+    A level archive's `Texture/` and `AltTextures/` folders answer
+    `texture/<name>` for anything the global archives lack
+    (`ArchivePool.add_level`), and a mod can ship a kit part's or a weapon's
+    only copy there: FHSW's Japanese caps and hip packs (`ryakubou`,
+    `USequip_J`) are in a handful of level archives and nowhere else, so a kit
+    or pose exported outside a level bake came out white. Each level's patches
+    are added before its base. Global textures keep priority, and where levels
+    disagree the first level in `discover_levels` order wins. Returns the
+    entries registered.
+    """
+    added = 0
+    for name, path in levels:
+        for layer in [*roster_mod.level_patches(path), path]:
+            try:
+                added += textures.add_level(layer, label=f"{name} textures")
+            except Exception as exc:
+                print(f"  {layer.name}: textures unreadable ({exc})", file=sys.stderr)
+    return added
+
+
 RE_FOLDER = re.compile(r"^\s*rem\s+folder\s*=\s*(.+)$", re.IGNORECASE)
 RE_SAUCE = re.compile(r"^\s*rem\s+sauce\s*=\s*(.+)$", re.IGNORECASE)
 

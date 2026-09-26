@@ -42,7 +42,8 @@ from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool
 
 from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, add_level_objects,
-                            build_library, build_pools, discover_levels, mod_chain)
+                            add_level_textures, build_library, build_pools,
+                            discover_levels, mod_chain)
 from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
@@ -151,9 +152,11 @@ def main() -> int:
         return 1
     meshes, textures, objects, game = build_pools(chain, [])
     # Kits a level declares in its own archive are bound by name like any
-    # other, and FHSW declares 1,397 of its kits that way.
+    # other, and FHSW declares 1,397 of its kits that way. Its levels also
+    # hold the only copy of some parts' textures.
     levels = discover_levels(chain)
     add_level_objects(objects, levels)
+    add_level_textures(textures, levels)
     library = build_library(objects)
 
     kits = kit_mod.collect(library)

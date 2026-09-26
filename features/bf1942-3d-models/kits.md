@@ -529,7 +529,10 @@ chain and level-local declarations, so the data is otherwise sound.
 **Closed 2026-09-27** for `bf42/kit.py`: `collect` takes every `Kit` template,
 filed by the convention or not (those it cannot read a nation from have none),
 and `extract_kits.py` and `extract_pose.py --kit-poses` load every level's own
-`Objects/` through `extract_models.add_level_objects`, patches before the base.
+`Objects/` through `extract_models.add_level_objects`, patches before the base,
+and let the levels' `Texture/` folders fill texture gaps
+(`extract_models.add_level_textures`): FHSW keeps 40 kit parts' only texture
+there.
 Vanilla, both XPacks and EoD collect exactly the kits they did before. The
 service record's mod trees are built this way (`features/service-record`).
 
