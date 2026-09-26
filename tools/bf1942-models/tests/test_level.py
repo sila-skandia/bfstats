@@ -1338,6 +1338,15 @@ spawnPointManager.groupTeam 0
         self.assertIn(20, groups)
         self.assertIsNone(groups[20].team)
 
+    def test_group_enable_to_change_team(self) -> None:
+        """Battle of Britain's `groupEnableToChangeTeam 0`; on by default."""
+        groups = parse_spawn_point_groups(
+            "spawnPointManager.group 1\nspawnPointManager.groupTeam 1\n"
+            "spawnPointManager.groupEnableToChangeTeam 0\n"
+            "spawnPointManager.group 2\nspawnPointManager.groupTeam 2\n")
+        self.assertFalse(groups[1].enable_to_change_team)
+        self.assertTrue(groups[2].enable_to_change_team)
+
     def test_an_empty_file_is_an_empty_map(self) -> None:
         self.assertEqual({}, parse_spawn_point_groups(""))
         self.assertEqual({}, parse_spawn_point_manager(""))
