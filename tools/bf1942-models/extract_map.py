@@ -2229,6 +2229,30 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
     return node
 
 
+def level_assembler(meshes: ArchivePool, textures: ArchivePool,
+                    objects: ArchivePool, library: con_mod.ObjectLibrary, *,
+                    max_texture: int, include_collision: bool,
+                    lightmaps: dict[tuple[str, int, int, int], str]) -> Assembler:
+    """The assembler a level bake builds its placements with.
+
+    Collision hulls ride along. They are never drawn — `map.html` hides
+    anything carrying `extras.collision` on load — and they are what a round in
+    flight tests against. The budget is small because the hulls are per
+    *geometry*, not per placement: El Alamein's 898 statics resolve to about 5k
+    unique collision triangles, roughly 0.3 MB of buffer against a 40 MB scene.
+
+    A level is also the one export that ships each mesh's LOD chain
+    (`lod_chains`, Gap 11): the level loader swaps the rungs by distance
+    (`liftLods` in viewer/level-statics.js), and nothing that loads a model
+    glb does.
+    """
+    return Assembler(meshes, textures, objects, library,
+                     lod=0, max_texture=max_texture,
+                     include_collision=include_collision,
+                     lod_chains=True,
+                     lightmaps=lightmaps)
+
+
 def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  *, max_texture: int, include_objects: bool,
                  out_dir: Path | None = None,
@@ -2677,15 +2701,9 @@ def main() -> int:
     library = ctx.library
     if not args.terrain_only:
         lightmaps = write_object_lightmaps(files, out_dir)
-        # Collision hulls ride along. They are never drawn — `map.html` hides
-        # anything carrying `extras.collision` on load — and they are what a
-        # round in flight tests against. The budget is small because the hulls
-        # are per *geometry*, not per placement: El Alamein's 898 statics
-        # resolve to about 5k unique collision triangles, roughly 0.3 MB of
-        # buffer against a 40 MB scene.
-        assembler = Assembler(
+        assembler = level_assembler(
             meshes, textures, objects, library,
-            lod=0, max_texture=args.max_texture,
+            max_texture=args.max_texture,
             include_collision=not args.no_collision,
             lightmaps=lightmaps)
 

@@ -454,6 +454,7 @@ class Assembler:
                  include_collision: bool = True,
                  include_effects: bool = True,
                  first_person: bool = False,
+                 lod_chains: bool = False,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None):
         if configuration not in con_mod.MODEL_CONFIGURATIONS:
             raise ValueError(f"unknown model configuration: {configuration}")
@@ -480,6 +481,15 @@ class Assembler:
         # its own — see `geometry_is_first_person` for why the two cannot share
         # one file.
         self.first_person = first_person
+        # Gap 11: ship each StandardMesh's kept LOD levels as `<mesh>_lod<N>`
+        # rung nodes under the part (`extras.lod`). Only a level bake asks for
+        # them, because only the level loader swaps them by distance
+        # (`liftLods` in viewer/level-statics.js). Every other consumer of an
+        # export (the model browser and its thumbnails, cockpit grafts, wrecks,
+        # soldiers, replays, kits, poses, viewmodels) draws every mesh node it
+        # is given, so a rung there is a second copy of the part drawn on top
+        # of LOD 0.
+        self.lod_chains = lod_chains
         self.lightmaps = lightmaps or {}
         # Multiply a material's texture by its `.rs` `materialDiffuse`. Off for
         # the model and map exports, whose lighting is calibrated on white
@@ -1209,7 +1219,13 @@ class Assembler:
         emitted: list[tuple[int, int]] = []      # (lod level, mesh index)
         emitted_tris: list[int] = []
         emitted_signatures: list[tuple] = []
-        for level in range(selected_lod + 1, kept):
+        # Anything but a level bake ships LOD 0 alone (`lod_chains`), and so
+        # does a mesh skinned through its geometry's `.skn` (a soldier's body
+        # and hands): a rung is a plain mesh, so it would stand in the bind
+        # pose while the skinned LOD 0 animates.
+        chain = self.lod_chains and not template.skin
+        rung_levels = range(selected_lod + 1, kept) if chain else ()
+        for level in rung_levels:
             level_lod = mesh.lods[level]
             level_prims: list[gltf.Primitive] = []
             level_tris = 0
@@ -3003,8 +3019,9 @@ class Assembler:
         # them as child nodes (extras.lod), for the viewer to swap by
         # distance. Skinned parts are excluded: their rungs would have to
         # follow the skeleton, and a swap that detaches them mid-pose would
-        # need joints the lower rungs do not carry.
-        if (mesh_index is not None and not template.skeleton
+        # need joints the lower rungs do not carry. (A geometry skinned by its
+        # own `.skn` never emits a chain; `_mesh_index` checks that.)
+        if (self.lod_chains and mesh_index is not None and not template.skeleton
                 and template.geometry
                 and geometry_is_first_person(template.geometry) == self.first_person):
             geom_template = self.library.geometry(template.geometry)
