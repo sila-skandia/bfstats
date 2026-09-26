@@ -1032,6 +1032,24 @@ class GameplayObjects:
     def template_for(self, inst: StaticInstance) -> ControlPointTemplate | None:
         return self.control_point_templates.get(inst.template.lower())
 
+    def created_control_points(self) -> list[StaticInstance]:
+        """The control-point placements the engine makes a point of, in file
+        order: those whose template this layer defines.
+
+        `Object.create` of a template no script declared makes nothing:
+        `ObjectTemplateAdm::createObject` 0x084513e0 returns 0 for a null
+        template (0x08451403; ledger SPAWNGRP-7). XPack1 Cassino's CTF layer
+        places `openbase_lumbermill_Cpoint` and `openbasecammo` twice: its
+        `ControlPoints.con` is vanilla Kursk's, at Kursk's coordinates, and
+        only Kursk defines the two. EoD Stream places `us_base` in all four
+        layers and defines `US__Base`. No such name, there or in any other
+        installed level the exporter reads, is declared anywhere else a round
+        could take it from (the game type's scripts, the level's other files,
+        the mod chain's archives), so the layer's own templates are the test.
+        """
+        return [inst for inst in self.control_points
+                if self.template_for(inst) is not None]
+
     def team_of_group(self, group: int | None) -> int | None:
         """Which side a spawn group lists under when a round starts.
 
@@ -1086,9 +1104,10 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
     """Read a level's control points and soldier spawns.
 
     Every file here is optional and levels really do omit them: vanilla
-    Coral_sea ships `ControlPoints.con` with no `ControlPointTemplates.con` at
-    all, so a placement with no template is normal and yields a point with
-    default parameters rather than an error.
+    Coral_sea ships neither `ControlPoints.con` nor `ControlPointTemplates.con`.
+    A placement whose template the layer does not define is kept in
+    `control_points` rather than raised as an error; the engine makes nothing
+    of it, so `created_control_points` leaves it out.
 
     `sources` overrides the directory per file, keyed by the lowercased base
     name — `{"controlpoints": "Conquest"}` on a game type that runs
