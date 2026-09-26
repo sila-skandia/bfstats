@@ -1,20 +1,23 @@
-"""`viewer/replay.js` under node: the replayed-aircraft propeller law.
+"""`viewer/replay.js` and its modules under node: the replayed-aircraft
+propeller law, the recording's players, kits, seats and deaths, and the
+kinematics a replayed hull is presented from.
 
-Same pattern as `test_flight.py` — one node run (`replay_harness.mjs`), many
-assertions. The replayed-aircraft half of the propeller-blur pair machinery:
-the playable map's own swap is pinned in `test_flight.py`, the extractor's
-stamp in `test_assemble.py`/`test_con.py`.
+One node run (`replay_harness.mjs`), many assertions. The harness imports the
+viewer's modules in place through `sim/env.mjs`'s hooks, so the files under
+test are the files the page loads.
 
-Why this file exists. A 2026-09-20 defect report read "the planes are not
-showing the correct propeller: it's showing both the spinning + idle" — both
-of a prop plane's meshes drawn at once. The playable map cannot do that (the
-pair toggle in `flight.js`'s `applyRig` is exclusive by construction, and the
-level load hides the disc before anything renders); the one place both meshes
-really did draw together was a **round replay**: `replay.js` clones whole
-`models/<Template>.glb` files, which ship both alternatives visible, and a
-recording carries no throttle for anything to swap on. It stayed latent until
-the models tree was republished with both meshes (before that, the clone held
-one blade), which is why the report landed the same day as the republish.
+Why the propeller half exists. A 2026-09-20 defect report read "the planes are
+not showing the correct propeller: it's showing both the spinning + idle" --
+both of a prop plane's meshes drawn at once, in a round replay, which clones
+whole `models/<Template>.glb` files that ship both alternatives visible. The
+2026-09-27 rework presents a replayed aircraft through the map's own
+`Aircraft` (`presentKinematic`), so the swap is now the flight model's own and
+the propeller turns; the idle default still holds until the drive's first
+frame.
+
+Why the recording half exists. The 2026-09-27 report: "I spawned as assault,
+but the recorder shows me with a zook". The parser gave every soldier the last
+kit anyone picked up; each soldier now keeps his own player's kit.
 """
 
 from __future__ import annotations
@@ -22,87 +25,18 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
-import tempfile
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "replay_harness.mjs"
 
-# `replay.js` copied as `.mjs` next to the harness, plus everything its import
-# graph reaches for at their own relative paths (`vehicle-base.js` for the pair-kind
-# gate, `gait-select.js` for the soldier retargeting, `soldier.js` and
-# `physics.js` under that, and the two vendored utilities).
-MODULES = {
-    "replay.js": VIEWER / "replay.js",
-    "replay-recording.js": VIEWER / "replay-recording.js",
-    "replay-server-log.js": VIEWER / "replay-server-log.js",
-    "replay-ui.js": VIEWER / "replay-ui.js",
-    "replay-gait.js": VIEWER / "replay-gait.js",
-    "replay-assets.js": VIEWER / "replay-assets.js",
-    "replay-actors.js": VIEWER / "replay-actors.js",
-    "replay-camera.js": VIEWER / "replay-camera.js",
-    # `replay-assets.js` resolves a soldier's pose through `pose-compose.js`,
-    # which needs the model-root resolution and the bone-name rule beside it.
-    "pose-compose.js": VIEWER / "pose-compose.js",
-    "pose-bases.js": VIEWER / "pose-bases.js",
-    "skeleton-hit.js": VIEWER / "skeleton-hit.js",
-    "replay-gunfire.js": VIEWER / "replay-gunfire.js",
-    "vehicle-camera.js": VIEWER / "vehicle-camera.js",
-    "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
-    "vehicle-base.js": VIEWER / "vehicle-base.js",
-    "camera-pivot.js": VIEWER / "camera-pivot.js",
-    "aircraft.js": VIEWER / "aircraft.js",
-    "ship-spec.js": VIEWER / "ship-spec.js",
-    "gait-select.js": VIEWER / "gait-select.js",
-    "soldier.js": VIEWER / "soldier.js",
-    "ladder-climb.js": VIEWER / "ladder-climb.js",
-    "spawn-flags.js": VIEWER / "spawn-flags.js",
-    "spawn-safety.js": VIEWER / "spawn-safety.js",
-    "physics.js": VIEWER / "physics.js",
-    "walking-body.js": VIEWER / "walking-body.js",
-    "soldier-resolve.js": VIEWER / "soldier-resolve.js",
-    "soldier-pose.js": VIEWER / "soldier-pose.js",
-    "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
-    "point-body.js": VIEWER / "point-body.js",
-    "fixed-step.js": VIEWER / "fixed-step.js",
-    "parachute.js": VIEWER / "parachute.js",
-    "swim.js": VIEWER / "swim.js",
-    "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
-    "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
-    "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
-    # The bare specifier `three` is an import map entry in the page; node needs
-    # a package, so the same file is published as one.
-    "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
-}
-THREE_PACKAGE = json.dumps({
-    "name": "three", "version": "0.0.0", "type": "module",
-    "main": "three.module.js", "exports": "./three.module.js",
-})
-
 
 def run_harness() -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
-    for source in MODULES.values():
-        if not source.exists():
-            raise unittest.SkipTest(f"{source.name} is not in the tree")
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        for name, source in MODULES.items():
-            target = work / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
-        (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
-        (work / "package.json").write_text('{"type":"module"}\n')
-        shutil.copyfile(HARNESS, work / "harness.mjs")
-        proc = subprocess.run(
-            ["node", str(work / "harness.mjs")],
-            capture_output=True, text=True, timeout=900)
+    proc = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=900)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stderr}")
     return json.loads(proc.stdout)
@@ -160,6 +94,114 @@ class ReplayPropellerTests(unittest.TestCase):
         # browser — `model()` fetches a glb — so the source is the contract.)
         source = (VIEWER / "replay-assets.js").read_text()
         self.assertIn("setReplayPropellerIdle(gltf.scene)", source)
+
+
+    def test_a_replayed_aircraft_runs_the_flown_propeller_law(self) -> None:
+        # Parked with nobody aboard: the idle blade, gear down. Under power
+        # 300 m up: the disc past the 0.07 swap, the propeller turned, the gear
+        # away -- the flight model's own presentation of a recorded pose.
+        flown = self.results["flownPropeller"]
+        self.assertEqual(flown["parked"], {"blade": True, "disc": False, "gear": 0})
+        self.assertFalse(flown["flying"]["blade"])
+        self.assertTrue(flown["flying"]["disc"])
+        self.assertEqual(flown["flying"]["gear"], 1)
+        self.assertGreater(flown["flying"]["throttle"], 0.07)
+        self.assertGreater(flown["flying"]["turned"], 0)
+        self.assertTrue(flown["flying"]["wrapperTurned"])
+        self.assertEqual(flown["placed"], {"x": 0, "y": 300})
+
+
+class ReplayRecordingTests(unittest.TestCase):
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_each_soldier_keeps_his_own_kit(self) -> None:
+        # The report: spawned as assault, drawn with a bazooka. The recording
+        # player picked up UsMarine_Assault; a bot carried UsMarine_AT from the
+        # join. Each keeps his own.
+        rec = self.results["recording"]
+        self.assertEqual(rec["mine"], {"pid": 0, "kit": "UsMarine_Assault", "weapon": "Bar1918"})
+        self.assertEqual(rec["bot"]["kit"], "UsMarine_AT")
+        self.assertEqual(rec["bot"]["weapon"], "Bazooka")
+        self.assertEqual(rec["fallback"], {"mine": "Bar1918", "bot": "Bazooka"})
+        self.assertEqual(rec["fire"], [{"t": 8, "soldier": True, "kit": "UsMarine_Assault"}])
+
+    def test_a_seat_id_resolves_to_its_hull(self) -> None:
+        # A hull's nested PlayerControlObjects take the ids after its own: the
+        # Sherman at 532 has its hull gun at 533.
+        rec = self.results["recording"]
+        self.assertEqual(rec["seat"], {"root": "Sherman", "seat": 1})
+        self.assertEqual(rec["crewAt7"], [{"pid": 250, "seat": 1}])
+        self.assertEqual(rec["crewAt10"], [])
+
+    def test_a_death_is_the_score_streams(self) -> None:
+        rec = self.results["recording"]
+        self.assertEqual(rec["bot"]["diedAt"], 12)
+        self.assertEqual(rec["bot"]["killer"], 0)
+        self.assertEqual(rec["controlledAt13"], 700)
+
+    def test_round_end_tallies_decode_from_raw(self) -> None:
+        self.assertEqual(self.results["recording"]["stats"], [{"pid": 0, "fired": [[1231, 31]]}])
+
+    def test_v4_records(self) -> None:
+        v4 = self.results["v4"]
+        self.assertEqual(v4["seat"], {"root": "Sherman", "seat": 1})
+        self.assertEqual(v4["crew"], [{"pid": 251, "seat": 1}])
+        self.assertEqual(v4["pooled"], ["GrenadeAlliesProjectile#1075", "GrenadeAlliesProjectile#1076",
+                                        "GrenadeAlliesProjectile#1077"])
+        self.assertAlmostEqual(v4["clock"], 289.5)
+        self.assertEqual(v4["stats"], [{"tid": 1941, "tmpl": "AichiVal", "n": 3}])
+        self.assertEqual(v4["shot"], [{"nid": 532, "weapon": "ShermanCannon", "kind": 1}])
+        # The engine: the PhysicsEngine's revs, running and not.
+        self.assertEqual(v4["engine"][0], {"revs": 0.8, "running": True, "disabled": False})
+        self.assertEqual(v4["engine"][1], {"revs": 0.1, "running": False, "disabled": False})
+        # A turret's rotation against its hull, by the part's template name.
+        self.assertEqual(v4["joint"], {"name": "ShermanTower", "q": [0, 0.7071, 0, 0.7071]})
+        # A soldier's body through the engine's own state table: crouched
+        # and firing, then lying and holding his fourth item.
+        crouched, lying = v4["body"]
+        self.assertEqual((crouched["stance"], crouched["firing"], crouched["item"]), ("crouch", True, 2))
+        self.assertEqual(crouched["pitch"], -12.5)
+        self.assertEqual((lying["stance"], lying["firing"], lying["item"]), ("prone", False, 3))
+
+
+class ReplayKinematicsTests(unittest.TestCase):
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["kinematics"]
+
+    def test_motion_is_read_in_the_viewers_frame(self) -> None:
+        # 10 m/s along BF1942's +Z is the viewer's -Z; a left turn is +Y.
+        self.assertEqual(self.results["velocity"], [0, 0, -10])
+        self.assertAlmostEqual(self.results["yawRate"], 0.5, places=3)
+        self.assertGreater(self.results["forward"], 0)
+
+    def test_the_stick_follows_the_games_signs(self) -> None:
+        # c_PIPitch positive is nose DOWN, c_PIYaw positive is right,
+        # c_PIRoll positive is right wing down (controls-rows.js).
+        self.assertEqual(self.results["stickNoseUp"], {"pitch": -0.5, "roll": 0, "yaw": 0})
+        self.assertEqual(self.results["stickLeft"], {"pitch": 0, "roll": 0, "yaw": -0.5})
+        self.assertEqual(self.results["stickRightWingDown"], {"pitch": 0, "roll": 0.5, "yaw": 0})
+        self.assertLess(self.results["steerLeft"], 0)
+
+    def test_the_gearbox_shifts_on_the_engines_own_thresholds(self) -> None:
+        gears = [row["gear"] for row in self.results["revs"]]
+        self.assertEqual(gears, sorted(gears[:4]) + gears[4:])
+        self.assertEqual(gears[0], 1)
+        self.assertEqual(gears[3], 4)
+        self.assertEqual(gears[-1], 1)
+        for row in self.results["revs"]:
+            self.assertLessEqual(row["revs"], 1.2)
+
+    def test_the_throttle_is_shut_without_a_crew(self) -> None:
+        self.assertEqual(self.results["throttleEmpty"], 0)
+        self.assertEqual(self.results["throttleParked"], 0)
+        self.assertGreater(self.results["throttleFlying"], 0.5)
 
 
 if __name__ == "__main__":

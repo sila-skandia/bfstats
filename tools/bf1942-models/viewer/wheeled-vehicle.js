@@ -276,6 +276,27 @@ export class GroundVehicle extends Vehicle {
     this.#applyWheels();
   }
 
+  /**
+   * A replay's recorded drive (`Vehicle.presentKinematic`): each wheel rolls
+   * at the hull's own speed along it over the wheel radius -- the visual law
+   * `#step` runs off the contact speed -- at its rest height, since nothing
+   * recorded says how far a spring is compressed; the steering bundle follows
+   * the `c_PIYaw` the caller derived through `applyRig`, as it does driven.
+   */
+  presentKinematic(dt, throttle = 0) {
+    const s = this.state;
+    this._qInv.copy(s.orientation).invert();
+    this._vBody.copy(s.velocity).applyQuaternion(this._qInv);
+    const forward = -this._vBody.z;
+    const radius = this.spec.wheelRadius || 0.4;
+    for (const wheel of this.wheels) {
+      wheel.compression = 0;
+      wheel.angle += (forward / radius) * dt;
+    }
+    super.presentKinematic(dt, throttle);
+    this.#applyWheels();
+  }
+
   #step(h) {
     const s = this.state;
     const k = this.spec;

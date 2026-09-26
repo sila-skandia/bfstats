@@ -355,7 +355,9 @@ export function createBotVisuals(page) {
       bot, group, rig: null, want: null, lastSpeed: 0, lastPos: null,
       feetPrev: { x: 0, y: 0, z: 0 }, feetCur: { x: 0, y: 0, z: 0 },
       yawPrev: 0, yawCur: 0, snapped: false,
-      soldierName: soldierFor(team), weapon: null, kit: bot.kit ?? null,
+      // A recorded player (replay-bodies.js) wears the soldier template the
+      // recording named; a bot, his side's on this level.
+      soldierName: bot.soldierTemplate ?? soldierFor(team), weapon: null, kit: bot.kit ?? null,
       clips: [], seat: null, seatLoading: null,
       // The stance the last world tick left, and the changes since the frame
       // last looked (`captureBotPresentationTick`).
@@ -788,6 +790,17 @@ export function createBotVisuals(page) {
     }
   }
 
+  /** One bot's body, gone (his corpses stay): a recorded player who came back
+   *  in another kit gets a fresh one from `ensureBotVisual`. */
+  function disposeBotVisual(playerId) {
+    const vis = botVisuals.get(playerId);
+    if (!vis) return;
+    botBodies.botRoot?.remove(vis.group);
+    if (vis.rig?.scene) page.disposeFootBodyScene(vis.rig.scene);
+    disposeSeat(vis.seat);
+    botVisuals.delete(playerId);
+  }
+
   function disposeBotVisuals() {
     for (const vis of botVisuals.values()) {
       botBodies.botRoot.remove(vis.group);
@@ -825,6 +838,7 @@ export function createBotVisuals(page) {
     botVisuals,
     debug,
     captureBotPresentationTick,
+    disposeBotVisual,
     disposeBotVisuals,
     ensureBotVisual,
     updateBotVisuals,
