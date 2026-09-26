@@ -59,6 +59,8 @@ _VIEWER_MODULES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
+    # world-soldier-tick.js and world-bodies.js bill barbed wire.
+    "obstacle",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "collision-materials", "heightfield", "static-index", "collision-meshes",
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",

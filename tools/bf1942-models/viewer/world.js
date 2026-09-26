@@ -430,7 +430,12 @@ export class World {
   get alpha() { return this.clock.alpha; }
 
   #emptyReport() {
-    return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [], timedDamage: [] };
+    // `obstacles`: every touch of barbed wire this step (`obstacle.js`), `{
+    // id, x, y, z, playerId | owner, lost, killed }`: the message each one
+    // sends the wire, which the page plays as its scrape, and for a soldier
+    // the hit points it billed.
+    return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [], timedDamage: [],
+             obstacles: [] };
   }
 
   #tick() {

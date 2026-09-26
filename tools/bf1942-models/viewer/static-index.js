@@ -100,6 +100,32 @@ export class CollisionIndex {
     this.subs = null;                 // Int32Array, 1 per triangle, or null
     this.subParts = [];               // { node, owner, ownerBaked, baked }
     this._subActive = new Uint8Array(0);
+    /**
+     * Per triangle, the `Obstacle` object it belongs to (an index into
+     * `obstacleNodes`), or -1; null when the level places none. Per TRIANGLE,
+     * not per owner: XPack2's `Milifence_*` is a `Bundle` whose wire is an
+     * `Obstacle` child beside a `SimpleObject` fence, and the engine asks each
+     * child's own `handleCollision` (`Obstacle::handleCollision` lnxded
+     * 0x08315e10), so the fence stops a body and the wire beside it does not.
+     */
+    this.obstacles = null;            // Int32Array, 1 per triangle, or null
+    this.obstacleNodes = [];          // Object3D[] indexed by obstacle id
+    /** While set, `sweepSphere` looks past obstacle triangles: a body whose
+     *  contact with the wire the handler vetoed goes on to meet what is
+     *  behind it (`WorldCollider.sweepSphere`'s `passObstacles`). */
+    this.passObstacles = false;
+  }
+
+  /** Attach the per-triangle obstacle ids (`buildCollisionIndex`). */
+  setObstacles(ids, nodes) {
+    this.obstacles = nodes.length ? ids : null;
+    this.obstacleNodes = nodes;
+  }
+
+  /** The `Obstacle` a triangle belongs to, or -1. */
+  obstacleOf(tri) {
+    if (!this.obstacles || !(tri >= 0) || tri >= this.obstacles.length) return -1;
+    return this.obstacles[tri];
   }
 
   /** Attach the per-triangle sub-part ids (`buildCollisionIndex`). */
@@ -406,6 +432,7 @@ export class CollisionIndex {
             if (skipBodies && this._body[this.owners[tri]]) continue;
           }
           if (this.subs && this.#subSkips(tri, onlySub)) continue;
+          if (this.passObstacles && this.obstacles && this.obstacles[tri] >= 0) continue;
           // Box reject before the swept test. A ray gets away without one — the
           // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
           // costs a plane crossing, three edge quadratics and three corner
@@ -780,6 +807,27 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   // downstream pays for a level with no bridges.
   const drivableIds = new Uint8Array(total);
   const subIds = new Int32Array(total).fill(-1);
+  // The `Obstacle` each mesh hangs under (nearest ancestor up to its owner
+  // whose `templateKind` is `Obstacle`: barbed wire), one id per such node.
+  const obstacleIds = new Int32Array(total).fill(-1);
+  const obstacleNodes = [];
+  const obstacleIdOf = new Map();
+  const obstacleOfMesh = (mesh, owner) => {
+    const stop = owner >= 0 ? owners[owner] : null;
+    for (let n = mesh; n; n = n.parent) {
+      if (n.userData?.templateKind === 'Obstacle') {
+        let id = obstacleIdOf.get(n);
+        if (id === undefined) {
+          id = obstacleNodes.length;
+          obstacleIdOf.set(n, id);
+          obstacleNodes.push(n);
+        }
+        return id;
+      }
+      if (n === stop) break;
+    }
+    return -1;
+  };
   let anyDrivable = false;
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   let at = 0;
@@ -792,6 +840,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     const material = geometry.userData?.defenseMaterial ?? 0;
     const owner = ownerOf.get(mesh) ?? -1;
     const sub = subOf(mesh, owner);
+    const obstacle = obstacleOfMesh(mesh, owner);
     const drivable = isDrivableCollisionMesh(mesh) ? 1 : 0;
     if (drivable) anyDrivable = true;
     const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
@@ -814,6 +863,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
       ownerIds[at] = owner;
       drivableIds[at] = drivable;
       subIds[at] = sub;
+      obstacleIds[at] = obstacle;
       at++;
     }
   }
@@ -822,6 +872,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
                           { minX, minZ, maxX, maxZ },
                           anyDrivable ? drivableIds : null);
   index.setSubParts(subIds.subarray(0, at), subParts);
+  index.setObstacles(obstacleIds.subarray(0, at), obstacleNodes);
   return index;
 }
 

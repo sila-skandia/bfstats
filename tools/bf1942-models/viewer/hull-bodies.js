@@ -885,9 +885,10 @@ export function createHullBodies(page) {
         // `skipBodies` stays true whatever the caller says — that is this
         // wrapper's whole job — but the gate is passed straight through.
         value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1,
-                _skipBodies = true, deckStepTop = -Infinity, deckFloorCos = 2) =>
+                _skipBodies = true, deckStepTop = -Infinity, deckFloorCos = 2,
+                passObstacles = false) =>
           world.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner,
-                            true, deckStepTop, deckFloorCos),
+                            true, deckStepTop, deckFloorCos, passObstacles),
       },
     });
   }

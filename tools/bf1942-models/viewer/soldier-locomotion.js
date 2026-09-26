@@ -347,3 +347,20 @@ export const SNAP_DOWN = 0.45;
  * consults it.
  */
 export const MAX_GROUND_SLOPE = Math.cos(60 * Math.PI / 180);
+
+/**
+ * Barbed wire's two soldier numbers (`obstacle.js`, which re-exports them;
+ * they live here so every module the walking body is built from stays the
+ * set its harnesses already copy).
+ *
+ * `ObjectTemplate.slowDownMod` on a `BFSoldierTemplate` (+0x2f8): the
+ * constructor's `0x3ecccccd` (0.4) at 0x0827a3ae; no vanilla, XPack1 or
+ * XPack2 soldier sets it. `handlePlayerInput` multiplies the forward and the
+ * strafe command by it on the tick after a touch.
+ */
+export const SLOW_DOWN_MOD = 0.4;
+
+/** The collision handlers' gate, `|vRel|^2 > 0.1` (collision-response.md
+ *  §6.2): below it no handler runs and an `Obstacle` is as solid as any
+ *  static. */
+export const OBSTACLE_HANDLER_SPEED_SQ = 0.1;

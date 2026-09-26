@@ -44,9 +44,14 @@
 //       `near` still has them. The hit carries `x/y/z` (the crossing),
 //       `nx/ny/nz` (the face normal **oriented back toward the ray's start**)
 //       and `material`.
+//   obstacleAt(hit) -> number
+//       Optional. The `Obstacle` (the class barbed wire is) the hit's own
+//       triangle belongs to, or -1: its handler vetoes a hull's response
+//       (§6.2) and the pass reports the touch as `handlers.onObstacle(part,
+//       obstacle, point)`, the message that plays the wire's scrape.
 //   obstacle(owner) -> boolean
-//       Optional. Whether the hit's `owner` is an `Obstacle` (the class
-//       barbed wire is), whose handler vetoes a hull's response (§6.2).
+//       Optional, the older per-owner form of the same question, read only
+//       when `obstacleAt` is absent.
 //   supportY(x, z, fromY) -> number
 //       Optional. The height of the surface the body is standing on, terrain
 //       or drivable deck. `stepTop` is that plus `KERB_STEP`: a drivable
@@ -221,7 +226,17 @@ function probePart(part, body, statics, handlers, owner, stepTop, share) {
       // reason; a hull stopped by it wedges against a route the map drew
       // straight through.
       if (handlers.onStatic && !handlers.onStatic(part, _vRel, _n, _P, matVertex, matFace)) continue;
-      if (statics.obstacle?.(hitOwner)) continue;
+      // `PlayerControlObject::handleCollision` 0x08318b00 is the vehicle's
+      // side of the same veto: an `Obstacle` is sent `handleMessage(0)`
+      // (vt+0x9c, which `Bundle::handleMessage` 0x081a74b0 forwards to its
+      // `e_Barbwire` effect: the scrape) and the response is skipped.
+      const obstacle = statics.obstacleAt
+        ? statics.obstacleAt(hit)
+        : (statics.obstacle?.(hitOwner) ? hitOwner : -1);
+      if (obstacle >= 0) {
+        handlers.onObstacle?.(part, obstacle, _P);
+        continue;
+      }
     }
 
     const mv = handlers.materialValues(matVertex, matFace);
