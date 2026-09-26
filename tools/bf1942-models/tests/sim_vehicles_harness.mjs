@@ -688,11 +688,23 @@ const recipes = {
  *  as `models/<Template>.wreck.glb`. The list of air templates the level places
  *  comes back with it, so the test can check that file exists for every one. */
 recipes.downedAir = async function downedAir() {
+  return downedAirOn('el_alamein', 'Spitfire');
+};
+
+/** The same run on the planes the reports come from: a BF109 over Bocage. The
+ *  owner's own report is that a 109 killed in the air keeps its intact model
+ *  while his Mustang does not, which is a template the Spitfire run does not
+ *  exercise. */
+recipes.downedAir109 = async function downedAir109() {
+  return downedAirOn('bocage', 'bf109');
+};
+
+async function downedAirOn(map, template) {
   wreckLoader = await realWreckLoader();
-  const match = await start('el_alamein');
+  const match = await start(map);
   const b = bot(match, 'bot_1');
   const attacker = match.bots.find(o => o.team !== b.team) ?? b;
-  const cand = mount(match, b, 'Spitfire');
+  const cand = mount(match, b, template);
   freezeOthers(match, [b.playerId]);
   const node = cand.node;
   const wrecked = [];
@@ -745,8 +757,11 @@ recipes.downedAir = async function downedAir() {
   // `placeWreck`'s guards are satisfied for this hull's owner.
   let loadError = null;
   let loadedScene = false;
+  // The URL `placeWreck` builds: the hull's own template (its scene node's
+  // control), not the AI table's spelling the seat search was given.
+  const wreckTemplate = node.userData?.control ?? node.name.replace(/_\d+$/, '');
   try {
-    const g = await wreckLoader.loadAsync(`models/${cand.template}.wreck.glb`);
+    const g = await wreckLoader.loadAsync(`models/${wreckTemplate}.wreck.glb`);
     loadedScene = !!g?.scene;
   } catch (e) {
     loadError = String(e?.message ?? e).slice(0, 300);
