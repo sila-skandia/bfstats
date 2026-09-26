@@ -114,6 +114,15 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x00407710",
+   "name": "BFPlayer networkable setNetUpdate (client)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Writes the replicated fire flag at this+0x17c (0x00407b9b) and altfire at this+0x17d (0x00407baf); the fire loop 0x004b9143 reads them as BFPlayer +0x184/+0x185, so this is the networkable subobject at BFPlayer+8 (the +8 is inferred from the two offsets)."
+  },
+  {
    "address": "0x00408f80",
    "name": "GameClient__scoreFunc1",
    "kind": "function",
@@ -1680,6 +1689,15 @@
    "note": "Name descriptive, not recovered. The client self-prediction per-player loop (P-1, read live): front pending input -> PlayerAction::set 0x00483e70 -> get 0x004913a0 -> handleInput vtable+0x30 -> performHandleUpdate 0x004b7680 -> registerPlayerAction 0x004904f0 -> pop. The client steps its own player each tick from the same PlayerAction it registers for the wire. See subsystems/netcode.md"
   },
   {
+   "address": "0x004b90d0",
+   "name": "GameClient remote-fire loop (per tick; name ours)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Undefined in Ghidra; read from the bytes 2026-09-27. For each player whose vehicle has live ghost data: if BFPlayer +0x184 -> player->vtbl+0x38 (getVehicle) ->vtbl+0x98 handleMessage(6, player) at 0x004b9143..0x004b915b; +0x185 -> handleMessage(7) at 0x004b9161..0x004b9179. This is how the client fires remote players' weapons."
+  },
+  {
    "address": "0x004bb800",
    "name": "Armor::getDamageMod",
    "kind": "function",
@@ -2229,6 +2247,24 @@
    "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
   },
   {
+   "address": "0x0053d7b0",
+   "name": "FireArms::Fire(IPlayer*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Client twin of lnxded 0x0828a090 (thiscall, one IPlayer*). Every round the client simulates goes through it: its own player's from input, every remote player's (bots included) from the replicated fire flags via GameClient's loop 0x004b90d0 -> vehicle handleMessage(6/7). Remote tracers are local projectiles. bf42plus hooks its commit point 0x0053dcb1. features/round-replay-capture/README.md 14."
+  },
+  {
+   "address": "0x0053dcb1",
+   "name": "FireArms::Fire round-commit point (bf42plus replay hook)",
+   "kind": "patch_site",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "mov edx,[ebp+264h] (8b 95 64 02 00 00), reached through 0x0053dcaa by every round-committing path after the barrel loop and by no path that fires nothing (overheat, fire delay, empty magazine, medic/engineer tools). There: ebp = FireArms, ebx = the IPlayer* Fire was handed (null on the auto-fire path), [esp+10h] FireArmsTemplate, [esp+3Ch..7Bh] the Mat4 the round left along (+Z row). Hooked by sila-skandia/bf42plus 4fc0352 replay_hook_init, which checks these 6 bytes first."
+  },
+  {
    "address": "0x0053eaad",
    "name": "FireArms__handleUpdate_clearZoomFlags",
    "kind": "address",
@@ -2767,6 +2803,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Thrust. Found via the PhysicsEngine vtable at 0x008fdf50. rho = 1 - clamp(pos.y/getAirDensityZeroAtHeight(), 0, 1); e = throttle - rho*(vel . fwd)/EngineTemplate.setNoPropellerEffectAtSpeed; K = 0.1*|throttle| + e*|e| (a SIGNED SQUARE, not the linear fade flight-model.md 6 assumes); force = fwd * K * getCurrentRatio(), applied at the ENGINE NODE'S OWN POSITION (not the CoM) via rootNode vtable+0x68. setTorque is absent from this expression. Medium gate: an engine runs only when its EngineTemplate flag bit 3 matches the medium (submerged vs air), which is what separates c_ETShip from c_ETPlane. Tail is prop visuals: spin rate = throttle*400 below |throttle|<0.08, else throttle*20. Linux twin: 0x0824cbb0."
+  },
+  {
+   "address": "0x0057d470",
+   "name": "RotationalBundle::setState() (client)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Client twin of lnxded 0x081d8110: tests template+0x254 (automatic reset) and clamps the stored angle this+0x11c against template+0x200/+0x20c before rebuilding the relative transform."
   },
   {
    "address": "0x0057f0d0",
@@ -3514,6 +3559,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-1p-mount",
    "note": "lnxded 0x0832aed0. Second arg is the clip slot (0 = 3P clip, 1 = 1P clip); returns without touching the skeleton when clipIndex >= the state's clip count (lnxded 0x0832af36). BFSoldier::updateAnimations passes isFirstPerson&&(soldier+0x50==0) here, so in first person every Lb_* state (none declares a 1P clip) applies nothing and root/pelvis/legs stay at the .ske rest."
+  },
+  {
+   "address": "0x00613440",
+   "name": "getCurrentStateFlags (animation state machine instance)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Index this+0x20 (negative -> 0), bounds-checked against the table at *0x009c9664 (+0x18..+0x1c), returns that state's flags."
   },
   {
    "address": "0x00613480",
@@ -5667,6 +5721,15 @@
    "note": "Client. Value 0xc4c5, matching lnxded's own IID_IPlayerControlObject."
   },
   {
+   "address": "0x008eb128",
+   "name": "vtable for BFSoldier (client)",
+   "kind": "vtable",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored by the ctors at 0x004ff468 (BFSoldier::BFSoldier 0x004ff440) and 0x004fff03; slot 37 = handlePlayerInput 0x00500190. Fields the replay recorder reads: aim pitch +0x2b0 and torso twist +0x2b4 (degrees), lower/upper animation state index +0x2e0/+0x324, held item's 1-based itemIndex +0x3e8, state bits +0x416."
+  },
+  {
    "address": "0x008eb25c",
    "name": "soldier jump speed (6.0)",
    "kind": "data",
@@ -5695,12 +5758,21 @@
   },
   {
    "address": "0x008f9750",
-   "name": "HandFireArms::vtable",
-   "kind": "data",
+   "name": "HandFireArms secondary vtable (at object +0x2d8)",
+   "kind": "vtable",
    "subsystem": "weapons",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "Client HandFireArms vtable. Slots: +0x170 getDevMod (0x00551930), +0x174 updateDeviation (0x00551f50). Base located by walking back from the DATA xref at 0x008f98c4 to the first entry after the .rdata string block."
+   "note": "CORRECTED 2026-09-27 (round-replay research): the ctor stores 0x008f97b8 at object+0 (0x00551d8b) and this table at object+0x2d8 (0x00551da4), and a null at 0x008f97b4 ends it (25 slots). The slots below are therefore the primary table's +0x108 getDevMod and +0x10c updateDeviation; FireArms__isZoomed's +0xf8 is the primary's +0x90. The absolute slot addresses are unchanged. Was: Client HandFireArms vtable. Slots: +0x170 getDevMod (0x00551930), +0x174 updateDeviation (0x00551f50). Base located by walking back from the DATA xref at 0x008f98c4 to the first entry after the .rdata string block."
+  },
+  {
+   "address": "0x008f97b8",
+   "name": "vtable for HandFireArms (client, primary)",
+   "kind": "vtable",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored at object+0 by the ctor at 0x00551d8b; the same ctor stores the secondary table 0x008f9750 at object+0x2d8 (0x00551da4), which a null at 0x008f97b4 ends. Slot +0x90 isZoomed 0x0050ee00, +0x108 getDevMod 0x00551930, +0x10c updateDeviation 0x00551f50."
   },
   {
    "address": "0x008fbc7c",
@@ -5739,13 +5811,40 @@
    "note": "client. [R5] 33-byte object, 32-byte alloc"
   },
   {
-   "address": "0x008fdf50",
-   "name": "PhysicsEngine vtable",
+   "address": "0x008fdec0",
+   "name": "vtable for PhysicsEngine (client)",
    "kind": "vtable",
    "subsystem": "physics",
    "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored by the ctor at 0x0057bc5d (no code references 0x008fdf50). Slot 36 (at 0x008fdf50) = updatePhysics 0x0057bfb0. PhysicsEngine +0xa0 revs, +0xbc gear."
+  },
+  {
+   "address": "0x008fdf50",
+   "name": "PhysicsEngine vtable slot 36 (updatePhysics)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
    "source": "ghidra-session",
-   "note": "Holds the pointer to PhysicsEngine::updatePhysics (0x0057bfb0), found the same way."
+   "note": "CORRECTED 2026-09-27 (round-replay research): not a vtable base, no code references it. The PhysicsEngine ctor stores 0x008fdec0 (at 0x0057bc5d); this is that table's slot 36. Was: Holds the pointer to PhysicsEngine::updatePhysics (0x0057bfb0), found the same way."
+  },
+  {
+   "address": "0x008fe1b0",
+   "name": "vtable for RotationalBundle (client)",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored by the ctor at 0x0057cf4e. Slots 15 0x004a2250, 20 0x0057d010, 28 0x004a2700 (the replay recorder's signature check). Its networkable carries the angles; RotationalBundle::setState 0x0057d470 makes them the relative transform each frame."
+  },
+  {
+   "address": "0x008fe4a0",
+   "name": "vtable for Engine (client)",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored by the ctor at 0x0057e702; slot 20 0x0057e1d0. Engine +0x15c running, +0x15d disabled by damage, +0x124 throttle servo angle (over maxRotation.z at 0x0057e296), +0x60 its PhysicsEngine. Engine::handleUpdate never rebuilds its transform; the propeller is spun locally (0x0057c21e..0x0057c2cf)."
   },
   {
    "address": "0x008fead8",
@@ -6430,6 +6529,15 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-drawfov",
    "note": "IDirect3DDevice8*: slot 0x94 = SetTransform (index 37), 0xc8 SetRenderState (50), 0xfc SetTextureStageState (63), 0xb0 SetLight (44), 0x130 SetVertexShader (76), 0x54 Clear? is on RendPCDX8 not here. Every renderer state setter in 0x0046xxxx calls through it."
+  },
+  {
+   "address": "0x009c9664",
+   "name": "animation state table (pointer)",
+   "kind": "data",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "*this: states vector begin +0x18, end +0x1c; a state's flags +0x2c, its name +0x130 (getCurrentStateFlags 0x00613440). Lower-state flags: 0x20 crouching, 0x40 lying (the stance test at 0x005013d6), 0x08 swimming, 0x10 climbing, 0x80 jumping."
   },
   {
    "address": "0x009c9b14",
