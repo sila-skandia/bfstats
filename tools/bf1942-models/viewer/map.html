@@ -449,7 +449,7 @@ const level = createLevel(bag(
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
   from(() => vehicleEntry, `forgetEntryPoints`),
-  from(() => wrecks, `damageVisuals registerDamageables templateNameOf`),
+  from(() => wrecks, `damageVisuals loadFailures registerDamageables templateNameOf wreckState`),
   {
     get activeMod() { return activeMod; }, get bust() { return bust; },
     get camera() { return camera; }, get cubeLoader() { return cubeLoader; },
@@ -2072,7 +2072,7 @@ const testHooks = installTestHooks(bag(
   from(() => vehicleHits, `applyVehicleHit occupiedVehicleDamage soldierExposureFor splashPos
     splashTargets vehicleInput`),
   from(() => vehicleHud, `crosshairAim`),
-  from(() => wrecks, `damageVisuals showDamageTier wreckVehicle`),
+  from(() => wrecks, `damageVisuals loadFailures showDamageTier wreckState wreckVehicle`),
   {
     get botBodies() { return botBodies; }, get botRounds() { return botRounds; },
     get botUnits() { return botUnits; },

@@ -277,6 +277,18 @@ speed, whether the crash happened, what it is carrying, and any load failure.
 `window.__wrecks()` in the console prints it (`test-hooks-vehicles.js`), which is
 the check to run the next time a plane lands intact.
 
+A stale module in the browser is the first thing to rule out here, and the hook
+answers that too: if `__wrecks` is not a function, the page is running a cached
+`map.html` and a cache-busting reload is the fix. Neither the deployed site nor
+a local `http.server` sends `Cache-Control`, so browsers are free to reuse
+`map.html` and the viewer's modules across reloads.
+
+The 109 case has its own run: `downedAir109` puts an AI-piloted BF109 over
+Bocage through the same fall, with the AI table's spelling (`bf109`) handed to
+the seat search and the wreck URL built from the hull's scene template
+(`BF109`). Both runs assert the wreck glb parsed and that the hull carries
+`wreck:<Template>` with the intact mesh hidden.
+
 Files: `viewer/vehicle-instance.js`, `viewer/airborne.js`,
 `viewer/vehicle-wrecks.js`.
 

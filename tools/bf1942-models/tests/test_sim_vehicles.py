@@ -281,6 +281,27 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(intact, [], f"the intact mesh is still drawn: {r['shownChildren']}")
         self.assertIn(r["wreckNode"], r["shownChildren"], "and the wreck is what is drawn")
 
+    def test_a_bf109_shot_down_over_bocage_comes_down_and_wrecks(self) -> None:
+        # The report this fix answers: a 109 killed in the air over Bocage kept
+        # its intact model while the owner's Mustang did not. The Spitfire run
+        # above covers the mechanism; this one covers the template and the level
+        # it was seen on, and it is also where the AI table's own spelling
+        # (`bf109`) is handed to the seat search while the wreck URL is built
+        # from the scene node's template (`BF109`) — the pair the two spellings
+        # make easy to confuse.
+        assets = ASSETS
+        assert assets is not None
+        r = recipe("downedAir109")
+        self.assertEqual(r["wrecked"][0]["template"], "BF109", f"the hull's own template: {r}")
+        self.assertGreater(r["deathAgl"], 80.0, f"killed in the air: {r}")
+        self.assertTrue(r["flying"], "it joins the wreck list")
+        self.assertFalse(r["frozen"], "and is not parked where it was hit")
+        self.assertGreater(r["fellBy"], 60.0, f"it comes down: {r}")
+        self.assertLess(r["crashAgl"], 5.0, f"the crash is on the ground: {r}")
+        self.assertEqual(r["loadedScene"], True, f"its wreck glb did not parse: {r['loadError']}")
+        self.assertEqual(r["wreckNode"], "wreck:BF109", f"no wreck model on the hull: {r}")
+        self.assertTrue((assets / "models" / "BF109.wreck.glb").is_file())
+
     def test_every_aircraft_the_game_fields_has_a_wreck_model(self) -> None:
         # `maps/_shared/vehicle-ai.json` is the extracted AI table for the mod's
         # own vehicles — its air class is the list of aircraft a player can meet.
