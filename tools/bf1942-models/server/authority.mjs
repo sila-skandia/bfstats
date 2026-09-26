@@ -1,9 +1,9 @@
 // The P3 authority: the room server's half of the damage, death, ticket and
 // flag-capture law — the part nobody else runs. Citations for every number:
 // the parity round's ticket item 9 (`features/bf1942-parity-round-2026-09-19`:
-// "a death count (`setTicketLosePerDeath`, GameServer `0x0813d700`), a
-// flag-majority timer (`setTicketLostPerMin` drains only while the other side
-// holds more than half the flags)... and somewhere to put the result"), and
+// "a death count (`setTicketLosePerDeath`, GameServer `0x0813d700`)... and
+// somewhere to put the result"), ledger rows TKT-4 and TKT-5
+// (`features/bf1942-engine-reference/ledger.md`) for the bleed, and
 // `features/bf1942-engine-reference/subsystems/hitpoints-and-damage.md` for
 // the Armor law itself.
 //
@@ -19,9 +19,20 @@
 //   makes it a death — the `killed` row, the ticket, the dead-until-respawn
 //   latch. No client can damage anything: every Armor that dies here took
 //   its damage from the server's own sim in the same tick;
-// * the ticket law: one per death (`setTicketLosePerDeath`), and
-//   `lossPerMin` drained once a second while the OTHER side holds more than
-//   half the capturable flags (`setTicketLostPerMin`'s majority gate);
+// * the ticket law, played on the page's own round (`viewer/round-state.js`
+//   `createRoundState`, which the headless runner plays too): one whole
+//   ticket per death (`setTicketLosePerDeath`), and the bleed of ledger TKT-4,
+//   read from `GameServer::gameStatusPlaying` 0x08150df0. A side loses one
+//   whole ticket every `60 / (rate * maxPlayers / 16)` seconds while the
+//   ENEMY's summed `areaValue` over the control points it holds is greater
+//   than 99. Every control point counts, the uncapturable bases included
+//   (Battle of Britain's Axis airfield weighs 50), and so does a point that
+//   owns no spawns and so has no flag (its `Allied_Base`, team 2, 150: the
+//   Axis bleeds from the first frame). The countdown is written back to a
+//   whole interval on every frame the gate is shut (team 1 0x08152100,
+//   team 2 0x0815218c), so each bleed's first ticket comes a whole interval
+//   after it starts. TKT-5's two end-of-round rules, for a side left with no
+//   spawn groups, are not built here or on the page;
 // * flag capture: a live player of the opposing team inside the flag's ring
 //   for `FLAG_CAPTURE_SECONDS` un-contested flips the owner. The capture law
 //   itself was never read (the parity round left it open), so
@@ -34,6 +45,7 @@
 // and crash damage, which the rooms' synthetic test level exercises.
 
 import { Armor } from '../viewer/armor.js';
+import { createRoundState, TICKET_BASE_PLAYERS } from '../viewer/round-state.js';
 
 /** One per death, `setTicketLosePerDeath`. */
 export const LOSS_PER_DEATH = 1;
@@ -71,7 +83,54 @@ export function createAuthority(ctx) {
   /** flag index -> {team, ticks} — an enemy inside the ring, accumulating.
    *  Contested (both teams present) freezes; an empty|defended ring resets. */
   const capture = new Map();
-  let bleedAccumulator = 0;
+
+  /** A team's count as `world.tickets` holds it: the room's own copy of the
+   *  level's tickets, which the round below starts from and writes every
+   *  change back to, and which the handshake and the wire rows read. The
+   *  published sidecars use `team1`/`team2`; the harness's old descriptor
+   *  used bare `1`/`2` — either answers. */
+  const ticketsOf = team => {
+    const t = world.tickets;
+    if (!t) return 0;
+    return t[`team${team}`] ?? t[team] ?? 0;
+  };
+
+  /** The room's round: the page's own (`round-state.js`), so a room spends
+   *  and bleeds by the code the page and the headless runner run. Its counts
+   *  start as the room's and every change is written back to `world.tickets`
+   *  (`spendTicket`, `bleed`), which the handshake and the rows read.
+   *
+   *  The room's tickets are already scaled for its slots (`level-data.mjs`
+   *  `scaleTickets`: the counts, and `lossPerMin` times maxPlayers / 16), so
+   *  the round takes them as a 16-slot server's, which scales nothing again:
+   *  a ticket every `60 / lossPerMin` s is the engine's `60 / (rate *
+   *  maxPlayers / 16)`. The counts are handed over bare, because the object's
+   *  own `maxPlayers` (a mode script's `game.maxNrOfPlayers`, Kasserine Pass
+   *  co-op's 18) has already scaled the start once. */
+  const round = createRoundState({
+    tickets: { team1: ticketsOf(1), team2: ticketsOf(2) },
+    rates: world.tickets?.lossPerMin ?? null,
+    maxPlayers: TICKET_BASE_PLAYERS,
+  });
+
+  /** The control points as the round weighs them, `{ team, areaValue }`, the
+   *  headless runner's join (`sim/match.mjs` `weighedPoints`): every point of
+   *  the level with its `areaValue`, owned by the world flag of the same name,
+   *  read live, so a capture moves the weight in the tick it lands. A point
+   *  that owns no spawns is no flag (`spawn-flags.js`) and keeps its level
+   *  team, as Battle of Britain's `Allied_Base` does. The fleet's ship flags
+   *  are no control points and weigh nothing. */
+  const points = (() => {
+    const flags = new Map((world.flags ?? [])
+      .filter(f => !f.standalone && f.controlPointName)
+      .map(f => [f.controlPointName, f]));
+    return (world.extras?.controlPoints ?? []).map(({ name, team, areaValue }) => {
+      const flag = flags.get(name);
+      return flag
+        ? { name, get team() { return flag.team; }, areaValue }
+        : { name, team, areaValue };
+    });
+  })();
 
   /** The Armor a player of `team` spawning with the deploy screen's kit
    *  gets — the page's own `soldierMaxHp` law over the same sidecar.
@@ -93,19 +152,12 @@ export function createAuthority(ctx) {
     return new Armor(max);
   }
 
-  /** The current ticket count of a team (the room's world owns the raw
-   *  object; the wire rows carry these numbers). The published sidecars
-   *  use `team1`/`team2`; the harness's old descriptor used bare `1`/`2` —
-   *  either answers. */
-  const ticketsOf = team => {
-    const t = world.tickets;
-    if (!t) return 0;
-    return t[`team${team}`] ?? t[team] ?? 0;
-  };
-
   return {
     KITS,
     dead,
+    /** The round (`round-state.js`): the counts, the weight each side held
+     *  on the last tick, which side is bleeding and its countdown. */
+    round,
 
     /** The room's spawn path calls this before `world.spawnPlayer`: the
      *  fresh Armor on the kit's max, and the death decree lifted. */
@@ -124,12 +176,14 @@ export function createAuthority(ctx) {
     },
 
     /** One world step's worth of the authority: deaths first (every damage
-     *  funnel lands on Armors during `step`), then the flags and the bleed
-     *  on their own accumulators. `step` is the world's report, `dt` the
-     *  room's tick. */
+     *  funnel lands on Armors during `step`), then the flags, then the bleed
+     *  over the owners the captures just left (the page's and the runner's
+     *  order: `captureTick`, then `round.tick`). `step` is the world's
+     *  report, `dt` the room's tick. */
     afterStep(step, dt) {
       decreeDeaths(step);
-      flagsAndBleed(dt);
+      captureFlags(dt);
+      bleed(dt);
     },
   };
 
@@ -165,13 +219,9 @@ export function createAuthority(ctx) {
       }
   }
 
-  /** One call's worth of the flags-and-bleed law, at the room's tick
-   *  cadence; the engine's own clock is per-second, accumulated here. */
-  function flagsAndBleed(dt) {
+  /** One tick of the capture law, at the room's tick cadence. */
+  function captureFlags(dt) {
     const flags = world.flags ?? [];
-    if (!flags.length) return;
-
-    // Capture first: owner changes move the majority this same loop.
     for (const [index, flag] of flags.entries()) {
         if (flag.uncapturable || !flag.position) continue;
         let progress = capture.get(index);
@@ -210,28 +260,20 @@ export function createAuthority(ctx) {
           capture.delete(index);
         }
       }
+  }
 
-      // The bleed: `lossPerMin` drains once a second while the other side
-      // holds more than half the capturable flags (the fleet's uncapturable
-      // points are the engine's `unableToChangeTeam` — never counted).
-      const lossPerMin = world.tickets?.lossPerMin;
-      if (!lossPerMin) return;
-      bleedAccumulator += dt;
-      if (bleedAccumulator < 1) return;
-      bleedAccumulator = 0;
-      const capturable = flags.filter(f => !f.uncapturable).length;
-      if (capturable === 0) return;
-      for (const victim of [1, 2]) {
-        const owner = victim === 1 ? 2 : 1;
-        const owned = flags.filter(f => f.team === owner).length;
-        if (owned * 2 <= capturable) continue;   // no strict majority, no bleed
-        const perSecond = lossPerMin[`team${victim}`] / 60;
-        if (!(perSecond > 0)) continue;
-        if (spendTicket(victim, perSecond)) {
-          onRow({ type: 'ticket', team: victim,
-                  count: ticketsOf(victim), reason: 'flag_majority' });
-        }
-      }
+  /** One tick of the bleed (the header's TKT-4 rule): the round's own `tick`
+   *  over the room's control points, which spends whole tickets, and a
+   *  `ticket` row for each side it cost, carrying the fresh count however
+   *  many the tick took. */
+  function bleed(dt) {
+    if (!world.tickets) return;
+    const lost = round.tick(dt, points);
+    for (const team of [1, 2]) {
+      if (!lost[team]) continue;
+      writeTickets(team);
+      onRow({ type: 'ticket', team, count: ticketsOf(team), reason: 'bleed' });
+    }
   }
 
   // --- the law's helpers ----------------------------------------------------
@@ -241,22 +283,24 @@ export function createAuthority(ctx) {
       ? flag.timeToGetControl : FLAG_CAPTURE_SECONDS;
   }
 
-  /** One ticket down for `team`; false when it was already at 0. The
-   *  world owns the tickets object, raw from scene.json — counts mutate in
-   *  place (both key spellings, so a harness descriptor's legacy `1`/`2`
-   *  shape stays coherent) and the wire rows carry the fresh numbers. */
+  /** `amount` whole tickets off `team`, spent through the round (which also
+   *  ends its bleed when a side reaches 0, as the page's does); false when
+   *  there were none left to spend. */
   function spendTicket(team, amount) {
-    const t = world.tickets;
-    if (!t) return false;
-    const key = `team${team}`;
-    const legacy = `${team}`;
-    const now = t[key] ?? t[legacy] ?? null;
-    if (now == null || !Number.isFinite(now)) return false;
-    const next = Math.max(0, now - amount);
-    if (next === now) return false;
-    t[key] = next;
-    if (legacy in t) t[legacy] = next;
+    if (!world.tickets || !round.spend(team, amount)) return false;
+    writeTickets(team);
     return true;
+  }
+
+  /** The round's count for `team`, written into the world's tickets object:
+   *  a copy per room (`level-data.mjs`), and the one the handshake sends and
+   *  the rows read. Both key spellings, so a harness descriptor's legacy
+   *  `1`/`2` shape stays coherent. */
+  function writeTickets(team) {
+    const t = world.tickets;
+    const legacy = `${team}`;
+    t[`team${team}`] = round.tickets[team];
+    if (legacy in t) t[legacy] = round.tickets[team];
   }
 
   /** The live (~= not dead) players standing inside a flag's ring. The

@@ -27,7 +27,11 @@ What this file pins is the P2 contract of
   with no geometry decoded;
 * P4's snap-back fix — a deploy row's `spawnIndex` pins the authority to the
   page's own spawn point, the snapshot carries the monotonic input `ack`, and
-  the facing on the wire is degrees (`SNAPBACK.md`).
+  the facing on the wire is degrees (`SNAPBACK.md`);
+* the bleed on the engine's rule (ledger TKT-4), played on the page's own
+  round (`round-state.js`): a whole ticket every `60 / (rate * maxPlayers /
+  16)` s while the enemy's summed `areaValue` is over 99, a point with no
+  flag counting, and the countdown refilled whole while the gate is shut.
 """
 
 from __future__ import annotations
@@ -305,7 +309,7 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(k["reviveOk"], k["reviveOk"])
         self.assertEqual(k["hpAfterRespawn"], 30)
 
-    # --- (l) P3: flag capture and the majority bleed -------------------------------------
+    # --- (l) P3: flag capture and the bleed ----------------------------------------------
 
     def test_contested_ring_freezes_capture(self) -> None:
         l = self.results["l"]
@@ -320,10 +324,21 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(row["team"], 1)
         self.assertEqual(row["name"], "South")
 
-    def test_majority_bleed_drains_the_flagless_team(self) -> None:
+    def test_holding_both_flags_bleeds_the_other_side_whole_tickets(self) -> None:
+        # The test level's points weigh 50 each. One a side bled nobody; team 1
+        # holding both holds 100, over the engine's 99, and team 2 bleeds its
+        # 30 a minute: one whole ticket, on a row of its own reason.
         l = self.results["l"]
-        self.assertTrue(l["bleedTicket"], l["majorityRow"])
-        self.assertEqual(l["majorityRow"]["team"], 2)
+        self.assertEqual(0, l["bleedsBeforeCapture"])
+        self.assertEqual({"team": 2, "count": 99, "reason": "bleed"}, l["bleedRow"])
+        self.assertEqual({"1": 100, "2": 0}, l["held"])
+        self.assertEqual({"1": False, "2": True}, l["bleeding"])
+
+    def test_the_first_bleed_ticket_waits_a_whole_interval(self) -> None:
+        # 60 / 30 = 2 s. The capture's own tick is the bleed's first, so the
+        # ticket lands 60 ticks in; float error on the countdown may add one.
+        seconds = (self.results["l"]["bleedGapTicks"] + 1) / 30
+        self.assertAlmostEqual(2.0, seconds, delta=1 / 30 + 1e-9)
 
 
     # --- (m) P4: one spawn pick, the ack, and the wire's units ---------------
@@ -367,6 +382,78 @@ class RoomTests(unittest.TestCase):
         self.assertNotAlmostEqual(m["wireYawDeg"], m["soldierYawRad"], places=3)
         self.assertAlmostEqual(m["wireYawDeg"], -72.0, places=3)
 
+
+    # --- (n)-(q) the bleed on the engine's rule (ledger TKT-4) ---------------------------
+
+    def test_a_point_with_no_flag_over_99_bleeds_its_enemy(self) -> None:
+        # Battle of Britain: `Allied_Base` owns no spawns, so the world makes
+        # no flag of it, but it weighs 150 for the Allies. The Axis bleeds its
+        # 4 a minute from the first tick, and its own 50 bleeds nobody.
+        n = self.results["n"]
+        self.assertEqual(["Axis_East_Airfield"], n["flags"])
+        self.assertEqual({"1": 50, "2": 150}, n["firstTick"]["held"])
+        self.assertEqual({"1": True, "2": False}, n["firstTick"]["bleeding"])
+        self.assertEqual({"1": 96, "2": 100}, n["tickets"])
+        self.assertEqual(0, n["allies"])
+
+    def test_the_bleed_is_one_whole_ticket_every_sixty_over_the_rate_seconds(self) -> None:
+        # A ticket every 60 / 4 = 15 s, the first a whole interval in: the
+        # room's ticks 1..t all bled. Four in 61 s, counting down by one.
+        n = self.results["n"]
+        self.assertEqual(61, n["clock"])
+        self.assertEqual([99, 98, 97, 96], [count for _, count in n["axis"]])
+        for i, (tick, _) in enumerate(n["axis"]):
+            self.assertAlmostEqual(15.0 * (i + 1), tick / 30, delta=1 / 30 + 1e-9)
+
+    def test_all_five_wake_points_bleed_japan(self) -> None:
+        # The US's five points of 20 weigh 100: Japan bleeds its 5 a minute,
+        # a ticket at 12 s.
+        o = self.results["o"]
+        self.assertEqual({"1": 0, "2": 100}, o["allUs"]["held"])
+        self.assertEqual({"1": True, "2": False}, o["allUs"]["bleeding"])
+        self.assertEqual({"1": 99, "2": 100}, o["at13"]["tickets"])
+        [(team, tick, count)] = o["at13"]["bleeds"]
+        self.assertEqual((1, 99), (team, count))
+        self.assertAlmostEqual(12.0, tick / 30, delta=1 / 30 + 1e-9)
+
+    def test_four_of_five_points_at_20_bleed_nobody(self) -> None:
+        # Japan takes one: the US keeps four of the five, the flag majority
+        # the superseded rule bled Japan for, and 80 of weight, under 99.
+        # A minute passes without a ticket row.
+        taken = self.results["o"]["oneTaken"]
+        self.assertEqual({"1": 20, "2": 80}, taken["held"])
+        self.assertEqual({"1": False, "2": False}, taken["bleeding"])
+        self.assertEqual({"1": 99, "2": 100}, taken["tickets"])
+        self.assertEqual(0, taken["rows"])
+        self.assertEqual(60, taken["seconds"])
+
+    def test_a_shut_gate_refills_the_countdown(self) -> None:
+        # Wake at 18 s owes Japan's next ticket in 6 s. The gate shuts for one
+        # tick (the US at 80) and the engine writes the whole 12 s back
+        # (team 1 0x08152100): the next ticket comes 12 s after the gate
+        # reopens, not 6.
+        p = self.results["p"]
+        self.assertEqual(1, len(p["beforeShut"]))
+        self.assertAlmostEqual(6.0, p["owed"], delta=1 / 30 + 1e-9)
+        self.assertEqual(12, p["shut"]["countdown"])
+        self.assertEqual({"1": False, "2": False}, p["shut"]["bleeding"])
+        self.assertEqual(98, p["next"]["count"])
+        self.assertAlmostEqual(12.0, p["next"]["gapTicks"] / 30, delta=1 / 30 + 1e-9)
+        self.assertEqual(1, p["after"])
+
+    def test_the_rooms_round_is_scaled_once(self) -> None:
+        # Kasserine Pass co-op's 100 a side and `game.maxNrOfPlayers 18`: the
+        # room scales the start once for its 16 slots (112, not 126), the
+        # round starts where the handshake does, and its 15 a minute is a
+        # ticket every 4 s.
+        q = self.results["q"]
+        self.assertEqual({"1": 112, "2": 112}, q["start"]["world"])
+        self.assertEqual({"1": 112, "2": 112}, q["start"]["round"])
+        self.assertEqual({"team1": 15, "team2": 15}, q["start"]["lossPerMin"])
+        tick, count = q["first"]
+        self.assertEqual(111, count)
+        self.assertAlmostEqual(4.0, tick / 30, delta=1 / 30 + 1e-9)
+        self.assertEqual({"1": 111, "2": 112}, q["tickets"])
 
     # ---- (r) the radio relay ------------------------------------------------
 

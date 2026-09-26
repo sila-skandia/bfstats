@@ -190,9 +190,9 @@ export function holdWeight(points) {
  *                scaled by it over 16, so the default 16 plays them as given;
  *  - `ticketLosePerDeath`  the engine's default 1, or a level's own command.
  *
- * `counts` is keyed by player id: the page's local player, or a bot's. A room
- * does not use any of this — the server owns the round there — so the page
- * simply does not build one.
+ * `counts` is keyed by player id: the page's local player, or a bot's. In a
+ * room the page builds none: the server owns the round there, and its
+ * authority (`server/authority.mjs`) plays this same one for the tickets.
  */
 export function createRoundState({
   settings = null, mode = '', tickets = null, rates = null,

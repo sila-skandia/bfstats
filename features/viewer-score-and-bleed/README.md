@@ -163,8 +163,10 @@ it moves, as a fresh object: that replacement is the change signal the memo in
 The score board's rows read the tally in single player and the room's own
 `killed` rows in a room.
 
-In a room the server owns the round: the bleed is off, and no local award is
-made, the same gate the capture law uses (`captureEnabled: () => !room.roomJoined`).
+In a room the server owns the round (`server/authority.mjs` plays this same
+`round-state.js` round and sends its counts as `ticket` rows): the page's bleed
+is off, and no local award is made, the same gate the capture law uses
+(`captureEnabled: () => !room.roomJoined`).
 A room's score column stays 0 because the netcode protocol carries no score.
 
 ## Not implemented

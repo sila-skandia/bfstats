@@ -22,9 +22,11 @@ export function fakeLevelDescriptor({ viewerDir }) {
     extras: {
       worldSize: 600,
       gameplayMode: 'Conquest',
+      // 50 each: a side holding both flags holds 100, over the engine's 99,
+      // and the other side bleeds (ledger TKT-4). One each bleeds nobody.
       controlPoints: [
-        { name: 'North', spawnGroupId: 1, team: 1, position: [10, 0, 10] },
-        { name: 'South', spawnGroupId: 2, team: 2, position: [-10, 0, -10] },
+        { name: 'North', spawnGroupId: 1, team: 1, areaValue: 50, position: [10, 0, 10] },
+        { name: 'South', spawnGroupId: 2, team: 2, areaValue: 50, position: [-10, 0, -10] },
       ],
       soldierSpawns: [
         // rotation [180,0,0] so `spawnYaw` is 0 — the page yaw that faces +Z.
