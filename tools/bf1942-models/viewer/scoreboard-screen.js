@@ -134,8 +134,13 @@ export function createScoreboardScreen(page) {
       const font = scoreLayout.fonts.get(fontId);
       return font ? page.measureText(font, text) : 0;
     },
-    drawText: (ctx, fontId, text, x, y, rgb) =>
-      page.drawBitmapText(ctx, fontId, text, x, y, rgb, scoreLayout.fonts),
+    // `bitmap-text.js`'s renderer (through the deploy screen's bag) takes the
+    // face itself and an options bag, not a font id and a bare colour; the
+    // board's faces are its own map, not the spawn screen's.
+    drawText: (ctx, fontId, text, x, y, rgb) => {
+      const font = scoreLayout.fonts.get(fontId);
+      if (font) page.drawBitmapText(ctx, font, text, x, y, { rgb });
+    },
     lineHeight: fontId => scoreLayout.data?.fontFiles?.[fontId]?.lineHeight || 8,
     hover: el => scoreboard.scoreHoverDone && el.texture === 'knappext_n',
     rowColor: row => rowColor(row, scoreLayout.data?.colors),
@@ -198,7 +203,10 @@ export function createScoreboardScreen(page) {
           const font = page.spawnLayout.fonts.get(fontId);
           return font ? page.measureText(font, text) : 0;
         },
-        drawText: (c, fontId, text, x, y, rgb) => page.drawBitmapText(c, fontId, text, x, y, rgb),
+        drawText: (c, fontId, text, x, y, rgb) => {
+          const font = page.spawnLayout.fonts.get(fontId);
+          if (font) page.drawBitmapText(c, font, text, x, y, { rgb });
+        },
       };
       paintLeaves(ctx, data, page.spawnLayout.data.groups.tickets.elements, page.deployVars(), spawnRes);
     }
