@@ -1010,8 +1010,9 @@ the propeller is spun locally (`0x0057C21E`..`0x0057C2CF`: `revs x 400` degrees
 a tick below the 0.08 blur swap, `revs x 20` above), so a 10 Hz sample of it
 aliases.
 
-Corrections these readings make elsewhere (recorded here; the corpus files are
-another session's to merge):
+Corrections these readings make elsewhere. The addresses above, and the two
+vtable corrections below, are in `bf1942-engine-reference/symbols.json`
+(source `research-2026-09-27-round-replay`); `netcode.md` is left as it is:
 
 - `subsystems/netcode.md` P-2's "no interpolation buffer": each networkable
   keeps a 16-entry history, and a RotationalBundle's `predict` (PMLinear,
@@ -1022,7 +1023,7 @@ another session's to merge):
   the fire-flag loop of §14.
 - The PhysicsEngine vtable is `0x008FDEC0`; `0x008FDF50` is its slot 36.
 - `HandFireArms`' primary vtable is `0x008F97B8` (`0x008F9750` is the
-  interface table at object `+0x2D8`).
+  secondary table, at object `+0x2D8`).
 
 Open: the sign of the recorded aim pitch (only the property name says
 positive is up; check it in a recording), which LOD a part hangs under on a
