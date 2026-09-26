@@ -48,6 +48,7 @@ import os
 import re
 import subprocess
 import sys
+import weakref
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1961,6 +1962,122 @@ def _global_spawn_group_teams(game) -> dict[int, int]:
     return parse_spawn_point_manager(text)
 
 
+_OBJECT_CREATE = re.compile(r"(?im)^\s*objecttemplate\.create\s+\S+\s+(\S+)")
+# Per objects pool: template name (lower) -> the Objects.con that creates it.
+_objects_con_index: "weakref.WeakKeyDictionary[object, dict[str, str]]" = \
+    weakref.WeakKeyDictionary()
+
+
+def _created_templates(text: str) -> set[str]:
+    return {m.group(1).lower() for m in _OBJECT_CREATE.finditer(con_mod.strip_comments(text))}
+
+
+def _vehicle_objects_con(objects, vehicle: str) -> str | None:
+    """The text of the `Objects.con` that `ObjectTemplate.create`s `vehicle`.
+
+    A ship's folder is usually named after it, but not always: Omaha Beach's
+    destroyer is `Fletcher2`, the second hull `Sea/fletcher/Objects.con`
+    creates, and Midway, Guadalcanal and the Philippines spawn it and
+    `Hatsuzuki2` too. The folder guesses go first, since they are the pool's
+    own priority for that path (Coral Sea's carriers override from the
+    level's archive); anything else is found by scanning the pool's
+    `Vehicles/Sea` Objects.con files once.
+    """
+    key = vehicle.lower()
+    for rel in (f"Objects/Vehicles/Sea/{vehicle}/Objects.con",
+                # Coral Sea's carriers live in the level's own archive,
+                # directly under `Objects/` — no Vehicles/Sea rung.
+                f"Objects/{vehicle}/Objects.con"):
+        blob = objects.try_read(rel)
+        if blob is not None:
+            text = blob.decode("latin-1", "replace")
+            if key in _created_templates(text):
+                return text
+    index = _objects_con_index.get(objects)
+    if index is None:
+        index = {}
+        for name in objects.names():
+            lower = name.lower()
+            # Hulls only. XPack2's ParatrooperSpawner also creates SpawnPoints
+            # (group 101, which no spawnPointManager file binds to a side), and
+            # widening to it would invent a team for Essen's paradrop.
+            if not (lower.endswith("objects.con") and "vehicles/sea/" in lower):
+                continue
+            blob = objects.try_read(name)
+            if blob is None:
+                continue
+            for created in _created_templates(blob.decode("latin-1", "replace")):
+                index.setdefault(created, name)
+        _objects_con_index[objects] = index
+    rel = index.get(key)
+    blob = objects.try_read(rel) if rel else None
+    return blob.decode("latin-1", "replace") if blob is not None else None
+
+
+def _scoped_child_offsets(text: str, root: str,
+                          wanted: set[str]) -> dict[str, list[tuple[float, float, float]]]:
+    """Where each `wanted` template sits in `root`'s bundle, in root's frame.
+
+    Only `root`'s own create block and the blocks it `addTemplate`s from the
+    same file count. One Objects.con holds several complete hulls — the
+    fletcher file creates `Fletcher` (spawn groups 68/69), `FletcherStatic`
+    (68/69 again) and `Fletcher2` (80/81) — and reading every `addTemplate` in
+    the file hung all of them on each hull. Most ships add their deck points
+    one level down, `Enterprise` -> `lodEnterprise` -> `EnterpriseComplex`,
+    so the walk follows children, composing each one's `setPosition` and yaw.
+    A template added twice yields one entry per add, port and starboard.
+    """
+    children: dict[str, list[list]] = {}
+    current: list[list] | None = None
+    last: list | None = None
+    for ns, cmd, args in _commands(text):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd == "create":
+            current = children.setdefault(tokens[1].lower(), []) if len(tokens) >= 2 else None
+            last = None
+        elif cmd in ("active", "activesafe"):
+            current = children.setdefault(tokens[-1].lower(), []) if tokens else None
+            last = None
+        elif current is None:
+            continue
+        elif cmd == "addtemplate":
+            last = [tokens[0].lower(), (0.0, 0.0, 0.0), 0.0] if tokens else None
+            if last is not None:
+                current.append(last)
+        elif cmd in ("setposition", "setrotation") and last is not None:
+            try:
+                values = tuple(float(v) for v in args.split("/")[:3])
+            except ValueError:
+                continue
+            if len(values) != 3:
+                continue
+            if cmd == "setposition":
+                last[1] = values
+            else:
+                last[2] = values[0]
+
+    out: dict[str, list[tuple[float, float, float]]] = {}
+
+    def walk(name: str, origin: tuple[float, float, float], yaw: float,
+             stack: tuple[str, ...]) -> None:
+        cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        for child, (lx, ly, lz), child_yaw in children.get(name, []):
+            # The same con-frame yaw the hull's own pose applies below.
+            pos = (origin[0] + lx * cos_y + lz * sin_y,
+                   origin[1] + ly,
+                   origin[2] - lx * sin_y + lz * cos_y)
+            if child in wanted:
+                out.setdefault(child, []).append(pos)
+            elif child in children and child not in stack and len(stack) < 16:
+                walk(child, pos, yaw + child_yaw, stack + (child,))
+
+    root = root.lower()
+    walk(root, (0.0, 0.0, 0.0), 0.0, (root,))
+    return out
+
+
 def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                                   gameplay=None) -> list[dict]:
     """The fleet's deck spawn points, reconstructed from the vehicle templates.
@@ -1989,38 +2106,16 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
         vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
             continue
-        blob = None
-        for rel in (f"Objects/Vehicles/Sea/{vehicle}/Objects.con",
-                    # Coral Sea's carriers live in the level's own archive,
-                    # directly under `Objects/` — no Vehicles/Sea rung.
-                    f"Objects/{vehicle}/Objects.con"):
-            blob = objects.try_read(rel)
-            if blob is not None:
-                break
-        if blob is None:
+        text = _vehicle_objects_con(objects, vehicle)
+        if text is None:
             continue
-        text = blob.decode("latin-1", "replace")
         templates = parse_soldier_spawn_templates(text)
-        # `addTemplate <SpawnPoint>` followed by the `setPosition` that places
-        # that instance in the ship's local frame. A template added twice —
-        # every deck point is — yields one entry per add, port and starboard.
-        offsets: dict[str, list[tuple[float, float, float]]] = {}
-        pending: str | None = None
-        for ns, cmd, args in _commands(text):
-            if ns != "objecttemplate":
-                continue
-            if cmd == "addtemplate":
-                tokens = args.split()
-                pending = tokens[0].lower() if tokens else None
-            elif cmd == "setposition" and pending is not None:
-                parts = args.split("/")
-                try:
-                    lx, ly, lz = (float(v) for v in parts[:3])
-                except ValueError:
-                    pending = None
-                    continue
-                offsets.setdefault(pending, []).append((lx, ly, lz))
-                pending = None
+        # Each SpawnPoint instance in this hull's bundle, in the ship's local
+        # frame. A SpawnPoint the file defines but this hull never adds is
+        # another hull's, and gets no entry.
+        offsets = _scoped_child_offsets(text, vehicle, set(templates))
+        if not offsets:
+            continue
         # One transform per pad: the ships spawn at their spawner's pose.
         ox, oy, oz = inst.position
         yaw_rad = math.radians(inst.rotation[0] or 0.0)
@@ -2035,7 +2130,7 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
             # stand; the helm points the fleet ships leave remmed are kept.
             if tpl.enter_on_spawn or tpl.group is None:
                 continue
-            for lx, ly, lz in offsets.get(name, [(0.0, 0.0, 0.0)]):
+            for lx, ly, lz in offsets.get(name, []):
                 # Mirror the offset's z into the viewer's frame BEFORE rotating
                 # it. The pad origin is mirrored at output (`-oz` below) and the
                 # hull node carries `Ry(-yaw_con)` (`gltf.quat_from_ypr`), so
