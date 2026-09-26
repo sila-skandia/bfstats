@@ -804,7 +804,7 @@ const wrecks = createVehicleWrecks(bag(
   from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
     soldierDead standUp useLens`),
   from(() => seatPose, `detachSeatCorpse`),
-  from(() => pageAudio, `disposeEngineAudio`),
+  from(() => pageAudio, `cutVehicleAudio`),
   from(() => soldierHud, `clearHitIndicator`),
   from(() => touchControls, `resetMobileControls`),
   from(() => vehicleEntry, `exitPoseManned`),
@@ -892,6 +892,14 @@ const guns = new GunFire({
 guns.impactMarkers = params.get('impacts') === 'debug';
 // Every seat's gun groups are collected and released by the hull's instance.
 vehicles.env.guns = guns;
+// `guns.firstPerson` is the human's view and only his own guns spend it: a
+// bot-crewed hull's gun (or a bot's rocket, `group.firer`) flashes the outside
+// mesh, never the `em_1P_*` sprite his camera would get (round-launch.js
+// `flashView`). Same firer rule as `vehicle-hits.js` `roundFirer`.
+guns.viewOf = group => {
+  const firer = vehicles.firerOf(group) ?? group?.firer ?? null;
+  return firer != null && firer !== LOCAL_PLAYER ? 'third' : null;
+};
 // Every round that stops anywhere comes through here. Most land on terrain or a
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
@@ -1080,6 +1088,7 @@ const referee = createBotReferee({
   onShot: (bot, at) => {
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
+    botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
