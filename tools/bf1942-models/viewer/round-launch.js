@@ -277,7 +277,7 @@ function spawnTracer(guns, muzzle, group, bright) {
     // the node's -Z down the line of flight leaves the tail behind the round
     // where it belongs — no half-length offset, unlike the centred cylinder.
     pool = group.tracerMeshPool;
-    mesh = pool.pop() || group.tracerMesh.clone();
+    mesh = pool.pop() || tracerClone(group.tracerMesh);
     mesh.visible = true;
     // Scaled uniformly: `tracerScaler` is one number, and reading it as
     // length alone leaves the streak 6 mm wide — a fifty-metre thread.
@@ -337,6 +337,29 @@ function spawnTracer(guns, muzzle, group, bright) {
     // the point a hit's damage arc looks at (ledger HFD-4).
     origin: [_origin.x, _origin.y, _origin.z],
   });
+}
+
+/**
+ * A pooled copy of the baked streak with materials of its own, so
+ * `advanceTracers` can dim one round without dimming the gun's others. Each
+ * material's authored opacity is kept on `userData.tracerFade` as the ceiling
+ * the fade scales.
+ */
+function tracerClone(template) {
+  const mesh = template.clone();
+  const fade = [];
+  mesh.traverse(part => {
+    if (!part.isMesh) return;
+    part.material = Array.isArray(part.material)
+      ? part.material.map(m => m.clone())
+      : part.material.clone();
+    for (const material of [part.material].flat()) {
+      material.transparent = true;
+      fade.push({ material, opacity: material.opacity });
+    }
+  });
+  mesh.userData.tracerFade = fade;
+  return mesh;
 }
 
 /**

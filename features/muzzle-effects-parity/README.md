@@ -59,8 +59,9 @@ mesh particle with no `sizeModifier` draws at its authored size, whatever its
 1.76 m `MuzzHeavy_m1` at scale 1, and its `.rs` (`blendDest one` and
 `alphaTestRef 0.7`) keeps only the texture's hard core (alpha > 0.7 is 12.5% of
 `MuzzHeavy_o` against 19.8% above 0.1). Seen from behind the gunner that is the
-star end of the mesh, about 0.3 m of flame, plus the 0.43 m orange glow: head
-sized. The casing's `size 1.7` is inert for the same reason: it is 8.5 cm.
+star end of the mesh, about 0.3 m of flame, plus the orange glow, whose
+`size 0.43` is a half-extent (ledger SPR-7): an 0.86 m quad of a soft 16 px
+`e_fire4` whose bright core is about a third of that. Head sized. The casing's `size 1.7` is inert for the same reason: it is 8.5 cm.
 
 ### What the viewer did instead
 
@@ -139,6 +140,18 @@ Scratchpad images `flash_compare_m3a1left.jpg` (halftrack gunner, 2x crops),
 `flash_compare_shermancoaxF.jpg`. The halftrack flash went from roughly four
 head-widths of flame to about one head, orange-yellow; casings leave the
 receiver to the gun's left and fall.
+
+### Merged with main's sprite fixes (fd3ca777, efcc599c)
+
+`fd3ca777` settled SPR-7..9: sprite `size` is a half-extent (the player draws
+sprites at `2 x size`), colour ramps are gamma-space, sprites fall at -9.82.
+The muzzle path now goes through that same player, so all three apply to the
+glow and the tank flares; the parked fallback in `gun-cycle.js` also draws a
+sprite at `2 x size x sizeOverTime` (a mesh stays at its authored size,
+IMP-5). `dece98ff`'s derived attach velocity is kept, written into the run's
+own array so a pooled muzzle run still allocates nothing. `efcc599c` (retail
+LOD chains) shrinks the effect library (vanilla 2,555,528 -> 2,007,540 B); it
+was re-extracted with both changes and republished.
 
 ## Open
 

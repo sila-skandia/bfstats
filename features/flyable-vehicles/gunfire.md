@@ -89,6 +89,14 @@ touching its length:
 | 136.8 m | 0.55 m | 2.5 px |
 | 736.7 m | 2.97 m | 2.5 px |
 
+**The floor dims what it widens (2026-09-26).** At full opacity the floor drew
+a converged stream as two bright 2.5 px lines running on for hundreds of metres
+past the crossing. The owner's retail capture of a Zero's burst shows them going
+to faint specks there. Each streak now owns its materials (`tracerClone`,
+`round-launch.js`), and `advanceTracers` scales opacity by `real width / floored
+width`, so the light on screen is the real sub-pixel streak's. Measured in a
+flown Zero: opacity 0.92 at 82 m, 0.35 at 215 m, 0.15 at 500 m.
+
 The floor is measured against the template's **geometry** bounding box, not
 `Box3.setFromObject`. That one works in world space, and the AABB of a thin
 spike rotated by the airframe reads 0.42 m across instead of 0.0061 — 68x too

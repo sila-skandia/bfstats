@@ -1845,21 +1845,32 @@ def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
 
 def seat_anchored(skeleton: ske_mod.Skeleton,
                   locals_by_name: dict[str, tuple],
+                  standing: tuple[float, float, float] | None = None,
                   ) -> dict[str, tuple]:
-    """Move a seat pose's origin from the soldier's feet onto his hips.
+    """Measure a seat pose's root from where a standing man's hips would be.
 
     A `.baf` root track is the one transform expressed in the clip's own world
-    (`baf.ROOT_ALIGN`'s note), and for a seat clip it carries the *standing*
-    soldier's origin-at-the-feet convention: `3PWillySitLower` writes
-    `Bip01` at `0/-0.1104/-0.8335`, 0.83 m from the hips, which is the same
-    0.9992 m `3PStandLower` writes for a man standing on the ground.
+    (`baf.ROOT_ALIGN`'s note), with the origin at the soldier's feet:
+    `3PStandLower` writes `Bip01` 0.9992 m up for a man on the ground. A seat
+    clip uses the same origin, and how far *it* puts the hips up is the pose's
+    own sitting height: `3PWillySitLower` 0.8335 m, `3PSitM3a1PassLower`
+    0.434 m, `3PSitHanomagPassLower` 0.297 m (a bench much lower than the
+    rider's hips would be standing).
 
-    A `SeatObject` is the sit position — `WillySeat` sits 0.6 m up inside the
-    Willys' body, where the cushion is, not 0.83 m under it — so a pose
-    parented there has to have its hips at its origin, or the whole soldier
-    rides that far out of the vehicle and his arms cannot reach anything. The
-    root's rotation is kept; only the translation goes, and the offset it
-    carried is recorded in the report so nothing is silently lost.
+    `SeatObject::enter` (lnxded `0x083208d0`) parents the soldier to the
+    `SeatObject` under an identity transform, and DICE placed every seat node
+    so that a *standing* man's hips would land on it: the Hanomag's passenger
+    seats are at y = 1.0 over a bench at 0.18, the M3A1's at 0.85 over 0.19,
+    WillySeat at 0.6 over a cushion at 0.38, KubelwagenSeat at 0.25 over 0.0.
+    Measured from the standing root, every one of those puts the pelvis 5 to
+    12 cm above its seat surface, and every fighter pilot's helmet under his
+    canopy. Dropping the root outright instead put the hips *on* the node and
+    floated them 0.22 to 0.82 m high -- Hanomag and M3A1 passengers' heads
+    through the roof, the pilots' through the glass.
+
+    So the root keeps its rotation and its translation less `standing` (the
+    aligned `Lb_Stand` root, `standing_root`). `None` drops the translation
+    whole, which is the old anchoring, kept for a mod with no standing clip.
     """
     out = dict(locals_by_name)
     for bone in skeleton.bones:
@@ -1867,19 +1878,41 @@ def seat_anchored(skeleton: ske_mod.Skeleton,
             continue
         key = ske_mod.canonical(bone.name)
         if key in out:
-            out[key] = (out[key][0], (0.0, 0.0, 0.0))
+            rotation, translation = out[key]
+            if standing is None:
+                out[key] = (rotation, (0.0, 0.0, 0.0))
+            else:
+                out[key] = (rotation, tuple(
+                    t - s for t, s in zip(translation, standing)))
     return out
 
 
 def seat_root_offset(skeleton: ske_mod.Skeleton,
                      locals_by_name: dict[str, tuple]) -> list[float] | None:
-    """The translation `seat_anchored` drops, for the report."""
+    """A pose's aligned root translation, for the report."""
     for bone in skeleton.bones:
         if bone.parent < 0:
             key = ske_mod.canonical(bone.name)
             if key in locals_by_name:
                 return [round(v, 5) for v in locals_by_name[key][1]]
     return None
+
+
+def standing_root(machine: animstates.StateMachine, meshes: ArchivePool,
+                  skeleton: ske_mod.Skeleton, frame: int,
+                  ) -> tuple[float, float, float] | None:
+    """The aligned root translation of `Lb_Stand` at `frame`: the reference
+    `seat_anchored` measures a seat pose's root from. None when the state
+    machine has no standing clip."""
+    state = machine.state("Lb_Stand")
+    ref = state.clip_3p() if state else None
+    clip = read_clip(meshes, ref.path) if ref else None
+    if clip is None:
+        return None
+    aligned = pose_mod.align_clip_roots(
+        skeleton, clip.local_pose(min(frame, clip.frames - 1)))
+    offset = seat_root_offset(skeleton, aligned)
+    return tuple(offset) if offset else None
 
 
 def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
@@ -1913,8 +1946,10 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     locals_map, lower_path, upper_path = resolve_seat_pose(
         machine, meshes, upper_state, lower_state, frame)
     aligned = pose_mod.align_clip_roots(skeleton, locals_map)
-    result["rootOffsetDropped"] = seat_root_offset(skeleton, aligned)
-    locals_map = seat_anchored(skeleton, aligned)
+    standing = standing_root(machine, meshes, skeleton, frame)
+    result["rootOffset"] = seat_root_offset(skeleton, aligned)
+    result["standingRoot"] = list(standing) if standing else None
+    locals_map = seat_anchored(skeleton, aligned, standing)
     result["lowerClip"] = lower_path
     result["upperClip"] = upper_path
 
@@ -1983,7 +2018,7 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         # The same re-anchoring the static hierarchy got, every frame: a mixer
         # writes the clip's own root translation back over the node's and
         # would put the soldier's feet on the seat again.
-        frames = [seat_anchored(skeleton, f) for f in frames]
+        frames = [seat_anchored(skeleton, f, standing) for f in frames]
         tracks = timeline_tracks(frames, period, joint_nodes)
         if tracks:
             builder.add_animation(label, tracks)

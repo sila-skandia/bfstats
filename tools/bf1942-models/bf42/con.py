@@ -1693,7 +1693,7 @@ class GeometryTemplate:
     # internal LOD chain (0.0 for LOD 0, rising to a final cull band), NOT the
     # vehicle-part LodSelector thresholds (`LodSelector.addLodDistance`), which
     # are a separate mechanism recorded on `LodSelector.distances`.
-    lod_distances: list[float] = field(default_factory=list)
+    lod_distances: list[float | None] = field(default_factory=list)
 
     @property
     def mesh_file(self) -> str:
@@ -2646,8 +2646,10 @@ class ObjectLibrary:
                     except (ValueError, IndexError):
                         continue
                     if index >= 0:
+                        # A gap stays None: the engine keeps its constructor
+                        # default for an index the file never names.
                         while len(geom.lod_distances) <= index:
-                            geom.lod_distances.append(0.0)
+                            geom.lod_distances.append(None)
                         geom.lod_distances[index] = metres
 
             elif ns == "weapontemplate":

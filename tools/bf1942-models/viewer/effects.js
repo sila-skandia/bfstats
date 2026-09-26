@@ -20,6 +20,10 @@ import {
 // lnxded 0x081e02f0); the particle cap is ours.
 export const MAX_PARTICLES = 1200;
 export const MAX_DECALS = 128;
+// m/s. An attached run's derived velocity above this is a jump, not motion.
+const ATTACH_MAX_DERIVED_SPEED = 400;
+// The baked sprite quad's width over the engine's `size` (see `#draw`).
+const SPRITE_QUAD_SPAN = 2;
 const DEG = Math.PI / 180;
 
 const _pos = new THREE.Vector3();
@@ -486,12 +490,29 @@ export class EffectPlayer {
       if (run.attach?.object) {
         const obj = run.attach.object;
         obj.updateWorldMatrix(true, false);
+        (run.previous ??= new THREE.Vector3()).copy(run.origin);
         obj.getWorldPosition(run.origin);
         obj.getWorldQuaternion(run.quaternion);
         const v = run.attach.velocity?.();
         if (v) {
           velocity = run.velocity ??= [0, 0, 0];
           velocity[0] = v.x; velocity[1] = v.y; velocity[2] = v.z;
+        } else if (dt > 0) {
+          // No velocity handed in: the object's own motion since last frame.
+          // A vehicle's damage tier rides an anchor on the hull, and every
+          // plane's fire and smoke emitters declare `addEmitterSpeed`. Left
+          // at rest they were strewn 80 m behind a Zero at 100 m/s (0.8 s
+          // particle life) instead of licking round its cowling. A jump
+          // faster than any vehicle flies is a respawn or a teleport, not
+          // motion. Written into the run's own array: a pooled muzzle run
+          // allocates nothing per frame.
+          const dx = (run.origin.x - run.previous.x) / dt;
+          const dy = (run.origin.y - run.previous.y) / dt;
+          const dz = (run.origin.z - run.previous.z) / dt;
+          if (Math.hypot(dx, dy, dz) < ATTACH_MAX_DERIVED_SPEED) {
+            velocity = run.velocity ??= [0, 0, 0];
+            velocity[0] = dx; velocity[1] = dy; velocity[2] = dz;
+          }
         }
         run.speed = velocity ? Math.hypot(velocity[0], velocity[1], velocity[2]) : 0;
       }
@@ -745,7 +766,15 @@ export class EffectPlayer {
     const look = evalParticleInto(p);
     const mesh = p.mesh;
     mesh.position.set(p.position[0], p.position[1], p.position[2]);
-    mesh.scale.set(Math.max(look.scale[0], 1e-4), Math.max(look.scale[1], 1e-4),
+    // A sprite's `size` is a HALF-extent: the client's quad builder
+    // (`FUN_0062d300`, fed by the update at 0x0060a860 that writes
+    // `size x sizeOverTime` and its xy-ratio product to particle +0x68/+0x64)
+    // puts the four corners at +-w, +-h around the centre. The baked quad is
+    // a unit square (+-0.5), so it is scaled by twice that. At 1x every smoke,
+    // fire and dust sprite drew at a quarter of its area: a burning plane's
+    // trail read as a dotted line of small grey puffs.
+    const span = p.kind === 'sprite' ? SPRITE_QUAD_SPAN : 1;
+    mesh.scale.set(Math.max(look.scale[0] * span, 1e-4), Math.max(look.scale[1] * span, 1e-4),
                    Math.max(look.scale[2], 1e-4));
     if (p.kind === 'sprite') {
       mesh.quaternion.copy(this.camera.quaternion);
@@ -754,7 +783,15 @@ export class EffectPlayer {
         mesh.quaternion.multiply(_spin);
       }
       const material = mesh.material;
-      if (look.color) material.color.setRGB(look.color[0], look.color[1], look.color[2]);
+      // `colorRGBAOverTime` is the vertex colour D3D modulated the texture by
+      // in gamma space (client `draw` 0x0060a0e0 packs it straight into the
+      // quad's diffuse). three.js reads a bare `setRGB` as LINEAR and encodes
+      // it on output, which lifted every mid-tone: a plane's smoke ramp of
+      // 145/255 drew at 0.78 grey instead of 0.57, and its 24/255 tail was a
+      // light haze instead of black.
+      if (look.color) {
+        material.color.setRGB(look.color[0], look.color[1], look.color[2], THREE.SRGBColorSpace);
+      }
       material.opacity = look.opacity;
       if (p.spec.numAnimationFrames > 1) {
         // The spec is the shared template's `particle` object (one per

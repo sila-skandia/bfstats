@@ -76,8 +76,9 @@ class MuzzleBundleTests(unittest.TestCase):
 
     def test_glow_is_its_authored_size(self):
         scale = self.results["third"]["glowScale"]
-        self.assertAlmostEqual(0.43, scale[0], places=5)
-        self.assertAlmostEqual(0.43, scale[1], places=5)
+        # SPR-7: `size 0.43` is a half-extent on the +-0.5 quad.
+        self.assertAlmostEqual(0.86, scale[0], places=5)
+        self.assertAlmostEqual(0.86, scale[1], places=5)
 
     def test_flash_rides_the_gun(self):
         self.assertAlmostEqual(1.0, self.results["third"]["flashMoved"], places=5)
@@ -115,7 +116,7 @@ class MuzzleBundleTests(unittest.TestCase):
         fallback = self.results["fallback"]
         self.assertIn("em_MuzzHeavy", fallback["bakedLit"])
         self.assertAlmostEqual(1.0, fallback["flashScale"], places=5)
-        self.assertAlmostEqual(0.43, fallback["glowScale"], places=5)
+        self.assertAlmostEqual(0.86, fallback["glowScale"], places=5)
 
     def test_a_viewmodel_gun_keeps_the_baked_path(self):
         viewmodel = self.results["viewmodel"]

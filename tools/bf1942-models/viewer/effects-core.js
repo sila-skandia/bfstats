@@ -24,6 +24,12 @@ export {
 // (client 0x00578f00) writes -14.73, not -9.81; `physics.js` owns the same
 // constant, but this module keeps its own copy so it stays import-free.
 export const GRAVITY = -14.73;
+// A SPRITE particle falls under a literal -9.82 instead: it has no physics
+// node, and the client's own integrator (`geom::ParticleSystem` update,
+// 0x0060a860) multiplies `gravityModifier x gravityModifierOverTime` by the
+// immediate -9.82. A plane's smoke at `gravityModifier -0.1` rises at 0.98
+// m/s^2, not the 1.47 the world constant gave it.
+export const SPRITE_GRAVITY = -9.82;
 
 // A mesh particle's `PointPhysicsNode` mass, hardcoded 1.0 in the node's own
 // constructor and never touched by `Particle::Particle` (EMT-5, verify-r8.md
@@ -452,7 +458,7 @@ export function integrateParticle(p, dt, gravity = GRAVITY) {
   const dRamp = sampleCurveInto(p.spec.dragOverTime, phase, _curve);
   if (dRamp >= 0) drag *= _curve[0];
   const v = p.velocity;
-  if (g) v[1] += gravity * g * dt;
+  if (g) v[1] += (p.kind === 'mesh' ? gravity : SPRITE_GRAVITY) * g * dt;
   if (drag > 0) {
     const k = p.kind === 'mesh' && p.radius > 0
       ? Math.PI * p.radius * p.radius * drag / PARTICLE_MASS
