@@ -182,8 +182,56 @@ const airHold = {
   gunner: passHeldBy({ air: true, root: false, mounted: true }),
   foot: passHeldBy({ mounted: false }),
 };
+// A capture-only flag (`spawn-flags.js`: a control point that owns no soldier
+// spawn) binds the engine's way: to an area with the `ControlPoint` type flag
+// whose centre box holds it (`AIStrategicArea::update` 0x0863d6d0,
+// `BFEnvironment::findControlPoint` 0x085e53a0), never to the nearest area.
+// Midway Conquest's own areas and points, both sea areas taken by the Axis:
+// they lie in no area's box, so NorthSea and SouthSea stay held by presence,
+// and the Axis still count them among their control points. Salerno's hill
+// is `hillnest`'s; a point inside an area without the flag is nobody's.
+const seaArea = (name, min, max, radius, flags, side) => ({ name, min, max, radius, flags, side, neighbours: [],
+                                                          orderPositions: {}, takeable: {} });
+const midway = new StrategicLayer({ strategicAreas: [
+  seaArea('Base', [2044.5, -2142.0], [2076.0, -2099.0], 120, ['Base', 'ControlPoint'], 0),
+  seaArea('OutPost', [1824.0, -1958.0], [1842.0, -1938.0], 100, ['Flank', 'ControlPoint'], 0),
+  seaArea('NorthSea', [1833.0, -1568.0], [1992.0, -1504.0], 10, ['ControlPoint', 'Route', 'Flank'], 2),
+  seaArea('SouthSea', [1800.0, -2506.0], [1980.0, -2415.0], 10, ['ControlPoint', 'Route', 'Flank'], 1),
+] }, [
+  { name: 'Airfield', controlPointName: 'The_Airfield', position: [2078.63, 24.3187, -2112.66], team: 0 },
+  { name: 'Coastal_Defences', controlPointName: 'The_Radar_Bunker', position: [1836.99, 32.9391, -1972.83], team: 0 },
+  { name: 'NORTH_SEA_AREA', controlPointName: 'North_Midway', position: [2030.71, 19.9763, -3055.48], team: 1,
+    captureOnly: true },
+  { name: 'SOUTH_SEA_AREA', controlPointName: 'South_Midway', position: [2033.56, 19.8993, -1032.48], team: 1,
+    captureOnly: true },
+]);
+// A side's `ControlPoint` state: its flags plus its owned areas with the
+// type flag (`_updateStates`), with the sea areas neutral and then the Axis's.
+const controlPointStates = () => {
+  const sai = new StrategicAI(midway, { random: () => 0.5 });
+  sai.beginPass(new Map());
+  return [1, 2].map(side => { sai._updateStates(side); return sai.sides[side].states.friendly.get('ControlPoint') ?? 0; });
+};
+const seaFlags = midway.flags.filter(f => f.captureOnly);
+for (const f of seaFlags) f.team = 0;
+const neutralSeas = controlPointStates();
+for (const f of seaFlags) f.team = 1;
+const axisSeas = controlPointStates();
+const salerno = new StrategicLayer({ strategicAreas: [
+  seaArea('hillnest', [439.0, -492.5], [449.5, -482.0], 300, ['Centre', 'StrongPoint', 'ControlPoint'], 0),
+  seaArea('supply_left', [329.5, -552.0], [345.0, -537.0], 100, ['Flank', 'West', 'SupplyPoint'], 0),
+] }, [
+  { name: 'HILL_424', controlPointName: 'The_top', position: [447.602, 144.248, -492.623], team: 2, captureOnly: true },
+  { name: 'FIELD', controlPointName: 'Field', position: [340, 100, -545], team: 2, captureOnly: true },
+]);
+const bindings = layer => layer.areas.map(a => [a.name, a.controlPoints.map(f => f.name), layer.ownerOf(a)]);
+const captureOnly = {
+  midway: bindings(midway),
+  controlPoints: { neutralSeas, axisSeas },
+  salerno: bindings(salerno),
+};
 const pins = {
-  air, orderInside, prereq, presence, airHold,
+  air, orderInside, prereq, presence, airHold, captureOnly,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
   tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,

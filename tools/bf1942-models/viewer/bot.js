@@ -549,7 +549,8 @@ export function spawnBots({
     const teamName = botTeam === 1 ? 'German' : 'American';
     const names = BOT_NAMES[teamName] || FALLBACK_NAMES;
 
-    const teamFlags = flags.filter(f => f.team === botTeam);
+    // Never a capture-only flag: it has nowhere to stand up (`spawn-flags.js`).
+    const teamFlags = flags.filter(f => f.team === botTeam && !f.captureOnly);
     const flag = teamFlags.length ? teamFlags[i % teamFlags.length] : null;
     const spawnIndex = teamFlags.length ? Math.floor(i / teamFlags.length) : i;
 

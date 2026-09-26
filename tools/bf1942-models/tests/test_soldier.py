@@ -544,14 +544,18 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_flags_join_to_the_spawns_their_group_owns(self) -> None:
         flags = self.results["flags"]
-        self.assertEqual(3, len(flags))            # the fourth owns no spawns
+        self.assertEqual(4, len(flags))
         axis = flags[0]
         self.assertEqual("2nd_Panzer_Division_HQ", axis["name"])
         self.assertEqual(1, axis["team"])
         self.assertEqual(1, axis["group"])
         self.assertTrue(axis["uncapturable"])
         self.assertEqual(4, axis["spawns"])
-        self.assertEqual([1, 2, 0], [f["team"] for f in flags])
+        self.assertEqual([1, 2, 0, 0], [f["team"] for f in flags])
+        # The fourth owns no spawns: a flag to take, and nowhere to spawn.
+        self.assertEqual([False, False, False, True], [f["captureOnly"] for f in flags])
+        self.assertEqual({"name": "Nowhere", "group": None, "spawns": 0, "uncapturable": False},
+                         {k: flags[3][k] for k in ("name", "group", "spawns", "uncapturable")})
 
     def test_paratrooper_spawns_are_skipped_both_ways(self) -> None:
         # One is declared `paratrooper`, one is only 160 m above the ground —

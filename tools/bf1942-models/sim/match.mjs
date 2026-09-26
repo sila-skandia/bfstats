@@ -182,9 +182,11 @@ export class Match {
    *  `team` `hoistCaptureFlag` keeps in step with the world's flags; here each
    *  is its level entry's `areaValue` (the world's flags carry none) and the
    *  owner of the flag of the same name, read live. A point that owns no
-   *  spawns is no flag (`spawn-flags.js`) and keeps its level team, as on the
-   *  page: Battle of Britain's `Allied_Base`, whose 150 bleeds the Axis from
-   *  the first frame. */
+   *  spawns and can change hands is a capture-only flag (`spawn-flags.js`),
+   *  among `controlPoints` like any other: Midway's sea areas weigh 40 each
+   *  for whoever takes them. One that cannot change hands is no flag and keeps
+   *  its level team, as on the page: Battle of Britain's `Allied_Base`, whose
+   *  150 bleeds the Axis from the first frame. */
   weighedPoints(extras) {
     const flags = new Map(this.controlPoints.map(f => [f.controlPointName, f]));
     return (extras?.controlPoints ?? []).map(({ name, team, areaValue }) => {

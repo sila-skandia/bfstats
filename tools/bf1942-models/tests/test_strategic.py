@@ -120,6 +120,22 @@ class StrategicFixtureTests(unittest.TestCase):
         # empty or contested; a base Allies may not take stays Axis.
         self.assertEqual(self.results["pins"]["presence"], [1, 2, 2, 2, 1])
 
+    def test_a_capture_only_flag_binds_only_where_the_engine_binds_it(self) -> None:
+        # `AIStrategicArea::update` 0x0863d6d0 looks a point up only for an
+        # area flagged `ControlPoint`, inside its centre box
+        # (`BFEnvironment::findControlPoint` 0x085e53a0). Midway's sea areas
+        # lie in no box: the nearest-centre rule would have bound North_Midway
+        # to SouthSea and South_Midway to NorthSea, handing NorthSea to the
+        # Axis. The Axis still count both among their control points
+        # (`getNumberOfControlPoints` 0x085e4f80 counts every point): the
+        # state is a side's flags plus its owned areas with the type flag.
+        c = self.results["pins"]["captureOnly"]
+        self.assertEqual([["Base", ["Airfield"], 0], ["OutPost", ["Coastal_Defences"], 0],
+                          ["NorthSea", [], 2], ["SouthSea", [], 1]], c["midway"])
+        self.assertEqual([1, 1], c["controlPoints"]["neutralSeas"])
+        self.assertEqual([3, 1], c["controlPoints"]["axisSeas"])
+        self.assertEqual([["hillnest", ["HILL_424"], 2], ["supply_left", [], 0]], c["salerno"])
+
     def test_an_aircraft_does_not_hold_an_area_its_gunner_seat_does(self) -> None:
         # `AIStrategicArea::update` 0x0863d6d0 skips an air object in the
         # counts (0x0863e182 / 0x0863e1e5) but not a secondary seat of it.
