@@ -35,6 +35,11 @@
 //   m   P4: a deploy row's `spawnIndex` pins the authority to the page's own
 //       spawn point (the snap-back defect), the snapshot carries the input
 //       `ack`, and the facing on the wire is degrees
+//   n-q the bleed (ledger TKT-4) on rooms with nobody in them: Battle of
+//       Britain's flagless `Allied_Base` bleeds the Axis from the first
+//       frame; Wake's five points at 20 bleed Japan while the US holds all
+//       five and nobody at four; a gate shut for one tick refills the
+//       countdown; a level's own max players scales the round once
 //
 // Laws cited are the engine's (`netcode.md` §1/§2/§5, J-3) as pinned by
 // `features/netcode-play-multiplayer/README.md` P2.
@@ -518,10 +523,13 @@ let nextTag = 1;
   };
 }
 
-// --- (l) P3: flag capture and the majority bleed -------------------------------
+// --- (l) P3: flag capture and the bleed ----------------------------------------
 // The law: an un-contested enemy inside the ring flips the owner after
-// FLAG_CAPTURE_SECONDS; both teams present freezes; then the majority-flag
-// timer drains the loser's `lossPerMin` once a second.
+// FLAG_CAPTURE_SECONDS; both teams present freezes. The test level's two
+// points weigh 50 each, so one flag a side bleeds nobody, and the capture
+// that leaves team 1 holding both (100, over the engine's 99) bleeds team 2
+// its 30 a minute: a whole ticket every 2 s, the first a whole interval after
+// the capture (ledger TKT-4).
 {
   const pl = attachPeer(core, String(nextTag++));
   const hl = joinPeer(core, pl, 'LLL', 'L', 0);       // first: team 1
@@ -561,22 +569,20 @@ let nextTag = 1;
     .filter(b => b[0] === MSG_EVENT).map(b => jsonRow(b))
     .some(r => r.type === 'captured');
   // The defender leaves the map: lone team-1 inside South -> the capture
-  // runs to completion, and team 2 ends up holding nothing at all (the
-  // majority the bleed keys off).
+  // runs to completion, and team 2 ends up holding nothing at all.
   lw.player(2).soldier.spawn(50, 0, 50);
   tick(300);
-  const rowsAfter = lRoom.players.get(1).peer.sent
+  const lRows = () => lRoom.players.get(1).peer.sent
     .filter(b => b[0] === MSG_EVENT).map(b => jsonRow(b));
-  const capturedAfter = rowsAfter.find(r => r.type === 'captured');
+  const capturedAfter = lRows().find(r => r.type === 'captured');
   const southNow = lw.flags[1].team;
-  // Both flags are team 1's now: team 2 owns nothing capturable, so team 2
-  // bleeds 30/60 per second — a `flag_majority` row within a few seconds.
-  let majorityRow = null;
-  for (let i = 0; i < 240 && !majorityRow; i++) {
+  // Both flags are team 1's now, 100 of weight: team 2 bleeds a whole ticket
+  // every 60 / 30 = 2 s, the first 2 s after the capture.
+  const isBleed = r => r.type === 'ticket' && r.reason === 'bleed';
+  let bleedRow = null;
+  for (let i = 0; i < 240 && !bleedRow; i++) {
     tick(1);
-    majorityRow = lRoom.players.get(1).peer.sent
-      .filter(b => b[0] === MSG_EVENT).map(b => jsonRow(b))
-      .find(r => r.type === 'ticket' && r.reason === 'flag_majority');
+    bleedRow = lRows().find(isBleed);
   }
   results.l = {
     northBefore,
@@ -588,9 +594,15 @@ let nextTag = 1;
     },
     southTeamAfter: southNow,
     southFlipped: southNow === 1 && !capturedBefore,
-    majorityRow: majorityRow
-      ? { team: majorityRow.team, count: majorityRow.count } : null,
-    bleedTicket: majorityRow?.team === 2 && majorityRow.count < 100,
+    bleedRow: bleedRow
+      ? { team: bleedRow.team, count: bleedRow.count, reason: bleedRow.reason } : null,
+    // Ticks from the capture's row to the first bleed row; the capture's own
+    // tick is the bleed's first.
+    bleedGapTicks: bleedRow && capturedAfter ? bleedRow.t - capturedAfter.t : null,
+    bleedsBeforeCapture: capturedAfter
+      ? lRows().filter(r => isBleed(r) && r.t < capturedAfter.t).length : null,
+    held: { ...lRoom.authority.round.held },
+    bleeding: { ...lRoom.authority.round.bleeding },
   };
 }
 
@@ -707,6 +719,185 @@ let nextTag = 1;
   sendJson(mPeer, MSG_ACTION, { type: 'spawn', flag: 0, spawnIndex: 1e12 });
   mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
   results.m.absurdIndex = mw.player(1).spawnIndex;
+}
+
+// --- (n)-(q) the bleed on rooms of its own ---------------------------------------
+// The engine's rule (ledger TKT-4): a side loses one whole ticket every
+// `60 / (rate * maxPlayers / 16)` s while the ENEMY's summed `areaValue` over
+// the control points it holds is over 99, and the countdown is refilled whole
+// on every frame that gate is shut. Each room here plays a level of its own
+// with nobody in it (the bleed needs no players, and an empty room has nobody
+// to stand in a ring), and keeps the rows its authority raises where the wire
+// would carry them. Rooms are 16 slots, the number the levels' rates are
+// written for.
+
+/** A room on a descriptor level of `extras`, no vehicles, and its rows. */
+function bleedRoom(code, extras) {
+  const name = `bleed-${code.toLowerCase()}`;
+  const descriptor = {
+    name,
+    extras: { worldSize: 1000, gameplayMode: 'Conquest', ...extras },
+    collider: { waterLevel: null, heightfield: null, statics: null, surfaceHeight() { return 0; } },
+    vehicles: [],
+  };
+  core.levels.set(name, buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const room = core.createRoom(code, { level: name });
+  const rows = [];
+  room.broadcast = row => rows.push(row);      // the wire, with nobody on it
+  const bleeds = team => rows.filter(r => r.type === 'ticket' && r.reason === 'bleed'
+    && (team == null || r.team === team));
+  return { room, rows, bleeds };
+}
+
+/** Run a room until `ticks` more engine ticks have gone (a lap can run none
+ *  or two, so the count is the room's own). */
+function runTicks(room, ticks) {
+  const until = room.tick + ticks;
+  while (room.tick < until) { clock.ms += FRAME_MS; room.frame(FRAME_MS); }
+}
+
+const countsOf = room => ({ 1: room.world.tickets.team1, 2: room.world.tickets.team2 });
+const roundOf = room => {
+  const r = room.authority.round;
+  return { held: { ...r.held }, bleeding: { ...r.bleeding }, tickets: { ...r.tickets } };
+};
+
+/** Wake's five points (its Conquest layer): 20 each, all the US's at the
+ *  start, and each owns spawns, so each is a flag the room can turn. Wake's
+ *  own rates, 5 a minute for Japan and 30 for the US. */
+const wakeExtras = () => {
+  const names = ['The_beach', 'The_Airfield', 'ALLIES_southbase', 'ALLIES_north_base',
+                 'ALLIES_north_village'];
+  const at = i => [200 * (i - 2), 0, 300];
+  return {
+    controlPoints: names.map((name, i) => ({
+      name, team: 2, areaValue: 20, spawnGroupId: i + 1, unableToChangeTeam: false,
+      radius: 50, timeToGetControl: 10, position: at(i),
+    })),
+    soldierSpawns: names.map((name, i) => ({
+      name: `${name}_spawn`, group: i + 1, team: 2, position: at(i), rotation: [180, 0, 0],
+    })),
+    tickets: { mode: 'Conquest', team1: 100, team2: 100, lossPerMin: { team1: 5, team2: 30 } },
+  };
+};
+const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName === name);
+
+// --- (n) the weight gate: a point with no flag, as on Battle of Britain -----------
+// Battle of Britain's own points and rates (Conquest): the Axis airfield,
+// uncapturable, 50 for team 1; and the Allies' `Allied_Base`, uncapturable,
+// 150 for team 2, whose spawn group 3 holds no soldier spawn, so the world
+// makes no flag of it (`spawn-flags.js`). The Allies hold 150 from the first
+// frame: the Axis bleeds its 4 a minute, a whole ticket every 15 s. The
+// Axis's 50 bleeds nobody, however fast the Allies' 1000 a minute would run.
+// No flag here is capturable, which is why the old flag-majority rule bled
+// nobody on this level.
+{
+  const { room, bleeds } = bleedRoom('BOB', {
+    controlPoints: [
+      { name: 'Axis_East_Airfield', displayName: 'Axis_Airfield', team: 1, areaValue: 50,
+        spawnGroupId: 1, secondSpawnGroupId: 2, unableToChangeTeam: true, radius: 50,
+        timeToGetControl: 9999, position: [200, 0, 200] },
+      { name: 'Allied_Base', displayName: 'Allied_Weapons_Factory', team: 2, areaValue: 150,
+        spawnGroupId: 3, secondSpawnGroupId: null, unableToChangeTeam: true, radius: 50,
+        timeToGetControl: 9999, position: [-200, 0, -200] },
+    ],
+    soldierSpawns: [
+      { name: 'Axis_spawn', group: 1, team: 1, position: [200, 0, 200], rotation: [180, 0, 0] },
+    ],
+    tickets: { mode: 'Conquest', team1: 100, team2: 100, lossPerMin: { team1: 4, team2: 1000 } },
+  });
+  runTicks(room, 1);
+  const firstTick = roundOf(room);
+  runTicks(room, 61 * 30 - room.tick);
+  results.n = {
+    flags: room.world.flags.map(f => f.controlPointName),
+    firstTick,
+    clock: room.tick / 30,
+    tickets: countsOf(room),
+    // [the tick of the row, its count] for every ticket the Axis bled.
+    axis: bleeds(1).map(r => [r.t, r.count]),
+    allies: bleeds(2).length,
+  };
+}
+
+// --- (o) four of five points at 20 bleed nobody, as on Wake -------------------------
+// The US holding all five, 100, bleeds Japan its 5 a minute: a ticket every
+// 12 s. Japan taking one leaves the US four of the five, the strict majority
+// of the flags the old rule bled Japan for, and 80 of weight: nobody bleeds.
+{
+  const { room, rows, bleeds } = bleedRoom('WAK', wakeExtras());
+  runTicks(room, 1);
+  const allUs = roundOf(room);
+  runTicks(room, 13 * 30 - room.tick);
+  const at13 = { tickets: countsOf(room), bleeds: bleeds().map(r => [r.team, r.t, r.count]) };
+  wakeFlag(room, 'The_Airfield').team = 1;
+  const takenAt = room.tick;
+  runTicks(room, 60 * 30);
+  results.o = {
+    allUs,
+    at13,
+    oneTaken: {
+      ...roundOf(room),
+      tickets: countsOf(room),
+      // Every ticket row after the point turned, whatever its reason.
+      rows: rows.filter(r => r.type === 'ticket' && r.t > takenAt).length,
+      seconds: (room.tick - takenAt) / 30,
+    },
+  };
+}
+
+// --- (p) a shut gate refills the countdown ------------------------------------------
+// Wake again, all five the US's: Japan's first ticket at 12 s, and at 18 s
+// half the next interval is owed. Japan holds one point for one tick (the US
+// weight drops to 80, the gate shuts) and loses it: the engine writes the
+// whole 12 s back on the shut frame, so the next ticket comes a whole 12 s
+// after the gate reopens, not the 6 s that were owed.
+{
+  const { room, bleeds } = bleedRoom('WKR', wakeExtras());
+  runTicks(room, 18 * 30);
+  const owed = room.authority.round.countdowns[1];
+  const beforeShut = bleeds(1).map(r => [r.t, r.count]);
+  const airfield = wakeFlag(room, 'The_Airfield');
+  airfield.team = 1;
+  runTicks(room, 1);
+  const shut = { countdown: room.authority.round.countdowns[1],
+                 bleeding: { ...room.authority.round.bleeding } };
+  airfield.team = 2;
+  const reopened = room.tick;
+  runTicks(room, 14 * 30);
+  const next = bleeds(1).find(r => r.t > reopened);
+  results.p = {
+    owed,
+    beforeShut,
+    shut,
+    next: next ? { gapTicks: next.t - reopened, count: next.count } : null,
+    after: bleeds(1).filter(r => r.t > reopened).length,
+  };
+}
+
+// --- (q) the room's round is scaled once ----------------------------------------------
+// Kasserine Pass co-op's own tickets: 100 a side, 15 a minute, and its
+// script's `game.maxNrOfPlayers 18`, which sets the start and not the bleed
+// (ledger TKT-2). The room scales them once for its 16 slots (`level-data.mjs`
+// `scaleTickets`): 100 x 18 / 16 = 112.5, truncated to 112, and 15 a minute,
+// a ticket every 4 s. The round has to start where the handshake does, and
+// not at 112 x 18 / 16 = 126. One point of 100 for team 2 bleeds team 1.
+{
+  const { room, bleeds } = bleedRoom('KAS', {
+    controlPoints: [
+      { name: 'Allied_Hill', team: 2, areaValue: 100, spawnGroupId: 1, position: [100, 0, 100] },
+    ],
+    soldierSpawns: [
+      { name: 'Hill_spawn', group: 1, team: 2, position: [100, 0, 100], rotation: [180, 0, 0] },
+    ],
+    tickets: { mode: 'CoOp', team1: 100, team2: 100, maxPlayers: 18,
+               lossPerMin: { team1: 15, team2: 15 } },
+  });
+  const start = { world: countsOf(room), round: { ...room.authority.round.tickets },
+                  lossPerMin: { ...room.world.tickets.lossPerMin } };
+  runTicks(room, 5 * 30);
+  const first = bleeds(1)[0];
+  results.q = { start, first: first ? [first.t, first.count] : null, tickets: countsOf(room) };
 }
 
 // --- (r) radio relay: GameServer::radioMessage -----------------------------------
