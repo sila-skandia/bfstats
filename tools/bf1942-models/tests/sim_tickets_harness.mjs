@@ -75,8 +75,9 @@ for (const maxPlayers of [8, 32]) {
                                 after: { ...match.tickets }, weight: { ...match.round.held } };
 }
 
-// Battle of Britain: the Allies' `Allied_Base` owns no spawns, so the world
-// makes no flag of it (`spawn-flags.js`), and weighs 150. On the synthetic
+// Battle of Britain: the Allies' `Allied_Base` owns no spawns and cannot
+// change hands, so the world makes no flag of it (`spawn-flags.js`), and
+// weighs 150. On the synthetic
 // level with Battle of Britain's tickets (4 and 1000 a minute) the Allies hold
 // three of the six points, half and no more, and 200 of weight, so the Axis
 // bleeds from the first frame: a ticket every 15 s on the 16 slots its
@@ -117,6 +118,47 @@ const alliedBase = {
   bleed(match, 30 * 30);
   results.wake = { allUs, oneTaken: { tickets: { ...match.tickets }, weight: { ...match.round.held },
                                       held: held(match), bleeding: { ...match.round.bleeding } } };
+}
+
+// Midway's sea areas on the synthetic level: two points that own no spawns
+// and weigh 40 each, neutral. They are capture-only flags (`spawn-flags.js`),
+// so the runner counts them among its control points, after the flags that
+// have spawns, and weighs each by its live owner. An Allied bot alone in each
+// takes it by the law (`captureTick`); the Allies then hold 50 + 80, and the
+// Axis bleeds, where the frozen 0 of the old flagless points never let the
+// Allies past 50.
+{
+  const sea = (name, position) => ({
+    name, displayName: name, position, rotation: [0, 0, 0], team: 0, radius: 30, areaValue: 40,
+    spawnGroupId: null, secondSpawnGroupId: null, unableToChangeTeam: false, timeToGetControl: 10,
+    timeToLoseControl: 10,
+  });
+  const { match } = start({ maxPlayers: 16,
+                            points: cps => [...cps, sea('North_Sea', [220, 0, -100]), sea('South_Sea', [220, 0, -200])] });
+  const names = fs => fs.map(f => f.controlPointName ?? f.name);
+  const setup = {
+    flags: names(match.world.flags), captureOnly: match.world.flags.filter(f => f.captureOnly).length,
+    controlPoints: names(match.controlPoints),
+  };
+  bleed(match, 1);
+  const before = { weight: { ...match.round.held }, bleeding: { ...match.round.bleeding } };
+  const bot = match.bots.find(b => b.team === 2);
+  const taken = [];
+  for (const at of [[220, 0, -100], [220, 0, -200]]) {
+    bot.setPosition(...at);
+    for (let i = 0; i < 11 * 30; i++) match.referee.captureTick(1 / 30);
+    taken.push(match.world.flags.filter(f => f.captureOnly).map(f => f.team));
+  }
+  const tickets = { ...match.tickets };
+  bleed(match, 25 * 30);
+  results.sea = {
+    setup, before, taken,
+    owners: match.roundPoints.filter(p => p.name.endsWith('_Sea')).map(p => p.team),
+    after: { weight: { ...match.round.held }, bleeding: { ...match.round.bleeding } },
+    tickets, bled: { ...match.tickets },
+    // No bot spawned at sea.
+    atSea: match.bots.filter(b => match.world.player(b.playerId)?.flag?.captureOnly).length,
+  };
 }
 
 // `routeConsole(true)` silenced `console.log` along with the viewer's lines.

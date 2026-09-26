@@ -97,15 +97,38 @@ export class StrategicLayer {
   }
 
   /** Attach every control point to the area whose box (grown by its radius)
-   *  holds it; a flag outside every box goes to the nearest area centre. */
+   *  holds it; a flag outside every box goes to the nearest area centre. A
+   *  capture-only flag (`spawn-flags.js`) is bound the engine's way instead,
+   *  `controlPointAreaAt`, so a point no area claims stays out of every
+   *  area's owner. */
   bindFlags(flags) {
     this.flags = flags ?? [];
     for (const a of this.areas) a.controlPoints = [];
     for (const flag of this.flags) {
       if (!flag?.position) continue;
-      const area = this.areaAt(flag.position[0], flag.position[2]);
+      const area = flag.captureOnly
+        ? this.controlPointAreaAt(flag.position[0], flag.position[2])
+        : this.areaAt(flag.position[0], flag.position[2]);
       if (area) area.controlPoints.push(flag);
     }
+  }
+
+  /**
+   * The area the engine gives a control point at a world point, or null.
+   * `AIStrategicArea::update` 0x0863d6d0 looks a point up only for an area
+   * with the `ControlPoint` type flag (`hasObjectTypeFlag` 0x0863e870, bit
+   * 0x10) whose point (+0x138) is still -1, and `BFEnvironment::
+   * findControlPoint` 0x085e53a0 answers the first control point whose x/z
+   * is inside the area's centre box (`insideCentreBox`). One point an area:
+   * an area that already has one here keeps it. Midway's two sea areas lie
+   * in no area's box (NorthSea and SouthSea are the water by the island), so
+   * no area follows them; Salerno's `The_top` is `hillnest`'s.
+   */
+  controlPointAreaAt(x, z) {
+    for (const a of this.areas) {
+      if (a.flags.has('ControlPoint') && !a.controlPoints.length && this.isInside(a, x, z)) return a;
+    }
+    return null;
   }
 
   /** The area holding a world point: inside a grown box, nearest centre wins. */
