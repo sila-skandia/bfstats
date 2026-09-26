@@ -1076,8 +1076,8 @@ const referee = createBotReferee({
   beforeBots: () => {
     botPlayerPos = localPlayer.soldier ? [localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z] : null;
     botPlayerTeam = level.world?.player(LOCAL_PLAYER)?.team ?? spawning.deployTeamId;
-    botPlayerFired = !!localPlayer.frameInputLast?.fire && !frameInputWasFiring;
-    frameInputWasFiring = !!localPlayer.frameInputLast?.fire;
+    botPlayerFired = localFireEdge;
+    localFireEdge = false;
   },
   afterBotTick: (bot, dt) => {
     pageAudio.botFootstepTick(bot, dt);
@@ -1439,7 +1439,7 @@ const botBodies = createBotVisuals(bag(
   from(() => localLook, `presentAlpha`),
   from(() => referee, `bots`),
   {
-    get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
+    get bust() { return bust; }, get camera() { return camera; }, get MODELS_BASE() { return MODELS_BASE; },
     get scene() { return scene; }, get vehicles() { return vehicles; },
   },
 ));
@@ -1452,8 +1452,18 @@ const botRounds = createBotRounds(bag(
     get MODELS_BASE() { return MODELS_BASE; }, get scene() { return scene; },
   },
 ));
-/** The edge of the human's fire input last frame, for the bots' hearing. */
+/** The edge of the human's fire input, for the bots' hearing: noted every
+ *  frame (`noteLocalFireEdge`), drained by the referee's next pass, which no
+ *  longer runs every frame. */
 let frameInputWasFiring = false;
+let localFireEdge = false;
+function noteLocalFireEdge() {
+  const firing = !!localPlayer.frameInputLast?.fire;
+  if (firing && !frameInputWasFiring) localFireEdge = true;
+  frameInputWasFiring = firing;
+}
+/** World ticks run since the bots' referee last passed (`simulate`). */
+let aiOwed = 0;
 const soldierView = createSoldierView(bag(
   from(() => deployScreen, `deployActive`),
   from(() => footBodies, `footBody footCanopy`),
@@ -1847,8 +1857,28 @@ function simulate(dt, input, look) {
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
   const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
-  // Bot AI runs after the world step, so bots read the player's post-step pose.
-  referee.tick(dt);
+  // The human's fire edge is noted every frame, whether or not the bots hear
+  // it this frame (`beforeBots` drains it on the referee's next pass).
+  noteLocalFireEdge();
+  // Bot AI runs after the world step, so bots read the player's post-step
+  // pose -- once per WORLD TICK, not once per frame. Each pass reads the tick
+  // just run and writes the input word the next tick consumes, which is the
+  // headless runner's own order (sim/match.mjs); a second pass before the
+  // next tick only wrote a word the first pass's replaced, at the full price
+  // of every bot's sensing, decision and path search (7.5 ms of a 25 ms
+  // frame with sixteen bots, features/bot-fight-performance). At 60 fps the
+  // pass is deferred to the frame between two ticks, so the tick frame does
+  // not carry both the bodies and the AI; a display at or under 30 fps runs
+  // it right after the step. The pass gets the sim time it covers.
+  aiOwed += step.ticks;
+  if (aiOwed > 0) {
+    const nextFrameTicks = step.alpha + dt / (1 / 30) >= 0.999;
+    const defer = step.ticks > 0 && aiOwed === 1 && !nextFrameTicks;
+    if (!defer) {
+      referee.tick(aiOwed / 30);
+      aiOwed = 0;
+    }
+  }
   // The kits on the ground turn and time out on the world's own ticks: one
   // `Item::handleUpdate` and one message-clock step per world update.
   kitDrops.tick(step.ticks / 30);
