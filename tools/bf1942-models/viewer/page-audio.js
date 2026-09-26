@@ -154,8 +154,8 @@ export function createPageAudio(page) {
     pageAudio.soundsGeneration++;
     disposeEngineAudio();
     // Bots' gunfire goes with the level too, but not with a single wreck:
-    // `killOccupantInWreck` also runs `disposeEngineAudio`, and a bot's rifle
-    // must outlive the player's own hull.
+    // `killOccupantInWreck` cuts only its own hull (`cutVehicleAudio`), and a
+    // bot's rifle must outlive the player's own hull.
     pageAudio.worldFire?.dispose();
     pageAudio.worldFire = null;
     // Every pooled effect voice, armed latch and looping wreck fire, gone —
@@ -364,6 +364,12 @@ export function createPageAudio(page) {
   function disposeEngineAudio() {
     pageAudio.vehicleAudio?.dispose();
     pageAudio.vehicleAudio = null;
+  }
+
+  /** One destroyed hull's engine and guns, silent now; every other hull on
+   *  the rack -- the bots' -- keeps its claims. */
+  function cutVehicleAudio(node) {
+    pageAudio.vehicleAudio?.cut(node);
   }
 
   /**
@@ -716,6 +722,7 @@ export function createPageAudio(page) {
     audioBufferCache,
     botFootstepTick,
     claimVehicleAudio,
+    cutVehicleAudio,
     disposeEngineAudio,
     disposeSounds,
     ensureAudioContext,

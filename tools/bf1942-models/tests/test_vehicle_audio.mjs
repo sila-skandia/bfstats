@@ -289,6 +289,58 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   const snap = rack.snapshot();
   assert.equal(snap.vehicles.length, 1, 'a re-claim inside the shut-down tail keeps the hull');
   assert.ok(snap.vehicles[0].built, 'and its graph');
+  assert.equal(snap.vehicles[0].engine.released, false,
+    'a live graph, not the released one the last crewman left behind');
+  rack.dispose();
+}
+
+// --- re-crewed inside the tail, the hull sounds: engine and guns -----------
+// The released graph used to stay built for the new crew: its loops faded on
+// `timerelease` and `trigger()` refused every round, so a bot boarding a tank
+// another had just left drove it in silence, MG and main gun included.
+
+{
+  // A gun's report is its one-shots, which is what `trigger()` replays.
+  const shot = { ...LAYER('brown.wav'), loop: false };
+  const sherman = { ...SHERMAN, weapons: [{ ...SHERMAN.weapons[0], layers: [shot] }] };
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([sherman]));
+  const node = sceneNode('sherman', 0);
+  childNode(node, 'ShermanEngine');
+  const gun = childNode(node, 'Coaxial_browning');
+  rack.claim({ seatKey: 'bot:1', node, template: 'sherman', drive: drive(0), groups: [{ node: gun }] });
+  await settle();
+  rack.releaseClaim('bot:1', node);
+  rack.claim({ seatKey: 'bot:2', node, template: 'sherman', drive: drive(0), groups: [{ node: gun }] });
+  await settle();
+  const v = rack.snapshot().vehicles[0];
+  assert.ok(v.built && v.engine && !v.engine.released, 'the new crew gets a running engine');
+  assert.ok(v.weapons.every(w => !w.released), 'and live gun patches');
+  assert.ok(rack.weaponFor(gun).audio.trigger() > 0, 'which a round actually sounds');
+  rack.dispose();
+}
+
+// --- a wreck cuts its own hull, and nobody else's ---------------------------
+// The local player's wreck used to dispose the whole rack, so every
+// bot-crewed hull on the map went silent until its crew changed seats.
+
+{
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([SHERMAN, WILLY]));
+  const mine = sceneNode('sherman', 0);
+  childNode(mine, 'ShermanEngine');
+  const bots = sceneNode('willy', 20);
+  childNode(bots, 'WillyEngine');
+  rack.claim({ seatKey: 'local', node: mine, template: 'sherman', drive: drive(0), groups: [] });
+  rack.claim({ seatKey: 'bot:1', node: bots, template: 'willy', drive: drive(20), groups: [] });
+  await settle();
+  rack.cut(mine);
+  const snap = rack.snapshot();
+  assert.deepEqual(snap.vehicles.map(v => v.key), ['willy'], 'only the wrecked hull goes');
+  assert.ok(snap.vehicles[0].built && !snap.vehicles[0].engine.released,
+    'and the bot\'s hull keeps sounding');
+  rack.releaseClaim('local', mine);   // his seat, emptied after the cut: a no-op
+  assert.equal(rack.snapshot().vehicles.length, 1);
   rack.dispose();
 }
 
