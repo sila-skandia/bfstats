@@ -9,6 +9,24 @@
 //   node decktrace.cjs --base http://localhost:5573 --map bocage
 //   node decktrace.cjs --base http://localhost:5573 --map bocage --vehicle '^Willy'
 //   node decktrace.cjs --base http://localhost:5573 --map wake --targets 'dock|deck'
+//   node decktrace.cjs --base http://localhost:5573 --map bocage --targets bridge --out trace.json
+//
+// `--list` prints the decks the scan found and stops. `--out <file>` writes the
+// full per-tick trace beside the summary; without it the summary still carries
+// `path`, one row every `--every` ticks, and `stallAt` when the run jammed —
+// enough to put a stall on the map.
+//
+// NOT a hull-sweep test. With the body solver up (every current build), the
+// driven vehicle reports `hullSolved: true` and its contact with the statics —
+// a parapet, a workshop wall, a bridge pier — is resolved by `body-statics.js`
+// through the body world, while the drive model's own swept sphere
+// (the `collider.sweepSphere` call in `tracked-vehicle.js` / `wheeled-vehicle.js`)
+// stands down.
+// `hullSolved` and the per-tick `contacts` in the result are that path's
+// numbers. `--sweep` runs the old path instead (`__hullSolver(false)`: statics
+// out of the solver, the swept sphere back on) for an A/B. The deck RIDE — the
+// wheels on the span, which is what the summary grades — is neither: it is the
+// ground probe `__drive().ground()` answers, the same in both modes.
 //
 // The run finds the level's drivable statics by name, stands the vehicle a run-up
 // short of one on the heading that crosses it, and holds W through the REAL key
@@ -43,7 +61,8 @@ const opts = {
   base: 'http://localhost:5573', mod: 'bf1942', map: 'bocage',
   vehicle: '^(Tiger|PanzerIV|Sherman)', targets: null,
   runUp: 26, ticks: 900, width: 480, height: 300,
-  software: false, headed: false, out: null, list: false,
+  software: false, headed: false, out: null, list: false, sweep: false,
+  every: 10,                           // `path` sampling interval, in ticks
   // An explicit crossing, when the automatic one (the deck's long axis, from
   // `runUp` metres outside it) is not the line worth driving: `--start x,z`
   // plus `--yaw <radians>`, and `--zone x0,x1,z0,z1` for the stretch the
@@ -51,13 +70,20 @@ const opts = {
   // workshop building standing on the pad, which is a wall and should be.
   start: null, yaw: null, zone: null, deck: null,
 };
+// `--key value` and `--key=value` both work. An unknown key is an error: a
+// mistyped one used to land in `opts` unread, so `--targets=bridge` ran the
+// default target list and picked a repair pad without a word.
 const argv = process.argv.slice(2);
+const parse = v => (Number.isNaN(Number(v)) ? v : Number(v));
 for (let i = 0; i < argv.length; i++) {
-  if (!argv[i].startsWith('--')) continue;
-  const key = argv[i].slice(2);
+  if (!argv[i].startsWith('--')) throw new Error(`unexpected argument ${argv[i]}`);
+  const eq = argv[i].indexOf('=');
+  const key = argv[i].slice(2, eq < 0 ? undefined : eq);
+  if (!(key in opts)) throw new Error(`unknown option --${key}`);
   const next = argv[i + 1];
-  if (next === undefined || next.startsWith('--')) opts[key] = true;
-  else { opts[key] = Number.isNaN(Number(next)) ? next : Number(next); i++; }
+  if (eq >= 0) opts[key] = parse(argv[i].slice(eq + 1));
+  else if (next === undefined || next.startsWith('--')) opts[key] = true;
+  else { opts[key] = parse(next); i++; }
 }
 
 const round = (v, p = 3) => (Number.isFinite(v) ? +v.toFixed(p) : v);
@@ -117,25 +143,72 @@ async function run(browser) {
   const decks = await page.evaluate(pattern => {
     const re = new RegExp(pattern, 'i');
     const out = [];
-    const box = new window.__THREE.Box3();
+    const taken = new Set();
+    const THREE = window.__THREE;
+    const box = new THREE.Box3();
+    const local = new THREE.Box3();
+    const part = new THREE.Box3();
+    const toLocal = new THREE.Matrix4();
+    const m = new THREE.Matrix4();
+    // A placed vehicle's parts match too (`B17_Bay_Left`, `Katyusha_Ramp`); the
+    // loose match is harmless to the collider but they are not decks.
+    const vehicleNames = new Set(window.__vehicles().map(v => v.name));
+    const under = (node, test) => {
+      for (let n = node.parent; n; n = n.parent) if (test(n)) return true;
+      return false;
+    };
     window.__scene.traverse(node => {
       if (!node.name || !re.test(node.name)) return;
       // Only placements, not the collision primitives inside them.
       if (/collision/i.test(node.name)) return;
-      if (out.some(o => o.node === node.parent?.name)) return;
+      // Nor the meshes nested inside a placement already taken: a repair depot
+      // is `landrep1_supply` > `landrep1_m1` > `landrep1_m1_lod1_6`, every level
+      // of which matches `landrep`. The traversal is parent-first, so an
+      // ancestor walk against what was taken is enough.
+      if (under(node, n => taken.has(n))) return;
+      if (vehicleNames.has(node.name) || under(node, n => vehicleNames.has(n.name))) return;
       box.setFromObject(node);
       if (!Number.isFinite(box.min.x)) return;
+      taken.add(node);
+      // The placement's own box, in its own frame. A bridge is placed at any
+      // heading, and the world box of one at 45 degrees is near square, so its
+      // long side says nothing about which way the span runs. The local axis
+      // whose extent covers the most ground in XZ is the span.
+      toLocal.copy(node.matrixWorld).invert();
+      local.makeEmpty();
+      node.traverse(o => {
+        if (!o.geometry) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        local.union(part.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(toLocal, o.matrixWorld)));
+      });
+      let span = null;
+      if (!local.isEmpty()) {
+        const mid = local.getCenter(new THREE.Vector3());
+        for (const k of ['x', 'y', 'z']) {
+          const a = mid.clone(); a[k] = local.min[k];
+          const b = mid.clone(); b[k] = local.max[k];
+          a.applyMatrix4(node.matrixWorld); b.applyMatrix4(node.matrixWorld);
+          const len = Math.hypot(b.x - a.x, b.z - a.z);
+          if (!span || len > span.len) span = { len, a, b };
+        }
+      }
       out.push({
         node: node.name,
         min: [box.min.x, box.min.y, box.min.z].map(v => +v.toFixed(2)),
         max: [box.max.x, box.max.y, box.max.z].map(v => +v.toFixed(2)),
+        // The span: its two ends' ground position and length, for the crossing.
+        span: span && span.len > 0 ? {
+          from: [span.a.x, span.a.z].map(v => +v.toFixed(2)),
+          to: [span.b.x, span.b.z].map(v => +v.toFixed(2)),
+          length: +span.len.toFixed(2),
+        } : null,
       });
     });
     return out;
     // Keep this in step with `DRIVABLE_TOP_RE` in `viewer/collision-meshes.js`; this
     // file cannot import the module the page loads.
   }, String(opts.targets
-    || 'bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|supplyde|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck'));
+    || 'bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck'));
 
   if (opts.list) {
     console.log(JSON.stringify({ map: opts.map, decks }, null, 1));
@@ -144,17 +217,22 @@ async function run(browser) {
   if (!decks.length) throw new Error(`no drivable statics matching on ${opts.map}`);
   const nums = v => String(v).split(',').map(Number);
 
-  // The vehicle: whichever placed one matches, nearest to the first deck.
+  // The vehicle and the deck together: the (matching vehicle, listed deck) pair
+  // standing closest. Every candidate deck came through `--targets`, so the
+  // list decides WHICH kind of deck; proximity only picks one of them (the
+  // vehicle is placed at the run-up anyway). `--deck <node>` pins it.
   const chosen = await page.evaluate(([pattern, decksIn, only]) => {
     const want = new RegExp(pattern, 'i');
     const centre = d => [(d.min[0] + d.max[0]) / 2, (d.min[2] + d.max[2]) / 2];
     const best = { owner: null, deck: null, distance: Infinity };
     for (const v of window.__vehicles()) {
-      if (!v.pos || v.destroyed || !want.test(v.name)) continue;
+      // `test-hooks-world.js` reports `x, y, z`; the older hook had `pos`.
+      const at = Number.isFinite(v.x) ? [v.x, v.y, v.z] : v.pos;
+      if (!at || v.destroyed || !want.test(v.name)) continue;
       for (const deck of decksIn) {
         if (only && deck.node !== only) continue;
         const [cx, cz] = centre(deck);
-        const d = Math.hypot(v.pos[0] - cx, v.pos[2] - cz);
+        const d = Math.hypot(at[0] - cx, at[2] - cz);
         if (d < best.distance) {
           best.distance = d;
           best.owner = v.owner; best.name = v.name; best.deck = deck;
@@ -163,26 +241,38 @@ async function run(browser) {
     }
     return best;
   }, [String(opts.vehicle), decks, opts.deck ? String(opts.deck) : null]);
-  if (chosen.owner === null) throw new Error(`no vehicle matching ${opts.vehicle} on ${opts.map}`);
+  if (chosen.owner === null) {
+    throw new Error(`no vehicle matching ${opts.vehicle} on ${opts.map}`
+      + (opts.deck ? ` beside a deck named ${opts.deck}` : ''));
+  }
   if (!await page.evaluate(o => window.__enterOwner(o), chosen.owner)) {
     throw new Error(`could not take owner ${chosen.owner} (${chosen.name})`);
   }
   await step(20);
 
-  // Cross the deck along its LONG horizontal axis, starting `runUp` metres
-  // outside it so the approach ramp is part of the run.
+  // Cross the deck along its span (its long axis in its own frame, see the
+  // scan), starting `runUp` metres short of its end so the approach ramp is
+  // part of the run. Without a span (no geometry under the node) fall back to
+  // the world box's long side.
   const plan = await page.evaluate(([deck, runUp, startIn, yawIn]) => {
-    const spanX = deck.max[0] - deck.min[0];
-    const spanZ = deck.max[2] - deck.min[2];
-    const alongX = spanX >= spanZ;
-    const cx = (deck.min[0] + deck.max[0]) / 2;
-    const cz = (deck.min[2] + deck.max[2]) / 2;
-    // Heading: yaw 0 points -Z (the spawn heading), yaw -pi/2 points +X.
-    const yaw = yawIn !== null ? yawIn : (alongX ? -Math.PI / 2 : 0);
-    const start = startIn || (alongX ? [deck.min[0] - runUp, cz] : [cx, deck.max[2] + runUp]);
+    let from, to;
+    if (deck.span) ({ from, to } = deck.span);
+    else {
+      const cx = (deck.min[0] + deck.max[0]) / 2;
+      const cz = (deck.min[2] + deck.max[2]) / 2;
+      const alongX = deck.max[0] - deck.min[0] >= deck.max[2] - deck.min[2];
+      from = alongX ? [deck.min[0], cz] : [cx, deck.max[2]];
+      to = alongX ? [deck.max[0], cz] : [cx, deck.min[2]];
+    }
+    const len = Math.hypot(to[0] - from[0], to[1] - from[1]) || 1;
+    const axis = [(to[0] - from[0]) / len, (to[1] - from[1]) / len];
+    // Heading: yaw 0 points -Z (the spawn heading), yaw -pi/2 points +X, so a
+    // heading (hx, hz) is yaw atan2(-hx, -hz).
+    const yaw = yawIn !== null ? yawIn : Math.atan2(-axis[0], -axis[1]);
+    const start = startIn || [from[0] - axis[0] * runUp, from[1] - axis[1] * runUp];
     const y = window.__drive().ground(start[0], start[1]).height;
     window.__drive().place(start[0], y + 1.2, start[1], yaw);
-    return { alongX, yaw, start, startY: y };
+    return { axis, yaw, start, startY: y };
   }, [chosen.deck, opts.runUp, opts.start ? nums(opts.start) : null,
       opts.yaw !== null ? Number(opts.yaw) : null]);
   await step(40);                      // let the springs settle before the run
@@ -193,6 +283,11 @@ async function run(browser) {
   // produce both halves of a before/after.
   const legacy = await page.evaluate(() => !window.__drive().sweep);
   if (legacy) console.error('# legacy build: no deck hooks, surface is its own raster');
+  // Which path answers the statics: see the header. `__hullSolver` is absent on
+  // a build from before the body solver, where the sweep is the only path.
+  const solver = await page.evaluate(sweep => (window.__hullSolver
+    ? window.__hullSolver(sweep ? false : undefined) : null), !!opts.sweep);
+  if (opts.sweep && !solver) console.error('# --sweep: no __hullSolver on this build, the sweep is already the path');
 
   // The real key path: the only one a tracked hull moves down. `captured` is
   // what pointer lock would have set and the seated input branch reads it
@@ -241,18 +336,27 @@ async function run(browser) {
           terrain: terrain.height,
           friction: surface.friction,
           along: s.along, grounded: s.grounded, pitch, roll: s.roll ?? null,
+          hullSolved: s.hullSolved ?? null,
+          // This tick's static contacts from `body-statics.js`, and the most
+          // upright-facing one's normal: a wall is ~0, a floor ~1.
+          contacts: s.hullContacts ? s.hullContacts.length : null,
+          contactNormalY: s.hullContacts?.length
+            ? Math.max(...s.hullContacts.map(c => c.normalY)) : null,
         });
       }
       return out;
     }, [batch, opts.width, opts.height, legacy]);
     for (const row of rows) trace.push(row);
     if (!rows.length) break;
-    // Stop once the run has plainly ended: a hull jammed against a wall for two
-    // seconds would otherwise dominate every average in the summary. `stall` in
-    // the result says whether this fired.
+    // Stop once the run has plainly ended: a hull jammed against a wall for 120
+    // ticks would otherwise dominate every average in the summary. `stalled` in
+    // the result says whether this fired. Net ground covered, not speed: a Tiger
+    // nosing up the Bocage depot's slab edge shoves back and forth at 0.3-3 m/s
+    // for 500 ticks and goes nowhere, and a speed test never saw it.
     const tail = trace.slice(-120);
-    if (tail.length >= 120 && tail.every(p => Math.abs(p.along) < 0.5)) {
-      stalled = true;
+    if (tail.length >= 120
+      && Math.hypot(tail[119].x - tail[0].x, tail[119].z - tail[0].z) < 1) {
+      stalled = trace.length - tail.length;   // the first tick of that window
       break;
     }
   }
@@ -273,16 +377,42 @@ async function run(browser) {
   const rides = onDeck.map(p => p.y - p.surface);
   const flat = trace.filter(p => !inside(p) && p.grounded).map(p => p.y - p.surface);
   const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const row = (p, i) => ({
+    tick: i, x: round(p.x, 2), y: round(p.y, 2), z: round(p.z, 2),
+    surface: round(p.surface, 2), deck: p.deck === null ? null : round(p.deck, 2),
+    along: round(p.along, 2), grounded: p.grounded, pitch: round(p.pitch, 1),
+    onDeck: inside(p), contacts: p.contacts,
+  });
+  // The run at a glance, one row every `--every` ticks plus the last, so a
+  // stall or a drop can be placed without the full `--out` trace.
+  // `contacts` on a sampled row is the most seen on any tick since the last
+  // one, so a brush with a wall between samples still shows.
+  const every = Math.max(1, Number(opts.every) || 10);
+  const sampled = [];
+  let peak = null;
+  trace.forEach((p, i) => {
+    if (p.contacts !== null) peak = Math.max(peak ?? 0, p.contacts);
+    if (i % every && i !== trace.length - 1) return;
+    sampled.push({ ...row(p, i), contacts: peak });
+    peak = null;
+  });
 
   const result = {
     map: opts.map, mod: opts.mod,
     vehicle: chosen.name, owner: chosen.owner,
-    deck: deck.node, deckBox: { min: deck.min, max: deck.max },
-    plan: { alongX: plan.alongX, start: plan.start.map(v => round(v, 2)), yaw: round(plan.yaw, 3) },
+    deck: deck.node, deckBox: { min: deck.min, max: deck.max }, span: deck.span,
+    plan: { axis: plan.axis.map(v => round(v, 3)), start: plan.start.map(v => round(v, 2)), yaw: round(plan.yaw, 3) },
     zone: zone || null,
     ticks: trace.length,
     legacy,
-    stalled,
+    hullSolved: trace.length ? trace[trace.length - 1].hullSolved : null,
+    solver,
+    stalled: stalled !== false,
+    // Where the hull stopped, with what was touching it: `contacts` > 0 and a
+    // `contactNormalY` near 0 is a wall the body solver met.
+    stallAt: stalled !== false
+      ? { ...row(trace[stalled], stalled), contactNormalY: round(trace[stalled].contactNormalY, 2) }
+      : null,
     ticksOnDeck: onDeck.length,
     crossedDeck: onDeck.length > 0,
     // Ride height on the deck against ride height on open ground: the deck must
@@ -310,6 +440,8 @@ async function run(browser) {
       ? [round(Math.min(...onDeck.map(p => p.pitch)), 2), round(Math.max(...onDeck.map(p => p.pitch)), 2)]
       : null,
     pageErrors: errors,
+    every,
+    path: sampled,
   };
   if (opts.out) {
     fs.writeFileSync(opts.out, JSON.stringify({ ...result, trace }, null, 1));
