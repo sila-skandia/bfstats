@@ -38,6 +38,7 @@
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
 import { EnemyStrengthTables } from './bot-strength.js';
+import { disembarkPath, DISEMBARK, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
@@ -1026,20 +1027,34 @@ export function createBotReferee(env) {
     const record = w.player(bot.playerId);
     if (record) { record.vehicleStrType = null; record.position = null; }
     const soldier = record?.soldier;
+    // The hull's heading, read while he still holds the seat.
+    const f = bot._vehicleForward();
     if (soldier) {
       // Out where the seat says (`setSoldierExitLocation`, `units.leave`), as
       // the human steps out; without one, through the side: re-spawned beside
       // the hull (its position is the body's, `Soldier.spawn` is the
       // placement API). The side step put a soldier leaving Bocage's Allied
       // AA gun inside its sandbag ring, where the route out crossed the bags.
-      const f = bot._vehicleForward();
       const x = p.exit ? p.exit.x : p.x + f[1] * BOT_EXIT_OFFSET, z = p.exit ? p.exit.z : p.z - f[0] * BOT_EXIT_OFFSET;
-      const y = env.groundAt(x, z, (p.exit?.y ?? p.y) + 3);
-      const yy = Number.isFinite(y) ? y + 0.05 : (p.exit?.y ?? p.y);
+      // At the exit's own height, lifted only onto ground above it; `spawn`'s
+      // settle then stands him on whatever is underneath, the hull he left
+      // included. Snapping to `groundAt` alone missed that hull: it answers
+      // terrain, sea and static decks, so a beached landing craft's
+      // passengers, whose exits are on its floor, came out on the sand under
+      // the bow, boxed in by the hull and the ramp.
+      const exitY = p.exit?.y ?? p.y;
+      const y = env.groundAt(x, z, exitY + 3);
+      const yy = Number.isFinite(y) ? Math.max(y + 0.05, exitY) : exitY;
       soldier.spawn(x, yy, z, p.exit ? p.exit.yaw : Math.atan2(f[0], f[1]));
-      bot.setPosition(x, yy, z);
+      bot.setPosition(soldier.x, soldier.y, soldier.z);
     }
     bot.dismount(referee.clock);
+    // Out of a landing craft's hold, over the bow before anything else
+    // (doctrine-landing.js `disembarkPath`, bot-route.js `steerToward`).
+    const path = soldier && !killed && LANDING_CRAFT_RE.test(m.template ?? '')
+      ? disembarkPath(w.collider, soldier.x, soldier.y, soldier.z, p.x, p.z, f[0], f[1])
+      : null;
+    bot._disembark = path ? { points: path, until: referee.clock + DISEMBARK.timeout, arrive: DISEMBARK.arrive } : null;
     referee.strategy?.botChangedUnit(bot.playerId);
     units()?.invalidate?.();
     env.onDismounted?.(bot, m, { killed, silent });

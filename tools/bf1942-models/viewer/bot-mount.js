@@ -15,13 +15,8 @@ import { wrapAngle } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { PLAN_ACTION } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
-import { craftBailReason, levelZones } from './doctrine-landing.js';
+import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landing.js';
 
-/** The landing craft (the Daihatsu and the LCVP, whose seats are the
- *  `LandingCraft` / `LandingCraftPassenger` / `LandingCraftFixed` units:
- *  `equipmentType` 7 / 10 / 11), by AI template name, as bot-units.js
- *  picks their water map. */
-const LANDING_CRAFT_RE = /lcvp|daihatsu|landing/i;
 /** `BBChangeLandingCraft::calculateUrgency` 0x085608ea: the bail's urgency. */
 const LANDING_BAIL_URGENCY = 4.0;
 
