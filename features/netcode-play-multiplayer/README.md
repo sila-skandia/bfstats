@@ -329,7 +329,7 @@ boundaries, which is the honest P2 state).
 **Slice A implemented 2026-09-21** — the authority lives in
 `tools/bf1942-models/server/authority.mjs`, wired into every room's
 post-step pass (`rooms.mjs`), and pinned by the room harness's (k)/(l)
-scenarios:
+scenarios, the bleed also by (n)-(q):
 
 - **Armor on the server** — each spawn builds the player's Armor from
   `_shared/loadouts.json` the page's own way (`kits[kit].maxHitpoints`,
@@ -344,17 +344,30 @@ scenarios:
   `setTicketLosePerDeath`), the dead-until-respawn latch, the input gate
   (a dead player's word never reaches the world), and `alive: false` in
   the snapshots. The deploy action revives with fresh Armor.
-- **The ticket law** — one per death; plus `lossPerMin` drained once a
-  second while the other side holds more than half the capturable flags
-  (`setTicketLostPerMin`'s majority gate — the parity round's missing
-  server-side timer). `ticket` rows carry the fresh counts.
+- **The ticket law** — the page's own round (`round-state.js`
+  `createRoundState`, also the headless runner's), in whole tickets: one per
+  death, and the engine's bleed (ledger TKT-4, `GameServer::gameStatusPlaying`
+  `0x08150df0`): a side loses a ticket every `60 / (rate × maxPlayers / 16)`
+  s while the ENEMY's summed `areaValue` over the control points it holds is
+  over 99. Every control point counts, uncapturable bases and points with no
+  flag included (Battle of Britain's flagless `Allied_Base`, 150, bleeds the
+  Axis from the first frame); a flagged point's owner is read live. A shut
+  gate refills the countdown, so each bleed's first ticket waits a whole
+  interval. `level-data.mjs` scales the room's tickets once (`scaleTickets`)
+  and the round takes them as a 16-slot server's. `ticket` rows carry the
+  fresh count and `reason` `death` or `bleed`. Until 2026-09-27 the room
+  drained `lossPerMin / 60` a second while the other side held over half the
+  capturable flags, which bled nobody on Battle of Britain and bled Japan at
+  Wake's four points of five (80). TKT-5's end-of-round rules are not built,
+  here or on the page.
 - **Flag capture** — a live, un-contested enemy inside the flag's ring for
   `FLAG_CAPTURE_SECONDS` flips the owner (`captured` rows; the deploy
   screen's list and the map markers repaint from the `flags[]` write).
   **`FLAG_CAPTURE_RADIUS_MS = 8` and `FLAG_CAPTURE_SECONDS = 8` are
   authored constants** — the capture law was never corpus-read, so P5
-  confirms or corrects them in one place. Uncapturable points (the fleet)
-  never count toward the majority.
+  confirms or corrects them in one place. Uncapturable points never change
+  hands; the fleet's ship flags are no control points and weigh nothing in
+  the bleed.
 - **Client consumption** — a `killed` row for the local slot drives the
   page's own death loop (destroyed Armor ⇒ the existing death cam and
   deploy screen — the suicide path's precedent), snapshots correct HP
