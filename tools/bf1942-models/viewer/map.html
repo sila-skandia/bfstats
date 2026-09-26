@@ -188,7 +188,7 @@ import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
-import { createRoundState } from './round-state.js';
+import { clampMaxPlayers, createRoundState, TICKET_BASE_PLAYERS } from './round-state.js';
 import { createHudFeed } from './hud-feed.js';
 import { createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
@@ -1043,6 +1043,18 @@ const LOCAL_PLAYER = 'local';
 /** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
 const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
+/**
+ * The slot count of the server this page's round stands for, which scales its
+ * tickets and its bleed by `/ 16` (round-state.js, ledger TKT-1). `?maxPlayers=`
+ * names one outright: the parity lab's scenarios run 32. Without it a bot game
+ * is a server its bots fill, because that is what the engine's top-up makes of
+ * every bot server, retail Instant Battle and a dedicated co-op server alike:
+ * bots join until the players reach max players, so the bots and the local
+ * player ARE the slot count. A page with no bots is no bot server, and keeps
+ * the 16 the level's numbers are written for.
+ */
+const ROUND_MAX_PLAYERS = clampMaxPlayers(params.get('maxPlayers'),
+  BOT_COUNT > 0 ? BOT_COUNT + 1 : TICKET_BASE_PLAYERS);
 /** `?botDebug`: log every hit on a bot. */
 const BOT_DEBUG = params.has('botDebug');
 /** `?doctrine=`: who orders the bots (doctrine.js `parseDoctrineSpec`):
@@ -1245,7 +1257,8 @@ const flagCapture = createFlagCapture(bag(
  * enemy holds more than 99 weight of the map.
  *
  * Rebuilt per level, from the level's own data: `scene.json.tickets` carries
- * the starting counts and the `setTicketLostPerMin` rates, and the gameplay
+ * the starting counts and the `setTicketLostPerMin` rates, both scaled by the
+ * server's max players over 16 (`ROUND_MAX_PLAYERS`), and the gameplay
  * mode picks which `ScoreManagerSettings*.con` answers. Both the score
  * settings and the mode are read live, because the HUD pack (which carries the
  * settings file) is fetched in parallel with the level.
@@ -1281,6 +1294,7 @@ function startRound() {
     mode: () => level.extras?.gameplayMode,
     tickets,
     rates: tickets?.lossPerMin ?? null,
+    maxPlayers: ROUND_MAX_PLAYERS,
   });
 }
 

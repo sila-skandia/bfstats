@@ -5,7 +5,8 @@
 // the page loads, byte for byte. The module imports nothing.
 
 import { SCORE_DEFAULTS, BLEED_WEIGHT, scoreTable, scoreSettingsFile, holdWeight,
-          createRoundState }
+          createRoundState, TICKET_BASE_PLAYERS, MAX_PLAYERS_LIMIT, clampMaxPlayers,
+          roundPlayers, startingTickets, bleedInterval, scaleTickets }
   from './round-state.js';
 
 const results = {};
@@ -156,6 +157,70 @@ const run = (round, seconds, points) => {
   const level = fresh({ ticketLosePerDeath: 3 });
   level.suicide({ player: 1, team: 2 });
   results.lossPerDeath = { one: { ...round.tickets }, three: { ...level.tickets } };
+}
+
+// --- max players ---------------------------------------------------------------
+
+{
+  // Wake co-op as the dedicated server runs it: the root Coop.con's 100 a side,
+  // Japan bleeding 15 a minute and the US 10000.
+  const wake = { mode: 'CoOp', team1: 100, team2: 100, lossPerMin: { team1: 15, team2: 10000 } };
+  const at = (maxPlayers, tickets = wake) => createRoundState({ settings: vanilla, mode: 'CoOp',
+    tickets, rates: tickets.lossPerMin, maxPlayers });
+  results.maxPlayers = {
+    base: TICKET_BASE_PLAYERS,
+    limit: MAX_PLAYERS_LIMIT,
+    // The parity lab's rounds: 200 / 200 at 32, 50 / 50 at 8.
+    lab: { 32: { ...at(32).tickets }, 8: { ...at(8).tickets }, 16: { ...at(16).tickets } },
+    // 100 x 11 / 16 = 68.75: the engine's fistp truncates.
+    eleven: { ...at(11).tickets },
+    // A round that names no server plays the level's numbers as they are.
+    unnamed: { ...createRoundState({ tickets: { team1: 100, team2: 140 } }).tickets },
+    counts: {
+      berlinRoot: startingTickets(60, 32), berlinGameTypes: startingTickets(100, 32),
+      tobruk: startingTickets(150, 32), wakeGameTypes: startingTickets(140, 32),
+      one: startingTickets(100, 1), none: startingTickets(null, 32), negative: startingTickets(-5, 32),
+    },
+    clamp: {
+      big: clampMaxPlayers(200), zero: clampMaxPlayers(0), junk: clampMaxPlayers('x'),
+      fraction: clampMaxPlayers(20.9), text: clampMaxPlayers('32'), fallback: clampMaxPlayers(null, 5),
+    },
+    // Seconds per ticket: 15/min on a 32-player server is 30/min.
+    interval: { 32: bleedInterval(15, 32), 8: bleedInterval(15, 8), none: bleedInterval(0, 32) },
+    countdowns: { 32: at(32).countdowns[1], 8: at(8).countdowns[1] },
+  };
+
+  // A side bleeds out in the same time on any size of server: the counts and
+  // the rate scale together. Berlin's weights make team 2 bleed; give it
+  // Wake's 15/min and run 20 minutes.
+  const bleedOut = maxPlayers => {
+    const round = at(maxPlayers, { team1: 100, team2: 100, lossPerMin: { team1: 0, team2: 15 } });
+    let t = 0;
+    while (!round.over && t < 3600) { round.tick(1, berlin); t += 1; }
+    return { seconds: t, over: round.over, tickets: { ...round.tickets } };
+  };
+  results.maxPlayers.bleedOut = { 32: bleedOut(32), 16: bleedOut(16), 8: bleedOut(8) };
+
+  // Kasserine Pass co-op: the script's own `game.maxNrofPlayers 18` comes after
+  // its bleed lines, so the start uses 18 and the bleed keeps the server's 32.
+  const kasserine = { mode: 'CoOp', team1: 100, team2: 100, maxPlayers: 18,
+                      lossPerMin: { team1: 15, team2: 15 } };
+  const kp = at(32, kasserine);
+  results.maxPlayers.kasserine = {
+    tickets: { ...kp.tickets }, maxPlayers: kp.maxPlayers, startPlayers: kp.startPlayers,
+    countdown: kp.countdowns[1], roundPlayers: roundPlayers(32, kasserine),
+    roundPlayersNoScript: roundPlayers(32, wake),
+  };
+
+  // What the room server takes: a fresh, scaled copy.
+  const room16 = scaleTickets(wake, 16);
+  const room32 = scaleTickets(wake, 32);
+  results.maxPlayers.room = {
+    at16: room16, at32: room32, kasserine16: scaleTickets(kasserine, 16),
+    fresh: room16 !== wake && room16.lossPerMin !== wake.lossPerMin,
+    untouched: { ...wake, lossPerMin: { ...wake.lossPerMin } },
+    none: scaleTickets(null, 32),
+  };
 }
 
 console.log(JSON.stringify(results));
