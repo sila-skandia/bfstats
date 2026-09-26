@@ -66,9 +66,10 @@ const inTrough = (r, x, y) =>
   x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
 const frac = (r, x) => Math.min(1, Math.max(0, (x - r[0]) / r[2]));
 
-/** A click fraction to a bot count, rounded to a whole body. */
+/** A click fraction to a bot count, in twos: 0, 2, 4 ... 32. */
 export function fracToBotCount(f) {
-  return Math.min(MAX_BOTS, Math.max(0, Math.round(f * MAX_BOTS)));
+  const steps = MAX_BOTS / 2;
+  return 2 * Math.min(steps, Math.max(0, Math.round(f * steps)));
 }
 
 /** A click fraction to an intelligence step, quantised to the five stops. */
