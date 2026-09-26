@@ -20,6 +20,8 @@ import {
 // lnxded 0x081e02f0); the particle cap is ours.
 export const MAX_PARTICLES = 1200;
 export const MAX_DECALS = 128;
+// m/s. An attached run's derived velocity above this is a jump, not motion.
+const ATTACH_MAX_DERIVED_SPEED = 400;
 const DEG = Math.PI / 180;
 
 const _pos = new THREE.Vector3();
@@ -439,10 +441,25 @@ export class EffectPlayer {
       if (run.attach?.object) {
         const obj = run.attach.object;
         obj.updateWorldMatrix(true, false);
+        (run.previous ??= new THREE.Vector3()).copy(run.origin);
         obj.getWorldPosition(run.origin);
         obj.getWorldQuaternion(run.quaternion);
         const v = run.attach.velocity?.();
-        if (v) velocity = [v.x, v.y, v.z];
+        if (v) {
+          velocity = [v.x, v.y, v.z];
+        } else if (dt > 0) {
+          // No velocity handed in: the object's own motion since last frame.
+          // A vehicle's damage tier rides an anchor on the hull, and every
+          // plane's fire and smoke emitters declare `addEmitterSpeed`. Left
+          // at rest they were strewn 80 m behind a Zero at 100 m/s (0.8 s
+          // particle life) instead of licking round its cowling. A jump
+          // faster than any vehicle flies is a respawn or a teleport, not
+          // motion.
+          const dx = (run.origin.x - run.previous.x) / dt;
+          const dy = (run.origin.y - run.previous.y) / dt;
+          const dz = (run.origin.z - run.previous.z) / dt;
+          if (Math.hypot(dx, dy, dz) < ATTACH_MAX_DERIVED_SPEED) velocity = [dx, dy, dz];
+        }
         run.speed = velocity ? Math.hypot(...velocity) : 0;
       }
       let running = false;
