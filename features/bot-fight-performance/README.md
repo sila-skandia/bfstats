@@ -171,6 +171,15 @@ query, 42 us a cast. The natural El Alamein match does not move because it is
    is the one change that alters a seeded match's trace: routes resolve a few
    ticks later, and everything after a chaotic fight differs.
 
+   Correction (2026-09-27): "at most six ticks longer" held only for a route
+   that already had points to follow. A route whose first leg needed a
+   widening had no point yet, `execInfantryMoveTo` failed it in the same tick,
+   and the retry started again from the narrow box. A first leg that only the
+   third widening closes was never found: a hull held its throttle at 0, and
+   no path failure was counted, so `_pathFailures` never widened the next
+   box. A route with a widening pending now stands until the widenings run
+   out (`test_bot_route.py` `LegWideningTests`).
+
 ## After
 
 Headed, same level data, same camera, same staging, same machine, minutes
