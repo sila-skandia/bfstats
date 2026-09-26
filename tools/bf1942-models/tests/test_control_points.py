@@ -12,6 +12,7 @@ from bf42 import con as con_mod  # noqa: E402
 from bf42.level import (  # noqa: E402
     CombatArea,
     ControlPointTemplate,
+    SpawnGroupSettings,
     GameplayObjects,
     LevelInfo,
     StaticInstance,
@@ -215,26 +216,71 @@ ObjectTemplate.setGroup 2
             "ObjectTemplate.create ObjectSpawner Airfield\nObjectTemplate.setGroup 9\n")
         self.assertEqual(out, {})
 
+    @staticmethod
+    def _placed(*templates: ControlPointTemplate, groups=None) -> GameplayObjects:
+        """Templates placed once each, as `ControlPoints.con` would."""
+        return GameplayObjects(
+            mode="Conquest",
+            control_points=[StaticInstance(template=t.name, position=(0.0, 0.0, 0.0),
+                                           rotation=(0.0, 0.0, 0.0)) for t in templates],
+            control_point_templates={t.name.lower(): t for t in templates},
+            spawn_groups=groups or {},
+            spawn_group_teams={n: g.team for n, g in (groups or {}).items()
+                               if g.team is not None})
+
     def test_group_team_comes_from_the_owning_control_point(self) -> None:
         """A spawn point carries no team of its own."""
-        objects = GameplayObjects(
-            mode="Conquest",
-            control_point_templates={
-                "a": ControlPointTemplate(name="A", team=2, spawn_group_id=2),
-                "b": ControlPointTemplate(name="B", team=1, spawn_group_id=1),
-            })
+        objects = self._placed(ControlPointTemplate(name="A", team=2, spawn_group_id=2),
+                               ControlPointTemplate(name="B", team=1, spawn_group_id=1))
         self.assertEqual(objects.team_of_group(2), 2)
         self.assertEqual(objects.team_of_group(1), 1)
         self.assertIsNone(objects.team_of_group(7))
         self.assertIsNone(objects.team_of_group(None))
 
-    def test_second_spawn_group_also_binds(self) -> None:
+    def test_an_unplaced_template_claims_nothing(self) -> None:
+        """Only a placed point runs `ControlPoint::init` / `reset`."""
         objects = GameplayObjects(
             mode="Conquest",
             control_point_templates={
-                "a": ControlPointTemplate(name="A", team=1, spawn_group_id=1,
-                                          second_spawn_group_id=6)})
-        self.assertEqual(objects.team_of_group(6), 1)
+                "a": ControlPointTemplate(name="A", team=2, spawn_group_id=2)})
+        self.assertIsNone(objects.team_of_group(2))
+
+    def test_the_control_point_beats_group_team(self) -> None:
+        """Wake Conquest: group 1 is `groupTeam 1`, The_Beach claims it at team 2.
+
+        `spawnPointManagerSettings` runs first and `ControlPoints` last, and the
+        point writes its team into the group (SPAWNGRP-3), so the beach starts
+        American.
+        """
+        objects = self._placed(
+            ControlPointTemplate(name="The_Beach", team=2, spawn_group_id=1),
+            groups={1: SpawnGroupSettings(group=1, team=1)})
+        self.assertEqual(objects.team_of_group(1), 2)
+
+    def test_a_neutral_point_zeroes_its_groups(self) -> None:
+        objects = self._placed(
+            ControlPointTemplate(name="Village", team=0, spawn_group_id=5),
+            groups={5: SpawnGroupSettings(group=5, team=2)})
+        self.assertEqual(objects.team_of_group(5), 0)
+
+    def test_group_enable_to_change_team_0_keeps_group_team(self) -> None:
+        objects = self._placed(
+            ControlPointTemplate(name="Airfield", team=2, spawn_group_id=1),
+            groups={1: SpawnGroupSettings(group=1, team=1, enable_to_change_team=False)})
+        self.assertEqual(objects.team_of_group(1), 1)
+
+    def test_second_spawn_group_is_team_twos(self) -> None:
+        """Team 1 enables `spawnGroupId`, team 2 `secondSpawnGroupId`; the other
+        keeps its `groupTeam` (Kasserine SinglePlayer's axis_base: 1 and 6)."""
+        objects = self._placed(
+            ControlPointTemplate(name="A", team=1, spawn_group_id=1, second_spawn_group_id=6),
+            groups={6: SpawnGroupSettings(group=6, team=1)})
+        self.assertEqual(objects.team_of_group(1), 1)
+        self.assertEqual(objects.team_of_group(6), 1)   # its groupTeam, not the point's
+        held_by_two = self._placed(
+            ControlPointTemplate(name="A", team=2, spawn_group_id=1, second_spawn_group_id=6))
+        self.assertEqual(held_by_two.team_of_group(6), 2)
+        self.assertIsNone(held_by_two.team_of_group(1))
 
 
 class PlacementJoinTests(unittest.TestCase):
