@@ -54,6 +54,15 @@ export class CollisionIndex {
   // runs over every candidate in the cell and must not allocate once.
   #sweepNx = 0; #sweepNy = 0; #sweepNz = 0;
   #sweepPx = 0; #sweepPy = 0; #sweepPz = 0;
+  // Whether that contact is a `shell` graze, and the deepest the sphere is into
+  // anything the sweep has looked at so far (see `sweepSphere`'s `shell`).
+  #sweepGraze = false;
+  #sweepDepth = 0;
+  #sweepBuried = 0;
+  #grazeTri = -1;
+  #grazeNx = 0; #grazeNy = 0; #grazeNz = 0;
+  #grazePx = 0; #grazePy = 0; #grazePz = 0;
+  #grazeDepth = 0;
 
   constructor(tris, materials, owners, ownerNodes, bounds, drivable = null) {
     this.tris = tris;                 // Float32Array, 9 per triangle
@@ -402,9 +411,18 @@ export class CollisionIndex {
    *   to the surface its wheels are on plus the step a driven vehicle climbs,
    *   so a deck's leading lip face is stepped over while a parapet, a pillar or
    *   a hut on the bay — all of them rising well above it — still stop the hull.
+   *
+   * `shell` is how deep, in metres, a sphere may already be into an edge or a
+   * corner and still be stopped by it; see `#sweepTriangle`. Zero, the
+   * default, is the old let-go-on-any-overlap. A sphere buried deeper than
+   * three shells in anything at all is let go of every graze: it is inside
+   * something, and the edges it is brushing on the way out are that
+   * something's own (a body spawned into the wall of a hut is otherwise held
+   * there by the wall's far edges).
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1,
-              skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2, onlySub = -1) {
+              skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2, onlySub = -1,
+              shell = 0) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -429,6 +447,8 @@ export class CollisionIndex {
     // parameterised on the displacement vector.
     let best = 1;
     let found = false;
+    this.#sweepBuried = 0;
+    this.#grazeTri = -1;
     // Is the driven-vehicle deck gate live at all? Hoisted out of the triangle
     // loop so the soldier and the rounds pay one boolean for it.
     const deck = this.drivable
@@ -473,16 +493,32 @@ export class CollisionIndex {
           // cells away never reaches it. Only a drivable triangle can be gated.
           if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
           stats.tests++;
-          const t = this.#sweepTriangle(tri, ox, oy, oz, vx, vy, vz, radius, best);
-          if (t >= 0 && t <= best) {
+          const t = this.#sweepTriangle(tri, ox, oy, oz, vx, vy, vz, radius, best, shell);
+          if (t >= 0 && this.#sweepGraze) {
+            if (this.#grazeTri < 0) {
+              this.#grazeTri = tri;
+              this.#grazeNx = this.#sweepNx; this.#grazeNy = this.#sweepNy; this.#grazeNz = this.#sweepNz;
+              this.#grazePx = this.#sweepPx; this.#grazePy = this.#sweepPy; this.#grazePz = this.#sweepPz;
+              this.#grazeDepth = this.#sweepDepth;
+            }
+          } else if (t >= 0 && t <= best) {
             best = t;
             found = true;
             out.triangle = tri;
             out.nx = this.#sweepNx; out.ny = this.#sweepNy; out.nz = this.#sweepNz;
             out.px = this.#sweepPx; out.py = this.#sweepPy; out.pz = this.#sweepPz;
+            out.depth = this.#sweepDepth;
           }
         }
       }
+    }
+    if (this.#grazeTri >= 0 && this.#sweepBuried <= 3 * shell && !(found && best === 0)) {
+      best = 0;
+      found = true;
+      out.triangle = this.#grazeTri;
+      out.nx = this.#grazeNx; out.ny = this.#grazeNy; out.nz = this.#grazeNz;
+      out.px = this.#grazePx; out.py = this.#grazePy; out.pz = this.#grazePz;
+      out.depth = this.#grazeDepth;
     }
     if (!found) return null;
     out.t = best * maxDist;
@@ -519,8 +555,19 @@ export class CollisionIndex {
    * thin, near-flat plate — a landing craft's lowered ramp — has the plate
    * slicing through his middle sphere, and only the edge quadratic stops him
    * sliding under it.
+   *
+   * Letting go of an overlapped edge is for a body that is *in* something,
+   * though, and a sphere that finished a glancing slide tangent to an edge is
+   * inside it by rounding error. Once let go the edge is gone for good: every
+   * later sweep starts inside it, and the body walks on through. So a caller
+   * may pass a `shell`: an edge or a corner the sphere is no deeper into than
+   * that is still met, at `t = 0`, by a move that closes on it, and let go by
+   * one that does not. A seam is never met this way: the surface it is inside
+   * of is the face's business.
    */
-  #sweepTriangle(tri, cx, cy, cz, vx, vy, vz, radius, best) {
+  #sweepTriangle(tri, cx, cy, cz, vx, vy, vz, radius, best, shell = 0) {
+    this.#sweepGraze = false;
+    this.#sweepDepth = 0;
     const p = this.tris;
     const i = tri * 9;
     const ax = p[i], ay = p[i + 1], az = p[i + 2];
@@ -572,8 +619,10 @@ export class CollisionIndex {
       return u >= 0 && w >= 0 && u + w <= 1;
     };
     if (overFace(px, py, pz)) {
+      if (sd < radius && radius - sd > this.#sweepBuried) this.#sweepBuried = radius - sd;
       // Over the face and not closing on it: embedded, and let go.
       if (t < 0) return -1;
+      if (sd < radius) this.#sweepDepth = radius - sd;
       this.#sweepNx = nx; this.#sweepNy = ny; this.#sweepNz = nz;
       this.#sweepPx = px; this.#sweepPy = py; this.#sweepPz = pz;
       return t;
@@ -582,17 +631,35 @@ export class CollisionIndex {
     const vv = vx * vx + vy * vy + vz * vz;
     if (vv < 1e-18) return -1;
     let hit = -1;
-    const corner = (qx, qy, qz) => {
+    // An overlapped feature the sphere is only `shell` into, and closing on:
+    // `(sx, sy, sz)` from the nearest point of it to the centre.
+    // Also where the depth of every overlapped feature is kept.
+    const grazing = (sx, sy, sz, ss) => {
+      const d = Math.sqrt(ss);
+      if (radius - d > this.#sweepBuried) this.#sweepBuried = radius - d;
+      if (!(shell > 0) || d < 1e-9 || radius - d > shell) return false;
+      return vx * sx + vy * sy + vz * sz < -1e-7 * Math.sqrt(vv) * d;
+    };
+    const corner = (qx, qy, qz, seam) => {
       const sx = cx - qx, sy = cy - qy, sz = cz - qz;
       const c = sx * sx + sy * sy + sz * sz - radius * radius;
-      if (c < 0) return;                       // already inside it: let go
+      if (c < 0) {                             // already inside it: let go
+        if (!grazing(sx, sy, sz, c + radius * radius) || seam) return;
+        hit = 0;
+        this.#sweepGraze = true;
+        this.#sweepDepth = radius - Math.sqrt(c + radius * radius);
+        this.#sweepPx = qx; this.#sweepPy = qy; this.#sweepPz = qz;
+        return;
+      }
       const root = lowestRoot(vv, 2 * (vx * sx + vy * sy + vz * sz), c,
                               hit < 0 ? best : hit);
       if (root < 0) return;
       hit = root;
+      this.#sweepGraze = false;
+      this.#sweepDepth = 0;
       this.#sweepPx = qx; this.#sweepPy = qy; this.#sweepPz = qz;
     };
-    const edge = (qx, qy, qz, ex, ey, ez) => {
+    const edge = (qx, qy, qz, ex, ey, ez, seam) => {
       const ee = ex * ex + ey * ey + ez * ez;
       if (ee < 1e-12) return;
       const kx = qx - cx, ky = qy - cy, kz = qz - cz;   // base -> corner
@@ -601,7 +668,19 @@ export class CollisionIndex {
       const kk = kx * kx + ky * ky + kz * kz;
       // `ee (radius^2 - distance^2 to the line)`: positive while overlapping.
       const c = ee * (radius * radius - kk) + ek * ek;
-      if (c > 0) return;                       // already inside it: let go
+      if (c > 0) {                             // already inside it: let go
+        // Unless it is only grazing a point of the segment (a corner past
+        // either end is the corner's to judge).
+        const f = -ek / ee;
+        if (f < 0 || f > 1) return;
+        const sx = -(kx + ex * f), sy = -(ky + ey * f), sz = -(kz + ez * f);
+        if (!grazing(sx, sy, sz, sx * sx + sy * sy + sz * sz) || seam) return;
+        hit = 0;
+        this.#sweepGraze = true;
+        this.#sweepDepth = radius - Math.hypot(sx, sy, sz);
+        this.#sweepPx = cx - sx; this.#sweepPy = cy - sy; this.#sweepPz = cz - sz;
+        return;
+      }
       const root = lowestRoot(
         ev * ev - ee * vv,
         2 * (ee * (vx * kx + vy * ky + vz * kz) - ev * ek),
@@ -611,18 +690,21 @@ export class CollisionIndex {
       const f = (ev * root - ek) / ee;
       if (f < 0 || f > 1) return;
       hit = root;
+      this.#sweepGraze = false;
+      this.#sweepDepth = 0;
       this.#sweepPx = qx + ex * f; this.#sweepPy = qy + ey * f; this.#sweepPz = qz + ez * f;
     };
     // Not closing on the plane, the sphere is sliding along the surface this
     // triangle is part of, so a seam inside that surface (`internalEdges`)
     // is not a border, nor a corner both of whose edges are seams.
-    const seams = t < 0 && this.internalEdges ? this.internalEdges[tri] : 0;
-    if ((seams & 3) !== 3) corner(ax, ay, az);
-    if ((seams & 5) !== 5) corner(bx, by, bz);
-    if ((seams & 6) !== 6) corner(gx, gy, gz);
-    if (!(seams & 1)) edge(ax, ay, az, e1x, e1y, e1z);
-    if (!(seams & 2)) edge(ax, ay, az, e2x, e2y, e2z);
-    if (!(seams & 4)) edge(bx, by, bz, gx - bx, gy - by, gz - bz);
+    const seamBits = this.internalEdges ? this.internalEdges[tri] : 0;
+    const seams = t < 0 ? seamBits : 0;
+    if ((seams & 3) !== 3) corner(ax, ay, az, (seamBits & 3) === 3);
+    if ((seams & 5) !== 5) corner(bx, by, bz, (seamBits & 5) === 5);
+    if ((seams & 6) !== 6) corner(gx, gy, gz, (seamBits & 6) === 6);
+    if (!(seams & 1)) edge(ax, ay, az, e1x, e1y, e1z, seamBits & 1);
+    if (!(seams & 2)) edge(ax, ay, az, e2x, e2y, e2z, seamBits & 2);
+    if (!(seams & 4)) edge(bx, by, bz, gx - bx, gy - by, gz - bz, seamBits & 4);
     if (hit < 0) return -1;
     // Sliding in from over the face — a wall's next panel, across a seam — the
     // sphere reaches this triangle's far rim from inside. That is the surface
