@@ -37,7 +37,7 @@ import { advanceImpacts, advancePuffs, sampleCurve, shellMaterial, tracerGeometr
 import { advanceProjectiles, advanceTracers, endRound,
          TRACER_MIN_SCREEN_PX } from './projectile-flight.js';
 import { collectGroups } from './gun-groups.js';
-import { fireBarrel, PROJECTILE_SCALE_CUTOFF, TRACER_MAX_AGE, TRACER_MAX_RANGE,
+import { fireBarrel, lightMuzzle, PROJECTILE_SCALE_CUTOFF, TRACER_MAX_AGE, TRACER_MAX_RANGE,
          TRACER_SPEED_SCALE } from './round-launch.js';
 
 export { FLASH_RAMP_MAX, PROJECTILE_SCALE_CUTOFF, RECOIL_KICK_SCALE, sampleCurve,
@@ -71,6 +71,11 @@ export class GunFire {
     // 0.4 m sprite. A model on a turntable is always watched from outside, so
     // that is the default; a page that puts the camera in a cockpit sets this.
     this.firstPerson = false;
+    // `firstPerson` is the observer's, and only his own guns spend it. A page
+    // with other shooters in it sets `viewOf(group)` to `'third'` for a
+    // group it knows is someone else's, and null to leave it to
+    // `firstPerson` (round-launch.js `flashView`).
+    this.viewOf = null;
     this.groups = [];
     this.tracers = [];
     this.projectiles = [];
@@ -339,6 +344,21 @@ export class GunFire {
     for (const barrel of pull.barrels) {
       fireBarrel(this, group, group.muzzles[barrel]);
     }
+  }
+
+  /**
+   * The muzzle of one pull and nothing else: the flash, casing and smoke
+   * emitters lit exactly as `fireShot` lights them, with no round, no
+   * `onShot` and no recoil. For a shot something else has already resolved
+   * -- a bot's rifle round is the referee's ray (`bot-referee.js`
+   * `resolveShot`), and firing it a second time through here would bill it
+   * twice. One barrel a pull, round-robin, which is every hand weapon.
+   */
+  flash(group) {
+    if (!group?.muzzles?.length) return;
+    const muzzle = group.muzzles[group.shots % group.muzzles.length];
+    group.shots += 1;
+    lightMuzzle(this, group, muzzle);
   }
 
   /**

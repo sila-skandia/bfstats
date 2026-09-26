@@ -137,6 +137,20 @@ class ProjectileLayerTests(unittest.TestCase):
         # flight orientation alone.
         self.assertEqual(8, self.results["spin"])
 
+    def test_someone_elses_gun_flashes_the_outside_mesh(self) -> None:
+        # The observer on foot: his own gun gets the first-person sprite...
+        self.assertEqual(["first"], self.results["flashOwn"])
+        # ...and a group pinned (a bot's rifle) or named by the page as
+        # someone else's (a bot-crewed hull) gets the outside flash.
+        self.assertEqual(["third"], self.results["flashPinned"])
+        self.assertEqual(["third"], self.results["flashViewOf"])
+
+    def test_a_flash_is_not_a_round(self) -> None:
+        # A bot's rifle round is the referee's ray; the muzzle drawn for it
+        # must not fire a second one or bill it through `onShot`.
+        self.assertEqual(0, self.results["flashRounds"])
+        self.assertEqual(0, self.results["flashOnShot"])
+
 
 if __name__ == "__main__":
     unittest.main()

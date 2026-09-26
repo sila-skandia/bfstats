@@ -41,10 +41,34 @@ const _direction = new THREE.Vector3();
 /** One projectile, out of one barrel. */
 export function fireBarrel(guns, group, muzzle) {
   group.shots += 1;
+  lightMuzzle(guns, group, muzzle);
+  fireRound(guns, group, muzzle);
+}
+
+/**
+ * Which flash `group` shows the observer: `'first'` or `'third'`.
+ *
+ * `guns.firstPerson` is the observer's own view, and it is set every frame by
+ * whatever the local player is doing -- on foot it is always true. It is only
+ * his to spend on his own guns: a bot's rifle or a bot-crewed Sherman firing
+ * across the field is seen from outside whatever the local player's camera
+ * is, and handing it the `em_1P_*` sprite (0.4 m, made for the seat's own
+ * eye) instead of the 1.76 m outside mesh is what left every bot's gun with
+ * no visible flash. `group.view` pins one; `guns.viewOf(group)` (set by the
+ * page) answers for groups it can name the firer of; otherwise the
+ * observer's.
+ */
+export function flashView(guns, group) {
+  return group.view ?? guns.viewOf?.(group) ?? (guns.firstPerson ? 'first' : 'third');
+}
+
+/** The flash, the casing and the smoke out of one barrel, with no round:
+ *  the muzzle half of `fireBarrel`, and all of `GunFire.flash`. */
+export function lightMuzzle(guns, group, muzzle) {
   // An emitter with no declared `view` is drawn in both, which is 341 of
   // vanilla's 364 — and it is also what a glb baked before the flag was
   // exported looks like, so a stale asset behaves exactly as it used to.
-  const view = guns.firstPerson ? 'first' : 'third';
+  const view = flashView(guns, group);
   for (const emitter of group.emitters) {
     if (emitter.spec.view && emitter.spec.view !== view) continue;
     if (emitter.muzzle && emitter.muzzle !== muzzle) continue;
@@ -63,6 +87,10 @@ export function fireBarrel(guns, group, muzzle) {
       node.visible = true;
     }
   }
+}
+
+/** The round half of `fireBarrel`: the barrel's kick and what leaves it. */
+function fireRound(guns, group, muzzle) {
   if (group.recoil !== null) group.recoil = 0;
   const tracer = group.stats.tracer;
   const tracerRound = tracer
