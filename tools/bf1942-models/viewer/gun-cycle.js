@@ -11,10 +11,10 @@ import { sampleCurve } from './round-visuals.js';
 // a gun. Recovery runs at the same scale so size/speed keeps the engine's
 // ratio (Sherman: 0.3 m kick recovered in 0.3 s).
 export const RECOIL_KICK_SCALE = 0.1;
-// `fx_MuzzHeavy` ramps sizeOverTime 0.12 -> 9.4 on a mesh already 1.76 m
-// long: replayed as absolute node scale that is a 16.5 m fireball. In game
-// the late ramp plays on particles that have left the muzzle; parked here,
-// the scale gets a lid instead.
+// A lid on a parked sprite's `size x sizeOverTime`. The ramps were authored
+// for particles that stream away from the muzzle (the Defgun's flare leaves
+// at -60 m/s); parked on it, the tail would read as a fireball. Mesh flashes
+// no longer ramp at all (IMP-5, see `advanceGroups`).
 export const FLASH_RAMP_MAX = 3;
 
 const _billboard = new THREE.Quaternion();
@@ -56,9 +56,23 @@ export function advanceGroups(guns, dt) {
       // authored for particles streaming away from the muzzle, not for one
       // node parked on it. Mesh muzzle flashes (fx_1p_MuzzGun size 0.2) must
       // not fall back to 1 — that alone made 1P flashes ~5× retail (T2/V-R2).
-      const size = emitter.spec.sizeOverTime
-        ? sampleCurve(emitter.spec.sizeOverTime, phase)[0]
-        : (emitter.spec.size ?? 1);
+      //
+      // This is the fallback: with the effect library loaded the map page
+      // plays the bundle itself (round-launch.js `playMuzzleBundles`) and
+      // these nodes stay dark. Even so it keeps the engine's size rules
+      // (ledger IMP-5): a sprite is `size x sizeOverTime`; a mesh particle
+      // with no `sizeModifier` draws at its authored size whatever its ramp
+      // says -- `em_MuzzHeavy` has no `size` and no modifier, only the
+      // 0.12 -> 9.4 ramp, and replaying that ramp is what made every
+      // vehicle MG's flash a fireball. The baked extras carry no modifier,
+      // so a mesh that declares a `size` (the `em_1P_*` flashes, all
+      // `sizeModifier 1/1/1`) keeps it, and one that declares only a ramp
+      // is drawn at 1.
+      const ramp = emitter.spec.sizeOverTime
+        ? sampleCurve(emitter.spec.sizeOverTime, phase)[0] : 1;
+      const size = emitter.spec.kind === 'mesh'
+        ? (emitter.spec.size ?? 1)
+        : (emitter.spec.size ?? 1) * ramp;
       emitter.node.scale.setScalar(Math.min(Math.max(size, 1e-4), FLASH_RAMP_MAX));
       // Emitter motion along the direction of fire: muzzle smoke recedes
       // (`positionalSpeedInDof` -5), glows sit slightly ahead

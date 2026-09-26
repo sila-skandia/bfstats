@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import {
-  basisFromNormal, EmitterClock, spawnParticle, integrateParticle,
+  basisFromNormal, EmitterClock, spawnParticleInto, newParticleRecord, integrateParticle,
   evalParticleInto, atlasGrid, frameIndex, GRAVITY,
 } from './effects-core.js';
 
@@ -38,6 +38,13 @@ const _camPos = new THREE.Vector3();
 // before the next slot's `follow()` runs (`EffectAudio.update` is
 // synchronous), so nothing here is ever live across two attachments at once.
 const _soundPos = new THREE.Vector3();
+// Scratch for `#follow`: where a child particle's anchor is now, and the turn
+// it made since the last frame.
+const _anchorPos = new THREE.Vector3();
+const _anchorQuat = new THREE.Quaternion();
+const _anchorScale = new THREE.Vector3();
+const _turn = new THREE.Quaternion();
+const _carry = new THREE.Vector3();
 
 /**
  * EMT-5's `r`: a mesh particle's own local bounding box, magnitude from the
@@ -90,16 +97,19 @@ function frameQuaternion(basis, out) {
   return out.setFromRotationMatrix(_m);
 }
 
-/** The frame a quaternion describes, as plain arrays for effects-core. */
-function quaternionFrame(q) {
+/** The frame a quaternion describes, as plain arrays for effects-core,
+ *  written into `out` (a spawn's scratch frame: nothing keeps it). */
+function quaternionFrame(q, out) {
   _m.makeRotationFromQuaternion(q);
   const e = _m.elements;
-  return {
-    right: [e[0], e[1], e[2]],
-    up: [e[4], e[5], e[6]],
-    dof: [-e[8], -e[9], -e[10]],
-  };
+  out.right[0] = e[0]; out.right[1] = e[1]; out.right[2] = e[2];
+  out.up[0] = e[4]; out.up[1] = e[5]; out.up[2] = e[6];
+  out.dof[0] = -e[8]; out.dof[1] = -e[9]; out.dof[2] = -e[10];
+  return out;
 }
+const _frame = { right: [0, 0, 0], up: [0, 0, 0], dof: [0, 0, 0] };
+const noop = () => {};
+const _origin = [0, 0, 0];
 
 /**
  * Move a flipbook sprite's quad onto its current atlas cell (ledger SPR-6):
@@ -234,6 +244,11 @@ export class EffectPlayer {
     this.decals = [];
     this.spritePool = new Map();   // material uuid -> Mesh[]
     this.meshPool = new Map();     // template node uuid -> Mesh[]
+    // Spent particle records and finished pooled runs, reused rather than
+    // rebuilt: a vehicle MG plays two bundles and spawns three particles ten
+    // times a second (features/muzzle-effects-parity).
+    this.recordPool = [];
+    this.runPool = [];
     this.plays = 0;
     this.spawned = 0;
     this.dropped = 0;
@@ -252,7 +267,8 @@ export class EffectPlayer {
    * Returns a handle with `stop()`; a stopped run spawns nothing more and
    * ends when its particles have.
    */
-  play(name, { position = null, normal = null, attach = null, speed = 0 } = {}) {
+  play(name, { position = null, normal = null, attach = null, speed = 0,
+                view = null, silent = false, pooled = false } = {}) {
     // Sound first, and independent of the geometry library: see `onSound`.
     // An `attach`ed bundle (a wreck's fire, in practice — vanilla's trail
     // bundles carry no script of their own) has no `position`, so it is given
@@ -262,7 +278,8 @@ export class EffectPlayer {
     // of freezing at the point it started.
     let soundPosition = position;
     let follow = null;
-    if (attach?.object) {
+    // `silent` skips the sound half altogether, closures and all.
+    if (attach?.object && !silent) {
       attach.object.updateWorldMatrix(true, false);
       attach.object.getWorldPosition(_soundPos);
       if (!soundPosition) soundPosition = [_soundPos.x, _soundPos.y, _soundPos.z];
@@ -278,29 +295,38 @@ export class EffectPlayer {
     // (the `e_Collision_*` family is sound and nothing else), which is why
     // this is threaded through both early returns below rather than only the
     // final one.
-    const token = (this.onSound && soundPosition) ? Symbol(name) : null;
+    const token = (this.onSound && soundPosition && !silent) ? Symbol(name) : null;
     if (token) {
       try { this.onSound(name, soundPosition, { follow, token }); } catch (_) {}
     }
-    const stopSound = () => {
-      if (token != null && this.onSoundStop) {
+    const stopSound = token == null ? noop : () => {
+      if (this.onSoundStop) {
         try { this.onSoundStop(token); } catch (_) {}
       }
     };
 
     const bundle = this.library?.get(name);
     if (!bundle) return token != null ? { run: null, stop: stopSound } : null;
-    const run = {
-      name: bundle.name,
+    // `pooled`: the caller keeps no handle (a gun's muzzle bundle, played
+    // every shot and left to end on its own), so the run, its emitter slots
+    // and their clocks go back to `runPool` when it ends and are reused. A
+    // caller that may `stop()` later gets a fresh run, because a handle to a
+    // recycled run would stop whatever play reused it.
+    const run = (pooled && this.runPool.pop()) || {
       origin: new THREE.Vector3(),
       quaternion: new THREE.Quaternion(),
-      attach,
-      speed,
       emitters: [],
-      alive: true,
-      stopped: false,
-      age: 0,
+      slots: [],
+      velocity: [0, 0, 0],
     };
+    run.name = bundle.name;
+    run.attach = attach;
+    run.speed = speed;
+    run.emitters.length = 0;
+    run.alive = true;
+    run.stopped = false;
+    run.age = 0;
+    run.pooled = pooled;
     if (attach?.object) {
       attach.object.getWorldPosition(run.origin);
       attach.object.getWorldQuaternion(run.quaternion);
@@ -311,21 +337,41 @@ export class EffectPlayer {
       frameQuaternion(basis, run.quaternion);
     }
     const distance = this.camera ? this.camera.getWorldPosition(_camPos).distanceTo(run.origin) : 0;
-    const view = this.firstPerson ? 'first' : 'third';
+    // `view` pins the observer for this one play: a gun's muzzle bundle is
+    // seen from the seat only by the man in it (round-launch.js
+    // `flashView`), whatever the page's own camera is doing.
+    const seen = view ?? (this.firstPerson ? 'first' : 'third');
     for (const emitter of bundle.emitters) {
       const spec = emitter.spec;
-      if (spec.view && spec.view !== view) continue;
+      if (spec.view && spec.view !== seen) continue;
       if (spec.lodDistance && distance > spec.lodDistance) continue;
       if (spec.startProbability != null && this.rand() > spec.startProbability) continue;
+      if (pooled) {
+        let slot = run.slots[run.emitters.length];
+        if (!slot) {
+          slot = { template: null, spec: null, clock: null };
+          run.slots.push(slot);
+        }
+        slot.template = emitter;
+        slot.spec = spec;
+        if (slot.clock) slot.clock.reset(spec, this.rand);
+        else slot.clock = new EmitterClock(spec, this.rand);
+        run.emitters.push(slot);
+        continue;
+      }
       run.emitters.push({
         template: emitter,
         spec,
         clock: new EmitterClock(spec, this.rand),
       });
     }
-    if (!run.emitters.length) return token != null ? { run: null, stop: stopSound } : null;
+    if (!run.emitters.length) {
+      if (pooled) this.runPool.push(run);
+      return token != null ? { run: null, stop: stopSound } : null;
+    }
     this.runs.push(run);
     this.plays++;
+    if (pooled) return null;
     return {
       run,
       stop: () => {
@@ -341,6 +387,7 @@ export class EffectPlayer {
     for (const p of this.particles) this.#recycle(p);
     this.particles.length = 0;
     this.decals.length = 0;
+    for (const run of this.runs) if (run.pooled) this.#retire(run);
     this.runs.length = 0;
   }
 
@@ -442,8 +489,11 @@ export class EffectPlayer {
         obj.getWorldPosition(run.origin);
         obj.getWorldQuaternion(run.quaternion);
         const v = run.attach.velocity?.();
-        if (v) velocity = [v.x, v.y, v.z];
-        run.speed = velocity ? Math.hypot(...velocity) : 0;
+        if (v) {
+          velocity = run.velocity ??= [0, 0, 0];
+          velocity[0] = v.x; velocity[1] = v.y; velocity[2] = v.z;
+        }
+        run.speed = velocity ? Math.hypot(velocity[0], velocity[1], velocity[2]) : 0;
       }
       let running = false;
       for (const emitter of run.emitters) {
@@ -453,12 +503,14 @@ export class EffectPlayer {
       }
       if (!running) {
         this.runs.splice(i, 1);
+        if (run.pooled) this.#retire(run);
       } else {
         active = true;
       }
     }
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
+      if (p.anchor) this.#follow(p);
       const alive = integrateParticle(p, dt, this.gravity);
       if (!alive) {
         this.#recycle(p);
@@ -476,11 +528,13 @@ export class EffectPlayer {
     // The emitter's own frame: the bundle's, then its authored placement.
     _q.copy(run.quaternion).multiply(emitter.template.quaternion);
     _pos.copy(emitter.template.position).applyQuaternion(run.quaternion).add(run.origin);
-    const basis = quaternionFrame(_q);
-    const p = spawnParticle(emitter.spec, basis, [_pos.x, _pos.y, _pos.z],
-                            emitterVelocity, this.rand);
+    const basis = quaternionFrame(_q, _frame);
+    _origin[0] = _pos.x; _origin[1] = _pos.y; _origin[2] = _pos.z;
+    const p = spawnParticleInto(this.recordPool.pop() ?? newParticleRecord(),
+                                emitter.spec, basis, _origin, emitterVelocity, this.rand);
+    p.tumbleRates = null;
     p.mesh = this.#acquire(emitter, p);
-    if (!p.mesh) { this.dropped++; return; }
+    if (!p.mesh) { this.dropped++; this.recordPool.push(p); return; }
     p.emitter = emitter;
     p.decal = p.kind === 'mesh' && !p.spec.debris && p.ttl >= 5 && !!p.spec.alphaOverTime;
     if (p.decal) {
@@ -498,6 +552,20 @@ export class EffectPlayer {
       const base = p.mesh.userData.baseQuaternion ??= new THREE.Quaternion();
       p.baseQuaternion = base.copy(p.mesh.quaternion);
       p.tumble = 0;
+    }
+    // `addChild 1` on the emitter: the particle is hung on the object that
+    // plays the bundle rather than left in the world. Every muzzle-flash mesh
+    // and most of the tank flares declare it (features/muzzle-effects-parity),
+    // and it is why a halftrack's flash stays on the barrel at 15 m/s instead
+    // of being left a metre behind by its own 0.07 s of life. The anchor is
+    // kept on the pooled mesh, like the tumble's base, so a spawn allocates
+    // nothing for it.
+    p.anchor = null;
+    if (emitter.spec.addChild && run.attach?.object) {
+      const ud = p.mesh.userData;
+      p.anchor = run.attach.object;
+      (ud.anchorPos ??= new THREE.Vector3()).copy(run.origin);
+      (ud.anchorQuat ??= new THREE.Quaternion()).copy(run.quaternion);
     }
     this.particles.push(p);
     this.spawned++;
@@ -600,6 +668,12 @@ export class EffectPlayer {
             c.blending = THREE.AdditiveBlending;
             c.transparent = true;
             c.depthWrite = false;
+            // The `.rs` alpha test the engine applies on top of the additive
+            // blend: `MuzzHeavy_m1` is `blendDest one` AND `alphaTestRef
+            // 0.7`, so only the flame's hard core is drawn, not the soft
+            // halo around it. `extract_effects.py` carries it for this
+            // library only (`Assembler.additive_alpha_test`).
+            if (c.userData.alphaTest > 0) c.alphaTest = c.userData.alphaTest;
           }
           this.onMaterial?.(c);
           mesh.userData.materials.push(c);
@@ -609,6 +683,33 @@ export class EffectPlayer {
     }
     mesh.visible = true;
     return mesh;
+  }
+
+  /**
+   * Carry a child particle (`addChild`) with its anchor: whatever the anchor
+   * moved and turned since the last frame, the particle's position, velocity
+   * and (for a mesh) orientation move and turn with it. Its own motion stays
+   * the ordinary world-space integration on top.
+   */
+  #follow(p) {
+    const obj = p.anchor;
+    const ud = p.mesh.userData;
+    obj.updateWorldMatrix(true, false);
+    obj.matrixWorld.decompose(_anchorPos, _anchorQuat, _anchorScale);
+    _turn.copy(ud.anchorQuat).invert().premultiply(_anchorQuat);
+    const pos = p.position;
+    _carry.set(pos[0], pos[1], pos[2]).sub(ud.anchorPos)
+      .applyQuaternion(_turn).add(_anchorPos);
+    pos[0] = _carry.x; pos[1] = _carry.y; pos[2] = _carry.z;
+    const v = p.velocity;
+    _carry.set(v[0], v[1], v[2]).applyQuaternion(_turn);
+    v[0] = _carry.x; v[1] = _carry.y; v[2] = _carry.z;
+    if (p.kind === 'mesh') {
+      p.baseQuaternion.premultiply(_turn);
+      p.mesh.quaternion.premultiply(_turn);
+    }
+    ud.anchorPos.copy(_anchorPos);
+    ud.anchorQuat.copy(_anchorQuat);
   }
 
   #recycle(p) {
@@ -622,6 +723,17 @@ export class EffectPlayer {
       if (at >= 0) this.decals.splice(at, 1);
     }
     p.mesh = null;
+    p.anchor = null;
+    p.emitter = null;
+    this.recordPool.push(p);
+  }
+
+  /** A pooled run is over: its slots let go of what they pointed at and it
+   *  waits in `runPool` for the next pooled play. */
+  #retire(run) {
+    run.attach = null;
+    run.emitters.length = 0;
+    this.runPool.push(run);
   }
 
   #draw(p) {
