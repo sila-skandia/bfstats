@@ -11,7 +11,7 @@ const { viewerDir, installModuleHooks } = await import(path.join(HERE, '..', 'si
 const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { controlPointStep, controlPointSettings } = await import(path.join(viewer, 'bot-referee.js'));
-const { spawnFlags } = await import(path.join(viewer, 'spawn-flags.js'));
+const { spawnFlags, pickSpawn } = await import(path.join(viewer, 'spawn-flags.js'));
 
 const DT = 1 / 30;
 
@@ -65,6 +65,54 @@ const results = {
   // A scene extracted before the exporter carried the field: the default.
   const old = { ...extras, controlPoints: [{ ...extras.controlPoints[0], timeToLoseControl: undefined }] };
   results.oldScene = controlPointSettings(spawnFlags(old)[0]);
+}
+
+// Kasserine Pass SinglePlayer's `axis_base` and `allied_base`, as the
+// exporter writes them: two spawn groups each, all four listed under the
+// point's own side at the start (ledger SPAWNGRP-4). The engine enables one
+// group per holder -- the first for team 1, the second for team 2 -- and a
+// point going neutral zeroes both. Each step records which groups the flag
+// offers, the group `pickSpawn` lands on, and every group's side.
+{
+  const spawn = (group, team, i) => ({ name: `s${group}_${i}`, group, team, position: [i, 0, 0] });
+  const extras = {
+    controlPoints: [
+      { name: 'axis_base', team: 1, position: [0, 0, 0], radius: 50, spawnGroupId: 1, secondSpawnGroupId: 6 },
+      { name: 'allied_base', team: 2, position: [500, 0, 0], radius: 50, spawnGroupId: 2, secondSpawnGroupId: 7 },
+      { name: 'kasserine', team: 0, position: [250, 0, 0], radius: 50, spawnGroupId: 3, secondSpawnGroupId: null },
+    ],
+    soldierSpawns: [
+      ...[0, 1, 2].map(i => spawn(1, 1, i)), ...[0, 1].map(i => spawn(6, 1, i)),
+      ...[0, 1, 2].map(i => spawn(2, 2, i)), ...[0, 1].map(i => spawn(7, 2, i)),
+      ...[0, 1].map(i => spawn(3, 0, i)),
+    ],
+  };
+  const flags = spawnFlags(extras);
+  const [axis, allied, village] = flags;
+  const state = f => ({
+    team: f.team,
+    offered: [...new Set(f.spawns.map(s => s.group))],
+    picked: pickSpawn(f, 0)?.group ?? null,
+    groupTeams: f.groupTeams,
+  });
+  const steps = { start: state(axis) };
+  // An Allied soldier alone on it: run down to neutral, then taken.
+  const events = run(axis, [2], 25).events;
+  steps.captured = { ...state(axis), events };
+  // The Axis walk back in: neutral again, then theirs.
+  run(axis, [1], 25);
+  steps.retaken = state(axis);
+  // A net-room decree writes the new side straight over the old one.
+  axis.team = 2;
+  steps.decreed = state(axis);
+  allied.team = 0;
+  steps.alliedLost = state(allied);
+  allied.team = 1;
+  steps.alliedTakenByAxis = state(allied);
+  steps.alliedStart = state(spawnFlags(extras)[1]);
+  village.team = 2;
+  steps.village = state(village);
+  results.kasserine = steps;
 }
 
 // The old per-bot law on the contested case: two timers, one a bot, each

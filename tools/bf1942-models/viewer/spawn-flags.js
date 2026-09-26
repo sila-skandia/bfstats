@@ -45,14 +45,8 @@ export function spawnFlags(extras) {
     const owned = groups.flatMap(value => byGroup.get(value) || []);
     if (!owned || !owned.length) continue;
     for (const value of groups) claimed.add(value);
-    flags.push({
+    const flag = {
       name: point.displayName || point.name || `flag ${group}`,
-      // A spawn group's tab team is not the control point's live owner. The
-      // retail ControlPoint starts from its template team and changes that
-      // field only through gotControl/setTeam; neutral points must therefore
-      // stay neutral even when their authored group is listed under a side.
-      team: point.team === 0 || point.team === 1 || point.team === 2
-        ? point.team : owned.find(s => s.team === 1 || s.team === 2)?.team ?? null,
       group,
       groups,
       position: point.position || null,
@@ -71,8 +65,15 @@ export function spawnFlags(extras) {
       minNrToTakeControl: Number.isFinite(point.minNrToTakeControl) ? point.minNrToTakeControl : null,
       onlyTakeableByTeam: Number.isFinite(point.onlyTakeableByTeam) ? point.onlyTakeableByTeam : null,
       controlPointName: point.name || null,
-      spawns: owned,
-    });
+    };
+    // A spawn group's tab team is not the control point's live owner. The
+    // retail ControlPoint starts from its template team and changes that
+    // field only through gotControl/setTeam; neutral points must therefore
+    // stay neutral even when their authored group is listed under a side.
+    const team = point.team === 0 || point.team === 1 || point.team === 2
+      ? point.team : owned.find(s => s.team === 1 || s.team === 2)?.team ?? null;
+    holdGroups(flag, point, owned, team);
+    flags.push(flag);
   }
   // Some maps have valid side-owned bases that are not represented by a
   // ControlPoint object (Guadalcanal's airfield groups 9 and 10 are the
@@ -137,6 +138,75 @@ export function spawnFlags(extras) {
     });
   }
   return flags;
+}
+
+/**
+ * A control point's `team` and the `spawns` it offers, as the engine hands its
+ * two spawn groups between sides (ledger SPAWNGRP-3, SPAWNGRP-4).
+ *
+ * `ControlPoint::control(0)` `0x08283fe0` and `reset` `0x08284640` enable
+ * ONE group: `spawnGroupId` when there is no `secondSpawnGroupId` or the new
+ * owner is team 1, `secondSpawnGroupId` when it is team 2, and write the
+ * owner into it. Losing the point (going
+ * neutral) writes 0 into both. The group not enabled keeps whatever it last
+ * held, which at the start is its `groupTeam` — the round-start team the
+ * exporter puts on each `soldierSpawns[]` entry. The spawns a flag offers are
+ * those of the groups currently on its owner's side.
+ *
+ * Kasserine Pass SinglePlayer is the one capturable case in vanilla, XPack1
+ * and XPack2: `axis_base` (1 and 6, both `groupTeam 1`) opens with both groups
+ * Axis, but an Allied capture zeroes 1 and gives the Allies 6 alone, and the
+ * Axis retaking it get 1 alone. With one group this is the old behaviour:
+ * the group always carries the owner, so every spawn is offered.
+ *
+ * `team` is an accessor because several writers move it — the referee's
+ * `controlPointStep`, the net room's `captured` decree — and each must run the
+ * group writes. `groupEnableToChangeTeam 0` (the enable skips the write) is
+ * not in `scene.json`; SPAWNGRP-5 measured it inert in the three packs.
+ */
+function holdGroups(flag, point, owned, start) {
+  const first = point.spawnGroupId;
+  const second = point.secondSpawnGroupId ?? null;
+  const sideOf = value => (value === 1 || value === 2 ? value : 0);
+  const groupTeam = new Map();
+  for (const spawn of owned) {
+    if (!groupTeam.has(spawn.group)) groupTeam.set(spawn.group, sideOf(spawn.team));
+  }
+  const enable = team => groupTeam.set(second == null || team === 1 ? first : second, team);
+  const disable = () => {
+    groupTeam.set(first, 0);
+    if (second != null) groupTeam.set(second, 0);
+  };
+  let team = start;
+  let spawns = owned;
+  const offer = () => {
+    const side = sideOf(team);
+    spawns = owned.filter(spawn => groupTeam.get(spawn.group) === side);
+  };
+  // `init` runs the enable (or, for a neutral point, the disable) once more
+  // over the round-start teams; for a well-extracted level this changes
+  // nothing.
+  if (sideOf(start)) enable(sideOf(start)); else disable();
+  offer();
+  Object.defineProperties(flag, {
+    team: {
+      enumerable: true,
+      get: () => team,
+      set(next) {
+        if (next === team) return;
+        // A decree may jump straight from one side to the other; the engine
+        // always goes through neutral, and disable-then-enable is that.
+        if (sideOf(team)) disable();
+        if (sideOf(next)) enable(sideOf(next));
+        team = next;
+        offer();
+      },
+    },
+    spawns: { enumerable: true, get: () => spawns },
+    /** group -> the side it currently spawns (0 for none), for tests and
+     *  the debug hooks. */
+    groupTeams: { get: () => Object.fromEntries(groupTeam) },
+  });
 }
 
 /**

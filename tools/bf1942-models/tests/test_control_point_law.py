@@ -74,6 +74,43 @@ class ControlPointLawTests(unittest.TestCase):
         self.assertAlmostEqual(events[1]["t"], 20.0, delta=0.2)
         self.assertEqual(self.r["oldScene"]["timeToLose"], 5)
 
+    def test_a_holder_spawns_at_its_own_group_of_two(self) -> None:
+        """Ledger SPAWNGRP-4 on Kasserine SinglePlayer's two-group bases.
+
+        `ControlPoint::control(0)` 0x08283fe0 enables `spawnGroupId` for team 1
+        and `secondSpawnGroupId` for team 2; losing the point zeroes both, and
+        the group not enabled keeps what it last held.
+        """
+        k = self.r["kasserine"]
+        # The start: both of axis_base's groups are Axis (group 6 by its
+        # `groupTeam`), so the Axis spawn at both, as before.
+        self.assertEqual(k["start"]["offered"], [1, 6])
+        self.assertEqual(k["start"]["groupTeams"], {"1": 1, "6": 1})
+        self.assertEqual(k["alliedStart"]["offered"], [2, 7])
+        # Taken by the Allies: the second group alone, the first on no side --
+        # the Axis spawn at neither.
+        captured = k["captured"]
+        self.assertEqual(captured["team"], 2)
+        self.assertEqual([("lost" in e, "got" in e) for e in captured["events"]],
+                         [(True, False), (False, True)])
+        self.assertEqual(captured["offered"], [6])
+        self.assertEqual(captured["picked"], 6)
+        self.assertEqual(captured["groupTeams"], {"1": 0, "6": 2})
+        # Retaken by the Axis: the first group alone; 6 stays zeroed.
+        self.assertEqual(k["retaken"]["team"], 1)
+        self.assertEqual(k["retaken"]["offered"], [1])
+        self.assertEqual(k["retaken"]["groupTeams"], {"1": 1, "6": 0})
+        # A decree straight from one side to the other is the same hand-over.
+        self.assertEqual(k["decreed"]["offered"], [6])
+        self.assertEqual(k["decreed"]["groupTeams"], {"1": 0, "6": 2})
+        # allied_base: lost zeroes both; the Axis take it at its FIRST group.
+        self.assertEqual(k["alliedLost"]["groupTeams"], {"2": 0, "7": 0})
+        self.assertEqual(k["alliedTakenByAxis"]["offered"], [2])
+        self.assertEqual(k["alliedTakenByAxis"]["picked"], 2)
+        # A one-group point offers its whole group to whoever holds it.
+        self.assertEqual(k["village"]["offered"], [3])
+        self.assertEqual(k["village"]["groupTeams"], {"3": 2})
+
 
 
 if __name__ == "__main__":
