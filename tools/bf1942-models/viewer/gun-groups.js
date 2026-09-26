@@ -80,6 +80,7 @@ export function collectGroups(guns, root, options = {}) {
     if (!stats) return;
     const muzzles = [];
     const emitters = [];
+    const bundles = [];
     let projectileMesh = null;
     let trailQuad = null;
     let tracerMesh = null;
@@ -89,6 +90,20 @@ export function collectGroups(guns, root, options = {}) {
       if (node.userData?.projectileTrail) trailQuad = node;
       if (node.userData?.tracerMesh) tracerMesh = node;
       const spec = node.userData?.effect;
+      if (spec?.kind === 'bundle' && !ancestorBundle(node.parent, obj)) {
+        // The outermost node of a muzzle or casing bundle, named for the
+        // template (`e_MuzzHeavy`, `e_shell1250mm`) and placed where the
+        // `.con` put it. `lightMuzzle` plays the bundle itself out of the
+        // effect library at this node when the page has one; the baked
+        // emitters under it are then left dark. `userData.name` is the
+        // glTF name as authored: GLTFLoader suffixes a repeat (`_1`, `_2`).
+        bundles.push({
+          node,
+          name: node.userData.name ?? node.name,
+          muzzle: ancestorMuzzle(node, obj),
+          live: false,
+        });
+      }
       if (!spec || spec.kind === 'bundle') return;
       // Emitter materials are shared through the exporter's cache (both wing
       // flashes, or two seats' glows, reference one material); tinting a
@@ -118,6 +133,9 @@ export function collectGroups(guns, root, options = {}) {
       });
       emitters.push({
         node, spec, materials, age: Infinity, spin: 0,
+        // The bundle this emitter was baked under, whose own `live` says the
+        // library is playing it this shot instead.
+        bundle: null,
         // Which barrel this flash belongs to, so only the barrel that fired
         // lights up. Null for a flash hung off the FireArms itself by
         // `addTemplate` (the Sherman's `e_MuzzPanz`), which fires every shot.
@@ -129,6 +147,12 @@ export function collectGroups(guns, root, options = {}) {
         baseQuat: node.quaternion.clone(),
       });
     });
+    for (const emitter of emitters) {
+      for (let n = emitter.node.parent; n && n !== obj; n = n.parent) {
+        const b = bundles.find(entry => entry.node === n);
+        if (b) { emitter.bundle = b; break; }
+      }
+    }
     // A bomb rack declares no flash, no tracer and no recoil, and releases at
     // zero muzzle velocity -- so it matched every clause of the guard that
     // used to stand here and no plane in this viewer has ever dropped a bomb
@@ -191,6 +215,7 @@ export function collectGroups(guns, root, options = {}) {
       boundingRadius: projectileMesh ? meshRadius(projectileMesh) : 0,
       muzzles: muzzles.length ? muzzles : [obj],
       emitters,
+      bundles,
       projectileMesh,
       trailQuad,
       tracerMesh,
@@ -247,6 +272,14 @@ function meshRadius(node) {
     radius = Math.max(radius, part.geometry.boundingSphere?.radius || 0);
   });
   return radius;
+}
+
+/** Whether `node` or any ancestor short of `stop` is a baked effect bundle. */
+function ancestorBundle(node, stop) {
+  for (let n = node; n && n !== stop; n = n.parent) {
+    if (n.userData?.effect?.kind === 'bundle') return true;
+  }
+  return false;
 }
 
 /** The `muzzle` node `node` hangs off, searching no further than `stop`. */

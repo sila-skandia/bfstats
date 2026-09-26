@@ -406,6 +406,32 @@ def effect_names_for_armor(library: con_mod.ObjectLibrary) -> set[str]:
             for _, name, _ in template.armor_effects}
 
 
+def effect_names_for_firearms(library: con_mod.ObjectLibrary) -> set[str]:
+    """Bundles a gun plays on every shot: its muzzle flash and its casings.
+
+    Two declarations, both on the FireArms (or HandFireArms) template itself:
+    `ObjectTemplate.visibleBarrelTemplate e_MuzzHeavy` on the meshless plane
+    guns, stood up under every `addFireArmsPosition` barrel, and an ordinary
+    `addTemplate e_MuzzHeavy` / `addTemplate e_Shell1250mm` child placed with
+    `setPosition` on everything else (the Browning puts the flash 0.8 m ahead
+    of its pivot and the casings 0.16 m ahead, 0.12 m up). The weapon and level
+    bakes already hang a node named for each bundle at that placement; this
+    puts the bundle itself into the effect library so the viewer can play it
+    through the particle runtime rather than strobing the parked emitters.
+    """
+    names: set[str] = set()
+    for template in library.objects.values():
+        if template.kind.lower() not in ("firearms", "handfirearms"):
+            continue
+        if template.visible_barrel_template:
+            names.add(template.visible_barrel_template)
+        for ref in template.children:
+            child = library.object(ref.template)
+            if child is not None and child.kind.lower() in ("effectbundle", "emitter"):
+                names.add(child.name)
+    return names
+
+
 def projectile_trail_bundle(library: con_mod.ObjectLibrary,
                             projectile: con_mod.ObjectTemplate) -> str | None:
     """The bundle a projectile drags along in flight, if it declares one."""
