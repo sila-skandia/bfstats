@@ -207,6 +207,35 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.6, edge["ny"], places=4)
         self.assertAlmostEqual(7.6, edge["t"], places=4)
 
+    def test_a_level_sweep_meets_the_edge_of_an_open_plate(self) -> None:
+        # The centre passes 0.1 m above a zero-thickness plate, moving along its
+        # plane: no face contact is possible, so the edge has to answer. Touch
+        # is where the edge is one radius off: 2 - sqrt(0.3^2 - 0.1^2).
+        lip = self.results["sweepPlateEdge"]
+        self.assertIsNotNone(lip)
+        self.assertAlmostEqual(1.7172, lip["t"], places=4)
+        self.assertAlmostEqual(10.0, lip["px"], places=4)
+        self.assertAlmostEqual(1.0, lip["py"], places=4)
+        self.assertAlmostEqual(-0.9428, lip["nx"], places=4)
+        self.assertAlmostEqual(0.3333, lip["ny"], places=4)
+        flank = self.results["sweepPlateSide"]
+        self.assertIsNotNone(flank)
+        self.assertAlmostEqual(1.7172, flank["t"], places=4)
+        self.assertAlmostEqual(2.0, flank["pz"], places=4)
+        self.assertTrue(self.results["sweepPlateClear"])
+
+    def test_an_edge_the_sphere_already_overlaps_lets_it_go(self) -> None:
+        # Stopping it there would freeze a body caught inside a hull, and the
+        # quadratic's far root is the sphere coming out, not a contact.
+        self.assertTrue(self.results["sweepOverlapLetsGo"])
+
+    def test_a_seam_inside_a_flat_wall_is_not_an_edge(self) -> None:
+        seam = self.results["sweepSeam"]
+        self.assertTrue(seam["along"])
+        self.assertTrue(seam["diagonal"])
+        # The wall's own end, walked into along its plane: 2 - sqrt(0.3^2 - 0.25^2).
+        self.assertAlmostEqual(1.8342, seam["endOn"], places=4)
+
     def test_a_sweep_that_misses_reports_nothing(self) -> None:
         self.assertTrue(self.results["sweepClears"])
         self.assertTrue(self.results["sweepMissesPastTheEnd"])
@@ -417,6 +446,14 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertLess(wall["x"], 8.0)
         # Parked one body radius short, to within the skin width.
         self.assertLess(abs(wall["short"]), 0.02)
+
+    def test_a_body_stops_at_the_edge_of_a_plate_it_walks_level_into(self) -> None:
+        # An open plate at chest height: the middle sphere meets its edge moving
+        # along its plane. Without the edge test he walked on under it.
+        plate = self.results["stopsAtThePlateEdge"]
+        self.assertGreaterEqual(plate["contacts"], 1)
+        self.assertLess(plate["x"], 8.0)
+        self.assertGreater(plate["x"], 7.5)
 
     def test_a_body_slides_along_a_wall_it_hits_at_an_angle(self) -> None:
         # 45 degrees into a wall at 6 m/s for two seconds: blocked in x, and the
