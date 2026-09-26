@@ -476,11 +476,17 @@ export class Soldier {
    * doing 90 m/s keeps doing 90 m/s. That is the ordinary consequence of the
    * exit not changing the body's momentum, and it is what makes the free-fall
    * gate (`vy < -8`) take a moment to arm after a level bail-out.
+   *
+   * `hull` is the owner id of the aircraft he left and `hullGrace` how long
+   * the resolve looks through it (`SoldierBody.ignoreHull`): the exit point
+   * is on the airframe, and without it the first tick stood him on the wing
+   * and threw the momentum away.
    */
-  bailOut(x, y, z, yaw = 0, vx = 0, vy = 0, vz = 0) {
+  bailOut(x, y, z, yaw = 0, vx = 0, vy = 0, vz = 0, { hull = -1, hullGrace = 0 } = {}) {
     this.body.place(x, y, z, yaw);
     this.body.setPoseFlags(0, 0);
     this.body.body.setVelocity(vx, vy, vz);
+    this.body.ignoreHull(hull, hullGrace);
     this.body.grounded = false;
     this.body.contacted = false;
     this.body.jumpArmed = false;
@@ -503,6 +509,22 @@ export class Soldier {
     this.parachuteEvents.length = 0;
     this.body.setParachute(false);
     this.climb.reset();
+    return this;
+  }
+
+  /**
+   * Hand a freshly `spawn`ed body the velocity of the hull it stepped out of.
+   *
+   * Nothing in the engine stops a man who leaves a moving jeep: he keeps its
+   * speed, and on the ground the soldier's friction (the static/kinetic latch
+   * in `SoldierBody.step`) bleeds it off, so he stumbles a few metres rather
+   * than planting where the door was.
+   */
+  carry(vx = 0, vy = 0, vz = 0) {
+    if (Number.isFinite(vx) && Number.isFinite(vy) && Number.isFinite(vz)) {
+      this.body.body.setVelocity(vx, vy, vz);
+      this.body.sliding = vx !== 0 || vz !== 0;
+    }
     return this;
   }
 
@@ -809,7 +831,10 @@ export class Soldier {
       dt,
       velocityY: this.body.body.velocity.y,
       height: Number.isFinite(ground) ? this.y - ground : null,
-      grounded: this.body.grounded,
+      // In the sea is down, too: a swimmer is never `grounded`, and without
+      // this a man who fell into the water stayed in free fall -- and in its
+      // looping wind -- for as long as he swam.
+      grounded: this.body.grounded || this.swim.swimming,
       deploy: !!input.deploy,
       dead: !!input.dead,
       forward: view,

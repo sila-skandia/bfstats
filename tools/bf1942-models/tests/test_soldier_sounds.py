@@ -155,7 +155,8 @@ trigger Volume
             list(MOVEMENT_SCRIPTS))
         self.assertEqual(
             [("c_SstHitDamage", "SoldierHitDamage.ssc"),
-             ("c_SstFFHitDamage", "SoldierFFHitDamage.ssc")],
+             ("c_SstFFHitDamage", "SoldierFFHitDamage.ssc"),
+             ("c_SstKilled", "SoldierKilled.ssc")],
             list(INJURY_SCRIPTS))
         self.assertEqual(
             list(BAIL_OUT_SCRIPTS) + list(MOVEMENT_SCRIPTS) + list(INJURY_SCRIPTS),
