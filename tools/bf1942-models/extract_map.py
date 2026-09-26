@@ -2013,9 +2013,9 @@ def _vehicle_objects_con(objects, vehicle: str) -> str | None:
         index = {}
         for name in objects.names():
             lower = name.lower()
-            # Hulls only. XPack2's ParatrooperSpawner also creates SpawnPoints
-            # (group 101, which no spawnPointManager file binds to a side), and
-            # widening to it would invent a team for Essen's paradrop.
+            # Hulls only. XPack2's ParatrooperSpawner also creates SpawnPoints,
+            # but its group 101 is bound by no file, so the engine leaves it at
+            # team -1 and Essen's paradrop is dead in retail (SPAWNGRP-2).
             if not (lower.endswith("objects.con") and "vehicles/sea/" in lower):
                 continue
             blob = objects.try_read(name)
@@ -2172,7 +2172,12 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                 # spawn screen, which is the wrong end of the English Channel.
                 settings = layer_groups.get(tpl.group)
                 team = (settings.team if settings and settings.team is not None
-                        else global_teams.get(tpl.group) or inst.team)
+                        else global_teams.get(tpl.group))
+                # A group neither file binds keeps the engine's -1 and no side
+                # can spawn on it (ledger SPAWNGRP-2), so it is not a spawn;
+                # the spawner's own team is not a stand-in.
+                if team is None:
+                    continue
                 entry = {
                     "vehicle": vehicle,
                     "spawner": inst.template,

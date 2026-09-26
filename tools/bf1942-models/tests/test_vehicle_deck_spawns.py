@@ -97,6 +97,19 @@ ObjectTemplate.create SpawnPoint CarrierDeckSpawn
 ObjectTemplate.setGroup 72
 """
 
+# Essen's ParatrooperSpawner in miniature: group 101, which no
+# spawnPointManager file binds. The engine creates the group at team -1 and no
+# side can spawn on it (ledger SPAWNGRP-2).
+UNBOUND = """
+ObjectTemplate.create PlayerControlObject Paradrop
+ObjectTemplate.addTemplate ParaSpawn
+ObjectTemplate.setPosition 0/160/0
+
+ObjectTemplate.create SpawnPoint ParaSpawn
+ObjectTemplate.setGroup 101
+ObjectTemplate.setSpawnAsParaTroper 1
+"""
+
 SPAWNERS = """
 ObjectTemplate.create ObjectSpawner DestroyerSpawner
 ObjectTemplate.setObjectTemplate 2 fletcher2
@@ -104,6 +117,8 @@ ObjectTemplate.create ObjectSpawner OldDestroyerSpawner
 ObjectTemplate.setObjectTemplate 2 fletcher
 ObjectTemplate.create ObjectSpawner CarrierSpawner
 ObjectTemplate.setObjectTemplate 2 carrier
+ObjectTemplate.create ObjectSpawner ParadropSpawner
+ObjectTemplate.setObjectTemplate 2 paradrop
 """
 
 GLOBAL_GROUPS = """
@@ -153,6 +168,7 @@ def _report(*pads):
     objects = FakePool({
         "Objects/Vehicles/Sea/fletcher/Objects.con": FLETCHER,
         "Objects/Vehicles/Sea/Carrier/Objects.con": CARRIER,
+        "Objects/Vehicles/Sea/Paradrop/Objects.con": UNBOUND,
     })
     game = FakePool({"Bf1942/Game/GlobalSpawnGroups.con": GLOBAL_GROUPS})
     return em._vehicle_soldier_spawn_report(info, objects, game)
@@ -198,6 +214,10 @@ class DeckSpawnScopeTests(unittest.TestCase):
             by_vehicle.setdefault(e["vehicle"], set()).add((e["pad"], e["group"]))
         self.assertEqual(by_vehicle, {"fletcher": {(1, 68), (1, 69)},
                                       "fletcher2": {(2, 80), (2, 81)}})
+
+    def test_a_group_no_file_binds_is_no_spawn(self):
+        """Not the spawner's team 2: an unbound group lists for neither side."""
+        self.assertEqual(_report(_pad("ParadropSpawner")), [])
 
     def test_the_template_is_matched_case_blind(self):
         objects = FakePool({"Objects/Vehicles/Sea/fletcher/Objects.con": FLETCHER})
