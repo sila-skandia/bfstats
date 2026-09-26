@@ -468,6 +468,12 @@ class Assembler:
         # (ledger DL-3); on for the effect library, where the decals' 0.388 grey
         # is the difference between a bullet hole and a pale smudge.
         self.apply_material_diffuse = False
+        # Carry an additive shader's `alphaTestRef` into the material extras
+        # (`extras.alphaTest`). Off by default so the model and level bakes are
+        # untouched; `extract_effects.py` turns it on, because a muzzle flash's
+        # size is its texture's alpha > 0.7 core (`MuzzHeavy_m1.rs`), not its
+        # soft halo (features/muzzle-effects-parity).
+        self.additive_alpha_test = False
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
@@ -635,7 +641,8 @@ class Assembler:
                    else None)
         key = (texture_path, shader.twosided, shader.transparent,
                shader.alpha_test, unlit, emissive_floor, shader.additive,
-               shader.texture_fade, shader.envmap, diffuse)
+               shader.texture_fade, shader.envmap, diffuse,
+               self.additive_alpha_test)
         if key in self._material_cache:
             return self._material_cache[key]
 
@@ -655,6 +662,8 @@ class Assembler:
             additive=shader.additive,
             texture_fade=shader.texture_fade,
             envmap=shader.envmap,
+            additive_alpha_test=(shader.alpha_test if self.additive_alpha_test
+                                 and shader.additive else None),
         )
         self._material_cache[key] = index
         return index
