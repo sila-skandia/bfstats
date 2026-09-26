@@ -586,27 +586,39 @@ spawn position. What it lacks beyond ~520 m is motion.
 
 ### 11.3 Event layouts decoded (`working` unless marked)
 
-Offsets are into the payload, after the 12-byte header.
+Offsets are into the payload, after the 12-byte header. The class names and
+the rows marked 2026-09-27 come from the Linux server's own event classes,
+registered by id in `GameEvent::initEvents` (`0x0811bee0`), whose in-memory
+layout the client's `GameClient::processEvent` (`0x004933D0`) reads at the same
+offsets, checked field by field against `replay_20260927-001120` and its
+server log. They correct the 2026-09-15 readings of 0x05, 0x13, 0x16, 0x29,
+0x30/0x31 and 0x37. "World time" is the server's round clock
+(`WorldPref::mWorldTime`), which resets to 0 at PREGAME, the log's `roundInit`.
 
-| id | layout | evidence |
-|---|---|---|
-| 0x04 | `u8`, `f32` seconds since `roundInit` | 38.40 vs 38.59 s and 1167.60 vs 1167.73 s against the server log |
-| 0x05 | `u32 1288`, `u16` netId, `u8 3` at spawn | `inferred`: a child of the soldier (netId one past it), probably its weapon |
-| 0x06 | `u16` netId: object destroyed | every object at round end; each wreck 10.06 s after its kill |
-| 0x07 | `u32` templateId, `u16` netId, `u8 1`, `vec3` position, `vec3` rotation in degrees | 46 of 46 decode; positions equal `ObjectSpawns.con`, rotation equals its `Object.rotation` |
-| 0x09 | `u8` playerId, `u16` netId: player now controls object | soldier at spawn, camera at round end |
-| 0x0A | `u8` playerId, `u16` netId: enter vehicle | server `enterVehicle` 4 ms apart |
-| 0x0B | `u8` playerId, `u8` flag: exit vehicle; flag 1 during round-end teardown | server `exitVehicle` 30 ms apart |
-| 0x13 | `u8 1`, `u8` map length, `u8` mod length, `u8 2`, `char[64]` map, `char[32]` mod | `wake`, `bf1942` |
-| 0x14 | `char[10]` random token, `char[16]` mod, `u8` length, `i32 -1` | the token changes on every connection |
-| 0x16 | join snapshot: `u8`, `u8`, `f32 1.0`, `f32 1.0`, `u32`, `u32` round seconds, `u8` | the seconds equal elapsed round time at the moment of connecting |
-| 0x1A | 3 × `{char[16], u8 length}` mod names | first event of every join |
-| 0x1B | `char[32]` server name, `u8` length | "BF1942 server1" |
-| 0x23 | `u8` playerId, `u16` netId: kit | server `pickupKit` in the same tick |
-| 0x29 | `u32 0`, `u32` round seconds floored to 10, sent every 10 s | resets to 0 each round |
-| 0x30, 0x31 | 74 bytes at map change; 0x30 carries 2916, the server's `+reconnectPassword` | `inferred`: reconnect instructions. 0x31's 1230 is unexplained; other fields look like uninitialised 32-bit Linux heap pointers |
-| 0x36 SetLevel | `char[64]` level path, `char[64]` game-mode file, settings from offset 128 | `bf1942/levels/wake/`, `conquest.con`; 300 = `serverNameTagDistanceScope`, 10 = `serverGameRoundStartDelay`. Bytes after each string's terminator are stale buffer contents |
-| 0x37 | `char[16]` `_ClientID_0`, then mod names | |
+| id | class | layout | evidence |
+|---|---|---|---|
+| 0x04 | SimulationEvent | `u8` running (always 1), `f32` world time | sent once per join, answering the client's DatabaseCompleteAck (`sendSimulationMsg` `0x081349a0`); 288.533 against the log's 288.56. The log offset is `roundInit + worldTime - t` |
+| 0x05 | CreateMultipleObjectsEvent | `u32` template, `u16` first netId, `i32` count | 2026-09-27: a kit's networked projectile pool (`FireArms::initProjectilePool` `0x08287a80`), `count` objects from the first id, made at the spawn between the soldier and the kit. Not a weapon: US kits get GrenadeAlliesProjectile x3, Japanese GrenadeAxisProjectile x3, Scouts add BinocularsProjectile x1, engineers LandmineProjectile x9 and ExpPackProjectile x9 |
+| 0x06 | DestroyObject | `u16` netId: object destroyed | every object at round end; each wreck 10.06 s after its kill |
+| 0x07 | CreateObject | `u32` templateId, `u16` netId, `u8 1`, `vec3` position, `vec3` rotation in degrees | 46 of 46 decode; positions equal `ObjectSpawns.con`, rotation equals its `Object.rotation` |
+| 0x09 | PlayerControlObject | `u8` playerId, `u16` netId: player now controls object | soldier at spawn, camera at death and round end |
+| 0x0A | EnterVehicle | `u8` playerId, `u16` netId | server `enterVehicle` 4 ms apart. The netId is the seat's: a hull's nested PlayerControlObjects take the ids straight after its own (Sherman 532, hull gun 533; Shokaku 534, AA batteries 535..538) |
+| 0x0B | ExitVehicle | `u8` playerId, `u8` flag; flag 1 during round-end teardown | server `exitVehicle` 30 ms apart |
+| 0x13 | MapEvent | `u8` add, `u8` map length, `u8` mod length, `u8` GamePlayMode (1 CTF, 2 CQ, 3 TDM, 4 COOP, 5 OBJECTIVEMODE), `char[64]` map, `char[32]` mod | 2026-09-27: one per map-rotation entry at join (`sendMapList` `0x08134360`); mode 2 in 24 conquest joins, 4 in the coop one |
+| 0x14 | ChallengeEvent | `char[10]` challenge, `char[16]` mod, `u8` length, `i32` xpack id (-1 vanilla), `char[8]` zeros | the client hashes `BF1942.exe` and `objects.rfa` with it (answer 0x15) |
+| 0x16 | GameRulesEvent | `u8` external views, `u8` nose cam, `f32` soldier FF, `f32` ticket ratio, `u32` time limit (0 none), `u32` world time, `u8` crosshair centre point | 2026-09-27: at join, at every PREGAME (world time 0) and whenever a rule changes; not only a join snapshot |
+| 0x1A | ServerInfoEvent | 3 x `{char[16], u8 length}`: map id, mod, game id | first event of every join; the client relaunches into the mod |
+| 0x1B | ServerInfoEvent2 | `char[32]` server name, `u8` length | "BF1942 server1", "bfstats-lab" |
+| 0x23 | PickupKit | `u8` playerId, `u16` netId: kit | server `pickupKit` in the same tick |
+| 0x29 | TimerSyncEvent | `u32` time limit (0 none), `u32` world time **rounded** to the second | 2026-09-27: every 10 s (`updateConnections` `0x081391f0`); 591, 601, 611 in replay_20260926-224904 |
+| 0x30 / 0x31 / 0x32 | StatsKills / StatsShots / StatsHits | `u8` rows-1, `u8` playerId, `u32[10]` template ids, `u16[10]` counts; only the first rows are real, the rest stale stack | 2026-09-27: each player's whole-round tallies at the round's end (`sendPlayerStats` `0x081534b0`): vehicles destroyed, projectiles fired and projectiles that damaged something, by template (the root vehicle's when mounted, the hand weapon's on foot). All 6 destroyed rows match the log's `destroyVehicle`; skandia's 13 Defgun shots equal his 13 Defgun presses. 0x30's 2916 in 20260915-204355 is a Sherman destroyed, not a reconnect password |
+| 0x36 SetLevel | | `char[64]` level path, `char[64]` game-mode file, settings from offset 128 | `bf1942/levels/wake/`, `conquest.con`, `coop.con`; 300 = `serverNameTagDistanceScope`, 10 = `serverGameRoundStartDelay`. Bytes after each string's terminator are stale buffer contents |
+| 0x37 | SessionIdEvent | `char[64]`: the server's prefix (empty) and `_ClientID_<connection>` | 2026-09-27: sent right after SetLevel; the bytes after the terminator are a stale ServerInfoEvent from the server's event pool, not mod names |
+
+Template ids are the load order of the client's templates, so they mean
+nothing outside the recording: from format v4 the recorder names them at
+record time (`ObjectTemplateManager::getTemplate`), for a pool's projectile, a
+tally's key and a kill's weapon.
 
 `ScoreMsg` SPAWNED leaves `weapon` and `bodypart` uninitialised (garbage in one
 recording, zero in the next). The DEATH at round end is teardown, not a kill.
@@ -811,6 +823,18 @@ unterminated while its round runs.
 
 ## 13. Why tank shells and rockets are invisible to a single client (2026-09-15)
 
+> **Corrected 2026-09-27 (§14).** §13.3 misread the gate. Template vtable slot
+> `+0x4C` is `getNetworkableInfo()` (`0x007EB7F0` = `lea eax,[ecx+0x24]`), not
+> a geometry getter: `createProjectile` builds a projectile **locally** unless
+> its template declares `networkableInfo`, and only a networked one waits for
+> the server. 67 of vanilla's 73 projectile templates declare none (every
+> bullet, `Tracer_Projectile`, shells, rockets, bombs), so the client really
+> does fly its own and every remote player's rounds; the recordings held none
+> because the sampler skips objects without a networkable. The six networked
+> ones are both grenades, ExpPack, Landmine, FloatingMine and the binoculars'
+> marker. What a recording needs is not the round object but the moment it is
+> fired, and §14 records that for every weapon the client simulates.
+
 Two real recordings have the recording player destroy a Sherman at point-blank
 range with rockets — `replay_20260915-210619.ndjson` and
 `replay_20260915-213110.ndjson`, the second cross-checked against the LAN
@@ -904,3 +928,106 @@ other players' — as a local, non-networked signal. Also open: whether the
 is ever ghost-replicated to any client under any circumstance — not observed
 in either recording, not proven impossible in general (e.g. slower/longer-lived
 ordnance, or a third-party observer rather than the shooter).
+
+---
+
+## 14. Format v4: every round, the seats, the named events (2026-09-27)
+
+Built in bf42plus `src/replay.cpp` (sila-skandia/bf42plus), read by
+`viewer/replay-recording.js`. What it adds to §9's table:
+
+| `k` | meaning | fields |
+|---|---|---|
+| `f` | one round fired by any weapon the client simulates | `id` the root object the FireArms hangs under (soldier or hull), `pid` the firing player (-1 on the auto-fire path), `w` the FireArms template (`Bar1918`, `DefgunGunBarrel`), `p`/`d` the transform the engine fired along (position and +Z axis: the camera's for a `fireInCameraDof` weapon, the weapon's otherwise), `local` 1 for the recording player's own |
+| `p` | player state, extended | `[pid, team, vehicle, root, seat, triggers]`: `root` the network id of the object the controlled one hangs under, `seat` the controlled id's place after it (0 the root seat), `triggers` the fire (1) and altfire (2) flags the server replicates on the BFPlayer |
+| `e` | named events | `simStart` (0x04), `projPool` (0x05), `mapList` (0x13), `challenge` (0x14), `gameRules` (0x16), `serverInfo` (0x1A), `serverName` (0x1B), `clock` (0x29), `roundStats` (0x30..0x32, `stat` destroyed / fired / hit, `rows` `[{tid, tmpl, n}]`), `sessionId` (0x37); `score` kills gain `weaponName` |
+
+**Every round (`f`).** The client fires every weapon it simulates through
+`FireArms::Fire` (`0x0053D7B0`, the twin of lnxded `0x0828A090`): its own
+player's from input, and every other player's -- human or bot -- from the fire
+and altfire flags the server replicates on each BFPlayer. The chain, each step
+read in the disassembly:
+
+1. The server sets `BFPlayer+0x148/+0x149` from input every tick
+   (`GameServer::checkPlayerTriggers` `0x0814F2C0`) and replicates them
+   (`BFPlayer` networkable masks `0x4000`/`0x8000`).
+2. The client's BFPlayer networkable (`setNetUpdate` `0x00407710`, at
+   BFPlayer+8) writes them to `BFPlayer+0x184/+0x185` (`0x00407B9B`,
+   `0x00407BAF`).
+3. The multiplayer client's per-tick loop `0x004B90D0` sends
+   `handleMessage(6)` / `(7)` to every player's vehicle whose networkable has
+   live ghost data (`[net+0xC]`), at `0x004B915B` / `0x004B9179`.
+4. `FireArms::handleMessage` (`0x0053EAD0`) calls Fire, the path the local
+   player's own input takes.
+
+The hook sits at `0x0053DCB1` (`mov edx,[ebp+264h]`, 6 bytes, checked before
+patching), which all nine round-committing jumps reach through `0x0053DCAA`
+after the barrel loop and which no path that fires nothing reaches: `ebp` is
+the FireArms, `ebx` the firing IPlayer, `[esp+3Ch]` the Mat4 fired along
+(copied at `0x0053DA29`). One record per trigger pull that commits a round, so
+a multi-barrel salvo is one record.
+
+Open, and worth a lab round each: a remote tap released between two BFPlayer
+updates (50-100 ms) may fire nothing on the client (the flag is level-held),
+so bolt actions, bazookas and tank guns may be undercounted -- compare the `f`
+count per player with `roundStats` fired; whether the server echoes the local
+player's flag back (a possible double count for `local` records); remote
+rounds land about one-way latency plus a ghost interval after the server's.
+The v3 input-edge `fire` record is still written as a cross-check, and a
+v4 file's player presses stay in the replay's feed without firing.
+
+---
+
+## 15. Format v4: turrets, engines and soldiers' bodies (2026-09-27)
+
+What the server replicates beyond a root's transform, read where the client
+has applied it. Each child object with a networkable (a template declaring
+`networkableInfo`) is registered with the object manager like any root, with
+the root flag `0x02000000` clear, so the sampler finds them in the same walk.
+Every vtable slot and code signature below was checked in the hashed
+BF1942.exe before the recorder reads a field through it (`partsVerified` in
+`replay.cpp`), and every read goes through `safeCopy`.
+
+| `k` | what | fields | where it is read |
+|---|---|---|---|
+| `jn` | a moving part, named on first sight | `o`: `[root, part, template]` | |
+| `j` | a moving part's rotation relative to its root | `o`: `[root, part, qx, qy, qz, qw]` (BF1942's frame), when it moved | a RotationalBundle (vtable `0x008FE1B0`, slot 20 `0x0057D010`): its RotationalBundleNetworkable carries the angles and `RotationalBundle::setState` `0x0057D470` makes them the relative transform every frame, so its absolute rotation against its root's is the traverse and the elevation |
+| `g` | an engine | `o`: `[root, revs, throttle servo, flags, gear, engine]`, flags 1 running, 2 disabled by damage | Engine (vtable `0x008FE4A0`, slot 20 `0x0057E1D0`): running `+0x15C`, disabled `+0x15D`, throttle servo angle `+0x124` (T1 is it over `maxRotation.z`, `0x0057E296`); its PhysicsEngine at `+0x60` (vtable `0x008FDEC0`, slot 36 `0x0057BFB0`): revs `+0xA0`, gear `+0xBC` |
+| `st` | a soldier's body | `o`: `[soldier, lower state, upper state, aim pitch, torso twist, held item, state bits]` | BFSoldier (vtable `0x008EB128`, slot 37 `0x00500190`): aim pitch `+0x2B0` and twist `+0x2B4` (degrees), the lower and upper animation machines' state index `+0x2E0` and `+0x324`, the held item's 1-based `itemIndex` `+0x3E8`, state bits `+0x416` |
+| `anim` | the animation state table, once a file | `states`: `[index, name, flags]` | the global table `*0x009C9664` that `getCurrentStateFlags` `0x00613440` reads: states vector `+0x18`..`+0x1C`, a state's flags `+0x2C`, its name `+0x130`. The movement code's own stance test (`0x005013D6`) reads the lower state's flags: 0x20 crouching, 0x40 lying (0x08 swimming, 0x10 climbing, 0x80 jumping) |
+
+What the replay does with them (`features/round-replay-fidelity/`): a `j`
+part goes on the model's node of the same template name, after the drive's
+rig has posed everything else; `g`'s revs are the engine note's and the
+propeller's (`PhysicsEngine::updatePhysics` plays its sound from `|revs|`
+and spins the propeller from it), and its running flag decides whether the
+engine sounds at all; `st`'s lower state gives the stance, its upper state
+the fire, and its item the weapon drawn in his hands.
+
+Why an engine is not read from its propeller: the Engine derives from
+RotationalBundle, but `Engine::handleUpdate` never rebuilds its transform, and
+the propeller is spun locally (`0x0057C21E`..`0x0057C2CF`: `revs x 400` degrees
+a tick below the 0.08 blur swap, `revs x 20` above), so a 10 Hz sample of it
+aliases.
+
+Corrections these readings make elsewhere (recorded here; the corpus files are
+another session's to merge):
+
+- `subsystems/netcode.md` P-2's "no interpolation buffer": each networkable
+  keeps a 16-entry history, and a RotationalBundle's `predict` (PMLinear,
+  every vanilla turret) interpolates between the two records around
+  `now - delay` (client `0x00559D40`). The functions P-1/P-2 name on vtable
+  `0x008D8DA8` belong to the client's local-host server (its queryInterface
+  answers IGameServer); the multiplayer client's remotes are ghost state plus
+  the fire-flag loop of §14.
+- The PhysicsEngine vtable is `0x008FDEC0`; `0x008FDF50` is its slot 36.
+- `HandFireArms`' primary vtable is `0x008F97B8` (`0x008F9750` is the
+  interface table at object `+0x2D8`).
+
+Open: the sign of the recorded aim pitch (only the property name says
+positive is up; check it in a recording), which LOD a part hangs under on a
+distant hull (a LodObject's `getChild` returns only the selected LOD; the
+sampler reads every registered object, so it is unaffected, but a part under an
+unselected LOD may stop updating), and what the soldier's `0x2000` bit and
+byte `+0x26D` mean.
+

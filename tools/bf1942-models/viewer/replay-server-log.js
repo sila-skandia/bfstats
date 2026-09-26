@@ -69,6 +69,15 @@ export function alignServerLog(rec, log) {
     if (m.kind !== 'spawn' && m.kind !== 'chat') continue;
     for (const e of candidates(m)) offsets.add(Math.round((e.t - m.t) * 1000) / 1000);
   }
+  // The server's own clock at the join: event 0x04 (SimulationEvent) carries
+  // the world time, which counts from the log's `roundInit` (the PREGAME
+  // reset, `WorldPref::mWorldTime`). One more candidate, which needs no
+  // shared event at all, and it still has to win the vote below.
+  const inits = byName.get('roundInit') || [];
+  for (const c of rec.clocks) {
+    if (!c.exact) continue;
+    for (const init of inits) offsets.add(Math.round((init.t + c.seconds - c.t) * 1000) / 1000);
+  }
   let best = null;
   for (const offset of offsets) {
     let matched = 0;
@@ -89,16 +98,24 @@ export function alignServerLog(rec, log) {
   return { offset: best.offset, matched: best.matched, total: rec.matchable.length, meanError: best.error / best.matched };
 }
 
+/** Server events that repeat every second or so of a round (an engineer
+ *  holding his wrench on a hull logs a begin/end pair per tick of repair) and
+ *  would bury the feed. */
+const QUIET = new Set(['beginRepair', 'endRepair', 'beginMedPack', 'endMedPack']);
+
 export function serverRows(rec, log, alignment) {
   const names = new Map();
   for (const e of log.events) {
     if (e.name === 'createPlayer') names.set(e.params.player_id, e.params.name);
   }
-  const who = id => names.get(id) ?? `player ${id}`;
+  // Bots have no createPlayer in the log; the recording's CreatePlayer names
+  // them (the same ids: the server's).
+  const who = id => names.get(id) ?? rec.players?.get(id)?.name ?? `player ${id}`;
   const rows = [];
   for (const e of log.events) {
     const t = e.t - alignment.offset;
     if (t < -2 || t > rec.duration + 2) continue;
+    if (QUIET.has(e.name)) continue;
     const p = e.params;
     const at = Array.isArray(p.vehicle_pos) ? p.vehicle_pos
       : Array.isArray(p.player_location) ? p.player_location : null;
@@ -108,7 +125,19 @@ export function serverRows(rec, log, alignment) {
       case 'spawnEvent': text = `${who(p.player_id)} spawned`; break;
       case 'pickupKit': text = `${who(p.player_id)} picked up ${p.kit}`; break;
       case 'chat': text = `${who(p.player_id)}: ${p.text}`; break;
-      case 'destroyVehicle': text = `${who(p.player_id)} destroyed ${p.vehicle}`; break;
+      case 'destroyVehicle':
+        text = p.player_id !== undefined ? `${who(p.player_id)} destroyed ${p.vehicle}` : `${p.vehicle} destroyed`;
+        break;
+      case 'scoreEvent': {
+        const weapon = p.weapon && p.weapon !== '(none)' ? ` with ${p.weapon}` : '';
+        if (/kill/i.test(p.score_type ?? '') && p.victim_id !== undefined) {
+          text = `${who(p.player_id)} ${/tk|team/i.test(p.score_type) ? 'team-killed' : 'killed'} ${who(p.victim_id)}${weapon}`;
+        } else {
+          text = `${who(p.player_id)}: ${String(p.score_type ?? 'score').toLowerCase()}${weapon}`;
+        }
+        break;
+      }
+      case 'reSpawnEvent': text = `${who(p.player_id)} respawned`; break;
       case 'enterVehicle': text = `${who(p.player_id)} got into ${p.vehicle}`; break;
       case 'exitVehicle': text = `${who(p.player_id)} got out of ${p.vehicle}`; break;
       case 'setTeam': text = `${who(p.player_id)} switched to ${teamName(p.team)}`; break;

@@ -762,6 +762,30 @@ export class Vehicle {
     }
   }
 
+  /**
+   * Present a state something other than this model wrote: a round replay's
+   * recorded motion (`replay-hulls.js`). `state` already holds where the hull
+   * is and how it moves -- position, orientation, velocity, angular velocity
+   * -- and `inputs` the stick that turns it that way; this runs what
+   * `integrate` runs after its physics (the throttle spool toward `throttle`,
+   * the propeller, the surface servos, the transform and the rig) and no
+   * physics at all. The subclasses add their own presentation: an aircraft's
+   * gear, a ground vehicle's wheels.
+   */
+  presentKinematic(dt, throttle = 0) {
+    this.spoolThrottle(dt, throttle);
+    this.advancePropeller(dt);
+    this.advanceSurfaces(dt);
+    this.applyTransform();
+    this.applyRig();
+  }
+
+  /** The engine setting chasing `wanted`: a straight step here; an aircraft
+   *  spools at its own `throttleRate`, as `integrate` does. */
+  spoolThrottle(_dt, wanted) {
+    this.state.throttle = wanted;
+  }
+
   /** Push `state` onto the scene node. */
   applyTransform() {
     this.node.position.copy(this.state.position);

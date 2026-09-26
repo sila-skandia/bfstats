@@ -71,15 +71,6 @@ export function place(player, entity, t) {
   // in replay_20260915-213110.ndjson, against spawnYaw()'s convention.
   if (life.soldier) group.quaternion.multiply(SOLDIER_YAW_FLIP);
 
-  // Aim assist during firing: align soldier model directly towards the target/shot direction
-  if (life.soldier && player.rec.fires) {
-    const activeFire = player.rec.fires.find(f => Math.abs(t - f.t) <= 0.8);
-    if (activeFire && activeFire.dir) {
-      const dirVec = new THREE.Vector3(activeFire.dir[0], 0, -activeFire.dir[2]).normalize();
-      const lookTarget = group.position.clone().add(dirVec);
-      group.lookAt(lookTarget.x, group.position.y, lookTarget.z);
-    }
-  }
   setGhost(entity, !replicated);
   const hp = hpAt(life, t);
   entity.hp = hp;
