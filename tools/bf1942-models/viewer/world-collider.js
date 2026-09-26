@@ -171,7 +171,7 @@ export class WorldCollider {
     };
     this._movedSweep = {
       t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
-      px: 0, py: 0, pz: 0,
+      px: 0, py: 0, pz: 0, depth: 0,
       material: 0, kind: '', owner: -1, triangle: -1,
     };
     this.hit = {
@@ -183,7 +183,7 @@ export class WorldCollider {
     // overwrite the impact a round is in the middle of reporting.
     this.sweepHit = {
       t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
-      px: 0, py: 0, pz: 0,
+      px: 0, py: 0, pz: 0, depth: 0,
       material: 0, kind: '', owner: -1, triangle: -1,
     };
     this.elapsed = 0;    // total microseconds spent in cast(), for the budget
@@ -198,9 +198,12 @@ export class WorldCollider {
    * and a clamp, which is both exact and far cheaper than sweeping a sphere
    * against a lattice. `physics.js` does that clamp, and `map.html` composes the
    * two. The sea is not solid and never appears in a sweep at all.
+   *
+   * `shell` is `CollisionIndex.sweepSphere`'s, passed to the moved hulls too.
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false,
-              deckStepTop = -Infinity, deckFloorCos = 2, passObstacles = false) {
+              deckStepTop = -Infinity, deckFloorCos = 2, passObstacles = false,
+              shell = 0) {
     if (!this.statics) return null;
     const started = performance.now();
     // `passObstacles`: the caller's contact with an `Obstacle` was vetoed by
@@ -209,7 +212,7 @@ export class WorldCollider {
     this.statics.passObstacles = !!passObstacles;
     let out = this.statics.sweepSphere(
       ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies,
-      deckStepTop, deckFloorCos);
+      deckStepTop, deckFloorCos, -1, shell);
     this.statics.passObstacles = false;
     // `skipBodies`: the caller is itself a simulated body, and what it does to
     // another one is the contact solver's business (a push, a spin, damage on
@@ -228,7 +231,7 @@ export class WorldCollider {
           e[0] * dx + e[4] * dy + e[8] * dz,
           e[1] * dx + e[5] * dy + e[9] * dz,
           e[2] * dx + e[6] * dy + e[10] * dz,
-          best, radius, -1, this._movedSweep, owner, false, -Infinity, 2, m.sub);
+          best, radius, -1, this._movedSweep, owner, false, -Infinity, 2, m.sub, shell);
         if (!hit || hit.t >= best) continue;
         best = hit.t;
         out = this.sweepHit;
@@ -247,6 +250,7 @@ export class WorldCollider {
         out.owner = owner;
         out.triangle = hit.triangle;
         out.kind = hit.kind;
+        out.depth = hit.depth;
       }
     }
     this.elapsed += (performance.now() - started) * 1000;
