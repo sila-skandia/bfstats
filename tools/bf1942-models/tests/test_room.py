@@ -55,7 +55,7 @@ _VIEWER_MODULES = [
     "body-world", "body-statics", "body-pose", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact", "airborne",
     # seats.js re-exports its split modules.
-    "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
+    "seat-survey", "camera-pivot", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
