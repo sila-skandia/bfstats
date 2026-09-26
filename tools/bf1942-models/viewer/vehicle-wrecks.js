@@ -9,6 +9,7 @@ import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
 import { AIRBORNE_MARGIN } from './airborne.js';
+import { restoreLift } from './world-vehicle-tick.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -354,6 +355,9 @@ export function createVehicleWrecks(page) {
     } else {
       page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     }
+    // The wreck has stopped moving: its drive is not a wreck's any more, and a
+    // hull the spawner puts back on the pad has to be able to fly.
+    restoreLift(drive);
     page.retireVehicleBody(owner);
     // Back with the level's frozen scenery: the hull is where it came down, and
     // nothing is going to move it again until its spawner puts a fresh one on
@@ -642,6 +646,7 @@ export function createVehicleWrecks(page) {
     // and back in is the same object and keeps what it spent).
     idleFirePose(visual.node);
     idleFireState(visual.node, [page.fireStates, page.world?.fireStates]);
+    restoreLift(page.vehicles?.lastFlightOf?.(visual.node)?.drive ?? null);
     vehicle?.reset();
     if (vehicle) showDamageTier(vehicle, null);
     page.collider?.statics?.enableOwner?.(owner);

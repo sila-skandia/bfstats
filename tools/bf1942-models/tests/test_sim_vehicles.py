@@ -254,8 +254,10 @@ class SimVehicleTests(unittest.TestCase):
         # flight at 200 m), a hull that keeps its lift glides for the best part
         # of a minute and wrecks a kilometre downrange, which is what "the
         # wreck never happened" looked like from the cockpit.
-        self.assertLess(r["crashAfter"], 15.0, f"it comes down, it does not glide: {r}")
-        self.assertLess(r["drift"], 400.0, f"it wrecks near where it was killed: {r}")
+        # Tight on purpose: 15 s and 400 m pass a glide, which is the bug this
+        # assertion exists for. Measured 3.7-3.9 s and 50-74 m.
+        self.assertLess(r["crashAfter"], 8.0, f"it comes down, it does not glide: {r}")
+        self.assertLess(r["drift"], 150.0, f"it wrecks near where it was killed: {r}")
         self.assertLess(r["crashAgl"], 5.0, "and it ends on the ground, not in the air")
         self.assertEqual(len(r["wrecked"]), 1)
         self.assertEqual(r["wrecked"][0]["template"], "Spitfire", "the wreck is the hull's own template")
@@ -303,8 +305,8 @@ class SimVehicleTests(unittest.TestCase):
         self.assertTrue(r["flying"], "it joins the wreck list")
         self.assertFalse(r["frozen"], "and is not parked where it was hit")
         self.assertGreater(r["fellBy"], 60.0, f"it comes down: {r}")
-        self.assertLess(r["crashAfter"], 15.0, f"it comes down, it does not glide: {r}")
-        self.assertLess(r["drift"], 400.0, f"the wreck lands near the kill: {r}")
+        self.assertLess(r["crashAfter"], 8.0, f"it comes down, it does not glide: {r}")
+        self.assertLess(r["drift"], 150.0, f"the wreck lands near the kill: {r}")
         self.assertLess(r["crashAgl"], 5.0, f"the crash is on the ground: {r}")
         self.assertEqual(r["loadedScene"], True, f"its wreck glb did not parse: {r['loadError']}")
         self.assertEqual(r["wreckNode"], "wreck:BF109", f"no wreck model on the hull: {r}")
