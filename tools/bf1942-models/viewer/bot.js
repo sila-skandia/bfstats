@@ -350,6 +350,7 @@ export class BotController {
     this.firingTarget = null; this.targetPosition = null; this.targetScore = 0;
     this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
     this.route = null; this.obstacles = []; this._stalledTicks = 0;
+    this._disembark = null;
     this.scout = new ScoutState();
     this.cover = new TakeCoverState();
     this.medic = new MedicState();

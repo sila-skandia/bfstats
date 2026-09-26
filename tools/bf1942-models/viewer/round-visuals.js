@@ -210,7 +210,8 @@ export function advancePuffs(guns, dt) {
     if (spec.colorOverTime) {
       const [r, g, b, a] = sampleCurve(spec.colorOverTime, phase);
       for (const material of puff.materials) {
-        material.color.setRGB(r / 255, g / 255, b / 255);
+        // Gamma-space, as the engine drew it; see `effects.js`.
+        material.color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
         material.opacity = a / 255;
       }
     } else {
