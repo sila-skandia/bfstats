@@ -112,7 +112,7 @@ export function parseRecording(text) {
     matchable: [],        // { t, kind, text } for aligning a server log
     fires: [],            // { t, pid, kind, weapon, pos, dir, nid? } one per shot (v4) or per trigger press (v3)
     deaths: [],           // { t, pid } a player's death, as the score stream reports it
-    joints: new Map(),    // v4: root nid -> Map<part nid, { name, keys: [{ t, q }] }>
+    joints: new Map(),    // v5: root nid -> Map<part id, { name, since, pos, keys: [{ t, q }] }>
     engines: new Map(),   // v4: root nid -> Map<engine nid, [{ t, revs, throttle, running, disabled, gear }]>
     stances: new Map(),   // v4: soldier nid -> [{ t, lower, upper, pitch, twist, item, bits }]
     animStates: [],       // v4: index -> { name, flags }, the engine's animation state table
@@ -490,12 +490,23 @@ export function parseRecording(text) {
                          local: Boolean(r.local) });
         break;
       case 'jn':
-        // v4: a moving part's name, on first sight: `[root, part, template]`.
-        for (const [root, nid, name] of r.o) jointOf(root, nid).name = name;
+        // A moving part's name, on first sight: `[root, part, template]`, and
+        // from v5 where it sits in its root's frame, `x, y, z` (BF1942's; the
+        // viewer's has z negated). A v4 recorder keyed every part 0 -- a child
+        // networkable has no id of its own -- so a v4 file's parts cannot be
+        // told apart and are not used.
+        if (rec.version === 4) break;
+        for (const [root, nid, name, x, y, z] of r.o) {
+          const part = jointOf(root, nid);
+          part.name = name;
+          part.since = t;
+          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) part.pos = [x, y, -z];
+        }
         break;
       case 'j':
-        // v4: a moving part's rotation relative to its root object (a turret's
+        // A moving part's rotation relative to its root object (a turret's
         // traverse, a gun's elevation), `[root, part, qx, qy, qz, qw]`.
+        if (rec.version === 4) break;
         for (const [root, nid, qx, qy, qz, qw] of r.o) jointOf(root, nid).keys.push({ t, q: [qx, qy, qz, qw] });
         break;
       case 'g':

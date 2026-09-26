@@ -28,11 +28,18 @@ import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
 import { crewOf, engineAt, hpAt, isReplicated, latestAt } from './replay-recording.js';
 import {
-  aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, motionAt, shipThrottle,
+  aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
+  shipThrottle,
 } from './replay-kinematics.js';
 
 const _world = new THREE.Quaternion();
 const _parent = new THREE.Quaternion();
+const _at = new THREE.Vector3();
+const _toRoot = new THREE.Matrix4();
+
+/** Seconds a part's first sight may precede its hull's life: both come from
+ *  one sample, but the life starts at its root's first record. */
+const PART_LEAD = 1;
 
 /** Out-of-range objects are drawn in this: announced and placed, not updated. */
 const ghostMaterial = new THREE.MeshBasicMaterial({
@@ -270,24 +277,36 @@ export class ReplayHull {
   }
 
   /**
-   * The moving parts a v4 recording carries (`j`): each networked
+   * The moving parts a v5 recording carries (`j`): each networked
    * RotationalBundle's rotation relative to the root object -- a turret's
    * traverse, a gun's elevation, a pintle MG's mount -- put on the node of the
-   * same name, after the rig has posed everything else. A v3 recording has
-   * none, and its turrets stay where the rig leaves them.
+   * same name (among several, the one where the recording places the part),
+   * after the rig has posed everything else. The parts are this life's: a
+   * root id a respawn reuses brings new parts. A v3 recording has none, and
+   * its turrets stay where the rig leaves them.
    */
   applyJoints(t) {
     const parts = this.player.rec.joints?.get(this.life.nid);
     if (!parts?.size) return;
     if (!this.jointNodes) {
-      const byName = new Map();
+      const { created, destroyed } = this.life;
+      const mine = [...parts]
+        .filter(([, part]) => part.since === undefined || (part.since >= created - PART_LEAD && part.since < destroyed))
+        .map(([key, part]) => ({ key, part, name: String(part.name || '').toLowerCase(), pos: part.pos ?? null }));
+      this.root.updateMatrixWorld(true);
+      _toRoot.copy(this.root.matrixWorld).invert();
+      const nodes = [];
       this.root.traverse(obj => {
-        const key = String(obj.name || '').replace(/_\d+$/, '').toLowerCase();
-        if (key && !byName.has(key)) byName.set(key, obj);
+        if (obj === this.root) return;
+        const name = String(obj.name || '').replace(/_\d+$/, '').toLowerCase();
+        if (!name) return;
+        obj.getWorldPosition(_at).applyMatrix4(_toRoot);
+        nodes.push({ node: obj, name, pos: [_at.x, _at.y, _at.z] });
       });
+      const match = matchJointNodes(mine, nodes);
       const depth = node => { let d = 0; for (let n = node; n && n !== this.root; n = n.parent) d++; return d; };
-      this.jointNodes = [...parts].map(([nid, part]) => ({ part, node: byName.get(String(part.name || '').toLowerCase()) ?? null }))
-        .filter(j => j.node && j.node !== this.root)
+      this.jointNodes = mine.filter(j => match.has(j.key))
+        .map(j => ({ part: j.part, node: nodes[match.get(j.key)].node }))
         .sort((a, b) => depth(a.node) - depth(b.node));
     }
     if (!this.jointNodes.length) return;
