@@ -1929,6 +1929,17 @@ function draw(dt) {
 function paintHud(dt) {
   // The briefing screen owns the stage while it is parked on it: the game
   // shows only the dialog over the live scene, so the HUD — the F1..F8 radio
+  // strip (comms-canvas) included — waits for READY. Hiding the canvases
+  // (not just skipping the paint) clears whatever the load parked on them;
+  // the [hidden] !important rules in map.css beat the generic canvas rule.
+  const briefingUp = overlay.briefingCaptures();
+  for (const c of [hudFeed.gameHud.canvas, document.getElementById('comms-canvas')]) {
+    if (c) c.hidden = briefingUp;
+  }
+  if (briefingUp) return;
+  hudFeed.gameHud.requestRepaint();
+  // The briefing screen owns the stage while it is parked on it: the game
+  // shows only the dialog over the live scene, so the HUD — the F1..F8 radio
   // keys included — waits for READY. Hiding the canvas (not just skipping
   // the paint) clears whatever the load parked on it.
   if (overlay.briefingCaptures()) {

@@ -193,13 +193,17 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
       }
     }
 
-    // The READY row: its own band below the plate, the game's knapp plate,
-    // and the wide-tracked label.
+    // The READY row: its own band below the plate, framed on all four sides
+    // with the dialog's light border and rounded corners (the capture reads
+    // an ~8px frame at its scale — about 3 virtual units — in the same grey
+    // as the plate's own edge).
     ctx.fillStyle = 'rgba(62, 62, 58, 0.88)';
-    ctx.fillRect(READY_ROW.x, READY_ROW.y, READY_ROW.w, READY_ROW.h);
-    ctx.fillStyle = 'rgba(168, 166, 158, 0.85)';
-    ctx.fillRect(READY_ROW.x, READY_ROW.y, READY_ROW.w, 2);
-    ctx.fillRect(READY_ROW.x, READY_ROW.y + READY_ROW.h - 2, READY_ROW.w, 2);
+    ctx.beginPath();
+    (ctx.roundRect || ctx.rect).call(ctx, READY_ROW.x, READY_ROW.y, READY_ROW.w, READY_ROW.h, 3);
+    ctx.fill();
+    ctx.strokeStyle = 'rgb(140, 139, 140)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
     const knapp = hover && assets.knappHover && assets.knappHover.complete
       && assets.knappHover.naturalWidth > 0 ? assets.knappHover : assets.knapp;
     if (knapp && knapp.complete && knapp.naturalWidth > 0) {
