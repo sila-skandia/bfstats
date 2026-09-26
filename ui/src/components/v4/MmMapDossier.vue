@@ -44,8 +44,8 @@ const props = withDefaults(
     hideHeading?: boolean
     /**
      * Live tickets for the current round on this server. When provided, live ticket counts
-     * are shown. When omitted, default ticket counts from level files are hidden
-     * because servers almost certainly override them.
+     * are shown. When omitted, the level's own counts stay hidden: they are a 16-player
+     * server's, and a round starts at count × max players / 16 × the server's ticket ratio.
      */
     liveTickets?: DossierLiveTickets | null
     /** True when this briefing is opened in the context of an active live server match. */
@@ -108,6 +108,12 @@ const bleedStory = computed(() => {
   const worse = a > b ? first : second
   return { team: worse, rate: Math.max(a, b), other: Math.min(a, b) }
 })
+
+/**
+ * The level's bleed rates are a 16-player server's: a round loses rate × max players / 16
+ * a minute, and starts with its tickets scaled the same way.
+ */
+const hasBleed = computed(() => teams.value.some((team) => team.ticketLossPerMin != null))
 
 const plottedFlags = computed(() => {
   const doc = dossier.value
@@ -304,6 +310,13 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
       <strong :class="`mm-dossier__verdict--${sideOf(bleedStory.team)}`">{{ bleedStory.team.label }}</strong>
       on the clock: {{ bleedStory.rate }} tickets a minute against
       {{ bleedStory.other }} once the flags go the other way.
+    </p>
+
+    <p
+      v-if="hasBleed"
+      class="mm-card__foot mm-dossier__rates"
+    >
+      Rates are a 16-player server's; a 32-player server bleeds twice as fast.
     </p>
 
     <div v-if="isLive" class="mm-dossier__live-notice">
@@ -727,6 +740,9 @@ watch(() => [props.gameId, props.mapName], load, { immediate: true })
   color: var(--mm-ink-soft);
   max-width: 62ch;
 }
+
+/* Tucked under the order of battle whose rates it qualifies. */
+.mm-dossier__rates { margin: -12px 0 0; }
 
 .mm-dossier__verdict strong { font-weight: 500; }
 .mm-dossier__verdict--axis { color: var(--mm-kill); }

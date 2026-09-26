@@ -7,7 +7,9 @@ site does not:
 
     Init.con                          which armies fight, their kits, the assault team
     Init/Terrain.con                  world size, which turns positions into map coords
-    GameTypes/Conquest.con            starting tickets and the per-minute bleed
+    Conquest.con                      starting tickets and the per-minute bleed, as a
+                                      16-player server has them (GameTypes/Conquest.con
+                                      only when the level ships no root script)
     Conquest/ControlPoints.con        every flag, by name and world position
     Conquest/ControlPointTemplates.con  who starts holding each flag
     Conquest/ObjectSpawnTemplates.con   what each spawner yields per team
@@ -498,10 +500,13 @@ class LevelFiles:
             self._files.setdefault(key, value)
 
     def get(self, *candidates: str) -> str:
-        """First candidate that exists, so callers can express a preference order."""
+        """First candidate that exists, so callers can express a preference order.
+
+        A file that exists but says nothing still wins: the engine runs it.
+        """
         for candidate in candidates:
             text = self._files.get(candidate.lower())
-            if text:
+            if text is not None:
                 return text
         return ""
 
@@ -647,7 +652,20 @@ def lookup_category(categories: dict[str, str], normalised: str) -> str:
 
 def parse_teams(files: LevelFiles, kit_types: dict[str, str] | None = None) -> list[dict]:
     init = files.get("init.con")
-    conquest = files.get("gametypes/conquest.con", "conquest.con")
+    # The server runs the level's root `Conquest.con`: `Setup::startHostGame` hands
+    # `setGameStartup` the bare `conquest.con` and `Game::load` joins it to the level
+    # path. `GameTypes/Conquest.con` is only checked for existence when a map is
+    # queued, and across vanilla and the two packs it disagrees with the root script
+    # on 8 levels' tickets (Coral Sea 100 / 100 against 100 / 150) and 13 levels'
+    # bleed. Ledger TKT-3. A level with no root script anywhere in its mod chain
+    # (none in vanilla or the packs) falls back to the `GameTypes/` copy, the only
+    # numbers it states, as the level exporter's `game_type_script` does.
+    #
+    # Both are a 16-player server's numbers: a round starts each side at
+    # count x max players / 16 (times the server's ticket ratio) and bleeds
+    # rate x max players / 16 a minute (TKT-1, TKT-4), so any size of server
+    # bleeds out in the same time.
+    conquest = files.get("conquest.con", "gametypes/conquest.con")
 
     skins = {int(t): s for t, s in con_values(init, "game.setTeamSkin", 2) if t in ("1", "2")}
     kits: dict[int, list[str]] = {1: [], 2: []}

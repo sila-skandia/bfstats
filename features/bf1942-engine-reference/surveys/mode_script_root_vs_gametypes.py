@@ -1,7 +1,7 @@
 """Which script a game mode runs: the level's root `<Mode>.con` against its
 `GameTypes/<Mode>.con`, across every installed mod's levels.
 
-Run from the repository root. Backs ledger row TKT-2: the dedicated server runs
+Run from the repository root. Backs ledger row TKT-3: the dedicated server runs
 `bf1942/levels/<level>/<mode>.con` (`Game::load` 0x0805b4b0 joins the level path
 and the startup name), and `GameTypes/<mode>.con` is only checked for existence
 when a map is queued (`Setup::setNextLevel` 0x080bf160). The exporter read the
