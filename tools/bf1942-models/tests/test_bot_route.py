@@ -6,6 +6,10 @@ template changes, and plants a still object it will meet as a potential
 obstacle (`addSlowMovingPathfindingObstacle` 0x0855d550), with the still
 objects around it. The viewer had taken the soldier's look-ahead for 0.
 
+And a route's leg widenings, which since 9bba931c run one search a tick
+(`extendRoute`, `route.widen`): a first leg still being widened has no point
+to steer at, and the route must stand until the widenings run out.
+
 The harness runs on the module set `test_bot_ai.py` stages.
 """
 
@@ -107,6 +111,42 @@ class SoldierLookAheadTests(unittest.TestCase):
         self.assertEqual(m["onFoot"], 2)
         self.assertEqual(m["mounted"], 1)
         self.assertEqual(m["kept"], ["contact"])
+
+
+class LegWideningTests(unittest.TestCase):
+    """A hull whose one leg only the third widening closes (a wall with its end
+    58 m to the side), and one whose goal is walled in. One search a tick: the
+    base box and the first widening in the tick the route is made, then one a
+    tick. Before the fix a route with no point yet was failed in the tick it
+    was made and replaced from the narrow box, so the hull never got a point
+    and no path failure was counted. Found with test_sim_vehicles `tankDuel`
+    (2026-09-26), whose orders threw the route away every tick and froze the
+    PanzerIV 114 m short of North outpost the same way."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_a_first_leg_the_third_widening_closes_is_driven(self) -> None:
+        r = self.results["firstLegWidening"]
+        self.assertEqual(r["steeredAt"], 2, r)
+        self.assertEqual(r["widest"], 3, r)
+        self.assertIsNone(r["failedAt"], r)
+        self.assertEqual(r["pathFailures"], 0, r)
+        self.assertEqual(r["throttle"], 1, r)
+
+    def test_a_walled_in_goal_fails_after_the_last_widening(self) -> None:
+        # Six widenings after the base box, one a tick: the route fails on
+        # the sixth tick and counts as a path failure, which is what widens
+        # the next attempt's base box (`bot._pathFailures`).
+        r = self.results["goalWalledIn"]
+        self.assertEqual(r["failedAt"], 5, r)
+        self.assertEqual(r["widest"], 6, r)
+        self.assertGreaterEqual(r["pathFailures"], 1, r)
+        self.assertIsNone(r["steeredAt"], r)
+        self.assertEqual(r["throttle"], 0, r)
 
 
 if __name__ == "__main__":
