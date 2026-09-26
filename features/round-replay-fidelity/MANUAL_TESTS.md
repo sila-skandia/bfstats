@@ -1,8 +1,8 @@
 # Round replay: manual checks
 
-The game folder now has the v4 recorder: `dsound.dll` is bf42plus `4fc0352`
-(pushed to `sila-skandia/bf42plus` master). The build it replaced is
-`dsound_old.dll` in the same folder. To go back to it:
+The game folder has the v5 recorder: `dsound.dll` is bf42plus `1e45a5d`
+(pushed to `sila-skandia/bf42plus` master). `dsound_old.dll` in the same
+folder is the v4 build, `4fc0352`. To go back to it:
 
 ```bash
 cp ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound_old.dll ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound.dll
@@ -32,7 +32,10 @@ shots (v3 has only yours), turrets turning (they sit at rest), crouch, prone
 and weapon switches. A plane's control surfaces and every engine's throttle
 are estimated from how the hull moves.
 
-## 2. A round with the v4 recorder
+## 2. A round with the v5 recorder
+
+The 07:57 round (`replay_20260927-075756`) was v4: it shows all of the below
+except the turret, whose records v4 keyed wrongly. A new round checks that.
 
 1. Record a lab round as usual (the bf1942-server-lab skill), joining in the
    90 s pregame.
@@ -42,7 +45,8 @@ are estimated from how the hull moves.
    - man a tank or an AA gun, turn it and fire;
    - fly a plane: take off, turn, land if you can;
    - ride a landing craft.
-3. `python3 lab/lab.py stop`, and open the URL it prints.
+3. `python3 lab/lab.py stop` from `tools/bf1942-models`, and open the URL it
+   prints.
 
 The file should say so itself:
 
@@ -50,7 +54,7 @@ The file should say so itself:
 f=$(ls -t ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/replays/replay_*.ndjson | head -1); head -c 100 "$f"; echo; grep -o '"k":"[a-z]*"' "$f" | sort | uniq -c
 ```
 
-The header reads `"v":4,"plus":"99.0.0-0-g4fc0352"`, and the counts include
+The header reads `"v":5,"plus":"99.0.0-0-g1e45a5d"`, and the counts include
 `f` (every round fired: thousands, with 30 bots), `jn` and `j` (turrets), `g`
 (engines), `st` and `anim` (soldiers). If `f`, `j`, `g` or `st` is missing,
 the recorder turned that part off on purpose: `logs/bf42plus_debug.log` in

@@ -990,7 +990,7 @@ BF1942.exe before the recorder reads a field through it (`partsVerified` in
 
 | `k` | what | fields | where it is read |
 |---|---|---|---|
-| `jn` | a moving part, named on first sight | `o`: `[root, part, template]` | |
+| `jn` | a moving part, named on first sight | `o`: `[root, part, template]`; v5 adds `x, y, z`, where it sits in its root's frame (§16) | |
 | `j` | a moving part's rotation relative to its root | `o`: `[root, part, qx, qy, qz, qw]` (BF1942's frame), when it moved | a RotationalBundle (vtable `0x008FE1B0`, slot 20 `0x0057D010`): its RotationalBundleNetworkable carries the angles and `RotationalBundle::setState` `0x0057D470` makes them the relative transform every frame, so its absolute rotation against its root's is the traverse and the elevation |
 | `g` | an engine | `o`: `[root, revs, throttle servo, flags, gear, engine]`, flags 1 running, 2 disabled by damage | Engine (vtable `0x008FE4A0`, slot 20 `0x0057E1D0`): running `+0x15C`, disabled `+0x15D`, throttle servo angle `+0x124` (T1 is it over `maxRotation.z`, `0x0057E296`); its PhysicsEngine at `+0x60` (vtable `0x008FDEC0`, slot 36 `0x0057BFB0`): revs `+0xA0`, gear `+0xBC` |
 | `st` | a soldier's body | `o`: `[soldier, lower state, upper state, aim pitch, torso twist, held item, state bits]` | BFSoldier (vtable `0x008EB128`, slot 37 `0x00500190`): aim pitch `+0x2B0` and twist `+0x2B4` (degrees), the lower and upper animation machines' state index `+0x2E0` and `+0x324`, the held item's 1-based `itemIndex` `+0x3E8`, state bits `+0x416` |
@@ -1025,10 +1025,50 @@ vtable corrections below, are in `bf1942-engine-reference/symbols.json`
 - `HandFireArms`' primary vtable is `0x008F97B8` (`0x008F9750` is the
   secondary table, at object `+0x2D8`).
 
-Open: the sign of the recorded aim pitch (only the property name says
-positive is up; check it in a recording), which LOD a part hangs under on a
-distant hull (a LodObject's `getChild` returns only the selected LOD; the
-sampler reads every registered object, so it is unaffected, but a part under an
-unselected LOD may stop updating), and what the soldier's `0x2000` bit and
-byte `+0x26D` mean.
+Open: which LOD a part hangs under on a distant hull (a LodObject's
+`getChild` returns only the selected LOD; the sampler reads every registered
+object, so it is unaffected, but a part under an unselected LOD may stop
+updating), and what the soldier's `0x2000` bit and byte `+0x26D` mean. The
+aim pitch's sign and scale are settled in §16.
 
+
+## 16. The first v4 round, and format v5 (2026-09-27)
+
+`replay_20260927-075756` (lab run `20260927-075736-wake-coop`, 279 s, recorder
+`4fc0352`) is the first recording from a v4 recorder in the game. Every v4
+record is there and the recorder refused nothing: 791 rounds in `f` from 24
+shooters (100 of them the recording player's), 2586 `g`, 2605 `j`, 1507 `st`
+and the state table once in `anim` (1395 states). Every vehicle round names a
+FireArms that is a node in its hull's model (Daihatsu `MG42` 321, Sherman
+`Browning` 246, M3A1 `Browning` 46, SBD `SBDGuns` 28 and so on), so the replay
+fires each from its own gun.
+
+The part records were wrong. The sampler keyed each part by its networkable's
+id, and a child object's networkable has none: `getID()` is 0 for every part
+and every engine, the root's ghost carrying its children's state. So `jn`
+named one part in the file (`DefgunTurret`, the first seen) out of 35, and a
+hull's parts wrote over one another under key 0. Engines had the same key,
+but a `g` record also carries its root, so they still resolved per hull.
+
+Format 5 (bf42plus after `4fc0352`) fixes the keys:
+
+- The recorder numbers each part and engine itself, once per file, by the
+  object. An address the allocator reuses for an object under another root or
+  of another template gets a new number.
+- `jn` adds where the part sits in its root's frame, `[root, part, template,
+  x, y, z]` (BF1942's), taken at first sight.
+
+The viewer puts a v5 part on the same-named model node nearest that position
+(`replay-kinematics.js` `matchJointNodes`), so a ship's identical AA guns each
+turn their own node. It takes a hull life's parts only (a respawn that reuses
+a root's id brings new parts), and it uses a v4 file's parts not at all.
+
+Two readings from the same file:
+
+- Aim pitch (`st`, BFSoldier `+0x2B0`): positive is up, and it is 0.4 of the
+  aim. 21 of the recording player's BAR shots left at 2.50 times the recorded
+  value (2.34 to 2.68, from -14 to +30 degrees), with the same sign every time.
+- The Engine's `+0x124` (`g`'s third field) is in the template's own units,
+  since `Engine::handleUpdate`'s T1 is it over `maxRotation.z`: -4000 to 5000
+  on the planes and boats here, -1 to 1 on the land hulls. The viewer does not
+  use it; the revs are what the engine note and the propeller follow.

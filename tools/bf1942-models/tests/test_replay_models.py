@@ -146,23 +146,30 @@ class ReplayRecordingTests(unittest.TestCase):
     def test_round_end_tallies_decode_from_raw(self) -> None:
         self.assertEqual(self.results["recording"]["stats"], [{"pid": 0, "fired": [[1231, 31]]}])
 
-    def test_v4_records(self) -> None:
-        v4 = self.results["v4"]
-        self.assertEqual(v4["seat"], {"root": "Sherman", "seat": 1})
-        self.assertEqual(v4["crew"], [{"pid": 251, "seat": 1}])
-        self.assertEqual(v4["pooled"], ["GrenadeAlliesProjectile#1075", "GrenadeAlliesProjectile#1076",
+    def test_a_v4_files_parts_are_not_used(self) -> None:
+        # The v4 recorder keyed every part 0 (a child networkable has no id),
+        # so its parts cannot be told apart.
+        self.assertEqual(self.results["v4Joints"], 0)
+
+    def test_v5_records(self) -> None:
+        v5 = self.results["v5"]
+        self.assertEqual(v5["seat"], {"root": "Sherman", "seat": 1})
+        self.assertEqual(v5["crew"], [{"pid": 251, "seat": 1}])
+        self.assertEqual(v5["pooled"], ["GrenadeAlliesProjectile#1075", "GrenadeAlliesProjectile#1076",
                                         "GrenadeAlliesProjectile#1077"])
-        self.assertAlmostEqual(v4["clock"], 289.5)
-        self.assertEqual(v4["stats"], [{"tid": 1941, "tmpl": "AichiVal", "n": 3}])
-        self.assertEqual(v4["shot"], [{"nid": 532, "weapon": "ShermanCannon", "kind": 1}])
+        self.assertAlmostEqual(v5["clock"], 289.5)
+        self.assertEqual(v5["stats"], [{"tid": 1941, "tmpl": "AichiVal", "n": 3}])
+        self.assertEqual(v5["shot"], [{"nid": 532, "weapon": "ShermanCannon", "kind": 1}])
         # The engine: the PhysicsEngine's revs, running and not.
-        self.assertEqual(v4["engine"][0], {"revs": 0.8, "running": True, "disabled": False})
-        self.assertEqual(v4["engine"][1], {"revs": 0.1, "running": False, "disabled": False})
-        # A turret's rotation against its hull, by the part's template name.
-        self.assertEqual(v4["joint"], {"name": "ShermanTower", "q": [0, 0.7071, 0, 0.7071]})
+        self.assertEqual(v5["engine"][0], {"revs": 0.8, "running": True, "disabled": False})
+        self.assertEqual(v5["engine"][1], {"revs": 0.1, "running": False, "disabled": False})
+        # A turret's rotation against its hull, by the part's template name,
+        # with where it sits on the hull in the viewer's frame (z negated).
+        self.assertEqual(v5["joint"], {"name": "ShermanTower", "q": [0, 0.7071, 0, 0.7071],
+                                       "pos": [0.1, 1.8, -0.5], "since": 6})
         # A soldier's body through the engine's own state table: crouched
         # and firing, then lying and holding his fourth item.
-        crouched, lying = v4["body"]
+        crouched, lying = v5["body"]
         self.assertEqual((crouched["stance"], crouched["firing"], crouched["item"]), ("crouch", True, 2))
         self.assertEqual(crouched["pitch"], -12.5)
         self.assertEqual((lying["stance"], lying["firing"], lying["item"]), ("prone", False, 3))
@@ -197,6 +204,15 @@ class ReplayKinematicsTests(unittest.TestCase):
         self.assertEqual(gears[-1], 1)
         for row in self.results["revs"]:
             self.assertLessEqual(row["revs"], 1.2)
+
+    def test_same_named_parts_take_the_node_where_they_sit(self) -> None:
+        self.assertEqual(self.results["matchPlaced"], {"11": 2, "12": 1, "13": 0})
+        # A placed part first; an unplaced one takes the next free node.
+        self.assertEqual(self.results["matchMixed"], {"31": 1, "32": 0})
+
+    def test_unplaced_parts_take_the_names_nodes_in_model_order(self) -> None:
+        # One node each; a part with no node of its name, or none left, is out.
+        self.assertEqual(self.results["matchUnplaced"], {"21": 0, "22": 1, "23": 3})
 
     def test_the_throttle_is_shut_without_a_crew(self) -> None:
         self.assertEqual(self.results["throttleEmpty"], 0)

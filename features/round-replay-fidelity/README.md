@@ -39,23 +39,24 @@ in play; the recording writes the state the physics would have written.
 
 ## Recorded, and derived
 
-| quantity | v3 recording | v4 recording |
+| quantity | v3 recording | v4 and v5 recording |
 |---|---|---|
 | hull pose | recorded, 10 Hz | recorded, 10 Hz |
 | velocity, turn rates | derived from the poses (`replay-kinematics.js` `motionAt`) | same |
 | throttle, revs, engine on/off | **derived**: an aircraft's from speed, climb and the take-off roll; a ship's from its speed; a land engine's revs from its own gearbox ladder (`EngineState`) and the speed | recorded: the PhysicsEngine's revs and the Engine's running flag (`g`) |
 | stick (flaps, rudder, steering) | **derived** from the turn rates, in the game's signs | same |
-| turret traverse, gun elevation | not recorded: the rig's rest | recorded (`j`) |
+| turret traverse, gun elevation | not recorded: the rig's rest | recorded (`j`); usable from v5 only, a v4 file's parts are all keyed 0 |
 | who fired, what, where | the recording player's trigger presses only | every round the client fires, bots included (`f`) |
 | stance, held weapon, firing pose | not recorded: standing, kit primary | recorded animation states and item (`st`, `anim`) |
 | crew and seats | from every player's controlled object; a seat id resolves to its hull (the ids after the hull's own) | the hull and seat are in the player record |
 
-## Format v4 (bf42plus)
+## Recording format (bf42plus)
 
 `sila-skandia/bf42plus` `src/replay.cpp`; the tables are in
 `features/round-replay-capture/README.md` §11.3 (the decoded events), §14
-(every round, the player record, the named events) and §15 (parts, engines,
-bodies). The reverse engineering behind them is there too, with addresses.
+(every round, the player record, the named events), §15 (parts, engines,
+bodies) and §16 (the first v4 round, and v5's part numbering). The reverse
+engineering behind them is there too, with addresses.
 
 ## Verification (2026-09-27)
 
@@ -79,18 +80,22 @@ bodies). The reverse engineering behind them is there too, with addresses.
   `ShermanGunBarrel` shot fired that group only, its tower turned with the
   recorded part; the recording player crouched, fired and drew the Colt while
   the recorded held item was 2, and the BAR again at item 3.
-- bf42plus `4fc0352` builds clean under `tools/build-linux.sh` (MSVC under
-  Wine) and is installed in the game folder (`dsound_old.dll` is the previous
-  build). It has not run in the game yet: that is MANUAL_TESTS.md.
+- The first v4 round in the game (`replay_20260927-075756`, 279 s): every
+  record there, 791 rounds from 24 shooters, and every vehicle round names a
+  gun its hull's model has. Its part records were keyed 0 (a child
+  networkable has no id), which v5 fixes (capture README §16).
+- bf42plus `1e45a5d` (v5) builds clean under `tools/build-linux.sh` (MSVC
+  under Wine) and is installed in the game folder; `dsound_old.dll` is
+  `4fc0352` (v4).
 
 ## Open
 
-- **A real v4 recording.** Everything the recorder reads is checked against
-  the binary, but none of it has run in the game. MANUAL_TESTS.md step 2.
+- **A v5 round**, for the turrets: MANUAL_TESTS.md step 2.
 - The round-end tallies (`roundStats`) are the whole round's; a check that
   compares each player's `f` count with his `fired` tally would measure how
   many remote taps the client drops (§14's open item).
-- Aim pitch is recorded but not drawn: `bot-visuals.js` has no aim pitch.
+- Aim pitch is recorded (positive up, 0.4 of the aim, capture README §16) but
+  not drawn: `bot-visuals.js` has no aim pitch.
 - A dead bot's free camera is never replicated; the follow camera stays on
   his body until it is removed.
 - Kits dropped before the join, and a round's end effect when the round goes
