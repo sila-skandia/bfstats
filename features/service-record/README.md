@@ -108,7 +108,10 @@ not there:
    Village, Guadalcanal and El Alamein, 135 teams in all), so a `_CHUTE` kit
    the manifest does not list is dressed as its base kit.
 4. **Worn parts.** Each `worn[].glb` from the first tree in the search path
-   that has it — a mod kit borrows vanilla's radio and packs.
+   that has it — a mod kit borrows vanilla's radio and packs. A part hung more
+   than a metre off its bone is left off: every part in every tree sits within
+   0.1 m but DC Final's grenade (`SetPosition 0/0/5` on the hip), which would
+   float in mid-air and shrink the soldier to a speck to fit the frame.
 
 A soldier whose kits all fail to pose has no figure (`null`), the same as one the
 armoury never extracted.
@@ -147,6 +150,11 @@ A kit whose spawn weapon will not pose (a clip the archive lacks) is posed with
 the next item it carries. `extract_kits.py` and `--kit-poses` both read the
 templates a level declares in its own archive, where FHSW declares 1,397 of its
 kits, and take a kit wherever it is filed (bf1918's `Austrian_Kit_Early/`).
+Both also let the levels' `Texture/` folders fill texture gaps, as the engine
+does: FHSW's Japanese caps and hip packs have their only copy there, and drew
+white without it. Seven FHSW poses still hold an untextured weapon, because
+FHSW does not ship its texture (the Lebel's is in BF1918's archives; the
+MP40-II's and the M18 recoilless rifle's are nowhere in the install).
 
 Built 2026-09-27, every (soldier, kit) job posed. 12 hold the kit's next
 weapon, because the first one tried (Pirates' musket, FHSW's smoke grenades
@@ -344,7 +352,7 @@ Paths under `figure` and `vehicles` are relative to the mesh root
 
 | | |
 |---|---|
-| Service record | Redis 1 h per player (`service-record:v3:`); edge `s-maxage=600` |
+| Service record | Redis 1 h per player (`service-record:v4:`); edge `s-maxage=600` |
 | Map armies | `public, max-age=86400`, as the dossier |
 | `/stats/assets/mesh/*` | `public, max-age=300, s-maxage=86400` — the mesh site's own policy. Without a `Cache-Control` the zone rule bypasses Cloudflare, so every profile view pulled a 1–2 MB glb from the node. |
 | Mesh directory index | in memory, 10 min, like the dossier icon index |

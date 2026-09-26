@@ -15,7 +15,7 @@ import extract_models  # noqa: E402
 from bf42 import kit as kit_mod  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout  # noqa: E402
-from extract_models import add_level_objects  # noqa: E402
+from extract_models import add_level_objects, add_level_textures  # noqa: E402
 from extract_pose import kit_pose_plan, merge_matrix, resolve_kit_poses  # noqa: E402
 
 
@@ -147,6 +147,23 @@ class AddLevelObjectsTests(unittest.TestCase):
                                              ("Berlin", Path("/levels/Berlin.rfa"))])
 
         self.assertEqual(3, added)
+
+
+class AddLevelTexturesTests(unittest.TestCase):
+    def test_each_levels_patches_fill_texture_gaps_before_its_base(self) -> None:
+        pool = mock.Mock()
+        pool.add_level.return_value = 4
+
+        def patches(path: Path) -> list[Path]:
+            return [path.with_name("Cebu-1945_001.rfa")] if path.stem == "Cebu-1945" else []
+
+        with mock.patch.object(extract_models.roster_mod, "level_patches", side_effect=patches):
+            added = add_level_textures(pool, [("Cebu-1945", Path("/levels/Cebu-1945.rfa")),
+                                              ("KotaBharu", Path("/levels/KotaBharu.rfa"))])
+
+        self.assertEqual(["Cebu-1945_001.rfa", "Cebu-1945.rfa", "KotaBharu.rfa"],
+                         [call.args[0].name for call in pool.add_level.call_args_list])
+        self.assertEqual(12, added)
 
 
 class MergeMatrixTests(unittest.TestCase):
