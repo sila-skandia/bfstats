@@ -32,6 +32,7 @@ node sim/run.mjs --why bot_4 312.5 --trace sim/out/el_alamein-s3/trace.jsonl
 |---|---|---|
 | `--synthetic` / `--map <dir>` | synthetic | the level; `<dir>` is a directory under the maps tree |
 | `--bots N` | 4 | bots a side |
+| `--max-players N` | 2 x `--bots` | the slot count of the server the round is played on, 1 to 64, which scales the tickets (below) |
 | `--time T` | 120 | game seconds; a side at 0 tickets ends the match early |
 | `--seed S` | 1 | the seed |
 | `--skill A` | 0.75 | `botSkill` (the engine's default) |
@@ -50,8 +51,22 @@ Alamein with 8 a side and the page's vehicles plays 600 s in 80 to 100 s
 tracing every third tick (longer on a loaded machine), after a load of about
 3 s (the glb, the settle of every parked hull, the two nav maps).
 
+**Max players.** Each side starts at the level's count times the server's max
+players over 16, truncated, and bleeds at the level's rate times the same
+(`viewer/round-state.js` `scaleTickets`, ledger TKT-1..TKT-4): Wake's 100 is
+200 on a 32-slot server. A level's own `tickets.maxPlayers` (a mode script's
+`game.maxNrOfPlayers`, Kasserine Pass co-op's 18) sets the start and not the
+bleed. Without `--max-players` the server is the bots, 2 x `--bots`: the
+engine's top-up fills every slot of a bot server, so its population is its
+slot count, which is `map.html`'s rule too (there with the local player among
+them; the runner has none). `--bots 8` is the 16 the levels' numbers are
+written for. The parity lab's `wake-coop` fills 30 of 32 slots, so a run
+compared with it names its server: `--bots 15 --max-players 32`.
+
 Tests: `python3 -m unittest tests.test_sim_match` (a 20 s seeded match on the
 synthetic level, run twice for the same seed and once for another);
+`python3 -m unittest tests.test_sim_tickets` (the tickets above, from the
+command line and on matches set up with other levels' tickets);
 `python3 -m unittest tests.test_sim_vehicles` (the vehicle recipes of
 `tests/sim_vehicles_harness.mjs` on El Alamein and Wake; it finds the
 untracked maps tree in `$BF42_VIEWER_ASSETS`, this checkout's `viewer/` or
@@ -180,13 +195,15 @@ The first line is the header, the last the summary. Numbers are rounded to
 0.01 (positions, times) or 0.0001 (urgencies). The file is byte-identical for
 a seed; nothing wall-clock is written to it.
 
-`{"k":"match", ...}` — `version`, `level`, `seed`, `botsPerSide`, `botSkill`,
-`duration`, `tickHz` (30), `traceEvery`, `sampleEvery`, `worldSize`,
-`behaviours` (the order of every urgency array below), `nav` (`width`,
-`height`, `cellSize`), `strategic` (area names, or null: bots walk at the
-nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
-`uncapturable`, `controlPoint`), `tickets`, `lossPerMin`, `covers`,
-`vehicles`, `bots` (`id`, `side`, `name`, `kit`, `weapons`).
+`{"k":"match", ...}` — `version`, `level`, `seed`, `botsPerSide`,
+`maxPlayers`, `botSkill`, `duration`, `tickHz` (30), `traceEvery`,
+`sampleEvery`, `worldSize`, `behaviours` (the order of every urgency array
+below), `nav` (`width`, `height`, `cellSize`), `strategic` (area names, or
+null: bots walk at the nearest enemy flag), `flags` (`name`, `team`, `pos`,
+`radius`, `uncapturable`, `controlPoint`), `tickets` and `lossPerMin` (as the
+round starts them, scaled), `startPlayers` (the count the start was scaled
+by: `maxPlayers`, or the level's own), `covers`, `vehicles`, `bots` (`id`,
+`side`, `name`, `kit`, `weapons`).
 
 `{"k":"tick", ...}` — one per bot per traced tick, after the bot's tick:
 
@@ -237,7 +254,8 @@ in header order (control points only).
 
 ## Summary (`summary.json`)
 
-`result` (`reason` `time` or `tickets`, `winner`, `tickets`) and `metrics`:
+`maxPlayers` (the server the round was played on), `result` (`reason` `time`
+or `tickets`, `winner`, `tickets`) and `metrics`:
 `ticketsOverTime` and `flagsHeldOverTime` (every 5 s: `[t, axis, allies]`,
 `[t, neutral, axis, allies]`), `timeToFirstCapture`, `captures`, `deaths`,
 `kills`, `deathsPerCapture`, `vehicleUtilisation` (`mountedShare` = mounted
@@ -295,10 +313,12 @@ page as here; everything timed in seconds matches.
 
 Runner-only, labelled SIM in the code:
 
-- **Tickets**: one a death, and `lossPerMin` a minute while the other side
-  holds more than half the control points
-  (`features/bf1942-3d-models/tickets-hud.md`). The viewer's counter does not
-  move.
+- **The ticket bleed**: a side bleeds `lossPerMin` a minute, continuously,
+  while the other side holds more than half the control points
+  (`features/bf1942-3d-models/tickets-hud.md`); the page's round
+  (`viewer/round-state.js`) bleeds a whole ticket per interval while the
+  enemy's summed `areaValue` is over 99. The start, the rate and a ticket a
+  death are the page's (Max players, above).
 - The synthetic level's vehicles (it has no vehicle nodes; a real level
   plays the page's):
 - **`SimDrive`** (`vehicles.mjs`): a kinematic hull driven by the bot's input

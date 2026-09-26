@@ -66,11 +66,11 @@ export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
   const [world, bot, nav, strategic, strength, armor, heightfield, staticIndex, drivable, collider,
-    behaviours, vehicle, three, referee, projectileDamage] = await Promise.all([
+    behaviours, vehicle, three, referee, projectileDamage, roundState] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
     imp('armor.js'), imp('heightfield.js'), imp('static-index.js'), imp('drivable-mask.js'),
     imp('world-collider.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
-    imp('vendor/three.module.js'), imp('bot-referee.js'), imp('projectile-damage.js'),
+    imp('vendor/three.module.js'), imp('bot-referee.js'), imp('projectile-damage.js'), imp('round-state.js'),
   ]);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
@@ -92,6 +92,10 @@ export async function loadViewerModules(viewer) {
     BOT_BODY_MATERIAL: referee.BOT_BODY_MATERIAL,
     // A round's falloff over the distance it flew (`Projectile::getDamage`).
     damageFactor: projectileDamage.damageFactor,
+    // A level's tickets as a server of max players starts and bleeds them
+    // (ledger TKT-1..TKT-4).
+    scaleTickets: roundState.scaleTickets, roundPlayers: roundState.roundPlayers,
+    clampMaxPlayers: roundState.clampMaxPlayers,
     THREE: three,
     mulberry32,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,

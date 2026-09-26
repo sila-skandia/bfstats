@@ -17,7 +17,7 @@ import { replaySummary, why } from './report.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
-  const a = { level: null, bots: 4, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
+  const a = { level: null, bots: 4, maxPlayers: null, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
               vehicles: true, out: null, maps: null, models: null, viewer: null, quiet: false,
               replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -30,6 +30,7 @@ function parseArgs(argv) {
       case '--models': a.models = next(); break;
       case '--viewer': a.viewer = next(); break;
       case '--bots': a.bots = Number(next()); break;
+      case '--max-players': a.maxPlayers = parseMaxPlayers(next()); break;
       case '--time': a.time = Number(next()); break;
       case '--seed': a.seed = Number(next()); break;
       case '--skill': a.skill = Number(next()); break;
@@ -52,6 +53,15 @@ function parseArgs(argv) {
   return a;
 }
 
+/** `--max-players 32`: a slot count the engine allows, 1 to 64 (round-state.js
+ *  `MAX_PLAYERS_LIMIT`). Refused rather than clamped, so a round is never
+ *  played on another server than the one asked for. */
+function parseMaxPlayers(spec) {
+  const n = Number(spec);
+  if (!Number.isInteger(n) || n < 1 || n > 64) throw new Error(`--max-players ${spec}: expected a whole number from 1 to 64`);
+  return n;
+}
+
 /** `--seat bot_1=AA_Allies` or `bot_1=Sherman:shermanBrowning_PCO1`. */
 function parseSeat(spec) {
   const m = /^([^=]+)=([^:]+)(?::(.+))?$/.exec(spec);
@@ -66,6 +76,8 @@ const HELP = `usage:
 
 match options:
   --bots N          bots a side (default 4)
+  --max-players N   the server's slot count, 1..64: the tickets and the bleed
+                    are the level's times N / 16 (default: the bots, 2 x --bots)
   --time T          game seconds (default 120); a side at 0 tickets ends it early
   --seed S          the random seed (default 1); the same seed replays the same match
   --skill A         botSkill (default 0.75, the engine's)
@@ -109,7 +121,7 @@ async function runMatch(a) {
   const sink = (line) => { if (fd === null) return; buffer.push(line); if (buffer.length >= 2000) flush(); };
   const match = new Match({ M, level, botsPerSide: a.bots, botSkill: a.skill, duration: a.time, seed: a.seed,
                             traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink,
-                            doctrine: a.doctrine, seats: a.seats });
+                            doctrine: a.doctrine, seats: a.seats, maxPlayers: a.maxPlayers });
   const started = performance.now();
   match.setup();
   let lastReport = 0;
@@ -129,7 +141,8 @@ async function runMatch(a) {
   writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
   const m = summary.metrics;
   const lines = [
-    `level ${summary.level}  seed ${summary.seed}  ${summary.botsPerSide} a side  ${summary.duration} s  (${summary.runtime.wallMs} ms)`,
+    `level ${summary.level}  seed ${summary.seed}  ${summary.botsPerSide} a side  ${summary.maxPlayers} max players  `
+      + `${summary.duration} s  (${summary.runtime.wallMs} ms)`,
     `result: ${summary.result.reason}, tickets Axis ${summary.result.tickets[1]} / Allies ${summary.result.tickets[2]}`
       + `${summary.result.winner ? `, ${summary.result.winner === 1 ? 'Axis' : 'Allies'} ahead` : ', level'}`,
     `captures ${m.captures.total} (Axis ${m.captures[1]}, Allies ${m.captures[2]}), first ${m.timeToFirstCapture ? `${m.timeToFirstCapture.flag} at ${m.timeToFirstCapture.t} s` : 'none'}`,
