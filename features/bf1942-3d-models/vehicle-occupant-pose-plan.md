@@ -291,6 +291,22 @@ believed to be working end to end.
    translation (keeping the rotation) in the static hierarchy and in every clip
    frame, and records what it dropped in the report.
 
+   **Revised 2026-09-26: the root is measured from the standing root, not
+   dropped.** Dropping it put every pelvis *on* its `SeatObject`, which is right
+   only for a clip whose sitting height matches the Willys'. The Hanomag's
+   bench clip puts the hips 0.297 m up and the M3A1's 0.434 m, so their
+   passengers floated 0.4-0.55 m over the benches and their heads went through
+   the roof (and every fighter pilot's helmet through his canopy).
+   `SeatObject::enter` (lnxded `0x083208d0`) parents the soldier under an
+   identity transform; the seat nodes are where a *standing* man's hips would
+   be. `seat_anchored` now subtracts `Lb_Stand`'s aligned root (0.9992 m up)
+   from the seat clip's, which puts every seated foot at standing-foot level
+   and the pelvis 5-12 cm over its seat surface in the Hanomag (bench 0.18),
+   M3A1 (0.19), Willys (cushion 0.38) and Kubelwagen (0.0). Standing gunners
+   (`Lb_StandInVehicle`, the same clip) are unchanged; sit-in-vehicle drivers
+   and pilots drop 0.166 m. The Willys driver still solves onto the wheel.
+   Reports record `rootOffset` and `standingRoot`.
+
 ## How it was verified
 
 Served from this worktree on `:5313` over a Wake level and a Willys/Sherman
