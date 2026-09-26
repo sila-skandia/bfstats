@@ -28,7 +28,9 @@ export interface MapDossierTeam {
   nation: string | null
   label: string
   skin: string | null
+  /** A 16-player server's count: a round starts at this × max players / 16 × the ticket ratio. */
   tickets: number | null
+  /** A 16-player server's bleed: a round loses this × max players / 16 a minute. */
   ticketLossPerMin: number | null
   /** True when the level designates this side the attacker. */
   isAssault: boolean
