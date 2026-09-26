@@ -43,7 +43,6 @@
     <label class="opt"><input type="checkbox" id="pilot"> pilot the plane</label>
     <label class="opt" title="game.serverExternalViews: chase, front and fly-by views from every seat"><input type="checkbox" id="srv-external-views" checked> server: external views</label>
     <label class="opt" title="game.serverAllowNoseCam: the aircraft's second inside view, past the propeller"><input type="checkbox" id="srv-nose-cam" checked> server: nose cam</label>
-    <label class="opt" title="Viewer switch (retail has none): C cycles the soldier's own views on foot"><input type="checkbox" id="srv-soldier-views" checked> server: soldier views</label>
     <label class="opt" hidden><input type="checkbox" id="onfoot"> spawn on foot</label>
     <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
@@ -672,7 +671,7 @@ const seatCamera = createSeatCamera(bag(
   from(() => localLook, `mouseInput stepMouseLookKey`),
   from(() => localPlayer, `aircraft car FLY_FOV MANNED_GUN_FOV occupancy soldier`),
   from(() => seatPose, `updateSeatPoseVisibility`),
-  from(() => soldierView, `footView3p syncFootView`),
+  from(() => soldierView, `footView3p`),
   from(() => vehicleHits, `vehicleInput`),
   {
     get camera() { return camera; }, get effects() { return effects; }, get guns() { return guns; },
@@ -1445,7 +1444,6 @@ const soldierView = createSoldierView(bag(
   from(() => localLook, `footEyeCur footEyePrev footLookPending footPending footView presentAlpha`),
   from(() => localPlayer, `deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
     frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
-  from(() => seatCamera, `serverSettings`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
   from(() => spawning, `deployTeamId openDeploy`),
   from(() => vehicleEntry, `scanForEntry`),
@@ -2066,7 +2064,7 @@ const testHooks = installTestHooks(bag(
     explosivesTemplate handFireLoop handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor thrownPackGroup
     viewmodelRigFor vmCamera vmRoot vmScene weaponBarUntil weaponTemplateFor`),
-  from(() => soldierView, `canopySpan foot3pRel footView3p soldier3pOnFoot supplyField`),
+  from(() => soldierView, `canopySpan foot3pRel footView3p supplyField`),
   from(() => spawning, `cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
     deployUnchosen selectDeployFlag`),
   from(() => vehicleEntry, `collectEntryPoints enterVehicle entryPoints exitSeat exitVehicle

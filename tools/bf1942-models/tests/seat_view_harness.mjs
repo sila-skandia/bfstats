@@ -69,12 +69,26 @@ results.readStored = readServerSettings(null, fakeStorage({
   [SERVER_SETTINGS_STORE_KEY]: JSON.stringify({ externalViews: false, junk: 1 }),
 }));
 results.readParamsOverStored = readServerSettings(
-  fakeParams({ externalViews: '1', noseCam: '0', foot3p: 'off' }),
+  fakeParams({ externalViews: '1', noseCam: '0' }),
   fakeStorage({ [SERVER_SETTINGS_STORE_KEY]: JSON.stringify({ externalViews: false }) }));
-results.readFoot3pOldSpelling = readServerSettings(fakeParams({ foot3p: '1' }), null);
 results.readBadStorage = readServerSettings(null, {
   getItem: () => { throw new Error('private window'); },
 });
+// The page's own soldier switch, `soldierExternalViews` / `?foot3p=1`, is
+// gone (2026-09-26): the owner plays with the external views off on foot.
+// These are the reads that must come back with nothing in them, because
+// `set` writes every key and a browser that had touched the panel still
+// carries `"soldierExternalViews": true` under the store key.
+results.soldierSwitchGone = {
+  defaultKeys: Object.keys(SERVER_SETTINGS_DEFAULTS),
+  paramKeys: Object.keys(SERVER_SETTINGS_PARAMS),
+  queryFoot3p: readServerSettings(fakeParams({ foot3p: '1' }), null),
+  queryLongName: readServerSettings(fakeParams({ soldierExternalViews: '1' }), null),
+  stored: readServerSettings(null, fakeStorage({
+    [SERVER_SETTINGS_STORE_KEY]: JSON.stringify({
+      externalViews: true, allowNoseCam: true, soldierExternalViews: true }),
+  })),
+};
 results.truthy = {
   one: truthyParam('1'), zero: truthyParam('0'), empty: truthyParam(''),
   off: truthyParam('off'), no: truthyParam('NO'), missing: truthyParam(null),

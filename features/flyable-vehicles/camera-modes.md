@@ -341,9 +341,12 @@ vehicle space and ramp on distance, there is no inside/outside word to honour.
 `serverExternalViews`, `serverAllowNoseCam`, `serverFreeCamera`,
 `serverDeathCameraType`; the shipped `ServerSettings.con` writes them
 `1 / 1 / 0 / 1`. `server-settings.js` honours the first two (default on, the
-side panel and `?externalViews=0` / `?noseCam=0` switch them, persisted) and
-adds a third of the page's own, `soldierExternalViews`, for C on foot: **retail
-has no such switch** (CAM-1 stands: `SoldierCamera` is locked and
-`BFSoldier::nextCamera` is empty), the owner wants the view anyway, and turning
-it off is the engine's own behaviour. `?foot3p=0` is its off spelling;
-`?foot3p=1`, the older opt-in, still works.
+side panel and `?externalViews=0` / `?noseCam=0` switch them, persisted).
+
+A third of the page's own, `soldierExternalViews`, sat beside them from
+2026-09-23 to 2026-09-26 for C on foot, under `?foot3p=1`. Retail has no such
+switch and CAM-1 stands: `SoldierCamera` writes the three external `CVM*` words
+to zero, so a standing soldier has one view. The owner has withdrawn it, and
+the key is gone rather than defaulted off, because `set` wrote all three keys
+and a browser that had touched the side panel held it on. See
+[`features/viewer-foot-first-person`](../viewer-foot-first-person/README.md).

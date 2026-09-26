@@ -109,13 +109,16 @@ class SoldierCameraTests(unittest.TestCase):
         self.assertEqual(["inside", "chase", "front"],
                          self.results["parachuteCycle"])
 
-    def test_the_on_foot_inspection_cycle_is_the_canopy_s(self) -> None:
-        # `?foot3p=1` is a labelled departure from CAM-1, and it offers the same
-        # three modes the canopy does rather than inventing a fourth.
-        self.assertEqual(self.results["parachuteCycle"],
-                         self.results["footCycle"])
-        # It is NOT what a soldier's camera authorises, which stays one.
-        self.assertEqual(["inside"], self.results["engineCycle"])
+    def test_the_page_offers_no_wider_cycle_on_foot(self) -> None:
+        # 2026-09-23 to 2026-09-26 the page widened a standing soldier's cycle
+        # to the canopy's three, behind its own `soldierExternalViews` switch
+        # (`?foot3p=1`). The owner withdrew it: F11 and C sit beside the keys he
+        # walks with, and an accidental F11 was taking him out of first person
+        # mid-stride. The constant is gone from the module, so the widening has
+        # no name left to come back under. The canopy's cycle is asserted here
+        # and in `test_the_canopy_cycles_three_views`, and is untouched.
+        self.assertNotIn("FOOT_VIEW_CYCLE", self.results["exports"])
+        self.assertIn("PARACHUTE_VIEW_CYCLE", self.results["exports"])
         air = self.results["underCanopy"]
         self.assertEqual(["inside", "chase", "front", "inside"], air["seen"])
         self.assertEqual([3, 12, 13, 3], air["ids"])
