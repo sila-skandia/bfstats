@@ -541,6 +541,19 @@ results.surfaceHeight = {
   const tests = sloped.stats.tests;
   m.rampAcrossCells = hitOf(sloped, [2, 9, 4], [1, 0, 0], 20);
   m.rampTests = sloped.stats.tests - tests;
+  // `collectInBox` lists a triangle once however many of the box's cells hold
+  // it. The hall again, with a post standing in the second cell alone and a
+  // list with room for six: the hall's four triangles listed a second time
+  // must not crowd the post's two out.
+  const shed = [
+    quad([1, 0, 1], [15, 0, 1], [15, 0, 7], [1, 0, 7], 92),
+    quad([1, 10, 1], [15, 10, 1], [15, 10, 7], [1, 10, 7], 92),
+    quad([10, 0, 6.5], [11, 0, 6.5], [11, 10, 6.5], [10, 10, 6.5], 85),
+  ];
+  const shedIndex = buildCollisionIndex(group(shed), { ownerRoots: shed, cellSize: 8 });
+  const listed = new Int32Array(6);
+  const kept = shedIndex.collectInBox(0, -1, 0, 16, 11, 8, -1, false, -Infinity, 2, listed);
+  m.collected = [...listed.subarray(0, kept)].sort((a, b) => a - b);
   results.multiCell = m;
 }
 

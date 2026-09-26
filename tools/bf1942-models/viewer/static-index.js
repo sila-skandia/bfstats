@@ -758,7 +758,7 @@ export class CollisionIndex {
 
   /**
    * Every triangle this caller can see whose AABB overlaps the box, into
-   * `out`; returns how many were written (capped at `out.length`).
+   * `out`, each once; returns how many were written (capped at `out.length`).
    *
    * The broadphase half of a hull vertex probe (`body-statics.js`, spec §5.1's
    * one grid query per root per tick): the root collects once and every vertex
@@ -785,6 +785,7 @@ export class CollisionIndex {
     const p = this.tris;
     const stats = this.stats;
     stats.queries++;
+    const stamp = ++this._query;
     let kept = 0;
     const limit = out ? out.length : 0;
     for (let iz = iz0; iz <= iz1; iz++) {
@@ -797,6 +798,14 @@ export class CollisionIndex {
         stats.cells++;
         for (let k = from; k < to; k++) {
           const tri = this.cellItems[k];
+          // Once, however many of the box's cells list it. Unlike `cast`'s,
+          // this box is the whole query's, so the first cell that lists a
+          // triangle decides it for all of them. Listed once a cell, up to
+          // a third of a Berlin hull's list was copies, each tested again
+          // by every vertex probe (`castAmong`), and a full `out` would
+          // have lost the triangles not yet reached to them.
+          if (this._stamp[tri] === stamp) continue;
+          this._stamp[tri] = stamp;
           const owner = this.owners[tri];
           if (skipOwner >= 0 && owner === skipOwner) continue;
           if (this._disabled[owner]) continue;
