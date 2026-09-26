@@ -19,6 +19,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { applyCameraPivot } from './camera-pivot.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -596,6 +597,7 @@ export class Vehicle {
       // `templateKind: "Camera"` and `cameraView`, sitting at the pilot's eye
       // point in the vehicle's own frame. That is first person, for free.
       if (!this.cameraNode && (data.cameraView || data.templateKind === 'Camera')) {
+        applyCameraPivot(obj);
         this.cameraNode = obj;
       }
       // `_propeller_blur` in assemble.py stamps the wrapper LodObject with
