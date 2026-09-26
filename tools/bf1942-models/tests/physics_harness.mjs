@@ -285,6 +285,32 @@ results.sweepSeam = {
   endOn: paneled.sweepSphere(0.25, 1.2, -2, 0, 0, 1, 4, 0.3)?.t ?? null,
 };
 
+// A sphere a hair into the plate's edge, the way a glancing slide leaves one
+// tangent and rounding carries it on. With no shell it is let go of whichever
+// way it moves (above); with a soldier's 2 cm shell a move that closes on the
+// edge is stopped where it is, and one that leaves it or runs along it is not.
+const grazeAt = [9.705, 1, 0];   // 0.295 m from the edge: 5 mm in
+const shellSweep = (world, at, [dx, dy, dz], shell) =>
+  world.sweepSphere(...at, dx, dy, dz, 1, 0.3, -1, false, -Infinity, 2, false, shell);
+const grazed = shellSweep(plated, grazeAt, [1, 0, 0], 0.02);
+// Beside it, a wall the sphere is sunk 20 cm into: a body inside something.
+const sunkInto = fakeMesh([9, 0, 0.1, 10.5, 0, 0.1, 10.5, 2, 0.1, 9, 2, 0.1],
+                          { index: [0, 1, 2, 0, 2, 3] });
+const plateAgain = fakeMesh([10, 1, -2, 14, 1, -2, 14, 1, 2, 10, 1, 2],
+                            { index: [0, 1, 2, 0, 2, 3] });
+const sunkBeside = new WorldCollider({
+  statics: buildCollisionIndex(group([plateAgain, sunkInto])),
+});
+results.sweepShell = {
+  noShell: shellSweep(plated, grazeAt, [1, 0, 0], 0) === null,
+  into: grazed && { t: grazed.t, nx: grazed.nx, ny: grazed.ny, depth: grazed.depth },
+  away: shellSweep(plated, grazeAt, [-1, 0, 0], 0.02) === null,
+  along: shellSweep(plated, grazeAt, [0, 0, 1], 0.02) === null,
+  // 0.14 m from the edge, well inside it: let go as before.
+  deep: shellSweep(plated, [9.9, 1.1, 0], [1, 0, 0], 0.02) === null,
+  buried: shellSweep(sunkBeside, grazeAt, [1, 0, 0], 0.02) === null,
+};
+
 // --- a body that walks -----------------------------------------------------
 
 const field = buildHeightfield([flatTile(0)], { worldSize: 64, dim: 16 });
@@ -600,6 +626,22 @@ const tooTall = new WorldCollider({
 });
 const blocked = walk(tooTall, { forward: 1 }, 2);
 results.doesNotClimbAWall = { x: blocked.x, y: blocked.y };
+// The same kerb under a ceiling. On the ground the head (its top sphere
+// reaches 1.8 m) clears one at 2.0 m, but stepping onto the kerb would lift it
+// to 2.1 m, so the step is refused; unswept, that lift put the head inside the
+// ceiling, the sweep let go of it, and he walked on through. With a ceiling at
+// 2.2 m there is room, and the step is taken.
+function kerbUnder(ceiling) {
+  const lid = fakeMesh([6, ceiling, -40, 20, ceiling, -40, 20, ceiling, -24, 6, ceiling, -24],
+                       { index: [0, 1, 2, 0, 2, 3] });
+  const world = new WorldCollider({
+    heightfield: field,
+    statics: buildCollisionIndex(group([box(8, 0, -40, 20, 0.3, -24), lid])),
+  });
+  const end = walk(world, { forward: 1 }, 2);
+  return { x: end.x, y: end.y };
+}
+results.kerbUnderACeiling = { low: kerbUnder(2.0), high: kerbUnder(2.2) };
 
 // Jump: leaves the ground, peaks at the documented apex, and comes back.
 //
