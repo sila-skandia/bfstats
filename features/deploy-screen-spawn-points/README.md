@@ -62,6 +62,13 @@ Root cause, read off the installed archives:
   starts `team 2`. The extractor derived each spawn's team from the flag
   alone, which put the beach spawn on the wrong side and left the Axis tab
   empty.
+
+  **Corrected 2026-09-27 (ledger SPAWNGRP-3):** `groupTeam` is only the
+  group's first value. `ControlPoints.con` runs after the manager settings and
+  each placed point writes its own team into the group it claims, at load and
+  at every round start, unless the group says `groupEnableToChangeTeam 0`. So
+  Wake's beach group 1 starts American (The_Beach, team 2); the Axis tab is
+  filled by the fleet's deck spawns, not by the beach.
 - The fleet ships carry deck spawn points *inside the vehicle templates*
   (`Objects/Vehicles/Sea/<ship>/Objects.con` adds `SpawnPoint` children with
   `setGroup` 64+), and `Game/GlobalSpawnGroups.con` binds those groups to a

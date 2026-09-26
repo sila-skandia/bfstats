@@ -928,17 +928,18 @@ class SpawnGroupSettings:
     team: int | None = None
     only_for_ai: bool = False
     only_for_human: bool = False
+    # `groupEnableToChangeTeam`: whether a control point claiming the group may
+    # write its own team into it (BFSpawnGroup `+0x15`, ctor default on).
+    enable_to_change_team: bool = True
 
 
 def parse_spawn_point_groups(text: str) -> dict[int, SpawnGroupSettings]:
     """`spawnPointManagerSettings.con`, whole: every group it declares.
 
-    The spawn screen keys on this, not on the control point that happens to
-    declare the group: `spawnPointManager.group N` / `groupTeam T` says which
-    tab the group's spawn points list under. Wake is the proof it matters — its
-    group 1 is the landing beach, `groupTeam 1`, while the control point that
-    declares `spawnGroupId 1` starts `team 2`. Deriving the side from the flag
-    alone put the Japanese landing spawn on the wrong side of the screen.
+    `groupTeam T` is the group's side until a control point claiming it (by
+    `spawnGroupId`) writes its own team over it, which it does at load and at
+    every round start unless the group says `groupEnableToChangeTeam 0`
+    (ledger SPAWNGRP-3; `GameplayObjects.team_of_group` applies the rule).
     `groupTeam 0` (CTF's shared groups) is no side and is not recorded.
 
     A block runs from its `group` line to the next one, so every word after
@@ -968,6 +969,8 @@ def parse_spawn_point_groups(text: str) -> dict[int, SpawnGroupSettings]:
             current.only_for_ai = bool(tokens) and tokens[0] != "0"
         elif cmd == "onlyforhuman":
             current.only_for_human = bool(tokens) and tokens[0] != "0"
+        elif cmd == "groupenabletochangeteam":
+            current.enable_to_change_team = not (bool(tokens) and tokens[0] == "0")
     return groups
 
 
@@ -1023,24 +1026,41 @@ class GameplayObjects:
         return self.control_point_templates.get(inst.template.lower())
 
     def team_of_group(self, group: int | None) -> int | None:
-        """Which side a spawn group lists under on the spawn screen.
+        """Which side a spawn group lists under when a round starts.
 
-        The engine's own binding is `spawnPointManager.groupTeam` — that is
-        what decides which tab the group shows on, wherever the group came
-        from. The control point whose `spawnGroupId` matches is only the
-        fallback for the levels (all of the CTF set, mostly) that ship no
-        manager settings: a flag carrying the group puts it on the flag's
-        side.
+        `groupTeam` is only the group's first value (`spawnPointManagerSettings`
+        runs before `ControlPoints`). Each placed control point then writes
+        its own start team into the group it claims, in `ControlPoint::init`
+        and again in `reset` from `GameServer::restartMap`, unless the group
+        says `groupEnableToChangeTeam 0` (ledger SPAWNGRP-3). A point on a side
+        claims `spawnGroupId`, or with a `secondSpawnGroupId` the first for
+        team 1 and the second for team 2; a neutral point writes 0 into both.
+        So Wake's beach group 1, `groupTeam 1` under The_Beach at team 2,
+        starts American. None is a group nothing binds (SPAWNGRP-2).
         """
         if group is None:
             return None
-        own = self.spawn_group_teams.get(group)
-        if own is not None:
-            return own
-        for tpl in self.control_point_templates.values():
-            if group in (tpl.spawn_group_id, tpl.second_spawn_group_id):
-                return tpl.team
-        return None
+        settings = self.spawn_groups.get(group)
+        if settings is None or settings.enable_to_change_team:
+            claim = None
+            for inst in self.control_points:
+                tpl = self.template_for(inst)
+                if tpl is None:
+                    continue
+                first, second = (None if g in (None, -1) else g
+                                 for g in (tpl.spawn_group_id, tpl.second_spawn_group_id))
+                team = tpl.team or 0
+                if team == 0:
+                    if group in (first, second):
+                        claim = 0
+                elif first is not None:
+                    target = second if second is not None and team == 2 else (
+                        first if second is None or team == 1 else None)
+                    if target == group:
+                        claim = team
+            if claim is not None:
+                return claim
+        return self.spawn_group_teams.get(group)
 
 
 # The seven files a gameplay layer is made of. `run` is per file, not per
