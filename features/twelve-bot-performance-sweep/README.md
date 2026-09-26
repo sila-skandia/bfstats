@@ -198,3 +198,110 @@ lower when bots genuinely leave hulls), the foley census peaked at 89 live
 panners against 113 before the gate, and heap, texture count and the GPU
 process's dmabuf footprint are flat across every run. The recovery fix's
 real-crash verification is still pending a crash in a run that carries it.
+
+## Fullscreen, real player input, and the laptop's thermals (2026-09-26)
+
+Dylan reported the map player lagging in his real sessions: full browser, then
+fullscreen, worst in flight while chasing a plane and on foot, with `top`
+reading up to 1330% on one chrome process. This pass re-ran the probe at his
+real screen sizes and, for the first time, with a player who actually plays.
+New probe flags in `botload2.cjs`: `--fullscreen` (`--start-fullscreen` plus a
+`requestFullscreen` fallback; the record's gl block records the real state,
+and a fullscreen flag does not resize a fixed Playwright window),
+`--window-pos`, `--extraq` (query params such as `aa=0`), and `--play`.
+
+### The runs
+
+Scenario unchanged: twelve bots, Bocage, audio on, system Chrome 149, 20 s
+spectate, 30 s foot, 180 s plane.
+
+| run | canvas | mode | foot fps | plane fps | p95 foot/plane, ms | max frame, ms | renderer cores, foot/plane |
+|-----|--------|------|----------|-----------|--------------------|---------------|----------------------------|
+| run-win-base | 1280x800 windowed | static | 46.5 | 54.9 | 42 / 33 | 217 | 1.46 / 1.11 |
+| run-fs-1440 | 2560x1440 fullscreen | static | 34.7 | 47.0 | 62 / 33 | 1201 | 1.56 / 1.35 |
+| run-fs-1440-play | 2560x1440 fullscreen | played | ~34 | ~34 | 50 / 50 | 984 | 1.66 / 1.45 |
+| run-fs-1440-noaa | 1280x800, window did not resize | static, aa=0 | 41.2 | 50.9 | 50 / 33 | 84 | 1.53 / 1.30 |
+| run-fs-1440-cool | 2560x1440 fullscreen | static, after 4 idle minutes | ~38 | ~48 | 33 / 33 | 817 | 1.66 / 1.34 |
+
+Two reading notes. The play and cool runs print double fps: the play driver's
+idle reschedule went through the wrapped `requestAnimationFrame`, so every
+frame logged twice, p50 reads 0, and the real number is the halved one, while
+p95/p99/max stay real intervals. Fixed after run-e by rescheduling the driver
+through `window.__rawRaf`. And the noaa run's fullscreen flag kept the
+1280x800 canvas, so it reads against run-win-base: MSAA off moved nothing,
+matching the sweep's 11 percent of GPU frame measurement at DPR 2.
+
+Also new since the sweep: today's windowed 1280x800 baseline no longer holds
+the clean runs' 59-60 fps (46.5 to 54.9, p95 up to 42 ms, a 217 ms stall).
+Same URL, same scenario, same Chrome major. The machine changed, not the page.
+
+### What playing for real costs
+
+`--play` gives the probe a synthetic player. On foot it walks (a real W
+keydown), fires 170 ms bursts every 700 ms (real pointer down and up through
+the page's own button router) and scans its surroundings through `__lookDelta`,
+the pointer-locked handler's own entry point, at a fast flick plus jitter per
+frame. In the air it pursues the nearest airborne bot (bank toward the yaw
+error, pull toward the pitch error, a touch of rudder), fires inside a six
+degree cone, and weaves hard when nobody is up.
+
+run-fs-1440-play drove 7,027 pursuit frames with a live target, fired 35
+shots, and drew up to 772 calls and 132k triangles against the static
+flight's 160 to 470. The flight fell from 47 fps straight and level to about
+34 while chasing and firing, and the renderer rose from 1.35 to 1.45 cores.
+On foot, walking, scanning and firing held the same ~34 fps the static stance
+got. The player's own work is real but second-order next to what the GPU is
+doing.
+
+### The machine is thermally throttled, and that is the day's whole story
+
+* The Iris Xe sat pinned at 300 MHz of its 1450 max for 25 consecutive samples
+  while frames were being missed, and averaged 337 MHz across the whole
+  fullscreen run. During the four idle minutes before that run it briefly
+  boosted to the full 1450 with cores at 85 C. The chip can run; the cooling
+  cannot sustain it.
+* CPU cores ran 90-99 C with the package at its 100 C trip point, and the
+  package logged 373 throttle events in five seconds under load.
+* The machine did not recover for the rest of the session: cores at 100 C and
+  the GPU at 300 MHz even during the cooldown, with the only other load a
+  sibling automation session's headless SwiftShader Chrome, about 1.5 cores of
+  heat, left alone.
+* All three displays are iGPU-driven (card1 owns eDP-1, DP-2 and DP-7 on
+  Wayland); the RTX 3050 Ti is a render node only, so there is no cross-GPU
+  present path in the story.
+
+The fullscreen penalty is not page code. Renderer cores stayed between 1.1 and
+1.7 across every run while fullscreen halved the fps, and the fullscreen CPU
+profile dropped from 36 percent idle to 14 percent with the time spread across
+GL entry points (`renderBufferDirect`, `setProgram`, `texSubImage2D`,
+`bindVertexArray`): a main thread queued behind a GPU that cannot finish a
+frame in the vsync budget. Because the world sim feeds off frame deltas,
+stalled frames stall the world: the bots' `_now` fell to 0.0-0.78 of wall
+speed in windows in every fullscreen run and caught up at up to 2.5x, which
+reads as slow motion then a whoosh. That is the lag as Dylan described it, and
+a 300 MHz iGPU produces it at any page efficiency reachable from JavaScript.
+
+### Smaller findings
+
+* A deep sample reading 8 draw calls for a whole on-foot phase is the arms
+  pass, not a lost context: three resets `renderer.info` per `render()`, the
+  last `render()` of an on-foot frame is the viewmodel scene, and the sample
+  reads its count. The canvas kept drawing (foot-mid.png).
+* The original 1330 percent reading remains unexplained by the page. Across
+  every run today the renderer never passed 1.7 cores and the GPU process
+  never passed 0.3. `top -H` during a bad session is still the artifact that
+  would name what 1300 percent was.
+
+### Open
+
+* Re-run the fullscreen pair on a machine that is actually cool. This session
+  started with the package already at its wall and never saw it lower. The
+  sweep's clean runs (59-60 fps at 1280x800) are the only cool-machine numbers
+  on file, and they predate today's thermal state.
+* Dylan-side checks for the next laggy session: `sensors` for core temps over
+  95 C, `cat /sys/class/drm/card1/gt/gt0/rps_act_freq_mhz` for a clock pinned
+  near 300, `top -H` if the 1300 percent reading comes back, and
+  `systemctl status thermald`.
+* The probe's frame-time census double-counts whenever a second rAF loop lives
+  on the page (p50 reads 0). The post-e build re-schedules the play driver
+  through `__rawRaf`; any future second loop must do the same.
