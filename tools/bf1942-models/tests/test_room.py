@@ -124,6 +124,9 @@ def run_harness() -> dict:
     for source in MODULES.values():
         if not source.exists():
             raise unittest.SkipTest(f"{source.name} is not in the tree")
+    # Scenario (i) loads the real Wake level out of the untracked maps tree.
+    if not (VIEWER / "maps" / "wake" / "scene.json").exists():
+        raise unittest.SkipTest("viewer/maps/wake is not in the tree")
     env = dict(os.environ)
     env["REAL_VIEWER"] = str(VIEWER)
     with tempfile.TemporaryDirectory() as tmp:
