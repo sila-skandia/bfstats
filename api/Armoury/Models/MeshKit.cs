@@ -9,7 +9,14 @@ public record MeshKit
     [JsonPropertyName("template")]
     public string Template { get; init; } = "";
 
-    /// <summary>Weapons and tools in the order the kit hands them out; the first is the primary.</summary>
+    /// <summary>
+    /// The weapon a soldier spawns holding (the kit's slot-3 <c>HandFireArms</c>), spelled as
+    /// its own template, or null. Manifests written before the extractor recorded it have none.
+    /// </summary>
+    [JsonPropertyName("primary")]
+    public string? Primary { get; init; }
+
+    /// <summary>Weapons and tools in the order the kit declares them.</summary>
     [JsonPropertyName("items")]
     public IReadOnlyList<MeshKitItem> Items { get; init; } = [];
 

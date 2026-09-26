@@ -216,6 +216,30 @@ def discover_levels(chain: list[Path]) -> list[tuple[str, Path]]:
     return results
 
 
+def add_level_objects(objects: ArchivePool, levels: list[tuple[str, Path]]) -> int:
+    """Every level's own `Objects/` templates, behind the chain's `Objects.rfa`.
+
+    A level can declare templates in its own archive, and the engine resolves
+    them by name like any other (`ArchivePool.add_level_objects`). A level bake
+    loads its own; a kit census needs every level's, because that is where a
+    quarter of the install's kits are declared -- FHSW 1,397, bf1918 116, FH
+    100, DC_Final 49 -- and a level binds them by name. Each level's patches
+    are added before its base, as the engine overlays them. Global templates
+    keep priority, and where two levels declare one name the first level in
+    `discover_levels` order wins. Returns the entries registered.
+    """
+    added = 0
+    for name, path in levels:
+        for layer in [*roster_mod.level_patches(path), path]:
+            try:
+                added += objects.add_level_objects(layer, label=f"{name} objects")
+            except Exception as exc:
+                # One unreadable archive costs its own templates, as it does
+                # every other level reader here.
+                print(f"  {layer.name}: objects unreadable ({exc})", file=sys.stderr)
+    return added
+
+
 RE_FOLDER = re.compile(r"^\s*rem\s+folder\s*=\s*(.+)$", re.IGNORECASE)
 RE_SAUCE = re.compile(r"^\s*rem\s+sauce\s*=\s*(.+)$", re.IGNORECASE)
 

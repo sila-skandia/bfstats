@@ -291,6 +291,53 @@ public sealed class ServiceRecordServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DressesTheArmyFromTheLongestServedMapWhoseSoldierCanBeDrawn()
+    {
+        // Lost Village issues only kits the armoury cannot pose; Wake's Viet Cong it can.
+        meshIndex.ResolveFigure("VietCongSoldier",
+                Arg.Is<IReadOnlyList<string>>(kits => kits.Contains("VC_Undressable")), Arg.Any<IReadOnlyList<string>>())
+            .Returns((ArmyFigure?)null);
+        var usa = Team(2, "us", "United States", "USSoldier", "US_Rifleman");
+        Dossier("eod", "lost village", Map("eod", "lost_village", "Lost Village",
+            Team(1, "", "", "VietCongSoldier", "VC_Undressable"), usa));
+        Dossier("eod", "the hill", Map("eod", "the_hill", "The Hill",
+            Team(1, "", "", "VietCongSoldier", "VC_Undressable"), usa));
+        Dossier("eod", "wake", Map("eod", "wake", "Wake",
+            Team(1, "", "", "VietCongSoldier", "VC_Rifleman", "VC_Assault"), usa));
+        Rows(
+            Row("eod", "lost village", "Axis", 100),
+            Row("eod", "the hill", "Axis", 70),
+            Row("eod", "wake", "Axis", 40));
+
+        var army = Assert.Single((await RecordAsync()).Armies);
+
+        Assert.Equal("Lost Village", army.Maps[0].DisplayName);
+        // Kits and figure both from Wake, so each kit button has the figure's kit to switch to.
+        Assert.Equal(["VC_Rifleman", "VC_Assault"], army.Kits.Select(kit => kit.Template));
+        Assert.Equal(["VC_Rifleman", "VC_Assault"], army.Figure!.Kits.Select(kit => kit.Template));
+        // The Hill is set up exactly like Lost Village, so it is not dressed a second time.
+        meshIndex.Received(1).ResolveFigure("VietCongSoldier",
+            Arg.Is<IReadOnlyList<string>>(kits => kits.Contains("VC_Undressable")), Arg.Any<IReadOnlyList<string>>());
+    }
+
+    [Fact]
+    public async Task KeepsTheHomeMapsKitsWhenNoMapCanDressTheSoldier()
+    {
+        meshIndex.ResolveFigure("VietCongSoldier", Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns((ArmyFigure?)null);
+        var usa = Team(2, "us", "United States", "USSoldier", "US_Rifleman");
+        Dossier("eod", "lost village", Map("eod", "lost_village", "Lost Village",
+            Team(1, "", "", "VietCongSoldier", "VC_Rifleman_CHUTE"), usa));
+        Dossier("eod", "wake", Map("eod", "wake", "Wake", Team(1, "", "", "VietCongSoldier", "VC_Rifleman"), usa));
+        Rows(Row("eod", "lost village", "Axis", 100), Row("eod", "wake", "Axis", 40));
+
+        var army = Assert.Single((await RecordAsync()).Armies);
+
+        Assert.Null(army.Figure);
+        Assert.Equal(["VC_Rifleman_CHUTE"], army.Kits.Select(kit => kit.Template));
+    }
+
+    [Fact]
     public async Task OneMapReportedUnderTwoAddressesIsOneMap()
     {
         Dossier("bf1942", "wake", Wake());
@@ -396,7 +443,7 @@ public sealed class ServiceRecordServiceTests : IDisposable
     {
         var cached = new PlayerServiceRecord(Player, 1, 1, [], [], new ServiceRecordUnattributed(0, 0),
             new ServiceRecordWindow(0, false, null));
-        cache.GetAsync<PlayerServiceRecord>("service-record:v2:BetMan", Arg.Any<CancellationToken>()).Returns(cached);
+        cache.GetAsync<PlayerServiceRecord>("service-record:v3:BetMan", Arg.Any<CancellationToken>()).Returns(cached);
 
         Assert.Same(cached, await service.GetAsync(Player));
         await store.DidNotReceive().PlayerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -409,7 +456,7 @@ public sealed class ServiceRecordServiceTests : IDisposable
 
         var record = await RecordAsync();
 
-        await cache.Received(1).SetAsync("service-record:v2:BetMan", record, TimeSpan.FromHours(1),
+        await cache.Received(1).SetAsync("service-record:v3:BetMan", record, TimeSpan.FromHours(1),
             Arg.Any<CancellationToken>());
     }
 

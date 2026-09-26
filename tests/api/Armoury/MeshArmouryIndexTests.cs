@@ -85,11 +85,23 @@ public sealed class MeshArmouryIndexTests : IDisposable
         Touch("mesh/models/mods/xpack2/thumbs/germanelitesoldier.png");
         Touch("mesh/models/mods/xpack2/thumbs/sturmtiger.png");
 
-        // Eve of Destruction re-skins USSoldier; its tree is complete on its own.
+        // Eve of Destruction re-skins USSoldier; its tree is complete on its own. Its manifest
+        // folds each parachute twin (US_Rifleman_CHUTE) into its base kit, and keeps a twin
+        // under its own name only when the base is missing. US_Medic declares its pistol
+        // before the carbine it spawns holding.
         Write("mesh/models/mods/eod/kits.json", """
-        { "mod": "eod", "kits": [ { "template": "US_Rifleman", "items": [ { "template": "M16" } ], "worn": [] } ] }
+        { "mod": "eod", "kits": [
+          { "template": "US_Rifleman", "primary": "M16", "items": [ { "template": "M16" } ], "worn": [] },
+          { "template": "US_JetPilot_CHUTE", "items": [ { "template": "Colt" } ], "worn": [] },
+          { "template": "US_Medic", "primary": "m1carbine",
+            "items": [ { "template": "Colt" }, { "template": "M1Carbine" } ], "worn": [] },
+          { "template": "US_Engineer", "primary": "Shotgun",
+            "items": [ { "template": "Colt" }, { "template": "Shotgun" } ], "worn": [] }
+        ] }
         """);
         Touch("mesh/models/mods/eod/poses/USSoldier__M16.pose.glb");
+        Touch("mesh/models/mods/eod/poses/USSoldier__Colt.pose.glb");
+        Touch("mesh/models/mods/eod/poses/USSoldier__M1Carbine.pose.glb");
 
         var resolver = new MapDossierResolver(NullLogger<MapDossierResolver>.Instance);
         index = new MeshArmouryIndex(resolver, NullLogger<MeshArmouryIndex>.Instance);
@@ -199,9 +211,47 @@ public sealed class MeshArmouryIndexTests : IDisposable
     [Fact]
     public void ResolveFigure_IsNullWhenNoKitCanBePosed()
     {
-        // Eve of Destruction levels that issue only parachute kits: the soldier exists, but
-        // nothing he is issued has a pose, so there is nothing to draw.
+        // The soldier exists, but nothing he is issued has a pose, so there is nothing to draw.
         Assert.Null(index.ResolveFigure("RussianSoldier", ["Rus_Medic", "Rus_Unknown"], ["bf1942"]));
+    }
+
+    [Fact]
+    public void ResolveFigure_DressesAParachuteTwinAsTheBaseKitItWasFoldedInto()
+    {
+        // Lost Village drops both teams in by parachute and binds only the _CHUTE twins.
+        var figure = index.ResolveFigure("USSoldier", ["US_Rifleman_CHUTE", "us_rifleman_chute"], index.TreesFor("eod"));
+
+        var kit = Assert.Single(figure!.Kits);
+        // The level's spelling, so the page can pair it with the army's kit button.
+        Assert.Equal("US_Rifleman_CHUTE", kit.Template);
+        Assert.Equal("M16", kit.Weapon);
+        Assert.Equal("models/mods/eod/poses/USSoldier__M16.pose.glb", kit.Pose);
+    }
+
+    [Fact]
+    public void ResolveFigure_TakesATwinKeptUnderItsOwnNameAsItIs()
+    {
+        var figure = index.ResolveFigure("USSoldier", ["US_JetPilot_CHUTE"], index.TreesFor("eod"));
+
+        Assert.Equal("Colt", Assert.Single(figure!.Kits).Weapon);
+    }
+
+    [Fact]
+    public void ResolveFigure_HoldsTheWeaponTheKitSpawnsWithBeforeTheFirstDeclared()
+    {
+        var figure = index.ResolveFigure("USSoldier", ["US_Medic"], index.TreesFor("eod"));
+
+        var kit = Assert.Single(figure!.Kits);
+        Assert.Equal("M1Carbine", kit.Weapon);
+        Assert.Equal("models/mods/eod/poses/USSoldier__M1Carbine.pose.glb", kit.Pose);
+    }
+
+    [Fact]
+    public void ResolveFigure_FallsBackToTheDeclaredOrderWhenTheSpawnWeaponHasNoPose()
+    {
+        var figure = index.ResolveFigure("USSoldier", ["US_Engineer"], index.TreesFor("eod"));
+
+        Assert.Equal("Colt", Assert.Single(figure!.Kits).Weapon);
     }
 
     [Fact]
