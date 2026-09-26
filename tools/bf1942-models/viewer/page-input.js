@@ -655,6 +655,12 @@ export function createPageInput(page) {
   }
 
   page.renderer.domElement.addEventListener('pointerdown', e => {
+    // The mission briefing owns the pane while it is up, the way it owns the
+    // keyboard. A click behind it would `capture()` the pointer — and once
+    // the lock is held the cursor is gone and READY can never be clicked;
+    // the drag then moves the free camera behind the plate. The game's own
+    // rule: the briefing is closed before the game takes any input at all.
+    if (page.overlay?.briefingCaptures?.()) return;
     if (e.pointerType === 'touch') {
       activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { page.renderer.domElement.setPointerCapture(e.pointerId); } catch {}
@@ -863,6 +869,8 @@ export function createPageInput(page) {
   });
   document.addEventListener('wheel', e => {
     if (!pageInput.captured) return;
+    // The briefing owns the pane; the dolly does not reach through it.
+    if (page.overlay?.briefingCaptures?.()) return;
     e.preventDefault();
     // On foot the wheel walks the kit's inventory (slot order, wrapping) — the
     // game's own mouse-wheel behaviour — instead of dollying. The free-fly

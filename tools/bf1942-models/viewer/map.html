@@ -1031,7 +1031,7 @@ const soldierHud = createSoldierHud(bag(
 const LOCAL_PLAYER = 'local';
 /** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
-const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
+const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /** `?botDebug`: log every hit on a bot. */
 const BOT_DEBUG = params.has('botDebug');
 /** `?doctrine=`: who orders the bots (doctrine.js `parseDoctrineSpec`):
