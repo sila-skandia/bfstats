@@ -220,6 +220,20 @@ class ScenePruneTests(unittest.TestCase):
         self.assertTrue(checks["notAnArray"])
         self.assertTrue(checks["noNode"])
 
+    def test_a_scene_json_entry_follows_the_same_rule(self) -> None:
+        # An emitter on a static only some layers place (Telemark's turbines,
+        # from its mode scripts' `AdditionalStaticObjects`) is dropped where
+        # the static is; an untagged one plays everywhere.
+        checks = self.results["entryInMode"]
+        self.assertTrue(checks["taggedIn"])
+        self.assertFalse(checks["taggedOut"])
+        self.assertTrue(checks["caseInsensitive"])
+        self.assertTrue(checks["untagged"])
+        self.assertTrue(checks["noMode"])
+        self.assertTrue(checks["notAnArray"])
+        self.assertTrue(checks["noEntry"])
+        self.assertEqual(checks["filtered"], ["coast1"])
+
 
 class SpawnerWindowTests(unittest.TestCase):
     results: dict
