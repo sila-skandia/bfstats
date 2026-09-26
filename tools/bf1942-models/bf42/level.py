@@ -459,12 +459,28 @@ class AreaSoundTemplate:
 
 @dataclass
 class PlacedAreaSound:
+    """One placed ambience emitter: an AreaObject outline or a point.
+
+    `kind` is "area" for an AreaObject (a closed outline the engine measures
+    in XZ and stops beyond `trigger_radius`; `AreaObject::handleFrameUpdate`,
+    lnxded 0x08269f30) and "point" for everything else. `min_distance` is the
+    layer's DirectSound minimum distance (ledger SND-6) and `distance_volume`
+    the script's own `Volume <- Distance` ramp (`p1 p2 p3 p4`), or None when
+    it has none. `loop` False marks a one-shot, which is an event and not a
+    bed. See features/ambient-sound-parity/README.md.
+    """
+
     name: str
     file: str
     volume: float = 1.0
     near_distance: float = 40.0
     far_distance: float = 80.0
     points: list[list[float]] = field(default_factory=list)
+    kind: str = "point"
+    min_distance: float = 1.0
+    trigger_radius: float | None = None
+    distance_volume: list[float] | None = None
+    loop: bool = True
 
 
 @dataclass
@@ -2287,6 +2303,19 @@ def parse_sound_scripts(text: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def _distance_volume(patch: SoundPatch) -> list[float] | None:
+    """The first layer's `Volume <- Distance` ramp, as the four params the
+    viewer evaluates (a six-param ramp's surplus pair is not interpreted
+    anywhere, `SoundEffect`)."""
+    if not patch.samples:
+        return None
+    for eff in patch.samples[0].effects:
+        if eff.destination == "volume" and eff.source == "distance" \
+                and eff.envelope == "ramp" and len(eff.params) >= 4:
+            return [float(v) for v in eff.params[:4]]
+    return None
+
+
 def parse_area_con(text: str) -> AreaSoundTemplate | None:
     """Parse an AreaObject or SimpleObject sound template from a Sounds/*.con file."""
     tmpl: AreaSoundTemplate | None = None
@@ -2453,24 +2482,22 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
         far_dist = patch.far_distance if patch.far_distance is not None else max(near_dist * 2.0, tmpl.trigger_radius * 2.0)
         ox, oy, oz = inst.position
 
-        yaw_deg = inst.rotation[0]
-        yaw_rad = math.radians(yaw_deg)
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-
         gltf_points: list[list[float]] = []
-        if tmpl.line_points:
+        is_area = tmpl.kind == "areaobject"
+        if is_area:
+            # `AreaObject::handleFrameUpdate` (lnxded 0x08269f30) adds each
+            # line point straight to the object's x and z: the instance's
+            # rotation is never applied, and the voice stands at the object's
+            # own height. Fewer than three points and it does nothing at all.
+            if len(tmpl.line_points) < 3:
+                continue
             for dx, dz in tmpl.line_points:
-                if abs(yaw_deg) > 1e-4:
-                    rx = dx * cos_y - dz * sin_y
-                    rz = dx * sin_y + dz * cos_y
-                else:
-                    rx, rz = dx, dz
-                wx = ox + rx
-                wy = oy
-                wz = oz + rz
                 # glTF coordinate conversion: negate Z
-                gltf_points.append([round(wx, 3), round(wy, 3), round(-wz, 3)])
+                gltf_points.append([round(ox + dx, 3), round(oy, 3), round(-(oz + dz), 3)])
+        elif tmpl.line_points:
+            # Line points on anything but an AreaObject have no reader in the
+            # engine; the object is a point emitter at its own position.
+            gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
         else:
             # Point emitter (like Siren)
             gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
@@ -2485,12 +2512,17 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             near_distance=near_dist,
             far_distance=far_dist,
             points=gltf_points,
+            kind="area" if is_area else "point",
+            min_distance=patch.min_distance,
+            trigger_radius=tmpl.trigger_radius if is_area else None,
+            distance_volume=_distance_volume(patch),
+            loop=patch.loop,
         ))
 
     # 4. Building sounds from static objects with loadSoundScript in their template tree
     if library is not None and objects is not None:
         # Cache parsed sound info per template to avoid re-parsing
-        template_sounds: dict[str, tuple[str, float, float, float] | None] = {}
+        template_sounds: dict[str, tuple | None] = {}
 
         for inst in static_objects:
             template_key = inst.template.lower()
@@ -2538,17 +2570,27 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                     patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.5
                 )
 
+                first = patch.samples[0] if patch.samples else None
+                offset = first.relative_position if first is not None else None
                 # Cache the sound info
-                template_sounds[template_key] = (patch.file, vol, near_dist, far_dist)
+                template_sounds[template_key] = (
+                    patch.file, vol, near_dist, far_dist, patch.min_distance,
+                    _distance_volume(patch), patch.loop, offset)
 
             # Get cached sound info
             sound_info = template_sounds[template_key]
             if sound_info is None:
                 continue
 
-            sound_file, vol, near_dist, far_dist = sound_info
+            (sound_file, vol, near_dist, far_dist, min_dist, ramp, loop,
+             offset) = sound_info
             ox, oy, oz = inst.position
-            # Point emitter at the building's position
+            # Point emitter at the building's position. The client stands a
+            # voice at its owner's transform times `relativePosition`
+            # (0x00802620); only the height is carried here, which needs no
+            # rotation convention (guardtow's wind is 15 m up the tower).
+            if offset is not None:
+                oy += offset[1]
             gltf_points = [[round(ox, 3), round(oy, 3), round(-oz, 3)]]
 
             sounds.areas.append(PlacedAreaSound(
@@ -2558,6 +2600,10 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 near_distance=near_dist,
                 far_distance=far_dist,
                 points=gltf_points,
+                kind="point",
+                min_distance=min_dist,
+                distance_volume=ramp,
+                loop=loop,
             ))
 
     return sounds
