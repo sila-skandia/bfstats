@@ -23,11 +23,39 @@ mechanisms:
   swap mechanism (151 templates). Recorded separately on `LodSelector`;
   untouched here.
 
-Geometries with no declared table get a fallback curve,
-`FALLBACK_LOD_DISTANCES = [0, 15, 35, 60, 100, 200]` in `bf42/assemble.py`,
-derived from the median curve of the 780 real 6-level chains in the census.
-Declared tables shorter than 6 are padded by repeating the final value (a
-chain that culls at 80 stays culled).
+An undeclared slot keeps the template constructor's default: `StandardMeshTemplate`
+ctor `0x005b5b40` fills the ten-slot table at `+0xd8` with 0, 150, 300, ... 1350, and
+`setLodDistance` overwrites single slots. That is `DEFAULT_LOD_DISTANCES` in
+`bf42/assemble.py`. (Until 2026-09-26 the exporter used a census-median curve,
+0/15/35/60/100/200, and padded short tables by repeating the last band; neither is
+what the engine does.)
+
+### Which levels the client keeps (2026-09-26)
+
+The client does not draw every level a `.sm` ships. `StandardMeshTemplate_readLods`
+(`0x005b54e0`) reads each LOD through `readMaterials` (`0x005b42d0`), which leaves the
+vertex count of the LOD's **last** material descriptor in `DAT_009ab664`. After the first
+LOD whose last material has **fewer than 100 vertices**, it sets `DAT_009ab660`, and
+`readMaterials` reads the rest through without building them. Template vt+0xac is a
+constant `false` for StandardMesh (`0x004067d0`), so nothing exempts a mesh. The LOD
+vector is then resized to the kept count (`0x005b55e2`, `ebx`). When that cut the chain
+and kept more than LOD 0, the last kept level takes the chain's final distance
+(`0x005b55b6`..`0x005b55c6`: `dist[kept-1] = dist[total-1]`). Template byte `+0x100`
+(the object-lightmap flag, ledger LM-1) also stops the chain after LOD 0; where it is
+set is still unread.
+
+`retail_lod_chain` in `bf42/assemble.py` is that rule, and `_mesh_index` emits only the
+kept rungs. Example: `stonebridge_sml_M1`'s LOD 0 ends on a 68-vertex material, so the
+game draws LOD 0 at every distance. We had shipped all six levels, and its LOD 4 has one
+deck end collapsed onto the abutment's foot, which read as a hole in the bridge from 100 m.
+
+Selection, for reference (`StandardMesh_selectLod` `0x005adfd0`): the highest level `i`
+with `dist[i]^2 * globalLodPercent * sizeFactor * fovModifier < d^2 - r^2`. Here `d` is the
+camera distance and `r` the mesh radius (`+0x4c`). `globalLodPercent` is renderer `+0x130`,
+1 in every vanilla `Init.con` that sets it, clamped to 0..1 by `0x00679aa0`. `fovModifier`
+is `RenderView::getFieldOfViewModifier` (`+0x1c`), 1 at the start FOV and larger when
+zoomed. `sizeFactor` only applies below `renderer.globalLodRadius` (1 m by default).
+The viewer uses plain `THREE.LOD` distance, which ignores the `-r^2` term.
 
 ## Export
 
@@ -110,9 +138,8 @@ mods' trees are not re-baked.
 
 ## Open
 
-- The fallback curve is ours, not the engine's — the engine's own per-geometry
-  swap distances for undeclared geometries are not recoverable from the data
-  (no reader in the binary was traced). Where a level declares
-  `setLodDistance`, the authored numbers are used.
+- The `-r^2` term and the zoom `fovModifier` in `selectLod` are not ported. A
+  big mesh (the 32 m-radius bridge) swaps about 5 m later in the game.
+- Where template byte `+0x100` is set is unread.
 - The `LodSelector` vehicle-part mechanism is untouched; vehicle parts keep
   their existing swap behaviour.
