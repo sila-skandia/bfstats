@@ -412,9 +412,11 @@ export function createLoadOverlay(host, {
    *  state — a new `begin()` retires whatever the last load owed. */
   let readyResolve = null;
   let readyCallback = null;
+  let acceptBriefing = null;
   if (elReadyBtn) {
-    elReadyBtn.addEventListener('click', () => {
-      if (root.dataset.state !== 'briefing') return;
+    // The READY click's own body: leave the briefing state, fade out and
+    // settle — the button's click and Enter's accept share it.
+    acceptBriefing = () => {
       root.dataset.state = 'done';
       const settle = readyResolve;
       const callback = readyCallback;
@@ -425,7 +427,8 @@ export function createLoadOverlay(host, {
       else root.hidden = true;
       if (callback) { try { callback(); } catch (_) { /* the page's problem */ } }
       if (settle) (fade || Promise.resolve()).then(settle, settle);
-    });
+    };
+    elReadyBtn.addEventListener('click', acceptBriefing);
     // The knapp hover lives on the canvas; the transparent hit area relays it.
     elReadyBtn.addEventListener('mouseenter', () => briefing?.hover?.(true));
     elReadyBtn.addEventListener('mouseleave', () => briefing?.hover?.(false));
@@ -705,6 +708,16 @@ export function createLoadOverlay(host, {
   }
 
   return {
+    /** True while the overlay parks on the briefing screen: the keyboard is
+     *  the briefing's, the way it is the console's or the Escape menu's. */
+    briefingCaptures() {
+      return Boolean(elReadyBtn) && root.dataset.state === 'briefing';
+    },
+    /** Enter's way to accept the briefing — the READY click's own body. */
+    acceptBriefing() {
+      acceptBriefing?.();
+    },
+
     /**
      * Start a load. Second argument carries authentic-screen art and music:
      * `{ background, music, theme, title, assetBase }`.
