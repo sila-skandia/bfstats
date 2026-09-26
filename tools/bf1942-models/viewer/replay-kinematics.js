@@ -244,3 +244,45 @@ export function aboveGround(position, groundHeight) {
   const floor = groundHeight ? groundHeight(position[0], position[2]) : -Infinity;
   return Number.isFinite(floor) ? position[1] - floor : Infinity;
 }
+
+/**
+ * Which model node each recorded moving part turns. Parts and nodes meet by
+ * name; among a name's several nodes (a ship's identical AA guns) each placed
+ * part takes the nearest to where the recording says it sits (a v5 `jn`),
+ * closest pair first and each node once, and a part with no place takes the
+ * name's next free node in model order. `parts` are `{ key, name, pos }` and
+ * `nodes` `{ name, pos }`, positions in the root's frame and names compared as
+ * given; returns Map<part key, node index>. A part left without a node is
+ * absent.
+ */
+export function matchJointNodes(parts, nodes) {
+  const byName = new Map();
+  nodes.forEach((node, i) => {
+    if (!byName.has(node.name)) byName.set(node.name, []);
+    byName.get(node.name).push(i);
+  });
+  const out = new Map();
+  const taken = new Set();
+  const pairs = [];
+  for (const part of parts) {
+    if (!part.pos) continue;
+    for (const i of byName.get(part.name) ?? []) {
+      const at = nodes[i].pos;
+      pairs.push([Math.hypot(at[0] - part.pos[0], at[1] - part.pos[1], at[2] - part.pos[2]), part.key, i]);
+    }
+  }
+  pairs.sort((a, b) => a[0] - b[0]);
+  for (const [, key, i] of pairs) {
+    if (out.has(key) || taken.has(i)) continue;
+    out.set(key, i);
+    taken.add(i);
+  }
+  for (const part of parts) {
+    if (out.has(part.key)) continue;
+    const i = (byName.get(part.name) ?? []).find(j => !taken.has(j));
+    if (i === undefined) continue;
+    out.set(part.key, i);
+    taken.add(i);
+  }
+  return out;
+}
