@@ -716,13 +716,24 @@ async function downedAirOn(map, template) {
   const drive = () => match.stage.vehicles.lastFlightOf(node)?.drive ?? b.vehicle?.drive ?? null;
   const at = () => drive()?.state?.position ?? null;
 
-  // Fly until there is real air under the hull, then shoot it down.
+  // Put it in LEVEL flight at 200 m before the kill. A dead airframe's descent
+  // is decided by the energy it had, so the run has to set one: taken from the
+  // AI's own climb it stalls and drops quickly, and the case that was reported
+  // -- a 109 at cruise, killed, gliding for three quarters of a minute -- never
+  // happens. `__plane().place` sets exactly this on the live page.
+  const cruise = drive();
+  if (cruise?.state?.position?.set && cruise.state.velocity?.set) {
+    const ground = match.groundAt(cruise.state.position.x, cruise.state.position.z);
+    cruise.state.position.set(cruise.state.position.x, ground + 200, cruise.state.position.z);
+    cruise.state.velocity.set(60, 0, 0);
+  }
+  match.step();
   let topAgl = -Infinity;
-  run(match, 120, () => {
+  run(match, 6, () => {
     const p = at();
     if (!p) return false;
     topAgl = Math.max(topAgl, p.y - match.groundAt(p.x, p.z));
-    return topAgl > 120;
+    return false;
   });
   const death = at() ? { x: at().x, y: at().y, z: at().z } : null;
   match.stage.damageHull(b, 1e6, { attackerId: attacker.playerId });
@@ -777,6 +788,9 @@ async function downedAirOn(map, template) {
     fellBy: death && Number.isFinite(minY) ? round(death.y - minY) : null,
     crashAfter, crashY,
     crashAgl: crashY === null ? null : round(crashY - match.groundAt(crashX, crashZ)),
+    drift: death && crashX !== null
+      ? round(Math.hypot(crashX - death.x, crashZ - death.z))
+      : null,
     wrecked,
     wreckNode, shownChildren, childCount: childNames.length,
     loadedScene, loadError, hasDamageRecord: !!rec, guardVisual,

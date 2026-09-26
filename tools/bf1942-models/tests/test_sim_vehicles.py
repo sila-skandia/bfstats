@@ -232,7 +232,7 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["remounts"], [])
 
 
-    def test_an_ai_plane_shot_down_in_the_air_flies_itself_down_and_wrecks(self) -> None:
+    def test_an_ai_plane_shot_down_in_the_air_comes_down_and_wrecks(self) -> None:
         # The other half of the player's own plane: an AI pilot's death is
         # handled by the referee a tick before the wreck pass reads the hull, so
         # the seat registry has already dropped the instance and the drive has
@@ -250,6 +250,12 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreater(r["fellBy"], 80.0, f"it comes down: {r}")
         self.assertIsNotNone(r["crashAfter"])
         self.assertGreater(r["crashAfter"], 2.0, "the fall is flown, not a one-tick drop")
+        # Dead, not pilotless. Killed at cruise (the run places it in level
+        # flight at 200 m), a hull that keeps its lift glides for the best part
+        # of a minute and wrecks a kilometre downrange, which is what "the
+        # wreck never happened" looked like from the cockpit.
+        self.assertLess(r["crashAfter"], 15.0, f"it comes down, it does not glide: {r}")
+        self.assertLess(r["drift"], 400.0, f"it wrecks near where it was killed: {r}")
         self.assertLess(r["crashAgl"], 5.0, "and it ends on the ground, not in the air")
         self.assertEqual(len(r["wrecked"]), 1)
         self.assertEqual(r["wrecked"][0]["template"], "Spitfire", "the wreck is the hull's own template")
@@ -297,6 +303,8 @@ class SimVehicleTests(unittest.TestCase):
         self.assertTrue(r["flying"], "it joins the wreck list")
         self.assertFalse(r["frozen"], "and is not parked where it was hit")
         self.assertGreater(r["fellBy"], 60.0, f"it comes down: {r}")
+        self.assertLess(r["crashAfter"], 15.0, f"it comes down, it does not glide: {r}")
+        self.assertLess(r["drift"], 400.0, f"the wreck lands near the kill: {r}")
         self.assertLess(r["crashAgl"], 5.0, f"the crash is on the ground: {r}")
         self.assertEqual(r["loadedScene"], True, f"its wreck glb did not parse: {r['loadError']}")
         self.assertEqual(r["wreckNode"], "wreck:BF109", f"no wreck model on the hull: {r}")
