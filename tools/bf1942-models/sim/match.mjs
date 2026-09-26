@@ -10,7 +10,8 @@
 //                             order, `bot.tick`, the no-progress redeploy;
 //                             then the bots' rounds
 //   referee.captureTick       the control points' own law, per flag
-//   tickets, trace, samples   the runner's own bookkeeping
+//   round.tick                the round's bleed (`round-state.js`)
+//   trace, samples            the runner's own bookkeeping
 //
 // The referee is the page's own (`viewer/bot-referee.js`, imported, not
 // copied): rounds, damage, death and respawn, capture, seating and the enemy
@@ -27,13 +28,13 @@
 // the runner's hitscan stand-in (`SIM_GUN`). Either way each event becomes a
 // trace line and a statistic.
 //
-// Runner-only, labelled SIM: the ticket bleed. A round starts from the page's
-// own arithmetic (`round-state.js` `scaleTickets`: the level's counts and
-// rates times the server's max players over 16, ledger TKT-1..TKT-4) and a
-// death costs a ticket as it does there, but a side bleeds `lossPerMin`
-// continuously while the other side holds more than half the control points
-// (features/bf1942-3d-models/tickets-hud.md), where the page bleeds a whole
-// ticket per interval while the enemy's summed `areaValue` is over 99.
+// The round is the page's too (`round-state.js` `createRoundState`, ledger
+// TKT-1..TKT-4): a side starts at the level's count times the server's max
+// players over 16, truncated, pays `lossPerDeath` for a death, and bleeds a
+// whole ticket every `60 / (rate * maxPlayers / 16)` s while the enemy's
+// summed `areaValue` over the points it holds is over 99. Runner-only,
+// labelled SIM: a side at zero (`round.over`) ends the match, where the page
+// plays on. Neither builds the engine's end-of-round rules (TKT-5).
 
 import { createHash } from 'node:crypto';
 import { SimVehicles, SIM_GUN } from './vehicles.mjs';
@@ -94,6 +95,8 @@ export class Match {
   get strategy() { return this.referee.strategy; }
   get nav() { return this.referee.navGrid; }
   get covers() { return this.referee.covers; }
+  /** The round's two counters, whole tickets: team 1 Axis, team 2 Allies. */
+  get tickets() { return this.round.tickets; }
 
   // --- output -----------------------------------------------------------------
 
@@ -137,19 +140,22 @@ export class Match {
       kitFor: (team, i) => level.kits.kitFor(team, i),
       viewDistance: extras?.ai?.settings?.viewDistance ?? null,
     }));
-    // The round as a `maxPlayers` server starts it (`round-state.js`
-    // `scaleTickets`): each side's count times max players over 16, truncated,
-    // and each bleed rate times the same. A level's own `tickets.maxPlayers`
-    // (a mode script's `game.maxNrOfPlayers`: Kasserine Pass co-op's 18)
-    // replaces the server's count for the start only. A side the level gives
-    // no count starts at 100, scaled the same way.
+    // The round as the page plays it on a `maxPlayers` server (`round-state.js`
+    // `createRoundState`): each side's count times max players over 16,
+    // truncated, and each bleed rate times the same. A level's own
+    // `tickets.maxPlayers` (a mode script's `game.maxNrOfPlayers`: Kasserine
+    // Pass co-op's 18) replaces the server's count for the start only. A side
+    // the level gives no count starts at 100, scaled the same way.
     const own = extras?.tickets ?? {};
     const count = v => (Number.isFinite(v) ? v : 100);
-    const round = M.scaleTickets({ ...own, team1: count(own.team1), team2: count(own.team2) }, this.maxPlayers);
-    this.startPlayers = M.roundPlayers(this.maxPlayers, own);
-    this.tickets = { 1: round.team1, 2: round.team2 };
-    this.lossPerMin = { 1: round.lossPerMin?.team1 ?? 0, 2: round.lossPerMin?.team2 ?? 0 };
+    const tickets = { ...own, team1: count(own.team1), team2: count(own.team2) };
+    this.round = M.createRoundState({ tickets, rates: tickets.lossPerMin, maxPlayers: this.maxPlayers });
+    this.startPlayers = this.round.startPlayers;
+    // The header's rates a minute, scaled as the round scales them.
+    const rates = M.scaleTickets(tickets, this.maxPlayers).lossPerMin;
+    this.lossPerMin = { 1: rates?.team1 ?? 0, 2: rates?.team2 ?? 0 };
     this.controlPoints = world.flags.filter(f => !f.standalone && f.controlPointName);
+    this.roundPoints = this.weighedPoints(extras);
 
     this.emit({
       k: 'match', version: 1, level: level.name, seed: this.seed, botsPerSide: this.botsPerSide,
@@ -169,6 +175,22 @@ export class Match {
     });
     this.sample();
     this.seatByHand();
+  }
+
+  /** The control points as the round weighs them, `{ team, areaValue }`. The
+   *  page hands `round.tick` the level's own `extras.controlPoints`, whose
+   *  `team` `hoistCaptureFlag` keeps in step with the world's flags; here each
+   *  is its level entry's `areaValue` (the world's flags carry none) and the
+   *  owner of the flag of the same name, read live. A point that owns no
+   *  spawns is no flag (`spawn-flags.js`) and keeps its level team, as on the
+   *  page: Battle of Britain's `Allied_Base`, whose 150 bleeds the Axis from
+   *  the first frame. */
+  weighedPoints(extras) {
+    const flags = new Map(this.controlPoints.map(f => [f.controlPointName, f]));
+    return (extras?.controlPoints ?? []).map(({ name, team, areaValue }) => {
+      const flag = flags.get(name);
+      return flag ? { name, get team() { return flag.team; }, areaValue } : { name, team, areaValue };
+    });
   }
 
   /** Friendly fire, counted where every soldier's damage lands (the
@@ -298,7 +320,7 @@ export class Match {
         victim.deaths++;
         const killer = attackerId ? stat(attackerId) : null;
         if (killer && killer.side !== victim.side) killer.kills++;
-        this.tickets[victim.side] -= 1;
+        this.round.spend(victim.side, this.round.lossPerDeath);
         this.event({ type: 'kill', killer: attackerId ?? null, killerSide: killer?.side ?? null, victim: bot.playerId,
                      victimSide: victim.side, weapon: opts?.weapon ?? opts?.via ?? null, dist: r2(opts?.dist ?? null),
                      pos: v2(bot.position) });
@@ -408,16 +430,15 @@ export class Match {
     this.referee.captureTick(dt);
     this.stage?.afterCapture(report, dt);
     if (this.stage) this.airTick();
-    this.ticketTick(dt);
+    this.round.tick(dt, this.roundPoints);
     for (const e of this.pendingEvents.splice(0)) {
       if (e.type === 'mount') { const s = this.stats.get(e.bot); if (s) s.mounts++; }
       this.event(e);
     }
     if ((this.tickIndex - 1) % this.traceEvery === 0) this.trace();
     if (this.clock + 1e-9 >= this.nextSample) this.sample();
-    for (const side of [1, 2]) {
-      if (this.tickets[side] <= 0 && !this.ended) this.ended = { reason: 'tickets', loser: side };
-    }
+    // SIM: a side at zero ends the match; the page's round plays on.
+    if (this.round.over && !this.ended) this.ended = { reason: 'tickets', loser: this.tickets[1] === 0 ? 1 : 2 };
     if (!this.ended && this.clock + 1e-9 >= this.duration) this.ended = { reason: 'time' };
     return !this.ended;
   }
@@ -482,21 +503,6 @@ export class Match {
                              { weapon: w?.name ?? 'gun', shell: !w?.burst, dist: hit.dist });
   }
 
-  // --- tickets ----------------------------------------------------------------------
-
-  /** SIM: one ticket a death (the referee's `onDeath`), and the bleed, at the
-   *  server's scaled rate, while the other side holds more than half the
-   *  control points. */
-  ticketTick(dt) {
-    const n = this.controlPoints.length;
-    if (!n) return;
-    for (const side of [1, 2]) {
-      const other = side === 1 ? 2 : 1;
-      const held = this.controlPoints.filter(f => f.team === other).length;
-      if (held > n / 2 && this.lossPerMin[side] > 0) this.tickets[side] -= this.lossPerMin[side] / 60 * dt;
-    }
-  }
-
   // --- the trace ------------------------------------------------------------------
 
   sample() {
@@ -508,7 +514,7 @@ export class Match {
       alive[bot.team]++;
       if (bot.vehicle) mounted[bot.team]++;
     }
-    const s = { k: 'sample', t: r2(this.clock), tickets: { 1: r2(this.tickets[1]), 2: r2(this.tickets[2]) },
+    const s = { k: 'sample', t: r2(this.clock), tickets: { ...this.tickets },
                 flags, alive, mounted, owners: this.controlPoints.map(f => f.team ?? 0) };
     this.samples.push(s);
     this.emit(s);
@@ -672,7 +678,7 @@ export class Match {
     return {
       level: this.level.name, seed: this.seed, botsPerSide: this.botsPerSide, maxPlayers: this.maxPlayers,
       botSkill: this.botSkill, duration: r2(this.clock), requestedDuration: this.duration,
-      result: { reason: this.ended?.reason ?? 'unfinished', winner, tickets: { 1: r2(this.tickets[1]), 2: r2(this.tickets[2]) } },
+      result: { reason: this.ended?.reason ?? 'unfinished', winner, tickets: { ...this.tickets } },
       metrics: {
         ticketsOverTime: series.map(s => [s.t, s.tickets[1], s.tickets[2]]),
         flagsHeldOverTime: series.map(s => [s.t, s.flags[0], s.flags[1], s.flags[2]]),

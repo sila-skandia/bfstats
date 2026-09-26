@@ -148,8 +148,12 @@ export function syntheticLevel(M, { vehicles = true } = {}) {
     position: [centre[0] - 6 + 6 * i, 0, centre[2] + (team === 2 ? 4 : -4)],
     rotation: [team === 2 ? 180 : 0, 0, 0],
   }));
-  const cp = (name, pos, team, group, radius, ttgc, uncapturable) => ({
-    name, displayName: name, position: pos, rotation: [0, 0, 0], team, radius, areaValue: radius,
+  // A point's weight (`areaValue`, what the round's bleed sums) is that of the
+  // vanilla five-point maps of this shape, El Alamein, Kharkov, Stalingrad and
+  // Bocage: a base nothing, an open point 50. A side holding two of the three
+  // open points (100, over the engine's 99) bleeds the other.
+  const cp = (name, pos, team, group, radius, areaValue, ttgc, uncapturable) => ({
+    name, displayName: name, position: pos, rotation: [0, 0, 0], team, radius, areaValue,
     spawnGroupId: group, secondSpawnGroupId: null, unableToChangeTeam: uncapturable, timeToGetControl: ttgc,
   });
   const extras = {
@@ -159,11 +163,11 @@ export function syntheticLevel(M, { vehicles = true } = {}) {
     gameplayMode: 'Conquest',
     tickets: { mode: 'Conquest', team1: 100, team2: 100, lossPerMin: { team1: 5, team2: 5 } },
     controlPoints: [
-      cp('AlliedBase', S.alliedBase, 2, 10, 5, 9999, true),
-      cp('Home', S.home, 2, 1, 10, 10, false),
-      cp('Middle', S.middle, 0, 3, 10, 10, false),
-      cp('Enemy', S.enemy, 1, 2, 10, 10, false),
-      cp('AxisBase', S.axisBase, 1, 20, 5, 9999, true),
+      cp('AlliedBase', S.alliedBase, 2, 10, 5, 0, 9999, true),
+      cp('Home', S.home, 2, 1, 10, 50, 10, false),
+      cp('Middle', S.middle, 0, 3, 10, 50, 10, false),
+      cp('Enemy', S.enemy, 1, 2, 10, 50, 10, false),
+      cp('AxisBase', S.axisBase, 1, 20, 5, 0, 9999, true),
     ],
     soldierSpawns: [
       ...spawnsAround(S.alliedBase, 10, 2, 3, 'AlliedBaseSpawn'),
