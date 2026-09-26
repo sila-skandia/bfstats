@@ -848,7 +848,9 @@ body.is-portrait .shell-nav,
 body.is-portrait #hints,
 body.is-portrait #crew,
 body.is-portrait #crumb,
-body.is-portrait #banner { display: none; }
+body.is-portrait #banner,
+body.is-portrait .stage-touchpad-toggle,
+body.is-portrait #touchpad-disk-wrap { display: none; }
 body.is-portrait canvas { opacity: 1; transition: none; }
 /* Hiding the bar takes it out of the grid, so auto-placement would pull the
    column and stage up into the collapsed first row. Pin them to the second
