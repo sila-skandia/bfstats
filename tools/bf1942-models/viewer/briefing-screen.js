@@ -93,7 +93,7 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
     let img = flags.get(src);
     if (!img) {
       img = new Image();
-      img.onload = () => paint();
+      img.onload = () => draw();
       img.onerror = () => {};
       img.src = src;
       flags.set(src, img);
@@ -143,8 +143,14 @@ export function createBriefingScreen({ hudPaths, mapsBase = 'maps', bust = () =>
     text(ctx, 'trebuchet_ms18', d.displayName || '', { align: 'center', x: 400, baselineY: 101, rgb: hexRgb(INK) });
     // The teams: the ticket counter's waving sprites (16x16, flag content in
     // rows 2..12), "VS" between — the capture's own x positions (the group
-    // sits a shade left of centre).
-    const flagY = 112;
+    // sits a shade left of centre). The flags centre on the VS line, the way
+    // the capture has it: the line's ink centre is the baseline minus half
+    // the face's cap ascent.
+    const vsFont = fonts.get('trebuchet_ms8');
+    const vsInk = vsFont
+      ? Math.max(...['V', 'S'].map(ch => vsFont.meta.glyphs[ch.charCodeAt(0)]?.[3] ?? 0))
+      : 6.5;
+    const flagY = 125 - vsInk / 2 - 5.5;
     for (const [src, cx] of [[d.flags?.[0], 337], [d.flags?.[1], 444]]) {
       const img = flagImage(src);
       if (img) ctx.drawImage(img, cx - 8, flagY, 16, 11);
