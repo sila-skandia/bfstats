@@ -53,6 +53,59 @@ import { WATER_MATERIAL } from './collision-materials.js';
 
 const _normal = [0, 0, 0];
 
+/** How far past its hull's bounding sphere an articulated part may swing
+ *  (a Daihatsu's second ramp leaf, 180 degrees out), metres. */
+const SUB_PART_REACH = 6;
+
+const _onInv = new Float64Array(16);
+const _swing = new Float64Array(16);
+const _tmpA = new Float64Array(16);
+const _tmpB = new Float64Array(16);
+
+/** `out = a * b`, column-major 4x4s; `out` must not alias either. */
+function mul4(a, b, out) {
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    for (let r = 0; r < 4; r++) {
+      out[c * 4 + r] = a[r] * b0 + a[4 + r] * b1 + a[8 + r] * b2 + a[12 + r] * b3;
+    }
+  }
+  return out;
+}
+
+/** `out = inverse(m)`, column-major 4x4 (three.js `Matrix4.invert`'s
+ *  cofactor expansion); a singular `m` leaves the identity. */
+function invert4(m, out) {
+  const n11 = m[0], n21 = m[1], n31 = m[2], n41 = m[3];
+  const n12 = m[4], n22 = m[5], n32 = m[6], n42 = m[7];
+  const n13 = m[8], n23 = m[9], n33 = m[10], n43 = m[11];
+  const n14 = m[12], n24 = m[13], n34 = m[14], n44 = m[15];
+  const t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
+  const t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44;
+  const t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44;
+  const t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
+  const det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
+  if (det === 0) { out.fill(0); out[0] = out[5] = out[10] = out[15] = 1; return out; }
+  const d = 1 / det;
+  out[0] = t11 * d;
+  out[1] = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * d;
+  out[2] = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * d;
+  out[3] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * d;
+  out[4] = t12 * d;
+  out[5] = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * d;
+  out[6] = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * d;
+  out[7] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * d;
+  out[8] = t13 * d;
+  out[9] = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * d;
+  out[10] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * d;
+  out[11] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * d;
+  out[12] = t14 * d;
+  out[13] = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * d;
+  out[14] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * d;
+  out[15] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * d;
+  return out;
+}
+
 /**
  * Whether a segment (or a sphere swept along it) can reach a moved hull's
  * bounding sphere at all: closest approach of the segment to the centre.
@@ -158,7 +211,8 @@ export class WorldCollider {
     // both sides), not a dead stop against a swept sphere.
     if (this.moved.size && !skipBodies) {
       let best = out ? out.t : maxDist;
-      for (const [owner, m] of this.moved) {
+      for (const [key, m] of this.moved) {
+        const owner = m.sub >= 0 ? m.owner : key;
         if (owner === skipOwner) continue;
         if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, radius)) continue;
         const e = m.inv;
@@ -169,7 +223,7 @@ export class WorldCollider {
           e[0] * dx + e[4] * dy + e[8] * dz,
           e[1] * dx + e[5] * dy + e[9] * dz,
           e[2] * dx + e[6] * dy + e[10] * dz,
-          best, radius, -1, this._movedSweep, owner);
+          best, radius, -1, this._movedSweep, owner, false, -Infinity, 2, m.sub);
         if (!hit || hit.t >= best) continue;
         best = hit.t;
         out = this.sweepHit;
@@ -212,7 +266,7 @@ export class WorldCollider {
   setMovedOwner(owner, fwd, inv, x, y, z, radius) {
     let m = this.moved.get(owner);
     if (!m) {
-      m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0 };
+      m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0, sub: -1 };
       this.moved.set(owner, m);
       this.statics?.disableOwner?.(owner);
       // The index answers for its own moved owners from here on, so a caller
@@ -226,6 +280,73 @@ export class WorldCollider {
     }
     m.fwd.set(fwd); m.inv.set(inv);
     m.x = x; m.y = y; m.z = z; m.radius = radius;
+    this.#syncSubParts(owner, m);
+  }
+
+  /**
+   * The owner's articulated sub-parts (`CollisionIndex.subParts`: a landing
+   * craft's ramp, a turret) against the pose they were baked in. One whose
+   * rig has swung it is taken out of the owner's own pass (`_subActive`) and
+   * given a frame of its own in `moved`, keyed `sub:<id>`, which every query
+   * loop over `moved` asks with that sub-part alone and reports as the owner:
+   *
+   *   baked world -> world = fwd * Ob * inv(On) * Sn * inv(Sb)
+   *
+   * `Ob`/`Sb` the owner's and the part's world matrices at the bake, `On`/`Sn`
+   * the scene graph's now. The owner's `fwd` carries the hull; `inv(On) * Sn`
+   * is only the swing of the part inside it, so a render pose a tick ahead of
+   * the drive model does not move the ramp off its hinge.
+   */
+  #syncSubParts(owner, m) {
+    const statics = this.statics;
+    if (!statics?.subs) return;
+    let list = this._subsByOwner?.get(owner);
+    if (!this._subsByOwner) this._subsByOwner = new Map();
+    if (list === undefined) {
+      list = [];
+      statics.subParts.forEach((part, id) => { if (part.owner === owner) list.push(id); });
+      this._subsByOwner.set(owner, list);
+    }
+    if (!list.length) return;
+    const ownerNode = statics.ownerNodes[owner];
+    if (!ownerNode?.matrixWorld) return;
+    invert4(ownerNode.matrixWorld.elements, _onInv);
+    for (const id of list) {
+      const part = statics.subParts[id];
+      const key = `sub:${id}`;
+      // The swing inside the hull now, against the same at the bake.
+      mul4(_onInv, part.node.matrixWorld.elements, _swing);
+      if (!part.bakedSwing) {
+        part.bakedSwing = new Float64Array(16);
+        invert4(part.ownerBaked, _tmpA);
+        mul4(_tmpA, part.baked, part.bakedSwing);
+        part.bakedInv = new Float64Array(16);
+        invert4(part.baked, part.bakedInv);
+      }
+      let moved = false;
+      for (let i = 0; i < 16; i++) {
+        if (Math.abs(_swing[i] - part.bakedSwing[i]) > 1e-4) { moved = true; break; }
+      }
+      if (!moved) {
+        statics._subActive[id] = 0;
+        this.moved.delete(key);
+        continue;
+      }
+      let e = this.moved.get(key);
+      if (!e) {
+        e = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0,
+              owner, sub: id };
+        this.moved.set(key, e);
+      }
+      mul4(m.fwd, part.ownerBaked, _tmpA);
+      mul4(_tmpA, _swing, _tmpB);
+      mul4(_tmpB, part.bakedInv, e.fwd);
+      invert4(e.fwd, e.inv);
+      // The part swings within reach of the hull's own sphere; a ramp laid
+      // flat reaches a few metres past it.
+      e.x = m.x; e.y = m.y; e.z = m.z; e.radius = m.radius + SUB_PART_REACH;
+      statics._subActive[id] = 1;
+    }
   }
 
   /**
@@ -238,7 +359,8 @@ export class WorldCollider {
   castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out) {
     if (!this.statics || !this.moved.size || !(best > 0)) return false;
     let improved = false;
-    for (const [owner, m] of this.moved) {
+    for (const [key, m] of this.moved) {
+      const owner = m.sub >= 0 ? m.owner : key;
       if (owner === skipOwner) continue;
       if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, 0)) continue;
       const e = m.inv;
@@ -253,7 +375,7 @@ export class WorldCollider {
         e[1] * ox + e[5] * oy + e[9] * oz + e[13],
         e[2] * ox + e[6] * oy + e[10] * oz + e[14],
         probe.dx, probe.dy, probe.dz,
-        best, -1, probe, owner);
+        best, -1, probe, owner, false, false, -Infinity, 2, m.sub);
       if (!hit || hit.t >= best) continue;
       best = hit.t;
       improved = true;
@@ -274,6 +396,10 @@ export class WorldCollider {
   /** The owner is back where it was baked (a respawn), or gone (a wreck). */
   clearMovedOwner(owner, { enable = true } = {}) {
     if (!this.moved.delete(owner)) return;
+    for (const id of this._subsByOwner?.get(owner) ?? []) {
+      this.moved.delete(`sub:${id}`);
+      this.statics._subActive[id] = 0;
+    }
     if (enable) this.statics?.enableOwner?.(owner);
   }
 
