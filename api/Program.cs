@@ -844,6 +844,7 @@ try
     // Register ServiceRecord services (scoped: they read the player's sessions through the DbContext)
     builder.Services.AddScoped<api.ServiceRecord.IServiceRecordStore, api.ServiceRecord.ServiceRecordStore>();
     builder.Services.AddScoped<api.ServiceRecord.IServiceRecordService, api.ServiceRecord.ServiceRecordService>();
+    builder.Services.AddScoped<api.ServiceRecord.ITeamMapStatsAggregator, api.ServiceRecord.TeamMapStatsAggregator>();
 
     // Register PlayerBanners (forum signature) services
     builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();

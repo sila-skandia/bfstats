@@ -3,6 +3,9 @@ using api.ServiceRecord;
 using api.ServiceRecord.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using NodaTime;
+using NSubstitute;
 
 namespace api.tests.ServiceRecord;
 
@@ -225,6 +228,84 @@ public sealed class ServiceRecordStoreTests : IDisposable
 
         Assert.False(result.Capped);
         Assert.Equal(2, Assert.Single(result.Rows).Rounds);
+    }
+
+    private async Task BuildAggregateAsync()
+    {
+        await dbContext.SaveChangesAsync();
+        var clock = Substitute.For<IClock>();
+        clock.GetCurrentInstant().Returns(Instant.FromDateTimeUtc(Start.AddDays(6)));
+        await new TeamMapStatsAggregator(dbContext, clock, NullLogger<TeamMapStatsAggregator>.Instance).RefreshAsync();
+    }
+
+    private void SeedAMixedCareer()
+    {
+        Session("Axis", 10, kills: 5, deaths: 2, score: 20);
+        Session("Axis", 15, roundId: "axis-won", kills: 1);
+        Session("Allied", 20, roundId: "axis-won");
+        Session("Allied", 5, roundId: "allied-won");
+        Session("allied", 7, roundId: "tied");
+        Session("Axis", 9, roundId: "live");
+        Session("1", 3);
+        Session("Axis", 11, server: "sw", map: "essen");
+        Session("Axis", 4, deleted: true);
+        Session("Axis", 8, server: "fh2");
+        Session("Axis", 6, player: "Other");
+    }
+
+    [Fact]
+    public async Task TheAggregateCountsExactlyWhatTheLiveQueryCounts()
+    {
+        SeedAMixedCareer();
+        await dbContext.SaveChangesAsync();
+        var live = (await store.GetRowsAsync("BetMan", ServiceRecordStore.SessionWindow, CancellationToken.None)).Rows;
+
+        await BuildAggregateAsync();
+        var aggregate = await store.GetRowsAsync("BetMan");
+
+        Assert.False(aggregate.Capped);
+        static string Key(ServiceRecordRow row) => $"{row.GameId}|{row.MapName}|{row.TeamLabel}";
+        Assert.Equal(live.OrderBy(Key).Select(Key), aggregate.Rows.OrderBy(Key).Select(Key));
+        foreach (var (expected, actual) in live.OrderBy(Key).Zip(aggregate.Rows.OrderBy(Key)))
+        {
+            Assert.Equal(expected with { Minutes = 0 }, actual with { Minutes = 0 });
+            Assert.Equal(expected.Minutes, actual.Minutes, precision: 6);
+        }
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_ReadsTheAggregateOnlyOnceItsBackfillIsComplete()
+    {
+        Session("Axis", 10);
+        await BuildAggregateAsync();
+        // A value only the aggregate could return.
+        await dbContext.Database.ExecuteSqlRawAsync("UPDATE PlayerTeamMapStats SET Sessions = 99");
+
+        Assert.Equal(99, Assert.Single((await store.GetRowsAsync("BetMan")).Rows).Rounds);
+
+        var state = await TeamMapStatsState.LoadAsync(dbContext);
+        await (state! with { Complete = false }).SaveAsync(dbContext, state.RefreshedThrough);
+
+        var live = await store.GetRowsAsync("BetMan");
+        Assert.Equal(1, Assert.Single(live.Rows).Rounds);
+    }
+
+    [Fact]
+    public async Task AggregateRowsSql_ReadsOnePlayersRangeOfTheKey()
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN QUERY PLAN " + ServiceRecordStore.AggregateRowsSql;
+        command.Parameters.AddWithValue("$playerName", "BetMan");
+
+        var steps = new List<string>();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+                steps.Add(reader.GetString(3));
+        }
+
+        Assert.StartsWith("SEARCH a USING INDEX sqlite_autoindex_PlayerTeamMapStats_1 (PlayerName=?)", steps[0], StringComparison.Ordinal);
+        Assert.DoesNotContain(steps, step => step.StartsWith("SCAN", StringComparison.Ordinal));
     }
 
     [Fact]

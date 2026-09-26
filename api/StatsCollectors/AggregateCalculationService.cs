@@ -81,6 +81,13 @@ public class AggregateCalculationService(
                         await Task.Delay(50, stoppingToken);
 
                         results["map"] = await CalculatePlayerMapStats(dbContext, currentYear, currentMonth);
+                        await Task.Delay(50, stoppingToken);
+
+                        // The service record's per-team aggregate: the players seen since the
+                        // last cycle, then a few more months of history until it is complete.
+                        results["team"] = await scope.ServiceProvider
+                            .GetRequiredService<api.ServiceRecord.ITeamMapStatsAggregator>()
+                            .RefreshAsync(stoppingToken);
                     }, stoppingToken);
 
                     cycleStopwatch.Stop();
@@ -88,12 +95,14 @@ public class AggregateCalculationService(
                     activity?.SetTag("monthly_records", results.GetValueOrDefault("monthly"));
                     activity?.SetTag("server_records", results.GetValueOrDefault("server"));
                     activity?.SetTag("map_records", results.GetValueOrDefault("map"));
+                    activity?.SetTag("team_records", results.GetValueOrDefault("team"));
 
                     var totalRecords = results.Values.Sum();
                     logger.LogInformation(
-                        "Aggregate calculation: {TotalRecords} records (monthly={Monthly}, server={Server}, map={Map}) for {Year}-{Month:00} in {Duration}ms",
+                        "Aggregate calculation: {TotalRecords} records (monthly={Monthly}, server={Server}, map={Map}, team={Team}) for {Year}-{Month:00} in {Duration}ms",
                         totalRecords, results.GetValueOrDefault("monthly"), results.GetValueOrDefault("server"),
-                        results.GetValueOrDefault("map"), currentYear, currentMonth, cycleStopwatch.ElapsedMilliseconds);
+                        results.GetValueOrDefault("map"), results.GetValueOrDefault("team"), currentYear, currentMonth,
+                        cycleStopwatch.ElapsedMilliseconds);
                 }
             }
             catch (Exception ex) when (SqliteBusy.IsBusy(ex))

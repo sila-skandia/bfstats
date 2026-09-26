@@ -295,6 +295,10 @@ public class ServerMergeService(
             .Where(x => allMergeGuids.Contains(x.ServerGuid))
             .ExecuteDeleteAsync();
 
+        deletedAggregateRows += await dbContext.PlayerTeamMapStats
+            .Where(x => allMergeGuids.Contains(x.ServerGuid))
+            .ExecuteDeleteAsync();
+
         deletedAggregateRows += await dbContext.ServerMapStats
             .Where(x => allMergeGuids.Contains(x.ServerGuid))
             .ExecuteDeleteAsync();

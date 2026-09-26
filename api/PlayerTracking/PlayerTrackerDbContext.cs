@@ -40,6 +40,7 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<PlayerStatsMonthly> PlayerStatsMonthly { get; set; }
     public DbSet<PlayerServerStats> PlayerServerStats { get; set; }
     public DbSet<PlayerMapStats> PlayerMapStats { get; set; }
+    public DbSet<PlayerTeamMapStats> PlayerTeamMapStats { get; set; }
     public DbSet<PlayerBestScore> PlayerBestScores { get; set; }
     public DbSet<ServerOnlineCount> ServerOnlineCounts { get; set; }
     public DbSet<ServerHourlyPattern> ServerHourlyPatterns { get; set; }
@@ -971,6 +972,28 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<PlayerMapStats>()
             .Property(pms => pms.UpdatedAt)
+            .HasConversion(
+                instant => FormatInstant(instant),
+                str => ParseInstant(str));
+
+        // Configure PlayerTeamMapStats (the service record's per-team monthly aggregate).
+        // PlayerName leads the key so one player's career is one range, and Year/Month
+        // follow so the hourly refresh can replace a player's month in place.
+        modelBuilder.Entity<PlayerTeamMapStats>()
+            .HasKey(s => new { s.PlayerName, s.Year, s.Month, s.ServerGuid, s.MapName, s.TeamLabel });
+
+        // A backfill or a month's finalisation replaces the whole month.
+        modelBuilder.Entity<PlayerTeamMapStats>()
+            .HasIndex(s => new { s.Year, s.Month });
+
+        modelBuilder.Entity<PlayerTeamMapStats>()
+            .Property(s => s.FirstSessionStart)
+            .HasConversion(
+                instant => FormatInstant(instant),
+                str => ParseInstant(str));
+
+        modelBuilder.Entity<PlayerTeamMapStats>()
+            .Property(s => s.UpdatedAt)
             .HasConversion(
                 instant => FormatInstant(instant),
                 str => ParseInstant(str));

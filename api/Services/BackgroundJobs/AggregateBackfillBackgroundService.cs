@@ -200,9 +200,15 @@ public class AggregateBackfillBackgroundService(
                         bestScoresCount += await BackfillBestScoresAsync(dbContext, batchPlayers, nowUtc, c);
                     }
 
+                    // The service record's per-team aggregate, rebuilt for the same players.
+                    // Not part of the tiered backfill: it keeps its own, month by month.
+                    var teamStatsCount = await scope.ServiceProvider
+                        .GetRequiredService<api.ServiceRecord.ITeamMapStatsAggregator>()
+                        .RecomputePlayersAsync(playerList, c);
+
                     stopwatch.Stop();
 
-                    var totalRecords = lifetimeCount + serverStatsCount + mapStatsCount + bestScoresCount;
+                    var totalRecords = lifetimeCount + serverStatsCount + mapStatsCount + bestScoresCount + teamStatsCount;
                     logger.LogInformation(
                         "Aggregate backfill for {PlayerCount} players: {TotalRecords} records in {Duration}ms",
                         playerList.Count, totalRecords, stopwatch.ElapsedMilliseconds);
