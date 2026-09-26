@@ -172,6 +172,15 @@ query, 42 us a cast. The natural El Alamein match does not move because it is
    (`test_collision.py`, the multi-cell tests). Same walk time on the same
    casts (-0.4 % Berlin, -1.8 % the vehicle match); 3-5 % more candidates
    and 1-6 % more narrowphase tests a query.
+
+   The hull probe's candidate list (`collectInBox`) had the other half of
+   it: no dedupe at all, so a triangle spanning cells was listed once a
+   cell, 21-32 % of a Berlin hull's list and 20 % of El Alamein's, and
+   every vertex probe tested each copy again. It lists each triangle once
+   now: the same matches (identical outcomes, seeds 1-5), 29 % fewer
+   narrowphase tests in Berlin's vehicle match and 4 % in El Alamein's. No
+   list came near its 8,192 slots (the longest was 293), so no triangle was
+   ever crowded out of one.
 5. **The hull box memoised per referee pass** (`bot-units.js` `unitInfo`).
    `Box3.setFromObject` over a hull's whole tree, per bot, per target, per
    frame; it feeds only the fire plan's precision. The runner already memoised

@@ -401,6 +401,13 @@ class CollisionModuleTests(unittest.TestCase):
                          m["rampAcrossCells"])
         self.assertEqual(2, m["rampTests"])
 
+    def test_a_triangle_is_collected_once_however_many_cells_list_it(self) -> None:
+        # The hull probe's candidate list (`collectInBox`): the hall's four
+        # triangles are in both cells and the post's two in the second only.
+        # Listed once each, all six fit a list of six; listed per cell, the
+        # hall's second copies filled it and the post was never tested.
+        self.assertEqual([0, 1, 2, 3, 4, 5], self.results["multiCell"]["collected"])
+
 
 class ProjectileMaterialTests(unittest.TestCase):
     """`ObjectTemplate.material` on a Projectile is the attacker id."""
