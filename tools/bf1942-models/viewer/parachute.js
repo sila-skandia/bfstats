@@ -157,6 +157,30 @@ export const PARACHUTE_SPEED = 30;
 export const PARACHUTE_DRAG_RADIUS = 1.8;
 
 /**
+ * How fast free fall's look-steering may push a man along the ground: the
+ * canopy's own terminal glide, 12.28 m/s. **A viewer decision, not the
+ * engine's number.**
+ *
+ * The engine's free-fall term is `PARACHUTE_SPEED` along the camera's forward
+ * row with only its upward half clamped (`0x082726fd`-`0x08272764`, re-read
+ * 2026-09-26: the vector goes straight into `PointPhysicsNode`'s acceleration
+ * accumulator, `0x08256650`, and nothing on the way scales it), against the
+ * soldier's own `drag 1.0`, which is inert. Taken as read, a man who falls
+ * looking level gains 30 m/s of forward speed a second without bound -- 165
+ * m/s five seconds out of a plane -- and retail does not fling him. Whatever
+ * bounds it there was not found, so the viewer bounds it here: the thrust is
+ * spent only while the speed along the look's heading is under the speed the
+ * same 30 m/s^2 settles at under the canopy, `30 * mass / (pi r^2 drag)` with
+ * the canopy's drag and radius and the soldier's `mass 100`
+ * (`CommonSoldierData.inc`; `SOLDIER_MASS` in `soldier-locomotion.js`,
+ * restated because this module imports nothing). The downward half is
+ * untouched -- looking down still dives -- and so is any speed the body
+ * already had: out of a 50 m/s plane he keeps the plane's 50.
+ */
+export const FREE_FALL_TRACK_SPEED = PARACHUTE_SPEED * 100
+  / (Math.PI * PARACHUTE_DRAG_RADIUS * PARACHUTE_DRAG_RADIUS * PARACHUTE_DRAG);
+
+/**
  * A canopy landing costs nothing, and this is the engine's own mechanism.
  *
  * `BFSoldier::handleCollision` (`0x0827d3b0`) overrides `SimpleObject`'s and
@@ -396,7 +420,9 @@ export class Parachute {
    */
   update({
     dt = 0,
+    velocityX = 0,
     velocityY = 0,
+    velocityZ = 0,
     height = null,
     grounded = false,
     deploy = false,
@@ -444,8 +470,10 @@ export class Parachute {
         this.#toOpen();
       } else {
         // Free fall: the camera's forward times parachuteSpeed, y clamped so
-        // the term can never lift you (0x0827274d-0x08272764).
+        // the term can never lift you (0x0827274d-0x08272764), and its
+        // horizontal half spent only up to `FREE_FALL_TRACK_SPEED`.
         this.#steer(forward, true);
+        this.#capTracking(dt, velocityX, velocityZ);
         return this;
       }
     }
@@ -514,6 +542,24 @@ export class Parachute {
         voice: !!layer.voice,
       });
     }
+  }
+
+  /**
+   * Trim the free-fall thrust's horizontal half so it never carries the speed
+   * along its own heading past `FREE_FALL_TRACK_SPEED`, and never overshoots
+   * it inside a tick. Speed across the heading, or already past the cap, is
+   * left alone: this only withholds thrust, it never brakes.
+   */
+  #capTracking(dt, vx, vz) {
+    const a = this.accel;
+    const push = Math.hypot(a.x, a.z);
+    if (!(push > 0)) return;
+    const along = (vx * a.x + vz * a.z) / push;
+    const room = FREE_FALL_TRACK_SPEED - along;
+    const allowed = room <= 0 ? 0 : (dt > 0 ? Math.min(push, room / dt) : push);
+    const scale = allowed / push;
+    a.x *= scale;
+    a.z *= scale;
   }
 
   #steer(dir, clampUp) {

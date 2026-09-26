@@ -11,6 +11,7 @@ real `Soldier` is bailed out over a real heightfield and flown down.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -243,6 +244,23 @@ class ParachuteTests(unittest.TestCase):
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
                 self.assertIsNotNone(self.results[case]["trace"]["landedAt"])
+
+    def test_free_fall_steers_up_to_the_canopy_glide_and_no_further(self) -> None:
+        cap = self.results["trackSpeed"]
+        self.assertAlmostEqual(12.2805, cap, places=3)
+        rest = self.results["levelFallFromRest"]
+        self.assertEqual("falling", rest["state"])
+        # It used to reach 30 m/s of forward speed a second, without bound.
+        self.assertLessEqual(rest["peak"], cap + 1e-6)
+        self.assertGreater(rest["speed"], cap - 0.1)
+
+    def test_free_fall_keeps_the_planes_speed_without_adding_to_it(self) -> None:
+        plane = self.results["levelFallFromPlane"]
+        self.assertEqual("falling", plane["state"])
+        self.assertLessEqual(plane["peak"], 50.0 + 1e-6)
+        # The soldier's own drag 1.0 is all that takes anything off it:
+        # 50 * exp(-pi * 0.8^2 * 1.0 / 100 * 8 s) = 42.6.
+        self.assertAlmostEqual(50 * math.exp(-math.pi * 0.64 / 100 * 8), plane["speed"], delta=0.3)
 
     def test_a_bail_out_passes_through_the_hull_it_left(self) -> None:
         held = self.results["bailOntoHull"]["held"]

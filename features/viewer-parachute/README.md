@@ -635,6 +635,8 @@ beside this file; serve the viewer on your own port first). Out of a plane
   `parachute.js` therefore *names* the clip pair for every state
   (`PARA_CLIPS`), so a renderer that gains one can ask for them by the engine's
   own names.
+- **Capped since 2026-09-26 (§11)** -- the rest of this bullet is the state
+  before that.
 - **The free-fall look-steering is faithful and does not feel like retail.**
   30 m/s² along the camera axis with only the upward half clamped means a
   soldier who free-falls looking level accelerates horizontally without a
@@ -780,4 +782,32 @@ its own `soldier-voices.json`. The page picks `teamNation(team)`, then vanilla's
 folder, then `models/sounds/` (the one language `soldier.json` resolved).
 Published to the volume 2026-09-26 for vanilla, XPack1 and XPack2, with
 `models/sounds/Dying*.mp3` and the regenerated `soldier.json`.
+
+---
+
+## 11. Free fall no longer flings you forward (2026-09-26)
+
+The owner's call on §7's open question: retail does not fling a free-falling
+man, whatever the binary says. The site was re-read once more first
+(`0x082726b8`-`0x082727c8`): the camera row times `+0x2e8` goes, y clamped
+`<= 0`, as argument 2 to `addAccelerationAtRelativePosition`, and
+`PointPhysicsNode`'s (`0x08256650`) adds it to the `+0x1c` accumulator
+unscaled -- the same accumulator the jump's `6 * 30` goes through, so it is
+m/s^2. Nothing there bounds it, and what bounds it in retail was not found.
+
+So the viewer bounds it. `parachute.js` `FREE_FALL_TRACK_SPEED`: the thrust's
+horizontal half is spent only while the speed along its heading is under the
+canopy's own terminal glide, the speed the same 30 m/s^2 settles at under the
+canopy -- 12.28 m/s. It only withholds thrust, never brakes; the downward half
+is untouched (looking down still dives).
+
+- From rest, looking level: 12.28 m/s and no more (it was 30 m/s more every
+  second).
+- Out of the Corsair climbing at 57 m/s on Wake: out at (0, 16, 38), apex, and
+  the 38 m/s forward bleeds to 34 on the soldier's own `drag 1.0` over the
+  fall, where it used to climb past 160.
+- `test_parachute.py` pins both.
+
+A viewer number, marked so in the code. If the engine's real bound is ever
+found, it replaces this.
 
