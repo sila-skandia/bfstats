@@ -93,18 +93,31 @@ not there:
    Every other mod ships its own soldiers, vehicles and kit parts, so it gets
    its own trees or nothing (`dc_final` -> `dc_final`, `desertcombat`; `eod` ->
    `eod`).
-2. **Kit -> weapon.** `kits.json` (first tree that declares the kit) names its
-   items in order; the weapon is the first item with a `{skin}__{item}.pose.glb`
-   in any tree of the path, looked up per weapon, not per figure: the xpack2
-   tree has `GermanSoldier` poses for its own weapons only, so a Mimoyecques
-   Wehrmacht resolved inside it alone lost all five vanilla kits. Matching is
-   case-insensitive: the manifests spell `MP18`, the files `Mp18`.
-3. **Worn parts.** Each `worn[].glb` from the first tree in the search path
+2. **Kit -> weapon.** `kits.json` (first tree that declares the kit) names the
+   weapon the kit spawns with (`primary`) and its items in declaration order;
+   the weapon is the first of those with a `{skin}__{item}.pose.glb` in any
+   tree of the path, looked up per weapon, not per figure: the xpack2 tree has
+   `GermanSoldier` poses for its own weapons only, so a Mimoyecques Wehrmacht
+   resolved inside it alone lost all five vanilla kits. Matching is
+   case-insensitive: the manifests spell `MP18`, the files `Mp18`. Manifests
+   written before `primary` existed (vanilla, both XPacks, EoD) go by
+   declaration order alone, which puts the primary first there anyway.
+3. **Parachute twins.** EoD ships every kit twice, `VC_Scout` and
+   `VC_Scout_CHUTE`, and the manifest folds each twin into its base kit. A
+   level that drops its teams in by parachute binds only the twins (Lost
+   Village, Guadalcanal and El Alamein, 135 teams in all), so a `_CHUTE` kit
+   the manifest does not list is dressed as its base kit.
+4. **Worn parts.** Each `worn[].glb` from the first tree in the search path
    that has it — a mod kit borrows vanilla's radio and packs.
 
 A soldier whose kits all fail to pose has no figure (`null`), the same as one the
-armoury never extracted: Eve of Destruction has 135 teams that issue only
-parachute kits, which no `kits.json` lists.
+armoury never extracted.
+
+**Which map dresses the army.** The kits and the soldier are those of the map
+the player served on longest, unless the armoury cannot dress that map's
+soldier; then those of the longest-served map it can. Both come from one map,
+because the page pairs each kit button with the figure's kit of the same
+template.
 
 The page grafts the worn parts onto the pose's `A` / `backpack` / `HipPack`
 bones with the viewer's own slot rotations (`tools/bf1942-models/viewer/
@@ -114,6 +127,51 @@ kit-graft.js`), which were set by eye and must not be re-derived.
 pose de-duplication (`features/pose-asset-dedup`) plans to delete those after
 its cutover; this page must learn the split rig + recipe path first. That
 dependency is recorded in that feature's phase 3 checklist.
+
+### The mod trees
+
+Vanilla, Road to Rome, Secret Weapons and EoD have full model trees. Every other
+installed mod has a poses-only tree, built for this page: its kit manifest, the
+parts its kits wear, and one pose per (soldier, kit) its own levels issue,
+holding the weapon the kit spawns with. No vehicles, no maps, no kit pickups.
+
+```bash
+cd tools/bf1942-models
+python3 extract_kits.py --mod FHSW --no-pickups --out viewer/models/mods/fhsw
+python3 extract_pose.py --kit-poses --mod FHSW --out viewer/models/mods/fhsw/poses -j 6
+```
+
+`--kit-poses` sweeps only the levels the mod ships: an inherited level's dossier
+is filed under the mod that ships it, and its figure comes from that mod's tree.
+A kit whose spawn weapon will not pose (a clip the archive lacks) is posed with
+the next item it carries. `extract_kits.py` and `--kit-poses` both read the
+templates a level declares in its own archive, where FHSW declares 1,397 of its
+kits, and take a kit wherever it is filed (bf1918's `Austrian_Kit_Early/`).
+
+Built 2026-09-27, every (soldier, kit) job posed. 12 hold the kit's next
+weapon, because the first one tried (Pirates' musket, FHSW's smoke grenades
+and charges) names a stand-aim clip its archive lacks:
+
+| tree | poses | soldiers | kits | MB | minutes to build |
+|---|---|---|---|---|---|
+| Desert Combat Final (`dc_final`) | 23 | 3 | 49 | 45 | 0.2 |
+| Desert Combat (`desertcombat`) | 13 | 2 | 45 | 29 | 0.2 |
+| Forgotten Hope (`fh`) | 92 | 14 | 286 | 167 | 1 |
+| FHSW (`fhsw`) | 333 | 26 | 1,187 | 510 | 4 |
+| Galactic Conquest (`gcmod`) | 44 | 8 | 68 | 132 | 1 |
+| Battlefield 1918 (`bf1918`) | 118 | 20 | 296 | 217 | 2.5 |
+| Interstate '82 (`interstate`) | 3 | 2 | 39 | 6 | 0.1 |
+| Pirates (`pirates`) | 12 | 2 | 48 | 43 | 0.6 |
+| **total** | **638** | | | **1,148** | **10** |
+
+The bytes are the poses' own textures: a pose is 1-2 MB, Galactic Conquest's
+up to 4.8 MB (4.4 MB of it five 1024px textures). The full `--matrix` product
+would be every soldier against every weapon, tens of thousands for FHSW alone.
+
+BG42, FinnWars and WarFront have no tree, by choice: they are not kept installed
+on the PC these trees are extracted from, so their armies stay on "No soldier
+extracted". FHSWEurope is a map pack with no `init.con`, so its dossiers search only
+themselves and draw nothing.
 
 ## Arsenal
 
@@ -286,7 +344,7 @@ Paths under `figure` and `vehicles` are relative to the mesh root
 
 | | |
 |---|---|
-| Service record | Redis 1 h per player; edge `s-maxage=600` |
+| Service record | Redis 1 h per player (`service-record:v3:`); edge `s-maxage=600` |
 | Map armies | `public, max-age=86400`, as the dossier |
 | `/stats/assets/mesh/*` | `public, max-age=300, s-maxage=86400` — the mesh site's own policy. Without a `Cache-Control` the zone rule bypasses Cloudflare, so every profile view pulled a 1–2 MB glb from the node. |
 | Mesh directory index | in memory, 10 min, like the dossier icon index |

@@ -42,11 +42,11 @@ from . import roster as roster_mod
 # content rather than edge cases: a theatre suffix (`GerKitdesert` is the Afrika
 # Korps, the kits `GermanDesertSoldier` actually wears), an optional unit segment
 # (FH/FHSW file `JapKit/SNLF/1SNLF_OfficerMp18/`), and `BaseKit`, which has no
-# class segment at all and turns out to be dead everywhere it appears.
+# class segment at all and turns out to be dead everywhere it appears. The path
+# only labels a kit; `collect` takes kits it does not match too.
 KIT_SOURCE = re.compile(
     r"objects/items/(?P<nation>\w+?)kit(?P<theatre>desert|winter|summer)?/"
     r"(?:(?P<unit>\w+)/)?(?P<cls>\w+)/objects\.con$")
-BASE_KIT_SOURCE = re.compile(r"objects/items/basekit/objects\.con$")
 
 # What `setBoneName` means. The engine offers no others.
 BONE_SLOTS = {"a": "head", "backpack": "back", "hippack": "hip"}
@@ -273,15 +273,40 @@ def primary_weapon(library: con_mod.ObjectLibrary,
     return None
 
 
+def pose_candidates(kit: Kit, posable: dict[str, str]) -> list[str]:
+    """The weapons to pose a kit's wearer holding, best first.
+
+    The spawn weapon, then every other item the kit carries, in declaration
+    order -- each only if `posable` has it. `posable` maps a lowercased weapon
+    name to the spelling the pose files use (the animation state machine's).
+    More than one, because a weapon the state machine names can still fail to
+    pose: its clip may be missing from the archive.
+    """
+    candidates: list[str] = []
+    for name in [kit.primary, *kit.carried]:
+        spelled = posable.get(name.lower()) if name else None
+        if spelled is not None and spelled not in candidates:
+            candidates.append(spelled)
+    return candidates
+
+
 def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
-    """Every `Kit` template in the library, keyed lowercased."""
+    """Every `Kit` template in the library, keyed lowercased.
+
+    The engine finds a kit by name, wherever its `.con` sits, so the folder is
+    only a label. Kits filed outside `Objects/Items/<Nation>Kit/...` -- bf1918's
+    `Austrian_Kit_Early/`, FinnWars' `FinSummer_1941/`, bg42's `GerAir/`, and
+    the ones a level declares in its own archive (FHSW's night and marker
+    variants) -- are collected with no nation rather than dropped; a level
+    binding one is the whole of what makes it live (`sweep_levels`). Vanilla,
+    both XPacks and EoD file every kit by the convention, so their manifests do
+    not move.
+    """
     kits: dict[str, Kit] = {}
     for template in library.objects.values():
         if template.kind.lower() != "kit":
             continue
         nation_token, theatre, unit, class_token = classify(template.source)
-        if nation_token is None and not BASE_KIT_SOURCE.search(template.source.lower()):
-            continue
 
         nation = roster_mod.nation_label(nation_token) if nation_token else None
         kit_class = (TYPE_LABELS.get((template.kit_type or "").lower())
