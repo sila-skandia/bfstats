@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 
+import { MAX_PLAYERS } from '../viewer/netcode.js';
+import { scaleTickets } from '../viewer/round-state.js';
 import { World } from '../viewer/world.js';
 import { WorldCollider } from '../viewer/world-collider.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
@@ -99,6 +101,12 @@ export class LevelData {
     // P3 seam: `guns: null` — fire events cannot resolve into rounds until a
     // headless GunFire joins the World here (guns.collider/modifiers wiring).
     world.setCollider(collider);
+    // The room's own tickets: the level's scaled for the room's slot count
+    // (round-state.js `scaleTickets`, ledger TKT-1), which at the lobby's 16
+    // is the level's numbers except where its script sets its own max
+    // players. A copy, so the authority spends this room's counts and not
+    // the ones every room of the level shares.
+    world.tickets = scaleTickets(extras?.tickets, MAX_PLAYERS);
 
     // Damageables: every owner root that carries armor extras (map.html
     // registerDamageables).
