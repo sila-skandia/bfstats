@@ -86,7 +86,17 @@ function liftLods(root, spawnersRoot) {
     // their rungs: parked hulls draw at full detail, exactly as they did
     // before the rungs shipped. The parts INSIDE the vehicle (turret, wheels,
     // propeller) lift normally — their LODs travel with the subtree.
-    if (spawnersRoot && obj.parent === spawnersRoot) {
+    //
+    // Building interiors (`*Interior`) skip the lift as well. The engine
+    // never applied a geometry's own setLodDistance table to an interior — it
+    // ran one interior switch at 70 m — and the interior shell is only ever
+    // meant to be seen from inside: its decimated rungs tear straight through
+    // the exterior walls when the chain swaps at 15 m (measured: the french
+    // farm at 16 m showed rung0, not the shell). Hide the rungs and keep the
+    // part; backface culling keeps it invisible from outside, the texture-fade
+    // darkness planes handle the doorway sealing, and the draw-distance cull
+    // covers the range.
+    if ((spawnersRoot && obj.parent === spawnersRoot) || /Interior(_\d+)?$/i.test(obj.name || '')) {
       for (const child of [...obj.children]) {
         if (child.userData?.lod) child.visible = false;
       }

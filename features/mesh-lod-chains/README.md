@@ -76,13 +76,16 @@ Two transforms, learned the hard way (2026-09-26):
   behind at the pad as a ghost shell. Vehicle-root rungs are hidden instead,
   so parked hulls draw at full detail as they did before the rungs shipped.
   The parts inside the vehicle (turret, wheels, propeller) lift normally.
+  Building-interior chains (`*Interior`, instance suffixes included) stay
+  unlifted too: the engine ran one interior switch at 70 m and never applied
+  the geometry's own setLodDistance table to an interior, and a decimated
+  interior rung tears through the exterior walls when it swaps at 15 m.
 
-The transform handoff, found by the Stalingrad ladder pass (2026-09-26): the
-LOD copies the part's local transform and the part must go to IDENTITY inside
-it, or the placement composes twice (a ladder baked at (541.6, 43.2, -393.9)
-read (-1.2, 82, -1.7) after the lift, T applied twice). The copy happens
-before `buildLodLevels` resets the part; the rungs keep their own locals, which
-were authored relative to the part.
+The copy happens before `buildLodLevels` runs; the rungs keep their own locals,
+which were authored relative to the part. (The identity-reset variant of this
+splice was reverted the same day: it fixed the render but destroyed the part's
+local transform, which the vehicle rigs pose through - see the sibling design
+above.)
 
 ## Measured (bocage)
 
