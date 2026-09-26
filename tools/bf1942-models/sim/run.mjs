@@ -128,7 +128,7 @@ async function runMatch(a) {
   while (match.step()) {
     if (!a.quiet && match.clock - lastReport >= 30) {
       lastReport = match.clock;
-      process.stderr.write(`  t=${Math.round(match.clock)} s  tickets ${match.tickets[1].toFixed(1)} / ${match.tickets[2].toFixed(1)}  `
+      process.stderr.write(`  t=${Math.round(match.clock)} s  tickets ${match.tickets[1]} / ${match.tickets[2]}  `
                            + `${Math.round(performance.now() - started)} ms\n`);
     }
   }
