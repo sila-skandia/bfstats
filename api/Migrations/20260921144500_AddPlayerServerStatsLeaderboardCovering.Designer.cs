@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using api.PlayerTracking;
 
@@ -10,9 +11,11 @@ using api.PlayerTracking;
 namespace api.Migrations
 {
     [DbContext(typeof(PlayerTrackerDbContext))]
-    partial class PlayerTrackerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921144500_AddPlayerServerStatsLeaderboardCovering")]
+    partial class AddPlayerServerStatsLeaderboardCovering
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -541,62 +544,6 @@ namespace api.Migrations
                         .HasDatabaseName("IX_PlayerStatsMonthly_Year_PlayerName_Covering");
 
                     b.ToTable("PlayerStatsMonthly");
-                });
-
-            modelBuilder.Entity("api.Data.Entities.PlayerTeamMapStats", b =>
-                {
-                    b.Property<string>("PlayerName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Year")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Month")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ServerGuid")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MapName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TeamLabel")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FirstSessionStart")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Losses")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Sessions")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TotalDeaths")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TotalKills")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double>("TotalPlayTimeMinutes")
-                        .HasColumnType("REAL");
-
-                    b.Property<int>("TotalScore")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("UpdatedAt")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Wins")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("PlayerName", "Year", "Month", "ServerGuid", "MapName", "TeamLabel");
-
-                    b.HasIndex("Year", "Month");
-
-                    b.ToTable("PlayerTeamMapStats");
                 });
 
             modelBuilder.Entity("api.Data.Entities.PlayerWrappedCache", b =>

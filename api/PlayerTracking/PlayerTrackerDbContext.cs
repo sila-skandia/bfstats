@@ -905,8 +905,27 @@ public class PlayerTrackerDbContext : DbContext
         modelBuilder.Entity<PlayerServerStats>()
             .HasIndex(pss => new { pss.Year, pss.Week });
 
+        // Global leaderboard with populatedOnly / include / exclude filters aggregates
+        // PlayerServerStats over a year of weeks for a handful of ServerGuids. The old
+        // (ServerGuid, Year, Week) index found the rows, then each SUM column was a
+        // random heap fetch. On the network-attached volume that is ~1.38ms each, which
+        // is how GET /stats/leaderboard?days=365&populatedOnly=true crossed 10s. Carrying
+        // PlayerName and the SUM columns makes the GROUP BY index-only. Prefix-compatible
+        // with the dropped (ServerGuid, Year, Week) index.
         modelBuilder.Entity<PlayerServerStats>()
-            .HasIndex(pss => new { pss.ServerGuid, pss.Year, pss.Week });
+            .HasIndex(pss => new
+            {
+                pss.ServerGuid,
+                pss.Year,
+                pss.Week,
+                pss.PlayerName,
+                pss.TotalKills,
+                pss.TotalDeaths,
+                pss.TotalScore,
+                pss.TotalPlayTimeMinutes,
+                pss.TotalRounds
+            })
+            .HasDatabaseName("IX_PlayerServerStats_LeaderboardCovering");
 
         // Covers the "which server does this player play on most" rollup the arcade roster
         // builds — SUM(TotalRounds) GROUP BY (PlayerName, ServerGuid) over the roster names.
