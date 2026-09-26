@@ -537,7 +537,8 @@ export function createBotReferee(env) {
     if (!armor?.destroyed) return false;
     bot._respawnIn = (bot._respawnIn ?? BOT_RESPAWN_DELAY) - dt;
     if (bot._respawnIn > 0) return true;
-    const teamFlags = w.flags.filter(f => f.team === bot.team);
+    // A captured capture-only flag is the side's, and still nowhere to spawn.
+    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly);
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);

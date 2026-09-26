@@ -752,7 +752,8 @@ function bobShape(input, factor) {
         spawnGroupId: 2, unableToChangeTeam: true, position: [1214, 20, -566] },
       { name: 'broaxis_Cpoint', displayName: 'Bridge', team: 0,
         spawnGroupId: 6, unableToChangeTeam: false, position: [760, 31, -940] },
-      // A flag whose group no spawn point claims: left out entirely.
+      // A flag whose group no spawn point claims: a capture-only flag, after
+      // the others.
       { name: 'Empty_Cpoint', displayName: 'Nowhere', team: 0, spawnGroupId: 99 },
     ],
     soldierSpawns: [
@@ -773,7 +774,7 @@ function bobShape(input, factor) {
   const flags = spawnFlags(extras);
   results.flags = flags.map(f => ({
     name: f.name, team: f.team, group: f.group,
-    spawns: f.spawns.length, uncapturable: f.uncapturable,
+    spawns: f.spawns.length, uncapturable: f.uncapturable, captureOnly: !!f.captureOnly,
   }));
 
   const axis = flags.find(f => f.group === 1);

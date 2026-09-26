@@ -90,11 +90,15 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
  * `spawnAtFlag` used to: pickSpawn, then the soldier's own spawn at the
  * spawn's yaw. Returns `{ flag, spawn }`, or null when the flag has no
  * spawn left to offer.
+ *
+ * A capture-only flag (`spawn-flags.js` `captureZone`) is nowhere to spawn:
+ * the pick never lands on one, and one handed in is taken as no choice.
  */
 export function spawnPlayer(world, playerId, { flag = null, advance = false, group = null } = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
-  const flags = world.flags;
+  const flags = world.flags.filter(f => !f.captureOnly);
+  if (flag?.captureOnly) flag = null;
   const side = player.team === 1 || player.team === 2;
   // A side with no flag of its own at the start (Omaha's Allies, whose deck
   // spawns ride a hull the level does not give us) goes to a neutral flag
