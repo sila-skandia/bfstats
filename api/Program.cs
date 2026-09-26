@@ -835,6 +835,16 @@ try
     builder.Services.AddSingleton<api.MapDossiers.IMapDossierResolver, api.MapDossiers.MapDossierResolver>();
     builder.Services.AddSingleton<api.MapDossiers.IMapDossierService, api.MapDossiers.MapDossierService>();
 
+    // Register Armoury services
+    // Singletons: the mesh index holds listings of the model trees for ten minutes, and the
+    // armoury service is stateless over it and the dossier service
+    builder.Services.AddSingleton<api.Armoury.IMeshArmouryIndex, api.Armoury.MeshArmouryIndex>();
+    builder.Services.AddSingleton<api.Armoury.IArmouryService, api.Armoury.ArmouryService>();
+
+    // Register ServiceRecord services (scoped: they read the player's sessions through the DbContext)
+    builder.Services.AddScoped<api.ServiceRecord.IServiceRecordStore, api.ServiceRecord.ServiceRecordStore>();
+    builder.Services.AddScoped<api.ServiceRecord.IServiceRecordService, api.ServiceRecord.ServiceRecordService>();
+
     // Register PlayerBanners (forum signature) services
     builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();
     builder.Services.AddSingleton<api.PlayerBanners.BannerRenderer>();

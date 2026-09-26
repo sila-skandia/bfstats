@@ -84,6 +84,14 @@ public class AssetsController(
     {
         var basePath = TournamentImagesConfig.ResolveMeshPath();
         var result = await assetServingService.GetAssetAsync(basePath, path);
+        if (result.IsSuccess)
+        {
+            // The mesh site's own policy. Without a Cache-Control the zone rule bypasses
+            // Cloudflare, so every profile view pulled a 1-2 MB glb from the node. A
+            // republished asset reaches the edge within a day, as on mesh.bfstats.io.
+            Response.Headers.CacheControl = "public, max-age=300, s-maxage=86400";
+        }
+
         return HandleAssetResult(result);
     }
 

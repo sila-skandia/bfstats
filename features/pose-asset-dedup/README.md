@@ -165,6 +165,12 @@ Phase 3 — cutover and publish
       blast radius (poses are a per-tree artifact, not a `scene.json` layer,
       but every tree's `poses/` is regenerated) and publish with
       `scripts/publish-mesh-delta.py`.
+- [ ] Before deleting anything: port the split path to bfstats.io. The player
+      profile's service record and the round report draw soldiers from
+      `<Soldier>__<Weapon>.pose.glb` through the API's mesh route
+      (`ui/src/components/v4/armoury/stage.ts`, paths resolved by
+      `api/Armoury/`; see `features/service-record`). Deleting the monolithic
+      glbs first leaves those stages on their fallback image.
 - [ ] Delete the monolithic glbs from the volume; measure before/after in the
       publish log.
 
