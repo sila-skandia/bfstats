@@ -97,6 +97,9 @@ export function installWorldHooks(page) {
     if (!round) return null;
     return {
       tickets: { ...round.tickets },
+      maxPlayers: round.maxPlayers,
+      startPlayers: round.startPlayers,
+      countdowns: { ...round.countdowns },
       bleeding: { ...round.bleeding },
       held: { ...round.held },
       over: round.over,

@@ -756,4 +756,21 @@ let nextTag = 1;
   };
 }
 
+// --- (t) each room its own tickets ----------------------------------------------
+// Rooms AAA and BBB play the same LevelData. The authority spends a room's
+// tickets in place, so each room needs its own copy (level-data.mjs
+// `scaleTickets`): AAA losing tickets must not reach BBB or the level.
+{
+  const a = core.room('AAA').world.tickets;
+  const b = core.room('BBB').world.tickets;
+  const before = { a: a.team1, b: b.team1, level: levelData.extras.tickets.team1 };
+  a.team1 -= 7;
+  results.t = {
+    separate: a !== b && a !== levelData.extras.tickets,
+    before,
+    after: { a: a.team1, b: b.team1, level: levelData.extras.tickets.team1 },
+  };
+  a.team1 += 7;
+}
+
 console.log(JSON.stringify(results));

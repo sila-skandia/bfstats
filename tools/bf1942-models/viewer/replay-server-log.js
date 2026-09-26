@@ -114,7 +114,9 @@ export function serverRows(rec, log, alignment) {
       case 'setTeam': text = `${who(p.player_id)} switched to ${teamName(p.team)}`; break;
       case 'disconnectPlayer': text = `${who(p.player_id)} disconnected`; break;
       case 'destroyPlayer': text = `${who(p.player_id)} removed`; break;
-      case 'roundInit': text = `round started, tickets ${p.tickets_team1} / ${p.tickets_team2}`; break;
+      // Both of roundInit's ticket params are team 1's: the server reads
+      // getTeamScore(1) for each (ledger TKT-6), so team 2's is not in the log.
+      case 'roundInit': text = `round started, ${teamName(1)} tickets ${p.tickets_team1}`; break;
       case 'restartMap': text = 'map restarted'; break;
       case 'roundstats': text = `round over: ${teamName(p.winner)} win (${p.tickets.join(', ')})`; break;
       default: text = p.player_id !== undefined ? `${e.name} (${who(p.player_id)})` : e.name;
