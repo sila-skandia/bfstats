@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bf42 import gltf, rs, skin, stdmesh  # noqa: E402
 from bf42.assemble import (  # noqa: E402
     Assembler,
-    FALLBACK_LOD_DISTANCES,
+    DEFAULT_LOD_DISTANCES,
+    RETAIL_LOD_MIN_VERTICES,
     Report,
     browse_rig,
     is_foreign_skeleton_part,
@@ -2566,11 +2567,16 @@ GeometryTemplate.create StandardMesh Plain_m1
 
     @staticmethod
     def build(assembler: Assembler, builder: gltf.GlbBuilder, template: str,
-              levels: int) -> tuple[int | None, Report]:
+              levels: int, vertex_counts: list[int] | None = None,
+              ) -> tuple[int | None, Report]:
+        # Every level at or above the client's 100-vertex cut unless a test
+        # says otherwise, so the whole chain survives `retail_lod_chain`; the
+        # payload is one triangle and the accessors zero-pad the rest.
+        counts = vertex_counts or [RETAIL_LOD_MIN_VERTICES] * levels
         lods = [stdmesh.Lod([stdmesh.Material(
             name=f"Chain_Material{level}", primitive=stdmesh.PRIM_TRIANGLE_LIST,
             flags=stdmesh.VF_STANDARD, stride=32,
-            vertex_count=3, index_count=3, unknown=(0, 0, 0, 0),
+            vertex_count=counts[level], index_count=3, unknown=(0, 0, 0, 0),
             vertices=[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
                       1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0,
                       0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
@@ -2625,15 +2631,42 @@ GeometryTemplate.create StandardMesh Plain_m1
                      for i in document["nodes"][node]["children"]]
         self.assertEqual([10.0, 50.0, 150.0], distances)
 
-    def test_no_declared_table_falls_back_to_the_census_curve(self) -> None:
-        # `Plain_m1` declares no setLodDistance; a 2-level mesh on it swaps at
-        # FALLBACK_LOD_DISTANCES[1] rather than never.
+    def test_no_declared_table_keeps_the_constructor_defaults(self) -> None:
+        # `Plain_m1` declares no setLodDistance; a 2-level mesh on it swaps
+        # where the template constructor put slot 1 — 150 m.
         assembler, builder = self.assembler()
         node, _ = self.build(assembler, builder, "TestPlain", levels=2)
 
         document = glb_document(builder.build([node]))
         child = document["nodes"][document["nodes"][node]["children"][0]]
-        self.assertEqual(FALLBACK_LOD_DISTANCES[1], child["extras"]["lod"]["distance"])
+        self.assertEqual(150.0, DEFAULT_LOD_DISTANCES[1])
+        self.assertEqual(150.0, child["extras"]["lod"]["distance"])
+
+    def test_a_level_ending_under_100_vertices_is_the_last_one_kept(self) -> None:
+        # `readLods` keeps LOD 2 (its last material has 99 vertices) and
+        # builds nothing after it; LOD 2 then takes the chain's final
+        # distance, slot 4's constructor default, since the chain was cut.
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=5,
+                                  vertex_counts=[120, 110, 99, 150, 150])
+
+        document = glb_document(builder.build([node]))
+        rungs = [document["nodes"][i]["extras"]["lod"]
+                 for i in document["nodes"][node]["children"]]
+        self.assertEqual([(1, 10.0), (2, 600.0)],
+                         [(r["level"], r["distance"]) for r in rungs])
+        self.assertEqual(3, report.mesh_lods["Chain_m1"]["retailKept"])
+
+    def test_a_small_lod_0_keeps_no_chain_at_all(self) -> None:
+        # The small stone bridge: LOD 0 ends on a 68-vertex material, so the
+        # game draws LOD 0 at every distance and no rung is shipped.
+        assembler, builder = self.assembler()
+        node, report = self.build(assembler, builder, "TestBuilding", levels=6,
+                                  vertex_counts=[68, 60, 60, 60, 55, 12])
+
+        document = glb_document(builder.build([node]))
+        self.assertEqual([], document["nodes"][node].get("children", []))
+        self.assertEqual(1, report.mesh_lods["Chain_m1"]["retailKept"])
 
     def test_report_records_the_emitted_levels(self) -> None:
         assembler, builder = self.assembler()

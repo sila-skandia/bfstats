@@ -3072,7 +3072,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-drawfov",
-   "note": "Returns the LOD index for a draw. A mesh with its own field of view (mesh+0xf0 != -1) always returns 0: first-person parts never LOD by distance."
+   "note": "Returns the LOD index for a draw. A mesh with its own field of view (mesh+0xf0 != -1) always returns 0: first-person parts never LOD by distance. Otherwise d2 = |mesh - camera|^2 / mesh+0x60 - r^2 (r = mesh+0x4c) and it takes the highest i with dist[i]^2 * renderer+0x130 (globalLodPercent) * sizeFactor * renderView FOV modifier (+0x1c) < d2; dist[] is template+0xd8. sizeFactor = r / (renderer+0x13c * template+0x11c) only below renderer+0x138 (globalLodRadius). Ledger SM-11/SM-12."
   },
   {
    "address": "0x005aeec0",
@@ -3108,7 +3108,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "vtable +0x98. Loops the LOD count calling +0x9c (0x005b42d0) per LOD; +0xac participates in a fallback/skip decision."
+   "note": "vtable +0x98. Loops the LOD count calling +0x9c (0x005b42d0) per LOD. Stops building LODs after the first whose last material has < 100 vertices (DAT_009ab664) or when template byte +0x100 is set; resizes the LOD vector to the kept count and moves the final distance onto the last kept slot. Ledger SM-11."
   },
   {
    "address": "0x005b5f50",
@@ -11965,6 +11965,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] global candidate vector"
+  },
+  {
+   "address": "0x005b5b40",
+   "name": "StandardMeshTemplate_ctor",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-26-lod",
+   "note": "vtable 0x00905a90. LOD distance table +0xd8..+0xfc = 0,150,...,1350; +0x100 (object-lightmap flag) = 0. Ledger SM-12."
   }
  ]
 }
