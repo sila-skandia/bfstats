@@ -436,18 +436,46 @@ function actionOf(name) {
 export class MorphBlend {
   constructor(bones) {
     this.bones = bones;
+    // The pose drawn: where the morph stands.
     this.q = new Float64Array(bones.length * 4);
     this.p = new Float64Array(bones.length * 3);
+    // The mixer's pose: where it is going.
+    this.tq = new Float64Array(bones.length * 4);
+    this.tp = new Float64Array(bones.length * 3);
     this.w = 1;
     this.rate = 0;
     this.fresh = false;
+    // The bones hold the morph's pose rather than the mixer's.
+    this.held = false;
   }
 
-  /** A state was entered: remember the bones as they stand, before the mixer
-   *  poses them from the new clip. */
+  /**
+   * Before the mixer: the mixer's own pose back on the bones. three's
+   * `PropertyMixer.apply` writes a bone only when its value changed since it
+   * last wrote it, so a bone the clip holds still -- a run's clavicles and
+   * left hand -- is written once as the state starts and never again. The
+   * morph then took its own last frame for the clip and stopped: a replayed
+   * rifleman ran on with his clavicles and left hand in the shot's pose, the
+   * hand 27 cm off his Garand (2026-09-27). With the mixer's pose restored,
+   * a bone the mixer leaves alone still holds what the mixer says.
+   */
+  restore() {
+    if (!this.held) return;
+    const { tq, tp } = this;
+    this.bones.forEach((b, i) => {
+      const o = i * 4;
+      const j = i * 3;
+      setQuaternion(b.quaternion, tq[o], tq[o + 1], tq[o + 2], tq[o + 3]);
+      b.position.x = tp[j]; b.position.y = tp[j + 1]; b.position.z = tp[j + 2];
+    });
+  }
+
+  /** A state was entered: remember the pose on screen -- the morph's own when
+   *  one is under way, else the bones -- before the mixer poses them from the
+   *  new clip. */
   enter(morph) {
-    if (!(morph < MORPH_CUT)) { this.w = 1; this.fresh = false; return; }
-    this.capture();
+    if (!(morph < MORPH_CUT)) { this.w = 1; this.fresh = false; this.held = false; return; }
+    if (!this.held) this.capture();
     this.w = 0;
     this.rate = morph;
     this.fresh = true;
@@ -469,19 +497,29 @@ export class MorphBlend {
     if (this.fresh) this.fresh = false;
     else this.w = Math.min(1, this.w + dt * this.rate);
     const w = this.w;
-    const { q, p } = this;
+    const { q, p, tq, tp } = this;
     this.bones.forEach((b, i) => {
       const o = i * 4;
-      slerpInto(b.quaternion, q[o], q[o + 1], q[o + 2], q[o + 3], w);
+      const bq = b.quaternion;
       const bp = b.position;
+      // What the mixer holds the bone at (restored, then maybe rewritten).
+      tq[o] = bq.x; tq[o + 1] = bq.y; tq[o + 2] = bq.z; tq[o + 3] = bq.w;
+      tp[i * 3] = bp.x; tp[i * 3 + 1] = bp.y; tp[i * 3 + 2] = bp.z;
+      slerpInto(bq, q[o], q[o + 1], q[o + 2], q[o + 3], w);
       bp.x = p[i * 3] + (bp.x - p[i * 3]) * w;
       bp.y = p[i * 3 + 1] + (bp.y - p[i * 3 + 1]) * w;
       bp.z = p[i * 3 + 2] + (bp.z - p[i * 3 + 2]) * w;
     });
     // The result is where the bones stand now: the next frame starts here.
     this.capture();
+    this.held = w < 1;
     return w;
   }
+}
+
+function setQuaternion(target, x, y, z, w) {
+  if (typeof target.set === 'function') target.set(x, y, z, w);
+  else { target.x = x; target.y = y; target.z = z; target.w = w; }
 }
 
 /** `target = slerp(from, target, t)`, the short way round. */

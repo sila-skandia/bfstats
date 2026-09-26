@@ -199,6 +199,14 @@ class MorphBlendTests(unittest.TestCase):
         self.assertEqual(90, trace[-1]["angle"])
         self.assertEqual(0.5, trace[-1]["y"])
 
+    def test_a_bone_the_clip_holds_still_still_reaches_it(self) -> None:
+        # three writes it once, as the state starts; without the mixer's pose
+        # restored the morph read its own frame back and froze where it began
+        # (a replayed rifleman's clavicles and left hand, 27 cm off his rifle).
+        still = self.results["stillBone"]
+        self.assertEqual({"angle": 90.0, "y": 0.5}, still["restored"])
+        self.assertEqual({"angle": 0.0, "y": 1.0}, still["unrestored"])
+
     def test_a_morph_factor_above_a_thousand_cuts(self) -> None:
         self.assertEqual({"w": 1, "y": 0.5}, self.results["cut"])
 
