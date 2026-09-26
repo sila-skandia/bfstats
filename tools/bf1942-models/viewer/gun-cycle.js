@@ -70,9 +70,11 @@ export function advanceGroups(guns, dt) {
       // is drawn at 1.
       const ramp = emitter.spec.sizeOverTime
         ? sampleCurve(emitter.spec.sizeOverTime, phase)[0] : 1;
+      // A sprite's `size` is a half-extent on the baked +-0.5 quad (ledger
+      // SPR-7, `effects.js` SPRITE_QUAD_SPAN), hence the 2.
       const size = emitter.spec.kind === 'mesh'
         ? (emitter.spec.size ?? 1)
-        : (emitter.spec.size ?? 1) * ramp;
+        : 2 * (emitter.spec.size ?? 1) * ramp;
       emitter.node.scale.setScalar(Math.min(Math.max(size, 1e-4), FLASH_RAMP_MAX));
       // Emitter motion along the direction of fire: muzzle smoke recedes
       // (`positionalSpeedInDof` -5), glows sit slightly ahead
@@ -87,7 +89,8 @@ export function advanceGroups(guns, dt) {
       if (emitter.spec.colorOverTime) {
         const [r, g, b, a] = sampleCurve(emitter.spec.colorOverTime, phase);
         for (const material of emitter.materials) {
-          material.color.setRGB(r / 255, g / 255, b / 255);
+          // The ramp is D3D's gamma-space vertex colour, like `effects.js`'s.
+          material.color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
           material.opacity = a / 255;
         }
       }
