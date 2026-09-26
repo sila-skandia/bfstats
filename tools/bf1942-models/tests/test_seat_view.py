@@ -128,24 +128,36 @@ class SeatViewTests(unittest.TestCase):
     # --- the server switches -----------------------------------------------------
 
     def test_the_defaults_are_the_shipped_server_settings(self) -> None:
-        # `game.serverExternalViews 1`, `game.serverAllowNoseCam 1`, and the
-        # page's own soldier switch on.
-        self.assertEqual({"externalViews": True, "allowNoseCam": True,
-                          "soldierExternalViews": True},
+        # `game.serverExternalViews 1` and `game.serverAllowNoseCam 1`, which
+        # is the whole of it: the page's own third switch for C on foot was
+        # withdrawn on 2026-09-26.
+        self.assertEqual({"externalViews": True, "allowNoseCam": True},
                          self.results["readDefaults"])
 
     def test_storage_is_read_and_junk_in_it_ignored(self) -> None:
-        self.assertEqual({"externalViews": False, "allowNoseCam": True,
-                          "soldierExternalViews": True},
+        self.assertEqual({"externalViews": False, "allowNoseCam": True},
                          self.results["readStored"])
 
     def test_the_query_string_wins_over_storage(self) -> None:
-        self.assertEqual({"externalViews": True, "allowNoseCam": False,
-                          "soldierExternalViews": False},
+        self.assertEqual({"externalViews": True, "allowNoseCam": False},
                          self.results["readParamsOverStored"])
 
-    def test_the_old_foot3p_spelling_still_works(self) -> None:
-        self.assertTrue(self.results["readFoot3pOldSpelling"]["soldierExternalViews"])
+    def test_the_soldier_switch_and_its_spellings_are_gone(self) -> None:
+        # `soldierExternalViews` / `?foot3p=1` widened a standing soldier's
+        # cycle from 2026-09-23 to 2026-09-26. It must read as nothing in all
+        # three places, and the store is the one that matters: `set` writes
+        # every key, so a browser that had touched the side panel holds
+        # `"soldierExternalViews": true` and a surviving default would have
+        # loaded the departure back on.
+        gone = self.results["soldierSwitchGone"]
+        self.assertEqual(["externalViews", "allowNoseCam"], gone["defaultKeys"])
+        self.assertEqual(["externalViews", "allowNoseCam"], gone["paramKeys"])
+        self.assertEqual({"externalViews": True, "allowNoseCam": True},
+                         gone["queryFoot3p"])
+        self.assertEqual({"externalViews": True, "allowNoseCam": True},
+                         gone["queryLongName"])
+        self.assertEqual({"externalViews": True, "allowNoseCam": True},
+                         gone["stored"])
 
     def test_a_throwing_storage_reads_as_empty(self) -> None:
         self.assertEqual(self.results["readDefaults"], self.results["readBadStorage"])
@@ -153,7 +165,7 @@ class SeatViewTests(unittest.TestCase):
     def test_truthy_params(self) -> None:
         t = self.results["truthy"]
         self.assertTrue(t["one"])
-        self.assertTrue(t["empty"])      # `?foot3p` alone is on
+        self.assertTrue(t["empty"])      # a bare `?externalViews` is on
         self.assertFalse(t["zero"])
         self.assertFalse(t["off"])
         self.assertFalse(t["no"])
@@ -163,8 +175,8 @@ class SeatViewTests(unittest.TestCase):
         live = self.results["live"]
         self.assertFalse(live["externalViews"])
         self.assertEqual([["externalViews", False]], live["fired"])
-        self.assertEqual({"externalViews": False, "allowNoseCam": True,
-                          "soldierExternalViews": True}, live["stored"])
+        self.assertEqual({"externalViews": False, "allowNoseCam": True},
+                         live["stored"])
         self.assertNotIn("nonsense", live["json"])
 
 

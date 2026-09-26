@@ -644,10 +644,12 @@ frame to frame (`Bip01_L_UpperArm` `[0.0049, 0.4034, -0.4407, 0.8019]` standing,
 1. `visible: false` persisted after `__footView('chase')` because the call was
    **refused**. On foot the view cycle is the engine's own set of one — CAM-1:
    `SoldierCamera` writes `CVMChase 0` and `BFSoldier::nextCamera` is an empty
-   function — and `SOLDIER_3P_ON_FOOT` needs **`?foot3p=1`** to widen it.
+   function — and `SOLDIER_3P_ON_FOOT` needs **`?foot3p=1`** to widen it (the
+   flag and its switch were deleted on 2026-09-26; see
+   `features/viewer-foot-first-person`).
    `SoldierView.setMode` then leaves the mode alone, silently, exactly as
    `Camera::setViewMode` returns 0. The lead's page was drawing no body to look
-   at. `__footView()` now reports `cycleOnFoot` so that refusal is legible
+   at. `__footView()` reported `cycleOnFoot` so that refusal was legible
    instead of looking like a missing body.
 2. In first person what the player was actually looking at was his **rifle**,
    held out in front of him, playing its ordinary idle clip. That is the wrong
@@ -799,7 +801,7 @@ key in `poses/gaits/gaits.json` — is already in the shared tree and already on
 | Item | Where it stands |
 |---|---|
 | **Remote swimmers** | Still W6-G's. `netcode-render.js` and `remote-gait.js` are outside this stream's files and are untouched, so a remote swimmer is still drawn with his locomotion gait: the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`). This is the half of the owner's "they have a swimming animation" that is not yet delivered |
-| **Seeing your own swim animation on foot** | Only under `?foot3p=1`, and that stays a marked departure: CAM-1 says the engine authorises one view mode for a soldier. Not widened here |
+| **Seeing your own swim animation on foot** | Only under `?foot3p=1`, and that stays a marked departure: CAM-1 says the engine authorises one view mode for a soldier. Not widened here. **Withdrawn 2026-09-26**: the flag and the switch behind it are deleted, so a standing soldier has no external view at all; `features/viewer-foot-first-person` has the change and the live check |
 | **Messages 8, 9, 11, 12, 14..17, 22** | Named only as "inside the gated range". Their jump-table targets are read (`0x082779d0`, `0x082779dc`, `0x08277a09`, `0x08277ab0`, `0x08277add`, `0x08277b0a`, `0x08277b37`, `0x08277b75`) and all of them are past the gate, which is all this stream needed; the enum itself is unmapped |
 | **The swim speed ceiling** | Unchanged and still a viewer number — §8's first row stands |
 | **Sound** | Unchanged: the four `.ssc` scripts still ship and none is played |

@@ -9,6 +9,12 @@
 3. Aircraft were missing the view between the cockpit and the chase: the nose
    cam — full screen, the reticle, no cockpit, the engine heard from outside.
 
+**Item 2 was withdrawn on 2026-09-26.** The owner plays with the external views
+off on foot: F11 beside the walk keys was taking him out of first person
+mid-stride. `soldierExternalViews` and `FOOT_VIEW_CYCLE` are deleted, and a
+standing soldier is back to the engine's one view. Items 1 and 3 stand. See
+[`features/viewer-foot-first-person`](../viewer-foot-first-person/README.md).
+
 ## What was read
 
 - **The cycle is per Camera, and every seat has a Camera.** `Camera::setViewMode`
