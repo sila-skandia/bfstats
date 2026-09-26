@@ -146,6 +146,23 @@ class ReplayRecordingTests(unittest.TestCase):
     def test_round_end_tallies_decode_from_raw(self) -> None:
         self.assertEqual(self.results["recording"]["stats"], [{"pid": 0, "fired": [[1231, 31]]}])
 
+    def test_the_replays_rounds_pass_the_levels_hidden_vehicles(self) -> None:
+        c = self.results["replayCollision"]
+        # Nothing to do before the level's collider exists; then the baked
+        # Defgun (no deck) leaves the rounds' way, the carrier (its deck is a
+        # parked plane's ground) and the bunker (a static) stay; once per
+        # collider, and again for a new one; the replayed hulls' cast is on.
+        self.assertEqual((c["before"], c["taken"], c["again"], c["retaken"]), (0, 1, 0, 1))
+        self.assertEqual(c["disabled"], [0])
+        self.assertTrue(c["castInstalled"])
+
+    def test_the_hit_indicator_decodes_named_and_raw(self) -> None:
+        # HitFromPosEvent (0x3C): the sector the damage came from and its
+        # strength, 255 x the damage over the victim's maximum hit points.
+        self.assertEqual(self.results["v4Hits"], [{"t": 275.203, "dir": 2, "strength": 191}])
+        self.assertEqual(self.results["v5"]["hits"], [{"t": 8, "dir": 4, "strength": 15}])
+        self.assertEqual(self.results["v5"]["hitRow"], "hit from behind, 6% of full health")
+
     def test_a_v4_files_parts_are_not_used(self) -> None:
         # The v4 recorder keyed every part 0 (a child networkable has no id),
         # so its parts cannot be told apart.

@@ -118,6 +118,7 @@ export function parseRecording(text) {
     animStates: [],       // v4: index -> { name, flags }, the engine's animation state table
     seats: new Map(),     // v4: pid -> [{ t, root, seat }]
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
+    hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
     roundEnded: Infinity, // the first round-over status: the teardown after it is not play
   };
@@ -137,6 +138,17 @@ export function parseRecording(text) {
     return entry;
   };
   const playerName = pid => rec.players.get(pid)?.name ?? `player ${pid}`;
+
+  /** HitFromPosEvent (0x3C), sent to the damaged player's client alone: the
+   *  sector the damage came from (45 degrees each: 0 ahead, 4 behind, 1-3
+   *  one side and 5-7 the other, which side unconfirmed) and its strength,
+   *  255 x the damage over his maximum hit points (lnxded
+   *  `GameServer::_giveDamage` 0x0814b870). The game's hit indicator. */
+  const hitTaken = (t, dir, strength) => {
+    rec.hitsTaken.push({ t, dir, strength });
+    const from = dir === 0 ? 'ahead' : dir === 4 ? 'behind' : `sector ${dir}`;
+    row(t, 'damage', `hit from ${from}, ${Math.round(strength / 2.55)}% of full health`);
+  };
 
   const lifeFor = (nid, t) => {
     let life = current.get(nid);
@@ -249,6 +261,9 @@ export function parseRecording(text) {
           rec.clocks.push({ t, seconds: view.getUint32(4, true), exact: false });
           rec.timeLimit = view.getUint32(0, true);
         }
+        return;
+      case 0x3c:
+        if (b.length >= 2) hitTaken(t, b[0], b[1]);
         return;
       case 0x05:
         // CreateMultipleObjectsEvent: u32 template, u16 first network id, i32
@@ -389,6 +404,9 @@ export function parseRecording(text) {
         return;
       case 'roundStats':
         roundStat(t, r.stat, r.pid, r.rows ?? []);
+        return;
+      case 'hitFrom':
+        hitTaken(t, r.dir, r.strength);
         return;
       case 'fire':
         // v3's shot: the recording player's own trigger press, from his input

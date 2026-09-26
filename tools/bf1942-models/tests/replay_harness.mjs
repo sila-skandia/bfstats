@@ -25,9 +25,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { setReplayPropellerIdle }, recording, kinematics, { Aircraft }, { EngineState }] = await Promise.all([
+const [THREE, { setReplayPropellerIdle }, recording, kinematics, { Aircraft }, { EngineState }, replayGunfire] = await Promise.all([
   imp('vendor/three.module.js'), imp('replay.js'), imp('replay-recording.js'), imp('replay-kinematics.js'),
-  imp('aircraft.js'), imp('ground-engine.js'),
+  imp('aircraft.js'), imp('ground-engine.js'), imp('replay-gunfire.js'),
 ]);
 
 const results = {};
@@ -311,6 +311,7 @@ const read = scene => {
     line({ k: 'anim', t: 6, states: [[0, 'Lb_Stand', 0], [1, 'Lb_Crouch', 0x20], [2, 'Ub_Fire', 0], [3, 'Lb_Lie', 0x40]] }),
     line({ k: 'st', t: 6, o: [[600, 1, 2, -12.5, 3, 2, 0]] }),
     line({ k: 'st', t: 7, o: [[600, 3, 0, 0, 0, 3, 0]] }),
+    line({ k: 'e', t: 8, e: 'hitFrom', dir: 4, strength: 15 }),
   ].join('\n'));
   const sherman = rec.lives.find(l => l.nid === 532);
   results.v5 = {
@@ -323,6 +324,8 @@ const read = scene => {
     joint: (() => { const p = rec.joints.get(532)?.get(7); return p ? { name: p.name, q: p.keys[0].q, pos: p.pos, since: p.since } : null; })(),
     body: [recording.bodyAt(rec, 600, 6.5), recording.bodyAt(rec, 600, 7.5)],
     crew: recording.crewOf(rec, sherman, 3),
+    hits: rec.hitsTaken,
+    hitRow: rec.events.find(e => e.kind === 'damage' && e.t === 8)?.text ?? null,
   };
 }
 
@@ -332,9 +335,53 @@ const read = scene => {
   const rec = recording.parseRecording([
     line({ k: 'h', v: 4, start: '', hz: 10 }),
     line({ k: 'jn', t: 4.5, o: [[529, 0, 'DefgunTurret']] }),
+    // A v4 file's HitFromPosEvent is still a raw dump.
+    line({ k: 'e', t: 275.203, e: 'raw', type: 60, size: 14, raw: '02bf' }),
     line({ k: 'j', t: 4.5, o: [[529, 0, 0, 0.7071, 0, 0.7071], [529, 0, 0, 0, 0.1, 0.995], [532, 0, 0, 1, 0, 0]] }),
   ].join('\n'));
   results.v4Joints = rec.joints.size;
+  results.v4Hits = rec.hitsTaken;
+}
+
+// --- the replay's rounds and the level's hidden placed vehicles -------------
+{
+  // A level: its `spawners` group holds a Defgun (no deck) and a carrier (a
+  // drivable deck); a bunker is a plain static. One triangle each.
+  const level = new THREE.Group();
+  const spawners = new THREE.Group();
+  spawners.name = 'spawners';
+  const defgun = new THREE.Object3D(); defgun.name = 'Defgun';
+  const carrier = new THREE.Object3D(); carrier.name = 'Shokaku';
+  const bunker = new THREE.Object3D(); bunker.name = 'bunker';
+  spawners.add(defgun, carrier);
+  level.add(spawners, bunker);
+  const makeCollider = () => {
+    const disabled = new Set();
+    return {
+      dynamicCast: null,
+      disabled,
+      statics: {
+        ownerNodes: [defgun, carrier, bunker],
+        owners: Int32Array.from([0, 1, 2]),
+        drivable: Uint8Array.from([0, 1, 0]),
+        disableOwner: id => disabled.add(id),
+      },
+    };
+  };
+  const first = makeCollider();
+  const player = { hulls: new Map(), ctx: { guns: { collider: null } } };
+  const before = replayGunfire.syncReplayCollision(player);   // no level collider yet
+  player.ctx.guns.collider = first;
+  const taken = replayGunfire.syncReplayCollision(player);
+  const again = replayGunfire.syncReplayCollision(player);
+  const second = makeCollider();
+  player.ctx.guns.collider = second;
+  const retaken = replayGunfire.syncReplayCollision(player);
+  results.replayCollision = {
+    before, taken, again, retaken,
+    disabled: [...first.disabled],
+    castInstalled: typeof first.dynamicCast === 'function' && second.dynamicCast === first.dynamicCast,
+  };
 }
 
 // --- kinematics from recorded motion -----------------------------------------

@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, rootOf } from './replay-recording.js';
 import { poseAt } from './replay-kinematics.js';
+import { syncReplayCollision } from './replay-gunfire.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -359,6 +360,7 @@ export class ReplaySoldiers {
       held.root.scale.set(1, 1, 1);
     }
     held.root.updateMatrixWorld(true);
+    syncReplayCollision(this.player);
     guns.fireShot(group);
   }
 
