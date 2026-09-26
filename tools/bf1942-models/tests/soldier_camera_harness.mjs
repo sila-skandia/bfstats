@@ -1,9 +1,9 @@
 // Drives `viewer/soldier-camera.js` and prints one JSON blob.
 // `tests/test_soldier_camera.py` asserts on it.
 
+import * as soldierCamera from './soldier-camera.js';
 import {
   SoldierView, SOLDIER_CAMERA_CVM, SOLDIER_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE,
-  FOOT_VIEW_CYCLE,
   PARACHUTE_VIEW_RADIUS, VIEW_MODE_ID, VIEW_INSIDE, VIEW_CHASE, VIEW_FRONT,
 } from './soldier-camera.js';
 
@@ -11,9 +11,11 @@ const results = {
   cvm: SOLDIER_CAMERA_CVM,
   engineCycle: SOLDIER_VIEW_CYCLE,
   parachuteCycle: PARACHUTE_VIEW_CYCLE,
-  footCycle: FOOT_VIEW_CYCLE,
   parachuteRadius: PARACHUTE_VIEW_RADIUS,
   modeIds: VIEW_MODE_ID,
+  // Every name the module hands the page. The one widening a standing
+  // soldier's cycle, `FOOT_VIEW_CYCLE`, is not among them.
+  exports: Object.keys(soldierCamera),
 };
 
 // On foot: the shipped SoldierCamera authorises CVMInside alone, so C is a

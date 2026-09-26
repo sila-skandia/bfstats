@@ -15,32 +15,30 @@
 // death cam is its own. Both default to 1, which is the shipped file and the
 // setting the owner plays under.
 //
-// `soldierExternalViews` is NOT one of the four. Nothing in the binary gates a
-// soldier's camera per server: `SoldierCamera` writes `CVMChase 0` and the
-// rest, and `Camera::setViewMode` refuses those modes outright
-// (`soldier-camera.js`, CAM-1). The owner wants C to work on foot the way it
-// does in a seat, so this page adds a switch of its own beside the two real
-// ones, default on, and labels it a viewer switch. Turning it off is the
-// engine's own behaviour.
+// `soldierExternalViews` sat beside them from 2026-09-23 to 2026-09-26, for C
+// on foot. Nothing in the binary gates a soldier's camera per server:
+// `SoldierCamera` writes `CVMChase 0` and the rest, and `Camera::setViewMode`
+// refuses those modes outright (`soldier-camera.js`, CAM-1). The owner has
+// withdrawn it, so a standing soldier is back to the engine's one view; see
+// `features/viewer-foot-first-person/README.md`. Leaving the key out of
+// `SERVER_SETTINGS_DEFAULTS` is also what keeps a `localStorage` entry written
+// while it existed from loading the departure back on.
 //
 // Every switch is also a query parameter, so a headless check or a shared
-// link can pin it: `?externalViews=0`, `?noseCam=0`, `?foot3p=0`. `?foot3p=1`
-// is the older spelling of the soldier switch and still works. The side panel
-// writes the same keys to `localStorage`, which the next load reads under
-// the query string.
+// link can pin it: `?externalViews=0`, `?noseCam=0`. The side panel writes the
+// same keys to `localStorage`, which the next load reads under the query
+// string.
 
-/** The shipped `ServerSettings.con` values, plus the page's own soldier switch. */
+/** The shipped `ServerSettings.con` values. */
 export const SERVER_SETTINGS_DEFAULTS = Object.freeze({
   externalViews: true,
   allowNoseCam: true,
-  soldierExternalViews: true,
 });
 
 /** `?key=` spellings per switch. The first is the one the side panel writes. */
 export const SERVER_SETTINGS_PARAMS = Object.freeze({
   externalViews: ['externalViews'],
   allowNoseCam: ['noseCam', 'allowNoseCam'],
-  soldierExternalViews: ['foot3p', 'soldierExternalViews'],
 });
 
 export const SERVER_SETTINGS_STORE_KEY = 'bf42-server-settings';
