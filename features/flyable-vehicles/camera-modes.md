@@ -47,7 +47,7 @@ commands**. `confirmed`.
 | `OutsideHudOffset` | 1335 | outside-view HUD anchor (§4) |
 | `CVMExternTrace` | 841 | shell-following view, artillery and ships |
 | `toggleMouseLook` | 641 | consumes the shift-held mouse-look reroute |
-| `setPivotPosition` | 624 | rotation pivot, always `0/0/0` or a ~0.25 m nudge |
+| `setPivotPosition` | 624 | the eye's offset in the Camera's own frame, usually `0/0/0` or a ~0.25 m nudge; the half-tracks' MG is `0/0.3/-1` (see `features/bf1942-camera-pivot/`) |
 | `setHasTarget` | 160 | — |
 | `setContinousRotationSpeed` | 126 | — |
 | `CVMInside` / `Chase` / `FrontChase` / `FlyBy` / `Trace` | 89 / 88 / 89 / 93 / 89 | per-mode availability booleans |
@@ -259,10 +259,9 @@ where this aircraft's flash was always meant to be seen.
   the gap in the meantime.
 - **`vehicleFov` is parsed by nothing.** Vanilla never sets it, so the viewer is
   correct today, but an FHSW or bg42 extract would want it (§5a).
-- **`setPivotPosition`** — 17 vanilla Camera uses, mostly `0/0/0` with a ~0.25 m
-  nudge on open-top land vehicles. Not modelled; its effect on a first-person view
-  is presumably the rotation centre of the look, which our camera takes as the node
-  origin.
+- ~~**`setPivotPosition`**~~ **Closed 2026-09-26.** It is the eye's offset in the
+  Camera's own frame (`Camera::handleUpdate` 0x081aa940). `viewer/camera-pivot.js`
+  applies it. See `features/bf1942-camera-pivot/README.md`.
 
 ## 10. Extracted (2026-09-17)
 

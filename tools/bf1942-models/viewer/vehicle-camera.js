@@ -2,6 +2,7 @@
 // state that smooths them. Split out of `flight.js`, which still re-exports it.
 
 import * as THREE from 'three';
+import { cameraPivotOffset } from './camera-pivot.js';
 
 // --- camera modes ----------------------------------------------------------
 //
@@ -495,8 +496,19 @@ export class VehicleCamera {
         out.position.add(this._offset.copy(this.nose).applyQuaternion(out.quaternion));
       }
       if (this.look.yaw || this.look.pitch) {
-        out.quaternion.multiply(this._q.setFromEuler(
-          new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ')));
+        this._q.setFromEuler(new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ'));
+        // A Camera with a `setPivotPosition` turns its eye with the head:
+        // `Camera::handleUpdate` builds `T(pivot) * R(look) * bundle`, so the
+        // eye sits at the pivot turned by the look (camera-pivot.js). The
+        // node already carries the unturned pivot; swap it for the turned one.
+        const pivot = this.eyeNode?.userData?.pivotApplied
+          && cameraPivotOffset(this.eyeNode.userData);
+        if (pivot) {
+          this._offset.fromArray(pivot);
+          this._target.copy(this._offset).applyQuaternion(this._q).sub(this._offset);
+          out.position.add(this._target.applyQuaternion(out.quaternion));
+        }
+        out.quaternion.multiply(this._q);
       }
       // Keep the follow frame warm so switching to an external view opens
       // already settled behind the aircraft rather than snapping into place.
