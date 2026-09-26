@@ -75,6 +75,7 @@ def effect_names(tables, library, extra: list[str]) -> set[str]:
         names.update(tables.effects.values())
     names.update(effects_mod.effect_names_for_projectiles(library))
     names.update(effects_mod.effect_names_for_armor(library))
+    names.update(effects_mod.effect_names_for_firearms(library))
     return names
 
 
@@ -212,6 +213,7 @@ def main() -> int:
     assembler = Assembler(meshes, textures, objects, library,
                           include_collision=False, max_texture=args.max_texture)
     assembler.apply_material_diffuse = True
+    assembler.additive_alpha_test = True
     builder = gltf.GlbBuilder()
     report = Report(root="effects", configuration="complex", lod=0)
     roots, index = assembler.bake_effect_library(builder, names, report)

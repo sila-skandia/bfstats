@@ -251,6 +251,11 @@ const IDLE_INTERVAL = 100;
  */
 export class EmitterClock {
   constructor(spec, rand = Math.random) {
+    this.reset(spec, rand);
+  }
+
+  /** Start over on `spec`: what a pooled clock does instead of being rebuilt. */
+  reset(spec, rand = Math.random) {
     this.spec = spec;
     this.rand = rand;
     this.delay = Math.max(0, sampleCrd(spec.delay, rand));
@@ -316,55 +321,80 @@ export class EmitterClock {
  * `drag 20` stops them, which is the trail. Every scalar is a fresh CRD draw.
  */
 export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.random) {
+  return spawnParticleInto(newParticleRecord(), spec, basis, origin, emitterVelocity, rand);
+}
+
+/** An empty particle record for `spawnParticleInto` to fill, and to be pooled. */
+export function newParticleRecord() {
+  return {
+    kind: null, spec: null,
+    position: [0, 0, 0], velocity: [0, 0, 0],
+    frame: { right: [0, 0, 0], up: [0, 0, 0], dof: [0, 0, 0] },
+    age: 0, ttl: 0, size: 1, gravity: 0, drag: 0, rotation: 0, spin: 0, xy: 1,
+    radius: 0, animFrame: 0, animSpeed: 0,
+  };
+}
+
+/**
+ * `spawnParticle` into a record the caller owns: the same draws in the same
+ * order, the same numbers, and no allocation, so a pooled record can take a
+ * muzzle flash ten times a second without feeding the collector
+ * (features/mesh-viewer-performance, rule 5). Fields a caller hangs on the
+ * record itself (a mesh, an anchor, a tumble) are the caller's to reset.
+ */
+export function spawnParticleInto(out, spec, basis, origin, emitterVelocity, rand = Math.random) {
   const p = spec.particle;
-  const frame = rollBasis(basis, sampleCrd(spec.startRotation, rand));
+  // `rollBasis` and `inFrame`, in place.
+  const f = out.frame;
+  const degrees = sampleCrd(spec.startRotation, rand);
+  const t = degrees ? degrees * Math.PI / 180 : 0;
+  const c = Math.cos(t), sn = Math.sin(t);
+  for (let i = 0; i < 3; i++) {
+    const r = basis.right[i], u = basis.up[i];
+    f.dof[i] = basis.dof[i];
+    f.right[i] = degrees ? r * c + u * sn : r;
+    f.up[i] = degrees ? u * c - r * sn : u;
+  }
   const rel = spec.relativePosition || {};
   const spd = spec.positionalSpeed || {};
-  const offset = inFrame(frame, sampleCrd(rel.right, rand), sampleCrd(rel.up, rand),
-                         sampleCrd(rel.dof, rand));
-  const velocity = inFrame(frame, sampleCrd(spd.right, rand), sampleCrd(spd.up, rand),
-                           sampleCrd(spd.dof, rand));
-  if (spec.addEmitterSpeed && emitterVelocity) {
-    const k = spec.emitterSpeedScale ?? 1;
-    velocity[0] += emitterVelocity[0] * k;
-    velocity[1] += emitterVelocity[1] * k;
-    velocity[2] += emitterVelocity[2] * k;
+  const orr = sampleCrd(rel.right, rand), oru = sampleCrd(rel.up, rand), ord = sampleCrd(rel.dof, rand);
+  const vr = sampleCrd(spd.right, rand), vu = sampleCrd(spd.up, rand), vd = sampleCrd(spd.dof, rand);
+  const k = spec.addEmitterSpeed && emitterVelocity ? (spec.emitterSpeedScale ?? 1) : 0;
+  for (let i = 0; i < 3; i++) {
+    out.position[i] = origin[i] + (f.right[i] * orr + f.up[i] * oru + f.dof[i] * ord);
+    out.velocity[i] = f.right[i] * vr + f.up[i] * vu + f.dof[i] * vd
+      + (k ? emitterVelocity[i] * k : 0);
   }
-  const ttl = Math.max(sampleCrd(p.timeToLive, rand), 0.01);
-  return {
-    kind: p.kind,
-    spec: p,
-    position: [origin[0] + offset[0], origin[1] + offset[1], origin[2] + offset[2]],
-    velocity,
-    frame,
-    age: 0,
-    ttl,
-    // The particle's own base numbers, drawn once; the ramps multiply them.
-    size: p.size ? sampleCrd(p.size, rand) : 1,
-    gravity: p.gravityModifier ? sampleCrd(p.gravityModifier, rand) : (p.kind === 'mesh' && !p.debris ? 0 : 1),
-    drag: p.drag ? sampleCrd(p.drag, rand) : 0,
-    rotation: sampleCrd(p.initRotation, rand),
-    spin: sampleCrd(p.rotationSpeed, rand),
-    xy: p.xySizeRatio ? sampleCrd(p.xySizeRatio, rand) : 1,
-    // EMT-5: the bounding radius `integrateParticle`'s drag law needs,
-    // `pi * r^2` standing in for the body's frontal area. Only a `kind
-    // === 'mesh'` particle has a `PointPhysicsNode` at all (R8-16..18); its
-    // radius is the mesh's own local bounding box, `effects.js` computing
-    // `length(boundsMax)` once per template from the real exported geometry
-    // when the effect library loads (R8-13/14) — not a CRD, not resampled
-    // here. Left at 0 for a sprite (no physics body to report one, R8-16) or
-    // a mesh whose geometry did not resolve; `integrateParticle` treats 0 as
-    // "unknown" and falls back rather than silently dropping all drag.
-    radius: p.radius || 0,
-    // Texture-atlas flipbooks (ledger SPR-6): a sprite with more than one
-    // `numAnimationFrames` rolls its starting frame and its speed once per
-    // particle, the same as `initRotation`/`rotationSpeed`
-    // (`geom::ParticleSystem::addParticle`, client 0x0060a680). Zero on
-    // every other particle, so `integrateParticle` can skip the whole thing
-    // with one comparison.
-    animFrame: p.numAnimationFrames > 1 ? sampleCrd(p.initAnimationFrame, rand) : 0,
-    animSpeed: p.numAnimationFrames > 1 ? sampleCrd(p.animationSpeed, rand) : 0,
-  };
+  out.kind = p.kind;
+  out.spec = p;
+  out.age = 0;
+  out.ttl = Math.max(sampleCrd(p.timeToLive, rand), 0.01);
+  // The particle's own base numbers, drawn once; the ramps multiply them.
+  out.size = p.size ? sampleCrd(p.size, rand) : 1;
+  out.gravity = p.gravityModifier ? sampleCrd(p.gravityModifier, rand) : (p.kind === 'mesh' && !p.debris ? 0 : 1);
+  out.drag = p.drag ? sampleCrd(p.drag, rand) : 0;
+  out.rotation = sampleCrd(p.initRotation, rand);
+  out.spin = sampleCrd(p.rotationSpeed, rand);
+  out.xy = p.xySizeRatio ? sampleCrd(p.xySizeRatio, rand) : 1;
+  // EMT-5: the bounding radius `integrateParticle`'s drag law needs,
+  // `pi * r^2` standing in for the body's frontal area. Only a `kind
+  // === 'mesh'` particle has a `PointPhysicsNode` at all (R8-16..18); its
+  // radius is the mesh's own local bounding box, `effects.js` computing
+  // `length(boundsMax)` once per template from the real exported geometry
+  // when the effect library loads (R8-13/14) — not a CRD, not resampled
+  // here. Left at 0 for a sprite (no physics body to report one, R8-16) or
+  // a mesh whose geometry did not resolve; `integrateParticle` treats 0 as
+  // "unknown" and falls back rather than silently dropping all drag.
+  out.radius = p.radius || 0;
+  // Texture-atlas flipbooks (ledger SPR-6): a sprite with more than one
+  // `numAnimationFrames` rolls its starting frame and its speed once per
+  // particle, the same as `initRotation`/`rotationSpeed`
+  // (`geom::ParticleSystem::addParticle`, client 0x0060a680). Zero on
+  // every other particle, so `integrateParticle` can skip the whole thing
+  // with one comparison.
+  out.animFrame = p.numAnimationFrames > 1 ? sampleCrd(p.initAnimationFrame, rand) : 0;
+  out.animSpeed = p.numAnimationFrames > 1 ? sampleCrd(p.animationSpeed, rand) : 0;
+  return out;
 }
 
 /**

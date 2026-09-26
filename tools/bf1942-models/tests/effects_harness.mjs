@@ -4,7 +4,8 @@
 import {
   sampleCrd, sampleCurve, sampleCurveInto, basisFromNormal, basisFromAxes,
   rollBasis, inFrame,
-  EmitterClock, spawnParticle, integrateParticle, evalParticle, evalParticleInto,
+  EmitterClock, spawnParticle, spawnParticleInto, newParticleRecord,
+  integrateParticle, evalParticle, evalParticleInto,
   damageFactor,
   atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
   blastDistance, diesOnContact, isFuseRound, roundTimeToLive,
@@ -438,6 +439,30 @@ out.blastDistance = {
   const a = evalParticleInto(cases.puff);
   const b = evalParticleInto(cases.puff);
   out.into.reuse = { sameObject: a === b, sameScale: a.scale === b.scale };
+}
+
+// `spawnParticleInto` is `spawnParticle` without the allocation: the same
+// draws in the same order give the same record, including into a record a
+// different spec used before (a pooled one), and with a startRotation roll.
+{
+  const casingSpec = {
+    timeToLive: ['n', 0.1, 0, 0], intensity: ['n', 10, 0, 0], startRotation: ['n', 150, 0, 0],
+    addEmitterSpeed: true, emitterSpeedScale: 1, relativePosition: { right: ['u', 0, 0.01, 1] },
+    positionalSpeed: { dof: ['u', 0, 0.5, 1], up: ['u', 0, 0.4, 1], right: ['u', 0.9, 1.1, 0] },
+    particle: { kind: 'mesh', timeToLive: ['n', 1, 0, 0], size: ['n', 1.7, 0, 0],
+                gravityModifier: ['n', 0.5, 0, 0], radius: 0.07 },
+  };
+  const basis = basisFromAxes([0.3, 0, -1], [0, 1, 0]);
+  const fresh = spawnParticle(casingSpec, basis, [1, 2, 3], [4, 0, -2], lcg(77));
+  const record = newParticleRecord();
+  spawnParticleInto(record, puffSpec, basis, [9, 9, 9], null, lcg(5));
+  const reused = spawnParticleInto(record, casingSpec, basis, [1, 2, 3], [4, 0, -2], lcg(77));
+  out.spawnInto = {
+    same: JSON.stringify(fresh) === JSON.stringify(reused),
+    sameRecord: reused === record,
+    fresh: JSON.stringify(fresh),
+    reused: JSON.stringify(reused),
+  };
 }
 
 console.log(JSON.stringify(out));
