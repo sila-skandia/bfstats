@@ -27,6 +27,15 @@ public sealed partial class MeshArmouryIndex(
     public const string VanillaTree = "bf1942";
 
     private const string PoseSuffix = ".pose.glb";
+
+    /// <summary>
+    /// Eve of Destruction ships every kit twice, <c>VC_Scout</c> and <c>VC_Scout_CHUTE</c>, which
+    /// differ only by a behaviour flag, and the kit manifest folds each twin into its base kit
+    /// (<c>bf42/kit.py</c>, <c>CHUTE_SUFFIX</c>). Levels that drop their teams in by parachute
+    /// bind only the twins.
+    /// </summary>
+    private const string ParachuteTwinSuffix = "_CHUTE";
+
     private static readonly TimeSpan IndexTtl = TimeSpan.FromMinutes(10);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly IReadOnlyList<double> Origin = [0, 0, 0];
@@ -92,9 +101,8 @@ public sealed partial class MeshArmouryIndex(
             kits.Add(new FigureKit(template.Trim(), posed.Value.Weapon, posed.Value.Pose, WornParts(searched, kit)));
         }
 
-        // A soldier with no kit the armoury can pose has nothing to draw: Eve of Destruction
-        // levels that issue only parachute kits, which no kits.json lists. Null says so,
-        // where an empty figure would leave the page an empty stage and no explanation.
+        // A soldier with no kit the armoury can pose has nothing to draw. Null says so, where
+        // an empty figure would leave the page an empty stage and no explanation.
         if (kits.Count == 0)
             return null;
 
@@ -130,7 +138,21 @@ public sealed partial class MeshArmouryIndex(
         return dashed.ToLowerInvariant();
     }
 
+    /// <summary>
+    /// The manifest's kit, or for a parachute twin the base kit it was folded into. A twin
+    /// whose base is missing or dead is kept in the manifest under its own name, so the exact
+    /// name is always tried first.
+    /// </summary>
     private static MeshKit? FindKit(List<MeshTree> searched, string template)
+    {
+        var kit = FindKitNamed(searched, template);
+        if (kit is null && template.EndsWith(ParachuteTwinSuffix, StringComparison.OrdinalIgnoreCase)
+                        && template.Length > ParachuteTwinSuffix.Length)
+            kit = FindKitNamed(searched, template[..^ParachuteTwinSuffix.Length]);
+        return kit;
+    }
+
+    private static MeshKit? FindKitNamed(List<MeshTree> searched, string template)
     {
         foreach (var tree in searched)
         {
@@ -142,20 +164,22 @@ public sealed partial class MeshArmouryIndex(
     }
 
     /// <summary>
-    /// The kit's first item with a <c>{skin}__{item}.pose.glb</c> anywhere on the path: each
-    /// item is looked for in every tree in turn before the next item is tried, so a vanilla
-    /// rifle posed only in <c>models/</c> still beats a mod tree's grip for the kit's third
-    /// item. Matching ignores case — the manifests spell "MP18", the files "Mp18" — and the
-    /// weapon is returned as the file spells it.
+    /// The pose of the weapon the kit spawns with, else of its first item with a
+    /// <c>{skin}__{item}.pose.glb</c> anywhere on the path: each weapon is looked for in every
+    /// tree in turn before the next is tried, so a vanilla rifle posed only in <c>models/</c>
+    /// still beats a mod tree's grip for the kit's third item. Matching ignores case — the
+    /// manifests spell "MP18", the files "Mp18" — and the weapon is returned as the file
+    /// spells it.
     /// </summary>
     private static (string Weapon, string Pose)? FindPose(List<MeshTree> poseTrees, string skin, MeshKit kit)
     {
-        foreach (var item in kit.Items ?? [])
+        IEnumerable<string?> weapons = [kit.Primary, .. (kit.Items ?? []).Select(item => item?.Template)];
+        foreach (var weapon in weapons)
         {
-            if (item is null || string.IsNullOrWhiteSpace(item.Template))
+            if (string.IsNullOrWhiteSpace(weapon))
                 continue;
 
-            var wanted = $"{skin}__{item.Template.Trim()}{PoseSuffix}";
+            var wanted = $"{skin}__{weapon.Trim()}{PoseSuffix}";
             foreach (var tree in poseTrees)
             {
                 if (tree.Poses.TryGetValue(wanted, out var file))

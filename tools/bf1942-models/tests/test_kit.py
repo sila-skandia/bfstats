@@ -20,6 +20,7 @@ from bf42.kit import (  # noqa: E402
     kit_parts,
     level_loadouts,
     parse_level_kits,
+    pose_candidates,
     primary_weapon,
 )
 
@@ -205,6 +206,67 @@ ObjectTemplate.setBoneName A
         # The kit's own geometry is the mesh it becomes when dropped, not
         # something the soldier wears.
         self.assertEqual("Kit_Allies_Medic", kits["us_medic"].pickup)
+
+
+class CollectEveryKitTests(unittest.TestCase):
+    """The engine finds a kit by name; its folder is only a label."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        # bf1918 files by period rather than as `<Nation>Kit/`.
+        library.add_con("objects/Items/Austrian_Kit_Early/Officer/Objects.con", """
+ObjectTemplate.create Kit kuk_Officer2
+ObjectTemplate.setType Assault
+ObjectTemplate.addTemplate Steyr_M1912
+""")
+        # FHSW declares a quarter of its kits inside the level that binds them.
+        library.add_con("bf1942/levels/Way_to_Paris-1946/Objects/2OfficerStenMk2Night/Objects.con", """
+ObjectTemplate.create Kit 1Canadian_OfficerStenMk2Night
+ObjectTemplate.addTemplate StenMk2
+""")
+        library.add_con("Objects/Items/USKit/Medic/Objects.con", """
+ObjectTemplate.create Kit US_Medic
+ObjectTemplate.setType Medic
+""")
+        return library
+
+    def test_a_kit_filed_outside_the_convention_is_collected_without_a_nation(self) -> None:
+        kit = collect(self.library())["kuk_officer2"]
+        self.assertIsNone(kit.nation)
+        self.assertEqual("Assault", kit.kit_class)
+        self.assertEqual(["Steyr_M1912"], kit.carried)
+
+    def test_a_kit_a_level_declares_for_itself_is_collected(self) -> None:
+        kit = collect(self.library())["1canadian_officerstenmk2night"]
+        self.assertEqual("Base", kit.kit_class)
+        self.assertEqual(["StenMk2"], kit.carried)
+
+    def test_a_kit_filed_by_the_convention_keeps_its_nation(self) -> None:
+        self.assertEqual("US", collect(self.library())["us_medic"].nation)
+
+
+class PoseCandidateTests(unittest.TestCase):
+    """Which weapons to pose a kit's wearer holding, best first."""
+
+    POSABLE = {"thompson": "Thompson", "colt": "Colt", "mp18": "Mp18"}
+
+    def kit(self, primary: str | None, carried: list[str]) -> Kit:
+        return Kit(template="K", source="", nation=None, kit_class="Base",
+                   carried=list(carried), primary=primary)
+
+    def test_the_spawn_weapon_comes_first(self) -> None:
+        kit = self.kit("Thompson", ["KnifeAllies", "Colt", "Thompson"])
+        self.assertEqual(["Thompson", "Colt"], pose_candidates(kit, self.POSABLE))
+
+    def test_a_name_comes_back_as_the_pose_files_spell_it(self) -> None:
+        self.assertEqual(["Mp18"], pose_candidates(self.kit("MP18", ["MP18"]), self.POSABLE))
+
+    def test_without_a_spawn_weapon_the_posable_items_keep_their_order(self) -> None:
+        kit = self.kit(None, ["nochute", "Colt", "Binoculars", "Thompson"])
+        self.assertEqual(["Colt", "Thompson"], pose_candidates(kit, self.POSABLE))
+
+    def test_a_kit_with_nothing_posable_has_no_candidates(self) -> None:
+        self.assertEqual([], pose_candidates(self.kit(None, ["Binoculars"]), self.POSABLE))
 
 
 class BrowsableTests(unittest.TestCase):

@@ -137,13 +137,31 @@ def level_pool(path: Path) -> ArchivePool | None:
     consistent: WarFront patches every level with a four-digit `_0351`
     build stamp, and XPack1's `Salerno` carries both `_001` and `_003`.
 
-    `ArchivePool.add` is first-registered-wins, so the highest-numbered
-    patch is added first, lower numbers after, and the base last — base
-    entries only fill in what no patch overrides, the same overlay order
-    the engine itself applies. A patch that will not open is skipped and
-    the remaining layers still apply; the level itself is skipped (`None`)
-    only if the base archive won't open either, matching every other level
-    reader in this pipeline.
+    `ArchivePool.add` is first-registered-wins, so the layers are added in
+    `level_patches` order and the base last — base entries only fill in what
+    no patch overrides, the same overlay order the engine itself applies. A
+    patch that will not open is skipped and the remaining layers still apply;
+    the level itself is skipped (`None`) only if the base archive won't open
+    either, matching every other level reader in this pipeline.
+    """
+    pool = ArchivePool()
+    for patch_path in level_patches(path):
+        try:
+            pool.add(patch_path)
+        except Exception:
+            continue
+    try:
+        pool.add(path)
+    except Exception:
+        return None
+    return pool
+
+
+def level_patches(path: Path) -> list[Path]:
+    """A level's numbered patch archives, highest-numbered first.
+
+    The order a first-registered-wins pool wants them in, ahead of the base
+    archive `path` itself (see `level_pool`).
     """
     stem_lower = path.stem.lower()
     patches: list[tuple[int, str, Path]] = []
@@ -155,18 +173,7 @@ def level_pool(path: Path) -> ArchivePool | None:
             continue
         patches.append((int(suffix), sibling.name.lower(), sibling))
     patches.sort(key=lambda item: (item[0], item[1]), reverse=True)
-
-    pool = ArchivePool()
-    for _, _, patch_path in patches:
-        try:
-            pool.add(patch_path)
-        except Exception:
-            continue
-    try:
-        pool.add(path)
-    except Exception:
-        return None
-    return pool
+    return [patch_path for _, _, patch_path in patches]
 
 
 def nation_label(token: str) -> str | None:
