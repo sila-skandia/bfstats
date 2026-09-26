@@ -122,13 +122,26 @@ export function createSpawning(page) {
 
   // --- the state -----------------------------------------------------------------
 
+  /** Whether the screen may offer a flag: every one but a capture-only point
+   *  (`spawn-flags.js` `captureZone`), which is somewhere to take and hold and
+   *  nowhere to spawn. The map still draws its marker from the level's
+   *  control points. */
+  function offered(flag) {
+    return !!flag && !flag.captureOnly;
+  }
+
   /** The flags the current tab may spawn at, as indices into `flags`. A side
    *  with no flag of its own on this level — a one-sided extract — gets them
    *  all rather than an empty map. */
   function deployFlagIndices() {
     const own = [];
-    page.flags.forEach((flag, index) => { if (flag.team === spawning.deployTeamId) own.push(index); });
-    return own.length ? own : page.flags.map((_, index) => index);
+    const all = [];
+    page.flags.forEach((flag, index) => {
+      if (!offered(flag)) return;
+      all.push(index);
+      if (flag.team === spawning.deployTeamId) own.push(index);
+    });
+    return own.length ? own : all;
   }
 
   /** The side the page was launched on, or null.
@@ -163,6 +176,7 @@ export function createSpawning(page) {
     let axis = 0;
     let allied = 0;
     for (const flag of page.flags) {
+      if (!offered(flag)) continue;
       if (flag.team === 1) axis++;
       else if (flag.team === 2) allied++;
     }
@@ -196,19 +210,25 @@ export function createSpawning(page) {
     const kept = page.spawnFlagSelect.value;
     page.refreshFlags();
     page.spawnFlagSelect.innerHTML = '';
+    // The option's value is the flag's index in `flags`, which the room's
+    // spawn row carries too; a capture-only flag gets no option, and as those
+    // come last no index moves.
+    let count = 0;
     for (const [index, flag] of page.flags.entries()) {
+      if (!offered(flag)) continue;
       const option = document.createElement('option');
       const side = flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied' : 'neutral';
       option.value = String(index);
       option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
       page.spawnFlagSelect.appendChild(option);
+      count++;
     }
-    if (kept !== '' && Number(kept) < page.flags.length) page.spawnFlagSelect.value = kept;
+    if (kept !== '' && offered(page.flags[Number(kept)])) page.spawnFlagSelect.value = kept;
     // The sidebar picker is a debug aid; the deploy screen is the real join
     // path (Caps Lock / auto-open). Keep the select populated whenever there
     // are flags so a later commit can read it, and only hide it when empty.
-    page.spawnFlagSelect.hidden = !page.flags.length;
-    return page.flags.length;
+    page.spawnFlagSelect.hidden = !count;
+    return count;
   }
 
   /** A new level: the choice starts over (the rebuilt select must not keep
@@ -314,6 +334,9 @@ export function createSpawning(page) {
 
   function selectDeployFlag(index, group = null) {
     if (!Number.isInteger(index) || index < 0 || index >= page.flags.length) return false;
+    // A number key past the spawn flags lands on a capture-only point, which
+    // is not a spawn to select.
+    if (!offered(page.flags[index])) return false;
     spawning.deployUnchosen = false;
     page.spawnFlagSelect.value = String(index);
     // A fresh choice starts at the flag's first spawn, as the select's own

@@ -26,6 +26,17 @@ const DEG = Math.PI / 180;
  * groups to a side, so Wake's Japanese round opens on their carrier and
  * destroyer. The extractor reconstructs them at the spawner pads in
  * `vehicleSoldierSpawns`, and each ship instance becomes one flag here.
+ *
+ * A control point that can change hands but owns no soldier spawn is still
+ * a flag, a capture-only one (`captureZone`): Midway's two sea areas, which
+ * declare no `spawnGroupId`, and Salerno's `The_top` in Conquest and CoOp,
+ * whose layers set `spawnGroupId -1` and rem out its seven hilltop spawn
+ * points. Nothing in the engine's capture path reads a spawn group (ledger
+ * SPAWNGRP-7), and the point's `areaValue` is the holder's weight in the
+ * ticket bleed. Those flags come after every other, so a flag that has
+ * spawns keeps its index (the deploy select's value, the room's `flag` rows).
+ * A point that cannot change hands (Battle of Britain's `Allied_Base`) stays
+ * no flag, its weight its level team's for good.
  */
 export function spawnFlags(extras) {
   const points = extras?.controlPoints || [];
@@ -38,33 +49,22 @@ export function spawnFlags(extras) {
   }
   const flags = [];
   const claimed = new Set();
+  const zones = [];
   for (const point of points) {
     const group = point?.spawnGroupId;
     const groups = [point?.spawnGroupId, point?.secondSpawnGroupId]
       .filter((value, index, all) => value != null && all.indexOf(value) === index);
     const owned = groups.flatMap(value => byGroup.get(value) || []);
-    if (!owned || !owned.length) continue;
+    if (!owned || !owned.length) {
+      if (point && !point.unableToChangeTeam && placedTemplate(point)) zones.push(point);
+      continue;
+    }
     for (const value of groups) claimed.add(value);
     const flag = {
       name: point.displayName || point.name || `flag ${group}`,
       group,
       groups,
-      position: point.position || null,
-      uncapturable: !!point.unableToChangeTeam,
-      radius: Number.isFinite(point.radius) ? point.radius : null,
-      timeToGetControl: Number.isFinite(point.timeToGetControl)
-        ? point.timeToGetControl : null,
-      // The rest of the template's control-point settings, null where the
-      // level keeps the ctor's default (bot-referee.js
-      // `controlPointSettings` holds those).
-      timeToLoseControl: Number.isFinite(point.timeToLoseControl) ? point.timeToLoseControl : null,
-      disableIfEnemyInsideRadius: point.disableIfEnemyInsideRadius ?? null,
-      disableWhenLosingControl: point.disableWhenLosingControl ?? null,
-      loseControlWhenEnemyClose: point.loseControlWhenEnemyClose ?? null,
-      loseControlWhenNotClose: point.loseControlWhenNotClose ?? null,
-      minNrToTakeControl: Number.isFinite(point.minNrToTakeControl) ? point.minNrToTakeControl : null,
-      onlyTakeableByTeam: Number.isFinite(point.onlyTakeableByTeam) ? point.onlyTakeableByTeam : null,
-      controlPointName: point.name || null,
+      ...controlPointFields(point),
     };
     // A spawn group's tab team is not the control point's live owner. The
     // retail ControlPoint starts from its template team and changes that
@@ -137,7 +137,73 @@ export function spawnFlags(extras) {
       spawns: points,
     });
   }
+  for (const point of zones) flags.push(captureZone(point));
   return flags;
+}
+
+/** What a control-point flag carries of its point: where it is, whether it
+ *  can change hands, and the template's capture settings, null where the
+ *  level keeps the ctor's default (bot-referee.js `controlPointSettings`
+ *  holds those). */
+function controlPointFields(point) {
+  return {
+    position: point.position || null,
+    uncapturable: !!point.unableToChangeTeam,
+    radius: Number.isFinite(point.radius) ? point.radius : null,
+    timeToGetControl: Number.isFinite(point.timeToGetControl)
+      ? point.timeToGetControl : null,
+    timeToLoseControl: Number.isFinite(point.timeToLoseControl) ? point.timeToLoseControl : null,
+    disableIfEnemyInsideRadius: point.disableIfEnemyInsideRadius ?? null,
+    disableWhenLosingControl: point.disableWhenLosingControl ?? null,
+    loseControlWhenEnemyClose: point.loseControlWhenEnemyClose ?? null,
+    loseControlWhenNotClose: point.loseControlWhenNotClose ?? null,
+    minNrToTakeControl: Number.isFinite(point.minNrToTakeControl) ? point.minNrToTakeControl : null,
+    onlyTakeableByTeam: Number.isFinite(point.onlyTakeableByTeam) ? point.onlyTakeableByTeam : null,
+    controlPointName: point.name || null,
+  };
+}
+
+/** The words a `ControlPointTemplate` gives its point in `scene.json`. */
+const TEMPLATE_WORDS = [
+  'spawnGroupId', 'secondSpawnGroupId', 'objectSpawnerId', 'timeToGetControl', 'timeToLoseControl',
+  'disableIfEnemyInsideRadius', 'disableWhenLosingControl', 'loseControlWhenEnemyClose',
+  'loseControlWhenNotClose', 'minNrToTakeControl', 'onlyTakeableByTeam',
+];
+
+/**
+ * Whether the point's template reached the scene, which is whether the engine
+ * made a point at all. `Object.create` of a template the layer never defines
+ * makes nothing: `ObjectTemplateAdm::createObject` 0x084513e0 returns 0 for a
+ * null template (0x08451403). The exporter still lists such a placement, with
+ * nothing of a template on it: no radius or weight, no group or spawner, none
+ * of the capture settings. Cassino's CTF places three (`openbasecammo` twice,
+ * `openbase_lumbermill_Cpoint`), EoD's Stream one (`us_base`).
+ */
+function placedTemplate(point) {
+  return Number(point.radius) > 0 || Number(point.areaValue) > 0
+    || TEMPLATE_WORDS.some(key => point[key] != null);
+}
+
+/**
+ * A control point that owns no soldier spawn: a flag to take and hold, and
+ * nowhere to spawn (`captureOnly`, no `spawns`, no `groups`). The capture law
+ * runs on it as on any other (`ControlPoint::handleFrameUpdate` 0x08283b00
+ * reads no spawn group, ledger SPAWNGRP-7), `hoistCaptureFlag` carries its
+ * owner to `extras.controlPoints` and so to the map and the round's weight,
+ * and the spawn pickers skip it: `World.spawnPlayer`, the deploy screen, the
+ * bots' spawn and respawn. `team` is a plain field; with no groups there is no
+ * hand-over for a writer to run.
+ */
+function captureZone(point) {
+  return {
+    name: point.displayName || point.name || 'control point',
+    group: null,
+    groups: [],
+    ...controlPointFields(point),
+    captureOnly: true,
+    team: point.team === 1 || point.team === 2 ? point.team : 0,
+    spawns: [],
+  };
 }
 
 /**

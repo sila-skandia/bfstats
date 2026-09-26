@@ -97,10 +97,11 @@ class SimTicketTests(unittest.TestCase):
             self.assertAlmostEqual(1200, bleed[players]["out"], delta=1 / 30 + 1e-9)
 
     def test_half_the_points_bleed_the_enemy_when_they_weigh_over_99(self) -> None:
-        # Battle of Britain: the Allied_Base owns no spawns, so it is no flag,
-        # but it weighs 150. The Allies hold three of six points, no more than
-        # half, and the Axis bleeds its 4 a minute from the first tick: a ticket
-        # every 15 s, the first between the 14 s and 16 s samples.
+        # Battle of Britain: the Allied_Base owns no spawns and cannot change
+        # hands, so it is no flag, but it weighs 150. The Allies hold three of
+        # six points, no more than half, and the Axis bleeds its 4 a minute
+        # from the first tick: a ticket every 15 s, the first between the 14 s
+        # and 16 s samples.
         britain = self.results["britain"]
         self.assertEqual(6, britain["points"])
         self.assertEqual(5, britain["flags"])
@@ -124,6 +125,26 @@ class SimTicketTests(unittest.TestCase):
         self.assertEqual({"1": 20, "2": 80}, taken["weight"])
         self.assertEqual({"1": False, "2": False}, taken["bleeding"])
         self.assertEqual({"1": 195, "2": 200}, taken["tickets"])
+
+    def test_a_point_with_no_spawns_changes_hands_and_weighs_for_its_holder(self) -> None:
+        # Midway's sea areas: 40 each, neutral, no `spawnGroupId`. They are
+        # capture-only flags, after the synthetic level's five, among the
+        # runner's control points and weighed by their live owner.
+        sea = self.results["sea"]
+        five = ["AlliedBase", "Home", "Middle", "Enemy", "AxisBase"]
+        self.assertEqual(five + ["North_Sea", "South_Sea"], sea["setup"]["flags"])
+        self.assertEqual(2, sea["setup"]["captureOnly"])
+        self.assertEqual(five + ["North_Sea", "South_Sea"], sea["setup"]["controlPoints"])
+        self.assertEqual({"1": 50, "2": 50}, sea["before"]["weight"])
+        # An Allied bot alone in each for 11 s takes it by the law.
+        self.assertEqual([[2, 0], [2, 2]], sea["taken"])
+        self.assertEqual([2, 2], sea["owners"])
+        # 50 + 80 over 99: the Axis bleeds a ticket every 12 s, two in 25 s.
+        self.assertEqual({"1": 50, "2": 130}, sea["after"]["weight"])
+        self.assertEqual({"1": True, "2": False}, sea["after"]["bleeding"])
+        self.assertEqual({"1": 100, "2": 100}, sea["tickets"])
+        self.assertEqual({"1": 98, "2": 100}, sea["bled"])
+        self.assertEqual(0, sea["atSea"])
 
     def test_a_levels_own_max_players_sets_the_start_and_not_the_bleed(self) -> None:
         # Kasserine Pass co-op on a 32-slot server: 100 x 18 / 16 = 112.5 -> 112,

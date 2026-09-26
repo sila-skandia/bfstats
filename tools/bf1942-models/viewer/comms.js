@@ -107,9 +107,16 @@ export function createComms(page) {
   // --- the radio state the menu reads -----------------------------------------
 
   /** The points the F4 page offers, in level order: every control point that
-   *  can change hands (0x006D45A0 skips `unableToChangeTeam`), at most six. */
+   *  can change hands (0x006D45A0 skips `unableToChangeTeam`), at most six.
+   *  A capture-only flag is one of them (Midway's sea areas, Salerno's hill);
+   *  the world lists those after its other flags, so the level's own order
+   *  (`extras.controlPoints`) puts each back in its place. */
   function radioPoints() {
-    return (page.flags || []).filter(f => f && !f.uncapturable && f.controlPointName != null);
+    const points = (page.flags || []).filter(f => f && !f.uncapturable && f.controlPointName != null);
+    if (!points.some(f => f.captureOnly)) return points;
+    const order = new Map((page.extras?.controlPoints || []).map((p, i) => [p?.name, i]));
+    const at = f => order.get(f.controlPointName) ?? Infinity;
+    return points.sort((a, b) => at(a) - at(b));
   }
 
   /** A point's name as the engine prints it: `Locale(controlPointName)`,

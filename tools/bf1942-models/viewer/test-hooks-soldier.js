@@ -55,7 +55,9 @@ export function installSoldierHooks(page) {
     get flags() {
       const chosen = page.deployUnchosen ? -1
         : Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
-      return page.flags.map((flag, index) => ({
+      // The screen offers no capture-only point (`spawn-flags.js`); they come
+      // last, so an entry's position here is still its `select(index)`.
+      return page.flags.filter(flag => !flag.captureOnly).map((flag, index) => ({
         name: flag.name,
         team: flag.team,
         spawns: flag.spawns.length,
