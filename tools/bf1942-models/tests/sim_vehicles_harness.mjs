@@ -10,6 +10,7 @@
 // `soldier.spawn` + `setPosition` + `tick = () => {}`), played in the runner.
 
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +22,9 @@ const { Match } = await import(path.join(SIM, 'match.mjs'));
 
 const [assets, recipe] = process.argv.slice(2);
 const SEED = 7;
+/** The loader the stage hands the wreck path. A run that only wants the fall
+ *  leaves it null (`stage.mjs` then never resolves a load). */
+let wreckLoader = null;
 const M = await loadViewerModules(viewerDir(path.join(HERE, '..', 'viewer')));
 routeConsole(true);
 
@@ -28,12 +32,58 @@ async function start(map, botsPerSide = 4, seed = SEED) {
   seedMathRandom(seed);
   const level = await realLevel(M, { maps: path.join(assets, 'maps'), models: path.join(assets, 'models'), map });
   seedMathRandom(seed);
-  const match = new Match({ M, level, botsPerSide, duration: 3600, seed, sink: null });
+  const match = new Match({ M, level, botsPerSide, duration: 3600, seed, sink: null, wreckLoader });
   match.setup();
   return match;
 }
 
 const bot = (match, id) => match.bots.find(b => b.playerId === id);
+
+/** The wreck glb the page would fetch, read off disk and parsed through the
+ *  viewer's own `GLTFLoader` the way the level's scene is (`sim/level.mjs`).
+ *  `placeWreck` awaits `loadAsync` and takes `.scene` off it, so this does what
+ *  the page's loader does when the file is there and the network is not.
+ *
+ *  Textures are stripped before the parse: three's loader decodes images
+ *  through `self`, which node does not have, and a model glb carries them
+ *  (the scene glb does not — which is why `sim/level.mjs` can parse one).
+ *  What this run has to answer is whether the graph arrives and what it is
+ *  parented to, not what it looks like. */
+async function realWreckLoader() {
+  const GLTFLoader = await M.loadGltfLoader();
+  const dir = path.join(assets, 'models');
+  return {
+    async loadAsync(url) {
+      const name = path.basename(String(url).split('?')[0]);
+      const buf = await fs.readFile(path.join(dir, name));
+      const data = stripTextures(buf).buffer.slice(0);
+      return await new Promise((resolve, reject) => new GLTFLoader().parse(data, '', resolve, reject));
+    },
+  };
+}
+
+/** The same glb with every material reference and image/texture table gone,
+ *  the JSON chunk re-padded to its original length (trailing spaces are legal
+ *  padding, and the new JSON is always shorter). */
+function stripTextures(buf) {
+  const jsonLen = buf.readUInt32LE(12);
+  const json = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
+  for (const mesh of json.meshes ?? []) {
+    for (const prim of mesh.primitives ?? []) {
+      delete prim.material;
+      for (const key of ['extensions', 'extras']) if (key in prim) delete prim[key];
+    }
+  }
+  json.images = [];
+  json.textures = [];
+  json.samplers = [];
+  delete json.materials;
+  let text = Buffer.from(JSON.stringify(json), 'utf8');
+  if (text.length > jsonLen) throw new Error(`stripped JSON grew: ${text.length} > ${jsonLen}`);
+  if (text.length < jsonLen) text = Buffer.concat([text, Buffer.alloc(jsonLen - text.length, 0x20)]);
+  const out = Buffer.concat([buf.subarray(0, 20), text, buf.subarray(20 + jsonLen)]);
+  return out;
+}
 
 /** Whether a hull's pad is a free cell of the vehicle map. The viewer's map
  *  paints the pad of El Alamein's nearest Allied Sherman (1685, -736) inside
@@ -638,6 +688,7 @@ const recipes = {
  *  as `models/<Template>.wreck.glb`. The list of air templates the level places
  *  comes back with it, so the test can check that file exists for every one. */
 recipes.downedAir = async function downedAir() {
+  wreckLoader = await realWreckLoader();
   const match = await start('el_alamein');
   const b = bot(match, 'bot_1');
   const attacker = match.bots.find(o => o.team !== b.team) ?? b;
@@ -682,6 +733,28 @@ recipes.downedAir = async function downedAir() {
     return false;
   });
 
+  // The wreck model itself. `placeWreck` awaits the loader, so the swap lands a
+  // macrotask after the crash; step a few frames, then ask the hull node what it
+  // is carrying: the wreck under `wreck:<Template>` and the intact mesh hidden.
+  await new Promise(r => setTimeout(r, 60));
+  for (let i = 0; i < 3; i++) match.step();
+  const childNames = node.children.map(c => c.name);
+  const wreckNode = node.children.find(c => c.name?.startsWith('wreck:'))?.name ?? null;
+  const shownChildren = node.children.filter(c => c.visible).map(c => c.name);
+  // Diagnostic: what the loader hands back for this template, and whether
+  // `placeWreck`'s guards are satisfied for this hull's owner.
+  let loadError = null;
+  let loadedScene = false;
+  try {
+    const g = await wreckLoader.loadAsync(`models/${cand.template}.wreck.glb`);
+    loadedScene = !!g?.scene;
+  } catch (e) {
+    loadError = String(e?.message ?? e).slice(0, 300);
+  }
+  const visual = match.stage.wrecks.damageVisuals.get(b.playerId);
+  const rec = match.stage.world.vehicleDamage?.get?.(b.playerId) ?? null;
+  const guardVisual = match.stage.wrecks.damageVisuals.get(rec?.owner) === visual;
+
   return {
     template: cand.template, topAgl: round(topAgl), stillMounted: !!b.vehicle, flying, frozen,
     deathY: death ? round(death.y) : null,
@@ -690,6 +763,8 @@ recipes.downedAir = async function downedAir() {
     crashAfter, crashY,
     crashAgl: crashY === null ? null : round(crashY - match.groundAt(crashX, crashZ)),
     wrecked,
+    wreckNode, shownChildren, childCount: childNames.length,
+    loadedScene, loadError, hasDamageRecord: !!rec, guardVisual,
     // Every plane this level places, off the page's own candidate scan.
     airTemplates: [...new Set(match.stage.units.candidates().filter(c => c.isRoot && c.kind === 'air').map(c => c.template))],
     destroyed: eventsOf(match, 'vehicle_destroyed').map(e => `${round(e.t)} ${e.vehicle} by ${e.killer}`),

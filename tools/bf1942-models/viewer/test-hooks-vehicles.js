@@ -277,6 +277,10 @@ export function installVehicleHooks(page) {
   });
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
+  // Every hull the wreck path is tracking: is it still coming down, did the
+  // crash happen, is the wreck model parented, and did a load fail. The state
+  // the world cannot show once the intact mesh is sitting on the ground.
+  window.__wrecks = () => page.wreckState();
   window.__vehicles = () => [...page.vehicleDamage.byOwner.entries()].map(([owner, v]) => ({
     owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
     max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,

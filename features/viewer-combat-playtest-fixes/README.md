@@ -246,6 +246,37 @@ carries the template `BF109` and `models/BF109.wreck.glb` exists. (The AI table
 spelling; the wreck URL is composed from the hull's scene node name, not from
 that table.)
 
+### The model swap itself, for an AI hull
+
+The fix above is about the fall. The other half, that the wreck *model* is what
+stands where the plane came down, is now covered end to end as well: the sim's
+stage takes a `wreckLoader` (`sim/stage.mjs`, threaded through `Match`) and the
+`downedAir` recipe hands it a real one, which reads the page's own
+`models/<template>.wreck.glb` off disk and parses it through the viewer's
+`GLTFLoader`. A run therefore answers what the hull node is carrying after the
+crash, not just that the fall ended: `wreck:Spitfire` parented, the intact
+`lod*` children hidden, the effect anchors still up.
+
+One wrinkle worth knowing before trusting a green run: three decodes images
+through `self`, which node has not got, and a *model* glb carries textures (the
+level *scene* glb does not, which is why `sim/level.mjs` can parse one
+untouched). The harness strips materials and the image/texture tables out of the
+glb JSON chunk before parsing, padding the chunk back to its length, and asserts
+the graph rather than the pixels.
+
+### Telling the two failures apart in a live match
+
+An AI plane that never got a wreck model, and one whose crash never fired, look
+the same in the world: an intact aeroplane sitting where it came to rest. Two
+things now say which it is.
+
+`placeWreck`'s catch records the reason instead of swallowing it
+(`vehicle-wrecks.js loadFailures`, per template), and `wreckState()` reports
+every hull the path is tracking: whether it is still in the air, its height and
+speed, whether the crash happened, what it is carrying, and any load failure.
+`window.__wrecks()` in the console prints it (`test-hooks-vehicles.js`), which is
+the check to run the next time a plane lands intact.
+
 Files: `viewer/vehicle-instance.js`, `viewer/airborne.js`,
 `viewer/vehicle-wrecks.js`.
 

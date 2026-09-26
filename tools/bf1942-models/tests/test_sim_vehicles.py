@@ -269,6 +269,17 @@ class SimVehicleTests(unittest.TestCase):
         files = {p.name.lower() for p in (assets / "models").glob("*.wreck.glb")}
         missing = [t for t in set(r["airTemplates"]) if f"{t}.wreck.glb".lower() not in files]
         self.assertEqual(missing, [], f"planes the level places with no wreck glb: {missing}")
+        # And the model itself: the hull node ends up carrying `wreck:<Template>`
+        # with the intact mesh hidden. The sim loads the real glb for this (the
+        # page's own `models/<template>.wreck.glb`, textures stripped because
+        # three decodes images through `self`, which node has not got), so a
+        # wreck that never arrives for an AI hull fails here instead of showing
+        # up in a match as an undamaged plane parked where it came down.
+        self.assertEqual(r["loadedScene"], True, f"the wreck glb did not parse: {r['loadError']}")
+        self.assertEqual(r["wreckNode"], f"wreck:{wrecked_template}", f"no wreck model on the hull: {r}")
+        intact = [n for n in r["shownChildren"] if n.startswith(("lod", "BF", "bf", "P-", "Ju", "Il", "Yak"))]
+        self.assertEqual(intact, [], f"the intact mesh is still drawn: {r['shownChildren']}")
+        self.assertIn(r["wreckNode"], r["shownChildren"], "and the wreck is what is drawn")
 
     def test_every_aircraft_the_game_fields_has_a_wreck_model(self) -> None:
         # `maps/_shared/vehicle-ai.json` is the extracted AI table for the mod's
