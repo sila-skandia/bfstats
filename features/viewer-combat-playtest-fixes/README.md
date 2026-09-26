@@ -105,6 +105,32 @@ input word, through a scenario added to `tests/world_harness.mjs`.
 The sim exercises the whole path on its own: a bot plane in the 600 s Bocage
 match dies in the air within 90 s, falls, and lands.
 
+### What comes down, and how fast
+
+The fall was first written as "the airframe's, not a falling brick's": zero the
+controls, keep the flight model, and let a hull with no thrust bleed its speed
+off until the wing stops making lift. A fighter at cruise does not stop making
+lift. Measured live on Bocage, a BF109 killed at 200 m held its altitude, then
+glided down at 30-46 m/s for 45 s and wrecked about a kilometre downrange, so
+the intact model was the only thing the shooter saw come down. The wreck glb,
+the level tag and the placement path were all fine; only the flight was wrong.
+
+A hull on `world.falling` is now a dead object. `FALL_MIN_SINK` (18 m/s) forbids
+holding altitude or climbing, clamped BEFORE the integration so the airframe's
+lift is resolved against a downward flow instead of fighting the floor, with a
+floor after it too, and `FALL_DRAG` bleeds the forward speed. The occupant's
+tick skips a hull the wreck list is stepping, so a pilot killed in his own plane
+cannot keep flying it from a seat entry his death left behind. The sim runs
+(`downedAir`, `downedAir109`) kill from level flight at 200 m now, because the
+descent depends on the energy the aircraft had rather than on the AI's own
+climb, and assert the wreck lands within 400 m of the kill: 5.9-6.6 s and
+158-169 m in the runs.
+
+Live after the change the same kill wrecks in 18-20 s, half the glide and still
+twice the sink the floor asks. Something else still carries lift under the wreck
+path; that is the open question, and `__wrecks()` on the same experiment is how
+to answer it.
+
 ## 3. The B17 takes off like a fighter
 
 Not fixed here. The measurement and the mechanism are below.
