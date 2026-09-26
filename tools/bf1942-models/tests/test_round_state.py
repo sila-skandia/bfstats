@@ -9,7 +9,11 @@ The numbers under test are the game's own, not the viewer's invention:
   - a death costs the dead player's team a ticket (`setTicketLosePerDeath`,
     which no shipped level declares, so 1);
   - a side bleeds one ticket per `60 / rate` seconds while the ENEMY's summed
-    `areaValue` is greater than 99 (`GameServer::gameStatusPlaying`).
+    `areaValue` is greater than 99 (`GameServer::gameStatusPlaying`);
+  - and both the starting counts and the rates scale by the server's max
+    players over 16 (`gamaStatusFirstPreGame`, `setTicketLostPerMin`; ledger
+    TKT-1..TKT-4), which the parity lab measured: Wake co-op's 100 starts a
+    32-player server at 200 and an 8-player one at 50.
 
 `test_extract_score_settings.py` covers the parser that fills the table.
 """
@@ -193,6 +197,90 @@ class RoundStateTests(unittest.TestCase):
     def test_a_death_costs_what_the_level_says(self) -> None:
         self.assertEqual(99, self.results["lossPerDeath"]["one"]["2"])
         self.assertEqual(97, self.results["lossPerDeath"]["three"]["2"])
+
+    # ---- max players (ledger TKT-1..TKT-4) ---------------------------------
+
+    def test_the_parity_labs_rounds(self) -> None:
+        # Wake co-op measured on the lab server: 200 / 200 at 32 max players,
+        # 50 / 50 at 8, from the level's 100 a side.
+        lab = self.results["maxPlayers"]["lab"]
+        self.assertEqual({"1": 200, "2": 200}, lab["32"])
+        self.assertEqual({"1": 50, "2": 50}, lab["8"])
+        self.assertEqual({"1": 100, "2": 100}, lab["16"])
+
+    def test_the_start_is_truncated_not_rounded(self) -> None:
+        # 100 x 11 / 16 = 68.75; gamaStatusFirstPreGame's fistp runs under
+        # round-toward-zero (`mov ah,0xc`).
+        self.assertEqual({"1": 68, "2": 68}, self.results["maxPlayers"]["eleven"])
+        self.assertEqual(6, self.results["maxPlayers"]["counts"]["one"])
+
+    def test_a_round_that_names_no_server_keeps_the_levels_numbers(self) -> None:
+        self.assertEqual(16, self.results["maxPlayers"]["base"])
+        self.assertEqual({"1": 100, "2": 140}, self.results["maxPlayers"]["unnamed"])
+
+    def test_the_root_scripts_counts_scale_like_any_other(self) -> None:
+        counts = self.results["maxPlayers"]["counts"]
+        self.assertEqual(120, counts["berlinRoot"])       # Berlin's root Coop.con, 60
+        self.assertEqual(200, counts["berlinGameTypes"])  # its GameTypes/Coop.con, 100
+        self.assertEqual(300, counts["tobruk"])
+        self.assertEqual(280, counts["wakeGameTypes"])    # what the old reading predicted
+        self.assertEqual(0, counts["none"])
+        self.assertEqual(0, counts["negative"])
+
+    def test_max_players_is_a_whole_number_from_one_to_sixty_four(self) -> None:
+        clamp = self.results["maxPlayers"]["clamp"]
+        self.assertEqual(64, self.results["maxPlayers"]["limit"])
+        self.assertEqual(64, clamp["big"])
+        self.assertEqual(16, clamp["zero"])
+        self.assertEqual(16, clamp["junk"])
+        self.assertEqual(20, clamp["fraction"])
+        self.assertEqual(32, clamp["text"])
+        self.assertEqual(5, clamp["fallback"])
+
+    def test_the_bleed_rate_scales_with_the_server(self) -> None:
+        # 15 a minute on a 32-player server is 30 a minute: one every 2 s.
+        interval = self.results["maxPlayers"]["interval"]
+        self.assertEqual(2, interval["32"])
+        self.assertEqual(8, interval["8"])
+        self.assertIsNone(interval["none"])  # Infinity: no rate, no bleed
+        self.assertEqual({"32": 2, "8": 8}, self.results["maxPlayers"]["countdowns"])
+
+    def test_a_side_bleeds_out_in_the_same_time_on_any_server(self) -> None:
+        # 100 tickets at 15/min is 400 s on a 16-player server; the counts and
+        # the rate scale together, so 32 and 8 players take the same time.
+        out = self.results["maxPlayers"]["bleedOut"]
+        for players in ("32", "16", "8"):
+            self.assertTrue(out[players]["over"], players)
+            self.assertEqual(0, out[players]["tickets"]["2"], players)
+            self.assertEqual(400, out[players]["seconds"], players)
+
+    def test_a_levels_own_max_players_sets_the_start_and_not_the_bleed(self) -> None:
+        # Kasserine Pass co-op sets `game.maxNrofPlayers 18` after its bleed
+        # lines: 100 x 18 / 16 = 112.5 -> 112, and the bleed keeps 32's rate.
+        kp = self.results["maxPlayers"]["kasserine"]
+        self.assertEqual({"1": 112, "2": 112}, kp["tickets"])
+        self.assertEqual(32, kp["maxPlayers"])
+        self.assertEqual(18, kp["startPlayers"])
+        self.assertEqual(2, kp["countdown"])
+        self.assertEqual(18, kp["roundPlayers"])
+        self.assertEqual(32, kp["roundPlayersNoScript"])
+
+    def test_the_room_takes_a_fresh_scaled_copy(self) -> None:
+        room = self.results["maxPlayers"]["room"]
+        # The lobby's 16 slots: the level's numbers.
+        self.assertEqual(100, room["at16"]["team1"])
+        self.assertEqual(15, room["at16"]["lossPerMin"]["team1"])
+        self.assertEqual("CoOp", room["at16"]["mode"])
+        self.assertEqual(200, room["at32"]["team2"])
+        self.assertEqual(30, room["at32"]["lossPerMin"]["team1"])
+        self.assertEqual(20000, room["at32"]["lossPerMin"]["team2"])
+        # Kasserine's own 18 reaches a room too; its bleed stays at 16's.
+        self.assertEqual(112, room["kasserine16"]["team1"])
+        self.assertEqual(15, room["kasserine16"]["lossPerMin"]["team1"])
+        self.assertTrue(room["fresh"])
+        self.assertEqual(100, room["untouched"]["team1"])
+        self.assertEqual(15, room["untouched"]["lossPerMin"]["team1"])
+        self.assertIsNone(room["none"])
 
 
 if __name__ == "__main__":

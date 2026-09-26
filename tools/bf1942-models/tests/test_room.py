@@ -72,6 +72,8 @@ _VIEWER_MODULES = [
     # Reached through seats.js: the salvo arithmetic and the HUD weapon-slot
     # order, and an aircraft torpedo's water run.
     "bomb-release", "torpedo-run",
+    # level-data.mjs gives each room its own tickets, scaled for its slots.
+    "round-state",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -379,6 +381,17 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"b": 1, "c": 1}, r["nearShout"])   # the enemy hears it too
         self.assertEqual({"b": 1, "c": 0}, r["farShout"])
         self.assertEqual(0, r["badId"])
+
+    # ---- (t) each room its own tickets --------------------------------------
+
+    def test_each_room_spends_its_own_tickets(self) -> None:
+        # Two rooms on one level: a room's tickets are its own copy, scaled
+        # for the lobby's 16 slots (the level's numbers), so one room's losses
+        # never reach the other room or the level's data (ledger TKT-1).
+        t = self.results["t"]
+        self.assertTrue(t["separate"])
+        self.assertEqual({"a": 100, "b": 100, "level": 100}, t["before"])
+        self.assertEqual({"a": 93, "b": 100, "level": 100}, t["after"])
 
 
 if __name__ == "__main__":
