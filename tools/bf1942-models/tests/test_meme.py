@@ -3,6 +3,7 @@ from __future__ import annotations
 import struct
 import sys
 import unittest
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -573,16 +574,31 @@ class MemeElevenSurveyTests(unittest.TestCase):
             self.assertIsNone(exc, (mod, archive))
             self.assertEqual([], reader.warnings, (mod, archive))
 
+    # Clean pages per (mod folder, archive), measured 2026-09-27: 122 of 214.
+    # The survey read 11 of 230 pages clean before the MEME-11 fix, 80 after
+    # it, 110 with the five Singleplayer classes above and 137 of 236 with
+    # MEME-15's `BfTransformNodeSize` field order (each count measured by
+    # putting the old reading back). A single floor of 130 across everything
+    # installed then failed with no reader change at all: bfheroes and
+    # WarFront were uninstalled on 2026-09-25, and their menus held 22 of the
+    # 236 pages and 15 of the clean ones (the 2026-09-22 reader, a0f53789,
+    # reads today's 214 pages exactly as this one does). So each archive
+    # keeps its own floor, and a mod that is not installed is left out.
+    CLEAN_FLOORS = {
+        ("bf1942", "menu.rfa"): 51, ("FHSW", "menu.rfa"): 53, ("FinnWars", "menu.rfa"): 5,
+        ("interstate", "menu.rfa"): 3, ("EoD", "menu.rfa"): 2, ("GCMOD", "menu.rfa"): 2,
+        ("bf1918", "menu.rfa"): 2, ("FH", "menu.rfa"): 1, ("Pirates", "menu.rfa"): 1,
+        ("XPack2", "Menu.rfa"): 1, ("bg42", "menu.rfa"): 1,
+    }
+
     def test_clean_page_count_has_not_regressed(self) -> None:
-        # 11 of 230 before the MEME-11 fix, 80 of 230 after it, 110 of 230
-        # once the five Singleplayer classes above were added, and 137 of
-        # 236 with MEME-15's `BfTransformNodeSize` field order (each count
-        # measured directly by putting the old reading back and re-running
-        # this survey). A floor, not the exact count, so the test does not
-        # chase whichever mods happen to be installed.
-        clean = sum(1 for _, _, _, reader, exc in self.results
-                   if exc is None and reader.pos == len(reader.data) and not reader.warnings)
-        self.assertGreaterEqual(clean, 130)
+        installed = {(mod, path.name) for mod, path in installed_menu_archives()}
+        clean = Counter((mod, archive) for mod, archive, _, reader, exc in self.results
+                        if exc is None and reader.pos == len(reader.data) and not reader.warnings)
+        self.assertIn(("bf1942", "menu.rfa"), installed)
+        below = {key: (clean[key], floor) for key, floor in self.CLEAN_FLOORS.items()
+                 if key in installed and clean[key] < floor}
+        self.assertEqual({}, below)
 
 
 if __name__ == "__main__":
