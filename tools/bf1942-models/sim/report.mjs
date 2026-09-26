@@ -105,7 +105,8 @@ export async function replaySummary(file, { step = 30, out = console.log } = {})
     if (parts.length) timeline.push({ t: k + step - 1e-6, text: `window   ${clock(k)}-${clock(k + step)} ${parts.join(', ')}` });
   }
   timeline.sort((a, b) => a.t - b.t);
-  out(`match ${header.level}  seed ${header.seed}  ${header.botsPerSide} bots a side  skill ${header.botSkill}  `
+  out(`match ${header.level}  seed ${header.seed}  ${header.botsPerSide} bots a side  `
+      + `${header.maxPlayers ? `${header.maxPlayers} max players  ` : ''}skill ${header.botSkill}  `
       + `${header.duration} s  trace every ${header.traceEvery} tick(s)`);
   out(`flags: ${header.flags.map(f => `${f.name}${f.uncapturable ? '*' : ''}(${SIDE[f.team]})`).join(', ')}   (* uncapturable)`);
   for (const e of timeline) out(`${lpad(clock(e.t), 6)}  ${e.text}`);
