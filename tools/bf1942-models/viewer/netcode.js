@@ -219,7 +219,8 @@ export function decodeInputFrame(payload) {
 // Per-player record, 31 bytes:
 //   u8  slot           1..16
 //   u8  flags          bit0 alive, bit1 seated, bit2 crouch, bit3 prone,
-//                      bit4 inVehicle (position is the hull's)
+//                      bit4 inVehicle (position is the hull's), bits5-7 the
+//                      swim state (`SWIM_WIRE`, 0 = dry)
 //   u8  team           1 = Axis, 2 = Allies
 //   f32 x, y, z        soldier feet, or the hull's origin when inVehicle
 //   f32 yaw, pitch     degrees; NaN when seated (the hull owns the facing)
@@ -244,6 +245,27 @@ export function decodeInputFrame(payload) {
 //   f32 x, y, z        the hull origin in world space
 //   f32 qx, qy, qz, qw the hull quaternion (viewer frame, already z-negated)
 export const SNAPSHOT_PLAYER_BYTES = 31;
+
+/**
+ * The swim state on the wire, in the flag byte's three spare bits: the family
+ * `swim.js` `SwimState` is in (its `SWIM_CLIPS` key), or 0 when dry.
+ *
+ * The engine's own network state carries the swim bit (`BFSoldier::
+ * getStateBits`, lnxded `0x0827e1c0`; features/viewer-swimming §8). This
+ * record carries no remote's throttle, which is what the swim states'
+ * `addTransitionOne c_PIThrottle` bands pick the stroke from, so the state the
+ * authority's machine settled on goes instead: 3 bits, no new bytes, and a
+ * record from a build without it decodes as dry.
+ */
+export const SWIM_WIRE = Object.freeze([
+  null, 'swimStart', 'swimFloat', 'swimForward', 'swimBackward', 'swimEnd',
+]);
+
+/** A swim family to its 3-bit code, 0 for dry or anything unknown. */
+export function swimWireCode(family) {
+  const i = family ? SWIM_WIRE.indexOf(family) : -1;
+  return i > 0 ? i : 0;
+}
 export const SNAPSHOT_VEHICLE_BYTES = 30;
 
 export function encodeSnapshot(tick, players, vehicles) {
@@ -255,7 +277,7 @@ export function encodeSnapshot(tick, players, vehicles) {
   buf.setUint8(o, players.length); o += 1;
   for (const p of players) {
     const flags = (p.alive ? 1 : 0) | (p.seated ? 2 : 0) | (p.crouch ? 4 : 0)
-      | (p.prone ? 8 : 0) | (p.inVehicle ? 16 : 0);
+      | (p.prone ? 8 : 0) | (p.inVehicle ? 16 : 0) | (swimWireCode(p.swim) << 5);
     buf.setUint8(o, p.slot); o += 1;
     buf.setUint8(o, flags); o += 1;
     buf.setUint8(o, p.team ?? 0); o += 1;
@@ -308,6 +330,7 @@ export function decodeSnapshot(payload) {
       crouch: (flags & 4) !== 0,
       prone: (flags & 8) !== 0,
       inVehicle: (flags & 16) !== 0,
+      swim: SWIM_WIRE[(flags >> 5) & 7] ?? null,
       team, x, y, z, yaw, pitch,
       hp: hp === 0xffff ? null : hp,
       vehicleId,

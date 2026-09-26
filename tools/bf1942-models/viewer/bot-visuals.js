@@ -37,6 +37,7 @@ import { createSeatBodies, seatAnchor } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { PARA_FALLING } from './parachute.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
+import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { rigCapsules } from './rig-capsules.js';
 import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
@@ -59,6 +60,11 @@ export function createBotVisuals(page) {
   // Bots get the same pose-pair + gait-rig treatment as remote players
   // (netcode-render.js). Each bot is a THREE.Group with a cloned skinned mesh
   // and an AnimationMixer, positioned at the bot controller's position.
+
+  /** Every death a bot's body can play: `soldier-death.js`'s, and the swim
+   *  death `handleDamage` takes first for a man in the water (`0x08270c63`,
+   *  `Lb_DieSwim` / `Ub_DieSwim`, baked into `swim.gait.glb`). */
+  const CORPSE_CLIPS = Object.freeze({ ...DIE_CLIPS, swimDie: SWIM_CLIPS.swimDie });
 
   // The templates the bots wore before they wore the level's: the fallback
   // for a maps tree whose `_shared/loadouts.json` does not know the level, and
@@ -232,8 +238,8 @@ export function createBotVisuals(page) {
       families: Object.fromEntries(Object.entries(FAMILY_HALVES)
         .filter(([, h]) => actions.has(h.lower) && actions.has(h.upper))
         .map(([family, h]) => [family, [actions.get(h.lower), actions.get(h.upper)]])),
-      hasDeath: family => !!DIE_CLIPS[family]
-        && actions.has(DIE_CLIPS[family].lower) && actions.has(DIE_CLIPS[family].upper),
+      hasDeath: family => !!CORPSE_CLIPS[family]
+        && actions.has(CORPSE_CLIPS[family].lower) && actions.has(CORPSE_CLIPS[family].upper),
     };
   }
 
@@ -268,15 +274,28 @@ export function createBotVisuals(page) {
       if (lower && upper) families[family] = [lower, upper];
     }
     // The deaths, one-shots that hold their last frame.
-    for (const [family, spec] of Object.entries(DIE_CLIPS)) {
+    for (const [family, spec] of Object.entries(CORPSE_CLIPS)) {
       const lower = action(spec.lower, gaitClips, true);
       const upper = action(spec.upper, gaitClips, true);
+      if (lower && upper) families[family] = [lower, upper];
+    }
+    // The swim states, whole-body pairs (`swim.gait.glb`): the entry and the
+    // exit play once and hold, the float and the strokes loop.
+    for (const [family, spec] of Object.entries(SWIM_CLIPS)) {
+      if (families[family]) continue;
+      const once = family === 'swimStart' || family === 'swimEnd';
+      const lower = action(spec.lower, gaitClips, once);
+      const upper = action(spec.upper, gaitClips, once);
       if (lower && upper) families[family] = [lower, upper];
     }
     const rig = { kind: 'still', scene, mixer, families, want: null,
                   hasDeath: family => !!families[family] };
     rig.step = ({ family }, dt) => {
-      if (family && family !== rig.want) { rig.want = family; playFamily(rig, family); }
+      if (family && family !== rig.want) {
+        const was = rig.want;
+        rig.want = family;
+        switchFamily(rig.families, was, family);
+      }
       mixer.update(dt);
     };
     return rig;
@@ -532,7 +551,7 @@ export function createBotVisuals(page) {
     // The half-body rig carries the fall in from wherever the bones stood
     // (`setMorphFactor 20` on the die states), the still rig cuts to it.
     const { group, rig } = vis;
-    if (rig.anim) rig.anim.die(DIE_CLIPS[played].lower, DIE_CLIPS[played].upper);
+    if (rig.anim) rig.anim.die(CORPSE_CLIPS[played].lower, CORPSE_CLIPS[played].upper);
     else playFamily(rig, played);
     if (rig.weaponNode) rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
     vis.group.visible = true;
@@ -638,9 +657,19 @@ export function createBotVisuals(page) {
       // The gait family follows the bot's live speed and stance, the same rule
       // remote soldiers use (`remoteClipFamily`), resolved against what bound.
       const stance = vis.stanceTick ?? bot.stance ?? 'stand';
-      const want = botClipFamily(vis.lastSpeed, stance,
+      const gait = botClipFamily(vis.lastSpeed, stance,
                                  family => !!vis.rig.families[family]);
+      // In the water the swim state holds both halves instead: the bot's own
+      // `SwimState` (`swim.js`, run by his soldier's body every tick off his
+      // throttle) says which of the engine's five states he is in, and the
+      // half-body machine enters it by name (`SoldierActions.followSwim`).
+      const swim = swimPairOf(bot);
+      const swimWant = swim ? swimFamilyOf(swim, vis.rig) : null;
+      const want = swimWant ?? gait;
       vis.want = want;
+      // `c_AsmHideWeapon`: every lower swim state declares it, and the pose
+      // glb welds the rifle to the hand whatever the clip does.
+      if (vis.rig.weaponNode) vis.rig.weaponNode.visible = !swimWant;
       if (vis.rig.anim) {
         // The stance changes the ticks caught, in order: each starts the
         // engine's transition on both halves.
@@ -653,8 +682,26 @@ export function createBotVisuals(page) {
         watchReload(vis, bot);
       }
       vis.stanceEvents.length = 0;
-      vis.rig.step({ stance, family: want, trigger: !!bot.isFiring }, dt);
+      vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
+                     swim: swimWant ? swim : null }, dt);
     }
+  }
+
+  /** The swim state's clip pair for `bot`'s soldier this tick, or null dry. */
+  function swimPairOf(bot) {
+    const soldier = page.world?.player(bot.playerId)?.soldier;
+    return soldier?.swimClips?.(false) ?? null;
+  }
+
+  /** The swim family `pair` is, when this rig can draw it; null when it cannot
+   *  (a tree published before `swim.gait.glb`), which leaves him on his gait. */
+  function swimFamilyOf(pair, rig) {
+    const family = Object.keys(SWIM_CLIPS).find(f => SWIM_CLIPS[f].lower === pair.lower);
+    if (!family) return null;
+    if (rig.kind === 'halves') {
+      return rig.actions.has(pair.lower) && rig.actions.has(pair.upper) ? family : null;
+    }
+    return rig.families[family] ? family : null;
   }
 
   /** Wrap to [-pi, pi], for the yaw blend between two tick poses. */

@@ -9,7 +9,7 @@
 // clips are baked into the shared gait sidecars under the engine's own state
 // names (`extract_pose.py` `STANCE_TRANSITIONS` / `UPPER_ACTIONS`), and this
 // decides which one each half plays, from the stance and gait the page
-// already simulates and three events:
+// already simulates and four events:
 //
 //  * **a stance change.** `BFSoldier::handlePlayerInput` (lnxded `0x08273c70`)
 //    enters the first state of a chain on both machines by name and each
@@ -25,6 +25,9 @@
 //    and hands back to the pose -- or, for the bolt-action rifles, to
 //    `Ub_StandReload`, the bolt. An automatic's loops while the trigger is
 //    held (`addTransitionOne c_PIFire`) and `returnToState _POSE_` on release.
+//  * **the water.** `BFSoldier::updateSwimming` sets the swim states on both
+//    machines by name, and while one holds them nothing else is entered: no
+//    stance chain, no fire, no reload (`c_AsmHideWeapon`). `followSwim`.
 //  * **a reload.** `Ub_StandReload` or `Ub_LieReload`, a one-shot that cuts in
 //    and returns to the pose when its clip is done -- which is shorter than the
 //    weapon's `reloadTime` on most weapons; the torso aims again while the
@@ -130,6 +133,20 @@ export const VANILLA_STATES = Object.freeze({
   Ub_RunStandToLie: { speed: 1.4, loop: false, morph: 4.0, then: 'Ub_Lie' },
   Ub_StandReload: { loop: false, morph: 10000, then: '_POSE_' },
   Ub_LieReload: { loop: false, morph: 10000, then: '_POSE_' },
+  // `animations/AnimationStatesSwim.con`, after `3pAnimationsTweaking.con`
+  // (`set3pAnimationSpeed Lb_StartSwim 2.60`). Every one is `setMorphFactor
+  // 4.0` but `Ub_EndSwim`'s 1.0, so the stroke, the float and the way in and
+  // out are all a quarter-second morph from wherever the bones stood.
+  Lb_StartSwim: { speed: 2.6, loop: false, morph: 4.0, then: 'Lb_SwimForward' },
+  Ub_StartSwim: { speed: 2.6, loop: false, morph: 4.0, then: 'Ub_SwimForward' },
+  Lb_Floating: { speed: 0.4, loop: true, morph: 4.0 },
+  Ub_Floating: { speed: 0.4, loop: true, morph: 4.0 },
+  Lb_SwimForward: { speed: 1.0, loop: true, morph: 4.0, then: 'Lb_Floating' },
+  Ub_SwimForward: { speed: 1.0, loop: true, morph: 4.0, then: 'Ub_Floating' },
+  Lb_SwimBackward: { speed: 1.0, loop: true, morph: 4.0, then: 'Lb_Floating' },
+  Ub_SwimBackward: { speed: 1.0, loop: true, morph: 4.0, then: 'Ub_Floating' },
+  Lb_EndSwim: { speed: -3.2, loop: false, morph: 4.0, then: 'Lb_Stand' },
+  Ub_EndSwim: { speed: -3.2, loop: false, morph: 1.0, then: 'Ub_Stand' },
 });
 
 /** `AnimationState`'s constructor default (lnxded `0x08328bf8`). */
@@ -173,6 +190,8 @@ export class SoldierActions {
     this.family = 'stand';
     this.trigger = false;
     this.dead = false;
+    /** The lower swim state both halves are held in, or null when dry. */
+    this.swim = null;
     this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
     this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
     this.entries = [];
@@ -263,6 +282,9 @@ export class SoldierActions {
     if (this.dead || from === to) return;
     this.stance = to;
     this.family = family ?? STILL_FAMILY[to] ?? 'stand';
+    // The swim states hold both machines; a stance the tick changed under
+    // them starts no chain (the body is posed standing in the water).
+    if (this.swim) return;
     const pose = this.bodyPose();
     if (pose === to) {
       if (!this.lower.base) this.enterBase(this.lower, true);
@@ -278,7 +300,9 @@ export class SoldierActions {
 
   /** A round left the weapon this body holds. */
   fire() {
-    if (this.dead) return;
+    // `c_AsmHideWeapon`: a swimmer has no item to fire (`swim.js`
+    // `itemsLocked`), so no torso fire either.
+    if (this.dead || this.swim) return;
     const u = this.upper;
     // The transition states take no `c_PIFire`; the round flies, the torso
     // finishes lying down.
@@ -292,7 +316,7 @@ export class SoldierActions {
 
   /** The weapon began a reload. */
   reload() {
-    if (this.dead) return;
+    if (this.dead || this.swim) return;
     const name = this.stance === 'prone' ? 'Ub_LieReload' : 'Ub_StandReload';
     if (!this.rig.has(name)) return;
     this.enter(this.upper, name, 'reload');
@@ -301,6 +325,7 @@ export class SoldierActions {
   /** The killing blow: both halves to the death `soldier-death.js` chose. */
   die(lowerName, upperName) {
     this.dead = true;
+    this.swim = null;
     for (const [h, name] of [[this.lower, lowerName], [this.upper, upperName]]) {
       if (!name || !this.rig.has(name)) continue;
       const info = this.info(name);
@@ -316,15 +341,61 @@ export class SoldierActions {
   }
 
   /**
-   * One frame: take the stance, gait family and trigger the page simulated,
-   * run each half's one-shots out and follow their `then`, and return the
-   * states entered (`{ half, name, morph }`) since the last call.
+   * The swim states, set on both machines by name.
+   *
+   * `BFSoldier::updateSwimming` (lnxded `0x08282190`) enters `Lb_StartSwim` /
+   * `Ub_StartSwim` with `setAnimationState` (`0x082823f7`, `0x08282426`) and
+   * leaves by `Lb_EndSwim` / `Ub_EndSwim`; between the two the states' own
+   * `addTransitionOne c_PIThrottle 0.5 1` / `-1 -0.5` and `returnToState
+   * Lb_Floating` pick the stroke or the tread. `swim.js` `SwimState` runs that
+   * whole machine -- the throttle bands and the two one-shot timers -- per
+   * tick, and its `clips()` pair is what arrives here: this follows it rather
+   * than running a second copy of the timers, and each state is entered with
+   * its own morph (4.0; `Ub_EndSwim` 1.0) from the bones as they stand.
+   *
+   * `pair` is `{ lower, upper }` or null. Null after a swim drops both halves
+   * back to the base, which is `Lb_EndSwim`'s `addTransitionWhenDone Lb_Stand`.
+   * A tree with no `swim.gait.glb` binds none of the names: the halves stay on
+   * whatever the gait asks for.
    */
-  update({ stance = this.stance, family = this.family, trigger = false } = {}, dt = 0) {
+  followSwim(pair) {
+    const lower = pair?.lower ?? null;
+    if (lower === this.swim) return;
+    const was = this.swim;
+    this.swim = lower && this.rig.has(lower) ? lower : null;
+    if (this.swim) {
+      for (const [h, name] of [[this.lower, pair.lower], [this.upper, pair.upper]]) {
+        if (!this.rig.has(name)) { this.enterBase(h, true); continue; }
+        const info = this.info(name);
+        h.name = name;
+        h.base = false;
+        h.time = 0;
+        h.loop = !!info?.loop;
+        h.duration = Infinity;          // `swim.js` ends the one-shots, not this
+        h.action = 'swim';
+        this.entries.push({ half: h.half, name, morph: this.morphOf(name) });
+      }
+      return;
+    }
+    if (was) {
+      this.enterBase(this.lower, true);
+      this.enterBase(this.upper, true);
+    }
+  }
+
+  /**
+   * One frame: take the stance, gait family, trigger and swim pair the page
+   * simulated, run each half's one-shots out and follow their `then`, and
+   * return the states entered (`{ half, name, morph }`) since the last call.
+   */
+  update({ stance = this.stance, family = this.family, trigger = false, swim = null } = {},
+         dt = 0) {
     this.stance = stance;
     this.family = family;
     this.trigger = !!trigger;
+    if (!this.dead) this.followSwim(swim);
     for (const h of [this.lower, this.upper]) {
+      if (h.action === 'swim' && this.swim) { h.time += dt; continue; }
       if (h.name === null) { this.enterBase(h, true); continue; }
       if (this.dead) continue;
       if (h.base) { this.enterBase(h); continue; }

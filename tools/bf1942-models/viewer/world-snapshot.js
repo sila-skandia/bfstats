@@ -36,6 +36,8 @@ export function playersSnapshot(world) {
       seated,
       crouch: soldier?.stance === 'crouch',
       prone: soldier?.stance === 'prone',
+      // The swim state's family (`swim.js`), null dry or seated.
+      swim: !seated ? (soldier?.swim?.family ?? null) : null,
       inVehicle: seated,
       x, y, z, yaw, pitch,
       hp: armor ? Math.max(0, armor.hitPoints) : null,

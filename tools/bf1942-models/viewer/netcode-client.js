@@ -219,8 +219,9 @@ export function createRoomClient({ ws, now = null }) {
   // --- the renderer's reads -------------------------------------------------
 
   /** The remote player `slot`'s lerped state between the last two snapshots:
-   *  {slot, x, y, z, yaw, pitch, alive, seated, crouch, prone, inVehicle,
-   *   vehicleId, seatIndex, hp, team} or null before the first snapshot. */
+   *  {slot, x, y, z, yaw, pitch, alive, seated, crouch, prone, swim,
+   *   inVehicle, vehicleId, seatIndex, hp, team} or null before the first
+   *  snapshot. `swim` is the swim family (`netcode.js` `SWIM_WIRE`) or null. */
   out.remotePlayer = (slot, at = null) => {
     const state = lerped(slot, at);
     return state ? { slot, ...state } : null;
@@ -323,6 +324,7 @@ function lerped(slot, at) {
       seated: pb.seated,
       crouch: pb.crouch,
       prone: pb.prone,
+      swim: pb.swim ?? null,
       inVehicle: pb.inVehicle,
       x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y), z: lerp(pa.z, pb.z),
       yaw: lerp(pa.yaw, pb.yaw), pitch: lerp(pa.pitch, pb.pitch),

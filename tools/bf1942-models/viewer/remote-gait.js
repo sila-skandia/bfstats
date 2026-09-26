@@ -125,7 +125,38 @@ export function resolveRemoteGait(want, bound) {
   return 'stand';
 }
 
-/** `remoteGait` then `resolveRemoteGait`, which is what a renderer wants. */
-export function remoteClipFamily(speed, state, bound) {
-  return resolveRemoteGait(remoteGait(speed, state), bound);
+/**
+ * The swim families, `swim.js` `SWIM_CLIPS`' keys, and what each falls back
+ * to when it did not bind: the tread (`swimFloat`, the posture every swim
+ * state returns to), and past that nothing -- the gait decides, so a tree
+ * published before `swim.gait.glb` draws him as it always did.
+ */
+export const SWIM_FALLBACKS = Object.freeze({
+  swimStart: Object.freeze(['swimStart', 'swimFloat']),
+  swimFloat: Object.freeze(['swimFloat']),
+  swimForward: Object.freeze(['swimForward', 'swimFloat']),
+  swimBackward: Object.freeze(['swimBackward', 'swimFloat']),
+  swimEnd: Object.freeze(['swimEnd', 'swimFloat']),
+});
+
+/** The swim family to draw for `swim`, or null when there is none to draw. */
+export function resolveRemoteSwim(swim, bound) {
+  const chain = swim ? SWIM_FALLBACKS[swim] : null;
+  if (!chain) return null;
+  if (typeof bound !== 'function') return chain[0];
+  for (const name of chain) if (bound(name)) return name;
+  return null;
+}
+
+/**
+ * `remoteGait` then `resolveRemoteGait`, which is what a renderer wants.
+ *
+ * `swim` is the swim state the snapshot carried (`netcode.js` `SWIM_WIRE`),
+ * and it outranks the gait for the engine's reason: `BFSoldier::updateSwimming`
+ * sets the swim states on both machines by name (`0x082823f7`, `0x08282426`),
+ * so a man in the water is not also walking, whatever his speed reads.
+ */
+export function remoteClipFamily(speed, state, bound, swim = null) {
+  return resolveRemoteSwim(swim, bound)
+    ?? resolveRemoteGait(remoteGait(speed, state), bound);
 }

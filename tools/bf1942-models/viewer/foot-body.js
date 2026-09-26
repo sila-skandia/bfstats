@@ -10,6 +10,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
+import { switchFamily } from './swim.js';
 import { poseBases } from './pose-bases.js';
 import { createPoseComposer, ungraft } from './pose-compose.js';
 
@@ -437,14 +438,12 @@ export function createFootBody(page) {
     // The family was resolved above the visibility gate, because a corpse is
     // drawn only when its death bound. The order inside `bodyFamily` is the
     // engine's: the death, the parachute's whole-body pair, the swim's, the gait.
+    // Into and out of the water the switch is the swim states' own morph
+    // (`swim.js` `switchFamily`); every other switch is the cut it was.
     if (want !== footBodies.footBody.want) {
+      const was = footBodies.footBody.want;
       footBodies.footBody.want = want;
-      for (const [family, actions] of Object.entries(footBodies.footBody.families)) {
-        for (const a of actions) {
-          a.setEffectiveWeight(family === want ? 1 : 0);
-          if (family === want) { a.paused = false; a.reset(); a.play(); }
-        }
-      }
+      switchFamily(footBodies.footBody.families, was, want);
     }
     footBodies.footBody.mixer.update(dt);
 
