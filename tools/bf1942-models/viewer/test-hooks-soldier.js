@@ -18,7 +18,7 @@
  * `packAmmo`, `packsLeft`, `parachuteLog`, `playCaptureVoice`,
  * `pressTrigger`, `renderer`, `seatAltFire`, `seatFire`, `selectDeployFlag`,
  * `selectKitWeapon`, `setAim`, `setSeatTriggers`, `shipFlagInactive`,
- * `snapPresentation`, `soldier`, `soldier3pOnFoot`, `soldierArmor`,
+ * `snapPresentation`, `soldier`, `soldierArmor`,
  * `soldierDead`, `soldierTemplateFor`, `spawnFlagSelect`, `stage`,
  * `supplyField`, `supplyTarget`, `thrownPackGroup`, `triggerHeld`,
  * `viewmodelRigFor`, `vmCamera`, `weaponBarUntil`, `weaponTemplateFor`.
@@ -295,15 +295,13 @@ export function installSoldierHooks(page) {
       modeId: page.footView3p.modeId,
       modes: page.footView3p.modes,
       firstPerson: page.footView3p.firstPerson,
-      // Why `setMode('chase')` may have done nothing. On foot the engine's
-      // cycle is a set of ONE (CAM-1: `SoldierCamera` writes `CVMChase 0` and
-      // `BFSoldier::nextCamera` is empty), and the server's soldier switch
-      // (on by default, `?foot3p=0` off) is the marked departure that widens
-      // it. Reported here because a check that asks for a
-      // chase view and is refused otherwise reads the refusal as "the body is
-      // not being drawn" — which is how W8-B's swim body came to be called
-      // missing when it was only invisible.
-      cycleOnFoot: page.soldier3pOnFoot(),
+      // Why `setMode('chase')` may have done nothing. On foot the cycle is
+      // the engine's own set of ONE (CAM-1: `SoldierCamera` writes
+      // `CVMChase 0`, and `BFSoldier::nextCamera` is empty), and it widens to
+      // the canopy's three only while a chute is open. Reported here because a
+      // check that asks for a chase view and is refused otherwise reads the
+      // refusal as "the body is not being drawn" — which is how W8-B's swim
+      // body came to be called missing when it was only invisible.
       rel: [...page.foot3pRel],
       eye: { x: page.camera.position.x, y: page.camera.position.y, z: page.camera.position.z },
     };

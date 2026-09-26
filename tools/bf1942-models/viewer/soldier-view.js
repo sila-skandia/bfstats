@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { soldierLookDegrees } from './mouse-input.js';
 import { CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, chaseTarget, chaseStep, chaseEye } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
-import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT } from './soldier-camera.js';
+import { SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT } from './soldier-camera.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -323,16 +323,12 @@ export function createSoldierView(page) {
   // soldier's own pose rig, played from the game's own clips -- and
   // `footCanopy`, the `Parachute` child the soldier has always carried.
   const SOLDIER_3P_VIEWS = !page.params.has('no-soldier3p');
-  // C outside a standing soldier. CAM-1 is parity: the engine authorises one
-  // view mode for a soldier and `BFSoldier::nextCamera` is empty, so retail
-  // gives a standing man no second view. The owner wants one anyway, the way a
-  // seat has one, so it is a server switch of the page's own
-  // (`serverSettings.soldierExternalViews`, default ON, `?foot3p=0` or the side
-  // panel to turn it off) -- a departure, labelled, and switchable back to the
-  // engine's own behaviour. Read live, so the switch re-gates a standing man.
-  function soldier3pOnFoot() {
-    return SOLDIER_3P_VIEWS && page.serverSettings.soldierExternalViews;
-  }
+  // A standing soldier gets no external view (2026-09-26). Between 2026-09-23
+  // and here the page widened his cycle on a switch of its own
+  // (`soldierExternalViews`), because the engine gives him one view and the
+  // owner wanted the seat's. He plays with it off: F11 and C sit beside the
+  // keys he walks with, and an accidental F11 was taking him out of first
+  // person mid-stride. See `features/viewer-foot-first-person/README.md`.
 
   /**
    * Open the canopy's view cycle, close it again on the ground.
@@ -345,12 +341,12 @@ export function createSoldierView(page) {
   function syncFootView() {
     const open = SOLDIER_3P_VIEWS && page.soldier?.parachuteState === 'open';
     const before = footView3p.mode;
-    // On foot the engine's own cycle is a set of one (CAM-1), so C does
-    // nothing -- unless the server's soldier switch widens it, which it does by
-    // default here: a marked departure, not parity, and one the switch takes
-    // back. See `soldier-camera.js` FOOT_VIEW_CYCLE and server-settings.js.
-    footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE
-      : (soldier3pOnFoot() ? FOOT_VIEW_CYCLE : null));
+    // The canopy is the one place a soldier's cycle is wider than the
+    // engine's. Everywhere else it is `SOLDIER_VIEW_CYCLE`, which is
+    // `CVMInside` alone: `SoldierCamera` writes the three external words to
+    // zero and `setViewMode` refuses a mode whose byte is zero, so C and
+    // F9-F12 do nothing for a man on the ground. See `soldier-camera.js`.
+    footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE : null);
     if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
       foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
     }
@@ -362,7 +358,6 @@ export function createSoldierView(page) {
     foot3pRel,
     footView3p,
     onFootCamera,
-    soldier3pOnFoot,
     syncFootView,
   });
   return soldierView;

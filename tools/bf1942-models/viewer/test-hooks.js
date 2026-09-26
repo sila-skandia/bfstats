@@ -44,7 +44,7 @@ import { installLadderHooks } from './test-hooks-ladder.js';
  * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
  * `setAim`, `setFly`, `setMapGate`, `setScoreboard`, `setSeatTriggers`,
  * `shipFlagInactive`, `showDamageTier`, `snapPresentation`,
- * `soldier`, `soldier3pOnFoot`, `soldierArmor`, `soldierDead`,
+ * `soldier`, `soldierArmor`, `soldierDead`,
  * `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
  * `spawnFlagSelect`, `splashPos`, `splashTargets`, `stage`,
  * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,

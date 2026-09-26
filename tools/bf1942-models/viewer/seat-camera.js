@@ -17,7 +17,7 @@ import { effectNameFor } from './crash-damage.js';
  * `FLY_FOV`, `footView3p`, `groundHeight`, `guns`, `hullCollisionMaterial`,
  * `isCollision`, `MANNED_GUN_FOV`, `mouseInput`, `occupancy`, `optOnFoot`,
  * `optPilot`, `params`, `soldier`, `stepMouseLookKey`,
- * `syncFootView`, `updateSeatPoseVisibility`, `vehicleInput`.
+ * `updateSeatPoseVisibility`, `vehicleInput`.
  */
 export function createSeatCamera(page) {
   const seatCamera = {};
@@ -60,17 +60,16 @@ export function createSeatCamera(page) {
   for (const [id, key] of [
     ['srv-external-views', 'externalViews'],
     ['srv-nose-cam', 'allowNoseCam'],
-    ['srv-soldier-views', 'soldierExternalViews'],
   ]) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.checked = serverSettings[key];
     el.addEventListener('change', () => serverSettings.set(key, el.checked));
   }
-  serverSettings.onChange(() => {
-    refreshSeatViewModes();
-    page.syncFootView();
-  });
+  // Both of these gate a SEAT's cycle. A soldier on foot has no external view
+  // to re-gate: the page dropped the third switch that used to widen him
+  // (2026-09-26, `features/viewer-foot-first-person/README.md`).
+  serverSettings.onChange(refreshSeatViewModes);
 
   /**
    * The active seat's own view rig. Called on every mount and every seat switch:
