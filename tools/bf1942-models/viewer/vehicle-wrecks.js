@@ -16,7 +16,7 @@ import { restoreLift } from './world-vehicle-tick.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
- * `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
+ * `cutVehicleAudio`, `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `freezeVehicle`, `groundHeight`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
  * `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
@@ -453,8 +453,10 @@ export function createVehicleWrecks(page) {
     // The hull's killer is his (`vehicle-damage.js` `killedBy`): the message
     // log names him when the death latches.
     page.noteHullKiller?.(killer);
-    // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
-    page.disposeEngineAudio();
+    // A wreck cuts off its engine audio immediately -- crash effect plays,
+    // engine stops. That hull's only: disposing the whole rack here silenced
+    // every bot-crewed hull on the map until its crew next changed seats.
+    page.cutVehicleAudio(node);
     page.clearHitIndicator();
     node.updateWorldMatrix(true, false);
     node.getWorldPosition(wreckDeathPos);
@@ -502,7 +504,9 @@ export function createVehicleWrecks(page) {
   function killOccupantInSeat() {
     if (!page.occupancy || page.soldierDead || !page.soldierArmor?.destroyed) return false;
     const occupancy = page.occupancy;
-    page.disposeEngineAudio();
+    // No audio call: the hull is whole and may still be crewed, and
+    // `leaveSeat` below drops his claim on it (`vehicle-audio.js`), which
+    // plays the shut-down tail only when he was the last one aboard.
     page.clearHitIndicator();
     const seatNode = occupancy.seatInfo?.(occupancy.activeSeatId)?.node ?? occupancy.root;
     seatNode.updateWorldMatrix(true, false);

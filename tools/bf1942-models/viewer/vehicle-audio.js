@@ -245,6 +245,15 @@ export class VehicleAudioRack {
       entry.node = claim.node;
       this.vehicles.set(key, entry);
     }
+    // A hull whose last crewman has just left is still built for the length
+    // of its shut-down tail, but its patches are `release`d, and a released
+    // patch never comes back: its loops fade out on `timerelease` and
+    // `trigger()` refuses every round. Re-crewed inside that window (a bot
+    // taking the tank another has just stepped out of, or climbing back into
+    // his own) it kept that dead graph for as long as he stayed aboard -- no
+    // engine, no MG, no main gun. Tear it down so `_rebalance` builds it
+    // fresh, as it would for any hull boarded cold.
+    if (!entry.want && entry.built) entry.dispose();
     entry.want = true;
     entry.claims.set(claim.seatKey, {
       drive: claim.drive ?? null,
@@ -281,6 +290,21 @@ export class VehicleAudioRack {
       this.vehicles.delete(entry.key);
       this._rebalance();
     }, RELEASE_MS);
+  }
+
+  /**
+   * One hull, silent now and forgotten: it has been destroyed. Every other
+   * hull's claims stay, which is the difference from `dispose` -- the local
+   * player's wreck used to dispose the whole rack, and every bot-crewed hull
+   * on the map went quiet until its crew next changed seats.
+   */
+  cut(node) {
+    const key = node?.uuid || node?.name;
+    const entry = key ? this.vehicles.get(key) : null;
+    if (!entry) return;
+    entry.dispose();
+    this.vehicles.delete(key);
+    this._rebalance();
   }
 
   /** A level change: everything, now. */
