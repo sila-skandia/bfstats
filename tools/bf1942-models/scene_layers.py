@@ -425,7 +425,7 @@ def layer_sounds(ctx: LevelContext):
         # The flags' flap is read from the object pool even on a terrain-only
         # bake; the vehicles need the library as well.
         library=library, objects=ctx.pools[2],
-        vehicles=em.spawned_vehicle_templates(info),
+        vehicles=em.spawned_vehicle_templates(info, library),
         shared_dir=ctx.shared_sounds, audio_format=ctx.audio_format,
         final_dir=ctx.final_level_dir())}, {}
 

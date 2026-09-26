@@ -63,6 +63,7 @@ from extract_models import (  # noqa: E402
 
 from bf42 import gltf, stdmesh  # noqa: E402
 from bf42 import baf as baf_mod  # noqa: E402
+from bf42 import con as con_mod  # noqa: E402
 from bf42 import rs as rs_mod  # noqa: E402
 from bf42 import ske as ske_mod  # noqa: E402
 from bf42.assemble import Assembler, Report  # noqa: E402
@@ -1779,7 +1780,7 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
     return out
 
 
-def spawned_vehicle_templates(info: LevelInfo) -> list[str]:
+def spawned_vehicle_templates(info: LevelInfo, library=None) -> list[str]:
     """Every vehicle template the scene can ever contain, deduped.
 
     The sound list has to answer for the *scene*, and the scene is built from
@@ -1828,6 +1829,34 @@ def spawned_vehicle_templates(info: LevelInfo) -> list[str]:
                               gameplay.object_spawn_templates))
             for template in spec.vehicles.values():
                 add(template)
+    # 3. **Held children.** A vehicle can carry `ObjectSpawner` children of its
+    #    own -- Wake's Hatsuzuki holds its Daihatsus (`HatsuzukiDaihatsuSpawner`),
+    #    a carrier its deck aircraft -- which `assemble.build_node` bakes into
+    #    the scene as held hulls. No level spawner names them, so without this
+    #    walk the landing craft a bot drives off the destroyer had no
+    #    `sounds.vehicles` entry: no engine for bots or the player. Both teams'
+    #    halves, as for a level pad; appended, so existing entries keep their
+    #    order.
+    if library is not None:
+        visited: set[str] = set()
+
+        def walk(name: str | None) -> None:
+            if not name or name.lower() in visited:
+                return
+            visited.add(name.lower())
+            template = library.object(name)
+            if template is None:
+                return
+            if template.is_spawner:
+                for held in template.spawner_vehicles.values():
+                    add(held)
+                    walk(held)
+                return
+            for ref in template.children:
+                walk(con_mod.instance_template_name(ref, library.object))
+
+        for template in list(out):
+            walk(template)
     return out
 
 
