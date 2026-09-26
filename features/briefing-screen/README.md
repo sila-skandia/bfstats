@@ -103,6 +103,22 @@ rest of `Menu/Init.con`) stay unread; the debriefing screens (`mp_debriefing`)
 are not part of this; ESC does not dismiss the briefing (it does not in the
 game either).
 
+## Follow-up: Enter accepts the briefing (2026-09-26)
+
+While the overlay parks on the briefing state the keyboard is the briefing's,
+the way it is the console's or the Escape menu's: `page-input.js`'s keydown
+router gains a `page.overlay.briefingCaptures()` gate ahead of the Escape
+branch, and Enter (or NumpadEnter) runs `page.overlay.acceptBriefing()` — the
+READY click's own body, factored out in `progress.js`. Before this, Enter hit
+`c_GIInGameMenu` and opened the spawn interface BEHIND the still-up briefing.
+The pad's `c_GIInGameMenu` takes the same gate in `cameraOrSpawnTrigger`.
+The spawn screen stays closed until the briefing is accepted either way, and
+behind the briefing the pane shows the free camera at the map's default pose,
+as in the game. Also fixed here: the flag sprites' `onload` repaint called a
+nonexistent `paint()` (so late-arriving flags never drew), and the flags now
+centre on the VS line (flag Y = baseline − capAscent/2 − flagH/2, off the
+`trebuchet_ms8` metrics) instead of a hard-coded y.
+
 ## Tasklist
 
 - [x] Extract `mp_briefing.png` (chrome extractor) and publish to the volume.
