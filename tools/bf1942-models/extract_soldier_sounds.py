@@ -62,6 +62,7 @@ MOVEMENT_SCRIPTS = (
 INJURY_SCRIPTS = (
     ("c_SstHitDamage", "SoldierHitDamage.ssc"),
     ("c_SstFFHitDamage", "SoldierFFHitDamage.ssc"),
+    ("c_SstKilled", "SoldierKilled.ssc"),
 )
 
 ALL_SOLDIER_SCRIPTS = BAIL_OUT_SCRIPTS + MOVEMENT_SCRIPTS + INJURY_SCRIPTS

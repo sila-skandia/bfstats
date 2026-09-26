@@ -511,6 +511,7 @@ export class Parachute {
       this.events.push({
         type: 'sound', id: layer.id, trigger: 'c_SstFallingHigh',
         sample, loop: !!layer.loop, volume: layer.volume, at: layer.at,
+        voice: !!layer.voice,
       });
     }
   }
