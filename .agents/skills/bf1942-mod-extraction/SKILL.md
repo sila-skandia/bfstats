@@ -552,9 +552,11 @@ other mod's live dossiers are still the 2026-09-14 run's, read `GameTypes/` firs
   of 64 KiB and are dated 2026-09-07. The RFA reader fails on them with "unpack requires
   a buffer of 4 bytes" and the extractor skips them. Reinstall them before extracting
   (FHSW's own `Operation_Ketsu4.rfa` is complete).
-- **Dead files on the volume.** Nine FHSW dossiers date from the first run (2026-09-06):
-  the four truncated levels, plus `air_raid_alert_-kure-1945`, `apennines`,
-  `fht_the_breaking_point-1940`, `forgotten_hometown` and `operation_springawakening`,
-  which are no longer installed. The manifest does not list them, so the site answers
-  404 for all nine. `bfheroes` (34) and `warfront` (90) were uninstalled 2026-09-25 but are
-  live and listed, and a run on this PC cannot regenerate them.
+- **Old files outlive their levels.** A level the extractor cannot read, or that is no
+  longer installed, leaves its old dossier on the volume, unlisted and answering 404.
+  Nine FHSW ones from the first run (2026-09-06), the four truncated levels plus five no
+  longer installed, were deleted on 2026-09-27; a checksummed copy is on this PC in
+  `~/.cache/bfstats-volume-backups/2026-09-27-dead-fhsw-dossiers/`. Every mod folder on
+  the volume then matched its manifest entry. `bfheroes` (34) and `warfront` (90) were
+  uninstalled 2026-09-25 but are live and listed, and a run on this PC cannot
+  regenerate them.
