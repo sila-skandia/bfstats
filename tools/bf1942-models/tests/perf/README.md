@@ -176,3 +176,40 @@ What to compare, and what not to:
 - Every real-time run ends with `__matrixDrift`: every world matrix in the
   scene against a fresh recompute, which is how a frozen static subtree that
   something still moves gets caught (it caught the Hatsuzuki's radar).
+
+## Bot fights
+
+Two harnesses for the case the earlier ones do not cover: many bots fighting
+at close quarters. The findings are in `features/bot-fight-performance/README.md`.
+
+`simphase.mjs` runs a match on the headless runner (`sim/match.mjs`: the page's
+own AI, bodies and vehicles, no renderer) and prints ms per 30 Hz tick per
+phase (the referee and each bot's sensing, decision and plan phases inside it;
+the world step and the soldier bodies inside that; the vehicle bodies; the
+collider's casts per tick and their cost), plus the shots and hits.
+
+```bash
+cd tools/bf1942-models/tests/perf
+node simphase.mjs --map el_alamein --bots 8 --time 60 --warm 10            # a natural match
+node simphase.mjs --map berlin --bots 8 --stage Reichstag --restage 12 --gap 30
+node simphase.mjs --viewer /path/to/other/checkout/viewer --map berlin ... # A/B another build
+```
+
+`--stage <flag>` pins every bot on foot and lays the sides out in lines
+`--gap` m apart across the flag every `--restage` s; `--warm` seconds are left
+out of the stats. `--viewer` loads the AI from another checkout against this
+one's maps and models, so a before/after pair runs on identical level data.
+
+`botfight.cjs` is the same fight on `map.html`: `fight`, then `noai` (the same
+bodies, every bot's tick emptied) and `base` (no bots), each with a CPU
+profile, workload counters (draws, skinned meshes, skeletons, bone textures,
+bodies drawn, panners) and per-thread CPU. Stepped headless for shares of the
+JavaScript; `--headed --realtime 20` for the player's frame (a window on the
+system GL, the page's own loop, frame intervals off `requestAnimationFrame`).
+It waits for any other headless Chromium to finish first.
+
+```bash
+node botfight.cjs --map el_alamein --bots 16 --frames 900 --out out/fight-16
+node botfight.cjs --headed --realtime 20 --bots 16 --out out/fight-16-headed
+node botfight.cjs --headed --realtime 20 --base http://localhost:5677 --runs fight,noai   # another build
+```

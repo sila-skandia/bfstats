@@ -26,16 +26,16 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
  * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
- * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`,
+ * `footLookPair`, `forgetSeatViews`, `handleParachuteEvent`, `handleSoldierFootstep`,
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `lookKeyHeld`, `lookNeedsKey`,
  * `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
- * `optPilot`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
+ * `optPilot`, `pickVehicle`, `playSoldierDeathSound`, `playSoldierHurtSound`, `pumpLook`,
  * `rebuildVehicleInterp`, `remoteCrewTeam`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
- * `stepSeatIk`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
+ * `stepSeatIk`, `stopFallSound`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
  * `viewFor`, `warmSubtree`, `world`.
  */
@@ -459,6 +459,9 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamShot = DEATH_CAM.foot;
     localPlayer.deathCamTarget = null;
     localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
+    // `c_SstKilled`, his last word -- which is all a free fall into the
+    // ground without the cord pulled sounds like.
+    page.playSoldierDeathSound();
   };
   /** Killed inside a hull: all of the body's HP goes (a body that climbed in
    *  at full health still has it, and the `soldierArmor.destroyed` latch must
@@ -584,7 +587,8 @@ export function createLocalPlayer(page) {
     if (!(damage >= 0)) return;
 
     const isFriendlyFire = attackerTeam != null && attackerTeam === page.deployTeamId;
-    page.playSoldierHurtSound(isFriendlyFire);
+    // The killing blow is `dieOnFoot`'s last word, not a grunt as well.
+    if (localPlayer.soldierArmor.hitPoints > 0) page.playSoldierHurtSound(isFriendlyFire);
 
     // `_giveDamage`'s wash and arc (HFD-2, HFD-3): the octant from the
     // soldier toward that point, in 3-D, the alpha this damage's share of
@@ -695,13 +699,18 @@ export function createLocalPlayer(page) {
   localPlayer.drainSoldierEvents = () => {
     // Bail-out triggers for the frame. `parachute.js` names each one by the
     // engine's own sound trigger (`c_SstFallingHigh`, `c_SstOpenParachute`,
-    // `c_SstParachuteLand`) and animation state; nothing plays them yet — the
-    // samples are not in the published `_shared/sounds` tree — so this keeps
-    // them where a check and a future audio stage can both read them.
+    // `c_SstParachuteLand`) and animation state; `page-audio.js` plays them,
+    // and the log keeps them where a check can read them.
     if (localPlayer.soldier?.parachuteEvents.length) {
-      for (const event of localPlayer.soldier.drainParachuteEvents()) localPlayer.parachuteLog.push(event);
+      for (const event of localPlayer.soldier.drainParachuteEvents()) {
+        localPlayer.parachuteLog.push(event);
+        page.handleParachuteEvent(event);
+      }
       if (localPlayer.parachuteLog.length > 64) localPlayer.parachuteLog.splice(0, localPlayer.parachuteLog.length - 64);
     }
+    // The free fall can also end without a state event -- a respawn or a
+    // climb into a seat resets the chute outright -- and its winds loop.
+    if (localPlayer.soldier?.parachuteState !== PARA_FALLING) page.stopFallSound();
     if (localPlayer.soldier?.footstepEvents.length) {
       for (const step of localPlayer.soldier.drainFootstepEvents()) page.handleSoldierFootstep(step);
     }
