@@ -346,6 +346,96 @@ export function swimStroke(throttle) {
 }
 
 /**
+ * Each swim state's `setMorphFactor`, `animations/AnimationStatesSwim.con` and
+ * `AnimationStatesDie.con`: 4.0 on every swim state but `Ub_EndSwim`'s 1.0,
+ * and 20 on the swim death. With `STAND_MORPH`, the base the exit's
+ * `addTransitionWhenDone Lb_Stand` / `Ub_Stand` lands on
+ * (`AnimationStatesLower.con` / `AnimationStatesUpper.con`, the same numbers
+ * `soldier-actions.js` `VANILLA_STATES` carries for `stand.lower` /
+ * `stand.upper`).
+ *
+ * The morph is ANIM-4's weight ramp: on entering a state the blend weight
+ * starts at 0 and gains `dt x morph` a tick, the bones slerped from where they
+ * stood toward the new clip, so a state is fully in after `1 / morph` seconds.
+ */
+export const SWIM_MORPH = Object.freeze({
+  Lb_StartSwim: 4.0, Ub_StartSwim: 4.0,
+  Lb_Floating: 4.0, Ub_Floating: 4.0,
+  Lb_SwimForward: 4.0, Ub_SwimForward: 4.0,
+  Lb_SwimBackward: 4.0, Ub_SwimBackward: 4.0,
+  Lb_EndSwim: 4.0, Ub_EndSwim: 1.0,
+  Lb_DieSwim: 20.0, Ub_DieSwim: 20.0,
+});
+export const STAND_MORPH = Object.freeze({ lower: 2.0, upper: 0.7 });
+
+/**
+ * The swim family (`SWIM_CLIPS` key) a `{ lower, upper }` clip pair is, or
+ * null. The lower name decides: it is the machine the engine reads.
+ */
+export function swimFamilyOfPair(pair) {
+  const lower = pair?.lower;
+  if (!lower) return null;
+  for (const [family, clips] of Object.entries(SWIM_CLIPS)) {
+    if (clips.lower === lower) return family;
+  }
+  return null;
+}
+
+/**
+ * How long each half's morph takes when a whole-body renderer switches from
+ * family `from` to family `to`, as `{ lower, upper }` seconds -- or null when
+ * neither end is a swim family, which leaves every other switch as it was.
+ *
+ * Into a swim state: that state's own morph (`SWIM_MORPH`). Out of one onto
+ * the gait: the stand base's, because `Lb_EndSwim` / `Ub_EndSwim` hand over to
+ * `Lb_Stand` / `Ub_Stand` and those are what the weight ramps into. Null from
+ * a rig that drew nothing yet.
+ */
+export function swimMorphSeconds(from, to) {
+  // Nothing drawn before (a fresh rig) is nothing to morph from.
+  if (from == null || to == null || from === to) return null;
+  const into = SWIM_CLIPS[to];
+  if (into) {
+    return { lower: 1 / (SWIM_MORPH[into.lower] ?? 4.0),
+             upper: 1 / (SWIM_MORPH[into.upper] ?? 4.0) };
+  }
+  if (SWIM_CLIPS[from]) {
+    return { lower: 1 / STAND_MORPH.lower, upper: 1 / STAND_MORPH.upper };
+  }
+  return null;
+}
+
+/**
+ * Switch a whole-body rig's `families` (`{ family: [lowerAction, upperAction] }`,
+ * or a single-action pose family) from `from` to `to`: the new family on from
+ * its first frame, everything else off. Into or out of the water it is the
+ * engine's morph instead of a cut -- the new family's actions fade in and the
+ * old one's out over `swimMorphSeconds`, which is the weight ramp above done as
+ * a cross-fade between the two clips. Duck-typed on three.js `AnimationAction`
+ * (`reset`, `play`, `setEffectiveWeight`, `fadeIn`, `fadeOut`), so this module
+ * stays free of `three`.
+ */
+export function switchFamily(families, from, to) {
+  const fade = swimMorphSeconds(from, to);
+  const seconds = (i, n) => (n > 1 && i > 0 ? fade.upper : fade.lower);
+  for (const [family, actions] of Object.entries(families ?? {})) {
+    actions.forEach((a, i) => {
+      if (family === to) {
+        a.paused = false;
+        a.reset();
+        a.setEffectiveWeight(1);
+        if (fade) a.fadeIn(seconds(i, actions.length));
+        a.play();
+      } else if (fade && family === from) {
+        a.fadeOut(seconds(i, actions.length));
+      } else {
+        a.setEffectiveWeight(0);
+      }
+    });
+  }
+}
+
+/**
  * `updateSwimming`, as a state object.
  *
  * Owns exactly what the engine's function owns: whether the `c_AsmIsSwimming`
