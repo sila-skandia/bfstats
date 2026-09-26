@@ -1596,40 +1596,44 @@ def _control_point_report(info: LevelInfo, placed: set[str] | None,
     is the best answer available.
 
     `gameplay` is the layer to report; the default mode when omitted.
+
+    A placement of a template the layer never defines is left out
+    (`GameplayObjects.created_control_points`): the engine makes nothing of
+    it, so it has no marker, no bar segment and no index to bind a spawner.
     """
     gameplay = info.gameplay if gameplay is None else gameplay
     out: list[dict] = []
-    for inst in gameplay.control_points:
+    for inst in gameplay.created_control_points():
         tpl = gameplay.template_for(inst)
         entry = {
             "name": inst.template,
             "position": _to_gltf_vec(inst.position),
             "rotation": list(inst.rotation),
             # A placement may override the template's starting owner.
-            "team": inst.team if inst.team is not None else (tpl.team if tpl else 0),
-            "displayName": (tpl.display_name or inst.template) if tpl else inst.template,
-            "radius": tpl.radius if tpl else 0.0,
-            "areaValue": tpl.area_value if tpl else 0.0,
-            "spawnGroupId": tpl.spawn_group_id if tpl else None,
-            "secondSpawnGroupId": tpl.second_spawn_group_id if tpl else None,
-            "objectSpawnerId": tpl.object_spawner_id if tpl else None,
-            "unableToChangeTeam": tpl.unable_to_change_team if tpl else False,
-            "timeToGetControl": tpl.time_to_get_control if tpl else None,
+            "team": inst.team if inst.team is not None else tpl.team,
+            "displayName": tpl.display_name or inst.template,
+            "radius": tpl.radius,
+            "areaValue": tpl.area_value,
+            "spawnGroupId": tpl.spawn_group_id,
+            "secondSpawnGroupId": tpl.second_spawn_group_id,
+            "objectSpawnerId": tpl.object_spawner_id,
+            "unableToChangeTeam": tpl.unable_to_change_team,
+            "timeToGetControl": tpl.time_to_get_control,
             # The rest of the control-point law's settings (bf42/level.py
             # `ControlPointTemplate`); null where the level keeps the
             # template ctor's default, which the viewer holds
             # (bot-referee.js `controlPointSettings`).
-            "timeToLoseControl": tpl.time_to_lose_control if tpl else None,
-            "disableIfEnemyInsideRadius": tpl.disable_if_enemy_inside_radius if tpl else None,
-            "disableWhenLosingControl": tpl.disable_when_losing_control if tpl else None,
-            "loseControlWhenEnemyClose": tpl.lose_control_when_enemy_close if tpl else None,
-            "loseControlWhenNotClose": tpl.lose_control_when_not_close if tpl else None,
-            "minNrToTakeControl": tpl.min_nr_to_take_control if tpl else None,
-            "onlyTakeableByTeam": tpl.only_takeable_by_team if tpl else None,
-            "flagMesh": tpl.flag_mesh() if tpl else None,
-            "flagHeight": tpl.flag_offset[1] if tpl else 0.0,
+            "timeToLoseControl": tpl.time_to_lose_control,
+            "disableIfEnemyInsideRadius": tpl.disable_if_enemy_inside_radius,
+            "disableWhenLosingControl": tpl.disable_when_losing_control,
+            "loseControlWhenEnemyClose": tpl.lose_control_when_enemy_close,
+            "loseControlWhenNotClose": tpl.lose_control_when_not_close,
+            "minNrToTakeControl": tpl.min_nr_to_take_control,
+            "onlyTakeableByTeam": tpl.only_takeable_by_team,
+            "flagMesh": tpl.flag_mesh(),
+            "flagHeight": tpl.flag_offset[1],
             # False for a capture zone the level deliberately left invisible.
-            "visible": bool(tpl and tpl.visible
+            "visible": bool(tpl.visible
                             and (placed is None or inst.template.lower() in placed)),
         }
         out.append(entry)
@@ -1998,7 +2002,10 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
     spawner_specs = (info.spawn_templates if gameplay is None
                      else gameplay.object_spawn_templates)
     out: list[dict] = []
-    control_points = gameplay.control_points if gameplay is not None else info.gameplay.control_points
+    layer = gameplay if gameplay is not None else info.gameplay
+    # The list `_control_point_report` writes, so `controlPointIndex` indexes
+    # it; a placement of a template the layer never defines binds no pad.
+    control_points = layer.created_control_points()
     for inst in spawns:
         vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
@@ -2023,9 +2030,7 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
                 inst.position[0] - point.position[0],
                 inst.position[2] - point.position[2],
             )
-            tpl = gameplay.template_for(point) if gameplay is not None else info.gameplay.template_for(point)
-            radius = tpl.radius if tpl is not None else 0.0
-            limit = max(60.0, radius * 4.0)
+            limit = max(60.0, layer.template_for(point).radius * 4.0)
             if distance <= limit and distance < nearest_distance:
                 nearest = (index, point.template)
                 nearest_distance = distance

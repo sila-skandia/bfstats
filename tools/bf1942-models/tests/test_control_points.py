@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -15,6 +17,7 @@ from bf42.level import (  # noqa: E402
     SpawnGroupSettings,
     GameplayObjects,
     LevelInfo,
+    SpawnTemplate,
     StaticInstance,
     TerrainInfo,
     parse_control_point_templates,
@@ -303,11 +306,152 @@ Object.rotation 0/0/0
         self.assertEqual(objects.template_for(inst).flag_mesh(), "flagus_m1")
 
     def test_a_placement_with_no_template_is_not_an_error(self) -> None:
-        """Vanilla Coral_Sea ships placements with no templates file at all."""
+        """Cassino's CTF layer places three templates it never defines
+        (`UndefinedTemplateTests`)."""
         objects = GameplayObjects(
             mode="Conquest",
             control_points=parse_static_objects(self.PLACEMENTS))
         self.assertIsNone(objects.template_for(objects.control_points[0]))
+
+
+class UndefinedTemplateTests(unittest.TestCase):
+    """A placement of a template the layer never defines is no control point.
+
+    `Object.create` of an undeclared template makes nothing:
+    `ObjectTemplateAdm::createObject` 0x084513e0 returns 0 for a null template
+    (0x08451403, ledger SPAWNGRP-7). So `scene.json` lists no such point, where
+    it used to list one with no radius, weight or settings: the map drew a
+    marker and a grey bar segment for it, and a pad within 60 m bound to it.
+    """
+
+    AIRFIELD = """
+Object.create The_Airfield
+Object.absolutePosition 1383.75/115.998/775.193
+"""
+    # Cassino's CTF placements, ahead of a real point so an index would move.
+    CASSINO_CTF = """
+Object.create openbase_lumbermill_Cpoint
+Object.absolutePosition 639.658/83.3344/556.038
+Object.create openbasecammo
+Object.absolutePosition 516.598/84.6821/591.681
+"""
+
+    @staticmethod
+    def _layer(placements: str, pads: list[StaticInstance] | None = None) -> GameplayObjects:
+        return GameplayObjects(
+            mode="Ctf",
+            control_points=parse_static_objects(placements),
+            control_point_templates=parse_control_point_templates(WAKE_TEMPLATES),
+            object_spawns=list(pads or []),
+            object_spawn_templates={"antitankgunspawner": SpawnTemplate(
+                name="AntiTankGunSpawner", vehicles={1: "Pak40", 2: "Pak40"})})
+
+    @staticmethod
+    def _info(layer: GameplayObjects) -> LevelInfo:
+        """The layer as the default mode, which `load_level` also makes the
+        top-level vehicle layer."""
+        info = LevelInfo(name="T", terrain=TerrainInfo())
+        info.gameplay = layer
+        info.spawn_objects = layer.object_spawns
+        info.spawn_templates = layer.object_spawn_templates
+        return info
+
+    @staticmethod
+    def _pad(x: float, z: float) -> StaticInstance:
+        return StaticInstance("AntiTankGunSpawner", (x, 100.0, z), (0.0, 0.0, 0.0), team=1)
+
+    def test_only_a_defined_template_is_created(self) -> None:
+        layer = self._layer(self.CASSINO_CTF + self.AIRFIELD)
+        self.assertEqual(len(layer.control_points), 3)      # still read, not an error
+        self.assertEqual([inst.template for inst in layer.created_control_points()],
+                         ["The_Airfield"])
+
+    def test_the_report_leaves_it_out_and_the_rest_as_it_was(self) -> None:
+        mixed = self._layer(self.CASSINO_CTF + self.AIRFIELD)
+        alone = self._layer(self.AIRFIELD)
+        for placed in (None, {"the_airfield"}, set()):
+            got = extract_map._control_point_report(self._info(mixed), placed)
+            self.assertEqual(json.dumps(got),
+                             json.dumps(extract_map._control_point_report(self._info(alone), placed)))
+            self.assertEqual([entry["name"] for entry in got], ["The_Airfield"])
+        # A layer other than the default, as `modes.<mode>` is written.
+        info = self._info(alone)
+        self.assertEqual(extract_map._control_point_report(info, None, mixed),
+                         extract_map._control_point_report(info, None, alone))
+
+    def test_a_layer_of_them_alone_reports_no_point(self) -> None:
+        layer = self._layer(self.CASSINO_CTF)
+        self.assertEqual(extract_map._control_point_report(self._info(layer), None), [])
+
+    def test_a_pad_binds_none_of_them(self) -> None:
+        """Cassino CTF's Pak40 pad 25 m from `openbasecammo`, which bound it
+        at the 60 m reach of a point with no radius."""
+        layer = self._layer(self.CASSINO_CTF, [self._pad(535.0, 574.0)])
+        [pad] = extract_map._object_spawn_report(self._info(layer), layer)
+        self.assertEqual(pad["vehicle"], "Pak40")
+        self.assertNotIn("controlPointIndex", pad)
+        self.assertNotIn("controlPointName", pad)
+
+    def test_a_pad_s_index_is_its_point_s_place_in_the_report(self) -> None:
+        layer = self._layer(self.CASSINO_CTF + self.AIRFIELD, [self._pad(1390.0, 780.0)])
+        info = self._info(layer)
+        [pad] = extract_map._object_spawn_report(info)
+        points = extract_map._control_point_report(info, None)
+        self.assertEqual(pad["controlPointIndex"], 0)
+        self.assertEqual(points[pad["controlPointIndex"]]["name"], pad["controlPointName"])
+        self.assertEqual(pad["controlPointName"], "The_Airfield")
+
+
+class CassinoCtfArchiveTests(unittest.TestCase):
+    """Road to Rome's Cassino, against the shipped archives: its CTF
+    `ControlPoints.con` is vanilla Kursk's, at Kursk's coordinates, and only
+    Kursk defines the two templates it places."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from extract_models import DEFAULT_GAME_DIR, mod_chain
+        from bf42.level import find_level_archives, load_gameplay_objects, load_level_files
+        if not (DEFAULT_GAME_DIR / "Mods" / "XPack1").is_dir():
+            raise unittest.SkipTest("Road to Rome is not installed")
+
+        def layer(mod: str, level: str, mode: str) -> GameplayObjects:
+            paths = find_level_archives(DEFAULT_GAME_DIR, mod, level,
+                                        chain=mod_chain(DEFAULT_GAME_DIR, mod))
+            if not paths:
+                raise unittest.SkipTest(f"{mod} {level} is not installed")
+            return load_gameplay_objects(load_level_files(paths, level), mode)
+
+        cls.ctf = layer("XPack1", "cassino", "Ctf")
+        cls.conquest = layer("XPack1", "cassino", "Conquest")
+        cls.kursk = layer("bf1942", "Kursk", "Ctf")
+
+    def test_the_ctf_layer_creates_none_of_its_three_placements(self) -> None:
+        self.assertEqual([inst.template for inst in self.ctf.control_points],
+                         ["openbase_lumbermill_Cpoint", "openbasecammo", "openbasecammo"])
+        self.assertEqual(self.ctf.created_control_points(), [])
+
+    def test_kursk_defines_both(self) -> None:
+        self.assertIn("openbasecammo", self.kursk.control_point_templates)
+        self.assertIn("openbase_lumbermill_cpoint", self.kursk.control_point_templates)
+        self.assertEqual(self.kursk.created_control_points(), self.kursk.control_points)
+
+    def test_ctf_reports_no_point_and_binds_no_pad(self) -> None:
+        """Two Pak40 pads stand within 60 m of an `openbasecammo`, and bound
+        it while the exporter listed it."""
+        info = LevelInfo(name="cassino", terrain=TerrainInfo())
+        info.gameplay = self.conquest
+        self.assertEqual(extract_map._control_point_report(info, None, self.ctf), [])
+        pads = extract_map._object_spawn_report(info, self.ctf)
+        near = [pad for pad in pads if any(
+            math.hypot(pad["position"][0] - inst.position[0],
+                       -pad["position"][2] - inst.position[2]) <= 60.0
+            for inst in self.ctf.control_points)]
+        self.assertEqual([pad["vehicle"] for pad in near], ["Pak40", "Pak40"])
+        self.assertFalse([pad for pad in pads if "controlPointIndex" in pad])
+
+    def test_conquest_keeps_all_six(self) -> None:
+        self.assertEqual(len(self.conquest.control_points), 6)
+        self.assertEqual(self.conquest.created_control_points(), self.conquest.control_points)
 
 
 ANIMATED_FLAG = """
