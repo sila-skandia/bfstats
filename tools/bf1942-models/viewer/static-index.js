@@ -99,7 +99,9 @@ export class CollisionIndex {
     // round, a soldier - still meets them here.
     this._body = new Uint8Array(ownerNodes.length);
     // Measured per-query work, for the budget in the feature doc. Reset by
-    // whoever is reading it.
+    // whoever is reading it. `candidates` is every triangle a query walks
+    // past its dedupe, which in `cast` is once per cell for a triangle the
+    // cell's box rejects (see there); `tests` is every narrowphase run.
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
     /**
      * Articulated sub-parts: a hull's collision meshes that hang under a rig
@@ -303,7 +305,6 @@ export class CollisionIndex {
             for (let k = from; k < to; k++) {
               const tri = this.cellItems[k];
               if (this._stamp[tri] === stamp) continue;
-              this._stamp[tri] = stamp;
               stats.candidates++;
               if (onlyDrivable && !this.drivable[tri]) continue;
               if (onlyOwner >= 0) {
@@ -321,6 +322,16 @@ export class CollisionIndex {
                   || Math.max(p[j], p[j + 3], p[j + 6]) < loX
                   || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
                   || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
+              // Stamped only once it is inside this cell's box. The box is the
+              // ray's over this cell alone, and a triangle listed in several
+              // cells can be clear of it here and in the ray's path in the
+              // next: a ceiling slab over two cells that a climbing ray is
+              // still under in the first. Stamped before the box, the slab was
+              // struck off in the first cell and the ray went through it in
+              // the second. Nothing below depends on the cell, and
+              // `#intersect` tests the whole ray, so a stamped triangle is
+              // done with for this query.
+              this._stamp[tri] = stamp;
               if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
               stats.tests++;
               const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
