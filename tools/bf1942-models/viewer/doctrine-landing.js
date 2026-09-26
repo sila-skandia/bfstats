@@ -515,6 +515,52 @@ export function craftBailReason({ zones, x, z, speed, touchingLand = true, walka
   return null;
 }
 
+/** The landing craft (the Daihatsu and the LCVP, whose seats are the
+ *  `LandingCraft` / `LandingCraftPassenger` / `LandingCraftFixed` units:
+ *  `equipmentType` 7 / 10 / 11), by AI template name, as bot-units.js
+ *  picks their water map. */
+export const LANDING_CRAFT_RE = /lcvp|daihatsu|landing/i;
+
+/** `disembarkPath`'s numbers (INVENTION, all of them). */
+export const DISEMBARK = {
+  /** The march along the centreline, and how far it looks for the bow. */
+  step: 0.5,
+  reach: 20,
+  /** How far past the last of the hull the walk ends. */
+  clear: 1.5,
+  /** A point counts as reached inside this. */
+  arrive: 1.0,
+  /** Seconds before the walk is dropped for the bot's own route. */
+  timeout: 8,
+};
+
+/**
+ * The walk off a beached landing craft for a soldier standing in it, or null
+ * when the hull is not what he stands on (INVENTION). Two points: the
+ * craft's centreline abreast of him, then over the bow and the lowered ramp
+ * to `clear` past the first ground that is not the hull.
+ *
+ * The infantry map is painted from the terrain and knows nothing of a hull,
+ * so a route from a man in the hold runs straight through the side wall
+ * whenever his goal is off the bow's line; he walks into the gunwale, which
+ * is too high to step, and stays there. `(hx, hz)` is the hull's origin and
+ * `(fx, fz)` its bow's heading, unit. `collider` is the world's.
+ */
+export function disembarkPath(collider, x, y, z, hx, hz, fx, fz) {
+  if (!collider?.cast) return null;
+  const under = collider.cast(x, y + 0.5, z, 0, -1, 0, 1.5);
+  if (!under || under.kind !== 'object' || !(under.owner >= 0)) return null;
+  const along = (x - hx) * fx + (z - hz) * fz;
+  const cx = hx + fx * along, cz = hz + fz * along;
+  for (let d = DISEMBARK.step; d <= DISEMBARK.reach; d += DISEMBARK.step) {
+    const hit = collider.cast(cx + fx * d, y + 3, cz + fz * d, 0, -1, 0, 8);
+    if (hit && hit.kind === 'object' && hit.owner === under.owner) continue;
+    const out = d + DISEMBARK.clear;
+    return [[cx, cz], [cx + fx * out, cz + fz * out]];
+  }
+  return null;
+}
+
 /** The level's zones for a world's `extras.ai`, built once per `ai` object. */
 const zonesByAi = new WeakMap();
 export function levelZones(ai) {

@@ -627,15 +627,22 @@ export function createVehicleWrecks(page) {
     }
     for (const child of visual.hidden) {
       child.visible = true;
-      // No-wreck fallthrough fades these in place; undo that.
+      // No-wreck fallthrough fades these in place; undo that, and only that.
+      // Keying the undo on `opacity < 1` also caught every material that is
+      // translucent by design: the muzzle flash and smoke emitters live in
+      // this subtree, their `colorOverTime` leaves opacity below 1 after a
+      // shot, and forcing them opaque drew every later puff as a black box
+      // (shared material, so every hull of the type).
       child.traverse(obj => {
         if (!obj.material) return;
         const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
         for (const material of materials) {
-          if (!(material.opacity < 1)) continue;
-          material.opacity = 1;
-          material.transparent = false;
-          material.depthWrite = true;
+          const before = material.userData.preFade;
+          if (!before) continue;
+          material.opacity = before.opacity;
+          material.transparent = before.transparent;
+          material.depthWrite = before.depthWrite;
+          delete material.userData.preFade;
         }
       });
     }
@@ -664,6 +671,12 @@ export function createVehicleWrecks(page) {
       if (!obj.material) return;
       const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
       for (const material of materials) {
+        // What `respawnVehicle` puts back, taken before the first fade step.
+        material.userData.preFade ??= {
+          opacity: material.opacity,
+          transparent: material.transparent,
+          depthWrite: material.depthWrite,
+        };
         material.transparent = true;
         material.opacity = opacity;
         // An opaque wreck still writes depth; a fading one must not, or it punches

@@ -15,9 +15,10 @@ export function isCollision(obj) {
  * (each carrying `extras.lod = { geometry, level, distance }`) are detached
  * from the part node and re-parented under a LOD inserted in the part's
  * place, with the part's own LOD0 mesh as level 0 at distance 0. Distances
- * are the geometry's authored `setLodDistance` metres when the exporter had a
- * table (1,133 vanilla geometries declare one) and the census fallback curve
- * otherwise (`FALLBACK_LOD_DISTANCES` in bf42/assemble.py, 0/15/35/60/100/200).
+ * are the engine's table: the geometry's authored `setLodDistance` metres
+ * over the template constructor's 150 m steps (`DEFAULT_LOD_DISTANCES` in
+ * bf42/assemble.py). The exporter ships only the rungs the client keeps
+ * (`retail_lod_chain`), so a chain here is already the game's.
  *
  * Runs on the whole subtree, because a placed vehicle nests several meshed
  * parts (hull, turret, tracks, wheels) and each carries its own chain. All

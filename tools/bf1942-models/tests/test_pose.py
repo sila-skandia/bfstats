@@ -508,16 +508,16 @@ class SeatStateNotInTheMachineTests(unittest.TestCase):
 
 
 class SeatAnchorTests(unittest.TestCase):
-    """A seat pose's origin is the soldier's hips, not the ground under him.
+    """A seat pose's origin is where a standing man's hips would be.
 
-    A `.baf` root track is the one transform in clip world, and a seat clip
-    carries the standing origin-at-the-feet convention in it:
-    `3PWillySitLower` writes `Bip01` at `0/-0.1104/-0.8335`, against
-    `3PStandLower`'s `0.004/-0.0075/-0.9992` for a man on the ground. A
-    `SeatObject` is the cushion — `WillySeat` sits 0.6 m up inside the Willys'
-    body — so a pose parented there with that offset still in it rides 0.83 m
-    out of the vehicle, which put the driver's shoulder 1.25 m from a wheel
-    0.60 m of arm away and left both hands hanging in the air.
+    A `.baf` root track is the one transform in clip world, with the origin at
+    the soldier's feet: `3PStandLower` writes `Bip01` 0.9992 m up, a seat clip
+    its own sitting height (`3PWillySitLower` 0.8335 m, the Hanomag bench
+    0.297 m). A `SeatObject` is where a standing man's hips would go, so the
+    root keeps its translation less the standing one: with the whole
+    translation the Willys driver rode 0.83 m out of the vehicle, and with
+    none of it the Hanomag's passengers sat 0.55 m over their bench with their
+    heads through the roof.
     """
 
     def _skeleton(self) -> ske.Skeleton:
@@ -527,7 +527,28 @@ class SeatAnchorTests(unittest.TestCase):
             ("Bip01 Spine", 1, IDENTITY, (0.1, 0.0, 0.0)),
         ]), "s.ske")
 
-    def test_the_root_translation_goes_and_its_rotation_stays(self) -> None:
+    def test_the_root_is_measured_from_the_standing_root(self) -> None:
+        from extract_pose import seat_anchored
+        turned = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+        locals_map = {"bip01": (turned, (-0.0043, -0.0917, 0.2966)),
+                      "bip01 pelvis": (IDENTITY, (0.0312, -0.0045, 0.0))}
+
+        out = seat_anchored(self._skeleton(), locals_map,
+                            (-0.004, -0.0075, 0.9992))
+
+        for got, want in zip(out["bip01"][1], (-0.0003, -0.0842, -0.7026)):
+            self.assertAlmostEqual(want, got, places=6)
+        self.assertEqual(turned, out["bip01"][0])
+        self.assertEqual((0.0312, -0.0045, 0.0), out["bip01 pelvis"][1])
+
+    def test_a_standing_seat_clip_keeps_its_hips_on_the_node(self) -> None:
+        from extract_pose import seat_anchored
+        standing = (-0.004, -0.0075, 0.9992)
+        out = seat_anchored(self._skeleton(),
+                            {"bip01": (IDENTITY, standing)}, standing)
+        self.assertEqual((0.0, 0.0, 0.0), out["bip01"][1])
+
+    def test_without_a_standing_clip_the_root_translation_goes(self) -> None:
         from extract_pose import seat_anchored
         turned = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
         locals_map = {"bip01": (turned, (0.0, -0.1104, -0.8335)),
@@ -549,7 +570,7 @@ class SeatAnchorTests(unittest.TestCase):
 
         self.assertNotIn("bip01", out)
 
-    def test_the_dropped_offset_is_reported_not_silently_lost(self) -> None:
+    def test_the_root_offset_is_reported(self) -> None:
         from extract_pose import seat_root_offset
         locals_map = {"bip01": (IDENTITY, (0.0, -0.1104, 0.8335))}
         self.assertEqual([0.0, -0.1104, 0.8335],

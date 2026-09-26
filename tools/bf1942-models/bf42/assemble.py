@@ -126,16 +126,34 @@ SPIN_DISPLAY_SCALE = 3.0
 SPIN_MIN_DEG_PER_SEC = 120.0
 SPIN_MAX_DEG_PER_SEC = 2160.0
 
-# Gap 11: the fallback swap distances for a geometry whose `.con` declares no
-# `GeometryTemplate.setLodDistance` table. The `.sm` file itself carries no
-# distances (standardmesh-vertex-format.md: the header is version/bounds/
-# collision/lod-count only), so these are derived from the shipped data: the
-# per-index MEDIANS of the 780 vanilla `Geometries.con` tables that declare
-# exactly six bands (census 2026-09-26 over Objects.rfa, 0/15/35/60/100/200).
-# Vanilla ships a real table for the meshes that matter; this only covers the
-# residue (level-local geometries, mod templates without the word) so their
-# chains still switch rather than all drawing LOD 0 to the far plane.
-FALLBACK_LOD_DISTANCES = (0.0, 15.0, 35.0, 60.0, 100.0, 200.0)
+# Gap 11: the swap distance of every LOD slot a geometry's `.con` does not
+# name with `GeometryTemplate.setLodDistance`. The `.sm` carries no distances
+# (standardmesh-vertex-format.md), so an undeclared slot keeps what the
+# template constructor wrote: `StandardMeshTemplate` ctor 0x005b5b40 fills the
+# ten-slot table at +0xd8 (the one `StandardMesh_selectLod` 0x005adfd0 reads)
+# with 0, 150, 300, ... 1350. `setLodDistance` overwrites single slots, so a
+# partial declaration keeps the defaults around it.
+DEFAULT_LOD_DISTANCES = tuple(150.0 * i for i in range(10))
+
+# The client does not keep every level a `.sm` ships. `readLods` 0x005b54e0
+# stops building LODs after the first one whose LAST material has fewer than
+# this many vertices (`readMaterials` 0x005b42d0 leaves the descriptor's vertex
+# count in DAT_009ab664; template vt+0xac is a constant false for StandardMesh,
+# so nothing exempts it), resizes the LOD vector to what it kept, and — when
+# that cut the chain and kept more than LOD 0 — moves the chain's final
+# distance onto the last kept level (0x005b55b6..0x005b55c6).
+RETAIL_LOD_MIN_VERTICES = 100
+
+
+def retail_lod_chain(lods) -> int:
+    """How many of a `.sm`'s levels the client keeps, counted from LOD 0."""
+    last_vertices = 9999999          # DAT_009ab664's reset value
+    for index, lod in enumerate(lods):
+        if lod.materials:
+            last_vertices = lod.materials[-1].vertex_count
+        if last_vertices < RETAIL_LOD_MIN_VERTICES:
+            return index + 1
+    return len(lods)
 
 
 def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
@@ -1010,19 +1028,16 @@ class Assembler:
                            template: con_mod.GeometryTemplate) -> list[float]:
         """The distance table a viewer swaps this geometry's chain by.
 
-        The `.sm` carries the rungs but no distances, so the numbers come from
-        the geometry's own `GeometryTemplate.setLodDistance` lines when the
-        `.con` declares them (1,133 vanilla geometries do), and from
-        `FALLBACK_LOD_DISTANCES` when it does not. A short declared table is
-        padded by repeating its last band, so a 3-band declaration still swaps
-        the 4th..6th rungs instead of sending them all at LOD 0's threshold.
+        The engine's own table: the constructor defaults
+        (`DEFAULT_LOD_DISTANCES`) with every slot the `.con` names through
+        `GeometryTemplate.setLodDistance` written over them (1,133 vanilla
+        geometries declare some).
         """
-        declared = list(template.lod_distances) if template else []
-        if not declared:
-            return list(FALLBACK_LOD_DISTANCES)
-        while len(declared) < len(FALLBACK_LOD_DISTANCES):
-            declared.append(declared[-1] if declared else 0.0)
-        return declared
+        table = list(DEFAULT_LOD_DISTANCES)
+        for index, metres in enumerate(template.lod_distances if template else []):
+            if metres is not None and index < len(table):
+                table[index] = metres
+        return table
 
     def _lod_children_for(self, builder: gltf.GlbBuilder, geometry_name: str,
                           mesh_file: str) -> list[int]:
@@ -1182,10 +1197,19 @@ class Assembler:
         # `Material2` six times) and reorders the list between levels on
         # multi-material meshes — while counts do, and geometry that did not
         # change must not be shipped twice.
+        # Only the levels the client keeps (`retail_lod_chain`): the small
+        # stone bridge's LOD 0 ends on a 68-vertex material, so the game draws
+        # LOD 0 at every distance — and its decimated LOD 4, one deck end
+        # collapsed onto the abutment's foot, was a hole at 100 m here.
+        kept = retail_lod_chain(mesh.lods)
+        distances = self._lod_distances_for(geometry_name, template)
+        if 1 < kept < len(mesh.lods):
+            distances[kept - 1] = distances[len(mesh.lods) - 1]
+        report.mesh_lods[mesh_file]["retailKept"] = kept
         emitted: list[tuple[int, int]] = []      # (lod level, mesh index)
         emitted_tris: list[int] = []
         emitted_signatures: list[tuple] = []
-        for level in range(selected_lod + 1, len(mesh.lods)):
+        for level in range(selected_lod + 1, kept):
             level_lod = mesh.lods[level]
             level_prims: list[gltf.Primitive] = []
             level_tris = 0
@@ -1218,8 +1242,7 @@ class Assembler:
             report.mesh_lods[mesh_file]["emittedLevels"] = [
                 level for level, _ in emitted]
             report.mesh_lods[mesh_file]["lodTriangles"] = emitted_tris
-            self._geom_lod_chain[cache_key] = (
-                emitted, self._lod_distances_for(geometry_name, template))
+            self._geom_lod_chain[cache_key] = (emitted, distances)
 
         primitives: list[gltf.Primitive] = []
         triangles = 0
