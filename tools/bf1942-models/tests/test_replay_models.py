@@ -237,5 +237,103 @@ class ReplayKinematicsTests(unittest.TestCase):
         self.assertGreater(self.results["throttleFlying"], 0.5)
 
 
+class ReplayUxTests(unittest.TestCase):
+    """The viewing experience (features/round-replay-ux): the round's
+    chapters and kill lines, the players' states and tallies, the page's
+    message log driven from the recording, and the camera's three modes."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_the_kill_log_lines(self) -> None:
+        ux = self.results["ux"]
+        # A kill with its weapon; a team kill (6, then its victim's 4: one
+        # death, one line pair); a death nobody caused (4 alone). The kill's
+        # victim's own 5 prints nothing.
+        self.assertEqual(ux["kills"], [[10, "kill", 1, 2, "Type99"], [20, "teamkill", 2, 0, None],
+                                       [30, "death", None, 1, None]])
+        # The server's own log names the team kill's weapon a v3 file lacks.
+        self.assertEqual(ux["filled"], ["Type99", "Thompson", None])
+
+    def test_a_flag_is_taken_through_neutral(self) -> None:
+        # 2 at the opening, 0 as it comes down, 1 as the attackers raise
+        # theirs: taken by Axis. The opening -1 to 2 is not a capture.
+        ux = self.results["ux"]
+        self.assertEqual(ux["captures"], [[50, "Landing_Beach", 1, 0], [60, "Village", 1, 0]])
+        self.assertEqual(ux["flagRows"], ["Landing_Beach taken by Axis", "Village taken by Axis"])
+        self.assertEqual(ux["pointsAt61"], [["Landing_Beach", 1], ["Village", 1]])
+
+    def test_round_and_players(self) -> None:
+        ux = self.results["ux"]
+        self.assertEqual(ux["roundStarted"], 2)
+        self.assertEqual(ux["leftT"], 70)
+        self.assertEqual(ux["recordingPlayer"], 0)
+        self.assertEqual(ux["roster"], ["Axe", "Bea", "rec"])
+        self.assertEqual(ux["status"], [["foot", None], ["dead", "teamkill"], ["left", None], ["absent", None]])
+        # A team kill is no kill; every death is a death.
+        self.assertEqual(ux["tally"], {"0": [0, 1], "1": [1, 1], "2": [0, 1]})
+
+    def test_chapters_in_the_games_words(self) -> None:
+        ux = self.results["ux"]
+        self.assertEqual(ux["chapters"], [[2, "round-start", 0], [10, "kill", 3], [20, "teamkill", 3],
+                                          [30, "death", 3], [35, "vehicle", 3], [50, "capture", 6],
+                                          [60, "capture", 6], [80, "round-end", 3]])
+        self.assertEqual(ux["texts"][1], "Axe [Type 99] Bea")
+        self.assertEqual(ux["texts"][2], "Bea killed a teammate: rec")
+        self.assertEqual(ux["texts"][3], "Axe is no more")
+        self.assertEqual(ux["texts"][4], "Sherman destroyed by Axe")
+        self.assertEqual(ux["texts"][5], "[Landing Beach] Axis captured the control point")
+
+    def test_next_and_previous_event(self) -> None:
+        # A jump lands a chapter's lead before its moment; "previous" skips
+        # the one the playhead is just past; the followed player's alone.
+        ux = self.results["ux"]
+        self.assertEqual(ux["next"], ["round-start", "kill", "teamkill"])
+        self.assertEqual(ux["prev"], "kill")
+        self.assertEqual(ux["nextOwn"], "teamkill")
+        self.assertEqual(ux["feed"], [[10, "kill"], [20, "kill"], [30, "kill"], [45, "chat"],
+                                      [50, "capture"], [60, "capture"]])
+
+    def test_the_page_message_log_follows_the_recording(self) -> None:
+        feed = self.results["uxFeed"]
+        # The radio strip goes; the log starts empty.
+        self.assertEqual(feed["opened"], [["radio", False], ["clear"]])
+        # Played across: the kill line, the centre message for the followed
+        # victim (`local`).
+        self.assertEqual(feed["forward"], [["clear"], ["kill", "Bea", "Axe", "Type99", True]])
+        # The hit wash only in his own first person: sector 2 is octant 3,
+        # alpha 64/255.
+        self.assertEqual(feed["noWash"], 0)
+        self.assertEqual(feed["washed"], [[3, 0.251]])
+        # A seek rebuilds the log in order with its timers stepped between
+        # lines, and no stale centre message.
+        self.assertEqual(feed["rebuilt"], [["clear"], ["kill", "Bea", "Axe", "Type99", False],
+                                           ["kill", "rec", "Bea", "Thompson", False], ["kill", "Axe", None, None, False],
+                                           ["chat", "Axe: hello", 1], ["capture", "Landing_Beach", 1, False]])
+        self.assertEqual(feed["rebuiltTicks"], 52)
+
+    def test_the_camera_modes(self) -> None:
+        cam = self.results["uxCamera"]
+        # The orbit: 6 m out at zoom 1, behind him; W closes to the nearest,
+        # the wheel opens to the farthest; D turns round him.
+        self.assertEqual(cam["orbit"], {"distance": 6, "behind": True})
+        self.assertAlmostEqual(cam["zoomedIn"], 1.5, delta=0.05)
+        self.assertEqual(cam["zoomedOut"], 150)
+        self.assertAlmostEqual(cam["orbited"], 0.9, places=3)
+        # First person: his standing eye, his heading, the soldier's lens,
+        # his own body hidden.
+        pov = cam["pov"]
+        self.assertEqual(pov["eye"], [10, 1.65, -20])
+        self.assertEqual(pov["look"], [0, 0, 1])
+        self.assertEqual((pov["fov"], pov["near"], pov["hides"]), (57.3, 0.2, 0))
+        # Free: W flies along the view at 30 m/s, with the page's own lens.
+        self.assertEqual(cam["free"], {"moved": 30, "along": 1, "fov": 60})
+        # Dead: no eyes to look through, nothing hidden.
+        self.assertIsNone(cam["deadPov"])
+
+
 if __name__ == "__main__":
     unittest.main()
