@@ -47,6 +47,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
 | Anything drawn or placed: a flag's or a spawner's position, which vehicle a spawner makes, which modes a placement is in, whether a flag is drawn at all, a static, the terrain, textures, the exporter (`bf42/gltf.py`, `assemble.py`, `rs.py`) | `scene.glb` and its side files | full bake: `extract_maps_all.py --mod M` |
+| The statics a mode script places beyond `StaticObjects.con` (`GameType.objects` -> `union_mode_statics`: Secret Weapons' `AdditionalStaticObjects`) | the glb (the nodes, tagged `extras.modes`) and `objects.modeStatics`; their emitters' `sounds.areas[].modes` and cover values ride the `sounds` and `ai` layers | full bake of the levels that have any: in vanilla and the two packs, XPack2's Hellendoorn, Kbely_Airfield, Mimoyecques and Telemark (`features/mode-script-statics/`) |
 | An ObjectSpawner's respawn window | `scene.json` (`objectSpawns`) AND the glb (the spawner node's `extras.spawner`, which `viewer/vehicle-wrecks.js` prefers) | full bake |
 | The water level | `waterLevel` AND the water mesh and depth map | full bake |
 
