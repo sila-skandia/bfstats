@@ -12,7 +12,15 @@ export { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js'
 
 // --- static hulls ----------------------------------------------------------
 
-const CELL_SIZE = 32;   // metres; 64 x 64 cells over a 2048 m level
+// Metres. 32 m (64 x 64 cells over a 2048 m level) until 2026-09-26: Berlin
+// packs 400 triangles into its median cell and 1,800 into its fullest, and a
+// soldier's short probes (a metre or two, `body-statics.js`) and the bots'
+// sense rays paid the whole cell's candidate walk each -- 1,440 candidates a
+// query, 42 us a cast, 6.8 ms of every 30 Hz tick for sixteen bots on foot.
+// At 8 m the same queries walk a sixteenth of the triangles; a long ray
+// crosses more cells, each with a Y-band reject, and the DDA's step guard
+// below is sized from the grid rather than fixed (features/bot-fight-performance).
+const CELL_SIZE = 8;
 
 /** Smallest root of `a t^2 + b t + c` inside [0, limit], or -1. */
 function lowestRoot(a, b, c, limit) {
@@ -211,9 +219,12 @@ export class CollisionIndex {
     const deck = this.drivable
       && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     const subs = this.subs;
-    // A segment 16 m long crosses at most two 32 m cells; the cap is only here
-    // so a degenerate direction cannot spin.
-    for (let guard = 0; guard < 256; guard++) {
+    // A segment cannot cross more cells than the grid has along both axes;
+    // the cap is only here so a degenerate direction cannot spin. (It was a
+    // fixed 256 when the cells were 32 m; at 8 m a 1,500 m diagonal round
+    // crosses 375, and a cap under that ended it short of a real hit.)
+    const maxSteps = this.cols + this.rows + 2;
+    for (let guard = 0; guard < maxSteps; guard++) {
       const tExit = Math.min(tMaxX, tMaxZ, maxDist);
       if (ix >= 0 && iz >= 0 && ix < this.cols && iz < this.rows) {
         const cell = this.cell(ix, iz);
