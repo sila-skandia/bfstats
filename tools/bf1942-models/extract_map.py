@@ -1734,6 +1734,11 @@ def _tickets_report(data) -> dict | None:
             out["lossPerMin"]["team1"] = data.loss_per_min_team1
         if data.loss_per_min_team2 is not None:
             out["lossPerMin"]["team2"] = data.loss_per_min_team2
+    # The script's own `game.maxNrOfPlayers`, the count its round's starting
+    # tickets scale by (`viewer/round-state.js` `roundPlayers`). Only written
+    # when set, so every other level's record keeps its bytes.
+    if data.max_players is not None:
+        out["maxPlayers"] = data.max_players
     return out
 
 
