@@ -310,7 +310,7 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   // The HUD speed is the body's ground speed, not a distance divided by a dt.
   const running = runway();
   walk(running, { forward: 1 }, 60);
-  results.reportedSpeed = { speed: running.speed, gait: running.gait };
+  results.reportedSpeed = { speed: running.speed, gait: running.gait, travelSpeed: running.travelSpeed };
 }
 
 // --- look clamp ------------------------------------------------------------
