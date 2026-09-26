@@ -61,7 +61,7 @@ reads as broken layout rather than a preview. Nothing is available only on hover
 |---|---|
 | `Init.con` | `setTeamSkin` (the nationality), `setKit` (kit roles), `assaultTeam`, `setActiveCombatArea` (the rectangle the minimap art covers) |
 | `Init/Terrain.con` | `worldSize`, the fallback framing for a level declaring no combat area |
-| `GameTypes/Conquest.con` | starting tickets and the per-minute bleed, per team |
+| `Conquest.con` (the level's root script; `GameTypes/Conquest.con` only when it ships none) | starting tickets and the per-minute bleed, per team, at 16 players |
 | `Conquest/ControlPoints.con` | each flag's name and world position |
 | `Conquest/ControlPointTemplates.con` | who holds each flag at round start |
 | `Conquest/ObjectSpawnTemplates.con` | what each spawner yields, per team |
@@ -72,7 +72,22 @@ Patch archives (`Wake_003.rfa`) override the base archive, so the extractor merg
 them in filename order and lets the later file win — several maps had their tickets
 retuned by a patch.
 
-## Two things that are not as simple as they look
+## Things that are not as simple as they look
+
+**The tickets come from the root `Conquest.con`, and they are a 16-player server's.**
+The server runs the level's root `Conquest.con`. `GameTypes/Conquest.con` is only
+checked for existence when a map is queued (ledger TKT-3 in
+[the engine reference](../bf1942-engine-reference/ledger.md)). Across vanilla, Road to
+Rome and Secret Weapons the two copies disagree on 8 levels' tickets and 13 levels'
+bleed: Coral Sea's root script starts both sides at 100, its `GameTypes/` copy the US at
+150. The extractor read the `GameTypes/` copy until 2026-09-27. The census is
+`features/bf1942-engine-reference/surveys/mode_script_root_vs_gametypes.py`.
+
+A round starts each side at count × max players / 16, times the server's ticket ratio,
+and bleeds rate × max players / 16 a minute (TKT-1, TKT-4). So a 32-player server starts
+Coral Sea at 200 / 200 and bleeds twice as fast, and a round takes as long to bleed out
+on any size of server. The briefing hides the level's starting tickets and shows a live
+server's own count where it has one. Its bleed rates are labelled as a 16-player server's.
 
 **A minimap is hand-drawn art, and it frames the level's combat area, not its
 world.** The transform is
@@ -191,6 +206,24 @@ Both write into `tournament-images/`, which is where `dotnet run` and
 `scripts/verify.sh` point `ASSETS_STORAGE_PATH`. Uploading to Hetzner follows the same
 `kubectl cp` / tar-pipe route as the map images — ask Claude for the
 `bf1942-map-images` skill, which documents it.
+
+`manifest.json` is merged into whatever `--out` already holds, and the live one lists
+mods this install no longer has (`bfheroes`, `warfront`, both uninstalled 2026-09-25,
+and still served). Regenerating into an empty tree and uploading its manifest would
+drop them. Stage over a copy of the live tree instead and upload only what changed:
+
+```bash
+kubectl --context hetzner -n bf42-stats exec <pod> -c nginx -- tar cf - -C /mnt/data/assets/dossiers . | tar xf - -C <stage>
+python3 scripts/extract_map_dossiers.py --force --mods bf1942 xpack1 xpack2 --out <stage>
+```
+
+The 2026-09-27 root-script republish did this: 15 of the three packs' 38 dossiers
+changed, uploaded by tar pipe and checked by `sha256sum -c` in the pod; the manifest
+was left alone, since only its `generated` stamp had moved. The other mods' live
+dossiers are still the 2026-09-14 run's, read `GameTypes/` first, per the vanilla-only
+extraction scope in `CLAUDE.md`. Re-reading them root first moves 161 dossiers across
+12 mods and loses no number anywhere; 32 of bf1918's 130 go from no tickets or bleed at
+all to both.
 
 ## Notes for whoever picks this up next
 

@@ -23,11 +23,18 @@ public record MapDossierTeam
     [JsonPropertyName("skin")]
     public string? Skin { get; init; }
 
-    /// <summary>Tickets this side starts the round with.</summary>
+    /// <summary>
+    /// Tickets this side starts with on a 16-player server, from the level's root
+    /// <c>Conquest.con</c>. A round starts at this × max players / 16, times the server's
+    /// ticket ratio.
+    /// </summary>
     [JsonPropertyName("tickets")]
     public int? Tickets { get; init; }
 
-    /// <summary>Tickets lost per minute while the other side holds the majority of flags.</summary>
+    /// <summary>
+    /// Tickets lost per minute on a 16-player server while the other side holds the
+    /// majority of flags. A round bleeds this × max players / 16 a minute.
+    /// </summary>
     [JsonPropertyName("ticketLossPerMin")]
     public int? TicketLossPerMin { get; init; }
 

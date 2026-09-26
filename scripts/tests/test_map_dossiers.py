@@ -119,6 +119,60 @@ class ControlPointProjectionTests(unittest.TestCase):
         self.assertEqual(self._point((0.0, 0.0, 2048.0, 2048.0))["team"], 1)
 
 
+CORAL_SEA_ROOT = """
+Game.setNumberOfTickets 2 100
+Game.setNumberOfTickets 1 100
+Game.setTicketLostPerMin 2 1000
+Game.setTicketLostPerMin 1 1000
+"""
+
+CORAL_SEA_GAMETYPES = """
+Game.setNumberOfTickets 2 150
+Game.setNumberOfTickets 1 100
+Game.setTicketLostPerMin 2 5
+Game.setTicketLostPerMin 1 15
+"""
+
+
+class TicketScriptTests(unittest.TestCase):
+    """Which `Conquest.con` the tickets and the bleed are read from.
+
+    The server runs the level's root script and only checks that
+    `GameTypes/Conquest.con` exists (ledger TKT-3). The two disagree on 8
+    vanilla and pack levels' tickets; Coral Sea is one, and the parity lab
+    starts it at the root's 100 / 100.
+    """
+
+    @staticmethod
+    def _numbers(level: dossiers.LevelFiles) -> list[tuple]:
+        return [(t["tickets"], t["ticketLossPerMin"]) for t in dossiers.parse_teams(level)]
+
+    def test_the_root_script_wins(self) -> None:
+        self.assertEqual(
+            self._numbers(files(**{"conquest.con": CORAL_SEA_ROOT,
+                                   "gametypes__conquest.con": CORAL_SEA_GAMETYPES})),
+            [(100, 1000), (100, 1000)])
+
+    def test_gametypes_only_when_there_is_no_root_script(self) -> None:
+        self.assertEqual(
+            self._numbers(files(**{"gametypes__conquest.con": CORAL_SEA_GAMETYPES})),
+            [(100, 15), (150, 5)])
+
+    def test_a_root_script_that_sets_nothing_still_wins(self) -> None:
+        """The engine runs it, so the GameTypes copy's numbers never apply."""
+        self.assertEqual(
+            self._numbers(files(**{"conquest.con": "rem no tickets here\n",
+                                   "gametypes__conquest.con": CORAL_SEA_GAMETYPES})),
+            [(None, None), (None, None)])
+
+    def test_a_parents_root_script_beats_the_mods_own_gametypes_copy(self) -> None:
+        """`Game::load` asks for `<level>/conquest.con`, and a mod that ships no
+        such file gets its parent's copy of the level: the underlay."""
+        level = files(**{"gametypes__conquest.con": CORAL_SEA_GAMETYPES})
+        level.underlay(files(**{"conquest.con": CORAL_SEA_ROOT}))
+        self.assertEqual(self._numbers(level), [(100, 1000), (100, 1000)])
+
+
 class PlottableTests(unittest.TestCase):
     """`controlPointsPlottable` is the site's guard against a bad projection.
 

@@ -219,7 +219,7 @@ vehicle roster:
 |---|---|
 | `Init.con` | `game.setTeamSkin` (nationality), `game.setKit`, `game.assaultTeam` |
 | `Init/Terrain.con` | `GeometryTemplate.worldSize` — the scale positions are given in |
-| `GameTypes/Conquest.con` | `Game.setNumberOfTickets`, `Game.setTicketLostPerMin`, per team |
+| `Conquest.con` (the level's root script; `GameTypes/Conquest.con` only when it ships none) | `Game.setNumberOfTickets`, `Game.setTicketLostPerMin`, per team, as a 16-player server has them |
 | `Conquest/ControlPoints.con` | each flag's name and `absolutePosition` |
 | `Conquest/ControlPointTemplates.con` | `ObjectTemplate.team` — who holds it at round start |
 | `Conquest/ObjectSpawnTemplates.con` | `setObjectTemplate <team> <vehicle>`, and `teamOnVehicle` where a spawner is pinned to one side |
@@ -231,6 +231,11 @@ Traps worth knowing before parsing these:
   strip trailing comments.
 - **Patch archives override.** Merge `Wake.rfa` then `Wake_003.rfa` and let the later
   file win — several stock maps had their tickets retuned by a patch.
+- **The root `<mode>.con` is the script that runs.** `Game::load` runs
+  `<level>/conquest.con`; `GameTypes/Conquest.con` is only checked for existence when
+  a map is queued, and the two disagree on 8 vanilla and pack levels' tickets. Both
+  numbers are a 16-player server's: a round scales starting tickets and bleed by max
+  players / 16 (bfstats ledger TKT-1, TKT-3, TKT-4).
 - **A spawner is not always a vehicle.** Levels place scenery and scripting objects
   through the same `ObjectSpawner` mechanism (FHSW places thousands of invisible
   `killercage` boundary markers). Classify against the `Objects*.rfa` directory layout:
