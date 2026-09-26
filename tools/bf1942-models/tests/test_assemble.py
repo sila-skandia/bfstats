@@ -2534,7 +2534,8 @@ class LodChainEmissionTests(unittest.TestCase):
     `extras.lod = {geometry, level, distance}`, the distances come from the
     geometry's own `GeometryTemplate.setLodDistance` table (the census
     fallback curve when it declares none), and a geometry without a chain
-    emits nothing.
+    emits nothing. Only a level bake asks for the chain (`lod_chains`); every
+    other export ships LOD 0 alone.
     """
 
     LIBRARY = """
@@ -2544,6 +2545,9 @@ ObjectTemplate.geometry Chain_m1
 ObjectTemplate.create StaticObject TestPlain
 ObjectTemplate.geometry Plain_m1
 
+ObjectTemplate.create StaticObject TestBody
+ObjectTemplate.geometry Body_m1
+
 GeometryTemplate.create StandardMesh Chain_m1
 GeometryTemplate.setLodDistance 0 0
 GeometryTemplate.setLodDistance 1 10
@@ -2551,9 +2555,13 @@ GeometryTemplate.setLodDistance 2 50
 GeometryTemplate.setLodDistance 3 150
 
 GeometryTemplate.create StandardMesh Plain_m1
+
+GeometryTemplate.create StandardMesh Body_m1
+GeometryTemplate.setSkin animations/TestBody.skn
 """
 
-    def assembler(self) -> tuple[Assembler, gltf.GlbBuilder]:
+    def assembler(self, *, lod_chains: bool = True,
+                  ) -> tuple[Assembler, gltf.GlbBuilder]:
         library = ObjectLibrary()
         library.add_con("Objects/Buildings/Test/Objects.con", self.LIBRARY)
         pool = ArchivePool()
@@ -2561,7 +2569,8 @@ GeometryTemplate.create StandardMesh Plain_m1
         # resolve/read pair rather than building an archive: `_mesh_index`
         # reads `standardMesh/<file>` through `resolve_ext`, and the mesh
         # content is what varies per test below.
-        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        assembler = Assembler(pool, pool, pool, library, include_collision=False,
+                              lod_chains=lod_chains)
         builder = gltf.GlbBuilder()
         return assembler, builder
 
@@ -2686,6 +2695,39 @@ GeometryTemplate.create StandardMesh Plain_m1
         document = glb_document(builder.build([node]))
         self.assertEqual([], document["nodes"][node].get("children", []))
         self.assertNotIn("emittedLevels", report.mesh_lods["Chain_m1"])
+
+    def test_a_model_export_ships_lod_0_alone(self) -> None:
+        # Nothing that loads a model glb swaps rungs by distance: the browser,
+        # its thumbnails, cockpit grafts, wrecks and soldiers draw every mesh
+        # node, so a rung is a second copy of the part on top of LOD 0. The
+        # default assembler (the model, kit, pose, viewmodel and effect
+        # exporters) emits neither the rung nodes nor their meshes.
+        self.assertFalse(Assembler(ArchivePool(), ArchivePool(), ArchivePool(),
+                                   ObjectLibrary()).lod_chains)
+        assembler, builder = self.assembler(lod_chains=False)
+        node, report = self.build(assembler, builder, "TestBuilding", levels=4)
+
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        self.assertEqual([], document["nodes"][node].get("children", []))
+        self.assertEqual(["Chain_m1"], [m["name"] for m in document["meshes"]])
+        self.assertFalse(any("lod" in (n.get("extras") or {})
+                             for n in document["nodes"]))
+        # What the game keeps is still reported; nothing was emitted for it.
+        self.assertEqual(4, report.mesh_lods["Chain_m1"]["retailKept"])
+        self.assertNotIn("emittedLevels", report.mesh_lods["Chain_m1"])
+
+    def test_a_part_skinned_by_its_geometry_gets_no_rungs(self) -> None:
+        # A soldier's body and hands are skinned through the geometry's `.skn`,
+        # not an object skeleton. A rung is a plain mesh, so it would stand in
+        # the bind pose while the part it replaces animates.
+        assembler, builder = self.assembler()
+        node, _ = self.build(assembler, builder, "TestBody", levels=4)
+
+        document = glb_document(builder.build([node]))
+        placed = document["nodes"][node]
+        self.assertEqual("animations/TestBody.skn", placed["extras"]["skin"])
+        self.assertEqual([], placed.get("children", []))
+        self.assertEqual(["Body_m1"], [m["name"] for m in document["meshes"]])
 
 
 class LadderSpecTests(unittest.TestCase):
