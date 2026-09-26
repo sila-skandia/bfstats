@@ -56,8 +56,26 @@ whole objects. `statics.lodCount` carries the spliced count for the test
 hooks.
 
 The splice collects candidates before mutating: `traverse` walks a live
-children snapshot, and `addLevel` re-parents the part node under the LOD, so
-`obj.parent` is captured before the splice.
+children snapshot, and the splice runs against a captured parent.
+
+Two transforms, learned the hard way (2026-09-26):
+
+* The LOD must NOT re-parent the part. The first splice moved the part
+  inside the LOD and composed its local transform twice (a placement at
+  (541.6, 43.2, -393.9) rendered at (-1.2, 82, -1.7), T applied twice).
+  Resetting the part to identity inside the LOD fixed the render but
+  destroyed the node's local transform - and that transform is load-bearing:
+  `applyRig` poses turret, wheels and propeller through the captured base
+  locals, so every driven vehicle lost its turret mount, buried its wheels
+  and stranded its propeller. The final shape: the LOD is a SIBLING of the
+  part carrying the part's transform, the rungs move under it, and the
+  part's local transform is never touched. The part is the implicit level 0;
+  a patched `lod.update` swaps it against the rungs by threshold.
+* A parked vehicle's root chain stays unlifted. `Vehicle` reparents the
+  node onto the level root when driven; a LOD holding its rungs would stay
+  behind at the pad as a ghost shell. Vehicle-root rungs are hidden instead,
+  so parked hulls draw at full detail as they did before the rungs shipped.
+  The parts inside the vehicle (turret, wheels, propeller) lift normally.
 
 The transform handoff, found by the Stalingrad ladder pass (2026-09-26): the
 LOD copies the part's local transform and the part must go to IDENTITY inside
