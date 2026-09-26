@@ -331,11 +331,13 @@ export function createRoundState({
    * which no shipped level reaches but the arithmetic allows.
    *
    * The countdown runs in real time, the engine's rule while both sides have
-   * spawn groups, which is all of normal play. Two end-of-round rules for a
-   * side left with no spawn groups are not modelled (ledger TKT-5): it bleeds
-   * at `setTicketLostAtEndPerMin`'s rate whatever the weights once it has
-   * nobody alive or nowhere to spawn, and meanwhile its enemy, if it has a
-   * live player, has its countdown run at (the weight the side holds) / 100.
+   * spawn groups, which is all of normal play, and a shut gate refills it, so
+   * each bleed's first ticket comes a whole interval after it starts (TKT-4).
+   * Two end-of-round rules for a side left with no spawn groups are not
+   * modelled (ledger TKT-5): it bleeds at `setTicketLostAtEndPerMin`'s rate
+   * whatever the weights once it has nobody alive or nowhere to spawn, and
+   * meanwhile its enemy, if it has a live player, has its countdown run at
+   * (the weight the side holds) / 100.
    */
   function tick(dt, points) {
     const held = holdWeight(points);
@@ -347,7 +349,13 @@ export function createRoundState({
       const running = !round.over && held[enemy] > BLEED_WEIGHT
         && Number.isFinite(intervals[team]) && round.tickets[team] > 0;
       round.bleeding[team] = running;
-      if (!running) continue;
+      if (!running) {
+        // The engine writes `60 / rate` back on every frame the gate is shut
+        // (team 1 `0x08152100`, team 2 `0x0815218c`; ledger TKT-4): a bleed
+        // that stops keeps nothing of the interval it had run down.
+        round.countdowns[team] = intervals[team];
+        continue;
+      }
       round.countdowns[team] -= dt;
       // A frame long enough to cross the interval more than once spends more
       // than one ticket, which is what the engine's per-frame subtract does.

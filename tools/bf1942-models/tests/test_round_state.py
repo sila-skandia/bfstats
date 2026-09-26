@@ -9,7 +9,8 @@ The numbers under test are the game's own, not the viewer's invention:
   - a death costs the dead player's team a ticket (`setTicketLosePerDeath`,
     which no shipped level declares, so 1);
   - a side bleeds one ticket per `60 / rate` seconds while the ENEMY's summed
-    `areaValue` is greater than 99 (`GameServer::gameStatusPlaying`);
+    `areaValue` is greater than 99 (`GameServer::gameStatusPlaying`), the
+    countdown refilled whole while it is not;
   - and both the starting counts and the rates scale by the server's max
     players over 16 (`gamaStatusFirstPreGame`, `setTicketLostPerMin`; ledger
     TKT-1..TKT-4), which the parity lab measured: Wake co-op's 100 starts a
@@ -170,6 +171,16 @@ class RoundStateTests(unittest.TestCase):
         self.assertEqual({"1": 50, "2": 60}, closed["held"])
         self.assertEqual({"1": False, "2": False}, closed["bleeding"])
         self.assertEqual({"1": 80, "2": 99}, closed["tickets"])
+
+    def test_a_shut_gate_refills_the_countdown(self) -> None:
+        # The engine writes `60 / rate` back while the enemy holds 99 or less
+        # (ledger TKT-4): 6 s were owed when the gate shut for a frame, and the
+        # next ticket still waits the whole 12 s.
+        reopened = self.results["bleed"]["reopened"]
+        self.assertAlmostEqual(6, reopened["owed"], places=4)
+        self.assertEqual(12, reopened["shut"])
+        self.assertEqual({"1": 80, "2": 99}, reopened["atEleven"])
+        self.assertEqual({"1": 80, "2": 98}, reopened["atThirteen"])
 
     def test_the_other_side_bleeds_at_its_own_thirty_a_minute(self) -> None:
         axis = self.results["bleed"]["axis"]

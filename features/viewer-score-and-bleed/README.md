@@ -77,7 +77,11 @@ float countdown in seconds, team 1 at `GameServer+0x1d4` and team 2 at `+0x1e0`.
 and `GameServer::init` (`0x08131d2d`) writes 16 to `GameServer+0x1c`, so the
 interval is exactly `60 / rate` seconds per ticket. While a team's drain runs,
 each frame subtracts `dt` from its countdown, and every time the countdown
-crosses zero the team loses a ticket and the interval is added back.
+crosses zero the team loses a ticket and the interval is added back. While it
+does not run, each frame writes the whole interval back (`0x08152100`,
+`0x0815218c`), so a drain that stops and starts again waits a full interval for
+its first ticket (ledger TKT-4; `round-state.js` did not refill it before
+2026-09-27).
 
 What starts and stops the drain is a weight, not a flag count. The function sums
 `ControlPoint::getAreaValueTeam1` / `getAreaValueTeam2` (`0x08284350`,
