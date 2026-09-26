@@ -4,6 +4,15 @@
 **Branch**: `parity/tickets`  
 **Commit**: (pending)
 
+> **Superseded in two respects (2026-09-27, ledger TKT-1..TKT-4).** The counts
+> now come from the level's root `<mode>.con`, the script the server runs
+> (`GameTypes/<mode>.con` only says the game type exists; the two disagree on
+> 22 game types' tickets across vanilla and the packs, Wake co-op's 140 / 100 vs
+> the root's 100 / 100 among them). And they are a 16-player server's numbers: a
+> round starts each side at `trunc(count * maxPlayers / 16)` and bleeds at
+> `rate * maxPlayers / 16`, which `viewer/round-state.js` applies. What follows
+> is the original record.
+
 ## Summary
 
 The mesh viewer's scene.json now carries ticket configuration for each level, parsed from the same `GameTypes/<mode>.con` files the tournament dossier script reads. The viewer can now display authentic ticket counters matching the in-game spawn screen.

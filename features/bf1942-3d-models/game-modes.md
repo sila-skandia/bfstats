@@ -119,6 +119,22 @@ objdump -d -M intel --start-address=0x080bf160 --stop-address=0x080bfd00 \
   ~/Downloads/bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static
 ```
 
+> **Corrected 2026-09-27 (ledger TKT-3).** `setNextLevel` builds that path only
+> to ask `FileManager::fileExists` (`0x0841e190`, the call at `0x080bf60b`)
+> whether the game type exists; it refuses the maplist entry when it does not.
+> The script a round RUNS is the level's root `<mode>.con`:
+> `Setup::startHostGame` hands `setGameStartup` the bare `coop.con`, and
+> `Game::load` (`0x0805b4b0`) runs `bf1942/levels/<level>/` plus that name. So
+> `GameTypes/` is still the index of which game types a level offers, but the
+> tickets and the layer files come from the root script, and the two copies
+> disagree often: Wake's root `Coop.con` sets 100 / 100 where `GameTypes/Coop.con`
+> sets 140 / 100, and every Road to Rome CoOp root script takes its flags from
+> `SinglePlayer/` and its vehicles from `Conquest/`, the reverse of the Anzio
+> `GameTypes/` script quoted below. The parity lab's server starts a Wake co-op
+> round at the root's numbers. The extractor reads the root script since
+> 2026-09-27 (`bf42/level.py` `game_type_script`); the census is
+> `features/bf1942-engine-reference/surveys/mode_script_root_vs_gametypes.py`.
+
 ### 1.2.1 `run` is per file, and 35 scripts use that
 
 A game type is **not** a directory, and on 35 of the 3,048 GameTypes scripts
