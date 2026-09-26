@@ -835,7 +835,7 @@ const vehicleHits = createVehicleHits(bag(
   from(() => referee, `applyDamage bodyAt bots capsulesOf damageLanded`),
   from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
   from(() => vehicleHud, `feedVehicleHud`),
-  from(() => wrecks, `damageVisuals showDamageTier stepWrecks wreckVehicle`),
+  from(() => wrecks, `damageVisuals loadFailures showDamageTier stepWrecks wreckState wreckVehicle`),
   {
     get camera() { return camera; }, get guns() { return guns; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },

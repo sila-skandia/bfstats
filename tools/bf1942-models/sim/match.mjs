@@ -47,7 +47,8 @@ const v2 = (a) => (a ? a.map(r2) : null);
 
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
-                sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [] }) {
+                sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [],
+                wreckLoader = null }) {
     this.M = M;
     /** `[{ bot, template, seat }]`: bots seated by hand at t = 0 (`--seat`). */
     this.seats = seats;
@@ -59,6 +60,9 @@ export class Match {
     this.traceEvery = Math.max(1, Math.round(traceEvery));
     this.sampleEvery = sampleEvery;
     this.useVehicles = vehicles;
+    /** The asset loader the stage hands the wreck path (`stage.mjs`); null
+     *  means "nothing loads", which is what a run that never draws wants. */
+    this.wreckLoader = wreckLoader;
     this.sink = sink;
     // Each side's doctrine (viewer/doctrine.js); 'sai' both sides is the
     // engine's SAI, and a baseline run's trace names none (it is byte for
@@ -106,7 +110,7 @@ export class Match {
     // A real level: the page's stage (the World, the collider, the bodies,
     // the hulls, the guns). The synthetic level: a World over its collider
     // and the stand-in vehicles.
-    this.stage = level.stage ? createStage(M, level, { vehicles: this.useVehicles, seed: this.seed }) : null;
+    this.stage = level.stage ? createStage(M, level, { vehicles: this.useVehicles, seed: this.seed, wreckLoader: this.wreckLoader }) : null;
     const world = this.stage ? this.stage.world : new M.World({ collider: level.collider, extras });
     this.world = world;
     const worldSize = extras?.worldSize || 2048;

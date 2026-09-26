@@ -59,7 +59,7 @@
 export const STAGE_KINDS = ['ground', 'tank', 'gun', 'air', 'ship'];
 
 /** Build the stage. `data` is `realLevel`'s: the scene root and the tables. */
-export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, seed = 1 } = {}) {
+export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, seed = 1, wreckLoader = null } = {}) {
   const S = M.stage;
   const { THREE } = M;
   const data = level.stage;
@@ -69,7 +69,10 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   const unchecked = { checked: false };
   // The presentation a page would have: nothing is drawn or heard.
   const effects = { play: () => null, flush: noop, advance: noop, library: null, firstPerson: false };
-  const loader = { loadAsync: () => new Promise(noop) };
+  // The page's asset loader. Nothing is drawn here, so the default never
+  //  resolves; a recipe that wants to see what the wreck path does with a
+  //  real glb passes one that reads the file (`wreckLoader`).
+  const loader = wreckLoader ?? { loadAsync: () => new Promise(noop) };
   const camera = new THREE.PerspectiveCamera();
   const seatWorldPos = new THREE.Vector3();
 
