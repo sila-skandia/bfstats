@@ -22,7 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SIDE = { 1: 'Axis', 2: 'Allies' };
 
 function parseArgs(argv) {
-  const a = { maps: ['el_alamein', 'bocage'], seeds: range('1-10'), time: 600, bots: 8, jobs: 8,
+  const a = { maps: ['el_alamein', 'bocage'], seeds: range('1-10'), time: 600, bots: 8, maxPlayers: null, jobs: 8,
               configs: ['sai', 'axis=squad', 'allies=squad'], out: path.join(HERE, 'out', 'compare'),
               mapsDir: null, modelsDir: null, viewer: null, reportOnly: false, force: false, markdown: null };
   for (let i = 0; i < argv.length; i++) {
@@ -33,6 +33,7 @@ function parseArgs(argv) {
       case '--seeds': a.seeds = range(next()); break;
       case '--time': a.time = Number(next()); break;
       case '--bots': a.bots = Number(next()); break;
+      case '--max-players': a.maxPlayers = next(); break;
       case '--jobs': a.jobs = Number(next()); break;
       case '--configs': a.configs = next().split(';').flatMap(s => s.split(/\s+/)).filter(Boolean); break;
       case '--out': a.out = path.resolve(next()); break;
@@ -67,6 +68,7 @@ const HELP = `usage: node sim/compare.mjs [options]
   --seeds 1-10        seeds (ranges and lists)
   --time T            game seconds per match (default 600)
   --bots N            bots a side (default 8)
+  --max-players N     the server's slot count (run.mjs --max-players; default 2 x --bots)
   --configs a b c     --doctrine specs, space or ';' separated (default: sai axis=squad allies=squad)
   --jobs J            matches at once (default 8)
   --out DIR           where the runs go (default sim/out/compare)
@@ -84,6 +86,7 @@ function runOne(a, map, config, seed) {
   const args = [path.join(HERE, 'run.mjs'), ...(map === 'synthetic' ? ['--synthetic'] : ['--map', map]),
                 '--bots', String(a.bots), '--time', String(a.time), '--seed', String(seed),
                 '--doctrine', config, '--no-trace', '--quiet', '--out', out];
+  if (a.maxPlayers) args.push('--max-players', a.maxPlayers);
   if (a.mapsDir) args.push('--maps', a.mapsDir);
   if (a.modelsDir) args.push('--models', a.modelsDir);
   if (a.viewer) args.push('--viewer', a.viewer);
