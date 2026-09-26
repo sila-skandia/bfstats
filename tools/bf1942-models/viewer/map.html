@@ -173,7 +173,7 @@ import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { createReplayController, recordingLevel } from './replay.js';
+import { createReplayController, recordingLevel, recordingMode } from './replay.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -907,7 +907,12 @@ guns.viewOf = group => {
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
 // anything in this engine).
-guns.onImpact = record => vehicleHits.applyVehicleHit(record);
+// A replayed round (replay-hulls.js, replay-bodies.js) draws and sounds and
+// bills nothing: the recording's hit points are the truth.
+guns.onImpact = record => {
+  if (record.firerGroup?.replay) return;
+  vehicleHits.applyVehicleHit(record);
+};
 guns.bodyCast = vehicleHits.roundBodyCast;
 // The struck hull's own `angleMod`, for the direct hit's angle term.
 guns.angleModOf = vehicleHits.angleModOf;
@@ -1724,6 +1729,12 @@ if (!manifest.length) {
   });
   // A recording names the level it was made on; ?map= still wins.
   const replayLevel = replayUrl ? await recordingLevel(replayUrl).catch(() => '') : '';
+  // ...and the game type it was played in picks the level's layer (a co-op
+  // round plays `SinglePlayer/`), unless `?mode=` says otherwise.
+  if (replayUrl && !params.has('mode')) {
+    const replayMode = await recordingMode(replayUrl).catch(() => '');
+    if (replayMode) params.set('mode', replayMode);
+  }
   const wanted = (params.get('map') || replayLevel || '').toLowerCase();
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
@@ -1748,12 +1759,51 @@ replayController = createReplayController({
   shadeModel: root => level.bindDynamicShading(root),
   guns,
   effects,
-  fetchHandFireSound: soldierKit.fetchHandFireSound,
-  playHandFire: soldierKit.playHandFire,
+  // The map's own machinery, which the replay presents its recording through
+  // (features/round-replay-fidelity): a replayed hull is built on the same
+  // drive classes, claims the same audio rack and fires through the same
+  // guns; a replayed soldier is drawn by the bots' own body renderer.
+  vehicleClasses: { Aircraft, GroundVehicle, TrackedVehicle, Ship },
+  groundHeight: (x, z, fromY) => level.groundHeight(x, z, fromY),
+  waterLevel: () => level.collider?.waterLevel ?? level.extras?.waterLevel,
+  claimVehicleAudio: (key, node, drive, groups) => pageAudio.claimVehicleAudio(key, node, drive, groups),
+  releaseVehicleAudio: (key, node) => pageAudio.releaseVehicleAudio(key, node),
+  cutVehicleAudio: node => pageAudio.cutVehicleAudio(node),
+  makeReplayBodies: shim => createBotVisuals(bag(
+    from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
+      soldierBody soldierDress`),
+    from(() => level, `bindDynamicShading`),
+    shim,
+  )),
+  loadouts: () => soldierKit.loadouts,
+  loadoutsReady: () => soldierKit.loadoutsLoad,
+  // A dropped kit's own pickup mesh (`kits.json` `pickup`), the one
+  // kit-drops-page.js lays down for a bot.
+  kitPickupModel: async kit => {
+    const found = await footBodies.soldierDress?.kitRow(kit);
+    const glb = found?.row?.pickup?.glb;
+    if (!glb) return null;
+    const gltf = await loader.loadAsync(`${found.base}/${glb}${bust()}`);
+    level.bindDynamicShading(gltf.scene);
+    return gltf.scene;
+  },
+  playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
+  footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
+  playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
+  ensureAudio: () => pageAudio.ensureAudioContext(),
 });
 if (replayUrl) {
   replayController.openFromUrl(replayUrl, params.get('serverlog'))
     .catch(error => console.warn('replay unavailable', error));
+  // The briefing screen gates a join, and a replay joins nothing: it goes as
+  // soon as it comes up (its READY opens no spawn screen for a replay,
+  // level-load.js), whenever the level's last textures let it.
+  const briefingWatch = setInterval(() => {
+    if (!overlay.briefingCaptures()) return;
+    overlay.acceptBriefing();
+    clearInterval(briefingWatch);
+  }, 250);
+  setTimeout(() => clearInterval(briefingWatch), 10 * 60 * 1000);
 }
 
 

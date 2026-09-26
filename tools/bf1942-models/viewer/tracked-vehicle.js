@@ -746,6 +746,29 @@ export class TrackedVehicle extends Vehicle {
     }
   }
 
+  /**
+   * A replay's recorded drive (`Vehicle.presentKinematic`): every road wheel
+   * rolls at its own track's speed over its measured radius -- the hull's
+   * speed along it plus the turn's share at the wheel's side (`w x r`), which
+   * is how a tracked hull turns: one track faster than the other -- at rest
+   * height, since nothing recorded says how far a spring is compressed.
+   */
+  presentKinematic(dt, throttle = 0) {
+    const s = this.state;
+    this._qInv.copy(s.orientation).invert();
+    this._vBody.copy(s.velocity).applyQuaternion(this._qInv);
+    this._u.copy(s.angularVelocity).applyQuaternion(this._qInv);
+    const forward = -this._vBody.z;
+    for (const wheel of this.wheels) {
+      const radius = wheel.radius || this.spec.wheelRadius || 0.4;
+      const along = forward + this._u.y * (wheel.rest?.x ?? 0);
+      wheel.compression = 0;
+      wheel.angle += (along / radius) * dt;
+    }
+    super.presentKinematic(dt, throttle);
+    this.#applyWheels();
+  }
+
   /** Suspension lift + roll onto the scene graph — `GroundVehicle`'s own
    * convention, unchanged; see its comment. The steer is not written here
    * either, for the same reason: a half-track's front-axle yaw is the

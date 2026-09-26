@@ -2,7 +2,7 @@
 // time, and the orbit that frames it. The orbit itself (yaw, pitch, zoom) is
 // the player's, turned by the mouse in replay-ui.js.
 
-import { sampleAt } from './replay-recording.js';
+import { sampleAt, controlledAt, rootOf } from './replay-recording.js';
 import { toViewPosition } from './replay-actors.js';
 
 // Follow-camera distance from the followed object, and the lowest the orbit
@@ -12,16 +12,27 @@ const FOLLOW_SOLDIER = { distance: 9, minPitch: -0.15 };
 const FOLLOW_VEHICLE = { distance: 20, minPitch: -0.15 };
 const FOLLOW_SPECTATOR = { distance: 85, minPitch: 0.7 };
 
-/** The followed player's controlled object: their soldier, their vehicle,
- *  or before spawning the spectator camera, which has a pose but no model. */
+/** The followed player's controlled object: their soldier, the hull whose
+ *  seat they hold (a gunner's seat id resolves to its hull, `rootOf`), or
+ *  before spawning the spectator camera, which has a pose but no model. */
 export function focusLife(player, t) {
-  let nid = null;
-  for (const c of player.rec.control) {
-    if (c.t > t) break;
-    if (c.pid === player.followPid) nid = c.nid;
-  }
+  const { rec } = player;
+  const nid = controlledAt(rec, player.followPid, t);
   if (nid === null) return null;
-  return player.rec.lives.find(l => l.nid === nid && t >= l.created && t < l.destroyed) || null;
+  const root = rootOf(rec, nid, t, player.followPid);
+  const life = root?.life ?? rec.lives.find(l => l.nid === nid && t >= l.created && t < l.destroyed) ?? null;
+  // A bot's free camera is never replicated (a bot looks through nothing), so
+  // following it would sit at wherever the camera was made. While he is dead
+  // the camera stays on his body instead, for as long as it lies there.
+  if (life?.camera && !life.keys.length) {
+    let body = null;
+    for (const l of rec.lives) {
+      if (!l.soldier || l.pid !== player.followPid || l.created > t || t >= l.destroyed) continue;
+      if (!body || l.created > body.created) body = l;
+    }
+    return body ?? life;
+  }
+  return life;
 }
 
 export function followCamera(player, dt, t) {
