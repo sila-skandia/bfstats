@@ -95,8 +95,13 @@ export function spawnPlayer(world, playerId, { flag = null, advance = false, gro
   const player = world.players.get(playerId);
   if (!player) return null;
   const flags = world.flags;
-  const pick = flag ?? (player.team === 1 || player.team === 2
-    ? flags.find(f => f.team === player.team) : flags[0]);
+  const side = player.team === 1 || player.team === 2;
+  // A side with no flag of its own at the start (Omaha's Allies, whose deck
+  // spawns ride a hull the level does not give us) goes to a neutral flag
+  // before an enemy one.
+  const pick = flag ?? (side
+    ? flags.find(f => f.team === player.team) ?? flags.find(f => f.team !== 1 && f.team !== 2)
+    : flags[0]);
   if (!pick && !flags.length) return null;
   const target = pick ?? flags[0];
   if (advance) player.spawnIndex++;
@@ -113,7 +118,10 @@ export function spawnPlayer(world, playerId, { flag = null, advance = false, gro
   player.soldier.collider = world.collider;
   player.soldier.spawn(
     spawn.position[0], spawn.position[1], spawn.position[2], spawnYaw(spawn));
-  player.team = target.team ?? player.team;
+  // A side's flag decides the side (the deploy screen's other-side spawn
+  // switches it); a neutral flag never does, or a side standing on Omaha's
+  // beach would become team 0, which no side-keyed table carries.
+  if (target.team === 1 || target.team === 2) player.team = target.team;
   player.flag = target;
   player.spawn = spawn;
   return { flag: target, spawn };
