@@ -58,8 +58,18 @@ Unit rung, from `tools/bf1942-models`:
   list is asserted to carry no `FOOT_VIEW_CYCLE`, and the three reads that used
   to answer `soldierExternalViews` (the defaults, `?foot3p=1`, and a stored
   `"soldierExternalViews": true`) now come back with the two shipped words.
-- The full suite (`python3 -m unittest discover -s tests`) and
-  `./scripts/verify.sh --skip-e2e` were run after the change.
+- The full suite (`python3 -m unittest discover -s tests`, 3,503 tests, 270 s)
+  and `./scripts/verify.sh --skip-e2e` were both run. Both stop on the same
+  nine cases, and all nine reproduce at `79209a82` in a clean worktree with
+  none of these edits present, so none of them is this change's:
+  `test_verify_mutations.SharedCatalogueMutationTests` (7 errors, the catalogue
+  entries `Bar1918`, `Sherman` and `BritishSoldier` absent from this checkout's
+  shared tree), `test_meme.MemeElevenSurveyTests.test_clean_page_count_has_not_regressed`
+  (122 clean pages against a floor of 130) and
+  `test_sim_vehicles.SimVehicleTests.test_the_tank_pair_both_reach_north_outpost`
+  (`148.2 North_outpost 0->1 bot_0` against an expected `144.67`, the sim timing
+  `f4ad960d` moved). Because the models section fails first, `verify.sh` never
+  reaches its API section; nothing in this change touches C#.
 
 Live rung, `map.html?shots=1&map=wake&dev=1`, served from
 `tools/bf1942-models/viewer`, one page load:
@@ -75,6 +85,16 @@ Live rung, `map.html?shots=1&map=wake&dev=1`, served from
 - `AA_Allies` (`rootKind: "gun"`, no drivetrain) reaches cockpit, chase, front
   and fly-by.
 - `Corsair` reaches cockpit, nose, chase, front and fly-by.
+
+Deployed rung, after the push, the same URL on `https://mesh.bfstats.io`. All
+five files byte-match the commit: `map.html` `9880ef85`, `soldier-camera.js`
+`cdf0dca3`, `soldier-view.js` `2d8db90a`, `server-settings.js` `809c0220`,
+`seat-camera.js` `bba51f69`. The page boots to a 557 px stage with
+`window.__errs` empty, `#srv-soldier-views` is absent from the panel, and on
+foot at `Landing_Beach` a standing soldier with 30 hp takes F9, F10, F11, F12
+and C without leaving `inside`. Under an open canopy F11 gives `front`, C gives
+`inside`, F10 gives `chase`. `AA_Allies` walks cockpit, chase, front, fly-by.
+`Corsair` walks cockpit, nose, chase, front, fly-by.
 
 One error was on the page and is not this change's: opening the score board
 raises `TypeError: Cannot read properties of undefined (reading 'get')` in
