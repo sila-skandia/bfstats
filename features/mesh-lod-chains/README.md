@@ -72,6 +72,36 @@ unchanged. `scene.json` records the chain per placement under `meshLods`.
 Rung meshes are shared per unique geometry (one buffer each); rung NODES are
 fresh per placement because glTF forbids one node under many parents.
 
+### Only level bakes ship rungs (2026-09-27)
+
+Rungs were emitted wherever `Assembler` built a StandardMesh part, so the model
+exporter wrote them into model glbs as well. A fresh vanilla catalogue run gave
+162 glbs 1,687 rung nodes (Sherman.glb 16, BritishSoldier.glb 5,
+Spitfire.cockpit.glb 2). Only the level loader lifts rungs. Everything that
+loads a model glb draws every mesh node it is given: the browser and its
+thumbnails, cockpit grafts, wrecks, soldiers, replays, netcode, kits and poses.
+So each rung was a second copy of its part drawn over LOD 0. Measured headless
+in the browser: the Sherman drew 101 meshes and 15,000 triangles instead of 75
+and 5,614. The soldiers' body and hand rungs were plain meshes under parts
+skinned by the geometry's `.skn`, so they would stand in the bind pose while
+the body animated. The object-skeleton guard in `build_node` never saw that
+case.
+
+Emission is now opt-in, through `Assembler(lod_chains=True)`, and only
+`extract_map.level_assembler` sets it. The model, kit, pose, viewmodel and
+effect exporters ship LOD 0 alone, as they did before Gap 11. A geometry with
+its own `.skn` never emits a chain, in a level either; no vanilla or expansion
+level had one.
+
+The fix is in the exporter rather than in a helper beside `liftLods`:
+
+- A helper would have to be wired into every model-glb consumer, and any it
+  missed would draw the rungs.
+- Most of those consumers never want a distance swap. A cockpit is always at
+  the camera, and the browser is a close-up.
+- The level's own vehicles already draw at full detail, because `liftLods`
+  keeps every chain under the spawners unlifted and its rungs hidden.
+
 ## Viewer
 
 `level-statics.js` `liftLods` runs in `indexScene` after the lightmap pass and

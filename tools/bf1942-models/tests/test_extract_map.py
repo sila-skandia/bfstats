@@ -8,9 +8,10 @@ from pathlib import Path
 
 from bf42.level import (LevelInfo, decode_heightmap, find_level_archives,
                         load_level_files, parse_init_con, parse_terrain_con)
+from bf42.con import ObjectLibrary
 from bf42.rfa import ArchivePool
 from bf42.terrain import default_patches
-from extract_map import build_scene
+from extract_map import build_scene, level_assembler
 
 
 def _game_files(level: str):
@@ -82,6 +83,20 @@ class DefaultTextureFallbackTests(unittest.TestCase):
 
         self.assertEqual(0, report["terrain"]["defaultTiles"])
         self.assertNotIn("textureDefault", _material_names(glb))
+
+
+class LevelAssemblerTests(unittest.TestCase):
+    """A level bake is the one export that ships each mesh's LOD chain: the
+    level loader lifts the rungs onto a `THREE.LOD` (`liftLods`), and every
+    other consumer of an export would draw them on top of LOD 0."""
+
+    def test_a_level_bake_asks_for_the_lod_chains(self) -> None:
+        pool = ArchivePool()
+        assembler = level_assembler(pool, pool, pool, ObjectLibrary(),
+                                    max_texture=512, include_collision=True,
+                                    lightmaps={})
+        self.assertTrue(assembler.lod_chains)
+        self.assertTrue(assembler.include_collision)
 
 
 if __name__ == "__main__":
