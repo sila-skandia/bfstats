@@ -4,6 +4,7 @@
     python3 extract_pose.py BritishSoldier Colt GermanSoldier K98 --out ./viewer/models
     python3 extract_pose.py --matrix
     python3 extract_pose.py --matrix --export --out ./viewer/models
+    python3 extract_pose.py --kit-poses --mod FHSW --out ./viewer/models/mods/fhsw/poses -j 6
 
     --seat-poses extracts every seat pose the mod ships, one
     `<Soldier>__<PoseName>.pose.glb` per soldier per pose (e.g.
@@ -52,6 +53,13 @@ grip bundle). `--gaits-only` rewrites exactly those files and their keys in
 `--matrix` runs every vanilla soldier against every weapon the animation
 state machine knows, measures how far each palm is from the weapon surface,
 and writes `poses-matrix.json`.
+
+`--kit-poses` exports only the poses a player of the mod is ever seen in:
+every kit the mod's own levels bind, on every soldier those levels dress in
+it, holding the weapon the kit spawns with (the next item it carries when that
+one will not pose). One pose per (soldier, kit) -- 23 for Desert Combat Final,
+where the matrix product for FHSW alone is tens of thousands. It is the tree
+the main site's service record draws from; see `features/service-record`.
 
 `--split` writes the same poses as a *tree of shared documents* instead of
 one self-contained file per pose, because the bytes are the same ones over
@@ -106,7 +114,9 @@ from bf42 import ske as ske_mod, skin as skin_mod, stdmesh
 from bf42.assemble import (Assembler, Report, geometry_is_first_person,
                           is_foreign_skeleton_part)
 from bf42.rfa import ArchivePool
-from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, discover_levels, mod_chain
+from bf42 import kit as kit_mod
+from extract_models import (DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools,
+                            discover_levels, mod_chain)
 
 UPPER_PREFIX = "Ub_"
 
@@ -2134,9 +2144,13 @@ def weld_metrics(library, meshes, parts, posed_by_stance, attach, weapon,
 _pose_worker_context: dict = {}
 
 
-def _init_pose_worker(chain_paths: list[str]) -> None:
+def _init_pose_worker(chain_paths: list[str], level_objects: bool = False) -> None:
     chain = [Path(p) for p in chain_paths]
     meshes, textures, objects, _game = build_pools(chain, [])
+    if level_objects:
+        # The parent's library had the levels' own templates in (`--kit-poses`);
+        # a worker's has to match it.
+        add_level_objects(objects, discover_levels(chain))
     library = build_library(objects)
     machine = state_machine(meshes)
     _pose_worker_context["machine"] = machine
@@ -2158,6 +2172,246 @@ def _export_pose_task(task_args: tuple) -> dict:
     except PoseError as exc:
         row = {"soldier": soldier, "weapon": weapon, "error": str(exc)}
     return row
+
+
+def print_pose_row(row: dict) -> None:
+    """One exported pair's palm distances, or its failure, to stderr."""
+    status = "" if "error" not in row else f"FAIL {row['error']}"
+    m = row.get("metrics", {})
+    print(f"{row['soldier']:22s} {row['weapon']:14s} "
+          f"R {m.get('palmR', '-'):>7} L {m.get('palmL', '-'):>7}"
+          f"  {status}".rstrip(), file=sys.stderr)
+
+
+def export_rows(pairs: list[tuple[str, str]], *, args, chain: list[Path],
+                context: dict, out: Path | None,
+                level_objects: bool = False) -> list[dict]:
+    """Export `(soldier, weapon)` pairs, one row each, failures included.
+
+    In `args.jobs` worker processes when there is more than one pair, each
+    building its own pools from `chain` (plus every level's own templates when
+    `level_objects`, to match a parent that loaded them); in this process
+    otherwise, with `context`.
+    """
+    rows: list[dict] = []
+    if args.jobs > 1 and len(pairs) > 1:
+        tasks = [(s, w, str(out) if out else None, args.state, args.frame,
+                  args.max_texture, args.gaits, args.split, args.monolithic)
+                 for s, w in pairs]
+        with ProcessPoolExecutor(
+            max_workers=min(args.jobs, len(tasks)),
+            initializer=_init_pose_worker,
+            initargs=([str(p) for p in chain], level_objects),
+        ) as executor:
+            for row in executor.map(_export_pose_task, tasks):
+                rows.append(row)
+                print_pose_row(row)
+        return rows
+    for soldier, weapon in pairs:
+        try:
+            row = export_pose(soldier, weapon, out=out, **context)
+        except PoseError as exc:
+            row = {"soldier": soldier, "weapon": weapon, "error": str(exc)}
+        rows.append(row)
+        print_pose_row(row)
+    return rows
+
+
+def merge_matrix(out: Path, rows: list[dict], soldiers: list[str],
+                 weapons: list[str], skipped: list[str], *, state: str,
+                 frame: int) -> list[dict]:
+    """Write `rows` into `out/poses-matrix.json`, merged with what it holds.
+
+    Merge rather than overwrite. A mod extracted with `--own` wants two
+    targeted passes, not the full cross product -- its own soldiers against
+    every weapon their kits carry, then every soldier against its own weapons
+    -- because the rest of the product is byte-identical to vanilla's poses.
+    Overwriting leaves the second pass's rows describing a directory that
+    holds both passes' `.glb` files, and the viewer believes the manifest, so
+    the first pass silently vanishes from the UI.
+
+    Keyed on (soldier, weapon) lowercased, this run winning, so re-running one
+    pass refreshes its own rows and leaves the other's alone. Returns every row
+    the file now holds.
+    """
+    matrix_path = out / "poses-matrix.json"
+    merged: dict[tuple[str, str], dict] = {}
+    if matrix_path.exists():
+        try:
+            previous = json.loads(matrix_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+        for row in previous.get("pairs", []):
+            merged[(str(row.get("soldier", "")).lower(),
+                    str(row.get("weapon", "")).lower())] = row
+        soldiers = sorted({*previous.get("soldiers", []), *soldiers}, key=str.lower)
+        weapons = sorted({*previous.get("weapons", []), *weapons}, key=str.lower)
+        skipped = sorted({*previous.get("weaponsWithoutTemplate", []), *skipped},
+                         key=str.lower)
+    for row in rows:
+        merged[(row["soldier"].lower(), row["weapon"].lower())] = row
+    rows = [merged[key] for key in sorted(merged)]
+
+    out.mkdir(parents=True, exist_ok=True)
+    matrix_path.write_text(json.dumps({
+        "state": state, "frame": frame,
+        "soldiers": soldiers, "weapons": weapons,
+        "weaponsWithoutTemplate": skipped,
+        "pairs": rows,
+    }, indent=2))
+    return rows
+
+
+KitPoseJob = tuple[str, tuple[str, ...]]
+
+
+def kit_pose_plan(library: con_mod.ObjectLibrary,
+                  machine: animstates.StateMachine,
+                  levels: list[tuple[str, Path]], *, state: str = DEFAULT_STATE,
+                  ) -> tuple[dict[KitPoseJob, list[str]], dict]:
+    """The poses a player of this mod is ever seen in, as export jobs.
+
+    Every kit a level binds, on every soldier a level dresses in it (the
+    `game.setTeamSkin` beside the `game.setKit`), holding the first of
+    `kit.pose_candidates` that poses -- the spawn weapon, else the next best.
+    A job is a (soldier, candidates) pair, so kits that differ only in what
+    they do not hold are one job: EoD's parachute twins, and FHSW's many
+    variants of one loadout.
+
+    Returns the jobs, each with the kits it stands for, and what could not be
+    planned: live kits with nothing posable, and team skins that are not a
+    `BFSoldier` template.
+    """
+    kits = kit_mod.collect(library)
+    kit_mod.sweep_levels(kits, levels)
+    posable = {name.lower(): name
+               for name in machine.weapons(f"{UPPER_PREFIX}{state}")
+               if library.object(name) is not None}
+    jobs: dict[KitPoseJob, list[str]] = {}
+    unposable: list[str] = []
+    unknown: set[str] = set()
+    for kit in sorted(kits.values(), key=lambda k: k.template.lower()):
+        if not kit.live:
+            continue
+        candidates = tuple(kit_mod.pose_candidates(kit, posable))
+        if not candidates:
+            unposable.append(kit.template)
+            continue
+        for name in kit.soldiers:
+            soldier = library.object(name)
+            if soldier is None or soldier.kind.lower() != "bfsoldier":
+                unknown.add(name)
+                continue
+            jobs.setdefault((soldier.name, candidates), []).append(kit.template)
+    return jobs, {"unposableKits": unposable, "unknownSoldiers": sorted(unknown)}
+
+
+def resolve_kit_poses(jobs, export) -> tuple[dict[KitPoseJob, str | None], dict]:
+    """Pose every job with the first of its candidates that exports.
+
+    A round at a time: every job's current candidate is exported (each
+    distinct (soldier, weapon) once, across jobs and rounds), and a job whose
+    candidate failed moves to its next one for the following round.
+    `export(pairs)` returns a row per pair, with `error` when it failed.
+
+    Returns the weapon each job resolved to (None when none of its candidates
+    posed) and every row exported, keyed on (soldier, weapon) lowercased.
+    """
+    rows: dict[tuple[str, str], dict] = {}
+    chosen: dict[KitPoseJob, str | None] = {}
+    step = {job: 0 for job in jobs}
+    while step:
+        wanted: list[tuple[str, str]] = []
+        for (soldier, candidates), index in step.items():
+            pair = (soldier, candidates[index])
+            if (soldier.lower(), pair[1].lower()) not in rows and pair not in wanted:
+                wanted.append(pair)
+        for row in export(wanted) if wanted else []:
+            rows[(row["soldier"].lower(), row["weapon"].lower())] = row
+        following: dict[KitPoseJob, int] = {}
+        for job, index in step.items():
+            soldier, candidates = job
+            row = rows.get((soldier.lower(), candidates[index].lower()), {"error": "not exported"})
+            if "error" not in row:
+                chosen[job] = candidates[index]
+            elif index + 1 < len(candidates):
+                following[job] = index + 1
+            else:
+                chosen[job] = None
+        step = following
+    return chosen, rows
+
+
+def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
+    """`--kit-poses`: plan, export, and write the matrix and gait sidecars.
+
+    Only the levels this mod ships are swept. A level it inherits has its
+    dossier filed under the mod that ships it, and a page dressing that
+    level's soldiers looks in that mod's tree: Desert Combat Final's copy of
+    Wake is vanilla's Wake.
+    """
+    machine, library = context["machine"], context["library"]
+    levels = [(name, path) for name, path in discover_levels(chain)
+              if path.is_relative_to(chain[0])]
+    jobs, notes = kit_pose_plan(library, machine, levels, state=args.state)
+    if args.soldiers is not None:
+        keep = {s.lower() for s in args.soldiers}
+        jobs = {job: kits for job, kits in jobs.items() if job[0].lower() in keep}
+    if args.weapons is not None:
+        keep = {w.lower() for w in args.weapons}
+        narrowed: dict[KitPoseJob, list[str]] = {}
+        for (soldier, candidates), kits in jobs.items():
+            kept = tuple(w for w in candidates if w.lower() in keep)
+            if kept:
+                narrowed.setdefault((soldier, kept), []).extend(kits)
+        jobs = narrowed
+    soldiers = sorted({soldier for soldier, _ in jobs}, key=str.lower)
+    print(f"{args.mod}: {len(jobs)} (soldier, kit) poses to find for "
+          f"{len(soldiers)} soldiers on its {len(levels)} levels", file=sys.stderr)
+    for name in notes["unknownSoldiers"]:
+        print(f"  team skin is no soldier template: {name}", file=sys.stderr)
+    for name in notes["unposableKits"]:
+        print(f"  kit carries nothing posable: {name}", file=sys.stderr)
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    if args.split:
+        report_rigs(write_rigs(soldiers, context["meshes"], context["textures"],
+                               context["objects"], library, args.out,
+                               args.max_texture))
+    chosen, rows = resolve_kit_poses(jobs, lambda pairs: export_rows(
+        pairs, args=args, chain=chain, context=context, out=args.out,
+        level_objects=True))
+
+    # The kits each exported pose stands for, so the matrix says why it exists.
+    kits_of: dict[tuple[str, str], set[str]] = {}
+    for (soldier, _candidates), weapon in chosen.items():
+        if weapon is not None:
+            kits_of.setdefault((soldier.lower(), weapon.lower()), set()).update(
+                jobs[(soldier, _candidates)])
+    for key, row in rows.items():
+        if key in kits_of:
+            row["kits"] = sorted(kits_of[key], key=str.lower)
+
+    posed = [row for row in rows.values() if "error" not in row]
+    if args.gaits == "shared" and posed:
+        write_shared_gaits(context["machine"], context["meshes"], library,
+                           sorted({r["soldier"] for r in posed}, key=str.lower),
+                           sorted({r["weapon"] for r in posed}, key=str.lower),
+                           args.out)
+    merge_matrix(args.out, list(rows.values()), soldiers,
+                 sorted({r["weapon"] for r in posed}, key=str.lower), [],
+                 state=args.state, frame=args.frame)
+
+    unresolved = sorted((job for job, weapon in chosen.items() if weapon is None),
+                        key=lambda job: (job[0].lower(), job[1]))
+    fell_back = sum(1 for (s, c), w in chosen.items() if w is not None and w != c[0])
+    print(f"\n{len(posed)} poses for {len(chosen) - len(unresolved)}/{len(chosen)} "
+          f"(soldier, kit) jobs, {fell_back} on a later candidate; "
+          f"matrix in {args.out / 'poses-matrix.json'}", file=sys.stderr)
+    for soldier, candidates in unresolved:
+        print(f"  unposed: {soldier} with none of {', '.join(candidates)} "
+              f"(kits {', '.join(jobs[(soldier, candidates)])})", file=sys.stderr)
+    return 1 if unresolved else 0
 
 
 # -- CLI -------------------------------------------------------------------- #
@@ -2277,6 +2531,15 @@ def main() -> int:
                          "weapon's hand attachment and the gait references). "
                          "The monolithic .glb files are written as well, so both "
                          "trees exist while the viewer migrates per consumer.")
+    ap.add_argument("--kit-poses", action="store_true",
+                    help="export the poses a player of this mod is ever seen "
+                         "in: every kit a level binds, on every soldier a level "
+                         "dresses in it, holding the weapon he spawns with (the "
+                         "next item the kit carries when that one will not "
+                         "pose). One pose per (soldier, kit) rather than the "
+                         "full --matrix product, which for FHSW is tens of "
+                         "thousands. Writes poses-matrix.json and the gait "
+                         "sidecars; --soldiers/--weapons narrow it")
     ap.add_argument("--split-only", action="store_true",
                     help="with --split: write the rigs and the recipes and no "
                          "monolithic .glb at all. This is the cutover — it is "
@@ -2292,17 +2555,21 @@ def main() -> int:
         ap.error("--split writes the gaits as sidecars: use --gaits shared "
                  "(the default), or drop --split")
 
-    if not args.matrix and not args.seat_poses and not args.parachute \
-            and not args.swim and not args.die and not args.shared_assets \
-            and not args.gaits_only and (
+    if not args.matrix and not args.kit_poses and not args.seat_poses \
+            and not args.parachute and not args.swim and not args.die \
+            and not args.shared_assets and not args.gaits_only and (
             not args.pairs or len(args.pairs) % 2):
-        ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses, "
-                 "or --parachute, or --swim, or --die, or --shared-assets, "
-                 "or --gaits-only")
+        ap.error("give soldier/weapon pairs, or --matrix, or --kit-poses, "
+                 "or --seat-poses, or --parachute, or --swim, or --die, "
+                 "or --shared-assets, or --gaits-only")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
     meshes, textures, objects, _game = build_pools(chain, [])
+    if args.kit_poses:
+        # A level binds kits it declares in its own archive (FHSW 1,397 of
+        # them); they have to be in the library before the kits are collected.
+        add_level_objects(objects, discover_levels(chain))
     library = build_library(objects)
     machine = state_machine(meshes)
 
@@ -2432,12 +2699,12 @@ def main() -> int:
         return extract_seat_poses(machine, meshes, textures, objects, library,
                                   args)
 
+    if args.kit_poses:
+        return extract_kit_poses(args, chain, context)
+
     if args.matrix:
         declared = machine.weapons(f"{UPPER_PREFIX}{args.state}")
-    soldiers = soldier_templates(library)
-    if args.soldiers is not None:
-        keep = {s.lower() for s in args.soldiers}
-        soldiers = [s for s in soldiers if s.lower() in keep]
+        soldiers = soldier_templates(library)
         weapons = [w for w in declared if library.object(w) is not None]
         skipped = [w for w in declared if library.object(w) is None]
         if args.soldiers is not None:
@@ -2470,49 +2737,14 @@ def main() -> int:
                         continue
                 target_pairs.append((soldier, weapon))
 
-        rows = []
         if args.export and args.split:
             # Before the poses that name them, once per soldier rather than once
             # per pair: eight rigs for vanilla's eight soldiers against its 224
             # pairs, and a `-j` worker writing the same bytes is wasted work.
             report_rigs(write_rigs(soldiers, meshes, textures, objects, library,
                                    args.out, args.max_texture))
-        if args.jobs > 1 and len(target_pairs) > 1:
-            tasks = [(s, w, str(args.out) if args.export else None, args.state,
-                      args.frame, args.max_texture, args.gaits, args.split,
-                      args.monolithic)
-                     for s, w in target_pairs]
-            chain_strs = [str(p) for p in chain]
-            with ProcessPoolExecutor(
-                max_workers=min(args.jobs, len(tasks)),
-                initializer=_init_pose_worker,
-                initargs=(chain_strs,),
-            ) as executor:
-                for row in executor.map(_export_pose_task, tasks):
-                    rows.append(row)
-                    status = "ok" if "error" not in row else f"FAIL {row['error']}"
-                    m = row.get("metrics", {})
-                    print(f"{row['soldier']:22s} {row['weapon']:14s} "
-                          f"R {m.get('palmR', '-'):>7} L {m.get('palmL', '-'):>7}"
-                          f"  {status if status != 'ok' else ''}".rstrip(),
-                          file=sys.stderr)
-        else:
-            for soldier, weapon in target_pairs:
-                try:
-                    row = export_pose(soldier, weapon,
-                                      out=args.out if args.export else None,
-                                      **context)
-                    status = "ok"
-                except PoseError as exc:
-                    row = {"soldier": soldier, "weapon": weapon,
-                           "error": str(exc)}
-                    status = f"FAIL {exc}"
-                rows.append(row)
-                m = row.get("metrics", {})
-                print(f"{soldier:22s} {weapon:14s} "
-                      f"R {m.get('palmR', '-'):>7} L {m.get('palmL', '-'):>7}"
-                      f"  {status if status != 'ok' else ''}".rstrip(),
-                      file=sys.stderr)
+        rows = export_rows(target_pairs, args=args, chain=chain, context=context,
+                           out=args.out if args.export else None)
         args.out.mkdir(parents=True, exist_ok=True)
         if args.export and args.gaits == "shared":
             shared = write_shared_gaits(
@@ -2527,39 +2759,8 @@ def main() -> int:
             body = chute["body"] or {}
             print(f"parachute: {len(body.get('clips', {}))} body clips, "
                   f"canopy {chute['canopy'].get('asset')}", file=sys.stderr)
-        matrix_path = args.out / "poses-matrix.json"
-
-        # Merge rather than overwrite. A mod extracted with `--own` wants two
-        # targeted passes, not the full cross product — its own soldiers against
-        # every weapon their kits carry, then every soldier against its own
-        # weapons — because the rest of the product is byte-identical to
-        # vanilla's poses. Overwriting leaves the second pass's rows describing
-        # a directory that holds both passes' `.glb` files, and the viewer
-        # believes the manifest, so the first pass silently vanishes from the UI.
-        #
-        # Keyed on (soldier, weapon) lowercased, this run winning, so re-running
-        # one pass refreshes its own rows and leaves the other's alone.
-        merged: dict[tuple[str, str], dict] = {}
-        if matrix_path.exists():
-            try:
-                previous = json.loads(matrix_path.read_text())
-            except (OSError, json.JSONDecodeError):
-                previous = {}
-            for row in previous.get("pairs", []):
-                merged[(str(row.get("soldier", "")).lower(),
-                        str(row.get("weapon", "")).lower())] = row
-            soldiers = sorted({*previous.get("soldiers", []), *soldiers}, key=str.lower)
-            weapons = sorted({*previous.get("weapons", []), *weapons}, key=str.lower)
-        for row in rows:
-            merged[(row["soldier"].lower(), row["weapon"].lower())] = row
-        rows = [merged[key] for key in sorted(merged)]
-
-        matrix_path.write_text(json.dumps({
-            "state": args.state, "frame": args.frame,
-            "soldiers": soldiers, "weapons": weapons,
-            "weaponsWithoutTemplate": skipped,
-            "pairs": rows,
-        }, indent=2))
+        rows = merge_matrix(args.out, rows, soldiers, weapons, skipped,
+                            state=args.state, frame=args.frame)
         failures = sum(1 for r in rows if "error" in r)
         print(f"\n{len(rows) - failures}/{len(rows)} pairs resolved; "
               f"matrix in {args.out / 'poses-matrix.json'}", file=sys.stderr)

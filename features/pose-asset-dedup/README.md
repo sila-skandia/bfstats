@@ -170,7 +170,10 @@ Phase 3 — cutover and publish
       `<Soldier>__<Weapon>.pose.glb` through the API's mesh route
       (`ui/src/components/v4/armoury/stage.ts`, paths resolved by
       `api/Armoury/`; see `features/service-record`). Deleting the monolithic
-      glbs first leaves those stages on their fallback image.
+      glbs first leaves those stages on their fallback image. Since 2026-09-27
+      that includes the poses-only trees of every other installed mod
+      (`extract_pose.py --kit-poses`, "The mod trees" in that README), which
+      are monolithic too and need the same `--split` re-export.
 - [ ] Delete the monolithic glbs from the volume; measure before/after in the
       publish log.
 

@@ -3,6 +3,7 @@
 
     python3 extract_kits.py --out ./viewer/models
     python3 extract_kits.py --mod EoD --out ./viewer/models/mods/eod
+    python3 extract_kits.py --mod FHSW --no-pickups --out ./viewer/models/mods/fhsw
     python3 extract_kits.py --list
 
 Every extracted soldier in this pipeline is bare-headed, correctly: a `BFSoldier`
@@ -19,7 +20,8 @@ Two kinds of file come out, both small:
   thumbnail a kit card could have.
 
 Plus `kits.json`, the manifest: one row per kit that a level actually binds,
-naming its nation, class, worn parts, weapons and maps.
+naming its nation, class, worn parts, the weapon it spawns with, its weapons
+and maps. Kits a level declares in its own archive count like any other.
 
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
@@ -39,8 +41,8 @@ from bf42 import roster as roster_mod
 from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool
 
-from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, build_library,
-                            build_pools, discover_levels, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, add_level_objects,
+                            build_library, build_pools, discover_levels, mod_chain)
 from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
@@ -137,6 +139,10 @@ def main() -> int:
     ap.add_argument("--own", action="store_true",
                     help="only kits this mod declares itself, not the ones it "
                          "inherits (Road to Rome: 13 rather than 48)")
+    ap.add_argument("--no-pickups", action="store_true",
+                    help="export the worn parts only, not each kit as it lies "
+                         "on the ground. FHSW binds thousands of kits; a page "
+                         "that only dresses soldiers needs none of them")
     args = ap.parse_args()
 
     chain = mod_chain(args.game_dir, args.mod)
@@ -144,10 +150,13 @@ def main() -> int:
         print(f"no mod chain for {args.mod}", file=sys.stderr)
         return 1
     meshes, textures, objects, game = build_pools(chain, [])
+    # Kits a level declares in its own archive are bound by name like any
+    # other, and FHSW declares 1,397 of its kits that way.
+    levels = discover_levels(chain)
+    add_level_objects(objects, levels)
     library = build_library(objects)
 
     kits = kit_mod.collect(library)
-    levels = discover_levels(chain)
     read = kit_mod.sweep_levels(kits, levels)
     chosen = (sorted(kits.values(), key=lambda k: k.template)
               if args.all else kit_mod.browsable(kits))
@@ -163,6 +172,9 @@ def main() -> int:
         if archives is not None:
             own_pool = ArchivePool()
             own_pool.add_dir(archives, OBJECT_ARCHIVES)
+            # A kit one of this mod's own levels declares is this mod's too.
+            add_level_objects(own_pool, [(name, path) for name, path in levels
+                                         if path.is_relative_to(chain[0])])
             before = len(chosen)
             chosen = [k for k in chosen if own_pool.try_read(k.source) is not None]
             print(f"  --own: {len(chosen)} of {before} kits are this mod's",
@@ -185,7 +197,7 @@ def main() -> int:
                 geometry = (resolved.geometry if resolved else None) or part.geometry
                 if geometry:
                     wanted.setdefault(template, (template, part.bone, part.slot))
-        if kit.pickup:
+        if kit.pickup and not args.no_pickups:
             # Export the kit's *own* geometry, not the kit template — that tree
             # holds the weapons and every worn part, so exporting it gives a
             # 3,300-triangle pile of rifles rather than the 209-triangle satchel
@@ -253,6 +265,9 @@ def main() -> int:
             "soldiers": sorted(kit.soldiers),
             "levels": sorted(kit.levels),
             "slots": sorted(kit.slots),
+            # The weapon in hand on spawn, spelled as its own template: what
+            # a page dressing the soldier should pose him holding.
+            "primary": kit.primary,
             "pickup": {"geometry": kit.pickup,
                        "glb": pickup["glb"] if pickup else None},
             "worn": worn,

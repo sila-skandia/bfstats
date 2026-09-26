@@ -42,8 +42,11 @@ public class ServiceRecordService(
     private static readonly HashSet<string> VehicleCategories =
         new(StringComparer.OrdinalIgnoreCase) { "land", "air", "sea" };
 
-    /// <summary>Redis key for a player's record. Bump the version when the payload changes shape.</summary>
-    public static string CacheKey(string playerName) => $"service-record:v2:{playerName}";
+    /// <summary>
+    /// Redis key for a player's record. Bump the version when the payload changes shape, or when
+    /// a change to how armies are dressed would otherwise leave an hour of stale figures.
+    /// </summary>
+    public static string CacheKey(string playerName) => $"service-record:v3:{playerName}";
 
     /// <summary>
     /// Refractor's team numbering for a bflist label: "Axis" is team 1, "Allied" (or
@@ -227,8 +230,7 @@ public class ServiceRecordService(
 
         try
         {
-            // The kits and the soldier are those of the map the player served on longest.
-            var described = armouryService.DescribeTeam(home.Dossier, home.Team);
+            var described = Dress(tally);
             kits = described.Kits;
             figure = described.Figure;
             vehicles = MotorPool(tally);
@@ -269,6 +271,32 @@ public class ServiceRecordService(
             kits,
             figure,
             vehicles);
+    }
+
+    /// <summary>
+    /// The kits and the soldier are those of the map the player served on longest, unless the
+    /// armoury cannot dress that map's soldier; then those of the longest-served map whose
+    /// soldier it can. Both come from one map, because the page pairs each kit button with the
+    /// figure's kit of the same template. A map whose team is set up like one already tried
+    /// (same mod, skin and kits) is not tried again.
+    /// </summary>
+    private MapArmy Dress(ArmyTally tally)
+    {
+        MapArmy? home = null;
+        var tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var map in tally.MapsByMinutes)
+        {
+            var kitTemplates = (map.Team.Kits ?? []).Select(kit => kit?.Template?.Trim());
+            if (!tried.Add($"{map.Dossier.Mod}|{map.Team.Skin}|{string.Join(',', kitTemplates)}"))
+                continue;
+
+            var described = armouryService.DescribeTeam(map.Dossier, map.Team);
+            home ??= described;
+            if (described.Figure is not null)
+                return described;
+        }
+
+        return home ?? armouryService.DescribeTeam(tally.Home.Dossier, tally.Home.Team);
     }
 
     /// <summary>
@@ -382,11 +410,13 @@ public class ServiceRecordService(
         /// <summary>Keyed by lowercased arsenal template.</summary>
         public Dictionary<string, VehicleTally> Vehicles { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>The map this army was played on longest.</summary>
-        public MapTally Home => Maps.Values
+        /// <summary>The army's maps, longest played first.</summary>
+        public IEnumerable<MapTally> MapsByMinutes => Maps.Values
             .OrderByDescending(map => map.Minutes)
-            .ThenBy(map => map.Key, StringComparer.Ordinal)
-            .First();
+            .ThenBy(map => map.Key, StringComparer.Ordinal);
+
+        /// <summary>The map this army was played on longest.</summary>
+        public MapTally Home => MapsByMinutes.First();
 
         public void Add(ServiceRecordRow row, Attribution attribution)
         {

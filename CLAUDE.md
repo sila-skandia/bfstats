@@ -206,7 +206,11 @@ database.
     assets (a census, a parse survey, a spot extraction to prove a code path)
     is in scope and needs no permission — building out their trees is not.
     Work on a non-vanilla mod happens only when the owner explicitly requests
-    that mod by name.
+    that mod by name. One standing exception (2026-09-27): the service record's
+    poses-only trees for DC, DC Final, FH, FHSW, GCMOD, bf1918, Pirates and
+    Interstate. A change that moves `extract_kits.py` or `extract_pose.py
+    --kit-poses` output re-runs them: ten minutes for all eight, 1.15 GB
+    (`features/service-record/README.md`, "The mod trees").
   - **A fix to the exporter is not done until every layer it touches is rebuilt in
     every tree and live.** A change that only moves con-derived values in `scene.json`
     (control points, spawns, tickets and modes, fog and lighting, damage, sounds, AI)
