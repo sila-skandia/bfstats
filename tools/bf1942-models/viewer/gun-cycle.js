@@ -73,7 +73,8 @@ export function advanceGroups(guns, dt) {
       if (emitter.spec.colorOverTime) {
         const [r, g, b, a] = sampleCurve(emitter.spec.colorOverTime, phase);
         for (const material of emitter.materials) {
-          material.color.setRGB(r / 255, g / 255, b / 255);
+          // The ramp is D3D's gamma-space vertex colour, like `effects.js`'s.
+          material.color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
           material.opacity = a / 255;
         }
       }
