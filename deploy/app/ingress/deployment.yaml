@@ -32,6 +32,8 @@ data:
       # ACL definitions
       acl host_staging_bfstats req.hdr(host) -i staging.bfstats.io
       acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
+      acl host_play_bfstats req.hdr(host) -i play.bfstats.io
+      acl is_play_root path -i /
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
       acl is_netcode path_beg /netcode
@@ -39,8 +41,21 @@ data:
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"
 
+      # play.bfstats.io — the playable map page. The mesh nginx keeps its
+      # catch-all server block, so no nginx change is needed: HAProxy routes
+      # on Host and the mesh service already resolves. The root path is
+      # rewritten to the map page (a set-path, not a redirect, so the browser
+      # stays on /); every other path — /map.html, /vendor/, /models/, /maps/
+      # — is served by the same block the mesh host uses. The /netcode route
+      # below is path-based and rides this host too.
+      http-request set-path /map.html if host_play_bfstats is_play_root
+
       # Dedicated mesh viewer host — before the shared /stats and default UI routes
       use_backend mesh_frontend if host_mesh_bfstats
+      # !is_netcode: use_backend is first-match-wins, and without it this
+      # rule would swallow /netcode/* on the play host before the path-based
+      # netcode route below is ever evaluated.
+      use_backend mesh_frontend if host_play_bfstats !is_netcode
 
       # Route /stats to stats API
       use_backend stats_api if is_stats
