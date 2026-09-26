@@ -1827,6 +1827,41 @@ function frame(dt) {
   paintPlayingShell();
 }
 
+/** Barbed wire this step (`obstacle.js`, the world's `report.obstacles`):
+ *  every touch messages the wire, which is its scrape; a bot the wire hurt
+ *  goes through the referee's hurt-and-death path. `giveDamage`'s attacker
+ *  is -1, which the engine turns into the Armor's last hitter
+ *  (`GameServer::giveDamage` 0x0814b2e0); the message log's last attack on
+ *  him is this page's record of that. The human's own HP drop is the HUD's
+ *  (`soldier-hud.js`), and his death the on-foot camera's, as a fall's is. */
+const obstacleLog = [];
+function obstacleContacts(step) {
+  const list = step.obstacles;
+  if (!list?.length) return;
+  for (const ev of list) {
+    pageAudio.playObstacleScrape(ev);
+    if (obstacleLog.length >= 512) obstacleLog.shift();
+    obstacleLog.push({ ...ev, t: performance.now() });
+    if (!(ev.lost > 0) || ev.playerId == null || ev.playerId === LOCAL_PLAYER) continue;
+    if (!referee.bots.some(b => b.playerId === ev.playerId)) continue;
+    referee.damageLanded(ev.playerId, ev.lost, comms.lastAttack(ev.playerId)?.killerId ?? null,
+                         null, { via: 'obstacle', environment: true });
+  }
+}
+// The `?shots` hooks: the touches this page has seen, the level's wire
+// (`{ id, name, pos }` each) and the scrape player's count.
+if (params.has('shots')) {
+  window.__obstacleLog = () => obstacleLog.slice();
+  window.__obstacles = () => (level.collider?.statics?.obstacleNodes ?? []).map((n, id) => {
+    const e = n.matrixWorld.elements;
+    return { id, name: n.name, pos: [e[12], e[13], e[14]] };
+  });
+  window.__scrape = () => (pageAudio.scrape ? {
+    started: pageAudio.scrape.started, areas: pageAudio.scrape.areas.length,
+    buffers: [...pageAudio.scrape.buffers].map(([file, b]) => ({ file, duration: b.duration })),
+  } : null);
+}
+
 /** The simulation phase: the world's tick, then the bots, the capture law and
  *  the drawn instant, the room's send, and the step's readbacks. */
 function simulate(dt, input, look) {
@@ -1838,6 +1873,7 @@ function simulate(dt, input, look) {
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
   const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
+  obstacleContacts(step);
   // Bot AI runs after the world step, so bots read the player's post-step pose.
   referee.tick(dt);
   // The kits on the ground turn and time out on the world's own ticks: one

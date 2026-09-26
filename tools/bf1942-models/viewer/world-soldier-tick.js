@@ -3,6 +3,7 @@
 // A plain function of the `World` (world.js), called from its tick.
 
 import { fallDamageFor } from './fall-damage.js';
+import { obstacleDamage, obstacleOrigin, OBSTACLE_DAMAGE } from './obstacle.js';
 import { soldierLookDegrees } from './mouse-input.js';
 import { consume } from './world-input.js';
 
@@ -48,5 +49,40 @@ export function soldierTick(world, player, dt) {
   if (player.armor) {
     const drowned = soldier.drainDrowning?.() ?? 0;
     if (drowned > 0) player.armor.applyDamage(drowned);
+  }
+  obstacleTick(world, player, dt);
+}
+
+/**
+ * Barbed wire, `BFSoldier::handleCollision`'s Obstacle branch (lnxded
+ * 0x0827dc81-0x0827dd40), for every wire the body passed through this tick:
+ * the message to the wire (the scrape, reported for the page), and unless
+ * the wire is still in the Armor's collision list, the list entry and
+ * `giveDamage(soldier, damage, -1, ...)`. The slow half is the body's own
+ * (`walking-body.js`). The list ages first, as `Armor::update` does every
+ * tick whether anything touched or not, so a wire held against the body
+ * bills its 5 HP once a second (`obstacle.js`).
+ *
+ * `giveDamage`'s attacker is -1, which `GameServer::giveDamage` 0x0814b2e0
+ * replaces with the Armor's own last hitter (vt+0x78) and damage type
+ * (vt+0x88): the wire itself is credited to nobody.
+ */
+function obstacleTick(world, player, dt) {
+  const soldier = player.soldier;
+  const armor = player.armor;
+  armor?.colList?.update(dt);
+  const touches = soldier?.drainObstacles?.();
+  if (!touches?.length) return;
+  for (const t of touches) {
+    let lost = 0;
+    if (armor && !armor.destroyed) {
+      const damage = obstacleDamage(armor, t.id, OBSTACLE_DAMAGE);
+      if (damage > 0) lost = armor.damage(damage);
+    }
+    if (world.report.obstacles.length >= 256) continue;
+    world.report.obstacles.push({
+      id: t.id, x: t.x, y: t.y, z: t.z, origin: obstacleOrigin(world.collider, t.id),
+      playerId: player.id, lost, killed: lost > 0 && !!armor?.destroyed,
+    });
   }
 }

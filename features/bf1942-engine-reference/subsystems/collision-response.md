@@ -437,7 +437,7 @@ Below the 0.1 threshold the handlers are not called and the response always
 runs: a resting contact costs no `handleCollision`. `handleCollision` is where
 damage happens (§9); it returns 0 only in special cases (a spawner-held object
 touching its holder; a vehicle or soldier touching an `ObstacleTemplate`, which
-is messaged instead).
+is messaged instead; ledger OBS-2..OBS-8 for what barbed wire then does).
 
 ### 6.3 `impulseOn(relPos, speed, n, depth, mat1, mat2)` `0x08258900`, *client* `0x00574bb0`
 

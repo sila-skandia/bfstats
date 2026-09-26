@@ -628,6 +628,21 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
             # AreaObjects only: the engine stops the voice beyond it.
             if area.trigger_radius is not None:
                 entry["triggerRadius"] = area.trigger_radius
+            # A one-shot's `randomPlay` list: every sample, one per play (the
+            # barbed wire's three scrapes). `file` stays the first, so a
+            # viewer that predates the field still has a sample to play.
+            if area.random_play:
+                picks = []
+                for name in area.random_play:
+                    got = resolve_sound(name, level_files, sounds)
+                    if got is not None:
+                        picks.append(write(got))
+                if len(picks) > 1:
+                    entry["randomPlay"] = picks
+            # And its per-play pitch jitter (one-shots only: a bed's loop is
+            # started once and the field would change nothing it plays).
+            if area.random_start_pitch is not None and not area.loop:
+                entry["randomStartPitch"] = list(area.random_start_pitch)
             sound_report["areas"].append(entry)
 
     if library is not None and objects is not None and vehicles:

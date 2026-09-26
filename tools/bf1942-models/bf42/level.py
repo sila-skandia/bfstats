@@ -481,6 +481,12 @@ class PlacedAreaSound:
     trigger_radius: float | None = None
     distance_volume: list[float] | None = None
     loop: bool = True
+    # A one-shot patch's `randomPlay 1` samples, every one (`file` is the
+    # first): each play picks one. Barbed wire's `e_Barbwire.ssc` loads
+    # `barbwire1..3.wav`. None when the patch has one sample or is a loop.
+    random_play: list[str] | None = None
+    # The first sample's `randomStartPitch a / b`, or None.
+    random_start_pitch: tuple[float, float] | None = None
 
 
 @dataclass
@@ -2572,10 +2578,17 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
 
                 first = patch.samples[0] if patch.samples else None
                 offset = first.relative_position if first is not None else None
+                # A one-shot's pick list (`randomPlay 1`): the event plays one
+                # of them. Loops keep their single-voice view.
+                pick = None
+                if (patch.random_play and not patch.loop
+                        and len(patch.samples) > 1):
+                    pick = [smp.file for smp in patch.samples if smp.file]
+                pitch = first.random_start_pitch if first is not None else None
                 # Cache the sound info
                 template_sounds[template_key] = (
                     patch.file, vol, near_dist, far_dist, patch.min_distance,
-                    _distance_volume(patch), patch.loop, offset)
+                    _distance_volume(patch), patch.loop, offset, pick, pitch)
 
             # Get cached sound info
             sound_info = template_sounds[template_key]
@@ -2583,7 +2596,7 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 continue
 
             (sound_file, vol, near_dist, far_dist, min_dist, ramp, loop,
-             offset) = sound_info
+             offset, pick, pitch) = sound_info
             ox, oy, oz = inst.position
             # Point emitter at the building's position. The client stands a
             # voice at its owner's transform times `relativePosition`
@@ -2604,6 +2617,8 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 min_distance=min_dist,
                 distance_volume=ramp,
                 loop=loop,
+                random_play=pick,
+                random_start_pitch=pitch,
             ))
 
     return sounds
