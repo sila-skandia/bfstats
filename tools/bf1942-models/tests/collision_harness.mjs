@@ -440,6 +440,60 @@ results.surfaceHeight = {
   };
 }
 
+// --- articulated sub-parts (a landing craft's ramp) ------------------------
+
+// A hull whose ramp is a rig node of its own: raised, a wall at x = 5 across
+// the bow; lowered 90 degrees about z, the same quad lies flat from x = 5 to 8.
+// The bake keeps the raised wall, and the hull moves as one rigid body, so the
+// collider must follow the ramp's own swing or a soldier walking out of the
+// well deck meets the wall that is no longer drawn.
+{
+  const RAISED = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1];
+  const LOWERED = [0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1];
+  const floor = fakeMesh([0, 0, -1, 5, 0, -1, 5, 0, 1, 0, 0, 1],
+                         { index: [0, 1, 2, 0, 2, 3], material: 85 });
+  const wall = fakeMesh([0, 0, -1, 0, 3, -1, 0, 3, 1, 0, 0, 1],
+                        { index: [0, 1, 2, 0, 2, 3], material: 85, matrix: RAISED });
+  const ramp = group([wall]);
+  ramp.name = 'Ramp';
+  ramp.userData = { rig: { axes: { pitch: { input: 'c_PIPitch', driver: 'position' } } } };
+  ramp.matrixWorld = { elements: RAISED.slice() };
+  const hull = group([floor, ramp]);
+  hull.matrixWorld = { elements: IDENTITY };
+  const craft = buildCollisionIndex(group([hull]), { ownerRoots: [hull] });
+  const w = new WorldCollider({ statics: craft });
+  const owner = craft.ownerOf(hull);
+  const ahead = () => w.cast(-1, 1, 0, 1, 0, 0, 20, -1);
+  const r = { subParts: craft.subParts.length, owner };
+  const raisedHit = ahead();
+  r.raisedWall = raisedHit && { t: round(raisedHit.t), owner: raisedHit.owner };
+  ramp.matrixWorld.elements = LOWERED.slice();
+  w.setMovedOwner(owner, IDENTITY, IDENTITY, 0, 0, 0, 10);
+  r.loweredAhead = ahead();
+  const down = w.cast(6.5, 5, 0.2, 0, -1, 0, 20, -1);
+  r.loweredDeck = down && { y: round(down.y), owner: down.owner, ny: round(down.ny) };
+  r.loweredSweep = w.sweepSphere(-1, 1, 0, 1, 0, 0, 20, 0.3, -1);
+  // The index's own `cast` (what `soldier.js`'s settle calls) sees it too.
+  const viaIndex = craft.cast(6.5, 5, 0.2, 0, -1, 0, 20, -1, { dx: 0, dy: -1, dz: 0 });
+  r.loweredDeckViaIndex = viaIndex && round(viaIndex.y);
+  // Driven off 100 m in x: both the hull and the lowered ramp go with her.
+  const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 0, 0, 1];
+  const Ti = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -100, 0, 0, 1];
+  hull.matrixWorld = { elements: T };
+  ramp.matrixWorld.elements = [0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 105, 0, 0, 1];
+  w.setMovedOwner(owner, T, Ti, 100, 0, 0, 10);
+  const far = w.cast(106.5, 5, 0.2, 0, -1, 0, 20, -1);
+  r.drivenDeck = far && { y: round(far.y), owner: far.owner };
+  r.drivenBakedSpot = w.cast(6.5, 5, 0.2, 0, -1, 0, 20, -1);
+  // Raised again: the wall is back, and the extra frame is gone.
+  ramp.matrixWorld.elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 105, 0, 0, 1];
+  w.setMovedOwner(owner, T, Ti, 100, 0, 0, 10);
+  const back = w.cast(99, 1, 0, 1, 0, 0, 20, -1);
+  r.raisedAgain = back && round(back.t);
+  r.movedEntries = w.moved.size;
+  results.articulated = r;
+}
+
 // --- effect selection ------------------------------------------------------
 
 const effects = { 236: { 1: 'e_waterimpact', 10: 'GroundExplDry', 92: 'Exp2CascadesStone' } };

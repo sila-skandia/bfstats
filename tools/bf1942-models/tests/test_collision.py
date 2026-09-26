@@ -358,6 +358,25 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertEqual("concrete", mats["concrete"])
 
 
+    def test_a_lowered_ramp_moves_its_collision_with_it(self) -> None:
+        r = self.results["articulated"]
+        self.assertEqual(1, r["subParts"])
+        # Raised, the wall across the bow stops a ray 6 m out, as the hull's.
+        self.assertEqual({"t": 6.0, "owner": r["owner"]}, r["raisedWall"])
+        # Lowered, nothing stands at the hinge, for a ray or a soldier's sweep,
+        self.assertIsNone(r["loweredAhead"])
+        self.assertIsNone(r["loweredSweep"])
+        # and the ramp is a floor where it now lies, billed to the hull.
+        self.assertEqual({"y": 0.0, "owner": r["owner"], "ny": 1.0}, r["loweredDeck"])
+        self.assertEqual(0.0, r["loweredDeckViaIndex"])
+        # Driven away, the lowered ramp goes with the hull, not the bake.
+        self.assertEqual({"y": 0.0, "owner": r["owner"]}, r["drivenDeck"])
+        self.assertIsNone(r["drivenBakedSpot"])
+        # Raised again, the wall is back and the ramp's own frame retired.
+        self.assertEqual(6.0, r["raisedAgain"])
+        self.assertEqual(1, r["movedEntries"])
+
+
 class ProjectileMaterialTests(unittest.TestCase):
     """`ObjectTemplate.material` on a Projectile is the attacker id."""
 
