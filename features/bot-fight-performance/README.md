@@ -151,6 +151,27 @@ query, 42 us a cast. The natural El Alamein match does not move because it is
    fixed 256 (at 8 m a 1,500 m diagonal round crosses 375 cells and a fixed
    cap ended it short of a real hit). Berlin: 59 triangles a cell mean, casts
    42 us to 6.5, the soldier bodies 6.8 ms a tick to 1.1.
+
+   Correction (2026-09-27): not the same tests for `cast`. Its per-triangle
+   box reject (01cf327a) is the ray's box over the cell being walked, and the
+   dedupe stamp was set before it, so a triangle listed in two cells was
+   struck off in the first cell whenever the ray's stretch there passed clear
+   of its box, and was then never tested in the cell where the ray meets it.
+   At 8 m that is common. Old and new walk run on every cast of the same
+   matches (`simphase`, seeds 1-5, 250 s each):
+
+   | fight | casts that answered wrong | `lineClear` that said clear through a wall |
+   |---|---|---|
+   | Berlin, 16 on foot | 1 in 38 (4,384 no hit, 7,486 a farther surface) | 1 in 48, ~1,050 a minute (sensing, the fire trigger, decisions) |
+   | El Alamein, 16 on foot | 1 in 558 | 1 in 2,057 |
+   | El Alamein, natural match | 1 in 275, nearly all against a driven hull | none |
+
+   In the vehicle match those casts are the moved-owner pass: a line check
+   to an enemy vehicle skips that vehicle anyway, but rounds stepping down
+   onto a driven hull went through it. The stamp is now set after the box
+   (`test_collision.py`, the multi-cell tests). Same walk time on the same
+   casts (-0.4 % Berlin, -1.8 % the vehicle match); 3-5 % more candidates
+   and 1-6 % more narrowphase tests a query.
 5. **The hull box memoised per referee pass** (`bot-units.js` `unitInfo`).
    `Box3.setFromObject` over a hull's whole tree, per bot, per target, per
    frame; it feeds only the fire plan's precision. The runner already memoised

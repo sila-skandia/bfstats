@@ -494,6 +494,56 @@ results.surfaceHeight = {
   results.articulated = r;
 }
 
+// --- a triangle listed in more than one cell --------------------------------
+
+// `cast` walks the grid a cell at a time and throws a triangle out against the
+// ray's box over the cell it is walking, not the whole ray. A triangle is
+// listed in every cell its XZ box touches, so one the ray is still clear of in
+// the first cell can be met in the next: passing it over once must not strike
+// it off for the rest of the ray. Each scene is laid across 8 m cells so that
+// the ray meets it just past a cell boundary.
+{
+  const quad = (a, b, c, d, material) => fakeMesh([...a, ...b, ...c, ...d],
+    { index: [0, 1, 2, 0, 2, 3], material });
+  const unit = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l, z / l]; };
+  const hitOf = (index, [ox, oy, oz], [dx, dy, dz], maxDist) => {
+    const hit = index.cast(ox, oy, oz, dx, dy, dz, maxDist, -1, { dx, dy, dz });
+    return hit && { x: round(hit.x), y: round(hit.y), z: round(hit.z), owner: hit.owner };
+  };
+  const m = {};
+  // A hall across the cells x 0..8 and 8..16: a floor at y = 0 and a ceiling
+  // slab at y = 10, both over x 1..15 and z 1..7, so all four triangles are in
+  // both cells.
+  const floor = quad([1, 0, 1], [15, 0, 1], [15, 0, 7], [1, 0, 7], 92);
+  const ceiling = quad([1, 10, 1], [15, 10, 1], [15, 10, 7], [1, 10, 7], 92);
+  const hall = buildCollisionIndex(group([floor, ceiling]),
+                                   { ownerRoots: [floor, ceiling], cellSize: 8 });
+  m.hallEntries = hall.cellItems.length;
+  // Climbing at 1.5 in 1 from x = 2: 9.5 m up at the boundary, so the first
+  // cell's stretch of the ray is under the slab. It meets it at x = 8.33.
+  m.climbUnderSlab = hitOf(hall, [2, 0.5, 4], unit(1, 1.5, 0), 20);
+  // The same thing downwards: 0.5 m off the floor at the boundary.
+  m.descendOntoFloor = hitOf(hall, [2, 9.5, 4], unit(1, -1.5, 0), 20);
+  // Not only in y. A wall standing on the diagonal z = 16 - x, x 7..13, is
+  // listed in the first cell a flat round crosses, but the round's stretch of
+  // that cell (z 1..2.75) passes short of the wall's box (z 3..9); it meets the
+  // wall in the next cell, at x = 12.2.
+  const wall = quad([7, 0, 9], [13, 0, 3], [13, 3, 3], [7, 3, 9], 85);
+  const diagonal = buildCollisionIndex(group([wall]), { ownerRoots: [wall], cellSize: 8 });
+  m.pastDiagonalWall = hitOf(diagonal, [1, 1, 1], unit(1, 0, 0.25), 20);
+  // And the other half of the rule: a triangle the narrowphase has already
+  // tested is not tested again in the next cell. A roof sloping up along x
+  // over the hall's footprint is within a flat ray's box from the first cell
+  // on; both its triangles are tested there, the hit is 5.6 m into the next
+  // cell, and nothing is tested twice.
+  const roof = quad([1, 0, 1], [15, 10, 1], [15, 10, 7], [1, 0, 7], 80);
+  const sloped = buildCollisionIndex(group([roof]), { ownerRoots: [roof], cellSize: 8 });
+  const tests = sloped.stats.tests;
+  m.rampAcrossCells = hitOf(sloped, [2, 9, 4], [1, 0, 0], 20);
+  m.rampTests = sloped.stats.tests - tests;
+  results.multiCell = m;
+}
+
 // --- effect selection ------------------------------------------------------
 
 const effects = { 236: { 1: 'e_waterimpact', 10: 'GroundExplDry', 92: 'Exp2CascadesStone' } };

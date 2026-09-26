@@ -376,6 +376,31 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertEqual(6.0, r["raisedAgain"])
         self.assertEqual(1, r["movedEntries"])
 
+    def test_a_triangle_passed_over_in_one_cell_is_still_met_in_the_next(self) -> None:
+        # `cast` rejects a triangle against the ray's box over the cell it is
+        # walking. A triangle rejected there and listed in the next cell too
+        # must still be tested in the next cell, or the ray misses it.
+        m = self.results["multiCell"]
+        self.assertEqual(8, m["hallEntries"])      # four triangles, two cells each
+        # Under the ceiling for the whole first cell, into it just past x = 8.
+        self.assertEqual({"x": 8.333, "y": 10.0, "z": 4.0, "owner": 1},
+                         m["climbUnderSlab"])
+        # Clear of the floor for the whole first cell, onto it just past x = 8.
+        self.assertEqual({"x": 8.333, "y": 0.0, "z": 4.0, "owner": 0},
+                         m["descendOntoFloor"])
+        # Short of a diagonal wall's box in the first cell, through the wall in
+        # the second.
+        self.assertEqual({"x": 12.2, "y": 1.0, "z": 3.8, "owner": 0},
+                         m["pastDiagonalWall"])
+
+    def test_a_triangle_is_tested_once_however_many_cells_list_it(self) -> None:
+        # The roof's two triangles are tested in the first cell, the hit is in
+        # the second, and the second cell does not test them again.
+        m = self.results["multiCell"]
+        self.assertEqual({"x": 13.6, "y": 9.0, "z": 4.0, "owner": 0},
+                         m["rampAcrossCells"])
+        self.assertEqual(2, m["rampTests"])
+
 
 class ProjectileMaterialTests(unittest.TestCase):
     """`ObjectTemplate.material` on a Projectile is the attacker id."""
