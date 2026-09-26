@@ -638,6 +638,30 @@ export function steerToward(bot, x, z, speed = 1) {
     bot._dbgDrive = r.drive;
     return;
   }
+  // Still in a landing craft's hold: its walk over the bow comes first
+  // (doctrine-landing.js `disembarkPath`, INVENTION).
+  const off = disembarkPoint(bot);
+  if (off) return steerOnFoot(bot, off[0] - bot.position[0], off[1] - bot.position[2], speed);
+  steerOnFoot(bot, dx, dz, speed);
+}
+
+/** The next point of the bot's walk off a landing craft, or null once it is
+ *  done or has run out of time (`bot._disembark`, bot-referee.js
+ *  `leaveVehicle`). */
+function disembarkPoint(bot) {
+  const d = bot._disembark;
+  if (!d) return null;
+  if ((bot._now ?? 0) > d.until) { bot._disembark = null; return null; }
+  while (d.points.length
+         && Math.hypot(d.points[0][0] - bot.position[0], d.points[0][1] - bot.position[2]) < d.arrive) {
+    d.points.shift();
+  }
+  if (!d.points.length) { bot._disembark = null; return null; }
+  return d.points[0];
+}
+
+/** A soldier's steer: face the heading, and run once it is inside the cone. */
+function steerOnFoot(bot, dx, dz, speed) {
   const want = Math.atan2(dx, dz);
   const rel = wrapAngle(want - bot.yaw);
   bot._aimLook(want, 0);
