@@ -28,6 +28,9 @@ export function createVehicleWrecks(page) {
   // owner id -> { node, anchors: Map<effectName, Object3D>, handles: [] }, the
   // scene-side bookkeeping a tier change needs to undo.
   const damageVisuals = new Map();
+  /** Why a template's wreck glb did not load, per template. A wreck that never
+   *  arrives and a wreck that was never asked for look identical in the world. */
+  const loadFailures = new Map();
 
   /**
    * Register every placed object that carries an `armor` extras block. Most of a
@@ -404,9 +407,12 @@ export function createVehicleWrecks(page) {
       // recompute so the wreck inherits the spawn pose (same contract as
       // `damageAnchor`).
       visual.node.updateMatrixWorld(true);
-    } catch {
+    } catch (error) {
       // No wreck for this template: leave the live mesh up for the linger/fade
-      // rather than blanking the pad.
+      // rather than blanking the pad. Keep the reason: the hull then sits where
+      // it came down wearing its intact mesh, which looks like the wreck path
+      // never ran at all, and the two are only told apart from the console.
+      loadFailures.set(template, String(error?.message ?? error).slice(0, 300));
     }
   }
 
@@ -658,8 +664,39 @@ export function createVehicleWrecks(page) {
     });
   }
 
+  /** What the wreck path knows about every damaged hull, for a live check:
+   *  whether it is still in the air, what it is carrying, and why nothing is. */
+  function wreckState() {
+    const out = [];
+    for (const [owner, visual] of damageVisuals) {
+      const template = templateNameOf(visual.node);
+      const position = visual.falling?.state?.position ?? null;
+      out.push({
+        owner,
+        template,
+        node: visual.node?.name ?? null,
+        falling: !!visual.falling,
+        agl: position ? Math.round((position.y - surfaceUnder(position.x, position.z)) * 10) / 10 : null,
+        speed: position
+          ? Math.round(Math.hypot(
+            visual.falling.state.velocity.x,
+            visual.falling.state.velocity.y,
+            visual.falling.state.velocity.z) * 10) / 10
+          : null,
+        wrecked: !!visual.wrecked,
+        wreckAge: Math.round((visual.wreckAge ?? 0) * 10) / 10,
+        wreckNode: visual.wreck?.name ?? null,
+        hidden: (visual.hidden ?? []).length,
+        loadFailure: loadFailures.get(template) ?? null,
+      });
+    }
+    return out;
+  }
+
   Object.assign(wrecks, {
     damageVisuals,
+    loadFailures,
+    wreckState,
     registerDamageables,
     showDamageTier,
     killOccupantInSeat,
