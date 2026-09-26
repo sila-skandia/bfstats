@@ -102,6 +102,13 @@ The fix is in the exporter rather than in a helper beside `liftLods`:
 - The level's own vehicles already draw at full detail, because `liftLods`
   keeps every chain under the spawners unlifted and its rungs hidden.
 
+Level bakes are unchanged: Berlin re-baked byte-identical with and without the
+fix. The model trees were re-extracted the same day from the fix and published:
+the vanilla catalogue (96 templates, 263 glbs), XPack1 and XPack2 with `--own`
+(36 and 71 glbs), and the level-local Ju88A. No glb under `viewer/models` has a
+rung now. The browser loads all 370 variants with no rung drawn, and the Sherman
+is back to 75 meshes and 5,614 triangles.
+
 ## Viewer
 
 `level-statics.js` `liftLods` runs in `indexScene` after the lightmap pass and
