@@ -26,6 +26,9 @@
 import {
   AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, visibleRows,
 } from './menu-screen.js';
+import {
+  fracToBotCount, fracToBotSkill, hitBotSettings, paintBotSettings,
+} from './bot-settings.js';
 import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
@@ -96,10 +99,10 @@ export function createSkirmishScreen({
   const state = {
     team: ALLIED, index: 0, scroll: 0, level: null,
     disconnect: Boolean(inGame && onDisconnect),
-    // Bot settings: always on. The retail AI SKILL slider is proven inert
-    // (§5.3 of the AI research doc); wiring it is a deliberate departure.
-    botSkill: 0.75,   // 0.25 EASY, 0.5 NORMAL, 0.75 HARD, 1.0 IMPOSSIBLE
-    botCount: 4,      // number of bots to spawn (default on)
+    // Bot settings: the two controls `bot-settings.js` draws — the total
+    // across both sides, and the skill behind `map.html`'s `?botSkill=`.
+    botSkill: 0.75,
+    botCount: 4,
   };
   let layout = null;
   let levels = [];
@@ -244,24 +247,13 @@ export function createSkirmishScreen({
     paintSoon();
   }
 
-  /** Apply a bot slider click. The layout's `sets` array carries the variable
-   *  name and the value to set. For the four-step sliders (AiSkill, BotRatio,
-   *  NrOfLives) the value is 1-4; for the percentage sliders it's the authored
-   *  value. We map the 1-4 values to actual botSkill/botCount state.
-   *
-   *  The retail AI SKILL slider is proven inert (§5.3); wiring it is a
-   *  deliberate departure from the game. */
-  function applyBotSlider(sets) {
-    for (const s of sets) {
-      if (s.var === 'Skirmish/SkirmishAiSkill') {
-        // 1→0.25, 2→0.5, 3→0.75, 4→1.0 (§5.2 table)
-        state.botSkill = [0.25, 0.5, 0.75, 1.0][s.value - 1] ?? 0.75;
-      } else if (s.var === 'Options/General/SkirmishPercentageOfBots') {
-        // 50-400% scale on max bot count. Map to botCount: 50%→2, 100%→4,
-        // 200%→8, 400%→16. Linear interpolation.
-        state.botCount = Math.max(1, Math.round((s.value / 100) * 4));
-      }
-    }
+  /** Apply a bot-settings click. `hit` is `hitBotSettings`'s: which trough
+   *  and the fraction across it. The count is a whole body; the intelligence
+   *  quantises to the five stops (`bot-settings.js` `BOT_SKILL_STEPS`). */
+  function applyBotSetting(hit) {
+    if (hit.kind === 'botCount') state.botCount = fracToBotCount(hit.frac);
+    else if (hit.kind === 'botSkill') state.botSkill = fracToBotSkill(hit.frac);
+    else return;
     paintSoon();
   }
 
@@ -314,9 +306,11 @@ export function createSkirmishScreen({
   function paint() {
     if (!layout) return;
     if (!beginStage(canvas, ctx, layout.virtual)) return;
-    // The left column is the bot settings, which `SHOW_BOT_SETTINGS` has off
-    // by default because the retail screen leaves it blank.
-    paintMenu(ctx, layout, state, env, true);
+    // The retail bot column stays switched off (`menu-screen.js`
+    // SHOW_BOT_SETTINGS): the two controls the viewer actually takes into a
+    // battle are drawn over its old spot by `bot-settings.js`.
+    paintMenu(ctx, layout, state, env, false);
+    paintBotSettings(ctx, env, state);
     strip?.paint(ctx);
   }
 
@@ -332,7 +326,9 @@ export function createSkirmishScreen({
   canvas.addEventListener('pointermove', event => {
     if (!layout) return;
     const [x, y] = at(event);
-    const next = strip?.hover(x, y)
+    const bot = hitBotSettings(x, y);
+    const next = bot ? { kind: 'bot' }
+      : strip?.hover(x, y)
       || hitTest(layout, state, x, y, levels.length, true);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
     hover = next;
@@ -350,11 +346,12 @@ export function createSkirmishScreen({
     const [x, y] = at(event);
     canvas.focus();
     if (strip?.click(x, y)) return;
+    const bot = hitBotSettings(x, y);
+    if (bot) { applyBotSetting(bot); return; }
     const hit = hitTest(layout, state, x, y, levels.length, true);
     if (!hit) return;
     if (hit.kind === 'row') select(hit.index);
     else if (hit.kind === 'team') setTeam(hit.team);
-    else if (hit.kind === 'botSlider') applyBotSlider(hit.sets);
     else if (hit.action === 'scroll') scrollBy(hit.by);
     else if (hit.action === 'start') start();
     else if (hit.action === 'disconnect') onDisconnect?.();
