@@ -1941,24 +1941,22 @@ function paintHud(dt) {
   // strip (comms-canvas) included — waits for READY. Hiding the canvases
   // (not just skipping the paint) clears whatever the load parked on them;
   // the [hidden] !important rules in map.css beat the generic canvas rule.
+  // Toggled on the edge only, and the repaint asked for once, when the HUD
+  // comes back: a `requestRepaint()` on every frame would defeat the dirty
+  // check below and repaint the whole HUD sixty times a second.
   const briefingUp = overlay.briefingCaptures();
-  for (const c of [hudFeed.gameHud.canvas, document.getElementById('comms-canvas')]) {
-    if (c) c.hidden = briefingUp;
-  }
-  if (briefingUp) return;
-  hudFeed.gameHud.requestRepaint();
-  // The briefing screen owns the stage while it is parked on it: the game
-  // shows only the dialog over the live scene, so the HUD — the F1..F8 radio
-  // keys included — waits for READY. Hiding the canvas (not just skipping
-  // the paint) clears whatever the load parked on it.
-  if (overlay.briefingCaptures()) {
-    if (!hudFeed.gameHud.canvas.hidden) hudFeed.gameHud.canvas.hidden = true;
+  const hudCanvas = hudFeed.gameHud.canvas;
+  const commsCanvas = document.getElementById('comms-canvas');
+  if (briefingUp) {
+    if (hudCanvas && !hudCanvas.hidden) hudCanvas.hidden = true;
+    if (!commsCanvas.hidden) commsCanvas.hidden = true;
     return;
   }
-  if (hudFeed.gameHud.canvas.hidden) {
-    hudFeed.gameHud.canvas.hidden = false;
+  if (hudCanvas?.hidden) {
+    hudCanvas.hidden = false;
     hudFeed.gameHud.requestRepaint();
   }
+  if (commsCanvas.hidden) commsCanvas.hidden = false;
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually
   // changed since the call before (features/mesh-viewer-performance, rule 7).
