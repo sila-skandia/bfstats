@@ -67,8 +67,8 @@ export class GunFire {
     this.viewportHeight = viewportHeight || (() => window.innerHeight || 800);
     // Which flash the observer gets. Refractor bundles both and marks each
     // with the view it belongs to: from outside, `em_MuzzHeavy`'s 1.76 m mesh
-    // ramping to nine times its own length; from the seat, `em_1P_MuzzHeavy`'s
-    // 0.4 m sprite. A model on a turntable is always watched from outside, so
+    // (drawn at its authored size, ledger IMP-5) and a 0.43 m glow; from the
+    // seat, `em_1P_MuzzHeavy`'s 0.4 m sprite. A model on a turntable is always watched from outside, so
     // that is the default; a page that puts the camera in a cockpit sets this.
     this.firstPerson = false;
     // `firstPerson` is the observer's, and only his own guns spend it. A page

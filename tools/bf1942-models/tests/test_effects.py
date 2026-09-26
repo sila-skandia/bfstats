@@ -1424,5 +1424,18 @@ GeometryTemplate.create StandardMesh Gibb_iron_m1
         self.assertEqual("mesh", node.extras["effect"]["kind"])
 
 
+class SpawnParticleIntoTests(unittest.TestCase):
+    """The pooled spawn is the same particle as the allocating one."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["spawnInto"]
+
+    def test_same_record_as_spawn_particle(self):
+        self.assertTrue(self.results["same"],
+                        f"{self.results['fresh']}\n!=\n{self.results['reused']}")
+        self.assertTrue(self.results["sameRecord"])
+
+
 if __name__ == "__main__":
     unittest.main()

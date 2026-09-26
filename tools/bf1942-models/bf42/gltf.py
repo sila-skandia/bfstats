@@ -254,7 +254,8 @@ class GlbBuilder:
                      blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
                      unlit: bool = False, emissive_floor: float = 0.0,
                      additive: bool = False, texture_fade: bool = False,
-                     envmap: bool = False) -> int:
+                     envmap: bool = False,
+                     additive_alpha_test: float | None = None) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -277,6 +278,11 @@ class GlbBuilder:
             # material.userData) and switches to real additive blending.
             mat["alphaMode"] = "BLEND"
             extras["additive"] = True
+            # The `.rs` `alphaTestRef` the engine keeps on top of the additive
+            # blend. Only a caller that asks carries it (the effect library),
+            # so every other tree's bake stays byte-identical.
+            if additive_alpha_test:
+                extras["alphaTest"] = additive_alpha_test
         elif texture_fade:
             # `textureFade true;` — Refractor fades this surface with camera
             # distance (the black_o darkness plane in every doorway). glTF has
