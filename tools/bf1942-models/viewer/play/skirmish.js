@@ -24,7 +24,7 @@
 // selection and turns a pointer into a choice.
 
 import {
-  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, visibleRows,
+  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, trackRect, visibleRows,
 } from './menu-screen.js';
 import {
   fracToBotCount, fracToBotSkill, hitBotSettings, paintBotSettings,
@@ -323,11 +323,75 @@ export function createSkirmishScreen({
     return pointerToVirtual(canvas, event, layout.virtual);
   }
 
-  canvas.addEventListener('pointermove', event => {
-    if (!layout) return;
+  // --- drags: the bot troughs and the list's scrollbar update as they move ---
+  // A press in one of the three tracks starts a drag; every move re-applies
+  // at the pointer's fraction, and the release ends it. The canvas captures
+  // the pointer so a drag that leaves the screen keeps working.
+
+  /** Which track a drag is riding, or null. */
+  let dragKind = null;
+
+  const inTrack = (r, x, y) =>
+    x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
+
+  /** The list's scroll track, in virtual units, or null. */
+  function track() {
+    if (!layout) return null;
+    const t = trackRect(layout);
+    if (!t) return null;
+    // The arrows sit at the track's ends; the draggable span is between them.
+    return t;
+  }
+
+  /** Press in the scrollbar: the thumb jumps to the pointer, and the drag
+   *  keeps it there. Proportional over the whole track, arrows included. */
+  function scrollDragTo(y) {
+    const t = track();
+    const box = listBox(layout);
+    if (!t || !box) return;
+    const max = Math.max(0, levels.length - visibleRows(layout, box));
+    const frac = Math.min(1, Math.max(0, (y - t[1]) / t[3]));
+    state.scroll = Math.round(frac * max);
+    paintSoon();
+  }
+
+  function dragTo(event) {
+    const [x, y] = at(event);
+    if (dragKind === 'list') { scrollDragTo(y); return; }
+    const hit = hitBotSettings(x, y);
+    if (hit) applyBotSetting(hit);
+  }
+
+  canvas.addEventListener('pointerdown', event => {
+    if (!layout || event.pointerType === 'touch') return;
     const [x, y] = at(event);
     const bot = hitBotSettings(x, y);
+    if (bot) {
+      dragKind = bot.kind;
+      applyBotSetting(bot);
+    } else {
+      const t = track();
+      // The arrows are buttons in the track's own rect; they stay clicks.
+      const arrow = hitTest(layout, state, x, y, levels.length, true);
+      if (t && inTrack(t, x, y) && arrow?.action !== 'scroll') {
+        dragKind = 'list';
+        scrollDragTo(y);
+      }
+    }
+    if (dragKind) {
+      canvas.focus();
+      try { canvas.setPointerCapture(event.pointerId); } catch { /* gone */ }
+    }
+  });
+
+  canvas.addEventListener('pointermove', event => {
+    if (!layout) return;
+    if (dragKind) { dragTo(event); return; }
+    const [x, y] = at(event);
+    const bot = hitBotSettings(x, y);
+    const t = track();
     const next = bot ? { kind: 'bot' }
+      : (t && inTrack(t, x, y)) ? { kind: 'scroll' }
       : strip?.hover(x, y)
       || hitTest(layout, state, x, y, levels.length, true);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
@@ -335,6 +399,11 @@ export function createSkirmishScreen({
     canvas.style.cursor = next ? 'pointer' : 'default';
     if (changed) paintSoon();
   });
+
+  for (const kind of ['pointerup', 'pointercancel']) {
+    canvas.addEventListener(kind, () => { dragKind = null; });
+  }
+
 
   canvas.addEventListener('pointerleave', () => {
     hover = null;
