@@ -69,7 +69,9 @@ export function lightMuzzle(guns, group, muzzle) {
   // vanilla's 364 — and it is also what a glb baked before the flag was
   // exported looks like, so a stale asset behaves exactly as it used to.
   const view = flashView(guns, group);
+  playMuzzleBundles(guns, group, muzzle, view);
   for (const emitter of group.emitters) {
+    if (emitter.bundle?.live) continue;
     if (emitter.spec.view && emitter.spec.view !== view) continue;
     if (emitter.muzzle && emitter.muzzle !== muzzle) continue;
     // R2 / V-R2: Em_Shell792D* delay 2.0 s — age starts negative so the
@@ -87,6 +89,60 @@ export function lightMuzzle(guns, group, muzzle) {
       node.visible = true;
     }
   }
+}
+
+/**
+ * The game's own muzzle and casing bundles, played through the particle
+ * runtime (`effects.js`) at the node the bake hung each one on.
+ *
+ * Retail fires a gun's `addTemplate e_MuzzHeavy` / `e_shell1250mm` children
+ * (or its `visibleBarrelTemplate`) as ordinary EffectBundles: an emitter per
+ * layer, one particle per shot at `intensity 10` over `timeToLive 0.1`, each
+ * particle living its own `timeToLive`, sized by the IMP-5 rule (a mesh
+ * particle with no `sizeModifier` draws at its authored size, whatever its
+ * `sizeOverTime` says), casings flung out along the rolled emitter frame
+ * under half gravity. Strobing the parked emitters instead is what made the
+ * halftrack's Browning flash a 5 m fireball: `em_MuzzHeavy`'s ramp to 9.4
+ * replayed as node scale, and no casing ever left the gun
+ * (features/muzzle-effects-parity).
+ *
+ * A bundle is played only when the page's effect library holds it and its
+ * node is in the player's own scene: the first-person viewmodel draws in a
+ * scene of its own (`arms-rig.js`), and a particle placed at a viewmodel
+ * node's world point would land in the wrong world. Everything else keeps the
+ * baked emitters, so a stale library or the model browser behaves as before.
+ * The bundle's sound is left off (`silent`): the casings' `shells.ssc` is an
+ * open item, not a guess to make here.
+ */
+function playMuzzleBundles(guns, group, muzzle, view) {
+  const bundles = group.bundles;
+  if (!bundles?.length) return;
+  const player = guns.effects;
+  const library = player?.library;
+  for (const bundle of bundles) {
+    bundle.live = !!library && library.has(bundle.name)
+      && inScene(bundle.node, player.scene);
+    if (!bundle.live) continue;
+    if (bundle.muzzle && bundle.muzzle !== muzzle) continue;
+    // One options record per bundle, built on its first shot and reused:
+    // `pooled` hands the run back to the player's pool when it ends, so a
+    // held trigger allocates nothing per round on this path.
+    const options = bundle.play ??= {
+      attach: { object: bundle.node, velocity: () => group.platformVelocity?.() ?? null },
+      view,
+      silent: true,
+      pooled: true,
+    };
+    options.view = view;
+    player.play(bundle.name, options);
+  }
+}
+
+/** Whether `node` hangs under `scene`. */
+function inScene(node, scene) {
+  let n = node;
+  while (n.parent) n = n.parent;
+  return n === scene;
 }
 
 /** The round half of `fireBarrel`: the barrel's kick and what leaves it. */
