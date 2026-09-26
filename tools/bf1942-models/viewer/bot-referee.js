@@ -53,6 +53,11 @@ export const BOT_FALLBACK_ROF = 8;
  *  is physics.js `CHARACTER_HEIGHT`. */
 export const BOT_BODY_RADIUS = 0.6;
 export const BOT_BODY_HEIGHT = 1.0;
+/** How far from the body centre any capsule of a drawn body can reach, in
+ *  any pose (a prone man's boots 1.2 m out, a raised rifle 1 m up) plus the
+ *  fattest capsule: the broadphase sphere a round must pass through before
+ *  the body's capsules are built for it (`resolveShot`). */
+export const BOT_BODY_REACH = 2.5;
 /** The material a round is priced against when it meets the stand-in body,
  *  which has no capsules: the torso's (`Bip01_Spine2`, 41), the largest of the
  *  eight and the one most rounds meet (INVENTION: the engine always has the
@@ -261,6 +266,19 @@ export function buildBotCovers(world) {
     });
   }
   return out;
+}
+
+/**
+ * Whether the ray from `origin` along the unit `(dx, dy, dz)` passes within
+ * `r` of `center` somewhere in `[-r, maxT + r]` along it: a conservative
+ * superset of every capsule hit on a body whose capsules lie within `r` of
+ * that centre, including a shooter standing inside the sphere.
+ */
+export function withinReach(origin, dx, dy, dz, maxT, center, r) {
+  const cx = center[0] - origin[0], cy = center[1] - origin[1], cz = center[2] - origin[2];
+  const t = cx * dx + cy * dy + cz * dz;
+  if (t < -r || t > maxT + r) return false;
+  return cx * cx + cy * cy + cz * cz - t * t <= r * r;
 }
 
 /** Terrain-blocked line of sight (the same stand-in as bot.js `checkLOS`). */
@@ -696,9 +714,16 @@ export function createBotReferee(env) {
       if (w.armorOf(id)?.destroyed) continue;
       const s = referee.bodyAt(id);
       if (!s) continue;
+      // The stand-in sphere first, grown to `BOT_BODY_REACH`: only a round that
+      // can reach a body pays for its capsules, which read the drawn rig's
+      // bones through a full `updateMatrixWorld` (rig-capsules.js). Every
+      // round used to build every living body's capsules, most of them for
+      // targets it was flying away from (features/bot-fight-performance).
+      const center = [s.x, s.y + BOT_BODY_HEIGHT, s.z];
+      if (!withinReach(origin, cx, cy, cz, BOT_FIRE_RANGE, center, BOT_BODY_REACH)) continue;
       const met = meetSoldier(origin, [cx, cy, cz], BOT_FIRE_RANGE, {
         capsules: referee.capsulesOf(id),
-        center: [s.x, s.y + BOT_BODY_HEIGHT, s.z], radius: BOT_BODY_RADIUS,
+        center, radius: BOT_BODY_RADIUS,
       });
       if (!met || met.t >= bestT) continue;
       if (!lineOfSight(w.collider, origin, met.at)) continue;
