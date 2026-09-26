@@ -19,6 +19,7 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | landing craft silent except near the destroyer | nothing claimed their audio; what was heard near the Hatsuzuki was the level's own sounds |
 | shots pointed at whatever vehicle took damage next | the parser rewrote every fire event's direction toward the next damaged vehicle, and `place()` turned the soldier to face it |
 | only the recording player's shots, one per trigger press | the recorder took shots from the local input (`Game::addPlayerInput`), which exists for the local player only |
+| (after the first v4 round) a Defgun's shot looked like the gun being hit | a replay hides the level's own placed vehicles but left their hulls in the collision index, so a round leaving the replayed Defgun's barrel started inside the hidden baked one and burst there; and when the level's collider arrived after the replay was built, the replay's rounds lost the "skip my own hull" tag and its hull cast. `replay-gunfire.js` `syncReplayCollision` now takes the baked vehicles without a deck out of the rounds' way (a carrier's deck stays, it is a parked plane's ground) and re-arms both on whatever collider the guns hold |
 
 ## What the replay reuses now
 
@@ -84,9 +85,10 @@ engineering behind them is there too, with addresses.
   record there, 791 rounds from 24 shooters, and every vehicle round names a
   gun its hull's model has. Its part records were keyed 0 (a child
   networkable has no id), which v5 fixes (capture README §16).
-- bf42plus `1e45a5d` (v5) builds clean under `tools/build-linux.sh` (MSVC
-  under Wine) and is installed in the game folder; `dsound_old.dll` is
-  `4fc0352` (v4).
+- bf42plus `9451721` (v5, with the hit indicator named) builds clean under
+  `tools/build-linux.sh` (MSVC under Wine) and is installed in the game
+  folder; `dsound_old.dll` is `1e45a5d`. Every event the game sends a client
+  is now decoded: `0x3C` was the last one dumped raw (capture README §11.3).
 
 ## Open
 

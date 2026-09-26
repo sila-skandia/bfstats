@@ -27,6 +27,7 @@ import { VehicleOccupancy } from './seats.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
 import { crewOf, engineAt, hpAt, isReplicated, latestAt } from './replay-recording.js';
+import { syncReplayCollision } from './replay-gunfire.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
   shipThrottle,
@@ -422,6 +423,7 @@ export class ReplayHull {
   fire(seat, kind, shot = null) {
     const guns = this.player.ctx.guns;
     if (!guns || !this.groups.length) return false;
+    syncReplayCollision(this.player);
     let pick = [];
     const bare = name => String(name || '').replace(/_\d+$/, '').toLowerCase();
     if (shot?.weapon) {
@@ -437,6 +439,12 @@ export class ReplayHull {
       pick = own.length ? own : (seat === 0 ? candidates : []);
     }
     for (const group of pick) {
+      // Its rounds skip this hull (`dynamicCast`). Pinned to the collider the
+      // guns hold now: `projectile-flight.js` `gunOwner` re-reads the owner
+      // from the level's index whenever the collider has changed since, and
+      // a replayed hull is not in it.
+      group.owner = this.ownerTag;
+      group.ownerFor = guns.collider;
       if (Array.isArray(shot?.pos) && Array.isArray(shot?.dir)) {
         const origin = new THREE.Vector3(shot.pos[0], shot.pos[1], -shot.pos[2]);
         const dir = new THREE.Vector3(shot.dir[0], shot.dir[1], -shot.dir[2]).normalize();
