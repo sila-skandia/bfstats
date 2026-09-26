@@ -653,18 +653,70 @@ public class ArcadeTests : IDisposable
     [Fact]
     public async Task RevealHigherLower_NextQuestion_DoesNotAnchorRightPlayerToLeft()
     {
-        var matchedCarriedCount = 0;
-        for (var i = 0; i < 20; i++)
+        // An anchored reveal builds the next matchup around the previous PlayerB, and the random
+        // side swap then puts them on the left only half the time. So the bug shows as that player
+        // in every next question, not as a rate of left-hand carries; counting those among the
+        // fixture's four players failed a correct service about one run in seventy. Sixteen
+        // regulars on one map make a fresh matchup feature a given player one time in eight:
+        // twenty in a row is an 8^-20 chance.
+        const string serverGuid = "srv-kursk";
+        const int regulars = 16;
+        const int rounds = 20;
+        _dbContext.Servers.Add(new GameServer { Guid = serverGuid, Name = "Kursk 24/7", Country = "PL", Game = "bf1942", IsOnline = true });
+        foreach (var step in Enumerable.Range(1, regulars))
         {
-            var q = await _service.GetNextHigherLowerQuestionAsync();
-            var rev = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(q.RoundToken, "playerA"));
-            if (rev.NextQuestion != null && string.Equals(rev.NextQuestion.PlayerA.Name, q.PlayerB.Name, StringComparison.OrdinalIgnoreCase))
+            // A step apart on kills, score, K/D and kill rate, so every pair is comparable.
+            var name = $"Regular{step:D2}";
+            _dbContext.PlayerServerStats.Add(new PlayerServerStats
             {
-                matchedCarriedCount++;
+                PlayerName = name,
+                ServerGuid = serverGuid,
+                Year = 2026,
+                Week = 35,
+                TotalKills = 1000 * step,
+                TotalDeaths = 500,
+                TotalScore = 2000 * step,
+                TotalPlayTimeMinutes = 1200,
+                TotalRounds = 40
+            });
+            _dbContext.PlayerMapStats.Add(new PlayerMapStats
+            {
+                PlayerName = name,
+                MapName = "Kursk",
+                ServerGuid = serverGuid,
+                Year = 2026,
+                Month = 9,
+                TotalRounds = 40,
+                TotalKills = 1000 * step,
+                TotalDeaths = 500,
+                TotalScore = 2000 * step,
+                TotalPlayTimeMinutes = 1200
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        static bool Features(HigherLowerQuestionDto matchup, string playerName) =>
+            string.Equals(matchup.PlayerA.Name, playerName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(matchup.PlayerB.Name, playerName, StringComparison.OrdinalIgnoreCase);
+
+        var question = await _service.GetNextHigherLowerQuestionAsync(serverGuid);
+        var featuredPreviousPlayerB = 0;
+        for (var i = 0; i < rounds; i++)
+        {
+            var reveal = await _service.RevealHigherLowerAsync(new HigherLowerRevealRequest(question.RoundToken, "playerA"));
+            var next = reveal.NextQuestion;
+            Assert.NotNull(next);
+            if (Features(next, question.PlayerB.Name))
+            {
+                featuredPreviousPlayerB++;
             }
+
+            question = next;
         }
 
-        Assert.True(matchedCarriedCount < 10, $"Expected freshly randomized candidates, but PlayerB was carried to PlayerA {matchedCarriedCount}/20 times");
+        Assert.True(
+            featuredPreviousPlayerB < rounds,
+            $"All {rounds} next questions featured the previous PlayerB: the reveal is anchoring the next matchup on them.");
     }
 
     [Fact]
