@@ -1949,14 +1949,14 @@ function paintHud(dt) {
   const commsCanvas = document.getElementById('comms-canvas');
   if (briefingUp) {
     if (hudCanvas && !hudCanvas.hidden) hudCanvas.hidden = true;
-    if (!commsCanvas.hidden) commsCanvas.hidden = true;
+    if (commsCanvas && !commsCanvas.hidden) commsCanvas.hidden = true;
     return;
   }
   if (hudCanvas?.hidden) {
     hudCanvas.hidden = false;
     hudFeed.gameHud.requestRepaint();
   }
-  if (commsCanvas.hidden) commsCanvas.hidden = false;
+  if (commsCanvas?.hidden) commsCanvas.hidden = false;
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually
   // changed since the call before (features/mesh-viewer-performance, rule 7).
