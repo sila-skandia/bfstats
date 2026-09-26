@@ -36,11 +36,13 @@ const _normal = [0, 1, 0];
  * 0.3 m spheres; the approximation's only error is the scalloping between
  * them, which is under a centimetre and is on the inside of the volume.
  */
-function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets, walker = null) {
+function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
+                      walker = null, skipOwner = -1) {
   if (!world || !world.sweepSphere) return null;
   let best = -1;
   for (const offset of offsets) {
-    let hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius);
+    let hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
+                                skipOwner);
     if (!hit) continue;
     // Barbed wire (`BFSoldier::handleCollision` 0x0827d3b0's Obstacle
     // branch): above the handler gate the contact is recorded and vetoed,
@@ -50,7 +52,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets, walker 
       if (obstacle >= 0) {
         noteObstacle(walker, obstacle, hit.px, hit.py, hit.pz);
         hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
-                                -1, false, -Infinity, 2, true);
+                                skipOwner, false, -Infinity, 2, true);
         if (!hit) continue;
       }
     }
@@ -159,7 +161,7 @@ export function resolveMove(walker) {
     if (dist < 1e-6) break;
     const dx = rx / dist, dy = ry / dist, dz = rz / dist;
     const hit = sweepCapsule(world, px, py, pz, dx, dy, dz, dist,
-                             BODY_RADIUS, offsets, walker);
+                             BODY_RADIUS, offsets, walker, walker.ignoreOwner ?? -1);
     if (!hit) {
       px += rx; py += ry; pz += rz;
       rx = 0; ry = 0; rz = 0;
@@ -355,8 +357,9 @@ export function settleFeet(walker) {
     // kerb and the glue onto a descending ramp. `cast` answers for terrain and
     // sea as well, which only agrees with `surfaceHeight` above — harmless,
     // and it costs one entry in the collider's cast meter per tick.
+    const skipOwner = walker.ignoreOwner ?? -1;
     let hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
-                         STEP_HEIGHT + SNAP_DOWN);
+                         STEP_HEIGHT + SNAP_DOWN, skipOwner);
     // Barbed wire is no floor to a body moving through it (the same veto as
     // the sweep's): the touch is recorded and the ray goes on below it.
     if (hit && walker._obstaclePass && world.obstacleAt) {
@@ -365,7 +368,7 @@ export function settleFeet(walker) {
         noteObstacle(walker, obstacle, hit.x, hit.y, hit.z);
         const from = hit.y - 1e-3;
         const reach = STEP_HEIGHT + SNAP_DOWN - (p.y + STEP_HEIGHT - from);
-        hit = reach > 0 ? world.cast(p.x, from, p.z, 0, -1, 0, reach) : null;
+        hit = reach > 0 ? world.cast(p.x, from, p.z, 0, -1, 0, reach, skipOwner) : null;
         if (hit && world.obstacleAt(hit) >= 0) hit = null;
       }
     }

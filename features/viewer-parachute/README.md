@@ -621,17 +621,7 @@ beside this file; serve the viewer on your own port first). Out of a plane
 
 ## 7. Not done, and what is open
 
-- **No audio plays yet, but the samples are one command away.**
-  `tools/bf1942-models/extract_soldier_sounds.py --out <tree>` writes eleven
-  mp3s (251 KB: `rcktlp1`, `luft2`, `fhs1`, `fhs2`, `soprupp`,
-  `fallparachute{,2,3}`, `para{1,2,3}`) plus `sounds/soldier.json`, the
-  manifest carrying every layer's volume, loop flag and `Time` gate. It was
-  run into a scratch tree and checked; it was **not** run into
-  `viewer/maps/_shared`, because that tree is the lead's and read-only from a
-  worktree. `parachute.js` meanwhile emits each trigger by the engine's own
-  name with the sample, the `randomPlay` choices, the volume and the delay,
-  and `map.html` collects them — so the remaining work is a player that reads
-  `soldier.json` and the event stream, and it has nothing left to discover.
+- ~~No audio plays yet.~~ It does, since 2026-09-26: see §10.
 - **No third-person parachute animation.** The extracted soldier glbs carry
   **zero** animation clips — `extract_pose.py` bakes three *static* poses
   (`Lb_Stand`/`Lb_Crouch`/`Lb_Lie` plus `Ub_*<Weapon>`) and nothing animates a
@@ -645,6 +635,8 @@ beside this file; serve the viewer on your own port first). Out of a plane
   `parachute.js` therefore *names* the clip pair for every state
   (`PARA_CLIPS`), so a renderer that gains one can ask for them by the engine's
   own names.
+- **Capped since 2026-09-26 (§11)** -- the rest of this bullet is the state
+  before that.
 - **The free-fall look-steering is faithful and does not feel like retail.**
   30 m/s² along the camera axis with only the upward half clamped means a
   soldier who free-falls looking level accelerates horizontally without a
@@ -728,3 +720,94 @@ The exit path itself is otherwise untouched: `leaveVehicle`, `exitPose`,
 ## 9. Ledger rows
 
 See the final message of this stream; the lead owns `ledger.md`.
+
+---
+
+## 10. Momentum out of a seat, and the bail-out heard (2026-09-26)
+
+**The dead stop.** Bailing out of a climbing plane stopped the pilot in mid-air
+and dropped him. `bailOut` did hand over the hull's velocity -- measured on
+Wake, a Corsair climbing 20 degrees at 57 m/s put him out at (0, 15, 37) -- but
+the exit location stands him on the airframe, and the soldier's resolve sweeps
+against the hull where it stands this tick, not against its motion. The first
+tick found the wing under his boots (contact, `grounded`, material 3) and the
+ground arm assigned `v = vCmd`, which is zero: (8, 0, 1.4) m/s one frame later.
+
+- `SoldierBody.ignoreHull(owner, seconds)`: the resolve's capsule sweep and
+  ground cast pass that owner as `skipOwner`. A bail-out out of an **aircraft**
+  (driver or gunner seat) ignores its airframe for 1.5 s -- a viewer number;
+  the engine's own mechanism was not traced. Never for a ship: a carrier's AA
+  gun and a destroyer's helm exit onto the hull's own deck.
+- Measured after: out at (0, 12, 44), rising to an apex 5 m up and falling
+  away, as retail does.
+- `vehicle-entry.js` `stepOut` is the one exit for both the driver's and a
+  manned seat. A B-17 gunner at altitude now bails out as the pilot does; he
+  used to be dropped onto the ground under the plane by `spawn()`.
+
+**Out of a jeep.** Below the bail-out height the exit is still `spawn()` and its
+floor probe, now followed by `Soldier.carry(hull velocity)`, which marks the
+body `sliding`. While it is, the ground arm's `v = vCmd` gives way to PHY-2's
+latch (flat, A = 1): he slides at the kinetic `4.8 * 9.82` m/s^2 until the slip
+is inside the static `7.2 * 9.82` and the assignment takes over. 20 m/s is gone
+in 0.42 s and 4.2 m (`test_parachute.py`). Only carried speed slides: his own
+command steps (the dive handing over to the crawl) stay the instant assignment
+`test_soldier.py` pins.
+
+**A swimmer is down.** `#stepParachute` hands the state machine
+`grounded || swimming`: a man who free-fell into the sea stayed in
+`Lb_ParachuteFall`, and in its looping wind, for as long as he swam.
+
+**The sounds.** `page-audio.js` `handleParachuteEvent` plays what
+`parachute.js` emits, at the listener's ear:
+
+| trigger | what | lives |
+|---|---|---|
+| `c_SstFallingHigh` | `rcktlp1`, `luft2` looping from 0 s; `fhs1` 1.2, `fhs2` 2.3, the scream 3.3, `soprupp` 11.5 | as long as the free-fall state: the cord, the ground, the sea or a respawn cuts every layer (50 ms fade) |
+| `c_SstOpenParachute` | one of `para1..3`, delayed 0.4/0.4/0.3 s by its `Time` gate | plays out |
+| `c_SstParachuteLand` | nothing -- the script does not ship | |
+
+The "damn" of a man who never pulled the cord is not a landing sound. The
+landing kills him and it is **`c_SstKilled`**: `SoldierKilled.ssc`,
+`randomPlay 1` over `Dying1..8`, now played by `dieOnFoot` (and for bots,
+positional, from where they fell). A fall he survives is the ordinary
+`c_SstHitDamage` grunt the HUD's HP poll already played; the killing blow no
+longer plays a grunt as well.
+
+**In the speaker's tongue.** The scream, the grunts, `WatchYourAim` and the
+death lines all load from `Sound/@RTD/@Language/`, and `@Language` is the
+side's `setRadioLanguage`, the same as the radio's. `extract_soldier_voices.py`
+lays all 26 stems out per nation under `_shared/voices/<nation>/` beside the
+radio lines (vanilla's six tongues, Road to Rome's French and Italian), with
+its own `soldier-voices.json`. The page picks `teamNation(team)`, then vanilla's
+folder, then `models/sounds/` (the one language `soldier.json` resolved).
+Published to the volume 2026-09-26 for vanilla, XPack1 and XPack2, with
+`models/sounds/Dying*.mp3` and the regenerated `soldier.json`.
+
+---
+
+## 11. Free fall no longer flings you forward (2026-09-26)
+
+The owner's call on §7's open question: retail does not fling a free-falling
+man, whatever the binary says. The site was re-read once more first
+(`0x082726b8`-`0x082727c8`): the camera row times `+0x2e8` goes, y clamped
+`<= 0`, as argument 2 to `addAccelerationAtRelativePosition`, and
+`PointPhysicsNode`'s (`0x08256650`) adds it to the `+0x1c` accumulator
+unscaled -- the same accumulator the jump's `6 * 30` goes through, so it is
+m/s^2. Nothing there bounds it, and what bounds it in retail was not found.
+
+So the viewer bounds it. `parachute.js` `FREE_FALL_TRACK_SPEED`: the thrust's
+horizontal half is spent only while the speed along its heading is under the
+canopy's own terminal glide, the speed the same 30 m/s^2 settles at under the
+canopy -- 12.28 m/s. It only withholds thrust, never brakes; the downward half
+is untouched (looking down still dives).
+
+- From rest, looking level: 12.28 m/s and no more (it was 30 m/s more every
+  second).
+- Out of the Corsair climbing at 57 m/s on Wake: out at (0, 16, 38), apex, and
+  the 38 m/s forward bleeds to 34 on the soldier's own `drag 1.0` over the
+  fall, where it used to climb past 160.
+- `test_parachute.py` pins both.
+
+A viewer number, marked so in the code. If the engine's real bound is ever
+found, it replaces this.
+

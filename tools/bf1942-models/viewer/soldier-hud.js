@@ -183,7 +183,8 @@ export function createSoldierHud(page) {
     if (page.soldierArmor && !page.soldierDead && !inVehicle) {
       if (soldierHud.lastSoldierHp !== null && page.soldierArmor.hitPoints < soldierHud.lastSoldierHp - 0.01) {
         const drop = soldierHud.lastSoldierHp - page.soldierArmor.hitPoints;
-        page.playSoldierHurtSound(false);
+        // A lethal fall's voice is `dieOnFoot`'s `Dying`, not a grunt too.
+        if (page.soldierArmor.hitPoints > 0) page.playSoldierHurtSound(false);
         // HP lost outside `applyDamageToPlayer` -- a fall, drowning, the
         // combat area, a room's snapshot. The game washes the screen for
         // every one of them (they all reach `_giveDamage`, HFD-4), but points

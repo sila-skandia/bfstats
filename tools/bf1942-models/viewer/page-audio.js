@@ -19,10 +19,10 @@ import { ScrapeVoices } from './obstacle.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
- * `currentRoot`, `effectAudio`, `ensureHandFireBus`, `extras`,
+ * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`, `optPilot`,
- * `optSound`, `optSoundVol`, `scene`, `soldier`, `vehicleGuns`, `view`,
- * `weaponSoundsManifest`.
+ * `optSound`, `optSoundVol`, `scene`, `soldier`, `teamNation`, `vehicleGuns`,
+ * `view`, `weaponSoundsManifest`.
  */
 export function createPageAudio(page) {
   const pageAudio = {};
@@ -654,12 +654,16 @@ export function createPageAudio(page) {
    * no `Volume <- Distance` ramps (it is foley, not a sound script), so a
    * positional voice takes the panner's own inverse curve with a 1 m reference
    * and a 40 m cut, which is the band a boot actually reaches across.
+   *
+   * Returns a handle whose `stop()` fades the voice out over 50 ms, for a
+   * layer that belongs to a state the soldier can leave (the free-fall wind);
+   * `loop` keeps it going until then.
    */
   function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0,
-                              position = null) {
-    if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return;
+                              position = null, loop = false) {
+    if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return null;
     const ctx = pageAudio.audioListener.context;
-    if (ctx.state === 'suspended') return;
+    if (ctx.state === 'suspended') return null;
     if (position) {
       // Beyond the panner's own 40 m cut a bot's foley is ~-32 dB; skip the
       // voice entirely. Twelve bots walking was a hundred one-shot panners a
@@ -667,11 +671,12 @@ export function createPageAudio(page) {
       const e = pageAudio.audioListener.matrixWorld?.elements;
       if (e) {
         const dx = e[12] - position.x, dy = e[13] - position.y, dz = e[14] - position.z;
-        if (dx * dx + dy * dy + dz * dz > 1600) return;
+        if (dx * dx + dy * dy + dz * dz > 1600) return null;
       }
     }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
+    source.loop = loop;
     if (pitchJitter > 0) {
       source.playbackRate.value = 1 + (Math.random() * 2 - 1) * pitchJitter;
     }
@@ -701,6 +706,16 @@ export function createPageAudio(page) {
     };
     const when = delay > 0 ? ctx.currentTime + delay : 0;
     try { source.start(when); } catch (_) {}
+    return {
+      stop() {
+        const now = ctx.currentTime;
+        try {
+          gain.gain.setValueAtTime(gain.gain.value, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.05);
+          source.stop(now + 0.06);
+        } catch (_) {}
+      },
+    };
   }
 
   // The footstep's own cast record, reused. It used to borrow the soldier's
@@ -764,7 +779,54 @@ export function createPageAudio(page) {
   }
 
 
-  async function playSoldierHurtSound(isFriendlyFire = false, position = null) {
+  /**
+   * One of the soldier's own `@Language` lines -- a grunt, a death, the
+   * free-fall scream -- in `nation`'s tongue.
+   *
+   * `extract_soldier_voices.py` lays them out beside the radio's, under
+   * `_shared/voices/<nation>/`, because the engine loads them from
+   * `Sound/@RTD/@Language/` and `@Language` is the speaker's side
+   * (`setRadioLanguage`): a Marine swears in UsEnglish, a German in German. A
+   * mod tree borrows vanilla's folder, and a tree extracted before any of this
+   * falls back to the one language `soldier.json` resolved.
+   */
+  const missingSoldierVoices = new Set();
+  async function soldierVoiceBuffer(stem, nation) {
+    if (page.AUDIO_OFF || !stem) return null;
+    ensureListener();
+    const shared = page.MAPS_BASE === 'maps' ? 'maps/_shared' : `${page.MAPS_BASE}/_shared`;
+    const dirs = [];
+    if (nation && nation !== 'unknown') {
+      dirs.push(`${shared}/voices/${nation}`);
+      if (shared !== 'maps/_shared') dirs.push(`maps/_shared/voices/${nation}`);
+    }
+    for (const dir of dirs) {
+      const url = `${dir}/${stem}.mp3`;
+      if (missingSoldierVoices.has(url)) continue;
+      const key = `voices:${url}`;
+      let pending = audioBufferCache.get(key);
+      if (!pending) {
+        pending = pageAudio.audioLoader.loadAsync(`${url}${page.bust()}`).catch(() => {
+          // Remembered, not retried: a tongue this tree does not carry would
+          // otherwise be fetched again on every grunt.
+          missingSoldierVoices.add(url);
+          audioBufferCache.delete(key);
+          return null;
+        });
+        audioBufferCache.set(key, pending);
+      }
+      const buffer = await pending;
+      if (buffer) return buffer;
+    }
+    return modelSoundBuffer(`sounds/${stem}.mp3`);
+  }
+
+  /** The local soldier's side, as a voice folder. */
+  function localNation() {
+    return page.teamNation?.(page.deployTeamId) ?? null;
+  }
+
+  async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const now = performance.now() * 0.001;
     // Two cooldowns: the listener's own grunt and the world's. A shared one
@@ -781,8 +843,71 @@ export function createPageAudio(page) {
     const patch = trigger?.patches?.[0];
     if (!patch?.layers?.length) return;
     const choice = patch.layers[Math.floor(Math.random() * patch.layers.length)];
-    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
+    const buf = await soldierVoiceBuffer(choice.sample,
+      nation === undefined ? (position ? null : localNation()) : nation);
     if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0, position);
+  }
+
+  /**
+   * `c_SstKilled`: `SoldierKilled.ssc`'s `randomPlay 1` over `Dying1..8`, the
+   * last word. A man who rides a free fall into the ground without pulling
+   * the cord hears this -- it is the fall that kills him, not a landing
+   * sound; `SoldierParachuteLand.ssc` does not ship (see `parachute.js`).
+   */
+  const DYING_STEMS = ['Dying1', 'Dying2', 'Dying3', 'Dying4', 'Dying5', 'Dying6', 'Dying7', 'Dying8'];
+  async function playSoldierDeathSound(position = null, nation = undefined) {
+    if (page.AUDIO_OFF || masterVolume() <= 0) return;
+    const manifest = await soldierSoundsManifest();
+    const layers = manifest?.triggers?.c_SstKilled?.patches?.[0]?.layers;
+    const stems = layers?.length ? layers.map(l => l.sample) : DYING_STEMS;
+    const stem = stems[Math.floor(Math.random() * stems.length)];
+    const buf = await soldierVoiceBuffer(stem,
+      nation === undefined ? (position ? null : localNation()) : nation);
+    if (buf) playSoldierOneShot(buf, 1, 0.09, 0, position);
+  }
+
+  // --- the bail-out -------------------------------------------------------------
+  //
+  // `parachute.js` names each trigger at the moment the engine fires it; this
+  // plays them at the listener's own ear. `c_SstFallingHigh` belongs to the
+  // free-fall animation state, so its layers -- the two looping winds, the
+  // whooshes at 1.2 and 2.3 s, the scream at 3.3 and the 11.5 s egg -- live
+  // exactly as long as the state does: pulling the cord, landing, dying into
+  // another state or a respawn cuts them. The canopy's crack is its own
+  // script and plays out whatever happens next.
+
+  /** The running `c_SstFallingHigh` layers, each a `playSoldierOneShot` handle. */
+  pageAudio.fallVoices = [];
+  /** Bumped whenever the fall script is cut, so a buffer that finishes
+   *  decoding after the fall ended does not start into silence. */
+  pageAudio.fallGeneration = 0;
+
+  function stopFallSound() {
+    pageAudio.fallGeneration++;
+    for (const voice of pageAudio.fallVoices) voice.stop();
+    pageAudio.fallVoices.length = 0;
+  }
+
+  async function handleParachuteEvent(event) {
+    if (event.type === 'state') {
+      if (event.state !== 'falling') stopFallSound();
+      return;
+    }
+    if (event.type !== 'sound' || !event.sample || page.AUDIO_OFF || masterVolume() <= 0) return;
+    if (event.trigger === 'c_SstFallingHigh') {
+      const generation = pageAudio.fallGeneration;
+      const buf = event.voice
+        ? await soldierVoiceBuffer(event.sample, localNation())
+        : await modelSoundBuffer(`sounds/${event.sample}.mp3`);
+      if (!buf || generation !== pageAudio.fallGeneration) return;
+      const voice = playSoldierOneShot(buf, event.volume ?? 1, 0, 0, null, !!event.loop);
+      if (voice) pageAudio.fallVoices.push(voice);
+      return;
+    }
+    // `c_SstOpenParachute`: one of three, each with its own `Volume <- Time`
+    // gate, so the crack lands a third of a second after the pull.
+    const buf = await modelSoundBuffer(`sounds/${event.sample}.mp3`);
+    if (buf) playSoldierOneShot(buf, event.volume ?? 1, 0, event.at ?? 0);
   }
 
   Object.assign(pageAudio, {
@@ -795,9 +920,11 @@ export function createPageAudio(page) {
     ensureAudioContext,
     ensureListener,
     ensureWorldFire,
+    handleParachuteEvent,
     handleSoldierFootstep,
     masterVolume,
     modelSoundBuffer,
+    playSoldierDeathSound,
     playSoldierHurtSound,
     playObstacleScrape,
     playSoldierOneShot,
@@ -806,6 +933,7 @@ export function createPageAudio(page) {
     releaseVehicleAudio,
     setupSounds,
     soundBuffer,
+    stopFallSound,
     updateAudio,
   });
   return pageAudio;

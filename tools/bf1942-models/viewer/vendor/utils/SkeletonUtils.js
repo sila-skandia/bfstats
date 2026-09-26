@@ -368,24 +368,44 @@ function clone( source ) {
 
 	} );
 
+	// bfstats (2026-09-26): one cloned Skeleton per SOURCE skeleton, not per
+	// SkinnedMesh. Upstream clones a skeleton for every skinned mesh, so a
+	// soldier rig whose eight primitives share one glTF skin came out with
+	// eight Skeletons over the same bones -- eight `Skeleton.update()` passes
+	// and eight bone-texture uploads a frame for one body, 123 of each a
+	// frame with sixteen bots (features/bot-fight-performance). Meshes that
+	// shared a skeleton in the source share the clone; a mesh with its own
+	// skin keeps its own.
+	const clonedSkeletons = new Map();
+
 	clone.traverse( function ( node ) {
 
 		if ( ! node.isSkinnedMesh ) return;
 
 		const clonedMesh = node;
 		const sourceMesh = sourceLookup.get( node );
-		const sourceBones = sourceMesh.skeleton.bones;
+		const sourceSkeleton = sourceMesh.skeleton;
 
-		clonedMesh.skeleton = sourceMesh.skeleton.clone();
+		let skeleton = clonedSkeletons.get( sourceSkeleton );
+
+		if ( skeleton === undefined ) {
+
+			skeleton = sourceSkeleton.clone();
+
+			skeleton.bones = sourceSkeleton.bones.map( function ( bone ) {
+
+				return cloneLookup.get( bone );
+
+			} );
+
+			clonedSkeletons.set( sourceSkeleton, skeleton );
+
+		}
+
+		clonedMesh.skeleton = skeleton;
 		clonedMesh.bindMatrix.copy( sourceMesh.bindMatrix );
 
-		clonedMesh.skeleton.bones = sourceBones.map( function ( bone ) {
-
-			return cloneLookup.get( bone );
-
-		} );
-
-		clonedMesh.bind( clonedMesh.skeleton, clonedMesh.bindMatrix );
+		clonedMesh.bind( skeleton, clonedMesh.bindMatrix );
 
 	} );
 

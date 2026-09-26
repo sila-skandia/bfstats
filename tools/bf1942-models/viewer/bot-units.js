@@ -554,8 +554,30 @@ export function createBotUnits(env) {
     return seat ? { vehicleId: seat.root.uuid, seatId: seat.seatId } : null;
   };
 
-  /** A seated player's hull with every seat, for `scoreVehicleTargets`. */
+  /**
+   * A seated player's hull with every seat, for `scoreVehicleTargets`.
+   *
+   * Memoised per referee pass: the hull's box (`Box3.setFromObject` over its
+   * whole tree, hundreds of nodes) is the expensive part, and nothing a
+   * bot's pass does moves a hull or changes a seat, so the answer is the
+   * same for every bot asking in one pass. The runner memoised the same call
+   * per tick (sim/stage.mjs, which this makes redundant); the page asked it
+   * per bot, per target, per frame -- 15 % of a vehicle match's whole sim
+   * before this (features/bot-fight-performance).
+   */
+  const infoMemo = { at: -1, byId: new Map() };
   units.unitInfo = playerId => {
+    const now = clock();
+    if (infoMemo.at !== now) {
+      infoMemo.at = now;
+      infoMemo.byId.clear();
+    }
+    if (infoMemo.byId.has(playerId)) return infoMemo.byId.get(playerId);
+    const info = computeUnitInfo(playerId);
+    infoMemo.byId.set(playerId, info);
+    return info;
+  };
+  function computeUnitInfo(playerId) {
     const world = env.world();
     const p = world?.player(playerId);
     const seat = env.vehicles.seatOf(playerId);
@@ -573,7 +595,7 @@ export function createBotUnits(env) {
       seats: c?.seats ?? cands.map(x => ({ seatId: x.seatId, table: x.strengths, occupied: !!x.occupiedBy, strType: x.strType })),
       enemyManned: true, mobile: kind !== 'gun', vehicle: true, large: kind === 'ship', extents: ext,
     };
-  };
+  }
 
   /**
    * A level change (`level-load.js` `show()`, through the page's

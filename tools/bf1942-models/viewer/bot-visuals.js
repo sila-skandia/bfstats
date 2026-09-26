@@ -44,6 +44,17 @@ import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
 
+/** The sphere a live body on foot is culled by, about a point this far over
+ *  his feet and this wide: any pose of the rig fits (a prone man's boots are
+ *  1.2 m from his root, a raised rifle 1 m up), with a margin for the frame
+ *  the camera moves before the cull is read again. */
+const BOT_CULL_UP = 1.0;
+const BOT_CULL_RADIUS = 3.5;
+const _cullFrustum = new THREE.Frustum();
+const _cullMatrix = new THREE.Matrix4();
+const _cullSphere = new THREE.Sphere();
+const _yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
@@ -555,6 +566,7 @@ export function createBotVisuals(page) {
     else playFamily(rig, played);
     if (rig.weaponNode) rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
     vis.group.visible = true;
+    rig.scene.visible = true;   // a body culled out of the last frame's view falls in view
     corpses.push({ name: bot.playerId, family: played, scene: group, mixer: rig.mixer,
                    step: dt => rig.step({}, dt),
                    ttl: corpseSeconds(page.soldierBody), anchor: null,
@@ -602,6 +614,21 @@ export function createBotVisuals(page) {
   function updateBotVisuals(dt) {
     stepCorpses(dt);
     if (!page.bots.length) return;
+    // The camera's frustum as it stood last frame (the cameras are placed
+    // after the simulation this runs in); `BOT_CULL_RADIUS` carries the margin.
+    // The rig's skinned meshes are `frustumCulled = false` (pose-compose.js:
+    // a posed body leaves its bind-pose sphere), so without this every bot on
+    // the level is drawn every frame -- his skeleton composed, his bone
+    // texture uploaded, his meshes drawn -- wherever the camera looks. The
+    // body stays animated and `capsulesOf` keeps reading it; only the draw
+    // is skipped (features/bot-fight-performance).
+    const cam = page.camera;
+    const cull = !!cam?.projectionMatrix;
+    if (cull) {
+      _cullMatrix.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      _cullFrustum.setFromProjectionMatrix(_cullMatrix);
+      _cullSphere.radius = BOT_CULL_RADIUS;
+    }
     for (const bot of page.bots) {
       const vis = botVisuals.get(bot.playerId);
       if (!vis?.rig) continue;
@@ -643,7 +670,14 @@ export function createBotVisuals(page) {
       const dyaw = wrapYaw(vis.yawCur - vis.yawPrev);
       const yaw = vis.yawPrev + dyaw * a;
       const q = vis.group.quaternion;
-      q.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
+      _yawEuler.y = yaw;
+      q.setFromEuler(_yawEuler);
+      if (cull) {
+        _cullSphere.center.set(vis.group.position.x, vis.group.position.y + BOT_CULL_UP, vis.group.position.z);
+        vis.rig.scene.visible = _cullFrustum.intersectsSphere(_cullSphere);
+      } else if (!vis.rig.scene.visible) {
+        vis.rig.scene.visible = true;
+      }
 
       // The gait speed from the drawn position's change, one pole.
       const drawn = vis.group.position;
