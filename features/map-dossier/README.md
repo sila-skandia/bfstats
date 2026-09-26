@@ -223,7 +223,10 @@ was left alone, since only its `generated` stamp had moved. The other mods' live
 dossiers are still the 2026-09-14 run's, read `GameTypes/` first, per the vanilla-only
 extraction scope in `CLAUDE.md`. Re-reading them root first moves 161 dossiers across
 12 mods and loses no number anywhere; 32 of bf1918's 130 go from no tickets or bleed at
-all to both.
+all to both, because their `GameTypes/Conquest.con` is only `run ..\Conquest.con`.
+The checklist for that run, six truncated FHSW and FHSW Europe archives on this PC
+included, is [`bf1942-mod-extraction` §12](../../.agents/skills/bf1942-mod-extraction/SKILL.md),
+and `features/bf1942-engine-reference/surveys/dossier_conquest_scripts.py` re-measures it.
 
 ## Notes for whoever picks this up next
 

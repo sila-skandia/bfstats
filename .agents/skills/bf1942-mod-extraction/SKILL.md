@@ -21,6 +21,9 @@ description: >
   horn", a drone, a honk, flanging, a gun that is too loud or silent): section 11 carries
   the one invariant that has now been broken three times, why each fix stopped holding,
   and the command that measures it instead of guessing.
+  Before re-extracting or publishing a mod's map dossiers (tickets, bleed, flags), read
+  section 12: which Conquest script runs, what the live tree holds, and the archives on
+  this PC that no longer open.
 ---
 
 # Battlefield 1942 & Mod Artifact Extraction Guide
@@ -229,13 +232,17 @@ explicitly refused on 2026-09-23 ("it's your job to do that, not me"). The
 `bfstats-mesh-assets` skill has the table, the scan recipe and the timings.
 
 - **Storage Location**: Kubernetes PVC `bf42-stats-pvc-v2` mounted at `/mnt/assets` on `filebrowser` and `/mnt/data/assets` on `bf42-stats`.
-- **Upload Method**: Streaming tar over `kubectl exec`:
+- **Upload Method**: Streaming tar over `kubectl exec` into the API pod, which is always
+  running (`filebrowser` sits at `replicas: 0` by default):
   ```bash
-  tar -cf - dossiers hud | kubectl --context hetzner -n bf42-stats exec -i filebrowser-857667c845-vcqsv -- tar -xf - -C /mnt/assets
+  kubectl --context hetzner -n bf42-stats get pods -l app=bf42-stats
+  tar -cf - hud | kubectl --context hetzner -n bf42-stats exec -i <pod> -c nginx -- tar -xf - -C /mnt/data/assets
   ```
+  Never `dossiers` wholesale: its live `manifest.json` lists mods this PC no longer has.
+  Upload only the dossier files a run changed (section 12).
 - **Permissions**: Ensure files are world-readable:
   ```bash
-  kubectl --context hetzner -n bf42-stats exec filebrowser-857667c845-vcqsv -- chmod -R a+rX /mnt/assets/dossiers /mnt/assets/hud
+  kubectl --context hetzner -n bf42-stats exec <pod> -c nginx -- chmod -R a+rX /mnt/data/assets/dossiers /mnt/data/assets/hud
   ```
 - **Safety**: Never touch or overwrite `/mnt/assets/.filebrowser.db`.
 
@@ -507,3 +514,47 @@ so `verify.sh` covers it) — the synthetic mechanism, the detunes that must sur
 tie-breaks, a one-shot that must not spend its `trigger Volume` latch when it loses, and a
 sweep of every extracted level's shipped layer data at 24 distances. Full history and
 measurements: `features/vehicle-sound-coverage/README.md`.
+
+---
+
+## 12. Map Dossiers in Mods: the Checklist for the Next Run
+
+Out of scope until the owner names a mod (`CLAUDE.md`). This is what that run will meet.
+
+The dossier (`scripts/extract_map_dossiers.py`, `features/map-dossier/README.md`) reads
+each side's tickets and bleed from the level's root `Conquest.con`, the script the server
+runs, and falls back to `GameTypes/Conquest.con` only when there is none (ledger TKT-3).
+Vanilla, XPack1 and XPack2 were re-read that way and republished on 2026-09-27. **Every
+other mod's live dossiers are still the 2026-09-14 run's, read `GameTypes/` first.**
+
+- **Measure first:** `python3 features/bf1942-engine-reference/surveys/dossier_conquest_scripts.py`.
+  On 2026-09-27 re-reading root first moved 161 dossiers across 12 mods: bf1918 52,
+  FHSW 32, FinnWars 32, FH 15, Pirates 10, DC Final 8, GCMOD 4, Desert Combat 3, EoD 2,
+  BG42 1, FHSW Europe 1, Interstate 1. None loses a number. 32 bf1918 levels gain them
+  from nothing: their `GameTypes/Conquest.con` is the single line `run ..\Conquest.con`,
+  a hand-over to the root script, and the old read found no tickets in it.
+- **No new code needed.** Across every installed mod, every Conquest level has a root script,
+  so the fallback never fires. No Conquest script sets `maxNrOfPlayers` or a ratio, so every
+  dossier's numbers are a 16-player server's (TKT-1, TKT-4). The `Conquest/` layer files the
+  dossier reads directly are the ones the scripts run.
+- **Parents' scripts.** 28 levels in DC Final, Desert Combat, FH and FHSW ship no root
+  script of their own and run the parent mod's (the underlay, section 3). Only FHSW's
+  `crete-1941` also ships a `GameTypes/` copy that disagrees with it, and the engine never
+  runs that copy.
+- **Publish over the live tree.** Stage over a copy of the live tree, pass `--mods` for the
+  mod in hand, and upload only the files that changed (recipe: `features/map-dossier/README.md`,
+  "Regenerating"). The manifest merge replaces a mod's whole entry with the run's map list.
+  A run that cannot read some of a mod's levels drops them from the manifest, and the
+  resolver then 404s them even though their files stay on the volume.
+- **Truncated archives on this PC.** FHSW `Berlin-1945-Outskirts`, `fht_battle_of_kohima-1944`,
+  `fht_conquest_of_java-1942` and `Stalingrad_RedSquare`, and FHSW Europe
+  `guangxi_counterattack-1940` and `operation_ketsu4`, have sizes that are exact multiples
+  of 64 KiB and are dated 2026-09-07. The RFA reader fails on them with "unpack requires
+  a buffer of 4 bytes" and the extractor skips them. Reinstall them before extracting
+  (FHSW's own `Operation_Ketsu4.rfa` is complete).
+- **Dead files on the volume.** Nine FHSW dossiers date from the first run (2026-09-06):
+  the four truncated levels, plus `air_raid_alert_-kure-1945`, `apennines`,
+  `fht_the_breaking_point-1940`, `forgotten_hometown` and `operation_springawakening`,
+  which are no longer installed. The manifest does not list them, so the site answers
+  404 for all nine. `bfheroes` (34) and `warfront` (90) were uninstalled 2026-09-25 but are
+  live and listed, and a run on this PC cannot regenerate them.
