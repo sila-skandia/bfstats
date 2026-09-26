@@ -233,9 +233,11 @@ class LevelContext:
                         library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
                         em.detach_flag_cloth(library, info)
                 # Building ambience (windmills, factories with a
-                # `loadSoundScript`) is only visible through the library.
+                # `loadSoundScript`) is only visible through the library --
+                # and so is which of a mode script's placements are statics.
                 info.sounds = discover_level_sounds(
-                    files, info.static_objects, library, self.pools[2])
+                    files, info.static_objects, library, self.pools[2],
+                    mode_statics=em.union_mode_statics(info, library))
                 self._library = library
         return self._library
 
@@ -435,8 +437,12 @@ def layer_ai(ctx: LevelContext):
     level_ai = load_level_ai(files)
     out = {}
     if level_ai is not None:
-        add_cover_values(level_ai, ctx.library,
-                         (inst.template for inst in info.static_objects))
+        # A template table, so a mode script's statics join it untagged: a
+        # lookup for a template the active layer does not place is never made.
+        placed = [inst.template for inst in info.static_objects]
+        placed += [inst.template for inst, _modes
+                   in em.union_mode_statics(info, ctx.library)]
+        add_cover_values(level_ai, ctx.library, placed)
         out["ai"] = level_ai.to_json()
     # The search maps the level ships baked and `ai.loadMaps` loads; written
     # (or a stale folder removed) either way, as the full bake always has.

@@ -9,6 +9,7 @@ template, but each record is an instance already placed in the world.
 from __future__ import annotations
 
 import math
+import posixpath
 import re
 import struct
 from collections.abc import Callable
@@ -67,6 +68,9 @@ class StaticInstance:
     # `Object.geometry.color r/g/b` — per-placement vertex tint (5,123 vanilla
     # placements). Same dotted-command grammar as scale.
     color: tuple[float, float, float] | None = None
+    # The level-relative file that created it, when a mode script's chain did
+    # (`script_objects`); None for everything read from one known file.
+    source: str | None = None
 
 
 @dataclass
@@ -487,6 +491,9 @@ class PlacedAreaSound:
     random_play: list[str] | None = None
     # The first sample's `randomStartPitch a / b`, or None.
     random_start_pitch: tuple[float, float] | None = None
+    # The layers the emitter's object stands in, when that is not every layer
+    # (a static a mode script places, `union_mode_statics`); None = all.
+    modes: list[str] | None = None
 
 
 @dataclass
@@ -1177,6 +1184,17 @@ class GameType:
     # script takes its flags from `Conquest/` and everything else from
     # `SinglePlayer/`. `composed` says when that has happened.
     files: dict[str, str] = field(default_factory=dict)
+    # Everything else a round of this game type creates on a host: every
+    # `Object.create` in the script and in the files it runs, the seven layer
+    # files apart (`script_objects`). Secret Weapons' Hellendoorn places its
+    # four V2s this way (`run Conquest/AdditionalStaticObjects`), from every
+    # script but ObjectiveMode's.
+    objects: list[StaticInstance] = field(default_factory=list)
+    # `ObjectTemplate.create <kind> <name>` anywhere in that chain, the layer
+    # files included: name -> kind, both lower case. How a placement of a
+    # template the level declares for itself (an objective's spawner, a
+    # control point) is told from a static.
+    declared: dict[str, str] = field(default_factory=dict)
 
     @property
     def composed(self) -> bool:
@@ -1279,6 +1297,224 @@ def game_type_script(files: LevelFiles, name: str) -> str | None:
     return files.find(f"{name}.con") or files.find(f"GameTypes/{name}.con")
 
 
+# What a host decides as it runs a script: which lines run at all
+# (`if`/`elseIf`/`else`/`endIf`, `return`), and the includes. `handleCommand`
+# 0x083de990 takes these keywords off the front of a line
+# (subsystems/console.md §2).
+_IF_LINE = re.compile(r"^\s*(if|elseif)\s+(.+?)\s*$", re.IGNORECASE)
+_ELSE_LINE = re.compile(r"^\s*else\s*$", re.IGNORECASE)
+_ENDIF_LINE = re.compile(r"^\s*endif\b", re.IGNORECASE)
+_RETURN_LINE = re.compile(r"^\s*(return|exit|quit)\b", re.IGNORECASE)
+_INCLUDE_LINE = re.compile(r"^\s*(?:run|include)\s+(\S+)(.*)$", re.IGNORECASE)
+_TEMPLATE_LINE = re.compile(r"^\s*objecttemplate\.create\s+(\S+)\s+(\S+)",
+                            re.IGNORECASE)
+_SCRIPT_ARG = re.compile(r"v_arg(\d+)", re.IGNORECASE)
+# An include chain deeper than this is a cycle in authored data.
+_SCRIPT_DEPTH = 12
+
+
+def _script_value(token: str, args: list[str]) -> str | None:
+    """A script token's value: `v_argN` is the Nth argument the file was run
+    with ("" when there is none), a quoted word is the word, and any other
+    `v_` variable is one this reader does not track (None)."""
+    token = token.strip('"')
+    match = _SCRIPT_ARG.fullmatch(token)
+    if match:
+        index = int(match.group(1)) - 1
+        return args[index] if 0 <= index < len(args) else ""
+    return None if token.lower().startswith("v_") else token
+
+
+def _script_condition(expr: str, args: list[str]) -> bool:
+    """One `if` test as a host decides it.
+
+    Only the arguments are known: a mode script runs with `v_arg1 = host`
+    (`Game::load` 0x0805b4b0, TKT-3), and passes it on with `run <file>
+    v_arg1`. A test on anything else counts as passed, which keeps the arm
+    written for the host; `if v_gameplaymode == gpm_cq` is the only such test
+    in the 16 installs' mode scripts.
+    """
+    tokens = expr.split()
+    if len(tokens) != 3 or tokens[1] not in ("==", "!="):
+        return True
+    left, right = _script_value(tokens[0], args), _script_value(tokens[2], args)
+    if left is None or right is None:
+        return True
+    return (left.lower() == right.lower()) == (tokens[1] == "==")
+
+
+def _host_lines(text: str, args: list[str]) -> list[str]:
+    """The lines of a console script a host executes, in order.
+
+    Comments are gone first (`strip_comments`), so a `rem`-ed `endIf` cannot
+    unbalance anything. `return` ends the file.
+    """
+    out: list[str] = []
+    # One frame per open `if`: whether the block around it runs, and whether
+    # one of its arms has been taken.
+    frames: list[list[bool]] = []
+    active = True
+    for line in con_mod.strip_comments(text).splitlines():
+        match = _IF_LINE.match(line)
+        if match:
+            if match.group(1).lower() == "if":
+                take = active and _script_condition(match.group(2), args)
+                frames.append([active, take])
+            elif frames:
+                outer, taken = frames[-1]
+                take = outer and not taken and _script_condition(match.group(2), args)
+                frames[-1][1] = taken or take
+            else:
+                continue
+            active = take
+            continue
+        if _ELSE_LINE.match(line):
+            if frames:
+                outer, taken = frames[-1]
+                active = outer and not taken
+                frames[-1][1] = True
+            continue
+        if _ENDIF_LINE.match(line):
+            if frames:
+                active = frames.pop()[0]
+            continue
+        if not active:
+            continue
+        if _RETURN_LINE.match(line):
+            break
+        out.append(line)
+    return out
+
+
+def _resolve_run(files: LevelFiles, current: str, target: str) -> str | None:
+    """The archive path `run <target>` inside `current` opens, or None.
+
+    Relative to the including file's own directory, `.con` added when the
+    name has no extension: the scripts the engine runs are written that way
+    (`Sounds/Environment.con` runs `Siren.con`, `Init/Terrain.con` runs
+    `TerrainSP.con`). A mode script sits at the level root, so its
+    `Conquest/AdditionalStaticObjects` reads the same either way. A path that
+    only resolves from the level root is taken too, which is how the
+    `GameTypes/` fallback scripts write theirs.
+    """
+    rel = target.strip('"').replace("\\", "/")
+    if not rel:
+        return None
+    if "." not in rel.rsplit("/", 1)[-1]:
+        rel += ".con"
+    here = current.replace("\\", "/")
+    candidates = [rel]
+    if "/" in here:
+        candidates.insert(0, f"{here.rsplit('/', 1)[0]}/{rel}")
+    for candidate in candidates:
+        hit = files.find(posixpath.normpath(candidate))
+        if hit is not None:
+            return hit
+    return None
+
+
+def _level_relative(files: LevelFiles, path: str) -> str:
+    """`bf1942/Levels/Telemark/AdditionalStaticObjects.con` ->
+    `AdditionalStaticObjects.con`; a path already relative is returned as is."""
+    norm = path.replace("\\", "/")
+    name = getattr(files, "level_name", "") or ""
+    marker = f"/levels/{name.lower()}/"
+    cut = norm.lower().find(marker) if name else -1
+    return norm[cut + len(marker):] if cut >= 0 else norm
+
+
+@dataclass
+class ScriptObjects:
+    """What a mode script's chain creates beyond the seven layer files."""
+
+    objects: list[StaticInstance] = field(default_factory=list)
+    declared: dict[str, str] = field(default_factory=dict)
+
+
+def script_objects(files: LevelFiles, script: str,
+                   args: list[str] | None = None) -> ScriptObjects:
+    """Every object a mode script creates on a host, outside its layer files.
+
+    The script is walked the way a host runs it: `v_arg1` is `host`, each
+    `if` arm is decided (`_host_lines`), and every `run`/`include` is
+    followed into the file it names (`_resolve_run`) with the arguments it
+    passes. The seven layer files are what `load_gameplay_objects` reads, so
+    their placements are left to it; their `ObjectTemplate.create` lines are
+    still recorded, because a placement elsewhere can be of a template they
+    declare.
+
+    What is left is scenery as far as the chain is concerned. Across the 16
+    installs it is Secret Weapons' `AdditionalStaticObjects` (Hellendoorn's
+    V2s, Kbely's prototypes, Mimoyecques' V3 shafts, Telemark's turbines),
+    whole vegetation and prop files (EoD's `vegetation`, bg42's hedges and
+    trees, bf1918's per-mode `StaticObjects`), and alongside it each round's
+    machinery that is not in a layer file: a CTF script's flag bases, an
+    ObjectiveMode script's objective spawners. Telling the two apart needs
+    the template's kind (`is_gameplay_kind`), which `declared` supplies for
+    the templates the chain declares itself.
+    """
+    out = ScriptObjects()
+    layer_files = {name.lower() for name in LAYER_SOURCE_FILES}
+
+    def walk(path: str, argv: list[str], depth: int, layer: bool) -> None:
+        text = files.read(path).decode("latin-1", "replace")
+        pending: list[str] = []
+
+        def flush() -> None:
+            if pending and not layer:
+                made = parse_static_objects("\n".join(pending))
+                rel = _level_relative(files, path)
+                for inst in made:
+                    inst.source = rel
+                out.objects.extend(made)
+            pending.clear()
+
+        for line in _host_lines(text, argv):
+            declared = _TEMPLATE_LINE.match(line)
+            if declared:
+                out.declared[declared.group(2).lower()] = declared.group(1).lower()
+            include = _INCLUDE_LINE.match(line)
+            if include is None:
+                pending.append(line)
+                continue
+            # Placements before the include are made before the included
+            # file's own, as the host makes them.
+            flush()
+            if depth >= _SCRIPT_DEPTH:
+                continue
+            target = _resolve_run(files, path, include.group(1))
+            if target is None:
+                continue
+            callee = [_script_value(token, argv) or ""
+                      for token in include.group(2).split()]
+            base = target.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            base = base[:-4] if base.endswith(".con") else base
+            walk(target, callee, depth + 1, layer or base in layer_files)
+        flush()
+
+    walk(script, list(args) if args is not None else ["host"], 0, False)
+    return out
+
+
+# The kinds of object a mode script makes that are the round's machinery, not
+# scenery. The layer files place the first three (`load_gameplay_objects`);
+# a CTF flag base (`FlagBase`, which hangs its `flagTemplate` flag at
+# `setFlagLocation`) with its `Flag`, and every objective
+# (`DestroyTargetObjective`, `ANDCompositeObjective`, `TimerObjective`, ...)
+# have no counterpart in the viewer. None is drawn as a static.
+GAMEPLAY_KINDS = frozenset({"controlpoint", "spawnpoint", "objectspawner",
+                            "flagbase", "flag"})
+
+
+def is_gameplay_kind(kind: str | None) -> bool:
+    """True for a template kind that is round machinery (`GAMEPLAY_KINDS`,
+    or any `...Objective`); False for scenery and for an unknown kind."""
+    if not kind:
+        return False
+    lowered = kind.lower()
+    return lowered in GAMEPLAY_KINDS or lowered.endswith("objective")
+
+
 def load_game_types(files: LevelFiles) -> dict[str, GameType]:
     """Every game type the level offers, keyed by its `GameTypes/` file's own
     name and read from the script a round of it runs (`game_type_script`).
@@ -1307,6 +1543,8 @@ def load_game_types(files: LevelFiles) -> dict[str, GameType]:
             continue
         gt = parse_game_type(files.read(hit).decode("latin-1", "replace"), name)
         gt.source = hit
+        made = script_objects(files, hit)
+        gt.objects, gt.declared = made.objects, made.declared
         if not gt.mode:
             # `GameTypes/Conquest.con` that only runs bare scripts still means
             # Conquest: the file name is the game type either way.
@@ -2468,8 +2706,44 @@ def _find_template_sound_script(template_name: str, library, objects) -> tuple[s
     return None
 
 
+def _level_sound_children(template: str, library,
+                          templates: dict[str, "AreaSoundTemplate"]) -> list[tuple[str, float]]:
+    """The level's own sound templates hanging off a placed template's tree.
+
+    `(name, height)` for each child the object library does not know but one
+    of the level's `Sounds/*.con` declares. Telemark's turbines carry their
+    hum this way: `Objects.rfa` adds `turbinesound` to the turbine by name,
+    and only the level declares it (`Sounds/Environment.con` runs
+    `turbinesound.con`), so neither the match on the placement's own template
+    nor the library walk for building sounds sees it. `height` is the child's
+    `setPosition` y summed down the tree; as for a building's sound, only the
+    height is carried.
+    """
+    if library is None:
+        return []
+    out: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    queue: list[tuple[str, float]] = [(template, 0.0)]
+    while queue:
+        name, height = queue.pop(0)
+        if name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        tmpl = library.object(name)
+        if tmpl is None:
+            continue
+        for ref in tmpl.children:
+            below = height + ref.position[1]
+            if ref.template.lower() in templates and library.object(ref.template) is None:
+                out.append((ref.template.lower(), below))
+            else:
+                queue.append((ref.template, below))
+    return out
+
+
 def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance],
-                         library=None, objects=None) -> LevelSounds:
+                         library=None, objects=None,
+                         mode_statics=None) -> LevelSounds:
     """Extract ambient environment sound and placed area/coastline sounds.
 
     Args:
@@ -2477,11 +2751,19 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
         static_objects: Placed static instances from StaticObjects.con
         library: ObjectLibrary for template lookups (optional)
         objects: ArchivePool for reading .con/.ssc files (optional)
+        mode_statics: `(inst, modes)` for the statics a mode script places
+            (`extract_map.union_mode_statics`); each emitter they yield is
+            tagged with those `modes`
 
     When library and objects are provided, also harvests loadSoundScript from
     building statics (windmills, factories, guard towers, etc.).
     """
     sounds = LevelSounds()
+    # Every placement an emitter can hang off, with the layers it stands in
+    # (None = every layer). `StaticObjects.con` first, so its emitters keep
+    # their order.
+    placements = [(inst, None) for inst in static_objects]
+    placements += [(inst, modes) for inst, modes in (mode_statics or ())]
 
     # 1. Global Ambient Sound from Sounds/Environment.con -> Environment.ssc.
     # Most levels use Sounds/, but some (e.g. Kasserine_Pass) ship a singular
@@ -2525,80 +2807,85 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             if tmpl is not None:
                 templates[tmpl.name.lower()] = tmpl
 
-    # 3. Match templates with placements in static_objects
-    for inst in static_objects:
-        key = inst.template.lower()
-        if key not in templates:
-            continue
-        tmpl = templates[key]
-        if not tmpl.ssc_file:
-            continue
-
-        ssc_candidate = tmpl.ssc_file
-        ssc_hit = (
-            files.find(f"Sounds/{ssc_candidate}")
-            or files.find(f"Sound/{ssc_candidate}")
-            or files.find(ssc_candidate)
-        )
-        if not ssc_hit:
-            continue
-        ssc_txt = files.read(ssc_hit).decode("latin-1")
-        patches = parse_ssc(ssc_txt)
-        patch = None
-        for p in patches:
-            if p.file and not p.file.lower().endswith("silence.wav"):
-                patch = p
-                break
-        if patch is None:
-            continue
-
-        near_dist = patch.near_distance if patch.near_distance is not None else tmpl.trigger_radius
-        far_dist = patch.far_distance if patch.far_distance is not None else max(near_dist * 2.0, tmpl.trigger_radius * 2.0)
-        ox, oy, oz = inst.position
-
-        gltf_points: list[list[float]] = []
-        is_area = tmpl.kind == "areaobject"
-        if is_area:
-            # `AreaObject::handleFrameUpdate` (lnxded 0x08269f30) adds each
-            # line point straight to the object's x and z: the instance's
-            # rotation is never applied, and the voice stands at the object's
-            # own height. Fewer than three points and it does nothing at all.
-            if len(tmpl.line_points) < 3:
+    # 3. Match templates with placements in static_objects: the placement's own
+    # template, and any of the level's sound templates hanging off its tree.
+    for inst, modes in placements:
+        matches: list[tuple[str, float]] = []
+        if inst.template.lower() in templates:
+            matches.append((inst.template.lower(), 0.0))
+        matches += _level_sound_children(inst.template, library, templates)
+        for key, height in matches:
+            tmpl = templates[key]
+            if not tmpl.ssc_file:
                 continue
-            for dx, dz in tmpl.line_points:
-                # glTF coordinate conversion: negate Z
-                gltf_points.append([round(ox + dx, 3), round(oy, 3), round(-(oz + dz), 3)])
-        elif tmpl.line_points:
-            # Line points on anything but an AreaObject have no reader in the
-            # engine; the object is a point emitter at its own position.
-            gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
-        else:
-            # Point emitter (like Siren)
-            gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
 
-        vol = patch.volume if patch.volume > 0 else (
-            patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.6
-        )
-        sounds.areas.append(PlacedAreaSound(
-            name=tmpl.name,
-            file=patch.file,
-            volume=vol,
-            near_distance=near_dist,
-            far_distance=far_dist,
-            points=gltf_points,
-            kind="area" if is_area else "point",
-            min_distance=patch.min_distance,
-            trigger_radius=tmpl.trigger_radius if is_area else None,
-            distance_volume=_distance_volume(patch),
-            loop=patch.loop,
-        ))
+            ssc_candidate = tmpl.ssc_file
+            ssc_hit = (
+                files.find(f"Sounds/{ssc_candidate}")
+                or files.find(f"Sound/{ssc_candidate}")
+                or files.find(ssc_candidate)
+            )
+            if not ssc_hit:
+                continue
+            ssc_txt = files.read(ssc_hit).decode("latin-1")
+            patches = parse_ssc(ssc_txt)
+            patch = None
+            for p in patches:
+                if p.file and not p.file.lower().endswith("silence.wav"):
+                    patch = p
+                    break
+            if patch is None:
+                continue
+
+            near_dist = patch.near_distance if patch.near_distance is not None else tmpl.trigger_radius
+            far_dist = patch.far_distance if patch.far_distance is not None else max(near_dist * 2.0, tmpl.trigger_radius * 2.0)
+            ox, oy, oz = inst.position
+            oy += height
+
+            gltf_points: list[list[float]] = []
+            is_area = tmpl.kind == "areaobject"
+            if is_area:
+                # `AreaObject::handleFrameUpdate` (lnxded 0x08269f30) adds each
+                # line point straight to the object's x and z: the instance's
+                # rotation is never applied, and the voice stands at the object's
+                # own height. Fewer than three points and it does nothing at all.
+                if len(tmpl.line_points) < 3:
+                    continue
+                for dx, dz in tmpl.line_points:
+                    # glTF coordinate conversion: negate Z
+                    gltf_points.append([round(ox + dx, 3), round(oy, 3), round(-(oz + dz), 3)])
+            elif tmpl.line_points:
+                # Line points on anything but an AreaObject have no reader in the
+                # engine; the object is a point emitter at its own position.
+                gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
+            else:
+                # Point emitter (like Siren)
+                gltf_points.append([round(ox, 3), round(oy, 3), round(-oz, 3)])
+
+            vol = patch.volume if patch.volume > 0 else (
+                patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.6
+            )
+            sounds.areas.append(PlacedAreaSound(
+                name=tmpl.name,
+                file=patch.file,
+                volume=vol,
+                near_distance=near_dist,
+                far_distance=far_dist,
+                points=gltf_points,
+                kind="area" if is_area else "point",
+                min_distance=patch.min_distance,
+                trigger_radius=tmpl.trigger_radius if is_area else None,
+                distance_volume=_distance_volume(patch),
+                loop=patch.loop,
+                modes=modes,
+            ))
 
     # 4. Building sounds from static objects with loadSoundScript in their template tree
     if library is not None and objects is not None:
         # Cache parsed sound info per template to avoid re-parsing
         template_sounds: dict[str, tuple | None] = {}
 
-        for inst in static_objects:
+        for inst, modes in placements:
             template_key = inst.template.lower()
 
             # Check cache first
@@ -2687,6 +2974,7 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 loop=loop,
                 random_play=pick,
                 random_start_pitch=pitch,
+                modes=modes,
             ))
 
     return sounds
