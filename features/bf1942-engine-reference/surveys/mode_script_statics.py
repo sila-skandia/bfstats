@@ -50,16 +50,22 @@ def main() -> None:
         files: Counter = Counter()
         gaining: list[tuple[str, list]] = []
         unreadable = 0
+        # The mod's own library once; a level that declares templates of its
+        # own (`Levels/<Map>/Objects/`, `add_level_objects`) gets its own.
+        _m, _t, objects, _g = build_pools(chain, [])
+        mod_library = build_library(objects)
         for level in levels:
             try:
-                _files, info, _hm, paths = em.load_level(GAME, mod, level, chain)
+                level_files, info, _hm, paths = em.load_level(GAME, mod, level, chain)
             except (Exception, SystemExit):  # a stub or damaged archive
                 unreadable += 1
                 continue
-            _m, _t, objects, _g = build_pools(chain, [])
-            for path in paths:
-                objects.add_level_objects(path, label=level)
-            library = build_library(objects)
+            library = mod_library
+            if any(name.lower().startswith("objects/") for name in level_files._index):
+                _m, _t, objects, _g = build_pools(chain, [])
+                for path in paths:
+                    objects.add_level_objects(path, label=level)
+                library = build_library(objects)
             for gt in info.game_types.values():
                 for inst in gt.objects:
                     kind = gt.declared.get(inst.template.lower())
