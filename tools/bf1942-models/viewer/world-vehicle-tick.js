@@ -37,13 +37,38 @@ import { axisToward, consume } from './world-input.js';
 /** The sink a dead hull is held to, m/s. Well past any glide the airframe can
  *  hold, so a wreck comes down where it was killed; small enough that the
  *  descent still carries its forward speed and reads as a falling aeroplane. */
-const FALL_MIN_SINK = 18;
+const FALL_MIN_SINK = 30;
 
 /** How fast a dead hull's forward speed bleeds off, per second. Not a glide:
  *  a wreck that keeps 60 m/s for the whole descent still lands half a map
  *  away, which is the same "it just flew away" the sink floor is there to
  *  stop. */
 const FALL_DRAG = 0.25;
+
+/**
+ * A wreck makes no lift. `aircraft.js` evaluates every surface's lift each
+ * tick and the floor alone cannot out-vote it: asking for 18 m/s of sink was
+ * delivered as 11, because the wing went on making the difference (a 100 m/s
+ * floor came out at 68 the same way). Zeroing the surfaces' own coefficient is
+ * the lever the model actually reads, and it takes the aero moments with it,
+ * so the hull tumbles rather than flies. The air coefficients are kept on the
+ * surface (`coeffAir`) so a hull that is put back on its pad can fly again.
+ */
+function killLift(vehicle) {
+  for (const surface of vehicle?.surfaces ?? []) {
+    if (surface.coeffAir == null) surface.coeffAir = surface.coeff;
+    surface.coeff = 0;
+  }
+}
+
+/** Undo `killLift`, for a hull the spawner puts back. */
+export function restoreLift(vehicle) {
+  for (const surface of vehicle?.surfaces ?? []) {
+    if (surface.coeffAir == null) continue;
+    surface.coeff = surface.coeffAir;
+    surface.coeffAir = null;
+  }
+}
 
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
@@ -57,6 +82,7 @@ export function stepFallingWrecks(world, dt) {
     // The spool state itself, not just its target: `#vacate` pinned it when
     // the seat emptied, and a wreck's engine is dead rather than idling.
     vehicle.state.throttle = 0;
+    killLift(vehicle);
     // Sink first, integrate second. `aircraft.js` computes lift from the flow
     // over the wing, so a wreck already moving down gets its "lift" downward:
     // clamping AFTER the integration left the airframe's own lift to fight the
