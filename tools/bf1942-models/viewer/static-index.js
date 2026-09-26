@@ -122,6 +122,17 @@ export class CollisionIndex {
      *  contact with the wire the handler vetoed goes on to meet what is
      *  behind it (`WorldCollider.sweepSphere`'s `passObstacles`). */
     this.passObstacles = false;
+    /**
+     * Per triangle, which of its edges are seams inside one flat surface
+     * rather than a rim: bit 0 the edge a-b, bit 1 a-c, bit 2 b-c, set when
+     * the same owner and sub-part has a triangle across that edge lying in
+     * (near enough) the same plane (`markInternalEdges`). A sphere sunk into
+     * a wall or a floor meets those seams edge-on as it slides, and they are
+     * not there to meet: the neighbour's face is. Read only where the sweep
+     * tests a triangle's border without closing on its plane. null: every
+     * edge a rim.
+     */
+    this.internalEdges = null;
   }
 
   /** Attach the per-triangle obstacle ids (`buildCollisionIndex`). */
@@ -491,9 +502,23 @@ export class CollisionIndex {
    *
    * The face case is a plane crossing; the edge and corner cases are the
    * quadratics from Fauerby's swept-sphere note, written out for a sphere of
-   * arbitrary radius rather than in unit-ellipsoid space. Anything moving away
-   * from the face is ignored outright, which is what lets a body that has ended
-   * up inside geometry push its way back out instead of freezing.
+   * arbitrary radius rather than in unit-ellipsoid space.
+   *
+   * What a body already inside is allowed to do is what lets it push its way
+   * back out instead of freezing. Over the face (its centre projects inside
+   * the triangle), moving away from the plane or along it is ignored. An edge
+   * or a corner the sphere already overlaps is ignored whichever way it moves:
+   * for one of those `lowestRoot` would hand back the moment the sphere comes
+   * out the far side, which is not a contact, and stopping it at `t = 0`
+   * instead while it closes freezes a body caught inside a parked jeep, since
+   * from inside a closed hull every heading closes on some edge.
+   *
+   * Moving along the plane or away from it does not skip the border, though.
+   * Inside the face's slab (`sd < radius`) with the centre off the face, a
+   * sphere can still walk into an edge: a soldier going level at the edge of a
+   * thin, near-flat plate — a landing craft's lowered ramp — has the plate
+   * slicing through his middle sphere, and only the edge quadratic stops him
+   * sliding under it.
    */
   #sweepTriangle(tri, cx, cy, cz, vx, vy, vz, radius, best) {
     const p = this.tris;
@@ -514,29 +539,44 @@ export class CollisionIndex {
     let sd = nx * (cx - ax) + ny * (cy - ay) + nz * (cz - az);
     if (sd < 0) { nx = -nx; ny = -ny; nz = -nz; sd = -sd; }
     const nv = nx * vx + ny * vy + nz * vz;
-    if (nv >= -1e-9) return -1;                // parallel, or receding
-    let t = (radius - sd) / nv;
-    if (t < 0) t = 0;                          // already inside the slab
-    if (t > best) return -1;
-    // Where on the plane the sphere touches down at t.
-    const px = cx + vx * t - nx * radius;
-    const py = cy + vy * t - ny * radius;
-    const pz = cz + vz * t - nz * radius;
-    const rx = px - ax, ry = py - ay, rz = pz - az;
+    // The face can only be met closing on the plane. Parallel or receding, it
+    // cannot; nor, outside the slab, can the border, every point of which is
+    // at least `sd` away with that gap not closing. Inside the slab the border
+    // is still live: `t = -1` marks that only it can be met.
+    let t = -1;
+    if (nv < -1e-9) {
+      t = (radius - sd) / nv;
+      if (t < 0) t = 0;                        // already inside the slab
+      if (t > best) return -1;
+    } else if (sd >= radius) {
+      return -1;
+    }
+    // Where on the plane the sphere touches down at t — or, with no face
+    // contact coming, below the centre now.
+    const tf = t < 0 ? 0 : t;
+    const px = cx + vx * tf - nx * radius;
+    const py = cy + vy * tf - ny * radius;
+    const pz = cz + vz * tf - nz * radius;
     const d11 = e1x * e1x + e1y * e1y + e1z * e1z;
     const d12 = e1x * e2x + e1y * e2y + e1z * e2z;
     const d22 = e2x * e2x + e2y * e2y + e2z * e2z;
-    const dr1 = rx * e1x + ry * e1y + rz * e1z;
-    const dr2 = rx * e2x + ry * e2y + rz * e2z;
     const denom = d11 * d22 - d12 * d12;
-    if (denom > 1e-12) {
-      const u = (d22 * dr1 - d12 * dr2) / denom;
-      const w = (d11 * dr2 - d12 * dr1) / denom;
-      if (u >= 0 && w >= 0 && u + w <= 1) {
-        this.#sweepNx = nx; this.#sweepNy = ny; this.#sweepNz = nz;
-        this.#sweepPx = px; this.#sweepPy = py; this.#sweepPz = pz;
-        return t;
-      }
+    // Whether a point projects inside the triangle.
+    const overFace = (qx, qy, qz) => {
+      if (denom <= 1e-12) return false;
+      const rx = qx - ax, ry = qy - ay, rz = qz - az;
+      const r1 = rx * e1x + ry * e1y + rz * e1z;
+      const r2 = rx * e2x + ry * e2y + rz * e2z;
+      const u = (d22 * r1 - d12 * r2) / denom;
+      const w = (d11 * r2 - d12 * r1) / denom;
+      return u >= 0 && w >= 0 && u + w <= 1;
+    };
+    if (overFace(px, py, pz)) {
+      // Over the face and not closing on it: embedded, and let go.
+      if (t < 0) return -1;
+      this.#sweepNx = nx; this.#sweepNy = ny; this.#sweepNz = nz;
+      this.#sweepPx = px; this.#sweepPy = py; this.#sweepPz = pz;
+      return t;
     }
     // Off the face: the nearest of the six features on its border.
     const vv = vx * vx + vy * vy + vz * vz;
@@ -544,8 +584,9 @@ export class CollisionIndex {
     let hit = -1;
     const corner = (qx, qy, qz) => {
       const sx = cx - qx, sy = cy - qy, sz = cz - qz;
-      const root = lowestRoot(vv, 2 * (vx * sx + vy * sy + vz * sz),
-                              sx * sx + sy * sy + sz * sz - radius * radius,
+      const c = sx * sx + sy * sy + sz * sz - radius * radius;
+      if (c < 0) return;                       // already inside it: let go
+      const root = lowestRoot(vv, 2 * (vx * sx + vy * sy + vz * sz), c,
                               hit < 0 ? best : hit);
       if (root < 0) return;
       hit = root;
@@ -558,10 +599,13 @@ export class CollisionIndex {
       const ev = ex * vx + ey * vy + ez * vz;
       const ek = ex * kx + ey * ky + ez * kz;
       const kk = kx * kx + ky * ky + kz * kz;
+      // `ee (radius^2 - distance^2 to the line)`: positive while overlapping.
+      const c = ee * (radius * radius - kk) + ek * ek;
+      if (c > 0) return;                       // already inside it: let go
       const root = lowestRoot(
         ev * ev - ee * vv,
         2 * (ee * (vx * kx + vy * ky + vz * kz) - ev * ek),
-        ee * (radius * radius - kk) + ek * ek,
+        c,
         hit < 0 ? best : hit);
       if (root < 0) return;
       const f = (ev * root - ek) / ee;
@@ -569,11 +613,21 @@ export class CollisionIndex {
       hit = root;
       this.#sweepPx = qx + ex * f; this.#sweepPy = qy + ey * f; this.#sweepPz = qz + ez * f;
     };
-    corner(ax, ay, az); corner(bx, by, bz); corner(gx, gy, gz);
-    edge(ax, ay, az, e1x, e1y, e1z);
-    edge(ax, ay, az, e2x, e2y, e2z);
-    edge(bx, by, bz, gx - bx, gy - by, gz - bz);
+    // Not closing on the plane, the sphere is sliding along the surface this
+    // triangle is part of, so a seam inside that surface (`internalEdges`)
+    // is not a border, nor a corner both of whose edges are seams.
+    const seams = t < 0 && this.internalEdges ? this.internalEdges[tri] : 0;
+    if ((seams & 3) !== 3) corner(ax, ay, az);
+    if ((seams & 5) !== 5) corner(bx, by, bz);
+    if ((seams & 6) !== 6) corner(gx, gy, gz);
+    if (!(seams & 1)) edge(ax, ay, az, e1x, e1y, e1z);
+    if (!(seams & 2)) edge(ax, ay, az, e2x, e2y, e2z);
+    if (!(seams & 4)) edge(bx, by, bz, gx - bx, gy - by, gz - bz);
     if (hit < 0) return -1;
+    // Sliding in from over the face — a wall's next panel, across a seam — the
+    // sphere reaches this triangle's far rim from inside. That is the surface
+    // it is already sunk into running out, not something to walk into.
+    if (t < 0 && overFace(cx + vx * hit, cy + vy * hit, cz + vz * hit)) return -1;
     // The separating direction is centre-at-contact minus the point touched.
     let sx = (cx + vx * hit) - this.#sweepPx;
     let sy = (cy + vy * hit) - this.#sweepPy;
@@ -884,7 +938,87 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
                           anyDrivable ? drivableIds : null);
   index.setSubParts(subIds.subarray(0, at), subParts);
   index.setObstacles(obstacleIds.subarray(0, at), obstacleNodes);
+  index.internalEdges = markInternalEdges(tris, ownerIds, subIds, at);
   return index;
+}
+
+/** Two faces meeting at a seam within about 10 degrees count as one surface. */
+const SEAM_COS = 0.985;
+
+/**
+ * `CollisionIndex.internalEdges`: for each triangle, the edges it shares with
+ * a triangle of the same owner and sub-part that lies across the edge from it
+ * in near enough the same plane.
+ *
+ * "Across" is the test that matters, not the winding: the collision meshes do
+ * not keep one, so the neighbour's normal is compared by its absolute value,
+ * and its third corner must fall on the far side of the shared edge. That is
+ * what tells a wall's next panel from a double-sided plate's back face, which
+ * shares all three corners and must leave the plate's rim a rim.
+ *
+ * Corners are matched on a millimetre grid. The level has some 30,000
+ * triangles, so a map of their edges costs a few milliseconds at load.
+ */
+function markInternalEdges(tris, ownerIds, subIds, count) {
+  const flags = new Uint8Array(count);
+  const vertexIds = new Map();
+  const vertexOf = (i) => {
+    const key = `${Math.round(tris[i] * 1000)},${Math.round(tris[i + 1] * 1000)},${Math.round(tris[i + 2] * 1000)}`;
+    let id = vertexIds.get(key);
+    if (id === undefined) { id = vertexIds.size; vertexIds.set(key, id); }
+    return id;
+  };
+  const normal = new Float64Array(count * 3);
+  // Edge k of a triangle runs between its corners EDGE[k] and EDGE[k + 1];
+  // OPPOSITE[k] is the corner off it. The bit order is the sweep's.
+  const EDGE = [0, 1, 0, 2, 1, 2];
+  const OPPOSITE = [2, 1, 0];
+  const edges = new Map();
+  for (let tri = 0; tri < count; tri++) {
+    const j = tri * 9;
+    const e1x = tris[j + 3] - tris[j], e1y = tris[j + 4] - tris[j + 1], e1z = tris[j + 5] - tris[j + 2];
+    const e2x = tris[j + 6] - tris[j], e2y = tris[j + 7] - tris[j + 1], e2z = tris[j + 8] - tris[j + 2];
+    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-12) continue;                 // degenerate: never a neighbour
+    normal[tri * 3] = nx / len; normal[tri * 3 + 1] = ny / len; normal[tri * 3 + 2] = nz / len;
+    const v = [vertexOf(j), vertexOf(j + 3), vertexOf(j + 6)];
+    for (let k = 0; k < 3; k++) {
+      const p = v[EDGE[k * 2]], q = v[EDGE[k * 2 + 1]];
+      if (p === q) continue;
+      const key = `${ownerIds[tri]}:${subIds[tri]}:${Math.min(p, q)}:${Math.max(p, q)}`;
+      const list = edges.get(key);
+      if (list) list.push(tri * 3 + k); else edges.set(key, [tri * 3 + k]);
+    }
+  }
+  const corner = (tri, c, axis) => tris[tri * 9 + c * 3 + axis];
+  for (const list of edges.values()) {
+    if (list.length < 2) continue;
+    for (let x = 0; x < list.length; x++) {
+      const ta = Math.floor(list[x] / 3), ka = list[x] % 3;
+      for (let y = x + 1; y < list.length; y++) {
+        const tb = Math.floor(list[y] / 3), kb = list[y] % 3;
+        const na = ta * 3, nb = tb * 3;
+        const dot = normal[na] * normal[nb] + normal[na + 1] * normal[nb + 1] + normal[na + 2] * normal[nb + 2];
+        if (Math.abs(dot) < SEAM_COS) continue;
+        // The in-plane perpendicular to the shared edge, and which side of
+        // it each triangle's third corner falls.
+        const p0 = EDGE[ka * 2], p1 = EDGE[ka * 2 + 1];
+        const ex = corner(ta, p1, 0) - corner(ta, p0, 0);
+        const ey = corner(ta, p1, 1) - corner(ta, p0, 1);
+        const ez = corner(ta, p1, 2) - corner(ta, p0, 2);
+        const wx = ey * normal[na + 2] - ez * normal[na + 1];
+        const wy = ez * normal[na] - ex * normal[na + 2];
+        const wz = ex * normal[na + 1] - ey * normal[na];
+        const side = (tri, c) => wx * (corner(tri, c, 0) - corner(ta, p0, 0))
+          + wy * (corner(tri, c, 1) - corner(ta, p0, 1)) + wz * (corner(tri, c, 2) - corner(ta, p0, 2));
+        if (side(ta, OPPOSITE[ka]) * side(tb, OPPOSITE[kb]) >= 0) continue;
+        flags[ta] |= 1 << ka;
+        flags[tb] |= 1 << kb;
+      }
+    }
+  }
+  return flags;
 }
 
 /**

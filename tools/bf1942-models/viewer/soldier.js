@@ -366,7 +366,13 @@ export class Soldier {
     this.pitch = 0;
     this.stance = 'stand';
 
-    this.speed = 0;           // horizontal, m/s, as actually achieved
+    this.speed = 0;           // horizontal velocity, m/s, after the resolve
+    // Horizontal m/s the body actually covered over the last frame that ran a
+    // tick. Not `speed`: a grounded body's velocity is re-set to the command
+    // every tick, so one wedged against geometry the resolve cannot strip
+    // (the plate of a landing craft's ramp through his middle) still reads a
+    // full run while he does not move.
+    this.travelSpeed = 0;
     this.gait = 'stand';      // run | walk | crouch | prone | stand
     this.bobPhase = 0;        // 0..1 of the fade-in, not a clock
     this.bobTime = 0;         // seconds the current shake has been running
@@ -446,6 +452,7 @@ export class Soldier {
     this.stance = 'stand';
     this.gait = 'stand';
     this.speed = 0;
+    this.travelSpeed = 0;
     this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
     this.stepPhase = 0; this.steps = 0;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
@@ -499,6 +506,7 @@ export class Soldier {
     this.stance = 'stand';
     this.gait = 'stand';
     this.speed = 0;
+    this.travelSpeed = 0;
     this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
     this.stepPhase = 0; this.steps = 0;
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
@@ -797,6 +805,7 @@ export class Soldier {
 
     const travelled = Math.hypot(this.x - startX, this.z - startZ);
     this.speed = this.body.groundSpeed;
+    if (ticks > 0) this.travelSpeed = travelled / (ticks * this.clock.dt);
     this.blocked = contacts > 0;
     this.#updateWater();
     this.#advanceBob(frameDt, travelled);
