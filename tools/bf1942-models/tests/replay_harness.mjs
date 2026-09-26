@@ -292,11 +292,11 @@ const read = scene => {
   };
 }
 
-// --- a v4 recording's own records -------------------------------------------
+// --- a v5 recording's own records (v4's, with the parts numbered) ----------
 {
   const line = o => JSON.stringify(o);
   const rec = recording.parseRecording([
-    line({ k: 'h', v: 4, start: '', hz: 10 }),
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
     line({ k: 'e', t: 1, e: 'createObject', tid: 2916, netId: 532, tmpl: 'Sherman', pos: [0, 0, 0], rot: [0, 0, 0] }),
     line({ k: 'p', t: 2, p: [[251, 2, 533, 532, 1]] }),
     line({ k: 'e', t: 3, e: 'projPool', tid: 1288, tmpl: 'GrenadeAlliesProjectile', netId: 1075, count: 3 }),
@@ -305,25 +305,36 @@ const read = scene => {
     line({ k: 'f', t: 6, id: 532, w: 'ShermanCannon', pid: 251, p: [0, 2, 0], d: [0, 0, 1] }),
     line({ k: 'g', t: 6, o: [[532, 0.8, 1, 1, 2, 535]] }),
     line({ k: 'g', t: 8, o: [[532, 0.1, 0, 0, 1, 535]] }),
-    line({ k: 'jn', t: 6, o: [[532, 536, 'ShermanTower']] }),
-    line({ k: 'j', t: 6, o: [[532, 536, 0, 0.7071, 0, 0.7071]] }),
+    line({ k: 'jn', t: 6, o: [[532, 7, 'ShermanTower', 0.1, 1.8, 0.5]] }),
+    line({ k: 'j', t: 6, o: [[532, 7, 0, 0.7071, 0, 0.7071]] }),
     line({ k: 'o', t: 6, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2 }),
     line({ k: 'anim', t: 6, states: [[0, 'Lb_Stand', 0], [1, 'Lb_Crouch', 0x20], [2, 'Ub_Fire', 0], [3, 'Lb_Lie', 0x40]] }),
     line({ k: 'st', t: 6, o: [[600, 1, 2, -12.5, 3, 2, 0]] }),
     line({ k: 'st', t: 7, o: [[600, 3, 0, 0, 0, 3, 0]] }),
   ].join('\n'));
   const sherman = rec.lives.find(l => l.nid === 532);
-  results.v4 = {
+  results.v5 = {
     seat: (() => { const r = recording.rootOf(rec, 533, 2.5, 251); return r ? { root: r.life.tmpl, seat: r.seat } : null; })(),
     pooled: rec.lives.filter(l => l.pooled).map(l => `${l.tmpl}#${l.nid}`),
     clock: recording.roundClock(rec, 5),
     stats: rec.roundStats.get(249)?.destroyed ?? null,
     shot: rec.fires.map(f => ({ nid: f.nid, weapon: f.weapon, kind: f.kind })),
     engine: [recording.engineAt(rec, 532, 7), recording.engineAt(rec, 532, 9)],
-    joint: (() => { const p = rec.joints.get(532)?.get(536); return p ? { name: p.name, q: p.keys[0].q } : null; })(),
+    joint: (() => { const p = rec.joints.get(532)?.get(7); return p ? { name: p.name, q: p.keys[0].q, pos: p.pos, since: p.since } : null; })(),
     body: [recording.bodyAt(rec, 600, 6.5), recording.bodyAt(rec, 600, 7.5)],
     crew: recording.crewOf(rec, sherman, 3),
   };
+}
+
+// --- a v4 file's parts: every one keyed 0, so none is used -------------------
+{
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 4, start: '', hz: 10 }),
+    line({ k: 'jn', t: 4.5, o: [[529, 0, 'DefgunTurret']] }),
+    line({ k: 'j', t: 4.5, o: [[529, 0, 0, 0.7071, 0, 0.7071], [529, 0, 0, 0, 0.1, 0.995], [532, 0, 0, 1, 0, 0]] }),
+  ].join('\n'));
+  results.v4Joints = rec.joints.size;
 }
 
 // --- kinematics from recorded motion -----------------------------------------
@@ -356,6 +367,26 @@ const read = scene => {
     throttleEmpty: kinematics.aircraftThrottle({ crewed: false, airborne: true, speed: 50 }),
     throttleFlying: +kinematics.aircraftThrottle({ crewed: true, airborne: true, speed: 50, vmax: 60 }).toFixed(3),
   };
+  // A ship's three identical AA guns and a tower, in the root's frame.
+  const nodes = [
+    { name: 'aagun', pos: [-3, 2, 10] }, { name: 'aagun', pos: [3, 2, 10] }, { name: 'aagun', pos: [0, 4, -20] },
+    { name: 'tower', pos: [0, 1, 0] },
+  ];
+  const match = parts => Object.fromEntries(kinematics.matchJointNodes(parts, nodes));
+  results.kinematics.matchPlaced = match([
+    { key: 11, name: 'aagun', pos: [0.2, 4, -19] },
+    { key: 12, name: 'aagun', pos: [2.9, 2, 10.2] },
+    { key: 13, name: 'aagun', pos: [-3.1, 2, 9.7] },
+  ]);
+  results.kinematics.matchUnplaced = match([
+    { key: 21, name: 'aagun', pos: null }, { key: 22, name: 'aagun', pos: null },
+    { key: 23, name: 'tower', pos: null }, { key: 24, name: 'tower', pos: null },
+    { key: 25, name: 'nothing', pos: null },
+  ]);
+  results.kinematics.matchMixed = match([
+    { key: 32, name: 'aagun', pos: null },
+    { key: 31, name: 'aagun', pos: [3, 2, 10] },
+  ]);
 }
 
 console.log(JSON.stringify(results));
