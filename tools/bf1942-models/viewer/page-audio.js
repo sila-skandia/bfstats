@@ -11,7 +11,8 @@ import { WEAPON_HEADROOM } from './engine-audio.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
 import { footstepMaterial } from './collision-materials.js';
-import { isBed, loudestEmitter } from './area-sound.js';
+import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
+import { ScrapeVoices } from './obstacle.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -182,6 +183,92 @@ export function createPageAudio(page) {
       } catch (_) {}
     }
     pageAudio.activeAreaAudios = [];
+    pageAudio.scrape = null;
+  }
+
+  // --- barbed wire's scrape ------------------------------------------------
+  //
+  // `e_Barbwire.ssc`, the one-shot a wire's `e_Barbwire` child plays when the
+  // wire is messaged: by a soldier's or a vehicle's contact
+  // (`BFSoldier::handleCollision` 0x0827d3b0, `PlayerControlObject::
+  // handleCollision` 0x08318b00; `obstacle.js`). The level ships it as a
+  // one-point, non-looping static script per wire (`<template>_static`),
+  // which `setupSounds` keeps out of the bed pool and hands to this instead.
+  // `randomPlay 1` picks one of its samples each play; `randomStartPitch`
+  // jitters the rate; volume, `minDistance` and the 3..4 m `Volume <-
+  // Distance` ramp are `area-sound.js`'s `emitterAt`, the same law the beds
+  // use. One voice per wire at a time (`ScrapeVoices`, INFERRED; the .ssc rule).
+  pageAudio.scrape = null;
+  /** Wires matched to their script, by obstacle id: area or null. */
+  const scrapeAreaOf = new Map();
+  /** A one-shot static script whose point is within this of the wire's
+   *  origin is that wire's (the extractor puts it there, plus the sample's
+   *  own `relativePosition` height, which barbed wire does not set). */
+  const SCRAPE_MATCH = 0.5;
+
+  function scrapeAreaFor(ev) {
+    const scrape = pageAudio.scrape;
+    if (!scrape) return null;
+    if (scrapeAreaOf.has(ev.id)) return scrapeAreaOf.get(ev.id);
+    const o = ev.origin ?? [ev.x, ev.y, ev.z];
+    let best = null;
+    let bestD = SCRAPE_MATCH * SCRAPE_MATCH;
+    for (const area of scrape.areas) {
+      const [x, y, z] = area.points[0];
+      const d = (x - o[0]) ** 2 + (y - o[1]) ** 2 + (z - o[2]) ** 2;
+      if (d <= bestD) { bestD = d; best = area; }
+    }
+    scrapeAreaOf.set(ev.id, best);
+    return best;
+  }
+
+  /**
+   * One message to a wire (a `report.obstacles` entry of the world's step):
+   * start its scrape unless its last one is still sounding. Returns whether
+   * a voice started, for the test hook.
+   */
+  function playObstacleScrape(ev) {
+    const scrape = pageAudio.scrape;
+    if (!scrape || !ev || page.AUDIO_OFF || !pageAudio.audioListener) return false;
+    const ctx = pageAudio.audioListener.context;
+    const area = scrapeAreaFor(ev);
+    if (!area) return false;
+    const files = Array.isArray(area.randomPlay) && area.randomPlay.length
+      ? area.randomPlay : [area.file];
+    const file = files[Math.floor(Math.random() * files.length)];
+    const buffer = scrape.buffers.get(file);
+    if (!buffer) return false;
+    const [up = 0, down = 0] = area.randomStartPitch || [];
+    const rate = 1 + (Math.random() * (up + down) - down);
+    const now = ctx.currentTime;
+    if (!scrape.voices.touch(ev.id, now, buffer.duration / rate)) return false;
+    scrape.started++;
+    if (ctx.state !== 'running' || masterVolume() <= 0) return true;
+    const e = pageAudio.audioListener.matrixWorld?.elements;
+    const ear = e ? { x: e[12], y: e[13], z: e[14] } : { x: 0, y: 0, z: 0 };
+    const at = emitterAt(area, ear);
+    if (!at || !(at.gain > 0)) return true;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    const gain = ctx.createGain();
+    gain.gain.value = at.gain * masterVolume();
+    const panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    // `emitterAt` owns the distance law, as it does for the beds.
+    panner.distanceModel = 'linear';
+    panner.rolloffFactor = 0;
+    panner.positionX.value = at.x;
+    panner.positionY.value = at.y;
+    panner.positionZ.value = at.z;
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(pageAudio.audioListener.getInput());
+    source.onended = () => {
+      try { source.disconnect(); gain.disconnect(); panner.disconnect(); } catch (_) {}
+    };
+    try { source.start(); } catch (_) {}
+    return true;
   }
 
   // A depot's give sound, once `setupSounds` has pulled it out of the ambience:
@@ -294,6 +381,25 @@ export function createPageAudio(page) {
       const buffer = await getBuffer(giveFile);
       if (gen !== pageAudio.soundsGeneration) return;
       if (buffer) pageAudio.supplyGive = { buffer, until: 0 };
+    }
+
+    // The one-shot static scripts (barbed wire's scrape): events, played by
+    // `playObstacleScrape` when the wire is messaged.
+    scrapeAreaOf.clear();
+    const scrapeAreas = areaList.filter(a => a.file && !isBed(a) && a.points?.length === 1);
+    if (scrapeAreas.length) {
+      const buffers = new Map();
+      const files = new Set();
+      for (const a of scrapeAreas) {
+        files.add(a.file);
+        for (const f of a.randomPlay || []) files.add(f);
+      }
+      for (const f of files) {
+        const buf = await getBuffer(f);
+        if (gen !== pageAudio.soundsGeneration) return;
+        if (buf) buffers.set(f, buf);
+      }
+      pageAudio.scrape = { areas: scrapeAreas, buffers, voices: new ScrapeVoices(), started: 0 };
     }
 
     if (areaList.length > 0) {
@@ -693,6 +799,7 @@ export function createPageAudio(page) {
     masterVolume,
     modelSoundBuffer,
     playSoldierHurtSound,
+    playObstacleScrape,
     playSoldierOneShot,
     playSupplyGive,
     playWorldShot,

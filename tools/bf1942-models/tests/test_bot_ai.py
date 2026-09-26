@@ -43,6 +43,8 @@ _MODULE_NAMES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
+    # world-soldier-tick.js and world-bodies.js bill barbed wire.
+    "obstacle",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.

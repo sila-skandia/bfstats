@@ -9,6 +9,7 @@ import { TICK_RATE } from './fixed-step.js';
 import { BODY_RADIUS } from './soldier-pose.js';
 import {
   JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER, STEP_HEIGHT, SNAP_DOWN, MAX_GROUND_SLOPE,
+  OBSTACLE_HANDLER_SPEED_SQ,
 } from './soldier-locomotion.js';
 
 /** Gap kept between a body and whatever it stops against, in metres. */
@@ -35,12 +36,24 @@ const _normal = [0, 1, 0];
  * 0.3 m spheres; the approximation's only error is the scalloping between
  * them, which is under a centimetre and is on the inside of the volume.
  */
-function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets) {
+function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets, walker = null) {
   if (!world || !world.sweepSphere) return null;
   let best = -1;
   for (const offset of offsets) {
-    const hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius);
+    let hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius);
     if (!hit) continue;
+    // Barbed wire (`BFSoldier::handleCollision` 0x0827d3b0's Obstacle
+    // branch): above the handler gate the contact is recorded and vetoed,
+    // and the sphere goes on to whatever is behind the wire.
+    if (walker?._obstaclePass && world.obstacleAt) {
+      const obstacle = world.obstacleAt(hit);
+      if (obstacle >= 0) {
+        noteObstacle(walker, obstacle, hit.px, hit.py, hit.pz);
+        hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
+                                -1, false, -Infinity, 2, true);
+        if (!hit) continue;
+      }
+    }
     // A surface the motion is travelling *away* from cannot stop it. The sweep
     // reports one at `t = 0` for any sphere already resting against geometry,
     // and `#resolve` then advances by `max(0, t - SKIN)` = 0, finds the move is
@@ -63,6 +76,17 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets) {
     _contact.owner = hit.owner;
   }
   return best >= 0 ? _contact : null;
+}
+
+/**
+ * A vetoed touch of an `Obstacle` this tick, once per wire: what
+ * `BFSoldier::handleCollision` bills (the slow flag, the message, the
+ * damage), which `walking-body.js` and the world's soldier tick act on.
+ */
+function noteObstacle(walker, obstacle, x, y, z) {
+  const list = walker.obstacleContacts;
+  for (const c of list) if (c.id === obstacle) return;
+  list.push({ id: obstacle, x, y, z });
 }
 
 /**
@@ -118,6 +142,13 @@ export function resolveMove(walker) {
   const world = walker.world;
   const body = walker.body;
   walker.contacts = 0;
+  walker.obstacleContacts.length = 0;
+  // Every handler, the wire's veto included, runs only above this contact
+  // speed (collision-response.md §6.2); a body slower than it meets the wire
+  // as any static. A static's contact speed is the body's own velocity.
+  const v0 = body.velocity;
+  walker._obstaclePass = v0.x * v0.x + v0.y * v0.y + v0.z * v0.z
+    > OBSTACLE_HANDLER_SPEED_SQ;
   if (!world || !world.sweepSphere) return;
   const from = body.previous;
   let px = from.x, py = from.y, pz = from.z;
@@ -128,7 +159,7 @@ export function resolveMove(walker) {
     if (dist < 1e-6) break;
     const dx = rx / dist, dy = ry / dist, dz = rz / dist;
     const hit = sweepCapsule(world, px, py, pz, dx, dy, dz, dist,
-                             BODY_RADIUS, offsets);
+                             BODY_RADIUS, offsets, walker);
     if (!hit) {
       px += rx; py += ry; pz += rz;
       rx = 0; ry = 0; rz = 0;
@@ -324,8 +355,20 @@ export function settleFeet(walker) {
     // kerb and the glue onto a descending ramp. `cast` answers for terrain and
     // sea as well, which only agrees with `surfaceHeight` above — harmless,
     // and it costs one entry in the collider's cast meter per tick.
-    const hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
-                           STEP_HEIGHT + SNAP_DOWN);
+    let hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
+                         STEP_HEIGHT + SNAP_DOWN);
+    // Barbed wire is no floor to a body moving through it (the same veto as
+    // the sweep's): the touch is recorded and the ray goes on below it.
+    if (hit && walker._obstaclePass && world.obstacleAt) {
+      const obstacle = world.obstacleAt(hit);
+      if (obstacle >= 0) {
+        noteObstacle(walker, obstacle, hit.x, hit.y, hit.z);
+        const from = hit.y - 1e-3;
+        const reach = STEP_HEIGHT + SNAP_DOWN - (p.y + STEP_HEIGHT - from);
+        hit = reach > 0 ? world.cast(p.x, from, p.z, 0, -1, 0, reach) : null;
+        if (hit && world.obstacleAt(hit) >= 0) hit = null;
+      }
+    }
     // The cast answers for the water plane too (`collision.js`'s `kind ===
     // 'water'` arm), and that answer is not a floor for a man: without this
     // the sea came straight back in through the hull probe the moment the

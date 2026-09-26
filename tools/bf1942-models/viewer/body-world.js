@@ -42,11 +42,13 @@ export class BodyWorld {
    *        meets a building the way it did before this existed — whatever the
    *        drive model does for itself.
    */
-  constructor({ tables, terrain, onDamage = null, statics = null }) {
+  constructor({ tables, terrain, onDamage = null, statics = null, onObstacle = null }) {
     this.tables = tables;
     this.terrain = terrain;
     this.statics = statics;
     this.onDamage = onDamage;
+    /** `(owner, obstacle, pos)`: a driven hull touched barbed wire. */
+    this.onObstacle = onObstacle;
     this.crash = new CrashDamage(tables);
     /** owner -> entry. */
     this.entries = new Map();
@@ -75,6 +77,12 @@ export class BodyWorld {
         }
       },
       onWater() {},
+      // A hull rolled through an `Obstacle` (barbed wire): no response, but
+      // the wire is messaged (`PlayerControlObject::handleCollision`
+      // 0x08318b00), which is its scrape.
+      onObstacle(part, obstacle, pos) {
+        world.onObstacle?.(part.owner, obstacle, pos);
+      },
       materialValues(matA, matB) {
         return contactMaterialValues(world.tables, matA, matB);
       },
