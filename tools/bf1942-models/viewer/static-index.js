@@ -84,6 +84,36 @@ export class CollisionIndex {
     // Measured per-query work, for the budget in the feature doc. Reset by
     // whoever is reading it.
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
+    /**
+     * Articulated sub-parts: a hull's collision meshes that hang under a rig
+     * node which swings on its own -- a landing craft's ramp
+     * (`DaihatsuLanding1/2`, `Lcvp_Ramp`, `c_PIPitch`), a turret. The bake
+     * put their triangles where the part stood at load, and the owner moves
+     * as one rigid body (`WorldCollider.setMovedOwner`), so a lowered ramp
+     * left its raised copy standing at the hinge as an invisible wall. Per
+     * triangle, the sub-part it belongs to (-1: the hull itself); per
+     * sub-part, its node, its owner and the two world matrices it was baked
+     * under. A sub-part flagged active (`_subActive`, set by the world
+     * collider when its pose leaves the bake) is left out of every query
+     * except its own (`onlySub`), which the collider asks in its own frame.
+     */
+    this.subs = null;                 // Int32Array, 1 per triangle, or null
+    this.subParts = [];               // { node, owner, ownerBaked, baked }
+    this._subActive = new Uint8Array(0);
+  }
+
+  /** Attach the per-triangle sub-part ids (`buildCollisionIndex`). */
+  setSubParts(subs, parts) {
+    this.subs = parts.length ? subs : null;
+    this.subParts = parts;
+    this._subActive = new Uint8Array(parts.length);
+  }
+
+  /** Is a sub-part's triangle out of this query? `onlySub` >= 0 keeps that
+   *  sub-part alone; otherwise an active sub-part is out. */
+  #subSkips(tri, onlySub) {
+    const s = this.subs[tri];
+    return onlySub >= 0 ? s !== onlySub : (s >= 0 && this._subActive[s] !== 0);
   }
 
   /**
@@ -147,7 +177,7 @@ export class CollisionIndex {
    */
   cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1,
        onlyDrivable = false, skipBodies = false, deckStepTop = -Infinity,
-       deckFloorCos = 2) {
+       deckFloorCos = 2, onlySub = -1) {
     if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
@@ -180,6 +210,7 @@ export class CollisionIndex {
     // loop, as `sweepSphere` hoists its own.
     const deck = this.drivable
       && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
+    const subs = this.subs;
     // A segment 16 m long crosses at most two 32 m cells; the cap is only here
     // so a degenerate direction cannot spin.
     for (let guard = 0; guard < 256; guard++) {
@@ -225,6 +256,7 @@ export class CollisionIndex {
                 if (this._disabled[this.owners[tri]]) continue;
                 if (skipBodies && this._body[this.owners[tri]]) continue;
               }
+              if (subs && this.#subSkips(tri, onlySub)) continue;
               const j = tri * 9;
               if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
                   || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
@@ -324,7 +356,7 @@ export class CollisionIndex {
    *   a hut on the bay — all of them rising well above it — still stop the hull.
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1,
-              skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2) {
+              skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2, onlySub = -1) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -373,6 +405,7 @@ export class CollisionIndex {
             if (this._disabled[this.owners[tri]]) continue;
             if (skipBodies && this._body[this.owners[tri]]) continue;
           }
+          if (this.subs && this.#subSkips(tri, onlySub)) continue;
           // Box reject before the swept test. A ray gets away without one — the
           // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
           // costs a plane crossing, three edge quadratics and three corner
@@ -583,6 +616,7 @@ export class CollisionIndex {
           if (skipOwner >= 0 && owner === skipOwner) continue;
           if (this._disabled[owner]) continue;
           if (skipBodies && this._body[owner]) continue;
+          if (this.subs && this.#subSkips(tri, -1)) continue;
           stats.candidates++;
           const j = tri * 9;
           if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
@@ -710,6 +744,26 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     if (!isCollisionMesh(obj)) return;
     meshes.push(obj);
   });
+  // The articulated sub-part each collision mesh hangs under, if any
+  // (`CollisionIndex.setSubParts`).
+  const subParts = [];
+  const subOfNode = new Map();
+  const subOf = (mesh, owner) => {
+    if (owner < 0) return -1;
+    const ownerNode = owners[owner];
+    for (let n = mesh.parent; n && n !== ownerNode; n = n.parent) {
+      if (!isArticulated(n)) continue;
+      let id = subOfNode.get(n);
+      if (id === undefined) {
+        id = subParts.length;
+        subOfNode.set(n, id);
+        subParts.push({ node: n, owner, ownerBaked: Float64Array.from(ownerNode.matrixWorld.elements),
+                        baked: Float64Array.from(n.matrixWorld.elements) });
+      }
+      return id;
+    }
+    return -1;
+  };
   if (!meshes.length) return null;
   let total = 0;
   for (const mesh of meshes) {
@@ -725,6 +779,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   // read; left null when the level ships no drivable static at all, so nothing
   // downstream pays for a level with no bridges.
   const drivableIds = new Uint8Array(total);
+  const subIds = new Int32Array(total).fill(-1);
   let anyDrivable = false;
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   let at = 0;
@@ -736,6 +791,7 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     const m = mesh.matrixWorld.elements;
     const material = geometry.userData?.defenseMaterial ?? 0;
     const owner = ownerOf.get(mesh) ?? -1;
+    const sub = subOf(mesh, owner);
     const drivable = isDrivableCollisionMesh(mesh) ? 1 : 0;
     if (drivable) anyDrivable = true;
     const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
@@ -757,13 +813,29 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
       materials[at] = material;
       ownerIds[at] = owner;
       drivableIds[at] = drivable;
+      subIds[at] = sub;
       at++;
     }
   }
   if (!at) return null;
-  return packIndex(tris, materials, ownerIds, owners, at, cellSize,
-                   { minX, minZ, maxX, maxZ },
-                   anyDrivable ? drivableIds : null);
+  const index = packIndex(tris, materials, ownerIds, owners, at, cellSize,
+                          { minX, minZ, maxX, maxZ },
+                          anyDrivable ? drivableIds : null);
+  index.setSubParts(subIds.subarray(0, at), subParts);
+  return index;
+}
+
+/**
+ * A rig node that swings its children on its own: every declared axis a
+ * position servo (a ramp, a turret, a gun's elevation). A `rate` axis (an
+ * engine, a propeller, a wheel's roll) turns without end and never stands
+ * still long enough to be worth a frame of its own.
+ */
+function isArticulated(node) {
+  const axes = node.userData?.rig?.axes;
+  if (!axes) return false;
+  const list = Object.values(axes);
+  return list.length > 0 && list.every(a => a && a.driver !== 'rate');
 }
 
 /**
