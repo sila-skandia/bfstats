@@ -14,6 +14,8 @@ import MmBattleVisualizer from './round-report/MmBattleVisualizer.vue'
 import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
 import MmMapThumb from './MmMapThumb.vue'
 import MmMapDossier from './MmMapDossier.vue'
+import MmRoundArmies from './armoury/MmRoundArmies.vue'
+import { fetchMapArmies, type MapArmies } from '@/services/serviceRecordApi'
 import { BfLoadingBar } from '@/components/common'
 import { kdClass } from '@/views/v4/mmTokens'
 
@@ -28,6 +30,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const roundReport = ref<RoundReport | null>(null)
+/** The level's own armies for this map: the nations behind bflist's "Axis" and "Allied". */
+const roundArmies = ref<MapArmies | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const showBriefing = ref(false)
@@ -94,6 +98,7 @@ const fetchData = async () => {
     const data = await fetchRoundReport(props.roundId)
     roundReport.value = data
     updatePageTitle()
+    void loadRoundArmies(data)
 
     // Show briefing by default for empty rounds; collapse by default when there are players to get straight to match replay
     showBriefing.value = isEmptyRound.value
@@ -110,6 +115,44 @@ const fetchData = async () => {
     loading.value = false
   }
 }
+
+async function loadRoundArmies(report: RoundReport) {
+  roundArmies.value = null
+  const { gameId, mapName } = report.round
+  const requested = props.roundId
+  if (!mapName) return
+  try {
+    const armies = await fetchMapArmies(gameId || 'bf1942', mapName)
+    // A reply for a round the reader has already left must not land on the next one.
+    if (props.roundId === requested) roundArmies.value = armies
+  } catch {
+    // A map without a dossier keeps bflist's own labels.
+  }
+}
+
+/** Team index (1 Axis, 2 Allied) behind a round's ticket column, read from its label. */
+function teamIndexOf(label: string | null | undefined, fallback: 1 | 2): 1 | 2 {
+  const value = (label || '').trim().toLowerCase()
+  if (value === 'axis') return 1
+  if (value === 'allied' || value === 'allies') return 2
+  return fallback
+}
+
+function ticketTeamName(column: 1 | 2): string {
+  const round = roundReport.value?.round
+  const label = column === 1 ? round?.team1Label : round?.team2Label
+  const index = teamIndexOf(label, column)
+  return roundArmies.value?.teams.find(team => team.index === index)?.name || label || `Team ${column}`
+}
+
+/** The winning team index once the round is over and the tickets are not level. */
+const roundWinner = computed<1 | 2 | null>(() => {
+  const round = roundReport.value?.round
+  if (!round || round.isActive || !shouldShowTickets.value) return null
+  const { tickets1, tickets2 } = round
+  if (tickets1 == null || tickets2 == null || tickets1 === tickets2) return null
+  return tickets1 > tickets2 ? teamIndexOf(round.team1Label, 1) : teamIndexOf(round.team2Label, 2)
+})
 
 const startPlayback = () => {
   if (!batchUpdateEvents.value.length) return
@@ -504,16 +547,24 @@ onUnmounted(() => {
 
         <div v-if="shouldShowTickets" class="mm-rr__tickets">
           <div class="mm-rr__ticket-team">
-            <div class="mm-eyebrow">{{ roundReport.round.team1Label || 'Team 1' }}</div>
+            <div class="mm-eyebrow">{{ ticketTeamName(1) }}</div>
             <div class="mm-stat__value">{{ roundReport.round.tickets1 }}</div>
           </div>
           <div class="mm-rr__ticket-sep">vs</div>
           <div class="mm-rr__ticket-team">
-            <div class="mm-eyebrow">{{ roundReport.round.team2Label || 'Team 2' }}</div>
+            <div class="mm-eyebrow">{{ ticketTeamName(2) }}</div>
             <div class="mm-stat__value">{{ roundReport.round.tickets2 }}</div>
           </div>
         </div>
       </header>
+
+      <MmRoundArmies
+        v-if="roundArmies"
+        :armies="roundArmies"
+        :winner="roundWinner"
+        :is-active="roundReport.round.isActive"
+        style="margin-top: 20px"
+      />
 
       <hr class="mm-rule" style="margin: 24px 0" />
 

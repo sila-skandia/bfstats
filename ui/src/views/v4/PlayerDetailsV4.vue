@@ -24,6 +24,7 @@ import MmPlayerAllyOrbit from '@/components/v4/MmPlayerAllyOrbit.vue'
 import MmPlayerRivalsDossier from '@/components/v4/MmPlayerRivalsDossier.vue'
 import MmPlayerFormMathModal, { type FormInsight, type FormContributingSession } from '@/components/v4/MmPlayerFormMathModal.vue'
 import MmPlayerAchievementsSlideover from '@/components/v4/MmPlayerAchievementsSlideover.vue'
+import MmServiceRecord from '@/components/v4/armoury/MmServiceRecord.vue'
 import { fetchPlayerCommunities, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { kdClass, streakClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
@@ -928,6 +929,13 @@ const signatureServers = computed(() => {
         v-if="activeTab === 'overview'"
         style="margin-top: 22px"
       >
+        <!-- the armies their time on each map's sides adds up to, and that army's soldier in 3D -->
+        <MmServiceRecord
+          :player-name="rawName"
+          style="margin-bottom: 20px"
+          @open-map="openMapRankings"
+        />
+
         <!-- main 2-column grid: trends | accolades (achievements, best scores, rankings) -->
         <div
           class="mm-dash-grid"

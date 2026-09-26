@@ -49,7 +49,12 @@ export default [
         RequestInit: 'readonly',
         MutationObserver: 'readonly',
         getComputedStyle: 'readonly',
-        ResizeObserver: 'readonly'
+        ResizeObserver: 'readonly',
+        IntersectionObserver: 'readonly',
+        PointerEvent: 'readonly',
+        performance: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly'
       }
     },
     plugins: {
@@ -128,7 +133,12 @@ export default [
         RequestInit: 'readonly',
         MutationObserver: 'readonly',
         getComputedStyle: 'readonly',
-        ResizeObserver: 'readonly'
+        ResizeObserver: 'readonly',
+        IntersectionObserver: 'readonly',
+        PointerEvent: 'readonly',
+        performance: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly'
       }
     },
     plugins: {
