@@ -14,7 +14,6 @@ checkout's (a worktree's git common dir), and skips when there is none.
 from __future__ import annotations
 
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -169,14 +168,23 @@ class SimVehicleTests(unittest.TestCase):
         # stopped a hull on wire, where `Obstacle::handleCollision`
         # 0x08315e10 vetoes the response for anything but a soldier (and
         # the level's Tank0 map paints the wire free). Rolling through it,
-        # the Sherman leaves its base and both hulls meet near the outpost
-        # the PanzerIV takes.
+        # the Sherman leaves its base and both hulls meet at the outpost.
+        #
+        # Until 2026-09-26 this pinned the PanzerIV's capture at 144.67 s.
+        # That time moved with unrelated changes (148.07 once 8ef491ab lifted
+        # the LOD chains of the re-baked level, 142.23 a few commits later),
+        # and the recipe's orders were a fresh object per read, so every tick
+        # rebuilt both plans and threw their routes away. Once 9bba931c paced
+        # a route's widenings one a tick on the route itself, the PanzerIV
+        # never got past the second and held at 0 throttle 114 m short of the
+        # flag for the last 105 s. With the orders held the way the SAI holds
+        # them (`redirectOrders`), the pair meet inside the flag's 50 m radius
+        # and fight there: on 2026-09-27, 41 samples, nearest 40 m and 10 m,
+        # rounds 6 and 5, the Sherman destroyed at 189.67 s, no capture.
         r = recipe("tankDuel")
         self.assertGreater(r["samples"], 0, r["end"])
-        flag = (874.005, -1815.98)
-        allied = r["end"]["allied"]
-        self.assertLess(math.hypot(allied[0] - flag[0], allied[2] - flag[1]), 250.0, r["end"])
-        self.assertIn("144.67 North_outpost 0->1 bot_0", r["captures"])
+        for side in ("axis", "allied"):
+            self.assertLess(r["nearest"][side], 50.0, (side, r["nearest"], r["end"]))
 
     def test_the_tank_pair_close_until_one_can_fire(self) -> None:
         # Brief P item 3 (ledger AI-116) and Brief R (AI-123..AI-125): K's
