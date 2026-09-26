@@ -613,14 +613,22 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
     for area in info.sounds.areas:
         resolved = resolve_sound(area.file, level_files, sounds)
         if resolved is not None:
-            sound_report["areas"].append({
+            entry = {
                 "name": area.name,
                 "file": write(resolved),
+                "kind": area.kind,
+                "loop": area.loop,
                 "volume": area.volume,
+                "minDistance": area.min_distance,
+                "distanceVolume": area.distance_volume,
                 "nearDistance": area.near_distance,
                 "farDistance": area.far_distance,
                 "points": area.points,
-            })
+            }
+            # AreaObjects only: the engine stops the voice beyond it.
+            if area.trigger_radius is not None:
+                entry["triggerRadius"] = area.trigger_radius
+            sound_report["areas"].append(entry)
 
     if library is not None and objects is not None and vehicles:
         sound_report["vehicles"] = extract_vehicle_sounds(
@@ -699,6 +707,8 @@ def extract_flag_sound(info: LevelInfo, objects: ArchivePool,
     }
     if ramp:
         entry["nearDistance"], entry["farDistance"] = ramp[0], ramp[1]
+        if len(ramp) >= 4:
+            entry["distanceVolume"] = [float(v) for v in ramp[:4]]
     return entry
 
 

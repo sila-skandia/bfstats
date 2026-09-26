@@ -11,6 +11,7 @@ import { WEAPON_HEADROOM } from './engine-audio.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
 import { footstepMaterial } from './collision-materials.js';
+import { isBed, loudestEmitter } from './area-sound.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -241,7 +242,9 @@ export function createPageAudio(page) {
     // file: several areas sharing Water_waves.wav used to get one loop each, and
     // two loops of the same sample audible at once through separate HRTF panners
     // reads as a hall echo, not louder surf. updateAudio moves the single
-    // anchor to the closest point across every polyline in the group.
+    // anchor to whichever emitter in the group is loudest (`area-sound.js`).
+    // One-shot scripts on statics (barbed wire's scrape) are events, not beds,
+    // and stay out of the pool.
     // Flags join the area pool as one-point emitters. They group by file like
     // everything else, so every flag on the map shares a single looping voice
     // anchored at whichever one is nearest — which is the same reason the
@@ -255,7 +258,11 @@ export function createPageAudio(page) {
           name: 'flag',
           file: flags.file,
           points: [point],
+          kind: 'point',
+          loop: true,
           volume: flags.volume ?? 1.0,
+          minDistance: flags.minDistance,
+          distanceVolume: flags.distanceVolume,
           nearDistance: flags.nearDistance ?? flags.minDistance ?? 4.0,
           farDistance: flags.farDistance ?? 15.0,
         });
@@ -292,7 +299,7 @@ export function createPageAudio(page) {
     if (areaList.length > 0) {
       const groups = new Map();
       for (const area of areaList) {
-        if (!area.file || !area.points || area.points.length === 0) continue;
+        if (!area.file || !area.points || area.points.length === 0 || !isBed(area)) continue;
         const key = area.file.toLowerCase();
         if (!groups.has(key)) groups.set(key, { file: area.file, areas: [] });
         groups.get(key).areas.push(area);
@@ -311,12 +318,11 @@ export function createPageAudio(page) {
         const sound = new THREE.PositionalAudio(pageAudio.audioListener);
         sound.setBuffer(buf);
         sound.setLoop(true);
-        sound.setRefDistance(first.nearDistance || 40.0);
-        // The manual .ssc near/far ramp in updateAudio owns distance volume
-        // exclusively; rolloff 0 disables the panner's own inverse-distance
-        // curve so the two attenuations don't multiply. setMaxDistance is not
-        // called — it only applies to the 'linear' distance model, so it was
-        // inert here anyway. HRTF panning is kept for direction.
+        // updateAudio owns distance volume exclusively -- DirectSound's
+        // minDistance / d and the script's ramp, both from `area-sound.js` --
+        // so the panner's own inverse-distance curve is off (rolloff 0) and
+        // the two attenuations never multiply. HRTF panning is kept for
+        // direction.
         sound.setRolloffFactor(0);
         anchor.add(sound);
 
@@ -474,60 +480,15 @@ export function createPageAudio(page) {
 
     if (pageAudio.activeAreaAudios.length === 0) return;
 
-    const camPos = page.camera.position;
+    // Each group's loudest emitter, measured from the camera the way the game
+    // measures it (`area-sound.js`): an AreaObject's voice at the nearest
+    // point of its closed outline in XZ, stopped beyond its trigger radius;
+    // every voice falling off as minDistance / d with the script's own
+    // distance ramp on top. `ear` is the camera's world point (SND-5).
     for (const item of pageAudio.activeAreaAudios) {
-      // Closest point to the camera across every polyline in the group; the
-      // area that produced it supplies the near/far ramp and base volume.
-      let bestArea = item.areas[0];
-      let bx = bestArea.points[0][0], by = bestArea.points[0][1], bz = bestArea.points[0][2];
-      let minD2 = Infinity;
-
-      for (const area of item.areas) {
-        const pts = area.points;
-        if (pts.length === 1) {
-          const dist2 = (camPos.x - pts[0][0]) ** 2 + (camPos.y - pts[0][1]) ** 2 + (camPos.z - pts[0][2]) ** 2;
-          if (dist2 < minD2) {
-            minD2 = dist2;
-            bx = pts[0][0]; by = pts[0][1]; bz = pts[0][2];
-            bestArea = area;
-          }
-          continue;
-        }
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const dx = p2[0] - p1[0];
-          const dy = p2[1] - p1[1];
-          const dz = p2[2] - p1[2];
-          const len2 = dx * dx + dy * dy + dz * dz;
-          let t = len2 > 0 ? ((camPos.x - p1[0]) * dx + (camPos.y - p1[1]) * dy + (camPos.z - p1[2]) * dz) / len2 : 0;
-          if (t < 0) t = 0;
-          else if (t > 1) t = 1;
-          const qx = p1[0] + t * dx;
-          const qy = p1[1] + t * dy;
-          const qz = p1[2] + t * dz;
-          const dist2 = (camPos.x - qx) ** 2 + (camPos.y - qy) ** 2 + (camPos.z - qz) ** 2;
-          if (dist2 < minD2) {
-            minD2 = dist2;
-            bx = qx; by = qy; bz = qz;
-            bestArea = area;
-          }
-        }
-      }
-
-      item.anchor.position.set(bx, by, bz);
-
-      const dist = Math.sqrt(minD2);
-      const near = bestArea.nearDistance || 40.0;
-      const far = bestArea.farDistance || 80.0;
-      let ramp = 0.0;
-      if (dist <= near) {
-        ramp = 1.0;
-      } else if (dist < far) {
-        const denom = Math.max(far - near, 0.001);
-        ramp = 1.0 - (dist - near) / denom;
-      }
-      item.sound.setVolume((bestArea.volume ?? 0.6) * ramp * master * pageAudio.ambientDuck);
+      const hit = loudestEmitter(item.areas, ear);
+      if (hit) item.anchor.position.set(hit.x, hit.y, hit.z);
+      item.sound.setVolume((hit ? hit.gain : 0) * master * pageAudio.ambientDuck);
     }
   }
 

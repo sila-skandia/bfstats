@@ -808,6 +808,7 @@ ObjectTemplate.loadSoundScript Coastline.ssc
 ObjectTemplate.triggerRadius 40
 ObjectTemplate.addLinePoint 10.0/-20.0
 ObjectTemplate.addLinePoint 30.0/-40.0
+ObjectTemplate.addLinePoint 50.0/-20.0
 """,
             "Sounds/Coastline.ssc": """
 #templateLevel HIGH
@@ -849,10 +850,52 @@ endEffect
         self.assertEqual(80.0, area.far_distance)
 
         # Refractor (100 + 10, 95, 200 - 20) = (110, 95, 180) -> glTF [110, 95, -180]
-        self.assertEqual(2, len(area.points))
+        self.assertEqual(3, len(area.points))
         self.assertEqual([110.0, 95.0, -180.0], area.points[0])
         # Refractor (100 + 30, 95, 200 - 40) = (130, 95, 160) -> glTF [130, 95, -160]
         self.assertEqual([130.0, 95.0, -160.0], area.points[1])
+        # What the engine reads off an AreaObject (features/ambient-sound-parity).
+        self.assertEqual("area", area.kind)
+        self.assertEqual(40.0, area.trigger_radius)
+        self.assertEqual(1.0, area.min_distance)
+        self.assertEqual([40.0, 80.0, 1.0, -1.0], area.distance_volume)
+        self.assertTrue(area.loop)
+
+    def test_an_area_object_ignores_the_instance_rotation(self) -> None:
+        # `AreaObject::handleFrameUpdate` (lnxded 0x08269f30) adds each line
+        # point to the object's x/z as authored; rotation is never applied.
+        files = MockLevelFiles({
+            "Sounds/a.con": """
+ObjectTemplate.create AreaObject a
+ObjectTemplate.loadSoundScript A.ssc
+ObjectTemplate.triggerRadius 20
+ObjectTemplate.addLinePoint 10.0/0.0
+ObjectTemplate.addLinePoint 0.0/10.0
+ObjectTemplate.addLinePoint -10.0/0.0
+""",
+            "Sounds/A.ssc": "newPatch\nload a.wav\nloop\nminDistance 5\n",
+        })
+        statics = [StaticInstance(template="a", position=(0.0, 7.0, 0.0),
+                                  rotation=(90.0, 0.0, 0.0))]
+        area = discover_level_sounds(files, statics).areas[0]
+        self.assertEqual([10.0, 7.0, 0.0], area.points[0])
+        self.assertEqual(5.0, area.min_distance)
+        self.assertIsNone(area.distance_volume)
+
+    def test_an_area_object_with_two_points_is_silent(self) -> None:
+        # The engine's loop needs three or more points (`2 < n`).
+        files = MockLevelFiles({
+            "Sounds/a.con": """
+ObjectTemplate.create AreaObject a
+ObjectTemplate.loadSoundScript A.ssc
+ObjectTemplate.addLinePoint 10.0/0.0
+ObjectTemplate.addLinePoint 0.0/10.0
+""",
+            "Sounds/A.ssc": "newPatch\nload a.wav\nloop\n",
+        })
+        statics = [StaticInstance(template="a", position=(0.0, 0.0, 0.0),
+                                  rotation=(0.0, 0.0, 0.0))]
+        self.assertEqual([], discover_level_sounds(files, statics).areas)
 
     def test_discover_level_sounds_singular_sound_folder(self) -> None:
         # Kasserine_Pass ships Sound/ (singular) instead of Sounds/, with a
@@ -873,6 +916,8 @@ ObjectTemplate.create AreaObject coast
 ObjectTemplate.loadSoundScript Coastline.ssc
 ObjectTemplate.triggerRadius 40
 ObjectTemplate.addLinePoint 10.0/-20.0
+ObjectTemplate.addLinePoint 30.0/-40.0
+ObjectTemplate.addLinePoint 50.0/-20.0
 """,
             "Sound/Coastline.ssc": """
 #templateLevel HIGH
