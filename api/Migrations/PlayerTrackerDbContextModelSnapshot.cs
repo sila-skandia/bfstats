@@ -542,6 +542,62 @@ namespace api.Migrations
                     b.ToTable("PlayerStatsMonthly");
                 });
 
+            modelBuilder.Entity("api.Data.Entities.PlayerTeamMapStats", b =>
+                {
+                    b.Property<string>("PlayerName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ServerGuid")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MapName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TeamLabel")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FirstSessionStart")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Losses")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Sessions")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TotalDeaths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TotalKills")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("TotalPlayTimeMinutes")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("TotalScore")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Wins")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("PlayerName", "Year", "Month", "ServerGuid", "MapName", "TeamLabel");
+
+                    b.HasIndex("Year", "Month");
+
+                    b.ToTable("PlayerTeamMapStats");
+                });
+
             modelBuilder.Entity("api.Data.Entities.PlayerWrappedCache", b =>
                 {
                     b.Property<string>("PlayerName")
