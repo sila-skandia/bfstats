@@ -68,7 +68,7 @@ export function snapshotRecord(room) {
     players.push({
       slot,
       alive: row.alive, seated: row.seated,
-      crouch: row.crouch, prone: row.prone,
+      crouch: row.crouch, prone: row.prone, swim: row.swim ?? null,
       inVehicle: row.inVehicle,
       team: row.team, x, y, z,
       // DEGREES on the wire, which is what the record says it carries

@@ -25,6 +25,8 @@ import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
+import { SWIM_CLIPS, switchFamily } from './swim.js';
+import { weaponNodeOf } from './soldier-dress.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -115,7 +117,10 @@ export function createRemoteRenderer(ctx) {
     }
     const lower = await gaitBundle(manifest.lower);
     const die = manifest.die ? await gaitBundle(manifest.die) : [];
-    return [...lower, ...upper, ...die];
+    // The swim states and the swim death, weapon-independent
+    // (`gaits/swim.gait.glb`, every clip under `animations/3P_NoWeapon/`).
+    const swim = manifest.swim ? await gaitBundle(manifest.swim) : [];
+    return [...lower, ...upper, ...die, ...swim];
   }
 
   function posePair(soldier, weapon) {
@@ -171,7 +176,8 @@ export function createRemoteRenderer(ctx) {
       }
       s.assets = assets;
       const scene = skeletonClone(assets.pair.scene);
-      s.rig = { scene, mixer: null, families: null };
+      s.rig = { scene, mixer: null, families: null,
+                weaponNode: weaponNodeOf(scene, assets.pair.weaponName ?? PLACEHOLDER_WEAPON) };
       buildGaitRig(s, scene, assets.pair.animations, assets.gaits);
       group.add(scene);
     });
@@ -217,6 +223,14 @@ export function createRemoteRenderer(ctx) {
     for (const [family, spec] of Object.entries(DIE_CLIPS)) {
       const lower = action(spec.lower, gaitClips, true);
       const upper = action(spec.upper, gaitClips, true);
+      if (lower && upper) families[family] = [lower, upper];
+    }
+    // The swim states (`swim.js` `SWIM_CLIPS`): the entry, the exit and the
+    // death play once and hold, the float and the two strokes loop.
+    for (const [family, spec] of Object.entries(SWIM_CLIPS)) {
+      const once = family === 'swimStart' || family === 'swimEnd' || family === 'swimDie';
+      const lower = action(spec.lower, gaitClips, once);
+      const upper = action(spec.upper, gaitClips, once);
       if (lower && upper) families[family] = [lower, upper];
     }
     s.rig.mixer = mixer;
@@ -427,17 +441,17 @@ export function createRemoteRenderer(ctx) {
       return;
     }
     if (was) {
+      // A man last seen swimming dies the swim death (`handleDamage` tests
+      // `c_AsmIsSwimming` before the pose, `0x08270c63`).
       const want = was.seated ? null : resolveDeathFamily(deathFamily({
+        swimming: !!was.swim,
         stance: was.prone ? 'prone' : was.crouch ? 'crouch' : 'stand',
       }), family => !!s.rig?.families?.[family]);
       if (want) {
+        const from = s.want;
         s.want = want;
-        for (const [family, actions] of Object.entries(s.rig.families)) {
-          for (const a of actions) {
-            a.setEffectiveWeight(family === want ? 1 : 0);
-            if (family === want) { a.paused = false; a.reset(); a.play(); }
-          }
-        }
+        switchFamily(s.rig.families, from, want);
+        if (s.rig.weaponNode) s.rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
         s.corpseLeft = corpseSeconds(s.assets?.soldierBody);
       }
     }
@@ -471,21 +485,18 @@ export function createRemoteRenderer(ctx) {
     if (!rig?.families) return;
     // Stance and speed decide the family; `remote-gait.js` owns both the
     // bands (the engine's own speed tables) and the fallback chain.
+    // In the water the snapshot's swim state wins (`netcode.js` `SWIM_WIRE`):
+    // the authority's `SwimState` already chose the stroke off his throttle.
     const want = remoteClipFamily(s.lastSpeed, state,
-                                  family => !!rig.families[family]);
+                                  family => !!rig.families[family],
+                                  state.swim ?? null);
     if (want !== s.want) {
+      const was = s.want;
       s.want = want;
-      for (const [family, actions] of Object.entries(rig.families)) {
-        for (const a of actions) {
-          a.setEffectiveWeight(family === want ? 1 : 0);
-          if (family === want) {
-            a.paused = false;
-            a.reset();
-            a.play();
-          }
-        }
-      }
+      switchFamily(rig.families, was, want);
     }
+    // `c_AsmHideWeapon`, which every lower swim state declares.
+    if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want];
     rig.mixer.update(dt);
   }
 

@@ -800,8 +800,102 @@ key in `poses/gaits/gaits.json` — is already in the shared tree and already on
 
 | Item | Where it stands |
 |---|---|
-| **Remote swimmers** | Still W6-G's. `netcode-render.js` and `remote-gait.js` are outside this stream's files and are untouched, so a remote swimmer is still drawn with his locomotion gait: the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`). This is the half of the owner's "they have a swimming animation" that is not yet delivered |
+| **Remote swimmers** | Still W6-G's. `netcode-render.js` and `remote-gait.js` are outside this stream's files and are untouched, so a remote swimmer is still drawn with his locomotion gait: the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`). This is the half of the owner's "they have a swimming animation" that is not yet delivered. **Delivered 2026-09-26** (§14-§16), with the bots |
 | **Seeing your own swim animation on foot** | Only under `?foot3p=1`, and that stays a marked departure: CAM-1 says the engine authorises one view mode for a soldier. Not widened here. **Withdrawn 2026-09-26**: the flag and the switch behind it are deleted, so a standing soldier has no external view at all; `features/viewer-foot-first-person` has the change and the live check |
 | **Messages 8, 9, 11, 12, 14..17, 22** | Named only as "inside the gated range". Their jump-table targets are read (`0x082779d0`, `0x082779dc`, `0x08277a09`, `0x08277ab0`, `0x08277add`, `0x08277b0a`, `0x08277b37`, `0x08277b75`) and all of them are past the gate, which is all this stream needed; the enum itself is unmapped |
 | **The swim speed ceiling** | Unchanged and still a viewer number — §8's first row stands |
 | **Sound** | Unchanged: the four `.ssc` scripts still ship and none is played |
+
+---
+
+# 2026-09-26: bots and remote players swim too
+
+The owner's report:
+
+> bots (and soldiers generally) that walk into water and swim do not play the
+> game's swim animation. In retail BF1942 a swimmer does a doggy-paddle-esque
+> stroke while moving through the water (and a tread/idle in place).
+
+W8-B and W9-B drew the swim states on the **local** body only. A bot's legs and
+torso are the engine's two half-body machines (`soldier-actions.js`,
+features/bot-body-animation), and nothing in that machine knew about water: a
+swimming bot's `SwimState` was running correctly under his soldier every tick,
+and his body walked (or stood) in the sea holding his rifle. A remote player was
+drawn with his locomotion gait for the reason §13 gives: the snapshot carried no
+swim state. Nothing needed extracting -- `gaits/swim.gait.glb` is on
+`mesh.bfstats.io` with all twelve clips (§5) -- so this is wiring only.
+
+## 14. The law, re-read
+
+`animations/AnimationStatesSwim.con`, read again out of vanilla `animations.rfa`
+for this change (with `3pAnimationsTweaking.con`'s `set3pAnimationSpeed
+Lb_StartSwim 2.60` over it):
+
+| state | clip (`animations/3P_NoWeapon/`) | speed | transitions | morph |
+|---|---|---|---|---|
+| `Lb/Ub_StartSwim` | `3PSwimStart{Lower,Upper}` | 2.6, once | `addTransitionWhenDone Lb/Ub_SwimForward` | 4.0 |
+| `Lb/Ub_Floating` | `3PSwimFloating{Lower,Upper}` | 0.4, loop | `c_PIThrottle 0.5 1` -> forward, `-1 -0.5` -> backward | 4.0 |
+| `Lb/Ub_SwimForward` | `3PSwimForward{Lower,Upper}` | 1.0, loop | holds on `0.5 1`, `returnToState Lb/Ub_Floating` | 4.0 |
+| `Lb/Ub_SwimBackward` | `3PSwimBackward{Lower,Upper}` | 1.0, loop | holds on `-1 -0.5`, `returnToState Lb/Ub_Floating` | 4.0 |
+| `Lb/Ub_EndSwim` | `3PSwimStart{Lower,Upper}` | -3.2, once | `addTransitionWhenDone Lb_Stand` / `Ub_Stand` | 4.0 / **1.0** |
+
+So the stroke is `3PSwimForward` (the doggy-paddle, one cycle a second), the
+tread is `3PSwimFloating` (one cycle every 2.5 s), and the selection is the
+**throttle input**, not the speed: anything inside +-0.5 treads water. Both
+machines are set by name out of `BFSoldier::updateSwimming` (lnxded
+`0x08282190`: `setAnimationState(0, "Lb_StartSwim")` at `0x082823f7`,
+`(1, "Ub_StartSwim")` at `0x08282426`, `Lb_EndSwim` / `Ub_EndSwim` off
+`0x086d2988` / `0x086d2993`). The blend between states is the engine's morph
+(ledger ANIM-4: weight from 0, `+dt x morph` a tick, slerp from the bones as they
+stand), so every swim state is fully in a quarter of a second after it is
+entered, and the exit's torso takes a whole second.
+
+`swim.js` `SwimState` already ran exactly that machine for every soldier (the
+bots' included -- `Soldier` injects it into every body, and `walking-body.js`
+passes the raw forward axis as `c_PIThrottle`). The fix is to make every
+renderer follow it.
+
+## 15. What changed
+
+| file | what |
+|---|---|
+| `viewer/soldier-actions.js` | `followSwim(pair)`: `update({ swim })` takes `SwimState.clips()` and holds both halves in the named swim state, entered with its own morph; the swim states added to `VANILLA_STATES` (speed, loop, morph 4.0 / `Ub_EndSwim` 1.0, `then`). While swimming a stance change starts no chain and `fire()` / `reload()` do nothing (`c_AsmHideWeapon`); leaving drops both halves to the base, which is `Lb_EndSwim`'s `Lb_Stand` |
+| `viewer/bot-visuals.js` | each frame reads the bot's soldier's swim pair and hands it to the half-body rig (the still rig gets the swim families as whole-body pairs); hides the welded weapon while swimming; a bot killed in the water plays `swimDie` -- before this `hasDeath('swimDie')` was always false and a bot that died swimming left no corpse |
+| `viewer/swim.js` | `SWIM_MORPH`, `STAND_MORPH`, `swimFamilyOfPair`, `swimMorphSeconds`, and `switchFamily` -- the whole-body rigs' family switch, which into or out of the water is the morph done as a cross-fade over `1 / morph` per half, and elsewhere the cut it always was |
+| `viewer/foot-body.js` | the local body switches through `switchFamily` (the local swim selection itself was already right) |
+| `viewer/netcode.js` | the swim family in the player record's three spare flag bits (`SWIM_WIRE`, `swimWireCode`): no new bytes, and a record from an older build decodes as dry |
+| `viewer/world-snapshot.js`, `server/room-stream.mjs`, `viewer/netcode-client.js` | the authority's `SwimState.family` into the row, onto the wire, and through the client's lerp |
+| `viewer/remote-gait.js` | `remoteClipFamily(speed, state, bound, swim)`: the snapshot's swim state outranks the speed bands, falling back to the tread, then to the gait |
+| `viewer/netcode-render.js` | loads `swim.gait.glb`, binds the six swim families, plays them through `switchFamily`, hides the placeholder weapon while swimming, and a remote last seen swimming dies `swimDie` |
+
+**Why the remote gets the state and not the throttle.** The swim stroke is a
+throttle band, and this room's snapshot carries no remote's input. The authority
+has already run `SwimState` with the real throttle, so its answer is what goes:
+three bits, not a new field.
+
+## 16. Verified
+
+`tests/test_swim_clips.py` (+ `swim_clips_harness.mjs`), 12 tests: a soldier
+walks into 0.93 m of water and out again under `SwimState` feeding
+`SoldierActions`, and both halves enter `Lb/Ub_StartSwim` -> (0.4 s at 30 Hz,
+`1/2.6`) `SwimForward` -> `Floating` on release -> `SwimBackward` at throttle -1
+-> `Floating` at 0.4 (inside the band) -> `EndSwim` -> (`1/3.2` s) the gait,
+each entered at morph 4.0 but `Ub_EndSwim`'s 1.0; a round, a reload and a stance
+change while swimming leave that log byte-identical; a tree with no swim bundle
+stays on the gait; the cross-fade timings and the switch's fades; the remote
+selection and its fallbacks; and every swim state round-trips the snapshot with
+the other flag bits intact and the record size unchanged. The existing
+`test_soldier_actions`, `test_remote_gait`, `test_swim`, `test_swim_assets`,
+`test_netcode_client`, `test_netcode_reconcile`, `test_soldier_body`,
+`test_room`, `test_world` and `test_bot_ai` pass unchanged.
+
+Not run: a headless render on a live level (no local model tree in this
+session).
+
+## 17. Still open
+
+| Item | Where it stands |
+|---|---|
+| **A swimming bot can still shoot** | The body now shows empty hands, but the bot referee's fire path does not consult `Soldier.itemsLocked`, so a swimming bot's rounds still fly. The engine's `handleMessage` gate (§9) applies to him as to the player |
+| **Replays** | `replay-gait.js` selects from recorded speed and heading only; a server-log recording carries no swim bit and the replay renderer does not test the map's water level. A recorded swimmer still walks |
+| **Sound** | Unchanged: `c_SstToSwim` / `c_SstSwim` / `c_SstSwimStand` / `c_SstFromSwim` are still not played |
