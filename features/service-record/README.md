@@ -38,7 +38,9 @@ PlayerSessions (map, CurrentTeamLabel)  --join-->  Servers.GameId (the mod)
 dossier(gameId, map).teams[Axis -> 1, Allied -> 2]  ->  { nation, label, skin, kits }
 ```
 
-- A record covers the player's **most recent 1,000 sessions**; see "The window".
+- A record covers the player's **whole career**, read from `PlayerTeamMapStats`;
+  see "Whole career". Until that table's first backfill completes it covers
+  their most recent 1,000 sessions.
 - Only `Servers.Game = 'bf1942'` sessions count; FH2 and BFV are other games.
 - `Axis` is team 1 and `Allied`/`Allies` team 2 — Refractor's convention, and
   what every dossier assumes. Numeric or empty labels are unattributed.
@@ -131,7 +133,7 @@ Thumbnails are the mesh site's own browse renders (`thumbs/{slug}.png`, slug as
 across the search path's trees. A vehicle with neither keeps the in-game HUD
 icon.
 
-## The window
+## Whole career
 
 A session costs a random read for its row and another for its round, and the
 production volume answers about 700 of those a second (`deploy/NODE_TUNING.md`).
@@ -144,17 +146,83 @@ Measured on a 25 GB copy of the database (2.68M sessions, 61k players):
 | 2,000+ | 123 |
 | 4,000+ | 16 (the busiest: 9,408) |
 
-The busiest player's whole career took 1.26 s cold on local NVMe, which is tens of
-seconds on the production volume. So the query walks
-`IX_PlayerSessions_PlayerName_LastSeenTime` newest first and stops at 1,000: every
-player's whole history bar ~500, and a second or two cold for those, whose
-record says "last 1,000 rounds" (`window.capped`). The record is held in Redis
-for an hour and at the edge for ten minutes.
+The busiest player's whole career took 1.26 s cold on local NVMe, which is tens
+of seconds on the production volume, so the record is summed from a monthly
+aggregate instead:
 
-Lifting the window means a monthly aggregate by (player, server, map, team),
-built by the hourly aggregate loop like `PlayerMapStats` — and, like it, carried
-through the backfill, player deletion and server merge paths. That is a schema
-change on the production database and deserves its own change.
+```
+PlayerTeamMapStats (PlayerName, Year, Month, ServerGuid, MapName, TeamLabel)
+  -> Sessions, TotalKills, TotalDeaths, TotalScore, TotalPlayTimeMinutes,
+     Wins, Losses, FirstSessionStart
+```
+
+A record reads the player's own range of the primary key and groups it by
+(gameId, map, label) — the rows the live query returns, from a few dozen pages
+however long they have played. The sums are the same SQL (`ServiceRecordSql`),
+so the two cannot count differently.
+
+**Bucketed by the month a session was last seen,** not the month it started
+(`PlayerMapStats` uses the start). A month is then one range of
+`IX_PlayerSessions_LastSeenTime_WhereNotDeleted`, about a second on the copy,
+where a start-time month cannot use an index. A session still being played moves
+forward with its `LastSeenTime`, into the next month at midnight on the 1st; the
+refresh rewrites both months then.
+
+**The hourly refresh** runs at the end of `AggregateCalculationService`'s cycle,
+under its lock, and rewrites the rows of:
+
+- everyone seen since the last refresh (less 30 minutes: the tracker stamps a
+  session before it commits it), in every month from then to now;
+- everyone in a round that has finished since, in the month of that session.
+  A round only closes when its server is next seen on another map, which
+  settles the win or loss of players who left before the end. In August 2026,
+  499 of 133,769 decided sessions (0.37%) closed more than 2 hours after the
+  player's last observation, and 221 a day or more later: servers that went dark
+  mid-round. They are found from the servers seen since, down
+  `IX_Rounds_ServerGuid_EndTime`.
+
+**History is backfilled three months a cycle,** newest first, after the first run
+builds the current month. Progress is the `app_data` row
+`aggregate:player-team-map-stats` (`RefreshedThrough`, `OldestMonth`,
+`Complete`), so a restart resumes. The record keeps to the 1,000-session window,
+with its "last 1,000 rounds" label, until `Complete`: a partial career would be
+worse than a labelled one. The copy's sessions start in June 2025: sixteen
+months, five cycles counting the first run, so complete about four hours after
+the first cycle following a deploy.
+
+**Rebuilt per player** wherever the other aggregates are:
+`AggregateBackfillBackgroundService.RunForPlayersAsync` (round delete and
+undelete, server merge) calls `RecomputePlayersAsync`, and a server merge deletes
+the merged servers' rows first.
+
+**Writes** follow the WriteLockNote in `AggregateCalculationService.cs`: every
+scan runs outside a transaction. A month the record does not read yet (the first
+run, the backfill) is committed 2,000 rows at a time; a live month swaps each
+player's rows in one transaction.
+
+On the copy, on local NVMe:
+
+| | |
+|---|---|
+| Migration | 1.1 s |
+| Full build, 16 months | 5 cycles of 9–12 s, 1,511,124 rows |
+| An hour of the tracker | 130 players seen and 178 player-months in finished rounds (July and August among them): 3,912 rows over three month scans, 2.2 s |
+| Size | 215 MB table, 131 MB primary key, 21.5 MB `(Year, Month)` index; `PlayerMapStats` is 230 MB |
+| Agreement | 561 players (the 25 busiest, 300 at random, everyone that hour rewrote, their rows corrupted first): identical to the uncapped live query |
+| Reads, those 561 | 209 ms in all, against 2,939 ms live |
+
+The production cost of a month scan is not measured; the refresh's span in Seq
+is `AggregateCalculation.PlayerTeamMapStats`, and the cycle's log line carries
+`team=` rows. A scan holds its month in memory while it writes, about 95k rows
+(~40 MB) at most, against the API's 3 Gi limit.
+
+**Query plans.** Production has `sqlite_stat1` (`deploy/NODE_TUNING.md`) and it
+changes plans: with it, "players seen since" skip-scans
+`IX_PlayerSessions_PlayerName_LastSeenTime` for its `DISTINCT` (1.3 s against
+1 ms for the range, on the copy), so that query is pinned with `INDEXED BY`, and
+the rounds query fixes its join order with `CROSS JOIN`. The tests explain every
+scan under production's statistics (`UseProductionStatisticsAsync`), since an
+empty database plans from heuristics.
 
 ## Contract
 
@@ -198,9 +266,13 @@ change on the production database and deserves its own change.
     }
   ],
   "unattributed": { "minutes": 0, "rounds": 0 },
-  "window": { "sessions": 1000, "capped": true, "since": "2026-08-02T19:41:07.123Z" }
+  "window": { "sessions": 11874, "capped": false, "since": "2025-06-03T19:41:07.123Z" }
 }
 ```
+
+`window` is what the record counted: every session and the first one's start
+once the aggregate is complete; during its backfill, up to 1,000 sessions with
+`capped` set when older ones were left out.
 
 `GET /stats/armoury/maps/{gameId}/{mapName}` — the two armies of one map, for
 the round report: `{ "mod", "map", "displayName", "teams": [ { "index", "side",
@@ -228,6 +300,7 @@ mesh.bfstats.io.
 |---|---|
 | Army catalogue, mesh index, map armies endpoint | `api/Armoury/` |
 | Aggregation + endpoint | `api/ServiceRecord/` |
+| Whole-career aggregate | `PlayerTeamMapStats` (`api/Data/Entities/`), built by `TeamMapStatsAggregator` |
 | 3D stage (lazy three.js chunk) | `ui/src/components/v4/armoury/stage.ts`, wrapped by `MmArmouryStage.vue` |
 | Panels | `MmServiceRecord.vue` (profile), `MmFaceoffBand.vue` with `MmRoundArmies.vue` and `MmPlayerFaceoff.vue` |
 | Tests | `tests/api/Armoury/`, `tests/api/ServiceRecord/`, `ui/e2e/service-record.spec.ts` |

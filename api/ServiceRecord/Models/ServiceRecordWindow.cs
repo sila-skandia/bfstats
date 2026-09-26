@@ -1,8 +1,8 @@
 namespace api.ServiceRecord.Models;
 
 /// <summary>
-/// Which sessions a record covers: the player's most recent, up to
-/// <see cref="ServiceRecordStore.SessionWindow"/>.
+/// Which sessions a record covers: the whole career once PlayerTeamMapStats is complete,
+/// until then the player's most recent, up to <see cref="ServiceRecordStore.SessionWindow"/>.
 /// </summary>
 /// <param name="Sessions">Sessions counted.</param>
 /// <param name="Capped">True when older sessions were left out.</param>
