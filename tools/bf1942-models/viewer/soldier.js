@@ -829,7 +829,9 @@ export class Soldier {
     facing.x = sy; facing.y = 0; facing.z = cy;
     this.chute.update({
       dt,
+      velocityX: this.body.body.velocity.x,
       velocityY: this.body.body.velocity.y,
+      velocityZ: this.body.body.velocity.z,
       height: Number.isFinite(ground) ? this.y - ground : null,
       // In the sea is down, too: a swimmer is never `grounded`, and without
       // this a man who fell into the water stayed in free fall -- and in its
