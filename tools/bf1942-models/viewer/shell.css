@@ -1,8 +1,8 @@
-/* Shared chrome for the three viewers: models (index.html), maps (map.html)
-   and poses (poses.html). Each page keeps its own layout; this file owns only
-   the bar across the top, so switching feature never looks like landing on a
-   different site. Colours and type come from tokens.css, which every page
-   links first.
+/* Shared chrome for the viewers: models (index.html), maps (map.html), poses
+   (poses.html) and kits (kits.html). Each page keeps its own layout; this file
+   owns only the bar across the top, so switching feature never looks like
+   landing on a different site. Colours and type come from tokens.css, which
+   every page links first.
 
    Every page reserves --nav-h as its first grid row, so the bar takes space
    rather than floating over the canvas. That matters for the two pages whose
@@ -91,6 +91,10 @@
   background: var(--mm-highlight);
   font-weight: 600;
 }
+/* The map page is play.bfstats.io's. On mesh.bfstats.io the pages' <head>
+   sets `shell-no-maps` and the bar is Models, Poses and Kits; everywhere else
+   (localhost, the play host) Maps stays. */
+:root.shell-no-maps .shell-tab-maps { display: none; }
 
 /* What the current page is for, so the tab label can stay one word. */
 .shell-sub {
