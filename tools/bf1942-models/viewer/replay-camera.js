@@ -56,8 +56,6 @@ const FREE_FAST = 4;             // x with Shift
 const FOOT_LENS = { fov: 57.3, near: 0.2 };
 const SEAT_LENS = { fov: 60, near: 0.1 };
 
-/** The soldier pose glb's half turn, as replay-bodies.js reads a heading. */
-const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 /** The recorded aim pitch is 0.4 of the aim (capture README section 16). */
 const AIM_PITCH_SCALE = 2.5 * Math.PI / 180;
 
@@ -283,7 +281,6 @@ export class ReplayCamera {
     if (life.soldier) {
       const dead = life.diedAt !== undefined && t >= life.diedAt;
       const rig = dead ? BODY : SOLDIER;
-      _q.multiply(SOLDIER_YAW_FLIP);
       point.y += rig.lift;
       return { life, kind: dead ? 'body' : 'soldier', point, base: rig.base, minPitch: PITCH_MIN, heading: headingOf(_q) };
     }
@@ -430,9 +427,12 @@ export class ReplayCamera {
       if (!s) return false;
       toViewPosition(s.a.p, cam.position);
       if (s.b) cam.position.lerp(toViewPosition(s.b.p, _v), s.k);
+      // His recorded rotation looks where he does, as a hull's does (its -Z
+      // is his forward; `targetAt` reads it the same way). The pose glb's
+      // half turn (replay-bodies.js `SOLDIER_YAW_FLIP`) is the body model's,
+      // never the view's: with it, this looked out of the back of his head.
       toViewQuaternion(s.a.q, _q);
       if (s.b) _q.slerp(toViewQuaternion(s.b.q, _q2), s.k);
-      _q.multiply(SOLDIER_YAW_FLIP);
       _e.setFromQuaternion(_q, 'YXZ');
       const body = bodyAt(player.rec, life.nid, t);
       const pose = body?.stance === 'prone' ? POSE_PRONE : body?.stance === 'crouch' ? POSE_CROUCH : POSE_STAND;

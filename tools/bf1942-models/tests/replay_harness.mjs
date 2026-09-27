@@ -215,10 +215,11 @@ const read = scene => {
   plane.groundHeight = () => 0;
   const blade = () => wrapper.children[0].visible;
   const disc = () => wrapper.children[1].visible;
-  // Parked, nobody aboard: idle blade.
+  // Parked, nobody aboard, the engine off: idle blade, standing still.
   plane.state.position.set(0, 1.2, 0);
-  plane.presentKinematic(0.1, 0);
-  const parked = { blade: blade(), disc: disc(), gear: plane.input('c_PILandingGear') };
+  for (let i = 0; i < 10; i++) plane.presentKinematic(0.1, 0, false);
+  const parked = { blade: blade(), disc: disc(), gear: plane.input('c_PILandingGear'),
+                   turned: plane.state.propellerAngle };
   // In flight under power: the spooled throttle crosses the 0.07 swap, the
   // propeller has turned, and 300 m up the gear is away.
   const angleBefore = plane.state.propellerAngle;
@@ -230,6 +231,71 @@ const read = scene => {
               throttle: plane.state.throttle, turned: plane.state.propellerAngle - angleBefore,
               wrapperTurned: 1 - Math.abs(wrapper.quaternion.w) > 1e-4 },
     placed: { x: root.position.x, y: root.position.y },
+  };
+}
+
+// --- a parked plane's propeller is still until its engine starts --------------
+//
+// The 2026-09-27 report: on Midway the parked planes' propellers turned over
+// slowly. Every replayed plane is presented each frame, crewed or not, and the
+// propeller's idle floor (2 rev/s) is a started engine's. A Corsair stands on
+// the ground for ten seconds; the recorder's `g` lines have its engine off
+// for five, then running at zero revs (a pilot aboard on the deck). Without
+// `g` lines at all (a v3 file) nobody holds its root seat, so it stays still.
+// Out of range from 3 s with its engine last seen running, it is not being
+// updated: met there after a seek, it holds still too.
+{
+  const { ReplayHull } = await imp('replay-hulls.js');
+  const line = o => JSON.stringify(o);
+  const corsair = () => {
+    const root = new THREE.Group();
+    root.name = 'Corsair';
+    root.userData = { templateKind: 'PlayerControlObject', control: 'Corsair' };
+    const engine = new THREE.Object3D();
+    engine.name = 'CorsairEngine';
+    engine.userData = {
+      templateKind: 'Engine', control: 'Corsair', physics: { engineType: 'c_ETPlane' },
+      rig: { control: 'Corsair', axes: { roll: { input: 'c_PIThrottle', driver: 'rate', min: -3000, max: 5000, maxSpeed: 500 } } },
+      spinsChildren: ['lodCorsairPropeller'],
+    };
+    const blade = new THREE.Object3D();
+    blade.name = 'lodCorsairPropeller';
+    engine.add(blade);
+    root.add(engine);
+    const scene = new THREE.Group();
+    scene.add(root);
+    return { scene, blade };
+  };
+  // An engine record, `[root, revs, throttle servo, flags, gear, engine]`:
+  // flags 1 running.
+  const g = (t, flags, revs = 0) => line({ k: 'g', t, o: [[792, revs, 0, flags, 1, 296]] });
+  const text = extra => [
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 0.5, e: 'createObject', tid: 2100, netId: 792, tmpl: 'Corsair', pos: [300, 2, 400], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 0.5, id: 792, gid: 1, tmpl: 'Corsair', tid: 2100, team: 2, maxhp: 100, crit: 20 }),
+    ...Array.from({ length: 101 }, (_, i) => line({ k: 's', t: +(0.5 + i * 0.1).toFixed(1), o: [[792, 300, 2, 400, 0, 0, 0, 1]] })),
+    ...extra,
+    line({ k: 'end', t: 11 }),
+  ].join('\n');
+  const watch = (extra, from = 0.5) => {
+    const rec = recording.parseRecording(text(extra));
+    const { scene, blade } = corsair();
+    const ctx = { scene: new THREE.Scene(), vehicleClasses: { Aircraft }, groundHeight: () => 0 };
+    const hull = new ReplayHull({ ctx, rec, showGhosts: true }, rec.lives.find(l => l.nid === 792), scene, null);
+    const angles = [];
+    for (let i = Math.round((from - 0.5) * 10); i <= 100; i++) {
+      const t = +(0.5 + i * 0.1).toFixed(1);
+      hull.update(t, 0.1);
+      if ([1, 4.5, 8, 10].includes(t)) {
+        angles.push({ t, angle: +hull.drive.state.propellerAngle.toFixed(1), rate: Math.round(hull.drive.state.propRpm) });
+      }
+    }
+    return { kind: hull.kind, angles, bladeTurned: 1 - Math.abs(blade.quaternion.w) > 1e-4 };
+  };
+  results.parkedPropeller = {
+    recorded: watch([g(0.5, 0), g(5, 1)]),
+    unrecorded: watch([]),
+    outOfRange: watch([g(0.5, 1, 0.5), line({ k: 'd', t: 3, id: 792 })], 8),
   };
 }
 
@@ -602,15 +668,16 @@ const read = scene => {
   results.uxFeed = { opened, forward, noWash, washed, rebuilt: calls.splice(0), rebuiltTicks: +ticked.toFixed(2) };
 
   // The camera's three modes, on the recording player standing at (10, 0,
-  // 20) facing the way his identity rotation points (sampled at his origin, a
-  // metre up, as the recorder writes a soldier).
+  // 20) facing the way his identity rotation points, BF1942's +Z and the
+  // viewer's -Z (sampled at his origin, a metre up, as the recorder writes a
+  // soldier).
   const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
   const watcher = { rec, followPid: 0, time: 5, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
   const camera = new ReplayCamera(watcher);
   watcher.camera = camera;
   const target = new THREE.Vector3(10, 1.2, -20);
   for (let i = 0; i < 30; i++) camera.update(1 / 60, 5);
-  const orbit = { distance: +cam.position.distanceTo(target).toFixed(2), behind: cam.position.z < target.z };
+  const orbit = { distance: +cam.position.distanceTo(target).toFixed(2), behind: cam.position.z > target.z };
   camera.keys.add('KeyW');
   for (let i = 0; i < 60; i++) camera.update(1 / 60, 5);
   camera.keys.clear();
@@ -640,6 +707,49 @@ const read = scene => {
   camera.setMode('pov');
   camera.update(1 / 60, 25);
   results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, deadPov: camera.hidePid };
+}
+
+// --- the camera looks where a soldier looks ---------------------------------
+//
+// The 2026-09-27 report: first person on foot looked out of the back of his
+// head. A soldier's recorded rotation is a hull's, BF1942's +Z forward (95% of
+// Midway's running samples move along it); the pose glb's half turn is the
+// body model's, and the camera had it too. He runs along BF1942's +X facing
+// it, a quarter turn about +Y: first person looks along his run, and the
+// orbit starts behind him, as R ("Behind") puts it back.
+{
+  const { ReplayCamera } = await imp('replay-camera.js');
+  const line = o => JSON.stringify(o);
+  const q = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 3, start: '', hz: 10 }),
+    line({ k: 'e', t: 0.5, e: 'createPlayer', pid: 0, name: 'rec', team: 2, ai: 0 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 100, netId: 600, tmpl: 'USMarineSoldier', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'control', pid: 0, netId: 600 }),
+    line({ k: 'o', t: 1, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2, maxhp: 30 }),
+    ...Array.from({ length: 41 }, (_, i) => line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[600, +(i * 0.5).toFixed(2), 1, 0, ...q]] })),
+    line({ k: 'end', t: 10 }),
+  ].join('\n'));
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const watcher = { rec, followPid: 0, time: 3, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
+  const camera = new ReplayCamera(watcher);
+  watcher.camera = camera;
+  // Where the camera stands from him, on the ground, as a unit [x, z].
+  const from = () => {
+    const d = cam.position.clone().sub(new THREE.Vector3(10, 0, 0));
+    const n = Math.hypot(d.x, d.z);
+    return [+(d.x / n).toFixed(2) + 0, +(d.z / n).toFixed(2) + 0];
+  };
+  for (let i = 0; i < 30; i++) camera.update(1 / 60, 3);
+  const orbit = from();
+  camera.setMode('pov');
+  camera.update(1 / 60, 3);
+  const pov = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).toArray().map(v => +v.toFixed(2) + 0);
+  camera.setMode('orbit');
+  camera.yaw += 2;
+  camera.resetOrbit();
+  for (let i = 0; i < 120; i++) camera.update(1 / 60, 3);
+  results.soldierView = { orbit, pov, reset: from() };
 }
 
 // --- the camera a replayed body is culled against ----------------------------

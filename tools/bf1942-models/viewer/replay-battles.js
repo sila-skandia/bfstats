@@ -86,9 +86,10 @@ function sideOf(rec, life, t) {
 }
 
 /** The forward direction on the ground of a recorded life at `t`, in the
- *  viewer's frame, as `[x, z]` (unit), or null. A vehicle's forward is its
- *  -Z in the viewer's frame, a soldier's +Z (his pose's half turn,
- *  replay-actors.js `SOLDIER_YAW_FLIP`). */
+ *  viewer's frame, as `[x, z]` (unit), or null: its -Z in the viewer's
+ *  frame, a soldier's as a vehicle's. The half turn a soldier's pose glb
+ *  carries (replay-actors.js `SOLDIER_YAW_FLIP`) is the model's, not the
+ *  recording's. */
 export function headingAt(life, t) {
   const s = sampleAt(life, t);
   if (!s) return null;
@@ -104,10 +105,9 @@ export function headingAt(life, t) {
     x += (sign * bq[0] - x) * s.k; y += (sign * bq[1] - y) * s.k;
     z += (sign * bq[2] - z) * s.k; w += (sign * bq[3] - w) * s.k;
   }
-  const f = life.soldier ? 1 : -1;
-  // q applied to (0, 0, f): the third column of its rotation matrix, times f.
-  const fx = f * 2 * (x * z + w * y);
-  const fz = f * (1 - 2 * (x * x + y * y));
+  // q applied to (0, 0, -1): the third column of its rotation matrix, negated.
+  const fx = -2 * (x * z + w * y);
+  const fz = -(1 - 2 * (x * x + y * y));
   const n = Math.hypot(fx, fz);
   return n > 1e-6 ? [fx / n, fz / n] : null;
 }

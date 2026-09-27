@@ -243,6 +243,7 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
       B.headingAt({ soldier: true, keys: [{ t: 0, p: [0, 0, 0], q: [0, 0, 0, 1] }] }, 0).map(v => +v.toFixed(3)),
       // A quarter turn about +Y (BF1942's frame).
       B.headingAt({ soldier: false, keys: [{ t: 0, p: [0, 0, 0], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2] }] }, 0).map(v => +v.toFixed(3)),
+      B.headingAt({ soldier: true, keys: [{ t: 0, p: [0, 0, 0], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2] }] }, 0).map(v => +v.toFixed(3)),
     ],
   };
 }

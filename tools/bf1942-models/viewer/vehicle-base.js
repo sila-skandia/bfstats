@@ -700,17 +700,22 @@ export class Vehicle {
    * The Engine template's roll axis spans -3000..5000 with `setMaxSpeed 500`,
    * which the assembler's `browse_rig` already classifies as a `rate` driver:
    * throttle sets how fast the drivetrain turns, not where it stops.
+   *
+   * `running` false is an engine nobody has started: the idle floor goes and
+   * the blades wind down to rest.
    */
-  advancePropeller(dt) {
+  advancePropeller(dt, running = true) {
     // An idling engine turns its propeller. Retail: board a plane and the
     // blades are already turning over slowly long before any throttle — the
     // "idle" state the blur swap sits at the far end of. The idled rate chases
     // its target with inertia, so the boarding spin-up reads as an
     // acceleration rather than the previous hard cut (rate was exactly zero
     // at rest throttle, then the spooling throttle's disc arrived within
-    // spool*0.07 = 0.7 s of W).
-    const target = PROP_IDLE_RATE
-      + this.state.throttle * (PROP_FULL_RATE - PROP_IDLE_RATE);
+    // spool*0.07 = 0.7 s of W). A parked plane's propeller is still in the
+    // game (level-load.js leaves its `spin` clip unplayed), and a replay
+    // presents every plane each frame, crewed or not.
+    const idle = running ? PROP_IDLE_RATE : 0;
+    const target = idle + this.state.throttle * (PROP_FULL_RATE - idle);
     const gap = target - this.state.propRpm;
     const tau = gap > 0 ? PROP_SPOOL_UP : PROP_SPOOL_DOWN;
     this.state.propRpm += gap * Math.min(1, dt / tau);
@@ -770,11 +775,12 @@ export class Vehicle {
    * `integrate` runs after its physics (the throttle spool toward `throttle`,
    * the propeller, the surface servos, the transform and the rig) and no
    * physics at all. The subclasses add their own presentation: an aircraft's
-   * gear, a ground vehicle's wheels.
+   * gear, a ground vehicle's wheels. `running` is whether its engine runs
+   * (`advancePropeller`).
    */
-  presentKinematic(dt, throttle = 0) {
+  presentKinematic(dt, throttle = 0, running = true) {
     this.spoolThrottle(dt, throttle);
-    this.advancePropeller(dt);
+    this.advancePropeller(dt, running);
     this.advanceSurfaces(dt);
     this.applyTransform();
     this.applyRig();

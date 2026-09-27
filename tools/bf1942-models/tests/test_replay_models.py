@@ -97,11 +97,12 @@ class ReplayPropellerTests(unittest.TestCase):
 
 
     def test_a_replayed_aircraft_runs_the_flown_propeller_law(self) -> None:
-        # Parked with nobody aboard: the idle blade, gear down. Under power
-        # 300 m up: the disc past the 0.07 swap, the propeller turned, the gear
-        # away -- the flight model's own presentation of a recorded pose.
+        # Parked with nobody aboard and the engine off: the idle blade, still,
+        # gear down. Under power 300 m up: the disc past the 0.07 swap, the
+        # propeller turned, the gear away -- the flight model's own
+        # presentation of a recorded pose.
         flown = self.results["flownPropeller"]
-        self.assertEqual(flown["parked"], {"blade": True, "disc": False, "gear": 0})
+        self.assertEqual(flown["parked"], {"blade": True, "disc": False, "gear": 0, "turned": 0})
         self.assertFalse(flown["flying"]["blade"])
         self.assertTrue(flown["flying"]["disc"])
         self.assertEqual(flown["flying"]["gear"], 1)
@@ -109,6 +110,28 @@ class ReplayPropellerTests(unittest.TestCase):
         self.assertGreater(flown["flying"]["turned"], 0)
         self.assertTrue(flown["flying"]["wrapperTurned"])
         self.assertEqual(flown["placed"], {"x": 0, "y": 300})
+
+    def test_a_parked_propeller_is_still_until_its_engine_starts(self) -> None:
+        # The 2026-09-27 report: Midway's parked planes turned their propellers
+        # over slowly. The recorded engine is off for five seconds, then runs
+        # at zero revs: still, then the 2 rev/s idle (720 degrees a second).
+        recorded = self.results["parkedPropeller"]["recorded"]
+        self.assertEqual(recorded["kind"], "air")
+        off = [a for a in recorded["angles"] if a["t"] < 5]
+        on = [a for a in recorded["angles"] if a["t"] > 5]
+        self.assertEqual([(a["angle"], a["rate"]) for a in off], [(0, 0), (0, 0)])
+        self.assertAlmostEqual(on[-1]["rate"], 720, delta=5)
+        self.assertGreater(on[-1]["angle"], on[0]["angle"])
+        self.assertTrue(recorded["bladeTurned"])
+        # No engine records and nobody in the root seat: still throughout.
+        unrecorded = self.results["parkedPropeller"]["unrecorded"]
+        self.assertEqual({(a["angle"], a["rate"]) for a in unrecorded["angles"]}, {(0, 0)})
+        self.assertFalse(unrecorded["bladeTurned"])
+        # Out of range with its engine last seen running at half revs: not
+        # being updated, so met there after a seek it holds still.
+        ghost = self.results["parkedPropeller"]["outOfRange"]
+        self.assertEqual({(a["angle"], a["rate"]) for a in ghost["angles"]}, {(0, 0)})
+        self.assertFalse(ghost["bladeTurned"])
 
 
 class ReplayRecordingTests(unittest.TestCase):
@@ -352,7 +375,7 @@ class ReplayUxTests(unittest.TestCase):
         # his own body hidden.
         pov = cam["pov"]
         self.assertEqual(pov["eye"], [10, 1.65, -20])
-        self.assertEqual(pov["look"], [0, 0, 1])
+        self.assertEqual(pov["look"], [0, 0, -1])
         self.assertEqual((pov["fov"], pov["near"], pov["hides"]), (57.3, 0.2, 0))
         # Free: W flies along the view at 30 m/s, with the page's own lens.
         self.assertEqual(cam["free"], {"moved": 30, "along": 1, "fov": 60})
@@ -372,6 +395,15 @@ class ReplayUxTests(unittest.TestCase):
         # And the page's free camera leaves a replay's camera alone.
         self.assertEqual(cull["underReplay"], [])
         self.assertEqual(cull["withoutReplay"], ["fly", "look"])
+
+    def test_the_camera_looks_where_a_soldier_looks(self) -> None:
+        # The 2026-09-27 report: first person on foot looked out of the back
+        # of his head. He runs along +X facing it: first person looks along
+        # his run, the orbit starts behind him, and R puts it back there.
+        view = self.results["soldierView"]
+        self.assertEqual(view["pov"], [1, 0, 0])
+        self.assertEqual(view["orbit"], [-1, 0])
+        self.assertEqual(view["reset"], [-1, 0])
 
 
 class ReplaySoldierFeetTests(unittest.TestCase):

@@ -283,7 +283,7 @@ export class GroundVehicle extends Vehicle {
    * recorded says how far a spring is compressed; the steering bundle follows
    * the `c_PIYaw` the caller derived through `applyRig`, as it does driven.
    */
-  presentKinematic(dt, throttle = 0) {
+  presentKinematic(dt, throttle = 0, running = true) {
     const s = this.state;
     this._qInv.copy(s.orientation).invert();
     this._vBody.copy(s.velocity).applyQuaternion(this._qInv);
@@ -293,7 +293,7 @@ export class GroundVehicle extends Vehicle {
       wheel.compression = 0;
       wheel.angle += (forward / radius) * dt;
     }
-    super.presentKinematic(dt, throttle);
+    super.presentKinematic(dt, throttle, running);
     this.#applyWheels();
   }
 
