@@ -95,7 +95,8 @@ part.
     within 1.0 m of the ladder's axis (`LADDER_REACH`) — walking into the
     ladder, the engine's own start. Backward held grabs only beside the TOP
     rungs — stepping backwards off a deck onto the ladder to climb down.
-    On a grab the body snaps onto the axis at the closest point, offset
+    On a grab the body snaps onto the axis at his own height (his feet's
+    place on the line; until 2026-09-27 his mid-body's, see below), offset
     perpendicular by 0.48 m on the side he approached from (the exporter's
     `face` sign is arbitrary; the grab orients it toward the soldier), and
     he turns to face the ladder.
@@ -172,3 +173,33 @@ A note on the first Stalingrad ladder the pass tried (541.6, -393.9): its top
 exit is honest about unsupported geometry — the climb ends at the ladder top
 and, with nothing to stand on there, the ordinary physics brings him back
 down. The climb law does not invent a deck the level did not bake.
+
+## 2026-09-27: the grab keeps his height
+
+`climbStart` measured the reach from the soldier's mid-body (his feet plus half
+his 1.8 m) and then reused that point's parameter on the line to place him, so
+every grab lifted him 0.9 m: the live pass above grabbed at `t = 0.135`, and
+`tests/ladder_harness.mjs` had learned to step the bottom exit frame by frame
+because "the grab's own parameter offset" left an equal up and down short of
+the ground. Nothing asked for the lift. The mid-body arrived with the climb
+itself (`fffbd1e7`, the only commit on the file), there for the reach test and
+its `-0.2 .. 1.2` range, which the top grab needs. The reach test keeps it.
+
+The engine (ledger LADDER-1) keeps his height. `BFSoldier::handleClimbAction`
+takes the ladder when forward is held, his origin is under less than 0.48 m of
+water, and either the ladder's origin is above his and he moves along its +z
+(`dot > 0.8`) or it is below his and he moves against it (`dot < -0.8`). The
+first writes no position at all. The second drops him 2.0 m before
+`getLadderClosestPosition` snaps him. That snap, repeated every climbing tick,
+clamps only across the rungs and sets the -0.48 m standoff: his coordinate up
+the ladder is his own. So the placement parameter is now where his feet
+project onto the line (clamped to the line's ends), and the soldier stays at
+his height on the grab: from the ground, and from a platform 4 m up
+(`test_ladder.py` `test_the_grab_keeps_his_height`, which fails on the old
+module with the 0.9 m lift).
+
+Still the viewer's, and noted: the climb rate (animation-driven in the engine),
+the page's exits at the line's ends (the engine's tests are against his origin
+and the ladder mesh's bounding box, read but not verified), and the top grab,
+which the page takes on a backward press near the top without the engine's
+2.0 m drop.

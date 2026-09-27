@@ -65,6 +65,28 @@ out.constants = {
   };
 }
 
+// 1b. He takes it at his own height: the forward grab below the ladder's
+//     origin writes no position (`handleClimbAction` 0x082818f4 leaves before
+//     the only write) and `getLadderClosestPosition` keeps his coordinate up the
+//     ladder, so his feet stay where they were -- from the ground, and from a
+//     platform 4 m up. The page used to take the line point nearest his
+//     mid-body and lift him 0.9 m.
+{
+  const s = spawnAt(2.8, 0);
+  const before = s.y;
+  s.step(TICK, { forward: 1 });
+  const ground = { before, after: s.y, t: s.climb.t, active: s.climb.active };
+  const p = spawnAt(5, 0);          // parked well out of reach
+  p.body.place(2.8, 4, 0, FACE_YAW);
+  p.body.plant(1, -1);
+  const pBefore = p.y;
+  p.step(TICK, { forward: 1 });
+  out.grabHeight = {
+    ground,
+    platform: { before: pBefore, after: p.y, t: p.climb.t, active: p.climb.active },
+  };
+}
+
 // 2. The rate: two consecutive seconds on the climb, each measured.
 {
   const s = spawnAt(2.8, 0);
@@ -99,9 +121,7 @@ out.constants = {
 }
 
 // 5. The bottom exit: up part-way, down the rest, feet back on the ground.
-//    The down leg steps frame by frame until the climb ends (the grab's own
-//    parameter offset means an equal-duration up/down does not land exactly
-//    at the bottom).
+//    The down leg steps frame by frame until the climb ends.
 {
   const s = spawnAt(2.8, 0);
   s.step(TICK, { forward: 1 });

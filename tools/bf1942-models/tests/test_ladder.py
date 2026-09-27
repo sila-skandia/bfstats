@@ -108,6 +108,22 @@ class LadderClimbLawTests(unittest.TestCase):
         # Facing the ladder: forward (-1, 0, 0) is yaw -pi/2.
         self.assertAlmostEqual(-pi / 2, snap["yaw"], places=3)
 
+    def test_the_grab_keeps_his_height(self) -> None:
+        # `BFSoldier::handleClimbAction` 0x08281080: the forward grab below the
+        # ladder's origin writes no position (0x082818f4 leaves before the only
+        # write, the top grab's 2.0 m drop at 0x082818f9), and the per-tick snap
+        # `getLadderClosestPosition` 0x08280b40 clamps only across the rungs, so
+        # his coordinate up the ladder is his own. The page took the line point
+        # nearest his MID-body and lifted him 0.9 m on the grab.
+        grab = self.results["grabHeight"]
+        self.assertTrue(grab["ground"]["active"])
+        self.assertAlmostEqual(grab["ground"]["before"], grab["ground"]["after"], places=6)
+        self.assertAlmostEqual(0.0, grab["ground"]["t"], places=6)
+        self.assertTrue(grab["platform"]["active"])
+        self.assertAlmostEqual(4.0, grab["platform"]["before"], places=6)
+        self.assertAlmostEqual(4.0, grab["platform"]["after"], places=6)
+        self.assertAlmostEqual(0.4, grab["platform"]["t"], places=6)
+
     def test_the_climb_moves_at_the_constant_rate(self) -> None:
         rate = self.results["rate"]
         # Two independent one-second windows on the same climb: the rate is
