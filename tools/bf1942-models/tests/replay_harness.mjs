@@ -833,4 +833,192 @@ const read = scene => {
   };
 }
 
+// --- a manned gun laid where the recording says it pointed -------------------
+//
+// The report (2026-09-27, `replay_20260927-075756`, v4): "in the defgun I can
+// see the rounds impacting at the correct location, but the defgun points to
+// a random spot". The rounds fly the recorded ray; nothing turned the gun, so
+// it sat at the rig's rest. A Defgun (the model's own nodes and rig, a yaw
+// turret over a pitch gun base) turned by a v4 file's parts, by its rounds
+// alone, and by a v5 file's parts, which win.
+{
+  const [{ ReplayHull }, aim, { GunFire }] = await Promise.all([
+    imp('replay-hulls.js'), imp('replay-aim.js'), imp('gunfire.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const rad = d => d * Math.PI / 180;
+  const qmul = (a, b) => [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+  ];
+  const round4 = q => q.map(v => +v.toFixed(4));
+  // A part turned `yaw` degrees and raised `up` degrees, relative to its
+  // hull, as the recorder writes it (BF1942's frame: yaw about +Y, then
+  // pitch about X, +Z forward).
+  const part = (yaw, up = 0) => round4(qmul([0, Math.sin(rad(yaw) / 2), 0, Math.cos(rad(yaw) / 2)],
+                                            [Math.sin(rad(-up) / 2), 0, 0, Math.cos(rad(-up) / 2)]));
+  const HULL_YAW = 30;
+  const hullQ = [0, Math.sin(rad(HULL_YAW) / 2), 0, Math.cos(rad(HULL_YAW) / 2)];
+  const turn = (q, v) => {
+    const r = qmul(qmul(q, [v[0], v[1], v[2], 0]), [-q[0], -q[1], -q[2], q[3]]);
+    return [r[0], r[1], r[2]];
+  };
+  // A round leaving a gun laid at (yaw, up) on the hull: its world ray.
+  const round = (t, yaw, up) => line({ k: 'f', t, id: 523, pid: 0, w: 'DefgunGunBarrel', p: [100, 17, 200],
+                                       d: turn(hullQ, turn(part(yaw, up), [0, 0, 1])).map(v => +v.toFixed(5)) });
+  const head = v => [
+    line({ k: 'h', v, start: '', hz: 10 }),
+    line({ k: 'e', t: 0.2, e: 'createObject', tid: 1200, netId: 522, tmpl: 'Defgun', pos: [0, 10, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 0.2, e: 'createObject', tid: 1200, netId: 523, tmpl: 'Defgun', pos: [100, 10, 200], rot: [HULL_YAW, 0, 0] }),
+    line({ k: 'o', t: 0.5, id: 523, tmpl: 'Defgun', tid: 1200, team: 2 }),
+  ];
+  // The v4 recorder's own writing of it (keyed 0, a part left out when it
+  // equals the entry before it): the Defgun at 522 at rest ahead of 523 in
+  // the walk; 523's turret back at rest at 1.1 left out (it equals 522's),
+  // its gun base level at 1.3 left out (it equals the turret).
+  const I = [0, 0, 0, 1];
+  const j = (t, ...entries) => line({ k: 'j', t, o: entries.map(([root, q]) => [root, 0, ...q]) });
+  const v4 = [
+    ...head(4),
+    line({ k: 'jn', t: 1.0, o: [[522, 0, 'DefgunTurret']] }),
+    j(1.0, [522, I], [523, part(10)], [523, part(10, 10)]),
+    j(1.1, [522, I], [523, part(0, 10)]),
+    round(1.1, 0, 10),
+    j(1.2, [522, I], [523, part(25)], [523, part(25, 5)]),
+    j(1.3, [522, I], [523, part(40)]),
+    j(1.4, [522, I], [523, part(60)], [523, part(60, 5)]),
+    round(1.4, 60, 5),
+    j(3.0, [522, I], [523, part(60)], [523, part(60, 5)]),
+    line({ k: 'end', t: 10 }),
+  ].join('\n');
+  // The same rounds and nothing else, plus one laid above the gun's
+  // elevation limit (30 degrees up).
+  const roundsOnly = [...head(4), round(1.1, 0, 10), round(1.4, 60, 5), round(4, -20, 50), line({ k: 'end', t: 10 })].join('\n');
+  // A v5 file: the parts, numbered and placed, turn the gun one way; a
+  // round says another. The parts are the truth.
+  const v5 = [
+    ...head(5),
+    line({ k: 'jn', t: 1.0, o: [[523, 1, 'DefgunTurret', 0, 5.13, -0.4], [523, 2, 'DefgunGunBase', 0, 6.83, 0.7]] }),
+    line({ k: 'j', t: 1.0, o: [[523, 1, ...part(-45)], [523, 2, ...part(-45, 20)]] }),
+    round(1.05, 60, 5),
+    line({ k: 'end', t: 10 }),
+  ].join('\n');
+
+  // The Defgun as models/Defgun.glb has it: the turret's traverse and the gun
+  // base's elevation with their own limits, the barrel and its muzzle.
+  const defgun = () => {
+    const node = (name, data, at = [0, 0, 0]) => {
+      const n = new THREE.Object3D();
+      n.name = name;
+      n.userData = { control: 'Defgun', ...data };
+      n.position.fromArray(at);
+      return n;
+    };
+    const rig = axes => ({ axes, automaticReset: false, control: 'Defgun' });
+    const root = node('Defgun', { templateKind: 'PlayerControlObject' });
+    const turret = node('DefgunTurret', { templateKind: 'RotationalBundle', rig: rig({ yaw: {
+      input: 'c_PIMouseLookX', min: -90, max: 90, free: false, driver: 'position', maxSpeed: 90, direction: 1, acceleration: 50,
+    } }) }, [0, 5.13, 0.4]);
+    const base = node('DefgunGunBase', { templateKind: 'RotationalBundle', rig: rig({ pitch: {
+      input: 'c_PIMouseLookY', min: -30, max: 10, free: false, driver: 'position', maxSpeed: 50, direction: 1, acceleration: 75,
+    } }) }, [0, 1.7, -1.1]);
+    const barrel = node('DefgunGunBarrel', { templateKind: 'FireArms', fireArms: {
+      input: 'c_PIFire', roundOfFire: 0.2, velocity: 125, muzzles: 1, projectile: { kind: 'shell' },
+    } });
+    const muzzle = node('DefgunGunBarrel_muzzle_1', { templateKind: 'Muzzle', muzzle: { index: 0 } }, [0, 0, -9.7]);
+    const camera = node('DefgunCamera', { templateKind: 'Camera' }, [-1, 0.6, -0.2]);
+    barrel.add(muzzle);
+    base.add(barrel, camera);
+    turret.add(base);
+    root.add(turret);
+    const scene = new THREE.Group();
+    scene.add(root);
+    return { scene, muzzle };
+  };
+  const _q = new THREE.Quaternion();
+  const deg = r => +(r * 180 / Math.PI).toFixed(2);
+  // The drawn barrel's angle to a gun laid at (yaw, up) on the hull, degrees.
+  const replay = text => {
+    const rec = recording.parseRecording(text);
+    const { scene, muzzle } = defgun();
+    const guns = new GunFire({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), viewportHeight: () => 800 });
+    const player = { rec, showGhosts: true, ctx: { guns } };
+    const hull = new ReplayHull(player, rec.lives.find(l => l.nid === 523), scene, null);
+    hull.ownerTag = -1523;
+    const off = (t, yaw, up) => {
+      hull.update(t, 0);
+      const drawn = new THREE.Vector3(0, 0, -1).applyQuaternion(muzzle.getWorldQuaternion(_q));
+      const [x, y, z] = turn(hullQ, turn(part(yaw, up), [0, 0, 1]));
+      return deg(drawn.angleTo(new THREE.Vector3(x, y, -z)));
+    };
+    const angles = t => {
+      hull.update(t, 0);
+      const rig = hull.occupancy.rigFor('Defgun');
+      return rig.axes.map(axis => +axis.angle.toFixed(2));
+    };
+    return { rec, hull, off, angles };
+  };
+
+  const decoded = (() => {
+    const rec = recording.parseRecording(v4);
+    const runs = rec.keyedParts?.get(523) ?? [];
+    const tracks = aim.decodeKeyedParts(runs);
+    return {
+      joints: rec.joints.size,
+      runs: runs.map(r => [r.t, r.parts.length, r.before]),
+      tracks: tracks.map(track => track.map(({ t, q }) => [t, q])),
+    };
+  })();
+  const partsRun = replay(v4);
+  const roundsRun = replay(roundsOnly);
+  const v5Run = replay(v5);
+  const sources = run => {
+    run.hull.update(0.5, 0);
+    return run.hull.aims?.map(a => (a.dense ? 'parts' : 'rounds')) ?? null;
+  };
+  results.gunAim = {
+    decoded,
+    expected: {
+      turret: [[1.0, part(10)], [1.1, I], [1.2, part(25)], [1.3, part(40)], [1.4, part(60)], [3.0, part(60)]],
+      base: [[1.0, part(10, 10)], [1.1, part(0, 10)], [1.2, part(25, 5)], [1.3, part(40)], [1.4, part(60, 5)],
+             [3.0, part(60, 5)]],
+    },
+    parts: {
+      source: sources(partsRun),
+      atRounds: [partsRun.off(1.1, 0, 10), partsRun.off(1.4, 60, 5)],
+      // Between the rounds, the recorded parts: raised at 1.0, level at 1.3.
+      between: [partsRun.off(1.0, 10, 10), partsRun.off(1.3, 40, 0)],
+      beforeParts: partsRun.off(0.7, 0, 0),
+      held: partsRun.off(8, 60, 5),
+    },
+    rounds: {
+      source: sources(roundsRun),
+      atRounds: [roundsRun.off(1.1, 0, 10), roundsRun.off(1.4, 60, 5)],
+      // Traverse and elevation (the rig's own degrees, up is negative): at
+      // rest long before the first round, raised into it at the gun base's
+      // own 50 deg/s, held, turned as late as the next round allows (faster
+      // than the turret's own 90 deg/s where the recorded rounds say so),
+      // and never past the elevation limit.
+      rest: roundsRun.angles(0.6),
+      laying: roundsRun.angles(1.0),
+      turning: roundsRun.angles(1.3),
+      held: roundsRun.angles(2.0),
+      overLimit: roundsRun.angles(4),
+      after: roundsRun.angles(9),
+    },
+    v5: {
+      toParts: v5Run.off(1.05, -45, 20),
+      toRound: v5Run.off(1.05, 60, 5),
+    },
+    lateTurn: [
+      aim.lateTurn(0, 40, 0, 1, 90),
+      aim.lateTurn(0, 40, 0.8, 1, 90),
+      aim.lateTurn(0, 40, 0.95, 1, 90, { start: 0.9 }),
+      aim.lateTurn(170, -170, 0.9, 1, 90, { free: true }),
+    ].map(v => +v.toFixed(2)),
+  };
+}
+
 console.log(JSON.stringify(results));
