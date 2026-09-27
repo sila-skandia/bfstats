@@ -31,10 +31,10 @@ function, in order:
 |---|---|---|
 | no water on this map | `0x082821a4` → `0x082821b9 cmp ah,0x40; jne` | `terrainBase->vtbl+0xc` compared with **-1.0** (`0x086b05ec`); equal means the level has no water and the function returns |
 | on a ladder | `0x082821d0`, `0x082821da test eax,0x10` | the **lower** body's `getCurrentStateFlags()` (`this+0x294`) carrying `c_AsmIsClimbing`; returns before the water is even sampled, and before the *exit* test, so a ladder neither starts nor ends a swim |
-| the depth | `0x08282215`, `0x0828221e`, `0x0828223a` | `surfaceY = terrainBase->vtbl+0x5c(pos.x, pos.z)`, then `depth = max(0, surfaceY - pos.y)`. **A function of x and z only** — the same trap HP-5's `touchesWater` documents on the vehicle side. `pos` is the object's own origin, which for a soldier is his feet |
-| enter | `0x082823c5` (`0x086d29bc` = **0.43**), or `0x082823b1` | `depth > 0.43` (or the surface above the composite object's own reference height) → `setAnimationState(0, "Lb_StartSwim")` at `0x082823f7` and `setAnimationState(1, "Ub_StartSwim")` at `0x08282426` |
+| the depth | `0x08282215`, `0x0828221e`, `0x0828223a` | `surfaceY = terrainBase->vtbl+0x5c(pos.x, pos.z)`, then `depth = max(0, surfaceY - pos.y)`. **A function of x and z only** — the same trap HP-5's `touchesWater` documents on the vehicle side. `pos` is the object's own origin, which for a soldier stands **a metre over his feet** (§18; this row said "is his feet" until 2026-09-27) |
+| enter | `0x082823c5` (`0x086d29bc` = **0.43**), or `0x082823b1` | `depth > 0.43` (or the surface above his **camera**, §18) → `setAnimationState(0, "Lb_StartSwim")` at `0x082823f7` and `setAnimationState(1, "Ub_StartSwim")` at `0x08282426` |
 | leave | `0x082822a8` (`0x086d29b8` = **0.35**) | `depth <= 0.35` → `Lb_EndSwim` / `Ub_EndSwim` (`0x086d2988`, `0x086d2993`) |
-| float | `0x082822bc`, `0x082822d4` (`0x086c4f70` = **0.4**) | while swimming and `surfaceY > pos.y`, **teleport** the body to `surfaceY - 0.4` through the object's vtable `+0x3c` |
+| float | `0x082822bc`, `0x082822d4` (`0x086c4f70` = **0.4**) | while swimming and `surfaceY > pos.y`, **teleport** the origin to `surfaceY - 0.4` through the object's vtable `+0x3c`: his feet 1.4 m under (§18) |
 
 So the swim state is not a physics mode the engine solves. It is an **animation
 state**, entered by name on both machines, and what physics reads is the
@@ -72,7 +72,8 @@ that third of a second.
 `ResponsePhysics::checkVsTerrain(float)` (`0x0825a960`) is what calls
 `setUnderWater` (`0x0825ac60`, and the zero arm at `0x0825ad41`), and I did not
 finish reading how it forms the argument. It matters for one number only — see
-§4 — and nothing else in this document rests on it.
+§4 — and nothing else in this document rests on it. **Read 2026-09-27 (§18):**
+the water less the lowest collision vertex, i.e. from his feet.
 
 ---
 
@@ -216,9 +217,9 @@ dependency it has always had and no existing harness had to learn a new module.
 
 | number | value | where from |
 |---|---|---|
-| enter depth | 0.43 m | `0x086d29bc` |
-| leave depth | 0.35 m | `0x086d29b8` |
-| draft | 0.40 m | `0x086c4f70` |
+| enter depth | 0.43 m over the origin, **1.43 m over the feet** (§18) | `0x086d29bc` |
+| leave depth | 0.35 m over the origin, **1.35 m over the feet** | `0x086d29b8` |
+| draft | 0.40 m for the origin, **1.40 m for the feet** | `0x086c4f70` |
 | locomotion gain | `5.0·vCmd`, ungated | `0x086c5288`, `0x08274b6f` |
 | stroke bands | `|throttle| > 0.5` | the states' own `addTransitionOne c_PIThrottle` |
 | entry / exit clip length | 1/2.6 s and 1/3.2 s | the state speeds; a clip's span is `1/|speed|` (ledger ANIM-1) |
@@ -480,7 +481,7 @@ worktree** is now a real directory of symlinks plus one real
 |---|---|
 | **The swim speed ceiling is a viewer number** | §4. The engine's cap is the `PhysicsNode` box drag, which this module does not carry. The two ways of reading `ResponsePhysics::checkVsTerrain`'s `setUnderWater` argument give 2.06 m/s (saturated) and 8.1 m/s (at the 0.4 m draft); the second is faster than running, so the first is almost certainly right, but it is an assumption and is labelled one |
 | **`deepWaterLevel`'s runtime default** | `Armor::update`'s deep-water test (`0x08172fad`) sets the *ordinary* water byte as well as the deep one. No vanilla object sets the field and no instruction writes `+0x144` outside the property setter, so the default is unread. If it is 0, a soldier's origin going under the surface arms the drown clock by that route too, and the wading case would drown a man who stood in a puddle for 90 s. The soldier-specific `isSwimming()` clause exists to make the answer swim-keyed, so this stream implemented swim-keyed |
-| **`0x082823b1`'s second entry condition** | Entering the swim state has an OR arm: the water surface above a float read off the composite object through `IID_ICompositeObject` slot `+0x38`. Not identified. It only ever makes entry *easier* than the 0.43 threshold, so the implementation is conservative |
+| ~~**`0x082823b1`'s second entry condition**~~ | ~~Entering the swim state has an OR arm: the water surface above a float read off the composite object through `IID_ICompositeObject` slot `+0x38`. Not identified. It only ever makes entry *easier* than the 0.43 threshold, so the implementation is conservative~~ **Closed 2026-09-27 (§18):** the soldier's camera's `getAbsolutePosition().y`, his eye; built |
 | **LOOP-1** | The 90 s and the 1 s are `dt`-accumulated seconds and are therefore immune to LOOP-1; the `5.0·vCmd` gain and the `1/|speed|` clip periods are not, and carry the same qualifier as every other per-call quantity in the corpus |
 | **The first-person arms while swimming** | `c_AsmHideWeapon` is honoured on the third-person body. The first-person rig (`stance-clips.js`) still draws the weapon, and the engine has no `1P` swim clip family to put in its place — `1pAnimationsTweaking.con` names `Ub_StartSwim` and friends, so there may be one; unsurveyed |
 | **Remote players** | `netcode-render.js` and `remote-gait.js` are W6-G's and are untouched. A remote swimmer is drawn with his locomotion gait, because the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`); wiring it is a netcode job |
@@ -899,3 +900,97 @@ session).
 | **A swimming bot can still shoot** | The body now shows empty hands, but the bot referee's fire path does not consult `Soldier.itemsLocked`, so a swimming bot's rounds still fly. The engine's `handleMessage` gate (§9) applies to him as to the player |
 | **Replays** | `replay-gait.js` selects from recorded speed and heading only; a server-log recording carries no swim bit and the replay renderer does not test the map's water level. A recorded swimmer still walks |
 | **Sound** | Unchanged: `c_SstToSwim` / `c_SstSwim` / `c_SstSwimStand` / `c_SstFromSwim` are still not played |
+
+---
+
+# 2026-09-27: his origin is a metre over his feet
+
+Everything above measured `updateSwimming`'s `pos` from the soldier's **feet**.
+It is his **origin**, and the origin stands 1.0 m over his feet. So the page
+entered the swim state in 0.43 m of water where the game needs 1.43 m, walked out
+at 0.35 where the game needs 1.35, and floated its swimmers with their feet
+0.4 m under the surface -- a metre too high -- where the game pins the origin
+0.4 m under and the feet 1.4. Ledger PHY-10 and PHY-11 carry the addresses; the
+short of it is below.
+
+## 18. What the engine and the recordings say
+
+**The origin.** A soldier's only collision geometry is `ObjectTemplate.geometry
+BodyCollision`, a `SkeletonCollisionMesh` whose file ships in no archive: the
+hull is 17 vertices `SkeletonCollisionMeshTemplate`'s constructor hard-codes
+(`0x083af375`-`0x083af62a`, run under `lnxded/x87emu.py`), the lowest (0, -1, 0).
+`ResponsePhysics::checkVsTerrain` rests the first five of them on the terrain for
+a soldier (`0x0825aa94`, `0x0825b040`), so a standing man's origin is 1.0 m over
+the ground in every pose (`setCollisionOffset` moves the hull in x and z only,
+`0x082738bd`). `setCharacterHeight -1.00` is the same metre for the drawing: it
+is the y of the translation the skeleton is transformed by (`0x0826e984`,
+`0x08273047`). The recordings agree: standing soldiers' samples lie 1.00 m over
+Wake's terrain; soldiers stand 1.00 m over the sea bottom through 0.43-0.8 m of
+water (`replay_20260927-075756` soldier 860) and up to 1.47 m of it
+(`replay_20260919-213409` soldier 608, first lifted at 1.47-1.48 m); a swimmer in
+4.07 m of water has his origin 0.45-0.49 m under the surface
+(`replay_20260927-001120` soldier 1091). No v4/v5 file yet records a swim state
+(the `st` records), so the entry is placed by position, not by the state.
+
+**The second entry arm** (§8's open row) is the soldier's **camera**: the first of
+`this+0x3f0`'s list, `IID_ICompositeObject`, `getAbsolutePosition()` (vtable +0x38),
+its y tested against the surface at `0x082823bc`. That is his eye, 1.65 / 1.12 /
+0.30 m over his feet standing / crouched / prone. Standing, the 1.43 line comes
+first; crouched, water over 1.12 m puts him in; prone, water over 0.30 m does, and
+the next tick's exit test (the origin is dry) takes him straight back out and
+standing. **The entering tick writes no position**: `0x082823db`-`0x08282426` is
+the two `setAnimationState` calls; the pin is the swimming arm's.
+
+**`setUnderWater`** (§1's unread number): `checkVsTerrain` keeps the lowest
+vertex's y (from 9999.0, `0x086d16d0`), asks the water at the object's (x, z)
+(`0x0825ac12`) and hands `water - lowest` to `PointPhysicsNode::setUnderWater`
+(`0x0825ac60`), 0 when nothing is under (`0x0825ad41`). From the feet, so 1.4 m at
+the draft. Against a 0.8 x 1.8 m box the box law's balance is then 2.6 m/s, near
+the 2.0 m/s ceiling §4 chose; the ceiling stays a viewer number.
+
+## 19. What changed
+
+| file | what |
+|---|---|
+| `viewer/swim.js` | depth, entry, exit and pin measured over `feetY + CHARACTER_HEIGHT`; `SWIM_ENTER_WATER` 1.43, `SWIM_LEAVE_WATER` 1.35, `SWIM_FEET_DRAFT` 1.4; the eye arm (`update({ eyeY })`); no pin on the entering tick; the header's "which is his FEET" replaced with the evidence |
+| `viewer/walking-body.js` | passes `eyeY = feet + eyeHeight`; PHY-7's drag reads `underWater`, the water over the feet, instead of the swim state's depth |
+| `viewer/soldier.js` | standing while the swim states hold the lower body (they carry no crouch or lie flag); the free-fall gate measures the origin (`FALL_STATE_HEIGHT` over the feet is 9 m) |
+| `viewer/local-player.js` | the water spends the `c_PILie` toggle, as the engine's lower machine leaves `Lb_Lie` for the swim states and `c_PILie` is a press; the hit octant looks from the origin (ledger HFD-9) |
+| `viewer/kit-drops.js`, `kit-drops-page.js` | `dropKit`'s rest probe casts from and is weighed against the origin (KITDROP-2); the 0.1 m probe lift it compensated for is gone |
+| `viewer/soldier-pose.js` | `CHARACTER_HEIGHT`'s "strong inference" replaced with the evidence |
+
+Checked and left: ladders (the page compares no engine position with a height:
+`getLadderClosestPosition` keeps the origin's own height, and `handleClimbAction`'s
+water test, `water - origin.y >= 0.48`, is not modelled); the water contact
+(`checkVsTerrain` registers it off the lowest vertex, the page's feet, already);
+spawn points and vehicle exits (the engine sets the origin there and its
+push-out lifts the hull a metre; the page sets the feet there and settles them,
+the same end state on a floor); fall heights (differences, convention-free); the
+bots' water rule (terrain depth, not position).
+
+## 20. Verified
+
+`tests/test_swim.py` `SwimFeetConventionTests` (8 tests: knee-deep is a wade,
+1.42 / 1.44, 1.36 / 1.34, feet at surface - 1.4, no pin on the entering tick, the
+eye arm standing / crouched / prone, in by the eye and straight back out). On the
+pre-fix `swim.js` 11 assertions fail and one errors; all 36 pass on the fix.
+`test_physics.py` (a chest-deep wade in 1.2 m), `test_soldier.py` (a swimmer
+stands whatever he holds; prone in 0.5 m his eye puts him in), `test_parachute.py`
+(the gate on the origin), `test_kit_drops.py` (a bunker floor under the terrain),
+`test_hud.py` (a ground blast 1.2 m ahead is octant 2 from the origin, 1 from the
+feet, and the page's call adds `CHARACTER_HEIGHT`): each fails on the pre-fix
+modules. The whole `tools/bf1942-models` suite: 3692 tests, OK.
+
+In the page (`map.html?mod=bf1942&map=wake&shots`, headless, teleported in
+0.25 m steps seaward along soldier 608's recorded path): standing at 1.39 m of
+water over his feet, swimming past 1.43 m; floating with his feet at 93.60 under
+the 95.0 surface, eye 95.25, `swimFloat`, weapon stowed, the drawn body at the
+feet.
+
+## 21. Still open
+
+| Item | Where it stands |
+|---|---|
+| **The ladder grab** | `climbStart` puts the feet on the ladder line at the mid-body's height, lifting a man 0.9 m on the grab; `startClimbing` keeps his height (`getLadderClosestPosition` clamps only across the rungs and sets the -0.48 m standoff) |
+| **A recorded swim state** | No v4/v5 recording has a soldier in `Lb_StartSwim`; one would place the entry by the state rather than by position |
+| **Replayed swimmers** | Drawn with their gait, a metre lower since `standOnFeet`; the swim family for them is a separate change |

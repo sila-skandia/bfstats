@@ -68,8 +68,13 @@ export class SoldierBody {
     this.swim = null;
     /** `c_AsmIsSwimming` as of this tick, mirrored off the collaborator. */
     this.swimming = false;
-    /** `max(0, waterSurface - feetY)`, the engine's own quantity. */
+    /** The collaborator's depth: the water over his ORIGIN, a metre over his
+     *  feet, which is what `updateSwimming` measures (`swim.js`). */
     this.swimDepth = 0;
+    /** The water over his FEET, the lowest vertex of his collision hull:
+     *  what `checkVsTerrain` hands `setUnderWater` (`swim.js`,
+     *  `SWIM_SPEED_CEILING_FACTOR`). PHY-7's drag reads this one. */
+    this.underWater = 0;
     // Eye height is animated rather than snapped: a pose change that teleported
     // the camera 50 cm reads as a glitch, not as ducking. The travel is linear
     // over a duration the caller may set per transition, because it stands in
@@ -484,11 +489,12 @@ export class SoldierBody {
 
     // --- the engine's update ----------------------------------------------
     const wasGrounded = this.grounded;
-    // PHY-7's submersion drag, live: `scale = 1 + 24 * min(underWater/r, 1)`
-    // with `underWater` the same `max(0, surface - y)` the swim state computed.
-    // It is the engine's own coupling (`setUnderWater`, `0x08256ad0`), and it is
-    // the reason a body in water sinks slowly rather than like a stone.
-    body.updatePhysics(dt, { underWater: this.swimming ? this.swimDepth : 0 });
+    // PHY-7's submersion drag, live: `scale = 1 + 24 * min(underWater/r, 1)`,
+    // the engine's own coupling (`setUnderWater`, `0x08256ad0`) and the reason a
+    // body in water sinks slowly rather than like a stone. `checkVsTerrain`
+    // measures it from the lowest vertex of his hull, his feet (`0x0825ac60`),
+    // not from the origin the swim state measures.
+    body.updatePhysics(dt, { underWater: this.swimming ? this.underWater : 0 });
     if (this.swimming) this.#capSwimSpeed();
     // The impact velocity, captured before anything clamps it.
     const ivx = v.x, ivy = v.y, ivz = v.z;
@@ -609,9 +615,11 @@ export class SoldierBody {
    * The water surface is asked for as a function of (x, z) and nothing else,
    * which is the engine's own shape: `updateSwimming` calls
    * `terrainBase->vtbl+0x5c(pos.x, pos.z)` (`0x08282215`) and subtracts the
-   * body's y from the answer. That is the same trap HP-5's `touchesWater`
-   * documents on the vehicle side — `surfaceHeight` cannot tell you whether you
-   * are *in* the water, only where the water is; altitude decides.
+   * body's y from the answer -- his origin's, a metre over the feet this body
+   * carries, which `swim.js` adds back. That is the same trap HP-5's
+   * `touchesWater` documents on the vehicle side — `surfaceHeight` cannot tell
+   * you whether you are *in* the water, only where the water is; altitude
+   * decides.
    *
    * `this.world.waterLevel` is that surface: the collider carries one horizontal
    * plane over the whole world, and so does the engine (`WaterPatch`'s level is
@@ -622,13 +630,18 @@ export class SoldierBody {
     if (!swim || typeof swim.update !== 'function') {
       this.swimming = false;
       this.swimDepth = 0;
+      this.underWater = 0;
       return;
     }
     const level = this.world ? this.world.waterLevel : null;
+    const feetY = this.body.position.y;
     const pin = swim.update({
       dt,
       surfaceY: Number.isFinite(level) ? level : null,
-      feetY: this.body.position.y,
+      feetY,
+      // The entry's other arm tests the surface against his camera
+      // (`0x082823bc`), which is this body's eye.
+      eyeY: feetY + this.eyeHeight,
       // `c_PIThrottle`, which is the forward axis and not the ramp: the swim
       // states' `addTransitionOne` clauses read the raw input.
       throttle: forward,
@@ -637,6 +650,10 @@ export class SoldierBody {
     });
     this.swimming = Boolean(swim.swimming);
     this.swimDepth = Number.isFinite(swim.depth) ? swim.depth : 0;
+    // Where the swim state measured, after the tick's resolve and before the
+    // pin -- only from the feet rather than the origin.
+    const under = Number.isFinite(level) ? level - feetY : 0;
+    this.underWater = under > 0 ? under : 0;
     this.#floatAtDraft(pin);
   }
 
@@ -672,10 +689,12 @@ export class SoldierBody {
    *
    * `updateSwimming`'s last act, while the surface is above the body, is
    * `setPosition(x, surfaceY - 0.4, z)` through the object's own vtable slot
-   * `+0x3c` (`0x082822d4`-`0x0828227b`). It is a position write and not a
-   * force, so a swimmer's vertical motion is not solved at all: he is placed at
-   * his draft every tick, which is why a man who falls into the sea from a
-   * bomber surfaces instantly instead of sinking and bobbing.
+   * `+0x3c` (`0x082822d4`-`0x0828227b`). That is his origin, a metre over his
+   * feet, so `pin` -- `swim.js`'s answer -- is feet 1.4 m under the surface
+   * (`SWIM_FEET_DRAFT`). It is a position write and not a force, so a
+   * swimmer's vertical motion is not solved at all: he is placed at his draft
+   * every tick, which is why a man who falls into the sea from a bomber
+   * surfaces instantly instead of sinking and bobbing.
    *
    * The one thing added here is zeroing a downward velocity, and it is added for
    * the reason `#settle`'s wedge guard is: gravity keeps seeding the accumulator

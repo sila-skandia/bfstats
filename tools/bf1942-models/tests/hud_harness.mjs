@@ -470,6 +470,11 @@ results.hitFromDir = {
   coincidentFacingMinusZ: hitFromDirOctant(o, Math.PI, at(0, 0, 0)),
   // Not at the origin: the direction is the difference, not the source alone.
   offOrigin: hitFromDirOctant(at(100, 5, -40), 0, at(90, 5, -40)),
+  // The eye is his origin, a metre over his feet (HFD-9, HFD-11): a blast on
+  // the ground 1.2 m ahead is dead ahead from his feet, but from his origin it
+  // is 40 degrees down, 0.77 forward, the front-right arc.
+  groundBlastFromFeet: hitFromDirOctant(o, 0, at(0, 0, 1.2)),
+  groundBlastFromOrigin: hitFromDirOctant(at(0, 1, 0), 0, at(0, 0, 1.2)),
 };
 
 // A hull framed by its own axes (HFD-11): at rest its nose is -z and its

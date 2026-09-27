@@ -23,6 +23,19 @@ const out = { constants: { KIT_TIME_TO_LIVE, KIT_YAW_SPEED, PICKUP_COOLDOWN, PIC
     slope: restingPlace({ x: 0, y: 3, z: 0 }, slope),
     nothing: restingPlace({ x: 0, y: 7, z: 0 }, {}),
   };
+  // A bunker: he stands on its floor at 10, and the heightfield passes over
+  // the roof at 11.5. `dropKit` casts from his origin, a metre over his feet,
+  // and weighs both surfaces against the origin's y: the terrain is 0.48 from
+  // it and the floor 1.02, so the kit goes up onto the terrain. Measured from
+  // the feet the floor would win.
+  const probes = [];
+  const bunker = {
+    terrain: () => ({ y: 11.5, normal: [0, 1, 0] }),
+    castDown: (x, y) => { probes.push(y); return { y: 10, normal: [0, 1, 0] }; },
+  };
+  out.rest.bunkerFromOrigin = restingPlace({ x: 0, y: 10.02, z: 0 }, bunker, 1.0);
+  out.rest.bunkerProbeFrom = probes[0];
+  out.rest.bunkerFromFeet = restingPlace({ x: 0, y: 10.02, z: 0 }, bunker);
 }
 
 // --- lifetime, spin, reach, take ----------------------------------------------

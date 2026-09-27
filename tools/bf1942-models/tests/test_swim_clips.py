@@ -32,7 +32,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("swim_clips_harness.mjs")
-MODULES = ["swim.js", "soldier-actions.js", "remote-gait.js", "netcode.js", "mouse-input.js"]
+MODULES = ["swim.js", "soldier-pose.js", "soldier-actions.js", "remote-gait.js", "netcode.js",
+           "mouse-input.js"]
 
 
 def run_harness() -> dict:
