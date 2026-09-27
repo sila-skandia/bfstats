@@ -40,7 +40,19 @@ export function parseServerLog(text) {
     events.push({ t: Number(m[1]), name: 'roundstats', params: { winner: winner ? Number(winner[1]) : 0, tickets } });
   }
   events.sort((a, b) => a.t - b.t);
-  return { events };
+  // The server's settings block (`<bf:setting name="maxplayers">32`), and each
+  // round's final tickets by team as numbers.
+  const settings = {};
+  for (const m of text.matchAll(/<bf:setting name="([^"]*)">([^<]*)<\/bf:setting>/g)) {
+    const value = unescapeXml(m[2]);
+    settings[m[1]] = value !== '' && Number.isFinite(Number(value)) ? Number(value) : value;
+  }
+  const finals = [...text.matchAll(statsRe)].map(m => ({
+    t: Number(m[1]),
+    tickets: Object.fromEntries([...m[2].matchAll(/<bf:teamtickets team="(\d+)">(-?\d+)<\/bf:teamtickets>/g)]
+      .map(x => [Number(x[1]), Number(x[2])])),
+  }));
+  return { events, settings, finals };
 }
 
 const SERVER_NAME = {

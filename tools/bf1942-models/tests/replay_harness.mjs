@@ -25,9 +25,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { setReplayPropellerIdle }, recording, kinematics, { Aircraft }, { EngineState }, replayGunfire] = await Promise.all([
+const [THREE, { setReplayPropellerIdle }, recording, kinematics, { Aircraft }, { EngineState }, replayGunfire, replayRound] = await Promise.all([
   imp('vendor/three.module.js'), imp('replay.js'), imp('replay-recording.js'), imp('replay-kinematics.js'),
-  imp('aircraft.js'), imp('ground-engine.js'), imp('replay-gunfire.js'),
+  imp('aircraft.js'), imp('ground-engine.js'), imp('replay-gunfire.js'), imp('replay-round.js'),
 ]);
 
 const results = {};
@@ -381,6 +381,57 @@ const read = scene => {
     before, taken, again, retaken,
     disabled: [...first.disabled],
     castInstalled: typeof first.dynamicCast === 'function' && second.dynamicCast === first.dynamicCast,
+  };
+}
+
+// --- the round: flags, tickets ------------------------------------------------
+{
+  const line = o => JSON.stringify(o);
+  // A round seen from its start: PREGAME at 5, PLAYING at 10. Wake's five
+  // points, all the Allies' (team 2, 20 each: exactly 100, so the Axis bleed).
+  const names = [['Landing_Beach', 'The_Beach'], ['The_Airfield', 'The_Airfield'], ['South_Base', 'ALLIES_southbase'],
+    ['North_Base', 'ALLIES_north_base'], ['Village', 'ALLIES_north_village']];
+  const text = [
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 1, name: 'axis', team: 1 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 2, name: 'allied', team: 2 }),
+    line({ k: 'e', t: 5, e: 'gameStatus', status: 3 }),
+    ...names.map(([name, tmpl], i) => line({ k: 'cp', t: 6, id: 100 + i, name, tmpl, pos: [i * 100, 0, 0], team: 2 })),
+    line({ k: 'e', t: 10, e: 'gameStatus', status: 1 }),
+    line({ k: 'e', t: 12, e: 'score', kind: 4, pid: 1, victim: 1 }),
+    line({ k: 'e', t: 15, e: 'score', kind: 4, pid: 2, victim: 2 }),
+    line({ k: 'e', t: 20, e: 'score', kind: 4, pid: 1, victim: 1 }),
+    line({ k: 's', t: 40, o: [] }),
+  ].join('\n');
+  const rec = recording.parseRecording(text);
+  const entries = names.map(([name, tmpl], i) => ({
+    name: i === 0 ? 'The_beach' : tmpl, displayName: name, areaValue: 20, team: 2, position: [i * 100, 0, 0],
+  }));
+  const matched = replayRound.matchPoints([...rec.controlPoints.values()], entries);
+  const byName = new Map([...matched].map(([id, entry]) => [rec.controlPoints.get(id)?.name, entry]));
+  const timeline = replayRound.estimateTickets(rec, {
+    tickets: { team1: 100, team2: 100 }, rates: { team1: 15, team2: 15 }, maxPlayers: 32,
+    areaValueOf: p => Number(byName.get(p.name)?.areaValue) || 0,
+  });
+  // A join mid-round: PLAYING with no PREGAME before it.
+  const midRound = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 3, e: 'gameStatus', status: 1 }),
+    line({ k: 'tk', t: 3, v: [140, 190] }),
+    line({ k: 'tk', t: 9, v: [139, 190] }),
+  ].join('\n'));
+  results.round = {
+    roundStarted: rec.roundStarted,
+    deaths: rec.deaths.map(d => [d.t, d.pid]),
+    matched: [...matched].map(([id, entry]) => [id, entry.name]),
+    at9: replayRound.ticketsAt(timeline, 9),
+    at31: replayRound.ticketsAt(timeline, 31),
+    midRoundStarted: midRound.roundStarted,
+    midRoundEstimate: replayRound.estimateTickets(midRound, { tickets: { team1: 100, team2: 100 }, areaValueOf: () => 0 }),
+    recorded: [replayRound.ticketsAt(midRound.tickets, 2), replayRound.ticketsAt(midRound.tickets, 5), replayRound.ticketsAt(midRound.tickets, 9.5)],
+    slots: [replayRound.serverSlots({ settings: { maxplayers: 32 } }, null),
+      replayRound.serverSlots({ settings: {}, events: [{ name: 'roundInit', params: { tickets_team1: 200 } }] }, { team1: 100 }),
+      replayRound.serverSlots(null, null)],
   };
 }
 

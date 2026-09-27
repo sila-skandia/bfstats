@@ -119,6 +119,7 @@ export function parseRecording(text) {
     seats: new Map(),     // v4: pid -> [{ t, root, seat }]
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
+    tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
     kills: [],            // { t, kind, killer, victim, weapon } one per line the kill log printed
     captures: [],         // { t, id, name, team, from } a control point taken during play
     controlPoints: new Map(), // cp id -> { id, name, tmpl, pos, changes: [{ t, team }] }
@@ -136,6 +137,7 @@ export function parseRecording(text) {
   const nidEvents = [];         // { t, pid, nid } every report of what a player controls
   const plainDeaths = [];       // { t, victim } score DEATH (4): "is no more", unless a team kill wrote it
   let joined = -Infinity;
+  let sawPregame = false;
 
   const row = (t, kind, text) => {
     const entry = { t, kind, text, source: 'client' };
@@ -349,7 +351,11 @@ export function parseRecording(text) {
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
-        if (r.status === 1 && rec.roundStarted === null) rec.roundStarted = t;
+        // The round began inside the recording only when PREGAME (3) came
+        // first: a join mid-round is sent PLAYING straight away
+        // (replay_20260927-001120 joined 277 s into its round).
+        if (r.status === 3) sawPregame = true;
+        if (r.status === 1 && rec.roundStarted === null && sawPregame) rec.roundStarted = t;
         row(t, 'round', GAME_STATUS[r.status] ?? `game status ${r.status}`);
         return;
       case 'dbComplete':
@@ -576,6 +582,11 @@ export function parseRecording(text) {
           if (!rec.stances.has(nid)) rec.stances.set(nid, []);
           rec.stances.get(nid).push({ t, lower, upper, pitch, twist, item, bits });
         }
+        break;
+      case 'tk':
+        // Both sides' tickets, the client's ScoreManager's (from bf42plus
+        // e692f14), written whenever either moves.
+        if (Array.isArray(r.v) && r.v.length >= 2) rec.tickets.push({ t, v: [r.v[0], r.v[1]] });
         break;
       case 'anim':
         // v4: the engine's animation state table, once: `[index, name, flags]`.

@@ -163,6 +163,31 @@ class ReplayRecordingTests(unittest.TestCase):
         self.assertEqual(self.results["v5"]["hits"], [{"t": 8, "dir": 4, "strength": 15}])
         self.assertEqual(self.results["v5"]["hitRow"], "hit from behind, 6% of full health")
 
+    def test_the_round_starts_only_after_a_pregame(self) -> None:
+        r = self.results["round"]
+        self.assertEqual(r["roundStarted"], 10)
+        # A join mid-round is sent PLAYING straight away: no start, no estimate.
+        self.assertIsNone(r["midRoundStarted"])
+        self.assertIsNone(r["midRoundEstimate"])
+
+    def test_recorded_points_find_the_levels_by_template_whatever_the_case(self) -> None:
+        self.assertEqual(self.results["round"]["matched"][0], [100, "The_beach"])
+
+    def test_the_estimate_runs_the_pages_own_round(self) -> None:
+        r = self.results["round"]
+        # 100 a side at 32 slots is 200; before the start the counter shows it.
+        self.assertEqual(r["at9"], [200, 200])
+        # 21 s in: the Allies hold exactly 100, so the Axis bleed one every
+        # 60 / (15 x 32/16) = 2 s (ten, at 12..30) and lose their two deaths;
+        # the Allies lose their one.
+        self.assertEqual(r["at31"], [188, 199])
+
+    def test_recorded_tickets_are_a_step_function(self) -> None:
+        self.assertEqual(self.results["round"]["recorded"], [[140, 190], [140, 190], [139, 190]])
+
+    def test_the_servers_slot_count(self) -> None:
+        self.assertEqual(self.results["round"]["slots"], [32, 32, 16])
+
     def test_a_v4_files_parts_are_not_used(self) -> None:
         # The v4 recorder keyed every part 0 (a child networkable has no id),
         # so its parts cannot be told apart.
