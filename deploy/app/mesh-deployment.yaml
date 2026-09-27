@@ -34,6 +34,12 @@ spec:
               mountPath: /usr/share/nginx/html/maps
               subPath: assets/mesh/maps
               readOnly: true
+            # Recordings published to share, uploaded with FileBrowser to
+            # mesh/replays/ (features/gameplay-recordings).
+            - name: assets-data
+              mountPath: /usr/share/nginx/html/replays
+              subPath: assets/mesh/replays
+              readOnly: true
           # nginx handing out static files; the client does all the WebGL work.
           # Measured at 19.6Mi steady and 23.2Mi peak while serving concurrent
           # 2.5MB .glb transfers — and that was with 22 workers, where this node's

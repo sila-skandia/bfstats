@@ -62,6 +62,23 @@ results.href = {
 };
 results.local = [open.isLocalReplay('local:replay_1'), open.isLocalReplay('replays/replay_1.ndjson'), open.isLocalReplay(null)];
 
+// A shared link (features/gameplay-recordings) names the file alone; the page
+// came up in whichever mod the visitor browsed last.
+const PLAY = 'https://play.bfstats.io/map.html';
+const SHARED = `${PLAY}?replay=replays/replay_20260927-140921.ndjson&serverlog=replays/ev_14567-20260927_1409.xml`;
+const MAPS = [{ id: 'bf1942' }, { id: 'xpack1' }, { id: 'dc' }];
+const ownMod = (href, mod, current) => open.ownModHref(href, { mod }, current, MAPS);
+results.ownMod = {
+  remembered: await ownMod(SHARED, 'bf1942', 'dc'),
+  pack: await ownMod(SHARED, 'XPack1', 'bf1942'),
+  already: await ownMod(SHARED, 'bf1942', 'bf1942'),
+  named: await ownMod(`${SHARED}&mod=dc`, 'bf1942', 'dc'),
+  held: await ownMod(`${PLAY}?replay=local:replay_1`, 'bf1942', 'dc'),
+  unnamed: await ownMod(SHARED, '', 'dc'),
+  noMaps: await ownMod(SHARED, 'FHSW', 'bf1942'),
+  noReplay: await ownMod(`${PLAY}?map=wake`, 'bf1942', 'dc'),
+};
+
 // --- a recording begun after the join ----------------------------------------
 //
 // replay_20260927-190946 was switched on 20 s into a Tobruk round: no
