@@ -8,6 +8,7 @@
 // (replay-chapters.js), so `tests/replay_highlights_harness.mjs` runs them.
 
 import { whereIs } from './replay-battles.js';
+import { nameAt, teamAt } from './replay-recording.js';
 
 /** Kills this close together are one multi-kill, seconds. BF1942's pace is
  *  slower than the arcade shooters that set the word's 4.5 s. */
@@ -193,8 +194,8 @@ export function medalsOf(rec, kills, { chapters = [], roundStarted = rec.roundSt
   // Vehicles destroyed, by whoever the server credits, not his own side's.
   for (const ch of chapters) {
     if (ch.kind !== 'vehicle' || ch.by === null || ch.by === undefined) continue;
-    const team = rec.players.get(ch.by)?.team ?? 0;
-    const owner = ch.crew?.length ? rec.players.get(ch.crew[0])?.team ?? 0 : 0;
+    const team = teamAt(rec, ch.by, ch.t);
+    const owner = ch.crew?.length ? teamAt(rec, ch.crew[0], ch.t) : 0;
     if (owner && owner === team) continue;
     const aboard = ch.crew?.length ?? 0;
     add({ t: ch.t, pid: ch.by, kind: 'vehicle', tmpl: ch.tmpl, crew: aboard, label: 'Destroyed',
@@ -213,7 +214,7 @@ export function medalsOf(rec, kills, { chapters = [], roundStarted = rec.roundSt
 /** A medal's line under its name: whom, with what, how far. `display` turns
  *  a template into the words the game shows (the message log's lexicon). */
 export function describeMedal(m, rec, display = s => s) {
-  const name = pid => rec.players.get(pid)?.name ?? `player ${pid}`;
+  const name = pid => nameAt(rec, pid, m.t);
   const weapon = m.weapon ? display(m.weapon) : null;
   switch (m.kind) {
     case 'multi': return `${m.count} kills in ${m.span.toFixed(1)} s${weapon ? ` [${weapon}]` : ''}`;

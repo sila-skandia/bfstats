@@ -26,6 +26,7 @@ import {
   vehiclesAt, whereIs,
 } from './replay-battles.js';
 import { bestStreakAt, describeMedal, leaderAt, leadersOf, medalsOf, streakAt, streaksOf, topPlays } from './replay-medals.js';
+import { nameAt, teamAt } from './replay-recording.js';
 import { ReplayDirector } from './replay-director.js';
 import { ReplayBattleMap } from './replay-battlemap.js';
 import { ReplayCallouts } from './replay-callouts.js';
@@ -208,12 +209,14 @@ export class ReplayHighlights {
     return describeMedal(medal, this.player.rec, this.model.display);
   }
 
-  name(pid) {
-    return this.player.rec.players.get(pid)?.name ?? `player ${pid}`;
+  /** `pid`'s name and side at recording time `t` (the playhead's by
+   *  default): an id passes to the next player to join. */
+  name(pid, t = this.player.time) {
+    return nameAt(this.player.rec, pid, t);
   }
 
-  team(pid) {
-    return this.player.rec.players.get(pid)?.team ?? 0;
+  team(pid, t = this.player.time) {
+    return teamAt(this.player.rec, pid, t);
   }
 
   // --- going somewhere ---------------------------------------------------------------------
@@ -391,7 +394,7 @@ export class ReplayHighlights {
     this.reel.pid = play.pid;
     this.reel.expect = play.t0;
     const what = play.kind === 'battle' ? `${play.title}: ${this.model.placeOf(play.pos)}` : play.title;
-    this.reelText.textContent = `HIGHLIGHT ${index + 1}/${this.model.plays.length} · ${what} · ${this.name(play.pid)}`;
+    this.reelText.textContent = `HIGHLIGHT ${index + 1}/${this.model.plays.length} · ${what} · ${this.name(play.pid, play.t)}`;
     this.reelPlate.hidden = false;
   }
 

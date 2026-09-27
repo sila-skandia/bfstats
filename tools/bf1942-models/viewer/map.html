@@ -1794,6 +1794,25 @@ replayController = createReplayController({
   levelRoot: () => level.currentRoot ?? null,
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
+  // Those vehicles, and the craft their ships carry, in the recording's frame
+  // (BF1942's: z negated, the quaternion's x and y negated), with the names of
+  // every node under each: what a recording begun after the join never names
+  // is stood in by these (replay-standins.js).
+  levelVehicles: () => {
+    const root = level.spawnersRoot;
+    if (!root) return [];
+    root.updateMatrixWorld(true);
+    const p = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    const bare = name => String(name || '').replace(/_\d+$/, '');
+    return root.children.filter(node => node.userData?.templateKind).map(node => {
+      node.matrixWorld.decompose(p, q, s);
+      const names = new Set();
+      node.traverse(o => { if (o.name) names.add(bare(o.name).toLowerCase()); });
+      return { template: bare(node.name), p: [p.x, p.y, -p.z], q: [-q.x, -q.y, q.z, q.w], names };
+    });
+  },
   // The engine's vehicle lighting, as the level's own vehicles get it.
   // Not bindTextureFade: that one resets the level's list of fading meshes.
   shadeModel: root => level.bindDynamicShading(root),
@@ -1830,6 +1849,7 @@ replayController = createReplayController({
   playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
+  playRefillSound: at => pageAudio.playRefillSound(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),
   // The viewing side (features/round-replay-ux): the round's kills, flags and
   // chat go into this page's own message log, a side is drawn with its own

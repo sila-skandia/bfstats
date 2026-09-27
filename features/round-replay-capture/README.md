@@ -103,7 +103,7 @@ Known IDs and layouts (all `working`, struct sizes are `static_assert`ed):
 | 0x17 | WelcomeMsg | server settings text |
 | 0x1C / 0x1D | Create/UpdateStaticObject | bf42plus-only extension |
 | 0x24 | GameStatus `{PLAYING, ENDGAME, PREGAME, PAUSED, ENDMAP}` | round boundaries |
-| 0x27 | SpecialGameEvent `{action}` | `action==2` means "database sent"; others unknown |
+| 0x27 | SpecialGameEvent `{action}` | `action==2` means "database sent"; `action==0` is a refill: lnxded `GameServer::triggerSpecialGameEvent` (0x081591a0) sends it to the client of a player a depot resupplies, whose soldier plays `SoldierRefillAmmo.ssc` (`BFSoldier::triggerRefillAmmoSound` 0x0827ebc0, sound trigger 0x1a), every half second at the depot (12 in replay_20260927-203459); type 1 is the hit indication, which rides the control-object state to a remote client instead (ledger XHIT-6) |
 | 0x28 | ChatFragment | chat |
 | 0x2A | ScoreMsg `{eventid, playerid, victimpid, weapon, bodypart}` with `eventid ∈ {FLAGCAPTURE, ATTACK, DEFENCE, KILL, DEATH, DEATHNOMSG, TK, SPAWNED, OBJECTIVE, OBJECTIVETK}` | kills, deaths, spawns, captures |
 | 0x34 | DataBaseComplete | end of join-time world dump |
@@ -1191,6 +1191,47 @@ For files from before `ea600c1`, the viewer recognises the level by its flags
 and reads names off the chat box (`features/round-replay-ux`, "A recording
 that names no level").
 
-Not yet seen in a real file: the DLL is built and installed as `dsound.dll`,
-but no round has been recorded with it. Rollback to the `v2.0-replay` build:
-`cp dsound_old.dll dsound.dll` in the game folder.
+First seen in `replay_20260927-203459` (Midway, a public server, begun 41 s
+after the join, recorded with the `v2.0-round-replay` release of `ea600c1`):
+the join's events and an 11-player roster at its head, as designed.
+
+### What the objects made before the file were missing, and bf42plus `0254e92`
+
+That file still lacked every object the join made: CreateObject (0x07) comes
+once per object, at the join for everything standing, and the sampler names
+only what the server replicates within the view distance. So the carriers,
+the Yamato, both Hatsuzukis, a Fletcher, eight Daihatsus and two LCVPs were
+only the root ids of their turrets (`jn`/`j`) and engines (`g`), and the
+PrinceOW and the Fletcher2 nothing until they came into range at 405 s. It
+had no projectile pools (0x05) and no kits either: a player spawned before the
+join has his soldier and kit only in his createPlayer (`vehNetId`,
+`kitNetId`), and one who picked his up since did it in a PickupKit (0x23)
+before the file.
+
+From bf42plus `0254e92` the recorder holds these beside the join's events,
+whether or not a file is open, and lets them go at the next join (0x1A): each
+player's latest createPlayer until he leaves (0x0C); each object's
+createObject until a DestroyObject (0x06) for its id; each projectile pool
+until one for its first id; and each player's latest pickupKit until that kit
+is destroyed or he leaves. A file begun after the join writes, after the
+join's events and before the roster, the players, the objects, the pools and
+the kits, in the order they came, each with `ago`:
+
+```
+{"k":"e","t":0.000,"e":"createPlayer","pid":0,"name":"...","team":1,"ai":0,"netId":1,"vehNetId":6428,"camNetId":2,"kitNetId":6432,"ago":26.006}
+{"k":"e","t":0.000,"e":"createObject","tid":3427,"netId":534,"tmpl":"Shokaku","pos":[446.00,95.32,1516.00],"rot":[48.71,-0.00,0.02],"ago":116.560}
+{"k":"e","t":0.000,"e":"projPool","tid":1293,"tmpl":"GrenadeAxisProjectile","netId":599,"count":3,"ago":113.365}
+{"k":"e","t":0.000,"e":"pickupKit","pid":254,"netId":602,"ago":113.364}
+```
+
+A held createPlayer is the player as he joined (his side then; the roster
+after it has his side as the file begins, and the viewer takes that). The
+format stays 5. The viewer reads a record with `ago` as the join's, so what it
+made was standing at the file's start, not spawned in it. For files from
+before `0254e92`, the viewer carries a hull it sees late back to its first
+trace and stands the level's own vehicle in for a root it never sees
+(`features/round-replay-fidelity`, `replay-standins.js`).
+
+Built and installed as `dsound.dll` on 2026-09-27 22:52; not yet in a real
+file. Rollback to the `v2.0-round-replay` build: `cp dsound_old.dll
+dsound.dll` in the game folder.

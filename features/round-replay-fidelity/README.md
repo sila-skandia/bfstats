@@ -33,6 +33,16 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | a soldier in the sea walking on the seabed | the replay's stand-in soldier gave the body renderer no swim state (`swimClips` returned null), so it drew his gait. `replay-bodies.js` `swimState` hands it the recorded lower state (v4 on), or in a v3 file the engine's own test on his origin (`swim.js`): a swimmer's origin is pinned 0.4 m under the surface. Soldier 1091 of replay_20260927-001120 now swims at 72.3 s, head and shoulders out, his rifle stowed; a death in the water is the swim death |
 | (replay_20260927-140921) a man a blast threw ran on through the air, and, killed in it, fell with a standing death where the score stream found him, a corpse left hanging in the air | nothing baked `AnimationStatesExplosionFly.con`'s twenty states and the renderer had no path for them; and a replayed corpse is left where it is made. `extract_pose.py --explosion` bakes them into `gaits/explosion.gait.glb`; `SoldierActions.followHeld` holds the legs in the recorded state by name, and the torso where the recorded torso is the explosion's own (a thrown man's is often a hit or his aim), his weapon stowed (`c_AsmHideWeapon`), a sample early so his legs never run (`FLIGHT_LEAD`: the state is on the record a tenth after his samples leave the ground). A dead man still in the air is drawn by his body until the recording lands him (`recordedFlight`), and his corpse is the landing, `Lb_ExplosionLandFront` / `Back`, where he came to rest; his cry stays at the blow. All eight thrown men of that round were dead: soldier 3 flies 27 m from 30.8 s and lies on his face at 33.0 s, soldier 24 tumbles, bounces and lands on his back at 55.2 s |
 | a pilot who bailed out fell standing, with no canopy | the parachute bundle was bound but nothing entered it for a replayed man or a bot, and only the human's body drew a canopy. The recorded parachute states hold the legs the same way (the glide's torso is his own aim, fire and reload, `Ub_ParachuteOpen`'s `addTransitionWhenDone Ub_StandAim`); the canopy (`parachute.canopy.glb`, `foot-body.js` `canopyAsset`) is out while the recorded state bit `0x10` is (`setIsParachuting`), opening while his legs do, idle after, hung at his origin plus the template's `addTemplate Parachute` 0/0.3/0. Soldier 22 falls from 70.8 s, opens at 72.8 s, fires his No4 under the canopy at 78.8 s and lands at 84.5 s; a man killed under his canopy rides it down and is left where it lands (`Lb_ParachuteDeadHitGround`). A page bot's own `Parachute` (a fall from a plane, the chute pulled) takes the same path |
+| (a public Midway round, `replay_20260927-203459`, 6:20) El Zilcho's Zero firing and silent; so was every aircraft and hull machine gun | a gun patch made of loops (every MG's: `CAMG1`, `brownmlp`, `MG42_fire`) sounds only while its group fires (`vehicle-audio.js`, `group.firing`, the trigger in play), and a replayed gun has no trigger, only recorded rounds; one-shot guns (cannons, AA, bombs) were the only ones heard. `replay-hulls.js` `holdSound` holds `group.sounding` a round and a half at the gun's rate (0.2 s at least) past each round while the replay runs, and the rack opens on it. The rack also asks every mount of a name, not the first: a destroyer's third Browning left the shared patch shut, in play too |
+| (the same round, 9:58) "Rut appears to kill Niconan but it shows as a team kill" | a public server hands a leaver's pid to the next to join, and the replay knew each pid by its last holder: pid 11 was Omen on the Axis when Rut's bazooka killed him (score kind 3, a kill), switched to the Allies in the same tick, left, and was Niconan (Allies) by the round's end. The log compared those final sides and printed "Rut killed a teammate / Niconan is no more". The parser keeps every pid's sessions (join, leave, each change of side from `setTeam` and the player records; `playerAt`, `nameAt`, `teamAt`), stamps each kill with the sides as the file stood at its line, and the score kind decides a team kill (`deathLines` `how.teamKill`). Chat lines, the card, the scoreboard (whose tally forgets a leaver's score), the tags, the kill log, the highlights and the server log's rows name whoever held the pid then: 3star's "lunch time" is 3star's, not "BF Udo Mayer: 3star: lunch time" |
+| (the same round) the PT boats, their rafts, the Kubelwagens, the Stationary MG42s and the B17 silent | a level's `sounds.vehicles` covers the templates its own spawners place, and this server spawns others. `_shared/vehicle-sounds.json` (`extract_vehicle_sounds.py`, every vehicle template of the mod, the levels' own entries) is the rack's fallback for a template the level lacks (`page-audio.js` `sharedVehicleSounds`) |
+| (the same round) both carriers, the Yamato, both Hatsuzukis, a Fletcher, eight Daihatsus and two LCVPs missing; the PrinceOW and the Fletcher2 appearing from nowhere at 405 s | the file began 41 s after the join (a recorder before bf42plus `0254e92` kept none of the join's objects), and each stayed beyond the 520 m view distance, so the sampler never named it; the replay hides the level's own vehicles. `replay-standins.js`: a hull the file sees late (41 of them: everything on the airfield first seen at 8.7 s, the PrinceOW, the LCVPs) lives from its first trace in the part and engine records, where it was first seen, when its engine never ran in between; a root nothing ever names is matched to the level vehicle whose parts it has, and stood in by it (18: a place holds one hull, so the unnamed destroyer takes the pad the Fletcher2 does not; the carrier removed at 389 s and made again at 499 s is the Enterprise). Both are drawn as out-of-range ghosts |
+| (the same round) a respawned Enterprise carried a frozen Corsair, SBD and two LCVPs on her deck | a ship's `models/<Ship>.glb` bakes the craft its spawners launch, which a level detaches (`detachSpawnedCraft`); a replayed ship kept them, doubling the recorded craft and counting their seats among hers. `ReplayHull` drops them (`spawned-craft.js` `spawnedCraftUnder`) |
+| (the same round) three soldiers never died and had no kit (806, 814, 740) | their players held them from the file's first record, and the recording first saw them 8.5 s in; a soldier took his player only from a control record at or after his first sighting. The owner is now whoever's hold on that id overlaps the life, and a kit picked up before the first sighting finds him through what his player controls |
+| (the same round) no radio | nine RadioMessage events (0x3A) were read by nobody. They go through the page's own `comms.receive` with the recording player as the listener: the game's line (`[D5] Rut: Enemy armor spotted!`), team radio in his side's voice, a shout in the speaker's voice at the speaker; a line a seek rebuilds is not heard again |
+| (the same round) twelve `special` events read by nobody | SpecialGameEvent type 0 is a refill: lnxded `GameServer::triggerSpecialGameEvent` (0x081591a0) sends it to the client of a player a depot resupplies, whose soldier plays `SoldierRefillAmmo.ssc` (`BFSoldier::triggerRefillAmmoSound` 0x0827ebc0). The recording player's refills play `Ammorefill` at him, full to 10 m and gone at 15 m (`page-audio.js` `playRefillSound`); one log row a visit |
+| (the same round) ten "round playing" rows | the server sends every client the status again whenever someone joins; a row is now a change |
+| (the same round) MoonGamers' messages read `*Donotsteal/destroyequipment...` | its lines separate words with byte 0x80, which the chat font has no glyph for; drawn as a space (`chatText`, inferred: MANUAL_TESTS.md) |
 
 ## What the replay reuses now
 
@@ -141,8 +151,47 @@ engineering behind them is there too, with addresses.
   same over a synthetic v5 file and a page bot's `Parachute`;
   `tests/test_explosion_assets.py` the bundle.
 
+## Every record and event, cross-checked (replay_20260927-203459)
+
+The Midway round of 2026-09-27 (MoonGamers, a public server, 883 s, v5,
+begun 41 s after the join) holds every record kind and 23 event kinds. Each,
+and where the replay presents it:
+
+| record / event | count | presented by |
+|---|---|---|
+| `h`, `end` | 1, 1 | the format; the file's clean close |
+| `serverInfo`, `serverName`, `challenge`, `setLevel`, `gameRules` (`ago`) | 1 each | the level, mod and server name; the challenge and the rules (friendly fire, ticket ratio, crosshair) change nothing drawn |
+| `roster` | 1 (11 players) | the players' first sessions; a known player's side and `local` |
+| `createPlayer`, `destroyPlayer`, `setTeam` | 10, 8, 3 | each pid's sessions (four ids passed to a new player; one side switched in the tick of a kill) |
+| `p` | 1953 | who controls what, and each player's side as it changes |
+| `o`, `s`, `d`, `createObject`, `destroyObject` | 517, 8379, 462, 260, 780 | object lives, their range and removals; removals of objects never seen feed the stand-ins |
+| `jn`, `j`, `g` | 56, 5863, 6756 | turrets, engine notes and propellers; the traces a late or unnamed hull is carried back by |
+| `a` | 1117 | hit points, damage tiers, wrecks and the kill's explosion |
+| `f` | 2155 | every round, from its own gun, sounding while its rounds leave |
+| `fire` (the input edge) | 255 | the replay log only (`f` has the rounds) |
+| `st`, `anim` | 6367, 1 | stance, held weapon, fire, reload, swim, blast and chute states |
+| `score` | 286 | the kill log (kinds 3, 4, 5 here), spawns and attacks in the replay log |
+| `control`, `enterVehicle`, `exitVehicle`, `pickupKit`, `projPool` | 173, 114, 99, 95, 114 | who controls what, the seats, each soldier's kit, the grenades and mines lying about |
+| `chat` records, `chat` fragments | 47, 140 | the chat box as shown (the fragments are v2's) |
+| `cp`, `tk`, `clock` | 56, 125, 88 | the flags, the recorded tickets, the round clock |
+| `hitFrom` | 41 | the recording player's red hit wash in his own first person |
+| `radio` | 9 | the message log's radio lines and voices |
+| `special` (type 0) | 12 | the recording player's refill sound |
+| `gameStatus` | 10 | a replay log row for a change of status only |
+
 ## Open
 
+- **A round begun after the join with the new recorder** (bf42plus
+  `0254e92`, installed 2026-09-27 22:52): the file should open with every
+  player's `createPlayer`, every standing object's `createObject`, the pools
+  and the kits, each with `ago` (MANUAL_TESTS.md step 4). Until then the
+  stand-ins are what such a file gets.
+- The replay's ghost is 20% opacity, and past 200 m Midway's fog takes the
+  rest: an out-of-range carrier is hard to see. The owner's call whether
+  never-seen ships should be drawn more solidly.
+- A soldier alive at a late file's start whose kit went by before it (723, dead
+  at 3.6 s) has no kit in the file, so his body has no kit weapon; the new
+  recorder's held createPlayer and pickupKit give it.
 - **A v5 round**, for the turrets: MANUAL_TESTS.md step 2.
 - The round-end tallies (`roundStats`) are the whole round's; a check that
   compares each player's `f` count with his `fired` tally would measure how

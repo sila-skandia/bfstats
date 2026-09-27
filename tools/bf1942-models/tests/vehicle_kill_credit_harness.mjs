@@ -110,6 +110,12 @@ out.lines = {
   hullDiedWithNobody: deathLines(hans, null, strings, names),
   ownHand: deathLines(human, human, strings, names),
   teamKill: deathLines({ ...hans, team: 2 }, davis, strings, names),
+  // A recorded score event's own verdict wins over the sides (replay-feed.js):
+  // Omen, killed by Rut's bazooka in the tick he switched to Rut's side
+  // (599.74 s of replay_20260927-203459), is a kill (3), not a team kill.
+  recordedKillSameSides: deathLines({ ...hans, team: 2 }, davis, strings, names,
+                                    { weapon: 'Thompson', teamKill: false }),
+  recordedTeamKillOtherSides: deathLines(hans, davis, strings, names, { teamKill: true }),
 };
 
 console.log(JSON.stringify(out));
