@@ -60,6 +60,17 @@ class KitDropTests(unittest.TestCase):
         self.assertEqual([0.6, 0.8, 0], [round(v, 6) for v in r["slope"]["normal"]])
         self.assertEqual(7, r["nothing"]["y"])
 
+    def test_the_rest_is_weighed_from_his_origin(self) -> None:
+        # `dropKit` reads his own transform (`0x08279b94`), casts from that
+        # origin and compares both candidates with its y (`0x08279cd1`). The
+        # origin is a metre over his feet (the page passes `CHARACTER_HEIGHT`):
+        # on a bunker floor under the terrain, the terrain is nearer it.
+        r = self.results["rest"]
+        self.assertAlmostEqual(11.02, r["bunkerProbeFrom"], places=6)
+        self.assertEqual(11.5, r["bunkerFromOrigin"]["y"])
+        # Weighed from the feet, as the page used to, the floor won.
+        self.assertEqual(10, r["bunkerFromFeet"]["y"])
+
     def test_turns_thirty_degrees_a_second_and_lasts_thirty_seconds(self) -> None:
         life = self.results["life"]
         self.assertAlmostEqual(30.0, life["spinAfter1s"])

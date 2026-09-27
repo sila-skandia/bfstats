@@ -42,9 +42,23 @@ export function poseFromFlags(flags) {
  * absurd, so the origin is not at the feet. `setCharacterHeight -1.00` is the
  * missing metre: the contact point sits 1 m *below* the origin. Adding it back
  * gives 1.65 / 1.12 / 0.30 m, which are exactly the heights a standing,
- * crouching and prone man's eyes sit at. The three offsets are `confirmed`
- * shipped data; reading `characterHeight` as the origin-to-feet distance is
- * `strong inference`.
+ * crouching and prone man's eyes sit at. **Confirmed** (2026-09-27), twice
+ * over in lnxded and once in the recordings:
+ *
+ *   - physics: his collision hull is the 17 vertices
+ *     `SkeletonCollisionMeshTemplate`'s constructor hard-codes
+ *     (`0x083af375`-`0x083af62a`), the lowest (0, -1, 0), and
+ *     `ResponsePhysics::checkVsTerrain` rests exactly those on the ground, so
+ *     the origin stands 1.0 m over it in every pose (`swim.js`, THE ORIGIN);
+ *   - drawing: `setCharacterHeight` writes `BFSoldierTemplate+0x158`
+ *     (`0x082bb734`, ctor default -0.9 at `0x0827a261`), the y his skeleton
+ *     is translated by (`0x0826e984`, `0x08273047`); every installed mod's
+ *     soldiers set -1.00;
+ *   - the bf42plus recorder's soldier samples lie 1.00 m (median) over Wake's
+ *     terrain (`replay-recording.js` `standOnFeet`).
+ *
+ * The hull's metre is code and the template's is data; they agree wherever a
+ * soldier is shipped. This constant is the page's feet-to-origin distance.
  */
 export const CHARACTER_HEIGHT = 1.0;
 export const POSE_CAMERA_POS = Object.freeze([0.65, 0.12, -0.7]);

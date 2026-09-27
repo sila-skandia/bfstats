@@ -520,6 +520,24 @@ class SoldierModuleTests(unittest.TestCase):
         # always undefined and let 13 of these through.
         self.assertEqual(0, wading["steps"])
 
+    def test_a_swimmer_stands_whatever_he_holds(self) -> None:
+        # The swim states own the lower machine and carry no crouch or lie flag,
+        # so `getPose()` answers standing: the standing eye, 0.25 m over the
+        # surface with his feet pinned 1.4 m under it.
+        swimmer = self.results["swimmerStance"]
+        self.assertTrue(swimmer["swimming"])
+        self.assertEqual("stand", swimmer["stance"])
+        self.assertAlmostEqual(1.65, swimmer["eye"], places=6)
+        self.assertAlmostEqual(3 - 1.4, swimmer["y"], places=6)
+
+    def test_lying_down_in_half_a_metre_of_water_puts_his_eye_under(self) -> None:
+        # `updateSwimming`'s second entry arm (`0x082823bc`): the surface over
+        # his camera. Prone the eye is 0.30 m over his feet; standing, 0.5 m of
+        # water is nowhere near either arm.
+        shallows = self.results["proneInShallows"]
+        self.assertTrue(shallows["prone"])
+        self.assertFalse(shallows["standing"])
+
     # -- cost --------------------------------------------------------------- #
 
     def test_a_frame_costs_four_collider_queries(self) -> None:

@@ -131,6 +131,15 @@ class ParachuteTests(unittest.TestCase):
         # No terrain to measure against is "no", not "infinitely high".
         self.assertEqual("none", g["noTerrain"])
 
+    def test_the_height_gate_measures_his_origin(self) -> None:
+        # `0x08275ed2`-`0x08275f28`: `this->getAbsolutePosition().y` less the
+        # terrain, against 10.0. His origin stands a metre over his feet (the
+        # lowest of the 17 hull vertices `SkeletonCollisionMeshTemplate`
+        # hard-codes is (0, -1, 0)), so the state arms with his feet 9 m up.
+        g = self.results["gateOnTheOrigin"]
+        self.assertEqual("falling", g["feet96"])
+        self.assertEqual("none", g["feet89"])
+
     def test_free_fall_steers_on_the_look_axis_and_cannot_lift_you(self) -> None:
         # 0x082726fd takes the CAMERA's absolute transform row 2 and clamps the
         # y of the product at 0x0827274d-0x08272764.
