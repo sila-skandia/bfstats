@@ -14,24 +14,23 @@ soldier's climb state climbs it.
 
 ## The engine's own subsystem
 
-From `bf1942_lnxded.static` (addresses recorded in the audit):
+From `bf1942_lnxded.static`; the addresses, and the evidence for every number
+below, are ledger LADDER-1..5 (`features/bf1942-engine-reference/ledger.md`).
 
 | word | address | what it does |
 |---|---|---|
-| `BFSoldier::startClimbing` | `0x08281b20` | joins collision group 4 (`IResponsePhysics` vt+0x30), snaps onto the ladder plane, plays `Ub_ClimbLadder1` |
-| `getLadderClosestPosition` | `0x08280b40` | a fixed **-0.48 m** perpendicular standoff off the ladder plane |
-| `handleClimbAction` | `0x08281080` | reads the forward/back throttle axis each tick; ladder-top and ladder-bottom exit tests |
-| `stopClimbing` | `0x08281ca0` | leaves the group, restores the default animation state |
-| `updateClimbing` | `0x08280f10` | a literal no-op — climbing has no coded speed constant; motion is animation root-motion |
+| `BFSoldier::handleCollision` | `0x0827d3b0` | a contact with a ladder material (192..195) on an object in the ladder collision group records the ladder, `+0x3c8`/`+0x3c4` |
+| `BFSoldier::handleClimbAction` | `0x08281080` | the grab; every climbing tick the snap, the direction, the ends |
+| `getLadderClosestPosition` | `0x08280b40` | the snap: in the ladder's own frame, across the rungs clamped, up the ladder kept, **-0.48** on its z |
+| `BFSoldier::stopClimbing` | `0x08281ca0` | every way off; at the top the 2.0 m lift a metre through the ladder; the `(0, -100, 0)` push |
+| `BFSoldier::handlePlayerInput` | `0x08273c70` | gravity off and the velocity set along the ladder's up axis while a ladder is held |
+| `BFSoldier::updateClimbing` | `0x08280f10` | a literal no-op; the rate is `handlePlayerInput`'s, not an animation's |
 
-Two consequences drive the design:
-
-* **The climb speed is a placeholder, and says so in one place.** The engine
-  gives no number to copy (`updateClimbing` is `return;`). `LADDER_CLIMB_SPEED
-  = 2.5` m/s in `viewer/ladder-climb.js` is chosen to read as a brisk climb and
-  is the only place the number lives.
-* **The -0.48 m standoff is the engine's own.** `LADDER_STANDOFF = 0.48`,
-  same module, one place.
+Everything is measured in the LADDER'S frame (the placed object's rows: x
+across the rungs, y up, z its face normal) against the `.sm` header's bounding
+box, and against the soldier's ORIGIN, a metre over his feet. The climber
+always hangs on the ladder's -z face looking along +z; the +z side is the deck
+side.
 
 ## What the data carries
 
@@ -61,7 +60,11 @@ The `.con` carries no ladder words beyond the collision group, so the geometry
 is read off the mesh itself (`ladder_spec_from_positions`): the longest
 bounding-box axis is the climb axis, the longer of the two remaining extents
 is the across-rungs width, the shorter is the face — the direction the
-engine's -0.48 m standoff points in. Bottom/top go through the same Z mirror
+engine's -0.48 m standoff points in. For all 17 vanilla ladder geometries the
+face is the mesh's z, so `face` (glTF -z) is the ladder's own +z, and the box
+is the `.sm` header's (the header bounds equal the LOD-0 vertex box for all 15
+meshes they draw). The viewer reads the ladder's frame off the node's world
+matrix rather than off `face`. Bottom/top go through the same Z mirror
 as every vertex, so the spec is plain glTF space. The reading is cached per
 geometry, so a bundle of fifty guard towers parses `Ladder_10m.sm` once. A
 ladder whose mesh cannot be measured (missing `.sm`, degenerate box) exports
@@ -82,7 +85,8 @@ part.
 * **The index.** `collectLadders(root)` runs once per level inside
   `level-terrain.js`'s `buildCollider`, after `indexScene` has composed every
   matrix: one plain-number record per `extras.isLadder` node — world bottom,
-  world top, world face, length, width. The records ride the collider
+  world top, world face, length, width, and the ladder's own frame (origin,
+  rows, the box's extents in it). The records ride the collider
   (`collider.ladders`), which the soldier reads duck-typed the way it reads
   `collider.statics`; a collider without the field simply has nothing to
   climb.
@@ -91,31 +95,34 @@ part.
   (`Soldier#stepLadder`) ahead of the ordinary body step — the engine's
   collision-group swap standing in for skipping `body.step`:
 
-  * **Grab.** Forward held, on the ground, not swimming, not under canopy,
-    within 1.0 m of the ladder's axis (`LADDER_REACH`) — walking into the
-    ladder, the engine's own start. Backward held grabs only beside the TOP
-    rungs — stepping backwards off a deck onto the ladder to climb down.
-    On a grab the body snaps onto the axis at his own height (his feet's
-    place on the line; until 2026-09-27 his mid-body's, see below), offset
-    perpendicular by 0.48 m on the side he approached from (the exporter's
-    `face` sign is arbitrary; the grab orients it toward the soldier), and
-    he turns to face the ladder.
-  * **Move.** The clamped throttle axis: positive climbs up, negative down,
-    zero hangs on — at `LADDER_CLIMB_SPEED`, a constant rate. Every rung is a
-    contact: `lastCollisionHeight` tracks the climb, so a leap off
-    mid-ladder is billed from where he let go and the top exit lands with
-    nothing owed.
-  * **Exit.** At the top (`t = 1`), the climb ends and the body is stepped
-    `LADDER_TOP_STEP = 0.4` m *through* the ladder — a guard tower's deck is
-    on the far side of its ladder from the man who just climbed it — and the
-    ordinary physics settles his feet on whatever is there. At the bottom
-    (`t = 0`) the climb ends on the ground under the ladder. A jump press
-    tears the climb off at the jump-queue site and the queued impulse fires
-    the next tick — the leap off. A dead body falls out of the climb the
-    ordinary way.
+  * **Grab** (`climbStart`). Forward held and touching a ladder (the page's
+    stand-in for the contact: within `LADDER_REACH`, 1.0 m, of its face
+    rectangle, his body overlapping its height to `LADDER_TOUCH_ABOVE`, 1.1 m,
+    past the top, on the side he faces it from), his origin under less than 0.48 m of water, and one of
+    the engine's two arms: below the ladder's origin facing its +z (`> 0.8`),
+    or above it facing its -z (`< -0.8`) — walking forward off the deck out
+    over it, which drops him 2.0 m. No backward grab, no ground test; the
+    canopy refusal is the page's. A swimmer (his origin pinned 0.4 m under
+    the surface) takes a net, and the climb ends his swim. He is snapped to the -z face at his
+    origin's height in the ladder's frame, across the rungs where the
+    engine's clamp puts him, and turned to face +z. The grab's tick is
+    already a climbing tick.
+  * **Move** (`climbTick`). A held throttle, either key, climbs the way he
+    looks (the sign of his pitch; a level look keeps the key's sign), at the
+    engine's rate: the standing row of `directionalSpeed` times the climb
+    states' `setSpeed 0.7` through the ordinary ramp — 4.2 m/s up, 2.8 down,
+    a third with the walk key. Nothing held hangs, once the ramp has run
+    down. The velocity is the climb's, so it carries into a let-go. Every
+    rung is a contact: `lastCollisionHeight` tracks the climb.
+  * **Ends** (`climbStop`). Moving down with his origin under the box's
+    bottom plus 1.6 (feet 0.6 m over it) lets go; moving up with it over the
+    box's top less 0.8 lets go, and there he is lifted 2.0 m and a metre
+    along +z, through the ladder onto the deck side; moving down with it more
+    than 0.5 m under water lets go. A jump press lets go without a jump; so
+    does death. Every let-go adds the engine's `(0, -100, 0)` for one tick.
 
-While climbing the gait hangs at `stand` (no run bob), `body.step` does not
-run for that tick, and the swim/drown/parachute seams are untouched.
+While climbing the stance and gait hang at `stand`, `body.step` does not run
+for that tick, and the swim/drown/parachute seams are untouched.
 
 ## Verification
 
@@ -126,16 +133,22 @@ run for that tick, and the swim/drown/parachute seams are untouched.
   the mesh-bounds reading (axis, length, width, face, the Z mirror), the
   direct and nested emissions, the non-ladder and unmeasurable cases, the
   per-geometry cache.
-* `tests/test_ladder.py` + `tests/ladder_harness.mjs` (12 tests): the whole
-  climb law through the real `Soldier` against a fake collider — grab, the
-  0.48 m snap, the 2.5 m/s rate, the hang, the top exit (through the ladder,
-  onto the deck side), the bottom exit, the leap, the dead drop, the reach
-  refusal, the ladder-less world, the backward grab.
+* `tests/test_ladder.py` + `tests/ladder_harness.mjs` (22 tests): the whole
+  climb law through the real `Soldier` against a fake collider and a ladder
+  built through `ladderRecord` — both grab arms, the facing and height
+  refusals, no backward grab, no grab walking away from it, the snap, the rates and the look's direction,
+  the hang, the top's lift onto a deck, the bottom, the water, a swimmer's
+  grab, the jump's let-go, the dead drop, the reach refusal, the ladder-less
+  world.
 * `node --check` every touched viewer file.
 * `python3 -m unittest discover -s tests` from `tools/bf1942-models` — green
   apart from the one pre-existing `test_meme` clean-page-count failure.
 
 ## Live pass (Stalingrad), and the one caveat
+
+(The first pass, with the original climb law, before the scenes carried
+`extras.isLadder`. The 2026-09-27 pass at the end of this file replaces its
+numbers.)
 
 The shipped `viewer/maps/bf1942/stalingrad/scene.glb` predates
 `extras.isLadder` — the scene re-bake is sequenced after this exporter lands
@@ -202,4 +215,75 @@ Still the viewer's, and noted: the climb rate (animation-driven in the engine),
 the page's exits at the line's ends (the engine's tests are against his origin
 and the ladder mesh's bounding box, read but not verified), and the top grab,
 which the page takes on a backward press near the top without the engine's
-2.0 m drop.
+2.0 m drop. (All three were settled the same day; see below.)
+
+## 2026-09-27: the engine's grab, climb and ends
+
+Ledger LADDER-2..5; `viewer/ladder-climb.js`, `viewer/soldier.js`
+`#stepLadder`, `tests/test_ladder.py`.
+
+**The top grab.** The dot `handleClimbAction` tests is his FACING — his own
+row 2, which `handlePlayerInput` hands it — against the ladder object's row 2,
+its +z; his velocity is not read. Below the ladder's origin he takes it facing
++z; above it, facing -z, which is walking forward off the deck out over the
+ladder: dropped 2.0 m, put on the -z face, turned round to face +z. Only
+forward grabs, so the page's backward-press grab is gone, and so is its ground
+test (the engine has none). A man level with or above the ladder's origin on
+its -z side, facing it, takes neither arm; a short ladder whose origin sits
+under a standing man's cannot be taken from its foot. The page also refused
+any swimmer; the engine's water test lets one whose origin is under 0.48 m
+take a ship's net, which the swim's own pin (0.4 m) always is.
+
+**The exits.** Verified: the box the tests read is the ladder object's
+geometry's `getBoundingBox` (`IGeometry` vt+0x1c), the `BStandardMesh`'s copy
+of the `.sm` header bounds that `loadHeader` reads — and for all 15 vanilla
+ladder meshes those are the LOD-0 vertex box, so the exporter's bottom and top
+are the engine's box. The tests are against his origin in the ladder's frame:
+down under `min.y + 1.6` (feet 0.6 m over the box), up over `max.y - 0.8`,
+down more than 0.5 m under water. `stopClimbing` at the top lifts him 2.0 m
+and a metre along +z (feet 0.2 m over the box's top, 0.52 m beyond the
+ladder's plane); every let-go gets a one-tick `(0, -100, 0)` acceleration.
+The page's exits now do exactly that. A jump press lets go without a jump (the
+engine zeroes the action). The top's `Lb_ClimbLadderEnd1`/`Exit`/
+`StopClimbing` arms are dormant in vanilla — nothing enters those states —
+and are not built; nor is the one-second `+0x55c` timer, which only stops
+`handleCollision` looking for a moving object to ride.
+
+**The climb rate**, measured where it could be:
+
+* The engine: while a ladder is held `handlePlayerInput` turns gravity off
+  and sets the velocity to the ladder's up axis times the ordinary forward
+  command, the climb states' `setSpeed 0.7` included: **4.2 m/s up, 2.8 down**
+  at the full ramp, 1.4 and 0.93 with the walk key. `LADDER_CLIMB_SPEED` is
+  now that product, not a placeholder.
+* The clips: `3PClimbLadder1Lower`/`2Lower.baf` are six frames; the root's
+  height channel moves 1 cm over a clip and the rest bob and return. No root
+  motion to measure, and the engine reads none for the motion.
+* The recordings: the only two with a state table (Wake v4, Kursk v5) hold
+  4,416 soldier-state records and none in any of the 20 climb states; a
+  motion scan of all 55 recordings finds no climb. Nothing recorded to hold
+  4.2 against.
+
+**The direction**, found on the way: a held throttle, W or S, climbs the way
+he looks — the sign of his aim pitch replaces it. The recordings settle which
+sign is up: in all 33 of the fired rounds with pitch and elevation both past
+5 degrees, the two agree.
+
+**Live, Stalingrad** (one headless Chromium, the baked `extras.isLadder`, all
+twelve ladders): walking into each -z face with W, the grab within two ticks,
+4.200 m/s over the last full second of every tower climb, the top let go with
+his feet 0.20-0.27 m over the box and 0.52 m through, and he settled on the
+deck — 42.83 m on the bunkers, 47.39-48.43 m on the towers. Then, on five of
+them (four towers, one bunker), from where he stood: turned out over the
+ladder, looking down, W — taken on the first tick (63 ticks when he had first
+to walk 2.9 m to the edge), dropped 2.004 m onto the -z face, down at 2.8 m/s,
+let go with his feet 0.49-0.60 m over the box's bottom, standing on the
+ground, no damage. The tower ladder at (541.6, -393.9) that the first pass
+found unsupported now leaves him on the ruin at 48.43 m.
+
+Left open, and the page's: the touch (`LADDER_REACH`, `LADDER_TOUCH_ABOVE`,
+and the side he faces it from) stands in for a contact with the ladder's
+collision mesh; the page turns him
+to face the ladder once, at the grab, where the engine hands him its rows
+every tick; and the `(0, -100, 0)` push is a per-tick acceleration, so it
+takes 1.7 m/s at the page's 60 Hz where it takes 3.3 at 30.
