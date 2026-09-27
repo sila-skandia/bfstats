@@ -46,7 +46,7 @@ public class ServiceRecordService(
     /// Redis key for a player's record. Bump the version when the payload changes shape, or when
     /// a change to how armies are dressed would otherwise leave an hour of stale figures.
     /// </summary>
-    public static string CacheKey(string playerName) => $"service-record:v4:{playerName}";
+    public static string CacheKey(string playerName) => $"service-record:v5:{playerName}";
 
     /// <summary>
     /// Refractor's team numbering for a bflist label: "Axis" is team 1, "Allied" (or

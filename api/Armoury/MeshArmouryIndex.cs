@@ -18,6 +18,11 @@ namespace api.Armoury;
 /// and bayonet grips, not the vanilla rifles its soldiers also carry — so a pose, part or
 /// vehicle is looked up per file along the search path, the way the viewer's
 /// <c>pose-bases.js</c> does, rather than inside one tree.
+///
+/// Every path it returns ends in <c>?v=</c> and the file's modification time. The mesh route
+/// is cached at the edge for a day, so a republished glb under an unchanged URL kept its old
+/// bytes that long (a figure's broken first bake, a cap whose texture had been missing); the
+/// version gives a republished file a URL the edge has never seen.
 /// </summary>
 public sealed partial class MeshArmouryIndex(
     IMapDossierResolver resolver,
@@ -191,7 +196,7 @@ public sealed partial class MeshArmouryIndex(
             foreach (var tree in poseTrees)
             {
                 if (tree.Poses.TryGetValue(wanted, out var file))
-                    return (file[(skin.Length + 2)..^PoseSuffix.Length], $"{tree.Prefix}/poses/{file}");
+                    return (file.Name[(skin.Length + 2)..^PoseSuffix.Length], Versioned($"{tree.Prefix}/poses", file));
             }
         }
 
@@ -228,11 +233,13 @@ public sealed partial class MeshArmouryIndex(
         {
             var names = thumbs ? tree.Thumbs : tree.Files;
             if (names.TryGetValue(fileName, out var file))
-                return thumbs ? $"{tree.Prefix}/thumbs/{file}" : $"{tree.Prefix}/{file}";
+                return Versioned(thumbs ? $"{tree.Prefix}/thumbs" : tree.Prefix, file);
         }
 
         return null;
     }
+
+    private static string Versioned(string directory, MeshFile file) => $"{directory}/{file.Name}?v={file.Version}";
 
     private MeshTree Tree(string id)
     {
@@ -267,16 +274,16 @@ public sealed partial class MeshArmouryIndex(
 
         foreach (var pose in tree.Poses.Values)
         {
-            var separator = pose.IndexOf("__", StringComparison.Ordinal);
+            var separator = pose.Name.IndexOf("__", StringComparison.Ordinal);
             if (separator > 0)
-                tree.PoseSkins.TryAdd(pose[..separator], pose[..separator]);
+                tree.PoseSkins.TryAdd(pose.Name[..separator], pose.Name[..separator]);
         }
 
         LoadKits(tree, Path.Combine(root, "kits.json"));
         return tree;
     }
 
-    private void ListInto(Dictionary<string, string> names, string directory, string suffix)
+    private void ListInto(Dictionary<string, MeshFile> names, string directory, string suffix)
     {
         try
         {
@@ -284,14 +291,12 @@ public sealed partial class MeshArmouryIndex(
                 return;
 
             // Sorted so that, where two files differ only in case, the same one always wins.
-            var files = Directory.EnumerateFiles(directory)
-                .Select(Path.GetFileName)
-                .OfType<string>()
-                .Where(name => name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                .Order(StringComparer.Ordinal);
+            var files = new DirectoryInfo(directory).EnumerateFiles()
+                .Where(file => file.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(file => file.Name, StringComparer.Ordinal);
 
             foreach (var file in files)
-                names.TryAdd(file, file);
+                names.TryAdd(file.Name, new MeshFile(file.Name, new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeSeconds()));
         }
         catch (Exception ex)
         {
@@ -329,6 +334,9 @@ public sealed partial class MeshArmouryIndex(
     [GeneratedRegex("^[a-z0-9_-]+$")]
     private static partial Regex SafeTreeId();
 
+    /// <summary>A listed file: its own spelling, and its modification time in Unix seconds.</summary>
+    private readonly record struct MeshFile(string Name, long Version);
+
     /// <summary>One model tree's listings. Names are keyed without case and map to the file's own spelling.</summary>
     private sealed class MeshTree(string prefix, bool exists)
     {
@@ -337,14 +345,14 @@ public sealed partial class MeshArmouryIndex(
         public bool Exists { get; } = exists;
 
         /// <summary>glb files at the tree's root: vehicles, weapons and worn kit parts.</summary>
-        public Dictionary<string, string> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, MeshFile> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public Dictionary<string, string> Poses { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, MeshFile> Poses { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Every skin with at least one monolithic pose, as the files spell it.</summary>
         public Dictionary<string, string> PoseSkins { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public Dictionary<string, string> Thumbs { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, MeshFile> Thumbs { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public Dictionary<string, MeshKit> Kits { get; } = new(StringComparer.OrdinalIgnoreCase);
     }

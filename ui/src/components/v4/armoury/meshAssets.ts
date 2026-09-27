@@ -40,12 +40,13 @@ export function openingArmy(record: ServiceRecord | null): ServiceRecordArmy | n
 }
 
 /**
- * `models/mods/xpack2/Flakpanzer.glb` -> the mesh site's model page for it.
+ * `models/mods/xpack2/Flakpanzer.glb?v=1759000000` -> the mesh site's model page for it.
  * The page matches the hash against its manifest by name, and `?mod=` picks the tree.
+ * The API versions every asset path with its file's modification time; that is not part of the name.
  */
 export function meshSiteModelUrl(modelPath: string | null): string | null {
   if (!modelPath) return null
-  const match = /^models\/(?:mods\/([^/]+)\/)?([^/]+)\.glb$/i.exec(modelPath)
+  const match = /^models\/(?:mods\/([^/]+)\/)?([^/?]+)\.glb(?:\?.*)?$/i.exec(modelPath)
   if (!match) return null
   const [, mod, name] = match
   return `${MESH_SITE}${mod ? `?mod=${encodeURIComponent(mod)}` : ''}#${encodeURIComponent(name)}`
