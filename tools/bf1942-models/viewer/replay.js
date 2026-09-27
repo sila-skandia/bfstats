@@ -124,7 +124,7 @@ class ReplayPlayer {
     // The recording's own player first: the one person in a bot round, and
     // the one whose view the recording was made from.
     this.recordingPid = recordingPlayer(rec);
-    const human = pids.find(pid => rec.players.get(pid) && !rec.players.get(pid).ai);
+    const human = pids.find(pid => rec.players.get(pid)?.ai === false);
     this.followPid = this.recordingPid ?? human ?? (pids.length ? pids[0] : null);
     this.v1 = new THREE.Vector3();
     this.v2 = new THREE.Vector3();
@@ -598,7 +598,7 @@ export function recordingInfo(url) {
  * The replay controller map.html creates once its level is showing.
  *
  * ctx: { scene, camera, loader, stage, bust, modelsBase, levelName(),
- *        hideBakedVehicles(), shadeModel(root), guns, effects,
+ *        levelRoot(), hideBakedVehicles(), shadeModel(root), guns, effects,
  *        vehicleClasses, groundHeight(x, z), waterLevel(),
  *        claimVehicleAudio(key, node, drive, groups), releaseVehicleAudio(key, node),
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),

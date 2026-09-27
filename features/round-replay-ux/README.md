@@ -278,7 +278,8 @@ other; a `?replay=` URL needed the file under the served `replays/`.
   first line is the `h` header, whatever the extension), that its mod has maps
   in this viewer (`serverInfo.mod`, now `rec.mod`), and that the level is
   extracted for that mod. Each refusal says which, on the panel, with Choose a
-  file. A recording that names no level plays on the one on screen.
+  file. A recording that names no level is recognised by its flags, or asks
+  which it was (see "A recording that names no level").
 - **The date.** The loading screen carries a line over the plate, `REPLAY ·
   27 SEP 2026, 14:09 · <server>`, and the replay bar `RECORDED 27 SEP 2026,
   14:09` after the clock (its tooltip the seconds, the server and the file).
@@ -316,3 +317,57 @@ the opened round plays, a refresh saying so with the level still loading; a
 `progress.js` without `note` served to the page (the Kursk replay loads, one
 warning), and a highlights layer throwing every frame (switched off, the
 replay plays on).
+
+## A recording that names no level (2026-09-27)
+
+The report: "replay_20260927-190946.ndjson does not say which level it was
+recorded on", and once it was played on Tobruk by hand, every player was
+`player 18` and the Shermans wore the wrong paint. The recorder had begun that
+file 20 s after the join, so it has none of the join's events
+(`features/round-replay-capture` §18, fixed in the recorder since bf42plus
+`ea600c1`). What the viewer does with a file like it:
+
+- **The level from its flags** (`replay-level.js`). Every recording has its
+  `cp` records, each flag's template and position, and every extracted level
+  has its flags in scene.json (`controlPoints`, and each game type's). The
+  level with every recorded flag within 1 m, under the same template, is the
+  one. Failing that, the level with the most is taken if it has three in four
+  and no other level has as many. The search reads the recording's own mod's
+  levels, then vanilla's and the packs' (a pack's copy of a vanilla level is
+  read once). It skips a level smaller than where the flags stand, reads at
+  most 72 scene files, and stops at the first full match. That file is
+  Tobruk, in 0.3 s on this PC.
+- **Otherwise it asks.** The panel lists every level the viewer has: the
+  recording's mod first, then vanilla and the packs, then the rest, with the
+  level on screen chosen. Play loads it; Close, Escape or another file drops
+  the question. This replaces "plays on the level on screen".
+- **Names.** The recorder's `roster` names everyone. A file without one names
+  whoever talked: the chat box prints `Name: text`, or `Name [allies]: text`
+  on the side channel (`speakerOf`). Everyone else a player record shows keeps
+  his side, with no name and no bot flag. In that file, 9 of the 28 are named,
+  the recording player among them.
+- **The level's paint.** A replayed hull was `models/<Template>.glb` in the
+  game's own textures. Tobruk's `textureManager.alternativePath Texture/Africa`
+  paints its vehicles desert, so its Shermans came out olive. A hull now takes
+  the level's variant where models.json lists one (a level archive's reskin:
+  `Sherman.Kasserine_Pass.glb`). Over the rest it takes any colour texture the
+  level's own bake read from somewhere other than `texture/` (`levelSkins`,
+  `wearLevelSkin`): the bake's Sherman wears `texture/Africa/sherma_i`. The
+  bake's textures are at the bake's resolution, about half the model's.
+
+| File | What changed |
+|---|---|
+| `viewer/replay-level.js` | New: the flags of a recording and of a scene.json, and the search. |
+| `viewer/replay-open.js` | The search, the level question (`askLevel`), maps.json read once a page. |
+| `viewer/replay-recording.js` | `roster`, names from the chat, every player's side. |
+| `viewer/replay-chapters.js`, `viewer/replay.js` | The roster's `local` first when choosing whom to follow; only a known human counts as the human. |
+| `viewer/replay-assets.js`, `viewer/map.html` | The level's variant and paint (`ctx.levelRoot`). |
+
+Verified: `tests/test_replay_open.py` (the search over three vanilla levels
+and a pack, one flag moved, three moved, a tie, the budget, no flags; names
+from the chat and from a roster; the paint and the variant files). In headless
+Chromium on the real file: Open recording on Aberdeen, "Finding the level",
+then Tobruk; the tab reads `Tobruk replay · 27 Sep 2026, 19:09`; the camera
+follows the recording player, named by his own chat; all five replayed
+Shermans wear `texture/Africa`. A copy with the flags taken out asks, with
+Aberdeen chosen, and plays on Tobruk when that is picked.

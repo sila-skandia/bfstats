@@ -40,6 +40,43 @@ const MAX_SEATS = 12;
 export const teamName = team => (team === 1 ? 'Axis' : team === 2 ? 'Allies' : 'no team');
 export const fmtHp = v => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
+/** The speaker of a line as the chat box prints it: `Name: text`, or `Name
+ *  [allies]: text` on his side's channel. null for a line with no speaker
+ *  (the server's own, `*Welcome...`, come from pid -1 and have none). */
+export function speakerOf(line) {
+  const at = String(line ?? '').indexOf(': ');
+  if (at <= 0) return null;
+  const name = line.slice(0, at).replace(/ \[(allies|axis)\]$/i, '');
+  return name.trim() ? name : null;
+}
+
+/** Each player the chat names, `pid -> { name, team }`: the name most of his
+ *  lines carry, and the side of his last. Only the `chat` records are read. */
+function chatSpeakers(lines) {
+  const heard = new Map();
+  for (const line of lines) {
+    if (!line.includes('"k":"chat"')) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const name = r.k === 'chat' && r.pid >= 0 ? speakerOf(r.text) : null;
+    if (!name) continue;
+    if (!heard.has(r.pid)) heard.set(r.pid, { counts: new Map(), team: 0 });
+    const entry = heard.get(r.pid);
+    entry.counts.set(name, (entry.counts.get(name) ?? 0) + 1);
+    entry.team = r.team ?? entry.team;
+  }
+  const out = new Map();
+  for (const [pid, { counts, team }] of heard) {
+    const [name] = [...counts].sort((a, b) => b[1] - a[1])[0];
+    out.set(pid, { name, team });
+  }
+  return out;
+}
+
 function qmul(a, b) {
   const [ax, ay, az, aw] = a;
   const [bx, by, bz, bw] = b;
@@ -124,7 +161,7 @@ export function parseRecording(text) {
     mod: '',              // the server's mod (ServerInfoEvent 0x1A): 'bf1942', 'XPack1', ...
     server: '',
     lives: [],
-    players: new Map(),   // pid -> { name, team, ai, joinNid, joinKitNid }
+    players: new Map(),   // pid -> { name, team, ai, joinNid, joinKitNid, local? }
     control: [],          // { t, pid, team, nid } from player records
     chat: [],             // { t, pid, team, text, body }
     events: [],           // feed rows
@@ -160,12 +197,17 @@ export function parseRecording(text) {
   let joined = -Infinity;
   let sawPregame = false;
 
+  const lines = text.split('\n');
+  // Who the chat box names, for players nothing else introduces (see the
+  // roster below): read first, so the feed's rows carry the names too.
+  const spoken = chatSpeakers(lines);
+
   const row = (t, kind, text) => {
     const entry = { t, kind, text, source: 'client' };
     rec.events.push(entry);
     return entry;
   };
-  const playerName = pid => rec.players.get(pid)?.name ?? `player ${pid}`;
+  const playerName = pid => rec.players.get(pid)?.name ?? spoken.get(pid)?.name ?? `player ${pid}`;
 
   /** HitFromPosEvent (0x3C), sent to the damaged player's client alone: the
    *  sector the damage came from (45 degrees each: 0 ahead, 4 behind, 1-3
@@ -495,7 +537,7 @@ export function parseRecording(text) {
     }
   }
 
-  for (const line of text.split('\n')) {
+  for (const line of lines) {
     if (!line.trim()) continue;
     let r;
     try {
@@ -645,9 +687,38 @@ export function parseRecording(text) {
         // v4: the engine's animation state table, once: `[index, name, flags]`.
         for (const [index, name, flags] of r.states ?? []) rec.animStates[index] = { name, flags };
         break;
+      case 'roster':
+        // Who was playing when a file begun after the join began (bf42plus
+        // ea600c1): `[pid, team, ai, name, local]`, local the recording
+        // player. Their createPlayer events all went by before the file.
+        for (const [pid, team, ai, name, local] of r.p ?? []) {
+          if (rec.players.has(pid)) continue;
+          rec.players.set(pid, {
+            name, team, ai: Boolean(ai), joinT: t, joinNid: null, joinKitNid: null, camNid: null,
+            local: Boolean(local),
+          });
+        }
+        break;
       default:
         break;
     }
+  }
+
+  // Everyone else the recording shows playing. A file begun after the join
+  // (recording switched on mid-round) by a recorder that wrote no roster has
+  // no createPlayer for anyone already in the round: the chat names whoever
+  // talked, and his player records carry every player's side.
+  const sides = new Map();
+  for (const { pid, team } of rec.control) sides.set(pid, team);
+  for (const pid of new Set([...spoken.keys(), ...sides.keys()])) {
+    if (rec.players.has(pid)) continue;
+    const said = spoken.get(pid);
+    rec.players.set(pid, {
+      name: said?.name, team: sides.get(pid) ?? said?.team ?? 0,
+      // Bots do not talk; of a silent player the recording cannot say.
+      ai: said ? false : null,
+      joinT: 0, joinNid: null, joinKitNid: null, camNid: null,
+    });
   }
 
   // Names for lives announced only by template id (before v3), from any object

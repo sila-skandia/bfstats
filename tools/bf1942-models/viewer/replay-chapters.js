@@ -19,13 +19,15 @@ const SAME_EVENT = 1.5;
 export const playerName = (rec, pid) => rec.players.get(pid)?.name ?? `player ${pid}`;
 export const playerTeam = (rec, pid) => rec.players.get(pid)?.team ?? 0;
 
-/** The player whose client made the recording: the one whose rounds the
- *  recorder marks `local` (v4), else the round's human. His own view is the
+/** The player whose client made the recording: the one the roster marks
+ *  `local` (a file begun mid-round), else the one whose rounds the recorder
+ *  marks `local` (v4), else the round's human. His own view is the
  *  recording's (the hit indicator is his alone, `rec.hitsTaken`). */
 export function recordingPlayer(rec) {
+  for (const [pid, player] of rec.players) if (player.local) return pid;
   const shot = rec.fires.find(f => f.local && f.pid !== null && f.pid !== undefined);
   if (shot) return shot.pid;
-  for (const [pid, player] of rec.players) if (!player.ai) return pid;
+  for (const [pid, player] of rec.players) if (player.ai === false) return pid;
   return null;
 }
 

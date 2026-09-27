@@ -1789,6 +1789,9 @@ replayController = createReplayController({
   opened: player => recordings?.decorate(player),
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
+  // The level's bake: its own vehicles wear its paint (Tobruk's desert), which
+  // a replayed hull of the same template takes (replay-assets.js levelSkins).
+  levelRoot: () => level.currentRoot ?? null,
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
   // The engine's vehicle lighting, as the level's own vehicles get it.
