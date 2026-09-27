@@ -14,7 +14,10 @@
 // (`<Kit>__pickup.kit.glb`, the one `kit-drops-page.js` drops for a bot), a
 // round as the projectile mesh its weapon's glb carries, and a round that
 // goes out of the recording where it lay plays its template's end effect --
-// the grenade's `e_ExplGranade` -- through the page's EffectPlayer.
+// the grenade's `e_ExplGranade` -- through the page's EffectPlayer. A round a
+// hull lays has no glb of its own to carry it: the PT boats'
+// `FloatingMineLauncher` is part of the Elco80 and the Type38, and its
+// `FloatingMine` is drawn from whichever of the recording's hulls carries it.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -27,9 +30,37 @@ const AT_ORIGIN = 1;
 
 const atOrigin = p => Math.hypot(p[0], p[1], p[2]) < AT_ORIGIN;
 
-/** The weapon a projectile template belongs to: `GrenadeAlliesProjectile`
- *  is thrown by `GrenadeAllies`. */
-export const weaponOfProjectile = tmpl => String(tmpl || '').replace(/Projectile$/i, '');
+/** The hand weapon a projectile template belongs to, by the game's own
+ *  naming: `GrenadeAlliesProjectile` is thrown by `GrenadeAllies`. Null where
+ *  the name says nothing (`FloatingMine`): a round named after no weapon has
+ *  no `<Weapon>.glb` to fetch. */
+export const weaponOfProjectile = tmpl => {
+  const name = String(tmpl || '');
+  return /.Projectile$/i.test(name) ? name.replace(/Projectile$/i, '') : null;
+};
+
+/**
+ * A round of `tmpl` as `scene` carries it: the projectile mesh under the
+ * FireArms whose round it is (`extras.fireArms.projectile.template`,
+ * assemble.py `_projectile_spec`), and the end effect that FireArms names.
+ * A hull carries more than one -- an Elco80 has its torpedoes and its
+ * floating mines -- so the FireArms decides, never the first mesh found.
+ * `{ mesh, endEffect }`, or null.
+ */
+export function roundIn(scene, tmpl) {
+  const want = String(tmpl || '').toLowerCase();
+  let found = null;
+  scene?.traverse(obj => {
+    if (found) return;
+    const projectile = obj.userData?.fireArms?.projectile;
+    if (!projectile || typeof projectile !== 'object'
+        || String(projectile.template || '').toLowerCase() !== want) return;
+    let mesh = null;
+    obj.traverse(child => { if (!mesh && child !== obj && child.userData?.projectileMesh) mesh = child; });
+    if (mesh) found = { mesh, endEffect: projectile.endEffect ?? null };
+  });
+  return found;
+}
 
 export class ReplayProps {
   constructor(player) {
@@ -38,12 +69,13 @@ export class ReplayProps {
     this.sources = new Map();   // key -> Promise<{ scene, endEffect }|null>
   }
 
-  /** Every kit and round life that is ever somewhere. */
-  async load(lives) {
+  /** Every kit and round life that is ever somewhere. `hulls` are the
+   *  recording's hull models, where a round a hull lays is looked for. */
+  async load(lives, hulls = []) {
     const ctx = this.player.ctx;
     const placed = lives.filter(l => (l.kit || l.projectile) && l.keys.some(k => !atOrigin(k.p)));
     await Promise.all(placed.map(async life => {
-      const source = life.kit ? await this.kitSource(life.tmpl) : await this.roundSource(life.tmpl);
+      const source = life.kit ? await this.kitSource(life.tmpl) : await this.roundSource(life.tmpl, hulls);
       if (!source) return;
       const node = skeletonClone(source.scene);
       node.visible = false;
@@ -64,35 +96,42 @@ export class ReplayProps {
     return this.sources.get(key);
   }
 
-  roundSource(tmpl) {
-    const weapon = weaponOfProjectile(tmpl);
-    const key = `round|${weapon}`;
+  /** The mesh a round of `tmpl` is drawn with: a launcher on one of `hulls`
+   *  (no fetch), else its hand weapon's own glb. */
+  roundSource(tmpl, hulls = []) {
+    const key = `round|${String(tmpl).toLowerCase()}`;
     if (!this.sources.has(key)) {
-      const ctx = this.player.ctx;
-      this.sources.set(key, ctx.loader.loadAsync(`${ctx.modelsBase}/${weapon}.glb${ctx.bust()}`)
-        .then(gltf => {
-          let mesh = null;
-          let endEffect = null;
-          gltf.scene.traverse(obj => {
-            if (!mesh && obj.userData?.projectileMesh) mesh = obj;
-            const projectile = obj.userData?.fireArms?.projectile;
-            if (projectile && typeof projectile === 'object'
-                && String(projectile.template || '').toLowerCase() === String(tmpl).toLowerCase()) {
-              endEffect = projectile.endEffect ?? endEffect;
-            }
-          });
-          if (!mesh) return null;
-          const scene = mesh.clone(true);
-          scene.position.set(0, 0, 0);
-          scene.quaternion.identity();
-          scene.visible = true;
-          scene.traverse(obj => { obj.visible = true; });
-          ctx.shadeModel?.(scene);
-          return { scene, endEffect };
-        })
-        .catch(() => null));
+      this.sources.set(key, this.findRound(tmpl, hulls).catch(() => null));
     }
     return this.sources.get(key);
+  }
+
+  async findRound(tmpl, hulls) {
+    for (const hull of hulls) {
+      const round = roundIn(hull, tmpl);
+      if (round) return this.dress(round);
+    }
+    const weapon = weaponOfProjectile(tmpl);
+    if (!weapon) return null;
+    const ctx = this.player.ctx;
+    const gltf = await ctx.loader.loadAsync(`${ctx.modelsBase}/${weapon}.glb${ctx.bust()}`);
+    // A hand weapon has the one round; a glb whose FireArms does not name it
+    // (an older tree's) still draws the projectile mesh it carries.
+    let first = null;
+    gltf.scene.traverse(obj => { if (!first && obj.userData?.projectileMesh) first = obj; });
+    const round = roundIn(gltf.scene, tmpl) ?? (first ? { mesh: first, endEffect: null } : null);
+    return round ? this.dress(round) : null;
+  }
+
+  /** A drawable copy of a round's mesh, at the origin and shown. */
+  dress({ mesh, endEffect }) {
+    const scene = mesh.clone(true);
+    scene.position.set(0, 0, 0);
+    scene.quaternion.identity();
+    scene.visible = true;
+    scene.traverse(obj => { obj.visible = true; });
+    this.player.ctx.shadeModel?.(scene);
+    return { scene, endEffect };
   }
 
   update(t) {
