@@ -1417,6 +1417,12 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
             joint_bones.append(name)
     joint_bones = [name for name in joint_bones if name in binds
                    and ske_mod.canonical(name) in joint_nodes]
+    if not joint_bones:
+        # Nothing to bind the part to: a skin with no joints would point every
+        # vertex at a joint that does not exist, which three.js does not
+        # survive. Leave the part off, as for an unreadable skin.
+        part_report.setdefault("missing", []).append(f"{geom.skin} (no bindable bone)")
+        return None
     slot = {name: i for i, name in enumerate(joint_bones)}
 
     def vertex_slots(skn_index: int) -> tuple[tuple[int, ...], tuple[float, ...]]:
