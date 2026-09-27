@@ -57,6 +57,7 @@ function seedOverlay(el, buttons) {
     '.ld-trough': makeEl(),
     '.ld-fill': makeEl(),
     '.ld-prompt': makeEl(),
+    '.ld-note': makeEl(),
     '.ld-brief-btn': btn,
     '.ld-card .ld-title': makeEl(),
     '.ld-bar': makeEl(),
@@ -175,6 +176,16 @@ els['.ld-brief-btn'].dispatch('click');
 results.readyFiresOnReady = readyClicks === 1;
 results.readyClearsState = root.dataset.state === 'done';
 results.hoverRelayed = briefingStub.calls.hover.includes(true);
+
+// -- the line over the plate: a replay's date and server, kept across loads ---
+const noted = build(makeBriefingStub());
+const notedRoot = overlays[overlays.length - 1];
+noted.note('Replay  ·  27 Sep 2026, 14:09');
+noted.begin('Kursk', {});
+results.markupHasNote = screen.includes('class="ld-note"');
+results.noteKeptAcrossBegin = notedRoot.children['.ld-note'].textContent;
+noted.note('');
+results.noteCleared = notedRoot.children['.ld-note'].textContent;
 
 // -- corner placement: no briefing module, done means gone --------------------
 const corner = build(null);

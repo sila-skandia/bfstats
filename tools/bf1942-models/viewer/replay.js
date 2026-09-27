@@ -4,7 +4,9 @@
 //   map.html?replay=replays/<recording>.ndjson
 //   map.html?replay=replays/<recording>.ndjson&serverlog=replays/<ev_log>.xml
 //
-// or drop a recording (and optionally its server log) onto the view.
+// or open one from disk: picked with Open recording or dropped anywhere on
+// the page, it is kept in the browser and played as `?replay=local:<name>`
+// (replay-open.js).
 //
 // Everything drawn is a function of the recording's clock, so seeking is only
 // setting that clock. Recording formats 1-4 are read; what an older format
@@ -51,6 +53,7 @@ import { ReplaySoldiers } from './replay-bodies.js';
 import { ReplayProps } from './replay-props.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
+import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
@@ -540,10 +543,13 @@ class ReplayPlayer {
 // --- entry points for map.html --------------------------------------------------
 
 const textCache = new Map();
+const infoCache = new Map();
 
+/** A recording or server log by URL; `local:<name>` is one this browser keeps
+ *  (replay-open.js). */
 function fetchText(url) {
   if (!textCache.has(url)) {
-    textCache.set(url, fetch(url).then(r => {
+    textCache.set(url, isLocalReplay(url) ? readLocalRecording(url).then(kept => kept.text) : fetch(url).then(r => {
       if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
       return r.text();
     }));
@@ -551,16 +557,14 @@ function fetchText(url) {
   return textCache.get(url);
 }
 
-/** The level a recording was made on, from its SetLevel event. */
-export async function recordingLevel(url) {
-  return parseRecording(await fetchText(url)).level;
-}
-
-/** The game type a recording was made in, from its SetLevel event's mode
- *  file (`coop.con` is `coop`, which `?mode=` reads as CoOp's layer), or ''
- *  for a recording that joined without one. */
-export async function recordingMode(url) {
-  return parseRecording(await fetchText(url)).modeFile.replace(/\.con$/i, '');
+/** What map.html reads of a recording before its level loads: the level it
+ *  was made on (its SetLevel event), its game type (the mode file: `coop.con`
+ *  is `coop`, which `?mode=` reads as CoOp's layer; '' for a recording that
+ *  joined without one), its mod, and when and where it was recorded
+ *  (replay-open.js `recordingSummary`). */
+export function recordingInfo(url) {
+  if (!infoCache.has(url)) infoCache.set(url, fetchText(url).then(text => recordingSummary(parseRecording(text))));
+  return infoCache.get(url);
 }
 
 /**
@@ -574,12 +578,14 @@ export async function recordingMode(url) {
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
  *        playSoldierDeathSound(position, team), ensureAudio(),
  *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
- *        keyboardTaken(), mapArt(), mapProjection(), viewDistance() }
+ *        keyboardTaken(), mapArt(), mapProjection(), viewDistance(), opened(player) }
  * Everything after `effects` is the map's own machinery and optional: then
  * the page's message log (comms.js), a side's flag sprite, the HUD's
  * hit-direction wash, whether the console, the Escape menu or the briefing
  * has the keyboard, and for the battle map the level's map art, its
- * projection (`extras.minimap.worldToImage`) and its view distance. The page calls `afterRender(canvas)` after each
+ * projection (`extras.minimap.worldToImage`) and its view distance, and
+ * `opened`, handed each player once its chrome is built (the page's additions
+ * to the bar, replay-open.js). The page calls `afterRender(canvas)` after each
  * render and runs its message log at `feedRate()`.
  */
 export function createReplayController(ctx) {
@@ -598,22 +604,10 @@ export function createReplayController(ctx) {
     const alignment = log ? alignServerLog(rec, log) : null;
     player = new ReplayPlayer(ctx, rec, log, alignment, label, assets);
     if (typeof window !== 'undefined') window.replay = player;
+    ctx.opened?.(player);
     await player.load();
     return player;
   }
-
-  ctx.stage.addEventListener('dragover', e => {
-    if ([...(e.dataTransfer?.items || [])].some(item => item.kind === 'file')) e.preventDefault();
-  });
-  ctx.stage.addEventListener('drop', async e => {
-    const files = [...(e.dataTransfer?.files || [])];
-    const recording = files.find(f => /\.ndjson$/i.test(f.name));
-    if (!recording) return;
-    e.preventDefault();
-    const log = files.find(f => /\.xml$/i.test(f.name));
-    open({ recordingText: await recording.text(), logText: log ? await log.text() : null, label: recording.name })
-      .catch(error => toast(ctx.stage, `could not play ${recording.name}: ${error.message}`));
-  });
 
   return {
     update(dt) {
@@ -631,6 +625,12 @@ export function createReplayController(ctx) {
       return player !== null;
     },
     async openFromUrl(url, logUrl) {
+      // A kept recording brings the server log it was opened with.
+      if (isLocalReplay(url)) {
+        const kept = await readLocalRecording(url);
+        const logText = logUrl ? await fetchText(logUrl).catch(() => null) : kept.log?.text ?? null;
+        return open({ recordingText: kept.text, logText, label: kept.name });
+      }
       const [recordingText, logText] = await Promise.all([
         fetchText(url),
         logUrl ? fetchText(logUrl).catch(() => null) : null,

@@ -105,6 +105,14 @@ class LoadBriefingScreenTests(unittest.TestCase):
     def test_corner_placement_still_conceals_on_end(self) -> None:
         self.assertTrue(self.results["cornerEndConceals"])
 
+    def test_a_note_over_the_plate_outlasts_a_new_load(self) -> None:
+        # A replay's loading screen says when and where it was recorded
+        # (replay-open.js); the page sets it before the level's load begins.
+        r = self.results
+        self.assertTrue(r["markupHasNote"])
+        self.assertEqual(r["noteKeptAcrossBegin"], "Replay  \u00b7  27 Sep 2026, 14:09")
+        self.assertEqual(r["noteCleared"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
