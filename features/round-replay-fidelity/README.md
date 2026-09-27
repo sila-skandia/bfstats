@@ -31,6 +31,8 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | (checking the bombs in the page) a paused replay's bombs went on falling and burst; at 4x they fell at a quarter of the round's speed | the page advances its rounds (`GunFire.advance`, on the world's tick) and its effects on its own clock, whatever the replay is doing. `GunFire` and `EffectPlayer` take a `timeScale`, 1 in play, and the replay sets its playback rate there every frame (0 while paused or dragged), and 1 again when it closes |
 | (the same round) the four Flak 38s by the German base, and every Axis AA gun on every level, missing | the template is `flak38`, declared in `Objects/Vehicles/Land/Flak_38/`, and the models catalogue took a template as its folder's thing only on an exact name match, so no `models/flak38.glb` existed: the replay hid the level's baked Flak 38s and had nothing to draw in their place. `extract_models.py` `folder_key` compares without separators, which admits `flak38` and nothing else in vanilla, XPack1 or XPack2 |
 | a soldier in the sea walking on the seabed | the replay's stand-in soldier gave the body renderer no swim state (`swimClips` returned null), so it drew his gait. `replay-bodies.js` `swimState` hands it the recorded lower state (v4 on), or in a v3 file the engine's own test on his origin (`swim.js`): a swimmer's origin is pinned 0.4 m under the surface. Soldier 1091 of replay_20260927-001120 now swims at 72.3 s, head and shoulders out, his rifle stowed; a death in the water is the swim death |
+| (replay_20260927-140921) a man a blast threw ran on through the air, and, killed in it, fell with a standing death where the score stream found him, a corpse left hanging in the air | nothing baked `AnimationStatesExplosionFly.con`'s twenty states and the renderer had no path for them; and a replayed corpse is left where it is made. `extract_pose.py --explosion` bakes them into `gaits/explosion.gait.glb`; `SoldierActions.followHeld` holds the legs in the recorded state by name, and the torso where the recorded torso is the explosion's own (a thrown man's is often a hit or his aim), his weapon stowed (`c_AsmHideWeapon`), a sample early so his legs never run (`FLIGHT_LEAD`: the state is on the record a tenth after his samples leave the ground). A dead man still in the air is drawn by his body until the recording lands him (`recordedFlight`), and his corpse is the landing, `Lb_ExplosionLandFront` / `Back`, where he came to rest; his cry stays at the blow. All eight thrown men of that round were dead: soldier 3 flies 27 m from 30.8 s and lies on his face at 33.0 s, soldier 24 tumbles, bounces and lands on his back at 55.2 s |
+| a pilot who bailed out fell standing, with no canopy | the parachute bundle was bound but nothing entered it for a replayed man or a bot, and only the human's body drew a canopy. The recorded parachute states hold the legs the same way (the glide's torso is his own aim, fire and reload, `Ub_ParachuteOpen`'s `addTransitionWhenDone Ub_StandAim`); the canopy (`parachute.canopy.glb`, `foot-body.js` `canopyAsset`) is out while the recorded state bit `0x10` is (`setIsParachuting`), opening while his legs do, idle after, hung at his origin plus the template's `addTemplate Parachute` 0/0.3/0. Soldier 22 falls from 70.8 s, opens at 72.8 s, fires his No4 under the canopy at 78.8 s and lands at 84.5 s; a man killed under his canopy rides it down and is left where it lands (`Lb_ParachuteDeadHitGround`). A page bot's own `Parachute` (a fall from a plane, the chute pulled) takes the same path |
 
 ## What the replay reuses now
 
@@ -62,6 +64,8 @@ in play; the recording writes the state the physics would have written.
 | who fired, what, where | the recording player's trigger presses only | every round the client fires, bots included (`f`) |
 | stance, held weapon, firing pose | not recorded: standing, kit primary | recorded animation states and item (`st`, `anim`) |
 | swimming | **derived**: his origin more than 0.35 m under the water (`swim.js` `SWIM_LEAVE_DEPTH`), stroke from his motion along his heading | recorded: the lower swim state (`st`) |
+| blown off his feet | not recorded: drawn in his gait | recorded: both halves' explosion states (`st`) and his flight (`s`), the landing a dead man comes to rest in |
+| a bail-out | not recorded: drawn in his gait | recorded: the parachute states and the chute's state bit `0x10` (`st`); the canopy is derived from the bit, as the engine's child object is not replicated |
 | crew and seats | from every player's controlled object; a seat id resolves to its hull (the ids after the hull's own) | the hull and seat are in the player record |
 
 ## Recording format (bf42plus)
@@ -118,6 +122,19 @@ engineering behind them is there too, with addresses.
   mid-traverse, where he turned early and slowly and the fallback late and
   fast. `tests/test_replay_models.py` `ReplayGunAimTests` pins the decode,
   both sources, the rig's limits and that a v5 file's parts win.
+- Knockback and bail-out, headless Chromium on `replay_20260927-140921`
+  (v5), the page's own renderer, stepped at 30 frames a second: soldier 3's
+  legs enter `Lb_ExplosionForward` at 30.8 s with his weapon stowed and his
+  torso on its own machine, his body is drawn flying after his death at
+  32.78 s, and his corpse is `explosionLandFront` at 33.0 s where he landed
+  (546.6, 84.2, -587.0); soldier 24 goes `BounceFront`, `Forward`,
+  `BounceFront`, `Backward` with both halves and lands on his back at 55.2 s;
+  soldier 22 is `Lb_ParachuteFall` from 70.8 s, `Lb_ParachuteOpen` under the
+  `open` canopy from 72.8 s, the glide with his No4 out, `Ub_Fire` at 78.8 s
+  and the bolt after it, `Lb_ParachuteHitGround` with the canopy gone at
+  84.5 s, and on his feet at 85.0 s. `tests/test_replay_models.py`
+  `ReplayKnockbackAndParachuteTests` pins the same over a synthetic v5 file
+  and a page bot's `Parachute`; `tests/test_explosion_assets.py` the bundle.
 
 ## Open
 
@@ -129,10 +146,22 @@ engineering behind them is there too, with addresses.
   not drawn: `bot-visuals.js` has no aim pitch.
 - A dead bot's free camera is never replicated; the follow camera stays on
   his body until it is removed.
-- A soldier blown off his feet, living or dead, goes into the engine's
-  explosion states (`Lb_ExplosionForward`, `Lb_ExplosionLandFront`, 34
-  records in replay_20260927-140921), and a pilot who bails out into its
-  parachute states. No gait sidecar bakes the explosion clips, and the bots'
-  renderer draws no parachute, so a replayed body shows neither.
 - Kits dropped before the join, and a round's end effect when the round goes
   out of range rather than off, are approximations.
+- `gaits/explosion.gait.glb` is in the three vanilla trees (and their two
+  hard-link mirrors), but no tree's `gaits.json` names it yet, and a page
+  reads the bundle only through that key: `extract_pose.py --explosion
+  --out viewer/models/poses`, and with `--mod XPack1` / `--mod XPack2` into
+  `models/mods/xpack1/poses` / `xpack2/poses`, merges the one key in place
+  (and rewrites the glb with the same bytes); then publish the glb and the
+  three manifests.
+- A man killed in free fall (`Lb_DieHitGround`) is left a corpse where he
+  died, in the air: a corpse does not follow his recorded body down. None in
+  the recordings so far.
+- Soldier 22's torso reads `Ub_ParachuteHitGround` through his whole free
+  fall (70.77 to 72.76 s), where the server's `handlePlayerInput` sets
+  `Ub_ParachuteFall` (`template+0x1e8`); drawn as recorded.
+- The human's own canopy (`foot-body.js` `syncFootBody`) hangs at his feet
+  plus 0/0.3/0, a metre under the bots' and a replay's, which hang it at his
+  origin (`CHARACTER_HEIGHT` over the feet), where the risers meet his
+  shoulders in the page (soldier 22). Not checked in play.

@@ -288,6 +288,48 @@ DIE_STATES: tuple[str, ...] = (
 )
 DIE_ASSET = "die"
 
+# The explosion body states: a soldier a blast throws, baked under the engine's
+# own state names so `viewer/knockback.js`'s `EXPLOSION_CLIPS` is the only
+# table. `animations/AnimationStatesExplosionFly.con` creates all twenty and
+# the engine enters every one by name:
+#
+#   the flight   `BFSoldier::handleUpdate` (lnxded `0x08271e30`): alive, within
+#                0.2 s of the blast's `triggerFallingAnimation` stamp
+#                (`+0x584`), or dead, at any time; under no canopy (bit `0x10`)
+#                and at 8 m/s or more (`|v|^2` against 64.0) --
+#                `Lb_ExplosionForward` (`0x082729bd`) when he moves the way he
+#                faces, else `Lb_ExplosionBackward` (`0x08272a5e`), each with
+#                its torso
+#   the landing  `BFSoldier::handleCollision` (`0x0827d3b0`), out of a flight:
+#                alive, `...LandFrontSurvive` / `...LandBackSurvive`
+#                (`0x0827d93b` / `0x0827d8c8`), whose `addTransitionWhenDone`
+#                gets him up (or straight onto `Lb_Stand` / `Ub_StandAim`,
+#                `0x0827d9af`, when `+0x3e8`'s `vt+0x5c` at `0x0827d891`
+#                says no); dead on ground whose normal is over 0.3 up,
+#                `...LandFront` / `...LandBack` (`0x0827d80b` / `0x0827d79c`),
+#                which hold; dead against a wall (normal under 0.1 up),
+#                `...BounceFront` / `...BounceBack` (`0x0827d6ea` /
+#                `0x0827d647`), which hand over to the opposite flight
+#
+# Weapon-independent like the swim and death bundles: every clip is under
+# `DieHit/LowerBody/` or `DieHit/3p/EmptyHands/`, and every lower state
+# declares `c_AsmHideWeapon` (and `c_AsmLockFreeLook`), which the bundle
+# carries per state (`flags`). The flight loops (`c_AsmLooping`); the rest are
+# `c_AsmPlayOnce`, the get-ups at 0.5 (`3pAnimationsTweaking.con`).
+EXPLOSION_STATES: tuple[str, ...] = (
+    "Lb_ExplosionForward", "Ub_ExplosionForward",
+    "Lb_ExplosionBackward", "Ub_ExplosionBackward",
+    "Lb_ExplosionLandFront", "Ub_ExplosionLandFront",
+    "Lb_ExplosionLandFrontSurvive", "Ub_ExplosionLandFrontSurvive",
+    "Lb_ExplosionLandFrontSurviveStandUp", "Ub_ExplosionLandFrontSurviveStandUp",
+    "Lb_ExplosionLandBack", "Ub_ExplosionLandBack",
+    "Lb_ExplosionLandBackSurvive", "Ub_ExplosionLandBackSurvive",
+    "Lb_ExplosionLandBackSurviveStandUp", "Ub_ExplosionLandBackSurviveStandUp",
+    "Lb_ExplosionBounceFront", "Ub_ExplosionBounceFront",
+    "Lb_ExplosionBounceBack", "Ub_ExplosionBounceBack",
+)
+EXPLOSION_ASSET = "explosion"
+
 # The stance transitions: the lower-body one-shots between standing, crouching
 # and lying, baked into `gaits/lower.gait.glb` beside the gaits under the
 # engine's own state names.
@@ -1179,6 +1221,60 @@ def write_die_assets(machine: animstates.StateMachine, meshes: ArchivePool,
             break
     write_gaits_manifest(out, changed)
     return {"body": body, "soldierBody": changed.get("soldierBody")}
+
+
+def export_explosion_clips(machine: animstates.StateMachine,
+                           meshes: ArchivePool, skeleton: ske_mod.Skeleton,
+                           out: Path) -> dict:
+    """`gaits/explosion.gait.glb`: the twenty explosion body states.
+
+    Same shape as the swim and death bundles: one clip per state, named after
+    the state (`EXPLOSION_STATES`), so `viewer/knockback.js` is the only
+    table. Each state's meta also carries its `flags` as the script declares
+    them: every lower state `c_AsmHideWeapon` and `c_AsmLockFreeLook`, which
+    is how a renderer knows the weapon is stowed through the whole of it
+    without being told (`hidesWeapon` sums it up for the bundle, as the swim
+    and death bundles have it).
+    """
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, EXPLOSION_STATES)
+    for name, entry in meta.items():
+        entry["flags"] = list(machine.state(name).flags)
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    lower = [entry for name, entry in meta.items() if name.startswith("Lb_")]
+    hides = bool(lower) and all(
+        "c_asmhideweapon" in {flag.lower() for flag in entry["flags"]}
+        for entry in lower)
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{EXPLOSION_ASSET}.gait.glb",
+        {"explosion": meta, "absent": absent, "skeleton": skeleton.source,
+         "hidesWeapon": hides})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{EXPLOSION_ASSET}.gait.glb"
+    return result
+
+
+def write_explosion_assets(machine: animstates.StateMachine,
+                           meshes: ArchivePool,
+                           library: con_mod.ObjectLibrary,
+                           soldiers: list[str], out: Path) -> dict:
+    """The explosion bundle, merged into `gaits/gaits.json` under one key,
+    `explosion`, the way `write_swim_assets` merges `swim`."""
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    if skeleton is None:
+        return {"body": None}
+    body = export_explosion_clips(machine, meshes, skeleton, out)
+    write_gaits_manifest(out, {"explosion": body["asset"]})
+    return {"body": body}
 
 
 def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -2516,8 +2612,8 @@ def main() -> int:
     ap.add_argument("--shared-assets", action="store_true",
                     help="write every shared sidecar and nothing else: the "
                          "lower bundle, one bundle per grip, the parachute body "
-                         "clips, the canopy and the swim clips. The pose .glb "
-                         "files and "
+                         "clips, the canopy, the swim, death and explosion "
+                         "clips. The pose .glb files and "
                          "poses-matrix.json are not touched, which makes this "
                          "the whole re-extraction a change to the shared "
                          "timelines needs.")
@@ -2527,8 +2623,9 @@ def main() -> int:
                          "transitions), one bundle per grip (the torso halves, "
                          "the transitions' torsos, fire and reload) and their "
                          "keys merged into gaits/gaits.json. The pose .glb "
-                         "files, the parachute, canopy, swim and death bundles "
-                         "and poses-matrix.json are not touched.")
+                         "files, the parachute, canopy, swim, death and "
+                         "explosion bundles and poses-matrix.json are not "
+                         "touched.")
     ap.add_argument("--parachute", action="store_true",
                     help="write only the parachute shared assets — the body "
                          "clip bundle (gaits/parachute.gait.glb) and the canopy "
@@ -2547,6 +2644,11 @@ def main() -> int:
                          "(gaits/die.gait.glb) and merge that one key into "
                          "gaits/gaits.json. Weapon- and soldier-independent, "
                          "so this is the whole of it.")
+    ap.add_argument("--explosion", action="store_true",
+                    help="write only the explosion body clips, a soldier a "
+                         "blast throws (gaits/explosion.gait.glb), and merge "
+                         "that one key into gaits/gaits.json. Weapon- and "
+                         "soldier-independent, so this is the whole of it.")
     ap.add_argument("--seat-poses", action="store_true",
                     help="extract every passenger-seat pose (Ub_PassengerInX / "
                          "Lb_PassengerInX) the mod ships, one .glb per soldier per "
@@ -2588,11 +2690,12 @@ def main() -> int:
 
     if not args.matrix and not args.kit_poses and not args.seat_poses \
             and not args.parachute and not args.swim and not args.die \
+            and not args.explosion \
             and not args.shared_assets and not args.gaits_only and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --kit-poses, "
                  "or --seat-poses, or --parachute, or --swim, or --die, "
-                 "or --shared-assets, or --gaits-only")
+                 "or --explosion, or --shared-assets, or --gaits-only")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -2656,10 +2759,14 @@ def main() -> int:
             print(f"  error:  {name}: {why}", file=sys.stderr)
         die = write_die_assets(machine, meshes, library, soldiers, args.out)
         die_body = report_body("death", die["body"])
+        blast = write_explosion_assets(machine, meshes, library, soldiers,
+                                       args.out)
+        blast_body = report_body("explosion", blast["body"])
         return 0 if (shared and body.get("asset")
                      and chute["canopy"].get("asset")
                      and swim_body.get("asset")
-                     and die_body.get("asset")) else 1
+                     and die_body.get("asset")
+                     and blast_body.get("asset")) else 1
 
     if args.gaits_only:
         args.out.mkdir(parents=True, exist_ok=True)
@@ -2694,6 +2801,12 @@ def main() -> int:
         summary = write_die_assets(machine, meshes, library,
                                    soldier_templates(library), args.out)
         return 0 if report_body("death", summary["body"]).get("asset") else 1
+
+    if args.explosion:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_explosion_assets(machine, meshes, library,
+                                         soldier_templates(library), args.out)
+        return 0 if report_body("explosion", summary["body"]).get("asset") else 1
 
     if args.swim:
         args.out.mkdir(parents=True, exist_ok=True)
