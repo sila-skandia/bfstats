@@ -1,9 +1,10 @@
 """`viewer/replay-open.js` under node, through `replay_open_harness.mjs`.
 
 A recording opened from disk (Open recording, or dropped anywhere on
-map.html) is kept in the browser and the page reloads as
+map.html) is held in the browser only across the reload to
 `map.html?mod=<mod>&map=<level>&replay=local:<name>`, so the recording's own
-mod, level and game type load behind the loading screen. That rests on what
+mod, level and game type load behind the loading screen; the page that plays
+it lets it go. That rests on what
 is read out of the file before any level loads, and on the URL it is played
 from; both are pinned here. The picker, the drop, the browser's store and the
 loading screen's line are checked in a page (features/round-replay-ux,
