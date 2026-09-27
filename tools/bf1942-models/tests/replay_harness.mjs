@@ -971,9 +971,19 @@ const read = scene => {
       tracks: tracks.map(track => track.map(({ t, q }) => [t, q])),
     };
   })();
+  // A v5 traverse between two samples a tenth of a second apart: eased
+  // across it by the recording's own law (`sampleAt`), not held and stepped.
+  const v5Swing = [
+    ...head(5),
+    line({ k: 'jn', t: 1.0, o: [[523, 1, 'DefgunTurret', 0, 5.13, -0.4], [523, 2, 'DefgunGunBase', 0, 6.83, 0.7]] }),
+    line({ k: 'j', t: 1.0, o: [[523, 1, ...part(-40)], [523, 2, ...part(-40, 10)]] }),
+    line({ k: 'j', t: 1.1, o: [[523, 1, ...part(40)], [523, 2, ...part(40, 10)]] }),
+    line({ k: 'end', t: 10 }),
+  ].join('\n');
   const partsRun = replay(v4);
   const roundsRun = replay(roundsOnly);
   const v5Run = replay(v5);
+  const swingRun = replay(v5Swing);
   const sources = run => {
     run.hull.update(0.5, 0);
     return run.hull.aims?.map(a => (a.dense ? 'parts' : 'rounds')) ?? null;
@@ -1011,6 +1021,7 @@ const read = scene => {
     v5: {
       toParts: v5Run.off(1.05, -45, 20),
       toRound: v5Run.off(1.05, 60, 5),
+      swing: [swingRun.off(1.0, -40, 10), swingRun.off(1.05, 0, 10), swingRun.off(1.1, 40, 10)],
     },
     lateTurn: [
       aim.lateTurn(0, 40, 0, 1, 90),
