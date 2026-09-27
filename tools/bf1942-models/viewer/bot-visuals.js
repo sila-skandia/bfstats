@@ -29,15 +29,21 @@
 // put back on a flag in the meantime -- the engine's corpse is its own object
 // and so is this one. A man killed in his seat slumps where he sat: the seat's
 // legs, `Ub_DieInVehicle` over the top.
+//
+// Beside the gait, three whole-body states the engine enters by name: the
+// swim (`swim.js`), a blast's knockback (`knockback.js`) and the parachute
+// (`parachute.js`), whose open chute draws the canopy over him.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
-import { PARA_FALLING } from './parachute.js';
+import { PARA_CLIPS, PARA_FALLING } from './parachute.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
+import { EXPLOSION_CLIPS, EXPLOSION_DEATHS, HELD_HIDES_WEAPON, canopyClipFor } from './knockback.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { rigCapsules } from './rig-capsules.js';
 import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
@@ -74,8 +80,26 @@ export function createBotVisuals(page) {
 
   /** Every death a bot's body can play: `soldier-death.js`'s, and the swim
    *  death `handleDamage` takes first for a man in the water (`0x08270c63`,
-   *  `Lb_DieSwim` / `Ub_DieSwim`, baked into `swim.gait.glb`). */
-  const CORPSE_CLIPS = Object.freeze({ ...DIE_CLIPS, swimDie: SWIM_CLIPS.swimDie });
+   *  `Lb_DieSwim` / `Ub_DieSwim`, baked into `swim.gait.glb`); and the states
+   *  a dead man comes to rest in out of the air: a blast's landing
+   *  (`knockback.js`, `explosion.gait.glb`) and the canopy's
+   *  (`Lb_ParachuteDeadHitGround`, `parachute.gait.glb`). */
+  const CORPSE_CLIPS = Object.freeze({
+    ...DIE_CLIPS, swimDie: SWIM_CLIPS.swimDie,
+    ...EXPLOSION_DEATHS, parachuteDeadLanded: PARA_CLIPS.deadLanded,
+  });
+
+  /** The whole-body pairs a blast or the parachute holds a live body in, by
+   *  the family the still rig binds them as. Left out: the glide, whose torso
+   *  is the weapon's own aim, which that rig does not have; and the landings
+   *  a dead man comes to rest in, which are corpses (`CORPSE_CLIPS`). */
+  const HELD_CLIPS = Object.freeze({
+    ...Object.fromEntries(Object.entries(EXPLOSION_CLIPS)
+      .filter(([, pair]) => !Object.values(EXPLOSION_DEATHS).includes(pair))),
+    parachuteFall: PARA_CLIPS.falling, parachuteOpen: PARA_CLIPS.open,
+    parachuteLanded: PARA_CLIPS.landed, parachuteDie: PARA_CLIPS.dead,
+  });
+  const HELD_FAMILY = new Map(Object.entries(HELD_CLIPS).map(([family, pair]) => [pair.lower, family]));
 
   // The templates the bots wore before they wore the level's: the fallback
   // for a maps tree whose `_shared/loadouts.json` does not know the level, and
@@ -302,6 +326,16 @@ export function createBotVisuals(page) {
       const upper = action(spec.upper, gaitClips, once);
       if (lower && upper) families[family] = [lower, upper];
     }
+    // A blast's states and the parachute's (`explosion.gait.glb`,
+    // `parachute.gait.glb`): the flights and the fall loop, the rest play
+    // once and hold (`c_AsmLooping` / `c_AsmPlayOnce`).
+    for (const [family, spec] of Object.entries(HELD_CLIPS)) {
+      if (families[family]) continue;
+      const once = !['flyForward', 'flyBackward', 'parachuteFall'].includes(family);
+      const lower = action(spec.lower, gaitClips, once);
+      const upper = action(spec.upper, gaitClips, once);
+      if (lower && upper) families[family] = [lower, upper];
+    }
     const rig = { kind: 'still', scene, mixer, families, want: null,
                   hasDeath: family => !!families[family] };
     rig.step = ({ family }, dt) => {
@@ -365,6 +399,9 @@ export function createBotVisuals(page) {
       // The stance the last world tick left, and the changes since the frame
       // last looked (`captureBotPresentationTick`).
       stanceTick: null, stanceEvents: [], reloading: false, reloadLeft: 0, shots: 0,
+      // The canopy over him while his chute is open (`syncCanopy`), and the
+      // whole-body pair the last frame held him in.
+      canopy: null, canopyLoading: false, held: null,
     };
     botVisuals.set(bot.playerId, vis);
 
@@ -575,6 +612,7 @@ export function createBotVisuals(page) {
       yaw: vis.yawCur,
     });
     vis.group.visible = false;
+    if (vis.canopy) vis.canopy.scene.visible = false;
 
     if (family === 'dieInVehicle') {
       const seat = vis.seat;
@@ -610,10 +648,92 @@ export function createBotVisuals(page) {
                      botBodies.botRoot.remove(group);
                      page.disposeFootBodyScene(rig.scene);
                    } });
+    removeCanopy(vis);
     botVisuals.delete(bot.playerId);
     ensureBotVisual(bot);
     return played;
   };
+
+  // --- the canopy ---------------------------------------------------------
+
+  /** The canopy asset, cloned for one soldier: its opening plays once and
+   *  holds, its idle loops, both parked until `syncCanopy` picks one (the
+   *  discipline `foot-body.js` keeps for the human's own). */
+  function buildCanopy(asset) {
+    const scene = skeletonClone(asset.scene);
+    page.bindDynamicShading(scene);
+    scene.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
+    const mixer = new THREE.AnimationMixer(scene);
+    const actions = {};
+    for (const clip of asset.animations ?? []) {
+      const a = mixer.clipAction(clip);
+      if (clip.name === 'open') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      else a.setLoop(THREE.LoopRepeat, Infinity);
+      a.play();
+      a.setEffectiveWeight(0);
+      a.paused = true;
+      actions[clip.name] = a;
+    }
+    scene.visible = false;
+    botBodies.botRoot?.add(scene);
+    const attach = Array.isArray(asset.attach) && asset.attach.length === 3 ? asset.attach : [0, 0.3, 0];
+    return { scene, mixer, actions, attach, want: null };
+  }
+
+  /** A soldier's canopy, gone with his body. The clone shares the cached
+   *  asset's geometry, which stays for the next one. */
+  function removeCanopy(vis) {
+    const c = vis?.canopy;
+    if (!c) return;
+    c.mixer.stopAllAction();
+    botBodies.botRoot?.remove(c.scene);
+    vis.canopy = null;
+  }
+
+  /**
+   * The canopy over a soldier whose chute is open: the `Parachute` child
+   * every soldier template carries (`addTemplate Parachute` at `0/0.3/0` in
+   * `CommonSoldierData.inc`, `parachute.canopy.glb`), drawn only while the
+   * chute is carrying him -- state bit `0x10`, set and cleared by
+   * `setIsParachuting` (`0x08276f90`), the page's `Parachute.open` -- and
+   * playing its opening while his legs play `Lb_ParachuteOpen`, its idle
+   * after (`knockback.js` `canopyClipFor`). The offset is from his origin,
+   * which `setCharacterHeight -1.00` puts `CHARACTER_HEIGHT` over the feet
+   * the body is drawn at. The asset is asked for the first time he falls,
+   * so it is there by the time he pulls.
+   */
+  function syncCanopy(vis, bot, held, dt) {
+    const soldier = page.world?.player(bot.playerId)?.soldier;
+    const clip = canopyClipFor(Boolean(soldier?.chute?.open), held?.lower ?? null);
+    if (!vis.canopy) {
+      if ((clip || held) && !vis.canopyLoading && page.canopyAsset) {
+        vis.canopyLoading = true;
+        Promise.resolve(page.canopyAsset()).then(asset => {
+          if (!asset || botVisuals.get(bot.playerId) !== vis || vis.canopy) return;
+          vis.canopy = buildCanopy(asset);
+        }).catch(err => console.warn(`bot canopy for ${bot.name}:`, err));
+      }
+      return;
+    }
+    const c = vis.canopy;
+    c.scene.visible = Boolean(clip) && vis.group.visible;
+    if (!clip) {
+      c.want = null;
+      return;
+    }
+    const [ax, ay, az] = c.attach;
+    const p = vis.group.position;
+    c.scene.position.set(p.x + ax, p.y + CHARACTER_HEIGHT + ay, p.z + az);
+    c.scene.quaternion.copy(vis.group.quaternion);
+    if (clip !== c.want) {
+      c.want = clip;
+      for (const [name, a] of Object.entries(c.actions)) {
+        a.setEffectiveWeight(name === clip ? 1 : 0);
+        if (name === clip) { a.paused = false; a.reset(); a.play(); }
+      }
+    }
+    c.mixer.update(dt);
+  }
 
   /** The seat anchors a live occupant holds this frame, whose corpse must go:
    *  a new man in the seat is where the old one slumped. */
@@ -676,10 +796,12 @@ export function createBotVisuals(page) {
       // seated one is drawn in his seat, where the seat draws anybody.
       if (page.world?.armorOf(bot.playerId)?.destroyed) {
         vis.group.visible = false;
+        if (vis.canopy) vis.canopy.scene.visible = false;
         continue;
       }
       if (bot.vehicle) {
         vis.group.visible = false;
+        if (vis.canopy) vis.canopy.scene.visible = false;
         vis.stanceEvents.length = 0;
         syncSeated(vis, bot, dt);
         continue;
@@ -735,11 +857,24 @@ export function createBotVisuals(page) {
       // half-body machine enters it by name (`SoldierActions.followSwim`).
       const swim = swimPairOf(bot);
       const swimWant = swim ? swimFamilyOf(swim, vis.rig) : null;
-      const want = swimWant ?? gait;
+      // Beside it, a blast's knockback or the parachute: his soldier says
+      // which (`explosionClips`, a replayed man's recorded states; `chute`,
+      // the `Parachute` every soldier of the page carries, whose own timers
+      // run it), and the machine holds his legs in it, and his torso where
+      // the state has one (`SoldierActions.followHeld`).
+      const heldPair = swimWant ? null : heldPairOf(bot);
+      const heldWant = heldPair ? heldFamilyOf(heldPair, vis.rig) : null;
+      const held = heldWant ? {
+        lower: heldPair.lower, upper: heldPair.upper ?? null,
+        stowed: HELD_HIDES_WEAPON.has(heldPair.lower) || heldPair.stowed === true,
+      } : null;
+      vis.held = held;
+      const want = swimWant ?? heldWant ?? gait;
       vis.want = want;
-      // `c_AsmHideWeapon`: every lower swim state declares it, and the pose
-      // glb welds the rifle to the hand whatever the clip does.
-      if (vis.rig.weaponNode) vis.rig.weaponNode.visible = !swimWant;
+      // `c_AsmHideWeapon`: every lower swim state declares it, every lower
+      // explosion state, and the parachute's fall and opening; the pose glb
+      // welds the rifle to the hand whatever the clip does.
+      if (vis.rig.weaponNode) vis.rig.weaponNode.visible = !swimWant && !held?.stowed;
       if (vis.rig.anim) {
         // The stance changes the ticks caught, in order: each starts the
         // engine's transition on both halves.
@@ -753,7 +888,8 @@ export function createBotVisuals(page) {
       }
       vis.stanceEvents.length = 0;
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
-                     swim: swimWant ? swim : null }, dt);
+                     swim: swimWant ? swim : null, held }, dt);
+      syncCanopy(vis, bot, heldPair, dt);
     }
   }
 
@@ -761,6 +897,24 @@ export function createBotVisuals(page) {
   function swimPairOf(bot) {
     const soldier = page.world?.player(bot.playerId)?.soldier;
     return soldier?.swimClips?.(false) ?? null;
+  }
+
+  /** The whole-body pair a blast or the parachute holds `bot`'s soldier in
+   *  this tick, `{ lower, upper }` by the engine's state names, or null. */
+  function heldPairOf(bot) {
+    const soldier = page.world?.player(bot.playerId)?.soldier;
+    return soldier?.explosionClips?.(false) ?? soldier?.chute?.clips?.(false) ?? null;
+  }
+
+  /** What the rig plays for a held pair, when it can: the lower state's own
+   *  name on the half-body rig (its torso's base stays the standing one), the
+   *  pair's family on the still rig. Null when the tree has no clip of it (a
+   *  tree published before `explosion.gait.glb`), which leaves him on his
+   *  gait. */
+  function heldFamilyOf(pair, rig) {
+    if (rig.kind === 'halves') return rig.actions.has(pair.lower) ? pair.lower : null;
+    const family = HELD_FAMILY.get(pair.lower);
+    return family && rig.families[family] ? family : null;
   }
 
   /** The swim family `pair` is, when this rig can draw it; null when it cannot
@@ -832,6 +986,7 @@ export function createBotVisuals(page) {
     botBodies.botRoot?.remove(vis.group);
     if (vis.rig?.scene) page.disposeFootBodyScene(vis.rig.scene);
     disposeSeat(vis.seat);
+    removeCanopy(vis);
     botVisuals.delete(playerId);
   }
 
@@ -840,6 +995,7 @@ export function createBotVisuals(page) {
       botBodies.botRoot.remove(vis.group);
       if (vis.rig?.scene) page.disposeFootBodyScene(vis.rig.scene);
       disposeSeat(vis.seat);
+      removeCanopy(vis);
     }
     botVisuals.clear();
     for (const c of corpses) c.dispose();
@@ -854,6 +1010,8 @@ export function createBotVisuals(page) {
         soldier: vis.soldierName, weapon: vis.weapon, kit: vis.kit,
         rig: vis.rig?.kind ?? null,
         lower: vis.rig?.anim?.lower.name ?? null, upper: vis.rig?.anim?.upper.name ?? null,
+        held: vis.held, weaponShown: vis.rig?.weaponNode ? vis.rig.weaponNode.visible : null,
+        canopy: vis.canopy?.scene.visible ? vis.canopy.want : null,
         stance: vis.stanceTick, shots: vis.shots, reloading: vis.reloading,
         worn: vis.rig ? wornSlots(vis.rig.scene) : {},
         seated: !!vis.seat, seatVisible: !!vis.seat?.scene.visible,

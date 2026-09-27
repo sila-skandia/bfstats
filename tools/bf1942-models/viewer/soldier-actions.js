@@ -28,6 +28,11 @@
 //  * **the water.** `BFSoldier::updateSwimming` sets the swim states on both
 //    machines by name, and while one holds them nothing else is entered: no
 //    stance chain, no fire, no reload (`c_AsmHideWeapon`). `followSwim`.
+//  * **a blast, a bail-out.** The explosion states (`knockback.js`) and the
+//    parachute's are set by name too, on the legs always and on the torso
+//    where the state has a torso of its own; a torso without one (the glide's
+//    `Ub_StandAim`, a thrown man's recorded hit) runs its own aim, fire and
+//    reload meanwhile. `followHeld`.
 //  * **a reload.** `Ub_StandReload` or `Ub_LieReload`, a one-shot that cuts in
 //    and returns to the pose when its clip is done -- which is shorter than the
 //    weapon's `reloadTime` on most weapons; the torso aims again while the
@@ -147,6 +152,41 @@ export const VANILLA_STATES = Object.freeze({
   Ub_SwimBackward: { speed: 1.0, loop: true, morph: 4.0, then: 'Ub_Floating' },
   Lb_EndSwim: { speed: -3.2, loop: false, morph: 4.0, then: 'Lb_Stand' },
   Ub_EndSwim: { speed: -3.2, loop: false, morph: 1.0, then: 'Ub_Stand' },
+  // `animations/AnimationStatesExplosionFly.con`: the flight loops and is
+  // entered at `setMorphFactor 50`, the landings and get-ups at 10, a bounce
+  // cuts (5000); the get-ups play at 0.5 (`3pAnimationsTweaking.con`).
+  Lb_ExplosionForward: { speed: 1, loop: true, morph: 50 },
+  Ub_ExplosionForward: { speed: 1, loop: true, morph: 50 },
+  Lb_ExplosionBackward: { speed: 1, loop: true, morph: 50 },
+  Ub_ExplosionBackward: { speed: 1, loop: true, morph: 50 },
+  Lb_ExplosionLandFront: { speed: 1, loop: false, morph: 10 },
+  Ub_ExplosionLandFront: { speed: 1, loop: false, morph: 10 },
+  Lb_ExplosionLandBack: { speed: 1, loop: false, morph: 10 },
+  Ub_ExplosionLandBack: { speed: 1, loop: false, morph: 10 },
+  Lb_ExplosionLandFrontSurvive: { speed: 1, loop: false, morph: 10, then: 'Lb_ExplosionLandFrontSurviveStandUp' },
+  Ub_ExplosionLandFrontSurvive: { speed: 1, loop: false, morph: 10, then: 'Ub_ExplosionLandFrontSurviveStandUp' },
+  Lb_ExplosionLandFrontSurviveStandUp: { speed: 0.5, loop: false, morph: 10, then: 'Lb_Stand' },
+  Ub_ExplosionLandFrontSurviveStandUp: { speed: 0.5, loop: false, morph: 10, then: 'Ub_StandAim' },
+  Lb_ExplosionLandBackSurvive: { speed: 1, loop: false, morph: 10, then: 'Lb_ExplosionLandBackSurviveStandUp' },
+  Ub_ExplosionLandBackSurvive: { speed: 1, loop: false, morph: 10, then: 'Ub_ExplosionLandBackSurviveStandUp' },
+  Lb_ExplosionLandBackSurviveStandUp: { speed: 0.5, loop: false, morph: 10, then: 'Lb_Stand' },
+  Ub_ExplosionLandBackSurviveStandUp: { speed: 0.5, loop: false, morph: 10, then: 'Ub_StandAim' },
+  Lb_ExplosionBounceFront: { speed: 1, loop: false, morph: 5000, then: 'Lb_ExplosionBackward' },
+  Ub_ExplosionBounceFront: { speed: 1, loop: false, morph: 5000, then: 'Ub_ExplosionBackward' },
+  Lb_ExplosionBounceBack: { speed: 1, loop: false, morph: 5000, then: 'Lb_ExplosionForward' },
+  Ub_ExplosionBounceBack: { speed: 1, loop: false, morph: 5000, then: 'Ub_ExplosionForward' },
+  // `animations/AnimationStatesParachute.con`, after `3pAnimationsTweaking.con`.
+  Lb_ParachuteFall: { speed: 1, loop: true, morph: 1 },
+  Ub_ParachuteFall: { speed: 1, loop: true, morph: 1 },
+  Lb_ParachuteOpen: { speed: 0.6, loop: false, morph: 1, then: 'Lb_ParachuteIdle' },
+  Ub_ParachuteOpen: { speed: 0.6, loop: false, morph: 1, then: 'Ub_StandAim' },
+  Lb_ParachuteIdle: { speed: 1, loop: true, morph: 1 },
+  Lb_ParachuteHitGround: { speed: 2, loop: false, morph: 10, then: 'Lb_Stand' },
+  Ub_ParachuteHitGround: { speed: 2, loop: false, morph: 10, then: 'Ub_StandAim' },
+  Lb_ParachuteDie: { speed: 0.9, loop: false, morph: 4 },
+  Ub_ParachuteDie: { speed: 0.9, loop: false, morph: 4 },
+  Lb_ParachuteDeadHitGround: { speed: 1, loop: false, morph: 4 },
+  Ub_ParachuteDeadHitGround: { speed: 1, loop: false, morph: 4 },
 });
 
 /** `AnimationState`'s constructor default (lnxded `0x08328bf8`). */
@@ -192,6 +232,12 @@ export class SoldierActions {
     this.dead = false;
     /** The lower swim state both halves are held in, or null when dry. */
     this.swim = null;
+    /** The whole-body lower state a blast or a bail-out holds the legs in
+     *  (`followHeld`), the torso's own where it has one, and whether the
+     *  weapon is stowed meanwhile (`c_AsmHideWeapon` on the lower state). */
+    this.held = null;
+    this.heldUpper = null;
+    this.heldStowed = false;
     this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
     this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
     this.entries = [];
@@ -283,8 +329,9 @@ export class SoldierActions {
     this.stance = to;
     this.family = family ?? STILL_FAMILY[to] ?? 'stand';
     // The swim states hold both machines; a stance the tick changed under
-    // them starts no chain (the body is posed standing in the water).
-    if (this.swim) return;
+    // them starts no chain (the body is posed standing in the water). A
+    // blast's or a parachute's state holds the legs the same way.
+    if (this.swim || this.held) return;
     const pose = this.bodyPose();
     if (pose === to) {
       if (!this.lower.base) this.enterBase(this.lower, true);
@@ -301,8 +348,10 @@ export class SoldierActions {
   /** A round left the weapon this body holds. */
   fire() {
     // `c_AsmHideWeapon`: a swimmer has no item to fire (`swim.js`
-    // `itemsLocked`), so no torso fire either.
-    if (this.dead || this.swim) return;
+    // `itemsLocked`), so no torso fire either; nor has a man a blast threw,
+    // or one falling or pulling his ripcord. A torso the held state sets
+    // (`Ub_ParachuteOpen`, `Ub_ExplosionForward`) is not the aim's to fire.
+    if (this.dead || this.swim || this.heldStowed || this.heldUpper) return;
     const u = this.upper;
     // The transition states take no `c_PIFire`; the round flies, the torso
     // finishes lying down.
@@ -316,7 +365,7 @@ export class SoldierActions {
 
   /** The weapon began a reload. */
   reload() {
-    if (this.dead || this.swim) return;
+    if (this.dead || this.swim || this.heldStowed || this.heldUpper) return;
     const name = this.stance === 'prone' ? 'Ub_LieReload' : 'Ub_StandReload';
     if (!this.rig.has(name)) return;
     this.enter(this.upper, name, 'reload');
@@ -326,6 +375,9 @@ export class SoldierActions {
   die(lowerName, upperName) {
     this.dead = true;
     this.swim = null;
+    this.held = null;
+    this.heldUpper = null;
+    this.heldStowed = false;
     for (const [h, name] of [[this.lower, lowerName], [this.upper, upperName]]) {
       if (!name || !this.rig.has(name)) continue;
       const info = this.info(name);
@@ -384,18 +436,85 @@ export class SoldierActions {
   }
 
   /**
+   * A whole-body state beside the swim, set by name: a blast's (the flight,
+   * the bounce, the landing, the get-up; `knockback.js`) or the parachute's
+   * (the fall, the opening, the glide, the landing).
+   *
+   * The engine sets each on both machines (`BFSoldier::handleUpdate` and
+   * `handleCollision` for a blast, `handlePlayerInput` and
+   * `setIsParachuting` for a chute), but the torso does not always keep it:
+   * a thrown man's recorded torso holds a hit or his aim while his legs fly
+   * (replay_20260927-140921), and the glide has no torso state at all
+   * (`Ub_ParachuteOpen`'s `addTransitionWhenDone Ub_StandAim`). So the legs
+   * hold `pair.lower`, and the torso holds `pair.upper` only where this body
+   * has a clip of that state; otherwise it runs its own aim, fire and reload.
+   * `pair.stowed` is the lower state's `c_AsmHideWeapon`: no fire and no
+   * reload while it is up.
+   *
+   * Whoever hands the pair in runs the states' timers (a replay's recording,
+   * `parachute.js`'s `Parachute`), as `swim.js` does for the swim, so a
+   * one-shot here holds its last frame until the next pair arrives. Null
+   * drops the legs back to the base, `Lb_Stand`, where every one of these
+   * ends, and the torso with them if it was held. A tree without the bundle
+   * binds none of the names, and the halves stay on the gait.
+   */
+  followHeld(pair) {
+    const lower = pair?.lower && this.rig.has(pair.lower) ? pair.lower : null;
+    const upper = lower && pair.upper && this.rig.has(pair.upper) ? pair.upper : null;
+    this.heldStowed = Boolean(lower && pair.stowed);
+    const was = this.held;
+    const wasUpper = this.heldUpper;
+    if (lower === was && upper === wasUpper) return;
+    this.held = lower;
+    this.heldUpper = upper;
+    if (lower && lower !== was) this.enterHeld(this.lower, lower);
+    if (upper && upper !== wasUpper) this.enterHeld(this.upper, upper);
+    if (!lower && was) this.enterBase(this.lower, true);
+    if (!upper && wasUpper) this.enterBase(this.upper, true);
+  }
+
+  /** Put a half on a held state, from its first frame and with its morph. */
+  enterHeld(h, name) {
+    const info = this.info(name);
+    h.name = name;
+    h.base = false;
+    h.time = 0;
+    h.loop = !!info?.loop;
+    h.duration = Infinity;              // the pair's owner ends the one-shots
+    h.action = 'held';
+    this.entries.push({ half: h.half, name, morph: this.morphOf(name) });
+  }
+
+  /**
    * One frame: take the stance, gait family, trigger and swim pair the page
    * simulated, run each half's one-shots out and follow their `then`, and
    * return the states entered (`{ half, name, morph }`) since the last call.
+   * `held` is `followHeld`'s pair, which outranks the swim the way the page's
+   * own body has it (`soldier-body.js` `bodyFamily`: a canopy over water is
+   * the parachute's landing).
    */
-  update({ stance = this.stance, family = this.family, trigger = false, swim = null } = {},
-         dt = 0) {
+  update({ stance = this.stance, family = this.family, trigger = false, swim = null,
+           held = null } = {}, dt = 0) {
     this.stance = stance;
     this.family = family;
     this.trigger = !!trigger;
-    if (!this.dead) this.followSwim(swim);
+    if (!this.dead) {
+      // Out of one before into the other, so the base an exit enters never
+      // lands after the other's entry.
+      if (held?.lower && this.rig.has(held.lower)) {
+        this.followSwim(null);
+        this.followHeld(held);
+      } else {
+        this.followHeld(null);
+        this.followSwim(swim);
+      }
+    }
     for (const h of [this.lower, this.upper]) {
       if (h.action === 'swim' && this.swim) { h.time += dt; continue; }
+      if (h.action === 'held' && (h === this.lower ? this.held : this.heldUpper)) {
+        h.time += dt;
+        continue;
+      }
       if (h.name === null) { this.enterBase(h, true); continue; }
       if (this.dead) continue;
       if (h.base) { this.enterBase(h); continue; }

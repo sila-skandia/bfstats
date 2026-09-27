@@ -141,15 +141,20 @@ export function createFootBody(page) {
     return footBundleCache.get(relative);
   }
 
-  /** The named-state bundles (`die`, `swim`, `parachute`) describe their clips
-   *  in the older shape, `{ speed, loop, morphFactor, returnTo }` under the
-   *  bundle's own key; read as the same `{ speed, loop, morph, then }`. */
+  /** The named-state bundles (`die`, `swim`, `parachute`, `explosion`)
+   *  describe their clips in the older shape, `{ speed, loop, morphFactor,
+   *  returnTo }` under the bundle's own key; read as the same `{ speed, loop,
+   *  morph, then }`, and a state's `c_AsmHideWeapon` as `hidesWeapon` where
+   *  the bundle carries its flags (`explosion`). */
   function namedStates(extras) {
     const out = {};
-    for (const key of ['die', 'swim', 'parachute']) {
+    for (const key of ['die', 'swim', 'parachute', 'explosion']) {
       for (const [name, meta] of Object.entries(extras?.[key] ?? {})) {
         out[name] = { speed: meta.speed, loop: meta.loop, morph: meta.morphFactor,
                       then: meta.returnTo ?? undefined };
+        if (Array.isArray(meta.flags)) {
+          out[name].hidesWeapon = meta.flags.some(f => f.toLowerCase() === 'c_asmhideweapon');
+        }
       }
     }
     return out;
@@ -168,6 +173,10 @@ export function createFootBody(page) {
   async function footBodyClips(weapon) {
     const manifest = await footGaits();
     if (!manifest) return [];
+    // A blast's knockback (`knockback.js`), from `DieHit/`: the bots' and a
+    // replay's bodies play it (this body has no knockback). Asked for now so
+    // its fetch runs beside the others rather than after them.
+    const blastLoad = footBundle(manifest.explosion);
     const grip = manifest.weaponGrip?.[weapon] ?? weapon;
     let upper = await footBundle(manifest.grips?.[grip]);
     if (!upper.length && manifest.grips?.Colt) {
@@ -184,7 +193,8 @@ export function createFootBody(page) {
     // The deaths, weapon-independent too: `DieHit/LowerBody/`,
     // `DieHit/3p/EmptyHands/` and `Vehicle/`.
     const die = await footBundle(manifest.die);
-    return [...lower, ...upper, ...chute, ...swim, ...die];
+    const blast = await blastLoad;
+    return [...lower, ...upper, ...chute, ...swim, ...die, ...blast];
   }
 
   /** The death bundle's clips (`gaits/die.gait.glb`), for a body that is not
@@ -473,6 +483,9 @@ export function createFootBody(page) {
   }
 
   Object.assign(footBodies, {
+    // The canopy asset, for the bots' and a replay's bodies too
+    // (`bot-visuals.js` `syncCanopy`): one load for the page.
+    canopyAsset: footCanopyAsset,
     dieClips,
     disposeFootBodyScene,
     footCapsules,

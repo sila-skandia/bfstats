@@ -624,5 +624,146 @@ class ReplaySwimmerTests(unittest.TestCase):
         self.assertEqual(self.results["v4Death"], "Lb_DieSwim")
         self.assertIsNone(self.results["dryDeath"])
 
+
+class ReplayKnockbackAndParachuteTests(unittest.TestCase):
+    """A replayed man blown off his feet, and a pilot who bails out.
+
+    A blast throws a soldier into the engine's explosion states, living or
+    dead (`knockback.js`: `BFSoldier::handleUpdate` enters the flight,
+    `handleCollision` the landing), and a bail-out is the parachute's states;
+    the body renderer drew neither. A v5 file records both halves' states and
+    the state bits (`0x10`, the chute open, `setIsParachuting` `0x08276f90`).
+    The renderer now holds the legs in the recorded whole-body state, entered
+    by name as the swim states are, the torso too where the state has one of
+    its own; the weapon is stowed where the lower state declares
+    `c_AsmHideWeapon`; the canopy is out while the chute is. A dead man's body
+    keeps flying, or riding his canopy down, until the recording lands it; the
+    corpse is left where it came to rest.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["knockback"]
+
+    def names(self, pid: int, half: str) -> list[str]:
+        return [name for name, _t in self.results[half][str(pid)]]
+
+    def entered_at(self, pid: int, half: str, name: str) -> float:
+        return next(t for n, t in self.results[half][str(pid)] if n == name)
+
+    def test_a_thrown_man_flies_and_lands_in_his_recorded_states(self) -> None:
+        # No run between: the flight is on the record a sample after his body
+        # left the ground (6.0), and is taken from there.
+        self.assertEqual(self.names(51, "lower"),
+                         ["stand.lower", "Lb_ExplosionForward", "Lb_ExplosionLandFront"])
+        self.assertEqual(6.0, self.entered_at(51, "lower", "Lb_ExplosionForward"))
+        at = self.results["sample"]["51@6.3"]
+        self.assertEqual({"lower": "Lb_ExplosionForward", "upper": "Ub_HitChestStand"}, at["blast"])
+        self.assertEqual("Lb_ExplosionForward", at["held"]["lower"])
+        # Every lower explosion state declares `c_AsmHideWeapon`.
+        self.assertFalse(at["weapon"])
+
+    def test_a_torso_the_blast_did_not_set_runs_its_own_machine(self) -> None:
+        # His torso held a hit, then his aim, while his legs flew: neither is
+        # an explosion state, so the torso stays on its own machine until the
+        # landing sets both halves.
+        self.assertEqual(self.names(51, "upper"), ["stand.upper", "Ub_ExplosionLandFront"])
+
+    def test_a_man_killed_in_the_air_is_drawn_flying_until_he_lands(self) -> None:
+        at = self.results["sample"]["51@7.1"]
+        self.assertTrue(at["drawn"])
+        self.assertAlmostEqual(11.0, at["x"], places=1)
+        kills = {k["pid"]: k for k in self.results["kills"]}
+        self.assertEqual("explosionLandFront", kills[51]["family"])
+        self.assertEqual(7.3, kills[51]["t"])
+        # His cry is the blow's, at his death.
+        self.assertIn(7.0, self.results["cries"])
+        self.assertEqual({"until": 7.3, "landing": "Lb_ExplosionLandFront"},
+                         self.results["flight"]["A"])
+
+    def test_nobody_walks_in_the_air(self) -> None:
+        steps = self.results["steps"].get("51", [])
+        self.assertEqual([], [t for t in steps if 6.1 <= t <= 7.3])
+
+    def test_a_survivor_lands_gets_up_and_goes_on(self) -> None:
+        self.assertEqual(self.names(52, "lower"),
+                         ["stand.lower", "Lb_ExplosionBackward", "Lb_ExplosionLandBackSurvive",
+                          "Lb_ExplosionLandBackSurviveStandUp", "stand.lower"])
+        self.assertEqual(self.names(52, "upper"),
+                         ["stand.upper", "Ub_ExplosionBackward", "Ub_ExplosionLandBackSurvive",
+                          "Ub_ExplosionLandBackSurviveStandUp", "stand.upper"])
+        self.assertEqual(10.0, self.results["lower"]["52"][-1][1])
+        self.assertFalse(self.results["sample"]["52@8.5"]["weapon"])
+        after = self.results["sample"]["52@10.5"]
+        self.assertTrue(after["weapon"])
+        self.assertIsNone(after["held"])
+        self.assertIsNone(after["blast"])
+        self.assertNotIn(52, [k["pid"] for k in self.results["kills"]])
+        self.assertIsNone(self.results["flight"]["B"])
+
+    def test_a_pilot_who_bails_out_falls_opens_glides_and_lands(self) -> None:
+        self.assertEqual(self.names(53, "lower"),
+                         ["Lb_ParachuteFall", "Lb_ParachuteOpen", "Lb_ParachuteIdle",
+                          "Lb_ParachuteHitGround", "stand.lower"])
+        self.assertEqual(7.0, self.entered_at(53, "lower", "Lb_ParachuteOpen"))
+        self.assertEqual(8.7, self.entered_at(53, "lower", "Lb_ParachuteIdle"))
+        self.assertEqual(11.5, self.results["lower"]["53"][-1][1])
+        # The glide has no torso of its own (`Ub_ParachuteOpen`'s
+        # `addTransitionWhenDone Ub_StandAim`): he aims, and fires his rifle.
+        upper = self.names(53, "upper")
+        self.assertEqual(["Ub_ParachuteHitGround", "Ub_ParachuteOpen", "stand.upper", "Ub_Fire"],
+                         upper[:4])
+        self.assertEqual(9.0, self.entered_at(53, "upper", "Ub_Fire"))
+        self.assertIn("Ub_ParachuteHitGround", upper[4:])
+        # `c_AsmHideWeapon` on the fall and the opening, not the glide.
+        self.assertFalse(self.results["sample"]["53@5.5"]["weapon"])
+        self.assertFalse(self.results["sample"]["53@7.5"]["weapon"])
+        self.assertTrue(self.results["sample"]["53@9.1"]["weapon"])
+        self.assertTrue(self.results["sample"]["53@11.8"]["weapon"])
+        self.assertIsNone(self.results["sample"]["53@11.8"]["chute"])
+
+    def test_the_canopy_is_out_while_the_chute_carries_him(self) -> None:
+        sample = self.results["sample"]
+        self.assertFalse(sample["53@5.5"]["open"])
+        self.assertFalse(sample["53@5.5"]["canopy"]["visible"])
+        self.assertEqual({"visible": True, "clip": "open", "over": 1.3}, sample["53@7.5"]["canopy"])
+        self.assertEqual("idle", sample["53@9.1"]["canopy"]["clip"])
+        self.assertTrue(sample["53@9.1"]["canopy"]["visible"])
+        # Bit 0x10 drops as he touches down (`Lb_ParachuteHitGround`).
+        self.assertFalse(sample["53@11.2"]["open"])
+        self.assertFalse(sample["53@11.2"]["canopy"]["visible"])
+
+    def test_a_man_killed_under_his_canopy_rides_it_down(self) -> None:
+        at = self.results["sample"]["54@8.5"]
+        self.assertTrue(at["drawn"])
+        self.assertEqual({"lower": "Lb_ParachuteDie", "upper": "Ub_ParachuteDie"}, at["chute"])
+        self.assertTrue(at["canopy"]["visible"])
+        # A dead man holds no weapon, as no corpse does, though
+        # `Lb_ParachuteDie` declares no `c_AsmHideWeapon`.
+        self.assertFalse(at["weapon"])
+        self.assertTrue(self.results["sample"]["54@9.5"]["drawn"])
+        kills = {k["pid"]: k for k in self.results["kills"]}
+        self.assertEqual("parachuteDeadLanded", kills[54]["family"])
+        self.assertEqual(10.5, kills[54]["t"])
+        self.assertEqual(["Lb_ParachuteIdle", "Lb_ParachuteDie", "Lb_ParachuteDeadHitGround"],
+                         self.names(54, "lower"))
+        self.assertIn(8.0, self.results["cries"])
+        self.assertEqual({"until": 10.5, "landing": "Lb_ParachuteDeadHitGround"},
+                         self.results["flight"]["D"])
+
+    def test_a_page_bot_falling_out_of_the_sky_takes_the_same_path(self) -> None:
+        bot = self.results["pageBot"]
+        self.assertEqual("falling", bot["falling"]["state"])
+        self.assertEqual({"lower": "Lb_ParachuteFall", "upper": "Ub_ParachuteFall"},
+                         bot["falling"]["held"])
+        self.assertFalse(bot["falling"]["weapon"])
+        self.assertFalse((bot["falling"]["canopy"] or {}).get("visible", False))
+        self.assertEqual("open", bot["opening"]["state"])
+        self.assertEqual({"visible": True, "clip": "open"}, bot["opening"]["canopy"])
+        self.assertEqual(["Lb_ParachuteFall", "Lb_ParachuteOpen"], bot["lower"])
+
+
 if __name__ == "__main__":
     unittest.main()

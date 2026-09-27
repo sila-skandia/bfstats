@@ -170,6 +170,12 @@ export function resolveDeathFamily(want, bound) {
     dieLie: ['dieLie', 'dieChestStand'],
     dieHitGround: ['dieHitGround', 'dieChestStand'],
     dieByVehicle: ['dieByVehicle', 'dieChestStand'],
+    // Where a dead man comes to rest out of the air (`knockback.js`,
+    // `parachute.js`), for a tree without the clip: a blast's landing on his
+    // face or his back, the canopy's on the ground.
+    explosionLandFront: ['explosionLandFront', 'dieChestStand'],
+    explosionLandBack: ['explosionLandBack', 'dieBackStand', 'dieChestStand'],
+    parachuteDeadLanded: ['parachuteDeadLanded', 'dieHitGround', 'dieChestStand'],
   }[want] ?? [want];
   if (typeof bound !== 'function') return chain[0];
   for (const name of chain) if (bound(name)) return name;
