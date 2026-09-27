@@ -107,10 +107,16 @@ const options = createControlsScreen({
 
 // A recording, from REPLAY or dropped on the page, plays on its own level:
 // `map.html?replay=local:<name>` behind that level's loading screen. One
-// whose server named no mod plays in the menu's.
-const recordings = installRecordingOpener({
-  mod: () => { try { return screen.mod.active; } catch { return 'bf1942'; } },
-});
+// whose server named no mod plays in the menu's. An extra: one that cannot be
+// installed leaves the menu without REPLAY, not a menu that does not start.
+let recordings = null;
+try {
+  recordings = installRecordingOpener({
+    mod: () => { try { return screen.mod.active; } catch { return 'bf1942'; } },
+  });
+} catch (error) {
+  console.warn('front-end: REPLAY left out', error);
+}
 
 let tab = 'singleplay';
 let multiplayLoaded = null;
@@ -120,7 +126,7 @@ let optionsLoaded = null;
 function show(id) {
   // REPLAY is an action, not a screen: the tab that is up stays up.
   if (id === 'replay') {
-    recordings.pick();
+    recordings?.pick();
     return;
   }
   if (id === tab) return;

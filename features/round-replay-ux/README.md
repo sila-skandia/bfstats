@@ -260,13 +260,20 @@ other; a `?replay=` URL needed the file under the served `replays/`.
   anywhere on either page. The picker takes the recording and its `ev_*.xml`
   server log together. The CONTROLS screen keeps its own drop (a profile
   folder).
-- The recording is kept in the browser (IndexedDB `bf42-mesh-replays`, the 8
-  newest, keyed by file name) and the page reloads as
+- The page reloads as
   `map.html?mod=<mod>&map=<level>&replay=local:replay_<stamp>`. From there it
   is the `?replay=` path unchanged: the recording's mod, level and game type
   (a co-op round loads the level's `SinglePlayer` layer), the game's loading
-  screen, the briefing accepted on its own. A reload or the back button finds
-  it again.
+  screen, the briefing accepted on its own. Nothing leaves the machine.
+- **Nothing is kept (2026-09-27).** Recordings run to tens of megabytes: you
+  open one, watch the round, and it is gone. The file crosses the reload in
+  the browser's own store (IndexedDB `bf42-mesh-replays`, keyed by file name),
+  alone: opening one clears whatever was there. The page that plays it reads
+  it and deletes it in the same transaction, then holds it in memory for as
+  long as the round is watched. Every other page clears what a reload that
+  never finished left behind. A refresh, or the back and forward buttons,
+  says the recording was only held for the page that opened it: open the
+  file again.
 - Before leaving the page it checks the file is a bf42plus recording (its
   first line is the `h` header, whatever the extension), that its mod has maps
   in this viewer (`serverInfo.mod`, now `rec.mod`), and that the level is
@@ -277,8 +284,15 @@ other; a `?replay=` URL needed the file under the served `replays/`.
   14:09` after the clock (its tooltip the seconds, the server and the file).
   The time is the header's `start` as written: the recording PC's local clock,
   no zone. The tab reads `Kursk replay · 27 Sep 2026, 14:09`.
-- A `local:` recording the browser no longer has says so over the level (the
-  URL names it), with the site bar back.
+- A `local:` recording that is not held says so over the level (the URL names
+  it), with the site bar back.
+- **A nicety never stops the page.** The loading screen's line, the panel's
+  error, the bar's date and Open button and the opener itself are extras: one
+  that throws (a module the browser still holds from before a deploy was the
+  2026-09-27 case, `overlay.note is not a function`) is a console warning.
+  The highlights (features/round-replay-highlights) are the same: one that
+  throws while opening is left out, one that throws in a frame is switched off
+  rather than stop the frame drawing.
 
 | File | What it is |
 |---|---|
@@ -296,4 +310,9 @@ named-event files, keys, the reload URL) and `tests/test_load_briefing_js.py`
 recording and its server log (aligned on 80 of 136 events), a drop, the four
 refusals (not a recording, a lone server log, Anzio not extracted, a
 DesertCombat recording), Escape closing the panel without the game menu, a
-`local:` name the browser does not have, eviction past 8, and the co-op layer.
+`local:` name the browser does not have, and the co-op layer. Since the
+store holds nothing: a leftover cleared by a plain load, the store empty while
+the opened round plays, a refresh saying so with the level still loading; a
+`progress.js` without `note` served to the page (the Kursk replay loads, one
+warning), and a highlights layer throwing every frame (switched off, the
+replay plays on).

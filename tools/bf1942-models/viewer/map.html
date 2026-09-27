@@ -365,13 +365,20 @@ const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE, briefing: brief
 // it the way it loads any `?replay=` (replay-open.js). One that names no mod
 // or level plays in this page's; the getter runs on a drop, which can come
 // before the level exists.
-const recordings = installRecordingOpener({
-  mod: () => activeMod.id,
-  levelName: () => {
-    try { return level.extras?.level ?? ''; } catch { return ''; }
-  },
-});
-document.getElementById('open-recording')?.addEventListener('click', () => recordings.pick());
+// It is an extra: one that cannot be installed leaves the page without it,
+// not a page that does not start.
+let recordings = null;
+try {
+  recordings = installRecordingOpener({
+    mod: () => activeMod.id,
+    levelName: () => {
+      try { return level.extras?.level ?? ''; } catch { return ''; }
+    },
+  });
+} catch (error) {
+  console.warn('map: Open recording left out', error);
+}
+document.getElementById('open-recording')?.addEventListener('click', () => recordings?.pick());
 // The local player's combat-area frame (`level.combatArea`), read back from
 // the last world step in frame() below, and the world that stepped it. A new
 // level's world has stepped nothing yet, so a frame the old one left reads as
@@ -554,7 +561,7 @@ const pageConsole = createPageConsole(bag(
   {
     get hudPaths() { return hudPaths; }, get MENU_URL() { return MENU_URL; },
     get params() { return params; }, get controls() { return controls; },
-    openRecording: () => recordings.pick(),
+    openRecording: () => recordings?.pick(),
   },
 ));
 
@@ -1743,11 +1750,18 @@ if (!manifest.length) {
     const entry = manifest.find(e => e.name === select.value);
     if (entry) level.show(entry);
   });
+  // What the loading screen and the recording's panel say is a nicety: one
+  // that throws (a module the browser still holds from before a deploy) is a
+  // console warning, never a level that does not load.
+  const quietly = (what, fn) => {
+    try { fn(); } catch (error) { console.warn(`map: ${what} left out`, error); }
+  };
   // A recording names the level it was made on; ?map= still wins. One the
-  // page cannot read (a kept recording the browser has let go of, a URL that
-  // is gone) says so, over the level with the site's bar back to leave by.
+  // page cannot read (a recording opened on another page, which only that
+  // page holds; a URL that is gone) says so, over the level with the site's
+  // bar back to leave by.
   const replayInfo = replayUrl ? await recordingInfo(replayUrl).catch(error => {
-    recordings.fail(`Could not open the recording: ${error.message}.`);
+    quietly("the recording's error", () => recordings?.fail(`Could not open the recording: ${error.message}.`));
     document.documentElement.classList.remove('shell-playing');
     return null;
   }) : null;
@@ -1755,7 +1769,7 @@ if (!manifest.length) {
   // round plays `SinglePlayer/`), unless `?mode=` says otherwise.
   if (replayInfo?.mode && !params.has('mode')) params.set('mode', replayInfo.mode);
   // The loading screen says which round is coming: when and where.
-  if (replayInfo) overlay.note(loadingNote(replayInfo));
+  if (replayInfo) quietly("the loading screen's line", () => overlay.note(loadingNote(replayInfo)));
   const wanted = (params.get('map') || replayInfo?.level || '').toLowerCase();
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
@@ -1772,7 +1786,7 @@ replayController = createReplayController({
   scene, camera, loader, bust,
   stage: document.getElementById('stage'),
   // The bar's date and Open button, once the replay's chrome is built.
-  opened: player => recordings.decorate(player),
+  opened: player => recordings?.decorate(player),
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
   // The level's own parked vehicles would double every recorded one.

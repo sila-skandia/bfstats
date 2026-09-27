@@ -1,14 +1,17 @@
 // Opening a recording from disk (features/round-replay-ux, "Opening a
 // recording"). A bf42plus recording, `replay_*.ndjson` (with its `ev_*.xml`
 // server log if there is one), picked with Open recording or dropped anywhere
-// on map.html, plays on its own level: the file is kept in this browser
-// (IndexedDB) and the page reloads as
+// on map.html, plays on its own level: the page reloads as
 //
 //   map.html?mod=<mod>&map=<level>&replay=local:<file name>
 //
 // so the recording's mod, level and game type load behind the game's loading
-// screen exactly as a `?replay=` URL does. A reload, or coming back to the
-// page, finds the recording where it was left; the KEEP newest are kept.
+// screen exactly as a `?replay=` URL does. Nothing leaves the machine. The
+// file is held in the browser (IndexedDB) only to cross that reload: the page
+// that plays it reads it and lets it go, and every other page clears whatever
+// a reload that never finished left there. Recordings run to tens of
+// megabytes, so the browser never keeps one: you open it, watch the round,
+// and it is gone; watching it again means opening the file again.
 //
 // Also here: what the loading screen and the replay bar say about a recording
 // (when it was recorded, on which server), and the bar's Open button.
@@ -20,8 +23,6 @@ import { loadMods, servable, VANILLA } from './mods.js';
 export const LOCAL_PREFIX = 'local:';
 const DB_NAME = 'bf42-mesh-replays';
 const STORE = 'recordings';
-/** How many opened recordings are kept, the newest. */
-const KEEP = 8;
 /** The viewer's root, where map.html and the maps manifests are, whichever
  *  page imported this. */
 const ROOT = new URL('./', import.meta.url);
@@ -100,22 +101,40 @@ function settled(tx) {
   });
 }
 
-/** Keep `entry` as the newest recording, and let go of all but the KEEP
- *  newest. */
-async function keepRecording(entry) {
+/** Hold `entry` for the reload that plays it: the one recording in the
+ *  store, whatever was there before let go. */
+async function holdRecording(entry) {
   const db = await openStore();
   try {
     const tx = db.transaction(STORE, 'readwrite');
     const store = tx.objectStore(STORE);
+    store.clear();
     store.put({ ...entry, stored: Date.now() });
-    let seen = 0;
-    const walk = store.index('stored').openKeyCursor(null, 'prev');
-    walk.onsuccess = () => {
-      const cursor = walk.result;
-      if (!cursor) return;
-      if (++seen > KEEP) store.delete(cursor.primaryKey);
-      cursor.continue();
-    };
+    await settled(tx);
+  } finally {
+    db.close();
+  }
+}
+
+/** Let go of every held recording but `except`'s: what a reload that never
+ *  got to play one (a tab closed on the loading screen) left behind. */
+async function dropLeftovers(except = null) {
+  if (!globalThis.indexedDB) return;
+  const db = await openStore();
+  try {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    if (except === null) {
+      store.clear();
+    } else {
+      const walk = store.openKeyCursor();
+      walk.onsuccess = () => {
+        const cursor = walk.result;
+        if (!cursor) return;
+        if (cursor.primaryKey !== except) store.delete(cursor.primaryKey);
+        cursor.continue();
+      };
+    }
     await settled(tx);
   } finally {
     db.close();
@@ -124,20 +143,30 @@ async function keepRecording(entry) {
 
 const reads = new Map();
 
-/** A kept recording, `{ key, name, text, log: { name, text } | null, info }`,
- *  for `local:<key>`. Rejects when this browser no longer has it. */
+/** A held recording, `{ key, name, text, log: { name, text } | null, info }`,
+ *  for `local:<key>`. The first read takes it out of the store: this page
+ *  keeps it in memory for as long as the round is watched, and the browser
+ *  keeps nothing. Rejects when it is not there: a recording is held only for
+ *  the page that opens it. */
 export function readLocalRecording(url) {
   const key = String(url).slice(LOCAL_PREFIX.length);
   if (!reads.has(key)) {
     reads.set(key, (async () => {
       const db = await openStore();
       try {
+        const tx = db.transaction(STORE, 'readwrite');
+        const store = tx.objectStore(STORE);
         const entry = await new Promise((resolve, reject) => {
-          const request = db.transaction(STORE).objectStore(STORE).get(key);
-          request.onsuccess = () => resolve(request.result);
+          const request = store.get(key);
+          request.onsuccess = () => {
+            // Let go in the same transaction, while it is still open.
+            if (request.result) store.delete(key);
+            resolve(request.result);
+          };
           request.onerror = () => reject(request.error);
         });
-        if (!entry) throw new Error(`${key} is no longer kept in this browser`);
+        if (!entry) throw new Error(`${key} was only held for the page that opened it. Open the file again to watch it`);
+        await settled(tx).catch(error => console.warn('replay-open: a watched recording was not let go', error));
         return entry;
       } finally {
         db.close();
@@ -195,13 +224,13 @@ async function levelEntry(mod, level) {
   }
 }
 
-/** A kept recording's key: its file name without the extension, as a URL
- *  carries it. The same file opened again replaces it. */
+/** A held recording's key: its file name without the extension, as a URL
+ *  carries it. */
 export const keyFor = name => String(name).replace(/\.ndjson$/i, '').replace(/[^\w.-]+/g, '_').slice(0, 96)
   || 'recording';
 
-/** Where the page goes to play a kept recording: its mod and level named, so
- *  the right ones load even if the browser has let the recording go. The
+/** Where the page goes to play a held recording: its mod and level named, so
+ *  the right ones load even when the recording is gone (a refresh). The
  *  page's own switches carry over; its side, room and game type do not. */
 export function replayHref(key, mod, level, search = globalThis.location?.search ?? '') {
   const query = [`mod=${encodeURIComponent(mod)}`];
@@ -300,6 +329,12 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     style.textContent = STYLE;
     document.head.append(style);
   }
+  // A recording is held only for the reload that plays it; whatever a
+  // reload that never finished left behind goes now, bar the one this page
+  // is about to play.
+  const playing = new URLSearchParams(globalThis.location?.search ?? '').get('replay');
+  dropLeftovers(isLocalReplay(playing) ? playing.slice(LOCAL_PREFIX.length) : null)
+    .catch(error => console.warn('replay-open: the held recordings were not cleared', error));
   const input = el('input');
   input.type = 'file';
   input.accept = '.ndjson,.xml';
@@ -337,7 +372,8 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
   document.body.append(input, shade);
 
   /** 'drag' while files are held over the page, 'busy' while one is read and
-   *  kept, 'error' when it could not be; null with the panel down. */
+   *  held for the reload, 'error' when it could not be; null with the panel
+   *  down. */
   let state = null;
   function show(next, text, more = '') {
     message.textContent = text;
@@ -373,10 +409,10 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
         throw new Error(`${titled(level)} has not been extracted for ${target.name}, so this recording cannot play here.`);
       }
       const key = keyFor(recording.name);
-      await keepRecording({
+      await holdRecording({
         key, name: recording.name, text, info,
         log: log ? { name: log.name, text: await log.text() } : null,
-      }).catch(error => { throw new Error(`The browser would not keep ${recording.name}: ${error.message}.`); });
+      }).catch(error => { throw new Error(`The browser would not hold ${recording.name} for the reload: ${error.message}.`); });
       show('busy', `Loading ${titled(entry?.loading?.title || level)}`, recordedLine(info.start, info.server));
       location.assign(replayHref(key, target.id, entry?.name ?? level));
     } catch (error) {
