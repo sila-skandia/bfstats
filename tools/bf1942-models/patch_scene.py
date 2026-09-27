@@ -15,7 +15,9 @@ each kind of change to one):
                     the loading screen's briefing text
     environment     fog, sun, lighting, water level, draw distance
     damage          the `damage` key and the mod's _shared/damage.json
-    sounds          the `sounds` key; new samples into _shared/sounds
+    sounds          the `sounds` key; new samples into _shared/sounds; and
+                    the mod's _shared/vehicle-sounds.json, once per run,
+                    when the tree has one
     ai              the `ai` key and the level's pathfinding/ folder
     all             every one of them
 
@@ -90,6 +92,33 @@ def patch_level(game_dir: Path, mod: str, level_dir: Path, layers: list[str], *,
             "warnings": warnings}
 
 
+def refresh_vehicle_sounds(game_dir: Path, mod: str, tree: Path, *,
+                           shared_sounds: Path | None = None,
+                           audio_format: str = "mp3", dry_run: bool = False) -> int:
+    """Keep the tree's `_shared/vehicle-sounds.json` in step with its levels.
+
+    The table is the `sounds` layer's vehicle half for every template of the
+    mod, made by the same `extract_map.extract_vehicle_sounds`
+    (`extract_vehicle_sounds.py`), so whatever moves a level's
+    `sounds.vehicles` moves it too. Rebuilt once per run, not per level: it
+    is the mod's, not a level's. Only a tree that already has one, the way
+    `--all` never widens a tree: a scratch bake gains no file from a patch.
+    Returns 1 on failure, which the run reports like a failed level.
+    """
+    import extract_vehicle_sounds
+    if not (tree / "_shared" / extract_vehicle_sounds.TABLE_NAME).is_file():
+        return 0
+    try:
+        result = extract_vehicle_sounds.write_table(
+            game_dir, mod, tree, shared_sounds=shared_sounds,
+            audio_format=audio_format, dry_run=dry_run)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - reported, not raised
+        print(f"_shared/{extract_vehicle_sounds.TABLE_NAME}: FAILED {exc}", file=sys.stderr)
+        return 1
+    print(extract_vehicle_sounds.summary_line(result))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -161,6 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result['level']}: {what} ({time.time() - t0:.1f} s)")
         for warning in result["warnings"]:
             print(f"  warning: {warning}")
+    if "sounds" in layers:
+        rc = refresh_vehicle_sounds(game_dir, args.mod, tree,
+                                    shared_sounds=args.shared_sounds,
+                                    audio_format=args.audio_format,
+                                    dry_run=args.dry_run) or rc
     print(f"{len(wanted)} level(s), {written} scene.json "
           f"{'to write' if args.dry_run else 'written'}, {time.time() - started:.1f} s "
           f"[{' '.join(layers)}]")

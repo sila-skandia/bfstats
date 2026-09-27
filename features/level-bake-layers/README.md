@@ -22,7 +22,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | each game type's script (the level's root `<Mode>.con`, which the server runs; `GameTypes/*.con` says which exist), `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting`, `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
-| `sounds` | `sounds` | new samples in `<tree>/_shared/sounds` | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
+| `sounds` | `sounds` | new samples in `<tree>/_shared/sounds`; `<tree>/_shared/vehicle-sounds.json` (once per run, when the tree has one) | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
 | `scene` (full bake only) | `level`, `worldSize`, `terrain`, `objects`, `skybox`, `sky`, `water`, `envmap`, `lensFlare`, `minimap` | `scene.glb`, textures, lightmaps, sky, water, minimap | everything the geometry needs |
 
@@ -44,7 +44,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Which files a game type's script runs (a CoOp layer composed from two directories) | `modes.<type>.*` AND the glb's per-mode node tags | full bake of the levels whose composed layer moved (the 2026-09-27 root-script change: all 6 XPack1 levels, 5 XPack2) |
 | Fog, sun, lighting, draw distance | `scene.json` | `--layer environment` |
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
-| Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples | `--layer sounds` |
+| Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
 | Anything drawn or placed: a flag's or a spawner's position, which vehicle a spawner makes, which modes a placement is in, whether a flag is drawn at all, a static, the terrain, textures, the exporter (`bf42/gltf.py`, `assemble.py`, `rs.py`) | `scene.glb` and its side files | full bake: `extract_maps_all.py --mod M` |
 | The statics a mode script places beyond `StaticObjects.con` (`GameType.objects` -> `union_mode_statics`: Secret Weapons' `AdditionalStaticObjects`) | the glb (the nodes, tagged `extras.modes`) and `objects.modeStatics`; their emitters' `sounds.areas[].modes` and cover values ride the `sounds` and `ai` layers | full bake of the levels that have any: in vanilla and the two packs, XPack2's Hellendoorn, Kbely_Airfield, Mimoyecques and Telemark (`features/mode-script-statics/`) |
@@ -65,6 +65,32 @@ block, not only `sounds.vehicles`), `extract_map.py <L> --damage-only` is
 Then publish with `scripts/publish-mesh-delta.py maps --hash`: a layer patch
 often keeps a file's length (`10.0` -> `20.0`), which the size compare cannot
 see.
+
+## The mod's vehicle sound table (2026-09-27)
+
+`sounds.vehicles` answers only for the templates the level's own spawners
+place. A round replay shows whatever the server spawned: the MoonGamers Midway
+recording's Elco80 and Type38 PT boats, their rafts, Kubelwagens,
+`Stationary_mg42`s and a B17 had models and no sound. `<tree>/_shared/vehicle-sounds.json`
+is `{"mod", "vehicles": [...]}`, one `sounds.vehicles` entry per vehicle
+template of the whole mod chain (the model catalogue's land, air, sea and
+emplacement templates, every template a level's ObjectSpawner names, and the
+hulls those carry on spawners of their own), made by the same
+`extract_map.extract_vehicle_sounds`, with the same `../_shared/sounds/x.mp3`
+paths. `template` is the declared name; match it case-insensitively. A
+template a level declares in its own archive (Battle of Britain's Ju88A, Coral
+Sea's carriers, vanilla Caen's Pak40) is left to that level's `scene.json`,
+and a pickup kit a spawner lays down (XPack2's `GermanElite_*`) is no hull.
+
+    python3 tools/bf1942-models/extract_vehicle_sounds.py --mod bf1942   # or XPack1, XPack2
+
+`patch_scene.py --layer sounds` refreshes it once per run when the tree has
+one, and `extract_maps_all.py` writes it after its levels, so it moves with the
+levels' entries: every entry of a global hull a level places equals that
+level's (`tests/test_extract_vehicle_sounds.py`; 358 vanilla, 462 XPack1 and
+486 XPack2 level entries compared equal on 2026-09-27). Vanilla has 64 entries
+(893 KB), XPack1 73, XPack2 81; XPack2's `Jetpack`, `ParatrooperSpawner` and
+`Wasserfall` have no engine or gun script.
 
 ## Timing (vanilla, 23 levels)
 
