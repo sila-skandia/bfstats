@@ -783,7 +783,9 @@ unterminated while its round runs.
   standing, crouched and prone, the template's `setPoseCameraPos`, and the
   server's log puts a live player 1.02 m over the terrain. A soldier's creation
   event is his spawn point, on the ground (0.00 m median at 30 spawns). The
-  viewer stands him on his feet (`replay-recording.js` `standOnFeet`).
+  viewer stands him on his feet (`replay-recording.js` `standOnFeet`), and
+  lays a player's server-log ring on the surface under him (`replay.js`
+  `restOnSurface`).
 - Replay models get the page's own vehicle lighting (`bindDynamicShading`),
   and the level's baked spawner vehicles are hidden so nothing is drawn twice.
 

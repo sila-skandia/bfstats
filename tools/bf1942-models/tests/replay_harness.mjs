@@ -807,4 +807,30 @@ const read = scene => {
   };
 }
 
+// --- the server log's rings, on the ground -----------------------------------
+//
+// The server's log places a player where the engine holds him, a metre over
+// his feet, as the recording does; a spawn is on the ground and a hull is at
+// its own origin. A player's ring lies on the surface under him when he stood
+// within a man's height of it; a pilot's stays in the air with him.
+{
+  const [{ ReplayPlayer }, { serverRows }] = await Promise.all([imp('replay.js'), imp('replay-server-log.js')]);
+  const log = { events: [
+    { t: 10, name: 'scoreEvent', params: { player_id: 1, victim_id: 2, score_type: 'Kill', weapon: 'Thompson', player_location: [10, 1.02, 20] } },
+    { t: 11, name: 'spawnEvent', params: { player_id: 2, player_location: [30, 0, 20] } },
+    { t: 12, name: 'scoreEvent', params: { player_id: 3, score_type: 'Kill', player_location: [50, 150, 20] } },
+    { t: 13, name: 'destroyVehicle', params: { player_id: 1, vehicle: 'Sherman', vehicle_pos: [70, 1.5, 20] } },
+  ] };
+  const rows = serverRows({ duration: 100, players: new Map() }, log, { offset: 0 });
+  const player = Object.assign(Object.create(ReplayPlayer.prototype), {
+    alignment: { offset: 0 }, rows, markers: [], root: new THREE.Group(),
+    ctx: { groundHeight: (x, z, fromY) => (fromY >= 0 ? 0 : -Infinity) },
+  });
+  player.buildMarkers();
+  results.serverRings = {
+    atPlayer: rows.map(r => r.atPlayer),
+    y: player.markers.map(m => +m.marker.position.y.toFixed(2)),
+  };
+}
+
 console.log(JSON.stringify(results));
