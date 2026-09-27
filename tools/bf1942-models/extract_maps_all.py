@@ -105,6 +105,28 @@ def promote(staging: Path, out: Path) -> int:
     return moved
 
 
+def write_vehicle_sounds(game_dir: Path, mod: str, tree: Path,
+                         shared_sounds: Path, audio_format: str) -> bool:
+    """The mod's `_shared/vehicle-sounds.json`, once per run.
+
+    Every vehicle template's engine and gun sound, for a round replay that
+    fields what no level places (`extract_vehicle_sounds.py`). It is the
+    mod's rather than any level's, so it is written after the levels, and a
+    failure is reported without failing a run whose product is the levels.
+    """
+    import extract_vehicle_sounds
+    try:
+        result = extract_vehicle_sounds.write_table(
+            game_dir, mod, tree, shared_sounds=shared_sounds,
+            audio_format=audio_format)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - reported, not raised
+        print(f"_shared/{extract_vehicle_sounds.TABLE_NAME}: FAILED {exc}",
+              file=sys.stderr)
+        return False
+    print(extract_vehicle_sounds.summary_line(result), file=sys.stderr)
+    return True
+
+
 def _extract_one(task: tuple) -> dict:
     """One `extract_map.py` run in its own staging dir. Never raises."""
     (level, game_dir, mod, staging_root, max_texture,
@@ -280,6 +302,9 @@ def main() -> int:
 
     shutil.rmtree(staging_root, ignore_errors=True)
     publish()
+    if not args.terrain_only:
+        write_vehicle_sounds(game_dir, args.mod, args.out, shared_sounds,
+                             args.audio_format)
 
     print(f"\nextracted {len(tasks) - len(failures)} of {len(tasks)} levels; "
           f"{len(listing)} in {index_path}", file=sys.stderr)
