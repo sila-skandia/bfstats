@@ -381,21 +381,24 @@ pipeline {
                       # The UI stage purges the whole zone, but it only runs when ui/
                       # changed. Without this, a mesh-only build leaves the edge serving
                       # the previous viewer — /vendor/ for up to seven days. Scoped to
-                      # the one host so a mesh deploy does not cold-start bfstats.io.
-                      echo "Purging Cloudflare cache for mesh.bfstats.io..."
+                      # the two hosts this image serves so a mesh deploy does not
+                      # cold-start bfstats.io. play.bfstats.io is the same nginx under
+                      # another name with its own edge copies: left out, its first load
+                      # after a deploy can run a day-old module against the fresh page.
+                      echo "Purging Cloudflare cache for mesh.bfstats.io and play.bfstats.io..."
                       if command -v curl >/dev/null 2>&1; then
                         curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
                           -H "Authorization: Bearer ${CF_API_TOKEN}" \
                           -H "Content-Type: application/json" \
-                          --data '{"hosts":["mesh.bfstats.io"]}'
+                          --data '{"hosts":["mesh.bfstats.io","play.bfstats.io"]}'
                       else
                         wget -qO- \
                           --header="Authorization: Bearer ${CF_API_TOKEN}" \
                           --header="Content-Type: application/json" \
-                          --post-data='{"hosts":["mesh.bfstats.io"]}' \
+                          --post-data='{"hosts":["mesh.bfstats.io","play.bfstats.io"]}' \
                           "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
                       fi
-                      echo "Cloudflare cache purged for mesh.bfstats.io."
+                      echo "Cloudflare cache purged for mesh.bfstats.io and play.bfstats.io."
                       '''
                     }
                   }
