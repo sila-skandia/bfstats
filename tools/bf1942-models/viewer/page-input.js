@@ -19,7 +19,7 @@ import { GameConsole } from './console.js';
  * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
  * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`,
  * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
- * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
+ * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`,
@@ -671,13 +671,8 @@ export function createPageInput(page) {
         pageInput.lastPointerX = e.clientX;
         pageInput.lastPointerY = e.clientY;
         pageInput.dragging = true;
-        if (page.navMode === 'fly') {
-          pageInput.touchFlying = true;
-          pageInput.isPanning = false;
-        } else {
-          pageInput.touchFlying = false;
-          pageInput.isPanning = true;
-        }
+        pageInput.touchFlying = true;
+        pageInput.isPanning = false;
       } else if (activeTouches.size === 2) {
         pageInput.touchFlying = false;
         pageInput.isPanning = true;
@@ -737,13 +732,8 @@ export function createPageInput(page) {
         const remaining = activeTouches.values().next().value;
         pageInput.lastPointerX = remaining.x;
         pageInput.lastPointerY = remaining.y;
-        if (page.navMode === 'fly') {
-          pageInput.touchFlying = true;
-          pageInput.isPanning = false;
-        } else {
-          pageInput.touchFlying = false;
-          pageInput.isPanning = true;
-        }
+        pageInput.touchFlying = true;
+        pageInput.isPanning = false;
       } else {
         const geom = getTouchesCenterAndDist();
         if (geom) {

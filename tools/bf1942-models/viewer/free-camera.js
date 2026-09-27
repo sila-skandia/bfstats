@@ -1,14 +1,13 @@
 /**
- * The free camera: fly and pan navigation, the altitude clamp, the speed and
- * nav-mode toggles, placing and resetting the camera over a level, and the
- * look it steers by. Split out of `page-input.js`, which keeps the devices.
+ * The free camera: fly and pan navigation, the altitude clamp, placing and
+ * resetting the camera over a level, and the look it steers by. Split out of
+ * `page-input.js`, which keeps the devices.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `camera`, `captured`, `car`, `extras`, `FLY_SLOW`,
- * `FLY_SPEED`, `getFloorAltitude`, `groundHeight`, `keys`, `leavePilot`,
- * `optOnFoot`, `optPilot`, `params`, `soldier`, `spawnAtFlag`,
- * `touchFlying`.
+ * `FLY_SPEED`, `getFloorAltitude`, `groundHeight`, `keys`,
+ * `optOnFoot`, `optPilot`, `params`, `touchFlying`.
  */
 export function createFreeCamera(page) {
   const freeCamera = {};
@@ -26,8 +25,6 @@ export function createFreeCamera(page) {
     look.yaw -= dx * sens;
     look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - dy * sens));
   };
-
-  freeCamera.navMode = 'fly'; // 'fly' or 'pan'
 
   function clampAltitude() {
     if (page.optPilot.checked && (page.aircraft || page.car)) return;
@@ -95,16 +92,9 @@ export function createFreeCamera(page) {
     freeCamera.initialCameraPose = { x: page.camera.position.x, y: page.camera.position.y, z: page.camera.position.z, yaw: look.yaw, pitch: look.pitch };
   }
 
+  // Only R out of a seat and off foot reaches here: `reloadKey`
+  // (page-input.js) gives the seat and the soldier their own R first.
   function resetCamera() {
-    page.leavePilot();
-    // On foot R respawns rather than resetting the camera — the keydown handler
-    // routes it to `spawnAtFlag` before it ever reaches here — but a reset that
-    // arrives from the on-screen button must not kick the player out of the mode
-    // or move a camera the body owns.
-    if (page.optOnFoot.checked && page.soldier) {
-      page.spawnAtFlag(true);
-      return;
-    }
     if (freeCamera.initialCameraPose) {
       page.camera.position.set(freeCamera.initialCameraPose.x, freeCamera.initialCameraPose.y, freeCamera.initialCameraPose.z);
       freeCamera.setLook(freeCamera.initialCameraPose.yaw, freeCamera.initialCameraPose.pitch);
@@ -114,57 +104,9 @@ export function createFreeCamera(page) {
     }
   }
 
-  freeCamera.speedMode = 'fast'; // 'fast' or 'slow'
-
   function isSlow() {
-    return page.keys.has('ShiftLeft') || page.keys.has('ShiftRight') || freeCamera.speedMode === 'slow';
+    return page.keys.has('ShiftLeft') || page.keys.has('ShiftRight');
   }
-
-  const speedToggleBtn = document.getElementById('speed-toggle-btn');
-  function setSpeedMode(mode) {
-    freeCamera.speedMode = mode;
-    if (speedToggleBtn) {
-      speedToggleBtn.dataset.speed = mode;
-      const badge = speedToggleBtn.querySelector('.speed-badge');
-      const hint = speedToggleBtn.querySelector('.speed-hint');
-      if (badge) badge.textContent = mode.toUpperCase();
-      if (hint) hint.textContent = mode === 'fast' ? 'Tap for slow' : 'Tap for fast';
-    }
-  }
-  speedToggleBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    setSpeedMode(freeCamera.speedMode === 'fast' ? 'slow' : 'fast');
-  });
-
-  const modeToggleBtn = document.getElementById('mode-toggle-btn');
-  const resetCamBtn = document.getElementById('reset-cam-btn');
-  const mapActionsBar = document.getElementById('map-actions');
-
-  function setNavMode(mode) {
-    freeCamera.navMode = mode;
-    if (modeToggleBtn) {
-      modeToggleBtn.dataset.mode = mode;
-      const badge = modeToggleBtn.querySelector('.mode-badge') || modeToggleBtn.querySelector('.action-badge');
-      const hint = modeToggleBtn.querySelector('.mode-hint') || modeToggleBtn.querySelector('.action-hint');
-      if (badge) badge.textContent = mode.toUpperCase();
-      if (hint) hint.textContent = mode === 'fly' ? 'Tap for pan' : 'Tap for fly';
-    }
-  }
-
-  modeToggleBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    setNavMode(freeCamera.navMode === 'fly' ? 'pan' : 'fly');
-  });
-
-  resetCamBtn?.addEventListener('click', e => {
-    e.stopPropagation();
-    resetCamera();
-  });
-
-  mapActionsBar?.addEventListener('pointerdown', e => {
-    e.stopPropagation();
-  });
-
 
   function flySpeed() {
     return page.FLY_SPEED * (isSlow() ? page.FLY_SLOW : 1);
@@ -209,8 +151,6 @@ export function createFreeCamera(page) {
     panCamera,
     placeCamera,
     resetCamera,
-    setNavMode,
-    setSpeedMode,
   });
   return freeCamera;
 }
