@@ -36,12 +36,13 @@ function el(tag, className, text) {
 }
 
 // The marks' glyphs, 12x12: a sight for a kill, a cross for a death, a burst
-// for a hull, a pennant for a flag.
+// for a hull, a pennant for a flag, an arrow up off the ground for a spawn.
 const GLYPH = {
   sight: '<circle cx="6" cy="6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 0v3.2M6 8.8V12M0 6h3.2M8.8 6H12" stroke="currentColor" stroke-width="1.6"/>',
   cross: '<path d="M2.2 2.2l7.6 7.6M9.8 2.2l-7.6 7.6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
   burst: '<path d="M6 .3l1.5 3.4 3.5-1.3-1.7 3.3 2.4 1.9-3.6.6.2 3.5L6 9.6l-2.3 2.1.2-3.5-3.6-.6 2.4-1.9L1 2.4l3.5 1.3z" fill="currentColor"/>',
   flag: '<path d="M2 .5h1.5v11H2z" fill="currentColor"/><path d="M3.5 1h7.2l-2 2.6 2 2.6H3.5z" fill="currentColor"/>',
+  spawn: '<path d="M6 .6l4 4.5H7.3v3.8H4.7V5.1H2z" fill="currentColor"/><path d="M1.6 11h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
 };
 
 export function glyphSvg(name) {
@@ -65,6 +66,8 @@ export function markStyle(ch, pid) {
       return { glyph: 'burst', cls: `vehicle${mine ? ' mine' : ''}` };
     case 'capture':
       return { glyph: 'flag', cls: `capture ${team}` };
+    case 'spawn':
+      return { glyph: 'spawn', cls: `spawn${mine ? ' mine' : ''}` };
     default:
       return { glyph: null, cls: 'round' };
   }
