@@ -1823,6 +1823,12 @@ replayController = createReplayController({
   levelPoints: () => level.extras?.controlPoints ?? [],
   levelTickets: () => levelTicketsAtStart,
   hoistFlag: flag => flagCapture.hoistCaptureFlag(flag),
+  // The battle map (features/round-replay-highlights): the level's own map
+  // art and its projection, and the view distance that bounds what the
+  // recording could see.
+  mapArt: () => mapSurfaces.mapArt,
+  mapProjection: () => level.extras?.minimap?.worldToImage ?? null,
+  viewDistance: () => level.extras?.drawDistance ?? null,
   setTickets: (team1, team2) => {
     if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
   },

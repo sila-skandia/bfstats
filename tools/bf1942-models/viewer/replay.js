@@ -50,6 +50,7 @@ import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { ReplayProps } from './replay-props.js';
 import { ReplayRound } from './replay-round.js';
+import { ReplayHighlights } from './replay-highlights.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
@@ -125,6 +126,9 @@ class ReplayPlayer {
     this.round = new ReplayRound(rec, log, ctx);
     this.roundNoted = false;
     this.ui = new ReplayUi(this);
+    // The battles, streaks and plays worth watching, the battle map and the
+    // Auto camera (features/round-replay-highlights).
+    this.highlights = new ReplayHighlights(this);
   }
 
   /** Follow `pid` from now on: the camera eases over to him. */
@@ -170,8 +174,8 @@ class ReplayPlayer {
   }
 
   /** Where the name tags go this frame (replay-ui.js): every living soldier
-   *  on foot, and every crewed or damaged hull, as `{ key, pid, pids, name,
-   *  extra, team, at, hp }`. */
+   *  on foot, and every crewed or damaged hull (`vehicle`), as `{ key, pid,
+   *  pids, name, extra, team, at, hp, vehicle }`. */
   tagTargets() {
     const out = [];
     const point = key => {
@@ -213,6 +217,7 @@ class ReplayPlayer {
       const vehicle = names?.[life.tmpl] ?? life.tmpl;
       out.push({
         key: hull,
+        vehicle: true,
         pid: lead?.pid ?? null,
         pids: crew.map(c => c.pid),
         name: lead ? name(lead.pid) : vehicle,
@@ -440,7 +445,9 @@ class ReplayPlayer {
     // the camera as it stands when it draws him (bot-visuals.js
     // `updateBotVisuals`). Placed after them, the cull read whatever the
     // camera was aimed at before the replay ran, and the followed player
-    // vanished at some angles of the orbit.
+    // vanished at some angles of the orbit. The Auto camera's director and
+    // the highlight reel choose whom it is on first.
+    this.highlights?.lead(t, dt);
     this.camera.update(dt, t);
     this.soldiers?.update(t, step, this.hulls);
     this.props.update(t);
@@ -482,6 +489,7 @@ class ReplayPlayer {
     this.feed.update(t, ownView);
     this.ui.timeline.plan(prevT, t, this.playing);
     this.ui.update(t, dt);
+    this.highlights?.update(t, dt);
   }
 
   /** First person looks out of the followed player's head: his own body,
@@ -524,6 +532,7 @@ class ReplayPlayer {
     this.ctx.guns?.clear();
     this.ctx.scene.remove(this.root);
     this.feed.dispose();
+    this.highlights?.dispose();
     this.ui.dispose();
   }
 }
@@ -565,11 +574,12 @@ export async function recordingMode(url) {
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
  *        playSoldierDeathSound(position, team), ensureAudio(),
  *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
- *        keyboardTaken() }
- * Everything after `effects` is the map's own machinery and optional: the
- * last four are the page's message log (comms.js), a side's flag sprite, the
- * HUD's hit-direction wash, and whether the console, the Escape menu or the
- * briefing has the keyboard. The page calls `afterRender(canvas)` after each
+ *        keyboardTaken(), mapArt(), mapProjection(), viewDistance() }
+ * Everything after `effects` is the map's own machinery and optional: then
+ * the page's message log (comms.js), a side's flag sprite, the HUD's
+ * hit-direction wash, whether the console, the Escape menu or the briefing
+ * has the keyboard, and for the battle map the level's map art, its
+ * projection (`extras.minimap.worldToImage`) and its view distance. The page calls `afterRender(canvas)` after each
  * render and runs its message log at `feedRate()`.
  */
 export function createReplayController(ctx) {
