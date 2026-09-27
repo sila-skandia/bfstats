@@ -11,10 +11,15 @@ import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat
 
 /** How far before its moment a chapter starts, seconds: a jump to a kill
  *  lands in time to see it happen, a capture on the last of the hold. */
-const LEAD = { kill: 3, teamkill: 3, death: 3, vehicle: 3, capture: 6, 'round-start': 0, 'round-end': 3 };
+const LEAD = { kill: 3, teamkill: 3, death: 3, vehicle: 3, capture: 6, spawn: 1, 'round-start': 0, 'round-end': 3 };
 
 /** A server event this close to a recorded one is the same event, seconds. */
 const SAME_EVENT = 1.5;
+
+/** A spawn this close to a control point, metres, is at that point: the
+ *  recorded levels' spawns stand within 185 m of their flag, a carrier's
+ *  kilometres from any. */
+const SPAWN_NEAR = 200;
 
 export const playerName = (rec, pid) => rec.players.get(pid)?.name ?? `player ${pid}`;
 export const playerTeam = (rec, pid) => rec.players.get(pid)?.team ?? 0;
@@ -61,12 +66,82 @@ export function pointsAt(rec, t) {
   return out;
 }
 
+const spawnCache = new WeakMap();
+
+/**
+ * `pid`'s spawns, in time order: `[{ t, life }]`, each new soldier of his
+ * from the moment he took control of it. That is the spawn itself, even
+ * where the recording saw the soldier only once it came into range, a few
+ * seconds on. A soldier standing when the recording began is no spawn it
+ * saw.
+ */
+export function spawnsOf(rec, pid) {
+  let cache = spawnCache.get(rec);
+  if (!cache) {
+    const soldiers = new Map();
+    for (const l of rec.lives) {
+      if (!l.soldier) continue;
+      if (!soldiers.has(l.nid)) soldiers.set(l.nid, []);
+      soldiers.get(l.nid).push(l);
+    }
+    spawnCache.set(rec, cache = { soldiers, byPid: new Map() });
+  }
+  if (cache.byPid.has(pid)) return cache.byPid.get(pid);
+  const control = rec.playerNids?.get(pid) ?? [];
+  const spawns = [];
+  const seen = new Set();
+  control.forEach(({ t, nid }, i) => {
+    // A soldier made as he took it (the object can land a moment before
+    // the control does), or first seen while he still held it. His first
+    // entry is only where the recording found him, so a soldier seen
+    // after that is one he was already in.
+    const until = control[i + 1]?.t ?? Infinity;
+    const life = cache.soldiers.get(nid)?.find(l => l.created >= t - 1 && l.created < until);
+    if (!life || seen.has(life)) return;
+    seen.add(life);
+    if (i === 0 && life.created > t + 1) return;
+    const at = Math.min(t, life.created);
+    if (at > 0.05) spawns.push({ t: at, life });
+  });
+  cache.byPid.set(pid, spawns);
+  return spawns;
+}
+
+/** `pid`'s next spawn after `t`, `{ t, life }`, or null: none while he is
+ *  in a soldier the recording has yet to see (spawned out of its range). */
+export function nextSpawn(rec, pid, t) {
+  for (const s of spawnsOf(rec, pid)) {
+    if (s.t > t) return s;
+    if (s.life.created > t) return null;
+  }
+  return null;
+}
+
+/** The control point a soldier spawned at: the nearest to where he was
+ *  first seen, if it is near enough to be his spawn's. */
+function spawnPoint(rec, life) {
+  const p = life.keys[0]?.p;
+  if (!p) return null;
+  let best = null;
+  let near = SPAWN_NEAR;
+  for (const point of rec.controlPoints?.values() ?? []) {
+    if (!point.pos) continue;
+    const d = Math.hypot(point.pos[0] - p[0], point.pos[2] - p[2]);
+    if (d < near) {
+      best = point.name;
+      near = d;
+    }
+  }
+  return best;
+}
+
 /**
  * The round's chapters, in time order: `{ t, kind, lead, team, ... }` with
  * `kind` one of kill, teamkill, death (`killer`, `victim`, `weapon`),
  * vehicle (`tmpl`, `crew` the players aboard, `by` the destroyer when the
- * server's log names him), capture (`name`, `team`), round-start and
- * round-end (`winner`). `team` is the side the chapter is drawn in.
+ * server's log names him), capture (`name`, `team`), spawn (the recording
+ * player's: `pid`, `at` the control point), round-start and round-end
+ * (`winner`). `team` is the side the chapter is drawn in.
  */
 export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverRows)) {
   const chapters = [];
@@ -102,6 +177,14 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
 
   for (const c of rec.captures ?? []) add({ t: c.t, kind: 'capture', name: c.name, team: c.team });
 
+  // The recording player into the round, and back into it after each death.
+  const own = recordingPlayer(rec);
+  if (own !== null) {
+    for (const { t, life } of spawnsOf(rec, own)) {
+      add({ t, kind: 'spawn', pid: own, at: spawnPoint(rec, life), team: playerTeam(rec, own) });
+    }
+  }
+
   const init = serverRows.find(r => r.kind === 'roundInit' && r.t >= 0 && r.t <= rec.duration);
   const start = rec.roundStarted ?? init?.t ?? null;
   if (start !== null) add({ t: start, kind: 'round-start', team: 0 });
@@ -113,11 +196,12 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
   return chapters;
 }
 
-/** Whether a chapter is `pid`'s: his kill or death, or a hull he rode or
- *  destroyed. */
+/** Whether a chapter is `pid`'s: his kill, death or spawn, or a hull he
+ *  rode or destroyed. */
 export function involves(ch, pid) {
   if (pid === null || pid === undefined) return false;
-  return ch.killer === pid || ch.victim === pid || ch.by === pid || Boolean(ch.crew?.includes(pid));
+  return ch.killer === pid || ch.victim === pid || ch.by === pid || Boolean(ch.crew?.includes(pid))
+    || (ch.kind === 'spawn' && ch.pid === pid);
 }
 
 /** A chapter in the game's own words where it has them: the kill log's
@@ -134,6 +218,10 @@ export function chapterText(rec, ch, lexicon = null) {
     case 'death': return deathLine(name(ch.victim), strings);
     case 'vehicle': return `${display(ch.tmpl)} destroyed${ch.by !== null && ch.by !== undefined ? ` by ${name(ch.by)}` : ''}`;
     case 'capture': return captureLine(display(ch.name), ch.team, strings).trim();
+    case 'spawn': {
+      const at = ch.at ? names?.[ch.at] ?? String(ch.at).replace(/_/g, ' ') : null;
+      return `${name(ch.pid)} spawned${at ? ` at ${at}` : ''}`;
+    }
     case 'round-start': return 'Round started';
     case 'round-end': return ch.winner ? `Round over: ${teamName(ch.winner)} win` : 'Round over';
     default: return ch.kind;

@@ -8,7 +8,7 @@
 
 import { GameConsole } from './console.js';
 import { fmtHp, roundClock } from './replay-recording.js';
-import { chapterStart, nextChapter, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
+import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
@@ -110,6 +110,7 @@ html.replay-on #side { z-index: 8; }
   --rp-allies: #6699ff;
   --rp-gold: #e8c35a;
   --rp-fire: #f0913c;
+  --rp-life: #a9c36a;
   --rp-font: 'Trebuchet MS', 'Geist Variable', 'Segoe UI', system-ui, sans-serif;
   --rp-mono: var(--mm-font-mono, ui-monospace, monospace);
   --rp-bar-h: 88px;
@@ -186,6 +187,7 @@ html.replay-on #side { z-index: 8; }
 .rp-mk.teamkill { color: #d8a24a; }
 .rp-mk.vehicle { color: var(--rp-fire); opacity: .55; }
 .rp-mk.vehicle.mine { opacity: 1; }
+.rp-mk.spawn { color: var(--rp-life); }
 .rp-mk.round { width: 2px; height: 30px; bottom: -14px; background: var(--rp-khaki); opacity: .9; }
 .rp-mini { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .1);
   opacity: 0; transition: opacity .35s; }
@@ -212,6 +214,7 @@ html.replay-on #side { z-index: 8; }
 .rp-tip-list li.t1 i { color: var(--rp-axis); } .rp-tip-list li.t2 i { color: var(--rp-allies); }
 .rp-tip-list li.kill.mine i { color: var(--rp-gold); } .rp-tip-list li.death i { color: var(--rp-axis); }
 .rp-tip-list li.vehicle i { color: var(--rp-fire); }
+.rp-tip-list li.spawn i { color: var(--rp-life); }
 
 /* The player card. */
 .rp-card { position: absolute; left: 50%; bottom: calc(var(--rp-bar-h) + 18px); transform: translateX(-50%);
@@ -230,8 +233,15 @@ html.replay-on #side { z-index: 8; }
 .rp-card-rec { margin-left: 7px; padding: 1px 4px; border-radius: 2px; background: var(--rp-khaki); color: var(--rp-khaki-ink);
   font: 800 9px/1.2 var(--rp-font); letter-spacing: .1em; vertical-align: 2px; }
 .rp-card-state { display: flex; align-items: center; gap: 8px; color: var(--rp-muted); font-size: 11px; white-space: nowrap; overflow: hidden; }
-.rp-card-state .dead { color: var(--rp-axis); }
+.rp-card-state .dead { color: var(--rp-axis); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rp-card-state .range { color: #b7c27a; }
+/* Waiting to spawn: the time left, and a beat while it runs. */
+.rp-card-state .spawn { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--rp-life); }
+.rp-card-state .spawn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 6px currentColor; animation: rp-spawn-beat 1s ease-in-out infinite; }
+.rp-card-state .spawn b { color: var(--rp-ink); font: 700 12px/1 var(--rp-mono); font-variant-numeric: tabular-nums; }
+@keyframes rp-spawn-beat { 50% { opacity: .3; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .rp-card-state .spawn::before { animation: none; } }
 .rp-hp { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .15); overflow: hidden; flex: none; }
 .rp-hp > i { display: block; height: 100%; background: #a9c36a; }
 .rp-hp.smoke > i { background: var(--rp-gold); } .rp-hp.fire > i { background: var(--rp-axis); }
@@ -1023,8 +1033,9 @@ export class ReplayUi {
     }
     this.updateTags(t);
 
-    // The chrome fades while it plays untouched; paused, it stays.
-    const idle = player.playing && !this.timeline.scrubbing && !this.overChrome
+    // The chrome fades while it plays untouched; paused, or while the
+    // followed player waits to spawn (the card's countdown), it stays.
+    const idle = player.playing && !this.timeline.scrubbing && !this.overChrome && !this.spawnWait
       && !this.root.matches('.board-open, .help-open, .map-open')
       && !this.speedWrap.classList.contains('open')
       && (performance.now() - this.lastActivity) / 1000 > IDLE_AFTER;
@@ -1042,6 +1053,7 @@ export class ReplayUi {
     if (pid === null) {
       this.cardName.textContent = 'Nobody to follow';
       this.cardState.textContent = '';
+      this.spawnWait = false;
       return;
     }
     const info = rec.players.get(pid);
@@ -1064,6 +1076,11 @@ export class ReplayUi {
     this.cardFlag.classList.toggle('none', !flag);
     if (flag && this.cardFlag.src !== flag) this.cardFlag.src = flag;
     const status = playerStatusAt(rec, pid, t, player.kills);
+    // Not in the round yet, on the spawn screen or dead: when the recording
+    // has him spawn next.
+    const waiting = status.state === 'absent' || status.state === 'spawning' || status.state === 'dead';
+    const spawn = waiting ? nextSpawn(rec, pid, t)?.t ?? null : null;
+    this.spawnWait = spawn !== null;
     let html = '';
     let hp = null;
     const display = key => this.lexicon()?.names?.[key] ?? key;
@@ -1089,9 +1106,13 @@ export class ReplayUi {
         html = `<span class="dead">${esc(by)}</span>`;
         break;
       }
-      case 'spawning': html = 'spawn screen'; break;
+      case 'spawning': html = spawn === null ? 'spawn screen' : ''; break;
       case 'left': html = 'left the game'; break;
-      default: html = 'not in the round yet';
+      default: html = spawn === null ? 'not in the round yet' : '';
+    }
+    if (spawn !== null) {
+      html += `<span class="spawn" title="Spawns at ${fmtClock(spawn)}">`
+        + `${status.state === 'dead' ? 'respawns' : 'spawns'} in <b>${fmtClock(Math.ceil(spawn - t))}</b></span>`;
     }
     // Beyond the recording player's view distance the server sends nothing,
     // and the replay holds his last pose as a ghost until he is back.
