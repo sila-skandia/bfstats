@@ -513,8 +513,8 @@ const read = scene => {
     line({ k: 'e', t: 3, e: 'createObject', tid: 100, netId: 600, tmpl: 'USMarineSoldier', pos: [10, 0, 20], rot: [0, 0, 0] }),
     line({ k: 'e', t: 3, e: 'control', pid: 0, netId: 600 }),
     line({ k: 'o', t: 3.1, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2, maxhp: 30 }),
-    line({ k: 's', t: 3.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
-    line({ k: 's', t: 5.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 3.1, o: [[600, 10, 1, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 5.1, o: [[600, 10, 1, 20, 0, 0, 0, 1]] }),
     line({ k: 'e', t: 10, e: 'score', kind: 3, pid: 1, victim: 2, weaponName: 'Type99' }),
     line({ k: 'e', t: 10, e: 'score', kind: 5, pid: 2 }),
     line({ k: 'e', t: 15, e: 'hitFrom', dir: 2, strength: 64 }),
@@ -602,7 +602,8 @@ const read = scene => {
   results.uxFeed = { opened, forward, noWash, washed, rebuilt: calls.splice(0), rebuiltTicks: +ticked.toFixed(2) };
 
   // The camera's three modes, on the recording player standing at (10, 0,
-  // 20) facing the way his identity rotation points.
+  // 20) facing the way his identity rotation points (sampled at his origin, a
+  // metre up, as the recorder writes a soldier).
   const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
   const watcher = { rec, followPid: 0, time: 5, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
   const camera = new ReplayCamera(watcher);
@@ -665,8 +666,8 @@ const read = scene => {
     line({ k: 'e', t: 3, e: 'createObject', tid: 100, netId: 600, tmpl: 'USMarineSoldier', pos: [10, 0, 20], rot: [0, 0, 0] }),
     line({ k: 'e', t: 3, e: 'control', pid: 0, netId: 600 }),
     line({ k: 'o', t: 3.1, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2, maxhp: 30 }),
-    line({ k: 's', t: 3.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
-    line({ k: 's', t: 5.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 3.1, o: [[600, 10, 1, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 5.1, o: [[600, 10, 1, 20, 0, 0, 0, 1]] }),
     line({ k: 'end', t: 90 }),
   ].join('\n'));
   const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
@@ -719,6 +720,91 @@ const read = scene => {
   page.replayCamera = false;
   local.frameCameras(1 / 60, false, false);
   results.replayCull = { drawn: Boolean(vis), culled, underReplay, withoutReplay: calls.splice(0) };
+}
+
+// --- a soldier stands on his feet --------------------------------------------
+//
+// The report (2026-09-27, replay_20260927-075756): the recording player ran a
+// metre above the ground. Every bot did too. A soldier's sample is where the
+// engine holds him, his origin, which the template's `setCharacterHeight -1.00`
+// puts a metre over the ground he stands on; the renderer, the fallback and
+// the camera all stand a man on his feet. A bot and the recording player
+// spawn on flat ground at y = 0 (the creation event is the spawn point) and
+// run at 6 m/s, sampled a metre up as the recorder writes them; the recording
+// player crouches at 5.8 s. A jeep beside them is sampled at its own origin.
+{
+  const [{ ReplaySoldiers }, { ReplayCamera }, { place }] = await Promise.all([
+    imp('replay-bodies.js'), imp('replay-camera.js'), imp('replay-actors.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const lines = [
+    line({ k: 'h', v: 4, start: '', hz: 10 }),
+    line({ k: 'anim', t: 1, states: [[0, 'Lb_Stand', 0], [1, 'Lb_RunForward', 0], [2, 'Lb_CrouchWalkForward', 0x20], [3, 'Ub_Stand', 0]] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 250, name: 'Fred Bailey', team: 2, ai: 1, netId: 501, vehNetId: 502, camNetId: 502, kitNetId: 0 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 0, name: 'skandia', team: 2, ai: 0, netId: 1, vehNetId: 2, camNetId: 2, kitNetId: 0 }),
+    line({ k: 'e', t: 2, e: 'createObject', tid: 1760, netId: 520, tmpl: 'Willy', pos: [120, 1.2, 60], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 5, e: 'createObject', tid: 1754, netId: 631, tmpl: 'USMarineSoldier', pos: [100, 0, 50], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 5, e: 'control', pid: 250, netId: 631 }),
+    line({ k: 'e', t: 5, e: 'createObject', tid: 1754, netId: 980, tmpl: 'USMarineSoldier', pos: [110, 0, 50], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 5, e: 'control', pid: 0, netId: 980 }),
+    line({ k: 'o', t: 5.1, id: 520, gid: 3, tmpl: 'Willy', tid: 1760, team: 2, maxhp: 50, crit: 6 }),
+    line({ k: 'o', t: 5.1, id: 631, gid: 1, tmpl: 'USMarineSoldier', tid: 1754, team: 2, maxhp: 30, crit: 0 }),
+    line({ k: 'o', t: 5.1, id: 980, gid: 2, tmpl: 'USMarineSoldier', tid: 1754, team: 2, maxhp: 30, crit: 0 }),
+    line({ k: 'st', t: 5.1, o: [[631, 1, 3, 0, 0, 3, 0], [980, 1, 3, 0, 0, 3, 0]] }),
+    line({ k: 'st', t: 5.8, o: [[980, 2, 3, 0, 0, 3, 0]] }),
+  ];
+  for (let i = 0; i <= 10; i++) {
+    const t = +(5.1 + i * 0.1).toFixed(1);
+    const x = 0.6 * i;
+    const o = [[631, 100 + x, 1, 50, 0, 0, 0, 1], [980, 110 + x, 1, 50, 0, 0, 0, 1]];
+    if (i === 0) o.unshift([520, 120, 1.2, 60, 0, 0, 0, 1]);
+    lines.push(line({ k: 's', t, o }));
+  }
+  const rec = recording.parseRecording(lines.join('\n'));
+  const lifeOf = nid => rec.lives.find(l => l.nid === nid);
+  const bot = lifeOf(631);
+  const mine = lifeOf(980);
+  const jeep = lifeOf(520);
+  const height = (life, t) => +kinematics.poseAt(life, t).p[1].toFixed(3);
+  const times = [5.05, 5.1, 5.35, 5.55, 5.95];
+
+  // The page's renderer is handed each actor's soldier: its feet.
+  const drawn = t => {
+    const player = { rec, playing: true, ctx: {} };
+    const soldiers = new ReplaySoldiers(player);
+    soldiers.update(t, 0.1, new Map());
+    return Object.fromEntries(soldiers.drawn.map(a => [a.name, +a.state.soldier.y.toFixed(3)]));
+  };
+
+  // The plain soldier the page falls back to without its bodies.
+  const fallback = t => {
+    const player = { showGhosts: true, v1: new THREE.Vector3(), q1: new THREE.Quaternion() };
+    const entity = { life: mine, group: new THREE.Group(), normal: new THREE.Group(), wreck: null, meshes: [], anim: null };
+    place(player, entity, t);
+    return +entity.group.position.y.toFixed(3);
+  };
+
+  // His first person and the orbit, over the ground at y = 0.
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const watcher = { rec, followPid: 0, time: 5.5, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
+  const camera = new ReplayCamera(watcher);
+  watcher.camera = camera;
+  const eye = t => {
+    camera.setMode('pov');
+    camera.update(1 / 60, t);
+    return +cam.position.y.toFixed(3);
+  };
+
+  results.feet = {
+    spawn: { bot: +bot.pose.p[1].toFixed(3), mine: +mine.pose.p[1].toFixed(3) },
+    bot: times.map(t => height(bot, t)),
+    mine: times.map(t => height(mine, t)),
+    jeep: height(jeep, 5.5),
+    drawn: [5.35, 5.95].map(drawn),
+    fallback: [5.35, 5.95].map(fallback),
+    orbit: +camera.targetAt(5.5).point.y.toFixed(3),
+    eye: { standing: eye(5.5), crouched: eye(5.95) },
+  };
 }
 
 console.log(JSON.stringify(results));

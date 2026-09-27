@@ -6,6 +6,8 @@
 // features/round-replay-capture/README.md documents the format and how each
 // mapping here was measured.
 
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
+
 // --- conventions --------------------------------------------------------------
 
 // Recorded samples are written at 10 Hz, and only when an object moved: a
@@ -84,6 +86,22 @@ function classify(life) {
   life.soldier = /soldier/i.test(tmpl);
   life.camera = /camera/i.test(tmpl);
   life.projectile = /projectile$/i.test(tmpl);
+}
+
+/**
+ * A soldier's samples, stood on his feet. The sampler writes where the engine
+ * holds a soldier, his origin, which the template's `setCharacterHeight -1.00`
+ * puts a metre over the ground he stands on (soldier-pose.js
+ * `CHARACTER_HEIGHT`); the body renderer, the plain fallback and the camera
+ * stand a man on his feet. Measured in replay_20260927-075756: the recording
+ * player's live samples lie 1.00 m (median) over Wake's terrain and 25 bots'
+ * the same, and his shots leave his camera 0.65, 0.12 and -0.70 m over his
+ * sample standing, crouched and prone, the template's `setPoseCameraPos`. A
+ * creation event is the spawn point, on the ground already, and keeps its
+ * height.
+ */
+function standOnFeet(life) {
+  for (const key of life.keys) key.p[1] -= CHARACTER_HEIGHT;
 }
 
 /**
@@ -602,6 +620,7 @@ export function parseRecording(text) {
   for (const life of rec.lives) {
     if (!life.tmpl && life.tid) life.tmpl = tidNames.get(life.tid) || '';
     classify(life);
+    if (life.soldier) standOnFeet(life);
     life.kit = kitIds.has(life.nid);
     life.controlPoint = cpTemplates.has(life.tmpl);
     // DataBaseComplete arrives after the join-time burst of creations, so
