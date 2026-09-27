@@ -71,6 +71,20 @@ class SkinParseTests(unittest.TestCase):
         self.assertEqual(0, parsed.vertices[0].influences[0].bone)
         self.assertEqual(0.5, parsed.vertices[1].influences[1].weight)
 
+    def test_a_vertex_with_thirteen_influences_parses(self) -> None:
+        # DC Final's US body weights vertices to up to 13 bones, bf1918's to 12.
+        influences = [(bone, 1 / 13, (0.0, 0.0, 0.0)) for bone in range(13)]
+        parsed = skin.parse(pack_skn([((0.0, 1.0, 0.0), influences)],
+                                     [f"Bone{i}" for i in range(13)]), "USbody.skn")
+        self.assertEqual(13, len(parsed.vertices[0].influences))
+        self.assertEqual(13, len(parsed.bones))
+
+    def test_an_implausible_influence_count_is_still_refused(self) -> None:
+        payload = bytearray(pack_skn([((0.0, 0.0, 0.0), [(0, 1.0, (0.0, 0.0, 0.0))])], ["Bip01"]))
+        payload[8 + 12] = 200  # the vertex's influence count
+        with self.assertRaises(skin.SkinError):
+            skin.parse(bytes(payload), "garbage.skn")
+
 
 class BindPoseTests(unittest.TestCase):
     def test_recovers_known_rigid_bind(self) -> None:
