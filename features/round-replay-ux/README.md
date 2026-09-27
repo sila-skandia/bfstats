@@ -32,7 +32,7 @@ the end has the files, the decisions made on the way and what is still open.
 | Transport keys | YouTube and every video player | Space, arrows for 5 s steps, `,` `.` for the previous/next marker (video editors' marker keys), `-` `=` for speed. |
 | Player list is the scoreboard | BF1942's own Tab scoreboard (Axis left, Allied right), clickable like Overwatch and Valorant replay portraits | Tab opens it; click a name to follow. ↑ ↓ step through players without it. A player card over the timeline says whom you follow and what he is doing. |
 | Kill feed and chat as the game draws them | The play page's own message log | `comms.js` / `chat-log.js`, the log the play page draws: `killer [weapon] victim` under the killer's flag, `[point] Axis captured the control point`, chat, the centre kill message when the followed player dies, and, in first person on the recording player, the game's red hit-direction wash. The raw replay log stays as a debug panel (L). |
-| Name tags you can click | Spectator name tags (CS2, Fortnite) | Players near the camera carry their name; clicking one follows him. |
+| Name tags you can click | Spectator name tags (CS2, Fortnite) | Players near the camera carry their name (within 35 m, fading out by 60; since features/round-replay-highlights); clicking one follows him. |
 | Chrome that gets out of the way | Netflix / YouTube idle fade; Overwatch, Fortnite and Rocket League hide-HUD keys | While playing, the bar fades after a few idle seconds (a thin progress line stays); H hides every panel for clean shots. |
 | Shortcuts overlay | YouTube and GitHub's `?` | `?` lists every key. |
 
@@ -57,7 +57,8 @@ timeline or any button.
 | Free camera: move | wheel moves along the view | W A S D, Q / E down / up, Shift fast |
 | Follow previous / next player | arrows on the player card, click a name tag | ↑ / ↓ |
 | Players (scoreboard) | Players button | Tab |
-| Name tags | | N |
+| Name tags (the players near the camera) | | N |
+| Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons | M, 4, B |
 | Replay log (debug) | Log button | L |
 | Hide the interface | | H |
 | Fullscreen | button | F |
@@ -105,7 +106,8 @@ red, Allies blue).
 
 - **An auto-director or kill cam** (the camera cutting to the action on its
   own): it needs a model of what is interesting; the chapters and the
-  scoreboard get you there by hand.
+  scoreboard get you there by hand. (Since built: the Auto camera,
+  features/round-replay-highlights.)
 - **A heading-locked chase camera for vehicles**: the orbit stays level and
   world-aligned so it never swings on its own; first person is the view
   locked to the vehicle.
