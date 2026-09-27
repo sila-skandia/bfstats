@@ -535,6 +535,7 @@ class ReplayKurskRoundTests(unittest.TestCase):
         harness = run_harness()
         cls.results = {"soldiers": harness["respawnKit"], "rack": harness["bombRack"]}
         cls.clock = harness["replayClock"]
+        cls.out_of_range = harness["outOfRange"]
 
     def test_a_respawn_draws_his_new_kit_without_a_seek(self) -> None:
         kit = self.results["soldiers"]["kit"]
@@ -579,6 +580,13 @@ class ReplayKurskRoundTests(unittest.TestCase):
     def test_one_round_fires_one_mount(self) -> None:
         # Left from the mount 30 m aft; out of its own muzzle, 4 m ahead.
         self.assertEqual(self.results["rack"]["mounts"], [[500, 5, -474]])
+
+    def test_the_card_says_when_the_recording_lost_sight_of_him(self) -> None:
+        # The yellow shells are the objects beyond the recording player's
+        # view distance, held at their last pose. In range, no note; out of
+        # range, the time he went; back again, no note.
+        self.assertEqual(self.out_of_range,
+                         [["vehicle", None], ["vehicle", 10], ["vehicle", None], ["foot", 8]])
 
     def test_the_rounds_keep_the_replays_clock(self) -> None:
         # Paused, a bomb in the air holds its height; the replay hands the

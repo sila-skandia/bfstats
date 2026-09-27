@@ -218,6 +218,7 @@ html.replay-on #side { z-index: 8; }
   font: 800 9px/1.2 var(--rp-font); letter-spacing: .1em; vertical-align: 2px; }
 .rp-card-state { display: flex; align-items: center; gap: 8px; color: var(--rp-muted); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .rp-card-state .dead { color: var(--rp-axis); }
+.rp-card-state .range { color: #b7c27a; }
 .rp-hp { display: inline-block; width: 64px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .15); overflow: hidden; flex: none; }
 .rp-hp > i { display: block; height: 100%; background: #a9c36a; }
 .rp-hp.smoke > i { background: var(--rp-gold); } .rp-hp.fire > i { background: var(--rp-axis); }
@@ -567,7 +568,7 @@ export class ReplayUi {
       : 'load a server log (&serverlog=) to overlay it';
     serverToggle.querySelector('input').disabled = !player.alignment;
     const ghosts = this.checkbox('out-of-range objects', player.showGhosts, on => { player.showGhosts = on; });
-    ghosts.title = 'objects announced to the client but beyond its ~520 m update radius';
+    ghosts.title = 'objects beyond the recording player\'s view distance (the map\'s fog line), which the server stops updating: drawn translucent where they were last seen';
     this.statusText = el('span', 'rp-log-status');
     opts.append(serverToggle, ghosts, this.statusText);
     this.list = el('div', 'rp-log-list');
@@ -1051,6 +1052,13 @@ export class ReplayUi {
       case 'spawning': html = 'spawn screen'; break;
       case 'left': html = 'left the game'; break;
       default: html = 'not in the round yet';
+    }
+    // Beyond the recording player's view distance the server sends nothing,
+    // and the replay holds his last pose as a ghost until he is back.
+    if (status.outOfRange) {
+      const since = status.outOfRange.since;
+      html += `<span class="range" title="Beyond the recording player's view distance: the server sent no updates, so this is where he was last seen">`
+        + `out of range${since !== null ? ` since ${fmtTime(since)}` : ''}</span>`;
     }
     if (this.loadingText) html = esc(this.loadingText);
     if (hp) {
