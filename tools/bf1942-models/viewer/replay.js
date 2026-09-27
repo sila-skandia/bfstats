@@ -5,8 +5,8 @@
 //   map.html?replay=replays/<recording>.ndjson&serverlog=replays/<ev_log>.xml
 //
 // or open one from disk: picked with Open recording or dropped anywhere on
-// the page, it is kept in the browser and played as `?replay=local:<name>`
-// (replay-open.js).
+// the page, it is held in the browser across the reload that loads its level
+// and played as `?replay=local:<name>`, then let go (replay-open.js).
 //
 // Everything drawn is a function of the recording's clock, so seeking is only
 // setting that clock. Recording formats 1-4 are read; what an older format
@@ -75,6 +75,18 @@ const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
  *  the air as it was (replay's `seek`). */
 const SEEK_SHOT_WINDOW = 0.6;
 
+/** An extra the replay can do without (the page's additions to its bar, the
+ *  highlights): a throw in it is a console warning, never a replay that does
+ *  not open. */
+function extra(what, fn) {
+  try {
+    return fn();
+  } catch (error) {
+    console.warn(`replay: ${what} left out`, error);
+    return undefined;
+  }
+}
+
 /** A hull is a life with a body of its own that is not a man, a kit, a flag,
  *  a camera or a round. */
 const isHull = life => life.tmpl && !life.soldier && !life.kit && !life.controlPoint
@@ -131,7 +143,22 @@ class ReplayPlayer {
     this.ui = new ReplayUi(this);
     // The battles, streaks and plays worth watching, the battle map and the
     // Auto camera (features/round-replay-highlights).
-    this.highlights = new ReplayHighlights(this);
+    this.highlights = extra('the highlights', () => new ReplayHighlights(this)) ?? null;
+  }
+
+  /** The highlights' turn in a frame. One that throws is switched off for the
+   *  rest of the replay rather than stop every frame from drawing (the page's
+   *  loop skips a frame that throws, render and all). */
+  withHighlights(fn) {
+    if (!this.highlights) return;
+    try {
+      fn(this.highlights);
+    } catch (error) {
+      console.warn('replay: the highlights threw and are switched off', error);
+      const highlights = this.highlights;
+      this.highlights = null;
+      extra('taking the highlights down', () => highlights.dispose());
+    }
   }
 
   /** Follow `pid` from now on: the camera eases over to him. */
@@ -450,7 +477,7 @@ class ReplayPlayer {
     // camera was aimed at before the replay ran, and the followed player
     // vanished at some angles of the orbit. The Auto camera's director and
     // the highlight reel choose whom it is on first.
-    this.highlights?.lead(t, dt);
+    this.withHighlights(h => h.lead(t, dt));
     this.camera.update(dt, t);
     this.soldiers?.update(t, step, this.hulls);
     this.props.update(t);
@@ -492,7 +519,7 @@ class ReplayPlayer {
     this.feed.update(t, ownView);
     this.ui.timeline.plan(prevT, t, this.playing);
     this.ui.update(t, dt);
-    this.highlights?.update(t, dt);
+    this.withHighlights(h => h.update(t, dt));
   }
 
   /** First person looks out of the followed player's head: his own body,
@@ -535,7 +562,7 @@ class ReplayPlayer {
     this.ctx.guns?.clear();
     this.ctx.scene.remove(this.root);
     this.feed.dispose();
-    this.highlights?.dispose();
+    extra('taking the highlights down', () => this.highlights?.dispose());
     this.ui.dispose();
   }
 }
@@ -545,8 +572,8 @@ class ReplayPlayer {
 const textCache = new Map();
 const infoCache = new Map();
 
-/** A recording or server log by URL; `local:<name>` is one this browser keeps
- *  (replay-open.js). */
+/** A recording or server log by URL; `local:<name>` is one the page that
+ *  opened it holds for this page (replay-open.js). */
 function fetchText(url) {
   if (!textCache.has(url)) {
     textCache.set(url, isLocalReplay(url) ? readLocalRecording(url).then(kept => kept.text) : fetch(url).then(r => {
@@ -604,7 +631,7 @@ export function createReplayController(ctx) {
     const alignment = log ? alignServerLog(rec, log) : null;
     player = new ReplayPlayer(ctx, rec, log, alignment, label, assets);
     if (typeof window !== 'undefined') window.replay = player;
-    ctx.opened?.(player);
+    extra("the page's additions to the replay bar", () => ctx.opened?.(player));
     await player.load();
     return player;
   }
@@ -625,7 +652,7 @@ export function createReplayController(ctx) {
       return player !== null;
     },
     async openFromUrl(url, logUrl) {
-      // A kept recording brings the server log it was opened with.
+      // A held recording brings the server log it was opened with.
       if (isLocalReplay(url)) {
         const kept = await readLocalRecording(url);
         const logText = logUrl ? await fetchText(logUrl).catch(() => null) : kept.log?.text ?? null;
