@@ -13,10 +13,15 @@
 // megabytes, so the browser never keeps one: you open it, watch the round,
 // and it is gone; watching it again means opening the file again.
 //
+// A recording that does not say which level it was made on (one begun
+// mid-round) is recognised by its flags (replay-level.js); one whose flags
+// match no level asks which it was, from the levels the viewer has.
+//
 // Also here: what the loading screen and the replay bar say about a recording
 // (when it was recorded, on which server), and the bar's Open button.
 
 import { parseRecording } from './replay-recording.js';
+import { recogniseLevel } from './replay-level.js';
 import { loadMods, servable, VANILLA } from './mods.js';
 
 /** `?replay=local:<key>` names a recording this browser keeps. */
@@ -211,17 +216,53 @@ async function modFor(named, current) {
   return mod;
 }
 
+const manifests = new Map();
+
+/** A mod's maps.json, or null when it could not be read; read once a page. */
+function levelsOf(mod) {
+  if (!manifests.has(mod.id)) {
+    const read = fetch(new URL(`${mod.paths.maps}/maps.json`, ROOT), { cache: 'no-cache' })
+      .then(response => (response.ok ? response.json() : null))
+      .then(list => (Array.isArray(list) ? list : null))
+      .catch(() => null);
+    manifests.set(mod.id, read);
+    // A list that could not be read is asked for again next time.
+    read.then(list => { if (!list) manifests.delete(mod.id); });
+  }
+  return manifests.get(mod.id);
+}
+
 /** The mod's maps.json entry for `level`: false when the mod has no such
  *  level, null when the list could not be read (the page will say). */
 async function levelEntry(mod, level) {
-  try {
-    const response = await fetch(new URL(`${mod.paths.maps}/maps.json`, ROOT), { cache: 'no-cache' });
-    if (!response.ok) return null;
-    const manifest = await response.json();
-    return manifest.find(e => e.name.toLowerCase() === level.toLowerCase()) ?? false;
-  } catch {
-    return null;
+  const levels = await levelsOf(mod);
+  if (!levels) return null;
+  return levels.find(e => e.name.toLowerCase() === level.toLowerCase()) ?? false;
+}
+
+/** A level's scene.json, where its flags are (replay-level.js). */
+async function sceneOf(mod, entry) {
+  const report = entry.report ?? String(entry.glb ?? '').replace(/\.glb$/i, '.json');
+  if (!report) return null;
+  const response = await fetch(new URL(`${mod.paths.maps}/${report}`, ROOT));
+  return response.ok ? response.json() : null;
+}
+
+/** The vanilla game and its packs, which every recording that names no level
+ *  is looked for in after its own mod. */
+const VANILLA_PACKS = ['bf1942', 'xpack1', 'xpack2'];
+
+/** `[{ mod, levels }]`: `first`'s levels, then `also`'s mods' that the viewer
+ *  has maps for, each once. */
+async function treesFrom(first, also) {
+  const mods = servable(await loadMods(), 'maps');
+  const trees = [];
+  for (const mod of [first, ...mods.filter(also)]) {
+    if (!mod || trees.some(tree => tree.mod.id === mod.id)) continue;
+    const levels = await levelsOf(mod);
+    if (levels?.length) trees.push({ mod, levels });
   }
+  return trees;
 }
 
 /** A held recording's key: its file name without the extension, as a URL
@@ -271,17 +312,17 @@ const STYLE = `
 .ro-close { appearance: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; margin: 0;
   border: 0; border-radius: 4px; background: none; color: inherit; cursor: pointer; }
 .ro-close:hover { background: rgba(0, 0, 0, .12); }
-.ro-shade:not(.error) .ro-close { visibility: hidden; }
+.ro-shade:not(.error):not(.choose) .ro-close { visibility: hidden; }
 .ro-close svg { width: 14px; height: 14px; }
 .ro-zone { margin: 14px; padding: 22px 18px 20px; border: 1.5px dashed rgba(200, 194, 152, .38); border-radius: 6px;
   text-align: center; transition: border-color .15s ease, background-color .15s ease; }
 .ro-shade.drag .ro-zone { border-color: #e8c35a; background: rgba(232, 195, 90, .07); }
 .ro-icon { display: block; width: 30px; height: 30px; margin: 0 auto 10px; color: #b9b38a; }
 .ro-shade.drag .ro-icon { color: #e8c35a; animation: ro-bob 1.1s ease-in-out infinite; }
-.ro-shade.error .ro-icon { color: #8f8a68; }
+.ro-shade.error .ro-icon, .ro-shade.choose .ro-icon { color: #8f8a68; }
 @keyframes ro-bob { 50% { transform: translateY(-3px); } }
 .ro-message { margin: 0; font: 700 15px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; overflow-wrap: anywhere; text-wrap: balance; }
-.ro-shade.error .ro-message { color: #f2c25a; font-size: 13px; }
+.ro-shade.error .ro-message, .ro-shade.choose .ro-message { color: #f2c25a; font-size: 13px; }
 .ro-detail { margin: 6px 0 0; color: #a9a690; font-size: 11.5px; overflow-wrap: anywhere; text-wrap: balance; }
 .ro-detail:empty { display: none; }
 .ro-busy { display: none; position: relative; width: 160px; height: 3px; margin: 14px auto 0; border-radius: 2px;
@@ -291,14 +332,25 @@ const STYLE = `
   animation: ro-sweep 1s ease-in-out infinite; }
 @keyframes ro-sweep { to { left: 100%; } }
 .ro-actions { display: none; justify-content: center; gap: 8px; margin-top: 16px; }
-.ro-shade.error .ro-actions { display: flex; }
+.ro-shade.error .ro-actions, .ro-shade.choose .ro-actions { display: flex; }
+.ro-shade.error .ro-play, .ro-shade.choose .ro-choose { display: none; }
+.ro-pick { display: none; max-width: 320px; margin: 14px auto 0; }
+.ro-shade.choose .ro-pick { display: block; }
+.ro-select { appearance: none; -webkit-appearance: none; display: block; width: 100%; height: 30px; margin: 0;
+  padding: 0 30px 0 10px; border: 1px solid rgba(200, 194, 152, .45); border-radius: 5px; color: #eeecd9;
+  background: rgba(0, 0, 0, .25) no-repeat right 10px center / 10px 10px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%23b9b38a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  font: 700 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif; text-overflow: ellipsis; cursor: pointer; }
+.ro-select:hover { border-color: #b9b38a; }
+.ro-select option, .ro-select optgroup { background: #1c1c18; color: #eeecd9; }
 .ro-btn { appearance: none; height: 28px; padding: 0 12px; margin: 0; border: 1px solid rgba(200, 194, 152, .45);
   border-radius: 5px; background: rgba(0, 0, 0, .25); color: #eeecd9; font: 700 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
   letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
 .ro-btn:hover { background: rgba(255, 255, 255, .08); border-color: #b9b38a; }
 .ro-btn.primary { background: #a39c6c; border-color: #a39c6c; color: #15150e; }
 .ro-btn.primary:hover { background: #b9b38a; border-color: #b9b38a; }
-.ro-btn:focus-visible, .ro-close:focus-visible { outline: 1px solid #e8c35a; outline-offset: 1px; }
+.ro-btn:disabled { opacity: .45; cursor: default; }
+.ro-btn:focus-visible, .ro-close:focus-visible, .ro-select:focus-visible { outline: 1px solid #e8c35a; outline-offset: 1px; }
 .ro-when { overflow: hidden; text-overflow: ellipsis; min-width: 0; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .ro-shade, .ro-zone { transition: none; }
@@ -360,21 +412,36 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
   const detail = el('p', 'ro-detail');
   const busy = el('div', 'ro-busy');
   busy.append(el('i'));
-  const choose = el('button', 'ro-btn primary', 'Choose a file');
+  // The level a recording that does not say was made on, when its flags
+  // match none (`askLevel`): every level the viewer has, its own mod's first.
+  const pickRow = el('div', 'ro-pick');
+  const levelSelect = el('select', 'ro-select');
+  levelSelect.setAttribute('aria-label', 'Level');
+  pickRow.append(levelSelect);
+  const choose = el('button', 'ro-btn primary ro-choose', 'Choose a file');
   choose.type = 'button';
+  const play = el('button', 'ro-btn primary ro-play', 'Play');
+  play.type = 'button';
   const dismiss = el('button', 'ro-btn', 'Close');
   dismiss.type = 'button';
   const actions = el('div', 'ro-actions');
-  actions.append(choose, dismiss);
-  zone.append(message, detail, busy, actions);
+  actions.append(choose, play, dismiss);
+  zone.append(message, detail, busy, pickRow, actions);
   panel.append(head, zone);
   shade.append(panel);
   document.body.append(input, shade);
 
   /** 'drag' while files are held over the page, 'busy' while one is read and
-   *  held for the reload, 'error' when it could not be; null with the panel
-   *  down. */
+   *  held for the reload, 'choose' while it asks which level a recording was
+   *  made on, 'error' when it could not be opened; null with the panel down. */
   let state = null;
+  /** Answers the level question (`askLevel`): a place, or null for none. */
+  let answer = null;
+  const settle = place => {
+    const done = answer;
+    answer = null;
+    done?.(place);
+  };
   function show(next, text, more = '') {
     message.textContent = text;
     detail.textContent = more;
@@ -386,35 +453,94 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     shade.hidden = false;
     if (!up) requestAnimationFrame(() => { if (state === next) shade.classList.add('show'); });
     if (next === 'error') choose.focus({ preventScroll: true });
+    if (next === 'choose') levelSelect.focus({ preventScroll: true });
   }
   function hide() {
     state = null;
     shade.hidden = true;
     shade.className = 'ro-shade';
+    settle(null);
+  }
+
+  /** Which level `name` was recorded on, from every level the viewer has
+   *  (`first`'s, the mod it will play in, first; the one on screen chosen):
+   *  `{ mod, level }`, or null when the panel is closed or another file
+   *  opened instead. */
+  async function askLevel(name, first, why) {
+    // Its own mod's levels, then the vanilla game's and its packs', then the rest.
+    const rank = tree => (tree.mod.id === first.id ? 0 : VANILLA_PACKS.includes(tree.mod.id) ? 1 : 2);
+    const trees = (await treesFrom(first, () => true)).sort((a, b) => rank(a) - rank(b));
+    if (!trees.length) throw new Error(`${name} does not say which level it was recorded on.`);
+    const mods = new Map(trees.map(tree => [tree.mod.id, tree.mod]));
+    const here = String(levelName() ?? '').toLowerCase();
+    levelSelect.replaceChildren();
+    const prompt = el('option', '', 'Choose the level');
+    prompt.value = '';
+    prompt.disabled = true;
+    levelSelect.append(prompt);
+    let chosen = '';
+    for (const { mod: tree, levels } of trees) {
+      const group = el('optgroup');
+      group.label = tree.name;
+      for (const entry of levels) {
+        const option = el('option', '', titled(entry.loading?.title || entry.name));
+        option.value = `${tree.id}/${entry.name}`;
+        if (!chosen && tree.id === first.id && entry.name.toLowerCase() === here) chosen = option.value;
+        group.append(option);
+      }
+      levelSelect.append(group);
+    }
+    levelSelect.value = chosen;
+    play.disabled = !chosen;
+    return new Promise(resolve => {
+      settle(null);
+      answer = value => {
+        if (!value) return resolve(null);
+        const at = value.indexOf('/');
+        resolve({ mod: mods.get(value.slice(0, at)), level: value.slice(at + 1) });
+      };
+      show('choose', `${name} does not say which level it was recorded on.`, why);
+    });
   }
 
   async function open(files) {
     if (state === 'busy' || !files.length) return;
+    // A file opened while the panel asks which level the last one was on
+    // replaces the question.
+    settle(null);
     show('busy', 'Reading the recording');
     try {
       const { recording, log } = await sortFiles(files);
       show('busy', `Reading ${recording.name}`);
       const text = await recording.text();
-      const info = recordingSummary(parseRecording(text));
+      const rec = parseRecording(text);
+      const info = recordingSummary(rec);
       const target = await modFor(info.mod, mod());
-      const level = info.level || levelName();
-      if (!level) throw new Error(`${recording.name} does not say which level it was recorded on.`);
-      const entry = await levelEntry(target, level);
+      let place = info.level ? { mod: target, level: info.level } : null;
+      if (!place) {
+        show('busy', `Finding the level of ${recording.name}`, "It does not say, so its flags are matched against each level's.");
+        const found = await recogniseLevel(rec, await treesFrom(target, m => VANILLA_PACKS.includes(m.id)), sceneOf)
+          .catch(error => { console.warn('replay-open: the level search failed', error); return null; });
+        if (found) place = { mod: found.mod, level: found.entry.name };
+      }
+      if (!place) {
+        place = await askLevel(recording.name, target,
+          rec.controlPoints.size ? 'Its flags match no level here. Choose the level to play it on.' : 'Choose the level to play it on.');
+        // Closed, or another file opened in its place.
+        if (!place) return;
+        show('busy', `Reading ${recording.name}`);
+      }
+      const entry = await levelEntry(place.mod, place.level);
       if (entry === false) {
-        throw new Error(`${titled(level)} has not been extracted for ${target.name}, so this recording cannot play here.`);
+        throw new Error(`${titled(place.level)} has not been extracted for ${place.mod.name}, so this recording cannot play here.`);
       }
       const key = keyFor(recording.name);
       await holdRecording({
         key, name: recording.name, text, info,
         log: log ? { name: log.name, text: await log.text() } : null,
       }).catch(error => { throw new Error(`The browser would not hold ${recording.name} for the reload: ${error.message}.`); });
-      show('busy', `Loading ${titled(entry?.loading?.title || level)}`, recordedLine(info.start, info.server));
-      location.assign(replayHref(key, target.id, entry?.name ?? level));
+      show('busy', `Loading ${titled(entry?.loading?.title || place.level)}`, recordedLine(info.start, info.server));
+      location.assign(replayHref(key, place.mod.id, entry?.name ?? place.level));
     } catch (error) {
       console.warn('recording not opened', error);
       show('error', error?.message || String(error));
@@ -434,8 +560,12 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
   choose.addEventListener('click', pick);
   close.addEventListener('click', hide);
   dismiss.addEventListener('click', hide);
+  levelSelect.addEventListener('change', () => { play.disabled = !levelSelect.value; });
+  play.addEventListener('click', () => {
+    if (state === 'choose' && levelSelect.value) settle(levelSelect.value);
+  });
   shade.addEventListener('pointerdown', e => {
-    if (e.target === shade && state === 'error') hide();
+    if (e.target === shade && (state === 'error' || state === 'choose')) hide();
   });
   // A page brought back by the back button, as it was when it left: not
   // still loading the recording it left for.
@@ -445,7 +575,7 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
   // Ahead of the replay's own keys (both on the window's capture phase, this
   // one added first): Escape takes the panel down and goes no further.
   window.addEventListener('keydown', e => {
-    if (e.code !== 'Escape' || state !== 'error') return;
+    if (e.code !== 'Escape' || (state !== 'error' && state !== 'choose')) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     hide();
@@ -507,7 +637,10 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     const button = ui.button('ro-open', null, 'Open another recording', pick);
     button.innerHTML = uploadIcon();
     ui.logBtn.before(button);
-    document.title = [rec.level && `${titled(rec.level)} replay`, when].filter(Boolean).join(' · ') || document.title;
+    // A recording that does not say its level plays on the one it was
+    // recognised as, or chosen for: the page's.
+    const level = rec.level || levelName();
+    document.title = [level && `${titled(level)} replay`, when].filter(Boolean).join(' · ') || document.title;
   }
 
   return {
