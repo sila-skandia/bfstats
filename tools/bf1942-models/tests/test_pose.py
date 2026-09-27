@@ -659,6 +659,66 @@ class SeatPoseOrientationTests(unittest.TestCase):
         self.assertIn("quat_from_ypr(180.0, -90.0, 0.0)", source)
 
 
+class BlendedBindTests(unittest.TestCase):
+    """Binds for a skin with no vertex weighted to one bone alone."""
+
+    @staticmethod
+    def rotation(yaw: float, pitch: float) -> tuple:
+        cy, sy, cp, sp = math.cos(yaw), math.sin(yaw), math.cos(pitch), math.sin(pitch)
+        return ((cy, -sy * cp, sy * sp), (sy, cy * cp, -cy * sp), (0.0, sp, cp))
+
+    def skin_from(self, binds: dict, vertices: list) -> skin.Skin:
+        # Each influence's offset is its bone's view of the rest point, so the
+        # weighted blend of the bound offsets is the rest point exactly.
+        names = list(binds)
+        out = []
+        for rest, weights in vertices:
+            influences = []
+            for name, weight in weights:
+                rotation, translation = binds[name]
+                local = tuple(sum(rotation[k][i] * (rest[k] - translation[k]) for k in range(3))
+                              for i in range(3))
+                influences.append(skin.Influence(names.index(name), weight, local))
+            out.append(skin.SkinVertex(rest, tuple(influences)))
+        return skin.Skin(out, names)
+
+    def test_every_bone_is_recovered_when_no_vertex_is_rigid(self) -> None:
+        binds = {
+            "Bip01 Spine": (self.rotation(0.3, 0.1), (0.0, 0.1, 1.0)),
+            "Bip01 L UpperArm": (self.rotation(-0.8, 0.4), (0.2, 0.0, 1.3)),
+            "Bip01 L Forearm": (self.rotation(1.1, -0.2), (0.4, 0.1, 1.2)),
+        }
+        names = list(binds)
+        vertices = []
+        for i in range(40):
+            rest = (0.01 * i, 0.3 * math.sin(i), 1.0 + 0.02 * (i % 7))
+            first, second = names[i % 3], names[(i + 1) % 3]
+            w = 0.2 + 0.6 * ((i * 7) % 11) / 10
+            vertices.append((rest, [(first, w), (second, 1.0 - w)]))
+        skn = self.skin_from(binds, vertices)
+        self.assertEqual({}, skin.bind_poses(skn))
+
+        recovered = pose.refine_binds(skn)
+
+        self.assertEqual(set(names), set(recovered))
+        for name in names:
+            (r0, t0), (r1, t1) = binds[name], recovered[name]
+            for i in range(3):
+                self.assertAlmostEqual(t0[i], t1[i], places=6)
+                for j in range(3):
+                    self.assertAlmostEqual(r0[i][j], r1[i][j], places=6)
+
+    def test_bones_that_only_share_vertices_equally_stay_unbound(self) -> None:
+        # Neck and Spine3 in bf1918's bodies: only their average is in the data.
+        binds = {
+            "Bip01 Neck": (self.rotation(0.2, 0.0), (0.0, 0.0, 1.5)),
+            "Bip01 Spine3": (self.rotation(-0.1, 0.3), (0.0, 0.05, 1.4)),
+        }
+        vertices = [((0.02 * i, 0.1 * math.cos(i), 1.45 + 0.01 * i),
+                     [("Bip01 Neck", 0.5), ("Bip01 Spine3", 0.5)]) for i in range(12)]
+        self.assertEqual({}, pose.refine_binds(self.skin_from(binds, vertices)))
+
+
 class PackInfluencesTests(unittest.TestCase):
     """A vertex's influences as glTF's four joint and weight slots."""
 
