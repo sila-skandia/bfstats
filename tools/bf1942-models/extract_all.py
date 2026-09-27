@@ -35,8 +35,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extract_models import (  # noqa: E402
-    DEFAULT_GAME_DIR, build_library, build_pools, catalogue, mod_chain,
-    own_templates,
+    DEFAULT_GAME_DIR, build_library, build_pools, catalogue, discover_levels,
+    mod_chain, own_templates, spawned_templates,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -108,11 +108,13 @@ def main() -> int:
     if not game_dir.is_dir():
         sys.exit(f"game dir not found: {game_dir}")
 
-    # The same catalogue --list prints, derived from the archives.
+    # The same catalogue --list prints, derived from the archives: the object
+    # folders, and every template a level's spawners field (`Fletcher2`).
     chain = mod_chain(game_dir, args.mod)
     _meshes, _textures, objects, _game = build_pools(chain, [])
     library = build_library(objects)
-    entries = catalogue(objects, library)
+    entries = catalogue(objects, library,
+                        spawned=spawned_templates(discover_levels(chain)))
 
     # An expansion inherits its parent wholesale, so most of its catalogue is
     # vanilla's. Extracting that again writes a second copy of every vanilla

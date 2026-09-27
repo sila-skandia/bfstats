@@ -37,7 +37,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt,
+  parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
@@ -350,8 +350,10 @@ class ReplayPlayer {
       this.entities.push({ life, group, normal, wreck: null, meshes, anim, gunGroup: null, ghost: false, label: null, hp: null });
     }
 
-    // Dropped kits and thrown rounds, where the recording has them lying.
-    await this.props.load(this.rec.lives);
+    // Dropped kits and thrown rounds, where the recording has them lying. A
+    // round a hull lays (the PT boats' floating mines) is drawn from that
+    // hull's own launcher, so the hulls' models go along.
+    await this.props.load(this.rec.lives, [...models.values()].map(m => m.normal).filter(Boolean));
 
     if (this.ctx.guns?.collider) {
       this.ctx.guns.collider.dynamicCast = (ox, oy, oz, dx, dy, dz, maxDist, skipOwner) =>
@@ -621,6 +623,10 @@ export function createReplayController(ctx) {
 
   async function open({ recordingText, logText, label }) {
     const rec = parseRecording(recordingText);
+    // A round is a round whatever its name, and the level's own projectile
+    // table (`_shared/damage.json`) names them all: a mine from a pool made
+    // before the recording began is not a hull to find a model for.
+    markRounds(rec, tmpl => Boolean(ctx.guns?.projectileEntry?.({ template: tmpl })));
     const level = ctx.levelName();
     if (rec.level && level && rec.level.toLowerCase() !== level.toLowerCase()) {
       toast(ctx.stage, `${label} was recorded on ${rec.level}, and this view shows ${level}. Open it with ?map=${rec.level}.`);

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -8,9 +9,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import ObjectLibrary  # noqa: E402
 from extract_models import (  # noqa: E402
+    DEFAULT_GAME_DIR,
     _inline_includes,
+    build_library,
+    build_pools,
     catalogue,
+    discover_levels,
+    mod_chain,
     spawn_folder,
+    spawned_templates,
+    spawner_templates,
     variant_suffix,
 )
 
@@ -41,6 +49,35 @@ ObjectTemplate.addTemplate K98SniperComplex
 
 ObjectTemplate.create SimpleObject K98Scope
 ObjectTemplate.geometry K98Scope
+"""
+
+# `Objects/Vehicles/Sea/fletcher/Objects.con`, cut down: the two hulls share
+# one LOD and one gun, and differ in the deck spawn points they add.
+FLETCHER_FOLDER = """
+ObjectTemplate.create PlayerControlObject Fletcher
+ObjectTemplate.addTemplate lodFletcher
+ObjectTemplate.addTemplate FletcherSoldierSpawn
+
+ObjectTemplate.create LodObject lodFletcher
+ObjectTemplate.addTemplate FletcherComplex
+
+ObjectTemplate.create Bundle FletcherComplex
+ObjectTemplate.geometry fletcher_hull_m1
+ObjectTemplate.addTemplate fletcher_GunBase
+
+ObjectTemplate.create PlayerControlObject fletcher_GunBase
+ObjectTemplate.geometry fletcher_gun_m1
+
+ObjectTemplate.create SpawnPoint FletcherSoldierSpawn
+ObjectTemplate.setGroup 69
+
+ObjectTemplate.create SpawnPoint FletcherSoldierSpawnAlt
+ObjectTemplate.setGroup 81
+
+rem *** Fletcher ***
+ObjectTemplate.create PlayerControlObject Fletcher2
+ObjectTemplate.addTemplate lodFletcher
+ObjectTemplate.addTemplate FletcherSoldierSpawnAlt
 """
 
 
@@ -150,6 +187,92 @@ ObjectTemplate.geometry USSoldier
 
         self.assertEqual(
             ["USSoldier"], [name for name, _c, _s in catalogue(None, library)])
+
+    def test_a_second_hull_a_level_spawns_is_catalogued(self) -> None:
+        # `Sea/fletcher/Objects.con` declares two complete destroyers, and
+        # Midway's `DestroyerSpawner2` fields the one named after no folder.
+        # Without it the replay asked for a `Fletcher2.glb` no tree had and
+        # drew no destroyer at all.
+        library = library_with(("Objects/Vehicles/Sea/fletcher/Objects.con", FLETCHER_FOLDER))
+
+        self.assertEqual(
+            ["Fletcher"], [name for name, _c, _s in catalogue(None, library)])
+        self.assertEqual(
+            [("Fletcher", "sea", "Objects/Vehicles/Sea/fletcher/Objects.con"),
+             ("Fletcher2", "sea", "Objects/Vehicles/Sea/fletcher/Objects.con")],
+            catalogue(None, library, spawned={"FLETCHER2"}))
+
+    def test_the_parts_a_spawned_hull_is_made_of_stay_parts(self) -> None:
+        # Only what a spawner names comes in: the gun both hulls carry is
+        # still a part of them, never a model of its own.
+        library = library_with(("Objects/Vehicles/Sea/fletcher/Objects.con", FLETCHER_FOLDER))
+
+        names = {name for name, _c, _s in catalogue(None, library,
+                                                    spawned={"fletcher", "fletcher2"})}
+
+        self.assertEqual({"Fletcher", "Fletcher2"}, names)
+
+    def test_a_spawned_template_outside_the_category_folders_stays_out(self) -> None:
+        # Secret Weapons' levels spawn the elite jet pack, a Kit filed under
+        # `Objects/Items/`: a spawner's word admits a template in a category
+        # folder, it does not invent a category.
+        library = library_with(("Objects/Items/GerEliteKit/JetPack/Objects.con", """
+ObjectTemplate.create Kit GermanElite_JetPack
+ObjectTemplate.geometry JetPack
+"""))
+
+        self.assertEqual([], catalogue(None, library, spawned={"germanelite_jetpack"}))
+
+
+# Midway's `Conquest/ObjectSpawnTemplates.con`, the ships only: each spawner
+# names a hull per team, and the second pair is the one no folder is named
+# after.
+MIDWAY_SHIP_SPAWNERS = """
+ObjectTemplate.create ObjectSpawner battleshipSpawner
+ObjectTemplate.setObjectTemplate 1 yamato
+ObjectTemplate.setObjectTemplate 2 princeow
+ObjectTemplate.MinSpawnDelay 300
+ObjectTemplate.create ObjectSpawner DestroyerSpawner
+ObjectTemplate.setObjectTemplate 1 hatsuzuki
+ObjectTemplate.setObjectTemplate 2 fletcher
+ObjectTemplate.create ObjectSpawner DestroyerSpawner2
+ObjectTemplate.setObjectTemplate 1 hatsuzuki2
+ObjectTemplate.setObjectTemplate 2 fletcher2
+ObjectTemplate.create ObjectSpawner ParaSpawner
+ObjectTemplate.setObjectTemplate 2 ParatrooperSpawnObject
+"""
+
+
+class SpawnerTemplatesTests(unittest.TestCase):
+    def test_every_team_of_every_spawner_lower_case(self) -> None:
+        self.assertEqual(
+            {"yamato", "princeow", "hatsuzuki", "fletcher", "hatsuzuki2", "fletcher2"},
+            spawner_templates(MIDWAY_SHIP_SPAWNERS))
+
+    def test_a_file_without_spawners_names_nothing(self) -> None:
+        self.assertEqual(set(), spawner_templates("ObjectTemplate.create Bundle Foo\n"))
+
+
+def _vanilla_chain() -> list[Path] | None:
+    game = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+    if not (game / "Mods" / "bf1942").is_dir():
+        return None
+    return mod_chain(game, "bf1942")
+
+
+@unittest.skipIf(_vanilla_chain() is None, "no BF1942 install")
+class RetailSpawnedCatalogueTests(unittest.TestCase):
+    def test_the_second_destroyers_are_vanilla_models(self) -> None:
+        chain = _vanilla_chain()
+        _meshes, _textures, objects, _game = build_pools(chain, [])
+        library = build_library(objects)
+        spawned = spawned_templates(discover_levels(chain))
+
+        self.assertLessEqual({"fletcher2", "hatsuzuki2"}, spawned)
+        names = {name for name, _c, _s in catalogue(objects, library, spawned=spawned)}
+        self.assertLessEqual({"Fletcher", "Fletcher2", "Hatsuzuki", "Hatsuzuki2"}, names)
+        # Everything the folder rule already listed is still listed.
+        self.assertLessEqual({name for name, _c, _s in catalogue(objects, library)}, names)
 
 
 class FakeObjects:
