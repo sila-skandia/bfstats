@@ -1354,4 +1354,35 @@ const read = scene => {
   };
 }
 
+// --- out of the recording's range ------------------------------------------
+//
+// The owner's question on replay_20260927-140921: the yellow shells. The
+// server stops sending an object beyond the map's view distance from the
+// recording player, and the replay draws a ghost at its last pose; the
+// followed player's card now says so. A pilot's plane leaves range at 10 s
+// and is back at 20; a soldier on foot leaves at 8 s and never returns.
+{
+  const [chapters] = await Promise.all([imp('replay-chapters.js')]);
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 2108, netId: 900, tmpl: 'Ilyushin', pos: [0, 200, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1742, netId: 910, tmpl: 'RussianSoldier', pos: [50, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 5, name: 'pilot', team: 2, ai: 0, netId: 60, vehNetId: 900, camNetId: 61, kitNetId: 0 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 6, name: 'walker', team: 2, ai: 0, netId: 62, vehNetId: 910, camNetId: 63, kitNetId: 0 }),
+    line({ k: 'o', t: 1.5, id: 900, gid: 1, tmpl: 'Ilyushin', tid: 2108, team: 2, maxhp: 130 }),
+    line({ k: 'o', t: 1.5, id: 910, gid: 2, tmpl: 'RussianSoldier', tid: 1742, team: 2, maxhp: 30 }),
+    line({ k: 's', t: 1.5, o: [[900, 0, 200, 0, 0, 0, 0, 1], [910, 50, 1, 0, 0, 0, 0, 1]] }),
+    line({ k: 'd', t: 8, id: 910 }),
+    line({ k: 'd', t: 10, id: 900 }),
+    line({ k: 'o', t: 20, id: 900, gid: 1, tmpl: 'Ilyushin', tid: 2108, team: 2, maxhp: 130 }),
+    line({ k: 's', t: 20, o: [[900, 300, 250, 100, 0, 0, 0, 1]] }),
+    line({ k: 'end', t: 30 }),
+  ].join('\n'));
+  results.outOfRange = [[5, 5], [5, 12], [5, 21], [6, 9]].map(([pid, t]) => {
+    const s = chapters.playerStatusAt(rec, pid, t, []);
+    return [s.state, s.outOfRange ? s.outOfRange.since : null];
+  });
+}
+
 console.log(JSON.stringify(results));
