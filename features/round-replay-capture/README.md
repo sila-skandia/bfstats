@@ -1076,7 +1076,23 @@ Format 5 (bf42plus after `4fc0352`) fixes the keys:
 The viewer puts a v5 part on the same-named model node nearest that position
 (`replay-kinematics.js` `matchJointNodes`), so a ship's identical AA guns each
 turn their own node. It takes a hull life's parts only (a respawn that reuses
-a root's id brings new parts), and it uses a v4 file's parts not at all.
+a root's id brings new parts), and it puts no v4 part on a node.
+
+A v4 file's parts are still readable per hull. The shared key made the
+recorder's change test compare each part with the last part it wrote, of any
+hull, so a part was left out exactly when it equalled the entry written just
+before it; and its walk is the object manager's registry, so every record
+lists a hull's parts together and in one order (none of the 2605 records in
+`replay_20260927-075756` interleaves two hulls). A run of `k` entries is `k`
+of the hull's `n` parts in order, the others copies of the entry before them,
+and the run's last entry is always the hull's last part. `replay-aim.js`
+`decodeKeyedParts` takes the reading that turns the parts least since the
+last record, and the replay aims a gun from a decoded part only where that
+part's axis carries the gun's own rounds (`f`). In that file every gun on an
+aim rig that fired matched one, to 0.05-0.34 degrees at the median: the
+Defgun's gun base 0.06, the two AA guns' cannons 0.16 and 0.06, the tanks'
+guns 0.08-0.27, their cupola Brownings (whose mounts face aft of the gun)
+0.10-0.34.
 
 Two readings from the same file:
 
