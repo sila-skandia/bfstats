@@ -43,7 +43,7 @@ import { PARA_CLIPS, PARA_FALLING } from './parachute.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS, EXPLOSION_DEATHS, HELD_HIDES_WEAPON, canopyClipFor } from './knockback.js';
-import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { canopyPosition } from './soldier-body.js';
 import { rigCapsules } from './rig-capsules.js';
 import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
@@ -713,9 +713,9 @@ export function createBotVisuals(page) {
    * `setIsParachuting` (`0x08276f90`), the page's `Parachute.open` -- and
    * playing its opening while his legs play `Lb_ParachuteOpen`, its idle
    * after (`knockback.js` `canopyClipFor`), each by the state his legs are
-   * in, whatever came before. The offset is from his origin, which
-   * `setCharacterHeight -1.00` puts `CHARACTER_HEIGHT` over the feet the
-   * body is drawn at.
+   * in, whatever came before. The offset is from his origin, a metre over
+   * the feet the body is drawn at (`soldier-body.js` `canopyPosition`, the
+   * human's canopy's place too).
    */
   function syncCanopy(vis, bot, held, dt) {
     const soldier = page.world?.player(bot.playerId)?.soldier;
@@ -731,9 +731,8 @@ export function createBotVisuals(page) {
       c.want = null;
       return;
     }
-    const [ax, ay, az] = c.attach;
     const p = vis.group.position;
-    c.scene.position.set(p.x + ax, p.y + CHARACTER_HEIGHT + ay, p.z + az);
+    canopyPosition(p.x, p.y, p.z, c.attach, c.scene.position);
     c.scene.quaternion.copy(vis.group.quaternion);
     if (clip !== c.want) {
       c.want = clip;
