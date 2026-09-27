@@ -145,6 +145,11 @@ export class GunFire {
     // UUIDs, so a build that clones one material more or less per pool miss
     // would fire a different burst and fail a pixel diff for no reason.
     this.rand = Math.random;
+    // The clock the rounds run on, against the page's: 1 in play. A round
+    // replay sets its playback rate here (0 while it is paused), so a bomb
+    // in the air holds still with everything else in a paused replay and
+    // keeps pace at 4x rather than falling at a quarter of the round's speed.
+    this.timeScale = 1;
   }
 
   /** Attacker material for a projectile template, or null. */
@@ -397,6 +402,7 @@ export class GunFire {
 
   /** Advance flashes, recoil, firing cadence and rounds. True while active. */
   advance(dt) {
+    dt *= this.timeScale ?? 1;
     let active = false;
     // The per-frame collision budget, spent by `sweep` and reset here.
     this.casts = 0;

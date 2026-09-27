@@ -236,6 +236,10 @@ export class EffectPlayer {
     scene.add(this.root);
     this.library = library;
     this.gravity = gravity;
+    // The clock the effects run on, against the page's: 1 in play, a round
+    // replay's playback rate while one is open (`GunFire.timeScale`), so an
+    // explosion or a burning hull's smoke holds with a paused replay.
+    this.timeScale = 1;
     this.onMaterial = onMaterial;
     // Called once per newly built mesh particle (decals, stone chips, debris)
     // before its materials are indexed, so the page can rebuild them under
@@ -482,6 +486,7 @@ export class EffectPlayer {
   }
 
   advance(dt) {
+    dt *= this.timeScale ?? 1;
     let active = false;
     for (let i = this.runs.length - 1; i >= 0; i--) {
       const run = this.runs[i];
