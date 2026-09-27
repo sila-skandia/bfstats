@@ -245,7 +245,7 @@ corrected by the server anyway.
 | control point owner and capture progress | control point objects (`ObjectManager_getControlPointVector`) | sampler; field offsets `open` |
 | health, ammo, vehicle damage | ghost fields; not exposed by current bf42plus headers | decoder, or find the offsets (`open`) |
 | projectiles (tank shells, bombs) | **not achievable from a single client** — see §13 | n/a, architectural ceiling |
-| tickets | not yet located on the client (`open`); scoreboard reads them from somewhere | find offset |
+| tickets | the client's replicated `ScoreManager`, `TeamScore +0x48` (§17) | recorded as `tk` from bf42plus `e692f14` |
 
 ---
 
@@ -1076,3 +1076,41 @@ Two readings from the same file:
   since `Engine::handleUpdate`'s T1 is it over `maxRotation.z`: -4000 to 5000
   on the planes and boats here, -1 to 1 on the land hulls. The viewer does not
   use it; the revs are what the engine note and the propeller follow.
+
+## 17. Tickets, and where a round starts (2026-09-27)
+
+The tickets row of §3's table was `open`; it is found. The client's
+`ScoreManager` is the server's replicated (`ScoreManager::getNetUpdate` /
+`setNetUpdate`, a 24-bit changed-field mask): the pointer is at `0x0097A0D8`,
+made by the class factory with class id `0xC4B8` at `0x004830C0` (the
+factory function `0x00483040` allocates `0x104` bytes, the server's size, and
+calls the constructor `0x004A1140`, vtable `0x008DAEB0`). Its `getTeamScore`
+(vtable `+0x10`, `0x0049FD10`) is `this + 0x10 + team x 0x50` for team 1..2,
+exactly lnxded's `0x081616C0`, and a `TeamScore`'s live count is `+0x48`
+(lnxded `TeamScore::setTickets` `0x081610A0`). The HUD reads it that way at
+`0x004A8C2F` and ten other places. The constructor also lays out the score
+table at `+0x3C..+0x58` with `SCORE_DEFAULTS`' values (death -1, kill 3, tk
+-3, capture 20, attack, defence and objective 5, objective tk -15).
+
+From bf42plus `e692f14` the recorder writes `{"k":"tk","t","v":[team1,
+team2]}` whenever either count moves, after checking the vtable slot once and
+the object's vtable each sample.
+
+A control point replicates its team and nothing else (a 4-bit signed value
+through `ControlPointNetworkable::setNetUpdate` into `setTeam`), so the `cp`
+records already hold all a client knows of the flags.
+
+Where a round starts: the client is sent the game status on joining, so a
+join mid-round sees PLAYING (1) with no PREGAME (3) before it
+(`replay_20260927-001120` joined 277 s into its round, `roundInit` at 22.1 s
+of the server log and the join at 299.5 s). `rec.roundStarted` is now the
+first PLAYING after a PREGAME, and null for such a join.
+
+The replay (`replay-round.js`, `features/round-replay-fidelity`) shows the
+recorded counts; without `tk` it runs the page's own round (`round-state.js`)
+from the round's start over the recorded deaths and owners, with the server's
+slot count from the event log's `maxplayers`, and says it is an estimate. On
+`replay_20260927-075756` that is 200 / 200 at the start, the Axis bleeding
+one every 2 s while the Allies held all five points (100 of weight) until the
+beach fell at 185.5 s, and 87 / 171 at the end. A join mid-round without `tk`
+shows no counter.

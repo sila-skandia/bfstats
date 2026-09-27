@@ -1428,6 +1428,24 @@
    "note": "Input-manager constructor (this, float fps, int ringSize): +0xc produced, +0x10 consumed, +0x14 ringSize (0x400), +0x18 timeGetTime-ish base (FUN_00804af0), +0x1c fps (= g_simulationFps 30), +0x20 ring of ringSize x 0xd0-byte samples. Class name not recoverable from the client; the lnxded twin keeps the fps in Setup+0xcc as 1/fps instead."
   },
   {
+   "address": "0x0049fd10",
+   "name": "ScoreManager::getTeamScore(unsigned int) (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Teams 1..2: this + team*0x50 + 0x10 (lea edx,[esi+esi*4]; shl edx,4; lea eax,[edx+edi+0x10]), as lnxded 0x081616c0; else an error path. A TeamScore is 0x50 bytes; its live ticket count is +0x48."
+  },
+  {
+   "address": "0x004a1140",
+   "name": "ScoreManager::ScoreManager (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Allocated 0x104 bytes by the factory 0x00483040 (the server's size). Score table +0x3c death -1, +0x40 kill 3, +0x44 tk -3, +0x48 capture 20, +0x4c/+0x50/+0x54 attack/defence/objective 5, +0x58 objectivetk -15 (round-state.js SCORE_DEFAULTS); two TeamScores zeroed at +0x60 and +0xb0."
+  },
+  {
    "address": "0x004a4a60",
    "name": "HitFromPosEvent::HitFromPosEvent(char octant, char alphaByte)",
    "kind": "function",
@@ -5667,6 +5685,15 @@
    "note": "50 slots, 0x008d6700-0x008d67c4, installed by BfMap__BfMap. Diffed against TransformNode's table (0x00943208, also 50 slots), exactly three slots differ: +0x00 the destructor (0x0046e7c0, unread), +0x68 BfMap__update (0x0046a680), +0x74 minimap_screenTransform (0x00469360)."
   },
   {
+   "address": "0x008daeb0",
+   "name": "vtable for ScoreManager (client)",
+   "kind": "vtable",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "Stored by the ctor 0x004a1140 (secondary 0x008dae88 at +4). Slot 4 (+0x10) = getTeamScore 0x0049fd10."
+  },
+  {
    "address": "0x008dbf78",
    "name": "hit octant thresholds 0.9238 / 0.3826 / -0.3826 / -0.9238",
    "kind": "data",
@@ -6340,6 +6367,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Global Data Pointers"
+  },
+  {
+   "address": "0x0097a0d8",
+   "name": "ScoreManager* (client)",
+   "kind": "data",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-27-round-replay",
+   "note": "The client's replicated ScoreManager (lnxded dice::ref2::world::scoreManager 0x0871bb58): created at 0x004830c0 by the class factory ([0x009a4f50] vt+0x28, class id 0xc4b8); the HUD reads each side's tickets through it at 0x004a8c2f and ten other places: getTeamScore(team) (vt+0x10) then [TeamScore+0x48]."
   },
   {
    "address": "0x0097d758",

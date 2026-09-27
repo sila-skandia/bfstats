@@ -49,6 +49,7 @@ import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { ReplayProps } from './replay-props.js';
+import { ReplayRound } from './replay-round.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
 /** The player itself, for the node harness (it needs a DOM to construct). */
@@ -119,6 +120,9 @@ class ReplayPlayer {
     this.camera = new ReplayCamera(this);
     if (this.followPid === null) this.camera.setMode('free');
     this.feed = new ReplayFeed(this, this.kills);
+    // The level's flags and the ticket counter, as the recording has them.
+    this.round = new ReplayRound(rec, log, ctx);
+    this.roundNoted = false;
     this.ui = new ReplayUi(this);
   }
 
@@ -322,7 +326,8 @@ class ReplayPlayer {
       ? ` · server log aligned on ${this.alignment.matched} of ${this.alignment.total} shared events`
       : this.log ? ' · server log loaded but could not be aligned' : '';
     const bodies = this.soldiers?.available ? ' · soldiers drawn by the map' : '';
-    this.ui.status(`${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${bodies}${aligned}`);
+    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${bodies}${aligned}`;
+    this.ui.status(this.statusLine);
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
     this.ui.activity(4);
@@ -423,6 +428,17 @@ class ReplayPlayer {
     this.camera.update(dt, t);
     this.soldiers?.update(t, step, this.hulls);
     this.props.update(t);
+    this.round?.update(t);
+    if (!this.roundNoted && this.round?.points && this.statusLine) {
+      // Once the level's points are matched: where the counter's numbers
+      // come from.
+      this.roundNoted = true;
+      const tickets = this.round.source === 'recorded' ? 'tickets recorded'
+        : this.round.source === 'estimated' ? 'tickets estimated from the recorded deaths and flags'
+        : 'no tickets (the recording joined mid-round, before the recorder kept them)';
+      this.statusLine += ` · ${tickets}`;
+      this.ui.status(this.statusLine);
+    }
     // The server log's rings on the level are the replay log's, a debug
     // overlay: up while that panel is.
     const rings = this.showServer && this.ui.logOpen;

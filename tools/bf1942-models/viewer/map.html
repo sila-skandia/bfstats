@@ -1044,6 +1044,9 @@ const soldierHud = createSoldierHud(bag(
   {
     get combatFrame() { return combatFrameNow(); }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; },
+    // A round being watched (replay-round.js) shows its counter as a round in
+    // play does, with nobody of the page's own in the world.
+    watchingRound: () => replayController?.active() ?? false,
   },
 ));
 // The level's headless simulation core is `level.world` (level-load.js); the
@@ -1295,8 +1298,14 @@ function syncTickets() {
   level.extras.tickets = { ...level.extras.tickets, team1, team2 };
 }
 
+/** The level's own counts and rates as the round started, before anything
+ *  wrote the round's moving counts over them: a replay's estimate starts
+ *  from these (replay-round.js). */
+let levelTicketsAtStart = null;
+
 function startRound() {
   const tickets = level.extras?.tickets ?? null;
+  levelTicketsAtStart = tickets ? { ...tickets } : null;
   ticketsWritten = null;
   round = createRoundState({
     settings: () => hudFeed.hudPack.scoreSettings,
@@ -1808,6 +1817,15 @@ replayController = createReplayController({
   // A click on the view while the level was loading took the pointer for the
   // free-fly camera; the replay's own input layer gives it back.
   releasePageInput: () => pageInput.release(),
+  // The round as the recording has it (replay-round.js): each control point's
+  // flag moved the way play moves it, and the ticket counter the HUD draws.
+  worldFlags: () => level.world?.flags ?? [],
+  levelPoints: () => level.extras?.controlPoints ?? [],
+  levelTickets: () => levelTicketsAtStart,
+  hoistFlag: flag => flagCapture.hoistCaptureFlag(flag),
+  setTickets: (team1, team2) => {
+    if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
+  },
 });
 if (replayUrl) {
   replayController.openFromUrl(replayUrl, params.get('serverlog'))
@@ -2007,8 +2025,12 @@ function simulate(dt, input, look) {
   // `60 / rate` seconds while the enemy holds more than 99 weight of the map
   // (`round-state.js`). The weights come from `extras.controlPoints`, which
   // `hoistCaptureFlag` keeps in step with the world's flags.
-  if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
-  syncTickets();
+  // Not under a replay: its round is the recording's (replay-round.js), and
+  // this one would bleed the level's starting flags into the counter.
+  if (!replayController?.active()) {
+    if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
+    syncTickets();
+  }
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
