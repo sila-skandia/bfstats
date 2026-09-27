@@ -1362,6 +1362,33 @@ def _match_skn_vertices(mesh_positions, skn: skin_mod.Skin) -> list[int]:
     return out
 
 
+GLTF_INFLUENCES = 4   # one JOINTS_0 / WEIGHTS_0 pair
+
+
+def pack_influences(joints: list[int], weights: list[float],
+                    ) -> tuple[tuple[int, ...], tuple[float, ...]]:
+    """One vertex's influences as glTF's four joint and weight slots.
+
+    Up to four pass through in the skin's order, normalised. More than four
+    keep the four heaviest, per joint, normalised over what is kept. Taking
+    the first four in file order and normalising over all of them left the
+    weights summing short of one, which pulls a vertex toward the origin. No
+    vanilla skin has more than four; DC Final's US body carries up to 13 a
+    vertex, bf1918's bodies 12, GCMOD's Mon Calamari 17.
+    """
+    if len(joints) > GLTF_INFLUENCES:
+        merged: dict[int, float] = {}
+        for joint, weight in zip(joints, weights):
+            merged[joint] = merged.get(joint, 0.0) + weight
+        heaviest = sorted(merged, key=lambda joint: -merged[joint])[:GLTF_INFLUENCES]
+        kept = [joint for joint in merged if joint in heaviest]
+        joints, weights = kept, [merged[joint] for joint in kept]
+    total = sum(weights) or 1.0
+    weights = [w / total for w in weights]
+    return (tuple((list(joints) + [0] * GLTF_INFLUENCES)[:GLTF_INFLUENCES]),
+            tuple((weights + [0.0] * GLTF_INFLUENCES)[:GLTF_INFLUENCES]))
+
+
 def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
                        meshes: ArchivePool, skeleton: ske_mod.Skeleton,
                        template: con_mod.ObjectTemplate,
@@ -1404,11 +1431,7 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
             # Every influence unmapped: ride the anchor rather than carry
             # zero weight, which three.js "repairs" into joint 0, weight 1.
             joints, weights = [slot[anchor]], [1.0]
-        total = sum(weights) or 1.0
-        weights = [w / total for w in weights]
-        joints = (joints + [0, 0, 0, 0])[:4]
-        weights = (weights + [0.0, 0.0, 0.0, 0.0])[:4]
-        return tuple(joints), tuple(weights)
+        return pack_influences(joints, weights)
 
     primitives = []
     triangles = 0
