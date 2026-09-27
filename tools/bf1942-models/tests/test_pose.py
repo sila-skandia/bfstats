@@ -659,5 +659,32 @@ class SeatPoseOrientationTests(unittest.TestCase):
         self.assertIn("quat_from_ypr(180.0, -90.0, 0.0)", source)
 
 
+class PackInfluencesTests(unittest.TestCase):
+    """A vertex's influences as glTF's four joint and weight slots."""
+
+    def test_up_to_four_pass_through_in_the_skins_order(self) -> None:
+        from extract_pose import pack_influences
+        joints, weights = pack_influences([3, 1], [0.25, 0.75])
+        self.assertEqual((3, 1, 0, 0), joints)
+        self.assertEqual((0.25, 0.75, 0.0, 0.0), weights)
+
+    def test_more_than_four_keep_the_four_heaviest_and_sum_to_one(self) -> None:
+        from extract_pose import pack_influences
+        # The old packing kept the first four, normalised over all six, so the
+        # vertex carried 0.62 of its weight and sagged toward the origin.
+        joints, weights = pack_influences([0, 1, 2, 3, 4, 5],
+                                          [0.02, 0.30, 0.03, 0.25, 0.20, 0.20])
+        self.assertEqual((1, 3, 4, 5), joints)
+        self.assertAlmostEqual(1.0, sum(weights))
+        self.assertAlmostEqual(0.30 / 0.95, weights[0])
+
+    def test_two_influences_on_one_joint_count_as_one(self) -> None:
+        from extract_pose import pack_influences
+        joints, weights = pack_influences([7, 7, 1, 2, 3, 4],
+                                          [0.1, 0.1, 0.3, 0.3, 0.1, 0.1])
+        self.assertEqual((7, 1, 2, 3), joints)
+        self.assertAlmostEqual(0.2 / 0.9, weights[0])
+
+
 if __name__ == "__main__":
     unittest.main()

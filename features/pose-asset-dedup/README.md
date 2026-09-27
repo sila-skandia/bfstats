@@ -164,7 +164,11 @@ Phase 3 — cutover and publish
 - [ ] Re-run the level/model layers per `features/level-bake-layers/README.md`
       blast radius (poses are a per-tree artifact, not a `scene.json` layer,
       but every tree's `poses/` is regenerated) and publish with
-      `scripts/publish-mesh-delta.py`.
+      `scripts/publish-mesh-delta.py`. The published vanilla, XPack and EoD
+      pose trees predate the gait and envmap extras, and also the four-heaviest
+      influence rule (2026-09-27), which moves one vertex of
+      `gerelitebody.skn` in XPack2's `GermanEliteSoldier` and EoD's
+      `VCFemaleSoldier` poses.
 - [ ] Before deleting anything: port the split path to bfstats.io. The player
       profile's service record and the round report draw soldiers from
       `<Soldier>__<Weapon>.pose.glb` through the API's mesh route

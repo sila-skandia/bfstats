@@ -45,6 +45,8 @@ class Skin:
     bones: list[str]
 
 
+MAX_INFLUENCES = 32
+
 # Prefer the bone that actually meets the sleeve. Hands are not in the body
 # skin; the forearm is the last shared link.
 _ALIGN_PREFERENCE = ("forearm", "hand", "upperarm", "clavicle")
@@ -64,7 +66,11 @@ def parse(data: bytes, name: str = "") -> Skin:
             pos += 12
             ninf = data[pos]
             pos += 1
-            if ninf < 1 or ninf > 8:
+            # A sanity bound, not a format limit: the install's 596 skins carry
+            # up to 17 influences a vertex (GCMOD's Mon Calamari hands; DC
+            # Final's US body 13, bf1918's bodies 12), and a cap of 8 turned
+            # their bodies away whole.
+            if ninf < 1 or ninf > MAX_INFLUENCES:
                 raise SkinError(f"bad influence count {ninf} in {name or 'skin'}")
             inf: list[Influence] = []
             for _ in range(ninf):

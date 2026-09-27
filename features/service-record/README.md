@@ -156,6 +156,13 @@ white without it. Seven FHSW poses still hold an untextured weapon, because
 FHSW does not ship its texture (the Lebel's is in BF1918's archives; the
 MP40-II's and the M18 recoilless rifle's are nowhere in the install).
 
+The first pass drew every bf1918 soldier, DC Final's US soldier and GCMOD's
+Mon Calamari without a body: their `.skn` skins weight a vertex to up to 12,
+13 and 17 bones, and the skin reader refused anything over 8. It now takes up
+to 32 (the install's 596 skins top out at 17), and the pose exporter keeps a
+vertex's four heaviest influences, renormalised, where it used to keep the
+first four and leave the weights summing short of one.
+
 Built 2026-09-27, every (soldier, kit) job posed. 12 hold the kit's next
 weapon, because the first one tried (Pirates' musket, FHSW's smoke grenades
 and charges) names a stand-aim clip its archive lacks:
