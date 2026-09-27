@@ -389,10 +389,13 @@ class ReplaySoldierFeetTests(unittest.TestCase):
     """
 
     results: dict
+    rings: dict
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.results = run_harness()["feet"]
+        harness = run_harness()
+        cls.results = harness["feet"]
+        cls.rings = harness["serverRings"]
 
     def test_every_soldier_runs_on_the_ground(self) -> None:
         # Sampled a metre up; drawn on the ground at y = 0, the recording
@@ -418,6 +421,13 @@ class ReplaySoldierFeetTests(unittest.TestCase):
         # crouched; the orbit circles 1.2 m over his feet.
         self.assertEqual(self.results["eye"], {"standing": 1.65, "crouched": 1.12})
         self.assertEqual(self.results["orbit"], 1.2)
+
+    def test_a_server_log_ring_lies_on_the_ground(self) -> None:
+        # The server's log places a live player at his origin, a metre over
+        # his feet: his ring lies on the ground under him. A spawn is on the
+        # ground already, a pilot keeps his height, a hull its own origin.
+        self.assertEqual(self.rings["atPlayer"], [True, True, True, False])
+        self.assertEqual(self.rings["y"], [0, 0, 150, 1.5])
 
 
 if __name__ == "__main__":
