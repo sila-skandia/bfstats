@@ -403,15 +403,28 @@ def spawn_folder(source: str) -> str:
     return parts[-1] if parts else ""
 
 
+def folder_key(name: str) -> str:
+    """A name as the folder rule compares it: case and separators dropped.
+
+    The Axis AA gun is `flak38`, declared in `Objects/Vehicles/Land/Flak_38/`.
+    An exact comparison left it out of every models tree, although ten vanilla
+    levels place it on their Axis AA pads (the level bakes draw it) and the
+    game hands it to the Axis on every AA spawner, so a round replay had no
+    model to draw it with. Dropping the separators admits it and nothing else
+    in vanilla, XPack1 or XPack2.
+    """
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tuple[str, str, str]]:
     """Every template a category folder declares as a spawnable object.
 
     Two ways in, because two different things make a template the object. Most
     of the game is one folder per object, so a template named after the folder
-    holding its `.con` is that folder's thing. A few are not — see
-    `CATALOGUE_KINDS` — and those are admitted on their declared kind instead.
-    A template that satisfies both (`K98` is a `HandFireArms` *and* named after
-    `HandWeapons/K98/`) appears once: the library is keyed by name.
+    holding its `.con` (`folder_key`) is that folder's thing. A few are not —
+    see `CATALOGUE_KINDS` — and those are admitted on their declared kind
+    instead. A template that satisfies both (`K98` is a `HandFireArms` *and*
+    named after `HandWeapons/K98/`) appears once: the library is keyed by name.
     """
     out: list[tuple[str, str, str]] = []
     for template in library.objects.values():
@@ -425,7 +438,7 @@ def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tupl
         if category == "soldier" and kind != "bfsoldier":
             continue
         folder = spawn_folder(template.source)
-        if (folder and template.name.lower() == folder.lower()) \
+        if (folder and folder_key(template.name) == folder_key(folder)) \
                 or kind in CATALOGUE_KINDS.get(category, ()):
             out.append((template.name, category, template.source))
     return sorted(out, key=lambda r: (r[1], r[0].lower()))

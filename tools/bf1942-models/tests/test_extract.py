@@ -119,6 +119,26 @@ ObjectTemplate.geometry ShermanTurret
             catalogue(None, library),
         )
 
+    def test_a_folder_spelled_with_a_separator_still_names_its_vehicle(self) -> None:
+        # The Axis AA gun: `flak38` in `Flak_38/`, with the two turning
+        # bundles its folder also declares. An exact match left it out of the
+        # models tree, and every replay drew no Axis AA gun.
+        library = library_with(("Objects/Vehicles/Land/Flak_38/Objects.con", """
+ObjectTemplate.create PlayerControlObject flak38
+ObjectTemplate.addTemplate flak38_body
+
+ObjectTemplate.create RotationalBundle flak38_body
+ObjectTemplate.geometry flak38_lavett_m1
+ObjectTemplate.addTemplate flak38_gun
+
+ObjectTemplate.create RotationalBundle flak38_gun
+"""))
+
+        self.assertEqual(
+            [("flak38", "land", "Objects/Vehicles/Land/Flak_38/Objects.con")],
+            catalogue(None, library),
+        )
+
     def test_a_soldiers_parachute_is_not_a_soldier(self) -> None:
         library = library_with(("Objects/Soldiers/Common/Parachute/Objects.con", """
 ObjectTemplate.create AnimatedBundle Parachute
