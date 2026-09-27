@@ -59,20 +59,6 @@
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
-  <div id="map-actions" class="map-actions speed-control">
-    <button type="button" id="speed-toggle-btn" class="map-action-btn speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
-      <span class="action-badge speed-badge">FAST</span>
-      <span class="action-hint speed-hint">Tap for slow</span>
-    </button>
-    <button type="button" id="mode-toggle-btn" class="map-action-btn mode-toggle-btn" data-mode="fly" aria-label="Toggle Fly or Pan navigation mode">
-      <span class="action-badge mode-badge">FLY</span>
-      <span class="action-hint mode-hint">Tap for pan</span>
-    </button>
-    <button type="button" id="reset-cam-btn" class="map-action-btn reset-cam-btn" aria-label="Reset camera position">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 8a5.5 5.5 1 0 0 1.6-3.9L2 6.5M2 2.5v4h4"/></svg>
-      <span>Reset</span>
-    </button>
-  </div>
   <div id="mobile-controls" hidden>
     <div id="mobile-pad" aria-label="Movement control">
       <div id="mobile-pad-puck"><span id="mobile-pad-label">MOVE</span></div>
@@ -506,7 +492,7 @@ const pageInput = createPageInput(bag(
   from(() => comms, `keydown:radioKeydown`),
   from(() => controls, `activeCodes codeTriggers kblockKeys`),
   from(() => deployScreen, `deployActive`),
-  from(() => freeCamera, `clampAltitude dollyCamera isSlow navMode panCamera resetCamera`),
+  from(() => freeCamera, `clampAltitude dollyCamera isSlow panCamera resetCamera`),
   from(() => level, `world`),
   from(() => localLook, `lookDelta`),
   from(() => localPlayer, `aircraft car occupancy soldier switchSeat toggleProne`),
@@ -535,9 +521,8 @@ const pageInput = createPageInput(bag(
 ));
 const freeCamera = createFreeCamera(bag(
   from(() => level, `extras getFloorAltitude groundHeight`),
-  from(() => localPlayer, `aircraft car leavePilot soldier`),
+  from(() => localPlayer, `aircraft car`),
   from(() => pageInput, `captured keys touchFlying`),
-  from(() => spawning, `spawnAtFlag`),
   {
     get camera() { return camera; }, get FLY_SLOW() { return FLY_SLOW; },
     get FLY_SPEED() { return FLY_SPEED; }, get optOnFoot() { return optOnFoot; },
