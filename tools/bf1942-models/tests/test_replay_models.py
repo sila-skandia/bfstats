@@ -727,13 +727,33 @@ class ReplayKnockbackAndParachuteTests(unittest.TestCase):
     def test_the_canopy_is_out_while_the_chute_carries_him(self) -> None:
         sample = self.results["sample"]
         self.assertFalse(sample["53@5.5"]["open"])
-        self.assertFalse(sample["53@5.5"]["canopy"]["visible"])
+        self.assertFalse((sample["53@5.5"]["canopy"] or {}).get("visible", False))
         self.assertEqual({"visible": True, "clip": "open", "over": 1.3}, sample["53@7.5"]["canopy"])
         self.assertEqual("idle", sample["53@9.1"]["canopy"]["clip"])
         self.assertTrue(sample["53@9.1"]["canopy"]["visible"])
         # Bit 0x10 drops as he touches down (`Lb_ParachuteHitGround`).
         self.assertFalse(sample["53@11.2"]["open"])
         self.assertFalse(sample["53@11.2"]["canopy"]["visible"])
+
+    def test_a_chute_first_seen_opening_opens_at_once(self) -> None:
+        # replay_20260927-075756's nid 775: first on the record already in
+        # `Lb_ParachuteOpen`, no fall before it. Each state is entered by
+        # name, so the opening and the canopy do not wait for a fall.
+        self.assertEqual(["Lb_ParachuteOpen", "Lb_ParachuteIdle", "stand.lower"],
+                         self.names(55, "lower"))
+        self.assertEqual(["Ub_ParachuteOpen", "stand.upper"], self.names(55, "upper"))
+        self.assertEqual(8.5, self.entered_at(55, "lower", "stand.lower"))
+        sample = self.results["sample"]
+        # The canopy is out on his body's very first frame, the one his legs
+        # enter the opening on.
+        first = self.entered_at(55, "lower", "Lb_ParachuteOpen")
+        self.assertEqual(5.15, first)
+        self.assertEqual({"visible": True, "clip": "open", "over": 1.3}, sample["55@5.15"]["canopy"])
+        self.assertEqual({"visible": True, "clip": "open", "over": 1.3}, sample["55@5.2"]["canopy"])
+        self.assertEqual("open", sample["55@5.5"]["canopy"]["clip"])
+        self.assertEqual({"visible": True, "clip": "idle", "over": 1.3}, sample["55@7.5"]["canopy"])
+        self.assertFalse(sample["55@9.1"]["canopy"]["visible"])
+        self.assertIsNone(sample["55@9.1"]["chute"])
 
     def test_a_man_killed_under_his_canopy_rides_it_down(self) -> None:
         at = self.results["sample"]["54@8.5"]

@@ -1401,6 +1401,9 @@ const read = scene => {
 //     9.0, lands at 11.0, stands at 11.5
 //   D (pid 54) glides, is killed at 8.0, rides the canopy down dead and lands
 //     at 10.5
+//   E (pid 55) is first on the record already pulling his ripcord,
+//     `Lb_ParachuteOpen` with no fall before it (replay_20260927-075756's
+//     nid 775), glides from 6.8 and stands at 8.5
 //
 // Their bodies are the bots' own renderer over a rig stood in for (the
 // engine's two-half machine, logging what each half enters), with a canopy
@@ -1436,12 +1439,13 @@ const read = scene => {
   // A flies 10 m/s along +x from 6.0 to 7.3, a metre and a half up at the
   // top; B 6 m/s back from 6.0 to 7.0; C falls from 200 m, fast to 7.0 and
   // then 5 m/s under the canopy onto the ground at 11.0; D from 60 m at 5 m/s
-  // onto the ground at 10.5.
+  // onto the ground at 10.5; E from 30 m at 8.5 m/s onto the ground at 8.5.
   const at = {
     851: t => (t <= 6 ? [0, 1, 0] : t >= 7.3 ? [13, 1, 0] : [10 * (t - 6), 1 + 1.5 * Math.sin(Math.PI * (t - 6) / 1.3), 0]),
     852: t => (t <= 6 ? [20, 1, 0] : t >= 7 ? [14, 1, 0] : [20 - 6 * (t - 6), 1 + Math.sin(Math.PI * (t - 6)), 0]),
     853: t => [40, t <= 7 ? 200 - 20 * (t - 5.1) : Math.max(1, 162 - 40.25 * (t - 7)), 0],
     854: t => [60, Math.max(1, 60 - 5 * (t - 5.1) - 25.5 * Math.max(0, t - 10.4)), 0],
+    855: t => [80, Math.max(1, 30 - 8.5 * (t - 5.1)), 0],
   };
   const timed = [
     st(5.1, 851, 0, 1, 0x4040), st(5.1, 852, 0, 1, 0x4040), st(5.1, 853, 13, 14, 0x6000),
@@ -1451,19 +1455,20 @@ const read = scene => {
     st(7.0, 853, 15, 16, 0x4010), st(8.7, 853, 17, 1, 0x4010), st(9.0, 853, 17, 18, 0x4010),
     st(9.3, 853, 17, 1, 0x4010), st(11.0, 853, 19, 14, 0x40), st(11.5, 853, 0, 1, 0x41),
     st(8.1, 854, 20, 21, 0x4010), st(10.5, 854, 22, 23, 0x40),
+    st(5.1, 855, 15, 16, 0x4011), st(6.8, 855, 17, 1, 0x4010), st(8.5, 855, 0, 1, 0xc0),
     line({ k: 'e', t: 7.0, e: 'score', kind: 3, pid: 52, victim: 51, weapon: 1, bodypart: 1 }),
     line({ k: 'e', t: 8.0, e: 'score', kind: 3, pid: 52, victim: 54, weapon: 1, bodypart: 1 }),
     line({ k: 'f', t: 9.0, id: 853, pid: 53, w: 'No4', p: [40, 150, 0], d: [0, 0, 1] }),
   ];
   for (let i = 0; i <= 80; i++) {
     const t = +(5.1 + i * 0.1).toFixed(1);
-    timed.push(line({ k: 's', t, o: [851, 852, 853, 854].map(nid => [nid, ...at[nid](t), 0, 0, 0, 1]) }));
+    timed.push(line({ k: 's', t, o: [851, 852, 853, 854, 855].map(nid => [nid, ...at[nid](t), 0, 0, 0, 1]) }));
   }
   timed.sort((a, b) => JSON.parse(a).t - JSON.parse(b).t);
   const rec = recording.parseRecording([
     line({ k: 'h', v: 5, start: '', hz: 10 }),
     line({ k: 'anim', t: 1, states: STATES }),
-    ...man(51, 851), ...man(52, 852), ...man(53, 853), ...man(54, 854),
+    ...man(51, 851), ...man(52, 852), ...man(53, 853), ...man(54, 854), ...man(55, 855),
     ...timed,
     line({ k: 'end', t: 20 }),
   ].join('\n'));
@@ -1560,12 +1565,12 @@ const read = scene => {
     };
   };
   const probes = {
-    6.3: [51, 52], 7.1: [51], 7.5: [53], 8.5: [52, 54], 9.1: [53], 9.5: [54], 10.5: [52], 11.2: [53], 11.8: [53],
-    5.5: [53],
+    6.3: [51, 52], 7.1: [51], 7.5: [53, 55], 8.5: [52, 54], 9.1: [53, 55], 9.5: [54], 10.5: [52], 11.2: [53],
+    11.8: [53], 5.15: [55], 5.2: [55], 5.5: [53, 55],
   };
   for (let i = 0; i <= 150; i++) {
     now = +(5.1 + i * 0.05).toFixed(2);
-    for (const pid of [51, 52, 53, 54]) {
+    for (const pid of [51, 52, 53, 54, 55]) {
       const vis = visuals.get(`replay:${pid}`);
       if (vis && !vis.rig) vis.rig = rigFor(pid);
     }
@@ -1614,8 +1619,8 @@ const read = scene => {
   const byName = log => log.map(([name, t]) => [name, t]);
   results.knockback = {
     sample,
-    lower: Object.fromEntries([51, 52, 53, 54].map(pid => [pid, byName(logs.get(pid)?.lower ?? [])])),
-    upper: Object.fromEntries([51, 52, 53, 54].map(pid => [pid, byName(logs.get(pid)?.upper ?? [])])),
+    lower: Object.fromEntries([51, 52, 53, 54, 55].map(pid => [pid, byName(logs.get(pid)?.lower ?? [])])),
+    upper: Object.fromEntries([51, 52, 53, 54, 55].map(pid => [pid, byName(logs.get(pid)?.upper ?? [])])),
     kills,
     cries,
     steps: Object.fromEntries([...steps].map(([pid, ts]) => [pid, ts])),
