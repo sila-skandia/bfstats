@@ -501,6 +501,34 @@ export function createBotVisuals(page) {
     vis.rig.anim.fire();
   };
 
+  /**
+   * The trigger is held on a weapon whose rounds nobody sees: a replayed
+   * wrench or medic's pack, where the recorded torso state is all there is
+   * of its fire. The torso's fire starts whenever it is not already playing
+   * one -- the engine enters a one-shot fire state again on every round
+   * while the trigger stays down, and an automatic's loop just runs on.
+   */
+  botBodies.botFireHeld = bot => {
+    const vis = botVisuals.get(bot?.playerId);
+    if (vis?.rig?.anim?.upper?.action === 'fire') return;
+    botBodies.botFired(bot);
+  };
+
+  /**
+   * A reload began, as a replayed body's recording has it (the torso's own
+   * reload state): the torso's reload for the weapon in his drawn hands,
+   * unless it is reloading already -- a bolt-action's fire hands straight
+   * over to its bolt.
+   */
+  botBodies.botReloaded = bot => {
+    const vis = botVisuals.get(bot?.playerId);
+    if (!vis?.rig?.anim || bot.vehicle) return;
+    const held = bot.weaponAi?.name ?? null;
+    if (held && vis.weapon && held.toLowerCase() !== vis.weapon.toLowerCase()) return;
+    if (vis.rig.anim.upper.action === 'reload') return;
+    vis.rig.anim.reload();
+  };
+
   /** The bot's magazine for the weapon in his hands (`bot-referee.js`
    *  `magazineTick`): a reload that has just begun starts the torso's -- the
    *  clock coming off zero, or starting over (a fresh magazine change begun
@@ -527,7 +555,9 @@ export function createBotVisuals(page) {
 
   /**
    * The bot has just died: pick the engine's death and leave the body playing
-   * it. `opts.seated` is whether he died in his seat (`referee.damageLanded`).
+   * it. `opts.seated` is whether he died in his seat (`referee.damageLanded`);
+   * `opts.family`, a death the engine is known to have chosen (a replay's
+   * recorded die state), is played instead of choosing one.
    * The bot's own visual is rebuilt for the respawn, so the corpse keeps its
    * full `CORPSE_SECONDS` however soon he is back.
    */
@@ -535,7 +565,7 @@ export function createBotVisuals(page) {
     const vis = botVisuals.get(bot.playerId);
     if (!vis) return null;
     const soldier = page.world?.player(bot.playerId)?.soldier ?? null;
-    const family = deathFamily({
+    const family = opts.family ?? deathFamily({
       seated: !!opts.seated,
       parachuteOpen: !!soldier?.chute?.open,
       swimming: !!soldier?.swim?.swimming,
