@@ -799,14 +799,14 @@ export class Aircraft extends Vehicle {
   /** A replay's recorded flight (`Vehicle.presentKinematic`): the throttle
    *  spooled at the airframe's own rate, the gear on its own thresholds, then
    *  the propeller, the servos and the rig. */
-  presentKinematic(dt, throttle = 0) {
+  presentKinematic(dt, throttle = 0, running = true) {
     this.state.airspeed = this.state.velocity.length();
     // A hull with no gear thresholds (a ship) has no gear to move, and a
     // recorded pose needs no bed contact.
     if (Number.isFinite(this.spec.gearUpAltitude) || Number.isFinite(this.spec.gearDownAltitude)) {
       this.autoGear();
     }
-    super.presentKinematic(dt, throttle);
+    super.presentKinematic(dt, throttle, running);
   }
 
   spoolThrottle(dt, wanted) {

@@ -315,20 +315,24 @@ export class ReplayHull {
     }
     this.prevForward = motion.forward;
 
-    this.present(motion, t, dt, driven && replicated && !wrecked);
+    // A v4 recording carries the engine itself (`present`). It runs where
+    // the recording says it does (it starts on a driver's entry and stops on
+    // his exit or its damage), else while someone holds the root seat: its
+    // note plays and its propeller turns only then.
+    const live = replicated && !wrecked;
+    this.engine = this.drive ? engineAt(player.rec, life.nid, t) : null;
+    const running = live && (this.engine ? this.engine.running && !this.engine.disabled : driven);
+    this.present(motion, t, dt, driven && live, running);
     this.applyWreck(wrecked);
     this.updateTier(t, hp, wrecked, replicated);
-    // The engine sounds while it runs: the recorded running flag where the
-    // recording has one (the engine starts on a driver's entry and stops on
-    // his exit or its damage), else while someone holds the root seat.
-    const running = this.engine ? this.engine.running && !this.engine.disabled : driven;
-    this.updateAudio(running && replicated && !wrecked, this.crew.length > 0 && replicated && !wrecked, wrecked);
+    this.updateAudio(running, this.crew.length > 0 && live, wrecked);
     this.lastHp = hp;
     this.lastT = t;
   }
 
-  /** The pose, and every rig the drive runs over it. */
-  present(motion, t, dt, running) {
+  /** The pose, and every rig the drive runs over it: `crewed` while someone
+   *  holds the root seat, `running` while the engine runs. */
+  present(motion, t, dt, crewed, running) {
     const drive = this.drive;
     const [px, py, pz] = motion.position;
     const [qx, qy, qz, qw] = motion.quaternion;
@@ -338,7 +342,6 @@ export class ReplayHull {
       this.root.position.set(px, py, pz);
       this.root.quaternion.set(qx, qy, qz, qw);
       this.root.updateMatrixWorld(true);
-      this.engine = null;
       this.applyJoints(t);
       this.applyAim(t);
       return;
@@ -348,22 +351,22 @@ export class ReplayHull {
     s.orientation.set(qx, qy, qz, qw);
     s.velocity.set(motion.velocity[0], motion.velocity[1], motion.velocity[2]);
     s.angularVelocity.set(motion.angular[0], motion.angular[1], motion.angular[2]);
-    // A v4 recording carries the engine itself: the PhysicsEngine's revs,
-    // which are what the engine plays its note from and spins its propeller
-    // with (`PhysicsEngine::updatePhysics`), in place of every estimate below.
-    const recorded = engineAt(this.player.rec, this.life.nid, t);
-    this.engine = recorded;
+    // A v4 recording carries the engine itself (`update`): the
+    // PhysicsEngine's revs, which are what the engine plays its note from and
+    // spins its propeller with (`PhysicsEngine::updatePhysics`), in place of
+    // every estimate below.
+    const recorded = this.engine;
     const ctx = this.player.ctx;
     let throttle = 0;
     if (this.kind === 'air') {
-      const stick = running ? aircraftStick(motion.bodyRates) : { pitch: 0, roll: 0, yaw: 0 };
+      const stick = crewed ? aircraftStick(motion.bodyRates) : { pitch: 0, roll: 0, yaw: 0 };
       drive.setInput('c_PIPitch', stick.pitch);
       drive.setInput('c_PIRoll', stick.roll);
       drive.setInput('c_PIYaw', stick.yaw);
       const clearance = drive.spec?.groundClearance ?? 1.2;
       const agl = aboveGround(motion.position, ctx.groundHeight);
       throttle = recorded ? Math.min(1, recorded.revs) : aircraftThrottle({
-        crewed: running,
+        crewed,
         airborne: agl > clearance + 1.5,
         speed: motion.speed,
         forwardAccel: this.forwardAccel,
@@ -371,17 +374,19 @@ export class ReplayHull {
         vmax: drive.spec?.maxSpeed ?? AIR_VMAX,
       });
     } else if (this.kind === 'ship') {
-      drive.setInput('c_PIYaw', running ? groundSteer(motion.bodyRates[1], motion.forward) : 0);
-      throttle = recorded ? Math.min(1, recorded.revs) : shipThrottle({ crewed: running, forward: motion.forward });
+      drive.setInput('c_PIYaw', crewed ? groundSteer(motion.bodyRates[1], motion.forward) : 0);
+      throttle = recorded ? Math.min(1, recorded.revs) : shipThrottle({ crewed, forward: motion.forward });
     } else {
-      drive.setInput('c_PIYaw', running ? groundSteer(motion.bodyRates[1], motion.forward) : 0);
-      drive.setInput('c_PIThrottle', running ? Math.sign(motion.forward) * Math.min(1, Math.abs(this.forwardAccel)) : 0);
-      throttle = recorded ? Math.min(1.2, recorded.revs) : groundRevs(drive.engine, motion.forward, running);
+      drive.setInput('c_PIYaw', crewed ? groundSteer(motion.bodyRates[1], motion.forward) : 0);
+      drive.setInput('c_PIThrottle', crewed ? Math.sign(motion.forward) * Math.min(1, Math.abs(this.forwardAccel)) : 0);
+      throttle = recorded ? Math.min(1.2, recorded.revs) : groundRevs(drive.engine, motion.forward, crewed);
     }
     // The first frame after a seek (or of a life) starts from the settled
     // state rather than spooling up from a cold engine: a plane met in the
-    // middle of a dive is at full power, not idling.
-    drive.presentKinematic(this.lastT === null ? SETTLE : dt, throttle);
+    // middle of a dive is at full power, not idling. A parked plane's
+    // propeller is still until its engine starts, and one out of range or
+    // wrecked winds down: its last recorded revs are not being updated.
+    drive.presentKinematic(this.lastT === null ? SETTLE : dt, running ? throttle : 0, running);
     this.applyJoints(t);
     this.applyAim(t);
   }
