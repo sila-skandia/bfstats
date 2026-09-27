@@ -173,10 +173,26 @@ export class ClimbState {
  * ground, the engine's own start); backward input grabs only near the TOP —
  * stepping backwards off a deck onto the ladder to climb down, which is the
  * other way the game is played. On a grab the soldier is snapped onto the
- * axis line at the closest point, offset perpendicular by the engine's
- * 0.48 m standoff on the side he approached from, and turned to face the
- * ladder. Returns true when the climb took (the caller skips that tick's
- * normal body step).
+ * axis line AT HIS OWN HEIGHT, offset perpendicular by the engine's 0.48 m
+ * standoff on the side he approached from, and turned to face the ladder.
+ * Returns true when the climb took (the caller skips that tick's normal body
+ * step).
+ *
+ * His own height, because the engine keeps it. `BFSoldier::handleClimbAction`
+ * (`0x08281080`) takes the ladder when forward is held, his origin is less
+ * than 0.48 m under the water (`0x086d2950`, `0x082817c8`), and either the
+ * ladder's origin is above his and he moves along its +z (`dot > 0.8`,
+ * `0x082817ed`) or it is below his and he moves against it (`dot < -0.8`,
+ * `0x08281817`). The first arm writes no position (`0x082818f4` leaves
+ * before the only write, at `0x082818f9`); the second drops him 2.0 m
+ * (`0x086c08c4`, `0x0828192e`) before `getLadderClosestPosition`
+ * (`0x08280b40`) snaps him. And that
+ * snap, run again every tick he climbs, keeps his coordinate up the ladder:
+ * it clamps only across the rungs (`bbox.min.x + 0.4`, `bbox.max.x - 0.4`)
+ * and sets the -0.48 standoff. So the parameter is where his FEET project
+ * onto the line. It used to be where his mid-body did -- the reach test's
+ * point, reused -- which lifted him half his height, 0.9 m, the moment he
+ * touched a ladder.
  */
 export function climbStart(climb, body, ladders) {
   const p = body.position;
@@ -198,7 +214,9 @@ export function climbStart(climb, body, ladders) {
   }
   if (!best) return false;
   const near = closestOnLadder(best, p.x, midY, p.z);
-  const t = Math.min(1, Math.max(0, near.t));
+  // Where he takes it: his feet's own place on the line (see above). The
+  // mid-body stays the reach test's point and the side's.
+  const t = Math.min(1, Math.max(0, closestOnLadder(best, p.x, p.y, p.z).t));
   // The standoff side: the ladder's own face normal, flipped to point at the
   // soldier; a ladder whose face never resolved stands him on an arbitrary
   // but fixed side (face is horizontal by construction, so it is at worst
