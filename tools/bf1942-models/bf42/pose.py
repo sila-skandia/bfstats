@@ -37,6 +37,13 @@ vertices are weighted to them alone. `refine_binds` closes those exactly:
 a two-influence vertex whose other bone is known pins the missing bone's
 contribution, `residual = (rest - sum(known)) / w`, and three such vertices
 make the same least-squares problem `skin.recover_bind` already solves.
+
+Some mods' skins have no rigidly weighted vertex at all, so neither step can
+start: DC Final's US body weights every vertex to 2-13 bones, GCMOD's Mon
+Calamari to up to 17. `solve_blended_binds` solves every remaining bone at
+once from the blend itself, `rest = sum(w * (R * offset + T))`, which is
+linear in the binds; a bone the data cannot separate from another (two bones
+that only ever share vertices at equal weights) stays unbound.
 """
 
 from __future__ import annotations
@@ -196,7 +203,128 @@ def refine_binds(skn: skin_mod.Skin,
                 progressed = True
         if not progressed:
             break
-    return poses
+    return solve_blended_binds(skn, poses)
+
+
+# A solved bind is kept only if it is a rotation (orthonormal to this, with a
+# positive determinant) and the binds together put every vertex they fully
+# weight back on its rest position (to within this many metres). Exact data
+# lands at 1e-7 m and 1e-5 respectively.
+BLEND_ORTHONORMAL_TOLERANCE = 1e-2
+BLEND_REST_TOLERANCE = 1e-3
+
+
+def solve_blended_binds(skn: skin_mod.Skin, poses: dict[str, RT]) -> dict[str, RT]:
+    """Bind the bones `poses` lacks from the blend every vertex encodes.
+
+    Per axis, `rest = sum(w * (R_row . offset + T))` over a vertex's
+    influences is linear in each bone's (R_row, T) -- four unknowns a bone a
+    axis -- so the unbound bones are one least-squares problem each axis,
+    with the bound bones' contributions moved to the known side. An unknown
+    whose pivot vanishes is one the data does not determine; its bone fails
+    the rotation check and stays unbound, as does every bone if the result
+    does not reproduce the rest pose. Bones no vertex weights are left alone.
+    """
+    weighted = {skn.bones[inf.bone] for vertex in skn.vertices
+                for inf in vertex.influences if inf.weight > 1e-6}
+    missing = [name for name in skn.bones if name in weighted and name not in poses]
+    if not missing:
+        return poses
+    column = {name: k for k, name in enumerate(missing)}
+    size = 4 * len(missing)
+    normal = [[[0.0] * size for _ in range(size)] for _ in range(3)]
+    target = [[0.0] * size for _ in range(3)]
+    for vertex in skn.vertices:
+        coefficients: dict[int, float] = {}
+        known = [0.0, 0.0, 0.0]
+        for inf in vertex.influences:
+            if inf.weight <= 1e-6:
+                continue
+            name = skn.bones[inf.bone]
+            if name in column:
+                base = 4 * column[name]
+                for k in range(3):
+                    coefficients[base + k] = coefficients.get(base + k, 0.0) + inf.weight * inf.offset[k]
+                coefficients[base + 3] = coefficients.get(base + 3, 0.0) + inf.weight
+            else:
+                point = apply(poses[name], inf.offset)
+                for axis in range(3):
+                    known[axis] += inf.weight * point[axis]
+        if not coefficients:
+            continue
+        entries = list(coefficients.items())
+        for axis in range(3):
+            residual = vertex.rest[axis] - known[axis]
+            rows = normal[axis]
+            for i, ci in entries:
+                target[axis][i] += ci * residual
+                row = rows[i]
+                for j, cj in entries:
+                    row[j] += ci * cj
+    solved = [_solve_symmetric(normal[axis], target[axis]) for axis in range(3)]
+
+    found = dict(poses)
+    for name, k in column.items():
+        rotation = tuple(tuple(solved[axis][4 * k + j] for j in range(3)) for axis in range(3))
+        translation = tuple(solved[axis][4 * k + 3] for axis in range(3))
+        if _is_rotation(rotation):
+            found[name] = (rotation, translation)
+    if len(found) == len(poses):
+        return poses
+
+    worst = 0.0
+    for vertex in skn.vertices:
+        influences = [inf for inf in vertex.influences if inf.weight > 1e-6]
+        if not influences or any(skn.bones[inf.bone] not in found for inf in influences):
+            continue
+        point = [0.0, 0.0, 0.0]
+        for inf in influences:
+            moved = apply(found[skn.bones[inf.bone]], inf.offset)
+            for axis in range(3):
+                point[axis] += inf.weight * moved[axis]
+        worst = max(worst, math.dist(point, vertex.rest))
+    return found if worst <= BLEND_REST_TOLERANCE else poses
+
+
+def _solve_symmetric(matrix: list[list[float]], rhs: list[float]) -> list[float]:
+    """Gaussian elimination with partial pivoting; an undetermined unknown is 0."""
+    n = len(rhs)
+    rows = [matrix[i][:] + [rhs[i]] for i in range(n)]
+    scale = max((abs(rows[i][i]) for i in range(n)), default=1.0) or 1.0
+    solution = [0.0] * n
+    pivot_of: list[int | None] = [None] * n
+    rank_row = 0
+    for col in range(n):
+        pivot = max(range(rank_row, n), key=lambda r: abs(rows[r][col]), default=None)
+        if pivot is None or abs(rows[pivot][col]) < 1e-9 * scale:
+            continue
+        rows[rank_row], rows[pivot] = rows[pivot], rows[rank_row]
+        lead = rows[rank_row][col]
+        for j in range(col, n + 1):
+            rows[rank_row][j] /= lead
+        for r in range(n):
+            if r != rank_row and rows[r][col] != 0.0:
+                factor = rows[r][col]
+                for j in range(col, n + 1):
+                    rows[r][j] -= factor * rows[rank_row][j]
+        pivot_of[col] = rank_row
+        rank_row += 1
+    for col in range(n):
+        if pivot_of[col] is not None:
+            solution[col] = rows[pivot_of[col]][n]
+    return solution
+
+
+def _is_rotation(rotation: Matrix3) -> bool:
+    for i in range(3):
+        for j in range(3):
+            dot = sum(rotation[i][k] * rotation[j][k] for k in range(3))
+            if abs(dot - (1.0 if i == j else 0.0)) > BLEND_ORTHONORMAL_TOLERANCE:
+                return False
+    det = (rotation[0][0] * (rotation[1][1] * rotation[2][2] - rotation[1][2] * rotation[2][1])
+           - rotation[0][1] * (rotation[1][0] * rotation[2][2] - rotation[1][2] * rotation[2][0])
+           + rotation[0][2] * (rotation[1][0] * rotation[2][1] - rotation[1][1] * rotation[2][0]))
+    return det > 0
 
 
 @dataclass
