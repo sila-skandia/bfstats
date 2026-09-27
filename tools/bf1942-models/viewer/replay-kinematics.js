@@ -80,7 +80,8 @@ export function poseAt(life, t) {
   return { p, q };
 }
 
-function rotate(q, v, out = [0, 0, 0]) {
+/** `v` turned by the unit quaternion `q`, into `out`. */
+export function rotate(q, v, out = [0, 0, 0]) {
   const [qx, qy, qz, qw] = q;
   const [vx, vy, vz] = v;
   // t = 2 * cross(q.xyz, v); v' = v + w * t + cross(q.xyz, t)

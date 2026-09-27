@@ -131,6 +131,7 @@ export function parseRecording(text) {
     fires: [],            // { t, pid, kind, weapon, pos, dir, nid? } one per shot (v4) or per trigger press (v3)
     deaths: [],           // { t, pid } a player's death, as the score stream reports it
     joints: new Map(),    // v5: root nid -> Map<part id, { name, since, pos, keys: [{ t, q }] }>
+    keyedParts: new Map(),// v4: root nid -> [{ t, parts: [q...], before }], keyed 0 (replay-aim.js)
     engines: new Map(),   // v4: root nid -> Map<engine nid, [{ t, revs, throttle, running, disabled, gear }]>
     stances: new Map(),   // v4: soldier nid -> [{ t, lower, upper, pitch, twist, item, bits }]
     animStates: [],       // v4: index -> { name, flags }, the engine's animation state table
@@ -196,6 +197,27 @@ export function parseRecording(text) {
   const closeReplicated = (life, t) => {
     const last = life.replicated[life.replicated.length - 1];
     if (last && last[1] === Infinity) last[1] = t;
+  };
+  // A v4 recorder keyed every part 0 and wrote a part only when it differed
+  // from the last part it wrote, whichever hull's that was (bf42plus 4fc0352
+  // `sampleParts`). Its walk is the object manager's registry, so a record
+  // lists each hull's parts together and in the same order every time; each
+  // hull's run is kept with the entry written just before it, which is what
+  // a part left out of the run's head was equal to (replay-aim.js
+  // `decodeKeyedParts`).
+  let lastKeyed = null;
+  const keyedRuns = (t, entries) => {
+    let run = null;
+    for (const [root, , qx, qy, qz, qw] of entries) {
+      const q = [qx, qy, qz, qw];
+      if (run?.root !== root) {
+        run = { root, t, parts: [], before: lastKeyed };
+        if (!rec.keyedParts.has(root)) rec.keyedParts.set(root, []);
+        rec.keyedParts.get(root).push(run);
+      }
+      run.parts.push(q);
+      lastKeyed = q;
+    }
   };
 
   /** A pool of rounds a kit carries, `count` objects from `first`. */
@@ -567,7 +589,8 @@ export function parseRecording(text) {
         // from v5 where it sits in its root's frame, `x, y, z` (BF1942's; the
         // viewer's has z negated). A v4 recorder keyed every part 0 -- a child
         // networkable has no id of its own -- so a v4 file's parts cannot be
-        // told apart and are not used.
+        // told apart by key and are not put on nodes; its `j` runs are kept
+        // per hull instead (`keyedParts`).
         if (rec.version === 4) break;
         for (const [root, nid, name, x, y, z] of r.o) {
           const part = jointOf(root, nid);
@@ -579,7 +602,10 @@ export function parseRecording(text) {
       case 'j':
         // A moving part's rotation relative to its root object (a turret's
         // traverse, a gun's elevation), `[root, part, qx, qy, qz, qw]`.
-        if (rec.version === 4) break;
+        if (rec.version === 4) {
+          keyedRuns(t, r.o ?? []);
+          break;
+        }
         for (const [root, nid, qx, qy, qz, qw] of r.o) jointOf(root, nid).keys.push({ t, q: [qx, qy, qz, qw] });
         break;
       case 'g':

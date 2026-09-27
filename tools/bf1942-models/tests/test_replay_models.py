@@ -430,5 +430,73 @@ class ReplaySoldierFeetTests(unittest.TestCase):
         self.assertEqual(self.rings["y"], [0, 0, 150, 1.5])
 
 
+class ReplayGunAimTests(unittest.TestCase):
+    """A manned gun laid where the recording says it pointed.
+
+    The report (2026-09-27, `replay_20260927-075756`, a v4 file): "in the
+    defgun I can see the rounds impacting at the correct location, but the
+    defgun points to a random spot". The rounds flew their recorded rays and
+    nothing turned the gun, so it sat at the rig's rest: 90 degrees off the
+    Defgun's rounds there, 33 off the AA gun's. A Defgun hull (its own
+    turret and gun base, their limits) is replayed from a v4 file's parts,
+    from its rounds alone, and from a v5 file's parts; the harness measures
+    the drawn barrel against where the gun was laid, in degrees."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["gunAim"]
+
+    def test_a_v4_files_parts_decode_per_hull(self) -> None:
+        # Every part keyed 0, and one left out whenever it equals the entry
+        # written before it (the turret back at rest at 1.1, equal to the
+        # Defgun ahead of it; the gun base level at 1.3, equal to its
+        # turret). The order and the rule put every entry back on its part.
+        # Still never put on nodes by key.
+        decoded = self.results["decoded"]
+        self.assertEqual(decoded["joints"], 0)
+        self.assertEqual([run[1] for run in decoded["runs"]], [2, 1, 2, 1, 2, 2])
+        expected = self.results["expected"]
+        self.assertEqual(decoded["tracks"], [expected["turret"], expected["base"]])
+
+    def test_the_gun_follows_its_decoded_part(self) -> None:
+        # The gun base's part carries the gun's own rounds, so it lays the
+        # gun at every sample: on each round, between them (raised at 1.0,
+        # level at 1.3), held after; at rest before the first part.
+        parts = self.results["parts"]
+        self.assertEqual(parts["source"], ["parts"])
+        for off in [*parts["atRounds"], *parts["between"], parts["held"], parts["beforeParts"]]:
+            self.assertLess(off, 0.5)
+
+    def test_its_rounds_alone_lay_the_gun(self) -> None:
+        # Without parts: on every round exactly; at rest until the gun must
+        # move, then raised at the gun base's own 50 deg/s; held; turned as
+        # late as the next round allows, faster than the turret's own 90
+        # deg/s where the rounds say so; never past the 30-degree elevation
+        # limit (a round laid 50 up); held after the last. Traverse, then
+        # elevation, in the rig's degrees (up is negative).
+        rounds = self.results["rounds"]
+        self.assertEqual(rounds["source"], ["rounds"])
+        for off in rounds["atRounds"]:
+            self.assertLess(off, 0.5)
+        expected = {"rest": [0, 0], "laying": [0, -5], "turning": [40, -10], "held": [60, -5],
+                    "overLimit": [-20, -30], "after": [-20, -30]}
+        for key, want in expected.items():
+            for got, angle in zip(rounds[key], want):
+                self.assertAlmostEqual(got, angle, delta=0.1, msg=key)
+
+    def test_a_v5_files_parts_win_over_its_rounds(self) -> None:
+        v5 = self.results["v5"]
+        self.assertLess(v5["toParts"], 0.5)
+        self.assertGreater(v5["toRound"], 45)
+
+    def test_a_late_turn(self) -> None:
+        # 0 to 40 degrees by t=1 at 90 deg/s: still at 0 at t=0, 22 at 0.8;
+        # from a round at 0.9 it must go faster, 20 at 0.95; a free axis
+        # takes the short way from 170 to -170.
+        self.assertEqual(self.results["lateTurn"], [0, 22, 20, -179])
+
+
 if __name__ == "__main__":
     unittest.main()

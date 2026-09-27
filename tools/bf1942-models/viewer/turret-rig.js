@@ -98,6 +98,23 @@ export function seatYawLimits(seat) {
 
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
+const _parentQuat = new THREE.Quaternion();
+const _about = new THREE.Vector3();
+const _line = new THREE.Vector3();
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+const _cross = new THREE.Vector3();
+const UNIT = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+
+/** The signed angle (radians) about the unit axis `about` that turns `from`
+ *  nearest to `to`: both taken into the plane the axis sweeps. Zero when
+ *  either lies along the axis. */
+function sweepAngle(about, from, to) {
+  _from.copy(from).addScaledVector(about, -from.dot(about));
+  _to.copy(to).addScaledVector(about, -to.dot(about));
+  if (_from.lengthSq() < 1e-12 || _to.lengthSq() < 1e-12) return 0;
+  return Math.atan2(about.dot(_cross.crossVectors(_from, _to)), _from.dot(_to));
+}
 
 /**
  * One RotationalBundle axis, run as the engine's own first-order velocity
@@ -258,6 +275,35 @@ export class TurretAxis {
     for (const peer of this.peers) {
       peer.node.quaternion.copy(peer.base).multiply(_quat);
     }
+  }
+
+  /** Sit at `degrees` from the rest pose, inside the axis's own limits, and
+   *  pose the nodes there: an angle somebody else decided (a round replay's
+   *  recorded aim), not a servo tick. The speed register is left alone. */
+  hold(degrees) {
+    this.angle = Number.isFinite(degrees) ? degrees : 0;
+    this._clip();
+    this._apply();
+  }
+
+  /**
+   * Turn to the angle that brings a line of fire this axis carries nearest
+   * the world direction `dir`, inside the limits. `line(out)` writes the line
+   * into `out` as a world direction, as the node tree stands; `peer` is the
+   * one of this axis's nodes the line hangs under, whose own axis the turn is
+   * taken about. The turn is measured from the rest pose (unclipped, so a
+   * range that excludes it still measures from it), so the answer does not
+   * depend on where the axis was.
+   */
+  swingToward(dir, line, peer = this.peers[0]) {
+    this.angle = 0;
+    this._apply();
+    line(_line);
+    if (peer.node.parent) peer.node.parent.getWorldQuaternion(_parentQuat);
+    else _parentQuat.identity();
+    _about.copy(UNIT[RIG_AXIS[this.axisName]]).applyQuaternion(peer.base).applyQuaternion(_parentQuat);
+    const turn = sweepAngle(_about, _line, dir);
+    this.hold(THREE.MathUtils.radToDeg(turn) * RIG_SIGN[this.axisName]);
   }
 }
 
@@ -445,5 +491,37 @@ export class TurretRig {
    *  world pose off it. */
   apply() {
     for (const axis of this.axes) axis._apply();
+  }
+
+  /** The axes that carry `node` (a gun's muzzle, or the seat camera a
+   *  `fireInCameraDof` gun fires from), outermost first, each as `{ axis,
+   *  peer }` with the peer node `node` hangs under. An axis none of whose
+   *  nodes is above `node` turns something else and is not in it. */
+  chainOf(node) {
+    const above = new Map();
+    let depth = 0;
+    for (let at = node; at; at = at.parent) above.set(at, depth++);
+    const chain = [];
+    for (const axis of this.axes) {
+      const peer = axis.peers.find(p => above.has(p.node));
+      if (peer) chain.push({ axis, peer, depth: above.get(peer.node) });
+    }
+    return chain.sort((a, b) => b.depth - a.depth);
+  }
+
+  /**
+   * Aim the gun whose line of fire hangs under `node` along the world
+   * direction `dir`: each axis that carries it turned, outermost first, so
+   * the line comes as near `dir` as the axes' own limits allow; twice over,
+   * so an axis that tilts another's sweep settles. `line(out)` writes the
+   * line of fire as a world direction (`TurretAxis.swingToward`). Returns the
+   * chain; the angles stay on its axes.
+   */
+  pointAlong(dir, line, node) {
+    const chain = this.chainOf(node);
+    for (let pass = 0; pass < 2; pass++) {
+      for (const { axis, peer } of chain) axis.swingToward(dir, line, peer);
+    }
+    return chain;
   }
 }
