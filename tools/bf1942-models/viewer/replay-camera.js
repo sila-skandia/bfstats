@@ -7,8 +7,10 @@
 //          in a seat the seat's own Camera node (the cockpit view's eye).
 //   free   a fly camera, moved with the keys, looked with the mouse.
 //
-// The input is replay-ui.js's; this turns it into the camera's pose, last in
-// the frame (map.html runs the replay after its own camera controls).
+// The input is replay-ui.js's; this turns it into the camera's pose. While a
+// replay is open the page's own free camera leaves the camera alone
+// (local-player.js `frameCameras`), and the replay places it before it draws
+// its soldiers, whose renderer culls against it (replay.js `update`).
 
 import * as THREE from 'three';
 import { bodyAt, controlledAt, rootOf, sampleAt } from './replay-recording.js';
