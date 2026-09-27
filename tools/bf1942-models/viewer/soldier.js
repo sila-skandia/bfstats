@@ -42,7 +42,7 @@ import {
   SWIM_ENTER_DEPTH, SWIM_LEAVE_DEPTH, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN,
   WATER_DAMAGE_DELAY, HP_LOST_WHILE_DAMAGE_FROM_WATER, WATER_DAMAGE_INTERVAL,
 } from './swim.js';
-import { ClimbState, climbStart, climbTick } from './ladder-climb.js';
+import { ClimbState, climbStart, climbStop, climbTick } from './ladder-climb.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
 // past it for a number it is about to compare against. Every one of these is
@@ -737,12 +737,15 @@ export class Soldier {
     // Space: landing with the key still down leaves you on the floor until
     // it is released and pressed again. (An earlier build re-latched every
     // frame, which read as the soldier bouncing whenever Space was held.)
-    // On a ladder the press is `stopClimbing`'s other way out: the climb
-    // ends and the queued impulse below fires on the next tick, which is
-    // the leap off the ladder.
+    // On a ladder the press only lets go. `handleClimbAction` (0x08281080)
+    // takes `c_PIAction` on the ladder as `stopClimbing` (0x08281235), zeroes
+    // it (0x0828123d-0x08281245) and writes it back into the input
+    // (0x08281219), so no jump follows: he drops from where he hung, with the
+    // push `climbStop` gives -- or, in the ladder's top 0.8 m, is lifted onto
+    // the deck as the top exit lifts him.
     if (input.jump && !this._jumpHeld) {
-      if (this.climb.active) this.climb.reset();
-      this.body.jump();
+      if (this.climb.active) climbStop(this.climb, this.body, 'jump');
+      else this.body.jump();
     }
     this._jumpHeld = !!input.jump;
 
@@ -894,53 +897,47 @@ export class Soldier {
    * tick was a climb tick and the ordinary body step must not run.
    *
    * A climb tick replaces the whole walk-and-resolve: the engine puts the
-   * climbing soldier in collision group 4 (`startClimbing` 0x08281b20) and
-   * out of the ordinary physics, and the motion along the ladder is a
-   * constant rate (see the module header for why it must be). The dead body
-   * falls out of the climb, and a jump press has already torn the climb off
-   * at the queue site above — this method only moves, exits and grabs.
+   * climbing soldier in collision group 4 (`startClimbing` 0x08281b20), turns
+   * his gravity off and sets his velocity along the ladder
+   * (`handlePlayerInput` 0x0827515e, 0x08274ccd). The dead body falls out of
+   * the climb, and a jump press has already let go at the queue site above —
+   * this method only grabs, moves and exits.
+   *
+   * The grab is `handleClimbAction`'s, forward held and nothing else asked of
+   * him: no ground under him, no backward press (`climbStart`). And like the
+   * engine's, the tick that grabs is already a climbing tick — the snap, the
+   * direction, the ends and the motion all run in it (0x0828125b onward), so
+   * a man who takes the bottom of a ladder looking down is let go again at
+   * once.
    */
   #stepLadder(dt, input) {
     const climb = this.climb;
-    if (climb.active) {
-      if (input.dead) {
-        climb.reset();
-        return false;   // a dead body falls the ordinary way
-      }
-      const ended = climbTick(climb, this.body, dt, clamp(input.forward || 0, -1, 1));
-      // 'bottom' resumes the walk on the ground under the ladder; 'top' has
-      // already been stepped through onto the deck. Both let the next tick
-      // settle the feet the ordinary way.
-      if (ended !== null) return false;
-      return true;
-    }
-    // The grab. Forward into the ladder from the ground is the engine's own
-    // start; backward out of it only takes near the TOP, which is stepping
-    // backwards off a deck onto the ladder to climb down. Neither fires in
-    // the air, in the water or under a canopy.
-    if (!this.body.grounded || this.chute.open || this.swim.swimming) {
+    const forward = clamp(input.forward || 0, -1, 1);
+    if (!climb.active) {
+      // The canopy is the page's own refusal; the engine's grab asks nothing
+      // of a parachute.
+      if (forward <= 0 || this.chute.open || input.dead) return false;
+      const ladders = this.body.world?.ladders;
+      if (!ladders || !ladders.length) return false;
+      if (!climbStart(climb, this.body, ladders)) return false;
+      // The grab sets `Lb_ClimbLadder1` and `Ub_ClimbLadder1` (0x08281835,
+      // 0x08281871), and the swim is only ever those machines' states: a
+      // swimmer who takes a net is out of the water's states, and
+      // `updateSwimming` does not look again until he lets go (0x082821da).
+      this.swim.reset();
+    } else if (input.dead) {
+      // `BFSoldier::handleDamage` lets go through `stopClimbing` while a
+      // ladder is held (0x08270a22-0x08270e05), and the body falls the
+      // ordinary way from there.
+      climbStop(climb, this.body, 'dead');
       return false;
     }
-    const ladders = this.body.world?.ladders;
-    if (!ladders || !ladders.length) return false;
-    const forward = clamp(input.forward || 0, -1, 1);
-    if (forward === 0) return false;
-    if (forward > 0) return climbStart(climb, this.body, ladders);
-    // Backward grab: only where the feet are beside the ladder's top rungs.
-    const p = this.body.position;
-    for (const ladder of ladders) {
-      const atTop = ladder.ty - 0.5 <= p.y && p.y <= ladder.ty + 1.0;
-      if (!atTop) continue;
-      const dx = p.x - ladder.x, dz = p.z - ladder.z;
-      const ax = ladder.tx - ladder.x, az = ladder.tz - ladder.z;
-      const span2 = ax * ax + az * az;
-      const horizontal2 = span2 > 0
-        ? Math.max(0, dx * dx + dz * dz
-            - (dx * ax + dz * az) ** 2 / span2)
-        : dx * dx + dz * dz;
-      if (horizontal2 <= 1.0 * 1.0) return climbStart(climb, this.body, ladders);
-    }
-    return false;
+    const ended = climbTick(climb, this.body, dt, {
+      forward, pitch: this.pitch, walk: !!input.walk,
+    });
+    // An exit hands the tick back: the ordinary body step settles him from
+    // where `stopClimbing` left him, with the climb's velocity and its push.
+    return ended === null;
   }
 
   /**
@@ -1009,6 +1006,11 @@ export class Soldier {
     // `soldier-body.js` `bodyFamily`): his eye is the standing one, 0.25 m
     // over the surface at the draft, whatever key he holds.
     if (this.swim.swimming) want = 'stand';
+    // On a ladder the lower machine is in the climb states, and none of those
+    // declares either flag (`AnimationStatesClimb.con`: `c_AsmHideWeapon`,
+    // `c_AsmIsClimbing`, `c_AsmLockFreeLook`), so he climbs standing whatever
+    // key he holds, and the climb's speed is the standing row's.
+    if (this.climb.active) want = 'stand';
     if (want === this.stance) return;
     // The engine's own test is `forwardInput * currentState.speedForward < 0`,
     // and every stand/walk/run state declares 1.0, so it is the input's sign.

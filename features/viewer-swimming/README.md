@@ -961,7 +961,9 @@ the 2.0 m/s ceiling §4 chose; the ceiling stays a viewer number.
 
 Checked and left: ladders (the page compares no engine position with a height:
 `getLadderClosestPosition` keeps the origin's own height, and `handleClimbAction`'s
-water test, `water - origin.y >= 0.48`, is not modelled); the water contact
+water test, `water - origin.y >= 0.48`, is not modelled -- since the same
+day's ladder round it is, against the origin, with the 0.5 m let-go climbing
+down, ledger LADDER-2/3); the water contact
 (`checkVsTerrain` registers it off the lowest vertex, the page's feet, already);
 spawn points and vehicle exits (the engine sets the origin there and its
 push-out lifts the hull a metre; the page sets the feet there and settles them,
