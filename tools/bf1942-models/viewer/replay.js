@@ -50,6 +50,7 @@ import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { ReplayProps } from './replay-props.js';
 import { ReplayRound } from './replay-round.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
 /** The player itself, for the node harness (it needs a DOM to construct). */
@@ -349,10 +350,20 @@ class ReplayPlayer {
       marker.add(new THREE.Mesh(ring, material));
       if (row.kind === 'destroyVehicle') marker.add(new THREE.Mesh(beam, material));
       toViewPosition(row.at, marker.position);
+      if (row.atPlayer) this.restOnSurface(marker.position);
       marker.visible = false;
       this.root.add(marker);
       this.markers.push({ row, marker, material });
     }
+  }
+
+  /** A player's place in the server's log is his origin, a metre over his
+   *  feet (replay-recording.js `standOnFeet`): his ring lies on the surface
+   *  under him when he stood within a man's height of one. A spawn is on the
+   *  ground already, and a man in the air keeps his height. */
+  restOnSurface(p) {
+    const floor = this.ctx.groundHeight?.(p.x, p.z, p.y + 0.1);
+    if (Number.isFinite(floor) && p.y >= floor && p.y - floor <= CHARACTER_HEIGHT + 0.5) p.y = floor;
   }
 
   seek(t) {

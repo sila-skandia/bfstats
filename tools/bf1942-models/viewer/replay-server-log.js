@@ -166,6 +166,9 @@ export function serverRows(rec, log, alignment) {
     // with what, and the destroyed template (replay-chapters.js).
     rows.push({
       t, kind: e.name, text, source: 'server', at,
+      // `player_location` is where the engine holds the player, a soldier's
+      // origin a metre over his feet; `vehicle_pos` is the hull's own.
+      atPlayer: at !== null && at === p.player_location,
       pid: p.player_id ?? null,
       victim: p.victim_id ?? null,
       weapon: p.weapon && p.weapon !== '(none)' ? p.weapon : null,
