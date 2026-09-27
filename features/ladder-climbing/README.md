@@ -285,5 +285,7 @@ Left open, and the page's: the touch (`LADDER_REACH`, `LADDER_TOUCH_ABOVE`,
 and the side he faces it from) stands in for a contact with the ladder's
 collision mesh; the page turns him
 to face the ladder once, at the grab, where the engine hands him its rows
-every tick; and the `(0, -100, 0)` push is a per-tick acceleration, so it
-takes 1.7 m/s at the page's 60 Hz where it takes 3.3 at 30.
+every tick. The `(0, -100, 0)` push is a per-tick acceleration: the page's
+world steps soldiers at the engine's 30 Hz (`world.js` `WORLD_TICK_DT`), so it
+takes the engine's 3.3 m/s there; `tests/ladder_harness.mjs` steps at 60 Hz
+and sees half.
