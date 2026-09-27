@@ -491,6 +491,13 @@ class ReplayGunAimTests(unittest.TestCase):
         self.assertLess(v5["toParts"], 0.5)
         self.assertGreater(v5["toRound"], 45)
 
+    def test_a_v5_part_eases_between_its_samples(self) -> None:
+        # A traverse from -40 to 40 degrees between two samples 0.1 s apart:
+        # halfway there at 1.05 s, as the hull's own pose eases. Held, it sat
+        # at -40, 39 degrees off, and stepped at the next sample.
+        for off in self.results["v5"]["swing"]:
+            self.assertLess(off, 0.5)
+
     def test_a_late_turn(self) -> None:
         # 0 to 40 degrees by t=1 at 90 deg/s: still at 0 at t=0, 22 at 0.8;
         # from a round at 0.9 it must go faster, 20 at 0.95; a free axis

@@ -28,7 +28,7 @@ import * as THREE from 'three';
 import { VehicleOccupancy } from './seats.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
-import { crewOf, engineAt, hpAt, isReplicated, latestAt } from './replay-recording.js';
+import { crewOf, engineAt, hpAt, isReplicated, latestAt, sampleAt } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
@@ -39,6 +39,7 @@ import {
 } from './replay-aim.js';
 
 const _world = new THREE.Quaternion();
+const _next = new THREE.Quaternion();
 const _parent = new THREE.Quaternion();
 const _at = new THREE.Vector3();
 const _toRoot = new THREE.Matrix4();
@@ -378,12 +379,17 @@ export class ReplayHull {
     if (!this.jointNodes.length) return;
     const rootQ = this.root.quaternion;
     for (const { part, node } of this.jointNodes) {
-      const key = latestAt(part.keys, t);
-      if (!key) continue;
+      if (!latestAt(part.keys, t)) continue;
+      // Eased into the next sample over its last tenth of a second, as the
+      // hull's own pose is (`sampleAt`): held and stepped at 10 Hz, a fast
+      // traverse jumped and lagged a sample behind its rounds.
+      const { a, b, k } = sampleAt(part, t);
       // The recorder's quaternion is BF1942's; the viewer's is (-x, -y, z, w),
       // and the map is a homomorphism, so a relative rotation converts the
       // same way an absolute one does.
-      _world.set(-key.q[0], -key.q[1], key.q[2], key.q[3]).premultiply(rootQ);
+      _world.set(-a.q[0], -a.q[1], a.q[2], a.q[3]);
+      if (b) _world.slerp(_next.set(-b.q[0], -b.q[1], b.q[2], b.q[3]), k);
+      _world.premultiply(rootQ);
       node.parent.getWorldQuaternion(_parent);
       node.quaternion.copy(_parent.invert().multiply(_world));
       node.updateMatrixWorld(true);
