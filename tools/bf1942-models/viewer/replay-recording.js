@@ -55,11 +55,11 @@ export function speakerOf(line) {
  * A chat-box line as the game draws it. MoonGamers' server lines separate
  * their words with byte 0x80 (`*Do\u0080not\u0080steal\u0080...` throughout
  * replay_20260927-203459), which the recorder writes as the byte came. The
- * chat font has no glyph for it, and a message the admins have broadcast for
- * years reads as words in the game, so it is drawn as a space (inferred: the
- * client's own drawing of the byte has not been read).
+ * game draws nothing for it, so the line reads as one word,
+ * `*Donotsteal/destroyequipment...` (the owner, 2026-09-28). The byte is
+ * dropped, not left for a browser font to draw as a box.
  */
-export const chatText = text => String(text ?? '').replace(/\u0080/g, ' ');
+export const chatText = text => String(text ?? '').replace(/\u0080/g, '');
 
 /** A radio message's words for the replay log, from the lexicon key the
  *  game prints it with (radio.js `RADIO_MESSAGES`): `RADIO_ARMOR_SPOTTED` is
