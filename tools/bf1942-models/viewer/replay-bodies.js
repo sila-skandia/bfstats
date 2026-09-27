@@ -21,12 +21,14 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, recordedDeath, rootOf } from './replay-recording.js';
+import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { DIE_CLIPS } from './soldier-death.js';
 import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { PARA_CLIPS } from './parachute.js';
+import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE, explosionDeath, explosionFamily } from './knockback.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -38,11 +40,28 @@ const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 const TRIGGER_HOLD = 0.25;
 
 /** A recorded die state's death family, for the deaths the body renderer
- *  has clips of (`bot-visuals.js` `CORPSE_CLIPS`). */
+ *  has clips of (`bot-visuals.js` `CORPSE_CLIPS`): `handleDamage`'s, and the
+ *  states a thrown body or a dead parachutist comes to rest in. */
 const DIE_FAMILY = new Map([
   ...Object.entries(DIE_CLIPS).map(([family, clips]) => [clips.lower, family]),
   [SWIM_CLIPS.swimDie.lower, 'swimDie'],
+  ['Lb_ExplosionLandFront', explosionDeath('Lb_ExplosionLandFront')],
+  ['Lb_ExplosionLandBack', explosionDeath('Lb_ExplosionLandBack')],
+  [PARA_CLIPS.deadLanded.lower, 'parachuteDeadLanded'],
 ]);
+
+/** The parachute's lower states (`parachute.js` `PARA_CLIPS`): the fall, the
+ *  opening, the glide, the landing and the two deaths. */
+const PARACHUTE_LOWER = new Set(Object.values(PARA_CLIPS).map(clips => clips.lower));
+
+/** Seconds a blast's flight comes on the record after his samples leave the
+ *  ground: the recorder writes the state it finds a sample later
+ *  (replay_20260927-140921: one body is moving at 13 to 18 m/s from 30.78 s
+ *  and `Lb_ExplosionForward` is recorded at 30.88 s; another 69.33 and
+ *  69.43 s). The engine enters it on the tick his speed passes 8 m/s, so the
+ *  replay takes it a sample early rather than run his legs for the tenth of
+ *  a second between. */
+const FLIGHT_LEAD = 0.1;
 
 /** A live swim state's family, by the lower state that plays it (swim.js
  *  `SWIM_CLIPS`; the swim death is a death, not a swim). */
@@ -87,14 +106,16 @@ export class ReplaySoldiers {
     this.soldiers = new Map();    // actor id -> the shim's soldier record
     this.hands = new Map();       // weapon template -> Promise<{ scene }|null>
     this.guns = new Map();        // actor id + weapon -> { root, groups }
+    this.flights = new Map();     // soldier life -> recordedFlight(...) after his death
     const self = this;
     this.shim = {
       get bots() { return self.drawn; },
       world: {
         player: id => self.soldiers.get(id) ?? null,
+        // A dead man still in the air is drawn by his body, not his corpse.
         armorOf: id => {
           const s = self.soldiers.get(id);
-          return s ? { destroyed: s.dead, lastHit: null } : null;
+          return s ? { destroyed: s.dead && !s.falling, lastHit: null } : null;
         },
       },
       vehicles: {
@@ -121,6 +142,13 @@ export class ReplaySoldiers {
     if (actor) return actor;
     const info = this.player.rec.players.get(pid);
     const id = `replay:${pid}`;
+    // The whole-body state a blast or a bail-out holds him in, as the
+    // recording has it (`heldState`): `pair` is the recorded lower and upper
+    // states, and `stowed` his weapon put away whatever they say; `kind`
+    // whose they are.
+    const held = {
+      kind: null, pair: { lower: null, upper: null, stowed: false }, chuteOpen: false, airborne: false,
+    };
     const soldier = {
       team: info?.team ?? 2,
       soldier: {
@@ -132,8 +160,21 @@ export class ReplaySoldiers {
           if (dead) return this.swim.swimming ? SWIM_CLIPS.swimDie : null;
           return this.swim.family ? SWIM_CLIPS[this.swim.family] : null;
         },
+        held,
+        // A blast's states (knockback.js), which the renderer reads beside
+        // the swim; and his chute, in the shape the page's own soldier
+        // carries it (parachute.js `Parachute`: `open`, `clips`).
+        explosionClips: () => (held.kind === 'explosion' ? held.pair : null),
+        chute: {
+          get open() { return held.kind === 'parachute' && held.chuteOpen; },
+          clips: () => (held.kind === 'parachute' ? held.pair : null),
+        },
       },
       dead: false,
+      // Dead, and his body still in the air (`recordedFlight`).
+      falling: false,
+      // His corpse has been left (or his death walked past without one).
+      down: false,
     };
     this.soldiers.set(id, soldier);
     actor = {
@@ -181,6 +222,8 @@ export class ReplaySoldiers {
     for (const actor of this.actors.values()) {
       actor.lifeNid = null;
       actor.state.dead = false;
+      actor.state.falling = false;
+      actor.state.down = false;
       actor.firingUntil = -Infinity;
       actor.seat = null;
       actor.reloading = false;
@@ -226,6 +269,13 @@ export class ReplaySoldiers {
       actor.stance = body?.stance ?? 'stand';
       s.stance = actor.stance;
       this.swimState(s, body, life, t, dead || Boolean(seated));
+      // A dead man a blast threw, or one riding his canopy down, is still in
+      // the air: his body keeps flying as the recording has it, and his
+      // corpse is left where it comes to rest.
+      const flight = dead ? this.flightOf(life) : null;
+      const falling = Boolean(flight) && t < flight.until;
+      actor.state.falling = falling;
+      this.heldState(s, body, bodyAt(rec, life.nid, t + FLIGHT_LEAD), (dead && !falling) || Boolean(seated), dead);
       actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
       if (body?.item) this.hold(actor, body.item, loadouts);
       // A weapon with no round to record (an engineer's wrench, a medic's
@@ -241,24 +291,36 @@ export class ReplaySoldiers {
       const reloading = Boolean(body?.reloading) && !dead;
       if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
       actor.reloading = reloading;
-      // His death, when playback walks across it: the renderer plays the
-      // engine's death for how he stood and leaves the body.
+      // His death, when playback walks across it: his cry at the blow, and
+      // the renderer's death and body where he comes to rest -- where he
+      // fell, or where a flight after his death landed him.
       if (dead && !actor.state.dead) {
         actor.state.dead = true;
         if (this.player.playing && t - life.diedAt < 0.5) {
-          // The death the engine chose, where the recording has his body's
-          // die state; the renderer's own choice otherwise, and in a seat.
-          const family = seated ? undefined : DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
-          this.bodies?.killBot?.(actor, { seated: Boolean(seated), family });
           this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
         }
       }
-      if (!dead) actor.state.dead = false;
+      if (dead && !falling && !actor.state.down) {
+        actor.state.down = true;
+        const rest = flight ? flight.until : life.diedAt;
+        if (this.player.playing && t - rest < 0.5) {
+          // The death the engine chose, where the recording has his body's
+          // die state or the state a flight landed him in; the renderer's
+          // own choice otherwise, and in a seat.
+          const family = seated ? undefined
+            : DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+          this.bodies?.killBot?.(actor, { seated: Boolean(seated), family });
+        }
+      }
+      if (!dead) {
+        actor.state.dead = false;
+        actor.state.down = false;
+      }
       this.drawn.push(actor);
     }
     if (!this.bodies) return;
     for (const actor of this.drawn) {
-      if (!actor.state.dead) this.bodies.ensureBotVisual(actor);
+      if (!actor.state.dead || actor.state.falling) this.bodies.ensureBotVisual(actor);
     }
     // Whoever the recording has nothing of this frame (out of the client's
     // range, spawning, gone) is not drawn at his last pose.
@@ -267,6 +329,7 @@ export class ReplaySoldiers {
       if (shown.has(id)) continue;
       vis.group.visible = false;
       if (vis.seat?.scene) vis.seat.scene.visible = false;
+      if (vis.canopy?.scene) vis.canopy.scene.visible = false;
     }
     // The renderer blends between two tick poses; the replay hands it one a
     // frame, so the blend is always at its end. A seek snaps rather than
@@ -275,8 +338,55 @@ export class ReplaySoldiers {
     this.snap = false;
     this.bodies.updateBotVisuals(dt);
     for (const actor of this.drawn) {
-      if (!actor.vehicle && !actor.state.dead) this.player.ctx.footstepTick?.(actor, dt);
+      // Nobody steps in the air: a thrown man or a parachutist moves fast
+      // with nothing under his boots.
+      if (!actor.vehicle && !actor.state.dead && !actor.state.soldier.held.airborne) {
+        this.player.ctx.footstepTick?.(actor, dt);
+      }
     }
+  }
+
+  /**
+   * The whole-body state a blast or a bail-out holds him in at `t`, onto the
+   * stand-in soldier: the recorded lower and upper states while the lower is
+   * one of the explosion states (`knockback.js`) or the parachute's
+   * (`parachute.js`), and the chute's own state bit. The renderer holds his
+   * legs in the lower one by name, as it holds a swimmer's
+   * (`SoldierActions.followHeld`). A flight is taken from `ahead`, the body
+   * a sample on, while the record has not reached it (`FLIGHT_LEAD`). A dead
+   * man still in the air holds no weapon, whatever the state says
+   * (`Lb_ParachuteDie` declares no `c_AsmHideWeapon`): his kit has dropped,
+   * and every corpse is drawn without it (`killBot`). Nothing while he rides
+   * a seat or lies dead, and nothing in a file without body states (v3).
+   */
+  heldState(soldier, body, ahead, out, dead = false) {
+    const held = soldier.held;
+    held.kind = null;
+    held.pair.lower = null;
+    held.pair.upper = null;
+    held.pair.stowed = Boolean(dead);
+    held.chuteOpen = false;
+    held.airborne = false;
+    if (out) return;
+    const now = !explosionFamily(body?.lower) && EXPLOSION_AIRBORNE.has(ahead?.lower) ? ahead : body;
+    const lower = now?.lower;
+    if (!lower) return;
+    const kind = explosionFamily(lower) ? 'explosion' : PARACHUTE_LOWER.has(lower) ? 'parachute' : null;
+    if (!kind) return;
+    held.kind = kind;
+    held.pair.lower = lower;
+    held.pair.upper = now.upper;
+    held.chuteOpen = kind === 'parachute' && Boolean(now.chuteOpen);
+    held.airborne = EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower);
+  }
+
+  /** Where `life`'s body went through the air after his death, once per
+   *  life (`recordedFlight`), or null. */
+  flightOf(life) {
+    if (!this.flights.has(life)) {
+      this.flights.set(life, recordedFlight(this.player.rec, life.nid, life.diedAt));
+    }
+    return this.flights.get(life);
   }
 
   /**

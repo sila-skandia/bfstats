@@ -1464,7 +1464,7 @@ function loadBotWeapons(bot) {
   })));
 }
 const botBodies = createBotVisuals(bag(
-  from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
+  from(() => footBodies, `canopyAsset disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
     soldierBody soldierDress`),
   from(() => soldierKit, `soldierTemplateFor`),
   from(() => level, `bindDynamicShading world`),
@@ -1783,7 +1783,7 @@ replayController = createReplayController({
   releaseVehicleAudio: (key, node) => pageAudio.releaseVehicleAudio(key, node),
   cutVehicleAudio: node => pageAudio.cutVehicleAudio(node),
   makeReplayBodies: shim => createBotVisuals(bag(
-    from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
+    from(() => footBodies, `canopyAsset disposeFootBodyScene footBodyClips footBodyLoader footStateMachine
       soldierBody soldierDress`),
     from(() => level, `bindDynamicShading`),
     shim,

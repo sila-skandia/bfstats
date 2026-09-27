@@ -1049,8 +1049,17 @@ vtable corrections below, are in `bf1942-engine-reference/symbols.json`
 Open: which LOD a part hangs under on a distant hull (a LodObject's
 `getChild` returns only the selected LOD; the sampler reads every registered
 object, so it is unaffected, but a part under an unselected LOD may stop
-updating), and what the soldier's `0x2000` bit and byte `+0x26D` mean. The
-aim pitch's sign and scale are settled in §16.
+updating), and what byte `+0x26D` means. The aim pitch's sign and scale are
+settled in §16.
+
+Two of `st`'s state bits, read on the server (`+0x3e6` there) and matching
+the recordings: `0x10` is the chute carrying him, set and cleared by
+`BFSoldier::setIsParachuting` (`0x08276f90`); `0x2000` is the free fall,
+cleared every tick by `BFSoldier::handleUpdate` (`0x0827239b`) and set again
+while the lower state is `Lb_ParachuteFall` (`template+0x1e4`, `0x082723b7`).
+replay_20260927-140921's bail-out reads `0x6000` through `Lb_ParachuteFall`,
+`0x4010` from `Lb_ParachuteOpen` and `0x40` from `Lb_ParachuteHitGround`;
+the replay draws the canopy off `0x10` (`round-replay-fidelity`).
 
 
 ## 16. The first v4 round, and format v5 (2026-09-27)
