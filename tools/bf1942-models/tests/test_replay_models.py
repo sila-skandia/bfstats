@@ -334,6 +334,20 @@ class ReplayUxTests(unittest.TestCase):
         # Dead: no eyes to look through, nothing hidden.
         self.assertIsNone(cam["deadPov"])
 
+    def test_the_followed_body_is_drawn_from_every_side_of_the_orbit(self) -> None:
+        # The 2026-09-27 report: the followed player vanished at some angles
+        # of the orbit and came back as the camera went round him. The bots'
+        # renderer culls each body against the camera as it stands when it
+        # draws him; the replay drew its bodies before placing its camera, so
+        # the cull read the page's free camera, re-aimed down -Z first, and
+        # culled him from 9 of 16 angles.
+        cull = self.results["replayCull"]
+        self.assertTrue(cull["drawn"], "the renderer must have a body for him")
+        self.assertEqual(cull["culled"], [], "no angle of the orbit may cull the man at its centre")
+        # And the page's free camera leaves a replay's camera alone.
+        self.assertEqual(cull["underReplay"], [])
+        self.assertEqual(cull["withoutReplay"], ["fly", "look"])
+
 
 if __name__ == "__main__":
     unittest.main()

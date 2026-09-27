@@ -193,6 +193,18 @@ red, Allies blue).
   playback passes a chapter (0.35 s after it) and once per storyboard slot
   (5 s, or duration / 120 for long rounds), 176 px wide. Nothing is
   re-rendered for them.
+- **The camera is placed before the bodies are drawn** (the 2026-09-27
+  report: the followed player vanished at some angles and came back as the
+  orbit went round). The bots' renderer culls each body against the camera
+  as it stands when it draws him. The replay drew its bodies first and placed
+  the camera last, and before the replay ran at all the page's free camera
+  had re-aimed it down -Z (`applyLook`; the effect listener's ear read
+  baked it into the camera's matrices). Every body was culled from the half
+  of the orbit facing +Z: 9 of 16 angles round skandia at 138 s in
+  `replay_20260927-075756`. `ReplayPlayer.update` now places the camera
+  after the hulls and before the soldiers, and `frameCameras` skips the free
+  camera while a replay is open. The second change also turns the audio
+  listener's facing with the view.
 
 ### Verification
 
@@ -201,7 +213,9 @@ red, Allies blue).
   chapters and their words, next and previous, player states and tallies,
   the message log driven, rebuilt and washed (the page's log stood in), and
   the camera's three modes (distances, keys, wheel, the eye and lens, the
-  free camera's travel, the dead player's first person).
+  free camera's travel, the dead player's first person), and the followed
+  body drawn from all 16 angles of the orbit through `ReplayPlayer.update`
+  and the bots' own cull (9 of 16 culled before the fix).
 - Headless Chromium on both test recordings through `page.mouse` and
   `page.keyboard`: Caps Lock, Enter and M open nothing; Tab opens the
   replay's board and not the page's; Escape closes a panel, then opens the

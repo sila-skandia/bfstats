@@ -668,6 +668,7 @@ const localPlayer = createLocalPlayer(bag(
     get camera() { return camera; },
     get hudBridge() { return hudBridge; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get replayCamera() { return Boolean(replayController?.active()); },
     get vehicles() { return vehicles; },
   },
 ));
