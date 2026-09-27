@@ -169,6 +169,41 @@ class ReplayRecordingTests(unittest.TestCase):
     def test_round_end_tallies_decode_from_raw(self) -> None:
         self.assertEqual(self.results["recording"]["stats"], [{"pid": 0, "fired": [[1231, 31]]}])
 
+    def test_a_pools_rounds_are_rounds_whatever_their_name(self) -> None:
+        # The Midway report: an Elco80's pool of five `FloatingMine` was read
+        # as five hulls, and each asked for a `FloatingMine.glb` no tree has.
+        r = self.results["hullRounds"]
+        self.assertEqual(
+            [{"nid": nid, "pooled": True, "projectile": True} for nid in range(1519, 1524)]
+            + [{"nid": 1600, "pooled": False, "projectile": True}],
+            r["mines"])
+
+    def test_the_levels_projectile_table_names_the_rest(self) -> None:
+        # A depth charge no pool of the recording made is a hull to the
+        # parser, and a round once the level's table (replay.js) says so.
+        r = self.results["hullRounds"]
+        self.assertEqual(r["hullsParsed"], ["Elco80", "DepthCharge"])
+        self.assertEqual(r["marked"], 1)
+        self.assertEqual(r["hullsMarked"], ["Elco80"])
+
+    def test_a_mine_is_drawn_from_its_launcher_on_the_recordings_hull(self) -> None:
+        # The mine lying in the water is the Elco80's `FloatingMineLauncher`
+        # round, not the first projectile mesh on the boat (its torpedo), and
+        # nothing is fetched for it: only the grenade's own weapon is.
+        r = self.results["hullRounds"]
+        self.assertEqual(r["torpedo"], "Elco80_Torpedos projectile")
+        self.assertEqual(r["placed"], 2)
+        self.assertEqual(r["requested"], ["models/GrenadeAllies.glb"])
+        self.assertEqual(r["props"], [
+            {"tmpl": "GrenadeAlliesProjectile", "nid": 1075, "mesh": "GrenadeAlliesProjectile",
+             "endEffect": "e_ExplGranade", "at": [0, 0, 0]},
+            {"tmpl": "FloatingMine", "nid": 1600, "mesh": "FloatingMineLauncherDummy",
+             "endEffect": "e_ExplMine", "at": [0, 0, 0]},
+        ])
+
+    def test_a_round_named_after_no_weapon_fetches_nothing(self) -> None:
+        self.assertEqual(self.results["hullRounds"]["weapons"], ["GrenadeAllies", None, None])
+
     def test_the_replays_rounds_pass_the_levels_hidden_vehicles(self) -> None:
         c = self.results["replayCollision"]
         # Nothing to do before the level's collider exists; then the baked
