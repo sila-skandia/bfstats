@@ -1,0 +1,22 @@
+{
+  "name": "wake-coop",
+  "description": "Wake Island co-op, one round, 15 bots a side. aiSettings.setMaxNBots sets the bot count (split evenly); 30 of 32 slots leaves room for the recording client. The baseline bot round to record, replay and compare.",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 90,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "Launch the client as soon as `start` prints the join line: the 90 s pregame lets it connect before the round begins and the bots spawn, so the recording holds the whole round. Stay on the spawn screen to watch (the free camera is the relevance centre, ~520 m), or play. The game closes itself when the round ends, which closes the recording; then `lab.py stop`."
+}
