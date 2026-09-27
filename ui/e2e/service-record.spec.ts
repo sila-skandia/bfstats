@@ -35,7 +35,7 @@ const marines = {
     ],
   },
   vehicles: [
-    { template: 'sherman', name: 'M4 Sherman', category: 'land', iconPath: 'vehicles/bf1942/sherman.png', thumb: 'models/thumbs/sherman.png', model: 'models/Sherman.glb', minutes: 1200, maps: 1 },
+    { template: 'sherman', name: 'M4 Sherman', category: 'land', iconPath: 'vehicles/bf1942/sherman.png', thumb: 'models/thumbs/sherman.png?v=1767225600', model: 'models/Sherman.glb?v=1767225600', minutes: 1200, maps: 1 },
     { template: 'lcvp', name: 'LCVP', category: 'sea', iconPath: 'vehicles/bf1942/lcvp.png', thumb: null, model: null, minutes: 600, maps: 1 },
   ],
 };

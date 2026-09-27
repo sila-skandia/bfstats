@@ -161,7 +161,14 @@ Mon Calamari without a body: their `.skn` skins weight a vertex to up to 12,
 13 and 17 bones, and the skin reader refused anything over 8. It now takes up
 to 32 (the install's 596 skins top out at 17), and the pose exporter keeps a
 vertex's four heaviest influences, renormalised, where it used to keep the
-first four and leave the weights summing short of one.
+first four and leave the weights summing short of one. Those skins also have
+few or no vertices weighted to one bone alone, which is what bind recovery
+started from, so DC Final's US body came back with no bindable bone at all:
+`pose.solve_blended_binds` now solves the rest from the weighted blend, and a
+part with no bindable bone is left off rather than shipped with a skin
+three.js cannot draw. Only bones the data cannot tell apart stay unbound
+(bf1918's neck and upper spine, which share every vertex equally), and ride
+their anchor bone as before.
 
 Built 2026-09-27, every (soldier, kit) job posed. 12 hold the kit's next
 weapon, because the first one tried (Pirates' musket, FHSW's smoke grenades
@@ -326,15 +333,15 @@ empty database plans from heuristics.
                   "iconPath": "kits/bf1942/rusassault.png" } ],
       "figure": {
         "skin": "RussianSoldier",
-        "thumb": "models/thumbs/russiansoldier.png",
+        "thumb": "models/thumbs/russiansoldier.png?v=1758870000",
         "kits": [ { "template": "Rus_Assault", "weapon": "DP",
-                    "pose": "models/poses/RussianSoldier__DP.pose.glb",
-                    "worn": [ { "path": "models/Russ_Helmet.kit.glb", "bone": "A", "slot": "head",
+                    "pose": "models/poses/RussianSoldier__DP.pose.glb?v=1758870000",
+                    "worn": [ { "path": "models/Russ_Helmet.kit.glb?v=1758870000", "bone": "A", "slot": "head",
                                 "position": [0, 0, 0], "rotation": [0, 0, 0] } ] } ]
       },
       "vehicles": [ { "template": "t34", "name": "T-34", "category": "land",
                       "iconPath": "vehicles/bf1942/t34.png",
-                      "thumb": "models/thumbs/t34.png", "model": "models/T34.glb",
+                      "thumb": "models/thumbs/t34.png?v=1758870000", "model": "models/T34.glb?v=1758870000",
                       "minutes": 2100.0, "maps": 3 } ]
     }
   ],
@@ -353,19 +360,25 @@ the round report: `{ "mod", "map", "displayName", "teams": [ { "index", "side",
 map has no dossier.
 
 Paths under `figure` and `vehicles` are relative to the mesh root
-(`/stats/assets/mesh/`); `iconPath` to the HUD root (`/stats/assets/hud/`).
+(`/stats/assets/mesh/`) and carry their file's version (`?v=`, see
+"Caching"); `iconPath` is relative to the HUD root (`/stats/assets/hud/`).
 
 ## Caching
 
 | | |
 |---|---|
-| Service record | Redis 1 h per player (`service-record:v4:`); edge `s-maxage=600` |
+| Service record | Redis 1 h per player (`service-record:v5:`); edge `s-maxage=600` |
 | Map armies | `public, max-age=86400`, as the dossier |
 | `/stats/assets/mesh/*` | `public, max-age=300, s-maxage=86400` — the mesh site's own policy. Without a `Cache-Control` the zone rule bypasses Cloudflare, so every profile view pulled a 1–2 MB glb from the node. |
+| Asset paths the API returns | each ends in `?v=` and its file's modification time, so a republished glb has a URL the edge has never cached |
 | Mesh directory index | in memory, 10 min, like the dossier icon index |
 
-A republished asset reaches the main site within a day at the edge, the same as
-mesh.bfstats.io.
+A republished asset reaches the main site as soon as a record names it: the
+API's listing refreshes every ten minutes and the version in the path changes
+with the file. Before the version, a republished glb kept its old bytes at the
+edge for a day, and fetching a new file's URL before it was fixed (a probe, a
+test run) cached the broken copy for that day. mesh.bfstats.io itself still
+serves its own unversioned URLs.
 
 ## Where things live
 
