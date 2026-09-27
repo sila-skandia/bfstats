@@ -98,6 +98,11 @@ and cloudflared reads its ingress rules from the ConfigMap at startup. The
 `/netcode` route is path-based and rides this host; it is written below and
 answers 503 until the netcode Deployment is applied.
 
+Since 2026-09-27 the map page is this host's alone: `mesh/nginx.conf` sends
+`mesh.bfstats.io/map.html` and `/play/…` here with a 301, keyed on `$host`, so
+HAProxy needs no change for it
+([mesh-site](../../../features/mesh-site/README.md#maps-moved-to-playbfstatsio-2026-09-27)).
+
 ## The netcode room server route (`/netcode`)
 
 The BF1942 multiplayer room server (P2 of

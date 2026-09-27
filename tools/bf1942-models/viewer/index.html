@@ -6,6 +6,11 @@
 <meta http-equiv="Cache-Control" content="no-store">
 <title>BF1942 mesh &middot; models</title>
 <link rel="icon" href="./favicon.ico">
+<script>
+// mesh.bfstats.io has no map page (mesh/nginx.conf sends it to play.bfstats.io),
+// so its bar drops the Maps tab (shell.css). Set before the bar paints.
+if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.add('shell-no-maps');
+</script>
 <link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
 <link rel="stylesheet" href="./index.css">
@@ -16,7 +21,7 @@
     <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
     <span class="shell-tabs">
       <a href="./index.html" aria-current="page">Models</a>
-      <a href="./play/index.html">Maps</a>
+      <a class="shell-tab-maps" href="./play/index.html">Maps</a>
       <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>

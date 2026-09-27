@@ -191,9 +191,11 @@ function install(available, active, tab) {
   pick.append(label, wrap);
 
   // The active mod's size on every tab, with this tab's figure in full ink.
+  // No maps figure where the bar has no Maps tab (`shell-no-maps`, shell.css).
+  const noMaps = document.documentElement.classList.contains('shell-no-maps');
   const counts = document.createElement('span');
   counts.className = 'shell-mods-counts';
-  COUNT_NOUNS.forEach(([key, noun], index) => {
+  COUNT_NOUNS.filter(([key]) => !(noMaps && key === 'maps')).forEach(([key, noun], index) => {
     if (index) counts.append(' · ');
     const figure = Number(active.counts?.[key] || 0).toLocaleString();
     if (key === tab) {

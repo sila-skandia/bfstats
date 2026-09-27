@@ -1,9 +1,10 @@
 # mesh.bfstats.io
 
-Dedicated host for the BF1942 model and level viewers in
+Dedicated host for the BF1942 model, pose and kit viewers in
 [`tools/bf1942-models/viewer`](../../tools/bf1942-models/viewer). Same cluster as
 bfstats.io; separate site so the main UI stays lean and the mesh work can ship
-on its own cadence.
+on its own cadence. The level viewer (`map.html`) is play.bfstats.io's now; see
+[Maps moved to play.bfstats.io](#maps-moved-to-playbfstatsio-2026-09-27).
 
 ## Shape
 
@@ -15,19 +16,37 @@ on its own cadence.
 | Public URL | `https://mesh.bfstats.io` |
 | Same assets for the main site | `GET /stats/assets/mesh/{*path}` on the API |
 
-## One site, three features
+## One site, three tabs
 
-`index.html`, `map.html` and `poses.html` are three independent three.js apps —
-different layouts, different asset trees, no shared runtime. What makes them one
-site is [`shell.css`](../../tools/bf1942-models/viewer/shell.css): a bar across
-the top of all three carrying the brand and a Models / Maps / Poses toggle, with
-the active tab marked by `aria-current="page"`.
+`index.html`, `poses.html` and `kits.html` are independent three.js apps —
+different layouts, no shared runtime. What makes them one site is
+[`shell.css`](../../tools/bf1942-models/viewer/shell.css): a bar across the top
+of each carrying the brand and a Models / Poses / Kits toggle, with the active
+tab marked by `aria-current="page"`.
 
 | Tab | Page | Serves from |
 |---|---|---|
 | Models | `index.html` | `models/` — vehicles, weapons, armour, damage |
-| Maps | `map.html` | `maps/` — extracted levels, terrain, lightmaps, sky |
 | Poses | `poses.html` | `models/poses/` — soldier states and weapon grip welds |
+| Kits | `kits.html` | `models/` (`kits.json`, the pose matrix, `models.json`) |
+
+### Maps moved to play.bfstats.io (2026-09-27)
+
+The map page (`map.html`, and the `play/` front end a bare one hands over to)
+belongs to play.bfstats.io. It still ships in this image, because HAProxy routes
+the play host to the same nginx, so the mesh host drops it in two places:
+
+- [`mesh/nginx.conf`](../../mesh/nginx.conf) answers `mesh.bfstats.io/map.html`
+  and `/play/…` with a 301 to the same path and query on play.bfstats.io, so an
+  old link still lands on its level. `/maps/` stays served: the play host reads
+  it through this nginx.
+- `index.html`, `poses.html` and `kits.html` set `shell-no-maps` on `<html>`
+  when `location.hostname` is `mesh.bfstats.io`. `shell.css` hides the
+  `.shell-tab-maps` link, and `mods.js` leaves maps out of the strip's counts.
+
+Everywhere else the Maps tab stays. On this PC (`localhost:5273`, the
+`model-viewer` launch config) it is the way into `map.html` for testing, and
+the play host's flythrough keeps the four-tab bar.
 
 The nav is static markup in each page rather than injected by script, so it
 survives a module that fails to load — which on these pages is the case worth

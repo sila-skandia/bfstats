@@ -5,6 +5,9 @@ gates. A bare `map.html` therefore has nothing to choose a level with, and used
 to open the first one in the manifest with no way off it. These pin the three
 things that keep that from coming back: the bare page hands over to the menu,
 the ways in that must stay on the page still do, and there is a way back.
+
+The page is play.bfstats.io's. mesh.bfstats.io, served by the same nginx,
+has neither the tab nor the page (features/mesh-site); this PC keeps both.
 """
 from __future__ import annotations
 
@@ -51,6 +54,33 @@ class MapEntryTests(unittest.TestCase):
             text = (VIEWER / page).read_text(encoding="utf-8")
             self.assertNotIn('href="./map.html"', text, page)
             self.assertIn('href="./play/index.html"', text, page)
+
+    def test_the_mesh_host_alone_drops_the_maps_tab(self) -> None:
+        css = (VIEWER / "shell.css").read_text(encoding="utf-8")
+        self.assertIn(":root.shell-no-maps .shell-tab-maps { display: none; }", css)
+        for page in ("index.html", "poses.html", "kits.html"):
+            text = (VIEWER / page).read_text(encoding="utf-8")
+            self.assertIn('<a class="shell-tab-maps" href="./play/index.html">Maps</a>',
+                          text, page)
+            # On the host alone, and set in <head>, before the bar paints.
+            check = text.index("if (location.hostname === 'mesh.bfstats.io') "
+                               "document.documentElement.classList.add('shell-no-maps');")
+            self.assertLess(check, text.index("<body>"), page)
+
+    def test_the_mesh_host_sends_the_map_page_to_the_play_host(self) -> None:
+        conf = (VIEWER.parents[2] / "mesh" / "nginx.conf").read_text(encoding="utf-8")
+        self.assertIn("if ($to_play_host) {\n"
+                      "        return 301 https://play.bfstats.io$request_uri;", conf)
+        # nginx matches "$host$uri" against this; PCRE and `re` agree on it.
+        pattern = re.search(r'"~(\^mesh[^"]+)" 1;', conf).group(1)
+        for moved in ("mesh.bfstats.io/map.html", "mesh.bfstats.io/play",
+                      "mesh.bfstats.io/play/", "mesh.bfstats.io/play/front-end.js"):
+            self.assertRegex(moved, pattern)
+        for stays in ("mesh.bfstats.io/", "mesh.bfstats.io/index.html",
+                      "mesh.bfstats.io/kits.html", "mesh.bfstats.io/maps/maps.json",
+                      "mesh.bfstats.io/mods.js", "mesh.bfstats.io/map.html.bak",
+                      "play.bfstats.io/map.html", "play.bfstats.io/play/"):
+            self.assertNotRegex(stays, pattern)
 
 
 if __name__ == "__main__":
