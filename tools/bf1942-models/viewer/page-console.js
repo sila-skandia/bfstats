@@ -12,9 +12,9 @@ import { createControlsScreen } from './play/controls-screen.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bfmap`, `capture`, `extras`, `hudPaths`, `keys`, `launchTeam`,
- * `MENU_URL`, `mouseInput`, `params`, `radioToolTip`, `release`, `releaseButtons`,
- * `scoreboardOpen`, `scoreFromSpawn`, `setRadioToolTip`, `setScoreboard`,
- * `setSideCollapsed`.
+ * `MENU_URL`, `mouseInput`, `openRecording`, `params`, `radioToolTip`, `release`,
+ * `releaseButtons`, `scoreboardOpen`, `scoreFromSpawn`, `setRadioToolTip`,
+ * `setScoreboard`, `setSideCollapsed`.
  */
 export function createPageConsole(page) {
   const pageConsole = {};
@@ -271,10 +271,13 @@ export function createPageConsole(page) {
   // own control map, so an import there is the one the game plays on).
   pageConsole.escTab = 'singleplay';
   pageConsole.optionsScreen = null;
+  // REPLAY on INTRO's plate, as on the front end: a recording picked there
+  // plays on its own level (replay-open.js).
   const ESC_TABS = [
     { page: 'mainNav',
       items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
-              { key: 'MENU_OPTIONS', id: 'options' }] },
+              { key: 'MENU_OPTIONS', id: 'options' },
+              { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' }] },
   ];
   const OPTIONS_TABS = [
     ...ESC_TABS,
@@ -300,6 +303,10 @@ export function createPageConsole(page) {
 
   /** Switch the menu's tab. The two screens are two canvases, one up. */
   function showEscTab(id) {
+    if (id === 'replay') {
+      page.openRecording();
+      return;
+    }
     pageConsole.escTab = id === 'options' ? 'options' : 'singleplay';
     if (!pageConsole.escMenuUp) return;
     const options = pageConsole.escTab === 'options';

@@ -253,9 +253,13 @@ Right now you have to open the same map." A dropped recording used to play
 only over the level already on screen, and said "open it with ?map=" for any
 other; a `?replay=` URL needed the file under the served `replays/`.
 
-- **Open recording** in the site bar (the flythrough), the upload button on
-  the replay bar, or files dropped anywhere on the page. The picker takes the
-  recording and its `ev_*.xml` server log together.
+- **REPLAY** on the front end's tab row (`play/index.html`, where a bare
+  `map.html` sends you, and the in-level Escape menu: INTRO's plate, which
+  the site otherwise leaves undrawn), **Open recording** in the site bar of
+  a flythrough, the upload button on the replay bar, or files dropped
+  anywhere on either page. The picker takes the recording and its `ev_*.xml`
+  server log together. The CONTROLS screen keeps its own drop (a profile
+  folder).
 - The recording is kept in the browser (IndexedDB `bf42-mesh-replays`, the 8
   newest, keyed by file name) and the page reloads as
   `map.html?mod=<mod>&map=<level>&replay=local:replay_<stamp>`. From there it
@@ -283,6 +287,7 @@ other; a `?replay=` URL needed the file under the served `replays/`.
 | `viewer/replay-recording.js` | `rec.mod`, from the ServerInfoEvent (0x1A raw, `serverInfo` named). |
 | `viewer/progress.js` | `note(text)`: the line over the loading plate, kept across loads. |
 | `viewer/map.html`, `viewer/shell.css` | The button, the opener installed before the level loads, the loading screen's line. |
+| `viewer/play/front-end.js`, `viewer/page-console.js`, `viewer/play/nav-strip.js` | REPLAY on the front end's and the Escape menu's tab rows (`label` draws the site's word on a slot's own plate), and the front end's drop. |
 
 Verified: `tests/test_replay_open.py` (the date, the summary from v2, v3 and
 named-event files, keys, the reload URL) and `tests/test_load_briefing_js.py`
