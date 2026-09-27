@@ -7,7 +7,7 @@
 // ReplayPlayer (replay.js); owns only DOM.
 
 import { GameConsole } from './console.js';
-import { fmtHp, roundClock } from './replay-recording.js';
+import { fmtHp, nameAt, roundClock, teamAt } from './replay-recording.js';
 import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 
@@ -708,7 +708,7 @@ export class ReplayUi {
   follow(pid) {
     if (pid === this.player.followPid) return;
     this.player.follow(pid);
-    this.flash(this.player.rec.players.get(pid)?.name ?? `player ${pid}`);
+    this.flash(nameAt(this.player.rec, pid, this.player.time));
     this.syncMode();
     this.slowClock = SLOW_TICK;
   }
@@ -717,7 +717,7 @@ export class ReplayUi {
    *  not in the round at this moment. */
   stepPlayer(dir) {
     const player = this.player;
-    const roster = rosterOf(player.rec);
+    const roster = rosterOf(player.rec, player.time);
     if (!roster.length) return;
     const present = roster.filter(p => {
       const s = playerStatusAt(player.rec, p.pid, player.time).state;
@@ -1056,11 +1056,12 @@ export class ReplayUi {
       this.spawnWait = false;
       return;
     }
-    const info = rec.players.get(pid);
-    const team = info?.team ?? 0;
-    const name = info?.name ?? `player ${pid}`;
-    if (this.cardName.dataset.key !== `${pid}|${team}`) {
-      this.cardName.dataset.key = `${pid}|${team}`;
+    // Whoever holds the pid now, on his side now: an id passes to the next
+    // player to join once its own leaves.
+    const team = teamAt(rec, pid, t);
+    const name = nameAt(rec, pid, t);
+    if (this.cardName.dataset.key !== `${pid}|${team}|${name}`) {
+      this.cardName.dataset.key = `${pid}|${team}|${name}`;
       this.cardName.textContent = name;
       // The recording player: his first person is the recording's own view,
       // hit indicator and all.
@@ -1101,7 +1102,7 @@ export class ReplayUi {
       case 'dead': {
         const k = status.killedBy;
         const by = k && k.killer !== null && k.killer !== undefined && k.killer !== pid
-          ? `killed by ${rec.players.get(k.killer)?.name ?? `player ${k.killer}`}${k.weapon ? ` [${display(k.weapon)}]` : ''}`
+          ? `killed by ${nameAt(rec, k.killer, k.t)}${k.weapon ? ` [${display(k.weapon)}]` : ''}`
           : 'dead';
         html = `<span class="dead">${esc(by)}</span>`;
         break;
@@ -1142,11 +1143,11 @@ export class ReplayUi {
     const player = this.player;
     const rec = player.rec;
     const t = player.time;
-    const tally = tallyAt(player.kills, t);
+    const tally = tallyAt(player.kills, t, rec);
     const display = key => this.lexicon()?.names?.[key] ?? key;
     // Anyone without a side sits under the Allies.
     const rows = { 1: [], 2: [] };
-    for (const p of rosterOf(rec)) {
+    for (const p of rosterOf(rec, t)) {
       const status = playerStatusAt(rec, p.pid, t, player.kills);
       const score = tally.get(p.pid) ?? { kills: 0, deaths: 0 };
       rows[p.team === 1 ? 1 : 2].push({ ...p, status, ...score });
@@ -1196,7 +1197,7 @@ export class ReplayUi {
       const v = player.v2;
       const hideOwn = player.camera.hidePid;
       // Through his eyes, only his side's names, as the game tags friends.
-      const ownTeam = hideOwn !== null ? player.rec.players.get(hideOwn)?.team ?? null : null;
+      const ownTeam = hideOwn !== null ? teamAt(player.rec, hideOwn, t) || null : null;
       const orbit = player.camera.mode === 'orbit';
       const candidates = [];
       for (const target of player.tagTargets(t)) {

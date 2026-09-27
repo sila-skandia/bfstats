@@ -26,6 +26,7 @@
 
 import * as THREE from 'three';
 import { VehicleOccupancy } from './seats.js';
+import { spawnedCraftUnder } from './spawned-craft.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
 import { crewOf, engineAt, hpAt, isReplicated, latestAt, sampleAt } from './replay-recording.js';
@@ -125,6 +126,19 @@ const AIR_VMAX = 60;
  *  longer than every spool and servo in the game, so it starts settled. */
 const SETTLE = 5;
 
+/**
+ * How long a gun keeps sounding past its last recorded round: this many
+ * rounds at its own rate of fire, and never less than `SOUND_HOLD_MIN`
+ * seconds. Every aircraft and hull machine gun's patch runs on loops, which
+ * the rack sounds only while the gun fires (`group.firing`, the trigger, in
+ * play). A replayed gun has no trigger, only its rounds, and the client fires
+ * a remote player's gun at its own cadence (El Zilcho's `ZeroGuns` every
+ * 0.1 s at 6:20 of replay_20260927-203459, which played in silence): a round
+ * and a half bridges a burst and lets the loop stop when the rounds do.
+ */
+const SOUND_HOLD_ROUNDS = 1.5;
+const SOUND_HOLD_MIN = 0.2;
+
 /** The template's own root node inside a `models/<Template>.glb` scene: the
  *  one node the assembler stamps `templateKind`. */
 function vehicleRoot(scene) {
@@ -181,6 +195,13 @@ export class ReplayHull {
     this.group.visible = false;
     this.scene = scene;
     this.root = vehicleRoot(scene);
+    // A ship's model carries the craft its spawners launch baked under it --
+    // the Enterprise's Corsair, SBD and two LCVPs, a Hatsuzuki's two
+    // Daihatsus -- which a level detaches as vehicles of their own
+    // (spawned-craft.js). Each is a life of its own in the recording, drawn
+    // where the recording has it; left on the ship it was a second copy,
+    // frozen on her deck, and its seats were counted among hers.
+    for (const craft of spawnedCraftUnder(this.root)) craft.parent?.remove(craft);
     this.group.add(scene);
     this.wreck = wreck;
     if (wreck) {
@@ -325,6 +346,10 @@ export class ReplayHull {
     this.present(motion, t, dt, driven && live, running);
     this.applyWreck(wrecked);
     this.updateTier(t, hp, wrecked, replicated);
+    // A gun's report sounds while its recorded rounds leave (`holdSound`),
+    // and only while the replay runs: a paused replay's guns fall silent.
+    const playback = player.feedRate?.() > 0;
+    for (const group of this.groups) group.sounding = playback && t < (group.soundUntil ?? -Infinity);
     this.updateAudio(running, this.crew.length > 0 && live, wrecked);
     this.lastHp = hp;
     this.lastT = t;
@@ -678,6 +703,7 @@ export class ReplayHull {
       pick = own.length ? own : (seat === 0 ? candidates : []);
     }
     for (const group of pick) {
+      this.holdSound(group, shot?.t ?? this.player.time);
       // Its rounds skip this hull (`dynamicCast`). Pinned to the collider the
       // guns hold now: `projectile-flight.js` `gunOwner` re-reads the owner
       // from the level's index whenever the collider has changed since, and
@@ -692,6 +718,24 @@ export class ReplayHull {
       guns.fireShot(group);
     }
     return pick.length > 0;
+  }
+
+  /** Keep `group`'s report sounding past a recorded round at recording time
+   *  `t` (`SOUND_HOLD_ROUNDS`); the rack reads `group.sounding`, which
+   *  `update` raises from this. */
+  holdSound(group, t) {
+    const rate = group.stats?.roundOfFire || 0;
+    const hold = Math.max(SOUND_HOLD_MIN, rate > 0 ? SOUND_HOLD_ROUNDS / rate : 0);
+    group.soundUntil = Math.max(group.soundUntil ?? -Infinity, t + hold);
+  }
+
+  /** A seek: no gun is sounding from a round the clock has jumped away from.
+   *  The rounds fired just before the new instant hold it again. */
+  resetSound() {
+    for (const group of this.groups) {
+      group.soundUntil = -Infinity;
+      group.sounding = false;
+    }
   }
 
   /** Of `groups`, one name on several mounts, the one whose FireArms sits
@@ -711,6 +755,7 @@ export class ReplayHull {
   hide() {
     this.group.visible = false;
     this.velocity.set(0, 0, 0);
+    for (const group of this.groups) group.sounding = false;
     this.stopTier();
     if (this.claimed) {
       this.player.ctx.releaseVehicleAudio?.(this.audioKey, this.root);

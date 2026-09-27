@@ -21,7 +21,9 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf } from './replay-recording.js';
+import {
+  bodyAt, controlledAt, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf, teamAt,
+} from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { DIE_CLIPS } from './soldier-death.js';
@@ -136,11 +138,12 @@ export class ReplaySoldiers {
 
   get available() { return Boolean(this.bodies); }
 
-  /** The actor for `pid`, made on first sight. */
-  actorFor(pid) {
+  /** The actor for `pid`, made on first sight at recording time `t`. */
+  actorFor(pid, t) {
     let actor = this.actors.get(pid);
     if (actor) return actor;
-    const info = this.player.rec.players.get(pid);
+    const { rec } = this.player;
+    const info = { name: nameAt(rec, pid, t), team: teamAt(rec, pid, t) || null };
     const id = `replay:${pid}`;
     // The whole-body state a blast or a bail-out holds him in, as the
     // recording has it (`heldState`): `pair` is the recorded lower and upper
@@ -238,7 +241,7 @@ export class ReplaySoldiers {
     for (const pid of rec.playerNids?.keys() ?? []) {
       const nid = controlledAt(rec, pid, t);
       if (nid === null) continue;
-      const actor = this.actorFor(pid);
+      const actor = this.actorFor(pid, t);
       const life = this.soldierLife(pid, nid, t);
       if (!life) {
         // Nothing of him to draw: spawning, or his body is gone.
@@ -449,9 +452,12 @@ export class ReplaySoldiers {
     actor.soldierTemplate = life.tmpl || null;
     actor.weaponAi = actor.kitPrimary ? { name: actor.kitPrimary } : null;
     actor.state.dead = false;
-    // A player can change sides between lives; the name tag, his death cry
-    // and his uniform follow the life's own side.
-    actor.team = life.team || actor.team;
+    // A pid passes to the next player to join once its own leaves, and a
+    // player can change sides between lives: the name tag, his death cry
+    // and his uniform follow the life's own player and side.
+    const { rec } = this.player;
+    actor.name = nameAt(rec, actor.pid, life.created);
+    actor.team = life.team || teamAt(rec, actor.pid, life.created) || actor.team;
     actor.state.team = actor.team;
     actor.heldItem = null;
     actor.reloading = false;

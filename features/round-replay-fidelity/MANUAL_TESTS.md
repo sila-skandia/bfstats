@@ -1,8 +1,10 @@
 # Round replay: manual checks
 
-The game folder has the v5 recorder: `dsound.dll` is bf42plus `e692f14`
-(pushed to `sila-skandia/bf42plus` master). `dsound_old.dll` in the same
-folder is the previous build, `9451721`. To go back to it:
+The game folder has the v5 recorder: `dsound.dll` is bf42plus `0254e92`
+(pushed to `sila-skandia/bf42plus` master, installed 2026-09-27 22:52).
+`dsound_old.dll` in the same folder is the previous build, the
+`v2.0-round-replay` release of `ea600c1` that recorded the Midway round. To go
+back to it:
 
 ```bash
 cp ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound_old.dll ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound.dll
@@ -76,10 +78,42 @@ In the viewer:
 | getting hit | a "hit from ..." row in the replay log for each hit you took, and in your own first person (2) the game's red wash on that side |
 | the plane | the engine note follows the throttle you used |
 
-## 3. If the new DLL misbehaves
+## 3. The Midway round (`replay_20260927-203459`, no game needed)
+
+<http://localhost:5273/map.html?mod=bf1942&replay=replays/20260927-203459-midway-conquest/replay_20260927-203459.ndjson>
+
+| check | expected |
+|---|---|
+| 6:19 to 6:22, follow El Zilcho (his Zero) | his machine guns rattle while the tracers fly and stop with them; the bomb drop at 6:21 |
+| any aircraft or tank machine gun, a PT boat's side gunner (8:57) | the same: heard while it fires |
+| 9:58 to 10:00 | the kill line reads `Rut [Bazooka] Omen` under the Allies' flag, not a team kill |
+| the chat at 0:08 to 0:16, 9:07 to 9:51 | `3star: ...` and `Omen: ...`, not a later player's name before theirs |
+| a MoonGamers server line (0:29) | words with spaces: does the game draw them that way? (the byte between them is 0x80, drawn as a space by inference) |
+| 6:16 and 6:23 | Rut's radio line (`[D5] Rut: Enemy armor spotted!`) and the radio voice |
+| 0:47 and 0:55 near your soldier | the ammo refill sound at the depot |
+| the scoreboard at 7:00 and at 14:30 | pid 11 is Omen, then Niconan with none of Omen's deaths |
+| the sea off the island, 0:00 to 6:29 | the carriers, the Yamato, the Hatsuzukis, the destroyers and their landing craft, as faint out-of-range ghosts where they lay; the Enterprise gone at 6:29 and back at 8:19; the status line says how many the level stood in for |
+| the PT boats, the Kubelwagens, the B17 | their engines and guns sound |
+
+## 4. A round begun after the join, with the new recorder
+
+Join a round, then switch recording on in the console (`plus.recordReplays
+1`), play a minute, and quit. The file's head, after the join's events, should
+carry every player's `createPlayer`, every standing object's `createObject`,
+the grenade and mine pools (`projPool`) and the kits (`pickupKit`), each with
+`ago`, then the roster:
+
+```bash
+f=$(ls -t ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/replays/replay_*.ndjson | head -1); head -400 "$f" | grep -o '"e":"[a-zA-Z]*"[^}]*"ago"' | cut -d'"' -f4 | sort | uniq -c
+```
+
+In the replay, ships out of range all round are drawn as ghosts where they
+lay, and every soldier alive at the start holds his own kit's weapon.
+
+## 5. If the new DLL misbehaves
 
 - The game crashes on joining or at the first shot: put `dsound_old.dll`
-  back (above), and keep `logs/bf42plus_debug.log` and anything in
+  back (above), and keep `logs/bf42++_debug.log` and anything in
   `logs/crash/` from the game folder.
 - Stutter while recording: the v4 sampler reads every hull and soldier ten
   times a second. Note when it happens.

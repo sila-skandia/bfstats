@@ -8,6 +8,7 @@
 
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
+import { RADIO_MESSAGES } from './radio.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -50,6 +51,26 @@ export function speakerOf(line) {
   return name.trim() ? name : null;
 }
 
+/**
+ * A chat-box line as the game draws it. MoonGamers' server lines separate
+ * their words with byte 0x80 (`*Do\u0080not\u0080steal\u0080...` throughout
+ * replay_20260927-203459), which the recorder writes as the byte came. The
+ * chat font has no glyph for it, and a message the admins have broadcast for
+ * years reads as words in the game, so it is drawn as a space (inferred: the
+ * client's own drawing of the byte has not been read).
+ */
+export const chatText = text => String(text ?? '').replace(/\u0080/g, ' ');
+
+/** A radio message's words for the replay log, from the lexicon key the
+ *  game prints it with (radio.js `RADIO_MESSAGES`): `RADIO_ARMOR_SPOTTED` is
+ *  "armor spotted". The message log itself prints the game's own string. */
+export function radioWords(id) {
+  const msg = RADIO_MESSAGES[id];
+  if (!msg) return `radio message ${id}`;
+  if (msg.cp != null) return `control point ${msg.cp + 1}`;
+  return msg.key.replace(/^RADIO_(LOCAL_)?/, '').replace(/_/g, ' ').toLowerCase();
+}
+
 /** Each player the chat names, `pid -> { name, team }`: the name most of his
  *  lines carry, and the side of his last. Only the `chat` records are read. */
 function chatSpeakers(lines) {
@@ -62,7 +83,7 @@ function chatSpeakers(lines) {
     } catch {
       continue;
     }
-    const name = r.k === 'chat' && r.pid >= 0 ? speakerOf(r.text) : null;
+    const name = r.k === 'chat' && r.pid >= 0 ? speakerOf(chatText(r.text)) : null;
     if (!name) continue;
     if (!heard.has(r.pid)) heard.set(r.pid, { counts: new Map(), team: 0 });
     const entry = heard.get(r.pid);
@@ -185,7 +206,15 @@ export function parseRecording(text) {
     mod: '',              // the server's mod (ServerInfoEvent 0x1A): 'bf1942', 'XPack1', ...
     server: '',
     lives: [],
-    players: new Map(),   // pid -> { name, team, ai, joinNid, joinKitNid, local? }
+    // pid -> his latest session. A session is one player's time under a
+    // pid: `{ pid, name, team, ai, joinT, leftT?, local?, joinNid, joinKitNid,
+    // camNid, teams: [{ t, team }] }`, `team` his side at the end of it.
+    players: new Map(),
+    // pid -> every session, in join order: a public server hands a leaver's
+    // id to the next player to join (pid 11 is Omen at 496.8 s and Niconan
+    // at 850.8 s of replay_20260927-203459), so who a pid is, and his side,
+    // are answered at a time (`playerAt`, `nameAt`, `teamAt`).
+    sessions: new Map(),
     control: [],          // { t, pid, team, nid } from player records
     chat: [],             // { t, pid, team, text, body }
     events: [],           // feed rows
@@ -202,7 +231,12 @@ export function parseRecording(text) {
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
     tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
-    kills: [],            // { t, kind, killer, victim, weapon } one per line the kill log printed
+    // { t, kind, killer, victim, weapon, killerTeam, victimTeam } one per
+    // line the kill log printed, both sides as they stood when it was scored
+    kills: [],
+    radio: [],            // { t, pid, msg, global } radio messages the recording player heard (0x3A)
+    unseenDestroys: [],   // { t, nid } an object removed (0x06) that no life of the recording holds
+    refills: [],          // { t } the recording player's ammo refilled at a depot (0x27, type 0)
     captures: [],         // { t, id, name, team, from } a control point taken during play
     controlPoints: new Map(), // cp id -> { id, name, tmpl, pos, changes: [{ t, team }] }
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
@@ -220,6 +254,9 @@ export function parseRecording(text) {
   const plainDeaths = [];       // { t, victim } score DEATH (4): "is no more", unless a team kill wrote it
   let joined = -Infinity;
   let sawPregame = false;
+  let lastStatus = null;
+  let beganAfterJoin = false;
+  let lastRefill = -Infinity;
 
   const lines = text.split('\n');
   // Who the chat box names, for players nothing else introduces (see the
@@ -231,7 +268,33 @@ export function parseRecording(text) {
     rec.events.push(entry);
     return entry;
   };
-  const playerName = pid => rec.players.get(pid)?.name ?? spoken.get(pid)?.name ?? `player ${pid}`;
+  const playerName = (pid, t) => playerAt(rec, pid, t)?.name ?? spoken.get(pid)?.name ?? `player ${pid}`;
+  /** `pid`'s side now, in the file's own order: a kill is scored against
+   *  the sides as they stand at that line (pid 11 switched from Axis to
+   *  Allies in the same tick Rut's bazooka killed him, 599.74 s). */
+  const teamNow = pid => rec.players.get(pid)?.team ?? 0;
+
+  /** A new session for `pid` from `t`, ending any he has open: the server
+   *  gives a leaver's id to the next player to join. */
+  const startSession = (pid, t, fields) => {
+    const open = rec.players.get(pid);
+    if (open && open.leftT === undefined && t > open.joinT) open.leftT = t;
+    const session = { pid, ...fields, joinT: t, teams: [] };
+    if (fields.team === 1 || fields.team === 2) session.teams.push({ t, team: fields.team });
+    if (!rec.sessions.has(pid)) rec.sessions.set(pid, []);
+    rec.sessions.get(pid).push(session);
+    rec.players.set(pid, session);
+    return session;
+  };
+  /** `pid`'s side from `t`: a team switch (0x39), or a player record's team,
+   *  which the server sends with his every change of state. */
+  const noteTeam = (pid, t, team) => {
+    const session = rec.players.get(pid);
+    if (!session) return;
+    const last = session.teams[session.teams.length - 1];
+    if (last?.team !== team) session.teams.push({ t, team });
+    session.team = team;
+  };
 
   /** HitFromPosEvent (0x3C), sent to the damaged player's client alone: the
    *  sector the damage came from (45 degrees each: 0 ahead, 4 behind, 1-3
@@ -412,23 +475,23 @@ export function parseRecording(text) {
   function parseEvent(r, t) {
     switch (r.e) {
       case 'createPlayer':
-        rec.players.set(r.pid, {
-          name: r.name, team: r.team, ai: Boolean(r.ai), joinT: t,
+        startSession(r.pid, t, {
+          name: r.name, team: r.team, ai: Boolean(r.ai),
           joinNid: r.vehNetId ?? null, joinKitNid: r.kitNetId ?? null, camNid: r.camNetId ?? null,
         });
         if (r.vehNetId) nidEvents.push({ t, pid: r.pid, nid: r.vehNetId });
-        row(t, 'player', `${r.name} joined ${teamName(r.team)}`);
+        // One held from before the file began is a player already in the round.
+        if (r.ago === undefined) row(t, 'player', `${r.name} joined ${teamName(r.team)}`);
         return;
       case 'destroyPlayer': {
-        row(t, 'player', `${playerName(r.pid)} left`);
+        row(t, 'player', `${playerName(r.pid, t)} left`);
         const player = rec.players.get(r.pid);
         if (player && player.leftT === undefined) player.leftT = t;
         return;
       }
       case 'setTeam': {
-        const player = rec.players.get(r.pid);
-        if (player) player.team = r.team;
-        row(t, 'player', `${playerName(r.pid)} switched to ${teamName(r.team)}`);
+        noteTeam(r.pid, t, r.team);
+        row(t, 'player', `${playerName(r.pid, t)} switched to ${teamName(r.team)}`);
         rec.matchable.push({ t, kind: 'setTeam' });
         return;
       }
@@ -437,29 +500,52 @@ export function parseRecording(text) {
           if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
             rec.deaths.push({ t, pid: r.victim, killer: r.pid, weapon: r.weaponName ?? null });
             // The kill log's line (chat-log.js `deathLines`): a kill names its
-            // killer and his weapon, a team kill only the killer.
+            // killer and his weapon, a team kill only the killer. The kind is
+            // the server's word for it, and the sides are as they stood.
             rec.kills.push({ t, kind: r.kind === SCORE.TEAMKILL ? 'teamkill' : 'kill',
-                             killer: r.pid, victim: r.victim, weapon: r.weaponName ?? null });
+                             killer: r.pid, victim: r.victim, weapon: r.weaponName ?? null,
+                             killerTeam: teamNow(r.pid), victimTeam: teamNow(r.victim) });
           } else if (r.kind === SCORE.DEATH || r.kind === SCORE.DEATH_NO_MSG) {
             rec.deaths.push({ t, pid: r.pid, killer: null, weapon: null });
-            if (r.kind === SCORE.DEATH) plainDeaths.push({ t, victim: r.pid });
+            if (r.kind === SCORE.DEATH) plainDeaths.push({ t, victim: r.pid, victimTeam: teamNow(r.pid) });
           }
         }
         if (r.kind === SCORE.SPAWNED) {
-          row(t, 'spawn', `${playerName(r.pid)} spawned`);
+          row(t, 'spawn', `${playerName(r.pid, t)} spawned`);
         } else if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
           const how = r.weaponName ? ` with ${r.weaponName}` : '';
-          row(t, 'kill', `${playerName(r.pid)} ${SCORE_TEXT[r.kind]} ${playerName(r.victim)}${how}`);
+          row(t, 'kill', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]} ${playerName(r.victim, t)}${how}`);
         } else if (SCORE_TEXT[r.kind]) {
           // Deaths (4, 5) are skipped: a kill row carries them, and the rest
           // are the round-end teardown.
-          row(t, 'score', `${playerName(r.pid)} ${SCORE_TEXT[r.kind]}`);
+          row(t, 'score', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]}`);
+        }
+        return;
+      case 'radio':
+        // RadioMessageEvent (0x3A): `msg` the engine's message id (radio.js
+        // `RADIO_MESSAGES`), `global` 1 for team radio and 0 for a shout. The
+        // server sends team radio to the speaker's side and a shout to anyone
+        // within 70 m, so the file holds what its player heard.
+        rec.radio.push({ t, pid: r.pid, msg: r.msg, global: Boolean(r.global) });
+        row(t, 'radio', `${playerName(r.pid, t)}: ${radioWords(r.msg)}`);
+        return;
+      case 'special':
+        // SpecialGameEvent (0x27). Type 0 is a refill: the server's
+        // `GameServer::triggerSpecialGameEvent` (lnxded 0x081591a0) sends it
+        // to the client of a player a depot is resupplying, whose soldier
+        // plays `SoldierRefillAmmo.ssc` (`BFSoldier::triggerRefillAmmoSound`
+        // 0x0827ebc0, sound trigger 0x1a). So a file holds its own player's,
+        // one every half second he stands at a depot; one row a visit.
+        if (r.action === 0) {
+          rec.refills.push({ t });
+          if (t - lastRefill > 2) row(t, 'supply', 'ammo refilled at a depot');
+          lastRefill = t;
         }
         return;
       case 'chat':
         // From v3 the chat box itself is recorded, which also has the
         // player's own lines; the fragments are only needed before that.
-        if (rec.version < 3) row(t, 'chat', `${playerName(r.pid)}: ${r.text}`);
+        if (rec.version < 3) row(t, 'chat', `${playerName(r.pid, t)}: ${chatText(r.text)}`);
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
@@ -468,7 +554,15 @@ export function parseRecording(text) {
         // (replay_20260927-001120 joined 277 s into its round).
         if (r.status === 3) sawPregame = true;
         if (r.status === 1 && rec.roundStarted === null && sawPregame) rec.roundStarted = t;
-        row(t, 'round', GAME_STATUS[r.status] ?? `game status ${r.status}`);
+        // The server sends every client the status again whenever someone
+        // joins (ten "round playing" in replay_20260927-203459, each a
+        // millisecond after a createPlayer): a row is a change. A file begun
+        // after the join has missed the status the join was sent, and
+        // PLAYING then is only the first repeat.
+        if (r.status !== lastStatus && !(lastStatus === null && beganAfterJoin && r.status === 1)) {
+          row(t, 'round', GAME_STATUS[r.status] ?? `game status ${r.status}`);
+        }
+        lastStatus = r.status;
         return;
       case 'dbComplete':
         joined = t;
@@ -493,6 +587,10 @@ export function parseRecording(text) {
           if (life && life.destroyed === Infinity) {
             life.destroyed = t;
             closeReplicated(life, t);
+          } else {
+            // An object the recording never saw made or sampled: one the join
+            // made before the file began, out of range (replay-standins.js).
+            rec.unseenDestroys.push({ t, nid: r.netId });
           }
         }
         return;
@@ -577,6 +675,11 @@ export function parseRecording(text) {
         rec.start = r.start ?? '';
         break;
       case 'e':
+        // An event with `ago` arrived before the file began and heads it (a
+        // file begun after the join, bf42plus ea600c1 and later): the join's
+        // own, and the objects, pools, kits and players it made. What it made
+        // was there at the file's start, not spawned during it.
+        if (r.ago !== undefined) joined = Math.max(joined, t);
         parseEvent(r, t);
         break;
       case 'o': {
@@ -610,6 +713,7 @@ export function parseRecording(text) {
         for (const entry of r.p) {
           const [pid, team, nid] = entry;
           rec.control.push({ t, pid, team, nid });
+          if (team === 1 || team === 2) noteTeam(pid, t, team);
           nidEvents.push({ t, pid, nid });
           if (entry.length >= 5 && entry[3] >= 0) {
             if (!rec.seats.has(pid)) rec.seats.set(pid, []);
@@ -649,7 +753,7 @@ export function parseRecording(text) {
         break;
       }
       case 'chat':
-        rec.chat.push({ t, pid: r.pid, team: r.team, text: r.text ?? '' });
+        rec.chat.push({ t, pid: r.pid, team: r.team, text: chatText(r.text) });
         break;
       case 'f':
         // v4: one round leaving a weapon, any weapon the client simulates.
@@ -715,11 +819,19 @@ export function parseRecording(text) {
         // Who was playing when a file begun after the join began (bf42plus
         // ea600c1): `[pid, team, ai, name, local]`, local the recording
         // player. Their createPlayer events all went by before the file.
+        beganAfterJoin = true;
         for (const [pid, team, ai, name, local] of r.p ?? []) {
-          if (rec.players.has(pid)) continue;
-          rec.players.set(pid, {
-            name, team, ai: Boolean(ai), joinT: t, joinNid: null, joinKitNid: null, camNid: null,
-            local: Boolean(local),
+          // A player the file already knows from his held createPlayer (a
+          // recorder after ea600c1) joined on the side he had then: the
+          // roster has the side he is on as the file begins.
+          const known = rec.players.get(pid);
+          if (known) {
+            if (team === 1 || team === 2) noteTeam(pid, t, team);
+            if (local) known.local = true;
+            continue;
+          }
+          startSession(pid, t, {
+            name, team, ai: Boolean(ai), joinNid: null, joinKitNid: null, camNid: null, local: Boolean(local),
           });
         }
         break;
@@ -737,12 +849,18 @@ export function parseRecording(text) {
   for (const pid of new Set([...spoken.keys(), ...sides.keys()])) {
     if (rec.players.has(pid)) continue;
     const said = spoken.get(pid);
-    rec.players.set(pid, {
+    const session = startSession(pid, 0, {
       name: said?.name, team: sides.get(pid) ?? said?.team ?? 0,
       // Bots do not talk; of a silent player the recording cannot say.
       ai: said ? false : null,
-      joinT: 0, joinNid: null, joinKitNid: null, camNid: null,
+      joinNid: null, joinKitNid: null, camNid: null,
     });
+    // His sides as his player records had them.
+    session.teams = [];
+    for (const c of rec.control) {
+      if (c.pid !== pid || (c.team !== 1 && c.team !== 2)) continue;
+      if (session.teams[session.teams.length - 1]?.team !== c.team) session.teams.push({ t: c.t, team: c.team });
+    }
   }
 
   // Names for lives announced only by template id (before v3), from any object
@@ -760,7 +878,8 @@ export function parseRecording(text) {
   // A kit is also whatever a player carried at the join, before any pickup,
   // and anything else of a template a kit was: a kit dropped by a dead man
   // lies on the ground as the same template until somebody takes it.
-  for (const player of rec.players.values()) {
+  const allSessions = [...rec.sessions.values()].flat();
+  for (const player of allSessions) {
     const kit = player.joinKitNid ? lifeAtIn(rec.lives, player.joinKitNid, player.joinT) : null;
     if (kit) kit.kit = true;
   }
@@ -781,7 +900,7 @@ export function parseRecording(text) {
       for (const row of entry[stat]) row.tmpl = row.tmpl || tidNames.get(row.tid) || `template ${row.tid}`;
       if (entry[stat].length) words.push(`${stat} ${entry[stat].map(x => `${x.tmpl} x${x.n}`).join(', ')}`);
     }
-    if (words.length) row(entry.t, 'stats', `${playerName(pid)}: ${words.join('; ')}`);
+    if (words.length) row(entry.t, 'stats', `${playerName(pid, entry.t)}: ${words.join('; ')}`);
   }
 
   // Who controlled what, per player, as a list of changes in time order.
@@ -797,11 +916,29 @@ export function parseRecording(text) {
 
   // Each soldier's player: a soldier object is made for one spawn of one
   // player, and whoever controls it is its owner for its whole life.
+  const livesOf = new Map();
+  for (const life of rec.lives) {
+    if (!livesOf.has(life.nid)) livesOf.set(life.nid, []);
+    livesOf.get(life.nid).push(life);
+  }
   for (const [pid, list] of rec.playerNids) {
     for (const { t, nid } of list) {
       const life = lifeAtIn(rec.lives, nid, t);
       if (life?.soldier && life.pid === undefined) life.pid = pid;
     }
+  }
+  // The control can come before the recording first sees the soldier: a man
+  // who spawned out of range, or one alive when a file begun mid-round
+  // opened (soldiers 806, 814 and 740 of replay_20260927-203459 are held
+  // from 0.0 s and first seen at 8.5 s). His is then the life of that id his
+  // hold on it overlaps; without it the man had no death, corpse or kit.
+  for (const [pid, list] of rec.playerNids) {
+    list.forEach(({ t, nid }, i) => {
+      const until = list[i + 1]?.t ?? Infinity;
+      for (const life of livesOf.get(nid) ?? []) {
+        if (life.soldier && life.pid === undefined && life.created < until && life.destroyed > t) life.pid = pid;
+      }
+    });
   }
 
   // Each soldier's kit: what his player picked up at the spawn (0x23), or
@@ -812,17 +949,22 @@ export function parseRecording(text) {
       if (!life.soldier || life.pid !== pid || life.created > t + 0.5 || t >= life.destroyed) continue;
       if (!best || life.created > best.created) best = life;
     }
-    return best;
+    if (best) return best;
+    // A soldier the recording first sees after the pickup: the one he holds.
+    const held = controlledAt(rec, pid, t + 0.5);
+    return (livesOf.get(held) ?? [])
+      .filter(l => l.soldier && l.pid === pid && l.destroyed > t)
+      .sort((a, b) => a.created - b.created)[0] ?? null;
   };
   for (const { t, pid, nid } of kitPickups) {
     const soldier = soldierOf(pid, t);
     const kit = lifeAtIn(rec.lives, nid, t + 0.5);
     if (soldier && kit?.tmpl) soldier.kitTemplate = kit.tmpl;
   }
-  for (const [pid, player] of rec.players) {
+  for (const player of allSessions) {
     const soldier = player.joinNid ? lifeAtIn(rec.lives, player.joinNid, player.joinT) : null;
     if (!soldier?.soldier || soldier.kitTemplate) continue;
-    if (soldier.pid === undefined) soldier.pid = pid;
+    if (soldier.pid === undefined) soldier.pid = player.pid;
     const kit = player.joinKitNid ? lifeAtIn(rec.lives, player.joinKitNid, player.joinT) : null;
     if (kit?.tmpl) soldier.kitTemplate = kit.tmpl;
   }
@@ -867,8 +1009,8 @@ export function parseRecording(text) {
   // (replay.js), his kit until then.
   for (const f of rec.fires) {
     if (!f.press) continue;
-    f.row = row(f.t, 'fire', `${playerName(f.pid)} fired ${f.soldier ? (f.kitTemplate ?? 'a weapon') : (f.weapon || 'a weapon')}`);
-    f.shooter = playerName(f.pid);
+    f.shooter = playerName(f.pid, f.t);
+    f.row = row(f.t, 'fire', `${f.shooter} fired ${f.soldier ? (f.kitTemplate ?? 'a weapon') : (f.weapon || 'a weapon')}`);
   }
 
   const lifeAt = (nid, t) => rec.lives.find(l => l.nid === nid && l.created <= t + 0.5 && t < l.destroyed);
@@ -877,9 +1019,9 @@ export function parseRecording(text) {
     if (d.type === 'enter') {
       const root = rootOf(rec, d.nid, d.t);
       const what = root?.life.tmpl || lifeAt(d.nid, d.t)?.tmpl || `object ${d.nid}`;
-      row(d.t, 'vehicle', `${playerName(d.pid)} got into ${what}${root?.seat ? ` (seat ${root.seat + 1})` : ''}`);
+      row(d.t, 'vehicle', `${playerName(d.pid, d.t)} got into ${what}${root?.seat ? ` (seat ${root.seat + 1})` : ''}`);
     } else {
-      row(d.t, 'vehicle', `${playerName(d.pid)} got out`);
+      row(d.t, 'vehicle', `${playerName(d.pid, d.t)} got out`);
     }
   }
 
@@ -910,9 +1052,11 @@ export function parseRecording(text) {
   }
 
   for (const c of rec.chat) {
-    const name = playerName(c.pid);
-    c.body = c.text.startsWith(`${name}: `) ? c.text.slice(name.length + 2) : c.text;
-    row(c.t, 'chat', `${name}: ${c.body}`);
+    // The server's own lines (pid -1, `*Welcome...`) have no speaker.
+    const name = c.pid < 0 ? null : playerName(c.pid, c.t);
+    const at = c.text.indexOf(': ');
+    c.body = name !== null && at > 0 && speakerOf(c.text) === name ? c.text.slice(at + 2) : c.text;
+    row(c.t, 'chat', name === null ? c.text : `${name}: ${c.body}`);
     rec.matchable.push({ t: c.t, kind: 'chat', text: c.body.trim() });
   }
 
@@ -922,7 +1066,7 @@ export function parseRecording(text) {
   // prints both from the one death, so that one is the team kill's.
   for (const d of plainDeaths) {
     const own = rec.kills.some(k => k.victim === d.victim && k.kind === 'teamkill' && Math.abs(k.t - d.t) < 0.25);
-    if (!own) rec.kills.push({ t: d.t, kind: 'death', killer: null, victim: d.victim, weapon: null });
+    if (!own) rec.kills.push({ t: d.t, kind: 'death', killer: null, victim: d.victim, weapon: null, victimTeam: d.victimTeam });
   }
   rec.kills.sort((a, b) => a.t - b.t);
 
@@ -945,6 +1089,44 @@ function lifeAtIn(lives, nid, t) {
 
 export function lifeAt(rec, nid, t) {
   return lifeAtIn(rec.lives, nid, t);
+}
+
+/**
+ * Who `pid` was at recording time `t`: the session he had joined by then
+ * (the last to join at or before `t`), else his first; without `t`, his
+ * latest. A public server gives a leaver's pid to the next player to join,
+ * so a name or a side read without a time is only the id's last holder:
+ * Rut's bazooka kill of Omen at 599.7 s of replay_20260927-203459 printed
+ * "Rut killed a teammate / Niconan is no more", Niconan being who held pid
+ * 11 at the end of the round, and on Rut's side.
+ */
+export function playerAt(rec, pid, t) {
+  const list = rec.sessions?.get(pid);
+  if (!list?.length) return rec.players?.get(pid) ?? null;
+  if (t === undefined || t === null) return list[list.length - 1];
+  let hit = list[0];
+  for (const session of list) {
+    if (session.joinT > t) break;
+    hit = session;
+  }
+  return hit;
+}
+
+/** `pid`'s name at `t` (`playerAt`), or `player <pid>`. */
+export const nameAt = (rec, pid, t) => playerAt(rec, pid, t)?.name ?? `player ${pid}`;
+
+/** `pid`'s side at `t`: his session's last change of side by then (a team
+ *  switch, or a player record's team), 0 for none. */
+export function teamAt(rec, pid, t) {
+  const session = playerAt(rec, pid, t);
+  if (!session) return 0;
+  if (t === undefined || t === null || !session.teams?.length) return session.team ?? 0;
+  let team = session.teams[0].team;
+  for (const change of session.teams) {
+    if (change.t > t) break;
+    team = change.team;
+  }
+  return team;
 }
 
 /** The network id `pid` controlled at `t`: his soldier, a seat, his free

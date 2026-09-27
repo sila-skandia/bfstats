@@ -18,6 +18,7 @@
 
 import { createRoundState, TICKET_BASE_PLAYERS } from './round-state.js';
 import { pointsAt } from './replay-chapters.js';
+import { teamAt } from './replay-recording.js';
 
 /** The bleed's step, seconds: fine next to its 2 s countdowns. */
 const STEP = 0.1;
@@ -94,7 +95,7 @@ export function estimateTickets(rec, { tickets, rates = null, maxPlayers = TICKE
   const round = createRoundState({ tickets, rates, maxPlayers });
   const start = rec.roundStarted;
   const end = Math.min(rec.duration, rec.roundEnded ?? Infinity);
-  const teamOf = pid => rec.players.get(pid)?.team;
+  const teamOf = (pid, t) => teamAt(rec, pid, t);
   const deaths = rec.deaths.filter(d => d.t >= start && d.t < end).sort((a, b) => a.t - b.t);
   const timeline = [{ t: 0, v: [round.tickets[1], round.tickets[2]] }];
   let next = 0;
@@ -107,7 +108,7 @@ export function estimateTickets(rec, { tickets, rates = null, maxPlayers = TICKE
   for (let t = start; t < end; t += STEP) {
     while (next < deaths.length && deaths[next].t <= t + STEP) {
       const d = deaths[next++];
-      const team = teamOf(d.pid);
+      const team = teamOf(d.pid, d.t);
       if (team === 1 || team === 2) round.suicide({ player: d.pid, team });
       note(d.t);
     }

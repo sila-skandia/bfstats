@@ -208,11 +208,17 @@ export function createComms(page) {
    * `speaker`: `{ name, team, position, local }`. Team radio is only ever
    * delivered to the speaker's team; a shout reaches anyone in 70 m but only
    * the speaker's team gets the line.
+   *
+   * `listener` is who hears it when that is not the page's own player: a
+   * round replay's recording player (replay-feed.js), `{ team, silent }`.
+   * The server has already chosen who got it, so no range is tested, and a
+   * shout is placed at its speaker for the camera to hear; `silent` writes
+   * the line without the voice (a log rebuilt after a seek).
    */
-  function receive(id, speaker) {
+  function receive(id, speaker, listener = null) {
     const msg = RADIO_MESSAGES[id];
     if (!msg) return;
-    const listenerTeam = page.localTeam?.() ?? 0;
+    const listenerTeam = listener ? listener.team ?? 0 : page.localTeam?.() ?? 0;
     const team = msg.kind === 'team';
     let defend = false;
     let pointName = null;
@@ -234,12 +240,13 @@ export function createComms(page) {
       });
       if (text) chat.add(SECTION_CHAT, { text, team: speaker.team, buddy: isBuddy(speaker) });
     }
+    dirty = true;
     const patch = radioPatch(id, defend);
-    if (!patch) return;
+    if (!patch || listener?.silent) return;
     if (patch.script === 'radio') {
       playVoice('radio', patch.patch, page.teamNation?.(listenerTeam), null);
     } else {
-      const here = xyz(page.localPosition?.());
+      const here = listener ? null : xyz(page.localPosition?.());
       if (!speaker.local && here && speaker.position) {
         const d = Math.hypot(here.x - speaker.position.x, here.y - speaker.position.y,
           here.z - speaker.position.z);
@@ -248,7 +255,6 @@ export function createComms(page) {
       playVoice('local', patch.patch, page.teamNation?.(speaker.team),
         speaker.local ? null : speaker.position);
     }
-    dirty = true;
   }
   comms.receive = receive;
 

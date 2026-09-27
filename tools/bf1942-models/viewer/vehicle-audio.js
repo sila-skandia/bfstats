@@ -211,13 +211,17 @@ export class VehicleAudioRack {
    * @param {(dir: string, relPath: string) => Promise<AudioBuffer|null>} opts.getBuffer
    * @param {() => object} opts.report   `() => extras`, the level report whose
    *   `.sounds.vehicles` the spec helpers read
+   * @param {() => Promise<object|null>} [opts.shared]  the tree's table of
+   *   every vehicle in the same shape (`_shared/vehicle-sounds.json`), for a
+   *   template the level's own report does not place
    * @param {() => string} opts.dir      `() => currentDir`, for `getBuffer`
    * @param {() => number} opts.master  0..1, the page's own volume
    */
-  constructor({ listener, getBuffer, report, dir, master = () => 1 }) {
+  constructor({ listener, getBuffer, report, shared = null, dir, master = () => 1 }) {
     this.getListener = listener;
     this.getBuffer = getBuffer;
     this.getReport = typeof report === 'function' ? report : () => report;
+    this.getShared = shared;
     this.getDir = typeof dir === 'function' ? dir : () => dir;
     this.getMaster = master;
     this.vehicles = new Map();
@@ -396,20 +400,28 @@ export class VehicleAudioRack {
     const gen = this.generation;
     const node = entry.node;
     const template = node?.userData?.control || node?.name;
-    const report = this.getReport();
+    const levelReport = this.getReport();
     entry.building = true;
     try {
       const listener = this.getListener?.();
       if (!listener || !node) return;
+
+      // A template the level's own report does not place -- a round replay's
+      // server can spawn any -- is looked up in the tree's table of every
+      // vehicle, whose entries have the same shape and sample paths.
+      const shared = findEngineSpec(levelReport, template) ? null : await this.getShared?.() ?? null;
+      const report = shared && findEngineSpec(shared, template) ? shared : levelReport;
 
       // The engine. A bare gun/seat root, or a hull nobody drives, has no
       // live drivetrain and therefore no Engine `.ssc` of its own — the
       // driver's claim is the one that carries the hull's note.
       let engineAudio = null;
       let engineNode = null;
+      let engineSpec = null;
       let engineMissing = false;
       if (entry.drive) {
         const spec = findEngineSpec(report, template);
+        engineSpec = spec;
         if (spec) {
           // The voices hang off the `Engine` node the script is bound to, not
           // the vehicle origin: on a Corsair that is the propeller hub at
@@ -437,11 +449,16 @@ export class VehicleAudioRack {
       let specs = findWeaponSpecs(report, template);
       if (!specs.length) {
         const arms = listSeatFireArms(node);
-        specs = findWeaponSpecsByFireArms(report, arms).map(found => {
+        const byArms = source => findWeaponSpecsByFireArms(source, arms).map(found => {
           const local = arms.find(a => a === found.fireArms
                                        || a === `${found.fireArms}_unlimited`);
           return local ? { ...found, fireArms: local } : found;
         });
+        specs = byArms(levelReport);
+        if (!specs.length) {
+          const table = shared ?? await this.getShared?.() ?? null;
+          if (table) specs = byArms(table);
+        }
       }
       const weapons = [];
       for (const spec of specs) {
@@ -485,7 +502,7 @@ export class VehicleAudioRack {
       }
       entry.engineAudio = engineAudio;
       entry.engineNode = engineNode;
-      entry.engineSpec = engineAudio ? findEngineSpec(report, template) : null;
+      entry.engineSpec = engineAudio ? engineSpec : null;
       entry.engineMissing = engineMissing;
       entry.weapons = weapons;
       entry.built = true;
@@ -568,12 +585,11 @@ export class VehicleAudioRack {
         entry.engineAudio.update(control);
       }
       for (const weapon of entry.weapons) {
-        const group = this._firingGroup(entry, weapon.spec.fireArms);
         // A gain gate is only meaningful for a patch that has something
         // running to gate. A gun built entirely out of one-shots is silent
         // between rounds on its own.
         weapon.audio.setMaster(
-          weapon.audio.hasLoops && !group?.firing ? 0 : entryMaster);
+          weapon.audio.hasLoops && !this._gunFiring(entry, weapon.spec.fireArms) ? 0 : entryMaster);
         weapon.audio.setAttachedToListener(
           this._attached(entry, weapon.node, weapon.spec, 'weapon'));
         this._weaponControl(weapon, dt, listenerPosition, listenerForward);
@@ -658,17 +674,23 @@ export class VehicleAudioRack {
   }
 
   /**
-   * The live gun group this patch belongs to, tolerating the instance suffix.
-   * The hull's own claimed groups first — two Shermans must not gate each
-   * other's coax — then the page's player groups, which is what the
-   * single-seat path consulted.
+   * Whether a gun this patch belongs to is firing, tolerating the instance
+   * suffix: the hull's own claimed groups of the patch's FireArms name —
+   * two Shermans must not gate each other's coax — else the page's player
+   * groups, which is what the single-seat path consulted. Any one of them:
+   * a destroyer's four `Browning` mounts share the one patch, and a gunner
+   * on the third used to leave it shut because only the first was asked.
+   *
+   * `firing` is the trigger (play); `sounding` is a replayed gun's, whose
+   * rounds come from a recording rather than a trigger and which the replay
+   * holds up while they leave (replay-hulls.js `holdSound`).
    */
-  _firingGroup(entry, fireArms) {
+  _gunFiring(entry, fireArms) {
     const want = bareFireArmsName(fireArms);
-    const matches = group => group && bareFireArmsName(group.node?.name) === want;
-    return entry.groups.find(matches)
-      || (this.playerGroups || []).find(matches)
-      || null;
+    const named = group => group && bareFireArmsName(group.node?.name) === want;
+    const own = entry.groups.filter(named);
+    const groups = own.length ? own : (this.playerGroups || []).filter(named);
+    return groups.some(group => group.firing || group.sounding);
   }
 
   /** What the rack is doing, for headless checks. */
