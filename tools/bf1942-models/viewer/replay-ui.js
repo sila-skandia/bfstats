@@ -95,7 +95,7 @@ const leaderMark = () => `<span class="rp-hl-lead" title="Kill leader">${svg('cr
 // colours (chat-layout.json: Axis 1, .35, .35; Allies .4, .6, 1).
 
 const STYLE = `
-html.replay-on .map-actions, html.replay-on #mobile-controls, html.replay-on #crosshair { display: none !important; }
+html.replay-on #mobile-controls, html.replay-on #crosshair { display: none !important; }
 html.replay-on #side { z-index: 8; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);

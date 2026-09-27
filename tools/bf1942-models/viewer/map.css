@@ -486,80 +486,6 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
-.speed-control,
-.map-actions {
-  position: absolute;
-  bottom: 18px;
-  left: 18px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
-}
-.speed-toggle-btn,
-.map-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  height: 32px;
-  box-sizing: border-box;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--text);
-  font: 11px var(--mm-font-mono);
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.speed-toggle-btn:hover,
-.map-action-btn:hover { border-color: var(--accent); }
-.speed-toggle-btn:active,
-.map-action-btn:active { background: rgba(255, 255, 255, 0.14); }
-.map-action-btn svg { flex-shrink: 0; }
-.action-badge,
-.speed-badge {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-  font-size: 10px;
-  letter-spacing: .08em;
-}
-[data-speed="fast"] .action-badge,
-[data-speed="fast"] .speed-badge {
-  background: var(--accent);
-  color: var(--mm-highlight-ink);
-}
-[data-speed="slow"] .action-badge,
-[data-speed="slow"] .speed-badge {
-  background: var(--muted);
-  color: var(--mm-highlight-ink);
-}
-[data-mode="fly"] .action-badge {
-  background: var(--accent);
-  color: var(--mm-highlight-ink);
-}
-[data-mode="pan"] .action-badge {
-  background: #5dade2;
-  color: #0b1520;
-}
-.action-hint,
-.speed-hint {
-  color: var(--muted);
-  font-size: 10px;
-}
-
 #mobile-controls {
   position: absolute;
   left: 12px; right: 12px; bottom: 72px;
@@ -742,29 +668,10 @@ a { color: var(--accent); }
     display: none;
   }
   .controls-collapse-btn { display: inline-flex; }
-  .map-controls-fab { display: inline-flex; }
-  .speed-control,
-  .map-actions {
-    bottom: 18px;
-    left: 12px;
-    gap: 6px;
-  }
-  #side:not(.side-collapsed) ~ .map-actions {
-    display: none !important;
-  }
   .map-controls-fab {
+    display: inline-flex;
     bottom: 18px;
     right: 12px;
-  }
-  .speed-toggle-btn,
-  .map-action-btn {
-    padding: 6px 10px;
-    font-size: 10px;
-    height: 34px;
-  }
-  .action-hint,
-  .speed-hint {
-    display: none;
   }
 }
 /* The room join modal (P3): the game's own overlay for a room that will
