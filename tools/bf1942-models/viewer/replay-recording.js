@@ -7,6 +7,7 @@
 // mapping here was measured.
 
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -1038,8 +1039,16 @@ export function placeholderWeaponFor(life, loadouts = null) {
  *  crouching, 0x40 lying, 0x08 swimming, 0x10 climbing, 0x80 jumping. */
 export const ANIM_FLAGS = Object.freeze({ SWIMMING: 0x08, CLIMBING: 0x10, CROUCHING: 0x20, LYING: 0x40, JUMPING: 0x80 });
 
+/** The soldier's state bit `0x10`, the chute carrying him: set and cleared by
+ *  `BFSoldier::setIsParachuting` (lnxded `0x08276f90`, its `+0x3e6`; the
+ *  client's `+0x416` is what `st` records). replay_20260927-140921's bail-out
+ *  has it up from `Lb_ParachuteOpen` (72.76 s) through `Lb_ParachuteIdle`
+ *  (84.36 s) and down from `Lb_ParachuteHitGround` (84.46 s). */
+export const CHUTE_OPEN_BIT = 0x10;
+
 /** A soldier's recorded body at `t` (v4 `st`), read through the state table:
- *  `{ stance, lower, upper, firing, reloading, pitch, item }`, or null. */
+ *  `{ stance, lower, upper, firing, reloading, pitch, item }` and whether
+ *  his chute is open (`chuteOpen`), or null. */
 export function bodyAt(rec, nid, t) {
   const entry = latestAt(rec.stances?.get(nid), t);
   if (!entry) return null;
@@ -1051,6 +1060,7 @@ export function bodyAt(rec, nid, t) {
   return {
     stance,
     swimming: Boolean(flags & ANIM_FLAGS.SWIMMING),
+    chuteOpen: Boolean((entry.bits ?? 0) & CHUTE_OPEN_BIT),
     lower: lower?.name ?? null,
     upper: upperName || null,
     firing: /fire/i.test(upperName) && !/end$/i.test(upperName),
@@ -1083,6 +1093,45 @@ export function recordedDeath(rec, nid, diedAt) {
     if (/^Lb_(Die|ParachuteDie)/.test(lower)) return lower;
   }
   return null;
+}
+
+/** A lower state in which the body is in the air: a blast's flight or
+ *  bounce, or the parachute's fall, opening, glide and death. */
+const inTheAir = lower => EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower);
+
+/**
+ * Where a dead man's body went after his death, when it was in the air (v4
+ * `st`): thrown by a blast (`knockback.js` -- the engine throws a dead body
+ * too, and a blast is what kills most men it throws), or riding his canopy
+ * down in `Lb_ParachuteDie`. From the record current at his death, or the
+ * first within `DIE_LAG` after it, while his lower state is one of those, to
+ * the first record after that is not: `{ until, landing }`, the moment the
+ * body came to rest and the lower state it came to rest in
+ * (`Lb_ExplosionLandFront`, `Lb_ParachuteDeadHitGround`, ...), `until`
+ * Infinity when the recording never lands him. Null when his body was not
+ * in the air, or went straight into a death of `handleDamage`'s.
+ *
+ * In replay_20260927-140921 all eight bodies a blast threw were dead men,
+ * killed from 0.2 s before the flight to 1.9 s into it, each coming to rest
+ * 0.02 to 3.1 s after his death.
+ */
+export function recordedFlight(rec, nid, diedAt) {
+  const list = rec.stances?.get(nid);
+  if (!list?.length || !Number.isFinite(diedAt)) return null;
+  const name = entry => rec.animStates?.[entry.lower]?.name ?? '';
+  const current = latestAt(list, diedAt);
+  let i = current ? list.indexOf(current) : 0;
+  while (i < list.length && list[i].t <= diedAt + DIE_LAG) {
+    const lower = name(list[i]);
+    if (inTheAir(lower)) break;
+    if (/^Lb_Die/.test(lower) && list[i].t >= diedAt - DIE_LEAD) return null;
+    i++;
+  }
+  if (i >= list.length || list[i].t > diedAt + DIE_LAG) return null;
+  for (let j = i + 1; j < list.length; j++) {
+    if (!inTheAir(name(list[j]))) return { until: list[j].t, landing: name(list[j]) };
+  }
+  return { until: Infinity, landing: null };
 }
 
 /** A hull's recorded engines at `t` (v4 `g`), folded into one:

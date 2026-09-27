@@ -1385,4 +1385,247 @@ const read = scene => {
   });
 }
 
+// --- a man blown off his feet, and a pilot who bails out -----------------------
+//
+// A soldier a blast throws goes into the engine's explosion states, living or
+// dead (knockback.js), and a pilot who bails out into its parachute states;
+// the body renderer drew neither. A v5 file records both halves' states and
+// the soldier's state bits (`0x10`: the chute is open). Four men, the table
+// as the game writes it (flags 0x6 on the explosion legs):
+//
+//   A (pid 51) thrown at 6.0, killed at 7.0 in the air, lands dead at 7.3; his
+//     torso holds a hit, then his aim, while his legs fly
+//   B (pid 52) thrown backward at 6.0, lands alive at 7.0, gets up at 8.0,
+//     stands at 10.0
+//   C (pid 53) falls from 5.1, opens at 7.0, glides from 8.7 and fires at
+//     9.0, lands at 11.0, stands at 11.5
+//   D (pid 54) glides, is killed at 8.0, rides the canopy down dead and lands
+//     at 10.5
+//
+// Their bodies are the bots' own renderer over a rig stood in for (the
+// engine's two-half machine, logging what each half enters), with a canopy
+// asset stood in for the published one. A page bot of the map's own, falling
+// out of the sky with the page's `Parachute`, goes through the same path.
+{
+  const [{ ReplaySoldiers }, { createBotVisuals }, { bag }, { SoldierActions }, { Parachute }] = await Promise.all([
+    imp('replay-bodies.js'), imp('bot-visuals.js'), imp('page-bag.js'), imp('soldier-actions.js'),
+    imp('parachute.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const STATES = [
+    [0, 'Lb_Stand', 0], [1, 'Ub_StandAimNo4', 0],
+    [2, 'Lb_ExplosionForward', 0x6], [3, 'Ub_ExplosionForward', 0],
+    [4, 'Lb_ExplosionLandFront', 0x6], [5, 'Ub_ExplosionLandFront', 0], [6, 'Ub_HitChestStand', 0],
+    [7, 'Lb_ExplosionBackward', 0x6], [8, 'Ub_ExplosionBackward', 0],
+    [9, 'Lb_ExplosionLandBackSurvive', 0x6], [10, 'Ub_ExplosionLandBackSurvive', 0],
+    [11, 'Lb_ExplosionLandBackSurviveStandUp', 0x6], [12, 'Ub_ExplosionLandBackSurviveStandUp', 0],
+    [13, 'Lb_ParachuteFall', 0x2], [14, 'Ub_ParachuteHitGround', 0],
+    [15, 'Lb_ParachuteOpen', 0x6], [16, 'Ub_ParachuteOpen', 0], [17, 'Lb_ParachuteIdle', 0],
+    [18, 'Ub_FireNo4', 0], [19, 'Lb_ParachuteHitGround', 0],
+    [20, 'Lb_ParachuteDie', 0x4], [21, 'Ub_ParachuteDie', 0],
+    [22, 'Lb_ParachuteDeadHitGround', 0x4], [23, 'Ub_ParachuteDeadHitGround', 0],
+  ];
+  const man = (pid, nid) => [
+    line({ k: 'e', t: 1, e: 'createPlayer', pid, name: `p${pid}`, team: 2, ai: 1 }),
+    line({ k: 'e', t: 5, e: 'createObject', tid: 1742, netId: nid, tmpl: 'RussianSoldier', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 5, e: 'control', pid, netId: nid }),
+    line({ k: 'o', t: 5.1, id: nid, gid: pid, tmpl: 'RussianSoldier', tid: 1742, team: 2, maxhp: 30, crit: 0 }),
+  ];
+  const st = (t, nid, lower, upper, bits) => line({ k: 'st', t, o: [[nid, lower, upper, 0, 0, 3, bits]] });
+  // Where each is, BF1942's frame, at his origin (a metre over his feet).
+  // A flies 10 m/s along +x from 6.0 to 7.3, a metre and a half up at the
+  // top; B 6 m/s back from 6.0 to 7.0; C falls from 200 m, fast to 7.0 and
+  // then 5 m/s under the canopy onto the ground at 11.0; D from 60 m at 5 m/s
+  // onto the ground at 10.5.
+  const at = {
+    851: t => (t <= 6 ? [0, 1, 0] : t >= 7.3 ? [13, 1, 0] : [10 * (t - 6), 1 + 1.5 * Math.sin(Math.PI * (t - 6) / 1.3), 0]),
+    852: t => (t <= 6 ? [20, 1, 0] : t >= 7 ? [14, 1, 0] : [20 - 6 * (t - 6), 1 + Math.sin(Math.PI * (t - 6)), 0]),
+    853: t => [40, t <= 7 ? 200 - 20 * (t - 5.1) : Math.max(1, 162 - 40.25 * (t - 7)), 0],
+    854: t => [60, Math.max(1, 60 - 5 * (t - 5.1) - 25.5 * Math.max(0, t - 10.4)), 0],
+  };
+  const timed = [
+    st(5.1, 851, 0, 1, 0x4040), st(5.1, 852, 0, 1, 0x4040), st(5.1, 853, 13, 14, 0x6000),
+    st(5.1, 854, 17, 1, 0x4010),
+    st(6.1, 851, 2, 6, 0x4000), st(6.5, 851, 2, 1, 0x4000), st(7.3, 851, 4, 5, 0x4040),
+    st(6.1, 852, 7, 8, 0x4000), st(7.0, 852, 9, 10, 0x40), st(8.0, 852, 11, 12, 0x40), st(10.0, 852, 0, 1, 0x41),
+    st(7.0, 853, 15, 16, 0x4010), st(8.7, 853, 17, 1, 0x4010), st(9.0, 853, 17, 18, 0x4010),
+    st(9.3, 853, 17, 1, 0x4010), st(11.0, 853, 19, 14, 0x40), st(11.5, 853, 0, 1, 0x41),
+    st(8.1, 854, 20, 21, 0x4010), st(10.5, 854, 22, 23, 0x40),
+    line({ k: 'e', t: 7.0, e: 'score', kind: 3, pid: 52, victim: 51, weapon: 1, bodypart: 1 }),
+    line({ k: 'e', t: 8.0, e: 'score', kind: 3, pid: 52, victim: 54, weapon: 1, bodypart: 1 }),
+    line({ k: 'f', t: 9.0, id: 853, pid: 53, w: 'No4', p: [40, 150, 0], d: [0, 0, 1] }),
+  ];
+  for (let i = 0; i <= 80; i++) {
+    const t = +(5.1 + i * 0.1).toFixed(1);
+    timed.push(line({ k: 's', t, o: [851, 852, 853, 854].map(nid => [nid, ...at[nid](t), 0, 0, 0, 1]) }));
+  }
+  timed.sort((a, b) => JSON.parse(a).t - JSON.parse(b).t);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'anim', t: 1, states: STATES }),
+    ...man(51, 851), ...man(52, 852), ...man(53, 853), ...man(54, 854),
+    ...timed,
+    line({ k: 'end', t: 20 }),
+  ].join('\n'));
+
+  // The canopy as `parachute.canopy.glb` carries it: its two clips and the
+  // soldier template's `addTemplate Parachute` offset.
+  const canopyAsset = () => {
+    const scene = new THREE.Group();
+    scene.name = 'canopy';
+    return Promise.resolve({
+      scene, attach: [0, 0.3, 0],
+      animations: [new THREE.AnimationClip('open', 2.5, []), new THREE.AnimationClip('idle', 2, [])],
+    });
+  };
+  // What the published bundles bind: the gaits, the parachute's eleven, the
+  // explosion's twenty, the torso's fire, the deaths played here.
+  const BOUND = new Set([
+    'stand.lower', 'stand.upper', 'walk.lower', 'walk.upper', 'run.lower', 'run.upper', 'Ub_Fire',
+    'Lb_DieChestStand', 'Ub_DieChestStand',
+    'Lb_ParachuteFall', 'Ub_ParachuteFall', 'Lb_ParachuteOpen', 'Ub_ParachuteOpen', 'Lb_ParachuteIdle',
+    'Lb_ParachuteHitGround', 'Ub_ParachuteHitGround', 'Lb_ParachuteDie', 'Ub_ParachuteDie',
+    'Lb_ParachuteDeadHitGround', 'Ub_ParachuteDeadHitGround',
+    ...STATES.map(([, name]) => name).filter(name => /Explosion/.test(name)),
+    'Lb_ExplosionBackward', 'Ub_ExplosionBackward', 'Lb_ExplosionLandBack', 'Ub_ExplosionLandBack',
+  ]);
+  const INFO = {
+    Lb_ExplosionForward: { loop: true, morph: 50 }, Lb_ExplosionBackward: { loop: true, morph: 50 },
+    Lb_ParachuteFall: { loop: true, morph: 1 }, Lb_ParachuteIdle: { loop: true, morph: 1 },
+    Ub_Fire: { loop: false, morph: 10000, then: '_POSE_' },
+  };
+  let now = 0;
+  const logs = new Map();       // pid -> { lower: [[name, t]], upper: [[name, t]] }
+  const rigFor = pid => {
+    const log = logs.get(pid) ?? { lower: [], upper: [] };
+    logs.set(pid, log);
+    const anim = new SoldierActions({
+      has: name => BOUND.has(name),
+      info: name => INFO[name] ?? (BOUND.has(name) ? { loop: /\.(lower|upper)$/.test(name), morph: 10 } : null),
+      duration: name => (name === 'Ub_Fire' ? 1 : 1),
+    });
+    const deaths = { dieChestStand: 1, explosionLandFront: 1, explosionLandBack: 1, parachuteDeadLanded: 1 };
+    return {
+      kind: 'halves', scene: new THREE.Group(), families: { stand: true, walk: true, run: true },
+      actions: new Map([...BOUND].map(name => [name, {}])), anim, weaponNode: new THREE.Object3D(),
+      mixer: { stopAllAction() {} }, hasDeath: family => family in deaths,
+      step: (input, dt) => {
+        log.held = input?.held ?? null;
+        for (const e of anim.update(input, dt)) {
+          const list = log[e.half];
+          if (list.at(-1)?.[0] !== e.name) list.push([e.name, +now.toFixed(2)]);
+        }
+      },
+    };
+  };
+  const pending = () => new Promise(() => {});
+  const kills = [];
+  const cries = [];
+  const steps = new Map();
+  const ctx = {
+    scene: new THREE.Scene(), bust: () => '', modelsBase: 'models', loadouts: () => null,
+    waterLevel: () => -100,
+    playSoldierDeathSound: () => cries.push(+now.toFixed(2)),
+    footstepTick: actor => steps.set(actor.pid, [...(steps.get(actor.pid) ?? []), +now.toFixed(2)]),
+    makeReplayBodies: shim => createBotVisuals(bag({
+      footBodyLoader: { loadAsync: pending }, footBodyClips: pending, footStateMachine: () => null,
+      disposeFootBodyScene: () => {}, soldierDress: null, bindDynamicShading: () => {}, canopyAsset,
+    }, shim)),
+  };
+  const soldiers = new ReplaySoldiers({ rec, ctx, playing: true });
+  const visuals = soldiers.bodies.botVisuals;
+  const killBot = soldiers.bodies.killBot;
+  soldiers.bodies.killBot = (bot, opts) => {
+    const family = killBot(bot, opts);
+    kills.push({ pid: bot.pid, family, t: +now.toFixed(2) });
+    return family;
+  };
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  const sample = {};
+  const look = (pid, key) => {
+    const vis = visuals.get(`replay:${pid}`);
+    const s = soldiers.soldiers.get(`replay:${pid}`)?.soldier;
+    const canopy = vis?.canopy ?? null;
+    const pair = p => (p ? { lower: p.lower, upper: p.upper } : null);
+    sample[`${pid}@${key}`] = {
+      drawn: Boolean(vis?.group.visible),
+      x: vis ? +vis.group.position.x.toFixed(2) : null,
+      weapon: vis?.rig?.weaponNode ? vis.rig.weaponNode.visible : null,
+      held: logs.get(pid)?.held ? { lower: logs.get(pid).held.lower, upper: logs.get(pid).held.upper ?? null } : null,
+      blast: pair(s?.explosionClips?.()),
+      chute: pair(s?.chute?.clips?.(false)),
+      open: s?.chute?.open ?? null,
+      canopy: canopy ? { visible: canopy.scene.visible, clip: canopy.want,
+                         over: +(canopy.scene.position.y - vis.group.position.y).toFixed(2) } : null,
+    };
+  };
+  const probes = {
+    6.3: [51, 52], 7.1: [51], 7.5: [53], 8.5: [52, 54], 9.1: [53], 9.5: [54], 10.5: [52], 11.2: [53], 11.8: [53],
+    5.5: [53],
+  };
+  for (let i = 0; i <= 150; i++) {
+    now = +(5.1 + i * 0.05).toFixed(2);
+    for (const pid of [51, 52, 53, 54]) {
+      const vis = visuals.get(`replay:${pid}`);
+      if (vis && !vis.rig) vis.rig = rigFor(pid);
+    }
+    if (now === 9) soldiers.fire(53, { weapon: 'No4', dir: [0, 0, 1] }, now);
+    soldiers.update(now, 0.05, new Map());
+    await tick();
+    for (const pid of probes[now] ?? []) look(pid, now);
+  }
+
+  // A bot of the page's own: his soldier's `Parachute` in free fall, then
+  // open -- the same renderer, reading `soldier.chute` as it reads a
+  // recorded man's.
+  const chute = new Parachute({ random: () => 0 });
+  const soldier = { x: 5, y: 150, z: 5, yaw: 0, stance: 'stand', body: { stateSpeed: 1 }, chute, swimClips: () => null };
+  const bot = { playerId: 'bot:7', name: 'b7', stance: 'stand', isFiring: false, vehicle: null, weaponAi: null,
+                kit: null, getPosition: () => [soldier.x, soldier.y, soldier.z] };
+  const scene = new THREE.Scene();
+  const pageBodies = createBotVisuals(bag({
+    footBodyLoader: { loadAsync: pending }, footBodyClips: pending, footStateMachine: () => null,
+    disposeFootBodyScene: () => {}, soldierDress: null, bindDynamicShading: () => {}, canopyAsset,
+    bots: [bot], world: { player: () => ({ soldier, team: 2 }), armorOf: () => ({ destroyed: false }) },
+    presentAlpha: 1, scene, camera: null, bust: () => '', MODELS_BASE: 'models',
+    soldierTemplateFor: () => 'USMarineSoldier', vehicles: null,
+  }));
+  pageBodies.ensureRoot();
+  pageBodies.ensureBotVisual(bot);
+  const pageVis = pageBodies.botVisuals.get('bot:7');
+  pageVis.rig = rigFor(7);
+  const pageFrame = async input => {
+    chute.update({ dt: 1 / 30, velocityY: -20, height: 100, ...input });
+    pageBodies.captureBotPresentationTick(false);
+    pageBodies.updateBotVisuals(1 / 30);
+    await tick();
+    const log = logs.get(7);
+    return {
+      state: chute.state, held: log.held ? { lower: log.held.lower, upper: log.held.upper ?? null } : null,
+      weapon: pageVis.rig.weaponNode.visible,
+      canopy: pageVis.canopy ? { visible: pageVis.canopy.scene.visible, clip: pageVis.canopy.want } : null,
+    };
+  };
+  const pageBot = { falling: await pageFrame({}), opening: null };
+  await pageFrame({ deploy: true });
+  pageBot.opening = await pageFrame({});
+  pageBot.lower = logs.get(7).lower.map(([name]) => name);
+
+  const byName = log => log.map(([name, t]) => [name, t]);
+  results.knockback = {
+    sample,
+    lower: Object.fromEntries([51, 52, 53, 54].map(pid => [pid, byName(logs.get(pid)?.lower ?? [])])),
+    upper: Object.fromEntries([51, 52, 53, 54].map(pid => [pid, byName(logs.get(pid)?.upper ?? [])])),
+    kills,
+    cries,
+    steps: Object.fromEntries([...steps].map(([pid, ts]) => [pid, ts])),
+    flight: {
+      A: recording.recordedFlight?.(rec, 851, 7.0) ?? null,
+      D: recording.recordedFlight?.(rec, 854, 8.0) ?? null,
+      B: recording.recordedFlight?.(rec, 852, 9.0) ?? null,
+    },
+    pageBot,
+  };
+}
+
 console.log(JSON.stringify(results));
