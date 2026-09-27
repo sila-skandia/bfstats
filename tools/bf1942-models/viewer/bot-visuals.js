@@ -401,9 +401,10 @@ export function createBotVisuals(page) {
       stanceTick: null, stanceEvents: [], reloading: false, reloadLeft: 0, shots: 0,
       // The canopy over him while his chute is open (`syncCanopy`), and the
       // whole-body pair the last frame held him in.
-      canopy: null, canopyLoading: false, held: null,
+      canopy: null, held: null,
     };
     botVisuals.set(bot.playerId, vis);
+    askCanopy();
 
     // The level's soldier holding the kit's primary; the old template for a
     // pair the tree has no pose for; the pistol last, as it always was.
@@ -656,6 +657,20 @@ export function createBotVisuals(page) {
 
   // --- the canopy ---------------------------------------------------------
 
+  /** The canopy asset once it is in (`page.canopyAsset`, one load for the
+   *  page), shared by every body. It is asked for with the first body drawn,
+   *  so a man first seen with his chute already opening (a replay joined
+   *  under a canopy: `Lb_ParachuteOpen` with no fall before it) has his
+   *  canopy on that very frame. */
+  let canopyReady = null;
+  let canopyAsked = false;
+  function askCanopy() {
+    if (canopyAsked || !page.canopyAsset) return;
+    canopyAsked = true;
+    Promise.resolve(page.canopyAsset()).then(asset => { canopyReady = asset ?? null; },
+      err => console.warn('bot canopy:', err));
+  }
+
   /** The canopy asset, cloned for one soldier: its opening plays once and
    *  holds, its idle loops, both parked until `syncCanopy` picks one (the
    *  discipline `foot-body.js` keeps for the human's own). */
@@ -697,23 +712,18 @@ export function createBotVisuals(page) {
    * chute is carrying him -- state bit `0x10`, set and cleared by
    * `setIsParachuting` (`0x08276f90`), the page's `Parachute.open` -- and
    * playing its opening while his legs play `Lb_ParachuteOpen`, its idle
-   * after (`knockback.js` `canopyClipFor`). The offset is from his origin,
-   * which `setCharacterHeight -1.00` puts `CHARACTER_HEIGHT` over the feet
-   * the body is drawn at. The asset is asked for the first time he falls,
-   * so it is there by the time he pulls.
+   * after (`knockback.js` `canopyClipFor`), each by the state his legs are
+   * in, whatever came before. The offset is from his origin, which
+   * `setCharacterHeight -1.00` puts `CHARACTER_HEIGHT` over the feet the
+   * body is drawn at.
    */
   function syncCanopy(vis, bot, held, dt) {
     const soldier = page.world?.player(bot.playerId)?.soldier;
     const clip = canopyClipFor(Boolean(soldier?.chute?.open), held?.lower ?? null);
     if (!vis.canopy) {
-      if ((clip || held) && !vis.canopyLoading && page.canopyAsset) {
-        vis.canopyLoading = true;
-        Promise.resolve(page.canopyAsset()).then(asset => {
-          if (!asset || botVisuals.get(bot.playerId) !== vis || vis.canopy) return;
-          vis.canopy = buildCanopy(asset);
-        }).catch(err => console.warn(`bot canopy for ${bot.name}:`, err));
-      }
-      return;
+      askCanopy();
+      if (!clip || !canopyReady) return;
+      vis.canopy = buildCanopy(canopyReady);
     }
     const c = vis.canopy;
     c.scene.visible = Boolean(clip) && vis.group.visible;
