@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { bodyAt, controlledAt, rootOf, sampleAt } from './replay-recording.js';
 import { toViewPosition, toViewQuaternion } from './replay-actors.js';
+import { nextSpawn } from './replay-chapters.js';
 import { EYE_HEIGHT, POSE_CROUCH, POSE_PRONE, POSE_STAND } from './soldier-pose.js';
 
 export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
@@ -271,6 +272,14 @@ export class ReplayCamera {
     const { player } = this;
     if (player.followPid === null) return null;
     const life = focusLife(player, t, true);
+    // Waiting to spawn with no body of his to watch: over where he will
+    // appear, framed as he will be there. His spectator camera sits wherever
+    // the game left it, the world's origin before his first spawn.
+    if (!life || life.camera) {
+      const spawn = nextSpawn(player.rec, player.followPid, t);
+      const target = spawn && this.spawnTarget(spawn.life);
+      if (target) return target;
+    }
     if (!life) return null;
     const s = sampleAt(life, t);
     if (!s) return null;
@@ -297,6 +306,15 @@ export class ReplayCamera {
     }
     point.y += radius * HULL_LIFT;
     return { life, kind: 'hull', hull, point, base: clamp(radius * HULL_BASE, 8, 400), minPitch: PITCH_MIN, heading: headingOf(_q) };
+  }
+
+  /** The orbit over where `life`, a soldier yet to spawn, first stands. */
+  spawnTarget(life) {
+    const key = life.keys[0];
+    if (!key) return null;
+    const point = toViewPosition(key.p, new THREE.Vector3());
+    point.y += SOLDIER.lift;
+    return { life, kind: 'spawn', point, base: SOLDIER.base, minPitch: PITCH_MIN, heading: headingOf(toViewQuaternion(key.q, _q)) };
   }
 
   // --- per frame -----------------------------------------------------------------
@@ -447,6 +465,9 @@ export class ReplayCamera {
       // what he was looking at.
       const s = sampleAt(life, t);
       if (!s || !life.keys.length) return false;
+      // One the game has not placed yet sits at the world's origin, looking
+      // at nothing: the orbit stands in, over where he will spawn.
+      if (!s.a.p[0] && !s.a.p[1] && !s.a.p[2]) return false;
       toViewPosition(s.a.p, cam.position);
       if (s.b) cam.position.lerp(toViewPosition(s.b.p, _v), s.k);
       toViewQuaternion(s.a.q, cam.quaternion);

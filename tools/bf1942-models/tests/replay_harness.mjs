@@ -709,6 +709,87 @@ const read = scene => {
   results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, deadPov: camera.hidePid };
 }
 
+// --- when he spawns ------------------------------------------------------------
+//
+// The 2026-09-27 request: a replay opens on the recording player, who can
+// take a while to spawn, so his card counts down to it and the timeline
+// marks it. A spawn is the moment a player takes control of a new soldier.
+// The recording player spawns at 8.5 s by the Airfield's flag, dies at 20
+// and is back at 32 on a carrier far from any flag. Another player's
+// control moves to a soldier at 10 that comes into range only at 15. A third
+// was already standing when the recording began, and a fourth was in a
+// soldier when the recording first listed him, seen only at 12: no spawn
+// the recording saw, either of them. While the recording player waits, the
+// orbit is over where he will appear, framed as it will frame him there:
+// his spectator camera sits at the world's origin until the game places it
+// at 4 s (Midway's first wait), and his body lies from 20 until 26.
+{
+  const [chapters, { markStyle }] = await Promise.all([imp('replay-chapters.js'), imp('replay-timeline.js')]);
+  const line = o => JSON.stringify(o);
+  const soldier = (t, id, team, [x, z]) => [
+    line({ k: 'o', t, id, gid: id, tmpl: team === 1 ? 'JapSoldier' : 'USMarineSoldier', tid: 100 + team, team }),
+    line({ k: 's', t, o: [[id, x, 1, z, 0, 0, 0, 1]] }),
+  ];
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'roster', t: 0, p: [[0, 2, 0, 'rec', 1], [1, 1, 1, 'far', 0], [2, 1, 1, 'here', 0], [3, 1, 1, 'late', 0]] }),
+    line({ k: 'o', t: 0, id: 18, gid: 18, tmpl: 'MultiPlayerFreeCamera', tid: 102, team: 0 }),
+    line({ k: 's', t: 0, o: [[18, 0, 0, 0, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 4, o: [[18, 100, 60, 100, 0, 0, 0, 1]] }),
+    ...soldier(0, 300, 1, [500, 500]),
+    line({ k: 'cp', t: 0, id: 900, name: 'Airfield', tmpl: 'The_Airfield', pos: [100, 0, 100], team: 2 }),
+    line({ k: 'p', t: 0, p: [[0, 2, 18, 18, 0, 0], [1, 1, 40, 40, 0, 0], [2, 1, 300, 300, 0, 0], [3, 1, 800, 800, 0, 0]] }),
+    ...soldier(8.5, 600, 2, [120, 90]),
+    line({ k: 'p', t: 8.5, p: [[0, 2, 600, 600, 0, 0]] }),
+    line({ k: 'p', t: 10, p: [[1, 1, 700, 700, 0, 0]] }),
+    ...soldier(12, 800, 1, [600, 600]),
+    ...soldier(15, 700, 1, [400, 300]),
+    line({ k: 'e', t: 20, e: 'score', kind: 4, pid: 0 }),
+    line({ k: 'p', t: 20.2, p: [[0, 2, 18, 18, 0, 0]] }),
+    line({ k: 'e', t: 26, e: 'destroyObject', netId: 600 }),
+    ...soldier(32, 610, 2, [1500, 1500]),
+    line({ k: 'p', t: 32, p: [[0, 2, 610, 610, 0, 0]] }),
+    line({ k: 'end', t: 60 }),
+  ].join('\n'));
+  const times = pid => chapters.spawnsOf(rec, pid).map(s => s.t);
+  const list = chapters.buildChapters(rec);
+  const spawns = list.filter(ch => ch.kind === 'spawn');
+  results.spawns = {
+    rec: times(0),
+    far: times(1),
+    here: times(2),
+    late: times(3),
+    next: [0, 9, 25, 33].map(t => chapters.nextSpawn(rec, 0, t)?.t ?? null),
+    // Before his spawn at 10, and after it while his soldier is out of range.
+    farNext: [5, 12, 16].map(t => chapters.nextSpawn(rec, 1, t)?.t ?? null),
+    status: [5, 25].map(t => chapters.playerStatusAt(rec, 0, t).state),
+    chapters: spawns.map(ch => [ch.t, ch.lead, ch.pid, ch.at]),
+    texts: spawns.map(ch => chapters.chapterText(rec, ch, { strings: null, names: {} })),
+    mine: [chapters.involves(spawns[0], 0), chapters.involves(spawns[0], 1)],
+    marks: [markStyle(spawns[0], 0), markStyle(spawns[0], 1)],
+    nextOwn: chapters.nextChapter(list, 0, 0)?.kind ?? null,
+  };
+
+  const { ReplayCamera } = await imp('replay-camera.js');
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const watcher = { rec, followPid: 0, time: 2, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
+  const camera = new ReplayCamera(watcher);
+  watcher.camera = camera;
+  const r2 = v => v.toArray().map(x => +x.toFixed(2) + 0);
+  const aim = t => {
+    const g = camera.targetAt(t);
+    return g && { kind: g.kind, nid: g.life.nid, point: r2(g.point) };
+  };
+  camera.setMode('pov');
+  camera.update(1 / 60, 2);
+  const early = { hides: camera.hidePid, fromSpawn: +cam.position.distanceTo(camera.targetAt(2).point).toFixed(1) };
+  camera.update(1 / 60, 5);
+  results.spawns.camera = {
+    waiting: aim(5), body: aim(24), gone: aim(28), spawned: aim(9),
+    povUnplaced: early, povPlaced: r2(cam.position),
+  };
+}
+
 // --- the camera looks where a soldier looks ---------------------------------
 //
 // The 2026-09-27 report: first person on foot looked out of the back of his

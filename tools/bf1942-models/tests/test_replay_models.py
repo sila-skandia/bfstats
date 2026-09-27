@@ -326,14 +326,15 @@ class ReplayUxTests(unittest.TestCase):
 
     def test_chapters_in_the_games_words(self) -> None:
         ux = self.results["ux"]
-        self.assertEqual(ux["chapters"], [[2, "round-start", 0], [10, "kill", 3], [20, "teamkill", 3],
-                                          [30, "death", 3], [35, "vehicle", 3], [50, "capture", 6],
-                                          [60, "capture", 6], [80, "round-end", 3]])
-        self.assertEqual(ux["texts"][1], "Axe [Type 99] Bea")
-        self.assertEqual(ux["texts"][2], "Bea killed a teammate: rec")
-        self.assertEqual(ux["texts"][3], "Axe is no more")
-        self.assertEqual(ux["texts"][4], "Sherman destroyed by Axe")
-        self.assertEqual(ux["texts"][5], "[Landing Beach] Axis captured the control point")
+        self.assertEqual(ux["chapters"], [[2, "round-start", 0], [3, "spawn", 1], [10, "kill", 3],
+                                          [20, "teamkill", 3], [30, "death", 3], [35, "vehicle", 3],
+                                          [50, "capture", 6], [60, "capture", 6], [80, "round-end", 3]])
+        self.assertEqual(ux["texts"][1], "rec spawned at Landing Beach")
+        self.assertEqual(ux["texts"][2], "Axe [Type 99] Bea")
+        self.assertEqual(ux["texts"][3], "Bea killed a teammate: rec")
+        self.assertEqual(ux["texts"][4], "Axe is no more")
+        self.assertEqual(ux["texts"][5], "Sherman destroyed by Axe")
+        self.assertEqual(ux["texts"][6], "[Landing Beach] Axis captured the control point")
 
     def test_next_and_previous_event(self) -> None:
         # A jump lands a chapter's lead before its moment; "previous" skips
@@ -341,9 +342,46 @@ class ReplayUxTests(unittest.TestCase):
         ux = self.results["ux"]
         self.assertEqual(ux["next"], ["round-start", "kill", "teamkill"])
         self.assertEqual(ux["prev"], "kill")
-        self.assertEqual(ux["nextOwn"], "teamkill")
+        # His first chapter is his spawn at 3 s.
+        self.assertEqual(ux["nextOwn"], "spawn")
         self.assertEqual(ux["feed"], [[10, "kill"], [20, "kill"], [30, "kill"], [45, "chat"],
                                       [50, "capture"], [60, "capture"]])
+
+    def test_when_he_spawns(self) -> None:
+        # The 2026-09-27 request: the card counts down to the recording
+        # player's spawn and the timeline marks it. A spawn is the moment a
+        # player takes control of a new soldier, even one seen only later;
+        # a soldier he was already in when the recording found him is none.
+        spawns = self.results["spawns"]
+        self.assertEqual(spawns["rec"], [8.5, 32])
+        self.assertEqual(spawns["far"], [10])
+        self.assertEqual((spawns["here"], spawns["late"]), ([], []))
+        # The countdown's target: the next spawn after the moment, none after
+        # the last.
+        self.assertEqual(spawns["next"], [8.5, 32, 32, None])
+        # Spawned out of the recording's range: in the round, not waiting.
+        self.assertEqual(spawns["farNext"], [10, None, None])
+        self.assertEqual(spawns["status"], ["spawning", "dead"])
+        # The timeline: the recording player's spawns alone, a second before
+        # each, named for the flag they were at; his own marks when followed.
+        self.assertEqual(spawns["chapters"], [[8.5, 1, 0, "Airfield"], [32, 1, 0, None]])
+        self.assertEqual(spawns["texts"], ["rec spawned at Airfield", "rec spawned"])
+        self.assertEqual(spawns["mine"], [True, False])
+        self.assertEqual(spawns["marks"], [{"glyph": "spawn", "cls": "spawn mine"},
+                                           {"glyph": "spawn", "cls": "spawn"}])
+        self.assertEqual(spawns["nextOwn"], "spawn")
+        # While he waits the orbit is over where he will appear, framed as it
+        # will frame him there, so the spawn itself moves nothing; his body
+        # while it lies; then his next spawn's place.
+        cam = spawns["camera"]
+        self.assertEqual(cam["waiting"], {"kind": "spawn", "nid": 600, "point": [120, 1.2, -90]})
+        self.assertEqual(cam["spawned"], {"kind": "soldier", "nid": 600, "point": [120, 1.2, -90]})
+        self.assertEqual(cam["body"]["kind"], "body")
+        self.assertEqual(cam["gone"], {"kind": "spawn", "nid": 610, "point": [1500, 1.2, -1500]})
+        # First person on a spectator camera the game has not placed (the
+        # world's origin) is the orbit over his spawn; placed, it is his view.
+        self.assertEqual(cam["povUnplaced"], {"hides": None, "fromSpawn": 6})
+        self.assertEqual(cam["povPlaced"], [100, 60, -100])
 
     def test_the_page_message_log_follows_the_recording(self) -> None:
         feed = self.results["uxFeed"]
