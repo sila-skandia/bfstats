@@ -1267,6 +1267,34 @@ const read = scene => {
     afterOneSecond,
     mounts: shipGuns.projectiles.map(p => r2(p.mesh.position)),
   };
+
+  // The rounds keep the replay's clock. The page advances its guns and its
+  // effects on its own clock, so in a paused replay the Stuka's bombs went on
+  // falling and burst. The replay hands both its playback rate each frame:
+  // nothing moves at 0, twice as far at 2.
+  const [{ ReplayPlayer }] = await Promise.all([imp('replay.js')]);
+  const height = () => +guns.projectiles[0].mesh.position.y.toFixed(3);
+  const clock = [];
+  guns.timeScale = 0;
+  const held = height();
+  for (let i = 0; i < 10; i++) guns.advance(0.05);
+  clock.push(+(height() - held).toFixed(3));
+  const effects = { timeScale: 1 };
+  const player = Object.assign(Object.create(ReplayPlayer.prototype), {
+    ctx: { guns, effects, scene: new THREE.Scene() }, rec: { duration: 100, fires: [] },
+    time: 5, speed: 4, playing: true, lastFiredTime: 5, hulls: new Map(), entities: [], markers: [],
+    soldiers: null, round: null, props: { update() {}, dispose() {} }, feed: { update() {}, dispose() {} },
+    camera: { update() {}, dispose() {}, hidePid: null, mode: 'orbit' },
+    ui: { timeline: { takeScrub: () => null, plan() {} }, scrubbing: false, logOpen: false, update() {}, dispose() {} },
+  });
+  player.update(1 / 60);
+  clock.push([guns.timeScale, effects.timeScale]);
+  player.playing = false;
+  player.update(1 / 60);
+  clock.push([guns.timeScale, effects.timeScale]);
+  player.dispose();
+  clock.push([guns.timeScale, effects.timeScale]);
+  results.replayClock = clock;
 }
 
 // --- a replayed swimmer swims --------------------------------------------------

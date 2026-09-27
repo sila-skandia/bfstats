@@ -428,6 +428,11 @@ class ReplayPlayer {
     // or scrubbed. The presentation integrates over it, so a paused replay's
     // propellers hold still with everything else.
     const step = Math.max(0, t - prevT);
+    // The rounds in the air and the effects run on the same clock: the page
+    // advances both on its own, and a paused replay's bombs kept falling.
+    const rate = this.feedRate();
+    if (this.ctx.guns) this.ctx.guns.timeScale = rate;
+    if (this.ctx.effects) this.ctx.effects.timeScale = rate;
     for (const hull of this.hulls.values()) hull.update(t, step);
     for (const entity of this.entities) place(this, entity, t);
     // The camera after the hulls (the orbit centres on a hull as drawn this
@@ -509,6 +514,8 @@ class ReplayPlayer {
 
   dispose() {
     if (this.ctx.guns?.collider?.dynamicCast) this.ctx.guns.collider.dynamicCast = null;
+    if (this.ctx.guns) this.ctx.guns.timeScale = 1;
+    if (this.ctx.effects) this.ctx.effects.timeScale = 1;
     this.camera.dispose();
     for (const hull of this.hulls.values()) hull.dispose();
     this.hulls.clear();
