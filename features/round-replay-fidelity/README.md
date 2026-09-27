@@ -29,6 +29,7 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | (the same round) the Stuka's bomb drop was one bomb, falling nose-down | the rack has a barrel under each wing, 6.6 m apart, and every barrel launched from the recorded point, so the two bombs lay on top of each other; and a replayed hull's rounds had no platform velocity, all a `velocity 0` release has, so they fell from a standstill and turned to face the ground. Each barrel now keeps its muzzle's offset from the recorded point (`recordedLaunch`) and every hull round leaves with the hull's recorded velocity |
 | (the gun-aim work beside it) one Hatsuzuki round lit all three of its mounts | `fire` fired every gun of the round's FireArms name; it now fires the mount nearest where the round left (`nearestGroup`), the one the aim lays for it |
 | (the same round) the four Flak 38s by the German base, and every Axis AA gun on every level, missing | the template is `flak38`, declared in `Objects/Vehicles/Land/Flak_38/`, and the models catalogue took a template as its folder's thing only on an exact name match, so no `models/flak38.glb` existed: the replay hid the level's baked Flak 38s and had nothing to draw in their place. `extract_models.py` `folder_key` compares without separators, which admits `flak38` and nothing else in vanilla, XPack1 or XPack2 |
+| a soldier in the sea walking on the seabed | the replay's stand-in soldier gave the body renderer no swim state (`swimClips` returned null), so it drew his gait. `replay-bodies.js` `swimState` hands it the recorded lower state (v4 on), or in a v3 file the engine's own test on his origin (`swim.js`): a swimmer's origin is pinned 0.4 m under the surface. Soldier 1091 of replay_20260927-001120 now swims at 72.3 s, head and shoulders out, his rifle stowed; a death in the water is the swim death |
 
 ## What the replay reuses now
 
@@ -59,6 +60,7 @@ in play; the recording writes the state the physics would have written.
 | turret traverse, gun elevation | not recorded: the rig's rest (a press's ray is the hull's axis, not the barrel's) | v5: recorded (`j`), put on the nodes, eased into each next sample as the hull's pose is (`sampleAt`). v4: the parts, all keyed 0, decoded per hull (`replay-aim.js` `decodeKeyedParts`) and used for a gun where one carries its own rounds, every 0.1 s; else **derived** from the rounds (`f`): each is where its gun pointed, held until the gun must turn to the next as late as its `setMaxSpeed` allows |
 | who fired, what, where | the recording player's trigger presses only | every round the client fires, bots included (`f`) |
 | stance, held weapon, firing pose | not recorded: standing, kit primary | recorded animation states and item (`st`, `anim`) |
+| swimming | **derived**: his origin more than 0.35 m under the water (`swim.js` `SWIM_LEAVE_DEPTH`), stroke from his motion along his heading | recorded: the lower swim state (`st`) |
 | crew and seats | from every player's controlled object; a seat id resolves to its hull (the ids after the hull's own) | the hull and seat are in the player record |
 
 ## Recording format (bf42plus)

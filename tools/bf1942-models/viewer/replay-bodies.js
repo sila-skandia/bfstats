@@ -22,10 +22,11 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, recordedDeath, rootOf } from './replay-recording.js';
-import { poseAt } from './replay-kinematics.js';
+import { motionAt, poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { DIE_CLIPS } from './soldier-death.js';
-import { SWIM_CLIPS } from './swim.js';
+import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -42,6 +43,16 @@ const DIE_FAMILY = new Map([
   ...Object.entries(DIE_CLIPS).map(([family, clips]) => [clips.lower, family]),
   [SWIM_CLIPS.swimDie.lower, 'swimDie'],
 ]);
+
+/** A live swim state's family, by the lower state that plays it (swim.js
+ *  `SWIM_CLIPS`; the swim death is a death, not a swim). */
+const SWIM_FAMILY = new Map(Object.entries(SWIM_CLIPS)
+  .filter(([family]) => family !== 'swimDie')
+  .map(([family, clips]) => [clips.lower, family]));
+
+/** Metres a second along his heading a swimmer the file has no body state
+ *  for must make to be drawn swimming rather than afloat. */
+const SWIM_STROKE = 0.5;
 
 const _q = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -110,7 +121,20 @@ export class ReplaySoldiers {
     if (actor) return actor;
     const info = this.player.rec.players.get(pid);
     const id = `replay:${pid}`;
-    const soldier = { team: info?.team ?? 2, soldier: { x: 0, y: 0, z: 0, yaw: 0, stance: 'stand', body: { stateSpeed: 1 }, swimClips: () => null }, dead: false };
+    const soldier = {
+      team: info?.team ?? 2,
+      soldier: {
+        x: 0, y: 0, z: 0, yaw: 0, stance: 'stand', body: { stateSpeed: 1 },
+        // His swim state, as the page's own soldier carries it (swim.js
+        // `SwimState`): read by the renderer's swim clips and its death.
+        swim: { swimming: false, family: null },
+        swimClips(dead = false) {
+          if (dead) return this.swim.swimming ? SWIM_CLIPS.swimDie : null;
+          return this.swim.family ? SWIM_CLIPS[this.swim.family] : null;
+        },
+      },
+      dead: false,
+    };
     this.soldiers.set(id, soldier);
     actor = {
       playerId: id,
@@ -201,6 +225,7 @@ export class ReplaySoldiers {
       const body = bodyAt(rec, life.nid, t);
       actor.stance = body?.stance ?? 'stand';
       s.stance = actor.stance;
+      this.swimState(s, body, life, t, dead || Boolean(seated));
       actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
       if (body?.item) this.hold(actor, body.item, loadouts);
       // A weapon with no round to record (an engineer's wrench, a medic's
@@ -252,6 +277,32 @@ export class ReplaySoldiers {
     for (const actor of this.drawn) {
       if (!actor.vehicle && !actor.state.dead) this.player.ctx.footstepTick?.(actor, dt);
     }
+  }
+
+  /**
+   * His swim state at `t`, onto the stand-in soldier: whether he swims and the
+   * family of `SWIM_CLIPS` his body plays. A v4 file records it, the lower
+   * state his body entered. A file without body states has the engine's own
+   * test (`BFSoldier::updateSwimming`, swim.js) on his origin, a metre over the
+   * feet he is drawn at: swimming while it is more than the leave depth under
+   * the water, where a swimmer's is pinned 0.4 m under the surface; forward or
+   * back as he moved along his heading, afloat when he did not.
+   */
+  swimState(soldier, body, life, t, out) {
+    const swim = soldier.swim;
+    swim.swimming = false;
+    swim.family = null;
+    if (out) return;
+    if (body) {
+      if (body.swimming) swim.family = SWIM_FAMILY.get(body.lower) ?? 'swimFloat';
+    } else {
+      const water = this.player.ctx.waterLevel?.();
+      if (!Number.isFinite(water) || water - (soldier.y + CHARACTER_HEIGHT) <= SWIM_LEAVE_DEPTH) return;
+      const v = motionAt(life, t)?.velocity ?? [0, 0, 0];
+      const along = v[0] * Math.sin(soldier.yaw) + v[2] * Math.cos(soldier.yaw);
+      swim.family = along > SWIM_STROKE ? 'swimForward' : along < -SWIM_STROKE ? 'swimBackward' : 'swimFloat';
+    }
+    swim.swimming = Boolean(swim.family);
   }
 
   /** The soldier life `pid` stands in at `t`: the one he controls, or the one

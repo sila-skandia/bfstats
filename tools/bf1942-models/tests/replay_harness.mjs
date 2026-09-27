@@ -1269,4 +1269,61 @@ const read = scene => {
   };
 }
 
+// --- a replayed swimmer swims --------------------------------------------------
+//
+// A soldier in the water was drawn walking on the seabed: the replay's
+// stand-in soldier had no swim state for the renderer. A v4 file records the
+// state his body entered; a v3 file has none, and there the engine's own test
+// on his origin decides (swim.js): a swimmer's is pinned 0.4 m under the
+// surface, a wader's is a metre over the seabed. Water at y = 0. In the v3
+// file a man swims forward (his heading is BF1942's +Z), one floats, one wades
+// 1.2 m deep and one stands on the beach; in the v4 file one is recorded
+// swimming backward, then dies in the water.
+{
+  const { ReplaySoldiers } = await imp('replay-bodies.js');
+  const line = o => JSON.stringify(o);
+  const man = (pid, nid) => [
+    line({ k: 'e', t: 1, e: 'createPlayer', pid, name: `p${pid}`, team: 2, ai: 1 }),
+    line({ k: 'e', t: 5, e: 'createObject', tid: 1754, netId: nid, tmpl: 'USMarineSoldier', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 5, e: 'control', pid, netId: nid }),
+    line({ k: 'o', t: 5.1, id: nid, gid: pid, tmpl: 'USMarineSoldier', tid: 1754, team: 2, maxhp: 30, crit: 0 }),
+  ];
+  const samples = rows => {
+    const out = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = +(5.1 + i * 0.1).toFixed(1);
+      out.push(line({ k: 's', t, o: rows.map(([nid, x, y, z, dz]) => [nid, x, y, z + dz * i * 0.1, 0, 0, 0, 1]) }));
+    }
+    return out;
+  };
+  const v3 = recording.parseRecording([
+    line({ k: 'h', v: 3, start: '', hz: 10 }),
+    ...man(1, 701), ...man(2, 702), ...man(3, 703), ...man(4, 704),
+    ...samples([[701, 0, -0.45, 50, 1.5], [702, 10, -0.45, 50, 0], [703, 20, -0.2, 50, 1.5], [704, 30, 1, 50, 1.5]]),
+  ].join('\n'));
+  const v4 = recording.parseRecording([
+    line({ k: 'h', v: 4, start: '', hz: 10 }),
+    line({ k: 'anim', t: 1, states: [[0, 'Lb_Stand', 0], [1, 'Lb_SwimBackward', 0x0a], [2, 'Ub_SwimBackward', 0], [3, 'Ub_Stand', 0]] }),
+    ...man(5, 705),
+    line({ k: 'st', t: 5.1, o: [[705, 1, 2, 0, 0, 3, 0]] }),
+    ...samples([[705, 0, -0.45, 80, -1]]),
+  ].join('\n'));
+  const at = (rec, t) => {
+    const soldiers = new ReplaySoldiers({ rec, playing: true, ctx: { waterLevel: () => 0 } });
+    soldiers.update(t, 0.1, new Map());
+    const of = pid => soldiers.soldiers.get(`replay:${pid}`)?.soldier;
+    return { of, soldiers };
+  };
+  const pair = s => s?.swimClips()?.lower ?? null;
+  const v3At = at(v3, 5.55);
+  const v4At = at(v4, 5.55);
+  results.swim = {
+    v3: [1, 2, 3, 4].map(pid => pair(v3At.of(pid))),
+    swimming: [1, 2, 3, 4].map(pid => v3At.of(pid)?.swim?.swimming ?? null),
+    v4: pair(v4At.of(5)),
+    v4Death: v4At.of(5)?.swimClips(true)?.lower ?? null,
+    dryDeath: v3At.of(4)?.swimClips(true) ?? null,
+  };
+}
+
 console.log(JSON.stringify(results));
