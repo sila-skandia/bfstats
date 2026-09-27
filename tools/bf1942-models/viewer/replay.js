@@ -51,6 +51,8 @@ import { ReplaySoldiers } from './replay-bodies.js';
 import { ReplayProps } from './replay-props.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
+/** The player itself, for the node harness (it needs a DOM to construct). */
+export { ReplayPlayer };
 export { roundClock } from './replay-recording.js';
 export { setReplayPropellerIdle } from './replay-assets.js';
 
@@ -412,6 +414,13 @@ class ReplayPlayer {
     const step = Math.max(0, t - prevT);
     for (const hull of this.hulls.values()) hull.update(t, step);
     for (const entity of this.entities) place(this, entity, t);
+    // The camera after the hulls (the orbit centres on a hull as drawn this
+    // frame) and before the soldiers: their renderer culls each body against
+    // the camera as it stands when it draws him (bot-visuals.js
+    // `updateBotVisuals`). Placed after them, the cull read whatever the
+    // camera was aimed at before the replay ran, and the followed player
+    // vanished at some angles of the orbit.
+    this.camera.update(dt, t);
     this.soldiers?.update(t, step, this.hulls);
     this.props.update(t);
     // The server log's rings on the level are the replay log's, a debug
@@ -433,7 +442,6 @@ class ReplayPlayer {
       }
     }
     this.lastFiredTime = t;
-    this.camera.update(dt, t);
     this.hideOwnBody(this.camera.hidePid);
     // The game's message log, and in the recording player's own first
     // person his hits' red wash.

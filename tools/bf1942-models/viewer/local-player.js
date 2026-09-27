@@ -33,7 +33,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierDeathSound`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `remoteCrewTeam`, `roomJoined`, `seatAltFire`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
  * `stepSeatIk`, `stopFallSound`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
@@ -757,7 +757,11 @@ export function createLocalPlayer(page) {
       page.seatedCamera(dt);
     } else if (onFoot) {
       page.onFootCamera(dt);
-    } else {
+    } else if (!page.replayCamera) {
+      // A replay places the camera itself (replay-camera.js). Re-aimed here
+      // first, everything the frame reads of the camera before the replay
+      // runs -- the listener's facing, the replayed bodies' cull -- faced
+      // the free camera's idle look instead of the view being drawn.
       page.flyFreeCamera(dt);
       page.applyLook();
     }

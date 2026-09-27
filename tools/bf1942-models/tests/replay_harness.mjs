@@ -590,4 +590,84 @@ const read = scene => {
   results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, deadPov: camera.hidePid };
 }
 
+// --- the camera a replayed body is culled against ----------------------------
+//
+// The 2026-09-27 report: "the model of the player you're viewing can go
+// invisible depending on the angle you watch them on. If you pan around them
+// they appear again." A replayed soldier is drawn by the bots' own renderer,
+// which culls each body against the camera as it stands when it draws him
+// (bot-visuals.js `updateBotVisuals`). The replay placed its camera after its
+// bodies, and the page's free camera had re-aimed it down -Z first, so from
+// half of the orbit the man at its centre was culled. The page is stood in
+// for by that same re-aim, every frame before the replay runs, and the orbit
+// goes once round him; the renderer and its cull are the page's own, with his
+// rig stood in for.
+{
+  const [{ ReplayPlayer }, { ReplaySoldiers }, { ReplayCamera }, { createBotVisuals }, { bag }, { createLocalPlayer }] = await Promise.all([
+    imp('replay.js'), imp('replay-bodies.js'), imp('replay-camera.js'), imp('bot-visuals.js'),
+    imp('page-bag.js'), imp('local-player.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 4, start: '', hz: 10 }),
+    line({ k: 'e', t: 0.5, e: 'createPlayer', pid: 0, name: 'rec', team: 2, ai: 0 }),
+    line({ k: 'e', t: 3, e: 'createObject', tid: 100, netId: 600, tmpl: 'USMarineSoldier', pos: [10, 0, 20], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 3, e: 'control', pid: 0, netId: 600 }),
+    line({ k: 'o', t: 3.1, id: 600, gid: 1, tmpl: 'USMarineSoldier', tid: 100, team: 2, maxhp: 30 }),
+    line({ k: 's', t: 3.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 's', t: 5.1, o: [[600, 10, 0, 20, 0, 0, 0, 1]] }),
+    line({ k: 'end', t: 90 }),
+  ].join('\n'));
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const pending = () => new Promise(() => {});
+  const ctx = {
+    scene: new THREE.Scene(), camera: cam, bust: () => '', modelsBase: 'models',
+    groundHeight: () => 0, waterLevel: () => -100, loadouts: () => null,
+    makeReplayBodies: shim => createBotVisuals(bag({
+      footBodyLoader: { loadAsync: pending }, footBodyClips: pending, footStateMachine: () => null,
+      disposeFootBodyScene: () => {}, soldierDress: null, bindDynamicShading: () => {},
+    }, shim)),
+  };
+  const player = Object.assign(Object.create(ReplayPlayer.prototype), {
+    ctx, rec, time: 5, speed: 1, playing: false, lastFiredTime: 5, followPid: 0, recordingPid: 0,
+    hulls: new Map(), entities: [], markers: [], showServer: false,
+    props: { update() {} }, feed: { update() {} },
+    ui: { timeline: { takeScrub: () => null, plan() {} }, scrubbing: false, logOpen: false, update() {} },
+  });
+  player.soldiers = new ReplaySoldiers(player);
+  player.camera = new ReplayCamera(player);
+  const ear = new THREE.Vector3();
+  const frame = () => {
+    // map.html before the replay: the free camera's look, then the ear read
+    // back off the camera, which leaves its matrices on that look.
+    cam.lookAt(cam.position.x, cam.position.y, cam.position.z - 1);
+    cam.getWorldPosition(ear);
+    player.update(1 / 60);
+  };
+  frame();
+  const vis = player.soldiers.bodies.botVisuals.get('replay:0');
+  if (vis) vis.rig = { kind: 'still', scene: new THREE.Group(), families: { idle: true }, anim: null, weaponNode: null, step() {} };
+  const culled = [];
+  for (let i = 0; i < 16; i++) {
+    player.camera.yaw = i * Math.PI / 8;
+    for (let n = 0; n < 40; n++) frame();
+    if (!vis?.rig?.scene.visible) culled.push(i);
+  }
+
+  // The page's side: while a replay has the camera, the free camera leaves
+  // it alone; without one it flies and looks as it always did.
+  const calls = [];
+  const page = {
+    replayCamera: true, camera: cam, optPilot: { checked: false },
+    flyFreeCamera: () => calls.push('fly'), applyLook: () => calls.push('look'),
+    followSeat: () => {}, syncFootBody: () => {},
+  };
+  const local = createLocalPlayer(page);
+  local.frameCameras(1 / 60, false, false);
+  const underReplay = calls.splice(0);
+  page.replayCamera = false;
+  local.frameCameras(1 / 60, false, false);
+  results.replayCull = { drawn: Boolean(vis), culled, underReplay, withoutReplay: calls.splice(0) };
+}
+
 console.log(JSON.stringify(results));
