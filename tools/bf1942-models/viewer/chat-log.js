@@ -169,10 +169,16 @@ export function deathLine(name, strings) {
  * (0x00494342..0x00494419: the wide `" ["` at 0x008d89a4 and `"] "` at
  * 0x008d96b0 around the lexicon word). A team kill is 6 then 4, both team 0;
  * no killer, or his own hand, is 4, `is no more`.
+ *
+ * `how.teamKill`, when it is a boolean, is the server's own verdict (a
+ * recorded score event's 3 or 6, replay-feed.js) and wins over the sides:
+ * a player killed as he switched sides is still an enemy kill.
  */
 export function deathLines(victim, killer, strings, names, how = null) {
   if (killer && killer.id !== victim.id) {
-    if (killer.team && killer.team === victim.team) {
+    const teamKill = typeof how?.teamKill === 'boolean'
+      ? how.teamKill : Boolean(killer.team && killer.team === victim.team);
+    if (teamKill) {
       const tk = teamKillLine(killer.name, strings);
       return {
         lines: [{ text: tk, team: 0, who: 'killer' },

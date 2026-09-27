@@ -2,7 +2,7 @@
 // the recording's clock, and turned into feed rows. The optional overlay of
 // replay.js (`&serverlog=`).
 
-import { teamName } from './replay-recording.js';
+import { nameAt, teamName } from './replay-recording.js';
 
 // Server-log events are matched to recording events within this window when
 // the two clocks are aligned. A player's own chat is shown locally up to
@@ -116,16 +116,18 @@ export function alignServerLog(rec, log) {
 const QUIET = new Set(['beginRepair', 'endRepair', 'beginMedPack', 'endMedPack']);
 
 export function serverRows(rec, log, alignment) {
+  // Each id's name as the log goes: the server gives a leaver's id to the
+  // next player to join, so an event names whoever connected under it last.
+  // Bots have no createPlayer in the log; the recording's names them (the
+  // same ids: the server's), as they were at the event.
   const names = new Map();
-  for (const e of log.events) {
-    if (e.name === 'createPlayer') names.set(e.params.player_id, e.params.name);
-  }
-  // Bots have no createPlayer in the log; the recording's CreatePlayer names
-  // them (the same ids: the server's).
-  const who = id => names.get(id) ?? rec.players?.get(id)?.name ?? `player ${id}`;
+  let when = 0;
+  const who = id => names.get(id) ?? nameAt(rec, id, when);
   const rows = [];
   for (const e of log.events) {
+    if (e.name === 'createPlayer') names.set(e.params.player_id, e.params.name);
     const t = e.t - alignment.offset;
+    when = t;
     if (t < -2 || t > rec.duration + 2) continue;
     if (QUIET.has(e.name)) continue;
     const p = e.params;

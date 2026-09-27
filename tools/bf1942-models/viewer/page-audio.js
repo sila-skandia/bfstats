@@ -303,6 +303,46 @@ export function createPageAudio(page) {
     pageAudio.supplyGive.until = ctx.currentTime + pageAudio.supplyGive.buffer.duration;
   }
 
+  /**
+   * `SoldierRefillAmmo.ssc`: a soldier's own refill, which his client plays
+   * when a depot resupplies him (`BFSoldier::triggerRefillAmmoSound`, lnxded
+   * 0x0827ebc0, told by SpecialGameEvent 0), played for a replayed player at
+   * `position` (replay.js). The script's HIGH patch: `Ammorefill.wav` with a
+   * 5 % pitch jitter, full to 10 m and gone at 15 m (`Volume <- Distance`
+   * ramp 10..15). The wave is the one the levels' depots ship, so a level
+   * whose own depot gave it this page already holds it (`supplyGive`), and
+   * any other finds it in its tree's shared sounds.
+   */
+  async function playRefillSound(position) {
+    if (page.AUDIO_OFF || !position || masterVolume() <= 0) return;
+    ensureListener();
+    const buffer = pageAudio.supplyGive?.buffer
+      ?? await soundBuffer(page.currentDir, '../_shared/sounds/Ammorefill.mp3');
+    const ctx = pageAudio.audioListener?.context;
+    if (!buffer || !ctx || ctx.state !== 'running') return;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 1 + (Math.random() * 2 - 1) * 0.05;
+    const gain = ctx.createGain();
+    gain.gain.value = masterVolume() * WEAPON_HEADROOM;
+    const panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 10;
+    panner.maxDistance = 15;
+    panner.rolloffFactor = 1;
+    panner.positionX.value = position.x;
+    panner.positionY.value = position.y;
+    panner.positionZ.value = position.z;
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(pageAudio.audioListener.getInput());
+    source.onended = () => {
+      try { source.disconnect(); gain.disconnect(); panner.disconnect(); } catch (_) {}
+    };
+    try { source.start(); } catch (_) {}
+  }
+
   async function setupSounds(report, dir) {
     disposeSounds();
     const gen = pageAudio.soundsGeneration;
@@ -445,12 +485,35 @@ export function createPageAudio(page) {
    *  change and the next claim rebuilds. */
   pageAudio.vehicleAudio = null;
 
+  /**
+   * Every vehicle's engine and gun patches for this tree
+   * (`_shared/vehicle-sounds.json`, extract_vehicle_sounds.py), as a level
+   * report (`{ sounds: { vehicles } }`) whose sample paths are a level's own
+   * (`../_shared/sounds/...`): what the rack falls back to for a template the
+   * level's `scene.json` does not place. A round replay's server can spawn any
+   * (MoonGamers' Midway: Elco80 and Type38 PT boats and their rafts,
+   * Kubelwagens, Stationary MG42s, a B17), and each was silent. Fetched once
+   * per tree, on first need; null where the tree has no table.
+   */
+  const sharedVehicleSoundsByUrl = new Map();
+  function sharedVehicleSounds() {
+    const url = `${page.MAPS_BASE}/_shared/vehicle-sounds.json`;
+    if (!sharedVehicleSoundsByUrl.has(url)) {
+      sharedVehicleSoundsByUrl.set(url, fetch(`${url}${page.bust()}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(doc => (Array.isArray(doc?.vehicles) ? { sounds: { vehicles: doc.vehicles } } : null))
+        .catch(() => null));
+    }
+    return sharedVehicleSoundsByUrl.get(url);
+  }
+
   function ensureVehicleAudio() {
     if (pageAudio.vehicleAudio && !pageAudio.vehicleAudio.disposed) return pageAudio.vehicleAudio;
     pageAudio.vehicleAudio = new VehicleAudioRack({
       listener: () => ensureListener(),
       getBuffer: (dir, relPath) => soundBuffer(dir, relPath),
       report: () => page.extras ?? null,
+      shared: () => sharedVehicleSounds(),
       dir: () => page.currentDir,
       master: () => masterVolume(),
     });
@@ -930,6 +993,7 @@ export function createPageAudio(page) {
     playSoldierDeathSound,
     playSoldierHurtSound,
     playObstacleScrape,
+    playRefillSound,
     playSoldierOneShot,
     playSupplyGive,
     playWorldShot,

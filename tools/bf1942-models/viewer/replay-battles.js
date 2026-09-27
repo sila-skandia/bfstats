@@ -17,7 +17,7 @@
 // what was live -- `fresh` -- and says when something is only last seen.
 
 import {
-  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleAt,
+  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleAt, teamAt,
 } from './replay-recording.js';
 import { playerStatusAt, pointsAt } from './replay-chapters.js';
 
@@ -79,10 +79,10 @@ const otherSide = team => (team === 1 ? 2 : team === 2 ? 1 : 0);
 /** Whose side a life is on at `t`: a soldier's player's, a hull's own
  *  recorded team, else its crew's. */
 function sideOf(rec, life, t) {
-  if (life.soldier) return rec.players.get(life.pid)?.team ?? life.team ?? 0;
+  if (life.soldier) return teamAt(rec, life.pid, t) || life.team || 0;
   if (life.team === 1 || life.team === 2) return life.team;
   const crew = crewOf(rec, life, t);
-  return crew.length ? rec.players.get(crew[0].pid)?.team ?? 0 : 0;
+  return crew.length ? teamAt(rec, crew[0].pid, t) : 0;
 }
 
 /** The forward direction on the ground of a recorded life at `t`, in the
@@ -131,7 +131,7 @@ export function compass(dx, dz) {
  */
 export function whereIs(rec, pid, t, kills = rec.kills) {
   const status = playerStatusAt(rec, pid, t, kills);
-  const team = rec.players.get(pid)?.team ?? 0;
+  const team = teamAt(rec, pid, t);
   const out = { pid, team, state: status.state, life: status.life ?? null, seat: status.seat ?? 0,
                 pos: null, fresh: false, seen: null };
   if (status.state !== 'foot' && status.state !== 'vehicle') return out;
@@ -186,7 +186,7 @@ export function everyoneAt(rec, t, kills = rec.kills) {
  */
 export function activityOf(rec, kills = rec.kills, serverRows = []) {
   const events = [];
-  const teamOf = pid => (pid === null || pid === undefined ? 0 : rec.players.get(pid)?.team ?? 0);
+  const teamOf = (pid, t) => (pid === null || pid === undefined ? 0 : teamAt(rec, pid, t));
 
   // Shots, a shooter's half-second at a time. A v4 recording's trigger
   // presses repeat its rounds (`feedOnly`), and v3's oldest carry no place.
@@ -198,7 +198,7 @@ export function activityOf(rec, kills = rec.kills, serverRows = []) {
     const key = `${who}|${Math.floor(f.t / SHOT_BIN)}`;
     let bin = bins.get(key);
     if (!bin) {
-      bin = { t: f.t, sum: [0, 0, 0], n: 0, heavy: false, pid: f.pid ?? null, team: teamOf(f.pid) };
+      bin = { t: f.t, sum: [0, 0, 0], n: 0, heavy: false, pid: f.pid ?? null, team: teamOf(f.pid, f.t) };
       if (!bin.team && f.nid !== null && f.nid !== undefined) bin.team = lifeAt(rec, f.nid, f.t)?.team ?? 0;
       bins.set(key, bin);
     }
@@ -216,7 +216,7 @@ export function activityOf(rec, kills = rec.kills, serverRows = []) {
   for (const k of kills) {
     const pos = killPosition(rec, k, serverRows);
     if (!pos) continue;
-    events.push({ t: k.t, pos, w: WEIGHT.kill, team: teamOf(k.killer), pid: k.killer ?? null,
+    events.push({ t: k.t, pos, w: WEIGHT.kill, team: k.killerTeam ?? teamOf(k.killer, k.t), pid: k.killer ?? null,
                   victim: k.victim, kind: 'kill' });
   }
 

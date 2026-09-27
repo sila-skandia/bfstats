@@ -167,6 +167,14 @@ class DeathLineTests(unittest.TestCase):
         self.assertEqual([("Davis killed a teammate", 0), ("Hans is no more", 0)],
                          self.line("teamKill"))
 
+    def test_a_recorded_score_kind_wins_over_the_sides(self) -> None:
+        # A replay hands the server's own verdict (score event 3 or 6): a man
+        # killed as he switched to his killer's side is still a kill, in the
+        # killer's colour (Rut [Bazooka] Omen, replay_20260927-203459 9:59.7).
+        self.assertEqual([("Davis [Sherman] Hans", 2)], self.line("recordedKillSameSides"))
+        self.assertEqual([("Davis killed a teammate", 0), ("Hans is no more", 0)],
+                         self.line("recordedTeamKillOtherSides"))
+
 
 if __name__ == "__main__":
     unittest.main()

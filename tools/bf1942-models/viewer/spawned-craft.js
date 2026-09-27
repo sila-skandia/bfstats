@@ -38,14 +38,10 @@ export function detachSpawnedCraft(root) {
   const craft = [];
   const hosts = new Map();
   for (const top of spawners.children) {
-    top.traverse(o => {
-      if (o === top || o.userData?.templateKind !== 'PlayerControlObject') return;
-      const physics = o.userData.physics;
-      if (!(physics?.mass > 0)) return;
-      if (physics.vehicleCategory !== 'VCSea' && physics.vehicleCategory !== 'VCAir') return;
+    for (const o of spawnedCraftUnder(top)) {
       craft.push(o);
       hosts.set(o, top);
-    });
+    }
   }
   if (!craft.length) return craft;
   root.updateMatrixWorld(true);
@@ -58,6 +54,24 @@ export function detachSpawnedCraft(root) {
     }
     spawners.attach(o);
   }
+  return craft;
+}
+
+/**
+ * The craft a ship's spawners launch, baked under `top` (a ship's node in a
+ * level, or a `models/<Ship>.glb`'s root): every nested PlayerControlObject
+ * with a body of its own (`physics.mass`) in the sea or the air category,
+ * `top` itself excepted. A seat PCO carries no mass.
+ */
+export function spawnedCraftUnder(top) {
+  const craft = [];
+  top?.traverse(o => {
+    if (o === top || o.userData?.templateKind !== 'PlayerControlObject') return;
+    const physics = o.userData.physics;
+    if (!(physics?.mass > 0)) return;
+    if (physics.vehicleCategory !== 'VCSea' && physics.vehicleCategory !== 'VCAir') return;
+    craft.push(o);
+  });
   return craft;
 }
 

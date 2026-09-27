@@ -890,5 +890,85 @@ class ReplayKnockbackAndParachuteTests(unittest.TestCase):
         self.assertEqual(["Lb_ParachuteFall", "Lb_ParachuteOpen"], bot["lower"])
 
 
+class ReplayMidwayAuditTests(unittest.TestCase):
+    """The public-server Midway round (replay_20260927-203459), audited event
+    by event: ids reused by the next player to join, a team switch in the
+    tick of a kill, a soldier first seen after his player took him, the
+    radio, a depot's refills, the server's 0x80-separated lines, the status
+    it repeats at every join, a looped gun's report, and the ships a file
+    begun after the join never names."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["midway"]
+
+    def test_a_pid_is_whoever_held_it_then(self) -> None:
+        self.assertEqual(["3star", "Niconan", "Omen", "Niconan"], self.results["names"])
+        self.assertEqual([1, 2], self.results["teams"])
+        self.assertEqual(["left", "left"], self.results["left"])
+        roster = {pid: (name, team) for pid, name, team in self.results["roster45"]}
+        self.assertEqual(("Niconan", 2), roster[4])
+        self.assertEqual(("Niconan", 2), roster[11])
+        self.assertEqual(8, self.results["recordingPid"])
+
+    def test_a_kill_keeps_the_sides_it_was_scored_on(self) -> None:
+        # The owner's 9:58: "Rut appears to kill Niconan but it shows as a team
+        # kill". Omen switched to Rut's side in the tick Rut's bazooka killed
+        # him, and pid 11 was another man's by the round's end.
+        kill = self.results["kill"]
+        self.assertEqual((2, 1), (kill["killerTeam"], kill["victimTeam"]))
+        self.assertEqual("Rut [Bazooka] Omen", kill["text"])
+        self.assertIn([0, 11, 2, 1], self.results["feedKill"])
+
+    def test_the_score_board_forgets_a_leavers_score(self) -> None:
+        tally = self.results["tally"]
+        self.assertEqual({"kills": 0, "deaths": 1}, tally["omenAt35"])
+        self.assertIsNone(tally["niconanAt45"], "the next holder of pid 11 starts clean")
+        self.assertEqual({"kills": 0, "deaths": 1}, tally["withoutSessions"])
+
+    def test_chat_names_the_speaker_of_the_day_and_draws_0x80_as_a_space(self) -> None:
+        self.assertEqual(["3star: :O", "*Do not steal.", "Niconan: yo"], self.results["chat"])
+
+    def test_a_status_the_server_repeats_is_no_row(self) -> None:
+        self.assertEqual([], self.results["status"])
+
+    def test_the_radio_and_the_refills_are_read(self) -> None:
+        self.assertEqual([{"t": 15, "pid": 0, "msg": 15, "global": True}], self.results["radio"])
+        self.assertEqual("Rut: armor spotted", self.results["radioRow"])
+        self.assertEqual(1, self.results["radioFeed"])
+        self.assertEqual(3, self.results["refills"])
+        self.assertEqual(1, self.results["supplyRows"], "one row a visit to the depot")
+
+    def test_a_soldier_first_seen_after_his_player_took_him_is_his(self) -> None:
+        self.assertEqual({"pid": 9, "diedAt": 20}, self.results["lateSoldier"])
+
+    def test_a_looped_gun_sounds_while_its_rounds_leave_and_the_replay_runs(self) -> None:
+        # before a round, a round ago, paused, long after, after a seek
+        self.assertEqual([False, True, False, False, False], self.results["sounding"])
+
+    def test_a_replayed_ship_drops_the_craft_its_model_carries(self) -> None:
+        self.assertEqual(["Corsair"], self.results["craft"])
+        self.assertIsNone(self.results["corsairLeft"])
+        self.assertEqual("Enterprise", self.results["aaSeatKept"])
+
+    def test_what_the_file_sees_late_or_never_is_traced_back(self) -> None:
+        # The Fletcher2 sat on the level's Fletcher pad until seen at 405 s.
+        self.assertEqual([[559, "Fletcher2", 0]], self.results["extended"])
+        stand_ins = {nid: (tmpl, created, until) for nid, tmpl, created, until in self.results["standIns"]}
+        self.assertEqual(("Hatsuzuki", 0, None), stand_ins[541])
+        self.assertEqual(("Hatsuzuki2", 0, None), stand_ins[545])
+        # Removed at 389 s and made again at its place at 499 s: the Enterprise.
+        self.assertEqual(("Enterprise", 0, 389), stand_ins[571])
+        self.assertEqual(("Shokaku", 0, None), stand_ins[553])
+        # The Fletcher pad is the Fletcher2's, so the unnamed destroyer is the
+        # other pad's.
+        self.assertEqual(("Fletcher2", 0, None), stand_ins[563])
+        # The deck Zero until its engine started.
+        self.assertEqual(("Zero", 0, 9.5), stand_ins[613])
+        self.assertNotIn(558, stand_ins, "an engine alone names no template")
+
+
 if __name__ == "__main__":
     unittest.main()
