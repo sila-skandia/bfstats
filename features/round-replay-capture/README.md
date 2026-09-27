@@ -732,9 +732,11 @@ map.html?replay=replays/<recording>.ndjson
 map.html?replay=replays/<recording>.ndjson&serverlog=replays/<ev_log>.xml
 ```
 
-or a recording (and optionally its server log) dropped onto the view. The
-recording's SetLevel picks the map unless `?map=` says otherwise. `replays/` is
-gitignored; recordings are data.
+or a recording (and optionally its server log) opened from disk: Open
+recording, or dropped anywhere on the page, plays it on its own level
+(features/round-replay-ux, "Opening a recording"). The recording's SetLevel
+picks the map unless `?map=` says otherwise. `replays/` is gitignored;
+recordings are data.
 
 ### What the client recording alone gives
 

@@ -138,6 +138,29 @@
   letter-spacing: .05em;
 }
 
+/* A page's own action in the bar (map.html's Open recording), squared off
+   like the tabs beside it. */
+.shell-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  color: var(--mm-ink-soft);
+  font: 10.5px var(--mm-font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background-color .15s ease;
+}
+.shell-action svg { width: 13px; height: 13px; flex: none; }
+.shell-action:hover,
+.shell-action:focus-visible { border-color: var(--mm-ink-muted); color: var(--mm-ink); background: var(--mm-bg-soft); outline: none; }
+
 /* Which game the three tabs are showing: the house olive anchor strip,
    injected by mods.js only when there is more than one mod with assets for
    the current tab — a viewer serving vanilla alone gets the bar and nothing
@@ -223,10 +246,17 @@
 }
 .shell-mods-counts b { color: var(--mm-highlight-ink); font-weight: 600; }
 
+/* A bar with an action runs out of room for the page's sub-line sooner: gone
+   rather than cut to a stub. */
+@media (max-width: 1180px) {
+  .shell-bar:has(.shell-action) .shell-sub { display: none; }
+}
 @media (max-width: 880px) {
   .shell-sub { display: none; }
   .shell-search { min-width: 0; }
   .shell-search span { display: none; }
+  .shell-action { padding: 7px 9px; }
+  .shell-action span { display: none; }
 }
 @media (max-width: 560px) {
   .shell-mods-counts { display: none; }

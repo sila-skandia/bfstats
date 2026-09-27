@@ -121,6 +121,7 @@ export function parseRecording(text) {
     duration: 0,
     level: '',
     modeFile: '',
+    mod: '',              // the server's mod (ServerInfoEvent 0x1A): 'bf1942', 'XPack1', ...
     server: '',
     lives: [],
     players: new Map(),   // pid -> { name, team, ai, joinNid, joinKitNid }
@@ -297,6 +298,10 @@ export function parseRecording(text) {
       case 0x1b:
         rec.server = cString(b, 0, 32);
         return;
+      case 0x1a:
+        // ServerInfoEvent: 3 x { char[16], u8 length }: map id, mod, game id.
+        rec.mod = cString(b, 17, 16) || rec.mod;
+        return;
       case 0x04:
         // SimulationEvent: u8 running, f32 the server's world time, sent once
         // as this client's database completes.
@@ -462,6 +467,9 @@ export function parseRecording(text) {
         return;
       case 'serverName':
         rec.server = r.name ?? rec.server;
+        return;
+      case 'serverInfo':
+        rec.mod = r.mod || rec.mod;
         return;
       case 'projPool':
         projectilePool(t, r.tid, r.netId, r.count, r.tmpl);
