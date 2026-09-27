@@ -928,8 +928,18 @@ class ReplayMidwayAuditTests(unittest.TestCase):
         self.assertIsNone(tally["niconanAt45"], "the next holder of pid 11 starts clean")
         self.assertEqual({"kills": 0, "deaths": 1}, tally["withoutSessions"])
 
-    def test_chat_names_the_speaker_of_the_day_and_draws_0x80_as_a_space(self) -> None:
-        self.assertEqual(["3star: :O", "*Do not steal.", "Niconan: yo"], self.results["chat"])
+    def test_chat_names_the_speaker_of_the_day_and_draws_0x80_as_nothing(self) -> None:
+        # The game runs MoonGamers' words together (the owner, 2026-09-28).
+        self.assertEqual(["3star: :O", "*Donotsteal.", "Niconan: yo"], self.results["chat"])
+
+    def test_a_side_switched_before_the_file_is_the_rosters(self) -> None:
+        # The recorder holds a player's createPlayer from the join, with the
+        # side joined on; the roster after it has the side held as the file
+        # begins, and the replay uses it from the first second.
+        held = self.results["heldSwitch"]
+        self.assertEqual([2, 2], held["sides"])
+        self.assertTrue(held["local"])
+        self.assertFalse(held["joinedRow"], "a held createPlayer is no join")
 
     def test_a_status_the_server_repeats_is_no_row(self) -> None:
         self.assertEqual([], self.results["status"])
