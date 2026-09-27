@@ -13,10 +13,14 @@ import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
-/** Name tags further than this from the camera are not drawn, metres. */
-const TAG_RANGE = 320;
+/** Name tags are for the players near the camera: whole within TAG_NEAR
+ *  metres of it, faded out by TAG_FAR, a vehicle's 1.6 times as far. The
+ *  followed player's is drawn wherever he is while the orbit is on him. */
+const TAG_NEAR = 35;
+const TAG_FAR = 60;
+const TAG_VEHICLE = 1.6;
 /** At most this many tags, the nearest. */
-const TAG_MAX = 24;
+const TAG_MAX = 12;
 /** Seconds without a pointer move or key before a playing replay's chrome
  *  fades. */
 const IDLE_AFTER = 2.8;
@@ -71,8 +75,17 @@ const ICON = {
   close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.6"/>',
   dead: '<path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2"/>',
   vehicle: '<path d="M1.5 10.5h13v2h-13zM3 8l1.5-3.5h5L12 8h2.5v2h-13V8z"/>',
+  auto: '<path d="M1.5 4.5h9v7h-9z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 7l4-2.5v7l-4-2.5z"/><circle cx="6" cy="8" r="1.6"/>',
+  flame: '<path d="M8 1c1.9 2.7 4.1 4.3 3.7 8-.3 2.8-2 5-3.7 5-2 0-3.8-1.7-3.8-4.1 0-2.1 1.3-3.1 2.2-4.6.4 1.6 1 2.3 1.8 2.6.4-2 .1-4.4-.2-6.9z"/>',
+  crown: '<path d="M1.8 12.5h12.4l1-7.6-3.9 3L8 2.5 4.7 7.9l-3.9-3z"/>',
 };
 const svg = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name] ?? ''}</svg>`;
+
+/** The streak and kill-leader marks a name carries (replay-highlights.js). */
+function streakMark(n) {
+  return n >= 2 ? `<span class="rp-hl-streak" title="${n} kills without dying">${svg('flame')}${n}</span>` : '';
+}
+const leaderMark = () => `<span class="rp-hl-lead" title="Kill leader">${svg('crown')}</span>`;
 
 // --- the look ----------------------------------------------------------------------
 //
@@ -425,8 +438,9 @@ export class ReplayUi {
       orbit: this.button('', 'orbit', 'Orbit camera (1)', () => this.setMode('orbit')),
       pov: this.button('', 'pov', 'First person (2)', () => this.setMode('pov')),
       free: this.button('', 'free', 'Free camera (3)', () => this.setMode('free')),
+      auto: this.button('', 'auto', 'Auto camera: follows the action (4)', () => this.setMode('auto')),
     };
-    modes.append(this.modeBtns.orbit, this.modeBtns.pov, this.modeBtns.free);
+    modes.append(this.modeBtns.orbit, this.modeBtns.pov, this.modeBtns.free, this.modeBtns.auto);
 
     this.speedWrap = el('div', 'rp-speed');
     this.speedBtn = this.button('', null, 'Playback speed (- / =)', () => this.speedWrap.classList.toggle('open'), '1x');
@@ -516,7 +530,7 @@ export class ReplayUi {
         [k(['Home', 'End']), 'Start / end'],
       ]],
       ['Camera', [
-        [k(['1', '2', '3']), 'Orbit / first person / free'],
+        [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
         [k(['C']), 'Next camera'],
         ['Drag, wheel', 'Orbit and zoom'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
@@ -529,9 +543,11 @@ export class ReplayUi {
         [k(['&uarr;', '&darr;']), 'Previous / next player'],
         [k(['Tab']), 'Players'],
         ['Click a name', 'Follow him'],
+        [k(['M']), 'Battle map: click a man, a fight or the ground'],
+        [k(['B']), 'Battle markers'],
       ]],
       ['View', [
-        [k(['N']), 'Name tags'],
+        [k(['N']), 'Name tags (the players near the camera)'],
         [k(['L']), 'Replay log'],
         [k(['H']), 'Hide the interface'],
         [k(['F']), 'Fullscreen'],
@@ -653,14 +669,28 @@ export class ReplayUi {
   }
 
   setMode(mode) {
-    if (this.player.camera.setMode(mode)) {
+    // Auto is the orbit with the director choosing whom (replay-highlights.js).
+    const highlights = this.player.highlights;
+    if (mode === 'auto') {
+      highlights?.setAuto(true);
+      this.syncMode();
+      return;
+    }
+    const wasAuto = Boolean(highlights?.auto);
+    highlights?.setAuto(false, true);
+    if (this.player.camera.setMode(mode) || wasAuto) {
       this.flash(mode === 'orbit' ? 'Orbit' : mode === 'pov' ? 'First person' : 'Free camera');
     }
     this.syncMode();
   }
 
+  /** The camera the bar shows as chosen: Auto while the director has it. */
+  uiMode() {
+    return this.player.highlights?.auto ? 'auto' : this.player.camera.mode;
+  }
+
   syncMode() {
-    const mode = this.player.camera.mode;
+    const mode = this.uiMode();
     for (const [name, b] of Object.entries(this.modeBtns)) b.classList.toggle('on', name === mode);
     this.root?.classList.toggle('mode-free', mode === 'free');
   }
@@ -694,6 +724,7 @@ export class ReplayUi {
     // One overlay in the middle at a time.
     if (on && cls === 'board-open') this.root.classList.remove('help-open');
     if (on && cls === 'help-open') this.root.classList.remove('board-open');
+    if (on) this.player.highlights?.map.close();
     this.root.classList.toggle(cls, on);
     this.playersBtn.classList.toggle('on', this.root.classList.contains('board-open'));
     this.logBtn.classList.toggle('on', this.root.classList.contains('log-open'));
@@ -803,6 +834,7 @@ export class ReplayUi {
     this.speedWrap.classList.remove('open');
     this.root.classList.remove('board-open', 'help-open');
     this.playersBtn.classList.remove('on');
+    this.player.highlights?.map.close();
   }
 
   bindKeys() {
@@ -847,6 +879,9 @@ export class ReplayUi {
       if (once) this.toggle('help-open');
       return true;
     }
+    // The battle map, the markers, the Auto camera and the reel's keys.
+    const taken = player.highlights?.key(e, once);
+    if (taken !== undefined) return taken;
     switch (e.code) {
       case 'Space': if (once) this.togglePlay(); return true;
       case 'ArrowLeft': this.skip(e.shiftKey ? -15 : -5); return true;
@@ -862,7 +897,12 @@ export class ReplayUi {
       case 'Digit1': case 'Numpad1': if (once) this.setMode('orbit'); return true;
       case 'Digit2': case 'Numpad2': if (once) this.setMode('pov'); return true;
       case 'Digit3': case 'Numpad3': if (once) this.setMode('free'); return true;
-      case 'KeyC': if (once) { camera.cycleMode(); this.syncMode(); this.flash(camera.mode === 'orbit' ? 'Orbit' : camera.mode === 'pov' ? 'First person' : 'Free camera'); } return true;
+      case 'KeyC':
+        if (once) {
+          const cycle = ['orbit', 'pov', 'free', 'auto'];
+          this.setMode(cycle[(cycle.indexOf(this.uiMode()) + 1) % cycle.length]);
+        }
+        return true;
       case 'KeyW': case 'KeyA': case 'KeyS': case 'KeyD': case 'KeyQ': case 'KeyE':
         camera.keys.add(e.code);
         return true;
@@ -985,7 +1025,7 @@ export class ReplayUi {
 
     // The chrome fades while it plays untouched; paused, it stays.
     const idle = player.playing && !this.timeline.scrubbing && !this.overChrome
-      && !this.root.matches('.board-open, .help-open')
+      && !this.root.matches('.board-open, .help-open, .map-open')
       && !this.speedWrap.classList.contains('open')
       && (performance.now() - this.lastActivity) / 1000 > IDLE_AFTER;
     if (idle !== this.root.classList.contains('rp-idle')) {
@@ -1061,6 +1101,10 @@ export class ReplayUi {
         + `out of range${since !== null ? ` since ${fmtTime(since)}` : ''}</span>`;
     }
     if (this.loadingText) html = esc(this.loadingText);
+    else if (player.highlights && (status.state === 'foot' || status.state === 'vehicle')) {
+      html += streakMark(player.highlights.streakOf(pid, t));
+      if (player.highlights.leaderAt(t)?.pid === pid) html += leaderMark();
+    }
     if (hp) {
       const k = Math.max(0, Math.min(1, hp.hp / hp.max));
       const cls = hp.crit > 0 && hp.hp <= hp.crit ? 'fire' : hp.hp <= hp.max / 2 ? 'smoke' : '';
@@ -1086,7 +1130,10 @@ export class ReplayUi {
       const score = tally.get(p.pid) ?? { kills: 0, deaths: 0 };
       rows[p.team === 1 ? 1 : 2].push({ ...p, status, ...score });
     }
-    const key = JSON.stringify([player.followPid, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.life?.tmpl ?? '', r.kills, r.deaths]))]);
+    const highlights = player.highlights;
+    const leader = highlights?.leaderAt(t)?.pid ?? null;
+    for (const team of [1, 2]) for (const r of rows[team]) r.streak = highlights?.streakOf(r.pid, t) ?? 0;
+    const key = JSON.stringify([player.followPid, leader, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.life?.tmpl ?? '', r.kills, r.deaths, r.streak]))]);
     if (!force && key === this.boardKey) return;
     this.boardKey = key;
     for (const team of [1, 2]) {
@@ -1109,13 +1156,15 @@ export class ReplayUi {
             : r.status.state === 'left' ? 'left' : r.status.state === 'foot' ? 'on foot' : '';
         const nm = el('span', 'nm', r.name);
         if (r.pid === player.recordingPid) nm.append(el('span', 'rp-card-rec', 'REC'));
+        if (r.pid === leader || r.streak >= 2) nm.insertAdjacentHTML('beforeend', `${r.pid === leader ? leaderMark() : ''}${streakMark(r.streak)}`);
         row.append(st, nm, el('span', 'vh', where), el('span', '', String(r.kills)), el('span', '', String(r.deaths)));
         box.rows.append(row);
       }
     }
   }
 
-  /** Names over the players near the camera; a click follows one. */
+  /** Names over the players near the camera, and over the followed player
+   *  while the orbit is on him; a click follows one. */
   updateTags(t) {
     const seen = new Set();
     const player = this.player;
@@ -1127,20 +1176,29 @@ export class ReplayUi {
       const hideOwn = player.camera.hidePid;
       // Through his eyes, only his side's names, as the game tags friends.
       const ownTeam = hideOwn !== null ? player.rec.players.get(hideOwn)?.team ?? null : null;
+      const orbit = player.camera.mode === 'orbit';
       const candidates = [];
       for (const target of player.tagTargets(t)) {
         // Not over the head the first-person camera is inside.
         if (hideOwn !== null && target.pids?.includes(hideOwn)) continue;
         if (ownTeam !== null && target.team !== ownTeam) continue;
+        const me = Boolean(target.pids?.includes(player.followPid));
         v.copy(target.at);
         const distance = v.distanceTo(camera.position);
-        if (distance > TAG_RANGE) continue;
+        // Only the players round the camera carry a name: whole close to it,
+        // fading out further off.
+        const reach = target.vehicle ? TAG_VEHICLE : 1;
+        const fade = me && orbit ? 1
+          : 1 - Math.min(1, Math.max(0, (distance - TAG_NEAR * reach) / ((TAG_FAR - TAG_NEAR) * reach)));
+        if (fade < 0.05) continue;
         v.project(camera);
         if (!(v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05)) continue;
-        candidates.push({ target, distance, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height });
+        candidates.push({ target, distance, fade, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height });
       }
       candidates.sort((a, b) => a.distance - b.distance);
-      for (const { target, distance, x, y } of candidates.slice(0, TAG_MAX)) {
+      const highlights = player.highlights;
+      const leader = highlights?.leaderAt(t)?.pid ?? null;
+      for (const { target, fade, x, y } of candidates.slice(0, TAG_MAX)) {
         seen.add(target.key);
         let tag = this.tagNodes.get(target.key);
         if (!tag) {
@@ -1152,10 +1210,13 @@ export class ReplayUi {
           this.tagNodes.set(target.key, tag);
         }
         const me = Boolean(target.pids?.includes(player.followPid));
-        const text = `${target.name}${target.extra ? ` ${target.extra}` : ''}`;
+        const streak = target.pid !== null && target.pid !== undefined ? highlights?.streakOf(target.pid, t) ?? 0 : 0;
+        const lead = target.pid !== null && target.pid === leader;
+        const text = `${target.name}${target.extra ? ` ${target.extra}` : ''}|${streak}|${lead}`;
         if (tag.dataset.text !== text) {
           tag.dataset.text = text;
           tag.firstChild.textContent = target.name;
+          if (lead || streak >= 2) tag.firstChild.insertAdjacentHTML('beforeend', `${lead ? leaderMark() : ''}${streakMark(streak)}`);
           if (target.extra) tag.firstChild.append(el('small', '', ` ${target.extra}`));
         }
         tag.dataset.pid = String(target.pid ?? '');
@@ -1172,7 +1233,7 @@ export class ReplayUi {
         } else {
           bar.style.display = 'none';
         }
-        tag.style.opacity = me ? '1' : String(Math.max(0.45, 1 - distance / TAG_RANGE).toFixed(2));
+        tag.style.opacity = fade.toFixed(2);
         tag.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
         if (tag.style.display) tag.style.display = '';
       }
