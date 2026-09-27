@@ -174,6 +174,26 @@ const TABS = [
   assert.equal(strip.click(40, 200), false, 'below the strip is nobody\'s');
 }
 
+// --- the site's own word on a plate it has no other use for ------------------
+
+{
+  // REPLAY rides a slot the site does not answer for (INTRO's on the real
+  // strip; OPTIONS' plate here): the file's plate, place and dimming, with
+  // only the label the site's own, and the pack itself left as it was.
+  const rows = [{ page: 'mainNav', items: [{ key: 'MENU_OPTIONS', id: 'replay', label: 'REPLAY' }] }];
+  const picked = [];
+  const strip = createNavStrip({ layout, env, rows, active: 'singleplay', onPick: id => picked.push(id) });
+  const [replay] = strip.buttons;
+  assert.equal(replay.text, 'REPLAY');
+  assert.deepEqual(replay.elements.filter(el => el.kind === 'text').map(el => el.text), ['REPLAY']);
+  assert.equal(replay.index, 3, 'the slot\'s own dim index');
+  assert.equal(layout.pages.mainNav.elements.find(el => el.key === 'MENU_OPTIONS').text, 'OPTIONS',
+               'the pack keeps its word');
+  assert.equal(strip.hover(260, 45)?.id, 'replay', 'the plate is live');
+  strip.click(260, 45);
+  assert.deepEqual(picked, ['replay']);
+}
+
 // --- painting reaches the canvas -------------------------------------------
 
 {

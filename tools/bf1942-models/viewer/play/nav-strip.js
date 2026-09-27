@@ -71,15 +71,24 @@ function place(slot, x) {
   return slot.elements.map(el => ({ ...el, rect: [el.rect[0] + dx, ...el.rect.slice(1)] }));
 }
 
+/** A slot's labels, and their dimmed copies, reading `label` instead of the
+ *  file's word: a site action on a plate the site has no other use for
+ *  (REPLAY on INTRO's). The plates are the file's, untouched. */
+function relabel(elements, label) {
+  if (!label) return elements;
+  return elements.map(el => (el.kind === 'text' ? { ...el, text: label } : el));
+}
+
 /**
  * @param {object} options
  * @param {object} options.layout  main-menu-layout.json
  * @param {object} options.env     a `menu-pack.js` env
  * @param {Array}  options.rows    `[{ page, items: [{ key, id, slot?,
- *                                 enabled? }] }]` — `slot` re-places an
- *                                 item at that slot's x on its own page,
+ *                                 label?, enabled? }] }]` — `slot` re-places
+ *                                 an item at that slot's x on its own page,
  *                                 for a row the site keeps only one button
- *                                 of; `enabled` is asked every frame and a
+ *                                 of; `label` draws the site's own word on
+ *                                 the slot's plate; `enabled` is asked every frame and a
  *                                 button that answers false is neither
  *                                 drawn nor clickable (CREATE GAME while
  *                                 the room server is not answering)
@@ -98,10 +107,10 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
       return [{
         id: item.id,
         index: slot.index,
-        text: slot.text,
+        text: item.label ?? slot.text,
         enabled: item.enabled ?? (() => true),
         rect: [x, slot.elements[0].rect[1], slot.width, slot.elements[0].rect[3]],
-        elements: place(slot, x),
+        elements: relabel(place(slot, x), item.label),
       }];
     });
   });
