@@ -621,6 +621,7 @@ export function createBotVisuals(page) {
     if (!page.bots.length) return;
     // The camera's frustum as it stood last frame (the cameras are placed
     // after the simulation this runs in); `BOT_CULL_RADIUS` carries the margin.
+    // A replay places its camera before it draws (replay.js `update`).
     // The rig's skinned meshes are `frustumCulled = false` (pose-compose.js:
     // a posed body leaves its bind-pose sphere), so without this every bot on
     // the level is drawn every frame -- his skeleton composed, his bone
