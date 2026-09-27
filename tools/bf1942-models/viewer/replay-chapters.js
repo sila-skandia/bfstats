@@ -6,7 +6,7 @@
 // `tests/replay_harness.mjs` runs them under node.
 // features/round-replay-ux/README.md is the design.
 
-import { controlledAt, crewOf, lifeAt, rootOf, teamName } from './replay-recording.js';
+import { controlledAt, crewOf, isReplicated, lifeAt, rootOf, teamName } from './replay-recording.js';
 import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat-log.js';
 
 /** How far before its moment a chapter starts, seconds: a jump to a kill
@@ -164,10 +164,28 @@ export function prevChapter(chapters, t, pid = null) {
 }
 
 /**
+ * Whether the recording client had `life` in range at `t`. The server stops
+ * sending an object beyond the map's view distance from the recording
+ * player (`Game.setViewDistance`: Wake's 500 m cut at about 520, Kursk's
+ * 400 m at 407 to 416 in replay_20260927-140921), so the replay has only its
+ * last pose until it comes back, drawn as a ghost. `{ since }`, the time it
+ * went (null when it was never in range), or undefined while it is.
+ */
+export function outOfRange(life, t) {
+  if (!life || isReplicated(life, t)) return undefined;
+  let since = null;
+  for (const [, to] of life.replicated) {
+    if (to <= t && (since === null || to > since)) since = to;
+  }
+  return { since };
+}
+
+/**
  * What `pid` is doing at `t`: `{ state }` with `state` one of foot (`life`,
  * his soldier), vehicle (`life` the hull, `seat`), dead (`killedBy`, the
  * kill line that did it, if any), spawning (on the spawn screen before his
- * first life), left, or absent (nothing recorded of him yet).
+ * first life), left, or absent (nothing recorded of him yet). On foot and in
+ * a vehicle, `outOfRange` says when the recording lost sight of him.
  */
 export function playerStatusAt(rec, pid, t, kills = rec.kills) {
   const player = rec.players.get(pid);
@@ -185,11 +203,13 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
   };
   if (own?.soldier) {
     if (own.diedAt !== undefined && t >= own.diedAt) return dead();
-    return { state: 'foot', life: own };
+    return { state: 'foot', life: own, outOfRange: outOfRange(own, t) };
   }
   if (!own?.camera) {
     const root = rootOf(rec, nid, t, pid);
-    if (root && !root.life.soldier && !root.life.camera) return { state: 'vehicle', life: root.life, seat: root.seat };
+    if (root && !root.life.soldier && !root.life.camera) {
+      return { state: 'vehicle', life: root.life, seat: root.seat, outOfRange: outOfRange(root.life, t) };
+    }
   }
   const lived = rec.lives.some(l => l.soldier && l.pid === pid && l.created <= t);
   return lived ? dead() : { state: 'spawning' };

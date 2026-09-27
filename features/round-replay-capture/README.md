@@ -567,7 +567,13 @@ two within 30 ms, so the timings below are measured.
   sample, so it is not "stays replicated once you have been near". Control
   points are exempt: they stayed replicated at 687 m. Wake sets
   `Game.setViewDistance 500`, the likely driver; the extra ~20 m is unexplained.
-  A map with a different view distance would confirm it.
+  Confirmed on a second map (2026-09-27): Kursk sets `Game.setViewDistance 400`,
+  and in `replay_20260927-140921` (a public server) an Ilyushin left the
+  recording player's range at 414 m and 416 m and came back at 407 m. So the
+  cut-off is the level's view distance plus a few per cent, the fog line the
+  player could not have seen past anyway. The replay holds such an object at
+  its last pose as a translucent ghost, and the followed player's card says
+  when he went out of range.
 - **The round did not end on a time limit.** The server runs
   `serverGameTime 0`. On the empty server every round lasted exactly 1200 s
   from `roundInit` because team 1's 200 tickets drained at one per 6 s
