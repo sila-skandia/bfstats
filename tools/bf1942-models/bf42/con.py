@@ -1808,16 +1808,26 @@ class ObjectLibrary:
                         child = ChildRef(template=args.split()[0])
                         obj.children.append(child)
                 elif cmd in ("setposition", "setrotation"):
+                    # Both place the child the last `addTemplate` added, and
+                    # nothing else. The console word hands
+                    # `BundleTemplate::setPosition` / `setRotation` (lnxded
+                    # 0x081a8fe0 / 0x081a9050) the index `addTemplate` stored in
+                    # `BundleTemplate::mActiveMemberId` (0x081cc03b), and both
+                    # return without writing when that index is past the
+                    # template's children. On a template with no child yet the
+                    # word is a no-op, not the template's own offset: DC Final's
+                    # helmet (`SetPosition 0/-.1/0`) sits where vanilla's does,
+                    # and its grenade (`0/0/5`) on the hip, not five metres off.
+                    if child is None:
+                        continue
                     try:
                         value = vec3(args.split()[0]) if args else (0.0, 0.0, 0.0)
                     except ValueError:
                         continue
-                    # The active target is the last child added, else the template.
-                    target = child or obj
                     if cmd == "setposition":
-                        target.position = value
+                        child.position = value
                     else:
-                        target.rotation = value
+                        child.rotation = value
                 # The rig always belongs to the template being defined, never to a
                 # child instance — it is behaviour, not placement.
                 elif cmd in ("setminrotation", "setmaxrotation", "setmaxspeed",
