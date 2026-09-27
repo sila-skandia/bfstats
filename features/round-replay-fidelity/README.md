@@ -37,6 +37,7 @@ in play; the recording writes the state the physics would have written.
 | a soldier's shot | the weapon glb's FireArms through `GunFire` (as `bot-rounds.js`), `playWorldShot` | flash, casing, tracer or rocket from the drawn weapon, down the recorded direction; the world fire patch at the shooter |
 | footsteps, death cry | `page-audio.js` `botFootstepTick`, `playSoldierDeathSound` | per actor |
 | dropped kit, thrown grenade | the kit's `__pickup.kit.glb` (`kit-drops-page.js`'s mesh), the weapon glb's projectile mesh and end effect | shown where the recording has it lying; a round that goes out of the recording where it lay plays its projectile's end effect (`e_ExplGranade` for a grenade) |
+| control points, tickets | `hoistCaptureFlag` (the flag's cloth, the minimap marker, the flag bar), the HUD's `ShowTicket` counter (`extras.tickets`), `round-state.js` | each point's recorded owner (`cp`) on the level's point it matches (by template, shown name, or place); the recorded tickets (`tk`, bf42plus `e692f14` on), else the page's own round run over the recorded deaths and owners from the round's start and called an estimate; no counter for a join mid-round without `tk`. The page's own round stands aside while a replay has the page |
 | layer | `level-load.js` `?mode=` | from the recording's SetLevel mode file (`coop.con` plays `SinglePlayer/`) unless `?mode=` says otherwise; the briefing screen is accepted on its own and opens no spawn screen |
 
 ## Recorded, and derived

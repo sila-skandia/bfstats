@@ -237,7 +237,8 @@ red, Allies blue).
   with the page's log stood in, not yet by a real round.
 - The soldier's torso twist (`st`) is not applied to the first-person
   heading; only the recorded heading and the aim pitch (x 2.5) are.
-- The level's own flags, the minimap's flag bar and the ticket counter do not
-  follow the recording.
+- (Since done, `replay-round.js`: the level's flags, the minimap's markers
+  and flag bar, and the game's ticket counter follow the recording; see
+  `features/round-replay-fidelity`.)
 - Touch (one finger orbits, two pinch) was laid out at phone width but not
   driven on a device.
