@@ -109,9 +109,11 @@ not there:
    the manifest does not list is dressed as its base kit.
 4. **Worn parts.** Each `worn[].glb` from the first tree in the search path
    that has it — a mod kit borrows vanilla's radio and packs. A part hung more
-   than a metre off its bone is left off: every part in every tree sits within
-   0.1 m but DC Final's grenade (`SetPosition 0/0/5` on the hip), which would
-   float in mid-air and shrink the soldier to a speck to fit the frame.
+   than a metre off its bone is left off, so bad data cannot float a part in
+   mid-air and shrink the soldier to a speck to fit the frame. The one case
+   seen, DC Final's grenade at `0/0/5`, was the parser's: a `KitPart`'s own
+   `setPosition` is a no-op in the engine (`features/bf1942-3d-models/kits.md`),
+   and the same misreading had put DC Final's helmet 10 cm behind the head.
 
 A soldier whose kits all fail to pose has no figure (`null`), the same as one the
 armoury never extracted.
@@ -367,7 +369,7 @@ Paths under `figure` and `vehicles` are relative to the mesh root
 
 | | |
 |---|---|
-| Service record | Redis 1 h per player (`service-record:v5:`); edge `s-maxage=600` |
+| Service record | Redis 1 h per player (`service-record:v6:`); edge `s-maxage=600` |
 | Map armies | `public, max-age=86400`, as the dossier |
 | `/stats/assets/mesh/*` | `public, max-age=300, s-maxage=86400` — the mesh site's own policy. Without a `Cache-Control` the zone rule bypasses Cloudflare, so every profile view pulled a 1–2 MB glb from the node. |
 | Asset paths the API returns | each ends in `?v=` and its file's modification time, so a republished glb has a URL the edge has never cached |
