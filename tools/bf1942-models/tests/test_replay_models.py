@@ -523,6 +523,9 @@ class ReplayKurskRoundTests(unittest.TestCase):
       release has.
     - (From the gun-aim work beside it.) One destroyer round flashed every
       mount of that name.
+    - Checking the bombs in the page: the page advanced its rounds and its
+      effects on its own clock, so a paused replay's bombs fell and burst,
+      and at 4x they fell at a quarter of the round's speed.
     """
 
     results: dict
@@ -531,6 +534,7 @@ class ReplayKurskRoundTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         harness = run_harness()
         cls.results = {"soldiers": harness["respawnKit"], "rack": harness["bombRack"]}
+        cls.clock = harness["replayClock"]
 
     def test_a_respawn_draws_his_new_kit_without_a_seek(self) -> None:
         kit = self.results["soldiers"]["kit"]
@@ -575,6 +579,12 @@ class ReplayKurskRoundTests(unittest.TestCase):
     def test_one_round_fires_one_mount(self) -> None:
         # Left from the mount 30 m aft; out of its own muzzle, 4 m ahead.
         self.assertEqual(self.results["rack"]["mounts"], [[500, 5, -474]])
+
+    def test_the_rounds_keep_the_replays_clock(self) -> None:
+        # Paused, a bomb in the air holds its height; the replay hands the
+        # page's guns and effects its playback rate (4x, then 0 paused) and
+        # gives the page its own clock back when it closes.
+        self.assertEqual(self.clock, [0, [4, 4], [0, 0], [1, 1]])
 
 
 
