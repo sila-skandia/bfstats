@@ -505,5 +505,77 @@ class ReplayGunAimTests(unittest.TestCase):
         self.assertEqual(self.results["lateTurn"], [0, 22, 20, -179])
 
 
+class ReplayKurskRoundTests(unittest.TestCase):
+    """The owner's report on a public Kursk round, `replay_20260927-140921`.
+
+    - A medic killed with his Mp18 at 112.9 s was drawn with a bazooka, the AT
+      kit he had died in, until a seek put the Mp18 back: his old body, built
+      in the old kit, outlived the stretch with nothing of him to draw and was
+      kept for the new life.
+    - An engineer repairing never turned his wrench: a wrench fires no round,
+      so nothing started the torso's fire, although the recording has the
+      engine's `Ub_FireRepairPack` state. Found beside it: no reload ever
+      played (a magazine change is only a torso state too), and every death
+      was the renderer's guess although the recording names the engine's.
+    - A Stuka's bomb drop was one bomb falling nose-down from a standstill:
+      both barrels of the rack left from one recorded point, and a replayed
+      hull's rounds had no platform velocity, which is all a `velocity 0`
+      release has.
+    - (From the gun-aim work beside it.) One destroyer round flashed every
+      mount of that name.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        harness = run_harness()
+        cls.results = {"soldiers": harness["respawnKit"], "rack": harness["bombRack"]}
+
+    def test_a_respawn_draws_his_new_kit_without_a_seek(self) -> None:
+        kit = self.results["soldiers"]["kit"]
+        self.assertEqual(kit["5"], {"body": "Rus_AT", "primary": "Bazooka"})
+        self.assertEqual(kit["16"], {"body": "Rus_Medic", "primary": "Mp18"})
+
+    def test_a_wrench_turns_while_the_recording_says_he_repairs(self) -> None:
+        # Held from 3.0 to 5.1 s on a one-second one-shot: three fires, each
+        # started as the last ran out, and none after the trigger let go.
+        soldiers = self.results["soldiers"]
+        self.assertEqual(soldiers["engineer"], "RepairPack")
+        self.assertEqual(soldiers["fires"], [3, 4, 5])
+        # A weapon whose rounds the recording writes fires on its rounds.
+        self.assertEqual(soldiers["recordsRounds"], {"Mp18": True, "RepairPack": False})
+
+    def test_a_recorded_reload_plays_once(self) -> None:
+        # The torso's reload state from 6.0 to 8.2 s: one magazine change,
+        # started as the recording enters it and not again while it holds.
+        self.assertEqual(self.results["soldiers"]["reloads"], [6])
+
+    def test_a_death_plays_the_die_state_the_engine_chose(self) -> None:
+        # His body's record 0.07 s after the kill is `Lb_DieHead`: the head
+        # shot the engine picked, where the renderer would have guessed.
+        soldiers = self.results["soldiers"]
+        self.assertEqual(soldiers["recordedDeath"], "Lb_DieHead")
+        self.assertEqual(soldiers["kills"], [{"pid": 24, "family": "dieHead"}])
+
+    def test_a_rack_drops_a_bomb_from_each_barrel_at_the_planes_speed(self) -> None:
+        dropped = self.results["rack"]["dropped"]
+        self.assertEqual([d["at"] for d in dropped], [[3.3, 99.8, -240], [-3.3, 99.8, -240]])
+        for bomb in dropped:
+            self.assertEqual(bomb["v"], [0, 0, -60])
+            self.assertEqual(bomb["nose"], [0, 0, -1])
+
+    def test_a_falling_bomb_noses_down_its_path_not_the_ground(self) -> None:
+        # A second after release, 60 m/s forward and 14.7 m/s down: about 14
+        # degrees nose down, where a bomb dropped from a standstill points
+        # straight at the ground.
+        for nose in self.results["rack"]["afterOneSecond"]:
+            self.assertEqual(nose, [0, -0.24, -0.97])
+
+    def test_one_round_fires_one_mount(self) -> None:
+        # Left from the mount 30 m aft; out of its own muzzle, 4 m ahead.
+        self.assertEqual(self.results["rack"]["mounts"], [[500, 5, -474]])
+
+
 if __name__ == "__main__":
     unittest.main()

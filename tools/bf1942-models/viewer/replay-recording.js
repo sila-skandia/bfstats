@@ -1060,6 +1060,31 @@ export function bodyAt(rec, nid, t) {
   };
 }
 
+/** How far a body's recorded die state may lead or trail the score stream's
+ *  death, seconds: the body's record follows the kill by 0.05 to 0.14 s in
+ *  replay_20260927-140921, the sampler's tick. */
+const DIE_LEAD = 0.2;
+const DIE_LAG = 0.6;
+
+/**
+ * The die state a soldier's body entered at his death (v4 `st`), the one the
+ * engine chose (`BFSoldier::handleDamage`, soldier-death.js): the first lower
+ * state named `Lb_Die...` or `Lb_ParachuteDie` recorded around `diedAt`, or
+ * null. A man blown off his feet can go straight into the explosion states,
+ * which name no death.
+ */
+export function recordedDeath(rec, nid, diedAt) {
+  const list = rec.stances?.get(nid);
+  if (!list?.length || !Number.isFinite(diedAt)) return null;
+  for (const entry of list) {
+    if (entry.t < diedAt - DIE_LEAD) continue;
+    if (entry.t > diedAt + DIE_LAG) break;
+    const lower = rec.animStates?.[entry.lower]?.name ?? '';
+    if (/^Lb_(Die|ParachuteDie)/.test(lower)) return lower;
+  }
+  return null;
+}
+
 /** A hull's recorded engines at `t` (v4 `g`), folded into one:
  *  `{ revs, running, disabled }` (the loudest engine's revs), or null. */
 export function engineAt(rec, nid, t) {

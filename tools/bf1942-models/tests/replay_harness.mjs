@@ -1032,4 +1032,241 @@ const read = scene => {
   };
 }
 
+// --- a respawn in another kit, a wrench's fire, a reload and a death ----------
+//
+// The 2026-09-27 report on replay_20260927-140921 (Kursk): a medic killed with
+// his Mp18 was drawn with a bazooka, the AT kit he had died in, until a seek
+// put the Mp18 back in his hands; and an engineer's wrench never turned while
+// he repaired. Playback runs forward from the first frame, never seeking: an
+// AT soldier dies at 10 s by a head shot (his body's recorded die state), his
+// body goes at 12 s and he is back as a medic at 15 s. An engineer holds his
+// wrench (item 6) and repairs from 3.0 to 5.1 s, which the recording has only
+// as his torso state: a wrench fires no round. A German medic changes his
+// Mp40's magazine from 6.0 to 8.2 s, which is also only a torso state.
+{
+  const [{ ReplaySoldiers }, { createBotVisuals }, { bag }, { SoldierActions }] = await Promise.all([
+    imp('replay-bodies.js'), imp('bot-visuals.js'), imp('page-bag.js'), imp('soldier-actions.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const lines = [
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'anim', t: 1, states: [[0, 'Lb_Stand', 0], [1, 'Ub_StandAim', 0], [2, 'Ub_FireRepairPack', 0],
+                                     [3, 'Ub_StandAimRepairPack', 0], [4, 'Ub_StandAimMp40', 0],
+                                     [5, 'Ub_StandReloadMp40', 0], [6, 'Lb_DieHead', 0], [7, 'Ub_DieHead', 0]] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1742, netId: 600, tmpl: 'RussianSoldier', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1498, netId: 604, tmpl: 'Rus_AT', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1742, netId: 800, tmpl: 'RussianSoldier', pos: [20, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1510, netId: 804, tmpl: 'Rus_Engineer', pos: [20, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1740, netId: 810, tmpl: 'GermanSoldier', pos: [40, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1511, netId: 814, tmpl: 'German_Medic', pos: [40, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 24, name: 'medic', team: 2, ai: 0, netId: 49, vehNetId: 600, camNetId: 50, kitNetId: 604 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 30, name: 'engineer', team: 2, ai: 0, netId: 51, vehNetId: 800, camNetId: 52, kitNetId: 804 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 31, name: 'sanitater', team: 1, ai: 0, netId: 53, vehNetId: 810, camNetId: 54, kitNetId: 814 }),
+    line({ k: 'e', t: 1.05, e: 'dbComplete' }),
+    line({ k: 'o', t: 1.1, id: 600, gid: 1, tmpl: 'RussianSoldier', tid: 1742, team: 2, maxhp: 30 }),
+    line({ k: 'o', t: 1.1, id: 800, gid: 2, tmpl: 'RussianSoldier', tid: 1742, team: 2, maxhp: 30 }),
+    line({ k: 'o', t: 1.1, id: 810, gid: 4, tmpl: 'GermanSoldier', tid: 1740, team: 1, maxhp: 30 }),
+    line({ k: 's', t: 1.1, o: [[600, 0, 1, 0, 0, 0, 0, 1], [800, 20, 1, 0, 0, 0, 0, 1], [810, 40, 1, 0, 0, 0, 0, 1]] }),
+    line({ k: 'st', t: 1.1, o: [[600, 0, 1, 0, 0, 3, 0], [800, 0, 3, 0, 0, 6, 0], [810, 0, 4, 0, 0, 3, 0]] }),
+    line({ k: 'st', t: 3.0, o: [[800, 0, 2, 0, 0, 6, 0]] }),
+    line({ k: 'st', t: 5.1, o: [[800, 0, 3, 0, 0, 6, 0]] }),
+    line({ k: 'st', t: 6.0, o: [[810, 0, 5, 0, 0, 3, 0]] }),
+    line({ k: 'st', t: 8.2, o: [[810, 0, 4, 0, 0, 3, 0]] }),
+    line({ k: 'e', t: 10, e: 'score', kind: 3, pid: 30, victim: 24, weapon: 1, bodypart: 1 }),
+    line({ k: 'e', t: 10, e: 'control', pid: 24, netId: 50 }),
+    line({ k: 'st', t: 10.07, o: [[600, 6, 7, 0, 0, 3, 0]] }),
+    line({ k: 'e', t: 12, e: 'destroyObject', netId: 600 }),
+    line({ k: 'e', t: 15, e: 'createObject', tid: 1742, netId: 700, tmpl: 'RussianSoldier', pos: [5, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 15, e: 'control', pid: 24, netId: 700 }),
+    line({ k: 'e', t: 15, e: 'createObject', tid: 1508, netId: 704, tmpl: 'Rus_Medic', pos: [5, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 15, e: 'pickupKit', pid: 24, netId: 704 }),
+    line({ k: 'o', t: 15.1, id: 700, gid: 3, tmpl: 'RussianSoldier', tid: 1742, team: 2, maxhp: 30 }),
+    line({ k: 's', t: 15.1, o: [[700, 5, 1, 0, 0, 0, 0, 1]] }),
+    line({ k: 'st', t: 15.1, o: [[700, 0, 1, 0, 0, 3, 0]] }),
+    // His Mp18's round: the recording writes that weapon's rounds.
+    line({ k: 'f', t: 16, id: 700, pid: 24, w: 'Mp18', p: [5, 1, 0], d: [0, 0, 1] }),
+    line({ k: 'end', t: 20 }),
+  ];
+  const rec = recording.parseRecording(lines.join('\n'));
+  const loadouts = { kits: {
+    Rus_AT: { primary: 'Bazooka', weapons: [{ slot: 3, weapon: 'Bazooka' }] },
+    Rus_Medic: { primary: 'Mp18', weapons: [{ slot: 3, weapon: 'Mp18' }] },
+    Rus_Engineer: { primary: 'No4', weapons: [{ slot: 3, weapon: 'No4' }, { slot: 6, weapon: 'RepairPack' }] },
+    German_Medic: { primary: 'Mp40', weapons: [{ slot: 3, weapon: 'Mp40' }] },
+  } };
+  const pending = () => new Promise(() => {});
+  const ctx = {
+    scene: new THREE.Scene(), bust: () => '', modelsBase: 'models', loadouts: () => loadouts,
+    makeReplayBodies: shim => createBotVisuals(bag({
+      footBodyLoader: { loadAsync: pending }, footBodyClips: pending, footStateMachine: () => null,
+      disposeFootBodyScene: () => {}, soldierDress: null, bindDynamicShading: () => {},
+    }, shim)),
+  };
+  const soldiers = new ReplaySoldiers({ rec, ctx, playing: true });
+  const visuals = soldiers.bodies.botVisuals;
+  const kills = [];
+  const killBot = soldiers.bodies.killBot;
+  soldiers.bodies.killBot = (bot, opts) => {
+    const family = killBot(bot, opts);
+    kills.push({ pid: bot.pid, family });
+    return family;
+  };
+  // A body: the engine's own two-half machine over a rig with the two
+  // one-shots in question -- the wrench's fire (`Ub_FireRepairPack`, 13
+  // frames at speed 1: a second) and a magazine change (two seconds) -- each
+  // handing back to the pose.
+  let now = 0;
+  const entered = { 30: [], 31: [] };
+  const CLIPS = { Ub_Fire: 1, Ub_StandReload: 2 };
+  const rigFor = pid => {
+    const anim = new SoldierActions({
+      has: name => name in CLIPS,
+      info: name => (name in CLIPS ? { loop: false, then: '_POSE_', morph: 10000 } : null),
+      duration: name => CLIPS[name] ?? 0,
+    });
+    return {
+      kind: 'halves', scene: new THREE.Group(), families: { stand: true, walk: true, run: true },
+      anim, weaponNode: null,
+      step: (input, dt) => {
+        for (const e of anim.update(input, dt)) {
+          if (e.half === 'upper' && e.name in CLIPS) entered[pid].push([e.name, +now.toFixed(2)]);
+        }
+      },
+    };
+  };
+  const kit = {};
+  for (let i = 0; i <= 380; i++) {
+    now = +(1 + i * 0.05).toFixed(2);
+    for (const [pid, weapon] of [[30, 'RepairPack'], [31, 'Mp40']]) {
+      const vis = visuals.get(`replay:${pid}`);
+      if (vis && !vis.rig && vis.bot?.weaponAi?.name === weapon) {
+        vis.rig = rigFor(pid);
+        vis.weapon = weapon;
+      }
+    }
+    soldiers.update(now, 0.05, new Map());
+    if (now === 5 || now === 16) {
+      kit[now] = { body: visuals.get('replay:24')?.kit ?? null, primary: soldiers.actors.get(24)?.kitPrimary ?? null };
+    }
+  }
+  results.respawnKit = {
+    kit,
+    engineer: soldiers.actors.get(30)?.weaponAi?.name ?? null,
+    fires: entered[30].filter(([name]) => name === 'Ub_Fire').map(([, t]) => t),
+    reloads: entered[31].filter(([name]) => name === 'Ub_StandReload').map(([, t]) => t),
+    kills,
+    recordedDeath: recording.recordedDeath?.(rec, 600, 10) ?? null,
+    recordsRounds: { Mp18: soldiers.recordsRounds?.('Mp18') ?? null, RepairPack: soldiers.recordsRounds?.('RepairPack') ?? null },
+  };
+}
+
+// --- a bomb rack's barrels, and the hull's own velocity under its rounds ------
+//
+// The same report: a replayed Stuka dropped one bomb, and it fell nose-down
+// from a standstill where the game's inclined with the plane. The rack has two
+// barrels, one under each wing (+-3.3 m, the shipped Stuka.glb's), and a bomb
+// leaves at the rack's `velocity 0` plus the aircraft's own. The Stuka flies
+// level at 60 m/s along BF1942's +Z, 100 m up, and releases at 5 s.
+{
+  const [{ ReplayHull }, { GunFire }] = await Promise.all([imp('replay-hulls.js'), imp('gunfire.js')]);
+  const line = o => JSON.stringify(o);
+  const lines = [
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 2641, netId: 900, tmpl: 'Stuka', pos: [0, 100, 0], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 1, id: 900, gid: 1, tmpl: 'Stuka', tid: 2641, team: 1, maxhp: 130, crit: 20 }),
+  ];
+  for (let i = 0; i <= 90; i++) {
+    const t = +(1 + i * 0.1).toFixed(1);
+    lines.push(line({ k: 's', t, o: [[900, 0, 100, +(60 * (t - 1)).toFixed(2), 0, 0, 0, 1]] }));
+  }
+  lines.push(line({ k: 'f', t: 5, id: 900, pid: 26, w: 'StukaBombRack', p: [0, 100, 240], d: [0, 0, 1] }));
+  const rec = recording.parseRecording(lines.join('\n'));
+  const life = rec.lives.find(l => l.nid === 900);
+
+  const root = new THREE.Group();
+  root.name = 'Stuka';
+  root.userData = { templateKind: 'PlayerControlObject' };
+  const rack = new THREE.Group();
+  rack.name = 'StukaBombRack';
+  rack.userData.fireArms = {
+    projectile: { template: 'DiveBomberBomb', kind: 'shell', trail: null, timeToLive: 20, mass: 250, drag: 0.08,
+                  damage: { radius: 20, hasCollisionEffect: true } },
+    roundOfFire: 0.2, magSize: 30, numOfMag: 1, velocity: 0, input: 'c_PIAltFire', muzzles: 2,
+  };
+  for (const [i, x] of [3.3, -3.3].entries()) {
+    const muzzle = new THREE.Object3D();
+    muzzle.name = `StukaBombRack muzzle ${i + 1}`;
+    muzzle.userData.muzzle = { index: i };
+    muzzle.position.set(x, -0.199, 0);
+    rack.add(muzzle);
+  }
+  const bomb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 2), new THREE.MeshBasicMaterial());
+  bomb.name = 'StukaBombRack projectile';
+  bomb.userData.projectileMesh = { template: 'DiveBomberBomb', geometry: 'Big_Bomb_M1' };
+  rack.add(bomb);
+  root.add(rack);
+  const model = new THREE.Group();
+  model.add(root);
+
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, viewportHeight: () => 800 });
+  const hull = new ReplayHull({ ctx: { guns, scene }, rec, showGhosts: true }, life, model, null);
+  hull.update(4.95, 0.05);
+  hull.update(5, 0.05);
+  const shot = rec.fires[0];
+  hull.fire(0, shot.kind, shot);
+  const r2 = v => v.toArray().map(x => +x.toFixed(2) + 0);
+  const nose = mesh => r2(new THREE.Vector3(0, 0, -1).applyQuaternion(mesh.quaternion));
+  const dropped = guns.projectiles.map(p => ({ at: r2(p.mesh.position), v: r2(p.velocity), nose: nose(p.mesh) }));
+  for (let i = 0; i < 20; i++) guns.advance(0.05);
+  const afterOneSecond = guns.projectiles.map(p => nose(p.mesh));
+
+  // A destroyer's three mounts share one FireArms name (the scene suffixes
+  // the repeats). One recorded round is one mount's: the one nearest where
+  // it left, not all three at once.
+  const ship = new THREE.Group();
+  ship.name = 'Hatsuzuki';
+  ship.userData = { templateKind: 'PlayerControlObject' };
+  for (const [i, z] of [-30, 0, 30].entries()) {
+    const gun = new THREE.Group();
+    gun.name = i ? `HatsuzukiGun_${i}` : 'HatsuzukiGun';
+    gun.position.set(0, 5, z);
+    gun.userData.fireArms = {
+      projectile: { template: 'HatsuzukiShell', kind: 'shell', trail: null, timeToLive: 10, damage: { radius: 5 } },
+      roundOfFire: 0.5, magSize: -1, velocity: 150, input: 'c_PIFire', muzzles: 1,
+    };
+    const muzzle = new THREE.Object3D();
+    muzzle.name = `${gun.name} muzzle 1`;
+    muzzle.userData.muzzle = { index: 0 };
+    muzzle.position.set(0, 0, -4);
+    gun.add(muzzle);
+    const shell = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.6), new THREE.MeshBasicMaterial());
+    shell.name = `${gun.name} projectile`;
+    shell.userData.projectileMesh = { template: 'HatsuzukiShell' };
+    gun.add(shell);
+    ship.add(gun);
+  }
+  const shipModel = new THREE.Group();
+  shipModel.add(ship);
+  const shipRec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1900, netId: 950, tmpl: 'Hatsuzuki', pos: [500, 0, 500], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 1, id: 950, gid: 2, tmpl: 'Hatsuzuki', tid: 1900, team: 1, maxhp: 1000, crit: 100 }),
+    line({ k: 's', t: 1, o: [[950, 500, 0, 500, 0, 0, 0, 1]] }),
+    // Left from the mount 30 m aft of the hull's origin: the viewer's +Z,
+    // BF1942's -Z.
+    line({ k: 'f', t: 3, id: 950, pid: 7, w: 'HatsuzukiGun', p: [500, 5, 470], d: [0, 0, 1] }),
+  ].join('\n'));
+  const shipGuns = new GunFire({ scene, viewportHeight: () => 800 });
+  const destroyer = new ReplayHull({ ctx: { guns: shipGuns, scene }, rec: shipRec, showGhosts: true },
+    shipRec.lives.find(l => l.nid === 950), shipModel, null);
+  destroyer.update(3, 0.05);
+  destroyer.fire(0, 1, shipRec.fires[0]);
+  results.bombRack = {
+    dropped,
+    afterOneSecond,
+    mounts: shipGuns.projectiles.map(p => r2(p.mesh.position)),
+  };
+}
+
 console.log(JSON.stringify(results));
