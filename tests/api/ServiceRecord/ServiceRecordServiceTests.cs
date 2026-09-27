@@ -443,7 +443,7 @@ public sealed class ServiceRecordServiceTests : IDisposable
     {
         var cached = new PlayerServiceRecord(Player, 1, 1, [], [], new ServiceRecordUnattributed(0, 0),
             new ServiceRecordWindow(0, false, null));
-        cache.GetAsync<PlayerServiceRecord>("service-record:v4:BetMan", Arg.Any<CancellationToken>()).Returns(cached);
+        cache.GetAsync<PlayerServiceRecord>("service-record:v5:BetMan", Arg.Any<CancellationToken>()).Returns(cached);
 
         Assert.Same(cached, await service.GetAsync(Player));
         await store.DidNotReceive().PlayerExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -456,7 +456,7 @@ public sealed class ServiceRecordServiceTests : IDisposable
 
         var record = await RecordAsync();
 
-        await cache.Received(1).SetAsync("service-record:v4:BetMan", record, TimeSpan.FromHours(1),
+        await cache.Received(1).SetAsync("service-record:v5:BetMan", record, TimeSpan.FromHours(1),
             Arg.Any<CancellationToken>());
     }
 

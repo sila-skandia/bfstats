@@ -113,11 +113,16 @@ public sealed class MeshArmouryIndexTests : IDisposable
         index = new MeshArmouryIndex(resolver, NullLogger<MeshArmouryIndex>.Instance);
     }
 
+    // Every fixture file carries this modification time, so each path's version is known.
+    private static readonly DateTime Published = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private const string V = "?v=1767225600";
+
     private void Write(string relativePath, string content)
     {
         var path = Path.Combine(assetsRoot, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
+        File.SetLastWriteTimeUtc(path, Published);
     }
 
     private void Touch(string relativePath) => Write(relativePath, "glTF");
@@ -146,14 +151,30 @@ public sealed class MeshArmouryIndexTests : IDisposable
         // The dossier's spelling of the kit, so a page can match it against the army's kits.
         Assert.Equal("RUS_assault", kit.Template);
         Assert.Equal("Mp18", kit.Weapon);
-        Assert.Equal("models/poses/RussianSoldier__Mp18.pose.glb", kit.Pose);
+        Assert.Equal("models/poses/RussianSoldier__Mp18.pose.glb" + V, kit.Pose);
 
         var helmet = Assert.Single(kit.Worn);
-        Assert.Equal("models/Russ_Helmet.kit.glb", helmet.Path);
+        Assert.Equal("models/Russ_Helmet.kit.glb" + V, helmet.Path);
         Assert.Equal("A", helmet.Bone);
         Assert.Equal("head", helmet.Slot);
         Assert.Equal([0.0, 0.1, 0.0], helmet.Position);
         Assert.Equal([0.0, 0.0, 90.0], helmet.Rotation);
+    }
+
+    [Fact]
+    public void ResolveFigure_VersionsAPathWithItsFilesModificationTime()
+    {
+        // The mesh route is cached at the edge for a day, so a republished glb needs a URL
+        // the edge has not seen.
+        File.SetLastWriteTimeUtc(Path.Combine(assetsRoot, "mesh/models/poses/RussianSoldier__Mp18.pose.glb"),
+            Published.AddHours(1));
+        var fresh = new MeshArmouryIndex(new MapDossierResolver(NullLogger<MapDossierResolver>.Instance),
+            NullLogger<MeshArmouryIndex>.Instance);
+
+        var kit = Assert.Single(fresh.ResolveFigure("RussianSoldier", ["Rus_Assault"], ["bf1942"])!.Kits);
+
+        Assert.Equal("models/poses/RussianSoldier__Mp18.pose.glb?v=1767229200", kit.Pose);
+        Assert.Equal("models/Russ_Helmet.kit.glb" + V, Assert.Single(kit.Worn).Path);
     }
 
     [Fact]
@@ -163,7 +184,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
 
         var kit = Assert.Single(figure!.Kits);
         Assert.Equal("Colt", kit.Weapon);
-        Assert.Equal("models/poses/RussianSoldier__Colt.pose.glb", kit.Pose);
+        Assert.Equal("models/poses/RussianSoldier__Colt.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -184,7 +205,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
 
         var kit = Assert.Single(figure!.Kits);
         Assert.Equal("Sg44", kit.Weapon);
-        Assert.Equal("models/poses/GermanSoldier__Sg44.pose.glb", kit.Pose);
+        Assert.Equal("models/poses/GermanSoldier__Sg44.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -193,10 +214,10 @@ public sealed class MeshArmouryIndexTests : IDisposable
         var figure = index.ResolveFigure("GermanEliteSoldier", ["GermanElite_Assault"], index.TreesFor("xpack2"));
 
         Assert.NotNull(figure);
-        Assert.Equal("models/mods/xpack2/thumbs/germanelitesoldier.png", figure.Thumb);
+        Assert.Equal("models/mods/xpack2/thumbs/germanelitesoldier.png" + V, figure.Thumb);
         var kit = Assert.Single(figure.Kits);
         Assert.Equal("Gewehr42", kit.Weapon);
-        Assert.Equal("models/mods/xpack2/poses/GermanEliteSoldier__Gewehr42.pose.glb", kit.Pose);
+        Assert.Equal("models/mods/xpack2/poses/GermanEliteSoldier__Gewehr42.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -207,7 +228,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
         var worn = Assert.Single(figure!.Kits).Worn;
         // The mod's own helmet, vanilla's radio (spelled in another case), and nothing for a
         // part no tree has or the extractor never baked.
-        Assert.Equal(["models/mods/xpack2/GermanElite_Helmet.kit.glb", "models/Radio.kit.glb"],
+        Assert.Equal(["models/mods/xpack2/GermanElite_Helmet.kit.glb" + V, "models/Radio.kit.glb" + V],
             worn.Select(part => part.Path));
         Assert.Equal([0.0, 0.0, 0.0], worn[1].Position);
         Assert.Equal([0.0, 0.0, 0.0], worn[1].Rotation);
@@ -221,7 +242,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
         // air and the stage shrinks the soldier to keep it in frame.
         var figure = index.ResolveFigure("USSoldier", ["US_Grenadier"], index.TreesFor("eod"));
 
-        Assert.Equal(["models/mods/eod/Us_Helmet.kit.glb"], Assert.Single(figure!.Kits).Worn.Select(part => part.Path));
+        Assert.Equal(["models/mods/eod/Us_Helmet.kit.glb" + V], Assert.Single(figure!.Kits).Worn.Select(part => part.Path));
     }
 
     [Fact]
@@ -241,7 +262,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
         // The level's spelling, so the page can pair it with the army's kit button.
         Assert.Equal("US_Rifleman_CHUTE", kit.Template);
         Assert.Equal("M16", kit.Weapon);
-        Assert.Equal("models/mods/eod/poses/USSoldier__M16.pose.glb", kit.Pose);
+        Assert.Equal("models/mods/eod/poses/USSoldier__M16.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -259,7 +280,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
 
         var kit = Assert.Single(figure!.Kits);
         Assert.Equal("M1Carbine", kit.Weapon);
-        Assert.Equal("models/mods/eod/poses/USSoldier__M1Carbine.pose.glb", kit.Pose);
+        Assert.Equal("models/mods/eod/poses/USSoldier__M1Carbine.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -287,7 +308,7 @@ public sealed class MeshArmouryIndexTests : IDisposable
         // EoD has its own USSoldier: its own kit resolves, and a kit posed only in vanilla does not.
         var figure = index.ResolveFigure("USSoldier", ["US_Assault", "US_Rifleman"], index.TreesFor("eod"));
         var kit = Assert.Single(figure!.Kits);
-        Assert.Equal("models/mods/eod/poses/USSoldier__M16.pose.glb", kit.Pose);
+        Assert.Equal("models/mods/eod/poses/USSoldier__M16.pose.glb" + V, kit.Pose);
     }
 
     [Fact]
@@ -303,24 +324,24 @@ public sealed class MeshArmouryIndexTests : IDisposable
     public void ResolveVehicle_FindsTheModelAndThumbnailIgnoringCase()
     {
         var chiHa = index.ResolveVehicle("chi-ha", ["bf1942"]);
-        Assert.Equal("models/Chi-ha.glb", chiHa.Model);
-        Assert.Equal("models/thumbs/chi-ha.png", chiHa.Thumb);
+        Assert.Equal("models/Chi-ha.glb" + V, chiHa.Model);
+        Assert.Equal("models/thumbs/chi-ha.png" + V, chiHa.Thumb);
 
         // The model is the machine itself, not one of its variants.
         var flak = index.ResolveVehicle("AA_allies", ["bf1942"]);
-        Assert.Equal("models/AA_Allies.glb", flak.Model);
-        Assert.Equal("models/thumbs/aa-allies.png", flak.Thumb);
+        Assert.Equal("models/AA_Allies.glb" + V, flak.Model);
+        Assert.Equal("models/thumbs/aa-allies.png" + V, flak.Thumb);
     }
 
     [Fact]
     public void ResolveVehicle_SearchesTheModTreeFirst()
     {
         var sturmtiger = index.ResolveVehicle("sturmtiger", index.TreesFor("xpack2"));
-        Assert.Equal("models/mods/xpack2/Sturmtiger.glb", sturmtiger.Model);
-        Assert.Equal("models/mods/xpack2/thumbs/sturmtiger.png", sturmtiger.Thumb);
+        Assert.Equal("models/mods/xpack2/Sturmtiger.glb" + V, sturmtiger.Model);
+        Assert.Equal("models/mods/xpack2/thumbs/sturmtiger.png" + V, sturmtiger.Thumb);
 
         var sherman = index.ResolveVehicle("sherman", index.TreesFor("xpack2"));
-        Assert.Equal("models/Sherman.glb", sherman.Model);
+        Assert.Equal("models/Sherman.glb" + V, sherman.Model);
     }
 
     [Fact]
