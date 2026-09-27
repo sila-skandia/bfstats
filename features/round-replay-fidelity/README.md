@@ -132,9 +132,14 @@ engineering behind them is there too, with addresses.
   soldier 22 is `Lb_ParachuteFall` from 70.8 s, `Lb_ParachuteOpen` under the
   `open` canopy from 72.8 s, the glide with his No4 out, `Ub_Fire` at 78.8 s
   and the bolt after it, `Lb_ParachuteHitGround` with the canopy gone at
-  84.5 s, and on his feet at 85.0 s. `tests/test_replay_models.py`
-  `ReplayKnockbackAndParachuteTests` pins the same over a synthetic v5 file
-  and a page bot's `Parachute`; `tests/test_explosion_assets.py` the bundle.
+  84.5 s, and on his feet at 85.0 s. On `replay_20260927-075756` (v4) nid
+  775, first on the record already in `Lb_ParachuteOpen` (52.71 s, no fall
+  before it), the opening and the canopy start on that frame, and he fires
+  his Panzershreck under the canopy at 55.7 s: every state is entered by its
+  own name, and the canopy asset is asked for with the first body drawn.
+  `tests/test_replay_models.py` `ReplayKnockbackAndParachuteTests` pins the
+  same over a synthetic v5 file and a page bot's `Parachute`;
+  `tests/test_explosion_assets.py` the bundle.
 
 ## Open
 
