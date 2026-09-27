@@ -374,5 +374,51 @@ class ReplayUxTests(unittest.TestCase):
         self.assertEqual(cull["withoutReplay"], ["fly", "look"])
 
 
+class ReplaySoldierFeetTests(unittest.TestCase):
+    """A replayed soldier stands on the ground.
+
+    The 2026-09-27 report: in `replay_20260927-075756` the recording player
+    ran about a metre above the ground. Every soldier did, bots included. A
+    soldier's sample is his engine origin, which the soldier template's
+    `setCharacterHeight -1.00` puts a metre over his feet: the recording
+    player's live samples in that round lie 1.00 m (median) over Wake's
+    terrain, and 25 bots' the same, and his shots leave his camera 0.65, 0.12
+    and -0.70 m over them standing, crouched and prone (`setPoseCameraPos`).
+    The body renderer, the plain fallback and the camera stand a man on his
+    feet.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["feet"]
+
+    def test_every_soldier_runs_on_the_ground(self) -> None:
+        # Sampled a metre up; drawn on the ground at y = 0, the recording
+        # player and the bot alike, before his first sample and after.
+        self.assertEqual(self.results["bot"], [0, 0, 0, 0, 0])
+        self.assertEqual(self.results["mine"], [0, 0, 0, 0, 0])
+
+    def test_the_bodies_are_handed_his_feet(self) -> None:
+        # What the page's renderer (bot-visuals.js) stands the body on, and
+        # the plain soldier's group.
+        for drawn in self.results["drawn"]:
+            self.assertEqual(drawn, {"Fred Bailey": 0, "skandia": 0})
+        self.assertEqual(self.results["fallback"], [0, 0])
+
+    def test_the_spawn_point_and_a_hull_keep_their_heights(self) -> None:
+        # The creation event is the spawn point, already on the ground; a
+        # hull's sample is its own origin.
+        self.assertEqual(self.results["spawn"], {"bot": 0, "mine": 0})
+        self.assertEqual(self.results["jeep"], 1.2)
+
+    def test_the_camera_sees_from_his_eyes(self) -> None:
+        # First person at the engine's eye over his feet, standing and
+        # crouched; the orbit circles 1.2 m over his feet.
+        self.assertEqual(self.results["eye"], {"standing": 1.65, "crouched": 1.12})
+        self.assertEqual(self.results["orbit"], 1.2)
+
+
 if __name__ == "__main__":
     unittest.main()
