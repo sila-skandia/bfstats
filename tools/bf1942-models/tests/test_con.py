@@ -154,6 +154,37 @@ ObjectTemplate.setRotation 10/20/30
         self.assertEqual((1.0, -2.0, 3.0), root.children[0].position)
         self.assertEqual((10.0, 20.0, 30.0), root.children[0].rotation)
 
+    def test_a_transform_with_no_child_to_place_does_nothing(self) -> None:
+        # The engine places the last-added child and nothing else; with no child
+        # yet the index is out of range and the word is a no-op (lnxded
+        # BundleTemplate::setPosition 0x081a8fe0). DC Final's helmet and grenade.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Items/USKit/Common/Objects.con",
+            """
+ObjectTemplate.create KitPart Us_Helmet
+ObjectTemplate.geometry Us_Helmet
+ObjectTemplate.SetPosition 0/-.1/0
+ObjectTemplate.setRotation 0/90/0
+ObjectTemplate.setBoneName A
+
+ObjectTemplate.create KitPart US_Grenades
+ObjectTemplate.geometry US_Grenades
+ObjectTemplate.SetPosition 0/0/5
+ObjectTemplate.addTemplate US_GrenadeHolder
+ObjectTemplate.setPosition 0/0.1/0
+""",
+        )
+
+        helmet = library.object("Us_Helmet")
+        grenades = library.object("US_Grenades")
+
+        self.assertEqual((0.0, 0.0, 0.0), helmet.position)
+        self.assertEqual((0.0, 0.0, 0.0), helmet.rotation)
+        self.assertEqual((0.0, 0.0, 0.0), grenades.position)
+        # A child added afterwards is placed as usual.
+        self.assertEqual((0.0, 0.1, 0.0), grenades.children[0].position)
+
     def test_numeric_inputs_and_free_rotation_are_preserved(self) -> None:
         library = ObjectLibrary()
         library.add_con(
