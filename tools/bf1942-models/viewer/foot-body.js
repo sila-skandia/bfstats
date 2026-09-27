@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
-import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
+import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
 import { poseBases } from './pose-bases.js';
@@ -459,8 +459,7 @@ export function createFootBody(page) {
 
     if (footBodies.footCanopy) {
       const clip = canopyClip(want);
-      const [ax, ay, az] = footBodies.footCanopy.attach;
-      footBodies.footCanopy.scene.position.set(bx + ax, by + ay, bz + az);
+      canopyPosition(bx, by, bz, footBodies.footCanopy.attach, footBodies.footCanopy.scene.position);
       footBodies.footCanopy.scene.quaternion.copy(footBodyQuat);
       footBodies.footCanopy.scene.visible = visible && !!clip;
       if (clip !== footBodies.footCanopy.want) {

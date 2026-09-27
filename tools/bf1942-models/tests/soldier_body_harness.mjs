@@ -9,7 +9,7 @@
 import {
   BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_FALLBACKS, BODY_HIDES_WEAPON,
   UPPER_STAND_AIM, LOWER_STAND,
-  bodyClipFamily, bodyFamily, canopyClip, locoFamily, parachuteFamily,
+  bodyClipFamily, bodyFamily, canopyClip, canopyPosition, locoFamily, parachuteFamily,
   resolveBodyFamily, swimFamily,
 } from './soldier-body.js';
 import { PARA_CLIPS } from './parachute.js';
@@ -180,5 +180,10 @@ results.canopy = {
   run: canopyClip('run'),
   stand: canopyClip('stand'),
 };
+
+// The canopy's place: the template's `0/0.3/0` from his origin, a metre over
+// the feet the body is drawn at.
+results.canopyAt = canopyPosition(2, 10, -3, [0, 0.3, 0], { set: (x, y, z) => [x, y, z] })
+  .map(v => +v.toFixed(3));
 
 console.log(JSON.stringify(results, null, 1));
