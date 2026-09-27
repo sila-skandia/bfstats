@@ -286,6 +286,28 @@ export function replayHref(key, mod, level, search = globalThis.location?.search
   return url.href;
 }
 
+/**
+ * Where a shared link plays (features/gameplay-recordings): `href` with the
+ * recording's own mod added, or null to stay. A link written from the file
+ * name alone names no mod, so the page came up in the one the visitor browsed
+ * last (mods.js remembers it); a recording made in another goes again in its
+ * own. It stays when the link names a mod, when the recording is one held for
+ * this page (that URL always names one, and the recording is read only once),
+ * and when the recording names no mod or one without maps here. `mods` is the
+ * harness's; the page reads the viewer's.
+ */
+export async function ownModHref(href, info, current, mods = null) {
+  const url = new URL(href);
+  const replay = url.searchParams.get('replay');
+  const named = String(info?.mod ?? '').toLowerCase();
+  if (!replay || isLocalReplay(replay) || url.searchParams.has('mod') || !named || named === current) return null;
+  const own = (mods ?? servable(await loadMods(), 'maps')).find(mod => mod.id === named);
+  if (!own) return null;
+  // Appended, so the rest of the link reads as it was written.
+  url.search = `${url.search}&mod=${encodeURIComponent(own.id)}`;
+  return url.href;
+}
+
 // --- the page's side ---------------------------------------------------------------
 
 const UPLOAD_ICON = '<path d="M8 10.6V2.8M4.7 6 8 2.7 11.3 6" fill="none" stroke="currentColor" stroke-width="1.6" '
