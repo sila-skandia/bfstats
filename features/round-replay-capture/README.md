@@ -517,7 +517,8 @@ carries `[pid, team, vehicleNetId]` only), and no map name.
 
 So: set `recordReplays=1` in `bf42plus.ini` before launching, or enable it and
 reconnect. T5 cannot be tested any other way either, since it is defined
-relative to `DataBaseComplete`.
+relative to `DataBaseComplete`. (Since bf42plus `ea600c1` a file begun after
+the join names its level, server and players anyway: §18.)
 
 ### 10.4 T4 is not blocked (corrected in §11.1)
 
@@ -1158,3 +1159,38 @@ slot count from the event log's `maxplayers`, and says it is an estimate. On
 one every 2 s while the Allies held all five points (100 of weight) until the
 beach fell at 185.5 s, and 87 / 171 at the end. A join mid-round without `tk`
 shows no counter.
+
+## 18. A file begun after the join (2026-09-27)
+
+§10.3's limit came back with the port to bf42++ v2.0 (bf42plus `d3c3df3`,
+released as `v2.0-replay`). The port reads `bf42++.ini`, not `bf42plus.ini`,
+so `recordReplays` was off until it was switched on in the console.
+`replay_20260927-190946` began 20 s into a Tobruk round on a public server:
+the join's `serverInfo`, `serverName` and `setLevel` arrived at 19:09:27-28,
+the ini was written at 19:09:46.536 (`plus.recordReplays 1` saves it) and the
+file opened 10 ms later. It named no level, mod or server, and 26 of its 28
+players had no createPlayer and so no name.
+
+From bf42plus `ea600c1` the recorder keeps the join's own events as they
+pass, recording or not: server info (0x1A) and name (0x1B), the challenge
+(0x14), the rules (0x16) and the level (0x36). A new join (0x1A) lets the last
+one's go. A file that begins after them opens with them, each with `ago`, the
+seconds before the file began that it arrived, and then a roster of who is
+playing, `local` 1 for the recording player:
+
+```
+{"k":"e","t":0.000,"e":"setLevel","level":"bf1942/levels/Tobruk/","mode":"conquest.con","ago":18.251}
+{"k":"roster","t":0.000,"p":[[pid, team, ai, "name", local], ...]}
+```
+
+The world clock (0x04) is not kept: its time is the join's. A file begun by
+the join has nothing kept and records the join as before. The format stays 5,
+and a reader that does not know `roster` or `ago` skips them.
+
+For files from before `ea600c1`, the viewer recognises the level by its flags
+and reads names off the chat box (`features/round-replay-ux`, "A recording
+that names no level").
+
+Not yet seen in a real file: the DLL is built and installed as `dsound.dll`,
+but no round has been recorded with it. Rollback to the `v2.0-replay` build:
+`cp dsound_old.dll dsound.dll` in the game folder.
