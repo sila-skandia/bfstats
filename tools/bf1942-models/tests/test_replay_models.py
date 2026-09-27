@@ -577,5 +577,34 @@ class ReplayKurskRoundTests(unittest.TestCase):
         self.assertEqual(self.results["rack"]["mounts"], [[500, 5, -474]])
 
 
+
+class ReplaySwimmerTests(unittest.TestCase):
+    """A replayed soldier in the water swims.
+
+    He was drawn walking on the seabed: the replay's stand-in soldier gave the
+    body renderer no swim state. A v4 file records the lower state his body
+    entered; a v3 file has none, and there the engine's own test on his origin
+    decides (swim.js `BFSoldier::updateSwimming`): a swimmer's origin is pinned
+    0.4 m under the surface, a wader's is a metre over the seabed.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["swim"]
+
+    def test_a_v3_swimmer_is_told_by_his_depth(self) -> None:
+        # Forward along his heading, afloat, wading 1.2 m deep, on the beach.
+        self.assertEqual(self.results["v3"], ["Lb_SwimForward", "Lb_Floating", None, None])
+        self.assertEqual(self.results["swimming"], [True, True, False, False])
+
+    def test_a_v4_swimmer_plays_his_recorded_state(self) -> None:
+        self.assertEqual(self.results["v4"], "Lb_SwimBackward")
+
+    def test_a_man_who_dies_in_the_water_takes_the_swim_death(self) -> None:
+        self.assertEqual(self.results["v4Death"], "Lb_DieSwim")
+        self.assertIsNone(self.results["dryDeath"])
+
 if __name__ == "__main__":
     unittest.main()
