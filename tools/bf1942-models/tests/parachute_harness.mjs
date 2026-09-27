@@ -234,6 +234,18 @@ function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}
   };
 }
 
+// The height gate on a real `Soldier`: `0x08275f13` measures the soldier's own
+// `getAbsolutePosition()`, his origin, a metre over the feet the body carries.
+// Falling at 9 m/s with his feet 9.6 m up the origin is 10.6 m up and the state
+// arms; with his feet 8.9 m up the origin is 9.9 and it does not. One tick.
+function armsAt(feet) {
+  const soldier = new Soldier({ collider: flatWorld(WORLD), worldSize: WORLD });
+  soldier.bailOut(MID_X, feet, MID_Z, 0, 0, -9, 0);
+  soldier.step(TICK_DT, {});
+  return soldier.parachuteState;
+}
+results.gateOnTheOrigin = { feet96: armsAt(9.6), feet89: armsAt(8.9) };
+
 // Straight down, no chute: free fall the whole way, and it is lethal.
 results.freeFall = bail({ from: 120, deployAt: null, pitch: -Math.PI / 2 });
 // Chute opened two seconds in, looking level so the glide is measurable.

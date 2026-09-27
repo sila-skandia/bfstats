@@ -7,7 +7,7 @@
 // the files under test are the files the page loads.
 
 import {
-  SWIM_CLIPS, SWIM_ENTER_DEPTH, SWIM_START_SECONDS, SWIM_END_SECONDS,
+  SWIM_CLIPS, SWIM_ENTER_WATER, SWIM_START_SECONDS, SWIM_END_SECONDS,
   SwimState, swimFamilyOfPair, swimMorphSeconds, switchFamily,
 } from './swim.js';
 import { FAMILY_HALVES, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
@@ -76,8 +76,9 @@ function wade(script, seconds, opts = {}) {
 }
 
 // In at a walk, stroke on, let go of the key, back-pedal, a half-press, then
-// out onto the beach.
-const DEEP = SWIM_ENTER_DEPTH + 0.5;
+// out onto the beach. `depth` is the water over his feet, so the entry is
+// `SWIM_ENTER_WATER`, 1.43 m.
+const DEEP = SWIM_ENTER_WATER + 0.5;
 const course = t => {
   if (t < 0.5) return { depth: 0, throttle: 1 };
   if (t < 2.0) return { depth: DEEP, throttle: 1 };

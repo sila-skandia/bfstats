@@ -335,6 +335,21 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual(1, got["farAndHigh"])
         self.assertEqual(3, got["overhead"])
 
+    def test_the_page_looks_from_his_origin_not_his_feet(self) -> None:
+        # HFD-9, closed: the octant's eye is the soldier's own
+        # `getAbsolutePosition()` (HFD-11), and a soldier's origin stands a metre
+        # over his feet -- the lowest of his 17 hull vertices is (0, -1, 0)
+        # (`SkeletonCollisionMeshTemplate`, `0x083af375`-`0x083af62a`). Close to
+        # the ground the metre turns the arc.
+        got = self.results["hitFromDir"]
+        self.assertEqual(1, got["groundBlastFromFeet"])
+        self.assertEqual(2, got["groundBlastFromOrigin"])
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from page_source import function_body
+        body = function_body("applyDamageToPlayer")
+        self.assertIn("soldier.y + CHARACTER_HEIGHT", body)
+
     def test_a_source_on_the_victim_is_the_identity_look_at(self) -> None:
         # Row 2 of an identity is the engine's +z, this frame's -z.
         got = self.results["hitFromDir"]

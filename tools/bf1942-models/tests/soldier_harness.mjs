@@ -689,16 +689,17 @@ function bobShape(input, factor) {
   // No footfalls in the water. A pinned swimmer is never grounded, so the case
   // that matters is wading out: `Lb_EndSwim` still carries `c_AsmIsSwimming`
   // after the boots are back on the bottom. A tide does it on flat ground — up
-  // to 0.5 m (past the 0.43 entry) and back to 0.2 m (under the 0.35 exit) —
-  // and the frame it rises is swept so a stride is mid-phase when he comes out.
+  // to 1.5 m (past the entry, 1.43 m over the feet: 0.43 over his origin) and
+  // back to 1.2 m (under the 1.35 exit) — and the frame it rises is swept so a
+  // stride is mid-phase when he comes out.
   let wadingFrames = 0, wadingSteps = 0;
   for (let k = 0; k < 22; k++) {
     const tide = { level: -5 };
     const beach = { surfaceHeight: () => 0, get waterLevel() { return tide.level; } };
     const s = new Soldier({ collider: beach }).spawn(0, 0, 0, 0);
     for (let i = 0; i < 600; i++) {
-      if (i === 60 + k) tide.level = 0.5;
-      if (i === 240) tide.level = 0.2;
+      if (i === 60 + k) tide.level = 1.5;
+      if (i === 240) tide.level = 1.2;
       const before = s.footstepEvents.length;
       s.step(DT, { forward: 1 });
       if (s.grounded && s.swim.swimming) {
@@ -708,6 +709,32 @@ function bobShape(input, factor) {
     }
   }
   results.wadingFootsteps = { frames: wadingFrames, steps: wadingSteps };
+
+  // The swim states hold the lower body and declare neither crouch nor lie, so
+  // a swimmer's pose is standing whatever he holds, and his eye the standing
+  // one: 1.65 over feet pinned 1.4 under the surface. Three metres of water.
+  const sea = { surfaceHeight: () => 0, waterLevel: 3 };
+  const swimmer = new Soldier({ collider: sea }).spawn(0, 0, 0, 0);
+  for (let i = 0; i < 120; i++) swimmer.step(DT, { crouch: true });
+  results.swimmerStance = { swimming: swimmer.swim.swimming, stance: swimmer.stance,
+                            eye: swimmer.body.eyeHeight, y: swimmer.y };
+  // Prone in half a metre: the origin is dry, but the eye (0.30 over the feet)
+  // goes under, and the surface over the camera puts him in (`0x082823bc`).
+  const shallows = { surfaceHeight: () => 0, waterLevel: 0.5 };
+  const lying = new Soldier({ collider: shallows }).spawn(0, 0, 0, 0);
+  let proneEntered = false;
+  for (let i = 0; i < 180; i++) {
+    lying.step(DT, { prone: true });
+    if (lying.swim.swimming) proneEntered = true;
+  }
+  // And standing in the same water nothing happens.
+  const standing = new Soldier({ collider: shallows }).spawn(0, 0, 0, 0);
+  let standEntered = false;
+  for (let i = 0; i < 180; i++) {
+    standing.step(DT, {});
+    if (standing.swim.swimming) standEntered = true;
+  }
+  results.proneInShallows = { prone: proneEntered, standing: standEntered };
 }
 
 // --- cost ------------------------------------------------------------------

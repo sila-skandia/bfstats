@@ -31,7 +31,7 @@ import {
   POSE_FLAG_JUMP, directionalSpeed, MATERIAL_WATER,
   RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
-  DIVE_SPEED_FACTOR, DIVE_DURATION,
+  DIVE_SPEED_FACTOR, DIVE_DURATION, CHARACTER_HEIGHT,
 } from './physics.js';
 import {
   Parachute, effectiveParachuteDrag, landingImpactSpeed,
@@ -87,9 +87,8 @@ const STANCE_FLAGS = { stand: 0, crouch: POSE_FLAG_CROUCH, prone: POSE_FLAG_PRON
  *
  * relative to a soldier origin that sits one metre above the contact point, so
  * the absolute heights are 1.65 / 1.12 / 0.30 m. The three offsets are shipped
- * data; reading `characterHeight` as the origin-to-feet distance is strong
- * inference, and it is the reading that makes all three numbers plausible at
- * once. See `physics.js`.
+ * data, and the metre is confirmed in the engine: see `soldier-pose.js`
+ * `CHARACTER_HEIGHT`.
  */
 export const EYE = Object.freeze({
   stand: EYE_HEIGHT[POSE_STAND],
@@ -833,7 +832,10 @@ export class Soldier {
    * `height` is above the **terrain**, not above the nearest surface: the
    * engine's own gate is `pos.y - terrainBase->getHeight(x, z)`
    * (`0x08275f10`), so `surfaceHeight` and not a downward cast is the right
-   * question to ask the collider.
+   * question to ask the collider. And `pos` is the soldier's own
+   * `getAbsolutePosition()` (`vtbl+0x38`, `0x08275edb`), his origin, a metre
+   * over the feet this body carries (`swim.js`, THE ORIGIN): the state arms
+   * with his feet 9 m up, not 10.
    */
   #stepParachute(dt, input) {
     const collider = this.body.world;
@@ -850,7 +852,7 @@ export class Soldier {
       velocityX: this.body.body.velocity.x,
       velocityY: this.body.body.velocity.y,
       velocityZ: this.body.body.velocity.z,
-      height: Number.isFinite(ground) ? this.y - ground : null,
+      height: Number.isFinite(ground) ? this.y + CHARACTER_HEIGHT - ground : null,
       // In the sea is down, too: a swimmer is never `grounded`, and without
       // this a man who fell into the water stayed in free fall -- and in its
       // looping wind -- for as long as he swam.
@@ -1001,6 +1003,12 @@ export class Soldier {
         && !this.headroom(HEIGHT[want])) {
       want = this.stance;
     }
+    // In the water the swim states hold the lower machine, and none of them
+    // declares `c_AsmIsCrouching` or `c_AsmIsLying`, so `getPose()` answers
+    // standing from `Lb_StartSwim` to the end of `Lb_EndSwim` (`swim.js`,
+    // `soldier-body.js` `bodyFamily`): his eye is the standing one, 0.25 m
+    // over the surface at the draft, whatever key he holds.
+    if (this.swim.swimming) want = 'stand';
     if (want === this.stance) return;
     // The engine's own test is `forwardInput * currentState.speedForward < 0`,
     // and every stand/walk/run state declares 1.0, so it is the input's sign.

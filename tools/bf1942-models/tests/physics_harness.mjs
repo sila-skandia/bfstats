@@ -22,7 +22,7 @@ import {
 import { buildHeightfield } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { WorldCollider } from './world-collider.js';
-import { SwimState, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN } from './swim.js';
+import { SwimState, SWIM_FEET_DRAFT, SWIM_ACCEL_GAIN } from './swim.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -483,7 +483,7 @@ results.fallArc = arcSamples;
 // a body used to be settled onto that, so it stood on the sea and could walk out
 // to the horizon. It cannot any more: the engine has no surface there for a
 // soldier -- `BFSoldier::updateSwimming` is the only thing that ever puts a
-// soldier's y on the water, and it puts it 0.4 m under.
+// soldier's y on the water, and it puts his origin 0.4 m under, his feet 1.4.
 //
 // Three metres of water over a flat seabed at 0.
 const sea = new WorldCollider({ heightfield: field, waterLevel: 3 });
@@ -493,9 +493,9 @@ const sea = new WorldCollider({ heightfield: field, waterLevel: 3 });
 const noSwim = walk(sea, {}, 2, { start: { x: 4, y: 20, z: -32 } });
 results.withoutASwimStateHeSinksToTheBed = {
   y: noSwim.y, grounded: noSwim.grounded, bed: 0, waterLevel: 3 };
-// With one he floats at `waterLevel - SWIM_FLOAT_DRAFT` and `c_AsmIsSwimming` is
-// up. Dropped from 20 m, so his vertical velocity when he hits is 19 m/s and the
-// draft is a clamp, not a settle.
+// With one he floats with his feet at `waterLevel - SWIM_FEET_DRAFT` and
+// `c_AsmIsSwimming` is up. Dropped from 20 m, so his vertical velocity when he
+// hits is 19 m/s and the draft is a clamp, not a settle.
 const swam = walk(sea, {}, 3, {
   start: { x: 4, y: 20, z: -32 },
   setup: s => { s.swim = new SwimState(); },
@@ -503,11 +503,12 @@ const swam = walk(sea, {}, 3, {
 results.swimsInsteadOfStanding = {
   y: swam.y, grounded: swam.grounded, swimming: swam.soldier.swimming,
   depth: swam.soldier.swimDepth,
-  draft: SWIM_FLOAT_DRAFT, waterLevel: 3,
+  draft: SWIM_FEET_DRAFT, waterLevel: 3,
   family: swam.soldier.swim.family,
 };
-// Wading: 20 cm of water over a seabed at 2.8 is under the 0.43 threshold, so he
-// walks on the bed with the bed's own normal and never enters the swim state.
+// Wading: 20 cm of water over a seabed at 2.8 is far under the threshold (1.43 m
+// over the feet: 0.43 over the origin a metre up), so he walks on the bed with
+// the bed's own normal and never enters the swim state.
 const shallowField = buildHeightfield([flatTile(2.8)], { worldSize: 64, dim: 16 });
 const shallow = new WorldCollider({ heightfield: shallowField, waterLevel: 3 });
 const waded = walk(shallow, { forward: 1 }, 2, {
@@ -518,18 +519,32 @@ results.wadesOnTheSeabed = {
   y: waded.y, grounded: waded.grounded, swimming: waded.soldier.swimming,
   depth: waded.soldier.swimDepth, travelled: waded.travelled,
 };
+// And chest-deep: 1.2 m of water over the feet is 0.2 over his origin, still a
+// wade. The page used to measure the 0.43 from the feet and swim him here; the
+// recordings have soldiers standing on Wake's sea bottom in up to 1.47 m of it.
+const chestField = buildHeightfield([flatTile(1.8)], { worldSize: 64, dim: 16 });
+const chest = new WorldCollider({ heightfield: chestField, waterLevel: 3 });
+const chestDeep = walk(chest, { forward: 1 }, 2, {
+  start: { x: 4, y: 1.8, z: -32 },
+  setup: s => { s.swim = new SwimState(); },
+});
+results.wadesChestDeep = {
+  y: chestDeep.y, grounded: chestDeep.grounded, swimming: chestDeep.soldier.swimming,
+  depth: chestDeep.soldier.swimDepth, underWater: chestDeep.soldier.underWater,
+  travelled: chestDeep.travelled,
+};
 // Swimming into the shallows: the seabed has to be able to end the swim.
 //
-// This is the ordering trap. The pin puts the feet at `surface - 0.4` every
+// This is the ordering trap. The pin puts the origin at `surface - 0.4` every
 // tick, so a depth measured BEFORE the resolve is always exactly 0.4 and the
 // 0.35 exit test can never fire -- a man swimming at a beach would never stand
 // up. The engine measures it in `handleUpdate`, after the tick's resolve, where
-// the seabed has already pushed him up. Started over deep water, then the bed is
-// raised to 2.7 (0.3 m of water, inside the exit threshold).
+// the seabed has already pushed him up. Started afloat over deep water, then the
+// bed is raised to 2.7 (0.3 m of water over the feet, well inside the exit).
 {
   const swimmer = new SoldierBody({ world: sea, yaw: Math.PI / 2 });
   swimmer.swim = new SwimState();
-  swimmer.place(4, 2.5, -32);
+  swimmer.place(4, 3 - SWIM_FEET_DRAFT, -32);
   for (let i = 0; i < 60; i++) swimmer.step(TICK_DT, {});
   const afloat = { swimming: swimmer.swimming, y: swimmer.position.y,
                    family: swimmer.swim.family };
@@ -562,7 +577,7 @@ results.wadesOnTheSeabed = {
 // entry. What matters is that he moves, in the direction he is facing, and slower
 // than the 6 m/s the standing row of `directionalSpeed` names.
 const stroked = walk(sea, { forward: 1 }, 6, {
-  start: { x: 4, y: 2.6, z: -32 },
+  start: { x: 4, y: 3 - SWIM_FEET_DRAFT, z: -32 },
   setup: s => { s.swim = new SwimState(); },
 });
 results.swimsForward = {

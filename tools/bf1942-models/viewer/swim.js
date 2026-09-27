@@ -3,8 +3,9 @@
 //
 // Everything in this file was read out of `bf1942_lnxded.static` and out of
 // `animations/AnimationStatesSwim.con`, and every number carries the address or
-// the line that says so. Free of `three` and of the DOM, so
-// `tests/swim_harness.mjs` runs the real thing under node.
+// the line that says so. Free of `three` and of the DOM (its one import is
+// `soldier-pose.js`'s `CHARACTER_HEIGHT`), so `tests/swim_harness.mjs` runs the
+// real thing under node.
 //
 // THE STATE. `BFSoldier::updateSwimming(float)` (lnxded `0x08282190`) runs once
 // per tick out of `BFSoldier::handleUpdate` (`0x0827237a`, `0x08272c63`) and is
@@ -15,21 +16,71 @@
 //   2. the LOWER body's `getCurrentStateFlags()` (`this+0x294`,
 //      `0x082821d0`) carries `c_AsmIsClimbing` 0x10 -> return
 //      (`0x082821da test eax,0x10`). A man on a ladder is not swimming.
-//   3. `surfaceY = terrainBase->vtbl+0x5c(pos.x, pos.z)` (`0x08282215`) and
-//      `depth = max(0, surfaceY - pos.y)` (`0x0828221e` .. `0x0828223a`).
-//      **A function of x and z only** — the same trap HP-5's `touchesWater`
-//      documents on the vehicle side: altitude is what decides water contact,
-//      and it is decided against the soldier's own origin, which is his FEET.
+//   3. `pos` is row 3 of the soldier's own `getAbsoluteTransformation()`
+//      (`vtbl+0x40`, `0x082821ea`), `surfaceY = terrainBase->vtbl+0x5c(pos.x,
+//      pos.z)` (`0x08282215`) and `depth = max(0, surfaceY - pos.y)`
+//      (`0x0828221e` .. `0x0828223a`). **A function of x and z only** — the
+//      same trap HP-5's `touchesWater` documents on the vehicle side. And
+//      `pos` is the soldier's ORIGIN, which stands a metre over his feet (THE
+//      ORIGIN, below).
 //   4. not swimming yet: enter if `depth > 0.43` (`0x086d29bc`, tested at
-//      `0x082823c5`) or if the surface is above the composite object's own
-//      reference height (`0x082823b1`). Entering is two `setAnimationState`
-//      calls, `Lb_StartSwim` (`0x086d299e`, `0x082823f7`) and `Ub_StartSwim`
-//      (`0x086d29ab`, `0x08282426`).
+//      `0x082823c5`) OR if the surface is above his camera. The camera is the
+//      first of `this+0x3f0`'s list (`0x08282380`), asked for
+//      `IID_ICompositeObject` 0xc378 (`0x086c2a58`, `0x082823a0`), and its
+//      `getAbsolutePosition()` (`vtbl+0x38`, `0x082823ae`: the Camera
+//      vtable's slot is `BCompositeObject::getAbsolutePosition`
+//      `0x08164380`) has its y tested against the surface at `0x082823bc`.
+//      That is the eye, `setPoseCameraPos` over the origin: standing it is
+//      above the 0.43 line, so the depth test comes first, and a crouched or
+//      prone man is put in the water by his eye. Entering is two
+//      `setAnimationState` calls, `Lb_StartSwim` (`0x086d299e`, `0x082823f7`)
+//      and `Ub_StartSwim` (`0x086d29ab`, `0x08282426`), and nothing else: the
+//      entering tick writes no position.
 //   5. already swimming: leave if `depth <= 0.35` (`0x086d29b8`, tested at
 //      `0x082822a8`) — `Lb_EndSwim` (`0x086d2988`) and `Ub_EndSwim`
 //      (`0x086d2993`) — else, while `surfaceY > pos.y` (`0x082822bc`), TELEPORT
-//      the body to `surfaceY - 0.4` (`0x086c4f70`, `0x082822d4`, written
-//      through `vtbl+0x3c`).
+//      the origin to `surfaceY - 0.4` (`0x086c4f70`, `0x082822d4`, written
+//      through `vtbl+0x3c`, `setAbsolutePosition`).
+//
+// One arm is not modelled: a soldier whose byte `+0x245` is set skips 4 and 5
+// and is only pinned (`0x0828223d`). Its one writer besides the ctor's zero is
+// `BFSoldierNetworkable::setNetUpdate` (`0x082254ae`), which reads a soldier's
+// state off a `BitStream`: a networked copy, which the page's soldiers are not.
+//
+// THE ORIGIN. The soldier's physics origin is 1.0 m over his feet, and the
+// engine says so twice:
+//
+//   * His only collision geometry is `ObjectTemplate.geometry BodyCollision`, a
+//     `SkeletonCollisionMesh` whose `bodycollision_m1` ships in no archive: the
+//     hull is the 17 vertices `SkeletonCollisionMeshTemplate`'s constructor
+//     hard-codes (`0x083af375`-`0x083af62a`), and the lowest is (0, -1, 0).
+//     `ResponsePhysics::checkVsTerrain` (`0x0825a960`) sweeps those
+//     (`getVertexCollision` `0x0825a991`, then the `ICollisionMesh`'s
+//     `getVertexCount` `0x0825aa48` and `getVertices` `0x0825ab0b`) against
+//     `terrainBase->vtbl+0x54`, and for a soldier only the first five
+//     (`CID_BFSoldierTemplate` tested at `0x0825aa94`, the count set to 5 at
+//     `0x0825b040`): that foot point and the ring at y -0.6 over it. So a man
+//     standing on the ground has his origin 1.0 m over it;
+//     `BFSoldier::handleUpdate` moves the hull only in x and z
+//     (`setCollisionOffset`, y zeroed at `0x082738bd`), so in every pose.
+//   * `setCharacterHeight -1.00` writes `BFSoldierTemplate+0x158`
+//     (`0x082bb734`), the y of the translation his skeleton is drawn with
+//     (`BFSoldier::updateAnimations` `0x0826e984`, `handleUpdate`
+//     `0x08273047`): the drawn feet are a metre under the origin.
+//
+// The recordings agree (the bf42plus sampler writes a soldier's engine
+// origin, `features/round-replay-capture/`): over Wake's terrain a standing
+// soldier's samples lie 1.00 m (median) over the ground; in the sea they stay
+// 1.00 m over the bottom through 0.43-0.8 m of water (replay_20260927-075756,
+// soldier 860, 205 samples) and up to 1.47 m of it (replay_20260919-213409,
+// soldier 608), where the page's old reading had them swimming from 0.43 m;
+// and a swimmer in 4.07 m of water has his origin 0.45-0.49 m under the surface
+// (replay_20260927-001120, soldier 1091), the 0.4 pin applied to the origin.
+//
+// So in the page's convention, where a body's y is his feet, every number
+// above is a metre deeper: he swims from 1.43 m of water over his feet (or with
+// his eye under), walks out at 1.35, and floats with his feet 1.4 m under the
+// surface (`SWIM_ENTER_WATER`, `SWIM_LEAVE_WATER`, `SWIM_FEET_DRAFT`).
 //
 // So the swim state is not a physics mode the engine solves: it is an
 // **animation state**, entered by name, and the thing physics reads is the
@@ -43,6 +94,8 @@
 // (`0x082991aa`), `c_AsmIsClimbing` 0x10 (`0x082991da`), `c_AsmIsCrouching`
 // 0x20 (`0x0829920a`), `c_AsmIsLying` 0x40 (`0x0829923a`) — which independently
 // re-derives PHY-8's 0x20/0x40 pair.
+
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /**
  * `c_AsmHideWeapon`. Every one of the five lower swim states declares it, and
@@ -58,13 +111,23 @@ export const ASM_IS_SWIMMING = 0x8;
 /** `c_AsmIsClimbing` (`0x082991da`). `updateSwimming` early-outs on it. */
 export const ASM_IS_CLIMBING = 0x10;
 
-/** Enter the swim state above this much water over the feet (`0x086d29bc`). */
+/** Enter the swim state above this much water over the ORIGIN (`0x086d29bc`). */
 export const SWIM_ENTER_DEPTH = 0.43;
 /** And leave it at or below this much (`0x086d29b8`). The hysteresis is the
  *  engine's: 8 cm of it, which is what stops a man in the surf flickering. */
 export const SWIM_LEAVE_DEPTH = 0.35;
-/** How far below the surface a swimmer's feet are pinned (`0x086c4f70`). */
+/** How far below the surface a swimmer's ORIGIN is pinned (`0x086c4f70`). */
 export const SWIM_FLOAT_DRAFT = 0.4;
+/**
+ * The same three in the page's convention, where a body's y is his feet: the
+ * engine's numbers plus the metre his origin stands over them
+ * (`CHARACTER_HEIGHT`; THE ORIGIN in the header). 1.43 m of water over his
+ * feet puts a standing man in, 1.35 m lets him out, and he floats with his
+ * feet 1.4 m under the surface.
+ */
+export const SWIM_ENTER_WATER = SWIM_ENTER_DEPTH + CHARACTER_HEIGHT;
+export const SWIM_LEAVE_WATER = SWIM_LEAVE_DEPTH + CHARACTER_HEIGHT;
+export const SWIM_FEET_DRAFT = SWIM_FLOAT_DRAFT + CHARACTER_HEIGHT;
 /**
  * The swim locomotion gain: `a = 5.0 * vCmd` (`0x086c5288`, applied at
  * `0x08274b6f`-`0x08274b98` and handed to
@@ -102,14 +165,19 @@ export const SWIM_ACCEL_GAIN = 5.0;
  *
  * WHY THIS NUMBER. Two things agree on about 2 m/s:
  *
- *  1. The box law's own balance, with the scale saturated (`depth >= DY`, i.e.
- *     25x dry drag) and the soldier's collision extent taken as roughly
- *     0.8 x 1.8 m: `v = sqrt(5*6*100 / (25^2 * (pi/4)*0.8*1.8))` = **2.06 m/s**.
- *     The saturation is the assumption — at the 0.4 m draft against a 1.8 m box
- *     the scale would be 6.33 and the balance 8.1 m/s, which is *faster than
- *     running* and so is almost certainly not what the engine does. Which of the
- *     two `ResponsePhysics::checkVsTerrain` (`0x0825a960`, `setUnderWater` at
- *     `0x0825ac60`) actually produces was **not** settled; see the feature doc.
+ *  1. The box law's own balance, taking the box as his hull's bounding box,
+ *     0.8 x 1.8 x 0.8 m (the 17 hull vertices in THE ORIGIN span x and z +-0.4
+ *     and y -1.0 to 0.8; that the law reads this box is not read).
+ *     `depth` is what `ResponsePhysics::checkVsTerrain` hands `setUnderWater`
+ *     (the node's `vtbl+0xc0`, `PointPhysicsNode::setUnderWater` `0x08256ad0`,
+ *     at `0x0825ac60`): the water at his (x, z) (`0x0825ac12`) less the lowest
+ *     of those vertices, the running minimum the vertex loop keeps from
+ *     9999.0 (`0x086d16d0`), and 0 when no vertex is under (`0x0825ad41`).
+ *     So it is measured from his FEET, and at the draft it is 1.4 m, not 0.4:
+ *     the scale is `1 + 24*1.4/1.8` = 19.7 and
+ *     `v = sqrt(5*6*100 / (19.7^2 * (pi/4)*0.8*1.8))` = **2.6 m/s**. (Read as
+ *     0.4 m it gave 8.1 m/s, faster than running, which is why this used to be
+ *     an open question; saturated at 25x it gives 2.06.)
  *  2. `walkSpeedFactor` (1/3, `0x0872ee10`), which is a shipped constant, gives
  *     exactly 2.0 m/s off the standing row — and a swimming soldier moving at
  *     about a walk is the observable everyone who has played the game has.
@@ -318,17 +386,19 @@ export const SWIM_START_SECONDS = 1 / SWIM_START_SPEED;
 export const SWIM_END_SECONDS = 1 / SWIM_END_SPEED;
 
 /**
- * `max(0, surfaceY - feetY)`, the engine's own quantity (`0x0828221e`).
+ * `max(0, surfaceY - y)` (`0x0828221e`). `updateSwimming` measures it from the
+ * soldier's origin, `y = feetY + CHARACTER_HEIGHT`; `setUnderWater` measures
+ * the same thing from his feet (see `SWIM_SPEED_CEILING_FACTOR`).
  *
  * `surfaceY` is the water surface at (x, z) and nothing else — pass `null` for
  * a level with no water and the answer is 0, which is `updateSwimming`'s
  * `terrainBase->getWaterLevel() == -1.0` early-out in a different shape.
  */
-export function swimDepth(surfaceY, feetY) {
-  if (surfaceY == null || !Number.isFinite(surfaceY) || !Number.isFinite(feetY)) {
+export function swimDepth(surfaceY, y) {
+  if (surfaceY == null || !Number.isFinite(surfaceY) || !Number.isFinite(y)) {
     return 0;
   }
-  const depth = surfaceY - feetY;
+  const depth = surfaceY - y;
   return depth > 0 ? depth : 0;
 }
 
@@ -454,7 +524,8 @@ export class SwimState {
     this.swimming = false;
     /** The current family name, or `null` when dry. */
     this.family = null;
-    /** `max(0, surfaceY - feetY)` as of the last `update`. */
+    /** The engine's depth as of the last `update`: the water over his ORIGIN,
+     *  `max(0, surfaceY - (feetY + CHARACTER_HEIGHT))`. */
     this.depth = 0;
     /** The water surface the last `update` saw, or `null`. */
     this.surfaceY = null;
@@ -508,18 +579,23 @@ export class SwimState {
    * One tick.
    *
    * `surfaceY` is the water surface at the body's own (x, z), or `null` where
-   * there is no water; `feetY` is the body origin. `throttle` is the forward
-   * input, which is what `c_PIThrottle` is. `climbing` is `c_AsmIsClimbing`,
-   * which switches the whole function off.
+   * there is no water. `feetY` is where the body stands, the page's convention;
+   * the engine's `pos` is his origin a metre over it (THE ORIGIN in the
+   * header), and the depth is measured from there. `eyeY` is his camera's y,
+   * the entry's other arm (`0x082823bc`), or `null` to leave that arm out.
+   * `throttle` is the forward input, which is what `c_PIThrottle` is.
+   * `climbing` is `c_AsmIsClimbing`, which switches the whole function off.
    *
-   * Returns the y the body is to be pinned at, or `null` for "leave it alone" —
-   * the engine only writes the position while `surfaceY > pos.y`.
+   * Returns the y the body's FEET are to be pinned at, or `null` for "leave it
+   * alone" — the engine writes the position only in the swimming arm, and only
+   * while `surfaceY > pos.y`.
    */
-  update({ dt = 0, surfaceY = null, feetY = 0, throttle = 0,
+  update({ dt = 0, surfaceY = null, feetY = 0, eyeY = null, throttle = 0,
            climbing = false, dead = false } = {}) {
     this.entered = false;
     this.left = false;
-    const depth = swimDepth(surfaceY, feetY);
+    const originY = feetY + CHARACTER_HEIGHT;
+    const depth = swimDepth(surfaceY, originY);
     this.depth = depth;
     this.surfaceY = surfaceY == null || !Number.isFinite(surfaceY) ? null : surfaceY;
     // `0x082821da`: a man on a ladder is not swimming, and the function does not
@@ -544,14 +620,20 @@ export class SwimState {
       }
     }
     if (!this.swimming) {
-      if (depth > SWIM_ENTER_DEPTH) {
+      // `0x082823c5`: over the 0.43 line; `0x082823bc`: or the surface over his
+      // eye, which is what puts a crouched or prone man in first.
+      const eyeUnder = this.surfaceY !== null && Number.isFinite(eyeY)
+        && this.surfaceY > eyeY;
+      if (depth > SWIM_ENTER_DEPTH || eyeUnder) {
         this.swimming = true;
         this.family = 'swimStart';
         this.oneShotLeft = SWIM_START_SECONDS;
         this.entered = true;
         this.swimTime = 0;
       }
-      return this.swimming ? this.#pin(feetY) : null;
+      // The entering tick is the two `setAnimationState` calls and nothing
+      // else; the pin belongs to the swimming arm and lands from the next tick.
+      return null;
     }
     this.swimTime += dt;
     if (depth <= SWIM_LEAVE_DEPTH) {
@@ -564,14 +646,16 @@ export class SwimState {
       return null;
     }
     if (!this.oneShot) this.family = swimStroke(dead ? 0 : throttle);
-    return this.#pin(feetY);
+    return this.#pin(originY);
   }
 
-  /** `0x082822bc`: only while the surface really is above the feet. */
-  #pin(feetY) {
+  /** `0x082822bc`: only while the surface really is above the origin. The
+   *  engine writes the origin to `surfaceY - 0.4` (`0x082822d4`); the feet
+   *  that makes are `SWIM_FEET_DRAFT` under the surface. */
+  #pin(originY) {
     if (this.surfaceY == null) return null;
-    if (!(this.surfaceY > feetY)) return null;
-    return this.surfaceY - SWIM_FLOAT_DRAFT;
+    if (!(this.surfaceY > originY)) return null;
+    return this.surfaceY - SWIM_FEET_DRAFT;
   }
 }
 

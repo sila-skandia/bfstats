@@ -12,6 +12,10 @@ import {
   SWIM_STATE_FLAGS, SwimState, WATER_DAMAGE_DELAY, WATER_DAMAGE_INTERVAL,
   itemsLocked, swimDepth, swimStroke,
 } from './swim.js';
+// The feet-convention constants by namespace, so a swim.js without them reads
+// as `null` in the blob rather than failing the whole import.
+import * as SWIM from './swim.js';
+import { CHARACTER_HEIGHT, EYE_HEIGHT } from './soldier-pose.js';
 
 const results = {};
 const DT = 1 / 60;
@@ -20,6 +24,10 @@ results.constants = {
   enter: SWIM_ENTER_DEPTH,
   leave: SWIM_LEAVE_DEPTH,
   draft: SWIM_FLOAT_DRAFT,
+  enterWater: SWIM.SWIM_ENTER_WATER ?? null,
+  leaveWater: SWIM.SWIM_LEAVE_WATER ?? null,
+  feetDraft: SWIM.SWIM_FEET_DRAFT ?? null,
+  characterHeight: CHARACTER_HEIGHT,
   gain: SWIM_ACCEL_GAIN,
   band: SWIM_THROTTLE_BAND,
   hideWeapon: ASM_HIDE_WEAPON,
@@ -54,14 +62,15 @@ results.stroke = {
   garbage: swimStroke(undefined),
 };
 
-/** Run a swim state over a scripted feet-height sequence. */
+/** Run a swim state over a scripted feet-height sequence. `eyeY`, when a
+ *  sample names one, is the camera's y for the entry's second arm. */
 function walkDepths(samples, { throttle = 0, climbing = false, dead = false } = {}) {
   const swim = new SwimState();
   const trace = [];
-  for (const { surfaceY, feetY, ticks = 1, throttle: t, dead: d } of samples) {
+  for (const { surfaceY, feetY, eyeY = null, ticks = 1, throttle: t, dead: d } of samples) {
     for (let i = 0; i < ticks; i++) {
       const pin = swim.update({
-        dt: DT, surfaceY, feetY,
+        dt: DT, surfaceY, feetY, eyeY,
         throttle: t ?? throttle,
         climbing, dead: d ?? dead,
       });
@@ -75,27 +84,35 @@ function walkDepths(samples, { throttle = 0, climbing = false, dead = false } = 
 const round = n => (Number.isFinite(n) ? Math.round(n * 1e6) / 1e6 : n);
 
 // --- the hysteresis --------------------------------------------------------
-// Wading: 0.40 m of water over the feet is inside the 0.43 entry threshold, so
-// he is still walking. 0.44 puts him in. Then 0.36 keeps him in (the exit is
-// 0.35, not 0.43) and 0.34 takes him out.
-results.wading = walkDepths([{ surfaceY: 3, feetY: 2.60 }]).last;
-results.entering = walkDepths([{ surfaceY: 3, feetY: 2.56 }]).last;
+// In the page's convention, feet: `updateSwimming` measures from his origin,
+// a metre up, so every threshold is a metre deeper over the feet. Surface at 3,
+// so `feetY` 1.0 is 2 m of water over the feet, well in.
+//
+// Wading: 1.42 m of water over the feet is 0.42 over the origin, inside the
+// 0.43 entry threshold, so he is still walking. 1.44 puts him in. Then 1.36
+// keeps him in (the exit is 0.35 over the origin, not 0.43) and 1.34 takes him
+// out.
+const DEEP_FEET = 1.0;
+results.wading = walkDepths([{ surfaceY: 3, feetY: 3 - 1.42 }]).last;
+results.entering = walkDepths([{ surfaceY: 3, feetY: 3 - 1.44 }]).last;
+// And what the old reading had wrong: 0.44 m over the feet is a wade.
+results.kneeDeep = walkDepths([{ surfaceY: 3, feetY: 2.56, ticks: 5 }]).last;
 {
   const run = walkDepths([
-    { surfaceY: 3, feetY: 2.0, ticks: 40 },   // swimming, one-shot done
-    { surfaceY: 3, feetY: 2.64, ticks: 1 },   // 0.36 deep: still swimming
+    { surfaceY: 3, feetY: DEEP_FEET, ticks: 40 },   // swimming, one-shot done
+    { surfaceY: 3, feetY: 3 - 1.36, ticks: 1 },     // 1.36 over the feet: still in
   ]);
   results.staysInAtPointThreeSix = run.last;
   const out = walkDepths([
-    { surfaceY: 3, feetY: 2.0, ticks: 40 },
-    { surfaceY: 3, feetY: 2.66, ticks: 1 },   // 0.34 deep: the exit clip
+    { surfaceY: 3, feetY: DEEP_FEET, ticks: 40 },
+    { surfaceY: 3, feetY: 3 - 1.34, ticks: 1 },     // 1.34: the exit clip
   ]);
   results.exitsAtPointThreeFour = out.last;
   // And the exit clip is where the flag drops, not the depth test: it plays out
   // first and `addTransitionWhenDone Lb_Stand` is what ends the swim.
   const done = walkDepths([
-    { surfaceY: 3, feetY: 2.0, ticks: 40 },
-    { surfaceY: 3, feetY: 2.66, ticks: Math.ceil(SWIM_END_SECONDS / DT) + 2 },
+    { surfaceY: 3, feetY: DEEP_FEET, ticks: 40 },
+    { surfaceY: 3, feetY: 3 - 1.34, ticks: Math.ceil(SWIM_END_SECONDS / DT) + 2 },
   ]);
   results.exitClipEndsTheSwim = done.last;
   // `Lb_EndSwim` declares `c_AsmIsSwimming` itself, so every tick of the exit
@@ -109,36 +126,62 @@ results.entering = walkDepths([{ surfaceY: 3, feetY: 2.56 }]).last;
 
 // --- the entry one-shot, and the stroke it hands over to -------------------
 {
-  const run = walkDepths([{ surfaceY: 3, feetY: 2.0, ticks: 2 }]);
+  const run = walkDepths([{ surfaceY: 3, feetY: DEEP_FEET, ticks: 2 }]);
   results.entryPlaysStartSwim = run.last;
   const later = walkDepths([
-    { surfaceY: 3, feetY: 2.0, ticks: Math.ceil(SWIM_START_SECONDS / DT) + 2 },
+    { surfaceY: 3, feetY: DEEP_FEET, ticks: Math.ceil(SWIM_START_SECONDS / DT) + 2 },
   ]);
   results.entryHandsOverToSwimForward = later.last;
 }
 results.strokeFromThrottle = {
-  forward: walkDepths([{ surfaceY: 3, feetY: 2.0, ticks: 40 }],
+  forward: walkDepths([{ surfaceY: 3, feetY: DEEP_FEET, ticks: 40 }],
                       { throttle: 1 }).last.family,
-  backward: walkDepths([{ surfaceY: 3, feetY: 2.0, ticks: 40 }],
+  backward: walkDepths([{ surfaceY: 3, feetY: DEEP_FEET, ticks: 40 }],
                        { throttle: -1 }).last.family,
-  floating: walkDepths([{ surfaceY: 3, feetY: 2.0, ticks: 40 }],
+  floating: walkDepths([{ surfaceY: 3, feetY: DEEP_FEET, ticks: 40 }],
                        { throttle: 0 }).last.family,
 };
 
 // --- the draft ------------------------------------------------------------
-// The pin is `surfaceY - 0.4` and it does not depend on how deep he started.
+// The engine writes his origin to `surfaceY - 0.4`, so the feet the page
+// carries go 1.4 m under, and it does not depend on how deep he started.
 results.draftPin = {
   deep: walkDepths([{ surfaceY: 3, feetY: -20, ticks: 2 }]).last.pin,
-  shallow: walkDepths([{ surfaceY: 3, feetY: 2.0, ticks: 2 }]).last.pin,
+  shallow: walkDepths([{ surfaceY: 3, feetY: DEEP_FEET, ticks: 2 }]).last.pin,
   // Above the surface: `0x082822bc` refuses to write the position at all.
   aboveTheSurface: (() => {
     const run = walkDepths([
-      { surfaceY: 3, feetY: 2.0, ticks: 40 },
+      { surfaceY: 3, feetY: DEEP_FEET, ticks: 40 },
       { surfaceY: 3, feetY: 3.5, ticks: 1 },
     ]);
     return run.last.pin;
   })(),
+  // The entering tick is two `setAnimationState` calls and no position: the
+  // pin comes from the swimming arm, a tick later.
+  onTheEnteringTick: walkDepths([{ surfaceY: 3, feetY: -20, ticks: 1 }]).last,
 };
+
+// --- the eye ----------------------------------------------------------------
+// The entry's other arm (`0x082823bc`): the surface over his camera. Standing,
+// the eye is 1.65 m over the feet, above the 1.43 line, so the depth decides;
+// crouched (1.12) and prone (0.30) the eye goes under first. Surface at 3.
+{
+  const eye = pose => EYE_HEIGHT[pose];
+  const at = (water, pose) => ({ surfaceY: 3, feetY: 3 - water, eyeY: 3 - water + eye(pose) });
+  results.eye = {
+    standingAt142: walkDepths([at(1.42, 0)]).last,
+    crouchedAt115: walkDepths([at(1.15, 1)]).last,
+    crouchedAt110: walkDepths([at(1.10, 1)]).last,
+    proneAt035: walkDepths([at(0.35, 2)]).last,
+    proneAt025: walkDepths([at(0.25, 2)]).last,
+    // No eye given, the arm is out: 0.35 m is a wade.
+    noEyeAt035: walkDepths([{ surfaceY: 3, feetY: 2.65 }]).last,
+    // In by the eye with the origin 0.15 m under: the next tick's exit test
+    // (0.35 over the origin) takes him straight back out, as it does the
+    // engine's crouched man in chest-deep water.
+    crouchedNextTick: walkDepths([at(1.15, 1), at(1.15, 1)]).trace.map(s => s.family),
+  };
+}
 
 // --- the ladder ----------------------------------------------------------
 // `c_AsmIsClimbing` switches the whole function off, and it does not take a
@@ -149,7 +192,7 @@ results.ladder = {
   keepsASwimmerIn: (() => {
     const swim = new SwimState();
     for (let i = 0; i < 40; i++) {
-      swim.update({ dt: DT, surfaceY: 3, feetY: 2.0 });
+      swim.update({ dt: DT, surfaceY: 3, feetY: DEEP_FEET });
     }
     const before = { swimming: swim.swimming, family: swim.family };
     for (let i = 0; i < 10; i++) {
@@ -165,7 +208,7 @@ results.noWater = walkDepths([{ surfaceY: null, feetY: -400, ticks: 10 }]).last;
 // --- death ---------------------------------------------------------------
 {
   const swim = new SwimState();
-  for (let i = 0; i < 40; i++) swim.update({ dt: DT, surfaceY: 3, feetY: 2.0 });
+  for (let i = 0; i < 40; i++) swim.update({ dt: DT, surfaceY: 3, feetY: DEEP_FEET });
   results.dieSwim = {
     alive: swim.clips(false),
     dead: swim.clips(true),
@@ -243,11 +286,11 @@ results.itemsLockedBy = {
   };
   tick(null, 0);                                   // no water at all
   tick(3, 2.8);                                    // 0.2 m: wading, still armed
-  tick(3, 2.0);                                    // 0.43 crossed: Lb_StartSwim
-  for (let i = 0; i < Math.round(0.4 / DT); i++) tick(3, 2.0);   // -> forward
-  tick(3, 2.0, 1);                                 // stroking
-  tick(3, 2.0, -1);
-  tick(3, 2.0);                                    // floating
+  tick(3, DEEP_FEET);                              // 1.43 crossed: Lb_StartSwim
+  for (let i = 0; i < Math.round(0.4 / DT); i++) tick(3, DEEP_FEET);   // -> forward
+  tick(3, DEEP_FEET, 1);                           // stroking
+  tick(3, DEEP_FEET, -1);
+  tick(3, DEEP_FEET);                              // floating
   tick(3, 2.8);                                    // 0.2 m: Lb_EndSwim
   const exiting = { family: swim.family, flags: swim.stateFlags,
                     locked: swim.itemsLocked };
