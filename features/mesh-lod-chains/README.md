@@ -102,8 +102,20 @@ The fix is in the exporter rather than in a helper beside `liftLods`:
 - The level's own vehicles already draw at full detail, because `liftLods`
   keeps every chain under the spawners unlifted and its rungs hidden.
 
-Level bakes are unchanged: Berlin re-baked byte-identical with and without the
-fix. The model trees were re-extracted the same day from the fix and published:
+Level bakes draw the same, but they are not byte-identical everywhere. Berlin
+re-baked byte-identical with and without the fix; a level whose vehicles have a
+track skinned by its `.skn` (the Sherman, Tiger, PanzerIV, Hanomag, Wespe,
+M3A1, T95 ...) loses those tracks' rung meshes, about 40-90 KB a level. No
+node ever referenced them: a track carries a skeleton, so `build_node` hung no
+rungs under it, and the loader never builds a mesh no node uses. Across the 84
+published levels of the three trees, 2,571 parts carry a `.skn` and none has a
+rung node. Other meshes no node uses ride in those glbs too (rungs of shells,
+muzzle flashes and bombs, some collision hulls): 13.5 MB over the 84, the
+tracks' included. The published level trees keep those orphan meshes; re-publishing
+every level glb (each a full re-download for a returning visitor) to shed them
+was judged not worth it, so they go with the next re-bake that changes
+something drawn (2026-09-27). The model trees were re-extracted the same day
+from the fix and published:
 the vanilla catalogue (96 templates, 263 glbs), XPack1 and XPack2 with `--own`
 (36 and 71 glbs), and the level-local Ju88A. No glb under `viewer/models` has a
 rung now. The browser loads all 370 variants with no rung drawn, and the Sherman

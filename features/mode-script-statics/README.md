@@ -175,12 +175,13 @@ with its LOD rungs and a collision hull). `viewer/models/mods/xpack2` is the
 vehicle and kit catalogue, and nothing the page loads for a level reads it.
 
 The glbs also carry `1a561a94` (a mesh skinned by its own `.skn` ships no
-LOD rungs), which landed on main while this was in progress. Its note says
-level bakes are unchanged, checked on Berlin, but every level that parks a
-tracked vehicle moves: a bake from before it differed here by the Sherman's
-three track rung meshes on all four levels and the T95's six more on
-Mimoyecques, nothing else. The rest of the level trees still carry those rungs
-until they are next baked.
+LOD rungs), which landed on main while this was in progress. A bake from
+before it differed here by the Sherman's three track rung meshes on all four
+levels and the T95's six more on Mimoyecques, nothing else. Those meshes were
+orphans: no node referenced them (a track carries a skeleton, so no rung node
+was ever made for it), and the loader never builds such a mesh, so nothing
+drawn changed. The other levels keep theirs until a re-bake with a visible
+reason (see `features/mesh-lod-chains/README.md`).
 
 Published with `scripts/publish-mesh-delta.py maps --hash --root <staging>`
 (a staging tree of exactly the nine files): 0.33 GB in 2 min, after the
