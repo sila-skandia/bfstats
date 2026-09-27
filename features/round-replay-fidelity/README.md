@@ -42,7 +42,7 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | (the same round) no radio | nine RadioMessage events (0x3A) were read by nobody. They go through the page's own `comms.receive` with the recording player as the listener: the game's line (`[D5] Rut: Enemy armor spotted!`), team radio in his side's voice, a shout in the speaker's voice at the speaker; a line a seek rebuilds is not heard again |
 | (the same round) twelve `special` events read by nobody | SpecialGameEvent type 0 is a refill: lnxded `GameServer::triggerSpecialGameEvent` (0x081591a0) sends it to the client of a player a depot resupplies, whose soldier plays `SoldierRefillAmmo.ssc` (`BFSoldier::triggerRefillAmmoSound` 0x0827ebc0). The recording player's refills play `Ammorefill` at him, full to 10 m and gone at 15 m (`page-audio.js` `playRefillSound`); one log row a visit |
 | (the same round) ten "round playing" rows | the server sends every client the status again whenever someone joins; a row is now a change |
-| (the same round) MoonGamers' messages read `*Donotsteal/destroyequipment...` | its lines separate words with byte 0x80, which the chat font has no glyph for; drawn as a space (`chatText`, inferred: MANUAL_TESTS.md) |
+| (the same round) MoonGamers' messages were drawn with spaces the game does not show | its lines separate words with byte 0x80, which the game draws as nothing: they read as one word, `*Donotsteal/destroyequipment...` (the owner, 2026-09-28). `chatText` drops the byte rather than leave a browser font to draw it |
 
 ## What the replay reuses now
 

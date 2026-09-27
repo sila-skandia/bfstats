@@ -88,7 +88,7 @@ In the viewer:
 | any aircraft or tank machine gun, a PT boat's side gunner (8:57) | the same: heard while it fires |
 | 9:58 to 10:00 | the kill line reads `Rut [Bazooka] Omen` under the Allies' flag, not a team kill |
 | the chat at 0:08 to 0:16, 9:07 to 9:51 | `3star: ...` and `Omen: ...`, not a later player's name before theirs |
-| a MoonGamers server line (0:29) | words with spaces: does the game draw them that way? (the byte between them is 0x80, drawn as a space by inference) |
+| a MoonGamers server line (0:29) | one run-together word, `*Donotsteal/...`, as the game draws it |
 | 6:16 and 6:23 | Rut's radio line (`[D5] Rut: Enemy armor spotted!`) and the radio voice |
 | 0:47 and 0:55 near your soldier | the ammo refill sound at the depot |
 | the scoreboard at 7:00 and at 14:30 | pid 11 is Omen, then Niconan with none of Omen's deaths |
@@ -97,18 +97,22 @@ In the viewer:
 
 ## 4. A round begun after the join, with the new recorder
 
-Join a round, then switch recording on in the console (`plus.recordReplays
-1`), play a minute, and quit. The file's head, after the join's events, should
-carry every player's `createPlayer`, every standing object's `createObject`,
-the grenade and mine pools (`projPool`) and the kits (`pickupKit`), each with
+Join a round with recording off (`plus.recordReplays 0` in the console), play
+a while and switch sides, then turn recording on (`plus.recordReplays 1`), play
+a minute, and quit. The file's head, after the join's events, should carry
+every player's `createPlayer`, every standing object's `createObject`, the
+grenade and mine pools (`projPool`) and the kits (`pickupKit`), each with
 `ago`, then the roster:
 
 ```bash
 f=$(ls -t ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/replays/replay_*.ndjson | head -1); head -400 "$f" | grep -o '"e":"[a-zA-Z]*"[^}]*"ago"' | cut -d'"' -f4 | sort | uniq -c
 ```
 
-In the replay, ships out of range all round are drawn as ghosts where they
-lay, and every soldier alive at the start holds his own kit's weapon.
+In the replay you are on the side you switched to from the first second (your
+held `createPlayer` has the side you joined on, the roster the side you were
+on when recording began), ships out of range all round are drawn as ghosts
+where they lay, and every soldier alive at the start holds his own kit's
+weapon.
 
 ## 5. If the new DLL misbehaves
 

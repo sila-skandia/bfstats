@@ -1931,6 +1931,9 @@ const read = scene => {
   const rec = recording.parseRecording([
     line({ k: 'h', v: 5, start: '', hz: 10 }),
     line({ k: 'e', t: 0, e: 'serverInfo', mapId: 'BF1942', mod: 'bf1942', gameId: 'BF1942', ago: 41 }),
+    // The recording player joined the Axis and switched sides before the file
+    // began: the held createPlayer has the side joined on, the roster the new.
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 8, name: 'skandia', team: 1, ai: 0, netId: 17, vehNetId: 18, camNetId: 18, kitNetId: 0, ago: 30 }),
     line({ k: 'roster', t: 0, p: [[0, 2, 0, 'Rut', 0], [4, 1, 0, '3star', 0], [9, 1, 0, 'waldo', 0], [8, 2, 0, 'skandia', 1]] }),
     line({ k: 'p', t: 0, p: [[9, 1, 740, 740, 0, 0], [0, 2, 700, 700, 0, 0]] }),
     line({ k: 'jn', t: 0, o: [[541, 1, 'HatsuzukiCannon', 0, 5, -20], [545, 2, 'HatsuzukiCannon', 0, 5, -20],
@@ -2068,6 +2071,11 @@ const read = scene => {
     },
     roster45: chapters.rosterOf(rec, 45).map(p => [p.pid, p.name, p.team]),
     recordingPid: chapters.recordingPlayer(rec),
+    heldSwitch: {
+      sides: [recording.teamAt(rec, 8, 0), recording.teamAt(rec, 8, 5)],
+      local: Boolean(recording.playerAt(rec, 8, 0)?.local),
+      joinedRow: rec.events.some(r => r.kind === 'player' && r.text.startsWith('skandia joined')),
+    },
     extended: traced.extended.map(l => [l.nid, l.tmpl, l.created]),
     standIns: traced.added.map(l => [l.nid, l.tmpl, l.created, Number.isFinite(l.destroyed) ? l.destroyed : null]),
     sounding,
