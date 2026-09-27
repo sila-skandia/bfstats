@@ -252,6 +252,14 @@ class SoldierBodyTests(unittest.TestCase):
         # they must agree family by family or one of them is wrong.
         self.assertTrue(self.results["hidesWeaponAgreesWithSwimJs"])
 
+    def test_the_canopy_hangs_from_his_origin(self) -> None:
+        # `addTemplate Parachute` at 0/0.3/0 in the soldier's own frame, his
+        # origin a metre over his feet: 1.3 m over the feet at (2, 10, -3).
+        # Hung from the feet, the human's canopy had its risers at his knees.
+        self.assertEqual(self.results["canopyAt"], [2, 11.3, -3])
+        for page_module in ("foot-body.js", "bot-visuals.js"):
+            self.assertIn("canopyPosition(", (VIEWER / page_module).read_text(), page_module)
+
     def test_a_swimmer_has_no_canopy(self) -> None:
         canopy = self.results["swimCanopy"]
         self.assertIsNone(canopy["float"])

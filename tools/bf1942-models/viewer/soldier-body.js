@@ -57,6 +57,7 @@
 // real thing under node.
 
 import { DIE_CLIPS } from './soldier-death.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /** The baked clip the `Ub_StandAim<W>` state's timeline ships as. */
 export const UPPER_STAND_AIM = 'stand.upper';
@@ -350,4 +351,16 @@ export function canopyClip(family) {
     return 'idle';
   }
   return null;
+}
+
+/**
+ * Where the canopy hangs, into `out` (anything with `set(x, y, z)`). The
+ * soldier template's `addTemplate Parachute` child sits at `attach` (`0/0.3/0`
+ * on every vanilla soldier) in the soldier's own frame, which is his origin, a
+ * metre over the feet `(x, y, z)` a body is drawn at (`soldier-pose.js`
+ * `CHARACTER_HEIGHT`). From the feet, the risers hung at his knees.
+ */
+export function canopyPosition(x, y, z, attach, out) {
+  const [ax, ay, az] = attach;
+  return out.set(x + ax, y + CHARACTER_HEIGHT + ay, z + az);
 }
