@@ -20,7 +20,9 @@
 // player's controlled object (`crewOf`): the engine note plays while someone
 // holds the root seat, the guns sound while anyone is aboard, and a round
 // fires through the seat's own gun group when the recording says the seat
-// fired.
+// fired. A gun's traverse and elevation are a v5 recording's parts; without
+// them, where its rounds went and a v4 file's decoded parts (`replay-aim.js`)
+// aim it on the seat's own rig.
 
 import * as THREE from 'three';
 import { VehicleOccupancy } from './seats.js';
@@ -32,11 +34,71 @@ import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
   shipThrottle,
 } from './replay-kinematics.js';
+import {
+  bracket, decodeKeyedParts, directionAt, lateTurn, matchPart, partAim, shotInHull,
+} from './replay-aim.js';
 
 const _world = new THREE.Quaternion();
 const _parent = new THREE.Quaternion();
 const _at = new THREE.Vector3();
 const _toRoot = new THREE.Matrix4();
+const _aim = new THREE.Vector3();
+const _hullQ = new THREE.Quaternion();
+const _muzzleQ = new THREE.Quaternion();
+const _gunQ = new THREE.Quaternion();
+
+/** Degrees a second a gun turns between two rounds where its axis declares
+ *  no `setMaxSpeed`: the order of a manned gun's (a Sherman tower's 35, a
+ *  Defgun's 90). */
+const AIM_RATE = 45;
+
+/** A FireArms' name as a recorded round spells it: the scene's duplicate
+ *  suffix dropped, lower case. */
+const bareName = name => String(name || '').replace(/_\d+$/, '').toLowerCase();
+
+/** The seat whose FireArms `node` is, or null. */
+function seatOfGun(occupancy, node) {
+  for (const [id, seat] of occupancy.survey.seats) {
+    if (seat.fireArms.includes(node)) return id;
+  }
+  return null;
+}
+
+/** A gun group's line of fire, as the map fires it (round-launch.js): its
+ *  first muzzle's -Z, or for a `fireInCameraDof` gun its seat camera's, turned
+ *  as the muzzle is turned on the gun (gun-groups.js `cameraLaunch`). */
+function lineOfFire(group) {
+  const muzzle = group.muzzles?.[0] ?? group.node;
+  const camera = group.cameraNode ?? null;
+  return out => {
+    muzzle.getWorldQuaternion(_muzzleQ);
+    if (camera) {
+      _muzzleQ.premultiply(group.node.getWorldQuaternion(_gunQ).invert());
+      _muzzleQ.premultiply(camera.getWorldQuaternion(_gunQ));
+    }
+    return out.set(0, 0, -1).applyQuaternion(_muzzleQ);
+  };
+}
+
+/** The gun of those named `weapon` whose FireArms sits nearest `pos` (the
+ *  hull's frame): a destroyer's mounts share one name. */
+function nearestGun(guns, weapon, pos) {
+  const want = bareName(weapon);
+  let best = null;
+  let bestDistance = Infinity;
+  for (const gun of guns) {
+    if (gun.name !== want) continue;
+    const d = pos ? Math.hypot(gun.at[0] - pos[0], gun.at[1] - pos[1], gun.at[2] - pos[2]) : 0;
+    if (d < bestDistance) {
+      best = gun;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/** How fast an axis turns a gun between rounds, deg/s. */
+const turnRate = axis => Math.abs(axis.spec?.maxSpeed || 0) || AIM_RATE;
 
 /** Seconds a part's first sight may precede its hull's life: both come from
  *  one sample, but the life starts at its root's first record. */
@@ -233,6 +295,7 @@ export class ReplayHull {
       this.root.updateMatrixWorld(true);
       this.engine = null;
       this.applyJoints(t);
+      this.applyAim(t);
       return;
     }
     const s = drive.state;
@@ -275,6 +338,7 @@ export class ReplayHull {
     // middle of a dive is at full power, not idling.
     drive.presentKinematic(this.lastT === null ? SETTLE : dt, throttle);
     this.applyJoints(t);
+    this.applyAim(t);
   }
 
   /**
@@ -283,8 +347,9 @@ export class ReplayHull {
    * traverse, a gun's elevation, a pintle MG's mount -- put on the node of the
    * same name (among several, the one where the recording places the part),
    * after the rig has posed everything else. The parts are this life's: a
-   * root id a respawn reuses brings new parts. A v3 recording has none, and
-   * its turrets stay where the rig leaves them.
+   * root id a respawn reuses brings new parts. A v3 or v4 recording has none
+   * to put on nodes, and its guns are aimed from what it does carry
+   * (`applyAim`).
    */
   applyJoints(t) {
     const parts = this.player.rec.joints?.get(this.life.nid);
@@ -322,6 +387,122 @@ export class ReplayHull {
       node.parent.getWorldQuaternion(_parent);
       node.quaternion.copy(_parent.invert().multiply(_world));
       node.updateMatrixWorld(true);
+    }
+  }
+
+  /**
+   * Every gun a seat's aim rig turns: its group, its seat and the seat's rig
+   * (`rigFor`, the rig the mouse drives in play), the node its line of fire
+   * hangs from, and where its FireArms sits on the hull.
+   */
+  aimedGuns() {
+    this.root.updateMatrixWorld(true);
+    _toRoot.copy(this.root.matrixWorld).invert();
+    const guns = [];
+    for (const group of this.groups) {
+      const seatId = seatOfGun(this.occupancy, group.node);
+      const rig = seatId === null ? null : this.occupancy.rigFor(seatId);
+      const reference = group.cameraNode ?? group.muzzles?.[0] ?? group.node;
+      if (!rig?.chainOf(reference).length) continue;
+      group.node.getWorldPosition(_at).applyMatrix4(_toRoot);
+      guns.push({
+        group, seatId, rig, reference, line: lineOfFire(group),
+        name: bareName(group.node.name), at: [_at.x, _at.y, _at.z], shots: [],
+      });
+    }
+    return guns;
+  }
+
+  /**
+   * Where each aimed seat's gun pointed over this life, from a recording
+   * whose parts cannot be put on nodes (`replay-aim.js`): a track of
+   * directions in the hull's frame per seat, the seats outermost first (a
+   * cupola MG rides the tower its driver turns). A v4 file's decoded part
+   * where it carries one of the seat's guns, sampled every tenth of a
+   * second; else the rounds the seat's guns fired, each on the gun nearest
+   * where it left among those of its name.
+   */
+  buildAims() {
+    const { life } = this;
+    const rec = this.player.rec;
+    const guns = this.aimedGuns();
+    if (!guns.length) return [];
+    for (const f of rec.fires) {
+      if (f.press || f.nid !== life.nid || f.t < life.created || f.t >= life.destroyed) continue;
+      const shot = shotInHull(life, f);
+      const gun = shot && nearestGun(guns, f.weapon, shot.pos);
+      if (gun) gun.shots.push({ ...shot, gun });
+    }
+    const runs = (rec.keyedParts?.get(life.nid) ?? [])
+      .filter(run => run.t >= life.created - PART_LEAD && run.t < life.destroyed);
+    const parts = runs.length ? decodeKeyedParts(runs) : [];
+    const seats = new Map();
+    for (const gun of guns) {
+      if (!gun.shots.length) continue;
+      if (!seats.has(gun.seatId)) seats.set(gun.seatId, []);
+      seats.get(gun.seatId).push(gun);
+    }
+    const aims = [];
+    for (const [seatId, seatGuns] of seats) {
+      let aim = null;
+      for (const gun of seatGuns) {
+        const match = matchPart(parts, gun.shots);
+        if (match && (!aim || match.error < aim.error)) {
+          aim = { dense: true, gun, error: match.error, samples: partAim(parts[match.part], match.sense) };
+        }
+      }
+      if (!aim) {
+        const gun = seatGuns.reduce((most, g) => (g.shots.length > most.shots.length ? g : most));
+        aim = { dense: false, gun, samples: seatGuns.flatMap(g => g.shots).sort((a, b) => a.t - b.t) };
+      }
+      const { rig } = aim.gun;
+      aims.push({ ...aim, seatId, rig, chain: rig.chainOf(aim.gun.reference) });
+    }
+    const order = this.occupancy.order;
+    return aims.sort((a, b) => order.indexOf(a.seatId) - order.indexOf(b.seatId));
+  }
+
+  /** `gun`'s line of fire laid along `dir` (the hull's frame) on its rig. */
+  layGun(rig, gun, dir) {
+    _aim.set(dir[0], dir[1], dir[2]).applyQuaternion(this.root.getWorldQuaternion(_hullQ));
+    rig.pointAlong(_aim, gun.line, gun.reference);
+  }
+
+  /**
+   * The guns laid where the recording says they pointed at `t`, after the
+   * drive's rig has posed every turret at rest. A decoded part's track is
+   * followed as recorded; a track of rounds holds each round's aim and
+   * turns to the next as late as the axis's own speed allows (`lateTurn`).
+   * Before a seat's first aim its gun is at rest. A v5 file's parts, where
+   * the hull has them, are the truth and nothing is derived.
+   */
+  applyAim(t) {
+    if (this.jointNodes?.length) return;
+    // Built once, on the first frame the hull is shown: the rigs take their
+    // rest pose from the nodes, which are at rest then.
+    this.aims ??= this.buildAims();
+    for (const aim of this.aims) {
+      const { chain, rig } = aim;
+      if (aim.dense) {
+        const dir = directionAt(aim.samples, t);
+        if (dir) this.layGun(rig, aim.gun, dir);
+        else for (const { axis } of chain) axis.hold(0);
+      } else {
+        const { a, b } = bracket(aim.samples, t);
+        const anglesOf = shot => {
+          this.layGun(rig, shot.gun, shot.dir);
+          return chain.map(({ axis }) => axis.angle);
+        };
+        const from = a ? anglesOf(a) : chain.map(() => 0);
+        const to = b ? anglesOf(b) : from;
+        chain.forEach(({ axis }, i) => {
+          const turn = { start: a?.t, free: axis.spec.free };
+          axis.hold(b ? lateTurn(from[i], to[i], t, b.t, turnRate(axis), turn) : from[i]);
+        });
+      }
+      for (const { axis } of chain) {
+        for (const peer of axis.peers) peer.node.updateMatrixWorld(true);
+      }
     }
   }
 

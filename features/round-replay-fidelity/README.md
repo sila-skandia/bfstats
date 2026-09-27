@@ -22,6 +22,7 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | (after the first v4 round) a rifleman's left hand in mid-air beside his Garand (3:05.4, running after a shot) | the bots' body renderer, play's bots too: three's `PropertyMixer` writes a bone only when its own value changed, so a bone the new state's clip holds still (a run's clavicles and left hand) was written once and then left to `MorphBlend`, which read its own last frame back as the clip and froze the bone in the shot's pose, the hand 27 cm off the rifle. `MorphBlend.restore` (soldier-actions.js) puts the mixer's pose back on the bones before the mixer runs; 4.8 cm, every arm bone on the clip |
 | (after the first v4 round) the recording player running a metre above the ground | so was every soldier, the bots too. A soldier's sample is the engine's soldier origin, which the template's `setCharacterHeight -1.00` puts a metre over his feet, and the body renderer, the camera and the plain fallback stand a man on his feet. `replay-recording.js` `standOnFeet` lowers a soldier's samples by `CHARACTER_HEIGHT` (capture README §12); his first-person eye is 1.65 m over the ground again, not 2.65 |
 | (after the first v4 round) a Defgun's shot looked like the gun being hit | a replay hides the level's own placed vehicles but left their hulls in the collision index, so a round leaving the replayed Defgun's barrel started inside the hidden baked one and burst there; and when the level's collider arrived after the replay was built, the replay's rounds lost the "skip my own hull" tag and its hull cast. `replay-gunfire.js` `syncReplayCollision` now takes the baked vehicles without a deck out of the rounds' way (a carrier's deck stays, it is a parked plane's ground) and re-arms both on whatever collider the guns hold |
+| (after the first v4 round) "in the defgun I can see the rounds impacting at the correct location, but the defgun points to a random spot"; the AA gun the same | nothing turned a gun. The rounds flew their recorded rays, but a v4 file's parts were all keyed 0 and left unused, so every turret sat at its rig's rest: the Defgun's barrel 90 degrees off its rounds, skandia's AA gun 33 (up to 115), a bot's 134. `replay-aim.js` now aims each manned gun from the recording (below), on the seat's own `TurretRig` (`pointAlong`, within the axes' limits), after the drive's rig; a v5 file's parts still win |
 
 ## What the replay reuses now
 
@@ -49,7 +50,7 @@ in play; the recording writes the state the physics would have written.
 | velocity, turn rates | derived from the poses (`replay-kinematics.js` `motionAt`) | same |
 | throttle, revs, engine on/off | **derived**: an aircraft's from speed, climb and the take-off roll; a ship's from its speed; a land engine's revs from its own gearbox ladder (`EngineState`) and the speed | recorded: the PhysicsEngine's revs and the Engine's running flag (`g`) |
 | stick (flaps, rudder, steering) | **derived** from the turn rates, in the game's signs | same |
-| turret traverse, gun elevation | not recorded: the rig's rest | recorded (`j`); usable from v5 only, a v4 file's parts are all keyed 0 |
+| turret traverse, gun elevation | not recorded: the rig's rest (a press's ray is the hull's axis, not the barrel's) | v5: recorded (`j`), put on the nodes. v4: the parts, all keyed 0, decoded per hull (`replay-aim.js` `decodeKeyedParts`) and used for a gun where one carries its own rounds, every 0.1 s; else **derived** from the rounds (`f`): each is where its gun pointed, held until the gun must turn to the next as late as its `setMaxSpeed` allows |
 | who fired, what, where | the recording player's trigger presses only | every round the client fires, bots included (`f`) |
 | stance, held weapon, firing pose | not recorded: standing, kit primary | recorded animation states and item (`st`, `anim`) |
 | crew and seats | from every player's controlled object; a seat id resolves to its hull (the ids after the hull's own) | the hull and seat are in the player record |
@@ -92,6 +93,22 @@ engineering behind them is there too, with addresses.
   `tools/build-linux.sh` (MSVC under Wine) and is installed in the game
   folder; `dsound_old.dll` is `1e45a5d`. Every event the game sends a client
   is now decoded: `0x3C` was the last one dumped raw (capture README §11.3).
+- The guns aimed (`replay_20260927-075756`): the drawn barrel's world
+  direction against each recorded round's, through `ReplayHull` on the
+  models' own node trees in node and in the page headless. Before, at rest:
+  the Defgun 90 degrees off (67 to 90), skandia's AA gun 33 median (up to
+  115), bot 240's AA gun 134, the Hatsuzuki's gun 95, a Sherman's cupola
+  Browning 62 and its main gun 6. After, on the decoded parts: 0.05 to 0.08
+  on the Defgun, 0.05 to 0.75 on skandia's AA gun, 0.06 on the bot's, and
+  medians of 0.05 to 0.38 on every other gun on an aim rig that fired (a
+  quickly swept MG up to 10.7, its part sampled 0.1 s from the round).
+  Between rounds the barrel is on the decoded part (0.00). From the rounds
+  alone (a file with no part that matches) it is exact at every round and
+  holds between them: on the Defgun session that is within 0.3 degrees of
+  the recorded aim while the gunner holds his aim, and up to 95 off
+  mid-traverse, where he turned early and slowly and the fallback late and
+  fast. `tests/test_replay_models.py` `ReplayGunAimTests` pins the decode,
+  both sources, the rig's limits and that a v5 file's parts win.
 
 ## Open
 
@@ -103,5 +120,10 @@ engineering behind them is there too, with addresses.
   not drawn: `bot-visuals.js` has no aim pitch.
 - A dead bot's free camera is never replicated; the follow camera stays on
   his body until it is removed.
+- A round fires every gun of its FireArms' name (`ReplayHull.fire`): one
+  `HatsuzukiGun` round lights all three of the Hatsuzuki's mounts, the two
+  that did not fire at rest. The aim gives each round to the gun of its name
+  nearest where it left (`replay-hulls.js` `nearestGun`); `fire` should pick
+  the same one.
 - Kits dropped before the join, and a round's end effect when the round goes
   out of range rather than off, are approximations.
