@@ -775,6 +775,15 @@ unterminated while its round runs.
   is assumed.
 - Samples are written only on change, so a gap between two samples is a hold,
   then the last 0.1 s is interpolated, not a slow drift across the gap.
+- A soldier's sample is his engine origin, a metre over his feet
+  (`setCharacterHeight -1.00`). In `replay_20260927-075756` the recording
+  player's 1149 live samples lie 1.00 m (median) over Wake's terrain and 25
+  bots' 20979 the same; the recording player in the six earlier files, 1.00
+  each. His shots leave his camera 0.65, 0.12 and -0.70 m over his sample
+  standing, crouched and prone, the template's `setPoseCameraPos`, and the
+  server's log puts a live player 1.02 m over the terrain. A soldier's creation
+  event is his spawn point, on the ground (0.00 m median at 30 spawns). The
+  viewer stands him on his feet (`replay-recording.js` `standOnFeet`).
 - Replay models get the page's own vehicle lighting (`bindDynamicShading`),
   and the level's baked spawner vehicles are hidden so nothing is drawn twice.
 
