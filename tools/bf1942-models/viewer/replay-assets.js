@@ -45,10 +45,69 @@ export function setReplayPropellerIdle(scene) {
   });
 }
 
+/** The material slots repainted: the colour map, which is what a level's
+ *  alternative path paints (a bake's lightmaps are the level's own and
+ *  never a model's). */
+const TEXTURE_SLOTS = ['map'];
+
+/** A texture's file as a level and a model both name it: the leaf, lower
+ *  case, without its extension (`texture/Africa/sherma_i.dds` is `sherma_i`). */
+const textureLeaf = path => String(path ?? '').replace(/\\/g, '/').split('/').pop().replace(/\.[^.]*$/, '').toLowerCase();
+
+/**
+ * The level's own paint, `leaf -> THREE.Texture`: every texture the level's
+ * bake read from somewhere other than `texture/<file>`. BF1942 looks a
+ * texture up in the level's `textureManager.alternativePath` before the game's
+ * own: Tobruk's is `Texture/Africa`, which paints every vehicle on it desert
+ * (its bake's Sherman wears `texture/Africa/sherma_i`, the template's model
+ * `texture/Sherma_I`). A level archive's own textures come the same way.
+ */
+export function levelSkins(root) {
+  const skins = new Map();
+  root?.traverse(obj => {
+    for (const material of [obj.material].flat()) {
+      for (const slot of TEXTURE_SLOTS) {
+        const texture = material?.[slot];
+        const path = String(texture?.name ?? '').replace(/\\/g, '/').toLowerCase();
+        const leaf = textureLeaf(path);
+        if (!leaf || /^texture\/[^/]+$/.test(path) || skins.has(leaf)) continue;
+        skins.set(leaf, texture);
+      }
+    }
+  });
+  return skins;
+}
+
+/** Paint `scene` (a template's model) with the level's own textures where
+ *  the level has its own (`levelSkins`), over the ones it took from the
+ *  game's `texture/` (a level's variant already wears its level's). Returns
+ *  how many it changed. */
+export function wearLevelSkin(scene, skins) {
+  let changed = 0;
+  if (!skins?.size) return changed;
+  scene.traverse(obj => {
+    for (const material of [obj.material].flat()) {
+      if (!material) continue;
+      for (const slot of TEXTURE_SLOTS) {
+        const own = material[slot];
+        const path = String(own?.name ?? '').replace(/\\/g, '/').toLowerCase();
+        const level = /^texture\/[^/]+$/.test(path) ? skins.get(textureLeaf(path)) : null;
+        if (!level || level === own) continue;
+        material[slot] = level;
+        material.needsUpdate = true;
+        changed += 1;
+      }
+    }
+  });
+  return changed;
+}
+
 export class ReplayAssets {
   constructor(ctx) {
     this.ctx = ctx;
     this.modelCache = new Map();
+    this.cataloguePromise = null;       // Promise<models.json | null>, fetched once
+    this.skins = null;                  // { root, skins } for the level on screen
     this.gaitBundleCache = new Map();   // relative sidecar path -> Promise<AnimationClip[]>
     this.gaitsManifestPromise = null;   // Promise<gaits.json>, fetched once and shared
     /** Where a soldier's mesh comes from: the split tree's recipe + rig +
@@ -64,25 +123,68 @@ export class ReplayAssets {
     });
   }
 
+  /** A template's model (`Sherman`, `Sherman.wreck`), dressed the way the
+   *  level on screen dresses its own: the level's variant where the catalogue
+   *  has one, and the level's own textures (`levelSkins`) over the rest. */
   model(name) {
-    if (!this.modelCache.has(name)) {
-      const url = `${this.ctx.modelsBase}/${name}.glb${this.ctx.bust()}`;
-      this.modelCache.set(name, this.ctx.loader.loadAsync(url).then(gltf => {
-        gltf.scene.traverse(obj => {
-          const data = obj.userData || {};
-          // What show() hides on the level: baked weapon-effect payloads. And
-          // collision hulls, which are geometry but not for drawing.
-          if (data.effect || data.projectileMesh || data.projectileTrail
-              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
-        });
-        setReplayPropellerIdle(gltf.scene);
-        // The page's own vehicle shading, so a replayed tank is lit like a
-        // parked one rather than by raw glTF materials.
-        this.ctx.shadeModel?.(gltf.scene);
-        return gltf.scene;
-      }).catch(() => null));
+    const level = String(this.ctx.levelName?.() ?? '').toLowerCase();
+    const key = `${level}/${name}`;
+    if (!this.modelCache.has(key)) {
+      this.modelCache.set(key, this.modelFile(name, level)
+        .then(file => this.ctx.loader.loadAsync(`${this.ctx.modelsBase}/${file}${this.ctx.bust()}`))
+        .then(gltf => {
+          gltf.scene.traverse(obj => {
+            const data = obj.userData || {};
+            // What show() hides on the level: baked weapon-effect payloads. And
+            // collision hulls, which are geometry but not for drawing.
+            if (data.effect || data.projectileMesh || data.projectileTrail
+                || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
+          });
+          setReplayPropellerIdle(gltf.scene);
+          // A nicety: a model the level cannot repaint is drawn as it is.
+          try {
+            wearLevelSkin(gltf.scene, this.levelSkins());
+          } catch (error) {
+            console.warn(`replay: ${name} left in its own paint`, error);
+          }
+          // The page's own vehicle shading, so a replayed tank is lit like a
+          // parked one rather than by raw glTF materials.
+          this.ctx.shadeModel?.(gltf.scene);
+          return gltf.scene;
+        }).catch(() => null));
     }
-    return this.modelCache.get(name);
+    return this.modelCache.get(key);
+  }
+
+  /** models.json, or null: read once. */
+  catalogue() {
+    this.cataloguePromise ??= fetch(`${this.ctx.modelsBase}/models.json${this.ctx.bust()}`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(list => (Array.isArray(list) ? list : null))
+      .catch(() => null);
+    return this.cataloguePromise;
+  }
+
+  /** The file `name` is read from on `level`: the level's own variant where
+   *  the catalogue lists one (a level archive's reskin: Kasserine Pass's
+   *  Sherman is `Sherman.Kasserine_Pass.glb`), else `<name>.glb`. */
+  async modelFile(name, level) {
+    const own = `${name}.glb`;
+    if (!level) return own;
+    const wreck = /\.wreck$/i.test(name);
+    const template = (wreck ? name.slice(0, -'.wreck'.length) : name).toLowerCase();
+    const entry = (await this.catalogue())?.find(e => String(e?.name).toLowerCase() === template);
+    const variant = entry?.variants?.find(v => String(v?.level ?? '').toLowerCase() === level && !v.firstPerson
+      && (wreck ? v.configuration === 'wreck' : v.configuration === entry.configuration));
+    return variant?.glb ?? own;
+  }
+
+  /** The level on screen's own textures (`levelSkins`), gathered once a level. */
+  levelSkins() {
+    const root = this.ctx.levelRoot?.() ?? null;
+    if (!root) return null;
+    if (this.skins?.root !== root) this.skins = { root, skins: levelSkins(root) };
+    return this.skins.skins;
   }
 
   // --- soldier gait animation: loading and retargeting ---------------------
