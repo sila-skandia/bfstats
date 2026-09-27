@@ -34,6 +34,7 @@ HARNESS = Path(__file__).with_name("soldier_body_harness.mjs")
 MODULES = {"soldier-body.js": VIEWER / "soldier-body.js",
            "parachute.js": VIEWER / "parachute.js",
            "swim.js": VIEWER / "swim.js",
+           "soldier-pose.js": VIEWER / "soldier-pose.js",
            "soldier-death.js": VIEWER / "soldier-death.js",
            "skeleton-hit.js": VIEWER / "skeleton-hit.js"}
 

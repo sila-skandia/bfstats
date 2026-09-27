@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { hitFromDirAlpha, hitFromDirOctant } from './hud.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { Armor } from './armor.js';
 import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
@@ -593,9 +594,14 @@ export function createLocalPlayer(page) {
     // `_giveDamage`'s wash and arc (HFD-2, HFD-3): the octant from the
     // soldier toward that point, in 3-D, the alpha this damage's share of
     // his max HP. A caller that names no point gets 1, whose arc the data
-    // never draws (MEME-14): the wash alone.
+    // never draws (MEME-14): the wash alone. The octant's eye is his own
+    // `getAbsolutePosition()` (HFD-11), his origin, a metre over the feet
+    // `soldier.y` carries (`swim.js`, THE ORIGIN; ledger HFD-9).
     const soldier = localPlayer.soldier;
-    const dir = attackerPos && soldier ? hitFromDirOctant(soldier, soldier.yaw, attackerPos) : 1;
+    const dir = attackerPos && soldier
+      ? hitFromDirOctant({ x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z },
+        soldier.yaw, attackerPos)
+      : 1;
     page.triggerHitIndicator(dir, hitFromDirAlpha(damage, localPlayer.soldierArmor.maxHitPoints));
   }
 
@@ -653,6 +659,14 @@ export function createLocalPlayer(page) {
     } else if (onFoot) {
       page.pumpLook(lookTicks);
       const held = page.captured ? page.keys : page.EMPTY_KEYS;
+      // The water takes the lower body out of `Lb_Lie` (`swim.js`: the swim
+      // states hold it, and the eye under the surface puts a prone man in
+      // them), and `c_PILie` is a press, not a held state -- a non-repetitive
+      // trigger, one of the one-shot buttons `BotMain::updatePlayerAction`
+      // clears every update (`0x08526430`): after the swim he stands until Z
+      // is pressed again. The page's toggle is that press's memory, so the
+      // water spends it.
+      if (localPlayer.soldier?.swim?.swimming) localPlayer.prone = false;
       // The touch drag forwards like a held W (`touchFlying`), but only into
       // neutral: a held S still brakes, and two held keys cancel as they
       // always did. `axis` carries the W-S pair; the touch term adds only

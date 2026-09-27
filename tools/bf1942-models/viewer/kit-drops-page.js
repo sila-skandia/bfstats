@@ -27,14 +27,9 @@
 
 import * as THREE from 'three';
 import { KitDrops, ammoRowsFromBotMags, pickupAllowed, restingPlace } from './kit-drops.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 const DEG = Math.PI / 180;
-
-/** How far above his feet the rest probe starts. The engine casts from his
- *  origin; the page's feet sit ON the floor they stand on, and a ray that
- *  starts exactly on a surface does not meet it. A viewer margin, the same
- *  idea as `WorldCollider.deckHeight`'s millimetre. */
-const PROBE_LIFT = 0.1;
 
 /**
  * Built once by the page. `page` hands in what it reads of the rest of the
@@ -96,12 +91,13 @@ export function createKitDropsPage(page) {
     material: 0, kind: '', owner: -1, triangle: -1,
   };
   /** The first static surface straight down from `(x, y, z)`, vehicles
-   *  passed through, or null. */
+   *  passed through, or null. `restingPlace` asks from his origin, a metre
+   *  over the floor his feet are on, which is where `dropKit` casts from. */
   function surfaceBelow(x, y, z, far) {
     const statics = page.collider?.statics;
     if (!statics) return null;
-    let top = y + PROBE_LIFT;
-    let left = far + PROBE_LIFT;
+    let top = y;
+    let left = far;
     let skip = -1;
     for (let i = 0; i < 8 && left > 0; i++) {
       const hit = statics.cast(x, top, z, 0, -1, 0, left, skip, castHit);
@@ -212,7 +208,7 @@ export function createKitDropsPage(page) {
    *  fell or stood, with the rows of ammunition its weapons carry. */
   function layDown(kit, at, { ammo = [], by = null, team = null } = {}) {
     if (!kit || !at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return null;
-    const place = restingPlace(at, ground);
+    const place = restingPlace(at, ground, CHARACTER_HEIGHT);
     const record = drops.drop(place, { kit, ammo, by, team });
     if (record) showMesh(record);
     return record;

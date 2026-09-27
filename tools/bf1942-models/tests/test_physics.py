@@ -406,7 +406,8 @@ class PhysicsModuleTests(unittest.TestCase):
         # the feet were settled onto that, so a soldier stood on the sea and
         # could walk out to the horizon. The engine has no such surface for a
         # soldier -- `BFSoldier::updateSwimming` (`0x08282190`) is the only thing
-        # that ever puts a soldier's y on the water, and it puts it 0.4 m under.
+        # that ever puts a soldier's y on the water, and it puts his origin
+        # 0.4 m under (his feet 1.4).
         #
         # With no swim state injected the surface is simply not a floor, so the
         # body goes through it. Three metres of water over a flat bed at 0:
@@ -417,31 +418,46 @@ class PhysicsModuleTests(unittest.TestCase):
     def test_deep_enough_water_puts_him_in_the_swim_state(self) -> None:
         swam = self.results["swimsInsteadOfStanding"]
         self.assertTrue(swam["swimming"])
-        # `0x082822d4`: the position is written to `surfaceY - 0.4` every tick,
-        # so the draft is exact rather than a settle, and he is not `grounded`.
+        # `0x082822d4`: his origin is written to `surfaceY - 0.4` every tick,
+        # his feet 1.4 m under, so the draft is exact rather than a settle, and
+        # he is not `grounded`.
         self.assertAlmostEqual(swam["waterLevel"] - swam["draft"], swam["y"],
                                places=6)
         self.assertFalse(swam["grounded"])
 
     def test_wading_is_walking_on_the_seabed(self) -> None:
-        # 20 cm of water is under `SWIM_ENTER_DEPTH`, so he keeps his feet, keeps
-        # the bed's own normal and material, and covers ground.
+        # 20 cm of water is far under `SWIM_ENTER_WATER`, so he keeps his feet,
+        # keeps the bed's own normal and material, and covers ground.
         waded = self.results["wadesOnTheSeabed"]
         self.assertFalse(waded["swimming"])
         self.assertTrue(waded["grounded"])
         self.assertAlmostEqual(2.8, waded["y"], places=3)
         self.assertGreater(waded["travelled"], 8.0)
 
+    def test_chest_deep_water_is_still_a_wade(self) -> None:
+        # 1.2 m over the feet is 0.2 over his origin, a metre up: under the
+        # 0.43 entry. He walks the bottom, grounded, covering ground. The swim
+        # state's depth is the origin's 0.2; `setUnderWater`'s is the feet's 1.2
+        # (the lowest hull vertex), which the drag reads only while he swims.
+        chest = self.results["wadesChestDeep"]
+        self.assertFalse(chest["swimming"])
+        self.assertTrue(chest["grounded"])
+        self.assertAlmostEqual(1.8, chest["y"], places=3)
+        self.assertGreater(chest["travelled"], 8.0)
+        self.assertAlmostEqual(0.2, chest["depth"], places=5)
+        self.assertAlmostEqual(1.2, chest["underWater"], places=5)
+
     def test_a_swimmer_can_stand_up_in_the_shallows(self) -> None:
         # The ordering trap, and it is the whole reason the swim state is
         # updated AFTER the tick's resolve rather than before it: the pin puts
-        # the feet at `surface - 0.4` every tick, so a depth measured before the
-        # resolve is always exactly 0.4 and the 0.35 exit test can never fire.
+        # the origin at `surface - 0.4` every tick, so a depth measured before
+        # the resolve is always exactly 0.4 and the 0.35 exit test can never
+        # fire.
         # `BFSoldier::updateSwimming` runs out of `handleUpdate`, where the
         # seabed has already had its say.
         shallows = self.results["swimsIntoTheShallows"]
         self.assertTrue(shallows["afloat"]["swimming"])
-        self.assertAlmostEqual(2.6, shallows["afloat"]["y"], places=6)
+        self.assertAlmostEqual(1.6, shallows["afloat"]["y"], places=6)
         # `Lb_EndSwim` really plays -- it is not skipped straight to standing.
         self.assertTrue(shallows["sawExitClip"])
         ended = shallows["ended"]
@@ -458,7 +474,7 @@ class PhysicsModuleTests(unittest.TestCase):
         swim = self.results["swimsForward"]
         self.assertGreater(swim["travelled"], 5.0)
         self.assertLess(swim["speed"], swim["runSpeed"])
-        self.assertAlmostEqual(2.6, swim["y"], places=6)
+        self.assertAlmostEqual(1.6, swim["y"], places=6)
         self.assertEqual("swimForward", swim["family"])
 
     def test_a_body_stops_at_a_hull(self) -> None:

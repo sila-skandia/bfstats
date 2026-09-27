@@ -90,14 +90,23 @@ export const REST_PROBE = 1000;
  * and `castDown(x, y, z, far)` -> `{ y, normal } | null`, the first
  * non-vehicle surface below. Whichever is nearer his height wins; with
  * neither, it rests at his feet facing up.
+ *
+ * "His height" is his origin's: `dropKit` reads row 3 of his own
+ * `getAbsoluteTransformation()` (`vtbl+0x40`, `0x08279b94`), casts from there
+ * and measures both candidates against its y. That origin stands
+ * `originHeight` over the feet `y` names -- the page passes the soldier's
+ * `CHARACTER_HEIGHT`, a metre (`swim.js`, THE ORIGIN). The difference shows
+ * where the terrain is above his feet: on a bunker floor the heightfield over
+ * the roof is nearer his origin than the floor is, and the kit goes up there.
  */
-export function restingPlace({ x, y, z, yaw = 0 }, ground = {}) {
+export function restingPlace({ x, y, z, yaw = 0 }, ground = {}, originHeight = 0) {
+  const oy = y + originHeight;
   let best = null;
   const t = ground.terrain?.(x, z) ?? null;
   if (t && Number.isFinite(t.y)) best = { y: t.y, normal: t.normal ?? [0, 1, 0] };
-  const hit = ground.castDown?.(x, y, z, REST_PROBE) ?? null;
-  // `ABS(hit - y) < ABS(terrain - y)`, strictly (0x08279cd1).
-  if (hit && Number.isFinite(hit.y) && (!best || Math.abs(hit.y - y) < Math.abs(best.y - y))) {
+  const hit = ground.castDown?.(x, oy, z, REST_PROBE) ?? null;
+  // `ABS(hit - y) < ABS(terrain - y)`, strictly (0x08279cd1), y his origin's.
+  if (hit && Number.isFinite(hit.y) && (!best || Math.abs(hit.y - oy) < Math.abs(best.y - oy))) {
     best = { y: hit.y, normal: hit.normal ?? [0, 1, 0] };
   }
   if (!best) best = { y, normal: [0, 1, 0] };

@@ -6,7 +6,10 @@ that are easy to get wrong:
 
 * The entry and exit thresholds are **different** -- 0.43 m in, 0.35 m out
   (`0x086d29bc` and `0x086d29b8`) -- and the 8 cm of hysteresis is what stops a
-  man standing in the surf flickering between walking and swimming.
+  man standing in the surf flickering between walking and swimming. Both are
+  measured over his ORIGIN, a metre over his feet, so in the page's feet
+  convention he swims from 1.43 m of water, walks out at 1.35 and floats with
+  his feet 1.4 m under the surface.
 
 * `Lb_EndSwim` still declares `c_AsmIsSwimming`, so leaving the water does not
   drop the flag; the clip playing out and `addTransitionWhenDone Lb_Stand` does.
@@ -28,7 +31,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("swim_harness.mjs")
-MODULES = {"swim.js": VIEWER / "swim.js"}
+MODULES = {"swim.js": VIEWER / "swim.js",
+           "soldier-pose.js": VIEWER / "soldier-pose.js"}
 
 
 def run_harness() -> dict:
@@ -108,7 +112,7 @@ class SwimDepthTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_depth_is_the_surface_over_the_feet_clamped_at_zero(self) -> None:
+    def test_depth_is_the_surface_over_the_height_clamped_at_zero(self) -> None:
         d = self.results["depth"]
         self.assertEqual(2, d["under"])
         self.assertEqual(0, d["atSurface"])
@@ -139,7 +143,7 @@ class SwimStateTests(unittest.TestCase):
         cls.results = run_harness()
 
     def test_a_man_wading_is_not_swimming(self) -> None:
-        # 0.40 m of water over the feet is under the 0.43 threshold.
+        # 1.42 m of water over the feet is 0.42 over the origin: under 0.43.
         wading = self.results["wading"]
         self.assertFalse(wading["swimming"])
         self.assertIsNone(wading["family"])
@@ -178,12 +182,12 @@ class SwimStateTests(unittest.TestCase):
         self.assertEqual("swimFloat", s["floating"])
 
     def test_a_swimmer_floats_at_the_surface_less_the_draft(self) -> None:
-        # `0x082822d4`: the position is written to `surfaceY - 0.4` whatever the
+        # `0x082822d4`: his origin is written to `surfaceY - 0.4` whatever the
         # feet were doing, so a man who fell in from 20 m under ends up at the
-        # same draft as one who waded in.
+        # same draft as one who waded in -- with his feet 1.4 m under.
         pin = self.results["draftPin"]
-        self.assertAlmostEqual(2.6, pin["deep"], places=6)
-        self.assertAlmostEqual(2.6, pin["shallow"], places=6)
+        self.assertAlmostEqual(1.6, pin["deep"], places=6)
+        self.assertAlmostEqual(1.6, pin["shallow"], places=6)
         # `0x082822bc` refuses to write the position when the feet are already
         # above the surface, so the clamp never pulls a man DOWN into the water.
         self.assertIsNone(pin["aboveTheSurface"])
@@ -209,6 +213,80 @@ class SwimStateTests(unittest.TestCase):
         self.assertNotEqual(die["alive"], die["dead"])
         # Dying on dry land is not this file's business.
         self.assertIsNone(self.results["dieDry"]["dead"])
+
+
+class SwimFeetConventionTests(unittest.TestCase):
+    """The thresholds in the page's convention, where a body's y is his feet.
+
+    `updateSwimming` measures `pos`, the soldier's origin, and the origin stands
+    a metre over his feet: the lowest of the 17 hull vertices
+    `SkeletonCollisionMeshTemplate`'s constructor hard-codes is (0, -1, 0)
+    (`0x083af375`-`0x083af62a`), and `setCharacterHeight -1.00` draws the
+    skeleton a metre under it. The recordings agree: standing soldiers' origins
+    1.00 m over Wake's terrain, a man wading at 1.00 m over the sea bottom in
+    up to 1.47 m of water, a swimmer's origin 0.45-0.49 m under the surface.
+    The page used to measure all three numbers from the feet.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_the_feet_numbers_are_the_engines_plus_a_metre(self) -> None:
+        c = self.results["constants"]
+        self.assertAlmostEqual(1.0, c["characterHeight"])
+        self.assertAlmostEqual(1.43, c["enterWater"])
+        self.assertAlmostEqual(1.35, c["leaveWater"])
+        self.assertAlmostEqual(1.4, c["feetDraft"])
+
+    def test_knee_deep_water_is_a_wade(self) -> None:
+        # 0.44 m over the feet: the old reading swam here.
+        knee = self.results["kneeDeep"]
+        self.assertFalse(knee["swimming"])
+        self.assertIsNone(knee["family"])
+
+    def test_he_enters_at_one_forty_three_over_the_feet(self) -> None:
+        self.assertFalse(self.results["wading"]["swimming"])       # 1.42
+        self.assertTrue(self.results["entering"]["swimming"])      # 1.44
+        self.assertEqual("swimStart", self.results["entering"]["family"])
+
+    def test_he_leaves_at_one_thirty_five_over_the_feet(self) -> None:
+        stays = self.results["staysInAtPointThreeSix"]              # 1.36
+        self.assertTrue(stays["swimming"])
+        self.assertNotEqual("swimEnd", stays["family"])
+        self.assertEqual("swimEnd", self.results["exitsAtPointThreeFour"]["family"])  # 1.34
+
+    def test_his_feet_float_one_point_four_under_the_surface(self) -> None:
+        pin = self.results["draftPin"]
+        self.assertAlmostEqual(3 - 1.4, pin["deep"], places=6)
+        self.assertAlmostEqual(3 - 1.4, pin["shallow"], places=6)
+
+    def test_the_entering_tick_writes_no_position(self) -> None:
+        # `0x082823db`..`0x08282426`: two `setAnimationState` calls and back out;
+        # the `setAbsolutePosition` is the swimming arm's, from the next tick.
+        entering = self.results["draftPin"]["onTheEnteringTick"]
+        self.assertTrue(entering["swimming"])
+        self.assertEqual("swimStart", entering["family"])
+        self.assertIsNone(entering["pin"])
+
+    def test_the_eye_under_the_surface_puts_him_in(self) -> None:
+        # `0x082823bc`: the surface over his camera's y. Standing the eye is
+        # 1.65 over the feet and the 1.43 line comes first; crouched (1.12) and
+        # prone (0.30) the eye goes under first.
+        eye = self.results["eye"]
+        self.assertFalse(eye["standingAt142"]["swimming"])
+        self.assertTrue(eye["crouchedAt115"]["swimming"])
+        self.assertFalse(eye["crouchedAt110"]["swimming"])
+        self.assertTrue(eye["proneAt035"]["swimming"])
+        self.assertFalse(eye["proneAt025"]["swimming"])
+        self.assertFalse(eye["noEyeAt035"]["swimming"])
+
+    def test_in_by_the_eye_in_shallow_water_he_is_straight_back_out(self) -> None:
+        # Crouched in 1.15 m, the origin is 0.15 under: the swimming arm's exit
+        # test (0.35) fires on the very next tick.
+        self.assertEqual(["swimStart", "swimEnd"], self.results["eye"]["crouchedNextTick"])
 
 
 class DrowningTests(unittest.TestCase):
@@ -307,7 +385,8 @@ class SwimItemGateTests(unittest.TestCase):
         self.assertFalse(gate["dry"]["locked"])
         self.assertIsNone(gate["wading"]["family"])
         self.assertFalse(gate["wading"]["locked"])
-        # The tick he crosses 0.43 m the weapon is gone.
+        # The tick he crosses 0.43 m over his origin (1.43 over the feet) the
+        # weapon is gone.
         self.assertEqual("swimStart", gate["entering"]["family"])
         self.assertTrue(gate["entering"]["locked"])
         # `Lb_EndSwim` declares the flag too, so it is still gone through the
