@@ -1824,4 +1824,92 @@ const read = scene => {
   };
 }
 
+// --- a round a hull lays: the PT boats' floating mines ------------------------
+//
+// The Midway report (replay_20260927-203459): `models/FloatingMine.glb` 404'd.
+// An Elco80 spawned at 613 s with its `FloatingMineLauncher`'s pool of five
+// `FloatingMine`, a round no `...Projectile` suffix names, so the five were
+// read as hulls and each asked for a model no tree has. A pool's rounds are
+// rounds whatever their name, and one lying in the water is drawn from its
+// launcher on the recording's own hull: the mine, not the torpedo beside it.
+{
+  const { ReplayProps, roundIn, weaponOfProjectile } = await imp('replay-props.js');
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 3168, netId: 1524, tmpl: 'Elco80', pos: [10, 20, 10], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'projPool', tid: 3220, tmpl: 'FloatingMine', netId: 1519, count: 5 }),
+    // A mine from a pool made before the recording began, met only as itself.
+    line({ k: 'o', t: 2, id: 1600, gid: 1, tmpl: 'FloatingMine', tid: 3220, team: 1 }),
+    line({ k: 's', t: 2, o: [[1600, 30, 20, 30, 0, 0, 0, 1], [1519, 0, 0, 0, 0, 0, 0, 1]] }),
+    // A depth charge no pool of this recording made.
+    line({ k: 'o', t: 3, id: 1700, gid: 2, tmpl: 'DepthCharge', tid: 3300, team: 2 }),
+    line({ k: 's', t: 3, o: [[1700, 40, 10, 40, 0, 0, 0, 1]] }),
+  ].join('\n'));
+  const hullTemplates = () => [...new Set(rec.lives
+    .filter(l => l.tmpl && !l.soldier && !l.kit && !l.controlPoint && !l.camera && !l.projectile)
+    .map(l => l.tmpl))];
+  const mines = rec.lives.filter(l => l.tmpl === 'FloatingMine')
+    .map(l => ({ nid: l.nid, pooled: Boolean(l.pooled), projectile: l.projectile }));
+  const hullsParsed = hullTemplates();
+  // What replay.js asks of the level's projectile table (`_shared/damage.json`).
+  const marked = recording.markRounds(rec, tmpl => ['depthcharge', 'floatingmine'].includes(tmpl.toLowerCase()));
+  const hullsMarked = hullTemplates();
+
+  // The Elco80 as `models/Elco80.glb` loads: the torpedo tubes first, each
+  // FireArms with its round's mesh under it, hidden as the model hides it.
+  const launcher = (name, round, mesh, endEffect) => {
+    const fireArms = new THREE.Object3D();
+    fireArms.name = name;
+    fireArms.userData = { templateKind: 'FireArms',
+                          fireArms: { projectile: { template: round, kind: 'shell', endEffect } } };
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    body.name = `${name} projectile`;
+    body.visible = false;
+    body.position.set(1, 2, 3);
+    body.userData = { templateKind: 'SimpleObject', projectileMesh: { template: mesh, geometry: mesh } };
+    fireArms.add(body);
+    return fireArms;
+  };
+  const elco = new THREE.Group();
+  elco.name = 'Elco80';
+  elco.add(launcher('Elco80_Torpedos', 'PTBoatTorpedo', 'PT_Dummy_Torpedo', null),
+           launcher('FloatingMineLauncher', 'FloatingMine', 'FloatingMineLauncherDummy', 'e_ExplMine'));
+  const grenade = new THREE.Group();
+  grenade.add(launcher('GrenadeAllies', 'GrenadeAlliesProjectile', 'GrenadeAlliesProjectile', 'e_ExplGranade'));
+  const requested = [];
+  const ctx = {
+    modelsBase: 'models',
+    bust: () => '',
+    loader: {
+      loadAsync: async url => {
+        requested.push(url);
+        if (url === 'models/GrenadeAllies.glb') return { scene: grenade };
+        throw new Error(`404 ${url}`);
+      },
+    },
+  };
+  const props = new ReplayProps({ ctx, root: new THREE.Group() });
+  const thrown = { nid: 1075, tmpl: 'GrenadeAlliesProjectile', projectile: true, kit: false,
+                   keys: [{ t: 2, p: [5, 0, 5], q: [0, 0, 0, 1] }] };
+  const placed = await props.load([...rec.lives, thrown], [elco]);
+  results.hullRounds = {
+    mines,
+    hullsParsed,
+    marked,
+    hullsMarked,
+    weapons: ['GrenadeAlliesProjectile', 'FloatingMine', 'Projectile'].map(weaponOfProjectile),
+    torpedo: roundIn(elco, 'ptboattorpedo')?.mesh.name ?? null,
+    placed,
+    requested,
+    props: props.props.map(p => ({
+      tmpl: p.life.tmpl,
+      nid: p.life.nid,
+      mesh: p.node.userData?.projectileMesh?.template ?? null,
+      endEffect: p.endEffect,
+      at: p.node.position.toArray(),
+    })).sort((a, b) => a.nid - b.nid),
+  };
+}
+
 console.log(JSON.stringify(results));

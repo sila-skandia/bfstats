@@ -118,12 +118,36 @@ function cString(bytes, offset, length) {
 }
 
 /** What a template name says the object is. Kits are recognised by what
- *  picked them up (0x23), not by name, so they are marked later. */
+ *  picked them up (0x23), not by name, so they are marked later. A round is
+ *  whatever a projectile pool made (0x05, `projPool`), whatever its name:
+ *  the PT boats' `FloatingMineLauncher` pools `FloatingMine`, which no
+ *  `...Projectile` suffix names, and read as a hull it asked for a
+ *  `FloatingMine.glb` no tree has. */
 function classify(life) {
   const tmpl = life.tmpl || '';
   life.soldier = /soldier/i.test(tmpl);
   life.camera = /camera/i.test(tmpl);
-  life.projectile = /projectile$/i.test(tmpl);
+  life.projectile = Boolean(life.pooled) || /projectile$/i.test(tmpl);
+}
+
+/**
+ * Mark as a round (`life.projectile`) every other life whose template
+ * `isRound(tmpl)` names one, and return how many it marked.
+ *
+ * A pool made before the recording began is never announced, so its rounds
+ * are met only as objects of their template: the parser marks them from the
+ * pools it did see, and replay.js from the level's own projectile table
+ * (`_shared/damage.json`, which names every Projectile the game declares).
+ */
+export function markRounds(rec, isRound) {
+  let marked = 0;
+  for (const life of rec.lives) {
+    if (life.projectile || !life.tmpl || life.soldier || life.camera || life.kit || life.controlPoint) continue;
+    if (!isRound(life.tmpl)) continue;
+    life.projectile = true;
+    marked += 1;
+  }
+  return marked;
 }
 
 /**
@@ -744,6 +768,10 @@ export function parseRecording(text) {
   for (const life of rec.lives) {
     if (!life.kit && life.tmpl && kitTemplates.has(life.tmpl.toLowerCase())) life.kit = true;
   }
+  // A round is anything else of a template a pool made: the boats at the
+  // join laid mines from pools the recording never saw made.
+  const poolTemplates = new Set(rec.lives.filter(l => l.pooled && l.tmpl).map(l => l.tmpl.toLowerCase()));
+  markRounds(rec, tmpl => poolTemplates.has(tmpl.toLowerCase()));
 
   // The round-end tallies, named where the recording knows the template, one
   // feed row a player.

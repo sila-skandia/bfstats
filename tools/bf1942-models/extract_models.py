@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
 from bf42 import damage as damage_mod
+from bf42 import level as level_mod
 from bf42 import measure as measure_mod
 from bf42 import roster as roster_mod
 from bf42.assemble import Assembler, reaches_first_person
@@ -416,16 +417,62 @@ def folder_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tuple[str, str, str]]:
+def spawner_templates(text: str) -> set[str]:
+    """Every template one `ObjectSpawnTemplates.con` has an ObjectSpawner put
+    in the world, for either team, lower case."""
+    return {vehicle.lower()
+            for spec in level_mod.parse_spawn_templates(text).values()
+            for vehicle in spec.vehicles.values()}
+
+
+def spawned_templates(levels: list[tuple[str, Path]]) -> set[str]:
+    """Every template a level's ObjectSpawners put in the world, lower case.
+
+    Every game mode's `ObjectSpawnTemplates.con` of every level in `levels`
+    (`discover_levels`), each read through its numbered patches. This is the
+    game's own word that a template is a thing a round fields, wherever its
+    `.con` was filed: `Sea/fletcher/Objects.con` declares `Fletcher2` beside
+    `Fletcher` (Midway, Guadalcanal and the Philippines field both, Omaha
+    Beach only the second), and `Sea/Hatsuzuki/` its Japanese twin
+    `Hatsuzuki2`, so the folder rule in `catalogue` never listed either.
+    Level-declared templates (Coral Sea's carriers) come back too; the object
+    library decides whether they are extractable. One unreadable level costs
+    only its own spawners.
+    """
+    names: set[str] = set()
+    for name, path in levels:
+        try:
+            pool = roster_mod.level_pool(path)
+            if pool is None:
+                continue
+            for entry in pool.names():
+                if not entry.lower().endswith("objectspawntemplates.con"):
+                    continue
+                blob = pool.try_read(entry)
+                if blob is not None:
+                    names |= spawner_templates(blob.decode("latin-1", "replace"))
+        except Exception as exc:
+            print(f"  {name}: spawners unreadable ({exc})", file=sys.stderr)
+    return names
+
+
+def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
+              spawned: set[str] | frozenset[str] = frozenset(),
+              ) -> list[tuple[str, str, str]]:
     """Every template a category folder declares as a spawnable object.
 
-    Two ways in, because two different things make a template the object. Most
+    Three ways in, because different things make a template the object. Most
     of the game is one folder per object, so a template named after the folder
     holding its `.con` (`folder_key`) is that folder's thing. A few are not —
     see `CATALOGUE_KINDS` — and those are admitted on their declared kind
-    instead. A template that satisfies both (`K98` is a `HandFireArms` *and*
+    instead. And a template a level's ObjectSpawner names (`spawned`, from
+    `spawned_templates`) is spawnable on the game's own word, whichever folder
+    declares it: `Fletcher2` sits in `Sea/fletcher/` beside `Fletcher`, and
+    without it a round replay had no model for Midway's second destroyer. A
+    template that satisfies more than one (`K98` is a `HandFireArms` *and*
     named after `HandWeapons/K98/`) appears once: the library is keyed by name.
     """
+    spawned = {name.lower() for name in spawned}
     out: list[tuple[str, str, str]] = []
     for template in library.objects.values():
         source = template.source.lower()
@@ -439,7 +486,8 @@ def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary) -> list[tupl
             continue
         folder = spawn_folder(template.source)
         if (folder and folder_key(template.name) == folder_key(folder)) \
-                or kind in CATALOGUE_KINDS.get(category, ()):
+                or kind in CATALOGUE_KINDS.get(category, ()) \
+                or template.name.lower() in spawned:
             out.append((template.name, category, template.source))
     return sorted(out, key=lambda r: (r[1], r[0].lower()))
 
@@ -747,7 +795,8 @@ def main() -> int:
         print(f"levels:     {', '.join(n for n, _ in level_sources)}", file=sys.stderr)
 
     # Browse facets: who fielded the thing, and on which maps.
-    roster, kit_count, level_count = roster_mod.build(library, discover_levels(chain))
+    levels = discover_levels(chain)
+    roster, kit_count, level_count = roster_mod.build(library, levels)
     print(f"roster:     {kit_count} kits, {level_count} levels -> "
           f"{len(roster.factions)} templates with a faction", file=sys.stderr)
     if not base_textures.names() and not level_sources:
@@ -755,7 +804,8 @@ def main() -> int:
               file=sys.stderr)
 
     if args.list:
-        for name, category, source in catalogue(objects, library):
+        for name, category, source in catalogue(objects, library,
+                                                spawned=spawned_templates(levels)):
             print(f"{category:12s} {name:28s} {source}")
         return 0
 
