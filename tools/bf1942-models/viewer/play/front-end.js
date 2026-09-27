@@ -1,14 +1,16 @@
 // The front end `play/index.html` mounts: SINGLEPLAY (Instant Battle),
 // MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings)
 // and CUSTOM GAME (the mod list), one canvas each, switched by the nav strip
-// every screen draws. Moved out of the
-// page's inline module script; `window.__menu` is the page's test hook.
+// every screen draws; and REPLAY, which opens a bf42plus recording from disk,
+// as does one dropped anywhere on the page (`../replay-open.js`). Moved out of
+// the page's inline module script; `window.__menu` is the page's test hook.
 
 import { createSkirmishScreen } from './skirmish.js';
 import { createMultiplayScreen } from './multiplay.js';
 import { createModPicker } from './mod-picker-screen.js';
 import { createControlsScreen } from './controls-screen.js';
 import { createControls } from '../controls.js';
+import { installRecordingOpener } from '../replay-open.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
@@ -18,13 +20,14 @@ const status = document.getElementById('status');
 
 // SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
 // its own slot; INTRO and CREDITS, which this site does not answer for, are
-// not drawn.
+// not drawn. INTRO's plate is REPLAY's: the file picker for a recording.
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
             { key: 'MENU_MULTIPLAY', id: 'multiplay' },
             { key: 'MENU_OPTIONS', id: 'options' },
-            { key: 'MENU_CUSTOM_GAME', id: 'customgame' }] },
+            { key: 'MENU_CUSTOM_GAME', id: 'customgame' },
+            { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' }] },
 ];
 // OPTIONS' own row: CONTROLS is the one of its four this site has.
 const OPTIONS_TABS = [
@@ -102,12 +105,24 @@ const options = createControlsScreen({
   pollPad: true,
 });
 
+// A recording, from REPLAY or dropped on the page, plays on its own level:
+// `map.html?replay=local:<name>` behind that level's loading screen. One
+// whose server named no mod plays in the menu's.
+const recordings = installRecordingOpener({
+  mod: () => { try { return screen.mod.active; } catch { return 'bf1942'; } },
+});
+
 let tab = 'singleplay';
 let multiplayLoaded = null;
 let customGameLoaded = null;
 let optionsLoaded = null;
 
 function show(id) {
+  // REPLAY is an action, not a screen: the tab that is up stays up.
+  if (id === 'replay') {
+    recordings.pick();
+    return;
+  }
   if (id === tab) return;
   tab = id;
   canvas.hidden = id !== 'singleplay';
