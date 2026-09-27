@@ -6,7 +6,9 @@
 // `tests/replay_harness.mjs` runs them under node.
 // features/round-replay-ux/README.md is the design.
 
-import { controlledAt, crewOf, isReplicated, lifeAt, rootOf, teamName } from './replay-recording.js';
+import {
+  controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, teamAt, teamName,
+} from './replay-recording.js';
 import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat-log.js';
 
 /** How far before its moment a chapter starts, seconds: a jump to a kill
@@ -21,14 +23,23 @@ const SAME_EVENT = 1.5;
  *  kilometres from any. */
 const SPAWN_NEAR = 200;
 
-export const playerName = (rec, pid) => rec.players.get(pid)?.name ?? `player ${pid}`;
-export const playerTeam = (rec, pid) => rec.players.get(pid)?.team ?? 0;
+/** `pid`'s name and side at recording time `t` (replay-recording.js
+ *  `nameAt`, `teamAt`): a pid passes from player to player on a public
+ *  server, and a player can change sides. Without `t`, the id's last. */
+export const playerName = (rec, pid, t) => nameAt(rec, pid, t);
+export const playerTeam = (rec, pid, t) => teamAt(rec, pid, t);
+
+/** A kill line's two sides, as they stood when the server scored it
+ *  (replay-recording.js stamps them), else at its time. */
+export const killerTeamOf = (rec, k) => k.killerTeam ?? playerTeam(rec, k.killer, k.t);
+export const victimTeamOf = (rec, k) => k.victimTeam ?? playerTeam(rec, k.victim, k.t);
 
 /** The player whose client made the recording: the one the roster marks
  *  `local` (a file begun mid-round), else the one whose rounds the recorder
  *  marks `local` (v4), else the round's human. His own view is the
  *  recording's (the hit indicator is his alone, `rec.hitsTaken`). */
 export function recordingPlayer(rec) {
+  for (const [pid, list] of rec.sessions ?? []) if (list.some(s => s.local)) return pid;
   for (const [pid, player] of rec.players) if (player.local) return pid;
   const shot = rec.fires.find(f => f.local && f.pid !== null && f.pid !== undefined);
   if (shot) return shot.pid;
@@ -148,7 +159,7 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
   const add = ch => chapters.push({ lead: LEAD[ch.kind] ?? 0, ...ch });
 
   for (const k of kills) {
-    const team = k.kind === 'death' ? playerTeam(rec, k.victim) : playerTeam(rec, k.killer);
+    const team = k.kind === 'death' ? victimTeamOf(rec, k) : killerTeamOf(rec, k);
     add({ t: k.t, kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon, team });
   }
 
@@ -167,12 +178,12 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
     const crew = crewOf(rec, life, Math.max(life.created, t - 0.3)).map(c => c.pid);
     const by = server?.pid ?? null;
     add({ t, kind: 'vehicle', tmpl: life.tmpl, nid: life.nid, crew, by,
-          team: by !== null ? playerTeam(rec, by) : life.team || 0 });
+          team: by !== null ? playerTeam(rec, by, t) : life.team || 0 });
   }
   for (const r of serverWrecks) {
     if (claimed.has(r) || r.t < 0 || r.t > rec.duration) continue;
     add({ t: r.t, kind: 'vehicle', tmpl: r.vehicle, nid: null, crew: [], by: r.pid,
-          team: r.pid !== null ? playerTeam(rec, r.pid) : 0, server: true });
+          team: r.pid !== null ? playerTeam(rec, r.pid, r.t) : 0, server: true });
   }
 
   for (const c of rec.captures ?? []) add({ t: c.t, kind: 'capture', name: c.name, team: c.team });
@@ -181,7 +192,7 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
   const own = recordingPlayer(rec);
   if (own !== null) {
     for (const { t, life } of spawnsOf(rec, own)) {
-      add({ t, kind: 'spawn', pid: own, at: spawnPoint(rec, life), team: playerTeam(rec, own) });
+      add({ t, kind: 'spawn', pid: own, at: spawnPoint(rec, life), team: playerTeam(rec, own, t) });
     }
   }
 
@@ -211,7 +222,7 @@ export function chapterText(rec, ch, lexicon = null) {
   const strings = lexicon?.strings ?? null;
   const names = lexicon?.names ?? null;
   const display = key => (key ? names?.[key] ?? key : '');
-  const name = pid => playerName(rec, pid);
+  const name = pid => playerName(rec, pid, ch.t);
   switch (ch.kind) {
     case 'kill': return killLine(name(ch.killer), name(ch.victim), killWord(ch.weapon, strings, names));
     case 'teamkill': return `${teamKillLine(name(ch.killer), strings)}: ${name(ch.victim)}`;
@@ -278,7 +289,7 @@ export function outOfRange(life, t) {
  * a vehicle, `outOfRange` says when the recording lost sight of him.
  */
 export function playerStatusAt(rec, pid, t, kills = rec.kills) {
-  const player = rec.players.get(pid);
+  const player = playerAt(rec, pid, t);
   if (player?.leftT !== undefined && t >= player.leftT) return { state: 'left' };
   const nid = controlledAt(rec, pid, t);
   if (nid === null) return { state: 'absent' };
@@ -306,49 +317,60 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
 }
 
 /** Kills and deaths per player up to `t`, as the scoreboard counts them: a
- *  team kill is no kill, every death is a death. */
-export function tallyAt(kills, t) {
+ *  team kill is no kill, every death is a death. With `rec`, only the ones
+ *  of the player who holds each pid at `t`: the one before him under that
+ *  id took his score with him when he left. */
+export function tallyAt(kills, t, rec = null) {
   const out = new Map();
   const of = pid => {
     if (!out.has(pid)) out.set(pid, { kills: 0, deaths: 0 });
     return out.get(pid);
   };
+  const his = (pid, at) => !rec || playerAt(rec, pid, at) === playerAt(rec, pid, t);
   for (const k of kills) {
     if (k.t > t) break;
-    if (k.kind === 'kill' && k.killer !== null && k.killer !== undefined) of(k.killer).kills++;
-    if (k.victim !== null && k.victim !== undefined) of(k.victim).deaths++;
+    if (k.kind === 'kill' && k.killer !== null && k.killer !== undefined && his(k.killer, k.t)) of(k.killer).kills++;
+    if (k.victim !== null && k.victim !== undefined && his(k.victim, k.t)) of(k.victim).deaths++;
   }
   return out;
 }
 
 /** Everyone the recording knows of, in a steady order: Axis, then Allies,
- *  then anyone without a side, each by name. `[{ pid, name, team, ai }]`. */
-export function rosterOf(rec) {
+ *  then anyone without a side, each by name. `[{ pid, name, team, ai }]`,
+ *  each as he was at `t` (the id's last holder without it). */
+export function rosterOf(rec, t = null) {
   const pids = new Set([...rec.players.keys(), ...(rec.playerNids?.keys() ?? [])]);
   const order = team => (team === 1 ? 0 : team === 2 ? 1 : 2);
   return [...pids].map(pid => ({
     pid,
-    name: playerName(rec, pid),
-    team: playerTeam(rec, pid) || rec.control.find(c => c.pid === pid)?.team || 0,
-    ai: Boolean(rec.players.get(pid)?.ai),
+    name: playerName(rec, pid, t),
+    team: playerTeam(rec, pid, t) || rec.control.find(c => c.pid === pid)?.team || 0,
+    ai: Boolean(playerAt(rec, pid, t)?.ai),
   })).sort((a, b) => order(a.team) - order(b.team) || a.name.localeCompare(b.name));
 }
 
 /**
  * The lines the game's message log printed, in time order (comms.js writes
- * them): `{ t, type: 'kill', kind, killer, victim, weapon }`, `{ t, type:
- * 'capture', name, team }` and `{ t, type: 'chat', text, team }`. A v3+
- * recording has the chat box itself (`rec.chat`, the line as shown); an
- * older one only the fragments its feed rows carry.
+ * them): `{ t, type: 'kill', kind, killer, victim, weapon, killerTeam,
+ * victimTeam }`, `{ t, type: 'capture', name, team }`, `{ t, type: 'chat',
+ * text, team }` and `{ t, type: 'radio', pid, msg, global }`, the radio the
+ * recording player heard. A v3+ recording has the chat box itself
+ * (`rec.chat`, the line as shown); an older one only the fragments its feed
+ * rows carry.
  */
 export function feedEvents(rec, kills = rec.kills) {
   const out = [];
-  for (const k of kills) out.push({ t: k.t, type: 'kill', kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon });
+  for (const k of kills) {
+    out.push({ t: k.t, type: 'kill', kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon,
+               killerTeam: k.killer === null || k.killer === undefined ? 0 : killerTeamOf(rec, k),
+               victimTeam: victimTeamOf(rec, k) });
+  }
   for (const c of rec.captures ?? []) out.push({ t: c.t, type: 'capture', name: c.name, team: c.team });
+  for (const r of rec.radio ?? []) out.push({ t: r.t, type: 'radio', pid: r.pid, msg: r.msg, global: r.global });
   if (rec.chat.length) {
-    for (const c of rec.chat) out.push({ t: c.t, type: 'chat', text: c.text, team: c.team ?? playerTeam(rec, c.pid) });
+    for (const c of rec.chat) out.push({ t: c.t, type: 'chat', text: c.text, team: c.team ?? playerTeam(rec, c.pid, c.t) });
   } else {
-    const byName = new Map([...rec.players.values()].map(p => [p.name, p.team]));
+    const byName = new Map([...rec.sessions?.values() ?? []].flat().map(p => [p.name, p.team]));
     for (const row of rec.events) {
       if (row.kind !== 'chat' || row.source !== 'client') continue;
       const speaker = row.text.slice(0, Math.max(0, row.text.indexOf(': ')));

@@ -38,6 +38,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
+  nameAt, teamAt, positionAt,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
@@ -50,6 +51,7 @@ import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
+import { addStandIns } from './replay-standins.js';
 import { ReplayProps } from './replay-props.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
@@ -216,7 +218,8 @@ class ReplayPlayer {
       }
       return p;
     };
-    const name = pid => this.rec.players.get(pid)?.name ?? `player ${pid}`;
+    const name = pid => nameAt(this.rec, pid, this.time);
+    const team = pid => teamAt(this.rec, pid, this.time);
     const names = this.ctx.comms?.lexicon?.()?.names ?? null;
     if (this.soldiers?.available) {
       for (const actor of this.soldiers.drawn) {
@@ -232,7 +235,7 @@ class ReplayPlayer {
         const at = point(entity).copy(entity.group.position);
         at.y += 2.1;
         out.push({ key: entity, pid: entity.life.pid, pids: [entity.life.pid], name: name(entity.life.pid),
-                   team: entity.life.team || this.rec.players.get(entity.life.pid)?.team || 0, at });
+                   team: entity.life.team || team(entity.life.pid), at });
       }
     }
     for (const hull of this.hulls.values()) {
@@ -252,7 +255,7 @@ class ReplayPlayer {
         pids: crew.map(c => c.pid),
         name: lead ? name(lead.pid) : vehicle,
         extra: lead ? `${vehicle}${crew.length > 1 ? ` +${crew.length - 1}` : ''}` : '',
-        team: lead ? this.rec.players.get(lead.pid)?.team ?? life.team : life.team,
+        team: lead ? team(lead.pid) || life.team : life.team,
         at,
         hp: life.maxhp > 0 && hull.hp !== null ? { hp: hull.hp, max: life.maxhp, crit: life.crit } : null,
       });
@@ -278,6 +281,14 @@ class ReplayPlayer {
     for (const life of this.rec.lives) {
       if (life.tmpl && carried.has(life.tmpl.toLowerCase())) life.item = true;
     }
+    // What the recording sees late or never -- a hull already there when it
+    // came into range, the ships and craft of a file begun after the join --
+    // carried back to its first trace in the part and engine records, or
+    // stood in by the level's own vehicle where those say which
+    // (replay-standins.js).
+    const traced = extra('the stand-ins', () => addStandIns(this.rec, this.ctx.levelVehicles?.() ?? []));
+    this.standIns = traced?.added ?? [];
+    this.seenLate = traced?.extended ?? [];
     // A press on foot names the weapon in his hands, now that the kits are
     // known.
     for (const f of this.rec.fires) {
@@ -364,7 +375,8 @@ class ReplayPlayer {
       ? ` · server log aligned on ${this.alignment.matched} of ${this.alignment.total} shared events`
       : this.log ? ' · server log loaded but could not be aligned' : '';
     const bodies = this.soldiers?.available ? ' · soldiers drawn by the map' : '';
-    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${bodies}${aligned}`;
+    const unseen = this.standIns.length ? ` · ${this.standIns.length} never in range, stood in by the level` : '';
+    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${unseen}${bodies}${aligned}`;
     this.ui.status(this.statusLine);
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
@@ -407,7 +419,10 @@ class ReplayPlayer {
     this.time = Math.min(Math.max(0, t), this.rec.duration);
     this.ctx.guns?.clear();
     this.soldiers?.reset();
-    for (const hull of this.hulls.values()) hull.lastT = null;
+    for (const hull of this.hulls.values()) {
+      hull.lastT = null;
+      hull.resetSound();
+    }
     // A round fired just before the new instant is still in the air.
     for (const f of this.rec.fires) {
       const age = this.time - f.t;
@@ -449,6 +464,17 @@ class ReplayPlayer {
     // On foot: a v3 press of the alternate trigger is the zoom, not a round.
     if (f.press && f.kind === 2) return;
     if (pid !== null) this.soldiers?.fire(pid, f, f.t);
+  }
+
+  /** The recording player's ammo refilled at a depot at `t` (SpecialGameEvent
+   *  0, replay-recording.js `refills`): his soldier's refill sound, at him. */
+  refill(t) {
+    const pid = this.recordingPid;
+    if (pid === null || !this.playing) return;
+    const nid = controlledAt(this.rec, pid, t);
+    const life = nid !== null ? lifeAt(this.rec, nid, t) : null;
+    const p = life?.soldier ? positionAt(life, t) : null;
+    if (p) this.ctx.playRefillSound?.({ x: p[0], y: p[1] + 1, z: -p[2] });
   }
 
   update(dt) {
@@ -510,6 +536,9 @@ class ReplayPlayer {
     if (t > prevT) {
       for (const f of this.rec.fires) {
         if (f.t > prevT && f.t <= t) this.fireShot(f);
+      }
+      for (const r of this.rec.refills ?? []) {
+        if (r.t > prevT && r.t <= t) this.refill(r.t);
       }
     }
     this.lastFiredTime = t;
@@ -600,12 +629,12 @@ export function recordingInfo(url) {
  * The replay controller map.html creates once its level is showing.
  *
  * ctx: { scene, camera, loader, stage, bust, modelsBase, levelName(),
- *        levelRoot(), hideBakedVehicles(), shadeModel(root), guns, effects,
+ *        levelRoot(), hideBakedVehicles(), levelVehicles(), shadeModel(root), guns, effects,
  *        vehicleClasses, groundHeight(x, z), waterLevel(),
  *        claimVehicleAudio(key, node, drive, groups), releaseVehicleAudio(key, node),
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
- *        playSoldierDeathSound(position, team), ensureAudio(),
+ *        playSoldierDeathSound(position, team), playRefillSound(position), ensureAudio(),
  *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
  *        keyboardTaken(), mapArt(), mapProjection(), viewDistance(), opened(player) }
  * Everything after `effects` is the map's own machinery and optional: then

@@ -1912,4 +1912,169 @@ const read = scene => {
   };
 }
 
+// --- Midway (replay_20260927-203459): who a pid is, a gun's report, a soldier
+// --- first seen late, the radio, the refills, and what the file never names --
+//
+// A public server's round, recorded from 41 s after the join. Its pid 4 was
+// 3star, then Niconan; its pid 11 Omen, killed by Rut's bazooka in the tick he
+// switched to Rut's side, then another Niconan. Waldo's soldier was his from
+// the file's first record and first seen 8.7 s in. The ships out of range
+// all round are only parts and engines; the Fletcher2 is seen at 405 s on the
+// level's Fletcher pad; the Enterprise is removed at 389 s and made again at
+// its place at 499 s; a deck Zero's engine starts at 9.5 s.
+{
+  const [{ ReplayHull }, { GunFire }, chapters, { addStandIns }, { spawnedCraftUnder }] = await Promise.all([
+    imp('replay-hulls.js'), imp('gunfire.js'), imp('replay-chapters.js'), imp('replay-standins.js'),
+    imp('spawned-craft.js'),
+  ]);
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 0, e: 'serverInfo', mapId: 'BF1942', mod: 'bf1942', gameId: 'BF1942', ago: 41 }),
+    line({ k: 'roster', t: 0, p: [[0, 2, 0, 'Rut', 0], [4, 1, 0, '3star', 0], [9, 1, 0, 'waldo', 0], [8, 2, 0, 'skandia', 1]] }),
+    line({ k: 'p', t: 0, p: [[9, 1, 740, 740, 0, 0], [0, 2, 700, 700, 0, 0]] }),
+    line({ k: 'jn', t: 0, o: [[541, 1, 'HatsuzukiCannon', 0, 5, -20], [545, 2, 'HatsuzukiCannon', 0, 5, -20],
+                              [553, 3, 'Carrier_AA_Cannon', 10, 15, 5], [571, 4, 'Carrier_AA_Cannon', 10, 15, 5],
+                              [563, 5, 'Fletcher_cannon', 0, 6, 30], [559, 6, 'Fletcher_cannon', 0, 6, 30]] }),
+    line({ k: 'g', t: 0, o: [[541, 0, 0, 0, 0, 7], [559, 0, 0, 0, 0, 8], [558, 0, 0, 0, 0, 9], [613, 0, 0, 0, 0, 10]] }),
+    // The server repeats the status whenever someone joins.
+    line({ k: 'e', t: 1, e: 'gameStatus', status: 1 }),
+    line({ k: 'chat', t: 5, pid: 4, team: 1, text: '3star: :O' }),
+    line({ k: 'chat', t: 6, pid: -1, team: 0, text: '*Do\u0080not\u0080steal.' }),
+    line({ k: 'o', t: 8.7, id: 740, gid: 1, tmpl: 'JapaneseSoldier', tid: 1732, team: 1, maxhp: 30, crit: 0 }),
+    line({ k: 's', t: 8.7, o: [[740, 100, 11, 100, 0, 0, 0, 1]] }),
+    line({ k: 'g', t: 9.5, o: [[613, 0.8, 0, 1, 0, 10]] }),
+    line({ k: 'e', t: 10, e: 'destroyPlayer', pid: 4 }),
+    line({ k: 'e', t: 12, e: 'createPlayer', pid: 11, name: 'Omen', team: 1, ai: 0, netId: 23, vehNetId: 24, camNetId: 24, kitNetId: 0 }),
+    line({ k: 'e', t: 12.001, e: 'gameStatus', status: 1 }),
+    line({ k: 'p', t: 13, p: [[11, 1, 24, -1, 0, 0]] }),
+    line({ k: 'e', t: 15, e: 'radio', pid: 0, msg: 15, global: 1 }),
+    line({ k: 'e', t: 16, e: 'special', action: 0 }),
+    line({ k: 'e', t: 16.5, e: 'special', action: 0 }),
+    line({ k: 'e', t: 17, e: 'special', action: 0 }),
+    line({ k: 'e', t: 20, e: 'score', kind: 3, pid: 0, victim: 9, weapon: 1, bodypart: 1, weaponName: 'Thompson' }),
+    line({ k: 'e', t: 20, e: 'createPlayer', pid: 4, name: 'Niconan', team: 2, ai: 0, netId: 9, vehNetId: 10, camNetId: 10, kitNetId: 0 }),
+    line({ k: 'chat', t: 25, pid: 4, team: 2, text: 'Niconan: yo' }),
+    line({ k: 'e', t: 30, e: 'score', kind: 3, pid: 0, victim: 11, weapon: 1, bodypart: 1, weaponName: 'Bazooka' }),
+    line({ k: 'e', t: 30, e: 'score', kind: 5, pid: 11, victim: 1, weapon: 0, bodypart: 0 }),
+    line({ k: 'e', t: 30.001, e: 'setTeam', pid: 11, team: 2 }),
+    line({ k: 'e', t: 32, e: 'destroyPlayer', pid: 11 }),
+    line({ k: 'e', t: 40, e: 'createPlayer', pid: 11, name: 'Niconan', team: 2, ai: 0, netId: 23, vehNetId: 24, camNetId: 24, kitNetId: 0 }),
+    line({ k: 'o', t: 66, id: 613, gid: 3, tmpl: 'Zero', tid: 1, team: 1, maxhp: 100, crit: 20 }),
+    line({ k: 's', t: 66, o: [[613, 900, 200, 900, 0, 0, 0, 1]] }),
+    line({ k: 'e', t: 389, e: 'destroyObject', netId: 571 }),
+    line({ k: 'o', t: 405, id: 559, gid: 2, tmpl: 'Fletcher2', tid: 2, team: 0, maxhp: 200, crit: 50 }),
+    line({ k: 's', t: 405, o: [[559, 3174, 20, 2260, 0, 0, 0, 1]] }),
+    line({ k: 'e', t: 499, e: 'createObject', tid: 3, netId: 1325, tmpl: 'Enterprise', pos: [3399, 19, 2856], rot: [0, 0, 0] }),
+    line({ k: 'end', t: 600 }),
+  ].join('\n'));
+  const kill = rec.kills.find(k => k.victim === 11);
+  const soldier = rec.lives.find(l => l.nid === 740);
+  const q = [0, 0, 0, 1];
+  const place = (template, p, ...names) => ({ template, p, q, names: new Set([template.toLowerCase(), ...names]) });
+  const traced = addStandIns(rec, [
+    place('Hatsuzuki', [371, 14, 1749], 'hatsuzukicannon'),
+    place('Hatsuzuki2', [1235, 14, 1934], 'hatsuzukicannon'),
+    place('Shokaku', [682, 20, 1592], 'carrier_aa_cannon'),
+    place('Enterprise', [3399, 19, 2856], 'carrier_aa_cannon'),
+    place('Fletcher', [3174, 20, 2260], 'fletcher_cannon'),
+    place('Fletcher2', [3781, 20, 2978], 'fletcher_cannon'),
+    place('Zero', [634, 34, 1590]),
+  ]);
+
+  // A looped gun's report is held up by its rounds, and nothing else.
+  const zero = new THREE.Group();
+  zero.name = 'Zero';
+  zero.userData = { templateKind: 'PlayerControlObject' };
+  const zeroGuns = new THREE.Group();
+  zeroGuns.name = 'ZeroGuns';
+  zeroGuns.userData.fireArms = {
+    projectile: { template: 'Tracer_Projectile', kind: 'bullet', trail: null, timeToLive: 3, damage: {} },
+    roundOfFire: 10, magSize: -1, velocity: 400, input: 'c_PIFire', muzzles: 1,
+  };
+  zero.add(zeroGuns);
+  const zeroModel = new THREE.Group();
+  zeroModel.add(zero);
+  const zeroRec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1, netId: 892, tmpl: 'Zero', pos: [0, 100, 0], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 1, id: 892, gid: 1, tmpl: 'Zero', tid: 1, team: 1, maxhp: 100, crit: 20 }),
+    line({ k: 's', t: 1, o: [[892, 0, 100, 0, 0, 0, 0, 1]] }),
+    line({ k: 'f', t: 2, id: 892, pid: 2, w: 'ZeroGuns', p: [0, 100, 1], d: [0, 0, 1] }),
+  ].join('\n'));
+  let rate = 1;
+  const scene = new THREE.Scene();
+  const zeroHull = new ReplayHull({ ctx: { guns: new GunFire({ scene, viewportHeight: () => 800 }), scene },
+    rec: zeroRec, showGhosts: true, time: 0, feedRate: () => rate }, zeroRec.lives.find(l => l.nid === 892), zeroModel, null);
+  const gun = zeroHull.groups[0];
+  const sounding = [];
+  zeroHull.update(1.9, 0.05);
+  sounding.push(Boolean(gun.sounding));
+  zeroHull.fire(0, 1, zeroRec.fires[0]);
+  zeroHull.update(2.05, 0.05);
+  sounding.push(Boolean(gun.sounding));
+  rate = 0;
+  zeroHull.update(2.1, 0.05);
+  sounding.push(Boolean(gun.sounding));
+  rate = 1;
+  zeroHull.update(2.5, 0.05);
+  sounding.push(Boolean(gun.sounding));
+  zeroHull.fire(0, 1, zeroRec.fires[0]);
+  zeroHull.resetSound();
+  zeroHull.update(2.05, 0.05);
+  sounding.push(Boolean(gun.sounding));
+
+  // A carrier's model carries a deck Corsair (a PCO with a body) beside an AA
+  // seat (a PCO without one): only the Corsair is craft, and a replayed
+  // carrier drops it.
+  const carrier = new THREE.Group();
+  carrier.name = 'Enterprise';
+  carrier.userData = { templateKind: 'PlayerControlObject', physics: { mass: 50000, vehicleCategory: 'VCSea' } };
+  const corsair = new THREE.Group();
+  corsair.name = 'Corsair';
+  corsair.userData = { templateKind: 'PlayerControlObject', physics: { mass: 4000, vehicleCategory: 'VCAir' } };
+  const aaSeat = new THREE.Group();
+  aaSeat.name = 'Carrier_AA_Base';
+  aaSeat.userData = { templateKind: 'PlayerControlObject' };
+  carrier.add(corsair, aaSeat);
+  const carrierModel = new THREE.Group();
+  carrierModel.add(carrier);
+  const craft = spawnedCraftUnder(carrier).map(o => o.name);
+  const carrierRec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 3, netId: 1325, tmpl: 'Enterprise', pos: [3399, 19, 2856], rot: [0, 0, 0] }),
+  ].join('\n'));
+  // eslint-disable-next-line no-new
+  new ReplayHull({ ctx: { scene }, rec: carrierRec, showGhosts: true }, carrierRec.lives[0], carrierModel, null);
+
+  results.midway = {
+    names: [recording.nameAt(rec, 4, 5), recording.nameAt(rec, 4, 25), recording.nameAt(rec, 11, 20), recording.nameAt(rec, 11, 45)],
+    teams: [recording.teamAt(rec, 11, 29.9), recording.teamAt(rec, 11, 30.5)],
+    kill: { killerTeam: kill.killerTeam, victimTeam: kill.victimTeam, text: chapters.chapterText(rec, { ...kill, lead: 0 }) },
+    feedKill: chapters.feedEvents(rec).filter(e => e.type === 'kill').map(e => [e.killer, e.victim, e.killerTeam, e.victimTeam]),
+    chat: rec.events.filter(r => r.kind === 'chat').map(r => r.text),
+    status: rec.events.filter(r => r.kind === 'round').map(r => r.text),
+    radio: rec.radio,
+    radioRow: rec.events.find(r => r.kind === 'radio')?.text ?? null,
+    radioFeed: chapters.feedEvents(rec).filter(e => e.type === 'radio').length,
+    refills: rec.refills.length,
+    supplyRows: rec.events.filter(r => r.kind === 'supply').length,
+    lateSoldier: { pid: soldier.pid ?? null, diedAt: soldier.diedAt ?? null },
+    left: [chapters.playerStatusAt(rec, 4, 15).state, chapters.playerStatusAt(rec, 11, 35).state],
+    tally: {
+      omenAt35: chapters.tallyAt(rec.kills, 35, rec).get(11) ?? null,
+      niconanAt45: chapters.tallyAt(rec.kills, 45, rec).get(11) ?? null,
+      withoutSessions: chapters.tallyAt(rec.kills, 45).get(11) ?? null,
+    },
+    roster45: chapters.rosterOf(rec, 45).map(p => [p.pid, p.name, p.team]),
+    recordingPid: chapters.recordingPlayer(rec),
+    extended: traced.extended.map(l => [l.nid, l.tmpl, l.created]),
+    standIns: traced.added.map(l => [l.nid, l.tmpl, l.created, Number.isFinite(l.destroyed) ? l.destroyed : null]),
+    sounding,
+    craft,
+    corsairLeft: corsair.parent?.name ?? null,
+    aaSeatKept: aaSeat.parent?.name ?? null,
+  };
+}
+
 console.log(JSON.stringify(results));

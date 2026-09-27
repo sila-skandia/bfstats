@@ -446,4 +446,79 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   rack.dispose();
 }
 
+// --- a looped gun sounds while any of its mounts fires, or a replay says so ---
+//
+// A machine gun's patch is loops, gated on its group firing. A replayed gun
+// has no trigger, only recorded rounds, so the replay holds `sounding` up
+// while they leave (replay-hulls.js `holdSound`): El Zilcho's Zero fired 22
+// rounds at 6:20 of replay_20260927-203459 in silence before it. And a
+// destroyer's four same-named mounts share one patch: a gunner on the second
+// used to leave it shut, because only the first group was asked.
+
+{
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([SHERMAN]));
+  const node = sceneNode('sherman', 5);
+  childNode(node, 'ShermanEngine');
+  const first = childNode(node, 'Coaxial_browning');
+  const second = childNode(node, 'Coaxial_browning_1');
+  const groups = [{ node: first, firing: false }, { node: second, firing: false }];
+  rack.claim({ seatKey: 'replay:1', node, template: 'sherman', drive: null, groups });
+  await settle();
+  const gun = () => rack.snapshot().vehicles[0].weapons.find(w => w.fireArms === 'Coaxial_browning');
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(gun().master, 0, 'a looped gun nobody fires is shut');
+  groups[0].sounding = true;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.ok(gun().master > 0, "a replayed gun's recorded rounds open it (`sounding`)");
+  groups[0].sounding = false;
+  groups[1].firing = true;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.ok(gun().master > 0, 'the second mount of the name opens the shared patch too');
+  groups[1].firing = false;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(gun().master, 0, 'and it shuts when neither fires');
+  rack.dispose();
+}
+
+// --- a template the level does not place sounds from the tree's table --------
+//
+// A round replay's server can spawn anything: MoonGamers' Midway adds Elco80
+// PT boats, which midway/scene.json has no sound for. The rack asks the
+// tree's `_shared/vehicle-sounds.json` (same shape) when the level's report
+// lacks the template, and only then.
+
+{
+  const ctx = stubCtx();
+  const listener = fakeListener(ctx);
+  let asked = 0;
+  const ELCO = {
+    template: 'Elco80', level: 'high', engine: 'Elco80_Engine', layers: [LAYER('elco.wav')],
+    weapons: [{ fireArms: 'Elco80_SideGunner', script: 'Gun.ssc', layers: [LAYER('mg.wav')] }],
+  };
+  const rack = new VehicleAudioRack({
+    listener: () => listener,
+    getBuffer: async () => fakeBuffer(),
+    report: () => report([SHERMAN]),
+    shared: async () => { asked++; return report([ELCO]); },
+    dir: () => 'midway',
+    master: () => 1,
+  });
+  const boat = sceneNode('Elco80', 5);
+  childNode(boat, 'Elco80_Engine');
+  childNode(boat, 'Elco80_SideGunner');
+  rack.claim({ seatKey: 'replay:524', node: boat, template: 'Elco80', drive: drive(5), groups: [] });
+  const tank = sceneNode('sherman', 9);
+  childNode(tank, 'ShermanEngine');
+  rack.claim({ seatKey: 'replay:782', node: tank, template: 'sherman', drive: drive(9), groups: [] });
+  await settle();
+  const snap = rack.snapshot();
+  const elco = snap.vehicles.find(v => v.template === 'Elco80');
+  assert.ok(elco?.engine, "a template the level does not place takes its engine from the tree's table");
+  assert.deepEqual(elco.weapons.map(w => w.fireArms), ['Elco80_SideGunner'], 'and its guns');
+  assert.ok(snap.vehicles.find(v => v.template === 'sherman')?.engine, "the level's own template still sounds");
+  assert.equal(asked, 1, "the table is asked for only the template the level's report lacks");
+  rack.dispose();
+}
+
 console.log('vehicle-audio: all assertions passed');

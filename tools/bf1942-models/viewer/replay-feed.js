@@ -12,6 +12,7 @@
 // player's client ever receives) through the page's own HUD.
 
 import { feedEvents, playerName, playerTeam, pointsAt } from './replay-chapters.js';
+import { controlledAt, lifeAt, positionAt, rootOf } from './replay-recording.js';
 
 /** How far back a seek rebuilds the log from, recording seconds: longer
  *  than a line can stay up (chat-log.js: three kill lines at five seconds
@@ -46,18 +47,48 @@ export class ReplayFeed {
     this.written = null;
   }
 
-  speaker(pid, local = false) {
+  /** `pid` as the log names him at recording time `t`: the player who held
+   *  the id then, on his side then (`team` overrides it with the side a
+   *  kill was scored on). */
+  speaker(pid, t, local = false, team = undefined) {
     const { rec } = this.player;
-    return { id: pid, name: playerName(rec, pid), team: playerTeam(rec, pid), local, vehicle: null, weapon: null };
+    return {
+      id: pid, name: playerName(rec, pid, t), team: team ?? playerTeam(rec, pid, t),
+      local, vehicle: null, weapon: null,
+    };
   }
 
-  /** One line (or two, for a team kill) into the page's log. */
+  /** Where `pid` was at `t`, in the viewer's frame: his soldier's feet, or
+   *  the hull he rode; null where the recording has nothing of him. */
+  positionOf(pid, t) {
+    const { rec } = this.player;
+    const nid = controlledAt(rec, pid, t);
+    if (nid === null) return null;
+    const root = rootOf(rec, nid, t, pid);
+    const life = root?.life ?? lifeAt(rec, nid, t);
+    const p = life && !life.camera ? positionAt(life, t) : null;
+    return p ? { x: p[0], y: p[1], z: -p[2] } : null;
+  }
+
+  /** One line (or two, for a team kill) into the page's log. `live` is a
+   *  line playback has just reached, rather than one a seek rebuilds. */
   write(e, live) {
     const { comms } = this;
     if (e.type === 'kill') {
-      const victim = this.speaker(e.victim, live && e.victim === this.player.followPid);
-      const killer = e.killer === null || e.killer === undefined ? null : this.speaker(e.killer);
-      comms.onKill(victim, killer, e.weapon ? { weapon: e.weapon } : null);
+      const victim = this.speaker(e.victim, e.t, live && e.victim === this.player.followPid, e.victimTeam);
+      const killer = e.killer === null || e.killer === undefined ? null : this.speaker(e.killer, e.t, false, e.killerTeam);
+      // The server's own word for it: a kill (3) is a kill line whatever
+      // sides the log would read now, and a team kill (6) is the team-kill
+      // pair.
+      comms.onKill(victim, killer, { weapon: e.weapon ?? null, teamKill: e.kind === 'teamkill' });
+    } else if (e.type === 'radio') {
+      // What the recording player heard, as his client printed and played
+      // it: team radio in his side's tongue, a shout in the speaker's voice
+      // at the speaker (comms.js `receive`). A rebuilt line is not heard again.
+      const own = this.player.recordingPid;
+      const speaker = { ...this.speaker(e.pid, e.t), position: this.positionOf(e.pid, e.t), local: e.pid === own };
+      const listener = { team: own !== null ? playerTeam(this.player.rec, own, e.t) : speaker.team, silent: !live };
+      comms.receive?.(e.msg, speaker, listener);
     } else if (e.type === 'capture') {
       // "Every point" is the recording's points as they stood after this one
       // fell, not the page's flags, which a replay never moves.

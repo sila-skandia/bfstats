@@ -191,7 +191,7 @@ export class ReplayBattleMap {
       ic.innerHTML = p.best ? medalSvg(p.best) : icon('fight');
       ic.style.color = p.best ? tierColour(p.score) : '#f0913c';
       const tx = el('span', 'tx');
-      tx.append(el('b', `t${this.hl.team(p.pid)}`, `${p.title}: ${this.hl.name(p.pid)}`));
+      tx.append(el('b', `t${this.hl.team(p.pid, p.t)}`, `${p.title}: ${this.hl.name(p.pid, p.t)}`));
       const detail = el('span');
       this.playDetails.push({ node: detail, play: p });
       tx.append(detail);
