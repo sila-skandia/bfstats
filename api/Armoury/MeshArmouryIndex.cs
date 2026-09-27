@@ -42,10 +42,10 @@ public sealed partial class MeshArmouryIndex(
     private const string ParachuteTwinSuffix = "_CHUTE";
 
     /// <summary>
-    /// How far off its bone a part may hang and still be worn, in metres. Every part in every
-    /// tree sits within 0.1 m of its bone but Desert Combat Final's grenade, which
-    /// <c>SetPosition 0/0/5</c> puts five metres off the hip: drawn, it hangs in mid-air and
-    /// the stage shrinks the soldier to a speck to keep it in frame.
+    /// How far off its bone a part may hang and still be worn, in metres. Drawn further out, a
+    /// part hangs in mid-air and the stage shrinks the soldier to a speck to keep it in frame.
+    /// The one case seen was an extractor misreading (Desert Combat Final's grenade, a
+    /// <c>SetPosition 0/0/5</c> the engine ignores); this keeps bad data off the stage.
     /// </summary>
     private const double MaxWornOffset = 1.0;
 

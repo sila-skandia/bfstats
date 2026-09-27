@@ -472,8 +472,14 @@ Resolution notes that bite:
 ([`con.py:704`](../../tools/bf1942-models/bf42/con.py:704), the weapon path), but
 nothing reads the KitPart bone. Adding a `bone_name: str | None` populated from
 `setBoneName` — accepting an optionally quoted argument, for GCMOD — is the whole
-parser change. `setPosition` on a `KitPart` already reads correctly, because it
-lands before any `addTemplate` and so binds to the template rather than a child.
+parser change. A `setPosition` or `setRotation` on a `KitPart` before any
+`addTemplate` does nothing in the engine (corrected 2026-09-27): the console
+word places the child at `BundleTemplate::mActiveMemberId`, the index the last
+`addTemplate` stored, and `BundleTemplate::setPosition` / `setRotation`
+(lnxded 0x081a8fe0 / 0x081a9050) return without writing when that index is
+past the template's children. The parser read such a line as the part's own
+offset, which put DC Final's helmet (`SetPosition 0/-.1/0`) behind the head
+and its grenade (`0/0/5`) five metres off the hip.
 
 ## What the roster parser misses today
 
