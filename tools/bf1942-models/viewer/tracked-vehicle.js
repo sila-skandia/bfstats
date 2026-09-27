@@ -753,7 +753,7 @@ export class TrackedVehicle extends Vehicle {
    * is how a tracked hull turns: one track faster than the other -- at rest
    * height, since nothing recorded says how far a spring is compressed.
    */
-  presentKinematic(dt, throttle = 0) {
+  presentKinematic(dt, throttle = 0, running = true) {
     const s = this.state;
     this._qInv.copy(s.orientation).invert();
     this._vBody.copy(s.velocity).applyQuaternion(this._qInv);
@@ -765,7 +765,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.compression = 0;
       wheel.angle += (along / radius) * dt;
     }
-    super.presentKinematic(dt, throttle);
+    super.presentKinematic(dt, throttle, running);
     this.#applyWheels();
   }
 

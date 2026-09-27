@@ -188,9 +188,10 @@ class ReplayStandoutTests(unittest.TestCase):
         self.assertEqual(gone, {"fresh": False, "pos": None, "seen": None})
 
     def test_headings_on_the_ground(self) -> None:
-        # A vehicle faces -Z in the viewer's frame, a soldier +Z (his pose's
-        # half turn); a quarter turn about +Y points a vehicle along +X.
-        self.assertEqual(self.standouts["heading"], [[0, -1], [0, 1], [1, 0]])
+        # A vehicle and a soldier both face -Z in the viewer's frame (the half
+        # turn a soldier's pose glb carries is the model's, not the
+        # recording's); a quarter turn about +Y points either along +X.
+        self.assertEqual(self.standouts["heading"], [[0, -1], [0, -1], [1, 0], [1, 0]])
 
 
 class ReplayDirectorTests(unittest.TestCase):
