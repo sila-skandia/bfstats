@@ -991,6 +991,37 @@ feet.
 
 | Item | Where it stands |
 |---|---|
-| **The ladder grab** | `climbStart` puts the feet on the ladder line at the mid-body's height, lifting a man 0.9 m on the grab; `startClimbing` keeps his height (`getLadderClosestPosition` clamps only across the rungs and sets the -0.48 m standoff) |
+| ~~**The ladder grab**~~ | ~~`climbStart` puts the feet on the ladder line at the mid-body's height, lifting a man 0.9 m on the grab~~ **Fixed 2026-09-27**: the grab keeps his height (ledger LADDER-1, `features/ladder-climbing`) |
 | **A recorded swim state** | No v4/v5 recording has a soldier in `Lb_StartSwim`; one would place the entry by the state rather than by position |
 | **Replayed swimmers** | Drawn with their gait, a metre lower since `standOnFeet`; the swim family for them is a separate change |
+
+## 22. The swim speed, measured against the recordings (2026-09-27)
+
+The page caps a swimmer at 2.0 m/s (`SWIM_SPEED_CEILING_FACTOR`, a viewer number);
+§18's corrected submersion puts the box law's balance near 2.6 m/s. The recordings
+were searched for swimmers to decide between them: every file in the game's
+`replays/` folder and the lab's `runs/*/client` (53 files: Wake, Bocage, Kharkov,
+Berlin, El Alamein or Aberdeen, Kursk), a soldier sample counted as swimming when his origin
+sits 0.2-0.8 m under the level's water over a bottom more than 1.45 m down (a
+standing man's origin is 1.0 m over the bottom). Six soldiers came back:
+
+| file | soldier | water over the bottom | what he does |
+|---|---|---|---|
+| `replay_20260927-001120` (Wake) | 1091, a bot | 4.1 m | about a second alive (71.76-72.73 s): stepped out of a Daihatsu (hull 1068) moving 1.76 m/s and sinking, swam 2.42-2.58 m/s (least squares over 8-10 samples; the 10 Hz samples scatter 1.1-5.8), then was killed at 72.735 s; the body drifts at 0.4 m/s |
+| `replay_20260919-213409` (Wake) | 608 | 1.5 m | lifted onto the swim line in the last 0.4 s of his samples, 0.1 m/s |
+| `replay_20260920-153930` (Bocage) | 1156 | 1.5 m | 4.8 s at 0.01 m/s |
+| `replay_20260923-115056` (Kharkov) | 884 | 1.6-1.7 m | 5.5 s at 0.02 m/s |
+| `replay_20260920-173900` (Wake) | 774 | 1.5 m | 2.1 s at 0.13 m/s |
+| `replay_20260925-212254` (Wake) | 904 | 1.5 m | 1.0 s at 0.09 m/s |
+
+No soldier swims under a held throttle for long enough to reach a steady speed.
+The four bots on the swim line tread water. The one mover, 1091, left a moving
+boat less than a second before, so his 2.4-2.6 m/s cannot be separated from the
+velocity he stepped out with, nor shown to be the balance rather than a speed on
+the way to it. The law is not settled either: 2.6 m/s is the box law with the
+hull's box, and the corpus's parachute rows put the soldier on a
+`PointPhysicsNode` (PARA-5), whose law is the sphere one with a bounding radius
+PARA-6 leaves open; that law's balance at a 1-3 m radius is 9 to 38 m/s. So the
+data cannot settle the swim speed, and the cap stays as it is: a viewer number,
+labelled one. What would settle it is a recording of a player swimming a straight
+line with forward held for several seconds.
