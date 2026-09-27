@@ -1,8 +1,8 @@
 # Round replay: manual checks
 
-The game folder has the v5 recorder: `dsound.dll` is bf42plus `9451721`
+The game folder has the v5 recorder: `dsound.dll` is bf42plus `e692f14`
 (pushed to `sila-skandia/bf42plus` master). `dsound_old.dll` in the same
-folder is the previous v5 build, `1e45a5d`. To go back to it:
+folder is the previous build, `9451721`. To go back to it:
 
 ```bash
 cp ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound_old.dll ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/dsound.dll
@@ -54,9 +54,10 @@ The file should say so itself:
 f=$(ls -t ~/.wine/drive_c/EA\ Games/Battlefield\ 1942/replays/replay_*.ndjson | head -1); head -c 100 "$f"; echo; grep -o '"k":"[a-z]*"' "$f" | sort | uniq -c
 ```
 
-The header reads `"v":5,"plus":"99.0.0-0-g9451721"`, and the counts include
+The header reads `"v":5,"plus":"99.0.0-0-ge692f14"`, and the counts include
 `f` (every round fired: thousands, with 30 bots), `jn` and `j` (turrets), `g`
-(engines), `st` and `anim` (soldiers). If `f`, `j`, `g` or `st` is missing,
+(engines), `st` and `anim` (soldiers), and `tk` (tickets, a few hundred). If
+`f`, `j`, `g`, `st` or `tk` is missing,
 the recorder turned that part off on purpose: `logs/bf42plus_debug.log` in
 the game folder says why, on a line starting `replay:`.
 
@@ -70,6 +71,8 @@ In the viewer:
 | crouch, prone | your body in that stance |
 | the turret | turns as you turned it; the rounds leave along the barrel |
 | a Defgun or AA gun firing | the muzzle flash at the barrel and the round flying out, with no hit burst on the gun itself |
+| the ticket counter (top right) | the numbers you saw in the game at the same moment; the log panel's status line says "tickets recorded" |
+| a flag changing hands | the minimap marker, the flag bar and the flag on its pole turn when the game's did |
 | getting hit | a "hit from ..." row in the replay log for each hit you took, and in your own first person (2) the game's red wash on that side |
 | the plane | the engine note follows the throttle you used |
 
