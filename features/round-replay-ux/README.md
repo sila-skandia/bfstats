@@ -371,3 +371,42 @@ then Tobruk; the tab reads `Tobruk replay · 27 Sep 2026, 19:09`; the camera
 follows the recording player, named by his own chat; all five replayed
 Shermans wear `texture/Africa`. A copy with the flags taken out asks, with
 Aberdeen chosen, and plays on Tobruk when that is picked.
+
+## Waiting to spawn (2026-09-27)
+
+The request: a replay opens on the recording player, who can take a while to
+spawn (8.5 s on Midway's `replay_20260927-203459`, 48 s on Tobruk's), so count
+his card down to it and mark it on the timeline.
+
+- **A spawn** is the moment a player takes control of a new soldier
+  (`spawnsOf`): the soldier is made as he takes it, or first seen while he
+  still holds it, which is how a spawn beyond the recording's range shows.
+  A soldier he was already in when the recording found him is no spawn it saw.
+  On all four recordings the recording player's spawns are exactly his
+  soldiers' lives.
+- **The card**, while he is not in the round yet, on the spawn screen or dead,
+  reads `spawns in 0:07` (`respawns in` after a death, beside who killed him).
+  The chrome stays up through the wait and fades as usual once he is in.
+- **The timeline** marks each of the recording player's spawns with a green
+  arrow, named for the flag he spawned at when one stands within 200 m
+  (`skandia spawned at Airfield`). A jump lands a second before it; `,` and
+  `.` step onto them like any event, and with Shift they count as his own.
+- **The camera.** His spectator camera sits wherever the game left it, and
+  before a first spawn that is the world's origin: an empty grey corner of
+  Midway. While he waits with no body of his to watch, the orbit is over where
+  he will appear, framed as it will frame him there, so the spawn itself moves
+  nothing. First person on a camera still at the origin is that orbit too.
+
+| File | What changed |
+|---|---|
+| `viewer/replay-chapters.js` | `spawnsOf`, `nextSpawn`, the `spawn` chapter and its words. |
+| `viewer/replay-timeline.js` | The spawn glyph and mark. |
+| `viewer/replay-ui.js` | The card's countdown; the chrome held through the wait. |
+| `viewer/replay-camera.js` | The orbit over a coming spawn; an unplaced camera is no view. |
+
+Verified: `tests/test_replay_models.py` (`test_when_he_spawns`: his own, one
+beyond range, two that were no spawn; the countdown's target; the chapters,
+their words and marks; the camera through the wait). In headless Chromium on
+Midway: the card reads `spawns in 0:07` at load, over the Airfield spot where
+he appears at 0:00; ten green marks; `killed by Kerem [Panzerschreck]` then
+`respawns in 0:07` at 90 s.
