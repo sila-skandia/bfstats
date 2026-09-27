@@ -62,6 +62,7 @@ timeline or any button.
 | Replay log (debug) | Log button | L |
 | Hide the interface | | H |
 | Fullscreen | button | F |
+| Open another recording | upload button, or drop the file anywhere (see "Opening a recording") | |
 | Shortcuts | ? button | ? |
 | Close a panel | click outside | Esc; with nothing open, Esc is the game's menu as before |
 
@@ -244,3 +245,50 @@ red, Allies blue).
   `features/round-replay-fidelity`.)
 - Touch (one finger orbits, two pinch) was laid out at phone width but not
   driven on a device.
+
+## Opening a recording (2026-09-27)
+
+The request: "a simple and intuitive way to upload recordings to replay them.
+Right now you have to open the same map." A dropped recording used to play
+only over the level already on screen, and said "open it with ?map=" for any
+other; a `?replay=` URL needed the file under the served `replays/`.
+
+- **Open recording** in the site bar (the flythrough), the upload button on
+  the replay bar, or files dropped anywhere on the page. The picker takes the
+  recording and its `ev_*.xml` server log together.
+- The recording is kept in the browser (IndexedDB `bf42-mesh-replays`, the 8
+  newest, keyed by file name) and the page reloads as
+  `map.html?mod=<mod>&map=<level>&replay=local:replay_<stamp>`. From there it
+  is the `?replay=` path unchanged: the recording's mod, level and game type
+  (a co-op round loads the level's `SinglePlayer` layer), the game's loading
+  screen, the briefing accepted on its own. A reload or the back button finds
+  it again.
+- Before leaving the page it checks the file is a bf42plus recording (its
+  first line is the `h` header, whatever the extension), that its mod has maps
+  in this viewer (`serverInfo.mod`, now `rec.mod`), and that the level is
+  extracted for that mod. Each refusal says which, on the panel, with Choose a
+  file. A recording that names no level plays on the one on screen.
+- **The date.** The loading screen carries a line over the plate, `REPLAY ·
+  27 SEP 2026, 14:09 · <server>`, and the replay bar `RECORDED 27 SEP 2026,
+  14:09` after the clock (its tooltip the seconds, the server and the file).
+  The time is the header's `start` as written: the recording PC's local clock,
+  no zone. The tab reads `Kursk replay · 27 Sep 2026, 14:09`.
+- A `local:` recording the browser no longer has says so over the level (the
+  URL names it), with the site bar back.
+
+| File | What it is |
+|---|---|
+| `viewer/replay-open.js` | The store, the picker, the drop, the panel, the checks, the reload URL, the recording's summary and date, the bar's additions (`decorate`). |
+| `viewer/replay.js` | `local:` reads, `recordingInfo` (one parse for the level, mode, mod, date and server), `ctx.opened(player)`; the stage's own drop is gone. |
+| `viewer/replay-recording.js` | `rec.mod`, from the ServerInfoEvent (0x1A raw, `serverInfo` named). |
+| `viewer/progress.js` | `note(text)`: the line over the loading plate, kept across loads. |
+| `viewer/map.html`, `viewer/shell.css` | The button, the opener installed before the level loads, the loading screen's line. |
+
+Verified: `tests/test_replay_open.py` (the date, the summary from v2, v3 and
+named-event files, keys, the reload URL) and `tests/test_load_briefing_js.py`
+(the note); in headless Chromium, the picker from a Wake flythrough to Kursk
+(the splash line, the bar, the title, a reload), the bar's button with a
+recording and its server log (aligned on 80 of 136 events), a drop, the four
+refusals (not a recording, a lone server log, Anzio not extracted, a
+DesertCombat recording), Escape closing the panel without the game menu, a
+`local:` name the browser does not have, eviction past 8, and the co-op layer.

@@ -221,6 +221,28 @@ function injectStyle() {
   text-transform: uppercase;
 }
 .ld-overlay[data-state="error"] .ld-prompt { color: #c5a23a; }
+/* A line over the plate about what is loading: a replay's date and server
+   (\`note\`). Not the game's; lit and shadowed to read over any art. */
+.ld-note {
+  position: absolute;
+  left: 40px;
+  top: 440px;
+  width: 720px;
+  height: 18px;
+  text-align: center;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 1.5px;
+  color: #efe4c4;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 8px rgba(0, 0, 0, .8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ld-note:empty { display: none; }
 /* --- the mission briefing screen (post-load, READY-gated) ----------------
    The game's second phase: over the live 3D scene, the mp_briefing plate
    with the map name, the teams, the game type, the settings block and the
@@ -231,6 +253,7 @@ function injectStyle() {
 .ld-overlay[data-state="briefing"] { background: transparent; }
 .ld-overlay[data-state="briefing"] .ld-bg-layer,
 .ld-overlay[data-state="briefing"] .ld-box,
+.ld-overlay[data-state="briefing"] .ld-note,
 .ld-overlay[data-state="briefing"] .ld-prompt { display: none; }
 .ld-brief-canvas {
   position: absolute;
@@ -336,6 +359,7 @@ export function createLoadOverlay(host, {
     root.innerHTML =
       '<div class="ld-bg-layer" aria-hidden="true"><img class="ld-bg-img" alt=""></div>' +
       '<div class="ld-stage">' +
+      '<div class="ld-note"></div>' +
       '<div class="ld-box">' +
       '<div class="ld-title"></div>' +
       '<div class="ld-trough" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
@@ -368,6 +392,7 @@ export function createLoadOverlay(host, {
   const elTrough = root.querySelector('.ld-trough');
   const elFill = root.querySelector('.ld-fill');
   const elPrompt = root.querySelector('.ld-prompt');
+  const elNote = root.querySelector('.ld-note');
   const elCardTitle = root.querySelector('.ld-card .ld-title') || root.querySelector('.ld-title');
   const elBar = root.querySelector('.ld-bar');
   const elBarFill = root.querySelector('.ld-bar i');
@@ -716,6 +741,11 @@ export function createLoadOverlay(host, {
     /** Enter's way to accept the briefing — the READY click's own body. */
     acceptBriefing() {
       acceptBriefing?.();
+    },
+    /** A line over the plate, kept across loads until changed ('' clears
+     *  it): a replay says when and where it was recorded. */
+    note(text) {
+      if (elNote) elNote.textContent = text || '';
     },
 
     /**

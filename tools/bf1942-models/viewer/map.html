@@ -22,6 +22,10 @@
     </span>
     <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
     <span class="shell-spacer"></span>
+    <button type="button" class="shell-action" id="open-recording" title="Watch a bf42plus recording (replay_*.ndjson, with its ev_*.xml server log if you have it). Or drop one anywhere on the page.">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10.6V2.8M4.7 6 8 2.7 11.3 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 9.8v3.6h10.8V9.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <span>Open recording</span>
+    </button>
     <a class="shell-search" href="./index.html?browse">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       <span>Search name, faction, map&hellip;</span><kbd>/</kbd>
@@ -173,7 +177,8 @@ import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { createReplayController, recordingLevel, recordingMode } from './replay.js';
+import { createReplayController, recordingInfo } from './replay.js';
+import { installRecordingOpener, loadingNote } from './replay-open.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -369,6 +374,18 @@ const hudPaths = await loadHudPaths(activeMod.id, { bust });
 // out of the hud pack and the load pack through `hudPaths`.
 const briefingScreen = createBriefingScreen({ hudPaths, mapsBase: MAPS_BASE, bust });
 const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE, briefing: briefingScreen });
+// A recording picked with Open recording, or dropped anywhere on the page,
+// plays on its own level: the page reloads as `?replay=local:<name>` and loads
+// it the way it loads any `?replay=` (replay-open.js). One that names no mod
+// or level plays in this page's; the getter runs on a drop, which can come
+// before the level exists.
+const recordings = installRecordingOpener({
+  mod: () => activeMod.id,
+  levelName: () => {
+    try { return level.extras?.level ?? ''; } catch { return ''; }
+  },
+});
+document.getElementById('open-recording')?.addEventListener('click', () => recordings.pick());
 // The local player's combat-area frame (`level.combatArea`), read back from
 // the last world step in frame() below, and the world that stepped it. A new
 // level's world has stepped nothing yet, so a frame the old one left reads as
@@ -1740,15 +1757,20 @@ if (!manifest.length) {
     const entry = manifest.find(e => e.name === select.value);
     if (entry) level.show(entry);
   });
-  // A recording names the level it was made on; ?map= still wins.
-  const replayLevel = replayUrl ? await recordingLevel(replayUrl).catch(() => '') : '';
+  // A recording names the level it was made on; ?map= still wins. One the
+  // page cannot read (a kept recording the browser has let go of, a URL that
+  // is gone) says so, over the level with the site's bar back to leave by.
+  const replayInfo = replayUrl ? await recordingInfo(replayUrl).catch(error => {
+    recordings.fail(`Could not open the recording: ${error.message}.`);
+    document.documentElement.classList.remove('shell-playing');
+    return null;
+  }) : null;
   // ...and the game type it was played in picks the level's layer (a co-op
   // round plays `SinglePlayer/`), unless `?mode=` says otherwise.
-  if (replayUrl && !params.has('mode')) {
-    const replayMode = await recordingMode(replayUrl).catch(() => '');
-    if (replayMode) params.set('mode', replayMode);
-  }
-  const wanted = (params.get('map') || replayLevel || '').toLowerCase();
+  if (replayInfo?.mode && !params.has('mode')) params.set('mode', replayInfo.mode);
+  // The loading screen says which round is coming: when and where.
+  if (replayInfo) overlay.note(loadingNote(replayInfo));
+  const wanted = (params.get('map') || replayInfo?.level || '').toLowerCase();
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
   select.value = first.name;
   await level.show(first);
@@ -1763,6 +1785,8 @@ level.warmups.level.finally(() => { pageConsole.escMenuScreen(); });
 replayController = createReplayController({
   scene, camera, loader, bust,
   stage: document.getElementById('stage'),
+  // The bar's date and Open button, once the replay's chrome is built.
+  opened: player => recordings.decorate(player),
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
   // The level's own parked vehicles would double every recorded one.
