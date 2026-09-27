@@ -23,6 +23,12 @@ Manual checks for the owner: [MANUAL_TESTS.md](MANUAL_TESTS.md).
 | (after the first v4 round) the recording player running a metre above the ground | so was every soldier, the bots too. A soldier's sample is the engine's soldier origin, which the template's `setCharacterHeight -1.00` puts a metre over his feet, and the body renderer, the camera and the plain fallback stand a man on his feet. `replay-recording.js` `standOnFeet` lowers a soldier's samples by `CHARACTER_HEIGHT` (capture README §12); his first-person eye is 1.65 m over the ground again, not 2.65 |
 | (after the first v4 round) a Defgun's shot looked like the gun being hit | a replay hides the level's own placed vehicles but left their hulls in the collision index, so a round leaving the replayed Defgun's barrel started inside the hidden baked one and burst there; and when the level's collider arrived after the replay was built, the replay's rounds lost the "skip my own hull" tag and its hull cast. `replay-gunfire.js` `syncReplayCollision` now takes the baked vehicles without a deck out of the rounds' way (a carrier's deck stays, it is a parked plane's ground) and re-arms both on whatever collider the guns hold |
 | (after the first v4 round) "in the defgun I can see the rounds impacting at the correct location, but the defgun points to a random spot"; the AA gun the same | nothing turned a gun. The rounds flew their recorded rays, but a v4 file's parts were all keyed 0 and left unused, so every turret sat at its rig's rest: the Defgun's barrel 90 degrees off its rounds, skandia's AA gun 33 (up to 115), a bot's 134. `replay-aim.js` now aims each manned gun from the recording (below), on the seat's own `TurretRig` (`pointAlong`, within the axes' limits), after the drive's rig; a v5 file's parts still win |
+| (a public Kursk round, `replay_20260927-140921`) a medic killing with his Mp18 at 1:52.9 drawn with a bazooka, right again after a seek | he had died in an AT kit. `killBot` builds the dead man a fresh body at once, in the kit he died with, and a stretch with nothing of him to draw left no life bound, so the new life thought he had no body and kept that one. `bindLife` now discards whatever body he has whenever the life changes |
+| (the same round) an engineer's wrench never turned while he repaired | a wrench, a medic's pack and the plunger fire no round, so no `f` record ever started the torso's fire, though the recording has the engine's `Ub_FireRepairPack`. A weapon the recording writes no rounds for now fires from the recorded torso state, started again each time the one-shot runs out while the state still says fire (`ReplaySoldiers.recordsRounds`, `bot-visuals.js` `botFireHeld`) |
+| (found beside it) no reload ever played; every death was a guess | a reload is only a torso state too (`Ub_StandReload<W>`), and nothing read it; it now starts the torso's reload as the recording enters it (`botReloaded`). A body's record ~0.1 s after the kill names the die state the engine chose (`Lb_DieHead`, `Lb_DieChestStand`, `Lb_DieLie`), and `killBot` plays that one (`recordedDeath`) instead of rolling its own |
+| (the same round) the Stuka's bomb drop was one bomb, falling nose-down | the rack has a barrel under each wing, 6.6 m apart, and every barrel launched from the recorded point, so the two bombs lay on top of each other; and a replayed hull's rounds had no platform velocity, all a `velocity 0` release has, so they fell from a standstill and turned to face the ground. Each barrel now keeps its muzzle's offset from the recorded point (`recordedLaunch`) and every hull round leaves with the hull's recorded velocity |
+| (the gun-aim work beside it) one Hatsuzuki round lit all three of its mounts | `fire` fired every gun of the round's FireArms name; it now fires the mount nearest where the round left (`nearestGroup`), the one the aim lays for it |
+| (the same round) the four Flak 38s by the German base, and every Axis AA gun on every level, missing | the template is `flak38`, declared in `Objects/Vehicles/Land/Flak_38/`, and the models catalogue took a template as its folder's thing only on an exact name match, so no `models/flak38.glb` existed: the replay hid the level's baked Flak 38s and had nothing to draw in their place. `extract_models.py` `folder_key` compares without separators, which admits `flak38` and nothing else in vanilla, XPack1 or XPack2 |
 
 ## What the replay reuses now
 
@@ -120,10 +126,10 @@ engineering behind them is there too, with addresses.
   not drawn: `bot-visuals.js` has no aim pitch.
 - A dead bot's free camera is never replicated; the follow camera stays on
   his body until it is removed.
-- A round fires every gun of its FireArms' name (`ReplayHull.fire`): one
-  `HatsuzukiGun` round lights all three of the Hatsuzuki's mounts, the two
-  that did not fire at rest. The aim gives each round to the gun of its name
-  nearest where it left (`replay-hulls.js` `nearestGun`); `fire` should pick
-  the same one.
+- A soldier blown off his feet, living or dead, goes into the engine's
+  explosion states (`Lb_ExplosionForward`, `Lb_ExplosionLandFront`, 34
+  records in replay_20260927-140921), and a pilot who bails out into its
+  parachute states. No gait sidecar bakes the explosion clips, and the bots'
+  renderer draws no parachute, so a replayed body shows neither.
 - Kits dropped before the join, and a round's end effect when the round goes
   out of range rather than off, are approximations.

@@ -47,6 +47,9 @@ const _aim = new THREE.Vector3();
 const _hullQ = new THREE.Quaternion();
 const _muzzleQ = new THREE.Quaternion();
 const _gunQ = new THREE.Quaternion();
+const _gunAt = new THREE.Vector3();
+const _launchQ = new THREE.Quaternion();
+const _gunForward = new THREE.Vector3();
 
 /** Degrees a second a gun turns between two rounds where its axis declares
  *  no `setMaxSpeed`: the order of a manned gun's (a Sherman tower's 35, a
@@ -129,6 +132,39 @@ function vehicleRoot(scene) {
   return scene.children.find(child => child.userData?.templateKind) ?? scene.children[0] ?? scene;
 }
 
+/**
+ * The launch of a recorded shot, as the `aimRay` contract `round-launch.js`
+ * reads: `node` is the FireArms that fired and `shot` the recording's
+ * `p`/`d`, the weapon's own transform when the engine fired it (BF1942's
+ * frame).
+ *
+ * The engine fires each barrel from its own `addFireArmsPosition` in that
+ * frame (`FireArms::fireBarrel`), so every barrel keeps its muzzle's offset
+ * from the weapon, taken off the hull as it is drawn and turned by whatever
+ * lies between the drawn gun and the recorded one -- nothing on an airframe,
+ * which is drawn on the same recorded pose; the traverse on a turret the
+ * drawing has not turned. Launching every barrel from the recorded point put
+ * a Stuka's two bombs, 6.6 m apart under its wings, into one.
+ */
+export function recordedLaunch(node, shot) {
+  const origin = new THREE.Vector3(shot.pos[0], shot.pos[1], -shot.pos[2]);
+  const dir = new THREE.Vector3(shot.dir[0], shot.dir[1], -shot.dir[2]).normalize();
+  node.updateWorldMatrix(true, false);
+  const base = node.getWorldPosition(new THREE.Vector3());
+  // The FireArms node's forward is its gun's: glTF -Z, BF1942's +Z.
+  _gunForward.set(0, 0, -1).applyQuaternion(node.getWorldQuaternion(_launchQ));
+  const turn = new THREE.Quaternion().setFromUnitVectors(_gunForward, dir);
+  const ray = { origin: new THREE.Vector3(), dir };
+  return muzzle => {
+    ray.origin.copy(origin);
+    if (muzzle && muzzle !== node) {
+      muzzle.updateWorldMatrix(true, false);
+      ray.origin.add(muzzle.getWorldPosition(_gunAt).sub(base).applyQuaternion(turn));
+    }
+    return ray;
+  };
+}
+
 export class ReplayHull {
   /**
    * @param {object} player  the ReplayPlayer (its `ctx`, `rec`, `showGhosts`)
@@ -183,6 +219,11 @@ export class ReplayHull {
       if (this.kind === 'air' && ctx.groundHeight) this.drive.groundHeight = ctx.groundHeight;
     }
 
+    // The hull's recorded velocity, the viewer's frame: what its rounds leave
+    // with on top of their own, as a flown seat's guns do (vehicle-instance.js).
+    // A bomb rack's `velocity 0` is nothing but this, so without it a replayed
+    // Stuka's bomb dropped straight down from a standstill, nose to the ground.
+    this.velocity = new THREE.Vector3();
     // The guns, collected the way a seat collects them, and marked as the
     // replay's: a round they fire draws and sounds but never bills a hit
     // (map.html's `guns.onImpact`), because the recording's hit points are
@@ -190,7 +231,9 @@ export class ReplayHull {
     this.groups = [];
     if (ctx.guns) {
       try {
-        this.groups = ctx.guns.collect(this.root, { ...SEAT_GUN_OPTIONS, replace: false });
+        this.groups = ctx.guns.collect(this.root, {
+          ...SEAT_GUN_OPTIONS, replace: false, platformVelocity: () => this.velocity,
+        });
       } catch (error) {
         console.warn(`replay: no guns for ${life.tmpl}`, error);
       }
@@ -253,6 +296,7 @@ export class ReplayHull {
     }
     this.group.visible = true;
     this.setGhost(!replicated);
+    this.velocity.set(motion.velocity[0], motion.velocity[1], motion.velocity[2]);
 
     const hp = hpAt(life, t);
     this.hp = hp;
@@ -603,19 +647,22 @@ export class ReplayHull {
    * A v4 shot names its FireArms (`weapon`, the template the group's node is
    * named after) and the ray the engine fired it along (`pos`/`dir`,
    * BF1942's frame), so exactly that gun fires, along exactly that ray,
-   * whatever its turret was drawn doing. A v3 press names only the seat and
-   * the trigger (`kind` 2 the alternate), and the seat's guns on that
-   * trigger fire down their own barrels.
+   * whatever its turret was drawn doing -- and of several mounts sharing the
+   * name (a destroyer's), the one nearest where the round left, the mount
+   * the aim lays for it (`buildAims`). One Hatsuzuki round used to flash all
+   * three of its guns. A v3 press names only the seat and the trigger (`kind`
+   * 2 the alternate), and the seat's guns on that trigger fire down their
+   * own barrels.
    */
   fire(seat, kind, shot = null) {
     const guns = this.player.ctx.guns;
     if (!guns || !this.groups.length) return false;
     syncReplayCollision(this.player);
     let pick = [];
-    const bare = name => String(name || '').replace(/_\d+$/, '').toLowerCase();
     if (shot?.weapon) {
-      const want = bare(shot.weapon);
-      pick = this.groups.filter(g => bare(g.node?.name) === want);
+      const want = bareName(shot.weapon);
+      pick = this.groups.filter(g => bareName(g.node?.name) === want);
+      if (pick.length > 1) pick = [this.nearestGroup(pick, shot)];
     }
     if (!pick.length) {
       const seatId = this.seatIdAt(seat) ?? this.occupancy.rootId;
@@ -633,9 +680,7 @@ export class ReplayHull {
       group.owner = this.ownerTag;
       group.ownerFor = guns.collider;
       if (Array.isArray(shot?.pos) && Array.isArray(shot?.dir)) {
-        const origin = new THREE.Vector3(shot.pos[0], shot.pos[1], -shot.pos[2]);
-        const dir = new THREE.Vector3(shot.dir[0], shot.dir[1], -shot.dir[2]).normalize();
-        group.aimRay = () => ({ origin, dir });
+        group.aimRay = recordedLaunch(group.node, shot);
       } else {
         group.aimRay = group.ownAimRay ?? null;
       }
@@ -644,8 +689,23 @@ export class ReplayHull {
     return pick.length > 0;
   }
 
+  /** Of `groups`, one name on several mounts, the one whose FireArms sits
+   *  nearest where the recorded round left, in the hull's frame. */
+  nearestGroup(groups, shot) {
+    const inHull = shotInHull(this.life, shot);
+    if (!inHull?.pos) return groups[0];
+    this.root.updateMatrixWorld(true);
+    _toRoot.copy(this.root.matrixWorld).invert();
+    const mounts = groups.map(group => {
+      group.node.getWorldPosition(_at).applyMatrix4(_toRoot);
+      return { group, name: bareName(group.node.name), at: [_at.x, _at.y, _at.z] };
+    });
+    return nearestGun(mounts, shot.weapon, inHull.pos)?.group ?? groups[0];
+  }
+
   hide() {
     this.group.visible = false;
+    this.velocity.set(0, 0, 0);
     this.stopTier();
     if (this.claimed) {
       this.player.ctx.releaseVehicleAudio?.(this.audioKey, this.root);

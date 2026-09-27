@@ -21,9 +21,11 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, rootOf } from './replay-recording.js';
+import { bodyAt, controlledAt, lifeAt, primaryWeaponFor, recordedDeath, rootOf } from './replay-recording.js';
 import { poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
+import { DIE_CLIPS } from './soldier-death.js';
+import { SWIM_CLIPS } from './swim.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -33,6 +35,13 @@ const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 /** How long the torso holds its fire after a recorded shot, seconds: long
  *  enough for the half-body machine to see the trigger. */
 const TRIGGER_HOLD = 0.25;
+
+/** A recorded die state's death family, for the deaths the body renderer
+ *  has clips of (`bot-visuals.js` `CORPSE_CLIPS`). */
+const DIE_FAMILY = new Map([
+  ...Object.entries(DIE_CLIPS).map(([family, clips]) => [clips.lower, family]),
+  [SWIM_CLIPS.swimDie.lower, 'swimDie'],
+]);
 
 const _q = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -150,6 +159,7 @@ export class ReplaySoldiers {
       actor.state.dead = false;
       actor.firingUntil = -Infinity;
       actor.seat = null;
+      actor.reloading = false;
     }
   }
 
@@ -193,12 +203,28 @@ export class ReplaySoldiers {
       s.stance = actor.stance;
       actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
       if (body?.item) this.hold(actor, body.item, loadouts);
+      // A weapon with no round to record (an engineer's wrench, a medic's
+      // pack) fires by the recorded torso state alone. The engine enters its
+      // one-shot fire state again on every round while the trigger is down,
+      // and the recorder only writes a change, so a fire the torso has
+      // finished starts over for as long as the recording still says fire.
+      if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
+        this.bodies?.botFireHeld?.(actor);
+      }
+      // A reload is the torso's reload state and nothing else: no round
+      // says when a magazine went in, so none played until now.
+      const reloading = Boolean(body?.reloading) && !dead;
+      if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
+      actor.reloading = reloading;
       // His death, when playback walks across it: the renderer plays the
       // engine's death for how he stood and leaves the body.
       if (dead && !actor.state.dead) {
         actor.state.dead = true;
         if (this.player.playing && t - life.diedAt < 0.5) {
-          this.bodies?.killBot?.(actor, { seated: Boolean(seated) });
+          // The death the engine chose, where the recording has his body's
+          // die state; the renderer's own choice otherwise, and in a seat.
+          const family = seated ? undefined : DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+          this.bodies?.killBot?.(actor, { seated: Boolean(seated), family });
           this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
         }
       }
@@ -242,20 +268,46 @@ export class ReplaySoldiers {
     return best;
   }
 
-  /** A new soldier life for the actor: his uniform and kit, and a fresh body
-   *  for them. */
+  /**
+   * A new soldier life for the actor: his uniform and kit, and a fresh body
+   * for them.
+   *
+   * Whatever body he has is the last life's. The one he died in went to the
+   * corpse list, and `killBot` built him another straight away, in the kit he
+   * died with; so did a stretch with nothing of him to draw, which leaves no
+   * life bound at all. Kept, it carried the old kit's weapon into the new
+   * life: at 112.9 s of replay_20260927-140921 a medic killed with his Mp18,
+   * drawn with the bazooka of the AT kit he had died in, until a seek built
+   * him afresh.
+   */
   bindLife(actor, life, loadouts) {
     if (actor.lifeNid === life.nid) return;
-    const hadBody = actor.lifeNid !== null;
     actor.lifeNid = life.nid;
     actor.kit = life.kitTemplate ?? null;
     actor.kitPrimary = primaryWeaponFor(life, loadouts);
     actor.soldierTemplate = life.tmpl || null;
     actor.weaponAi = actor.kitPrimary ? { name: actor.kitPrimary } : null;
     actor.state.dead = false;
-    actor.state.team = life.team || actor.team;
+    // A player can change sides between lives; the name tag, his death cry
+    // and his uniform follow the life's own side.
+    actor.team = life.team || actor.team;
+    actor.state.team = actor.team;
     actor.heldItem = null;
-    if (hadBody) this.bodies?.disposeBotVisual?.(actor.playerId);
+    actor.reloading = false;
+    this.bodies?.disposeBotVisual?.(actor.playerId);
+  }
+
+  /**
+   * Whether the recording writes this weapon's rounds (`f`, v4 on): every
+   * weapon that launches something does, whoever fires it. The wrench, the
+   * medic's pack and the plunger launch nothing, so their fire is only ever
+   * the soldier's recorded torso state.
+   */
+  recordsRounds(weapon) {
+    if (!weapon) return true;
+    this.roundWeapons ??= new Set(this.player.rec.fires
+      .filter(f => !f.press && f.weapon).map(f => f.weapon.toLowerCase()));
+    return this.roundWeapons.has(weapon.toLowerCase());
   }
 
   /**
