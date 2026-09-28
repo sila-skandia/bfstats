@@ -1,5 +1,99 @@
 import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
 
+// c_BfSoldierStanding/Crouching/Lying, the engine's own pose vocabulary
+// (CommonSoldierData.inc), against the sprite pack's own suffix — a direct
+// rename, not an inference.
+export const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: 'lying' };
+
+// `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
+// count: both live in `hud.js` beside the rest of the layout's own
+// vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
+//
+// Every `soldierAmmo` variable this file writes, so a weapon swap starts from
+// nothing. The `Ammo/Primary*` names are shared with the vehicle panel, which
+// is fine: the two groups are mutually exclusive in the layout
+// (`Vehicle/ShowVehicleIcon` gates one and `NotData` of it the other), and
+// only one of them is fed at a time.
+export const SOLDIER_AMMO_VARS = [
+  'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
+  'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
+  'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
+  'Ammo/SoldierAmmo/SoldierAmmoBarSize',
+];
+
+/**
+ * The soldier ammo panel for the weapon in hand: `data` its glb's weapon
+ * block (`hw.data`), `rounds` the loaded magazine and `mags` the spares. The
+ * page's own soldier feeds it, and a replay's first person (replay-hud.js)
+ * the soldier it looks out of.
+ */
+export function writeSoldierAmmo(vars, data, rounds, mags) {
+  const magazine = data?.magazine;
+  const hudAmmo = (data?.hudAmmo || '').toLowerCase();
+  const ammoHud = data?.hud;
+  const ammoType = AMMO_TYPE_CODES[hudAmmo];
+  // Every branch below only ever WRITES, so without this a weapon swap left
+  // the previous weapon's leaves behind: switch off a bazooka and its rocket
+  // icon stayed in `SoldierAmmoIcon`, switch to a knife (`ATNone`, which no
+  // branch feeds) and the rifle's `AmmoType 1` kept the whole magazine panel
+  // on screen. Harmless while only two branches existed and only one of them
+  // fed an icon; not once every type in HUD-10's enum is reachable. Cleared
+  // to undefined rather than to a zero, which is the painter's own rule.
+  for (const name of SOLDIER_AMMO_VARS) delete vars[name];
+  if (hudAmmo === 'atammobar' && magazine) {
+    // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
+    // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
+    // int, the spare-magazine count (bottom-right small box, "5") — the two
+    // numbers verify-r1.md's report was asked to settle, and they are not
+    // the same count.
+    vars['Ammo/AmmoType'] = 1;
+    vars['Ammo/PrimaryAmmo'] = rounds;
+    vars['Ammo/MaxPrimaryAmmo'] = magazine.size;
+    vars['Ammo/PrimaryMag'] = mags;
+    // OPEN: no `.con` word or client write-site for SoldierAmmoHasMag turned
+    // up in R1's survey; fed true unconditionally so the spare-count readout
+    // shows at all for a magazine weapon — an assumption this file is making,
+    // not a confirmed engine default.
+    vars['Ammo/SoldierAmmo/SoldierAmmoHasMag'] = true;
+    // The weapon's own bar art/size (weaponStats.hud), tolerant per HUD-1:
+    // absent leaves hud-layout.json's own literal (vanilla's rifle-style bar).
+    if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
+    if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
+    if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
+  } else if (ammoType >= 2) {
+    // Every icon-style type. HUD-10 closed the enum: the `.meme` value and
+    // the `.con` value are THE SAME enumeration, so the weapon's own
+    // `setHudAmmoType` goes straight through with no converter to write.
+    //
+    // The one real change is `ATIcon`, which this fed as **6** on the
+    // reasoning that 6 and 7 painted identically and the choice was
+    // arbitrary. It is 2, and it is not arbitrary: the layout's `{2,3,4,5}`
+    // group draws the rounds text (gated `ne 4 && ne 5 && ne 6`) where the
+    // `{6,7}` group does not, so a Bazooka, Panzerschreck, ExpPack,
+    // Detonator or Landmine was showing an icon with no rocket count beside
+    // it. 6 is `ATIconAndHeatBar`, which in vanilla is the MedPack alone.
+    //
+    // `Ammo/PrimaryAmmo` is fed for every type whose layout branch prints it,
+    // and left alone for the two that do not (4 `ATIconAndReloadBar`, the
+    // RepairPack; 5 `ATIconNoText`).
+    vars['Ammo/AmmoType'] = ammoType;
+    // `magSize -1` is the engine's unlimited ammo (`rounds` = Infinity),
+    // and the detonator is the one weapon in vanilla that declares it AND an
+    // icon type that prints a count — left alone it painted the word
+    // "Infinity" beside the demokit icon. An unlimited weapon has no count to
+    // print, so it gets none.
+    if (AMMO_TYPES_WITH_ROUNDS.has(ammoType) && Number.isFinite(rounds)) {
+      vars['Ammo/PrimaryAmmo'] = rounds;
+    }
+    if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
+  }
+  // `ATNone` (0, the two knives) and anything unrecognised leave
+  // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
+  // panel culls rather than guessing a shape for a weapon this file cannot
+  // classify. For a knife that is also what the engine does -- 0 is tested by
+  // no layout branch at all.
+}
+
 /**
  * The in-game HUD's soldier side: health, stance, kit and nation art, the
  * soldier ammo bars, the combat-area warning, the damage-direction arc and the
@@ -17,11 +111,6 @@ import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.
  */
 export function createSoldierHud(page) {
   const soldierHud = {};
-
-  // c_BfSoldierStanding/Crouching/Lying, the engine's own pose vocabulary
-  // (CommonSoldierData.inc), against the sprite pack's own suffix — a direct
-  // rename, not an inference.
-  const STANCE_TEXTURE = { stand: 'standing', crouch: 'crouching', prone: 'lying' };
 
   // OPEN [R1-12]: the nation key BFSoldierHud's stance icon actually reads was
   // never traced (verify-r1.md leaves it open). Approximated with the same
@@ -90,22 +179,6 @@ export function createSoldierHud(page) {
   // The "nothing to warn about" frame: what `CombatArea.step` returns inside
   // the area, hoisted so `updateSoldierHud` allocates nothing per frame.
   const IN_COMBAT_AREA = { countdown: 0 };
-
-  // `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
-  // count: both live in `hud.js` beside the rest of the layout's own
-  // vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
-  //
-  // Every `soldierAmmo` variable this file writes, so a weapon swap starts from
-  // nothing. The `Ammo/Primary*` names are shared with the vehicle panel, which
-  // is fine: the two groups are mutually exclusive in the layout
-  // (`Vehicle/ShowVehicleIcon` gates one and `NotData` of it the other), and
-  // only one of them is fed at a time.
-  const SOLDIER_AMMO_VARS = [
-    'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
-    'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
-    'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
-    'Ammo/SoldierAmmo/SoldierAmmoBarSize',
-  ];
 
   // The damage indicator: the red wash over the whole screen and the arc on
   // the side the damage came from (ledger HFD-1..HFD-6). The game keeps two
@@ -358,70 +431,7 @@ export function createSoldierHud(page) {
         vars['CrossHair/SightIcon'] = zoom.sightIcon || 'scout_ring_128x128.tga';
       }
     }
-    const magazine = hw.data?.magazine;
-    const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
-    const ammoHud = hw.data?.hud;
-    const ammoType = AMMO_TYPE_CODES[hudAmmo];
-    // Every branch below only ever WRITES, so without this a weapon swap left
-    // the previous weapon's leaves behind: switch off a bazooka and its rocket
-    // icon stayed in `SoldierAmmoIcon`, switch to a knife (`ATNone`, which no
-    // branch feeds) and the rifle's `AmmoType 1` kept the whole magazine panel
-    // on screen. Harmless while only two branches existed and only one of them
-    // fed an icon; not once every type in HUD-10's enum is reachable. Cleared
-    // to undefined rather than to a zero, which is the painter's own rule.
-    for (const name of SOLDIER_AMMO_VARS) delete vars[name];
-    if (hudAmmo === 'atammobar' && magazine) {
-      // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
-      // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
-      // int, the spare-magazine count (bottom-right small box, "5") — the two
-      // numbers verify-r1.md's report was asked to settle, and they are not
-      // the same count.
-      vars['Ammo/AmmoType'] = 1;
-      vars['Ammo/PrimaryAmmo'] = hw.rounds;
-      vars['Ammo/MaxPrimaryAmmo'] = magazine.size;
-      vars['Ammo/PrimaryMag'] = hw.mags;
-      // OPEN: no `.con` word or client write-site for SoldierAmmoHasMag turned
-      // up in R1's survey; fed true unconditionally so the spare-count readout
-      // shows at all for a magazine weapon — an assumption this file is making,
-      // not a confirmed engine default.
-      vars['Ammo/SoldierAmmo/SoldierAmmoHasMag'] = true;
-      // The weapon's own bar art/size (weaponStats.hud), tolerant per HUD-1:
-      // absent leaves hud-layout.json's own literal (vanilla's rifle-style bar).
-      if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
-      if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
-      if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
-    } else if (ammoType >= 2) {
-      // Every icon-style type. HUD-10 closed the enum: the `.meme` value and
-      // the `.con` value are THE SAME enumeration, so the weapon's own
-      // `setHudAmmoType` goes straight through with no converter to write.
-      //
-      // The one real change is `ATIcon`, which this fed as **6** on the
-      // reasoning that 6 and 7 painted identically and the choice was
-      // arbitrary. It is 2, and it is not arbitrary: the layout's `{2,3,4,5}`
-      // group draws the rounds text (gated `ne 4 && ne 5 && ne 6`) where the
-      // `{6,7}` group does not, so a Bazooka, Panzerschreck, ExpPack,
-      // Detonator or Landmine was showing an icon with no rocket count beside
-      // it. 6 is `ATIconAndHeatBar`, which in vanilla is the MedPack alone.
-      //
-      // `Ammo/PrimaryAmmo` is fed for every type whose layout branch prints it,
-      // and left alone for the two that do not (4 `ATIconAndReloadBar`, the
-      // RepairPack; 5 `ATIconNoText`).
-      vars['Ammo/AmmoType'] = ammoType;
-      // `magSize -1` is the engine's unlimited ammo (`hw.rounds` = Infinity),
-      // and the detonator is the one weapon in vanilla that declares it AND an
-      // icon type that prints a count — left alone it painted the word
-      // "Infinity" beside the demokit icon. An unlimited weapon has no count to
-      // print, so it gets none.
-      if (AMMO_TYPES_WITH_ROUNDS.has(ammoType) && Number.isFinite(hw.rounds)) {
-        vars['Ammo/PrimaryAmmo'] = hw.rounds;
-      }
-      if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
-    }
-    // `ATNone` (0, the two knives) and anything unrecognised leave
-    // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
-    // panel culls rather than guessing a shape for a weapon this file cannot
-    // classify. For a knife that is also what the engine does -- 0 is tested by
-    // no layout branch at all.
+    writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags);
   }
 
   Object.assign(soldierHud, {

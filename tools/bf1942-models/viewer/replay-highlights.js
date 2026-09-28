@@ -585,6 +585,9 @@ const STYLE = `
 .rp-hl-tick .rp-btn { height: 20px; min-width: 0; padding: 0 6px; font-size: 9px; border-color: var(--rp-edge); }
 @keyframes rp-hl-slide { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
 .rp-root.rp-idle .rp-hl-ticker { bottom: 22px; }
+/* In a first person the game's HUD owns the bottom band (its vehicle icon
+   from 75% of the screen down, replay-hud.js): the ticker waits above it. */
+html.replay-sight .rp-root.rp-idle .rp-hl-ticker { bottom: calc(25% + 10px); }
 .rp-root.map-open .rp-hl-callouts, .rp-root.map-open .rp-hl-ticker { display: none; }
 
 /* Streak marks on the name tags, the card and the board. */
