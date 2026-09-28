@@ -26,9 +26,14 @@ https://play.bfstats.io/map.html?replay=replays/<file>.ndjson&serverlog=replays/
 ```
 
 A new recording needs no deploy: nginx serves it as soon as it is on the
-volume. Give each cut a new file name. The edge keeps a recording for a day
-(`s-maxage=86400`), so a file replaced under the same name can serve the old
-copy until then. A mesh deploy purges it sooner.
+volume. Cloudflare does not cache `/replays/` (`cf-cache-status: DYNAMIC`,
+2026-09-28: neither `.ndjson` nor `.xml` is a type it caches by default, and
+no cache rule names the path), so the pod serves and gzips every view, and a
+browser keeps its copy five minutes (`max-age=300`). A file replaced under
+the same name shows within those five minutes; give each cut a new name all
+the same, since `s-maxage=86400` keeps it a day at the edge the day a cache
+rule takes the path. A 404, for a link opened before its upload lands,
+carries no cache header, so nothing keeps it.
 
 ## The link
 
@@ -94,6 +99,12 @@ PVC's root at `/mnt/data`: `chown 1000:1000 /mnt/data/assets/mesh/replays`.
   - a visitor who last browsed `xpack1` was sent on to `…&mod=bf1942`;
   - a fresh visitor and a link naming its mod stayed put;
   - all three reached the loading screen's `Replay · 15 Sep 2026, 21:31 · BF1942 server1`.
+- Live (2026-09-28): `replay_20260927-203459.ndjson` (Midway, 883 s) uploaded
+  through the FileBrowser pod into the `mesh/replays/` the kubelet had made
+  for the mesh pod's mount (`drwxrwsrwx root:user`, as `models/` and `maps/`,
+  so FileBrowser can write to it). The pod and play.bfstats.io both serve it
+  200, `application/x-ndjson`, 2.0 MB gzipped, byte for byte; the share link
+  loads Midway on a phone-sized page in 22 s.
 
 ## Later: players' own recordings
 
