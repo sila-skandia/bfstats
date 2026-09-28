@@ -1263,6 +1263,77 @@ export function hpAt(life, t) {
 
 export const isReplicated = (life, t) => life.replicated.some(([from, to]) => t >= from && t < to);
 
+/** Metres a second under which a hull the recording loses sight of was
+ *  standing still. */
+const AT_REST = 0.5;
+
+/** Seconds after a player's change of control at which his seat is read: the
+ *  player record that names the hull follows EnterVehicle by up to a sample. */
+const SEAT_SETTLE = 0.25;
+
+/** When somebody held each hull's root seat, the one that drives it, as
+ *  `Map(life -> [[from, to]])`, from every player's controlled object. A
+ *  gunner moves nothing but his gun: the Wake lab round's bots manned the
+ *  Shokaku's AA seats while it lay at anchor. Built on first use, once the
+ *  stand-ins are in. */
+function driverSpans(rec) {
+  if (rec.driverSpans) return rec.driverSpans;
+  const spans = new Map();
+  for (const [pid, list] of rec.playerNids ?? []) {
+    list.forEach(({ t, nid }, i) => {
+      const to = list[i + 1]?.t ?? Infinity;
+      const root = rootOf(rec, nid, t + Math.min(SEAT_SETTLE, (to - t) / 2), pid);
+      if (!root || root.seat !== 0 || root.life.soldier || root.life.camera) return;
+      if (!spans.has(root.life)) spans.set(root.life, []);
+      spans.get(root.life).push([t, to]);
+    });
+  }
+  rec.driverSpans = spans;
+  return spans;
+}
+
+/** Whether `life` stood still at `t` by its own samples. They are written only
+ *  when it moved, a gap being a hold and then the step over the last period,
+ *  so none in the last few periods is standing still. */
+function stillAt(life, t) {
+  const keys = life.keys;
+  if (!keys.length || t < keys[0].t) return true;
+  let lo = 0;
+  let hi = keys.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (keys[mid].t <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  const last = keys[lo];
+  const before = keys[lo - 1];
+  if (!before || t - last.t > 3 * SAMPLE_PERIOD) return true;
+  const step = Math.hypot(last.p[0] - before.p[0], last.p[1] - before.p[1], last.p[2] - before.p[2]);
+  return step / Math.min(last.t - before.t, SAMPLE_PERIOD) < AT_REST;
+}
+
+/**
+ * Whether the pose the recording last had for `life` still holds at `t`, the
+ * server no longer sending it: nobody has held its root seat since, and it was
+ * standing still then. Getting in and out of a vehicle reaches every client
+ * whatever the distance, and a teammate's hull is sent wherever it is, so a
+ * hull nobody has driven since the recording lost sight of it is where it
+ * was: a parked jeep, a plane on the runway, a ship at anchor. One somebody
+ * has driven is somewhere the recording cannot say. Hit points are not sent
+ * either: one wrecked out of range stays whole until the server removes it.
+ */
+export function poseHeld(rec, life, t) {
+  let since = life.created;
+  for (const [from, to] of life.replicated) {
+    if (from <= t) since = Math.max(since, Math.min(to, t));
+  }
+  if (!stillAt(life, since)) return false;
+  for (const [from, to] of driverSpans(rec).get(life) ?? []) {
+    if (from <= t && to > since) return false;
+  }
+  return true;
+}
+
 /** The last v4 record in a time-ordered list at or before `t`, or null. */
 export function latestAt(list, t) {
   if (!list?.length || t < list[0].t) return null;

@@ -2108,4 +2108,98 @@ const read = scene => {
   };
 }
 
+// --- out of range: solid, or a ghost -------------------------------------------
+//
+// The owner's question on replay_20260928-133433 (Bocage): must a vehicle out
+// of range be a translucent shell? The server stops sending it, but getting in
+// and out of it still reaches this client, so one nobody has driven since the
+// recording last saw it stands where it stood and is drawn solid. Only one
+// somebody has taken out of sight is a ghost. The seen ones leave range at 5 s:
+//
+//   800 a parked Willy nobody touches
+//   810 a Kubelwagen pid 7 gets into at 3 s and drives off; back in range at 8 s
+//   811 a Kubelwagen pid 8 parks and leaves at 2 s, before it goes
+//   820 a Willy rolling downhill with nobody in it
+//   830 a Willy the recording hears made and never sees
+//   840 a Willy never seen, that pid 9 gets into at 4 s
+//   850 a flak38 pid 10 mans at 5.5 s: no drivetrain, it cannot move
+//   870 a Hatsuzuki whose AA seat (872) pid 11 takes at 5.5 s: a gunner
+//   880 a Hatsuzuki whose helm pid 12 takes at 5.5 s
+{
+  const { ReplayHull } = await imp('replay-hulls.js');
+  const line = o => JSON.stringify(o);
+  const made = (nid, tmpl, x) => line({ k: 'e', t: 1, e: 'createObject', tid: 1, netId: nid, tmpl, pos: [x, 0, 0], rot: [0, 0, 0] });
+  const seen = (t, nid, tmpl) => line({ k: 'o', t, id: nid, gid: nid, tmpl, tid: 1, team: 0, maxhp: 50, crit: 6 });
+  const at = (nid, x) => [nid, x, 0, 0, 0, 0, 0, 1];
+  const player = (pid, nid) => line({ k: 'e', t: 1, e: 'createPlayer', pid, name: `p${pid}`, team: 1, ai: 0, netId: 60 + pid, vehNetId: nid, camNetId: 0, kitNetId: 0 });
+  const board = (t, pid, nid, root, seat) => [
+    line({ k: 'e', t, e: 'enterVehicle', pid, netId: nid }),
+    line({ k: 'p', t: t + 0.05, p: [[pid, 1, nid, root, seat, 0]] }),
+  ];
+  const moving = [];
+  for (let i = 1; i < 40; i++) {
+    const t = +(1 + i * 0.1).toFixed(1);
+    const o = [at(820, 60 + 0.3 * i)];
+    if (t > 3) o.push(at(810, 20 + 1.2 * (t - 3) * 10));
+    moving.push(line({ k: 's', t, o }));
+  }
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    made(800, 'Willy', 0), made(810, 'Kubelwagen', 20), made(811, 'Kubelwagen', 40), made(820, 'Willy', 60),
+    made(830, 'Willy', 80), made(840, 'Willy', 100), made(850, 'flak38', 120), made(870, 'Hatsuzuki', 300),
+    made(880, 'Hatsuzuki', 500),
+    player(7, 71), player(8, 811), player(9, 76), player(10, 77), player(11, 78), player(12, 79),
+    ...[[800, 'Willy'], [810, 'Kubelwagen'], [811, 'Kubelwagen'], [820, 'Willy'], [850, 'flak38'], [870, 'Hatsuzuki'],
+      [880, 'Hatsuzuki']].map(([nid, tmpl]) => seen(1, nid, tmpl)),
+    line({ k: 's', t: 1, o: [at(800, 0), at(810, 20), at(811, 40), at(820, 60), at(850, 120), at(870, 300), at(880, 500)] }),
+    line({ k: 'p', t: 1, p: [[7, 1, 71, 71, 0, 0], [8, 1, 811, 811, 0, 0], [9, 1, 76, 76, 0, 0], [10, 1, 77, 77, 0, 0],
+      [11, 1, 78, 78, 0, 0], [12, 1, 79, 79, 0, 0]] }),
+    line({ k: 'e', t: 2, e: 'exitVehicle', pid: 8 }),
+    line({ k: 'e', t: 2, e: 'control', pid: 8, netId: 68 }),
+    line({ k: 'p', t: 2.05, p: [[8, 1, 68, 68, 0, 0]] }),
+    ...board(3, 7, 810, 810, 0),
+    ...board(4, 9, 840, 840, 0),
+    ...moving,
+    ...[800, 810, 811, 820, 850, 870, 880].map(id => line({ k: 'd', t: 5, id })),
+    ...board(5.5, 10, 850, 850, 0),
+    ...board(5.5, 11, 872, 870, 2),
+    ...board(5.5, 12, 880, 880, 0),
+    seen(8, 810, 'Kubelwagen'),
+    line({ k: 's', t: 8, o: [at(810, 300)] }),
+    line({ k: 'end', t: 10 }),
+  ].join('\n'));
+  const engines = { Willy: 'c_ETCar', Kubelwagen: 'c_ETCar', Hatsuzuki: 'c_ETShip' };
+  const model = name => {
+    const scene = new THREE.Group();
+    const root = new THREE.Group();
+    root.name = name;
+    root.userData = { templateKind: 'PlayerControlObject', control: name };
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+    if (engines[name]) {
+      const engine = new THREE.Group();
+      engine.name = `${name}Engine`;
+      engine.userData = { templateKind: 'Engine', control: name, physics: { engineType: engines[name] } };
+      root.add(engine);
+    }
+    scene.add(root);
+    return scene;
+  };
+  const watcher = { ctx: { scene: new THREE.Scene() }, rec, showGhosts: true };
+  const hulls = rec.lives.filter(l => l.nid >= 800).map(l => new ReplayHull(watcher, l, model(l.tmpl), null));
+  const drawn = t => Object.fromEntries(hulls.map(hull => {
+    hull.update(t, 0.1);
+    return [hull.life.nid, hull.group.visible ? (hull.ghost ? 'ghost' : 'solid') : 'hidden'];
+  }));
+  const inRange = drawn(4.5);
+  const outOfRange = drawn(6);
+  const back = drawn(8.5);
+  watcher.showGhosts = false;
+  const ghostsOff = drawn(6);
+  results.heldPoses = {
+    inRange, outOfRange, back, ghostsOff,
+    movable: Object.fromEntries(hulls.map(hull => [hull.life.nid, hull.movable])),
+    held: [800, 810, 811, 820, 830, 840].map(nid => recording.poseHeld(rec, rec.lives.find(l => l.nid === nid), 6)),
+  };
+}
+
 console.log(JSON.stringify(results));
