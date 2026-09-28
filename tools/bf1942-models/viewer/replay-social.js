@@ -559,7 +559,7 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       takeCover();
     });
     ui.moreMenu.append(item);
-    ui.useFrameKey?.(takeCover, 'Use this frame as the cover');
+    ui.useFrameKey?.(takeCover);
   }
 
   // --- sharing a recording from disk -----------------------------------------------
@@ -569,7 +569,7 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     nodes.share = ui.button('rs-share rp-roomy', null, 'Share this recording to the REPLAY feed', () => openShare(),
       `${svg('share')}<span class="rp-label">Share</span>`);
     ui.logBtn.before(nodes.share);
-    ui.useFrameKey?.(takeCover, 'Use this frame as the cover');
+    ui.useFrameKey?.(takeCover);
   }
 
   async function openShare() {
@@ -745,6 +745,9 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       player = opened;
       ui = opened.ui;
       hookCapture();
+      // F on a shared recording, until the feed says this viewer may set its
+      // cover (`addCoverItem`).
+      if (slug) ui.useFrameKey?.(() => ui.flash('Only its uploader or an admin can set the cover', 2400));
       if (local) dressLocal();
       if (detail) dressShared();
       requestAnimationFrame(tick);
