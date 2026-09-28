@@ -93,6 +93,16 @@ class RecordingsApiTests(unittest.TestCase):
             "https://play.bfstats.io/map.html?mod=bf1942&map=midway&replay=/stats/recordings/abcdefghjk.ndjson&t=21")
         self.assertIn("replay=http://localhost:9222/stats/recordings/abcdefghjk.ndjson", watch["localApi"])
 
+    def test_a_recording_is_shared_under_the_player_who_recorded_it(self) -> None:
+        # The name the share dialogs offer first, found as the API finds it
+        # (RecordingInspectorTests): the roster's local player, the pid of his
+        # own shots under the name it had when he fired, his chat, the only
+        # human; of several humans with nothing marking one, nobody.
+        self.assertEqual(self.results["recorder"], {
+            "v2Lab": "skandia", "v3Lab": "skandia", "roster": "skandia", "ownShots": "skandia",
+            "v3Trigger": "skandia", "chat": "skandia", "severalHumans": "", "nobody": "",
+        })
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,8 +20,7 @@ import {
   ago, apiMode, clock, commentRuns, count, createRecordingsApi, readableQuery, resolveApi, sharedRecordingOf,
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
-import { recordingPlayer } from './replay-chapters.js';
-import { nameAt } from './replay-recording.js';
+import { recorderName } from './replay-chapters.js';
 
 /** A comment comes up this long as the round passes its moment, seconds. */
 const BUBBLE_SECONDS = 5;
@@ -601,24 +600,30 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       go.addEventListener('click', async () => {
         if (await api.signIn()) { close(); openShare(); }
       });
-      body.append(el('p', 'rs-hint', 'Sign in to share a recording. It goes up under your in-game name.'), go);
+      body.append(el('p', 'rs-hint', 'Sign in to share a recording.'), go);
       return;
     }
     viewer = await api.viewer().catch(() => null);
     const names = viewer?.names ?? [];
+    const rec = player.rec;
+    // Shared as the player who recorded it, as the file names him, unless one
+    // of the account's linked names is picked instead.
+    const recorder = recorderName(rec);
+    const options = [recorder, ...names].filter(Boolean)
+      .filter((name, i, all) => all.findIndex(n => n.toLowerCase() === name.toLowerCase()) === i);
     const preview = el('div', 'rs-cover');
     if (cover) preview.style.backgroundImage = `url("${URL.createObjectURL(cover)}")`;
     const titleLabel = el('label');
     const title = el('input');
     title.maxLength = 100;
-    title.value = [levelName() && levelName().replace(/_/g, ' '), player.rec.server && `on ${player.rec.server}`].filter(Boolean).join(' ');
+    title.value = [levelName() && levelName().replace(/_/g, ' '), rec.server && `on ${rec.server}`].filter(Boolean).join(' ');
     titleLabel.append(el('span', '', 'Title'), title);
     const asLabel = el('label');
     let as = null;
-    if (names.length) {
+    if (options.length) {
       as = el('select');
-      for (const name of names) as.append(new Option(name, name));
-      as.disabled = names.length === 1;
+      for (const name of options) as.append(new Option(name, name));
+      as.disabled = options.length === 1;
       asLabel.append(el('span', '', 'Shared by'), as);
     } else {
       as = el('input');
@@ -639,28 +644,28 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       go.disabled = true;
       status.classList.remove('rs-error');
       try {
-        let author = as.value.trim();
-        if (!names.length) {
+        const author = as.value.trim();
+        if (!options.length) {
           if (!author) throw new Error('Your in-game name first.');
           viewer = await api.linkName(author);
         }
         const kept = await readLocalRecording(new URLSearchParams(location.search).get('replay'));
         const recording = new File([kept.text], kept.name || 'replay.ndjson');
         const serverLog = kept.log ? new File([kept.log.text], kept.log.name) : null;
-        const rec = player.rec;
-        const pid = recordingPlayer(rec);
         const shared = await api.upload({
           recording,
           serverLog,
           thumbnail: cover,
           meta: {
             title: title.value,
-            authorName: author,
+            // The recording's own player goes up as the API reads him from the
+            // file; only another name is sent.
+            authorName: author === recorder ? '' : author,
             level: String(rec.level || levelName() || '').toLowerCase(),
             mod: modId(),
             gameMode: String(rec.modeFile || '').replace(/\.con$/i, '').toLowerCase(),
             serverName: rec.server || '',
-            recordedBy: pid !== null ? nameAt(rec, pid, 0) : '',
+            recordedBy: recorder,
             start: rec.start || '',
             durationSeconds: rec.duration,
             players: [...new Set([...rec.players.values()].map(p => p.name).filter(Boolean))].slice(0, 128),

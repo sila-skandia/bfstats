@@ -6,8 +6,8 @@
 // as Open recording recognises one (replay-level.js), and failing that the
 // share dialog asks.
 
-import { parseRecording, nameAt } from './replay-recording.js';
-import { recordingPlayer } from './replay-chapters.js';
+import { parseRecording } from './replay-recording.js';
+import { recorderName } from './replay-chapters.js';
 import { recogniseLevel } from './replay-level.js';
 import { loadMods, servable, VANILLA } from './mods.js';
 
@@ -91,7 +91,6 @@ export async function describeRecording(text, { fallbackMod = VANILLA.id, onStag
       .catch(error => { console.warn('recording-inspect: the level search failed', error); return null; });
     if (found) level = String(found.entry.name).toLowerCase();
   }
-  const pid = recordingPlayer(rec);
   const players = [...new Set([...rec.players.values()].map(p => String(p.name ?? '').trim()).filter(Boolean))];
   return {
     rec,
@@ -102,7 +101,7 @@ export async function describeRecording(text, { fallbackMod = VANILLA.id, onStag
       mod: mod.id,
       gameMode: String(rec.modeFile || '').replace(/\.con$/i, '').toLowerCase(),
       serverName: rec.server || '',
-      recordedBy: pid !== null ? nameAt(rec, pid, 0) : '',
+      recordedBy: recorderName(rec),
       start: rec.start || '',
       durationSeconds: rec.duration || 0,
       players: players.slice(0, 128),

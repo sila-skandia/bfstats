@@ -71,6 +71,7 @@ public class RecordingsController(
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
         var path = storage.ThumbnailPath(clean);
         if (!System.IO.File.Exists(path)) return NotFound();
+        Inert();
         Response.Headers.CacheControl = "public, max-age=31536000, immutable";
         return PhysicalFile(path, "image/jpeg");
     }
@@ -199,10 +200,24 @@ public class RecordingsController(
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
         var path = pathOf(clean);
         if (!System.IO.File.Exists(path)) return NotFound();
+        Inert();
         Response.Headers.ContentEncoding = "gzip";
         // A slug is never reused, so a file never changes under its name.
         Response.Headers.CacheControl = "public, max-age=86400";
         return PhysicalFile(path, contentType);
+    }
+
+    /// <summary>
+    /// A shared file is someone's upload, served from bfstats.io itself. The replay reads it
+    /// with fetch, which none of this touches; a browser sent to it directly must not take it
+    /// for a page. An XML document can carry XHTML script, and a browser runs that in an XML
+    /// page as it would in HTML, with the site's cookies: so the type is the one stated, and
+    /// a page it becomes anyway has no scripts, loads nothing and has no origin.
+    /// </summary>
+    private void Inert()
+    {
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
     }
 
     private ObjectResult Rejected(RecordingRejectedException ex) =>

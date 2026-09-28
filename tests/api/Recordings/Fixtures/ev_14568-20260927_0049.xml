@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<bf:log version="1.1" xmlns:bf="http://www.dice.se/xmlns/bf/1.1">
+<bf:round timestamp="2.84884">
+<bf:server>
+  <bf:setting name="server name">bfstats-lab</bf:setting>
+  <bf:setting name="port">14568</bf:setting>
+  <bf:setting name="dedicated">1</bf:setting>
+  <bf:setting name="modid">bf1942</bf:setting>
+  <bf:setting name="mapid">BF1942</bf:setting>
+  <bf:setting name="map">wake</bf:setting>
+  <bf:setting name="game mode">GPM_CQ</bf:setting>
+  <bf:setting name="gametime">0</bf:setting>
+  <bf:setting name="maxplayers">32</bf:setting>
+  <bf:setting name="scorelimit">0</bf:setting>
+  <bf:setting name="norounds">1</bf:setting>
+  <bf:setting name="spawntime">15</bf:setting>
+  <bf:setting name="spawndelay">5</bf:setting>
+  <bf:setting name="gamestartdelay">5</bf:setting>
+  <bf:setting name="roundstartdelay">10</bf:setting>
+  <bf:setting name="soldierff">100</bf:setting>
+  <bf:setting name="vehicleff">100</bf:setting>
+  <bf:setting name="ticketratio">100</bf:setting>
+  <bf:setting name="internet">0</bf:setting>
+  <bf:setting name="alliedtr">1</bf:setting>
+  <bf:setting name="axistr">1</bf:setting>
+  <bf:setting name="coopskill">50</bf:setting>
+  <bf:setting name="coopcpu">100</bf:setting>
+  <bf:setting name="reservedslots">0</bf:setting>
+  <bf:setting name="allownosecam">1</bf:setting>
+  <bf:setting name="freecamera">1</bf:setting>
+  <bf:setting name="externalviews">1</bf:setting>
+  <bf:setting name="autobalance">0</bf:setting>
+  <bf:setting name="tagdistance">100</bf:setting>
+  <bf:setting name="tagdistancescope">300</bf:setting>
+  <bf:setting name="kickback">0</bf:setting>
+  <bf:setting name="kickbacksplash">0</bf:setting>
+  <bf:setting name="soldierffonsplash">100</bf:setting>
+  <bf:setting name="vehicleffonsplash">100</bf:setting>
+  <bf:setting name="hitindication">1</bf:setting>
+  <bf:setting name="tkpunish">0</bf:setting>
+  <bf:setting name="crosshairpoint">1</bf:setting>
+  <bf:setting name="deathcamtype">1</bf:setting>
+  <bf:setting name="contentcheck">0</bf:setting>
+  <bf:setting name="sv_punkbuster">0</bf:setting>
+</bf:server>
+<bf:event name="roundInit" timestamp="22.8394">
+    <bf:param type="int" name="tickets_team1">200</bf:param>
+    <bf:param type="int" name="tickets_team2">200</bf:param>
+</bf:event>
+<bf:event name="spawnEvent" timestamp="22.9102">
+    <bf:param type="int" name="player_id">255</bf:param>
+    <bf:param type="vec3" name="player_location">1035/109.587/1230</bf:param>
+    <bf:param type="int" name="team">2</bf:param>
+</bf:event>
+<bf:event name="pickupKit" timestamp="22.9106">
+    <bf:param type="int" name="player_id">255</bf:param>
+    <bf:param type="vec3" name="player_location">1035/109.587/1230</bf:param>
+    <bf:param type="string" name="kit">UsMarine_Assault</bf:param>
+</bf:event>
+<bf:event name="spawnEvent" timestamp="23.0113">
+    <bf:param type="int" name="player_id">254</bf:param>
+    <bf:param type="vec3" name="player_location">350.112/98.7845/1439.24</bf:param>
+    <bf:param type="int" name="team">1</bf:param>
+</bf:event>
+<bf:event name="pickupKit" timestamp="23.0117">
+    <bf:param type="int" name="player_id">254</bf:param>
+    <bf:param type="vec3" name="player_location">350.112/98.7845/1439.24</bf:param>
+    <bf:param type="string" name="kit">Jap_Engineer</bf:param>
+</bf:event>
+<bf:event name="enterVehicle" timestamp="23.0119">
+    <bf:param type="int" name="player_id">254</bf:param>
+    <bf:param type="vec3" name="player_location">351.09/97.7721/1446.17</bf:param>
+    <bf:param type="string" name="vehicle">Daihatsu</bf:param>
+    <bf:param type="int" name="pco_id">0</bf:param>
+    <bf:param type="int" name="is_default">0</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
+<bf:event name="spawnEvent" timestamp="23.12">
+    <bf:param type="int" name="player_id">253</bf:param>
+    <bf:param type="vec3" name="player_location">357.503/98.7904/1430.82</bf:param>
+    <bf:param type="int" name="team">1</bf:param>
+</bf:event>
+<bf:event name="pickupKit" timestamp="23.1204">
+    <bf:param type="int" name="player_id">253</bf:param>
+    <bf:param type="vec3" name="player_location">357.503/98.7904/1430.82</bf:param>
+    <bf:param type="string" name="kit">Jap_Scout</bf:param>
+</bf:event>
+<bf:event name="enterVehicle" timestamp="23.1206">
+    <bf:param type="int" name="player_id">253</bf:param>
+    <bf:param type="vec3" name="player_location">364.498/97.9628/1430.9</bf:param>
+    <bf:param type="string" name="vehicle">Daihatsu</bf:param>
+    <bf:param type="int" name="pco_id">0</bf:param>
+    <bf:param type="int" name="is_default">0</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
+<bf:event name="spawnEvent" timestamp="23.2034">
+    <bf:param type="int" name="player_id">252</bf:param>
+    <bf:param type="vec3" name="player_location">1390.8/115.824/745.912</bf:param>
+    <bf:param type="int" name="team">2</bf:param>
+</bf:event>
+<bf:event name="pickupKit" timestamp="23.2037">
+    <bf:param type="int" name="player_id">252</bf:param>
+    <bf:param type="vec3" name="player_location">1390.8/115.824/745.912</bf:param>
+    <bf:param type="string" name="kit">UsMarine_AT</bf:param>
+</bf:event>
+<bf:event name="enterVehicle" timestamp="32.0157">
+    <bf:param type="int" name="player_id">252</bf:param>
+    <bf:param type="vec3" name="player_location">1392.51/116.678/737.013</bf:param>
+    <bf:param type="string" name="vehicle">Sherman</bf:param>
+    <bf:param type="int" name="pco_id">0</bf:param>
+    <bf:param type="int" name="is_default">0</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
+<bf:event name="enterVehicle" timestamp="94.3124">
+    <bf:param type="int" name="player_id">255</bf:param>
+    <bf:param type="vec3" name="player_location">1341.49/109.026/1179.98</bf:param>
+    <bf:param type="string" name="vehicle">M3A1</bf:param>
+    <bf:param type="int" name="pco_id">0</bf:param>
+    <bf:param type="int" name="is_default">0</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
+<bf:event name="exitVehicle" timestamp="144.05">
+    <bf:param type="int" name="player_id">255</bf:param>
+    <bf:param type="vec3" name="player_location">1397.78/117.917/876.182</bf:param>
+    <bf:param type="string" name="vehicle">M3A1</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
+<bf:event name="enterVehicle" timestamp="153.736">
+    <bf:param type="int" name="player_id">255</bf:param>
+    <bf:param type="vec3" name="player_location">1426.38/116.604/838.278</bf:param>
+    <bf:param type="string" name="vehicle">Corsair</bf:param>
+    <bf:param type="int" name="pco_id">0</bf:param>
+    <bf:param type="int" name="is_default">0</bf:param>
+    <bf:param type="int" name="is_fake">0</bf:param>
+</bf:event>
