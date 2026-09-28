@@ -1,9 +1,10 @@
 // The front end `play/index.html` mounts: SINGLEPLAY (Instant Battle),
-// MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings)
-// and CUSTOM GAME (the mod list), one canvas each, switched by the nav strip
-// every screen draws; and REPLAY, which opens a bf42plus recording from disk,
-// as does one dropped anywhere on the page (`../replay-open.js`). Moved out of
-// the page's inline module script; `window.__menu` is the page's test hook.
+// MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings),
+// CUSTOM GAME (the mod list) and REPLAY (the rounds players have shared,
+// features/replay-feed), one canvas each, switched by the nav strip every
+// screen draws. A bf42plus recording dropped anywhere on the page plays from
+// disk (`../replay-open.js`), as does REPLAY's Watch a file. Moved out of the
+// page's inline module script; `window.__menu` is the page's test hook.
 
 import { createSkirmishScreen } from './skirmish.js';
 import { createMultiplayScreen } from './multiplay.js';
@@ -11,16 +12,18 @@ import { createModPicker } from './mod-picker-screen.js';
 import { createControlsScreen } from './controls-screen.js';
 import { createControls } from '../controls.js';
 import { installRecordingOpener } from '../replay-open.js';
+import { createReplayScreen } from './replay-screen.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
 const canvasCg = document.getElementById('screen-cg');
 const canvasOpt = document.getElementById('screen-opt');
+const canvasRp = document.getElementById('screen-rp');
 const status = document.getElementById('status');
 
 // SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
 // its own slot; INTRO and CREDITS, which this site does not answer for, are
-// not drawn. INTRO's plate is REPLAY's: the file picker for a recording.
+// not drawn. INTRO's plate is REPLAY's: the feed of shared recordings.
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
@@ -105,41 +108,64 @@ const options = createControlsScreen({
   pollPad: true,
 });
 
-// A recording, from REPLAY or dropped on the page, plays on its own level:
-// `map.html?replay=local:<name>` behind that level's loading screen. One
-// whose server named no mod plays in the menu's. An extra: one that cannot be
-// installed leaves the menu without REPLAY, not a menu that does not start.
+// A recording from disk, from REPLAY's Watch a file or dropped on the page,
+// plays on its own level: `map.html?replay=local:<name>` behind that level's
+// loading screen. One whose server named no mod plays in the menu's. An
+// extra: one that cannot be installed leaves the menu without it, not a menu
+// that does not start.
 let recordings = null;
 try {
   recordings = installRecordingOpener({
     mod: () => { try { return screen.mod.active; } catch { return 'bf1942'; } },
   });
 } catch (error) {
-  console.warn('front-end: REPLAY left out', error);
+  console.warn('front-end: Open recording left out', error);
 }
+
+// REPLAY: the rounds players have shared, newest or most watched first, their
+// comments, and sharing one (features/replay-feed). Built lazily.
+const replay = createReplayScreen({
+  canvas: canvasRp,
+  root: '../',
+  tabs: TABS,
+  onTab: id => show(id),
+  onStatus: text => { status.textContent = text; },
+  onWatchFile: recordings ? () => recordings.pick() : null,
+  playerName: () => playerName,
+});
 
 let tab = 'singleplay';
 let multiplayLoaded = null;
 let customGameLoaded = null;
 let optionsLoaded = null;
+let replayLoaded = null;
+
+/** The tab in the address (`?tab=`, which the page opens on), so a reload
+ *  comes back to it; REPLAY's with the recording whose page is up. */
+function addressFor(id) {
+  const url = new URL(location.href);
+  if (id === 'singleplay') url.searchParams.delete('tab');
+  else url.searchParams.set('tab', id);
+  if (id !== 'replay') url.searchParams.delete('rec');
+  if (url.href !== location.href) history.replaceState(history.state, '', url);
+}
 
 function show(id) {
-  // REPLAY is an action, not a screen: the tab that is up stays up.
-  if (id === 'replay') {
-    recordings?.pick();
-    return;
-  }
   if (id === tab) return;
   tab = id;
   canvas.hidden = id !== 'singleplay';
   canvasMp.hidden = id !== 'multiplay';
   canvasCg.hidden = id !== 'customgame';
   canvasOpt.hidden = id !== 'options';
+  canvasRp.hidden = id !== 'replay';
   screen.strip?.setActive(id);
   multiplay.strip?.setActive(id);
   customGame.strip?.setActive(id);
   options.strip?.setActive(id);
+  replay.strip?.setActive(id);
   if (id !== 'options') options.stop();
+  if (id !== 'replay') replay.hide();
+  addressFor(id);
   if (id === 'singleplay') {
     multiplay.stop();
     screen.paint();
@@ -166,6 +192,17 @@ function show(id) {
     });
     customGameLoaded.then(() => { customGame.paint(); });
     canvasCg.focus();
+    return;
+  }
+  if (id === 'replay') {
+    status.textContent = '';
+    replayLoaded ??= replay.load().catch(error => {
+      status.textContent = `Replay screen unavailable: ${error.message}. `
+        + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
+      console.error(error);
+    });
+    replayLoaded.then(() => { if (tab === 'replay') replay.show(); });
+    canvasRp.focus();
     return;
   }
   if (id === 'options') {
@@ -199,6 +236,9 @@ canvasOpt.addEventListener('keyup', event => {
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
+// `?tab=replay&rec=<slug>` is a shared recording's page: where its links and
+// the replay's own way back to the menu lead (map.html `MENU_URL`).
+if (params.get('tab') === 'replay') queueMicrotask(() => show('replay'));
 
 window.__menu = {
   get state() { return screen.state; },
@@ -220,6 +260,7 @@ window.__menu = {
   chooseCustomGame: id => customGame.chooseMod(id),
   get options() { return options.state; },
   optionsScreen: options,
+  replay,
   show,
 };
 
