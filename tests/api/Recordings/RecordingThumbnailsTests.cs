@@ -56,6 +56,17 @@ public class RecordingThumbnailsTests
     }
 
     [Fact]
+    public async Task Normalize_RefusesACoverWiderThanAnyTheDialogsSend()
+    {
+        using var image = new Image<Rgba32>(RecordingThumbnails.MaxSide + 1, 64, new Rgba32(40, 60, 90, 255));
+        await using var png = await Encoded(image, (i, s) => i.SaveAsPngAsync(s));
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(() => RecordingThumbnails.NormalizeAsync(png, CancellationToken.None));
+
+        Assert.Contains("pixels a side", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Normalize_KeepsNothingButThePixels()
     {
         using var image = new Image<Rgba32>(320, 180, new Rgba32(40, 60, 90, 255));

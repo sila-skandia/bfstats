@@ -57,4 +57,16 @@ public class PlayerNameDecoderTests
         // No latin or cyrillic bytes — total counter is 0, return as-is
         Assert.Equal("12345!", PlayerNameDecoder.Decode("12345!"));
     }
+
+    /// <summary>A recording writes a name's bytes as U+0000 to U+00FF; BFList hands bfstats the
+    /// same bytes read as cp1252. They differ only at 0x80 to 0x9F.</summary>
+    [Theory]
+    [InlineData("skandia", "skandia")]
+    [InlineData("=\u0095NDR\u0095=Lapu", "=\u2022NDR\u2022=Lapu")]
+    [InlineData("Sgt\u0099", "Sgt\u2122")]
+    [InlineData("\u0080uro", "\u20ACuro")]
+    [InlineData("=\u2022NDR\u2022=Lapu", "=\u2022NDR\u2022=Lapu")]
+    [InlineData("Âàíÿ", "Âàíÿ")]
+    public void FromRecording_ReadsARecordedNamesBytesAsBflistDoes(string recorded, string site) =>
+        Assert.Equal(site, PlayerNameDecoder.FromRecording(recorded));
 }

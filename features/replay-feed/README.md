@@ -28,7 +28,8 @@ rest of the screen.
   the server). A card's cover is a frame of the replay when the uploader set
   one, else the level's loading screen with the level's name, as the game
   shows a level before it loads. The mod's badge, the length, the title, level
-  and game type and server, the uploader, views and age.
+  and game type and server, the uploader (with a link to their player page on
+  bfstats.io beside the name, when the site has a player by it), views and age.
 - **Filters** (2026-09-29): by server and by uploader, beside the order. Each
   one says All until a name is picked, then lights up with a clear button. Its
   list gives each name with how many recordings it would show beside the other
@@ -125,7 +126,7 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 |---|---|
 | `GET /` | the feed: `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not) |
 | `GET /filters` | the servers and uploaders to narrow the feed to, with counts, `server` and `uploader` as for the feed: each list is counted within the other filter and not its own. The busiest 100 of each, by name. |
-| `GET /{slug}` | one recording, with `canManage` for its uploader or an admin |
+| `GET /{slug}` | one recording, with `canManage` for its uploader or an admin. It and the feed's cards carry `uploaderPlayer`: the uploader as bfstats.io has a player page for them (a recorded name's bytes read as cp1252, as BFList reads them), or null; the page links to `bfstats.io/v4/players/<it>` beside the name |
 | `GET /{slug}.ndjson`, `.xml`, `.jpg` | the recording, its server log and its cover. The first two are stored gzipped and sent as they are (`Content-Encoding: gzip`): the browser unpacks them and the API spends no CPU compressing. The cover's link is versioned, so it keeps a year. |
 | `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
 | `PATCH`, `DELETE /{slug}` | rename, remove (uploader or admin) |
@@ -165,6 +166,16 @@ has a case for each):
   gzip of the bytes it read, never the bytes as sent, so nothing that rode
   along after a gzip stream's end is ever served (about 20 ms a megabyte
   unpacked; 0.25 s for a ten-minute round).
+- *An upload costs what its size says.* The whole pipeline streams (each part
+  to disk as it arrives, then read back 64 KB at a time), so what bounds an
+  upload's memory is what it holds of one line, 1 MB (the longest real line is
+  44 KB), and what bounds its CPU is how far it unpacks: every byte is read,
+  hashed, parsed and gzipped again, 11 to 19 ms a megabyte. So a gzipped
+  upload unpacks to no more than 32 times its size for a recording, 64 for a
+  server log (real ones gzip four to eight, and up to thirty, to one), past
+  64 MB, and a recording to 512 MB at most (over five hours of play). A 3 MB
+  gzip bomb that unpacked to the old 1 GiB cost 11.4 s of CPU (2026-09-29);
+  it is now refused at 95 MB, after 1.4 s.
 - *What a file says of itself is held to what the feed stores.* A level, mod
   and game type must be a name the viewer can look up (`[a-z0-9_-]`, or it is
   not taken); a player or recorder is cut to 32 characters with control
@@ -188,8 +199,9 @@ has a case for each):
 - *A cover is one frame of pixels.* Decoded as JPEG, PNG or WebP only (what a
   canvas writes), one frame deep (ImageSharp decodes every frame of an
   animated image by default, each the size of the canvas: a megabyte of
-  animated PNG could ask for gigabytes), with its metadata dropped, and
-  written out afresh.
+  animated PNG could ask for gigabytes), at most 2048 px a side (16 MB
+  decoded; the dialogs send 640x360), with its metadata dropped, and written
+  out afresh.
 
 **Every stored file is served inert**: `X-Content-Type-Options: nosniff` and
 `Content-Security-Policy: default-src 'none'; sandbox` on the `.ndjson`,
@@ -201,9 +213,9 @@ origin, whatever got past the checks above.
 |---|---|
 | All recordings | 20 GiB, gzipped, covers and server logs included (`Recordings__QuotaBytes`) |
 | The disk | never below max(8 GiB, 15%) free (`MinFreeBytes`, `MinFreeFraction`): it is the node's root disk, where the kubelet garbage-collects images at 85% and evicts pods at 90% |
-| One recording | 95 MB gzipped (Cloudflare refuses a request body over 100 MB), 1 GiB unpacked, 16 MB a line |
-| One server log | 20 MB gzipped, 256 MB unpacked, 64 KB without markup |
-| A cover | 1 MB in, 16 to 4096 px a side, JPEG, PNG or WebP, one frame |
+| One recording | 95 MB gzipped (Cloudflare refuses a request body over 100 MB), 512 MB unpacked and past 64 MB no more than 32 times its gzipped size, 1 MB a line |
+| One server log | 20 MB gzipped, 256 MB unpacked and past 64 MB no more than 64 times its gzipped size, 64 KB without markup |
+| A cover | 1 MB in, 16 to 2048 px a side, JPEG, PNG or WebP, one frame |
 | Names in a file | a player 32 characters, a server 64; a level, mod or game type `[a-z0-9_-]{1,64}` |
 | Titles, comments | 100 and 1000 characters, plain text: control characters and bidi overrides removed, never rendered as HTML |
 | Rate | per address (Cloudflare's `CF-Connecting-IP`): 10 uploads an hour, 20 comments or covers in 10 minutes, 60 views a minute |

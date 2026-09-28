@@ -22,8 +22,12 @@ public record RecordingsOptions
     /// 100 MB, which caps what a browser can send in any case.</summary>
     public long MaxRecordingBytes { get; init; } = 95 * MiB;
 
-    /// <summary>One recording unpacked: a bound on what a small file may expand to.</summary>
-    public long MaxRecordingRawBytes { get; init; } = GiB;
+    /// <summary>One recording unpacked. Every byte of it is read, hashed, parsed and gzipped
+    /// again on upload, 11 to 19 ms of CPU a megabyte (measured), so this is also what one
+    /// upload can cost. Real recordings run 0.75 to 1.6 MB a minute: this is over five hours
+    /// of play, past what a browser could replay, and most reach
+    /// <see cref="MaxRecordingBytes"/> gzipped first.</summary>
+    public long MaxRecordingRawBytes { get; init; } = 512 * MiB;
 
     public long MaxServerLogBytes { get; init; } = 20 * MiB;
 
