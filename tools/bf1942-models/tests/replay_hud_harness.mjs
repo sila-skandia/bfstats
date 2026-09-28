@@ -270,6 +270,75 @@ const life = rec.lives.find(l => l.nid === 50);
   results.seat.backOnFoot = vars['Vehicle/ShowVehicleIcon'];
 }
 
+// --- his zoom: the body record's bit, the weapon's lens, a rifle's scope ------------
+//
+// A scout (pid 4) zooms his K98 sniper at 3 s (bit 0x20, 0x80 while it
+// changes) and back at 6 s; a rifleman's BAR zoom keeps the cross.
+{
+  const zoomLines = [
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'anim', t: 0, states: [[0, 'Lb_Stand', 0], [1, 'Ub_StandAimK98Sniper', 0]] }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 1727, netId: 70, tmpl: 'GermanSoldier', pos: [0, 1, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 4, name: 'scout', team: 1, ai: 0, vehNetId: 70 }),
+    line({ k: 'e', t: 1, e: 'control', pid: 4, netId: 70 }),
+    line({ k: 'o', t: 1, id: 70, gid: 1, tmpl: 'GermanSoldier', tid: 1727, team: 1, maxhp: 30 }),
+    line({ k: 's', t: 1, o: [[70, 0, 2, 0, 0, 0, 0, 1]] }),
+    line({ k: 'st', t: 1, o: [[70, 0, 1, 0, 0, 3, 0x41]] }),
+    line({ k: 'st', t: 3.0, o: [[70, 0, 1, 0, 0, 3, 0xe1]] }),
+    line({ k: 'st', t: 3.1, o: [[70, 0, 1, 0, 0, 3, 0x61]] }),
+    line({ k: 'st', t: 6.0, o: [[70, 0, 1, 0, 0, 3, 0xc1]] }),
+    line({ k: 'st', t: 6.1, o: [[70, 0, 1, 0, 0, 3, 0x41]] }),
+    line({ k: 'end', t: 10 }),
+  ];
+  const zrec = recording.parseRecording(zoomLines.join('\n'));
+  const scout = zrec.lives.find(l => l.nid === 70);
+  scout.kitTemplate = 'Ger_Scout';
+  const sniper = { crossHair: 'CHTNone', hudAmmo: 'ATAmmoBar', magazine: { size: 5, magazines: 3, reloadTime: 1.6 },
+                   zoom: { fov: 0.1, soldierFov: 0.6, scope: true, sniperSight: true, icon: 'sniper.tga', unZoomBetweenFire: 3, toggle: true } };
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const player = {
+    rec: zrec, followPid: 4, recordingPid: null, soldiers: null, hulls: new Map(),
+    ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100,
+           loadouts: () => ({ kits: { Ger_Scout: { primary: 'K98Sniper', weapons: [{ slot: 3, weapon: 'K98Sniper' }] } } }) },
+  };
+  const camera = new ReplayCamera(player);
+  const replayHud = new hud.ReplayHud(player);
+  replayHud.data.set('k98sniper', sniper);
+  player.camera = camera;
+  player.hud = replayHud;
+  camera.setMode('pov');
+  const fovs = {};
+  const step = t => { camera.update(1 / 60, t); replayHud.update(t); };
+  step(2.9);
+  fovs.before = r3(cam.fov);
+  step(3.05);
+  fovs.first = r3(cam.fov);
+  for (let i = 0; i < 40; i++) step(3.2 + i / 60);
+  fovs.zoomed = r3(cam.fov);
+  const vars = {};
+  replayHud.feed(vars, {});
+  const scopedAim = replayHud.crosshairAim();
+  for (let i = 0; i < 60; i++) step(6.2 + i / 60);
+  fovs.after = r3(cam.fov);
+  const vars2 = { 'CrossHair/ScopeIndex': 0 };
+  replayHud.feed(vars2, {});
+  results.zoom = {
+    bits: [2.5, 3.05, 4, 6.05, 7].map(t => recording.bodyAt(zrec, 70, t).zoomed),
+    zoomOf: replayHud.zoomOf(scout, 4),
+    fovs,
+    scope: { show: vars['CrossHair/ShowCrossHair'], index: vars['CrossHair/ScopeIndex'],
+             icon: vars['CrossHair/ScopeIcon'], sniper: vars['CrossHair/SniperSight'] },
+    scopedAim: { style: scopedAim.style, scoped: scopedAim.scoped },
+    unzoomedIndex: vars2['CrossHair/ScopeIndex'],
+    unzoomedAim: replayHud.crosshairAim().scoped,
+  };
+  // A BAR's zoom: 0.5 rad, no scope, the cross stays.
+  replayHud.data.set('k98sniper', { ...sniper, crossHair: 'CHTCrossHair', zoom: { fov: 0.5, soldierFov: 0.6, toggle: true } });
+  step(4);
+  results.zoom.barAim = replayHud.crosshairAim().scoped;
+  results.zoom.barFov = r3(replayHud.zoomOf(scout, 4).fov);
+}
+
 // --- the page's cross asks the replay first ---------------------------------------
 {
   const replayAim = { style: 'CHTIcon', deviation: 0, scoped: false, centre: false };

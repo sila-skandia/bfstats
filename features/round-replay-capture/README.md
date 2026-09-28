@@ -1065,6 +1065,13 @@ replay_20260927-140921's bail-out reads `0x6000` through `Lb_ParachuteFall`,
 `0x4010` from `Lb_ParachuteOpen` and `0x40` from `Lb_ParachuteHitGround`;
 the replay draws the canopy off `0x10` (`round-replay-fidelity`).
 
+A third, read from the recordings (2026-09-29): `0x20` is the weapon zoomed,
+with `0x80` up while it changes. It flips on every one of the recording
+player's zoom presses (52 in replay_20260928-133433, each about 0.4 s after
+the key), and every other soldier carries it too, only ever with a weapon
+that zooms, so the server sends it for everyone. The replay's first person
+takes the weapon's zoom lens and scope from it (`round-replay-hud`).
+
 
 ## 16. The first v4 round, and format v5 (2026-09-27)
 

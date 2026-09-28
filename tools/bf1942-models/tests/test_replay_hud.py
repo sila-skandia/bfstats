@@ -14,7 +14,10 @@ the view's pitch (measured on 1,615 hand-weapon rounds of three recordings).
 At a round the recording has his view exactly: a hand weapon fires along the
 camera, so the view is laid on each round's own axis. Health is recorded;
 the spread is his weapon's deviation run over his recorded stance, movement
-and rounds; ammunition is counted from his rounds, reloads and refills.
+and rounds; ammunition is counted from his rounds, reloads and refills. His
+zoom is the body record's state bit 0x20, which the server sends for every
+soldier: the weapon's zoom lens, and a scoped rifle's scope in place of the
+cross.
 
 Run under node through `replay_hud_harness.mjs`.
 """
@@ -134,6 +137,23 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertFalse(seat["weapon"])
         self.assertEqual(seat["leftVehicleVars"], [], "the seat's variables go when he gets out")
         self.assertFalse(seat["backOnFoot"])
+
+    def test_his_zoom_is_the_recorded_bit_and_the_weapons_own_lens(self) -> None:
+        zoom = self.results["zoom"]
+        self.assertEqual(zoom["bits"], [False, True, True, False, False], "state bit 0x20, 3 s to 6 s")
+        self.assertEqual(zoom["zoomOf"], {"zoomed": True, "fov": 5.729577951308232}, "a K98 sniper's 0.1 rad")
+        # The engine's ease, 0.3 of the way a frame: 57.3 * 0.7 + 5.73 * 0.3.
+        self.assertEqual(zoom["fovs"], {"before": 57.3, "first": 41.829, "zoomed": 5.73, "after": 57.3})
+
+    def test_a_scoped_rifle_draws_its_scope_not_the_cross(self) -> None:
+        zoom = self.results["zoom"]
+        self.assertEqual(zoom["scope"], {"show": True, "index": 1, "icon": "sniper.tga", "sniper": True})
+        self.assertEqual(zoom["scopedAim"], {"style": "CHTNone", "scoped": True})
+        self.assertEqual(zoom["unzoomedIndex"], 0)
+        self.assertFalse(zoom["unzoomedAim"])
+        # A BAR zooms without a scope: its cross stays, through a 28.6 degree lens.
+        self.assertFalse(zoom["barAim"])
+        self.assertEqual(zoom["barFov"], 28.648)
 
     def test_the_pages_cross_asks_the_replay_first(self) -> None:
         aim = self.results["pageAim"]
