@@ -26,10 +26,11 @@
 
 import * as THREE from 'three';
 import { VehicleOccupancy } from './seats.js';
+import { DRIVE_KINDS } from './seat-survey.js';
 import { spawnedCraftUnder } from './spawned-craft.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
-import { crewOf, engineAt, hpAt, isReplicated, latestAt, sampleAt } from './replay-recording.js';
+import { crewOf, engineAt, hpAt, isReplicated, latestAt, poseHeld, sampleAt } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
@@ -109,7 +110,8 @@ const turnRate = axis => Math.abs(axis.spec?.maxSpeed || 0) || AIM_RATE;
  *  one sample, but the life starts at its root's first record. */
 const PART_LEAD = 1;
 
-/** Out-of-range objects are drawn in this: announced and placed, not updated. */
+/** A hull somebody has taken out of range is drawn in this, where it was last
+ *  seen (`poseHeld`). */
 const ghostMaterial = new THREE.MeshBasicMaterial({
   color: 0x9aa666, transparent: true, opacity: 0.2, depthWrite: false,
 });
@@ -217,6 +219,9 @@ export class ReplayHull {
     // classes, so a replayed Corsair is the flown Corsair's rig.
     this.occupancy = new VehicleOccupancy(this.root, ctx.vehicleClasses ?? {});
     this.kind = this.occupancy.rootKind;
+    // Whether anyone can move it: a hull with no drivetrain (a flak gun, a
+    // Defgun) stands where it was made, manned or not.
+    this.movable = DRIVE_KINDS.includes(this.kind) || Boolean(player.rec.engines?.has(life.nid));
     this.drive = null;
     if (ctx.vehicleClasses) {
       try {
@@ -306,7 +311,11 @@ export class ReplayHull {
       return;
     }
     const replicated = isReplicated(life, t);
-    if (!replicated && !player.showGhosts) {
+    // Out of range, a hull nobody has driven since the recording last had it
+    // is where it was, and is drawn as it is. Only one somebody has taken out
+    // of sight is a guess: a ghost where it was last seen.
+    const ghost = !replicated && this.movable && !poseHeld(player.rec, life, t);
+    if (ghost && !player.showGhosts) {
       this.hide();
       return;
     }
@@ -316,7 +325,7 @@ export class ReplayHull {
       return;
     }
     this.group.visible = true;
-    this.setGhost(!replicated);
+    this.setGhost(ghost);
     this.velocity.set(motion.velocity[0], motion.velocity[1], motion.velocity[2]);
 
     const hp = hpAt(life, t);
