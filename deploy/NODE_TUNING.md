@@ -8,7 +8,7 @@ Hardware: arm64, 4 vCPU, 7.6GiB RAM, no swap, Debian 13 / k3s
 
 | device | role |
 |---|---|
-| `/dev/sda` | 76GB OS disk (local) |
+| `/dev/sda` | 76GB OS disk (local). Also holds `/var/lib/bfstats/recordings`, the REPLAY feed's shared recordings (a hostPath PV, `deploy/app/recordings-storage.yaml`, features/replay-feed): up to 20 GiB, not backed up, and the API keeps max(8 GiB, 15%) of this disk free |
 | `/dev/sdb` | 80GB Hetzner Cloud Volume, ext4, mounted `/mnt/bfstats-data` — holds SQLite + Neo4j |
 
 ---

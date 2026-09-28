@@ -1,0 +1,57 @@
+# Shared gameplay recordings: the REPLAY feed's files (features/replay-feed).
+#
+# A directory on the node's own root disk (/dev/sda, the 76 GB OS disk), not
+# the network-attached volume under /mnt/bfstats-data that the local-path
+# provisioner hands every other claim out of: recordings are large sequential
+# reads, and the volume's IOPS belong to SQLite (deploy/NODE_TUNING.md).
+#
+# The root disk is not backed up and a rebuilt node comes back without this
+# directory. The API copes: RecordingFileReconciler marks a recording whose
+# file has gone as missing, which takes it out of the feed, and sharing the
+# same file again puts it back under its old link with its views and comments.
+#
+# 20Gi is the feed's quota, which the API enforces itself
+# (RecordingsOptions.QuotaBytes): a hostPath volume has no size of its own.
+# The API also refuses a file that would leave the disk with less than
+# max(8 GiB, 15%) free, ahead of the kubelet's image GC (85%) and eviction
+# (90%) thresholds.
+#
+# Static binding: the claim names this volume, and `storageClassName: ""`
+# keeps the default class (local-path, on /mnt) from provisioning one instead.
+# Apply by hand before the API deployment that mounts it; Jenkins' role
+# covers neither PVs nor PVCs. Retain: deleting the claim leaves the files.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: bfstats-recordings
+  labels:
+    app: bf42-stats
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: bf42-stats
+    name: bfstats-recordings
+  hostPath:
+    # Made by the kubelet as root:root 0755 on first mount; the API
+    # deployment's init container hands it to uid 1000.
+    path: /var/lib/bfstats/recordings
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bfstats-recordings
+  namespace: bf42-stats
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: bfstats-recordings
+  resources:
+    requests:
+      storage: 20Gi
