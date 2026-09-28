@@ -36,7 +36,12 @@ data:
       acl is_play_root path -i /
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
-      acl is_netcode path_beg /netcode
+      # Exactly /netcode (the WebSocket) and /netcode/... (the rooms list):
+      # path_beg /netcode alone also takes the viewer's own /netcode.js and
+      # /netcode-*.js modules on the play host, and a play page that cannot
+      # load them never starts.
+      acl is_netcode path /netcode
+      acl is_netcode path_beg /netcode/
 
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"

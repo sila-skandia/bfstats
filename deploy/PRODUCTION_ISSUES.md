@@ -10,6 +10,7 @@ network-attached volume. Most entries below trace back to one of those two facts
 
 | # | Date | Impact | Cause | Fixed by |
 |---|---|---|---|---|
+| 7 | 2026-09-28 | play.bfstats.io pages did not start, 9.5 min | HAProxy `is_netcode` was `path_beg /netcode`, which took the viewer's `/netcode.js` | ACL narrowed, this commit |
 | 6 | 2026-08-16 | Site unresponsive | `Cache=Shared` in connection string | `b7feede` |
 | 5 | 2026-08-16 | Misdiagnosis, outage continued | Blamed `busy_timeout`; real cause was #6 | `b7feede` |
 | 4 | 2026-08-15 | Player pages 6.2s | No `sqlite_stat1` — `ANALYZE` never run | `ANALYZE`, out-of-band |
@@ -18,6 +19,25 @@ network-attached volume. Most entries below trace back to one of those two facts
 | 1 | — | App locked out of its own DB | `sqlite3` as root over SSH created root-owned WAL/shm | n/a — process |
 
 ---
+
+### 7. The netcode route took the viewer's own modules — 2026-09-28
+
+Applying `deploy/app/ingress/deployment.yaml` for the REPLAY feed (the play
+host's `/stats` to the API, features/replay-feed) also applied a line the repo
+had carried unapplied: `use_backend mesh_frontend if host_play_bfstats
+!is_netcode`, with `acl is_netcode path_beg /netcode`. `path_beg` matches
+`/netcode.js` and `/netcode-*.js`, modules both `play/index.html` and
+`map.html` import, so on play.bfstats.io they went to the disabled netcode
+backend and answered 503: the front end stuck on "Loading…" and no level page
+started, from 19:53:25Z to 20:02:57Z. mesh.bfstats.io and bfstats.io were
+unaffected. The pages themselves answered 200, which is what the post-apply
+check looked at.
+
+The ACL is now `path /netcode` or `path_beg /netcode/`.
+
+**Remember:** a `path_beg` ACL on a host that serves static files matches file
+names too; end the prefix with `/` or match the exact path. After an ingress
+change, load a page in a browser (or fetch its modules), not just its HTML.
 
 ### 6. `Cache=Shared` serialized reads behind writers — 2026-08-16
 
