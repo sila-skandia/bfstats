@@ -4,7 +4,9 @@
 //   map.html?replay=replays/<recording>.ndjson
 //   map.html?replay=replays/<recording>.ndjson&serverlog=replays/<ev_log>.xml
 //
-// or open one from disk: picked with Open recording or dropped anywhere on
+// (`replays/` is the viewer's own folder locally, and on play.bfstats.io the
+// assets volume's mesh/replays/: features/gameplay-recordings), or open one
+// from disk: picked with Open recording or dropped anywhere on
 // the page, it is held in the browser across the reload that loads its level
 // and played as `?replay=local:<name>`, then let go (replay-open.js).
 //

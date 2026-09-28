@@ -164,7 +164,7 @@ import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { createReplayController, recordingInfo } from './replay.js';
-import { installRecordingOpener, loadingNote } from './replay-open.js';
+import { installRecordingOpener, loadingNote, ownModHref } from './replay-open.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -1765,6 +1765,15 @@ if (!manifest.length) {
     document.documentElement.classList.remove('shell-playing');
     return null;
   }) : null;
+  // A shared link names the recording and nothing else
+  // (features/gameplay-recordings), so the page came up in the mod the
+  // visitor browsed last: one recorded in another goes again in its own
+  // before any level loads, the recording back out of the browser's cache.
+  const ownMod = replayInfo ? await ownModHref(location.href, replayInfo, activeMod.id).catch(() => null) : null;
+  if (ownMod) {
+    location.replace(ownMod);
+    await new Promise(() => {});
+  }
   // ...and the game type it was played in picks the level's layer (a co-op
   // round plays `SinglePlayer/`), unless `?mode=` says otherwise.
   if (replayInfo?.mode && !params.has('mode')) params.set('mode', replayInfo.mode);

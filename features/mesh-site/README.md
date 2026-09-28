@@ -12,6 +12,7 @@ on its own cadence. The level viewer (`map.html`) is play.bfstats.io's now; see
 |---|---|
 | Viewer HTML/JS/vendor | Docker image `anskia/bfstats-mesh` (built from `mesh/`) |
 | Extracted glTF / maps | Assets PVC under `mesh/models/` and `mesh/maps/` |
+| Shared recordings (`/replays/`) | Assets PVC under `mesh/replays/` ([gameplay-recordings](../gameplay-recordings/README.md)) |
 | Upload / browse | FileBrowser (Tailscale `filebrowser-hetzner`) |
 | Public URL | `https://mesh.bfstats.io` |
 | Same assets for the main site | `GET /stats/assets/mesh/{*path}` on the API |
