@@ -66,8 +66,8 @@ shared recording:
 - marks each timed comment on the timeline; a click jumps there;
 - brings each timed comment up as the round passes its moment, while the
   panel is shut;
-- for its uploader or an admin, F or More > Use this frame as the cover (F
-  is fullscreen for everyone else);
+- for its uploader or an admin, F or More > Use this frame as the cover (for
+  anyone else F says who can);
 - leads back to its page in the feed from the Escape menu.
 
 A recording opened **from disk** gets a Share button on the bar: the frame F
