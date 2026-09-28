@@ -567,7 +567,8 @@ two within 30 ms, so the timings below are measured.
   camera and from the soldier alike. At spawn the replicated set swapped in one
   sample, so it is not "stays replicated once you have been near". Control
   points are exempt: they stayed replicated at 687 m. Wake sets
-  `Game.setViewDistance 500`, the likely driver; the extra ~20 m is unexplained.
+  `Game.setViewDistance 500`, the likely driver; the extra ~20 m is the
+  server's own (§19).
   Confirmed on a second map (2026-09-27): Kursk sets `Game.setViewDistance 400`,
   and in `replay_20260927-140921` (a public server) an Ilyushin left the
   recording player's range at 414 m and 416 m and came back at 407 m. So the
@@ -1235,3 +1236,70 @@ trace and stands the level's own vehicle in for a root it never sees
 Built and installed as `dsound.dll` on 2026-09-27 22:52; not yet in a real
 file. Rollback to the `v2.0-round-replay` build: `cp dsound_old.dll
 dsound.dll` in the game folder.
+
+---
+
+## 19. What the server sends one client, and how far (2026-09-28)
+
+Read from the Linux server, and measured on the three files that begin at the
+join. The owner's question: does the server send nothing for a player out of
+range, and is a recording as detailed as it can be?
+
+**The rule.** `GameServer::updateGhostManager` (lnxded `0x08137710`) calls
+`getRelevantObjects(connection, viewpoint, Setup::getViewDistance() + 20.0)`
+(`0x08137390`; the 20.0f at `0x086c0314`): the level's view distance plus 20 m
+around the client's viewpoint, which is §11.1's unexplained ~20 m. Wake is
+520 m, Bocage and Kursk 420, Berlin 120. Inside it every object is ghosted by
+priority (`calculateObjectPriority` `0x0813b230`). A second loop then ghosts,
+at a flat priority 0.03 (`0x3cf5c28f`) and wherever he is, the control object
+of every living player (BFPlayer `+0x79`, `AIPlayer::getIsAlive`) on the
+client's own side (`+0x7c`, what `BFPlayer::setTeam` writes), and of any
+enemy whose `+0x13c` is set: the flag carrier (`Flag::handlePickup`
+`0x08291d70`) and the tagged player (`GameServer::setTagPlayerId`
+`0x0814a2a0`).
+
+| what | own side | the other side, and empty hulls |
+|---|---|---|
+| position, hit points, turrets, engines, the body's states, trigger flags (so every shot, `f`) | everywhere | within the radius |
+| joins and leaves, sides, spawns (0x07 carries the new soldier's spawn point), vehicle entries and exits by seat, kits, kills with the weapon, deaths, chat, radio | everywhere | everywhere |
+| every object's creation with its transform, and its removal; control points; tickets; the round-end tallies | everywhere | everywhere |
+
+Replicated share of each player's time in the world (the spawn screen left
+out):
+
+| file | own side | other side |
+|---|---|---|
+| `replay_20260928-133433`, Bocage, public, 34 players | 95% (spawn latency, and a player who left at 233 s) | 78% |
+| `replay_20260927-140921`, Kursk, public | 99% | 90% |
+| `replay_20260927-075756`, Wake, the lab | 100% | 54% |
+
+In the Bocage file the other side's shots stop at 415 m and the own side's
+reach 908 m; 30 of its 210 vehicle entries were into hulls out of range, all
+recorded. Files begun mid-round read lower on their own side, but only through free
+cameras the file never saw made, which it cannot tell from hulls.
+
+**Out of range the client keeps the object.** All 256 re-sightings in the
+Bocage file came back with the same object-manager id (`gid`). The sampler
+reads only enabled roots, so the root drops out (`d`) while its children stay
+registered: a BF109's engine ran on at zero input for six seconds after its
+`d` (throttle servo down 100 a sample, revs to 0.37) and nothing changed
+after that until it was back.
+
+**What follows.**
+
+- One recording per side covers every player for the whole round: each file
+  has its own side everywhere and the other within its radius. Network ids
+  are the server's, so two files merge by id. Not built.
+- The replay draws a vehicle out of range solid while nobody has held its
+  root seat since the recording last saw it and it was standing then; only
+  one somebody has driven since is a ghost (`replay-recording.js`
+  `poseHeld`, a drivetrain-less gun never). 89% of the Bocage file's
+  out-of-range vehicle time is the former, 88% of Kursk's, 64% of the Wake
+  lab round's (its bots drive the landing craft).
+- Sampling: the server sends ghost state every 0.1 s (netcode P-2,
+  `conn+0x18`), and the recorder samples the applied world at 10 Hz, out of
+  step with it, so a sample can be the client's own zero-input step between
+  two updates. Writing each object as its ghost is applied (client
+  `0x0048a130` to `0x00489ed0`) would be exact. Not built.
+- Beyond one client: the server's event log for servers we run (§11.7), or a
+  recorder in the server itself.

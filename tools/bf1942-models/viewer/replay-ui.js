@@ -830,8 +830,8 @@ export class ReplayUi {
     serverToggle.title = player.alignment ? 'show the server event log on the level and in this list'
       : 'load a server log (&serverlog=) to overlay it';
     serverToggle.querySelector('input').disabled = !player.alignment;
-    const ghosts = this.checkbox('out-of-range objects', player.showGhosts, on => { player.showGhosts = on; });
-    ghosts.title = 'objects beyond the recording player\'s view distance (the map\'s fog line), which the server stops updating: drawn translucent where they were last seen';
+    const ghosts = this.checkbox('out-of-range vehicles', player.showGhosts, on => { player.showGhosts = on; });
+    ghosts.title = 'vehicles driven beyond the recording player\'s view distance (the map\'s fog line), where the server stops sending them: drawn translucent where they were last seen. One nobody has driven since is where it was, drawn solid';
     this.statusText = el('span', 'rp-log-status');
     opts.append(serverToggle, ghosts, this.statusText);
     this.list = el('div', 'rp-log-list');

@@ -989,5 +989,62 @@ class ReplayMidwayAuditTests(unittest.TestCase):
         self.assertNotIn(558, stand_ins, "an engine alone names no template")
 
 
+class ReplayOutOfRangeHullTests(unittest.TestCase):
+    """A hull the server has stopped sending is drawn solid while nobody has
+    driven it since the recording last saw it, and a ghost once somebody has.
+
+    The owner's question on replay_20260928-133433 (Bocage), whether the
+    translucent shells should be whole vehicles: 89% of that file's
+    out-of-range vehicle time was vehicles nobody had driven since the
+    recording last saw them, whose drawn pose was exact all along (79% on
+    Midway, 88% on Kursk, 40% in replay_20260927-190946, whose jeeps were
+    mostly being driven). EnterVehicle reaches every client whatever the
+    distance, so the rest are known to be guesses.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["heldPoses"]
+
+    def test_a_parked_vehicle_out_of_range_is_drawn_solid(self) -> None:
+        self.assertEqual("solid", self.results["outOfRange"]["800"])
+        # Driven and parked before the recording lost it: where it was left.
+        self.assertEqual("solid", self.results["outOfRange"]["811"])
+        # Heard made, never seen, never boarded: its spawn.
+        self.assertEqual("solid", self.results["outOfRange"]["830"])
+
+    def test_a_vehicle_taken_out_of_sight_is_a_ghost(self) -> None:
+        self.assertEqual("ghost", self.results["outOfRange"]["810"])
+        # Boarded while never seen: somewhere else by now.
+        self.assertEqual("ghost", self.results["inRange"]["840"])
+        self.assertEqual("ghost", self.results["outOfRange"]["840"])
+        # A ship whose helm is taken out of range.
+        self.assertEqual("ghost", self.results["outOfRange"]["880"])
+
+    def test_a_gunner_or_a_gun_with_no_drivetrain_moves_nothing(self) -> None:
+        # The Wake lab round's bots manned the Shokaku's AA seats at anchor.
+        self.assertEqual("solid", self.results["outOfRange"]["870"])
+        self.assertEqual("solid", self.results["outOfRange"]["850"])
+        self.assertFalse(self.results["movable"]["850"])
+        self.assertTrue(self.results["movable"]["870"])
+
+    def test_one_rolling_when_lost_is_a_ghost_though_nobody_is_aboard(self) -> None:
+        self.assertEqual("ghost", self.results["outOfRange"]["820"])
+
+    def test_one_back_in_range_is_solid_again(self) -> None:
+        self.assertEqual("solid", self.results["back"]["810"])
+
+    def test_the_toggle_hides_the_ghosts_and_keeps_what_stands(self) -> None:
+        self.assertEqual(
+            {"800": "solid", "810": "hidden", "811": "solid", "820": "hidden", "830": "solid", "840": "hidden",
+             "850": "solid", "870": "solid", "880": "hidden"},
+            self.results["ghostsOff"])
+
+    def test_pose_held_is_the_rule(self) -> None:
+        self.assertEqual([True, False, True, False, True, False], self.results["held"])
+
+
 if __name__ == "__main__":
     unittest.main()

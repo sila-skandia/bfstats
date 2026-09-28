@@ -27,9 +27,9 @@
 //   went to something else, or its engine started. So is a root seen later
 //   whose engine ran before it was seen, on a place of its own template.
 //
-// Both are drawn as the replay draws anything the recording holds but has not
-// seen move: an out-of-range ghost. Every unnamed root in that file has one
-// engine record, not running, and one record per part.
+// Both are drawn as the replay draws any hull out of range that nobody has
+// driven (`poseHeld`): solid, where it stands. Every unnamed root in that
+// file has one engine record, not running, and one record per part.
 //
 // Where the parts cannot say which of several level vehicles a root is, the
 // order of events can: a root removed, and a new object of a candidate's
