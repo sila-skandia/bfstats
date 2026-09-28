@@ -22,8 +22,8 @@ internal sealed class TestClock(Instant now) : IClock
 }
 
 /// <summary>
-/// An in-memory database with two users (one with a linked player name, one admin), a
-/// throwaway recordings directory, and the services over them.
+/// An in-memory database with users (three with a linked player name, one of them an admin,
+/// and one with none), a throwaway recordings directory, and the services over them.
 /// </summary>
 internal sealed class RecordingFixture : IDisposable
 {
@@ -47,6 +47,7 @@ internal sealed class RecordingFixture : IDisposable
         Uploader = AddUser("uploader@example.com", "skandia");
         Other = AddUser("other@example.com", "Rut");
         Admin = AddUser("admin@example.com", "Boss");
+        Unlinked = AddUser("unlinked@example.com", null);
         Db.SaveChanges();
 
         Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance);
@@ -64,18 +65,30 @@ internal sealed class RecordingFixture : IDisposable
     public User Other { get; }
     public User Admin { get; }
 
+    /// <summary>Signed in, with no player name linked to the account.</summary>
+    public User Unlinked { get; }
+
     public RecordingActor AsUploader => new(Uploader.Id, false);
     public RecordingActor AsOther => new(Other.Id, false);
     public RecordingActor AsAdmin => new(Admin.Id, true);
+    public RecordingActor AsUnlinked => new(Unlinked.Id, false);
 
-    private User AddUser(string email, string playerName)
+    private User AddUser(string email, string? playerName)
     {
         var user = new User { Email = email, CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
         Db.Users.Add(user);
         Db.SaveChanges();
-        Db.UserPlayerNames.Add(new UserPlayerName { UserId = user.Id, PlayerName = playerName, CreatedAt = DateTime.UtcNow });
+        if (playerName is not null)
+        {
+            Db.UserPlayerNames.Add(new UserPlayerName { UserId = user.Id, PlayerName = playerName, CreatedAt = DateTime.UtcNow });
+        }
         return user;
     }
+
+    /// <summary>The details the share dialog sends: a title and whom it goes up as, nothing
+    /// else read of the file.</summary>
+    public static RecordingUploadMeta Meta(string title = "Midway at dawn", string? authorName = null, string? recordedBy = null) =>
+        new(title, authorName, null, null, null, null, recordedBy, null, null, null);
 
     /// <summary>Shares <paramref name="recording"/> as the uploader would from the feed:
     /// gzipped, with its details.</summary>
@@ -84,6 +97,17 @@ internal sealed class RecordingFixture : IDisposable
     {
         using var content = Multipart(recording, meta ?? new RecordingUploadMeta(
             "Midway at dawn", "skandia", null, null, null, null, null, null, null, null), gzip, serverLog);
+        await using var body = await content.ReadAsStreamAsync();
+        return await Uploads.UploadAsync(
+            content.Headers.ContentType!.ToString(), body, body.Length, actor ?? AsUploader, CancellationToken.None);
+    }
+
+    /// <summary>Shares a recording whose bytes are given as they go over the wire.</summary>
+    public async Task<RecordingDetailDto> UploadBytesAsync(byte[] recording, RecordingUploadMeta meta, RecordingActor? actor = null)
+    {
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(JsonSerializer.Serialize(meta), Encoding.UTF8, "application/json"), "meta");
+        content.Add(new ByteArrayContent(recording), "recording", "replay.ndjson.gz");
         await using var body = await content.ReadAsStreamAsync();
         return await Uploads.UploadAsync(
             content.Headers.ContentType!.ToString(), body, body.Length, actor ?? AsUploader, CancellationToken.None);
@@ -104,15 +128,40 @@ internal sealed class RecordingFixture : IDisposable
         return content;
     }
 
-    public static byte[] Gzip(string text)
+    public static byte[] Gzip(string text) => Gzip(Encoding.UTF8.GetBytes(text), CompressionLevel.Fastest);
+
+    /// <summary>A file as the API keeps it: what it read, gzipped by it.</summary>
+    public static byte[] Kept(string text) => Gzip(Encoding.UTF8.GetBytes(text), CompressionLevel.Optimal);
+
+    public static byte[] Gzip(byte[] bytes, CompressionLevel level)
     {
         using var output = new MemoryStream();
-        using (var gzip = new GZipStream(output, CompressionLevel.Fastest, leaveOpen: true))
+        using (var gzip = new GZipStream(output, level, leaveOpen: true))
         {
-            gzip.Write(Encoding.UTF8.GetBytes(text));
+            gzip.Write(bytes);
         }
         return output.ToArray();
     }
+
+    /// <summary>A dedicated server's event log as the game writes it, cut off where a round
+    /// still running leaves it: no closing tags.</summary>
+    public static string EventLog(string events = "") => string.Join('\n',
+        """<?xml version="1.0" encoding="iso-8859-1"?>""",
+        """<bf:log version="1.1" xmlns:bf="http://www.dice.se/xmlns/bf/1.1">""",
+        """<bf:round timestamp="2.96057">""",
+        """<bf:server>""",
+        """  <bf:setting name="server name">bfstats-lab</bf:setting>""",
+        """  <bf:setting name="map">midway</bf:setting>""",
+        """</bf:server>""",
+        """<bf:event name="createPlayer" timestamp="12.4">""",
+        """    <bf:param type="int" name="player_id">0</bf:param>""",
+        """    <bf:param type="string" name="name">skandia</bf:param>""",
+        """</bf:event>""",
+        events,
+        """<bf:event name="destroyPlayer" timestamp="295.558">""",
+        """    <bf:param type="int" name="player_id">0</bf:param>""",
+        """    <bf:param type="string" name="player_location">(unknown)</bf:param>""",
+        """</bf:event>""") + "\n";
 
     /// <summary>A Midway round as bf42plus writes it, cut down: the header, the round's
     /// description, a roster naming the recording player, a later join, and the end.</summary>

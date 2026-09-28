@@ -47,6 +47,27 @@ export function recordingPlayer(rec) {
   return null;
 }
 
+/** The recording player's name, which a shared recording goes up under
+ *  (features/replay-feed), found as the API finds it (RecordingInspector): the
+ *  roster's `local`, else the name the pid of his own shots had when he fired
+ *  (v4's `local` rounds, v3's trigger presses), else the round's only human.
+ *  Stricter than `recordingPlayer`, which takes the first human for the
+ *  replay's point of view: of several humans and nothing marking one, the
+ *  file cannot say, and the answer is '', never a stand-in like `player 18`. */
+export function recorderName(rec) {
+  for (const list of rec.sessions?.values() ?? []) {
+    const own = list.find(s => s.local && s.name);
+    if (own) return String(own.name).trim();
+  }
+  for (const player of rec.players.values()) if (player.local && player.name) return String(player.name).trim();
+  const shot = rec.fires.find(f => (f.local || f.press) && f.pid !== null && f.pid !== undefined);
+  const shooter = shot ? playerAt(rec, shot.pid, shot.t)?.name : '';
+  if (shooter) return String(shooter).trim();
+  const humans = new Set([...rec.players.values()]
+    .filter(p => p.ai === false).map(p => String(p.name ?? '').trim()).filter(Boolean));
+  return humans.size === 1 ? [...humans][0] : '';
+}
+
 /**
  * The kill log's lines (`rec.kills`), with a weapon the recording did not
  * carry filled from the server's own log where it names one: a v3 file's

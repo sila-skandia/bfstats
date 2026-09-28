@@ -4,6 +4,7 @@
 // The feed's pages, the upload and the replay's comments need a page and an
 // API and are checked in one (features/replay-feed, "Verification").
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installModuleHooks, viewerDir } from '../sim/env.mjs';
@@ -12,7 +13,9 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 globalThis.location = new URL('https://play.bfstats.io/play/index.html?tab=replay');
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [api, feed] = await Promise.all([imp('recordings-api.js'), imp('play/recordings-feed.js')]);
+const [api, feed, { parseRecording }, { recorderName }] = await Promise.all([
+  imp('recordings-api.js'), imp('play/recordings-feed.js'), imp('replay-recording.js'), imp('replay-chapters.js'),
+]);
 
 const page = new URL('https://play.bfstats.io/map.html');
 const local = new URL('http://localhost:5273/map.html');
@@ -58,6 +61,48 @@ results.watch = {
   plain: feed.watchHref(recording, { root: '../' }),
   at: feed.watchHref({ ...recording, serverLogUrl: null }, { root: '../', at: 21.7 }),
   localApi: feed.watchHref(recording, { root: '../', fileUrl: p => `http://localhost:9222${p}` }),
+};
+
+// Whom a shared recording goes up under: the recording player as the file
+// names him, the same cases api/Recordings/RecordingInspector's tests read.
+const lines = (...records) => records.map(r => JSON.stringify(r)).join('\n');
+const recorded = text => recorderName(parseRecording(text));
+const fixture = name => fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'fixtures', name), 'utf8');
+results.recorder = {
+  v2Lab: recorded(fixture('replay_20260915-210619.ndjson')),
+  v3Lab: recorded(fixture('replay_20260915-213110.ndjson')),
+  roster: recorded(lines(
+    { k: 'h', v: 5 },
+    { k: 'roster', t: 0, p: [[0, 2, 0, 'Rut', 0], [8, 2, 0, 'skandia', 1], [3, 1, 1, 'Bot', 0]] },
+    { k: 'end', t: 60 })),
+  ownShots: recorded(lines(
+    { k: 'h', v: 5 },
+    { k: 'e', t: 1, e: 'createPlayer', pid: 23, name: 'Leaver', team: 1, ai: 0 },
+    { k: 'e', t: 2, e: 'createPlayer', pid: 4, name: 'Darko', team: 2, ai: 0 },
+    { k: 'e', t: 9, e: 'destroyPlayer', pid: 23 },
+    { k: 'e', t: 16.5, e: 'createPlayer', pid: 23, name: 'skandia', team: 1, ai: 0 },
+    { k: 'f', t: 18.1, id: 6424, pid: 4, w: 'MG42' },
+    { k: 'f', t: 19.2, id: 6425, pid: 23, w: 'Thompson', local: 1 },
+    { k: 'end', t: 60 })),
+  v3Trigger: recorded(lines(
+    { k: 'h', v: 3 },
+    { k: 'e', t: 1, e: 'createPlayer', pid: 0, name: 'skandia', team: 1, ai: 0 },
+    { k: 'e', t: 1.1, e: 'createPlayer', pid: 1, name: 'Darko', team: 2, ai: 0 },
+    { k: 'e', t: 21.2, e: 'fire', pid: 0, kind: 2, weapon: 'USMarineSoldier' },
+    { k: 'end', t: 60 })),
+  chat: recorded(lines(
+    { k: 'h', v: 5 },
+    { k: 'e', t: 0, e: 'createPlayer', pid: 13, name: 'Kerem', ai: 0, ago: 3 },
+    { k: 'chat', t: 1.7, pid: 13, team: 2, text: 'Kerem: teams' },
+    { k: 'f', t: 5, id: 80, pid: 18, w: 'K98', local: 1 },
+    { k: 'chat', t: 347.2, pid: 18, team: 2, text: 'skandia: gf' },
+    { k: 'end', t: 400 })),
+  severalHumans: recorded(lines(
+    { k: 'h', v: 2 },
+    { k: 'e', t: 1, e: 'createPlayer', pid: 1, name: 'Darko', ai: 0 },
+    { k: 'e', t: 5.7, e: 'createPlayer', pid: 0, name: 'skandia', ai: 0 },
+    { k: 'end', t: 60 })),
+  nobody: recorded(lines({ k: 'h', v: 5 }, { k: 'o', t: 0, id: 1 }, { k: 'end', t: 60 })),
 };
 
 process.stdout.write(JSON.stringify(results));
