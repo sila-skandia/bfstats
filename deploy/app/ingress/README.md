@@ -98,6 +98,12 @@ and cloudflared reads its ingress rules from the ConfigMap at startup. The
 `/netcode` route is path-based and rides this host; it is written below and
 answers 503 until the netcode Deployment is applied.
 
+Since 2026-09-28 the play host's `/stats` goes to the API
+(`use_backend mesh_frontend if host_play_bfstats !is_netcode !is_stats`): the
+REPLAY feed (features/replay-feed) calls it on its own origin, so bfstats.io's
+sign-in cookie (`Domain=bfstats.io; Path=/stats`) comes along. Apply and
+restart HAProxy as above.
+
 Since 2026-09-27 the map page is this host's alone: `mesh/nginx.conf` sends
 `mesh.bfstats.io/map.html` and `/play/…` here with a 301, keyed on `$host`, so
 HAProxy needs no change for it
