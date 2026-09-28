@@ -1432,9 +1432,20 @@ export const ANIM_FLAGS = Object.freeze({ SWIMMING: 0x08, CLIMBING: 0x10, CROUCH
  *  (84.36 s) and down from `Lb_ParachuteHitGround` (84.46 s). */
 export const CHUTE_OPEN_BIT = 0x10;
 
+/** The soldier's state bit `0x20`, his weapon zoomed in. The server sends it
+ *  for every soldier, not only the recording client's own: it flipped on all
+ *  52 of the recording player's zoom presses (his `fire` input edges of kind
+ *  2) in replay_20260928-133433, and over four recordings everyone else has
+ *  it only with a weapon that zooms (a sniper rifle 23-25% of the time, never
+ *  a grenade, knife, wrench, medic pack, mine or detonator), and 119 of 227
+ *  sniper rounds left zoomed, 3 of them still zoomed 1.5 s later (the bolt's
+ *  `unZoomBetweenFire`). `0x80` rises while the zoom changes. */
+export const ZOOM_BIT = 0x20;
+
 /** A soldier's recorded body at `t` (v4 `st`), read through the state table:
  *  `{ stance, lower, upper, firing, reloading, pitch, item }` and whether
- *  his chute is open (`chuteOpen`), or null. */
+ *  his chute is open (`chuteOpen`) and his weapon zoomed (`zoomed`), or
+ *  null. */
 export function bodyAt(rec, nid, t) {
   const entry = latestAt(rec.stances?.get(nid), t);
   if (!entry) return null;
@@ -1447,6 +1458,7 @@ export function bodyAt(rec, nid, t) {
     stance,
     swimming: Boolean(flags & ANIM_FLAGS.SWIMMING),
     chuteOpen: Boolean((entry.bits ?? 0) & CHUTE_OPEN_BIT),
+    zoomed: Boolean((entry.bits ?? 0) & ZOOM_BIT),
     lower: lower?.name ?? null,
     upper: upperName || null,
     firing: /fire/i.test(upperName) && !/end$/i.test(upperName),

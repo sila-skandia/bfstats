@@ -18,8 +18,10 @@
 //     for a recording player, whose every round and refill the file has; for
 //     anyone else an estimate, as a client can miss a remote player's single
 //     taps and is told nobody else's refills;
-//   - not recorded: his zoom (no scope, and the unzoomed lens), and the hit
-//     marks, which the server never sent this client.
+//   - his zoom: the body record's state bit (replay-recording.js
+//     `ZOOM_BIT`), the server's for every soldier: the weapon's zoom lens
+//     (replay-camera.js) and a scoped rifle's scope in place of the cross;
+//   - not recorded: the hit marks, which the server never sent this client.
 
 import { DeviationModel, TICK_HZ } from './deviation.js';
 import { AmmoEntry } from './kit-ammo.js';
@@ -329,6 +331,7 @@ export class ReplayHud {
       return {
         kind: 'foot', pid, team, life, kit: life.kitTemplate ?? null,
         stance: body?.stance ?? 'stand',
+        zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
         hp: hpAt(life, t), maxhp: life.maxhp || null,
         weapon, data: data ?? null,
         ammo: data && events ? handAmmoAt({ ...events, refills }, data.magazine ?? null, t, weapon) : null,
@@ -359,6 +362,19 @@ export class ReplayHud {
       // The soldier in the seat: his stance icon and his health stay up.
       soldier: this.seatedSoldier(pid, t),
     };
+  }
+
+  /** Whether `life` looked down his weapon's zoom at `t` (`ZOOM_BIT`), and
+   *  the lens it gives, `{ zoomed, fov }`: `fov` the weapon's `zoomFov` in
+   *  degrees (a whole field of view, radians in the data: a Thompson's 0.5 is
+   *  28.6, a sniper rifle's 0.1 is 5.7; hand-fire.js). For the first-person
+   *  camera, which is placed before this HUD's frame. */
+  zoomOf(life, t) {
+    const { rec } = this.player;
+    const weapon = heldWeapon(rec, this.player.ctx.loadouts?.() ?? null, life, t);
+    const zoom = this.weaponData(weapon)?.zoom;
+    if (!zoom || !bodyAt(rec, life.nid, t)?.zoomed) return { zoomed: false, fov: null };
+    return { zoomed: true, fov: zoom.fov > 0 ? (zoom.fov * 180) / Math.PI : null };
   }
 
   /** `pid`'s living soldier at `t`, as the seat's HUD shows him: `{ stance,
@@ -411,7 +427,9 @@ export class ReplayHud {
     if (this.player.camera?.sight?.looking) return { style: null, deviation: 0, scoped: false };
     const centre = this.player.rec.crosshairCentrePoint ?? true;
     if (s.kind === 'foot') {
-      return { style: s.data?.crossHair ?? null, deviation: s.spread * Math.PI / 180, scoped: false, centre };
+      // A scoped weapon zoomed draws its scope, not the cross (feed).
+      const scoped = Boolean(s.zoomed && s.zoom?.scope);
+      return { style: s.data?.crossHair ?? null, deviation: s.spread * Math.PI / 180, scoped, centre };
     }
     return { style: s.hud?.crossHairType ?? null, deviation: 0, scoped: false, centre };
   }
@@ -447,6 +465,17 @@ export class ReplayHud {
     if (s.kind === 'foot') {
       vars['Vehicle/ShowVehicleIcon'] = false;
       vars['Weapon/ShowWeaponIcon'] = Boolean(s.weapon);
+      // His scope, as the page's own soldier's (soldier-hud.js, SCOPE-1): the
+      // layout's crosshair group with the scope overlay in place of the cross,
+      // a sniper sight or the binoculars' ring. The page's feed puts the
+      // group and its index back down every frame.
+      if (s.zoomed && s.zoom?.scope) {
+        vars['CrossHair/ShowCrossHair'] = true;
+        vars['CrossHair/ScopeIndex'] = 1;
+        vars['CrossHair/SniperSight'] = Boolean(s.zoom.sniperSight);
+        vars['CrossHair/ScopeIcon'] = s.zoom.icon || 'sniper.tga';
+        if (!s.zoom.sniperSight) vars['CrossHair/SightIcon'] = s.zoom.sightIcon || 'scout_ring_128x128.tga';
+      }
       if (s.data && s.ammo) writeSoldierAmmo(vars, s.data, s.ammo.rounds, s.ammo.mags);
       else for (const name of SOLDIER_AMMO_VARS) delete vars[name];
       return;
