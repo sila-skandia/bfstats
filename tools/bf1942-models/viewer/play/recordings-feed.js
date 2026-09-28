@@ -1,0 +1,1272 @@
+// The REPLAY tab's feed (features/replay-feed): the rounds players have
+// shared, newest or most watched first, each one's page with its comments,
+// and sharing one. It is the page's DOM, laid over the menu's own frame by
+// `replay-screen.js`, which paints the game's background and tab strip round
+// it: the game has no such screen, and what people write here is free text
+// that the menu's bitmap faces could not draw. The look is the replay
+// chrome's (replay-ui.js, replay-open.js): dark plates, a khaki heading
+// strip, olive-edged buttons.
+//
+// A card's cover plays the recording; its title opens its page. A time in a
+// comment (`0:21 get rekt`) is a link into the replay at that moment, as a
+// time in a YouTube comment is. Watching is `map.html`, where the same
+// comments run alongside the round (replay-social.js).
+
+import {
+  ago, clock, commentRuns, count, createRecordingsApi, readableQuery, resolveApi, size,
+} from '../recordings-api.js';
+import { describeRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
+import { recordedAt, titled } from '../replay-open.js';
+import { loadMods, servable, VANILLA } from '../mods.js';
+import { loadHudPaths } from '../hud-pack.js';
+
+const PAGE_SIZE = 24;
+const COMMENT_PAGE = 20;
+
+const ICONS = {
+  play: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
+  upload: '<path d="M8 10.6V2.8M4.7 6 8 2.7 11.3 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 9.8v3.6h10.8V9.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  file: '<path d="M4 1.8h5.2L12.4 5v9.2H4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 2v3.3h3.2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  back: '<path d="M9.8 3.2 5 8l4.8 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  link: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.8 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  pencil: '<path d="M10.6 2.6l2.8 2.8-7.6 7.6H3v-2.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  trash: '<path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.4 4.5l.7 8.7h5.8l.7-8.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  eye: '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/>',
+  chat: '<path d="M2.5 3.2h11v7.2H7.2L4.3 13v-2.6H2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  user: '<circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.6c.6-2.6 2.6-3.8 5-3.8s4.4 1.2 5 3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+};
+const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
+
+const STYLE = `
+.rf-root { position: fixed; z-index: 20; display: flex; min-width: 0; min-height: 0;
+  --rf-plate: rgba(26, 26, 22, .93); --rf-plate-deep: rgba(14, 14, 12, .72); --rf-card: rgba(38, 38, 33, .92);
+  --rf-edge: rgba(200, 194, 152, .30); --rf-edge-strong: #b9b38a; --rf-khaki: #a39c6c; --rf-khaki-ink: #15150e;
+  --rf-ink: #eeecd9; --rf-muted: #a9a690; --rf-faint: #7d7a66; --rf-gold: #e8c35a; --rf-alert: #f2c25a;
+  font: 13px/1.4 'Trebuchet MS', 'Geist Variable', 'Segoe UI', system-ui, sans-serif; color: var(--rf-ink); }
+.rf-root[hidden], .rf-root [hidden] { display: none !important; }
+.rf-root *, .rf-root *::before, .rf-root *::after { box-sizing: border-box; }
+.rf-root { scrollbar-width: thin; scrollbar-color: rgba(200, 194, 152, .38) transparent; }
+.rf-root ::-webkit-scrollbar { width: 8px; height: 8px; }
+.rf-root ::-webkit-scrollbar-thumb { background: rgba(200, 194, 152, .38); border-radius: 4px; }
+.rf-root ::-webkit-scrollbar-track { background: transparent; }
+.rf-root svg { width: 15px; height: 15px; flex: none; }
+.rf-panel { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0;
+  background: var(--rf-plate); border: 1px solid var(--rf-edge); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55); }
+.rf-head { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 6px 0 14px; flex: none;
+  background: var(--rf-khaki); color: var(--rf-khaki-ink); font: 800 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .16em; text-transform: uppercase; }
+.rf-head h1 { margin: 0; font: inherit; }
+.rf-head .rf-count { font-weight: 700; letter-spacing: .08em; opacity: .7; }
+.rf-spacer { flex: 1 1 auto; }
+.rf-account { display: flex; align-items: center; gap: 6px; min-width: 0; font: 700 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .06em; text-transform: none; }
+.rf-account .rf-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+.rf-head .rf-btn { color: var(--rf-khaki-ink); border-color: rgba(21, 21, 14, .35); background: rgba(255, 255, 255, .12); height: 24px; }
+.rf-head .rf-btn:hover { background: rgba(255, 255, 255, .26); border-color: rgba(21, 21, 14, .6); }
+.rf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; flex: none;
+  border-bottom: 1px solid var(--rf-edge); background: var(--rf-plate-deep); }
+.rf-seg { display: inline-flex; border: 1px solid var(--rf-edge); border-radius: 6px; overflow: hidden; }
+.rf-seg button { appearance: none; height: 28px; padding: 0 12px; margin: 0; border: 0; background: transparent; color: var(--rf-muted);
+  font: 700 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.rf-seg button + button { border-left: 1px solid var(--rf-edge); }
+.rf-seg button:hover { color: var(--rf-ink); background: rgba(255, 255, 255, .06); }
+.rf-seg button[aria-pressed="true"] { background: var(--rf-khaki); color: var(--rf-khaki-ink); }
+.rf-btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 0 12px;
+  margin: 0; border: 1px solid rgba(200, 194, 152, .45); border-radius: 5px; background: rgba(0, 0, 0, .25); color: var(--rf-ink);
+  font: 700 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .08em; text-transform: uppercase; cursor: pointer;
+  white-space: nowrap; text-decoration: none; }
+.rf-btn:hover { background: rgba(255, 255, 255, .08); border-color: var(--rf-edge-strong); }
+.rf-btn.primary { background: var(--rf-khaki); border-color: var(--rf-khaki); color: var(--rf-khaki-ink); }
+.rf-btn.primary:hover { background: #b9b38a; border-color: #b9b38a; }
+.rf-btn.quiet { border-color: transparent; background: transparent; color: var(--rf-muted); }
+.rf-btn.quiet:hover { color: var(--rf-ink); border-color: var(--rf-edge); }
+.rf-btn.danger:hover { border-color: #d9824a; color: #f0b58a; }
+.rf-btn:disabled { opacity: .45; cursor: default; }
+.rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible,
+.rf-input:focus-visible, .rf-select:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rf-storage { color: var(--rf-faint); font-size: 11px; white-space: nowrap; }
+.rf-body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; }
+.rf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 16px 14px; }
+.rf-card { display: flex; flex-direction: column; min-width: 0; }
+.rf-cover { position: relative; display: block; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden;
+  background: #0d0d0b center / cover no-repeat; border: 1px solid var(--rf-edge); isolation: isolate; }
+.rf-cover::after { content: ''; position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, .7), rgba(0, 0, 0, 0) 55%); pointer-events: none; }
+.rf-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rf-cover-title { position: absolute; left: 10px; right: 10px; bottom: 9px; z-index: 1; font: 800 15px/1.05 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .08em; text-transform: uppercase; color: #f4f1dc; text-shadow: 0 2px 6px rgba(0, 0, 0, .8); }
+.rf-cover.shot .rf-cover-title { display: none; }
+.rf-mod, .rf-len { position: absolute; z-index: 1; padding: 3px 6px; border-radius: 4px; font: 700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .08em; background: rgba(0, 0, 0, .72); color: #f4f1dc; }
+.rf-mod { top: 7px; left: 7px; text-transform: uppercase; color: var(--rf-khaki); }
+.rf-len { right: 7px; bottom: 7px; font-family: ui-monospace, monospace; letter-spacing: 0; font-size: 11px; }
+.rf-cover:not(.shot) .rf-len { bottom: auto; top: 7px; }
+.rf-play { position: absolute; left: 50%; top: 50%; z-index: 1; display: grid; place-items: center; width: 46px; height: 46px;
+  margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(163, 156, 108, .92); color: var(--rf-khaki-ink);
+  opacity: 0; transform: scale(.85); transition: opacity .15s ease, transform .15s ease; }
+.rf-play svg { width: 20px; height: 20px; margin-left: 3px; }
+.rf-cover:hover .rf-play, .rf-cover:focus-visible .rf-play { opacity: 1; transform: none; }
+.rf-cover:hover { border-color: var(--rf-edge-strong); }
+.rf-info { padding: 8px 2px 0; min-width: 0; }
+.rf-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--rf-ink);
+  font: 700 14px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; text-decoration: none; overflow-wrap: anywhere; }
+.rf-name:hover { color: #fff; text-decoration: underline; text-decoration-color: var(--rf-khaki); text-underline-offset: 3px; }
+.rf-line { margin-top: 3px; color: var(--rf-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-line b { color: var(--rf-ink); font-weight: 700; }
+.rf-dot::before { content: '\\00b7'; margin: 0 5px; color: var(--rf-faint); }
+.rf-more { display: flex; justify-content: center; padding: 18px 0 4px; }
+.rf-note { padding: 34px 12px; text-align: center; color: var(--rf-muted); }
+.rf-note p { margin: 0 auto 14px; max-width: 46ch; text-wrap: balance; }
+.rf-note .rf-strong { color: var(--rf-ink); font: 700 15px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; }
+.rf-error { color: var(--rf-alert); }
+.rf-skeleton .rf-cover { background: linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.08), rgba(255,255,255,.03)) 0 0 / 200% 100%;
+  animation: rf-shimmer 1.2s linear infinite; }
+.rf-skeleton .rf-name, .rf-skeleton .rf-line { height: 12px; margin-top: 8px; border-radius: 3px; background: rgba(255, 255, 255, .06); }
+.rf-skeleton .rf-line { width: 60%; }
+@keyframes rf-shimmer { to { background-position: -200% 0; } }
+
+/* One recording's page. */
+.rf-detail { max-width: 1060px; margin: 0 auto; }
+.rf-back { margin: -4px 0 12px -6px; }
+.rf-hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.rf-hero .rf-cover { border-radius: 8px; }
+.rf-hero .rf-cover-title { font-size: 22px; left: 14px; bottom: 12px; }
+.rf-hero .rf-play { width: 64px; height: 64px; margin: -32px 0 0 -32px; opacity: .92; transform: none; }
+.rf-hero .rf-play svg { width: 26px; height: 26px; }
+.rf-title { display: flex; align-items: flex-start; gap: 8px; margin: 0; font: 800 20px/1.25 'Trebuchet MS', 'Segoe UI', sans-serif;
+  overflow-wrap: anywhere; }
+.rf-title span { flex: 1 1 auto; min-width: 0; }
+.rf-by { margin-top: 6px; color: var(--rf-muted); }
+.rf-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 14px; margin: 14px 0 0; font-size: 12.5px; }
+.rf-facts dt { color: var(--rf-faint); font: 700 10.5px/1.6 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.rf-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rf-players { color: var(--rf-muted); }
+.rf-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.rf-rename { display: flex; gap: 6px; flex: 1 1 auto; }
+.rf-input, .rf-select, .rf-text { width: 100%; min-width: 0; margin: 0; padding: 7px 10px; border: 1px solid rgba(200, 194, 152, .42);
+  border-radius: 5px; background: rgba(0, 0, 0, .3); color: var(--rf-ink); font: 13px/1.35 'Trebuchet MS', 'Segoe UI', sans-serif; }
+.rf-input:hover, .rf-select:hover, .rf-text:hover { border-color: var(--rf-edge-strong); }
+.rf-select { width: auto; max-width: 100%; padding-right: 26px; appearance: none; -webkit-appearance: none; cursor: pointer;
+  background: rgba(0, 0, 0, .3) no-repeat right 9px center / 10px 10px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 3.5 5 7l3.5-3.5' fill='none' stroke='%23b9b38a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.rf-select option { background: #1c1c18; color: var(--rf-ink); }
+.rf-text { min-height: 64px; resize: vertical; }
+.rf-comments { margin-top: 26px; border-top: 1px solid var(--rf-edge); padding-top: 14px; }
+.rf-comments-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+.rf-comments-head h2 { margin: 0; font: 800 13px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.rf-compose { display: grid; gap: 8px; margin-bottom: 16px; }
+.rf-compose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rf-compose-row .rf-hint { flex: 1 1 200px; color: var(--rf-faint); font-size: 11.5px; }
+.rf-signin { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; margin-bottom: 16px;
+  border: 1px dashed var(--rf-edge); border-radius: 6px; color: var(--rf-muted); }
+.rf-list { list-style: none; margin: 0; padding: 0; }
+.rf-comment { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 0;
+  border-bottom: 1px solid rgba(200, 194, 152, .12); }
+.rf-avatar { grid-row: span 2; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(163, 156, 108, .22); color: var(--rf-khaki); font: 800 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif; text-transform: uppercase; }
+.rf-comment-who { color: var(--rf-muted); font-size: 12px; }
+.rf-comment-who b { color: var(--rf-ink); margin-right: 6px; }
+.rf-comment-text { grid-column: 2; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+.rf-comment .rf-btn { grid-row: 1; grid-column: 3; height: 24px; padding: 0 6px; }
+.rf-time { color: #9fc3ff; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
+.rf-time:hover { text-decoration: underline; }
+.rf-status { min-height: 16px; color: var(--rf-muted); font-size: 12px; }
+.rf-status.error { color: var(--rf-alert); }
+
+/* Sharing a recording. */
+.rf-shade { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 14px; background: rgba(6, 6, 5, .62);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.rf-shade[hidden] { display: none; }
+.rf-dialog { width: min(520px, 100%); max-height: 100%; overflow: auto; background: rgba(28, 28, 24, .98); border: 1px solid var(--rf-edge);
+  border-radius: 8px; box-shadow: 0 18px 48px rgba(0, 0, 0, .6); }
+.rf-dialog .rf-head { position: sticky; top: 0; z-index: 1; }
+.rf-dialog-body { display: grid; gap: 12px; padding: 16px; }
+.rf-drop { display: grid; justify-items: center; gap: 8px; padding: 20px 16px; border: 1.5px dashed rgba(200, 194, 152, .4); border-radius: 6px;
+  text-align: center; color: var(--rf-muted); transition: border-color .15s ease, background-color .15s ease; }
+.rf-drop svg { width: 28px; height: 28px; color: #b9b38a; }
+.rf-drop.over { border-color: var(--rf-gold); background: rgba(232, 195, 90, .07); }
+.rf-drop b { color: var(--rf-ink); font-size: 14px; }
+.rf-drop.compact { grid-template-columns: minmax(0, 1fr) auto; justify-items: start; align-items: center; padding: 8px 8px 8px 12px; text-align: left; }
+.rf-drop.compact svg, .rf-drop.compact .rf-drop-hint { display: none; }
+.rf-drop.compact b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-size: 12.5px; }
+.rf-chosen { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; align-items: center; }
+.rf-chosen .rf-cover-title { font-size: 11px; }
+.rf-field { display: grid; gap: 5px; }
+.rf-field > span { color: var(--rf-faint); font: 700 10.5px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.rf-check { display: flex; align-items: center; gap: 8px; color: var(--rf-muted); cursor: pointer; }
+.rf-check input { margin: 0; accent-color: var(--rf-khaki); }
+.rf-progress { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.rf-progress i { display: block; height: 100%; width: 0; background: var(--rf-khaki); transition: width .2s ease; }
+.rf-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@container rf (max-width: 620px) {
+  .rf-hero { grid-template-columns: minmax(0, 1fr); }
+  .rf-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+}
+.rf-panel { container: rf / inline-size; }
+@media (max-width: 560px) {
+  .rf-head { flex-wrap: wrap; padding: 6px 6px 6px 12px; row-gap: 6px; }
+  .rf-bar { padding: 8px 10px; }
+  .rf-body { padding: 10px; }
+  .rf-grid { grid-template-columns: minmax(0, 1fr); }
+  .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rf-play, .rf-drop, .rf-progress i { transition: none; }
+  .rf-skeleton .rf-cover { animation: none; }
+}
+`;
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function button(className, label, onClick, iconName = null) {
+  const b = el('button', `rf-btn ${className}`.trim());
+  b.type = 'button';
+  b.innerHTML = `${iconName ? icon(iconName) : ''}<span></span>`;
+  b.querySelector('span').textContent = label;
+  b.addEventListener('click', e => { e.preventDefault(); onClick(e); });
+  return b;
+}
+
+/** The replay page for a shared recording, at `at` seconds if given. */
+export function watchHref(recording, { root, fileUrl = path => path, at = null }) {
+  const q = readableQuery([
+    ['mod', recording.mod],
+    ['map', recording.level],
+    ['replay', fileUrl(recording.recordingUrl)],
+    ['serverlog', recording.serverLogUrl ? fileUrl(recording.serverLogUrl) : null],
+    ['t', at === null ? null : Math.max(0, Math.floor(at))],
+  ]);
+  return new URL(`map.html?${q}`, new URL(root, location.href)).href;
+}
+
+// --- the levels' art -----------------------------------------------------------
+
+const DEFAULT_ART = 'maps/_shared/load/western.webp';
+
+/**
+ * A mod's levels as the feed shows them: `level -> { title, art }`, the menu's
+ * own title (`BATTLE OF MIDWAY`) and the loading screen's picture. A level the
+ * mod inherits carries neither in its own maps.json, so vanilla's are asked.
+ */
+function createLevelArt(root, modList) {
+  const catalogs = new Map();
+  const base = new URL(root, location.href);
+
+  function catalog(modId) {
+    if (!catalogs.has(modId)) {
+      catalogs.set(modId, (async () => {
+        const mods = servable(await modList(), 'maps');
+        const mod = mods.find(m => m.id === modId);
+        const levels = new Map();
+        if (!mod) return levels;
+        const [maps, menu] = await Promise.all([
+          fetch(new URL(`${mod.paths.maps}/maps.json`, base)).then(r => (r.ok ? r.json() : [])).catch(() => []),
+          loadHudPaths(mod.id, { root })
+            .then(hud => fetch(hud.menuUrl('menu-levels.json')).then(r => (r.ok ? r.json() : null)))
+            .catch(() => null),
+        ]);
+        for (const entry of Array.isArray(maps) ? maps : []) {
+          levels.set(String(entry.name).toLowerCase(), {
+            title: entry.loading?.title ? titled(entry.loading.title) : '',
+            art: entry.loading?.background ? new URL(`${mod.paths.maps}/${entry.loading.background}`, base).href : '',
+          });
+        }
+        for (const level of menu?.levels ?? []) {
+          for (const key of [level.dir, level.level].filter(Boolean).map(k => String(k).toLowerCase())) {
+            const known = levels.get(key);
+            if (known && level.title) known.title = titled(level.title);
+          }
+        }
+        return levels;
+      })().catch(() => new Map()));
+    }
+    return catalogs.get(modId);
+  }
+
+  return async function artFor(modId, level) {
+    const key = String(level || '').toLowerCase();
+    const own = (await catalog(modId || VANILLA.id)).get(key);
+    const vanilla = modId === VANILLA.id ? own : (await catalog(VANILLA.id)).get(key);
+    return {
+      title: own?.title || vanilla?.title || titled(level || 'Unknown level'),
+      art: own?.art || vanilla?.art || new URL(DEFAULT_ART, base).href,
+    };
+  };
+}
+
+// --- the feed --------------------------------------------------------------------
+
+/**
+ * @param {object} options
+ * @param {string} [options.root]  the viewer root from the mounting page
+ * @param {() => void} [options.onWatchFile]  Open recording's file picker: watch
+ *                                one from disk without sharing it
+ * @param {() => string} [options.playerName]  the front end's player name, the
+ *                                name to post as when the account has linked it
+ */
+export function createReplayFeed({ root = '../', onWatchFile = null, playerName = () => '' } = {}) {
+  if (!document.getElementById('rf-style')) {
+    const style = el('style');
+    style.id = 'rf-style';
+    style.textContent = STYLE;
+    document.head.append(style);
+  }
+  // The mod registry, read once: loadMods asks the server afresh every call.
+  let mods = null;
+  const modList = () => (mods ??= loadMods());
+  const artFor = createLevelArt(root, modList);
+
+  const state = {
+    api: null,          // recordings-api.js client, once the API is found
+    sort: 'recent',
+    items: [],
+    total: 0,
+    page: 0,
+    pages: 1,
+    storage: null,
+    loading: false,
+    error: null,
+    detail: null,       // the recording whose page is up
+    comments: [],
+    commentTotal: 0,
+    commentPage: 0,
+    commentPages: 1,
+    commentSort: 'newest',
+    viewer: null,       // `{ userId, names, isAdmin }` while signed in
+  };
+
+  const rootEl = el('div', 'rf-root');
+  rootEl.hidden = true;
+  const panel = el('section', 'rf-panel');
+  panel.setAttribute('aria-label', 'Shared recordings');
+  const head = el('div', 'rf-head');
+  const heading = el('h1', '', 'Recordings');
+  const countEl = el('span', 'rf-count');
+  const account = el('div', 'rf-account');
+  head.append(heading, countEl, el('span', 'rf-spacer'), account);
+  const bar = el('div', 'rf-bar');
+  const sortSeg = el('div', 'rf-seg');
+  sortSeg.setAttribute('role', 'group');
+  sortSeg.setAttribute('aria-label', 'Order');
+  const sorts = [['recent', 'Newest'], ['views', 'Most viewed']].map(([id, label]) => {
+    const b = el('button', '', label);
+    b.type = 'button';
+    b.dataset.sort = id;
+    b.addEventListener('click', () => setSort(id));
+    sortSeg.append(b);
+    return b;
+  });
+  const storageEl = el('span', 'rf-storage');
+  const watchFile = button('quiet', 'Watch a file', () => onWatchFile?.(), 'file');
+  watchFile.title = 'Watch a bf42plus recording from this computer without sharing it';
+  watchFile.hidden = !onWatchFile;
+  const shareBtn = button('primary', 'Share a recording', () => openShare(), 'upload');
+  bar.append(sortSeg, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
+  const body = el('div', 'rf-body');
+  const shade = el('div', 'rf-shade');
+  shade.hidden = true;
+  panel.append(head, bar, body, shade);
+  rootEl.append(panel);
+  document.body.append(rootEl);
+
+  // --- the API and who is signed in --------------------------------------------
+
+  let started = null;
+  /** The API client. Who is signed in is asked alongside, not first: the
+   *  list does not wait on it. */
+  function start() {
+    started ??= (async () => {
+      state.api = createRecordingsApi(await resolveApi());
+      state.api.onChange(() => renderAccount());
+      renderAccount();
+      state.api.ready().then(() => loadViewer()).catch(error => {
+        console.warn('recordings-feed: who is signed in', error);
+      });
+    })().catch(error => {
+      console.warn('recordings-feed: the API was not reached', error);
+    });
+    return started;
+  }
+
+  async function loadViewer() {
+    try {
+      state.viewer = state.api?.signedIn ? await state.api.viewer({ fresh: true }) : null;
+    } catch (error) {
+      console.warn('recordings-feed: who is signed in', error);
+      state.viewer = null;
+    }
+    renderAccount();
+    if (state.detail) renderComments();
+  }
+
+  function renderAccount() {
+    account.replaceChildren();
+    const api = state.api;
+    if (!api) return;
+    if (!api.canWrite) {
+      const note = el('span', 'rf-who', 'Live feed, read-only here');
+      note.title = 'This page reads the live feed from bfstats.io. Run the API here (dotnet run) to share and comment.';
+      account.append(note);
+      shareBtn.hidden = true;
+      return;
+    }
+    shareBtn.hidden = false;
+    if (api.signedIn) {
+      const who = el('span', 'rf-who', state.viewer?.names?.[0] ?? 'Signed in');
+      account.append(who, button('', 'Sign out', async () => {
+        await api.signOut();
+        state.viewer = null;
+        renderAccount();
+        if (state.detail) renderDetail();
+      }));
+    } else {
+      account.append(button('', api.mode === 'local' ? 'Sign in (dev)' : 'Sign in', () => signIn(), 'user'));
+    }
+  }
+
+  async function signIn() {
+    try {
+      if (await state.api.signIn()) await loadViewer();
+    } catch (error) {
+      flash(error.message, true);
+    }
+  }
+
+  // --- the list ------------------------------------------------------------------
+
+  function setSort(id) {
+    if (state.sort === id && state.items.length) return;
+    state.sort = id;
+    loadList(true);
+  }
+
+  let listAbort = null;
+  async function loadList(reset = false) {
+    if (!state.api) {
+      state.loading = true;
+      renderList();
+    }
+    await start();
+    if (!state.api) {
+      state.error = 'The recordings feed is not reachable right now.';
+      renderList();
+      return;
+    }
+    if (reset) {
+      listAbort?.abort();
+      state.items = [];
+      state.page = 0;
+      state.pages = 1;
+    }
+    if (state.page >= state.pages && !reset) return;
+    listAbort = new AbortController();
+    state.loading = true;
+    state.error = null;
+    renderList();
+    try {
+      const page = await state.api.list({ sort: state.sort, page: state.page + 1, pageSize: PAGE_SIZE, signal: listAbort.signal });
+      state.items = reset ? page.items : [...state.items, ...page.items.filter(i => !state.items.some(o => o.slug === i.slug))];
+      state.total = page.totalCount;
+      state.page = page.page;
+      state.pages = page.totalPages;
+      state.storage = page.storage;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      console.warn('recordings-feed: the list', error);
+      state.error = error.status === 404 || error.status === 0 || !error.status
+        ? 'The recordings feed is not reachable right now.' : error.message;
+    } finally {
+      state.loading = false;
+    }
+    renderList();
+  }
+
+  function renderList() {
+    if (state.detail) return;
+    for (const b of sorts) b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort));
+    bar.hidden = false;
+    countEl.textContent = state.total ? String(state.total) : '';
+    storageEl.textContent = state.storage ? `${size(state.storage.usedBytes)} of ${size(state.storage.quotaBytes)} used` : '';
+    body.replaceChildren();
+    if (state.error && !state.items.length) {
+      const note = el('div', 'rf-note');
+      note.append(el('p', 'rf-error', state.error), button('', 'Try again', () => loadList(true)));
+      body.append(note);
+      return;
+    }
+    if (!state.items.length && state.loading) {
+      const grid = el('div', 'rf-grid');
+      for (let i = 0; i < 8; i++) grid.append(skeleton());
+      body.append(grid);
+      return;
+    }
+    if (!state.items.length) {
+      const note = el('div', 'rf-note');
+      note.append(el('p', 'rf-strong', 'No recordings shared yet.'),
+        el('p', '', 'Record a round with bf42plus and share it: everyone can watch it in 3D.'));
+      if (state.api?.canWrite) note.append(button('primary', 'Share a recording', () => openShare(), 'upload'));
+      body.append(note);
+      return;
+    }
+    const grid = el('div', 'rf-grid');
+    for (const recording of state.items) grid.append(card(recording));
+    body.append(grid);
+    if (state.page < state.pages || state.loading) {
+      const more = el('div', 'rf-more');
+      const moreBtn = button('', state.loading ? 'Loading' : 'Show more', () => loadList(false));
+      moreBtn.disabled = state.loading;
+      more.append(moreBtn);
+      body.append(more);
+    }
+  }
+
+  function skeleton() {
+    const node = el('div', 'rf-card rf-skeleton');
+    node.append(el('div', 'rf-cover'), el('div', 'rf-name'), el('div', 'rf-line'));
+    return node;
+  }
+
+  /** A recording's cover: its own frame if it has one, else the level's
+   *  loading screen with the level's name on it. */
+  function cover(recording, { big = false } = {}) {
+    const a = el('a', 'rf-cover');
+    a.href = watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p) });
+    a.setAttribute('aria-label', `Watch ${recording.title}`);
+    a.addEventListener('click', e => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      watch(recording);
+    });
+    const title = el('span', 'rf-cover-title');
+    const mod = el('span', 'rf-mod', recording.mod);
+    const len = el('span', 'rf-len', clock(recording.durationSeconds));
+    const play = el('span', 'rf-play');
+    play.innerHTML = icon('play');
+    if (recording.thumbnailUrl) {
+      a.classList.add('shot');
+      const img = el('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.src = state.api.fileUrl(recording.thumbnailUrl);
+      a.append(img);
+    }
+    a.append(title, mod, len, play);
+    artFor(recording.mod, recording.level).then(level => {
+      title.textContent = level.title;
+      if (!recording.thumbnailUrl) a.style.backgroundImage = `url("${level.art}")`;
+    });
+    modList().then(list => {
+      const known = list.find(m => m.id === recording.mod);
+      if (known?.short) mod.textContent = known.short;
+    }).catch(() => {});
+    if (big) a.classList.add('big');
+    return a;
+  }
+
+  function card(recording) {
+    const node = el('article', 'rf-card');
+    const info = el('div', 'rf-info');
+    const name = el('a', 'rf-name', recording.title);
+    name.href = `?tab=replay&rec=${encodeURIComponent(recording.slug)}`;
+    name.addEventListener('click', e => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      openDetail(recording.slug, { push: true, summary: recording });
+    });
+    const where = el('div', 'rf-line');
+    artFor(recording.mod, recording.level).then(level => {
+      where.textContent = [level.title, titled(recording.gameMode), recording.serverName].filter(Boolean).join(' · ');
+      where.title = where.textContent;
+    });
+    const stats = el('div', 'rf-line');
+    stats.append(el('b', '', recording.uploaderName));
+    for (const part of [count(recording.viewCount, 'view'),
+      recording.commentCount ? count(recording.commentCount, 'comment') : null, ago(recording.createdAt)].filter(Boolean)) {
+      stats.append(el('span', 'rf-dot'), document.createTextNode(part));
+    }
+    info.append(name, where, stats);
+    node.append(cover(recording), info);
+    return node;
+  }
+
+  // --- watching ------------------------------------------------------------------
+
+  function watch(recording, at = null) {
+    location.assign(watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p), at }));
+  }
+
+  // --- one recording's page ------------------------------------------------------
+
+  async function openDetail(slug, { push = false, summary = null } = {}) {
+    await start();
+    if (push) history.pushState({ tab: 'replay', rec: slug }, '', `?tab=replay&rec=${encodeURIComponent(slug)}`);
+    state.detail = summary ? { ...summary, players: null, loading: true } : { slug, loading: true, title: '' };
+    state.comments = [];
+    state.commentPage = 0;
+    state.commentPages = 1;
+    state.commentTotal = summary?.commentCount ?? 0;
+    renderDetail();
+    body.scrollTop = 0;
+    try {
+      state.detail = await state.api.get(slug);
+    } catch (error) {
+      state.detail = { slug, error: error.status === 404 ? 'That recording is not shared any more.' : error.message };
+      renderDetail();
+      return;
+    }
+    renderDetail();
+    loadComments(true);
+  }
+
+  function closeDetail({ push = false } = {}) {
+    if (!state.detail) return;
+    state.detail = null;
+    commentsEl = null;
+    if (push) history.pushState({ tab: 'replay' }, '', '?tab=replay');
+    renderList();
+    if (!state.items.length) loadList(true);
+  }
+
+  function renderDetail() {
+    const recording = state.detail;
+    if (!recording) return;
+    bar.hidden = true;
+    body.replaceChildren();
+    const page = el('article', 'rf-detail');
+    page.append(button('quiet rf-back', 'All recordings', () => closeDetail({ push: true }), 'back'));
+    if (recording.error) {
+      const note = el('div', 'rf-note');
+      note.append(el('p', 'rf-error', recording.error));
+      page.append(note);
+      body.append(page);
+      return;
+    }
+    const hero = el('div', 'rf-hero');
+    const facts = el('div', 'rf-facts-col');
+    const title = el('h2', 'rf-title');
+    title.append(el('span', '', recording.title || ' '));
+    facts.append(title);
+    if (!recording.loading || recording.uploaderName) {
+      const by = el('div', 'rf-by');
+      by.textContent = [`Shared by ${recording.uploaderName}`, ago(recording.createdAt),
+        count(recording.viewCount, 'view')].filter(Boolean).join(' · ');
+      facts.append(by);
+    }
+    if (!recording.loading) {
+      const dl = el('dl', 'rf-facts');
+      const fact = (label, value) => {
+        if (!value) return;
+        dl.append(el('dt', '', label), el('dd', '', value));
+      };
+      const levelDd = { value: titled(recording.level) };
+      fact('Level', levelDd.value);
+      const levelNode = dl.lastChild;
+      artFor(recording.mod, recording.level).then(level => { if (levelNode) levelNode.textContent = level.title; });
+      fact('Game type', titled(recording.gameMode));
+      fact('Server', recording.serverName);
+      fact('Recorded', [recordedAt(recording.recordedLocal), recording.recordedBy && `by ${recording.recordedBy}`].filter(Boolean).join(' '));
+      fact('Length', clock(recording.durationSeconds));
+      if (recording.players?.length) {
+        dl.append(el('dt', '', `Players (${recording.players.length})`));
+        const dd = el('dd', 'rf-players', recording.players.join(', '));
+        dl.append(dd);
+      }
+      facts.append(dl);
+      const actions = el('div', 'rf-actions');
+      actions.append(button('primary', 'Watch', () => watch(recording), 'play'),
+        button('', 'Copy link', e => copyLink(recording, e.currentTarget), 'link'));
+      if (recording.canManage) {
+        actions.append(button('quiet', 'Rename', () => rename(recording, title), 'pencil'),
+          deleteButton(recording));
+      }
+      facts.append(actions);
+    }
+    hero.append(cover(recording, { big: true }), facts);
+    page.append(hero);
+    if (!recording.loading) page.append(commentsSection(recording));
+    body.append(page);
+  }
+
+  async function copyLink(recording, target) {
+    const href = watchHref(recording, { root, fileUrl: p => absolute(state.api.fileUrl(p)) });
+    try {
+      await navigator.clipboard.writeText(href);
+      target.querySelector('span').textContent = 'Link copied';
+    } catch {
+      window.prompt('The link to this recording:', href);
+    }
+  }
+
+  const absolute = path => new URL(path, location.origin).href;
+
+  function rename(recording, title) {
+    const form = el('form', 'rf-rename');
+    const input = el('input', 'rf-input');
+    input.value = recording.title;
+    input.maxLength = 100;
+    input.setAttribute('aria-label', 'Title');
+    const save = button('primary', 'Save', () => form.requestSubmit());
+    form.append(input, save, button('quiet', 'Cancel', () => renderDetail()));
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      save.disabled = true;
+      try {
+        state.detail = await state.api.rename(recording.slug, input.value);
+        patchItem(state.detail);
+        renderDetail();
+      } catch (error) {
+        save.disabled = false;
+        flash(error.message, true);
+      }
+    });
+    title.replaceChildren(form);
+    input.focus();
+    input.select();
+  }
+
+  function deleteButton(recording) {
+    let armed = false;
+    const b = button('quiet danger', 'Delete', async () => {
+      if (!armed) {
+        armed = true;
+        b.querySelector('span').textContent = 'Click again to delete';
+        setTimeout(() => { armed = false; b.querySelector('span').textContent = 'Delete'; }, 4000);
+        return;
+      }
+      b.disabled = true;
+      try {
+        await state.api.remove(recording.slug);
+        state.items = state.items.filter(i => i.slug !== recording.slug);
+        state.total = Math.max(0, state.total - 1);
+        closeDetail({ push: true });
+      } catch (error) {
+        b.disabled = false;
+        flash(error.message, true);
+      }
+    }, 'trash');
+    return b;
+  }
+
+  function patchItem(recording) {
+    const at = state.items.findIndex(i => i.slug === recording.slug);
+    if (at >= 0) state.items[at] = { ...state.items[at], ...recording };
+  }
+
+  // --- comments ------------------------------------------------------------------
+
+  let commentsEl = null;
+  function commentsSection(recording) {
+    const section = el('section', 'rf-comments');
+    section.setAttribute('aria-label', 'Comments');
+    commentsEl = section;
+    renderComments();
+    return section;
+  }
+
+  async function loadComments(reset = false) {
+    const recording = state.detail;
+    if (!recording?.slug || recording.error) return;
+    if (reset) { state.comments = []; state.commentPage = 0; state.commentPages = 1; }
+    try {
+      const page = await state.api.comments(recording.slug, {
+        sort: state.commentSort, page: state.commentPage + 1, pageSize: COMMENT_PAGE,
+      });
+      if (state.detail?.slug !== recording.slug) return;
+      state.comments = reset ? page.items : [...state.comments, ...page.items];
+      state.commentTotal = page.totalCount;
+      state.commentPage = page.page;
+      state.commentPages = page.totalPages;
+    } catch (error) {
+      console.warn('recordings-feed: comments', error);
+    }
+    renderComments();
+  }
+
+  function renderComments() {
+    const recording = state.detail;
+    const section = commentsEl;
+    if (!section || !recording || recording.loading) return;
+    section.replaceChildren();
+    const top = el('div', 'rf-comments-head');
+    top.append(el('h2', '', state.commentTotal ? count(state.commentTotal, 'comment') : 'Comments'));
+    const seg = el('div', 'rf-seg');
+    for (const [id, label] of [['newest', 'Newest'], ['time', 'In round order']]) {
+      const b = el('button', '', label);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(state.commentSort === id));
+      b.addEventListener('click', () => {
+        if (state.commentSort === id) return;
+        state.commentSort = id;
+        loadComments(true);
+      });
+      seg.append(b);
+    }
+    top.append(seg);
+    section.append(top, composer(recording));
+    const list = el('ol', 'rf-list');
+    for (const comment of state.comments) list.append(commentItem(recording, comment));
+    section.append(list);
+    if (!state.comments.length) section.append(el('div', 'rf-status', 'No comments yet.'));
+    if (state.commentPage < state.commentPages) {
+      const more = el('div', 'rf-more');
+      more.append(button('', 'More comments', () => loadComments(false)));
+      section.append(more);
+    }
+  }
+
+  function commentItem(recording, comment) {
+    const li = el('li', 'rf-comment');
+    const avatar = el('span', 'rf-avatar', (comment.authorName || '?').trim().charAt(0));
+    const who = el('div', 'rf-comment-who');
+    who.append(el('b', '', comment.authorName), document.createTextNode(ago(comment.createdAt)));
+    const text = el('p', 'rf-comment-text');
+    for (const run of commentRuns(comment.content, recording.durationSeconds)) {
+      if (run.at === undefined) {
+        text.append(document.createTextNode(run.text));
+        continue;
+      }
+      const link = el('a', 'rf-time', run.text);
+      link.href = watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p), at: run.at });
+      link.title = `Watch from ${clock(run.at)}`;
+      link.addEventListener('click', e => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+        e.preventDefault();
+        watch(recording, run.at);
+      });
+      text.append(link);
+    }
+    li.append(avatar, who);
+    if (comment.canDelete) {
+      li.append(button('quiet', 'Remove', async e => {
+        e.currentTarget.disabled = true;
+        try {
+          await state.api.removeComment(recording.slug, comment.id);
+          state.comments = state.comments.filter(c => c.id !== comment.id);
+          state.commentTotal = Math.max(0, state.commentTotal - 1);
+          renderComments();
+        } catch (error) {
+          flash(error.message, true);
+        }
+      }, 'trash'));
+    }
+    li.append(text);
+    return li;
+  }
+
+  /** Where a comment is written: the text, the name it goes up as, and POST;
+   *  or what it takes to get there (sign in, link an in-game name). */
+  function composer(recording) {
+    const api = state.api;
+    if (!api?.canWrite) return el('div');
+    if (!api.signedIn) {
+      const box = el('div', 'rf-signin');
+      box.append(el('span', '', 'Sign in to comment.'),
+        button('', api.mode === 'local' ? 'Sign in (dev)' : 'Sign in with Discord', () => signIn(), 'user'));
+      return box;
+    }
+    const names = state.viewer?.names ?? [];
+    if (!names.length) return linkNameForm();
+    const form = el('form', 'rf-compose');
+    const text = el('textarea', 'rf-text');
+    text.maxLength = 1000;
+    text.placeholder = 'Add a comment. A time like 0:21 links to that moment.';
+    text.setAttribute('aria-label', 'Comment');
+    const row = el('div', 'rf-compose-row');
+    const as = postAs(names);
+    const status = el('span', 'rf-hint', 'Posting as');
+    const post = button('primary', 'Post', () => form.requestSubmit());
+    row.append(status, as, post);
+    form.append(text, row);
+    text.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); form.requestSubmit(); }
+    });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (!text.value.trim()) return;
+      post.disabled = true;
+      try {
+        const comment = await api.comment(recording.slug, text.value, as.value);
+        rememberPostAs(as.value);
+        text.value = '';
+        state.commentTotal += 1;
+        if (state.commentSort === 'newest') state.comments = [comment, ...state.comments];
+        else await loadComments(true);
+        renderComments();
+      } catch (error) {
+        flash(error.message, true);
+      } finally {
+        post.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  /** The account has no in-game name to post as: link one, as the dashboard
+   *  does, and carry on. */
+  function linkNameForm(after = null) {
+    const form = el('form', 'rf-signin');
+    const input = el('input', 'rf-input');
+    input.maxLength = 32;
+    input.placeholder = 'Your in-game name';
+    input.value = playerName() && playerName() !== 'Player' ? playerName() : '';
+    input.style.maxWidth = '240px';
+    const save = button('primary', 'Use this name', () => form.requestSubmit());
+    form.append(el('span', '', 'Comments and shares go up under your in-game name.'), input, save);
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      save.disabled = true;
+      try {
+        state.viewer = await state.api.linkName(name);
+        rememberPostAs(name);
+        renderAccount();
+        if (after) after(); else renderComments();
+      } catch (error) {
+        save.disabled = false;
+        flash(error.message, true);
+      }
+    });
+    return form;
+  }
+
+  const POST_AS_KEY = 'bf42-mesh-post-as';
+  function rememberPostAs(name) {
+    try { localStorage.setItem(POST_AS_KEY, name); } catch {}
+  }
+
+  function postAs(names) {
+    const select = el('select', 'rf-select');
+    select.setAttribute('aria-label', 'Post as');
+    let preferred = '';
+    try { preferred = localStorage.getItem(POST_AS_KEY) || ''; } catch {}
+    for (const name of names) {
+      const option = el('option', '', name);
+      option.value = name;
+      select.append(option);
+    }
+    const wanted = [preferred, playerName()].map(n => n.toLowerCase());
+    const match = names.find(n => wanted.includes(n.toLowerCase()));
+    if (match) select.value = match;
+    select.disabled = names.length === 1;
+    return select;
+  }
+
+  // --- sharing -------------------------------------------------------------------
+
+  function openShare(files = null) {
+    shade.hidden = false;
+    shade.replaceChildren(shareDialog(files));
+  }
+
+  function closeShare() {
+    shade.hidden = true;
+    shade.replaceChildren();
+  }
+
+  shade.addEventListener('pointerdown', e => { if (e.target === shade && !sharing) closeShare(); });
+
+  let sharing = false;
+  function shareDialog(initialFiles) {
+    const api = state.api;
+    const dialog = el('div', 'rf-dialog');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', 'Share a recording');
+    const top = el('div', 'rf-head');
+    const close = button('', '', () => { if (!sharing) closeShare(); }, 'close');
+    close.setAttribute('aria-label', 'Close');
+    top.append(el('h1', '', 'Share a recording'), el('span', 'rf-spacer'), close);
+    const inner = el('div', 'rf-dialog-body');
+    dialog.append(top, inner);
+
+    if (!api?.canWrite) {
+      inner.append(el('p', 'rf-status', 'Sharing needs the site: this page reads the live feed read-only.'));
+      return dialog;
+    }
+    if (!api.signedIn) {
+      inner.append(el('p', '', 'Sign in with your Discord account to share a recording. It goes up under your in-game name.'));
+      const actions = el('div', 'rf-dialog-actions');
+      actions.append(button('primary', api.mode === 'local' ? 'Sign in (dev)' : 'Sign in with Discord', async () => {
+        await signIn();
+        if (api.signedIn) openShare(initialFiles);
+      }, 'user'));
+      inner.append(actions);
+      return dialog;
+    }
+    if (!(state.viewer?.names ?? []).length) {
+      inner.append(linkNameForm(() => openShare(initialFiles)));
+      return dialog;
+    }
+
+    const input = el('input');
+    input.type = 'file';
+    input.accept = '.ndjson,.xml';
+    input.multiple = true;
+    input.hidden = true;
+    const drop = el('div', 'rf-drop');
+    drop.innerHTML = `${icon('upload')}<b>Choose a replay_*.ndjson</b><span class="rf-drop-hint">and its ev_*.xml server log, if you have it. Or drop them here.</span>`;
+    const chooseBtn = button('', 'Choose a file', () => input.click());
+    drop.append(chooseBtn);
+    const chosen = el('div');
+    const status = el('div', 'rf-status');
+    status.setAttribute('aria-live', 'polite');
+    inner.append(input, drop, chosen, status);
+    if (state.storage) {
+      inner.append(el('div', 'rf-storage',
+        `${size(state.storage.usedBytes)} of ${size(state.storage.quotaBytes)} shared so far.`));
+    }
+
+    let picked = null;   // { recording, log, described }
+    const say = (text, error = false) => {
+      status.textContent = text;
+      status.classList.toggle('error', error);
+    };
+
+    async function take(files) {
+      if (sharing || !files.length) return;
+      picked = null;
+      chosen.replaceChildren();
+      say('Reading the recording');
+      try {
+        const { recording, log } = await sortRecordingFiles(files);
+        const described = await describeRecording(await recording.text(), { onStage: say });
+        picked = { recording, log, described };
+        say('');
+        // The zone steps aside for the recording it took: its name, and a way to another.
+        drop.classList.add('compact');
+        drop.querySelector('b').textContent = log ? `${recording.name} and ${log.name}` : recording.name;
+        chooseBtn.querySelector('span').textContent = 'Choose another';
+        renderChosen();
+      } catch (error) {
+        say(error.message || String(error), true);
+      }
+    }
+
+    async function renderChosen() {
+      const { recording, log, described } = picked;
+      const { meta } = described;
+      chosen.replaceChildren();
+      const row = el('div', 'rf-chosen');
+      const preview = { mod: meta.mod, level: meta.level, durationSeconds: meta.durationSeconds, title: recording.name };
+      const art = el('div', 'rf-cover');
+      const artTitle = el('span', 'rf-cover-title');
+      art.append(artTitle, el('span', 'rf-len', clock(meta.durationSeconds)));
+      artFor(preview.mod, preview.level).then(level => {
+        art.style.backgroundImage = `url("${level.art}")`;
+        artTitle.textContent = meta.level ? level.title : '';
+      });
+      const facts = el('div');
+      const levelLine = el('div', 'rf-name', meta.level ? titled(meta.level) : 'Level unknown');
+      artFor(preview.mod, preview.level).then(level => { if (meta.level) levelLine.textContent = level.title; });
+      facts.append(levelLine,
+        el('div', 'rf-line', [titled(meta.gameMode), meta.serverName].filter(Boolean).join(' · ') || recording.name),
+        el('div', 'rf-line', [recordedAt(meta.start), meta.recordedBy && `by ${meta.recordedBy}`].filter(Boolean).join(' ')));
+      row.append(art, facts);
+      chosen.append(row);
+
+      const fields = el('div', 'rf-dialog-body');
+      fields.style.padding = '12px 0 0';
+      // A recording that says no level, and whose flags match none: ask.
+      let levelSelect = null;
+      if (!meta.level) {
+        const field = el('label', 'rf-field');
+        field.append(el('span', '', 'Level'));
+        levelSelect = el('select', 'rf-select');
+        const prompt = el('option', '', 'Choose the level it was recorded on');
+        prompt.value = '';
+        levelSelect.append(prompt);
+        for (const { mod, levels } of await levelTrees(described.mod)) {
+          const group = el('optgroup');
+          group.label = mod.name;
+          for (const entry of levels) {
+            const option = el('option', '', titled(entry.loading?.title || entry.name));
+            option.value = `${mod.id}/${entry.name}`;
+            group.append(option);
+          }
+          levelSelect.append(group);
+        }
+        field.append(levelSelect);
+        fields.append(field);
+      }
+      const titleField = el('label', 'rf-field');
+      const titleInput = el('input', 'rf-input');
+      titleInput.maxLength = 100;
+      titleInput.placeholder = 'What happens in it';
+      const levelTitle = meta.level ? (await artFor(meta.mod, meta.level)).title : '';
+      titleInput.value = [levelTitle, meta.serverName && `on ${meta.serverName}`].filter(Boolean).join(' ');
+      titleField.append(el('span', '', 'Title'), titleInput);
+      fields.append(titleField);
+      const names = state.viewer?.names ?? [];
+      const asField = el('label', 'rf-field');
+      const as = postAs(names);
+      asField.append(el('span', '', 'Shared by'), as);
+      fields.append(asField);
+      let withLog = null;
+      if (log) {
+        withLog = el('input');
+        withLog.type = 'checkbox';
+        withLog.checked = true;
+        const check = el('label', 'rf-check');
+        check.append(withLog, document.createTextNode(`Include the server log (${log.name})`));
+        fields.append(check);
+      }
+      const progress = el('div', 'rf-progress');
+      const bar = el('i');
+      progress.append(bar);
+      progress.hidden = true;
+      const actions = el('div', 'rf-dialog-actions');
+      const go = button('primary', 'Share', () => share(), 'upload');
+      actions.append(button('quiet', 'Cancel', () => { if (!sharing) closeShare(); }), go);
+      fields.append(progress, actions);
+      chosen.append(fields);
+      titleInput.focus();
+
+      async function share() {
+        if (sharing) return;
+        let level = meta.level;
+        let modId = meta.mod;
+        if (levelSelect) {
+          if (!levelSelect.value) { say('Choose the level it was recorded on.', true); levelSelect.focus(); return; }
+          const at = levelSelect.value.indexOf('/');
+          modId = levelSelect.value.slice(0, at);
+          level = levelSelect.value.slice(at + 1).toLowerCase();
+        }
+        sharing = true;
+        go.disabled = true;
+        drop.hidden = true;
+        progress.hidden = false;
+        say('Compressing');
+        try {
+          const shared = await api.upload({
+            recording,
+            serverLog: withLog?.checked ? log : null,
+            meta: { ...meta, level, mod: modId, title: titleInput.value, authorName: as.value },
+            onStage: stage => say(stage),
+            onProgress: p => {
+              bar.style.width = `${Math.round(p * 100)}%`;
+              say(p >= 1 ? 'Checking the recording' : `Uploading ${Math.round(p * 100)}%`);
+            },
+          });
+          rememberPostAs(as.value);
+          sharing = false;
+          closeShare();
+          state.items = [shared, ...state.items.filter(i => i.slug !== shared.slug)];
+          state.total += 1;
+          openDetail(shared.slug, { push: true, summary: shared });
+        } catch (error) {
+          sharing = false;
+          go.disabled = false;
+          drop.hidden = false;
+          progress.hidden = true;
+          if (error.status === 409 && error.body?.existingSlug) {
+            say(error.message, true);
+            const open = button('', 'Open it', () => { closeShare(); openDetail(error.body.existingSlug, { push: true }); });
+            status.append(document.createTextNode(' '), open);
+            return;
+          }
+          say(error.message || String(error), true);
+        }
+      }
+    }
+
+    input.addEventListener('change', () => {
+      const files = [...input.files];
+      input.value = '';
+      take(files);
+    });
+    // The zone's own drop: prevented first, so Open recording's page-wide one
+    // (replay-open.js) leaves it alone.
+    const carries = e => [...(e.dataTransfer?.types ?? [])].includes('Files');
+    dialog.addEventListener('dragover', e => {
+      if (!carries(e)) return;
+      e.preventDefault();
+      drop.classList.add('over');
+    });
+    dialog.addEventListener('dragleave', e => { if (e.target === drop) drop.classList.remove('over'); });
+    dialog.addEventListener('drop', e => {
+      if (!carries(e)) return;
+      e.preventDefault();
+      drop.classList.remove('over');
+      take([...(e.dataTransfer?.files ?? [])]);
+    });
+    if (initialFiles?.length) take(initialFiles);
+    return dialog;
+  }
+
+  // --- the page's own status line --------------------------------------------------
+
+  let flashTimer = 0;
+  function flash(text, error = false) {
+    let note = panel.querySelector(':scope > .rf-flash');
+    if (!note) {
+      note = el('div', 'rf-status rf-flash');
+      note.style.cssText = 'position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:6;padding:8px 14px;'
+        + 'border-radius:6px;background:rgba(14,14,12,.95);border:1px solid var(--rf-edge);max-width:90%;text-align:center';
+      panel.append(note);
+    }
+    note.textContent = text;
+    note.classList.toggle('error', error);
+    note.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { note.hidden = true; }, 5000);
+  }
+
+  // --- routing -------------------------------------------------------------------
+
+  /** Shows what `?tab=replay[&rec=<slug>]` names. */
+  function route(params = new URLSearchParams(location.search)) {
+    const slug = params.get('rec');
+    if (slug) {
+      if (state.detail?.slug !== slug) openDetail(slug);
+      return;
+    }
+    if (state.detail) closeDetail();
+    else if (!state.items.length && !state.loading) loadList(true);
+  }
+
+  window.addEventListener('popstate', e => {
+    if (rootEl.hidden) return;
+    route(new URLSearchParams(location.search));
+    if (e.state?.tab && e.state.tab !== 'replay') return;
+  });
+
+  window.addEventListener('keydown', e => {
+    if (rootEl.hidden || e.key !== 'Escape') return;
+    if (!shade.hidden) { if (!sharing) closeShare(); e.preventDefault(); return; }
+    if (state.detail && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '')) {
+      closeDetail({ push: true });
+      e.preventDefault();
+    }
+  });
+
+  return {
+    element: rootEl,
+    /** Puts the feed in `box` (CSS pixels, the viewport's). */
+    place(box) {
+      Object.assign(rootEl.style, {
+        left: `${Math.round(box.left)}px`, top: `${Math.round(box.top)}px`,
+        width: `${Math.round(box.width)}px`, height: `${Math.round(box.height)}px`,
+      });
+    },
+    show(params) {
+      rootEl.hidden = false;
+      route(params);
+    },
+    hide() {
+      rootEl.hidden = true;
+      if (!sharing) closeShare();
+    },
+    openShare,
+    route,
+    get state() { return state; },
+  };
+}

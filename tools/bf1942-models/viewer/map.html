@@ -165,6 +165,7 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref } from './replay-open.js';
+import { installReplaySocial } from './replay-social.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -396,6 +397,24 @@ const params = new URLSearchParams(location.search);
 const MENU_URL = new URL('./play/index.html', location.href);
 if (params.get('mod') && params.get('mod') !== 'bf1942') {
   MENU_URL.searchParams.set('mod', params.get('mod'));
+}
+
+// A recording shared to the REPLAY feed: its views and comments here, and the
+// way back to the menu is its page in the feed; one opened from disk can be
+// shared from the bar (replay-social.js). An extra, like Open recording.
+let social = null;
+try {
+  social = installReplaySocial({
+    replayUrl: params.get('replay'),
+    params,
+    menuUrl: MENU_URL,
+    levelName: () => {
+      try { return level.extras?.level ?? ''; } catch { return ''; }
+    },
+    modId: () => activeMod.id,
+  });
+} catch (error) {
+  console.warn('map: the recording\'s comments left out', error);
 }
 
 // A bare `map.html` names no level, and the level list sits in the debug
@@ -1794,8 +1813,12 @@ level.warmups.level.finally(() => { pageConsole.escMenuScreen(); });
 replayController = createReplayController({
   scene, camera, loader, bust,
   stage: document.getElementById('stage'),
-  // The bar's date and Open button, once the replay's chrome is built.
-  opened: player => recordings?.decorate(player),
+  // The bar's date and Open button, once the replay's chrome is built, and a
+  // shared recording's comments.
+  opened: player => {
+    recordings?.decorate(player);
+    social?.decorate(player);
+  },
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
   // The level's bake: its own vehicles wear its paint (Tobruk's desert), which
