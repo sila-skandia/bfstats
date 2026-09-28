@@ -25,6 +25,20 @@ https://play.bfstats.io/map.html?replay=replays/<file>.ndjson
 https://play.bfstats.io/map.html?replay=replays/<file>.ndjson&serverlog=replays/<ev_log>.xml
 ```
 
+Without the UI, from this PC (how both recordings so far went up): write
+through the FileBrowser pod, which has been left running though its
+manifest says 0, under a hidden name, then rename, so no half-sent file is
+ever served. Compare the sum with `sha256sum "$f"`, and fetch it from the
+mesh pod before the link goes out.
+
+```bash
+f=replay_<stamp>.ndjson
+gzip -1 -c "$f" | kubectl --context hetzner -n bf42-stats exec -i deploy/filebrowser -- sh -c \
+  "d=/mnt/assets/mesh/replays; gunzip -c > \$d/.$f.part && chmod 0644 \$d/.$f.part && mv \$d/.$f.part \$d/$f && sha256sum \$d/$f"
+kubectl --context hetzner -n bf42-stats exec deploy/bfstats-mesh -- \
+  sh -c "wget -qO- http://127.0.0.1/replays/$f | sha256sum"
+```
+
 A new recording needs no deploy: nginx serves it as soon as it is on the
 volume. Cloudflare does not cache `/replays/` (`cf-cache-status: DYNAMIC`,
 2026-09-28: neither `.ndjson` nor `.xml` is a type it caches by default, and
