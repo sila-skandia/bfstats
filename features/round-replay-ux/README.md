@@ -61,7 +61,8 @@ timeline or any button.
 | Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons; markers in the menu | M, 4, B |
 | Replay log (debug) | Log button | L |
 | Hide the HUD: the replay's chrome, the message log, the minimap, the counters | menu (...) | H |
-| Fullscreen | button | F, unless F sets the cover ("No HUD, and F for the cover") |
+| Fullscreen | button | |
+| The frame on screen as the recording's cover (features/replay-feed) | menu (...), for its uploader or an admin | F |
 | Open another recording | upload button, or drop the file anywhere (see "Opening a recording") | |
 | Shortcuts | ? button | ? |
 | Close a panel | click outside | Esc; with nothing open, Esc is the game's menu as before |
@@ -525,12 +526,16 @@ and F to make the scene on screen the recording's cover.
   panels inside the hidden HUD, where nothing showed; now the HUD comes back
   with that panel up. Escape goes through `setBare`, so the page's layers
   come back with the replay's.
-- **F is the cover where this viewer may set one**: a shared recording's
-  uploader or an admin (the test More > Use this frame as the cover already
-  had; the item now shows F), and a recording opened from disk, where F picks
-  the frame Share sends. Everyone else keeps F for fullscreen, which keeps its
-  button either way; the shortcuts list and the button's tooltip say which F
-  is which. A cover is the 3D canvas alone, so it never carries the HUD.
+- **F is the cover's key.** A shared recording's uploader or an admin sets
+  it there and then (the test More > Use this frame as the cover already
+  had; the item now shows F); on a recording opened from disk F picks the
+  frame Share sends. Anywhere else F says why not: "Only its uploader or an
+  admin can set the cover" on a shared recording, until the feed says this
+  viewer may, and "Covers are for recordings in the REPLAY feed" on a plain
+  link. A cover is the 3D canvas alone, so it never carries the HUD.
+- **Fullscreen has no key.** The first cut kept F for fullscreen wherever no
+  cover could be set; the owner: the bar's button is enough, use F for the
+  frame. The shortcuts list reads F as the cover.
 
 | File | What changed |
 |---|---|
@@ -544,7 +549,7 @@ minimap hidden with their pixels intact, and Shift+H brings all of it back;
 so does Escape, and Tab, M, L and T bring it back with their panel up; under H
 an open log reads shut to the level's rings. Against a stubbed feed API: as the
 uploader, F and Shift+F each PUT a 640x360 JPEG of the view with no HUD in it
-and the notice reads Cover set; as a viewer, F is fullscreen; from disk, F
+and the notice reads Cover set; as a viewer, F sends nothing; from disk, F
 reads Cover chosen and the Share dialog shows that frame. On a phone without
 page fullscreen (844x390, touch), the fullscreen button hides the whole HUD
 and a tap brings it back.
