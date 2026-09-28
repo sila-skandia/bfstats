@@ -57,12 +57,14 @@ shared recording:
 - marks each timed comment on the timeline; a click jumps there;
 - brings each timed comment up as the round passes its moment, while the
   panel is shut;
-- for its uploader or an admin, More > Use this frame as the cover;
+- for its uploader or an admin, F or More > Use this frame as the cover (F
+  is fullscreen for everyone else);
 - leads back to its page in the feed from the Escape menu.
 
-A recording opened **from disk** gets a Share button on the bar: the frame on
-screen is its cover, and once shared the page carries on as the shared
-recording (its address, its comments) without loading the round again.
+A recording opened **from disk** gets a Share button on the bar: the frame F
+picked, or else the frame on screen, is its cover, and once shared the page
+carries on as the shared recording (its address, its comments) without
+loading the round again.
 
 ## Signing in
 
@@ -225,4 +227,4 @@ admin. With no API on :9222 the page reads the live feed, read-only;
 - A report button and an admin view of what was shared, when the feed needs
   moderating.
 - Covers for recordings shared from the feed's dialog come from the replay
-  (More > Use this frame as the cover); the dialog cannot render the level.
+  (F, or More > Use this frame as the cover); the dialog cannot render the level.

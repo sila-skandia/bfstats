@@ -233,6 +233,8 @@ export class ReplayBattleMap {
 
   show() {
     const root = this.ui.root;
+    // Out of the hidden HUD, the map brings it back (replay-ui.js `toggle`).
+    this.ui.setBare?.(false, true);
     // One overlay in the middle at a time.
     root.classList.remove('board-open', 'help-open');
     this.ui.playersBtn.classList.remove('on');

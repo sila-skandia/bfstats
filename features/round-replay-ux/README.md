@@ -33,7 +33,7 @@ the end has the files, the decisions made on the way and what is still open.
 | Player list is the scoreboard | BF1942's own Tab scoreboard (Axis left, Allied right), clickable like Overwatch and Valorant replay portraits | Tab opens it; click a name to follow. ↑ ↓ step through players without it. A player card over the timeline says whom you follow and what he is doing. |
 | Kill feed and chat as the game draws them | The play page's own message log | `comms.js` / `chat-log.js`, the log the play page draws: `killer [weapon] victim` under the killer's flag, `[point] Axis captured the control point`, chat, the centre kill message when the followed player dies, and, in first person on the recording player, the game's red hit-direction wash. The raw replay log stays as a debug panel (L). |
 | Name tags you can click | Spectator name tags (CS2, Fortnite) | Players near the camera carry their name (within 35 m, fading out by 60; since features/round-replay-highlights); clicking one follows him. |
-| Chrome that gets out of the way | Netflix / YouTube idle fade; Overwatch, Fortnite and Rocket League hide-HUD keys | While playing, the bar fades after a few idle seconds (a thin progress line stays); H hides every panel for clean shots. |
+| Chrome that gets out of the way | Netflix / YouTube idle fade; Overwatch, Fortnite and Rocket League hide-HUD keys | While playing, the bar fades after a few idle seconds (a thin progress line stays); H hides the whole HUD for clean shots, the game's message log, minimap and ticket plate with the replay's panels. |
 | Shortcuts overlay | YouTube and GitHub's `?` | `?` lists every key. |
 
 ## Controls
@@ -60,8 +60,8 @@ timeline or any button.
 | Name tags (the players near the camera) | menu (...) | N |
 | Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons; markers in the menu | M, 4, B |
 | Replay log (debug) | Log button | L |
-| Hide the interface | menu (...) | H |
-| Fullscreen | button | F |
+| Hide the HUD: the replay's chrome, the message log, the minimap, the counters | menu (...) | H |
+| Fullscreen | button | F, unless F sets the cover ("No HUD, and F for the cover") |
 | Open another recording | upload button, or drop the file anywhere (see "Opening a recording") | |
 | Shortcuts | ? button | ? |
 | Close a panel | click outside | Esc; with nothing open, Esc is the game's menu as before |
@@ -450,20 +450,20 @@ What it does now:
   | 667×375 | the same without the 5 s steps |
   | 390×844, 360×740 | two rows: playback over the cameras and the panels |
 
-- **The menu (...)**: Name tags (N), Battle markers (B), Hide the interface
+- **The menu (...)**: Name tags (N), Battle markers (B), Hide the HUD
   (H), and the Replay log and Open a recording once the bar has folded them
   away; the recording's date heads it once the bar has dropped it.
 - **A tap on the view** (a finger lifted within 350 ms, having moved under
   10 px) slides the bar and the card away, or back, paused or playing. A drag
   orbits and leaves the chrome as it is. A tap that closes a menu or a panel
   does nothing more. Playing untouched, the chrome goes after 4 s on a touch
-  screen (2.8 s with a mouse). Out of the hidden interface, a tap brings
+  screen (2.8 s with a mouse). Out of the hidden HUD, a tap brings
   everything back.
 - **Fullscreen is always on the bar.** The page goes fullscreen, not the
   stage, so Open recording's panel still shows over it, and a phone (its
   shorter side under 600 px) turns to landscape (`screen.orientation.lock`).
   Safari on an iPhone has no fullscreen for anything but a video: there the
-  button hides the interface instead, and a tap brings it back.
+  button hides the HUD instead, and a tap brings it back.
 - **The free camera on a touch screen**: a finger down on the left 40% of the
   view is a thumbstick, its ring where the thumb went down, full speed at
   48 px. The speed is the square of the push, 60 m/s at full (twice the keys').
@@ -482,7 +482,7 @@ What it does now:
 | drag | orbit; first person: look round; free: look |
 | pinch | orbit: zoom; free: fly ahead / back |
 | left thumb (free camera) | fly |
-| ... | name tags, battle markers, hide the interface |
+| ... | name tags, battle markers, hide the HUD |
 
 | File | What changed |
 |---|---|
@@ -507,3 +507,44 @@ click, H, N, Escape, F.
 
 Open: not yet on a device. Safari on iOS in particular (the fallback, the
 container queries, `touch-action`) was emulated, not driven.
+
+## No HUD, and F for the cover (2026-09-29)
+
+The request: H as a no-HUD key that takes the chat and the minimap away too,
+and F to make the scene on screen the recording's cover.
+
+- **H hid only the replay's own chrome.** The message log (`#comms-canvas`),
+  the HUD painter's canvas (the ticket plate, the gauges, the hit wash) and
+  the minimap belong to the page, outside the replay's root, and stayed up.
+  `setBare` now also sets `replay-bare` on the page's root, and the replay's
+  style hides those layers, and the flythrough's debug panel, with
+  `visibility`: the painters keep their size and their pixels and come back
+  as they were. The lens flare stays; it is part of the picture. The server
+  log's rings on the level follow the replay log, and go with it.
+- **A panel asked for brings the HUD back.** Tab, ?, L, M and T opened their
+  panels inside the hidden HUD, where nothing showed; now the HUD comes back
+  with that panel up. Escape goes through `setBare`, so the page's layers
+  come back with the replay's.
+- **F is the cover where this viewer may set one**: a shared recording's
+  uploader or an admin (the test More > Use this frame as the cover already
+  had; the item now shows F), and a recording opened from disk, where F picks
+  the frame Share sends. Everyone else keeps F for fullscreen, which keeps its
+  button either way; the shortcuts list and the button's tooltip say which F
+  is which. A cover is the 3D canvas alone, so it never carries the HUD.
+
+| File | What changed |
+|---|---|
+| `viewer/replay-ui.js` | `replay-bare` and its style; a panel's key brings the HUD back; `useFrameKey`; the words. |
+| `viewer/replay-social.js` | `takeCover` on F and the menu; the frame F picked goes to Share. |
+| `viewer/replay-battlemap.js` | The map brings the HUD back. |
+
+Verified in headless Chromium on the Midway round at 1280x720: H leaves the 3D
+view and its notice alone on screen, the message log, the HUD canvas and the
+minimap hidden with their pixels intact, and Shift+H brings all of it back;
+so does Escape, and Tab, M, L and T bring it back with their panel up; under H
+an open log reads shut to the level's rings. Against a stubbed feed API: as the
+uploader, F and Shift+F each PUT a 640x360 JPEG of the view with no HUD in it
+and the notice reads Cover set; as a viewer, F is fullscreen; from disk, F
+reads Cover chosen and the Share dialog shows that frame. On a phone without
+page fullscreen (844x390, touch), the fullscreen button hides the whole HUD
+and a tap brings it back.

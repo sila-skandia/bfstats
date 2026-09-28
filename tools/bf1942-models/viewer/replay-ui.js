@@ -127,6 +127,12 @@ const leaderMark = () => `<span class="rp-hl-lead" title="Kill leader">${svg('cr
 const STYLE = `
 html.replay-on #mobile-controls, html.replay-on #crosshair { display: none !important; }
 html.replay-on #side { z-index: 8; }
+/* No HUD (H): the page's own layers over the view go with the replay's --
+   the counters and gauges, the message log and the radio, the minimap, the
+   flythrough's panel. Hidden rather than undisplayed, so each keeps its size
+   and its pixels and comes back as it was. */
+html.replay-bare #hud-canvas, html.replay-bare #comms-canvas, html.replay-bare #minimap,
+html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden !important; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);
   --rp-plate-deep: rgba(20, 20, 17, .9);
@@ -494,6 +500,7 @@ export class ReplayUi {
     this.touchUi = false;        // the last hand on the replay was a finger
     this.coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     this.stick = null;           // the free camera's thumb: { id, x, y, at, moved, floated }
+    this.frameKey = null;        // what F does in place of fullscreen (`useFrameKey`)
     this.slowClock = 0;
     this.tagNodes = new Map();
     this.boardKey = '';
@@ -558,9 +565,9 @@ export class ReplayUi {
     return this.timeline.scrubbing;
   }
 
-  /** The replay log (the debug panel) is up. */
+  /** The replay log (the debug panel) is up, and not hidden with the HUD. */
   get logOpen() {
-    return this.root.classList.contains('log-open');
+    return this.root.classList.contains('log-open') && !this.root.classList.contains('rp-bare');
   }
 
   // --- building -----------------------------------------------------------------
@@ -669,7 +676,7 @@ export class ReplayUi {
       markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
-      bare: item('', 'hide', 'Hide the interface', 'H', () => this.setBare(true)),
+      bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
     };
     this.moreWrap.append(this.moreBtn, this.moreMenu);
   }
@@ -796,20 +803,24 @@ export class ReplayUi {
       ['View', [
         [k(['N']), 'Name tags (the players near the camera)'],
         [k(['L']), 'Replay log'],
-        [k(['H']), 'Hide the interface'],
-        [k(['F']), 'Fullscreen'],
+        [k(['H']), 'Hide the HUD'],
+        // Named: the page's additions may give F another job (`useFrameKey`).
+        [k(['F']), 'Fullscreen', 'frame'],
         [k(['?']), 'This list'],
         [k(['Esc']), 'Close a panel; then the game menu'],
       ]],
     ];
+    this.helpRows = {};
     for (const [title, rows] of groups) {
       const col = el('div');
       col.append(el('h3', '', title));
       const dl = el('dl');
-      for (const [keysHtml, what] of rows) {
+      for (const [keysHtml, what, name] of rows) {
         const dt = el('dt');
         dt.innerHTML = keysHtml;
-        dl.append(dt, el('dd', '', what));
+        const dd = el('dd', '', what);
+        if (name) this.helpRows[name] = dd;
+        dl.append(dt, dd);
       }
       col.append(dl);
       cols.append(col);
@@ -979,7 +990,10 @@ export class ReplayUi {
   }
 
   toggle(cls) {
-    const on = !this.root.classList.contains(cls);
+    // Out of the hidden HUD, a panel's key brings it back with that panel up.
+    const bare = this.root.classList.contains('rp-bare');
+    const on = bare || !this.root.classList.contains(cls);
+    if (bare) this.setBare(false, true);
     // One overlay in the middle at a time.
     if (on && cls === 'board-open') this.root.classList.remove('help-open');
     if (on && cls === 'help-open') this.root.classList.remove('board-open');
@@ -1027,7 +1041,8 @@ export class ReplayUi {
     const on = Boolean(fullscreenElement());
     if (this.shownFullscreen === on) return;
     this.shownFullscreen = on;
-    const label = on ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
+    const key = this.frameKey ? '' : ' (F)';
+    const label = on ? `Exit fullscreen${key}` : `Fullscreen${key}`;
     this.fullBtn.innerHTML = svg(on ? 'unfull' : 'full');
     this.fullBtn.title = label;
     this.fullBtn.setAttribute('aria-label', label);
@@ -1036,15 +1051,31 @@ export class ReplayUi {
     }
   }
 
-  /** Every panel and mark over the view away (H, the menu, a phone's
-   *  fullscreen), or back. On a touch screen a tap brings it back. */
-  setBare(on) {
+  /** The HUD away (H, the menu, a phone's fullscreen), or back: every panel
+   *  and mark of the replay's, and the page's own layers over the view, the
+   *  message log and the minimap among them (the style's `replay-bare`). On
+   *  a touch screen a tap brings it back. `quiet`: no word on the view. */
+  setBare(on, quiet = false) {
     const root = this.root;
     if (on === root.classList.contains('rp-bare')) return;
     if (on) this.closeFloating();
     root.classList.toggle('rp-bare', on);
+    document.documentElement.classList.toggle('replay-bare', on);
     this.userHidden = false;
-    this.flash(on ? (this.touchUi || this.coarse ? 'Tap to show' : 'H to show') : 'Interface');
+    if (!quiet) this.flash(on ? (this.touchUi || this.coarse ? 'Tap to show' : 'H to show') : 'HUD');
+    // A panel brought it back: 'H to show' is not so any more.
+    else if (!on) this.notice.classList.remove('show');
+  }
+
+  /** F runs `run` from now on, in place of fullscreen, which keeps its
+   *  button: the page's REPLAY feed gives it the recording's cover where this
+   *  viewer may set one (replay-social.js). `text` is what the shortcuts list
+   *  says it does. */
+  useFrameKey(run, text) {
+    this.frameKey = run;
+    if (this.helpRows?.frame) this.helpRows.frame.textContent = text;
+    this.shownFullscreen = null;
+    this.syncFullscreen();
   }
 
   // --- the input ------------------------------------------------------------------
@@ -1347,7 +1378,12 @@ export class ReplayUi {
       case 'KeyL': if (once) this.toggle('log-open'); return true;
       case 'KeyN': if (once) this.toggleTags(); return true;
       case 'KeyH': if (once) this.setBare(!this.root.classList.contains('rp-bare')); return true;
-      case 'KeyF': if (once) this.toggleFullscreen(); return true;
+      case 'KeyF':
+        if (once) {
+          if (this.frameKey) this.frameKey();
+          else this.toggleFullscreen();
+        }
+        return true;
       case 'Escape': {
         const open = ['help-open', 'board-open'].find(c => this.root.classList.contains(c))
           || (this.speedWrap.classList.contains('open') ? 'speed' : null)
@@ -1356,6 +1392,7 @@ export class ReplayUi {
         if (!open) return 'pass';
         if (open === 'speed') this.speedWrap.classList.remove('open');
         else if (open === 'more') this.closeMore();
+        else if (open === 'rp-bare') this.setBare(false);
         else this.root.classList.remove(open);
         this.playersBtn.classList.remove('on');
         return true;
@@ -1715,7 +1752,7 @@ export class ReplayUi {
     if (document.pointerLockElement === this.input) document.exitPointerLock();
     this.root.remove();
     const html = document.documentElement;
-    html.classList.remove('replay-on');
+    html.classList.remove('replay-on', 'replay-bare');
     if (this.addedShell) html.classList.remove('shell-playing');
   }
 }
