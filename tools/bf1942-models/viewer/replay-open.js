@@ -13,6 +13,10 @@
 // megabytes, so the browser never keeps one: you open it, watch the round,
 // and it is gone; watching it again means opening the file again.
 //
+// Several recordings of one round, picked or dropped together (one per side
+// covers every player, features/round-replay-merge), are merged into one
+// here first, and play as one.
+//
 // A recording that does not say which level it was made on (one begun
 // mid-round) is recognised by its flags (replay-level.js); one whose flags
 // match no level asks which it was, from the levels the viewer has.
@@ -194,16 +198,39 @@ async function isRecording(file) {
   }
 }
 
-/** The recording among what was picked or dropped, and its server log. */
+/** The recordings among what was picked or dropped, and a server log. */
 async function sortFiles(files) {
   const logs = files.filter(f => /\.xml$/i.test(f.name));
+  const recordings = [];
   for (const file of files) {
-    if (!logs.includes(file) && await isRecording(file)) return { recording: file, log: logs[0] ?? null };
+    if (!logs.includes(file) && await isRecording(file)) recordings.push(file);
   }
+  if (recordings.length) return { recordings, log: logs[0] ?? null };
   const named = files.find(f => /\.ndjson$/i.test(f.name));
   if (named) throw new Error(`${named.name} is not a bf42plus recording.`);
   if (logs.length) throw new Error(`${logs[0].name} is a server log. Open it together with its recording, a replay_*.ndjson.`);
   throw new Error('That is not a bf42plus recording. Open a replay_*.ndjson file.');
+}
+
+/**
+ * The recording to play from what was picked or dropped: `{ name, text, log,
+ * merged }`. Several recordings of one round (a player's per side, from the
+ * same round) are merged into one first (replay-merge.js), the first picked
+ * the one whose clock and player lead; `merged` is the merge's report.
+ * `onStage(text)` says what it is doing.
+ */
+export async function pickedRecording(files, onStage = () => {}) {
+  const { recordings, log } = await sortFiles(files);
+  if (recordings.length === 1) {
+    onStage(`Reading ${recordings[0].name}`);
+    return { name: recordings[0].name, text: await recordings[0].text(), log, merged: null };
+  }
+  onStage(`Merging ${recordings.length} recordings of one round`);
+  const inputs = await Promise.all(recordings.map(async file => ({ name: file.name, text: await file.text() })));
+  const { mergeRecordings, formatMergeReport } = await import('./replay-merge.js');
+  const { text, report } = mergeRecordings(inputs);
+  console.info(formatMergeReport(report));
+  return { name: `${inputs[0].name.replace(/\.ndjson$/i, '')}_merged.ndjson`, text, log, merged: report };
 }
 
 /** The viewer's mod a recording was made in: the one its server named, else
@@ -532,9 +559,8 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     settle(null);
     show('busy', 'Reading the recording');
     try {
-      const { recording, log } = await sortFiles(files);
-      show('busy', `Reading ${recording.name}`);
-      const text = await recording.text();
+      const recording = await pickedRecording(files, stage => show('busy', stage));
+      const { text, log } = recording;
       const rec = parseRecording(text);
       const info = recordingSummary(rec);
       const target = await modFor(info.mod, mod());
@@ -629,7 +655,7 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     e.preventDefault();
     e.dataTransfer.dropEffect = state === 'busy' ? 'none' : 'copy';
     if (state !== 'busy' && state !== 'drag') {
-      show('drag', 'Drop to watch the recording', 'A bf42plus replay_*.ndjson, and its ev_*.xml server log if you have it');
+      show('drag', 'Drop to watch the recording', 'A bf42plus replay_*.ndjson, or one per side of the same round to merge, and its ev_*.xml server log if you have it');
     }
     // A drag cancelled outside the window ends with no leave: dragover
     // repeats while it is over the page, so its stopping is the end.

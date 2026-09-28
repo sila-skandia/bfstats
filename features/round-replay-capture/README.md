@@ -1289,7 +1289,8 @@ after that until it was back.
 
 - One recording per side covers every player for the whole round: each file
   has its own side everywhere and the other within its radius. Network ids
-  are the server's, so two files merge by id. Not built.
+  are the server's, so two files merge by id: `features/round-replay-merge`
+  (2026-09-29), measured on this round split by side and merged back.
 - The replay draws a vehicle out of range solid while nobody has held its
   root seat since the recording last saw it and it was standing then; only
   one somebody has driven since is a ghost (`replay-recording.js`
