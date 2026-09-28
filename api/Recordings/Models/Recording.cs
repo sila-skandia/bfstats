@@ -80,5 +80,9 @@ public class Recording
 
     public Instant UpdatedAt { get; set; }
 
+    /// <summary>The round it is one recording of, with the others found to be (features/replay-feed,
+    /// "Rounds"): the lowest id among them. Null while it is the only one.</summary>
+    public int? RoundId { get; set; }
+
     public User Uploader { get; set; } = null!;
 }

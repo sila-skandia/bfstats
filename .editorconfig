@@ -214,6 +214,10 @@ generated_code = true
 # Display-time shuffling of engagement windows, not a security decision.
 dotnet_diagnostic.CA5394.severity = none
 
+[tests/api/Recordings/SyntheticRound.cs]
+# A seeded made-up round for the tests, the same every run: not a security decision.
+dotnet_diagnostic.CA5394.severity = none
+
 [api/Wrapped/WrappedPopulationStats.cs]
 # ADO.NET sync IsDBNull after ReadAsync is the normal data-reader pattern.
 dotnet_diagnostic.CA1849.severity = none

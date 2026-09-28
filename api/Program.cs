@@ -442,6 +442,8 @@ try
     builder.Services.AddSingleton<api.Recordings.IRecordingStorage, api.Recordings.RecordingStorage>();
     builder.Services.AddScoped<api.Recordings.IRecordingService, api.Recordings.RecordingService>();
     builder.Services.AddScoped<api.Recordings.IRecordingUploadService, api.Recordings.RecordingUploadService>();
+    builder.Services.AddScoped<api.Recordings.IRecordingRoundService, api.Recordings.RecordingRoundService>();
+    builder.Services.AddHostedService<api.Recordings.RecordingRoundBackfill>();
     builder.Services.AddSingleton<api.Recordings.RecordingViewCounter>();
     builder.Services.AddSingleton<api.Recordings.IRecordingViewCounter>(
         sp => sp.GetRequiredService<api.Recordings.RecordingViewCounter>());

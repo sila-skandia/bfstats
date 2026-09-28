@@ -50,8 +50,10 @@ internal sealed class RecordingFixture : IDisposable
         Unlinked = AddUser("unlinked@example.com", null);
         Db.SaveChanges();
 
-        Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance);
-        Uploads = new RecordingUploadService(Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance);
+        Rounds = new RecordingRoundService(Db, Storage, Clock, Options, NullLogger<RecordingRoundService>.Instance);
+        Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance, Rounds);
+        Uploads = new RecordingUploadService(
+            Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance, Rounds);
     }
 
     public PlayerTrackerDbContext Db { get; }
@@ -61,6 +63,7 @@ internal sealed class RecordingFixture : IDisposable
     public TestClock Clock { get; }
     public RecordingService Service { get; }
     public RecordingUploadService Uploads { get; }
+    public RecordingRoundService Rounds { get; }
     public User Uploader { get; }
     public User Other { get; }
     public User Admin { get; }

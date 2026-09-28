@@ -2159,6 +2159,9 @@ namespace api.Migrations
                     b.Property<long>("RecordingRawBytes")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("RoundId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ServerLogBytes")
                         .HasColumnType("INTEGER");
 
@@ -2196,6 +2199,8 @@ namespace api.Migrations
                     b.HasIndex("ContentHash")
                         .IsUnique();
 
+                    b.HasIndex("RoundId");
+
                     b.HasIndex("Slug")
                         .IsUnique();
 
@@ -2204,6 +2209,8 @@ namespace api.Migrations
                     b.HasIndex("FileMissing", "Id");
 
                     b.HasIndex("FileMissing", "ViewCount", "Id");
+
+                    b.HasIndex("Level", "Mod", "GameMode", "ServerName", "RecordedLocal");
 
                     b.ToTable("Recordings");
                 });
@@ -2242,6 +2249,96 @@ namespace api.Migrations
                     b.HasIndex("RecordingId", "Id");
 
                     b.ToTable("RecordingComments");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingFingerprint", b =>
+                {
+                    b.Property<int>("RecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("KeyCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Keys")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<double>("LiveFromSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<double>("LiveToSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<long>("ObjectSample")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PlayerKeyCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("PlayerSample")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RoundsChecked")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("RecordingId");
+
+                    b.ToTable("RecordingFingerprints");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingRoundLink", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ByUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("MatchedKeys")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("MatchedPlayerKeys")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("OffsetSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("OtherRecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("PlayerShare")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("RecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("Share")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OtherRecordingId");
+
+                    b.HasIndex("RecordingId", "OtherRecordingId")
+                        .IsUnique();
+
+                    b.ToTable("RecordingRoundLinks");
                 });
 
             modelBuilder.Entity("api.Recordings.Models.RecordingView", b =>
@@ -2747,6 +2844,36 @@ namespace api.Migrations
                         .IsRequired();
 
                     b.Navigation("Author");
+
+                    b.Navigation("Recording");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingFingerprint", b =>
+                {
+                    b.HasOne("api.Recordings.Models.Recording", "Recording")
+                        .WithOne()
+                        .HasForeignKey("api.Recordings.Models.RecordingFingerprint", "RecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recording");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingRoundLink", b =>
+                {
+                    b.HasOne("api.Recordings.Models.Recording", "Other")
+                        .WithMany()
+                        .HasForeignKey("OtherRecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("api.Recordings.Models.Recording", "Recording")
+                        .WithMany()
+                        .HasForeignKey("RecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Other");
 
                     b.Navigation("Recording");
                 });

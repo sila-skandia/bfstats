@@ -149,7 +149,8 @@ public static class RecordingInspector
             scan.Duration,
             scan.Players,
             raw,
-            Convert.ToHexStringLower(hash.GetHashAndReset()));
+            Convert.ToHexStringLower(hash.GetHashAndReset()),
+            scan.Fingerprint());
     }
 
     /// <summary>
@@ -340,6 +341,7 @@ public static class RecordingInspector
         private readonly Dictionary<int, string> names = [];
         private readonly HashSet<string> humans = new(StringComparer.Ordinal);
         private readonly Dictionary<int, Dictionary<string, int>> speakers = [];
+        private readonly RoundFingerprintBuilder round = new();
         private int lineNumber;
         private int? damaged;
         private string rosterLocal = "";
@@ -366,6 +368,9 @@ public static class RecordingInspector
         public string ServerName { get; private set; } = "";
         public double Duration { get; private set; }
         public IReadOnlyList<string> Players => players;
+
+        /// <summary>What finds the other recordings of its round (features/replay-feed, "Rounds").</summary>
+        public RoundFingerprint Fingerprint() => round.Build(Duration);
 
         /// <summary>
         /// The player whose client made the recording, as the viewer finds him
@@ -499,6 +504,7 @@ public static class RecordingInspector
             }
             Records++;
             if (double.IsFinite(time) && time > Duration && time <= MaxDurationSeconds) Duration = time;
+            round.Line(kind, eventName, time, line);
             return true;
         }
 

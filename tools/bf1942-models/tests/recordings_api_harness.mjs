@@ -128,4 +128,42 @@ results.filtered = {
   ofNone: feed.feedFilterOf(new URLSearchParams('tab=replay&rec=abcdefghjk')),
 };
 
+// A round several players shared (features/replay-feed, "Rounds"): watched
+// merged, one `replay` per recording, the one asked about first; its comments
+// moved onto the merged clock, and one written there put on the recording
+// whose stretch holds its moment, in that recording's clock.
+const lead = { slug: 'bbbbbbbbbb', mod: 'bf1942', level: 'bocage', recordingUrl: '/stats/recordings/bbbbbbbbbb.ndjson', serverLogUrl: null };
+const round = [
+  { slug: 'aaaaaaaaaa', recordingUrl: '/stats/recordings/aaaaaaaaaa.ndjson', serverLogUrl: '/stats/recordings/aaaaaaaaaa.xml' },
+  { ...lead },
+  { slug: 'cccccccccc', recordingUrl: '/stats/recordings/cccccccccc.ndjson', serverLogUrl: null },
+];
+// The merged header's sources for [lead, a, c], as replay-merge.js writes them:
+// the lead began 60 s into a's recording, whose clock ran 40 ppm slow.
+const sources = [
+  { offset: 60, drift: 0, duration: 476 },
+  { offset: 0, drift: -4e-5, duration: 506 },
+  { offset: 400, drift: 0, duration: 300 },
+];
+const clockA = api.sourceClock(sources[1]);
+results.round = {
+  urls: api.replayUrlsOf(new URLSearchParams('mod=bf1942&replay=/stats/recordings/bbbbbbbbbb.ndjson&replay=/stats/recordings/aaaaaaaaaa.ndjson&t=5')),
+  one: api.replayUrlsOf(new URLSearchParams('replay=/stats/recordings/bbbbbbbbbb.ndjson')),
+  watch: feed.watchRoundHref(lead, round, { root: '../' }),
+  watchLocal: feed.watchRoundHref(round[0], round, { root: '../', fileUrl: p => `http://localhost:9222${p}` }),
+  roundOf: [feed.roundOf({ round }), feed.roundOf({ round: [lead] }), feed.roundOf({})].map(r => (r ? r.length : null)),
+  toRound: Number(clockA.toRound(500).toFixed(3)),
+  back: Number(clockA.fromRound(clockA.toRound(123.4)).toFixed(6)),
+  // The lead's own `0:21` is 1:21 of the round.
+  runs: api.roundRuns('0:21 get rekt, 12:40 past its end', sources[0], 476),
+  targets: [
+    'no time at all',
+    '1:21 in the lead',
+    '0:30 before the lead began',
+    '9:50 and 10:10 after the lead ended',
+    '11:40 in the third only',
+    '59:00 in none',
+  ].map(text => api.commentTarget(text, sources)),
+};
+
 process.stdout.write(JSON.stringify(results));

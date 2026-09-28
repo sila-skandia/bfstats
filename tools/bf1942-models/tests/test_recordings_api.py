@@ -110,6 +110,42 @@ class RecordingsApiTests(unittest.TestCase):
             "v3Trigger": "skandia", "chat": "skandia", "severalHumans": "", "nobody": "",
         })
 
+    def test_a_round_is_watched_merged_the_one_asked_about_first(self) -> None:
+        round_ = self.results["round"]
+        self.assertEqual(round_["urls"], ["/stats/recordings/bbbbbbbbbb.ndjson", "/stats/recordings/aaaaaaaaaa.ndjson"])
+        self.assertEqual(round_["one"], ["/stats/recordings/bbbbbbbbbb.ndjson"])
+        self.assertEqual(
+            round_["watch"],
+            "https://play.bfstats.io/map.html?mod=bf1942&map=bocage"
+            "&replay=/stats/recordings/bbbbbbbbbb.ndjson&replay=/stats/recordings/aaaaaaaaaa.ndjson"
+            "&replay=/stats/recordings/cccccccccc.ndjson")
+        # The first recording's server log comes with it.
+        self.assertEqual(
+            round_["watchLocal"],
+            "https://play.bfstats.io/map.html?replay=http://localhost:9222/stats/recordings/aaaaaaaaaa.ndjson"
+            "&replay=http://localhost:9222/stats/recordings/bbbbbbbbbb.ndjson"
+            "&replay=http://localhost:9222/stats/recordings/cccccccccc.ndjson"
+            "&serverlog=http://localhost:9222/stats/recordings/aaaaaaaaaa.xml")
+        # A round is two or more recordings.
+        self.assertEqual(round_["roundOf"], [3, None, None])
+
+    def test_a_rounds_comments_are_moved_onto_the_merged_clock(self) -> None:
+        round_ = self.results["round"]
+        self.assertEqual(round_["toRound"], 499.98)
+        self.assertEqual(round_["back"], 123.4)
+        # The lead's own 0:21 is 1:21 of the round; a time past its end stays text.
+        self.assertEqual(round_["runs"], [{"text": "1:21", "at": 81}, {"text": " get rekt, 12:40 past its end"}])
+
+    def test_a_comment_on_a_round_goes_on_the_recording_that_holds_its_moment(self) -> None:
+        self.assertEqual(self.results["round"]["targets"], [
+            {"index": 0, "text": "no time at all"},
+            {"index": 0, "text": "0:21 in the lead"},
+            {"index": 1, "text": "0:30 before the lead began"},
+            {"index": 2, "text": "3:10 and 3:30 after the lead ended"},
+            {"index": 2, "text": "5:00 in the third only"},
+            {"index": 0, "text": "58:00 in none"},
+        ])
+
     def test_the_feed_narrows_to_a_server_and_an_uploader(self) -> None:
         filtered = self.results["filtered"]
         # An empty filter is left out of the API's query.

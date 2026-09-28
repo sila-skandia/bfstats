@@ -664,6 +664,28 @@ export function createReplayController(ctx) {
   const assets = new ReplayAssets(ctx);
   let player = null;
 
+  /** Several recordings of one round, merged into one before it plays. One the
+   *  merge cannot line up with the others plays the first alone, and says so. */
+  async function openMerged(urls, logUrl) {
+    const [texts, logText] = await Promise.all([
+      Promise.all(urls.map(fetchText)),
+      logUrl ? fetchText(logUrl).catch(() => null) : null,
+    ]);
+    const name = u => u.split('/').pop().split('?')[0];
+    let merged = null;
+    try {
+      const { mergeRecordings, formatMergeReport } = await import('./replay-merge.js');
+      merged = mergeRecordings(urls.map((u, i) => ({ name: name(u), text: texts[i] })));
+      console.info(formatMergeReport(merged.report));
+    } catch (error) {
+      console.warn('replay: the recordings were not merged', error);
+      const played = await open({ recordingText: texts[0], logText, label: name(urls[0]) });
+      if (played) toast(ctx.stage, `These recordings could not be merged (${error.message}). Playing the first alone.`);
+      return played;
+    }
+    return open({ recordingText: merged.text, logText, label: `${name(urls[0])} and ${urls.length - 1} more` });
+  }
+
   async function open({ recordingText, logText, label }) {
     const rec = parseRecording(recordingText);
     // A round is a round whatever its name, and the level's own projectile
@@ -710,7 +732,13 @@ export function createReplayController(ctx) {
     active() {
       return player !== null;
     },
+    /** `url` is one recording, or several of one round (`?replay=` once per
+     *  recording, features/replay-feed "Rounds"), merged here the way
+     *  several picked files are (replay-open.js): the first leads. */
     async openFromUrl(url, logUrl) {
+      const urls = (Array.isArray(url) ? url : [url]).filter(Boolean);
+      if (urls.length > 1) return openMerged(urls, logUrl);
+      url = urls[0];
       // A held recording brings the server log it was opened with.
       if (isLocalReplay(url)) {
         const kept = await readLocalRecording(url);

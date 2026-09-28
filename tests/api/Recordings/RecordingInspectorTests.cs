@@ -503,7 +503,7 @@ public class RecordingInspectorTests
         Assert.Equal(name, RecordingInspector.SpeakerOf(text));
 
     /// <summary>The checkout the tests run from: the real recordings live under tools/.</summary>
-    private static string RepositoryRoot()
+    internal static string RepositoryRoot()
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
