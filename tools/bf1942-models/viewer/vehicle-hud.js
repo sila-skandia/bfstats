@@ -10,7 +10,7 @@
  * `handWeapon`, `hudPaths`, `isZoomed`, `itemsLocked`, `LOCAL_PLAYER`,
  * `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
  * `occupiedVehicleDamage`, `occupiedVehicleIdFor`, `optOnFoot`, `renderer`,
- * `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
+ * `replayAim`, `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
  */
 
 /** The HUD's virtual screen, the frame the cross is measured in. */
@@ -406,6 +406,10 @@ export function createVehicleHud(page) {
    * deviation model here, and the bars meet at centre the way a tank's do.
    */
   function crosshairAim() {
+    // A replay's first person draws the followed player's own cross: his
+    // weapon's or his seat's, spread as his aim was (replay-hud.js).
+    const replay = page.replayAim;
+    if (replay) return replay;
     // The seat he holds, not the hull's drive: a drive outlives his seat (a bot
     // may still be driving it), and a soldier who had just stepped out of a
     // Sherman used to be asked what the Sherman draws.
@@ -460,7 +464,7 @@ export function createVehicleHud(page) {
   }
 
   function updateCrosshair() {
-    const { style, deviation, scoped } = crosshairAim();
+    const { style, deviation, scoped, centre: serverCentre } = crosshairAim();
     // `!fullmapBox.hidden` covers both overlays this can now collide with: the
     // deploy screen and the full map. They did not need saying while this ran
     // only from `footFire`, which the overlay suppresses; it runs every frame
@@ -478,8 +482,9 @@ export function createVehicleHud(page) {
       page.crosshairEl.classList.toggle('ch-icon', icon);
     }
     // `serverCrossHairCenterPoint`: the layout's own 1x1 fill at (400,300),
-    // gated on the CHTCrossHair branch (XHIT-11).
-    const centre = !icon && SERVER_CROSSHAIR_CENTER_POINT;
+    // gated on the CHTCrossHair branch (XHIT-11). A replay knows the
+    // recorded server's (its `gameRules`).
+    const centre = !icon && (serverCentre ?? SERVER_CROSSHAIR_CENTER_POINT);
     if (page.crosshairEl.classList.contains('ch-centre') !== centre) {
       page.crosshairEl.classList.toggle('ch-centre', centre);
     }

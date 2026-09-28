@@ -514,14 +514,17 @@ export class ReplaySoldiers {
     this.flash(actor, weapon, f);
   }
 
-  /** The weapon glb's FireArms, once per template: `{ scene }` or null. */
+  /** The weapon glb's FireArms and its weapon block (magazine, deviation,
+   *  crosshair, HUD art: the extras arms-rig.js reads as `hw.data`), once per
+   *  template: `{ scene, data }` or null. */
   handGun(weapon) {
     if (!this.hands.has(weapon)) {
       const ctx = this.player.ctx;
       this.hands.set(weapon, ctx.loader.loadAsync(`${ctx.modelsBase}/${weapon}.glb${ctx.bust()}`)
         .then(gltf => {
           ctx.shadeModel?.(gltf.scene);
-          return { scene: gltf.scene };
+          const data = gltf.userData?.weapon ?? gltf.parser?.json?.extras?.weapon ?? gltf.scene?.userData?.weapon ?? null;
+          return { scene: gltf.scene, data };
         })
         .catch(() => null));
     }

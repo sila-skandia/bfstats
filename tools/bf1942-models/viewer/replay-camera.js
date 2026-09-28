@@ -3,8 +3,9 @@
 //
 //   orbit  locked on him, or the hull he rides, or his body once he dies;
 //          dragged, wheeled and keyed around him, never away from him.
-//   pov    through his eyes: on foot his recorded eye, heading and aim pitch,
-//          in a seat the seat's own Camera node (the cockpit view's eye).
+//   pov    through his eyes: on foot his recorded eye, heading, torso twist
+//          and aim pitch, on the axis each of his rounds left along; in a
+//          seat the seat's own Camera node (the cockpit view's eye).
 //   free   a fly camera, moved with the keys (a thumbstick on a touch
 //          screen), looked with the mouse or a finger.
 //
@@ -14,7 +15,10 @@
 // its soldiers, whose renderer culls against it (replay.js `update`).
 
 import * as THREE from 'three';
-import { bodyAt, controlledAt, rootOf, sampleAt } from './replay-recording.js';
+import {
+  AIM_PITCH_SCALE, AIM_TWIST_SCALE, aimAt, bodyAt, controlledAt, rootOf, sampleAt,
+} from './replay-recording.js';
+import { NETWORKED_ROUNDS, weaponOfProjectile } from './replay-props.js';
 import { toViewPosition, toViewQuaternion } from './replay-actors.js';
 import { nextSpawn } from './replay-chapters.js';
 import { EYE_HEIGHT, POSE_CROUCH, POSE_PRONE, POSE_STAND } from './soldier-pose.js';
@@ -41,7 +45,6 @@ const CLEARANCE = 0.6;           // metres the camera keeps above ground and wat
 const SMOOTH = 0.05;             // s: the orbit's input easing
 const GLIDE = 0.28;              // s: a change of target or mode eases out over this
 const CUT = 250;                 // m: a target further than this is cut to, not flown to
-const POV_SMOOTH = 0.06;         // s: the recorded 10 Hz heading, eased
 const LOOK_RETURN = 0.3;         // s: a first-person look-around springs back
 
 const KEY_TURN = 1.8;            // rad/s, A/D
@@ -62,8 +65,21 @@ const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pi
 const FOOT_LENS = { fov: 57.3, near: 0.2 };
 const SEAT_LENS = { fov: 60, near: 0.1 };
 
-/** The recorded aim pitch is 0.4 of the aim (capture README section 16). */
-const AIM_PITCH_SCALE = 2.5 * Math.PI / 180;
+/** Radians of view per recorded degree of aim pitch and torso twist
+ *  (replay-recording.js `AIM_PITCH_SCALE`, `AIM_TWIST_SCALE`). */
+const PITCH = AIM_PITCH_SCALE * Math.PI / 180;
+const TWIST = AIM_TWIST_SCALE * Math.PI / 180;
+
+/** Seconds either side of a round over which the view is laid on the round's
+ *  own axis: a hand weapon fires along the camera (`fireInCameraDof`, every
+ *  vanilla one), so at a round the recording has exactly where he looked.
+ *  Two rounds closer than twice this are one burst, and the view goes from
+ *  the one axis to the next. */
+const SHOT_HOLD = 0.25;
+/** A round further off his recorded aim than this is not his view's: a
+ *  respawn's first sample, a round from a hand he no longer holds. */
+const SHOT_MAX_YAW = 30 * Math.PI / 180;
+const SHOT_MAX_PITCH = 20 * Math.PI / 180;
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
@@ -138,6 +154,26 @@ function headingOf(q) {
   return Math.atan2(-_fwd.x, -_fwd.z);
 }
 
+/**
+ * A soldier's recorded aim at `t`, `{ yaw, pitch }` in the view's frame (a
+ * YXZ camera's Euler angles): his sample's heading turned by his torso's
+ * twist, and his aim pitch. His recorded rotation looks where he does, as a
+ * hull's does (its -Z is his forward; `targetAt` reads it the same way); the
+ * pose glb's half turn (replay-bodies.js `SOLDIER_YAW_FLIP`) is the body
+ * model's, never the view's: with it, the view looked out of the back of his
+ * head. The twist turns the view the other way from BF1942's yaw, as the
+ * frame's z is negated.
+ */
+export function eyeAim(rec, life, t) {
+  const s = sampleAt(life, t);
+  if (!s) return { yaw: 0, pitch: 0 };
+  toViewQuaternion(s.a.q, _q);
+  if (s.b) _q.slerp(toViewQuaternion(s.b.q, _q2), s.k);
+  _e.setFromQuaternion(_q, 'YXZ');
+  const aim = aimAt(rec, life.nid, t);
+  return { yaw: _e.y + (aim?.twist ?? 0) * TWIST, pitch: (aim?.pitch ?? 0) * PITCH };
+}
+
 export class ReplayCamera {
   constructor(player) {
     this.player = player;
@@ -158,12 +194,17 @@ export class ReplayCamera {
     this.valid = false;
     // Free.
     this.free = { pos: new THREE.Vector3(), yaw: 0, pitch: 0 };
-    // First person: the eased heading and the look-around offset.
+    // First person: the heading and aim last drawn, and the look-around offset.
     this.pov = { yaw: 0, pitch: 0, ready: false, lookYaw: 0, lookPitch: 0, life: null };
+    this.shotAxes = new WeakMap();  // soldier life -> his rounds' axes off his recorded aim
     this.looking = false;        // a drag is turning the first-person view
     this.keys = new Set();       // held movement keys (KeyW ..., ShiftLeft)
     this.stick = null;           // the free camera's thumbstick: { x, y } in the unit disc, y ahead
     this.hidePid = null;         // whose body the first-person view is inside
+    // What the first-person view looks out of this frame, for his HUD
+    // (replay-hud.js): `{ kind: 'foot', life }` his eyes, `{ kind: 'seat',
+    // life, hull, seat }` a seat's camera, or null.
+    this.sight = null;
     this.firstPersonHull = null;
     this.pageLens = { fov: cam.fov, near: cam.near };
     this.lens = 'page';
@@ -330,6 +371,7 @@ export class ReplayCamera {
 
   update(dt, t) {
     this.hidePid = null;
+    this.sight = null;
     let firstPersonHull = null;
     if (this.mode === 'free') {
       this.updateFree(dt);
@@ -461,20 +503,21 @@ export class ReplayCamera {
       if (!s) return false;
       toViewPosition(s.a.p, cam.position);
       if (s.b) cam.position.lerp(toViewPosition(s.b.p, _v), s.k);
-      // His recorded rotation looks where he does, as a hull's does (its -Z
-      // is his forward; `targetAt` reads it the same way). The pose glb's
-      // half turn (replay-bodies.js `SOLDIER_YAW_FLIP`) is the body model's,
-      // never the view's: with it, this looked out of the back of his head.
-      toViewQuaternion(s.a.q, _q);
-      if (s.b) _q.slerp(toViewQuaternion(s.b.q, _q2), s.k);
-      _e.setFromQuaternion(_q, 'YXZ');
       const body = bodyAt(player.rec, life.nid, t);
       const pose = body?.stance === 'prone' ? POSE_PRONE : body?.stance === 'crouch' ? POSE_CROUCH : POSE_STAND;
       cam.position.y += EYE_HEIGHT[pose];
-      this.easeHeading(dt, _e.y, (body?.pitch ?? 0) * AIM_PITCH_SCALE, life);
-      _e.set(this.pov.pitch, this.pov.yaw, 0, 'YXZ');
+      // Where his eyes looked, which is where the game drew his crosshair:
+      // the screen's centre (`viewOf`).
+      const view = this.viewOf(life, t);
+      const pov = this.pov;
+      pov.yaw = view.yaw;
+      pov.pitch = view.pitch;
+      pov.ready = true;
+      pov.life = life;
+      _e.set(view.pitch, view.yaw, 0, 'YXZ');
       cam.quaternion.setFromEuler(_e);
       this.hidePid = player.followPid;
+      this.sight = { kind: 'foot', life };
       lens = 'foot';
     } else if (life.camera) {
       // His own spectator camera (the recording player on the spawn screen):
@@ -503,27 +546,82 @@ export class ReplayCamera {
       this.hidePid = player.followPid;
       this.povHull = seat === 0 ? hull : null;
       this.pov.ready = false;
+      this.sight = { kind: 'seat', life, hull, seat };
       lens = 'seat';
     }
     this.applyLook(dt, cam);
+    // Dragged off his aim, the view's centre is not where he looked.
+    if (this.sight) this.sight.looking = Math.hypot(this.pov.lookYaw, this.pov.lookPitch) > 0.005;
     this.useLens(lens);
     this.startGlide(cam.position, _v2.set(0, 0, -6).applyQuaternion(cam.quaternion).add(cam.position));
     return true;
   }
 
-  /** The recorded heading and aim, eased over the 10 Hz samples. */
-  easeHeading(dt, yaw, pitch, life) {
-    const pov = this.pov;
-    if (!pov.ready || pov.life !== life) {
-      pov.yaw = yaw;
-      pov.pitch = pitch;
-      pov.ready = true;
-      pov.life = life;
-      return;
+  /**
+   * Where a soldier's eyes looked at `t`, `{ yaw, pitch }` in the view's
+   * frame: his recorded aim (`eyeAim`), laid onto the axis his rounds left
+   * along around each one (`shotFix`). Nothing is eased: the samples and the
+   * aim are eased into each next record already, and an eased view trails a
+   * turn, which leaves the crosshair behind the rounds.
+   */
+  viewOf(life, t) {
+    const view = eyeAim(this.player.rec, life, t);
+    const fix = this.shotFix(life, t);
+    view.yaw += fix.yaw;
+    view.pitch += fix.pitch;
+    return view;
+  }
+
+  /** The view's offset at `t` from `life`'s recorded aim onto his rounds'
+   *  axes (`SHOT_HOLD`): whole at a round, eased across a burst, gone a
+   *  quarter of a second from the nearest. */
+  shotFix(life, t) {
+    const axes = this.roundAxes(life);
+    if (!axes.length) return { yaw: 0, pitch: 0 };
+    let lo = 0;
+    let hi = axes.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (axes[mid].t <= t) lo = mid + 1;
+      else hi = mid;
     }
-    const ease = 1 - Math.exp(-dt / POV_SMOOTH);
-    pov.yaw += wrap(yaw - pov.yaw) * ease;
-    pov.pitch += (pitch - pov.pitch) * ease;
+    const before = axes[hi - 1] ?? null;
+    const after = axes[hi] ?? null;
+    if (before && after && after.t - before.t <= 2 * SHOT_HOLD) {
+      const k = (t - before.t) / (after.t - before.t);
+      return { yaw: before.yaw + (after.yaw - before.yaw) * k, pitch: before.pitch + (after.pitch - before.pitch) * k };
+    }
+    const near = !after || (before && t - before.t <= after.t - t) ? before : after;
+    const w = Math.max(0, 1 - Math.abs(t - near.t) / SHOT_HOLD);
+    return { yaw: near.yaw * w, pitch: near.pitch * w };
+  }
+
+  /** `life`'s rounds as offsets from his recorded aim at each, `[{ t, yaw,
+   *  pitch }]`, once a life: every round of a weapon fired along the camera,
+   *  so not what he throws or lays (a grenade leaves above his view). */
+  roundAxes(life) {
+    let axes = this.shotAxes.get(life);
+    if (axes) return axes;
+    axes = [];
+    const { rec } = this.player;
+    const rounds = this.player.networkedRounds ?? new Set(NETWORKED_ROUNDS.map(n => n.toLowerCase()));
+    const thrown = new Set([...rounds].map(weaponOfProjectile).filter(Boolean).map(w => w.toLowerCase()));
+    for (const f of rec.fires ?? []) {
+      if (f.press || f.nid !== life.nid || !Array.isArray(f.dir)) continue;
+      if (f.t < life.created || f.t >= life.destroyed || thrown.has(String(f.weapon).toLowerCase())) continue;
+      const n = Math.hypot(f.dir[0], f.dir[1], f.dir[2]);
+      if (!(n > 0.1)) continue;
+      // BF1942's frame to the view's (z negated): three's camera looks down
+      // its -Z, so a yaw of atan2(-x, z) and a pitch of asin(y).
+      const aim = eyeAim(rec, life, f.t);
+      const yaw = wrap(Math.atan2(-f.dir[0], f.dir[2]) - aim.yaw);
+      const pitch = Math.asin(clamp(f.dir[1] / n, -1, 1)) - aim.pitch;
+      if (Math.abs(yaw) > SHOT_MAX_YAW || Math.abs(pitch) > SHOT_MAX_PITCH) continue;
+      axes.push({ t: f.t, yaw, pitch });
+    }
+    axes.sort((a, b) => a.t - b.t);
+    this.shotAxes.set(life, axes);
+    return axes;
   }
 
   /** A drag turns the head; let go, it comes back to his view. */
