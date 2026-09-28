@@ -151,7 +151,7 @@ public class RecordingInspectorTests
             """{"k":"e","t":0.0,"e":"setLevel","level":"bf1942/levels/<svg onload=alert(1)>","mode":"conquest.con"}""",
             $$"""{"k":"e","t":0.0,"e":"serverName","name":"{{huge}}"}""",
             $$"""{"k":"e","t":1.0,"e":"createPlayer","pid":1,"name":"{{huge}}","ai":1}""",
-            """{"k":"e","t":2.0,"e":"createPlayer","pid":2,"name":"‮ainadks","ai":1}""",
+            """{"k":"e","t":2.0,"e":"createPlayer","pid":2,"name":"\u202Eainadks","ai":1}""",
             """{"k":"e","t":3.0,"e":"createPlayer","pid":3,"name":"=\u0095NDR\u0095=  Lapu","ai":1}""",
             """{"k":"o","t":1e300,"id":1}""",
             """{"k":"end","t":120.0}""") + "\n";
