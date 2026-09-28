@@ -8,6 +8,7 @@ import { decodePlayerName } from '../utils/playerName'
 // callback, tournaments, admin) are still imported here. All public stats
 // pages live under /v4/* now.
 const DiscordCallback = () => import('../views/DiscordCallback.vue')
+const DiscordStart = () => import('../views/DiscordStart.vue')
 const TournamentDetails = () => import('../views/TournamentDetails.vue')
 // Public tournament pages route through a gate that renders the legacy layout
 // (LayoutVersion 1) or the V2 league layout (LayoutVersion 2) per tournament.
@@ -267,6 +268,16 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: 'Discord Authentication · bfstats.io',
         description: 'Completing Discord authentication.'
+      }
+    },
+    {
+      // Sign-in for another bfstats site: ?returnTo=<its page> (services/authReturn.ts).
+      path: '/auth/discord/start',
+      name: 'discord-start',
+      component: DiscordStart,
+      meta: {
+        title: 'Discord Authentication · bfstats.io',
+        description: 'Signing in with Discord.'
       }
     },
     {
