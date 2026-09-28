@@ -3,7 +3,8 @@ using NodaTime;
 namespace api.Recordings.Models;
 
 /// <summary>One recording's page: the feed's card and what else the file says, and whether
-/// the viewer may rename or remove it (its uploader, or an admin).</summary>
+/// the viewer may rename or remove it (its uploader, or an admin). <see cref="UploaderPlayer"/>
+/// is the uploader as bfstats.io has a player page for them, or null when it has none.</summary>
 public record RecordingDetailDto(
     string Slug,
     string Title,
@@ -25,4 +26,5 @@ public record RecordingDetailDto(
     string RecordingUrl,
     string? ServerLogUrl,
     string? ThumbnailUrl,
-    bool CanManage);
+    bool CanManage,
+    string? UploaderPlayer);

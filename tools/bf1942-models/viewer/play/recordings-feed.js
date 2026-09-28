@@ -13,7 +13,7 @@
 // comments run alongside the round (replay-social.js).
 
 import {
-  ago, clock, commentRuns, count, createRecordingsApi, readableQuery, resolveApi, size,
+  ago, clock, commentRuns, count, createRecordingsApi, playerHref, readableQuery, resolveApi, size,
 } from '../recordings-api.js';
 import { describeRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
 import { recordedAt, titled } from '../replay-open.js';
@@ -35,6 +35,7 @@ const ICONS = {
   eye: '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/>',
   chat: '<path d="M2.5 3.2h11v7.2H7.2L4.3 13v-2.6H2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
   user: '<circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.6c.6-2.6 2.6-3.8 5-3.8s4.4 1.2 5 3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  external: '<path d="M9.2 2.8h4v4M13.2 2.8 7.6 8.4M11.4 9.4v3.8H2.8V4.6h3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   server: '<rect x="2.5" y="2.6" width="11" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2.5" y="9" width="11" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.1" cy="4.8" r=".95" fill="currentColor"/><circle cx="5.1" cy="11.2" r=".95" fill="currentColor"/>',
   chevron: '<path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
@@ -86,7 +87,7 @@ const STYLE = `
 .rf-btn.quiet:hover { color: var(--rf-ink); border-color: var(--rf-edge); }
 .rf-btn.danger:hover { border-color: #d9824a; color: #f0b58a; }
 .rf-btn:disabled { opacity: .45; cursor: default; }
-.rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible,
+.rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible, .rf-player:focus-visible,
 .rf-input:focus-visible, .rf-select:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rf-storage { color: var(--rf-faint); font-size: 11px; white-space: nowrap; }
 /* The filters: quiet until touched, lit while they narrow the feed. What a
@@ -148,6 +149,9 @@ const STYLE = `
 .rf-name:hover { color: #fff; text-decoration: underline; text-decoration-color: var(--rf-khaki); text-underline-offset: 3px; }
 .rf-line { margin-top: 3px; color: var(--rf-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rf-line b { color: var(--rf-ink); font-weight: 700; }
+.rf-player { display: inline-flex; margin-left: 4px; vertical-align: -1px; color: var(--rf-faint); }
+.rf-player:hover { color: var(--rf-khaki); }
+.rf-root .rf-player svg { width: 11px; height: 11px; }
 .rf-dot::before { content: '\\00b7'; margin: 0 5px; color: var(--rf-faint); }
 .rf-more { display: flex; justify-content: center; padding: 18px 0 4px; }
 .rf-note { padding: 34px 12px; text-align: center; color: var(--rf-muted); }
@@ -773,7 +777,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       where.title = where.textContent;
     });
     const stats = el('div', 'rf-line');
-    stats.append(recording.uploaderName ? sharedBy(recording, state.filter, { strong: true }) : '');
+    if (recording.uploaderName) stats.append(sharedBy(recording, state.filter, { strong: true }), playerLink(recording));
     for (const part of [count(recording.viewCount, 'view'),
       recording.commentCount ? count(recording.commentCount, 'comment') : null, ago(recording.createdAt)].filter(Boolean)) {
       stats.append(el('span', 'rf-dot'), document.createTextNode(part));
@@ -781,6 +785,21 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     info.append(name, where, stats);
     node.append(cover(recording), info);
     return node;
+  }
+
+  /** The uploader's player page on bfstats.io, beside their name (which
+   *  narrows the feed to them): when the site has a player by the name
+   *  (`uploaderPlayer`), in a new tab; else nothing. */
+  function playerLink(recording) {
+    if (!recording.uploaderPlayer) return '';
+    const a = el('a', 'rf-player');
+    a.innerHTML = icon('external');
+    a.href = playerHref(recording.uploaderPlayer);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = `${recording.uploaderName} on bfstats.io`;
+    a.setAttribute('aria-label', `${recording.uploaderName}'s player page on bfstats.io`);
+    return a;
   }
 
   // --- watching ------------------------------------------------------------------
@@ -847,7 +866,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     const all = { server: '', uploader: '' };
     if (!recording.loading || recording.uploaderName) {
       const by = el('div', 'rf-by');
-      if (recording.uploaderName) by.append('Shared by ', sharedBy(recording, all));
+      if (recording.uploaderName) by.append('Shared by ', sharedBy(recording, all), playerLink(recording));
       for (const part of [ago(recording.createdAt), count(recording.viewCount, 'view')].filter(Boolean)) {
         by.append(by.childNodes.length ? ` · ${part}` : part);
       }

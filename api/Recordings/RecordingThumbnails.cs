@@ -18,7 +18,9 @@ public static class RecordingThumbnails
 {
     public const int Width = 640;
     public const int MaxBytes = 1024 * 1024;
-    private const int MaxSide = 4096;
+    /// <summary>The widest or tallest cover taken: the dialogs send 640x360 frames, and one
+    /// this size decodes to 16 MB, where 4096 a side was 64 MB.</summary>
+    internal const int MaxSide = 2048;
 
     /// <summary>
     /// How a cover is read: the formats a browser's canvas writes, one frame of it, and none
@@ -52,7 +54,7 @@ public static class RecordingThumbnails
             var info = await Image.IdentifyAsync(Decoding, buffer, ct);
             if (info.Width is < 16 or > MaxSide || info.Height is < 16 or > MaxSide)
             {
-                throw new RecordingRejectedException("A thumbnail must be between 16 and 4096 pixels a side.");
+                throw new RecordingRejectedException($"A thumbnail must be between 16 and {MaxSide} pixels a side.");
             }
             buffer.Position = 0;
             using var image = await Image.LoadAsync(Decoding, buffer, ct);

@@ -3,7 +3,8 @@ using NodaTime;
 namespace api.Recordings.Models;
 
 /// <summary>A recording as the feed lists it. <see cref="RecordingUrl"/> is relative to the
-/// API's host: <c>/stats/recordings/&lt;slug&gt;.ndjson</c>.</summary>
+/// API's host: <c>/stats/recordings/&lt;slug&gt;.ndjson</c>. <see cref="UploaderPlayer"/> is the
+/// uploader as bfstats.io has a player page for them, or null when it has none.</summary>
 public record RecordingSummaryDto(
     string Slug,
     string Title,
@@ -20,4 +21,5 @@ public record RecordingSummaryDto(
     Instant CreatedAt,
     string RecordingUrl,
     string? ServerLogUrl,
-    string? ThumbnailUrl);
+    string? ThumbnailUrl,
+    string? UploaderPlayer);

@@ -1,4 +1,5 @@
 using api.Auth;
+using api.PlayerTracking;
 using api.Recordings;
 using api.Recordings.Models;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,44 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(3, recent.TotalCount);
         Assert.True(recent.Storage.UsedBytes > 0);
         Assert.Equal(fixture.Options.Value.QuotaBytes, recent.Storage.QuotaBytes);
+    }
+
+    /// <summary>The uploader's name links to their page on bfstats.io when the site has a
+    /// human player by it.</summary>
+    [Fact]
+    public async Task List_AndDetail_NameTheUploadersPlayerPage()
+    {
+        fixture.Db.Players.Add(new Player { Name = "skandia", FirstSeen = DateTime.UtcNow, LastSeen = DateTime.UtcNow });
+        // A bot by the other uploader's name is no page of theirs.
+        fixture.Db.Players.Add(new Player { Name = "Rut", FirstSeen = DateTime.UtcNow, LastSeen = DateTime.UtcNow, AiBot = true });
+        await fixture.Db.SaveChangesAsync();
+        var mine = await Share("mine");
+        var theirs = await fixture.UploadAsync(
+            RecordingFixture.Midway("theirs"), RecordingFixture.Meta(authorName: "Rut"), actor: fixture.AsOther);
+
+        var list = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
+        var detail = await fixture.Service.GetAsync(mine.Slug, null, default);
+
+        Assert.Equal("skandia", mine.UploaderPlayer);
+        Assert.Equal("skandia", list.Items.Single(i => i.Slug == mine.Slug).UploaderPlayer);
+        Assert.Equal("skandia", detail!.UploaderPlayer);
+        Assert.Equal("Rut", theirs.UploaderName);
+        Assert.Null(list.Items.Single(i => i.Slug == theirs.Slug).UploaderPlayer);
+    }
+
+    /// <summary>A clan tag's cp1252 bullets: the recording writes the byte 0x95, the site has
+    /// the bullet BFList read it as, and the page is found under the site's spelling.</summary>
+    [Fact]
+    public async Task Detail_FindsARecordedNameUnderTheSpellingBflistGaveIt()
+    {
+        fixture.Db.Players.Add(new Player { Name = "=\u2022NDR\u2022=Lapu", FirstSeen = DateTime.UtcNow, LastSeen = DateTime.UtcNow });
+        await fixture.Db.SaveChangesAsync();
+        var text = RecordingFixture.Midway("clan").Replace("\"skandia\",1]", "\"=\\u0095NDR\\u0095=Lapu\",1]", StringComparison.Ordinal);
+
+        var shared = await fixture.UploadAsync(text, RecordingFixture.Meta(), actor: fixture.AsUnlinked);
+
+        Assert.Equal("=\u0095NDR\u0095=Lapu", shared.UploaderName);
+        Assert.Equal("=\u2022NDR\u2022=Lapu", shared.UploaderPlayer);
     }
 
     [Fact]

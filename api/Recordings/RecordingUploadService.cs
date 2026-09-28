@@ -127,7 +127,7 @@ public sealed class RecordingUploadService(
             logger.LogInformation(
                 "Recording {Slug} shared by user {UserId}: {Level} ({Mod}), {Duration:0}s, {Bytes} bytes",
                 shared.Slug, actor.UserId, shared.Level, shared.Mod, shared.DurationSeconds, shared.RecordingBytes);
-            return RecordingService.Detail(shared, actor);
+            return await recordings.DetailAsync(shared, actor, ct);
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
         {

@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Text.Json;
 using api.PlayerTracking;
 using api.Recordings.Models;
+using api.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,9 @@ public interface IRecordingService
     Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct);
 
     Task<RecordingDetailDto?> GetAsync(string slug, RecordingActor? actor, CancellationToken ct);
+
+    /// <summary>One recording's page, with the player page its uploader has on bfstats.io.</summary>
+    Task<RecordingDetailDto> DetailAsync(Recording recording, RecordingActor? actor, CancellationToken ct);
 
     /// <summary>The recording's id for counting a view, or null when there is none to watch.</summary>
     Task<int?> WatchableIdAsync(string slug, CancellationToken ct);
@@ -82,8 +86,9 @@ public sealed class RecordingService(
         var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         // The space is everyone's, whatever the feed is narrowed to.
         var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        var players = await PlayersAsync(rows.Select(r => r.UploaderName), ct);
         return new PagedRecordingsDto(
-            [.. rows.Select(Summary)],
+            [.. rows.Select(r => Summary(r, players.GetValueOrDefault(r.UploaderName)))],
             total,
             page,
             pageSize,
@@ -127,7 +132,13 @@ public sealed class RecordingService(
     public async Task<RecordingDetailDto?> GetAsync(string slug, RecordingActor? actor, CancellationToken ct)
     {
         var recording = await Find(slug).AsNoTracking().FirstOrDefaultAsync(ct);
-        return recording is null || recording.FileMissing ? null : Detail(recording, actor);
+        return recording is null || recording.FileMissing ? null : await DetailAsync(recording, actor, ct);
+    }
+
+    public async Task<RecordingDetailDto> DetailAsync(Recording recording, RecordingActor? actor, CancellationToken ct)
+    {
+        var players = await PlayersAsync([recording.UploaderName], ct);
+        return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName));
     }
 
     public async Task<int?> WatchableIdAsync(string slug, CancellationToken ct) =>
@@ -146,7 +157,7 @@ public sealed class RecordingService(
         recording.Title = clean;
         recording.UpdatedAt = clock.GetCurrentInstant();
         await db.SaveChangesAsync(ct);
-        return Detail(recording, actor);
+        return await DetailAsync(recording, actor, ct);
     }
 
     public async Task<bool> DeleteAsync(string slug, RecordingActor actor, CancellationToken ct)
@@ -186,7 +197,7 @@ public sealed class RecordingService(
         recording.ThumbnailBytes = jpeg.Length;
         recording.UpdatedAt = clock.GetCurrentInstant();
         await db.SaveChangesAsync(ct);
-        return Detail(recording, actor);
+        return await DetailAsync(recording, actor, ct);
     }
 
     public async Task<PagedRecordingCommentsDto?> CommentsAsync(
@@ -307,6 +318,25 @@ public sealed class RecordingService(
             .Select(n => n.PlayerName)
             .ToListAsync(ct);
 
+    /// <summary>
+    /// The bfstats.io players among <paramref name="names"/>, each under the name the site has
+    /// them by, for a link to their page: a recording writes a name's bytes as U+0000 to U+00FF,
+    /// and BFList hands the site the same bytes read as cp1252. A name the site has no human
+    /// player by has no entry.
+    /// </summary>
+    private async Task<Dictionary<string, string>> PlayersAsync(IEnumerable<string> names, CancellationToken ct)
+    {
+        var asked = names.Where(n => n.Length > 0).Distinct(StringComparer.Ordinal)
+            .ToDictionary(n => n, PlayerNameDecoder.FromRecording, StringComparer.Ordinal);
+        if (asked.Count == 0) return [];
+        var candidates = asked.Values.Distinct(StringComparer.Ordinal).ToList();
+        var known = (await db.Players.AsNoTracking()
+            .Where(p => candidates.Contains(p.Name) && !p.AiBot)
+            .Select(p => p.Name)
+            .ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        return asked.Where(a => known.Contains(a.Value)).ToDictionary(a => a.Key, a => a.Value, StringComparer.Ordinal);
+    }
+
     private IQueryable<Recording> Find(string slug)
     {
         var clean = RecordingStorage.CleanSlug(slug) ?? "";
@@ -330,7 +360,7 @@ public sealed class RecordingService(
     public static string? ThumbnailLink(Recording r) =>
         r.ThumbnailBytes > 0 ? $"/stats/recordings/{r.Slug}.jpg?v={r.UpdatedAt.ToUnixTimeSeconds()}" : null;
 
-    internal static RecordingSummaryDto Summary(Recording r) => new(
+    internal static RecordingSummaryDto Summary(Recording r, string? player) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -346,9 +376,10 @@ public sealed class RecordingService(
         r.CreatedAt,
         RecordingLink(r.Slug),
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
-        ThumbnailLink(r));
+        ThumbnailLink(r),
+        player);
 
-    internal static RecordingDetailDto Detail(Recording r, RecordingActor? actor) => new(
+    internal static RecordingDetailDto Detail(Recording r, RecordingActor? actor, string? player) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -369,7 +400,8 @@ public sealed class RecordingService(
         RecordingLink(r.Slug),
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
         ThumbnailLink(r),
-        actor is not null && (actor.IsAdmin || actor.UserId == r.UploaderUserId));
+        actor is not null && (actor.IsAdmin || actor.UserId == r.UploaderUserId),
+        player);
 
     private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
         new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);
