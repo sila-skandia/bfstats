@@ -65,6 +65,12 @@ const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pi
 const FOOT_LENS = { fov: 57.3, near: 0.2 };
 const SEAT_LENS = { fov: 60, near: 0.1 };
 
+/** A zoom's lens eases 0.3 of the way a frame and snaps within this, degrees
+ *  (hand-fire.js `FOV_SNAP`, the arms' `BFSoldier::handleVisualUpdate` law the
+ *  world lens borrows). */
+const ZOOM_EASE = 0.3;
+const ZOOM_SNAP = 0.001;
+
 /** Radians of view per recorded degree of aim pitch and torso twist
  *  (replay-recording.js `AIM_PITCH_SCALE`, `AIM_TWIST_SCALE`). */
 const PITCH = AIM_PITCH_SCALE * Math.PI / 180;
@@ -197,6 +203,8 @@ export class ReplayCamera {
     // First person: the heading and aim last drawn, and the look-around offset.
     this.pov = { yaw: 0, pitch: 0, ready: false, lookYaw: 0, lookPitch: 0, life: null };
     this.shotAxes = new WeakMap();  // soldier life -> his rounds' axes off his recorded aim
+    this.footFov = FOOT_LENS.fov;   // the first person's lens, degrees: his zoom's, eased
+    this.zoomLife = null;
     this.looking = false;        // a drag is turning the first-person view
     this.keys = new Set();       // held movement keys (KeyW ..., ShiftLeft)
     this.stick = null;           // the free camera's thumbstick: { x, y } in the unit disc, y ahead
@@ -519,6 +527,13 @@ export class ReplayCamera {
       this.hidePid = player.followPid;
       this.sight = { kind: 'foot', life };
       lens = 'foot';
+      // His zoom (replay-recording.js `ZOOM_BIT`): the weapon's own lens.
+      const zoom = player.hud?.zoomOf?.(life, t);
+      const target = zoom?.zoomed && zoom.fov ? zoom.fov : FOOT_LENS.fov;
+      const fresh = this.lens !== 'foot' || this.zoomLife !== life;
+      this.zoomLife = life;
+      this.footFov = fresh || Math.abs(target - this.footFov) <= ZOOM_SNAP
+        ? target : this.footFov + (target - this.footFov) * ZOOM_EASE;
     } else if (life.camera) {
       // His own spectator camera (the recording player on the spawn screen):
       // what he was looking at.
@@ -553,6 +568,10 @@ export class ReplayCamera {
     // Dragged off his aim, the view's centre is not where he looked.
     if (this.sight) this.sight.looking = Math.hypot(this.pov.lookYaw, this.pov.lookPitch) > 0.005;
     this.useLens(lens);
+    if (lens === 'foot' && cam.fov !== this.footFov) {
+      cam.fov = this.footFov;
+      cam.updateProjectionMatrix();
+    }
     this.startGlide(cam.position, _v2.set(0, 0, -6).applyQuaternion(cam.quaternion).add(cam.position));
     return true;
   }
