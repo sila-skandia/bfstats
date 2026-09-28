@@ -1,46 +1,22 @@
 <script setup lang="ts">
+// Sign-in on behalf of another bfstats site (play.bfstats.io's REPLAY feed):
+// /auth/discord/start?returnTo=<page> goes to Discord and, from the callback,
+// back to that page. See services/authReturn.ts and features/replay-feed.
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
-import { takeReturnUrl } from '@/services/authReturn'
+import { safeReturnUrl } from '@/services/authReturn'
 import '@/styles/modern-minimal.css'
 
 const router = useRouter()
 const error = ref<string | null>(null)
 
 onMounted(async () => {
-  const urlParams = new URLSearchParams(window.location.search)
-  const code = urlParams.get('code')
-  const errorParam = urlParams.get('error')
-
-  if (errorParam) {
-    error.value = `Discord authorization was denied or failed: ${errorParam}`
-    return
-  }
-
-  if (!code) {
-    error.value = 'No authorization code received from Discord.'
-    return
-  }
-
+  const returnTo = safeReturnUrl(new URLSearchParams(window.location.search).get('returnTo'))
   try {
-    await authService.handleDiscordCallback(code)
-    // Default landing is the V4 dashboard; legacy `/dashboard` is no
-    // longer the target so the user never sees the old sidebar layout
-    // even momentarily on sign-in.
-    const returnPath = localStorage.getItem('discord_auth_return_path') || '/v4/dashboard'
-    localStorage.removeItem('discord_auth_return_path')
-    // Sent here to sign in by another bfstats site (play.bfstats.io): back
-    // there, where the sign-in cookie now reaches too.
-    const returnUrl = takeReturnUrl()
-    if (returnUrl) {
-      window.location.replace(returnUrl)
-      return
-    }
-    router.push(returnPath)
+    await authService.initiateDiscordLogin({ returnPath: '/v4/dashboard', returnUrl: returnTo })
   } catch (err) {
-    console.error('Discord callback error:', err)
-    error.value = err instanceof Error ? err.message : 'An unknown error occurred during Discord authentication.'
+    error.value = err instanceof Error ? err.message : 'Discord sign-in could not start.'
   }
 })
 
@@ -51,7 +27,7 @@ const redirectToHome = () => router.push('/v4/servers/bf1942')
   <div class="mm mm-callback">
     <div class="mm-callback__panel">
       <template v-if="error">
-        <div class="mm-eyebrow mm-eyebrow--strong">Authentication failed</div>
+        <div class="mm-eyebrow mm-eyebrow--strong">Sign-in unavailable</div>
         <p class="mm-callback__msg">{{ error }}</p>
         <button type="button" class="mm-btn mm-btn--accent" @click="redirectToHome">Return home</button>
       </template>
@@ -60,7 +36,6 @@ const redirectToHome = () => router.push('/v4/servers/bf1942')
         <div class="mm-callback__skeletons">
           <div v-for="i in 3" :key="i" class="mm-skeleton" />
         </div>
-        <p class="mm-callback__msg">Completing authentication — you'll land on your dashboard shortly.</p>
       </template>
     </div>
   </div>

@@ -1,3 +1,5 @@
+import { rememberReturnUrl } from './authReturn';
+
 export interface UserProfile {
   id: number;
   name: string;
@@ -78,14 +80,22 @@ class AuthService {
   }
 
   // Discord OAuth Methods
-  async initiateDiscordLogin(): Promise<void> {
+  /**
+   * Off to Discord. The callback returns to `returnPath` (this page, by
+   * default), or to `returnUrl`: another bfstats site's page that sent the
+   * visitor here to sign in (DiscordStart.vue, services/authReturn.ts).
+   */
+  async initiateDiscordLogin({ returnPath = window.location.pathname, returnUrl = null }:
+    { returnPath?: string; returnUrl?: string | null } = {}): Promise<void> {
+    // Before the client id check: a sign-in that cannot start must not leave
+    // an earlier one's return address behind.
+    rememberReturnUrl(returnUrl);
     if (!this.discordClientId) {
       throw new Error('Discord Client ID not configured. Please set VITE_DISCORD_CLIENT_ID environment variable.');
     }
 
-    // Save the current path to redirect back after auth
-    const currentPath = window.location.pathname;
-    localStorage.setItem('discord_auth_return_path', currentPath);
+    // Save the path to redirect back to after auth
+    localStorage.setItem('discord_auth_return_path', returnPath);
 
     // Build Discord OAuth URL
     const params = new URLSearchParams({
