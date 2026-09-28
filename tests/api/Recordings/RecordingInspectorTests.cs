@@ -144,7 +144,7 @@ public class RecordingInspectorTests
     [Fact]
     public async Task Inspect_HoldsWhatTheFileSaysToWhatTheFeedKeeps()
     {
-        var huge = new string('A', 4 * 1024 * 1024);
+        var huge = new string('A', RecordingInspector.MaxLineBytes / 2);
         var text = string.Join('\n',
             """{"k":"h","v":5,"start":"<b>then</b>"}""",
             """{"k":"e","t":0.0,"e":"serverInfo","mod":"<img src=x onerror=alert(1)>"}""",
@@ -315,6 +315,59 @@ public class RecordingInspectorTests
 
         Assert.Equal(text, Gunzip(kept.ToArray()));
         Assert.Equal(RecordingFixture.Kept(text), kept.ToArray());
+    }
+
+    [Fact]
+    public async Task Inspect_RefusesALineLongerThanAnyTheRecorderWrites()
+    {
+        var line = $$"""{"k":"chat","t":5.0,"pid":1,"text":"{{new string('x', RecordingInspector.MaxLineBytes)}}"}""";
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(() => Inspect(MidwayWith(line)));
+
+        Assert.Contains("not a bf42plus recording", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A gzip bomb: a small upload of records that repeat, which would unpack to the
+    /// gigabyte the limit allows, is stopped once it passes the floor, far past any real
+    /// recording's ratio.</summary>
+    [Fact]
+    public async Task Inspect_StopsAGzipBombPastTheRatio()
+    {
+        var bomb = Bomb("{\"k\":\"h\",\"v\":5}\n", "{\"k\":\"s\",\"t\":1.0,\"o\":[[1,0,0,0,0,0,0,1]]}\n", RecordingInspector.RatioFloor + (8 << 20));
+        Assert.True(bomb.Length * RecordingInspector.MaxRatio < RecordingInspector.RatioFloor);
+        Assert.True(bomb.Length * RecordingInspector.MaxServerLogRatio < RecordingInspector.RatioFloor);
+        using var sent = new MemoryStream(bomb);
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => RecordingInspector.InspectAsync(sent, null, 1L << 30, CancellationToken.None));
+
+        Assert.Equal(413, ex.StatusCode);
+    }
+
+    [Fact]
+    public async Task InspectServerLog_StopsAGzipBombPastTheRatio()
+    {
+        var bomb = Bomb(RecordingFixture.EventLog(), "<bf:event name=\"x\" timestamp=\"1\"></bf:event>\n", RecordingInspector.RatioFloor + (8 << 20));
+        using var sent = new MemoryStream(bomb);
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => RecordingInspector.InspectServerLogAsync(sent, null, 1L << 30, CancellationToken.None));
+
+        Assert.Equal(413, ex.StatusCode);
+    }
+
+    /// <summary><paramref name="head"/>, then <paramref name="line"/> over and over to
+    /// <paramref name="bytes"/>, gzipped as it goes.</summary>
+    private static byte[] Bomb(string head, string line, long bytes)
+    {
+        var block = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat(line, (1 << 20) / line.Length)));
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            gzip.Write(Encoding.UTF8.GetBytes(head));
+            for (long written = 0; written < bytes; written += block.Length) gzip.Write(block);
+        }
+        return output.ToArray();
     }
 
     [Fact]

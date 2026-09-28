@@ -48,6 +48,9 @@ const now = Date.parse('2026-09-28T12:00:00Z');
 results.ago = ['2026-09-28T11:59:58Z', '2026-09-28T11:59:00Z', '2026-09-28T10:00:00Z', '2026-09-25T12:00:00Z', '2026-07-01T00:00:00Z', 'nonsense']
   .map(t => api.ago(t, now));
 results.size = [0, 512 * 1024 ** 2, 1.5 * 1024 ** 3, 20 * 1024 ** 3].map(api.size);
+// A player's page on bfstats.io, by the name the site has them under: raw,
+// escaped for the path (the clan tag's bullets, a slash).
+results.playerHref = ['skandia', '=\u2022NDR\u2022=Lapu', 'a/b?c#d'].map(api.playerHref);
 results.signIn = {
   play: api.signInHref('https://play.bfstats.io/play/?tab=replay&rec=abcdefghjk', page),
   local: api.signInHref('http://localhost:5273/play/', local),

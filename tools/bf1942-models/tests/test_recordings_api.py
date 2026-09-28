@@ -74,6 +74,13 @@ class RecordingsApiTests(unittest.TestCase):
             "2 seconds ago", "1 minute ago", "2 hours ago", "3 days ago", "2 months ago", ""])
         self.assertEqual(self.results["size"], ["0 MB", "512 MB", "1.5 GB", "20 GB"])
 
+    def test_an_uploader_links_to_their_player_page(self) -> None:
+        self.assertEqual(self.results["playerHref"], [
+            "https://bfstats.io/v4/players/skandia",
+            "https://bfstats.io/v4/players/%3D%E2%80%A2NDR%E2%80%A2%3DLapu",
+            "https://bfstats.io/v4/players/a%2Fb%3Fc%23d",
+        ])
+
     def test_signing_in_goes_by_way_of_bfstats_io(self) -> None:
         sign_in = self.results["signIn"]
         self.assertEqual(

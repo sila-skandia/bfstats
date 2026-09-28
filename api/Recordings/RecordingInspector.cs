@@ -25,8 +25,25 @@ namespace api.Recordings;
 public static class RecordingInspector
 {
     /// <summary>A line longer than this is not a recorder's: its longest, a batch of every
-    /// object's state, runs to tens of kilobytes.</summary>
-    internal const int MaxLineBytes = 16 * 1024 * 1024;
+    /// object's state, is 44 KB in the ten real recordings on the owner's PC (v2 to v5). A line
+    /// is held whole while it is read, so this is also what one upload can make the API hold.</summary>
+    internal const int MaxLineBytes = 1024 * 1024;
+
+    /// <summary>
+    /// A gzipped recording unpacks to no more than this many times its size, past
+    /// <see cref="RatioFloor"/>. Real ones gzip four to eight to one; a gzip bomb, hundreds to
+    /// a thousand, and every byte it unpacks to is read, hashed, parsed and gzipped again here:
+    /// 3 MB sent that unpacked to the whole gigabyte cost 11 s of CPU.
+    /// </summary>
+    internal const long MaxRatio = 32;
+
+    /// <summary>The same for a server log: XML that repeats itself, which gzips up to thirty
+    /// to one.</summary>
+    internal const long MaxServerLogRatio = 64;
+
+    /// <summary>What any gzipped upload may unpack to, whatever its ratio: a file under this is
+    /// not held to one.</summary>
+    internal const long RatioFloor = 64L * 1024 * 1024;
 
     /// <summary>The longest a recording can say it runs. A record's <c>t</c> past this is the
     /// file's own nonsense and is not taken as the recording's length.</summary>
@@ -64,14 +81,15 @@ public static class RecordingInspector
         {
             await using var content = await ContentAsync(upload, ct);
             await using var output = stored is null ? null : new GZipStream(stored, CompressionLevel.Optimal, leaveOpen: true);
+            var limit = UnpackLimit(upload, content, maxRawBytes, MaxRatio);
             int read;
             while ((read = await content.ReadAsync(chunk.AsMemory(0, ChunkBytes), ct)) > 0)
             {
                 raw += read;
-                if (raw > maxRawBytes)
+                if (raw > limit)
                 {
                     throw new RecordingRejectedException(
-                        $"The recording unpacks to more than {maxRawBytes / (1024 * 1024)} MB.",
+                        $"The recording unpacks to more than {limit / (1024 * 1024)} MB.",
                         StatusCodes.Status413PayloadTooLarge);
                 }
                 hash.AppendData(chunk, 0, read);
@@ -92,6 +110,7 @@ public static class RecordingInspector
                     }
                     else
                     {
+                        if (partial.WrittenCount + newline > MaxLineBytes) throw NotARecording();
                         partial.Write(rest[..newline]);
                         scan.Line(partial.WrittenSpan);
                         partial.ResetWrittenCount();
@@ -147,7 +166,7 @@ public static class RecordingInspector
         {
             await using var content = await ContentAsync(upload, ct);
             await using var output = stored is null ? null : new GZipStream(stored, CompressionLevel.Optimal, leaveOpen: true);
-            await using var watched = new ServerLogStream(content, output, maxRawBytes);
+            await using var watched = new ServerLogStream(content, output, UnpackLimit(upload, content, maxRawBytes, MaxServerLogRatio));
             var settings = new XmlReaderSettings
             {
                 Async = true,
@@ -249,6 +268,12 @@ public static class RecordingInspector
         while (reader.MoveToNextAttribute());
         reader.MoveToElement();
     }
+
+    /// <summary>How far <paramref name="upload"/> may unpack: <paramref name="maxRawBytes"/>, and
+    /// for a gzipped one no further than <paramref name="ratio"/> times its size past
+    /// <see cref="RatioFloor"/>.</summary>
+    private static long UnpackLimit(Stream upload, Stream content, long maxRawBytes, long ratio) =>
+        content is GZipStream ? Math.Min(maxRawBytes, Math.Max(RatioFloor, upload.Length * ratio)) : maxRawBytes;
 
     /// <summary>The upload's content: gunzipped when it starts as gzip does, else as it came.</summary>
     private static async Task<Stream> ContentAsync(Stream upload, CancellationToken ct)

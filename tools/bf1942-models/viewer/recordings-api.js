@@ -126,6 +126,12 @@ function rolesOf(token) {
   }
 }
 
+/** A player's page on bfstats.io, for `name` as the site has them (a
+ *  recording's `uploaderPlayer`): raw, as every link to a player page takes it. */
+export function playerHref(name) {
+  return `${LIVE_API}/v4/players/${encodeURIComponent(name)}`;
+}
+
 /** Where a visitor signs in: bfstats.io's own Discord sign-in, which sends
  *  them back to `returnTo` (ui/src/views/DiscordStart.vue). */
 export function signInHref(returnTo, page = globalThis.location) {
