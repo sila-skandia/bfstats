@@ -452,6 +452,12 @@ class ReplayUxTests(unittest.TestCase):
         self.assertEqual((pov["fov"], pov["near"], pov["hides"]), (57.3, 0.2, 0))
         # Free: W flies along the view at 30 m/s, with the page's own lens.
         self.assertEqual(cam["free"], {"moved": 30, "along": 1, "fov": 60})
+        # A touch screen's thumbstick: pushed all the way it flies ahead at
+        # twice the keys' speed, half way a quarter of that (the square of
+        # the push), and to the side it strafes. A pinch apart by e flies
+        # ahead as six wheel steps would.
+        self.assertEqual(cam["stick"], {"full": 60, "along": 1, "half": 15, "side": 60, "sideAlong": 1})
+        self.assertEqual(cam["pinchFree"], {"moved": 24, "along": 1})
         # Dead: no eyes to look through, nothing hidden.
         self.assertIsNone(cam["deadPov"])
 

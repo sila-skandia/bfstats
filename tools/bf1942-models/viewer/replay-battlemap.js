@@ -26,8 +26,10 @@ const HEAVY = /GunBarrel|Cannon|Bomb|Rocket|Torpedo|shreck|Bazooka|Flak|Mortar|H
 const KILL_AGE = 10;
 /** The list beside the map is refreshed this often, seconds. */
 const LIST_TICK = 0.25;
-/** A drag of more than this is a pan, not a click, pixels. */
+/** A drag of more than this is a pan, not a click, pixels; a finger's
+ *  tap wanders further than a mouse's click. */
 const CLICK_SLOP = 4;
+const TAP_SLOP = 10;
 const ZOOM_MAX = 5;
 /** A fight's glow at most this wide however far in the map is, pixels. */
 const HEAT_MAX_PX = 120;
@@ -122,7 +124,9 @@ export class ReplayBattleMap {
     this.view = el('div', 'rp-bm-view');
     this.canvas = el('canvas');
     this.tip = el('div', 'rp-bm-tip');
-    const hint = el('div', 'rp-bm-hint', 'Click a player to follow him, a fight to watch it, the ground to fly there. Wheel zooms, drag pans.');
+    const hint = el('div', 'rp-bm-hint', window.matchMedia?.('(hover: none)').matches
+      ? 'Tap a player to follow him, a fight to watch it, the ground to fly there. Pinch zooms, drag pans.'
+      : 'Click a player to follow him, a fight to watch it, the ground to fly there. Wheel zooms, drag pans.');
     this.view.append(this.canvas, this.tip, hint);
     const side = el('div', 'rp-bm-side');
     const tabs = el('div', 'rp-bm-tabs');
@@ -149,7 +153,7 @@ export class ReplayBattleMap {
 
     // The bar's own button for it.
     this.button = ui.button('', null, 'Battle map (M)', () => this.toggle(),
-      `${icon('map')}<span class="rp-hide-narrow">Map</span>`);
+      `${icon('map')}<span class="rp-label">Map</span>`);
     ui.playersBtn.before(this.button);
 
     side.addEventListener('click', e => {
@@ -362,6 +366,14 @@ export class ReplayBattleMap {
   bindCanvas() {
     const c = this.canvas;
     let drag = null;
+    // Two fingers pinch: the map zooms about the point between them and
+    // follows it as they move.
+    const fingers = new Map();
+    let pinch = null;
+    const spread = () => {
+      const [[ax, ay], [bx, by]] = fingers.values();
+      return { d: Math.hypot(ax - bx, ay - by), x: (ax + bx) / 2, y: (ay + by) / 2 };
+    };
     const local = e => {
       const r = c.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
@@ -369,14 +381,39 @@ export class ReplayBattleMap {
     c.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
       const [x, y] = local(e);
-      drag = { id: e.pointerId, x, y, sx: x, sy: y, moved: false };
+      if (e.pointerType === 'touch') {
+        fingers.set(e.pointerId, [x, y]);
+        // Held, so a finger that slides off the map still ends here.
+        try { c.setPointerCapture(e.pointerId); } catch {}
+        if (fingers.size >= 2) {
+          // A second finger: a pinch, and no longer a tap or a pan.
+          pinch = fingers.size === 2 ? spread() : pinch;
+          drag = null;
+          c.classList.remove('dragging');
+          return;
+        }
+      }
+      drag = { id: e.pointerId, x, y, sx: x, sy: y, moved: false, slop: e.pointerType === 'touch' ? TAP_SLOP : CLICK_SLOP };
       try { c.setPointerCapture(e.pointerId); } catch {}
     });
     c.addEventListener('pointermove', e => {
       const [x, y] = local(e);
       this.ui.activity();
+      if (fingers.has(e.pointerId)) {
+        fingers.set(e.pointerId, [x, y]);
+        if (pinch && fingers.size >= 2) {
+          const now = spread();
+          const side = Math.min(this.cw, this.ch) * this.zoom;
+          this.center[0] -= (now.x - pinch.x) / side;
+          this.center[1] -= (now.y - pinch.y) / side;
+          if (pinch.d > 0 && now.d > 0) this.zoomAbout(now.x, now.y, this.zoom * (now.d / pinch.d));
+          else this.clampCenter();
+          pinch = now;
+          return;
+        }
+      }
       if (drag && e.pointerId === drag.id) {
-        if (!drag.moved && Math.hypot(x - drag.sx, y - drag.sy) > CLICK_SLOP) {
+        if (!drag.moved && Math.hypot(x - drag.sx, y - drag.sy) > drag.slop) {
           drag.moved = true;
           c.classList.add('dragging');
         }
@@ -393,6 +430,8 @@ export class ReplayBattleMap {
       this.pointer = [x, y];
     });
     const up = e => {
+      fingers.delete(e.pointerId);
+      if (fingers.size < 2) pinch = null;
       if (!drag || e.pointerId !== drag.id) return;
       const click = !drag.moved;
       drag = null;
@@ -411,21 +450,25 @@ export class ReplayBattleMap {
       e.preventDefault();
       e.stopPropagation();
       const [x, y] = local(e);
-      const before = this.frame();
-      const u = (x - before.x0) / before.side;
-      const v = (y - before.y0) / before.side;
       const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-      this.zoom = Math.min(ZOOM_MAX, Math.max(1, this.zoom * Math.exp(-e.deltaY * scale * 0.001)));
-      // The point under the pointer stays under it.
-      const side = Math.min(this.cw, this.ch) * this.zoom;
-      this.center[0] = u - (x - this.cw / 2) / side;
-      this.center[1] = v - (y - this.ch / 2) / side;
-      this.clampCenter();
+      this.zoomAbout(x, y, this.zoom * Math.exp(-e.deltaY * scale * 0.001));
     }, { passive: false });
     c.addEventListener('dblclick', () => {
       this.zoom = 1;
       this.center = [0.5, 0.5];
     });
+  }
+
+  /** Zoom to `zoom`, the map's point under (x, y) staying under it. */
+  zoomAbout(x, y, zoom) {
+    const before = this.frame();
+    const u = (x - before.x0) / before.side;
+    const v = (y - before.y0) / before.side;
+    this.zoom = Math.min(ZOOM_MAX, Math.max(1, zoom));
+    const side = Math.min(this.cw, this.ch) * this.zoom;
+    this.center[0] = u - (x - this.cw / 2) / side;
+    this.center[1] = v - (y - this.ch / 2) / side;
+    this.clampCenter();
   }
 
   clampCenter() {

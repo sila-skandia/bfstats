@@ -652,11 +652,12 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     const { rec } = player;
     const when = recordedAt(rec.start);
     if (when) {
-      const stamp = el('span', 'rp-round rp-hide-narrow ro-when', `RECORDED ${when.toUpperCase()}`);
+      const stamp = el('span', 'rp-round rp-stamp ro-when', `RECORDED ${when.toUpperCase()}`);
       stamp.title = [recordedLine(rec.start, rec.server, { seconds: true }), player.label].filter(Boolean).join('\n');
       ui.roundText.after(stamp);
     }
-    const button = ui.button('ro-open', null, 'Open another recording', pick);
+    // A narrow bar folds it into its menu (replay-ui.js `rp-roomy`).
+    const button = ui.button('ro-open rp-roomy', null, 'Open another recording', pick);
     button.innerHTML = uploadIcon();
     ui.logBtn.before(button);
     // A recording that does not say its level plays on the one it was
