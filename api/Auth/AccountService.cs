@@ -1,5 +1,6 @@
 using api.Auth.Models;
 using api.PlayerTracking;
+using api.Recordings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -21,7 +22,8 @@ namespace api.Auth;
 /// </summary>
 public class AccountService(
     PlayerTrackerDbContext context,
-    ILogger<AccountService> logger) : IAccountService
+    ILogger<AccountService> logger,
+    IRecordingStorage? recordingStorage = null) : IAccountService
 {
     /// <summary>
     /// RFC 2606 reserves <c>.invalid</c>, so a tombstone address can never be
@@ -96,6 +98,18 @@ public class AccountService(
                 c.CreatedAt.ToDateTimeUtc(), c.UpdatedAt.ToDateTimeUtc()))
             .ToListAsync(cancellationToken);
 
+        var recordingComments = await context.RecordingComments.AsNoTracking()
+            .Where(c => c.AuthorUserId == userId)
+            .Select(c => new AccountExportComment(
+                "recording", c.Recording.Title, c.AuthorName, c.Content,
+                c.CreatedAt.ToDateTimeUtc(), c.CreatedAt.ToDateTimeUtc()))
+            .ToListAsync(cancellationToken);
+
+        var recordings = await context.Recordings.AsNoTracking()
+            .Where(r => r.UploaderUserId == userId)
+            .Select(r => new AccountExportRecording(r.Slug, r.Title, r.UploaderName, r.CreatedAt.ToDateTimeUtc()))
+            .ToListAsync(cancellationToken);
+
         var tournaments = await context.Tournaments.AsNoTracking()
             .Where(t => t.CreatedByUserId == userId)
             .Select(t => new AccountExportTournament(t.Id, t.Name, t.CreatedAt.ToDateTimeUtc()))
@@ -115,9 +129,10 @@ public class AccountService(
             FavouriteServers: favourites,
             Buddies: buddies,
             Sessions: sessions,
-            Comments: [.. playerComments, .. serverComments, .. tournamentComments, .. matchComments],
+            Comments: [.. playerComments, .. serverComments, .. tournamentComments, .. matchComments, .. recordingComments],
             Tournaments: tournaments,
-            TournamentTeamMemberships: memberships);
+            TournamentTeamMemberships: memberships,
+            SharedRecordings: recordings);
     }
 
     public async Task<AccountDeletionSummary?> DeleteAsync(int userId, CancellationToken cancellationToken = default)
@@ -166,6 +181,20 @@ public class AccountService(
         context.TournamentComments.RemoveRange(tournamentComments);
         context.TournamentMatchComments.RemoveRange(matchComments);
 
+        // Recordings they shared go, with everyone's comments on them (cascade), and so do
+        // their comments on other people's, which take those recordings' counts down.
+        var recordings = await context.Recordings.Where(r => r.UploaderUserId == userId).ToListAsync(cancellationToken);
+        var recordingComments = await context.RecordingComments.Where(c => c.AuthorUserId == userId).ToListAsync(cancellationToken);
+        var doomedRecordings = recordings.Select(r => r.Id).ToHashSet();
+        foreach (var onOthers in recordingComments.Where(c => !doomedRecordings.Contains(c.RecordingId)).GroupBy(c => c.RecordingId))
+        {
+            var count = onOthers.Count();
+            await context.Recordings.Where(r => r.Id == onOthers.Key)
+                .ExecuteUpdateAsync(set => set.SetProperty(r => r.CommentCount, r => Math.Max(0, r.CommentCount - count)), cancellationToken);
+        }
+        context.RecordingComments.RemoveRange(recordingComments);
+        context.Recordings.RemoveRange(recordings);
+
         // Tournament rosters are public competition records. The roster line
         // keeps the in-game name that played; only the account link is severed.
         var memberships = await context.TournamentTeamPlayers.Where(ttp => ttp.UserId == userId).ToListAsync(cancellationToken);
@@ -191,24 +220,41 @@ public class AccountService(
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        // The files after the rows: a file left behind is only disk, a row without its
+        // file would be a dead link.
+        foreach (var recording in recordings)
+        {
+            try
+            {
+                recordingStorage?.Delete(recording.Slug);
+            }
+            catch (IOException ex)
+            {
+                logger.LogWarning(ex, "Erased account {UserId}: recording {Slug}'s files were not removed", userId, recording.Slug);
+            }
+        }
+
         var summary = new AccountDeletionSummary(
             AliasesRemoved: aliases.Count,
             FavouriteServersRemoved: favourites.Count,
             BuddiesRemoved: buddies.Count,
             SessionsRevoked: sessions.Count,
-            CommentsRemoved: playerComments.Count + serverComments.Count + tournamentComments.Count + matchComments.Count,
+            CommentsRemoved: playerComments.Count + serverComments.Count + tournamentComments.Count + matchComments.Count
+                + recordingComments.Count,
             TeamRegistrationsUnlinked: memberships.Count + ledTeams.Count,
             TournamentsAnonymised: tournaments.Count,
-            TournamentPostsAnonymised: posts.Count);
+            TournamentPostsAnonymised: posts.Count,
+            RecordingsRemoved: recordings.Count);
 
         // Deliberately no email in this log line — logging the address of someone
         // who just asked to be forgotten would defeat the request.
         logger.LogInformation(
             "Erased account {UserId}: {Aliases} aliases, {Favourites} favourites, {Buddies} buddies, "
-            + "{Sessions} sessions, {Comments} comments, {Memberships} team links, {Tournaments} tournaments anonymised",
+            + "{Sessions} sessions, {Comments} comments, {Memberships} team links, {Tournaments} tournaments anonymised, "
+            + "{Recordings} recordings",
             userId, summary.AliasesRemoved, summary.FavouriteServersRemoved, summary.BuddiesRemoved,
             summary.SessionsRevoked, summary.CommentsRemoved, summary.TeamRegistrationsUnlinked,
-            summary.TournamentsAnonymised);
+            summary.TournamentsAnonymised, summary.RecordingsRemoved);
 
         return summary;
     }

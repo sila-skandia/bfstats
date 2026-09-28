@@ -2100,6 +2100,175 @@ namespace api.Migrations
                     b.ToTable("ServerBestScoreRaw");
                 });
 
+            modelBuilder.Entity("api.Recordings.Models.Recording", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CommentCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("DurationSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<bool>("FileMissing")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("GameMode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Mod")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PlayerCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PlayersJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecordedLocal")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RecordingBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RecordingRawBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ServerLogBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ServerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ThumbnailBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UploaderName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UploaderUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ViewCount")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentHash")
+                        .IsUnique();
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.HasIndex("UploaderUserId");
+
+                    b.HasIndex("FileMissing", "Id");
+
+                    b.HasIndex("FileMissing", "ViewCount", "Id");
+
+                    b.ToTable("Recordings");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingComment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("AtSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AuthorUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorUserId");
+
+                    b.HasIndex("RecordingId", "Id");
+
+                    b.ToTable("RecordingComments");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingView", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastCountedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RecordingId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ViewerKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RecordingId", "ViewerKey")
+                        .IsUnique();
+
+                    b.ToTable("RecordingViews");
+                });
+
             modelBuilder.Entity("api.PlayerTracking.PlayerComment", b =>
                 {
                     b.HasOne("api.PlayerTracking.User", "Author")
@@ -2550,6 +2719,47 @@ namespace api.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.Recording", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "Uploader")
+                        .WithMany()
+                        .HasForeignKey("UploaderUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Uploader");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingComment", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("api.Recordings.Models.Recording", "Recording")
+                        .WithMany()
+                        .HasForeignKey("RecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Recording");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingView", b =>
+                {
+                    b.HasOne("api.Recordings.Models.Recording", "Recording")
+                        .WithMany()
+                        .HasForeignKey("RecordingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Recording");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.GameServer", b =>
