@@ -122,6 +122,10 @@ PVC's root at `/mnt/data`: `chown 1000:1000 /mnt/data/assets/mesh/replays`.
 
 ## Later: players' own recordings
 
+Built (2026-09-28) as features/replay-feed: the REPLAY tab is a feed of
+recordings players share through the API, with views and comments. The plan
+this section held, and where it went:
+
 - Upload through the API rather than FileBrowser: authenticated, size-capped,
   and checked for a bf42plus header (the first line's `{"k":"h",...}`, as
   `replay-open.js` checks a dropped file). Write under

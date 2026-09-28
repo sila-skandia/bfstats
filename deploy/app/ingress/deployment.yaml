@@ -54,8 +54,11 @@ data:
       use_backend mesh_frontend if host_mesh_bfstats
       # !is_netcode: use_backend is first-match-wins, and without it this
       # rule would swallow /netcode/* on the play host before the path-based
-      # netcode route below is ever evaluated.
-      use_backend mesh_frontend if host_play_bfstats !is_netcode
+      # netcode route below is ever evaluated. !is_stats likewise: the play
+      # host's /stats is the API's, so the REPLAY feed (features/replay-feed)
+      # calls it on its own origin and bfstats.io's sign-in cookie
+      # (Domain=bfstats.io, Path=/stats) comes with each call.
+      use_backend mesh_frontend if host_play_bfstats !is_netcode !is_stats
 
       # Route /stats to stats API
       use_backend stats_api if is_stats

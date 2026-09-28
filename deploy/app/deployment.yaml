@@ -34,6 +34,28 @@ spec:
         fsGroup: 1000
         runAsUser: 1000
         runAsGroup: 1000
+      initContainers:
+        # The recordings directory is a hostPath on the node's root disk
+        # (recordings-storage.yaml): the kubelet makes it root-owned and
+        # fsGroup does not reach a hostPath, so it is handed to the API's uid
+        # here. Runs before the containers, so it adds nothing to the pod's
+        # memory budget.
+        - name: recordings-owner
+          image: busybox:1.36
+          command: ["sh", "-c", "chown 1000:1000 /mnt/recordings && chmod 0750 /mnt/recordings"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: recordings
+              mountPath: /mnt/recordings
+          resources:
+            requests:
+              memory: "8Mi"
+              cpu: "5m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
       containers:
         - name: nginx
           image: anskia/bfstats-api:latest
@@ -45,6 +67,11 @@ spec:
               value: "/mnt/data/playertracker.db"
             - name: ASSETS_STORAGE_PATH
               value: "/mnt/data/assets"
+            # The REPLAY feed's files (features/replay-feed, recordings-storage.yaml).
+            # The quota and the disk margin are RecordingsOptions' defaults: 20 GiB,
+            # and never below max(8 GiB, 15%) free on the node's root disk.
+            - name: Recordings__Path
+              value: "/mnt/recordings"
             - name: ASPNETCORE_URLS
               value: "http://+:8080"
             - name: ASPNETCORE_ENVIRONMENT
@@ -178,6 +205,8 @@ spec:
           volumeMounts:
             - name: stats-data
               mountPath: /mnt/data
+            - name: recordings
+              mountPath: /mnt/recordings
           # Bounded so a runaway process is OOM-killed and restarted rather than
           # taking the node into memory-pressure thrash with it. .NET reads the
           # cgroup limit and sizes its GC heap from it (~75% by default), so this
@@ -217,6 +246,9 @@ spec:
         - name: stats-data
           persistentVolumeClaim:
             claimName: bf42-stats-pvc-v2
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: bfstats-recordings
 
 ---
 apiVersion: v1
