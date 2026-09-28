@@ -2,6 +2,7 @@ using api.AI.Models;
 using api.Data.Entities;
 using api.ImageStorage.Models;
 using api.Players.Models;
+using api.Recordings.Models;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using NodaTime.Text;
@@ -65,6 +66,11 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<PlayerComment> PlayerComments { get; set; }
     public DbSet<ServerComment> ServerComments { get; set; }
     public DbSet<TournamentComment> TournamentComments { get; set; }
+
+    // Shared gameplay recordings (features/replay-feed)
+    public DbSet<Recording> Recordings { get; set; }
+    public DbSet<RecordingComment> RecordingComments { get; set; }
+    public DbSet<RecordingView> RecordingViews { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1353,6 +1359,55 @@ public class PlayerTrackerDbContext : DbContext
             .WithMany()
             .HasForeignKey(c => c.ParentCommentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        ConfigureRecordings(modelBuilder);
+    }
+
+    /// <summary>The REPLAY feed's tables (features/replay-feed). The feed pages by id, not by
+    /// CreatedAt: ExtendedIso strings vary in their fractional digits and do not sort.</summary>
+    private static void ConfigureRecordings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Recording>(recording =>
+        {
+            recording.HasKey(r => r.Id);
+            recording.HasIndex(r => r.Slug).IsUnique();
+            recording.HasIndex(r => r.ContentHash).IsUnique();
+            recording.HasIndex(r => new { r.FileMissing, r.Id });
+            recording.HasIndex(r => new { r.FileMissing, r.ViewCount, r.Id });
+            recording.HasIndex(r => r.UploaderUserId);
+            recording.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            recording.Property(r => r.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            recording.HasOne(r => r.Uploader)
+                .WithMany()
+                .HasForeignKey(r => r.UploaderUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RecordingComment>(comment =>
+        {
+            comment.HasKey(c => c.Id);
+            comment.HasIndex(c => new { c.RecordingId, c.Id });
+            comment.Property(c => c.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            comment.HasOne(c => c.Recording)
+                .WithMany()
+                .HasForeignKey(c => c.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+            comment.HasOne(c => c.Author)
+                .WithMany()
+                .HasForeignKey(c => c.AuthorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RecordingView>(view =>
+        {
+            view.HasKey(v => v.Id);
+            view.HasIndex(v => new { v.RecordingId, v.ViewerKey }).IsUnique();
+            view.Property(v => v.LastCountedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            view.HasOne(v => v.Recording)
+                .WithMany()
+                .HasForeignKey(v => v.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 
     private static string FormatInstant(Instant instant) => InstantExtendedIsoPattern.Format(instant);

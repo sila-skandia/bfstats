@@ -434,6 +434,20 @@ try
     // Register Auth services
     builder.Services.AddScoped<api.Auth.IDiscordAuthService, api.Auth.DiscordAuthService>();
 
+    // Shared gameplay recordings: the REPLAY feed (features/replay-feed). The view counter
+    // and the file check are request-driven upkeep, not data jobs, so they run whatever
+    // DISABLE_BACKGROUND_PROCESSING says.
+    builder.Services.Configure<api.Recordings.RecordingsOptions>(
+        builder.Configuration.GetSection(api.Recordings.RecordingsOptions.Section));
+    builder.Services.AddSingleton<api.Recordings.IRecordingStorage, api.Recordings.RecordingStorage>();
+    builder.Services.AddScoped<api.Recordings.IRecordingService, api.Recordings.RecordingService>();
+    builder.Services.AddScoped<api.Recordings.IRecordingUploadService, api.Recordings.RecordingUploadService>();
+    builder.Services.AddSingleton<api.Recordings.RecordingViewCounter>();
+    builder.Services.AddSingleton<api.Recordings.IRecordingViewCounter>(
+        sp => sp.GetRequiredService<api.Recordings.RecordingViewCounter>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<api.Recordings.RecordingViewCounter>());
+    builder.Services.AddHostedService<api.Recordings.RecordingFileReconciler>();
+
     // CORS
     var allowedOrigins = CorsOriginMatcher.Parse(builder.Configuration["Cors:AllowedOrigins"]);
     builder.Services.AddCors(options =>
@@ -453,6 +467,10 @@ try
                 policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
             }
         });
+        // The recordings feed's reads are public data: any origin may GET them (a local
+        // viewer browsing the live feed), with no credentials.
+        options.AddPolicy(api.Recordings.RecordingsController.PublicReadCors, policy =>
+            policy.AllowAnyOrigin().AllowAnyHeader().WithMethods("GET"));
     });
 
     // JWT Auth
@@ -947,6 +965,19 @@ try
                     QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                     QueueLimit = 2 // Allow 2 queued requests
                 }));
+        // The recordings feed's writes, per visitor address (the connection's own is HAProxy's).
+        options.AddPolicy(api.Recordings.RecordingsController.UploadLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromHours(1) }));
+        options.AddPolicy(api.Recordings.RecordingsController.CommentLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(10) }));
+        options.AddPolicy(api.Recordings.RecordingsController.ViewLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
     });
 
     var host = builder.Build();
