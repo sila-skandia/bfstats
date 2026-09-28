@@ -2,16 +2,19 @@
 // counts, the place a link starts it (`&t=21`), its comments beside the round
 // with each time in them a place to jump to, their marks along the timeline,
 // and the comments coming up as the round passes the moment they name. The
-// uploader, or an admin, can make the frame on screen the recording's cover.
+// uploader, or an admin, can make the frame on screen the recording's cover
+// (F, or the menu).
 //
 // And the way in for a recording opened from disk: Share puts it in the
-// REPLAY feed from here, with the frame on screen as its cover, and the page
-// carries on as the shared recording, comments and all.
+// REPLAY feed from here, with the frame F picked, or else the frame on
+// screen, as its cover, and the page carries on as the shared recording,
+// comments and all.
 //
 // The replay's own chrome (replay-ui.js) is not changed: this adds a button
 // to its bar, a panel and marks to its root and timeline, and an item to its
-// menu, through the page's `opened(player)` hook, the way replay-open.js adds
-// the bar's date and Open button.
+// menu, and gives its F the cover (`useFrameKey`), through the page's
+// `opened(player)` hook, the way replay-open.js adds the bar's date and Open
+// button.
 
 import {
   ago, apiMode, clock, commentRuns, count, createRecordingsApi, readableQuery, resolveApi, sharedRecordingOf,
@@ -158,6 +161,8 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
   let counted = false;
   let started = false;
   let pendingCapture = null;
+  let chosenCover = null;        // a recording from disk: the frame F picked for Share
+  let coverBusy = false;
   let lastTime = null;
   const startAt = Number(params.get('t'));
 
@@ -240,6 +245,8 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
 
   function toggle(on = !ui.root.classList.contains('rs-open')) {
     if (!ui) return;
+    // Out of the hidden HUD, the comments bring it back (replay-ui.js `toggle`).
+    if (on) ui.setBare?.(false, true);
     if (on) ui.root.classList.remove('log-open');
     ui.root.classList.toggle('rs-open', on);
     nodes.button?.classList.toggle('on', on);
@@ -519,25 +526,41 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     };
   }
 
+  /** The frame on screen as the cover (F, or the menu): a shared recording's
+   *  is set there and then; one from disk keeps it for Share to send. */
+  async function takeCover() {
+    if (coverBusy) return;
+    coverBusy = true;
+    try {
+      const blob = await capture();
+      if (!blob) throw new Error('The frame could not be taken.');
+      if (slug) {
+        await api.setThumbnail(slug, blob);
+        ui.flash('Cover set', 1600);
+      } else {
+        chosenCover = blob;
+        ui.flash('Cover chosen', 1600);
+      }
+    } catch (error) {
+      ui.flash(error.message, 3000);
+    } finally {
+      coverBusy = false;
+    }
+  }
+
   function addCoverItem() {
     if (!ui.moreMenu || ui.moreMenu.querySelector('.rs-cover-item')) return;
     const item = el('button', 'rp-mi rs-cover-item');
     item.type = 'button';
     item.setAttribute('role', 'menuitem');
-    item.innerHTML = `${svg('frame')}<span>Use this frame as the cover</span>`;
-    item.addEventListener('click', async e => {
+    item.innerHTML = `${svg('frame')}<span>Use this frame as the cover</span><kbd class="rp-keys-only">F</kbd>`;
+    item.addEventListener('click', e => {
       e.stopPropagation();
       ui.closeMore();
-      try {
-        const blob = await capture();
-        if (!blob) throw new Error('The frame could not be taken.');
-        await api.setThumbnail(slug, blob);
-        ui.flash('Cover set', 1600);
-      } catch (error) {
-        ui.flash(error.message, 3000);
-      }
+      takeCover();
     });
     ui.moreMenu.append(item);
+    ui.useFrameKey?.(takeCover, 'Use this frame as the cover');
   }
 
   // --- sharing a recording from disk -----------------------------------------------
@@ -547,6 +570,7 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     nodes.share = ui.button('rs-share rp-roomy', null, 'Share this recording to the REPLAY feed', () => openShare(),
       `${svg('share')}<span class="rp-label">Share</span>`);
     ui.logBtn.before(nodes.share);
+    ui.useFrameKey?.(takeCover, 'Use this frame as the cover');
   }
 
   async function openShare() {
@@ -557,7 +581,8 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     }
     const wasPlaying = player.playing;
     player.playing = false;
-    const cover = await capture().catch(() => null);
+    const picked = Boolean(chosenCover);
+    const cover = chosenCover ?? await capture().catch(() => null);
     const shade = el('div', 'rs-shade');
     const dialog = el('div', 'rp-panel rs-dialog');
     const head = el('div', 'rp-panel-head');
@@ -606,7 +631,8 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     go.type = 'button';
     const row = el('div', 'rs-row');
     row.append(status, go);
-    body.append(preview, el('span', 'rs-hint', 'The frame on screen is its cover.'), titleLabel, asLabel, row);
+    body.append(preview, el('span', 'rs-hint', picked ? 'The frame you picked with F is its cover.' : 'The frame on screen is its cover.'),
+      titleLabel, asLabel, row);
     title.focus();
     go.addEventListener('click', async () => {
       if (go.disabled) return;
