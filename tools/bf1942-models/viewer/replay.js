@@ -54,7 +54,7 @@ import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
-import { ReplayProps } from './replay-props.js';
+import { ReplayProps, networkedRounds } from './replay-props.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
@@ -130,6 +130,9 @@ class ReplayPlayer {
     // has one per file (replay-merge.js), and the first is followed first.
     this.recordingPids = recordingPlayers(rec);
     this.recordingPid = this.recordingPids[0] ?? null;
+    // The rounds the recording carries as objects (grenades, mines, packs):
+    // drawn from it (replay-props.js), never flown by the page's guns.
+    this.networkedRounds = networkedRounds(rec);
     const human = pids.find(pid => rec.players.get(pid)?.ai === false);
     this.followPid = this.recordingPid ?? human ?? (pids.length ? pids[0] : null);
     this.v1 = new THREE.Vector3();
