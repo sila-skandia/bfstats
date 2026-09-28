@@ -16,7 +16,8 @@ public sealed record AccountExport(
     IReadOnlyList<AccountExportSession> Sessions,
     IReadOnlyList<AccountExportComment> Comments,
     IReadOnlyList<AccountExportTournament> Tournaments,
-    IReadOnlyList<AccountExportTeamMembership> TournamentTeamMemberships);
+    IReadOnlyList<AccountExportTeamMembership> TournamentTeamMemberships,
+    IReadOnlyList<AccountExportRecording>? SharedRecordings = null);
 
 public sealed record AccountExportProfile(
     int Id,
@@ -52,6 +53,9 @@ public sealed record AccountExportComment(
     DateTime UpdatedAtUtc);
 
 public sealed record AccountExportTournament(int Id, string Name, DateTime CreatedAtUtc);
+
+/// <summary>A recording shared to the REPLAY feed (features/replay-feed).</summary>
+public sealed record AccountExportRecording(string Slug, string Title, string SharedAsPlayerName, DateTime SharedAtUtc);
 
 public sealed record AccountExportTeamMembership(
     string PlayerName,
