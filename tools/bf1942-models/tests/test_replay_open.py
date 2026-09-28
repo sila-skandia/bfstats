@@ -95,6 +95,24 @@ class ReplayOpenTests(unittest.TestCase):
         self.assertIn("replay=local:replay_20260927-140921", href["search"])
         self.assertEqual(self.results["local"], [True, False, False])
 
+    def test_a_shared_link_plays_in_the_recordings_own_mod(self) -> None:
+        # features/gameplay-recordings: a link written from the file name alone
+        # names no mod, and the page comes up in the one the visitor browsed
+        # last. The recording's own is added; the rest reads as written.
+        shared = ("https://play.bfstats.io/map.html?replay=replays/replay_20260927-140921.ndjson"
+                  "&serverlog=replays/ev_14567-20260927_1409.xml")
+        own = self.results["ownMod"]
+        self.assertEqual(own["remembered"], f"{shared}&mod=bf1942")
+        self.assertEqual(own["pack"], f"{shared}&mod=xpack1")
+
+    def test_a_link_that_needs_no_other_mod_stays(self) -> None:
+        # Already in it; a link that names a mod; a recording held for this
+        # page (read once, and its URL names one); a recording naming no mod,
+        # or one without maps here; a page watching nothing.
+        own = self.results["ownMod"]
+        for case in ("already", "named", "held", "unnamed", "noMaps", "noReplay"):
+            self.assertIsNone(own[case], case)
+
 
 class MidRoundRecordingTests(unittest.TestCase):
     """A file the recorder began after the join."""
