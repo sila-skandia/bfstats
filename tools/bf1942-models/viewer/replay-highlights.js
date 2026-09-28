@@ -304,6 +304,12 @@ export class ReplayHighlights {
     this.ui.flash([grid, place === 'Open ground' ? null : place].filter(Boolean).join(' · ') || place);
   }
 
+  /** The battle markers over the view, off or on (B, or the bar's menu). */
+  toggleMarkers() {
+    this.showMarkers = !this.showMarkers;
+    this.ui.flash(this.showMarkers ? 'Battle markers on' : 'Battle markers off');
+  }
+
   // --- the Auto camera -----------------------------------------------------------------------
 
   setAuto(on, quiet = false) {
@@ -434,10 +440,7 @@ export class ReplayHighlights {
         if (once) this.map.toggle();
         return true;
       case 'KeyB':
-        if (once) {
-          this.showMarkers = !this.showMarkers;
-          this.ui.flash(this.showMarkers ? 'Battle markers on' : 'Battle markers off');
-        }
+        if (once) this.toggleMarkers();
         return true;
       case 'Digit4': case 'Numpad4':
         if (once) this.ui.setMode('auto');
@@ -511,7 +514,7 @@ const STYLE = `
 
 /* The Auto caption and the reel's plate, over the player card. */
 .rp-hl-auto, .rp-hl-reel { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none;
-  bottom: calc(var(--rp-bar-h) + 70px); max-width: calc(100% - 24px); white-space: nowrap; overflow: hidden;
+  bottom: calc(var(--rp-bar-h) + var(--rp-card-h) + 24px); max-width: calc(100% - 24px); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; transition: opacity .35s ease; }
 .rp-hl-auto { padding: 2px 9px; border-radius: 3px; background: rgba(12, 12, 10, .6); border: 1px solid var(--rp-edge);
   color: var(--rp-khaki); font: 800 10px/1.5 var(--rp-font); letter-spacing: .14em; }
@@ -645,8 +648,22 @@ const STYLE = `
   .rp-bm-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); }
   .rp-bm-side { border-left: 0; border-top: 1px solid var(--rp-edge); }
   .rp-bm-legend { display: none; }
-  .rp-hl-ticker { width: calc(100% - 24px); }
+  /* The width of the view, so over the card and the Auto caption, not on them. */
+  .rp-hl-ticker { width: calc(100% - 24px); bottom: calc(var(--rp-bar-h) + var(--rp-card-h) + 52px); }
   .rp-hl-callout b { font-size: 16px; }
+}
+/* A phone on its side: the map beside its list, as on a desktop. */
+@media (max-height: 500px) {
+  .rp-bm { top: 6px; height: calc(100% - var(--rp-bar-h) - 20px); }
+  .rp-bm-body { grid-template-columns: minmax(0, 1fr) 240px; grid-template-rows: minmax(0, 1fr); }
+  .rp-bm-side { border-left: 1px solid var(--rp-edge); border-top: 0; }
+  .rp-bm-legend { display: none; }
+}
+@media (pointer: coarse) {
+  .rp-hl-reel .rp-btn { height: 34px; }
+  .rp-hl-tick .rp-btn { height: 30px; padding: 0 9px; }
+  .rp-bm-tabs .rp-btn { height: 38px; }
+  .rp-bm-row { padding-top: 7px; padding-bottom: 7px; }
 }
 `;
 

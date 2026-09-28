@@ -57,10 +57,10 @@ timeline or any button.
 | Free camera: move | wheel moves along the view | W A S D, Q / E down / up, Shift fast |
 | Follow previous / next player | arrows on the player card, click a name tag | ↑ / ↓ |
 | Players (scoreboard) | Players button | Tab |
-| Name tags (the players near the camera) | | N |
-| Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons | M, 4, B |
+| Name tags (the players near the camera) | menu (...) | N |
+| Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons; markers in the menu | M, 4, B |
 | Replay log (debug) | Log button | L |
-| Hide the interface | | H |
+| Hide the interface | menu (...) | H |
 | Fullscreen | button | F |
 | Open another recording | upload button, or drop the file anywhere (see "Opening a recording") | |
 | Shortcuts | ? button | ? |
@@ -244,7 +244,8 @@ red, Allies blue).
   and flag bar, and the game's ticket counter follow the recording; see
   `features/round-replay-fidelity`.)
 - Touch (one finger orbits, two pinch) was laid out at phone width but not
-  driven on a device.
+  driven on a device. (Since done in headless Chromium's touch emulation, not
+  yet on a device: see "Phones".)
 
 ## Opening a recording (2026-09-27)
 
@@ -410,3 +411,99 @@ their words and marks; the camera through the wait). In headless Chromium on
 Midway: the card reads `spawns in 0:07` at load, over the Airfield spot where
 he appears at 0:00; ten green marks; `killed by Kerem [Panzerschreck]` then
 `respawns in 0:07` at 90 s.
+
+## Phones (2026-09-28)
+
+The report: on a phone the bar's controls are not all there, even with the
+phone on its side, so first person and the free camera cannot be reached;
+there is no way to go fullscreen or to put the controls away ("maybe a tap to
+slide up the control bar").
+
+What was wrong:
+
+- **The bar could not fold.** It was one row that only wrapped under 720 px.
+  At 844×390 (a phone on its side) the camera group, a flex item with
+  `overflow: hidden`, shrank to its first two buttons: Free and Auto were cut
+  off, and "Map" ran into "Players". A 1024 px desktop window lost Auto the
+  same way. Under 720 px the row wrapped, but fullscreen was hidden there, and
+  every button was 28 px tall.
+- **The card was half the view wide at most.** Anchored at `left: 50%`, its
+  width was capped at the half of the view to the right of that, so a phone cut
+  the countdown to "spawns in 0".
+- **Touch had no way to hide or summon the chrome** but the idle fade, and
+  nothing hid it while paused. The free camera looked round on a finger but
+  moved only on W A S D. N, B and H had no button.
+
+What it does now:
+
+- **The bar folds to its own width** (container queries on `.rp-bar`): the
+  recording's date goes first, then the labels, then Log and Open (into the
+  menu), the round clock, the 5 s steps, and at last the view's controls take a
+  second row. Controls keep their size; the date takes the room left over; a
+  control that still does not fit wraps rather than going off the edge. On a
+  touch screen the targets are 38 to 46 px.
+
+  | View | Bar |
+  |---|---|
+  | 1280 and up (mouse) | one row, everything, labelled |
+  | 932×430, 844×390 | one row: transport, clock, speed, the four cameras, Map, Players, menu, fullscreen |
+  | 667×375 | the same without the 5 s steps |
+  | 390×844, 360×740 | two rows: playback over the cameras and the panels |
+
+- **The menu (...)**: Name tags (N), Battle markers (B), Hide the interface
+  (H), and the Replay log and Open a recording once the bar has folded them
+  away; the recording's date heads it once the bar has dropped it.
+- **A tap on the view** (a finger lifted within 350 ms, having moved under
+  10 px) slides the bar and the card away, or back, paused or playing. A drag
+  orbits and leaves the chrome as it is. A tap that closes a menu or a panel
+  does nothing more. Playing untouched, the chrome goes after 4 s on a touch
+  screen (2.8 s with a mouse). Out of the hidden interface, a tap brings
+  everything back.
+- **Fullscreen is always on the bar.** The page goes fullscreen, not the
+  stage, so Open recording's panel still shows over it, and a phone (its
+  shorter side under 600 px) turns to landscape (`screen.orientation.lock`).
+  Safari on an iPhone has no fullscreen for anything but a video: there the
+  button hides the interface instead, and a tap brings it back.
+- **The free camera on a touch screen**: a finger down on the left 40% of the
+  view is a thumbstick, its ring where the thumb went down, full speed at
+  48 px. The speed is the square of the push, 60 m/s at full (twice the keys').
+  Another finger looks; a pinch flies ahead or back, as the wheel does. A
+  faint ring marks its place while the free camera is on.
+- **The battle map** pinches, about the point between the fingers; a finger's
+  tap has 10 px of slop, a click 4; its hint speaks of taps and pinches on a
+  touch screen. On a phone on its side the map keeps its list beside it, and
+  the map and the scoreboard start at the top of the view.
+- With a mouse nothing moved: a move brings the chrome back, a click on the
+  view never hides it, the keys are the same.
+
+| Touch | Does |
+|---|---|
+| tap the view | chrome away / back |
+| drag | orbit; first person: look round; free: look |
+| pinch | orbit: zoom; free: fly ahead / back |
+| left thumb (free camera) | fly |
+| ... | name tags, battle markers, hide the interface |
+
+| File | What changed |
+|---|---|
+| `viewer/replay-ui.js` | The folding bar, the menu, the tap, the thumbstick, fullscreen and its fallback, touch sizes, the card's width. |
+| `viewer/replay-camera.js` | `stick` (the thumbstick's push), a free camera's pinch. |
+| `viewer/replay-highlights.js` | `toggleMarkers`; the Auto caption, the reel and a phone's ticker clear the card at its measured height; the battle map on a phone on its side; touch sizes. |
+| `viewer/replay-battlemap.js` | The pinch, the finger's slop, the hint. |
+| `viewer/replay-open.js` | The date and Open fold with the bar. |
+
+Verified: `tests/test_replay_models.py` (the thumbstick: 60 m in a second
+full ahead, 15 at half, 60 to the side; a pinch apart by e flies 24 m ahead).
+Headless Chromium with touch emulation on the Midway round, input through
+CDP's touch events, at 844×390, 932×430, 667×375, 390×844 and 360×740:
+nothing cut off; a tap hides and brings back the chrome, paused and playing;
+a drag orbits without it; a pinch zooms the orbit; the free camera's thumbstick
+flies 82 m in 1.2 s; the menu's switches; the hidden interface and back;
+fullscreen and landscape; a tap on the view closes the scoreboard and does no
+more; the battle map pinches from 1x to 3x. With the fullscreen flags forced
+off (an iPhone), the button hides the interface and a tap brings it back. At
+1024, 1280, 1440 and 1920 with the mouse and keys: the fade and the return, a
+click, H, N, Escape, F.
+
+Open: not yet on a device. Safari on iOS in particular (the fallback, the
+container queries, `touch-action`) was emulated, not driven.
