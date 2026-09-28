@@ -26,6 +26,7 @@ import {
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
+import { roundIsRecorded } from './replay-props.js';
 import { DIE_CLIPS } from './soldier-death.js';
 import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -559,7 +560,9 @@ export class ReplaySoldiers {
       }
     }
     const group = held.groups.find(g => (g.stats?.input || 'c_PIFire') === 'c_PIFire') ?? held.groups[0];
-    if (!group) return;
+    // A grenade, mine or pack is the recording's own object (replay-props.js):
+    // one the page threw as well would lie for its whole authored fuse.
+    if (!group || roundIsRecorded(group, this.player.networkedRounds)) return;
     const s = actor.state.soldier;
     const vis = this.bodies?.botVisuals?.get(actor.playerId);
     const node = vis?.group?.visible ? vis.rig?.weaponNode ?? null : null;

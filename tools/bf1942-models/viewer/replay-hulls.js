@@ -32,6 +32,7 @@ import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
 import { crewOf, engineAt, hpAt, isReplicated, latestAt, poseHeld, sampleAt } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
+import { roundIsRecorded } from './replay-props.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
   shipThrottle,
@@ -713,6 +714,9 @@ export class ReplayHull {
     }
     for (const group of pick) {
       this.holdSound(group, shot?.t ?? this.player.time);
+      // A PT boat's floating mine is the recording's own object
+      // (replay-props.js), not a round for the page to lay again.
+      if (roundIsRecorded(group, this.player.networkedRounds)) continue;
       // Its rounds skip this hull (`dynamicCast`). Pinned to the collider the
       // guns hold now: `projectile-flight.js` `gunOwner` re-reads the owner
       // from the level's index whenever the collider has changed since, and
