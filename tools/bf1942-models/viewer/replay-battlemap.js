@@ -524,10 +524,9 @@ export class ReplayBattleMap {
     this.updateTip(t);
   }
 
-  /** Where the recording player's client was at `t`: the centre of what the
+  /** Where a recording player's client was at `t`: the centre of what his
    *  recording could see. */
-  recorderAt(t) {
-    const pid = this.player.recordingPid;
+  recorderAt(t, pid = this.player.recordingPid) {
     if (pid === null || pid === undefined) return null;
     const w = this.hl.model.where(pid, t);
     if (w.pos) return w.pos;
@@ -574,28 +573,37 @@ export class ReplayBattleMap {
       }
     }
 
-    // What the recording could see: the rest of the level dimmed.
+    // What the recording could see: the rest of the level dimmed. A merged
+    // recording saw around each of its recording players; each clip below
+    // leaves one circle out, so the dim falls outside them all.
     const range = this.ctx.viewDistance?.();
-    const centre = Number.isFinite(range) && range > 0 ? this.recorderAt(t) : null;
-    if (centre) {
-      const [cx, cy] = this.toScreen(centre, f, m);
+    const pids = Number.isFinite(range) && range > 0 ? this.player.recordingPids ?? [this.player.recordingPid] : [];
+    const centres = pids.map(pid => this.recorderAt(t, pid)).filter(Boolean).map(c => this.toScreen(c, f, m));
+    if (centres.length) {
       const r = this.metres(range * RANGE_SLACK, f, m);
-      g.beginPath();
-      g.rect(0, 0, W, H);
-      g.arc(cx, cy, r, 0, Math.PI * 2, true);
+      g.save();
+      for (const [cx, cy] of centres) {
+        g.beginPath();
+        g.rect(0, 0, W, H);
+        g.arc(cx, cy, r, 0, Math.PI * 2, true);
+        g.clip('evenodd');
+      }
       g.fillStyle = 'rgba(4, 5, 4, .5)';
-      g.fill('evenodd');
-      g.beginPath();
-      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.fillRect(0, 0, W, H);
+      g.restore();
       g.setLineDash([5, 5]);
       g.strokeStyle = 'rgba(232, 195, 90, .45)';
       g.lineWidth = 1.2;
-      g.stroke();
-      g.setLineDash([]);
       g.font = '700 9px Trebuchet MS, sans-serif';
       g.fillStyle = 'rgba(232, 195, 90, .7)';
       g.textAlign = 'center';
-      g.fillText('RECORDED RANGE', cx, cy - r - 5);
+      for (const [cx, cy] of centres) {
+        g.beginPath();
+        g.arc(cx, cy, r, 0, Math.PI * 2);
+        g.stroke();
+        g.fillText('RECORDED RANGE', cx, cy - r - 5);
+      }
+      g.setLineDash([]);
     }
 
     // The fights, as heat.

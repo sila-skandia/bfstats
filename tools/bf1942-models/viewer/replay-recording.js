@@ -242,6 +242,9 @@ export function parseRecording(text) {
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
     roundStarted: null,   // the first round-playing status, or null for a join mid-round
     roundEnded: Infinity, // the first round-over status: the teardown after it is not play
+    // A merged file's sources (replay-merge.js): `[{ file, start, offset, drift, local }]`,
+    // `local` each file's recording player. null for one client's file.
+    merged: null,
   };
   const current = new Map();
   const tidNames = new Map();
@@ -301,8 +304,9 @@ export function parseRecording(text) {
    *  one side and 5-7 the other, which side unconfirmed) and its strength,
    *  255 x the damage over his maximum hit points (lnxded
    *  `GameServer::_giveDamage` 0x0814b870). The game's hit indicator. */
-  const hitTaken = (t, dir, strength) => {
-    rec.hitsTaken.push({ t, dir, strength });
+  const hitTaken = (t, dir, strength, pid) => {
+    // A merged file names whose hit it was (one per recording player).
+    rec.hitsTaken.push(pid === undefined ? { t, dir, strength } : { t, dir, strength, pid });
     const from = dir === 0 ? 'ahead' : dir === 4 ? 'behind' : `sector ${dir}`;
     row(t, 'damage', `hit from ${from}, ${Math.round(strength / 2.55)}% of full health`);
   };
@@ -525,8 +529,9 @@ export function parseRecording(text) {
         // RadioMessageEvent (0x3A): `msg` the engine's message id (radio.js
         // `RADIO_MESSAGES`), `global` 1 for team radio and 0 for a shout. The
         // server sends team radio to the speaker's side and a shout to anyone
-        // within 70 m, so the file holds what its player heard.
-        rec.radio.push({ t, pid: r.pid, msg: r.msg, global: Boolean(r.global) });
+        // within 70 m, so the file holds what its player heard; a merged file
+        // names which of its recording players heard it (`to`).
+        rec.radio.push({ t, pid: r.pid, msg: r.msg, global: Boolean(r.global), ...(r.to ? { to: r.to } : {}) });
         row(t, 'radio', `${playerName(r.pid, t)}: ${radioWords(r.msg)}`);
         return;
       case 'special':
@@ -537,7 +542,7 @@ export function parseRecording(text) {
         // 0x0827ebc0, sound trigger 0x1a). So a file holds its own player's,
         // one every half second he stands at a depot; one row a visit.
         if (r.action === 0) {
-          rec.refills.push({ t });
+          rec.refills.push(r.pid === undefined ? { t } : { t, pid: r.pid });
           if (t - lastRefill > 2) row(t, 'supply', 'ammo refilled at a depot');
           lastRefill = t;
         }
@@ -642,7 +647,7 @@ export function parseRecording(text) {
         roundStat(t, r.stat, r.pid, r.rows ?? []);
         return;
       case 'hitFrom':
-        hitTaken(t, r.dir, r.strength);
+        hitTaken(t, r.dir, r.strength, r.pid);
         return;
       case 'fire':
         // v3's shot: the recording player's own trigger press, from his input
@@ -673,6 +678,7 @@ export function parseRecording(text) {
       case 'h':
         rec.version = r.v ?? 1;
         rec.start = r.start ?? '';
+        rec.merged = Array.isArray(r.merged) ? r.merged : null;
         break;
       case 'e':
         // An event with `ago` arrived before the file began and heads it (a
