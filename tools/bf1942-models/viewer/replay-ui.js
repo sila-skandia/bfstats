@@ -500,7 +500,7 @@ export class ReplayUi {
     this.touchUi = false;        // the last hand on the replay was a finger
     this.coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     this.stick = null;           // the free camera's thumb: { id, x, y, at, moved, floated }
-    this.frameKey = null;        // what F does in place of fullscreen (`useFrameKey`)
+    this.frameKey = null;        // F: the frame on screen as the cover (`useFrameKey`)
     this.slowClock = 0;
     this.tagNodes = new Map();
     this.boardKey = '';
@@ -631,7 +631,7 @@ export class ReplayUi {
     this.playersBtn = this.button('', 'players', 'Players (Tab)', () => this.toggle('board-open'), '<span class="rp-label">Players</span>');
     this.logBtn = this.button('rp-roomy', 'log', 'Replay log (L)', () => this.toggle('log-open'));
     this.helpBtn = this.button('rp-keys-only', null, 'Shortcuts (?)', () => this.toggle('help-open'), '?');
-    this.fullBtn = this.button('', 'full', 'Fullscreen (F)', () => this.toggleFullscreen());
+    this.fullBtn = this.button('', 'full', 'Fullscreen', () => this.toggleFullscreen());
     this.buildMore();
 
     // The break is where a phone's bar starts its second row.
@@ -804,23 +804,19 @@ export class ReplayUi {
         [k(['N']), 'Name tags (the players near the camera)'],
         [k(['L']), 'Replay log'],
         [k(['H']), 'Hide the HUD'],
-        // Named: the page's additions may give F another job (`useFrameKey`).
-        [k(['F']), 'Fullscreen', 'frame'],
+        [k(['F']), 'Use this frame as the cover'],
         [k(['?']), 'This list'],
         [k(['Esc']), 'Close a panel; then the game menu'],
       ]],
     ];
-    this.helpRows = {};
     for (const [title, rows] of groups) {
       const col = el('div');
       col.append(el('h3', '', title));
       const dl = el('dl');
-      for (const [keysHtml, what, name] of rows) {
+      for (const [keysHtml, what] of rows) {
         const dt = el('dt');
         dt.innerHTML = keysHtml;
-        const dd = el('dd', '', what);
-        if (name) this.helpRows[name] = dd;
-        dl.append(dt, dd);
+        dl.append(dt, el('dd', '', what));
       }
       col.append(dl);
       cols.append(col);
@@ -1011,7 +1007,7 @@ export class ReplayUi {
   /** The whole page fullscreen, not the stage, so the page's own panels
    *  (Open recording's) still show over it; a phone turns on its side for
    *  it. An iPhone's Safari has no fullscreen for a page, only for a video:
-   *  there the interface goes instead, and a tap brings it back. */
+   *  there the HUD goes instead, and a tap brings it back. */
   toggleFullscreen() {
     if (fullscreenElement()) {
       exitFullscreen();
@@ -1041,8 +1037,7 @@ export class ReplayUi {
     const on = Boolean(fullscreenElement());
     if (this.shownFullscreen === on) return;
     this.shownFullscreen = on;
-    const key = this.frameKey ? '' : ' (F)';
-    const label = on ? `Exit fullscreen${key}` : `Fullscreen${key}`;
+    const label = on ? 'Exit fullscreen' : 'Fullscreen';
     this.fullBtn.innerHTML = svg(on ? 'unfull' : 'full');
     this.fullBtn.title = label;
     this.fullBtn.setAttribute('aria-label', label);
@@ -1067,15 +1062,10 @@ export class ReplayUi {
     else if (!on) this.notice.classList.remove('show');
   }
 
-  /** F runs `run` from now on, in place of fullscreen, which keeps its
-   *  button: the page's REPLAY feed gives it the recording's cover where this
-   *  viewer may set one (replay-social.js). `text` is what the shortcuts list
-   *  says it does. */
-  useFrameKey(run, text) {
+  /** What F does: the page's REPLAY feed makes it the recording's cover,
+   *  or says why it cannot be (replay-social.js). */
+  useFrameKey(run) {
     this.frameKey = run;
-    if (this.helpRows?.frame) this.helpRows.frame.textContent = text;
-    this.shownFullscreen = null;
-    this.syncFullscreen();
   }
 
   // --- the input ------------------------------------------------------------------
@@ -1378,10 +1368,11 @@ export class ReplayUi {
       case 'KeyL': if (once) this.toggle('log-open'); return true;
       case 'KeyN': if (once) this.toggleTags(); return true;
       case 'KeyH': if (once) this.setBare(!this.root.classList.contains('rp-bare')); return true;
+      // The frame on screen as the cover; fullscreen is the bar's button.
       case 'KeyF':
         if (once) {
           if (this.frameKey) this.frameKey();
-          else this.toggleFullscreen();
+          else this.flash('Covers are for recordings in the REPLAY feed', 2400);
         }
         return true;
       case 'Escape': {
