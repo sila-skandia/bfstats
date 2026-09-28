@@ -406,6 +406,8 @@ let social = null;
 try {
   social = installReplaySocial({
     replayUrl: params.get('replay'),
+    // A round several players shared plays merged: one `replay` per recording.
+    replayUrls: params.getAll('replay'),
     params,
     menuUrl: MENU_URL,
     levelName: () => {
@@ -1665,7 +1667,9 @@ const spawning = createSpawning(bag(
 
 // A round to play back over the level: `?replay=<recording.ndjson>`, with
 // `&serverlog=<ev_*.xml>` to overlay the server's own event log, or a
-// recording dropped onto the view. See replay.js.
+// recording dropped onto the view. See replay.js. `replay` once per recording
+// of one round plays them merged, the first leading (features/replay-feed,
+// "Rounds"); the first names the level.
 const replayUrl = params.get('replay');
 let replayController = null;
 const room = createNetRoom(bag(
@@ -1918,7 +1922,7 @@ replayController = createReplayController({
   },
 });
 if (replayUrl) {
-  replayController.openFromUrl(replayUrl, params.get('serverlog'))
+  replayController.openFromUrl(params.getAll('replay'), params.get('serverlog'))
     .catch(error => console.warn('replay unavailable', error));
   // The briefing screen gates a join, and a replay joins nothing: it goes as
   // soon as it comes up (its READY opens no spawn screen for a replay,

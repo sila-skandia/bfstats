@@ -34,7 +34,8 @@ public sealed class RecordingUploadService(
     IRecordingService recordings,
     IClock clock,
     IOptions<RecordingsOptions> options,
-    ILogger<RecordingUploadService> logger) : IRecordingUploadService
+    ILogger<RecordingUploadService> logger,
+    IRecordingRoundService? rounds = null) : IRecordingUploadService
 {
     private const int MaxMetaBytes = 64 * 1024;
     private const int CopyBytes = 80 * 1024;
@@ -121,12 +122,13 @@ public sealed class RecordingUploadService(
             recording.ServerLogBytes = keptLog is null ? 0 : new FileInfo(keptLog).Length;
             recording.ThumbnailBytes = thumbnail?.Length ?? 0;
 
-            var shared = await CommitAsync(recording, keptRecording, keptLog, thumbnail);
+            var shared = await CommitAsync(recording, inspection.Fingerprint, keptRecording, keptLog, thumbnail);
             keptRecording = null;
             keptLog = null;
             logger.LogInformation(
                 "Recording {Slug} shared by user {UserId}: {Level} ({Mod}), {Duration:0}s, {Bytes} bytes",
                 shared.Slug, actor.UserId, shared.Level, shared.Mod, shared.DurationSeconds, shared.RecordingBytes);
+            await FindRoundAsync(shared);
             return await recordings.DetailAsync(shared, actor, ct);
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
@@ -158,7 +160,8 @@ public sealed class RecordingUploadService(
     /// node's disk is not backed up), this upload puts it back under its old link, with its
     /// views and comments.
     /// </summary>
-    private async Task<Recording> CommitAsync(Recording recording, string recordingFile, string? logFile, byte[]? thumbnail)
+    private async Task<Recording> CommitAsync(
+        Recording recording, RoundFingerprint fingerprint, string recordingFile, string? logFile, byte[]? thumbnail)
     {
         // Past the upload, a client that goes away does not leave half a recording: what
         // follows runs to the end.
@@ -195,6 +198,14 @@ public sealed class RecordingUploadService(
                 // What was left behind of it goes; this upload is the whole of it now.
                 storage.Delete(existing.Slug);
             }
+            // Its round fingerprint beside it, from the same reading of the file (features/replay-feed,
+            // "Rounds"). A recording put back has the same content, and so the same fingerprint.
+            if (existing is null || !await db.RecordingFingerprints.AnyAsync(f => f.RecordingId == existing.Id, ct))
+            {
+                var row = RecordingFingerprint.From(fingerprint, recording.CreatedAt);
+                row.Recording = target;
+                db.RecordingFingerprints.Add(row);
+            }
             storage.Promote(recordingFile, storage.RecordingPath(target.Slug));
             if (logFile is not null) storage.Promote(logFile, storage.ServerLogPath(target.Slug));
             try
@@ -212,6 +223,24 @@ public sealed class RecordingUploadService(
         finally
         {
             Commit.Release();
+        }
+    }
+
+    /// <summary>
+    /// The other recordings of its round, found and linked now so that the page the uploader
+    /// lands on says so. A failure here costs the upload nothing: the background pass
+    /// (<see cref="RecordingRoundBackfill"/>) compares every recording that has not been.
+    /// </summary>
+    private async Task FindRoundAsync(Recording shared)
+    {
+        if (rounds is null) return;
+        try
+        {
+            await rounds.DetectAsync(shared.Id, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Recording {Slug}: its round was not worked out; the background pass will", shared.Slug);
         }
     }
 

@@ -306,6 +306,11 @@ export function createRecordingsApi(api) {
     setThumbnail: (slug, jpeg) =>
       request(`/stats/recordings/${encodeURIComponent(slug)}/thumbnail`, { method: 'PUT', body: jpeg, auth: true }),
     view: slug => request(`/stats/recordings/${encodeURIComponent(slug)}/views`, { method: 'POST' }),
+    /** An admin puts `slug` in the round of `other` (its id or any link to it). */
+    linkRound: (slug, other) =>
+      request(`/stats/recordings/${encodeURIComponent(slug)}/round`, { method: 'POST', json: { with: other }, auth: true }),
+    /** An admin takes `slug` out of its round, for good. */
+    separateRound: slug => request(`/stats/recordings/${encodeURIComponent(slug)}/round`, { method: 'DELETE', auth: true }),
     comments: (slug, { sort = 'newest', page = 1, pageSize = 20 } = {}) =>
       request(`/stats/recordings/${encodeURIComponent(slug)}/comments?sort=${sort}&page=${page}&pageSize=${pageSize}`),
     comment: (slug, content, authorName) =>
@@ -345,9 +350,7 @@ export function commentRuns(text, durationSeconds = Infinity) {
   const runs = [];
   let last = 0;
   for (const match of String(text).matchAll(TIME_IN_TEXT)) {
-    const at = match[1] !== undefined
-      ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
-      : Number(match[4]) * 60 + Number(match[5]);
+    const at = secondsOf(match);
     if (at > durationSeconds + 1) continue;
     if (match.index > last) runs.push({ text: text.slice(last, match.index) });
     runs.push({ text: match[0], at });
@@ -355,6 +358,66 @@ export function commentRuns(text, durationSeconds = Infinity) {
   }
   if (last < text.length) runs.push({ text: text.slice(last) });
   return runs;
+}
+
+const secondsOf = match => (match[1] !== undefined
+  ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+  : Number(match[4]) * 60 + Number(match[5]));
+
+// --- a round of several recordings ------------------------------------------------
+//
+// A round several players shared plays merged (replay-merge.js): one `?replay=`
+// per recording, the first leading. Its comments stay on each recording, in that
+// recording's own clock; the merged replay moves each onto the round's clock with
+// the header's `merged[i]` (`offset`, `drift`), and a comment written there goes
+// on the recording whose stretch holds the moment it names.
+
+/** The recordings a replay page plays, in order: every `replay` in its address. */
+export function replayUrlsOf(params) {
+  return params.getAll('replay').filter(Boolean);
+}
+
+/** One recording's clock against its merged round's (`merged[i]` of the merged
+ *  header): the round's `t = offset + (1 + drift) t`. */
+export function sourceClock(source) {
+  const offset = Number(source?.offset) || 0;
+  const rate = 1 + (Number(source?.drift) || 0);
+  return { toRound: t => offset + rate * t, fromRound: t => (t - offset) / rate };
+}
+
+/** A comment on one recording of a merged round in runs, as `commentRuns`, each
+ *  time a place on the round's clock and said in it. `duration` is the
+ *  recording's own. */
+export function roundRuns(text, source, duration = Infinity) {
+  const { toRound } = sourceClock(source);
+  // To the nearest second: a comment posted here at 8:40 reads 8:40 when it comes back.
+  return commentRuns(text, duration).map(run => (run.at === undefined ? run : { text: clock(Math.round(toRound(run.at))), at: toRound(run.at) }));
+}
+
+/**
+ * Where a comment written on a merged round goes: `{ index, text }`, the
+ * recording (of `sources`, `[{ offset, drift, duration }]` in the round's order)
+ * whose stretch holds the first time it names, the first's when it does or it
+ * names none, and the text with each time said on that recording's clock.
+ */
+export function commentTarget(text, sources) {
+  const words = String(text);
+  const times = [...words.matchAll(TIME_IN_TEXT)].map(match => ({ at: secondsOf(match), from: match.index, to: match.index + match[0].length }));
+  const holds = (i, at) => {
+    const t = sourceClock(sources[i]).fromRound(at);
+    return t >= 0 && t <= (sources[i].duration ?? Infinity) + 1;
+  };
+  let index = 0;
+  if (times.length && sources.length > 1 && !holds(0, times[0].at)) index = Math.max(0, sources.findIndex((_, i) => holds(i, times[0].at)));
+  const { fromRound } = sourceClock(sources[index]);
+  let out = '';
+  let last = 0;
+  for (const time of times) {
+    const t = fromRound(time.at);
+    out += words.slice(last, time.from) + (t >= 0 ? clock(Math.round(t)) : words.slice(time.from, time.to));
+    last = time.to;
+  }
+  return { index, text: out + words.slice(last) };
 }
 
 /** `14:43`, `1:02:03`. */

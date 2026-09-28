@@ -10,6 +10,14 @@
 // screen, as its cover, and the page carries on as the shared recording,
 // comments and all.
 //
+// A round several players shared plays merged (`?replay=` once per recording,
+// features/replay-feed "Rounds"). Its comments stay on each recording, in that
+// recording's own clock: here every recording's are shown together, each moved
+// onto the merged clock by the header's `merged[i]`, and one written here goes on
+// the recording whose stretch holds the moment it names (recordings-api.js
+// `commentTarget`). Each recording counts a view; the cover and the way back to
+// the feed are the first recording's.
+//
 // The replay's own chrome (replay-ui.js) is not changed: this adds a button
 // to its bar, a panel and marks to its root and timeline, and an item to its
 // menu, and gives its F the cover (`useFrameKey`), through the page's
@@ -17,7 +25,8 @@
 // button.
 
 import {
-  ago, apiMode, clock, commentRuns, count, createRecordingsApi, readableQuery, resolveApi, sharedRecordingOf,
+  ago, apiMode, clock, commentRuns, commentTarget, count, createRecordingsApi, readableQuery, resolveApi, roundRuns,
+  sharedRecordingOf, sourceClock,
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
 import { recorderName } from './replay-chapters.js';
@@ -132,17 +141,22 @@ function frameOf(canvas) {
 /**
  * @param {object} options
  * @param {string} options.replayUrl   the page's `?replay=`
+ * @param {string[]} [options.replayUrls]  every `?replay=`: several are one
+ *                                     round's recordings, merged
  * @param {URLSearchParams} [options.params]
  * @param {URL} [options.menuUrl]      where the page's way back to the menu
  *                                     goes: a shared recording's page in the feed
  * @param {() => string} [options.levelName]  the level on screen
  * @param {() => string} [options.modId]      the page's mod
  */
-export function installReplaySocial({ replayUrl, params = new URLSearchParams(location.search), menuUrl = null,
-  levelName = () => '', modId = () => 'bf1942' } = {}) {
+export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], params = new URLSearchParams(location.search),
+  menuUrl = null, levelName = () => '', modId = () => 'bf1942' } = {}) {
   const local = isLocalReplay(replayUrl);
   const shared = sharedRecordingOf(replayUrl);
   if (!shared && !local) return null;
+  // The other recordings of the round, when the page merges several of one API's.
+  const others = shared && replayUrls.length > 1 ? replayUrls.slice(1).map(u => sharedRecordingOf(u)) : [];
+  const alsoShared = others.length && others.every(o => o && o.base === shared.base) ? others.map(o => o.slug) : [];
   if (!document.getElementById('rs-style')) {
     const style = el('style');
     style.id = 'rs-style';
@@ -153,7 +167,10 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
   let slug = shared?.slug ?? null;
   let api = shared ? createRecordingsApi({ base: shared.base, mode: apiMode(shared.base) }) : null;
   let detail = null;
-  let comments = [];
+  // The recordings whose comments show: the one played, or each of a merged round's.
+  let members = slug ? [slug, ...alsoShared].map(s => ({ slug: s, detail: null })) : [];
+  let comments = [];        // each with `member`, its recording's index in `members`
+  let commentTotal = 0;
   let viewer = null;
   let player = null;
   let ui = null;
@@ -179,28 +196,60 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     if (!api || !slug) return;
     await api.ready();
     viewer = api.signedIn ? await api.viewer().catch(() => null) : null;
-    try {
-      detail = await api.get(slug);
-    } catch (error) {
-      console.warn('replay-social: the recording', error);
-      return;
-    }
+    const details = await Promise.all(members.map(m => api.get(m.slug).catch(error => {
+      console.warn('replay-social: the recording', m.slug, error);
+      return null;
+    })));
+    members.forEach((m, i) => { m.detail = details[i]; });
+    detail = details[0];
+    if (!detail) return;
     if (player) dressShared();
     await loadComments();
   }
 
   async function loadComments() {
-    try {
-      const page = await api.comments(slug, { sort: 'time', pageSize: 200 });
-      comments = page.items;
-      if (detail) detail.commentCount = page.totalCount;
-    } catch (error) {
-      console.warn('replay-social: comments', error);
-    }
+    const pages = await Promise.all(members.map((m, i) => (m.detail || i === 0
+      ? api.comments(m.slug, { sort: 'time', pageSize: 200 }).catch(error => {
+        console.warn('replay-social: comments', m.slug, error);
+        return null;
+      })
+      : null)));
+    comments = pages.flatMap((page, i) => (page?.items ?? []).map(c => ({ ...c, member: i })));
+    commentTotal = pages.reduce((sum, page) => sum + (page?.totalCount ?? 0), 0);
+    if (detail && pages[0]) detail.commentCount = pages[0].totalCount;
     renderComments();
     renderMarks();
     syncCount();
   }
+
+  // --- a merged round's clocks -----------------------------------------------------
+
+  /** The merged header's sources, one per `replay` of the page, when this page
+   *  merged them; else null: one recording (which may itself be a merged file,
+   *  its comments already in its own clock), or a merge that fell back to the
+   *  first. Member i is source i: the members are the page's recordings in its
+   *  order, or the first alone. */
+  function mergedSources() {
+    const merged = replayUrls.length > 1 ? player?.rec.merged : null;
+    return merged?.length === replayUrls.length ? merged : null;
+  }
+
+  /** Where a comment's moment is on the page's clock, or null for none. */
+  function atOf(comment) {
+    if (comment.atSeconds === null || comment.atSeconds === undefined) return null;
+    const merged = mergedSources();
+    return merged ? sourceClock(merged[comment.member]).toRound(comment.atSeconds) : comment.atSeconds;
+  }
+
+  /** The comments this page shows, in round order: every member's when merged,
+   *  else the one's. */
+  function shownComments() {
+    const merged = mergedSources();
+    return comments.filter(c => merged || c.member === 0)
+      .sort((a, b) => (atOf(a) ?? Infinity) - (atOf(b) ?? Infinity) || a.member - b.member || a.id - b.id);
+  }
+
+  const memberDuration = i => members[i]?.detail?.durationSeconds ?? Infinity;
 
   // --- the bar and the panel ------------------------------------------------------
 
@@ -236,7 +285,7 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
   }
 
   function syncCount() {
-    const n = detail?.commentCount ?? comments.length;
+    const n = mergedSources() ? commentTotal : detail?.commentCount ?? comments.length;
     const badge = nodes.button?.querySelector('.rs-count');
     if (badge) badge.textContent = String(n);
     if (nodes.heading) nodes.heading.textContent = n ? count(n, 'comment') : 'Comments';
@@ -262,9 +311,14 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     ui?.activity?.();
   }
 
-  function textWithTimes(text) {
+  function textWithTimes(comment) {
     const p = el('p', 'rs-text');
-    for (const run of commentRuns(text, player?.rec.duration ?? Infinity)) {
+    const merged = mergedSources();
+    // On a merged round each time is said on the round's clock, where it jumps to.
+    const runs = merged
+      ? roundRuns(comment.content, merged[comment.member], memberDuration(comment.member))
+      : commentRuns(comment.content, player?.rec.duration ?? Infinity);
+    for (const run of runs) {
       if (run.at === undefined) {
         p.append(document.createTextNode(run.text));
         continue;
@@ -281,16 +335,22 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
   function renderComments() {
     if (!nodes.list) return;
     nodes.list.replaceChildren();
-    if (!comments.length) {
+    const shown = shownComments();
+    if (!shown.length) {
       nodes.list.append(el('div', 'rs-empty', 'No comments yet. A time in yours, like 0:21, jumps there.'));
       return;
     }
-    for (const comment of comments) {
+    const merged = mergedSources();
+    for (const comment of shown) {
       const item = el('div', 'rs-item');
-      item.dataset.id = String(comment.id);
-      if (comment.atSeconds !== null && comment.atSeconds !== undefined) item.dataset.at = String(comment.atSeconds);
+      item.dataset.id = `${comment.member}:${comment.id}`;
+      const at = atOf(comment);
+      if (at !== null) item.dataset.at = String(at);
       const who = el('div', 'rs-who');
       who.append(el('b', '', comment.authorName), document.createTextNode(ago(comment.createdAt)));
+      // Whose recording it is on, when several play as one.
+      const owner = merged && members[comment.member]?.detail?.uploaderName;
+      if (owner) who.append(document.createTextNode(` · on ${owner}'s`));
       if (comment.canDelete) {
         const del = el('button', 'rs-del', 'remove');
         del.type = 'button';
@@ -298,9 +358,10 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
           e.stopPropagation();
           del.disabled = true;
           try {
-            await api.removeComment(slug, comment.id);
-            comments = comments.filter(c => c.id !== comment.id);
-            if (detail) detail.commentCount = Math.max(0, detail.commentCount - 1);
+            await api.removeComment(members[comment.member]?.slug ?? slug, comment.id);
+            comments = comments.filter(c => c !== comment);
+            commentTotal = Math.max(0, commentTotal - 1);
+            if (comment.member === 0 && detail) detail.commentCount = Math.max(0, detail.commentCount - 1);
             renderComments();
             renderMarks();
             syncCount();
@@ -311,7 +372,7 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
         });
         who.append(del);
       }
-      item.append(who, textWithTimes(comment.content));
+      item.append(who, textWithTimes(comment));
       nodes.list.append(item);
     }
     highlightNow();
@@ -338,19 +399,20 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
     if (!nodes.marks || !player) return;
     nodes.marks.replaceChildren();
     const duration = Math.max(0.001, player.rec.duration);
-    for (const comment of comments) {
-      if (comment.atSeconds === null || comment.atSeconds === undefined) continue;
+    for (const comment of shownComments()) {
+      const at = atOf(comment);
+      if (at === null) continue;
       const mark = el('button', 'rs-mk');
       mark.type = 'button';
       mark.tabIndex = -1;
-      mark.style.left = `${Math.min(100, (comment.atSeconds / duration) * 100)}%`;
-      mark.title = `${clock(comment.atSeconds)}  ${comment.authorName}: ${comment.content}`;
+      mark.style.left = `${Math.min(100, Math.max(0, (at / duration) * 100))}%`;
+      mark.title = `${clock(at)}  ${comment.authorName}: ${comment.content}`;
       mark.setAttribute('aria-label', mark.title);
       // Its own press: the timeline under it would scrub.
       mark.addEventListener('pointerdown', e => e.stopPropagation());
       mark.addEventListener('click', e => {
         e.stopPropagation();
-        jump(comment.atSeconds);
+        jump(at);
         toggle(true);
       });
       nodes.marks.append(mark);
@@ -422,17 +484,23 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       if (!content || go.disabled) return;
       go.disabled = true;
       try {
-        const comment = await api.comment(slug, content, as.value);
+        // On a merged round, the recording whose stretch holds the moment it names,
+        // its times said on that recording's clock.
+        const merged = mergedSources();
+        const target = merged
+          ? commentTarget(content, merged.slice(0, members.length).map((m, i) => ({ ...m, duration: memberDuration(i) })))
+          : { index: 0, text: content };
+        const comment = await api.comment(members[target.index]?.slug ?? slug, target.text, as.value);
         try { localStorage.setItem('bf42-mesh-post-as', as.value); } catch {}
-        comments = [...comments, comment].sort((a, b) =>
-          (a.atSeconds ?? Infinity) - (b.atSeconds ?? Infinity) || a.id - b.id);
-        if (detail) detail.commentCount += 1;
+        comments = [...comments, { ...comment, member: target.index }];
+        commentTotal += 1;
+        if (target.index === 0 && detail) detail.commentCount += 1;
         text.value = '';
         text.blur();
         renderComments();
         renderMarks();
         syncCount();
-        nodes.list.querySelector(`[data-id="${comment.id}"]`)?.scrollIntoView({ block: 'nearest' });
+        nodes.list.querySelector(`[data-id="${target.index}:${comment.id}"]`)?.scrollIntoView({ block: 'nearest' });
       } catch (error) {
         ui.flash(error.message, 3000);
       } finally {
@@ -490,14 +558,17 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       if (Number.isFinite(startAt) && startAt > 0) jump(Math.min(startAt, player.rec.duration));
       if (slug && !counted) {
         counted = true;
-        api.view(slug).catch(error => console.warn('replay-social: the view', error));
+        // Each recording of a merged round was watched.
+        for (const m of members.length ? members : [{ slug }]) {
+          api.view(m.slug).catch(error => console.warn('replay-social: the view', error));
+        }
       }
     }
     const t = player.time;
     if (lastTime !== null && player.playing && t > lastTime && t - lastTime < SEEK_JUMP) {
-      for (const comment of comments) {
-        const at = comment.atSeconds;
-        if (at !== null && at !== undefined && at > lastTime && at <= t && !ui.root.classList.contains('rs-open')) bubble(comment);
+      for (const comment of shownComments()) {
+        const at = atOf(comment);
+        if (at !== null && at > lastTime && at <= t && !ui.root.classList.contains('rs-open')) bubble(comment);
       }
     }
     if (lastTime === null || Math.floor(t) !== Math.floor(lastTime)) {
@@ -690,7 +761,9 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
   function becomeShared(recording) {
     slug = recording.slug;
     detail = recording;
+    members = [{ slug, detail }];
     comments = [];
+    commentTotal = 0;
     counted = true;
     const kept = [...new URLSearchParams(location.search)].filter(([name]) => !['replay', 'serverlog', 't'].includes(name));
     const search = readableQuery([
@@ -753,7 +826,9 @@ export function installReplaySocial({ replayUrl, params = new URLSearchParams(lo
       requestAnimationFrame(tick);
     },
     get slug() { return slug; },
-    get comments() { return comments; },
+    /** The recordings whose comments show, the one played first. */
+    get members() { return members.map(m => m.slug); },
+    get comments() { return shownComments(); },
     toggle: on => toggle(on),
     capture,
   };

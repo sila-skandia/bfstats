@@ -71,6 +71,8 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<Recording> Recordings { get; set; }
     public DbSet<RecordingComment> RecordingComments { get; set; }
     public DbSet<RecordingView> RecordingViews { get; set; }
+    public DbSet<RecordingFingerprint> RecordingFingerprints { get; set; }
+    public DbSet<RecordingRoundLink> RecordingRoundLinks { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1375,6 +1377,9 @@ public class PlayerTrackerDbContext : DbContext
             recording.HasIndex(r => new { r.FileMissing, r.Id });
             recording.HasIndex(r => new { r.FileMissing, r.ViewCount, r.Id });
             recording.HasIndex(r => r.UploaderUserId);
+            // A round's recordings, and the candidates for a new one's (features/replay-feed, "Rounds").
+            recording.HasIndex(r => r.RoundId);
+            recording.HasIndex(r => new { r.Level, r.Mod, r.GameMode, r.ServerName, r.RecordedLocal });
             recording.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.Property(r => r.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.HasOne(r => r.Uploader)
@@ -1406,6 +1411,33 @@ public class PlayerTrackerDbContext : DbContext
             view.HasOne(v => v.Recording)
                 .WithMany()
                 .HasForeignKey(v => v.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Their own small tables, so the feed's queries never load a fingerprint's bytes.
+        modelBuilder.Entity<RecordingFingerprint>(fingerprint =>
+        {
+            fingerprint.HasKey(f => f.RecordingId);
+            fingerprint.Property(f => f.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            fingerprint.HasOne(f => f.Recording)
+                .WithOne()
+                .HasForeignKey<RecordingFingerprint>(f => f.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RecordingRoundLink>(link =>
+        {
+            link.HasKey(l => l.Id);
+            link.HasIndex(l => new { l.RecordingId, l.OtherRecordingId }).IsUnique();
+            link.HasIndex(l => l.OtherRecordingId);
+            link.Property(l => l.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            link.HasOne(l => l.Recording)
+                .WithMany()
+                .HasForeignKey(l => l.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+            link.HasOne(l => l.Other)
+                .WithMany()
+                .HasForeignKey(l => l.OtherRecordingId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

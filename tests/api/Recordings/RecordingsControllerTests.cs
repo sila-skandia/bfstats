@@ -26,7 +26,8 @@ public sealed class RecordingsControllerTests : IDisposable
             Substitute.For<IRecordingUploadService>(),
             storage,
             Substitute.For<IRecordingViewCounter>(),
-            Substitute.For<IConfiguration>())
+            Substitute.For<IConfiguration>(),
+            Substitute.For<IRecordingRoundService>())
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

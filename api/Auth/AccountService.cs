@@ -23,7 +23,8 @@ namespace api.Auth;
 public class AccountService(
     PlayerTrackerDbContext context,
     ILogger<AccountService> logger,
-    IRecordingStorage? recordingStorage = null) : IAccountService
+    IRecordingStorage? recordingStorage = null,
+    IRecordingRoundService? recordingRounds = null) : IAccountService
 {
     /// <summary>
     /// RFC 2606 reserves <c>.invalid</c>, so a tombstone address can never be
@@ -184,6 +185,12 @@ public class AccountService(
         // Recordings they shared go, with everyone's comments on them (cascade), and so do
         // their comments on other people's, which take those recordings' counts down.
         var recordings = await context.Recordings.Where(r => r.UploaderUserId == userId).ToListAsync(cancellationToken);
+        // Read from the rows, not the entities: a round is set in bulk, past any this context tracks.
+        var rounds = await context.Recordings.AsNoTracking()
+            .Where(r => r.UploaderUserId == userId && r.RoundId != null)
+            .Select(r => r.RoundId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
         var recordingComments = await context.RecordingComments.Where(c => c.AuthorUserId == userId).ToListAsync(cancellationToken);
         var doomedRecordings = recordings.Select(r => r.Id).ToHashSet();
         foreach (var onOthers in recordingComments.Where(c => !doomedRecordings.Contains(c.RecordingId)).GroupBy(c => c.RecordingId))
@@ -219,6 +226,19 @@ public class AccountService(
 
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // Their recordings' links went with them: the rest of each round may fall in two.
+        if (recordingRounds is not null && rounds.Count > 0)
+        {
+            try
+            {
+                await recordingRounds.RegroupAsync(rounds, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Erased account {UserId}: its recordings' rounds are left to the background pass", userId);
+            }
+        }
 
         // The files after the rows: a file left behind is only disk, a row without its
         // file would be a dead link.
