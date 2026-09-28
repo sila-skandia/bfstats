@@ -34,11 +34,26 @@ export const playerTeam = (rec, pid, t) => teamAt(rec, pid, t);
 export const killerTeamOf = (rec, k) => k.killerTeam ?? playerTeam(rec, k.killer, k.t);
 export const victimTeamOf = (rec, k) => k.victimTeam ?? playerTeam(rec, k.victim, k.t);
 
-/** The player whose client made the recording: the one the roster marks
- *  `local` (a file begun mid-round), else the one whose rounds the recorder
- *  marks `local` (v4), else the round's human. His own view is the
- *  recording's (the hit indicator is his alone, `rec.hitsTaken`). */
-export function recordingPlayer(rec) {
+/** The players whose clients made the recording: each merged file's
+ *  (replay-merge.js), in the order they were merged, else the one client's
+ *  (`recordingPlayer`). Each one's own view is his file's: his hits, his
+ *  refills, the radio he heard. */
+export function recordingPlayers(rec) {
+  const merged = [...new Set((rec.merged ?? []).map(m => m?.local).filter(Number.isInteger))];
+  if (merged.length) return merged;
+  const one = clientPlayer(rec);
+  return one === null ? [] : [one];
+}
+
+/** The player whose client made the recording, the first of a merged
+ *  file's: the one the replay follows first. */
+export const recordingPlayer = rec => recordingPlayers(rec)[0] ?? null;
+
+/** One client's recording player: the one the roster marks `local` (a file
+ *  begun mid-round), else the one whose rounds the recorder marks `local`
+ *  (v4), else the round's human. His own view is the recording's (the hit
+ *  indicator is his alone, `rec.hitsTaken`). */
+function clientPlayer(rec) {
   for (const [pid, list] of rec.sessions ?? []) if (list.some(s => s.local)) return pid;
   for (const [pid, player] of rec.players) if (player.local) return pid;
   const shot = rec.fires.find(f => f.local && f.pid !== null && f.pid !== undefined);
@@ -209,9 +224,8 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
 
   for (const c of rec.captures ?? []) add({ t: c.t, kind: 'capture', name: c.name, team: c.team });
 
-  // The recording player into the round, and back into it after each death.
-  const own = recordingPlayer(rec);
-  if (own !== null) {
+  // Each recording player into the round, and back into it after each death.
+  for (const own of recordingPlayers(rec)) {
     for (const { t, life } of spawnsOf(rec, own)) {
       add({ t, kind: 'spawn', pid: own, at: spawnPoint(rec, life), team: playerTeam(rec, own, t) });
     }
@@ -387,7 +401,7 @@ export function feedEvents(rec, kills = rec.kills) {
                victimTeam: victimTeamOf(rec, k) });
   }
   for (const c of rec.captures ?? []) out.push({ t: c.t, type: 'capture', name: c.name, team: c.team });
-  for (const r of rec.radio ?? []) out.push({ t: r.t, type: 'radio', pid: r.pid, msg: r.msg, global: r.global });
+  for (const r of rec.radio ?? []) out.push({ t: r.t, type: 'radio', pid: r.pid, msg: r.msg, global: r.global, to: r.to ?? null });
   if (rec.chat.length) {
     for (const c of rec.chat) out.push({ t: c.t, type: 'chat', text: c.text, team: c.team ?? playerTeam(rec, c.pid, c.t) });
   } else {

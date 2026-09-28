@@ -57,6 +57,10 @@ function el(tag, className, text) {
 
 const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+/** Whether `pid` made (one file of) the recording: a merged recording has a
+ *  recording player per file. */
+const isRecordingPlayer = (player, pid) => (player.recordingPids ?? [player.recordingPid]).includes(pid);
+
 // Fullscreen, with Safari's prefixed names (an iPad's before iPadOS 16.4).
 const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
 const canFullscreen = () => Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
@@ -1527,11 +1531,11 @@ export class ReplayUi {
     if (this.cardName.dataset.key !== `${pid}|${team}|${name}`) {
       this.cardName.dataset.key = `${pid}|${team}|${name}`;
       this.cardName.textContent = name;
-      // The recording player: his first person is the recording's own view,
+      // A recording player: his first person is his recording's own view,
       // hit indicator and all.
-      if (pid === player.recordingPid) {
+      if (isRecordingPlayer(player, pid)) {
         const badge = el('span', 'rp-card-rec', 'REC');
-        badge.title = 'The recording player: first person is his own view';
+        badge.title = 'A recording player: first person is his own view';
         this.cardName.append(badge);
       }
       this.cardName.className = `rp-card-name t${team}`;
@@ -1579,11 +1583,12 @@ export class ReplayUi {
       html += `<span class="spawn" title="Spawns at ${fmtClock(spawn)}">`
         + `${status.state === 'dead' ? 'respawns' : 'spawns'} in <b>${fmtClock(Math.ceil(spawn - t))}</b></span>`;
     }
-    // Beyond the recording player's view distance the server sends nothing,
+    // Beyond the recording players' view distance the server sends nothing,
     // and the replay holds his last pose as a ghost until he is back.
     if (status.outOfRange) {
       const since = status.outOfRange.since;
-      html += `<span class="range" title="Beyond the recording player's view distance: the server sent no updates, so this is where he was last seen">`
+      const whose = (player.recordingPids?.length ?? 0) > 1 ? "every recording player's" : "the recording player's";
+      html += `<span class="range" title="Beyond ${whose} view distance: the server sent no updates, so this is where he was last seen">`
         + `out of range${since !== null ? ` since ${fmtTime(since)}` : ''}</span>`;
     }
     if (this.loadingText) html = esc(this.loadingText);
@@ -1641,7 +1646,7 @@ export class ReplayUi {
           : r.status.state === 'dead' ? 'dead' : r.status.state === 'spawning' ? 'spawning'
             : r.status.state === 'left' ? 'left' : r.status.state === 'foot' ? 'on foot' : '';
         const nm = el('span', 'nm', r.name);
-        if (r.pid === player.recordingPid) nm.append(el('span', 'rp-card-rec', 'REC'));
+        if (isRecordingPlayer(player, r.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));
         if (r.pid === leader || r.streak >= 2) nm.insertAdjacentHTML('beforeend', `${r.pid === leader ? leaderMark() : ''}${streakMark(r.streak)}`);
         row.append(st, nm, el('span', 'vh', where), el('span', '', String(r.kills)), el('span', '', String(r.deaths)));
         box.rows.append(row);

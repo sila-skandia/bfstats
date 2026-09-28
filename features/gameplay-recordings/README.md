@@ -15,7 +15,10 @@ served as static files. Nothing on the site uploads or lists them.
 1. Scale FileBrowser up (it sits at `replicas: 0`) and open it over Tailscale
    (`filebrowser-hetzner`).
 2. Upload `replay_<stamp>.ndjson`, and its `ev_*.xml` server log if there is
-   one, into `mesh/replays/`. Create that folder the first time.
+   one, into `mesh/replays/`. Create that folder the first time. Several
+   recordings of one round are merged into one first
+   (`features/round-replay-merge`), and the merged file goes up like any
+   other.
 3. Scale FileBrowser back to 0 (its 256Mi limit is outside the node's budget,
    see features/mesh-site).
 4. Share the link:

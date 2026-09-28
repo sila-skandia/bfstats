@@ -7,9 +7,10 @@
 // `feedRate`), so a paused replay keeps its lines and a seek rebuilds what
 // the log held at the new instant.
 //
-// And, in first person on the recording player, the game's hit-direction
+// And, in first person on a recording player, the game's hit-direction
 // wash (`rec.hitsTaken`, HitFromPosEvent 0x3C, which only the damaged
-// player's client ever receives) through the page's own HUD.
+// player's client ever receives) through the page's own HUD: his own hits,
+// where a merged recording has several recording players.
 
 import { feedEvents, playerName, playerTeam, pointsAt } from './replay-chapters.js';
 import { controlledAt, lifeAt, positionAt, rootOf } from './replay-recording.js';
@@ -84,8 +85,11 @@ export class ReplayFeed {
     } else if (e.type === 'radio') {
       // What the recording player heard, as his client printed and played
       // it: team radio in his side's tongue, a shout in the speaker's voice
-      // at the speaker (comms.js `receive`). A rebuilt line is not heard again.
-      const own = this.player.recordingPid;
+      // at the speaker (comms.js `receive`). In a merged recording, the
+      // followed player if he heard it, else the first who did. A rebuilt
+      // line is not heard again.
+      const heard = e.to ?? [];
+      const own = heard.includes(this.player.followPid) ? this.player.followPid : heard[0] ?? this.player.recordingPid;
       const speaker = { ...this.speaker(e.pid, e.t), position: this.positionOf(e.pid, e.t), local: e.pid === own };
       const listener = { team: own !== null ? playerTeam(this.player.rec, own, e.t) : speaker.team, silent: !live };
       comms.receive?.(e.msg, speaker, listener);
@@ -135,8 +139,9 @@ export class ReplayFeed {
   }
 
   /**
-   * One frame at recording time `t`. `wash` is whether the view is the
-   * recording player's own first person, where his hits are drawn.
+   * One frame at recording time `t`. `wash` is whose own first person the
+   * view is, where his hits are drawn: a recording player's pid, or `true`
+   * for the recording player of one client's file; false or null for none.
    */
   update(t, wash = false) {
     if (!this.comms) return;
@@ -148,10 +153,13 @@ export class ReplayFeed {
     for (; this.cursor < this.events.length && this.events[this.cursor].t <= t; this.cursor++) {
       this.write(this.events[this.cursor], true);
     }
-    if (wash && this.player.ctx.triggerHitIndicator) {
+    const whose = wash === true ? this.player.recordingPid ?? null : wash;
+    if (wash !== false && wash !== null && this.player.ctx.triggerHitIndicator) {
       for (const hit of this.hits) {
         if (hit.t <= this.written) continue;
         if (hit.t > t) break;
+        // A merged file's hits are each one recording player's.
+        if (hit.pid !== undefined && hit.pid !== whose) continue;
         // The recorded sector counts 45 degrees a step from ahead (0) round
         // to behind (4); the HUD's octant is the same compass from 1. Which
         // side 1-3 are is not confirmed (features/round-replay-ux): drawn

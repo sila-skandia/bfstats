@@ -48,7 +48,7 @@ import { phaseFor, buildGaitRig } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
 import { ReplayCamera, hullRadius } from './replay-camera.js';
-import { buildChapters, killsOf, recordingPlayer } from './replay-chapters.js';
+import { buildChapters, killsOf, recordingPlayers } from './replay-chapters.js';
 import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull } from './replay-hulls.js';
@@ -126,8 +126,10 @@ class ReplayPlayer {
     this.chapters = buildChapters(rec, this.serverRows, this.kills);
     const pids = [...new Set([...rec.players.keys(), ...rec.control.map(c => c.pid)])];
     // The recording's own player first: the one person in a bot round, and
-    // the one whose view the recording was made from.
-    this.recordingPid = recordingPlayer(rec);
+    // the one whose view the recording was made from. A merged recording
+    // has one per file (replay-merge.js), and the first is followed first.
+    this.recordingPids = recordingPlayers(rec);
+    this.recordingPid = this.recordingPids[0] ?? null;
     const human = pids.find(pid => rec.players.get(pid)?.ai === false);
     this.followPid = this.recordingPid ?? human ?? (pids.length ? pids[0] : null);
     this.v1 = new THREE.Vector3();
@@ -378,7 +380,8 @@ class ReplayPlayer {
       : this.log ? ' · server log loaded but could not be aligned' : '';
     const bodies = this.soldiers?.available ? ' · soldiers drawn by the map' : '';
     const unseen = this.standIns.length ? ` · ${this.standIns.length} never in range, stood in by the level` : '';
-    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${unseen}${bodies}${aligned}`;
+    const merged = this.rec.merged?.length ? ` · merged from ${this.rec.merged.length} recordings` : '';
+    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${merged}${unseen}${bodies}${aligned}`;
     this.ui.status(this.statusLine);
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
@@ -468,10 +471,10 @@ class ReplayPlayer {
     if (pid !== null) this.soldiers?.fire(pid, f, f.t);
   }
 
-  /** The recording player's ammo refilled at a depot at `t` (SpecialGameEvent
-   *  0, replay-recording.js `refills`): his soldier's refill sound, at him. */
-  refill(t) {
-    const pid = this.recordingPid;
+  /** A recording player's ammo refilled at a depot at `t` (SpecialGameEvent
+   *  0, replay-recording.js `refills`; a merged file names whose): his
+   *  soldier's refill sound, at him. */
+  refill(t, pid = this.recordingPid) {
     if (pid === null || !this.playing) return;
     const nid = controlledAt(this.rec, pid, t);
     const life = nid !== null ? lifeAt(this.rec, nid, t) : null;
@@ -540,16 +543,16 @@ class ReplayPlayer {
         if (f.t > prevT && f.t <= t) this.fireShot(f);
       }
       for (const r of this.rec.refills ?? []) {
-        if (r.t > prevT && r.t <= t) this.refill(r.t);
+        if (r.t > prevT && r.t <= t) this.refill(r.t, r.pid ?? this.recordingPid);
       }
     }
     this.lastFiredTime = t;
     this.hideOwnBody(this.camera.hidePid);
-    // The game's message log, and in the recording player's own first
-    // person his hits' red wash.
+    // The game's message log, and in a recording player's own first person
+    // his hits' red wash.
     const ownView = this.camera.mode === 'pov' && this.camera.hidePid !== null
-      && this.followPid === this.recordingPid;
-    this.feed.update(t, ownView);
+      && this.recordingPids.includes(this.followPid);
+    this.feed.update(t, ownView ? this.followPid : null);
     this.ui.timeline.plan(prevT, t, this.playing);
     this.ui.update(t, dt);
     this.withHighlights(h => h.update(t, dt));
