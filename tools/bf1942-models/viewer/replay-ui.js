@@ -5,6 +5,11 @@
 // the 3D view for the camera's drags and wheel, and the replay's key map,
 // which the play page's own keys never see past. Reads and drives a
 // ReplayPlayer (replay.js); owns only DOM.
+//
+// On a phone (features/round-replay-ux, "Phones"): the bar folds to its own
+// width, a tap on the view slides the chrome away and back, the free camera
+// flies on a thumbstick, and fullscreen is one button wherever the browser
+// allows it.
 
 import { GameConsole } from './console.js';
 import { fmtHp, nameAt, roundClock, teamAt } from './replay-recording.js';
@@ -22,8 +27,18 @@ const TAG_VEHICLE = 1.6;
 /** At most this many tags, the nearest. */
 const TAG_MAX = 12;
 /** Seconds without a pointer move or key before a playing replay's chrome
- *  fades. */
+ *  fades; on a touch screen, where a tap brought it up, a little longer for
+ *  the thumb to reach it. */
 const IDLE_AFTER = 2.8;
+const IDLE_TOUCH = 4;
+/** A finger lifted within TAP_TIME ms, having moved less than TAP_SLOP
+ *  pixels, is a tap on the view. */
+const TAP_SLOP = 10;
+const TAP_TIME = 350;
+/** The free camera's thumbstick: a finger down on the left STICK_ZONE of the
+ *  view, full speed at STICK_R pixels from where it went down. */
+const STICK_ZONE = 0.4;
+const STICK_R = 48;
 /** How often the card and the open scoreboard redraw, seconds. */
 const SLOW_TICK = 0.2;
 
@@ -41,6 +56,15 @@ function el(tag, className, text) {
 }
 
 const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// Fullscreen, with Safari's prefixed names (an iPad's before iPadOS 16.4).
+const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+const canFullscreen = () => Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+function exitFullscreen() {
+  try {
+    Promise.resolve((document.exitFullscreen ?? document.webkitExitFullscreen)?.call(document)).catch(() => {});
+  } catch {}
+}
 
 /** What a seat of a replayed hull is to the man in it, from the hull's own
  *  seat table (seats.js): the root seat drives, flies or steers what it can,
@@ -70,6 +94,12 @@ const ICON = {
   players: '<path d="M5.5 7.5a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2zM1 13.6c0-2.6 2-4.4 4.5-4.4S10 11 10 13.6zM11.4 7.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4zM11 8.6c2.3 0 4 1.6 4 3.9h-3.8c0-1.5-.5-2.8-1.4-3.8z"/>',
   log: '<path d="M3 1.8h10v12.4H3z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.3 5h5.4M5.3 8h5.4M5.3 11h3.4" stroke="currentColor" stroke-width="1.4"/>',
   full: '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  unfull: '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
+  tags: '<path d="M1.8 4h8.4l4 4-4 4H1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="5" cy="8" r="1.3"/>',
+  markers: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/>',
+  hide: '<path d="M1 8s2.6-4.6 7-4.6S15 8 15 8s-2.6 4.6-7 4.6S1 8 1 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/><path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.6"/>',
+  upload: '<path d="M8 10.6V2.8M4.7 6 8 2.7 11.3 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 9.8v3.6h10.8V9.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   chevLeft: '<path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
   chevRight: '<path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
   close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.6"/>',
@@ -100,6 +130,7 @@ html.replay-on #side { z-index: 8; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);
   --rp-plate-deep: rgba(20, 20, 17, .9);
+  --rp-plate-menu: rgba(20, 20, 17, .97);
   --rp-edge: rgba(200, 194, 152, .34);
   --rp-edge-strong: #b9b38a;
   --rp-khaki: #a39c6c;
@@ -114,10 +145,11 @@ html.replay-on #side { z-index: 8; }
   --rp-font: 'Trebuchet MS', 'Geist Variable', 'Segoe UI', system-ui, sans-serif;
   --rp-mono: var(--mm-font-mono, ui-monospace, monospace);
   --rp-bar-h: 88px;
+  --rp-card-h: 46px;
   --rp-log-top: 280px;
   position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden;
   font: 12px/1.35 var(--rp-font); color: var(--rp-ink);
-  -webkit-user-select: none; user-select: none;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
 }
 .rp-root svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
 .rp-input { position: absolute; inset: 0; pointer-events: auto; cursor: grab; touch-action: none; }
@@ -125,15 +157,24 @@ html.replay-on #side { z-index: 8; }
 .rp-root.mode-free .rp-input { cursor: crosshair; }
 .rp-root.rp-idle .rp-input { cursor: none; }
 
-/* The bar. */
-.rp-bar { position: absolute; left: 12px; right: 12px; bottom: 10px; pointer-events: auto;
+/* The bar: the timeline over a row of controls, the playback's on the left
+   and the view's on the right. It folds to its own width (the container
+   queries at the end) rather than cutting any control off. */
+.rp-bar { position: absolute; left: 12px; right: 12px; bottom: 10px; pointer-events: auto; container: rp-bar / inline-size;
   padding: 5px 12px 7px; border: 1px solid var(--rp-edge); border-radius: 8px;
   background: linear-gradient(to top, rgba(16, 16, 14, .9), rgba(32, 32, 28, .76));
   box-shadow: 0 8px 28px rgba(0, 0, 0, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  transition: opacity .35s ease, transform .35s ease; }
-.rp-ctl { display: flex; align-items: center; gap: 10px; margin-top: 3px; min-width: 0; }
+  transition: opacity .3s ease, transform .35s cubic-bezier(.2, .8, .2, 1); }
+/* Controls keep their size; the recording's date takes what room is left
+   (from nothing, so it never pushes a control onto a second row); anything
+   that still does not fit wraps rather than going off the edge. */
+.rp-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 3px; min-width: 0; }
+.rp-ctl > * { flex: none; }
+.rp-ctl > .rp-stamp { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rp-ctl > .rp-seg { margin-left: auto; }
+.rp-break { display: none; }
 .rp-grp { display: flex; align-items: center; gap: 2px; }
-.rp-spacer { flex: 1 1 auto; min-width: 0; }
+.rp-btn[hidden] { display: none; }
 .rp-btn { appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-width: 30px; height: 28px; padding: 0 7px; margin: 0; border: 1px solid transparent; border-radius: 5px;
   background: transparent; color: var(--rp-ink); font: 700 11px/1 var(--rp-font); letter-spacing: .08em;
@@ -152,11 +193,34 @@ html.replay-on #side { z-index: 8; }
 .rp-time span { color: var(--rp-muted); }
 .rp-round { color: var(--rp-muted); font: 700 10px var(--rp-font); letter-spacing: .12em; white-space: nowrap; }
 .rp-speed { position: relative; }
-.rp-speed-menu { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
-  display: none; flex-direction: column; padding: 4px; gap: 1px; background: var(--rp-plate-deep);
+/* The menus open over the timeline, above its marks' own stacking. */
+.rp-speed-menu { position: absolute; z-index: 5; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  display: none; flex-direction: column; padding: 4px; gap: 1px; background: var(--rp-plate-menu);
   border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
 .rp-speed.open .rp-speed-menu { display: flex; }
 .rp-speed-menu .rp-btn { justify-content: flex-end; min-width: 56px; font-family: var(--rp-mono); }
+
+/* The menu (...): the view's switches, and the bar's controls it has folded away. */
+.rp-more { position: relative; }
+.rp-more-menu { position: absolute; z-index: 5; right: -4px; bottom: calc(100% + 8px); display: none; flex-direction: column; gap: 1px;
+  width: max-content; min-width: 210px; max-width: calc(100vw - 24px); padding: 4px; background: var(--rp-plate-menu);
+  border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+.rp-more.open .rp-more-menu { display: flex; }
+.rp-more-when { display: none; padding: 3px 8px 6px; margin-bottom: 3px; border-bottom: 1px solid var(--rp-edge); color: var(--rp-muted);
+  font: 700 9px/1.4 var(--rp-font); letter-spacing: .12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-mi { appearance: none; display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 8px; margin: 0;
+  border: 0; border-radius: 4px; background: none; color: var(--rp-ink); font: 700 11px/1 var(--rp-font); letter-spacing: .08em;
+  text-transform: uppercase; text-align: left; white-space: nowrap; cursor: pointer; }
+.rp-mi:hover { background: rgba(255, 255, 255, .08); }
+.rp-mi:focus-visible { outline: 1px solid var(--rp-gold); outline-offset: -1px; }
+.rp-mi > span { flex: 1 1 auto; }
+.rp-mi kbd { min-width: 18px; padding: 1px 4px; border: 1px solid var(--rp-edge); border-radius: 3px; text-align: center;
+  color: var(--rp-muted); font: 10px/1.3 var(--rp-mono); }
+.rp-mi b { padding: 2px 5px; border-radius: 3px; background: rgba(255, 255, 255, .1); color: var(--rp-muted);
+  font: 800 9px/1.2 var(--rp-font); letter-spacing: .1em; }
+.rp-mi.on b { background: var(--rp-khaki); color: var(--rp-khaki-ink); }
+.rp-mi-roomy { display: none; }
+.rp-mi[hidden] { display: none; }
 
 /* The timeline. */
 .rp-tl { position: relative; height: 32px; cursor: pointer; touch-action: none; outline: none; }
@@ -216,11 +280,12 @@ html.replay-on #side { z-index: 8; }
 .rp-tip-list li.vehicle i { color: var(--rp-fire); }
 .rp-tip-list li.spawn i { color: var(--rp-life); }
 
-/* The player card. */
+/* The player card. Its own width, not the half of the view left of its
+   anchor, or a phone cuts the spawn countdown short. */
 .rp-card { position: absolute; left: 50%; bottom: calc(var(--rp-bar-h) + 18px); transform: translateX(-50%);
-  display: flex; align-items: stretch; max-width: calc(100% - 24px); pointer-events: auto;
+  display: flex; align-items: stretch; width: max-content; max-width: calc(100% - 24px); pointer-events: auto;
   background: var(--rp-plate); border: 1px solid var(--rp-edge); border-radius: 8px; overflow: hidden;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .4); transition: opacity .35s ease, transform .35s ease; }
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .4); transition: opacity .3s ease, transform .35s cubic-bezier(.2, .8, .2, 1); }
 .rp-card .rp-btn { height: auto; border-radius: 0; min-width: 28px; }
 .rp-card-main { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 9px;
   align-items: center; padding: 5px 12px; min-width: 220px; max-width: 420px; border-left: 1px solid var(--rp-edge);
@@ -329,21 +394,84 @@ html.replay-on #side { z-index: 8; }
   padding: 8px 12px; background: var(--panel, rgba(19, 19, 19, .9)); border: 1px solid #d9b36a; border-radius: 6px;
   color: var(--text, #c8c8c8); font: 12px var(--mm-font-mono, monospace); }
 
-/* Idle, and hidden. */
-.rp-root.rp-idle .rp-bar, .rp-root.rp-idle .rp-card { opacity: 0; transform: translateY(10px); pointer-events: none; }
-.rp-root.rp-idle .rp-card { transform: translate(-50%, 10px); }
+/* The free camera's thumbstick (touch): a ring where the thumb went down,
+   the knob where it has pushed to; faint at its home while the free camera
+   waits for a thumb. */
+.rp-stick { position: absolute; left: 0; top: 0; width: ${STICK_R * 2 + 8}px; height: ${STICK_R * 2 + 8}px;
+  margin: -${STICK_R + 4}px 0 0 -${STICK_R + 4}px; border-radius: 50%; pointer-events: none; opacity: 0;
+  border: 1.5px solid rgba(238, 236, 217, .4); background: radial-gradient(circle, rgba(20, 20, 17, .15), rgba(20, 20, 17, .45));
+  transition: opacity .25s ease; }
+.rp-stick > i { position: absolute; left: 50%; top: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%;
+  background: rgba(238, 236, 217, .6); box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .45); }
+.rp-stick.home { opacity: .4; }
+.rp-stick.on { opacity: 1; transition: none; }
+
+/* Hidden: idle while it plays, or a tap on the view. The bar slides down
+   off the view's edge and the card goes with it. */
+.rp-root.rp-idle .rp-bar { opacity: 0; transform: translateY(calc(100% + 16px)); pointer-events: none; }
+.rp-root.rp-idle .rp-card { opacity: 0; transform: translate(-50%, calc(var(--rp-bar-h) + 16px)); pointer-events: none; }
 .rp-root.rp-idle .rp-mini { opacity: 1; }
-.rp-root.rp-bare > :not(.rp-input):not(.rp-notice) { display: none !important; }
+.rp-root.rp-bare > :not(.rp-input):not(.rp-notice):not(.rp-stick) { display: none !important; }
+@media (prefers-reduced-motion: reduce) { .rp-bar, .rp-card { transition: opacity .2s ease; } }
+
+/* Touch: targets a thumb can hit. */
+@media (pointer: coarse) {
+  .rp-btn { min-width: 38px; height: 38px; }
+  .rp-btn.play { width: 46px; height: 40px; }
+  .rp-seg .rp-btn { min-width: 40px; height: 38px; }
+  .rp-grp { gap: 4px; }
+  .rp-card .rp-btn { min-width: 40px; }
+  .rp-speed-menu .rp-btn { height: 36px; }
+  .rp-panel-head .rp-btn { height: 30px; min-width: 30px; }
+  .rp-mi { height: 40px; }
+}
+@media (hover: none) {
+  .rp-keys-only { display: none; }
+  /* Nothing hovers to bring the playhead's knob up: it stays, to be grabbed. */
+  .rp-tl-knob { transform: scale(1); }
+}
+
+/* The bar folds as it narrows: the date, the labels, the log and the open
+   button (into the menu), the round clock, the 5 s steps, and then the view's
+   controls take a row of their own. */
+@container rp-bar (max-width: 1100px) { .rp-stamp { display: none; } .rp-more-when:not(:empty) { display: block; } }
+@container rp-bar (max-width: 1000px) { .rp-label { display: none; } }
+@container rp-bar (max-width: 920px) { .rp-roomy { display: none; } .rp-mi-roomy { display: flex; } }
+@container rp-bar (max-width: 830px) { .rp-round { display: none; } }
+@container rp-bar (max-width: 740px) { .rp-step { display: none; } .rp-ctl { column-gap: 6px; } }
+@container rp-bar (max-width: 610px) {
+  .rp-ctl { gap: 3px 6px; }
+  .rp-break { display: block; flex-basis: 100%; height: 0; }
+  .rp-ctl > .rp-speed { margin-left: auto; }
+  .rp-ctl > .rp-seg { margin-left: 0; margin-right: auto; }
+  .rp-step { display: inline-flex; }
+  /* The speed sits at the row's end: its menu opens leftward, on screen. */
+  .rp-speed-menu { left: auto; right: -4px; transform: none; }
+}
+@container rp-bar (max-width: 380px) { .rp-step { display: none; } }
+@container rp-bar (max-width: 345px) {
+  .rp-btn { min-width: 34px; }
+  .rp-seg .rp-btn { min-width: 36px; }
+  .rp-ctl { column-gap: 4px; }
+}
 
 @media (max-width: 720px) {
   .rp-bar { left: 6px; right: 6px; bottom: 6px; padding: 4px 8px 6px; }
-  .rp-ctl { flex-wrap: wrap; gap: 4px 8px; }
-  .rp-round, .rp-hide-narrow, .rp-card-name .rp-card-rec { display: none; }
+  .rp-card { bottom: calc(var(--rp-bar-h) + 12px); }
+  .rp-card-name .rp-card-rec { display: none; }
   .rp-card-main { min-width: 0; }
   .rp-board { grid-template-columns: 1fr; overflow: auto; }
   .rp-log { top: auto; height: 38%; }
 }
-@media (hover: none) { .rp-keys-only { display: none; } }
+/* A phone on its side: little height, so the panels start at the top. */
+@media (max-height: 500px) {
+  .rp-bar { bottom: 6px; padding-top: 3px; padding-bottom: 5px; }
+  .rp-card { bottom: calc(var(--rp-bar-h) + 12px); }
+  .rp-board, .rp-help { top: 8px; transform: translateX(-50%); max-height: calc(100% - var(--rp-bar-h) - 26px); }
+  .rp-team-head { padding: 4px 10px 3px; }
+  .rp-team-head b { font-size: 16px; }
+  .rp-team-head span { font-size: 14px; }
+}
 `;
 
 export function toast(stage, message) {
@@ -361,6 +489,11 @@ export class ReplayUi {
     this.showTags = true;
     this.lastActivity = performance.now();
     this.overChrome = false;
+    this.userHidden = false;     // a tap on the view put the chrome away
+    this.chromeHidden = false;   // the bar and the card are away, for either reason
+    this.touchUi = false;        // the last hand on the replay was a finger
+    this.coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    this.stick = null;           // the free camera's thumb: { id, x, y, at, moved, floated }
     this.slowClock = 0;
     this.tagNodes = new Map();
     this.boardKey = '';
@@ -392,15 +525,30 @@ export class ReplayUi {
     this.mini = el('div', 'rp-mini');
     this.miniFill = el('i');
     this.mini.append(this.miniFill);
-    this.root.append(this.input, this.tags, this.card, this.bar, this.log, this.board, this.help,
+    this.stickEl = el('div', 'rp-stick');
+    this.stickKnob = el('i');
+    this.stickEl.append(this.stickKnob);
+    this.root.append(this.input, this.tags, this.stickEl, this.card, this.bar, this.log, this.board, this.help,
       this.timeline.tip, this.mini, this.notice);
     this.stage.append(this.root);
 
-    this.root.addEventListener('pointerdown', () => player.ctx.ensureAudio?.(), true);
+    // A finger on the chrome keeps it up; one on the view decides for itself
+    // (`bindPointer`: a tap toggles it, a drag leaves it be).
+    this.root.addEventListener('pointerdown', e => {
+      player.ctx.ensureAudio?.();
+      if (e.pointerType === 'touch') {
+        this.touchUi = true;
+        if (e.target !== this.input) this.activity();
+      }
+    }, true);
     this.bindPointer();
     this.bindKeys();
+    this.onFullscreen = () => this.syncFullscreen();
+    document.addEventListener('fullscreenchange', this.onFullscreen);
+    document.addEventListener('webkitfullscreenchange', this.onFullscreen);
     this.sizes = new ResizeObserver(() => this.measure());
     this.sizes.observe(this.bar);
+    this.sizes.observe(this.card);
     this.sizes.observe(this.stage);
     this.measure();
   }
@@ -430,13 +578,18 @@ export class ReplayUi {
     return b;
   }
 
+  /** The bar's controls, in one row that folds (the style's container
+   *  queries): the transport, the clocks and the speed, then the view's --
+   *  the cameras, the panels, the menu and fullscreen. A control marked
+   *  `rp-step`, `rp-label`, `rp-roomy`, `rp-round` or `rp-stamp` is one the
+   *  bar lets go of as it narrows; the menu takes up the `rp-roomy` ones. */
   buildBar() {
     this.bar = el('div', 'rp-bar');
     const transport = el('div', 'rp-grp');
     this.prevBtn = this.button('', 'prev', 'Previous event (,)', () => this.stepChapter(-1));
-    this.backBtn = this.button('rp-hide-narrow', 'back', 'Back 5 s (Left)', () => this.skip(-5), '<small>5</small>');
+    this.backBtn = this.button('rp-step', 'back', 'Back 5 s (Left)', () => this.skip(-5), '<small>5</small>');
     this.playBtn = this.button('play', 'pause', 'Pause (Space)', () => this.togglePlay());
-    this.fwdBtn = this.button('rp-hide-narrow', 'forward', 'Forward 5 s (Right)', () => this.skip(5), '<small>5</small>');
+    this.fwdBtn = this.button('rp-step', 'forward', 'Forward 5 s (Right)', () => this.skip(5), '<small>5</small>');
     this.nextBtn = this.button('', 'next', 'Next event (.)', () => this.stepChapter(1));
     transport.append(this.prevBtn, this.backBtn, this.playBtn, this.fwdBtn, this.nextBtn);
 
@@ -453,7 +606,10 @@ export class ReplayUi {
     modes.append(this.modeBtns.orbit, this.modeBtns.pov, this.modeBtns.free, this.modeBtns.auto);
 
     this.speedWrap = el('div', 'rp-speed');
-    this.speedBtn = this.button('', null, 'Playback speed (- / =)', () => this.speedWrap.classList.toggle('open'), '1x');
+    this.speedBtn = this.button('', null, 'Playback speed (- / =)', () => {
+      this.closeMore();
+      this.speedWrap.classList.toggle('open');
+    }, '1x');
     const menu = el('div', 'rp-speed-menu');
     this.speedItems = SPEEDS.map(s => {
       const item = this.button('', null, `${s}x`, () => {
@@ -465,17 +621,98 @@ export class ReplayUi {
     });
     this.speedWrap.append(this.speedBtn, menu);
 
-    this.playersBtn = this.button('', 'players', 'Players (Tab)', () => this.toggle('board-open'), '<span class="rp-hide-narrow">Players</span>');
-    this.logBtn = this.button('', 'log', 'Replay log (L)', () => this.toggle('log-open'));
+    this.playersBtn = this.button('', 'players', 'Players (Tab)', () => this.toggle('board-open'), '<span class="rp-label">Players</span>');
+    this.logBtn = this.button('rp-roomy', 'log', 'Replay log (L)', () => this.toggle('log-open'));
     this.helpBtn = this.button('rp-keys-only', null, 'Shortcuts (?)', () => this.toggle('help-open'), '?');
-    this.fullBtn = this.button('rp-hide-narrow', 'full', 'Fullscreen (F)', () => this.toggleFullscreen());
+    this.fullBtn = this.button('', 'full', 'Fullscreen (F)', () => this.toggleFullscreen());
+    this.buildMore();
 
+    // The break is where a phone's bar starts its second row.
     const ctl = el('div', 'rp-ctl');
-    ctl.append(transport, this.timeText, this.roundText, el('span', 'rp-spacer'), modes, this.speedWrap,
-      this.playersBtn, this.logBtn, this.helpBtn, this.fullBtn);
+    ctl.append(transport, this.timeText, this.roundText, this.speedWrap, el('i', 'rp-break'), modes,
+      this.playersBtn, this.logBtn, this.moreWrap, this.helpBtn, this.fullBtn);
     this.bar.append(this.timeline.el, ctl);
     this.syncMode();
     this.syncSpeed();
+    this.syncFullscreen();
+  }
+
+  /** The menu: the name tags and the battle markers (keys N and B, nothing
+   *  else to press on a phone), hiding the interface, and the log and the
+   *  open button once the bar has folded them away. */
+  buildMore() {
+    this.moreWrap = el('div', 'rp-more');
+    this.moreBtn = this.button('', 'more', 'More', () => this.toggleMore());
+    this.moreBtn.setAttribute('aria-haspopup', 'menu');
+    this.moreBtn.setAttribute('aria-expanded', 'false');
+    this.moreMenu = el('div', 'rp-more-menu');
+    this.moreMenu.setAttribute('role', 'menu');
+    this.moreWhen = el('div', 'rp-more-when');
+    this.moreMenu.append(this.moreWhen);
+    const item = (className, icon, text, key, onClick, check = false) => {
+      const b = el('button', `rp-mi ${className}`.trim());
+      b.type = 'button';
+      b.setAttribute('role', check ? 'menuitemcheckbox' : 'menuitem');
+      b.innerHTML = `${svg(icon)}<span>${esc(text)}</span>${check ? '<b></b>' : ''}${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        onClick();
+        // A switch shows its new state; anything else is done with the menu.
+        if (check) this.syncMore();
+        else this.closeMore();
+      });
+      this.moreMenu.append(b);
+      return b;
+    };
+    this.moreItems = {
+      tags: item('', 'tags', 'Name tags', 'N', () => this.toggleTags(), true),
+      markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
+      log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
+      open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
+      bare: item('', 'hide', 'Hide the interface', 'H', () => this.setBare(true)),
+    };
+    this.moreWrap.append(this.moreBtn, this.moreMenu);
+  }
+
+  toggleMore() {
+    const open = !this.moreWrap.classList.contains('open');
+    if (open) {
+      this.speedWrap.classList.remove('open');
+      this.syncMore();
+    }
+    this.moreWrap.classList.toggle('open', open);
+    this.moreBtn.classList.toggle('on', open);
+    this.moreBtn.setAttribute('aria-expanded', String(open));
+  }
+
+  closeMore() {
+    this.moreWrap.classList.remove('open');
+    this.moreBtn.classList.remove('on');
+    this.moreBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  /** The menu's switches as they stand, and what it offers here: markers
+   *  with the highlights up, Open where the bar has its button. */
+  syncMore() {
+    const check = (item, on) => {
+      item.classList.toggle('on', on);
+      item.setAttribute('aria-checked', String(on));
+      item.querySelector('b').textContent = on ? 'ON' : 'OFF';
+    };
+    check(this.moreItems.tags, this.showTags);
+    const highlights = this.player.highlights;
+    this.moreItems.markers.hidden = !highlights;
+    if (highlights) check(this.moreItems.markers, highlights.showMarkers);
+    this.moreItems.open.hidden = !this.bar.querySelector('.ro-open');
+    // When the round was recorded, once the bar has folded its date away.
+    const stamp = this.bar.querySelector('.rp-stamp');
+    this.moreWhen.textContent = stamp?.textContent ?? '';
+    this.moreWhen.title = stamp?.title ?? '';
+  }
+
+  toggleTags() {
+    this.showTags = !this.showTags;
+    this.flash(this.showTags ? 'Name tags on' : 'Name tags off');
   }
 
   buildCard() {
@@ -614,6 +851,15 @@ export class ReplayUi {
   measure() {
     const h = this.bar.offsetHeight;
     if (h) this.root.style.setProperty('--rp-bar-h', `${h}px`);
+    this.barH = h;
+    this.stageW = this.stage.clientWidth;
+    this.stageH = this.stage.clientHeight;
+    this.cardW = this.card.offsetWidth;
+    // What sits over the card (the Auto caption, the reel, a phone's ticker)
+    // clears it at its own height.
+    const card = this.card.offsetHeight;
+    if (card) this.root.style.setProperty('--rp-card-h', `${card}px`);
+    this.cardH = card;
     // The log docks under the game's minimap, whose frame ends at y 205 of
     // the HUD's 600 (map.css `#minimap`).
     const stageH = this.stage.clientHeight || 600;
@@ -632,11 +878,11 @@ export class ReplayUi {
     this.lastActivity = performance.now() + extra * 1000;
   }
 
-  flash(text) {
+  flash(text, ms = 1100) {
     this.notice.textContent = text;
     this.notice.classList.add('show');
     clearTimeout(this.noticeTimer);
-    this.noticeTimer = setTimeout(() => this.notice.classList.remove('show'), 1100);
+    this.noticeTimer = setTimeout(() => this.notice.classList.remove('show'), ms);
   }
 
   togglePlay() {
@@ -689,7 +935,10 @@ export class ReplayUi {
     const wasAuto = Boolean(highlights?.auto);
     highlights?.setAuto(false, true);
     if (this.player.camera.setMode(mode) || wasAuto) {
-      this.flash(mode === 'orbit' ? 'Orbit' : mode === 'pov' ? 'First person' : 'Free camera');
+      // On a touch screen the free camera's flying is the thumbstick's, which
+      // nothing else would say is there.
+      if (mode === 'free' && this.coarse) this.flash('Free camera: left thumb flies, drag looks', 2600);
+      else this.flash(mode === 'orbit' ? 'Orbit' : mode === 'pov' ? 'First person' : 'Free camera');
     }
     this.syncMode();
   }
@@ -734,7 +983,10 @@ export class ReplayUi {
     // One overlay in the middle at a time.
     if (on && cls === 'board-open') this.root.classList.remove('help-open');
     if (on && cls === 'help-open') this.root.classList.remove('board-open');
-    if (on) this.player.highlights?.map.close();
+    if (on) {
+      this.player.highlights?.map.close();
+      this.closeMore();
+    }
     this.root.classList.toggle(cls, on);
     this.playersBtn.classList.toggle('on', this.root.classList.contains('board-open'));
     this.logBtn.classList.toggle('on', this.root.classList.contains('log-open'));
@@ -742,9 +994,57 @@ export class ReplayUi {
     if (cls === 'log-open' && on) this.scrollLogToCurrent();
   }
 
+  /** The whole page fullscreen, not the stage, so the page's own panels
+   *  (Open recording's) still show over it; a phone turns on its side for
+   *  it. An iPhone's Safari has no fullscreen for a page, only for a video:
+   *  there the interface goes instead, and a tap brings it back. */
   toggleFullscreen() {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else this.stage.requestFullscreen?.().catch(() => {});
+    if (fullscreenElement()) {
+      exitFullscreen();
+      return;
+    }
+    if (!canFullscreen()) {
+      this.setBare(!this.root.classList.contains('rp-bare'));
+      return;
+    }
+    const page = document.documentElement;
+    let asked;
+    try {
+      asked = (page.requestFullscreen ?? page.webkitRequestFullscreen).call(page, { navigationUI: 'hide' });
+    } catch {
+      return;
+    }
+    // A phone's view of a round is a wide one. A tablet, or a phone the
+    // browser will not turn, stays as it is held.
+    Promise.resolve(asked).then(() => {
+      if (!this.coarse || Math.min(screen.width, screen.height) >= 600) return;
+      screen.orientation?.lock?.('landscape')?.catch?.(() => {});
+    }, () => {});
+  }
+
+  /** The button's icon and words follow the fullscreen, however it ended. */
+  syncFullscreen() {
+    const on = Boolean(fullscreenElement());
+    if (this.shownFullscreen === on) return;
+    this.shownFullscreen = on;
+    const label = on ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
+    this.fullBtn.innerHTML = svg(on ? 'unfull' : 'full');
+    this.fullBtn.title = label;
+    this.fullBtn.setAttribute('aria-label', label);
+    if (!on) {
+      try { screen.orientation?.unlock?.(); } catch {}
+    }
+  }
+
+  /** Every panel and mark over the view away (H, the menu, a phone's
+   *  fullscreen), or back. On a touch screen a tap brings it back. */
+  setBare(on) {
+    const root = this.root;
+    if (on === root.classList.contains('rp-bare')) return;
+    if (on) this.closeFloating();
+    root.classList.toggle('rp-bare', on);
+    this.userHidden = false;
+    this.flash(on ? (this.touchUi || this.coarse ? 'Tap to show' : 'H to show') : 'Interface');
   }
 
   // --- the input ------------------------------------------------------------------
@@ -752,15 +1052,23 @@ export class ReplayUi {
   bindPointer() {
     const input = this.input;
     const camera = () => this.player.camera;
+    // The fingers on the view that orbit, look and pinch (the thumbstick's
+    // is not among them).
     const touches = new Map();
     let drag = null;
     let pinch = 0;
+    // A finger down on the view that may yet be a tap: { id, x, y, at, floated }.
+    let tap = null;
     const lockHeld = () => document.pointerLockElement === input;
     input.addEventListener('pointerdown', e => {
-      this.activity();
-      this.closeFloating();
-      if (e.pointerType === 'touch') {
+      const touch = e.pointerType === 'touch';
+      // Whatever floated over the view goes; a tap that closed it does no more.
+      const floated = this.closeFloating();
+      if (!touch) this.activity();
+      else {
+        if (this.startStick(e, floated)) return;
         touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        tap = touches.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), floated } : null;
         if (touches.size === 2) {
           const [a, b] = [...touches.values()];
           pinch = Math.hypot(a.x - b.x, a.y - b.y);
@@ -781,7 +1089,10 @@ export class ReplayUi {
       }
     });
     input.addEventListener('pointermove', e => {
-      this.activity();
+      if (this.moveStick(e)) return;
+      // A finger dragging the view leaves the chrome as it is.
+      if (e.pointerType !== 'touch') this.activity();
+      if (tap && e.pointerId === tap.id && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > TAP_SLOP) tap = null;
       if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
         touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (touches.size >= 2) {
@@ -801,13 +1112,32 @@ export class ReplayUi {
       if (dx || dy) camera().drag(dx, dy);
     });
     const end = e => {
+      if (this.endStick(e)) return;
       if (e.pointerType === 'touch') {
         touches.delete(e.pointerId);
         if (touches.size < 2) pinch = 0;
+        // Out of a pinch, the finger left dragging goes on from where it is,
+        // not from where the pinch began.
+        const still = drag && touches.get(drag.id);
+        if (still) {
+          drag.x = still.x;
+          drag.y = still.y;
+        }
+        if (tap && e.pointerId === tap.id) {
+          const tapped = e.type === 'pointerup' && performance.now() - tap.at < TAP_TIME && !tap.floated;
+          tap = null;
+          if (tapped) this.tapView();
+        }
       }
       if (!drag || e.pointerId !== drag.id) return;
-      drag = null;
       try { input.releasePointerCapture(e.pointerId); } catch {}
+      // Out of a pinch, the finger still down carries on the drag.
+      const [rest] = touches.entries();
+      if (rest) {
+        drag = { id: rest[0], x: rest[1].x, y: rest[1].y, button: 0 };
+        return;
+      }
+      drag = null;
       if (lockHeld()) document.exitPointerLock();
       input.classList.remove('dragging');
       camera().looking = false;
@@ -823,9 +1153,13 @@ export class ReplayUi {
       // Wheeling out of first person leaves it for the orbit.
       this.syncMode();
     }, { passive: false });
-    // Any move over the view brings the chrome back, and the pointer resting
-    // on the bar or the card keeps it up.
+    // Any mouse move over the view brings the chrome back, and the pointer
+    // resting on the bar or the card keeps it up. A finger does neither: a
+    // tap is what brings the chrome back on a touch screen.
     this.onStageMove = e => {
+      if (e.pointerType === 'touch') return;
+      this.touchUi = false;
+      this.userHidden = false;
       this.activity();
       this.overChrome = Boolean(e.target?.closest?.('.rp-bar, .rp-card'));
     };
@@ -839,12 +1173,101 @@ export class ReplayUi {
     });
   }
 
-  /** The speed menu and anything else that floats closes on a click away. */
+  /** The menus and anything else that floats close on a click away: true
+   *  when one was open. */
   closeFloating() {
+    const open = this.speedWrap.classList.contains('open') || this.moreWrap.classList.contains('open')
+      || this.root.matches('.board-open, .help-open, .map-open');
     this.speedWrap.classList.remove('open');
+    this.closeMore();
     this.root.classList.remove('board-open', 'help-open');
     this.playersBtn.classList.remove('on');
     this.player.highlights?.map.close();
+    return open;
+  }
+
+  /** A tap on the view (a touch screen): the chrome slides away, or back;
+   *  out of the hidden interface, everything comes back. */
+  tapView() {
+    if (this.root.classList.contains('rp-bare')) this.setBare(false);
+    else this.userHidden = !this.chromeHidden;
+    this.activity();
+    this.syncChrome();
+  }
+
+  // --- the free camera's thumbstick (touch) ------------------------------------------
+
+  /** A finger down on the left of the view, with the free camera on, is the
+   *  thumbstick's: the camera flies the way it pushes (replay-camera.js
+   *  `stick`), while another finger looks. */
+  startStick(e, floated) {
+    const camera = this.player.camera;
+    if (camera.mode !== 'free' || this.stick) return false;
+    const r = this.stage.getBoundingClientRect();
+    if (e.clientX - r.left > r.width * STICK_ZONE) return false;
+    this.stick = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), moved: 0, floated };
+    try { this.input.setPointerCapture(e.pointerId); } catch {}
+    camera.stick = { x: 0, y: 0 };
+    this.stickEl.classList.remove('home');
+    this.stickEl.classList.add('on');
+    this.stickEl.style.transform = `translate(${(e.clientX - r.left).toFixed(1)}px, ${(e.clientY - r.top).toFixed(1)}px)`;
+    this.stickKnob.style.transform = '';
+    return true;
+  }
+
+  moveStick(e) {
+    const s = this.stick;
+    if (!s || e.pointerId !== s.id) return false;
+    let dx = e.clientX - s.x;
+    let dy = e.clientY - s.y;
+    const d = Math.hypot(dx, dy);
+    s.moved = Math.max(s.moved, d);
+    if (d > STICK_R) {
+      dx *= STICK_R / d;
+      dy *= STICK_R / d;
+    }
+    this.stickKnob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+    // Up the screen is ahead.
+    if (this.player.camera.stick) this.player.camera.stick = { x: dx / STICK_R, y: -dy / STICK_R };
+    return true;
+  }
+
+  /** The thumb lifted: the camera stops. One that went down and up without
+   *  pushing was a tap on the view. */
+  endStick(e) {
+    const s = this.stick;
+    if (!s || e.pointerId !== s.id) return false;
+    this.dropStick();
+    if (e.type === 'pointerup' && s.moved < TAP_SLOP && performance.now() - s.at < TAP_TIME && !s.floated) this.tapView();
+    return true;
+  }
+
+  dropStick() {
+    const s = this.stick;
+    if (!s) return;
+    this.stick = null;
+    this.player.camera.stick = null;
+    this.stickEl.classList.remove('on');
+    this.stickKnob.style.transform = '';
+    try { this.input.releasePointerCapture(s.id); } catch {}
+  }
+
+  /** Where the stick waits while the free camera is on a touch screen: low
+   *  on the left, over the bar while the bar is up, and over the card too
+   *  where the card reaches that far left (a phone held upright). */
+  placeStickHome() {
+    const home = this.coarse && !this.stick && this.player.camera.mode === 'free' && !this.root.classList.contains('rp-bare');
+    this.stickEl.classList.toggle('home', home);
+    if (!home) return;
+    const x = STICK_R + 28;
+    let clear = 0;
+    if (!this.chromeHidden) {
+      clear = (this.barH ?? 0) + 10;
+      if (((this.stageW ?? 0) - (this.cardW ?? 0)) / 2 < x + STICK_R + 8) clear += (this.cardH ?? 0) + 12;
+    }
+    const y = (this.stageH ?? 0) - clear - STICK_R - 30;
+    const at = `translate(${x}px, ${Math.round(y)}px)`;
+    if (this.stickEl.style.transform !== at) this.stickEl.style.transform = at;
   }
 
   bindKeys() {
@@ -922,15 +1345,17 @@ export class ReplayUi {
       case 'KeyR': if (once) { camera.resetOrbit(); this.flash('Behind'); } return true;
       case 'Tab': if (once) this.toggle('board-open'); return true;
       case 'KeyL': if (once) this.toggle('log-open'); return true;
-      case 'KeyN': if (once) { this.showTags = !this.showTags; this.flash(this.showTags ? 'Name tags on' : 'Name tags off'); } return true;
-      case 'KeyH': if (once) { this.root.classList.toggle('rp-bare'); this.flash(this.root.classList.contains('rp-bare') ? 'H to show' : 'Interface'); } return true;
+      case 'KeyN': if (once) this.toggleTags(); return true;
+      case 'KeyH': if (once) this.setBare(!this.root.classList.contains('rp-bare')); return true;
       case 'KeyF': if (once) this.toggleFullscreen(); return true;
       case 'Escape': {
         const open = ['help-open', 'board-open'].find(c => this.root.classList.contains(c))
           || (this.speedWrap.classList.contains('open') ? 'speed' : null)
+          || (this.moreWrap.classList.contains('open') ? 'more' : null)
           || (this.root.classList.contains('rp-bare') ? 'rp-bare' : null);
         if (!open) return 'pass';
         if (open === 'speed') this.speedWrap.classList.remove('open');
+        else if (open === 'more') this.closeMore();
         else this.root.classList.remove(open);
         this.playersBtn.classList.remove('on');
         return true;
@@ -1032,17 +1457,28 @@ export class ReplayUi {
       if (this.root.classList.contains('board-open')) this.renderBoard(false);
     }
     this.updateTags(t);
+    this.syncChrome();
+    // The thumbstick is the free camera's alone.
+    if (this.stick && player.camera.mode !== 'free') this.dropStick();
+    if (this.coarse) this.placeStickHome();
+  }
 
-    // The chrome fades while it plays untouched; paused, or while the
-    // followed player waits to spawn (the card's countdown), it stays.
-    const idle = player.playing && !this.timeline.scrubbing && !this.overChrome && !this.spawnWait
-      && !this.root.matches('.board-open, .help-open, .map-open')
-      && !this.speedWrap.classList.contains('open')
-      && (performance.now() - this.lastActivity) / 1000 > IDLE_AFTER;
-    if (idle !== this.root.classList.contains('rp-idle')) {
-      this.root.classList.toggle('rp-idle', idle);
-      if (idle) this.timeline.hideTip();
-    }
+  /** The bar and the card, up or away. They go while it plays untouched,
+   *  and on a tap on the view; paused, or while the followed player waits
+   *  to spawn (the card's countdown), they stay unless a tap put them away.
+   *  A menu or a panel open holds them up. */
+  syncChrome() {
+    const root = this.root;
+    const open = root.matches('.board-open, .help-open, .map-open')
+      || this.speedWrap.classList.contains('open') || this.moreWrap.classList.contains('open');
+    if (open) this.userHidden = false;
+    const quiet = (performance.now() - this.lastActivity) / 1000 > (this.touchUi ? IDLE_TOUCH : IDLE_AFTER);
+    const idle = this.player.playing && quiet && !this.overChrome && !this.spawnWait;
+    const hidden = !open && !this.timeline.scrubbing && (this.userHidden || idle);
+    if (hidden === this.chromeHidden) return;
+    this.chromeHidden = hidden;
+    root.classList.toggle('rp-idle', hidden);
+    if (hidden) this.timeline.hideTip();
   }
 
   /** The followed player: who, his side, and what he is doing. */
@@ -1271,6 +1707,9 @@ export class ReplayUi {
     window.removeEventListener('keyup', this.onKeyUp, true);
     window.removeEventListener('blur', this.onBlur);
     this.stage.removeEventListener('pointermove', this.onStageMove);
+    document.removeEventListener('fullscreenchange', this.onFullscreen);
+    document.removeEventListener('webkitfullscreenchange', this.onFullscreen);
+    this.dropStick();
     this.sizes.disconnect();
     this.timeline.dispose();
     if (document.pointerLockElement === this.input) document.exitPointerLock();

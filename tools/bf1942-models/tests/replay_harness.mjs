@@ -702,11 +702,32 @@ const read = scene => {
   camera.keys.clear();
   const moved = cam.position.clone().sub(from);
   const free = { moved: +moved.length().toFixed(1), along: +moved.normalize().dot(look).toFixed(3), fov: cam.fov };
+  // The thumbstick (a touch screen, replay-ui.js): a second of each push.
+  const flown = stick => {
+    camera.stick = stick;
+    const at = cam.position.clone();
+    for (let i = 0; i < 60; i++) camera.update(1 / 60, 5);
+    camera.stick = null;
+    const d = cam.position.clone().sub(at);
+    return { moved: +d.length().toFixed(1), d };
+  };
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
+  const full = flown({ x: 0, y: 1 });
+  const half = flown({ x: 0, y: 0.5 });
+  const side = flown({ x: 1, y: 0 });
+  const stick = { full: full.moved, along: +full.d.normalize().dot(look).toFixed(3), half: half.moved,
+                  side: side.moved, sideAlong: +side.d.normalize().dot(right).toFixed(3) };
+  // Fingers apart by e: the free camera flies ahead, as six wheel steps would.
+  const pinchedFrom = cam.position.clone();
+  camera.pinch(Math.E);
+  camera.update(1 / 60, 5);
+  const pinched = cam.position.clone().sub(pinchedFrom);
+  const pinchFree = { moved: +pinched.length().toFixed(1), along: +pinched.normalize().dot(look).toFixed(3) };
   // Dead at 25: first person has no eyes to look through, the orbit stands in
   // over the body.
   camera.setMode('pov');
   camera.update(1 / 60, 25);
-  results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, deadPov: camera.hidePid };
+  results.uxCamera = { orbit, zoomedIn, zoomedOut, orbited, pov, free, stick, pinchFree, deadPov: camera.hidePid };
 }
 
 // --- when he spawns ------------------------------------------------------------

@@ -5,7 +5,8 @@
 //          dragged, wheeled and keyed around him, never away from him.
 //   pov    through his eyes: on foot his recorded eye, heading and aim pitch,
 //          in a seat the seat's own Camera node (the cockpit view's eye).
-//   free   a fly camera, moved with the keys, looked with the mouse.
+//   free   a fly camera, moved with the keys (a thumbstick on a touch
+//          screen), looked with the mouse or a finger.
 //
 // The input is replay-ui.js's; this turns it into the camera's pose. While a
 // replay is open the page's own free camera leaves the camera alone
@@ -50,6 +51,10 @@ const DRAG = 0.005;              // rad/px, orbit
 const LOOK = 0.0024;             // rad/px, free and first person
 const FREE_SPEED = 30;           // m/s
 const FREE_FAST = 4;             // x with Shift
+// The thumbstick (touch, replay-ui.js): the speed grows as the square of the
+// push, so a nudge creeps and a full push flies at twice the keys' speed.
+const STICK_FAST = 2;
+const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pinch
 
 // The game's lenses (local-player.js `LENS`): the soldier's 57.3 degrees and
 // 0.2 m near plane, a seat's 60 and 0.1 (a tank's interior is 0.09 m ahead of
@@ -157,6 +162,7 @@ export class ReplayCamera {
     this.pov = { yaw: 0, pitch: 0, ready: false, lookYaw: 0, lookPitch: 0, life: null };
     this.looking = false;        // a drag is turning the first-person view
     this.keys = new Set();       // held movement keys (KeyW ..., ShiftLeft)
+    this.stick = null;           // the free camera's thumbstick: { x, y } in the unit disc, y ahead
     this.hidePid = null;         // whose body the first-person view is inside
     this.firstPersonHull = null;
     this.pageLens = { fov: cam.fov, near: cam.near };
@@ -242,9 +248,12 @@ export class ReplayCamera {
     }
   }
 
-  /** A pinch: `ratio` > 1 is fingers apart (in). */
+  /** A pinch: `ratio` > 1 is fingers apart (in; the free camera flies
+   *  ahead, as the wheel moves it). */
   pinch(ratio) {
-    if (this.mode === 'orbit' && ratio > 0) this.zoom = clamp(this.zoom / ratio, ZOOM_MIN, ZOOM_MAX);
+    if (!(ratio > 0)) return;
+    if (this.mode === 'orbit') this.zoom = clamp(this.zoom / ratio, ZOOM_MIN, ZOOM_MAX);
+    else if (this.mode === 'free') this.wheel(-Math.log(ratio) * PINCH_FLY);
   }
 
   fast() {
@@ -412,9 +421,16 @@ export class ReplayCamera {
   updateFree(dt) {
     const cam = this.player.ctx.camera;
     const k = this.keys;
-    const fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
-    const side = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+    let fwd = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
+    let side = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
     const lift = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
+    const stick = this.stick;
+    const push = stick ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
+    if (push > 0) {
+      const gain = (STICK_FAST * push * push) / Math.hypot(stick.x, stick.y);
+      fwd += stick.y * gain;
+      side += stick.x * gain;
+    }
     const { free } = this;
     _e.set(free.pitch, free.yaw, 0, 'YXZ');
     if (fwd || side || lift) {
