@@ -479,10 +479,12 @@ const read = scene => {
     tickets: { team1: 100, team2: 100 }, rates: { team1: 15, team2: 15 }, maxPlayers: 32,
     areaValueOf: p => Number(byName.get(p.name)?.areaValue) || 0,
   });
-  // A join mid-round: PLAYING with no PREGAME before it.
+  // A join mid-round: PLAYING with no PREGAME before it, and the client's
+  // 0 a side before the server's first count.
   const midRound = recording.parseRecording([
     line({ k: 'h', v: 5, start: '', hz: 10 }),
     line({ k: 'e', t: 3, e: 'gameStatus', status: 1 }),
+    line({ k: 'tk', t: 1.5, v: [0, 0] }),
     line({ k: 'tk', t: 3, v: [140, 190] }),
     line({ k: 'tk', t: 9, v: [139, 190] }),
   ].join('\n'));

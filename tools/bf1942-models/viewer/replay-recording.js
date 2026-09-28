@@ -808,8 +808,13 @@ export function parseRecording(text) {
         break;
       case 'tk':
         // Both sides' tickets, the client's ScoreManager's (from bf42plus
-        // e692f14), written whenever either moves.
-        if (Array.isArray(r.v) && r.v.length >= 2) rec.tickets.push({ t, v: [r.v[0], r.v[1]] });
+        // e692f14), written whenever either moves. Joined mid-round, it reads
+        // 0 a side until the server's first count (replay_20260928-133433:
+        // 0 and 0 at 13.0 s, 348 and 211 at 13.8 s), and a count before any
+        // real one is no count: the round's first shows from its start.
+        if (Array.isArray(r.v) && r.v.length >= 2 && (rec.tickets.length || r.v[0] || r.v[1])) {
+          rec.tickets.push({ t, v: [r.v[0], r.v[1]] });
+        }
         break;
       case 'anim':
         // v4: the engine's animation state table, once: `[index, name, flags]`.

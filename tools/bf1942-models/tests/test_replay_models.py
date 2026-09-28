@@ -241,6 +241,9 @@ class ReplayRecordingTests(unittest.TestCase):
         self.assertEqual(r["at31"], [188, 199])
 
     def test_recorded_tickets_are_a_step_function(self) -> None:
+        # Joined mid-round, the client counts 0 a side until the server's
+        # first count: that is no count, and the first real one shows from
+        # the start (at 2 s, before it).
         self.assertEqual(self.results["round"]["recorded"], [[140, 190], [140, 190], [139, 190]])
 
     def test_the_servers_slot_count(self) -> None:
