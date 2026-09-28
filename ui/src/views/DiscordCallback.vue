@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
+import { takeReturnUrl } from '@/services/authReturn'
 import '@/styles/modern-minimal.css'
 
 const router = useRouter()
@@ -29,6 +30,13 @@ onMounted(async () => {
     // even momentarily on sign-in.
     const returnPath = localStorage.getItem('discord_auth_return_path') || '/v4/dashboard'
     localStorage.removeItem('discord_auth_return_path')
+    // Sent here to sign in by another bfstats site (play.bfstats.io): back
+    // there, where the sign-in cookie now reaches too.
+    const returnUrl = takeReturnUrl()
+    if (returnUrl) {
+      window.location.replace(returnUrl)
+      return
+    }
     router.push(returnPath)
   } catch (err) {
     console.error('Discord callback error:', err)
