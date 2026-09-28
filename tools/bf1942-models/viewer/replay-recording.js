@@ -242,6 +242,9 @@ export function parseRecording(text) {
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
     roundStarted: null,   // the first round-playing status, or null for a join mid-round
     roundEnded: Infinity, // the first round-over status: the teardown after it is not play
+    // The server's `serverCrossHairCenterPoint` (GameRulesEvent 0x16's last
+    // byte), whether the crosshair has its centre dot; null unannounced.
+    crosshairCentrePoint: null,
     // A merged file's sources (replay-merge.js): `[{ file, start, offset, drift, local }]`,
     // `local` each file's recording player. null for one client's file.
     merged: null,
@@ -551,6 +554,12 @@ export function parseRecording(text) {
         // From v3 the chat box itself is recorded, which also has the
         // player's own lines; the fragments are only needed before that.
         if (rec.version < 3) row(t, 'chat', `${playerName(r.pid, t)}: ${chatText(r.text)}`);
+        return;
+      case 'gameRules':
+        // The rules as the server announced them (at the join, each
+        // pre-game and each change): only the crosshair's centre dot is
+        // drawn from them (replay-hud.js).
+        if (r.crosshair !== undefined) rec.crosshairCentrePoint = Boolean(r.crosshair);
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
@@ -1342,7 +1351,13 @@ export function poseHeld(rec, life, t) {
 
 /** The last v4 record in a time-ordered list at or before `t`, or null. */
 export function latestAt(list, t) {
-  if (!list?.length || t < list[0].t) return null;
+  const i = latestIndex(list, t);
+  return i < 0 ? null : list[i];
+}
+
+/** The index of `latestAt`'s entry, or -1. */
+function latestIndex(list, t) {
+  if (!list?.length || t < list[0].t) return -1;
   let lo = 0;
   let hi = list.length - 1;
   while (lo < hi) {
@@ -1350,7 +1365,7 @@ export function latestAt(list, t) {
     if (list[mid].t <= t) lo = mid;
     else hi = mid - 1;
   }
-  return list[lo];
+  return lo;
 }
 
 // The kit rows' primaries, for a maps tree with no `_shared/loadouts.json`
@@ -1439,6 +1454,41 @@ export function bodyAt(rec, nid, t) {
     pitch: entry.pitch,
     item: entry.item,
   };
+}
+
+/**
+ * How much of the view's own turn a soldier's recorded aim is, as degrees of
+ * view per recorded degree: the aim pitch is 0.4 of it (capture README
+ * section 16) and the torso twist a third. Measured on the hand-weapon rounds
+ * of three recordings (replay_20260927-140921, _20260928-133433,
+ * _20260929-063300), each against his sample and body record within 50 ms: a
+ * round leaves along the camera, and its pitch is 2.50 times the recorded
+ * pitch at the median (1,165 rounds), its yaw off his sample's by -2.93 times
+ * the twist (135 rounds with a twist over a degree). With 3, a round's yaw is
+ * 0.16 degrees from the view's at the median and 3.1 at the 90th percentile;
+ * without the twist, 0.27 and 6.0.
+ */
+export const AIM_PITCH_SCALE = 2.5;
+export const AIM_TWIST_SCALE = 3;
+
+/**
+ * A soldier's recorded aim at `t`, `{ pitch, twist }` in recorded degrees
+ * (scale them by `AIM_PITCH_SCALE` and `AIM_TWIST_SCALE`), eased into each
+ * next record over the sample period as `sampleAt` eases a pose, so a view
+ * turns through it rather than stepping ten times a second. null before his
+ * first record.
+ */
+export function aimAt(rec, nid, t) {
+  const list = rec.stances?.get(nid);
+  const i = latestIndex(list, t);
+  if (i < 0) return null;
+  const a = list[i];
+  const b = list[i + 1];
+  if (!b) return { pitch: a.pitch ?? 0, twist: a.twist ?? 0 };
+  const start = Math.max(a.t, b.t - SAMPLE_PERIOD);
+  const k = t <= start ? 0 : (t - start) / (b.t - start);
+  const mix = (x = 0, y = 0) => x + (y - x) * k;
+  return { pitch: mix(a.pitch, b.pitch), twist: mix(a.twist, b.twist) };
 }
 
 /** How far a body's recorded die state may lead or trail the score stream's

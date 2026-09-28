@@ -1118,6 +1118,13 @@ Two readings from the same file:
 - Aim pitch (`st`, BFSoldier `+0x2B0`): positive is up, and it is 0.4 of the
   aim. 21 of the recording player's BAR shots left at 2.50 times the recorded
   value (2.34 to 2.68, from -14 to +30 degrees), with the same sign every time.
+- Torso twist (`st`, `+0x2B4`, 2026-09-29): a third of the view's yaw off the
+  soldier's own heading, turning it the other way from BF1942's yaw. Over the
+  hand-weapon rounds of three recordings, each within 50 ms of its soldier's
+  sample and body record, a round's yaw off the sample's is -2.93 times the
+  twist at the median (135 rounds with a twist over a degree), and the pitch
+  2.50 times (1,165 rounds). The replay's first person uses both
+  (`round-replay-hud`).
 - The Engine's `+0x124` (`g`'s third field) is in the template's own units,
   since `Engine::handleUpdate`'s T1 is it over `maxRotation.z`: -4000 to 5000
   on the planes and boats here, -1 to 1 on the land hulls. The viewer does not

@@ -1057,6 +1057,8 @@ const vehicleHud = createVehicleHud(bag(
     get fireStateFor() { return fireStateFor; }, get hudPaths() { return hudPaths; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get renderer() { return renderer; },
+    // A replay's first person: the followed player's own cross.
+    get replayAim() { return replayController?.crosshairAim() ?? null; },
   },
 ));
 const soldierHud = createSoldierHud(bag(
@@ -1891,6 +1893,9 @@ replayController = createReplayController({
   comms,
   teamFlag: team => hudFeed.sprite(`flag_ticket_${mapSurfaces.teamNation(team)}`)?.src ?? null,
   triggerHitIndicator: (octant, alpha) => soldierHud.triggerHitIndicator(octant, alpha),
+  // The HUD's variables, which a replay's first person feeds (replay-hud.js)
+  // and takes back when it closes.
+  hudVars: () => hudFeed.gameHud.vars,
   keyboardTaken: () => pageConsole.consoleCaptures() || pageConsole.escMenuCaptures()
     || Boolean(overlay.briefingCaptures()),
   // A click on the view while the level was loading took the pointer for the
@@ -2201,6 +2206,14 @@ function draw(dt) {
   mapSurfaces.drawFullMap();
 }
 
+/** The sprite lookups a replay's first-person HUD shares with the page's:
+ *  his side's stance icon, his kit's health bar, a seat's ammo bar. */
+const replayHudArt = {
+  stanceNation: team => soldierHud.stanceNation(team),
+  kitHealthArt: (team, kit) => (kit ? soldierHud.kitHealthArt(team, null, kit) : null),
+  ammoBarCode: name => vehicleHud.ammoBarCode(name),
+};
+
 /** The HUD feed and paint, last, over everything. */
 function paintHud(dt) {
   // The briefing screen owns the stage while it is parked on it: the game
@@ -2259,6 +2272,9 @@ function paintHud(dt) {
   // signature memo makes the steady state a single string compare.
   vehicleHud.feedSeatDots();
   soldierHud.updateSoldierHud(dt);
+  // A replay's first person: the followed player's health, ammo and seat,
+  // over the page's own (nobody of the page's is in the world then).
+  replayController?.feedHud(hudFeed.gameHud.vars, replayHudArt);
   // Every frame, not just an on-foot one: a seat has a crosshair too, and it
   // is `crosshairAim` that decides whose.
   vehicleHud.updateCrosshair();

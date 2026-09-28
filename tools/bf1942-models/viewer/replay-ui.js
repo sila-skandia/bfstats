@@ -129,13 +129,17 @@ const leaderMark = () => `<span class="rp-hl-lead" title="Kill leader">${svg('cr
 // colours (chat-layout.json: Axis 1, .35, .35; Allies .4, .6, 1).
 
 const STYLE = `
-html.replay-on #mobile-controls, html.replay-on #crosshair { display: none !important; }
+html.replay-on #mobile-controls { display: none !important; }
+/* The crosshair is the followed player's own, in his first person only
+   (replay-hud.js sets replay-sight). */
+html.replay-on:not(.replay-sight) #crosshair { display: none !important; }
 html.replay-on #side { z-index: 8; }
 /* No HUD (H): the page's own layers over the view go with the replay's --
-   the counters and gauges, the message log and the radio, the minimap, the
-   flythrough's panel. Hidden rather than undisplayed, so each keeps its size
-   and its pixels and comes back as it was. */
+   the counters and gauges, the crosshair, the message log and the radio, the
+   minimap, the flythrough's panel. Hidden rather than undisplayed, so each
+   keeps its size and its pixels and comes back as it was. */
 html.replay-bare #hud-canvas, html.replay-bare #comms-canvas, html.replay-bare #minimap,
+html.replay-bare #crosshair,
 html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden !important; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);
@@ -516,8 +520,9 @@ export class ReplayUi {
       document.head.appendChild(style);
     }
     // The replay owns the screen, as a match does (map.css `shell-playing`),
-    // and the flythrough's own buttons and the soldier's crosshair go. The
-    // page lets go of the pointer if a click while loading took it.
+    // and the flythrough's own buttons go, and the page's crosshair but in
+    // the followed player's first person (replay-hud.js). The page lets go
+    // of the pointer if a click while loading took it.
     const html = document.documentElement;
     this.addedShell = !html.classList.contains('shell-playing');
     html.classList.add('shell-playing', 'replay-on');
@@ -1748,7 +1753,7 @@ export class ReplayUi {
     if (document.pointerLockElement === this.input) document.exitPointerLock();
     this.root.remove();
     const html = document.documentElement;
-    html.classList.remove('replay-on', 'replay-bare');
+    html.classList.remove('replay-on', 'replay-bare', 'replay-sight');
     if (this.addedShell) html.classList.remove('shell-playing');
   }
 }

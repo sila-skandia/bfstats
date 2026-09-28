@@ -55,6 +55,7 @@ import { ReplayHull } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds } from './replay-props.js';
+import { ReplayHud } from './replay-hud.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
@@ -144,6 +145,8 @@ class ReplayPlayer {
     this.soldiers = ctx.makeReplayBodies ? new ReplaySoldiers(this) : null;
     this.props = new ReplayProps(this);
     this.camera = new ReplayCamera(this);
+    // His own HUD in first person: the crosshair, his health and ammo.
+    this.hud = new ReplayHud(this);
     if (this.followPid === null) this.camera.setMode('free');
     this.feed = new ReplayFeed(this, this.kills);
     // The level's flags and the ticket counter, as the recording has them.
@@ -551,6 +554,8 @@ class ReplayPlayer {
     }
     this.lastFiredTime = t;
     this.hideOwnBody(this.camera.hidePid);
+    // What his HUD shows through his eyes; the page paints it (`feedHud`).
+    this.hud?.update(t);
     // The game's message log, and in a recording player's own first person
     // his hits' red wash.
     const ownView = this.camera.mode === 'pov' && this.camera.hidePid !== null
@@ -590,6 +595,7 @@ class ReplayPlayer {
   }
 
   dispose() {
+    this.hud?.dispose(this.ctx.hudVars?.() ?? null);
     if (this.ctx.guns?.collider?.dynamicCast) this.ctx.guns.collider.dynamicCast = null;
     if (this.ctx.guns) this.ctx.guns.timeScale = 1;
     if (this.ctx.effects) this.ctx.effects.timeScale = 1;
@@ -689,6 +695,16 @@ export function createReplayController(ctx) {
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {
       return player ? player.feedRate() : 1;
+    },
+    /** The followed player's HUD into the page's HUD variables, in his
+     *  first person (replay-hud.js); `art` the page's sprite lookups. */
+    feedHud(vars, art) {
+      player?.hud?.feed(vars, art);
+    },
+    /** The crosshair his weapon or seat draws, in his first person; null
+     *  otherwise (vehicle-hud.js `crosshairAim`). */
+    crosshairAim() {
+      return player?.hud?.crosshairAim() ?? null;
     },
     /** Whether a replay has the page (its input is the replay's). */
     active() {
