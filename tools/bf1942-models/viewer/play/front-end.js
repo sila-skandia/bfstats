@@ -141,12 +141,13 @@ let optionsLoaded = null;
 let replayLoaded = null;
 
 /** The tab in the address (`?tab=`, which the page opens on), so a reload
- *  comes back to it; REPLAY's with the recording whose page is up. */
+ *  comes back to it; REPLAY's with the recording whose page is up, or what
+ *  the feed is narrowed to. */
 function addressFor(id) {
   const url = new URL(location.href);
   if (id === 'singleplay') url.searchParams.delete('tab');
   else url.searchParams.set('tab', id);
-  if (id !== 'replay') url.searchParams.delete('rec');
+  if (id !== 'replay') for (const key of ['rec', 'server', 'uploader']) url.searchParams.delete(key);
   if (url.href !== location.href) history.replaceState(history.state, '', url);
 }
 
