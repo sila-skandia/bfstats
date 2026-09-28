@@ -16,6 +16,12 @@
  *
  *   node tests/sound_coherence_measure.cjs [level] [template] [fireArms] [metres]
  *
+ * `fireArms` may join several guns of one hull with `+`
+ * (`bocage panzeriv Coaxial_MG42+MG42 16`): each is its own patch, stood at
+ * one point, and a third row per distance leaves the twins between patches
+ * unsettled -- the rack before `resolveAcross`, which is how the fourth
+ * route (2026-09-29) was measured.
+ *
  * Needs an extracted `viewer/maps` tree and `ui/node_modules/playwright`.
  * Serves `tools/bf1942-models` itself, on a port nothing else uses.
  */
@@ -59,15 +65,19 @@ const spread = xs => {
   await page.waitForFunction('window.__ready === true', null, { timeout: 30000 });
 
   console.log(`${level} ${template}/${fireArms}, ${REPEATS} renders each\n`);
+  const modes = [['unarbitrated', { arbitrate: false }], ['arbitrated', { arbitrate: true }]];
+  if (fireArms.includes('+')) {
+    modes.splice(1, 0, ['each patch alone', { arbitrate: true, across: false }]);
+  }
   for (const [label, distance] of [['as asked', Number(metres)], ['well outside any near band', 40]]) {
-    for (const arbitrate of [false, true]) {
+    for (const [mode, options] of modes) {
       const tonality = [], rms = [], peak = [];
       for (let i = 0; i < REPEATS; i++) {
         const out = await page.evaluate(
-          c => window.__honk(c), { map: level, template, fireArms, distance, arbitrate });
+          c => window.__honk(c), { map: level, template, fireArms, distance, ...options });
         tonality.push(out.tonality); rms.push(out.rms * 1000); peak.push(out.peak * 1000);
       }
-      console.log(`  ${distance} m ${label.padEnd(27)} ${arbitrate ? 'arbitrated' : 'unarbitrated'}`.padEnd(60)
+      console.log(`  ${distance} m ${label.padEnd(27)} ${mode}`.padEnd(60)
         + ` tonality ${spread(tonality)}  rms/1000 ${spread(rms)}  peak/1000 ${spread(peak)}`);
     }
   }
