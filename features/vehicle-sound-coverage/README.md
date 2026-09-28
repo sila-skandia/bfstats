@@ -14,7 +14,9 @@ None of them is about the Axis.
 bottom of this file. Read that first.** D4 and D5 below are both still correct and
 both still in the tree; the horn came back through a route neither of them covers,
 which is the point. D7 states the invariant all three share and replaces
-route-by-route fixing with a guard on the invariant itself.
+route-by-route fixing with a guard on the invariant itself. **D8 (2026-09-29) is
+the fourth time: two patches rather than two layers of one, so D7's guard, which
+runs inside a patch, never saw it. The guard now runs across the rack too.**
 
 ---
 
@@ -569,3 +571,130 @@ Not affected, and checked: hand weapons. `models/sounds/weapons.json` picks a
 **single** `fireLoop` sample per weapon rather than the near/far pair, and
 `map.html` already clamps its `volume` to unity — which is why the BAR was the
 known-good control in D5 and still measures the same.
+
+---
+
+# D8 — the fourth time: two patches, not two layers (2026-09-29)
+
+Reported watching the Bocage round (`replay_20260928-133433`): *the tank firing
+its machine gun makes the car horn noise*, having sounded right an hour before.
+D7's guard was in the tree and running. Nothing on the audio path had changed
+that morning either; the hour was the random draw D7 describes.
+
+## What D7 could not see
+
+`#resolveCoherent` runs inside one `EngineAudio`, one patch. A hull is several:
+the rack builds one patch per FireArms. The PanzerIV's coaxial MG42 (the
+driver's alternate fire) and its cupola MG42 (seat 2, `PanzerIV_Browning_PCO1`)
+each load `mg42.ssc`, so both play `MG42_fire`. With the driver and the cupola
+gunner firing together, which this round's PanzerIV at the barn by the Axis
+bridge base does at 3:04 (184 s) and again at 190 s, the two patches' loops summed
+at a fixed random offset: the horn, from a route no patch could see. The
+Sherman's coaxial and turret Brownings share `brownmlp` the same way, and so do
+two hulls of one type.
+
+D7 left "one sample at two points" alone on purpose, and inside a patch that is
+still right: an authored spread starts its copies together. Between patches the
+point stops mattering, because a Web Audio panner delays nothing. Two copies of
+one loop keep their fixed random offset wherever they stand, and where they
+stand only decides how much of each reaches each ear, which is how deep the comb
+is.
+
+## Found in the page, not argued
+
+`map.html` does run headless for this after all: with the Vulkan flags
+(`--use-angle=vulkan --enable-features=Vulkan --ignore-gpu-blocklist`) the replay
+page runs at about 30 fps, and `window.__vehicleAudio()` is the live rack. A probe
+seeked to every MG burst in the round (176 bursts, the gunner's own view and the
+orbit), read every sounding voice's real bus and node gain every 100 ms, and
+listed pairs of one buffer at one rate. The commonest by far was the PanzerIV's
+own pair, `Coaxial_MG42` x `MG42` (88 samples), then a PanzerIV's MG42s against a
+`Stationary_mg42` beside it, then engines (two idling Kubelwagens on
+`kblwgnngn2`, a Mustang's `prop` against a BF109's).
+
+## Measured
+
+`sound_coherence_measure.cjs` takes a `+`-joined pair now and adds a row for
+yesterday's code ("each patch alone"). Both guns are stood at one point, ten
+renders a row:
+
+| pair, 16 m | unarbitrated | each patch alone (before) | arbitrated (after) |
+|---|---|---|---|
+| Sherman `Coaxial_browning+Browning` | 67.4..84.7 | **53.4..86.1** | **61.4..62.4** |
+| PanzerIV `Coaxial_MG42+MG42` | 53.8..84.3 | 60.1..76.1 | 57.4..66.0 |
+
+The Brownings are the clean case: `brownmlp` carries no `randomStartPitch`, so
+the two are always at one rate and the spread of 33 points collapses to one. The
+MG42 carries `randomStartPitch 0.01/0.01`, drawn once per loop, so two guns land
+0..2% apart and only about a third of draws meet inside the tolerance. The rest
+drift, which is what the arbitrated row's remaining spread is. Pinned to matched
+rates in a separate rig, the pair measures 61.6..81.5 together against 73.0..73.7
+for the coax alone.
+
+The 0.4% line holds between patches as it does inside one. Swept on the same
+pair (the coax alone: 72.9..73.7):
+
+| apart | 0.0% | 0.2% | 0.3% | 0.4% | 0.5% | 0.8% | 1.0% |
+|---|---|---|---|---|---|---|---|
+| tonality | 73.1..81.5 | 64.2..80.7 | 59.8..75.4 | 55.0..68.6 | 60.6..64.2 | 54.4..64.6 | 54.3..61.2 |
+
+From 0.4% on, the pair never reads more tonal than one gun: it smears (a
+flanging drift, as the game's own `randomStartPitch` intends) rather than
+holding a pitch.
+
+In the page, on the replay's 182..192 s with both guns forced to one rate: the
+share of 100 ms samples in which the weaker copy was at least 30% of the stronger
+(a comb deep enough to hear) went from **48% to 4%**. The remainder are hand-overs:
+the cupola's recorded rounds leave gaps of 0.27..0.73 s, its gate shuts and
+reopens, and each change is a 50 ms-tau crossfade with both copies partly up.
+
+## The fix
+
+`EngineAudio.update` is now `evaluate` (panners, curves, the patch's own twins)
+then `apply` (the `trigger Volume` gate and the ramps). The rack evaluates every
+patch, runs `ssc-coherent.js` `resolveAcross` over all of them, then applies them
+all. `resolveAcross`:
+
+* **Loops only.** A one-shot starts at the head of its buffer, so two patches'
+  shots are sample-aligned when they are one event and two events when they are
+  not. Two tanks firing a second apart are two bangs.
+* **One decoded buffer at one rate** (`COHERENT_RATE_TOL`), anywhere on the rack.
+  The page decodes each file once, so buffer identity is the test.
+* **Only what sounds.** A patch at master 0 (a gun nobody fires, a hull out of
+  earshot) contests nothing; a silent loop must never mute a firing one. Voices a
+  patch has already arbitrated away stay out, and a spread one patch authors at
+  two offsets survives.
+* **The loudest as heard wins** (script gain x fall-off x bus), with last frame's
+  winner held until a rival is 25% (2 dB) louder, then patch order. Without the
+  hold, two guns at one distance trade the voice as the camera moves, and every
+  trade is a crossfade with both up. A copy 34 dB under its rival is left alone,
+  as `COHERENT_FLOOR` leaves a quiet twin inside a patch.
+
+It covers engines by the same rule: two idling Kubelwagens are one voice until
+their revs part, which is when they stop combing.
+
+## Verified / tests
+
+* `tests/test_vehicle_audio.mjs`: the PanzerIV pair (two firing, one heard, one
+  reported suppressed); a silent gun never muting a firing one; a 1% detune
+  keeping both; the hold (4% louder does not take the voice, 3 dB does, and it
+  then holds the same way); two guns' one-shots both heard; two Kubelwagens one
+  voice at one rate and two at different revs. And a sweep of every extracted
+  level's hulls, all guns firing at one point and the engine running, heard from
+  0.3 to 60 m: no two audible loops of one file at one rate between patches, 279
+  arbitrations across 23 levels (the sweep asserts it met twins, so it cannot
+  pass empty). Taking `resolveAcross` out fails the first case.
+* The D7 cases in `test_engine_audio_default.mjs` are unchanged and pass: the
+  split is behaviour-neutral for every caller of `update`.
+
+## Measuring it next time
+
+```bash
+node tools/bf1942-models/tests/sound_coherence_measure.cjs bocage sherman Coaxial_browning+Browning 16
+```
+
+For the page itself, drive the replay with the Vulkan flags and read the rack:
+every built entry's `engineAudio` and `weapons[].audio`, each voice's
+`source.playbackRate.value`, `gain.gain.value` times the patch's `bus.gain.value`,
+and `suppressed`. Group by `voice.buffer`. Pin every loop's `jitter` to 1 first
+if you want the worst case rather than the session's draw.

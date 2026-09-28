@@ -19,8 +19,8 @@ description: >
   them -- layered engine notes, vehicle and weapon fire, near/far hand-overs -- and ALWAYS
   when a sound is reported as wrong in the map viewer ("the machine gun sounds like a car
   horn", a drone, a honk, flanging, a gun that is too loud or silent): section 11 carries
-  the one invariant that has now been broken three times, why each fix stopped holding,
-  and the command that measures it instead of guessing.
+  the one invariant that has now been broken four times, the two guards that hold it,
+  and the commands that measure it instead of guessing.
   Before re-extracting or publishing a mod's map dossiers (tickets, bleed, flags), read
   section 12: which Conquest script runs, what the live tree holds, and the archives on
   this PC that no longer open.
@@ -437,27 +437,34 @@ the same curves the engine evaluates. Nothing here hard-codes a vehicle.
 
 ### The invariant
 
-> **No two voices of a patch may sound at once out of the same sample, at the same point
-> in space, at the same playback rate.**
+> **No two voices may sound at once out of the same sample at the same playback rate:
+> inside a patch, at one point in space; between two patches' loops, anywhere.**
 
 Break it and you get a fixed comb filter, not a louder gun: `EngineAudio.#play` starts a
 loop at a random point in its own buffer, so two copies of one sample sit at a fixed
 random phase offset for as long as both run. On a 114 ms loop (`brownmlp`, `MG42_fire`)
 the comb is already at 8.8 Hz, and through the page's limiter it flattens into a drone.
 The symptom people report is **"the tank's machine gun sounds like a car horn."**
+Between patches the point does not matter: a Web Audio panner delays nothing, so two
+guns' copies keep their offset wherever they stand.
 
-It has arrived three separate times, by three unrelated routes:
+It has arrived four separate times, by four unrelated routes:
 
 | | route | fixed |
 |---|---|---|
 | 1 | a `stereo` layer got a throwaway group frozen at `distance: 0`, so its `Volume <- Distance` ramp read "below a metre" wherever you stood | 2026-09-21 |
 | 2 | `volume 10` (an authoring outlier; 5,458 of 5,484 vanilla layers are at or below 1) read literally, driving the limiter 14 dB into 20:1 | 2026-09-21 |
 | 3 | two `Volume <- Distance` ramps whose bands simply **overlap** where the gunner's head is | 2026-09-23 |
+| 4 | two **patches**: a PanzerIV's coaxial and cupola MG42s both loop `MG42_fire` (the Sherman's two Brownings `brownmlp`, two idling hulls their engine), and a patch's guard never sees another patch | 2026-09-29 |
 
 Each fix closed its own route and the bug came back through the next one. **Do not patch
-the route. The guard is `EngineAudio.#resolveCoherent`, which arbitrates the fingerprint
-itself** — twins are zeroed all but one, by the script's own `priority`, then loudness,
-then declaration order.
+the route. Two guards arbitrate the fingerprint itself.** Inside a patch,
+`EngineAudio.#resolveCoherent` zeroes twins all but one, by the script's own
+`priority`, then loudness, then declaration order. Between patches, `ssc-coherent.js`
+`resolveAcross` runs on the vehicle rack, which evaluates every patch, arbitrates, and
+only then applies: loops only, one decoded buffer at one rate, the loudest as heard
+winning, with last frame's winner held until a rival is 2 dB louder. If it is reported
+again, check both still run before reaching for the data.
 
 ### What a near/far pair actually looks like
 
@@ -503,17 +510,33 @@ different draw of the comb every session, which is exactly why this bug reads as
 intermittent and "came back". Arbitrated: 61.6..62.9, which is what the same patch
 measures at 40 m where only one layer is up.
 
-Driving `map.html` headless does **not** work for this: `requestAnimationFrame` in
-headless Chromium runs at about 2 Hz, so the page's fire dispatch and gain gate
-effectively never run while the Web Audio graph keeps rendering on its own thread.
+A pair of guns is joined with `+`, and gets a third row, "each patch alone", which is
+the rack without `resolveAcross`:
+
+```bash
+node tools/bf1942-models/tests/sound_coherence_measure.cjs bocage sherman Coaxial_browning+Browning 16
+```
+
+Each patch alone: 53.4..86.1. Arbitrated: 61.4..62.4.
+
+`map.html` can be read live as well. Playwright with `--use-angle=vulkan
+--enable-features=Vulkan --ignore-gpu-blocklist` runs the replay page at about 30 fps;
+without those flags `requestAnimationFrame` crawls at about 2 Hz and the gun gates never
+run. Read `window.__vehicleAudio()`: every built entry's `engineAudio` and
+`weapons[].audio`, each voice's `buffer`, `source.playbackRate.value`, `gain.gain.value`
+times its patch's `bus.gain.value`, and `suppressed`, grouped by buffer. That is how the
+fourth route was found (D8 in the README below).
 
 ### Pinned by
 
 `tools/bf1942-models/tests/test_engine_audio_default.mjs` (run by `test_engine_audio.py`,
 so `verify.sh` covers it) — the synthetic mechanism, the detunes that must survive, the
 tie-breaks, a one-shot that must not spend its `trigger Volume` latch when it loses, and a
-sweep of every extracted level's shipped layer data at 24 distances. Full history and
-measurements: `features/vehicle-sound-coverage/README.md`.
+sweep of every extracted level's shipped layer data at 24 distances. Between patches,
+`tests/test_vehicle_audio.mjs` (run by `test_vehicle_audio.py`) — the PanzerIV pair, a
+silent gun never muting a firing one, detunes, the hold, one-shots left alone, two
+hulls' engines, and a sweep of every extracted level's hulls with every gun firing. Full
+history and measurements: `features/vehicle-sound-coverage/README.md`.
 
 ---
 

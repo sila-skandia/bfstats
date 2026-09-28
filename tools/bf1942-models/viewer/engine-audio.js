@@ -182,6 +182,10 @@ class Voice {
  * thrown away without ever having made a sound.
  */
 export class EngineAudio {
+  // What `evaluate` settled for `apply` to use: the frame's instant and whether
+  // it snaps. Null between frames.
+  #frame = null;
+
   /**
    * @param {boolean} [oneShotsOnTrigger] - hold every non-looping layer back
    *   from `start()` and play it from `trigger()` instead. That is what a gun
@@ -598,8 +602,19 @@ export class EngineAudio {
     this.pendingLoops.clear();
   }
 
+  /** One frame: `evaluate`, then `apply`. */
+  update(control) {
+    this.evaluate(control);
+    this.apply();
+  }
+
   /**
-   * One frame.
+   * The first half of a frame: the panners placed, and every voice's gain, rate
+   * and fall-off worked out from the script's curves, with this patch's own
+   * twins arbitrated (`#resolveCoherent`). Nothing reaches a gain or a rate
+   * until `apply`. `update` runs the two back to back. The vehicle rack runs
+   * every patch's `evaluate` first, arbitrates the twins *between* patches
+   * (`ssc-coherent.js` `resolveAcross`), and only then applies them all.
    *
    * `control` is everything the script's control sources need, in the units the
    * `.ssc` uses: `rpm` normalised 0..1 (engine rotation over `maxRotation.roll`
@@ -615,7 +630,7 @@ export class EngineAudio {
    * one-shot moving from the last shooter to this one must not sweep across
    * the stereo field under its own transient.
    */
-  update(control) {
+  evaluate(control) {
     if (this.disposed) return;
     this.#wake();
     const dt = Math.max(control.dt || 0, 0);
@@ -681,7 +696,6 @@ export class EngineAudio {
       released: this.released,
       distance: 0,
     };
-    const master = this.master;
 
     for (const voice of this.voices) {
       base.distance = voice.group.distance;
@@ -721,10 +735,23 @@ export class EngineAudio {
         : distanceRolloff(voice.group.distance, voice.layer.minDistance, this.rolloffFactor);
     }
 
-    // Both passes read `targetGain`, and the arbitration has to land between
+    // Both halves read `targetGain`, and the arbitration has to land between
     // them: a layer that loses its twin contest must never reach the trigger
-    // gate below, or a one-shot would spend its latch on a round nobody hears.
+    // gate in `apply`, or a one-shot would spend its latch on a round nobody
+    // hears.
     this.#resolveCoherent();
+    this.#frame = { now, snap };
+  }
+
+  /**
+   * The second half of a frame: the `trigger Volume` gate, and every gain and
+   * rate ramped to what `evaluate` (and any arbitration after it) settled on.
+   */
+  apply() {
+    const frame = this.#frame;
+    this.#frame = null;
+    if (this.disposed || !frame) return;
+    const { now, snap } = frame;
 
     for (const voice of this.voices) {
       // `trigger Volume` is the delayed-start gate: the sample waits until its
@@ -766,8 +793,8 @@ export class EngineAudio {
         this.#ramp(voice.source.playbackRate, voice.targetRate, now, PITCH_TAU);
       }
     }
-    if (snap) this.#set(this.bus.gain, master * this.headroom, now);
-    else this.#ramp(this.bus.gain, master * this.headroom, now, GAIN_TAU);
+    if (snap) this.#set(this.bus.gain, this.master * this.headroom, now);
+    else this.#ramp(this.bus.gain, this.master * this.headroom, now, GAIN_TAU);
   }
 
   #set(param, value, now) {

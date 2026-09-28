@@ -552,12 +552,13 @@ function gainOf(layer, headroom = 0.75, oneShots = true) {
 //   the same point in space, at the same playback rate.**
 //
 // That is not a style rule, it is the whole of the "the tank's machine gun
-// sounds like a car horn" report, and it has now arrived by three unrelated
+// sounds like a car horn" report, and it has now arrived by four unrelated
 // routes: a `stereo` layer's Distance channel frozen at 0 (2026-09-21), a
-// `volume 10` outlier read literally (2026-09-21), and two `Volume <-
-// Distance` ramps whose bands simply overlap where the gunner's head is
-// (2026-09-23). Each fix closed its own route; the bug came back through the
-// next one. So assert the invariant, not the route.
+// `volume 10` outlier read literally (2026-09-21), two `Volume <- Distance`
+// ramps whose bands simply overlap where the gunner's head is (2026-09-23),
+// and two *patches* looping one sample (2026-09-29, pinned between patches in
+// `test_vehicle_audio.mjs`). Each fix closed its own route; the bug came back
+// through the next one. So assert the invariant, not the route.
 //
 // Why it sounds like a horn: `#play` starts a loop at a random point in its
 // own buffer, so two copies of one sample sum at a FIXED random phase offset

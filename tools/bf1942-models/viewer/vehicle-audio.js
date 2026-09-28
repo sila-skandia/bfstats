@@ -33,14 +33,18 @@
 //   * **Voice arithmetic beyond the cap.** The cap is a budget, not a
 //     reproduction of the engine's own 32-voice pool. See `MAX_LIVE_VEHICLES`.
 //
-// The coherence invariant of `engine-audio.js` holds across this rack without
-// extra work: two voices only contest when they are the same sample, at the
-// same point, at the same rate, and two hulls are never at the same point.
+// The coherence invariant of `engine-audio.js` does not hold across the rack on
+// its own. Each patch settles its own twins, but two guns of one hull are two
+// patches (a PanzerIV's coaxial and cupola MG42s both play `MG42_fire`), and
+// so are two hulls; a panner delays nothing, so their loops comb wherever they
+// stand. `update` therefore evaluates every patch, settles the twins between
+// them (`ssc-coherent.js` `resolveAcross`), and only then applies them all.
 
 import {
   loadEngineAudio, findEngineSpec, findWeaponSpecs,
   findWeaponSpecsByFireArms, WEAPON_HEADROOM,
 } from './engine-audio.js';
+import { resolveAcross } from './ssc-coherent.js';
 import { attachesToListener } from './ssc-specs.js';
 
 /**
@@ -567,6 +571,7 @@ export class VehicleAudioRack {
     const at = listenerPosition
       ? { x: listenerPosition.x, y: listenerPosition.y, z: listenerPosition.z }
       : this._listenerPos();
+    const patches = [];
     for (const entry of this.vehicles.values()) {
       if (entry.demoting) {
         entry.demoteIn -= dt;
@@ -582,7 +587,8 @@ export class VehicleAudioRack {
           this._attached(entry, entry.engineNode, entry.engineSpec, 'engine'));
         const control = this._engineControl(entry, dt, listenerPosition);
         control.listenerForward = listenerForward;
-        entry.engineAudio.update(control);
+        entry.engineAudio.evaluate(control);
+        patches.push(entry.engineAudio);
       }
       for (const weapon of entry.weapons) {
         // A gain gate is only meaningful for a patch that has something
@@ -593,8 +599,13 @@ export class VehicleAudioRack {
         weapon.audio.setAttachedToListener(
           this._attached(entry, weapon.node, weapon.spec, 'weapon'));
         this._weaponControl(weapon, dt, listenerPosition, listenerForward);
+        patches.push(weapon.audio);
       }
     }
+    // Every patch evaluated and none applied: the one moment the twins
+    // between them can be settled (the file header, and `resolveAcross`).
+    resolveAcross(patches);
+    for (const patch of patches) patch.apply();
   }
 
   /** Every `.ssc` control source one hull's engine is worth this frame. */
@@ -652,7 +663,8 @@ export class VehicleAudioRack {
     };
   }
 
-  /** A gun patch needs none of the engine's rpm/speed/dive plumbing. */
+  /** A gun patch needs none of the engine's rpm/speed/dive plumbing. Evaluated
+   *  only: `update` applies it once the twins between patches are settled. */
   _weaponControl(weapon, dt, listenerPosition, listenerForward = null) {
     if (!weapon._pos) {
       weapon._pos = { x: 0, y: 0, z: 0 };
@@ -664,7 +676,7 @@ export class VehicleAudioRack {
       weapon._pos.x = e[12]; weapon._pos.y = e[13]; weapon._pos.z = e[14];
       quatFromElements(e, weapon._quat);
     }
-    weapon.audio.update({
+    weapon.audio.evaluate({
       dt,
       position: weapon._pos,
       quaternion: weapon._quat,
