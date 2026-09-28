@@ -7,6 +7,7 @@
  * Stub Web Audio, no browser. Run by `tests/test_vehicle_audio.py`.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES } from '../viewer/vehicle-audio.js';
 
 function stubCtx() {
@@ -519,6 +520,246 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   assert.ok(snap.vehicles.find(v => v.template === 'sherman')?.engine, "the level's own template still sounds");
   assert.equal(asked, 1, "the table is asked for only the template the level's report lacks");
   rack.dispose();
+}
+
+// --- the car horn between patches (2026-09-29, the fourth route) -------------
+//
+// `EngineAudio` settles the twins inside one patch, and a hull is several
+// patches. The PanzerIV's coaxial MG42 and its cupola MG42 are two FireArms,
+// both playing `MG42_fire`: fired together (Bocage, replay_20260928-133433 at
+// 3:04) the two loops summed into the horn, one patch never seeing the other's
+// voice. The rack settles them between `evaluate` and `apply`
+// (`ssc-coherent.js` `resolveAcross`).
+
+/** A rack whose loader decodes each file once, as the page's cache does: two
+ *  patches of one sample share one buffer, which is what makes them twins. */
+function sharedBufferRack(extras) {
+  const ctx = stubCtx();
+  const listener = fakeListener(ctx);
+  const decoded = new Map();
+  const rack = new VehicleAudioRack({
+    listener: () => listener,
+    getBuffer: async (dir, file) => {
+      if (!decoded.has(file)) decoded.set(file, fakeBuffer());
+      return decoded.get(file);
+    },
+    report: () => extras,
+    dir: () => 'bocage',
+    master: () => 1,
+  });
+  return { ctx, rack };
+}
+
+/** Every gun layer of hull `key` the listener would hear this frame. */
+function heardGuns(rack, key) {
+  const vehicle = rack.snapshot().vehicles.find(v => v.key === key);
+  return vehicle.weapons.flatMap(w => w.layers
+    .filter(l => w.master > 0 && l.output > 0)
+    .map(l => ({ fireArms: w.fireArms, ...l })));
+}
+
+const at = (node, x) => { node.matrixWorld.elements[12] = x; };
+
+const PANZER = {
+  template: 'panzeriv',
+  level: 'bocage',
+  engine: 'PanzerIVEngine',
+  layers: [LAYER('panzngn.mp3')],
+  weapons: [
+    { fireArms: 'Coaxial_MG42', script: 'mg42.ssc', layers: [{ ...LAYER('MG42_fire.mp3'), doppler: false }] },
+    { fireArms: 'MG42', script: 'mg42.ssc', layers: [{ ...LAYER('MG42_fire.mp3'), doppler: false }] },
+  ],
+};
+
+/** A PanzerIV at `x` with both MG42s, crewed, and which of them are firing. */
+async function panzer(x = 10) {
+  const { ctx, rack } = sharedBufferRack(report([PANZER]));
+  const node = sceneNode('panzeriv', x);
+  const coax = childNode(node, 'Coaxial_MG42');
+  const cupola = childNode(node, 'MG42');
+  at(coax, x);
+  at(cupola, x);
+  const groups = [{ node: coax, firing: true }, { node: cupola, firing: true }];
+  rack.claim({ seatKey: 'replay:1', node, template: 'panzeriv', drive: null, groups });
+  await settle();
+  return { ctx, rack, coax, cupola, groups };
+}
+
+{
+  // The route itself: both guns firing, one sample, one rate.
+  const { rack } = await panzer();
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  const heard = heardGuns(rack, 'panzeriv');
+  assert.equal(heard.length, 1,
+    `two MG42s of one hull firing together must sound one MG42_fire, not ${heard.length}: `
+    + 'two copies of one loop at one rate are the car horn');
+  const lost = rack.snapshot().vehicles[0].weapons.flatMap(w => w.layers).filter(l => l.suppressed);
+  assert.equal(lost.length, 1, 'and the other is reported as arbitrated away');
+  rack.dispose();
+}
+
+{
+  // A gun nobody fires runs its loop at master 0. It must never mute one that
+  // is firing, or the coax would go quiet whenever the cupola MG was built.
+  const { rack, groups } = await panzer();
+  groups[0].firing = false;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  const heard = heardGuns(rack, 'panzeriv');
+  assert.deepEqual(heard.map(l => l.fireArms), ['MG42'], 'the firing gun is the one heard');
+  assert.equal(heard[0].suppressed, false);
+  rack.dispose();
+}
+
+{
+  // Detuned copies beat instead of combing, between patches as inside one:
+  // the MG42's own `randomStartPitch` usually sets two guns 1% apart.
+  const { rack, cupola } = await panzer();
+  rack.weaponFor(cupola).audio.voices[0].jitter = 1.01;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(heardGuns(rack, 'panzeriv').length, 2, 'two guns 1% apart both sound');
+  rack.dispose();
+}
+
+{
+  // The louder copy keeps the voice, and holds it until the other is clearly
+  // louder, or two guns at one distance hand it back and forth as the camera
+  // moves (a crossfade each time, with both partly up).
+  const { rack, coax, cupola } = await panzer();
+  const winner = () => heardGuns(rack, 'panzeriv').map(l => l.fireArms).join();
+  at(coax, 10);
+  at(cupola, 10.5);
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(winner(), 'Coaxial_MG42', 'the nearer gun is the one heard');
+  at(cupola, 9.6);
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(winner(), 'Coaxial_MG42', 'a rival 4% louder does not take the voice');
+  at(cupola, 7);
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(winner(), 'MG42', 'one 3 dB louder does');
+  at(cupola, 9.6);
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(winner(), 'MG42', 'and then holds it the same way');
+  rack.dispose();
+}
+
+{
+  // One-shots are events, not a standing comb: a patch starts one at the head
+  // of its buffer, so two guns' shots are two bangs and both are heard.
+  const shot = { ...LAYER('shrmfire.mp3'), loop: false };
+  const TANKS = {
+    template: 'panzeriv', level: 'bocage', engine: 'PanzerIVEngine', layers: [],
+    weapons: [
+      { fireArms: 'PanzerIVGunBarrel', script: 'Cannon.ssc', layers: [shot] },
+      { fireArms: 'MG42', script: 'Cannon.ssc', layers: [shot] },
+    ],
+  };
+  const { ctx, rack } = sharedBufferRack(report([TANKS]));
+  const node = sceneNode('panzeriv', 10);
+  const gun = childNode(node, 'PanzerIVGunBarrel');
+  const other = childNode(node, 'MG42');
+  at(gun, 10);
+  at(other, 10);
+  rack.claim({ seatKey: 'replay:1', node, template: 'panzeriv', drive: null,
+               groups: [{ node: gun }, { node: other }] });
+  await settle();
+  rack.trigger(gun);
+  rack.trigger(other);
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(ctx.started.filter(s => !s.loop).length, 2, 'both shots start');
+  assert.equal(heardGuns(rack, 'panzeriv').length, 2, 'and both are heard');
+  rack.dispose();
+}
+
+{
+  // Two hulls are two patches too: two Kubelwagens idling side by side run
+  // one engine loop at one rate. Driven apart in revs they are two engines.
+  const KUBEL = {
+    template: 'kubelwagen', level: 'bocage', engine: 'KubelwagenEngine', weapons: [],
+    layers: [{ ...LAYER('kblwgnngn2.mp3'), doppler: false,
+               modulators: [{ dest: 'pitch', source: 'default', envelope: 'linear', params: [0.5, 1] }] }],
+  };
+  const { rack } = sharedBufferRack(report([KUBEL]));
+  const a = sceneNode('kubelwagen', 8);
+  childNode(a, 'KubelwagenEngine');
+  const b = sceneNode('kubelwagen_1', 9);
+  childNode(b, 'KubelwagenEngine');
+  const driveA = drive(8);
+  const driveB = drive(9);
+  rack.claim({ seatKey: 'a', node: a, template: 'kubelwagen', drive: driveA, groups: [] });
+  rack.claim({ seatKey: 'b', node: b, template: 'kubelwagen', drive: driveB, groups: [] });
+  await settle();
+  const engines = () => rack.snapshot().vehicles
+    .filter(v => v.engine.master > 0 && v.engine.layers.some(l => l.output > 0)).length;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(engines(), 1, 'two idling engines at one rate are one voice');
+  driveB.state.throttle = 0.9;
+  rack.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(engines(), 2, 'at different revs both are heard');
+  rack.dispose();
+}
+
+// --- and over the real shipped data ------------------------------------------
+//
+// Every extracted level's hulls, every gun firing and the engine running, the
+// guns stood at one point (the worst case: nothing tells them apart), heard
+// from where heads are: inside, in the coax overlap, beside, and down the
+// field. Skips without a `viewer/maps` tree (CI, a fresh worktree).
+
+{
+  const mapsDir = new URL('../viewer/maps/', import.meta.url);
+  let levels = [];
+  try {
+    levels = fs.readdirSync(mapsDir).filter(
+      name => fs.existsSync(new URL(`${name}/scene.json`, mapsDir)));
+  } catch (_) { levels = []; }
+  // `randomStartPitch` draws each loop's own rate; hold every draw at the
+  // middle so every pair that can meet at one rate does.
+  const random = Math.random;
+  Math.random = () => 0.5;
+  const offences = [];
+  let contested = 0;
+  try {
+    for (const level of levels) {
+      const scene = JSON.parse(fs.readFileSync(new URL(`${level}/scene.json`, mapsDir), 'utf8'));
+      for (const vehicle of scene.sounds?.vehicles ?? []) {
+        const loops = (vehicle.weapons ?? []).filter(w => w.layers?.some(l => l.loop));
+        if (loops.length < 2) continue;
+        const { rack } = sharedBufferRack(report([vehicle]));
+        const node = sceneNode(vehicle.template, 0);
+        if (vehicle.engine) childNode(node, vehicle.engine);
+        const groups = loops.map(w => ({ node: childNode(node, w.fireArms), firing: true }));
+        rack.claim({ seatKey: 'sweep', node, template: vehicle.template,
+                     drive: vehicle.layers?.length ? drive(0) : null, groups });
+        await settle();
+        for (const distance of [0.3, 1.4, 3, 16, 60]) {
+          rack.update(1 / 30, { x: distance, y: 0, z: 0 });
+          const snap = rack.snapshot().vehicles[0];
+          const patches = [snap.engine, ...snap.weapons].filter(Boolean);
+          const heard = patches.flatMap((p, patch) => (p.master > 0 ? p.layers : [])
+            .filter(l => l.loop && l.output > 0.02).map(l => ({ ...l, patch })));
+          contested += patches.flatMap(p => p.layers).filter(l => l.suppressed).length;
+          // Between patches only: a spread one patch authors at two offsets
+          // is its own business (test_engine_audio_default.mjs).
+          heard.forEach((a, i) => heard.slice(i + 1).forEach(b => {
+            if (a.patch !== b.patch && a.file === b.file
+                && Math.abs(a.playbackRate - b.playbackRate) <= 0.004 * Math.max(a.playbackRate, b.playbackRate)) {
+              offences.push(`${level} ${vehicle.template} ${a.file} at ${distance} m`);
+            }
+          }));
+        }
+        rack.dispose();
+      }
+    }
+  } finally {
+    Math.random = random;
+  }
+  assert.equal(offences.length, 0,
+    `coherent duplicates between one hull's patches:\n  ${offences.slice(0, 12).join('\n  ')}`);
+  if (levels.length) {
+    assert.ok(contested > 0, 'the sweep met no twins at all, so it proved nothing');
+  }
+  console.log(`  swept ${levels.length} extracted level(s) for twins between patches`
+    + (levels.length ? ` (${contested} arbitrated)` : ' (none extracted)'));
 }
 
 console.log('vehicle-audio: all assertions passed');
