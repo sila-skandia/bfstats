@@ -4,7 +4,8 @@ namespace api.Recordings.Models;
 /// What the API reads out of a shared recording itself (<see cref="RecordingInspector"/>).
 /// Fields a file does not carry are empty: a recording begun mid-round names no level, and
 /// the oldest formats hold their events as raw packets the API does not decode. The
-/// uploader's browser, which reads the whole file, fills those in.
+/// uploader's browser, which reads the whole file, fills those in. <see cref="Fingerprint"/>
+/// is what finds the other recordings of its round (features/replay-feed, "Rounds").
 /// </summary>
 public sealed record RecordingInspection(
     int Version,
@@ -17,4 +18,5 @@ public sealed record RecordingInspection(
     double DurationSeconds,
     IReadOnlyList<string> Players,
     long RawBytes,
-    string ContentHash);
+    string ContentHash,
+    RoundFingerprint Fingerprint);

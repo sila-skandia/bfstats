@@ -62,7 +62,8 @@ public sealed class RecordingService(
     IRecordingStorage storage,
     IClock clock,
     IOptions<RecordingsOptions> options,
-    ILogger<RecordingService> logger) : IRecordingService
+    ILogger<RecordingService> logger,
+    IRecordingRoundService? rounds = null) : IRecordingService
 {
     public const int DefaultPageSize = 24;
     public const int MaxPageSize = 48;
@@ -87,8 +88,9 @@ public sealed class RecordingService(
         // The space is everyone's, whatever the feed is narrowed to.
         var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
         var players = await PlayersAsync(rows.Select(r => r.UploaderName), ct);
+        var roundsOf = await RoundsAsync([.. rows.Select(r => r.Id)], ct);
         return new PagedRecordingsDto(
-            [.. rows.Select(r => Summary(r, players.GetValueOrDefault(r.UploaderName)))],
+            [.. rows.Select(r => Summary(r, players.GetValueOrDefault(r.UploaderName), roundsOf.GetValueOrDefault(r.Id)))],
             total,
             page,
             pageSize,
@@ -138,7 +140,8 @@ public sealed class RecordingService(
     public async Task<RecordingDetailDto> DetailAsync(Recording recording, RecordingActor? actor, CancellationToken ct)
     {
         var players = await PlayersAsync([recording.UploaderName], ct);
-        return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName));
+        var roundsOf = await RoundsAsync([recording.Id], ct);
+        return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName), roundsOf.GetValueOrDefault(recording.Id));
     }
 
     public async Task<int?> WatchableIdAsync(string slug, CancellationToken ct) =>
@@ -165,8 +168,11 @@ public sealed class RecordingService(
         var recording = await Find(slug).FirstOrDefaultAsync(ct);
         if (recording is null) return false;
         Manage(recording, actor);
+        // Its links go with it (cascade); the rest of its round may fall in two.
+        var round = await db.Recordings.Where(r => r.Id == recording.Id).Select(r => r.RoundId).FirstOrDefaultAsync(ct);
         db.Recordings.Remove(recording);
         await db.SaveChangesAsync(ct);
+        if (round is { } roundId && rounds is not null) await rounds.RegroupAsync([roundId], ct);
         // After the row: a file without a row is swept up; a row without its file would
         // be a dead link in the feed.
         try
@@ -319,6 +325,114 @@ public sealed class RecordingService(
             .ToListAsync(ct);
 
     /// <summary>
+    /// The round each of <paramref name="ids"/> is one recording of (features/replay-feed,
+    /// "Rounds"): every recording of it still in the feed, in the order they began in the round,
+    /// each with how it is tied to the one asked about. A recording in no round, or whose
+    /// round has no other recording left in the feed, has no entry. The rounds are read from
+    /// the database, not from the rows the caller holds: an upload's own was just changed
+    /// under it.
+    /// </summary>
+    private async Task<Dictionary<int, IReadOnlyList<RecordingRoundMemberDto>>> RoundsAsync(
+        IReadOnlyCollection<int> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var asked = await db.Recordings.AsNoTracking()
+            .Where(r => ids.Contains(r.Id) && r.RoundId != null)
+            .Select(r => new { r.Id, Round = r.RoundId!.Value })
+            .ToListAsync(ct);
+        if (asked.Count == 0) return [];
+        var roundIds = asked.Select(a => a.Round).Distinct().ToList();
+        var members = await db.Recordings.AsNoTracking()
+            .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value))
+            .Select(r => new RoundRow(
+                r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderName, r.RecordedBy, r.DurationSeconds,
+                r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing))
+            .ToListAsync(ct);
+        var memberIds = members.Select(m => m.Id).ToList();
+        var links = await db.RecordingRoundLinks.AsNoTracking()
+            .Where(l => memberIds.Contains(l.RecordingId) && l.Kind != RecordingRoundLinkKind.Separated)
+            .ToListAsync(ct);
+        var players = await PlayersAsync(members.Where(m => !m.FileMissing).Select(m => m.UploaderName), ct);
+        var result = new Dictionary<int, IReadOnlyList<RecordingRoundMemberDto>>();
+        foreach (var round in members.GroupBy(m => m.Round))
+        {
+            var shown = round.Where(m => !m.FileMissing).ToList();
+            if (shown.Count < 2) continue;
+            var offsets = RoundOffsets([.. round.Select(m => m.Id)], links);
+            var ordered = shown
+                .OrderBy(m => offsets.TryGetValue(m.Id, out var at) ? at : double.MaxValue)
+                .ThenBy(m => m.Id)
+                .ToList();
+            foreach (var one in asked.Where(a => a.Round == round.Key))
+            {
+                result[one.Id] = [.. ordered.Select(m => Member(m, one.Id, links, offsets, players))];
+            }
+        }
+        return result;
+    }
+
+    /// <summary>Where each recording's <c>t = 0</c> falls on its round's clock, as far as the
+    /// links measured it: from the lowest id, each link moving the next along, then shifted so
+    /// the one that began first begins at 0.</summary>
+    private static Dictionary<int, double> RoundOffsets(IReadOnlyList<int> members, IReadOnlyList<RecordingRoundLink> links)
+    {
+        var at = new Dictionary<int, double>();
+        if (members.Count == 0) return at;
+        at[members.Min()] = 0;
+        var measured = links.Where(l => l.OffsetSeconds is not null).ToList();
+        for (var changed = true; changed;)
+        {
+            changed = false;
+            foreach (var link in measured)
+            {
+                // t_recording = t_other + offset: the other's t = 0 is at the recording's `offset`.
+                if (at.TryGetValue(link.RecordingId, out var a) && !at.ContainsKey(link.OtherRecordingId))
+                {
+                    at[link.OtherRecordingId] = a + link.OffsetSeconds!.Value;
+                    changed = true;
+                }
+                else if (at.TryGetValue(link.OtherRecordingId, out var b) && !at.ContainsKey(link.RecordingId))
+                {
+                    at[link.RecordingId] = b - link.OffsetSeconds!.Value;
+                    changed = true;
+                }
+            }
+        }
+        var first = at.Values.Min();
+        return at.ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value - first, 3));
+    }
+
+    private static RecordingRoundMemberDto Member(
+        RoundRow m, int askedId, IReadOnlyList<RecordingRoundLink> links, Dictionary<int, double> offsets,
+        Dictionary<string, string> players)
+    {
+        var direct = links.FirstOrDefault(l =>
+            (l.RecordingId == askedId && l.OtherRecordingId == m.Id) || (l.RecordingId == m.Id && l.OtherRecordingId == askedId));
+        var link = m.Id == askedId ? "self"
+            : direct is null ? null
+            : direct.Kind == RecordingRoundLinkKind.Linked ? "linked"
+            : "detected";
+        return new RecordingRoundMemberDto(
+            m.Slug,
+            m.Title,
+            m.UploaderName,
+            players.GetValueOrDefault(m.UploaderName),
+            m.RecordedBy,
+            m.DurationSeconds,
+            offsets.TryGetValue(m.Id, out var offset) ? offset : null,
+            RecordingLink(m.Slug),
+            m.ServerLogBytes > 0 ? ServerLogLink(m.Slug) : null,
+            ThumbnailLink(m.Slug, m.ThumbnailBytes, m.UpdatedAt),
+            link,
+            direct?.MatchedKeys,
+            direct?.PlayerShare);
+    }
+
+    private sealed record RoundRow(
+        int Id, int Round, string Slug, string Title, string UploaderName, string RecordedBy, double DurationSeconds,
+        long ServerLogBytes, long ThumbnailBytes, Instant UpdatedAt, bool FileMissing);
+
+    /// <summary>
     /// The bfstats.io players among <paramref name="names"/>, each under the name the site has
     /// them by, for a link to their page: a recording writes a name's bytes as U+0000 to U+00FF,
     /// and BFList hands the site the same bytes read as cp1252. A name the site has no human
@@ -357,10 +471,12 @@ public sealed class RecordingService(
 
     /// <summary>The cover's link, versioned by the recording's last change: a new cover is a
     /// new URL, past any cached copy of the old.</summary>
-    public static string? ThumbnailLink(Recording r) =>
-        r.ThumbnailBytes > 0 ? $"/stats/recordings/{r.Slug}.jpg?v={r.UpdatedAt.ToUnixTimeSeconds()}" : null;
+    public static string? ThumbnailLink(Recording r) => ThumbnailLink(r.Slug, r.ThumbnailBytes, r.UpdatedAt);
 
-    internal static RecordingSummaryDto Summary(Recording r, string? player) => new(
+    private static string? ThumbnailLink(string slug, long bytes, Instant updatedAt) =>
+        bytes > 0 ? $"/stats/recordings/{slug}.jpg?v={updatedAt.ToUnixTimeSeconds()}" : null;
+
+    internal static RecordingSummaryDto Summary(Recording r, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -377,9 +493,11 @@ public sealed class RecordingService(
         RecordingLink(r.Slug),
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
         ThumbnailLink(r),
-        player);
+        player,
+        round);
 
-    internal static RecordingDetailDto Detail(Recording r, RecordingActor? actor, string? player) => new(
+    internal static RecordingDetailDto Detail(
+        Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -401,7 +519,9 @@ public sealed class RecordingService(
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
         ThumbnailLink(r),
         actor is not null && (actor.IsAdmin || actor.UserId == r.UploaderUserId),
-        player);
+        player,
+        round,
+        actor?.IsAdmin == true);
 
     private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
         new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);

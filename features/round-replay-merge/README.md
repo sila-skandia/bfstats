@@ -30,6 +30,13 @@ In the page, picking or dropping several `replay_*.ndjson` files together
 merges them before they play (`replay-open.js` `pickedRecording`). The first
 file picked leads. The report goes to the browser console.
 
+So does a link with one `replay` per recording,
+`map.html?replay=<one>&replay=<another>` (`replay.js` `openMerged`), the first
+leading: the REPLAY feed finds the recordings of one round that players shared
+separately and offers them merged that way, each recording's comments moved
+onto the merged clock by the header's `merged[i]` (features/replay-feed,
+"Rounds"). A set the merge refuses plays its first recording alone.
+
 A merged file is an ordinary v5 recording, shared exactly like one client's
 (`features/gameplay-recordings`). Its header adds the sources:
 

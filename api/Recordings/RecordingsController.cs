@@ -24,7 +24,8 @@ public class RecordingsController(
     IRecordingUploadService uploads,
     IRecordingStorage storage,
     IRecordingViewCounter views,
-    IConfiguration configuration) : ControllerBase
+    IConfiguration configuration,
+    IRecordingRoundService rounds) : ControllerBase
 {
     /// <summary>The whole upload body: the largest recording and server log the options
     /// allow, and the multipart framing round them.</summary>
@@ -147,6 +148,44 @@ public class RecordingsController(
         try
         {
             return await recordings.DeleteAsync(slug, actor, ct) ? NoContent() : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return Rejected(ex);
+        }
+    }
+
+    /// <summary>An admin puts this recording in the round of another (features/replay-feed,
+    /// "Rounds"): <c>{ "with": "&lt;its slug or any link to it&gt;" }</c>. The recording's page
+    /// after.</summary>
+    [HttpPost("{slug:length(10)}/round")]
+    [Authorize]
+    public async Task<ActionResult<RecordingDetailDto>> LinkRound(
+        string slug, [FromBody] LinkRecordingRoundRequest request, CancellationToken ct)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        try
+        {
+            if (!await rounds.LinkAsync(slug, request.With, actor, ct)) return NotFound();
+            return await recordings.GetAsync(slug, actor, ct) is { } detail ? Ok(detail) : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return Rejected(ex);
+        }
+    }
+
+    /// <summary>An admin takes this recording out of its round, for good: detection never
+    /// puts it back with those recordings. The recording's page after.</summary>
+    [HttpDelete("{slug:length(10)}/round")]
+    [Authorize]
+    public async Task<ActionResult<RecordingDetailDto>> SeparateRound(string slug, CancellationToken ct)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        try
+        {
+            if (!await rounds.SeparateAsync(slug, actor, ct)) return NotFound();
+            return await recordings.GetAsync(slug, actor, ct) is { } detail ? Ok(detail) : NotFound();
         }
         catch (RecordingRejectedException ex)
         {
