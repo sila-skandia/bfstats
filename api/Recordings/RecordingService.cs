@@ -38,6 +38,14 @@ public interface IRecordingService
     /// <summary>The linked player name <paramref name="name"/> matches, as the account has it;
     /// throws for one the account has not linked.</summary>
     Task<string> PostingNameAsync(RecordingActor actor, string? name, CancellationToken ct);
+
+    /// <summary>
+    /// The name a recording is shared under. By default the player who recorded it,
+    /// <paramref name="recorder"/> as the file names him, else the account's first linked name;
+    /// <paramref name="name"/> picks either instead. Throws for any other name, and when there
+    /// is neither.
+    /// </summary>
+    Task<string> SharingNameAsync(RecordingActor actor, string? name, string recorder, CancellationToken ct);
 }
 
 public sealed class RecordingService(
@@ -82,15 +90,8 @@ public sealed class RecordingService(
     public async Task<int?> WatchableIdAsync(string slug, CancellationToken ct) =>
         await Find(slug).Where(r => !r.FileMissing).Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
 
-    public async Task<RecordingViewerDto> ViewerAsync(RecordingActor actor, CancellationToken ct)
-    {
-        var names = await db.UserPlayerNames.AsNoTracking()
-            .Where(n => n.UserId == actor.UserId)
-            .OrderBy(n => n.CreatedAt)
-            .Select(n => n.PlayerName)
-            .ToListAsync(ct);
-        return new RecordingViewerDto(actor.UserId, names, actor.IsAdmin);
-    }
+    public async Task<RecordingViewerDto> ViewerAsync(RecordingActor actor, CancellationToken ct) =>
+        new(actor.UserId, await LinkedNamesAsync(actor, ct), actor.IsAdmin);
 
     public async Task<RecordingDetailDto?> RenameAsync(string slug, RecordingActor actor, string title, CancellationToken ct)
     {
@@ -230,14 +231,38 @@ public sealed class RecordingService(
         {
             throw new RecordingRejectedException("Choose which of your player names to post as.");
         }
-        var names = await db.UserPlayerNames.AsNoTracking()
-            .Where(n => n.UserId == actor.UserId)
-            .Select(n => n.PlayerName)
-            .ToListAsync(ct);
+        var names = await LinkedNamesAsync(actor, ct);
         return names.FirstOrDefault(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase))
             ?? throw new RecordingRejectedException(
                 $"{wanted} is not one of your linked player names.", StatusCodes.Status403Forbidden);
     }
+
+    public async Task<string> SharingNameAsync(RecordingActor actor, string? name, string recorder, CancellationToken ct)
+    {
+        var wanted = RecordingText.Name(name, RecordingInspector.MaxPlayerName);
+        if (recorder.Length > 0 && (wanted.Length == 0 || string.Equals(wanted, recorder, StringComparison.OrdinalIgnoreCase)))
+        {
+            return recorder;
+        }
+        var names = await LinkedNamesAsync(actor, ct);
+        if (wanted.Length == 0)
+        {
+            return names.FirstOrDefault() ?? throw new RecordingRejectedException(
+                "The recording does not say who recorded it. Link your in-game name to share it.");
+        }
+        return names.FirstOrDefault(n => string.Equals(n, wanted, StringComparison.OrdinalIgnoreCase))
+            ?? throw new RecordingRejectedException(
+                $"{wanted} is not the player who recorded this or one of your linked player names.",
+                StatusCodes.Status403Forbidden);
+    }
+
+    /// <summary>The account's linked player names, the first it linked first.</summary>
+    private Task<List<string>> LinkedNamesAsync(RecordingActor actor, CancellationToken ct) =>
+        db.UserPlayerNames.AsNoTracking()
+            .Where(n => n.UserId == actor.UserId)
+            .OrderBy(n => n.CreatedAt)
+            .Select(n => n.PlayerName)
+            .ToListAsync(ct);
 
     private IQueryable<Recording> Find(string slug)
     {

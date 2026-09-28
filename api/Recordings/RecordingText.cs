@@ -33,9 +33,29 @@ public static partial class RecordingText
     /// <summary>One line: newlines become spaces, runs of spaces one.</summary>
     public static string Line(string? text, int max)
     {
-        var clean = Clean(text, multiline: false);
+        var clean = Clean(Bounded(text, max), multiline: false);
         clean = string.Join(' ', clean.Split(' ', StringSplitOptions.RemoveEmptyEntries));
         return Cut(clean, max);
+    }
+
+    /// <summary>
+    /// A player's name as a recording or its uploader has it: control characters and bidi
+    /// overrides out, trimmed, cut to <paramref name="max"/>, and otherwise as it came. The
+    /// recorder writes a name's high bytes as U+0080 to U+00FF, and U+0080 to U+009F (cp1252's
+    /// <c>€</c>, <c>™</c>, <c>•</c> in a clan tag) are control characters by Unicode's reckoning,
+    /// so they stay; so do runs of spaces, which are part of some names.
+    /// </summary>
+    public static string Name(string? text, int max)
+    {
+        var bounded = Bounded(text, max);
+        if (bounded.Length == 0) return "";
+        var builder = new StringBuilder(bounded.Length);
+        foreach (var c in bounded)
+        {
+            if ((char.IsControl(c) && (c is < '\u0080' or > '\u009F')) || IsBidiControl(c)) continue;
+            builder.Append(c);
+        }
+        return Cut(builder.ToString().Trim(), max);
     }
 
     /// <summary>A comment: newlines kept, at most one blank line in a row.</summary>
@@ -100,6 +120,12 @@ public static partial class RecordingText
     /// <summary>The embeddings, overrides and isolates that let text run backwards over a
     /// name beside it.</summary>
     private static bool IsBidiControl(char c) => c is >= '\u202A' and <= '\u202E' or >= '\u2066' and <= '\u2069';
+
+    /// <summary>The front of <paramref name="text"/>, room enough for <paramref name="max"/>
+    /// characters once what is dropped from it is dropped: a file can name a server in 16 MB,
+    /// and only its first few characters are ever kept.</summary>
+    private static string Bounded(string? text, int max) =>
+        text is null ? "" : text.Length > max * 8 ? text[..(max * 8)] : text;
 
     private static string Cut(string text, int max)
     {

@@ -40,8 +40,10 @@ rest of the screen.
   server log). The browser reads it with the replay's own parser (level,
   game type, server, recorder, length), recognises the level by its flags for a
   file begun mid-round (and asks when the flags match none), gzips it with
-  `CompressionStream` and uploads it with progress. The same round shared
-  twice is refused with a link to the one already there.
+  `CompressionStream` and uploads it with progress. **Shared by** is the
+  player who recorded it, as the file names him; the account's linked names
+  are offered beside it. The same round shared twice is refused with a link to
+  the one already there.
 - **Watch a file** keeps the old behaviour: play one from disk without
   sharing it. A file dropped anywhere on the page still does that too.
 
@@ -68,10 +70,27 @@ loading the round again.
 
 ## Signing in
 
-Comments and shares need a bfstats.io account (Discord) and go up under one
-of the account's linked in-game names, as comments on players, servers and
-tournaments already do. An account with none links one on the spot
-(`POST /stats/auth/player-names`, what the dashboard does).
+Comments and shares need a bfstats.io account (Discord). A share goes up
+under the name of the player who recorded it, read from the file (below), or
+under one of the account's linked in-game names if the uploader picks one
+instead; nothing has to be linked first. Comments go up under a linked name,
+as comments on players, servers and tournaments already do, and an account
+with none links one on the spot (`POST /stats/auth/player-names`, what the
+dashboard does); so does a share when the file names nobody and the account
+has nothing linked.
+
+Who recorded a file is found the same way by the API
+(`RecordingInspector`) and the dialogs (`replay-chapters.js`
+`recorderName`): the player the roster marks `local` (a file begun
+mid-round), else the pid of the recorder's own shots (v4's `local` rounds,
+v3's trigger presses) under the name it had when he fired, or the name that
+pid's chat goes out under (`skandia: gf`, for a file begun after the join by
+a recorder that wrote no roster), else the round's only human. Of several
+humans with nothing marking one, the file cannot say. All ten recordings on
+this PC (v2 to v5, lab and public servers) name skandia. Linking a name is
+the account's own say-so, and so is a file, so neither is more proof of who
+someone is than the other; the account that shared a recording is kept either
+way, for Rename, Delete and moderation.
 
 play.bfstats.io signs in through bfstats.io's own session: the refresh cookie
 is `rt; Domain=bfstats.io; Path=/stats`, so once HAProxy sends the play host's
@@ -100,7 +119,7 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 | `GET /` | the feed: `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), and the space used |
 | `GET /{slug}` | one recording, with `canManage` for its uploader or an admin |
 | `GET /{slug}.ndjson`, `.xml`, `.jpg` | the recording, its server log and its cover. The first two are stored gzipped and sent as they are (`Content-Encoding: gzip`): the browser unpacks them and the API spends no CPU compressing. The cover's link is versioned, so it keeps a year. |
-| `POST /` | share one: multipart `meta` (JSON), `recording`, `serverlog`, `thumbnail` |
+| `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
 | `PATCH`, `DELETE /{slug}` | rename, remove (uploader or admin) |
 | `PUT /{slug}/thumbnail` | the cover, re-encoded by ImageSharp as a JPEG no wider than 640 px, so what is served is an image this code made |
 | `POST /{slug}/views` | a view (202) |
@@ -110,22 +129,74 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 **The upload** streams: MVC's form value providers are switched off for it
 (`DisableFormValueModelBindingAttribute`; they read a whole multipart body
 before the action runs), each part goes to `.incoming/` on the recordings
-volume (gzipped on the way if the browser could not), and
-`RecordingInspector` reads it back in one pass: the bf42plus header on the
-first line (the check the viewer makes of a dropped file), the level, game
-type, mod, server, players and recorder from the few records that say them,
-the length from every record's `t`, and SHA-256 of the whole. What the file
-says wins over what the browser sent; the browser's reading fills in what the
-file does not say. Then, one upload at a time, the quota and the disk are
-weighed, the files are renamed into place, and the row is written.
+volume as it came (gzipped by the browser, or plain from one without
+`CompressionStream`), and `RecordingInspector` reads it back in one pass and
+writes what it read, gzipped afresh, beside it: the SHA-256 of the whole, the
+length from every record's `t`, the level, game type, mod, server, players
+and recording player from the records that say them. What the file says wins
+over what the browser sent; the browser's reading fills in what the file does
+not say. Then, one upload at a time, the quota and the disk are weighed, the
+files are renamed into place, and the row is written.
+
+**What is checked** (2026-09-29; `tests/api/Recordings/RecordingInspectorTests.cs`
+has a case for each):
+
+- *A recording is one.* Its first line is the recorder's header
+  (`{"k":"h",...}`) and every line after it is a whole JSON object with its
+  kind in `k`, read to its end, nothing after it. Only the last line may be
+  broken (a crash cuts it short; it is skipped, as the viewer skips it); a bad
+  line with records after it is refused by number. A header with nothing after
+  it is refused as empty. Every real recording on this PC has every line whole.
+- *A gzip upload is whole.* .NET's `GZipStream` hands back what it has of a
+  stream cut short, without an error: half a file would have been taken for a
+  shorter round. zlib checks a stream's trailer (CRC-32 and length) when it
+  reaches it, and a whole stream ends in it, so the last four bytes must be
+  the length unpacked; that refuses a cut stream, bytes after its end, and
+  more than one member.
+- *What is kept is what was read.* The stored file is the inspector's own
+  gzip of the bytes it read, never the bytes as sent, so nothing that rode
+  along after a gzip stream's end is ever served (about 20 ms a megabyte
+  unpacked; 0.25 s for a ten-minute round).
+- *What a file says of itself is held to what the feed stores.* A level, mod
+  and game type must be a name the viewer can look up (`[a-z0-9_-]`, or it is
+  not taken); a player or recorder is cut to 32 characters with control
+  characters and bidi overrides out (a clan tag's cp1252 bytes, which the
+  recorder writes as U+0080 to U+009F, stay); a server to 64; a record's time
+  past a day is not the length. Before this a file could name a level in
+  16 MB, or 128 players at 7 MB each: measured, a 0.88 MB gzip of repeated
+  letters held 1.8 GB once read and 5.6 GB with the players serialised for
+  its row, past the API's 3 GiB limit twice over, where the same file now
+  holds 8 MB.
+- *A server log is BF1942's.* Read with `XmlReader`: rooted at `bf:log`,
+  every element in the `http://www.dice.se/xmlns/bf/` namespace, attributes
+  plain, no DTD, no processing instruction but the declaration, no run of
+  64 KB without markup (which bounds what the reader holds of one text). A
+  log is usually unterminated (the server appends while the round runs), so
+  one that is well-formed as far as it goes, read to its end, is one. Before
+  this, anything starting with `<` was taken, and served from bfstats.io as
+  `text/xml`: an XHTML `<script>` in an XML page runs as it would in HTML, with
+  the site's cookies, and `POST /stats/auth/refresh` would have handed it the
+  viewer's session.
+- *A cover is one frame of pixels.* Decoded as JPEG, PNG or WebP only (what a
+  canvas writes), one frame deep (ImageSharp decodes every frame of an
+  animated image by default, each the size of the canvas: a megabyte of
+  animated PNG could ask for gigabytes), with its metadata dropped, and
+  written out afresh.
+
+**Every stored file is served inert**: `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: default-src 'none'; sandbox` on the `.ndjson`,
+`.xml` and `.jpg`. The replay reads them with `fetch`, which neither touches;
+a browser sent to one directly gets a page with no script, no loads and no
+origin, whatever got past the checks above.
 
 | Limit | |
 |---|---|
 | All recordings | 20 GiB, gzipped, covers and server logs included (`Recordings__QuotaBytes`) |
 | The disk | never below max(8 GiB, 15%) free (`MinFreeBytes`, `MinFreeFraction`): it is the node's root disk, where the kubelet garbage-collects images at 85% and evicts pods at 90% |
 | One recording | 95 MB gzipped (Cloudflare refuses a request body over 100 MB), 1 GiB unpacked, 16 MB a line |
-| One server log | 20 MB gzipped, 256 MB unpacked |
-| A cover | 1 MB in, 16 to 4096 px a side |
+| One server log | 20 MB gzipped, 256 MB unpacked, 64 KB without markup |
+| A cover | 1 MB in, 16 to 4096 px a side, JPEG, PNG or WebP, one frame |
+| Names in a file | a player 32 characters, a server 64; a level, mod or game type `[a-z0-9_-]{1,64}` |
 | Titles, comments | 100 and 1000 characters, plain text: control characters and bidi overrides removed, never rendered as HTML |
 | Rate | per address (Cloudflare's `CF-Connecting-IP`): 10 uploads an hour, 20 comments or covers in 10 minutes, 60 views a minute |
 
@@ -186,8 +257,12 @@ sign-in:
 ```bash
 cd api && ASPNETCORE_ENVIRONMENT=Development E2E_SEED=true DB_PATH=/tmp/feed.db \
   Jwt__PrivateKey="$(base64 -w0 ../.e2e/jwt-e2e.pem)" RefreshToken__Secret="$(cat ../.e2e/refresh-secret)" \
+  Jwt__Issuer=http://localhost:9222 Jwt__Audience=http://localhost:5273 \
   Recordings__Path=/tmp/feed-recordings dotnet run --no-launch-profile --urls http://localhost:9222
 ```
+
+Without `Jwt__Issuer` and `Jwt__Audience` the dev sign-in hands out a token the
+API itself refuses (IDX10208), and every share and comment is a 401.
 
 (`./scripts/bootstrap-worktree.sh` makes the `.e2e/` key and secret.) Then
 `localhost:5273/play/index.html?tab=replay`: Sign in (dev) is the seeded
@@ -196,16 +271,23 @@ admin. With no API on :9222 the page reads the live feed, read-only;
 
 ## Verification
 
-- `tests/api/Recordings/`: the inspector (a real bf42plus layout, a half
-  line, mods, a recording begun mid-round, not-a-recording, not gzip, a
-  bomb), the upload end to end against SQLite and a temp directory (gzipped and
-  plain, the browser's reading filling in, duplicates, a missing file put back,
-  names not linked, size, quota and disk refusals), the feed's order and
+- `tests/api/Recordings/`: the inspector (a real bf42plus layout and the
+  repository's two real recordings, a half line, a bad line with records after
+  it, an empty one, mods, a recording begun mid-round, not-a-recording, plain
+  and gzip, a stream cut short, bytes after its end, what the file says of
+  itself held to size, the recording player five ways, a real lab server log
+  and markup that is not the game's, a bomb), covers (one frame of an animated
+  PNG, no GIF, BMP or TIFF, no metadata kept), the files served inert, the
+  upload end to end against SQLite and a temp directory (gzipped and plain,
+  what is kept, the browser's reading filling in, duplicates, a missing file
+  put back, the recording's player by default, a linked name instead, no name
+  to be had, size, quota and disk refusals), the feed's order and
   paging, comments' times, counts and who may delete them, rename and delete,
   covers, views once a window, the file check, and account export and erasure.
 - `tools/bf1942-models/tests/test_recordings_api.py`: which `?replay=` is a
   shared recording and on which API, the times in a comment, readable queries,
-  the watch links.
+  the watch links, and the recording player the dialogs offer, found as the
+  API finds him.
 - `ui/e2e/replay-feed-signin.spec.ts`: a bfstats.io return address is kept, a
   foreign one and a stale one are not, and the callback goes back.
 - By hand against the worktree's API and viewer (2026-09-28), the real Midway
@@ -219,6 +301,23 @@ admin. With no API on :9222 the page reads the live feed, read-only;
   the cover set from the frame on screen (640x360 JPEG), and a recording opened
   from disk shared from the bar with its cover, the page carrying on as the
   shared one.
+- The upload's checks and the name a share goes up under (2026-09-29),
+  against this branch's API and main's side by side on this PC:
+  - main took half a gzip stream of a 536 s Bocage round as a 271 s
+    recording, and a server log carrying an XHTML `<script>`, which it then
+    served as `text/xml`: opened in the browser, the script ran on the API's
+    origin. This branch refused both ("not whole", "not a BF1942 event
+    log"), and the same log planted on its disk opened inert ("Blocked script
+    execution ... the document's frame is sandboxed").
+  - the inspector over every recording (ten, v2 to v5) and server log
+    (fourteen) on this PC: all taken, every recording's player skandia,
+    re-gzipped in 1 to 250 ms.
+  - in headless Chromium (Vulkan), signed in as the dev admin with nothing
+    linked: the feed's dialog offered Shared by skandia alone and the share
+    went up as skandia; with Rut linked it offered skandia first, then Rut,
+    and picking Rut shared a Kursk round as Rut, recorded by skandia. Share
+    on the replay's bar, for a Bocage round watched from disk, offered
+    skandia and shared it, cover and all.
 
 ## Later
 

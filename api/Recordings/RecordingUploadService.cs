@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.IO.Compression;
 using System.Text.Json;
 using api.PlayerTracking;
 using api.Recordings.Models;
@@ -20,8 +19,10 @@ public interface IRecordingUploadService
     /// Reads a <c>multipart/form-data</c> body: <c>meta</c> (JSON,
     /// <see cref="RecordingUploadMeta"/>), <c>recording</c> (the <c>replay_*.ndjson</c>,
     /// gzipped by the browser where it can) and, optionally, <c>serverlog</c> (its
-    /// <c>ev_*.xml</c>, likewise) and <c>thumbnail</c> (a frame of the replay). Throws <see cref="RecordingRejectedException"/> with the
-    /// uploader's reason for anything it will not keep.
+    /// <c>ev_*.xml</c>, likewise) and <c>thumbnail</c> (a frame of the replay). Throws
+    /// <see cref="RecordingRejectedException"/> with the uploader's reason for anything it will
+    /// not keep. What is kept of each file is what <see cref="RecordingInspector"/> read of it,
+    /// gzipped here.
     /// </summary>
     Task<RecordingDetailDto> UploadAsync(
         string? contentType, Stream body, long? contentLength, RecordingActor actor, CancellationToken ct);
@@ -37,8 +38,6 @@ public sealed class RecordingUploadService(
 {
     private const int MaxMetaBytes = 64 * 1024;
     private const int CopyBytes = 80 * 1024;
-    private const int MaxPlayerName = 32;
-    private const int MaxServerName = 64;
     private const long MultipartOverhead = 1024 * 1024;
 
     /// <summary>One upload at a time weighs the quota and moves its files into place, so two
@@ -64,8 +63,11 @@ public sealed class RecordingUploadService(
             throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
         }
 
+        // Each file twice in .incoming/: as it came, and as it is kept.
         string? recordingFile = null;
         string? logFile = null;
+        string? keptRecording = null;
+        string? keptLog = null;
         try
         {
             RecordingUploadMeta? meta = null;
@@ -80,11 +82,11 @@ public sealed class RecordingUploadService(
                         break;
                     case "recording" when recordingFile is null:
                         recordingFile = storage.IncomingPath();
-                        await ReceiveAsync(section.Body, recordingFile, limits.MaxRecordingBytes, ct);
+                        await ReceiveAsync(section.Body, recordingFile, limits.MaxRecordingBytes, "A recording", ct);
                         break;
                     case "serverlog" when logFile is null:
                         logFile = storage.IncomingPath();
-                        await ReceiveAsync(section.Body, logFile, limits.MaxServerLogBytes, ct);
+                        await ReceiveAsync(section.Body, logFile, limits.MaxServerLogBytes, "A server log", ct);
                         break;
                     case "thumbnail" when thumbnail is null:
                         thumbnail = await RecordingThumbnails.NormalizeAsync(section.Body, ct);
@@ -97,25 +99,31 @@ public sealed class RecordingUploadService(
             if (recordingFile is null) throw new RecordingRejectedException("Choose a recording to share.");
 
             RecordingInspection inspection;
-            await using (var file = File.OpenRead(recordingFile))
+            keptRecording = storage.IncomingPath();
+            await using (var sent = File.OpenRead(recordingFile))
+            await using (var kept = NewFile(keptRecording))
             {
-                inspection = await RecordingInspector.InspectAsync(file, limits.MaxRecordingRawBytes, ct);
+                inspection = await RecordingInspector.InspectAsync(sent, kept, limits.MaxRecordingRawBytes, ct);
             }
             if (logFile is not null)
             {
-                await using var file = File.OpenRead(logFile);
-                await RecordingInspector.InspectServerLogAsync(file, limits.MaxServerLogRawBytes, ct);
+                keptLog = storage.IncomingPath();
+                await using var sent = File.OpenRead(logFile);
+                await using var kept = NewFile(keptLog);
+                await RecordingInspector.InspectServerLogAsync(sent, kept, limits.MaxServerLogRawBytes, ct);
             }
 
-            var author = await recordings.PostingNameAsync(actor, meta?.AuthorName, ct);
-            var recording = Describe(inspection, meta, author, actor);
-            recording.RecordingBytes = new FileInfo(recordingFile).Length;
-            recording.ServerLogBytes = logFile is null ? 0 : new FileInfo(logFile).Length;
+            // Who recorded it: the file's own word, else the uploader's browser's reading of it.
+            var recorder = First(inspection.RecordedBy, RecordingText.Name(meta?.RecordedBy, RecordingInspector.MaxPlayerName));
+            var author = await recordings.SharingNameAsync(actor, meta?.AuthorName, recorder, ct);
+            var recording = Describe(inspection, meta, recorder, author, actor);
+            recording.RecordingBytes = new FileInfo(keptRecording).Length;
+            recording.ServerLogBytes = keptLog is null ? 0 : new FileInfo(keptLog).Length;
             recording.ThumbnailBytes = thumbnail?.Length ?? 0;
 
-            var shared = await CommitAsync(recording, recordingFile, logFile, thumbnail);
-            recordingFile = null;
-            logFile = null;
+            var shared = await CommitAsync(recording, keptRecording, keptLog, thumbnail);
+            keptRecording = null;
+            keptLog = null;
             logger.LogInformation(
                 "Recording {Slug} shared by user {UserId}: {Level} ({Mod}), {Duration:0}s, {Bytes} bytes",
                 shared.Slug, actor.UserId, shared.Level, shared.Mod, shared.DurationSeconds, shared.RecordingBytes);
@@ -139,6 +147,8 @@ public sealed class RecordingUploadService(
         {
             Discard(recordingFile);
             Discard(logFile);
+            Discard(keptRecording);
+            Discard(keptLog);
         }
     }
 
@@ -207,7 +217,8 @@ public sealed class RecordingUploadService(
 
     /// <summary>The row for an upload: what the file says of itself, else what the
     /// uploader's browser read of it.</summary>
-    private Recording Describe(RecordingInspection inspection, RecordingUploadMeta? meta, string author, RecordingActor actor)
+    private Recording Describe(
+        RecordingInspection inspection, RecordingUploadMeta? meta, string recorder, string author, RecordingActor actor)
     {
         var level = First(inspection.Level, RecordingText.Id(meta?.Level));
         if (level.Length == 0)
@@ -215,18 +226,18 @@ public sealed class RecordingUploadService(
             throw new RecordingRejectedException(
                 "The recording does not say which level it was recorded on. Open it on the level first, then share it.");
         }
-        var server = First(RecordingText.Line(inspection.ServerName, MaxServerName), RecordingText.Line(meta?.ServerName, MaxServerName));
+        var server = First(inspection.ServerName, RecordingText.Line(meta?.ServerName, RecordingInspector.MaxServerName));
         var players = inspection.Players.Count > 0
             ? inspection.Players
             : (meta?.Players ?? [])
-                .Select(name => RecordingText.Line(name, MaxPlayerName))
+                .Select(name => RecordingText.Name(name, RecordingInspector.MaxPlayerName))
                 .Where(name => name.Length > 0)
                 .Distinct(StringComparer.Ordinal)
                 .Take(128)
                 .ToList();
         var duration = inspection.DurationSeconds > 0
             ? inspection.DurationSeconds
-            : Math.Clamp(meta?.DurationSeconds ?? 0, 0, 24 * 3600);
+            : Math.Clamp(meta?.DurationSeconds ?? 0, 0, RecordingInspector.MaxDurationSeconds);
         var title = RecordingText.Line(meta?.Title, RecordingText.MaxTitle);
         if (title.Length == 0)
         {
@@ -243,7 +254,7 @@ public sealed class RecordingUploadService(
             Mod = First(inspection.Mod, RecordingText.Id(meta?.Mod), "bf1942"),
             GameMode = First(inspection.GameMode, RecordingText.Id(meta?.GameMode)),
             ServerName = server,
-            RecordedBy = First(RecordingText.Line(inspection.RecordedBy, MaxPlayerName), RecordingText.Line(meta?.RecordedBy, MaxPlayerName)),
+            RecordedBy = recorder,
             RecordedLocal = First(RecordingText.Stamp(inspection.Start), RecordingText.Stamp(meta?.Start)),
             DurationSeconds = Math.Round(duration, 3),
             PlayerCount = players.Count,
@@ -269,37 +280,34 @@ public sealed class RecordingUploadService(
         db.Recordings.Where(r => !r.FileMissing).SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
 
     /// <summary>
-    /// Streams one part to <paramref name="path"/>, gzipped: a browser with
-    /// <c>CompressionStream</c> sends it gzipped already and it goes to disk as sent; one
-    /// without sends it plain and it is compressed here. Either way no more than
+    /// Streams one part to <paramref name="path"/> as it comes: gzipped by a browser with
+    /// <c>CompressionStream</c>, plain from one without. No more than
     /// <paramref name="maxBytes"/> are taken off the wire.
     /// </summary>
-    private static async Task ReceiveAsync(Stream part, string path, long maxBytes, CancellationToken ct)
+    private static async Task ReceiveAsync(Stream part, string path, long maxBytes, string what, CancellationToken ct)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(CopyBytes);
         try
         {
-            await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBytes, useAsync: true);
-            var first = await part.ReadAtLeastAsync(buffer.AsMemory(0, CopyBytes), 2, throwOnEndOfStream: false, ct);
-            if (first == 0) throw new RecordingRejectedException("The file is empty.");
-            var gzipped = first >= 2 && buffer[0] == 0x1f && buffer[1] == 0x8b;
-            await using var gzip = gzipped ? null : new GZipStream(file, CompressionLevel.Optimal, leaveOpen: true);
-            Stream output = gzip is null ? file : gzip;
+            await using var file = NewFile(path);
             long taken = 0;
-            var read = first;
-            while (read > 0)
+            int read;
+            while ((read = await part.ReadAsync(buffer.AsMemory(0, CopyBytes), ct)) > 0)
             {
                 taken += read;
-                if (taken > maxBytes) throw TooBig(maxBytes);
-                await output.WriteAsync(buffer.AsMemory(0, read), ct);
-                read = await part.ReadAsync(buffer.AsMemory(0, CopyBytes), ct);
+                if (taken > maxBytes) throw TooBig(maxBytes, what);
+                await file.WriteAsync(buffer.AsMemory(0, read), ct);
             }
+            if (taken == 0) throw new RecordingRejectedException("The file is empty.");
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
+
+    private static FileStream NewFile(string path) =>
+        new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBytes, useAsync: true);
 
     private static async Task<RecordingUploadMeta?> ReadMetaAsync(Stream part, CancellationToken ct)
     {
@@ -334,8 +342,8 @@ public sealed class RecordingUploadService(
             ? HeaderUtilities.RemoveQuotes(disposition.Name).Value
             : null;
 
-    private static RecordingRejectedException TooBig(long maxBytes) =>
-        new($"A recording can be at most {RecordingStorage.Size(maxBytes)} compressed.", StatusCodes.Status413PayloadTooLarge);
+    private static RecordingRejectedException TooBig(long maxBytes, string what = "A recording") =>
+        new($"{what} can be at most {RecordingStorage.Size(maxBytes)} compressed.", StatusCodes.Status413PayloadTooLarge);
 
     private static string First(params string[] values) => values.FirstOrDefault(v => v.Length > 0) ?? "";
 

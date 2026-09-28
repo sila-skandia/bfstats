@@ -910,9 +910,9 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     return form;
   }
 
-  /** The account has no in-game name to post as: link one, as the dashboard
-   *  does, and carry on. */
-  function linkNameForm(after = null) {
+  /** The account has no in-game name to comment as: link one, as the
+   *  dashboard does, and carry on. */
+  function linkNameForm() {
     const form = el('form', 'rf-signin');
     const input = el('input', 'rf-input');
     input.maxLength = 32;
@@ -920,7 +920,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     input.value = playerName() && playerName() !== 'Player' ? playerName() : '';
     input.style.maxWidth = '240px';
     const save = button('primary', 'Use this name', () => form.requestSubmit());
-    form.append(el('span', '', 'Comments and shares go up under your in-game name.'), input, save);
+    form.append(el('span', '', 'Comments go up under your in-game name.'), input, save);
     form.addEventListener('submit', async e => {
       e.preventDefault();
       const name = input.value.trim();
@@ -930,7 +930,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         state.viewer = await state.api.linkName(name);
         rememberPostAs(name);
         renderAccount();
-        if (after) after(); else renderComments();
+        renderComments();
       } catch (error) {
         save.disabled = false;
         flash(error.message, true);
@@ -942,6 +942,26 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   const POST_AS_KEY = 'bf42-mesh-post-as';
   function rememberPostAs(name) {
     try { localStorage.setItem(POST_AS_KEY, name); } catch {}
+  }
+
+  /** Whom a recording is shared as: the player who recorded it, as the file
+   *  names him, first; any name the account has linked after. A file that
+   *  names nobody, from an account with nothing linked, asks for the name to
+   *  link. `{ field, linking, value() }`. */
+  function shareAs(recorder, names) {
+    const options = [recorder, ...names].filter(Boolean)
+      .filter((name, i, all) => all.findIndex(n => n.toLowerCase() === name.toLowerCase()) === i);
+    if (!options.length) {
+      const input = el('input', 'rf-input');
+      input.maxLength = 32;
+      input.placeholder = 'Your in-game name';
+      input.value = playerName() && playerName() !== 'Player' ? playerName() : '';
+      return { field: input, linking: true, value: () => input.value.trim() };
+    }
+    const select = el('select', 'rf-select');
+    for (const name of options) select.append(new Option(name, name));
+    select.disabled = options.length === 1;
+    return { field: select, linking: false, value: () => select.value };
   }
 
   function postAs(names) {
@@ -993,17 +1013,13 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       return dialog;
     }
     if (!api.signedIn) {
-      inner.append(el('p', '', 'Sign in with your Discord account to share a recording. It goes up under your in-game name.'));
+      inner.append(el('p', '', 'Sign in with your Discord account to share a recording.'));
       const actions = el('div', 'rf-dialog-actions');
       actions.append(button('primary', api.mode === 'local' ? 'Sign in (dev)' : 'Sign in with Discord', async () => {
         await signIn();
         if (api.signedIn) openShare(initialFiles);
       }, 'user'));
       inner.append(actions);
-      return dialog;
-    }
-    if (!(state.viewer?.names ?? []).length) {
-      inner.append(linkNameForm(() => openShare(initialFiles)));
       return dialog;
     }
 
@@ -1107,8 +1123,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       fields.append(titleField);
       const names = state.viewer?.names ?? [];
       const asField = el('label', 'rf-field');
-      const as = postAs(names);
-      asField.append(el('span', '', 'Shared by'), as);
+      const as = shareAs(meta.recordedBy, names);
+      asField.append(el('span', '', as.linking ? 'Your in-game name' : 'Shared by'), as.field);
       fields.append(asField);
       let withLog = null;
       if (log) {
@@ -1140,23 +1156,31 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           modId = levelSelect.value.slice(0, at);
           level = levelSelect.value.slice(at + 1).toLowerCase();
         }
+        const author = as.value();
+        if (as.linking && !author) { say('Your in-game name first.', true); as.field.focus(); return; }
         sharing = true;
         go.disabled = true;
         drop.hidden = true;
         progress.hidden = false;
         say('Compressing');
         try {
+          if (as.linking) {
+            state.viewer = await api.linkName(author);
+            renderAccount();
+          }
           const shared = await api.upload({
             recording,
             serverLog: withLog?.checked ? log : null,
-            meta: { ...meta, level, mod: modId, title: titleInput.value, authorName: as.value },
+            // The recording's own player goes up as the API reads him from the file;
+            // only another name is sent.
+            meta: { ...meta, level, mod: modId, title: titleInput.value, authorName: author === meta.recordedBy ? '' : author },
             onStage: stage => say(stage),
             onProgress: p => {
               bar.style.width = `${Math.round(p * 100)}%`;
               say(p >= 1 ? 'Checking the recording' : `Uploading ${Math.round(p * 100)}%`);
             },
           });
-          rememberPostAs(as.value);
+          if ((state.viewer?.names ?? []).includes(author)) rememberPostAs(author);
           sharing = false;
           closeShare();
           state.items = [shared, ...state.items.filter(i => i.slug !== shared.slug)];

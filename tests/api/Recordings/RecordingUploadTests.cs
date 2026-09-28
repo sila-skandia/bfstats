@@ -15,7 +15,7 @@ public sealed class RecordingUploadTests : IDisposable
     [Fact]
     public async Task Upload_KeepsTheFileGzippedAndDescribesItFromItself()
     {
-        var detail = await fixture.UploadAsync(RecordingFixture.Midway(), serverLog: "<?xml version=\"1.0\"?><bf:log/>");
+        var detail = await fixture.UploadAsync(RecordingFixture.Midway(), serverLog: RecordingFixture.EventLog());
 
         Assert.Equal(RecordingStorage.SlugLength, detail.Slug.Length);
         Assert.Equal("Midway at dawn", detail.Title);
@@ -33,7 +33,7 @@ public sealed class RecordingUploadTests : IDisposable
         Assert.Equal($"/stats/recordings/{detail.Slug}.xml", detail.ServerLogUrl);
 
         Assert.Equal(RecordingFixture.Midway(), Gunzip(fixture.Storage.RecordingPath(detail.Slug)));
-        Assert.StartsWith("<?xml", Gunzip(fixture.Storage.ServerLogPath(detail.Slug)), StringComparison.Ordinal);
+        Assert.Equal(RecordingFixture.EventLog(), Gunzip(fixture.Storage.ServerLogPath(detail.Slug)));
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.Directory, ".incoming")));
     }
 
@@ -43,6 +43,49 @@ public sealed class RecordingUploadTests : IDisposable
         var detail = await fixture.UploadAsync(RecordingFixture.Midway(), gzip: false);
 
         Assert.Equal(RecordingFixture.Midway(), Gunzip(fixture.Storage.RecordingPath(detail.Slug)));
+    }
+
+    /// <summary>What is served is what was read, gzipped here: never the bytes as they came,
+    /// whatever rode along after the end of their gzip stream.</summary>
+    [Fact]
+    public async Task Upload_KeepsWhatItReadNotWhatWasSent()
+    {
+        var text = RecordingFixture.Midway();
+        var hidden = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("hidden payload ", 4096)));
+        var length = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(length, (uint)Encoding.UTF8.GetByteCount(text));
+
+        var detail = await fixture.UploadBytesAsync([.. RecordingFixture.Gzip(text), .. hidden, .. length], RecordingFixture.Meta());
+
+        var kept = await File.ReadAllBytesAsync(fixture.Storage.RecordingPath(detail.Slug));
+        Assert.Equal(RecordingFixture.Kept(text), kept);
+        Assert.Equal(kept.Length, detail.RecordingBytes);
+    }
+
+    [Fact]
+    public async Task Upload_RefusesAGzipStreamCutShort()
+    {
+        var gz = RecordingFixture.Gzip(RecordingFixture.Midway());
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => fixture.UploadBytesAsync(gz[..(gz.Length * 3 / 4)], RecordingFixture.Meta()));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Equal(0, await fixture.Db.Recordings.CountAsync());
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.Directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Upload_RefusesAServerLogThatIsNotTheGames()
+    {
+        var log = """<bf:log xmlns:bf="http://www.dice.se/xmlns/bf/1.1"><h:script xmlns:h="http://www.w3.org/1999/xhtml">alert(document.cookie)</h:script></bf:log>""";
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(() => fixture.UploadAsync(RecordingFixture.Midway(), serverLog: log));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Contains("event log", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, await fixture.Db.Recordings.CountAsync());
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.Directory, ".incoming")));
     }
 
     [Fact]
@@ -59,6 +102,7 @@ public sealed class RecordingUploadTests : IDisposable
 
         Assert.Equal("tobruk", detail.Level);
         Assert.Equal("A server", detail.ServerName);
+        Assert.Equal("skandia", detail.RecordedBy);
         Assert.Equal(["A", "B"], detail.Players);
         // The file's own clock wins over the browser's figure.
         Assert.Equal(120.0, detail.DurationSeconds);
@@ -109,11 +153,71 @@ public sealed class RecordingUploadTests : IDisposable
         Assert.True(fixture.Storage.Exists(first.Slug));
     }
 
+    /// <summary>A recording goes up under the name of the player who recorded it, as the file
+    /// names him: no name to pick, and none to have linked to the account first.</summary>
     [Fact]
-    public async Task Upload_PostsOnlyAsALinkedPlayerName()
+    public async Task Upload_SharesUnderTheRecordingsPlayerByDefault()
+    {
+        var detail = await fixture.UploadAsync(RecordingFixture.Midway(), RecordingFixture.Meta(), actor: fixture.AsUnlinked);
+
+        Assert.Equal("skandia", detail.UploaderName);
+        Assert.Equal("skandia", detail.RecordedBy);
+        Assert.True(detail.CanManage);
+    }
+
+    [Fact]
+    public async Task Upload_TakesTheRecordingsPlayerAsAskedAsTheFileSpellsHim()
+    {
+        var detail = await fixture.UploadAsync(RecordingFixture.Midway(), RecordingFixture.Meta(authorName: "SKANDIA"), actor: fixture.AsUnlinked);
+
+        Assert.Equal("skandia", detail.UploaderName);
+    }
+
+    [Fact]
+    public async Task Upload_TakesALinkedNameInsteadOfTheRecordingsPlayer()
+    {
+        var detail = await fixture.UploadAsync(RecordingFixture.Midway(), RecordingFixture.Meta(authorName: "rut"), actor: fixture.AsOther);
+
+        Assert.Equal("Rut", detail.UploaderName);
+        Assert.Equal("skandia", detail.RecordedBy);
+    }
+
+    [Fact]
+    public async Task Upload_FallsBackToALinkedNameWhenTheRecordingNamesNobody()
+    {
+        var text = """
+            {"k":"h","v":5,"start":"2026-09-27T20:34:59"}
+            {"k":"e","t":0.0,"e":"setLevel","level":"bf1942/levels/wake/","mode":"coop.con"}
+            {"k":"end","t":120.0}
+            """;
+
+        var detail = await fixture.UploadAsync(text, RecordingFixture.Meta());
+
+        Assert.Equal("skandia", detail.UploaderName);
+        Assert.Equal("", detail.RecordedBy);
+    }
+
+    [Fact]
+    public async Task Upload_AsksForANameWhenNeitherTheRecordingNorTheAccountHasOne()
+    {
+        var text = """
+            {"k":"h","v":5,"start":"2026-09-27T20:34:59"}
+            {"k":"e","t":0.0,"e":"setLevel","level":"bf1942/levels/wake/","mode":"coop.con"}
+            {"k":"end","t":120.0}
+            """;
+
+        var ex = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => fixture.UploadAsync(text, RecordingFixture.Meta(), actor: fixture.AsUnlinked));
+
+        Assert.Equal(400, ex.StatusCode);
+        Assert.Contains("Link your in-game name", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Upload_RefusesANameThatIsNeitherTheRecordingsPlayerNorLinked()
     {
         var ex = await Assert.ThrowsAsync<RecordingRejectedException>(() => fixture.UploadAsync(
-            RecordingFixture.Midway(), new RecordingUploadMeta("t", "SomeoneElse", null, null, null, null, null, null, null, null)));
+            RecordingFixture.Midway(), RecordingFixture.Meta(authorName: "SomeoneElse")));
 
         Assert.Equal(403, ex.StatusCode);
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.Directory, ".incoming")));
@@ -141,8 +245,8 @@ public sealed class RecordingUploadTests : IDisposable
     [Fact]
     public async Task Upload_StopsAtTheQuota()
     {
-        // Room for the first, as stored (gzipped, as sent), and not for a second.
-        var stored = RecordingFixture.Gzip(RecordingFixture.Midway()).Length;
+        // Room for the first, as kept (gzipped here), and not for a second.
+        var stored = RecordingFixture.Kept(RecordingFixture.Midway()).Length;
         using var tight = new RecordingFixture(o => o with { QuotaBytes = stored + 10 });
         await tight.UploadAsync(RecordingFixture.Midway());
 
