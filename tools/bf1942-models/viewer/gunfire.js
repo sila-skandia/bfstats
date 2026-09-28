@@ -197,12 +197,19 @@ export class GunFire {
     }
     this.tracers.length = 0;
     // Projectile and puff meshes are clones of the outgoing model's baked
-    // nodes; drop them rather than pooling across models.
-    for (const shot of this.projectiles) this.scene.remove(shot.mesh);
+    // nodes; drop them rather than pooling across models. A round's attached
+    // bundle (the rocket's `e_rocketFume`, a torpedo's wake) is a looping
+    // emitter with no life of its own (ttl -1): stop it before the round
+    // goes, or it keeps smoking wherever the round was. Every replay seek
+    // clears the rounds, and each one in the air left a trail behind.
+    for (const shot of this.projectiles) {
+      shot.run?.stop();
+      shot.wake?.stop();
+      this.scene.remove(shot.mesh);
+    }
     this.projectiles.length = 0;
     for (const puff of this.puffs) this.scene.remove(puff.mesh);
     this.puffs.length = 0;
-    for (const shot of this.projectiles) shot.run?.stop();
     for (const impact of this.impacts) {
       this.scene.remove(impact.mesh);
       impact.mesh.visible = false;
