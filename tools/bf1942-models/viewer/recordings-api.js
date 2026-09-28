@@ -283,8 +283,16 @@ export function createRecordingsApi(api) {
       return this.viewer({ fresh: true });
     },
 
-    list: ({ sort = 'recent', page = 1, pageSize = 24, signal } = {}) =>
-      request(`/stats/recordings?sort=${encodeURIComponent(sort)}&page=${page}&pageSize=${pageSize}`, { signal }),
+    /** A page of the feed, narrowed to a `server` and an `uploader` when given. */
+    list: ({ sort = 'recent', page = 1, pageSize = 24, server = '', uploader = '', signal } = {}) =>
+      request(`/stats/recordings?${readableQuery([
+        ['sort', sort], ['page', page], ['pageSize', pageSize], ['server', server], ['uploader', uploader]])}`, { signal }),
+    /** `{ servers, uploaders }`, each `[{ name, count }]`: what the feed can be
+     *  narrowed to, each counted within the other filter. */
+    filters: ({ server = '', uploader = '', signal } = {}) => {
+      const query = readableQuery([['server', server], ['uploader', uploader]]);
+      return request(`/stats/recordings/filters${query ? `?${query}` : ''}`, { signal });
+    },
     get: slug => request(`/stats/recordings/${encodeURIComponent(slug)}`),
     rename: (slug, title) => request(`/stats/recordings/${encodeURIComponent(slug)}`, { method: 'PATCH', json: { title }, auth: true }),
     remove: slug => request(`/stats/recordings/${encodeURIComponent(slug)}`, { method: 'DELETE', auth: true }),

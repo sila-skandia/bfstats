@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.Json;
 using api.PlayerTracking;
 using api.Recordings.Models;
@@ -13,7 +14,11 @@ namespace api.Recordings;
 /// first, one recording's page, and its comments.</summary>
 public interface IRecordingService
 {
-    Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, CancellationToken ct);
+    Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, RecordingFilter filter, CancellationToken ct);
+
+    /// <summary>The servers and uploaders the feed can be narrowed to. Each list is counted
+    /// within the other's filter and not its own, so the one picked keeps its neighbours.</summary>
+    Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct);
 
     Task<RecordingDetailDto?> GetAsync(string slug, RecordingActor? actor, CancellationToken ct);
 
@@ -59,18 +64,23 @@ public sealed class RecordingService(
     public const int MaxPageSize = 48;
     public const int MaxCommentPageSize = 200;
 
-    public async Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, CancellationToken ct)
+    /// <summary>The most names a filter offers: those with the most recordings.</summary>
+    public const int MaxFilterChoices = 100;
+
+    public async Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, RecordingFilter filter, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
         var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
+        var shown = Narrowed(shared, filter);
         // Newest by id: CreatedAt is an ExtendedIso string, whose varying fraction digits
         // do not sort.
         var ordered = sort == "views"
-            ? shared.OrderByDescending(r => r.ViewCount).ThenByDescending(r => r.Id)
-            : shared.OrderByDescending(r => r.Id);
-        var total = await shared.CountAsync(ct);
+            ? shown.OrderByDescending(r => r.ViewCount).ThenByDescending(r => r.Id)
+            : shown.OrderByDescending(r => r.Id);
+        var total = await shown.CountAsync(ct);
         var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        // The space is everyone's, whatever the feed is narrowed to.
         var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
         return new PagedRecordingsDto(
             [.. rows.Select(Summary)],
@@ -79,6 +89,39 @@ public sealed class RecordingService(
             pageSize,
             Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
             new RecordingStorageDto(used, options.Value.QuotaBytes));
+    }
+
+    public async Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct)
+    {
+        var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
+        var servers = await ChoicesAsync(Narrowed(shared, filter with { Server = null }), r => r.ServerName, ct);
+        var uploaders = await ChoicesAsync(Narrowed(shared, filter with { Uploader = null }), r => r.UploaderName, ct);
+        return new RecordingFiltersDto(servers, uploaders);
+    }
+
+    private static IQueryable<Recording> Narrowed(IQueryable<Recording> recordings, RecordingFilter filter)
+    {
+        if (filter.Server is { } server) recordings = recordings.Where(r => r.ServerName == server);
+        if (filter.Uploader is { } uploader) recordings = recordings.Where(r => r.UploaderName == uploader);
+        return recordings;
+    }
+
+    /// <summary>Each name <paramref name="name"/> gives, with its count: the busiest
+    /// <see cref="MaxFilterChoices"/>, in the order of their names. A recording that names no
+    /// server is in the feed, but there is no server to pick for it.</summary>
+    private static async Task<List<RecordingFilterChoiceDto>> ChoicesAsync(
+        IQueryable<Recording> recordings, Expression<Func<Recording, string>> name, CancellationToken ct)
+    {
+        var busiest = await recordings
+            .GroupBy(name)
+            .Where(g => g.Key != "")
+            .Select(g => new { Name = g.Key, Count = g.Count() })
+            .OrderByDescending(c => c.Count).ThenBy(c => c.Name)
+            .Take(MaxFilterChoices)
+            .ToListAsync(ct);
+        return [.. busiest
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Name, StringComparer.Ordinal)
+            .Select(c => new RecordingFilterChoiceDto(c.Name, c.Count))];
     }
 
     public async Task<RecordingDetailDto?> GetAsync(string slug, RecordingActor? actor, CancellationToken ct)

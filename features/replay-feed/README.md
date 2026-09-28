@@ -29,6 +29,13 @@ rest of the screen.
   one, else the level's loading screen with the level's name, as the game
   shows a level before it loads. The mod's badge, the length, the title, level
   and game type and server, the uploader, views and age.
+- **Filters** (2026-09-29): by server and by uploader, beside the order. Each
+  one says All until a name is picked, then lights up with a clear button. Its
+  list gives each name with how many recordings it would show beside the other
+  filter, so no pair of choices comes up empty. A server or uploader named
+  on a card narrows the feed the same way, and on a recording's page leads to
+  all of theirs. The filter is in the address (`&server=`, `&uploader=`), so
+  a narrowed feed can be linked and Back undoes a change. Not by mod, yet.
 - **The cover plays the round; the title opens its page.** The page has the
   facts (level, game type, server, when and by whom it was recorded, length,
   players), Watch, Copy link, and for its uploader or an admin Rename and
@@ -116,7 +123,8 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 
 | | |
 |---|---|
-| `GET /` | the feed: `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), and the space used |
+| `GET /` | the feed: `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not) |
+| `GET /filters` | the servers and uploaders to narrow the feed to, with counts, `server` and `uploader` as for the feed: each list is counted within the other filter and not its own. The busiest 100 of each, by name. |
 | `GET /{slug}` | one recording, with `canManage` for its uploader or an admin |
 | `GET /{slug}.ndjson`, `.xml`, `.jpg` | the recording, its server log and its cover. The first two are stored gzipped and sent as they are (`Content-Encoding: gzip`): the browser unpacks them and the API spends no CPU compressing. The cover's link is versioned, so it keeps a year. |
 | `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
@@ -262,7 +270,9 @@ cd api && ASPNETCORE_ENVIRONMENT=Development E2E_SEED=true DB_PATH=/tmp/feed.db 
 ```
 
 Without `Jwt__Issuer` and `Jwt__Audience` the dev sign-in hands out a token the
-API itself refuses (IDX10208), and every share and comment is a 401.
+API itself refuses (IDX10208), and every share and comment is a 401. On a disk
+more than 85% full, uploads are refused as they would be on the node: add
+`Recordings__MinFreeBytes=0 Recordings__MinFreeFraction=0`.
 
 (`./scripts/bootstrap-worktree.sh` makes the `.e2e/` key and secret.) Then
 `localhost:5273/play/index.html?tab=replay`: Sign in (dev) is the seeded
@@ -284,10 +294,20 @@ admin. With no API on :9222 the page reads the live feed, read-only;
   to be had, size, quota and disk refusals), the feed's order and
   paging, comments' times, counts and who may delete them, rename and delete,
   covers, views once a window, the file check, and account export and erasure.
+  The filters: a server, an uploader or both, trimmed, the space still
+  everyone's; each list's counts within the other filter, by name ignoring
+  case, a recording naming no server and one whose file is gone left out.
 - `tools/bf1942-models/tests/test_recordings_api.py`: which `?replay=` is a
   shared recording and on which API, the times in a comment, readable queries,
-  the watch links, and the recording player the dialogs offer, found as the
-  API finds him.
+  the watch links, the recording player the dialogs offer, found as the
+  API finds him, and the filters' queries and addresses.
+- The filters by hand (2026-09-29), twelve synthetic rounds on four servers
+  by four uploaders against the worktree's API: a server picked narrowed the
+  cards and the uploaders' counts, both together, Back undid one, the clear
+  button, a name on a card and on a page, a server nobody recorded on (No
+  recordings match, still clearable), leaving the tab, two changes in a row
+  (the last one wins), a real click and ArrowDown on the select; at 1280 and
+  on a 375 px phone, where both filters keep one row.
 - `ui/e2e/replay-feed-signin.spec.ts`: a bfstats.io return address is kept, a
   foreign one and a stale one are not, and the callback goes back.
 - By hand against the worktree's API and viewer (2026-09-28), the real Midway

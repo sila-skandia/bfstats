@@ -35,6 +35,8 @@ const ICONS = {
   eye: '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/>',
   chat: '<path d="M2.5 3.2h11v7.2H7.2L4.3 13v-2.6H2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
   user: '<circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3 13.6c.6-2.6 2.6-3.8 5-3.8s4.4 1.2 5 3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
+  server: '<rect x="2.5" y="2.6" width="11" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="2.5" y="9" width="11" height="4.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.1" cy="4.8" r=".95" fill="currentColor"/><circle cx="5.1" cy="11.2" r=".95" fill="currentColor"/>',
+  chevron: '<path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -87,6 +89,37 @@ const STYLE = `
 .rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible,
 .rf-input:focus-visible, .rf-select:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rf-storage { color: var(--rf-faint); font-size: 11px; white-space: nowrap; }
+/* The filters: quiet until touched, lit while they narrow the feed. What a
+   filter says is drawn; the native select lies over it unseen, so the pill is
+   as wide as its words in every browser and a phone opens its own picker. */
+.rf-filters { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; max-width: 100%; }
+.rf-filter { display: inline-flex; align-items: stretch; min-width: 0; max-width: 100%; height: 28px;
+  border: 1px solid transparent; border-radius: 6px; color: var(--rf-muted);
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.rf-filter:hover, .rf-filter:focus-within { border-color: var(--rf-edge); color: var(--rf-ink); }
+.rf-filter:has(select:focus-visible) { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rf-filter-face { position: relative; display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px;
+  font: 12px/1 'Trebuchet MS', 'Segoe UI', sans-serif; }
+.rf-root .rf-filter-face svg { width: 13px; height: 13px; opacity: .8; }
+.rf-root .rf-filter-face svg:last-of-type { width: 10px; height: 10px; }
+.rf-filter-text { min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-filter select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0;
+  appearance: none; -webkit-appearance: none; font: 13px 'Trebuchet MS', 'Segoe UI', sans-serif; cursor: pointer; }
+.rf-filter select option { background: #1c1c18; color: var(--rf-ink); }
+/* Below 16px a phone zooms the page to the select it focuses. */
+@media (pointer: coarse) { .rf-filter select { font-size: 16px; } }
+.rf-filter.on { border-color: rgba(163, 156, 108, .55); background: rgba(163, 156, 108, .14); color: var(--rf-ink); }
+.rf-root .rf-filter.on .rf-filter-face svg:first-of-type { color: var(--rf-khaki); opacity: 1; }
+.rf-filter-clear { appearance: none; display: grid; place-items: center; align-self: stretch; width: 24px; margin: 0; padding: 0;
+  border: 0; border-left: 1px solid rgba(163, 156, 108, .3); border-radius: 0 5px 5px 0; background: transparent;
+  color: var(--rf-muted); cursor: pointer; }
+.rf-filter-clear:hover { color: var(--rf-ink); background: rgba(255, 255, 255, .08); }
+.rf-filter-clear:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: -1px; }
+.rf-root .rf-filter-clear svg { width: 10px; height: 10px; }
+/* A server or uploader named in a card or on a page narrows the feed to it. */
+.rf-pick { color: inherit; text-decoration: none; }
+.rf-pick:hover { color: var(--rf-ink); text-decoration: underline; text-decoration-color: var(--rf-khaki); text-underline-offset: 3px; }
+.rf-pick:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rf-body { position: relative; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; }
 .rf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 16px 14px; }
 .rf-card { display: flex; flex-direction: column; min-width: 0; }
@@ -209,12 +242,17 @@ const STYLE = `
 @media (max-width: 560px) {
   .rf-head { flex-wrap: wrap; padding: 6px 6px 6px 12px; row-gap: 6px; }
   .rf-bar { padding: 8px 10px; }
+  /* Both filters on one row: a server's long name gives way first. */
+  .rf-filters { flex: 1 1 100%; flex-wrap: nowrap; }
+  .rf-filter { flex-shrink: 0; }
+  .rf-filter-server.on { flex-shrink: 1; }
+  .rf-filter-uploader .rf-filter-text { max-width: 110px; }
   .rf-body { padding: 10px; }
   .rf-grid { grid-template-columns: minmax(0, 1fr); }
   .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rf-play, .rf-drop, .rf-progress i { transition: none; }
+  .rf-play, .rf-drop, .rf-progress i, .rf-filter { transition: none; }
   .rf-skeleton .rf-cover { animation: none; }
 }
 `;
@@ -246,6 +284,21 @@ export function watchHref(recording, { root, fileUrl = path => path, at = null }
   ]);
   return new URL(`map.html?${q}`, new URL(root, location.href)).href;
 }
+
+/** What the feed is narrowed to in an address (`?server=`, `?uploader=`):
+ *  `{ server, uploader }`, '' for all. */
+export function feedFilterOf(params) {
+  return { server: (params.get('server') ?? '').trim(), uploader: (params.get('uploader') ?? '').trim() };
+}
+
+/** The feed's address, narrowed to `filter`. */
+export function feedHref(filter = {}) {
+  return `?${readableQuery([['tab', 'replay'], ['server', filter.server], ['uploader', filter.uploader]])}`;
+}
+
+const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader;
+const matchesFilter = (recording, filter) => (!filter.server || recording.serverName === filter.server)
+  && (!filter.uploader || recording.uploaderName === filter.uploader);
 
 // --- the levels' art -----------------------------------------------------------
 
@@ -327,6 +380,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   const state = {
     api: null,          // recordings-api.js client, once the API is found
     sort: 'recent',
+    filter: { server: '', uploader: '' },
+    choices: null,      // `{ servers, uploaders }` the feed can be narrowed to
     items: [],
     total: 0,
     page: 0,
@@ -364,12 +419,19 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     sortSeg.append(b);
     return b;
   });
+  const filtersEl = el('div', 'rf-filters');
+  filtersEl.setAttribute('role', 'group');
+  filtersEl.setAttribute('aria-label', 'Filters');
+  filtersEl.hidden = true;
+  const serverPick = filterPick('server', 'server', 'All servers', 'Server');
+  const uploaderPick = filterPick('uploader', 'user', 'All uploaders', 'Shared by');
+  filtersEl.append(serverPick.root, uploaderPick.root);
   const storageEl = el('span', 'rf-storage');
   const watchFile = button('quiet', 'Watch a file', () => onWatchFile?.(), 'file');
   watchFile.title = 'Watch a bf42plus recording from this computer without sharing it';
   watchFile.hidden = !onWatchFile;
   const shareBtn = button('primary', 'Share a recording', () => openShare(), 'upload');
-  bar.append(sortSeg, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
+  bar.append(sortSeg, filtersEl, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
   const body = el('div', 'rf-body');
   const shade = el('div', 'rf-shade');
   shade.hidden = true;
@@ -448,6 +510,22 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     loadList(true);
   }
 
+  /** Narrows the feed to `next` (`{ server, uploader }`, '' for all), at an
+   *  address of its own, from the bar or from a name in a card or on a page. */
+  function applyFilter(next) {
+    const filter = { server: next.server ?? '', uploader: next.uploader ?? '' };
+    const changed = !sameFilter(filter, state.filter);
+    if (!changed && !state.detail) return;
+    state.filter = filter;
+    history.pushState({ tab: 'replay' }, '', feedHref(filter));
+    state.detail = null;
+    commentsEl = null;
+    body.scrollTop = 0;
+    if (changed || !state.choices) loadChoices();
+    if (changed || !state.items.length) loadList(true);
+    else renderList();
+  }
+
   let listAbort = null;
   async function loadList(reset = false) {
     if (!state.api) {
@@ -467,32 +545,130 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       state.pages = 1;
     }
     if (state.page >= state.pages && !reset) return;
-    listAbort = new AbortController();
+    // A later load (another order or filter) takes over from this one.
+    const abort = listAbort = new AbortController();
     state.loading = true;
     state.error = null;
     renderList();
     try {
-      const page = await state.api.list({ sort: state.sort, page: state.page + 1, pageSize: PAGE_SIZE, signal: listAbort.signal });
+      const page = await state.api.list({
+        sort: state.sort, ...state.filter, page: state.page + 1, pageSize: PAGE_SIZE, signal: abort.signal,
+      });
+      if (abort !== listAbort) return;
       state.items = reset ? page.items : [...state.items, ...page.items.filter(i => !state.items.some(o => o.slug === i.slug))];
       state.total = page.totalCount;
       state.page = page.page;
       state.pages = page.totalPages;
       state.storage = page.storage;
     } catch (error) {
-      if (error.name === 'AbortError') return;
+      if (error.name === 'AbortError' || abort !== listAbort) return;
       console.warn('recordings-feed: the list', error);
       state.error = error.status === 404 || error.status === 0 || !error.status
         ? 'The recordings feed is not reachable right now.' : error.message;
     } finally {
-      state.loading = false;
+      if (abort === listAbort) state.loading = false;
     }
     renderList();
   }
+
+  // --- the filters ---------------------------------------------------------------
+
+  /** The servers and uploaders there are to pick, each counted within the
+   *  other filter. Filtering is a nicety: without them the feed is as it was. */
+  let choicesAbort = null;
+  async function loadChoices() {
+    await start();
+    if (!state.api) return;
+    choicesAbort?.abort();
+    const abort = choicesAbort = new AbortController();
+    try {
+      const choices = await state.api.filters({ ...state.filter, signal: abort.signal });
+      if (abort !== choicesAbort) return;
+      state.choices = choices;
+    } catch (error) {
+      if (error.name === 'AbortError' || abort !== choicesAbort) return;
+      console.warn('recordings-feed: the filters', error);
+      state.choices = null;
+    }
+    renderFilters();
+  }
+
+  function renderFilters() {
+    const { servers = [], uploaders = [] } = state.choices ?? {};
+    serverPick.set(servers, state.filter.server);
+    uploaderPick.set(uploaders, state.filter.uploader);
+    filtersEl.hidden = !state.filter.server && !state.filter.uploader && !servers.length && !uploaders.length;
+  }
+
+  /** One of the bar's filters: it says All until a name is picked, its list
+   *  gives each name with how many recordings it shows, and it has a way back
+   *  to all. */
+  function filterPick(key, iconName, all, label) {
+    const root = el('div', `rf-filter rf-filter-${key}`);
+    const face = el('div', 'rf-filter-face');
+    face.innerHTML = `${icon(iconName)}<span class="rf-filter-text" aria-hidden="true"></span>${icon('chevron')}`;
+    const text = face.querySelector('.rf-filter-text');
+    const select = el('select');
+    select.setAttribute('aria-label', label);
+    select.addEventListener('change', () => applyFilter({ ...state.filter, [key]: select.value }));
+    face.append(select);
+    const clear = el('button', 'rf-filter-clear');
+    clear.type = 'button';
+    clear.innerHTML = icon('close');
+    clear.title = all;
+    clear.setAttribute('aria-label', all);
+    clear.addEventListener('click', () => applyFilter({ ...state.filter, [key]: '' }));
+    root.append(face, clear);
+    let shown = '';
+    return {
+      root,
+      set(choices, value) {
+        const known = choices.some(c => c.name === value);
+        const options = [['', all], ...(value && !known ? [[value, value]] : []),
+          ...choices.map(c => [c.name, `${c.name} (${c.count})`])];
+        root.classList.toggle('on', Boolean(value));
+        clear.hidden = !value;
+        text.textContent = value || all;
+        select.title = value ? `${label}: ${value}` : all;
+        // Rebuilt only when it changes: a list replaced under an open select shuts it.
+        const next = JSON.stringify([options, value]);
+        if (next === shown) return;
+        shown = next;
+        select.replaceChildren(...options.map(([name, said]) => {
+          const option = el('option', '', said);
+          option.value = name;
+          return option;
+        }));
+        select.value = value;
+      },
+    };
+  }
+
+  /** A server or uploader named in a card or on a page: a link to the feed
+   *  narrowed to it, followed in place. */
+  function pickLink(text, filter, title, { strong = false } = {}) {
+    const a = el('a', 'rf-pick');
+    a.append(strong ? el('b', '', text) : text);
+    a.href = feedHref(filter);
+    a.title = title;
+    a.addEventListener('click', e => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      applyFilter(filter);
+    });
+    return a;
+  }
+
+  const onServer = (recording, filter = state.filter) => pickLink(recording.serverName,
+    { ...filter, server: recording.serverName }, `Recordings on ${recording.serverName}`);
+  const sharedBy = (recording, filter = state.filter, options = {}) => pickLink(recording.uploaderName,
+    { ...filter, uploader: recording.uploaderName }, `Recordings shared by ${recording.uploaderName}`, options);
 
   function renderList() {
     if (state.detail) return;
     for (const b of sorts) b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort));
     bar.hidden = false;
+    renderFilters();
     countEl.textContent = state.total ? String(state.total) : '';
     storageEl.textContent = state.storage ? `${size(state.storage.usedBytes)} of ${size(state.storage.quotaBytes)} used` : '';
     body.replaceChildren();
@@ -506,6 +682,13 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       const grid = el('div', 'rf-grid');
       for (let i = 0; i < 8; i++) grid.append(skeleton());
       body.append(grid);
+      return;
+    }
+    if (!state.items.length && (state.filter.server || state.filter.uploader)) {
+      const note = el('div', 'rf-note');
+      note.append(el('p', 'rf-strong', 'No recordings match.'),
+        button('', 'Show all recordings', () => applyFilter({ server: '', uploader: '' })));
+      body.append(note);
       return;
     }
     if (!state.items.length) {
@@ -584,11 +767,13 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     });
     const where = el('div', 'rf-line');
     artFor(recording.mod, recording.level).then(level => {
-      where.textContent = [level.title, titled(recording.gameMode), recording.serverName].filter(Boolean).join(' · ');
+      const said = [level.title, titled(recording.gameMode)].filter(Boolean);
+      where.replaceChildren(said.join(' · '));
+      if (recording.serverName) where.append(said.length ? ' · ' : '', onServer(recording));
       where.title = where.textContent;
     });
     const stats = el('div', 'rf-line');
-    stats.append(el('b', '', recording.uploaderName));
+    stats.append(recording.uploaderName ? sharedBy(recording, state.filter, { strong: true }) : '');
     for (const part of [count(recording.viewCount, 'view'),
       recording.commentCount ? count(recording.commentCount, 'comment') : null, ago(recording.createdAt)].filter(Boolean)) {
       stats.append(el('span', 'rf-dot'), document.createTextNode(part));
@@ -631,7 +816,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     if (!state.detail) return;
     state.detail = null;
     commentsEl = null;
-    if (push) history.pushState({ tab: 'replay' }, '', '?tab=replay');
+    if (push) history.pushState({ tab: 'replay' }, '', feedHref(state.filter));
+    if (!state.choices) loadChoices();
     renderList();
     if (!state.items.length) loadList(true);
   }
@@ -642,7 +828,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     bar.hidden = true;
     body.replaceChildren();
     const page = el('article', 'rf-detail');
-    page.append(button('quiet rf-back', 'All recordings', () => closeDetail({ push: true }), 'back'));
+    const narrowed = state.filter.server || state.filter.uploader;
+    page.append(button('quiet rf-back', narrowed ? 'Recordings' : 'All recordings', () => closeDetail({ push: true }), 'back'));
     if (recording.error) {
       const note = el('div', 'rf-note');
       note.append(el('p', 'rf-error', recording.error));
@@ -655,24 +842,31 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     const title = el('h2', 'rf-title');
     title.append(el('span', '', recording.title || ' '));
     facts.append(title);
+    // A name on a recording's page leads to all of that server's or that
+    // player's recordings, whatever the feed was narrowed to before.
+    const all = { server: '', uploader: '' };
     if (!recording.loading || recording.uploaderName) {
       const by = el('div', 'rf-by');
-      by.textContent = [`Shared by ${recording.uploaderName}`, ago(recording.createdAt),
-        count(recording.viewCount, 'view')].filter(Boolean).join(' · ');
+      if (recording.uploaderName) by.append('Shared by ', sharedBy(recording, all));
+      for (const part of [ago(recording.createdAt), count(recording.viewCount, 'view')].filter(Boolean)) {
+        by.append(by.childNodes.length ? ` · ${part}` : part);
+      }
       facts.append(by);
     }
     if (!recording.loading) {
       const dl = el('dl', 'rf-facts');
       const fact = (label, value) => {
         if (!value) return;
-        dl.append(el('dt', '', label), el('dd', '', value));
+        const dd = el('dd');
+        dd.append(value);
+        dl.append(el('dt', '', label), dd);
       };
       const levelDd = { value: titled(recording.level) };
       fact('Level', levelDd.value);
       const levelNode = dl.lastChild;
       artFor(recording.mod, recording.level).then(level => { if (levelNode) levelNode.textContent = level.title; });
       fact('Game type', titled(recording.gameMode));
-      fact('Server', recording.serverName);
+      fact('Server', recording.serverName && onServer(recording, all));
       fact('Recorded', [recordedAt(recording.recordedLocal), recording.recordedBy && `by ${recording.recordedBy}`].filter(Boolean).join(' '));
       fact('Length', clock(recording.durationSeconds));
       if (recording.players?.length) {
@@ -747,6 +941,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         await state.api.remove(recording.slug);
         state.items = state.items.filter(i => i.slug !== recording.slug);
         state.total = Math.max(0, state.total - 1);
+        loadChoices();
         closeDetail({ push: true });
       } catch (error) {
         b.disabled = false;
@@ -1183,8 +1378,11 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           if ((state.viewer?.names ?? []).includes(author)) rememberPostAs(author);
           sharing = false;
           closeShare();
-          state.items = [shared, ...state.items.filter(i => i.slug !== shared.slug)];
-          state.total += 1;
+          if (matchesFilter(shared, state.filter)) {
+            state.items = [shared, ...state.items.filter(i => i.slug !== shared.slug)];
+            state.total += 1;
+          }
+          loadChoices();
           openDetail(shared.slug, { push: true, summary: shared });
         } catch (error) {
           sharing = false;
@@ -1246,15 +1444,25 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
   // --- routing -------------------------------------------------------------------
 
-  /** Shows what `?tab=replay[&rec=<slug>]` names. */
+  /** Shows what `?tab=replay[&rec=<slug>]` names, or the feed narrowed to
+   *  `&server=` and `&uploader=`. A recording's page keeps the filter it was
+   *  opened from, for its way back to the feed. */
   function route(params = new URLSearchParams(location.search)) {
     const slug = params.get('rec');
     if (slug) {
       if (state.detail?.slug !== slug) openDetail(slug);
       return;
     }
+    const filter = feedFilterOf(params);
+    const changed = !sameFilter(filter, state.filter);
+    state.filter = filter;
+    if (changed || !state.choices) loadChoices();
+    if (changed) {
+      state.items = [];
+      body.scrollTop = 0;
+    }
     if (state.detail) closeDetail();
-    else if (!state.items.length && !state.loading) loadList(true);
+    else if (changed || (!state.items.length && !state.loading)) loadList(true);
   }
 
   window.addEventListener('popstate', e => {

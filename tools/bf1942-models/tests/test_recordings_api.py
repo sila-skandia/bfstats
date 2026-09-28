@@ -103,6 +103,21 @@ class RecordingsApiTests(unittest.TestCase):
             "v3Trigger": "skandia", "chat": "skandia", "severalHumans": "", "nobody": "",
         })
 
+    def test_the_feed_narrows_to_a_server_and_an_uploader(self) -> None:
+        filtered = self.results["filtered"]
+        # An empty filter is left out of the API's query.
+        self.assertEqual(filtered["asked"], [
+            "https://bfstats.io/stats/recordings?sort=views&page=2&pageSize=24&server=MoonGamers.com%20%7C%20Est.%202004",
+            "https://bfstats.io/stats/recordings?sort=recent&page=1&pageSize=24",
+            "https://bfstats.io/stats/recordings/filters?uploader=a%20b%26c",
+            "https://bfstats.io/stats/recordings/filters",
+        ])
+        # The page's own address names the filter, so it can be linked and gone back to.
+        self.assertEqual(filtered["href"], "?tab=replay&server=MoonGamers.com%20%7C%20Est.%202004&uploader=Rut")
+        self.assertEqual(filtered["hrefAll"], "?tab=replay")
+        self.assertEqual(filtered["of"], {"server": "Moon Gamers", "uploader": ""})
+        self.assertEqual(filtered["ofNone"], {"server": "", "uploader": ""})
+
 
 if __name__ == "__main__":
     unittest.main()
