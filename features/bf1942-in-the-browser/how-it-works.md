@@ -6,8 +6,8 @@ the end go to the long versions.
 ## Part 1. Turning the game's files into web files
 
 No model or level in the viewer is made or placed by hand. Python scripts in
-`tools/bf1942-models` read the retail game's `.rfa` archives and write files a
-browser can load:
+[`tools/bf1942-models`](../../tools/bf1942-models) read the retail game's
+`.rfa` archives and write files a browser can load:
 
 | Game format | Web format |
 |---|---|
@@ -21,8 +21,9 @@ glTF loader.
 
 ### Archives
 
-An `.rfa` is a flat archive of LZO-compressed segments. `bf42/rfa.py` opens
-many archives as one pool and matches names without regard to case, because
+An `.rfa` is a flat archive of LZO-compressed segments.
+[`bf42/rfa.py`](../../tools/bf1942-models/bf42/rfa.py) opens many archives as
+one pool and matches names without regard to case, because
 the game was authored on Windows and asks for `texture/Sherma_I` when the file
 is `texture/sherma_i.dds`. A mod looks each name up in its own archives first
 and then in its parent's, the way the game does, so Road to Rome falls back to
@@ -66,12 +67,14 @@ meshes go into one `collision-meshes.json` for the physics.
 - Helmets and packs are `KitPart` templates, each tied to one of three bones:
   `A` under the head, `backpack` or `HipPack`. Each becomes `<Part>.kit.glb`,
   and a kit lying on the ground becomes `<Kit>__pickup.kit.glb`.
-  `extract_loadouts.py` reads which soldier and kits each team gets from every
-  level's `Init.con` and writes `loadouts.json`.
+  [`extract_loadouts.py`](../../tools/bf1942-models/extract_loadouts.py) reads
+  which soldier and kits each team gets from every level's `Init.con` and
+  writes `loadouts.json`.
 
 ### Levels
 
-`extract_map.py <Level>` bakes one level into a folder:
+[`extract_map.py`](../../tools/bf1942-models/extract_map.py) bakes one level
+into a folder:
 
 - `scene.glb` holds everything drawn. The terrain is the level's 16-bit
   heightmap, cut into 256 m tiles and painted with the level's own colour
@@ -83,8 +86,8 @@ meshes go into one `collision-meshes.json` for the physics.
 - `scene.json` holds everything the viewer reads rather than draws: control
   points, spawn points, tickets, game modes, fog and sun, damage tables, sound
   placements and AI settings. The exporter builds it in layers, so
-  `patch_scene.py` can rewrite one layer without sending the 48 MB of geometry
-  again.
+  [`patch_scene.py`](../../tools/bf1942-models/patch_scene.py) can rewrite one
+  layer without sending the 48 MB of geometry again.
 
 ### Sound, music, menus and fonts
 
@@ -102,9 +105,9 @@ meshes go into one `collision-meshes.json` for the physics.
   glyph by glyph from them. Strings come from `lexiconAll.dat`.
 
 The same scripts take `--mod EoD`, `--mod XPack1` and so on, and write to
-`models/mods/<mod>` and `maps/mods/<mod>`. `scripts/publish-mesh-delta.py`
-uploads changed files to the production assets volume, which serves
-mesh.bfstats.io. On this PC the trees come to 5.7 GB of models and 19 GB of
+`viewer/models/mods/<mod>` and `viewer/maps/mods/<mod>`.
+[`scripts/publish-mesh-delta.py`](../../scripts/publish-mesh-delta.py) uploads
+changed files to the production assets volume, which serves mesh.bfstats.io. On this PC the trees come to 5.7 GB of models and 19 GB of
 maps, mods included.
 
 ## Part 2. How bf42plus records a round
@@ -127,8 +130,9 @@ simulation at the same 30 ticks a second and sends back two separate streams:
 
 ### What the recorder does
 
-The recorder is our fork of bf42++, `github.com/sila-skandia/bf42plus`, and
-the code is in `src/replay.cpp`. The game loads it as `dsound.dll` from its own
+The recorder is our fork of bf42++,
+[sila-skandia/bf42plus](https://github.com/sila-skandia/bf42plus), and the code
+is in [`src/replay.cpp`](https://github.com/sila-skandia/bf42plus/blob/master/src/replay.cpp). The game loads it as `dsound.dll` from its own
 folder, so it runs inside the player's game client, not on the server. It stays
 off until `recordReplays` is set in `bf42++.ini` or `plus.recordReplays 1` is
 typed in the console. It writes `replays/replay_<date>-<time>.ndjson` in the
@@ -170,7 +174,7 @@ A 9-minute, 34-player Bocage round on a public server made a 9.9 MB file of
 - Out of range, the replay holds an object at the last pose it saw.
 - One recording from each side covers every player for the whole round. The
   network ids are the server's, so two files merge by id, which
-  `features/round-replay-merge` does.
+  [round-replay-merge](../round-replay-merge/README.md) does.
 - The sampler runs 10 times a second, but not in step with the server's 0.1 s
   updates. A sample can land between two updates, where the client moves
   remote objects on its own at zero input. Writing each object as its update
@@ -182,10 +186,11 @@ A 9-minute, 34-player Bocage round on a public server made a 9.9 MB file of
 
 ## Longer versions
 
-- `features/round-replay-capture/README.md` has the recorder research, the
-  record format and the measurements behind Part 2.
-- `features/bf1942-engine-reference/subsystems/netcode.md` covers the wire
+- [round-replay-capture](../round-replay-capture/README.md) has the recorder
+  research, the record format and the measurements behind Part 2.
+- [netcode](../bf1942-engine-reference/subsystems/netcode.md) covers the wire
   format, the 30 Hz tick and the 0.1 s cadence.
-- `features/level-bake-layers/README.md` covers the level bake and its layers.
-- The module docstrings in `tools/bf1942-models/bf42/` explain each file
-  format.
+- [level-bake-layers](../level-bake-layers/README.md) covers the level bake and
+  its layers.
+- The module docstrings in [`tools/bf1942-models/bf42/`](../../tools/bf1942-models/bf42)
+  explain each file format.
