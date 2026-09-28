@@ -29,8 +29,8 @@ public sealed class RecordingServiceTests : IDisposable
         await fixture.Db.Recordings.Where(r => r.Slug == first.Slug)
             .ExecuteUpdateAsync(set => set.SetProperty(r => r.ViewCount, 9));
 
-        var recent = await fixture.Service.ListAsync(null, 1, 24, default);
-        var watched = await fixture.Service.ListAsync("views", 1, 24, default);
+        var recent = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
+        var watched = await fixture.Service.ListAsync("views", 1, 24, RecordingFilter.None, default);
 
         Assert.Equal([third.Slug, second.Slug, first.Slug], recent.Items.Select(i => i.Slug));
         Assert.Equal([first.Slug, third.Slug, second.Slug], watched.Items.Select(i => i.Slug));
@@ -44,7 +44,7 @@ public sealed class RecordingServiceTests : IDisposable
     {
         for (var i = 0; i < 5; i++) await Share($"r{i}");
 
-        var page = await fixture.Service.ListAsync(null, 2, 2, default);
+        var page = await fixture.Service.ListAsync(null, 2, 2, RecordingFilter.None, default);
 
         Assert.Equal(2, page.Items.Count);
         Assert.Equal(5, page.TotalCount);
@@ -64,9 +64,79 @@ public sealed class RecordingServiceTests : IDisposable
 
         await reconciler.ReconcileAsync(default);
 
-        var feed = await fixture.Service.ListAsync(null, 1, 24, default);
+        var feed = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
         Assert.Single(feed.Items);
         Assert.Null(await fixture.Service.GetAsync(gone.Slug, null, default));
+    }
+
+    private const string Moon = "MoonGamers.com | Est. 2004";
+
+    private Task<RecordingDetailDto> ShareAsRut(string salt) => fixture.UploadAsync(
+        RecordingFixture.Midway(salt), actor: fixture.AsOther,
+        meta: new RecordingUploadMeta($"Round {salt}", "Rut", null, null, null, null, null, null, null, null));
+
+    private Task OnServer(string slug, string server) =>
+        fixture.Db.Recordings.Where(r => r.Slug == slug).ExecuteUpdateAsync(set => set.SetProperty(r => r.ServerName, server));
+
+    [Fact]
+    public async Task List_NarrowsToAServerAnUploaderOrBoth()
+    {
+        var mine = await Share("mine");
+        var theirs = await ShareAsRut("theirs");
+        var elsewhere = await Share("elsewhere");
+        await OnServer(elsewhere.Slug, "Other");
+
+        var list = (string? server, string? uploader) =>
+            fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(server, uploader), default);
+        var onMoon = await list($"  {Moon} ", null);
+        var byMe = await list(null, "skandia");
+        var both = await list(Moon, "skandia");
+        var none = await list("Other", "Rut");
+        var everything = await list("", " ");
+
+        Assert.Equal([theirs.Slug, mine.Slug], onMoon.Items.Select(i => i.Slug));
+        Assert.Equal(2, onMoon.TotalCount);
+        Assert.Equal([elsewhere.Slug, mine.Slug], byMe.Items.Select(i => i.Slug));
+        Assert.Equal([mine.Slug], both.Items.Select(i => i.Slug));
+        Assert.Empty(none.Items);
+        Assert.Equal(0, none.TotalCount);
+        Assert.Equal(1, none.TotalPages);
+        Assert.Equal(3, everything.TotalCount);
+        // The space used is everyone's, whatever the feed shows.
+        Assert.Equal(everything.Storage.UsedBytes, none.Storage.UsedBytes);
+    }
+
+    [Fact]
+    public async Task Filters_CountEachChoiceWithinTheOtherFilter()
+    {
+        await Share("a");
+        await ShareAsRut("b");
+        await OnServer((await Share("c")).Slug, "Other");
+        var unnamed = await Share("d");
+        await fixture.Db.Recordings.Where(r => r.Slug == unnamed.Slug).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.ServerName, "")
+            .SetProperty(r => r.UploaderName, "anna"));
+        var gone = await Share("gone");
+        await fixture.Db.Recordings.Where(r => r.Slug == gone.Slug).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.FileMissing, true)
+            .SetProperty(r => r.UploaderName, "absent"));
+
+        var choices = (RecordingFiltersDto f) => (
+            f.Servers.Select(c => (c.Name, c.Count)).ToList(),
+            f.Uploaders.Select(c => (c.Name, c.Count)).ToList());
+        var (servers, uploaders) = choices(await fixture.Service.FiltersAsync(RecordingFilter.None, default));
+        var (serversOnOther, uploadersOnOther) = choices(await fixture.Service.FiltersAsync(RecordingFilter.From("Other", null), default));
+        var (serversByRut, uploadersByRut) = choices(await fixture.Service.FiltersAsync(RecordingFilter.From(null, "Rut"), default));
+
+        // By name ignoring case; a recording naming no server has no server to pick, and one
+        // whose file is gone is not counted.
+        Assert.Equal([(Moon, 2), ("Other", 1)], servers);
+        Assert.Equal([("anna", 1), ("Rut", 1), ("skandia", 2)], uploaders);
+        // A server picked narrows the uploaders, not the servers, and the other way round.
+        Assert.Equal(servers, serversOnOther);
+        Assert.Equal([("skandia", 1)], uploadersOnOther);
+        Assert.Equal([(Moon, 1)], serversByRut);
+        Assert.Equal(uploaders, uploadersByRut);
     }
 
     [Fact]

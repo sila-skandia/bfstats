@@ -105,4 +105,24 @@ results.recorder = {
   nobody: recorded(lines({ k: 'h', v: 5 }, { k: 'o', t: 0, id: 1 }, { k: 'end', t: 60 })),
 };
 
+// The feed narrowed to a server and an uploader: the API's queries, and the
+// page's own address.
+const asked = [];
+globalThis.fetch = async url => {
+  asked.push(String(url));
+  return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+const client = api.createRecordingsApi({ base: 'https://bfstats.io', mode: 'remote' });
+await client.list({ sort: 'views', page: 2, pageSize: 24, server: 'MoonGamers.com | Est. 2004', uploader: '' });
+await client.list();
+await client.filters({ server: '', uploader: 'a b&c' });
+await client.filters();
+results.filtered = {
+  asked,
+  href: feed.feedHref({ server: 'MoonGamers.com | Est. 2004', uploader: 'Rut' }),
+  hrefAll: feed.feedHref({ server: '', uploader: '' }),
+  of: feed.feedFilterOf(new URLSearchParams('tab=replay&server=+Moon%20Gamers+&uploader=')),
+  ofNone: feed.feedFilterOf(new URLSearchParams('tab=replay&rec=abcdefghjk')),
+};
+
 process.stdout.write(JSON.stringify(results));

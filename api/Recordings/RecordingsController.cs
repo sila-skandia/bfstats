@@ -35,12 +35,23 @@ public class RecordingsController(
     public const string CommentLimit = "recordings-comments";
     public const string ViewLimit = "recordings-views";
 
+    /// <summary>The feed, narrowed to one <paramref name="server"/>, one
+    /// <paramref name="uploader"/>, or both when given.</summary>
     [HttpGet]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<PagedRecordingsDto>> List(
-        [FromQuery] string? sort, [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
+        [FromQuery] string? sort, [FromQuery] string? server, [FromQuery] string? uploader,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
         CancellationToken ct = default) =>
-        Ok(await recordings.ListAsync(sort, page, pageSize, ct));
+        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader), ct));
+
+    /// <summary>The servers and uploaders the feed can be narrowed to, each with how many
+    /// recordings it would show beside the other filter.</summary>
+    [HttpGet("filters")]
+    [EnableCors(PublicReadCors)]
+    public async Task<ActionResult<RecordingFiltersDto>> Filters(
+        [FromQuery] string? server, [FromQuery] string? uploader, CancellationToken ct = default) =>
+        Ok(await recordings.FiltersAsync(RecordingFilter.From(server, uploader), ct));
 
     /// <summary>The signed-in viewer: the player names they can post as.</summary>
     [HttpGet("me")]
