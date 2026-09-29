@@ -8,13 +8,20 @@ Bocage round of 2026-09-28, `fixtures/merge_bocage_350-385.ndjson.gz`) split
 by side with the server's own rule (round-replay-capture §19) and merged back
 pins that the merge gives the original back where the two files cover it.
 With the whole round on this PC (536 s, 34 players) the same again.
+
+The guard: the first real pair shared to the feed, two rounds the fit once
+lined up by the server's adverts, is refused (and merged only by force);
+the first real pair of one round merges (`fixtures/merge_guard_*`, their
+events only); where the scores cannot decide, the world clock does.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -113,6 +120,95 @@ class ReplayMergeOptionTests(unittest.TestCase):
     def test_the_reports_summaries_take_a_real_rounds_numbers(self) -> None:
         # The first real pair threw in the report: Math.max(...) over its pose pairs.
         self.assertEqual({"max": 999, "n": 300000, "maxOf": 999, "minOf": 0, "none": None}, self.results["bigSpread"])
+
+
+class ReplayMergeGuardTests(unittest.TestCase):
+    """The guard (`replay-merge-guard.js`): an alignment a few events agreed on
+    by chance is two rounds, and is not merged; one round's files are."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+        cls.g = cls.results["guard"]
+
+    def test_the_first_real_pair_two_rounds_is_refused(self) -> None:
+        # kqqaqxdwtr and nj2dyh58te: the fit once lined them up by 58 events,
+        # 55 of them the server's adverts, 1377.5 s apart.
+        for run in (self.g["falsePair"], self.g["falsePairReversed"]):
+            self.assertFalse(run["merged"])
+            self.assertEqual(run["error"], "MergeRefused")
+            found = run["guard"]["files"][0]
+            self.assertEqual(found["by"], "scores")
+            self.assertEqual(found["scores"]["matched"], 1)
+            self.assertEqual(sorted(found["scores"]["held"]), [551, 670])
+            self.assertGreater(found["worldClock"]["apartSeconds"], 2000)
+            self.assertEqual(
+                run["message"],
+                "These look like different rounds: of the 551 kills and scores both recorded, 1 lines up,"
+                " and the server's clock puts them 35:47 apart.")
+
+    def test_forced_the_pair_merges_and_says_so(self) -> None:
+        run = self.g["falsePairForced"]
+        self.assertTrue(run["merged"])
+        self.assertFalse(run["guard"]["credible"])
+        self.assertTrue(any(w.startswith("merged by force: These look like different rounds") for w in run["warnings"]))
+
+    def test_the_real_pair_of_one_round_merges(self) -> None:
+        # nj2dyh58te and skandia's recording of the same round, 791.2 s apart.
+        run = self.g["genuinePair"]
+        self.assertTrue(run["merged"])
+        found = run["guard"]["files"][0]
+        self.assertEqual(found["by"], "scores")
+        self.assertGreater(found["scores"]["share"], 0.99)
+        self.assertLess(found["worldClock"]["apartSeconds"], 0.1)
+        self.assertAlmostEqual(run["offset"], -791.22, delta=0.05)
+
+    def test_the_split_rounds_merge(self) -> None:
+        for name in ("split", "synthetic"):
+            guard = self.results[name]["guard"]
+            self.assertTrue(guard["credible"], name)
+            self.assertEqual(guard["files"][0]["by"], "scores", name)
+            self.assertGreater(guard["files"][0]["scores"]["share"], 0.95, name)
+        if self.results["fullRound"] is not None:
+            self.assertTrue(self.results["fullRound"]["guard"]["credible"])
+
+    def test_where_the_scores_cannot_decide_the_world_clock_does(self) -> None:
+        agrees = self.g["clockAgrees"]
+        self.assertTrue(agrees["merged"])
+        self.assertEqual(agrees["guard"]["files"][0]["by"], "world clock")
+        self.assertLess(agrees["guard"]["files"][0]["worldClock"]["apartSeconds"], 0.1)
+        refused = self.g["clockDisagrees"]
+        self.assertFalse(refused["merged"])
+        self.assertEqual(refused["guard"]["files"][0]["by"], "world clock")
+        self.assertEqual(refused["message"], "These look like different rounds: the server's clock puts them 5:00 apart.")
+
+
+class ReplayMergeCommandLineTests(unittest.TestCase):
+    """`merge_replays.mjs` reports a refusal and exits 1 unless forced."""
+
+    def test_the_first_real_pair_is_refused_unless_forced(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is not installed")
+        cli = HARNESS.parent.parent / "merge_replays.mjs"
+        fixtures = HARNESS.parent / "fixtures"
+        with tempfile.TemporaryDirectory() as tmp:
+            files = []
+            for name in ("merge_guard_kqqaqxdwtr.ndjson.gz", "merge_guard_nj2dyh58te_1370-1930.ndjson.gz"):
+                target = Path(tmp) / name.replace(".gz", "")
+                target.write_bytes(gzip.decompress((fixtures / name).read_bytes()))
+                files.append(str(target))
+            out = str(Path(tmp) / "merged.ndjson")
+            refused = subprocess.run(["node", str(cli), *files, "-o", out], capture_output=True, text=True, timeout=300)
+            self.assertEqual(refused.returncode, 1, refused.stderr)
+            self.assertIn("not merged: These look like different rounds", refused.stderr)
+            self.assertIn("REFUSED by scores", refused.stderr)
+            self.assertFalse(Path(out).exists())
+            forced = subprocess.run(["node", str(cli), *files, "-o", out, "--force"], capture_output=True, text=True, timeout=300)
+            self.assertEqual(forced.returncode, 0, forced.stderr)
+            self.assertIn("warning: merged by force", forced.stdout)
+            self.assertTrue(Path(out).exists())
 
 
 class ReplayMergeViewerTests(unittest.TestCase):

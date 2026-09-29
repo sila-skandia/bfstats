@@ -166,4 +166,33 @@ results.round = {
   ].map(text => api.commentTarget(text, sources)),
 };
 
+// A round as one card, and the replay's switch between its recordings merged
+// and each alone, at the moment on screen (features/replay-feed, "Rounds").
+// The API's offsets: a at 0, the lead 60 s in, c 400 s in; d's place unmeasured
+// (an admin's link with nothing to measure it by).
+const onRound = [
+  { slug: 'aaaaaaaaaa', roundOffsetSeconds: 0, durationSeconds: 506 },
+  { slug: 'bbbbbbbbbb', roundOffsetSeconds: 60, durationSeconds: 476 },
+  { slug: 'cccccccccc', roundOffsetSeconds: 400, durationSeconds: 300 },
+  { slug: 'dddddddddd', roundOffsetSeconds: null, durationSeconds: 90 },
+];
+const mergedPage = { slugs: ['bbbbbbbbbb', 'aaaaaaaaaa', 'cccccccccc'], sources };
+const alone = slug => ({ slugs: [slug], sources: null });
+const moment = (playing, to, t) => {
+  const at = api.roundMoment(onRound, playing, to, t);
+  return at === null ? null : Number(at.toFixed(3));
+};
+results.switch = {
+  fromMerged: ['merged', 'aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc', 'dddddddddd'].map(to => moment(mergedPage, to, 100)),
+  fromLead: ['merged', 'aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc', 'dddddddddd'].map(to => moment(alone('bbbbbbbbbb'), to, 40)),
+  pastEnds: ['bbbbbbbbbb', 'cccccccccc'].map(to => moment(alone('aaaaaaaaaa'), to, 600)),
+  fromUnplaced: ['merged', 'aaaaaaaaaa', 'dddddddddd'].map(to => moment(alone('dddddddddd'), to, 50)),
+  count: [[4, 6], [3, 3], [1, 2], [0, 0]].map(([cards, recordings]) => api.feedCount(cards, recordings)),
+  card: [
+    feed.roundCardOf({ round, roundCard: { recordings: 3 } })?.members.length ?? null,
+    feed.roundCardOf({ round }),
+    feed.roundCardOf({ round: [lead], roundCard: { recordings: 1 } }),
+  ],
+};
+
 process.stdout.write(JSON.stringify(results));

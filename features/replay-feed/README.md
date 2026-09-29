@@ -124,8 +124,8 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 
 | | |
 |---|---|
-| `GET /` | the feed: `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not) |
-| `GET /filters` | the servers and uploaders to narrow the feed to, with counts, `server` and `uploader` as for the feed: each list is counted within the other filter and not its own. The busiest 100 of each, by name. |
+| `GET /` | the feed, a page of cards (a round of several recordings is one, below, "Rounds"): `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not). `totalCount` counts cards, `recordingCount` the recordings on them. |
+| `GET /filters` | the servers and uploaders to narrow the feed to, each with how many cards it would show, `server` and `uploader` as for the feed: each list is counted within the other filter and not its own. The busiest 100 of each, by name. |
 | `GET /{slug}` | one recording, with `canManage` for its uploader or an admin. It and the feed's cards carry `uploaderPlayer`: the uploader as bfstats.io has a player page for them (a recorded name's bytes read as cp1252, as BFList reads them), or null; the page links to `bfstats.io/v4/players/<it>` beside the name |
 | `GET /{slug}.ndjson`, `.xml`, `.jpg` | the recording, its server log and its cover. The first two are stored gzipped and sent as they are (`Content-Encoding: gzip`): the browser unpacks them and the API spends no CPU compressing. The cover's link is versioned, so it keeps a year. |
 | `POST /` | share one: multipart `meta` (JSON; `authorName` optional, the recording's player by default), `recording`, `serverlog`, `thumbnail` |
@@ -134,15 +134,17 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 | `POST /{slug}/views` | a view (202) |
 | `GET`, `POST /{slug}/comments`, `DELETE /{slug}/comments/{id}` | comments; `sort=time` is round order. Deleting is for the author, the recording's uploader or an admin. |
 | `GET /me` | the names the signed-in visitor posts as |
-| `POST`, `DELETE /{slug}/round` | an admin puts the recording in another's round (`{"with": "<its slug or any link to it>"}`), or takes it out of its own for good; the recording's page after (below, "Rounds") |
+| `POST`, `DELETE /{slug}/round` | an admin puts the recording in another's round (`{"with": "<its slug or any link to it>", "confirm": false}`), or takes it out of its own for good; the recording's page after (below, "Rounds"). Two recordings whose files fall short of what detection needs are a 409 with `evidence` until `confirm` is true. |
 
-The feed's cards and a recording's page carry `round`: every recording of its
+A round's card and a recording's page carry `round`: every recording of its
 round still in the feed, itself among them, in the order they began in the
 round, each with `roundOffsetSeconds` (where its `t = 0` falls on the clock of
 the one that began first), `link` (`self`, `detected`, `linked` by an admin,
-or null when tied through another) and that link's `matchedKeys` and
-`playerShare`; null while it is the only one. The page adds `canEditRound`
-for an admin.
+or null when tied through another), that link's `matchedKeys` and
+`playerShare`, and `weakLink` for an admin's link they fall short on; null
+while it is the only one. A round's card is its lead's summary with
+`roundCard` (below); the page adds `canEditRound` for an admin and
+`roundWeak`.
 
 **The upload** streams: MVC's form value providers are switched off for it
 (`DisableFormValueModelBindingAttribute`; they read a whole multipart body
@@ -248,30 +250,88 @@ comments on them, and their files).
 ## Rounds
 
 Built 2026-09-29. Players who record the same round share it separately; the
-feed finds the uploads of one round by itself and offers them merged
-(features/round-replay-merge).
+feed finds the uploads of one round by itself, shows them as one card, and
+plays them merged (features/round-replay-merge).
 
 ### What a visitor sees
 
-- A card whose round has other recordings in the feed carries a stack on its
-  cover with the count, and a line under it: `2 recordings of this round ·
-  Watch merged`. Each upload keeps its own card, uploader, title, cover,
-  comments, Rename and Delete.
+- **A round is one card** (2026-09-29, second pass; before it, each upload
+  was a card of its own and a round of two showed as two near-identical
+  cards). Its cover is the top of a deck: the round's other recordings are
+  plates behind it, peeking over its top edge (one for two recordings, two
+  for more), lifting a little under the pointer, with `N recordings` on the
+  cover. The cover **plays the round merged**. Under the title and the lines a
+  card always has, the round's recordings: who shared each, who recorded it
+  where that is someone else, its length, and **Alone**, which plays it on its
+  own; the name opens that recording's page. A card lists three; `and N more`
+  opens the lead's page, which lists all.
+- A recording on its own is a card as before.
+- The header counts cards and, once a round makes them fewer than the
+  recordings, both: `3 rounds · 5 recordings` (a recording on its own is a
+  round recorded once). With no round of several it is the number alone.
 - A recording's page leads with **Watch merged** (and Watch this one), and
   lists the round: when each recording began in it (`+1:00`), its title (a
   link to its page), who shared it and who recorded it, its length, and "put
-  here by an admin" for an admin's link.
+  here by an admin" for an admin's link. Each upload keeps its own page,
+  uploader, title, cover, comments, Rename and Delete.
 - **Watch merged** is `map.html?...&replay=<this one>&replay=<the next>...`:
-  one `replay` per recording, the one whose page or card it came from first
-  (its clock and its recording player lead), then the others in round order,
-  and the first's server log. The page fetches every one and merges them with
+  one `replay` per recording, the lead first (its clock and its recording
+  player lead: from a card, the round's lead; from a recording's page or
+  alone in the replay, that recording), then the others in round order, and
+  the first's server log. The page fetches every one and merges them with
   `mergeRecordings` before the level loads (`replay.js` `openMerged`); the
   status line says "merged from N recordings". A link with one `replay` plays
-  as before. A set the merge cannot line up plays the first alone and says so.
+  as before. A set the merge cannot line up, or whose alignment its guard
+  finds incredible (two rounds: features/round-replay-merge, "The guard"),
+  plays the first alone and says why: `Not merged. These look like different
+  rounds: of the 551 kills and scores both recorded, 1 lines up, and the
+  server's clock puts them 35:47 apart. Playing the first recording alone.`
+- **In the replay, the switch.** A recording of a round, merged or alone, has
+  a button on the bar beside Comments: the deck, `MERGED 2` or `ALONE 2` (the
+  label folds away on a narrow bar, the count stays). Its menu, in the bar's
+  own look: Merged (`Watch merged` when one plays alone), then each recording
+  alone by who shared it, who recorded it and its length, the one playing
+  marked ON. Picking one opens it at the moment on screen, moved onto its
+  clock (`recordings-api.js` `roundMoment`: through the merged header's
+  `merged[i]` when merged, else the links' `roundOffsetSeconds`; a moment
+  before a recording began is its start, one past its end its end, and one
+  whose place nothing measured starts at 0). A merge the guard refused marks
+  the button with a warning dot, and its Merged is greyed out with the
+  reason. The page reloads for the switch, the level from the browser's cache.
 - **Share a recording** takes several `replay_*.ndjson` files at once: each is
   read, listed and shared as its own recording, under the player who recorded
   it, titled by the API. A server log goes up only with a recording shared on
-  its own, since it belongs to one.
+  its own, since it belongs to one. After a share, a removal, or an admin's
+  link or take-out the feed asks the API for its cards again: a recording can
+  join a round already there.
+
+### The card, decided
+
+The API groups (`RecordingService.ListAsync`), before it pages, so a page, the
+counts and the order are the cards': a card is known by its round's id
+(`Recordings.RoundId`, the round's lowest id), or the recording's own while it
+is in none, and grouping by that is one `GROUP BY COALESCE(RoundId, Id)`. A
+round whose other recordings have all left the feed (their files gone) is a
+plain card.
+
+| | a round's card |
+|---|---|
+| which recording it is | the lead: the longest (it covers the most of the round, so the merged clock and the player followed first are its), the first shared of equals |
+| title, level, server, mod | the lead's |
+| cover | a recording's own cover, the lead's first, else the first in round order that has one; else the level's loading screen |
+| length | the merged span: from the first to begin to the last to end, where the links measured where each began; a recording whose place nothing measured (an admin's link with nothing to measure it by) counts its own length |
+| uploaders | everyone who shared one, in round order, each narrowing the feed to theirs |
+| views | the most-watched recording's: a merged watch counts a view on every recording of it, so a sum would count it once for each |
+| comments | all of theirs |
+| time | when its newest recording was shared |
+| under **Newest** | by its newest recording: a second recording shared today brings yesterday's round back to the top |
+| under **Most viewed** | by its views as above, then by its newest |
+| under a filter | shown when one of its recordings would be shown on its own (the filter as a whole: that server and that uploader), and then whole; each filter choice counts the cards it would show, so a round counts once under each name one of its recordings has |
+
+`roundCard` carries the round's own fields (`recordings`, `durationSeconds`,
+`uploaders`, `viewCount`, `commentCount`, `createdAt`, `thumbnailUrl`, `weak`);
+the summary's own fields stay the lead's, so a page cached from before still
+reads a card as the lead's recording.
 
 ### Comments on a merged round
 
@@ -292,8 +352,8 @@ push` went on the first's as `1:00`.
 Mapping comments rather than keeping them per recording in the merged view
 keeps one list in round order, where a merged replay's viewer reads them, at
 no cost to a recording's own page. Each recording of a merged round counts a
-view; the cover (F) and the Escape menu's way back to the feed are the first
-recording's.
+view (of a merge refused, only the first, which plays alone); the cover (F)
+and the Escape menu's way back to the feed are the first recording's.
 
 ### Detection
 
@@ -388,11 +448,42 @@ gone stays in its round and leaves the feed's list of it until it is back.
 
 **Admin link and take-out** (a recording's page, or the API above). Put in a
 round names another recording by its id or any link to it (its page, its
-watch link, its file) and links the two, whatever detection says, with what
-their fingerprints say recorded beside it. Take out separates the recording
-from every recording of its round: those pairs are marked separated, and
-detection never links them again. Linking a separated pair again replaces the
-separation.
+watch link, its file). The two fingerprints are compared first
+(`RecordingRoundService.Evidence`): a pair detection would call one round is
+linked at once; one it would not is refused with what the files say, in a
+line and in numbers, for the admin to read before saying yes:
+
+> 1 shared event: these look like different rounds.
+> 1 shared event · 0 of them the players' own · 0% of the players' events where
+> both recorded · 8:43 recorded by both
+> One round needs 8 shared events, 3 of them the players' own, and 50% of the
+> players' events where both recorded.
+> [Link anyway] [Leave them apart]
+
+(the first real pair, kqqaqxdwtr and nj2dyh58te, below). The other lines:
+`No shared event: nothing in their files says they are one round.` (two
+rounds with nothing in common, or two stretches of one round that share no
+moment, a player who rejoined: the files cannot tell which), `12 shared
+events, 2 of them the players' own: ...`, `40 shared events, but 20% of the
+players' events where both recorded: ...`, `Recorded on different levels or
+game types: these cannot be one round.`, `Not compared yet: ...` (a
+fingerprint still to be read). In the API: a 409 with `evidence` until the
+request says `"confirm": true`. Linked, the pair carries what was measured.
+
+Take out separates the recording from every recording of its round: those
+pairs are marked separated, and detection never links them again. Linking a
+separated pair again replaces the separation.
+
+**A weak link, marked.** A round whose recordings are one only through an
+admin's link they fall short on (measured below the thresholds, so the link
+kept no offset, or not measured at all) is marked where admins look: a
+pulsing `WEAK LINK` chip on its card in the feed (for an admin only), beside
+This round on its recordings' pages, and on the recording the weak link ties
+in, with its shared events. `roundWeak` on the page and `weak` on the card
+say it: the round's recordings in the feed are not all reached from one
+another through links detection found or would have. Its merged replay is
+still asked for, and the merge's guard is the second check: the first real
+pair's plays its lead alone with the reason.
 
 **The background pass** (`RecordingRoundBackfill`), a minute after start-up
 and every six hours: the recordings shared before fingerprints existed (or
@@ -418,12 +509,14 @@ recording again at the next background pass, from the database alone.
    "For the players").
 2. Share both, from the feed's Share a recording: pick the two files at once.
 3. The page that opens (the last one shared) lists both under This round, and
-   both cards say `2 recordings of this round`. If they do not, the files have
-   too little in common where they overlap (a file begun late, a v2 or v3
-   recorder writing raw events): on one's page, under This round, paste the
-   other's link and Put in its round.
-4. Watch merged, and read the merge report in the browser console
-   (round-replay-merge, "What the first real pair must confirm").
+   the feed shows them as one card, a deck of two. If they do not, the files
+   have too little in common where they overlap (a file begun late, a v2 or
+   v3 recorder writing raw events): on one's page, under This round, paste the
+   other's link and Put in its round. The line that comes back says what the
+   files share; `these look like different rounds` means they are.
+4. Watch merged, and read the merge report and the guard's lines in the
+   browser console (round-replay-merge, "What the first real pair must
+   confirm").
 
 ### For the players
 
@@ -473,6 +566,17 @@ fingerprint of every recording already shared from its file, one at a time
 (0.2 to 0.5 s each for a 10 to 23 MB round), and groups them; the API's log
 says `Recording rounds: N fingerprints read from their files`.
 
+**A round as one card, the switch, the evidence and the guard** (2026-09-29,
+second pass) need nothing beyond the push either: no migration, the card is
+grouped from `RoundId` and the weak mark read off the links' kept evidence.
+The API and the mesh image go out together; for the minutes between, a page
+from before on the new API shows a round as its lead's card with the old
+`2 recordings of this round` line, and a new page on the old API shows every
+recording as a plain card. The admin link of the first real pair
+(kqqaqxdwtr, nj2dyh58te) already made in production stays a link, now marked
+weak for the admins, and its merged replay plays nj2dyh58te alone with the
+reason; Take out of this round on either page parts them for good.
+
 ## Trying it locally
 
 The viewer (`python3 -m http.server 5273 --directory tools/bf1942-models/viewer`)
@@ -497,6 +601,48 @@ admin. With no API on :9222 the page reads the live feed, read-only;
 `?api=<origin>` points it anywhere for the tab.
 
 ## Verification
+
+A round as one card, the switch, the evidence (2026-09-29, second pass):
+
+- `tests/api/Recordings/RecordingFeedRoundTests.cs`: two made-up Wake rounds
+  of two recordings each and two recordings on their own, one card a round,
+  newest first (a round by its newest: the second recording shared after a
+  single brings its round ahead of it) and most viewed (a round by its
+  most-watched recording), paged by card (no round split across pages,
+  `totalCount` 4 cards of `recordingCount` 6); a round's card whole (the lead
+  the longer, the merged span 400 s over recordings of 200 s and 250 s, both
+  uploaders in round order, the most views, all the comments, the newest
+  share's time, the other recording's cover and then the lead's own first);
+  a round with one recording left in the feed a plain card; a filter by the
+  uploader of one recording of a round shows it whole, and the choices count
+  cards.
+- `tests/api/Recordings/RecordingRoundServiceTests.cs`: an admin's link of
+  two recordings sharing one chat line asked first (409, `1 shared event:
+  these look like different rounds.` or as many as chance adds), confirmed,
+  and marked weak on the page, the member and the card, with no offset kept;
+  the split Bocage pair taken out and linked back by an admin with no asking,
+  not weak, its offset measured; the rejoined player's two stretches (`No
+  shared event: ...`) asked, then linked on the admin's word; each line of
+  the evidence.
+- `tools/bf1942-models/tests/test_recordings_api.py`: the header's count, a
+  card that is a round, and the switch's moment from merged, from a
+  recording alone, past a recording's end and from a recording whose place
+  nothing measured.
+- By hand against this worktree's API (:9391, its own database, Redis db and
+  no background jobs) and viewer (:5391), headless Chromium (Vulkan), signed
+  in as the dev admin: the Kursk round of 2026-09-27 split by side
+  (`tests/replay_split.mjs`) and a Wake lab round shared together from the
+  feed's dialog, then the first real pair: the Kursk pair one deck, the Wake
+  round a plain card, `4 rounds · 5 recordings`. On kqqaqxdwtr's page, Put in
+  nj2dyh58te's round came back with `1 shared event: these look like different
+  rounds.` and 8:43 recorded by both; Link anyway made one card of them,
+  `WEAK LINK` on it and on the page, `3 rounds · 5 recordings`. A third file of
+  the Kursk round (another player's, from 50 s) joined its deck, two plates
+  now. The Kursk card played merged from 3 recordings (the guard: 53 of 53
+  kills and scores, 44 of 44); the switch went to Bonk alone at merged 1:10,
+  his own 0:40, and Watch merged from his 0:40 came back to 1:10 with him
+  leading. The Bocage card's merge was refused and nj2dyh58te played alone,
+  the toast and the switch saying why. Screenshots at 1280 and 375.
 
 Rounds (2026-09-29):
 
@@ -595,3 +741,9 @@ The feed and the upload (2026-09-28):
   moderating.
 - Covers for recordings shared from the feed's dialog come from the replay
   (F, or More > Use this frame as the cover); the dialog cannot render the level.
+- The replay's switch reloads the page (the level from the browser's cache).
+  Switching in place would reuse the level: `replay.js` `open` already takes
+  a player down and builds another, but the comments' chrome, the view count
+  and the page's address would have to follow it.
+- A round has no title of its own: its card is its lead's. One an uploader
+  sets for the round would need a place to keep it.

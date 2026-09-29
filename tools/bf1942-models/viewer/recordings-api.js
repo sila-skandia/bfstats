@@ -306,9 +306,11 @@ export function createRecordingsApi(api) {
     setThumbnail: (slug, jpeg) =>
       request(`/stats/recordings/${encodeURIComponent(slug)}/thumbnail`, { method: 'PUT', body: jpeg, auth: true }),
     view: slug => request(`/stats/recordings/${encodeURIComponent(slug)}/views`, { method: 'POST' }),
-    /** An admin puts `slug` in the round of `other` (its id or any link to it). */
-    linkRound: (slug, other) =>
-      request(`/stats/recordings/${encodeURIComponent(slug)}/round`, { method: 'POST', json: { with: other }, auth: true }),
+    /** An admin puts `slug` in the round of `other` (its id or any link to it).
+     *  Two recordings whose files fall short of what detection needs are a 409
+     *  whose `body.evidence` says what they share, until `confirm`. */
+    linkRound: (slug, other, confirm = false) =>
+      request(`/stats/recordings/${encodeURIComponent(slug)}/round`, { method: 'POST', json: { with: other, confirm }, auth: true }),
     /** An admin takes `slug` out of its round, for good. */
     separateRound: slug => request(`/stats/recordings/${encodeURIComponent(slug)}/round`, { method: 'DELETE', auth: true }),
     comments: (slug, { sort = 'newest', page = 1, pageSize = 20 } = {}) =>
@@ -375,6 +377,75 @@ const secondsOf = match => (match[1] !== undefined
 /** The recordings a replay page plays, in order: every `replay` in its address. */
 export function replayUrlsOf(params) {
   return params.getAll('replay').filter(Boolean);
+}
+
+/** The replay page for a shared recording, at `at` seconds if given. `root`
+ *  is the viewer's, from the page asking. */
+export function watchHref(recording, { root, fileUrl = path => path, at = null }) {
+  const q = readableQuery([
+    ['mod', recording.mod],
+    ['map', recording.level],
+    ['replay', fileUrl(recording.recordingUrl)],
+    ['serverlog', recording.serverLogUrl ? fileUrl(recording.serverLogUrl) : null],
+    ['t', at === null ? null : Math.max(0, Math.floor(at))],
+  ]);
+  return new URL(`map.html?${q}`, new URL(root, globalThis.location.href)).href;
+}
+
+/**
+ * A round's recordings played merged (features/replay-feed, "Rounds"): one
+ * `replay` per recording, `recording` first (its clock and its player lead),
+ * then the others in the order they began in the round, and the first's server
+ * log. `round` is the API's list of them, `recording` among them.
+ */
+export function watchRoundHref(recording, round, { root, fileUrl = path => path, at = null }) {
+  const lead = round.find(m => m.slug === recording.slug) ?? recording;
+  const order = [lead, ...round.filter(m => m.slug !== lead.slug)];
+  const q = readableQuery([
+    ['mod', recording.mod],
+    ['map', recording.level],
+    ...order.map(m => ['replay', fileUrl(m.recordingUrl)]),
+    ['serverlog', lead.serverLogUrl ? fileUrl(lead.serverLogUrl) : null],
+    ['t', at === null ? null : Math.max(0, Math.floor(at))],
+  ]);
+  return new URL(`map.html?${q}`, new URL(root, globalThis.location.href)).href;
+}
+
+/**
+ * Where the moment on screen falls in another way of watching a round
+ * (replay-social.js's switch), seconds, or null where nothing measured it.
+ * `round` is the API's list (each recording's `roundOffsetSeconds` on the
+ * round's clock, its `durationSeconds`); `playing` is what plays: `slugs`, the
+ * page's recordings in its order, and `sources`, the merged header's
+ * `merged[i]` when it played them merged (else the first plays alone, on its
+ * own clock); `t` its time. `to` is a recording's slug, watched alone, or
+ * 'merged': every recording, on the round's clock.
+ */
+export function roundMoment(round, playing, to, t) {
+  const bySlug = new Map(round.map(m => [m.slug, m]));
+  const offset = slug => bySlug.get(slug)?.roundOffsetSeconds ?? null;
+  const sources = playing.sources?.length === playing.slugs.length ? playing.sources : null;
+  const own = (i, at) => sourceClock(sources[i]).fromRound(at);
+  // The moment on the round's clock, through the first recording playing.
+  const first = playing.slugs[0];
+  const firstAt = sources ? own(0, t) : t;
+  const onRound = offset(first) === null ? (sources ? t : null) : firstAt + offset(first);
+  if (to === 'merged') return onRound === null ? null : Math.max(0, onRound);
+  const target = bySlug.get(to);
+  let at = null;
+  const index = sources ? playing.slugs.indexOf(to) : -1;
+  if (index >= 0) at = own(index, t);
+  else if (to === first && !sources) at = t;
+  else if (onRound !== null && offset(to) !== null) at = onRound - offset(to);
+  if (at === null) return null;
+  return Math.min(Math.max(0, at), Math.max(0, target?.durationSeconds ?? Infinity));
+}
+
+/** The header's count: `12`, or `2 rounds · 3 recordings` once rounds of
+ *  several recordings make the cards fewer than the recordings. */
+export function feedCount(cards, recordings = cards) {
+  if (!cards) return '';
+  return recordings > cards ? `${count(cards, 'round')} · ${count(recordings, 'recording')}` : String(cards);
 }
 
 /** One recording's clock against its merged round's (`merged[i]` of the merged
