@@ -73,6 +73,9 @@ body and every vehicle are still in that list.
 
 ## 3. The prone dive, and where it comes from
 
+*Corrected 2026-09-29: the ledger filed this finding as PHY-8, not PHY-7.
+Ledger PHY-7 is the soldier's underwater drag.*
+
 **PHY-7**, new. `BFSoldier::handlePlayerInput` (lnxded `0x08273c70`) does not
 reach `directionalSpeed` unscaled. Before the tables it runs both state
 machines' `AnimationStateMachineInstance::checkTransitions(input, float&,
@@ -137,6 +140,11 @@ The same decompile shows the ramp register reaching the table **squared**:
 linear. Squaring it changes the shape of every standing start on the page, which
 is a movement-feel change well outside what was asked for here, so it is
 recorded and left alone. Settle it before anyone touches the ramp again.
+
+*Corrected 2026-09-29: settled as squared. A second reader confirmed the square
+on 2026-09-25, ledger PHY-9, which calls PHY-6's linear reading a miscount.
+The viewer's `rampedDirectionalSpeed`, now in `viewer/soldier-locomotion.js`,
+is still linear on purpose, waiting for a playtest comparison.*
 
 ## Verification
 

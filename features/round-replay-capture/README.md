@@ -209,7 +209,11 @@ What this tells us (`inferred` unless noted):
 - **Network ID space is 16-bit** (`working`): `CreatePlayerEvent` carries
   `vehicleNetworkID`, `cameraNetworkID`, `kitNetworkID` as `uint16_t`.
 - **Relevance / culling: the server withholds distant objects** (`working`, see
-  §10). The hypothesis here used to be "everything, at varying rate", on the
+  §10). *Corrected 2026-09-29: the hypothesis quoted next is refuted, as the
+  rest of this bullet says. §19 has the rule the server runs, continuous state
+  within the view distance plus 20 m and the own side's living players
+  everywhere, so beyond that radius one client still follows its own side.*
+  The hypothesis here used to be "everything, at varying rate", on the
   strength of the DLL author's note that the server "sends back the result,
   which includes every detail about every object that is being synced". The
   first recording refutes it: the client held 22 of Wake Island's 32 spawned

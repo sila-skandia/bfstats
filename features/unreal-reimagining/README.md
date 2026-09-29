@@ -337,6 +337,11 @@ Node room server design is not ported; Unreal already does what it does.
   itself was forgiving here.
 - Target: 64 players, as the original. Budget bandwidth with the 30 Hz
   snapshot rate.
+  *Corrected 2026-09-29: retail sends object state every 0.1 s, ledger P-2, and
+  a connection's packet rate defaults to 20 Hz, J-1 and R-1, so 30 Hz is this
+  port's own choice, not the game's. §15 of
+  [round-replay-capture](../round-replay-capture/README.md) disputes P-2's
+  claim of no interpolation buffer, not its 0.1 s cadence.*
 - **Hosting.** Local first: the editor's Play button with a dedicated server,
   then the packaged Linux server binary run on this PC with clients joining
   `127.0.0.1`. Hetzner later, in a container. The production node is already
