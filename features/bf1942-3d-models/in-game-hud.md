@@ -351,9 +351,10 @@ lives outside this track's files:**
   already gets this correctly through the fix above.
   *Corrected 2026-09-29: the writer was found on 2026-09-25. `FUN_006e9180`
   writes `PrimaryAmmoText` and `SecondaryAmmoText` from the active magazine's
-  round count, for the first and second FireArm of the occupied seat (ledger
-  VHUD-10, [ingame-hud.md](../bf1942-engine-reference/subsystems/ingame-hud.md)
-  "Open"). [`vehicle-hud.js`](../../tools/bf1942-models/viewer/vehicle-hud.js)
+  round count, for the first and second FireArm of the occupied seat, see
+  ledger VHUD-10 and the Open list of
+  [ingame-hud.md](../bf1942-engine-reference/subsystems/ingame-hud.md).
+  [`vehicle-hud.js`](../../tools/bf1942-models/viewer/vehicle-hud.js)
   now feeds a drivetrain root's own guns, which fire through a gated
   `FireState`.*
 
