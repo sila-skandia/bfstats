@@ -150,6 +150,7 @@ folder answers.
 | [viewer-demokit-icon](viewer-demokit-icon/README.md) | fix | Why did the ExpPack and Detonator show the medkit icon? |
 | [viewer-map-focus-and-hint-line](viewer-map-focus-and-hint-line/README.md) | fix | Why were controls dead after closing the map, and where did the hint line go? |
 | [multiplay-front-end](multiplay-front-end/README.md) | build | How is the MULTIPLAY server browser drawn from the game's own menu files? |
+| [menu-background-movie](menu-background-movie/README.md) | fix | Why was there no looping movie behind the front end's tabs, and where does it come from? |
 | [radio-and-chat-log](radio-and-chat-log/README.md) | build | How do retail radio commands and the top-left message log behave? |
 | [viewer-profile-controls](viewer-profile-controls/README.md) | build | Where do key and joystick bindings come from, and how is a profile imported? |
 

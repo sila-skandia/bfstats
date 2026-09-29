@@ -9,8 +9,8 @@
 // corner that the front end does not otherwise show.
 //
 // Everything the two mounts differ by is an option: where the viewer root is
-// from the page, whether the menu loop plays, what START does, and whether
-// there is a game to leave. Nothing here knows about either page.
+// from the page, whether the menu loop and the background movie play, what
+// START does, and whether there is a game to leave. Nothing here knows about either page.
 //
 // The left column is the bot settings, on both mounts. The mod list used to
 // share it — pick a game here, and the level list below follows — and now
@@ -32,6 +32,7 @@ import {
 import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
+import { menuMovie } from './menu-movie.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
@@ -58,6 +59,9 @@ const rememberMute = muted => {
  *                                    `../` from `play/`, `./` from `map.html`
  * @param {URLSearchParams} [options.params]  the page's own query
  * @param {boolean} [options.music]   play the menu loop
+ * @param {boolean} [options.movie]   play the background movie behind the
+ *                                    front end (`menu-movie.js`); every
+ *                                    screen's plate draws it, not only this one
  * @param {boolean} [options.inGame]  there is a level running behind this,
  *                                    so draw `menu/ExitMenu`'s button
  * @param {(url: string) => void} [options.onStart]  START
@@ -76,6 +80,7 @@ export function createSkirmishScreen({
   root = '../',
   params = new URLSearchParams(location.search),
   music = false,
+  movie = false,
   inGame = false,
   onStart = url => { location.href = url; },
   onDisconnect = null,
@@ -190,6 +195,9 @@ export function createSkirmishScreen({
         menuAudio.start(track, `${root}maps/_shared/music/menu.mp3`);
       }
     }
+    // The active mod's own movie, as the loop is; no vanilla fallback, since
+    // it plays over the mod's own still (`menu-movie.js`).
+    if (movie) menuMovie.start(`${MAPS}/_shared/movies/background.webm`);
 
     const [skirmishLayout, navLayout] = await Promise.all([
       json(packUrl('menu-layout.json')),
@@ -481,6 +489,7 @@ export function createSkirmishScreen({
     },
     get strip() { return strip; },
     get audio() { return menuAudio.state; },
+    get movie() { return menuMovie.state; },
     get muted() { return menuAudio.muted; },
     setMuted: on => { menuAudio.setMuted(on); rememberMute(menuAudio.muted); },
     unlockAudio: () => menuAudio.unlock(),

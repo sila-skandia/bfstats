@@ -63,6 +63,9 @@ const screen = createSkirmishScreen({
   canvas,
   root: '../',
   music: true,
+  // `menu/Background`'s movie, behind every tab this page draws: the one
+  // controller that follows the active mod starts it for all of them.
+  movie: true,
   tabs: TABS,
   onTab: id => show(id),
   onStatus: text => { status.textContent = text; },
@@ -251,6 +254,7 @@ window.__menu = {
   launchUrl: screen.launchUrl,
   get mod() { return screen.mod; },
   get audio() { return screen.audio; },
+  get movie() { return screen.movie; },
   get muted() { return screen.muted; },
   setMuted: screen.setMuted,
   unlockAudio: screen.unlockAudio,
