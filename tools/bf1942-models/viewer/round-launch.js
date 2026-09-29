@@ -158,7 +158,7 @@ function fireRound(guns, group, muzzle) {
       && group.projectileMesh) {
     spawnProjectile(guns, muzzle, group, spec);
   } else if (spec && spec.kind === 'bullet') {
-    // GUN-10 / V-R2: rifle projectiles are `invisible 1` — retail draws no
+    // GUN-12 (V-R2's GUN-10): rifle projectiles are `invisible 1` — retail draws no
     // body. Tracer rounds still get the bright TLight streak. Every other
     // round still needs a ballistic in `tracers` so `sweep` / `impact`
     // run: hand weapons declare no tracer interval, so dropping the dim

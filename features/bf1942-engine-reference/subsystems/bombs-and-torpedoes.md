@@ -174,6 +174,11 @@ material 250 has no damage cell for defGroups 0 or 1.
 the surface: the water contact is swallowed (collision-response.md COL-2's only
 `return 0` path). Whether `detonateOnWaterCollision` reaches any other code path
 is **not read** — the viewer parses it nowhere today.
+*Updated 2026-09-29: COL-2 is the mass-share row, so the cross-reference above
+is wrong. The water contact returns early in `Projectile::handleCollision`
+(`0x0831ee80`), which reads `detonateOnWaterCollision` at `+0x1ac`
+(`0x0831f3ae`, ledger HP-9e and HP-9f). The viewer has parsed and used the word
+since the bomb build of 2026-09-22 (ledger BOMB-11).*
 
 Once in, three children make it run rather than sink:
 
@@ -194,6 +199,9 @@ pilot's aim, not the weapon's.
 (ledger GUN-2's call-site list), which is the pitch-levelling the floaters'
 `setMinRotation 0/-1/0` … `setMaxRotation 0/1/0` describes. Whether
 `dragModifier 8000` is the submerged drag term is **open**.
+*Settled 2026-09-22: nothing reads it. `setDragModifier` stores the value and
+only the serializer reads it back, so the 8000 has no effect in water or out
+(ledger BOMB-12 and SHIP-3).*
 
 ---
 
