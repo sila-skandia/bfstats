@@ -416,6 +416,12 @@ engine's AI works, and what `Skirmish/SkirmishAiSkill`, `SkirmishBotRatio`,
 `Options/General/SkirmishPercentageOf*` variables become when a battle starts,
 is not in `features/bf1942-engine-reference` yet.
 
+That research reached the ledger on 2026-09-23 as AI-14…AI-22, and it found
+the retail AI SKILL slider inert, AI-21. The bots were built and the column
+stays off. Since 2026-09-26 Instant Battle has only the two bot settings that
+mean something here, described in
+[`../instant-battle-bot-settings`](../instant-battle-bot-settings/README.md).
+
 ## Launching
 
 START goes to `../map.html?map=<level>&team=<1|2>`. The map page is reached by
