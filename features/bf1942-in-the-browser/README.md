@@ -711,13 +711,17 @@ loading screen's `vehicle4.mp3` (`progress.js`, on `map.html`) and not the
 well-known battle theme - whatever a mod's own `Game.setMenuMusicFilename`
 names. Every mod here happens to point that at `music/slaughter4.bik`, but
 `extract_menu_music.py` reads the directive out of each mod's `init.con`
-rather than assuming the filename, falling back to vanilla's directive for a
-mod that does not set one (XPack2). Output is `_shared/music/menu.mp3` per
+rather than assuming the filename, and looks up both the directive and the
+file along the mod's `game.addModPath` chain, so a mod that does not set one
+(XPack2) inherits its parent's. Output is `_shared/music/menu.mp3` per
 mod - named for the role, not the source file, since a mod's own recording
 under that name is not guaranteed to be `slaughter4.bik` in general even
-though today's four all are. Confirmed genuinely per-mod, not just
-per-directive: EoD's `menu.mp3` is a different recording (own md5) from
-vanilla/RtR/SWoWWII's, which are byte-identical to each other. Playback
+though every one here is. Confirmed genuinely per-mod, not just
+per-directive: EoD, DesertCombat, DC_Final and FHSW each ship their own
+recording (own md5), while vanilla/RtR/SWoWWII's are byte-identical to each
+other. With no `--mod` the script covers vanilla and every mod with levels.
+A mod without a `menu.mp3` plays vanilla's, which is how DC and DC Final
+played the BF1942 menu loop until 2026-09-30. Playback
 reuses `audio.js`'s `LoadingAudioController` outright (autoplay-gesture
 handling, fade, the unmute badge) rather than a second audio implementation;
 switching mods is a full page reload, so the new mod's own `menu.mp3` loads
