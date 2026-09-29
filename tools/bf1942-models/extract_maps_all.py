@@ -68,7 +68,8 @@ def merge_index(listing: dict[str, dict], rows: list[dict]) -> None:
 
     Keys only present on the previous row — notably `loading` from
     `extract_loading_assets.py` — are kept, otherwise every re-extract drops
-    every map back to the Western beach fallback in the viewer.
+    every map back to the Western beach fallback in the viewer. `promote`
+    keeps the files those keys name (`kept_files`).
     """
     for row in rows:
         name = row.get("name")
@@ -84,19 +85,62 @@ def merge_index(listing: dict[str, dict], rows: list[dict]) -> None:
         listing[key] = merged
 
 
-def promote(staging: Path, out: Path) -> int:
+def kept_files(prior: dict | None, rows: list[dict]) -> dict[str, list[str]]:
+    """Files inside a level directory that a row key `merge_index` keeps names.
+
+    The bake does not write those keys, so it does not write their files
+    either: `loading.background` is `<level>/load.webp`, put there by
+    `extract_loading_assets.py`. Keeping the key but not the file left the
+    row pointing at a 404. Returns `{level dir: [paths inside it]}`.
+    """
+    row = next((r for r in rows if r.get("name")), None)
+    if not isinstance(prior, dict) or row is None:
+        return {}
+    level = str(row["name"]).lower()
+    found: list[str] = []
+
+    def walk(value: object) -> None:
+        if isinstance(value, dict):
+            for v in value.values():
+                walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+        elif isinstance(value, str):
+            head, sep, rest = value.partition("/")
+            parts = rest.split("/")
+            if (sep and head.lower() == level and rest
+                    and not any(p in ("", ".", "..") for p in parts)):
+                found.append(rest)
+
+    for key, value in prior.items():
+        if key not in row:
+            walk(value)
+    return {level: found} if found else {}
+
+
+def promote(staging: Path, out: Path,
+            keep: dict[str, list[str]] | None = None) -> int:
     """Move a finished level out of its worker's staging dir into the tree.
 
     `maps.json` stays behind: the worker's copy holds one entry, and the
     merged index is this script's to write. Anything already at the target is
     replaced, so a re-extract cannot leave half of the previous run's
-    lightmaps behind.
+    lightmaps behind — except the files `keep` names (`kept_files`), which
+    another step owns and the bake does not rewrite. Those move across into
+    the new directory unless the bake wrote the same path itself.
     """
     moved = 0
     for child in sorted(staging.iterdir()):
         if child.name == "maps.json":
             continue
         target = out / child.name
+        if child.is_dir() and target.is_dir():
+            for rel in (keep or {}).get(child.name.lower(), []):
+                old, new = target / rel, child / rel
+                if old.is_file() and not new.exists():
+                    new.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(old), str(new))
         if target.is_dir():
             shutil.rmtree(target, ignore_errors=True)
         elif target.exists():
@@ -104,6 +148,21 @@ def promote(staging: Path, out: Path) -> int:
         shutil.move(str(child), str(target))
         moved += 1
     return moved
+
+
+def land(result: dict, out: Path, listing: dict[str, dict]) -> None:
+    """Promote one finished level and merge its row, as one step.
+
+    The keep list is read from the row before the merge replaces it, so the
+    files a carried-over key points at move with the key.
+    """
+    staging = Path(result["staging"])
+    rows = result["rows"]
+    prior = next((listing.get(str(r["name"]).lower()) for r in rows
+                  if r.get("name")), None)
+    promote(staging, out, kept_files(prior, rows))
+    shutil.rmtree(staging, ignore_errors=True)
+    merge_index(listing, rows)
 
 
 def write_vehicle_sounds(game_dir: Path, mod: str, tree: Path,
@@ -294,10 +353,7 @@ def main() -> int:
                 continue
 
             # Move the finished level into the real tree, then merge its row.
-            staging = Path(result["staging"])
-            promote(staging, args.out)
-            shutil.rmtree(staging, ignore_errors=True)
-            merge_index(listing, result["rows"])
+            land(result, args.out, listing)
             # Written every time, so an interrupted run still leaves a usable
             # index for everything that finished before it.
             publish()
