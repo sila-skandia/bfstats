@@ -79,6 +79,51 @@ from lying 0.115 s (soldier.js `STANCE_TRANSITION`).
 At the kill, 35:26, the view was 30 degrees above his round and is now 0.04
 degrees from it, with env()->Amsterdam under the cross, 102 m off.
 
+## The weapon in his hands
+
+"We just added FPV HUD to the replay ... But their weapon is not being
+wielded in the game (it's just a crosshair)."
+
+The followed player's arms and weapon are the page's own first-person rig,
+`<Soldier>__<Weapon>.fp.glb` in his side's sleeves (arms-rig.js), mounted on
+the camera as the engine mounts it and drawn in its own pass over the frame
+through the weapon's `set1pFov`. `replay-viewmodel.js` poses it from the
+recording:
+
+- **What the arms play is recorded.** The body record's upper state is the
+  engine's own animation state, and every upper state a weapon declares names
+  its first-person clip: aim, walk, run, crouched and lying, the raise, the
+  reload, the idle fidgets, the knife's five swings. The rig bakes those
+  clips (extract_viewmodel.py `FAMILIES`), so the arms play the recorded
+  state's clip (`ARMS_FAMILY`). A turn on the spot plays the run clip at 0.7,
+  so it takes the walk (0.5); a strafe or a backward run takes the run. A
+  state with no first-person clip (a stance change, a hit) leaves the arms
+  where they were. A lower state that puts the weapon away (swimming, a
+  ladder, a chute, a seat: `c_AsmHideWeapon`) hides them.
+- **Each state blends in at its own rate** (`setMorphFactor`: the aim 0.7 a
+  second, fire 4, a raise or a reload a cut) over the pose the arms held when
+  it came, blends included, as the engine blends into a state from whatever
+  the skeleton holds.
+- **The fire is his rounds.** At 10 samples a second the records catch a
+  burst's fire state only now and then. Rounds of his weapon no further apart
+  than 1.6 of its intervals are one hold of the trigger: a looping fire clip
+  (the Thompson's, the Mp40's) runs on through them and lets go an interval
+  after the last. A clip played once (a bolt, a swing, a throw) plays a round
+  from the click. A throw's round leaves `fireDelay` after the click, and the
+  grenade is out of his hand for `hideDuringFireTime` after it. A recorded
+  fire state no round explains is a shot of its own.
+- **His rounds leave his eye.** While his first person is watched and the rig
+  is up, his round is fired through the rig's FireArms from the recorded
+  origin, which is his eye, down the recorded axis, and flashes at the rig's
+  muzzle. Before, it flashed at his hidden body's gun below the camera.
+  Anything thrown or laid is the recording's own object, as before.
+- **His zoom:** the rig leans into its zoom pose and the arms' lens narrows to
+  the weapon's `soldierFov`, eased a frame at a time as the page's own
+  soldier's are. A scoped rifle zoomed shows the scope and no rifle.
+
+All of it is a function of the recording's clock: a seek, a pause or a speed
+change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
+
 ## What each part of the HUD comes from
 
 | part | source | |
@@ -101,6 +146,9 @@ degrees from it, with env()->Amsterdam under the cross, 102 m off.
 - `viewer/replay-camera.js`: `eyeAim`, `viewQuaternion`, `viewOf`, `shotFix`,
   `roundAxes`, and `sight` (what the first person looks out of).
 - `viewer/replay-recording.js`: `eyeLiftAt`, the eye along the body's up.
+- `viewer/replay-viewmodel.js`: the weapon in his hands (`armsStateOf`,
+  `armsTrack`, `armsPose`, `ReplayViewmodel`); `replay-bodies.js` hands it his
+  rounds, and map.html draws it after the frame (`renderViewmodel`).
 - `viewer/soldier-hud.js`: `writeSoldierAmmo`, the ammo panel shared with the
   page's own soldier.
 - `viewer/vehicle-hud.js`: `crosshairAim` asks the replay first (`replayAim`),
@@ -130,13 +178,21 @@ degrees from it, with env()->Amsterdam under the cross, 102 m off.
   left. The KettenKrad's MG seat at 248 s: the KettenKrad's icon at 23/50,
   462 rounds, the cross. The Bofors at 101 s: no HUD cross. The orbit: nothing.
 
-The prone view (`tests/test_replay_hud.py`): a soldier lying on 27 degrees
-rolled 15, whose view from the records alone is on his round with the eye
-where it left, the old level reading 28 degrees off, and the eye across a
-dive and a get-up.
+The prone view and the weapon (`tests/test_replay_hud.py`,
+`tests/test_replay_viewmodel.py`): a soldier lying on 27 degrees rolled 15,
+whose view from the records alone is on his round with the eye where it
+left, the old level reading 28 degrees off, and the eye across a dive and a
+get-up; the recorded states as families (the number after a weapon whose
+name ends in digits, a stance change with no clip), the fallbacks, the arms
+through a raise, a burst, a tap, a reload, a run, a dive, lying fire, a swim
+and a grenade's wind-up, and the rig on a stub glb: loaded in his sleeves,
+shown only in his first person, the mixer's weights, his round from his eye.
 
 Headless on `replay_20260928-161948`: at the kill (35:26) the view is 0.04
-degrees from his round and env()->Amsterdam is under the cross.
+degrees from his round and env()->Amsterdam is under the cross; the Mp40
+lying down with its flash; the Walther after his switch; a stick grenade's
+wind-up; a knife swing; a K98 sniper's scope with no rifle; another player's
+Thompson zoomed; the Hanomag driver's seat with no weapon.
 
 ## Zoom is in every recording already
 
@@ -166,3 +222,9 @@ narrower lens.
 - A seat camera is the model's Camera node on the recorded hull and turret.
   It is not laid on the rounds' axes, even for a gun that fires along the
   camera (a coax or a pintle MG).
+- The arms play the baked families only. The backward, strafe and turn
+  states have first-person clips of their own at their own rates
+  (extract_viewmodel.py names the gap), which take the nearest baked one
+  here, and `Ub_Stand<W>`'s own clip takes the aim's.
+- A mod weapon with no extracted rig draws its bare model at the page's
+  stand-in offset, unanimated, as the page's own soldier does.
