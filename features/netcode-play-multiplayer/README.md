@@ -1,7 +1,10 @@
 # Netcode for the play site: multiplayer over the existing viewer
 
-Investigation, 2026-09-20. No code was written; this is the design and the
-evidence it rests on. The owner asked how to add multiplayer to the play
+Investigation, 2026-09-20: the design and the evidence it rests on. This line
+used to say no code was written. Code followed: P1 in f0ee4f6c on 2026-09-20,
+P2 and the first slice of P3 in 3e456417 on 2026-09-21, and P4's correction
+handling on 2026-09-22, each recorded under its phase below and in
+[SNAPBACK.md](SNAPBACK.md). The owner asked how to add multiplayer to the play
 experience (`viewer/play/` and `viewer/map.html`): several players join a map
 and play together, the netcode leverages everything built so far, and the
 ceiling is 16 concurrent players.
@@ -44,8 +47,8 @@ built, tested answer somewhere in this repo already.
 |---|---|---|
 | One buffered input per tick reaches the player | `Setup::dispatchPlayerInput` client `0x00448520`; `Game__addPlayerInput` `0x0040ecb0` | The wire carries **input**, one tick's worth per tick — the client does not run a second world sim and reconcile it; it predicts locally and the server is final |
 | The server consumes per-player per-tick input | `GameServer::checkPlayerTriggers(BFPlayer*, PlayerInput)` lnxded `0x0814f2c0` | Authority lives in `GameServer`; the soldier is a plain consumer of the same `PlayerInput` type the client serializes |
-| Input has a wire format | `operator<<(ostream&, PlayerInputMap)` / `operator>>` lnxded `0x081d89f0` / `0x081d8bc0` | The engine shipped a serialization for exactly the structure we need to send |
-| The client's netcode classes are named | `IService` / `IJoinService` / `IHostService` (client classes recovered in Ghidra) | Join/host split: a dedicated host service, joiners connect to it |
+| Input has a wire format | `operator<<(ostream&, PlayerInputMap)` / `operator>>` lnxded `0x081d89f0` / `0x081d8bc0` | The engine shipped a serialization for exactly the structure we need to send. *Corrected 2026-09-29: these two are console name-index helpers, not the wire format, ledger W-5. The wire format is `PlayerAction`, W-1 to W-3 and §1 of [netcode.md](../bf1942-engine-reference/subsystems/netcode.md).* |
+| The client's netcode classes are named | `IService` / `IJoinService` / `IHostService` (client classes recovered in Ghidra) | Join/host split: a dedicated host service, joiners connect to it. *Corrected 2026-09-29: all three are empty stubs with no handshake, ledger J-2. The real join is the server flow in J-1 and §3 of [netcode.md](../bf1942-engine-reference/subsystems/netcode.md).* |
 | The loop is fixed-step on both binaries | W3-F closed LOOP-1: **fixed 30 Hz, `dt = 1/30` exactly, server and client**, backlog above 9-10 ticks collapses to one | The tick discipline the viewer already implements (`physics.js` `ENGINE_TICK_RATE = 30`, `TICK_RATE = 60`, `MAX_CATCH_UP_TICKS = 12`) is the engine's own trade-off |
 | Pain points were real and dealt with | `patch__*` symbols (bf42plus): `GameClient_disconnect_udp`, `force_disconnect_msg`, `network_error_debug`, `skip_spawn_screen_join` | The 2004 netcode had the classic problems — disconnects, spawn-join stalls. We get to skip the ones that were hardware-era (UDP hole punching is moot: the server is in our cluster) |
 

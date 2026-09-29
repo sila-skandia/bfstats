@@ -51,6 +51,9 @@ ear, which retail does not do.
   facing every frame; `play()` uses the tracked point (or the listener's world
   matrix), snaps panners and gains per round. `EngineAudio` now applies
   DirectSound's fall-off per voice (`distanceRolloff`, `ROLLOFF_FACTOR`).
+  *Added 2026-09-29: [world-vehicle-audio](../world-vehicle-audio/README.md)
+  describes `world-fire.js` as built on 2026-09-23 and says its near and far
+  layers hand over. Until this fix they did not, and that file now says so.*
 - **(B)** `EngineAudio.setAttachedToListener()`: panners go dead ahead of the
   listener (equal in both ears), no fall-off, no doppler, ramps keep the true
   distance. `VehicleAudioRack._attached()` reproduces SND-2 from the page's seat

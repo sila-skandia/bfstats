@@ -83,6 +83,9 @@ Changes:
 - `bf42/level.py`: `parse_spawn_point_manager()` reads the manager settings;
   `GameplayObjects.spawn_group_teams`; `team_of_group` prefers `groupTeam`
   (the engine's own rule) and falls back to the declaring control point.
+  *Corrected 2026-09-29: the rule is the other way round. Since a851aabe on
+  2026-09-27 `team_of_group` lets the claiming control point's team override
+  `groupTeam`, per the SPAWNGRP-3 correction in the root cause above.*
   `SoldierSpawnTemplate` also records `setEnterOnSpawn` so a seat-entry point
   is never mistaken for a standing one.
 - `extract_map.py`: `_vehicle_soldier_spawn_report()` walks the level's
@@ -101,7 +104,9 @@ The viewer (`viewer/soldier.js`):
   ship instance into one flag named after the vehicle (`Shokaku`,
   `Hatsuzuki`) with all of its deck points as spawns. On Wake the Axis tab
   now lists Landing Beach, Hatsuzuki and Shokaku; the Allied tab the four
-  island flags.
+  island flags. *Corrected 2026-09-29: under SPAWNGRP-3, in the root cause
+  above, Wake's beach group starts American, so the fleet's deck spawns fill
+  the Axis tab and the beach does not.*
 - `pickSpawn` lifts a ship flag's spawn `DECK_LIFT` (10 m) above the data's
   vehicle-origin position, so the soldier drops the last metres onto the deck
   instead of into the bilge; the ground clamp runs against the lifted height.
