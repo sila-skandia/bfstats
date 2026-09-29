@@ -7,7 +7,8 @@
 // projection and the animation. Built inside this factory from their own
 // modules: the canvases' backing-store sizing (`map-canvas-fit.js`), the
 // tinted sprite painter (`map-sprites.js`) and the friendly units the
-// surfaces mark (`map-friendlies.js`).
+// surfaces mark (`map-friendlies.js`). While a replay plays, the units are
+// its recording's instead, both sides of them (`replay-minimap.js`).
 
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
@@ -17,6 +18,7 @@ import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
+import { mapAngle, minimapMarksKey } from './replay-minimap.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -27,8 +29,8 @@ import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
  * `deployRejoin`, `deployTeamId`, `deployUnchosen`, `deployZ`,
  * `easeDeployClose`, `easeDeployOpen`, `extras`, `finishDeployClose`,
  * `flags`, `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`,
- * `mapVehicles`, `occupancy`, `release`, `scoreFromSpawn`, `setScoreboard`,
- * `spawnersRoot`, `spawnFlagSelect`, `sprite`, `stage`,
+ * `mapVehicles`, `occupancy`, `release`, `replayMinimap`, `scoreFromSpawn`,
+ * `setScoreboard`, `spawnersRoot`, `spawnFlagSelect`, `sprite`, `stage`,
  * `vehicleSpawnActive`, `world`.
  */
 export function createMapSurfaces(page) {
@@ -306,11 +308,11 @@ export function createMapSurfaces(page) {
     return has('rus') ? 'rus' : has('brit') ? 'brit' : null;
   }
 
-  function drawPlayer(ctx, px, py, sc, rot = 0) {
+  function drawPlayer(ctx, px, py, sc, heading, rot = 0) {
     // On the rotating minimap `rot` is minus the heading, so the arrow reads
     // straight up and the world turns under it.
     if (drawSprite(ctx, 'minimap_icon_ring_32x32', px, py, sc * 0.8,
-                   { angle: cameraHeading() + rot })) return;
+                   { angle: heading + rot })) return;
     ctx.fillStyle = '#76d65c';
     ctx.beginPath();
     ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
@@ -348,6 +350,62 @@ export function createMapSurfaces(page) {
       ctx.beginPath();
       ctx.arc(q.x, q.y, 3 * sc, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  /** Where the surfaces are centred and the ring is drawn: the followed
+   *  player in a replay whose camera is his (`replay-minimap.js`), else the
+   *  camera, which in play is the player's own. */
+  function mapFocus(replay) {
+    if (replay?.focus) {
+      const { x, z, dir } = replay.focus;
+      return { x, z, heading: dir ? mapAngle(dir) : cameraHeading() };
+    }
+    return { x: page.camera.position.x, z: page.camera.position.z, heading: cameraHeading() };
+  }
+
+  /** A side's own map colour; a man whose side the recording does not say is
+   *  the grey an empty hull is. */
+  const replayTint = team => MINIMAP_TEAM_TINT[team] || EMPTY_VEHICLE_TINT;
+  /** A last sighting is drawn at this alpha, a live mark at full. */
+  const LAST_SEEN_ALPHA = 0.45;
+
+  /** A replay's hulls, under the flags as the play marks' are: its icon by
+   *  template in its crew's colour, grey when nobody is in it (`drawVehicles`'
+   *  look, both sides of it). */
+  function drawReplayHulls(ctx, toPx, sc, rot, hulls) {
+    for (const h of hulls) {
+      const p = projectToArt(h.x, h.z);
+      if (!p) continue;
+      const q = toPx(p);
+      const template = String(h.tmpl || '').toLowerCase();
+      const entry = page.hudPack.icons[template];
+      const icon = entry?.icon && !entry.icon.startsWith('flag_') ? entry.icon : null;
+      const colour = h.team ? replayTint(h.team) : EMPTY_VEHICLE_TINT;
+      const alpha = h.fresh ? 0.9 : LAST_SEEN_ALPHA;
+      if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc, { angle: mapAngle(h.dir) + rot, alpha, tint: colour })) {
+        drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc, { alpha, tint: colour });
+      }
+    }
+  }
+
+  /** A replay's men on foot, over the flags as the play arrows are, each in
+   *  his own side's colour. */
+  function drawReplaySoldiers(ctx, toPx, sc, rot, soldiers) {
+    for (const s of soldiers) {
+      const p = projectToArt(s.x, s.z);
+      if (!p) continue;
+      const q = toPx(p);
+      const tint = replayTint(s.team);
+      const alpha = s.fresh ? 1 : LAST_SEEN_ALPHA;
+      if (drawSprite(ctx, 'minimap_icon_soldier_16x16', q.x, q.y, sc,
+                     { angle: mapAngle(s.dir) + rot, alpha, tint })) continue;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgb(${tint.join(',')})`;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, 3 * sc, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -415,13 +473,17 @@ export function createMapSurfaces(page) {
     // so neither the art's window nor a marker stretches; on the square
     // surfaces the two scales coincide and this is exactly the old mapping.
     const rot = opts.rot || 0;
+    const replay = opts.replay ?? null;
     const midX = size / 2, midY = h / 2;
     const toPx = p => rotateAbout(((p.u - u0) / span) * size,
                                   ((p.v - v0) / span) * h, midX, rot, midY);
     const sc = MARKER_SCALE * ratio * (opts.scale || 1);
     ctx.imageSmoothingEnabled = false;
 
-    drawVehicles(ctx, toPx, sc, rot);
+    // Last sightings under the live marks, in a replay.
+    const faded = list => [...list.filter(m => !m.fresh), ...list.filter(m => m.fresh)];
+    if (replay) drawReplayHulls(ctx, toPx, sc, rot, faded(replay.hulls));
+    else drawVehicles(ctx, toPx, sc, rot);
     for (const cp of page.extras.controlPoints || []) {
       const p = projectToArt(cp.position[0], cp.position[2]);
       if (!p) continue;
@@ -431,14 +493,17 @@ export function createMapSurfaces(page) {
     if (opts.spawnRings) drawSpawnRings(ctx, toPx, sc);
 
     // Friendly arrows under the local one: teammates are map furniture in every
-    // mode (deploy map included), so they draw whenever the map does.
-    drawFriendlies(ctx, toPx, sc, rot);
+    // mode (deploy map included), so they draw whenever the map does. A
+    // replay marks both sides' men instead.
+    if (replay) drawReplaySoldiers(ctx, toPx, sc, rot, faded(replay.soldiers));
+    else drawFriendlies(ctx, toPx, sc, rot);
 
     if (opts.player !== false) {
-      const here = projectToArt(page.camera.position.x, page.camera.position.z);
+      const focus = mapFocus(replay);
+      const here = projectToArt(focus.x, focus.z);
       if (here) {
         const q = toPx(here);
-        drawPlayer(ctx, q.x, q.y, sc, rot);
+        drawPlayer(ctx, q.x, q.y, sc, focus.heading, rot);
       }
     }
     ctx.imageSmoothingEnabled = true;
@@ -540,12 +605,12 @@ export function createMapSurfaces(page) {
     mapSurfaceLast.set(canvas, { key, at: now });
     return true;
   }
-  function mapSurfaceKey(canvas, here, span) {
+  function mapSurfaceKey(canvas, here, span, heading = cameraHeading()) {
     const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
     const px = size / span;   // backing pixels per unit of art
     const vehicle = (page.aircraft || page.car)?.state.position;
     return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
-      + `${Math.round(cameraHeading() * 100)},${size},${mapSurfaces.mapArt ? mapSurfaces.mapArtToken : -1},`
+      + `${Math.round(heading * 100)},${size},${mapSurfaces.mapArt ? mapSurfaces.mapArtToken : -1},`
       + `${page.hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
   }
 
@@ -614,14 +679,16 @@ export function createMapSurfaces(page) {
   function drawMinimap() {
     if (minimapBox.hidden) return;
     syncMinimapToTickets();
-    const here = projectToArt(page.camera.position.x, page.camera.position.z);
+    const replay = page.replayMinimap?.() ?? null;
+    const focus = mapFocus(replay);
+    const here = projectToArt(focus.x, focus.z);
     if (!here) return;
     // The live span: `N` steps the level and `bfmap.update` eases toward it, so
     // the span is part of what the surface shows and part of its key.
     const span = bfmap.span();
-    const key = `${mapSurfaceKey(minimapCanvas, here, span)},`
+    const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
       + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
-      + friendlyMarkerKey();
+      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey());
     if (!mapSurfaceStale(minimapCanvas, key)) return;
     // North-up with a rotating arrow by default. That is the game's own shipped
     // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -629,8 +696,8 @@ export function createMapSurfaces(page) {
     // the map under a fixed arrow instead: this widget is the closed map, z = 0,
     // so the turn is the whole heading (the heading is already in the key).
     const { u0, v0 } = minimapWindow(here, span);
-    const rot = bfmap.rotation(0, cameraHeading());
-    const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot });
+    const rot = bfmap.rotation(0, focus.heading);
+    const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot, replay });
     drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
   }
 
@@ -638,10 +705,12 @@ export function createMapSurfaces(page) {
    *  open the surface at a size or in a state the key has not seen. */
   function drawFullMap(force = false) {
     if (fullmapBox.hidden) return;
-    const here = projectToArt(page.camera.position.x, page.camera.position.z) || { u: 0, v: 0 };
-    const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${page.deployActive()},${page.deployRejoin},`
+    const replay = page.replayMinimap?.() ?? null;
+    const focus = mapFocus(replay);
+    const here = projectToArt(focus.x, focus.z) || { u: 0, v: 0 };
+    const key = `${mapSurfaceKey(fullmapCanvas, here, 1, focus.heading)},${page.deployActive()},${page.deployRejoin},`
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
-      + friendlyMarkerKey();
+      + (replay ? minimapMarksKey(replay) : friendlyMarkerKey());
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -657,6 +726,7 @@ export function createMapSurfaces(page) {
       dim: deploy,
       spawnRings: deploy,
       player: !deploy || page.deployRejoin,
+      replay,
     });
   }
 

@@ -60,6 +60,8 @@ import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { ReplayCreator } from './replay-creator.js';
+import { minimapMarksAt } from './replay-minimap.js';
+import { whereIs } from './replay-battles.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -243,6 +245,29 @@ class ReplayPlayer {
    *  replay's speed while it plays, still while it is paused or dragged. */
   feedRate() {
     return this.playing && !this.ui.scrubbing ? this.speed : 0;
+  }
+
+  /** What the game's minimap marks at the clock (replay-minimap.js): both
+   *  sides, and the followed player as its ring while the camera is his. In
+   *  his first person the ring turns with his view, as the player's turns
+   *  with the camera in play: no heading of its own, so the page's camera's.
+   *  Worked out once for each clock, camera and set of built hulls, however
+   *  many surfaces ask. */
+  minimapMarks() {
+    const t = this.time;
+    const followPid = this.camera.mode !== 'free' && !this.camera.rig ? this.followPid : null;
+    const pov = this.camera.mode === 'pov';
+    const built = this.hulls.size;
+    const cached = this.minimap;
+    if (cached && cached.t === t && cached.followPid === followPid && cached.pov === pov
+        && cached.built === built) return cached.marks;
+    const model = this.highlights?.model;
+    const where = model ? model.where : (pid, at) => whereIs(this.rec, pid, at, this.kills);
+    this.minimapPids ??= [...new Set([...this.rec.players.keys(), ...(this.rec.playerNids?.keys() ?? [])])];
+    const marks = minimapMarksAt(this.rec, t, { where, pids: this.minimapPids, hullLives: this.hulls.keys(), followPid });
+    if (pov && marks.focus) marks.focus.dir = null;
+    this.minimap = { t, followPid, pov, built, marks };
+    return marks;
   }
 
   /** After the frame is rendered: the timeline keeps a frame of it when it
@@ -991,6 +1016,13 @@ export function createReplayController(ctx) {
      *  otherwise (vehicle-hud.js `crosshairAim`). */
     crosshairAim() {
       return guarded('the crosshair', () => player.hud?.crosshairAim() ?? null, null);
+    },
+    /** The game's minimap's marks (replay-minimap.js), or null with no
+     *  replay open, when the minimap marks the page's own world. One that
+     *  throws marks nothing rather than the level's parked vehicles. */
+    minimapMarks() {
+      return guarded('the minimap', () => player.minimapMarks(),
+                     player ? { focus: null, soldiers: [], hulls: [] } : null);
     },
     /** Whether a replay has the page (its input is the replay's). */
     active() {
