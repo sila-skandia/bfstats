@@ -44,7 +44,7 @@ import {
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
-import { phaseFor, buildGaitRig } from './replay-gait.js';
+import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
 import { ReplayCamera, hullRadius } from './replay-camera.js';
@@ -595,6 +595,9 @@ class ReplayPlayer {
       hull.faulted = false;
       guard.run('the seek', () => hull.resetSound());
     }
+    // A plain soldier cuts to his gait at the new instant rather than
+    // morphing across the jump.
+    for (const entity of this.entities ?? []) snapGait(entity.anim);
     // A round fired just before the new instant is still in the air, once a
     // drag lets go: every step of one fired them again, reports and all.
     if (!this.ui?.timeline?.scrubbing) {

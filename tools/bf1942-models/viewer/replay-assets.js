@@ -5,6 +5,7 @@
 
 import { isPropellerBlurPair } from './vehicle-base.js';
 import { createPoseComposer } from './pose-compose.js';
+import { bundleClips } from './soldier-actions.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -220,11 +221,14 @@ export class ReplayAssets {
     return this.gaitsManifestPromise;
   }
 
+  // Each clip carries its state as `clip.userData` (soldier-actions.js
+  // `bundleClips`, the loader the page's own bodies use): the morph a
+  // replayed soldier enters its gait with rides on it (replay-gait.js).
   gaitBundle(relative) {
     if (!this.gaitBundleCache.has(relative)) {
       const url = `${this.posesBase()}/${relative}${this.ctx.bust()}`;
       this.gaitBundleCache.set(relative, this.ctx.loader.loadAsync(url)
-        .then(gltf => gltf.animations ?? [])
+        .then(bundleClips)
         .catch(() => []));
     }
     return this.gaitBundleCache.get(relative);

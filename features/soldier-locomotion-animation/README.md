@@ -384,9 +384,10 @@ Suite: **725 tests pass** (717 before the dedup, 702 before any of this).
 *Corrected 2026-09-29: this heading used to end "(not done here)". 644ebed2
 carried points 2 to 5 into the replay viewer on 2026-09-16, with
 `viewer/gait-select.js` picking idle, walk or run from the recorded motion. It
-seeds each soldier's phase from his network id and fades in a fixed 0.2 s
-rather than reading `random_start` and `morph_factor`, and it picks no stance,
-for the reason section 7 gives.*
+seeds each soldier's phase from his network id rather than reading
+`random_start`, and it picks no stance, for the reason section 7 gives. It
+faded in a fixed 0.2 s rather than reading `morph_factor` until point 5 was
+finished on 2026-09-29.*
 
 1. ~~**Deduplicate the clips first.**~~ Done — section 5. The replay viewer can
    load one `lower.gait.glb` plus one bundle per grip actually present in the
@@ -407,6 +408,12 @@ for the reason section 7 gives.*
    ANIM-4: the blend weight ramps `w += dt * morphFactor`, so a fade is
    `1 / morphFactor` seconds, and `State.morph_factor` is already parsed. The
    `map.html` viewer already reads this from extras for its stance fades.
+   Done 2026-09-29 for the replay's plain soldier (`replay-gait.js`): each
+   half enters its gait with its state's morph from the bundles'
+   `extras.states` through the bots' `MorphBlend` (legs 2.0, torso 0.5 into a
+   walk or run, 0.7 back to a stand); the fixed 0.2 s is left only as the
+   constructor default for a state with no morph. The map's own replay bodies
+   already did this (`bot-visuals.js`). `test_replay_models.ReplayGaitMorphTests`.
 6. **Do not sync footstep audio to the animation phase** (section 4).
 
 ### Noticed in passing, not investigated

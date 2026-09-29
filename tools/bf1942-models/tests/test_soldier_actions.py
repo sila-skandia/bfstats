@@ -211,5 +211,40 @@ class MorphBlendTests(unittest.TestCase):
         self.assertEqual({"w": 1, "y": 0.5}, self.results["cut"])
 
 
+class BundleStateTests(unittest.TestCase):
+    """What a gait bundle says of its states rides on each clip as `userData`
+    (`bundleClips`, the loader the page's bodies and the replay's plain
+    soldier share), and what a state is entered with (`stateInfo`,
+    `stateMorph`, the bots' and the replay's lookup alike)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_a_gait_bundles_states_ride_on_its_clips(self) -> None:
+        bundles = self.results["bundles"]
+        self.assertEqual([{"morph": 2, "speed": 1.6}, {}], bundles["gait"])
+        self.assertEqual([{}], bundles["bare"])
+
+    def test_a_named_state_bundle_reads_as_the_same_shape(self) -> None:
+        # `morphFactor` as `morph`, `c_AsmHideWeapon` as `hidesWeapon`.
+        self.assertEqual([{"speed": 1, "loop": True, "morph": 50, "hidesWeapon": True}],
+                         self.results["bundles"]["named"])
+
+    def test_a_states_morph_is_the_first_description_of_it(self) -> None:
+        morphs = self.results["stateMorphs"]
+        self.assertEqual(2, morphs["bundle"])
+        # An empty `userData` is no description: the vanilla scripts speak.
+        self.assertEqual(2.0, morphs["emptyUserData"])
+        self.assertEqual(3, morphs["clipless"])
+        self.assertEqual(0.7, morphs["vanilla"])
+        # Nobody names it, or the bundle names it with no morph: the
+        # constructor's 5.0.
+        self.assertEqual(5, morphs["unknown"])
+        self.assertEqual(5, morphs["noMorph"])
+
+
 if __name__ == "__main__":
     unittest.main()
