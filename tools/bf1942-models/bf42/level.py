@@ -36,6 +36,11 @@ class TerrainInfo:
     water_level: float = 0.0
     sea_floor_level: float = 0.0
     tex_base: str = ""
+    # `GeometryTemplate.file` and `.materialMap`: full archive paths, no
+    # extension. A time-of-day variant (DC's `Bocage_Day2`) names its base
+    # level's files here instead of shipping its own terrain.
+    heightmap_file: str = ""
+    material_map: str = ""
     tex_offset_x: int = 0
     tex_offset_y: int = 0
     detail_tex: str = ""
@@ -577,10 +582,18 @@ class LevelFiles:
     Lookups are case-insensitive and accept paths relative to the level folder.
     """
 
-    def __init__(self, archives: list[RfaArchive], level_name: str):
+    def __init__(self, archives: list[RfaArchive], level_name: str,
+                 underlay: list[RfaArchive] | None = None):
         self.archives = archives
         self.level_name = level_name
         self._index: dict[str, tuple[RfaArchive, str]] = {}
+        # Another level's archives a variant borrows its terrain from
+        # (`borrowed_levels`). Reachable by full path only, as the engine
+        # reaches them: their `Init.con`, spawns and statics are that level's,
+        # and must never answer for this one's relative lookups.
+        for archive in underlay or []:
+            for name in archive.entries:
+                self._index[_norm_path(name)] = (archive, name)
         prefix_tail = f"/levels/{level_name.lower()}/"
         for archive in archives:
             for name in archive.entries:
@@ -702,8 +715,41 @@ def find_level_archives(game_dir: Path, mod: str, level: str, *,
     return found
 
 
-def load_level_files(paths: list[Path], level: str) -> LevelFiles:
-    return LevelFiles([RfaArchive(path) for path in paths], level)
+def load_level_files(paths: list[Path], level: str,
+                     underlay: list[Path] | None = None) -> LevelFiles:
+    return LevelFiles([RfaArchive(path) for path in paths], level,
+                      [RfaArchive(path) for path in underlay or []])
+
+
+def borrowed_levels(terrain: TerrainInfo, level: str) -> list[str]:
+    """Other levels whose files `Terrain.con` names, in the order it names them.
+
+    DC and DC Final ship time-of-day variants (`Bocage_Day2`, `Kharkov_Day2`)
+    whose `Terrain.con` points the heightmap, material map, tiles and detail
+    texture at `bf1942/levels/<base>/...` and ship none of those files: the
+    engine loads them by full path from the base level's archive, found
+    through the mod chain like any other file."""
+    found: list[str] = []
+    for path in (terrain.heightmap_file, terrain.material_map, terrain.tex_base,
+                 terrain.detail_tex):
+        parts = path.replace("\\", "/").split("/")
+        lowered = [part.lower() for part in parts]
+        if "levels" not in lowered:
+            continue
+        at = lowered.index("levels") + 1
+        if (at < len(parts) and parts[at].lower() != level.lower()
+                and parts[at].lower() not in {name.lower() for name in found}):
+            found.append(parts[at])
+    return found
+
+
+def terrain_file(files: LevelFiles, named: str, fallback: str) -> str | None:
+    """The archive path of a terrain file `Terrain.con` names (`named`, no
+    extension), else the level's own `fallback`."""
+    for candidate in ((named + fallback[fallback.rfind("."):]) if named else "", fallback):
+        if candidate and files.find(candidate):
+            return files.find(candidate)
+    return None
 
 
 def parse_terrain_con(text: str) -> TerrainInfo:
@@ -722,6 +768,10 @@ def parse_terrain_con(text: str) -> TerrainInfo:
             info.water_level = float(token)
         elif cmd == "seafloorlevel":
             info.sea_floor_level = float(token)
+        elif cmd == "file":
+            info.heightmap_file = token.replace("\\", "/")
+        elif cmd == "materialmap":
+            info.material_map = token.replace("\\", "/")
         elif cmd == "texbasename":
             info.tex_base = token.replace("\\", "/")
         elif cmd == "texoffsetx":

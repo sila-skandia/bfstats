@@ -84,6 +84,12 @@ class RfaArchive(_SkillRfaArchive):
             return self._fh.read(uc_size)
 
         blob = self._fh.read(c_size)
+        # An entry that promises bytes and stores none: DC Final's
+        # `DC_No_Fly_Zone.rfa` lists `ctf/ControlPointTemplates.con` at 1821
+        # bytes with a compressed size of 0. It reads as an empty file, so the
+        # rest of the level still extracts.
+        if len(blob) < 4:
+            return b""
         (segments,) = struct.unpack_from("<I", blob, 0)
         data_start = 4 + segments * 12
         out = bytearray()
