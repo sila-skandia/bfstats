@@ -23,14 +23,15 @@ export const ALLIED = 2;
  *  CPU-TIME GIVEN TO AI), all under the INSTANT BATTLE tab. They are the
  *  screen's whole left column, and every one of them configures bots.
  *
- *  Switched off, not removed. This site has no bots, so the column was a
- *  panel of controls that changed nothing. It comes back with the bots, and
- *  the bots wait on research that has not been done: how the engine's AI
- *  works, and what `Skirmish/SkirmishAiSkill`, `SkirmishBotRatio`,
- *  `SkirmishNrOfLives`, `SkirmishOverallDifficulty` and the two
- *  `Options/General/SkirmishPercentageOf*` variables are turned into when a
- *  battle starts, has to be documented in `features/bf1942-engine-reference`
- *  before any of these controls can mean anything.
+ *  Switched off, not removed. The site had no bots on 2026-09-20, so the
+ *  column was a panel of controls that changed nothing. This comment used to
+ *  say the bots waited on research that had not been done. It has been done:
+ *  ledger AI-20 converts `Skirmish/SkirmishAiSkill`, `SkirmishBotRatio` and
+ *  `SkirmishNrOfLives`, and AI-21 found the retail AI SKILL slider inert.
+ *  Where the two `Options/General/SkirmishPercentageOf*` variables go is
+ *  still open, section 5.4 of features/bf1942-ai-research-2026-09-21. The
+ *  bots exist now and the column stays off. `bot-settings.js` draws the two
+ *  controls the viewer takes, as features/instant-battle-bot-settings says.
  *
  *  The layout pack still carries every one of these elements; set this to
  *  `true` and the screen is the game's again. */
