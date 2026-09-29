@@ -288,6 +288,10 @@ export class ReplayHull {
     this.lastHp = null;
     this.lastT = null;
     this.crew = [];
+    // Whether `hide` has put it away since it was last drawn: the replay
+    // skips a hull that is put away and outside its life (replay.js
+    // `updateHull`). A new one is drawn or put away on its first frame.
+    this.putAway = false;
   }
 
   /** The seat id at a recorded seat index (the root seat first, then the
@@ -326,6 +330,7 @@ export class ReplayHull {
       return;
     }
     this.group.visible = true;
+    this.putAway = false;
     this.setGhost(ghost);
     this.velocity.set(motion.velocity[0], motion.velocity[1], motion.velocity[2]);
 
@@ -767,6 +772,7 @@ export class ReplayHull {
 
   hide() {
     this.group.visible = false;
+    this.putAway = true;
     this.velocity.set(0, 0, 0);
     for (const group of this.groups) group.sounding = false;
     this.stopTier();

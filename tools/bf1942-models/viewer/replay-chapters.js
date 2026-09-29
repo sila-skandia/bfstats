@@ -7,7 +7,7 @@
 // features/round-replay-ux/README.md is the design.
 
 import {
-  controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, teamAt, teamName,
+  controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, soldierLivesOf, teamAt, teamName,
 } from './replay-recording.js';
 import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat-log.js';
 
@@ -329,14 +329,7 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
   const nid = controlledAt(rec, pid, t);
   if (nid === null) return { state: 'absent' };
   const own = lifeAt(rec, nid, t);
-  const dead = () => {
-    let killedBy = null;
-    for (const k of kills) {
-      if (k.t > t) break;
-      if (k.victim === pid) killedBy = k;
-    }
-    return { state: 'dead', killedBy };
-  };
+  const dead = () => ({ state: 'dead', killedBy: lastKillOf(kills, pid, t) });
   if (own?.soldier) {
     if (own.diedAt !== undefined && t >= own.diedAt) return dead();
     return { state: 'foot', life: own, outOfRange: outOfRange(own, t) };
@@ -347,8 +340,50 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
       return { state: 'vehicle', life: root.life, seat: root.seat, outOfRange: outOfRange(root.life, t) };
     }
   }
-  const lived = rec.lives.some(l => l.soldier && l.pid === pid && l.created <= t);
+  const lived = soldierLivesOf(rec, pid).some(l => l.created <= t);
   return lived ? dead() : { state: 'spawning' };
+}
+
+const killIndexes = new WeakMap();
+
+/**
+ * The kill line that last had `pid` die by `t`: of `kills` up to the first
+ * one after `t`, the last whose victim he is. The kill log is in time order
+ * (`parseRecording`), so each victim's lines are kept apart and found by
+ * halves; a list out of order is walked as it stands.
+ */
+function lastKillOf(kills, pid, t) {
+  let index = killIndexes.get(kills);
+  if (!index || index.count !== kills.length) {
+    let ordered = true;
+    const byVictim = new Map();
+    kills.forEach((k, i) => {
+      if (i > 0 && !(k.t >= kills[i - 1].t)) ordered = false;
+      const list = byVictim.get(k.victim);
+      if (list) list.push(k);
+      else byVictim.set(k.victim, [k]);
+    });
+    index = { count: kills.length, ordered, byVictim };
+    killIndexes.set(kills, index);
+  }
+  if (!index.ordered || Number.isNaN(t)) {
+    let killedBy = null;
+    for (const k of kills) {
+      if (k.t > t) break;
+      if (k.victim === pid) killedBy = k;
+    }
+    return killedBy;
+  }
+  const list = Number.isNaN(pid) ? null : index.byVictim.get(pid);
+  if (!list) return null;
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].t <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo > 0 ? list[lo - 1] : null;
 }
 
 /** Kills and deaths per player up to `t`, as the scoreboard counts them: a

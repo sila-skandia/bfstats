@@ -22,7 +22,8 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  bodyAt, controlledAt, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf, teamAt,
+  bodyAt, controlledAt, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf, soldierLivesOf,
+  teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { syncReplayCollision } from './replay-gunfire.js';
@@ -225,13 +226,36 @@ export class ReplaySoldiers {
     this.bodies?.disposeBotVisuals?.();
     for (const actor of this.actors.values()) {
       actor.lifeNid = null;
-      actor.state.dead = false;
-      actor.state.falling = false;
-      actor.state.down = false;
-      actor.firingUntil = -Infinity;
-      actor.seat = null;
-      actor.reloading = false;
+      this.forget(actor);
     }
+  }
+
+  /**
+   * A seek while the timeline is dragged, one a frame: the corpses go and
+   * every man is placed afresh, but a body whose life is the same at the new
+   * instant is moved rather than built again (`bindLife` still builds one
+   * for another life, and the renderer hides the living body of a man the
+   * recording has dead). Twenty bodies rebuilt at every step of a drag were
+   * most of its frame; the seek it ends on is a `reset`.
+   */
+  jump() {
+    if (!this.bodies?.disposeCorpses) {
+      this.reset();
+      return;
+    }
+    this.snap = true;
+    this.bodies.disposeCorpses();
+    for (const actor of this.actors.values()) this.forget(actor);
+  }
+
+  /** What `place` works out again from the recording at a new instant. */
+  forget(actor) {
+    actor.state.dead = false;
+    actor.state.falling = false;
+    actor.state.down = false;
+    actor.firingUntil = -Infinity;
+    actor.seat = null;
+    actor.reloading = false;
   }
 
   /** One frame at recording time `t`. Each man is placed on his own: one
@@ -444,8 +468,8 @@ export class ReplaySoldiers {
     const own = lifeAt(rec, nid, t);
     if (own?.soldier) return own;
     let best = null;
-    for (const life of rec.lives) {
-      if (!life.soldier || life.pid !== pid || life.created > t || t >= life.destroyed) continue;
+    for (const life of soldierLivesOf(rec, pid)) {
+      if (life.created > t || t >= life.destroyed) continue;
       if (!best || life.created > best.created) best = life;
     }
     return best;

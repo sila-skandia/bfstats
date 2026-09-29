@@ -45,7 +45,9 @@ Built (2026-09-27).
 
 Everything is a pure function of the recording (and the aligned server log
 when there is one), built once when the replay opens: about 20 ms for Wake's
-280 s round.
+280 s round, 164 ms for a 45-minute public Bocage round. Who stands apart is
+read after that, a few seconds of the round within 3 ms of each frame
+(features/replay-performance).
 
 ### What the recording can see
 
