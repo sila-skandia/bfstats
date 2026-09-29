@@ -174,7 +174,7 @@ lossless. So the candidates are:
 - **Quantised meshopt** (`KHR_mesh_quantization`): the biggest cut, but lossy.
   It needs a measured sign-off, like KTX2.
 
-### Phase 2a: gzip (built 2026-09-29, not published)
+### Phase 2a: gzip (live 2026-09-29)
 
 Every glb gets `<name>.glb.gz` beside it, a gzip of its exact bytes, and
 nginx's `gzip_static` sends that to any client that takes gzip. Nothing per
@@ -306,6 +306,34 @@ XPack1 models) mounted as the deployment mounts them:
    shows `content-encoding: gzip` and `x-file-size`.
 
 Rolling back is the image alone: without `gzip_static` the `.gz` files are never read.
+
+### Next: phase 2b, brotli
+
+The next optimisation step. Lossless like 2a, and the same shape: a
+pre-compressed `<name>.glb.br` beside each glb, served by `brotli_static`.
+Measured on Bocage, brotli level 5 is 24.8% of the plain glb (0.3 s) and
+level 11 is 21.2%, against 42% for the gzip copies now live. Level downloads
+would roughly halve again; models gain less (they already gzip to 20-30%).
+
+What it takes:
+- A custom mesh image. The official nginx image has no brotli module, so
+  `mesh/Dockerfile` has to build or install `ngx_brotli` (dynamic module)
+  against the image's nginx version, and load it next to njs. Keep the image
+  small and check its memory against the 64 MiB limit in
+  `deploy/app/mesh-deployment.yaml`.
+- `bf42/glbgz.py` grows a `.br` twin with the same staleness rule. Brotli has
+  no trailer checksum, so record the glb's sha256 or CRC and length in a
+  sidecar, or accept an mtime-plus-length check the way the API does.
+- The publisher sends and checks `.br` like `.gz`; the API route prefers `br`
+  when the request accepts it.
+- Cloudflare already asks the origin for `br, gzip`, so a `.br` is what the
+  edge caches for browsers that take it. Confirm with `cf-cache-status` and
+  `content-encoding` on a `?cb=` probe after rollout.
+- Storage: about another 470 MB across the three packs at level 11.
+
+After that, the remaining steps are lossy and need a measured parity sign-off:
+quantised meshopt geometry (below, under phase 2's options) and KTX2 textures
+(phase 4).
 
 ### Phase 3: the JSON chunk
 
