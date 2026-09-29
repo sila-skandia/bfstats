@@ -34,6 +34,7 @@ import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { PARA_CLIPS } from './parachute.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE, explosionDeath, explosionFamily } from './knockback.js';
+import { modelFileStem } from './model-file.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -575,7 +576,7 @@ export class ReplaySoldiers {
   handGun(weapon) {
     if (!this.hands.has(weapon)) {
       const ctx = this.player.ctx;
-      this.hands.set(weapon, ctx.loader.loadAsync(`${ctx.modelsBase}/${weapon}.glb${ctx.bust()}`)
+      this.hands.set(weapon, ctx.loader.loadAsync(`${ctx.modelsBase}/${modelFileStem(weapon)}.glb${ctx.bust()}`)
         .then(gltf => {
           ctx.shadeModel?.(gltf.scene);
           const data = gltf.userData?.weapon ?? gltf.parser?.json?.extras?.weapon ?? gltf.scene?.userData?.weapon ?? null;

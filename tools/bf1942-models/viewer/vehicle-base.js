@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { applyCameraPivot } from './camera-pivot.js';
+import { modelFileStem } from './model-file.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -468,7 +469,7 @@ export class Vehicle {
    *  is none at all for a vehicle with no interior. */
   async fetchCockpit(modelsBase, prepare) {
     const base = modelsBase || defaultModelsBase();
-    const url = new URL(`${this.control}.cockpit.glb`, base).href;
+    const url = new URL(`${modelFileStem(this.control)}.cockpit.glb`, base).href;
     try {
       const gltf = await cockpitLoader.loadAsync(url);
       // `prepare` gets the detached interior before the swap first shows it:
