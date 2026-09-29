@@ -140,6 +140,11 @@ def main() -> int:
     ap.add_argument("--own", action="store_true",
                     help="only kits this mod declares itself, not the ones it "
                          "inherits (Road to Rome: 13 rather than 48)")
+    ap.add_argument("--maps", type=Path, default=None,
+                    help="bind kits only on the levels this maps.json holds. A mod "
+                         "inherits its parents' levels, and they bind their own "
+                         "kits: DesertCombat inherits vanilla's Aberdeen and Midway, "
+                         "and without this their British and Japanese kits read as DC's")
     ap.add_argument("--no-pickups", action="store_true",
                     help="export the worn parts only, not each kit as it lies "
                          "on the ground. FHSW binds thousands of kits; a page "
@@ -160,7 +165,11 @@ def main() -> int:
     library = build_library(objects)
 
     kits = kit_mod.collect(library)
-    read = kit_mod.sweep_levels(kits, levels)
+    swept = levels
+    if args.maps:
+        baked = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
+        swept = [(name, path) for name, path in levels if name.lower() in baked]
+    read = kit_mod.sweep_levels(kits, swept)
     chosen = (sorted(kits.values(), key=lambda k: k.template)
               if args.all else kit_mod.browsable(kits))
 

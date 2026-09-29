@@ -244,6 +244,28 @@ ObjectTemplate.setType Medic
     def test_a_kit_filed_by_the_convention_keeps_its_nation(self) -> None:
         self.assertEqual("US", collect(self.library())["us_medic"].nation)
 
+    def test_a_level_declared_kit_takes_its_nation_from_its_name(self) -> None:
+        # DC Final files two anti-air kits inside DC_First_Light; the name's
+        # prefix is the only label they carry.
+        library = self.library()
+        library.add_con("bf1942/levels/DC_First_Light/objects/AntiAir2/Objects.con", """
+ObjectTemplate.create Kit US_AA2
+""")
+        library.add_con("bf1942/levels/DC_First_Light/objects/Iraq_AntiAir2/Objects.con", """
+ObjectTemplate.create Kit Iraq_AA2
+""")
+        kits = collect(library)
+        self.assertEqual("US", kits["us_aa2"].nation)
+        self.assertEqual("Iraqi", kits["iraq_aa2"].nation)
+
+    def test_desert_combat_iraqi_kits_have_a_nation(self) -> None:
+        library = self.library()
+        library.add_con("OBJECTS/items/IraqKit/Assault/Objects.con", """
+ObjectTemplate.create Kit Iraq_Assault
+ObjectTemplate.setType Assault
+""")
+        self.assertEqual("Iraqi", collect(library)["iraq_assault"].nation)
+
 
 class PoseCandidateTests(unittest.TestCase):
     """Which weapons to pose a kit's wearer holding, best first."""
