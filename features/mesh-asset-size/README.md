@@ -107,12 +107,30 @@ mirrors of `viewer/models` (`tournament-images/mesh`,
 inodes, so they need `textures/` beside `models/`:
 `cp -al viewer/textures <mirror>/textures`, again after new textures land.
 
-### Phase 2: geometry (`EXT_meshopt_compression`)
+### Phase 2: geometry and JSON (measuring)
 
-Lossless mode only: no quantisation, attribute and index codecs, decoded
-by `MeshoptDecoder` in the viewer. Needs a Python decoder (or keeping readers
-on uncompressed copies) for the tools that read accessors: `verify.py`,
-`measure.py`, collision extraction. Measure first.
+After phase 1 a glb is geometry plus JSON, and both compress well:
+
+| After phase 1 | Size | gzip -6 | zstd -19 | meshopt, lossless |
+|---|---|---|---|---|
+| Bocage `scene.glb` | 21.4 MB | 42% | 22% | binary 55% |
+| Telemark (XPack2) | 25.1 MB | | | binary 58% |
+| Sherman | 0.32 MB | 45% | 41% | binary 79% |
+
+The JSON chunk gzips to 11% (Bocage: 2.17 MB -> 0.24 MB). Lossless meshopt
+(`encodeVertexBuffer` with no filter, `encodeIndexSequence`) does no better on
+the binary than gzip; meshopt earns its keep with quantisation, which is not
+lossless. So the candidates are:
+
+- **gzip on the wire**: add `model/gltf-binary` to nginx's `gzip_types`. It cuts
+  transfer by more than half; storage is unchanged. The cost is CPU per request
+  on the node, much of it taken by Cloudflare's cache.
+- **Pre-compressed files** (`gzip_static`, or brotli): the same transfer win
+  with no per-request CPU, and smaller storage too if only the compressed copy
+  goes on the volume. That's a publisher change, and the local tree and the
+  volume would then differ in form.
+- **Quantised meshopt** (`KHR_mesh_quantization`): the biggest cut, but lossy.
+  It needs a measured sign-off, like KTX2.
 
 ### Phase 3: the JSON chunk
 

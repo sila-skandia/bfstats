@@ -227,7 +227,10 @@ database.
     `scripts/publish-mesh-delta.py`, and confirm the live sizes. "The models are fixed, the
     levels still carry the bug, here is the command" is the failure mode — the owner has
     said, twice, that running that command is the job, not a hand-off (2026-09-15,
-    2026-09-23). Budget for it: every layer patched is ~10 s a tree; a full level pass is ~5-9 min vanilla, ~15 min for the two
+    2026-09-23). A bake writes self-contained glbs; before publishing, run
+    `tools/bf1942-models/optimise_mesh.py` over what it wrote, which moves their
+    textures into the shared `viewer/textures/` store (lossless, about half the
+    bytes; `features/mesh-asset-size`). The publisher sends `textures/` first. Budget for it: every layer patched is ~10 s a tree; a full level pass is ~5-9 min vanilla, ~15 min for the two
     expansion packs, ~1.5 h for EoD; the publisher moves ~5 MB/s.
 
 ### Server and player name rendering
