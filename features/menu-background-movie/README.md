@@ -26,9 +26,11 @@ each ship their own.
 
 - `tools/bf1942-models/extract_menu_movie.py` finds `Movies/background.bik`
   along each mod's `game.addModPath` chain, nearest first, the same way
-  `extract_menu_music.py` finds the menu music. It writes a silent VP9 WebM at
-  the movie's own size to `<maps>/_shared/movies/background.webm`. That is
-  about 0.5 MB per mod. It uses VP9 rather than H.264 because headless Chromium
+  `extract_menu_music.py` finds the menu music. It writes a silent VP9 WebM to
+  `<maps>/_shared/movies/background.webm`, at most 640 wide and 300 kbit/s.
+  The vanilla packs' 320x180 movies come to about 0.5 MB; the cap is for mods
+  that ship a big one (EoD's is 800x489 and 181 s: 66 MB uncapped, 8.5 MB
+  capped; FHSW's 6.5 MB, DC's 2.1 MB). It uses VP9 rather than H.264 because headless Chromium
   decodes no proprietary codecs.
 - `viewer/play/menu-movie.js` holds one muted, looping `<video>` for the whole
   page. `menu-pack.js` returns the playing frame instead of the `background`
@@ -65,13 +67,14 @@ chain, and the path the front end reads.
 
 The WebMs are volume assets, not git. Publish
 `maps/_shared/movies/background.webm` and
-`maps/mods/{xpack1,xpack2}/_shared/movies/background.webm` with
+`maps/mods/{xpack1,xpack2,desertcombat,dc_final,eod,fhsw}/_shared/movies/background.webm` with
 `scripts/publish-mesh-delta.py`. Until they are live, the front end draws the
 still as before.
 
 ## Open
 
-- The other mods (DC, DC Final, FHSW, EoD, bf1918 and the rest) ship their own
-  `background.bik` but are outside extraction scope. They keep their stills.
-  Running `extract_menu_movie.py --mod <id>` adds one.
+- DC, DC Final, EoD and FHSW have theirs (2026-09-30). The other mods (bf1918
+  and the rest) ship their own `background.bik` but are outside extraction
+  scope and keep their stills. Running `extract_menu_movie.py --mod <id>` adds
+  one.
 - Safari older than 17.4 on iOS plays no WebM, so it keeps the still.
