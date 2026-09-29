@@ -61,5 +61,36 @@ class ExtractorHookTests(unittest.TestCase):
         self.assertFalse((self.root / "textures").exists())
 
 
+class BatchWorkerTests(unittest.TestCase):
+    def test_a_staged_level_is_not_optimised_where_it_is_staged(self) -> None:
+        # Image URIs are relative to the glb, so a level optimised in staging
+        # would point at textures from the wrong depth once promoted.
+        import extract_maps_all
+        seen = {}
+
+        def fake_run(command, **_):
+            seen["command"] = command
+            return mock.Mock(returncode=1, stdout="", stderr="stop here")
+
+        with mock.patch.object(extract_maps_all.subprocess, "run", fake_run):
+            extract_maps_all._extract_one(("Bocage", "/g", "bf1942", "/s", 512, False, [],
+                                           "/sounds", "mp3", "/out"))
+        self.assertIn("--no-optimise", seen["command"])
+
+    def test_a_uri_that_resolves_to_nothing_fails_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staged = root / "maps" / ".staging" / "bocage" / "bocage"
+            staged.mkdir(parents=True)
+            glb = staged / "scene.glb"
+            glb.write_bytes(textured_glb([(png(CHECKER), "a")]))
+            optimise_mesh.process(str(glb), str(root))          # URIs at staging depth
+            promoted = root / "maps" / "bocage"
+            promoted.mkdir()
+            (promoted / "scene.glb").write_bytes(glb.read_bytes())
+            with self.assertRaises(ValueError):
+                optimise_mesh.process(str(promoted / "scene.glb"), str(root))
+
+
 if __name__ == "__main__":
     unittest.main()

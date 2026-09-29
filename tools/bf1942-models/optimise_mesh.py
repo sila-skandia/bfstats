@@ -71,6 +71,14 @@ def process(glb: str, mesh_root: str) -> dict:
         with open(path, "r+b") as handle:
             handle.write(out)
             handle.truncate()
+    # Every image the glb points at, new or from an earlier run, must be where
+    # its URI says. A glb optimised somewhere other than where it is served
+    # (a staging directory) fails here instead of drawing untextured.
+    doc, _ = glbopt.read_glb(out)
+    broken = [i["uri"] for i in doc.get("images", [])
+              if "uri" in i and not (path.parent / i["uri"]).is_file()]
+    if broken:
+        raise ValueError(f"{len(broken)} image URIs resolve to nothing, e.g. {broken[0]}")
     return {"glb": glb, "changed": result.changed, "before": result.bytes_before,
             "after": result.bytes_after, "images": result.images,
             "written": result.written}
