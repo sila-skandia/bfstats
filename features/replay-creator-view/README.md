@@ -68,7 +68,7 @@ counts too, whatever the angle: from 6 m a metre and a half of running is
 `replay_20260928-161948`; mines and packs have none (replay-dossier.js
 `killingRound`). A man just out of a vehicle is placed where the recording
 next has him, not at his first sample, which is where he got in
-(replay-battles.js `settledTime`).
+(replay-recording.js `settledTime`).
 
 The chased round is the page's own: the one `fireShot` sent through the
 page's guns, found by its muzzle and direction as it appears, so the bullet
