@@ -286,3 +286,17 @@ Nothing above is EoD-only in the code. There are no `if mod == "eod"` branches.
    Maps dropdown pointing at nothing. Publishing models before maps are ready is
    fine on purpose — regenerate with the maps tree absent and `counts.maps` is
    zero, so the Maps tab simply does not offer EoD until it is there.
+
+## The play front end needs two more extractors
+
+Levels, models and kits are not enough for `play.bfstats.io`. A mod baked
+without these two falls back to vanilla's menu music, and its weapons float in
+first person with no hands (DC and DC Final until 2026-09-30):
+
+- `python3 extract_menu_music.py --mod <id>` writes the mod's own menu loop to
+  `maps/mods/<id>/_shared/music/menu.mp3`. With no `--mod` it covers vanilla
+  and every mod with levels.
+- `python3 extract_viewmodel.py --mod <Mod> --kits <tree>/kits.json --maps
+  <maps tree>/maps.json --out <tree>/viewmodels` writes the first-person
+  arms rigs and their `index.json`
+  (`features/bf1942-3d-models/first-person-soldier.md`, "Mod trees").

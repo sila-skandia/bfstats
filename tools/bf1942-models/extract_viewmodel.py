@@ -51,6 +51,17 @@ are where the declared rates are overridden -- the run clip is declared 0.7
 and plays at 1.40). Each family's `duration`, its state's `morphFactor` (the
 per-second blend-in rate, `setMorphFactor`) and `returnTo` ride in the extras.
 
+A mod's rigs go in its own tree, with the pairs its kits hand out:
+
+    python3 extract_viewmodel.py --mod DesertCombat \
+        --kits viewer/models/mods/desertcombat/kits.json \
+        --maps viewer/maps/mods/desertcombat/maps.json \
+        --out viewer/models/mods/desertcombat/viewmodels
+
+Every run rewrites `index.json` in `--out`: the stem of every rig there,
+which is how the viewer (`arms-rig.js`) knows which pairings a tree has
+rather than probing for each one.
+
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
 
@@ -814,6 +825,35 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     return result
 
 
+def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str]]:
+    """Every soldier/item pair a `kits.json` (extract_kits.py) hands out, once
+    each ignoring case, in kit order. With `levels`, only kits that some level
+    in it uses - a mod's kits.json also lists the kits of the vanilla levels it
+    inherits and does not bake."""
+    seen: set[tuple[str, str]] = set()
+    pairs: list[tuple[str, str]] = []
+    for kit in kits.get("kits", []):
+        used = kit.get("levels")
+        if levels is not None and used is not None \
+                and not {level.lower() for level in used} & levels:
+            continue
+        for soldier in kit.get("soldiers") or []:
+            for item in kit.get("items") or []:
+                key = (soldier.lower(), item["template"].lower())
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append((soldier, item["template"]))
+    return pairs
+
+
+def write_index(out: Path) -> list[str]:
+    """`index.json` in `out`: the stem of every `<Soldier>__<Weapon>.fp.glb`
+    there, sorted - what `arms-rig.js` looks a pairing up in."""
+    stems = sorted(path.name[:-len(".fp.glb")] for path in out.glob("*.fp.glb"))
+    (out / "index.json").write_text(json.dumps(stems, indent=1) + "\n")
+    return stems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -826,10 +866,23 @@ def main() -> int:
                     default=Path(__file__).resolve().parent
                     / "viewer" / "models" / "viewmodels")
     ap.add_argument("--max-texture", type=int, default=1024)
+    ap.add_argument("--kits", type=Path, default=None,
+                    help="also export every soldier/item pair this kits.json hands out")
+    ap.add_argument("--maps", type=Path, default=None,
+                    help="with --kits: only kits a level in this maps.json uses")
     args = ap.parse_args()
 
-    if not args.pairs or len(args.pairs) % 2:
+    if len(args.pairs) % 2:
         ap.error("give soldier/weapon pairs, e.g. USSoldier Thompson")
+    pairs = list(zip(args.pairs[::2], args.pairs[1::2]))
+    if args.kits:
+        levels = None
+        if args.maps:
+            levels = {entry["name"].lower()
+                      for entry in json.loads(args.maps.read_text())}
+        pairs += kit_pairs(json.loads(args.kits.read_text()), levels)
+    if not pairs:
+        ap.error("give soldier/weapon pairs, e.g. USSoldier Thompson, or --kits")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -841,7 +894,7 @@ def main() -> int:
                    max_texture=args.max_texture)
 
     failures = 0
-    for soldier, weapon in zip(args.pairs[::2], args.pairs[1::2]):
+    for soldier, weapon in pairs:
         try:
             result = export_viewmodel(soldier, weapon, out=args.out, **context)
         except PoseError as exc:
@@ -852,6 +905,8 @@ def main() -> int:
                     if "error" not in entry]
         print(f"{soldier} + {weapon}: clips [{', '.join(families)}] "
               f"-> {result.get('glb')}", file=sys.stderr)
+    if args.out.is_dir():
+        print(f"index.json: {len(write_index(args.out))} rigs", file=sys.stderr)
     return 1 if failures else 0
 
 
