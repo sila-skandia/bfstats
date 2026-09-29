@@ -1157,18 +1157,31 @@ const read = scene => {
   const standUpper = rig.clips.find(c => c.name === 'stand.upper');
   const moves = transitions(rig);
 
-  // Paused a tenth of a second into the run's morph: posed at the same
-  // instant again and again, nothing moves.
+  // Paused a tenth of a second into the run's morph: posed at the same instant
+  // for five frames, then played on beside a rig that never paused.
   const paused = await rigFor();
+  const unpaused = await rigFor();
   const pausedAt = drive(paused, 4, moves[0].at + 0.1);
+  drive(unpaused, 4, moves[0].at + 0.1);
   const snapshot = r => ({
     legs: r.scene.getObjectByName('Leg_L').quaternion.toArray(),
     torso: r.scene.getObjectByName('Spine').quaternion.toArray(),
     w: [r.anim.halves.lower.w, r.anim.halves.upper.w],
   });
   const before = snapshot(paused);
-  for (let i = 0; i < 3; i++) setGaitPose(paused.entity, pausedAt);
-  const after = snapshot(paused);
+  const still = [];
+  for (let i = 0; i < 5; i++) {
+    setGaitPose(paused.entity, pausedAt);
+    still.push(snapshot(paused));
+  }
+  const resumed = [];
+  const straight = [];
+  for (let i = 1; i <= 70; i++) {
+    setGaitPose(paused.entity, pausedAt + i / FPS);
+    resumed.push(snapshot(paused));
+    setGaitPose(unpaused.entity, pausedAt + i / FPS);
+    straight.push(snapshot(unpaused));
+  }
 
   // Standing at 4.5 s, then 7 s (running): through the player's seek, and as
   // a bare jump of the clock.
@@ -1204,13 +1217,121 @@ const read = scene => {
     bones: { lower: rig.anim.halves.lower.bones.map(b => b.name), upper: rig.anim.halves.upper.bones.map(b => b.name) },
     morphs: rig.anim.morphs,
     transitions: moves,
-    paused: { same: JSON.stringify(before) === JSON.stringify(after), midMorph: before.w },
+    paused: {
+      midMorph: before.w,
+      held: still.map(s => JSON.stringify(s) === JSON.stringify(before)),
+      resumedW: resumed[0].w,
+      resumedLikeUnpaused: JSON.stringify(resumed) === JSON.stringify(straight),
+      onTheRun: resumed.at(-1).w,
+    },
     seek: { lastT: lastTAfterSeek, cut: cutOf(seeked), jump: cutOf(jumped) },
     hidden: { whileDrawn: lastTWhileDrawn, afterHidden: hidden.anim.lastT, visible: hidden.entity.group.visible },
     vanilla: { morphs: vanilla.anim.morphs, run: transitions(vanilla)[0] },
     noMorph: { morphs: noMorph.anim.morphs, run: transitions(noMorph)[0] },
     defaultMorph: soldierActions.DEFAULT_MORPH,
     unknownState: soldierActions.stateMorph(soldierActions.stateInfo(null, 'Lb_NoSuchState')),
+  };
+}
+
+// --- a body paused mid-morph holds it -------------------------------------------
+//
+// The map's replay bodies are the bots' (bot-visuals.js), stepped by the replay
+// clock's own step, which is 0 while the replay is paused: a body caught
+// mid-morph kept closing on its clip while nothing else moved. Two bots get
+// the real half-body rig, built by `ensureBotVisual` from a pose and gait clips
+// handed in the way the page's loaders hand them; both stand, then run, and
+// one is paused for five frames a tenth of a second into the run's morph.
+{
+  const [{ createBotVisuals }, { bundleClips }] = await Promise.all([
+    imp('bot-visuals.js'), imp('soldier-actions.js'),
+  ]);
+  const LEGS = ['Leg_L', 'Leg_R'];
+  const TORSO = ['Spine', 'Head'];
+  const REST = new THREE.Quaternion();
+  const RUN_LEGS = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+  const RUN_TORSO = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const held = (name, bones, q) => new THREE.AnimationClip(name, 1, bones.map(b =>
+    new THREE.QuaternionKeyframeTrack(`${b}.quaternion`, [0, 1], [...q.toArray(), ...q.toArray()])));
+  const clips = [
+    ...bundleClips({
+      userData: { states: { 'stand.lower': { morph: 2.5, loop: true }, 'run.lower': { morph: 4, loop: true } } },
+      animations: [held('stand.lower', LEGS, REST), held('run.lower', LEGS, RUN_LEGS)],
+    }),
+    ...bundleClips({
+      userData: { states: { 'stand.upper': { morph: 0.8, loop: true }, 'run.upper': { morph: 1, loop: true } } },
+      animations: [held('stand.upper', TORSO, REST), held('run.upper', TORSO, RUN_TORSO)],
+    }),
+  ];
+  const poseScene = new THREE.Group();
+  for (const name of [...LEGS, ...TORSO]) {
+    const bone = new THREE.Bone();
+    bone.name = name;
+    poseScene.add(bone);
+  }
+  const bodies = createBotVisuals({
+    scene: new THREE.Scene(), bots: [], MODELS_BASE: 'models', bust: () => '', presentAlpha: 1,
+    world: { player: () => ({ team: 2 }) },
+    footBodyLoader: {
+      loadAsync: async url => {
+        if (!url.includes('.pose.glb')) throw new Error(`no ${url}`);
+        return { scene: poseScene, animations: [], userData: {} };
+      },
+    },
+    footBodyClips: async () => clips, footStateMachine: () => null,
+    bindDynamicShading: () => {}, soldierDress: null, soldierTemplateFor: () => 'USMarineSoldier',
+  });
+  bodies.ensureRoot();
+  // No split pose's recipe in this tree: the composer loads the monolithic one.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false });
+  let rigs;
+  try {
+    rigs = (await Promise.all(['paused', 'playing'].map(name =>
+      bodies.ensureBotVisual({ playerId: name, name, kitPrimary: 'Thompson' })))).map(vis => vis.rig);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const [paused, playing] = rigs;
+  const FPS = 60;
+  const reading = rig => ({
+    w: [rig.halves.lower.blend.w, rig.halves.upper.blend.w],
+    legs: rig.scene.getObjectByName('Leg_L').quaternion.toArray(),
+    torso: rig.scene.getObjectByName('Spine').quaternion.toArray(),
+  });
+  const degrees = (rig, bone, q) => {
+    const dot = Math.min(1, Math.abs(rig.scene.getObjectByName(bone).quaternion.dot(q)));
+    return +(2 * Math.acos(dot) * 180 / Math.PI).toFixed(3);
+  };
+  const stand = { stance: 'stand', family: 'stand' };
+  const run = { stance: 'stand', family: 'run' };
+  for (const rig of rigs) for (let i = 0; i < 2 * FPS; i++) rig.step(stand, 1 / FPS);
+  const trace = { paused: [], playing: [] };
+  const both = n => {
+    for (let i = 0; i < n; i++) {
+      paused.step(run, 1 / FPS);
+      trace.paused.push(reading(paused));
+      playing.step(run, 1 / FPS);
+      trace.playing.push(reading(playing));
+    }
+  };
+  // The frame the run is entered on, and six more.
+  both(7);
+  const before = reading(paused);
+  const beforeDegrees = { legs: degrees(paused, 'Leg_L', RUN_LEGS), torso: degrees(paused, 'Spine', RUN_TORSO) };
+  const still = [];
+  for (let i = 0; i < 5; i++) {
+    paused.step(run, 0);
+    still.push(reading(paused));
+  }
+  both(70);
+  results.botPause = {
+    kind: paused.kind,
+    morphs: { lower: paused.anim.morphOf('run.lower'), upper: paused.anim.morphOf('run.upper') },
+    before: { w: before.w, degrees: beforeDegrees },
+    held: still.map(s => JSON.stringify(s) === JSON.stringify(before)),
+    resumedW: trace.paused[7].w,
+    resumedLikePlaying: JSON.stringify(trace.paused) === JSON.stringify(trace.playing),
+    onTheRun: { w: trace.paused.at(-1).w, legs: degrees(paused, 'Leg_L', RUN_LEGS), torso: degrees(paused, 'Spine', RUN_TORSO) },
   };
 }
 

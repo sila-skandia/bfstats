@@ -597,7 +597,8 @@ function actionOf(name) {
  * The engine's morph for one half, as numbers: `update` it once a frame after
  * the mixer has posed the half's bones from the new state's clip, and each
  * bone becomes `slerp(where it was, the clip, w)`, `w` starting at 0 on the
- * frame the state is entered and gaining `dt x morph` a frame after.
+ * frame the state is entered and gaining `dt x morph` a frame after. A frame
+ * with no time in it draws where it was.
  *
  * `bones` are `{ quaternion: {x,y,z,w}, position: {x,y,z} }` (three.js
  * `Object3D`s in the page, plain objects under node). Quaternions are
@@ -660,25 +661,39 @@ export class MorphBlend {
     });
   }
 
-  /** After the mixer: carry the bones from the remembered pose toward the
-   *  clip's by this frame's weight. */
+  /**
+   * After the mixer: carry the bones from the remembered pose toward the
+   * clip's by this frame's weight. A frame the clock did not move (dt 0: a
+   * replay paused or dragged) draws the remembered pose again, unchanged.
+   * Slerped toward the clip by the same weight every frame instead, a paused
+   * body kept closing on it, 75 degrees to 45 in ten frames; and left to the
+   * mixer, it would snap onto the clip. Either way the mixer's pose is still
+   * read, for `restore`.
+   */
   update(dt) {
     if (this.w >= 1) return this.w;
+    const moving = dt > 0;
     if (this.fresh) this.fresh = false;
-    else this.w = Math.min(1, this.w + dt * this.rate);
+    else if (moving) this.w = Math.min(1, this.w + dt * this.rate);
     const w = this.w;
     const { q, p, tq, tp } = this;
     this.bones.forEach((b, i) => {
       const o = i * 4;
+      const j = i * 3;
       const bq = b.quaternion;
       const bp = b.position;
       // What the mixer holds the bone at (restored, then maybe rewritten).
       tq[o] = bq.x; tq[o + 1] = bq.y; tq[o + 2] = bq.z; tq[o + 3] = bq.w;
-      tp[i * 3] = bp.x; tp[i * 3 + 1] = bp.y; tp[i * 3 + 2] = bp.z;
+      tp[j] = bp.x; tp[j + 1] = bp.y; tp[j + 2] = bp.z;
+      if (!moving) {
+        setQuaternion(bq, q[o], q[o + 1], q[o + 2], q[o + 3]);
+        bp.x = p[j]; bp.y = p[j + 1]; bp.z = p[j + 2];
+        return;
+      }
       slerpInto(bq, q[o], q[o + 1], q[o + 2], q[o + 3], w);
-      bp.x = p[i * 3] + (bp.x - p[i * 3]) * w;
-      bp.y = p[i * 3 + 1] + (bp.y - p[i * 3 + 1]) * w;
-      bp.z = p[i * 3 + 2] + (bp.z - p[i * 3 + 2]) * w;
+      bp.x = p[j] + (bp.x - p[j]) * w;
+      bp.y = p[j + 1] + (bp.y - p[j + 1]) * w;
+      bp.z = p[j + 2] + (bp.z - p[j + 2]) * w;
     });
     // The result is where the bones stand now: the next frame starts here.
     this.capture();
