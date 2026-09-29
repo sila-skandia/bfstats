@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Publish what changed under the mesh viewer's asset trees to the assets volume.
 
-    scripts/publish-mesh-delta.py                 # models, then maps
+    scripts/publish-mesh-delta.py                 # textures, models, then maps
     scripts/publish-mesh-delta.py maps --streams 8
     scripts/publish-mesh-delta.py --dry-run       # say what would go, send nothing
     scripts/publish-mesh-delta.py maps --hash     # also catch same-size edits
+
+`textures/` is the store the glbs point at (`features/mesh-asset-size`); it goes
+first, so no glb lands before the textures it draws with. Its files are named
+by their content and never change.
 
 The mesh image carries the viewer's code; `models/` and `maps/` come from the
 PVC (`deploy/app/mesh-deployment.yaml`), and this uploads exactly the files in
@@ -70,6 +74,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
 STATE = Path.home() / ".cache" / "mesh-publish"
+TREES = ["textures", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json"}
 UNIT_BYTES = 48 * 1000 * 1000
 SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
@@ -344,7 +349,7 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("trees", nargs="*", choices=["models", "maps"], default=None)
+    ap.add_argument("trees", nargs="*", choices=list(TREES), default=None)
     ap.add_argument("--streams", type=int, default=8)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--list", action="store_true",
@@ -372,8 +377,9 @@ def main() -> int:
     global VIEWER
     if args.root is not None:
         VIEWER = args.root.resolve()
-    trees = [t for t in (args.trees or ["models", "maps"]) if (VIEWER / t).is_dir()]
-    for tree in set(args.trees or ["models", "maps"]) - set(trees):
+    wanted = sorted(args.trees or TREES, key=TREES.index)
+    trees = [t for t in wanted if (VIEWER / t).is_dir()]
+    for tree in set(wanted) - set(trees):
         print(f"{tree}: nothing at {VIEWER / tree}")
     if args.write_manifest is not None:
         for tree in trees:

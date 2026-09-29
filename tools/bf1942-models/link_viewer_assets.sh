@@ -4,7 +4,7 @@
 #   tools/bf1942-models/link_viewer_assets.sh            # from inside a worktree
 #   tools/bf1942-models/link_viewer_assets.sh /path/to/worktree
 #
-# `viewer/maps` (15 GB) and most of `viewer/models` are gitignored and live in
+# `viewer/maps` (15 GB), `viewer/textures` and most of `viewer/models` are gitignored and live in
 # the main checkout only, so a worktree's viewer has nothing to load. `maps` is
 # wholly ignored and is linked as one directory. `models` is not: four
 # first-person fixtures under `models/viewmodels/` are tracked, so replacing the
@@ -29,6 +29,13 @@ fi
 if [ ! -e "$VIEWER/maps" ]; then
   ln -s "$MAIN/maps" "$VIEWER/maps"
   echo "linked maps"
+fi
+
+# The texture store every optimised glb points at (features/mesh-asset-size):
+# wholly ignored, one directory, like maps.
+if [ -d "$MAIN/textures" ] && [ ! -e "$VIEWER/textures" ]; then
+  ln -s "$MAIN/textures" "$VIEWER/textures"
+  echo "linked textures"
 fi
 
 link_entries() {
