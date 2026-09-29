@@ -1021,6 +1021,199 @@ const read = scene => {
   };
 }
 
+// --- a plain soldier's gait morph ---------------------------------------------
+//
+// replay-gait.js, the soldier a page without the map's bodies draws. A gait
+// change enters each half's new state with that state's own morph, as the
+// bots' bodies do (ledger ANIM-4: the weight starts at 0 and gains dt x morph
+// a second, the bones slerp from where they stood); the rig used to fade every
+// change over a fixed 0.2 s. The body is two leg bones and two torso bones:
+// the pose pair's `stand` holds them at rest, the run turns them a quarter.
+// The clips come through the replay's own loader (`ReplayAssets.gaitClipsFor`)
+// from a lower bundle and a grip bundle whose `extras.states` give each half a
+// morph unlike the vanilla scripts' (run and walk 4 on the legs and 1 on the
+// torso, standing 2.5 and 0.8), so a fade taken from anywhere else shows. He
+// stands until 5 s, runs at 6 m/s until 10 s, and stands again; 60 frames a
+// second.
+{
+  const [{ buildGaitRig, setGaitPose }, soldierActions, { place }, { ReplayPlayer }, { ReplayAssets }] =
+    await Promise.all([imp('replay-gait.js'), imp('soldier-actions.js'), imp('replay-actors.js'),
+      imp('replay.js'), imp('replay-assets.js')]);
+  const LEGS = ['Leg_L', 'Leg_R'];
+  const TORSO = ['Spine', 'Head'];
+  const REST = new THREE.Quaternion();
+  const RUN_LEGS = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+  const RUN_TORSO = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const WALK_LEGS = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 4);
+  const WALK_TORSO = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
+  const held = (name, bones, q) => new THREE.AnimationClip(name, 1, bones.map(b =>
+    new THREE.QuaternionKeyframeTrack(`${b}.quaternion`, [0, 1], [...q.toArray(), ...q.toArray()])));
+  const BUNDLE_LOWER = { 'run.lower': { morph: 4 }, 'walk.lower': { morph: 4 }, 'stand.lower': { morph: 2.5 } };
+  const BUNDLE_UPPER = { 'run.upper': { morph: 1 }, 'walk.upper': { morph: 1 }, 'stand.upper': { morph: 0.8 } };
+  // A state the bundle describes without a morph.
+  const NO_MORPH = names => Object.fromEntries(names.map(n => [n, { speed: 1, loop: true }]));
+
+  /** The clips as the replay's loader hands them over, from bundles carrying
+   *  `lower` / `upper` as their `extras.states` (null: a bundle with none). */
+  const loadClips = async (lower, upper) => {
+    const files = {
+      'models/poses/gaits/lower.gait.glb': {
+        userData: lower ? { states: lower } : {},
+        animations: [held('run.lower', LEGS, RUN_LEGS), held('walk.lower', LEGS, WALK_LEGS), held('stand.lower', LEGS, REST)],
+      },
+      'models/poses/gaits/Thompson.gait.glb': {
+        userData: upper ? { states: upper } : {},
+        animations: [held('run.upper', TORSO, RUN_TORSO), held('walk.upper', TORSO, WALK_TORSO), held('stand.upper', TORSO, REST)],
+      },
+    };
+    const assets = new ReplayAssets({ loader: { loadAsync: async url => files[url] }, modelsBase: 'models', bust: () => '' });
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({
+      lower: 'gaits/lower.gait.glb', grips: { Thompson: 'gaits/Thompson.gait.glb' }, weaponGrip: { Thompson: 'Thompson' },
+    }) });
+    try { return await assets.gaitClipsFor('Thompson'); } finally { globalThis.fetch = realFetch; }
+  };
+
+  const keys = [];
+  for (let i = 0; i <= 150; i++) {
+    const t = +(i * 0.1).toFixed(1);
+    keys.push({ t, p: [0, 0, t <= 5 ? 0 : t <= 10 ? (t - 5) * 6 : 30], q: [0, 0, 0, 1] });
+  }
+  const life = { tmpl: 'USMarineSoldier', soldier: true, keys, created: 0, destroyed: 15 };
+  const rigFor = async (lower = BUNDLE_LOWER, upper = BUNDLE_UPPER) => {
+    const clips = await loadClips(lower, upper);
+    const scene = new THREE.Group();
+    for (const name of [...LEGS, ...TORSO]) {
+      const bone = new THREE.Bone();
+      bone.name = name;
+      scene.add(bone);
+    }
+    const anim = buildGaitRig(scene, [held('stand', [...LEGS, ...TORSO], REST)], clips, 0);
+    const entity = { life, anim, group: new THREE.Group(), normal: scene, wreck: null, meshes: [] };
+    return { scene, clips, entity, anim };
+  };
+  const FPS = 60;
+  /** Frames from `from` to `to`; the last instant posed. */
+  const drive = (rig, from, to, onFrame = null) => {
+    const n = Math.round((to - from) * FPS);
+    let t = from;
+    for (let i = 0; i <= n; i++) {
+      t = from + i / FPS;
+      setGaitPose(rig.entity, t);
+      onFrame?.(t);
+    }
+    return t;
+  };
+  /** Degrees from `bone`'s drawn rotation to `q`. */
+  const angle = (rig, bone, q) => {
+    const dot = Math.min(1, Math.abs(rig.scene.getObjectByName(bone).quaternion.dot(q)));
+    return +(2 * Math.acos(dot) * 180 / Math.PI).toFixed(3);
+  };
+  const round = x => (x === null ? null : +x.toFixed(6));
+  /** Each gait change from 4 s to 14 s: when each half's morph weight reached
+   *  1 after it, the legs and torso against the new clip as it was entered and
+   *  once both were on it, and whether they only ever closed on it. */
+  const transitions = rig => {
+    const out = [];
+    const { anim } = rig;
+    let gait = null;
+    let open = null;
+    drive(rig, 4, 14, t => {
+      if (gait === null) gait = anim.currentGait;
+      if (anim.currentGait !== gait) {
+        gait = anim.currentGait;
+        const target = gait === 'run' ? [RUN_LEGS, RUN_TORSO] : [REST, REST];
+        open = {
+          gait, at: t, target, lowerFull: null, upperFull: null, torsoWhenLegsDone: null, settled: null,
+          entering: {
+            legs: angle(rig, 'Leg_L', target[0]), torso: angle(rig, 'Spine', target[1]),
+            weights: {
+              stand: anim.actions.stand.getEffectiveWeight(), run: anim.actions.runLower.getEffectiveWeight(),
+              runUpper: anim.actions.runUpper.getEffectiveWeight(),
+            },
+          },
+          last: [Infinity, Infinity], closing: true,
+        };
+        out.push(open);
+      }
+      if (!open) return;
+      const now = [angle(rig, 'Leg_L', open.target[0]), angle(rig, 'Spine', open.target[1])];
+      if (now[0] > open.last[0] + 1e-6 || now[1] > open.last[1] + 1e-6) open.closing = false;
+      open.last = now;
+      const { lower, upper } = anim.halves;
+      if (open.lowerFull === null && lower.w >= 1) {
+        open.lowerFull = t - open.at;
+        open.torsoWhenLegsDone = +upper.w.toFixed(4);
+      }
+      if (open.upperFull === null && upper.w >= 1) open.upperFull = t - open.at;
+      if (open.settled === null && lower.w >= 1 && upper.w >= 1) open.settled = { legs: now[0], torso: now[1] };
+    });
+    return out.map(({ target, last, ...o }) => ({ ...o, lowerFull: round(o.lowerFull), upperFull: round(o.upperFull),
+      at: round(o.at) }));
+  };
+
+  const rig = await rigFor();
+  const runLower = rig.clips.find(c => c.name === 'run.lower');
+  const standUpper = rig.clips.find(c => c.name === 'stand.upper');
+  const moves = transitions(rig);
+
+  // Paused a tenth of a second into the run's morph: posed at the same
+  // instant again and again, nothing moves.
+  const paused = await rigFor();
+  const pausedAt = drive(paused, 4, moves[0].at + 0.1);
+  const snapshot = r => ({
+    legs: r.scene.getObjectByName('Leg_L').quaternion.toArray(),
+    torso: r.scene.getObjectByName('Spine').quaternion.toArray(),
+    w: [r.anim.halves.lower.w, r.anim.halves.upper.w],
+  });
+  const before = snapshot(paused);
+  for (let i = 0; i < 3; i++) setGaitPose(paused.entity, pausedAt);
+  const after = snapshot(paused);
+
+  // Standing at 4.5 s, then 7 s (running): through the player's seek, and as
+  // a bare jump of the clock.
+  const seeked = await rigFor();
+  drive(seeked, 4, 4.5);
+  const player = Object.assign(Object.create(ReplayPlayer.prototype), {
+    ctx: {}, rec: { duration: 15, fires: [] }, hulls: new Map(), entities: [seeked.entity], time: 4.5,
+  });
+  player.seek(7);
+  const lastTAfterSeek = seeked.anim.lastT;
+  setGaitPose(seeked.entity, 7);
+  const jumped = await rigFor();
+  drive(jumped, 4, 4.5);
+  setGaitPose(jumped.entity, 7);
+  const cutOf = r => ({
+    gait: r.anim.currentGait, w: [r.anim.halves.lower.w, r.anim.halves.upper.w],
+    legs: angle(r, 'Leg_L', RUN_LEGS), torso: angle(r, 'Spine', RUN_TORSO),
+  });
+
+  // Not drawn: past his life's end, `place` hides him.
+  const hidden = await rigFor();
+  drive(hidden, 4, 6);
+  const lastTWhileDrawn = hidden.anim.lastT;
+  place({ showGhosts: true }, hidden.entity, 16);
+
+  // A tree whose bundles carry no states, and one whose states give no morph.
+  const vanilla = await rigFor(null, null);
+  const noMorph = await rigFor(NO_MORPH(Object.keys(BUNDLE_LOWER)), NO_MORPH(Object.keys(BUNDLE_UPPER)));
+
+  results.gaitMorph = {
+    fps: FPS,
+    stamped: { runLower: runLower.userData?.morph ?? null, standUpper: standUpper.userData?.morph ?? null },
+    bones: { lower: rig.anim.halves.lower.bones.map(b => b.name), upper: rig.anim.halves.upper.bones.map(b => b.name) },
+    morphs: rig.anim.morphs,
+    transitions: moves,
+    paused: { same: JSON.stringify(before) === JSON.stringify(after), midMorph: before.w },
+    seek: { lastT: lastTAfterSeek, cut: cutOf(seeked), jump: cutOf(jumped) },
+    hidden: { whileDrawn: lastTWhileDrawn, afterHidden: hidden.anim.lastT, visible: hidden.entity.group.visible },
+    vanilla: { morphs: vanilla.anim.morphs, run: transitions(vanilla)[0] },
+    noMorph: { morphs: noMorph.anim.morphs, run: transitions(noMorph)[0] },
+    defaultMorph: soldierActions.DEFAULT_MORPH,
+    unknownState: soldierActions.stateMorph(soldierActions.stateInfo(null, 'Lb_NoSuchState')),
+  };
+}
+
 // --- the server log's rings, on the ground -----------------------------------
 //
 // The server's log places a player where the engine holds him, a metre over

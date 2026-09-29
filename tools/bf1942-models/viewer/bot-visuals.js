@@ -45,7 +45,8 @@ import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS, EXPLOSION_DEATHS, HELD_HIDES_WEAPON, canopyClipFor } from './knockback.js';
 import { canopyPosition } from './soldier-body.js';
 import { rigCapsules } from './rig-capsules.js';
-import { FAMILY_HALVES, MorphBlend, SoldierActions, VANILLA_STATES } from './soldier-actions.js';
+import { FAMILY_HALVES, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
+import { trackNodes } from './clip-nodes.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
@@ -168,20 +169,6 @@ export function createBotVisuals(page) {
 
   // --- the two half-bodies ---------------------------------------------------
 
-  /** The nodes a clip's tracks drive, found on `scene`. */
-  function trackNodes(scene, clip) {
-    const nodes = [];
-    const seen = new Set();
-    for (const track of clip?.tracks ?? []) {
-      const { nodeName } = THREE.PropertyBinding.parseTrackName(track.name);
-      if (seen.has(nodeName)) continue;
-      seen.add(nodeName);
-      const node = THREE.PropertyBinding.findNode(scene, nodeName);
-      if (node) nodes.push(node);
-    }
-    return nodes;
-  }
-
   /**
    * The engine's body: one action per baked clip, two halves with a current
    * action each and the engine's morph over their own bones, and the
@@ -208,11 +195,7 @@ export function createBotVisuals(page) {
       return clip && Number.isFinite(speed) && speed !== 0 && clip.duration > 0
         ? clip.duration * Math.abs(speed) : 1;
     };
-    const info = name => {
-      const data = byName.get(name)?.userData;
-      if (data && Object.keys(data).length) return data;
-      return clipless[name] ?? VANILLA_STATES[name] ?? null;
-    };
+    const info = name => stateInfo(byName.get(name), name, clipless);
 
     const actions = new Map();
     for (const clip of clips) {

@@ -4,7 +4,7 @@
 
 import {
   DIE_MORPH, FAMILY_HALVES, MorphBlend, SoldierActions, STANCE_ENTRY,
-  VANILLA_STATES, stanceEntryKey,
+  VANILLA_STATES, bundleClips, stanceEntryKey, stateInfo, stateMorph,
 } from './soldier-actions.js';
 
 const results = {};
@@ -262,6 +262,33 @@ function bone(angle, y) {
     return { angle: +(2 * Math.atan2(b.quaternion.y, b.quaternion.w) * 180 / Math.PI).toFixed(2), y: +b.position.y.toFixed(4) };
   };
   results.stillBone = { restored: settle(true), unrestored: settle(false) };
+}
+
+// What a bundle says of its states, on each clip as `userData`: a gait
+// bundle's `extras.states`, a named-state bundle's older shape, and none. And
+// the morph a state is entered with: the clip's, the clipless states', the
+// vanilla scripts', else the constructor's default.
+{
+  const clip = name => ({ name });
+  const gait = bundleClips({ userData: { states: { 'run.lower': { morph: 2, speed: 1.6 } } },
+                             animations: [clip('run.lower'), clip('Lb_Unlisted')] });
+  const named = bundleClips({
+    userData: { explosion: { Lb_ExplosionForward: {
+      speed: 1, loop: true, morphFactor: 50, returnTo: null, flags: ['c_AsmHideWeapon'] } } },
+    animations: [clip('Lb_ExplosionForward')],
+  });
+  const bare = bundleClips({ animations: [clip('walk.lower')] });
+  results.bundles = {
+    gait: gait.map(c => c.userData), named: named.map(c => c.userData), bare: bare.map(c => c.userData),
+  };
+  results.stateMorphs = {
+    bundle: stateMorph(stateInfo(gait[0], 'run.lower')),
+    emptyUserData: stateMorph(stateInfo(bare[0], 'walk.lower')),
+    clipless: stateMorph(stateInfo(null, 'Ub_StandToCrouch', { Ub_StandToCrouch: { morph: 3 } })),
+    vanilla: stateMorph(stateInfo(null, 'stand.upper')),
+    unknown: stateMorph(stateInfo(null, 'Lb_NoSuchState')),
+    noMorph: stateMorph(stateInfo({ userData: { speed: 1 } }, 'run.lower')),
+  };
 }
 
 console.log(JSON.stringify(results));
