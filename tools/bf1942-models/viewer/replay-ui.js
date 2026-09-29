@@ -1707,8 +1707,10 @@ export class ReplayUi {
     const player = this.player;
     if (this.showTags && !this.root.classList.contains('rp-bare')) {
       const camera = this.ctx.camera;
-      const width = this.stage.clientWidth;
-      const height = this.stage.clientHeight;
+      // The stage's size as `measure` keeps it: read here, after the frame's
+      // own writes to the bar, it forced a layout every frame.
+      const width = this.stageW ?? this.stage.clientWidth;
+      const height = this.stageH ?? this.stage.clientHeight;
       const v = player.v2;
       const hideOwn = player.camera.hidePid;
       // Through his eyes, only his side's names, as the game tags friends.

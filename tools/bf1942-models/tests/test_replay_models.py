@@ -1046,5 +1046,36 @@ class ReplayOutOfRangeHullTests(unittest.TestCase):
         self.assertEqual([True, False, True, False, True, False], self.results["held"])
 
 
+class ReplayLifeIndexTests(unittest.TestCase):
+    """The lives are indexed by id and by player (features/replay-performance):
+    a 45-minute round's 8,290 lives, walked for every player, hull and prop of
+    every frame, were most of the replay's frame. Every indexed answer must be
+    the walk's."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["lifeIndex"]
+
+    def test_every_answer_is_the_walks(self) -> None:
+        self.assertEqual([], self.results["mismatches"])
+        self.assertGreater(self.results["before"]["asked"], 5000)
+        self.assertEqual(0, self.results["before"]["mismatches"])
+
+    def test_a_life_pushed_after_the_first_question_is_found(self) -> None:
+        # replay-standins.js pushes its stand-ins once the level is in.
+        self.assertEqual({"lifeAt": "Hatsuzuki", "seat": ["Hatsuzuki", 5]}, self.results["standIn"])
+
+    def test_the_round_itself_is_answered(self) -> None:
+        # A seat by its recorded root (v4) and by its own id (v3); an id a
+        # respawn reuses; the crew, the hit points and the deaths.
+        self.assertEqual([["Sherman", 2], ["Sherman", 3]], self.results["seated"])
+        self.assertEqual(["Sherman", "M10"], self.results["respawn"])
+        self.assertEqual([{"pid": 1, "seat": 2}, {"pid": 2, "seat": 3}], self.results["crewAt9"])
+        self.assertEqual(70, self.results["hpAt7"])
+        self.assertEqual(["dead", "foot"], self.results["states"])
+
+
 if __name__ == "__main__":
     unittest.main()

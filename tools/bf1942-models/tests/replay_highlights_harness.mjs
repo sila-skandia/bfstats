@@ -225,11 +225,23 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
   const kindOf = life => (life?.tmpl === 'Zero' ? 'air' : null);
   const standouts = B.standoutsOf(rec, battles, { kindOf });
   const kind = (pid, t) => B.standoutAt(standouts, pid, t)?.kind ?? null;
+  // Read a few seconds at a time, as the page reads it between frames
+  // (`standoutSteps`): the same timeline, after as many pauses as chunks.
+  const steps = B.standoutSteps(rec, battles, { kindOf, chunk: 4 });
+  let pauses = 0;
+  let stepped = null;
+  for (;;) {
+    const { done, value } = steps.next();
+    if (done) { stepped = value; break; }
+    pauses += 1;
+  }
+  const flat = m => JSON.stringify([...m].sort((a, b) => a[0] - b[0]));
   const g = t => {
     const w = B.whereIs(rec, 9, t);
     return { fresh: w.fresh, pos: w.pos && w.pos.map(v => Math.round(v)), seen: w.seen };
   };
   results.standouts = {
+    stepped: { same: flat(stepped) === flat(standouts), pauses, seconds: Math.floor(rec.duration) },
     lone: [3, 10].map(t => kind(1, t)),
     loneDetail: B.standoutAt(standouts, 1, 10)?.detail ?? null,
     behind: kind(4, 10),

@@ -213,3 +213,26 @@ node botfight.cjs --map el_alamein --bots 16 --frames 900 --out out/fight-16
 node botfight.cjs --headed --realtime 20 --bots 16 --out out/fight-16-headed
 node botfight.cjs --headed --realtime 20 --base http://localhost:5677 --runs fight,noai   # another build
 ```
+
+## Round replays
+
+`replayperf.cjs` loads a recording on `map.html?replay=` and reports the time
+to a watchable round and the long tasks on the way, playback windows at
+`--windows` seconds of the round (every stage of the replay's frame by the
+names `replay.guard` runs them under, frames over 33 and 50 ms), what the GPU
+deletes and makes again in the second after a seek, and a drag along the
+timeline. `--profile <dir>` adds a CPU profile of the load and each window.
+One headless Chromium. The findings are in
+`features/replay-performance/README.md`.
+
+`replaydump.mjs` writes everything the replay works out of a recording to one
+JSON file, lives by index, so two trees' answers compare byte for byte: run it
+on this tree and with `--viewer` on another checkout's, then `cmp`. A change
+that is meant to be faster and nothing else must come out identical.
+
+```bash
+node replayperf.cjs --base http://localhost:5491 --replay replays/<file>.ndjson --windows 300,1300,2300
+node replaydump.mjs ../../viewer/replays/<file>.ndjson after.json
+node replaydump.mjs ../../viewer/replays/<file>.ndjson before.json --viewer ../../../../../bfstats-old/tools/bf1942-models/viewer
+cmp before.json after.json
+```

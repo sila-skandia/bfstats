@@ -1058,8 +1058,8 @@ export function parseRecording(text) {
   // carried at the join (CreatePlayer's kit id). Never another player's.
   const soldierOf = (pid, t) => {
     let best = null;
-    for (const life of rec.lives) {
-      if (!life.soldier || life.pid !== pid || life.created > t + 0.5 || t >= life.destroyed) continue;
+    for (const life of soldierLivesOf(rec, pid)) {
+      if (life.created > t + 0.5 || t >= life.destroyed) continue;
       if (!best || life.created > best.created) best = life;
     }
     if (best) return best;
@@ -1126,7 +1126,7 @@ export function parseRecording(text) {
     f.row = row(f.t, 'fire', `${f.shooter} fired ${f.soldier ? (f.kitTemplate ?? 'a weapon') : (f.weapon || 'a weapon')}`);
   }
 
-  const lifeAt = (nid, t) => rec.lives.find(l => l.nid === nid && l.created <= t + 0.5 && t < l.destroyed);
+  const lifeAt = (nid, t) => livesByNid(rec.lives).byNid.get(nid)?.find(l => l.created <= t + 0.5 && t < l.destroyed);
 
   for (const d of deferred) {
     if (d.type === 'enter') {
@@ -1185,7 +1185,59 @@ export function parseRecording(text) {
 
   rec.events.sort((a, b) => a.t - b.t);
   rec.clocks.sort((a, b) => a.t - b.t);
+  // Players were still being put to their soldiers while the lives were
+  // looked up above: whoever asks next indexes them as they now stand.
+  lifeIndexes.delete(rec.lives);
   return rec;
+}
+
+// --- finding a life -------------------------------------------------------------
+//
+// A 45-minute public round has thousands of lives (8,290 in
+// replay_20260928-161948), and the replay asks which one a network id is at
+// a time for every player, hull and prop of every frame. Walking the whole
+// list for each question cost most of a frame and seconds of the round's
+// reading, so the lives are indexed by id, and by player for his soldiers,
+// in the list's own order: every answer is the one a walk of the list gives.
+// An index is built on first use and again whenever lives are added
+// (replay-standins.js pushes its stand-ins); a life's id and its player are
+// set once the recording is read and never change after.
+
+const lifeIndexes = new WeakMap();
+
+/** `lives` by network id, `Map<nid, life[]>` in list order. */
+function livesByNid(lives) {
+  let index = lifeIndexes.get(lives);
+  if (!index || index.count !== lives.length) {
+    const byNid = new Map();
+    // Whether every id is a whole number, as the recorder writes them: the
+    // seat search below steps through ids one at a time.
+    let whole = true;
+    for (const life of lives) {
+      const list = byNid.get(life.nid);
+      if (list) list.push(life);
+      else byNid.set(life.nid, [life]);
+      if (!Number.isInteger(life.nid)) whole = false;
+    }
+    index = { count: lives.length, byNid, whole, soldiers: null };
+    lifeIndexes.set(lives, index);
+  }
+  return index;
+}
+
+/** Every soldier life of `pid` (`life.pid === pid`), in list order. */
+export function soldierLivesOf(rec, pid) {
+  const index = livesByNid(rec.lives);
+  if (!index.soldiers) {
+    index.soldiers = new Map();
+    for (const life of rec.lives) {
+      if (!life.soldier) continue;
+      const list = index.soldiers.get(life.pid);
+      if (list) list.push(life);
+      else index.soldiers.set(life.pid, [life]);
+    }
+  }
+  return Number.isNaN(pid) ? [] : index.soldiers.get(pid) ?? [];
 }
 
 /** The life of `nid` at `t`: the one created by then (half a second of
@@ -1193,8 +1245,10 @@ export function parseRecording(text) {
  *  destroyed. */
 function lifeAtIn(lives, nid, t) {
   let best = null;
-  for (const l of lives) {
-    if (l.nid !== nid || l.created > t + 0.5 || t >= l.destroyed) continue;
+  // No id equals NaN, though a Map would find the lives filed under it.
+  if (Number.isNaN(nid)) return null;
+  for (const l of livesByNid(lives).byNid.get(nid) ?? []) {
+    if (l.created > t + 0.5 || t >= l.destroyed) continue;
     if (!best || l.created > best.created) best = l;
   }
   return best;
@@ -1281,14 +1335,26 @@ export function rootOf(rec, nid, t, pid = null) {
   }
   const own = lifeAtIn(rec.lives, nid, t);
   if (own && !own.kit && !own.projectile) return { life: own, seat: 0 };
-  let best = null;
-  for (const l of rec.lives) {
-    if (l.nid >= nid || nid - l.nid > MAX_SEATS) continue;
-    if (l.created > t + 0.5 || t >= l.destroyed) continue;
-    if (l.soldier || l.kit || l.camera || l.controlPoint || l.projectile) continue;
-    if (!best || l.nid > best.nid) best = l;
+  // The nearest root below it within a hull's seats: the highest id first,
+  // and of one id the first life in the list.
+  const { byNid, whole } = livesByNid(rec.lives);
+  const isRoot = l => !(l.created > t + 0.5 || t >= l.destroyed)
+    && !(l.soldier || l.kit || l.camera || l.controlPoint || l.projectile);
+  if (!whole || !Number.isInteger(nid)) {
+    // A damaged file's id that is not a whole number: every life is looked at.
+    let best = null;
+    for (const l of rec.lives) {
+      if (l.nid >= nid || nid - l.nid > MAX_SEATS || !isRoot(l)) continue;
+      if (!best || l.nid > best.nid) best = l;
+    }
+    return best ? { life: best, seat: nid - best.nid } : null;
   }
-  return best ? { life: best, seat: nid - best.nid } : null;
+  for (let root = nid - 1; root >= nid - MAX_SEATS; root--) {
+    for (const l of byNid.get(root) ?? []) {
+      if (isRoot(l)) return { life: l, seat: nid - l.nid };
+    }
+  }
+  return null;
 }
 
 /** Everyone aboard `life` at `t`, as `[{ pid, seat }]`. */
@@ -1361,12 +1427,11 @@ export function positionAt(life, t, out = [0, 0, 0]) {
 }
 
 export function hpAt(life, t) {
-  let hp = null;
-  for (const entry of life.hp) {
-    if (entry.t > t) break;
-    hp = entry.hp;
-  }
-  return hp;
+  // In time order (`parseRecording`): the last at or before `t`, by halves.
+  // A time that is no number is before nothing, so the last as a walk has it.
+  if (Number.isNaN(t)) return life.hp.length ? life.hp[life.hp.length - 1].hp : null;
+  const i = latestIndex(life.hp, t);
+  return i < 0 ? null : life.hp[i].hp;
 }
 
 export const isReplicated = (life, t) => life.replicated.some(([from, to]) => t >= from && t < to);

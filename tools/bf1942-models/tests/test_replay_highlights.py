@@ -164,6 +164,14 @@ class ReplayStandoutTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.standouts = run_harness()["standouts"]
 
+    def test_standouts_read_in_pieces_are_the_same(self) -> None:
+        # The page reads them a few seconds at a time between frames
+        # (replay-highlights.js `readStandouts`): in one piece, a 45-minute
+        # round froze the view for seconds.
+        stepped = self.standouts["stepped"]
+        self.assertTrue(stepped["same"])
+        self.assertEqual(stepped["pauses"], stepped["seconds"] // 4)
+
     def test_a_lone_wolf_after_five_seconds_alone(self) -> None:
         self.assertEqual(self.standouts["lone"], [None, "lone"])
         self.assertEqual(self.standouts["loneDetail"], {"d": 200})
