@@ -198,6 +198,58 @@ export const MORPH_CUT = 1000;
 export const DIE_MORPH = 20;
 
 /**
+ * What a state is, `{ speed, loop, morph, then, ... }`: its clip's own
+ * `userData` wherever the bundle describes it (`bundleClips`), else the grip's
+ * clipless states (`gaits.json` `stateMachine.clipless`), else what the vanilla
+ * scripts say (`VANILLA_STATES`); null for a state none of them names.
+ */
+export function stateInfo(clip, name, clipless = null) {
+  const data = clip?.userData;
+  if (data && Object.keys(data).length) return data;
+  return clipless?.[name] ?? VANILLA_STATES[name] ?? null;
+}
+
+/** The morph a state is entered with (ledger ANIM-4): its own `setMorphFactor`,
+ *  else the constructor's `DEFAULT_MORPH`. */
+export function stateMorph(info) {
+  const m = info?.morph;
+  return Number.isFinite(m) ? m : DEFAULT_MORPH;
+}
+
+/**
+ * A loaded gait bundle's clips, each carrying the state it plays as
+ * `clip.userData`: the bundle's `extras.states` (`extract_pose.py`
+ * `state_meta`: the rate, loop, morph factor and follow-on state of each clip,
+ * as the engine plays it), which three hands over as `gltf.userData`. A bundle
+ * baked before that carries none, and its clips an empty `userData`.
+ */
+export function bundleClips(gltf) {
+  const states = gltf?.userData?.states ?? namedStates(gltf?.userData);
+  const clips = gltf?.animations ?? [];
+  for (const clip of clips) clip.userData = { ...(states[clip.name] ?? {}) };
+  return clips;
+}
+
+/** The named-state bundles (`die`, `swim`, `parachute`, `explosion`)
+ *  describe their clips in the older shape, `{ speed, loop, morphFactor,
+ *  returnTo }` under the bundle's own key; read as the same `{ speed, loop,
+ *  morph, then }`, and a state's `c_AsmHideWeapon` as `hidesWeapon` where
+ *  the bundle carries its flags (`explosion`). */
+function namedStates(extras) {
+  const out = {};
+  for (const key of ['die', 'swim', 'parachute', 'explosion']) {
+    for (const [name, meta] of Object.entries(extras?.[key] ?? {})) {
+      out[name] = { speed: meta.speed, loop: meta.loop, morph: meta.morphFactor,
+                    then: meta.returnTo ?? undefined };
+      if (Array.isArray(meta.flags)) {
+        out[name].hidesWeapon = meta.flags.some(f => f.toLowerCase() === 'c_asmhideweapon');
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * The key for `STANCE_ENTRY`. `backward` is the engine's dive test: the
  * forward input times the current state's own forward speed below zero
  * (`fStack_268 < 0`), which for every stand/walk/run state (`setSpeed 1.0`)
@@ -248,8 +300,7 @@ export class SoldierActions {
   }
 
   morphOf(name) {
-    const m = this.info(name)?.morph;
-    return Number.isFinite(m) ? m : DEFAULT_MORPH;
+    return stateMorph(this.info(name));
   }
 
   /** The base clip a half plays for the current family. */

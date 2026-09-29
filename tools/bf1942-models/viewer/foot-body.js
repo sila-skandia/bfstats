@@ -9,6 +9,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';
+import { bundleClips } from './soldier-actions.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
 import { poseBases } from './pose-bases.js';
@@ -123,41 +124,17 @@ export function createFootBody(page) {
   }
 
   /** One shared clip sidecar's animations, by its path relative to `poses/`.
-   *  A bundle's `extras.states` (`extract_pose.py` `state_meta`: the rate,
-   *  loop, morph factor and follow-on state of each clip, as the engine plays
-   *  it) rides on each clip as `clip.userData`, so whoever binds the clip has
-   *  it; a bundle baked before that carries none and the clips an empty one. */
+   *  Each clip carries its state as `clip.userData` (`soldier-actions.js`
+   *  `bundleClips`: the rate, loop, morph factor and follow-on state the
+   *  bundle's `extras.states` gives it), so whoever binds the clip has it. */
   function footBundle(relative) {
     if (!relative) return Promise.resolve([]);
     if (!footBundleCache.has(relative)) {
       footBundleCache.set(relative, footBodyLoader
         .loadAsync(`${footBodies.gaitsBase ?? page.MODELS_BASE}/poses/${relative}${page.bust()}`)
-        .then(g => {
-          const states = g.userData?.states ?? namedStates(g.userData);
-          for (const clip of g.animations ?? []) clip.userData = { ...(states[clip.name] ?? {}) };
-          return g.animations ?? [];
-        }, () => []));
+        .then(bundleClips, () => []));
     }
     return footBundleCache.get(relative);
-  }
-
-  /** The named-state bundles (`die`, `swim`, `parachute`, `explosion`)
-   *  describe their clips in the older shape, `{ speed, loop, morphFactor,
-   *  returnTo }` under the bundle's own key; read as the same `{ speed, loop,
-   *  morph, then }`, and a state's `c_AsmHideWeapon` as `hidesWeapon` where
-   *  the bundle carries its flags (`explosion`). */
-  function namedStates(extras) {
-    const out = {};
-    for (const key of ['die', 'swim', 'parachute', 'explosion']) {
-      for (const [name, meta] of Object.entries(extras?.[key] ?? {})) {
-        out[name] = { speed: meta.speed, loop: meta.loop, morph: meta.morphFactor,
-                      then: meta.returnTo ?? undefined };
-        if (Array.isArray(meta.flags)) {
-          out[name].hidesWeapon = meta.flags.some(f => f.toLowerCase() === 'c_asmhideweapon');
-        }
-      }
-    }
-    return out;
   }
 
   /** `gaits.json` `stateMachine`: the torso transitions with no clip of their

@@ -544,6 +544,132 @@ class ReplaySoldierFeetTests(unittest.TestCase):
         self.assertEqual(self.rings["y"], [0, 0, 150, 1.5])
 
 
+class ReplayGaitMorphTests(unittest.TestCase):
+    """A plain replayed soldier enters each gait with that state's own morph.
+
+    `replay-gait.js` draws the replay's soldiers on a page without the map's
+    bodies. It faded every gait change over a fixed 0.2 s on the belief that
+    the gait bundles carry no morph; they do (`extract_pose.py` `state_meta`
+    writes each clip's `morph` into `extras.states`), and the bots' bodies
+    already enter every state with it. Ledger ANIM-4: entering a state, the
+    weight starts at 0 and gains `dt x morph` a second while each bone slerps
+    from where it stood toward the new clip, so a half is on its new clip
+    `1/morph` seconds after the change. The harness's bundles give morphs
+    unlike the vanilla scripts' (a run's legs 4 and torso 1, standing 2.5 and
+    0.8), so a fade taken from anywhere else fails here.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["gaitMorph"]
+
+    def assertFade(self, seconds: float, morph: float, what: str = "") -> None:
+        # The weight reaches 1 on the frame its sum of dt x morph does; the
+        # float sum can take one frame more, and the harness rounds to 1e-6.
+        frame = 1 / self.results["fps"]
+        self.assertGreaterEqual(seconds, 1 / morph - 1e-6, what)
+        self.assertLessEqual(seconds, 1 / morph + frame + 1e-6, what)
+
+    def test_the_replays_loader_hands_each_clip_its_bundle_state(self) -> None:
+        # `ReplayAssets.gaitBundle` used to keep the animations and drop the
+        # bundle's extras; each clip now carries its state as `userData`, as
+        # the page's own bodies load them (`bundleClips`).
+        self.assertEqual({"runLower": 4, "standUpper": 0.8}, self.results["stamped"])
+
+    def test_each_half_enters_each_gait_with_its_own_states_morph(self) -> None:
+        # Standing still is `Lb_Stand` / `Ub_StandAim`, the `stand.lower` /
+        # `stand.upper` states, whatever clip draws it.
+        self.assertEqual({
+            "idle": {"lower": 2.5, "upper": 0.8},
+            "walk": {"lower": 4, "upper": 1},
+            "run": {"lower": 4, "upper": 1},
+        }, self.results["morphs"])
+        # Each morph carries its own half's bones, as the bots' halves do.
+        self.assertEqual({"lower": ["Leg_L", "Leg_R"], "upper": ["Spine", "Head"]},
+                         self.results["bones"])
+
+    def test_a_gait_change_fades_over_one_over_the_states_morph(self) -> None:
+        run, idle = self.results["transitions"]
+        self.assertEqual("run", run["gait"])
+        self.assertFade(run["lowerFull"], 4, "the legs into the run")
+        self.assertFade(run["upperFull"], 1, "the torso into the run")
+        # Not the 0.2 s every change used to take, and not one fade for both
+        # halves: the legs are on the run with the torso a quarter of the way.
+        self.assertGreater(run["lowerFull"], 0.2 + 1 / self.results["fps"])
+        self.assertAlmostEqual(0.25, run["torsoWhenLegsDone"], delta=1 / self.results["fps"])
+        self.assertEqual("idle", idle["gait"])
+        self.assertFade(idle["lowerFull"], 2.5, "the legs to a stand")
+        self.assertFade(idle["upperFull"], 0.8, "the torso to a stand")
+
+    def test_the_bones_morph_from_where_they_stood(self) -> None:
+        # Entering, the new clip is at full weight and the old one at none (the
+        # engine drops the parked clip, ANIM-4), yet the bones stand where the
+        # old gait left them, a quarter turn off the new clip. They only ever
+        # close on it, and end on it.
+        run, idle = self.results["transitions"]
+        self.assertEqual({"stand": 0, "run": 1, "runUpper": 1}, run["entering"]["weights"])
+        self.assertEqual({"stand": 1, "run": 0, "runUpper": 0}, idle["entering"]["weights"])
+        for move in (run, idle):
+            self.assertEqual(90, move["entering"]["legs"], move["gait"])
+            self.assertEqual(90, move["entering"]["torso"], move["gait"])
+            self.assertTrue(move["closing"], move["gait"])
+            self.assertEqual({"legs": 0, "torso": 0}, move["settled"], move["gait"])
+
+    def test_a_tree_without_states_takes_the_vanilla_scripts_morph(self) -> None:
+        # Bundles baked before `extras.states`: the same numbers, frozen in
+        # `VANILLA_STATES`, the bots' fallback too.
+        vanilla = self.results["vanilla"]
+        self.assertEqual({
+            "idle": {"lower": 2, "upper": 0.7},
+            "walk": {"lower": 2, "upper": 0.5},
+            "run": {"lower": 2, "upper": 0.5},
+        }, vanilla["morphs"])
+        self.assertFade(vanilla["run"]["lowerFull"], 2, "the legs into the run")
+        self.assertFade(vanilla["run"]["upperFull"], 0.5, "the torso into the run")
+
+    def test_only_a_state_with_no_morph_keeps_the_old_fixed_fade(self) -> None:
+        # The engine's constructor default, 5.0 a second, is the 0.2 s the rig
+        # used to fade every change over.
+        self.assertEqual(5, self.results["defaultMorph"])
+        self.assertEqual(5, self.results["unknownState"])
+        no_morph = self.results["noMorph"]
+        for gait in ("idle", "walk", "run"):
+            self.assertEqual({"lower": 5, "upper": 5}, no_morph["morphs"][gait], gait)
+        self.assertFade(no_morph["run"]["lowerFull"], 5, "the legs into the run")
+        self.assertFade(no_morph["run"]["upperFull"], 5, "the torso into the run")
+
+    def test_a_paused_replay_holds_a_morph_still(self) -> None:
+        # Posed at the same instant again, a tenth of a second into the run's
+        # morph: MorphBlend alone would keep closing on the clip every frame.
+        paused = self.results["paused"]
+        for w in paused["midMorph"]:
+            self.assertGreater(w, 0)
+            self.assertLess(w, 1)
+        self.assertTrue(paused["same"])
+
+    def test_a_seek_cuts_to_the_gait_rather_than_morphing(self) -> None:
+        seek = self.results["seek"]
+        self.assertIsNone(seek["lastT"])
+        cut = seek["cut"]
+        self.assertEqual("run", cut["gait"])
+        self.assertEqual([1, 1], cut["w"])
+        # On the run's clip, to its keys' float32 rounding.
+        self.assertLess(cut["legs"], 0.1)
+        self.assertLess(cut["torso"], 0.1)
+        # The same jump of the clock without the seek would morph from the
+        # pose on screen before it.
+        self.assertEqual([0, 0], seek["jump"]["w"])
+        self.assertEqual(90, seek["jump"]["legs"])
+
+    def test_a_frame_he_is_not_drawn_cuts_his_next(self) -> None:
+        hidden = self.results["hidden"]
+        self.assertEqual(6, hidden["whileDrawn"])
+        self.assertIsNone(hidden["afterHidden"])
+        self.assertFalse(hidden["visible"])
+
+
 class ReplayGunAimTests(unittest.TestCase):
     """A manned gun laid where the recording says it pointed.
 

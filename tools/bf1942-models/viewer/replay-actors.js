@@ -1,11 +1,11 @@
 // Where a replayed object is at a recording time: the recording's frame
 // turned into the viewer's, the ghost look of an object out of the client's
 // update range, and place(), which poses one replay entity (its group, its
-// wreck swap and, for a soldier, its gait) as a pure function of the clock.
+// wreck swap and, for a soldier, its gait) from the clock.
 
 import * as THREE from 'three';
 import { sampleAt, hpAt, isReplicated } from './replay-recording.js';
-import { setGaitPose } from './replay-gait.js';
+import { setGaitPose, snapGait } from './replay-gait.js';
 
 // --- coordinates ----------------------------------------------------------------
 //
@@ -38,23 +38,30 @@ function setGhost(entity, ghost) {
   for (const { mesh, material } of entity.meshes) mesh.material = ghost ? ghostMaterial : material;
 }
 
+// Not drawn this frame. A soldier's next drawn frame has no pose on screen to
+// morph from, so his gait cuts to what he is doing then (replay-gait.js).
+function hide(entity) {
+  entity.group.visible = false;
+  snapGait(entity.anim);
+}
+
 export function place(player, entity, t) {
   const { life, group } = entity;
   entity.hp = null;
   if (t < life.created || t >= life.destroyed) {
-    group.visible = false;
+    hide(entity);
     return;
   }
   const replicated = isReplicated(life, t);
   // A soldier out of the replicated set is in a vehicle, or out of range:
   // there is no pose worth holding.
   if ((life.soldier && !replicated) || (!replicated && !player.showGhosts)) {
-    group.visible = false;
+    hide(entity);
     return;
   }
   const s = sampleAt(life, t);
   if (!s) {
-    group.visible = false;
+    hide(entity);
     return;
   }
   group.visible = true;
