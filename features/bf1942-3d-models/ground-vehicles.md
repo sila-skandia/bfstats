@@ -207,6 +207,12 @@ patches, so the Coulomb cap does not gate its launch: on Wake the M3A1 reaches
 and 3.53 s. That is a property of the viewer's tracked model, not a reading of
 the engine, and it is the clearest remaining place where the two classes
 disagree about what drives a vehicle.
+*Corrected 2026-09-29: TANK-7 is refuted. The engine gives a car or a tank no
+hull thrust and the wheels are its whole propulsion, as this doc's own
+correction under
+[What `verify-r7.md` confirmed](#what-verify-r7md-confirmed-byte-for-byte) and
+[tank-driving.md](../bf1942-engine-reference/subsystems/tank-driving.md) §5
+say. The viewer's `bodyThrust` is gone.*
 
 ### On the page, on a real level
 
