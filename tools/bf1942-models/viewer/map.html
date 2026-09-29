@@ -1595,6 +1595,9 @@ const mapSurfaces = createMapSurfaces(bag(
     get bust() { return bust; }, get camera() { return camera; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
     get spawnFlagSelect() { return spawnFlagSelect; }, get stage() { return stage; },
+    // A replay's recording marks the surfaces instead of the page's world:
+    // both sides, the followed player as the ring (replay-minimap.js).
+    replayMinimap: () => replayController?.minimapMarks() ?? null,
   },
 ));
 const ticketFeed = createTicketFeed(bag(
