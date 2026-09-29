@@ -1077,5 +1077,27 @@ class ReplayLifeIndexTests(unittest.TestCase):
         self.assertEqual(["dead", "foot"], self.results["states"])
 
 
+class ReplaySampleTrackTests(unittest.TestCase):
+    """A life's samples are eight numbers each in one Float64Array
+    (features/replay-performance): the 45-minute round's 495,154 samples took
+    107 MB as objects. Every read must be the array's it replaced."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["sampleTrack"]
+
+    def test_every_read_is_the_arrays(self) -> None:
+        self.assertEqual([], self.results["mismatches"])
+
+    def test_a_file_out_of_order_is_put_in_order_stably(self) -> None:
+        # Two samples at 1 s: the one written first comes first, as the
+        # array's stable sort left them.
+        self.assertEqual([[0.5, 5], [1, 2], [1, 4], [2, 3], [3, 1]], self.results["ordered"])
+        self.assertTrue(self.results["kind"])
+        self.assertTrue(self.results["trimmed"])
+
+
 if __name__ == "__main__":
     unittest.main()

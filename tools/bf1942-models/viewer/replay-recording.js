@@ -197,6 +197,126 @@ export function markRounds(rec, isRound) {
   return marked;
 }
 
+// --- a life's samples ---------------------------------------------------------------
+//
+// A 45-minute round has half a million position samples (495,154 in
+// replay_20260928-161948). As `{ t, p: [x, y, z], q: [qx, qy, qz, qw] }`
+// objects they took 107 MB of the page, 216 bytes each; a track keeps them as
+// eight numbers each in one Float64Array per life, 64 bytes, the very numbers
+// the file wrote, and a moving part's rotations as five (`t` and the
+// quaternion). It reads like the array it replaces wherever the replay takes
+// a life's samples whole (`length`, `at`, the array's readers, iteration),
+// each read a `{ t, p, q }` (a part's `{ t, q }`) made on the spot, so
+// changing one changes nothing recorded. The lookups by time read the numbers where they
+// lie (`sampleAt`, `positionAt`, `sampleInto`).
+
+const POSE_STRIDE = 8;
+const TURN_STRIDE = 5;
+
+export class SampleTrack {
+  /** `stride` numbers a sample: 8 for a life (`t, x, y, z, qx, qy, qz, qw`),
+   *  5 for a moving part (`t, qx, qy, qz, qw`). */
+  constructor(stride = POSE_STRIDE) {
+    this.stride = stride;
+    this.length = 0;
+    this.data = new Float64Array(stride * 4);
+  }
+
+  /** One sample more: its time, then the stride's numbers. */
+  add(t, a, b, c, d, e, f, g) {
+    const n = this.stride;
+    const o = this.length * n;
+    if (o + n > this.data.length) {
+      const grown = new Float64Array(this.data.length * 2);
+      grown.set(this.data);
+      this.data = grown;
+    }
+    const x = this.data;
+    x[o] = t; x[o + 1] = a; x[o + 2] = b; x[o + 3] = c; x[o + 4] = d;
+    if (n === POSE_STRIDE) { x[o + 5] = e; x[o + 6] = f; x[o + 7] = g; }
+    this.length += 1;
+  }
+
+  /** Sample `i`'s time. */
+  time(i) {
+    return this.data[i * this.stride];
+  }
+
+  /** Sample `i` as the array had it, counting back from the end for a
+   *  negative `i` (`Array.prototype.at`); undefined past either end. */
+  at(i) {
+    let n = Math.trunc(i) || 0;
+    if (n < 0) n += this.length;
+    return n >= 0 && n < this.length ? this.sample(n) : undefined;
+  }
+
+  /** Sample `i`, made now: `{ t, p, q }`, a part's `{ t, q }`. */
+  sample(i) {
+    const x = this.data;
+    const o = i * this.stride;
+    if (this.stride === POSE_STRIDE) return { t: x[o], p: [x[o + 1], x[o + 2], x[o + 3]], q: [x[o + 4], x[o + 5], x[o + 6], x[o + 7]] };
+    return { t: x[o], q: [x[o + 1], x[o + 2], x[o + 3], x[o + 4]] };
+  }
+
+  // The array's own readers, each sample made as it is read.
+  some(fn) {
+    for (let i = 0; i < this.length; i++) if (fn(this.sample(i), i, this)) return true;
+    return false;
+  }
+
+  every(fn) {
+    for (let i = 0; i < this.length; i++) if (!fn(this.sample(i), i, this)) return false;
+    return true;
+  }
+
+  find(fn) {
+    for (let i = 0; i < this.length; i++) {
+      const sample = this.sample(i);
+      if (fn(sample, i, this)) return sample;
+    }
+    return undefined;
+  }
+
+  filter(fn) {
+    const out = [];
+    for (let i = 0; i < this.length; i++) {
+      const sample = this.sample(i);
+      if (fn(sample, i, this)) out.push(sample);
+    }
+    return out;
+  }
+
+  forEach(fn) {
+    for (let i = 0; i < this.length; i++) fn(this.sample(i), i, this);
+  }
+
+  map(fn) {
+    const out = new Array(this.length);
+    for (let i = 0; i < this.length; i++) out[i] = fn(this.sample(i), i, this);
+    return out;
+  }
+
+  * [Symbol.iterator]() {
+    for (let i = 0; i < this.length; i++) yield this.sample(i);
+  }
+
+  /** In time order, as the array's `sort` by time put it: a stable sort. */
+  sortByTime() {
+    const n = this.stride;
+    const order = Array.from({ length: this.length }, (_, i) => i).sort((a, b) => this.time(a) - this.time(b));
+    const copy = this.data.slice(0, this.length * n);
+    order.forEach((from, to) => this.data.set(copy.subarray(from * n, from * n + n), to * n));
+  }
+
+  /** Let go of the room grown for samples that never came. */
+  trim() {
+    if (this.data.length > this.length * this.stride) this.data = this.data.slice(0, this.length * this.stride);
+  }
+}
+
+/** Sample `i`'s time, of a track or of a plain array of samples. */
+export const sampleTime = (keys, i) => (keys instanceof SampleTrack ? keys.time(i) : keys[i].t);
+
 /**
  * A soldier's samples, stood on his feet. The sampler writes where the engine
  * holds a soldier, his origin, which the template's `setCharacterHeight -1.00`
@@ -210,7 +330,12 @@ export function markRounds(rec, isRound) {
  * height.
  */
 function standOnFeet(life) {
-  for (const key of life.keys) key.p[1] -= CHARACTER_HEIGHT;
+  const keys = life.keys;
+  if (keys instanceof SampleTrack) {
+    for (let i = 0; i < keys.length; i++) keys.data[i * POSE_STRIDE + 2] -= CHARACTER_HEIGHT;
+    return;
+  }
+  for (const key of keys) key.p[1] -= CHARACTER_HEIGHT;
 }
 
 /**
@@ -348,7 +473,7 @@ export function parseRecording(text) {
     if (!life || life.destroyed !== Infinity) {
       life = {
         nid, tmpl: '', tid: 0, team: 0, created: t, destroyed: Infinity, pose: null,
-        keys: [], replicated: [], hp: [], maxhp: 0, crit: 0, spawnedLate: false,
+        keys: new SampleTrack(), replicated: [], hp: [], maxhp: 0, crit: 0, spawnedLate: false,
       };
       current.set(nid, life);
       rec.lives.push(life);
@@ -358,7 +483,7 @@ export function parseRecording(text) {
   const jointOf = (root, nid) => {
     if (!rec.joints.has(root)) rec.joints.set(root, new Map());
     const parts = rec.joints.get(root);
-    if (!parts.has(nid)) parts.set(nid, { name: '', keys: [] });
+    if (!parts.has(nid)) parts.set(nid, { name: '', keys: new SampleTrack(TURN_STRIDE) });
     return parts.get(nid);
   };
   const closeReplicated = (life, t) => {
@@ -767,7 +892,7 @@ export function parseRecording(text) {
               rec.skipped += 1;
               continue;
             }
-            lifeFor(o[0], t).keys.push({ t, p: [o[1], o[2], o[3]], q: [o[4], o[5], o[6], o[7]] });
+            lifeFor(o[0], t).keys.add(t, o[1], o[2], o[3], o[4], o[5], o[6], o[7]);
           }
           break;
         case 'd': {
@@ -858,7 +983,7 @@ export function parseRecording(text) {
           }
           for (const [root, nid, qx, qy, qz, qw] of r.o) {
             if (!rotationOk(qx, qy, qz, qw)) continue;
-            jointOf(root, nid).keys.push({ t, q: [qx, qy, qz, qw] });
+            jointOf(root, nid).keys.add(t, qx, qy, qz, qw);
           }
           break;
         case 'g':
@@ -937,6 +1062,16 @@ export function parseRecording(text) {
   // nothing and placed a man at no position.
   const byTime = (a, b) => a.t - b.t;
   const ordered = list => {
+    if (list instanceof SampleTrack) {
+      list.trim();
+      for (let i = 1; i < list.length; i++) {
+        if (list.time(i) < list.time(i - 1)) {
+          list.sortByTime();
+          return;
+        }
+      }
+      return;
+    }
     for (let i = 1; i < list.length; i++) {
       if (list[i].t < list[i - 1].t) {
         list.sort(byTime);
@@ -1388,8 +1523,86 @@ export function roundClock(rec, t) {
 
 // --- sampling a life at a time --------------------------------------------------
 
+const _span = { i: -1, j: -1, k: 0 };
+
+/** Where `t` falls among a track's samples, as `sampleAt` weighs them, into
+ *  `out`: `i` the sample it holds or leaves (-1 before the first), `j` the
+ *  one it eases into over the sample period (-1 for none), `k` how far. */
+function spanIn(track, t, out) {
+  out.i = -1;
+  out.j = -1;
+  out.k = 0;
+  const n = track.length;
+  if (!n || t < track.time(0)) return out;
+  let hi = n - 1;
+  if (t >= track.time(hi)) {
+    out.i = hi;
+    return out;
+  }
+  let lo = 0;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (track.time(mid) <= t) lo = mid;
+    else hi = mid;
+  }
+  out.i = lo;
+  const ta = track.time(lo);
+  const tb = track.time(hi);
+  const start = Math.max(ta, tb - SAMPLE_PERIOD);
+  if (t <= start) return out;
+  out.j = hi;
+  out.k = (t - start) / (tb - start);
+  return out;
+}
+
+/** Sample `i` of `track` into `into` (a `{ t, p, q }` the caller keeps). */
+function fillSample(track, i, into) {
+  const x = track.data;
+  const o = i * track.stride;
+  into.t = x[o];
+  if (track.stride === POSE_STRIDE) {
+    into.p[0] = x[o + 1]; into.p[1] = x[o + 2]; into.p[2] = x[o + 3];
+    into.q[0] = x[o + 4]; into.q[1] = x[o + 5]; into.q[2] = x[o + 6]; into.q[3] = x[o + 7];
+  } else {
+    into.q[0] = x[o + 1]; into.q[1] = x[o + 2]; into.q[2] = x[o + 3]; into.q[3] = x[o + 4];
+  }
+  return into;
+}
+
+/** Room for `sampleInto`'s answers, made once by each caller. */
+export const sampleRoom = () => ({
+  a: { t: 0, p: [0, 0, 0], q: [0, 0, 0, 1] }, b: null, k: 0,
+  spare: { t: 0, p: [0, 0, 0], q: [0, 0, 0, 1] },
+});
+
+/**
+ * `sampleAt`'s answer written into `room` (`sampleRoom`) rather than made:
+ * for what every frame asks of every hull, man and moving part. It is `room`
+ * itself, written over by the next call, so it is read at once and never
+ * kept; before a life's first sample, and for a life without a track (a
+ * stand-in, a test's array), it is `sampleAt`'s own.
+ */
+export function sampleInto(life, t, room) {
+  const keys = life.keys;
+  if (!(keys instanceof SampleTrack)) return sampleAt(life, t);
+  const s = spanIn(keys, t, _span);
+  if (s.i < 0) return sampleAt(life, t);
+  fillSample(keys, s.i, room.a);
+  room.b = s.j < 0 ? null : fillSample(keys, s.j, room.spare);
+  room.k = s.k;
+  return room;
+}
+
 export function sampleAt(life, t) {
   const keys = life.keys;
+  if (keys instanceof SampleTrack) {
+    const s = spanIn(keys, t, _span);
+    if (s.i < 0) {
+      if (life.pose) return { a: life.pose, b: null, k: 0 };
+      return keys.length ? { a: keys.sample(0), b: null, k: 0 } : null;
+    }
+    return { a: keys.sample(s.i), b: s.j < 0 ? null : keys.sample(s.j), k: s.k };
+  }
   if (!keys.length || t < keys[0].t) {
     if (life.pose) return { a: life.pose, b: null, k: 0 };
     return keys.length ? { a: keys[0], b: null, k: 0 } : null;
@@ -1412,6 +1625,23 @@ export function sampleAt(life, t) {
 /** The recorded position at `t`, interpolated as `sampleAt` does, into `out`
  *  (a plain array); null when the life has no pose at all. */
 export function positionAt(life, t, out = [0, 0, 0]) {
+  const keys = life.keys;
+  if (keys instanceof SampleTrack) {
+    const s = spanIn(keys, t, _span);
+    if (s.i >= 0) {
+      const x = keys.data;
+      const a = s.i * POSE_STRIDE;
+      if (s.j < 0) {
+        out[0] = x[a + 1]; out[1] = x[a + 2]; out[2] = x[a + 3];
+        return out;
+      }
+      const b = s.j * POSE_STRIDE;
+      out[0] = x[a + 1] + (x[b + 1] - x[a + 1]) * s.k;
+      out[1] = x[a + 2] + (x[b + 2] - x[a + 2]) * s.k;
+      out[2] = x[a + 3] + (x[b + 3] - x[a + 3]) * s.k;
+      return out;
+    }
+  }
   const s = sampleAt(life, t);
   if (!s) return null;
   const a = s.a.p;
@@ -1470,16 +1700,16 @@ function driverSpans(rec) {
  *  so none in the last few periods is standing still. */
 function stillAt(life, t) {
   const keys = life.keys;
-  if (!keys.length || t < keys[0].t) return true;
+  if (!keys.length || t < sampleTime(keys, 0)) return true;
   let lo = 0;
   let hi = keys.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (keys[mid].t <= t) lo = mid;
+    if (sampleTime(keys, mid) <= t) lo = mid;
     else hi = mid - 1;
   }
-  const last = keys[lo];
-  const before = keys[lo - 1];
+  const last = keys.at(lo);
+  const before = lo > 0 ? keys.at(lo - 1) : undefined;
   if (!before || t - last.t > 3 * SAMPLE_PERIOD) return true;
   const step = Math.hypot(last.p[0] - before.p[0], last.p[1] - before.p[1], last.p[2] - before.p[2]);
   return step / Math.min(last.t - before.t, SAMPLE_PERIOD) < AT_REST;
@@ -1510,17 +1740,17 @@ export function poseHeld(rec, life, t) {
 /** The last v4 record in a time-ordered list at or before `t`, or null. */
 export function latestAt(list, t) {
   const i = latestIndex(list, t);
-  return i < 0 ? null : list[i];
+  return i < 0 ? null : list instanceof SampleTrack ? list.sample(i) : list[i];
 }
 
 /** The index of `latestAt`'s entry, or -1. */
-function latestIndex(list, t) {
-  if (!list?.length || t < list[0].t) return -1;
+export function latestIndex(list, t) {
+  if (!list?.length || t < sampleTime(list, 0)) return -1;
   let lo = 0;
   let hi = list.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (list[mid].t <= t) lo = mid;
+    if (sampleTime(list, mid) <= t) lo = mid;
     else hi = mid - 1;
   }
   return lo;
