@@ -1210,7 +1210,11 @@ The urgency contest, plans, the strategic layer.
   `getStatsViewDistance` (default 512) exist; the frustum test and the `AIInformationGrid`
   sweep were not opened.
 - What selects `C = 0/10/30` in the deviation formula (§6.2).
+  *Corrected 2026-09-29: closed. It is an anti-aircraft penalty on the
+  shooter, ledger AI-18 and row D of §9.*
 - Whether the skirmish AI-skill slider is live (§5.3).
+  *Corrected 2026-09-29: closed on 2026-09-21. The slider is inert, ledger
+  AI-21 and row A of §9.*
 - The per-behaviour urgency generators.
 
 ### Must be invented, and should be labelled as such

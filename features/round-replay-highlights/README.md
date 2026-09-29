@@ -61,6 +61,13 @@ their last sighting, for 20 s; the Auto camera never picks one. Kills are
 heard from everywhere (the score stream) and placed by the server log when the
 recording could not see them.
 
+*Corrected 2026-09-29: the server's rule is wider than this paragraph says. It
+sends continuous state within the level's view distance plus 20 m of the
+viewpoint, and it sends every living player on the recording player's own side
+map-wide at priority 0.03, so only the other side goes out of range. §19 of
+[round-replay-capture](../round-replay-capture/README.md) reads this from the
+server, and [round-replay-merge](../round-replay-merge/README.md) is built on it.*
+
 A man getting out of a vehicle comes back into the replicated set, and the
 recording's first samples of him are not his: the first is the last place the
 client had for his soldier, as a rule where he got in, and sometimes the next

@@ -186,7 +186,7 @@ extractor reads the root mode script, TKT-3.*
 | source | covers | rate | gives | lacks | state |
 |---|---|---|---|---|---|
 | server event log (XML) | the whole map | per event | spawns (position, team), kits, vehicle entry and exit (position), kills (both positions), vehicle destruction, round start and tickets, chat | motion between events; bot names | on in the lab |
-| client recording (bf42plus v3) | ~520 m around the recording client's viewpoint; flags everywhere; every object's creation | 10 Hz, on change | transforms, hit points, seats, flag owners, named players, chat; `fire` events in the uncommitted bf42plus work | distant motion; any projectile with a mesh (round-replay-capture §13); bot intent; the recording player's own soldier is client-predicted | deployed |
+| client recording (bf42plus v3) | ~520 m around the recording client's viewpoint; flags everywhere; every object's creation. *Corrected 2026-09-29: the radius is the level's view distance plus 20 m, 520 m on Wake, and the own side's living players come map-wide, per §19 of [round-replay-capture](../round-replay-capture/README.md).* | 10 Hz, on change | transforms, hit points, seats, flag owners, named players, chat; `fire` events in the uncommitted bf42plus work | distant motion; any projectile with a mesh (round-replay-capture §13); bot intent; the recording player's own soldier is client-predicted | deployed |
 | server recording | the whole map | every server tick | every object's transform and velocity, projectiles, hit points, seats, flags, bot state (behaviour, target, route) | effects, sound, animation | phase 3 |
 | screen capture | what the player sees | video | effects, sound, animation | numbers | manual |
 
