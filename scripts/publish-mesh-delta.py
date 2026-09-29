@@ -49,6 +49,15 @@ never sent under either compare.
 of the cluster (no kubectl; `--write-manifest FILE` records one from a local
 tree), which is how a scratch tree's dry run says what a change would send.
 
+Every glb goes with the `<name>.glb.gz` beside it, which nginx's
+`gzip_static` sends to clients that take gzip (`features/mesh-asset-size`,
+phase 2a; `tools/bf1942-models/optimise_mesh.py` writes it). The two go in one
+unit, the `.gz` is sent whenever its glb is, and nothing is sent if a `.gz` does
+not inflate to the glb beside it (its gzip trailer's CRC-32 and length, checked
+against the glb) or is missing: a stale `.gz` on the volume is what most
+clients would get. `--allow-plain` lets a glb with no `.gz` go, served plain,
+unless the volume holds a `.gz` for it.
+
 Every unit's landed sizes are checked against the local ones; manifests
 (`maps.json`, `models.json`, `mods.json`, `kits.json`) go last, because they
 are what advertises the rest; a finished unit is recorded under
@@ -69,6 +78,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -79,6 +89,7 @@ TREES = ["textures", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json"}
 UNIT_BYTES = 48 * 1000 * 1000
 SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
+GZ_SUFFIX = ".gz"
 
 
 def sha256(path: Path) -> str:
@@ -224,15 +235,85 @@ def local_files(tree: str) -> dict[str, int]:
 
 
 def rank(rel: str) -> tuple:
-    """Vanilla before the mods, a mod's `_shared` before its levels."""
+    """Vanilla before the mods, a mod's `_shared` before its levels, and a
+    glb's `.gz` straight after it."""
+    gz = rel.endswith(GZ_SUFFIX)
+    rel = rel[:-len(GZ_SUFFIX)] if gz else rel
     parts = rel.split("/")
     mod = parts[1] if parts[0] == "mods" and len(parts) > 2 else ""
-    return (0 if not mod else 1, mod, 0 if "_shared" in rel else 1, rel)
+    return (0 if not mod else 1, mod, 0 if "_shared" in rel else 1, rel, gz)
+
+
+def gz_fresh(glb: Path, gz: Path) -> bool:
+    """Whether `gz` inflates to `glb`, by its trailer: the CRC-32 and length
+    (mod 2**32) of the uncompressed bytes (`bf42/glbgz.py` writes them)."""
+    try:
+        with gz.open("rb") as fh:
+            if fh.read(2) != b"\x1f\x8b" or gz.stat().st_size < 18:
+                return False
+            fh.seek(-8, os.SEEK_END)
+            crc, size = struct.unpack("<II", fh.read(8))
+    except OSError:
+        return False
+    if size != glb.stat().st_size & 0xFFFFFFFF:
+        return False
+    running = 0
+    with glb.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            running = zlib.crc32(block, running)
+    return running == crc
+
+
+def gzip_pairs(base: Path, local: dict[str, int], remote: dict[str, int], send: list[str],
+               allow_plain: bool) -> tuple[list[str], list[str], list[str]]:
+    """`send` with the `.gz` of every glb in it added, the problems that must
+    stop the publish, and the glbs that go without a `.gz` (`--allow-plain`)."""
+    out = list(send)
+    going = set(send)
+    problems: list[str] = []
+    plain: list[str] = []
+    glbs = {r for r in send if r.endswith(".glb")}
+    glbs |= {r[:-len(GZ_SUFFIX)] for r in send if r.endswith(".glb" + GZ_SUFFIX)}
+    for glb in sorted(glbs):
+        gz = glb + GZ_SUFFIX
+        if glb not in local:
+            problems.append(f"{gz}: there is no {os.path.basename(glb)} beside it")
+        elif gz not in local:
+            if gz in remote:
+                problems.append(f"{glb}: no .gz here, and the volume's is of another copy")
+            elif allow_plain:
+                plain.append(glb)
+            else:
+                problems.append(f"{glb}: no .gz beside it")
+        elif not gz_fresh(base / glb, base / gz):
+            problems.append(f"{glb}: its .gz is of another copy")
+        elif gz not in going:
+            out.append(gz)
+            going.add(gz)
+    return out, problems, plain
+
+
+def pack_units(rels: list[str], local: dict[str, int]) -> list[list[str]]:
+    """The files in send order, cut into units of about UNIT_BYTES. A glb and
+    its .gz are never cut apart, so neither lands a unit after the other."""
+    units: list[list[str]] = []
+    current: list[str] = []
+    weight = 0
+    for rel in sorted(rels, key=rank):
+        paired = bool(current) and rel == current[-1] + GZ_SUFFIX
+        if current and weight + local[rel] > UNIT_BYTES and not paired:
+            units.append(current)
+            current, weight = [], 0
+        current.append(rel)
+        weight += local[rel]
+    if current:
+        units.append(current)
+    return units
 
 
 def publish(volume, tree: str, streams: int, dry_run: bool, *,
             hashes: HashManifest | None = None, hash_remote: bool = False,
-            list_files: bool = False) -> bool:
+            list_files: bool = False, allow_plain: bool = False) -> bool:
     local = local_files(tree)
     remote = volume.listing(tree)
     send = [r for r in local if remote.get(r) != local[r]]
@@ -263,6 +344,16 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
                     hashes.record(base, rel, sha)
             unverified = [r for r in unverified if r not in there]
         send += same_size_changed
+    send, problems, plain = gzip_pairs(base, local, remote, send, allow_plain)
+    if problems:
+        print(f"{tree}: {len(problems)} glbs and their .gz disagree; nothing sent. Run "
+              "tools/bf1942-models/optimise_mesh.py over them:", flush=True)
+        for row in problems[:20]:
+            print(f"  {row}")
+        return False
+    if plain:
+        print(f"{tree}: {len(plain)} glbs go without a .gz (--allow-plain), served "
+              "uncompressed", flush=True)
     total = sum(local[r] for r in send)
     print(f"{tree}: {len(local)} local, {len(remote)} on the volume, "
           f"{len(send)} to send ({total / 1e9:.2f} GB), "
@@ -282,18 +373,7 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
         return True
 
     last = [r for r in send if os.path.basename(r) in MANIFESTS]
-    body = sorted((r for r in send if r not in set(last)), key=rank)
-    units: list[list[str]] = []
-    current: list[str] = []
-    weight = 0
-    for rel in body:
-        if current and weight + local[rel] > UNIT_BYTES:
-            units.append(current)
-            current, weight = [], 0
-        current.append(rel)
-        weight += local[rel]
-    if current:
-        units.append(current)
+    units = pack_units([r for r in send if r not in set(last)], local)
 
     STATE.mkdir(parents=True, exist_ok=True)
     state = STATE / f"done-{tree}.txt"
@@ -394,6 +474,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--list", action="store_true",
                     help="print every file that would be (or is being) sent")
+    ap.add_argument("--allow-plain", action="store_true",
+                    help="send a glb that has no .gz beside it (served uncompressed), "
+                         "unless the volume holds a .gz for it")
     ap.add_argument("--hash", action="store_true",
                     help="compare content as well as size, against the hash "
                          "manifest of what this script last landed")
@@ -443,7 +526,8 @@ def main() -> int:
                       if args.hash or args.hash_remote else None)
             dry_run = args.dry_run
         ok = publish(volume, tree, args.streams, dry_run, hashes=hashes,
-                     hash_remote=args.hash_remote, list_files=args.list) and ok
+                     hash_remote=args.hash_remote, list_files=args.list,
+                     allow_plain=args.allow_plain) and ok
     return 0 if ok else 1
 
 

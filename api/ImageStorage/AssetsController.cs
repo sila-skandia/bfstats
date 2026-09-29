@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace api.ImageStorage;
@@ -83,7 +84,7 @@ public class AssetsController(
     public async Task<IActionResult> GetMeshAsset(string path)
     {
         var basePath = TournamentImagesConfig.ResolveMeshPath();
-        var result = await assetServingService.GetAssetAsync(basePath, path);
+        var result = await assetServingService.GetAssetAsync(basePath, path, AcceptsGzip());
         if (result.IsSuccess)
         {
             // The mesh site's own policy. Without a Cache-Control the zone rule bypasses
@@ -94,6 +95,17 @@ public class AssetsController(
             Response.Headers.CacheControl = path.StartsWith("textures/", StringComparison.Ordinal)
                 ? "public, max-age=31536000, immutable"
                 : "public, max-age=300, s-maxage=86400";
+
+            // A glb goes as the gzip copy beside it when the client takes gzip, as nginx's
+            // gzip_static does on mesh.bfstats.io: no CPU per request. X-File-Size is the
+            // inflated size, which three's FileLoader reports progress against.
+            if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+                Response.Headers.Vary = "Accept-Encoding";
+            if (result.ContentEncoding is { } encoding)
+            {
+                Response.Headers.ContentEncoding = encoding;
+                Response.Headers["X-File-Size"] = result.UncompressedLength?.ToString();
+            }
         }
 
         return HandleAssetResult(result);
@@ -143,6 +155,13 @@ public class AssetsController(
             };
         }
 
-        return File(result.FileStream!, result.ContentType!, result.FileName, enableRangeProcessing: true);
+        // A range of an encoded body is a range of the gzip, which no caller here wants.
+        return File(result.FileStream!, result.ContentType!, result.FileName,
+            enableRangeProcessing: result.ContentEncoding is null);
     }
+
+    private bool AcceptsGzip() =>
+        Request.GetTypedHeaders().AcceptEncoding.Any(coding =>
+            (coding.Value.Equals("gzip", StringComparison.OrdinalIgnoreCase) || coding.Value.Equals("*", StringComparison.Ordinal))
+            && coding.Quality is not 0);
 }
