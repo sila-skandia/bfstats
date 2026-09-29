@@ -95,17 +95,26 @@ for (const file of ['replays/replay_20260928-133433.ndjson']) {
   const real = R.parseRecording(fs.readFileSync(full, 'utf8'));
   const realPids = [...new Set([...real.players.keys(), ...(real.playerNids?.keys() ?? [])])];
   const hulls = real.lives.filter(l => l.tmpl && !l.soldier && !l.kit && !l.controlPoint && !l.camera && !l.projectile);
+  const read = t => M.minimapMarksAt(real, t, { where: (pid, at) => B.whereIs(real, pid, at), pids: realPids, hullLives: hulls });
   const moments = {};
-  let worst = 0;
   for (const t of [60, 120, 240, 400]) {
-    const started = performance.now();
-    const marks = M.minimapMarksAt(real, t, { where: (pid, at) => B.whereIs(real, pid, at), pids: realPids, hullLives: hulls });
-    worst = Math.max(worst, performance.now() - started);
+    const marks = read(t);
     const bySide = list => ({ 1: list.filter(m => m.team === 1).length, 2: list.filter(m => m.team === 2).length,
                               0: list.filter(m => !m.team).length, faded: list.filter(m => !m.fresh).length });
     moments[t] = { soldiers: bySide(marks.soldiers), hulls: bySide(marks.hulls) };
   }
-  results.rounds[path.basename(file, '.ndjson')] = { moments, worstMs: Math.round(worst) };
+  // The cost of a call, as the median over the round: a worst call is the
+  // machine's load and the first call's warm-up, not the marks'.
+  const times = [];
+  for (let t = 10; t < real.duration; t += real.duration / 40) {
+    const started = performance.now();
+    read(t);
+    times.push(performance.now() - started);
+  }
+  times.sort((a, b) => a - b);
+  results.rounds[path.basename(file, '.ndjson')] = {
+    moments, calls: times.length, medianMs: +times[times.length >> 1].toFixed(2), worstMs: +times.at(-1).toFixed(2),
+  };
 }
 
 process.stdout.write(JSON.stringify(results));
