@@ -21,6 +21,7 @@ import {
 import { NETWORKED_ROUNDS, weaponOfProjectile } from './replay-props.js';
 import { toViewPosition, toViewQuaternion } from './replay-actors.js';
 import { nextSpawn } from './replay-chapters.js';
+import { finite, finiteVector } from './replay-guard.js';
 import { EYE_HEIGHT, POSE_CROUCH, POSE_PRONE, POSE_STAND } from './soldier-pose.js';
 
 export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
@@ -96,6 +97,7 @@ const _fwd = new THREE.Vector3();
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+const lensOk = cam => cam.fov > 0 && cam.fov < 180 && cam.near > 0 && cam.near < Infinity;
 
 /** The followed player's controlled object: their soldier, the hull whose
  *  seat they hold (a gunner's seat id resolves to its hull, `rootOf`), or
@@ -217,6 +219,14 @@ export class ReplayCamera {
     this.pageLens = { fov: cam.fov, near: cam.near };
     this.lens = 'page';
     this.target = null;          // the last orbit target, for the UI's read
+    // The last pose drawn that was all numbers, which a view that cannot be
+    // placed holds (`update`), and what went wrong, said once a kind.
+    this.good = { pos: new THREE.Vector3(0, 100, 0), quat: new THREE.Quaternion() };
+    if (finiteVector(cam.position) && finiteVector(cam.quaternion)) {
+      this.good.pos.copy(cam.position);
+      this.good.quat.copy(cam.quaternion);
+    }
+    this.faults = new Set();
   }
 
   // --- input -----------------------------------------------------------------
@@ -271,6 +281,7 @@ export class ReplayCamera {
 
   /** A drag of `dx`, `dy` pixels. */
   drag(dx, dy) {
+    if (!finite(dx, dy)) return;
     if (this.mode === 'orbit') {
       this.yaw -= dx * DRAG;
       this.pitch = clamp(this.pitch + dy * DRAG * 0.8, PITCH_MIN, PITCH_MAX);
@@ -285,6 +296,7 @@ export class ReplayCamera {
 
   /** The wheel: `steps` > 0 is out (away from him, or backwards). */
   wheel(steps) {
+    if (!finite(steps)) return;
     if (this.mode === 'orbit') {
       this.zoom = clamp(this.zoom * Math.exp(steps * 0.15), ZOOM_MIN, ZOOM_MAX);
     } else if (this.mode === 'free') {
@@ -378,20 +390,116 @@ export class ReplayCamera {
   // --- per frame -----------------------------------------------------------------
 
   update(dt, t) {
+    const cam = this.player.ctx.camera;
     this.hidePid = null;
     this.sight = null;
+    this.sanitize();
     let firstPersonHull = null;
-    if (this.mode === 'free') {
-      this.updateFree(dt);
-      this.useLens('page');
-    } else if (this.mode === 'pov' && this.updatePov(dt, t)) {
-      firstPersonHull = this.povHull;
+    try {
+      if (this.mode === 'free') {
+        this.updateFree(dt);
+        this.useLens('page');
+      } else if (this.mode === 'pov' && this.placePov(dt, t)) {
+        firstPersonHull = this.povHull;
+      } else {
+        this.updateOrbit(dt, t);
+        this.useLens('page');
+      }
+    } catch (error) {
+      this.fault(`the ${this.mode} camera threw`, error);
+      this.hidePid = null;
+      this.sight = null;
+    }
+    // A pose that is not all numbers is never drawn: it froze the page (the
+    // audio listener throws on it, before the render) and, carried into the
+    // orbit's angles and the free camera's place, it outlived every change
+    // of mode and of player. The last good pose holds instead.
+    if (this.poseFinite(cam)) {
+      this.good.pos.copy(cam.position);
+      this.good.quat.copy(cam.quaternion);
     } else {
-      this.updateOrbit(dt, t);
-      this.useLens('page');
+      this.fault(`the ${this.mode} camera came out as no position`);
+      this.hold(cam);
+      firstPersonHull = null;
     }
     this.setFirstPersonHull(firstPersonHull);
-    this.player.ctx.camera.updateMatrixWorld();
+    cam.updateMatrixWorld();
+  }
+
+  /**
+   * First person, where his eyes give a pose the view can take (`updatePov`).
+   * One that throws, or comes out as no position (a rig or a record that is
+   * not all numbers), is no first person this frame: the orbit stands in, as
+   * it does for a man with no eyes to look through, and nothing of the first
+   * person is left set.
+   */
+  placePov(dt, t) {
+    const cam = this.player.ctx.camera;
+    try {
+      if (!this.updatePov(dt, t)) return false;
+      if (this.poseFinite(cam)) return true;
+      this.fault('first person came out as no position', { pid: this.player.followPid, t });
+    } catch (error) {
+      this.fault('first person threw', error);
+    }
+    this.hidePid = null;
+    this.sight = null;
+    this.povHull = null;
+    this.hold(cam);
+    this.startGlide(this.good.pos, _v2.set(0, 0, -6).applyQuaternion(this.good.quat).add(this.good.pos));
+    return false;
+  }
+
+  /** Whether the camera's pose and lens are all numbers. */
+  poseFinite(cam) {
+    return finiteVector(cam.position) && finiteVector(cam.quaternion) && lensOk(cam);
+  }
+
+  /** The last pose drawn that was all numbers, back on the camera, with the
+   *  page's lens if the lens is what broke. */
+  hold(cam) {
+    cam.position.copy(this.good.pos);
+    cam.quaternion.copy(this.good.quat);
+    if (!lensOk(cam)) {
+      this.lens = null;
+      this.useLens('page');
+    }
+  }
+
+  /**
+   * Any of the camera's own state that is not a number any more, back to
+   * something it can be drawn from: the orbit's angles and zoom, the free
+   * camera's place and look, the look-around and the glide. One bad frame
+   * (a pose from a broken rig, a drag the browser measured as nothing) must
+   * not leave every later frame bad.
+   */
+  sanitize() {
+    if (!finite(this.yaw)) this.yaw = finite(this.eased.yaw) ? this.eased.yaw : 0;
+    if (!finite(this.pitch)) this.pitch = 0.35;
+    if (!finite(this.zoom) || this.zoom <= 0) this.zoom = 1;
+    for (const key of ['yaw', 'pitch', 'zoom']) {
+      if (!finite(this.eased[key])) this.eased[key] = this[key];
+    }
+    const free = this.free;
+    if (!finiteVector(free.pos)) free.pos.copy(this.good.pos);
+    if (!finite(free.yaw)) free.yaw = 0;
+    if (!finite(free.pitch)) free.pitch = 0;
+    const pov = this.pov;
+    if (!finite(pov.lookYaw, pov.lookPitch)) {
+      pov.lookYaw = 0;
+      pov.lookPitch = 0;
+    }
+    if (!finiteVector(this.carryPos)) this.carryPos.set(0, 0, 0);
+    if (!finiteVector(this.carryLook)) this.carryLook.set(0, 0, 0);
+    if (!finiteVector(this.lastPos) || !finiteVector(this.lastLook)) this.valid = false;
+    if (this.stick && !finite(this.stick.x, this.stick.y)) this.stick = { x: 0, y: 0 };
+  }
+
+  /** What the camera could not do, said once a kind; the frame goes on. */
+  fault(what, detail = undefined) {
+    if (this.faults.has(what)) return;
+    this.faults.add(what);
+    console.warn(`replay camera: ${what}`, ...(detail === undefined ? [] : [detail]));
   }
 
   startGlide(fromPos, fromLook) {

@@ -234,97 +234,29 @@ export class ReplaySoldiers {
     }
   }
 
-  /** One frame at recording time `t`. */
+  /** One frame at recording time `t`. Each man is placed on his own: one
+   *  whose record throws is left out of this frame (the player's guard warns
+   *  once), and everyone after him is still placed and drawn. */
   update(t, dt, hulls) {
     const { rec } = this.player;
     this.drawn.length = 0;
     const loadouts = this.player.ctx.loadouts?.() ?? null;
+    const guard = this.player.guard ?? null;
     for (const pid of rec.playerNids?.keys() ?? []) {
       const nid = controlledAt(rec, pid, t);
       if (nid === null) continue;
       const actor = this.actorFor(pid, t);
-      const life = this.soldierLife(pid, nid, t);
-      if (!life) {
-        // Nothing of him to draw: spawning, or his body is gone.
-        actor.lifeNid = null;
-        continue;
-      }
-      this.bindLife(actor, life, loadouts);
-      const replicated = life.replicated.some(([from, to]) => t >= from && t < to);
-      const dead = life.diedAt !== undefined && t >= life.diedAt;
-      // Where he is: his soldier's recorded pose, or his seat's hull.
-      const root = rootOf(rec, nid, t, pid);
-      const seated = root && !root.life.soldier && !root.life.camera ? root : null;
-      actor.vehicle = seated && !dead ? seated.life.tmpl : null;
-      actor.seat = seated && !dead ? { hull: hulls.get(seated.life), index: seated.seat } : null;
-      if (actor.seat && !actor.seat.hull) actor.seat = null;
-      if (!replicated && !seated && !dead) continue;
-      const pose = poseAt(life, t);
-      if (!pose) continue;
-      const s = actor.state.soldier;
-      s.x = pose.p[0]; s.y = pose.p[1]; s.z = pose.p[2];
-      _q.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).multiply(SOLDIER_YAW_FLIP);
-      _euler.setFromQuaternion(_q, 'YXZ');
-      s.yaw = _euler.y;
-      // A v4 recording carries his body's own animation states: the stance
-      // is the lower state's flags, the fire the upper state, and the item
-      // in his hands the one the server says he holds.
-      const body = bodyAt(rec, life.nid, t);
-      actor.stance = body?.stance ?? 'stand';
-      s.stance = actor.stance;
-      this.swimState(s, body, life, t, dead || Boolean(seated));
-      // A dead man a blast threw, or one riding his canopy down, is still in
-      // the air: his body keeps flying as the recording has it, and his
-      // corpse is left where it comes to rest.
-      const flight = dead ? this.flightOf(life) : null;
-      const falling = Boolean(flight) && t < flight.until;
-      actor.state.falling = falling;
-      this.heldState(s, body, bodyAt(rec, life.nid, t + FLIGHT_LEAD), (dead && !falling) || Boolean(seated), dead);
-      actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
-      if (body?.item) this.hold(actor, body.item, loadouts);
-      // A weapon with no round to record (an engineer's wrench, a medic's
-      // pack) fires by the recorded torso state alone. The engine enters its
-      // one-shot fire state again on every round while the trigger is down,
-      // and the recorder only writes a change, so a fire the torso has
-      // finished starts over for as long as the recording still says fire.
-      if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
-        this.bodies?.botFireHeld?.(actor);
-      }
-      // A reload is the torso's reload state and nothing else: no round
-      // says when a magazine went in, so none played until now.
-      const reloading = Boolean(body?.reloading) && !dead;
-      if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
-      actor.reloading = reloading;
-      // His death, when playback walks across it: his cry at the blow, and
-      // the renderer's death and body where he comes to rest -- where he
-      // fell, or where a flight after his death landed him.
-      if (dead && !actor.state.dead) {
-        actor.state.dead = true;
-        if (this.player.playing && t - life.diedAt < 0.5) {
-          this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
-        }
-      }
-      if (dead && !falling && !actor.state.down) {
-        actor.state.down = true;
-        const rest = flight ? flight.until : life.diedAt;
-        if (this.player.playing && t - rest < 0.5) {
-          // The death the engine chose, where the recording has his body's
-          // die state or the state a flight landed him in; the renderer's
-          // own choice otherwise, and in a seat.
-          const family = seated ? undefined
-            : DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
-          this.bodies?.killBot?.(actor, { seated: Boolean(seated), family });
-        }
-      }
-      if (!dead) {
-        actor.state.dead = false;
-        actor.state.down = false;
-      }
-      this.drawn.push(actor);
+      let drawn = false;
+      const place = () => { drawn = this.place(actor, pid, nid, t, hulls, loadouts); };
+      if (guard) guard.item(`player ${pid}'s soldier`, actor, place);
+      else place();
+      if (drawn) this.drawn.push(actor);
     }
     if (!this.bodies) return;
     for (const actor of this.drawn) {
-      if (!actor.state.dead || actor.state.falling) this.bodies.ensureBotVisual(actor);
+      if (actor.state.dead && !actor.state.falling) continue;
+      if (guard) guard.item(`player ${actor.pid}'s body`, actor, () => this.bodies.ensureBotVisual(actor));
+      else this.bodies.ensureBotVisual(actor);
     }
     // Whoever the recording has nothing of this frame (out of the client's
     // range, spawning, gone) is not drawn at his last pose.
@@ -344,10 +276,96 @@ export class ReplaySoldiers {
     for (const actor of this.drawn) {
       // Nobody steps in the air: a thrown man or a parachutist moves fast
       // with nothing under his boots.
-      if (!actor.vehicle && !actor.state.dead && !actor.state.soldier.held.airborne) {
-        this.player.ctx.footstepTick?.(actor, dt);
+      if (actor.vehicle || actor.state.dead || actor.state.soldier.held.airborne) continue;
+      if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt));
+      else this.player.ctx.footstepTick?.(actor, dt);
+    }
+  }
+
+  /** `actor`, the soldier of `pid` who controls `nid`, placed at `t`: true
+   *  when he is drawn this frame. */
+  place(actor, pid, nid, t, hulls, loadouts) {
+    const { rec } = this.player;
+    const life = this.soldierLife(pid, nid, t);
+    if (!life) {
+      // Nothing of him to draw: spawning, or his body is gone.
+      actor.lifeNid = null;
+      return false;
+    }
+    this.bindLife(actor, life, loadouts);
+    const replicated = life.replicated.some(([from, to]) => t >= from && t < to);
+    const dead = life.diedAt !== undefined && t >= life.diedAt;
+    // Where he is: his soldier's recorded pose, or his seat's hull.
+    const root = rootOf(rec, nid, t, pid);
+    const seated = root && !root.life.soldier && !root.life.camera ? root : null;
+    actor.vehicle = seated && !dead ? seated.life.tmpl : null;
+    actor.seat = seated && !dead ? { hull: hulls.get(seated.life), index: seated.seat } : null;
+    if (actor.seat && !actor.seat.hull) actor.seat = null;
+    if (!replicated && !seated && !dead) return false;
+    const pose = poseAt(life, t);
+    // A pose that is not all numbers draws nothing, and the renderer and
+    // the name tags read him from it.
+    if (!pose || !pose.p.every(Number.isFinite) || !pose.q.every(Number.isFinite)) return false;
+    const s = actor.state.soldier;
+    s.x = pose.p[0]; s.y = pose.p[1]; s.z = pose.p[2];
+    _q.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).multiply(SOLDIER_YAW_FLIP);
+    _euler.setFromQuaternion(_q, 'YXZ');
+    s.yaw = _euler.y;
+    // A v4 recording carries his body's own animation states: the stance
+    // is the lower state's flags, the fire the upper state, and the item
+    // in his hands the one the server says he holds.
+    const body = bodyAt(rec, life.nid, t);
+    actor.stance = body?.stance ?? 'stand';
+    s.stance = actor.stance;
+    this.swimState(s, body, life, t, dead || Boolean(seated));
+    // A dead man a blast threw, or one riding his canopy down, is still in
+    // the air: his body keeps flying as the recording has it, and his
+    // corpse is left where it comes to rest.
+    const flight = dead ? this.flightOf(life) : null;
+    const falling = Boolean(flight) && t < flight.until;
+    actor.state.falling = falling;
+    this.heldState(s, body, bodyAt(rec, life.nid, t + FLIGHT_LEAD), (dead && !falling) || Boolean(seated), dead);
+    actor.isFiring = t < actor.firingUntil || Boolean(body?.firing);
+    if (body?.item) this.hold(actor, body.item, loadouts);
+    // A weapon with no round to record (an engineer's wrench, a medic's
+    // pack) fires by the recorded torso state alone. The engine enters its
+    // one-shot fire state again on every round while the trigger is down,
+    // and the recorder only writes a change, so a fire the torso has
+    // finished starts over for as long as the recording still says fire.
+    if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
+      this.bodies?.botFireHeld?.(actor);
+    }
+    // A reload is the torso's reload state and nothing else: no round
+    // says when a magazine went in, so none played until now.
+    const reloading = Boolean(body?.reloading) && !dead;
+    if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
+    actor.reloading = reloading;
+    // His death, when playback walks across it: his cry at the blow, and
+    // the renderer's death and body where he comes to rest -- where he
+    // fell, or where a flight after his death landed him.
+    if (dead && !actor.state.dead) {
+      actor.state.dead = true;
+      if (this.player.playing && t - life.diedAt < 0.5) {
+        this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
       }
     }
+    if (dead && !falling && !actor.state.down) {
+      actor.state.down = true;
+      const rest = flight ? flight.until : life.diedAt;
+      if (this.player.playing && t - rest < 0.5) {
+        // The death the engine chose, where the recording has his body's
+        // die state or the state a flight landed him in; the renderer's
+        // own choice otherwise, and in a seat.
+        const family = seated ? undefined
+          : DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+        this.bodies?.killBot?.(actor, { seated: Boolean(seated), family });
+      }
+    }
+    if (!dead) {
+      actor.state.dead = false;
+      actor.state.down = false;
+    }
+    return true;
   }
 
   /**
