@@ -30,6 +30,15 @@ export function createKitLoadout(page) {
     .then(r => (r.ok ? r.json() : null))
     .then(data => { loadout.loadouts = data; return data; })
     .catch(err => { console.warn('loadouts unavailable', err); return null; });
+  // The voice folder each soldier template speaks from, keyed lowercased
+  // (`_shared/voices/languages.json`, extract_radio.py): its own
+  // `setRadioLanguage`, which is what `Sound/@RTD/@Language/` resolves to.
+  // A tree without the file keeps the side's flag nation.
+  loadout.voiceLanguages = null;
+  fetch(`${page.MAPS_BASE}/_shared/voices/languages.json${page.bust()}`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => { loadout.voiceLanguages = data?.soldiers ?? null; })
+    .catch(() => {});
   // The stand-in for a maps tree published before `_shared/loadouts.json`
   // existed, or a mod not yet run through the extractor: vanilla's kit
   // primaries by the nation a side flies (`teamNation`), in the spawn screen's
@@ -171,6 +180,16 @@ export function createKitLoadout(page) {
       || FALLBACK_PRIMARIES[team === 1 ? 'ger' : 'us'][slot];
   }
 
+  /** The `_shared/voices/<folder>` `team` speaks from: its soldier's own
+   *  radio language, else the nation its flag says. They differ in Desert
+   *  Combat, which flies Iraq's flag in the German slot: by flag the Iraqi
+   *  side would shout in German. */
+  function teamVoice(team) {
+    const soldier = kitLoadout(team).soldier;
+    return (soldier && loadout.voiceLanguages?.[soldier.toLowerCase()])
+      || page.teamNation?.(team) || null;
+  }
+
   /** The soldier template whose sleeves the arms rig should wear: the level's
    *  `game.setTeamSkin`, or the nation's soldier when the file is absent. */
   function soldierTemplateFor(flag) {
@@ -285,6 +304,7 @@ export function createKitLoadout(page) {
     slotOf,
     soldierMaxHp,
     soldierTemplateFor,
+    teamVoice,
     weaponTemplateFor,
   });
   return loadout;

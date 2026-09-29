@@ -607,7 +607,7 @@ const pageAudio = createPageAudio(bag(
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
   from(() => mapSurfaces, `teamNation`),
   from(() => seatCamera, `view`),
-  from(() => soldierKit, `ensureHandFireBus handFireBus weaponSoundsManifest`),
+  from(() => soldierKit, `ensureHandFireBus handFireBus teamVoice weaponSoundsManifest`),
   from(() => spawning, `deployTeamId`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
@@ -1182,7 +1182,7 @@ const referee = createBotReferee({
   onHurt: bot => {
     const at = bot.getPosition();
     pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] },
-      mapSurfaces.teamNation(bot.team));
+      soldierKit.teamVoice(bot.team));
   },
   onDeath: (bot, attackerId, opts) => {
     // The corpse: the engine's death for how he was standing, sitting or
@@ -1191,7 +1191,7 @@ const referee = createBotReferee({
     // `c_SstKilled`, from where he fell.
     const at = bot.getPosition();
     pageAudio.playSoldierDeathSound({ x: at[0], y: at[1] + 1.2, z: at[2] },
-      mapSurfaces.teamNation(bot.team));
+      soldierKit.teamVoice(bot.team));
     // His kit where he fell, when he fell on foot (`kit-drops-page.js`).
     kitDrops.botDied(bot, opts);
     comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);
@@ -1285,6 +1285,7 @@ const flagCapture = createFlagCapture(bag(
     world`),
   from(() => localPlayer, `soldier soldierDead`),
   from(() => mapSurfaces, `drawFullMap drawMinimap localMapTeam teamNation`),
+  from(() => soldierKit, `teamVoice`),
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume playSoldierOneShot`),
   from(() => pageConsole, `logToConsole`),
@@ -1742,6 +1743,7 @@ const comms = createComms(bag(
   from(() => mapSurfaces, `gridRef teamNation`),
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume`),
+  from(() => soldierKit, `teamVoice`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get hudPaths() { return hudPaths; }, get MAPS_BASE() { return MAPS_BASE; },
@@ -1895,7 +1897,7 @@ replayController = createReplayController({
   lights: () => ({ hemi, sun }),
   playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
-  playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
+  playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
   playRefillSound: at => pageAudio.playRefillSound(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),
   // The page's mix where it leaves for the speakers, for a creator's clip

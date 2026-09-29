@@ -244,7 +244,7 @@ export function createComms(page) {
     const patch = radioPatch(id, defend);
     if (!patch || listener?.silent) return;
     if (patch.script === 'radio') {
-      playVoice('radio', patch.patch, page.teamNation?.(listenerTeam), null);
+      playVoice('radio', patch.patch, voiceOf(listenerTeam), null);
     } else {
       const here = listener ? null : xyz(page.localPosition?.());
       if (!speaker.local && here && speaker.position) {
@@ -252,7 +252,7 @@ export function createComms(page) {
           here.z - speaker.position.z);
         if (d > LOCAL_RANGE) return;
       }
-      playVoice('local', patch.patch, page.teamNation?.(speaker.team),
+      playVoice('local', patch.patch, voiceOf(speaker.team),
         speaker.local ? null : speaker.position);
     }
   }
@@ -261,6 +261,10 @@ export function createComms(page) {
   // --- voices ------------------------------------------------------------------
 
   const missingVoices = new Set();
+
+  /** A side's voice folder: its soldier's radio language (`teamVoice`),
+   *  else its flag nation. */
+  const voiceOf = team => (page.teamVoice ?? page.teamNation)?.(team);
 
   function voiceDirs(nation) {
     const shared = sharedDir();

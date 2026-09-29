@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -294,7 +295,42 @@ def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict
     if transcode:
         (out / "voices").mkdir(parents=True, exist_ok=True)
         (out / "voices" / "radio-sounds.json").write_text(json.dumps(manifest, indent=1) + "\n")
+        languages = soldier_languages(pool, set(manifest["nations"]))
+        (out / "voices" / "languages.json").write_text(
+            json.dumps({"mod": mod, "soldiers": languages}, indent=1) + "\n")
     return manifest
+
+
+RADIO_LANGUAGE = re.compile(
+    r'(?im)^[ \t]*objectTemplate\.(create|setRadioLanguage)[ \t]+(?:\S+[ \t]+)?"?([^"\s]+)"?')
+
+
+def soldier_languages(pool: ArchivePool, written: set[str]) -> dict[str, str]:
+    """Soldier template (lowercased) -> the voice folder its side speaks from.
+
+    `@Language` in `Sound/@RTD/@Language/` is the soldier's own
+    `ObjectTemplate.setRadioLanguage`, not the side's flag: Desert Combat flies
+    Iraq's flag in the German slot, so a side's flag nation would hand the
+    Iraqi side German lines. Only folders this run wrote are named; a soldier
+    whose tongue has none is left out and the viewer keeps its flag nation.
+    """
+    out: dict[str, str] = {}
+    for name in pool.names():
+        low = name.lower()
+        if not (low.startswith("objects/soldiers/") and low.endswith(".con")):
+            continue
+        data = pool.try_read(name)
+        if not data:
+            continue
+        soldier = None
+        for match in RADIO_LANGUAGE.finditer(data.decode("latin-1")):
+            if match.group(1).lower() == "create":
+                soldier = match.group(2)
+            elif soldier:
+                folder = LANGUAGE_NATIONS.get(match.group(2))
+                if folder in written:
+                    out[soldier.lower()] = folder
+    return dict(sorted(out.items()))
 
 
 # ------------------------------------------------------------------ chat log

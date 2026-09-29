@@ -895,7 +895,7 @@ export function createPageAudio(page) {
 
   /** The local soldier's side, as a voice folder. */
   function localNation() {
-    return page.teamNation?.(page.deployTeamId) ?? null;
+    return (page.teamVoice ?? page.teamNation)?.(page.deployTeamId) ?? null;
   }
 
   async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined) {
