@@ -313,3 +313,15 @@ the vanilla armies it inherits (DC and DC Final until 2026-09-30):
   <tree>` binds kits only on the levels the tree bakes. Without `--maps` the
   inherited vanilla levels bind their British, German and Japanese kits and
   the kits page lists them as the mod's.
+- `python3 extract_loadouts.py --mod <Mod> --out maps/mods/<id>/_shared/loadouts.json`
+  writes what each level deals each side. Kits a level declares in its own
+  archive count (DC Final's `US_AA2`, `Iraq_AA2`, `Iraq_Assault2`), and each
+  level is read from its root `Init.con`, the one the engine runs
+  (DC_Coastal_Hammer's `CustomObjects/INIT.con` binds nothing).
+- `python3 extract_vehicle_ai.py --mod <Mod> --out maps/mods/<id>/_shared/vehicle-ai.json`.
+  Without it no bot boards a vehicle or fixed gun on the mod's levels. It
+  reads the whole mod chain and each level's own boardable units (DC's
+  Urban Siege `Nimitz@DC_Urban_Siege`).
+- `python3 extract_tree_billboards.py --mod <Mod> --out maps/mods/<id>/_shared`
+  writes `trees.json` and `trees/`, the cards distant trees are drawn as.
+  DC and DC Final ship no tree meshes, so theirs are vanilla's strips.

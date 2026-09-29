@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout, collect, parse_level_kits  # noqa: E402
-from extract_loadouts import build_manifest  # noqa: E402
+from extract_loadouts import build_manifest, read_chain  # noqa: E402
 
 
 class LoadoutManifestTests(unittest.TestCase):
@@ -305,6 +307,58 @@ ObjectTemplate.create HandFireArms Parachute
         self.assertEqual("Weapon/Icon_alliesKnife.tga", weapons[0]["icon"])
         self.assertIsNone(weapons[1]["icon"])
         self.assertIsNone(weapons[4]["icon"])
+
+
+def _fake_archives(content: dict[str, dict[str, bytes]]):
+    """A stand-in for `RfaArchive` keyed by filename (as `tests/test_kit.py`)."""
+    class _FakeArchive:
+        def __init__(self, path: Path) -> None:
+            self._payloads = content.get(path.name, {})
+            self.entries = list(self._payloads)
+
+        def read(self, name: str) -> bytes:
+            return self._payloads[name]
+
+    return _FakeArchive
+
+
+class LevelDeclaredKitTests(unittest.TestCase):
+    """A kit only a level's own archive declares is bound like any other.
+
+    DC Final's DC_First_Light binds `Iraq_AA2`/`US_AA2` to slot 0 and
+    declares both in `bf1942/levels/DC_First_Light/objects/AntiAir2/`; read
+    from `Objects.rfa` alone, the slot named a kit the file did not list and
+    the page dealt its fallback instead.
+    """
+
+    def test_the_levels_own_kit_is_listed_with_its_primary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "M"
+            levels = mod / "Archives" / "bf1942" / "levels"
+            levels.mkdir(parents=True)
+            (mod / "Archives" / "objects.rfa").touch()
+            (levels / "L.rfa").touch()
+            content = {
+                "objects.rfa": {
+                    "Objects/HandWeapons/Stinger/Objects.con":
+                        b"ObjectTemplate.create HandFireArms Stinger\n"
+                        b"ObjectTemplate.itemIndex 3\n",
+                },
+                "L.rfa": {
+                    "bf1942/levels/L/Init.con":
+                        b"game.setTeamSkin 2 USSoldier\n"
+                        b"game.setKit 2 0 US_AA2\n",
+                    "bf1942/levels/L/objects/AntiAir2/Objects.con":
+                        b"ObjectTemplate.create Kit US_AA2\n"
+                        b"ObjectTemplate.setType AT\n"
+                        b"ObjectTemplate.addTemplate Stinger\n",
+                },
+            }
+            with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+                library, loadouts = read_chain([mod])
+            manifest = build_manifest(library, collect(library), loadouts, "M")
+        self.assertEqual("US_AA2", manifest["levels"]["l"]["2"]["slots"]["0"])
+        self.assertEqual("Stinger", manifest["kits"]["US_AA2"]["primary"])
 
 
 if __name__ == "__main__":
