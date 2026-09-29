@@ -76,6 +76,25 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual(view["thrownMoved"], 0)
         self.assertEqual(view["sight"], {"kind": "foot", "nid": 50, "looking": False})
 
+    def test_lying_on_a_slope_the_view_is_on_his_bodys_own_axes(self) -> None:
+        # The owner's report (2026-09-29): at 35:20 of replay_20260928-161948
+        # Instant Replay shoots env()->Amsterdam lying down, and his first
+        # person looks at the sky. His body lay on 27 degrees of downhill and
+        # his aim is off the slope, not the level.
+        prone = self.results["prone"]
+        self.assertEqual(prone["alone"], {"pitch": -6.212, "off": 0},
+                         "the records alone put the view on the round, 6 degrees down")
+        self.assertEqual(prone["atRound"], 0)
+        self.assertEqual(prone["roundPitch"], -6.212)
+        self.assertGreater(prone["levelOff"], 28, "read off the level, the view was 28 degrees into the sky")
+        self.assertGreater(abs(prone["roll"]), 10, "rolled with the slope across him, as the game's view is")
+        self.assertEqual(prone["eyeOff"], 0, "the eye is 0.7 m down his body's up, where his round left")
+
+    def test_the_eye_travels_between_stances_as_the_engine_moves_it(self) -> None:
+        # 0.65 standing, -0.7 lying; the running dive takes 0.282 s down, a
+        # get-up from lying 0.115 s (soldier.js STANCE_TRANSITION).
+        self.assertEqual(self.results["prone"]["lift"], [0.65, 0.65, -0.025, -0.7, -0.7, -0.7, -0.025, 0.65])
+
     def test_the_weapon_in_his_hands_is_the_kit_item_he_holds(self) -> None:
         self.assertEqual(self.results["held"], ["Bar1918", "GrenadeAllies"])
 

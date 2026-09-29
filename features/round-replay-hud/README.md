@@ -43,6 +43,42 @@ to be the player's own. Two changes to `replay-camera.js` make it so:
 When the viewer drags the first-person view off his aim, the cross goes away,
 because the centre is no longer where he looked.
 
+### Lying down, the view is on his body
+
+Reported the same day: "when players go prone and you're watching fpv, the
+cross hair is way off where they were actually shooting. At 35:20 'Instant
+Replay' is shooting at env()->Amsterdam while prone. Their FPV is shooting at
+the sky." (`replay_20260928-161948`.)
+
+A prone soldier's recorded rotation lies along the ground under him. From
+35:24 Instant Replay lay on 27 degrees of downhill, rolled 15 across it, with
+8.7 recorded degrees of aim pitch. The view took only the rotation's heading
+and put the aim pitch on the level, 21.8 degrees up, while his rounds left 6
+below it. That is 28 degrees too high, past the 20 degree limit for laying
+the view on a round, so nothing corrected it.
+
+The twist and the pitch are turns in the body's own frame, and the eye is the
+template's camera offset along the body's up (`eyeAim`, `viewQuaternion`,
+replay-recording.js `eyeLiftAt`). Standing and crouched, the body is upright
+and nothing changes. Over 1,804 rounds fired prone in seven recordings, the
+view from the records alone is 0.22 degrees from them at the median and 1.2
+at the 90th percentile; read off the level it was 3.7 and 12.5. The eye is
+7 mm from where his rounds left (1,098 rounds lying on more than 5 degrees),
+against 12 cm for 0.7 m straight down.
+
+Lying across a slope, the view rolls with him, as the game's does: the
+camera is a child of the soldier (`M` in
+`handweapon-view-and-deviation.md` §3), and the rounds say so. On 480 prone
+rounds with more than 8 degrees of roll, more than half are exactly the
+rolled body's composition (the client works a remote soldier's shot out of
+the same replicated values), and with the roll taken out they are 3.3
+degrees off at the median. The eye moves between stances as the page's own
+soldier's does: the running dive to the ground takes 0.28 s, standing up
+from lying 0.115 s (soldier.js `STANCE_TRANSITION`).
+
+At the kill, 35:26, the view was 30 degrees above his round and is now 0.04
+degrees from it, with env()->Amsterdam under the cross, 102 m off.
+
 ## What each part of the HUD comes from
 
 | part | source | |
@@ -62,8 +98,9 @@ because the centre is no longer where he looked.
 - `viewer/replay-hud.js`: the state (`heldWeapon`, `weaponEvents`, `handAmmoAt`,
   `settleTime`, `spreadAt`, `gunStateAt`), the feed into `gameHud.vars`, and
   `crosshairAim`.
-- `viewer/replay-camera.js`: `eyeAim`, `viewOf`, `shotFix`, `roundAxes`, and
-  `sight` (what the first person looks out of).
+- `viewer/replay-camera.js`: `eyeAim`, `viewQuaternion`, `viewOf`, `shotFix`,
+  `roundAxes`, and `sight` (what the first person looks out of).
+- `viewer/replay-recording.js`: `eyeLiftAt`, the eye along the body's up.
 - `viewer/soldier-hud.js`: `writeSoldierAmmo`, the ammo panel shared with the
   page's own soldier.
 - `viewer/vehicle-hud.js`: `crosshairAim` asks the replay first (`replayAim`),
@@ -92,6 +129,14 @@ because the centre is no longer where he looked.
   Prone at 217.6 s: the cross closed. The grenade at 73 s: the `hk` icon, 2
   left. The KettenKrad's MG seat at 248 s: the KettenKrad's icon at 23/50,
   462 rounds, the cross. The Bofors at 101 s: no HUD cross. The orbit: nothing.
+
+The prone view (`tests/test_replay_hud.py`): a soldier lying on 27 degrees
+rolled 15, whose view from the records alone is on his round with the eye
+where it left, the old level reading 28 degrees off, and the eye across a
+dive and a get-up.
+
+Headless on `replay_20260928-161948`: at the kill (35:26) the view is 0.04
+degrees from his round and env()->Amsterdam is under the cross.
 
 ## Zoom is in every recording already
 

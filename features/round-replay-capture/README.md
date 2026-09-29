@@ -1132,6 +1132,18 @@ Two readings from the same file:
   twist at the median (135 rounds with a twist over a degree), and the pitch
   2.50 times (1,165 rounds). The replay's first person uses both
   (`round-replay-hud`).
+- Both are turns in the soldier's own frame, which lying down is the slope
+  (2026-09-29). A prone soldier's recorded rotation is tilted with the
+  ground under him (27 degrees nose-down and 15 rolled at 35:24 of
+  replay_20260928-161948), and over 1,804 prone rounds of seven recordings
+  the twist and pitch are -3.00 and 2.50 of the round's turn off that tilted
+  body, not off the level. On a side slope of more than 8 degrees the round
+  is exactly the body frame's composition for more than half of the 480 rounds
+  (the client works a remote soldier's shot out of the same replicated
+  values), and 3.3 degrees off (7.3 at the 90th percentile) with the roll
+  taken out. His rounds leave from his origin plus `setPoseCameraPos` along
+  the body's up: 7 mm at the median over 1,098 rounds lying on more than 5
+  degrees, against 12 cm straight down.
 - The Engine's `+0x124` (`g`'s third field) is in the template's own units,
   since `Engine::handleUpdate`'s T1 is it over `maxRotation.z`: -4000 to 5000
   on the planes and boats here, -1 to 1 on the land hulls. The viewer does not
