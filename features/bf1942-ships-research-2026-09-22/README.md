@@ -3,6 +3,11 @@
 Stream **W6-E** of the parity round, research only. Nothing outside this folder
 was changed.
 
+*Added 2026-09-29: a second reader re-derived this report in
+[VERDICT.md](VERDICT.md). It confirms most claims and corrects several, and it
+reverses SHIP-7: a submarine does not sink without limit. Read the two
+together.*
+
 The owner's three reports, in one sentence each:
 
 1. **Destroyers sit too high — the propeller shows.** Two separate causes, and
@@ -474,6 +479,12 @@ matter for behaviour: `spawnObject` only ever tests the byte against zero, so
 `1` and a hypothetically-stored `2` are the same, and a failed parse is at worst
 the same as `0`.
 
+*Added 2026-09-29: two other folders touch this parse.
+[teamonvehicle-is-a-bool](../teamonvehicle-is-a-bool/README.md) reads `2` as
+true in the extractor, and
+[vehicle-entry-team-rule](../vehicle-entry-team-rule/README.md) leaves the
+stamp unmodelled. Each now points back here.*
+
 ### 4.2 What `spawnObject` actually does
 
 Server `0x083140a0`; client `FUN_00546f90` is the same function instruction for
@@ -692,6 +703,11 @@ ObjectTemplate.setFloatMinLift 0.8275
 | ~1.5 … ~2.8 | between | between | a trimmed equilibrium exists, `(−f)` from 0.754 to 1.0 |
 | > ~2.8 | 0 | `floatMinLift` 0.8275 | `8 × 1 × 0.8275 × 1.49995 = 9.93 m/s² < 14.73` — **buoyancy can never cancel gravity, the boat sinks without limit** |
 
+*Corrected 2026-09-29: this last row is refuted in §2.1 of
+[VERDICT.md](VERDICT.md). `t` is computed from the unclamped `f`, so lift
+recovers as the boat goes deeper, and a submerged boat settles at
+`depth = angle_Y + 0.5` m, stable.*
+
 So: pitch-down winds the angle up at 2 units/s (accel 1), the boat loses lift
 and goes down; pitch-up unwinds it (there is no `automaticReset`, so the plane
 of trim stays where you leave it — `setMinRotation 0/0/0` also means the angle
@@ -803,7 +819,7 @@ the `ObjectSpawner` rows into the existing spawner/seat area.
 | SHIP-4 | (new) `sinkingSpeedMod` is a sink velocity | — | **confirmed as something else** | It is a per-node multiplier on a **waterline-rise rate**. `FloatingBundle::handleMessage` `0x082402b0`, the field's only reader (`fmul [edx+0x1c4]` at `0x08240551`), on TemplateMessage **`0x14`** (critical damage, `Armor::status` `0x08173ad6`) and gated on `Armor::isSendingMessage()` (vtable `+0x94`, `0x081741c0`): `node+0xb0 = (q + 0.1)·0.05·sinkingSpeedMod` with `q = clamp((2R + Δz + Δx)/(4R), 0, 1)`, `R` the hull's bounding radius and `Δ` the node's offset from the hull centre. `updatePhysics` then does `sinkOffset += rate` every tick and wakes the hull. So a ship starts sinking at `criticalDamage`, not at death, and goes down by one end because `q` differs per node |
 | SHIP-5 | (new) Buoyancy sees a wave surface | — | **refuted** | `PatchTerrain::getWaterLevel(float, float)` `0x083d7a80` is `return *(float*)(this+0x30)` — it discards `x` and `z` and returns the level's single `GeometryTemplate.waterLevel`. `WaterPatch::getWaterLevel(x,y,z)` `0x083d9700` does add `waterWave()` `0x083d98d0`, but nothing on the physics path calls it. Ships do not bob |
 | SHIP-6 | A ship's helm has no engine law, so it must stay a passenger seat | [seats.js:186-196](../../tools/bf1942-models/viewer/seats.js#L186) | **refuted** | `c_ETShip = 9` sets bits 0 and 3 of `engineType`, so `PhysicsEngine::updatePhysics` `0x0824cbb0` runs the **same** thrust body an aircraft does (`rho`, the signed-square `K`, `getCurrentRatio()`, force at the engine node). Bit 3 adds the ship's own water rule, read at `0x0824cc89`/`0x0824d047`: screw **below** the waterline → thrust runs; screw **above** it and `|throttle| > 0.02` → thrust is skipped and the stored throttle is **pinned to 1.0**. A plane (bit 3 clear) gets the mirror: an engine below the waterline has its throttle **zeroed**. `setTorque` remains the sound (physics.md §5); ratio is `3.5·setDifferential/0.94`, so Fletcher 7.447 |
-| SHIP-7 | (new) A submarine needs a bespoke dive law | — | **confirmed as the same law** | `GatoFloater`/`Sub7C_Floater` are the only vanilla `FloatingBundle`s with `maxRotation.y != 0`. `FloatingBundle::handleUpdate` `0x08240180` calls `RotationalBundle::calculateAndClipAngle(axis 1)` — gated on `maxRotation.y > 0`, `0x082401cd` — and writes `node+0xa0 = −angle[1]` (`+0x144 = +0x108 ^ 0x80000000`). That angle is SHIP-1's `t` term, so `angle_Y` from 0 to 50 walks the lift from `floatMaxLift 1.6275` down to `floatMinLift 0.8275`; at minLift `8·1·0.8275·1.49995 = 9.93 m/s² < 14.73`, and since `f` is clamped at −1 buoyancy can never cancel gravity — the boat sinks without limit. `setMinRotation 0/0/0` and the commented-out `setAutomaticReset` are why trim is one-directional and sticky. The angle is in degrees and is subtracted from a metre-valued depth; the `[0,1]` clamp hides it |
+| SHIP-7 | (new) A submarine needs a bespoke dive law | — | **confirmed as the same law** | `GatoFloater`/`Sub7C_Floater` are the only vanilla `FloatingBundle`s with `maxRotation.y != 0`. `FloatingBundle::handleUpdate` `0x08240180` calls `RotationalBundle::calculateAndClipAngle(axis 1)` — gated on `maxRotation.y > 0`, `0x082401cd` — and writes `node+0xa0 = −angle[1]` (`+0x144 = +0x108 ^ 0x80000000`). That angle is SHIP-1's `t` term, so `angle_Y` from 0 to 50 walks the lift from `floatMaxLift 1.6275` down to `floatMinLift 0.8275`; at minLift `8·1·0.8275·1.49995 = 9.93 m/s² < 14.73`, and since `f` is clamped at −1 buoyancy can never cancel gravity — the boat sinks without limit. `setMinRotation 0/0/0` and the commented-out `setAutomaticReset` are why trim is one-directional and sticky. The angle is in degrees and is subtracted from a metre-valued depth; the `[0,1]` clamp hides it. *Corrected 2026-09-29: [VERDICT.md](VERDICT.md) refutes the sinking and the claim that these are the only two, in its SHIP-7 row and §2.1. The angle is a depth setpoint.* |
 | SPAWN-1 | `teamOnVehicle` names the team whose `setObjectTemplate` entry the spawner uses, overriding the instance's `Object.setTeam` | [level.py:1309-1312](../../tools/bf1942-models/bf42/level.py#L1309), [level.py:1355-1356](../../tools/bf1942-models/bf42/level.py#L1355) | **refuted** | It is a **bool** in one byte — `ObjectSpawnerTemplate+0x185` (*client* `+0x249`), default 0 in both ctors (`0x08314a70`, *client* `FUN_00547c90`). Three proofs: `makeScript` `0x08314f70` prints the literal `"ObjectTemplate.teamOnVehicle 1"` (`0x086e15e0`) with no value `<<`; the console property registered at `0x082a8932` is `ConsoleClass437` (vptr `0x8736fa8`), whose `checkObjectRange(bool)` types it and whose `setArgFromString` `0x082e9780` parses with `std::istream::operator>>(bool&)`; and `ObjectSpawner::spawnObject` `0x083140a0` (*client* `FUN_00546f90`) only tests it against zero. Its whole effect is `pco->setTeam(spawner.mTeam)` (`IPlayerControlObject` iface `+0x6c`, `PlayerControlObject::setTeam` `0x0831a5f0` → `+0x170`, `++0x174`) — vehicle **ownership**, which is what `validateBFEntryPoint` reads. Survey of 18 installs: `1` ×11351, `0` ×21998, `2` ×242 (all modder cargo-cult, e.g. `mobileaaUSspawner`), `1z` ×1 |
 | SPAWN-2 | (new) What selects the `setObjectTemplate <n>` entry | [level.py:1357-1359](../../tools/bf1942-models/bf42/level.py#L1357) | **confirmed** | The spawner's own live team, `ObjectSpawner+0x134` (*client* `+0x154`), used as the `std::map<uint, IObjectTemplate*>` key at the top of `spawnObject`. Seeded by the ctor `0x08312910` from `ObjectSpawnerTemplate+0x15c` = `ObjectTemplate.team` (default 0), and written **only** by `ObjectSpawner::setTeam(int)` `0x08313810`, whose three callers in the whole image are `ControlPoint::CPEnable` `0x082840e0`, `ControlPoint::CPDisable` `0x08284200`, and the instance console property's `executeObjectMethod` `0x082b5be0` — the path a level's `Object.setTeam` takes. A key with no map entry returns −1 and spawns **nothing**; our `vehicles[2] or vehicles[1]` fallback is a deliberate divergence |
 | SPAWN-3 | (new) A spawned object's position | [extract_map.py:1856](../../tools/bf1942-models/extract_map.py#L1856) | **confirmed** | `spawnObject` places it at `spawner.getAbsolutePosition() + spawnOffset`, where `spawnOffset` is `ObjectSpawner+0x150/0x154/0x158` copied by the ctor from `ObjectSpawnerTemplate+0x174/0x178/0x17c`, default `0/0/0`. Rotation is `getRotation(spawner.getAbsoluteTransformation())`. No vanilla ship spawner authors `spawnOffset`, so ship position **is** spawner position |

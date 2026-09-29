@@ -9,7 +9,8 @@ merged as `67c12cb` — framed an empty point in space, and were gated off behin
 
 There is a man there now.
 
-Branch: `worktree-agent-af3de668a9c59003b`. Commits:
+On main since 2026-09-22, merged in `a60b2608`. This line used to give only
+the branch, `worktree-agent-af3de668a9c59003b`. Commits:
 
 | commit | what |
 |---|---|
@@ -17,6 +18,10 @@ Branch: `worktree-agent-af3de668a9c59003b`. Commits:
 | `4d2fe98` | the viewer: `soldier-body.js`, `map.html`'s body and canopy, `?soldier3p=1` off |
 | `74544d6` | the canopy's framing, measured on the first frame ever taken of one |
 | `5904a7b` | the revert flag really reverts; the death cam keeps its nothing |
+
+*Added 2026-09-29: §7 of [viewer-parachute](../viewer-parachute/README.md) had
+listed the third-person parachute animation as not done. It now carries a note
+pointing here.*
 
 ---
 

@@ -162,6 +162,11 @@ max players / 16. The bot count plays no part. `GameServer::setNumberOfTicketPer
 count against, and halves it before multiplying; the rest of its formula is not
 traced. (`measured`; the formula `inferred`.)
 
+*Corrected 2026-09-29: `setNumberOfTicketPerPlayer` is not where the scaling
+happens. Ledger TKT-7 reads it and finds no mode script in the 16 installs
+calls it. The round start scales the count itself, TKT-1, by the server's max
+players, TKT-2.*
+
 It also shows which script coop runs: 200 / 200 is the root `Coop.con` in
 `wake_003.rfa` (100 / 100), not `GameTypes/Coop.con` in `wake.rfa` (140 / 100),
 which would give 280 / 200.
@@ -170,6 +175,11 @@ The viewer (`round-state.js`) starts a round at the level's value unscaled,
 and for Wake CoOp it reads `GameTypes/Coop.con`: 140 / 100 where the game
 starts a 32-player server at 200 / 200. That is two parity items: the
 max-player scaling, and which script supplies coop's tickets. Neither is fixed.
+
+*Corrected 2026-09-29: both are fixed. Since 490e8663 on 2026-09-27
+`round-state.js` scales the starting counts and the bleed by max players over
+16, ledger TKT-1, TKT-2 and TKT-4, and since 6f57df21 the same day the
+extractor reads the root mode script, TKT-3.*
 
 ## Capture sources
 

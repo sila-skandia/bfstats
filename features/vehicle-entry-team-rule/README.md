@@ -68,5 +68,11 @@ This line used to give only the branch, `fix/seats`. Ledger SEAT-26..SEAT-29
   re-extraction and a per-root team that outlives the instance.
 - `teamOnVehicle 2`'s bool parse is unread. With a stamp modelled, the engine's
   bots would walk to an empty locked enemy hull and be refused (its own stall).
+  *Added 2026-09-29: §4.1 of
+  [the ships research](../bf1942-ships-research-2026-09-22/README.md) read the
+  parse as `operator>>(bool&)`, under which `2` is not a valid token and the
+  parse fails. The byte it then leaves is still unread, its §7 says, and
+  [teamonvehicle-is-a-bool](../teamonvehicle-is-a-bool/README.md) reads `2` as
+  true in the extractor.*
 - `remoteCrewTeam` (client, rooms) was not exercised live; the room server
   still does not check a held seat (older gap).
