@@ -183,7 +183,8 @@ database.
 
 ## Conventions
 
-- When we document our decisions or iterate on a design, we store the outcomes / tasklist / progress in a markdown file in `features/<feature-name>` where feature name is a brief descriptive name of the feature separated by hyphens
+- When we document our decisions or iterate on a design, we store the outcomes / tasklist / progress in a markdown file in `features/<feature-name>` where feature name is a brief descriptive name of the feature separated by hyphens. A new folder also gets its line in `features/README.md`, and a unit test fails until it has one.
+- The `bf1942-knowledge` skill maps how retail BF1942 behaves to where the repo records it: the ledger rows, subsystem notes and feature folders for each topic, and which copy wins when they disagree. Load it before researching or building anything that depends on the real game.
 - Use the latest C# language features, e.g. primary constructors, collection expressions Tiers = ["bronze"] instead of Tiers = new[] { "bronze" }, and other features like range expressions and pattern matching.
 - Use record types for DTOs and data structures that are primarily data carriers.
 - All timestamp properties use NodaTime Instant type—must configure HasConversion() in OnModelCreating() with InstantPattern.ExtendedIso for EF Core mapping.
