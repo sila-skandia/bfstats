@@ -657,7 +657,7 @@ The other three mechanisms, in descending order of how much they matter:
 
 *Corrected 2026-09-29: `.baf` clips are not for soldiers only. The flags in
 every level scene play a 49-frame skinned `.baf`, and the 20-bone flag clips
-are among the 1,154 ([`parity-audit/animation.md`](parity-audit/animation.md)).*
+are among the 1,154, see [`parity-audit/animation.md`](parity-audit/animation.md).*
 
 `addSkeletonIK Bip01_R_Hand ...` is the join between the two worlds: the vehicle
 animates itself, the soldier is animated by clips, and IK pins their hands to the
@@ -948,10 +948,10 @@ the Build and Skin comparison explicit.
 
 *Corrected 2026-09-29: the `.baf` playback and vehicle IK below, and the
 collision damage under "Requires deep dive", have since been built. The viewer
-plays `.baf` clips in first person
-([`viewmodel-anim.js`](../../tools/bf1942-models/viewer/viewmodel-anim.js))
-and third person
-([`soldier-body.js`](../../tools/bf1942-models/viewer/soldier-body.js)),
+plays `.baf` clips in first person in
+[`viewmodel-anim.js`](../../tools/bf1942-models/viewer/viewmodel-anim.js)
+and in third person in
+[`soldier-body.js`](../../tools/bf1942-models/viewer/soldier-body.js),
 [`seat-ik.js`](../../tools/bf1942-models/viewer/seat-ik.js) applies
 `addSkeletonIK` to a seated occupant, and
 [`crash-damage.js`](../../tools/bf1942-models/viewer/crash-damage.js) charges
