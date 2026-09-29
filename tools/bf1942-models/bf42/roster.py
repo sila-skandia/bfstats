@@ -75,6 +75,8 @@ NATION_LABELS = {
     "navyseals": "Navy SEALs",
     "pathetlaos": "Pathet Lao",
     "rambo": "Rambo",
+    # Desert Combat: `IraqKit` / `Iraqkit` and `IraqSoldier`.
+    "iraq": "Iraqi",
     "auss": "Australian",
     "australian": "Australian",
     "dutch": "Dutch",
