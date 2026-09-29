@@ -519,6 +519,11 @@ subshader "1P_Katyusha_M1_Material1" "StandardMesh/Default"
 }
 ```
 
+*Corrected 2026-09-29: B2 has since been built, see
+[envmap-materials.md](../envmap-materials.md). That doc's census counts 435
+`.rs` files of 1,760 and the [ledger](../../bf1942-engine-reference/ledger.md)
+says 338 materials, and none of the three counts has been re-run to settle them.*
+
 The cubemap source is bound per level:
 `ShaderManager.setTextureParam envmap bf1942\levels\Tobruk\Textures\ENVMAP_G_.rcm`
 (23/23 levels), and `extract_map.py` already exports the six faces

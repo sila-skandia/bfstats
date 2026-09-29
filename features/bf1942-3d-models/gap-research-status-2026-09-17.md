@@ -1,4 +1,13 @@
-# Gap research status — live open/closed/partial matrix
+# Gap research status: an open/closed/partial matrix, a snapshot of 2026-09-17
+
+*Corrected 2026-09-29: this title used to call the matrix live, and it is a
+snapshot. Building ambience, envmap materials, tickets, non-Conquest modes and
+the vehicle muzzle bake, which rows 11 and 15 and the priorities below still
+list as open, have all shipped since: see
+[building-ambience.md](building-ambience.md),
+[envmap-materials.md](envmap-materials.md), [tickets-hud.md](tickets-hud.md),
+[game-modes.md](game-modes.md) and
+[vehicle-emitter-bake.md](vehicle-emitter-bake.md).*
 
 Date: 2026-09-17. Verify-only audit against current `tools/bf1942-models`
 code and extracted viewer trees. Sources: `parity-gaps.md`,
@@ -28,6 +37,10 @@ viewer), not "a comment exists somewhere".
 
 ## Emitter note (from [Emitter coverage](586b4d3e-c619-44a7-a5e0-b7a84f68cd40))
 
+*Corrected 2026-09-29: the link above is an agent transcript id, not a file in
+this repo. The emitter findings are in
+[gap-research-emitters-2026-09-17.md](gap-research-emitters-2026-09-17.md).*
+
 Parity “intensity unparsed / 80% missing” is stale. Empty-bundle count is the
 vehicle BMOne bake filter (~101/215), not missing rate fields. Impact path via
 `effects.glb` only leaves ~23 empty. Extra props mapped this pass:
@@ -42,6 +55,9 @@ vehicle BMOne bake filter (~101/215), not missing rate fields. Impact path via
 - Fog: do **not** re-open as "missed live spellings" — dead words must stay ignored.
 
 ## Top remaining priorities
+
+*Corrected 2026-09-29: items 1 to 4 and 7 have shipped, see the note at the
+top.*
 
 1. **Static building ambience (G9)** — follow `loadSoundScript` on placed sounding buildings into `sounds.areas`.
 2. **`envmap true` materials** — parse in `rs.py` and bind the already-exported cubemap to glass.
