@@ -47,6 +47,8 @@ replay M opens the battle map instead.
 `tools/bf1942-models/tests/test_replay_minimap.py` (node harness
 `replay_minimap_harness.mjs`) covers a small recording at one moment with
 each camera, plus the Bocage round when it is on disk. That round shows both
-sides at 60, 120, 240 and 400 s, and it takes 1 ms per call at worst. The
+sides at 60, 120, 240 and 400 s. A call takes 0.4 ms at the median over 40
+moments. The test bounds the median at one 60 fps frame, not the worst call:
+an 8 ms bound on the worst call failed under load (load average 25). The
 page caches the marks per clock, camera and built-hull count, so the map's
 repaint key costs one call a frame.
