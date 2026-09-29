@@ -2982,4 +2982,7 @@ def write_skybox(files, out_dir: Path) -> list[str] | None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Every glb this wrote moves its textures into the shared store
+    # (optimise_mesh.py, features/mesh-asset-size); `--no-optimise` opts out.
+    from optimise_mesh import run_then_optimise
+    raise SystemExit(run_then_optimise(main, Path(__file__).resolve().parent / "viewer" / "maps"))

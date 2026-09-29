@@ -64,6 +64,7 @@ import gzip
 import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import threading
@@ -272,6 +273,8 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
               f"{' (--hash-remote checks them)' if unverified else ''}", flush=True)
         if not dry_run:
             hashes.save()
+    if not texture_check(base, [r for r in send if r.endswith(".glb")], tree):
+        return False
     if list_files:
         for rel in sorted(send, key=rank):
             print(f"  {rel}")
@@ -344,6 +347,43 @@ def publish(volume, tree: str, streams: int, dry_run: bool, *,
         return False
     state.unlink(missing_ok=True)
     print(f"{tree}: published in {(time.time() - started) / 60:.0f} min")
+    return True
+
+
+def glb_images(path: Path) -> list[dict]:
+    with open(path, "rb") as handle:
+        head = handle.read(20)
+        if len(head) < 20 or head[:4] != b"glTF":
+            return []
+        length = struct.unpack_from("<I", head, 12)[0]
+        return json.loads(handle.read(length)).get("images", [])
+
+
+def texture_check(base: Path, glbs: list[str], tree: str) -> bool:
+    """Every texture a glb about to go points at is in the local store (a glb
+    whose texture never lands draws untextured), and say how many still carry
+    their textures inside (a bake that skipped optimise_mesh.py)."""
+    missing: list[str] = []
+    embedded = 0
+    for rel in glbs:
+        path = base / rel
+        images = glb_images(path)
+        if any("bufferView" in image for image in images):
+            embedded += 1
+        for image in images:
+            uri = image.get("uri")
+            if uri and not uri.startswith("data:") and not (path.parent / uri).is_file():
+                missing.append(f"{rel} -> {uri}")
+    if embedded:
+        print(f"{tree}: {embedded} of the glbs to send still embed their textures; "
+              "run tools/bf1942-models/optimise_mesh.py over them first unless that is "
+              "meant (a mod tree left as it was)", flush=True)
+    if missing:
+        print(f"{tree}: {len(missing)} textures the glbs point at are not in the local "
+              "store; nothing sent:", flush=True)
+        for row in missing[:20]:
+            print(f"  {row}")
+        return False
     return True
 
 
