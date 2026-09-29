@@ -1,6 +1,8 @@
 shots*/
 viewer/models
 viewer/maps
+# The texture store the glbs point at (features/mesh-asset-size).
+viewer/textures
 out*/
 __pycache__/
 viewer/replays

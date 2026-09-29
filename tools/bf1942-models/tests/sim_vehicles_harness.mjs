@@ -56,7 +56,10 @@ async function realWreckLoader() {
     async loadAsync(url) {
       const name = path.basename(String(url).split('?')[0]);
       const buf = await fs.readFile(path.join(dir, name));
-      const data = stripTextures(buf).buffer.slice(0);
+      // The glb's own bytes, not the Buffer's backing store: a Buffer under
+      // 4 KB is a view into Node's shared pool, at an offset.
+      const stripped = stripTextures(buf);
+      const data = stripped.buffer.slice(stripped.byteOffset, stripped.byteOffset + stripped.byteLength);
       return await new Promise((resolve, reject) => new GLTFLoader().parse(data, '', resolve, reject));
     },
   };
