@@ -603,6 +603,29 @@ What the screen does when the local player is hurt: the whole frame washes red a
 
 ---
 
+## The sniper scope overlay (2026-09-16; built 2026-09-17; whether the square scope art is letterboxed stays open)
+
+What retail draws when a scoped rifle or the binoculars zoom — the blackout,
+the circle, the sight lines — and the variables that switch it. Read for defect
+D4 of the viewer fidelity round, where the page drew no overlay at all: report
+[`R5-sniper-scope-overlay.md`](../mesh-viewer-fidelity-defects/reports/R5-sniper-scope-overlay.md),
+every claim re-derived by its verifier
+[`V-R5-sniper-scope-overlay.md`](../mesh-viewer-fidelity-defects/reports/V-R5-sniper-scope-overlay.md)
+(12 confirmed, 2 corrected, none refuted). Built 2026-09-17 (`471ced32`); the
+page's writes now live in `viewer/soldier-hud.js`. The `CrossHair` group's
+fields are XHIT-10's and the region's periscope gate is VHUD-5's. Addresses are
+the client's (`BF1942.exe`, the bridge's hash MATCH).
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| SCOPE-1 | **`CrossHair/ScopeIndex` is a 0/1 overlay switch, not a texture slot.** `FireArms::setZoom` writes 1 through the HUD's `0x006a9b20` when the weapon's `useScope` is set and 0 on unzoom; which art the overlay draws is the `ScopeIcon` string | **confirmed** (2026-09-16) | `setZoom` `0x005391b0`: the template at `this+0x4c`, `useScope` at its `+0x3d8` (`0x00539233`; `makeScript`'s frame is 4 bytes lower, VIEW-10); zooming does `mov ecx,[0xa5f1a8]; push 1; call 0x6a9b20`, unzooming `push 0`. `0x006a9b20` stores the dword at `CrossHair+0x30` through both the soldier HUD's and the ammo HUD's CrossHair pointers. The only other writer, the generic setter `0x006a9750`, is called at `0x006adbda` and `0x006aeb9c` (the per-frame HUD path around `0x006ad0a0`) and twice from `0x006d4b50`, always with 0 (V-R5 corrected R5's "one caller"; no path writes 2 or more). The zoom key is soldier input bit `0x20` → `setZoom(1/0)` (`0x004f76d0`), and the `UnZoomBetweenFireTime` path's `setZoom(0)` (`0x00539c80`) clears the overlay with the zoom (ZOOM-2, ZOOM-3) |
+| SCOPE-2 | **The weapon's scope words reach the HUD through one sync**, which copies `CrossHairType` ← template `+0x474`, `CrossHairIcon` ← `+0x478`, `ScopeIcon` ← `+0x494`, `SightIcon` ← `+0x4b0`, `SniperSight` ← `+0x4cc` | **confirmed** (2026-09-16) | `0x006e9dd0`, called from the soldier HUD's feed `0x006e9690` at `0x006e96d0` with `ecx = SoldierHud+0xc` (the CrossHair group) and the weapon's template (`FireArms+0x4c`). The `.con` words are `useScope`, `setSniperSight`, `setScopeIcon` and `setSightIcon` (property ctors `0x004d2d50`, `0x004d3970`, `0x004d34d0`, `0x004d3720`). The group (ctor `0x006e9d30`, `registerVariables` `0x006e9a60`, at `+0x1c` of the HUD singleton `DAT_00a5f1a8`): `ShowCrossHair` `+0x08` = 1, `CrossHairType` `+0x0c`, `CrossHairIcon` `+0x10` (handle `+0x2c`), `ScopeIndex` `+0x30` = 0, `Radius`/`Deviation` live at `+0x34`/`+0x38` with 5.0 defaults at `+0x3c`/`+0x40` (V-R5's correction), `ScopeIcon` `+0x44` (`+0x60`), `SightIcon` `+0x64` (`+0x80`), `SniperSight` `+0x84`, `ShowCenterPoint` `+0x85` = 1 |
+| SCOPE-3 | **`setSniperSight 1` draws the rifle's sight-line fills; `0` with a `setSightIcon` draws the binoculars' ring instead** | **confirmed** (data and layout, 2026-09-16) | Vanilla `No4Sniper`/`K98Sniper`: `useScope 1`, `setSniperSight 1`, `setScopeIcon "sniper.tga"`, `zoomFov 0.1`, `unZoomBetweenFireTime 3.0`, `altFireOnce 1`, `setCrossHairType CHTNone` (0, VHUD-5). `Binoculars`: `useScope 1`, `setSniperSight 0`, `setScopeIcon "binocular.tga"`, `setSightIcon "scout_ring_128x128.tga"`, `zoomFov 0.2`. The layout's scope group gates its fills (elements 4–9) on `SniperSight` and the ring on its absence; the whole scoped branch needs `ScopeIndex != 0` (with `ShowCrossHair` and not `Submarine/ShowPeriscope`), the hip art `ScopeIndex == 0`. 140 hand weapons across the installed mods declare scope words (48 distinct `setScopeIcon` names), and the contract holds wherever a mod's `menu.rfa` embeds `ScopeIndex` (bf1942, FH, FHSW, FinnWars, GCMOD, DesertCombat, WarFront, bf1918, bfheroes, bg42; DC_Final, XPack1 and XPack2 do not) |
+| SCOPE-4 | **The blackout is the opaque outside of the scope texture, not a HUD fill** | **confirmed** (data, 2026-09-16); whether the picture is letterboxed stays **open** | `sniper.tga`, shipped as `sniper.png`, is 256×256 RGBA with corners `(0,0,0,255)` and centre alpha 0; the layout's element 3 draws it as a `variable-picture` bound to `CrossHair/ScopeIcon` over `(-8,-2,825,625)`, overscanning the 800×600 space. Whether the picture node letterboxes the square texture in that rect was not read (`PictureNode::draw` unfinished): under the HUD's independent stretch (MEME-5) an unletterboxed square goes oval on a widescreen. `binocular.tga` is in `menu.rfa` (262,188 bytes) and was not in the HUD pack |
+| SCOPE-5 | (the defect) **The page wrote no `CrossHair/*` variable, so `hud.js` culled the whole scope group** — the art, the layout and the painter were all there, and the zoom's field of view already worked | **confirmed** (2026-09-16); fixed 2026-09-17 (`471ced32`) | `map.html` `updateSoldierHud` set nothing under `CrossHair/`, and `hud.js` said the group was culled. Now `soldier-hud.js` writes `ScopeIndex` 1, `SniperSight` and `ScopeIcon` while a `useScope` weapon is zoomed on foot, `SightIcon` on the binoculars' branch, and `ScopeIndex` 0 everywhere else (it cites SCOPE-1). R5's variable table and the capture pair `game-sniper-zoom.png` / `mesh-sniper-zoom.png` are in the report |
+
+---
+
 ## Supply depots (2026-09-16; SUP-15 closed and SUP-17 half-closed 2026-09-19)
 
 Ammo boxes, medical lockers, land/airplane repair pads and mobile vehicle
