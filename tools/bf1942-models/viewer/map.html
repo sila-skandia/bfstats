@@ -1817,7 +1817,7 @@ if (!manifest.length) {
 level.warmups.level.finally(() => { pageConsole.escMenuScreen(); });
 
 replayController = createReplayController({
-  scene, camera, loader, bust,
+  scene, camera, loader, bust, renderer,
   stage: document.getElementById('stage'),
   // The bar's date and Open button, once the replay's chrome is built, and a
   // shared recording's comments.
@@ -1884,6 +1884,11 @@ replayController = createReplayController({
     level.bindDynamicShading(gltf.scene);
     return gltf.scene;
   },
+  // The first-person weapon (replay-viewmodel.js): the page's own arms rig,
+  // warmed and lit as the page's soldier's is (hand-weapon.js).
+  warmSubtree: (root, cam, target) => level.warmSubtree(root, cam, target),
+  isCollision: obj => level.isCollision(obj),
+  lights: () => ({ hemi, sun }),
   playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
@@ -2215,6 +2220,8 @@ function presentWorld(step, dt) {
 function draw(dt) {
   renderer.render(scene, camera);
   soldierKit.renderViewmodel();
+  // A replay's first person: the followed player's arms and weapon.
+  replayController?.renderViewmodel();
   // In the task that drew it, while the drawing buffer is whole: a replay's
   // timeline keeps a small frame of the view as playback passes a chapter.
   replayController?.afterRender(renderer.domElement);
