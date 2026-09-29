@@ -106,7 +106,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | aim | axis saturation | +-16 | `PlayerAction::set` 0x081128a0 (`floatToFixed` range) | `bot.js AXIS_MAX`, `mouse-input.js AXIS_RANGE` | ENGINE |
 | aim | aim rate | 4 counts a tick, the count law's own clamp, for a soldier's aim and steer alike (the old law's 16 for a steer is gone) | `mouseControlLookAtDirection` 0x08627b90 | `bot-aim.js AIM_COUNTS_MAX`, `LOOK_COUNTS_MAX` | ENGINE |
 | aim | soldier count law | the gunner's law with `SoldierCtrl`: `pitchSensitivity 0.4363323`, `rollSensitivity -0.5235988`, `pitchScale` / `rollScale` 5.0; the camera is the look yaw and pitch, right level | `Objects/Soldiers/Common/AI/Objects.con`; `infanteryControlTowardsDirection` 0x08627000 and `EntryMouseTurretAimAt` 0x08619ac0 both end in `mouseControlLookAtDirection` (AI-108) | `bot-aim.js SOLDIER_CONTROL`, `soldierFrame`, `aimLook` | ENGINE / CON |
-| aim | bot skill | 0.75 default; slider 0.25 / 0.5 / 0.75 / 1.0 | `AISettings::reset` (+0x24); client `FUN_006dd910` | `bot.js DEFAULT_BOT_SKILL`; `map.html BOT_SKILL` | ENGINE |
+| aim | bot skill | 0.75 default; slider 0.25 / 0.5 / 0.75 / 1.0, a table the retail Instant Battle slider never reaches, AI-21 | `AISettings::reset` (+0x24); client `FUN_006dd910` | `bot.js DEFAULT_BOT_SKILL`; `map.html BOT_SKILL` | ENGINE |
 | aim | AI deviation | `(1 - 0.75 A) C + dev (max(0, T (1 - A) - t) / T + 0.25 (1 - A))` | `WeaponFireArm::setBotSkill` 0x085ee580 | `deviation.js setAIDeviation` | ENGINE |
 | aim | deviation clock | 30 Hz | `g_simulationFps` | `deviation.js TICK_HZ` | ENGINE |
 | aim | aim point | the target's +1.0 m | | `bot.js _execTrigger`, `_execMouseTurretAimAt` | UNSOURCED |

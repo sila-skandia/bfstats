@@ -1,5 +1,10 @@
 # Animation parity gaps: BF1942 vs. the bfstats extractor + viewer
 
+This audit is a snapshot of 2026-09-14. Gaps 2 and 3 have since closed, and the
+table in
+[`../../bf1942-corpus-sweep-2026-09-18/README.md`](../../bf1942-corpus-sweep-2026-09-18/README.md)
+tracks each gap after that. The game facts below still stand.
+
 Audit date 2026-09-14, repo at `main` / `0380713`. Ground truth is the installed
 vanilla game at `~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Archives/`.
 Every count below was produced by running the repo's own readers
@@ -138,6 +143,10 @@ flythrough and it is a plumbing fix, not new format work.
 
 ## Gap 2 — soldier animation is three frozen stills, not 1,458 states of timeline
 
+*Closed on 2026-09-16. `extract_pose.py` bakes whole `.baf` timelines, as
+[`soldier-locomotion-animation`](../../soldier-locomotion-animation/README.md)
+records.*
+
 **Gap.** The pose pipeline samples one frame from 3 of the game's 85 lower-body
 locomotion states and writes them as constant two-keyframe clips; nothing
 anywhere plays a `.baf` timeline for a soldier.
@@ -269,6 +278,8 @@ dies" is the difference between a reference viewer and something people watch.
 ---
 
 ## Gap 3 — no soldier appears in the map flythrough at all
+
+*Closed by 2026-09-25. The map viewer spawns soldiers and bots.*
 
 **Gap.** Soldier spawn points are 2D dots on the minimap; no soldier mesh is
 ever instantiated in a level scene, so soldier animation has nothing to animate

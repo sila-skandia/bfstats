@@ -484,6 +484,10 @@ or simply "the client is never told about objects it has not been near". The
 recording cannot distinguish these — it is one client, stationary, 30 s. T2 with
 a second player driving outward is the test that separates them.
 
+*Settled since. It is a fixed radius, the level's view distance plus 20 m
+around the viewpoint, about 520 m on Wake. §11.1 measured it and §19 read it
+from the server.*
+
 ### 10.2 Event 0x29 is a 10-second periodic counter — `inferred`
 
 The only events in the whole recording were three of type `0x29`, at
@@ -572,8 +576,9 @@ two within 30 ms, so the timings below are measured.
   Confirmed on a second map (2026-09-27): Kursk sets `Game.setViewDistance 400`,
   and in `replay_20260927-140921` (a public server) an Ilyushin left the
   recording player's range at 414 m and 416 m and came back at 407 m. So the
-  cut-off is the level's view distance plus a few per cent, the fog line the
-  player could not have seen past anyway. The replay holds such an object at
+  cut-off follows the level's view distance, the fog line the player could not
+  have seen past anyway. §19 reads the rule from the server, a flat 20 m past
+  it, which is 420 m on Kursk. The replay holds such an object at
   its last pose as a translucent ghost, and the followed player's card says
   when he went out of range.
 - **The round did not end on a time limit.** The server runs

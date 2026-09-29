@@ -405,6 +405,10 @@ client).
 
 ### The radius is the one open number
 
+*§0 overturns part of this subsection. The `r >= 2.354` lower bound below
+assumed a canopy landing pays its impact speed. PARA-10 shows it pays zero, so
+only the upper bound stands and the radius is back at 1.8.*
+
 `BCompositeObject<IPlayerObject>::getBoundingRadius` (`0x08165630`) is
 `max(geometry radius, max over children of |childPos| + childRadius)`, cached at
 `+0xb4`. Two ends of it are now known and neither is usable as-is:
@@ -515,6 +519,11 @@ states in their own right (template `+0x250` / `+0x254`, reached from
 his body plays when it arrives.
 
 ### Fall damage under a canopy — a deliberate deviation
+
+*§0 overturns this subsection. PARA-10 shows the engine makes a canopy landing
+free by billing it a zero impact speed, so the viewer no longer deviates here.
+The re-stamp of `lastCollisionHeight` that this subsection describes is
+deleted, as PARA-8 records.*
 
 HP-14's severity carries `Q = max(1, (F - 1) * kitDamping)` and squares it, where
 `F = getLastCollisionHeight() - y` is the drop since the last contact. A man who

@@ -1,8 +1,9 @@
 # Soldier locomotion animation
 
-**Status: prototype, on `poses.html`, for review.** Branch
-`claude/soldier-locomotion-anim`, worktree
-`.claude/worktrees/soldier-locomotion-anim`. Nothing is committed to `main`.
+**Status: on `main` since 2026-09-16.** `02cc5f5a` added the extractor and the
+pose page, and `644ebed2` added the replay's gait selection in
+`viewer/gait-select.js`. This line used to call the work a prototype on branch
+`claude/soldier-locomotion-anim`.
 
 The replay player renders every soldier as one rigid mid-run still that never
 changes while the figure translates across the map. This is the investigation
