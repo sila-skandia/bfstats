@@ -21,6 +21,15 @@ fact and it is spread across four files:
   complete, measured reverse-engineering of the format: per-bone, per-frame
   quaternion + translation, RLE-compressed, 1.15 fixed point for rotations and
   `1/2^precision` for positions. Nothing is procedural. There is a clip to play.
+  *Corrected 2026-09-29: "nothing is procedural" holds for the clip data only.
+  At run time the engine adds a third-person aim pitch and lean, ledger ANIM-5
+  and lines 375 to 399 of
+  [`handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md),
+  and IK that keeps a seated soldier's hands on the controls,
+  [`skeleton-ik.md`](../bf1942-engine-reference/subsystems/skeleton-ik.md).*
+  *Corrected 2026-09-29: positions divide by `2^precision - 1`, not
+  `2^precision`. Ledger BAF-1 records it, and `bf42/baf.py` has matched the
+  engine since 2026-09-16.*
 - **`animations.rfa` holds 1,154 `.baf` clips**, 1,153 of which parse cleanly
   with this repo's own reader (the one failure,
   `Weapons/MedPack/MedPackFire.baf`, is corrupt in the shipped game). **None has
@@ -370,7 +379,14 @@ Suite: **725 tests pass** (717 before the dedup, 702 before any of this).
 
 ---
 
-## 6. Carrying this into the replay viewer (not done here)
+## 6. Carrying this into the replay viewer
+
+*Corrected 2026-09-29: this heading used to end "(not done here)". 644ebed2
+carried points 2 to 5 into the replay viewer on 2026-09-16, with
+`viewer/gait-select.js` picking idle, walk or run from the recorded motion. It
+seeds each soldier's phase from his network id and fades in a fixed 0.2 s
+rather than reading `random_start` and `morph_factor`, and it picks no stance,
+for the reason section 7 gives.*
 
 1. ~~**Deduplicate the clips first.**~~ Done — section 5. The replay viewer can
    load one `lower.gait.glb` plus one bundle per grip actually present in the

@@ -206,8 +206,8 @@ def parse(data: bytes, name: str = "") -> Animation:
         # above is deliberately a constant, not this. Positions have no such
         # normalization: the old 2^precision divisor put every position a
         # factor of (2^precision)/(2^precision - 1) short, 0.003% at
-        # precision 15 (1,121 of 1,154 clips) and ~0.1% at the lowest
-        # precision (11) any mod uses.
+        # precision 15 (1,121 of 1,154 clips) and ~0.1% at precision 10, the
+        # lowest any installed mod uses (GCMOD sarlaac.baf, ledger BAF-1).
         pos_scale = 1.0 / ((1 << precision) - 1)
 
         bones: list[BoneTrack] = []
