@@ -1894,6 +1894,12 @@ replayController = createReplayController({
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, mapSurfaces.teamNation(team)),
   playRefillSound: at => pageAudio.playRefillSound(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),
+  // The page's mix where it leaves for the speakers, for a creator's clip
+  // recorded with its sound (replay-clip.js).
+  audioTap: () => {
+    const listener = pageAudio.audioListener;
+    return listener ? { context: listener.context, node: pageAudio.audioLimiter ?? listener.gain } : null;
+  },
   // The viewing side (features/round-replay-ux): the round's kills, flags and
   // chat go into this page's own message log, a side is drawn with its own
   // flag sprite, the recording player's hits wash his first-person view the
