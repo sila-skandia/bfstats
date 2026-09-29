@@ -1,6 +1,8 @@
 # Standing in the level: the first-person soldier
 
-An investigation, not an implementation. The question is what it takes to put
+This began as an investigation and was then built: §6a to §6d and §9 to §11
+record what shipped. *Corrected 2026-09-29: this line used to say "An
+investigation, not an implementation."* The question is what it takes to put
 the viewer's camera behind a soldier's eyes in a `map.html` level — on the
 ground, weapon drawn, walls that stop you — and what the game's own data says
 each piece should be.
@@ -2040,6 +2042,11 @@ Still OPEN, marked at their declarations in `deviation.js`: the tick cadence
 MouseLookX/Y (rad/s here; vanilla ships `setTurnDev 0 0 0 0`, so nothing can
 calibrate it), and the AT family's `minDeviation`/`maxDeviation` vocabulary
 (different console block, corpus doc §7 — floor-and-lid is the stand-in).
+*Corrected 2026-09-29: the tick cadence is settled. The engine updates
+deviation once per fixed 1/30 s simulation tick, on the client as on the
+server, and `deviation.js` now has `TICK_HZ = 30`
+([handweapon-view-and-deviation.md](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md),
+"Clock").*
 
 ### What remains
 

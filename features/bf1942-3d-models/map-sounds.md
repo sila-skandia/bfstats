@@ -50,6 +50,12 @@ so a superseded async setup cannot leak a loop past `disposeSounds`;
 `setRolloffFactor(0)` so the `.ssc` near/far ramp owns distance volume alone
 (the panner's inverse rolloff was double-attenuating; `setMaxDistance` was
 inert — it only applies to the 'linear' distance model).
+*Corrected 2026-09-29: the `.ssc` ramp does not own distance volume alone. A
+spatialised voice, placed ambience included, falls off as `minDistance / d`
+times the script's ramp (ledger SND-6, SND-10), which
+[`engine-audio.js`](../../tools/bf1942-models/viewer/engine-audio.js)
+`distanceRolloff` applies per voice while the panner keeps rolloff 0 for
+direction only. See [sound-listener-parity](../sound-listener-parity/README.md).*
 
 Tests: `tests/test_sound.py` covers the `Sound/` singular fallback. The
 grouping logic is inline JS in map.html and is not unit-tested.
