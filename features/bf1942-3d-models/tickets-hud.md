@@ -318,6 +318,10 @@ and the blink quads' two-variable AND.
 
 ## What a live bleed would need
 
+*Corrected 2026-09-29: the counters now move. The deaths and the bleed were
+built on 2026-09-25 in [viewer-score-and-bleed](../viewer-score-and-bleed/README.md),
+and what follows is the reasoning from before that.*
+
 The counters are the round-start numbers and they do not move. Three things
 are missing before they could:
 
@@ -329,6 +333,10 @@ are missing before they could:
    *other* side holds more than half the control points. The viewer has no
    capture mechanic, so every level would sit at its round-start flag split
    for ever and the drain would either never start or never stop.
+   *Corrected 2026-09-29: the bleed does not follow a flag majority. A side
+   bleeds while the enemy's summed `areaValue` over the points it holds is
+   above 99 ([`round-state.js`](../../tools/bf1942-models/viewer/round-state.js),
+   ledger TKT-4).*
 3. **Somewhere to put the result.** The counter is one of several things that
    want a round state (the score board opens nothing, the capture rings are
    unfed, `Ticket/*TicketBlink` has nobody to set it). A ticket counter alone
