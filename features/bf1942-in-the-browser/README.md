@@ -86,7 +86,7 @@ bots. The viewer extracts Conquest only, so the first version launches Conquest.
 | Its renderer, testable under node | `tools/bf1942-models/viewer/play/menu-screen.js` |
 | The launch hook in the map page | `viewer/map.html`, `launchTeam` + `preferredDeployTeam` |
 | Tests | `tests/test_menu_layout.py`, `tests/test_menu_screen.mjs`, `tests/test_meme.py` |
-| Deployment, **not applied** | `play/Dockerfile`, `play/nginx.conf`, `deploy/app/play-deployment.yaml`, the ingress ACL and the tunnel entry |
+| Deployment, **not applied** | `play/Dockerfile`, `play/nginx.conf`, `deploy/app/play-deployment.yaml`, the ingress ACL and the tunnel entry. *Corrected 2026-09-29: 458d62cc took these files out of main on 2026-09-19, and since 2026-09-26 the mesh container serves play.bfstats.io, as [Deployment](#deployment) now says.* |
 
 ### The command that produces the pack
 
@@ -522,7 +522,19 @@ the ingress ConfigMap — it is a manual step, as it already was for
 
 The Jenkins stage exists but is gated on `PLAY_ENABLED`, which is `'false'`.
 
+*Corrected 2026-09-29: the stage and `PLAY_ENABLED` are gone. 458d62cc took
+them out of the Jenkinsfile on 2026-09-19, together with `play/Dockerfile`,
+`play/nginx.conf` and `deploy/app/play-deployment.yaml`, and none of them was
+ever applied.*
+
 ### The node does not have room for this yet
+
+*Corrected 2026-09-29: the shared container recommended below is the shape that
+shipped, so the site adds no container and no memory limit. Since 847813b8 on
+2026-09-26 HAProxy routes play.bfstats.io to the mesh nginx, and since f751cc28
+on 2026-09-27 the map page belongs to that host, as
+[mesh-site](../mesh-site/README.md#maps-moved-to-playbfstatsio-2026-09-27) and
+[the ingress README](../../deploy/app/ingress/README.md) record.*
 
 Measured across `deploy/app/` on 2026-09-19:
 
@@ -620,10 +632,13 @@ parsed, what the `(2)` counts) is for stream B to read out of the client.
 ## Open questions
 
 - Whether the mesh site keeps a Maps tab that links out, or drops it.
+  *Closed 2026-09-27 by f751cc28: mesh.bfstats.io drops the tab, and its old
+  map URLs redirect to play.bfstats.io.*
 - Whether the map page should start in the deploy screen on the chosen team
   (it does today, on the launched team) or drop straight in.
 - Whether to spend the 64Mi or share the mesh container (above). The review
-  recommends sharing.
+  recommends sharing. *Closed 2026-09-26 by 847813b8: the mesh container serves
+  play.bfstats.io.*
 - Whether the level list's selected row is blue in the real game, as the file
   says, or olive.
 - Mod coverage: the pack is vanilla-only, like the spawn screen's. 16 installed
