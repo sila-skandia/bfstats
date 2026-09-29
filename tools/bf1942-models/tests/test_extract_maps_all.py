@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extract_maps_all import merge_index, promote  # noqa: E402
+from extract_maps_all import kept_files, land, merge_index, promote  # noqa: E402
 
 
 class MergeIndexTests(unittest.TestCase):
@@ -77,6 +77,74 @@ class PromoteTests(unittest.TestCase):
 
         self.assertEqual((self.out / "a_shau" / "scene.glb").read_bytes(), b"new")
         self.assertFalse((self.out / "a_shau" / "lightmap_41.png").exists())
+
+
+class LoadingAssetsSurviveARebakeTests(unittest.TestCase):
+    """`merge_index` keeps a row's `loading` key; the file it names must stay.
+
+    `extract_loading_assets.py` writes `<level>/load.webp` and points the row's
+    `loading.background` at it. The bake owns neither, and a re-bake that
+    replaced the directory wholesale left the row pointing at a 404 (the
+    replay feed card and map.html's loading screen).
+    """
+
+    LOADING = {"title": "A SHAU", "background": "a_shau/load.webp",
+               "music": "_shared/music/vehicle4.mp3", "theme": "eod"}
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.out = self.root / "maps"
+        previous = self.out / "a_shau"
+        previous.mkdir(parents=True)
+        (previous / "scene.glb").write_bytes(b"old")
+        (previous / "lightmap_41.png").write_bytes(b"orphan")
+        (previous / "load.webp").write_bytes(b"picture")
+        self.listing = {"a_shau": {"name": "A_Shau", "objects": 1,
+                                   "loading": dict(self.LOADING)}}
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def bake(self, row: dict) -> dict:
+        staging = self.root / "staging" / "a_shau"
+        (staging / "a_shau").mkdir(parents=True)
+        (staging / "a_shau" / "scene.glb").write_bytes(b"new")
+        (staging / "maps.json").write_text(json.dumps([row]))
+        return {"level": "A_Shau", "ok": True, "rows": [row],
+                "staging": str(staging)}
+
+    def test_a_re_bake_keeps_the_loading_background_and_its_row(self) -> None:
+        land(self.bake({"name": "A_Shau", "objects": 165}), self.out, self.listing)
+
+        level = self.out / "a_shau"
+        self.assertEqual((level / "scene.glb").read_bytes(), b"new")
+        self.assertFalse((level / "lightmap_41.png").exists())
+        self.assertEqual((level / "load.webp").read_bytes(), b"picture")
+        row = self.listing["a_shau"]
+        self.assertEqual(row["objects"], 165)
+        self.assertEqual(row["loading"], self.LOADING)
+        # The invariant, stated directly: every kept path resolves.
+        self.assertTrue((self.out / row["loading"]["background"]).is_file())
+
+    def test_a_bake_that_writes_the_key_itself_owns_its_files(self) -> None:
+        # The new row carries `loading`, so nothing is carried over for it.
+        row = {"name": "A_Shau", "loading": {"background": "_shared/load/western.webp"}}
+        land(self.bake(row), self.out, self.listing)
+        self.assertFalse((self.out / "a_shau" / "load.webp").exists())
+
+    def test_a_shared_background_is_not_the_level_s_to_keep(self) -> None:
+        prior = {"name": "Wake", "loading": {"background": "_shared/load/pacific2.webp"}}
+        self.assertEqual(kept_files(prior, [{"name": "Wake"}]), {})
+
+    def test_paths_that_climb_out_of_the_level_are_ignored(self) -> None:
+        prior = {"name": "Wake", "loading": {"background": "wake/../aberdeen/load.webp",
+                                             "extra": ["wake/menu/load.webp"]}}
+        self.assertEqual(kept_files(prior, [{"name": "Wake"}]),
+                         {"wake": ["menu/load.webp"]})
+
+    def test_a_first_bake_has_nothing_to_keep(self) -> None:
+        self.assertEqual(kept_files(None, [{"name": "Wake"}]), {})
 
 
 class IndexRoundTripTests(unittest.TestCase):
