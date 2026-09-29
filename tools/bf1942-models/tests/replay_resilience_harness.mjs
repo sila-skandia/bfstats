@@ -151,7 +151,8 @@ const finite = values => values.every(Number.isFinite);
   // the orbit stands in, nothing of the first person is left set, and it
   // comes back when his eyes do.
   const broken = [];
-  for (const viewOf of [() => ({ yaw: NaN, pitch: 0 }), () => { throw new Error('his eyes threw'); }]) {
+  for (const viewOf of [() => ({ body: new THREE.Quaternion(), yaw: NaN, pitch: 0 }),
+    () => { throw new Error('his eyes threw'); }]) {
     camera.viewOf = viewOf;
     step(6);
     broken.push({ mode: camera.mode, drawable: drawable(), sight: camera.sight, hidePid: camera.hidePid });

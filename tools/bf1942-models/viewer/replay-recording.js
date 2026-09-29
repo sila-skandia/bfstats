@@ -6,7 +6,9 @@
 // features/round-replay-capture/README.md documents the format and how each
 // mapping here was measured.
 
-import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { CHARACTER_HEIGHT, POSE_CAMERA_POS } from './soldier-pose.js';
+import { DIVE_DURATION } from './soldier-locomotion.js';
+import { STANCE_TRANSITION } from './soldier.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
 import { RADIO_MESSAGES } from './radio.js';
 
@@ -1570,6 +1572,13 @@ export function bodyAt(rec, nid, t) {
  * the twist (135 rounds with a twist over a degree). With 3, a round's yaw is
  * 0.16 degrees from the view's at the median and 3.1 at the 90th percentile;
  * without the twist, 0.27 and 6.0.
+ *
+ * Both are turns in his body's own frame, which lying down is the slope he
+ * lies on, not the world's level (replay-camera.js `eyeAim`). Over 1,804
+ * rounds fired prone in seven recordings, a round's pitch off his recorded
+ * body's is 2.50 times the aim pitch and its yaw -3.00 times the twist; the
+ * view built on the body is 0.22 degrees from them at the median and 1.2 at
+ * the 90th percentile, the world's level 3.7 and 12.5.
  */
 export const AIM_PITCH_SCALE = 2.5;
 export const AIM_TWIST_SCALE = 3;
@@ -1592,6 +1601,49 @@ export function aimAt(rec, nid, t) {
   const k = t <= start ? 0 : (t - start) / (b.t - start);
   const mix = (x = 0, y = 0) => x + (y - x) * k;
   return { pitch: mix(a.pitch, b.pitch), twist: mix(a.twist, b.twist) };
+}
+
+/** The stance a body record's lower state declares: 'stand', 'crouch' or
+ *  'prone' (`bodyAt`'s). */
+function stanceOf(rec, entry) {
+  const flags = rec.animStates?.[entry.lower]?.flags ?? 0;
+  return flags & ANIM_FLAGS.LYING ? 'prone' : flags & ANIM_FLAGS.CROUCHING ? 'crouch' : 'stand';
+}
+
+/** The template's `setPoseCameraPos` per stance, metres over his origin
+ *  (soldier-pose.js `POSE_CAMERA_POS`). */
+const EYE_LIFT = { stand: POSE_CAMERA_POS[0], crouch: POSE_CAMERA_POS[1], prone: POSE_CAMERA_POS[2] };
+
+/** The longest an eye takes between two stances: the dive to the ground. */
+const EYE_TRAVEL_MAX = Math.max(DIVE_DURATION, ...Object.values(STANCE_TRANSITION));
+
+/**
+ * Where a soldier's eye is at `t`, metres from his origin along his body's
+ * own up (a camera offset, `setPoseCameraPos`): 0.65 standing, 0.12
+ * crouched, -0.7 lying, eased across a change of stance over the time the
+ * engine's transition takes (soldier.js `STANCE_TRANSITION`, the running
+ * dive's `DIVE_DURATION`), as the page's own soldier eases his. Lying on a
+ * slope his up is not the world's: over 1,098 rounds fired lying on more
+ * than 5 degrees of slope in seven recordings, a round leaves 7 mm (median)
+ * from his origin plus -0.7 m along his recorded body's up, and 12 cm from
+ * 0.7 m straight down. Standing, with no record yet, the standing eye.
+ */
+export function eyeLiftAt(rec, nid, t) {
+  const list = rec.stances?.get(nid);
+  const i = latestIndex(list, t);
+  if (i < 0) return EYE_LIFT.stand;
+  const stance = stanceOf(rec, list[i]);
+  // The record his stance began at, looked for no further back than an eye
+  // takes to travel.
+  let j = i;
+  while (j > 0 && list[j].t > t - EYE_TRAVEL_MAX && stanceOf(rec, list[j - 1]) === stance) j -= 1;
+  if (j === 0) return EYE_LIFT[stance];
+  const from = stanceOf(rec, list[j - 1]);
+  if (from === stance) return EYE_LIFT[stance];
+  const dive = rec.animStates?.[list[j].lower]?.name === 'Lb_RunStandToLie';
+  const travel = dive ? DIVE_DURATION : STANCE_TRANSITION[`${from}>${stance}`] ?? 0.05;
+  const k = Math.min(1, Math.max(0, (t - list[j].t) / travel));
+  return EYE_LIFT[from] + (EYE_LIFT[stance] - EYE_LIFT[from]) * k;
 }
 
 /** How far a body's recorded die state may lead or trail the score stream's
