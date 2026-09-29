@@ -61,6 +61,23 @@ const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  *  recording player per file. */
 const isRecordingPlayer = (player, pid) => (player.recordingPids ?? [player.recordingPid]).includes(pid);
 
+/** An input's action, run so that one which throws is a console warning,
+ *  once a message, and never a click or a key left half done: the frame's
+ *  rule (replay-guard.js) for the replay's buttons, keys and pointer. */
+const warnedInput = new Set();
+function quietly(what, fn) {
+  try {
+    return fn();
+  } catch (error) {
+    const key = `${what}: ${error?.message ?? error}`;
+    if (!warnedInput.has(key) && warnedInput.size < 64) {
+      warnedInput.add(key);
+      console.warn(`replay: ${what} threw`, error);
+    }
+    return undefined;
+  }
+}
+
 // Fullscreen, with Safari's prefixed names (an iPad's before iPadOS 16.4).
 const fullscreenElement = () => document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
 const canFullscreen = () => Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
@@ -589,7 +606,7 @@ export class ReplayUi {
     b.setAttribute('aria-label', label);
     b.addEventListener('click', e => {
       e.stopPropagation();
-      onClick(e);
+      quietly(label, () => onClick(e));
     });
     return b;
   }
@@ -672,10 +689,10 @@ export class ReplayUi {
       b.innerHTML = `${svg(icon)}<span>${esc(text)}</span>${check ? '<b></b>' : ''}${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
       b.addEventListener('click', e => {
         e.stopPropagation();
-        onClick();
+        quietly(text, onClick);
         // A switch shows its new state; anything else is done with the menu.
-        if (check) this.syncMore();
-        else this.closeMore();
+        if (check) quietly(text, () => this.syncMore());
+        else quietly(text, () => this.closeMore());
       });
       this.moreMenu.append(b);
       return b;
@@ -740,7 +757,7 @@ export class ReplayUi {
     this.cardMain.title = 'Players (Tab)';
     this.cardMain.addEventListener('click', e => {
       e.stopPropagation();
-      this.toggle('board-open');
+      quietly('the players button', () => this.toggle('board-open'));
     });
     this.cardFlag = el('img', 'rp-card-flag none');
     this.cardFlag.alt = '';
@@ -773,7 +790,7 @@ export class ReplayUi {
       const row = e.target.closest?.('.rp-brow');
       if (!row) return;
       e.stopPropagation();
-      this.follow(Number(row.dataset.pid));
+      quietly('following a player', () => this.follow(Number(row.dataset.pid)));
       this.root.classList.remove('board-open');
     });
   }
@@ -1090,7 +1107,10 @@ export class ReplayUi {
     // A finger down on the view that may yet be a tap: { id, x, y, at, floated }.
     let tap = null;
     const lockHeld = () => document.pointerLockElement === input;
-    input.addEventListener('pointerdown', e => {
+    // Each of the view's pointer handlers runs quietly (`quietly`): one that
+    // throws leaves the camera and the rest of the replay's input working.
+    const on = (type, fn, options) => input.addEventListener(type, e => quietly(`the view's ${type}`, () => fn(e)), options);
+    on('pointerdown', e => {
       const touch = e.pointerType === 'touch';
       // Whatever floated over the view goes; a tap that closed it does no more.
       const floated = this.closeFloating();
@@ -1118,7 +1138,7 @@ export class ReplayUi {
         } catch {}
       }
     });
-    input.addEventListener('pointermove', e => {
+    on('pointermove', e => {
       if (this.moveStick(e)) return;
       // A finger dragging the view leaves the chrome as it is.
       if (e.pointerType !== 'touch') this.activity();
@@ -1172,10 +1192,21 @@ export class ReplayUi {
       input.classList.remove('dragging');
       camera().looking = false;
     };
-    input.addEventListener('pointerup', end);
-    input.addEventListener('pointercancel', end);
+    // A lift that throws still ends the drag: a camera left `looking` never
+    // springs back to his view.
+    const lift = e => {
+      if (quietly(`the view's ${e.type}`, () => { end(e); return true; })) return;
+      drag = null;
+      touches.clear();
+      pinch = 0;
+      tap = null;
+      input.classList.remove('dragging');
+      camera().looking = false;
+    };
+    input.addEventListener('pointerup', lift);
+    input.addEventListener('pointercancel', lift);
     input.addEventListener('contextmenu', e => e.preventDefault());
-    input.addEventListener('wheel', e => {
+    on('wheel', e => {
       e.preventDefault();
       this.activity();
       const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
@@ -1199,7 +1230,7 @@ export class ReplayUi {
       const tag = e.target.closest?.('.rp-tag');
       if (!tag) return;
       e.stopPropagation();
-      this.follow(Number(tag.dataset.pid));
+      quietly('following a player', () => this.follow(Number(tag.dataset.pid)));
     });
   }
 
@@ -1308,22 +1339,26 @@ export class ReplayUi {
     // console, the Escape menu and the briefing keep the keyboard while they
     // are up, as they do in play.
     this.onKeyDown = e => {
-      if (this.disposed || this.ctx.keyboardTaken?.()) return;
+      if (this.disposed || quietly('the keyboard', () => this.ctx.keyboardTaken?.())) return;
       if (GameConsole.isToggleKey(e)) return;
-      this.activity();
+      quietly('the chrome', () => this.activity());
       const inForm = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName ?? '');
-      const handled = inForm && e.code !== 'Escape' ? false : this.key(e);
+      // A key whose action throws is still the replay's, and Escape still
+      // goes on to the page's own menu: the way out of the replay is never
+      // behind something of the replay's that broke.
+      const handled = inForm && e.code !== 'Escape' ? false
+        : quietly(`the ${e.code} key`, () => this.key(e)) ?? (e.code === 'Escape' ? 'pass' : true);
       if (handled === 'pass') return;
       e.stopPropagation();
       if (handled) e.preventDefault();
     };
     this.onKeyUp = e => {
       if (this.disposed) return;
-      this.player.camera.keys.delete(e.code);
-      if (this.ctx.keyboardTaken?.()) return;
+      this.player.camera?.keys?.delete(e.code);
+      if (quietly('the keyboard', () => this.ctx.keyboardTaken?.())) return;
       e.stopPropagation();
     };
-    this.onBlur = () => this.player.camera.keys.clear();
+    this.onBlur = () => this.player.camera?.keys?.clear();
     window.addEventListener('keydown', this.onKeyDown, true);
     window.addEventListener('keyup', this.onKeyUp, true);
     window.addEventListener('blur', this.onBlur);
@@ -1418,7 +1453,7 @@ export class ReplayUi {
     this.rowNodes = this.player.rows.map(row => {
       const node = el('div', `rp-row k-${row.kind}`);
       node.append(el('time', '', fmtTime(row.t)), el('span', `rp-src ${row.source}`, row.source), el('span', 'rp-text', row.text));
-      node.addEventListener('click', () => this.player.seek(row.t - 1.5));
+      node.addEventListener('click', () => quietly('a log line', () => this.player.seek(row.t - 1.5)));
       this.list.appendChild(node);
       return node;
     });
@@ -1479,38 +1514,42 @@ export class ReplayUi {
     const clock = roundClock(rec, t);
     const round = clock === null ? '' : `ROUND ${fmtClock(clock)}`;
     if (this.roundText.textContent !== round) this.roundText.textContent = round;
-    this.timeline.update(t);
+    // Each part of the chrome on its own (`quietly`): the name tags that
+    // cannot be placed leave the clock, the card and the board working.
+    quietly('the timeline', () => this.timeline.update(t));
     const mini = this.timeline.shownAt;
     if (mini !== this.miniAt) {
       this.miniAt = mini;
       this.miniFill.style.width = mini;
     }
-    this.updateLog(t);
+    quietly('the replay log', () => this.updateLog(t));
 
     this.slowClock += dt;
     if (this.slowClock >= SLOW_TICK) {
       this.slowClock = 0;
-      this.renderCard(t);
-      if (this.root.classList.contains('board-open')) this.renderBoard(false);
+      quietly("the followed player's card", () => this.renderCard(t));
+      if (this.root.classList.contains('board-open')) quietly('the board', () => this.renderBoard(false));
     }
-    this.updateTags(t);
-    this.syncChrome();
+    quietly('the name tags', () => this.updateTags(t));
+    quietly('the chrome', () => this.syncChrome());
     // The thumbstick is the free camera's alone.
     if (this.stick && player.camera.mode !== 'free') this.dropStick();
     if (this.coarse) this.placeStickHome();
   }
 
   /** The bar and the card, up or away. They go while it plays untouched,
-   *  and on a tap on the view; paused, or while the followed player waits
-   *  to spawn (the card's countdown), they stay unless a tap put them away.
-   *  A menu or a panel open holds them up. */
+   *  and on a tap on the view; paused, while the followed player waits to
+   *  spawn (the card's countdown), or while his first person is out of the
+   *  recording's range (the view holds where he was last seen, and without
+   *  the card's word for it that read as the replay hanging), they stay
+   *  unless a tap put them away. A menu or a panel open holds them up. */
   syncChrome() {
     const root = this.root;
     const open = root.matches('.board-open, .help-open, .map-open')
       || this.speedWrap.classList.contains('open') || this.moreWrap.classList.contains('open');
     if (open) this.userHidden = false;
     const quiet = (performance.now() - this.lastActivity) / 1000 > (this.touchUi ? IDLE_TOUCH : IDLE_AFTER);
-    const idle = this.player.playing && quiet && !this.overChrome && !this.spawnWait;
+    const idle = this.player.playing && quiet && !this.overChrome && !this.spawnWait && !this.rangeWait;
     const hidden = !open && !this.timeline.scrubbing && (this.userHidden || idle);
     if (hidden === this.chromeHidden) return;
     this.chromeHidden = hidden;
@@ -1527,6 +1566,7 @@ export class ReplayUi {
       this.cardName.textContent = 'Nobody to follow';
       this.cardState.textContent = '';
       this.spawnWait = false;
+      this.rangeWait = false;
       return;
     }
     // Whoever holds the pid now, on his side now: an id passes to the next
@@ -1555,6 +1595,7 @@ export class ReplayUi {
     const waiting = status.state === 'absent' || status.state === 'spawning' || status.state === 'dead';
     const spawn = waiting ? nextSpawn(rec, pid, t)?.t ?? null : null;
     this.spawnWait = spawn !== null;
+    this.rangeWait = Boolean(status.outOfRange) && player.camera.mode === 'pov';
     let html = '';
     let hp = null;
     const display = key => this.lexicon()?.names?.[key] ?? key;

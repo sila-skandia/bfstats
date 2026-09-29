@@ -15,6 +15,11 @@ import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
 import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 
+/** A place a panner can take: Web Audio throws on a position that is not all
+ *  numbers, and a one-shot at no position is better not played than a frame
+ *  that stops (a replayed man whose record is broken, a camera that is). */
+const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.isFinite(p?.z);
+
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
@@ -248,7 +253,7 @@ export function createPageAudio(page) {
     const e = pageAudio.audioListener.matrixWorld?.elements;
     const ear = e ? { x: e[12], y: e[13], z: e[14] } : { x: 0, y: 0, z: 0 };
     const at = emitterAt(area, ear);
-    if (!at || !(at.gain > 0)) return true;
+    if (!at || !(at.gain > 0) || !placeable(at)) return true;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = rate;
@@ -314,7 +319,7 @@ export function createPageAudio(page) {
    * any other finds it in its tree's shared sounds.
    */
   async function playRefillSound(position) {
-    if (page.AUDIO_OFF || !position || masterVolume() <= 0) return;
+    if (page.AUDIO_OFF || !placeable(position) || masterVolume() <= 0) return;
     ensureListener();
     const buffer = pageAudio.supplyGive?.buffer
       ?? await soundBuffer(page.currentDir, '../_shared/sounds/Ammorefill.mp3');
@@ -730,6 +735,7 @@ export function createPageAudio(page) {
     if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return null;
     const ctx = pageAudio.audioListener.context;
     if (ctx.state === 'suspended') return null;
+    if (position && !placeable(position)) return null;
     if (position) {
       // Beyond the panner's own 40 m cut a bot's foley is ~-32 dB; skip the
       // voice entirely. Twelve bots walking was a hundred one-shot panners a

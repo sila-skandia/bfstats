@@ -2032,12 +2032,29 @@ function frame(dt) {
   const step = simulate(dt, input, look);
   // ---- the cameras and the rest of the presentation -------------------------
   localPlayer.frameCameras(dt, seated, onFoot);
-  presentWorld(step, dt);
-  draw(dt);
-  paintHud(dt);
+  // Each phase from here runs whatever the one before it threw. A throw in
+  // the world's presentation (a voice handed a position that is not a
+  // number) used to skip the replay, the render and the HUD with it: the
+  // last picture stayed up, with no Escape menu to leave it by. The first
+  // throw is still the loop's to report (`setAnimationLoop` below).
+  let thrown = null;
+  const phase = fn => {
+    try {
+      fn();
+    } catch (error) {
+      thrown ??= error;
+    }
+  };
+  phase(() => presentWorld(step, dt));
+  // After the camera controls and the world: a followed replay places the
+  // camera last.
+  phase(() => replayController?.update(dt));
+  phase(() => draw(dt));
+  phase(() => paintHud(dt));
   // The shell last, with the HUD: the spawn screen can take it down mid-match
   // or open it from a flythrough, and Esc puts it back.
-  paintPlayingShell();
+  phase(paintPlayingShell);
+  if (thrown) throw thrown;
 }
 
 /** Barbed wire this step (`obstacle.js`, the world's `report.obstacles`):
@@ -2191,8 +2208,6 @@ function presentWorld(step, dt) {
   level.advanceSim(dt);
   pageAudio.updateAudio(dt);
   level.updateSky();
-  // After the camera controls: a followed replay places the camera last.
-  replayController?.update(dt);
 }
 
 /** The draw phase: the 3D frame, the viewmodel over it, and the 2D surfaces

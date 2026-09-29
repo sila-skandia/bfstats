@@ -59,6 +59,7 @@ import { ReplayHud } from './replay-hud.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
+import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
@@ -107,6 +108,8 @@ class ReplayPlayer {
     this.log = log;
     this.alignment = alignment;
     this.label = label;
+    // The frame's stages, each unable to stop the others (replay-guard.js).
+    this.guard = new ReplayGuard();
     this.time = 0;
     this.speed = 1;
     this.playing = true;
@@ -335,41 +338,33 @@ class ReplayPlayer {
       }),
     ]);
 
+    // Each hull built on its own: a model that cannot be made into one is a
+    // warning and a vehicle left out, not a replay that stops loading.
     for (const life of hullLives) {
       const model = models.get(life.tmpl);
       if (!model?.normal) continue;
-      const scene = skeletonClone(model.normal);
-      const wreck = model.wreck ? skeletonClone(model.wreck) : null;
-      const hull = new ReplayHull(this, life, scene, wreck);
-      // Its rounds skip its own body (`dynamicCast`), the way a level hull's
-      // skip theirs through the collider's owner index.
-      hull.ownerTag = -1000 - life.nid;
-      for (const group of hull.groups) {
-        group.owner = hull.ownerTag;
-        group.ownerFor = this.ctx.guns?.collider;
-      }
-      this.root.add(hull.group);
-      this.hulls.set(life, hull);
+      extra(`the ${life.tmpl} ${life.nid}`, () => {
+        const scene = skeletonClone(model.normal);
+        const wreck = model.wreck ? skeletonClone(model.wreck) : null;
+        const hull = new ReplayHull(this, life, scene, wreck);
+        // Its rounds skip its own body (`dynamicCast`), the way a level hull's
+        // skip theirs through the collider's owner index.
+        hull.ownerTag = -1000 - life.nid;
+        for (const group of hull.groups) {
+          group.owner = hull.ownerTag;
+          group.ownerFor = this.ctx.guns?.collider;
+        }
+        this.root.add(hull.group);
+        this.hulls.set(life, hull);
+      });
     }
 
     for (const life of soldierLives) {
       const rigged = poses.get(`${life.tmpl}|${placeholderWeaponFor(life, loadouts)}`);
       if (!rigged) continue;
-      const group = new THREE.Group();
-      group.name = `replay ${life.tmpl} ${life.nid}`;
-      group.visible = false;
-      // A wrapper group carries the recorded transform, so the pose keeps
-      // its own root orientation (SOLDIER_YAW_FLIP in replay-actors.js).
-      // SkeletonUtils.clone rebuilds a parallel bone hierarchy per clone;
-      // Object3D.clone would share one skeleton across every soldier.
-      const normal = skeletonClone(rigged.pose.scene);
-      const anim = buildGaitRig(normal, rigged.pose.animations, rigged.gaitClips, phaseFor(life.nid));
-      group.add(normal);
-      const meshes = [];
-      group.traverse(obj => { if (obj.isMesh) meshes.push({ mesh: obj, material: obj.material }); });
-      this.root.add(group);
-      this.entities.push({ life, group, normal, wreck: null, meshes, anim, gunGroup: null, ghost: false, label: null, hp: null });
+      extra(`the plain soldier ${life.nid}`, () => this.addEntity(life, rigged));
     }
+
 
     // Dropped kits and thrown rounds, where the recording has them lying. A
     // round a hull lays (the PT boats' floating mines) is drawn from that
@@ -380,18 +375,38 @@ class ReplayPlayer {
       this.ctx.guns.collider.dynamicCast = (ox, oy, oz, dx, dy, dz, maxDist, skipOwner) =>
         dynamicCast(this, ox, oy, oz, dx, dy, dz, maxDist, skipOwner);
     }
-    this.buildMarkers();
+    extra("the server log's rings", () => this.buildMarkers());
     const aligned = this.alignment
       ? ` · server log aligned on ${this.alignment.matched} of ${this.alignment.total} shared events`
       : this.log ? ' · server log loaded but could not be aligned' : '';
     const bodies = this.soldiers?.available ? ' · soldiers drawn by the map' : '';
     const unseen = this.standIns.length ? ` · ${this.standIns.length} never in range, stood in by the level` : '';
     const merged = this.rec.merged?.length ? ` · merged from ${this.rec.merged.length} recordings` : '';
-    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${merged}${unseen}${bodies}${aligned}`;
+    const damaged = this.rec.skipped ? ` · ${this.rec.skipped} damaged records left out` : '';
+    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${merged}${unseen}${bodies}${aligned}${damaged}`;
     this.ui.status(this.statusLine);
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
     this.ui.activity(4);
+  }
+
+  /** The plain soldier fallback's body for `life`, on its (soldier, weapon)
+   *  pose pair. */
+  addEntity(life, rigged) {
+    const group = new THREE.Group();
+    group.name = `replay ${life.tmpl} ${life.nid}`;
+    group.visible = false;
+    // A wrapper group carries the recorded transform, so the pose keeps
+    // its own root orientation (SOLDIER_YAW_FLIP in replay-actors.js).
+    // SkeletonUtils.clone rebuilds a parallel bone hierarchy per clone;
+    // Object3D.clone would share one skeleton across every soldier.
+    const normal = skeletonClone(rigged.pose.scene);
+    const anim = buildGaitRig(normal, rigged.pose.animations, rigged.gaitClips, phaseFor(life.nid));
+    group.add(normal);
+    const meshes = [];
+    group.traverse(obj => { if (obj.isMesh) meshes.push({ mesh: obj, material: obj.material }); });
+    this.root.add(group);
+    this.entities.push({ life, group, normal, wreck: null, meshes, anim, gunGroup: null, ghost: false, label: null, hp: null });
   }
 
   buildMarkers() {
@@ -427,23 +442,33 @@ class ReplayPlayer {
   }
 
   seek(t) {
+    // A seek to no time at all is none: a clock that is not a number samples
+    // every life at no time, frame after frame.
+    if (!Number.isFinite(t)) return;
     this.time = Math.min(Math.max(0, t), this.rec.duration);
-    this.ctx.guns?.clear();
-    this.soldiers?.reset();
+    const guard = this.guard ??= new ReplayGuard();
+    guard.run('the seek', () => {
+      this.ctx.guns?.clear();
+      this.soldiers?.reset();
+    });
     for (const hull of this.hulls.values()) {
       hull.lastT = null;
-      hull.resetSound();
+      // A hull put away for throwing gets another go at the new instant.
+      hull.faulted = false;
+      guard.run('the seek', () => hull.resetSound());
     }
     // A round fired just before the new instant is still in the air.
     for (const f of this.rec.fires) {
       const age = this.time - f.t;
-      if (age >= 0 && age <= SEEK_SHOT_WINDOW) this.fireShot(f);
+      if (age >= 0 && age <= SEEK_SHOT_WINDOW) guard.run('a recorded round', () => this.fireShot(f));
     }
     this.lastFiredTime = this.time;
     // The message log is rebuilt for the new instant, and the camera starts
     // from wherever its target now is.
-    this.feed?.invalidate();
-    this.camera?.snap();
+    guard.run('the seek', () => {
+      this.feed?.invalidate();
+      this.camera?.snap();
+    });
   }
 
   /**
@@ -489,8 +514,19 @@ class ReplayPlayer {
   }
 
   update(dt) {
+    // Each stage of the frame runs through the guard (replay-guard.js): one
+    // that throws is a console warning and its stand-in, and everything after
+    // it still runs, the page's render and HUD included.
+    const guard = this.guard ??= new ReplayGuard();
+    // The frame's step, the speed and the clock stay numbers whatever
+    // arrives: a clock that is not one sampled every life at no time, and
+    // every frame after it did the same.
+    if (!(dt >= 0 && dt < Infinity)) dt = 0;
+    if (!(this.speed > 0 && this.speed < Infinity)) this.speed = 1;
+    if (!Number.isFinite(this.lastFiredTime)) this.lastFiredTime = Number.isFinite(this.time) ? this.time : 0;
+    if (!Number.isFinite(this.time)) this.time = this.lastFiredTime;
     // A drag along the timeline since the last frame lands first.
-    const scrub = this.ui.timeline.takeScrub();
+    const scrub = guard.run('the timeline', () => this.ui.timeline.takeScrub(), null);
     if (scrub !== null) this.seek(scrub);
     const prevT = this.lastFiredTime;
     if (this.playing && !this.ui.scrubbing) {
@@ -502,13 +538,16 @@ class ReplayPlayer {
     // or scrubbed. The presentation integrates over it, so a paused replay's
     // propellers hold still with everything else.
     const step = Math.max(0, t - prevT);
+    // Whatever throws below, the next frame steps from this one: a clock left
+    // behind grew the step every frame and fired every round since again.
+    this.lastFiredTime = t;
     // The rounds in the air and the effects run on the same clock: the page
     // advances both on its own, and a paused replay's bombs kept falling.
     const rate = this.feedRate();
     if (this.ctx.guns) this.ctx.guns.timeScale = rate;
     if (this.ctx.effects) this.ctx.effects.timeScale = rate;
-    for (const hull of this.hulls.values()) hull.update(t, step);
-    for (const entity of this.entities) place(this, entity, t);
+    for (const hull of this.hulls.values()) this.updateHull(hull, t, step);
+    for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
     // The camera after the hulls (the orbit centres on a hull as drawn this
     // frame) and before the soldiers: their renderer culls each body against
     // the camera as it stands when it draws him (bot-visuals.js
@@ -517,10 +556,15 @@ class ReplayPlayer {
     // vanished at some angles of the orbit. The Auto camera's director and
     // the highlight reel choose whom it is on first.
     this.withHighlights(h => h.lead(t, dt));
-    this.camera.update(dt, t);
-    this.soldiers?.update(t, step, this.hulls);
-    this.props.update(t);
-    this.round?.update(t);
+    guard.run('the camera', () => this.camera.update(dt, t), () => {
+      // What the first person set this frame is not his: no body hidden,
+      // no HUD over a view that did not come from his eyes.
+      this.camera.hidePid = null;
+      this.camera.sight = null;
+    });
+    guard.run('the soldiers', () => this.soldiers?.update(t, step, this.hulls));
+    guard.run('the dropped kits and rounds', () => this.props.update(t));
+    guard.run('the flags and tickets', () => this.round?.update(t));
     if (!this.roundNoted && this.round?.points && this.statusLine) {
       // Once the level's points are matched: where the counter's numbers
       // come from.
@@ -529,10 +573,58 @@ class ReplayPlayer {
         : this.round.source === 'estimated' ? 'tickets estimated from the recorded deaths and flags'
         : 'no tickets (the recording joined mid-round, before the recorder kept them)';
       this.statusLine += ` · ${tickets}`;
-      this.ui.status(this.statusLine);
+      guard.run('the status line', () => this.ui.status(this.statusLine));
     }
     // The server log's rings on the level are the replay log's, a debug
     // overlay: up while that panel is.
+    guard.run('the server log rings', () => this.updateMarkers(t));
+    if (t > prevT) {
+      for (const f of this.rec.fires) {
+        if (f.t > prevT && f.t <= t) guard.run('a recorded round', () => this.fireShot(f));
+      }
+      for (const r of this.rec.refills ?? []) {
+        if (r.t > prevT && r.t <= t) guard.run('a refill', () => this.refill(r.t, r.pid ?? this.recordingPid));
+      }
+    }
+    guard.run('hiding his own body', () => this.hideOwnBody(this.camera.hidePid));
+    // What his HUD shows through his eyes; the page paints it (`feedHud`).
+    // One that cannot be worked out is no HUD, not a stale one.
+    guard.run('the first-person HUD', () => this.hud?.update(t), () => {
+      if (this.hud) this.hud.state = null;
+    });
+    // The game's message log, and in a recording player's own first person
+    // his hits' red wash.
+    const ownView = this.camera.mode === 'pov' && this.camera.hidePid !== null
+      && this.recordingPids.includes(this.followPid);
+    guard.run('the message log', () => this.feed.update(t, ownView ? this.followPid : null));
+    guard.run('the timeline', () => this.ui.timeline.plan(prevT, t, this.playing));
+    guard.run('the bar', () => this.ui.update(t, dt));
+    this.withHighlights(h => h.update(t, dt));
+  }
+
+  /**
+   * One hull's frame. One that throws, or is placed at no position (a pose
+   * that is not all numbers draws nothing and poisons whatever reads it: the
+   * camera over it, its engine's sound), is hidden with its sound let go; one
+   * that keeps throwing is left out until the next seek rather than tried and
+   * warned about every frame. The rest of the round draws on.
+   */
+  updateHull(hull, t, step) {
+    if (hull.faulted) return;
+    const name = `the ${hull.life.tmpl || 'hull'} ${hull.life.nid}`;
+    this.guard.item(name, hull, () => {
+      hull.update(t, step);
+      if (hull.group.visible && !(finiteVector(hull.root.position) && finiteVector(hull.root.quaternion))) {
+        throw new Error(`${name} was placed at no position at ${t.toFixed(2)} s`);
+      }
+    }, (error, streak) => {
+      hull.hide();
+      if (streak >= FAULT_STREAK) hull.faulted = true;
+    });
+  }
+
+  /** The server log's rings around their events (`buildMarkers`). */
+  updateMarkers(t) {
     const rings = this.showServer && this.ui.logOpen;
     for (const m of this.markers) {
       const age = t - m.row.t;
@@ -544,26 +636,6 @@ class ReplayPlayer {
         m.marker.scale.set(1 + k * 2.5, 1, 1 + k * 2.5);
       }
     }
-    if (t > prevT) {
-      for (const f of this.rec.fires) {
-        if (f.t > prevT && f.t <= t) this.fireShot(f);
-      }
-      for (const r of this.rec.refills ?? []) {
-        if (r.t > prevT && r.t <= t) this.refill(r.t, r.pid ?? this.recordingPid);
-      }
-    }
-    this.lastFiredTime = t;
-    this.hideOwnBody(this.camera.hidePid);
-    // What his HUD shows through his eyes; the page paints it (`feedHud`).
-    this.hud?.update(t);
-    // The game's message log, and in a recording player's own first person
-    // his hits' red wash.
-    const ownView = this.camera.mode === 'pov' && this.camera.hidePid !== null
-      && this.recordingPids.includes(this.followPid);
-    this.feed.update(t, ownView ? this.followPid : null);
-    this.ui.timeline.plan(prevT, t, this.playing);
-    this.ui.update(t, dt);
-    this.withHighlights(h => h.update(t, dt));
   }
 
   /** First person looks out of the followed player's head: his own body,
@@ -594,21 +666,23 @@ class ReplayPlayer {
     return out;
   }
 
+  /** Everything the replay put on the page, taken down; a part that throws
+   *  on the way is a warning, and the rest still goes. */
   dispose() {
-    this.hud?.dispose(this.ctx.hudVars?.() ?? null);
+    extra('taking the HUD down', () => this.hud?.dispose(this.ctx.hudVars?.() ?? null));
     if (this.ctx.guns?.collider?.dynamicCast) this.ctx.guns.collider.dynamicCast = null;
     if (this.ctx.guns) this.ctx.guns.timeScale = 1;
     if (this.ctx.effects) this.ctx.effects.timeScale = 1;
-    this.camera.dispose();
-    for (const hull of this.hulls.values()) hull.dispose();
+    extra('taking the camera back', () => this.camera.dispose());
+    for (const hull of this.hulls.values()) extra(`taking the ${hull.life.tmpl} down`, () => hull.dispose());
     this.hulls.clear();
-    this.soldiers?.dispose();
-    this.props.dispose();
-    this.ctx.guns?.clear();
+    extra('taking the soldiers down', () => this.soldiers?.dispose());
+    extra('taking the dropped kits down', () => this.props.dispose());
+    extra('clearing the rounds', () => this.ctx.guns?.clear());
     this.ctx.scene.remove(this.root);
-    this.feed.dispose();
+    extra('taking the message log back', () => this.feed.dispose());
     extra('taking the highlights down', () => this.highlights?.dispose());
-    this.ui.dispose();
+    extra('taking the bar down', () => this.ui.dispose());
   }
 }
 
@@ -697,9 +771,10 @@ export function createReplayController(ctx) {
       toast(ctx.stage, `${label} was recorded on ${rec.level}, and this view shows ${level}. Open it with ?map=${rec.level}.`);
       return null;
     }
-    player?.dispose();
-    const log = logText ? parseServerLog(logText) : null;
-    const alignment = log ? alignServerLog(rec, log) : null;
+    extra('closing the last replay', () => player?.dispose());
+    player = null;
+    const log = logText ? extra('the server log', () => parseServerLog(logText)) ?? null : null;
+    const alignment = log ? extra('aligning the server log', () => alignServerLog(rec, log)) ?? null : null;
     player = new ReplayPlayer(ctx, rec, log, alignment, label, assets);
     if (typeof window !== 'undefined') window.replay = player;
     extra("the page's additions to the replay bar", () => ctx.opened?.(player));
@@ -707,26 +782,38 @@ export function createReplayController(ctx) {
     return player;
   }
 
+  // Nothing the replay does in the page's frame may throw into it: the page
+  // skips the rest of a frame that throws, and a replay that threw every
+  // frame froze the view and the Escape menu with it (replay-guard.js).
+  const guarded = (what, fn, fallback) => (player ? player.guard.run(what, fn, fallback) : fallback);
+
   return {
     update(dt) {
-      player?.update(dt);
+      guarded('the frame', () => player.update(dt));
     },
     afterRender(canvas) {
-      player?.afterRender(canvas);
+      guarded("the timeline's frame", () => player.afterRender(canvas));
     },
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {
-      return player ? player.feedRate() : 1;
+      return guarded('the feed rate', () => player.feedRate(), 1);
     },
     /** The followed player's HUD into the page's HUD variables, in his
-     *  first person (replay-hud.js); `art` the page's sprite lookups. */
+     *  first person (replay-hud.js); `art` the page's sprite lookups. One
+     *  that throws takes back whatever it had written. */
     feedHud(vars, art) {
-      player?.hud?.feed(vars, art);
+      guarded('the HUD feed', () => player.hud?.feed(vars, art), () => {
+        try {
+          if (player.hud?.written) player.hud.clear(vars);
+        } catch {
+          // Nothing more to take back.
+        }
+      });
     },
     /** The crosshair his weapon or seat draws, in his first person; null
      *  otherwise (vehicle-hud.js `crosshairAim`). */
     crosshairAim() {
-      return player?.hud?.crosshairAim() ?? null;
+      return guarded('the crosshair', () => player.hud?.crosshairAim() ?? null, null);
     },
     /** Whether a replay has the page (its input is the replay's). */
     active() {

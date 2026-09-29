@@ -160,14 +160,20 @@ export class ReplayProps {
   async load(lives, hulls = []) {
     const ctx = this.player.ctx;
     const placed = lives.filter(l => (l.kit || l.projectile) && l.keys.some(k => !atOrigin(k.p)));
+    // Each one on its own: a model that cannot be laid is a warning and one
+    // thing left off the ground, not a replay that stops loading.
     await Promise.all(placed.map(async life => {
-      const source = life.kit ? await this.kitSource(life.tmpl) : await this.roundSource(life.tmpl, hulls);
-      if (!source) return;
-      const node = skeletonClone(source.scene);
-      node.visible = false;
-      node.name = `replay ${life.tmpl} ${life.nid}`;
-      this.player.root.add(node);
-      this.props.push({ life, node, endEffect: source.endEffect, wasShown: false, lastAt: null });
+      try {
+        const source = life.kit ? await this.kitSource(life.tmpl) : await this.roundSource(life.tmpl, hulls);
+        if (!source) return;
+        const node = skeletonClone(source.scene);
+        node.visible = false;
+        node.name = `replay ${life.tmpl} ${life.nid}`;
+        this.player.root.add(node);
+        this.props.push({ life, node, endEffect: source.endEffect, wasShown: false, lastAt: null });
+      } catch (error) {
+        console.warn(`replay: the ${life.tmpl} ${life.nid} left off the ground`, error);
+      }
     }));
     return this.props.length;
   }
