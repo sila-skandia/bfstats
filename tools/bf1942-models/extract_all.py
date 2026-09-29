@@ -158,6 +158,8 @@ def main() -> int:
         "--out", str(args.out),
         "--max-texture", str(args.max_texture),
         "-j", str(args.jobs),
+        # Optimised once, below, with the seat poses.
+        "--no-optimise",
     ]
     if args.level_all:
         command.append("--level-all")

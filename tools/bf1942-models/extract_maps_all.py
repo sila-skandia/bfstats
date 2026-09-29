@@ -149,6 +149,10 @@ def _extract_one(task: tuple) -> dict:
         # Where this level ends up, so the relative sound paths in scene.json
         # are measured from the published location rather than from staging.
         "--final-out", final_out,
+        # Not in staging: an image URI is relative to where the glb sits, so a
+        # staged level would point at textures from a depth it will not live
+        # at. main() optimises the whole tree once every level is in place.
+        "--no-optimise",
     ]
     if terrain_only:
         command.append("--terrain-only")
