@@ -1,5 +1,9 @@
 # Hand-weapon first-person placement, deviation, and zoom
 
+*Added 2026-09-29: the first study of this topic is
+[first-person-soldier.md](../../bf1942-3d-models/first-person-soldier.md).
+Where the two disagree, this note wins.*
+
 Settled 2026-09-15, first-person mount closed in a second pass the same day, the
 clock and the zoom unit closed in a third (§2 "Clock", §3 "Fields of view",
 §7), the renderer's `drawFov` pass and the animation runtime under the arms

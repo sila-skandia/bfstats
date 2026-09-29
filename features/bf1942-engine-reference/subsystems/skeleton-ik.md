@@ -1,5 +1,9 @@
 # Skeleton IK — where a seated soldier's hands go
 
+*Added 2026-09-29: the first study of this topic is
+[vehicle-occupant-pose-plan.md](../../bf1942-3d-models/vehicle-occupant-pose-plan.md).
+Where the two disagree, this note wins.*
+
 `addSkeletonIK` is a `.con` word on an `AnimatedBundleTemplate`. The engine
 resolves it every frame into a two-bone reach followed by an outright rotation
 override, and the whole of "a driver's hands stay on the wheel" is one integer

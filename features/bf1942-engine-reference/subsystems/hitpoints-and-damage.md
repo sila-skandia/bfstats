@@ -1,5 +1,9 @@
 # Hit points and damage: Armor, and how it dies
 
+*Added 2026-09-29: the first study of fall damage is
+[fall-damage-research-groundwork-2026-09-17.md](../../bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md).
+Where the two disagree, this note wins.*
+
 Settled 2026-09-16 for the map viewer's `armor.js` and the soldier's HUD
 health bar ([ingame-hud.md](ingame-hud.md) HUD-9); extended 2026-09-17 with
 what makes a vehicle burn (§8); §3 (what a collision costs) was rewritten
