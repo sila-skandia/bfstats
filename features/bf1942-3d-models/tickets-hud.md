@@ -335,8 +335,8 @@ are missing before they could:
    for ever and the drain would either never start or never stop.
    *Corrected 2026-09-29: the bleed does not follow a flag majority. A side
    bleeds while the enemy's summed `areaValue` over the points it holds is
-   above 99 ([`round-state.js`](../../tools/bf1942-models/viewer/round-state.js),
-   ledger TKT-4).*
+   above 99. See ledger TKT-4 and
+   [`round-state.js`](../../tools/bf1942-models/viewer/round-state.js).*
 3. **Somewhere to put the result.** The counter is one of several things that
    want a round state (the score board opens nothing, the capture rings are
    unfed, `Ticket/*TicketBlink` has nobody to set it). A ticket counter alone

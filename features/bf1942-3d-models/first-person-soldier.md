@@ -2044,9 +2044,8 @@ calibrate it), and the AT family's `minDeviation`/`maxDeviation` vocabulary
 (different console block, corpus doc §7 — floor-and-lid is the stand-in).
 *Corrected 2026-09-29: the tick cadence is settled. The engine updates
 deviation once per fixed 1/30 s simulation tick, on the client as on the
-server, and `deviation.js` now has `TICK_HZ = 30`
-([handweapon-view-and-deviation.md](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md),
-"Clock").*
+server, and `deviation.js` now has `TICK_HZ = 30`. See "Clock" in
+[handweapon-view-and-deviation.md](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md).*
 
 ### What remains
 
