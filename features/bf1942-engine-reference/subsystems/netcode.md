@@ -179,6 +179,12 @@ caveat: `0x00498ce0`, the actual transform application step, was not read, so
 "how the factor maps to movement" stays unread — but the negative claim, "no
 interpolation buffer like replay.js's SAMPLE_PERIOD", is confirmed as far as
 read (P-2).
+*Noted 2026-09-29: [round-replay-capture §15](../../round-replay-capture/README.md#15-format-v4-turrets-engines-and-soldiers-bodies-2026-09-27)
+reads this differently. It finds a 16-entry history on each networkable and a
+RotationalBundle `predict` that interpolates between the two records around
+`now - delay` (client `0x00559D40`), and it says the client functions P-1 and
+P-2 name, on vtable `0x008D8DA8`, belong to the client's local-host server. The
+two readings disagree and the question is open.*
 
 ## 5. Rates and the choke
 
@@ -222,6 +228,8 @@ which is now read rather than guessed:
   state — replay.js-style interpolation is a rendering choice the engine
   never made (P-2). The 20 Hz default and the `Σ(rate × 1044)` choke
   arithmetic are the capacity law (R-1).
+  *Noted 2026-09-29: the no-interpolation half is disputed, see the note at
+  the end of §4.*
 - **Joining and leaving are explicit packets.** The server announces itself
   (ServerInfoEvent/ServerInfoEvent2), challenges, then choke-bandwidths; the
   client leaves with an explicit disconnect packet (type 0xd) before
