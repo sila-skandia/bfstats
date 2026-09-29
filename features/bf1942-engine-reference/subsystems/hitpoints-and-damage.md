@@ -710,6 +710,9 @@ is open; see the note at the end of
   What that gate measures — G-force, roll angle, something else — is unread.
   It is the best remaining candidate for why a burning vehicle *feels*
   undriveable: its crew keeps taking damage and the player bails.
+  *Noted 2026-09-29: a later reading, now in ledger PHY-3, places this call as
+  submarine suffocation, the crew's damage once the oxygen runs out, and not a
+  burning-vehicle mechanic. PHY-3 records that as one reader's result.*
 - ~~**HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`.~~
   **Closed 2026-09-25 (§7):** nothing — a remote client never receives these
   ids (they never leave the process that runs `Armor::status`, confirmed
