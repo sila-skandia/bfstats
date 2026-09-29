@@ -73,8 +73,9 @@ read from `bf1942_lnxded.static`.
 ## Verified
 
 Everything below was measured on main `ea2e0b8f`, before and after this branch. Runner numbers taken
-before the damage-parity merge are not comparable with these. The branch now sits on `1340e452`, whose
-two commits wash the seated player's HUD and change nothing a bot does.
+before the damage-parity merge are not comparable with these. The work landed on main on 2026-09-24 as
+`e751e8a5` and `75a14c93`, directly on top of `1340e452`, whose two commits wash the seated player's HUD
+and change nothing a bot does. This line used to say the branch sits on `1340e452`.
 
 **Tests.** `tests/test_bot_stance.py` (22) covers the component's threshold spread, its strict
 comparison, the 5 s re-decision, the control branch and the water rule, and every builder's threshold
