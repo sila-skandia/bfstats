@@ -37,14 +37,15 @@ public class RecordingsController(
     public const string ViewLimit = "recordings-views";
 
     /// <summary>The feed, narrowed to one <paramref name="server"/>, one
-    /// <paramref name="uploader"/>, or both when given.</summary>
+    /// <paramref name="uploader"/>, or both when given. Each card says whether the signed-in
+    /// viewer may rename or delete it.</summary>
     [HttpGet]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<PagedRecordingsDto>> List(
         [FromQuery] string? sort, [FromQuery] string? server, [FromQuery] string? uploader,
         [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
         CancellationToken ct = default) =>
-        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader), ct));
+        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader), Actor(), ct));
 
     /// <summary>The servers and uploaders the feed can be narrowed to, each with how many
     /// recordings it would show beside the other filter.</summary>

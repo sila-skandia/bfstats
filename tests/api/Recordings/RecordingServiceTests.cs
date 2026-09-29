@@ -30,8 +30,8 @@ public sealed class RecordingServiceTests : IDisposable
         await fixture.Db.Recordings.Where(r => r.Slug == first.Slug)
             .ExecuteUpdateAsync(set => set.SetProperty(r => r.ViewCount, 9));
 
-        var recent = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
-        var watched = await fixture.Service.ListAsync("views", 1, 24, RecordingFilter.None, default);
+        var recent = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, null, default);
+        var watched = await fixture.Service.ListAsync("views", 1, 24, RecordingFilter.None, null, default);
 
         Assert.Equal([third.Slug, second.Slug, first.Slug], recent.Items.Select(i => i.Slug));
         Assert.Equal([first.Slug, third.Slug, second.Slug], watched.Items.Select(i => i.Slug));
@@ -53,7 +53,7 @@ public sealed class RecordingServiceTests : IDisposable
         var theirs = await fixture.UploadAsync(
             RecordingFixture.Midway("theirs"), RecordingFixture.Meta(authorName: "Rut"), actor: fixture.AsOther);
 
-        var list = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
+        var list = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, null, default);
         var detail = await fixture.Service.GetAsync(mine.Slug, null, default);
 
         Assert.Equal("skandia", mine.UploaderPlayer);
@@ -83,7 +83,7 @@ public sealed class RecordingServiceTests : IDisposable
     {
         for (var i = 0; i < 5; i++) await Share($"r{i}");
 
-        var page = await fixture.Service.ListAsync(null, 2, 2, RecordingFilter.None, default);
+        var page = await fixture.Service.ListAsync(null, 2, 2, RecordingFilter.None, null, default);
 
         Assert.Equal(2, page.Items.Count);
         Assert.Equal(5, page.TotalCount);
@@ -103,7 +103,7 @@ public sealed class RecordingServiceTests : IDisposable
 
         await reconciler.ReconcileAsync(default);
 
-        var feed = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, default);
+        var feed = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, null, default);
         Assert.Single(feed.Items);
         Assert.Null(await fixture.Service.GetAsync(gone.Slug, null, default));
     }
@@ -126,7 +126,7 @@ public sealed class RecordingServiceTests : IDisposable
         await OnServer(elsewhere.Slug, "Other");
 
         var list = (string? server, string? uploader) =>
-            fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(server, uploader), default);
+            fixture.Service.ListAsync(null, 1, 24, RecordingFilter.From(server, uploader), null, default);
         var onMoon = await list($"  {Moon} ", null);
         var byMe = await list(null, "skandia");
         var both = await list(Moon, "skandia");
@@ -269,6 +269,27 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.False(File.Exists(fixture.Storage.RecordingPath(shared.Slug)));
         Assert.Equal(0, await fixture.Db.RecordingComments.CountAsync());
         Assert.False(await fixture.Service.DeleteAsync(shared.Slug, fixture.AsAdmin, default));
+    }
+
+    /// <summary>The feed says of each card whether the one asking may rename or delete it: the
+    /// account that shared it, or an admin; nobody signed out.</summary>
+    [Fact]
+    public async Task List_SaysWhoMayRenameOrDeleteEachCard()
+    {
+        var mine = await Share("mine");
+        var theirs = await ShareAsRut("theirs");
+
+        async Task<(bool Mine, bool Theirs)> SeenBy(RecordingActor? actor)
+        {
+            var items = (await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, actor, default)).Items;
+            return (items.Single(i => i.Slug == mine.Slug).CanManage, items.Single(i => i.Slug == theirs.Slug).CanManage);
+        }
+
+        Assert.Equal((false, false), await SeenBy(null));
+        Assert.Equal((true, false), await SeenBy(fixture.AsUploader));
+        Assert.Equal((false, true), await SeenBy(fixture.AsOther));
+        Assert.Equal((true, true), await SeenBy(fixture.AsAdmin));
+        Assert.Equal((false, false), await SeenBy(fixture.AsUnlinked));
     }
 
     [Fact]

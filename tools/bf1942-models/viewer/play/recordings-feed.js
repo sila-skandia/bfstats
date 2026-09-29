@@ -18,6 +18,11 @@
 // player's view, with the round's recordings listed under it, each to watch
 // alone. Each recording keeps its own page, uploader, title, cover and
 // comments.
+//
+// Whoever shared a recording, and an admin, can rename or delete it: from its
+// card's menu, or on its page. What the API says a viewer may do is for whoever
+// the cards and the page were read as, so they are read again once the page's
+// own sign-in lands, or after a sign-in or out.
 
 import {
   ago, clock, commentRuns, count, createRecordingsApi, feedCount, playerHref, readableQuery, resolveApi, size,
@@ -48,6 +53,7 @@ const ICONS = {
   chevron: '<path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
   round: '<rect x="1.8" y="5.2" width="9" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.6 3.2h8.4a1 1 0 0 1 1 1v6.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.2 7.3v2.9l2.6-1.45z" fill="currentColor"/>',
   unlink: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.8 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2M2.5 2.5l11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  more: '<circle cx="8" cy="3.2" r="1.45" fill="currentColor"/><circle cx="8" cy="8" r="1.45" fill="currentColor"/><circle cx="8" cy="12.8" r="1.45" fill="currentColor"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -96,6 +102,8 @@ const STYLE = `
 .rf-btn.quiet { border-color: transparent; background: transparent; color: var(--rf-muted); }
 .rf-btn.quiet:hover { color: var(--rf-ink); border-color: var(--rf-edge); }
 .rf-btn.danger:hover { border-color: #d9824a; color: #f0b58a; }
+.rf-btn.destroy { background: #c46f3e; border-color: #c46f3e; color: #1c1008; }
+.rf-btn.destroy:hover { background: #d9824a; border-color: #d9824a; }
 .rf-btn:disabled { opacity: .45; cursor: default; }
 .rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible, .rf-player:focus-visible,
 .rf-input:focus-visible, .rf-select:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
@@ -203,6 +211,38 @@ const STYLE = `
 .rf-take-watch:focus-visible, .rf-take-name:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rf-take-more { min-height: 24px; padding-top: 4px; color: var(--rf-faint); font-size: 11.5px; }
 .rf-take-more a { color: inherit; }
+/* A card whose recording this viewer may change (the uploader's own, any
+   for an admin): a menu beside its title, Rename and Delete. A round's lists
+   each of its recordings the viewer may change, by whose it is. */
+.rf-info { position: relative; }
+.rf-card.managed .rf-name { padding-right: 32px; }
+.rf-manage { position: absolute; top: 4px; right: 0; }
+.rf-manage-btn { appearance: none; display: grid; place-items: center; width: 28px; height: 28px; margin: 0; padding: 0;
+  border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--rf-muted); cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background-color .15s ease; }
+.rf-manage-btn:hover, .rf-manage.open .rf-manage-btn { color: var(--rf-ink); border-color: var(--rf-edge); background: rgba(255, 255, 255, .07); }
+.rf-manage-btn:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rf-manage-menu { position: absolute; z-index: 4; top: calc(100% + 4px); right: 0; display: none; flex-direction: column; gap: 1px;
+  width: max-content; min-width: 180px; max-width: min(280px, calc(100vw - 40px)); padding: 4px; background: rgba(28, 28, 24, .98);
+  border: 1px solid var(--rf-edge); border-radius: 6px; box-shadow: 0 10px 28px rgba(0, 0, 0, .55); }
+.rf-manage.open .rf-manage-menu { display: flex; }
+.rf-card.menu-open { position: relative; z-index: 3; }
+.rf-manage-head { padding: 6px 9px 3px; color: var(--rf-muted); font: 11.5px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-manage-head:not(:first-child) { margin-top: 3px; border-top: 1px solid rgba(200, 194, 152, .14); padding-top: 8px; }
+.rf-mi { appearance: none; display: flex; align-items: center; gap: 9px; width: 100%; height: 32px; padding: 0 9px; margin: 0;
+  border: 0; border-radius: 4px; background: none; color: var(--rf-ink); font: 700 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .08em; text-transform: uppercase; text-align: left; white-space: nowrap; cursor: pointer; }
+.rf-mi:hover { background: rgba(255, 255, 255, .08); }
+.rf-mi:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: -1px; }
+.rf-mi.danger { color: #f0b58a; }
+.rf-mi.danger:hover { background: rgba(217, 130, 74, .14); }
+@media (pointer: coarse) {
+  .rf-mi { height: 40px; }
+  .rf-manage { top: 0; }
+  .rf-manage-btn { width: 36px; height: 36px; }
+  .rf-card.managed .rf-name { padding-right: 40px; }
+}
 /* For an admin: a round held together only by an admin's link its
    recordings do not bear out. */
 .rf-root .rf-weak { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; vertical-align: 1px;
@@ -278,7 +318,8 @@ const STYLE = `
 .rf-several { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .rf-several li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px;
   border: 1px solid rgba(200, 194, 152, .18); border-radius: 6px; }
-.rf-several .rf-status { grid-column: 1 / -1; }
+.rf-several .rf-status, .rf-several .rf-field { grid-column: 1 / -1; }
+.rf-several .rf-field { margin-top: 4px; }
 .rf-several .rf-status:empty { display: none; }
 .rf-len-inline { color: var(--rf-muted); font: 12px/1 ui-monospace, monospace; }
 .rf-comments { margin-top: 26px; border-top: 1px solid var(--rf-edge); padding-top: 14px; }
@@ -311,6 +352,7 @@ const STYLE = `
   border-radius: 8px; box-shadow: 0 18px 48px rgba(0, 0, 0, .6); }
 .rf-dialog .rf-head { position: sticky; top: 0; z-index: 1; }
 .rf-dialog-body { display: grid; gap: 12px; padding: 16px; }
+.rf-dialog-form { display: grid; gap: 12px; }
 .rf-drop { display: grid; justify-items: center; gap: 8px; padding: 20px 16px; border: 1.5px dashed rgba(200, 194, 152, .4); border-radius: 6px;
   text-align: center; color: var(--rf-muted); transition: border-color .15s ease, background-color .15s ease; }
 .rf-drop svg { width: 28px; height: 28px; color: #b9b38a; }
@@ -328,6 +370,10 @@ const STYLE = `
 .rf-progress { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .1); overflow: hidden; }
 .rf-progress i { display: block; height: 100%; width: 0; background: var(--rf-khaki); transition: width .2s ease; }
 .rf-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* Renaming or deleting a recording: which one it is, under the question. */
+.rf-which { margin: 0; color: var(--rf-muted); font-size: 12px; overflow-wrap: anywhere; }
+.rf-ask { margin: 0; font: 700 15px/1.35 'Trebuchet MS', 'Segoe UI', sans-serif; overflow-wrap: anywhere; }
+.rf-dialog-actions .rf-status { flex: 1 1 auto; align-self: center; min-height: 0; }
 
 @container rf (max-width: 620px) {
   .rf-hero { grid-template-columns: minmax(0, 1fr); }
@@ -347,7 +393,7 @@ const STYLE = `
   .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rf-play, .rf-drop, .rf-progress i, .rf-filter, .rf-deck::before, .rf-deck::after { transition: none; }
+  .rf-play, .rf-drop, .rf-progress i, .rf-filter, .rf-deck::before, .rf-deck::after, .rf-manage-btn { transition: none; }
   .rf-skeleton .rf-cover, .rf-root .rf-weak::before { animation: none; }
 }
 `;
@@ -381,6 +427,22 @@ export const roundOf = recording => (Array.isArray(recording?.round) && recordin
  *  card shows of it (`roundCard`); null for a recording on its own. */
 export const roundCardOf = recording => (recording?.roundCard && roundOf(recording)
   ? { members: roundOf(recording), whole: recording.roundCard } : null);
+
+/** The recordings on a card this viewer may rename or delete, as the API says
+ *  of each (`canManage`: its uploader, or an admin): a round's, in round order,
+ *  else the card's own. */
+export function managedOf(recording) {
+  const round = roundCardOf(recording);
+  if (round) return round.members.filter(member => member.canManage);
+  return recording?.canManage ? [recording] : [];
+}
+
+/** The title a share offers until another is written: the level and the
+ *  server, as the API titles one that comes without (`Bocage on MoonGamers`).
+ *  None while the level is not known: the API titles it by the one chosen. */
+export function defaultTitle(level, server) {
+  return level ? [level, server && `on ${server}`].filter(Boolean).join(' ') : '';
+}
 
 /** What the feed is narrowed to in an address (`?server=`, `?uploader=`):
  *  `{ server, uploader }`, '' for all. */
@@ -492,6 +554,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     commentPages: 1,
     commentSort: 'newest',
     viewer: null,       // `{ userId, names, isAdmin }` while signed in
+    listAs: null,       // who the cards were read as (`readAs`), null for a mix
+    detailAs: null,     // who the recording's page was read as
   };
 
   const rootEl = el('div', 'rf-root');
@@ -565,6 +629,83 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     if (state.detail) renderComments();
     // An admin's cards mark a round held by a weak link.
     else if (state.viewer?.isAdmin && state.items.some(i => i.roundCard?.weak)) renderList();
+    syncViewer();
+  }
+
+  /** Who the page reads the feed as. What the API says a viewer may do (a
+   *  card's or a page's `canManage`, a comment's `canDelete`, `canEditRound`)
+   *  is for that viewer. */
+  const readAs = () => (state.api?.signedIn ? 'in' : 'out');
+
+  /** The cards and the page, read again when they were read as someone else:
+   *  the page asks for them alongside its sign-in, not after it, so a visitor
+   *  signed in on bfstats.io gets them first as nobody. */
+  function syncViewer() {
+    const now = readAs();
+    if (state.detail) {
+      if (state.detail.slug && !state.detail.loading && !state.detail.error && state.detailAs !== now) rereadDetail();
+    } else if (state.items.length && state.listAs !== now) {
+      rereadList();
+    }
+  }
+
+  async function rereadDetail() {
+    const { slug } = state.detail;
+    state.detailAs = readAs();
+    try {
+      const detail = await state.api.get(slug);
+      if (state.detail?.slug !== slug) return;
+      state.detail = detail;
+    } catch (error) {
+      console.warn('recordings-feed: the recording, read again', error);
+      return;
+    }
+    renderDetail();
+    loadComments(true);
+  }
+
+  /** The pages of cards shown so far, read again: quietly, the cards staying
+   *  up until theirs come. */
+  async function rereadList() {
+    const pages = Math.max(1, state.page);
+    listAbort?.abort();
+    const abort = listAbort = new AbortController();
+    state.listAs = readAs();
+    try {
+      const read = await Promise.all(Array.from({ length: pages }, (_, i) => state.api.list({
+        sort: state.sort, ...state.filter, page: i + 1, pageSize: PAGE_SIZE, signal: abort.signal,
+      })));
+      if (abort !== listAbort) return;
+      const items = [];
+      for (const item of read.flatMap(page => page.items)) if (!items.some(o => o.slug === item.slug)) items.push(item);
+      const last = read.at(-1);
+      Object.assign(state, {
+        items, total: last.totalCount, recordings: last.recordingCount ?? last.totalCount,
+        page: last.page, pages: last.totalPages, storage: last.storage,
+      });
+    } catch (error) {
+      if (error.name !== 'AbortError' && abort === listAbort) console.warn('recordings-feed: the list, read again', error);
+      return;
+    } finally {
+      if (abort === listAbort) state.loading = false;
+    }
+    renderList();
+  }
+
+  /** Signed out, nothing on the page is the viewer's to change: what it holds
+   *  says so at once, with nothing to read again. */
+  function forgetViewer() {
+    const drop = recording => { if (recording) recording.canManage = false; };
+    for (const item of state.items) {
+      drop(item);
+      item.round?.forEach(drop);
+    }
+    if (state.detail) {
+      Object.assign(state.detail, { canManage: false, canEditRound: false });
+      state.detail.round?.forEach(drop);
+    }
+    for (const comment of state.comments) comment.canDelete = false;
+    state.listAs = state.detailAs = 'out';
   }
 
   function renderAccount() {
@@ -584,8 +725,10 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       account.append(who, button('', 'Sign out', async () => {
         await api.signOut();
         state.viewer = null;
+        forgetViewer();
         renderAccount();
         if (state.detail) renderDetail();
+        else renderList();
       }));
     } else {
       account.append(button('', api.mode === 'local' ? 'Sign in (dev)' : 'Sign in', () => signIn(), 'user'));
@@ -648,11 +791,13 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     state.loading = true;
     state.error = null;
     renderList();
+    const asked = readAs();
     try {
       const page = await state.api.list({
         sort: state.sort, ...state.filter, page: state.page + 1, pageSize: PAGE_SIZE, signal: abort.signal,
       });
       if (abort !== listAbort) return;
+      state.listAs = reset || !state.items.length || state.listAs === asked ? asked : null;
       state.items = reset ? page.items : [...state.items, ...page.items.filter(i => !state.items.some(o => o.slug === i.slug))];
       state.total = page.totalCount;
       state.recordings = page.recordingCount ?? page.totalCount;
@@ -668,6 +813,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       if (abort === listAbort) state.loading = false;
     }
     renderList();
+    syncViewer();
   }
 
   // --- the filters ---------------------------------------------------------------
@@ -916,6 +1062,11 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       stats.append(el('span', 'rf-dot'), document.createTextNode(part));
     }
     info.append(name, where, stats);
+    const managed = managedOf(recording);
+    if (managed.length) {
+      node.classList.add('managed');
+      info.append(manageMenu(recording, managed, node));
+    }
     if (round) {
       if (round.whole.weak && state.viewer?.isAdmin) info.append(weakMark());
       info.append(takes(recording, round));
@@ -929,6 +1080,79 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     node.append(top, info);
     return node;
   }
+
+  /** A card's menu of what this viewer may do to the recordings on it: Rename
+   *  and Delete, under whose each is when the card is a round. */
+  function manageMenu(recording, managed, cardNode) {
+    const wrap = el('div', 'rf-manage');
+    const btn = el('button', 'rf-manage-btn');
+    btn.type = 'button';
+    btn.innerHTML = icon('more');
+    btn.title = 'Rename or delete';
+    btn.setAttribute('aria-label', `Rename or delete ${recording.title}`);
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
+    const menu = el('div', 'rf-manage-menu');
+    menu.setAttribute('role', 'menu');
+    const round = roundCardOf(recording);
+    for (const member of managed) {
+      if (round) menu.append(el('div', 'rf-manage-head', `${whose(member)} · ${clock(member.durationSeconds)}`));
+      menu.append(menuItem('pencil', 'Rename', () => openRename(member)),
+        menuItem('trash', 'Delete', () => openDelete(member), 'danger'));
+    }
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      const open = !wrap.classList.contains('open');
+      closeMenus();
+      if (!open) return;
+      wrap.classList.add('open');
+      cardNode.classList.add('menu-open');
+      btn.setAttribute('aria-expanded', 'true');
+      menu.querySelector('.rf-mi')?.focus();
+    });
+    menu.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const items = [...menu.querySelectorAll('.rf-mi')];
+      const at = items.indexOf(document.activeElement);
+      items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+    });
+    wrap.append(btn, menu);
+    return wrap;
+  }
+
+  function menuItem(iconName, label, onClick, className = '') {
+    const b = el('button', `rf-mi ${className}`.trim());
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.innerHTML = `${icon(iconName)}<span></span>`;
+    b.querySelector('span').textContent = label;
+    b.addEventListener('click', e => {
+      e.preventDefault();
+      closeMenus();
+      onClick();
+    });
+    return b;
+  }
+
+  /** Shuts any card's menu; `focus` puts the keyboard back on its button. */
+  function closeMenus({ focus = false } = {}) {
+    for (const open of body.querySelectorAll('.rf-manage.open')) {
+      open.classList.remove('open');
+      open.closest('.rf-card')?.classList.remove('menu-open');
+      const btn = open.querySelector('.rf-manage-btn');
+      btn?.setAttribute('aria-expanded', 'false');
+      if (focus) btn?.focus();
+    }
+  }
+
+  // A press anywhere else shuts a card's menu.
+  document.addEventListener('pointerdown', e => {
+    if (!e.target.closest?.('.rf-manage.open')) closeMenus();
+  }, true);
+
+  /** Whose a recording is: who shared it, else who recorded it. */
+  const whose = recording => `${recording.uploaderName || recording.recordedBy || 'This'}'s recording`;
 
   /** The most of a round's recordings its card lists; its page lists all. */
   const TAKES = 3;
@@ -1013,15 +1237,22 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     state.commentTotal = summary?.commentCount ?? 0;
     renderDetail();
     body.scrollTop = 0;
+    const asked = readAs();
     try {
-      state.detail = await state.api.get(slug);
+      const detail = await state.api.get(slug);
+      // Another page, or the feed, since.
+      if (state.detail?.slug !== slug) return;
+      state.detail = detail;
+      state.detailAs = asked;
     } catch (error) {
+      if (state.detail?.slug !== slug) return;
       state.detail = { slug, error: error.status === 404 ? 'That recording is not shared any more.' : error.message };
       renderDetail();
       return;
     }
     renderDetail();
     loadComments(true);
+    syncViewer();
   }
 
   function closeDetail({ push = false } = {}) {
@@ -1032,6 +1263,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     if (!state.choices) loadChoices();
     renderList();
     if (!state.items.length) loadList(true);
+    else syncViewer();
   }
 
   function renderDetail() {
@@ -1097,8 +1329,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       }
       actions.append(button('', 'Copy link', e => copyLink(recording, e.currentTarget), 'link'));
       if (recording.canManage) {
-        actions.append(button('quiet', 'Rename', () => rename(recording, title), 'pencil'),
-          deleteButton(recording));
+        actions.append(button('', 'Rename', () => rename(recording, title), 'pencil'),
+          button('danger', 'Delete', () => openDelete(recording), 'trash'));
       }
       facts.append(actions);
     }
@@ -1258,6 +1490,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
   const absolute = path => new URL(path, location.origin).href;
 
+  /** The page's title, as a box to write another in. */
   function rename(recording, title) {
     const form = el('form', 'rf-rename');
     const input = el('input', 'rf-input');
@@ -1268,47 +1501,133 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     form.append(input, save, button('quiet', 'Cancel', () => renderDetail()));
     form.addEventListener('submit', async e => {
       e.preventDefault();
+      if (input.value.trim() === recording.title) { renderDetail(); return; }
       save.disabled = true;
       try {
-        state.detail = await state.api.rename(recording.slug, input.value);
-        patchItem(state.detail);
-        renderDetail();
+        renamed(await state.api.rename(recording.slug, input.value));
       } catch (error) {
         save.disabled = false;
         flash(error.message, true);
       }
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      renderDetail();
     });
     title.replaceChildren(form);
     input.focus();
     input.select();
   }
 
-  function deleteButton(recording) {
-    let armed = false;
-    const b = button('quiet danger', 'Delete', async () => {
-      if (!armed) {
-        armed = true;
-        b.querySelector('span').textContent = 'Click again to delete';
-        setTimeout(() => { armed = false; b.querySelector('span').textContent = 'Delete'; }, 4000);
-        return;
-      }
-      b.disabled = true;
+  // --- renaming and deleting from a card -------------------------------------------
+
+  /** Whose a recording is and how long, under the question in its dialogs. */
+  const which = recording => [recording.uploaderName && `Shared by ${recording.uploaderName}`,
+    clock(recording.durationSeconds)].filter(Boolean).join(' · ');
+
+  function openRename(recording) {
+    const { box, inner } = dialogFrame('Rename recording');
+    const form = el('form', 'rf-dialog-form');
+    const field = el('label', 'rf-field');
+    const input = el('input', 'rf-input');
+    input.maxLength = 100;
+    input.value = recording.title;
+    field.append(el('span', '', 'Title'), input);
+    const status = el('div', 'rf-status');
+    status.setAttribute('aria-live', 'polite');
+    const save = button('primary', 'Save', () => form.requestSubmit(), 'pencil');
+    const actions = el('div', 'rf-dialog-actions');
+    actions.append(status, button('quiet', 'Cancel', () => { if (!busy) closeDialog(); }), save);
+    form.append(field, el('p', 'rf-which', which(recording)), actions);
+    const changed = () => input.value.trim().length > 0 && input.value.trim() !== recording.title;
+    input.addEventListener('input', () => { save.disabled = busy || !changed(); });
+    save.disabled = true;
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      if (busy || !changed()) return;
+      busy = true;
+      save.disabled = true;
+      status.classList.remove('error');
+      status.textContent = 'Saving';
       try {
-        await state.api.remove(recording.slug);
-        staleList();
-        loadChoices();
-        closeDetail({ push: true });
+        const done = await state.api.rename(recording.slug, input.value);
+        busy = false;
+        closeDialog();
+        renamed(done);
+        flash('Renamed');
       } catch (error) {
-        b.disabled = false;
-        flash(error.message, true);
+        busy = false;
+        save.disabled = !changed();
+        status.classList.add('error');
+        status.textContent = error.message;
       }
-    }, 'trash');
-    return b;
+    });
+    inner.append(form);
+    showDialog(box);
+    input.focus();
+    input.select();
   }
 
-  function patchItem(recording) {
-    const at = state.items.findIndex(i => i.slug === recording.slug);
-    if (at >= 0) state.items[at] = { ...state.items[at], ...recording };
+  function openDelete(recording) {
+    const { box, inner } = dialogFrame('Delete recording');
+    const status = el('div', 'rf-status');
+    status.setAttribute('aria-live', 'polite');
+    const keep = button('quiet', 'Keep it', () => { if (!busy) closeDialog(); });
+    const go = button('destroy', 'Delete', async () => {
+      if (busy) return;
+      busy = true;
+      go.disabled = true;
+      status.classList.remove('error');
+      status.textContent = 'Deleting';
+      try {
+        await state.api.remove(recording.slug);
+        busy = false;
+        closeDialog();
+        deleted(recording.slug);
+      } catch (error) {
+        busy = false;
+        go.disabled = false;
+        status.classList.add('error');
+        status.textContent = error.message;
+      }
+    }, 'trash');
+    const actions = el('div', 'rf-dialog-actions');
+    actions.append(status, keep, go);
+    inner.append(el('p', 'rf-ask', `Delete "${recording.title}"?`), el('p', 'rf-which', which(recording)),
+      el('p', 'rf-which', 'Its comments go with it. There is no undo.'), actions);
+    showDialog(box);
+    keep.focus();
+  }
+
+  /** A recording renamed: its card (a round's is its lead's title), its place
+   *  in a round's list, and its page when that is up. */
+  function renamed(recording) {
+    const retitle = r => { if (r?.slug === recording.slug) r.title = recording.title; };
+    for (const item of state.items) {
+      retitle(item);
+      item.round?.forEach(retitle);
+    }
+    if (state.detail?.slug === recording.slug) state.detail = recording;
+    else state.detail?.round?.forEach(retitle);
+    if (state.detail) renderDetail();
+    else renderList();
+  }
+
+  /** A recording deleted: its card goes at once, and the cards are read again,
+   *  since a round it was one of may have parted; its page gives way to them. */
+  function deleted(slug) {
+    flash('Deleted');
+    loadChoices();
+    state.items = state.items.filter(item => item.slug !== slug);
+    state.listAs = null;
+    if (state.detail) closeDetail({ push: true });
+    else if (!state.items.length) loadList(true);
+    else {
+      renderList();
+      syncViewer();
+    }
   }
 
   /** The cards as the page holds them no longer are: a share, a removal or an
@@ -1330,15 +1649,19 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     return section;
   }
 
+  /** Counts the times the comments are read from the start: an earlier read
+   *  that comes back after a later one has nothing to add. */
+  let commentReads = 0;
   async function loadComments(reset = false) {
     const recording = state.detail;
     if (!recording?.slug || recording.error) return;
     if (reset) { state.comments = []; state.commentPage = 0; state.commentPages = 1; }
+    const read = reset ? ++commentReads : commentReads;
     try {
       const page = await state.api.comments(recording.slug, {
         sort: state.commentSort, page: state.commentPage + 1, pageSize: COMMENT_PAGE,
       });
-      if (state.detail?.slug !== recording.slug) return;
+      if (state.detail?.slug !== recording.slug || read !== commentReads) return;
       state.comments = reset ? page.items : [...state.comments, ...page.items];
       state.commentTotal = page.totalCount;
       state.commentPage = page.page;
@@ -1539,32 +1862,48 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     return select;
   }
 
-  // --- sharing -------------------------------------------------------------------
+  // --- the dialogs ---------------------------------------------------------------
 
-  function openShare(files = null) {
+  /** A dialog doing its work (a share going up, a rename or a delete on its
+   *  way): it stays up until that is done. */
+  let busy = false;
+
+  function showDialog(dialog) {
+    closeMenus();
     shade.hidden = false;
-    shade.replaceChildren(shareDialog(files));
+    shade.replaceChildren(dialog);
   }
 
-  function closeShare() {
+  function closeDialog() {
     shade.hidden = true;
     shade.replaceChildren();
   }
 
-  shade.addEventListener('pointerdown', e => { if (e.target === shade && !sharing) closeShare(); });
+  shade.addEventListener('pointerdown', e => { if (e.target === shade && !busy) closeDialog(); });
 
-  let sharing = false;
+  /** A dialog's plate: its heading strip with a close button, and its body. */
+  function dialogFrame(heading) {
+    const box = el('div', 'rf-dialog');
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', heading);
+    const top = el('div', 'rf-head');
+    const close = button('', '', () => { if (!busy) closeDialog(); }, 'close');
+    close.setAttribute('aria-label', 'Close');
+    top.append(el('h1', '', heading), el('span', 'rf-spacer'), close);
+    const inner = el('div', 'rf-dialog-body');
+    box.append(top, inner);
+    return { box, inner };
+  }
+
+  // --- sharing -------------------------------------------------------------------
+
+  function openShare(files = null) {
+    showDialog(shareDialog(files));
+  }
+
   function shareDialog(initialFiles) {
     const api = state.api;
-    const dialog = el('div', 'rf-dialog');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-label', 'Share a recording');
-    const top = el('div', 'rf-head');
-    const close = button('', '', () => { if (!sharing) closeShare(); }, 'close');
-    close.setAttribute('aria-label', 'Close');
-    top.append(el('h1', '', 'Share a recording'), el('span', 'rf-spacer'), close);
-    const inner = el('div', 'rf-dialog-body');
-    dialog.append(top, inner);
+    const { box: dialog, inner } = dialogFrame('Share a recording');
 
     if (!api?.canWrite) {
       inner.append(el('p', 'rf-status', 'Sharing needs the site: this page reads the live feed read-only.'));
@@ -1606,7 +1945,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     };
 
     async function take(files) {
-      if (sharing || !files.length) return;
+      if (busy || !files.length) return;
       picked = null;
       chosen.replaceChildren();
       say('Reading the recording');
@@ -1682,7 +2021,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       titleInput.maxLength = 100;
       titleInput.placeholder = 'What happens in it';
       const levelTitle = meta.level ? (await artFor(meta.mod, meta.level)).title : '';
-      titleInput.value = [levelTitle, meta.serverName && `on ${meta.serverName}`].filter(Boolean).join(' ');
+      titleInput.value = defaultTitle(levelTitle, meta.serverName);
       titleField.append(el('span', '', 'Title'), titleInput);
       fields.append(titleField);
       const names = state.viewer?.names ?? [];
@@ -1705,13 +2044,13 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       progress.hidden = true;
       const actions = el('div', 'rf-dialog-actions');
       const go = button('primary', 'Share', () => share(), 'upload');
-      actions.append(button('quiet', 'Cancel', () => { if (!sharing) closeShare(); }), go);
+      actions.append(button('quiet', 'Cancel', () => { if (!busy) closeDialog(); }), go);
       fields.append(progress, actions);
       chosen.append(fields);
       titleInput.focus();
 
       async function share() {
-        if (sharing) return;
+        if (busy) return;
         let level = meta.level;
         let modId = meta.mod;
         if (levelSelect) {
@@ -1722,7 +2061,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         }
         const author = as.value();
         if (as.linking && !author) { say('Your in-game name first.', true); as.field.focus(); return; }
-        sharing = true;
+        busy = true;
         go.disabled = true;
         drop.hidden = true;
         progress.hidden = false;
@@ -1745,20 +2084,20 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
             },
           });
           if ((state.viewer?.names ?? []).includes(author)) rememberPostAs(author);
-          sharing = false;
-          closeShare();
+          busy = false;
+          closeDialog();
           // It may have joined a round already in the feed: the cards are asked again.
           staleList();
           loadChoices();
           openDetail(shared.slug, { push: true, summary: shared });
         } catch (error) {
-          sharing = false;
+          busy = false;
           go.disabled = false;
           drop.hidden = false;
           progress.hidden = true;
           if (error.status === 409 && error.body?.existingSlug) {
             say(error.message, true);
-            const open = button('', 'Open it', () => { closeShare(); openDetail(error.body.existingSlug, { push: true }); });
+            const open = button('', 'Open it', () => { closeDialog(); openDetail(error.body.existingSlug, { push: true }); });
             status.append(document.createTextNode(' '), open);
             return;
           }
@@ -1769,9 +2108,10 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
     /**
      * Several recordings picked at once (the round a few players recorded, say):
-     * each goes up as its own, shared by the player who recorded it, titled by
-     * the API, and the API groups those of one round. A server log is for one
-     * recording, so it goes up only with a recording shared on its own.
+     * each goes up as its own, shared by the player who recorded it, under the
+     * title written for it (the level and the server until another is), and the
+     * API groups those of one round. A server log is for one recording, so it
+     * goes up only with a recording shared on its own.
      */
     async function takeSeveral(files) {
       const rows = [];
@@ -1798,11 +2138,22 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
             : row.file.name));
         row.status = el('div', 'rf-status');
         if (!row.error && !meta.level) row.error = 'Its level is not known: share it on its own to choose it.';
+        item.append(facts, el('span', 'rf-len-inline', meta ? clock(meta.durationSeconds) : ''));
         if (row.error) {
           row.status.textContent = row.error;
           row.status.classList.add('error');
+        } else {
+          const field = el('label', 'rf-field');
+          row.title = el('input', 'rf-input');
+          row.title.maxLength = 100;
+          row.title.placeholder = 'What happens in it';
+          field.append(el('span', '', 'Title'), row.title);
+          item.append(field);
+          artFor(meta.mod, meta.level).then(level => {
+            if (!row.title.value) row.title.value = defaultTitle(level.title, meta.serverName);
+          });
         }
-        item.append(facts, el('span', 'rf-len-inline', meta ? clock(meta.durationSeconds) : ''), row.status);
+        item.append(row.status);
         list.append(item);
       }
       const ready = rows.filter(row => !row.error);
@@ -1813,16 +2164,17 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       const actions = el('div', 'rf-dialog-actions');
       const go = button('primary', `Share ${count(ready.length, 'recording')}`, () => shareAll(), 'upload');
       go.disabled = !ready.length;
-      actions.append(button('quiet', 'Cancel', () => { if (!sharing) closeShare(); }), go);
+      actions.append(button('quiet', 'Cancel', () => { if (!busy) closeDialog(); }), go);
       chosen.append(list, el('p', 'rf-status', 'Each goes up as its own recording, shared by the player who recorded it.'),
         progress, actions);
 
       async function shareAll() {
-        if (sharing || !ready.length) return;
-        sharing = true;
+        if (busy || !ready.length) return;
+        busy = true;
         go.disabled = true;
         drop.hidden = true;
         progress.hidden = false;
+        for (const row of ready) row.title.disabled = true;
         const shared = [];
         for (const [i, row] of ready.entries()) {
           row.status.classList.remove('error');
@@ -1830,7 +2182,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
             const { meta } = row.described;
             const recording = await api.upload({
               recording: row.file,
-              meta: { ...meta, title: '', authorName: '' },
+              meta: { ...meta, title: row.title.value, authorName: '' },
               onStage: stage => { row.status.textContent = stage; },
               onProgress: p => {
                 bar.style.width = `${Math.round(((i + p) / ready.length) * 100)}%`;
@@ -1844,7 +2196,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
             row.status.classList.add('error');
           }
         }
-        sharing = false;
+        busy = false;
         bar.style.width = '100%';
         if (!shared.length) {
           drop.hidden = false;
@@ -1856,11 +2208,11 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         loadChoices();
         if (shared.length < ready.length) {
           say(`Shared ${shared.length} of ${ready.length}.`, true);
-          const open = button('', 'Open the last', () => { closeShare(); openDetail(shared.at(-1).slug, { push: true }); });
+          const open = button('', 'Open the last', () => { closeDialog(); openDetail(shared.at(-1).slug, { push: true }); });
           status.append(document.createTextNode(' '), open);
           return;
         }
-        closeShare();
+        closeDialog();
         // The last one's page: the round the others are found in says so there.
         openDetail(shared.at(-1).slug, { push: true, summary: shared.at(-1) });
       }
@@ -1939,7 +2291,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
   window.addEventListener('keydown', e => {
     if (rootEl.hidden || e.key !== 'Escape') return;
-    if (!shade.hidden) { if (!sharing) closeShare(); e.preventDefault(); return; }
+    if (body.querySelector('.rf-manage.open')) { closeMenus({ focus: true }); e.preventDefault(); return; }
+    if (!shade.hidden) { if (!busy) closeDialog(); e.preventDefault(); return; }
     if (state.detail && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '')) {
       closeDetail({ push: true });
       e.preventDefault();
@@ -1961,7 +2314,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     },
     hide() {
       rootEl.hidden = true;
-      if (!sharing) closeShare();
+      if (!busy) closeDialog();
     },
     openShare,
     route,
