@@ -2413,3 +2413,26 @@ other six nations' arms (one CLI pair each — the meshes total 885 KB for
 all eight), knives (their fire states are `Ub_FireKnife*A..E` variants and
 need a family alias). The `.baf` base rate is no longer on the list: there
 is none, a pass is `1/speed` (third pass).
+
+### Mod trees (2026-09-30)
+
+A mod's rigs live in its own tree, `models/mods/<id>/viewmodels/`, one per
+soldier and item its kits hand out on the levels that tree bakes:
+
+```
+python3 extract_viewmodel.py --mod DesertCombat \
+    --kits viewer/models/mods/desertcombat/kits.json \
+    --maps viewer/maps/mods/desertcombat/maps.json \
+    --out viewer/models/mods/desertcombat/viewmodels
+```
+
+Every run rewrites `index.json` beside the rigs. `arms-rig.js` loads it once
+and looks pairings up there; the built-in `VIEWMODEL_RIGS` list is vanilla's,
+for a tree without an index. Before this, DC and DC Final had no rigs and no
+way for the viewer to name `IraqSoldier__AK47`, so every DC weapon drew bare
+at the stand-in offset with no hands. DesertCombat has 39 rigs, DC Final 60.
+`Mortar_weap` has no `Ub_StandAimMortar_weap` 1P state and stays bare. The
+gadgets lack `reload`/`proneReload`/`idle3`, and IraqSoldier's BrowningHipo
+lacks `idle3`, the same way vanilla's gadgets do. A run with any failed pair
+exits 1 and so skips the optimise pass: run `optimise_mesh.py` on `--out` by hand.
+EoD, FHSW and XPack1/2 have no rigs yet.

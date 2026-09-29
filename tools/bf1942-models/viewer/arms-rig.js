@@ -54,8 +54,12 @@ export function createArmsRig(page) {
   // to that weapon. Every weapon the kits can put in a hand: the primaries,
   // the knife and grenade (the knife's fire family is five variants, ANIM-6's
   // c_AsmRandom), the pistols, and the engineer/medic/scout gadgets. Looked up
-  // by `viewmodelRigFor`; a pairing absent here, or a mod tree without the
-  // folder, draws the bare 3P glb.
+  // by `viewmodelRigFor`; a pairing absent here draws the bare 3P glb.
+  //
+  // A tree's own `viewmodels/index.json` (extract_viewmodel.py writes it) wins
+  // over this list once it has loaded: a mod's rigs are its own soldiers and
+  // weapons (DesertCombat's IraqSoldier__AK47), which no list here could name.
+  // This list is vanilla's, for a tree that publishes no index.
   const VIEWMODEL_RIGS = [
     'USSoldier__Bar1918', 'USSoldier__Bazooka', 'USSoldier__Binoculars',
     'USSoldier__Colt', 'USSoldier__Detonator', 'USSoldier__ExpPack',
@@ -103,7 +107,21 @@ export function createArmsRig(page) {
     'JapaneseSoldier__RepairPack', 'JapaneseSoldier__Type5',
     'JapaneseSoldier__Type99', 'JapaneseSoldier__WalterP38',
   ];
-  const viewmodelRigIndex = new Map(VIEWMODEL_RIGS.map(stem => [stem.toLowerCase(), stem]));
+  const rigIndexOf = stems => new Map(stems.map(stem => [stem.toLowerCase(), stem]));
+  let viewmodelRigIndex = rigIndexOf(VIEWMODEL_RIGS);
+  let rigIndexLoad = null;
+  /** The tree's `viewmodels/index.json`, fetched once. A tree without one
+   *  keeps the built-in list; a failed fetch never stops a weapon loading. */
+  function loadRigIndex() {
+    rigIndexLoad ??= fetch(`${page.MODELS_BASE}/viewmodels/index.json${page.bust()}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then(stems => {
+        if (Array.isArray(stems) && stems.length) viewmodelRigIndex = rigIndexOf(stems);
+      })
+      .catch(err => console.warn('viewmodels/index.json:', err));
+    return rigIndexLoad;
+  }
+  if (page.MODELS_BASE) loadRigIndex();
 
   /** The arms rig for `weapon` in `soldier`'s hands, or null for the bare glb.
    *  Case-insensitive on both halves: the kit files spell `MP40` and `k98Sniper`
@@ -428,6 +446,7 @@ export function createArmsRig(page) {
     // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
     // welded around the weapon with the six clip families baked in. A pairing
     // without one falls through to the bare weapon, which works as it did.
+    await loadRigIndex();
     const rigFile = viewmodelRigFor(name, soldierName);
     if (rigFile) {
       try {
