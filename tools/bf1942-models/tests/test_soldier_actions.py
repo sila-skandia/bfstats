@@ -210,6 +210,33 @@ class MorphBlendTests(unittest.TestCase):
     def test_a_morph_factor_above_a_thousand_cuts(self) -> None:
         self.assertEqual({"w": 1, "y": 0.5}, self.results["cut"])
 
+    def test_a_frame_with_no_time_in_it_draws_the_frame_before(self) -> None:
+        # A replay paused mid-morph steps every body with dt 0. Slerped toward
+        # the clip by the same weight each frame, the bone kept closing on it;
+        # skipped, it would show the mixer's 90 degrees. It shows the pose it
+        # was drawn in, the weight where it stood.
+        frames = self.results["stillFrames"]
+        before = frames["before"]
+        self.assertAlmostEqual(0.2, before["w"], places=9)
+        self.assertGreater(before["angle"], 0)
+        self.assertLess(before["angle"], 90)
+        self.assertEqual(5, len(frames["still"]))
+        for still in frames["still"]:
+            self.assertEqual(before, still)
+
+    def test_the_morph_goes_on_from_where_it_stopped(self) -> None:
+        # The first frame after the pause gains one frame's weight on the pose
+        # it held, and every frame after is the unpaused morph's own.
+        frames = self.results["stillFrames"]
+        before, resumed = frames["before"], frames["resumed"]
+        self.assertAlmostEqual(before["w"] + 2 / 60, resumed["w"], places=9)
+        # Slerped from the held pose toward 90 degrees by the new weight.
+        self.assertAlmostEqual(before["angle"] + (90 - before["angle"]) * resumed["w"],
+                               resumed["angle"], places=6)
+        self.assertAlmostEqual(before["y"] + (0.5 - before["y"]) * resumed["w"],
+                               resumed["y"], places=9)
+        self.assertTrue(frames["sameAsUnpaused"])
+
 
 class BundleStateTests(unittest.TestCase):
     """What a gait bundle says of its states rides on each clip as `userData`

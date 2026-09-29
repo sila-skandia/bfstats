@@ -79,7 +79,10 @@ The variety the owner remembers has two sources, and neither is random tie-break
   follow their `addTransitionWhenDone`. `_POSE_` returns the half to its gait family's loop.
 - `MorphBlend` is ANIM-4's morph. On entry it captures the bones. Each frame after the mixer, every bone
   slerps from where it stood toward the new clip by `w`, which starts at 0 and gains `dt x morph` a frame.
-  A morph above 1000 is a cut.
+  A morph above 1000 is a cut. A frame with no time in it (dt 0: a paused or dragged replay, or
+  `__renderOnce(w, h, 0)`; live play has no pause) draws the pose of the frame before, and the morph goes
+  on from there when the clock does. Until 2026-09-30 it slerped by the same `w` again, and a paused replay's bodies settled
+  onto their clips (`test_replay_models.ReplayBotBodyPauseTests`).
 - `bot-visuals.js` builds that rig when the bundles carry the stance halves and keeps the old one
   otherwise. It reads each stance change at the world tick that made it, with the dive-or-backward test
   from the body's `stateSpeed`.
