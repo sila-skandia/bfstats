@@ -34,6 +34,12 @@ spec:
               mountPath: /usr/share/nginx/html/maps
               subPath: assets/mesh/maps
               readOnly: true
+            # The content-addressed texture store the glbs point at
+            # (features/mesh-asset-size).
+            - name: assets-data
+              mountPath: /usr/share/nginx/html/textures
+              subPath: assets/mesh/textures
+              readOnly: true
             # Recordings published to share, uploaded with FileBrowser to
             # mesh/replays/ (features/gameplay-recordings).
             - name: assets-data
