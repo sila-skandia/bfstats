@@ -34,7 +34,7 @@
 // button.
 
 import {
-  ago, apiMode, clock, commentRuns, commentTarget, count, createRecordingsApi, readableQuery, resolveApi, roundMoment,
+  ago, apiMode, clock, commentRuns, commentTarget, count, readableQuery, resolveApi, roundMoment, sharedRecordingsApi,
   roundRuns, sharedRecordingOf, sourceClock, watchHref, watchRoundHref,
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
@@ -203,7 +203,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
   }
 
   let slug = shared?.slug ?? null;
-  let api = shared ? createRecordingsApi({ base: shared.base, mode: apiMode(shared.base) }) : null;
+  let api = shared ? sharedRecordingsApi({ base: shared.base, mode: apiMode(shared.base) }) : null;
   let detail = null;
   // The recordings whose comments show: the one played, or each of a merged round's.
   let members = slug ? [slug, ...alsoShared].map(s => ({ slug: s, detail: null })) : [];
@@ -912,7 +912,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
   }
 
   async function openShare() {
-    if (!api) api = createRecordingsApi(await resolveApi());
+    if (!api) api = sharedRecordingsApi(await resolveApi());
     if (!api.canWrite) {
       ui.flash('Sharing needs the site: this page reads the live feed read-only.', 3000);
       return;

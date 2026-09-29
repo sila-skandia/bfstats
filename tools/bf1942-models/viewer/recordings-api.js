@@ -18,7 +18,7 @@ const AUTH_KEY = 'bf42-mesh-auth';
 const EXPIRY_MARGIN_MS = 5 * 60 * 1000;
 
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|.+\.localhost)$/i;
-const isLocalHost = host => LOCAL_HOSTS.test(host);
+export const isLocalHost = host => LOCAL_HOSTS.test(host);
 
 /** A recording's link, as the feed hands it out and map.html reads it back:
  *  `…/stats/recordings/<slug>.ndjson`. */
@@ -137,6 +137,16 @@ export function playerHref(name) {
 export function signInHref(returnTo, page = globalThis.location) {
   const host = /(^|\.)bfstats\.io$/i.test(page.hostname) ? LIVE_API : page.origin;
   return `${host}/auth/discord/start?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+/** One client per API on a page (`createRecordingsApi`): the comments, the
+ *  Share dialog and the creator view's gate all ask through it, since two
+ *  clients refreshing one cookie at once would revoke the session. */
+const clients = new Map();
+export function sharedRecordingsApi(api) {
+  const key = `${api.base}|${api.mode}`;
+  if (!clients.has(key)) clients.set(key, createRecordingsApi(api));
+  return clients.get(key);
 }
 
 /**

@@ -1377,7 +1377,10 @@ export class ReplayUi {
       if (once) this.toggle('help-open');
       return true;
     }
-    // The battle map, the markers, the Auto camera and the reel's keys.
+    // The creator view's keys (features/replay-creator-view), then the battle
+    // map, the markers, the Auto camera and the reel's.
+    const mine = player.creator?.key(e, once);
+    if (mine !== undefined) return mine;
     const taken = player.highlights?.key(e, once);
     if (taken !== undefined) return taken;
     switch (e.code) {
