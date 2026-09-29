@@ -130,7 +130,13 @@ and poses.
   fixtures were kept as committed. The manifests came from a normal run with
   the local `thumb` keys carried over: a subset `extract_models.py` run leaves
   a 1-row `models.json`, and `extract_kits --all` writes a larger `kits.json`.
-- Awaiting the owner's local test before anything is published.
+- Published after the owner's local test (a replayed round). One regression
+  followed. A bake into an empty scratch tree has no prior rows to merge, so
+  its `maps.json` lacked the `loading` key that `extract_loading_assets.py`
+  adds, and every replay card fell back to `western.webp`. Restored from the
+  pre-swap manifests, locally and live. When swapping a scratch bake in,
+  merge the manifests (keep the keys the bake does not write), as
+  `extract_maps_all.merge_index` does for an in-place bake.
 
 Recipe (from `tools/bf1942-models`; `S` is a scratch mesh root):
 
