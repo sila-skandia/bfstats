@@ -11,7 +11,9 @@ the draft the engine teleports him to, he stows his rifle, he wades out where it
 is shallow, he plays the swim death if he is killed in it, and he drowns on the
 soldier template's own clock.
 
-Branch: `worktree-agent-ae2794646b0b16539`. Commits:
+On main since 2026-09-22, merged in `8f00bfd9`. This line used to give only
+the branch, `worktree-agent-ae2794646b0b16539`, which no longer exists.
+Commits:
 
 | commit | what |
 |---|---|
@@ -498,7 +500,9 @@ deployed build after W8-B shipped. The owner:
 > It does slow me down when I enter, but I can still fire weapons, but in water
 > you're locked down and they have a swimming animation.
 
-Branch: `worktree-agent-ad46aa9fa7612154f`. Commits:
+On main since 2026-09-22, merged in `18852ccc`. This line used to give only
+the branch, `worktree-agent-ad46aa9fa7612154f`, which no longer exists.
+Commits:
 
 | commit | what |
 |---|---|

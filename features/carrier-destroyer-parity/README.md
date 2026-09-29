@@ -6,6 +6,26 @@ against the game data in `~/.wine/.../Mods/bf1942/Archives/Objects.rfa` and the 
 working tree (which already carries uncommitted fixes for Issues 3/4/5 — build on them,
 do not revert).
 
+*Corrected 2026-09-29: those fixes are on main. 0e1cd1e1 committed them on
+2026-09-22, together with the Issue 1 extractor and the Issue 2 routing. As far
+as git and the code show, the six issues ended as follows.*
+
+- *Issue 1: `bf42/con.py` parses child `ObjectSpawner`s from :655, and
+  `bf42/assemble.py` builds each held vehicle at its spawner's offset from
+  :2498. The Fletcher davit does name `Lcvp` for both teams, as
+  `tests/test_con.py` :2005 records. 29e9c09b then made a deck aircraft a
+  vehicle of its own on 2026-09-24, held on its pad by the ship's spawner.*
+- *Issue 2: a ship feeds `c_PIPitch` from the pitch axis, today in
+  `viewer/world-vehicle-tick.js`.*
+- *Issue 3: one groan plays on the frame the keel first touches, through
+  `crash-damage.js` `effectNameFor`. `beachSpeed` gates it and does not scale
+  it, and there is no grind loop.*
+- *Issue 4: the survey peers only bundles on the same input, today in
+  `viewer/seat-survey.js`, and `cameraRidesTurret` counts the peers.*
+- *Issue 5: Fix A and Fix B both landed. The commit left driverless coasting
+  of the abandoned hull as a follow-up.*
+- *Issue 6: no commit names it, so git records no outcome.*
+
 ---
 
 ## Issue 1: Carrier deck is empty (no planes) — CORRECTED root cause
@@ -25,6 +45,10 @@ In game the engine spawns the object and *holds* it on deck until entered / TTL 
 out-of-Distance. Our pipeline drops them entirely: `bf42/con.py` and `bf42/assemble.py`
 contain **zero** `ObjectSpawner` handling (grep), and `Enterprise.report.json`'s
 `partTree` shows no spawner entries — no planes, no davit LCVPs.
+
+*Corrected 2026-09-29: this handling exists now. 0e1cd1e1 added it on
+2026-09-22, the parse at `bf42/con.py` :655 and the held-child assembly at
+`bf42/assemble.py` :2498.*
 
 **Fix (extractor, Agent 1):**
 1. `bf42/con.py`: parse `ObjectSpawner` blocks needed for assembly

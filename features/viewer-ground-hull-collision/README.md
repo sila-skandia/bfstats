@@ -1,7 +1,10 @@
-# Hull collision for ground vehicles: a plan, not a build
+# Hull collision for ground vehicles: the plan, and what was built
 
 Written by wave-2 stream D (`w2d-drive`) alongside items 15–17 of the
-2026-09-19 parity round. **Nothing here is implemented.** It exists so that
+2026-09-19 parity round. Sections 1 to 5 are the plan. W6-C built it on
+2026-09-22, and [the Built section](#built--2026-09-22-w6-c) below says what
+and where. The title used to call this a plan, not a build, and this line used
+to say nothing here is implemented. The plan was written so that
 whoever picks the work up starts from what `viewer/ground.js` already has
 rather than from `collision-response.md` cold.
 
