@@ -4,7 +4,7 @@
 // say and its clock is fitted onto that file's, an offset and a drift. The
 // server's world clock (0x29, 0x04) checks the fit. Three.js-free and pure.
 
-import { count, mean, median } from './replay-merge-read.js';
+import { count, maxOf, mean, median, minOf } from './replay-merge-read.js';
 
 // --- the clocks -----------------------------------------------------------------
 
@@ -104,7 +104,7 @@ function fitClock(pairs, opts) {
   for (let pass = 0; pass < 4 && use.length; pass++) {
     const xs = use.map(p => p.src.t);
     const ys = use.map(p => p.ref.t);
-    const span = Math.max(...xs) - Math.min(...xs);
+    const span = maxOf(xs) - minOf(xs);
     let a;
     let b = 1;
     let drift = 'fitted';

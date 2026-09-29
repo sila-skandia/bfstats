@@ -16,7 +16,7 @@ import { indexRecording, playerAt, splitRecording } from './replay_split.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [merge, recording, chapters, { eventKey }] = await Promise.all([
+const [merge, recording, chapters, { eventKey, maxOf, minOf, spread }] = await Promise.all([
   imp('replay-merge.js'), imp('replay-recording.js'), imp('replay-chapters.js'), imp('replay-merge-read.js'),
 ]);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -176,6 +176,14 @@ const B = asFile('B', { from: 30, rate: 1 + 50e-6, jitter: 0.02 });
   } catch (error) {
     results.otherRound = error.message;
   }
+}
+
+// A real round's pose pairs run to hundreds of thousands, and the report's
+// summaries must take them: Math.max(...values) threw "Maximum call stack
+// size exceeded" on the first real pair (a 21-minute file with a 45-minute one).
+{
+  const many = Array.from({ length: 300000 }, (_, i) => i % 1000);
+  results.bigSpread = { max: spread(many).max, n: spread(many).n, maxOf: maxOf(many), minOf: minOf(many), none: maxOf([]) };
 }
 
 // --- a real round, split by side and merged back --------------------------------
