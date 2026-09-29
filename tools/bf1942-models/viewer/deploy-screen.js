@@ -37,7 +37,41 @@ export function createDeployScreen(page) {
   const deployChrome = document.getElementById('deploy-chrome');
   const fullmapFrame = page.fullmapBox.querySelector('.fm-map-frame');
   const deployTabs = [...page.fullmapBox.querySelectorAll('.fm-tab')];
+
+  // The rows in the game's order; the index is its `Kit/SelectedKit`, which
+  // is the `game.setKit <team> <slot>` slot the level binds a kit to. The
+  // first five are vanilla's rows, named by their class. Desert Combat's
+  // column has a sixth (its `BfSelectButtonNode` rows run `Index` 0..5 and
+  // its levels bind slots 0..5), which has no vanilla class to be named by.
+  const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer', 'slot5'];
+
+  // The page carries a button per vanilla row; a row beyond them gets its
+  // own here, hidden until a layout puts a row under it (`layoutDeploy`).
+  // Built before `spawning.js` wires the rows, so it is wired with the rest.
   const deployKitHits = [...page.fullmapBox.querySelectorAll('.fm-kit')];
+  for (const kit of KITS.slice(deployKitHits.length)) {
+    const hit = document.createElement('button');
+    hit.type = 'button';
+    hit.className = 'fm-hit fm-kit';
+    hit.dataset.kit = kit;
+    hit.tabIndex = -1;
+    hit.setAttribute('aria-label', `Kit ${KITS.indexOf(kit) + 1}`);
+    hit.style.display = 'none';
+    deployKitHits.at(-1).after(hit);
+    deployKitHits.push(hit);
+  }
+  // The `BfSelectButtonNode` row under the pointer, by its `Index`: the node
+  // tracks that itself (its update, 0x007da2d0) rather than through a
+  // `Kit/MouseOver/*` variable the way vanilla's rows do.
+  let deploySelectHover = null;
+  for (const hit of deployKitHits) {
+    const slot = KITS.indexOf(hit.dataset.kit);
+    hit.addEventListener('pointerenter', () => { deploySelectHover = slot; paintDeploySoon(); });
+    hit.addEventListener('pointerleave', () => {
+      if (deploySelectHover === slot) deploySelectHover = null;
+      paintDeploySoon();
+    });
+  }
   const deploySuicideBtn = document.getElementById('deploy-suicide');
   const deployScoreBtn = document.getElementById('deploy-score');
   const deployResumeBtn = document.getElementById('deploy-resume');
@@ -96,6 +130,8 @@ export function createDeployScreen(page) {
     if (page.scoreFromSpawn) page.setScoreboard(false);
     page.fullmapBox.hidden = true;
     page.fullmapBox.classList.remove('deploy', 'deploy-ready');
+    // A hidden button gets no pointerleave.
+    deploySelectHover = null;
     fullmapFrame.removeAttribute('style');
     page.fullmapCanvas.style.transform = '';
   }
@@ -125,9 +161,6 @@ export function createDeployScreen(page) {
     page.fullmapBox.classList.toggle('deploy-ready',
       deployScreen.deployZTarget === 1 && deployScreen.deployZ >= BFMAP_CHROME_Z);
   }
-
-  // The five rows in the game's order; the index is its `Kit/SelectedKit`.
-  const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
 
   /** Which photograph a kit row shows: the level's own kit for this row and
    *  team, through `_shared/loadouts.json`'s `kitIcon.icon` (`setKitIcon`'s raw
@@ -307,6 +340,20 @@ export function createDeployScreen(page) {
     btn.style.height = `${h * s.sy}px`;
   }
 
+  /** The layout's kit rows and the `Kit/SelectedKit` slot each one sets.
+   *  Vanilla's are the pointer regions that raise a `Kit/MouseOver/*` flag,
+   *  one per row in file order, and the row's click sets the slot of its
+   *  place in that order (scout 0 .. engineer 4). Desert Combat's are
+   *  `select` leaves (`BfSelectButtonNode`), which carry their slot as
+   *  `index` and sit in the file bottom row first. */
+  function kitRows(group) {
+    const hover = group.elements.filter(el => el.kind === 'hit' && el.hover)
+      .map((el, slot) => ({ el, slot }));
+    const select = group.elements.filter(el => el.kind === 'select')
+      .map(el => ({ el, slot: el.index }));
+    return [...hover, ...select];
+  }
+
   /** Where everything sits for the stage's current size: the map in its
    *  rectangle, the pointer regions over the game's own, then a paint. */
   function layoutDeploy() {
@@ -317,12 +364,18 @@ export function createDeployScreen(page) {
     // rect is the eased interpolation, not the layout's final one.
     if (!deployTransitionActive()) placeHit(fullmapFrame, data.map.rect, s);
     const group = data.groups.spawn;
-    const rows = group.elements.filter(el => el.kind === 'hit' && el.hover);
     for (const el of group.elements) {
       if (el.kind === 'hit' && el.label === 'RESPAWN_AXIS') placeHit(deployTabs[0], el.rect, s);
       if (el.kind === 'hit' && el.label === 'RESPAWN_ALLIED') placeHit(deployTabs[1], el.rect, s);
     }
-    rows.forEach((el, i) => { if (deployKitHits[i]) placeHit(deployKitHits[i], el.rect, s); });
+    // Each kit button over the row that sets its slot; a slot the layout has
+    // no row for is not offered.
+    const rows = kitRows(group);
+    for (const hit of deployKitHits) {
+      const row = rows.find(r => r.slot === KITS.indexOf(hit.dataset.kit));
+      if (row) placeHit(hit, row.el.rect, s);
+      hit.style.display = row ? '' : 'none';
+    }
     const buttons = { RESPAWN_SUICIDE: deploySuicideBtn, RESPAWN_CLOSE: deploySuicideBtn,
                       RESPAWN_RESUME: deployResumeBtn, RESPAWN_DONE: deployResumeBtn,
                       RESPAWN_SCOREBOARD: deployScoreBtn };
@@ -384,6 +437,20 @@ export function createDeployScreen(page) {
           // art sits inside a 128x128 sheet); the node's Width/Height is the
           // pointer region, not a scale.
           const img = page.sprite(page.deployHoverBtn === buttonHover[el.id] ? el.hover : el.texture);
+          if (!img) break;
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(img, x, y, img.width, img.height);
+          break;
+        }
+        case 'select': {
+          // A `BfSelectButtonNode` row's plate: selected while its variable
+          // holds its `Index`, else lit under the pointer, else at rest; drawn
+          // at the texture's own size like a button's (the 205x69 art sits in
+          // a 256x128 sheet, and the rect is the pointer region).
+          const chosen = el.var != null && Number(vars[el.var]) === el.index;
+          const name = chosen ? el.clicked
+            : deploySelectHover === el.index ? el.hover : el.texture;
+          const img = page.sprite(name);
           if (!img) break;
           ctx.imageSmoothingEnabled = true;
           ctx.drawImage(img, x, y, img.width, img.height);

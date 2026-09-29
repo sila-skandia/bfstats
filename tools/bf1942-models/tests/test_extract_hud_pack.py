@@ -138,6 +138,36 @@ class EditorDroppingSkipTests(unittest.TestCase):
                          [v["source"] for v in manifest.values()])
 
 
+GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+
+
+@unittest.skipUnless((GAME_DIR / "Mods/DesertCombat").is_dir(), "needs Desert Combat installed")
+class SelectButtonPlateTests(unittest.TestCase):
+    """The kit-row plates Desert Combat's `BfSelectButtonNode`s name are
+    taken from its `menu/InGame`, not listed, so they come into exactly the
+    packs whose layout draws them."""
+
+    @staticmethod
+    def plates(mod: str) -> list[str]:
+        from extract_models import mod_chain
+        from bf42.modmenu import MenuSources
+        with MenuSources(mod_chain(GAME_DIR, mod)).open_menu() as menu:
+            return ehp.select_button_plates(menu)
+
+    def test_desert_combat_and_dc_final_take_the_three_row_plates(self) -> None:
+        want = [f"Texture/Ingame/respawn/respawn_middle_256x128{s}" for s in ("", "_MO", "_CL")]
+        self.assertEqual(want, self.plates("DesertCombat"))
+        if (GAME_DIR / "Mods/DC_Final").is_dir():
+            self.assertEqual(want, self.plates("DC_Final"))
+
+    def test_vanilla_takes_none(self) -> None:
+        self.assertEqual([], self.plates("bf1942"))
+
+    @unittest.skipUnless((GAME_DIR / "Mods/Pirates").is_dir(), "needs Pirates installed")
+    def test_pirates_ships_the_files_but_draws_no_select_row(self) -> None:
+        self.assertEqual([], self.plates("Pirates"))
+
+
 class IconKeyTests(unittest.TestCase):
     def test_strips_directory_and_extension_and_lowercases(self) -> None:
         self.assertEqual("minimap_icon_tank_16x16",

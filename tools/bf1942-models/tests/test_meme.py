@@ -503,6 +503,49 @@ class InGameTests(unittest.TestCase):
         self.assertEqual("Trebuchet MS8.dif", self.reader.named["Style/InGameHeading"]["Font handle"])
 
 
+DC_MENU = GAME_DIR / "Mods/DesertCombat/Archives/MENU.rfa"
+
+
+@unittest.skipUnless(DC_MENU.exists(), "needs Desert Combat installed")
+class DesertCombatInGameTests(unittest.TestCase):
+    """Desert Combat's own `menu/InGame`, whose kit column is six
+    `BfSelectButtonNode`s. With no schema the reader followed each one's
+    sibling pointer and skipped its fields, so the rows' plates, index and
+    pointer region never reached the spawn layout."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from bf42.rfa import RfaArchive
+        with RfaArchive(DC_MENU) as arch:
+            entry = next(e for e in arch.entries if e.lower() == "menu/ingame")
+            cls.root, cls.reader = meme.load(arch.read(entry))
+        cls.rows = [n for n in meme.walk_all(cls.root) if n.cls == "BfSelectButtonNode"]
+
+    def test_reads_to_the_last_byte_with_no_warnings(self) -> None:
+        self.assertEqual(len(self.reader.data), self.reader.pos)
+        self.assertEqual([], self.reader.warnings)
+
+    def test_six_rows_one_per_kit_slot(self) -> None:
+        # Bottom row first in the file: Special Ops is slot 5, Sniper 0.
+        self.assertEqual([5, 4, 3, 2, 1, 0], [n["Index"] for n in self.rows])
+        for node in self.rows:
+            self.assertEqual("Kit/SelectedKit", node["Current clicked index"].name)
+            self.assertEqual((205.0, 69.0), (node["Width"], node["Height"]))
+            self.assertEqual("Ingame/respawn/respawn_middle_256x128.tga", node["Picture"])
+            self.assertEqual("Ingame/respawn/respawn_middle_256x128_MO.tga",
+                             node["Mouse over picture"])
+            self.assertEqual("Ingame/respawn/respawn_middle_256x128_CL.tga",
+                             node["Clicked picture"])
+
+    def test_the_action_sets_the_slot_vanilla_rows_set(self) -> None:
+        for node in self.rows:
+            actions = [a for a in node["Action"]["Actions"] if a is not None]
+            set_var, call = actions
+            self.assertEqual("Kit/SelectedKit", set_var["Variable"].name)
+            self.assertEqual(node["Index"], set_var["Value"]["Value"])
+            self.assertEqual("Kit/OnKitSelect", call["Function"].name)
+
+
 @unittest.skipUnless(GAME_DIR.is_dir(), "needs the BF1942 install")
 class MemeElevenSurveyTests(unittest.TestCase):
     """MEME-11's survey: every page in every installed mod's menu.rfa(s).
@@ -510,9 +553,9 @@ class MemeElevenSurveyTests(unittest.TestCase):
     The ledger's target is 228 of 230 pages reading to zero leftover bytes.
     This fix alone does not reach that - other classes this ledger row never
     named (BfCreditsNode, PathNode, BfCenterStyle, DataListData, DisableNode,
-    BfBinkNode, PointerXData / PointerYData, BfSelectButtonNode,
-    FloatRefData) are still unread and out of this row's and this track's
-    scope. What these assertions pin down is narrower and load-bearing:
+    BfBinkNode, PointerXData / PointerYData, FloatRefData) are still unread
+    and out of this row's and this track's scope (BfSelectButtonNode, on
+    that list until 2026-09-30, is read now: Desert Combat's kit rows). What these assertions pin down is narrower and load-bearing:
     nothing this fix touched has regressed, and the specific bug MEME-11
     describes (the Event-type width) is gone everywhere it appears, not just
     in the ten named classes.
@@ -539,7 +582,9 @@ class MemeElevenSurveyTests(unittest.TestCase):
              "TypeEvent", "ButtonEvent",
              # Added with the Singleplayer pages (SingleplayerClassTests).
              "BfNewListBoxNode", "BfEditNodeInt", "BfSliderNode", "BfFixedSliderNode",
-             "BfAddSubEffectNode")
+             "BfAddSubEffectNode",
+             # Desert Combat's kit rows (DesertCombatInGameTests).
+             "BfSelectButtonNode")
 
     def test_no_page_desyncs_on_a_class_this_fix_owns(self) -> None:
         offenders = [
@@ -589,6 +634,8 @@ class MemeElevenSurveyTests(unittest.TestCase):
         ("interstate", "menu.rfa"): 3, ("EoD", "menu.rfa"): 2, ("GCMOD", "menu.rfa"): 2,
         ("bf1918", "menu.rfa"): 2, ("FH", "menu.rfa"): 1, ("Pirates", "menu.rfa"): 1,
         ("XPack2", "Menu.rfa"): 1, ("bg42", "menu.rfa"): 1,
+        # 0 of 2 until BfSelectButtonNode was read (2026-09-30): InGame.
+        ("DesertCombat", "MENU.rfa"): 1,
     }
 
     def test_clean_page_count_has_not_regressed(self) -> None:

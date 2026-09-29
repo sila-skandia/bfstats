@@ -1128,3 +1128,67 @@ selector's index, written by `build_mods_manifest.py`) still lists only
 until that index is rebuilt and the packs' level trees exist. The HUD packs
 themselves are live and `viewer/hud-pack.js` will resolve them the moment a
 `?mod=` names one.
+
+## 15. Desert Combat's kit column (2026-09-30)
+
+Reported on play.bfstats.io: on a DC or DC Final level the kit column showed
+six weapon pictures with no plate behind them and no selected row, and a
+click on a row did nothing.
+
+### Why
+
+DC does not build its rows the way vanilla does. Vanilla's are a fill, a
+class glyph and three `CullEventActionNode`s per row (the `hit` leaves with a
+`Kit/MouseOver/*` flag). DC's `menu/InGame` has one `BfSelectButtonNode` per
+row, and `bf42/meme.py` had no schema for the class: the reader followed each
+node's sibling pointer, skipped its 220-odd bytes of fields, and
+`extract_spawn_layout.py`'s flattener walked into a node with no children and
+emitted nothing. Everything the row is (its three plates
+`Ingame/respawn/respawn_middle_256x128{,_MO,_CL}`, its pointer region and the
+kit slot it selects) was lost, and only the pictures and labels beside it
+came through. It is the only page of any installed mod that uses the class.
+
+What the class does is ledger MEME-18 (read, update, render and input decoded
+from BF1942.exe): the plate is "selected" while `Kit/SelectedKit` holds the
+node's `Index`, lit while the pointer is inside its 205x69 region, at rest
+otherwise, drawn at texture size; a click inside sets `Kit/SelectedKit` to
+`Index` and runs `Kit/OnKitSelect`. DC's six rows carry `Index` 0..5, the same
+values vanilla's row clicks write (0..4), so row N is the level's
+`game.setKit <team> N` slot. DC levels bind six (`_shared/loadouts.json`).
+
+### What changed
+
+- `bf42/meme.py`: the `BfSelectButtonNode` schema. DC's `menu/InGame` now
+  reads to its last byte with no warnings.
+- `extract_spawn_layout.py`: `Flattener.emit_select` writes a `select` leaf
+  (`rect` = the pointer region, `texture`/`hover`/`clicked`, `index`, `var`).
+- `extract_hud_pack.py`: `select_button_plates` adds the plates a chain's
+  `menu/InGame` names on those nodes to the sprite pack. Read from the graph,
+  so only DC and DC Final gain them (Pirates ships the same three files and
+  never draws them).
+- `viewer/deploy-screen.js`: `KITS` gains a sixth row name, `slot5`, and a
+  sixth hit button is made for it; each kit button is placed over the row
+  that sets its slot (vanilla's by file order as before, DC's by `index`) and
+  hidden when the layout has none; the `select` leaf is painted by the rule
+  above.
+
+`spawn-layout.json` comes out byte-identical before and after for vanilla,
+EoD, both expansions, FH, FHSW, Pirates, FinnWars, GCMOD, interstate, bf1918
+and bg42; so does
+`hud.json` for vanilla, EoD and both expansions, and `select_button_plates`
+is empty for every chain but DC's and DC Final's, so no other pack can move.
+El Alamein and an EoD level render pixel-identical, rest, selected and hover
+states included. On
+DC's Basrah's Edge a real mouse click on each of the six rows selects slot
+0..5 on both sides (Coalition M25Sniper, M16, SMAW, M249, Remington, CAR-15;
+Opposition TabukSniper, AK47, RPG7, PKM, Saiga12k, AKS-74U).
+
+### Still open
+
+- The scoreboard draws the local player's class glyph from the row name
+  (`scoreboard-screen.js`), which is vanilla's class only for vanilla's own
+  bindings. DC's slot 3 is Heavy Assault and shows the medic glyph; slot 5
+  shows none. Bots already use their kit's `class`; the local row should too.
+- `server/authority.mjs` keeps its own five-name `KITS` and, like before,
+  reads the spawn row's name as a kit template, so a room spawn's Armor falls
+  back to slot 0 for every row. Unchanged here.

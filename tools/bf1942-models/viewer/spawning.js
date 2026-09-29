@@ -378,7 +378,8 @@ export function createSpawning(page) {
     setDeployTeam(team);
   }
 
-  /** A kit row clicked, by the row's name (`scout` .. `engineer`). */
+  /** A kit row clicked, by the row's name (`deploy-screen.js` `KITS`:
+   *  `scout` .. `engineer`, `slot5` for Desert Combat's sixth). */
   function chooseKit(kit) {
     spawning.deployKit = kit;
     page.paintDeployChrome();

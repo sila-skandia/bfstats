@@ -253,6 +253,8 @@ class Flattener:
                 self.emit_text(node, rect, color, when)
             elif cls == "BfButtonNode":
                 self.emit_button(node, nodes, ox, oy, color, when)
+            elif cls == "BfSelectButtonNode":
+                self.emit_select(node, ox, oy, color, when)
             elif cls in ("CullEventActionNode", "CullVariableAndEventActionNode"):
                 self.emit_hit(node, nodes, rect, when)
             else:
@@ -335,6 +337,36 @@ class Flattener:
                   texture=texture_key(node["Picture"]),
                   hover=texture_key(node["Mouse over picture"]),
                   id=key)
+
+    def emit_select(self, node, ox, oy, color, when) -> None:
+        """A `BfSelectButtonNode`: one of Desert Combat's kit rows, a plate
+        and its own pointer region in one node where vanilla's rows are a
+        fill, a glyph and three `CullEventActionNode`s.
+
+        What the client does with it (BF1942.exe, vtable 0x0093e1a8):
+          update  +0x64 0x007da2d0  the plate is "Clicked picture" while the
+                  variable's value is `Index`, else "Mouse over picture"
+                  while the pointer is inside (X, Y, Width, Height), else
+                  "Picture"
+          render  +0x68 0x007da720  draws that plate through the same call
+                  `BfButtonNode`'s render (0x007da600) makes, so at the
+                  texture's own size (MEME-7): Width/Height is the pointer
+                  region, not a scale
+          input   +0x74 0x007da390  a click inside the region, when the
+                  variable is not already `Index`, sets it to `Index` and
+                  runs the action
+        The variable is `Kit/SelectedKit` on all six rows and `Index` is the
+        value vanilla's row click sets it to (`SetVariableAction
+        Kit/SelectedKit=N` beside `Kit/OnKitSelect`), so the rows index the
+        same `game.setKit` slots vanilla's do, 0..5 where vanilla's are 0..4.
+        """
+        var = node["Current clicked index"]
+        self.leaf("select", [ox, oy, node["Width"], node["Height"]], color, when,
+                  texture=texture_key(node["Picture"]),
+                  hover=texture_key(node["Mouse over picture"]),
+                  clicked=texture_key(node["Clicked picture"]),
+                  index=node["Index"],
+                  var=var.name if isinstance(var, meme.Obj) else None)
 
     def emit_hit(self, node, siblings, rect, when) -> None:
         """A pointer region: the kit rows toggle a `Kit/MouseOver/*` flag,
