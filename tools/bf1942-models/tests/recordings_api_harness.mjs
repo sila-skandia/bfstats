@@ -195,4 +195,28 @@ results.switch = {
   ],
 };
 
+// What a viewer may change on a card, as the API says of each recording
+// (`canManage`: its uploader, or an admin), and the title a share offers.
+const slugsOf = list => list.map(r => r.slug);
+const members = [
+  { slug: 'aaaaaaaaaa', canManage: true },
+  { slug: 'bbbbbbbbbb', canManage: false },
+  { slug: 'cccccccccc', canManage: true },
+];
+results.managed = {
+  own: slugsOf(feed.managedOf({ slug: 'aaaaaaaaaa', canManage: true })),
+  others: slugsOf(feed.managedOf({ slug: 'aaaaaaaaaa', canManage: false })),
+  unsaid: slugsOf(feed.managedOf({ slug: 'aaaaaaaaaa' })),
+  // A round's card is its lead's (b here, not the viewer's), the others its members.
+  round: slugsOf(feed.managedOf({ slug: 'bbbbbbbbbb', canManage: false, round: members, roundCard: { recordings: 3 } })),
+  roundNone: slugsOf(feed.managedOf({ slug: 'bbbbbbbbbb', canManage: false, round: [members[1], { slug: 'dddddddddd' }], roundCard: { recordings: 2 } })),
+  nothing: slugsOf(feed.managedOf(null)),
+};
+results.defaultTitle = [
+  feed.defaultTitle('Battle of Midway', 'MoonGamers.com | Est. 2004'),
+  feed.defaultTitle('Bocage', ''),
+  feed.defaultTitle('', 'bfstats-lab'),
+  feed.defaultTitle('', ''),
+];
+
 process.stdout.write(JSON.stringify(results));

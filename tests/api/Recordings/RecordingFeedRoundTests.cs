@@ -1,3 +1,4 @@
+using api.Recordings;
 using api.Recordings.Models;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
@@ -44,7 +45,7 @@ public sealed class RecordingFeedRoundTests : IDisposable
     }
 
     private Task<PagedRecordingsDto> ListAsync(string? sort = null, int page = 1, int pageSize = 24, string? server = null, string? uploader = null) =>
-        fixture.Service.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader), CancellationToken.None);
+        fixture.Service.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader), null, CancellationToken.None);
 
     private Task SetAsync(string slug, int views) =>
         fixture.Db.Recordings.Where(r => r.Slug == slug).ExecuteUpdateAsync(set => set.SetProperty(r => r.ViewCount, views));
@@ -177,6 +178,37 @@ public sealed class RecordingFeedRoundTests : IDisposable
         Assert.Equal([("Rut", 1), ("skandia", 2)], uploaders);
         Assert.Equal([(Lab, 1)], serversByRut);
         Assert.Equal([("Rut", 1), ("skandia", 1)], uploadersOnLab);
+    }
+
+    /// <summary>A round's card says of each of its recordings whether the one asking may rename
+    /// or delete it, and of itself (its lead's) likewise; a recording's page lists its round the
+    /// same way.</summary>
+    [Fact]
+    public async Task ARoundsCard_SaysWhoMayRenameOrDeleteEachOfItsRecordings()
+    {
+        var (mine, theirs) = await RoundAsync(36, "Wake", secondByRut: true);
+
+        async Task<RecordingSummaryDto> CardAsync(RecordingActor? actor) => Assert.Single(
+            (await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, actor, default)).Items);
+
+        // Rut's is the lead (the longer); the round lists skandia's first, as it began first.
+        var anyone = await CardAsync(null);
+        Assert.Equal(theirs.Slug, anyone.Slug);
+        Assert.False(anyone.CanManage);
+        Assert.Equal([false, false], anyone.Round!.Select(m => m.CanManage));
+        var rut = await CardAsync(fixture.AsOther);
+        Assert.True(rut.CanManage);
+        Assert.Equal([false, true], rut.Round!.Select(m => m.CanManage));
+        var skandia = await CardAsync(fixture.AsUploader);
+        Assert.False(skandia.CanManage);
+        Assert.Equal([true, false], skandia.Round!.Select(m => m.CanManage));
+        var admin = await CardAsync(fixture.AsAdmin);
+        Assert.True(admin.CanManage);
+        Assert.Equal([true, true], admin.Round!.Select(m => m.CanManage));
+
+        var page = await fixture.Service.GetAsync(mine.Slug, fixture.AsUploader, default);
+        Assert.True(page!.CanManage);
+        Assert.Equal([true, false], page.Round!.Select(m => m.CanManage));
     }
 
     private async Task CoverAsync(string slug)
