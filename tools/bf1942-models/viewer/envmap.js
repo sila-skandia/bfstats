@@ -1,6 +1,6 @@
 /* `envmap true` — the engine's environment-reflection stage, reproduced.
  *
- * 435 vanilla materials declare `envmap true;` in their `.rs` (aircraft
+ * 435 vanilla `.rs` files declare `envmap true;` (aircraft
  * painted metal first, canopy and window glass second — census in
  * features/bf1942-3d-models/envmap-materials.md). `bf42/rs.py` reads the flag,
  * `bf42/gltf.py` stamps it as `material.extras.envmap`, GLTFLoader lands that
