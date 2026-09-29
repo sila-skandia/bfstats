@@ -12,6 +12,12 @@
 // `textures` / `fontFiles` tables an extractor wrote) and a way to turn a
 // pack-relative path into a URL, and it hands back the three lookups
 // `paintElement` asks for.
+//
+// The one plate that is not a picture is `menu/Background`'s: while the front
+// end's background movie (`menu-movie.js`) has a frame, that frame is handed
+// back in the still's place, and every new frame repaints the screen.
+
+import { MOVIE_PLATE, menuMovie } from './menu-movie.js';
 
 /**
  * @param {object} options
@@ -62,6 +68,10 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {}, env: 
 
   const env = {
     texture: name => {
+      if (name === MOVIE_PLATE) {
+        const frame = menuMovie.frame();
+        if (frame) return frame;
+      }
       const entry = layout?.textures?.[name];
       return entry ? ready(image(url(entry.file))) : null;
     },
@@ -89,6 +99,9 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {}, env: 
     hover: null,
   };
   if (own) Object.defineProperties(env, Object.getOwnPropertyDescriptors(own));
+  // A hidden screen's paint stops at `beginStage` (no size), so every pack
+  // can listen; only the screen that is up draws.
+  menuMovie.onFrame(() => { if (layout?.textures?.[MOVIE_PLATE]) onImage(); });
 
   /** Fetch every face and every plate the layout names. The screens here
    *  are a few dozen small textures and paint once, so nothing is lazy. */
