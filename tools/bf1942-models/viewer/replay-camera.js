@@ -246,6 +246,29 @@ export class ReplayCamera {
       this.good.quat.copy(cam.quaternion);
     }
     this.faults = new Set();
+    // The creator view's (replay-creator.js): a rig that places the camera
+    // over the mode while it will (`placeRig`: a round in flight, a camera
+    // track), and a lens over every view but his eyes (`setLensHook`).
+    this.rig = null;
+    this.lensHook = null;
+  }
+
+  /** A rig places the camera instead of the mode from now on, while its
+   *  `place(cam, dt, t)` answers true; null hands back. A rig's `drag(dx,
+   *  dy)` and `wheel(steps)` take the view's drags and wheel when they answer
+   *  true. */
+  setRig(rig) {
+    this.rig = rig ?? null;
+  }
+
+  /** `fn(cam)` shapes the lens of every view but his eyes, each frame, before
+   *  the soldiers are culled against it; null puts the page's lens back. */
+  setLensHook(fn) {
+    this.lensHook = fn ?? null;
+    if (!fn && this.lens === 'page') {
+      this.lens = null;
+      this.useLens('page');
+    }
   }
 
   // --- input -----------------------------------------------------------------
@@ -301,6 +324,7 @@ export class ReplayCamera {
   /** A drag of `dx`, `dy` pixels. */
   drag(dx, dy) {
     if (!finite(dx, dy)) return;
+    if (this.rig?.drag?.(dx, dy)) return;
     if (this.mode === 'orbit') {
       this.yaw -= dx * DRAG;
       this.pitch = clamp(this.pitch + dy * DRAG * 0.8, PITCH_MIN, PITCH_MAX);
@@ -316,6 +340,7 @@ export class ReplayCamera {
   /** The wheel: `steps` > 0 is out (away from him, or backwards). */
   wheel(steps) {
     if (!finite(steps)) return;
+    if (this.rig?.wheel?.(steps)) return;
     if (this.mode === 'orbit') {
       this.zoom = clamp(this.zoom * Math.exp(steps * 0.15), ZOOM_MIN, ZOOM_MAX);
     } else if (this.mode === 'free') {
@@ -415,7 +440,9 @@ export class ReplayCamera {
     this.sanitize();
     let firstPersonHull = null;
     try {
-      if (this.mode === 'free') {
+      if (this.rig && this.placeRig(dt, t)) {
+        this.useLens('page');
+      } else if (this.mode === 'free') {
         this.updateFree(dt);
         this.useLens('page');
       } else if (this.mode === 'pov' && this.placePov(dt, t)) {
@@ -442,7 +469,45 @@ export class ReplayCamera {
       firstPersonHull = null;
     }
     this.setFirstPersonHull(firstPersonHull);
+    // The creator's lens, never over his eyes: the game's own lens and his
+    // zoom are what he saw.
+    if (this.lensHook && this.lens !== 'foot' && this.lens !== 'seat') {
+      try {
+        this.lensHook(cam);
+      } catch (error) {
+        this.fault('the lens threw', error);
+        this.setLensHook(null);
+      }
+      if (!this.poseFinite(cam)) {
+        this.fault('the lens came out as no pose');
+        this.setLensHook(null);
+        this.hold(cam);
+      }
+    }
     cam.updateMatrixWorld();
+  }
+
+  /**
+   * The rig's frame (`setRig`): true when it placed the camera. One that
+   * throws, or places it at no position, is dropped and the mode takes the
+   * frame; one that lets go hands the mode its last view to glide out of.
+   */
+  placeRig(dt, t) {
+    const cam = this.player.ctx.camera;
+    const rig = this.rig;
+    try {
+      if (!rig.place(cam, dt, t)) return false;
+      if (this.poseFinite(cam)) {
+        this.startGlide(cam.position, _v2.set(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position));
+        return true;
+      }
+      this.fault('a creator rig came out as no position');
+    } catch (error) {
+      this.fault('a creator rig threw', error);
+    }
+    if (this.rig === rig) this.rig = null;
+    this.hold(cam);
+    return false;
   }
 
   /**

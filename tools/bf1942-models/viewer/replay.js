@@ -59,6 +59,7 @@ import { ReplayHud } from './replay-hud.js';
 import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
+import { ReplayCreator } from './replay-creator.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -197,6 +198,23 @@ class ReplayPlayer {
     // The battles, streaks and plays worth watching, the battle map and the
     // Auto camera (features/round-replay-highlights).
     this.highlights = extra('the highlights', () => new ReplayHighlights(this)) ?? null;
+    // The creator view: picking, the round cam, a player's highlights, clips
+    // and camera keys, for an admin (features/replay-creator-view).
+    this.creator = extra('the creator view', () => new ReplayCreator(this)) ?? null;
+  }
+
+  /** The creator view's turn in a frame, switched off the way the
+   *  highlights' is if it throws. */
+  withCreator(fn) {
+    if (!this.creator) return;
+    try {
+      fn(this.creator);
+    } catch (error) {
+      console.warn('replay: the creator view threw and is switched off', error);
+      const creator = this.creator;
+      this.creator = null;
+      extra('taking the creator view down', () => creator.dispose());
+    }
   }
 
   /** The highlights' turn in a frame. One that throws is switched off for the
@@ -231,6 +249,8 @@ class ReplayPlayer {
    *  asked for one (replay-timeline.js). */
   afterRender(canvas) {
     this.ui.timeline.capture(canvas);
+    // A creator's clip cropped to its frame is drawn from the same canvas.
+    this.withCreator(c => c.afterRender(canvas));
   }
 
   /** A kit template's class as the game names it (`loadouts.json`). */
@@ -657,6 +677,7 @@ class ReplayPlayer {
     // vanished at some angles of the orbit. The Auto camera's director and
     // the highlight reel choose whom it is on first.
     this.withHighlights(h => h.lead(t, dt));
+    this.withCreator(c => c.lead(t, dt));
     guard.run('the camera', () => this.camera.update(dt, t), () => {
       // What the first person set this frame is not his: no body hidden,
       // no HUD over a view that did not come from his eyes.
@@ -707,6 +728,7 @@ class ReplayPlayer {
     guard.run('the timeline', () => this.ui.timeline.plan(prevT, t, this.playing));
     guard.run('the bar', () => this.ui.update(t, dt));
     this.withHighlights(h => h.update(t, dt));
+    this.withCreator(c => c.update(t, dt));
   }
 
   /**
@@ -792,6 +814,7 @@ class ReplayPlayer {
     this.ctx.scene.remove(this.root);
     extra('taking the message log back', () => this.feed.dispose());
     extra('taking the highlights down', () => this.highlights?.dispose());
+    extra('taking the creator view down', () => this.creator?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
   }
 }
