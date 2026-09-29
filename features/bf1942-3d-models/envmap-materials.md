@@ -21,6 +21,8 @@ The census revealed that the prior documentation claim of "all glass" was incorr
   - XPack1: 44 envmap .rs (of 298 total)
   - XPack2: 211 envmap .rs (of 562 total)
 
+*Corrected 2026-09-29: three docs give three vanilla counts, and none has been re-run to settle them. This census counted 435 `.rs` files of 1,760, which the summary above and the code comment below call materials; [parity-audit/effects-materials.md](parity-audit/effects-materials.md) B2 counted 494 `envmap true` blocks in 405 `.rs` files, of 4,048 materials. The [ledger](../bf1942-engine-reference/ledger.md)'s "Environment maps" section says 338 materials and does not say what it counted.*
+
 ### Top Model Families (by envmap usage)
 
 All top uses are aircraft:
@@ -79,6 +81,8 @@ if envmap:
     # cubemap via THREE.MeshStandardMaterial.envMap when it sees this.
     extras["envmap"] = True
 ```
+
+*Corrected 2026-09-29: the comment's 435 is this census's count of `.rs` files, not materials, and two other docs give 494 and 338. See the note under Census Results.*
 
 The extras dict is only created and attached if at least one flag (additive, textureFade, or envmap) is present, keeping materials without extras clean.
 
