@@ -166,6 +166,26 @@ class RecordingsApiTests(unittest.TestCase):
         # From a recording whose place nothing measured: only itself.
         self.assertEqual(switch["fromUnplaced"], [None, None, 50])
 
+    def test_a_card_offers_what_the_viewer_may_change(self) -> None:
+        managed = self.results["managed"]
+        # A recording on its own: when the API says this viewer may.
+        self.assertEqual(managed["own"], ["aaaaaaaaaa"])
+        self.assertEqual(managed["others"], [])
+        self.assertEqual(managed["unsaid"], [])
+        # A round: each of its recordings the viewer may change, in round
+        # order, whether or not the lead is one.
+        self.assertEqual(managed["round"], ["aaaaaaaaaa", "cccccccccc"])
+        self.assertEqual(managed["roundNone"], [])
+        self.assertEqual(managed["nothing"], [])
+
+    def test_a_share_is_titled_by_its_level_and_server_until_renamed(self) -> None:
+        self.assertEqual(self.results["defaultTitle"], [
+            "Battle of Midway on MoonGamers.com | Est. 2004",
+            "Bocage",
+            "",
+            "",
+        ])
+
     def test_the_feed_narrows_to_a_server_and_an_uploader(self) -> None:
         filtered = self.results["filtered"]
         # An empty filter is left out of the API's query.

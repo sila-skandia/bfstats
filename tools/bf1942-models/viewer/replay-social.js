@@ -23,8 +23,12 @@
 // (recordings-api.js `roundMoment`). One opened alone offers Watch merged; a
 // set the merge refused (two rounds, replay-merge-guard.js) says why there.
 //
+// Its uploader, or an admin, can also rename the recording or delete it from
+// the menu (the first recording's, when several play merged, as the cover is);
+// deleted, the page goes back to the feed.
+//
 // The replay's own chrome (replay-ui.js) is not changed: this adds a button
-// to its bar, a panel and marks to its root and timeline, and an item to its
+// to its bar, a panel and marks to its root and timeline, and items to its
 // menu, and gives its F the cover (`useFrameKey`), through the page's
 // `opened(player)` hook, the way replay-open.js adds the bar's date and Open
 // button.
@@ -52,6 +56,8 @@ const ICON = {
   frame: '<rect x="2" y="3.5" width="12" height="9" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/>',
   deck: '<rect x="1.8" y="5.2" width="9" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.6 3.2h8.4a1 1 0 0 1 1 1v6.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.2 7.3v2.9l2.6-1.45z" fill="currentColor"/>',
   play: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
+  pencil: '<path d="M10.6 2.6l2.8 2.8-7.6 7.6H3v-2.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  trash: '<path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.4 4.5l.7 8.7h5.8l.7-8.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
 };
 const svg = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name] ?? ''}</svg>`;
 
@@ -87,6 +93,8 @@ const STYLE = `
   color: var(--rp-khaki-ink); font: 700 11px/1 var(--rp-font); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
 .rs-go:hover { background: var(--rp-edge-strong); }
 .rs-go.quiet { background: transparent; color: var(--rp-ink); border-color: var(--rp-edge); }
+.rs-go.destroy { background: #c46f3e; border-color: #c46f3e; color: #1c1008; }
+.rs-go.destroy:hover { background: #d9824a; border-color: #d9824a; }
 .rs-go:disabled { opacity: .45; cursor: default; }
 .rs-error { color: #f2c25a; font-size: 11px; }
 .rs-marks { position: absolute; left: 0; right: 0; top: 27px; height: 5px; pointer-events: none; }
@@ -109,6 +117,9 @@ const STYLE = `
 .rs-dialog .rs-compose { border-top: 0; padding: 12px; gap: 10px; }
 .rs-dialog label > span { display: block; margin-bottom: 4px; color: var(--rp-muted); font: 700 10px/1 var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
 .rs-cover { width: 100%; aspect-ratio: 16 / 9; border-radius: 5px; border: 1px solid var(--rp-edge); background: #000 center / cover no-repeat; }
+.rs-ask { margin: 0; color: var(--rp-ink); font: 700 13px/1.4 var(--rp-font); overflow-wrap: anywhere; }
+/* The recording's own items in the menu: the cover, Rename, Delete. */
+.rs-menu-rule { flex: none; height: 1px; margin: 3px 6px; background: var(--rp-edge); }
 /* The round's switch: merged, or each recording alone. Its menu is the bar's
    own (.rp-more-menu), opening upward. */
 .rs-view { position: relative; }
@@ -300,7 +311,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     ui.timeline.el.append(nodes.marks);
     nodes.bubbles = el('div', 'rs-bubbles');
     ui.root.append(nodes.bubbles);
-    if (detail?.canManage) addCoverItem();
+    if (detail?.canManage) addOwnItems();
     buildSwitch();
     // One panel on the right at a time: the replay log opening shuts this.
     new MutationObserver(() => {
@@ -658,6 +669,13 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
         viewer = await api.viewer({ fresh: true }).catch(() => null);
         renderCompose();
         loadComments();
+        // Whether this viewer may set its cover, rename or delete it.
+        const fresh = slug ? await api.get(slug).catch(() => null) : null;
+        if (fresh) {
+          detail = fresh;
+          members[0].detail = fresh;
+          if (fresh.canManage) addOwnItems();
+        }
       }
     } catch (error) {
       ui?.flash(error.message, 3000);
@@ -750,19 +768,137 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     }
   }
 
-  function addCoverItem() {
-    if (!ui.moreMenu || ui.moreMenu.querySelector('.rs-cover-item')) return;
-    const item = el('button', 'rp-mi rs-cover-item');
-    item.type = 'button';
-    item.setAttribute('role', 'menuitem');
-    item.innerHTML = `${svg('frame')}<span>Use this frame as the cover</span><kbd class="rp-keys-only">F</kbd>`;
-    item.addEventListener('click', e => {
-      e.stopPropagation();
-      ui.closeMore();
-      takeCover();
-    });
-    ui.moreMenu.append(item);
+  /** The menu's items for its uploader or an admin: the frame on screen as
+   *  the cover (F), Rename and Delete. */
+  function addOwnItems() {
+    if (!ui?.moreMenu || ui.moreMenu.querySelector('.rs-cover-item')) return;
+    const item = (className, icon, text, onClick, key = '') => {
+      const b = el('button', `rp-mi ${className}`);
+      b.type = 'button';
+      b.setAttribute('role', 'menuitem');
+      b.innerHTML = `${svg(icon)}<span></span>${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
+      b.querySelector('span').textContent = text;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        ui.closeMore();
+        onClick();
+      });
+      ui.moreMenu.append(b);
+    };
+    ui.moreMenu.append(el('div', 'rs-menu-rule'));
+    item('rs-cover-item', 'frame', 'Use this frame as the cover', takeCover, 'F');
+    item('rs-rename-item', 'pencil', 'Rename', openRename);
+    item('rs-delete-item', 'trash', 'Delete', openDelete);
     ui.useFrameKey?.(takeCover);
+  }
+
+  // --- renaming and deleting it -----------------------------------------------------
+
+  /** A dialog over the round, which waits while it is up: `{ body, close,
+   *  submit }`, `submit` what Enter in its box does. `resume` is whether the
+   *  round plays again once it shuts. The keys are the dialog's while it is up
+   *  (the keyboard handler below). */
+  function modal(heading, { resume = player.playing } = {}) {
+    player.playing = false;
+    const shade = el('div', 'rs-shade');
+    const dialog = el('div', 'rp-panel rs-dialog');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-label', heading);
+    const head = el('div', 'rp-panel-head');
+    const box = { body: el('div', 'rs-compose'), submit: null };
+    box.close = () => {
+      shade.remove();
+      if (nodes.modal === box) nodes.modal = null;
+      player.playing = resume;
+    };
+    head.append(el('span', '', heading), ui.button('', 'close', 'Close', box.close));
+    dialog.append(head, box.body);
+    shade.append(dialog);
+    shade.addEventListener('pointerdown', e => { if (e.target === shade) box.close(); });
+    ui.root.append(shade);
+    nodes.modal = box;
+    return box;
+  }
+
+  /** Whose it is and how long, under the question. */
+  const whose = recording => [recording.uploaderName && `Shared by ${recording.uploaderName}`,
+    clock(recording.durationSeconds)].filter(Boolean).join(' · ');
+
+  function openRename() {
+    if (!detail) return;
+    const dialog = modal('Rename recording');
+    const { body, close } = dialog;
+    const label = el('label');
+    const title = el('input');
+    title.maxLength = 100;
+    title.value = detail.title;
+    label.append(el('span', '', 'Title'), title);
+    const status = el('div', 'rs-hint');
+    const cancel = el('button', 'rs-go quiet', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', close);
+    const go = el('button', 'rs-go', 'Save');
+    go.type = 'button';
+    const row = el('div', 'rs-row');
+    row.append(status, cancel, go);
+    body.append(label, el('span', 'rs-hint', whose(detail)), row);
+    const save = async () => {
+      const text = title.value.trim();
+      if (go.disabled || !text) return;
+      if (text === detail.title) { close(); return; }
+      go.disabled = true;
+      status.classList.remove('rs-error');
+      status.textContent = 'Saving';
+      try {
+        detail = await api.rename(slug, text);
+        members[0].detail = detail;
+        document.title = `${detail.title} · replay`;
+        close();
+        ui.flash('Renamed', 1600);
+      } catch (error) {
+        go.disabled = false;
+        status.classList.add('rs-error');
+        status.textContent = error.message;
+      }
+    };
+    go.addEventListener('click', save);
+    dialog.submit = save;
+    title.focus();
+    title.select();
+  }
+
+  function openDelete() {
+    if (!detail) return;
+    const { body, close } = modal('Delete recording');
+    const status = el('div', 'rs-hint');
+    const keep = el('button', 'rs-go quiet', 'Keep it');
+    keep.type = 'button';
+    keep.addEventListener('click', close);
+    const go = el('button', 'rs-go destroy', 'Delete');
+    go.type = 'button';
+    const row = el('div', 'rs-row');
+    row.append(status, keep, go);
+    body.append(el('p', 'rs-ask', `Delete "${detail.title}"?`),
+      el('span', 'rs-hint', `${whose(detail)}. Its comments go with it. There is no undo.`), row);
+    go.addEventListener('click', async () => {
+      if (go.disabled) return;
+      go.disabled = true;
+      status.classList.remove('rs-error');
+      status.textContent = 'Deleting';
+      try {
+        await api.remove(slug);
+        // Nothing left to watch: back to the feed.
+        const feed = new URL(menuUrl ?? new URL('./play/index.html', location.href));
+        feed.searchParams.set('tab', 'replay');
+        feed.searchParams.delete('rec');
+        location.assign(feed);
+      } catch (error) {
+        go.disabled = false;
+        status.classList.add('rs-error');
+        status.textContent = error.message;
+      }
+    });
+    keep.focus();
   }
 
   // --- sharing a recording from disk -----------------------------------------------
@@ -785,16 +921,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     player.playing = false;
     const picked = Boolean(chosenCover);
     const cover = chosenCover ?? await capture().catch(() => null);
-    const shade = el('div', 'rs-shade');
-    const dialog = el('div', 'rp-panel rs-dialog');
-    const head = el('div', 'rp-panel-head');
-    const close = () => { shade.remove(); player.playing = wasPlaying; };
-    head.append(el('span', '', 'Share to the REPLAY feed'), ui.button('', 'close', 'Close', close));
-    const body = el('div', 'rs-compose');
-    dialog.append(head, body);
-    shade.append(dialog);
-    shade.addEventListener('pointerdown', e => { if (e.target === shade) close(); });
-    ui.root.append(shade);
+    const { body, close } = modal('Share to the REPLAY feed', { resume: wasPlaying });
 
     await api.ready();
     if (!api.signedIn) {
@@ -918,6 +1045,20 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
   // after this): T opens the comments, as T opens the chat in the game; Enter
   // in the comment box posts it; Escape shuts the panel.
   window.addEventListener('keydown', e => {
+    // A dialog of this file's up (Share, Rename, Delete): the keys are its,
+    // the round's shortcuts wait. Escape shuts it; Enter in its box sends it;
+    // anything else does what it does there (types, moves the focus, presses).
+    if (nodes.modal) {
+      e.stopImmediatePropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        nodes.modal.close();
+      } else if (e.key === 'Enter' && e.target?.tagName === 'INPUT' && nodes.modal.submit) {
+        e.preventDefault();
+        nodes.modal.submit();
+      }
+      return;
+    }
     if (!ui || !nodes.panel) return;
     const typing = e.target === nodes.text;
     if (typing && e.key === 'Enter' && !e.shiftKey) {
@@ -951,7 +1092,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
       ui = opened.ui;
       hookCapture();
       // F on a shared recording, until the feed says this viewer may set its
-      // cover (`addCoverItem`).
+      // cover (`addOwnItems`).
       if (slug) ui.useFrameKey?.(() => ui.flash('Only its uploader or an admin can set the cover', 2400));
       if (local) dressLocal();
       if (detail) dressShared();

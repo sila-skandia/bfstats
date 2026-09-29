@@ -48,7 +48,7 @@ public sealed class RecordingRoundServiceTests : IDisposable
         Assert.True(link.PlayerShare >= 0.95);
 
         // The feed's cards carry it too, each with the other.
-        var feed = await fixture.Service.ListAsync("recent", 1, 24, new RecordingFilter(null, null), CancellationToken.None);
+        var feed = await fixture.Service.ListAsync("recent", 1, 24, new RecordingFilter(null, null), null, CancellationToken.None);
         Assert.All(feed.Items, card => Assert.Equal([a.Slug, b.Slug], card.Round!.Select(m => m.Slug)));
         Assert.Equal("self", feed.Items.Single(c => c.Slug == a.Slug).Round!.Single(m => m.Slug == a.Slug).Link);
     }
@@ -309,7 +309,7 @@ public sealed class RecordingRoundServiceTests : IDisposable
         Assert.True(page.RoundWeak);
         Assert.True(page.Round!.Single(m => m.Slug == one.Slug).WeakLink);
         Assert.Equal(evidence.MatchedKeys, page.Round!.Single(m => m.Slug == one.Slug).MatchedKeys);
-        var card = Assert.Single((await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, CancellationToken.None)).Items);
+        var card = Assert.Single((await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, null, CancellationToken.None)).Items);
         Assert.True(card.RoundCard!.Weak);
         var link = await fixture.Db.RecordingRoundLinks.AsNoTracking().SingleAsync();
         Assert.Null(link.OffsetSeconds);

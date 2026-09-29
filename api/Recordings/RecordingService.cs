@@ -15,7 +15,11 @@ namespace api.Recordings;
 /// first, one recording's page, and its comments.</summary>
 public interface IRecordingService
 {
-    Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, RecordingFilter filter, CancellationToken ct);
+    /// <summary>A page of the feed's cards, each saying whether <paramref name="actor"/> may
+    /// rename or delete it (<see cref="RecordingSummaryDto.CanManage"/>), and each recording of a
+    /// round likewise.</summary>
+    Task<PagedRecordingsDto> ListAsync(
+        string? sort, int page, int pageSize, RecordingFilter filter, RecordingActor? actor, CancellationToken ct);
 
     /// <summary>The servers and uploaders the feed can be narrowed to. Each list is counted
     /// within the other's filter and not its own, so the one picked keeps its neighbours.</summary>
@@ -80,7 +84,8 @@ public sealed class RecordingService(
     /// newest recording and among the most viewed by its most-watched one; a filter shows it
     /// when one of its recordings would show on its own, and then shows it whole.
     /// </summary>
-    public async Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, RecordingFilter filter, CancellationToken ct)
+    public async Task<PagedRecordingsDto> ListAsync(
+        string? sort, int page, int pageSize, RecordingFilter filter, RecordingActor? actor, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
@@ -103,13 +108,13 @@ public sealed class RecordingService(
         // The space is everyone's, whatever the feed is narrowed to.
         var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
         var players = await PlayersAsync(leads.Select(r => r.UploaderName), ct);
-        var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], ct);
+        var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], actor, ct);
         return new PagedRecordingsDto(
             [.. leads.Select(lead =>
             {
                 var round = roundsOf.GetValueOrDefault(lead.Id);
                 var card = round is null ? null : Card(lead, byCard[lead.RoundId ?? lead.Id], round);
-                return Summary(lead, players.GetValueOrDefault(lead.UploaderName), round?.Members, card);
+                return Summary(lead, players.GetValueOrDefault(lead.UploaderName), round?.Members, card, Manages(actor, lead.UploaderUserId));
             })],
             total,
             page,
@@ -195,7 +200,7 @@ public sealed class RecordingService(
     public async Task<RecordingDetailDto> DetailAsync(Recording recording, RecordingActor? actor, CancellationToken ct)
     {
         var players = await PlayersAsync([recording.UploaderName], ct);
-        var roundsOf = await RoundsAsync([recording.Id], ct);
+        var roundsOf = await RoundsAsync([recording.Id], actor, ct);
         var round = roundsOf.GetValueOrDefault(recording.Id);
         return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName), round?.Members, round?.Weak ?? false);
     }
@@ -279,7 +284,7 @@ public sealed class RecordingService(
             : comments.OrderByDescending(c => c.Id);
         var total = await comments.CountAsync(ct);
         var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-        var owner = actor is not null && (actor.IsAdmin || actor.UserId == recording.UploaderUserId);
+        var owner = Manages(actor, recording.UploaderUserId);
         return new PagedRecordingCommentsDto(
             [.. rows.Select(c => CommentDto(c, owner || c.AuthorUserId == actor?.UserId))],
             total,
@@ -387,9 +392,10 @@ public sealed class RecordingService(
     /// together only through an admin's link its recordings do not bear out. A recording in no
     /// round, or whose round has no other recording left in the feed, has no entry. The rounds
     /// are read from the database, not from the rows the caller holds: an upload's own was
-    /// just changed under it.
+    /// just changed under it. Each recording says whether <paramref name="actor"/> may rename or
+    /// delete it.
     /// </summary>
-    private async Task<Dictionary<int, RoundView>> RoundsAsync(IReadOnlyCollection<int> ids, CancellationToken ct)
+    private async Task<Dictionary<int, RoundView>> RoundsAsync(IReadOnlyCollection<int> ids, RecordingActor? actor, CancellationToken ct)
     {
         if (ids.Count == 0) return [];
         var asked = await db.Recordings.AsNoTracking()
@@ -401,7 +407,7 @@ public sealed class RecordingService(
         var members = await db.Recordings.AsNoTracking()
             .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value))
             .Select(r => new RoundRow(
-                r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderName, r.RecordedBy, r.DurationSeconds,
+                r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderUserId, r.UploaderName, r.RecordedBy, r.DurationSeconds,
                 r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing))
             .ToListAsync(ct);
         var memberIds = members.Select(m => m.Id).ToList();
@@ -423,7 +429,7 @@ public sealed class RecordingService(
             var weak = HeldByWeakLinks([.. round.Select(m => m.Id)], [.. shown.Select(m => m.Id)], links);
             foreach (var one in asked.Where(a => a.Round == round.Key))
             {
-                result[one.Id] = new RoundView([.. ordered.Select(m => Member(m, one.Id, links, offsets, players))], span, weak);
+                result[one.Id] = new RoundView([.. ordered.Select(m => Member(m, one.Id, links, offsets, players, actor))], span, weak);
             }
         }
         return result;
@@ -502,7 +508,7 @@ public sealed class RecordingService(
 
     private static RecordingRoundMemberDto Member(
         RoundRow m, int askedId, IReadOnlyList<RecordingRoundLink> links, Dictionary<int, double> offsets,
-        Dictionary<string, string> players)
+        Dictionary<string, string> players, RecordingActor? actor)
     {
         var direct = links.FirstOrDefault(l =>
             (l.RecordingId == askedId && l.OtherRecordingId == m.Id) || (l.RecordingId == m.Id && l.OtherRecordingId == askedId));
@@ -524,12 +530,13 @@ public sealed class RecordingService(
             link,
             direct?.MatchedKeys,
             direct?.PlayerShare,
-            direct is not null && Weak(direct));
+            direct is not null && Weak(direct),
+            Manages(actor, m.UploaderUserId));
     }
 
     private sealed record RoundRow(
-        int Id, int Round, string Slug, string Title, string UploaderName, string RecordedBy, double DurationSeconds,
-        long ServerLogBytes, long ThumbnailBytes, Instant UpdatedAt, bool FileMissing);
+        int Id, int Round, string Slug, string Title, int UploaderUserId, string UploaderName, string RecordedBy,
+        double DurationSeconds, long ServerLogBytes, long ThumbnailBytes, Instant UpdatedAt, bool FileMissing);
 
     /// <summary>
     /// The bfstats.io players among <paramref name="names"/>, each under the name the site has
@@ -556,9 +563,14 @@ public sealed class RecordingService(
         return db.Recordings.Where(r => r.Slug == clean);
     }
 
+    /// <summary>Whether <paramref name="actor"/> may rename, delete or set the cover of a recording
+    /// the account <paramref name="uploaderUserId"/> shared: that account, or an admin.</summary>
+    private static bool Manages(RecordingActor? actor, int uploaderUserId) =>
+        actor is not null && (actor.IsAdmin || actor.UserId == uploaderUserId);
+
     private static void Manage(Recording recording, RecordingActor actor)
     {
-        if (recording.UploaderUserId != actor.UserId && !actor.IsAdmin)
+        if (!Manages(actor, recording.UploaderUserId))
         {
             throw new RecordingRejectedException("Only whoever shared this recording can change it.", StatusCodes.Status403Forbidden);
         }
@@ -576,7 +588,8 @@ public sealed class RecordingService(
         bytes > 0 ? $"/stats/recordings/{slug}.jpg?v={updatedAt.ToUnixTimeSeconds()}" : null;
 
     internal static RecordingSummaryDto Summary(
-        Recording r, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, RecordingRoundCardDto? card = null) => new(
+        Recording r, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, RecordingRoundCardDto? card = null,
+        bool canManage = false) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -595,7 +608,8 @@ public sealed class RecordingService(
         ThumbnailLink(r),
         player,
         round,
-        card);
+        card,
+        canManage);
 
     internal static RecordingDetailDto Detail(
         Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
@@ -619,7 +633,7 @@ public sealed class RecordingService(
         RecordingLink(r.Slug),
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
         ThumbnailLink(r),
-        actor is not null && (actor.IsAdmin || actor.UserId == r.UploaderUserId),
+        Manages(actor, r.UploaderUserId),
         player,
         round,
         actor?.IsAdmin == true,

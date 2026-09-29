@@ -40,7 +40,9 @@ rest of the screen.
 - **The cover plays the round; the title opens its page.** The page has the
   facts (level, game type, server, when and by whom it was recorded, length,
   players), Watch, Copy link, and for its uploader or an admin Rename and
-  Delete.
+  Delete (below, "Renaming and deleting").
+- **A card's menu** (the dots beside its title), for its uploader or an admin:
+  Rename and Delete.
 - **Comments**, newest first or in round order. A time in one (`0:21`,
   `12:40`, `1:02:03`) is a link that opens the replay at that moment
   (`&t=21`); a time past the recording's end stays text.
@@ -48,7 +50,9 @@ rest of the screen.
   server log). The browser reads it with the replay's own parser (level,
   game type, server, recorder, length), recognises the level by its flags for a
   file begun mid-round (and asks when the flags match none), gzips it with
-  `CompressionStream` and uploads it with progress. **Shared by** is the
+  `CompressionStream` and uploads it with progress. Its title is offered as
+  the level and the server (`Bocage on MoonGamers.com | Est. 2004`), to keep
+  or write over. **Shared by** is the
   player who recorded it, as the file names him; the account's linked names
   are offered beside it. The same round shared twice is refused with a link to
   the one already there.
@@ -68,7 +72,7 @@ shared recording:
 - brings each timed comment up as the round passes its moment, while the
   panel is shut;
 - for its uploader or an admin, F or More > Use this frame as the cover (for
-  anyone else F says who can);
+  anyone else F says who can), and More > Rename and Delete;
 - leads back to its page in the feed from the Escape menu.
 
 A recording opened **from disk** gets a Share button on the bar: the frame F
@@ -124,7 +128,7 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 
 | | |
 |---|---|
-| `GET /` | the feed, a page of cards (a round of several recordings is one, below, "Rounds"): `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not). `totalCount` counts cards, `recordingCount` the recordings on them. |
+| `GET /` | the feed, a page of cards (a round of several recordings is one, below, "Rounds"), each with `canManage` for the one asking (and each of a round's recordings likewise): `sort=recent` (by id; the ExtendedIso `CreatedAt` strings do not sort) or `views`, `page`, `pageSize` (max 48), `server` and `uploader` (exact names, trimmed), and the space used (everyone's, filtered or not). `totalCount` counts cards, `recordingCount` the recordings on them. |
 | `GET /filters` | the servers and uploaders to narrow the feed to, each with how many cards it would show, `server` and `uploader` as for the feed: each list is counted within the other filter and not its own. The busiest 100 of each, by name. |
 | `GET /{slug}` | one recording, with `canManage` for its uploader or an admin. It and the feed's cards carry `uploaderPlayer`: the uploader as bfstats.io has a player page for them (a recorded name's bytes read as cp1252, as BFList reads them), or null; the page links to `bfstats.io/v4/players/<it>` beside the name |
 | `GET /{slug}.ndjson`, `.xml`, `.jpg` | the recording, its server log and its cover. The first two are stored gzipped and sent as they are (`Content-Encoding: gzip`): the browser unpacks them and the API spends no CPU compressing. The cover's link is versioned, so it keeps a year. |
@@ -247,6 +251,53 @@ is kept. A batch the database will not take is retried and then dropped.
 comments on recordings; erasing it removes both (the recordings with everyone's
 comments on them, and their files).
 
+## Renaming and deleting
+
+Built 2026-09-29, when the owner found no way to change a recording after
+sharing it. The API had `PATCH` and `DELETE /{slug}` for its uploader or an
+admin from the start, and a recording's page drew Rename and Delete for them,
+but only when the page was read signed in, and it never was the first time:
+
+**The race.** The feed asks for the cards and a recording's page alongside
+its own sign-in, not after it, so the list comes up at once for a visitor who
+is signed in nowhere. A visitor signed in on bfstats.io holds no token on
+play.bfstats.io until `POST /stats/auth/refresh` answers, so their first read
+went out as nobody: `canManage` false, and signing in redrew only the
+comments. Reproduced against main with the refresh held back 1.5 s (a
+recording's page, signed in as the admin, still showed only Watch and Copy
+link five seconds on). Now the feed notes whom it read the cards and the page
+as (`listAs`, `detailAs`), and once the sign-in lands, or on a sign-in or out,
+reads again whatever it read as someone else: quietly, the cards staying up
+until theirs come (`syncViewer`). Signing out drops every Rename, Delete and
+Remove at once, with nothing to read again. The replay page never had this:
+it waits for the sign-in before asking.
+
+**Who.** The account that shared a recording (`Recordings.UploaderUserId`,
+kept for every upload since the feed began, whatever name it went up under),
+or an admin. Not the player who recorded it: anyone can link any in-game name
+to an account, so a name is no proof of whose a recording is. A file shared
+by someone else is theirs to delete, or an admin's.
+
+**Where.**
+
+- *A card's menu*: the dots beside its title, on the cards the viewer may
+  change. Rename opens a box with the title (Save waits for a change; Enter
+  saves); Delete asks first (`Delete "<title>"?`, whose it is and its length,
+  "Its comments go with it. There is no undo.", Keep it focused). A deleted
+  card goes at once and the cards are read again: a round it was one of may
+  part.
+- *A recording's page*: Rename (the title becomes a box in place; Enter
+  saves, Escape leaves it) and Delete (the same question), as full buttons.
+- *The replay*: More > Rename and Delete, under Use this frame as the cover,
+  for the first recording when several play merged, as the cover is. Deleted,
+  the page goes back to the feed. While one of its dialogs is up the keys are
+  the dialog's: a title with an F or a T in it sets no cover and opens no
+  comments.
+
+**The API.** Each card and each recording of a round says `canManage` for the
+one asking, as a recording's page always did (`RecordingService.Manages`, the
+same rule the writes check); nothing about the account is exposed.
+
 ## Rounds
 
 Built 2026-09-29. Players who record the same round share it separately; the
@@ -273,7 +324,9 @@ plays them merged (features/round-replay-merge).
   lists the round: when each recording began in it (`+1:00`), its title (a
   link to its page), who shared it and who recorded it, its length, and "put
   here by an admin" for an admin's link. Each upload keeps its own page,
-  uploader, title, cover, comments, Rename and Delete.
+  uploader, title, cover, comments, Rename and Delete; a round's card menu
+  lists each of its recordings the viewer may change, by whose it is and its
+  length (`skandia's recording · 8:56`), with Rename and Delete under each.
 - **Watch merged** is `map.html?...&replay=<this one>&replay=<the next>...`:
   one `replay` per recording, the lead first (its clock and its recording
   player lead: from a card, the round's lead; from a recording's page or
@@ -300,7 +353,8 @@ plays them merged (features/round-replay-merge).
   reason. The page reloads for the switch, the level from the browser's cache.
 - **Share a recording** takes several `replay_*.ndjson` files at once: each is
   read, listed and shared as its own recording, under the player who recorded
-  it, titled by the API. A server log goes up only with a recording shared on
+  it, with a title box of its own (the level and the server until another is
+  written; left empty, the API titles it the same way). A server log goes up only with a recording shared on
   its own, since it belongs to one. After a share, a removal, or an admin's
   link or take-out the feed asks the API for its cards again: a recording can
   join a round already there.
@@ -601,6 +655,41 @@ admin. With no API on :9222 the page reads the live feed, read-only;
 `?api=<origin>` points it anywhere for the tab.
 
 ## Verification
+
+Renaming and deleting (2026-09-29):
+
+- `tests/api/Recordings/`: the feed's `canManage` for nobody, the uploader,
+  another user, an admin and an account with no name linked; a round's card
+  and a recording's page, each recording's own (the lead Rut's, skandia's
+  first in round order).
+- `tools/bf1942-models/tests/test_recordings_api.py`: which recordings a card
+  offers to change (a round's, whether or not its lead is one), and the title
+  a share offers (none while the level is unknown).
+- By hand against this worktree's API (:9391, its own database and Redis db)
+  and viewer (:5391), headless Chromium (Vulkan), four cut Bocage recordings
+  from `tests/fixtures/`:
+  - the dev admin shared two at once, one titled in its box and one left
+    empty (the API's `Bocage on MoonGamers.com | Est. 2004`); renamed one from
+    its card's menu (Save off until a change, Enter saved); asked to delete the
+    other, Escape kept it, Delete took it; shared the 35 s slice of the first
+    on its own with a title, and the API put the two in one round; the round's
+    card menu listed `skandia's recording · 8:56` and `· 0:35`, each with
+    Rename and Delete; at 375 px the menu and the rename box kept to the
+    screen.
+  - the race, main against this branch, the page same-origin as on
+    play.bfstats.io with its `/stats` sent on to the worktree's API and the
+    refresh held back 1.5 s: main's recording page, signed in as the admin,
+    showed Watch merged, Watch this one and Copy link five seconds on; this
+    branch's added Rename, Delete and the round tools, and its feed a menu on
+    the card.
+  - a second account (pois, no admin): no menu on the admin's cards and no
+    Rename or Delete on their pages; shared one as pois, renamed it on its
+    page, deleted it from its card; signing out took every menu at once.
+  - the replay of the slice: More listed the cover, Rename and Delete;
+    `Fast Tanks at the ford` typed into the rename box set no cover and opened
+    no comments, and Enter renamed it (the tab's title too); Escape kept it
+    from Delete, and Delete went back to the feed, where the round was a
+    plain card again.
 
 A round as one card, the switch, the evidence (2026-09-29, second pass):
 

@@ -8,7 +8,8 @@ namespace api.Recordings.Models;
 /// <c>detected</c>, <c>linked</c> by an admin, <c>self</c>, or null when it is tied through
 /// another; <see cref="MatchedKeys"/> and <see cref="PlayerShare"/> are that link's evidence,
 /// and <see cref="WeakLink"/> says it is an admin's link that evidence falls short of what
-/// detection needs to call two recordings one round.
+/// detection needs to call two recordings one round. <see cref="CanManage"/> says the viewer
+/// may rename or delete it (its uploader, or an admin).
 /// </summary>
 public record RecordingRoundMemberDto(
     string Slug,
@@ -24,4 +25,5 @@ public record RecordingRoundMemberDto(
     string? Link,
     int? MatchedKeys,
     double? PlayerShare,
-    bool WeakLink = false);
+    bool WeakLink = false,
+    bool CanManage = false);
