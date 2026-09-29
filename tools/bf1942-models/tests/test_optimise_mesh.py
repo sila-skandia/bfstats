@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import optimise_mesh  # noqa: E402
+from bf42 import glbopt  # noqa: E402
+from test_glbopt import CHECKER, png, textured_glb  # noqa: E402
+
+
+class MeshRootTests(unittest.TestCase):
+    def test_the_root_is_the_directory_above_maps_or_models(self) -> None:
+        self.assertEqual(Path("/v"), optimise_mesh.mesh_root_of(Path("/v/maps")))
+        self.assertEqual(Path("/v"), optimise_mesh.mesh_root_of(Path("/v/maps/mods/xpack1")))
+        self.assertEqual(Path("/v"), optimise_mesh.mesh_root_of(Path("/v/models/viewmodels")))
+        self.assertEqual(Path("/s"), optimise_mesh.mesh_root_of(Path("/s/maps/_shared")))
+
+    def test_a_tree_outside_any_root_has_none(self) -> None:
+        self.assertIsNone(optimise_mesh.mesh_root_of(Path("/tmp/out")))
+
+
+class ExtractorHookTests(unittest.TestCase):
+    """`run_then_optimise`: the entry point every extractor goes through."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.out = self.root / "maps" / "_shared"
+        self.out.mkdir(parents=True)
+        self.glb = self.out / "effects.glb"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def extractor(self) -> int:
+        # What an extractor's main() does: parse its own flags, write a glb.
+        assert "--no-optimise" not in sys.argv, "main() must not see the flag"
+        self.glb.write_bytes(textured_glb([(png(CHECKER), "a")]))
+        return 0
+
+    def run_with(self, *argv: str) -> int:
+        with mock.patch.object(sys, "argv", ["extract_x.py", *argv]):
+            return optimise_mesh.run_then_optimise(self.extractor, Path("/nowhere"))
+
+    def test_what_the_extractor_wrote_ends_up_in_the_store(self) -> None:
+        self.assertEqual(0, self.run_with("--out", str(self.out)))
+        doc, _ = glbopt.read_glb(self.glb.read_bytes())
+        self.assertTrue(doc["images"][0]["uri"].startswith("../../textures/"))
+        self.assertEqual(1, len(list((self.root / "textures").rglob("*.webp"))))
+
+    def test_no_optimise_leaves_the_glb_self_contained(self) -> None:
+        self.assertEqual(0, self.run_with("--out", str(self.out), "--no-optimise"))
+        doc, _ = glbopt.read_glb(self.glb.read_bytes())
+        self.assertIn("bufferView", doc["images"][0])
+        self.assertFalse((self.root / "textures").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
