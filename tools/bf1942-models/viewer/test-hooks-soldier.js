@@ -95,7 +95,8 @@ export function installSoldierHooks(page) {
       page.chooseTeam(team);
       return true;
     },
-    // The click on a kit row, by the row's name (`scout` .. `engineer`).
+    // The click on a kit row, by the row's name (`scout` .. `engineer`, and
+    // `slot5` for Desert Combat's sixth row: `deploy-screen.js` `KITS`).
     setKit(name) {
       if (!page.deployActive() || !page.KITS.includes(name)) return false;
       page.chooseKit(name);

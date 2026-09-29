@@ -274,6 +274,17 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
                                ("Action", OBJ), ("MouseOver button", BOOL), ("Index", INT),
                                ("Current mouseover index", OBJ), ("Current clicked index", OBJ),
                                ("MouseOver active", OBJ), ("Width", F32), ("Height", F32)],
+    # BfSelectButtonNode (verified: read 0x007da1f0, object vtable 0x0093e1a8,
+    # whose +0x04 0x007da7c0 registers "dice::meme::BfSelectButtonNode") is
+    # BfNavigationButtonNode without the mouse-over bookkeeping: the three
+    # plates, the action, then an index and the one variable it is compared
+    # against, width and height last. Desert Combat's kit rows are six of
+    # them (`menu/InGame`, the only page of any installed mod that uses it).
+    # What it does with them is in `extract_spawn_layout.Flattener.emit_select`.
+    "BfSelectButtonNode": [("Next node", OBJ), ("Picture", PSTR),
+                           ("Mouse over picture", PSTR), ("Clicked picture", PSTR),
+                           ("Action", OBJ), ("Index", INT),
+                           ("Current clicked index", OBJ), ("Width", F32), ("Height", F32)],
     # IndexDataData (verified: 0x007ef4b0) is the element of "Data" a
     # navigation button's "Current mouseover index" (or similar) selects.
     "IndexDataData": [("Data", OBJ), ("Index", OBJ)],
