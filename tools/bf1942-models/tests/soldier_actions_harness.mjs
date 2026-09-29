@@ -264,6 +264,50 @@ function bone(angle, y) {
   results.stillBone = { restored: settle(true), unrestored: settle(false) };
 }
 
+// A frame with no time in it (dt 0: a replay paused mid-morph) draws the pose
+// of the frame before, and once the clock moves again the morph goes on from
+// where it stood: the paused run's frames after the pause are the unpaused
+// run's, frame for frame. The mixer writes a bone only when its value changes,
+// as three's does, over a clip holding the bone at 90 degrees and y 0.5.
+{
+  const run = pauses => {
+    const b = bone(0, 1.0);
+    const blend = new MorphBlend([b]);
+    const target = bone(Math.PI / 2, 0.5);
+    let applied = null;
+    const mixer = () => {
+      const v = JSON.stringify([target.quaternion, target.position]);
+      if (v === applied) return;
+      applied = v;
+      b.quaternion = { ...target.quaternion };
+      b.position = { ...target.position };
+    };
+    const frame = dt => {
+      blend.restore();
+      mixer();
+      blend.update(dt);
+      return { w: blend.w, angle: 2 * Math.atan2(b.quaternion.y, b.quaternion.w) * 180 / Math.PI,
+               y: b.position.y };
+    };
+    blend.enter(2.0);
+    const frames = [];
+    // The frame it is entered on and six more, the pause, then 40 frames on.
+    for (let i = 0; i < 7; i++) frames.push(frame(1 / 60));
+    const still = [];
+    for (let i = 0; i < pauses; i++) still.push(frame(0));
+    for (let i = 0; i < 40; i++) frames.push(frame(1 / 60));
+    return { frames, still };
+  };
+  const paused = run(5);
+  const unpaused = run(0);
+  results.stillFrames = {
+    before: paused.frames[6],
+    still: paused.still,
+    resumed: paused.frames[7],
+    sameAsUnpaused: JSON.stringify(paused.frames) === JSON.stringify(unpaused.frames),
+  };
+}
+
 // What a bundle says of its states, on each clip as `userData`: a gait
 // bundle's `extras.states`, a named-state bundle's older shape, and none. And
 // the morph a state is entered with: the clip's, the clipless states', the

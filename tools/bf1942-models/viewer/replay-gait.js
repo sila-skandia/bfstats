@@ -105,13 +105,14 @@ export function buildGaitRig(scene, poseClips, gaitClips, phase) {
 // cannot be, since it starts from the bones as they stood when the gait
 // changed, so the rig keeps the time it last posed and steps the morph by the
 // clock's own advance, as the map's replay bodies do. A clock that has not
-// moved (paused) poses nothing and the bones hold still; a first pose, and
-// the first after `snapGait` (a seek, or a frame he was not drawn), cut
-// straight to the gait at `t` rather than morphing across the jump.
+// moved (paused) steps it by nothing, and `MorphBlend` draws the pose of the
+// frame before again; a first pose, the first after `snapGait` (a seek, or a
+// frame he was not drawn) and a clock gone back cut straight to the gait at
+// `t` rather than morphing across the jump.
 export function setGaitPose(entity, t) {
   const { anim, life } = entity;
   const dt = anim.lastT === null ? null : t - anim.lastT;
-  if (dt === 0) return;
+  const cut = dt === null || !(dt >= 0);
   anim.lastT = t;
   let desired = selectGait(life, t).gait;
   if (desired === 'run' && !anim.actions.runLower) desired = 'walk';
@@ -124,7 +125,7 @@ export function setGaitPose(entity, t) {
   const { lower, upper } = anim.halves;
   lower.restore();
   upper.restore();
-  if (!(dt > 0)) {
+  if (cut) {
     anim.currentGait = desired;
     lower.enter(MORPH_CUT);
     upper.enter(MORPH_CUT);
@@ -151,7 +152,7 @@ export function setGaitPose(entity, t) {
   setPair(anim.actions.walkLower, anim.actions.walkUpper, anim.currentGait === 'walk');
   if (anim.actions.stand) anim.actions.stand.setEffectiveWeight(anim.currentGait === 'idle' ? 1 : 0);
   anim.mixer.update(0);
-  const step = dt > 0 ? dt : 0;
+  const step = cut ? 0 : dt;
   lower.update(step);
   upper.update(step);
 }

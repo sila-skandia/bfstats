@@ -641,13 +641,20 @@ class ReplayGaitMorphTests(unittest.TestCase):
         self.assertFade(no_morph["run"]["upperFull"], 5, "the torso into the run")
 
     def test_a_paused_replay_holds_a_morph_still(self) -> None:
-        # Posed at the same instant again, a tenth of a second into the run's
-        # morph: MorphBlend alone would keep closing on the clip every frame.
+        # Posed at the same instant for five frames, a tenth of a second into
+        # the run's morph, both halves hold the weight and the bones they were
+        # drawn with; then the morph goes on from there, one frame's weight at
+        # a time, exactly as a rig that never paused, and ends on the run.
         paused = self.results["paused"]
-        for w in paused["midMorph"]:
-            self.assertGreater(w, 0)
-            self.assertLess(w, 1)
-        self.assertTrue(paused["same"])
+        lower, upper = paused["midMorph"]
+        self.assertAlmostEqual(0.4, lower, delta=1e-6)
+        self.assertAlmostEqual(0.1, upper, delta=1e-6)
+        self.assertEqual([True] * 5, paused["held"])
+        resumed_lower, resumed_upper = paused["resumedW"]
+        self.assertAlmostEqual(lower + 4 / 60, resumed_lower, delta=1e-9)
+        self.assertAlmostEqual(upper + 1 / 60, resumed_upper, delta=1e-9)
+        self.assertTrue(paused["resumedLikeUnpaused"])
+        self.assertEqual([1, 1], paused["onTheRun"])
 
     def test_a_seek_cuts_to_the_gait_rather_than_morphing(self) -> None:
         seek = self.results["seek"]
@@ -668,6 +675,53 @@ class ReplayGaitMorphTests(unittest.TestCase):
         self.assertEqual(6, hidden["whileDrawn"])
         self.assertIsNone(hidden["afterHidden"])
         self.assertFalse(hidden["visible"])
+
+
+class ReplayBotBodyPauseTests(unittest.TestCase):
+    """A body paused mid-morph holds the pose it was drawn in.
+
+    The map's replay bodies are the bots' (`bot-visuals.js`), stepped with the
+    replay clock's own step: 0 while the replay is paused or its timeline is
+    dragged. `MorphBlend` slerped each bone toward its clip by the same weight
+    on every such frame, so a body caught mid-morph kept closing on the clip
+    while nothing else moved (75 degrees to 45 in ten frames). Live play has
+    no pause and its Escape menu leaves the world running, so only `?shots`
+    tooling (`__renderOnce(w, h, 0)`) steps a live body with dt 0. The harness
+    builds the real half-body rig through
+    `ensureBotVisual`, runs two bots from a stand into a run, and pauses one
+    for five frames a tenth of a second into the morph.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["botPause"]
+
+    def test_the_bots_rig_enters_the_run_with_the_bundles_morph(self) -> None:
+        self.assertEqual("halves", self.results["kind"])
+        self.assertEqual({"lower": 4, "upper": 1}, self.results["morphs"])
+
+    def test_paused_mid_morph_the_weight_and_the_bones_hold(self) -> None:
+        before = self.results["before"]
+        lower, upper = before["w"]
+        self.assertAlmostEqual(0.4, lower, delta=1e-9)
+        self.assertAlmostEqual(0.1, upper, delta=1e-9)
+        # Caught between the stand and the run on both halves.
+        for bone in ("legs", "torso"):
+            self.assertGreater(before["degrees"][bone], 1, bone)
+            self.assertLess(before["degrees"][bone], 89, bone)
+        # Every paused frame draws exactly the pose of the frame before it.
+        self.assertEqual([True] * 5, self.results["held"])
+
+    def test_playing_on_the_morph_goes_on_from_where_it_stopped(self) -> None:
+        lower, upper = self.results["before"]["w"]
+        resumed_lower, resumed_upper = self.results["resumedW"]
+        self.assertAlmostEqual(lower + 4 / 60, resumed_lower, delta=1e-9)
+        self.assertAlmostEqual(upper + 1 / 60, resumed_upper, delta=1e-9)
+        # Frame for frame the morph of the bot that never paused, onto the run.
+        self.assertTrue(self.results["resumedLikePlaying"])
+        self.assertEqual({"w": [1, 1], "legs": 0, "torso": 0}, self.results["onTheRun"])
 
 
 class ReplayGunAimTests(unittest.TestCase):
