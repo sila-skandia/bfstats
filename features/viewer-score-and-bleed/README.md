@@ -65,6 +65,11 @@ Starting counts are `Game.setNumberOfTickets <team> <n>`, already parsed into
 `scene.json.tickets` (`bf42/level.py` `parse_tickets`). The engine stores them in
 an array at `GameServer+0xc0` indexed by team (`setNumberOfTickets` `0x081538b0`).
 
+*Corrected 2026-09-29: the stored count is not what a round starts with. The
+round start multiplies it by the server's max players over 16 and truncates,
+ledger TKT-1. [map-dossier](../map-dossier/README.md) says the same, and
+`viewer/round-state.js` has done it since 490e8663 on 2026-09-27.*
+
 A death costs the dead player's team tickets. `GameServer::killPlayer`
 (`0x0814d920`) reads `GameServer+0x1fc`, the `setTicketLosePerDeath` field
 (`0x0813d700`), and calls `TeamScore::subTicket` (`0x081610c0`). The constructor
@@ -82,6 +87,11 @@ does not run, each frame writes the whole interval back (`0x08152100`,
 `0x0815218c`), so a drain that stops and starts again waits a full interval for
 its first ticket (ledger TKT-4; `round-state.js` did not refill it before
 2026-09-27).
+
+*Corrected 2026-09-29: the 16 is only `init`'s default. A host overwrites
+`GameServer+0x1c` with the server's max players before the level loads,
+ledger TKT-2, so the interval is `60 / (rate × maxPlayers / 16)` seconds,
+TKT-4. `viewer/round-state.js` has used that since 490e8663 on 2026-09-27.*
 
 What starts and stops the drain is a weight, not a flag count. The function sums
 `ControlPoint::getAreaValueTeam1` / `getAreaValueTeam2` (`0x08284350`,
