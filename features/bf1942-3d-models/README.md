@@ -893,6 +893,11 @@ falls back to the inferred ranking if it does not. Reader in
 Not modelled: collision damage (`Collision_Armor/*`, which has a velocity term),
 `damageType 4` proximity fuses, splash line-of-sight blocking for soldiers, and
 repair rates.
+*Corrected 2026-09-29: three of these have since been built. Collision damage
+is in [`vehicle-collision-physics`](../vehicle-collision-physics/README.md), the
+proximity fuse in [`flak-proximity-fuse`](../flak-proximity-fuse/README.md),
+and the wrench's repairs in
+[`viewer-healing-packs`](../viewer-healing-packs/README.md).*
 
 ## Verification
 
