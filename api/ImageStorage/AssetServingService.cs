@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Buffers.Binary;
 using System.Text;
 
 namespace api.ImageStorage;
@@ -6,9 +7,11 @@ namespace api.ImageStorage;
 public interface IAssetServingService
 {
     /// <summary>
-    /// Serves a file from the specified base path with strict security validation
+    /// Serves a file from the specified base path with strict security validation.
+    /// With <paramref name="acceptGzip"/>, a glb that has a matching <c>.glb.gz</c> beside it
+    /// is served from that, and the result carries its Content-Encoding.
     /// </summary>
-    Task<AssetResult> GetAssetAsync(string basePath, string relativePath);
+    Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false);
 }
 
 /// <summary>
@@ -27,7 +30,13 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
         ".glb", ".gltf", ".bin",
     };
 
-    public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath)
+    // Files the mesh pipeline writes a gzip copy of (features/mesh-asset-size, phase 2a).
+    private static readonly HashSet<string> PrecompressedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".glb",
+    };
+
+    public async Task<AssetResult> GetAssetAsync(string basePath, string relativePath, bool acceptGzip = false)
     {
         try
         {
@@ -91,6 +100,11 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
 
             // 10. Get content type
             var contentType = GetContentType(fileInfo.Extension);
+
+            // 11. The pre-compressed copy, when the client takes gzip and the copy is of this file
+            if (acceptGzip && MatchingGzip(fileInfo, normalizedBasePath, contentType) is { } gzipped)
+                return gzipped;
+
             var fileStream = System.IO.File.OpenRead(fullPath);
 
             return AssetResult.Success(fileStream, contentType, fileInfo.Name);
@@ -100,6 +114,47 @@ public class AssetServingService(ILogger<AssetServingService> logger) : IAssetSe
             logger.LogError(ex, "Error retrieving asset {Path}", relativePath);
             return AssetResult.ServerError();
         }
+    }
+
+    /// <summary>
+    /// Serves <c>&lt;file&gt;.gz</c> if it is a gzip of <paramref name="plain"/>, or returns null
+    /// and the plain file is served. The publisher never lands a mismatched pair; this guards a
+    /// file copied onto the volume some other way, cheaply: the gzip trailer's length must be
+    /// the file's, and the copy must be at least as new (the pipeline writes it second). A
+    /// same-length edit made after the copy fails the second test. Either miss falls back to
+    /// the plain file, which is always right.
+    /// </summary>
+    private static AssetResult? MatchingGzip(FileInfo plain, string basePath, string contentType)
+    {
+        if (!PrecompressedExtensions.Contains(plain.Extension))
+            return null;
+
+        var gzip = new FileInfo(plain.FullName + ".gz");
+        if (!gzip.Exists || gzip.Length < 18 || gzip.LastWriteTimeUtc < plain.LastWriteTimeUtc
+            || ContainsSymlink(gzip.FullName, basePath))
+            return null;
+
+        var stream = System.IO.File.OpenRead(gzip.FullName);
+        try
+        {
+            Span<byte> head = stackalloc byte[2];
+            stream.ReadExactly(head);
+            Span<byte> length = stackalloc byte[4];
+            stream.Seek(-4, SeekOrigin.End);
+            stream.ReadExactly(length);
+            if (head[0] == 0x1f && head[1] == 0x8b
+                && BinaryPrimitives.ReadUInt32LittleEndian(length) == unchecked((uint)plain.Length))
+            {
+                stream.Seek(0, SeekOrigin.Begin);
+                return AssetResult.Gzip(stream, contentType, plain.Name, plain.Length);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        stream.Dispose();
+        return null;
     }
 
     /// <summary>
@@ -236,8 +291,21 @@ public class AssetResult
     public string? ContentType { get; private set; }
     public string? FileName { get; private set; }
 
+    /// <summary>"gzip" when <see cref="FileStream"/> is the pre-compressed copy, else null.</summary>
+    public string? ContentEncoding { get; private set; }
+
+    /// <summary>The size of the file the stream inflates to, when it is compressed.</summary>
+    public long? UncompressedLength { get; private set; }
+
     public static AssetResult Success(Stream fileStream, string contentType, string fileName)
         => new() { IsSuccess = true, StatusCode = 200, FileStream = fileStream, ContentType = contentType, FileName = fileName };
+
+    public static AssetResult Gzip(Stream fileStream, string contentType, string fileName, long uncompressedLength)
+        => new()
+        {
+            IsSuccess = true, StatusCode = 200, FileStream = fileStream, ContentType = contentType, FileName = fileName,
+            ContentEncoding = "gzip", UncompressedLength = uncompressedLength,
+        };
 
     public static AssetResult BadRequest(string message)
         => new() { IsSuccess = false, StatusCode = 400, ErrorMessage = message };

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Move the embedded textures of finished glbs into the shared texture store.
+"""Move the embedded textures of finished glbs into the shared texture store,
+and keep a gzip copy beside each one.
 
     optimise_mesh.py viewer/maps/bocage/scene.glb
     optimise_mesh.py viewer/maps --skip-mods -j 16
@@ -10,6 +11,11 @@ Every glb under the given paths has its embedded images written once to
 (`bf42/glbopt.py`, `features/mesh-asset-size`). Pixels and every other byte are
 checked unchanged before a file is rewritten. A glb is rewritten in place,
 through its own inode, so the hard-link mirrors of `viewer/models` see it.
+
+Then each glb gets `<name>.glb.gz` beside it, a deterministic gzip of its final
+bytes, which nginx sends to clients that take gzip (`bf42/glbgz.py`, phase 2a).
+A `.gz` that already matches its glb is left alone. The git-tracked first-person
+fixtures keep their textures but get a `.gz` too (it is ignored by git).
 
 `--skip-mods` leaves `mods/` subtrees out of a directory walk, so a vanilla pass
 does not touch a mod tree that is out of scope.
@@ -25,7 +31,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from bf42 import glbopt
+from bf42 import glbgz, glbopt
 
 VIEWER = Path(__file__).resolve().parent / "viewer"
 
@@ -47,7 +53,8 @@ def tracked(paths: list[Path]) -> set[Path]:
     return out
 
 
-def collect(paths: list[Path], skip_mods: bool) -> list[Path]:
+def collect(paths: list[Path], skip_mods: bool) -> tuple[list[Path], list[Path]]:
+    """(glbs to optimise, git-tracked glbs that only get their `.gz`)."""
     found: list[Path] = []
     for path in paths:
         if path.is_file():
@@ -59,13 +66,18 @@ def collect(paths: list[Path], skip_mods: bool) -> list[Path]:
                 continue
             found.append(glb)
     skip = tracked(paths)
-    return [g for g in found if g.resolve() not in skip]
+    return ([g for g in found if g.resolve() not in skip],
+            [g for g in found if g.resolve() in skip])
 
 
-def process(glb: str, mesh_root: str) -> dict:
+def process(glb: str, mesh_root: str, textures: bool = True) -> dict:
     path = Path(glb)
-    store = glbopt.TextureStore(Path(mesh_root))
     data = path.read_bytes()
+    if not textures:
+        gz_written, gz_bytes = glbgz.ensure(path, data)
+        return {"glb": glb, "changed": False, "before": len(data), "after": len(data),
+                "images": 0, "written": [], "gz_written": gz_written, "gz": gz_bytes}
+    store = glbopt.TextureStore(Path(mesh_root))
     out, result = glbopt.externalise_images(data, path, store)
     if result.changed:
         with open(path, "r+b") as handle:
@@ -79,9 +91,12 @@ def process(glb: str, mesh_root: str) -> dict:
               if "uri" in i and not (path.parent / i["uri"]).is_file()]
     if broken:
         raise ValueError(f"{len(broken)} image URIs resolve to nothing, e.g. {broken[0]}")
+    # Last, from the bytes just written: a .gz is only ever made from the glb
+    # as it will be served.
+    gz_written, gz_bytes = glbgz.ensure(path, out)
     return {"glb": glb, "changed": result.changed, "before": result.bytes_before,
             "after": result.bytes_after, "images": result.images,
-            "written": result.written}
+            "written": result.written, "gz_written": gz_written, "gz": gz_bytes}
 
 
 def mesh_root_of(out: Path) -> Path | None:
@@ -97,17 +112,19 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
     """Optimise every glb under `paths`. Returns the number that failed (each
     one is left as it was)."""
     mesh_root = mesh_root.resolve()
-    glbs = collect([p.resolve() for p in paths], skip_mods)
+    glbs, fixtures = collect([p.resolve() for p in paths], skip_mods)
     for glb in glbs:
         if mesh_root not in glb.parents:
             raise ValueError(f"{glb} is not under the mesh root {mesh_root}")
 
     started = time.time()
-    before = after = changed = images = written = 0
+    before = after = changed = images = written = gz_written = gz_bytes = 0
     failures = 0
     log = open(log_path, "a") if log_path else None
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(process, str(g), str(mesh_root)): g for g in glbs}
+        futures |= {pool.submit(process, str(g), str(mesh_root), False): g for g in fixtures}
+        total = len(futures)
         for done, future in enumerate(as_completed(futures), 1):
             try:
                 row = future.result()
@@ -120,17 +137,20 @@ def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int =
             changed += row["changed"]
             images += row["images"]
             written += len(row["written"])
+            gz_written += row["gz_written"]
+            gz_bytes += row["gz"]
             if log:
                 log.write(json.dumps(row) + "\n")
-            if done % 50 == 0 or done == len(glbs):
-                print(f"{done}/{len(glbs)}  {before / 1e6:,.0f} MB -> {after / 1e6:,.0f} MB"
+            if done % 50 == 0 or done == total:
+                print(f"{done}/{total}  {before / 1e6:,.0f} MB -> {after / 1e6:,.0f} MB"
                       f"  new textures {written}  {time.time() - started:.0f} s",
                       file=sys.stderr, flush=True)
     if log:
         log.close()
     print(f"{changed} of {len(glbs)} glbs rewritten, {images} images, {written} new in"
           f" {mesh_root / 'textures'}; glbs {before / 1e6:,.1f} MB -> {after / 1e6:,.1f} MB;"
-          f" {failures} failed", file=sys.stderr)
+          f" {gz_written} .gz written, {gz_bytes / 1e6:,.1f} MB gzipped; {failures} failed",
+          file=sys.stderr)
     return failures
 
 

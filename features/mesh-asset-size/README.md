@@ -174,6 +174,139 @@ lossless. So the candidates are:
 - **Quantised meshopt** (`KHR_mesh_quantization`): the biggest cut, but lossy.
   It needs a measured sign-off, like KTX2.
 
+### Phase 2a: gzip (built 2026-09-29, not published)
+
+Every glb gets `<name>.glb.gz` beside it, a gzip of its exact bytes, and
+nginx's `gzip_static` sends that to any client that takes gzip. Nothing per
+request is compressed; what the viewer draws is the same bytes, inflated.
+
+Measured over every in-scope glb (this PC, zlib 1.3.2, CPU seconds):
+
+| Tree | glbs | Plain | gzip -1 | gzip -6 | gzip -9 | -9 CPU |
+|---|---|---|---|---|---|---|
+| `maps` (vanilla) | 24 | 400.4 MB | 42.1% | 40.4% | 160.3 MB, 40.0% | 45.6 s |
+| `maps/mods/xpack1` | 30 | 491.9 MB | 42.3% | 40.6% | 197.5 MB, 40.2% | 56.5 s |
+| `maps/mods/xpack2` | 33 | 591.5 MB | 42.3% | 40.5% | 237.4 MB, 40.1% | 66.0 s |
+| `models` (vanilla) | 912 | 493.4 MB | 20.8% | 19.6% | 95.0 MB, 19.2% | 20.5 s |
+| `models/mods/xpack1` | 306 | 73.4 MB | 33.2% | 31.6% | 22.9 MB, 31.2% | 4.2 s |
+| `models/mods/xpack2` | 405 | 97.7 MB | 33.9% | 32.3% | 31.1 MB, 31.9% | 5.6 s |
+| Total | 1,710 | 2,148 MB | 787 MB | 752 MB | 744 MB, 34.6% | 198 s |
+
+Inflating all of it takes 8 s. `-9` is used: 8 MB smaller than `-6` over the
+lot, for three times the CPU, which is about 2 s a level once per bake and is
+saved on every transfer. A level load moves 9.2 MB instead of 21.3 MB (Bocage),
+a Sherman 0.14 MB instead of 0.32 MB.
+
+Brotli does much better on a level, because its window spans the whole buffer
+where gzip's is 32 KB:
+
+| | gzip -9 | brotli q5 | brotli q9 | brotli q11 | zstd -19 |
+|---|---|---|---|---|---|
+| Bocage (21.3 MB) | 42.4%, 1.8 s | 24.8%, 0.3 s | 24.3%, 2.5 s | 21.2%, 32 s | 22.5%, 2.6 s |
+| Telemark (25.1 MB) | 42.7% | 25.7% | 25.2% | 22.0%, 37 s | 23.5% |
+| Sherman (0.32 MB) | 45.1% | 42.7% | 42.2% | 38.5% | 41.2% |
+
+The official nginx image has no brotli module, and Cloudflare asks the origin
+for `br, gzip` on every plan, so a `.br` beside the `.gz` (with `ngx_brotli`
+built into the mesh image) would take a level from 9.2 MB to about 5.3 MB. That
+is the obvious phase 2b; zopfli (not installed here) would only shave gzip by a
+few percent.
+
+#### The design, and why
+
+- **Plain and `.gz` side by side, on the volume and locally**, not the `.gz`
+  alone. It costs 744 MB more on the volume (the glbs are 2.1 GB), and buys:
+  the local tree and the volume keep one form, so `python3 -m http.server`
+  (which cannot send Content-Encoding) and the owner's :5273 carry on unchanged;
+  the API route, the hard-link mirrors and every script that reads a glb keep
+  reading a glb; a client without gzip gets a file, not `gunzip` on the node;
+  and rolling back is turning `gzip_static` off. The cost of two files is that
+  they can disagree, which is what the checks below are for.
+- **Written by `optimise_mesh.py`** (`bf42/glbgz.py`), which every extractor
+  already runs at the end over exactly what it wrote, and which a bake's
+  promotion step runs after moving a level into place. It writes the `.gz` from
+  the bytes it has just written, as the last step, and only when the existing
+  one does not match. Deterministic: no name and mtime 0 in the header, so an
+  unchanged glb keeps a byte-identical `.gz` and the publisher sends nothing.
+  The two git-tracked first-person fixtures get a `.gz` too (git ignores it).
+- **Staleness is checked by the gzip trailer**: its last 8 bytes are the CRC-32
+  and length of what it inflates to. The optimiser rewrites a `.gz` whose
+  trailer does not match its glb. The publisher (`scripts/publish-mesh-delta.py`)
+  sends a glb's `.gz` whenever it sends the glb, in the same unit, and refuses
+  the whole tree if any glb or `.gz` about to go has a `.gz` that does not match
+  (a CRC over the glb, a few seconds for the whole tree) or has none.
+  `--allow-plain` lets a glb go without one, served plain, but never while the
+  volume holds a `.gz` for it, which nginx would go on sending.
+- **nginx**: `gzip_static on` in `/models/` and `/maps/`. `gzip_vary` adds
+  `Vary: Accept-Encoding` to both forms; Cache-Control is unchanged. JSON keeps
+  the on-the-fly gzip it had.
+- **`X-File-Size`** (`mesh/file-size.js`, njs, which the official image ships):
+  with Content-Encoding the Content-Length is the gzip's, but the browser counts
+  inflated bytes, so three's FileLoader would show the level's download done at
+  40%. It reads `X-File-Size` first, for exactly this case; the filter sets it to
+  the plain file's size (one stat). Memory at 4 workers: +0.2 MiB.
+- **The API route** (`/stats/assets/mesh/*`, the main site's armoury and service
+  record) serves the `.gz` the same way, with the same `Vary` and `X-File-Size`,
+  and no range processing on the encoded form. It cannot be sure a pair was
+  published together (the mirrors, a hand upload), so it checks, per request
+  and cheaply, that the trailer's length is the glb's and the `.gz` is no older
+  than the glb; the optimiser touches a matching `.gz` older than its glb so
+  this holds. Any miss serves the plain file.
+- **Cloudflare** asks the origin for `br, gzip` on every plan, so the edge
+  holds the gzip form; its docs say it inflates that for a client that does not
+  take gzip (not tested here).
+
+What it does not guard: a glb uploaded by hand (FileBrowser) over one that has a
+`.gz` leaves the old `.gz` on the volume, and mesh.bfstats.io sends it. Upload the
+pair, or delete the `.gz` with it. The old tar scripts (`upload-mesh-assets.sh`
+and friends) send whole trees, so they send the pair as it is locally.
+
+#### Verified locally
+
+The mesh image built from this branch, with a small copy of the trees
+(`~/.cache/gz-agent/mesh`: Bocage, Anzio, the shared dirs, the vanilla and
+XPack1 models) mounted as the deployment mounts them:
+
+- `Accept-Encoding: gzip` on `maps/bocage/scene.glb`: `Content-Encoding: gzip`,
+  `Content-Length: 9151173` (the `.gz` byte for byte, which inflates to the glb),
+  `X-File-Size: 21295028`, `Vary: Accept-Encoding`, the usual Cache-Control,
+  `Content-Type: application/octet-stream` as before. No `Accept-Encoding`, or
+  `br` only: the plain glb, byte for byte, with `Vary`. A texture and
+  `maps.json` are served as before.
+- Headless Chromium on Vulkan: `map.html?map=Bocage`, `map.html?map=Anzio&mod=xpack1`
+  and `index.html#Sherman` load, every glb arrives gzipped (9.3 MB on the wire
+  for 22.1 MB of glb on Bocage), and FileLoader's progress ends at exactly the
+  file size, never above it. The only failed requests are the same with the
+  current config: the loading music aborted when the level starts, and
+  `maps/mods/xpack1/_shared/load/mp_briefing.png`, which the XPack1 tree lacks.
+
+#### Rolling it out
+
+1. Write the `.gz` files into the local trees (no glb changes, the textures are
+   already out; about a minute at `-j 6`):
+
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/maps --skip-mods -j 6
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/maps/mods/xpack1 tools/bf1942-models/viewer/maps/mods/xpack2 -j 6
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/models --skip-mods -j 6
+        python3 tools/bf1942-models/optimise_mesh.py tools/bf1942-models/viewer/models/mods/xpack1 tools/bf1942-models/viewer/models/mods/xpack2 -j 6
+
+2. Publish them: `scripts/publish-mesh-delta.py models maps --dry-run` should
+   list about 1,710 `.glb.gz` files (744 MB) and no glb; then the same without
+   `--dry-run` (about 2.5 min at 5 MB/s). The live nginx ignores them until
+   step 3, so this can go any time. Out-of-scope mod glbs that differ from the
+   volume now stop the publish for want of a `.gz`: optimise them or pass
+   `--allow-plain`.
+3. Merge: Jenkins builds the mesh image (config, njs) and the API, and the
+   mesh deploy purges the mesh and play hosts' edge caches.
+   `deploy/app/mesh-deployment.yaml` needs no change: same mounts, and the
+   memory limit is untouched by njs.
+4. Check live, never probing an uncached URL without `?cb=` (it caches at the
+   edge for a day):
+   `curl -sI -H 'Accept-Encoding: gzip' 'https://mesh.bfstats.io/maps/bocage/scene.glb?cb=1'`
+   shows `content-encoding: gzip` and `x-file-size`.
+
+Rolling back is the image alone: without `gzip_static` the `.gz` files are never read.
+
 ### Phase 3: the JSON chunk
 
 840 MB of JSON across the maps. Find what dominates (per-node extras on placed
