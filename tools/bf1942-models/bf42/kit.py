@@ -309,6 +309,12 @@ def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
         nation_token, theatre, unit, class_token = classify(template.source)
 
         nation = roster_mod.nation_label(nation_token) if nation_token else None
+        if nation is None and nation_token is None:
+            # Filed outside the convention (a level's own archive: DC Final's
+            # `DC_First_Light/objects/AntiAir2`), the kit's name is the only
+            # label left, and mods prefix it the way they name the folder:
+            # `US_AA2`, `Iraq_AA2`. A prefix the table does not know stays None.
+            nation = roster_mod.nation_label(template.name.split("_", 1)[0])
         kit_class = (TYPE_LABELS.get((template.kit_type or "").lower())
                      or (roster_mod.KIT_CLASS_LABELS.get((class_token or "").lower())
                          if class_token else None)

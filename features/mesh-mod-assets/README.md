@@ -287,11 +287,12 @@ Nothing above is EoD-only in the code. There are no `if mod == "eod"` branches.
    fine on purpose — regenerate with the maps tree absent and `counts.maps` is
    zero, so the Maps tab simply does not offer EoD until it is there.
 
-## The play front end needs two more extractors
+## The play front end needs more than levels and models
 
 Levels, models and kits are not enough for `play.bfstats.io`. A mod baked
-without these two falls back to vanilla's menu music, and its weapons float in
-first person with no hands (DC and DC Final until 2026-09-30):
+without the steps below falls back to vanilla's menu music, its weapons float
+in first person with no hands, its radio is silent, and its kits page lists
+the vanilla armies it inherits (DC and DC Final until 2026-09-30):
 
 - `python3 extract_menu_music.py --mod <id>` writes the mod's own menu loop to
   `maps/mods/<id>/_shared/music/menu.mp3`. With no `--mod` it covers vanilla
@@ -300,3 +301,15 @@ first person with no hands (DC and DC Final until 2026-09-30):
   <maps tree>/maps.json --out <tree>/viewmodels` writes the first-person
   arms rigs and their `index.json`
   (`features/bf1942-3d-models/first-person-soldier.md`, "Mod trees").
+- `python3 extract_radio.py --mod <Mod> --out <scratch>`, then
+  `extract_capture_voices.py` and `extract_soldier_voices.py` with the same
+  `--out`, and copy `<scratch>/voices/` to `maps/mods/<id>/_shared/voices/`.
+  Copy only `voices/`: the `hud/` half belongs to the mod's HUD pack
+  (`extract_hud_mods.py`). `voices/languages.json` names each soldier's own
+  `setRadioLanguage` folder, which is how DC's Iraqi side speaks Iraqi when
+  its flag sits in vanilla's German slot. A new language goes in
+  `extract_capture_voices.LANGUAGE_NATIONS`.
+- `python3 extract_kits.py --mod <Mod> --maps <maps tree>/maps.json --out
+  <tree>` binds kits only on the levels the tree bakes. Without `--maps` the
+  inherited vanilla levels bind their British, German and Japanese kits and
+  the kits page lists them as the mod's.
