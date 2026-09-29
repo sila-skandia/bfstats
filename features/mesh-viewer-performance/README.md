@@ -246,6 +246,11 @@ Confirmed cause of the "8 s freeze" symptom, distinct from the Ctrl+W
 non-crash above. Real hardware: this machine's integrated Iris Xe, system GL
 (not SwANGLE/software), headed, DPR 2, under a sustained firing burst.
 
+*Added 2026-09-29: on 2026-09-26 Finding 3 of
+[twelve-bot-performance-sweep](../twelve-bot-performance-sweep/README.md) lost
+the context again in a twelve-bot fight, and suspects Chrome 149's GPU
+process, which crashed in those runs. Neither document tests the other's cause.*
+
 Raw evidence from a headed real-time run (`scratchpad/hd-nearpass.log`):
 
 ```
