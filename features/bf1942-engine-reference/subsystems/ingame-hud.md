@@ -1,5 +1,9 @@
 # In-game HUD: one variable registry, three fill-node classes
 
+*Added 2026-09-29: the first study of this topic is
+[in-game-hud.md](../../bf1942-3d-models/in-game-hud.md). Where the two
+disagree, this note wins.*
+
 Settled 2026-09-16 for the map viewer's `hud.js`. Client-only
 (`BF1942.exe`, sha256 `60c9452d…`) — the HUD is drawn, so there is no lnxded
 twin; every address below is a client address. The `menu/InGame` data this

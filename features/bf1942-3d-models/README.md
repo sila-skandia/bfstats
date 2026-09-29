@@ -1,5 +1,22 @@
 # BF1942 3D model extraction
 
+*Added 2026-09-29: most docs in this folder are the first study of their topic,
+committed between 10 and 17 September 2026, with a few more in the week after.
+Where the engine-reference [ledger](../bf1942-engine-reference/ledger.md)
+covers the same ground, the ledger wins. Seven of them have a counterpart note
+in the engine reference, and where the two disagree the engine-reference note
+wins:*
+
+| First study | Engine-reference note |
+|---|---|
+| [`supply-and-health.md`](supply-and-health.md) | [`supply-depots.md`](../bf1942-engine-reference/subsystems/supply-depots.md) |
+| [`in-game-hud.md`](in-game-hud.md) | [`ingame-hud.md`](../bf1942-engine-reference/subsystems/ingame-hud.md) |
+| [`seats-and-manned-guns.md`](seats-and-manned-guns.md) | [`seats-and-entry-points.md`](../bf1942-engine-reference/subsystems/seats-and-entry-points.md) and [`manned-guns.md`](../bf1942-engine-reference/subsystems/manned-guns.md) |
+| [`vehicle-occupant-pose-plan.md`](vehicle-occupant-pose-plan.md) | [`skeleton-ik.md`](../bf1942-engine-reference/subsystems/skeleton-ik.md) |
+| [`ground-vehicles.md`](ground-vehicles.md) | [`tank-driving.md`](../bf1942-engine-reference/subsystems/tank-driving.md) |
+| [`first-person-soldier.md`](first-person-soldier.md) | [`handweapon-view-and-deviation.md`](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md) |
+| [`fall-damage-research-groundwork-2026-09-17.md`](fall-damage-research-groundwork-2026-09-17.md) | [`hitpoints-and-damage.md`](../bf1942-engine-reference/subsystems/hitpoints-and-damage.md) |
+
 Pulls vehicles, soldiers and hand weapons out of the Refractor archives as
 textured glTF, and gives them a viewer to be judged in. Tooling lives in
 [`tools/bf1942-models/`](../../tools/bf1942-models).
@@ -21,6 +38,29 @@ work that came later, and each carries its own reproduce commands:
 | [`parity-gaps.md`](parity-gaps.md) | What the game does that we do not. Seven audits ([`parity-audit/`](parity-audit/)), what two or three of them found independently, where they disagree, and which repo docs they falsified. |
 | [`projectile-collision.md`](projectile-collision.md) | Rounds that stop. The heightfield, the sea and 21k collision triangles behind one swept query — what the game collides against, what the export carries, and the measured cost (1.7 us per cast). |
 | [`death-cam-deploy.md`](death-cam-deploy.md) | The death cam → spawn screen: the client opens deploy synchronously on local death (`FUN_004933d0` → `SpawnScreenStuff::setVisible(true)`), and the viewer's death → corpse float → deploy flow built on it. |
+| [`building-ambience.md`](building-ambience.md) | Placed buildings that make a sound. A static's `loadSoundScript` becomes a point sound in `scene.json`, 865 of them on 14 vanilla maps. |
+| [`envmap-materials.md`](envmap-materials.md) | The `envmap true;` shader flag, which materials reflect the level's cubemap, and how the extractor reads and exports it. |
+| [`fall-damage-research-groundwork-2026-09-17.md`](fall-damage-research-groundwork-2026-09-17.md) | Fall damage read out of the binary, from the first leads to the formula and the terrain scalars that `fall-damage.js` runs. |
+| [`firing-effects.md`](firing-effects.md) | How a weapon's templates define a shot, and why the muzzle flash was too big and the Katyusha fired lines instead of rockets. |
+| [`first-person-soldier.md`](first-person-soldier.md) | The soldier in first person on a level. The game's data for his body, weapon, movement and view, then each stage as built. |
+| [`flythrough-fidelity-gap.md`](flythrough-fidelity-gap.md) | Fog, draw distance, sky and water in the map flythrough, set against the game's own level data, and the fixes. |
+| [`game-modes.md`](game-modes.md) | A level ships one directory per game mode. The survey of them, the `scene.json` schema that carries every mode, and the page that picks one. |
+| [`gap-research-2026-09-17.md`](gap-research-2026-09-17.md) | The plan of the 17 September gap research, with its sources, its priorities and the missions it sent out. |
+| [`gap-research-emitters-2026-09-17.md`](gap-research-emitters-2026-09-17.md) | Emitter and EffectBundle extraction, and which of the effects audit's claims still held on 17 September. |
+| [`gap-research-fog-2026-09-17.md`](gap-research-fog-2026-09-17.md) | Which fog console words the engine reads, and which are dead. |
+| [`gap-research-meme10-2026-09-17.md`](gap-research-meme10-2026-09-17.md) | MEME-10, how the spawn screen dims its map. |
+| [`gap-research-status-2026-09-17.md`](gap-research-status-2026-09-17.md) | An open and closed matrix of the ranked gaps, a snapshot of 17 September. |
+| [`ground-vehicles.md`](ground-vehicles.md) | The Willys drive model and then the tracked hulls. What the glb carries, the drivetrain, and each review round that corrected it. |
+| [`impact-effects.md`](impact-effects.md) | The game's own impact bursts, bullet holes and rocket trails, played where a round lands. |
+| [`in-game-hud.md`](in-game-hud.md) | The in-game HUD as built, with the health bar, the stance figure and the magazine picture. |
+| [`kit-loadouts.md`](kit-loadouts.md) | The deploy screen's kit row decides the weapon a soldier spawns with, through the kit the level binds to that row. |
+| [`map-sounds.md`](map-sounds.md) | Ambient sound on a level, then the vehicle guns, effects and wrecks that make a sound. |
+| [`seats-and-manned-guns.md`](seats-and-manned-guns.md) | Entering, switching and leaving anything with a door, and aiming and firing a manned gun. |
+| [`supply-and-health.md`](supply-and-health.md) | Ammo boxes and medical lockers that rearm and heal, and the soldier's hit points. |
+| [`tickets-hud.md`](tickets-hud.md) | Each mode's ticket counts in `scene.json`, and their counters on the spawn screen. |
+| [`vehicle-emitter-bake.md`](vehicle-emitter-bake.md) | Vehicle and level effect bundles bake every sprite blend mode, not only additive flashes. |
+| [`vehicle-occupant-pose-plan.md`](vehicle-occupant-pose-plan.md) | Who a seat draws and where his hands go, from `addSkeletonIK` and the seat poses. |
+| [`verifier-truth.md`](verifier-truth.md) | Making `verify_models.py` report real breakage and only that, tested on models broken on purpose. |
 | [`../mesh-viewer-performance/README.md`](../mesh-viewer-performance/README.md) | Why the map page was choppy while firing, and the hot-path rules that came out of fixing it: what a frame paid for the near pass, static matrices, forced layout, particle churn and mid-burst shader links, measured before and after with `tests/perf/perfbench.cjs`. |
 
 ```bash

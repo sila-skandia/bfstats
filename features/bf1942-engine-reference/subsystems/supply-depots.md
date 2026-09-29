@@ -1,5 +1,9 @@
 # Supply depots: one class behind ammo boxes, medical lockers and repair pads
 
+*Added 2026-09-29: the first study of this topic is
+[supply-and-health.md](../../bf1942-3d-models/supply-and-health.md). Where the
+two disagree, this note wins.*
+
 Settled 2026-09-16 for the map viewer's `supply.js`/`armor.js`. All addresses
 `bf1942_lnxded.static` (`nm -C`/`objdump`) unless marked client — a
 `SupplyDepot` has no renderer-side work, so the dedicated server's named code
