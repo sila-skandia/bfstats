@@ -107,6 +107,42 @@ mirrors of `viewer/models` (`tournament-images/mesh`,
 inodes, so they need `textures/` beside `models/`:
 `cp -al viewer/textures <mirror>/textures`, again after new textures land.
 
+### Fresh bake, 2026-09-29 (local, not published)
+
+Every extractor now ends by optimising its own output. To prove it from
+scratch, vanilla, XPack1 and XPack2 were baked from the game into a scratch
+mesh root through every extractor: models, kits, viewmodels, levels, effects
+and poses.
+
+- All steps exited 0, and no glb came out still embedding its textures. A
+  second vanilla model run was byte-identical (830 files).
+- It caught one bug: levels are built in staging and moved afterwards, and the
+  first version optimised them in staging, so their URIs had the wrong depth.
+  Fixed (the workers pass `--no-optimise`, the batch optimises after
+  promotion), with a regression test. The optimiser now also fails any glb
+  whose image URIs do not resolve.
+- 873 files differed from the local tree. That was bake drift, not the
+  optimiser: the local levels were baked on 26 September, before 15 exporter
+  fixes that landed by 14:38 on 27 September (deck spawns, mode statics, spawn
+  groups, skinning, kits).
+- Installed into the local tree in place: 873 files changed and 1,413 added.
+  The overwritten originals are in `~/.cache/swap-backup`, and the two tracked
+  fixtures were kept as committed. The manifests came from a normal run with
+  the local `thumb` keys carried over: a subset `extract_models.py` run leaves
+  a 1-row `models.json`, and `extract_kits --all` writes a larger `kits.json`.
+- Awaiting the owner's local test before anything is published.
+
+Recipe (from `tools/bf1942-models`; `S` is a scratch mesh root):
+
+    python3 extract_all.py [--mod XPack1|XPack2 --own] --level-all --configuration-all --cockpit -j 8 --out $S/models[/mods/<m>]
+    python3 extract_kits.py [--mod <M> --own] --out $S/models[/mods/<m>]
+    python3 extract_viewmodel.py <soldier weapon pairs> --out $S/models/viewmodels
+    python3 extract_maps_all.py [--mod <M>] -j 8 --out $S/maps[/mods/<m>]
+    python3 extract_effects.py [--mod <M>] --out $S/maps[/mods/<m>]/_shared
+    python3 extract_pose.py [--mod <M>] --matrix --export --split-only --soldiers <...> --out <poses> -j 4
+    python3 extract_pose.py [--mod <M>] --shared-assets --out <poses>
+    python3 extract_pose.py [--mod <M>] --kit-poses --out <poses> -j 4
+
 ### Phase 2: geometry and JSON (measuring)
 
 After phase 1 a glb is geometry plus JSON, and both compress well:
