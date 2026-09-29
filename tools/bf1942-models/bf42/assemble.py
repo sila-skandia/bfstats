@@ -1465,7 +1465,7 @@ class Assembler:
                 # path picks it up, so no filter is needed here.
                 mesh_index, _ = self._mesh_index(builder, payload.geometry, report)
                 effect["kind"] = "mesh"
-                # EMT-6 / V-R2: mesh particles carry `ObjectTemplate.size` the
+                # EMT-8 (V-R2's EMT-6): mesh particles carry `ObjectTemplate.size` the
                 # same field sprites do (`sprite_size` here). `fx_1p_MuzzGun`
                 # is size 0.2 — omitting it left gunfire.js at the default
                 # scale of 1 (~5× retail frame coverage).
