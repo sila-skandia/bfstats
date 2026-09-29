@@ -653,6 +653,7 @@ export function createHandWeapon(page) {
     soldierMaxHp: loadout.soldierMaxHp,
     soldierTemplateFor,
     startReload,
+    teamVoice: loadout.teamVoice,
     viewmodelRigFor,
     vmCamera,
     vmHemi,

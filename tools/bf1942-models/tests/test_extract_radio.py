@@ -94,5 +94,39 @@ class ExtractRadioTests(unittest.TestCase):
         self.assertEqual("radiomess", self.voices["crackle"])
 
 
+
+class SoldierLanguageTests(unittest.TestCase):
+    """A side's voice folder is its soldier's `setRadioLanguage`."""
+
+    class Pool:
+        def __init__(self, files: dict[str, str]) -> None:
+            self.files = files
+
+        def names(self):
+            return list(self.files)
+
+        def try_read(self, name: str):
+            return self.files[name].encode("latin-1")
+
+    def test_each_soldier_maps_to_the_folder_its_language_wrote(self) -> None:
+        from extract_radio import soldier_languages
+        pool = self.Pool({
+            "Objects/Soldiers/Iraq/Objects.con":
+                'ObjectTemplate.create Soldier IraqSoldier\n'
+                'ObjectTemplate.setRadioLanguage "Iraqi"\n'
+                'ObjectTemplate.create Kit NotASoldier\n',
+            "objects/soldiers/US/Objects.con":
+                "ObjectTemplate.create Soldier USSoldier\n"
+                "ObjectTemplate.setRadioLanguage UsEnglish\n",
+            "Objects/Soldiers/Viet/Objects.con":
+                'ObjectTemplate.create Soldier VCSoldier\n'
+                'ObjectTemplate.setRadioLanguage "Vietnamese"\n',
+            "Objects/Vehicles/Land/M1/Objects.con":
+                'ObjectTemplate.create PlayerControlObject M1\n',
+        })
+        self.assertEqual({"iraqsoldier": "iraq", "ussoldier": "us"},
+                         soldier_languages(pool, {"iraq", "us"}))
+
+
 if __name__ == "__main__":
     unittest.main()
