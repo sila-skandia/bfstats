@@ -260,6 +260,83 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
   };
 }
 
+// --- a man back from a vehicle ---------------------------------------------------------------
+//
+// V drives a jeep from (0, 0, 450) to K at the origin and gets out at 10 s,
+// 11 m from him. The recording's first sample of his soldier is where he got
+// in, 450 m back; the next, 0.1 s on, is where he is. K shoots him 0.07 s
+// after he gets out: no long shot, and the kill and the wound where he
+// stood. O gets out at 20 s with his samples running on past him along the
+// jump until they snap back at 20.4 s. C gets out at 30 s and the recording
+// has him at once. W, out of his jeep 2 s, falls to S's rifle from 160 m: a
+// long shot still. Z's plane covers 15 m between samples.
+{
+  const hull = (L, t, nid, tmpl, team, pos) => {
+    L({ k: 'e', t, e: 'createObject', netId: nid, tmpl, tid: 960, pos, rot: [0, 0, 0] });
+    L({ k: 'o', t, id: nid, tmpl, tid: 960, team, maxhp: 100 });
+    L({ k: 's', t, o: [[nid, ...pos, 0, 0, 0, 1]] });
+  };
+  // Into a hull (the soldier leaves the replicated set) and out of it: the
+  // soldier's first sample `stale`, then `after`, one every 0.1 s.
+  const getIn = (L, t, pid, soldierNid, hullNid) => {
+    L({ k: 'd', t, id: soldierNid });
+    L({ k: 'p', t, p: [[pid, 2, hullNid]] });
+  };
+  const getOut = (L, t, pid, nid, stale, after) => {
+    L({ k: 'o', t, id: nid, tmpl: 'USSoldier', tid: 1702, team: 2, maxhp: 30 });
+    L({ k: 's', t, o: [[nid, stale[0], stale[1] + 1, stale[2], 0, 0, 0, 1]] });
+    L({ k: 'p', t, p: [[pid, 2, nid]] });
+    after.forEach((p, i) => L({ k: 's', t: +(t + 0.1 * (i + 1)).toFixed(2), o: [[nid, p[0], p[1] + 1, p[2], 0, 0, 0, 1]] }));
+  };
+  const rec = recording(L => {
+    L({ k: 'h', v: 5 });
+    for (const [pid, name, team] of [[1, 'K', 1], [2, 'V', 2], [3, 'O', 2], [4, 'C', 2], [5, 'S', 1], [6, 'W', 2], [7, 'Z', 2]]) {
+      player(L, pid, name, team);
+    }
+    soldier(L, 1, 100, 1, 1, [0, 0, 0]);
+    soldier(L, 1, 101, 5, 1, [0, 0, -10]);
+    hull(L, 1, 400, 'Corsair', 2, [1000, 100, 1000]);
+    L({ k: 'p', t: 1, p: [[7, 2, 400]] });
+    const drivers = [[2, 200, 300, [0, 0, 450]], [3, 201, 301, [200, 0, 300]], [4, 202, 302, [-20, 0, -300]],
+      [6, 203, 303, [300, 0, 300]]];
+    for (const [pid, nid, jeep, from] of drivers) {
+      soldier(L, 1, nid, pid, 2, from);
+      hull(L, 1, jeep, 'Willy', 2, from);
+    }
+    for (let i = 1; i <= 3; i++) L({ k: 's', t: +(1 + i / 10).toFixed(1), o: [[400, 1000 + 15 * i, 100, 1000, 0, 0, 0, 1]] });
+    for (const [pid, nid, jeep] of drivers) getIn(L, 2, pid, nid, jeep);
+    L({ k: 's', t: 9.9, o: [[300, 8, 0, 9, 0, 0, 0, 1]] });
+    getOut(L, 10, 2, 200, [0, 0, 450], [[8, 0, 8]]);
+    L({ k: 'a', t: 10, a: [[200, 30]] });
+    L({ k: 'a', t: 10.07, a: [[200, 0]] });
+    kill(L, 10.07, 1, 2, 'Mp40');
+    getOut(L, 20, 3, 201, [200, 0, 300], [[56, 0, -8], [35, 0, -54], [9, 0, -109], [60, 0, 0], [60.5, 0, 0], [61, 0, 0]]);
+    getOut(L, 30, 4, 202, [-20, 0, 0], [[-19.5, 0, 0], [-19, 0, 0], [-18.5, 0, 0]]);
+    getOut(L, 40, 6, 203, [300, 0, 300], [[160, 0, -10]]);
+    kill(L, 42, 5, 6, 'K98Sniper');
+    L({ k: 's', t: 45, o: [] });
+  });
+  const name = pid => rec.players.get(pid)?.name;
+  const at = (pid, t) => {
+    const w = B.whereIs(rec, pid, t);
+    return { state: w.state, fresh: w.fresh, pos: w.pos && w.pos.map(v => Math.round(v)), seen: w.seen === null ? null : +w.seen.toFixed(2) };
+  };
+  const activity = B.activityOf(rec, rec.kills);
+  const place = e => e?.pos.map(v => Math.round(v)) ?? null;
+  const life = nid => rec.lives.find(l => l.nid === nid);
+  results.rejoin = {
+    longShots: M.medalsOf(rec, rec.kills).filter(m => m.kind === 'longshot').map(m => [name(m.pid), name(m.victim), m.distance]),
+    victim: [9.95, 10.02, 10.06].map(t => at(2, t)),
+    killPlace: place(activity.find(e => e.kind === 'kill' && e.victim === 2)),
+    woundPlace: place(activity.find(e => e.kind === 'hit' && e.life?.nid === 200)),
+    runOn: [20.05, 20.25, 20.35, 20.45].map(t => at(3, t)),
+    clean: [30.02, 30.25].map(t => at(4, t)),
+    outLongSince: at(6, 41.95),
+    plane: at(7, 1.06),
+    settledTime: [[life(200), 10.02], [life(200), 10.5], [life(400), 1.06]].map(([l, t]) => +B.settledTime(l, t).toFixed(2)),
+  };
+}
+
 // --- the director -----------------------------------------------------------------------------
 //
 // Q1 (the recording player) stands idle all round. Q2 kills X at 10 s, then
@@ -319,6 +396,7 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
   const rounds = [
     ['replays/20260927-075736-wake-coop/replay_20260927-075756.ndjson', 'replays/20260927-075736-wake-coop/ev_14568-20260927_0757.xml'],
     ['replays/20260927-140921-kursk-conquest/replay_20260927-140921.ndjson', null],
+    ['replays/replay_20260928-133433.ndjson', null],
   ];
   results.rounds = {};
   for (const [file, logFile] of rounds) {
