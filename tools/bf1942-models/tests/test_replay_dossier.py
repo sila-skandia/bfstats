@@ -126,15 +126,15 @@ class ReplayKillingRoundTests(unittest.TestCase):
         self.assertLess(r["angle"], 1)
         self.assertEqual(self.rounds["point blank"]["fact"]["distance"], 3)
 
-    def test_a_man_just_out_of_a_vehicle_is_not_placed(self) -> None:
+    def test_a_man_just_out_of_a_vehicle_is_placed_where_he_is(self) -> None:
         rejoin = self.rounds["rejoin"]
-        # The recording has him live where he got in, 693 m off ...
-        self.assertEqual(rejoin["whereIs"], {"fresh": True, "ground": 693})
-        # ... which the dossier does not take: no distance, the round by time.
-        self.assertIsNone(rejoin["fact"]["distance"])
-        self.assertFalse(rejoin["fact"]["fresh"])
+        # His first sample is where he got in, 693 m off; `whereIs` places him
+        # where the recording next has him (replay-battles.js `settledTime`).
+        self.assertEqual(rejoin["whereIs"], {"fresh": True, "ground": 20})
+        self.assertEqual(rejoin["fact"]["distance"], 20)
+        self.assertTrue(rejoin["fact"]["fresh"])
         self.assertEqual(rejoin["round"]["weapon"], "Thompson")
-        self.assertIsNone(rejoin["round"]["distance"])
+        self.assertEqual(rejoin["round"]["distance"], 20)
 
 
 class ReplayDossierTests(unittest.TestCase):
@@ -305,9 +305,12 @@ class ReplayDossierOwnersRoundsTests(unittest.TestCase):
 
     def test_a_man_out_of_his_kubelwagen_is_not_459_m_off(self) -> None:
         exit = self.round("replay_20260928-133433")["exit"]
-        self.assertEqual(exit["whereIs"], {"fresh": True, "ground": 459})
-        self.assertIsNone(exit["fact"]["distance"])
+        self.assertEqual(exit["whereIs"], {"fresh": True, "ground": 6})
+        self.assertEqual(exit["fact"]["distance"], 7)
+        # First placed 0.25 s after the kill: the Sg44 round passes 1.7 m
+        # from there, more than MAX_ANGLE off, within MAX_MISS.
         self.assertEqual(exit["fact"]["round"]["weapon"], "Sg44")
+        self.assertGreater(exit["fact"]["round"]["angle"], 12)
 
     def test_a_45_minute_round_is_quick(self) -> None:
         r = self.round("replay_20260928-161948")

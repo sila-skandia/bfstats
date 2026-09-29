@@ -61,12 +61,14 @@ origin: for guns fired 0-0.4 s before the kill and within a few degrees
 (snipers 0.1-0.4 degrees at 340 m), grenades the throw nearest the 3 s
 fuse (a man's second grenade is often in the air when his first kills),
 bombs 0.4-8 s after release; a vehicle's kill names the vehicle and its
-rounds the gun, so a gun named after the vehicle matches. 115 of the 159
-kills of the Bocage round `replay_20260928-133433` have one, 545 of the 723
-of the 45-minute `replay_20260928-161948`; mines and packs have none
-(replay-dossier.js `killingRound`). A soldier the recording has just taken
-back into range is not placed for 0.25 s: its first sample is where he got
-into a vehicle, 26 to 740 m off in 42 of 105 cases.
+rounds the gun, so a gun named after the vehicle matches. Within 2 m of him
+counts too, whatever the angle: from 6 m a metre and a half of running is
+14 degrees. 123 of the 159 kills of the Bocage round
+`replay_20260928-133433` have one, 561 of the 723 of the 45-minute
+`replay_20260928-161948`; mines and packs have none (replay-dossier.js
+`killingRound`). A man just out of a vehicle is placed where the recording
+next has him, not at his first sample, which is where he got in
+(replay-battles.js `settledTime`).
 
 The chased round is the page's own: the one `fireShot` sent through the
 page's guns, found by its muzzle and direction as it appears, so the bullet
@@ -154,8 +156,10 @@ the man it killed ("Decisions" below).
   an old round at a better angle losing to age, a grenade by its fuse, no
   round for a mine, the frame's z), streaks and what ended them,
   multi-kills, longest shots, nemesis and prey, team kills and suicides
-  kept out; and the two real rounds (115 of 159 kills with a round in under
-  10 ms; SoldierHEad's 141 m No 4 on SwissChz first among his shots).
+  kept out; and the two real rounds (a round for 123 of 159 kills in under
+  10 ms; SoldierHEad's 141 m No 4 on SwissChz first among his shots;
+  RuppoPeaGame, shot 0.07 s out of his Kubelwagen, 6 m from the Sg44 and not
+  the 459 m of where he got in).
 - Headless Chromium on the Bocage round (`replay_20260928-133433`):
   the button on localhost; hovering a soldier rings and names him, a click
   follows him; 5 on Jano armed his No4Sniper round 3 s ahead over his
@@ -172,10 +176,6 @@ the man it killed ("Decisions" below).
 
 ### Open
 
-- **`whereIs` places a man just back in range at a stale spot** (where he
-  got into a vehicle) for up to 0.25 s. The dossier works round it; the
-  medals do not, and award >>XenaWarrior<< a 459 m Long shot at 52.2 s of
-  `replay_20260928-133433`. The fix belongs in replay-battles.js.
 - A close kill (2-5 m) can credit an older round of a burst: the angle
   cannot tell them apart there. The distance moves by a few metres.
 - Touch: a tap on the view picks, and also shows or hides the chrome.
