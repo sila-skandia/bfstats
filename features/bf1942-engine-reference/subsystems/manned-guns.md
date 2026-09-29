@@ -1,5 +1,9 @@
 # Manned guns: aiming, firing, heat
 
+*Added 2026-09-29: the first study of this topic is
+[seats-and-manned-guns.md](../../bf1942-3d-models/seats-and-manned-guns.md).
+Where the two disagree, this note wins.*
+
 Settled 2026-09-16 for the map viewer's `seats.js` gun runtime and
 `gunfire.js`. All addresses `bf1942_lnxded.static` unless marked client. How
 a seated gunner aims and fires a Defgun, an AA mount, a

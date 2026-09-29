@@ -1,5 +1,9 @@
 # Tank and half-track driving (`c_ETTank`)
 
+*Added 2026-09-29: the first study of this topic is
+[ground-vehicles.md](../../bf1942-3d-models/ground-vehicles.md). Where the two
+disagree, this note wins.*
+
 Settled 2026-09-16 for the map viewer's `TrackedVehicle` (`ground.js`), and
 **substantially rewritten 2026-09-20**. This doc assumes
 [physics.md](physics.md) §3 (the integrator), §5 (thrust) and §7 (an Engine
