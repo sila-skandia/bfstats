@@ -81,6 +81,12 @@ purpose. A bystander hears **rounds**, so each layer is forced to one cycle
 and every shot is one `trigger` — and the near and far samples still hand
 over on their Distance ramps, which is the whole point of shipping them.
 
+*Corrected 2026-09-29: they did not hand over at first. On 2026-09-25
+[sound-listener-parity](../sound-listener-parity/README.md) found that the page
+never called `WorldFire.update()`, so every round was measured from 0 m, the
+near layer played at full gain and the far layers never sounded. c385ed8c fixed
+it the same day.*
+
 `extract_weapon_sounds.py` now emits `layers` beside the first-person pick,
 through the same `_firing_patch` + `_sound_layers` the vehicle guns use. A
 manifest from before that field existed gets `FALLBACK_RAMP` (full at the
