@@ -84,7 +84,9 @@ from bf42.level import (  # noqa: E402
     is_gameplay_kind,
     load_game_types,
     load_gameplay_objects,
+    borrowed_levels,
     load_level_files,
+    terrain_file,
     load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
@@ -191,6 +193,11 @@ def load_level(game_dir: Path, mod: str, level: str,
     files = load_level_files(paths, level)
     terrain_text = _read_text(files, "Init/Terrain.con")
     info = LevelInfo(name=level, terrain=parse_terrain_con(terrain_text))
+    borrowed = borrowed_levels(info.terrain, level)
+    if borrowed:
+        underlay = [p for other in borrowed
+                    for p in find_level_archives(game_dir, mod, other, chain=chain)]
+        files = load_level_files(paths, level, underlay)
     if files.find("Init.con"):
         parse_init_con(_read_text(files, "Init.con"), info)
     if files.find("Init/SkyAndSun.con"):
@@ -226,8 +233,11 @@ def load_level(game_dir: Path, mod: str, level: str,
     # sounds; `scene_layers.LevelContext.library` redoes it with the library.
     info.sounds = discover_level_sounds(files, info.static_objects,
                                         mode_statics=union_mode_statics(info))
+    heightmap_path = terrain_file(files, info.terrain.heightmap_file, "Heightmap.raw")
+    if heightmap_path is None:
+        raise KeyError(f"no heightmap: {info.terrain.heightmap_file or 'Heightmap.raw'}")
     heightmap = decode_heightmap(
-        files.read("Heightmap.raw"), info.terrain.world_size, info.terrain.y_scale,
+        files.read(heightmap_path), info.terrain.world_size, info.terrain.y_scale,
     )
     return files, info, heightmap, paths
 
@@ -1213,7 +1223,7 @@ def write_terrain_materials(files, info: LevelInfo, out_dir: Path,
     The labels ride along because the ids alone are unreadable — the viewer
     shows "Dry sand" in a hit readout, not "10".
     """
-    entry = files.find("Materialmap.raw")
+    entry = terrain_file(files, info.terrain.material_map, "Materialmap.raw")
     if entry is None:
         return None
     try:
