@@ -42,6 +42,10 @@ LANGUAGE_NATIONS = {
     "Russian": "rus",
     "Italian": "it",
     "French": "fre",
+    # Desert Combat's IraqSoldier (`Sound/<rate>/Iraqi/`). DC flies Iraq's
+    # flag in the German slot, so the folder cannot be the side's flag nation;
+    # the viewer reads `voices/languages.json` for it (extract_radio.py).
+    "Iraqi": "iraq",
 }
 
 STEMS = (
