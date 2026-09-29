@@ -4,7 +4,9 @@
 // the activity, battles, medals, plays and standouts, the Auto camera's picks,
 // and, every 7.3 s of the round, every player's place and state, the vehicles
 // crewed, the battles burning, the roster, the tallies, the seats, the crews,
-// the hit points and the lives the players control.
+// the hit points and the lives the players control; and, every 21.9 s, the
+// poses and motion of every 23rd life, the headings, the moving parts'
+// rotations, the gaits and whether a pose still holds.
 //
 //   node replaydump.mjs <recording.ndjson> <out.json> [--viewer <other viewer dir>]
 //   cmp before.json after.json
@@ -25,9 +27,9 @@ const [file, out] = args.filter((_, i) => at < 0 || (i !== at && i !== at + 1));
 if (!file || !out) throw new Error('usage: node replaydump.mjs <recording.ndjson> <out.json> [--viewer <dir>]');
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [R, C, B, D, H] = await Promise.all([
+const [R, C, B, D, H, K, G] = await Promise.all([
   imp('replay-recording.js'), imp('replay-chapters.js'), imp('replay-battles.js'), imp('replay-director.js'),
-  imp('replay-highlights.js'),
+  imp('replay-highlights.js'), imp('replay-kinematics.js'), imp('gait-select.js'),
 ]);
 
 const rec = R.parseRecording(fs.readFileSync(file, 'utf8'));
@@ -69,6 +71,18 @@ res.frames = times.map(t => clean({
   hp: rec.lives.filter((l, i) => i % 7 === 0).map(l => R.hpAt(l, t)),
   crews: rec.lives.filter(l => !l.soldier && l.tmpl && l.created <= t && t < l.destroyed).map(l => R.crewOf(rec, l, t)),
   lifeAt: pids.map(pid => R.lifeAt(rec, R.controlledAt(rec, pid, t), t)),
+}));
+const some = rec.lives.filter((l, i) => i % 23 === 0);
+const parts = [...rec.joints.values()].flatMap(m => [...m.values()]).filter((p, i) => i % 5 === 0);
+res.motion = times.filter((t, i) => i % 3 === 0).map(t => clean({
+  t,
+  poses: some.map(l => K.poseAt(l, t)),
+  motion: some.map(l => K.motionAt(l, t)),
+  headings: some.map(l => B.headingAt(l, t)),
+  samples: some.map(l => R.sampleAt(l, t)),
+  held: some.map(l => R.poseHeld(rec, l, t)),
+  parts: parts.map(p => R.sampleAt(p, t)),
+  gaits: some.filter(l => l.soldier).map(l => G.selectGait(l, t)),
 }));
 const director = new D.ReplayDirector(model, { fallback: null });
 res.director = times.map(t => clean(director.update(t, null)));

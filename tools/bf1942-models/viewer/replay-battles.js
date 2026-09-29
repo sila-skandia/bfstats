@@ -17,7 +17,8 @@
 // what was live -- `fresh` -- and says when something is only last seen.
 
 import {
-  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleAt, soldierLivesOf, teamAt,
+  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleInto, sampleRoom,
+  soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { playerStatusAt, pointsAt } from './replay-chapters.js';
 
@@ -85,13 +86,16 @@ function sideOf(rec, life, t) {
   return crew.length ? teamAt(rec, crew[0].pid, t) : 0;
 }
 
+/** `headingAt`'s samples, read without making them (`sampleInto`). */
+const room = sampleRoom();
+
 /** The forward direction on the ground of a recorded life at `t`, in the
  *  viewer's frame, as `[x, z]` (unit), or null: its -Z in the viewer's
  *  frame, a soldier's as a vehicle's. The half turn a soldier's pose glb
  *  carries (replay-actors.js `SOLDIER_YAW_FLIP`) is the model's, not the
  *  recording's. */
 export function headingAt(life, t) {
-  const s = sampleAt(life, t);
+  const s = sampleInto(life, t, room);
   if (!s) return null;
   const q = s.a.q;
   // The recorded quaternion (x, y, z, w) is (-x, -y, z, w) in the viewer's

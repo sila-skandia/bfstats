@@ -51,7 +51,7 @@ import { ReplayCamera, hullRadius } from './replay-camera.js';
 import { buildChapters, killsOf, recordingPlayers } from './replay-chapters.js';
 import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
-import { ReplayHull } from './replay-hulls.js';
+import { ReplayHull, modelKind } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds } from './replay-props.js';
@@ -81,6 +81,13 @@ const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
 /** A shot this far back when the clock is set is still fired, its round in
  *  the air as it was (replay's `seek`). */
 const SEEK_SHOT_WINDOW = 0.6;
+
+/** Milliseconds of a frame the hulls are built in: those the round has at
+ *  the playhead while the timeline is dragged (every step can land among
+ *  dozens not built yet), and those it has not reached, while it plays
+ *  (`buildHulls`). One the playhead reaches in play is built at once. */
+const BUILD_DRAG_BUDGET = 4;
+const BUILD_AHEAD_BUDGET = 1.5;
 
 /** An extra the replay can do without (the page's additions to its bar, the
  *  highlights): a throw in it is a console warning, never a replay that does
@@ -369,26 +376,11 @@ class ReplayPlayer {
       }),
     ]);
 
-    // Each hull built on its own: a model that cannot be made into one is a
-    // warning and a vehicle left out, not a replay that stops loading.
-    for (const life of hullLives) {
-      const model = models.get(life.tmpl);
-      if (!model?.normal) continue;
-      extra(`the ${life.tmpl} ${life.nid}`, () => {
-        const scene = skeletonClone(model.normal);
-        const wreck = model.wreck ? skeletonClone(model.wreck) : null;
-        const hull = new ReplayHull(this, life, scene, wreck);
-        // Its rounds skip its own body (`dynamicCast`), the way a level hull's
-        // skip theirs through the collider's owner index.
-        hull.ownerTag = -1000 - life.nid;
-        for (const group of hull.groups) {
-          group.owner = hull.ownerTag;
-          group.ownerFor = this.ctx.guns?.collider;
-        }
-        this.root.add(hull.group);
-        this.hulls.set(life, hull);
-      });
-    }
+    // Each hull is built when the round first has it (`buildHulls`), not all
+    // of them before it shows: a 45-minute round has 562, 0.4 s of building.
+    this.hullModels = models;
+    this.unbuilt = hullLives.filter(life => models.get(life.tmpl)?.normal);
+    this.hullCount = this.unbuilt.length;
 
     for (const life of soldierLives) {
       const rigged = poses.get(`${life.tmpl}|${placeholderWeaponFor(life, loadouts)}`);
@@ -414,11 +406,78 @@ class ReplayPlayer {
     const unseen = this.standIns.length ? ` · ${this.standIns.length} never in range, stood in by the level` : '';
     const merged = this.rec.merged?.length ? ` · merged from ${this.rec.merged.length} recordings` : '';
     const damaged = this.rec.skipped ? ` · ${this.rec.skipped} damaged records left out` : '';
-    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hulls.size} vehicles${merged}${unseen}${bodies}${aligned}${damaged}`;
+    this.statusLine = `${this.label} · ${this.rec.level || 'level ?'} · ${this.hullCount} vehicles${merged}${unseen}${bodies}${aligned}${damaged}`;
     this.ui.status(this.statusLine);
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
     this.ui.activity(4);
+  }
+
+  /** `life`'s hull, built if it is not yet: undefined when its template has
+   *  no model or it could not be made. */
+  hullOf(life) {
+    return this.hulls.get(life) ?? this.buildHull(life);
+  }
+
+  /** Build `life`'s hull, once. Each on its own: a model that cannot be made
+   *  into one is a warning and a vehicle left out, not a replay that stops. */
+  buildHull(life) {
+    const model = this.hullModels?.get(life.tmpl);
+    if (!model?.normal || this.hulls.has(life) || this.hullTried?.has(life)) return this.hulls.get(life);
+    (this.hullTried ??= new Set()).add(life);
+    return extra(`the ${life.tmpl} ${life.nid}`, () => {
+      const scene = skeletonClone(model.normal);
+      const wreck = model.wreck ? skeletonClone(model.wreck) : null;
+      const hull = new ReplayHull(this, life, scene, wreck);
+      // Its rounds skip its own body (`dynamicCast`), the way a level hull's
+      // skip theirs through the collider's owner index.
+      hull.ownerTag = -1000 - life.nid;
+      for (const group of hull.groups) {
+        group.owner = hull.ownerTag;
+        group.ownerFor = this.ctx.guns?.collider;
+      }
+      this.root.add(hull.group);
+      this.hulls.set(life, hull);
+      return hull;
+    });
+  }
+
+  /**
+   * The hulls not built yet (`unbuilt`) that the round has at `t`, built now,
+   * and a few more of the rest, `BUILD_AHEAD_BUDGET` ms a frame, until every
+   * one is: a seek never meets a region of the round with nothing built.
+   * While the timeline is dragged, at most `BUILD_DRAG_BUDGET` ms a frame and
+   * nothing ahead; a hull not built yet is not drawn yet.
+   */
+  buildHulls(t, dragging) {
+    const list = this.unbuilt;
+    if (!list?.length) return;
+    const start = performance.now();
+    let kept = 0;
+    for (const life of list) {
+      const due = t >= life.created && t < life.destroyed;
+      if (due && !(dragging && performance.now() - start > BUILD_DRAG_BUDGET)) this.buildHull(life);
+      else list[kept++] = life;
+    }
+    list.length = kept;
+    if (dragging) return;
+    let next = 0;
+    while (next < list.length && performance.now() - start < BUILD_AHEAD_BUDGET) this.buildHull(list[next++]);
+    list.splice(0, next);
+  }
+
+  /** What `life`'s hull is (`ReplayHull.kind`) whether or not it is built:
+   *  its template's, surveyed once (replay-hulls.js `modelKind`). */
+  hullKind(life) {
+    const built = this.hulls.get(life);
+    if (built) return built.kind;
+    const model = this.hullModels?.get(life?.tmpl)?.normal;
+    if (!model) return null;
+    const kinds = this.templateKinds ??= new Map();
+    if (!kinds.has(life.tmpl)) {
+      kinds.set(life.tmpl, extra(`the ${life.tmpl}'s seats`, () => modelKind(model, this.ctx.vehicleClasses ?? {})) ?? null);
+    }
+    return kinds.get(life.tmpl);
   }
 
   /** The plain soldier fallback's body for `life`, on its (soldier, weapon)
@@ -491,10 +550,16 @@ class ReplayPlayer {
       hull.faulted = false;
       guard.run('the seek', () => hull.resetSound());
     }
-    // A round fired just before the new instant is still in the air.
-    for (const f of this.rec.fires) {
-      const age = this.time - f.t;
-      if (age >= 0 && age <= SEEK_SHOT_WINDOW) guard.run('a recorded round', () => this.fireShot(f));
+    // A round fired just before the new instant is still in the air, once a
+    // drag lets go: every step of one fired them again, reports and all.
+    if (!this.ui?.timeline?.scrubbing) {
+      const fires = this.rec.fires;
+      for (let i = firstFireAfter(fires, this.time - SEEK_SHOT_WINDOW - 1e-6); i < fires.length; i++) {
+        const f = fires[i];
+        const age = this.time - f.t;
+        if (age < 0) break;
+        if (age <= SEEK_SHOT_WINDOW) guard.run('a recorded round', () => this.fireShot(f));
+      }
     }
     this.lastFiredTime = this.time;
     // The message log is rebuilt for the new instant, and the camera starts
@@ -529,7 +594,7 @@ class ReplayPlayer {
       if (found && !found.life.soldier && !found.life.camera) root = found;
     }
     if (root) {
-      this.hulls.get(root.life)?.fire(root.seat, f.kind, f.press ? null : f);
+      this.hullOf(root.life)?.fire(root.seat, f.kind, f.press ? null : f);
       return;
     }
     // On foot: a v3 press of the alternate trigger is the zoom, not a round.
@@ -581,6 +646,7 @@ class ReplayPlayer {
     const rate = this.feedRate();
     if (this.ctx.guns) this.ctx.guns.timeScale = rate;
     if (this.ctx.effects) this.ctx.effects.timeScale = rate;
+    guard.run('building the hulls', () => this.buildHulls(t, this.ui.scrubbing));
     for (const hull of this.hulls.values()) this.updateHull(hull, t, step);
     for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
     // The camera after the hulls (the orbit centres on a hull as drawn this

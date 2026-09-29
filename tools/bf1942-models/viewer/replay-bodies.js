@@ -136,6 +136,8 @@ export class ReplaySoldiers {
     this.bodies = ctx.makeReplayBodies ? ctx.makeReplayBodies(this.shim) : null;
     this.bodies?.ensureRoot?.();
     this.snap = true;
+    // From a `jump` to the next `reset`: the timeline is being dragged.
+    this.dragging = false;
   }
 
   get available() { return Boolean(this.bodies); }
@@ -223,6 +225,7 @@ export class ReplaySoldiers {
    *  recording as the frames need them. */
   reset() {
     this.snap = true;
+    this.dragging = false;
     this.bodies?.disposeBotVisuals?.();
     for (const actor of this.actors.values()) {
       actor.lifeNid = null;
@@ -231,12 +234,13 @@ export class ReplaySoldiers {
   }
 
   /**
-   * A seek while the timeline is dragged, one a frame: the corpses go and
-   * every man is placed afresh, but a body whose life is the same at the new
-   * instant is moved rather than built again (`bindLife` still builds one
-   * for another life, and the renderer hides the living body of a man the
-   * recording has dead). Twenty bodies rebuilt at every step of a drag were
-   * most of its frame; the seek it ends on is a `reset`.
+   * A seek while the timeline is dragged, one every step: the corpses go and
+   * every man is placed afresh, but on the body he has, moved there. A man
+   * in another life or holding another item keeps it until the drag lets go
+   * (`bindLife`, `hold`), and nobody dies on the way, cry, fall and corpse
+   * (`place`): the renderer hides the living body of a man the recording
+   * has dead. Bodies built again at every step were most of a drag's frame;
+   * the seek it ends on is a `reset`, which builds each as he is.
    */
   jump() {
     if (!this.bodies?.disposeCorpses) {
@@ -244,6 +248,7 @@ export class ReplaySoldiers {
       return;
     }
     this.snap = true;
+    this.dragging = true;
     this.bodies.disposeCorpses();
     for (const actor of this.actors.values()) this.forget(actor);
   }
@@ -369,14 +374,14 @@ export class ReplaySoldiers {
     // fell, or where a flight after his death landed him.
     if (dead && !actor.state.dead) {
       actor.state.dead = true;
-      if (this.player.playing && t - life.diedAt < 0.5) {
+      if (this.player.playing && !this.dragging && t - life.diedAt < 0.5) {
         this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
       }
     }
     if (dead && !falling && !actor.state.down) {
       actor.state.down = true;
       const rest = flight ? flight.until : life.diedAt;
-      if (this.player.playing && t - rest < 0.5) {
+      if (this.player.playing && !this.dragging && t - rest < 0.5) {
         // The death the engine chose, where the recording has his body's
         // die state or the state a flight landed him in; the renderer's
         // own choice otherwise, and in a seat.
@@ -504,7 +509,8 @@ export class ReplaySoldiers {
     actor.state.team = actor.team;
     actor.heldItem = null;
     actor.reloading = false;
-    this.bodies?.disposeBotVisual?.(actor.playerId);
+    // Built afresh when the drag lets go (`jump`).
+    if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
   }
 
   /**
@@ -535,7 +541,7 @@ export class ReplaySoldiers {
     if (!weapon || weapon === actor.kitPrimary) return;
     actor.kitPrimary = weapon;
     actor.weaponAi = { name: weapon };
-    this.bodies?.disposeBotVisual?.(actor.playerId);
+    if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
   }
 
   /**

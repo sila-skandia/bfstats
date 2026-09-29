@@ -14,7 +14,7 @@
 // its local -Z, up +Y, right +X, as `aircraft.js` / `wheeled-vehicle.js` have
 // it. Three.js-free, so `tests/replay_kinematics_harness.mjs` runs it in node.
 
-import { sampleAt } from './replay-recording.js';
+import { sampleInto, sampleRoom } from './replay-recording.js';
 
 /** Half the central-difference window, seconds: one recorded sample either
  *  side of the instant, which is the resolution the recording has. */
@@ -64,10 +64,14 @@ function slerp(a, b, k, out) {
   return out;
 }
 
+/** `poseAt`'s samples, read without making them (`sampleInto`): it runs
+ *  three times a frame for every hull drawn. */
+const room = sampleRoom();
+
 /** The recorded pose at `t` in the viewer's frame, interpolated exactly as
  *  the replay draws it (`sampleAt`), or null. */
 export function poseAt(life, t) {
-  const s = sampleAt(life, t);
+  const s = sampleInto(life, t, room);
   if (!s) return null;
   const p = toViewPosition(s.a.p);
   const q = toViewQuaternion(s.a.q);
