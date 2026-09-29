@@ -85,7 +85,7 @@ The authoritative set is the engine's own serializer block, contiguous in
 | `radius <m>` | Capture sphere radius. Vanilla 5–100; the engine also uses it for "close to flag" tooltips. | **None** — no mesh, no decal. The engine draws nothing for the zone. |
 | `team <0\|1\|2>` | Owner at level start. 0 = neutral. | Picks which `setTeamGeometry` entry is live at t=0 |
 | `spawnGroupId <n>` | The `SpawnPoint.setGroup` value this flag enables when held | none |
-| `secondSpawnGroupId <n>` | A second group enabled with the first (vanilla: `Battle_of_Britain` only, 1 use; 10 across all mods) | none |
+| `secondSpawnGroupId <n>` | A second group enabled with the first (vanilla: `Battle_of_Britain` only, 1 use; 10 across all mods). *Corrected 2026-09-29: refuted by ledger SPAWNGRP-4. The holder gets one group, `spawnGroupId` for team 1 and `secondSpawnGroupId` for team 2.* | none |
 | `objectSpawnerId <n>` | The `Object.setOSId` value of the vehicle spawners this flag controls. `-1` = controls none. | none |
 | `areaValue <n>` / `areaValueTeam1` / `areaValueTeam2` | Ticket-bleed weight contributed while held. Per-team forms exist in the engine; no installed level uses them. | none |
 | `timeToGetControl` / `timeToLoseControl` <s> | Capture and neutralise time. `9999` is the idiom for "uncapturable". | none |
@@ -167,6 +167,10 @@ spawnPointManager.group 2
 spawnPointManager.groupTeam 2
 spawnPointManager.groupIcon test1.tga
 ```
+
+*Corrected 2026-09-29: `groupTeam` is only a group's first team. The mode
+script runs `ControlPoints` after it, and the control point that claims a group
+wins (ledger SPAWNGRP-3).*
 
 Commands seen across all mods: `group`, `groupTeam`, `groupIcon`,
 `groupStatus`, `groupEnableToChangeTeam`, `EnableToChangeTeam`, `OnlyForHuman`,
