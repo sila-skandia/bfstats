@@ -30,6 +30,14 @@ stand-in body the hand weapons use (`BOT_BODY_RADIUS` about
 The hit goes through `#impact`'s normal direct-hit formula (material 40,
 incidence, falloff), and `applyVehicleHit` hands it to `applyRoundToSoldier`.
 
+*Corrected 2026-09-29: this is the fix as built on 2026-09-23. `roundBodyCast`
+now lives in `viewer/vehicle-hits.js`, and since 2026-09-24 it tests a drawn
+soldier's eight hit capsules, pricing the round by the capsule it meets, as
+[soldier-death-animations](../soldier-death-animations/README.md) describes. A
+body nobody draws keeps the stand-in sphere, priced as the torso, material 41,
+and a round now meets friend and foe alike, passing only the firer and whoever
+rides in his hull, ledger FF-1.*
+
 The bots' cone test is gone. Their rounds use the same body test, so a bot's
 MG round is now a real round with flight time, and it no longer goes through
 walls.

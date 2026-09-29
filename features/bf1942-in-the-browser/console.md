@@ -4,6 +4,11 @@ Stream B of the [2026-09-19 parity round](../bf1942-parity-round-2026-09-19/READ
 Everything here carries the address it came from. Anything that could not be
 read out of a binary is marked **UNVERIFIED** in so many words.
 
+*Added 2026-09-29: the engine reference keeps a short copy of the same reading
+in [`subsystems/console.md`](../bf1942-engine-reference/subsystems/console.md),
+with each finding tied to its ledger row, CON-2 to CON-13. This file is the
+full report, with the listings, the commands 1.61 has and what the viewer built.*
+
 Re-derived line by line on 2026-09-19 by the stream's reviewer. Five claims
 did not survive the second reading and are corrected in place, each marked
 "(review)": the scrolled-up `+` marker is an extra row rather than a

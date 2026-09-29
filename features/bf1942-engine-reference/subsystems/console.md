@@ -5,6 +5,11 @@ reached this file. Where the two disagreed, the second reading is what is
 written here, and the first is named so that nobody re-derives it from the
 research report. Ledger rows CON-2…CON-13.
 
+*Added 2026-09-29: that research report is
+[`bf1942-in-the-browser/console.md`](../../bf1942-in-the-browser/console.md).
+It carries the disassembly listings and many addresses this note leaves out,
+the commands 1.61 has, and what the viewer built from it.*
+
 One class, two binaries. The Linux server names it `dice::ref2::io::OldConsole`
 (ctor `0x083dbfc0`); the client is the same code, stripped — ctor `0x005a2230`,
 vtable `0x009033a8`, object `0x918` bytes. The client builds **two** of them at
