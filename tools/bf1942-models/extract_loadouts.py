@@ -36,8 +36,8 @@ from bf42 import con as con_mod
 from bf42 import kit as kit_mod
 from bf42.modmenu import MenuSources
 
-from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
-                            discover_levels, mod_chain)
+from extract_models import (DEFAULT_GAME_DIR, add_level_objects, build_library,
+                            build_pools, discover_levels, mod_chain)
 from extract_spawn_layout import load_chain_lexicon
 
 
@@ -210,6 +210,23 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     }
 
 
+def read_chain(chain: list[Path]) -> tuple[con_mod.ObjectLibrary,
+                                            dict[str, dict[int, kit_mod.TeamLoadout]]]:
+    """The mod chain's object library and what every level of it hands out.
+
+    A level binds kits it declares in its own archive by name like any other
+    (DC Final's DC_First_Light `US_AA2`/`Iraq_AA2`, DC_LostVillage_nopara's
+    `Iraq_Assault2`), so each level's own `Objects/` sits behind the chain's
+    `Objects.rfa` (`add_level_objects`), the way `extract_kits.py` reads
+    them. Without it those slots named kits the library did not hold and the
+    page dealt its fallback (a K98 sniper, a Panzerschreck) instead.
+    """
+    _meshes, _textures, objects, _game = build_pools(chain, [])
+    levels = discover_levels(chain)
+    add_level_objects(objects, levels)
+    return build_library(objects), kit_mod.level_loadouts(levels)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -226,10 +243,8 @@ def main() -> int:
     if not chain:
         print(f"no mod chain for {args.mod}", file=sys.stderr)
         return 1
-    _meshes, _textures, objects, _game = build_pools(chain, [])
-    library = build_library(objects)
+    library, loadouts = read_chain(chain)
     kits = kit_mod.collect(library)
-    loadouts = kit_mod.level_loadouts(discover_levels(chain))
     # The kit row labels resolve through the same merged lexicon the
     # SkirmishMenu titles do (extract_menu_layout.py's own call).
     lexicon = load_chain_lexicon(MenuSources(chain).lexicon_paths)

@@ -87,13 +87,15 @@ export function createBotUnits(env) {
    * reads the template's name at +0x10c and asks `AITemplateManager::
    * getTemplate` 0x0848a470 at 0x081da28f), never by the folder the record
    * was extracted from: the node `flak38` is the PCO `flak38` of the record
-   * `Flak_38`, whose AI template is `Flak38`.
+   * `Flak_38`, whose AI template is `Flak38`. The name is tried as it
+   * stands before an instance suffix is cut: DC Final's `Howitzer_155` is a
+   * template whose own name ends in digits.
    */
   units.aiOf = node => {
     if (!units.ai) return null;
-    const raw = node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '';
-    const key = String(raw).replace(/_\d+$/, '').toLowerCase();
-    return recordsByObject().get(key) ?? null;
+    const raw = String(node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '').toLowerCase();
+    const index = recordsByObject();
+    return index.get(raw) ?? index.get(raw.replace(/_\d+$/, '')) ?? null;
   };
 
   /** A vehicle root's drive kind, surveyed once. */
