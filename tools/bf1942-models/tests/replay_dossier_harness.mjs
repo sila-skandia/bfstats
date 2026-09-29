@@ -101,7 +101,9 @@ const brief = r => (r ? { weapon: r.f.weapon, t: r2(r.f.t), kind: r.kind, angle:
 // (k) A pistol round at a man's chest from 3 m: his (0.3 m over his feet it
 //     is 17 degrees off).
 // (l) A man shot 0.05 s after he got out of his Kubelwagen, his soldier
-//     back in range at the place he got in at: 693 m off, and not placed.
+//     back in range at the place he got in at, 693 m off: placed where the
+//     recording next has him, 20 m from his killer (replay-battles.js
+//     `settledTime`).
 {
   const duels = [];
   const rec = recording(L => {
@@ -226,8 +228,8 @@ const brief = r => (r ? { weapon: r.f.weapon, t: r2(r.f.t), kind: r.kind, angle:
       fact: fact ? { distance: fact.distance, from: fact.from, fresh: fact.fresh, round: brief(fact.round) } : null,
     };
   }
-  // What the recording's own `whereIs` made of the man just out of his
-  // Kubelwagen: live, and 693 m from his killer.
+  // What `whereIs` makes of the man just out of his Kubelwagen: live, where
+  // the recording next has him, 20 m from his killer, not 693.
   const exit = lineOf(duels.find(d => d.name === 'rejoin'));
   const w = B.whereIs(rec, exit.victim, exit.t - 0.05);
   const kw = B.whereIs(rec, exit.killer, exit.t - 0.05);
@@ -415,8 +417,9 @@ const brief = r => (r ? { weapon: r.f.weapon, t: r2(r.f.t), kind: r.kind, angle:
               favourite: d.summary.favourite?.weapon ?? null },
       top3: d.longest.slice(0, 3).map(r => [r2(r.t), r.victimName, r.weapon, r.distance, r.round?.kind ?? null]),
     };
-    // RuppoPeaGame, shot 0.07 s after he got out of his Kubelwagen: the
-    // recording has him live 459 m off, where he got in.
+    // RuppoPeaGame, shot 0.07 s after he got out of his Kubelwagen: placed
+    // where the recording next has him, 6 m from the Sg44, not 459 m off
+    // where he got in.
     const exit = kills.find(k => k.victim === 5 && Math.abs(k.t - 52.191) < 0.01);
     if (name === 'replay_20260928-133433' && exit) {
       const w = B.whereIs(rec, exit.victim, exit.t - 0.05);

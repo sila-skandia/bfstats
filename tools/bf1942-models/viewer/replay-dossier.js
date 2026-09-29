@@ -50,6 +50,14 @@ const DIRECT_AGE = 3;
 const ANY_AGE = 2;
 const AGE_COST = 2;
 const MAX_ANGLE = 12;
+/** ... or, at close range, passing no further than this from his middle,
+ *  metres: a man is placed by his samples, 0.1 s apart and after a vehicle
+ *  the first that is his (replay-battles.js `settledTime`), and from 6 m a
+ *  metre and a half of his running is 14 degrees. RuppoPeaGame, killed from
+ *  6 m 0.07 s out of his Kubelwagen (replay_20260928-133433, 52.2 s), is
+ *  first placed 0.25 s after it, and the Sg44 rounds that killed him pass
+ *  1.7 m from there, 16 degrees off. */
+const MAX_MISS = 2;
 /** With the victim nowhere the recording saw, the latest round of the
  *  killing weapon at most this old, seconds: no angle to check it by. */
 const BLIND_AGE = 1;
@@ -76,14 +84,6 @@ const AIM_LIFT = 0.3;
 /** The men are placed this long before the kill line: at the line the
  *  victim is dead, and nowhere. */
 const BEFORE = 0.05;
-/** How long after the recording takes a soldier back into range his place
- *  is not yet his, seconds. A man getting out of a vehicle comes back with
- *  the transform his soldier had when he got in, and only the next sample,
- *  0.10 to 0.22 s on, has him at the door: 42 of the 105 times a soldier came
- *  back into replay_20260928-133433 began 26 to 740 m from the next sample.
- *  RuppoPeaGame, shot 0.07 s after leaving his Kubelwagen at 52.1 s, stood
- *  459 m from the Sg44 that killed him. */
-const REJOIN = 0.25;
 
 /** What kind of round a weapon's name says it fires: laid (left to go off
  *  later), thrown, bomb, or direct for anything else. */
@@ -143,20 +143,12 @@ function firstFrom(list, t) {
   return lo;
 }
 
-/** Where `pid` was at `t` (replay-battles.js `whereIs`), except that a
- *  soldier the recording has only just taken back into range is not placed
- *  yet (REJOIN). */
-function placedAt(rec, pid, t, kills) {
-  const w = whereIs(rec, pid, t, kills);
-  if (!w.fresh || w.state !== 'foot' || !w.life) return w;
-  for (const [from, to] of w.life.replicated) {
-    if (t >= from && t < to && t - from < REJOIN) return { ...w, pos: null, fresh: false, seen: null };
-  }
-  return w;
-}
-
 /** The point a man's killer aimed at, in the viewer's frame, from where the
- *  recording had him (`placedAt`); null unless it had him live. */
+ *  recording had him (replay-battles.js `whereIs`, which places a man just
+ *  out of a vehicle where the recording next has him, not where he got in:
+ *  RuppoPeaGame, shot 0.07 s out of his Kubelwagen at 52.2 s of
+ *  replay_20260928-133433, was otherwise 459 m from the Sg44 that killed him
+ *  from 6 m); null unless it had him live. */
 function aimPointOf(w) {
   if (!w?.fresh || !w.pos) return null;
   const origin = w.state === 'foot' ? CHARACTER_HEIGHT : 0;
@@ -184,6 +176,9 @@ function sight(f, aim) {
   const cos = (dx * vx + dy * vy + dz * vz) / (dl * vl);
   return { angle: (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI, distance: vl };
 }
+
+/** How far a round passes from the point it was sighted against, metres. */
+const missOf = s => (s.angle >= 90 ? s.distance : s.distance * Math.sin((s.angle * Math.PI) / 180));
 
 /** The round `kill` was made with, given where its victim was aimed at
  *  (`aim`, null when the recording did not have him): `killingRound`'s. */
@@ -244,7 +239,7 @@ function roundFor(rec, kill, aim) {
   let best = null;
   for (const f of pool) {
     const s = sight(f, aim);
-    if (!s || s.angle > MAX_ANGLE) continue;
+    if (!s || (s.angle > MAX_ANGLE && missOf(s) > MAX_MISS)) continue;
     // A round stamped just after the line is the same moment's: no credit
     // for being late.
     const score = s.angle + AGE_COST * Math.max(0, kill.t - f.t);
@@ -266,7 +261,7 @@ function roundFor(rec, kill, aim) {
 export function killingRound(rec, kill, { kills = rec.kills } = {}) {
   if (!kill || !credited(kill)) return null;
   const victim = kill.victim === null || kill.victim === undefined
-    ? null : placedAt(rec, kill.victim, kill.t - BEFORE, kills);
+    ? null : whereIs(rec, kill.victim, kill.t - BEFORE, kills);
   return roundFor(rec, kill, aimPointOf(victim));
 }
 
@@ -283,8 +278,8 @@ export function killFactsOf(rec, kills = rec.kills) {
   for (const k of kills) {
     if (!credited(k)) continue;
     const at = k.t - BEFORE;
-    const killer = placedAt(rec, k.killer, at, kills);
-    const victim = k.victim === null || k.victim === undefined ? null : placedAt(rec, k.victim, at, kills);
+    const killer = whereIs(rec, k.killer, at, kills);
+    const victim = k.victim === null || k.victim === undefined ? null : whereIs(rec, k.victim, at, kills);
     const round = roundFor(rec, k, aimPointOf(victim));
     const fresh = Boolean(killer.fresh && victim?.fresh);
     let distance = round?.distance ?? null;
