@@ -76,27 +76,29 @@ def process(glb: str, mesh_root: str) -> dict:
             "written": result.written}
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("paths", nargs="+", type=Path)
-    parser.add_argument("--mesh-root", type=Path, default=VIEWER,
-                        help="the directory holding models/ and maps/ (default: the viewer)")
-    parser.add_argument("--skip-mods", action="store_true")
-    parser.add_argument("-j", "--jobs", type=int, default=8)
-    parser.add_argument("--log", type=Path, help="write one JSON line per glb here")
-    args = parser.parse_args()
+def mesh_root_of(out: Path) -> Path | None:
+    """The directory above the `maps/` or `models/` a tree lives in, or None."""
+    for parent in [out.resolve(), *out.resolve().parents]:
+        if parent.name in ("maps", "models"):
+            return parent.parent
+    return None
 
-    mesh_root = args.mesh_root.resolve()
-    glbs = collect([p.resolve() for p in args.paths], args.skip_mods)
+
+def run(paths: list[Path], mesh_root: Path, skip_mods: bool = False, jobs: int = 8,
+        log_path: Path | None = None) -> int:
+    """Optimise every glb under `paths`. Returns the number that failed (each
+    one is left as it was)."""
+    mesh_root = mesh_root.resolve()
+    glbs = collect([p.resolve() for p in paths], skip_mods)
     for glb in glbs:
         if mesh_root not in glb.parents:
-            parser.error(f"{glb} is not under the mesh root {mesh_root}")
+            raise ValueError(f"{glb} is not under the mesh root {mesh_root}")
 
     started = time.time()
     before = after = changed = images = written = 0
     failures = 0
-    log = open(args.log, "a") if args.log else None
-    with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+    log = open(log_path, "a") if log_path else None
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(process, str(g), str(mesh_root)): g for g in glbs}
         for done, future in enumerate(as_completed(futures), 1):
             try:
@@ -114,11 +116,59 @@ def main() -> int:
                 log.write(json.dumps(row) + "\n")
             if done % 50 == 0 or done == len(glbs):
                 print(f"{done}/{len(glbs)}  {before / 1e6:,.0f} MB -> {after / 1e6:,.0f} MB"
-                      f"  new textures {written}  {time.time() - started:.0f} s", flush=True)
+                      f"  new textures {written}  {time.time() - started:.0f} s",
+                      file=sys.stderr, flush=True)
     if log:
         log.close()
-    print(f"{changed} of {len(glbs)} glbs rewritten, {images} images, {written} new in the store;"
-          f" glbs {before / 1e6:,.1f} MB -> {after / 1e6:,.1f} MB; {failures} failed")
+    print(f"{changed} of {len(glbs)} glbs rewritten, {images} images, {written} new in"
+          f" {mesh_root / 'textures'}; glbs {before / 1e6:,.1f} MB -> {after / 1e6:,.1f} MB;"
+          f" {failures} failed", file=sys.stderr)
+    return failures
+
+
+def optimise_bake(out: Path, jobs: int = 8) -> int:
+    """The last step of a batch extract: optimise the tree it just wrote. A
+    vanilla tree's `mods/` holds other bakes and is left alone. Returns the
+    number of failures; an `out` outside any mesh root is skipped with a note."""
+    root = mesh_root_of(out)
+    if root is None:
+        print(f"not optimising {out}: no maps/ or models/ above it to hang textures/ off",
+              file=sys.stderr)
+        return 0
+    print(f"\nmoving textures into {root / 'textures'} (optimise_mesh.py)...", file=sys.stderr)
+    return run([out], root, skip_mods=True, jobs=jobs)
+
+
+def run_then_optimise(main, default_out: Path) -> int:
+    """An extractor's entry point: run its `main()`, then optimise its `--out`.
+
+    For the extractors whose many modes return from many places (`extract_pose`,
+    `extract_viewmodel`, `extract_kits`, `extract_effects`). `--no-optimise`
+    is taken off the command line before `main()` sees it."""
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--out", type=Path, default=default_out)
+    pre.add_argument("--no-optimise", action="store_true")
+    known, rest = pre.parse_known_args(sys.argv[1:])
+    sys.argv = [sys.argv[0], *(a for a in sys.argv[1:] if a != "--no-optimise")]
+    code = main()
+    if known.no_optimise or {"-h", "--help", "--list", "--dry-run"} & set(rest):
+        return code
+    return code or (1 if optimise_bake(known.out) else 0)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("paths", nargs="+", type=Path)
+    parser.add_argument("--mesh-root", type=Path, default=VIEWER,
+                        help="the directory holding models/ and maps/ (default: the viewer)")
+    parser.add_argument("--skip-mods", action="store_true")
+    parser.add_argument("-j", "--jobs", type=int, default=8)
+    parser.add_argument("--log", type=Path, help="write one JSON line per glb here")
+    args = parser.parse_args()
+    try:
+        failures = run(args.paths, args.mesh_root, args.skip_mods, args.jobs, args.log)
+    except ValueError as exc:
+        parser.error(str(exc))
     return 1 if failures else 0
 
 

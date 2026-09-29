@@ -943,5 +943,7 @@ def own_weapons(library: con_mod.ObjectLibrary, root: str,
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-
+    # Every glb this wrote moves its textures into the shared store
+    # (optimise_mesh.py, features/mesh-asset-size); `--no-optimise` opts out.
+    from optimise_mesh import run_then_optimise
+    raise SystemExit(run_then_optimise(main, Path(__file__).resolve().parent / "out"))

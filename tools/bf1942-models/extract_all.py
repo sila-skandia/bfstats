@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, build_library, build_pools, catalogue, discover_levels,
     mod_chain, own_templates, spawned_templates,
@@ -100,6 +101,9 @@ def main() -> int:
                     help="render model thumbnails via shoot.mjs and stamp models.json")
     ap.add_argument("--thumbs-url", default="http://localhost:5273",
                     help="viewer URL to shoot thumbnails against (default: http://localhost:5273)")
+    ap.add_argument("--no-optimise", action="store_true",
+                    help="leave textures embedded in each glb instead of moving "
+                         "them into the shared texture store (optimise_mesh.py)")
     ap.add_argument("--verify", action="store_true",
                     help="run verify_models.py over the output afterwards")
     args = ap.parse_args()
@@ -207,6 +211,9 @@ def main() -> int:
         for name in failed:
             print(f"  {name}", file=sys.stderr)
 
+    # Before the thumbnails: shoot.mjs renders what the viewer will load.
+    optimise_failed = 0 if args.no_optimise else optimise_bake(args.out, args.jobs)
+
     if args.thumbs and manifest_path.is_file():
         thumbs_dir = args.out / "thumbs"
         shoot_cmd = [
@@ -229,9 +236,9 @@ def main() -> int:
             "--mod", args.mod,
         ]
         verified = subprocess.run(verify_command)
-        return verified.returncode or (1 if failed and completed.returncode else 0)
+        return verified.returncode or (1 if failed and completed.returncode else 0) or (1 if optimise_failed else 0)
 
-    return completed.returncode
+    return completed.returncode or (1 if optimise_failed else 0)
 
 
 if __name__ == "__main__":

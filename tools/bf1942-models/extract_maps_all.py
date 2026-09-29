@@ -50,6 +50,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import extract_map  # noqa: E402
+from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR, discover_levels, mod_chain,
 )
@@ -200,6 +201,9 @@ def main() -> int:
                     help="concurrent level extracts (default: 8; each is a "
                          "process holding a decoded level, so this is memory "
                          "bound rather than core bound)")
+    ap.add_argument("--no-optimise", action="store_true",
+                    help="leave textures embedded in each glb instead of moving "
+                         "them into the shared texture store (optimise_mesh.py)")
     ap.add_argument("--staging", type=Path, default=None,
                     help="where workers write before the move (default: "
                          "<out>/.staging)")
@@ -306,13 +310,15 @@ def main() -> int:
         write_vehicle_sounds(game_dir, args.mod, args.out, shared_sounds,
                              args.audio_format)
 
+    optimise_failed = 0 if args.no_optimise else optimise_bake(args.out, args.jobs)
+
     print(f"\nextracted {len(tasks) - len(failures)} of {len(tasks)} levels; "
           f"{len(listing)} in {index_path}", file=sys.stderr)
     if failures:
         print(f"{len(failures)} level(s) produced nothing:", file=sys.stderr)
         for level, error in sorted(failures):
             print(f"  {level}: {error}", file=sys.stderr)
-    return 1 if failures and len(failures) == len(tasks) else 0
+    return 1 if (failures and len(failures) == len(tasks)) or optimise_failed else 0
 
 
 if __name__ == "__main__":
