@@ -42,6 +42,93 @@ level bakes.
 byte-exact parity. "Feels the same" is the bar, and the parity docs say where
 the feel comes from.
 
+### Owner decisions (2026-09-29)
+
+- **Faithful, quirks included.** The quirks are what people still love, and a
+  faithful version gives us something to compare against. No gameplay
+  redesign: no bigger maps, no modern movement.
+- **This PC is the development machine.** Its setup is in section 0.
+- **Everything runs locally for now**, dedicated server included. Hetzner
+  later, when there is somewhere to put it.
+- **The browser engine and the Unreal version stay in step**, so a round can
+  be replayed in the browser and in Unreal and the two compared (D12, M1).
+
+---
+
+## 0. What Unreal is, and getting this PC ready
+
+### 0.1 What you work in
+
+Unreal Engine comes in two parts:
+
+- **The Unreal Editor.** A desktop application you install, a bit like Blender
+  and an IDE combined, but for games. You open the project in it and see the
+  3D world. You place things in levels, edit materials, set up animation, lay
+  out UI, and press **Play** to try the game inside the editor window. Most
+  non-code work happens here. It runs on Linux, Windows and macOS.
+- **The engine runtime**, compiled into the game. Gameplay code is **C++**,
+  written in a normal code editor (JetBrains Rider or VS Code; Unreal
+  generates project files for either). Unreal's build tool compiles it, and
+  the editor reloads it. Blueprints are Unreal's visual scripting, edited in
+  the editor. This plan uses them only for wiring content, not for logic
+  (D1).
+
+A project is a folder: a `.uproject` file, `Source/` (C++), `Config/`
+(settings) and `Content/` (`.uasset` and `.umap` files: imported meshes,
+materials, levels, all binary).
+
+Out of it you **package** two things:
+- **the game**: a Linux or Windows executable plus its data files
+- **a dedicated server**: a headless executable with no rendering. This is
+  what will later run on Hetzner, as a Linux binary in a container.
+
+For local testing, the editor's Play button can also start a dedicated server
+in the background and connect one or more client windows to it. That is how
+M6 (multiplayer) gets tested on this PC before there is a server anywhere.
+
+### 0.2 This PC against Unreal's requirements
+
+Unreal's recommended hardware is a quad-core CPU, 32 GB of RAM and 8 GB of
+video memory (Epic's install docs).
+
+| | This PC | Verdict |
+|---|---|---|
+| CPU | Intel i9-12900HK, 20 threads | Fine. Compiling C++ and shaders is where it counts. |
+| RAM | 62 GiB | Fine |
+| GPU | NVIDIA RTX 3050 Ti Laptop, **4 GB**, plus Intel Iris Xe | Workable, below the recommended 8 GB. BF1942's assets are small, so most video memory goes to the engine itself. Run the editor at reduced scalability, with Lumen in software mode and hardware ray tracing off. |
+| **GPU driver** | **The NVIDIA card is on `nouveau`, with no Vulkan driver for it.** Only the Intel GPU has Vulkan (`vulkan-intel`). | **Blocker.** Unreal on Linux renders through Vulkan, and on the Intel GPU it would crawl. |
+| **Disk** | **57 GB free** of 523 GB (89% used) | **Blocker.** The precompiled editor takes tens of GB, a source build well over 100 GB, plus the project and Unreal's cache of compiled shaders and assets. The biggest folders in home are `~/.cache` 67 GB, `~/projects` 58 GB, `~/.local` 46 GB, `~/.wine` 44 GB and `~/.config` 37 GB. |
+| Power | Laptop | Plug in and use the performance power profile while working in Unreal. Power saving has already caused a false 2.5x "regression" once (`project_viewer_perf_power_profile`). |
+
+### 0.3 Setup steps (the owner does these: they change the system)
+
+1. **NVIDIA driver.** Install the proprietary driver with Vulkan support.
+   Check the Arch wiki's NVIDIA page for the right package for an Ampere card
+   on the `linux-lts` kernel (the open kernel modules, `nvidia-open-lts` or
+   the `-dkms` variant, plus `nvidia-utils` for Vulkan and `nvidia-prime` for
+   `prime-run`). Reboot, then `vulkaninfo --summary` (from `vulkan-tools`)
+   should list the RTX 3050 Ti. This also gives the viewer's headless tests a
+   real GPU.
+2. **Disk space.** Free at least 150 GB, or add a drive for Unreal. That
+   covers a source build (step 3) plus the project.
+3. **Unreal Editor.** Two ways to get it on Linux:
+   - **Precompiled:** Epic publishes Linux editor builds for download from
+     its Linux page (it needs an Epic account). Quickest.
+   - **Source build:** link your Epic account to GitHub to get access to the
+     `EpicGames/UnrealEngine` repository, clone it, then run `Setup.sh`,
+     `GenerateProjectFiles.sh` and `make`. Slow (hours on this CPU) and
+     large.
+
+   As far as I know, **packaging a dedicated server needs a source build**:
+   the precompiled editor doesn't ship the server target. Epic's docs retrieved
+   for this plan confirm that only for consoles, so M0 checks it for Linux
+   servers before committing to a download. The plan is to start on the
+   precompiled editor for M0-M2 and switch to a source build before M6.
+4. **Code editor.** JetBrains Rider (free for non-commercial use) or VS Code
+   with the C/C++ extension.
+5. **Launch on the NVIDIA GPU** with `prime-run` (or the equivalent
+   environment variables) if the desktop session defaults to the Intel GPU.
+
 ---
 
 ## 1. What we are starting from
@@ -157,10 +244,17 @@ A **separate repository** (`bf1942-unreal` or similar) with Git LFS for
 in this repo.
 
 The **converter and import tooling stay in this repo** under
-`tools/bf1942-unreal/`, next to the exporter they read from. Imported
-`.uasset`s are build output of that tooling, so the Unreal repo can choose not
-to commit them and regenerate them from the published asset tree instead
-(see D4 and open question Q2).
+`tools/bf1942-unreal/`, next to the exporter they read from.
+
+**Imported assets are not committed; they are regenerated.** Everything the
+importer makes (meshes, material instances, vehicle Blueprints, levels) is
+build output of the published asset tree (D4), like `viewer/models` is build
+output of the game archives today. The Unreal repo commits only what a person
+made: C++, the master material, the Niagara archetypes, UI widgets, Blueprint
+parent classes and config. That keeps the repo small, avoids Git LFS quotas
+for gigabytes of generated content, and means an exporter fix reaches Unreal
+by rerunning the importer, not by committing binaries. Generated content goes
+under `/Game/BF42/Generated/`, and that folder is in `.gitignore`.
 
 ### D3. Coordinates and units
 
@@ -209,8 +303,16 @@ This is the decision that most shapes the project.
   `heightfield.js`) with Chaos scene queries (line traces, sweeps, overlaps)
   against Unreal collision built from our collision meshes. Rigid-body
   contacts (`hull-bodies.js`, `body-contact.js`, `contact-response.js`) are
-  the open part of this decision: spike S4 drives a ported tank against Chaos
-  contacts and against our ported contact solver, and picks one.
+  the open part of this decision.
+
+**Contacts default to our ported solver** (updated 2026-09-29 after the owner
+chose faithful, quirks included). Many of the quirks people remember come from
+how Refractor resolves contacts: jeeps flipping off rocks, tanks climbing what
+they shouldn't, the way a hull bounces off a wall. Our solver already
+reproduces them, while Chaos would need tuning to imitate them and may never
+match. Spike S4 still drives the Sherman both ways, but Chaos has to *match*
+the JS runner to win, not merely be acceptable. Chaos stays in charge of
+collision queries either way.
 
 All ported movement code runs on a **fixed 30 Hz step** driven from Unreal's
 variable tick with an accumulator, with rendered transforms interpolated
@@ -235,6 +337,11 @@ Node room server design is not ported; Unreal already does what it does.
   itself was forgiving here.
 - Target: 64 players, as the original. Budget bandwidth with the 30 Hz
   snapshot rate.
+- **Hosting.** Local first: the editor's Play button with a dedicated server,
+  then the packaged Linux server binary run on this PC with clients joining
+  `127.0.0.1`. Hetzner later, in a container. The production node is already
+  near its memory budget (`CLAUDE.md`, "Deployment constraints"), so measure
+  the server's memory with 64 players in M6 before planning where it goes.
 
 ### D7. Look: faithful or modern
 
@@ -243,7 +350,7 @@ Virtual Shadow Maps, and a sky driven by `scene.json` sun, fog and ambient
 values. The original lightmaps are dropped by default but kept importable (the
 statics carry `TEXCOORD_1`) for a possible "classic" look. BF1942's textures
 are low resolution and have lighting painted in, so this needs a tuning pass
-(see M3): expect to lower Lumen's intensity and add a colour grade so
+(see M4): expect to lower Lumen's intensity and add a colour grade so
 low-resolution albedo doesn't look washed out.
 
 Nanite is not a goal: the meshes are low-poly. Draw calls from thousands of
@@ -300,12 +407,62 @@ velocity and texture from the extras. Generating arbitrary Niagara graphs from
 data is not worth it. BF1942's effects are simple and parameter-driven, and
 `effects-core.js` shows the whole parameter set.
 
+### D12. Staying in step with the browser engine
+
+The owner wants both to stay in sync so they can be tested against each other.
+There are two sides to that: comparing them, and noticing when one has moved
+and the other hasn't.
+
+**Comparing: replays first.** A bf42plus recording (`replay_<stamp>.ndjson`,
+formats 1-4, 10 Hz samples of every object plus the event stream; see
+`features/round-replay-capture/README.md`) is the one input both can play
+without any simulation. So Unreal gets a **replay player early (M1)**, ported
+from the browser's.
+
+- `replay-recording.js` (2,114 lines) is documented as a pure function of the
+  recording's text: object lives, seats, hit points, poses and gaits at any
+  time. It ports to C++ as-is.
+- **Data comparison.** `tools/bf1942-models/tests/perf/replaydump.mjs`
+  already writes everything the replay works out of a recording as one JSON
+  file: lives, feed, every player's place and state every 7.3 s, seats,
+  crews, hit points, poses, gaits and moving-part rotations. The Unreal port
+  gets a command that writes **the same JSON**, and the two are diffed. Floats
+  are compared within a tolerance, not with `cmp`, because JS doubles and C++
+  floats differ. A difference is a porting bug, or a fix that landed on one
+  side only.
+- **Visual comparison.** A harness takes a recording plus a list of shots
+  (time, camera position, yaw, pitch) and captures each shot in both engines.
+  Browser: the existing hooks (`window.replay` seek, `__look.yaw/pitch`,
+  `__camera.position`). Unreal: console commands `bf42.Replay.Open`,
+  `bf42.Replay.Seek`, `bf42.Camera.Set` and a screenshot, run from the command
+  line (`-ExecCmds`). Output is a side-by-side page per shot. It shows
+  animation, turret angles, effects, the HUD and placement differences at a
+  glance, and it's the answer to "replay a round in the browser, then compare
+  it with Unreal."
+- **Gameplay comparison.** Replays carry recorded results, not inputs, so they
+  can't test the simulation. Gameplay is compared per subsystem against the JS
+  runner (5.2).
+
+**Noticing drift.** Every ported C++ file starts with the JS file and commit it
+was ported from:
+
+```cpp
+// Ported from tools/bf1942-models/viewer/tracked-vehicle.js @ 1a2b3c4d
+```
+
+`tools/bf1942-unreal/drift.py` reads those headers and lists every JS module
+whose git history has moved past its recorded commit, with the commits in
+between. A JS parity fix is not finished until it is either ported or listed
+in `features/unreal-reimagining/SYNC.md` as owed. Fixes found on the Unreal
+side go back to the JS the same way, so neither engine becomes the one that's
+wrong.
+
 ---
 
 ## 3. Spikes (risk first, before any milestone)
 
 Each spike is small, answers one question and produces a note in this folder.
-Nothing after M1 is planned in detail until S1-S4 have reported.
+Nothing after M0 is planned in detail until S1-S4 have reported.
 
 | # | Question | Method | Done when |
 |---|---|---|---|
@@ -378,7 +535,7 @@ It runs inside the editor and reads the bundle.
    it, with parameters read from the glTF material and its extras
    (`additive`, `alphaTest`, `textureFade`, `envmap`). Material counts in the
    current tree: 4,977 opaque, 2,905 blend, 35 mask. Many BLEND materials are
-   probably alpha-tested in practice, and M3 should check whether masked
+   probably alpha-tested in practice, and M4 should check whether masked
    rendering suits them better, since sorting thousands of translucent
    objects is expensive.
 3. **Collision.** Collision nodes become the matching Static Mesh's collision:
@@ -431,7 +588,7 @@ It runs inside the editor and reads the bundle.
    - Ambient sound areas from `scene.json.sounds.areas`.
 8. **Effects.** Per D11, Niagara archetypes plus generated parameter assets.
 9. **UI assets.** HUD sprites and bitmap fonts imported as textures and
-   Unreal fonts, and layouts from `hud/*.json` into UMG widget data (see M6).
+   Unreal fonts, and layouts from `hud/*.json` into UMG widget data (see M7).
 
 The importer is **idempotent and rerunnable**: it overwrites generated assets
 in place and never touches hand-made content (the master material, Niagara
@@ -504,7 +661,7 @@ never whole matches. The final check on feel is playing it, with the parity lab
 | Effects | Niagara | Per D11, with `effects-core.js`'s random-variable sampling moved into Niagara parameters. |
 | Animation | `UBf42SoldierAnimInstance` | Per D8. `seat-ik.js` and `arms-rig.js` become Control Rig or two-bone IK nodes. |
 | Cameras | `ABf42PlayerCameraManager` | 1P and 3P cameras from each Camera node's `cameraView`. Vehicle cameras from seat data. |
-| HUD and UI | UMG | Per M6. |
+| HUD and UI | UMG | Per M7. |
 | Netcode | Unreal replication | Per D6. `netcode.js`'s input struct is kept as the RPC payload. |
 
 ---
@@ -526,7 +683,32 @@ Unreal, working with AI assistance. Revise them after the spikes.
 `BP_Sherman` with a correct component tree and Data Asset sits on it.
 *Rough size: 3-5 weeks.*
 
-### M1. One tank on one map
+### M1. Replay player and the comparison harness
+
+Before any physics, Unreal learns to **play a recorded round**. It exercises
+nearly the whole asset pipeline (levels, vehicles with turrets and seats,
+soldiers with gaits and first-person arms, effects, sounds, HUD pieces) with
+none of the simulation, and it gives D12's comparison tool from the start.
+
+- Port `replay-recording.js` and the replay modules it needs for poses,
+  gaits, seats and moving parts (the 45 `replay*.js` files are mostly UI; the
+  port takes the model, not the page).
+- Draw every life on the imported level: soldiers posed and animated from
+  their recorded states, vehicles with turret and gun angles and crews,
+  projectiles and impacts from the v4 shot records.
+- `bf42.Replay.Dump` writes the same JSON as `tests/perf/replaydump.mjs`.
+  `tools/bf1942-unreal/compare/` diffs the two within a float tolerance, and
+  captures matching shots from both engines into a side-by-side page (D12).
+- A free camera and a follow camera, enough to inspect a round. The browser's
+  creator view, feed and highlights stay in the browser.
+- Soldier skeletons and gaits (S2) land here, earlier than M3 would need them.
+
+**Exit:** `replay_20260928-161948` (the 45-minute Bocage benchmark;
+`project_replay_performance`) plays in Unreal. Its dump matches the browser's
+within tolerance, and a 20-shot side-by-side comparison shows the same
+people in the same places doing the same things. *Rough size: 4-6 weeks.*
+
+### M2. One tank on one map
 
 - `UBf42WorldSubsystem`, fixed step and interpolation.
 - Ground vehicle port (S4's outcome), Sherman engine, gears, tracks.
@@ -537,7 +719,7 @@ Unreal, working with AI assistance. Revise them after the spikes.
 game's Sherman to the owner. The JS comparison tests for the drive pass.
 *Rough size: 4-6 weeks.*
 
-### M2. Soldiers
+### M3. Soldiers
 
 - Skeletal soldiers and gaits (S2), Animation Blueprint (D8).
 - Soldier movement port: walk, run, crouch, prone, jump, swim, ladders,
@@ -549,7 +731,7 @@ game's Sherman to the owner. The JS comparison tests for the drive pass.
 **Exit:** spawn as any vanilla kit, fight on foot, get in the Sherman as driver
 or gunner. *Rough size: 6-8 weeks.*
 
-### M3. Damage and the look
+### M4. Damage and the look
 
 - Armour, damage tables and per-face materials (S5), wrecks, critical damage,
   burning, soldier hit zones (`skeleton-hit.js`).
@@ -560,16 +742,16 @@ or gunner. *Rough size: 6-8 weeks.*
 **Exit:** a tank fight between the Sherman and a Panzer IV ends in a burning
 wreck, and Kasserine looks like Kasserine, better lit. *Rough size: 4-6 weeks.*
 
-### M4. Conquest
+### M5. Conquest
 
 - Game mode, control points, capture, tickets, bleed, spawn selection, vehicle
   spawners with their delays, supply depots, combat area.
-- Deploy screen, scoreboard and the core HUD (M6 starts here).
+- Deploy screen, scoreboard and the core HUD (M7 starts here).
 
 **Exit:** a full conquest round on Kasserine, alone, from start to ticket
 loss. *Rough size: 3-4 weeks.*
 
-### M5. Multiplayer
+### M6. Multiplayer
 
 - Dedicated server build, replication for world, vehicles, soldiers,
   projectiles and game state, the prediction outcome of S6.
@@ -579,16 +761,16 @@ loss. *Rough size: 3-4 weeks.*
 latency, with nothing that visibly snaps. *Rough size: 6-10 weeks, the widest
 range because the prediction work is the least predictable.*
 
-### M6. HUD and front-end
+### M7. HUD and front-end
 
 - UMG screens from the layout JSON: HUD (health, ammo, vehicle, compass,
   minimap from `minimap.png` and its affine transform), deploy screen, kit
   selection, scoreboard, chat, radio menu, console, main menu.
 - The bitmap fonts and sprites as-is, for the original look.
 
-Runs alongside M4-M5.
+Runs alongside M5-M6.
 
-### M7. Bots
+### M8. Bots
 
 - Decision layer port (D9), NavMesh for infantry, baked search maps for
   vehicles, bot gunners and drivers.
@@ -597,7 +779,7 @@ Runs alongside M4-M5.
 recordings, with bots capturing, driving tanks and firing.
 *Rough size: 6-8 weeks.*
 
-### M8. Air and sea
+### M9. Air and sea
 
 - Aircraft (Spitfire, Bf 109, Zero, Corsair, bombers), carriers and
   destroyers, landing craft, submarines, bombs and torpedoes.
@@ -606,7 +788,7 @@ recordings, with bots capturing, driving tanks and firing.
 **Exit:** Midway and Wake play, with carrier take-off, dogfights and a
 torpedo run. *Rough size: 6-8 weeks.*
 
-### M9. All vanilla levels
+### M10. All vanilla levels
 
 - Import all 23 levels, fix each level's problems, performance per level.
 - The Landscape terrain route for levels that people want to edit.
@@ -617,9 +799,8 @@ torpedo run. *Rough size: 6-8 weeks.*
 ### Later
 
 Road to Rome and Secret Weapons (a data pass plus their new vehicle types,
-such as Secret Weapons' jet packs and experimental aircraft), map editing for
-the community with the Unreal editor, and a replay viewer fed from Unreal's
-own replay system.
+such as Secret Weapons' jet packs and experimental aircraft), and map editing for
+the community with the Unreal editor.
 
 ---
 
@@ -630,31 +811,33 @@ own replay system.
 | The feel doesn't match | It's the reason to do this at all. | D5-C keeps our movement models. Per-subsystem JS comparison tests (5.2). Owner playtests at each milestone exit. |
 | glTF import loses what we need | Game data in extras, alpha modes, hierarchy. | S1 first. The sidecar manifests (4.2) make game data independent of the importer. |
 | Soldier skeleton and gait mismatch | 67-node gait rigs against an 80-node pose rig. | S2 first. The viewer already retargets by bone name, so the mapping is known. |
-| Old art under modern lighting looks worse, not better | Low-resolution albedo with lighting painted in. | D7 tuning pass in M3. The original lightmaps remain available as a classic mode. |
-| Prediction with custom movement | Character Movement's prediction doesn't apply to a ported soldier. | S6 before M5. `SNAPBACK.md` already has the design. |
+| Old art under modern lighting looks worse, not better | Low-resolution albedo with lighting painted in. | D7 tuning pass in M4. The original lightmaps remain available as a classic mode. |
+| Prediction with custom movement | Character Movement's prediction doesn't apply to a ported soldier. | S6 before M6. `SNAPBACK.md` already has the design. |
 | Draw calls from thousands of small statics | BF1942 maps are made of many small props. | Mesh dedupe and instancing (4.2, 4.3). Measure in S3. |
 | BLEND materials sorting | 2,905 translucent materials. | Check which are really alpha-tested, and use masked where so (4.3 step 2). |
 | Exporter and Unreal pipeline drift apart | Fixes land in one and not the other. | The converter reads only the published tree (D4). The importer is rerunnable. Re-import is part of the "done" rule for an exporter fix, as it already is for level bakes. |
-| Laptop hardware | The owner develops and tests on a laptop, and Unreal's editor is heavy. | Q4 below. |
+| Laptop hardware | 4 GB of video memory, below Unreal's recommended 8 GB. The owner also tests the browser viewer on the same laptop. | Section 0: driver and disk first, reduced editor scalability, software Lumen. Run one heavy thing at a time: Unreal or the browser comparisons, not both at full tilt (`feedback_limit_headless_browsers`). |
+| The two engines drift | Fixes land in the JS and not the C++, or the other way. | D12: port provenance headers, `drift.py`, `SYNC.md`, and the replay dump diff in M1. |
 
 ---
 
-## 8. Open questions for the owner
+## 8. Questions and answers
 
-- **Q1.** Is the reimagining *faithful with better rendering*, or is changing
-  gameplay on the table (bigger maps, new modes, modern movement)? The plan
-  assumes faithful, and the answer changes D5.
-- **Q2.** Should the Unreal repo commit imported `.uasset`s (easy to clone, big
-  repo) or regenerate them with the importer (small repo, every contributor
-  runs the pipeline)?
-- **Q3.** Where will dedicated servers run: the existing Hetzner node (7.7 GiB,
-  already full with the stats stack; see `CLAUDE.md` deployment constraints),
-  a separate box, or community-hosted?
-- **Q4.** What machine runs the Unreal editor? Unreal 5 with Lumen needs a
-  recent discrete GPU.
-- **Q5.** Should the browser engine and the Unreal version stay in step, so a
-  parity fix in one gets ported to the other, or does the browser version
-  freeze where it is?
+Answered by the owner 2026-09-29. The answers are recorded under "Owner
+decisions" at the top, and in D2, D5, D6 and D12.
+
+| Question | Answer |
+|---|---|
+| Faithful, or can gameplay change? | Faithful, quirks included. D5 now defaults contacts to our own solver. |
+| Commit imported assets or regenerate them? | Asked before explaining what Unreal is (now section 0). Decided as a default: regenerate (D2). Revisit if cloning and re-importing turns out to be slow. |
+| Where do dedicated servers run? | Locally for now, Hetzner later (D6). |
+| What machine runs the editor? | This PC. It needs the NVIDIA driver and disk space first (section 0). |
+| Keep the browser engine in step? | Yes, to test one against the other (D12, M1). |
+
+Still open:
+- Whether a dedicated server needs a source build of the engine on Linux (M0
+  checks, section 0.3).
+- Where the Unreal repo is hosted (GitHub, like this one, is the default).
 
 ---
 
@@ -662,6 +845,7 @@ own replay system.
 
 | Item | Status |
 |---|---|
-| Plan | written 2026-09-29 |
+| Plan | written 2026-09-29; owner's answers folded in the same day |
+| This PC: NVIDIA driver, disk space | not started (owner) |
 | S1-S6 | not started |
-| M0-M9 | not started |
+| M0-M10 | not started |
