@@ -7,7 +7,9 @@ namespace api.Recordings.Models;
 /// is the uploader as bfstats.io has a player page for them, or null when it has none.
 /// <see cref="Round"/> is every recording of its round in the feed, itself among them, in the
 /// order they began in the round, or null while it is the only one; <see cref="CanEditRound"/>
-/// says the viewer (an admin) may put it in another's round or take it out of its own.</summary>
+/// says the viewer (an admin) may put it in another's round or take it out of its own, and
+/// <see cref="RoundWeak"/> that the round holds together only through an admin's link its
+/// recordings do not bear out.</summary>
 public record RecordingDetailDto(
     string Slug,
     string Title,
@@ -32,4 +34,5 @@ public record RecordingDetailDto(
     bool CanManage,
     string? UploaderPlayer,
     IReadOnlyList<RecordingRoundMemberDto>? Round = null,
-    bool CanEditRound = false);
+    bool CanEditRound = false,
+    bool RoundWeak = false);

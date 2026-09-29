@@ -18,6 +18,11 @@
 // `commentTarget`). Each recording counts a view; the cover and the way back to
 // the feed are the first recording's.
 //
+// A recording of such a round, merged or alone, has a switch on the bar:
+// Merged, or each recording alone, going there at the moment on screen
+// (recordings-api.js `roundMoment`). One opened alone offers Watch merged; a
+// set the merge refused (two rounds, replay-merge-guard.js) says why there.
+//
 // The replay's own chrome (replay-ui.js) is not changed: this adds a button
 // to its bar, a panel and marks to its root and timeline, and an item to its
 // menu, and gives its F the cover (`useFrameKey`), through the page's
@@ -25,8 +30,8 @@
 // button.
 
 import {
-  ago, apiMode, clock, commentRuns, commentTarget, count, createRecordingsApi, readableQuery, resolveApi, roundRuns,
-  sharedRecordingOf, sourceClock,
+  ago, apiMode, clock, commentRuns, commentTarget, count, createRecordingsApi, readableQuery, resolveApi, roundMoment,
+  roundRuns, sharedRecordingOf, sourceClock, watchHref, watchRoundHref,
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
 import { recorderName } from './replay-chapters.js';
@@ -45,6 +50,8 @@ const ICON = {
   share: '<circle cx="12" cy="3.6" r="1.9" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="4" cy="8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12.4" r="1.9" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.7 7.1 10.3 4.5M5.7 8.9l4.6 2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>',
   close: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   frame: '<rect x="2" y="3.5" width="12" height="9" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  deck: '<rect x="1.8" y="5.2" width="9" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.6 3.2h8.4a1 1 0 0 1 1 1v6.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.2 7.3v2.9l2.6-1.45z" fill="currentColor"/>',
+  play: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
 };
 const svg = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name] ?? ''}</svg>`;
 
@@ -102,6 +109,26 @@ const STYLE = `
 .rs-dialog .rs-compose { border-top: 0; padding: 12px; gap: 10px; }
 .rs-dialog label > span { display: block; margin-bottom: 4px; color: var(--rp-muted); font: 700 10px/1 var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
 .rs-cover { width: 100%; aspect-ratio: 16 / 9; border-radius: 5px; border: 1px solid var(--rp-edge); background: #000 center / cover no-repeat; }
+/* The round's switch: merged, or each recording alone. Its menu is the bar's
+   own (.rp-more-menu), opening upward. */
+.rs-view { position: relative; }
+.rs-view-menu { position: absolute; z-index: 5; right: -4px; bottom: calc(100% + 8px); display: none; flex-direction: column; gap: 1px;
+  width: max-content; min-width: 250px; max-width: min(340px, calc(100vw - 24px)); padding: 4px; background: var(--rp-plate-menu);
+  border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+.rs-view.open .rs-view-menu { display: flex; }
+.rs-view-head { padding: 3px 8px 6px; margin-bottom: 3px; border-bottom: 1px solid var(--rp-edge); color: var(--rp-muted);
+  font: 700 9px/1.4 var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
+.rp-mi.rs-view-mi { height: auto; min-height: 38px; padding: 5px 8px; text-decoration: none; white-space: normal; }
+.rs-view-mi > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rs-view-mi i { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-view-mi .rs-name { text-transform: none; letter-spacing: .02em; font-size: 12px; }
+.rs-view-mi small { color: var(--rp-muted); font: 400 11px/1.35 var(--rp-font); letter-spacing: 0; text-transform: none; }
+.rp-mi.rs-view-mi.off { cursor: default; }
+.rp-mi.rs-view-mi.off:hover { background: none; }
+.rs-view-mi.off > svg, .rs-view-mi.off i { opacity: .55; }
+.rs-view-mi.off small { color: #f2c25a; }
+.rs-view-btn .rs-warn { display: inline-block; width: 6px; height: 6px; margin-left: -1px; border-radius: 50%; background: #f2c25a;
+  box-shadow: 0 0 6px #f2c25a; }
 @media (max-width: 720px) {
   .rs-panel { top: auto; height: 46%; }
   .rs-bubbles { bottom: calc(var(--rp-bar-h) + 70px); }
@@ -274,6 +301,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     nodes.bubbles = el('div', 'rs-bubbles');
     ui.root.append(nodes.bubbles);
     if (detail?.canManage) addCoverItem();
+    buildSwitch();
     // One panel on the right at a time: the replay log opening shuts this.
     new MutationObserver(() => {
       if (ui.root.classList.contains('log-open') && ui.root.classList.contains('rs-open')) toggle(false);
@@ -282,6 +310,109 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     renderComments();
     renderMarks();
     syncCount();
+  }
+
+  // --- the round's switch: merged, or each recording alone -----------------------
+
+  /** The round the page's recordings are of, as the first's page lists it
+   *  (every recording of it in the feed), or null for a recording alone. */
+  function roundList() {
+    const round = members[0]?.detail?.round;
+    return Array.isArray(round) && round.length > 1 ? round : null;
+  }
+
+  /** The page's recordings, by slug, in its order. */
+  const pageSlugs = () => replayUrls.map(u => sharedRecordingOf(u)?.slug ?? null);
+
+  /** The page's own address for watching `to` (a slug, or 'merged' led by
+   *  what plays first) from the moment on screen. */
+  function switchHref(round, to) {
+    const slugs = pageSlugs();
+    const at = player ? roundMoment(round, { slugs, sources: mergedSources() }, to, player.time) : null;
+    const place = { mod: detail.mod, level: detail.level };
+    const fileUrl = path => api.fileUrl(path);
+    if (to === 'merged') {
+      const lead = round.find(m => m.slug === slugs[0]) ?? round[0];
+      return watchRoundHref({ ...lead, ...place }, round, { root: './', fileUrl, at });
+    }
+    return watchHref({ ...round.find(m => m.slug === to), ...place }, { root: './', fileUrl, at });
+  }
+
+  /** The switch on the bar, for a recording of a round of several: what plays
+   *  (Merged, or Alone) and how many recordings the round has; its menu goes to
+   *  Merged or to each recording alone. A merge that was asked for and refused
+   *  (`player.notMerged`) marks it, and its Merged says why. */
+  function buildSwitch() {
+    const round = roundList();
+    if (!round || !ui || !nodes.button || nodes.view) return;
+    const merged = Boolean(mergedSources());
+    const refused = !merged && replayUrls.length > 1 ? player?.notMerged?.message ?? 'The recordings could not be merged.' : null;
+    const wrap = el('div', 'rs-view');
+    const label = `${merged ? 'Merged' : 'Alone'}: ${round.length} recordings of this round`;
+    // Each item's address, at the moment on screen (for a middle click too).
+    const refresh = [];
+    const btn = ui.button('rs-view-btn', null, `${label}. Watch them merged or each alone`, () => {
+      const open = !wrap.classList.contains('open');
+      ui.closeMore?.();
+      if (open) for (const fn of refresh) fn();
+      wrap.classList.toggle('open', open);
+      btn.classList.toggle('on', open);
+      btn.setAttribute('aria-expanded', String(open));
+    }, `${svg('deck')}<span class="rp-label">${merged ? 'Merged' : 'Alone'}</span><small>${round.length}</small>${refused ? '<i class="rs-warn"></i>' : ''}`);
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
+    const menu = el('div', 'rs-view-menu');
+    menu.setAttribute('role', 'menu');
+    menu.append(el('div', 'rs-view-head', `This round: ${count(round.length, 'recording')}`));
+    const playing = pageSlugs()[0];
+    const item = (to, icon, name, note, { on = false, off = false } = {}) => {
+      const a = el('a', `rp-mi rs-view-mi${on ? ' on' : ''}${off ? ' off' : ''}`);
+      a.setAttribute('role', 'menuitemradio');
+      a.setAttribute('aria-checked', String(on));
+      a.innerHTML = `${svg(icon)}<span><i class="${to === 'merged' ? '' : 'rs-name'}"></i><small></small></span>${on ? '<b>ON</b>' : ''}`;
+      a.querySelector('i').textContent = name;
+      a.querySelector('small').textContent = note;
+      if (off) a.setAttribute('aria-disabled', 'true');
+      else {
+        // The moment on screen when it is picked, not when the menu was drawn.
+        const update = () => { a.href = switchHref(round, to); };
+        update();
+        refresh.push(update);
+        a.addEventListener('pointerenter', update);
+        a.addEventListener('focus', update);
+      }
+      a.addEventListener('click', e => {
+        e.stopPropagation();
+        if (off || on) {
+          e.preventDefault();
+          if (on) wrap.classList.remove('open');
+          return;
+        }
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+        e.preventDefault();
+        location.assign(switchHref(round, to));
+      });
+      menu.append(a);
+    };
+    item('merged', 'deck', merged ? 'Merged' : 'Watch merged',
+      refused ? `Not merged. ${refused}` : `${round.length === 2 ? 'Both' : `All ${round.length}`} recordings as one round`,
+      { on: merged, off: Boolean(refused) });
+    for (const member of round) {
+      const by = member.recordedBy && member.recordedBy !== member.uploaderName ? `recorded by ${member.recordedBy} · ` : '';
+      item(member.slug, 'play', member.uploaderName || member.recordedBy || member.title, `${by}${clock(member.durationSeconds)} alone`,
+        { on: !merged && member.slug === playing });
+    }
+    wrap.append(btn, menu);
+    nodes.button.before(wrap);
+    nodes.view = wrap;
+    // A press anywhere else shuts it.
+    document.addEventListener('pointerdown', e => {
+      if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
+        wrap.classList.remove('open');
+        btn.classList.remove('on');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    }, true);
   }
 
   function syncCount() {
@@ -558,8 +689,9 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
       if (Number.isFinite(startAt) && startAt > 0) jump(Math.min(startAt, player.rec.duration));
       if (slug && !counted) {
         counted = true;
-        // Each recording of a merged round was watched.
-        for (const m of members.length ? members : [{ slug }]) {
+        // Each recording of a merged round was watched; of a merge refused,
+        // only the first, which plays alone.
+        for (const m of mergedSources() ? members : [{ slug }]) {
           api.view(m.slug).catch(error => console.warn('replay-social: the view', error));
         }
       }

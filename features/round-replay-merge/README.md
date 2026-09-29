@@ -11,8 +11,11 @@ which it sends map-wide at priority 0.03 (`features/round-replay-capture`
 §19). So one recording per side covers every player for the whole round, and
 the files line up by the server's own ids.
 
-Built 2026-09-29. Not yet run on a real pair: the first coordinated session
-is what the report below is for.
+Built 2026-09-29. The first real pairs came the same day: two rounds an admin
+linked by hand, which the merge must refuse (below, "The guard"), and one
+round two players recorded, nj2dyh58te and skandia's
+`replay_20260929-063300`, which it merges (8366 events matched, residual
+median 5.3 ms, p95 35 ms, drift 2.2 ppm).
 
 ## Using it
 
@@ -22,9 +25,11 @@ node tools/bf1942-models/merge_replays.mjs a.ndjson b.ndjson -o merged.ndjson --
 ```
 
 The first file's clock is the merged file's, and its recording player is the
-one the replay follows first. The report prints to stdout; `--report` also
-writes it as JSON. `--local 3,21` names each file's recording player where a
-file cannot (below).
+one the replay follows first. The report prints to stdout, the guard's lines
+after it; `--report` also writes it as JSON. `--local 3,21` names each file's
+recording player where a file cannot (below). Files the guard finds are not
+one round are not merged: what it measured is printed and the exit status is
+1; `--force` merges them anyway, with a warning in the report.
 
 In the page, picking or dropping several `replay_*.ndjson` files together
 merges them before they play (`replay-open.js` `pickedRecording`). The first
@@ -35,7 +40,10 @@ So does a link with one `replay` per recording,
 leading: the REPLAY feed finds the recordings of one round that players shared
 separately and offers them merged that way, each recording's comments moved
 onto the merged clock by the header's `merged[i]` (features/replay-feed,
-"Rounds"). A set the merge refuses plays its first recording alone.
+"Rounds"). A set the merge refuses plays its first recording alone, the page
+saying why (`Not merged. These look like different rounds: ...`), and the
+replay's switch between merged and each recording alone greys out Merged
+with the reason.
 
 A merged file is an ordinary v5 recording, shared exactly like one client's
 (`features/gameplay-recordings`). Its header adds the sources:
@@ -57,13 +65,15 @@ player.
 | `viewer/replay-merge.js` | `mergeRecordings(inputs, options)`: the merge proper, and `MERGE_DEFAULTS` |
 | `viewer/replay-merge-read.js` | one recording read for merging, its record classes and event keys, shared helpers |
 | `viewer/replay-merge-clock.js` | the clock fit, and the world-clock checks |
+| `viewer/replay-merge-guard.js` | the guard: `checkAlignment`, `MergeRefused`, `formatGuard` |
 | `viewer/replay-merge-report.js` | the report, and `formatMergeReport` |
 | `merge_replays.mjs` | the command line |
 | `tests/replay_split.mjs` | one real recording split into the files each side's client would have written |
 | `tests/replay_merge_harness.mjs`, `tests/test_replay_merge.py` | the tests |
 | `tests/fixtures/merge_bocage_350-385.ndjson.gz` | 35 s of the public Bocage round of 2026-09-28 (167 KB), cut by `make_merge_fixture.mjs` |
+| `tests/fixtures/merge_guard_*.ndjson.gz` | the events of the first real recordings shared (139 KB), cut by `make_merge_guard_fixtures.mjs`: kqqaqxdwtr whole, nj2dyh58te 1370-1930 s, `replay_20260929-063300` 580-1135 s |
 
-All four viewer modules are three.js-free and pure. The page loads them only
+All five viewer modules are three.js-free and pure. The page loads them only
 when it merges.
 
 ## Design
@@ -113,6 +123,71 @@ Two checks the report makes without any event:
 
 Records with no counterpart (a player's own hits, refills and trigger
 presses, team chat, radio) and continuous state are moved by the same fit.
+
+### The guard
+
+The vote finds the offset most rare shared events agree on, and eight can
+agree by chance. The first real pair shared to the feed (below) was two
+rounds of Bocage on one server, a day apart, which an admin had linked by
+hand: the fit lined them up by 58 events, 55 of them the server's adverts,
+which come round on one timer, and every kill of the stretch both recorded
+was left unmatched. So once every file is fitted, and before anything is
+merged, `checkAlignment` (`replay-merge-guard.js`) looks at each file against
+the one it was fitted to, over the stretch both recorded (each from its join,
+or its start, to its end):
+
+1. **The scores decide.** Kills and every other score (`score`, any kind)
+   reach every client, so one round's files share nearly all of theirs there,
+   and two rounds' almost none. Paired by key on the fitted clock (within the
+   event window; within 1.5 s for a fit by the world clock alone, which is
+   good to a second), fewer than `minScoreShare` (half) of the fewer either
+   file holds, where both hold at least `minScoreEvents` (8), is two rounds.
+2. **Where the scores cannot decide** (a short or quiet overlap, or a
+   recorder that wrote raw events), the world clock: each file's world-time
+   offset from its 10-second timer (0x29) over the overlap, on the fitted
+   clock, more than `worldClockSlack` (5 s) apart is two rounds. The offset is
+   the bounds' lower edge, `max(v - t)`, which a tick held up on its way never
+   raises (a late tick lowers `min(v - t) + 1`, the upper edge: one round's
+   files' upper edges crossed by 99 ms). One round's files: 0.001 s apart.
+3. Where neither can, the fit stands, as before the guard.
+
+Where the scores decide, the world clock does not overrule them: files whose
+kills line up event for event at a few milliseconds are one round, whatever a
+round restart does to the timer's runs. A refused set throws `MergeRefused`
+with what was measured (`guard`); `force: true` merges it anyway and says so
+in the report's warnings. Of three or more files, one refused refuses the set:
+the page's comments map onto the merge file by file.
+
+| pair | overlap | kills and scores matched | world clocks apart | verdict |
+|---|---|---|---|---|
+| kqqaqxdwtr (skandia, 2026-09-28, 536 s) with nj2dyh58te (Instant Replay, 2026-09-29, 2732 s): two rounds, linked by an admin | 8:44 (the fit's, 1377.5 s in) | 1 of 551 (0.2%) | 2147.4 s | refused, by the scores |
+| nj2dyh58te with `replay_20260929-063300` (skandia, 21.5 min, Axis): one round | 21:22 (791.2 s in) | 1330 of 1332 (99.9%) | 0.001 s | one round |
+| nj2dyh58te with `replay_20260929-063209` (skandia's 37 s before he rejoined) | 26 s | 24 of 24 | 0.006 s | one round |
+| the Bocage split fixture (35 s) | 22 s | 23 of 23 | 0.031 s | one round |
+| the whole Bocage round split by side | 446 s | 474 of 474 | 0.023 s | one round |
+| the Kursk round of 2026-09-27 split three ways, in the page | 79 s, 64 s | 53 of 53, 44 of 44 | 0.016 s, 0.017 s | one round |
+| the synthetic pair, its scores taken out, its timers agreeing / 300 s apart | 170 s | none to decide | 0.001 s / 300 s | one round / refused, by the world clock |
+
+The thresholds sit far from both sides: 0.2% against 99.9%, 2147 s against
+0.001 s. `test_replay_merge.py` pins the rows (`ReplayMergeGuardTests`, from
+the `merge_guard_*` fixtures, whose cut of the one-round pair has 710 of 713
+kills and scores in its 1124 s and the same 1 of 551 for the two rounds, at
+the same offsets), and the command line's refusal, exit status and `--force`
+(`ReplayMergeCommandLineTests`). The refusal reads, in the page and on the
+command line:
+
+```
+not merged: These look like different rounds: of the 551 kills and scores both recorded, 1 lines up, and the server's clock puts them 35:47 apart.
+
+Guard (are they one round?)
+  nj2dyh58te.ndjson -> kqqaqxdwtr.ndjson (events): kills and scores 1 matched of 551 and 670 (0.2%), world clocks 2147.397 s apart; REFUSED by scores
+  needs 50% of the kills and scores to match where both hold 8 or more, else world clocks within 5 s
+```
+
+Neither of the report's world-clock lines could have refused alone at its
+tolerance: on the one-round pair "world clock (0x29): DISAGREES, their bounds
+miss by 99 ms" (the upper edges, above) and "world clock at the joins (0x04):
+23.7 s apart" (one client's join took that much longer).
 
 ### Events
 
@@ -296,6 +371,9 @@ command line.
 | `chatWindow` | 2 s | the same for chat-box lines | `duplicates.chat` against each file's own |
 | `rareKey`, `voteBin` | 4, 0.05 s | the offset vote | `alignment[].method` stays `events` |
 | `minMatches` | 8 | fewer shared events and the files are not one round | |
+| `minScoreShare`, `minScoreEvents` | 0.5, 8 | the guard: fewer of the kills and scores both hold over the overlap lining up, where both hold that many, and they are two rounds | `guard.files[].scores` |
+| `worldClockSlack` | 5 s | the guard, where the scores cannot decide: the world clocks further apart and they are two rounds | `guard.files[].worldClock` |
+| `force` | false | merge what the guard refuses (`--force`) | `warnings` |
 | `minDriftSpan`, `maxDrift` | 120 s, 0.1% | when a drift is fitted, and how large one may be | `alignment[].driftPpm` |
 | `outlierFloor` | 0.05 s | residuals never rejected | `alignment[].rejected` |
 | `prefer` | `riding`, `nearest` | how an object's file is chosen | `rates`, `pose.moving` |
@@ -312,6 +390,9 @@ command line.
 Run `merge_replays.mjs <allies file> <axis file> -o merged.ndjson --report
 report.json` and read, in order:
 
+0. **The guard says one round** (`guard.credible`, the lines after the
+   report): nearly all the kills and scores of the stretch both recorded
+   line up. Refused, the files are two rounds, whatever an admin linked.
 1. **`sources[].local` and `localFrom`**: each file's recording player is
    found (`roster`, `own rounds` or `trigger presses`). A file whose player
    never fired and that began at the join says `unknown`: pass `--local`.
@@ -322,8 +403,11 @@ report.json` and read, in order:
 3. **`alignment[].unmatched` and `events.missing`** hold only team chat, team
    radio and shouts. Any other kind is an event the server does not send
    every client, and its class in `replay-merge-read.js` is wrong.
-4. **`alignment[].worldClock.agree`** is true, and `driftPpm` is within
-   about 100 ppm: the fit and the server's clock agree.
+4. **`guard.files[].worldClock.apartSeconds`** is a fraction of a second, and
+   `driftPpm` is within about 100 ppm: the fit and the server's clock agree.
+   (`alignment[].worldClock.agree` compares the bounds' upper edges too,
+   which one late tick drags down: the one-round pair of 2026-09-29 "missed"
+   by 99 ms there, and its lower edges were 0.001 s apart.)
 5. **`pose.lag`** is 0 within 0.02 s. Events and ghost state reach a client
    in the same packets (round-replay-capture §2.1), so it should be; if not,
    set `stateShift` to it.

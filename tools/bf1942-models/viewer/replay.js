@@ -751,8 +751,10 @@ export function createReplayController(ctx) {
   const assets = new ReplayAssets(ctx);
   let player = null;
 
-  /** Several recordings of one round, merged into one before it plays. One the
-   *  merge cannot line up with the others plays the first alone, and says so. */
+  /** Several recordings of one round, merged into one before it plays. A set
+   *  the merge cannot line up, or whose alignment its guard finds incredible
+   *  (two rounds, replay-merge-guard.js), plays the first alone and says why;
+   *  the player carries the reason (`notMerged`) for the page's switch. */
   async function openMerged(urls, logUrl) {
     const [texts, logText] = await Promise.all([
       Promise.all(urls.map(fetchText)),
@@ -761,19 +763,26 @@ export function createReplayController(ctx) {
     const name = u => u.split('/').pop().split('?')[0];
     let merged = null;
     try {
-      const { mergeRecordings, formatMergeReport } = await import('./replay-merge.js');
-      merged = mergeRecordings(urls.map((u, i) => ({ name: name(u), text: texts[i] })));
+      const { mergeRecordings, formatMergeReport, formatGuard } = await import('./replay-merge.js');
+      try {
+        merged = mergeRecordings(urls.map((u, i) => ({ name: name(u), text: texts[i] })));
+      } catch (error) {
+        if (error.guard) console.info(formatGuard(error.guard).join('\n'));
+        throw error;
+      }
       console.info(formatMergeReport(merged.report));
+      console.info(formatGuard(merged.report.guard).join('\n'));
     } catch (error) {
       console.warn('replay: the recordings were not merged', error);
-      const played = await open({ recordingText: texts[0], logText, label: name(urls[0]) });
-      if (played) toast(ctx.stage, `These recordings could not be merged (${error.message}). Playing the first alone.`);
+      const notMerged = { message: error.message, refused: Boolean(error.guard) };
+      const played = await open({ recordingText: texts[0], logText, label: name(urls[0]), notMerged });
+      if (played) toast(ctx.stage, `Not merged. ${error.message} Playing the first recording alone.`);
       return played;
     }
     return open({ recordingText: merged.text, logText, label: `${name(urls[0])} and ${urls.length - 1} more` });
   }
 
-  async function open({ recordingText, logText, label }) {
+  async function open({ recordingText, logText, label, notMerged = null }) {
     const rec = parseRecording(recordingText);
     // A round is a round whatever its name, and the level's own projectile
     // table (`_shared/damage.json`) names them all: a mine from a pool made
@@ -789,6 +798,8 @@ export function createReplayController(ctx) {
     const log = logText ? extra('the server log', () => parseServerLog(logText)) ?? null : null;
     const alignment = log ? extra('aligning the server log', () => alignServerLog(rec, log)) ?? null : null;
     player = new ReplayPlayer(ctx, rec, log, alignment, label, assets);
+    // Several recordings asked for and one played: why (`openMerged`).
+    player.notMerged = notMerged;
     if (typeof window !== 'undefined') window.replay = player;
     extra("the page's additions to the replay bar", () => ctx.opened?.(player));
     await player.load();

@@ -28,8 +28,10 @@ public interface IRecordingRoundService
 
     /// <summary>An admin puts <paramref name="slug"/> in the round of the recording
     /// <paramref name="other"/> names (a slug or any link to one). False when there is no
-    /// <paramref name="slug"/>.</summary>
-    Task<bool> LinkAsync(string slug, string? other, RecordingActor actor, CancellationToken ct);
+    /// <paramref name="slug"/>. Two recordings whose files fall short of what detection needs
+    /// are refused with the evidence (<see cref="RecordingRejectedException.Evidence"/>) unless
+    /// <paramref name="confirm"/>.</summary>
+    Task<bool> LinkAsync(string slug, string? other, RecordingActor actor, bool confirm, CancellationToken ct);
 
     /// <summary>An admin takes <paramref name="slug"/> out of its round, for good: detection
     /// never links it to those recordings again. False when there is no such recording.</summary>
@@ -181,7 +183,7 @@ public sealed partial class RecordingRoundService(
         return result;
     }
 
-    public async Task<bool> LinkAsync(string slug, string? other, RecordingActor actor, CancellationToken ct)
+    public async Task<bool> LinkAsync(string slug, string? other, RecordingActor actor, bool confirm, CancellationToken ct)
     {
         Admin(actor);
         var mine = RecordingStorage.CleanSlug(slug);
@@ -190,18 +192,31 @@ public sealed partial class RecordingRoundService(
             "Name the recording to put it with: its link, or the ten letters of its id.");
         var rows = await db.Recordings.AsNoTracking()
             .Where(r => r.Slug == mine || r.Slug == theirs)
-            .Select(r => new { r.Id, r.Slug })
+            .Select(r => new { r.Id, r.Slug, r.Level, r.Mod, r.GameMode })
             .ToListAsync(ct);
         var one = rows.FirstOrDefault(r => r.Slug == mine);
         if (one is null) return false;
         var two = rows.FirstOrDefault(r => r.Slug == theirs)
             ?? throw new RecordingRejectedException($"There is no recording {theirs}.", StatusCodes.Status404NotFound);
         if (one.Id == two.Id) throw new RecordingRejectedException("That is this recording.");
+        var sameLevel = one.Level == two.Level && one.Mod == two.Mod && one.GameMode == two.GameMode;
 
+        RecordingRoundEvidenceDto evidence;
         await Gate.WaitAsync(ct);
         try
         {
             var (low, high) = Ordered(one.Id, two.Id);
+            var prints = await db.RecordingFingerprints.AsNoTracking()
+                .Where(f => f.RecordingId == low || f.RecordingId == high)
+                .ToListAsync(ct);
+            var a = prints.FirstOrDefault(f => f.RecordingId == low);
+            var b = prints.FirstOrDefault(f => f.RecordingId == high);
+            // The lower id's clock: t_low = t_high + offset.
+            var match = a is not null && b is not null ? RoundMatcher.Match(a.Read(), b.Read(), options.Value) : null;
+            evidence = Evidence(match, sameLevel, options.Value);
+            // What the files say comes first: the admin reads it, and says yes, before a link
+            // they do not bear out makes a round of them.
+            if (!evidence.OneRound && !confirm) throw new RecordingRejectedException(evidence);
             var link = await db.RecordingRoundLinks.FirstOrDefaultAsync(l => l.RecordingId == low && l.OtherRecordingId == high, ct);
             if (link is null)
             {
@@ -211,12 +226,9 @@ public sealed partial class RecordingRoundService(
             link.Kind = RecordingRoundLinkKind.Linked;
             link.ByUserId = actor.UserId;
             link.CreatedAt = clock.GetCurrentInstant();
-            var prints = await db.RecordingFingerprints.AsNoTracking()
-                .Where(f => f.RecordingId == low || f.RecordingId == high)
-                .ToListAsync(ct);
-            var a = prints.FirstOrDefault(f => f.RecordingId == low);
-            var b = prints.FirstOrDefault(f => f.RecordingId == high);
-            link.Measured(a is not null && b is not null ? RoundMatcher.Match(a.Read(), b.Read(), options.Value) : null);
+            // Kept as measured; an offset only where detection would have linked them too
+            // (two levels are never one round, whatever their keys).
+            link.Measured(sameLevel || match is null ? match : match with { SameRound = false });
             await db.SaveChangesAsync(ct);
             await RegroupHeldAsync([low, high], ct);
         }
@@ -224,8 +236,37 @@ public sealed partial class RecordingRoundService(
         {
             Gate.Release();
         }
-        logger.LogInformation("Recording {Slug} put in the round of {Other} by user {UserId}", mine, theirs, actor.UserId);
+        logger.LogInformation(
+            "Recording {Slug} put in the round of {Other} by user {UserId}: {Evidence}", mine, theirs, actor.UserId, evidence.Summary);
         return true;
+    }
+
+    /// <summary>
+    /// What two recordings' fingerprints say of their being one round, in numbers and a line
+    /// (features/replay-feed, "Rounds"): <paramref name="match"/> is null while either has no
+    /// fingerprint. Recordings of different levels or game types are never one round, whatever
+    /// their keys.
+    /// </summary>
+    internal static RecordingRoundEvidenceDto Evidence(RoundMatch? match, bool sameLevel, RecordingsOptions options)
+    {
+        var m = match ?? RoundMatch.None;
+        var oneRound = match is { SameRound: true } && sameLevel;
+        var events = m.Matched == 1 ? "1 shared event" : $"{m.Matched} shared events";
+        var theirs = FormattableString.Invariant($"{m.MatchedPlayer} of them the players' own");
+        var summary =
+            !sameLevel ? "Recorded on different levels or game types: these cannot be one round."
+            : match is null ? "Not compared yet: a fingerprint is still to be read from one of their files."
+            : oneRound ? $"{events}, {theirs}: one round."
+            // Different rounds, or two stretches of one that share no moment (a player who
+            // rejoined): nothing in the files can tell which.
+            : m.Matched == 0 ? "No shared event: nothing in their files says they are one round."
+            : m.Matched < options.RoundMinMatches ? $"{events}: these look like different rounds."
+            : m.MatchedPlayer < options.RoundMinPlayerKeys ? $"{events}, {theirs}: these look like different rounds."
+            : FormattableString.Invariant(
+                $"{events}, but {Math.Round(m.PlayerShare * 100)}% of the players' events where both recorded: these look like different rounds.");
+        return new RecordingRoundEvidenceDto(
+            match is not null, m.Matched, m.MatchedPlayer, m.PlayerShare, m.OverlapSeconds, sameLevel, oneRound,
+            options.RoundMinMatches, options.RoundMinPlayerKeys, options.RoundMinPlayerShare, summary);
     }
 
     public async Task<bool> SeparateAsync(string slug, RecordingActor actor, CancellationToken ct)

@@ -136,6 +136,53 @@ const B = asFile('B', { from: 30, rate: 1 + 50e-6, jitter: 0.02 });
       .every(p => p.keys.every(k => Math.abs(k.q[1] - Math.sin(Math.floor(k.t + 0.01) / 20)) < 0.002)),
     header: lines[0].merged,
     shots: lines.filter(r => r.k === 'f').length,
+    guard: report.guard,
+  };
+}
+
+// --- the guard: an alignment a few events agreed on by chance -------------------
+//
+// The first real recordings shared to the feed (make_merge_guard_fixtures.mjs,
+// their events only): kqqaqxdwtr and nj2dyh58te are two rounds of Bocage on
+// one server, which the merge once fitted together by 58 events, 55 of them
+// the server's adverts; nj2dyh58te and skandia's replay_20260929-063300 are
+// one round. And where the scores cannot decide, the world clock: the
+// synthetic pair with its kills taken out and the server's 10-second timer
+// put in, agreeing or 300 s apart.
+{
+  const fixture = name => zlib.gunzipSync(fs.readFileSync(path.join(here, 'fixtures', name))).toString();
+  const kq = { name: 'kqqaqxdwtr.ndjson', text: fixture('merge_guard_kqqaqxdwtr.ndjson.gz') };
+  const nj = { name: 'nj2dyh58te.ndjson', text: fixture('merge_guard_nj2dyh58te_1370-1930.ndjson.gz') };
+  const own = { name: 'replay_20260929-063300.ndjson', text: fixture('merge_guard_20260929-063300_580-1135.ndjson.gz') };
+  const attempt = (inputs, options = {}) => {
+    try {
+      const { report } = merge.mergeRecordings(inputs, options);
+      return { merged: true, guard: report.guard, warnings: report.warnings, offset: report.alignment[0].offset };
+    } catch (error) {
+      return { merged: false, error: error.name, message: error.message, guard: error.guard ?? null };
+    }
+  };
+  // Timer ticks (0x29: the world time to the second) every 10 s of the
+  // round's own clock, from `from`, on a file's clock running at `rate`.
+  const ticks = (from, rate, worldAt) => {
+    const out = [];
+    for (let t = from + 5; t < 200; t += 10) {
+      out.push(L({ t: round3((t - from) * rate), k: 'e', e: 'clock', worldTime: Math.floor(worldAt(t)) }));
+    }
+    return out;
+  };
+  const noScores = text => text.split('\n').filter(l => !l.includes('"e":"score"'));
+  const clockOnly = (worldB) => [
+    { name: 'A.ndjson', text: [...noScores(A), ...ticks(0, 1, t => t + 1000)].join('\n') },
+    { name: 'B.ndjson', text: [...noScores(B), ...ticks(30, 1 + 50e-6, worldB)].join('\n') },
+  ];
+  results.guard = {
+    falsePair: attempt([kq, nj]),
+    falsePairReversed: attempt([nj, kq]),
+    falsePairForced: attempt([kq, nj], { force: true }),
+    genuinePair: attempt([own, nj]),
+    clockAgrees: attempt(clockOnly(t => t + 1000)),
+    clockDisagrees: attempt(clockOnly(t => t + 1300)),
   };
 }
 
@@ -359,6 +406,7 @@ function splitAndMerge(original, { cutA, fromB, drift, jitter, radius = 420 }) {
       hits: vm.hitsTaken.map(h => h.pid), recordingPlayers: chapters.recordingPlayers?.(vm) ?? null,
     },
     report: { pose: report.pose, rates: report.rates, coverage: report.coverage, selection: report.selection, children: report.children },
+    guard: report.guard,
   };
 }
 

@@ -6,7 +6,9 @@ namespace api.Recordings.Models;
 /// <c>t = 0</c> falls on the round's clock, the clock of the recording that began first, when
 /// the links measured it. <see cref="Link"/> is how it is tied to the recording asked about:
 /// <c>detected</c>, <c>linked</c> by an admin, <c>self</c>, or null when it is tied through
-/// another; <see cref="MatchedKeys"/> and <see cref="PlayerShare"/> are that link's evidence.
+/// another; <see cref="MatchedKeys"/> and <see cref="PlayerShare"/> are that link's evidence,
+/// and <see cref="WeakLink"/> says it is an admin's link that evidence falls short of what
+/// detection needs to call two recordings one round.
 /// </summary>
 public record RecordingRoundMemberDto(
     string Slug,
@@ -21,4 +23,5 @@ public record RecordingRoundMemberDto(
     string? ThumbnailUrl,
     string? Link,
     int? MatchedKeys,
-    double? PlayerShare);
+    double? PlayerShare,
+    bool WeakLink = false);

@@ -72,32 +72,78 @@ public sealed class RecordingService(
     /// <summary>The most names a filter offers: those with the most recordings.</summary>
     public const int MaxFilterChoices = 100;
 
+    /// <summary>
+    /// A page of cards (features/replay-feed, "Rounds"): a recording on its own, or a round of
+    /// several as one card, carried by its lead. A card is known by its round's id, or the
+    /// recording's own while it is in none, so a round is grouped here, before paging, and a
+    /// page, the counts and the order are the cards'. A round sits among the newest by its
+    /// newest recording and among the most viewed by its most-watched one; a filter shows it
+    /// when one of its recordings would show on its own, and then shows it whole.
+    /// </summary>
     public async Task<PagedRecordingsDto> ListAsync(string? sort, int page, int pageSize, RecordingFilter filter, CancellationToken ct)
     {
         page = Math.Max(1, page);
         pageSize = pageSize is < 1 or > MaxPageSize ? DefaultPageSize : pageSize;
         var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
-        var shown = Narrowed(shared, filter);
+        var shown = OnCards(shared, filter);
+        var cards = shown
+            .GroupBy(r => r.RoundId ?? r.Id)
+            .Select(g => new { Card = g.Key, Newest = g.Max(r => r.Id), Views = g.Max(r => r.ViewCount) });
         // Newest by id: CreatedAt is an ExtendedIso string, whose varying fraction digits
         // do not sort.
         var ordered = sort == "views"
-            ? shown.OrderByDescending(r => r.ViewCount).ThenByDescending(r => r.Id)
-            : shown.OrderByDescending(r => r.Id);
-        var total = await shown.CountAsync(ct);
-        var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+            ? cards.OrderByDescending(c => c.Views).ThenByDescending(c => c.Newest)
+            : cards.OrderByDescending(c => c.Newest);
+        var total = await cards.CountAsync(ct);
+        var recordings = await shown.CountAsync(ct);
+        var keys = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(c => c.Card).ToListAsync(ct);
+        var rows = keys.Count == 0 ? [] : await shared.Where(r => keys.Contains(r.RoundId ?? r.Id)).ToListAsync(ct);
+        var byCard = rows.GroupBy(r => r.RoundId ?? r.Id).ToDictionary(g => g.Key, g => g.ToList());
+        var leads = keys.Where(byCard.ContainsKey).Select(k => Lead(byCard[k])).ToList();
         // The space is everyone's, whatever the feed is narrowed to.
         var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
-        var players = await PlayersAsync(rows.Select(r => r.UploaderName), ct);
-        var roundsOf = await RoundsAsync([.. rows.Select(r => r.Id)], ct);
+        var players = await PlayersAsync(leads.Select(r => r.UploaderName), ct);
+        var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], ct);
         return new PagedRecordingsDto(
-            [.. rows.Select(r => Summary(r, players.GetValueOrDefault(r.UploaderName), roundsOf.GetValueOrDefault(r.Id)))],
+            [.. leads.Select(lead =>
+            {
+                var round = roundsOf.GetValueOrDefault(lead.Id);
+                var card = round is null ? null : Card(lead, byCard[lead.RoundId ?? lead.Id], round);
+                return Summary(lead, players.GetValueOrDefault(lead.UploaderName), round?.Members, card);
+            })],
             total,
             page,
             pageSize,
             Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)),
-            new RecordingStorageDto(used, options.Value.QuotaBytes));
+            new RecordingStorageDto(used, options.Value.QuotaBytes),
+            recordings);
     }
 
+    /// <summary>A round's lead: the recording its card is and its merged replay follows first,
+    /// the one that covers the most of it (the longest), the first shared of equals.</summary>
+    private static Recording Lead(IReadOnlyList<Recording> members) =>
+        members.OrderByDescending(r => r.DurationSeconds).ThenBy(r => r.Id).First();
+
+    /// <summary>What a round's card shows of the whole round (<see cref="RecordingRoundCardDto"/>).</summary>
+    private static RecordingRoundCardDto Card(Recording lead, IReadOnlyList<Recording> members, RoundView round)
+    {
+        var newest = members.MaxBy(r => r.Id)!;
+        var cover = ThumbnailLink(lead) ?? round.Members.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
+        return new RecordingRoundCardDto(
+            round.Members.Count,
+            round.SpanSeconds,
+            [.. round.Members.Select(m => m.UploaderName).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal)],
+            members.Max(r => r.ViewCount),
+            members.Sum(r => r.CommentCount),
+            newest.CreatedAt,
+            cover,
+            round.Weak);
+    }
+
+    /// <summary>
+    /// The servers and uploaders to narrow the feed to, each counted in cards: a round counts
+    /// once under each name one of its recordings has, beside the other filter.
+    /// </summary>
     public async Task<RecordingFiltersDto> FiltersAsync(RecordingFilter filter, CancellationToken ct)
     {
         var shared = db.Recordings.AsNoTracking().Where(r => !r.FileMissing);
@@ -113,16 +159,25 @@ public sealed class RecordingService(
         return recordings;
     }
 
-    /// <summary>Each name <paramref name="name"/> gives, with its count: the busiest
-    /// <see cref="MaxFilterChoices"/>, in the order of their names. A recording that names no
-    /// server is in the feed, but there is no server to pick for it.</summary>
+    /// <summary>Every recording on a card <paramref name="filter"/> shows: each recording of a
+    /// round one of whose recordings matches it, and each on its own that does.</summary>
+    private static IQueryable<Recording> OnCards(IQueryable<Recording> shared, RecordingFilter filter)
+    {
+        if (filter.Server is null && filter.Uploader is null) return shared;
+        var matching = Narrowed(shared, filter).Select(r => r.RoundId ?? r.Id);
+        return shared.Where(r => matching.Contains(r.RoundId ?? r.Id));
+    }
+
+    /// <summary>Each name <paramref name="name"/> gives, with how many cards it would show:
+    /// the busiest <see cref="MaxFilterChoices"/>, in the order of their names. A recording that
+    /// names no server is in the feed, but there is no server to pick for it.</summary>
     private static async Task<List<RecordingFilterChoiceDto>> ChoicesAsync(
         IQueryable<Recording> recordings, Expression<Func<Recording, string>> name, CancellationToken ct)
     {
         var busiest = await recordings
             .GroupBy(name)
             .Where(g => g.Key != "")
-            .Select(g => new { Name = g.Key, Count = g.Count() })
+            .Select(g => new { Name = g.Key, Count = g.Select(r => r.RoundId ?? r.Id).Distinct().Count() })
             .OrderByDescending(c => c.Count).ThenBy(c => c.Name)
             .Take(MaxFilterChoices)
             .ToListAsync(ct);
@@ -141,7 +196,8 @@ public sealed class RecordingService(
     {
         var players = await PlayersAsync([recording.UploaderName], ct);
         var roundsOf = await RoundsAsync([recording.Id], ct);
-        return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName), roundsOf.GetValueOrDefault(recording.Id));
+        var round = roundsOf.GetValueOrDefault(recording.Id);
+        return Detail(recording, actor, players.GetValueOrDefault(recording.UploaderName), round?.Members, round?.Weak ?? false);
     }
 
     public async Task<int?> WatchableIdAsync(string slug, CancellationToken ct) =>
@@ -327,13 +383,13 @@ public sealed class RecordingService(
     /// <summary>
     /// The round each of <paramref name="ids"/> is one recording of (features/replay-feed,
     /// "Rounds"): every recording of it still in the feed, in the order they began in the round,
-    /// each with how it is tied to the one asked about. A recording in no round, or whose
-    /// round has no other recording left in the feed, has no entry. The rounds are read from
-    /// the database, not from the rows the caller holds: an upload's own was just changed
-    /// under it.
+    /// each with how it is tied to the one asked about; the merged span; and whether it holds
+    /// together only through an admin's link its recordings do not bear out. A recording in no
+    /// round, or whose round has no other recording left in the feed, has no entry. The rounds
+    /// are read from the database, not from the rows the caller holds: an upload's own was
+    /// just changed under it.
     /// </summary>
-    private async Task<Dictionary<int, IReadOnlyList<RecordingRoundMemberDto>>> RoundsAsync(
-        IReadOnlyCollection<int> ids, CancellationToken ct)
+    private async Task<Dictionary<int, RoundView>> RoundsAsync(IReadOnlyCollection<int> ids, CancellationToken ct)
     {
         if (ids.Count == 0) return [];
         var asked = await db.Recordings.AsNoTracking()
@@ -353,7 +409,7 @@ public sealed class RecordingService(
             .Where(l => memberIds.Contains(l.RecordingId) && l.Kind != RecordingRoundLinkKind.Separated)
             .ToListAsync(ct);
         var players = await PlayersAsync(members.Where(m => !m.FileMissing).Select(m => m.UploaderName), ct);
-        var result = new Dictionary<int, IReadOnlyList<RecordingRoundMemberDto>>();
+        var result = new Dictionary<int, RoundView>();
         foreach (var round in members.GroupBy(m => m.Round))
         {
             var shown = round.Where(m => !m.FileMissing).ToList();
@@ -363,12 +419,54 @@ public sealed class RecordingService(
                 .OrderBy(m => offsets.TryGetValue(m.Id, out var at) ? at : double.MaxValue)
                 .ThenBy(m => m.Id)
                 .ToList();
+            var span = Span(shown, offsets);
+            var weak = HeldByWeakLinks([.. round.Select(m => m.Id)], [.. shown.Select(m => m.Id)], links);
             foreach (var one in asked.Where(a => a.Round == round.Key))
             {
-                result[one.Id] = [.. ordered.Select(m => Member(m, one.Id, links, offsets, players))];
+                result[one.Id] = new RoundView([.. ordered.Select(m => Member(m, one.Id, links, offsets, players))], span, weak);
             }
         }
         return result;
+    }
+
+    /// <summary>A round as a card or a page shows it: its recordings, relative to the one asked
+    /// about; the merged span, seconds; whether it hangs on a weak admin's link.</summary>
+    private sealed record RoundView(IReadOnlyList<RecordingRoundMemberDto> Members, double SpanSeconds, bool Weak);
+
+    /// <summary>The merged span: from the first of <paramref name="shown"/> to begin to the last
+    /// to end, where the links measured where each began. One whose place nothing measured (an
+    /// admin's link with nothing to measure it by) counts its own length.</summary>
+    private static double Span(IReadOnlyList<RoundRow> shown, Dictionary<int, double> offsets)
+    {
+        var placed = shown.Where(m => offsets.ContainsKey(m.Id)).ToList();
+        var span = placed.Count == 0 ? 0
+            : placed.Max(m => offsets[m.Id] + m.DurationSeconds) - placed.Min(m => offsets[m.Id]);
+        return Math.Round(Math.Max(span, shown.Max(m => m.DurationSeconds)), 3);
+    }
+
+    /// <summary>An admin's link its recordings do not bear out: measured short of what
+    /// detection needs (<see cref="RecordingRoundLink.Measured"/> keeps an offset only for a
+    /// match), or not measured at all.</summary>
+    private static bool Weak(RecordingRoundLink link) =>
+        link.Kind == RecordingRoundLinkKind.Linked && link.OffsetSeconds is null;
+
+    /// <summary>Whether the recordings of a round in the feed (<paramref name="shown"/>) are
+    /// one only through weak links: they are not all reached from one another through links
+    /// detection found or would have, over every recording of the round.</summary>
+    private static bool HeldByWeakLinks(IReadOnlyList<int> all, IReadOnlyList<int> shown, IReadOnlyList<RecordingRoundLink> links)
+    {
+        var strong = links.Where(l => !Weak(l)).ToList();
+        var reached = new HashSet<int> { shown[0] };
+        var queue = new Queue<int>([shown[0]]);
+        while (queue.TryDequeue(out var id))
+        {
+            foreach (var link in strong)
+            {
+                var next = link.RecordingId == id ? link.OtherRecordingId : link.OtherRecordingId == id ? link.RecordingId : -1;
+                if (next >= 0 && all.Contains(next) && reached.Add(next)) queue.Enqueue(next);
+            }
+        }
+        return !shown.All(reached.Contains);
     }
 
     /// <summary>Where each recording's <c>t = 0</c> falls on its round's clock, as far as the
@@ -425,7 +523,8 @@ public sealed class RecordingService(
             ThumbnailLink(m.Slug, m.ThumbnailBytes, m.UpdatedAt),
             link,
             direct?.MatchedKeys,
-            direct?.PlayerShare);
+            direct?.PlayerShare,
+            direct is not null && Weak(direct));
     }
 
     private sealed record RoundRow(
@@ -476,7 +575,8 @@ public sealed class RecordingService(
     private static string? ThumbnailLink(string slug, long bytes, Instant updatedAt) =>
         bytes > 0 ? $"/stats/recordings/{slug}.jpg?v={updatedAt.ToUnixTimeSeconds()}" : null;
 
-    internal static RecordingSummaryDto Summary(Recording r, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null) => new(
+    internal static RecordingSummaryDto Summary(
+        Recording r, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, RecordingRoundCardDto? card = null) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -494,10 +594,11 @@ public sealed class RecordingService(
         r.ServerLogBytes > 0 ? ServerLogLink(r.Slug) : null,
         ThumbnailLink(r),
         player,
-        round);
+        round,
+        card);
 
     internal static RecordingDetailDto Detail(
-        Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null) => new(
+        Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
         r.Slug,
         r.Title,
         r.UploaderName,
@@ -521,7 +622,8 @@ public sealed class RecordingService(
         actor is not null && (actor.IsAdmin || actor.UserId == r.UploaderUserId),
         player,
         round,
-        actor?.IsAdmin == true);
+        actor?.IsAdmin == true,
+        round is not null && roundWeak);
 
     private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
         new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);

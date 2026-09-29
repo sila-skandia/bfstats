@@ -146,6 +146,26 @@ class RecordingsApiTests(unittest.TestCase):
             {"index": 0, "text": "58:00 in none"},
         ])
 
+    def test_a_round_is_one_card_and_the_header_counts_both(self) -> None:
+        switch = self.results["switch"]
+        self.assertEqual(switch["count"], ["4 rounds · 6 recordings", "3", "1 round · 2 recordings", ""])
+        # A card is a round when the API grouped it (roundCard) and it has two
+        # or more recordings.
+        self.assertEqual(switch["card"], [3, None, None])
+
+    def test_the_replays_switch_keeps_the_moment_on_screen(self) -> None:
+        switch = self.results["switch"]
+        # Merged, at 100 s of the round (the lead 60 s in, a's clock 40 ppm
+        # slow): merged again, a alone, the lead alone, c before it began, d
+        # (its place unmeasured) not at all.
+        self.assertEqual(switch["fromMerged"], [100, 100.004, 40, 0, None])
+        # The lead alone at 40 s is 100 s of the round.
+        self.assertEqual(switch["fromLead"], [100, 100, 40, 0, None])
+        # Past a recording's end, its end.
+        self.assertEqual(switch["pastEnds"], [476, 200])
+        # From a recording whose place nothing measured: only itself.
+        self.assertEqual(switch["fromUnplaced"], [None, None, 50])
+
     def test_the_feed_narrows_to_a_server_and_an_uploader(self) -> None:
         filtered = self.results["filtered"]
         # An empty filter is left out of the API's query.

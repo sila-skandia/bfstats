@@ -157,7 +157,8 @@ public class RecordingsController(
 
     /// <summary>An admin puts this recording in the round of another (features/replay-feed,
     /// "Rounds"): <c>{ "with": "&lt;its slug or any link to it&gt;" }</c>. The recording's page
-    /// after.</summary>
+    /// after. Two recordings whose files fall short of what detection needs are a 409 with the
+    /// evidence (<c>evidence</c>) until the request says <c>"confirm": true</c>.</summary>
     [HttpPost("{slug:length(10)}/round")]
     [Authorize]
     public async Task<ActionResult<RecordingDetailDto>> LinkRound(
@@ -166,7 +167,7 @@ public class RecordingsController(
         if (Actor() is not { } actor) return Unauthorized();
         try
         {
-            if (!await rounds.LinkAsync(slug, request.With, actor, ct)) return NotFound();
+            if (!await rounds.LinkAsync(slug, request.With, actor, request.Confirm, ct)) return NotFound();
             return await recordings.GetAsync(slug, actor, ct) is { } detail ? Ok(detail) : NotFound();
         }
         catch (RecordingRejectedException ex)
@@ -271,7 +272,7 @@ public class RecordingsController(
     }
 
     private ObjectResult Rejected(RecordingRejectedException ex) =>
-        StatusCode(ex.StatusCode, new { message = ex.Message, existingSlug = ex.ExistingSlug });
+        StatusCode(ex.StatusCode, new { message = ex.Message, existingSlug = ex.ExistingSlug, evidence = ex.Evidence });
 
     private RecordingActor? Actor()
     {

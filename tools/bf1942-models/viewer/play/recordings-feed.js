@@ -13,12 +13,15 @@
 // comments run alongside the round (replay-social.js).
 //
 // Several players' recordings of one round are found by the API and grouped
-// (features/replay-feed, "Rounds"): each keeps its own card, uploader, title,
-// cover and comments, says how many recordings its round has, and offers them
-// merged, played as one round from every recording player's view.
+// (features/replay-feed, "Rounds"): the feed pages a round as one card, a deck
+// whose cover plays them merged, played as one round from every recording
+// player's view, with the round's recordings listed under it, each to watch
+// alone. Each recording keeps its own page, uploader, title, cover and
+// comments.
 
 import {
-  ago, clock, commentRuns, count, createRecordingsApi, playerHref, readableQuery, resolveApi, size,
+  ago, clock, commentRuns, count, createRecordingsApi, feedCount, playerHref, readableQuery, resolveApi, size,
+  watchHref, watchRoundHref,
 } from '../recordings-api.js';
 import { describeRecording, isRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
 import { recordedAt, titled } from '../replay-open.js';
@@ -160,20 +163,59 @@ const STYLE = `
 .rf-player:hover { color: var(--rf-khaki); }
 .rf-root .rf-player svg { width: 11px; height: 11px; }
 .rf-dot::before { content: '\\00b7'; margin: 0 5px; color: var(--rf-faint); }
-/* A round several players recorded: a stack on the cover, a line under the card. */
-.rf-stack { position: absolute; left: 7px; bottom: 7px; z-index: 1; display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px;
-  border-radius: 4px; background: rgba(0, 0, 0, .72); color: var(--rf-gold); font: 700 11px/1 ui-monospace, monospace;
-  box-shadow: 0 0 0 1px rgba(232, 195, 90, .35); }
+/* A round several players recorded is one card: its cover the top of a deck,
+   the other recordings the plates behind it peeking over its top edge (one
+   for two, two for more), which lift a little under the pointer. The cover
+   plays them merged. */
+.rf-deck { position: relative; display: block; isolation: isolate; }
+.rf-deck::before, .rf-deck::after { content: ''; position: absolute; inset: 0 8px; z-index: -1; border-radius: 6px 6px 4px 4px;
+  pointer-events: none; border: 1px solid rgba(200, 194, 152, .6); background: linear-gradient(180deg, #57574a, #2a2a23 40%);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, .35); transform: translateY(-7px);
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1), border-color .2s ease; }
+.rf-deck::after { z-index: -2; display: none; inset: 0 16px; border-color: rgba(200, 194, 152, .36);
+  background: linear-gradient(180deg, #414136, #1d1d18 40%); transform: translateY(-13px); }
+.rf-deck.more::after { display: block; }
+.rf-deck:hover::before, .rf-deck:focus-within::before { transform: translateY(-9px); border-color: rgba(185, 179, 138, .85); }
+.rf-deck:hover::after, .rf-deck:focus-within::after { transform: translateY(-16px); }
+/* Room above the first row for a deck's plates. */
+.rf-grid { padding-top: 4px; }
+.rf-stack { position: absolute; left: 7px; bottom: 7px; z-index: 1; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px 3px 6px;
+  border-radius: 4px; background: rgba(0, 0, 0, .74); color: var(--rf-gold); font: 700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 1px rgba(232, 195, 90, .38); }
 .rf-cover:not(.shot) .rf-stack { bottom: auto; top: 30px; left: 7px; }
 .rf-root .rf-stack svg { width: 12px; height: 12px; }
-.rf-round-line { display: flex; align-items: center; gap: 5px; color: var(--rf-gold); }
-.rf-root .rf-round-line svg { width: 13px; height: 13px; flex: none; }
-.rf-round-line a { color: inherit; text-decoration: none; }
-/* On a narrow card the count gives way; Watch merged stays whole. */
-.rf-round-line a:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.rf-round-line .rf-dot, .rf-round-line .rf-watch-merged { flex: none; }
-.rf-round-line a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.rf-round-line .rf-watch-merged { color: var(--rf-ink); font-weight: 700; }
+.rf-stack b { font: 700 11px/1 ui-monospace, monospace; letter-spacing: 0; }
+/* The round's recordings on its card: each by whom, its length, and a way to
+   watch it alone. */
+.rf-takes { list-style: none; margin: 7px 0 0; padding: 0; border-top: 1px solid rgba(200, 194, 152, .13); }
+.rf-take { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 0; border-bottom: 1px solid rgba(200, 194, 152, .07);
+  color: var(--rf-muted); font-size: 12px; }
+.rf-take-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rf-ink);
+  font-weight: 700; text-decoration: none; }
+.rf-take-name:hover { text-decoration: underline; text-decoration-color: var(--rf-khaki); text-underline-offset: 3px; }
+.rf-take-meta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-take-len { flex: none; color: var(--rf-faint); font: 11px/1 ui-monospace, monospace; }
+.rf-take-watch { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px 0 5px; border: 1px solid rgba(200, 194, 152, .3);
+  border-radius: 4px; color: var(--rf-ink); font: 700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .08em;
+  text-transform: uppercase; text-decoration: none; white-space: nowrap; }
+.rf-root .rf-take-watch svg { width: 11px; height: 11px; }
+.rf-take-watch:hover { border-color: var(--rf-edge-strong); background: rgba(255, 255, 255, .06); }
+.rf-take-watch:focus-visible, .rf-take-name:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rf-take-more { min-height: 24px; padding-top: 4px; color: var(--rf-faint); font-size: 11.5px; }
+.rf-take-more a { color: inherit; }
+/* For an admin: a round held together only by an admin's link its
+   recordings do not bear out. */
+.rf-root .rf-weak { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; vertical-align: 1px;
+  border: 1px solid rgba(242, 194, 90, .5); color: var(--rf-alert); background: rgba(242, 194, 90, .08);
+  font: 700 9.5px/1.2 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.rf-root .rf-weak::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor;
+  animation: rf-pulse 2.4s ease-in-out infinite; }
+@keyframes rf-pulse { 50% { opacity: .35; } }
+.rf-evidence { flex: 1 1 100%; display: grid; gap: 8px; padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(242, 194, 90, .45);
+  background: rgba(242, 194, 90, .07); }
+.rf-evidence p { margin: 0; color: var(--rf-ink); }
+.rf-evidence small { color: var(--rf-muted); font-size: 11.5px; }
+.rf-evidence .rf-dialog-actions { justify-content: flex-start; }
 .rf-more { display: flex; justify-content: center; padding: 18px 0 4px; }
 .rf-note { padding: 34px 12px; text-align: center; color: var(--rf-muted); }
 .rf-note p { margin: 0 auto 14px; max-width: 46ch; text-wrap: balance; }
@@ -229,6 +271,9 @@ const STYLE = `
 .rf-round-admin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px;
   border-top: 1px dashed rgba(200, 194, 152, .22); }
 .rf-round-admin form { display: flex; flex: 1 1 280px; gap: 6px; min-width: 0; }
+.rf-round-admin > div { flex: 1 1 100%; }
+.rf-round-admin > div:empty { display: none; }
+.rf-round-head .rf-weak { align-self: center; }
 .rf-round-admin .rf-hint { color: var(--rf-faint); font-size: 11.5px; flex: 1 1 100%; }
 .rf-several { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .rf-several li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 8px 10px;
@@ -302,8 +347,8 @@ const STYLE = `
   .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rf-play, .rf-drop, .rf-progress i, .rf-filter { transition: none; }
-  .rf-skeleton .rf-cover { animation: none; }
+  .rf-play, .rf-drop, .rf-progress i, .rf-filter, .rf-deck::before, .rf-deck::after { transition: none; }
+  .rf-skeleton .rf-cover, .rf-root .rf-weak::before { animation: none; }
 }
 `;
 
@@ -323,40 +368,19 @@ function button(className, label, onClick, iconName = null) {
   return b;
 }
 
-/** The replay page for a shared recording, at `at` seconds if given. */
-export function watchHref(recording, { root, fileUrl = path => path, at = null }) {
-  const q = readableQuery([
-    ['mod', recording.mod],
-    ['map', recording.level],
-    ['replay', fileUrl(recording.recordingUrl)],
-    ['serverlog', recording.serverLogUrl ? fileUrl(recording.serverLogUrl) : null],
-    ['t', at === null ? null : Math.max(0, Math.floor(at))],
-  ]);
-  return new URL(`map.html?${q}`, new URL(root, location.href)).href;
-}
-
-/**
- * A round's recordings played merged (features/replay-feed, "Rounds"): one
- * `replay` per recording, `recording` first (its clock and its player lead),
- * then the others in the order they began in the round, and the first's server
- * log. `round` is the API's list of them, `recording` among them.
- */
-export function watchRoundHref(recording, round, { root, fileUrl = path => path, at = null }) {
-  const lead = round.find(m => m.slug === recording.slug) ?? recording;
-  const order = [lead, ...round.filter(m => m.slug !== lead.slug)];
-  const q = readableQuery([
-    ['mod', recording.mod],
-    ['map', recording.level],
-    ...order.map(m => ['replay', fileUrl(m.recordingUrl)]),
-    ['serverlog', lead.serverLogUrl ? fileUrl(lead.serverLogUrl) : null],
-    ['t', at === null ? null : Math.max(0, Math.floor(at))],
-  ]);
-  return new URL(`map.html?${q}`, new URL(root, location.href)).href;
-}
+// The replay page's addresses (recordings-api.js, which the replay's own
+// switch between a round's recordings shares).
+export { watchHref, watchRoundHref };
 
 /** A recording's round, when it has other recordings in the feed: `round` of
  *  two or more, else null. */
 export const roundOf = recording => (Array.isArray(recording?.round) && recording.round.length > 1 ? recording.round : null);
+
+/** A feed card that is a round of several recordings (the API grouped them):
+ *  `{ members, whole }`, the round's recordings in round order and what the
+ *  card shows of it (`roundCard`); null for a recording on its own. */
+export const roundCardOf = recording => (recording?.roundCard && roundOf(recording)
+  ? { members: roundOf(recording), whole: recording.roundCard } : null);
 
 /** What the feed is narrowed to in an address (`?server=`, `?uploader=`):
  *  `{ server, uploader }`, '' for all. */
@@ -370,8 +394,6 @@ export function feedHref(filter = {}) {
 }
 
 const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader;
-const matchesFilter = (recording, filter) => (!filter.server || recording.serverName === filter.server)
-  && (!filter.uploader || recording.uploaderName === filter.uploader);
 
 // --- the levels' art -----------------------------------------------------------
 
@@ -456,7 +478,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     filter: { server: '', uploader: '' },
     choices: null,      // `{ servers, uploaders }` the feed can be narrowed to
     items: [],
-    total: 0,
+    total: 0,           // cards: a round of several recordings is one
+    recordings: 0,      // the recordings on them
     page: 0,
     pages: 1,
     storage: null,
@@ -540,6 +563,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     }
     renderAccount();
     if (state.detail) renderComments();
+    // An admin's cards mark a round held by a weak link.
+    else if (state.viewer?.isAdmin && state.items.some(i => i.roundCard?.weak)) renderList();
   }
 
   function renderAccount() {
@@ -630,6 +655,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       if (abort !== listAbort) return;
       state.items = reset ? page.items : [...state.items, ...page.items.filter(i => !state.items.some(o => o.slug === i.slug))];
       state.total = page.totalCount;
+      state.recordings = page.recordingCount ?? page.totalCount;
       state.page = page.page;
       state.pages = page.totalPages;
       state.storage = page.storage;
@@ -742,7 +768,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     for (const b of sorts) b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort));
     bar.hidden = false;
     renderFilters();
-    countEl.textContent = state.total ? String(state.total) : '';
+    countEl.textContent = feedCount(state.total, state.recordings);
     storageEl.textContent = state.storage ? `${size(state.storage.usedBytes)} of ${size(state.storage.quotaBytes)} used` : '';
     body.replaceChildren();
     if (state.error && !state.items.length) {
@@ -791,42 +817,46 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   }
 
   /** A recording's cover: its own frame if it has one, else the level's
-   *  loading screen with the level's name on it. */
-  function cover(recording, { big = false } = {}) {
+   *  loading screen with the level's name on it. A round's (`round`, from
+   *  `roundCardOf`) plays its recordings merged, with the round's cover and
+   *  span, and says how many recordings it is. */
+  function cover(recording, { big = false, round = null } = {}) {
     const a = el('a', 'rf-cover');
-    a.href = watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p) });
-    a.setAttribute('aria-label', `Watch ${recording.title}`);
+    const fileUrl = p => state.api.fileUrl(p);
+    a.href = round ? watchRoundHref(recording, round.members, { root, fileUrl }) : watchHref(recording, { root, fileUrl });
+    a.setAttribute('aria-label', round ? `Watch ${recording.title}, its ${round.members.length} recordings merged` : `Watch ${recording.title}`);
     a.addEventListener('click', e => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
-      watch(recording);
+      if (round) watchMerged(recording, round.members);
+      else watch(recording);
     });
+    const shot = round ? round.whole.thumbnailUrl : recording.thumbnailUrl;
     const title = el('span', 'rf-cover-title');
     const mod = el('span', 'rf-mod', recording.mod);
-    const len = el('span', 'rf-len', clock(recording.durationSeconds));
+    const len = el('span', 'rf-len', clock(round ? round.whole.durationSeconds : recording.durationSeconds));
     const play = el('span', 'rf-play');
     play.innerHTML = icon('play');
-    if (recording.thumbnailUrl) {
+    if (shot) {
       a.classList.add('shot');
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
-      img.src = state.api.fileUrl(recording.thumbnailUrl);
+      img.src = state.api.fileUrl(shot);
       a.append(img);
     }
     a.append(title, mod, len, play);
-    const round = roundOf(recording);
     if (round) {
       const stack = el('span', 'rf-stack');
-      stack.innerHTML = icon('round');
-      stack.append(String(round.length));
-      stack.title = `${round.length} recordings of this round`;
+      stack.innerHTML = `${icon('round')}<b></b> recordings`;
+      stack.querySelector('b').textContent = String(round.members.length);
+      stack.title = `One round, ${round.members.length} recordings of it: plays them merged`;
       a.append(stack);
     }
     artFor(recording.mod, recording.level).then(level => {
       title.textContent = level.title;
-      if (!recording.thumbnailUrl) a.style.backgroundImage = `url("${level.art}")`;
+      if (!shot) a.style.backgroundImage = `url("${level.art}")`;
     });
     modList().then(list => {
       const known = list.find(m => m.id === recording.mod);
@@ -836,16 +866,31 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     return a;
   }
 
-  function card(recording) {
-    const node = el('article', 'rf-card');
-    const info = el('div', 'rf-info');
-    const name = el('a', 'rf-name', recording.title);
-    name.href = `?tab=replay&rec=${encodeURIComponent(recording.slug)}`;
-    name.addEventListener('click', e => {
+  /** A link in place: followed here unless opened in a new tab. */
+  function inPlace(a, go) {
+    a.addEventListener('click', e => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
-      openDetail(recording.slug, { push: true, summary: recording });
+      go();
     });
+    return a;
+  }
+
+  const pageHref = slug => `?tab=replay&rec=${encodeURIComponent(slug)}`;
+
+  /**
+   * A card: a recording on its own, or a round of several (the API grouped
+   * them, `roundCard`), carried by its lead. A round's card is a deck; its
+   * cover plays the round merged, its title opens the lead's page, where the
+   * round is listed, and its recordings are listed under it, each to watch
+   * alone or to open.
+   */
+  function card(recording) {
+    const round = roundCardOf(recording);
+    const node = el('article', `rf-card${round ? ' rf-round-card' : ''}`);
+    const info = el('div', 'rf-info');
+    const name = inPlace(el('a', 'rf-name', recording.title), () => openDetail(recording.slug, { push: true, summary: recording }));
+    name.href = pageHref(recording.slug);
     const where = el('div', 'rf-line');
     artFor(recording.mod, recording.level).then(level => {
       const said = [level.title, titled(recording.gameMode)].filter(Boolean);
@@ -854,34 +899,80 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       where.title = where.textContent;
     });
     const stats = el('div', 'rf-line');
-    if (recording.uploaderName) stats.append(sharedBy(recording, state.filter, { strong: true }), playerLink(recording));
-    for (const part of [count(recording.viewCount, 'view'),
-      recording.commentCount ? count(recording.commentCount, 'comment') : null, ago(recording.createdAt)].filter(Boolean)) {
+    const views = round ? round.whole.viewCount : recording.viewCount;
+    const comments = round ? round.whole.commentCount : recording.commentCount;
+    if (round) {
+      // Everyone who shared one, each narrowing the feed to theirs.
+      round.whole.uploaders.forEach((uploader, i) => {
+        if (i) stats.append(', ');
+        stats.append(sharedBy({ uploaderName: uploader }, state.filter, { strong: true }));
+      });
+      stats.title = `Shared by ${round.whole.uploaders.join(', ')}`;
+    } else if (recording.uploaderName) {
+      stats.append(sharedBy(recording, state.filter, { strong: true }), playerLink(recording));
+    }
+    for (const part of [count(views, 'view'), comments ? count(comments, 'comment') : null,
+      ago(round ? round.whole.createdAt : recording.createdAt)].filter(Boolean)) {
       stats.append(el('span', 'rf-dot'), document.createTextNode(part));
     }
     info.append(name, where, stats);
-    const round = roundOf(recording);
-    if (round) info.append(roundLine(recording, round));
-    node.append(cover(recording), info);
+    if (round) {
+      if (round.whole.weak && state.viewer?.isAdmin) info.append(weakMark());
+      info.append(takes(recording, round));
+    }
+    let top = cover(recording, { round });
+    if (round) {
+      const deck = el('div', `rf-deck${round.members.length > 2 ? ' more' : ''}`);
+      deck.append(top);
+      top = deck;
+    }
+    node.append(top, info);
     return node;
   }
 
-  /** `3 recordings of this round · Watch merged`: the first opens the recording's
-   *  page, where the round is listed; the second plays them as one. */
-  function roundLine(recording, round) {
-    const line = el('div', 'rf-line rf-round-line');
-    line.innerHTML = icon('round');
-    const count = el('a', '', `${round.length} recordings of this round`);
-    count.href = `?tab=replay&rec=${encodeURIComponent(recording.slug)}`;
-    count.addEventListener('click', e => {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
-      e.preventDefault();
-      openDetail(recording.slug, { push: true, summary: recording });
-    });
-    const merged = el('a', 'rf-watch-merged', 'Watch merged');
-    merged.href = watchRoundHref(recording, round, { root, fileUrl: p => state.api.fileUrl(p) });
-    merged.title = 'Play every recording of this round as one';
-    line.append(count, el('span', 'rf-dot'), merged);
+  /** The most of a round's recordings its card lists; its page lists all. */
+  const TAKES = 3;
+
+  /** A round's recordings on its card: who shared each, who recorded it
+   *  where that is someone else, its length, and Alone, which plays it on
+   *  its own. The name opens its page. */
+  function takes(recording, round) {
+    const list = el('ol', 'rf-takes');
+    list.setAttribute('aria-label', 'The recordings of this round');
+    const fileUrl = p => state.api.fileUrl(p);
+    for (const member of round.members.slice(0, TAKES)) {
+      const item = el('li', 'rf-take');
+      const own = { ...member, mod: recording.mod, level: recording.level };
+      const name = inPlace(el('a', 'rf-take-name', member.uploaderName || member.recordedBy || member.title),
+        () => openDetail(member.slug, { push: true }));
+      name.href = pageHref(member.slug);
+      name.title = `${member.title}: its page`;
+      const by = member.recordedBy && member.recordedBy !== member.uploaderName ? `recorded by ${member.recordedBy}` : '';
+      const meta = el('span', 'rf-take-meta', by);
+      const watchAlone = inPlace(el('a', 'rf-take-watch'), () => watch(own));
+      watchAlone.innerHTML = `${icon('play')}<span>Alone</span>`;
+      watchAlone.href = watchHref(own, { root, fileUrl });
+      watchAlone.title = `Watch ${member.uploaderName ? `${member.uploaderName}'s recording` : 'this recording'} on its own`;
+      item.append(name, meta, el('span', 'rf-take-len', clock(member.durationSeconds)), watchAlone);
+      list.append(item);
+    }
+    if (round.members.length > TAKES) {
+      const more = el('li', 'rf-take-more');
+      const all = inPlace(el('a', '', `and ${round.members.length - TAKES} more`), () => openDetail(recording.slug, { push: true, summary: recording }));
+      all.href = pageHref(recording.slug);
+      more.append(all);
+      list.append(more);
+    }
+    return list;
+  }
+
+  /** For an admin: the round holds together only through an admin's link its
+   *  recordings do not bear out (features/replay-feed, "Rounds"). */
+  function weakMark() {
+    const mark = el('span', 'rf-weak', 'Weak link');
+    mark.title = 'One round only by an admin\'s link: its recordings do not bear it out';
+    const line = el('div', 'rf-line');
+    line.append(mark);
     return line;
   }
 
@@ -1032,6 +1123,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     head.append(el('h2', '', 'This round'), el('span', '', round
       ? `${round.length} recordings. Watch merged plays them as one.`
       : 'Only this recording so far.'));
+    // For an admin: held together only by an admin's link its files do not bear out.
+    if (round && recording.roundWeak && recording.canEditRound) head.append(weakMark().firstChild);
     section.append(head);
     if (round) {
       const list = el('ol', 'rf-round-list');
@@ -1060,8 +1153,12 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           member.recordedBy && member.recordedBy !== member.uploaderName ? `recorded by ${member.recordedBy}` : null,
           clock(member.durationSeconds),
           member.link === 'linked' ? 'put here by an admin' : null,
+          // What the files say of an admin's link, for the admins.
+          member.link === 'linked' && recording.canEditRound && member.matchedKeys !== null && member.matchedKeys !== undefined
+            ? count(member.matchedKeys, 'shared event') : null,
         ].filter(Boolean);
         for (const part of said) line.append(el('span', 'rf-dot'), part);
+        if (member.weakLink && recording.canEditRound) line.append(' ', weakMark().firstChild);
         facts.append(name, line);
         item.append(at, facts);
         list.append(item);
@@ -1073,7 +1170,9 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   }
 
   /** An admin's tools: put this recording in another's round, by that one's link
-   *  or id; take it out of its own, for good (detection leaves it out). */
+   *  or id; take it out of its own, for good (detection leaves it out). A link
+   *  the two recordings' files do not bear out comes back with what they say
+   *  (`evidence`), to link anyway or leave. */
   function roundAdmin(recording, round) {
     const tools = el('div', 'rf-round-admin');
     const form = el('form');
@@ -1082,27 +1181,34 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     input.setAttribute('aria-label', 'The recording to put this one with');
     const link = button('', 'Put in its round', () => form.requestSubmit(), 'link');
     form.append(input, link);
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (!input.value.trim()) { input.focus(); return; }
+    const asked = el('div');
+    const put = async (other, confirm) => {
       link.disabled = true;
       try {
-        state.detail = await state.api.linkRound(recording.slug, input.value.trim());
-        patchItem(state.detail);
+        state.detail = await state.api.linkRound(recording.slug, other, confirm);
+        staleList();
         renderDetail();
-        flash('Put in the round');
+        flash(confirm ? 'Put in the round, marked weak' : 'Put in the round');
       } catch (error) {
         link.disabled = false;
-        flash(error.message, true);
+        if (error.status === 409 && error.body?.evidence) asked.replaceChildren(evidenceBox(error.body.evidence, other, put, asked));
+        else flash(error.message, true);
       }
+    };
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (!input.value.trim()) { input.focus(); return; }
+      asked.replaceChildren();
+      put(input.value.trim(), false);
     });
-    tools.append(form);
+    input.addEventListener('input', () => asked.replaceChildren());
+    tools.append(form, asked);
     if (round) {
       const out = button('quiet danger', 'Take out of this round', async () => {
         out.disabled = true;
         try {
           state.detail = await state.api.separateRound(recording.slug);
-          patchItem(state.detail);
+          staleList();
           renderDetail();
           flash('Taken out of the round');
         } catch (error) {
@@ -1114,6 +1220,30 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     }
     tools.append(el('span', 'rf-hint', 'Taken out, it is never put back with these by itself.'));
     return tools;
+  }
+
+  /** What two recordings' files say of their being one round, when it falls
+   *  short of what detection needs: the admin's to overrule. */
+  function evidenceBox(evidence, other, put, holder) {
+    const box = el('div', 'rf-evidence');
+    box.setAttribute('role', 'alert');
+    // The numbers, where there are any to read: none in common says it all.
+    const numbers = evidence.measured && evidence.sameLevel && evidence.matchedKeys > 0
+      ? [count(evidence.matchedKeys, 'shared event'), `${evidence.matchedPlayerKeys} of them the players' own`,
+        `${Math.round((evidence.playerShare ?? 0) * 100)}% of the players' events where both recorded`,
+        `${clock(evidence.overlapSeconds)} recorded by both`].join(' · ')
+      : '';
+    const needs = `One round needs ${evidence.minMatches} shared events, ${evidence.minPlayerKeys} of them the players' own, `
+      + `and ${Math.round(evidence.minPlayerShare * 100)}% of the players' events where both recorded.`;
+    box.append(el('p', '', evidence.summary));
+    if (numbers) box.append(el('small', '', numbers));
+    box.append(el('small', '', needs));
+    const actions = el('div', 'rf-dialog-actions');
+    actions.append(
+      button('danger', 'Link anyway', () => { holder.replaceChildren(); put(other, true); }, 'link'),
+      button('quiet', 'Leave them apart', () => holder.replaceChildren()));
+    box.append(actions);
+    return box;
   }
 
   async function copyLink(recording, target) {
@@ -1165,8 +1295,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       b.disabled = true;
       try {
         await state.api.remove(recording.slug);
-        state.items = state.items.filter(i => i.slug !== recording.slug);
-        state.total = Math.max(0, state.total - 1);
+        staleList();
         loadChoices();
         closeDetail({ push: true });
       } catch (error) {
@@ -1180,6 +1309,14 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   function patchItem(recording) {
     const at = state.items.findIndex(i => i.slug === recording.slug);
     if (at >= 0) state.items[at] = { ...state.items[at], ...recording };
+  }
+
+  /** The cards as the page holds them no longer are: a share, a removal or an
+   *  admin's link or take-out can join two cards into one round, or part one.
+   *  The feed is asked again when it next shows. */
+  function staleList() {
+    listAbort?.abort();
+    Object.assign(state, { items: [], total: 0, recordings: 0, page: 0, pages: 1 });
   }
 
   // --- comments ------------------------------------------------------------------
@@ -1610,10 +1747,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           if ((state.viewer?.names ?? []).includes(author)) rememberPostAs(author);
           sharing = false;
           closeShare();
-          if (matchesFilter(shared, state.filter)) {
-            state.items = [shared, ...state.items.filter(i => i.slug !== shared.slug)];
-            state.total += 1;
-          }
+          // It may have joined a round already in the feed: the cards are asked again.
+          staleList();
           loadChoices();
           openDetail(shared.slug, { push: true, summary: shared });
         } catch (error) {
@@ -1716,11 +1851,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           say('Nothing was shared.', true);
           return;
         }
-        for (const recording of shared) {
-          if (!matchesFilter(recording, state.filter)) continue;
-          state.items = [recording, ...state.items.filter(item => item.slug !== recording.slug)];
-          state.total += 1;
-        }
+        // Recordings of one round are one card: the feed is asked again.
+        loadList(true);
         loadChoices();
         if (shared.length < ready.length) {
           say(`Shared ${shared.length} of ${ready.length}.`, true);

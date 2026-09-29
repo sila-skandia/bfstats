@@ -46,9 +46,10 @@ import {
   count, distance, ENDING_EVENTS, lastAt, ms, plain, poseAt, RANK, readRecording, spanAt, subtract,
 } from './replay-merge-read.js';
 import { alignAll, retime } from './replay-merge-clock.js';
+import { checkAlignment, formatGuard, MergeRefused } from './replay-merge-guard.js';
 import { alignmentReport, finishReport, formatMergeReport } from './replay-merge-report.js';
 
-export { formatMergeReport };
+export { formatGuard, formatMergeReport, MergeRefused };
 
 // --- options ------------------------------------------------------------------
 
@@ -72,6 +73,19 @@ export const MERGE_DEFAULTS = Object.freeze({
   voteBin: 0.05,
   /** Fewer matched events than this and two files are not one round. */
   minMatches: 8,
+  /** The guard (replay-merge-guard.js): fewer than this share of the kills
+   *  and scores both files hold over their overlap lining up, and they are
+   *  two rounds. One round's files share 99.6% (the first real pair of one
+   *  round, 1330 of 1335), two rounds' 0.2% (1 of 551). */
+  minScoreShare: 0.5,
+  /** ... where both hold at least this many; with fewer the scores cannot
+   *  decide, and the world clock does. */
+  minScoreEvents: 8,
+  /** Seconds the two files' world clocks (0x29) may disagree, on the fitted
+   *  clock, where the scores cannot decide. One round's files: 0.1 s. */
+  worldClockSlack: 5,
+  /** Merge even what the guard refuses (the command line's --force). */
+  force: false,
   /** Matched events spanning fewer seconds than this fit an offset alone. */
   minDriftSpan: 120,
   /** A fitted rate further than this from 1 is refused: two PCs' clocks do
@@ -187,6 +201,14 @@ export function mergeRecordings(inputs, options = {}) {
   // One clock: every file's fitted onto the first's, then shifted so the
   // file that began first begins at 0.
   const fits = alignAll(sources, opts);
+  // An alignment a few events agreed on by chance is two rounds: refused
+  // before anything is merged, unless forced.
+  const guard = checkAlignment(sources, fits, opts);
+  report.guard = guard;
+  if (!guard.credible) {
+    if (!opts.force) throw new MergeRefused(guard.message, guard);
+    report.warnings.push(`merged by force: ${guard.message}`);
+  }
   const shift = -Math.min(...fits.map(f => f.a));
   const stateShift = i => (i === 0 ? 0 : Array.isArray(opts.stateShift) ? opts.stateShift[i] ?? 0 : opts.stateShift);
   const alignment = alignmentReport(sources, fits, opts);
