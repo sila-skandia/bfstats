@@ -2,6 +2,13 @@
 
 Vanilla BF1942 (`~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942`) against
 `tools/bf1942-models/` and `tools/bf1942-models/viewer/` as of this working tree.
+*Corrected 2026-09-29: "this working tree" is the tree of 2026-09-14, when this
+audit was committed, and the audit is a snapshot of that day. Its counts of the
+repo's own state have moved since: kit meshes are extracted
+([kits.md](../kits.md)) and hand weapons fire on the map page
+([first-person-soldier.md](../first-person-soldier.md) §9), and
+[the corpus sweep](../../bf1942-corpus-sweep-2026-09-18/README.md) tracks each
+gap after that.*
 
 Every count below is reproducible. Unless stated otherwise the setup is:
 
@@ -920,6 +927,11 @@ ever reaches a glb.
 | face: `USFace*` (17), `Speak_*` (11) | 28 |
 | first-person set (`1p*`) | ~300 |
 | **total** | **1,154** |
+
+*Corrected 2026-09-29: [first-person-soldier.md](../first-person-soldier.md)
+§2.6 counts 379 first-person clips, not about 300. That doc states its number
+as an exact count and this table marks its own as approximate, and neither
+shows the command that counted.*
 
 **Current state.** `extract_pose.py:55-60` defines exactly three stances;
 `extract_pose.py:190-191` calls `lower.local_pose(frame)` / `upper.local_pose(frame)`
