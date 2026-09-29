@@ -163,9 +163,9 @@ count against, and halves it before multiplying; the rest of its formula is not
 traced. (`measured`; the formula `inferred`.)
 
 *Corrected 2026-09-29: `setNumberOfTicketPerPlayer` is not where the scaling
-happens. Ledger TKT-7 reads it and finds no mode script in the 16 installs
-calls it. The round start scales the count itself, TKT-1, by the server's max
-players, TKT-2.*
+happens. Ledger TKT-7 reads it and finds that no mode script in the 16
+installs calls it. The round start scales the count itself, TKT-1, by the
+server's max players, TKT-2.*
 
 It also shows which script coop runs: 200 / 200 is the root `Coop.con` in
 `wake_003.rfa` (100 / 100), not `GameTypes/Coop.con` in `wake.rfa` (140 / 100),
