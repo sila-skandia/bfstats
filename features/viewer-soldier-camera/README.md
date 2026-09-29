@@ -181,6 +181,12 @@ shipped behaviour — that bounds PARA-6, and it is treated the same way.
   marked in those words in the module, and `map.html` swaps it in only while
   `soldier.parachuteState === 'open'` **and** the page was loaded with
   `?soldier3p=1` -- see §6 for why the flag is there and off by default.
+  *Corrected 2026-09-29: the canopy's views have been on by default since
+  4d2fe981 on 2026-09-22, and `?no-soldier3p=1` puts them back behind the
+  flag, `viewer/soldier-view.js` :319-325. On foot without a canopy the cycle
+  is `inside` alone, as [viewer-foot-first-person](../viewer-foot-first-person/README.md)
+  and [vehicle-camera-toggle-sweep](../vehicle-camera-toggle-sweep/README.md)
+  record.*
 - `PARACHUTE_VIEW_RADIUS = 3.0` is a viewer number too. `chase-camera.js` takes
   the root's `getBoundingRadius()`, and for a soldier that is exactly the
   quantity PARA-6 cannot pin (1.0 with the `Parachute` child contributing
@@ -250,6 +256,11 @@ what each mode paints is in §6.
   worse than C doing nothing, so C stays a no-op everywhere until the body is
   built. The camera law itself is right and is exercised by
   `tests/test_soldier_camera.py`; turn the flag on with the mesh.
+  *Corrected 2026-09-29: 4d2fe981 built the body and put it under the canopy
+  on 2026-09-22, and the flag flipped with it. The canopy's external views are
+  on by default, `?no-soldier3p=1` turns them off, and what C does on foot
+  since is in [viewer-foot-first-person](../viewer-foot-first-person/README.md)
+  and [vehicle-camera-toggle-sweep](../vehicle-camera-toggle-sweep/README.md).*
 - **The client's channel-26 handler was not found**, so §3's question is open.
   The route that looked most likely and ran out of budget: the client's
   `Camera::getTransformation` is known to be at `0x005659b0` (W4-C), so its
