@@ -56,6 +56,7 @@ import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds } from './replay-props.js';
 import { ReplayHud } from './replay-hud.js';
+import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
@@ -150,6 +151,8 @@ class ReplayPlayer {
     this.camera = new ReplayCamera(this);
     // His own HUD in first person: the crosshair, his health and ammo.
     this.hud = new ReplayHud(this);
+    // And the weapon in his hands, his arms playing what his torso did.
+    this.viewmodel = extra('the first-person weapon', () => new ReplayViewmodel(this)) ?? null;
     if (this.followPid === null) this.camera.setMode('free');
     this.feed = new ReplayFeed(this, this.kills);
     // The level's flags and the ticket counter, as the recording has them.
@@ -468,6 +471,7 @@ class ReplayPlayer {
     guard.run('the seek', () => {
       this.feed?.invalidate();
       this.camera?.snap();
+      this.viewmodel?.snap();
     });
   }
 
@@ -561,6 +565,10 @@ class ReplayPlayer {
       // no HUD over a view that did not come from his eyes.
       this.camera.hidePid = null;
       this.camera.sight = null;
+    });
+    // The weapon in his hands, before his rounds of this frame leave it.
+    guard.run('the first-person weapon', () => this.viewmodel?.update(t), () => {
+      if (this.viewmodel) this.viewmodel.shown = null;
     });
     guard.run('the soldiers', () => this.soldiers?.update(t, step, this.hulls));
     guard.run('the dropped kits and rounds', () => this.props.update(t));
@@ -674,6 +682,7 @@ class ReplayPlayer {
     if (this.ctx.guns) this.ctx.guns.timeScale = 1;
     if (this.ctx.effects) this.ctx.effects.timeScale = 1;
     extra('taking the camera back', () => this.camera.dispose());
+    extra('taking the first-person weapon down', () => this.viewmodel?.dispose());
     for (const hull of this.hulls.values()) extra(`taking the ${hull.life.tmpl} down`, () => hull.dispose());
     this.hulls.clear();
     extra('taking the soldiers down', () => this.soldiers?.dispose());
@@ -721,6 +730,7 @@ export function recordingInfo(url) {
  *        vehicleClasses, groundHeight(x, z), waterLevel(),
  *        claimVehicleAudio(key, node, drive, groups), releaseVehicleAudio(key, node),
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),
+ *        renderer, warmSubtree(root, camera, scene), isCollision(obj), lights(),
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
  *        playSoldierDeathSound(position, team), playRefillSound(position), ensureAudio(),
  *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
@@ -731,8 +741,11 @@ export function recordingInfo(url) {
  * has the keyboard, and for the battle map the level's map art, its
  * projection (`extras.minimap.worldToImage`) and its view distance, and
  * `opened`, handed each player once its chrome is built (the page's additions
- * to the bar, replay-open.js). The page calls `afterRender(canvas)` after each
- * render and runs its message log at `feedRate()`.
+ * to the bar, replay-open.js). `renderer`, `warmSubtree`, `isCollision` and
+ * `lights` (the world's `{ hemi, sun }`) draw the followed player's weapon in
+ * his first person (replay-viewmodel.js). The page calls `renderViewmodel()`
+ * after each render, then `afterRender(canvas)`, and runs its message log at
+ * `feedRate()`.
  */
 export function createReplayController(ctx) {
   const assets = new ReplayAssets(ctx);
@@ -793,6 +806,11 @@ export function createReplayController(ctx) {
     },
     afterRender(canvas) {
       guarded("the timeline's frame", () => player.afterRender(canvas));
+    },
+    /** The followed player's weapon over the frame just drawn, in his first
+     *  person (replay-viewmodel.js): after the render, before `afterRender`. */
+    renderViewmodel() {
+      guarded('the first-person weapon', () => player.viewmodel?.render());
     },
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {
