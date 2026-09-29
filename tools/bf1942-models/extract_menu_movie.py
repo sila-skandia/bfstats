@@ -57,9 +57,16 @@ def movie_dest(out: Path, mod: str) -> Path:
     return base / "_shared" / "movies" / "background.webm"
 
 
+# The plate is 800x450 and the movie loops behind a menu, so a mod that ships
+# a big one (EoD's is 800x489, 181 s, 81 MB of Bink) is capped rather than
+# carried over at full weight: at most MAX_WIDTH wide, at most MAX_BITRATE.
+MAX_WIDTH = 640
+MAX_BITRATE = "300k"
+
+
 def transcode_bik_to_webm(bik_path: Path, dest: Path, *, crf: int = 30,
                           overwrite: bool = False, dry_run: bool = False) -> bool:
-    """VP9, constant quality, no audio. False when `dest` is already there."""
+    """VP9, constrained quality, no audio. False when `dest` is already there."""
     if dest.is_file() and dest.stat().st_size > 0 and not overwrite:
         return False
     if dry_run:
@@ -70,7 +77,8 @@ def transcode_bik_to_webm(bik_path: Path, dest: Path, *, crf: int = 30,
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(f".tmp_{dest.name}")
     cmd = [ffmpeg, "-y", "-nostats", "-loglevel", "error", "-i", str(bik_path),
-           "-an", "-c:v", "libvpx-vp9", "-crf", str(crf), "-b:v", "0",
+           "-an", "-vf", f"scale='min({MAX_WIDTH},iw)':-2",
+           "-c:v", "libvpx-vp9", "-crf", str(crf), "-b:v", MAX_BITRATE,
            "-row-mt", "1", "-deadline", "good", "-cpu-used", "2",
            "-pix_fmt", "yuv420p", "-f", "webm", str(tmp)]
     try:
