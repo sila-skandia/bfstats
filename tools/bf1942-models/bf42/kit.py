@@ -385,16 +385,17 @@ def level_loadouts(level_paths: list[tuple[str, Path]]) -> dict[str, dict[int, T
     own `Init.con` overrides the base's the way the engine actually loads
     it — see that function for why (five vanilla Pacific maps rebind their
     US side to Marine kits this way). A level whose base archive will not
-    open at all is skipped, the way `roster.add_levels` skips it.
+    open at all is skipped, the way `roster.add_levels` skips it. The file
+    read is the level's root `Init.con`, the one the engine runs
+    (`roster.level_init_con`), not the first file of that name in the
+    archive: DC_Coastal_Hammer's `CustomObjects/INIT.con` binds no kits.
     """
     loadouts: dict[str, dict[int, TeamLoadout]] = {}
     for level_name, path in level_paths:
         pool = roster_mod.level_pool(path)
         if pool is None:
             continue
-        init = next((name for name in pool.names()
-                     if name.lower().endswith("/init.con")
-                     and "menu" not in name.lower()), None)
+        init = roster_mod.level_init_con(pool.names())
         if init is None:
             continue
         loadouts[level_name] = parse_level_kits(pool.read(init).decode("latin-1"))

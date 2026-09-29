@@ -10,7 +10,13 @@ drives on), the `Physical` plug-in's `setStrType`, the `Unit` plug-in's
 vehicle's own `Objects.con` maps each `FireArms` child to its `aiTemplate`, which
 is how a gun node in the viewer finds its AI weapon.
 
+The mod's whole chain is read, nearest mod first (`game.addModPath`), so a
+mod keeps the units it inherits, and each level's own archive adds the units
+it declares for itself (DC's Urban Siege `Nimitz`). One file per maps tree:
+
     python3 extract_vehicle_ai.py --mod bf1942
+    python3 extract_vehicle_ai.py --mod DesertCombat --out viewer/maps/mods/desertcombat/_shared/vehicle-ai.json
+    python3 extract_vehicle_ai.py --mod DC_Final --out viewer/maps/mods/dc_final/_shared/vehicle-ai.json
 """
 
 from __future__ import annotations
@@ -23,7 +29,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bf42.rfa import RfaArchive  # noqa: E402
+from bf42 import roster as roster_mod  # noqa: E402
+from bf42.rfa import ArchivePool  # noqa: E402
+from extract_models import build_pools, discover_levels, mod_chain  # noqa: E402
 
 GAME = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
 
@@ -250,34 +258,75 @@ def fire_arms_under(pco: str, graph: dict[str, list[str]], kinds: dict[str, str]
     return out
 
 
-def extract(mod: str) -> dict:
-    archive = GAME / mod / "Archives" / "Objects.rfa"
-    if not archive.exists():
-        archive = GAME / mod / "Archives" / "objects.rfa"
-    rfa = RfaArchive(str(archive))
-    names = list(rfa.entries.keys())
-    # Every weapon template the archive declares, and every object's
-    # aiTemplate and addTemplate children: the shared guns (a Browning under
-    # Objects/Weapons) are reached from a vehicle's seat through them.
+def scan_objects(names: list[str], read, source_of=None) -> tuple[
+        dict[str, dict], dict[str, list[str]], dict[str, str], dict[str, str]]:
+    """Every weapon template the files declare, and every object's aiTemplate
+    and addTemplate children: the shared guns (a Browning under
+    Objects/Weapons) are reached from a vehicle's seat through them. `names`
+    are paths from `Objects/` on, grouped by archive nearest mod first (the
+    order `ArchivePool.names` gives); `read` returns a file's text or None.
+
+    `source_of` names each path's archive. A template or weapon template an
+    archive nearer the mod has already declared keeps that declaration: a
+    parent's copy of the name neither replaces it nor adds children to it
+    (DC Final redeclares 93 of the names DC and vanilla declare). Within one
+    archive, later files still read over earlier ones as before.
+    """
     all_weapons: dict[str, dict] = {}
     graph: dict[str, list[str]] = {}
     kinds: dict[str, str] = {}
     ai_of: dict[str, str] = {}
+    nearer_weapons: set[str] = set()
+    nearer_templates: set[str] = set()
+    source = object()
     for n in names:
+        src = source_of(n) if source_of else None
+        if src != source:
+            nearer_weapons |= set(all_weapons)
+            nearer_templates |= set(kinds)
+            source = src
         low = n.lower()
         if not low.endswith(".con"):
             continue
         if low.endswith("/ai/weapons.con") or low.endswith("/ai/weapon.con"):
-            all_weapons.update(parse_weapons_con(rfa.read(n).decode("latin-1")))
+            if (text := read(n)) is not None:
+                for key, weapon in parse_weapons_con(text).items():
+                    if key not in nearer_weapons:
+                        all_weapons[key] = weapon
         elif low.startswith("objects/") and "/ai/" not in low:
-            parse_template_graph(rfa.read(n).decode("latin-1"), graph, kinds, ai_of)
-    by_folder: dict[str, dict[str, str]] = {}
+            if (text := read(n)) is None:
+                continue
+            if not nearer_templates:
+                parse_template_graph(text, graph, kinds, ai_of)
+                continue
+            g: dict[str, list[str]] = {}
+            k: dict[str, str] = {}
+            a: dict[str, str] = {}
+            parse_template_graph(text, g, k, a)
+            for name, kind in k.items():
+                if name in nearer_templates:
+                    continue
+                kinds[name] = kind
+                graph.setdefault(name, []).extend(g.get(name, []))
+                if name in a:
+                    ai_of[name] = a[name]
+    return all_weapons, graph, kinds, ai_of
+
+
+def vehicle_folders(names: list[str]) -> dict[str, tuple[str, dict[str, str]]]:
+    """`Objects.rfa`'s vehicle folders: lower-cased folder -> (folder as
+    spelled, {file under it, lower-cased: entry name}).
+
+    A vehicle is `Objects/Vehicles/<class>/<name>`; a stationary gun
+    (`Stationary_Browning`, `Stationary_MG42`) is
+    `Objects/Stationary_Weapons/<name>`, a PlayerControlObject with an AI
+    template of its own like any vehicle. Grouped case-insensitively, the way
+    the engine opens files (RFA-1): a mod down the chain can spell a folder
+    its parent also ships differently.
+    """
+    by_folder: dict[str, tuple[str, dict[str, str]]] = {}
     for n in names:
         low = n.lower()
-        # A vehicle is `Objects/Vehicles/<class>/<name>`; a stationary gun
-        # (`Stationary_Browning`, `Stationary_MG42`) is
-        # `Objects/Stationary_Weapons/<name>`, a PlayerControlObject with an
-        # AI template of its own like any vehicle.
         if low.startswith("objects/vehicles/"):
             depth = 4
         elif low.startswith("objects/stationary_weapons/"):
@@ -288,93 +337,229 @@ def extract(mod: str) -> dict:
         if len(parts) < depth + 1:
             continue
         folder = "/".join(parts[:depth])
-        by_folder.setdefault(folder, {})[low[len(folder) + 1:]] = n
-    vehicles: dict[str, dict] = {}
-    for folder, files in sorted(by_folder.items()):
-        ai_objects = files.get("ai/objects.con")
-        if not ai_objects:
-            continue
-        vehicle_name = folder.split("/")[-1]
-        parsed = parse_objects_con(rfa.read(ai_objects).decode("latin-1"))
-        weapons = parse_weapons_con(rfa.read(files["ai/weapons.con"]).decode("latin-1")) if files.get("ai/weapons.con") else {}
-        fire_arms, pcos = ({}, {})
-        if files.get("objects.con"):
-            fire_arms, pcos = parse_vehicle_objects(rfa.read(files["objects.con"]).decode("latin-1"))
-        # The root PCO's template, and its Mobile / Physical / Unit / Cover plug-ins.
-        root_ai = pcos.get(vehicle_name) or next(iter(pcos.values()), None)
-        root = parsed["templates"].get((root_ai or "").lower()) or next(iter(parsed["templates"].values()), None)
-        info: dict = {
-            "class": folder.split("/")[2] if folder.lower().startswith("objects/vehicles/") else "Stationary",
-            "aiTemplate": root["name"] if root else None,
-            "basicTemp": basic_temp(root), "types": list((root or {}).get("types", [])),
-            "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
-            "strategicStrength": None, "coverValue": None, "isTurnable": None,
-            "fireArms": {k: v for k, v in fire_arms.items()},
-            "seats": {k: v for k, v in pcos.items()},
-            "aiWeapons": {w["name"]: {kk: vv for kk, vv in w.items() if kk != "name"} for w in weapons.values()},
-        }
-        # Every seat (PlayerControlObject) of the vehicle: its aiTemplate's
-        # Unit plug-in strengths and the AI weapons of the guns it reaches.
-        seats_ai: dict[str, dict] = {}
-        for pco, ai_name in pcos.items():
-            t = parsed["templates"].get(ai_name.lower())
-            seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
-                          "strategicStrength": None, "aiWeapons": {},
-                          "basicTemp": basic_temp(t), "types": list((t or {}).get("types", []))}
-            for pname in (t["plugIns"] if t else []):
-                p = parsed["plugIns"].get(pname.lower())
-                if p and p.get("kind") == "Unit":
-                    seat["strategicStrength"] = p.get("strategicStrength")
-                    # `aiTemplatePlugIn.equipmentType`: the unit's row of
-                    # `AIbehaviours.con`'s `setVehicle` list (0 Tank, 4 Fixed,
-                    # 13 FixedLargeBore, ...), which picks its behaviours: a
-                    # Tank's and a Fixed gun's Fire is `BBFireInfantery`.
-                    if p.get("equipmenttype") is not None:
-                        seat["equipmentType"] = int(p["equipmenttype"])
-                    # `setUseNoPathfindingToGetToObject` (ConsoleClass557
-                    # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
-                    # 0x0855e0c0 then takes the unit when a valid point lies
-                    # on the line 12 m behind it, not on its own cell.
-                    if p.get("setusenopathfindingtogettoobject"):
-                        seat["useNoPathfinding"] = True
-            if is_anti_aircraft(t, parsed["plugIns"]):
-                seat["isAntiAircraft"] = True
-            ctrl = control_info(t, parsed["plugIns"])
-            if ctrl:
-                seat["controlInfo"] = ctrl
-            for fa in fire_arms_under(pco.lower(), graph, kinds):
-                w_ai = ai_of.get(fa) or fire_arms.get(fa)
-                w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
-                if w:
-                    seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
-            seats_ai[pco] = seat
-        info["seatsAi"] = seats_ai
-        if is_anti_aircraft(root, parsed["plugIns"]):
-            info["isAntiAircraft"] = True
-        root_ctrl = control_info(root, parsed["plugIns"])
-        if root_ctrl:
-            info["controlInfo"] = root_ctrl
-        for pname in (root["plugIns"] if root else []):
+        entry = by_folder.setdefault(folder.lower(), (folder, {}))
+        entry[1][low[len(folder) + 1:]] = n
+    return by_folder
+
+
+def level_vehicle_folders(names: list[str]) -> dict[str, tuple[str, dict[str, str]]]:
+    """A level archive's own unit folders, the same shape as `vehicle_folders`.
+
+    A level files what it declares for itself as `Objects/<name>/` (DC's
+    Urban Siege `objects/Nimitz`, Caen's `Objects/Pak40`), so a unit folder
+    here is any folder holding `AI/Objects.con`, at whatever depth.
+    """
+    folders: set[str] = set()
+    for n in names:
+        low = n.lower()
+        if low.endswith("/ai/objects.con"):
+            folders.add(n[: -len("/ai/objects.con")])
+    by_folder: dict[str, tuple[str, dict[str, str]]] = {}
+    for folder in sorted(folders):
+        by_folder.setdefault(folder.lower(), (folder, {}))
+    for n in names:
+        low = n.lower()
+        for key, (folder, files) in by_folder.items():
+            if low.startswith(key + "/"):
+                files[low[len(key) + 1:]] = n
+    return by_folder
+
+
+def vehicle_record(folder: str, files: dict[str, str], read, all_weapons: dict[str, dict],
+                   graph: dict[str, list[str]], kinds: dict[str, str],
+                   ai_of: dict[str, str]) -> dict | None:
+    """One unit's record from its folder, or None when it ships no AI."""
+    ai_objects = files.get("ai/objects.con")
+    text = read(ai_objects) if ai_objects else None
+    if text is None:
+        return None
+    vehicle_name = folder.split("/")[-1]
+    parsed = parse_objects_con(text)
+    weapons_text = read(files["ai/weapons.con"]) if files.get("ai/weapons.con") else None
+    weapons = parse_weapons_con(weapons_text) if weapons_text else {}
+    fire_arms, pcos = ({}, {})
+    objects_text = read(files["objects.con"]) if files.get("objects.con") else None
+    if objects_text:
+        fire_arms, pcos = parse_vehicle_objects(objects_text)
+    # The root PCO's template, and its Mobile / Physical / Unit / Cover plug-ins.
+    root_ai = pcos.get(vehicle_name) or next(iter(pcos.values()), None)
+    root = parsed["templates"].get((root_ai or "").lower()) or next(iter(parsed["templates"].values()), None)
+    low = folder.lower()
+    info: dict = {
+        "class": (folder.split("/")[2] if low.startswith("objects/vehicles/")
+                  else "Stationary" if low.startswith("objects/stationary_weapons/") else None),
+        "aiTemplate": root["name"] if root else None,
+        "basicTemp": basic_temp(root), "types": list((root or {}).get("types", [])),
+        "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
+        "strategicStrength": None, "coverValue": None, "isTurnable": None,
+        "fireArms": {k: v for k, v in fire_arms.items()},
+        "seats": {k: v for k, v in pcos.items()},
+        "aiWeapons": {w["name"]: {kk: vv for kk, vv in w.items() if kk != "name"} for w in weapons.values()},
+    }
+    # Every seat (PlayerControlObject) of the vehicle: its aiTemplate's
+    # Unit plug-in strengths and the AI weapons of the guns it reaches.
+    seats_ai: dict[str, dict] = {}
+    for pco, ai_name in pcos.items():
+        t = parsed["templates"].get(ai_name.lower())
+        seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
+                      "strategicStrength": None, "aiWeapons": {},
+                      "basicTemp": basic_temp(t), "types": list((t or {}).get("types", []))}
+        for pname in (t["plugIns"] if t else []):
             p = parsed["plugIns"].get(pname.lower())
-            if not p:
-                continue
-            kind = p.get("kind")
-            if kind == "Mobile":
-                info["maxSpeed"] = p.get("maxspeed")
-                info["turnRadius"] = p.get("turnradius")
-                info["vehicleNumber"] = p.get("vehiclenumber")
-                info["isTurnable"] = p.get("isturnable")
-            elif kind == "Physical":
-                info["strType"] = p.get("strType")
-            elif kind == "Unit":
-                info["strategicStrength"] = p.get("strategicStrength")
+            if p and p.get("kind") == "Unit":
+                seat["strategicStrength"] = p.get("strategicStrength")
+                # `aiTemplatePlugIn.equipmentType`: the unit's row of
+                # `AIbehaviours.con`'s `setVehicle` list (0 Tank, 4 Fixed,
+                # 13 FixedLargeBore, ...), which picks its behaviours: a
+                # Tank's and a Fixed gun's Fire is `BBFireInfantery`.
                 if p.get("equipmenttype") is not None:
-                    info["equipmentType"] = int(p["equipmenttype"])
+                    seat["equipmentType"] = int(p["equipmenttype"])
+                # `setUseNoPathfindingToGetToObject` (ConsoleClass557
+                # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
+                # 0x0855e0c0 then takes the unit when a valid point lies
+                # on the line 12 m behind it, not on its own cell.
                 if p.get("setusenopathfindingtogettoobject"):
-                    info["useNoPathfinding"] = True
-            elif kind == "Cover":
-                info["coverValue"] = p.get("covervalue")
-        vehicles[vehicle_name] = info
+                    seat["useNoPathfinding"] = True
+        if is_anti_aircraft(t, parsed["plugIns"]):
+            seat["isAntiAircraft"] = True
+        ctrl = control_info(t, parsed["plugIns"])
+        if ctrl:
+            seat["controlInfo"] = ctrl
+        for fa in fire_arms_under(pco.lower(), graph, kinds):
+            w_ai = ai_of.get(fa) or fire_arms.get(fa)
+            w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
+            if w:
+                seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
+        seats_ai[pco] = seat
+    info["seatsAi"] = seats_ai
+    if is_anti_aircraft(root, parsed["plugIns"]):
+        info["isAntiAircraft"] = True
+    root_ctrl = control_info(root, parsed["plugIns"])
+    if root_ctrl:
+        info["controlInfo"] = root_ctrl
+    for pname in (root["plugIns"] if root else []):
+        p = parsed["plugIns"].get(pname.lower())
+        if not p:
+            continue
+        kind = p.get("kind")
+        if kind == "Mobile":
+            info["maxSpeed"] = p.get("maxspeed")
+            info["turnRadius"] = p.get("turnradius")
+            info["vehicleNumber"] = p.get("vehiclenumber")
+            info["isTurnable"] = p.get("isturnable")
+        elif kind == "Physical":
+            info["strType"] = p.get("strType")
+        elif kind == "Unit":
+            info["strategicStrength"] = p.get("strategicStrength")
+            if p.get("equipmenttype") is not None:
+                info["equipmentType"] = int(p["equipmenttype"])
+            if p.get("setusenopathfindingtogettoobject"):
+                info["useNoPathfinding"] = True
+        elif kind == "Cover":
+            info["coverValue"] = p.get("covervalue")
+    return info
+
+
+ENTRY_POINT_RE = re.compile(r"^\s*ObjectTemplate\.create\s+EntryPoint\s", re.I | re.M)
+
+
+def _level_objects(path: Path) -> tuple[list[str], dict[str, str], ArchivePool] | None:
+    """A level's own `Objects/` tree: its paths from `Objects/` on, each
+    path's entry in the level's archives (patches over the base, as
+    `roster.level_pool` layers them), and that pool."""
+    pool = roster_mod.level_pool(path)
+    if pool is None:
+        return None
+    real: dict[str, str] = {}
+    for name in pool.names():
+        parts = name.replace("\\", "/").split("/")
+        lowered = [p.lower() for p in parts]
+        # `bf1942/levels/<Level>/Objects/...`, not a deeper folder called objects.
+        if len(parts) < 5 or lowered[1] != "levels" or lowered[3] != "objects":
+            continue
+        real.setdefault("/".join(parts[3:]), name)
+    return sorted(real), real, pool
+
+
+def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict:
+    """Every unit's AI record along `mod`'s chain, one table for its tree.
+
+    The chain is read the way the engine mounts it (`mod_chain`,
+    `build_pools`): the nearest mod's copy of a file wins and archive names
+    match in any case, so Desert Combat's `OBJECTS.rfa` opens and DC Final
+    keeps the 54 units it inherits beside its own. `levels` adds the units a
+    level declares in its own archive and a soldier can board (Caen's
+    `Pak40`, DC Final's Al Nas trucks), after the global ones: a name the
+    chain already has keeps the chain's record, and of two levels the first
+    in `discover_levels` order wins, the way `ArchivePool.add_level_objects`
+    resolves a level's templates. A level's copy of a chain unit that brings
+    seats of its own (DC's Urban Siege `Nimitz`) is kept as
+    `<Unit>@<Level>`. Each such record carries the `level` that declares it.
+    """
+    chain = mod_chain(game_dir, mod)
+    _meshes, _textures, objects, _game = build_pools(chain, [])
+
+    def read(name: str) -> str | None:
+        blob = objects.try_read(name)
+        return blob.decode("latin-1") if blob is not None else None
+
+    names = objects.names()
+    all_weapons, graph, kinds, ai_of = scan_objects(names, read, objects.source_of)
+    vehicles: dict[str, dict] = {}
+    for folder, files in sorted(vehicle_folders(names).values()):
+        info = vehicle_record(folder, files, read, all_weapons, graph, kinds, ai_of)
+        if info is not None:
+            vehicles[folder.split("/")[-1]] = info
+    if not levels:
+        return {"mod": mod, "vehicles": vehicles}
+
+    taken = {name.lower() for name in vehicles}
+    seats = {pco.lower() for info in vehicles.values() for pco in info["seats"]}
+    for level_name, path in discover_levels(chain):
+        found = _level_objects(path)
+        if found is None:
+            continue
+        local_names, real, pool = found
+
+        def read_local(name: str, real=real, pool=pool) -> str | None:
+            entry = real.get(name)
+            blob = pool.try_read(entry) if entry else None
+            return blob.decode("latin-1") if blob is not None else None
+
+        # The level's own templates fill what the chain lacks; the chain's
+        # keep priority (`ArchivePool.add_level_objects`).
+        l_weapons, l_graph, l_kinds, l_ai_of = scan_objects(local_names, read_local)
+        for folder, files in level_vehicle_folders(local_names).values():
+            name = folder.split("/")[-1]
+            # Only what a soldier can board: a level's buildings carry AI
+            # templates and even a PlayerControlObject for their hit points
+            # (Battle of Britain's factory and radar tower), but no door.
+            objects_text = read_local(files["objects.con"]) if files.get("objects.con") else None
+            if not objects_text or not ENTRY_POINT_RE.search(objects_text):
+                continue
+            info = vehicle_record(folder, files, read_local,
+                                  {**l_weapons, **all_weapons}, {**l_graph, **graph},
+                                  {**l_kinds, **kinds}, {**l_ai_of, **ai_of})
+            if info is None or not info["seats"]:
+                continue
+            fresh = [pco for pco in info["seats"] if pco.lower() not in seats]
+            key = name
+            if name.lower() in taken:
+                # A level that redeclares a unit the chain has, with seats of
+                # its own: DC's Urban Siege places `Nimitz_Static_Heli_UrbS`,
+                # a PlayerControlObject only its own `objects/Nimitz` declares.
+                # The page finds a record by any of its seats' names, so the
+                # level's copy goes in beside the chain's under its own key;
+                # the names both declare stay with the chain's record.
+                if not fresh:
+                    continue
+                key = f"{name}@{level_name}"
+            if key.lower() in taken:
+                continue
+            info["level"] = level_name
+            vehicles[key] = info
+            taken.add(key.lower())
+            seats.update(pco.lower() for pco in fresh)
     return {"mod": mod, "vehicles": vehicles}
 
 

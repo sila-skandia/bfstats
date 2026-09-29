@@ -569,6 +569,41 @@ game.setKit 1 4 GerKitdesert_Engineer
 
         self.assertEqual("GermanDesertSoldier", loadouts["El_Alamein"][1].soldier)
 
+    def test_the_root_init_con_is_read_not_the_first_of_that_name(self) -> None:
+        # DC_Coastal_Hammer's index lists `CustomObjects/INIT.con` (no kits)
+        # ahead of the root `Init.con` the engine runs; the old pick took it
+        # and the level came out `{}`, so both sides spawned with fallbacks.
+        (self.levels_dir / "DC_Coastal_Hammer.rfa").touch()
+        content = {
+            "DC_Coastal_Hammer.rfa": {
+                "bf1942/levels/DC_Coastal_Hammer/CustomObjects/INIT.con":
+                    b"run Objects\n",
+                "bf1942/levels/DC_Coastal_Hammer/Init.con": b"""
+game.setTeamSkin 1 IraqSoldier
+game.setKit 1 0 Iraq_Sniper
+game.setTeamSkin 2 USSoldier
+game.setKit 2 0 US_Sniper
+""",
+                "bf1942/levels/DC_Coastal_Hammer/Init/Terrain.con": b"",
+                "bf1942/levels/DC_Coastal_Hammer/Menu/Init.con": b"",
+            },
+        }
+        with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+            loadouts = level_loadouts(
+                [("DC_Coastal_Hammer", self.levels_dir / "DC_Coastal_Hammer.rfa")])
+        teams = loadouts["DC_Coastal_Hammer"]
+        self.assertEqual("IraqSoldier", teams[1].soldier)
+        self.assertEqual({0: "US_Sniper"}, teams[2].slots)
+
+    def test_a_level_with_only_nested_init_cons_binds_nothing(self) -> None:
+        (self.levels_dir / "Nested.rfa").touch()
+        content = {"Nested.rfa": {
+            "bf1942/levels/Nested/Objects/INIT.con": b"game.setKit 1 0 X\n",
+            "bf1942/levels/Nested/Menu/Init.con": b"game.setKit 1 0 Y\n"}}
+        with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+            loadouts = level_loadouts([("Nested", self.levels_dir / "Nested.rfa")])
+        self.assertEqual({}, loadouts)
+
     def test_a_level_whose_base_wont_open_is_dropped_not_crashed(self) -> None:
         (self.levels_dir / "Tobruk.rfa").touch()
         with mock.patch("bf42.rfa.RfaArchive",
@@ -605,6 +640,47 @@ class RealWakePatchTests(unittest.TestCase):
     def test_team_1_is_unaffected(self) -> None:
         # Only the US side's binding was patched.
         self.assertEqual("JapaneseSoldier", self.loadouts["Wake"][1].soldier)
+
+
+DC_FINAL_LEVELS = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+                   "/DC_Final/Archives/BF1942/levels")
+COASTAL_HAMMER_RFA = DC_FINAL_LEVELS / "DC_Coastal_Hammer.rfa"
+
+
+@unittest.skipUnless(COASTAL_HAMMER_RFA.exists(), "needs the DC Final install")
+class RealCoastalHammerTests(unittest.TestCase):
+    """DC_Coastal_Hammer's archive lists `CustomObjects/INIT.con` before the
+    root `Init.con`; the level's six kits a side are in the root one."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.loadouts = level_loadouts([("DC_Coastal_Hammer", COASTAL_HAMMER_RFA)])
+
+    def test_both_sides_get_their_soldier_and_six_kits(self) -> None:
+        teams = self.loadouts["DC_Coastal_Hammer"]
+        self.assertEqual("IraqSoldier", teams[1].soldier)
+        self.assertEqual("USSoldier", teams[2].soldier)
+        self.assertEqual(list(range(6)), sorted(teams[1].slots))
+        self.assertEqual(list(range(6)), sorted(teams[2].slots))
+
+
+class LevelInitConTests(unittest.TestCase):
+    def test_the_root_one_wins_over_nested_and_menu(self) -> None:
+        from bf42.roster import level_init_con
+        names = ["bf1942/levels/L/CustomObjects/INIT.con",
+                 "bf1942/levels/L/Menu/Init.con",
+                 "bf1942/levels/L/Init/Terrain.con",
+                 "bf1942/levels/L/Init.con"]
+        self.assertEqual("bf1942/levels/L/Init.con", level_init_con(names))
+
+    def test_case_and_backslashes_do_not_matter(self) -> None:
+        from bf42.roster import level_init_con
+        self.assertEqual("Bf1942\\Levels\\L\\INIT.CON",
+                         level_init_con(["Bf1942\\Levels\\L\\INIT.CON"]))
+
+    def test_none_without_a_root_one(self) -> None:
+        from bf42.roster import level_init_con
+        self.assertIsNone(level_init_con(["bf1942/levels/L/Menu/Init.con"]))
 
 
 if __name__ == "__main__":

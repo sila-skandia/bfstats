@@ -178,6 +178,26 @@ def level_patches(path: Path) -> list[Path]:
     return [patch_path for _, _, patch_path in patches]
 
 
+def level_init_con(names: list[str]) -> str | None:
+    """The `Init.con` the engine runs for a level: the one at its root.
+
+    `Game::load` (lnxded 0x0805b785..0x0805b940) appends `Init.con` to the
+    level's own directory, `bf1942/levels/<Level>/`, checks the file exists
+    ("Level init.con file not found") and runs it. Nothing else of that name
+    is run unless that file `run`s it. Level archives ship others: every
+    `Menu/Init.con`, DC_Coastal_Hammer's `CustomObjects/INIT.con` and five
+    FHSW levels' `Objects/INIT.con`, which sit ahead of the root one in the
+    archive index and so were what "the first `*/init.con`" used to pick.
+    Every other level in the install ships exactly one root `Init.con`.
+    """
+    for name in names:
+        parts = name.replace("\\", "/").split("/")
+        if (len(parts) >= 3 and parts[-1].lower() == "init.con"
+                and parts[-3].lower() == "levels"):
+            return name
+    return None
+
+
 def nation_label(token: str) -> str | None:
     return NATION_LABELS.get(token.strip().lower().replace("_", ""))
 
@@ -283,8 +303,7 @@ def add_levels(roster: Roster, level_paths: list[tuple[str, Path]]) -> int:
             continue
 
         names = pool.names()
-        init = next((n for n in names
-                     if n.lower().endswith("/init.con") and "menu" not in n.lower()), None)
+        init = level_init_con(names)
         spawns = next((n for n in names
                        if n.lower().endswith("conquest/objectspawntemplates.con")), None)
         if init is None:
