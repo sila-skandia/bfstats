@@ -350,6 +350,9 @@ a scale derived from `pow()` of `1.0 - <member +0x40>`, and the map centre is in
 toward the view centre by the same factor, which is the standard zoom-about-a-point form.
 **Open**: how many discrete zoom steps there are and what the step values are. I did not
 recover the write site for `+0x40`.
+*Corrected 2026-09-29: settled by ledger MMAP-1. There are no discrete steps, only two
+states, and `BfMap__animate` eases `+0x40` toward 1 or 0 with a time constant of about
+0.11 s.*
 
 **Transparency.** `game.setMinimapTransparency` is an integer 0-100, default 20. Applies to
 the whole map surface.
