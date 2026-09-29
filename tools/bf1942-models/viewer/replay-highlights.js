@@ -22,7 +22,7 @@
 // and its chrome (replay.js, replay-ui.js), and owns the look they share.
 
 import {
-  activityOf, battlesAt, battlesOf, hullKillsOf, intensityOf, placeName, pointsOf, standoutAt, standoutsOf,
+  activityOf, battlesAt, battlesOf, hullKillsOf, intensityOf, placeName, pointsOf, standoutAt, standoutSteps,
   vehiclesAt, whereIs,
 } from './replay-battles.js';
 import { bestStreakAt, describeMedal, leaderAt, leadersOf, medalsOf, streakAt, streaksOf, topPlays } from './replay-medals.js';
@@ -43,6 +43,10 @@ const AUTO_ZOOM_EASE = 1.2;
 const USER_HOLD = 6;
 /** A reel's play is left this long after its last moment, seconds. */
 const REEL_TAIL = 0.5;
+/** Who stands apart is read STANDOUT_CHUNK seconds of the round at a time,
+ *  for at most STANDOUT_BUDGET milliseconds of a frame. */
+const STANDOUT_CHUNK = 5;
+const STANDOUT_BUDGET = 3;
 /** A play's shot: the orbit's zoom and pitch behind the man. */
 const SHOT_ZOOM = 1.3;
 const SHOT_PITCH = 0.38;
@@ -474,16 +478,32 @@ export class ReplayHighlights {
     this.runReel(t);
   }
 
+  /** Who stands apart, read a few seconds of the round at a time within
+   *  STANDOUT_BUDGET of each frame (`standoutSteps`): in one piece, a
+   *  45-minute round froze the view for seconds on the frame it asked. */
+  readStandouts() {
+    if (this.model.standouts) return;
+    // Once the hulls are in: who flies is known, so pilots are not taken
+    // for lone wolves.
+    this.standoutWork ??= standoutSteps(this.player.rec, this.model.battles, {
+      kills: this.player.kills, loadouts: this.ctx.loadouts?.() ?? null, kindOf: this.model.kindOf,
+      chunk: STANDOUT_CHUNK,
+    });
+    const until = performance.now() + STANDOUT_BUDGET;
+    do {
+      const { done, value } = this.standoutWork.next();
+      if (done) {
+        this.model.standouts = value;
+        this.standoutWork = null;
+        return;
+      }
+    } while (performance.now() < until);
+  }
+
   /** After the chrome: the markers, the callouts, the map, the heat strip. */
   update(t, dt) {
     const player = this.player;
-    if (!this.model.standouts && player.statusLine) {
-      // Once the hulls are in: who flies is known, so pilots are not taken
-      // for lone wolves.
-      this.model.standouts = standoutsOf(player.rec, this.model.battles, {
-        kills: player.kills, loadouts: this.ctx.loadouts?.() ?? null, kindOf: this.model.kindOf,
-      });
-    }
+    if (!this.model.standouts && player.statusLine) this.readStandouts();
     const bare = this.ui.root.classList.contains('rp-bare');
     this.callouts.update(t, this.prevT, bare);
     this.markers.update(t, bare || !this.showMarkers || this.map.open);

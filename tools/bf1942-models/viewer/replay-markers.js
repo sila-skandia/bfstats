@@ -48,8 +48,10 @@ export class ReplayBattleMarkers {
       const V = camera.position.constructor;
       if (!this.v) this.v = new V();
       const v = this.v;
-      const width = this.ui.stage.clientWidth;
-      const height = this.ui.stage.clientHeight;
+      // The stage's size as the bar keeps it (replay-ui.js `measure`), not
+      // read off the page every frame.
+      const width = this.ui.stageW ?? this.ui.stage.clientWidth;
+      const height = this.ui.stageH ?? this.ui.stage.clientHeight;
       const keepOut = this.keepOut(width, height);
       const target = player.camera.mode === 'free' ? null : player.camera.target?.point ?? null;
       let shown = 0;

@@ -2202,4 +2202,176 @@ const read = scene => {
   };
 }
 
+// --- the life index (features/replay-performance) -----------------------------
+//
+// A 45-minute round has thousands of lives, so `lifeAt`, `rootOf`, `crewOf`,
+// `hpAt` and `playerStatusAt` answer from indexes over them. Every answer must
+// be the one a walk of the whole list gives: a round where a hull's id is
+// reused by its respawn, seats found through the recorded root (v4) and by id
+// (v3), a kit just below a hull, a death, a respawn; then a stand-in pushed
+// after the first question (replay-standins.js), which the index must take in.
+{
+  const [chapters] = await Promise.all([imp('replay-chapters.js')]);
+  const L = [];
+  const line = o => L.push(JSON.stringify(o));
+  line({ k: 'h', v: 5, start: '', hz: 10 });
+  line({ k: 'e', t: 0.1, e: 'createPlayer', pid: 1, name: 'One', team: 1, ai: 1 });
+  line({ k: 'e', t: 0.1, e: 'createPlayer', pid: 2, name: 'Two', team: 2, ai: 1 });
+  const at = (t, id, x) => line({ k: 's', t, o: [[id, x, 1, 0, 0, 0, 0, 1]] });
+  const make = (t, nid, tmpl, team, pos = [0, 0, 0]) => {
+    line({ k: 'e', t, e: 'createObject', netId: nid, tmpl, tid: nid, pos, rot: [0, 0, 0] });
+    line({ k: 'o', t, id: nid, tmpl, tid: nid, team, maxhp: 100 });
+  };
+  make(1, 499, 'UsMarine_Assault', 1);
+  line({ k: 'e', t: 1, e: 'pickupKit', pid: 1, netId: 499 });
+  make(1, 500, 'Sherman', 0);
+  make(1, 600, 'GermanSoldier', 1);
+  make(2, 700, 'USSoldier', 2);
+  line({ k: 'p', t: 1, p: [[1, 1, 600, -1, 0]] });
+  line({ k: 'p', t: 2, p: [[2, 2, 700]] });
+  for (let t = 1; t <= 40; t += 0.5) {
+    if (t < 20) at(t, 500, t);
+    if (t >= 30) at(t, 500, 100 + t);
+    if (t < 25) at(t, 600, 2 * t);
+    if (t >= 26) at(t, 610, 3 * t);
+    at(t, 700, -t);
+  }
+  line({ k: 'a', t: 3, a: [[500, 100, -1]] });
+  line({ k: 'a', t: 6, a: [[500, 70, -1]] });
+  line({ k: 'a', t: 9, a: [[500, 40, -1]] });
+  // One takes the Sherman's third seat by its recorded root (v4); Two its
+  // fourth by the seat's own id alone (v3).
+  line({ k: 'e', t: 5, e: 'enterVehicle', pid: 1, netId: 502 });
+  line({ k: 'p', t: 5.05, p: [[1, 1, 502, 500, 2]] });
+  line({ k: 'e', t: 8, e: 'enterVehicle', pid: 2, netId: 503 });
+  line({ k: 'p', t: 8.05, p: [[2, 2, 503]] });
+  line({ k: 'e', t: 11, e: 'exitVehicle', pid: 1 });
+  line({ k: 'p', t: 11.05, p: [[1, 1, 600, -1, 0]] });
+  line({ k: 'e', t: 12, e: 'score', kind: 3, pid: 2, victim: 1, weaponName: 'Thompson' });
+  line({ k: 'e', t: 20, e: 'destroyObject', netId: 500 });
+  line({ k: 'e', t: 25, e: 'destroyObject', netId: 600 });
+  make(26, 610, 'GermanSoldier', 1);
+  line({ k: 'p', t: 26, p: [[1, 1, 610, -1, 0]] });
+  // The Sherman's id again: an M10, its respawn.
+  make(30, 500, 'M10', 0);
+  line({ k: 'e', t: 32, e: 'enterVehicle', pid: 2, netId: 500 });
+  line({ k: 'p', t: 32.05, p: [[2, 2, 500, 500, 0]] });
+  const rec = recording.parseRecording(L.join('\n'));
+
+  // The walks the indexes replace, as they were written.
+  const walkLifeAt = (nid, t) => {
+    let best = null;
+    for (const l of rec.lives) {
+      if (l.nid !== nid || l.created > t + 0.5 || t >= l.destroyed) continue;
+      if (!best || l.created > best.created) best = l;
+    }
+    return best;
+  };
+  const walkRootOf = (nid, t, pid = null) => {
+    if (nid === null || nid === undefined) return null;
+    if (pid !== null && rec.seats?.has(pid)) {
+      let hit = null;
+      for (const s of rec.seats.get(pid)) {
+        if (s.t > t) break;
+        hit = s;
+      }
+      if (hit && hit.root >= 0) {
+        const life = walkLifeAt(hit.root, t);
+        if (life) return { life, seat: hit.seat };
+      }
+    }
+    const own = walkLifeAt(nid, t);
+    if (own && !own.kit && !own.projectile) return { life: own, seat: 0 };
+    let best = null;
+    for (const l of rec.lives) {
+      if (l.nid >= nid || nid - l.nid > 12) continue;
+      if (l.created > t + 0.5 || t >= l.destroyed) continue;
+      if (l.soldier || l.kit || l.camera || l.controlPoint || l.projectile) continue;
+      if (!best || l.nid > best.nid) best = l;
+    }
+    return best ? { life: best, seat: nid - best.nid } : null;
+  };
+  const walkHpAt = (life, t) => {
+    let hp = null;
+    for (const entry of life.hp) {
+      if (entry.t > t) break;
+      hp = entry.hp;
+    }
+    return hp;
+  };
+  const walkLived = (pid, t) => rec.lives.some(l => l.soldier && l.pid === pid && l.created <= t);
+  const walkKilledBy = (pid, t) => {
+    let killedBy = null;
+    for (const k of rec.kills) {
+      if (k.t > t) break;
+      if (k.victim === pid) killedBy = k;
+    }
+    return killedBy;
+  };
+  const id = life => (life ? rec.lives.indexOf(life) : null);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  let asked = 0;
+  const mismatches = [];
+  const check = (what, got, want) => {
+    asked += 1;
+    if (!same(got, want) && mismatches.length < 10) mismatches.push({ what, got, want });
+  };
+  const ask = () => {
+    for (let t = 0; t <= 42; t += 0.25) {
+      for (const nid of [499, 500, 501, 502, 503, 505, 600, 610, 700, 800, 805, 813, 999]) {
+        check(`lifeAt ${nid} ${t}`, id(recording.lifeAt(rec, nid, t)), id(walkLifeAt(nid, t)));
+        const root = recording.rootOf(rec, nid, t);
+        const walked = walkRootOf(nid, t);
+        check(`rootOf ${nid} ${t}`, root && [id(root.life), root.seat], walked && [id(walked.life), walked.seat]);
+      }
+      for (const pid of [1, 2]) {
+        const nid = recording.controlledAt(rec, pid, t);
+        const root = recording.rootOf(rec, nid, t, pid);
+        const walked = walkRootOf(nid, t, pid);
+        check(`rootOf pid ${pid} ${t}`, root && [id(root.life), root.seat], walked && [id(walked.life), walked.seat]);
+        const status = chapters.playerStatusAt(rec, pid, t);
+        check(`status ${pid} ${t}`, status.state === 'dead' ? status.killedBy : status.state,
+              status.state === 'dead' ? walkKilledBy(pid, t) : status.state);
+        if (status.state === 'dead' || status.state === 'spawning') {
+          check(`lived ${pid} ${t}`, status.state === 'dead', walkLived(pid, t));
+        }
+      }
+      for (const life of rec.lives) {
+        check(`hpAt ${id(life)} ${t}`, recording.hpAt(life, t), walkHpAt(life, t));
+        const crew = [];
+        for (const pid of rec.playerNids.keys()) {
+          const nid = recording.controlledAt(rec, pid, t);
+          if (nid === null || (nid !== life.nid && (nid < life.nid || nid - life.nid > 12))) continue;
+          const root = walkRootOf(nid, t, pid);
+          if (root?.life === life) crew.push({ pid, seat: root.seat });
+        }
+        check(`crewOf ${id(life)} ${t}`, recording.crewOf(rec, life, t), crew);
+      }
+    }
+  };
+  ask();
+  const before = { asked, mismatches: mismatches.length };
+  // Asked once already: a stand-in pushed now must be found all the same.
+  rec.lives.push({
+    nid: 800, tmpl: 'Hatsuzuki', tid: 0, team: 0, created: 0, destroyed: Infinity, pose: { p: [0, 0, 0], q: [0, 0, 0, 1] },
+    keys: [], replicated: [], hp: [], maxhp: 0, crit: 0, spawnedLate: false, announced: true, standIn: true,
+    soldier: false, camera: false, projectile: false, kit: false, controlPoint: false,
+  });
+  ask();
+  const seat = recording.rootOf(rec, 805, 10);
+  results.lifeIndex = {
+    before,
+    asked,
+    mismatches,
+    standIn: { lifeAt: recording.lifeAt(rec, 800, 10)?.tmpl ?? null, seat: seat ? [seat.life.tmpl, seat.seat] : null },
+    // The answers the round itself gives, so the checks above cannot pass
+    // on a recording that says nothing.
+    seated: [recording.rootOf(rec, 502, 6, 1), recording.rootOf(rec, 503, 9, 2)].map(r => r && [r.life.tmpl, r.seat]),
+    respawn: [recording.lifeAt(rec, 500, 10)?.tmpl, recording.lifeAt(rec, 500, 35)?.tmpl],
+    crewAt9: recording.crewOf(rec, recording.lifeAt(rec, 500, 9), 9),
+    hpAt7: recording.hpAt(recording.lifeAt(rec, 500, 7), 7),
+    states: [chapters.playerStatusAt(rec, 1, 13).state, chapters.playerStatusAt(rec, 1, 27).state],
+  };
+}
+
 console.log(JSON.stringify(results));

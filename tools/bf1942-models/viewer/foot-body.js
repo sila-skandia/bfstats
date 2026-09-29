@@ -277,14 +277,17 @@ export function createFootBody(page) {
     // its meshes and materials belong to the page's cached weapon glb.
     undress(root);
     ungraft(root);
-    root.traverse(obj => {
-      obj.geometry?.dispose();
-      obj.skeleton?.dispose?.();
-      for (const m of [obj.material].flat().filter(Boolean)) {
-        m.map?.dispose();
-        m.dispose();
-      }
-    });
+    // The figure is the same story again. What a `skeletonClone` owns is its
+    // skeleton (one per source skin, bone texture and all); its geometry is
+    // the cached pose's, and its materials' textures too (the page's shading
+    // makes each body new materials over the cache's maps), shared with every
+    // other body cloned from the pose. The materials hold no GPU memory, only
+    // a program the next body asks for again. Freeing them freed what every
+    // other soldier was still drawing with: a round replay lets every body go
+    // at a seek, and the frames after it uploaded 150 textures and 700 buffers
+    // again and linked a program (60-80 ms frames against 21-26 ms,
+    // features/replay-performance); in play each corpse did it as it went.
+    root.traverse(obj => obj.skeleton?.dispose?.());
   }
 
   function disposeFootBody() {

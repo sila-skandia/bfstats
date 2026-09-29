@@ -94,6 +94,20 @@ function extra(what, fn) {
   }
 }
 
+/** The index of the first of `fires` (in time order, `parseRecording` sorts
+ *  them) later than `t`: a frame fires the rounds between its two clocks
+ *  without walking every shot of the round. */
+function firstFireAfter(fires, t) {
+  let lo = 0;
+  let hi = fires.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (fires[mid].t <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /** A hull is a life with a body of its own that is not a man, a kit, a flag,
  *  a camera or a round. */
 const isHull = life => life.tmpl && !life.soldier && !life.kit && !life.controlPoint
@@ -121,6 +135,20 @@ class ReplayPlayer {
     this.markers = [];
     this.root = new THREE.Group();
     this.root.name = 'replay';
+    // Only what is drawn is walked. Every hull life of the round is built,
+    // and every kit and round that ever lies somewhere (562 hulls of 63,650
+    // nodes and 1,225 props in the 45-minute replay_20260928-161948), most
+    // of them gone at any moment; three r169 recomposes every node's matrix
+    // each frame whether it is shown or not, which was half the page's frame.
+    // The group never moves, as the effects' does not (effects.js, and
+    // features/mesh-viewer-performance rule 2). A hidden node's matrices are
+    // brought up to date by `getWorldPosition` and its kind when read.
+    this.root.matrixAutoUpdate = false;
+    this.root.updateMatrixWorld = function (force) {
+      for (const child of this.children) {
+        if (child.visible) child.updateMatrixWorld(force);
+      }
+    };
     ctx.scene.add(this.root);
     this.serverRows = log && alignment ? serverRows(rec, log, alignment) : [];
     this.rows = [...rec.events, ...this.serverRows].sort((a, b) => a.t - b.t);
@@ -452,7 +480,10 @@ class ReplayPlayer {
     const guard = this.guard ??= new ReplayGuard();
     guard.run('the seek', () => {
       this.ctx.guns?.clear();
-      this.soldiers?.reset();
+      // A drag along the timeline seeks every frame it moves: its men are
+      // moved, and built afresh on the seek it lets go on.
+      if (this.ui?.timeline?.scrubbing) this.soldiers?.jump();
+      else this.soldiers?.reset();
     });
     for (const hull of this.hulls.values()) {
       hull.lastT = null;
@@ -587,8 +618,10 @@ class ReplayPlayer {
     // overlay: up while that panel is.
     guard.run('the server log rings', () => this.updateMarkers(t));
     if (t > prevT) {
-      for (const f of this.rec.fires) {
-        if (f.t > prevT && f.t <= t) guard.run('a recorded round', () => this.fireShot(f));
+      const fires = this.rec.fires;
+      for (let i = firstFireAfter(fires, prevT); i < fires.length && fires[i].t <= t; i++) {
+        const f = fires[i];
+        if (f.t > prevT) guard.run('a recorded round', () => this.fireShot(f));
       }
       for (const r of this.rec.refills ?? []) {
         if (r.t > prevT && r.t <= t) guard.run('a refill', () => this.refill(r.t, r.pid ?? this.recordingPid));
@@ -619,6 +652,8 @@ class ReplayPlayer {
    */
   updateHull(hull, t, step) {
     if (hull.faulted) return;
+    // Put away and outside its life: its frame would put it away again.
+    if (hull.putAway === true && !(t >= hull.life.created && t < hull.life.destroyed)) return;
     const name = `the ${hull.life.tmpl || 'hull'} ${hull.life.nid}`;
     this.guard.item(name, hull, () => {
       hull.update(t, step);
@@ -699,6 +734,10 @@ class ReplayPlayer {
 
 const textCache = new Map();
 const infoCache = new Map();
+/** url -> the parse `recordingInfo` made, handed to the open that follows it
+ *  (`takeParsed`): a 45-minute recording takes a second to read, and the
+ *  page used to read it twice, once for its level and again to play it. */
+const parsedCache = new Map();
 
 /** A recording or server log by URL; `local:<name>` is one the page that
  *  opened it holds for this page (replay-open.js). */
@@ -718,8 +757,24 @@ function fetchText(url) {
  *  joined without one), its mod, and when and where it was recorded
  *  (replay-open.js `recordingSummary`). */
 export function recordingInfo(url) {
-  if (!infoCache.has(url)) infoCache.set(url, fetchText(url).then(text => recordingSummary(parseRecording(text))));
+  if (!infoCache.has(url)) {
+    const parsed = fetchText(url).then(text => ({ text, rec: parseRecording(text) }));
+    parsedCache.set(url, parsed);
+    infoCache.set(url, parsed.then(({ rec }) => recordingSummary(rec)));
+  }
   return infoCache.get(url);
+}
+
+/** The recording `recordingInfo` already read from `url`, once, if it is
+ *  `text`'s: the open that follows plays it rather than reading it again.
+ *  Played, a recording is changed (its stand-ins, its rounds), so a second
+ *  open reads its own. Null when there is none. */
+async function takeParsed(url, text) {
+  const parsed = parsedCache.get(url);
+  if (!parsed) return null;
+  parsedCache.delete(url);
+  const got = await parsed.catch(() => null);
+  return got && got.text === text ? got.rec : null;
 }
 
 /**
@@ -756,10 +811,14 @@ export function createReplayController(ctx) {
    *  (two rounds, replay-merge-guard.js), plays the first alone and says why;
    *  the player carries the reason (`notMerged`) for the page's switch. */
   async function openMerged(urls, logUrl) {
+    // The merge is read afresh; the first file's own reading (its level,
+    // `recordingInfo`) is not held for it.
+    for (const url of urls) parsedCache.delete(url);
     const [texts, logText] = await Promise.all([
       Promise.all(urls.map(fetchText)),
       logUrl ? fetchText(logUrl).catch(() => null) : null,
     ]);
+    for (const url of urls) textCache.delete(url);
     const name = u => u.split('/').pop().split('?')[0];
     let merged = null;
     try {
@@ -782,8 +841,8 @@ export function createReplayController(ctx) {
     return open({ recordingText: merged.text, logText, label: `${name(urls[0])} and ${urls.length - 1} more` });
   }
 
-  async function open({ recordingText, logText, label, notMerged = null }) {
-    const rec = parseRecording(recordingText);
+  async function open({ recordingText, logText, label, notMerged = null, parsed = null }) {
+    const rec = parsed ?? parseRecording(recordingText);
     // A round is a round whatever its name, and the level's own projectile
     // table (`_shared/damage.json`) names them all: a mine from a pool made
     // before the recording began is not a hull to find a model for.
@@ -859,13 +918,16 @@ export function createReplayController(ctx) {
       if (isLocalReplay(url)) {
         const kept = await readLocalRecording(url);
         const logText = logUrl ? await fetchText(logUrl).catch(() => null) : kept.log?.text ?? null;
-        return open({ recordingText: kept.text, logText, label: kept.name });
+        return open({ recordingText: kept.text, logText, label: kept.name, parsed: await takeParsed(url, kept.text) });
       }
       const [recordingText, logText] = await Promise.all([
         fetchText(url),
         logUrl ? fetchText(logUrl).catch(() => null) : null,
       ]);
-      return open({ recordingText, logText, label: url.split('/').pop() });
+      // Read once it plays: the text of a 45-minute round is 47 MB the page
+      // has no more use for.
+      textCache.delete(url);
+      return open({ recordingText, logText, label: url.split('/').pop(), parsed: await takeParsed(url, recordingText) });
     },
   };
 }

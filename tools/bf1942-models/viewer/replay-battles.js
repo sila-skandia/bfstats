@@ -17,7 +17,7 @@
 // what was live -- `fresh` -- and says when something is only last seen.
 
 import {
-  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleAt, teamAt,
+  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleAt, soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { playerStatusAt, pointsAt } from './replay-chapters.js';
 
@@ -296,12 +296,47 @@ export function intensityOf(activity, duration, bucket = 1) {
 
 // --- battles ----------------------------------------------------------------------
 
+const timeOrders = new WeakMap();
+
+/** Whether `list` is in time order, asked once per list (and again when it
+ *  grows). The activity is sorted (`activityOf`); a list that is not is
+ *  walked whole wherever this is asked. */
+function inTimeOrder(list) {
+  let known = timeOrders.get(list);
+  if (!known || known.count !== list.length) {
+    let ordered = true;
+    for (let i = 1; i < list.length && ordered; i++) ordered = list[i].t >= list[i - 1].t;
+    known = { count: list.length, ordered };
+    timeOrders.set(list, known);
+  }
+  return known.ordered;
+}
+
+/** The index of the first of `list` (in time order) for which `after(e)` is
+ *  false, where `after` holds for a leading run of the list. */
+function firstWhere(list, after) {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (after(list[mid])) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /** One moment's clusters of activity: `[{ pos, r, heat, teams, pids, kills,
  *  shots }]`, hottest first. */
 function clusterAt(events, t) {
   const live = [];
-  for (const e of events) {
+  // In time order the window is one run of the list: from the first event
+  // no older than WINDOW to the last not after `t`. A 45-minute round has
+  // twelve thousand events and a clustering every half second.
+  const ordered = inTimeOrder(events) && !Number.isNaN(t);
+  for (let i = ordered ? firstWhere(events, e => t - e.t > WINDOW) : 0; i < events.length; i++) {
+    const e = events[i];
     const age = t - e.t;
+    if (age < 0 && ordered) break;
     if (age < 0 || age > WINDOW) continue;
     live.push({ e, w: e.w * Math.exp(-age / DECAY), taken: false });
   }
@@ -425,9 +460,20 @@ export function battlesOf(activity, duration) {
     track.peak = peak;
     track.peakT = peakT;
     track.pids = [...pids];
-    // The kills that happened in it: every kill event near its path.
-    track.kills = activity.filter(e => e.kind === 'kill' && e.t >= track.start - 1 && e.t <= track.end + 1
-      && track.samples.some(s => Math.abs(s.t - e.t) <= STEP * 2 && Math.hypot(s.pos[0] - e.pos[0], s.pos[2] - e.pos[2]) <= s.r + RADIUS / 2)).length;
+    // The kills that happened in it: every kill event near its path (in
+    // time order, only the run of the activity its life spans is looked at).
+    const near = e => e.kind === 'kill' && e.t >= track.start - 1 && e.t <= track.end + 1
+      && track.samples.some(s => Math.abs(s.t - e.t) <= STEP * 2 && Math.hypot(s.pos[0] - e.pos[0], s.pos[2] - e.pos[2]) <= s.r + RADIUS / 2);
+    if (inTimeOrder(activity)) {
+      let kills = 0;
+      for (let i = firstWhere(activity, e => e.t < track.start - 1); i < activity.length; i++) {
+        if (activity[i].t > track.end + 1) break;
+        if (near(activity[i])) kills++;
+      }
+      track.kills = kills;
+    } else {
+      track.kills = activity.filter(near).length;
+    }
     track.contested = track.samples.some(contested);
     kept.push(track);
   }
@@ -496,7 +542,22 @@ export function pointsOf(rec) {
  * Only while the recording had him live, and only once it has held for five
  * seconds. `detail` carries the distance that decided it.
  */
-export function standoutsOf(rec, battles, { kills = rec.kills, loadouts = null, kindOf = null } = {}) {
+export function standoutsOf(rec, battles, options = {}) {
+  const steps = standoutSteps(rec, battles, options);
+  for (;;) {
+    const { done, value } = steps.next();
+    if (done) return value;
+  }
+}
+
+/**
+ * `standoutsOf` a few seconds of the round at a time: a generator that
+ * yields after every `chunk` seconds it has read and returns the whole
+ * timeline. A 45-minute round took seconds in one piece, a frozen view on
+ * the frame that asked; the replay reads it between frames instead
+ * (replay-highlights.js).
+ */
+export function* standoutSteps(rec, battles, { kills = rec.kills, loadouts = null, kindOf = null, chunk = 30 } = {}) {
   const out = new Map();
   const points = pointsOf(rec);
   const pids = [...new Set([...rec.players.keys(), ...(rec.playerNids?.keys() ?? [])])];
@@ -516,6 +577,7 @@ export function standoutsOf(rec, battles, { kills = rec.kills, loadouts = null, 
     runs.set(pid, null);
   };
   for (let t = 0; t <= end; t++) {
+    if (t > 0 && t % chunk === 0) yield t;
     while (fi < fires.length && fires[fi].t <= t) { lastShot.set(fires[fi].pid, fires[fi].t); fi++; }
     const everyone = pids.map(pid => whereIs(rec, pid, t, kills));
     const placed = everyone.filter(w => w.pos && t - w.seen <= 15);
@@ -588,7 +650,7 @@ export function standoutsOf(rec, battles, { kills = rec.kills, loadouts = null, 
 /** When `pid`'s current soldier was made: his last spawn at or before `t`. */
 function spawnedAt(rec, pid, t) {
   let at = -Infinity;
-  for (const l of rec.lives) if (l.soldier && l.pid === pid && l.created <= t && l.created > at) at = l.created;
+  for (const l of soldierLivesOf(rec, pid)) if (l.created <= t && l.created > at) at = l.created;
   return at;
 }
 

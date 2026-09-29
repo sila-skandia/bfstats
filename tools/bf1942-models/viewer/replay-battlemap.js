@@ -1031,7 +1031,8 @@ export class ReplayBattleMap {
         node: () => this.row('player', pid, icon(run.kind), hl.name(pid), detail, fmt(t - run.start),
           { team: hl.team(pid), me: pid === follow }),
       };
-    }), model.standouts ? 'Everyone is with his side' : 'Waiting for the vehicles to load');
+    }), model.standouts ? 'Everyone is with his side'
+      : hl.player.statusLine ? 'Reading the round' : 'Waiting for the vehicles to load');
   }
 
   dispose() {

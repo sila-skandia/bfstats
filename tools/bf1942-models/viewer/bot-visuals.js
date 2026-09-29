@@ -1007,6 +1007,13 @@ export function createBotVisuals(page) {
       removeCanopy(vis);
     }
     botVisuals.clear();
+    disposeCorpses();
+  }
+
+  /** Every corpse gone, the living left standing: a round replay's drag
+   *  along its timeline moves its men rather than building them again at
+   *  every step (replay-bodies.js `jump`). */
+  function disposeCorpses() {
     for (const c of corpses) c.dispose();
     corpses.length = 0;
   }
@@ -1041,6 +1048,7 @@ export function createBotVisuals(page) {
     captureBotPresentationTick,
     disposeBotVisual,
     disposeBotVisuals,
+    disposeCorpses,
     ensureBotVisual,
     updateBotVisuals,
   });
