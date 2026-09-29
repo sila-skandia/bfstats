@@ -95,6 +95,9 @@ Sherman's hull-gunner door were all unreachable before this, confirmed via
   `shermanBrowning_PCO1` = key 2, matching SEAT-24's own `setSelectKey`
   reading exactly). `switchSeat()` rebuilds only the active seat's own
   FireArms group (`collectMannedGuns`) and re-feeds the HUD.
+  *Corrected 2026-09-29: SEAT-22, SEAT-23 and SEAT-24 are verify-r5.md's own
+  numbers, not ledger rows, and the ledger has no SEAT-14 to SEAT-24. The
+  ledger's row for the seat switch is SEAT-7.*
 - **Leave**: `E` again. `mannedActive()` picks `exitManned()` (a bare gun/seat,
   or any nested seat) vs the existing `exitVehicle()` (the drivetrain's own
   root seat). Either way there is exactly one occupant on this page, so
@@ -158,6 +161,11 @@ wrong the moment you first entered one and never fixed by switching seats.
 even use — this page has one soldier and no second team's vehicle for either
 gate to reject, so there is nothing to exercise it against (noted in
 `nearestEntry`'s own comment, not previously documented anywhere).
+*Corrected 2026-09-29: the ledger has no SEAT-13b, and its SEAT-13 is seat
+animation. The door gate meant here is `Armor::isDestroyed`, a wreck test and
+not a team test (SEAT-28, which corrects SEAT-4), and the team rule is
+`toggleEntryPoint`'s (SEAT-26). The viewer has built both since, see
+[vehicle-entry-team-rule](../vehicle-entry-team-rule/README.md).*
 
 Firing goes through the existing `gunfire.js`, scoped per seat (`mannedGuns`,
 rebuilt on every seat switch) rather than the whole vehicle at once — sharing
