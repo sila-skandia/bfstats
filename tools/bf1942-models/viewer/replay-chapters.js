@@ -301,10 +301,12 @@ export function prevChapter(chapters, t, pid = null) {
 
 /**
  * Whether the recording client had `life` in range at `t`. The server stops
- * sending an object beyond the map's view distance from the recording
- * player (`Game.setViewDistance`: Wake's 500 m cut at about 520, Kursk's
- * 400 m at 407 to 416 in replay_20260927-140921), so the replay has only its
- * last pose until it comes back, drawn as a ghost. `{ since }`, the time it
+ * sending an object beyond the map's view distance plus 20 m from the
+ * recording player (`Game.setViewDistance`: Wake's 500 m cut at about 520,
+ * Kursk's 400 m at 407 to 416 in replay_20260927-140921), so the replay has
+ * only its last pose until it comes back, drawn as a ghost. The recording
+ * player's own side, the flag carrier and a tagged player are sent at any
+ * range (features/round-replay-capture §19). `{ since }`, the time it
  * went (null when it was never in range), or undefined while it is.
  */
 export function outOfRange(life, t) {
