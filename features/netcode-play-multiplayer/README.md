@@ -19,7 +19,15 @@ BF1942's own netcode is the reference architecture, and it is not a mystery:
 the corpus already indexes the netcode's seams on both sides. The engine is —
 verified, not assumed — an **authoritative server stepping a fixed 30 Hz
 simulation, consuming one buffered `PlayerInput` per tick per player, with the
-client predicting and interpolating**. That is the "well solved problem", and
+client predicting and interpolating**. The last part is disputed. Ledger P-2
+and [`subsystems/netcode.md`](../bf1942-engine-reference/subsystems/netcode.md)
+say the client predicts only its own player, steps remote players at zero input
+and overwrites them with the server's state every 0.1 s, with no interpolation
+buffer. A later reading, §15 of
+[`round-replay-capture`](../round-replay-capture/README.md) on 2026-09-27, found
+a 16-entry history per networkable that turrets interpolate from, and places
+the functions P-2 cites in the client's local-host server. That is the "well
+solved problem", and
 it survived 64 players in 2002 on hardware this node beats by two orders of
 magnitude.
 

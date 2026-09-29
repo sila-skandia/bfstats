@@ -920,9 +920,10 @@ would still be a nice confirmation.
 **What the viewer should do meanwhile**: wire the slider to botSkill using the
 §5.2 table (1→0.25, 2→0.5, 3→0.75, 4→1.0). That is the mapping the engine's own
 conversion function implements, it is what the campaign path demonstrably does,
-and it is the behaviour a player expects from the label. If the retail skirmish
-path really is inert, matching the *intent* is the better parity choice and
-should be labelled as a deliberate departure, the way the turret camera was.
+and it is the behaviour a player expects from the label. The retail skirmish
+path is inert, as settled above and in ledger AI-21, so matching the *intent* is
+the better parity choice and should be labelled as a deliberate departure, the
+way the turret camera was.
 
 ### 5.4 Where the two percentages go — open
 
