@@ -110,6 +110,10 @@ class ReplayMergeOptionTests(unittest.TestCase):
     def test_files_of_two_levels_are_refused(self) -> None:
         self.assertIn("not one round", self.results["otherRound"] or "")
 
+    def test_the_reports_summaries_take_a_real_rounds_numbers(self) -> None:
+        # The first real pair threw in the report: Math.max(...) over its pose pairs.
+        self.assertEqual({"max": 999, "n": 300000, "maxOf": 999, "minOf": 0, "none": None}, self.results["bigSpread"])
+
 
 class ReplayMergeViewerTests(unittest.TestCase):
     """Several recording players in the viewer, and the page's merge."""

@@ -5,8 +5,8 @@
 // collapsed. Three.js-free and pure.
 
 import {
-  angle, count, covered, distance, mean, median, plain, poseAt, quantile, SAMPLE_PERIOD, spanAt, spread,
-  subtract,
+  angle, count, covered, distance, maxOf, mean, median, plain, poseAt, quantile, SAMPLE_PERIOD, spanAt,
+  spread, subtract,
 } from './replay-merge-read.js';
 import { clockBounds, joinClock, shared } from './replay-merge-clock.js';
 
@@ -30,7 +30,7 @@ export function alignmentReport(sources, fits, opts) {
       out.residualMs = {
         median: Number((median(abs) * 1000).toFixed(1)),
         p95: Number((quantile(abs, 0.95) * 1000).toFixed(1)),
-        max: Number((Math.max(...abs) * 1000).toFixed(1)),
+        max: Number((maxOf(abs) * 1000).toFixed(1)),
         mean: Number((mean(res) * 1000).toFixed(2)),
       };
       out.rejected = pair.pairs.length - pair.used.length;
