@@ -615,6 +615,10 @@ The other three mechanisms, in descending order of how much they matter:
 | `setAnimatedTextureSpeed` | scrolling the tread texture | no | `-0.006/0` (implemented) |
 | `.baf` clips | soldiers only — all 1,154 of them | driver poses | driver poses |
 
+*Corrected 2026-09-29: `.baf` clips are not for soldiers only. The flags in
+every level scene play a 49-frame skinned `.baf`, and the 20-bone flag clips
+are among the 1,154 ([`parity-audit/animation.md`](parity-audit/animation.md)).*
+
 `addSkeletonIK Bip01_R_Hand ...` is the join between the two worlds: the vehicle
 animates itself, the soldier is animated by clips, and IK pins their hands to the
 wheel wherever it rotates.
@@ -797,6 +801,12 @@ direct = materialDamage(att) * damageMod(att, def) * cos(angle) * distanceMod
 splash = materialDamage(att2) * damageMod(att2, splashMaterial) * (1 - d / radius)
 ```
 
+*Corrected 2026-09-29: the binary's angle term is not `cos(angle)`. It is
+`angleMod + (1 - angleMod) * sin(abs(cos) * pi/2)` from the struck object's own
+Armor, so a soldier, who authors `angleMod 1`, takes a round in full at any
+angle, and a hull that authors none takes `sin(abs(cos) * pi/2)` (ledger DMG-3,
+DMG-4).*
+
 `att` is the projectile's `material`, `def` the struck collision face's material,
 both mapped through their groups (every vanilla definition sets group = id). A
 pair with no `damageMod` line does nothing. `distanceMod` is 1 for every weapon
@@ -896,6 +906,17 @@ the Build and Skin comparison explicit.
 
 ## Not yet used
 
+*Corrected 2026-09-29: the `.baf` playback and vehicle IK below, and the
+collision damage under "Requires deep dive", have since been built. The viewer
+plays `.baf` clips in first person
+([`viewmodel-anim.js`](../../tools/bf1942-models/viewer/viewmodel-anim.js))
+and third person
+([`soldier-body.js`](../../tools/bf1942-models/viewer/soldier-body.js)),
+[`seat-ik.js`](../../tools/bf1942-models/viewer/seat-ik.js) applies
+`addSkeletonIK` to a seated occupant, and
+[`crash-damage.js`](../../tools/bf1942-models/viewer/crash-damage.js) charges
+collision damage.*
+
 - **`.baf` beyond a single frame.** The clips are read and one frame of
   `Ub_StandAim<Weapon>` poses the soldier, but nothing plays them. A weapon
   still does not cycle its bolt and track belts stay rigid.
@@ -916,3 +937,7 @@ left between a posed model and a moving one is a timeline.
   the viewer does not apply it: the documented formula adds a velocity-squared
   term and a height term for falling soldiers, and needs a relative speed the
   inspector has no source for.
+  *Corrected 2026-09-29: built in
+  [`crash-damage.js`](../../tools/bf1942-models/viewer/crash-damage.js) from
+  [collision-response.md](../bf1942-engine-reference/subsystems/collision-response.md)
+  section 9.*
