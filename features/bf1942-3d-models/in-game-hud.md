@@ -8,6 +8,10 @@ inside the game, our current implementation is a text value" and "the player's
 HP is also a visual indicator" — bottom left, a segmented health bar with the
 kit's own glyph baked into it beside a stance figure; bottom right, the
 magazine picture with the loaded round count and the spare-magazine count.
+*Corrected 2026-09-29: the corpus rows have landed, in
+[ingame-hud.md](../bf1942-engine-reference/subsystems/ingame-hud.md) and the
+[ledger](../bf1942-engine-reference/ledger.md)'s In-game HUD section, rows
+HUD-1 to HUD-10 and VHUD-1 to VHUD-11.*
 
 ## What's new
 
@@ -345,6 +349,13 @@ lives outside this track's files:**
   which is outside `feedVehicleHud`/`hud.js`'s files. Flagged here for
   whoever owns `drive()` next; the nested Browning seat (a true manned seat)
   already gets this correctly through the fix above.
+  *Corrected 2026-09-29: the writer was found on 2026-09-25. `FUN_006e9180`
+  writes `PrimaryAmmoText` and `SecondaryAmmoText` from the active magazine's
+  round count, for the first and second FireArm of the occupied seat (ledger
+  VHUD-10, [ingame-hud.md](../bf1942-engine-reference/subsystems/ingame-hud.md)
+  "Open"). [`vehicle-hud.js`](../../tools/bf1942-models/viewer/vehicle-hud.js)
+  now feeds a drivetrain root's own guns, which fire through a gated
+  `FireState`.*
 
 **Verified correct, no change** (each checked live, not just read off the
 layout): the health bar's fill direction and magnitude at both extremes —
