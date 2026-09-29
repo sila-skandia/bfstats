@@ -533,6 +533,116 @@ class TestPipelineSynthetic(unittest.TestCase):
         self.assertEqual(bob_entry["loading"]["background"], "battle_of_britain/load.webp")
 
 
+class TestModChainResolution(unittest.TestCase):
+    """DC_Final -> DesertCombat -> bf1942, resolved the way the engine does.
+
+    DC_Final's own `Menu.rfa` carries no loading chrome and no load pictures;
+    DesertCombat's `MENU.rfa` (upper case on disk) has the plate, the bar and
+    `Load/DC_*.tga`; the briefing plate and the theaters are only vanilla's.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.base = Path(self.tmp_dir)
+        self.game_dir = self.base / "game"
+        self.output_dir = self.base / "viewer" / "maps"
+        mods = self.game_dir / "Mods"
+
+        vanilla = mods / "bf1942"
+        (vanilla / "Archives" / "bf1942" / "levels").mkdir(parents=True)
+        (vanilla / "Music").mkdir()
+        (vanilla / "Music" / "Vehicle4.bik").write_bytes(b"vanilla bik")
+        (vanilla / "init.con").write_text(
+            "game.addModPath Mods/BF1942/\n"
+            'Game.setLoadMusicFilename "music/vehicle4.bik"\n')
+        (vanilla / "Archives" / "menu.rfa").write_bytes(make_mock_rfa({
+            "menu/Texture/Briefing/menu_loading.dds": make_dummy_dds(512, 64, (1, 1, 1, 255)),
+            "menu/Texture/loading_full_256x16.dds": make_dummy_dds(256, 16, (1, 1, 1, 255)),
+            "menu/Texture/Briefing/mp_briefing_512x512.dds": make_dummy_dds(64, 64, (9, 9, 9, 255)),
+            "menu/Texture/Load/Western.tga": make_dummy_tga(8, 6),
+        }))
+
+        dc = mods / "DesertCombat"
+        (dc / "Archives" / "bf1942" / "levels").mkdir(parents=True)
+        (dc / "Music").mkdir()
+        (dc / "Music" / "Vehicle4.bik").write_bytes(b"dc bik")
+        (dc / "init.con").write_text(
+            "game.addModPath Mods/DesertCombat/\ngame.addModPath Mods/BF1942/\n"
+            'Game.setLoadMusicFilename "music/vehicle4.bik"\n')
+        (dc / "Archives" / "MENU.rfa").write_bytes(make_mock_rfa({
+            "MENU/Texture/Briefing/menu_loading.dds": make_dummy_dds(512, 64, (200, 0, 0, 255)),
+            "MENU/Texture/loading_full_256x16.dds": make_dummy_dds(256, 16, (200, 0, 0, 255)),
+            "MENU/Texture/Load/DC_Apache.tga": make_dummy_tga(8, 6, (0, 0, 255)),
+        }))
+
+        dcf = mods / "DC_Final"
+        levels = dcf / "Archives" / "BF1942" / "levels"
+        levels.mkdir(parents=True)
+        # No Music/ and no load-music line: both come from the parent.
+        (dcf / "init.con").write_text(
+            "game.addModPath Mods/DC_Final/\ngame.addModPath Mods/DesertCombat/\n"
+            "game.addModPath Mods/BF1942/\n")
+        (dcf / "Archives" / "Menu.rfa").write_bytes(make_mock_rfa({
+            "menu/MainMenu": b"layout",
+        }))
+        # Script casing differs from the archive's; the engine ignores case.
+        (levels / "Kursk.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Kursk/Menu/init.con": b"game.setLoadPicture Load/DC_APACHE.tga\n",
+        }))
+        (levels / "Gazala.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Gazala/Menu/init.con": b"game.setLoadPicture Load/DC_Missing.tga\n",
+        }))
+
+        tree = self.output_dir / "mods" / "dc_final"
+        tree.mkdir(parents=True)
+        (tree / "maps.json").write_text(json.dumps(
+            [{"name": "Kursk", "mod": "dc_final"}, {"name": "Gazala", "mod": "dc_final"}]))
+        self.tree = tree
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def pixel(self, rel: str) -> tuple:
+        with Image.open(self.tree / rel) as im:
+            return im.convert("RGB").getpixel((0, 0))
+
+    @patch.object(ela, "transcode_bik_to_mp3", return_value=True)
+    def test_dc_final_inherits_everything_it_does_not_ship(self, mock_transcode):
+        summary = ela.LoadingAssetExtractor(
+            bf1942_dir=self.game_dir, output_dir=self.output_dir, mods=["dc_final"],
+        ).run()
+        self.assertEqual(summary.errors, [])
+
+        # Plate and bar are DesertCombat's (red), the briefing plate vanilla's.
+        self.assertEqual(self.pixel("_shared/load/menu_loading.png"), (200, 0, 0))
+        self.assertEqual(self.pixel("_shared/load/loading_bar.png"), (200, 0, 0))
+        self.assertEqual(self.pixel("_shared/load/mp_briefing.png"), (9, 9, 9))
+
+        # The load picture lands once, in the tree's own _shared/load.
+        self.assertGreater(self.pixel("_shared/load/dc_apache.webp")[0], 200)  # BGR (0,0,255)
+        self.assertTrue((self.tree / "_shared/load/western.webp").is_file())
+
+        # The cue DC_Final does not ship is DesertCombat's, not vanilla's.
+        bik, dest = mock_transcode.call_args.args[:2]
+        self.assertEqual(bik.read_bytes(), b"dc bik")
+        self.assertEqual(dest, self.tree / "_shared/music/vehicle4.mp3")
+
+        rows = {e["name"]: e["loading"] for e in json.loads((self.tree / "maps.json").read_text())}
+        self.assertEqual(rows["Kursk"]["background"], "_shared/load/dc_apache.webp")
+        self.assertEqual(rows["Kursk"]["music"], "_shared/music/vehicle4.mp3")
+        # A picture nothing ships falls back to a file the tree now has.
+        self.assertEqual(rows["Gazala"]["background"], "_shared/load/western.webp")
+        for loading in rows.values():
+            self.assertTrue((self.tree / loading["background"]).is_file())
+
+    def test_search_path_follows_add_mod_path(self):
+        extractor = ela.LoadingAssetExtractor(bf1942_dir=self.game_dir, output_dir=self.output_dir)
+        self.assertEqual([d.name for d in extractor.search_path("dc_final")],
+                         ["DC_Final", "DesertCombat", "bf1942"])
+        self.assertEqual(ela.load_music_path(extractor.search_path("dc_final")),
+                         "music/vehicle4.bik")
+
+
 class TestRealWineIntegration(unittest.TestCase):
     """Optional live Wine installation integration tests."""
 
