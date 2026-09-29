@@ -575,5 +575,41 @@ class ThompsonViewmodelArtifactTests(unittest.TestCase):
         self.assertEqual("1/speed", extras["clipTiming"])
 
 
+class TestModRigSelection(unittest.TestCase):
+    """A mod's rigs come from its kits.json, and the tree says what it holds."""
+
+    KITS = {"kits": [
+        {"soldiers": ["USSoldier"], "levels": ["Basra"],
+         "items": [{"template": "M16"}, {"template": "Binoculars"}]},
+        {"soldiers": ["USSoldier"], "levels": ["Kursk"],
+         "items": [{"template": "binoculars"}, {"template": "Thompson"}]},
+        {"soldiers": ["IraqSoldier"], "levels": None,
+         "items": [{"template": "AK47"}]},
+    ]}
+
+    def test_pairs_once_ignoring_case(self):
+        self.assertEqual(extract_viewmodel.kit_pairs(self.KITS), [
+            ("USSoldier", "M16"), ("USSoldier", "Binoculars"),
+            ("USSoldier", "Thompson"), ("IraqSoldier", "AK47")])
+
+    def test_pairs_only_for_levels_the_tree_bakes(self):
+        # Kursk is an inherited vanilla level the mod tree does not hold; a
+        # kit with no levels at all is kept.
+        self.assertEqual(extract_viewmodel.kit_pairs(self.KITS, {"basra"}), [
+            ("USSoldier", "M16"), ("USSoldier", "Binoculars"), ("IraqSoldier", "AK47")])
+
+    def test_index_lists_every_rig_in_the_tree(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            for name in ("USSoldier__M16.fp.glb", "IraqSoldier__AK47.fp.glb",
+                         "IraqSoldier__AK47.fp.glb.gz", "USSoldier__M16.fp.report.json"):
+                (out / name).write_bytes(b"")
+            self.assertEqual(extract_viewmodel.write_index(out),
+                             ["IraqSoldier__AK47", "USSoldier__M16"])
+            self.assertEqual(json.loads((out / "index.json").read_text()),
+                             ["IraqSoldier__AK47", "USSoldier__M16"])
+
+
 if __name__ == "__main__":
     unittest.main()
