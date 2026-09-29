@@ -10,4 +10,6 @@ agentId, label}` rows name the agents and `{type:'result', agentId, result}`
 rows hold the text. Write one file per agent rather than returning six 20–40 KB
 reports through the workflow's return value.
 
-Empty until the round is dispatched.
+The round was dispatched, and its reports are the files beside this one, on
+main since 471ced32 on 2026-09-17. This line used to say the folder stays empty
+until the round is dispatched.
