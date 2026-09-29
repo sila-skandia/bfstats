@@ -27,6 +27,7 @@ import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { weaponNodeOf } from './soldier-dress.js';
+import { modelFileStem } from './model-file.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -71,7 +72,7 @@ export function createRemoteRenderer(ctx) {
 
   function model(name) {
     if (!modelCache.has(name)) {
-      const url = `${ctx.modelsBase}/${name}.glb${ctx.bust()}`;
+      const url = `${ctx.modelsBase}/${modelFileStem(name)}.glb${ctx.bust()}`;
       modelCache.set(name, ctx.loader.loadAsync(url).then(gltf => {
         gltf.scene.traverse(obj => {
           const data = obj.userData || {};

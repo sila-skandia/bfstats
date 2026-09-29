@@ -27,6 +27,7 @@ def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copyfile(MODULE, work / "pose-bases.js")
+        shutil.copyfile(MODULE.with_name("model-file.js"), work / "model-file.js")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')
         proc = subprocess.run(["node", str(work / "harness.mjs")],
