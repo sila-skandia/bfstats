@@ -298,7 +298,7 @@ class GlbBuilder:
             mat["alphaMode"] = "BLEND"
         if envmap:
             # `envmap true;` — Refractor reflects environment (cubemap) on this
-            # surface. 435 vanilla materials declare it (all aircraft painted
+            # surface. 435 vanilla .rs files declare it (all aircraft painted
             # metal, glass canopies, vehicle windows). The viewer binds the
             # cubemap via THREE.MeshStandardMaterial.envMap when it sees this.
             #

@@ -23,7 +23,7 @@ topic's answer is and which copy wins when two disagree.
 |---|---|---|
 | `features/bf1942-engine-reference/ledger.md` | One row per claim about the engine, with a status and the binary address that proves it | What the engine does. The row's status is the verdict |
 | `features/bf1942-engine-reference/subsystems/*.md` | One narrative per subsystem, written from ledger rows | How the rows fit together |
-| `features/bf1942-3d-models/*.md` | The first studies of each topic, 6 to 17 September | Game data and leads. A later ledger row overrules them |
+| `features/bf1942-3d-models/*.md` | The first studies of each topic, most written 10 to 17 September | Game data and leads. A later ledger row overrules them |
 | `features/<feature>/` | What the viewer or pipeline built, how it was checked, what is open | What we built. Its engine claims count only where it cites a ledger row |
 | `tools/bf1942-models/` | The code. The module docstrings in `bf42/*.py` are the format specs | What is built today |
 

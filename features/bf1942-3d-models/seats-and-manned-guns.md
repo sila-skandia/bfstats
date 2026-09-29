@@ -1,5 +1,10 @@
 # Seats and manned guns: entering, switching and leaving anything with a door
 
+*Noted 2026-09-29: the SEAT-n numbers in this doc are the research reports' own
+(verify-r5.md and its siblings), not ledger rows. The ledger's SEAT rows with
+the same numbers say other things. Search the ledger by symbol, not by these
+IDs.*
+
 The user's ask: "entering and exiting any vehicle that can be spawned in to,
 e.g. a defgun can be entered and fired, it has its own HUD when inside, same
 as a sherman." Before this round the viewer only classified `c_ETPlane`/
