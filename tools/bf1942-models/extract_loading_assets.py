@@ -6,6 +6,14 @@ Extracts UI chrome (metallic frame plate cropped to active 290x64 and 256x16 fil
 loading music (vehicle4.bik -> 192k MP3 via FFmpeg). Generates or updates the loading
 metadata schema in maps.json for vanilla and mods (e.g. Eve of Destruction).
 
+Every file is found the way the engine finds it: along the mod's
+`game.addModPath` chain, nearest first. DC_Final ships no loading chrome and
+no load pictures in its own `Menu.rfa`, so its plate, bar and `Load/DC_*.tga`
+pictures come from DesertCombat's `MENU.rfa`, and its briefing plate from
+vanilla's. A picture from a menu archive lands once per tree at
+`_shared/load/<name>.webp`; one a level ships itself at `<level>/load.webp`,
+which `extract_maps_all.promote` carries across a re-bake.
+
 CLI Usage:
     python3 tools/bf1942-models/extract_loading_assets.py \\
         --bf1942-dir "/path/to/Battlefield 1942" \\
@@ -23,6 +31,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import posixpath
 import re
 import shutil
 import struct
@@ -189,6 +198,57 @@ def auto_detect_bf1942_dir(
     return valid_candidates[0][1]
 
 
+def mod_search_path(game_dir: Path, mod: str) -> list[Path]:
+    """The directories the engine searches for a mod's files, nearest first.
+
+    The chain its own `init.con` declares with `game.addModPath`
+    (`extract_models.mod_chain`), so DC_Final finds what it does not ship in
+    DesertCombat before vanilla. A mod that is not installed has no path.
+    """
+    from extract_models import mod_chain
+    try:
+        return mod_chain(Path(game_dir), mod)
+    except SystemExit:
+        return []
+
+
+def mod_menu_archives(mod_dirs: list[Path]) -> list[Path]:
+    """Every `menu*.rfa` along a search path, nearest mod first.
+
+    Within one mod a patch archive (`menu_001.rfa`) precedes its base, the
+    way level archives are ordered. Names are matched case-insensitively:
+    DesertCombat ships `MENU.rfa`, DC_Final `Menu.rfa`.
+    """
+    archives: list[Path] = []
+    for mod_dir in mod_dirs:
+        archives_dir = resolve_case_insensitive(mod_dir, "Archives")
+        if archives_dir and archives_dir.is_dir():
+            archives.extend(find_level_archives(archives_dir, "menu"))
+    return archives
+
+
+LOAD_MUSIC_RE = re.compile(
+    r'(?im)^\s*(?:game\.)?setLoadMusicFilename\s+["\']?([^"\'\r\n]+?)["\']?'
+    r'(?:\s+rem\b.*)?\s*$')
+DEFAULT_LOAD_MUSIC = "music/vehicle4.bik"
+
+
+def load_music_path(mod_dirs: list[Path]) -> str:
+    """The loading cue `Game.setLoadMusicFilename` names, nearest mod first.
+
+    Every installed mod but XPack2 sets it, and every one of them to
+    `music/vehicle4.bik`. One that does not set it inherits its parent's,
+    the same assumption `extract_menu_music.py` makes for the menu cue.
+    """
+    for mod_dir in mod_dirs:
+        init = resolve_case_insensitive(mod_dir, "init.con")
+        if init and init.is_file():
+            match = LOAD_MUSIC_RE.search(init.read_text(encoding="latin-1", errors="replace"))
+            if match:
+                return match.group(1).strip().replace("\\", "/")
+    return DEFAULT_LOAD_MUSIC
+
+
 def find_mod_music_file(
     mod_dirs: list[Path],
     rel_music_path: str = "music/vehicle4.bik",
@@ -249,6 +309,10 @@ class ArchiveReader:
                 if accept(norm):
                     return real
         return None
+
+    def exact(self, path: str) -> str | None:
+        """The entry at exactly this path, ignoring case, as the engine opens it."""
+        return self._index.get(path.replace("\\", "/").lower())
 
     def read(self, entry_name: str) -> bytes:
         norm = entry_name.replace("\\", "/").lower()
@@ -573,6 +637,57 @@ class LoadingAssetExtractor:
         self.summary = ExtractionSummary()
 
         self.vanilla_dir = resolve_mod_dir(self.bf1942_dir, "bf1942")
+        self._readers: dict[Path, ArchiveReader] = {}
+
+    def mod_output_dir(self, mod: str) -> Path:
+        return self.output_dir if mod == "bf1942" else self.output_dir / "mods" / mod
+
+    def search_path(self, mod: str) -> list[Path]:
+        """The mod's directories nearest first, always ending at vanilla."""
+        mod_dirs = mod_search_path(self.bf1942_dir, mod)
+        if not mod_dirs:
+            mod_dir = resolve_mod_dir(self.bf1942_dir, mod)
+            mod_dirs = [mod_dir] if mod_dir else []
+        if self.vanilla_dir and self.vanilla_dir not in mod_dirs:
+            mod_dirs.append(self.vanilla_dir)
+        return mod_dirs
+
+    def reader(self, path: Path) -> ArchiveReader:
+        """One open reader per menu archive for the whole run."""
+        if path not in self._readers:
+            self._readers[path] = ArchiveReader(path)
+        return self._readers[path]
+
+    def find_in_menus(
+        self,
+        mod_dirs: list[Path],
+        leaf: str | None = None,
+        path: str | None = None,
+    ) -> tuple[ArchiveReader, str] | None:
+        """The nearest menu archive entry along a search path.
+
+        `path` is matched exactly, the way the engine opens a file, with a
+        `.dds` twin probed for a `.tga` (the scripts name one, mods often ship
+        the other). `leaf` keeps `ArchiveReader.find`'s looser match, which is
+        what the chrome lookups have always used.
+        """
+        for archive in mod_menu_archives(mod_dirs):
+            try:
+                reader = self.reader(archive)
+            except Exception as exc:
+                logger.debug("Error reading archive %s: %s", archive, exc)
+                continue
+            if path is not None:
+                stem, ext = posixpath.splitext(path)
+                for candidate in (path, f"{stem}.dds" if ext.lower() == ".tga" else None):
+                    entry = candidate and reader.exact(candidate)
+                    if entry:
+                        return reader, entry
+            elif leaf is not None:
+                entry = reader.find(leaf)
+                if entry:
+                    return reader, entry
+        return None
 
     def run(self) -> ExtractionSummary:
         """Run extraction according to configured flags."""
@@ -597,142 +712,106 @@ class LoadingAssetExtractor:
             for mod in self.mods:
                 self.process_mod_levels(mod)
 
+        for reader in self._readers.values():
+            reader.close()
+        self._readers.clear()
         return self.summary
 
+    # (menu entry leaf, output name, convert_ui_chrome_dds options). Each is
+    # looked up along the mod's search path, nearest first, so DC_Final gets
+    # DesertCombat's plate and bar and vanilla's briefing plate.
+    CHROME: tuple[tuple[str, str, dict[str, bool]], ...] = (
+        # Beveled box container: menu/Texture/Briefing/menu_loading.dds -> 290x64
+        ("menu_loading.dds", "menu_loading.png", {"crop_active": True}),
+        # Fill bar: menu/Texture/loading_full_256x16.dds -> 256x16
+        ("loading_full_256x16.dds", "loading_bar.png", {"crop_active": False}),
+        # The mission-briefing dialog plate: the screen the game puts up over
+        # the loaded level, with the map name, teams, settings and the
+        # objectives/comments boxes on it. Painted 1:1 in the 800x600 stage;
+        # only its top 334 rows carry pixels.
+        ("mp_briefing_512x512.dds", "mp_briefing.png",
+         {"crop_active": False, "crop_to_content": True}),
+    )
+
     def extract_chrome(self) -> None:
-        """Extract menu_loading.png (290x64) and loading_bar.png (256x16) for each mod."""
+        """Extract the loading plate, fill bar and briefing plate for each mod."""
         for mod in self.mods:
-            mod_dir = resolve_mod_dir(self.bf1942_dir, mod)
-            if not mod_dir:
+            if not resolve_mod_dir(self.bf1942_dir, mod):
                 msg = f"Mod directory not found for {mod}"
                 logger.warning(msg)
                 self.summary.errors.append(msg)
                 continue
 
-            archives_dir = resolve_case_insensitive(mod_dir, "Archives")
-            if not archives_dir:
-                continue
-
-            menu_rfa = resolve_case_insensitive(archives_dir, "menu.rfa")
-            if not menu_rfa or not menu_rfa.is_file():
-                continue
-
-            dest_dir = (
-                self.output_dir / "_shared" / "load"
-                if mod == "bf1942"
-                else self.output_dir / "mods" / mod / "_shared" / "load"
-            )
-
-            with ArchiveReader(menu_rfa) as reader:
-                # 1. Beveled box container: menu/Texture/Briefing/menu_loading.dds -> 290x64 PNG
-                plate_entry = reader.find("menu_loading.dds")
-                if plate_entry:
-                    raw_plate = reader.read(plate_entry)
-                    dest_plate = dest_dir / "menu_loading.png"
-                    size = convert_ui_chrome_dds(
-                        raw_plate,
-                        dest_plate,
-                        crop_active=True,
-                        overwrite=True,
-                        dry_run=self.dry_run,
-                    )
-                    logger.info("[%s] Extracted menu_loading.png (%dx%d) -> %s", mod, size[0], size[1], dest_plate)
-                    self.summary.chrome_extracted += 1
-
-                # 2. Fill bar: menu/Texture/loading_full_256x16.dds -> 256x16 PNG
-                bar_entry = reader.find("loading_full_256x16.dds")
-                if bar_entry:
-                    raw_bar = reader.read(bar_entry)
-                    dest_bar = dest_dir / "loading_bar.png"
-                    size = convert_ui_chrome_dds(
-                        raw_bar,
-                        dest_bar,
-                        crop_active=False,
-                        overwrite=True,
-                        dry_run=self.dry_run,
-                    )
-                    logger.info("[%s] Extracted loading_bar.png (%dx%d) -> %s", mod, size[0], size[1], dest_bar)
-                    self.summary.chrome_extracted += 1
-
-                # 3. The mission-briefing dialog plate: the screen the game
-                # puts up over the loaded level, with the map name, teams,
-                # settings and the objectives/comments boxes on it. Painted
-                # 1:1 in the 800x600 stage; only its top 334 rows carry pixels.
-                plate_entry = reader.find("mp_briefing_512x512.dds")
-                if plate_entry:
-                    raw_plate = reader.read(plate_entry)
-                    dest_plate = dest_dir / "mp_briefing.png"
-                    size = convert_ui_chrome_dds(
-                        raw_plate,
-                        dest_plate,
-                        crop_active=False,
-                        overwrite=True,
-                        dry_run=self.dry_run,
-                        crop_to_content=True,
-                    )
-                    logger.info("[%s] Extracted mp_briefing.png (%dx%d) -> %s", mod, size[0], size[1], dest_plate)
-                    self.summary.chrome_extracted += 1
+            mod_dirs = self.search_path(mod)
+            dest_dir = self.mod_output_dir(mod) / "_shared" / "load"
+            for leaf, name, options in self.CHROME:
+                found = self.find_in_menus(mod_dirs, leaf=leaf)
+                if not found:
+                    logger.warning("[%s] %s not found along %s", mod, leaf,
+                                   [d.name for d in mod_dirs])
+                    continue
+                reader, entry = found
+                dest = dest_dir / name
+                size = convert_ui_chrome_dds(
+                    reader.read(entry),
+                    dest,
+                    overwrite=True,
+                    dry_run=self.dry_run,
+                    **options,
+                )
+                logger.info("[%s] Extracted %s (%dx%d) from %s:%s -> %s", mod, name,
+                            size[0], size[1], reader.path.name, entry, dest)
+                self.summary.chrome_extracted += 1
 
     def extract_theater_backgrounds(self) -> None:
-        """Extract the 7 standard vanilla theater backgrounds to _shared/load/*.webp."""
-        if not self.vanilla_dir:
-            return
+        """Extract the 7 standard theater backgrounds into each mod's _shared/load/.
 
-        archives_dir = resolve_case_insensitive(self.vanilla_dir, "Archives")
-        if not archives_dir:
-            return
+        Vanilla's levels name them (`Load/Desert.tga`), and so does any vanilla
+        level a mod inherits, so every tree carries them, each resolved along
+        that mod's own search path. `western.webp` is also the fallback a row
+        with no picture of its own points at.
+        """
+        for mod in self.mods:
+            mod_dirs = self.search_path(mod)
+            dest_dir = self.mod_output_dir(mod) / "_shared" / "load"
+            for theater in sorted(STANDARD_THEATERS):
+                found = self.find_in_menus(mod_dirs, path=f"menu/texture/load/{theater}.tga")
+                if not found:
+                    continue
+                reader, entry = found
+                out_path = dest_dir / f"{theater}.webp"
+                size = convert_background_to_webp(
+                    reader.read(entry),
+                    out_path,
+                    quality=85,
+                    overwrite=True,
+                    dry_run=self.dry_run,
+                )
+                logger.info("[%s] Extracted theater background %s (%dx%d) -> %s",
+                            mod, theater, size[0], size[1], out_path)
+                self.summary.backgrounds_extracted += 1
 
-        menu_rfa = resolve_case_insensitive(archives_dir, "menu.rfa")
-        if not menu_rfa or not menu_rfa.is_file():
-            return
-
-        dest_dir = self.output_dir / "_shared" / "load"
-
-        with ArchiveReader(menu_rfa) as reader:
-            for theater in STANDARD_THEATERS:
-                tga_entry = reader.find(f"menu/texture/load/{theater}.tga") or reader.find(f"{theater}.tga")
-                if tga_entry:
-                    raw = reader.read(tga_entry)
-                    out_path = dest_dir / f"{theater}.webp"
-                    size = convert_background_to_webp(
-                        raw,
-                        out_path,
-                        quality=85,
-                        overwrite=True,
-                        dry_run=self.dry_run,
-                    )
-                    logger.info("Extracted theater background %s (%dx%d) -> %s", theater, size[0], size[1], out_path)
-                    self.summary.backgrounds_extracted += 1
-
-                    # Also ensure western.webp exists in mod _shared/load/ if EoD is processed
-                    if "eod" in self.mods:
-                        eod_fallback = self.output_dir / "mods" / "eod" / "_shared" / "load" / f"{theater}.webp"
-                        convert_background_to_webp(
-                            raw,
-                            eod_fallback,
-                            quality=85,
-                            overwrite=True,
-                            dry_run=self.dry_run,
-                        )
+    def load_music(self, mod: str) -> tuple[str, Path | None]:
+        """The mod's loading cue: its tree-relative mp3 and the Bink it comes from."""
+        mod_dirs = self.search_path(mod)
+        rel = load_music_path(mod_dirs)
+        stem = Path(rel).stem.lower()
+        return f"_shared/music/{stem}.mp3", find_mod_music_file(mod_dirs, rel)
 
     def extract_audio(self) -> None:
-        """Extract vehicle4.bik to 192k MP3 for each mod."""
-        for mod in self.mods:
-            mod_dir = resolve_mod_dir(self.bf1942_dir, mod)
-            mod_dirs = [mod_dir] if mod_dir else []
-            if self.vanilla_dir and self.vanilla_dir not in mod_dirs:
-                mod_dirs.append(self.vanilla_dir)
+        """Transcode each mod's loading cue (`vehicle4.bik` everywhere) to 192k MP3.
 
-            bik_file = find_mod_music_file(mod_dirs, "music/vehicle4.bik")
+        Named by `Game.setLoadMusicFilename` and opened along the search path,
+        nearest first, as the engine opens any file: DesertCombat and DC_Final
+        each ship their own `Vehicle4.bik`, which is not vanilla's.
+        """
+        for mod in self.mods:
+            music_ref, bik_file = self.load_music(mod)
             if not bik_file:
-                logger.warning("[%s] vehicle4.bik not found in music directory", mod)
+                logger.warning("[%s] %s not found along the mod path", mod, music_ref)
                 continue
 
-            dest_mp3 = (
-                self.output_dir / "_shared" / "music" / "vehicle4.mp3"
-                if mod == "bf1942"
-                else self.output_dir / "mods" / mod / "_shared" / "music" / "vehicle4.mp3"
-            )
+            dest_mp3 = self.mod_output_dir(mod) / music_ref
 
             try:
                 transcoded = transcode_bik_to_mp3(
@@ -755,15 +834,15 @@ class LoadingAssetExtractor:
     def process_mod_levels(self, mod: str) -> None:
         """Process level backgrounds and update maps.json for a given mod."""
         mod_dir = resolve_mod_dir(self.bf1942_dir, mod)
-        mod_dirs: list[Path] = [mod_dir] if mod_dir else []
-        if self.vanilla_dir and self.vanilla_dir not in mod_dirs:
-            mod_dirs.append(self.vanilla_dir)
+        mod_dirs = self.search_path(mod)
 
-        is_vanilla = (mod == "bf1942")
         theme = "eod" if mod == "eod" else "vanilla"
 
-        mod_output_dir = self.output_dir if is_vanilla else self.output_dir / "mods" / mod
+        mod_output_dir = self.mod_output_dir(mod)
         manifest_path = mod_output_dir / "maps.json"
+        music_ref, _ = self.load_music(mod)
+        # A menu picture is shared by every level that names it; convert once.
+        written: set[Path] = set()
 
         # Determine target levels
         filter_levels = (
@@ -805,9 +884,10 @@ class LoadingAssetExtractor:
             bg_ref, source_bg = self.resolve_level_background(map_name, mod, mod_dirs)
 
             # Extract level override background if source bytes are found and not manifest_only
-            if source_bg and not self.manifest_only:
+            if source_bg and not self.manifest_only and (mod_output_dir / source_bg[1]) not in written:
                 raw_bytes, dest_file = source_bg
                 out_path = mod_output_dir / dest_file
+                written.add(out_path)
                 size = convert_background_to_webp(
                     raw_bytes,
                     out_path,
@@ -817,8 +897,6 @@ class LoadingAssetExtractor:
                 )
                 logger.info("[%s] Extracted level background %s (%dx%d) -> %s", mod, map_name, size[0], size[1], out_path)
                 self.summary.backgrounds_extracted += 1
-
-            music_ref = "_shared/music/vehicle4.mp3"
 
             record = {
                 "title": title,
@@ -843,6 +921,11 @@ class LoadingAssetExtractor:
         """Resolve background image path and raw source bytes for a level.
 
         Returns (bg_ref, (raw_bytes, dest_rel_path) | None).
+
+        `setLoadPicture` names a path under `Menu/Texture/`. A level's own
+        picture climbs out of it (`../../bf1942/levels/<L>/...`) into the level
+        archive; the rest (`Load/DC_Apache.tga`) live in a menu archive along
+        the mod path, and land once per tree at `_shared/load/<name>.webp`.
         """
         slug = map_name.lower()
 
@@ -882,6 +965,15 @@ class LoadingAssetExtractor:
                             if override_entry:
                                 raw = reader.read(override_entry)
                                 return (f"{slug}/load.webp", (raw, Path(slug) / "load.webp"))
+
+                            # A menu picture, from the nearest menu archive
+                            engine_path = posixpath.normpath(f"menu/texture/{arg}").lower()
+                            found = self.find_in_menus(mod_dirs, path=engine_path)
+                            if found:
+                                menu_reader, entry = found
+                                name = f"{Path(engine_path).stem}.webp"
+                                return (f"_shared/load/{name}",
+                                        (menu_reader.read(entry), Path("_shared") / "load" / name))
 
                     # EoD standard or generic level loader: loader.tga
                     loader_entry = reader.find("loader.tga") or reader.find("load.tga")
