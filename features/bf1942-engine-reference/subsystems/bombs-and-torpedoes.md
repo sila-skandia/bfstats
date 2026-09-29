@@ -199,6 +199,16 @@ pilot's aim, not the weapon's.
 
 ## 5. What this means for the viewer
 
+> **Built 2026-09-22** (W6-A, `b8184efb`; build record
+> [`../../plane-bombs-and-torpedoes/BUILD.md`](../../plane-bombs-and-torpedoes/BUILD.md)):
+> the guard admits a rack, a zero-velocity release leaves at the aircraft's
+> velocity, the rack is charged per projectile (BOMB-1, BOMB-5), the B17 lays
+> its stick, a torpedo enters the water and runs, and the release plays its
+> one-shot sound (the last three need scenes extracted after the build, its
+> §6). The code has since moved out of `gunfire.js` into
+> `gun-groups.js`, `round-launch.js`, `projectile-flight.js` and
+> `bomb-release.js`. What follows is the gap as it stood before the build.
+
 `viewer/gunfire.js` drops every bomb rack before it can fire, at the emitter
 guard:
 
