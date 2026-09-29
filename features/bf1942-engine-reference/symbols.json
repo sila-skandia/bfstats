@@ -4875,6 +4875,42 @@
    "note": "Real vtable 0x0093e078 +0x30; base ctor 0x007d9d50, createInstance 0x007da550 (0x5c bytes). Next node; Picture, Mouse over picture, Clicked picture; Action; MouseOver button (bool); Index (int); Current mouseover index, Current clicked index, MouseOver active (object frames); Width and Height (floats, read last). A three-state tab or row selector, not a BfButtonNode."
   },
   {
+   "address": "0x007da1f0",
+   "name": "meme_BfSelectButtonNode__read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-dc-kit-rows",
+   "note": "Object vtable 0x0093e1a8 +0x30. Node::read (0x007ec100), then Picture, Mouse over picture, Clicked picture (u8 strings, +0x4c), Action (+0x68 object), Index (int, +0x3c), Current clicked index (+0x6c object), Width, Height (floats, +0x34). BfNavigationButtonNode (0x007d9db0) without MouseOver button / Current mouseover index / MouseOver active. Wire layout checked against Desert Combat's menu/InGame: all six rows read to their frame ends, the page to its last byte."
+  },
+  {
+   "address": "0x007da2d0",
+   "name": "meme_BfSelectButtonNode__update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "research-2026-09-30-dc-kit-rows",
+   "note": "vtable +0x64. Picks the plate (+0x2c): Clicked picture (+0x28) when int(Current clicked index) == Index (+0x3c); else Mouse over picture (+0x24) when the pointer (0x007eb820) is strictly inside origin..origin+(Width,Height), setting the hover byte +0x45; else Picture (+0x20). Name from behaviour; the slot is not named elsewhere."
+  },
+  {
+   "address": "0x007da390",
+   "name": "meme_BfSelectButtonNode__input",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "research-2026-09-30-dc-kit-rows",
+   "note": "vtable +0x74. On event kind 1 with the pointer strictly inside the region: if Current clicked index is set and not already Index, writes Index into it (+0x4c) and runs Action (+0x30) through its +0x40; a click on the already-selected row does nothing. With no variable it always runs the Action."
+  },
+  {
+   "address": "0x007da720",
+   "name": "meme_BfSelectButtonNode__render",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "research-2026-09-30-dc-kit-rows",
+   "note": "vtable +0x68. Draws the plate +0x2c with 0x004681c0 + 0x007ed7e0, the same two calls BfButtonNode's +0x68 (0x007da600) makes: texture at its own size (MEME-7), Width/Height is only the pointer region."
+  },
+  {
    "address": "0x007db970",
    "name": "BfCrosshairNode draw (vtable +0x68)",
    "kind": "function",
@@ -6205,6 +6241,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-console",
    "note": "Client. \"ControlMap.addKeyToTriggerMapping c_GIToggleConsole IDFKeyboard IDKey_Grave c_CMNonRepetive\". The Caps Lock twin is at 0x00927020. Part of the compiled fallback control map 0x00926c28-0x00927410, which mirrors Settings/Default/Controls/Common.con lines 26-27. c_GIToggleConsole is ordinal 1, recovered from the addConstantHelper sites in io::Module::init (lnxded 0x083f7f40, calls 0x083f8db0/0x083f8dbd). 1.61 has NO deploy or spawn key in the whole c_GI* set. Ledger CON-2."
+  },
+  {
+   "address": "0x0093e1a8",
+   "name": "meme_BfSelectButtonNode__vftable",
+   "kind": "vtable",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-dc-kit-rows",
+   "note": "+0x04 0x007da7c0 returns the ClassInfo it registers under 'dice::meme::BfSelectButtonNode' (string 0x0093e310); +0x30 read 0x007da1f0; +0x64 0x007da2d0, +0x68 0x007da720, +0x74 0x007da390 are the class's own; the rest are Node's."
   },
   {
    "address": "0x0093f300",

@@ -57,6 +57,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from bf42 import meme  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 
@@ -381,6 +382,34 @@ def sprite_ref_from_entry(entry: str) -> str:
     return rel.rsplit(".", 1)[0] + ".tga"
 
 
+def select_button_plates(menu) -> list[str]:
+    """The plates the mod's `menu/InGame` hands its `BfSelectButtonNode`s,
+    as `SPRITES`-style stems (`Texture/Ingame/respawn/respawn_middle_256x128`).
+
+    Desert Combat draws its six kit rows with that class instead of
+    vanilla's fill-and-glyph rows, and each names three plates of its own
+    (at rest, under the pointer, selected) that no vanilla screen uses.
+    Read from the graph rather than listed, so a chain whose `menu/InGame`
+    has no such node -- every one but Desert Combat's and DC Final's, which
+    inherits it -- takes nothing here: Pirates ships the same three files
+    and never draws them.
+    """
+    entry = next((e for e in menu.entries if e.lower() == "menu/ingame"), None)
+    if entry is None:
+        return []
+    root, _ = meme.load(menu.read(entry))
+    stems: list[str] = []
+    for node in meme.walk_all(root):
+        if node.cls != "BfSelectButtonNode":
+            continue
+        for label in ("Picture", "Mouse over picture", "Clicked picture"):
+            picture = (node.get(label) or "").replace("\\", "/")
+            stem = "Texture/" + picture.rsplit(".", 1)[0]
+            if picture and stem not in stems:
+                stems.append(stem)
+    return stems
+
+
 def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
     """Decode the sprite list to PNGs, returning the manifest dict.
 
@@ -429,6 +458,16 @@ def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
             entry = index.get(f"menu/{stem}{ext}".lower())
             if entry:
                 break
+        if not entry:
+            missing.append(stem)
+            continue
+        decode_and_write(Path(stem).name.lower(), entry, sprite_ref(stem))
+
+    for stem in select_button_plates(menu):
+        if Path(stem).name.lower() in manifest:
+            continue
+        entry = next((index[k] for k in (f"menu/{stem}.dds".lower(),
+                                          f"menu/{stem}.tga".lower()) if k in index), None)
         if not entry:
             missing.append(stem)
             continue
