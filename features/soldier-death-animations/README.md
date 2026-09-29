@@ -53,6 +53,11 @@ sphere. A seated man is a target where his seat draws a full body (a jeep's
 passengers, a bare MG's gunner) and the round is his, not his hull's; a tank
 driver is not drawn and cannot be shot.
 
+*Added 2026-09-29: [vehicle-rounds-hit-soldiers](../vehicle-rounds-hit-soldiers/README.md)
+describes the first body test from 2026-09-23, with the stand-in sphere for
+everyone, hits priced as material 40 and the firer's whole side passed. Its fix
+section now carries a note pointing here.*
+
 **Two older bugs found and fixed on the way.** The human's rifle billed every
 trigger pull twice against a bot on foot -- once by a hitscan written before
 rounds could meet soldiers in flight, once by the round itself -- and the
