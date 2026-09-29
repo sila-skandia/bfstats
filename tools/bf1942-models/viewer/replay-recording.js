@@ -138,6 +138,30 @@ function cString(bytes, offset, length) {
   return s;
 }
 
+/** Seconds past which a record's time is not a round's: the longest round a
+ *  server runs is a few hours. A garbled time beyond it would stretch the
+ *  whole replay to it. */
+export const LONGEST_RECORDING = 12 * 3600;
+
+/** A rotation the viewer can turn by: four numbers, not all nothing. */
+function rotationOk(x, y, z, w) {
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(w)
+    && x * x + y * y + z * z + w * w > 1e-12;
+}
+
+/** An `s` entry, `[id, x, y, z, qx, qy, qz, qw]`, that is a place and a
+ *  rotation. */
+function sampleOk(o) {
+  return Array.isArray(o) && Number.isFinite(o[0])
+    && Number.isFinite(o[1]) && Number.isFinite(o[2]) && Number.isFinite(o[3])
+    && rotationOk(o[4], o[5], o[6], o[7]);
+}
+
+/** Three numbers, or null. */
+function vec3(v) {
+  return Array.isArray(v) && Number.isFinite(v[0]) && Number.isFinite(v[1]) && Number.isFinite(v[2]) ? v : null;
+}
+
 /** What a template name says the object is. Kits are recognised by what
  *  picked them up (0x23), not by name, so they are marked later. A round is
  *  whatever a projectile pool made (0x05, `projPool`), whatever its name:
@@ -248,6 +272,9 @@ export function parseRecording(text) {
     // A merged file's sources (replay-merge.js): `[{ file, start, offset, drift, local }]`,
     // `local` each file's recording player. null for one client's file.
     merged: null,
+    // Lines and entries left out as damaged: not JSON, not what their kind
+    // says, a time no round has, a sample that is not all numbers.
+    skipped: 0,
   };
   const current = new Map();
   const tidNames = new Map();
@@ -347,6 +374,7 @@ export function parseRecording(text) {
   const keyedRuns = (t, entries) => {
     let run = null;
     for (const [root, , qx, qy, qz, qw] of entries) {
+      if (!rotationOk(qx, qy, qz, qw)) continue;
       const q = [qx, qy, qz, qw];
       if (run?.root !== root) {
         run = { root, t, parts: [], before: lastKeyed };
@@ -389,10 +417,10 @@ export function parseRecording(text) {
         const life = lifeFor(u16(4), t);
         life.tid = view.getUint32(0, true);
         if (r.tmpl) life.tmpl = r.tmpl;
-        life.pose = {
-          p: [view.getFloat32(7, true), view.getFloat32(11, true), view.getFloat32(15, true)],
-          q: eulerToQuaternion([view.getFloat32(19, true), view.getFloat32(23, true), view.getFloat32(27, true)]),
-        };
+        const p = [view.getFloat32(7, true), view.getFloat32(11, true), view.getFloat32(15, true)];
+        const rot = [view.getFloat32(19, true), view.getFloat32(23, true), view.getFloat32(27, true)];
+        // Damaged bytes read as floats that are not numbers: no spawn point.
+        if (vec3(p) && vec3(rot)) life.pose = { p, q: eulerToQuaternion(rot) };
         life.created = Math.min(life.created, t);
         life.announced = true;
         return;
@@ -441,7 +469,9 @@ export function parseRecording(text) {
       case 0x04:
         // SimulationEvent: u8 running, f32 the server's world time, sent once
         // as this client's database completes.
-        if (b.length >= 5) rec.clocks.push({ t, seconds: view.getFloat32(1, true), exact: true });
+        if (b.length >= 5 && Number.isFinite(view.getFloat32(1, true))) {
+          rec.clocks.push({ t, seconds: view.getFloat32(1, true), exact: true });
+        }
         return;
       case 0x29:
         // TimerSyncEvent, every 10 s: u32 time limit (0 none), u32 world time
@@ -589,7 +619,9 @@ export function parseRecording(text) {
             life.tid = r.tid;
             if (r.tmpl) tidNames.set(r.tid, r.tmpl);
           }
-          if (r.pos && r.rot) life.pose = { p: r.pos, q: eulerToQuaternion(r.rot) };
+          // A spawn point that is not all numbers is none: the camera and
+          // the body are placed from it.
+          if (vec3(r.pos) && vec3(r.rot)) life.pose = { p: r.pos, q: eulerToQuaternion(r.rot) };
           life.created = Math.min(life.created, t);
           life.announced = true;
         }
@@ -637,10 +669,10 @@ export function parseRecording(text) {
         rec.modeFile = r.mode || rec.modeFile;
         return;
       case 'simStart':
-        rec.clocks.push({ t, seconds: r.worldTime, exact: true });
+        if (Number.isFinite(r.worldTime)) rec.clocks.push({ t, seconds: r.worldTime, exact: true });
         return;
       case 'clock':
-        rec.clocks.push({ t, seconds: r.worldTime, exact: false });
+        if (Number.isFinite(r.worldTime)) rec.clocks.push({ t, seconds: r.worldTime, exact: false });
         rec.timeLimit = r.timeLimit ?? rec.timeLimit;
         return;
       case 'serverName':
@@ -679,186 +711,245 @@ export function parseRecording(text) {
     try {
       r = JSON.parse(line);
     } catch {
+      rec.skipped += 1;
       continue;   // a crash can cut the last line short
     }
-    const t = typeof r.t === 'number' ? r.t : 0;
+    // A record the recorder cannot have written (not an object, a time before
+    // the file or beyond any round) is left out: one garbled time stretched
+    // the round to it, and everything that walks the round walked that far.
+    const t = typeof r?.t === 'number' ? r.t : 0;
+    if (!r || typeof r !== 'object' || !(t >= 0 && t <= LONGEST_RECORDING)) {
+      rec.skipped += 1;
+      continue;
+    }
     if (t > rec.duration) rec.duration = t;
-    switch (r.k) {
-      case 'h':
-        rec.version = r.v ?? 1;
-        rec.start = r.start ?? '';
-        rec.merged = Array.isArray(r.merged) ? r.merged : null;
-        break;
-      case 'e':
-        // An event with `ago` arrived before the file began and heads it (a
-        // file begun after the join, bf42plus ea600c1 and later): the join's
-        // own, and the objects, pools, kits and players it made. What it made
-        // was there at the file's start, not spawned during it.
-        if (r.ago !== undefined) joined = Math.max(joined, t);
-        parseEvent(r, t);
-        break;
-      case 'o': {
-        const life = lifeFor(r.id, t);
-        if (!life.tmpl) life.tmpl = r.tmpl || '';
-        if (!life.tid) life.tid = r.tid || 0;
-        life.team = r.team ?? life.team;
-        if (r.maxhp) {
-          life.maxhp = r.maxhp;
-          life.crit = r.crit ?? 0;
-        }
-        if (r.tmpl && r.tid) tidNames.set(r.tid, r.tmpl);
-        closeReplicated(life, t);
-        life.replicated.push([t, Infinity]);
-        break;
-      }
-      case 's':
-        for (const o of r.o) {
-          lifeFor(o[0], t).keys.push({ t, p: [o[1], o[2], o[3]], q: [o[4], o[5], o[6], o[7]] });
-        }
-        break;
-      case 'd': {
-        const life = current.get(r.id);
-        if (life) closeReplicated(life, t);
-        break;
-      }
-      case 'p':
-        // [pid, team, vehicle] from v1; v4 appends [root, seat]: the hull the
-        // controlled object belongs to and the seat's place among its nested
-        // PlayerControlObjects, 0 for the root seat itself.
-        for (const entry of r.p) {
-          const [pid, team, nid] = entry;
-          rec.control.push({ t, pid, team, nid });
-          if (team === 1 || team === 2) noteTeam(pid, t, team);
-          nidEvents.push({ t, pid, nid });
-          if (entry.length >= 5 && entry[3] >= 0) {
-            if (!rec.seats.has(pid)) rec.seats.set(pid, []);
-            rec.seats.get(pid).push({ t, root: entry[3], seat: entry[4] });
+    // A record that is not what its kind says (a list that is not one, a
+    // field of the wrong type) is left out with whatever it held, not the
+    // whole recording with it.
+    try {
+      switch (r.k) {
+        case 'h':
+          rec.version = r.v ?? 1;
+          rec.start = r.start ?? '';
+          rec.merged = Array.isArray(r.merged) ? r.merged : null;
+          break;
+        case 'e':
+          // An event with `ago` arrived before the file began and heads it (a
+          // file begun after the join, bf42plus ea600c1 and later): the join's
+          // own, and the objects, pools, kits and players it made. What it made
+          // was there at the file's start, not spawned during it.
+          if (r.ago !== undefined) joined = Math.max(joined, t);
+          parseEvent(r, t);
+          break;
+        case 'o': {
+          if (!Number.isFinite(r.id)) break;
+          const life = lifeFor(r.id, t);
+          if (!life.tmpl) life.tmpl = r.tmpl || '';
+          if (!life.tid) life.tid = r.tid || 0;
+          life.team = r.team ?? life.team;
+          if (r.maxhp) {
+            life.maxhp = r.maxhp;
+            life.crit = r.crit ?? 0;
           }
-        }
-        break;
-      case 'a':
-        for (const [nid, hp] of r.a) {
-          const life = lifeFor(nid, t);
-          const last = life.hp[life.hp.length - 1];
-          if (!last || last.hp !== hp) life.hp.push({ t, hp });
-        }
-        break;
-      case 'cp': {
-        if (r.tmpl) cpTemplates.add(r.tmpl);
-        const before = cpState.get(r.id);
-        const name = r.name ?? before?.name ?? `control point ${r.id}`;
-        // The first team a point reports (-1 until the server sets it) is
-        // where the round opened it; a change after that is play. A capture
-        // goes through neutral: 2, then 0 as the flag comes down, then 1 as
-        // the attackers raise theirs (Landing_Beach at 185.5 and 195.5 s in
-        // replay_20260927-075756), so a point turning to a side from neutral
-        // is taken as well as one turning from the other side.
-        const opened = Boolean(before?.opened) || r.team >= 0;
-        cpState.set(r.id, { name, team: r.team, opened });
-        if (!rec.controlPoints.has(r.id)) {
-          rec.controlPoints.set(r.id, { id: r.id, name, tmpl: r.tmpl ?? '', pos: r.pos ?? null, changes: [] });
-        }
-        const point = rec.controlPoints.get(r.id);
-        point.name = name;
-        if (r.team >= 0 && point.changes[point.changes.length - 1]?.team !== r.team) point.changes.push({ t, team: r.team });
-        if (before?.opened && r.team > 0 && before.team !== r.team) {
-          rec.captures.push({ t, id: r.id, name, team: r.team, from: before.team });
-          row(t, 'flag', `${name} taken by ${teamName(r.team)}`);
-        }
-        break;
-      }
-      case 'chat':
-        rec.chat.push({ t, pid: r.pid, team: r.team, text: chatText(r.text) });
-        break;
-      case 'f':
-        // v4: one round leaving a weapon, any weapon the client simulates.
-        // `id` the root object it hangs under, `w` the weapon's template,
-        // `p`/`d` the muzzle and the round's direction.
-        rec.fires.push({ t, pid: r.pid ?? null, nid: r.id ?? null, kind: r.alt ? 2 : 1,
-                         weapon: r.w ?? '', pos: r.p ?? null, dir: r.d ?? null, press: false,
-                         local: Boolean(r.local) });
-        break;
-      case 'jn':
-        // A moving part's name, on first sight: `[root, part, template]`, and
-        // from v5 where it sits in its root's frame, `x, y, z` (BF1942's; the
-        // viewer's has z negated). A v4 recorder keyed every part 0 -- a child
-        // networkable has no id of its own -- so a v4 file's parts cannot be
-        // told apart by key and are not put on nodes; its `j` runs are kept
-        // per hull instead (`keyedParts`).
-        if (rec.version === 4) break;
-        for (const [root, nid, name, x, y, z] of r.o) {
-          const part = jointOf(root, nid);
-          part.name = name;
-          part.since = t;
-          if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) part.pos = [x, y, -z];
-        }
-        break;
-      case 'j':
-        // A moving part's rotation relative to its root object (a turret's
-        // traverse, a gun's elevation), `[root, part, qx, qy, qz, qw]`.
-        if (rec.version === 4) {
-          keyedRuns(t, r.o ?? []);
+          if (r.tmpl && r.tid) tidNames.set(r.tid, r.tmpl);
+          closeReplicated(life, t);
+          life.replicated.push([t, Infinity]);
           break;
         }
-        for (const [root, nid, qx, qy, qz, qw] of r.o) jointOf(root, nid).keys.push({ t, q: [qx, qy, qz, qw] });
-        break;
-      case 'g':
-        // v4: an engine, `[root, revs, throttle servo, flags, gear, engine]`:
-        // flags 1 running, 2 disabled by damage.
-        for (const [root, revs, throttle, flags, gear, nid] of r.o) {
-          if (!rec.engines.has(root)) rec.engines.set(root, new Map());
-          const engines = rec.engines.get(root);
-          const key = nid ?? root;
-          if (!engines.has(key)) engines.set(key, []);
-          engines.get(key).push({ t, revs, throttle, running: Boolean(flags & 1), disabled: Boolean(flags & 2), gear });
-        }
-        break;
-      case 'st':
-        // v4: a soldier's body, `[soldier, lower state, upper state, aim
-        // pitch, torso twist, held item, state bits]`.
-        for (const [nid, lower, upper, pitch, twist, item, bits] of r.o) {
-          if (!rec.stances.has(nid)) rec.stances.set(nid, []);
-          rec.stances.get(nid).push({ t, lower, upper, pitch, twist, item, bits });
-        }
-        break;
-      case 'tk':
-        // Both sides' tickets, the client's ScoreManager's (from bf42plus
-        // e692f14), written whenever either moves. Joined mid-round, it reads
-        // 0 a side until the server's first count (replay_20260928-133433:
-        // 0 and 0 at 13.0 s, 348 and 211 at 13.8 s), and a count before any
-        // real one is no count: the round's first shows from its start.
-        if (Array.isArray(r.v) && r.v.length >= 2 && (rec.tickets.length || r.v[0] || r.v[1])) {
-          rec.tickets.push({ t, v: [r.v[0], r.v[1]] });
-        }
-        break;
-      case 'anim':
-        // v4: the engine's animation state table, once: `[index, name, flags]`.
-        for (const [index, name, flags] of r.states ?? []) rec.animStates[index] = { name, flags };
-        break;
-      case 'roster':
-        // Who was playing when a file begun after the join began (bf42plus
-        // ea600c1): `[pid, team, ai, name, local]`, local the recording
-        // player. Their createPlayer events all went by before the file.
-        beganAfterJoin = true;
-        for (const [pid, team, ai, name, local] of r.p ?? []) {
-          // A player the file already knows from his held createPlayer (a
-          // recorder after ea600c1) joined on the side he had then: the
-          // roster has the side he is on as the file begins.
-          const known = rec.players.get(pid);
-          if (known) {
-            if (team === 1 || team === 2) noteTeam(pid, t, team);
-            if (local) known.local = true;
-            continue;
+        case 's':
+          for (const o of r.o) {
+            // A sample that is not a place and a rotation is left out: drawn,
+            // it put the camera over it, and every voice near it, at no
+            // position.
+            if (!sampleOk(o)) {
+              rec.skipped += 1;
+              continue;
+            }
+            lifeFor(o[0], t).keys.push({ t, p: [o[1], o[2], o[3]], q: [o[4], o[5], o[6], o[7]] });
           }
-          startSession(pid, t, {
-            name, team, ai: Boolean(ai), joinNid: null, joinKitNid: null, camNid: null, local: Boolean(local),
-          });
+          break;
+        case 'd': {
+          const life = current.get(r.id);
+          if (life) closeReplicated(life, t);
+          break;
         }
-        break;
-      default:
-        break;
+        case 'p':
+          // [pid, team, vehicle] from v1; v4 appends [root, seat]: the hull the
+          // controlled object belongs to and the seat's place among its nested
+          // PlayerControlObjects, 0 for the root seat itself.
+          for (const entry of r.p) {
+            if (!Array.isArray(entry) || !Number.isFinite(entry[0]) || !Number.isFinite(entry[2])) continue;
+            const [pid, team, nid] = entry;
+            rec.control.push({ t, pid, team, nid });
+            if (team === 1 || team === 2) noteTeam(pid, t, team);
+            nidEvents.push({ t, pid, nid });
+            if (entry.length >= 5 && entry[3] >= 0) {
+              if (!rec.seats.has(pid)) rec.seats.set(pid, []);
+              rec.seats.get(pid).push({ t, root: entry[3], seat: entry[4] });
+            }
+          }
+          break;
+        case 'a':
+          for (const [nid, hp] of r.a) {
+            if (!Number.isFinite(nid) || !Number.isFinite(hp)) continue;
+            const life = lifeFor(nid, t);
+            const last = life.hp[life.hp.length - 1];
+            if (!last || last.hp !== hp) life.hp.push({ t, hp });
+          }
+          break;
+        case 'cp': {
+          if (r.tmpl) cpTemplates.add(r.tmpl);
+          const before = cpState.get(r.id);
+          const name = r.name ?? before?.name ?? `control point ${r.id}`;
+          // The first team a point reports (-1 until the server sets it) is
+          // where the round opened it; a change after that is play. A capture
+          // goes through neutral: 2, then 0 as the flag comes down, then 1 as
+          // the attackers raise theirs (Landing_Beach at 185.5 and 195.5 s in
+          // replay_20260927-075756), so a point turning to a side from neutral
+          // is taken as well as one turning from the other side.
+          const opened = Boolean(before?.opened) || r.team >= 0;
+          cpState.set(r.id, { name, team: r.team, opened });
+          if (!rec.controlPoints.has(r.id)) {
+            rec.controlPoints.set(r.id, { id: r.id, name, tmpl: r.tmpl ?? '', pos: r.pos ?? null, changes: [] });
+          }
+          const point = rec.controlPoints.get(r.id);
+          point.name = name;
+          if (r.team >= 0 && point.changes[point.changes.length - 1]?.team !== r.team) point.changes.push({ t, team: r.team });
+          if (before?.opened && r.team > 0 && before.team !== r.team) {
+            rec.captures.push({ t, id: r.id, name, team: r.team, from: before.team });
+            row(t, 'flag', `${name} taken by ${teamName(r.team)}`);
+          }
+          break;
+        }
+        case 'chat':
+          rec.chat.push({ t, pid: r.pid, team: r.team, text: chatText(r.text) });
+          break;
+        case 'f':
+          // v4: one round leaving a weapon, any weapon the client simulates.
+          // `id` the root object it hangs under, `w` the weapon's template,
+          // `p`/`d` the muzzle and the round's direction.
+          rec.fires.push({ t, pid: r.pid ?? null, nid: r.id ?? null, kind: r.alt ? 2 : 1,
+                           weapon: r.w ?? '', pos: vec3(r.p), dir: vec3(r.d), press: false,
+                           local: Boolean(r.local) });
+          break;
+        case 'jn':
+          // A moving part's name, on first sight: `[root, part, template]`, and
+          // from v5 where it sits in its root's frame, `x, y, z` (BF1942's; the
+          // viewer's has z negated). A v4 recorder keyed every part 0 -- a child
+          // networkable has no id of its own -- so a v4 file's parts cannot be
+          // told apart by key and are not put on nodes; its `j` runs are kept
+          // per hull instead (`keyedParts`).
+          if (rec.version === 4) break;
+          for (const [root, nid, name, x, y, z] of r.o) {
+            const part = jointOf(root, nid);
+            part.name = name;
+            part.since = t;
+            if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) part.pos = [x, y, -z];
+          }
+          break;
+        case 'j':
+          // A moving part's rotation relative to its root object (a turret's
+          // traverse, a gun's elevation), `[root, part, qx, qy, qz, qw]`.
+          if (rec.version === 4) {
+            keyedRuns(t, r.o ?? []);
+            break;
+          }
+          for (const [root, nid, qx, qy, qz, qw] of r.o) {
+            if (!rotationOk(qx, qy, qz, qw)) continue;
+            jointOf(root, nid).keys.push({ t, q: [qx, qy, qz, qw] });
+          }
+          break;
+        case 'g':
+          // v4: an engine, `[root, revs, throttle servo, flags, gear, engine]`:
+          // flags 1 running, 2 disabled by damage.
+          for (const [root, revs, throttle, flags, gear, nid] of r.o) {
+            if (!Number.isFinite(revs)) continue;
+            if (!rec.engines.has(root)) rec.engines.set(root, new Map());
+            const engines = rec.engines.get(root);
+            const key = nid ?? root;
+            if (!engines.has(key)) engines.set(key, []);
+            engines.get(key).push({ t, revs, throttle, running: Boolean(flags & 1), disabled: Boolean(flags & 2), gear });
+          }
+          break;
+        case 'st':
+          // v4: a soldier's body, `[soldier, lower state, upper state, aim
+          // pitch, torso twist, held item, state bits]`.
+          for (const [nid, lower, upper, pitch, twist, item, bits] of r.o) {
+            if (!rec.stances.has(nid)) rec.stances.set(nid, []);
+            // An aim that is not a number is his aim level: the view is laid
+            // on it.
+            rec.stances.get(nid).push({
+              t, lower, upper,
+              pitch: Number.isFinite(pitch) ? pitch : 0,
+              twist: Number.isFinite(twist) ? twist : 0,
+              item, bits,
+            });
+          }
+          break;
+        case 'tk':
+          // Both sides' tickets, the client's ScoreManager's (from bf42plus
+          // e692f14), written whenever either moves. Joined mid-round, it reads
+          // 0 a side until the server's first count (replay_20260928-133433:
+          // 0 and 0 at 13.0 s, 348 and 211 at 13.8 s), and a count before any
+          // real one is no count: the round's first shows from its start.
+          if (Array.isArray(r.v) && r.v.length >= 2 && (rec.tickets.length || r.v[0] || r.v[1])) {
+            rec.tickets.push({ t, v: [r.v[0], r.v[1]] });
+          }
+          break;
+        case 'anim':
+          // v4: the engine's animation state table, once: `[index, name, flags]`.
+          for (const [index, name, flags] of r.states ?? []) rec.animStates[index] = { name, flags };
+          break;
+        case 'roster':
+          // Who was playing when a file begun after the join began (bf42plus
+          // ea600c1): `[pid, team, ai, name, local]`, local the recording
+          // player. Their createPlayer events all went by before the file.
+          beganAfterJoin = true;
+          for (const [pid, team, ai, name, local] of r.p ?? []) {
+            // A player the file already knows from his held createPlayer (a
+            // recorder after ea600c1) joined on the side he had then: the
+            // roster has the side he is on as the file begins.
+            const known = rec.players.get(pid);
+            if (known) {
+              if (team === 1 || team === 2) noteTeam(pid, t, team);
+              if (local) known.local = true;
+              continue;
+            }
+            startSession(pid, t, {
+              name, team, ai: Boolean(ai), joinNid: null, joinKitNid: null, camNid: null, local: Boolean(local),
+            });
+          }
+          break;
+        default:
+          break;
+      }
+    } catch {
+      rec.skipped += 1;
     }
   }
+
+  // Every list a time is looked up in is searched by halves, which takes it
+  // in time order. The recorder writes in order; a file that is not (joined
+  // by hand, or by a recorder whose clock went back) is put in order here
+  // rather than answered wrongly: two samples out of order divided by
+  // nothing and placed a man at no position.
+  const byTime = (a, b) => a.t - b.t;
+  const ordered = list => {
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].t < list[i - 1].t) {
+        list.sort(byTime);
+        return;
+      }
+    }
+  };
+  for (const life of rec.lives) {
+    ordered(life.keys);
+    ordered(life.hp);
+  }
+  for (const list of rec.stances.values()) ordered(list);
+  for (const list of rec.seats.values()) ordered(list);
+  for (const parts of rec.joints.values()) for (const part of parts.values()) ordered(part.keys);
+  for (const engines of rec.engines.values()) for (const list of engines.values()) ordered(list);
 
   // Everyone else the recording shows playing. A file begun after the join
   // (recording switched on mid-round) by a recorder that wrote no roster has

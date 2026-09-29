@@ -662,6 +662,12 @@ export class EngineAudio {
       const dy = wy - listenerPosition.y;
       const dz = wz - listenerPosition.z;
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // A voice or a listener at no position this frame keeps the distance
+      // it last had, and its next frame starts a fresh doppler from there.
+      if (!Number.isFinite(distance)) {
+        group.primed = false;
+        continue;
+      }
       // Radial velocity from the change in distance rather than from the two
       // velocity vectors: it is one subtraction, and it picks up a moving
       // listener for free. The first frame has no previous distance to
@@ -797,7 +803,11 @@ export class EngineAudio {
     else this.#ramp(this.bus.gain, this.master * this.headroom, now, GAIN_TAU);
   }
 
+  // A value that is not a number (a source or a listener placed at no
+  // position) is not written: Web Audio throws on one, and the throw stopped
+  // the page's frame before its render, every frame, while it lasted.
   #set(param, value, now) {
+    if (!Number.isFinite(value)) return;
     param.cancelScheduledValues?.(now);
     param.setValueAtTime(value, now);
   }
@@ -805,7 +815,7 @@ export class EngineAudio {
   #resolveCoherent() { resolveCoherent(this.coherent); }
 
   #ramp(param, value, now, tau) {
-    if (Math.abs(param.value - value) < EPSILON) return;
+    if (!Number.isFinite(value) || Math.abs(param.value - value) < EPSILON) return;
     // Never `.value =` on a running graph: a step on a gain or a rate is a
     // zipper click. setTargetAtTime is the same de-zippering three.js's own
     // Audio.setVolume does.
@@ -813,6 +823,7 @@ export class EngineAudio {
   }
 
   #placePanner(panner, x, y, z, now, snap = false) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
     if (panner.positionX && snap) {
       // A new source, not a moving one: the pooled slot's last shooter was
       // somewhere else, and a one-frame ramp from there would sweep the
