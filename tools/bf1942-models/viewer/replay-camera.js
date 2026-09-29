@@ -399,7 +399,7 @@ export class ReplayCamera {
 
   /** The orbit over where `life`, a soldier yet to spawn, first stands. */
   spawnTarget(life) {
-    const key = life.keys[0];
+    const key = life.keys.at(0);
     if (!key) return null;
     const point = toViewPosition(key.p, new THREE.Vector3());
     point.y += SOLDIER.lift;

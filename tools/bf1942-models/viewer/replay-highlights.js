@@ -132,7 +132,9 @@ export class ReplayHighlights {
       chapters: player.chapters,
       serverRows: player.serverRows,
       display,
-      kindOf: life => hullKind(player.hulls.get(life)),
+      // Built or not yet (replay.js `hullKind`): who flies is asked of every
+      // hull of the round.
+      kindOf: life => hullKind({ kind: player.hullKind?.(life) ?? player.hulls.get(life)?.kind }),
     });
     this.director = new ReplayDirector(this.model, { fallback: player.recordingPid });
     this.auto = false;

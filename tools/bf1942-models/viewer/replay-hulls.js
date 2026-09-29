@@ -30,7 +30,9 @@ import { DRIVE_KINDS } from './seat-survey.js';
 import { spawnedCraftUnder } from './spawned-craft.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 import { activeTier, deathTier } from './vehicle-damage.js';
-import { crewOf, engineAt, hpAt, isReplicated, latestAt, poseHeld, sampleAt } from './replay-recording.js';
+import {
+  crewOf, engineAt, hpAt, isReplicated, latestIndex, poseHeld, sampleInto, sampleRoom,
+} from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
 import {
@@ -53,6 +55,9 @@ const _gunQ = new THREE.Quaternion();
 const _gunAt = new THREE.Vector3();
 const _launchQ = new THREE.Quaternion();
 const _gunForward = new THREE.Vector3();
+/** A moving part's samples around the instant, read without making them
+ *  (replay-recording.js `sampleInto`). */
+const jointRoom = sampleRoom();
 
 /** Degrees a second a gun turns between two rounds where its axis declares
  *  no `setMaxSpeed`: the order of a manned gun's (a Sherman tower's 35, a
@@ -147,6 +152,20 @@ const SOUND_HOLD_MIN = 0.2;
 function vehicleRoot(scene) {
   if (scene.userData?.templateKind) return scene;
   return scene.children.find(child => child.userData?.templateKind) ?? scene.children[0] ?? scene;
+}
+
+/**
+ * What a template's hull is (`rootKind`: air, ship, tank, ground, gun), read
+ * off its model the way a `ReplayHull` reads its own clone: the craft its
+ * spawners launch taken off first. The replay builds a hull only when the
+ * round first has it (replay.js `buildHull`); who flies is asked of every
+ * hull of the round long before that. A throwaway copy, never the cached
+ * model, is the one taken apart.
+ */
+export function modelKind(model, classes = {}) {
+  const root = vehicleRoot(model.clone());
+  for (const craft of spawnedCraftUnder(root)) craft.parent?.remove(craft);
+  return new VehicleOccupancy(root, classes).rootKind;
 }
 
 /**
@@ -468,11 +487,11 @@ export class ReplayHull {
     if (!this.jointNodes.length) return;
     const rootQ = this.root.quaternion;
     for (const { part, node } of this.jointNodes) {
-      if (!latestAt(part.keys, t)) continue;
+      if (latestIndex(part.keys, t) < 0) continue;
       // Eased into the next sample over its last tenth of a second, as the
       // hull's own pose is (`sampleAt`): held and stepped at 10 Hz, a fast
       // traverse jumped and lagged a sample behind its rounds.
-      const { a, b, k } = sampleAt(part, t);
+      const { a, b, k } = sampleInto(part, t, jointRoom);
       // The recorder's quaternion is BF1942's; the viewer's is (-x, -y, z, w),
       // and the map is a homomorphism, so a relative rotation converts the
       // same way an absolute one does.

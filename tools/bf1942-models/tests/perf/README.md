@@ -227,8 +227,11 @@ One headless Chromium. The findings are in
 
 `replaydump.mjs` writes everything the replay works out of a recording to one
 JSON file, lives by index, so two trees' answers compare byte for byte: run it
-on this tree and with `--viewer` on another checkout's, then `cmp`. A change
-that is meant to be faster and nothing else must come out identical.
+on this tree and with `--viewer` on another checkout's, then `cmp`. It covers
+the analysis (chapters, battles, medals, standouts, the Auto camera), every
+player's place and state, and the poses, motion, headings, moving parts and
+gaits the drawing reads. A change that is meant to be faster and nothing else
+must come out identical.
 
 ```bash
 node replayperf.cjs --base http://localhost:5491 --replay replays/<file>.ndjson --windows 300,1300,2300

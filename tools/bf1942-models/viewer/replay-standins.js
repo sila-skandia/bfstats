@@ -40,6 +40,8 @@
 //
 // Three.js-free and pure, so `tests/replay_harness.mjs` runs it in node.
 
+import { sampleTime } from './replay-recording.js';
+
 /** Metres within which a recorded object of a vehicle's template stands at
  *  that vehicle's place: a hull's spawn transform, a craft's deck. */
 const NEAR = 40;
@@ -70,7 +72,7 @@ function firstTrace(rec, nid) {
   let first = Infinity;
   for (const part of rec.joints?.get(nid)?.values() ?? []) {
     if (Number.isFinite(part.since)) first = Math.min(first, part.since);
-    for (const key of part.keys) first = Math.min(first, key.t);
+    for (let i = 0; i < part.keys.length; i++) first = Math.min(first, sampleTime(part.keys, i));
   }
   for (const list of rec.engines?.get(nid)?.values() ?? []) for (const e of list) first = Math.min(first, e.t);
   return Number.isFinite(first) ? first : null;
@@ -89,7 +91,7 @@ function engineStarts(rec, nid, from) {
 }
 
 /** The first place a recorded life was seen or announced, BF1942's frame. */
-const firstPlace = life => life.pose?.p ?? life.keys[0]?.p ?? null;
+const firstPlace = life => life.pose?.p ?? life.keys.at(0)?.p ?? null;
 
 /**
  * Carry each hull the recording sees late back to its first trace, and stand

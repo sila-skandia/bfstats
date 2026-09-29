@@ -387,7 +387,7 @@ const read = scene => {
     stats: rec.roundStats.get(249)?.destroyed ?? null,
     shot: rec.fires.map(f => ({ nid: f.nid, weapon: f.weapon, kind: f.kind })),
     engine: [recording.engineAt(rec, 532, 7), recording.engineAt(rec, 532, 9)],
-    joint: (() => { const p = rec.joints.get(532)?.get(7); return p ? { name: p.name, q: p.keys[0].q, pos: p.pos, since: p.since } : null; })(),
+    joint: (() => { const p = rec.joints.get(532)?.get(7); return p ? { name: p.name, q: p.keys.at(0).q, pos: p.pos, since: p.since } : null; })(),
     body: [recording.bodyAt(rec, 600, 6.5), recording.bodyAt(rec, 600, 7.5)],
     crew: recording.crewOf(rec, sherman, 3),
     hits: rec.hitsTaken,
@@ -2371,6 +2371,71 @@ const read = scene => {
     crewAt9: recording.crewOf(rec, recording.lifeAt(rec, 500, 9), 9),
     hpAt7: recording.hpAt(recording.lifeAt(rec, 500, 7), 7),
     states: [chapters.playerStatusAt(rec, 1, 13).state, chapters.playerStatusAt(rec, 1, 27).state],
+  };
+}
+
+// --- the samples' track (features/replay-performance) ----------------------------
+//
+// A life's samples live in a `SampleTrack`, eight numbers each in one
+// Float64Array. Every read of one must be the read of the array of
+// `{ t, p, q }` it replaced: `at`, the array's own readers, iteration, and
+// `sampleAt`, `sampleInto` and `positionAt` at every kind of instant. A file
+// written out of order is put in order as the array's stable sort did.
+{
+  const raw = [
+    [0, 1, 2, 3, 0, 0, 0, 1], [0.1, 1.5, 2, 3, 0, 0.1, 0, 0.995], [0.2, 2, 2.2, 3, 0, 0.2, 0, 0.98],
+    [0.5, 4, 2.5, 3.5, 0.1, 0.2, 0, 0.97], [0.55, 4.2, 2.5, 3.6, 0.1, 0.25, 0, 0.96],
+    [2, 9, 3, 4, 0.2, 0.3, 0.1, 0.93], [2.05, 9.5, 3, 4.1, 0.2, 0.31, 0.1, 0.92],
+  ];
+  const track = new recording.SampleTrack();
+  for (const r of raw) track.add(...r);
+  const array = raw.map(([t, x, y, z, qx, qy, qz, qw]) => ({ t, p: [x, y, z], q: [qx, qy, qz, qw] }));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const mismatches = [];
+  const check = (what, got, want) => { if (!same(got, want) && mismatches.length < 10) mismatches.push({ what, got, want }); };
+  for (const i of [-9, -8, -7, -1, 0, 1, 3, 6, 7, 8, 0.5, -0.5, NaN, Infinity, undefined]) check(`at ${i}`, track.at(i), array.at(i));
+  check('length', track.length, array.length);
+  check('iteration', [...track], array);
+  check('map', track.map((k, i) => [k.t, i]), array.map((k, i) => [k.t, i]));
+  check('some', track.some(k => k.p[0] > 4), array.some(k => k.p[0] > 4));
+  check('every', track.every(k => k.q[3] > 0.95), array.every(k => k.q[3] > 0.95));
+  check('find', track.find(k => k.t > 0.3), array.find(k => k.t > 0.3));
+  check('filter', track.filter(k => k.t > 0.3), array.filter(k => k.t > 0.3));
+  const eachTrack = [];
+  const eachArray = [];
+  track.forEach((k, i) => eachTrack.push([k.t, i]));
+  array.forEach((k, i) => eachArray.push([k.t, i]));
+  check('forEach', eachTrack, eachArray);
+  const room = recording.sampleRoom();
+  const pose = { p: [7, 7, 7], q: [0, 0, 0, 1] };
+  const asked = [-1, 0, 0.05, 0.1, 0.15, 0.19, 0.2, 0.3, 0.45, 0.5, 0.52, 0.55, 1, 1.9, 1.95, 2, 2.03, 2.05, 3, NaN, Infinity, -Infinity];
+  for (const withPose of [false, true]) {
+    const a = { keys: track, pose: withPose ? pose : null };
+    const b = { keys: array, pose: withPose ? pose : null };
+    for (const t of asked) {
+      check(`sampleAt ${t} ${withPose}`, recording.sampleAt(a, t), recording.sampleAt(b, t));
+      const into = recording.sampleInto(a, t, room);
+      check(`sampleInto ${t} ${withPose}`, into && { a: into.a, b: into.b, k: into.k }, recording.sampleAt(b, t));
+      check(`positionAt ${t} ${withPose}`, recording.positionAt(a, t), recording.positionAt(b, t));
+      check(`latestAt ${t}`, recording.latestAt(track, t), recording.latestAt(array, t));
+    }
+  }
+  const empty = { keys: new recording.SampleTrack(), pose: null };
+  check('empty sampleAt', recording.sampleAt(empty, 1), recording.sampleAt({ keys: [], pose: null }, 1));
+  check('empty positionAt', recording.positionAt(empty, 1), recording.positionAt({ keys: [], pose: null }, 1));
+  // Out of order, with two samples of one time: in order, the pair as written.
+  const lines = [
+    JSON.stringify({ k: 'h', v: 5 }),
+    JSON.stringify({ k: 'o', t: 0, id: 5, tmpl: 'Willys', team: 1 }),
+    ...[[3, 1], [1, 2], [2, 3], [1, 4], [0.5, 5]].map(([t, x]) => JSON.stringify({ k: 's', t, o: [[5, x, 0, 0, 0, 0, 0, 1]] })),
+  ];
+  const parsed = recording.parseRecording(lines.join('\n'));
+  const willys = parsed.lives.find(l => l.nid === 5);
+  results.sampleTrack = {
+    mismatches,
+    ordered: willys.keys.map(k => [k.t, k.p[0]]),
+    kind: willys.keys instanceof recording.SampleTrack,
+    trimmed: willys.keys.data.length === willys.keys.length * 8,
   };
 }
 

@@ -308,8 +308,8 @@ export class ReplayBattleMap {
     for (const p of this.hl.model.points) if (p.pos) grow(p.pos);
     for (const life of this.player.rec.lives) {
       if (!life.keys.length || (!life.soldier && life.kit)) continue;
-      grow(toView(life.keys[0].p));
-      grow(toView(life.keys[life.keys.length - 1].p));
+      grow(toView(life.keys.at(0).p));
+      grow(toView(life.keys.at(-1).p));
     }
     if (!Number.isFinite(x0)) { x0 = 0; x1 = 1024; z0 = 0; z1 = 1024; }
     const size = Math.max(x1 - x0, z1 - z0) * 1.15 + 50;

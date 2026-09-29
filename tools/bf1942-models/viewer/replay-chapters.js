@@ -167,7 +167,7 @@ export function nextSpawn(rec, pid, t) {
 /** The control point a soldier spawned at: the nearest to where he was
  *  first seen, if it is near enough to be his spawn's. */
 function spawnPoint(rec, life) {
-  const p = life.keys[0]?.p;
+  const p = life.keys.at(0)?.p;
   if (!p) return null;
   let best = null;
   let near = SPAWN_NEAR;

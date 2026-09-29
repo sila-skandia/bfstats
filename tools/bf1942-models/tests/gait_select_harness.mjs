@@ -96,11 +96,11 @@ function analyzeRecording(path) {
     soldierNid: soldier.nid,
     soldierTmpl: soldier.tmpl,
     keyCount: soldier.keys.length,
-    span: [soldier.keys[0].t, soldier.keys.at(-1).t],
+    span: [soldier.keys.at(0).t, soldier.keys.at(-1).t],
     rawSpeedStats: summarizeSpeeds(segs),
     runs: runs.map(r => ({ gait: r.gait, start: r.start, end: r.end, duration: r.end - r.start })),
     minBoundedRunDuration: minRunDuration,
-    farBeforeFirst: sampleAt(soldier.keys[0].t - 1000),
+    farBeforeFirst: sampleAt(soldier.keys.at(0).t - 1000),
     longAfterLast: sampleAt(soldier.keys.at(-1).t + 1000),
   };
 }

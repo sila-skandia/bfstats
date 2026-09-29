@@ -256,9 +256,11 @@ export function rawSegments(life) {
   const keys = life && life.keys ? life.keys : [];
   const segs = [];
   if (keys.length === 0) return segs;
-  segs.push({ start: -Infinity, end: keys[0].t, speed: 0, dot: null, teleport: false });
+  segs.push({ start: -Infinity, end: keys.at(0).t, speed: 0, dot: null, teleport: false });
+  // `at`, not `[i]`: a replay's life keeps its samples in a track
+  // (replay-recording.js `SampleTrack`), which reads them out that way.
   for (let i = 1; i < keys.length; i++) {
-    const a = keys[i - 1], b = keys[i];
+    const a = keys.at(i - 1), b = keys.at(i);
     const dt = b.t - a.t;
     if (!(dt > 0)) continue; // out-of-order or duplicate timestamps: skip, don't fabricate a speed
     const dx = b.p[0] - a.p[0];
@@ -285,7 +287,7 @@ export function rawSegments(life) {
     const dot = facingDot(dx, dz, dist, a.q, b.q);
     segs.push({ start: holdEnd, end: b.t, speed: windowedSpeed, dot, teleport: false });
   }
-  segs.push({ start: keys[keys.length - 1].t, end: Infinity, speed: 0, dot: null, teleport: false });
+  segs.push({ start: keys.at(-1).t, end: Infinity, speed: 0, dot: null, teleport: false });
   return segs;
 }
 
