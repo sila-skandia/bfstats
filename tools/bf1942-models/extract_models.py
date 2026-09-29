@@ -500,6 +500,14 @@ def template_category(library: con_mod.ObjectLibrary, name: str) -> str:
     return next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), "object")
 
 
+def model_file_stem(name: str) -> str:
+    """The file a template's model is stored under: its name with `/` spelled
+    `_`. A slash is legal in a Refractor template name (FHSW's `SdKfz251/1`,
+    `Flak18/36`) but would make a directory of the path; the viewer maps a
+    name the same way (`viewer/model-file.js`)."""
+    return name.replace("/", "_").replace("\\", "_")
+
+
 def variant_suffix(configuration: str, lod: int, level_label: str | None,
                    first_person: bool = False) -> str:
     tokens: list[str] = []
@@ -536,7 +544,7 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                           # inside the vehicle's own hull.
                           include_collision=not first_person)
     suffix = variant_suffix(configuration, lod, level_label, first_person)
-    file_stem = f"{name}{suffix}"
+    file_stem = f"{model_file_stem(name)}{suffix}"
     try:
         glb, report = assembler.export(name)
     except Exception as exc:
@@ -838,6 +846,14 @@ def main() -> int:
         if configurations:
             tasks.append((name, configurations, args.lod, args.max_texture, str(args.out),
                           [(n, str(p)) for n, p in level_sources], args.cockpit))
+
+    # Two templates spelled into one file would overwrite each other silently.
+    stems: dict[str, str] = {}
+    for name, *_ in tasks:
+        other = stems.setdefault(model_file_stem(name), name)
+        if other != name:
+            raise SystemExit(f"{other!r} and {name!r} would both be written as "
+                             f"{model_file_stem(name)}.glb")
 
     template_variants: dict[str, list[dict]] = {}
     failures = 0

@@ -29,6 +29,7 @@ import { FireState } from './fire-state.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { motionAt } from './replay-kinematics.js';
+import { modelFileStem } from './model-file.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
  *  hardly decays is taken as settled after this. */
@@ -287,7 +288,7 @@ export class ReplayHud {
     const ctx = this.player.ctx;
     const load = soldiers?.handGun
       ? soldiers.handGun(name).then(gun => gun?.data ?? null)
-      : ctx.loader?.loadAsync?.(`${ctx.modelsBase}/${name}.glb${ctx.bust?.() ?? ''}`)
+      : ctx.loader?.loadAsync?.(`${ctx.modelsBase}/${modelFileStem(name)}.glb${ctx.bust?.() ?? ''}`)
         .then(gltf => gltf?.userData?.weapon ?? gltf?.parser?.json?.extras?.weapon ?? gltf?.scene?.userData?.weapon ?? null);
     if (!load) {
       this.data.set(key, null);

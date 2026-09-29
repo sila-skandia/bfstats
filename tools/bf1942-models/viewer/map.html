@@ -206,6 +206,7 @@ import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
 import { createComms } from './comms.js';
+import { modelFileStem } from './model-file.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1454,7 +1455,7 @@ function botWeaponData(name) {
   if (!name) return Promise.resolve(null);
   let p = botWeaponDataCache.get(name);
   if (p) return p;
-  p = fetch(`${MODELS_BASE}/${name}.glb${bust()}`)
+  p = fetch(`${MODELS_BASE}/${modelFileStem(name)}.glb${bust()}`)
     .then(r => (r.ok ? r.arrayBuffer() : null))
     .then(buf => {
       if (!buf || buf.byteLength < 20) return null;

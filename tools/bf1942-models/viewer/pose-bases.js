@@ -17,6 +17,8 @@
 // separately, and a caller that gets its recipe from the mod tree still asks
 // both trees for the halves that recipe names.
 
+import { modelFileStem } from './model-file.js';
+
 /** The model roots to try, in order: `modelsBase` (the active mod's,
  *  `models/mods/xpack1`, or vanilla's own `models`), then vanilla's. */
 export function poseBases(modelsBase) {
@@ -37,7 +39,7 @@ export function rigUrls(modelsBase, soldier, bust = '') {
  *  standalone asset the model extractor already publishes, which is the whole
  *  point of the weapon half of a split pose. */
 export function weaponUrls(modelsBase, weapon, bust = '') {
-  return poseBases(modelsBase).map(base => `${base}/${weapon}.glb${bust}`);
+  return poseBases(modelsBase).map(base => `${base}/${modelFileStem(weapon)}.glb${bust}`);
 }
 
 /** The first of `urls` that `loader` loads; rejects with the last error when

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
+import { modelFileStem } from './model-file.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -457,7 +458,7 @@ export function createArmsRig(page) {
     }
     if (!gltf) {
       try {
-        gltf = await page.loader.loadAsync(`${page.MODELS_BASE}/${name}.glb${page.bust()}`);
+        gltf = await page.loader.loadAsync(`${page.MODELS_BASE}/${modelFileStem(name)}.glb${page.bust()}`);
       } catch {
         // A `?weapon=` naming nothing extracted, or a mod tree without the glb:
         // on foot bare-handed, which already worked.

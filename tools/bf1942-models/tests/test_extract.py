@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -19,6 +22,7 @@ from extract_models import (  # noqa: E402
     spawn_folder,
     spawned_templates,
     spawner_templates,
+    model_file_stem,
     variant_suffix,
 )
 
@@ -115,6 +119,28 @@ class VariantSuffixTests(unittest.TestCase):
             variant_suffix("complex", 1, "Truk", first_person=True),
         )
         self.assertEqual(".wreck", variant_suffix("wreck", 0, None))
+
+
+class ModelFileStemTests(unittest.TestCase):
+    """A slash is legal in a template name (FHSW's `SdKfz251/1`) but not in a
+    file name; the exporter and the viewer must spell it the same way."""
+
+    NAMES = ["Sherman", "SdKfz251/1", "Flak18/36_Coverd", "SdKfz7Tractor-Flak18/36",
+             "sFH414(f)Battery3Wreck"]
+
+    def test_a_slash_is_spelled_underscore(self) -> None:
+        self.assertEqual("SdKfz251_1", model_file_stem("SdKfz251/1"))
+        self.assertEqual("Sherman", model_file_stem("Sherman"))
+
+    def test_the_viewer_spells_every_name_the_same_way(self) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        module = (Path(__file__).resolve().parents[1] / "viewer" / "model-file.js").as_uri()
+        script = (f"const {{ modelFileStem }} = await import({json.dumps(module)});"
+                  f"console.log(JSON.stringify({json.dumps(self.NAMES)}.map(modelFileStem)));")
+        proc = subprocess.run(["node", "--input-type=module", "-e", script],
+                              capture_output=True, text=True, check=True)
+        self.assertEqual([model_file_stem(n) for n in self.NAMES], json.loads(proc.stdout))
 
 
 class CatalogueTests(unittest.TestCase):

@@ -68,6 +68,8 @@ _VIEWER_MODULES = [
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "collision-materials", "heightfield", "static-index", "collision-meshes",
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
+    # vehicle-base.js spells a template name as its model file.
+    "model-file",
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
     # enterable; it re-exports seats.js's occupancy.
     "vehicle-instance",

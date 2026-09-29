@@ -6,6 +6,7 @@
 import { isPropellerBlurPair } from './vehicle-base.js';
 import { createPoseComposer } from './pose-compose.js';
 import { bundleClips } from './soldier-actions.js';
+import { modelFileStem } from './model-file.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -170,7 +171,7 @@ export class ReplayAssets {
    *  the catalogue lists one (a level archive's reskin: Kasserine Pass's
    *  Sherman is `Sherman.Kasserine_Pass.glb`), else `<name>.glb`. */
   async modelFile(name, level) {
-    const own = `${name}.glb`;
+    const own = `${modelFileStem(name)}.glb`;
     if (!level) return own;
     const wreck = /\.wreck$/i.test(name);
     const template = (wreck ? name.slice(0, -'.wreck'.length) : name).toLowerCase();

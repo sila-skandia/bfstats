@@ -19,6 +19,7 @@ import { createPoseMotion } from './pose-motion.js';
 import { createModelRig, keyOf } from './model-rig.js';
 import { disposeModel } from './dispose-model.js';
 import { createPoseComposer } from './pose-compose.js';
+import { modelFileStem } from './model-file.js';
 
 /** The pair the soldier preview wears, the first of these the manifest
  *  carries: a US rifleman, else whoever is first. */
@@ -157,7 +158,7 @@ export function createControlsPreview({ root = '' } = {}) {
                     body: null, guns: [], tracers: [], heading: 0 };
 
   async function loadVehicle(name, seq) {
-    const gltf = await loader.loadAsync(`${root}models/${name}.glb`);
+    const gltf = await loader.loadAsync(`${root}models/${modelFileStem(name)}.glb`);
     if (seq !== loadSeq) { disposeModel(gltf.scene); return; }
     // The glb carries its collision meshes beside the visible ones.
     gltf.scene.traverse(o => {
