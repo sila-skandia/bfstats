@@ -61,6 +61,21 @@ their last sighting, for 20 s; the Auto camera never picks one. Kills are
 heard from everywhere (the score stream) and placed by the server log when the
 recording could not see them.
 
+A man getting out of a vehicle comes back into the replicated set, and the
+recording's first samples of him are not his: the first is the last place the
+client had for his soldier, as a rule where he got in, and sometimes the next
+few run on past him until the server's correction snaps him back. Across the
+owner's three public rounds, 164 of 686 men getting out began 10.6 to 1368 m
+from their next sample, and the recording had every one where he is within
+0.64 s; no spawn, man walking into range or hull starts that way. Until the
+first sample after the last jump of more than 10 m in the span's first
+second, he is placed where that sample has him (replay-battles.js
+`settledTime`), for the medals, the kills, the wounds, the battles, the
+standouts, the director and the map. Placed where he got in, RuppoPeaGame,
+shot 0.07 s out of his Kubelwagen at 52.2 s of replay_20260928-133433, made
+the 6 m Sg44 kill by `>>XenaWarrior<<` a 459 m long shot. Held back as out of
+range instead, the Auto camera cut away from a man as he got out.
+
 ### Battles (replay-battles.js)
 
 - Activity: each shooter's half-second of fire weighs 1 (so a machine gun
@@ -151,11 +166,11 @@ both sides fire in it), his streak (2.5 a kill), the kill lead (3), flying (1).
 
 ## Verification
 
-- `tests/test_replay_highlights.py` (`replay_highlights_harness.mjs`): 30
+- `tests/test_replay_highlights.py` (`replay_highlights_harness.mjs`): 37
   cases on recordings written line by line (medals and streaks, battles,
-  hull drains, vehicles, standouts, headings, the director's picks, its death
-  hold and seek), and the owner's Wake and Kursk rounds when
-  `viewer/replays` is on disk.
+  hull drains, vehicles, standouts, headings, a man just out of a vehicle,
+  the director's picks, its death hold and seek), and the owner's Wake,
+  Kursk and Bocage rounds when `viewer/replays` is on disk.
 - Headless Chromium on the Wake co-op round (`replay_20260927-075756`,
   with its server log): Yukiji Adachi's callouts at
   72.4 s (Destroyed, with Double kill) and 74.7 s (Triple kill, with
