@@ -125,7 +125,7 @@ export function rampedStrafeSpeed(pose, state, walk = false) {
   return STRAFE_SPEED[pose] * (state * RAMP_SCALE) * (walk ? WALK_SPEED_FACTOR : 1);
 }
 
-// --- the animation state's own speed, and the prone dive (PHY-7) -------------
+// --- the animation state's own speed, and the prone dive (PHY-8) -------------
 
 /**
  * A locomotion state can multiply the speed table, and exactly one of them does.
