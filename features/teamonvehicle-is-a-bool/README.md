@@ -179,6 +179,14 @@ wrong model and is now
   chased. UNVERIFIED. It is moot for the data: every `teamOnVehicle 2` spawner
   in the installed mods either declares one team or gives both teams the same
   hull.
+  *Added 2026-09-29: §4.1 of
+  [the ships research](../bf1942-ships-research-2026-09-22/README.md) chased the
+  setter, `ConsoleClass437::setArgFromString` 0x082e9780, which parses the word
+  with `operator>>(bool&)`, and there `2` is not a valid token. Its §7 leaves
+  unread what byte the failed parse stores, so this fix's `int(token) != 0`,
+  which reads `2` as true, is neither confirmed nor refuted.
+  [vehicle-entry-team-rule](../vehicle-entry-team-rule/README.md) also calls the
+  parse unread.*
 - `features/bf1942-3d-models/parity-audit/vehicle-physics.md:609` still names
   the field `owner_team`. Not edited — it belongs to another round.
 

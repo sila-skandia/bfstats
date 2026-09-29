@@ -644,6 +644,11 @@ beside this file; serve the viewer on your own port first). Out of a plane
   `parachute.js` therefore *names* the clip pair for every state
   (`PARA_CLIPS`), so a renderer that gains one can ask for them by the engine's
   own names.
+  *Corrected 2026-09-29: this was built on 2026-09-22. ad4ef06 bakes the
+  parachute body clips and the canopy, and 4d2fe98 draws the body under the
+  canopy on the page, as
+  [viewer-third-person-soldier](../viewer-third-person-soldier/README.md)
+  records.*
 - **Capped since 2026-09-26 (§11)** -- the rest of this bullet is the state
   before that.
 - **The free-fall look-steering is faithful and does not feel like retail.**
