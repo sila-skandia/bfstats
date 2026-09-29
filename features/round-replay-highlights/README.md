@@ -69,9 +69,11 @@ owner's three public rounds, 164 of 686 men getting out began 10.6 to 1368 m
 from their next sample, and the recording had every one where he is within
 0.64 s; no spawn, man walking into range or hull starts that way. Until the
 first sample after the last jump of more than 10 m in the span's first
-second, he is placed where that sample has him (replay-battles.js
+second, he is placed where that sample has him (replay-recording.js
 `settledTime`), for the medals, the kills, the wounds, the battles, the
-standouts, the director and the map. Placed where he got in, RuppoPeaGame,
+standouts, the director and the map, and drawn there: drawn from his first
+sample, he streaked 500 m across the level in the tenth of a second after
+he got out. Placed where he got in, RuppoPeaGame,
 shot 0.07 s out of his Kubelwagen at 52.2 s of replay_20260928-133433, made
 the 6 m Sg44 kill by `>>XenaWarrior<<` a 459 m long shot. Held back as out of
 range instead, the Auto camera cut away from a man as he got out.

@@ -333,7 +333,7 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
     clean: [30.02, 30.25].map(t => at(4, t)),
     outLongSince: at(6, 41.95),
     plane: at(7, 1.06),
-    settledTime: [[life(200), 10.02], [life(200), 10.5], [life(400), 1.06]].map(([l, t]) => +B.settledTime(l, t).toFixed(2)),
+    settledTime: [[life(200), 10.02], [life(200), 10.5], [life(400), 1.06]].map(([l, t]) => +R.settledTime(l, t).toFixed(2)),
   };
 }
 

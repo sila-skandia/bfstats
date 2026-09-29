@@ -17,8 +17,8 @@
 // what was live -- `fresh` -- and says when something is only last seen.
 
 import {
-  controlledAt, crewOf, isReplicated, latestIndex, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleInto,
-  sampleRoom, sampleTime, soldierLivesOf, teamAt,
+  controlledAt, crewOf, isReplicated, lifeAt, positionAt, primaryWeaponFor, rootOf, sampleInto,
+  sampleRoom, settledTime, soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { playerStatusAt, pointsAt } from './replay-chapters.js';
 
@@ -53,12 +53,6 @@ const HEAVY = /GunBarrel|Cannon|Bomb|Rocket|Torpedo|Mortar|Howitzer|Artillery|sh
  *  after it he is somewhere unknown. Seconds. */
 const LAST_SEEN_KEEP = 20;
 
-/** A soldier back in the replicated set is where the recording has him only
- *  after the last jump of more than REJOIN_JUMP metres over the ground from
- *  one of his samples to the next in the first REJOIN_SETTLE seconds
- *  (`settledTime`). */
-const REJOIN_JUMP = 10;
-const REJOIN_SETTLE = 1;
 
 /** Where someone stands among the round's people, metres. */
 const LONER = {
@@ -129,83 +123,6 @@ export function compass(dx, dz) {
   const a = Math.atan2(dx, -dz);   // 0 north, clockwise
   const i = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
   return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][i];
-}
-
-// --- a soldier back from a vehicle -------------------------------------------------
-//
-// A man who gets into a vehicle leaves the recording's replicated set, and
-// getting out brings his soldier back: a new `[from, to)` span in
-// `life.replicated`. The recorder's first sample of that span is the last
-// transform the client had for his soldier, as a rule where he got in, and
-// the client's next few can run on past where he is, along the jump, until
-// the server's correction snaps him back. Only then, 0.1 to 0.64 s after
-// the span began, does the recording have him where he is.
-//
-// Measured on the owner's three public rounds: of the men getting out of a
-// vehicle, 48 of 111 in replay_20260928-133433, 6 of 58 in
-// replay_20260927-203459 and 110 of 517 in replay_20260928-161948 began 10.6
-// to 1368 m from their next sample (149 m the median), and in 25 of them the
-// samples after it ran on past him; every one was where he is within 0.64 s.
-// The only other span to start that way is a body thrown out of a wreck, and
-// none of the 1,018 that began at a spawn or with a man walking into range.
-// A man thrown out of a moving vehicle covers up to 7 m from one sample to
-// the next (out of a Mustang), and a living man more than 10 m only across
-// a gap of 0.3 s or more in his samples. Placed at his first sample,
-// RuppoPeaGame, shot 0.07 s out of his Kubelwagen at 52.2 s of
-// replay_20260928-133433, stood where he had got in, and >>XenaWarrior<<'s
-// Sg44 kill from 6 m was a 459 m long shot.
-//
-// So a soldier's span is his from the sample after its last jump of more
-// than REJOIN_JUMP metres in its first REJOIN_SETTLE seconds, and until then
-// he is placed where that sample has him (`settledTime`): he is in range and
-// alive, and a fraction of a second on, the recording has him where he is. A
-// span without one, three in four of those after a vehicle, is his from its
-// start. Held back as a man out of range instead, the Auto camera cut away
-// from >>XenaWarrior<< as he got out, 1.5 s before that kill, and a lone
-// wolf's 14 s in replay_20260928-161948 broke in two. What the rule leaves,
-// a last correction under 10 m for a tenth of a second, is finer than
-// anything here tells apart. A hull is not held back: a plane covers more
-// than 10 m between samples, and none of the 887 hull spans of the three
-// rounds with a second sample starts away from its hull.
-
-/** Each soldier's spans' settled times, by span index (`settledAt`). */
-const settles = new WeakMap();
-
-/** When the recording has soldier `life` where he is in his replicated span
- *  `i`: the sample after the last jump of the span's first REJOIN_SETTLE
- *  seconds, else the span's start. */
-function settledAt(life, i) {
-  let known = settles.get(life);
-  if (!known) settles.set(life, (known = []));
-  if (known[i] !== undefined) return known[i];
-  const [from, to] = life.replicated[i];
-  const keys = life.keys;
-  // The span's first sample: the one the recorder wrote with it, at its
-  // start, else the first after.
-  let j = latestIndex(keys, from);
-  if (j < 0 || sampleTime(keys, j) < from) j += 1;
-  let at = from;
-  let prev = j < keys.length ? keys.at(j) : null;
-  for (j += 1; prev && j < keys.length; j++) {
-    const next = keys.at(j);
-    if (next.t >= to || next.t - from > REJOIN_SETTLE) break;
-    if (Math.hypot(next.p[0] - prev.p[0], next.p[2] - prev.p[2]) > REJOIN_JUMP) at = next.t;
-    prev = next;
-  }
-  known[i] = at;
-  return at;
-}
-
-/** The time of the sample that places `life` at `t`, a time it is
- *  replicated: `t` itself, but for a soldier just back from a vehicle whose
- *  samples are not yet his, the first that is (`settledAt`). */
-export function settledTime(life, t) {
-  if (!life.soldier) return t;
-  const spans = life.replicated;
-  for (let i = 0; i < spans.length; i++) {
-    if (t >= spans[i][0] && t < spans[i][1]) return Math.max(t, settledAt(life, i));
-  }
-  return t;
 }
 
 // --- who is where ------------------------------------------------------------------

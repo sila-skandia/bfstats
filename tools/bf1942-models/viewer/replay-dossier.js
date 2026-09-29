@@ -52,7 +52,7 @@ const AGE_COST = 2;
 const MAX_ANGLE = 12;
 /** ... or, at close range, passing no further than this from his middle,
  *  metres: a man is placed by his samples, 0.1 s apart and after a vehicle
- *  the first that is his (replay-battles.js `settledTime`), and from 6 m a
+ *  the first that is his (replay-recording.js `settledTime`), and from 6 m a
  *  metre and a half of his running is 14 degrees. RuppoPeaGame, killed from
  *  6 m 0.07 s out of his Kubelwagen (replay_20260928-133433, 52.2 s), is
  *  first placed 0.25 s after it, and the Sg44 rounds that killed him pass

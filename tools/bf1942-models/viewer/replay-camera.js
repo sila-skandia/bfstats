@@ -17,7 +17,7 @@
 
 import * as THREE from 'three';
 import {
-  AIM_PITCH_SCALE, AIM_TWIST_SCALE, aimAt, controlledAt, eyeLiftAt, rootOf, sampleAt,
+  AIM_PITCH_SCALE, AIM_TWIST_SCALE, aimAt, controlledAt, eyeLiftAt, rootOf, sampleAt, settledTime,
 } from './replay-recording.js';
 import { NETWORKED_ROUNDS, weaponOfProjectile } from './replay-props.js';
 import { toViewPosition, toViewQuaternion } from './replay-actors.js';
@@ -185,7 +185,7 @@ function headingOf(q) {
  * `AIM_PITCH_SCALE`).
  */
 export function eyeAim(rec, life, t, body = new THREE.Quaternion()) {
-  const s = sampleAt(life, t);
+  const s = sampleAt(life, settledTime(life, t));
   if (!s) return { body: body.identity(), yaw: 0, pitch: 0 };
   toViewQuaternion(s.a.q, body);
   if (s.b) body.slerp(toViewQuaternion(s.b.q, _q2), s.k);
@@ -395,7 +395,9 @@ export class ReplayCamera {
       if (target) return target;
     }
     if (!life) return null;
-    const s = sampleAt(life, t);
+    // A man just out of a vehicle where the recording next has him, as he is
+    // drawn (replay-recording.js `settledTime`).
+    const s = sampleAt(life, settledTime(life, t));
     if (!s) return null;
     const point = toViewPosition(s.a.p, new THREE.Vector3());
     if (s.b) point.lerp(toViewPosition(s.b.p, _v), s.k);
@@ -699,7 +701,7 @@ export class ReplayCamera {
     let lens = null;
     if (life.soldier) {
       if (life.diedAt !== undefined && t >= life.diedAt) return false;
-      const s = sampleAt(life, t);
+      const s = sampleAt(life, settledTime(life, t));
       if (!s) return false;
       toViewPosition(s.a.p, cam.position);
       if (s.b) cam.position.lerp(toViewPosition(s.b.p, _v), s.k);
