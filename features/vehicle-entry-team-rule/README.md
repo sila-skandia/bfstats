@@ -1,8 +1,9 @@
 # A crewed hull is its crew's: the vehicle entry team rule
 
-Owner's report: an enemy bot jumped into the T-34 he was driving. Branch
-`fix/seats`; ledger SEAT-26..SEAT-29 (SEAT-4 corrected by SEAT-28). All
-addresses `bf1942_lnxded.static` 1.61.
+Owner's report: an enemy bot jumped into the T-34 he was driving. On main
+since 2026-09-25 as 5ab0fc47, `mayEnterHull` in `viewer/vehicle-instance.js`.
+This line used to give only the branch, `fix/seats`. Ledger SEAT-26..SEAT-29
+(SEAT-4 corrected by SEAT-28). All addresses `bf1942_lnxded.static` 1.61.
 
 ## The engine
 

@@ -5,7 +5,10 @@ side-by-side captures of retail BF1942 and `map.html` taken minutes apart on
 Wake, from the same reference points.
 
 This folder holds the **agent prompts** for the round and the plan they feed.
-Nothing here has been dispatched. Dispatch is a separate, deliberate act — see
+The round was dispatched. Its reports are in [reports/](reports/README.md),
+and 471ced32 put them and the implementation on main on 2026-09-17, as
+[Status](#status) records. This line used to say nothing here had been
+dispatched. Dispatch is a separate, deliberate act — see
 [Dispatch](#dispatch).
 
 The shape is the one that worked in the two previous rounds
@@ -153,6 +156,10 @@ budget this one at roughly half that.
 
 Neither form below has been run. Pick one deliberately.
 
+*Corrected 2026-09-29: the round has run since. The R1 to R5, X1 and verifier
+reports are in [reports/](reports/README.md), and [Status](#status) says what
+was built.*
+
 **Agent tool, one researcher at a time** (they can be sent in a single message
 to run concurrently):
 
@@ -225,7 +232,9 @@ running it.
 
 ## Status
 
-Research + plan complete. **Implementation landed** (inherit/Auto), uncommitted.
+Research + plan complete. **Implementation landed** (inherit/Auto), on main
+since 471ced32 on 2026-09-17, with this folder's reports. This line used to say
+uncommitted.
 
 | Track | Report | Verified | Impl |
 |---|---|---|---|

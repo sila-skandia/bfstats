@@ -7,6 +7,10 @@ with sixteen bots in a close fight, cut what was waste, and names the limits
 that remain. Every number here is from this machine (Iris Xe, Chromium on the
 system GL, 1280x800, DPR 1) unless it says headless.
 
+*Added 2026-09-29: [twelve-bot-performance-sweep](../twelve-bot-performance-sweep/README.md)
+worked the same complaint the same day, twelve bots on Bocage, with its own
+probe harness and fixes, and leaves a GPU context loss open.*
+
 ## The short version
 
 - **On the owner's own conditions the frame was CPU-bound on the main thread

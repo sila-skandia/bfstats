@@ -9,6 +9,10 @@ actual animation; flying a plane becomes stuttery and almost unplayable. A
 This document records what the machine measured, what was actually wrong, the
 two fixes that landed, and the one suspect that is still open.
 
+*Added 2026-09-29: [bot-fight-performance](../bot-fight-performance/README.md)
+worked the same complaint on 2026-09-26, lag at twelve or more bots, with its
+own harness and its own fixes.*
+
 ## What the machine measures
 
 Probe harness: `tools/bf1942-models/scratchpad/botload/botload2.cjs`
@@ -91,6 +95,11 @@ plus engine and gun patches that the pools already budget.
 
 This is the suspect for the two symptoms the fixes above do not explain:
 black squares and the 1330% reading.
+
+*Added 2026-09-29: [mesh-viewer-performance](../mesh-viewer-performance/README.md),
+under "The Iris Xe context loss", recorded a lost context on this same Iris Xe
+on 2026-09-15 and tied it to a shader linked for the first time mid-burst,
+which its warm-up rule answers. Neither document tests the other's cause.*
 
 Evidence on the table:
 
