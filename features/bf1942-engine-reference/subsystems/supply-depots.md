@@ -190,6 +190,14 @@ The consumers are the two hand items, both called from
 HP-per-second figure needs the cadence of the `handleMessage` post while the
 pack is held, which nobody has read; an earlier "≈7.5 HP/s at 30 Hz" was an
 assumption stacked on an assumption and must not ship.
+*Noted 2026-09-29: [viewer-healing-packs](../../viewer-healing-packs/README.md)
+has since shipped both packs on four facts. By its own account it read three
+from the lnxded disassembly on 2026-09-25: the medic pack runs from the Fire
+message once per round of the held trigger, at the weapon's `roundOfFire`;
+`useMedPack` has no team gate; and the wrench heals only the nearest wounded
+hull. Its 2.5 HP/s is arithmetic from `healFactor` 0.25 and vanilla's
+`roundOfFire` of 10/s, checked only on the viewer's own page, and the ledger's
+SUP-15 still calls the cadence unread.*
 
 ### The in-world icons are named (SUP-17, half closed)
 
@@ -222,6 +230,8 @@ identification is the research pass's reading alone.
 - **SUP-15's rate**: how often `BFSoldier::handleMessage` posts the med-pack
   and repair-pack messages while the item is held. Without it the per-invocation
   factors cannot be turned into HP per second.
+  *Noted 2026-09-29: viewer-healing-packs reads it as once per round at
+  `roundOfFire`, see the note in §6.*
 - From the R3 verifier, not yet promoted to a row: whether
   `workOnSoldiers()`'s player-collection walk is the same container type as
   `workOnVehicles()`'s PCO map (it shows no `_M_increment` call, unlike the
