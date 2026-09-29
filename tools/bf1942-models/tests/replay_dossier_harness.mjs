@@ -102,7 +102,7 @@ const brief = r => (r ? { weapon: r.f.weapon, t: r2(r.f.t), kind: r.kind, angle:
 //     is 17 degrees off).
 // (l) A man shot 0.05 s after he got out of his Kubelwagen, his soldier
 //     back in range at the place he got in at, 693 m off: placed where the
-//     recording next has him, 20 m from his killer (replay-battles.js
+//     recording next has him, 20 m from his killer (replay-recording.js
 //     `settledTime`).
 {
   const duels = [];

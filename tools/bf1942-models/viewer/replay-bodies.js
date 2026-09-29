@@ -26,6 +26,7 @@ import {
   teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
+import { settledTime } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
 import { DIE_CLIPS } from './soldier-death.js';
@@ -331,7 +332,10 @@ export class ReplaySoldiers {
     actor.seat = seated && !dead ? { hull: hulls.get(seated.life), index: seated.seat } : null;
     if (actor.seat && !actor.seat.hull) actor.seat = null;
     if (!replicated && !seated && !dead) return false;
-    const pose = poseAt(life, t);
+    // Just out of a vehicle, his first samples are where he got in: he is
+    // drawn where the recording next has him (replay-recording.js
+    // `settledTime`), not streaked across the level to it.
+    const pose = poseAt(life, settledTime(life, t));
     // A pose that is not all numbers draws nothing, and the renderer and
     // the name tags read him from it.
     if (!pose || !pose.p.every(Number.isFinite) || !pose.q.every(Number.isFinite)) return false;
