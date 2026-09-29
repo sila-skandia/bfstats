@@ -20,7 +20,7 @@ export const STREAK_TIERS = Object.freeze([
 /** A kill from this far on foot is a long shot, metres: with a gun, not a
  *  mine or a charge left behind, nor an explosion nobody named. */
 export const LONG_SHOT = 100;
-const NOT_AIMED = /mine|grenade|exppack|satchel|dynamite|detonator|tnt|mortar|artillery|knife/i;
+export const NOT_AIMED = /mine|grenade|exppack|satchel|dynamite|detonator|tnt|mortar|artillery|knife/i;
 /** A streak this long ended is a shutdown. */
 const SHUTDOWN = 3;
 /** The kill leader holds at least this many kills. */
@@ -28,7 +28,7 @@ const LEADER_MIN = 3;
 /** A play scoring less than this is not a highlight. */
 const MIN_PLAY = 2.5;
 
-const MULTI_WORD = n => (n >= 5 ? 'Multi kill' : ['', '', 'Double kill', 'Triple kill', 'Quad kill'][n]);
+export const MULTI_WORD = n => (n >= 5 ? 'Multi kill' : ['', '', 'Double kill', 'Triple kill', 'Quad kill'][n]);
 const MULTI_SCORE = n => (n >= 5 ? 12 : [0, 0, 3, 6, 9][n]);
 const STREAK_SCORE = { 3: 4, 5: 7, 7: 9, 10: 12, 15: 15 };
 
