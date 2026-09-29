@@ -202,6 +202,62 @@ class ReplayStandoutTests(unittest.TestCase):
         self.assertEqual(self.standouts["heading"], [[0, -1], [0, -1], [1, 0], [1, 0]])
 
 
+class ReplayRejoinTests(unittest.TestCase):
+    """V gets out of a jeep 11 m from K, who shoots him 0.07 s later; the
+    recording's first sample of V is where he got in, 450 m back. O's samples
+    run on past him for 0.3 s after he gets out, C's first is right, W has
+    been out 2 s when S's rifle takes him from 160 m, and Z flies a plane
+    15 m a sample. The rule and what it was measured on: replay-battles.js,
+    "a soldier back from a vehicle". The 459 m long shot at 52.2 s of
+    replay_20260928-133433 was a V."""
+
+    rejoin: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rejoin = run_harness()["rejoin"]
+
+    def test_a_man_just_out_of_a_vehicle_is_where_the_recording_next_has_him(self) -> None:
+        in_jeep, out, dying = self.rejoin["victim"]
+        self.assertEqual(in_jeep["state"], "vehicle")
+        # Not 450 m back where he got in: where the sample 0.1 s on has him,
+        # in range and alive the while.
+        self.assertEqual(out, {"state": "foot", "fresh": True, "pos": [8, 0, -8], "seen": 10.1})
+        self.assertEqual(dying, out)
+        self.assertEqual(self.rejoin["settledTime"][:2], [10.1, 10.5])
+
+    def test_no_long_shot_from_where_he_got_in(self) -> None:
+        # K's kill from 11 m is none (read off the jump from where V got in,
+        # it was a 362 m long shot); S's 160 m kill of W, out of his jeep
+        # 2 s, still is one.
+        self.assertEqual(self.rejoin["longShots"], [["S", "W", 160]])
+
+    def test_his_death_and_his_wound_where_he_stood(self) -> None:
+        self.assertEqual(self.rejoin["killPlace"], [8, 0, -8])
+        self.assertEqual(self.rejoin["woundPlace"], [8, 0, -8])
+
+    def test_samples_running_on_past_him_are_not_his(self) -> None:
+        *running, after = self.rejoin["runOn"]
+        for w in running:
+            self.assertEqual(w, {"state": "foot", "fresh": True, "pos": [60, 0, 0], "seen": 20.4})
+        self.assertEqual(after, {"state": "foot", "fresh": True, "pos": [60, 0, 0], "seen": 20.45})
+
+    def test_a_man_the_recording_has_at_once_is_placed_at_once(self) -> None:
+        first, later = self.rejoin["clean"]
+        self.assertEqual(first, {"state": "foot", "fresh": True, "pos": [-20, 0, 0], "seen": 30.02})
+        self.assertEqual(later["seen"], 30.25)
+
+    def test_a_man_out_long_since_is_unaffected(self) -> None:
+        self.assertEqual(self.rejoin["outLongSince"],
+                         {"state": "foot", "fresh": True, "pos": [160, 0, 10], "seen": 41.95})
+
+    def test_a_hull_is_not_held_back(self) -> None:
+        # Between its first two samples, 15 m apart, not held at the second.
+        self.assertEqual(self.rejoin["plane"],
+                         {"state": "vehicle", "fresh": True, "pos": [1009, 100, -1000], "seen": 1.06})
+        self.assertEqual(self.rejoin["settledTime"][2], 1.06)
+
+
 class ReplayDirectorTests(unittest.TestCase):
     director: dict
 
@@ -262,6 +318,16 @@ class ReplayOwnersRoundsTests(unittest.TestCase):
         self.assertGreaterEqual(kursk["contested"], 5)
         self.assertTrue(any("Work_Camp" in place for place in kursk["hottest"]), kursk["hottest"])
         self.assertLess(kursk["ms"], 1500)
+
+    def test_bocage_long_shots_are_from_where_both_men_were(self) -> None:
+        bocage = self.round("replay_20260928-133433")
+        shots = [m for m in bocage["medals"] if m[2] == "Long shot"]
+        # >>XenaWarrior<<'s Sg44 kill from 6 m, RuppoPeaGame 0.07 s out of
+        # his Kubelwagen, was a 459 m long shot from where he had got in;
+        # the round's other 16 stay.
+        self.assertNotIn([52.2, ">>XenaWarrior<<", "Long shot"], shots)
+        self.assertEqual(len(shots), 16)
+        self.assertLess(bocage["ms"], 1500)
 
 
 class ReplayHighlightsWiringTests(unittest.TestCase):
