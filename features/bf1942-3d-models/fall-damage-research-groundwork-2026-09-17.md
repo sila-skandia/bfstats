@@ -467,6 +467,13 @@ plant the feet, and the height is `getLastCollisionHeight() − pos.y` — the
 height of the last *contact*, not the airborne apex the viewer used to track.
 That difference is visible: a jump straight up is billed `F = 0`, and a jump
 off a ledge is billed the ledge rather than the apex above it.
+*Noted 2026-09-29: whether the engine bills the last contact or the apex is
+open. Ledger PARA-8 reads `Armor+0x28` as a running maximum of altitude that
+only contact resets, which bills a jump's apex, while ledger HP-6d has
+`SimpleObject::handleCollision` write the contact's world Y into it, and
+[hitpoints-and-damage.md](../bf1942-engine-reference/subsystems/hitpoints-and-damage.md)
+calls the question unverified and has `PlayerControlObject::exit(bool)` write
+it too. `walking-body.js` bills the last contact, as this doc does.*
 
 ### Measured
 

@@ -355,6 +355,9 @@ The water path is a **duplicate of the whole function** entered at `0x08154e4f`
 when the collision material is 1, differing only in a single `fmul st,st(0)`
 that makes `A = |cos|²` instead of `|cos|³`. The 8.0 subtraction precedes the
 split, so it applies to both.
+*Added 2026-09-29: a parachute landing is billed a zero impact speed, so the
+first line returns and a canopy touchdown is free at any speed (ledger
+PARA-10).*
 
 The per-surface scalars are the ordinary MaterialManager tables our
 `bf42/damage.py` already extracts. Extracted from vanilla's `Game.rfa`, for
@@ -383,6 +386,15 @@ the apex of a fall rather than the last contact height, and which material index
 the physics layer supplies as the attacker (`collision-response.md` §9.4 answers
 the second for the general case: the vertex side brings the u16 on the collision
 vertex, the face side the material of the face it hit).
+*Noted 2026-09-29: the first of these has three readings that disagree, and it
+stays open. Ledger PARA-8 has `Armor::update` raise `Armor+0x28` to the current
+height every tick out of contact, a running maximum that bills a jump's apex,
+and finds no caller of `setLastCollisionHeight`; ledger HP-6d has
+`SimpleObject::handleCollision` call it with the contact's raw world Y; and §9
+below has `PlayerControlObject::exit(bool)` call it. The viewer's
+`walking-body.js` and
+[fall-damage-research-groundwork-2026-09-17.md](../../bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md)
+bill the last contact.*
 
 The vehicle case, the object-versus-object twin and the full material tables are
 [collision-response.md](collision-response.md) §9.3–9.5 and ledger COL-3/COL-4.
@@ -675,6 +687,11 @@ before rejoining the normal entry flow. What consumes that float is untraced, so
 the consequence of entering a burning vehicle is open — do not build a "cannot
 enter" rule on it. `exit(bool)` also resolves an Armor (`0x83180b7`) but only to
 call `setLastCollisionHeight` (`+0xf8`).
+*Noted 2026-09-29: this is a third reading of who calls
+`setLastCollisionHeight`. Ledger HP-6d finds one caller,
+`SimpleObject::handleCollision`, and ledger PARA-8 finds none, so which is right
+is open; see the note at the end of
+[A soldier's fall](#a-soldiers-fall-with-a-worked-example-hp-14-2026-09-19).*
 
 ## Open
 
