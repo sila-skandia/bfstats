@@ -11,6 +11,10 @@ Every rule below cites the claim id it came from in
 and damage) — both files' `## Corrected report` section, the verifier's word
 over the researcher's where they disagree. Nothing here is invented except
 where a section below says so explicitly.
+*Corrected 2026-09-29: these `SUP-n` ids are verify-r3.md's own numbers, not
+the ledger's. In the [ledger](../bf1942-engine-reference/ledger.md) the depot
+cadence is SUP-4 and SUP-11 is the heal sign, so "Cadence (SUP-11/12)" below
+names report claims, not ledger rows.*
 
 ## Files
 
@@ -87,6 +91,11 @@ tolerance, and lethal once the drop clears ~3 m, matching retail.
 A soldier's drag is inert enough over any survivable drop
 (`physics.js`'s terminal-velocity note, ~730 m/s) that the height→speed
 inversion is exact to the precision this needs.
+*Corrected 2026-09-29: this `FALL_KINETIC_HP = 10` model is retired. The
+viewer now runs the engine's formula with the terrain's own damage scalars in
+[`fall-damage.js`](../../tools/bf1942-models/viewer/fall-damage.js), see the
+"Closed (2026-09-20)" section of
+[fall-damage-research-groundwork-2026-09-17.md](fall-damage-research-groundwork-2026-09-17.md).*
 
 Tracked as a height rather than a sampled velocity on the adversarial
 reviewer's pass: `SoldierBody#settle()` zeroes `velocity.y` in the very
