@@ -98,9 +98,24 @@ export function quantile(values, q) {
 export const median = values => quantile(values, 0.5);
 export const mean = values => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
 
+/** The largest and smallest of `values`, or null for none. A loop, not
+ *  `Math.max(...values)`: a real round's pose pairs run to hundreds of
+ *  thousands, past what one call can take as arguments. */
+export function maxOf(values) {
+  let out = null;
+  for (const v of values) if (out === null || v > out) out = v;
+  return out;
+}
+
+export function minOf(values) {
+  let out = null;
+  for (const v of values) if (out === null || v < out) out = v;
+  return out;
+}
+
 export function spread(values, digits = 3) {
   const round = v => (v === null ? null : Number(v.toFixed(digits)));
-  return { n: values.length, median: round(median(values)), p95: round(quantile(values, 0.95)), max: round(values.length ? Math.max(...values) : null) };
+  return { n: values.length, median: round(median(values)), p95: round(quantile(values, 0.95)), max: round(maxOf(values)) };
 }
 
 export const count = (map, key, n = 1) => map.set(key, (map.get(key) ?? 0) + n);
