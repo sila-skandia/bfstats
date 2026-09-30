@@ -782,3 +782,39 @@ class StalemateTests(unittest.TestCase):
         self.assertFalse(g["spottedFar"][1])
         self.assertEqual(g["quiet"][0], "strategic")
         self.assertFalse(g["quiet"][1])
+
+
+class ArtilleryDriverTests(unittest.TestCase):
+    """Ledger SPOT-16: a self-propelled gun's driver (AI type 14) in
+    bot_ai_harness.mjs's `artilleryDriver` block."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.a = run_harness()["artilleryDriver"]
+
+    def test_the_artillery_drivers_row(self) -> None:
+        # Ledger SPOT-16: type 14 is its own row (`BBFireDriver`,
+        # `BBPFire2dDriver`), its Fire curve `UCUnion` where a tank's is
+        # `UCFire` (0 after 5.9 s).
+        a = self.a
+        self.assertEqual(a["modes"], ["artilleryDriver", "largeBore", "infantry"])
+        self.assertEqual(a["drivers"], [True, False, False])
+        self.assertEqual(a["curves"], [1.0, 0.0])
+
+    def test_the_hull_turn_law(self) -> None:
+        # `TankControl::turnTowardsDirection` 0x0862d630: full lock toward the
+        # angle, throttle 1.0 while the speed is within min(1, 0.3 a^2), else
+        # 0.4; inside the 5 deg tolerance the drive is reset.
+        turn = self.a["turn"]
+        self.assertEqual((turn[0]["throttle"], turn[0]["steer"]), (1.0, 1))
+        self.assertEqual((turn[1]["throttle"], turn[1]["steer"]), (0.4, 1))
+        self.assertEqual((turn[2]["throttle"], turn[2]["steer"]), (1.0, -1))
+        self.assertEqual((turn[3]["throttle"], turn[3]["steer"], turn[3]["turning"]), (0, 0, False))
+
+    def test_the_back_off_point_lies_on_the_circle(self) -> None:
+        # `tracePointOnCircle` 0x086584a0 from the target's bearing to the hull,
+        # 2 min + 5 out; with no map the first angle (0) is taken.
+        b = self.a["back"]
+        self.assertAlmostEqual(b[0], 15.0, places=6)
+        self.assertAlmostEqual(b[2], 20.0, places=6)
+        self.assertEqual(b[1], 7)
