@@ -210,8 +210,13 @@ class LevelContext:
             meshes, textures, objects, game = build_pools(self.chain, fallbacks)
             # A level can declare ObjectTemplates of its own; they have to be
             # in the pool before the library is built. See `add_level_objects`.
-            for path in self.paths:
-                objects.add_level_objects(path, label=f"{self.info.name} objects")
+            # Nearest mod and newest patch first: the pool keeps the first
+            # registration of a path, and `paths` is farthest first. The
+            # object scripts `Init.con` runs outside `Objects/` go in too.
+            scripts = em.level_object_scripts(self.files)
+            for path in reversed(self.paths):
+                objects.add_level_objects(path, label=f"{self.info.name} objects",
+                                          extra=scripts)
             self._pools = (meshes, textures, objects, game)
         return self._pools
 
@@ -224,7 +229,8 @@ class LevelContext:
             self._library_done = True
             if self.include_objects:
                 info, files = self.info, self.files
-                library = build_library(self.pools[2])
+                # The level's own templates first: they win (`em.LevelFirst`).
+                library = build_library(em.LevelFirst(self.pools[2]))
                 # A level's flags live in `<mode>/ControlPointTemplates.con`,
                 # which `build_library` never reads.
                 if info.gameplay.mode:

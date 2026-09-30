@@ -220,9 +220,95 @@ class DeckSpawnScopeTests(unittest.TestCase):
         self.assertEqual(_report(_pad("ParadropSpawner")), [])
 
     def test_the_template_is_matched_case_blind(self):
-        objects = FakePool({"Objects/Vehicles/Sea/fletcher/Objects.con": FLETCHER})
-        self.assertIsNotNone(em._vehicle_objects_con(objects, "FLETCHER2"))
-        self.assertIsNone(em._vehicle_objects_con(objects, "fletcher3"))
+        index = em.TemplateIndex(FakePool({"Objects/Vehicles/Sea/fletcher/Objects.con": FLETCHER}))
+        self.assertIsNotNone(index.get("FLETCHER2"))
+        self.assertIsNone(index.get("fletcher3"))
+        self.assertEqual(len(index.spawn_points("Fletcher2")), 3)
+
+
+# No Fly Zone Day 2's shape: an ObjectSpawner places a hangar, the hangar's
+# own file adds a bundle another file declares, and that bundle adds the
+# SpawnPoint. Nothing about the hangar's name says where the bundle is.
+HANGAR = """
+ObjectTemplate.create PlayerControlObject air_hangar_bunker_des
+ObjectTemplate.addTemplate lodair_hangar_bunker_des
+ObjectTemplate.addTemplate Opp_Airbase_Spawn
+ObjectTemplate.setPosition 27/0.4/62
+ObjectTemplate.setRotation -120/0/0
+ObjectTemplate.addTemplate Opp_Airbase_Spawn
+ObjectTemplate.setPosition -27/0.4/62
+ObjectTemplate.setRotation 120/0/0
+
+ObjectTemplate.create LodObject lodair_hangar_bunker_des
+"""
+
+SPAWN_BUNDLE = """
+beginrem
+spawnPointManager.group 99
+spawnPointManager.groupTeam 1
+endrem
+ObjectTemplate.create Bundle Opp_Airbase_Spawn
+ObjectTemplate.addTemplate Airbase_SoldierSpawn
+ObjectTemplate.setPosition 0/0/0
+
+ObjectTemplate.create SpawnPoint Airbase_SoldierSpawn
+ObjectTemplate.setGroup 99
+ObjectTemplate.setEnterOnSpawn 0
+"""
+
+# A second declaration of a name makes nothing in the engine
+# (`ObjectTemplateManager::createTemplate` 0x081d5a30), so its lines must not
+# reach the first one.
+REDECLARED = """
+ObjectTemplate.create SpawnPoint Airbase_SoldierSpawn
+ObjectTemplate.setGroup 12
+ObjectTemplate.create Bundle Opp_Airbase_Spawn
+ObjectTemplate.addTemplate SomethingElse
+"""
+
+BUILDING_SPAWNERS = """
+ObjectTemplate.create ObjectSpawner hangarspawner
+ObjectTemplate.setObjectTemplate 1 air_hangar_bunker_des
+ObjectTemplate.setObjectTemplate 2 air_hangar_bunker_des
+"""
+
+
+class CrossFileBundleTests(unittest.TestCase):
+    def _report(self, files, groups=None, position=(1000.0, 20.0, 800.0)):
+        from bf42.level import SpawnGroupSettings
+        info = SimpleNamespace(
+            gameplay=SimpleNamespace(spawn_groups={
+                g: SpawnGroupSettings(group=g, team=t) for g, t in (groups or {99: 1}).items()}),
+            spawn_objects=[_pad("hangarspawner", position=position, team=1)],
+            spawn_templates=parse_spawn_templates(BUILDING_SPAWNERS))
+        game = FakePool({"Bf1942/Game/GlobalSpawnGroups.con": GLOBAL_GROUPS})
+        return em._vehicle_soldier_spawn_report(info, FakePool(files), game)
+
+    def test_a_building_carries_spawns_its_bundle_declares_elsewhere(self):
+        out = self._report({
+            "bf1942/levels/DC_No_Fly_Zone_Day2/objects/air_hangar_bunker_m1/objects.con": HANGAR,
+            "bf1942/levels/DC_No_Fly_Zone_Day2/objects/Opp_Airbase_Spawn_group/Opp_Airbase_Spawn.con": SPAWN_BUNDLE,
+        })
+        self.assertEqual([(e["vehicle"], e["name"], e["group"], e["team"], e["pad"]) for e in out],
+                         [("air_hangar_bunker_des", "airbase_soldierspawn", 99, 1, 1)] * 2)
+        # Yaw 0 pad: world = (ox + lx, oy + ly, -oz - lz), one per add.
+        self.assertEqual(sorted(e["position"] for e in out),
+                         [[973.0, 20.4, -862.0], [1027.0, 20.4, -862.0]])
+
+    def test_the_first_declaration_of_a_name_owns_it(self):
+        files = {
+            "a/objects.con": HANGAR,
+            "b/Opp_Airbase_Spawn.con": SPAWN_BUNDLE,
+            "c/redeclared.con": REDECLARED,
+        }
+        out = self._report(files)
+        self.assertEqual({e["group"] for e in out}, {99})
+        self.assertEqual(len(out), 2)
+
+    def test_a_group_the_level_leaves_unbound_is_no_spawn(self):
+        out = self._report({"a/objects.con": HANGAR, "b/bundle.con": SPAWN_BUNDLE},
+                           groups={1: 1})
+        self.assertEqual(out, [])
 
 
 def _game_dir() -> Path | None:

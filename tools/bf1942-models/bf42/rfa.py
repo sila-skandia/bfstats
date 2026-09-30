@@ -34,6 +34,7 @@ exists to log and skip them.
 
 from __future__ import annotations
 
+import posixpath
 import re
 import struct
 import sys
@@ -206,6 +207,20 @@ def level_texture_names(path: Path) -> frozenset[str]:
     return frozenset(keys)
 
 
+def _key(name: str) -> str:
+    """The pool key for a lookup: lower case, with `..` segments resolved.
+
+    `GeometryTemplate.file ../bf1942/levels/DC_No_Fly_Zone/standardMesh/x` is
+    read from under `standardMesh/`, so the file the engine opens is
+    `bf1942/levels/DC_No_Fly_Zone/standardMesh/x.sm`. A name without `..` is
+    left exactly as it was.
+    """
+    key = name.lower()
+    if ".." in key:
+        key = posixpath.normpath(key.replace("\\", "/")).lstrip("/")
+    return key
+
+
 class ArchivePool:
     """Many archives addressed as one case-insensitive namespace.
 
@@ -269,6 +284,16 @@ class ArchivePool:
         these by basename, so ``AltTextures/p4main_f.dds`` satisfies a lookup
         for ``texture/p4main_f``.  This method mirrors that resolution.
 
+        Every image in the archive is also registered under its own full path,
+        whether or not the basename key was free. That is the path the engine
+        reads: `textureManager.alternativePath bf1942/levels/<L>/Textures/` is
+        probed before the global `texture/X` (`resolve_ext`), and a level's own
+        `.rs` names its textures by full path
+        (`bf1942/levels/DC_Battle_of_73_Easting/objectTexture/tablemap`). When
+        the full path was registered only with a free basename key, a level's
+        own copy of a texture the global archive also ships (its sky, its
+        reskins, the point of `alternativePath`) lost to the global one.
+
         Returns the number of texture entries registered.
         """
         archive = RfaArchive(path)
@@ -282,17 +307,40 @@ class ArchivePool:
             if synth_key not in self._index:
                 entry = (label, archive, name)
                 self._index[synth_key] = entry
-                # `resolve_ext` hands back the *real* entry name, which `read` then
-                # has to look up; index it under itself too or every level texture
-                # resolves and then fails to load.
-                self._index.setdefault(name.lower(), entry)
                 leaf = basename.lower()
                 if leaf not in self._basename:
                     self._basename[leaf] = entry
                 added += 1
+        for name in archive.entries:
+            if name.lower().endswith((".dds", ".tga")):
+                self._index.setdefault(name.lower(), (label, archive, name))
         return added
 
-    def add_level_objects(self, path: Path, label: str | None = None) -> int:
+    def mount_level(self, path: Path, exts: tuple[str, ...],
+                    label: str | None = None) -> int:
+        """Register a level archive's `exts` entries under their full paths only.
+
+        Refractor mounts every level archive of the mod chain at its own path,
+        so one level may name another's files: No Fly Zone Day 2's buildings
+        are `GeometryTemplate.file ../bf1942/levels/DC_No_Fly_Zone/standardMesh/...`
+        and its `alternativePath` is DC_No_Fly_Zone's `Textures/`, and neither
+        level ships a copy. Only the full path answers, never a basename or a
+        `standardMesh/` tail: those stay the current level's (`add_level_meshes`).
+        First registration wins, so mount the nearest mod's copy first.
+        """
+        archive = RfaArchive(path)
+        label = label or path.stem
+        self._archives.append((label, archive))
+        added = 0
+        for name in archive.entries:
+            key = name.lower()
+            if key.endswith(exts) and key not in self._index:
+                self._index[key] = (label, archive, name)
+                added += 1
+        return added
+
+    def add_level_objects(self, path: Path, label: str | None = None,
+                          extra: frozenset[str] | set[str] = frozenset()) -> int:
         """Register object templates a level defines for itself.
 
         A level may ship whole ObjectTemplates inside its own archive, under
@@ -305,9 +353,13 @@ class ArchivePool:
         them (Battle of Britain's factories and radar towers, Caen's Pegasus
         Bridge and Pak40, Truk's PT boats, Kasserine's bundles).
 
-        Only the `Objects/` subtree is taken. The rest of a level archive is
-        terrain, lightmaps and menu art, which `add_level` already handles on
-        the texture side and which have no business in the object namespace.
+        Only the `Objects/` subtree is taken, and `extra`: the archive paths
+        (lower case) of the other object scripts the level's `Init.con` runs,
+        such as Al Nas's root `objects.con` or Coastal Hammer's
+        `CustomObjects/`, registered under their full path. The rest of a
+        level archive is terrain, lightmaps and menu art, which `add_level`
+        already handles on the texture side and which have no business in the
+        object namespace.
 
         Entries are registered under their full archive path, which is what
         `build_library` iterates, and additionally under the tail from
@@ -322,6 +374,12 @@ class ArchivePool:
         for name in archive.entries:
             parts = name.replace("\\", "/").split("/")
             lowered = [p.lower() for p in parts]
+            if name.lower() in extra:
+                entry = (label, archive, name)
+                if name.lower() not in self._index:
+                    self._index[name.lower()] = entry
+                    added += 1
+                continue
             try:
                 start = lowered.index("objects")
             except ValueError:
@@ -399,10 +457,10 @@ class ArchivePool:
         return added
 
     def __contains__(self, name: str) -> bool:
-        return name.lower() in self._index
+        return _key(name) in self._index
 
     def read(self, name: str) -> bytes:
-        label, archive, real = self._index[name.lower()]
+        label, archive, real = self._index[_key(name)]
         return archive.read(real)
 
     def try_read(self, name: str) -> bytes | None:
@@ -415,7 +473,7 @@ class ArchivePool:
         over every `.con` in a pool must not abort the whole extraction because
         one script in an effects folder cannot be inflated.
         """
-        hit = self._index.get(name.lower())
+        hit = self._index.get(_key(name))
         if hit is None:
             return None
         label, archive, real = hit
@@ -430,19 +488,22 @@ class ArchivePool:
 
     def find(self, name: str) -> str | None:
         """The archive-cased name for a lookup, or None."""
-        hit = self._index.get(name.lower())
+        hit = self._index.get(_key(name))
         return hit[2] if hit else None
 
     def source_of(self, name: str) -> str | None:
-        hit = self._index.get(name.lower())
+        hit = self._index.get(_key(name))
         return hit[0] if hit else None
 
     def resolve_ext(self, stem: str, exts: tuple[str, ...]) -> str | None:
         """`texture/sherma_i` -> whichever of `.dds`/`.tga` actually exists.
 
         `.rs` files name textures without an extension because the engine probes
-        for one; this reproduces that probe.
+        for one; this reproduces that probe. A `..` in the name is resolved
+        first (`_key`), so another level's file is read at its own path.
         """
+        if ".." in stem:
+            stem = _key(stem)
         if stem.lower() in self._index:
             return self._index[stem.lower()][2]
         alt_leaf = stem.replace("\\", "/").rsplit("/", 1)[-1].lower()

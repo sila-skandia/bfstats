@@ -41,6 +41,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [level-bake-layers](level-bake-layers/README.md) | pipeline | Which layer and command ship a given level-data change without a full re-bake? |
+| [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
