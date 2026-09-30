@@ -381,6 +381,14 @@ export class ReplaySoldiers {
       actor.state.dead = true;
       if (this.player.playing && !this.dragging && t - life.diedAt < 0.5) {
         this.player.ctx.playSoldierDeathSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
+        // His side's death tier (`soldier-armor-effects.js`: Desert Combat's
+        // dropped helmet), at his feet and with the speed he died at. A
+        // client effect, so the recording never carries it.
+        if (!seated) {
+          const v = motionAt(life, life.diedAt)?.velocity;
+          this.player.ctx.playSoldierDeathEffects?.({ x: s.x, y: s.y, z: s.z, yaw: s.yaw }, actor.team,
+            v ? { x: v[0], y: v[1], z: v[2] } : null);
+        }
       }
     }
     if (dead && !falling && !actor.state.down) {

@@ -44,7 +44,9 @@ import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
   MAX_OVERRUN,
 } from './suspension.js';
-import { clamp, EngineState } from './ground-engine.js';
+import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
+import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
+import { AmphibiousKit, bedGroundHeight } from './amphibious.js';
 
 // Same body frame the flight model measured off the extracted scenes: -Z
 // forward, +Y up, +X starboard. The Willy agrees — its front wheels sit at
@@ -135,6 +137,17 @@ export class GroundVehicle extends Vehicle {
      */
     this.hullSolved = false;
 
+    /** An amphibian's water engine, floats and rudders (`amphibious.js`),
+     * or null. See `TrackedVehicle`'s own field. */
+    this.amphibious = AmphibiousKit.of(node, {
+      waterLevel: options.waterLevel ?? this.collider?.waterLevel,
+      mass: this.spec.mass, drag: this.spec.drag,
+    });
+    if (this.amphibious) {
+      this.groundHeight = bedGroundHeight(this.collider, this.amphibious.waterLevel, this.groundHeight);
+    }
+    this._inputOf = name => this.input(name);
+
     // Body-frame inertia, diagonal. A box is symmetric enough for a jeep.
     this._inertia = new THREE.Vector3(
       this.spec.inertiaPitch, this.spec.inertiaYaw, this.spec.inertiaRoll);
@@ -181,6 +194,9 @@ export class GroundVehicle extends Vehicle {
     this.node.traverse(obj => {
       const data = obj.userData || {};
       if (data.templateKind === 'Engine' && data.physics) {
+        // An amphibian's water engine drives no spring (`amphibious.js`);
+        // see `TrackedVehicle.collectChassis`.
+        if (engineTypeBits(data.physics.engineType) & ENGINE_BIT_THRUST) return;
         // `engineType` comes off the node now (item 3): the 1.2 rev ceiling
         // is type-independent but `getCurrentDifferentialRPM`'s +-1 clamp is
         // not, and 101 of the 1,309 ground-vehicle Engines across the 18
@@ -258,6 +274,10 @@ export class GroundVehicle extends Vehicle {
    */
   advancePropeller() {}
 
+  /** `Engine+0x142`: see `TrackedVehicle.engineRunning`. */
+  get engineRunning() { return this.engine.running; }
+  set engineRunning(on) { this.engine.running = !!on; }
+
   /**
    * One step. The public entry clamps its own rate: the page hands whatever
    * `THREE.Clock` gives it (up to 0.1 s), and a spring at `strength 25` times
@@ -274,6 +294,9 @@ export class GroundVehicle extends Vehicle {
     this.applyTransform();
     this.applyRig();
     this.#applyWheels();
+    // The belts' texture at this tick's engine state, each at its own side's
+    // `ratio * diffRPM` (`track-scroll.js`, AnimatedBundle::updateAnimations).
+    scrollBeltsByEngine(this.node, this.engine, dt);
   }
 
   /**
@@ -295,6 +318,9 @@ export class GroundVehicle extends Vehicle {
     }
     super.presentKinematic(dt, throttle, running);
     this.#applyWheels();
+    // No engine is recorded to scroll the belts from: each runs at its side's
+    // contact speed off the recorded motion (`track-scroll.js`).
+    scrollBeltsByMotion(this.node, bodyMotion(s.orientation, s.velocity, s.angularVelocity), dt);
   }
 
   #step(h) {
@@ -626,6 +652,12 @@ export class GroundVehicle extends Vehicle {
       staticBudget /= tanCount;
     }
 
+    // An amphibian's water half (`amphibious.js`).
+    if (this.amphibious) {
+      this.amphibious.step(h, { q, qInv, position: s.position, vBody, w, force, torque,
+        surfaces: s.surfaces, running: engine.running, inputOf: this._inputOf });
+    }
+
     s.grounded = loaded > 0;
     s.airspeed = speed;
 
@@ -755,6 +787,7 @@ export class GroundVehicle extends Vehicle {
     // The engine's own construction state: gear 1, no revs, the gear-change
     // lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
     this.engine.reset();
+    this.amphibious?.reset();
     this._staticQuiet = 0;
     this._staticHeld = false;
     for (const wheel of this.wheels) {

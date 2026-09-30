@@ -14,6 +14,7 @@ import {
   GRAFT, RECIPE_FORMAT_PREFIX, applyJoints, createPoseComposer, findBone, hideUnlit,
   isGraft, jointNodes, recipeClips, ungraft,
 } from './pose-compose.js';
+import { forgetPoseIndexes } from './pose-bases.js';
 
 const out = {};
 const round = (n, places = 6) => Math.round(n * 10 ** places) / 10 ** places;
@@ -298,6 +299,64 @@ const composer = createPoseComposer({ loader, modelsBase: 'models', bust: '' });
   const shared = await composer.pose('USSoldier', 'K98');
   out.uncached = { distinct: a !== b, ownScenes: a.scene !== b.scene,
                    otherComposer: shared !== a };
+}
+
+// --- the trees' pose indexes (`pose-bases.js` `poseSources`) ----------------
+//
+// FHSW's tree holds only single-file poses; vanilla holds recipes for the same
+// pairs. The mod's own glb has to win, the spelling has to be the file's, and
+// a tree whose index lacks the pair is never asked for it.
+{
+  forgetPoseIndexes();
+  const MOD = 'models/mods/fhsw';
+  const indexes = {
+    [`${MOD}/poses/index.json`]: { format: 'bf1942-pose-index/1', recipe: [],
+                                   glb: ['GermanSoldier__K98', 'GermanSoldier__MP40'] },
+    'models/poses/index.json': { format: 'bf1942-pose-index/1',
+                                 recipe: ['USSoldier__K98', 'GermanSoldier__K98'], glb: [] },
+  };
+  const monoUrls = new Set([`${MOD}/poses/GermanSoldier__K98.pose.glb`,
+                            `${MOD}/poses/GermanSoldier__MP40.pose.glb`]);
+  const loads = [];
+  const fetches = [];
+  const idxLoader = {
+    async loadAsync(url) {
+      loads.push(url);
+      if (monoUrls.has(url)) {
+        return { scene: rigScene(), animations: [], userData: { weapon: url.split('__')[1] } };
+      }
+      if (url === RIG_URL) return RIG_DOC;
+      if (url === WEAPON_URL) return { scene: weaponScene(), animations: [] };
+      throw new Error(`404 ${url}`);
+    },
+  };
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    fetches.push(url);
+    if (indexes[url]) return { ok: true, status: 200, json: async () => indexes[url] };
+    if (url === 'models/poses/USSoldier__K98.pose.json') {
+      return { ok: true, status: 200, json: async () => recipe() };
+    }
+    return { ok: false, status: 404 };
+  };
+  const fhsw = createPoseComposer({ loader: idxLoader, modelsBase: MOD, bust: '' });
+  const k98 = await fhsw.pose('GermanSoldier', 'K98');
+  // The kit spells `Mp40`, the file `MP40`.
+  const mp40 = await fhsw.pose('GermanSoldier', 'Mp40');
+  // Vanilla's recipe for a pair the mod tree lacks, composed from vanilla's rig.
+  const us = await fhsw.pose('USSoldier', 'K98');
+  const nobody = await fhsw.pose('Nobody', 'Nothing');
+  out.indexed = {
+    k98: k98?.userData?.weapon ?? null,
+    k98Recipe: k98?.recipe ?? null,
+    mp40: mp40?.userData?.weapon ?? null,
+    usRecipe: Boolean(us?.recipe),
+    nobody,
+    loads: [...loads],
+    fetches: [...fetches],
+  };
+  globalThis.fetch = savedFetch;
+  forgetPoseIndexes();
 }
 
 console.log(JSON.stringify(out));

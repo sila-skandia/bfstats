@@ -5,9 +5,12 @@
 import { fallDamageFor } from './fall-damage.js';
 import { obstacleDamage, obstacleOrigin, OBSTACLE_DAMAGE } from './obstacle.js';
 import { soldierLookDegrees } from './mouse-input.js';
+import { recoilStep } from './recoil.js';
 import { consume } from './world-input.js';
 
 const DEG_TO_RAD = Math.PI / 180;
+// The tick's recoil share, reused (nothing allocates per tick).
+const _recoil = { x: 0, y: 0 };
 
 export function soldierTick(world, player, dt) {
   const soldier = player.soldier;
@@ -19,8 +22,14 @@ export function soldierTick(world, player, dt) {
   // engine applies it per PlayerInput. An idle tick carries a zeroed axis,
   // so a missed packet turns nobody.
   const entry = consume(player);
-  const x = entry.lookX;
-  const y = entry.lookY;
+  // The recoil ride rides the same two axes (`recoil.js`, ledger FA-2..FA-5):
+  // `handlePlayerInput` adds this tick's share of the last shot's kick and
+  // return to c_PIMouseLookX/Y after the zoom factor and before the law, so
+  // it takes the x3 yaw gain and the pitch clamp as the hand does, and a
+  // player pulling against the climb pulls against the same number.
+  recoilStep(soldier.recoil, soldier.stance, _recoil);
+  const x = entry.lookX + _recoil.x;
+  const y = entry.lookY + _recoil.y;
   const per = soldierLookDegrees(x, y);
   const yaw = -per.yaw * DEG_TO_RAD;
   const pitch = -per.pitch * DEG_TO_RAD;

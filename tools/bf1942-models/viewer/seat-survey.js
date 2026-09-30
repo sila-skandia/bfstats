@@ -115,8 +115,13 @@ export function surveyVehicle(root) {
     if (!seat) {
       seat = {
         id, node: node || null, entryPoints: [], seatObjects: [],
-        camera: null, axes: {}, fireArms: [], engineType: null, hud: null,
+        camera: null, axes: {}, fireArms: [], engineType: null, engineTypes: [], hud: null,
         poseAnimation: null, cameraViewModes: null,
+        // `ObjectTemplate.setVehicleCategory` of the seat's own PCO: VCLand,
+        // VCSea or VCAir, and how many `c_PGFEngineGrip` springs the tree
+        // carries. Read for the root only (`rootDriveKind`).
+        vehicleCategory: node?.userData?.physics?.vehicleCategory ?? null,
+        drivenSprings: 0,
       };
       seats.set(id, seat);
       order.push(id);
@@ -248,7 +253,11 @@ export function surveyVehicle(root) {
     } else if (kind === 'FireArms' && data.fireArms) {
       seatFor(owner).fireArms.push(obj);
     } else if (kind === 'Engine' && data.physics?.engineType) {
-      seatFor(owner).engineType = data.physics.engineType;
+      const seat = seatFor(owner);
+      seat.engineType = data.physics.engineType;
+      seat.engineTypes.push(data.physics.engineType);
+    } else if (kind === 'Spring' && data.physics?.grip === 'c_PGFEngineGrip') {
+      seatFor(owner).drivenSprings += 1;
     }
   });
   return { rootId, order, seats };
@@ -269,17 +278,68 @@ export function surveyVehicle(root) {
  * adding the water rule. `ship.js` is that plus `FloatingBundle`; a helm is a
  * drive seat like any other. A car and a tank, whose bit 0 is clear, are the
  * ones that genuinely need their own model.
+ *
+ * A root with more than one engine type is classified by `rootDriveKind`.
  */
 export function classifySeat(seat, isRoot) {
   if (isRoot) {
-    if (seat.engineType === 'c_ETPlane') return 'air';
-    if (seat.engineType === 'c_ETCar') return 'ground';
-    if (seat.engineType === 'c_ETTank') return 'tank';
-    if (seat.engineType === 'c_ETShip') return 'ship';
+    const kind = rootDriveKind(seat);
+    if (kind) return kind;
   }
   const hasMotion = AXES.some(axis => seat.axes[axis] && seat.axes[axis].spec.maxSpeed > 0);
   if (hasMotion && seat.fireArms.length) return 'gun';
   return 'seat';
+}
+
+/** A root Engine's `setEngineType` to the drive kind that runs it. */
+const ENGINE_DRIVE_KIND = {
+  c_ETPlane: 'air', c_ETCar: 'ground', c_ETTank: 'tank', c_ETShip: 'ship',
+};
+
+/**
+ * The drive kind of a root seat whose PCO carries Engines, or null.
+ *
+ * The engine has no vehicle class to choose. Every Engine on a hull is its own
+ * `PhysicsEngine`, and all of them run every tick: a land engine (`c_ETCar`,
+ * `c_ETTank`, bit 0 clear) returns at the second instruction of
+ * `PhysicsEngine::updatePhysics` (`0x0824cc20`) and drives only the
+ * `c_PGFEngineGrip` springs that find it walking up their ancestors
+ * (`ResponsePhysics::addFriction` `0x0825c1b0`); a `c_ETShip` pushes along its
+ * own axis while its node is under water and, above it with its revs off the
+ * 0.02 dead band, pins them to 1.0 and pushes nothing (`0x0824cc89`,
+ * `0x0824d047`); `FloatingBundle`s lift only under water. So a BMP-2 is a tank
+ * on land and a boat afloat with no switch between them.
+ *
+ * The viewer runs one drive model per hull, so it has to pick one, and the
+ * hull says which in its own data: `setVehicleCategory`. A `VCLand` hull with a
+ * land engine is driven by that engine (`TrackedVehicle` / `GroundVehicle`,
+ * which run the water engine, the floats and the rudders as `amphibious.js`);
+ * a `VCSea` hull with a `c_ETShip` is a ship (a PT boat's `c_ETCar` beach
+ * engines are its landing gear); a `VCAir` hull with a `c_ETPlane` flies.
+ *
+ * Until 2026-09-30 the kind was the last Engine the walk met, which put every
+ * amphibian's water engine in charge (DC's BMP-2, BRDM-2, 2S1 and SA-9 and
+ * XPack2's LVT and Schwimmwagen drove as boats on land) and drove vanilla's
+ * Elco80 and Type38 PT boats as cars. A root with no category, or whose
+ * category names an engine it does not carry, keeps that rule.
+ *
+ * So does a `VCLand` hull whose tree carries no `c_PGFEngineGrip` spring for
+ * its land engine to drive. XPack2's LVT4 authors its two driven springs
+ * (`LVT4_S_Wheel_L3/R3`) `createInvisible 1` and the exporter drops invisible
+ * templates, so its extracted tree has only the twelve spin-only rollers: a
+ * land model would have nothing to push it, and it stays a boat until the
+ * exporter keeps them.
+ */
+export function rootDriveKind(seat) {
+  const types = seat?.engineTypes?.length ? seat.engineTypes
+    : (seat?.engineType ? [seat.engineType] : []);
+  if (!types.length) return null;
+  const category = seat.vehicleCategory ?? null;
+  const land = types.includes('c_ETTank') ? 'tank' : types.includes('c_ETCar') ? 'ground' : null;
+  if (category === 'VCLand' && land && seat.drivenSprings !== 0) return land;
+  if (category === 'VCSea' && types.includes('c_ETShip')) return 'ship';
+  if (category === 'VCAir' && types.includes('c_ETPlane')) return 'air';
+  return ENGINE_DRIVE_KIND[types[types.length - 1]] ?? null;
 }
 
 /** `classifyVehicle`'s old contract (a root node in, one of five kinds out). */

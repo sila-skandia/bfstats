@@ -32,6 +32,9 @@ export function mount(bot, m, now = bot._now ?? 0) {
   // 0x0851d475); `event_airborn` 0x0852eca0 sets it from the flight law.
   // A landed plane keeps it.
   bot._airborne = false;
+  // A helicopter pilot's collective integral (`helicopterControl`) is the
+  // hull's, not the bot's: it starts again at a hover's.
+  bot._heliState = null;
   bot.enterRequest = null;
   bot._lastChangeAt = now;
   bot._footWeapons = bot.weapons;

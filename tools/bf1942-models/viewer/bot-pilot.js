@@ -7,7 +7,41 @@
 import { playerPosition } from './bot-sense.js';
 import { GRAVITY } from './point-body.js';
 import { aimAtDirection, towardsPoint, attackRunStep, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE,
-         runwayClear, airAvoidUrgency, airAvoidPoint, AIR_AVOID } from './bot-vehicle-air.js';
+         runwayClear, airAvoidUrgency, airAvoidPoint, AIR_AVOID, helicopterControl } from './bot-vehicle-air.js';
+
+/** The world's tick, which is the bot's (`world.js` `WORLD_TICK_DT`, LOOP-1). */
+const BOT_TICK = 1 / 30;
+
+/** Does the bot's airframe hover on a collective (`Aircraft.hovers`)? */
+const fliesHelicopter = bot => bot.vehicle?.drive?.hovers === true;
+
+/**
+ * A MoveTo for a helicopter: `helicopterControl` toward the point at the
+ * move's clearance, hovering over it on arrival (an INVENTION, see there;
+ * the engine flies it with the plane law, which on this viewer's helicopters
+ * climbs out of the level before it turns). The channels land where the
+ * plane's do (`bot._airInput`, `writeInput`): `power` is the collective, a
+ * held axis for a vectored airframe (`world-vehicle-tick.js`).
+ */
+export function execHeliMoveTo(bot, target, action, clearance = PLANE.cruiseClearance) {
+  const m = bot.vehicle;
+  const st = m.drive?.state;
+  if (!st) return true;
+  const w = st.angularVelocity;
+  const r = helicopterControl(bot._heliState ?? (bot._heliState = {}), {
+    orientation: st.orientation, position: [st.position.x, st.position.y, st.position.z],
+    velocity: [st.velocity.x, st.velocity.y, st.velocity.z], angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0],
+    target, clearance, groundAt: (x, z) => bot._groundAt(x, z), maxSpeed: m.maxSpeed ?? 90,
+    radius: m.radius ?? 10, hover: true, dt: BOT_TICK, grounded: !!st.grounded,
+    authority: m.drive.controlAuthority?.() ?? null,
+  });
+  bot._airborne = !st.grounded;
+  bot._airInput = { power: r.collective, throttle: r.collective, roll: r.roll, pitch: r.pitch, rudder: r.rudder,
+                    arrived: r.arrived, heli: true };
+  bot._dbgSteer = [target[0], target[2]];
+  if (action?.orbit) return false;
+  return r.arrived;
+}
 
 /**
  * `PlaneMoveTo` (`EntryPlaneMoveTo::execute` -> `PlaneControl::towardsPoint`):
@@ -20,6 +54,10 @@ export function execPlaneMoveTo(bot, target, action, clearance = PLANE.cruiseCle
   const collider = bot.world?.collider;
   const position = [st.position.x, st.position.y, st.position.z];
   const tgy = collider?.surfaceHeight?.(target[0], target[2]);
+  if (fliesHelicopter(bot)) {
+    return execHeliMoveTo(bot, [target[0], target[1] ?? (Number.isFinite(tgy) ? tgy : st.position.y), target[2]],
+      action, clearance);
+  }
   const w = st.angularVelocity;
   const r = towardsPoint({
     orientation: st.orientation, position, velocity: [st.velocity.x, st.velocity.y, st.velocity.z],
@@ -30,13 +68,27 @@ export function execPlaneMoveTo(bot, target, action, clearance = PLANE.cruiseCle
     airborne: !!bot._airborne, maxSpeed: m.maxSpeed ?? 100, radius: m.radius ?? 10,
   });
   bot._airborne = r.airborne;
-  const cur = m.drive?.input?.('c_PIThrottle') ?? 1;
-  r.power = r.throttle > cur + 0.01 ? 1 : (r.throttle < cur - 0.01 ? -1 : 0);
+  r.power = planePower(m.drive, r.throttle);
   bot._airInput = r;
   bot._dbgSteer = [target[0], target[2]];
   if (action?.orbit) return false;                        // `ConFalse`: the idle's orbit never ends
   return r.arrived && !r.takeoff;
 }
+
+/**
+ * The throttle channel the plane law's `throttle` asks for. The engine writes
+ * it into `PlayerInput[driveThrottleControl]` as it is (`towardsDirection`
+ * 0x08629fa0, +0x50), which is what a vectored airframe's held axis takes
+ * (`world-vehicle-tick.js`); the viewer's fixed-wing throttle is a latch the
+ * bot ramps toward it a key at a time.
+ */
+function planePower(drive, throttle) {
+  if (drive?.vectored) return clamp1(throttle);
+  const cur = drive?.input?.('c_PIThrottle') ?? 1;
+  return throttle > cur + 0.01 ? 1 : (throttle < cur - 0.01 ? -1 : 0);
+}
+
+const clamp1 = v => (v < -1 ? -1 : v > 1 ? 1 : v);
 
 /**
  * `PlaneAttack`: `BBPFire3d`'s loop. Approach with `MoveTo3dObject` (the
@@ -95,6 +147,7 @@ export function execPlaneAttack(bot, action, now) {
     bot.isFiring = false;
     return false;
   }
+  if (fliesHelicopter(bot)) return heliAttack(bot, step, aimer, pos, position, now);
   if (step.phase === 'attack') {
     // `EntryPlaneAimAt` 0x0861f610: the Aimer's firing direction
     // (`planeAimFor`: the lead, the drop taken out, levelled for an
@@ -108,8 +161,7 @@ export function execPlaneAttack(bot, action, now) {
       airborne: !!bot._airborne, throttleFloor: aimer.throttleFloor, maxSpeed: m.maxSpeed ?? 100,
     });
     bot._airborne = r.airborne;
-    const cur = m.drive?.input?.('c_PIThrottle') ?? 1;
-    r.power = r.throttle > cur + 0.01 ? 1 : (r.throttle < cur - 0.01 ? -1 : 0);
+    r.power = planePower(m.drive, r.throttle);
     bot._airInput = r;
     bot._dbgSteer = [pos[0], pos[2]];
     bot.isFiring = step.fire;
@@ -134,6 +186,43 @@ export function execPlaneAttack(bot, action, now) {
   // 0x0859bfbb, which `towardsPoint` turns into the lift near it and the
   // pull-up probe.
   bot._execPlaneMoveTo([pos[0], pos[1], pos[2]], null, PLANE_FIRE.approachClearance);
+  return false;
+}
+
+/**
+ * `PlaneAttack` for a helicopter: the same approach / attack / break states
+ * (`attackRunStep`, the same trigger), flown with `helicopterControl`. The
+ * attack noses the hull down the Aimer's firing line (`aim`) at the approach's
+ * height, which is a strafing pass; the approach and the break are its moves.
+ * INVENTION, as the law is.
+ */
+function heliAttack(bot, step, aimer, pos, position, now) {
+  const m = bot.vehicle;
+  const st = m.drive.state;
+  if (step.phase === 'attack') {
+    const w = st.angularVelocity;
+    const r = helicopterControl(bot._heliState ?? (bot._heliState = {}), {
+      orientation: st.orientation, position, velocity: [st.velocity.x, st.velocity.y, st.velocity.z],
+      angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0], target: [pos[0], pos[1], pos[2]],
+      clearance: PLANE_FIRE.aimClearance, groundAt: (x, z) => bot._groundAt(x, z), maxSpeed: m.maxSpeed ?? 90,
+      radius: m.radius ?? 10, hover: true, dt: BOT_TICK, grounded: !!st.grounded,
+      authority: m.drive.controlAuthority?.() ?? null, aim: aimer.dir,
+    });
+    bot._airborne = !st.grounded;
+    bot._airInput = { power: r.collective, throttle: r.collective, roll: r.roll, pitch: r.pitch, rudder: r.rudder, heli: true };
+    bot._dbgSteer = [pos[0], pos[2]];
+    bot.isFiring = step.fire;
+    if (step.fire) bot.firingTargetTime = Math.min(bot.firingTargetTime, now);
+    return false;
+  }
+  bot.isFiring = false;
+  if (step.phase === 'break') {
+    const f = bot._unitForward3();
+    execHeliMoveTo(bot, [position[0] + f[0] * PLANE_FIRE.breakDistance, pos[1],
+                         position[2] + f[2] * PLANE_FIRE.breakDistance], null, PLANE_FIRE.breakClearance);
+    return false;
+  }
+  execHeliMoveTo(bot, [pos[0], pos[1], pos[2]], null, PLANE_FIRE.approachClearance);
   return false;
 }
 

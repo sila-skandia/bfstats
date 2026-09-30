@@ -18,6 +18,11 @@ export const DEFAULT_TORQUE = 60;
  *  hand-built test hull work. */
 const GEOMETRY_CHAIN_KINDS = new Set([undefined, null, '', 'LodObject', 'Bundle']);
 
+/** The engine types whose bit 0 is set, the only ones `PhysicsEngine::
+ *  updatePhysics` runs (`c_ETPlane` 1, `c_ETShip` 9, `c_ETRocket` 0x11,
+ *  `c_ETTorpedo` 0x19; `ground-engine.js` `ENGINE_TYPES`), lower-cased. */
+const THRUST_ENGINE_TYPES = new Set(['c_etplane', 'c_etship', 'c_etrocket', 'c_ettorpedo']);
+
 const _box = new THREE.Box3();
 const _size = new THREE.Vector3();
 const _inv = new THREE.Matrix4();
@@ -167,6 +172,13 @@ export function shipSpec(root) {
     const data = node.userData || {};
     const part = data.physics;
     if (data.templateKind === 'Engine' && part?.engineType) {
+      // A land engine has no thrust at all: `PhysicsEngine::updatePhysics`
+      // returns at its second instruction unless `getEngineType() & 1`
+      // (`0x0824cc16`), and `c_ETCar` (2) and `c_ETTank` (6) clear it. A PT
+      // boat's two `c_ETCar` beach engines drive its beaching wheels, which a
+      // ship here does not model; taken as screws they pushed along the nose
+      // above the waterline and lent the hull their own throttle range.
+      if (!THRUST_ENGINE_TYPES.has(String(part.engineType).toLowerCase())) return;
       engines.push({
         id: node.name,
         engineType: part.engineType,

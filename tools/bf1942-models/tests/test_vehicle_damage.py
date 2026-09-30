@@ -283,18 +283,52 @@ class WaterDamageTests(unittest.TestCase):
         self.assertEqual(0, self.results["waterExitDry"]["acc"])
 
     def test_boats_do_not_drown(self) -> None:
-        # damageFromWater is false on the boat template. Armor caps max at 128.
-        self.assertEqual(128, self.results["boatNoWaterDamage"]["hp"])
+        # damageFromWater is false on the boat template. Its authored 500
+        # survives the spawn (HP-17).
+        self.assertEqual(500, self.results["boatNoWaterDamage"]["hp"])
 
     def test_set_routes_in_water_per_owner(self) -> None:
         # Both owner 3 (Sherman) and 4 (boat) marked in-water; only the Sherman
-        # loses HP. Boat max is capped at 128.
+        # loses HP. The boat keeps its authored 500 (HP-17).
         self.assertEqual(70, self.results["setWater"]["shermanHp"])
-        self.assertEqual(128, self.results["setWater"]["boatHp"])
+        self.assertEqual(500, self.results["setWater"]["boatHp"])
         self.assertEqual(0, self.results["setWater"]["shermanAcc"])
 
     def test_set_without_in_water_flag_loses_nothing(self) -> None:
         self.assertEqual(100, self.results["setNoWater"]["shermanHp"])
+
+
+class AboveCeilingTests(unittest.TestCase):
+    """HP-17: `setArmorComponent` calls `setMaxHitPoints` (ceiling 128) and then
+    `setHitPoints`, which raises the max to the starting value, so a hull
+    authored above 128 spawns at its authored value. The old spawn clamp put
+    an Elco80 and an AC-130 below their own critical thresholds from the
+    first tick, and they burned to death untouched."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["aboveCeiling"]
+
+    def test_spawn_is_the_authored_value_and_not_critical(self) -> None:
+        self.assertEqual([
+            {"hp": 500, "max": 500, "critical": False},
+            {"hp": 2000, "max": 2000, "critical": False},
+        ], self.results["spawn"])
+
+    def test_untouched_for_a_minute_they_stay_full(self) -> None:
+        for hull in self.results["after"]:
+            self.assertEqual(hull["max"], hull["hp"])
+            self.assertFalse(hull["critical"])
+            self.assertFalse(hull["destroyed"])
+            self.assertIsNone(hull["tier"])
+
+    def test_a_shot_down_ac130_burns_at_its_own_rate(self) -> None:
+        # 400 left after 1600 damage, under the 500 critical threshold, then
+        # ten whole seconds at 4 HP/s.
+        self.assertEqual({"hp": 360, "critical": True, "destroyed": False},
+                         self.results["burn"])
 
 
 class BlastGeometryTests(unittest.TestCase):

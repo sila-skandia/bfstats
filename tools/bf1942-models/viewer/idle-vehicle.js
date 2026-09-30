@@ -18,10 +18,10 @@
 //     moment anybody climbs in; on a vehicle nobody has entered yet it draws
 //     from the first frame of the level.
 //   - the recoil pose. `advance` walks `group.node` back to `userData.home`
-//     over `recoil.size / recoil.speed` seconds. A group released inside that
+//     over `3.14 / recoilSpeed` seconds (GUN-12). A group released inside that
 //     window leaves the barrel standing where the kick put it, and the fresh
-//     group the next entry collects starts at `recoil = 1` (home), so nothing
-//     ever writes the position again.
+//     group the next entry collects starts with no kick left (home), so
+//     nothing ever writes the position again.
 //   - `FireState` (seats.js), held in a `WeakMap` keyed on the FireArms node.
 //     The node is reused across a respawn, so a vehicle destroyed with a hot,
 //     half-empty, mid-reload gun is rebuilt around that same gun.

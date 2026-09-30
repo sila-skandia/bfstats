@@ -178,6 +178,96 @@ class ConCaptureTests(unittest.TestCase):
         self.assertEqual((4.0, 200), (bazooka.explosion_radius, bazooka.material2))
 
 
+# DC's `e_Browning_Damage/Effects.con`: the destroyed MG's smoke, whose colour
+# ramp carries an empty point. Before `con.curve` read ramps the engine's way it
+# baked as `[..., [40, ...], [], [100, ...]]`, and the viewer's sampler threw
+# `RangeError: Invalid array length` on it every frame.
+BROWNING_DESTROY_CON = """
+ObjectTemplate.create Emitter Em_Browning_Destroy
+ObjectTemplate.template Fx_Browning_Destroy
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.intensity CRD_NONE/10/0/0
+
+ObjectTemplate.create SpriteParticle Fx_Browning_Destroy
+ObjectTemplate.timeToLive CRD_UNIFORM/2/2/0
+ObjectTemplate.size CRD_UNIFORM/2/2.5/0
+ObjectTemplate.sizeOverTime 0/0.540239|67/1.72002|100/2.15998
+ObjectTemplate.gravityModifierOverTime 0/0.460005|39/0.490005|100/1
+ObjectTemplate.texture e_difus1
+ObjectTemplate.colorRGBAOverTime 0/255/255/255/133|40/41/38/36/133||100/26/23/19/0
+"""
+
+
+class EngineCurveReadTests(unittest.TestCase):
+    """`con.curve` reads a ramp the way the client's parser loop does (EMT-9).
+
+    `FUN_0051dab0` (scalar) and `FUN_00525e20` (colour): `int`, one separator
+    `char`, the value(s), write, and go round again while `get()` is `|`.
+    """
+
+    def test_a_clean_ramp_is_unchanged(self) -> None:
+        self.assertEqual([[0.0, 0.12], [100.0, 9.4]], con_mod.curve("0/0.12|100/9.4"))
+        self.assertEqual([[0.0, 255.0, 255.0, 255.0, 204.0], [100.0, 0.0, 0.0, 0.0, 0.0]],
+                         con_mod.curve("0/255/255/255/204|100/0/0/0/0", 4))
+
+    def test_an_empty_point_ends_the_ramp_and_zeroes_the_colour_before_it(self) -> None:
+        # The failed pass rewrites point 40 through the colour reader's one
+        # stack temporary, which holds the stream's address: a denormal, 0.
+        self.assertEqual([[0.0, 255.0, 255.0, 255.0, 133.0], [40.0, 0.0, 0.0, 0.0, 0.0]],
+                         con_mod.curve("0/255/255/255/133|40/41/38/36/133||100/26/23/19/0", 4))
+        # A scalar reads into the parser's own locals: the point stands.
+        self.assertEqual([[0.0, 1.0], [40.0, 2.0]], con_mod.curve("0/1|40/2||100/3"))
+
+    def test_a_trailing_bar_is_the_same_failed_pass(self) -> None:
+        self.assertEqual([[0.0, 1.0], [100.0, 2.0]], con_mod.curve("0/1|100/2|"))
+        self.assertEqual([[0.0, 1.0, 1.0, 1.0, 1.0], [100.0, 0.0, 0.0, 0.0, 0.0]],
+                         con_mod.curve("0/1/1/1/1|100/2/2/2/2|", 4))
+
+    def test_a_point_ends_where_its_separators_stop(self) -> None:
+        # Vanilla's `Fx_ExplFrozen_Snow`: `2,5` reads 2 and `get()` finds `,`.
+        self.assertEqual([[0.0, 0.5], [53.0, 2.0]], con_mod.curve("0/0.5|53/2,5|100/3,5"))
+        # `Fx_KatyushaFume_Smoke`'s last point carries eight values: four read.
+        self.assertEqual([[0.0, 212.0, 208.0, 200.0, 255.0], [100.0, 200.0, 200.0, 200.0, 0.0]],
+                         con_mod.curve("0/212/208/200/255|100/200/200/200/0/0/0/0", 4))
+        # The index is an `int`: EoD's `1.5/0.5` is index 1, value 5.
+        self.assertEqual([[0.0, 0.5], [1.0, 5.0]], con_mod.curve("0/0.5|1.5/0.5"))
+        # DC Final's `...|100/6rem`, a lost newline: 6, then `r` ends it.
+        self.assertEqual([[0.0, 2.04004], [100.0, 6.0]], con_mod.curve("0/2.04004|100/6rem"))
+
+    def test_an_unwritten_index_zero_keeps_the_default(self) -> None:
+        self.assertEqual(1.0, con_mod.CURVE_DEFAULT)
+        self.assertEqual([[0.0, 1.0], [100.0, 0.299997]], con_mod.curve("100/0.299997"))
+        self.assertEqual([[0.0, 1.0, 1.0, 1.0, 1.0], [80.0, 0.0, 0.0, 0.0, 117.0]],
+                         con_mod.curve("80/0/0/0/117", 4))
+
+    def test_indices_sort_the_last_write_wins_and_out_of_range_drops(self) -> None:
+        # DC Final's smoke grenade authors index 0 twice, the second last.
+        self.assertEqual([[0.0, 255.0, 255.0, 255.0, 0.0], [10.0, 255.0, 255.0, 255.0, 255.0],
+                          [70.0, 200.0, 200.0, 200.0, 100.0]],
+                         con_mod.curve("0/255/255/255/255|10/255/255/255/255|"
+                                       "70/200/200/200/100|0/255/255/255/0", 4))
+        self.assertEqual([[0.0, 1.0], [50.0, 1.0], [90.0, 1.0]],
+                         con_mod.curve("0/1|50/1|90/1|110/1"))
+
+    def test_a_first_point_with_no_value_is_no_ramp(self) -> None:
+        self.assertIsNone(con_mod.curve("1"))
+        self.assertIsNone(con_mod.curve(""))
+
+    def test_the_browning_smoke_bakes_the_engine_ramp(self) -> None:
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Effects/e_Browning_Damage/Effects.con", BROWNING_DESTROY_CON)
+        emitter = lib.object("Em_Browning_Destroy")
+        spec = effects.emitter_spec(emitter, lib.object(emitter.emitter_template))
+        particle = spec["particle"]
+        self.assertEqual([[0.0, 255.0, 255.0, 255.0, 133.0], [40.0, 0.0, 0.0, 0.0, 0.0]],
+                         particle["colorRGBAOverTime"])
+        self.assertTrue(all(point for point in particle["colorRGBAOverTime"]))
+        self.assertEqual([[0.0, 0.460005], [39.0, 0.490005], [100.0, 1.0]],
+                         particle["gravityModifierOverTime"])
+        self.assertEqual([[0.0, 255.0, 255.0, 255.0, 133.0], [40.0, 0.0, 0.0, 0.0, 0.0]],
+                         lib.object("Fx_Browning_Destroy").color_over_time)
+
+
 class SpecTests(unittest.TestCase):
     def test_bundle_tree_flattens_nested_bundles_and_keeps_placement(self) -> None:
         tree = effects.bundle_tree(library(), "RichoStoneDecal")
@@ -819,6 +909,23 @@ class CoreModuleTests(unittest.TestCase):
         # The interpolation branch takes its count from the EARLIER point, so a
         # shorter later point is NaN -- unchanged from the allocating form.
         self.assertEqual("NaN", into["shorterLater"]["got"][1])
+
+    def test_a_timeless_point_is_passed_over_not_thrown_on(self) -> None:
+        """Ledger EMT-9: a ramp baked with an empty point (DC's destroyed
+        Browning) made `sampleCurveInto` set `out.length = -1` and throw every
+        frame. Both samplers now read around it, and agree while doing so."""
+        into = self.results["into"]["curve"]
+        # 70 % is between 40 and 100 with the empty point between them.
+        row = into["emptyBetween"]
+        self.assertEqual(4, row["gotLen"])
+        k = 30 / 60
+        self.assertEqual([41 + (26 - 41) * k, 38 + (23 - 38) * k, 36 + (19 - 36) * k, 133 * (1 - k)],
+                         row["got"])
+        self.assertEqual([2], into["emptyFirst"]["got"])       # before the first real point
+        self.assertEqual([2], into["nullPoint"]["got"])        # 0 -> 100 across the null
+        self.assertEqual([3], into["emptyLast"]["got"])        # held past the last real point
+        self.assertEqual(-1, into["onlyEmpty"]["gotLen"])      # nothing to read: no ramp
+        self.assertIsNone(into["onlyEmpty"]["want"])
 
     def test_eval_particle_into_matches_the_allocating_form(self) -> None:
         """`evalParticleInto` fills one module-level record; same numbers.

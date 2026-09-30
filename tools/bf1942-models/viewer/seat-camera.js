@@ -3,7 +3,9 @@ import { VehicleCamera, FixedSubject } from './vehicle-camera.js';
 import { seatViewModes, noseCamOffset } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
-import { CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor } from './chase-camera.js';
+import {
+  CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor, chaseFrameNode,
+} from './chase-camera.js';
 import { effectNameFor } from './crash-damage.js';
 
 /**
@@ -172,9 +174,10 @@ export function createSeatCamera(page) {
   // the world matrices, so the tower it sees is the one being drawn. Reading the
   // raw tick pose here is what would make the view judder at 30 Hz.
   //
-  // Which frame supplies forward/up is the contested part - the W4-C brief says
-  // the turret, both binaries say the hull - and `chaseLawFor` owns that answer.
-  // `?chase=engine` is the law as read; `?chase=legacy` is the old framing.
+  // Which frame supplies forward/up is `chaseLawFor`'s answer: the hull, as
+  // both binaries read it (CVM-2), for every seat whose Camera rides an aim
+  // axis. `?chase=engine` widens the law to every seat, `?chase=turret` frames
+  // it off the seat Camera's own axes, `?chase=legacy` is the old framing.
   const CHASE_OPTION = page.params.get('chase');
   const chaseRig = {
     law: null,            // chaseLawFor()'s answer for the mounted root seat
@@ -231,8 +234,9 @@ export function createSeatCamera(page) {
 
   /** Decide the law for the seat just taken. Called from `buildSeatView`, after
    *  the seat's rig exists: the anchor is THIS seat's Camera (the engine's
-   *  `camM`, which for a gunner rides the gun), the frame the root's or the
-   *  Camera's parent per `chaseLawFor`, and the radius the root's. */
+   *  `camM`, which for a gunner rides the gun, its pivot included), the frame
+   *  the root's (or the Camera's own under `?chase=turret`, `chaseLawFor`),
+   *  and the radius the root's. */
   function mountChaseLaw() {
     chaseRig.law = null;
     chaseRig.camera = page.occupancy?.cameraNode() || null;
@@ -272,9 +276,11 @@ export function createSeatCamera(page) {
       }
       return false;
     }
-    // forward/up: the Camera's parent (the brief's turret frame, a viewer
-    // choice) or the vehicle root (what both binaries read).
-    const frame = rig.law.frameFromAim ? rig.camera.parent : rig.root;
+    // forward/up: the vehicle root, what both binaries read, or under
+    // `?chase=turret` the seat Camera's own axes. Never the Camera's parent:
+    // a pintle MG's mount is turned round under a Camera that faces back
+    // down it, and that frame hung the eye in front of the gun.
+    const frame = chaseFrameNode(rig.law, rig.root, rig.camera);
     frame.getWorldQuaternion(rig.quat);
     rig.fwd.set(0, 0, -1).applyQuaternion(rig.quat);
     rig.up.set(0, 1, 0).applyQuaternion(rig.quat);

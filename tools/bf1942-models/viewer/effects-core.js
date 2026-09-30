@@ -78,19 +78,30 @@ export function gaussian(rand = Math.random) {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-/** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
+/**
+ * Piecewise-linear sample of an over-time ramp at `phase` (0..100).
+ *
+ * A point with no time at all (`[]`, `null`) is passed over as if it were not
+ * there, so a ramp baked before `con.curve` read ramps the way the engine does
+ * (ledger EMT-9: DC's `40/...||100/...` shipped as an empty point) cannot throw
+ * inside a frame. Every point it does read is used exactly as before.
+ */
 export function sampleCurve(points, phase) {
   if (!points || !points.length) return null;
-  if (phase <= points[0][0]) return points[0].slice(1);
-  for (let i = 1; i < points.length; i++) {
-    if (phase <= points[i][0]) {
-      const [t0, ...v0] = points[i - 1];
-      const [t1, ...v1] = points[i];
+  let a = null;
+  for (let i = 0; i < points.length; i++) {
+    const b = points[i];
+    if (!b || !b.length) continue;
+    if (phase <= b[0]) {
+      if (a === null) return b.slice(1);
+      const [t0, ...v0] = a;
+      const [t1, ...v1] = b;
       const k = t1 === t0 ? 1 : (phase - t0) / (t1 - t0);
       return v0.map((v, j) => v + (v1[j] - v) * k);
     }
+    a = b;
   }
-  return points[points.length - 1].slice(1);
+  return a === null ? null : a.slice(1);
 }
 
 /**
@@ -106,15 +117,20 @@ export function sampleCurve(points, phase) {
  *
  * `out` is the caller's scratch and is valid only until its next call — never
  * hold it. `sampleCurve` stays the export for everything else.
+ *
+ * It passes over a timeless point (`[]`, `null`) the same way. That point is
+ * what made DC's wrecked Browning throw here every frame: `out.length = -1`
+ * off an empty earlier point is a RangeError, and the throw skipped the rest of
+ * the page's world presentation with it.
  */
 export function sampleCurveInto(points, phase, out) {
   if (!points || !points.length) return -1;
-  const first = points[0];
-  if (phase <= first[0]) return fill(out, first);
-  for (let i = 1; i < points.length; i++) {
+  let a = null;
+  for (let i = 0; i < points.length; i++) {
     const b = points[i];
+    if (!b || !b.length) continue;
     if (phase <= b[0]) {
-      const a = points[i - 1];
+      if (a === null) return fill(out, b);
       const k = b[0] === a[0] ? 1 : (phase - a[0]) / (b[0] - a[0]);
       // The allocating form maps over `v0`, so the component count is the
       // EARLIER point's, and a shorter later point makes `v1[j]` undefined and
@@ -123,8 +139,9 @@ export function sampleCurveInto(points, phase, out) {
       out.length = a.length - 1;
       return a.length - 1;
     }
+    a = b;
   }
-  return fill(out, points[points.length - 1]);
+  return a === null ? -1 : fill(out, a);
 }
 
 /** `point.slice(1)` — the components without the phase — in place. `out` is

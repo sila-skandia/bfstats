@@ -245,6 +245,13 @@ export class GunFire {
     return collectGroups(this, root, options);
   }
 
+  /**
+   * `onRelease(group, { distance })`: the burst `group` fired is over, and
+   * its release patches are due (`gun-cycle.js` `releaseTick`, SND-12). Null
+   * leaves them unplayed, which is what the model browser does.
+   */
+  onRelease = null;
+
   /** Hold or release the trigger. Idempotent, so it can be driven per frame.
    *
    * Engaging the trigger does NOT reset `cooldown`. It used to, on the
@@ -353,6 +360,12 @@ export class GunFire {
     // handler written before this signature existed ignores the second
     // argument and spends one, which is what it did before.
     this.onShot?.(group, pull.rounds);
+    // `Fire` opens the burst for `updateSound`: no round for 0 s, trigger
+    // held, a release owed (`+0x230`, `+0x225`, `+0x226`; SND-13). Here and
+    // not in the trigger's path, so a replayed or bot round counts too.
+    group.sinceRound = 0;
+    group.soundHeld = true;
+    group.soundReleased = false;
     for (const barrel of pull.barrels) {
       fireBarrel(this, group, group.muzzles[barrel]);
     }

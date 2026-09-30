@@ -3,6 +3,37 @@
 // (features/vehicle-instance-refactor, Part 2d).
 
 /**
+ * One line per level variant of `kit` (`kits.json` `levelVariants`): the
+ * levels that run their own copy of the kit, and what that copy changes. A
+ * level's declaration of a template beats the mod's (ledger LOAD-1, LOAD-2),
+ * so on those levels this is the kit a soldier gets.
+ */
+export function variantNotes(kit) {
+  const base = (kit?.items || []).map(item => item.template);
+  return (kit?.levelVariants || []).map(variant => {
+    const changes = [];
+    if (variant.items) {
+      const own = variant.items.map(item => item.template);
+      const lower = names => names.map(name => String(name).toLowerCase());
+      const added = own.filter(name => !lower(base).includes(String(name).toLowerCase()));
+      const dropped = base.filter(name => !lower(own).includes(String(name).toLowerCase()));
+      if (added.length) changes.push(`+ ${added.join(', ')}`);
+      if (dropped.length) changes.push(`without ${dropped.join(', ')}`);
+      if (!added.length && !dropped.length) changes.push('its items in another order');
+    }
+    if (variant.primary) changes.push(`spawns holding ${variant.primary}`);
+    if (variant.worn) {
+      changes.push(`wears ${variant.worn.map(part => part.template).join(', ') || 'nothing'}`);
+    }
+    if (variant.pickup) changes.push(`lies on the ground as ${variant.pickup.geometry}`);
+    if (variant.overrideAirMovementInhibitations === true) changes.push('no parachute (nochute)');
+    if (variant.overrideAirMovementInhibitations === false) changes.push('a parachute');
+    const levels = (variant.levels || []).map(level => level.replace(/_/g, ' ')).join(' · ');
+    return `${levels}: the level's own ${kit.template}${changes.length ? `, ${changes.join('; ')}` : ''}.`;
+  });
+}
+
+/**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
@@ -60,6 +91,12 @@ export function createKitPanels(page) {
     document.getElementById('map-count').textContent = String(levels.length);
     document.getElementById('maps').textContent =
       levels.map(level => level.replace(/_/g, ' ')).join(' · ');
+    const variants = document.getElementById('variants');
+    if (variants) {
+      const notes = variantNotes(kit);
+      variants.hidden = !notes.length;
+      variants.textContent = notes.join(' ');
+    }
 
     const missing = (kit.worn || []).filter(part => !part.glb);
     const note = document.getElementById('note');

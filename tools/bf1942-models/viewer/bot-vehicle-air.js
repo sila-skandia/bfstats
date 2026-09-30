@@ -617,6 +617,194 @@ export function towardsPoint({ orientation, position, velocity, angularVelocity 
 }
 
 /**
+ * The helicopter pilot's constants. Every one is this file's own
+ * (INVENTION): see `helicopterControl`.
+ */
+export const HELI = {
+  /** Cruise speed, as a share of the unit's `maxSpeed` (Mobile +8), and a
+   *  ceiling on it. */
+  cruiseFraction: 0.5,
+  cruiseMax: 40.0,
+  /** Wanted ground speed per metre still to go, so the hull slows into its
+   *  point and stops over it. */
+  approachGain: 0.25,
+  /** Wanted acceleration per m/s of velocity error, and the tilt it may take
+   *  (radians): a hover engine's rack swings +-20 degrees. */
+  velocityGain: 0.6,
+  maxPitch: 0.30,
+  maxRoll: 0.25,
+  /** The attitude and heading loops' natural frequencies (rad/s) and damping.
+   *  Their gains are these over the airframe's own authority
+   *  (`Aircraft.controlAuthority`), so an AH-64 and a Mi-24, ten times apart
+   *  in roll, close at the same rate. */
+  attitudeOmega: 1.6,
+  headingOmega: 1.2,
+  damping: 1.0,
+  /** The authority taken when the airframe cannot say, rad/s^2 per stick. */
+  defaultAuthority: 0.2,
+  /** The most the hull is tilted, both axes together (radians). */
+  maxTilt: 0.35,
+  /** Heading is held, not turned, inside this much of the point. */
+  headingHoldRange: 30.0,
+  /** Vertical: wanted climb per metre of height error, its limits, and the
+   *  collective's proportional and integral gains on the climb error. */
+  altitudeGain: 0.5,
+  climbMax: 8.0,
+  sinkMax: 6.0,
+  collectiveGain: 0.12,
+  collectiveIntegral: 0.08,
+  /** Where the integral starts: about a DC hover's collective (the AH-64
+   *  hovers at T1 0.647, `features/flyable-vehicles/helicopters.md`). */
+  collectiveBias: 0.65,
+  /** Below this height over the ground the hull climbs level before it
+   *  tilts, so it does not drag its skids. */
+  liftOffHeight: 5.0,
+  /** The descent a landing holds, m/s, and the probe ahead of a transit. */
+  landSink: 3.0,
+  probe: 100.0,
+};
+
+const wrapPi = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * A bot flying an airframe whose engines point off its nose (a helicopter,
+ * the Harrier on its lift jets; `vectored-engines.js`): collective, cyclic
+ * and pedals for one tick, toward `target` (viewer frame).
+ *
+ * THE WHOLE LAW IS AN INVENTION, and says so. The engine has no helicopter
+ * pilot: its only air control is `PlaneControl` (`towardsPoint` 0x08629730,
+ * `towardsDirection` 0x08629fa0, `aimAtDirection` 0x08629cf0; a symbol search
+ * of lnxded finds no other), and DC's AH-64 hands it a `ControlInfo3d` with
+ * `maxRollAngle 0.1999` against a plane's 0.9. Flown through the plane law on
+ * this viewer's helicopter physics an AH-64 climbs 500 m before its takeoff
+ * gate (50 m up at half its `maxSpeed`) lets it turn, then tumbles. So the
+ * bot flies a helicopter the way its own controls work instead:
+ *
+ *  - The collective holds a climb rate: `vy* = clamp(0.5 (y* - y))`, and the
+ *    channel is a PI on `vy* - vy` started at a hover's 0.65. It is a HELD
+ *    axis (`world-vehicle-tick.js`): the engine's own roll axis and its idle
+ *    floor do the rest. `y*` is the higher of the ground under the hull and
+ *    the ground `probe` ahead, plus the move's clearance.
+ *  - The cyclic tilts the thrust: a wanted velocity toward the point (slowing
+ *    in to it) becomes a wanted acceleration, that becomes a nose-down and a
+ *    right-wing-down angle, and the sticks close on those with rate damping.
+ *    `c_PIPitch` +1 puts the nose down and `c_PIRoll` +1 the right wing down.
+ *  - The pedals turn the nose to the point's bearing (`c_PIYaw` +1 turns
+ *    right), and hold the heading inside `headingHoldRange` of it.
+ *  - `land` sinks at `landSink` over the point and, once down, drops the
+ *    collective to its floor.
+ *  - `aim` (a world direction, a gun's firing line) replaces the velocity
+ *    loop: the nose turns to its bearing and pitches down its elevation, the
+ *    wings are held level, and the collective still holds the height, so the
+ *    hull noses into its target the way a strafing pass does.
+ *
+ * `state` carries the collective's integral between ticks. `groundAt(x, z)`
+ * is the ground (and water) height. Returns `{ collective, pitch, roll,
+ * rudder, arrived, landed, dbg }`, the three stick channels already in the
+ * world tick's -1..1.
+ */
+export function helicopterControl(state, {
+  orientation, position, velocity, angularVelocity = [0, 0, 0], target, clearance = 50,
+  groundAt = null, maxSpeed = 90, radius = 10, land = false, hover = false, dt = 1 / 30, grounded = false,
+  authority = null, aim = null,
+}) {
+  const F = rotate(orientation, [0, 0, -1]);
+  const R = rotate(orientation, [1, 0, 0]);
+  const w = angularVelocity;
+  const g = 14.73;
+  const ground = (x, z) => {
+    const h = groundAt ? groundAt(x, z) : -Infinity;
+    return Number.isFinite(h) ? h : -Infinity;
+  };
+  const here = ground(position[0], position[2]);
+  const agl = Number.isFinite(here) ? position[1] - here : Infinity;
+  const dx = target[0] - position[0], dz = target[2] - position[2];
+  const dist = Math.hypot(dx, dz);
+  const arrived = Math.hypot(dx, target[1] - position[1], dz) < PLANE.arriveRadiusFactor * radius
+    || (hover && dist < PLANE.arriveRadiusFactor * radius);
+
+  // Horizontal: where to go and how fast.
+  const cruise = Math.min(HELI.cruiseMax, HELI.cruiseFraction * Math.max(1, maxSpeed));
+  const speedWant = Math.min(cruise, HELI.approachGain * dist);
+  const vWant = dist > 1e-3 ? [dx / dist * speedWant, dz / dist * speedWant] : [0, 0];
+  let ax = HELI.velocityGain * (vWant[0] - velocity[0]);
+  let az = HELI.velocityGain * (vWant[1] - velocity[2]);
+
+  // Vertical: the height to hold.
+  let yWant;
+  if (land) {
+    yWant = -Infinity;
+  } else {
+    const speed = Math.hypot(velocity[0], velocity[2]);
+    const ax0 = speed > 1 ? velocity[0] / speed * HELI.probe : 0;
+    const az0 = speed > 1 ? velocity[2] / speed * HELI.probe : 0;
+    let floor = here;
+    for (const t of [0.25, 0.5, 0.75, 1]) floor = Math.max(floor, ground(position[0] + ax0 * t, position[2] + az0 * t));
+    if (Number.isFinite(target[1]) && dist < HELI.probe) floor = Math.max(floor, target[1] - clearance);
+    yWant = (Number.isFinite(floor) ? floor : position[1]) + clearance;
+  }
+  const vyWant = land ? -HELI.landSink
+    : clamp(HELI.altitudeGain * (yWant - position[1]), -HELI.sinkMax, HELI.climbMax);
+  const vyErr = vyWant - velocity[1];
+  if (state.bias === undefined) state.bias = HELI.collectiveBias;
+  const landed = land && grounded;
+  let collective;
+  if (landed) {
+    collective = -1;
+    state.bias = HELI.collectiveBias;
+  } else {
+    state.bias = clamp(state.bias + HELI.collectiveIntegral * vyErr * dt, 0, 1);
+    collective = clamp(state.bias + HELI.collectiveGain * vyErr, -1, 1);
+  }
+
+  // No tilt until the skids are clear of the ground, and none once down.
+  if (agl < HELI.liftOffHeight && !land) { ax = 0; az = 0; }
+  if (landed) { ax = -velocity[0]; az = -velocity[2]; }
+
+  // The wanted acceleration as a tilt: nose-down along the level nose, right
+  // wing down along the level right.
+  const fh = Math.hypot(F[0], F[2]) || 1;
+  const Fh = [F[0] / fh, F[2] / fh];
+  const Rh = [-Fh[1], Fh[0]];
+  const aF = ax * Fh[0] + az * Fh[1];
+  const aR = ax * Rh[0] + az * Rh[1];
+  // A collective at its stop has no lift to spare for tilting.
+  const spare = clamp((1 - state.bias) / 0.1, 0.25, 1);
+  let pitchWant = clamp(Math.atan2(aF * spare, g), -HELI.maxPitch, HELI.maxPitch);
+  let rollWant = clamp(Math.atan2(aR * spare, g), -HELI.maxRoll, HELI.maxRoll);
+  const tilt = Math.hypot(pitchWant, rollWant);
+  if (tilt > HELI.maxTilt) { pitchWant *= HELI.maxTilt / tilt; rollWant *= HELI.maxTilt / tilt; }
+  if (aim) {
+    pitchWant = clamp(Math.asin(clamp(-aim[1], -1, 1)), -HELI.maxPitch, HELI.maxTilt);
+    rollWant = 0;
+  }
+  const noseDown = -Math.asin(clamp(F[1], -1, 1));
+  const rightDown = -Math.asin(clamp(R[1], -1, 1));
+  const noseDownRate = -(w[0] * R[0] + w[1] * R[1] + w[2] * R[2]);
+  const rightDownRate = w[0] * F[0] + w[1] * F[1] + w[2] * F[2];
+  // A PD per axis, its gains the loop's frequency over this airframe's own
+  // authority: `kp = w^2 / b`, `kd = 2 zeta w / b`.
+  const b = axis => Math.max(0.02, authority?.[axis] ?? HELI.defaultAuthority);
+  const pd = (axis, omega, error, rate) =>
+    clamp((omega * omega * error - 2 * HELI.damping * omega * rate) / b(axis), -1, 1);
+  const pitch = landed ? 0 : pd('pitch', HELI.attitudeOmega, pitchWant - noseDown, noseDownRate);
+  const roll = landed ? 0 : pd('roll', HELI.attitudeOmega, rollWant - rightDown, rightDownRate);
+
+  // The pedals: the point's bearing, held once close.
+  const heading = Math.atan2(F[0], -F[2]);
+  if (aim && Math.hypot(aim[0], aim[2]) > 1e-3) {
+    state.heading = Math.atan2(aim[0], -aim[2]);
+  } else if (state.heading === undefined || dist > HELI.headingHoldRange) {
+    state.heading = dist > HELI.headingHoldRange ? Math.atan2(dx, -dz) : heading;
+  }
+  const headingRate = -w[1];
+  const rudder = landed ? 0 : pd('yaw', HELI.headingOmega, wrapPi(state.heading - heading), headingRate);
+
+  return { collective, pitch, roll, rudder, arrived, landed,
+           dbg: { agl, yWant, vyWant, bias: state.bias, pitchWant, rollWant, dist } };
+}
+
+/**
  * The boat's helm for one tick: `{ throttle, steer, angle, arrived }`, the
  * steer in the same sense as the tank law (`-(bearing - yaw)`).
  */

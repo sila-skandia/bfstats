@@ -281,22 +281,40 @@ export function installVehicleHooks(page) {
   // crash happen, is the wreck model parented, and did a load fail. The state
   // the world cannot show once the intact mesh is sitting on the ground.
   window.__wrecks = () => page.wreckState();
-  window.__vehicles = () => [...page.vehicleDamage.byOwner.entries()].map(([owner, v]) => ({
-    owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
-    max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,
-    criticalDamage: v.criticalDamage,
-    // Where it stands, which is also the point a blast measures its distance
-    // to (HP-9: the transform origin, not a bounding box). A check that wants
-    // to stand a man beside one, or to know which neighbour a shell should
-    // have caught, needs this and has had to guess at it until now.
-    pos: page.damageVisuals.get(owner)?.node
-      ? page.damageVisuals.get(owner).node.getWorldPosition(page.splashPos).toArray()
-        .map(n => Math.round(n * 100) / 100)
-      : null,
-    tier: v.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
-    running: page.damageVisuals.get(owner)?.handles.length ?? 0,
-    tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
-  }));
+  // Every registered damageable object: its hit points and tier, and where
+  // it stands. One hook for what two used to answer: `test-hooks-world.js`
+  // defined its own after this one (x/y/z and `wrecked`, the node's name, raw
+  // hit points) and, installed later, replaced it, so `pos` and `tiers` never
+  // came back. Every field of both is here, the later one's values where they
+  // differed (raw `hp`, the node's name), so either caller's reads still work:
+  // the repair sweep and blast tests read `x/y/z`, leakcheck `pos`.
+  //
+  // Where it stands is also the point a blast measures its distance to (HP-9:
+  // the transform origin, not a bounding box). Owners come in `damageVisuals`
+  // order, as before, and any the damage set holds without a visual follow.
+  window.__vehicles = () => {
+    const owners = [...page.damageVisuals.keys()];
+    for (const owner of page.vehicleDamage.byOwner.keys()) {
+      if (!page.damageVisuals.has(owner)) owners.push(owner);
+    }
+    return owners.map(owner => {
+      const v = page.vehicleDamage.get(owner);
+      const visual = page.damageVisuals.get(owner) ?? null;
+      const at = visual?.node ? visual.node.getWorldPosition(page.splashPos).toArray() : null;
+      return {
+        owner, name: visual?.node?.name ?? v?.name ?? null,
+        hp: v ? v.hitPoints : null, max: v ? v.maxHitPoints : null,
+        critical: v ? v.critical : null, destroyed: v ? v.destroyed : null,
+        criticalDamage: v ? v.criticalDamage : null,
+        wrecked: !!visual?.wrecked,
+        x: at ? at[0] : null, y: at ? at[1] : null, z: at ? at[2] : null,
+        pos: at ? at.map(n => Math.round(n * 100) / 100) : null,
+        tier: v?.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
+        running: visual?.handles.length ?? 0,
+        tiers: v ? v.effects.map(e => ({ hp: e.hp, effect: e.effect })) : [],
+      };
+    });
+  };
   // The land vehicle the player is currently driving, for a headless drive.
   // Reading its state is not enough to *test* one: the renderer manages a
   // couple of frames a second on a real level under SwiftShader, which pins

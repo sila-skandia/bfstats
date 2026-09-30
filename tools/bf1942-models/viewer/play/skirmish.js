@@ -168,6 +168,12 @@ export function createSkirmishScreen({
     for (const level of menuLevels.levels) {
       const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
       if (!entry) continue;
+      // The game's own rule (`menu-levels.json` `inGameList`): Instant Battle
+      // lists a level only when its root ships `SinglePlayerAllied.con` or
+      // `SinglePlayerAxis.con` (BF1942.exe 0x006dca77..0x006dca83). A pack
+      // written before the rule was read carries no `singlePlayerSides` and
+      // keeps every level, as it always did.
+      if (level.singlePlayerSides && !level.singlePlayer) continue;
       out.push({
         ...level,
         map: entry.name,
@@ -228,10 +234,24 @@ export function createSkirmishScreen({
 
   // --- selection -------------------------------------------------------------
 
+  /** The sides a level can be played from: the ones whose
+   *  `SinglePlayer<Side>.con` it ships (the level's `+0x71` / `+0x70`). */
+  function sidesOf(level) {
+    const sides = level?.singlePlayerSides;
+    if (!sides) return [AXIS, ALLIED];
+    const out = [];
+    if (sides.axis) out.push(AXIS);
+    if (sides.allied) out.push(ALLIED);
+    return out.length ? out : [AXIS, ALLIED];
+  }
+
   function select(index) {
     if (!levels.length) return;
     state.index = Math.min(levels.length - 1, Math.max(0, index));
     state.level = levels[state.index];
+    // A level with one side's script offers that side alone.
+    const sides = sidesOf(state.level);
+    if (!sides.includes(state.team)) state.team = sides[0];
     const box = listBox(layout);
     if (box) state.scroll = scrollTo(layout, box, state.scroll, state.index, levels.length);
     for (const level of [state.level]) {
@@ -251,7 +271,9 @@ export function createSkirmishScreen({
   }
 
   function setTeam(team) {
-    state.team = team === AXIS ? AXIS : ALLIED;
+    const wanted = team === AXIS ? AXIS : ALLIED;
+    if (!sidesOf(state.level).includes(wanted)) return;
+    state.team = wanted;
     paintSoon();
   }
 

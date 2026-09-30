@@ -360,6 +360,13 @@ out.blastDistance = {
     empty: [[], 50],
     shorterLater: [[[0, 1, 2, 3], [100, 9]], 50],
     noComponents: [[[0], [100]], 50],
+    // A timeless point, as DC's `40/...||100/...` was baked before `con.curve`
+    // read ramps the engine's way (ledger EMT-9): passed over, never thrown on.
+    emptyBetween: [[[0, 255, 255, 255, 133], [40, 41, 38, 36, 133], [], [100, 26, 23, 19, 0]], 70],
+    emptyFirst: [[[], [10, 2], [100, 4]], 5],
+    nullPoint: [[[0, 1], null, [100, 3]], 50],
+    emptyLast: [[[0, 1], [50, 3], []], 90],
+    onlyEmpty: [[[], []], 50],
   };
   const scratch = [];
   out.into = { curve: {} };

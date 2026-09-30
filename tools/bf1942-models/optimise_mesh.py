@@ -179,7 +179,7 @@ def run_then_optimise(main, default_out: Path) -> int:
     known, rest = pre.parse_known_args(sys.argv[1:])
     sys.argv = [sys.argv[0], *(a for a in sys.argv[1:] if a != "--no-optimise")]
     code = main()
-    if known.no_optimise or {"-h", "--help", "--list", "--dry-run"} & set(rest):
+    if known.no_optimise or {"-h", "--help", "--list", "--dry-run", "--index-only"} & set(rest):
         return code
     return code or (1 if optimise_bake(known.out) else 0)
 

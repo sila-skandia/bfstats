@@ -27,7 +27,7 @@ import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { weaponNodeOf } from './soldier-dress.js';
-import { modelFileStem } from './model-file.js';
+import { byName, modelFileStem } from './model-file.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -109,8 +109,8 @@ export function createRemoteRenderer(ctx) {
 
   async function gaitClipsFor(weapon) {
     const manifest = await gaitsManifest();
-    const grip = manifest.weaponGrip?.[weapon] ?? weapon;
-    const gripPath = manifest.grips?.[grip];
+    const grip = byName(manifest.weaponGrip, weapon) ?? weapon;
+    const gripPath = byName(manifest.grips, grip);
     if (!manifest.lower) return [];
     let upper = gripPath ? await gaitBundle(gripPath) : [];
     if ((!upper || !upper.length) && gripPath !== 'gaits/Colt.gait.glb') {

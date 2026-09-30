@@ -21,6 +21,7 @@ test_gunfire_layers.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -137,9 +138,13 @@ class IdleVehicleTests(unittest.TestCase):
         self.assertEqual([], self.results["afterCollect"])
         self.assertEqual(1, self.results["firingShots"])
         self.assertIn("e_MuzzPanz", self.results["firingLit"])
-        # recoil.size 3 x RECOIL_KICK_SCALE, one 1/60 s frame into a 0.3 s
-        # recovery: the barrel is well out of battery.
-        self.assertGreater(self.results["firingOffHome"], 0.2)
+        # GUN-12: 0.025 x recoilSize deep on a half sine of 3.14 / recoilSpeed
+        # seconds, posed from the countdown before it runs down. One 1/60 s
+        # frame after the round the Sherman-sized kick (3 / 10) stands at
+        # 0.075 x sin(10 x (0.314 - 1/60)): 1.26 cm out of battery.
+        self.assertAlmostEqual(
+            0.075 * math.sin(10 * (3.14 / 10 - 1 / 60)),
+            self.results["firingOffHome"], delta=2e-4)
 
     def test_leaving_the_seat_puts_the_gun_out(self) -> None:
         self.assertTrue(self.results["releasedFromIndex"])

@@ -29,7 +29,7 @@ import { Vehicle } from './vehicle-base.js';
 import { Aircraft, CORSAIR, GRAVITY, calculateLift, aircraftSpec } from './aircraft.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
-import { aimAtDirection } from './bot-vehicle-air.js';
+import { aimAtDirection, helicopterControl } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
@@ -1581,6 +1581,112 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       && e.chain.every(c => c.axes.every(a => a.reg.angle === 0)));
   }
 
+  // Parked with the pilot aboard and the collective released, standing 6
+  // degrees nose-up and 3 over on its wheels: the idle floor's thrust is off
+  // the vertical, and the wheels' contact friction (`groundFriction`, the
+  // plain-contact arm of `addFriction` a `c_PGFDummyGrip` takes) holds it.
+  // With the engine stopped (the pilot's seat empty) there is no thrust at all.
+  {
+    const parked = running => {
+      const heli = ah64({ collective: 0 });
+      heli.state.orientation.setFromEuler(new THREE.Euler(6 * Math.PI / 180, 0, 3 * Math.PI / 180, 'YXZ'));
+      heli.engineRunning = running;
+      const p0 = heli.state.position.clone();
+      fly(heli, 20);
+      return { moved: round(Math.hypot(heli.state.position.x - p0.x, heli.state.position.z - p0.z), 4),
+               speed: round(Math.hypot(heli.state.velocity.x, heli.state.velocity.z), 4),
+               revs: round(hoverEngine(heli).revs, 4), grounded: heli.state.grounded };
+    };
+    helicopter.parked = { running: parked(true), stopped: parked(false) };
+    // Touching down at 10 m/s, the same contact slides it to a stop at
+    // mu * 1.5 * 9.82 = 14.73 m/s^2 (mu the mean of 1.0 and 1.0).
+    const slide = ah64({ collective: 0 });
+    slide.state.velocity.set(0, 0, -10);
+    fly(slide, 0.5);
+    const half = Math.hypot(slide.state.velocity.x, slide.state.velocity.z);
+    fly(slide, 0.5);
+    helicopter.slide = { half: round(half, 3), speed: round(Math.hypot(slide.state.velocity.x, slide.state.velocity.z), 3) };
+    // The friction holds the hull only while it is down: full collective lifts it.
+    const lift = ah64({ collective: 1 });
+    fly(lift, 4);
+    helicopter.liftOff = { agl: round(lift.state.position.y - lift.spec.groundClearance), grounded: lift.state.grounded };
+    // A fixed-wing aircraft rolls on as before.
+    const plane = aircraft({ speed: 10, altitude: CORSAIR.groundClearance, throttle: 0, ground: 0 });
+    fly(plane, 1);
+    helicopter.fixedWingRolls = round(Math.hypot(plane.state.velocity.x, plane.state.velocity.z), 3);
+  }
+
+  // The collective is a held axis: let go, the Engine's own roll axis
+  // (`setAutomaticReset 1`) falls straight back to its 1500 floor. The note
+  // and the rotor read the revs of the named Engine, not the collective.
+  {
+    const heli = ah64({ altitude: 100, collective: 1 });
+    fly(heli, 2);
+    const up = round(hoverEngine(heli).t1, 4);
+    heli.setInput('c_PIThrottle', 0);
+    fly(heli, 0.25);
+    const dummy = heli.vectoredEngines.find(e => e.id === 'AH64DummyEngine');
+    helicopter.collectiveHeld = { up, released: round(hoverEngine(heli).t1, 4) };
+    helicopter.rpm = {
+      dummy: round(heli.engineRpm('AH64DummyEngine'), 4), dummyRevs: round(Math.abs(dummy.revs), 4),
+      hover: round(heli.engineRpm('AH64HoverEngine1'), 4),
+      hoverRevs: round(Math.abs(heli.vectoredEngines.find(e => e.id === 'AH64HoverEngine1').revs), 4),
+      throttle: round(heli.state.throttle, 4), rotor: heli.rotorEngine?.id ?? null,
+      fixedWing: aircraft().engineRpm('engine'),
+    };
+    const auth = heli.controlAuthority();
+    helicopter.hovers = heli.hovers;
+    helicopter.authority = { pitch: round(auth.pitch, 4), roll: round(auth.roll, 4), yaw: round(auth.yaw, 4) };
+  }
+
+  // A bot's helicopter law on the airframe: climb off the pad, transit 500 m
+  // over a 40 m hill, hover over the point, then land on it.
+  {
+    const hill = (x, z) => 40 * Math.exp(-(((x - 150) ** 2 + (z + 200) ** 2) / (2 * 80 ** 2)));
+    const heli = ah64({ collective: 0 });
+    heli.groundHeight = hill;
+    const target = [300, hill(300, -400) + 75, -400];
+    const state = {};
+    const out = { arrived: null, landed: null, maxTilt: 0, minAgl: Infinity, hoverDrift: 0 };
+    let land = false, rudder = 0;
+    for (let i = 0; i < 100 * 30; i++) {
+      const s = heli.state;
+      const t = (i + 1) / 30;
+      if (out.arrived !== null && t > out.arrived + 10) land = true;
+      const w = s.angularVelocity;
+      const r = helicopterControl(state, {
+        orientation: s.orientation, position: [s.position.x, s.position.y, s.position.z],
+        velocity: [s.velocity.x, s.velocity.y, s.velocity.z], angularVelocity: [w.x, w.y, w.z], target,
+        clearance: 50, groundAt: hill, maxSpeed: 90, radius: 10, hover: true, land, dt: 1 / 30,
+        grounded: s.grounded, authority: heli.controlAuthority(),
+      });
+      if (out.arrived === null && r.arrived) out.arrived = round(t, 2);
+      if (out.landed === null && r.landed) out.landed = round(t, 2);
+      // The world tick's rudder spring (`axisToward`: 2.4/s out, 3.2/s back).
+      const rate = (r.rudder === 0 ? 3.2 : 2.4) / 30;
+      rudder += Math.max(-rate, Math.min(rate, r.rudder - rudder));
+      heli.setInput('c_PIThrottle', r.collective);
+      heli.setInput('c_PIYaw', rudder);
+      heli.setInput('c_PIRoll', r.roll);
+      heli.setInput('c_PIPitch', r.pitch);
+      heli.integrate(1 / 30);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(s.orientation);
+      out.maxTilt = Math.max(out.maxTilt, Math.acos(Math.min(1, up.y)) * DEG);
+      if (t > 5 && !land) out.minAgl = Math.min(out.minAgl, s.position.y - hill(s.position.x, s.position.z) - heli.spec.groundClearance);
+      // How far off the point it hovers once it has settled over it.
+      if (out.arrived !== null && !land && t > out.arrived + 9) {
+        out.hoverDrift = Math.max(out.hoverDrift, Math.hypot(s.position.x - target[0], s.position.z - target[2]));
+      }
+    }
+    const s = heli.state;
+    out.maxTilt = round(out.maxTilt, 2);
+    out.minAgl = round(out.minAgl, 2);
+    out.hoverDrift = round(out.hoverDrift, 2);
+    out.final = { off: round(Math.hypot(s.position.x - target[0], s.position.z - target[2]), 2),
+                  grounded: s.grounded, speed: round(s.velocity.length(), 3) };
+    helicopter.pilot = out;
+  }
+
   results.helicopter = helicopter;
 }
 
@@ -1679,12 +1785,68 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       heli.setInput('c_PIThrottle', 0);
       fly(heli, 8);
       real.helicopters[name] = { vectored: heli.vectored, engines: heli.vectoredEngines.length,
-                                 idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y) };
+                                 idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y),
+                                 hovers: heli.hovers };
+    }
+    // Parked on their own wheels, pilot aboard, collective released, nose 6
+    // degrees up: the reviewer's AH-64 walked off at 2.6 m/s after 10 s.
+    real.parked = {};
+    for (const name of ['AH64', 'UH-60', 'Mi24D', 'AH-6']) {
+      const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, heli.spec.groundClearance, 0);
+      heli.state.orientation.setFromEuler(new THREE.Euler(6 * Math.PI / 180, 0, 0, 'YXZ'));
+      heli.setInput('c_PIThrottle', 0);
+      fly(heli, 20);
+      real.parked[name] = { moved: round(Math.hypot(heli.state.position.x, heli.state.position.z), 3),
+                            grips: [...new Set(heli.spec.wheels.map(w => w.grip))] };
+    }
+    // The bot's law flies each of them 700 m and puts it down on the point.
+    real.pilot = {};
+    for (const name of ['AH64', 'UH-60', 'Mi24D', 'AH-6', 'Mi8']) {
+      const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, heli.spec.groundClearance, 0);
+      const target = [500, 75, -500];
+      const state = {};
+      let arrived = null, landed = null, land = false, rudder = 0, maxTilt = 0;
+      for (let i = 0; i < 150 * 30; i++) {
+        const s = heli.state;
+        const t = (i + 1) / 30;
+        if (arrived !== null && t > arrived + 10) land = true;
+        const w = s.angularVelocity;
+        const r = helicopterControl(state, {
+          orientation: s.orientation, position: [s.position.x, s.position.y, s.position.z],
+          velocity: [s.velocity.x, s.velocity.y, s.velocity.z], angularVelocity: [w.x, w.y, w.z], target,
+          clearance: 50, groundAt: () => 0, maxSpeed: 90, radius: 10, hover: true, land, dt: 1 / 30,
+          grounded: s.grounded, authority: heli.controlAuthority(),
+        });
+        if (arrived === null && r.arrived) arrived = round(t, 2);
+        if (landed === null && r.landed) landed = round(t, 2);
+        const rate = (r.rudder === 0 ? 3.2 : 2.4) / 30;
+        rudder += Math.max(-rate, Math.min(rate, r.rudder - rudder));
+        heli.setInput('c_PIThrottle', r.collective);
+        heli.setInput('c_PIYaw', rudder);
+        heli.setInput('c_PIRoll', r.roll);
+        heli.setInput('c_PIPitch', r.pitch);
+        heli.integrate(1 / 30);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(s.orientation);
+        maxTilt = Math.max(maxTilt, Math.acos(Math.min(1, up.y)) * DEG);
+      }
+      const s = heli.state;
+      real.pilot[name] = { arrived, landed, maxTilt: round(maxTilt, 1),
+                           off: round(Math.hypot(s.position.x - 500, s.position.z + 500), 2), grounded: s.grounded };
     }
     for (const name of planes) {
       const plane = new Aircraft(await glb(dc(name)), null, { cockpit: false });
       real.planes[name] = { vectored: plane.vectored, inertiaLaw: plane.spec.inertiaLaw ?? null,
-                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)) };
+                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)), hovers: plane.hovers };
+    }
+    // The Harrier is vectored (its lift jets point down) but does not hover on
+    // its collective: W opens the forward engine. Its bots keep the plane law.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false });
+      real.harrier = { vectored: harrier.vectored, hovers: harrier.hovers };
     }
     results.realGlbs = real;
   } else {

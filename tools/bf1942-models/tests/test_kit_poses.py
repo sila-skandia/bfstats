@@ -16,7 +16,8 @@ from bf42 import kit as kit_mod  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout  # noqa: E402
 from extract_models import add_level_objects, add_level_textures  # noqa: E402
-from extract_pose import kit_pose_plan, merge_matrix, resolve_kit_poses  # noqa: E402
+from extract_pose import (kit_pose_plan, merge_matrix, resolve_kit_poses,  # noqa: E402
+                          write_pose_index)
 
 
 class _Machine:
@@ -78,6 +79,57 @@ ObjectTemplate.addTemplate Binoculars
     def test_a_kit_no_level_binds_is_not_planned(self) -> None:
         jobs, _ = self.plan({"DC_Gazala": {1: TeamLoadout("IraqSoldier", {0: "Iraq_Assault"})}})
         self.assertNotIn("Iraq_Unbound", [kit for kits in jobs.values() for kit in kits])
+
+
+class RandomKitPosePlanTests(unittest.TestCase):
+    """A kit whose spawn weapon is rolled (ledger KIT-1) is seen holding each
+    variant, so each is a job: FHSW's British tank commander with a No2 or a
+    Sten. The bundle itself names no animation state and is never posed."""
+
+    def test_each_variant_of_a_rolled_primary_is_a_job(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/French/Objects.con",
+                        "ObjectTemplate.create BFSoldier FrenchSoldier\n")
+        library.add_con("Objects/Items/BritKit/Tanker/Objects.con", """
+ObjectTemplate.create Kit 5GB_TankCommander
+ObjectTemplate.addTemplate RandomGBTankcommander
+ObjectTemplate.setRandomGeometries 2
+ObjectTemplate.addTemplate KnifeAllies
+""")
+        for name, index in (("RandomGBTankcommander1", 3), ("RandomGBTankcommander2", 3),
+                            ("KnifeAllies", 1)):
+            library.add_con(f"Objects/HandWeapons/{name}/Objects.con",
+                            f"ObjectTemplate.create HandFireArms {name}\n"
+                            f"ObjectTemplate.itemIndex {index}\n")
+        machine = _Machine(["RandomGBTankcommander1", "RandomGBTankcommander2", "KnifeAllies"])
+        loadouts = {"Counterattack-1950": {2: TeamLoadout("frenchsoldier",
+                                                          {4: "5GB_TankCommander"})}}
+        with mock.patch.object(kit_mod, "level_loadouts", return_value=loadouts):
+            jobs, notes = kit_pose_plan(library, machine, [])
+        self.assertEqual({
+            ("FrenchSoldier", ("RandomGBTankcommander1", "KnifeAllies")): ["5GB_TankCommander"],
+            ("FrenchSoldier", ("RandomGBTankcommander2", "KnifeAllies")): ["5GB_TankCommander"],
+        }, jobs)
+        self.assertEqual([], notes["unposableKits"])
+
+
+class PoseIndexTests(unittest.TestCase):
+    """`poses/index.json`: every pose a tree holds, by kind, from the files."""
+
+    def test_the_index_lists_recipes_and_glbs_by_their_own_stems(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            for name in ("GermanSoldier__MP40.pose.glb", "FrenchSoldier__Mas36.pose.glb",
+                         "USSoldier__K98.pose.json", "USSoldier__K98.pose.glb",
+                         "USSoldier__K98.pose.report.json", "poses-matrix.json"):
+                (out / name).write_text("{}")
+            index = write_pose_index(out)
+            written = json.loads((out / "index.json").read_text())
+        self.assertEqual(index, written)
+        self.assertEqual("bf1942-pose-index/1", written["format"])
+        self.assertEqual(["USSoldier__K98"], written["recipe"])
+        self.assertEqual(["FrenchSoldier__Mas36", "GermanSoldier__MP40", "USSoldier__K98"],
+                         written["glb"])
 
 
 class ResolveKitPosesTests(unittest.TestCase):

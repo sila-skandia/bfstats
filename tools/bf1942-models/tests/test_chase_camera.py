@@ -5,9 +5,11 @@ The numbers are `Camera::getTransformation`'s own, read in both binaries
 `(-/+forward + 0.3 up) * 1.2 R`, eased by `1 - exp(-2 dt)`, trailing 0.6 s of
 velocity, anchored on the seat Camera and kept 1 m above the terrain.
 
-Which FRAME supplies forward/up is the part the round's brief and the binaries
-disagree on; `chaseLawFor` pins the page's answer (the brief's by default, the
-binaries' under `?chase=engine`) so a change to it is a deliberate one.
+Which FRAME supplies forward/up is `chaseLawFor`'s answer, pinned here so a
+change to it is a deliberate one: the hull, as both binaries read it (CVM-2),
+by default; the seat Camera's own axes under `?chase=turret`; never the
+Camera's parent, which is turned round under every pintle MG whose Camera
+faces back down it (the M1A1 commander's, the Sherman's).
 """
 
 from __future__ import annotations
@@ -16,9 +18,13 @@ import json
 import math
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from page_source import function_body  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
@@ -105,23 +111,60 @@ class ChaseCameraTests(unittest.TestCase):
         self.assertVec([0, 0, 4.8], self.results["eyeLiftedRel"])
         self.assertVec([10, -25, 20], self.results["eyeNoFloor"])
 
-    def test_the_default_is_the_brief_s_turret_frame(self) -> None:
+    def test_the_default_is_the_law_as_read_hull_frame(self) -> None:
         law = self.results["law"]
-        self.assertEqual({"law": "engine", "frameFromAim": True}, law["defaultTurret"])
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["defaultTurret"])
         self.assertEqual(law["defaultTurret"], law["unknownTurret"])
 
     def test_a_turretless_vehicle_is_left_exactly_as_it_was(self) -> None:
-        self.assertEqual({"law": "legacy", "frameFromAim": False},
+        self.assertEqual({"law": "legacy", "frame": "hull"},
                          self.results["law"]["defaultPlain"])
 
     def test_chase_engine_runs_the_law_as_read_for_everything(self) -> None:
         law = self.results["law"]
-        self.assertEqual({"law": "engine", "frameFromAim": False}, law["engineTurret"])
-        self.assertEqual({"law": "engine", "frameFromAim": False}, law["enginePlain"])
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["engineTurret"])
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["enginePlain"])
+
+    def test_chase_turret_follows_the_seat_camera_itself(self) -> None:
+        law = self.results["law"]
+        self.assertEqual({"law": "engine", "frame": "camera"}, law["turretTurret"])
+        self.assertEqual({"law": "legacy", "frame": "hull"}, law["turretPlain"])
 
     def test_chase_legacy_restores_the_old_framing(self) -> None:
-        self.assertEqual({"law": "legacy", "frameFromAim": False},
+        self.assertEqual({"law": "legacy", "frame": "hull"},
                          self.results["law"]["legacyTurret"])
+
+    def test_the_frame_node_is_the_hull_or_the_camera_never_its_parent(self) -> None:
+        flipped = self.results["flipped"]
+        self.assertEqual("hull", flipped["defaultNode"])
+        self.assertEqual("camera", flipped["turretNode"])
+        self.assertEqual("hull", flipped["legacyNode"])
+        self.assertEqual("hull", flipped["nullLawNode"])
+
+    def test_a_turned_round_mount_hangs_the_chase_behind_the_gun(self) -> None:
+        # R = 4 * 1.2: behind the hull and behind the gun is +Z.
+        flipped = self.results["flipped"]
+        self.assertVec([0, 1.44, 4.8], flipped["defaultTarget"])
+        self.assertVec([0, 1.44, 4.8], flipped["turretTarget"])
+        # The old default, the Camera's parent, put the eye in front of the
+        # gun looking back at it: the reported M1A1 commander MG view.
+        self.assertVec([0, 1.44, -4.8], flipped["parentTarget"])
+
+    def test_the_hull_frame_does_not_follow_the_gun_round(self) -> None:
+        flipped = self.results["flipped"]
+        self.assertVec([0, 1.44, 4.8], flipped["defaultTargetYawed"])
+        # `?chase=turret` swings behind the gun, which now points down +X.
+        self.assertVec([-4.8, 1.44, 0], flipped["turretTargetYawed"])
+
+
+class SeatCameraFrameTests(unittest.TestCase):
+    """The page's half: `seat-camera.js` takes the frame node from
+    `chaseFrameNode`, so the seat Camera's parent never frames a view."""
+
+    def test_the_external_law_asks_chase_frame_node(self) -> None:
+        body = function_body("chaseExternalLaw")
+        self.assertIn("chaseFrameNode(rig.law, rig.root, rig.camera)", body)
+        self.assertNotIn("camera.parent", body)
 
 
 if __name__ == "__main__":

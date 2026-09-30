@@ -569,6 +569,33 @@ LodSelectorTemplate.addLodDistance 400
         self.assertEqual([200.0, 400.0], selector.distances)
         self.assertEqual([], selector.comparisons)
 
+    def test_only_a_dist_compare_selector_is_flipped_by_the_inside_view(self) -> None:
+        # `lodObjectOn` writes the compare value only into a selector of class
+        # `DistCompareLodSelector` (CID 0x94b1). `DistCompareSelector2` is a
+        # class of its own (0x94b2), the vehicle root's intact/wreck ladder.
+        self.assertTrue(LodSelector("s", "DistCompareSelector").flips_in_inside_view)
+        self.assertTrue(LodSelector("s", "distcompareselector").flips_in_inside_view)
+        for kind in ("DistCompareSelector2", "DistanceSelector", "CompareSelector"):
+            self.assertFalse(LodSelector("s", kind).flips_in_inside_view, kind)
+
+    def test_compared_alternative_follows_get_lod_level_relative(self) -> None:
+        # One comparison of exactly 0.5: 1 from 0.5 up, whatever the distance.
+        cockpit = LodSelector("s", "DistCompareSelector", distances=[20.0],
+                              comparisons=[0.5])
+        self.assertEqual(1, cockpit.compared_alternative(1.0))
+        self.assertEqual(1, cockpit.compared_alternative(0.5))
+        self.assertEqual(0, cockpit.compared_alternative(0.0))
+        # Any other comparison is a `lower_bound` of the value in the list:
+        # EoD's one selector at 0.01 still shows alternative 1 inside.
+        odd = LodSelector("s", "DistCompareSelector", distances=[3.0],
+                          comparisons=[0.01])
+        self.assertEqual(1, odd.compared_alternative(1.0))
+        self.assertEqual(0, odd.compared_alternative(0.0))
+        # No comparison at all: `lower_bound` of an empty list, alternative 0.
+        bare = LodSelector("s", "DistCompareSelector", distances=[3.0])
+        self.assertEqual(0, bare.compared_alternative(1.0))
+        self.assertEqual(0, bare.compared_alternative(0.0))
+
     def test_geometry_set_skin_is_kept_on_the_template(self) -> None:
         library = ObjectLibrary()
         library.add_con(

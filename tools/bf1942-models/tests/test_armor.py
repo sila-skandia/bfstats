@@ -51,6 +51,8 @@ class ArmorModelTests(unittest.TestCase):
         self.assertEqual(0.001, self.results["constants"]["DEATH_EPSILON"])
         # R4-5: setMaxHitPoints' own ceiling.
         self.assertEqual(128, self.results["constants"]["MAX_HITPOINTS_CEILING"])
+        # HP-17: a template's hit-point words before a .con sets them.
+        self.assertEqual(10, self.results["constants"]["TEMPLATE_HITPOINTS_DEFAULT"])
 
     def test_spawn_is_full_and_alive(self) -> None:
         spawn = self.results["spawn"]
@@ -110,12 +112,55 @@ class ArmorModelTests(unittest.TestCase):
         self.assertEqual(0, r["hp"])
         self.assertTrue(r["destroyed"])
 
-    def test_max_hitpoints_ceiling(self) -> None:
-        # R4-5: 128 is a hard ceiling, applied even to a wildly over-authored
-        # template — this viewer never has one, but the rule is the engine's.
-        r = self.results["ceiling"]
-        self.assertEqual(128, r["max"])
-        self.assertEqual(128, r["hp"])
+    def test_spawn_above_the_ceiling_keeps_the_authored_value(self) -> None:
+        # HP-17: setArmorComponent calls setMaxHitPoints (ceiling 128) and
+        # then setHitPoints, which raises the max to the starting value. The
+        # 128 ceiling that made an Elco80 and an AC-130 spawn critical and
+        # bleed to death never survives a spawn with hitPoints == max.
+        r = self.results["spawnAboveCeiling"]
+        self.assertEqual({"max": 500, "hp": 500, "destroyed": False}, r["elco"])
+        self.assertEqual({"max": 2000, "hp": 2000, "destroyed": False}, r["ac130"])
+
+    def test_raised_max_is_the_max_for_heal_and_reset(self) -> None:
+        r = self.results["raisedMaxHeals"]
+        self.assertEqual(1300, r["afterDamage"])
+        self.assertEqual(700, r["gained"])
+        self.assertEqual(2000, r["hp"])
+        self.assertEqual(2000, r["max"])
+        self.assertEqual({"hp": 2000, "max": 2000, "destroyed": False},
+                         self.results["raisedMaxReset"])
+
+    def test_ceiling_applies_when_the_start_is_below_it(self) -> None:
+        # R4-5's ceiling is real: 155 authored, 40 to start -> 40/128.
+        self.assertEqual({"max": 128, "hp": 40}, self.results["ceilingBelowStart"])
+
+    def test_start_above_max_raises_the_max(self) -> None:
+        # HP-1: setHitPoints raises the max. DC's Forklift, 80 over 50.
+        self.assertEqual({"max": 80, "hp": 80}, self.results["startAboveMax"])
+
+    def test_setters(self) -> None:
+        r = self.results["setters"]
+        # setMaxHitPoints clamps and leaves hitPoints alone.
+        self.assertEqual({"max": 128, "hp": 30}, r["afterSetMax"])
+        # setHitPoints raises past the ceiling ...
+        self.assertEqual({"max": 600, "hp": 600}, r["afterSetHp"])
+        # ... and never lowers the max.
+        self.assertEqual({"max": 600, "hp": 20}, r["afterLower"])
+        # At or below the epsilon it kills, at exactly 0, and a dead Armor
+        # takes no new value.
+        self.assertEqual({"hp": 0, "destroyed": True}, r["afterEpsilon"])
+        self.assertEqual({"hp": 0, "destroyed": True}, r["afterDeath"])
+
+    def test_spawn_at_the_epsilon_is_dead(self) -> None:
+        self.assertEqual({"hp": 0, "destroyed": True}, self.results["spawnDead"])
+
+    def test_template_words(self) -> None:
+        # The console stores ceil(v) as an int, and an unset word is 10.
+        r = self.results["templateWords"]
+        self.assertEqual(2000, r["authored"])
+        self.assertEqual(13, r["fraction"])
+        self.assertEqual(10, r["missing"])
+        self.assertEqual(10, r["nullish"])
 
 
 if __name__ == "__main__":

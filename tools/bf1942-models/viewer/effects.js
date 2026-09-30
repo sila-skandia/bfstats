@@ -260,6 +260,10 @@ export class EffectPlayer {
     this.plays = 0;
     this.spawned = 0;
     this.dropped = 0;
+    // Particles and runs that threw and were dropped (`#fault`), and the
+    // templates that did it, each reported once.
+    this.faults = 0;
+    this.faulted = new Set();
     this.rand = Math.random;
   }
 
@@ -481,8 +485,20 @@ export class EffectPlayer {
       plays: this.plays,
       spawned: this.spawned,
       dropped: this.dropped,
+      faults: this.faults,
       bundles: this.library?.bundles.size ?? 0,
     };
+  }
+
+  /** A particle or a run threw: it is dropped, and the frame goes on.
+   *  An effect is a nicety; one bad template (ledger EMT-9's empty ramp point
+   *  was the first) must not take the rest of the page's frame with it. */
+  #fault(name, error) {
+    this.faults++;
+    const key = name ?? 'unnamed';
+    if (this.faulted.has(key)) return;
+    this.faulted.add(key);
+    console.warn(`effects: dropped ${key}: ${error?.message ?? error}`);
   }
 
   advance(dt) {
@@ -522,10 +538,15 @@ export class EffectPlayer {
         run.speed = velocity ? Math.hypot(velocity[0], velocity[1], velocity[2]) : 0;
       }
       let running = false;
-      for (const emitter of run.emitters) {
-        const count = emitter.clock.step(dt, run.speed);
-        if (!emitter.clock.done && !emitter.clock.stopped) running = true;
-        for (let n = 0; n < count; n++) this.#spawn(run, emitter, velocity);
+      try {
+        for (const emitter of run.emitters) {
+          const count = emitter.clock.step(dt, run.speed);
+          if (!emitter.clock.done && !emitter.clock.stopped) running = true;
+          for (let n = 0; n < count; n++) this.#spawn(run, emitter, velocity);
+        }
+      } catch (error) {
+        this.#fault(run.name, error);
+        running = false;
       }
       if (!running) {
         this.runs.splice(i, 1);
@@ -536,15 +557,21 @@ export class EffectPlayer {
     }
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      if (p.anchor) this.#follow(p);
-      const alive = integrateParticle(p, dt, this.gravity);
+      let alive = false;
+      try {
+        if (p.anchor) this.#follow(p);
+        alive = integrateParticle(p, dt, this.gravity);
+        if (alive) this.#draw(p);
+      } catch (error) {
+        this.#fault(p.spec?.template, error);
+        alive = false;
+      }
       if (!alive) {
         this.#recycle(p);
         this.particles.splice(i, 1);
         continue;
       }
       active = true;
-      this.#draw(p);
     }
     return active;
   }
