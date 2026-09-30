@@ -213,6 +213,51 @@ out.waterDeathFallback = deathTier(
   };
 }
 
+// Hulls authored above the 128 ceiling (HP-17), left alone for a minute at
+// 30 Hz. Under the old spawn clamp an Elco80 (500/500, critical at 350,
+// 40 HP/s) and DC's AC-130 (2000/2000, critical at 500, 4 HP/s) both spawned
+// at 128, below their own critical threshold, and burned to death untouched.
+// Their `armor` blocks as the level bakes carry them.
+const ELCO80 = {
+  hitpoints: 500, maxHitpoints: 500,
+  criticalDamage: 350, hpLostWhileCriticalDamage: 40,
+  hpLostWhileUpSideDown: 20, damageFromWater: false,
+  effects: BOAT.effects,
+};
+const AC130 = {
+  hitpoints: 2000, maxHitpoints: 2000,
+  criticalDamage: 500, hpLostWhileCriticalDamage: 4,
+  hpLostWhileDamageFromWater: 10, hpLostWhileUpSideDown: 10,
+  damageFromWater: true,
+  effects: [
+    { hp: 500, effect: 'e_B17Fire', offset: [0, 0, 0] },
+    { hp: 0, effect: 'e_ExplGas', offset: [0, 0, 0] },
+  ],
+};
+{
+  const set = new VehicleDamageSet();
+  set.add(1, ELCO80, { name: 'Elco80' });
+  set.add(2, AC130, { name: 'AC-130' });
+  const spawn = [1, 2].map(owner => {
+    const v = set.get(owner);
+    return { hp: v.hitPoints, max: v.maxHitPoints, critical: v.critical };
+  });
+  for (let i = 0; i < 60 * 30; i++) set.update(1 / 30);
+  const after = [1, 2].map(owner => {
+    const v = set.get(owner);
+    return { hp: v.hitPoints, max: v.maxHitPoints, critical: v.critical,
+             destroyed: v.destroyed, tier: v.shown?.threshold ?? null };
+  });
+  // Shot into its critical band, the AC-130 then burns at its own 4 HP/s.
+  const ac = set.get(2);
+  ac.damage(1600);                                     // 400 left: critical
+  for (let i = 0; i < 10 * 30 + 1; i++) set.update(1 / 30);
+  out.aboveCeiling = {
+    spawn, after,
+    burn: { hp: ac.hitPoints, critical: ac.critical, destroyed: ac.destroyed },
+  };
+}
+
 // The set: without inWaterOwners nothing burns underwater.
 {
   const set = new VehicleDamageSet();

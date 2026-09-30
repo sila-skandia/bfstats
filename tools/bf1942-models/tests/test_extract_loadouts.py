@@ -309,6 +309,66 @@ ObjectTemplate.create HandFireArms Parachute
         self.assertIsNone(weapons[4]["icon"])
 
 
+class RandomItemLoadoutTests(unittest.TestCase):
+    """FHSW's rolled kit items (ledger KIT-1): the bundle stays in the kit's
+    lists under its own name, its roll is written beside them for the page,
+    and every variant a spawn can hold has its AI entry."""
+
+    def manifest(self) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/BritKit/5TankCommander/Objects.con", """
+ObjectTemplate.create Kit 5GB_TankCommander
+ObjectTemplate.setType Engineer
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate RandomGBTankcommander
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate KnifeAllies
+""")
+        library.add_con("Objects/HandWeapons/!_PACK_COMMON/Compressed.con", """
+ObjectTemplate.create HandFireArms RandomGBTankcommander1
+ObjectTemplate.itemIndex 3
+ObjectTemplate.aiTemplate No2_ID3AI
+ObjectTemplate.create HandFireArms RandomGBTankcommander2
+ObjectTemplate.itemIndex 3
+ObjectTemplate.aiTemplate StenMK5_ID3AI
+ObjectTemplate.create HandFireArms KnifeAllies
+ObjectTemplate.itemIndex 1
+ObjectTemplate.create BFSoldier FrenchSoldier
+""")
+        library.add_con("Objects/HandWeapons/!_PACK_COMMON/Ai/Weapons.con", """
+weaponTemplate.create No2_ID3AI
+weaponTemplate.maxRange 30
+weaponTemplate.create StenMK5_ID3AI
+weaponTemplate.maxRange 60
+""")
+        init = "game.setTeamSkin 2 frenchsoldier\ngame.setKit 2 4 5GB_TankCommander\n"
+        return build_manifest(library, collect(library),
+                              {"Counterattack-1950": parse_level_kits(init)}, "FHSW")
+
+    def test_the_bundle_is_the_primary_and_holds_its_variants_slot(self) -> None:
+        row = self.manifest()["kits"]["5GB_TankCommander"]
+        self.assertEqual("RandomGBTankcommander", row["primary"])
+        self.assertEqual([(1, "KnifeAllies"), (3, "RandomGBTankcommander")],
+                         [(w["slot"], w["weapon"]) for w in row["weapons"]])
+
+    def test_the_roll_is_written_in_order_with_its_variants(self) -> None:
+        row = self.manifest()["kits"]["5GB_TankCommander"]
+        self.assertEqual([{"template": "RandomGBTankcommander", "count": 3,
+                           "variants": ["RandomGBTankcommander1", "RandomGBTankcommander2",
+                                        None]}], row["random"])
+
+    def test_every_variant_has_its_own_ai_entry(self) -> None:
+        ai = self.manifest()["aiWeapons"]
+        self.assertEqual("No2_ID3AI", ai["RandomGBTankcommander1"]["aiTemplate"])
+        self.assertEqual("StenMK5_ID3AI", ai["RandomGBTankcommander2"]["aiTemplate"])
+        self.assertNotIn("RandomGBTankcommander", ai)
+
+    def test_the_team_soldier_is_spelled_as_its_template(self) -> None:
+        # `setTeamSkin 2 frenchsoldier`; the files are `FrenchSoldier__...`.
+        level = self.manifest()["levels"]["counterattack-1950"]
+        self.assertEqual("FrenchSoldier", level["2"]["soldier"])
+
+
 def _fake_archives(content: dict[str, dict[str, bytes]]):
     """A stand-in for `RfaArchive` keyed by filename (as `tests/test_kit.py`)."""
     class _FakeArchive:

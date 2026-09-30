@@ -38,45 +38,64 @@
 export const DEATH_EPSILON = 0.001;
 
 /**
- * `setMaxHitPoints(float v)` never raises a max past this (`R4-5`,
- * `0x086c1fe8` = 128.0 exactly). **R4-5 re-verified from the bytes 2026-09-22**,
- * because its sibling R4-13 turned out to be wrong and because SHIPS DO EXCEED
- * IT — a Fletcher authors `maxhitpoints 300`, a Yamato and an Enterprise 600 —
- * so the old note here ("no vanilla soldier or Wake vehicle reaches it") was
- * true only of the cases it had looked at, and reads as if nothing does.
+ * `setMaxHitPoints(float v)` stores `min(v, 128)` (`0x086c1fe8` = 128.0
+ * exactly; lnxded `0x08173680`, client `0x004bbd40`). **The ceiling belongs to
+ * that one setter, and it does not survive a spawn** (HP-17, 2026-09-30).
  *
- * `Armor::setMaxHitPoints` lnxded `0x08173680` is eleven instructions and it is
- * a hard clamp:
+ * The 2026-09-22 reading here was right about the setter and wrong about the
+ * hull: it said a Yamato is a 128 HP object in retail and warned against
+ * passing the authored value through. It read `setMaxHitPoints` alone.
+ * `SimpleObjectTemplate::setArmorComponent` (`0x081ddae0`) builds every
+ * Armor by calling `setMaxHitPoints(template max)` (vtable `+0x10`,
+ * `0x081ddc43`) and **then** `setHitPoints(template hitPoints)` (`+0x18`,
+ * `0x081ddc5e`), and `setHitPoints` (`0x081726c0`) stores the value and, when
+ * it exceeds the max, stores it as the max too (`fsts [ebx+0x38]`, then
+ * `fstps [ebx+0x3c]` on the `v > max` fall-through at `0x0817271a`). Almost
+ * every template authors `hitPoints` equal to `maxHitPoints`, so a Yamato
+ * spawns 600/600, an Elco80 500/500 and DC's AC-130 2000/2000. The
+ * retail client says the same: bf42plus recordings read the live client
+ * Armor's `+0x3c` as 500 on Elco80 and Type38, 450 on the B17, 130 on the
+ * SBD and Stuka (`features/round-replay-capture` section 11.5).
  *
- *     fld [0x86c1fe8]   ; 128.0            st1
- *     fld [ebp+0xc]     ; v                st0
- *     fucom st(1) / fnstsw ax / test ah,0x45
- *     jne  0x81736a0    ; v <= 128 -> fstp st(1) pops the 128, v survives
- *     fstp st(0)        ; v  >  128 -> pops v, leaving 128.0
- *     fstp [eax+0x3c]   ; store whichever survived
- *
- * `test ah,0x45` reads fucom's C0/C2/C3: zero only when `v > 128`, which is the
- * fall-through that discards `v`. So a Yamato is a 128 HP object in the real
- * engine too, and this ceiling is parity rather than a lost field. **Do not
- * "fix" it by passing the authored value through** — that would make every ship
- * 2.3x to 4.7x tougher than retail. The extractor is emitting 300 and 600
- * correctly; the clamp is supposed to eat them.
+ * What the ceiling still does: a template whose `hitPoints` is below its
+ * over-128 max spawns with a 128 max (an FHSW `BrokenTiger`, 40 of 155,
+ * spawns 40/128). No other `setMaxHitPoints` caller was found (HP-17).
  */
 export const MAX_HITPOINTS_CEILING = 128;
 
+/**
+ * A template's `hitPoints` and `maxHitPoints` before any `.con` sets them:
+ * both 10 (`SimpleObjectTemplate` constructors `0x081dbd38`/`0x081dbd42` and
+ * `0x081dbfc8`/`0x081dbfd2`). The console words store `ceil(v)` as an
+ * unsigned int on the template (`ConsoleClass105`/`106::executeObjectMethod`,
+ * `0x081c1820`/`0x081c1c80`: round-up control word, `frndint`, `fistpll`), and
+ * `setArmorComponent` converts them back to float.
+ */
+export const TEMPLATE_HITPOINTS_DEFAULT = 10;
+
+/** One of a template's two hit-point words as the Armor receives it: the
+ *  authored value rounded up, or the template default when it was never
+ *  authored. */
+export function templateHitPoints(value) {
+  return Number.isFinite(value) ? Math.ceil(value) : TEMPLATE_HITPOINTS_DEFAULT;
+}
+
 export class Armor {
   /**
-   * @param {number} maxHitPoints template max, pre-ceiling (`R4-5`)
-   * @param {number} [hitPoints] starting HP; defaults to spawning full
+   * Spawns the way `setArmorComponent` does: `setMaxHitPoints(maxHitPoints)`
+   * first, then `setHitPoints(hitPoints)`, which raises the max to the
+   * starting value when that is higher (HP-3, HP-17).
+   *
+   * @param {number} maxHitPoints the template's max, before the ceiling
+   * @param {number} [hitPoints] the template's starting HP; defaults to the
+   *   same value, which spawns full
    */
   constructor(maxHitPoints, hitPoints = maxHitPoints) {
-    this.maxHitPoints = Math.min(maxHitPoints, MAX_HITPOINTS_CEILING);
-    // `hitPoints`'s default argument binds to the raw, pre-ceiling
-    // `maxHitPoints` (JS evaluates default parameters before the body runs),
-    // so an explicit "spawn full" call with an over-ceiling max would
-    // otherwise leave `hitPoints > this.maxHitPoints` — clamp here too.
-    this.hitPoints = Math.min(hitPoints, this.maxHitPoints);
-    this.destroyed = this.hitPoints <= DEATH_EPSILON;
+    this.destroyed = false;
+    this.maxHitPoints = 0;
+    this.hitPoints = 0;
+    this.setMaxHitPoints(maxHitPoints);
+    this.setHitPoints(hitPoints);
     /**
      * The body's latest round, `{ travel, height }` (`soldier-death.js`
      * `roundHit`), or null. The engine keeps it on the soldier's skeleton
@@ -86,6 +105,27 @@ export class Armor {
      * reads it.
      */
     this.lastHit = null;
+  }
+
+  /** `Armor::setMaxHitPoints` (`0x08173680`): `min(value, 128)`. It never
+   *  touches `hitPoints` (HP-1). */
+  setMaxHitPoints(value) {
+    this.maxHitPoints = value > MAX_HITPOINTS_CEILING ? MAX_HITPOINTS_CEILING : value;
+  }
+
+  /**
+   * `Armor::setHitPoints` (`0x081726c0`). A no-op once destroyed (this file
+   * never sets `canBeRepairedAndDestroyed`, the `+0x12a` escape). A value at
+   * or below the death epsilon is stored as exactly 0 and kills, through
+   * `status()`, as `damage` does. A value above the max becomes the max too:
+   * no ceiling applies here, which is how a 2000 HP template keeps its 2000.
+   */
+  setHitPoints(value) {
+    if (this.destroyed) return;
+    const next = value > DEATH_EPSILON ? value : 0;
+    if (next === 0) this.destroyed = true;
+    this.hitPoints = next;
+    if (next > this.maxHitPoints) this.maxHitPoints = next;
   }
 
   /**

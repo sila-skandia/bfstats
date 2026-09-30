@@ -210,8 +210,11 @@ class PoseComposeTests(unittest.TestCase):
         self.assertTrue(s["ownScene"])
         self.assertEqual(1, s["rigLoads"])
         self.assertEqual(1, s["weaponLoads"])
+        # The tree's pose index is asked once for the page; this stub's
+        # answer is no index, so the tree is guessed at as before.
         self.assertEqual(["models/poses/USSoldier__K98.pose.json",
-                          "models/poses/USSoldier__M1Garand.pose.json"], s["fetched"])
+                          "models/poses/USSoldier__M1Garand.pose.json",
+                          "models/poses/index.json"], s["fetched"])
 
     def test_one_pair_is_composed_once_and_cloned_by_the_caller(self) -> None:
         self.assertEqual({"samePromise": True, "sameScene": True}, self.r["cached"])
@@ -227,6 +230,36 @@ class PoseComposeTests(unittest.TestCase):
         # The gate is `format`, so any other `.pose.json` in the tree -- or a
         # 404 page that parses -- cannot be mistaken for one.
         self.assertEqual("USSoldier", self.r["fallback"]["notARecipe"])
+
+    # --- the trees' pose indexes --------------------------------------------
+
+    def test_a_mod_tree_s_own_pose_beats_vanilla_s_recipe(self) -> None:
+        # FHSW holds `GermanSoldier__K98` as one glb; vanilla holds a recipe
+        # for the pair. Asked by format first, vanilla's won and FHSW's
+        # riflemen wore vanilla's uniform.
+        i = self.r["indexed"]
+        self.assertEqual("K98.pose.glb", i["k98"])
+        self.assertIsNone(i["k98Recipe"])
+        self.assertNotIn("models/poses/GermanSoldier__K98.pose.json", i["fetches"])
+
+    def test_a_pose_is_found_whatever_the_case_the_caller_spells(self) -> None:
+        # The kit's `Mp40`, the file's `MP40` (ledger LOAD-7).
+        i = self.r["indexed"]
+        self.assertEqual("MP40.pose.glb", i["mp40"])
+        self.assertIn("models/mods/fhsw/poses/GermanSoldier__MP40.pose.glb", i["loads"])
+        self.assertNotIn("models/mods/fhsw/poses/GermanSoldier__Mp40.pose.glb", i["loads"])
+
+    def test_a_pair_only_vanilla_holds_composes_from_vanilla_s_rig(self) -> None:
+        i = self.r["indexed"]
+        self.assertTrue(i["usRecipe"])
+        # The mod tree is not asked for the recipe or for a rig it cannot hold.
+        self.assertNotIn("models/mods/fhsw/poses/rigs/USSoldier.rig.glb", i["loads"])
+        self.assertNotIn("models/mods/fhsw/poses/USSoldier__K98.pose.json", i["fetches"])
+
+    def test_a_pair_no_index_holds_asks_for_nothing(self) -> None:
+        i = self.r["indexed"]
+        self.assertIsNone(i["nobody"])
+        self.assertFalse([u for u in i["loads"] + i["fetches"] if "Nobody" in u])
 
     def test_an_uncached_composer_builds_a_scene_every_call(self) -> None:
         # For a caller that disposes what it stages (`poses.html`,

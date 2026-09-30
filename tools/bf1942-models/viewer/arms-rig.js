@@ -274,6 +274,16 @@ export function createArmsRig(page) {
 
   function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
                                          fade = viewmodelFade(hw, name) } = {}) {
+    // A weapon grafted onto the arms of the one held before it (`graftRig`)
+    // has no fire state: `BFSoldier::triggerFireAnimation` (lnxded 0x0827e880)
+    // asks for the bare `Ub_Fire` / `Ub_LieFire`, whose transition appends the
+    // held template's name (`AnimationState::update` 0x08329f00) and finds
+    // nothing, so the upper body sits in a state with no clip and no bone is
+    // written: the arms hold the pose they had.
+    if (hw?.graftOf && /fire/i.test(name)) {
+      hw.armsHeld = true;
+      return false;
+    }
     const to = hw?.actions?.[name];
     if (!to || !hw.mixer) return false;
     if (hw.active === name && !restart) return true;
@@ -311,6 +321,9 @@ export function createArmsRig(page) {
    */
   function updateViewmodelAnimation(hw, dt) {
     if (!hw.mixer) return;
+    // Held since a grafted weapon fired (`playViewmodelClip`): nothing plays
+    // until another weapon is raised.
+    if (hw.armsHeld) return;
     // Which stance families this rig actually baked; a rig published before they
     // existed resolves back down its chain to the standing ones.
     const has = hw.hasClip;
@@ -441,7 +454,7 @@ export function createArmsRig(page) {
    *  `soldierName` holding it, the bare `name`.glb where not. Null when
    *  neither loads. The first half of `loadHandWeapon`, which checks its load
    *  token once this resolves. */
-  async function fetchRig(name, soldierName) {
+  async function fetchRig(name, soldierName, { arms = false } = {}) {
     let gltf = null;
     let fp = false;
     // The arms first: §11's `<Soldier>__<Weapon>.fp.glb`, sleeves and hands
@@ -454,6 +467,13 @@ export function createArmsRig(page) {
         gltf = await page.loader.loadAsync(
           `${page.MODELS_BASE}/viewmodels/${rigFile}.fp.glb${page.bust()}`);
         fp = true;
+        // A graft (`extract_viewmodel.py` `export_graft`) is a weapon and its
+        // weld, for the arms already in hand (`arms`); with none it is the
+        // bare weapon's case.
+        if (isGraft(gltf) && !arms) {
+          gltf = null;
+          fp = false;
+        }
       } catch { /* the bare path below */ }
     }
     if (!gltf) {
@@ -629,8 +649,94 @@ export function createArmsRig(page) {
              fidgetNames, weaponNode };
   }
 
+  /** The document extras of a fetched glb (where `mountRig` reads them). */
+  function docOf(gltf) {
+    return (Object.keys(gltf?.userData ?? {}).length ? gltf.userData : null)
+      ?? gltf?.parser?.json?.extras ?? {};
+  }
+
+  /** Whether a fetched rig is a graft: a weapon the state machine never names
+   *  (Desert Combat's `Mortar_weap`), shipped as its weld alone. */
+  function isGraft(gltf) {
+    return !!docOf(gltf)?.graft;
+  }
+
+  /**
+   * Hang a graft's weapon in the arms `held` already holds: the engine keeps
+   * the upper body in the state it was in when the new weapon names none
+   * (`BFSoldier::enableItem` lnxded 0x08278460 asks for
+   * `Ub_*RaiseWeapon<W>`, and `setAnimationState` 0x0826cee0 does nothing on a
+   * miss), so the sleeves, the hands and the clip machine are the previous
+   * weapon's, still running, and only the thing in the hand changes. The
+   * previous weapon's own node comes off the hand (its `fireArms` with it, so
+   * the gun collected is the new one's); the graft's `<weapon> grip` goes on
+   * at the weld it carries. What `enableItem` does change it changes here too:
+   * the rig's offset follows the new weapon's `soldierCameraPosition`
+   * (copied onto the soldier before the state is asked for).
+   */
+  function graftRig(held, gltf, name) {
+    const doc = docOf(gltf);
+    const data = doc.weaponStats ?? doc.weapon ?? null;
+    let grip = null;
+    gltf.scene.traverse(obj => { if (!grip && obj.userData?.weldBone) grip = obj; });
+    const detached = [...(held.detached ?? [])];
+    const old = held.weaponNode;
+    let hand = old?.parent ?? null;
+    if (!hand && grip) {
+      const want = String(grip.userData.weldBone).toLowerCase();
+      held.rig.traverse(obj => {
+        if (!hand && String(obj.name).replace(/_/g, ' ').toLowerCase() === want) hand = obj;
+      });
+    }
+    if (old) {
+      old.removeFromParent();
+      detached.push(old);
+    }
+    if (grip && hand) {
+      hand.add(grip);
+      grip.traverse(obj => {
+        obj.layers.set(VIEWMODEL_LAYER);
+        if (!obj.isMesh) return;
+        obj.frustumCulled = false;
+        for (const m of [obj.material].flat().filter(Boolean)) {
+          if (!m.userData?.additive) continue;
+          m.blending = THREE.AdditiveBlending;
+          m.transparent = true;
+          m.depthWrite = false;
+          m.needsUpdate = true;
+        }
+      });
+    }
+    const hands = held.doc?.view?.center1pHands;
+    const base = hands ? { x: hands[0], y: hands[1], z: -hands[2] } : VIEWMODEL_BASE;
+    const toCamera = v => ({
+      x: base.x + (v?.[0] ?? 0),
+      y: base.y + (v?.[1] ?? 0),
+      z: base.z - (v?.[2] ?? 0),
+    });
+    const viewHip = toCamera(data?.view?.cameraPosition);
+    const viewZoom = data?.view?.zoomPosition ? toCamera(data.view.zoomPosition) : viewHip;
+    held.rig.name = `${name} viewmodel`;
+    held.rig.visible = !(page.optPilot.checked && (page.aircraft || page.car));
+    // Its programs and textures warmed the way `mountRig` warms a whole rig.
+    if (grip) page.warmups.rig = page.warmSubtree(grip, vmCamera, vmScene);
+    return { doc: held.doc, data, rig: held.rig, fov1p: held.fov1p, viewHip, viewZoom,
+             mixer: held.mixer, actions: held.actions, fireVariants: held.fireVariants,
+             fidgetNames: held.fidgetNames, weaponNode: grip, detached };
+  }
+
   /** Take the rig down: off `vmRoot`, its mixer stopped, its GPU half freed. */
   function disposeRig(hw) {
+    // The weapons a graft took off the hand (`graftRig`) go with it.
+    for (const node of hw.detached ?? []) {
+      node.traverse(obj => {
+        obj.geometry?.dispose();
+        for (const m of [obj.material].flat().filter(Boolean)) {
+          m.map?.dispose();
+          m.dispose();
+        }
+      });
+    }
     vmRoot.remove(hw.rig);
     // The mixer first, while its bindings still resolve, then the GPU half —
     // a skinned rig also owns bone textures its skeleton has to give back.
@@ -651,6 +757,8 @@ export function createArmsRig(page) {
   Object.assign(armsRig, {
     disposeRig,
     fetchRig,
+    graftRig,
+    isGraft,
     mountRig,
     playViewmodelClip,
     stanceDeployName,

@@ -15,6 +15,7 @@ import { GRAVITY } from './physics.js';
 import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
 import { releaseSpeed } from './bomb-release.js';
 import { adopt, shellMaterial, tracerGeometry, tracerMaterial } from './round-visuals.js';
+import { recoilSpan } from './gun-cycle.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -147,7 +148,9 @@ function inScene(node, scene) {
 
 /** The round half of `fireBarrel`: the barrel's kick and what leaves it. */
 function fireRound(guns, group, muzzle) {
-  if (group.recoil !== null) group.recoil = 0;
+  // The kick's countdown, `3.14 / recoilSpeed` (`FireArms::Fire` `0x0828a209`,
+  // ledger GUN-12); `gun-cycle.js` `poseRecoil` walks it down.
+  if (group.recoil != null) group.recoil = recoilSpan(group.stats.recoil);
   const tracer = group.stats.tracer;
   const tracerRound = tracer
     ? group.shots % Math.max(tracer.interval, 1) === 0

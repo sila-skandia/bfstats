@@ -152,6 +152,62 @@ class CloneResolutionTests(unittest.TestCase):
         self.assertEqual(6, len(machine.weapons("Ub_StandAim")))
 
 
+SLOT_CON = """\
+AnimationStateMachine.createState Ub_StandAimNo4
+AnimationStateMachine.addAnimation Animations/StandWalkRun/3p/No4/3PStandAimUpperNo4.baf 0.8 1
+AnimationStateMachine.addAnimation Animations/StandWalkRun/1p/No4/1PStandAimNo4.baf 0.1 1
+include copyRifles.inc No4
+AnimationStateMachine.createState WeaponReloadNo4
+AnimationStateMachine.addAnimation Animations/Weapons/No4/No4Reload.baf 1 0
+include copyRifles.inc No4
+AnimationStateMachine.createState Lb_WalkForwardNo4
+AnimationStateMachine.addAnimation Animations/StandWalkRun/3P/No4/3PWalkLowerNo4.baf 1 1
+include copyRifles.inc No4
+AnimationStateMachine.createState Ub_StandRaiseWeaponNo4
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/No4/1PDeployNo4.baf 1 0
+include copyRifles.inc No4
+"""
+
+SLOT_FILES = {
+    "animations/animationstates.con": SLOT_CON,
+    # FHSW's seized rifle: the No4's third-person arms, a Mas36 in first person.
+    "animations/copyrifles.inc":
+        "AnimationStateMachine.copyState RandomGerSeizedRifle1 v_arg1 No4 1.0 Mas36 1.0\n",
+}
+
+
+class CopyStateSlotTests(unittest.TestCase):
+    """`copyState`'s donors go by clip slot and state name, not by the clip's
+    path (ledger ANIM-13, lnxded 0x08327c70)."""
+
+    def setUp(self) -> None:
+        self.machine = machine_from(SLOT_FILES)
+
+    def paths(self, name: str) -> list[str]:
+        return [clip.path for clip in self.machine.state(name).clips]
+
+    def test_a_two_clip_state_takes_a_then_b(self) -> None:
+        self.assertEqual(
+            ["Animations/StandWalkRun/3p/No4/3PStandAimUpperNo4.baf",
+             "Animations/StandWalkRun/1p/Mas36/1PStandAimMas36.baf"],
+            self.paths("Ub_StandAimRandomGerSeizedRifle1"))
+
+    def test_a_single_clip_gun_state_takes_the_second_donor(self) -> None:
+        # Not a `/1p/` path, and still B: the bolt the soldier works is the
+        # Mas36's. The path rule gave the No4's.
+        self.assertEqual(["Animations/Weapons/Mas36/Mas36Reload.baf"],
+                         self.paths("WeaponReloadRandomGerSeizedRifle1"))
+
+    def test_a_single_clip_lower_state_takes_the_second_donor(self) -> None:
+        self.assertEqual(["Animations/StandWalkRun/3P/Mas36/3PWalkLowerMas36.baf"],
+                         self.paths("Lb_WalkForwardRandomGerSeizedRifle1"))
+
+    def test_a_single_clip_upper_state_takes_the_first_donor(self) -> None:
+        # A `ub_` state's one clip is slot 0, whatever its path says.
+        self.assertEqual(["Animations/WeaponHandling/1p/No4/1PDeployNo4.baf"],
+                         self.paths("Ub_StandRaiseWeaponRandomGerSeizedRifle1"))
+
+
 ANIM_CON = """\
 AnimationStateMachine.createState Ub_StandAimThompson
 AnimationStateMachine.addAnimation Animations/StandWalkRun/3p/Thompson/3PStandAimUpperThompson.baf 0.8 1

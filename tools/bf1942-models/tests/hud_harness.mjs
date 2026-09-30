@@ -8,14 +8,15 @@
 // a `save`/`beginPath`/`rect`/`clip`/`restore` quartet -- so a recording stub
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about. `soldier-hud.js`
-// is copied in beside it (it imports only `hud.js`) for the damage
-// indicator's clock.
+// is copied in beside it (it imports `hud.js` and `nation.js`) for the damage
+// indicator's clock, with `weapon-bar.js`, the weapon bar it feeds.
 
 import {
   Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant, prepareElement,
   hitFromDirAlpha, hitFromDirOctant, hitFromDirOctantAxes, paintOrder, PAINT_ORDER,
 } from './hud.js';
 import { createSoldierHud } from './soldier-hud.js';
+import { WeaponBar } from './weapon-bar.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -590,7 +591,7 @@ function soldierPage() {
     crossHairColor: () => [255, 255, 0],
     feedTicketVars() {}, feedFlagIconVars() {},
     combatArea: { feed() {} }, combatFrame: null,
-    handWeapon: null, weaponBarUntil: 0, WEAPON_ICON_VARS: [],
+    handWeapon: null, weaponBar: new WeaponBar(), WEAPON_ICON_VARS: [],
     playSoldierHurtSound() {},
   };
   return { page, vars, hud: createSoldierHud(page) };

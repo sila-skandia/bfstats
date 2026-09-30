@@ -418,6 +418,10 @@ export function createHandWeapon(page) {
     // A new soldier carries the deploy row's kit, whatever the last one
     // picked up (`BFSoldier::addKitByName` makes him a fresh one).
     loadout.carriedKit = null;
+    // ...and a new kit object, which rolls its `Random*` items: this life's
+    // No2 or Sten (`random-items.js`, ledger KIT-4). Everything below names
+    // the variant.
+    loadout.rollSpawnKit(flag);
     soldierKit.kitWeaponSlots = kitSlotsFor(flag);
     // A fresh kit: a fresh pouch, and a plunger wired to nothing. Charges left
     // over from the last life keep running their own 240 s fuse in the world,
@@ -460,8 +464,10 @@ export function createHandWeapon(page) {
    * False when the level's loadouts do not know the kit.
    */
   function equipKit(kitName, ammo = [], flag = { team: page.deployTeamId }) {
-    const row = kitName ? loadout.loadouts?.kits?.[kitName] : null;
-    if (!row) return false;
+    if (!kitName || !loadout.loadouts?.kits?.[kitName]) return false;
+    // The kit's rolled items are the ones its last owner was handed.
+    loadout.adoptKitRolls(kitName, ammo);
+    const row = loadout.kitRowFor(kitName);
     loadout.carriedKit = kitName;
     const weapons = Array.isArray(row.weapons) && row.weapons.length ? row.weapons.map(w => ({ ...w })) : null;
     soldierKit.kitWeaponSlots = weapons;

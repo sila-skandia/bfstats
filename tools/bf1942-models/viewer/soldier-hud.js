@@ -104,11 +104,11 @@ export function writeSoldierAmmo(vars, data, rounds, mags) {
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `carriedKit`, `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
- * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handSlot`, `handWeapon`,
+ * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handWeapon`,
  * `hudPack`, `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
  * `optOnFoot`, `optPilot`, `playSoldierHurtSound`, `soldier`,
  * `soldierArmor`, `soldierDead`, `teamNation`, `WEAPON_ICON_VARS`,
- * `weaponBarUntil`.
+ * `weaponBar`.
  */
 export function createSoldierHud(page) {
   const soldierHud = {};
@@ -151,6 +151,27 @@ export function createSoldierHud(page) {
       soldierHud.kitArtCache = (resolved && page.loadouts?.kits?.[resolved]) || null;
     }
     return soldierHud.kitArtCache;
+  }
+
+  // The weapon bar's icons: the carried kit's `addWeaponIcon` list in
+  // declaration order (`_shared/loadouts.json` `weaponIcons`), the list the
+  // client copies into `Weapon/Icon/WeaponIcon<i>` every frame (0x006ad836 ->
+  // 0x006d4c20). It is the JSON's own array, so `WeaponBar.setIcons` sees the
+  // same identity every frame and copies nothing. A loadouts file from before
+  // that field has only the per-weapon `icon`s, in slot order; that list is
+  // built once per kit table.
+  soldierHud.slotIconsFor = null;
+  soldierHud.slotIcons = null;
+  function kitWeaponIcons() {
+    const row = kitHealthArt(page.deployTeamId, page.deployKit, page.carriedKit ?? null);
+    if (Array.isArray(row?.weaponIcons)) return row.weaponIcons;
+    const slots = page.kitWeaponSlots;
+    if (slots !== soldierHud.slotIconsFor) {
+      soldierHud.slotIconsFor = slots;
+      soldierHud.slotIcons = Array.isArray(slots)
+        ? slots.filter(w => w.icon).sort((a, b) => a.slot - b.slot).map(w => w.icon) : null;
+    }
+    return soldierHud.slotIcons;
   }
 
   // The stance icon's own nation, memoised the same way and for a bigger
@@ -373,20 +394,22 @@ export function createSoldierHud(page) {
     // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
     vars['Soldier/ShowSoldierIcon'] = !!page.soldier && (onFootActive || inVehicle);
     vars['Vehicle/ShowVehicleIcon'] = inVehicle;
-    vars['Weapon/ShowWeaponIcon'] = onFootActive && !!page.handWeapon;
-    // The weapon bar (the kit's inventory row the game paints while a weapon
-    // is being selected — layout group `weaponBar`, gated on this one var, so
-    // a stale true could draw it over a cockpit): up for a beat after the last
-    // selection input, on foot only. Written before every early return below.
-    const weaponBarUp = onFootActive && performance.now() < page.weaponBarUntil;
-    vars['Weapon/SelectingWeapon'] = weaponBarUp;
-    if (!weaponBarUp) {
-      // Only cleared here — the icon/slot values themselves may stay stale
-      // while the bar is down, because every weaponBar leaf is gated on
-      // SelectingWeapon and culls whole.
-      for (const key of page.WEAPON_ICON_VARS) vars[key] = null;
-      vars['Weapon/WeaponSelect'] = null;
-    }
+    // The weapon bar: the client HUD's `Weapon` group (`weapon-bar.js`, ledger
+    // HUD-14..HUD-17), fed whole every painted frame, before every early
+    // return below. `ShowWeaponIcon` gates the wheel (0x006d4a72); the icons
+    // are the CARRIED kit's `addWeaponIcon` list, read every frame the way
+    // 0x006ad836 reads it, so `NumberOfItems` raises the fifth and sixth slots
+    // for a kit that declares them; the layout's timeout node runs once per
+    // painted frame. A seat takes the bar down (0x006d77c5), and a dead man
+    // has none, so `SelectingWeapon` is also false off foot: the group is
+    // gated on that one var, and a stale true would draw it over a cockpit.
+    const bar = page.weaponBar;
+    bar.show = onFootActive && !!page.handWeapon;
+    vars['Weapon/ShowWeaponIcon'] = bar.show;
+    if (!onFootActive) bar.close();
+    if (page.soldier) bar.setIcons(kitWeaponIcons());
+    bar.tick();
+    bar.feed(vars, page.WEAPON_ICON_VARS);
 
     if (!page.soldier) return;
 
@@ -421,21 +444,6 @@ export function createSoldierHud(page) {
     // stays at the 0 written above so the overlay cannot stick into a seat.
     // Soldier art above already ran for the seated case (T4a).
     if (!onFootActive) return;
-
-    // The weapon bar's own contents while it is up: the spawned kit's
-    // inventory — one icon per `addWeaponIcon` entry (slot order, loadouts'
-    // `weapons` list), painted at the slot's own numbered rect the way the
-    // engine raises it (a mod kit with no slot-2 weapon leaves that rect's
-    // variable unfed, so the layout's literal picture shows — HUD-1), and the
-    // highlighted fill on the slot in hand. The variable names come from the
-    // prebuilt WEAPON_ICON_VARS so nothing allocates per frame.
-    if (weaponBarUp && page.kitWeaponSlots) {
-      for (let slot = 1; slot <= page.WEAPON_ICON_VARS.length; slot++) {
-        const entry = page.kitWeaponSlots.find(w => w.slot === slot);
-        vars[page.WEAPON_ICON_VARS[slot - 1]] = entry ? (entry.icon || null) : null;
-      }
-      vars['Weapon/WeaponSelect'] = page.handSlot;
-    }
 
     const hw = page.handWeapon;
     if (!hw) return;

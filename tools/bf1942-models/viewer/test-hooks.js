@@ -52,7 +52,7 @@ import { installLadderHooks } from './test-hooks-ladder.js';
  * `vehicleAudio`,
  * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `view`,
  * `viewmodelRigFor`, `vmCamera`, `vmRoot`, `vmScene`, `warmups`,
- * `weaponBarUntil`, `weaponTemplateFor`, `world`, `worldFire`,
+ * `weaponBar`, `weaponTemplateFor`, `world`, `worldFire`,
  * `wreckVehicle`.
  */
 export function installTestHooks(page) {

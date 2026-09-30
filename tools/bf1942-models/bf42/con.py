@@ -27,6 +27,7 @@ They usually match, but not always — Sherman's `Sherman_MGun_Mount_M1` loads
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass, field
 
@@ -245,19 +246,150 @@ def truthy(text: str) -> bool | None:
         return None
 
 
-def curve(token: str) -> list[list[float]] | None:
-    """An over-time ramp: `0/0.12|100/9.4` -> [[0, 0.12], [100, 9.4]].
+# An `...OverTime` point is read off a stream, not split: an integer index, one
+# separator character, then the value(s). These are the two extractions the
+# client's `operator>>(int&)` and `operator>>(float&)` (BFCPRT.dll, the game's
+# own copy of msvcp70) accept, sign and exponent included.
+_CURVE_INT = re.compile(r"[+-]?\d+")
+_CURVE_FLOAT = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+# What a ramp holds at an index the script never authors. Every one of the
+# thirteen curve words parses into a console-owned `OverTimeDistribution` whose
+# default is 1.0 (`FUN_00509470(1.0)` in each setter, e.g. `sizeOverTime`'s
+# 0x00523240; four of them for `colorRGBAOverTime`, 0x00525d70), and the setter
+# copies that whole block, samples and default alike, over the template's own.
+CURVE_DEFAULT = 1.0
+
+
+class _CurveStream:
+    """Just enough of an `istream` to read a ramp the way the engine does.
+
+    Once an extraction fails the stream is bad and every later one fails too,
+    `get()` included, which then answers end-of-file.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text, self.at, self.good = text, 0, True
+
+    def _read(self, pattern: re.Pattern) -> str | None:
+        if not self.good:
+            return None
+        while self.at < len(self.text) and self.text[self.at].isspace():
+            self.at += 1
+        match = pattern.match(self.text, self.at)
+        if not match:
+            self.good = False
+            return None
+        self.at = match.end()
+        return match.group(0)
+
+    def int(self) -> int | None:
+        text = self._read(_CURVE_INT)
+        return None if text is None else int(text)
+
+    def float(self) -> float | None:
+        text = self._read(_CURVE_FLOAT)
+        return None if text is None else float(text)
+
+    def char(self) -> str | None:
+        if not self.good:
+            return None
+        while self.at < len(self.text) and self.text[self.at].isspace():
+            self.at += 1
+        if self.at >= len(self.text):
+            self.good = False
+            return None
+        self.at += 1
+        return self.text[self.at - 1]
+
+    def get(self) -> str | None:
+        if not self.good or self.at >= len(self.text):
+            self.good = False
+            return None
+        self.at += 1
+        return self.text[self.at - 1]
+
+
+def curve(token: str, channels: int = 1) -> list[list[float]] | None:
+    """An over-time ramp as the engine reads it: `0/0.12|100/9.4` ->
+    [[0, 0.12], [100, 9.4]].
 
     Time runs 0..100 (percent of the particle's timeToLive). Points carry one
-    value for `sizeOverTime` and four (RGBA, 0..255) for `colorRGBAOverTime`.
+    value, or four (RGBA, 0..255) for `colorRGBAOverTime` (`channels=4`).
+
+    The client does not split the text. Its parsers (scalar `FUN_0051dab0`,
+    colour `FUN_00525e20`; lnxded `ConsoleClass179::setArgFromString`
+    0x08204150 and `ConsoleClass176` 0x08203680 read the same) loop
+
+        index = int; sep = char; value(s) = float (sep float) x3
+        v[index] = value; mark index; generateDistribution()
+        while get() == '|'
+
+    into a 101-slot `OverTimeDistribution`, so what comes back is what that
+    loop leaves (ledger EMT-9):
+
+    - an empty point (`40/...||100/...`, DC's `Fx_Browning_Destroy`) fails
+      the `int` read, the stream goes bad and `get()` ends the loop: **the
+      rest of the ramp is never read**. The failed pass still writes the
+      point before it again with whatever the failed reads left. A scalar
+      reads into the parser's own locals, so nothing changes. A colour
+      reads through `FUN_0043b9a0`'s one stack temporary, which a failed
+      read leaves holding the stream's own address, the argument pushed into
+      that slot just before (0x00525e49); read as a float that is a
+      denormal, so **all four channels of the point before become 0**.
+      The same holds for a trailing `|`.
+    - a point ends where its separators stop: `2,5` reads 2 and the next
+      `get()` finds `,`; a colour point with extra values reads four and
+      stops at the fifth `/`; `1.5/0.5` reads index 1 and value 5.
+    - an index outside 0..100 writes outside the 101 slots (memory the
+      viewer does not have); it is dropped here.
+    - an index written twice keeps the last value, and points come out in
+      index order whatever order they were authored in.
+    - an index 0 the text never writes keeps `CURVE_DEFAULT`, and the ramp
+      runs from it to the first authored point. After the last authored
+      point the ramp holds flat (`generateDistribution` 0x081e7830 copies
+      it to index 100).
+
+    A text whose first point cannot be read at all (`1`, which ends before a
+    value) leaves the engine writing a value it never read: that is None
+    here, the same as no ramp.
     """
-    points: list[list[float]] = []
-    for chunk in token.split("|"):
-        try:
-            points.append([float(p) for p in chunk.split("/") if p.strip()])
-        except ValueError:
-            return None
-    return points or None
+    stream = _CurveStream(token)
+    points: dict[int, list[float]] = {}
+    index: int | None = None
+    values: list[float] | None = None
+    while True:
+        read = stream.int()
+        if read is not None:
+            index = read
+        stream.char()
+        if channels == 1:
+            value = stream.float()
+            if value is not None:
+                values = [value]
+        else:
+            # The colour reader's temporary: the stream's address (0.0) until
+            # a read lands in it, and the last value read after that.
+            held = 0.0
+            values = []
+            for channel in range(channels):
+                value = stream.float()
+                if value is not None:
+                    held = value
+                values.append(held)
+                if channel < channels - 1:
+                    stream.char()
+        if index is None or values is None:
+            break
+        if 0 <= index <= 100:
+            points[index] = list(values)
+        if stream.get() != "|":
+            break
+    if not points:
+        return None
+    ramp = [[float(at), *points[at]] for at in sorted(points)]
+    if 0 not in points:
+        ramp.insert(0, [0.0] + [CURVE_DEFAULT] * channels)
+    return ramp
 
 
 @dataclass
@@ -324,6 +456,34 @@ class LodSelector:
         first-person geometry guard picks the alternative regardless of order.
         """
         return self.kind.lower() == "distanceselector"
+
+    @property
+    def flips_in_inside_view(self) -> bool:
+        """Whether the Inside view sets this selector's compare value.
+
+        `Camera::setViewMode` (lnxded 0x081ac7c0) calls `lodObjectOn`
+        (0x081adbb0) on mode 3, which writes 1.0 through
+        `setLodSelectorCompareValue` only into a selector whose class is
+        `DistCompareLodSelector` (CID 0x94b1, compared at 0x081adcca), the
+        class `LodSelectorTemplate.create DistCompareSelector` makes.
+        `DistCompareSelector2` is another class (CID 0x94b2) that it never
+        writes, and every other kind is left alone too (ledger LOD-2).
+        """
+        return self.kind.lower() == "distcompareselector"
+
+    def compared_alternative(self, value: float) -> int:
+        """The alternative a `DistCompareSelector` picks for a compare value,
+        with the camera inside its `addLodDistance`.
+
+        `DistCompareLodSelector::getLodLevelRelative` (lnxded 0x08213e10):
+        with exactly one comparison, equal to 0.5, it is 1 at a value of at
+        least 0.5 and 0 below, and the distance is never read (0x08213f40..
+        0x08213f64). Otherwise, within the distance, it is `lower_bound` of
+        the value in the comparisons (0x08213f08); past it, alternative 0.
+        """
+        if self.comparisons == [0.5]:
+            return 1 if value >= 0.5 else 0
+        return bisect.bisect_left(self.comparisons, value)
 
     def as_dict(self) -> dict:
         return {"selector": self.name, "selectorKind": self.kind,
@@ -2587,7 +2747,8 @@ class ObjectLibrary:
                         setattr(obj,
                                 "size_over_time" if cmd == "sizeovertime"
                                 else "color_over_time",
-                                curve(args.split()[0]))
+                                curve(args.split()[0],
+                                      1 if cmd == "sizeovertime" else 4))
                 elif cmd in ("showinfirstperson", "showinthirdperson"):
                     setattr(obj,
                             "show_in_first_person" if cmd == "showinfirstperson"

@@ -403,10 +403,11 @@ export function createBotReferee(env) {
    * metre bitmap, flood-seeded from every soldier spawn point), `spawnBots`
    * (which owns flag filtering; the world's `spawnPlayer` owns placement),
    * the strategic AI on the level's `AI/*.con` data (without it a bot walks
-   * to the nearest enemy flag), the covers, and a body per bot. Returns the
-   * nav map's build time in ms.
+   * to the nearest enemy flag), the covers, and a body per bot. `nameFor`
+   * names each bot as the server does (`bot-names.js`). Returns the nav
+   * map's build time in ms.
    */
-  referee.spawn = ({ count, botSkill, teams, kitFor, viewDistance = null }) => {
+  referee.spawn = ({ count, botSkill, teams, kitFor, nameFor = null, viewDistance = null }) => {
     const w = world();
     referee.reset();
     const worldSize = w.extras?.worldSize || 2048;
@@ -417,7 +418,7 @@ export function createBotReferee(env) {
     const navStarted = performance.now();
     referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds });
     const navMs = performance.now() - navStarted;
-    referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, viewDistance });
+    referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, nameFor, viewDistance });
     // The strategic interface (doctrine.js) is the one order source: it runs
     // the engine's SAI and asks each side's doctrine (`env.doctrine`, default
     // the SAI itself) for the orders.

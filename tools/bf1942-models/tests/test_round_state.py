@@ -145,11 +145,14 @@ class RoundStateTests(unittest.TestCase):
     # ---- a capture ---------------------------------------------------------
 
     def test_a_capture_pays_every_player_it_is_awarded_to(self) -> None:
+        # A Conquest point taken is an Attack (`ControlPoint::handleFrameUpdate`
+        # pushes ScoreMsg 1 at 0x08283d5c), so it pays the table's `attack`,
+        # vanilla's 2; `capture` (10) is the CTF flag's. Ledger ROUND-7.
         capture = self.results["capture"]
-        self.assertEqual({"score": 10, "captures": 1}, {
+        self.assertEqual({"score": 2, "captures": 1}, {
             "score": capture["one"]["score"], "captures": capture["one"]["captures"]})
         self.assertEqual(2, capture["two"]["captures"])
-        self.assertEqual(20, capture["two"]["score"])
+        self.assertEqual(4, capture["two"]["score"])
 
     def test_a_capture_costs_no_tickets(self) -> None:
         self.assertEqual({"1": 80, "2": 100}, self.results["capture"]["tickets"])
@@ -296,3 +299,123 @@ class RoundStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoundEndTests(unittest.TestCase):
+    """The end of the round: ledger ROUND-1..ROUND-9, the design and what was
+    built in `features/round-end-winner-screen/README.md`."""
+
+    end: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.end = run_harness()["end"]
+
+    def test_game_play_modes_are_string_to_gpm(self) -> None:
+        gpm = self.end["gpm"]
+        self.assertEqual((1, 2, 4, 4, 3, 5, 2, 2), (
+            gpm["ctf"], gpm["conquest"], gpm["coop"], gpm["singlePlayer"],
+            gpm["tdm"], gpm["objective"], gpm["unknown"], gpm["none"]))
+        # The bleed and the ticket end run in modes 2, 4 and 5 only.
+        self.assertEqual([False, True, False, True, True], gpm["decides"])
+
+    def test_victory_type_is_the_share_margin_against_40_and_80_percent(self) -> None:
+        types = self.end["types"]
+        self.assertEqual(3, types["total"])
+        self.assertEqual(2, types["major"])
+        self.assertEqual(1, types["minor"])
+        # `fucompp` with the threshold on top: an equal margin is the larger class.
+        self.assertEqual(2, types["atMinor"])
+        self.assertEqual(3, types["atMajor"])
+        # A winner behind on shares has no margin.
+        self.assertEqual(1, types["behind"])
+        self.assertEqual(0, types["draw"])
+
+    def test_the_share_is_over_the_raw_count(self) -> None:
+        share = self.end["share"]
+        self.assertEqual(1.0, share["full"])
+        self.assertAlmostEqual(68 / 68.75, share["odd"])
+        self.assertEqual(0, share["none"])
+
+    def test_the_restart_delay_is_ten_seconds_clamped_one_to_thirty(self) -> None:
+        self.assertEqual({"base": 10, "low": 1, "high": 30, "junk": 10}, self.end["delay"])
+
+    def test_score_messages_are_handle_scores(self) -> None:
+        msg = self.end["msg"]
+        self.assertEqual((0, 1, 2, 3, 6), (msg["flagCapture"], msg["attack"],
+                                           msg["defence"], msg["kill"], msg["tk"]))
+
+    def test_a_side_bled_to_zero_loses_and_the_round_stops(self) -> None:
+        bled = self.end["bled"]
+        self.assertEqual(("endGame", True, 1, "tickets"), (
+            bled["status"], bled["over"], bled["winner"], bled["reason"]))
+        # 80 of 80 against nothing: a total victory.
+        self.assertEqual(3, bled["victoryType"])
+        self.assertEqual({"1": 1, "2": 0}, bled["roundsWon"])
+        # EndGame pays nothing and bleeds nothing.
+        self.assertEqual(0, bled["killPaid"])
+        self.assertEqual(0, bled["deathsAfter"])
+        self.assertEqual({"1": 0, "2": 0}, bled["lostAfter"])
+        self.assertEqual(10, bled["restartIn"])
+
+    def test_a_multiplayer_round_restarts_ten_seconds_later(self) -> None:
+        restart = self.end["restart"]
+        self.assertFalse(restart["dueEarly"])
+        self.assertTrue(restart["due"])
+        self.assertEqual("playing", restart["status"])
+        self.assertEqual({"1": 80, "2": 5}, restart["tickets"])
+        self.assertEqual(0, restart["counts"])
+        # `ScoreManager::reset` leaves the rounds won alone.
+        self.assertEqual({"1": 1, "2": 0}, restart["roundsWon"])
+        self.assertEqual((None, 4, 1), (restart["winner"], restart["victoryType"],
+                                        restart["restarts"]))
+
+    def test_a_death_on_the_last_ticket_ends_the_round_on_the_next_tick(self) -> None:
+        death = self.end["death"]
+        self.assertEqual("playing", death["beforeTick"])
+        self.assertEqual((2, "endGame", "tickets"), (death["winner"], death["status"],
+                                                     death["reason"]))
+
+    def test_both_sides_out_on_one_tick_is_a_draw(self) -> None:
+        draw = self.end["draw"]
+        self.assertEqual((0, 0), (draw["winner"], draw["type"]))
+        self.assertEqual({"1": 0, "2": 0}, draw["roundsWon"])
+
+    def test_a_single_player_round_waits_in_end_game(self) -> None:
+        sp = self.end["singlePlayer"]
+        self.assertIsNone(sp["restartIn"])  # Infinity
+        self.assertFalse(sp["due"])
+        self.assertEqual("endGame", sp["status"])
+
+    def test_the_time_limit_takes_the_larger_ticket_share(self) -> None:
+        timed = self.end["time"]
+        self.assertEqual("playing", timed["early"])
+        self.assertEqual(("endGame", 2, "time"), (timed["status"], timed["winner"],
+                                                   timed["reason"]))
+        # 90% against 40%: a margin of 0.5, a major victory.
+        self.assertEqual(2, timed["type"])
+
+    def test_ctf_ends_on_the_score_limit_of_flag_captures(self) -> None:
+        ctf = self.end["ctf"]
+        self.assertEqual("playing", ctf["noTicketEnd"])
+        self.assertEqual("playing", ctf["afterOne"])
+        self.assertEqual(("endGame", 2, 1, "score"), (ctf["status"], ctf["winner"],
+                                                       ctf["type"], ctf["reason"]))
+        self.assertEqual(2, ctf["teams"]["2"]["captures"])
+        # CTF's own table: a flag home pays 10, a pick-up 0, a return 3.
+        self.assertEqual(20, ctf["carrier"]["score"])
+        self.assertEqual(2, ctf["carrier"]["flags"])
+        self.assertEqual(3, ctf["defender"]["score"])
+        self.assertEqual(1, ctf["gpm"])
+
+    def test_ctf_with_no_limit_plays_on_and_its_time_limit_weighs_team_score(self) -> None:
+        open_ = self.end["ctfOpen"]
+        self.assertEqual("playing", open_["openStatus"])
+        self.assertEqual((1, "time", 1), (open_["winner"], open_["reason"], open_["type"]))
+
+    def test_a_conquest_point_pays_attack_on_the_side(self) -> None:
+        cp = self.end["cpCapture"]
+        self.assertEqual((2, 1, 1, 2), (cp["row"]["score"], cp["row"]["captures"],
+                                        cp["row"]["attacks"], cp["row"]["team"]))
+        self.assertEqual(2, cp["team"]["score"])
+

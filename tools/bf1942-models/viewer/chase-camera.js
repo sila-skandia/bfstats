@@ -3,7 +3,7 @@
 // Framework-free: no three.js, no DOM. Vectors are plain `[x, y, z]` arrays in
 // whatever world frame the caller uses, so the file runs unchanged under node
 // (`tests/test_chase_camera.py`). The three.js half - reading node poses and
-// writing the camera - is a few lines in `map.html`.
+// writing the camera - is a few lines in `seat-camera.js`.
 //
 // WHAT WAS READ. `Camera::getTransformation(float dt, Mat4& out)`, lnxded
 // `0x081aaf90` and its MSVC twin in the client, `0x005659b0`, instruction for
@@ -25,24 +25,37 @@
 // translation), in every mode, so C out of the cockpit starts from rel = 0 and
 // the camera swoops out of the vehicle over about a second.
 //
-// WHAT THAT MEANS FOR A TURRET, AND WHAT THIS PAGE DOES BY DEFAULT. The seat
-// Camera is a child of the pitching gun base (ledger GUN-7), so `camM.position`
-// rides the turret: the anchor and look-at point swing round the turret ring as
-// the tower traverses. The DIRECTION the camera hangs in comes, in both
-// binaries, from `rootM`, the hull: `getRootParent` climbs `+0x50` (parent)
-// until the no-parent flag `0x02000000` is set (`setParent` 0x08166050 sets it
-// on a null parent and clears it otherwise), so it is the vehicle's root
-// PlayerControlObject and never the tower.
+// WHICH NODE FRAMES IT (re-read 2026-09-30, ledger CVM-2). Two matrices
+// enter the function and nothing else: `rootM`, whose rows +0x20 (forward)
+// and +0x10 (up) give the direction, and `camM`, whose translation is the
+// anchor and the look-at point. `getRootParent` climbs `+0x50` until the
+// no-parent flag `0x02000000` is set, and `BCompositeObject::setParent`
+// 0x08166050 is the only writer of that flag on an object (the two other
+// `or 0x2000000` sites in the image, 0x08113149 and 0x0815c96a, are
+// `PlayerAction` input bits), so it is the vehicle's root
+// PlayerControlObject for every seat: a nested gunner's PCO included, never
+// the tower. `camM` is the seat Camera's own absolute matrix, so its
+// `setPivotPosition` is in the anchor (`Camera::handleUpdate` 0x081aa940,
+// camera-pivot.js), but its rotation is not used at all: the view is a
+// `calcLookAt` with world up, and the Camera's `setRotation` -- the
+// `-179.999` a pintle MG's Camera carries to face back down a mount that is
+// itself turned round -- and its parent play no part in an external view.
+// They matter only to the inside view (mode 3), which is the Camera's whole
+// matrix.
 //
-// That CONTRADICTS this round's brief (W4-C), which says the game's external
-// view follows the turret and asks for exactly that. The brief is what was
-// asked for, so it is the DEFAULT here: for a seat whose Camera rides an aim
-// axis the frame is the Camera's PARENT (turret yaw and gun pitch). That
-// default is a VIEWER CHOICE MADE TO THE BRIEF, not an engine reading, and the
-// read above does not support it. `?chase=engine` runs the law exactly as
-// read (hull frame) so the two can be compared side by side; flipping the
-// default is the one line in `chaseLawFor`. The conflict is written up in
-// `features/bf1942-parity-round-2026-09-19/w4c-camera.md` for the lead to rule on.
+// WHAT THIS PAGE DOES. The law as read is the default for every seat whose
+// Camera rides an aim axis: hull frame, anchored on that seat's Camera.
+//
+// Until 2026-09-30 the default was the W4-C brief's: the frame was the
+// Camera's PARENT, so the view followed the turret (the owner kept that on
+// 2026-09-21). On 268 seats across the trees the parent is turned 180
+// degrees against the Camera -- the M1A1 and T72 commander MGs, the Humvee
+// gunners, the Sherman, Panzer IV, Chi-ha and T34-85 pintle MGs -- and there
+// that frame hung the eye in front of the gun looking back at it. The binary
+// has no parent frame to get wrong. `?chase=turret` keeps a turret-following
+// view for comparison, framed off the Camera node's own axes (its
+// `setRotation` included, so a flipped mount faces the right way); that one
+// is a VIEWER CHOICE, not an engine reading.
 
 /** `R = getBoundingRadius() * 1.2`. lnxded `0x086c4f64`, client `0x008fb7d0`. */
 export const CHASE_RADIUS_SCALE = 1.2;
@@ -145,23 +158,46 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
  * Which law an external view runs under, from the page's `?chase=` switch and
  * whether the seat Camera rides an aim axis.
  *
- *   (absent)  what the W4-C brief asked for: a seat whose Camera rides a turret
- *             gets the engine's offsets, ease and anchor, hung off the Camera's
- *             PARENT frame, so the view yaws and pitches with the gun. The frame
- *             is NOT what the binaries show (file header). Every other vehicle
- *             keeps the old viewer framing, as the brief required.
- *   engine    the law exactly as read from both binaries: hull (root) frame,
- *             for every driven vehicle
+ *   (absent)  the law as read, for a seat whose Camera rides an aim axis:
+ *             hull (root) frame, anchored on the seat's Camera. Every other
+ *             seat keeps the old viewer framing, as the W4-C brief fenced it
+ *   engine    the law as read for every driven vehicle, turret or not
+ *   turret    a seat whose Camera rides an aim axis follows it: the frame is
+ *             the Camera node's own (a viewer choice, not the engine's)
  *   legacy    the old viewer framing everywhere
  *
- * @returns {{law: 'engine'|'legacy', frameFromAim: boolean}}
+ * `frame` names the node whose axes give forward and up: `hull` for the
+ * vehicle root, `camera` for the seat's Camera node itself. There is no
+ * parent frame: the Camera's parent is turned round under every pintle MG
+ * whose Camera faces back down it, and nothing in the engine reads it.
+ *
+ * @returns {{law: 'engine'|'legacy', frame: 'hull'|'camera'}}
  */
 export function chaseLawFor(option, ridesTurret) {
   switch (option) {
-    case 'legacy': return { law: 'legacy', frameFromAim: false };
-    case 'engine': return { law: 'engine', frameFromAim: false };
+    case 'legacy': return { law: 'legacy', frame: 'hull' };
+    case 'engine': return { law: 'engine', frame: 'hull' };
+    case 'turret': return ridesTurret
+      ? { law: 'engine', frame: 'camera' }
+      : { law: 'legacy', frame: 'hull' };
     default: return ridesTurret
-      ? { law: 'engine', frameFromAim: true }
-      : { law: 'legacy', frameFromAim: false };
+      ? { law: 'engine', frame: 'hull' }
+      : { law: 'legacy', frame: 'hull' };
   }
+}
+
+/**
+ * The node whose axes `chaseTarget` hangs the offset off, for `law.frame`:
+ * the vehicle root, or under `?chase=turret` the seat Camera itself. Never
+ * the Camera's parent (see `chaseLawFor`). Generic, so the node harness can
+ * hand it plain objects.
+ *
+ * @template T
+ * @param {{frame: 'hull'|'camera'}|null} law `chaseLawFor`'s answer
+ * @param {T} root the vehicle's root node
+ * @param {T} camera the seat's Camera node
+ * @returns {T}
+ */
+export function chaseFrameNode(law, root, camera) {
+  return law?.frame === 'camera' && camera ? camera : root;
 }

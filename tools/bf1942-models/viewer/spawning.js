@@ -6,16 +6,17 @@
 
 import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
 import { Armor } from './armor.js';
+import { kitOverridesAirMovement } from './kit-loadout.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `capture`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
+ * `capture`, `currentKit`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
  * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
  * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`,
  * `flags`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
- * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `LOCAL_PLAYER`,
+ * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `loadouts`, `LOCAL_PLAYER`,
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
  * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`,
@@ -89,6 +90,14 @@ export function createSpawning(page) {
     // must not hold the corpse cam over the new soldier.
     page.revive(armor);
     page.world.setPlayerArmor(page.LOCAL_PLAYER, armor);
+    // A kit wearing a `nochute` never enters free fall (`parachute.js`
+    // `freeFallBarred`). Asked when the gates would arm it, of the kit he
+    // wears then, so a kit picked up off the ground counts as the engine's
+    // kit parts do; the level's own kit where it declares one (LOAD-1).
+    if (page.soldier.chute) {
+      page.soldier.chute.freeFallBarred = () =>
+        kitOverridesAirMovement(page.loadouts, page.currentKit?.());
+    }
     page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: spawning.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
     // The weapon follows the flag: switching to the other side's spawn swaps
     // the SMG. A no-op when the right one is already in hand.

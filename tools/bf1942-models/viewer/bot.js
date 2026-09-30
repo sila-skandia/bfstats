@@ -35,7 +35,12 @@ export { PI } from './bot-aim.js';
 export { BEHAVIOUR, STANDARD_WEIGHTS, URGENCY_CURVE, IDLE_FLOOR } from './bot-decision.js';
 export { PLAN_ACTION } from './bot-plans.js';
 
-/** Bot name pools, from the research document §2.1. */
+/**
+ * The stand-in names for a maps tree with no `_shared/bot-names.json`. They
+ * are not the game's: the game names a bot from the lists the level's
+ * `SinglePlayer/Skirmish.con` loads (`bot-names.js`, ledger AI-134, AI-135),
+ * and `spawnBots` takes those through its `nameFor`.
+ */
 export const BOT_NAMES = {
   American: ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Wilson', 'Moore', 'Taylor'],
   British: ['Arthur', 'Bernard', 'Charles', 'David', 'Edward', 'Frank', 'George', 'Henry', 'James', 'Kenneth'],
@@ -527,7 +532,9 @@ export class BotController {
  * sides on the game's team balance); `kitFor(team, index)` may return
  * `{ name, weapons }` (AI weapon entries) for the bot's kit — the engine's
  * choice is uniform among the side's allowed kits (`BotSpawner::
- * findKitDiff` is 1 for every kit in practice).
+ * findKitDiff` is 1 for every kit in practice). `nameFor(team)` names each
+ * bot as the server does (`bot-names.js` `createBotNamer`, one per level);
+ * without it a bot takes the stand-in table's next name.
  */
 export function spawnBots({
   world,
@@ -539,6 +546,7 @@ export function spawnBots({
   controlInfo = null,
   weaponAi = null,
   kitFor = null,
+  nameFor = null,
   viewDistance = null,
 } = {}) {
   const bots = [];
@@ -564,7 +572,9 @@ export function spawnBots({
       playerId,
       world,
       botSkill,
-      name: names[i % names.length],
+      // Named once it is a player, for the team it joined, as the engine
+      // names a bot between creating it and registering it.
+      name: nameFor ? nameFor(botTeam) : names[i % names.length],
       spawnPos: spawnPositionOf(player, resolvedFlag),
       controlInfo,
       weaponAi,

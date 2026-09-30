@@ -5,8 +5,12 @@
 import {
   RADIO_MESSAGES, pressRadioKey, isTeamMessage, remapLocal, closestControlPoint,
   radioChatText, radioPatch, RadioSpamLimit, radioGameMode, radioVars, visibleLeaves,
-  ICON_ON_FOOT, ICON_LAND, ICON_AIR, ICON_SEA,
+  nationStems, ICON_ON_FOOT, ICON_LAND, ICON_AIR, ICON_SEA,
 } from './radio.js';
+import {
+  GameplayAnnouncer, gamePlayMode, AUTO_LOSE_TICKETS, TICKET_LOW, LEAVING_COMBAT,
+  GPM_CTF, GPM_CONQUEST, GPM_TDM, GPM_COOP, GPM_OBJECTIVE,
+} from './announcer.js';
 import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, killWord, killLine,
   teamKillLine, deathLine, captureLine, allPointsLine, rowGeometry, dividerGeometry,
@@ -90,6 +94,78 @@ out.leaves = {
   conquestF4: visibleLeaves(layout, radioVars(layout, { category: 4, gameMode: 3 })).map(l => l.alpha),
   tdmF4: visibleLeaves(layout, radioVars(layout, { category: 4, gameMode: 1 })).map(l => l.alpha),
   idle: visibleLeaves(layout, radioVars(layout, { category: 0 })).length,
+};
+
+// --- which lines a language has ------------------------------------------------
+
+// Desert Combat's manifest: UsEnglish and Iraqi ship every stem, English
+// (the vanilla British set) lacks the ones DC added.
+const dcSounds = {
+  nations: { us: { stems: 97 }, iraq: { stems: 97 }, brit: { stems: 47 } },
+  missing: [
+    { nation: 'brit', stems: ['RogerThat1', 'RogerThat2', 'RogerThat3', 'RogerThat4', 'ProtectOurFlag2'] },
+    { nation: 'brit', stem: 'Negative', why: 'a transcode failure, not an absent file' },
+  ],
+};
+const roger = { stems: ['RogerThat1', 'RogerThat2', 'RogerThat3', 'RogerThat4'], random: true };
+const protect = { stems: ['ProtectOurFlag', 'ProtectOurFlag2'], random: true };
+out.nationStems = {
+  usRoger: nationStems(dcSounds, roger, 'us'),
+  britRoger: nationStems(dcSounds, roger, 'brit'),
+  britProtect: nationStems(dcSounds, protect, 'brit'),
+  unknownNation: nationStems(dcSounds, roger, 'fre'),
+  noManifest: nationStems(null, protect, 'brit'),
+};
+
+// --- the side's announcer ----------------------------------------------------------
+
+out.gpm = ['Conquest', 'Ctf', 'Tdm', 'SinglePlayer', 'CoOp', 'ObjectiveMode', ''].map(gamePlayMode);
+const run = (frames, a = new GameplayAnnouncer()) => frames.map(f => a.frame(f));
+const cq = { mode: GPM_CONQUEST, team: 1, playing: true, start: { 1: 100, 2: 100 } };
+out.announcer = {
+  // Heavy casualties: the enemy's weight crossing 100, once, again after it
+  // falls away; the other side's weight means nothing to this side.
+  heavy: run([
+    { ...cq, held: { 1: 0, 2: 99 }, tickets: { 1: 100, 2: 100 } },
+    { ...cq, held: { 1: 0, 2: 100 }, tickets: { 1: 100, 2: 100 } },
+    { ...cq, held: { 1: 0, 2: 150 }, tickets: { 1: 99, 2: 100 } },
+    { ...cq, held: { 1: 0, 2: 60 }, tickets: { 1: 99, 2: 100 } },
+    { ...cq, held: { 1: 0, 2: 110 }, tickets: { 1: 98, 2: 100 } },
+    { ...cq, held: { 1: 180, 2: 0 }, tickets: { 1: 98, 2: 100 } },
+  ]),
+  // Not in CTF or TDM.
+  heavyTdm: run([{ ...cq, mode: GPM_TDM, held: { 1: 0, 2: 180 }, tickets: { 1: 100, 2: 100 } }]),
+  heavyCtf: run([{ ...cq, mode: GPM_CTF, held: { 1: 0, 2: 180 }, tickets: { 1: 100, 2: 100 } }]),
+  heavyCoop: run([{ ...cq, mode: GPM_COOP, held: { 1: 0, 2: 180 }, tickets: { 1: 100, 2: 100 } }]),
+  // Objective: ten tickets or fewer instead of a weight, and no TicketLow.
+  objective: run([
+    { ...cq, mode: GPM_OBJECTIVE, held: { 1: 0, 2: 180 }, tickets: { 1: 11, 2: 100 } },
+    { ...cq, mode: GPM_OBJECTIVE, held: { 1: 0, 2: 180 }, tickets: { 1: 10, 2: 100 } },
+  ]),
+  // Tickets low: (0.05, 0.2] of the start, once; above 0.2 re-arms it.
+  low: run([
+    { ...cq, held: {}, tickets: { 1: 21, 2: 100 } },
+    { ...cq, held: {}, tickets: { 1: 20, 2: 100 } },
+    { ...cq, held: {}, tickets: { 1: 10, 2: 100 } },
+    { ...cq, held: {}, tickets: { 1: 5, 2: 100 } },
+    { ...cq, held: {}, tickets: { 1: 30, 2: 100 } },
+    { ...cq, held: {}, tickets: { 1: 15, 2: 100 } },
+  ]),
+  lowAlreadyUnderFloor: run([{ ...cq, held: {}, tickets: { 1: 5, 2: 100 } }]),
+  lowRoundOver: run([{ ...cq, playing: false, held: { 1: 0, 2: 150 }, tickets: { 1: 10, 2: 0 } }]),
+  lowNoSide: run([{ ...cq, team: 0, held: { 1: 0, 2: 150 }, tickets: { 1: 10, 2: 100 } }]),
+  // Leaving the area: once the WHOLE seconds outside pass zero, once per
+  // excursion, and not before the player has been inside once.
+  leaving: run([
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 0 },
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 0.9 },
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 1.0 },
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 10 },
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 0 },
+    { ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 2.5 },
+  ]),
+  leavingSpawnedOutside: run([{ ...cq, held: {}, tickets: { 1: 100, 2: 100 }, outsideFor: 3 }]),
+  ids: [AUTO_LOSE_TICKETS, TICKET_LOW, LEAVING_COMBAT],
 };
 
 // --- the message log ----------------------------------------------------------

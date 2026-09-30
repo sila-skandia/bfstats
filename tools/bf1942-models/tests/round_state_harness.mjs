@@ -6,7 +6,9 @@
 
 import { SCORE_DEFAULTS, BLEED_WEIGHT, scoreTable, scoreSettingsFile, holdWeight,
           createRoundState, TICKET_BASE_PLAYERS, MAX_PLAYERS_LIMIT, clampMaxPlayers,
-          roundPlayers, startingTickets, bleedInterval, scaleTickets }
+          roundPlayers, startingTickets, bleedInterval, scaleTickets,
+          GAME_PLAY_MODE, gamePlayModeOf, ticketsDecide, VICTORY, victoryTypeOf,
+          ticketShare, RESTART_DELAY, clampRestartDelay, SCORE_MSG }
   from './round-state.js';
 
 const results = {};
@@ -235,6 +237,125 @@ const run = (round, seconds, points) => {
     untouched: { ...wake, lossPerMin: { ...wake.lossPerMin } },
     none: scaleTickets(null, 32),
   };
+}
+
+// --- the end of the round (ledger ROUND-1..ROUND-9) --------------------------
+
+{
+  const end = {};
+  end.gpm = {
+    ctf: gamePlayModeOf('Ctf'), conquest: gamePlayModeOf('Conquest'),
+    coop: gamePlayModeOf('CoOp'), singlePlayer: gamePlayModeOf('SinglePlayer'),
+    tdm: gamePlayModeOf('TDM'), objective: gamePlayModeOf('ObjectiveMode'),
+    unknown: gamePlayModeOf('Search_And_Destroy'), none: gamePlayModeOf(null),
+    decides: [1, 2, 3, 4, 5].map(ticketsDecide),
+  };
+  end.types = {
+    total: victoryTypeOf(1, { 1: 0.9, 2: 0 }),
+    major: victoryTypeOf(2, { 1: 0, 2: 0.5 }),
+    minor: victoryTypeOf(1, { 1: 0.3, 2: 0 }),
+    atMinor: victoryTypeOf(1, { 1: 0.4, 2: 0 }),
+    atMajor: victoryTypeOf(1, { 1: 0.8, 2: 0 }),
+    behind: victoryTypeOf(1, { 1: 0.2, 2: 0.6 }),
+    draw: victoryTypeOf(0, { 1: 0.5, 2: 0.5 }),
+  };
+  end.share = { full: ticketShare(100, 100, 16), odd: ticketShare(68, 100, 11), none: ticketShare(5, 0, 16) };
+  end.delay = { base: RESTART_DELAY, low: clampRestartDelay(0), high: clampRestartDelay(99), junk: clampRestartDelay('x') };
+  end.msg = SCORE_MSG;
+
+  // Conquest to zero on the bleed: the side still holding tickets wins, the
+  // status turns to EndGame, the round counts on its rounds-won line, and the
+  // bleed and every score stop.
+  const bled = createRoundState({ settings: vanilla, mode: 'Conquest',
+    tickets: { team1: 80, team2: 5 }, rates: { team1: 30, team2: 5 } });
+  let t = 0;
+  while (bled.status === 'playing' && t < 600) { bled.tick(1, berlin); t += 1; }
+  const restartAtEnd = bled.restartIn;
+  const beforeKill = bled.tally(1).score;
+  bled.kill({ killer: 1, killerTeam: 1, victim: 2, victimTeam: 2 });
+  const lostAfter = bled.tick(1, berlin);
+  end.bled = {
+    seconds: t, status: bled.status, over: bled.over, winner: bled.winner,
+    victoryType: bled.victoryType, reason: bled.endReason, roundsWon: { ...bled.roundsWon },
+    tickets: { ...bled.tickets }, killPaid: bled.tally(1).score - beforeKill,
+    deathsAfter: bled.tally(2).deaths, lostAfter, bleeding: { ...bled.bleeding },
+    restartIn: restartAtEnd,
+  };
+  // Ten seconds later a multiplayer server restarts: starting tickets back,
+  // tallies wiped, rounds won kept.
+  bled.tick(8.5, berlin);
+  const dueEarly = bled.restartDue();
+  bled.tick(0.5, berlin);
+  const due = bled.restartDue();
+  bled.restart();
+  end.restart = {
+    dueEarly, due, status: bled.status, tickets: { ...bled.tickets },
+    counts: bled.counts.size, roundsWon: { ...bled.roundsWon }, winner: bled.winner,
+    victoryType: bled.victoryType, restarts: bled.restarts, clock: bled.clock,
+  };
+
+  // A death that spends the last ticket ends the round at once.
+  const death = createRoundState({ mode: 'CoOp', tickets: { team1: 1, team2: 50 } });
+  death.suicide({ player: 7, team: 1 });
+  const beforeTick = death.status;
+  death.tick(1 / 30, berlin);
+  end.death = { beforeTick, winner: death.winner, status: death.status, reason: death.endReason,
+                type: death.victoryType };
+
+  // Both sides out on one tick is a draw.
+  const both = createRoundState({ mode: 'Conquest', tickets: { team1: 1, team2: 1 },
+    rates: { team1: 60, team2: 60 } });
+  both.tick(1.5, [{ team: 1, areaValue: 150 }, { team: 2, areaValue: 150 }]);
+  end.draw = { winner: both.winner, type: both.victoryType, roundsWon: { ...both.roundsWon } };
+
+  // A single-player round waits in EndGame for the debriefing.
+  const sp = createRoundState({ mode: 'CoOp', tickets: { team1: 1, team2: 50 }, singlePlayer: true });
+  sp.suicide({ player: 3, team: 1 });
+  sp.tick(1, berlin);
+  sp.tick(600, berlin);
+  end.singlePlayer = { restartIn: sp.restartIn, due: sp.restartDue(), status: sp.status };
+
+  // The time limit: the larger ticket share wins in Conquest.
+  const timed = createRoundState({ mode: 'Conquest', tickets: { team1: 100, team2: 100 },
+    rates: { team1: 30, team2: 5 }, gameTime: 120 });
+  timed.spend(1, 60);
+  timed.spend(2, 10);
+  for (let i = 0; i < 119; i++) timed.tick(1, []);
+  const early = timed.status;
+  timed.tick(2, []);
+  end.time = { early, status: timed.status, winner: timed.winner, reason: timed.endReason,
+               type: timed.victoryType };
+
+  // CTF: no bleed, no ticket end; the score limit on flag captures.
+  const ctf = createRoundState({ settings: vanilla, mode: 'Ctf', tickets: { team1: 0, team2: 0 },
+    rates: { team1: 30, team2: 30 }, scoreLimit: 2 });
+  ctf.tick(600, [{ team: 1, areaValue: 150 }]);
+  const ctfTicketsOk = ctf.status;
+  ctf.flagScore({ player: 4, team: 2, msg: SCORE_MSG.attack });
+  ctf.flagScore({ player: 4, team: 2, msg: SCORE_MSG.flagCapture });
+  ctf.flagScore({ player: 9, team: 1, msg: SCORE_MSG.defence });
+  const afterOne = ctf.status;
+  ctf.flagScore({ player: 4, team: 2, msg: SCORE_MSG.flagCapture });
+  end.ctf = {
+    noTicketEnd: ctfTicketsOk, afterOne, status: ctf.status, winner: ctf.winner,
+    type: ctf.victoryType, reason: ctf.endReason,
+    teams: { 1: { ...ctf.teams[1] }, 2: { ...ctf.teams[2] } },
+    carrier: ctf.tally(4), defender: ctf.tally(9), gpm: ctf.gamePlayMode,
+  };
+  // CTF with no score limit (the shipped setting) plays on; its time limit
+  // weighs the team score.
+  const open = createRoundState({ settings: vanilla, mode: 'Ctf', gameTime: 60 });
+  for (let i = 0; i < 5; i++) open.flagScore({ player: 1, team: 1, msg: SCORE_MSG.flagCapture });
+  const openStatus = open.status;
+  open.kill({ killer: 2, killerTeam: 2, victim: 1, victimTeam: 1 });
+  open.tick(61, []);
+  end.ctfOpen = { openStatus, winner: open.winner, reason: open.endReason, type: open.victoryType };
+
+  // A Conquest point taken pays the table's attack, not its capture.
+  const cp = createRoundState({ settings: vanilla, mode: 'Conquest', tickets: { team1: 10, team2: 10 } });
+  cp.capture({ player: 1, team: 2 });
+  end.cpCapture = { row: cp.tally(1), team: { ...cp.teams[2] } };
+  results.end = end;
 }
 
 console.log(JSON.stringify(results));

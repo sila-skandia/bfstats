@@ -210,7 +210,8 @@ export function writeInput(bot) {
     altFire: bot.isFiring && !!alt,
   };
   if (bot.vehicle?.kind === 'air') {
-    // The world's air branch: `forwardKeys` ramps the latched throttle,
+    // The world's air branch: `forwardKeys` ramps the latched throttle (a
+    // helicopter's is its held collective, `world-vehicle-tick.js`),
     // `rudder` is the yaw, the pad's `roll` / `pitch` are the stick.
     const a = bot._airInput ?? {};
     input.forwardKeys = a.power ?? 0;

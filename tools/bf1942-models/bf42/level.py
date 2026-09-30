@@ -77,6 +77,14 @@ class StaticInstance:
     # The level-relative file that created it, when a mode script's chain did
     # (`script_objects`); None for everything read from one known file.
     source: str | None = None
+    # `Object.setOSId <n>` on an ObjectSpawner placement: the control point
+    # whose `objectSpawnerId` is `n` owns it. `ObjectSpawner::setOSId`
+    # (lnxded 0x083144a0) files the spawner under that id
+    # (`BFSpawnPointManager::addObjectSpawner` 0x08167f50) when n > 0, and
+    # `ControlPoint::CPEnable` 0x082840e0 / `CPDisable` 0x08284200 hand every
+    # spawner filed under the point's `objectSpawnerId` (+0x210) the point's
+    # team and switch it on / off. None when the placement sets none.
+    os_id: int | None = None
 
 
 @dataclass
@@ -851,6 +859,11 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
         elif cmd == "setteam":
             try:
                 current.team = int(float(args.split()[0]))
+            except (ValueError, IndexError):
+                continue
+        elif cmd == "setosid":
+            try:
+                current.os_id = int(float(args.split()[0]))
             except (ValueError, IndexError):
                 continue
     return instances

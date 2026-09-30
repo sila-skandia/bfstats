@@ -41,6 +41,21 @@
  * the two open points (30 each) plus their own HQ (50), 110 in all, so the
  * Russians bleed 5 a minute from the start until the weight drops under 99.
  *
+ * The round's end is the server's too (`features/round-end-winner-screen`,
+ * ledger ROUND-1..ROUND-9). `GameServer::gameStatusPlaying` decides a winner
+ * every tick: in Conquest and Co-op a side under one ticket loses (both at
+ * once is a draw); past the time limit the larger share of its starting
+ * tickets wins there, and the larger team score in CTF and TDM; and
+ * `GameServer::handleScore` ends a CTF round the moment a side's flag
+ * captures reach the score limit. The winner goes to
+ * `ScoreManager::setWinner`, which also counts the round on that side's
+ * rounds-won line, and the status to EndGame, where every score and every
+ * bot stops. How decisively it was won is the victory type, from the margin
+ * between the two sides' ticket shares against `game.setMinorVictory` and
+ * `setMajorVictory`. A multiplayer server restarts the map
+ * `setTimeBeforeRestartMap` seconds later (10 by default); a single-player
+ * one waits for the debriefing's REPLAY or ABORT.
+ *
  * Pure: no `three`, no DOM, no page. `tests/round_state_harness.mjs` drives it.
  */
 
@@ -53,6 +68,93 @@ export const SCORE_DEFAULTS = Object.freeze({
 
 /** The enemy weight above which a side bleeds: `cmp [ebp-0x1dc],0x63`. */
 export const BLEED_WEIGHT = 99;
+
+/** `Game::getGamePlayMode` (`+0x10`): what `stringToGPM` makes of a mode's
+ *  name (ledger RADIO-13). Instant Battle plays Conquest's rules on the
+ *  level's `SinglePlayer<Side>.con` (the client's `setGamePlayMode(2)`,
+ *  0x0044eb19). */
+export const GAME_PLAY_MODE = Object.freeze({
+  ctf: 1, conquest: 2, tdm: 3, coop: 4, objective: 5,
+});
+
+/** The game play mode a layer or game type name stands for: `Ctf` 1, `Tdm`
+ *  3, `ObjectiveMode` 5, `CoOp` and its `SinglePlayer` layer 4, anything
+ *  else Conquest's 2, which is `stringToGPM`'s own fallback. */
+export function gamePlayModeOf(mode) {
+  const name = String(mode ?? '').trim().toLowerCase();
+  if (name === 'ctf') return GAME_PLAY_MODE.ctf;
+  if (name === 'tdm') return GAME_PLAY_MODE.tdm;
+  if (name === 'objectivemode' || name === 'objective') return GAME_PLAY_MODE.objective;
+  if (name === 'coop' || name === 'singleplayer') return GAME_PLAY_MODE.coop;
+  return GAME_PLAY_MODE.conquest;
+}
+
+/** Whether a mode runs the control-point bleed and ends on tickets: the
+ *  `mode == 2 || 4 || 5` block of `gameStatusPlaying` (0x08151bb5). */
+export function ticketsDecide(gpm) {
+  return gpm === GAME_PLAY_MODE.conquest || gpm === GAME_PLAY_MODE.coop
+    || gpm === GAME_PLAY_MODE.objective;
+}
+
+/** `ScoreManager::setVictoryType`'s values. `none` is what `reset` writes
+ *  (0x08161bf0) and what the debriefing refuses to build on. */
+export const VICTORY = Object.freeze({
+  draw: 0, minor: 1, major: 2, total: 3, none: 4,
+});
+
+/** `game.setMinorVictory 0.40` / `setMajorVictory 0.80`, vanilla's
+ *  `Bf1942/Game/Init.con`; no installed mod's `Game.rfa` sets its own. */
+export const MINOR_VICTORY = 0.40;
+export const MAJOR_VICTORY = 0.80;
+
+/** Seconds from the end of a round to the next: `GameServer::init` writes
+ *  10.0 to both restart timers (`+0x218`, `+0x21c`), and
+ *  `setTimeBeforeRestartMap` (0x0813da60) clamps a server's own to 1..30. */
+export const RESTART_DELAY = 10;
+
+export function clampRestartDelay(value, fallback = RESTART_DELAY) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(30, Math.max(1, n));
+}
+
+/** The share of its starting tickets a side still has, as the time-limit
+ *  and victory-type arithmetic takes it: `tickets / (count * ratio *
+ *  maxPlayers * 0.0625)` over the RAW count (0x081517bc..0x081517e9), not the
+ *  truncated start, so a full side reads a hair over 1 on an odd server. */
+export function ticketShare(tickets, count, maxPlayers = TICKET_BASE_PLAYERS) {
+  const whole = Number(count) * clampMaxPlayers(maxPlayers) * 0.0625;
+  return whole > 0 ? Number(tickets) / whole : 0;
+}
+
+/**
+ * How decisively `winner` won, from the two sides' ticket shares
+ * (0x08151842..0x0815187c): the margin is the winner's share less the
+ * loser's (0 when the loser is ahead), then 1 below `minor`, 2 from `minor`
+ * up to below `major`, 3 from `major` on (`fucompp` with the threshold on
+ * top: an equal margin reads as the larger class). A draw is 0.
+ */
+export function victoryTypeOf(winner, shares, minor = MINOR_VICTORY, major = MAJOR_VICTORY) {
+  if (winner !== 1 && winner !== 2) return VICTORY.draw;
+  const own = Number(shares?.[winner]) || 0;
+  const other = Number(shares?.[winner === 1 ? 2 : 1]) || 0;
+  const margin = own >= other ? own - other : 0;
+  if (!(minor <= margin)) return VICTORY.minor;
+  if (!(major <= margin)) return VICTORY.major;
+  return VICTORY.total;
+}
+
+/** `ScoreMsg`, as `GameServer::handleScore` (0x0814ac90) logs it and
+ *  `ScoreManager::scoreEvent` (0x081617c0) pays it: 0 FlagCapture pays the
+ *  table's `capture`, 1 Attack its `attack`, 2 Defence its `defence`. A
+ *  Conquest point taken is an Attack (`ControlPoint::handleFrameUpdate`,
+ *  `push 0x1` at 0x08283d5c), a CTF flag picked up is too, a flag brought
+ *  home is a FlagCapture and one returned is a Defence (`Flag::handleDrop`,
+ *  `Flag::handleUpdate`). */
+export const SCORE_MSG = Object.freeze({
+  flagCapture: 0, attack: 1, defence: 2, kill: 3, death: 4, deathNoMsg: 5,
+  tk: 6, spawned: 7, objective: 8, objectiveTk: 9,
+});
 
 /** The server size the level's ticket numbers are written for: both halves of
  *  the arithmetic multiply by `maxPlayers * 0.0625`. It is also what
@@ -182,13 +284,24 @@ export function holdWeight(points) {
  *  - `settings`  the pack's `score-settings.json`, or a function answering it
  *                (the page's pack lands after the level does);
  *  - `mode`      the level's gameplay mode, or a function answering it, for
- *                the table above;
+ *                the table above and for which rules end the round
+ *                (`gamePlayModeOf`);
  *  - `tickets`   `{ team1, team2 }`, the level's counts (`scene.json.tickets`,
  *                with its `maxPlayers` when the level's script sets one);
  *  - `rates`     `{ team1, team2 }`, `setTicketLostPerMin` per side;
  *  - `maxPlayers` the server's slot count; both the counts and the rates are
  *                scaled by it over 16, so the default 16 plays them as given;
- *  - `ticketLosePerDeath`  the engine's default 1, or a level's own command.
+ *  - `ticketLosePerDeath`  the engine's default 1, or a level's own command;
+ *  - `scoreLimit` `game.serverScoreLimit`: flag captures in CTF, team score in
+ *                TDM; 0, the shipped `ServerSettings.con`, is no limit;
+ *  - `gameTime`  the round's time limit in seconds (`game.serverGameTime` is
+ *                minutes; `Setup::startHostGame` multiplies by 60 before
+ *                `setGameInfo`); 0 is none, the shipped value;
+ *  - `minorVictory` / `majorVictory`  the victory-type thresholds;
+ *  - `restartDelay` seconds from EndGame to the restart on a multiplayer
+ *                server; `singlePlayer` true keeps the round in EndGame until
+ *                the page restarts it, as `gameStatusEndGame` does with
+ *                `Setup+0x15c` (the `game.gameMode` word) at 0.
  *
  * `counts` is keyed by player id: the page's local player, or a bot's. In a
  * room the page builds none: the server owns the round there, and its
@@ -197,11 +310,15 @@ export function holdWeight(points) {
 export function createRoundState({
   settings = null, mode = '', tickets = null, rates = null,
   maxPlayers = TICKET_BASE_PLAYERS, ticketLosePerDeath = 1,
+  scoreLimit = 0, gameTime = 0,
+  minorVictory = MINOR_VICTORY, majorVictory = MAJOR_VICTORY,
+  restartDelay = RESTART_DELAY, singlePlayer = false,
 } = {}) {
   const readSettings = typeof settings === 'function' ? settings : () => settings;
   const readMode = typeof mode === 'function' ? mode : () => mode;
   const serverPlayers = clampMaxPlayers(maxPlayers);
   const startPlayers = roundPlayers(serverPlayers, tickets);
+  const counts = { 1: Number(tickets?.team1), 2: Number(tickets?.team2) };
   const round = {
     /** Team 1 is Axis and team 2 Allied, the reading the rest of the viewer
      *  uses. Both are whole tickets. */
@@ -215,6 +332,15 @@ export function createRoundState({
     startPlayers,
     /** One tally per player, created on first use. */
     counts: new Map(),
+    /** Each side's `TeamScore`: the round's summed points (`+0x20`, what the
+     *  time limit weighs in CTF and TDM) and the counters `scoreEvent` keeps
+     *  beside them, flag captures (`+8`, what the CTF counter shows and the
+     *  score limit reads) among them. */
+    teams: { 1: emptyTeamScore(), 2: emptyTeamScore() },
+    /** Rounds each side has won on this server (`setWinner` adds one at
+     *  `ScoreManager + team * 0x50 + 0x5c`, which `reset` never clears): the
+     *  score board's `Scoreboard/AxisRoundWon` and `AlliedRoundWon`. */
+    roundsWon: { 1: 0, 2: 0 },
     /** Seconds each side still owes before its next ticket. */
     countdowns: { 1: 0, 2: 0 },
     /** Whether each side's bleed is running this frame, for the readouts. */
@@ -222,10 +348,35 @@ export function createRoundState({
     /** The weight each side held on the last `tick`, for the readouts. */
     held: { 1: 0, 2: 0 },
     lossPerDeath: Number(ticketLosePerDeath) || 0,
+    scoreLimit: Math.max(0, Math.trunc(Number(scoreLimit) || 0)),
+    gameTime: Math.max(0, Number(gameTime) || 0),
+    minorVictory: Number.isFinite(Number(minorVictory)) ? Number(minorVictory) : MINOR_VICTORY,
+    majorVictory: Number.isFinite(Number(majorVictory)) ? Number(majorVictory) : MAJOR_VICTORY,
+    restartDelay: clampRestartDelay(restartDelay),
+    singlePlayer: !!singlePlayer,
+    /** 'playing' or 'endGame' (`Game+0x58`: 1 or 2). */
+    status: 'playing',
+    /** Seconds the round has been playing, for the time limit. */
+    clock: 0,
+    /** 1, 2, 0 for a draw; null while the round plays. */
+    winner: null,
+    /** `VICTORY`; `none` until the round ends. */
+    victoryType: VICTORY.none,
+    /** Why it ended: 'tickets', 'time' or 'score'. */
+    endReason: null,
+    /** Seconds left before a multiplayer server restarts the map; Infinity on
+     *  a single-player one and while the round plays. */
+    restartIn: Infinity,
+    /** How many times the round has been restarted on this level. */
+    restarts: 0,
     /** A side at zero is out of the round; the engine stops the bleed there and
-     *  so does this. */
+     *  so does this. True from the end of the round on (`status` EndGame). */
     over: false,
   };
+
+  function emptyTeamScore() {
+    return { score: 0, kills: 0, deaths: 0, captures: 0, attacks: 0, defences: 0, teamKills: 0 };
+  }
 
   /** The score table, resolved on read so that a settings file arriving after
    *  the level (the pack is fetched in parallel with it) still counts: the
@@ -244,6 +395,10 @@ export function createRoundState({
       }
       return table;
     },
+  });
+  /** The round's `Game::getGamePlayMode`, read live like the table. */
+  Object.defineProperty(round, 'gamePlayMode', {
+    get() { return gamePlayModeOf(readMode()); },
   });
 
   /** Seconds between tickets while a side's bleed runs, `Infinity` when the
@@ -267,27 +422,44 @@ export function createRoundState({
     if (!row) {
       row = {
         playerId, score: 0, kills: 0, deaths: 0, suicides: 0, captures: 0,
-        teamKills: 0,
+        teamKills: 0, attacks: 0, defences: 0, flags: 0, team: 0,
       };
       round.counts.set(playerId, row);
     }
     return row;
   }
 
-  /** Pay `points` into a player's tally. `key` is a table key. */
-  function pay(playerId, key, field, points = 1) {
+  const playing = () => round.status === 'playing';
+
+  /** Pay `points` into a player's tally. `key` is a table key. `team` is the
+   *  player's side, when the caller knows it: the points go on that side's
+   *  `TeamScore` too (`scoreEvent` adds them at `team * 0x50 + 0x30`).
+   *  Nothing is paid once the round has ended: `scoreEvent` returns at once
+   *  while the status is EndGame (0x081617e2). */
+  function pay(playerId, key, field, points = 1, team = 0) {
+    if (!playing()) return tally(playerId);
     const row = tally(playerId);
+    if (team === 1 || team === 2) row.team = team;
     row[key] += points;
-    row.score += round.table[field] ?? 0;
+    const value = round.table[field] ?? 0;
+    row.score += value;
+    const side = row.team === 1 || row.team === 2 ? round.teams[row.team] : null;
+    if (side) {
+      side.score += value;
+      if (key in side) side[key] += points;
+    }
     return row;
   }
 
-  /** Take tickets off a team, never below zero. */
+  /** Take tickets off a team, never below zero. The round is not decided
+   *  here: `killPlayer` spends outside the status loop, and the next
+   *  `gameStatusPlaying` pass (`tick`) reads the counts, after its own bleed
+   *  has run for both sides, which is what makes two sides out on one tick a
+   *  draw rather than a win for whichever bled second. */
   function spend(team, count) {
     if (team !== 1 && team !== 2 || !(count > 0)) return 0;
     const before = round.tickets[team];
     round.tickets[team] = Math.max(0, before - count);
-    if (round.tickets[team] === 0) round.over = true;
     return before - round.tickets[team];
   }
 
@@ -295,9 +467,9 @@ export function createRoundState({
    *  tickets. `suicide` also counts on his own line. */
   function died(playerId, team, suicide = false) {
     if (playerId == null) return;
-    pay(playerId, 'deaths', 'death');
-    if (suicide) tally(playerId).suicides += 1;
-    spend(team, round.lossPerDeath);
+    pay(playerId, 'deaths', 'death', 1, team);
+    if (suicide && playing()) tally(playerId).suicides += 1;
+    if (playing()) spend(team, round.lossPerDeath);
   }
 
   /** One player killed another. Same team is a team kill: the killer pays the
@@ -306,7 +478,7 @@ export function createRoundState({
   function kill({ killer = null, killerTeam = 0, victim = null, victimTeam = 0 }) {
     if (killer == null || killer === victim) return died(victim, victimTeam, true);
     const friendly = killerTeam !== 0 && killerTeam === victimTeam;
-    pay(killer, friendly ? 'teamKills' : 'kills', friendly ? 'tk' : 'kill');
+    pay(killer, friendly ? 'teamKills' : 'kills', friendly ? 'tk' : 'kill', 1, killerTeam);
     died(victim, victimTeam, false);
   }
 
@@ -315,10 +487,111 @@ export function createRoundState({
     died(player, team, true);
   }
 
-  /** A player was inside a point of his own team when it turned. */
-  function capture({ player = null } = {}) {
-    if (player == null) return;
-    pay(player, 'captures', 'capture');
+  /** A player was inside a point of his own team when it turned. The engine
+   *  scores it as an Attack, the table's `attack` (`SCORE_MSG`), not its
+   *  `capture`, which is the CTF flag's; `captures` still counts the point
+   *  on his line. */
+  function capture({ player = null, team = 0 } = {}) {
+    if (player == null || !playing()) return;
+    pay(player, 'captures', 'attack', 1, team);
+    tally(player).attacks += 1;
+    if (round.teams[tally(player).team]) round.teams[tally(player).team].attacks += 1;
+  }
+
+  /**
+   * A CTF score (`ctf.js`): `msg` is `SCORE_MSG.flagCapture` (a flag brought
+   * home: the table's `capture`, one on the side's flag captures), `attack`
+   * (the enemy flag picked up) or `defence` (the own flag returned). Checks
+   * the score limit after paying, as `handleScore` does: CTF on flag
+   * captures, TDM on team score, team 1 first.
+   */
+  function flagScore({ player = null, team = 0, msg = SCORE_MSG.flagCapture } = {}) {
+    if (player == null || !playing()) return;
+    if (msg === SCORE_MSG.flagCapture) {
+      pay(player, 'flags', 'capture', 1, team);
+      if (round.teams[team]) round.teams[team].captures += 1;
+    } else if (msg === SCORE_MSG.attack) {
+      pay(player, 'attacks', 'attack', 1, team);
+      if (round.teams[team]) round.teams[team].attacks += 1;
+    } else if (msg === SCORE_MSG.defence) {
+      pay(player, 'defences', 'defence', 1, team);
+      if (round.teams[team]) round.teams[team].defences += 1;
+    }
+    checkScoreLimit();
+  }
+
+  /** `handleScore`'s tail (0x0814ad35..0x0814adf0): with a score limit set,
+   *  CTF ends on a side's flag captures (`TeamScore+8`, unsigned compare) and
+   *  TDM on its team score (`+0x20`); team 1 is asked first; victory type 1. */
+  function checkScoreLimit() {
+    if (!playing() || !(round.scoreLimit > 0)) return;
+    const gpm = round.gamePlayMode;
+    let key = null;
+    if (gpm === GAME_PLAY_MODE.ctf) key = 'captures';
+    else if (gpm === GAME_PLAY_MODE.tdm) key = 'score';
+    if (!key) return;
+    if (round.teams[1][key] >= round.scoreLimit) endRound(1, VICTORY.minor, 'score');
+    else if (round.teams[2][key] >= round.scoreLimit) endRound(2, VICTORY.minor, 'score');
+  }
+
+  /** Each side's share of its starting tickets (`ticketShare`). */
+  function shares() {
+    return {
+      1: ticketShare(round.tickets[1], counts[1], startPlayers),
+      2: ticketShare(round.tickets[2], counts[2], startPlayers),
+    };
+  }
+
+  /** The ticket law of `gameStatusPlaying` (0x08151458..0x0815155e), for the
+   *  modes that end on tickets: a side under one ticket loses, both at once
+   *  is a draw. */
+  function decideOnTickets() {
+    if (!playing() || !ticketsDecide(round.gamePlayMode)) return;
+    const out1 = round.tickets[1] < 1;
+    const out2 = round.tickets[2] < 1;
+    if (!out1 && !out2) return;
+    const winner = out1 && out2 ? 0 : (out1 ? 2 : 1);
+    endRound(winner, null, 'tickets');
+  }
+
+  /** The time limit (0x0815155e..0x08151a8f): the larger ticket share wins in
+   *  the ticket modes, the larger team score in CTF and TDM; equal is a draw. */
+  function decideOnTime() {
+    if (!playing() || !(round.gameTime > 0) || !(round.clock > round.gameTime)) return;
+    if (ticketsDecide(round.gamePlayMode)) {
+      const s = shares();
+      const winner = s[1] > s[2] ? 1 : (s[2] > s[1] ? 2 : 0);
+      endRound(winner, null, 'time');
+      return;
+    }
+    const a = round.teams[1].score, b = round.teams[2].score;
+    endRound(a > b ? 1 : (b > a ? 2 : 0), null, 'time');
+  }
+
+  /**
+   * The round is over: `setWinner`, then `setGameStatus(EndGame)`, then the
+   * victory type. In the ticket modes a winner's type is his margin in ticket
+   * shares (`victoryTypeOf`); CTF and TDM write 1, and a draw 0, in every
+   * mode. `type` forces one (the score limit's 1).
+   */
+  function endRound(winner, type = null, reason = null) {
+    if (!playing()) return;
+    round.winner = winner;
+    if (winner === 1 || winner === 2) round.roundsWon[winner] += 1;
+    round.status = 'endGame';
+    round.over = true;
+    round.endReason = reason;
+    if (type != null) {
+      round.victoryType = type;
+    } else if (winner !== 1 && winner !== 2) {
+      round.victoryType = VICTORY.draw;
+    } else if (ticketsDecide(round.gamePlayMode)) {
+      round.victoryType = victoryTypeOf(winner, shares(), round.minorVictory, round.majorVictory);
+    } else {
+      round.victoryType = VICTORY.minor;
+    }
+    for (const team of [1, 2]) round.bleeding[team] = false;
+    round.restartIn = round.singlePlayer ? Infinity : round.restartDelay;
   }
 
   /**
@@ -338,15 +611,25 @@ export function createRoundState({
    * whatever the weights once it has nobody alive or nowhere to spawn, and
    * meanwhile its enemy, if it has a live player, has its countdown run at
    * (the weight the side holds) / 100.
+   *
+   * CTF and TDM have no bleed (the weight block runs for modes 2, 4 and 5
+   * only). After the bleed the round is decided on tickets and on the time
+   * limit; once it is over, only the restart countdown runs.
    */
   function tick(dt, points) {
     const held = holdWeight(points);
     round.held = held;
     const lost = { 1: 0, 2: 0 };
     if (!(dt > 0)) return lost;
+    if (!playing()) {
+      if (Number.isFinite(round.restartIn)) round.restartIn = Math.max(0, round.restartIn - dt);
+      return lost;
+    }
+    round.clock += dt;
+    const bleeds = ticketsDecide(round.gamePlayMode);
     for (const team of [1, 2]) {
       const enemy = team === 1 ? 2 : 1;
-      const running = !round.over && held[enemy] > BLEED_WEIGHT
+      const running = bleeds && playing() && held[enemy] > BLEED_WEIGHT
         && Number.isFinite(intervals[team]) && round.tickets[team] > 0;
       round.bleeding[team] = running;
       if (!running) {
@@ -365,9 +648,46 @@ export function createRoundState({
         round.countdowns[team] += intervals[team];
       }
     }
+    decideOnTickets();
+    decideOnTime();
     return lost;
   }
 
-  Object.assign(round, { tally, kill, suicide, capture, tick, spend });
+  /** Whether a multiplayer server's restart timer has run out. */
+  function restartDue() {
+    return round.status === 'endGame' && round.restartIn <= 0;
+  }
+
+  /**
+   * `GameServer::restartMap` (0x08157cb0) for the score: every side back to
+   * its starting tickets (`round(N * ratio * players/16)`, the start's own
+   * arithmetic), the score wiped (`ScoreManager` vt+100) and every player's
+   * stats reset (`BFPlayer::resetStats`), the bleed countdowns refilled and
+   * the round playing again. The rounds won survive: `reset` does not touch
+   * them.
+   */
+  function restart() {
+    round.tickets[1] = startingTickets(counts[1], startPlayers);
+    round.tickets[2] = startingTickets(counts[2], startPlayers);
+    round.counts.clear();
+    round.teams = { 1: emptyTeamScore(), 2: emptyTeamScore() };
+    for (const team of [1, 2]) {
+      round.countdowns[team] = intervals[team];
+      round.bleeding[team] = false;
+    }
+    round.status = 'playing';
+    round.over = false;
+    round.clock = 0;
+    round.winner = null;
+    round.victoryType = VICTORY.none;
+    round.endReason = null;
+    round.restartIn = Infinity;
+    round.restarts += 1;
+  }
+
+  Object.assign(round, {
+    tally, kill, suicide, capture, flagScore, tick, spend, endRound, restart,
+    restartDue, shares,
+  });
   return round;
 }

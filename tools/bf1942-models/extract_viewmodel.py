@@ -523,8 +523,9 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     if PRIMARY not in resolved:
         # Numbered aim states only (`Ub_StandAim<W>1..n`) are not one weapon's
         # idle: FHSW's `Random*` kit items name one state per weapon they can
-        # issue. Which one a soldier holds is not settled here, so the pair is
-        # skipped rather than the whole run.
+        # issue. The bundle is never held -- a spawn rolls one of the
+        # numbered templates (bf42/kit.py `RandomItem`) -- so `kit_pairs`
+        # asks for each variant and the bundle itself is skipped here.
         primary = clip_report.get(PRIMARY, {})
         raise PoseError(primary.get("error") or
                         f"no plain Ub_StandAim{weapon}, only numbered states "
@@ -846,10 +847,14 @@ def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str
             continue
         for soldier in kit.get("soldiers") or []:
             for item in kit.get("items") or []:
-                key = (soldier.lower(), item["template"].lower())
-                if key not in seen:
-                    seen.add(key)
-                    pairs.append((soldier, item["template"]))
+                # A rolled item is never held: each variant it can hand out
+                # is (`Ub_StandAim<Bundle>N`, the arms that variant plays).
+                held = [v for v in item.get("variants") or [] if v] or [item["template"]]
+                for weapon in held:
+                    key = (soldier.lower(), weapon.lower())
+                    if key not in seen:
+                        seen.add(key)
+                        pairs.append((soldier, weapon))
     return pairs
 
 

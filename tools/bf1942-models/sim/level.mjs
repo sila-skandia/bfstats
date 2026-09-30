@@ -25,6 +25,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { resolveKitRow, rollKit } from '../viewer/random-items.js';
+
 // ---------------------------------------------------------------------------
 // The synthetic harness level
 // ---------------------------------------------------------------------------
@@ -385,8 +387,11 @@ export async function realLevel(M, { maps, models, map }) {
     const names = (Array.isArray(slots) ? slots : Object.values(slots ?? {})).filter(Boolean);
     if (!names.length) return null;
     const kitName = names[Math.floor(Math.random() * names.length)];
-    const kit = loadouts?.kits?.[kitName];
-    if (!kit) return null;
+    const row = loadouts?.kits?.[kitName];
+    if (!row) return null;
+    // Dealt as the page deals it: the kit's `Random*` items rolled to the
+    // variant this bot holds (`viewer/random-items.js`, ledger KIT-1).
+    const kit = resolveKitRow(row, rollKit(row));
     const items = [...(kit.items ?? [])];
     if (kit.primary) items.sort((a, b) => (a === kit.primary ? -1 : 0) - (b === kit.primary ? -1 : 0));
     const weapons = items.map(item => {

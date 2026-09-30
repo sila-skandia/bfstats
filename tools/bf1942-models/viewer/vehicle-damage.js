@@ -38,7 +38,7 @@
 // under plain node. The caller owns every scene concern: where an effect is
 // drawn, what a wreck looks like, who is allowed to climb in.
 
-import { Armor, DEATH_EPSILON } from './armor.js';
+import { Armor, DEATH_EPSILON, templateHitPoints } from './armor.js';
 import { blastDistance, splashDamage as splashHp } from './effects-core.js';
 
 /** `addArmorEffect`'s death tier: the explosion and the scrap. */
@@ -112,10 +112,12 @@ function namesAt(effects, threshold) {
  */
 export class DamageableVehicle {
   constructor(extras, { name = null, owner = -1 } = {}) {
-    const max = Number.isFinite(extras?.maxHitpoints) ? extras.maxHitpoints
-      : (Number.isFinite(extras?.hitpoints) ? extras.hitpoints : 0);
-    const start = Number.isFinite(extras?.hitpoints) ? extras.hitpoints : max;
-    this.armor = new Armor(max, start);
+    // The template's two words as `setArmorComponent` hands them over, a
+    // word the `.con` never set being the template's own 10. `Armor` then
+    // applies the 128 ceiling to the max and lets the starting value raise it
+    // again (HP-17), so an authored 2000/2000 spawns 2000/2000.
+    this.armor = new Armor(templateHitPoints(extras?.maxHitpoints),
+                           templateHitPoints(extras?.hitpoints));
     this.effects = Array.isArray(extras?.effects) ? extras.effects : [];
     this.criticalDamage = Number.isFinite(extras?.criticalDamage)
       ? extras.criticalDamage : null;
@@ -165,10 +167,15 @@ export class DamageableVehicle {
   get destroyed() { return this.armor.destroyed; }
 
   /**
-   * Is this vehicle critically damaged — the state the engine broadcasts as
-   * message `0x15` and the state its fire tier is authored to coincide with
-   * (ARM-2: 10 of 10 sampled vanilla vehicles put the fire tier at exactly
-   * `criticalDamage`)?
+   * Is this vehicle critically damaged — the state its fire tier is authored
+   * to coincide with (ARM-2: 10 of 10 sampled vanilla vehicles put the fire
+   * tier at exactly `criticalDamage`)? `hitPoints <= criticalDamage` on the
+   * two numbers, inclusive, which is the engine's own bleed test (HP-17).
+   * The engine's critical flag moves only when `status()` sees the crossing
+   * (message `0x14`; `0x15` is destruction, HP-13), so the two agree for any
+   * hull that spawns above its threshold. A scripted burn-down authored at
+   * or under it (DC's `flagkill`, EoD's `LtnFX`) bleeds here as it does in
+   * the engine, where it is never flagged.
    */
   get critical() {
     return this.criticalDamage !== null

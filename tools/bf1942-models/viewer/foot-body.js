@@ -14,6 +14,7 @@ import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
 import { poseBases } from './pose-bases.js';
 import { createPoseComposer, ungraft } from './pose-compose.js';
+import { byName } from './model-file.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -154,8 +155,9 @@ export function createFootBody(page) {
     // replay's bodies play it (this body has no knockback). Asked for now so
     // its fetch runs beside the others rather than after them.
     const blastLoad = footBundle(manifest.explosion);
-    const grip = manifest.weaponGrip?.[weapon] ?? weapon;
-    let upper = await footBundle(manifest.grips?.[grip]);
+    // Case-blind (`byName`): FHSW's kits say `Mp40`, its gaits `MP40`.
+    const grip = byName(manifest.weaponGrip, weapon) ?? weapon;
+    let upper = await footBundle(byName(manifest.grips, grip));
     if (!upper.length && manifest.grips?.Colt) {
       // The same fallback the remote renderer takes: a weapon whose grip has no
       // bundle borrows the pistol's rather than sliding along unanimated.

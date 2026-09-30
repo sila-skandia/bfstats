@@ -309,16 +309,17 @@ function armed(scene, { collider = null, platform = null } = {}) {
   const { guns, states, collect } = armed(scene, { platform });
   const [group] = collect(rig);
   const state = states.get(group.node);
-  // Hold the trigger for the whole magazine at `roundOfFire 4`: 8 bombs at
-  // 0.25 s apart is a 2 s stick.
+  // Hold the trigger for the whole magazine at `roundOfFire 4`, on the
+  // world's 30 Hz tick: the fire timer is set to 0.25 s a round and spent in
+  // whole ticks (GUN-13), so a bomb leaves every eighth tick, 0.267 s apart.
   const xs = [];
   const times = [];
   let t = 0;
   guns.setFiring(group, true);
-  for (let i = 0; i < 180 && state.ammo > 0; i++) {
+  for (let i = 0; i < 90 && state.ammo > 0; i++) {
     const before = guns.projectiles.length;
-    guns.advance(1 / 60);
-    t += 1 / 60;
+    guns.advance(1 / 30);
+    t += 1 / 30;
     if (guns.projectiles.length > before) {
       for (let k = before; k < guns.projectiles.length; k++) {
         xs.push(round3(guns.projectiles[k].mesh.position.x));
@@ -334,7 +335,7 @@ function armed(scene, { collider = null, platform = null } = {}) {
     // Alternating barrels: -1 then +1 then -1 ... in the rig's own x.
     barrelX: xs,
     releaseTimes: times,
-    // Along-track spacing at 60 m/s and 4 rounds a second.
+    // Along-track spacing at 60 m/s, one bomb every eight ticks.
     spacingMetres: times.length > 1
       ? round3((times[times.length - 1] - times[0]) / (times.length - 1) * 60)
       : null,

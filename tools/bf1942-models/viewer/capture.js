@@ -414,6 +414,16 @@ export function createFlagCapture(page) {
     page.ensureAudioContext();
     if (!page.audioListener || page.audioListener.context.state === 'suspended') return;
     flagCapture.lastCaptureVoiceTime = now;
+    // The tree's own `GamePlay.ssc` when its manifest carries the script
+    // (`radio-sounds.json` `gameplay`, patch 0 a gain and 1 a loss, 0x006E4C1D):
+    // the mod's stems, rolled over the ones the side's language ships. A tree
+    // extracted before it did keeps the stems above.
+    const scripted = page.comms?.playGameplay?.(kind === 'gain' ? 0 : 1, team);
+    if (scripted) {
+      const [played] = await scripted;
+      flagCapture.lastCaptureVoice = { kind, team, dir: played?.dir ?? null, stem: played?.stem ?? null };
+      return;
+    }
     const stem = stems[Math.floor(Math.random() * stems.length)];
     for (const dir of captureVoiceDirs(team)) {
       const buf = await loadCaptureVoice(dir, stem);

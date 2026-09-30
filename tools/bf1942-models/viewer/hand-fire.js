@@ -13,6 +13,7 @@ import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
+import { calcRecoil } from './recoil.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -346,20 +347,17 @@ export function createHandFire(page) {
     // runs out — the bolt-cycle un-zoom. The toggle latch itself holds.
     const unzoom = hw.data?.zoom?.unZoomBetweenFire;
     if (unzoom > 0 && hw.zoomed) hw.rezoom = unzoom;
-    // `setRecoil*`: degrees per shot, sampled uniformly inside the declared
-    // range (Thompson up 0.21..0.25, leftRight -0.1..0.1) and written into the
-    // soldier's own look state, unscaled — the pitch clamp catches a long
-    // burst the same way it catches the mouse.
-    const recoil = hw.data?.recoil;
-    if (recoil && page.soldier) {
-      const draw = range => {
-        if (!range) return 0;
-        const lo = Math.min(range[0], range[1]);
-        // The gun's dice, so a seeded check kicks the same way every run.
-        return lo + page.guns.rand() * (Math.max(range[0], range[1]) - lo);
-      };
-      page.soldier.look(draw(recoil.leftRight) * DEG_TO_RAD,
-                   draw(recoil.up) * DEG_TO_RAD);
+    // `BFSoldier::calcRecoil` (`recoil.js`, ledger FA-2..FA-5): the shot only
+    // arms the soldier's recoil ride -- the two amounts drawn from
+    // `setRecoilForceUp` / `LeftRight` (Thompson up 0.21..0.25, leftRight
+    // -0.1..0.1) and a 20-tick counter for a `setGoBackOnRecoil` weapon, 8
+    // for one without. The world's soldier tick spends it on the look axes:
+    // 0.75 of the kick over eight ticks, and for a goBack weapon the same back
+    // over the next twelve. Nothing at all without `setHasRecoilForce`.
+    if (page.soldier) {
+      page.soldier.recoil ??= { count: 0, pitch: 0, yaw: 0, goBack: true, devMod: null };
+      // The gun's dice, so a seeded check kicks the same way every run.
+      calcRecoil(page.soldier.recoil, hw.data?.recoil, page.guns.rand, hw.data?.deviation?.mod);
     }
   };
   // Chained on *after* the raw assignment above, never before: `chainOnShot`

@@ -105,10 +105,10 @@ const group = found[0];
 out.afterCollect = lit(hull);
 
 guns.setFiring(group, true);
-// Two frames: `advance` walks the recoil before it fires the round, so the
-// first frame's shot only arms the kick and the second is where the barrel
-// first stands away from home. `roundOfFire 2` is one round every 0.5 s, so
-// the second frame does not fire again.
+// Two frames: the round arms the kick (3.14 / 10 s of it, GUN-12) and poses
+// the barrel at sin(3.14), a hair out of battery; the second frame is where
+// it first stands clearly away from home. `roundOfFire 2` is one round every
+// 0.5 s, so the second frame does not fire again.
 guns.advance(1 / 60);
 guns.advance(1 / 60);
 out.firingLit = lit(hull);

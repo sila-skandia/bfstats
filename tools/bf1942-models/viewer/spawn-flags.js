@@ -102,35 +102,48 @@ export function spawnFlags(extras) {
       spawns: owned,
     });
   }
-  // The fleet. One flag per ship instance — the picker names the ship — but
-  // the map draws one ring per spawn *group* on that hull, the way the game
-  // does: Wake's carrier shows three rings down its deck, its destroyer two.
-  // Each ring carries its group so a click selects that spot on the deck.
-  const ships = new Map();
+  // Spawn points an object carries: the fleet's decks, and on Desert Combat's
+  // levels the airbases' hangars, radar domes and towers, the Talil statics and
+  // the AC-130. The spawn screen lists spawn GROUPS, never their carriers
+  // (ledger SPAWNGRP-10): `getGroupsForTeam` offers each group of the side
+  // that holds a point, the map draws one ring per group at the average of
+  // its points (`BFSpawnGroup::calcNewPos`), and nothing on the screen names
+  // any of them. So carriers that share a group are one flag (No Fly Zone
+  // Day 2's group 99 rides a radar dome, two hangars and a tower: one ring,
+  // not four), and each group is one ring with its group on it, so a click
+  // selects that spot: Wake's carrier still shows three rings down its deck,
+  // its destroyer two. The label is only the picker's, since the game prints
+  // none: the level's own name for the spawn point, the way an unclaimed
+  // level group above is labelled, not the carrier's template name.
+  const carriers = new Map();
   for (const spawn of extras?.vehicleSoldierSpawns || []) {
     if (spawn?.group == null || claimed.has(spawn.group) || !spawn.position) continue;
     const key = spawn.pad != null ? `pad${spawn.pad}`
       : `${spawn.vehicle}|${spawn.spawner}|${spawn.rotation?.join(',') ?? ''}`;
-    if (!ships.has(key)) ships.set(key, []);
-    ships.get(key).push(spawn);
+    if (!carriers.has(key)) carriers.set(key, []);
+    carriers.get(key).push(spawn);
   }
-  for (const points of ships.values()) {
-    const first = points[0];
-    const groups = [];
-    const seen = new Map();
+  for (const points of carriedGroupSets(carriers)) {
+    const spots = [];
+    const seen = new Set();
     for (const p of points) {
-      if (!seen.has(p.group)) {
-        const entry = { group: p.group, position: p.position };
-        seen.set(p.group, entry);
-        groups.push(entry);
-      }
+      if (seen.has(p.group)) continue;
+      seen.add(p.group);
+      const own = points.filter(q => q.group === p.group);
+      spots.push({ spot: groupSpot(p.group, own), aiOnly: own.every(q => q.onlyForAI) });
     }
+    // A human's screen skips an `OnlyForAI` group (the client's group
+    // `getActive(false)`, 0x00484bc0, byte +0x42): Battle of Britain's towers
+    // each carry one beside their human group. Its points stay in `spawns`,
+    // where `pickSpawn` refuses them to a human as before.
+    const human = spots.filter(s => !s.aiOnly);
+    const groups = (human.length ? human : spots).map(s => s.spot);
+    const first = points.find(p => p.group === groups[0].group);
     flags.push({
-      name: (first.vehicle || 'ship').charAt(0).toUpperCase()
-        + (first.vehicle || 'ship').slice(1),
+      name: first.name || `spawn group ${first.group}`,
       team: points.find(p => p.team === 1 || p.team === 2)?.team ?? null,
       group: first.group,
-      position: first.position,
+      get position() { return groups[0].position; },
       uncapturable: true,
       vehicle: true,
       groups,
@@ -139,6 +152,69 @@ export function spawnFlags(extras) {
   }
   for (const point of zones) flags.push(captureZone(point));
   return flags;
+}
+
+/**
+ * The carriers' points, gathered into one list per set of carriers that
+ * share a spawn group (a carrier is one placed object: one spawner pad). A
+ * group is one selectable point however many objects carry it, so two
+ * carriers of one group can never be two flags; carriers with groups of
+ * their own stay apart, a ship's decks as one flag with a ring per group.
+ * Carrier order, then point order, is kept.
+ */
+function carriedGroupSets(carriers) {
+  const keys = [...carriers.keys()];
+  const parent = new Map(keys.map(k => [k, k]));
+  const root = k => {
+    while (parent.get(k) !== k) k = parent.get(k);
+    return k;
+  };
+  const byGroup = new Map();
+  for (const key of keys) {
+    for (const p of carriers.get(key)) {
+      const other = byGroup.get(p.group);
+      if (other == null) byGroup.set(p.group, key);
+      else {
+        const a = root(other), b = root(key);
+        if (a !== b) parent.set(b, a);
+      }
+    }
+  }
+  const sets = new Map();
+  for (const key of keys) {
+    const r = root(key);
+    if (!sets.has(r)) sets.set(r, []);
+    sets.get(r).push(...carriers.get(key));
+  }
+  return [...sets.values()];
+}
+
+/**
+ * One ring of a carried group: where `BFSpawnGroup::calcNewPos` (lnxded
+ * 0x08166d90) puts it, the plain average of the group's points. Live: the
+ * points' own arrays move with a hull under way (`hull-bodies.js`
+ * `rebaseDeckSpawns` writes them in place), so the ring is re-averaged into
+ * one kept array whenever it is read. The engine also leaves out a point whose
+ * carrier is critically damaged; this does not (a burning ship's flag is
+ * refused whole, `shipFlagInactive`).
+ */
+function groupSpot(group, points) {
+  const at = [0, 0, 0];
+  return {
+    group,
+    get position() {
+      let n = 0;
+      at[0] = 0; at[1] = 0; at[2] = 0;
+      for (const p of points) {
+        if (!p.position) continue;
+        at[0] += p.position[0]; at[1] += p.position[1]; at[2] += p.position[2];
+        n++;
+      }
+      if (!n) return null;
+      at[0] /= n; at[1] /= n; at[2] /= n;
+      return at;
+    },
+  };
 }
 
 /** What a control-point flag carries of its point: where it is, whether it

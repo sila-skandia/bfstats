@@ -105,6 +105,52 @@ class WornPart:
 
 
 @dataclass
+class RandomItem:
+    """One `addTemplate` a kit rolls on every spawn: `setRandomGeometries N`.
+
+    The engine never instantiates the bare name. `BundleTemplate::
+    addBundleChilds` (lnxded `0x081a8300`) walks the kit's children in
+    declaration order and, for each child whose count is at least 1, bumps
+    one process-wide counter (`world::randomCounter`, `0x08720754`), wraps it
+    to 1 once it passes N, and looks up `"%s%d"` of the name and the counter
+    (`.rodata 0x086b16b5`). A variant the library lacks is logged
+    (`addBundleChilds() template not found`) and the child is skipped. So FHSW's
+    `RandomGBTankcommander` is never a weapon: the soldier holds
+    `RandomGBTankcommander1..4`, a No2 three times out of four and a Sten the
+    fourth. Ledger KIT-1..KIT-3.
+    """
+    template: str                       # as the kit's `addTemplate` spells it
+    count: int                          # N
+    variants: list[str | None] = field(default_factory=list)  # 1..N, None where undeclared
+
+    def as_dict(self) -> dict:
+        return {"template": self.template, "count": self.count,
+                "variants": list(self.variants)}
+
+
+def random_items(library: con_mod.ObjectLibrary,
+                 kit: con_mod.ObjectTemplate) -> list[RandomItem]:
+    """Every rolled child of `kit`, in the order the engine rolls them.
+
+    Worn parts count as much as weapons: a helmet roll and a weapon roll bump
+    the same counter, so the list is the kit's whole stride per spawn. Each
+    variant is spelled as its own `create` line spells it, which is what every
+    extracted file is named after.
+    """
+    rolled: list[RandomItem] = []
+    for child in kit.children:
+        count = child.random_geometries or 0
+        if count < 1:
+            continue
+        variants = []
+        for index in range(1, count + 1):
+            template = library.object(f"{child.template}{index}")
+            variants.append(template.name if template is not None else None)
+        rolled.append(RandomItem(child.template, count, variants))
+    return rolled
+
+
+@dataclass
 class Kit:
     template: str
     source: str
@@ -119,6 +165,9 @@ class Kit:
     # The weapon in hand on spawn — `primary_weapon`. None for a kit that
     # carries nothing at `PRIMARY_ITEM_INDEX`, which vanilla never does.
     primary: str | None = None
+    # Every child the kit rolls per spawn, in roll order (`RandomItem`). A
+    # carried item named here is a bundle, never a weapon: `variants_of`.
+    random: list[RandomItem] = field(default_factory=list)
     # Filled by `sweep_levels`.
     levels: list[str] = field(default_factory=list)
     soldiers: list[str] = field(default_factory=list)
@@ -138,6 +187,16 @@ class Kit:
 
     def headgear(self) -> WornPart | None:
         return next((part for part in self.worn if part.slot == "head"), None)
+
+    def variants_of(self, item: str | None) -> list[str] | None:
+        """The declared variants a rolled item can hand out, deduplicated in
+        roll order, or None when `item` is not rolled."""
+        if not item:
+            return None
+        for rolled in self.random:
+            if rolled.template.lower() == item.lower():
+                return list(dict.fromkeys(v for v in rolled.variants if v))
+        return None
 
 
 # -- resolution ------------------------------------------------------------- #
@@ -263,8 +322,20 @@ def primary_weapon(library: con_mod.ObjectLibrary,
     comes back as the weapon's own `create` line spells it (`K98Sniper`,
     `Mp40`), not as the kit spells it (`k98Sniper`, `MP40`): the exported glb
     is named from the former, and a case-mismatched URL is a 404.
+
+    A rolled child (`RandomItem`) is judged by its variants and comes back as
+    the kit spells the bundle: which variant is in hand is decided per spawn,
+    not here.
     """
+    rolled = {item.template.lower(): item for item in random_items(library, kit)}
     for name in carried_templates(library, kit):
+        item = rolled.get(name.lower())
+        if item is not None:
+            variant = next((library.object(v) for v in item.variants if v), None)
+            if (variant is not None and variant.kind.lower() == HAND_FIRE_ARMS
+                    and variant.item_index == PRIMARY_ITEM_INDEX):
+                return item.template
+            continue
         template = library.object(name)
         if template is None or template.kind.lower() != HAND_FIRE_ARMS:
             continue
@@ -281,13 +352,32 @@ def pose_candidates(kit: Kit, posable: dict[str, str]) -> list[str]:
     name to the spelling the pose files use (the animation state machine's).
     More than one, because a weapon the state machine names can still fail to
     pose: its clip may be missing from the archive.
+
+    A rolled item stands for its variants, in roll order: the state machine
+    names `Ub_StandAimRandomGBTankcommander1`, never the bundle.
     """
     candidates: list[str] = []
     for name in [kit.primary, *kit.carried]:
-        spelled = posable.get(name.lower()) if name else None
-        if spelled is not None and spelled not in candidates:
-            candidates.append(spelled)
+        for held in kit.variants_of(name) or [name]:
+            spelled = posable.get(held.lower()) if held else None
+            if spelled is not None and spelled not in candidates:
+                candidates.append(spelled)
     return candidates
+
+
+def pose_candidate_sets(kit: Kit, posable: dict[str, str]) -> list[tuple[str, ...]]:
+    """`pose_candidates` once per weapon a spawn can put in hand.
+
+    A kit whose spawn weapon is rolled is seen holding any of its variants, so
+    each posable variant leads a set of its own, followed by the kit's other
+    candidates as the fallback. Any other kit is the one set it always was.
+    """
+    ordered = pose_candidates(kit, posable)
+    leads = [posable[v.lower()] for v in kit.variants_of(kit.primary) or []
+             if v.lower() in posable]
+    if not leads:
+        return [tuple(ordered)] if ordered else []
+    return [(lead, *[c for c in ordered if c not in leads]) for lead in dict.fromkeys(leads)]
 
 
 def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
@@ -326,7 +416,8 @@ def collect(library: con_mod.ObjectLibrary) -> dict[str, Kit]:
             kit_class=kit_class, theatre=theatre, unit=unit,
             team=template.kit_team, pickup=template.geometry,
             worn=worn, carried=carried,
-            primary=primary_weapon(library, template))
+            primary=primary_weapon(library, template),
+            random=random_items(library, template))
     return kits
 
 
@@ -402,7 +493,19 @@ def level_loadouts(level_paths: list[tuple[str, Path]]) -> dict[str, dict[int, T
     return loadouts
 
 
-def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]]) -> int:
+def spell_soldiers(loadouts: dict[str, dict[int, "TeamLoadout"]],
+                   library: con_mod.ObjectLibrary) -> None:
+    """Respell every team's soldier as the library's template spells it (in
+    place). A name the library lacks is kept as the level wrote it."""
+    for teams in loadouts.values():
+        for team in teams.values():
+            template = library.object(team.soldier) if team.soldier else None
+            if template is not None:
+                team.soldier = template.name
+
+
+def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]],
+                 library: con_mod.ObjectLibrary | None = None) -> int:
     """Bind kits to the levels and soldiers that field them.
 
     This is also the liveness test. `game.setKit` is the only thing in the game
@@ -410,8 +513,16 @@ def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]]) -> i
     names: vanilla's five `BaseKit` entries, all five Canadian kits, XPack2's
     seven, 46 of EoD's. Filtering on it costs nothing — the sweep has to happen
     anyway for the map list.
+
+    With `library`, a soldier is recorded as his own `create` line spells him.
+    The engine finds a template by name case-blind (`getTemplate`,
+    `0x081d5f10`), so Counterattack-1950's `game.setTeamSkin 2 frenchsoldier`
+    dresses `FrenchSoldier` -- but every file this pipeline writes is named
+    after the `create` line, and a case-sensitive server 404s the other.
     """
     loadouts = level_loadouts(level_paths)
+    if library is not None:
+        spell_soldiers(loadouts, library)
     for level_name, teams in loadouts.items():
         for team_id, team in teams.items():
             for slot, name in team.slots.items():

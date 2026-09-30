@@ -16,6 +16,7 @@ from bf42.assemble import (  # noqa: E402
     RETAIL_LOD_MIN_VERTICES,
     Report,
     browse_rig,
+    inside_view_alternative,
     is_foreign_skeleton_part,
     ladder_spec_from_positions,
     reaches_first_person,
@@ -1127,6 +1128,298 @@ GeometryTemplate.create StandardMesh 1p_shipgun_m1
         self.assertNotIn("mesh", wrapper)
         self.assertEqual([], wrapper.get("children", []))
         self.assertNotIn("1p_shipgun_m1", report.missing_meshes)
+
+    # Desert Combat's jets: the interior is the alternative the Inside view
+    # selects, and nothing in its name says so.
+    F16_CON = """
+ObjectTemplate.create PlayerControlObject F16
+ObjectTemplate.addTemplate F16Body
+
+ObjectTemplate.create Bundle F16Body
+ObjectTemplate.addTemplate lodF16Cockpit
+ObjectTemplate.setPosition 0/0.6/0
+ObjectTemplate.addTemplate F16Seat
+
+ObjectTemplate.create LodObject lodF16Cockpit
+ObjectTemplate.addTemplate F16CockpitExternal
+ObjectTemplate.addTemplate F16CockpitInternal
+ObjectTemplate.lodSelector F16CockpitSelector
+
+ObjectTemplate.create SimpleObject F16CockpitExternal
+ObjectTemplate.geometry F16_Fus_M1
+
+ObjectTemplate.create Bundle F16CockpitInternal
+ObjectTemplate.geometry F16_1P
+ObjectTemplate.addTemplate F16Stick
+
+ObjectTemplate.create SimpleObject F16Stick
+ObjectTemplate.geometry F16_Stick_M1
+
+ObjectTemplate.create SimpleObject F16Seat
+ObjectTemplate.geometry F16_Seat_M1
+
+LodSelectorTemplate.create DistCompareSelector F16CockpitSelector
+LodSelectorTemplate.addLodDistance 20
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh F16_Fus_M1
+GeometryTemplate.create StandardMesh F16_1P
+GeometryTemplate.create StandardMesh F16_Stick_M1
+GeometryTemplate.create StandardMesh F16_Seat_M1
+"""
+
+    def f16_library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/F16/Objects.con", self.F16_CON)
+        return library
+
+    def test_the_inside_view_alternative_is_first_person_whatever_its_name(self) -> None:
+        library = self.f16_library()
+        lod = library.object("lodF16Cockpit")
+        self.assertEqual("F16CockpitInternal",
+                         inside_view_alternative(library, lod).template)
+        self.assertTrue(reaches_first_person(library, "F16"))
+        self.assertFalse(reaches_first_person(library, "F16Seat"))
+
+    def test_the_ordinary_export_draws_the_exterior_and_nothing_inside(self) -> None:
+        library = self.f16_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "F16_Fus_M1", "F16_1P", "F16_Stick_M1",
+                    "F16_Seat_M1")
+        report = Report(root="F16", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "F16", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertEqual(["lodF16Cockpit -> F16CockpitExternal"],
+                         report.selected_lod_alternatives)
+        self.assertIn("F16CockpitExternal", names)
+        self.assertNotIn("F16CockpitInternal", names)
+        self.assertNotIn("F16Stick", names)
+        self.assertIn("F16Seat", names)
+
+    def test_the_cockpit_export_takes_the_inside_view_alternative(self) -> None:
+        library = self.f16_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "F16_Fus_M1", "F16_1P", "F16_Stick_M1",
+                    "F16_Seat_M1")
+        report = Report(root="F16", configuration="complex", lod=0,
+                        first_person=True)
+
+        root = assembler.build_node(builder, "F16", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        # Everything under the inside alternative is drawn, its stick too,
+        # although no mesh there is called `1P_`. The seat stays with the
+        # ordinary export, which already draws it.
+        self.assertEqual(["F16Stick", "F16CockpitInternal", "lodF16Cockpit",
+                          "F16Body", "F16"], names)
+        for name in ("F16Stick", "F16CockpitInternal"):
+            self.assertIn("mesh", document["nodes"][names.index(name)])
+        swap = document["nodes"][names.index("lodF16Cockpit")]["extras"][
+            "lodAlternative"]
+        self.assertEqual("F16CockpitInternal", swap["selected"])
+        self.assertEqual(["F16CockpitExternal"], swap["replaces"])
+        self.assertEqual("DistCompareSelector", swap["selectorKind"])
+        self.assertEqual([0.5], swap["comparisons"])
+        self.assertEqual([0.0, 0.6, 0.0],
+                         document["nodes"][names.index("lodF16Cockpit")]["translation"])
+
+    def test_an_inside_view_interior_whose_mesh_ships_nowhere_still_swaps(self) -> None:
+        # DC's archives carry no `F16_1P.sm` (nor the A-10's, SU-25's, Mirage's
+        # or AV-8's interiors). The engine builds the alternative with no
+        # geometry (LOD-4), so first person hides the fuselage and draws
+        # nothing in its place.
+        library = self.f16_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "F16_Fus_M1", "F16_Seat_M1")
+        report = Report(root="F16", configuration="complex", lod=0,
+                        first_person=True)
+        # The stick is missing too, so nothing under the interior draws.
+        library.geometries.pop("f16_stick_m1")
+
+        root = assembler.build_node(builder, "F16", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertEqual(["lodF16Cockpit", "F16Body", "F16"], names)
+        wrapper = document["nodes"][names.index("lodF16Cockpit")]
+        self.assertEqual([], wrapper.get("children", []))
+        self.assertEqual(["F16CockpitExternal"],
+                         wrapper["extras"]["lodAlternative"]["replaces"])
+        self.assertIn("F16_1P", report.missing_meshes)
+        self.assertEqual(0, report.parts)
+
+    def test_a_meshless_exterior_keeps_its_wrapper_as_the_graft_host(self) -> None:
+        # DC's M2A3 and BMP-2 hang their interior beside an exterior with no
+        # geometry: the hull outside is drawn by other parts, so the ordinary
+        # export draws nothing here, but the graft needs the node to land on.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/M2A3/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject M2A3
+ObjectTemplate.geometry M2A3_Hull_M1
+ObjectTemplate.addTemplate lodM2A3_Cockpit
+
+ObjectTemplate.create LodObject lodM2A3_Cockpit
+ObjectTemplate.addTemplate M2A3_CockpitExternal
+ObjectTemplate.addTemplate M2A3_CockpitInternal
+ObjectTemplate.lodSelector M2A3_CockpitSelector
+
+ObjectTemplate.create SimpleObject M2A3_CockpitExternal
+
+ObjectTemplate.create SimpleObject M2A3_CockpitInternal
+ObjectTemplate.geometry M2A3_Interior
+
+LodSelectorTemplate.create DistCompareSelector M2A3_CockpitSelector
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh M2A3_Hull_M1
+GeometryTemplate.create StandardMesh M2A3_Interior
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "M2A3_Hull_M1", "M2A3_Interior")
+        report = Report(root="M2A3", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "M2A3", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertEqual(["lodM2A3_Cockpit", "M2A3"], names)
+        self.assertNotIn("mesh", document["nodes"][0])
+        self.assertTrue(reaches_first_person(library, "M2A3"))
+
+    def selector_library(self, kind: str, external: str, internal: str,
+                         placement: str = "") -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Test/Objects.con",
+            f"""
+ObjectTemplate.create LodObject lodTestCockpit
+ObjectTemplate.addTemplate {external}
+ObjectTemplate.addTemplate {internal}
+{placement}
+ObjectTemplate.lodSelector TestCockpitSelector
+
+ObjectTemplate.create SimpleObject TestHull
+ObjectTemplate.geometry Test_Hull_M1
+ObjectTemplate.create SimpleObject TestHullAgain
+ObjectTemplate.geometry Test_Hull_M1
+ObjectTemplate.create SimpleObject TestInterior
+ObjectTemplate.geometry Test_Interior
+ObjectTemplate.create SimpleObject TestEmpty
+ObjectTemplate.create SimpleObject TestEmptyAgain
+
+LodSelectorTemplate.create {kind} TestCockpitSelector
+LodSelectorTemplate.addLodDistance 3
+LodSelectorTemplate.addLodComparison 0.5
+""",
+        )
+        return library
+
+    def test_only_the_selector_the_inside_view_flips_makes_a_cockpit(self) -> None:
+        for kind, expected in (("DistCompareSelector", "TestInterior"),
+                               ("DistCompareSelector2", None),
+                               ("CompareSelector", None)):
+            library = self.selector_library(kind, "TestHull", "TestInterior")
+            alternative = inside_view_alternative(
+                library, library.object("lodTestCockpit"))
+            self.assertEqual(expected, alternative and alternative.template, kind)
+
+    def test_alternatives_that_draw_alike_are_no_swap(self) -> None:
+        # DC's Humvee names its exterior twice, the UH-60 draws one fuselage
+        # from two templates, and the M-109's two halves are both empty and
+        # placed apart. Swapping any of them changes nothing on screen.
+        for external, internal, placement in (
+                ("TestHull", "TestHull", ""),
+                ("TestHull", "TestHullAgain", ""),
+                ("TestEmpty", "TestEmptyAgain", "ObjectTemplate.setPosition 0/0/0.2")):
+            library = self.selector_library("DistCompareSelector", external,
+                                            internal, placement)
+            self.assertIsNone(inside_view_alternative(
+                library, library.object("lodTestCockpit")), internal)
+            self.assertFalse(reaches_first_person(library, "lodTestCockpit"))
+        # The same fuselage placed elsewhere is not alike.
+        library = self.selector_library("DistCompareSelector", "TestHull",
+                                        "TestHullAgain",
+                                        "ObjectTemplate.setPosition 0/0/0.2")
+        self.assertIsNotNone(inside_view_alternative(
+            library, library.object("lodTestCockpit")))
+
+    def test_a_swap_names_the_random_geometry_node_it_replaces(self) -> None:
+        # DC's Lada declares `LadaCockpitExternal` with `setRandomGeometries`,
+        # so the ordinary export builds `LadaCockpitExternal1`. The viewer
+        # hides `replaces` by node name, and the bare template name hid nothing.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Lada/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Lada
+ObjectTemplate.addTemplate lodLadaCockpit
+
+ObjectTemplate.create LodObject lodLadaCockpit
+ObjectTemplate.addTemplate LadaCockpitExternal
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate LadaCockpitInternal
+ObjectTemplate.lodSelector LadaCockpitSelector
+
+ObjectTemplate.create SimpleObject LadaCockpitExternal1
+ObjectTemplate.geometry Lada_Hull1_M1
+
+ObjectTemplate.create SimpleObject LadaCockpitInternal
+ObjectTemplate.geometry Lada_1P
+
+LodSelectorTemplate.create DistCompareSelector LadaCockpitSelector
+LodSelectorTemplate.addLodDistance 3.05
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Lada_Hull1_M1
+GeometryTemplate.create StandardMesh Lada_1P
+""",
+        )
+        pool = ArchivePool()
+        ordinary = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(ordinary, builder, "Lada_Hull1_M1", "Lada_1P")
+        root = ordinary.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0))
+        exterior = [node["name"] for node in
+                    glb_document(builder.build([root], extras={}))["nodes"]]
+        self.assertIn("LadaCockpitExternal1", exterior)
+
+        cockpit = Assembler(pool, pool, pool, library, first_person=True,
+                            include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(cockpit, builder, "Lada_Hull1_M1", "Lada_1P")
+        root = cockpit.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0, first_person=True))
+        swap = next(node["extras"]["lodAlternative"] for node in
+                    glb_document(builder.build([root], extras={}))["nodes"]
+                    if node["name"] == "lodLadaCockpit")
+        self.assertEqual("LadaCockpitInternal", swap["selected"])
+        self.assertEqual(["LadaCockpitExternal1"], swap["replaces"])
+
+    def test_a_first_person_name_keeps_deciding_where_there_is_one(self) -> None:
+        # Vanilla's M3A1 names both alternatives `1P_M3A1_Driver_M1`; the
+        # name rule takes the first, and its cockpit glb stays as it was.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Corsair/Objects.con", COCKPIT_CON)
+        self.assertIsNone(inside_view_alternative(
+            library, library.object("lodCorsairCockpit")))
 
 
 class BrowseRigTests(unittest.TestCase):

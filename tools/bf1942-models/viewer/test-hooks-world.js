@@ -85,6 +85,10 @@ export function installWorldHooks(page) {
     paint: (w, h) => page.comms.paint(w, h),
     press: code => page.comms.keydown(new KeyboardEvent('keydown', { code, cancelable: true })),
     receive: (id, speaker) => page.comms.receive(id, speaker),
+    // The side's announcer: one `GamePlay.ssc` patch in a side's language, and
+    // one frame of its rules (`announcer.js`) against a hand-made state.
+    playGameplay: (index, team) => page.comms.playGameplay(index, team),
+    gameplayFrame: state => page.comms.gameplayFrame(state),
     onKill: (victim, killer, how = null) => page.comms.onKill(victim, killer, how),
     onCapture: (flag, team) => page.comms.onCapture(flag, team),
     // The referee's own damage path, so the kill line comes from the real hook.
@@ -262,21 +266,8 @@ export function installWorldHooks(page) {
       depots: world ? world.supplyField.depots.length : 0,
     };
   };
-  // Every registered damageable object, with its world position and armor
-  // state: the harness's stand-in for walking `page.damageVisuals`, which
-  // repairs (`hand-fire.js`'s wrench sweep) and blast tests both read.
-  window.__vehicles = () => [...page.damageVisuals].map(([owner, visual]) => {
-    const veh = page.vehicleDamage.get(owner);
-    // The node's world translation straight off its matrix (test hooks stay
-    // free of a three.js import).
-    const e = visual.node.matrixWorld.elements;
-    return {
-      owner, name: visual.node.name,
-      hp: veh ? veh.hitPoints : null, max: veh ? veh.maxHitPoints : null,
-      destroyed: veh ? veh.destroyed : null, wrecked: !!visual.wrecked,
-      x: e[12], y: e[13], z: e[14],
-    };
-  });
+  // `window.__vehicles` is `test-hooks-vehicles.js`'s: one hook, every
+  // field (x/y/z and `wrecked` included).
   // Every soldier a blast can reach, and what HP-10 would give him from a
   // given point. The exposure is the thing worth reading back: it is the one
   // term in the splash product that a screenshot cannot show, and a check that

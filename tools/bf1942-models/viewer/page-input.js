@@ -26,7 +26,7 @@ import { GameConsole } from './console.js';
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
  * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
- * `updateMobileControls`, `world`.
+ * `updateMobileControls`, `weaponBarFire`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -419,6 +419,9 @@ export function createPageInput(page) {
   };
   /** The left button on foot: held, and a press queues one shot. */
   pageInput.pressTrigger = on => {
+    // A press is offered to a wheel-raised weapon bar first, as `buttonChange`
+    // offers the mouse's.
+    if (on && page.optOnFoot.checked && page.soldier && page.weaponBarFire?.()) return;
     pageInput.triggerHeld = !!on;
     if (on) pageInput.clickQueued = true;
   };
@@ -626,6 +629,11 @@ export function createPageInput(page) {
       return;
     }
     if (!(page.optOnFoot.checked && page.soldier)) return;
+    // The weapon bar the wheel raised takes either button first: the client's
+    // input dispatcher swallows Fire and AltFire while it is up and turns the
+    // press into the highlighted slot's `c_PIMenuSelect` (0x00448e41, ledger
+    // HUD-16). A bar raised by a number key lets the shot through.
+    if ((e.button === 0 || e.button === 2) && page.weaponBarFire?.()) return;
     // No active item, no mouse. Both buttons are `handleMessage` messages -- Fire
     // is 6 and AltFire is 7 -- and the gate at `0x082772ac` drops the dispatch
     // whole while `c_AsmHideWeapon` is up. `footFire` would refuse the trigger
@@ -862,10 +870,11 @@ export function createPageInput(page) {
     // The briefing owns the pane; the dolly does not reach through it.
     if (page.overlay?.briefingCaptures?.()) return;
     e.preventDefault();
-    // On foot the wheel walks the kit's inventory (slot order, wrapping) — the
-    // game's own mouse-wheel behaviour — instead of dollying. The free-fly
-    // dolly does nothing lasting on foot anyway: the soldier's own eye height
-    // sets camera.position.y every frame.
+    // On foot the wheel is `c_PINextItem` / `c_PIPrevItem`: it walks the weapon
+    // bar's highlight over the kit's icons (wrapping) and raises nothing until
+    // Fire commits it — the game's own mouse-wheel behaviour — instead of
+    // dollying. The free-fly dolly does nothing lasting on foot anyway: the
+    // soldier's own eye height sets camera.position.y every frame.
     if (page.optOnFoot.checked && page.soldier && page.cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
       return;
     }

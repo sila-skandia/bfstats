@@ -21,7 +21,7 @@
  * `snapPresentation`, `soldier`, `soldierArmor`,
  * `soldierDead`, `soldierTemplateFor`, `spawnFlagSelect`, `stage`,
  * `supplyField`, `supplyTarget`, `thrownPackGroup`, `triggerHeld`,
- * `viewmodelRigFor`, `vmCamera`, `weaponBarUntil`, `weaponTemplateFor`.
+ * `viewmodelRigFor`, `vmCamera`, `weaponBar`, `weaponTemplateFor`.
  */
 export function installSoldierHooks(page) {
   window.__lookDelta = (dx, dy) => { page.lookDelta(dx, dy); return window.__soldier(); };
@@ -234,7 +234,10 @@ export function installSoldierHooks(page) {
   window.__kitRotation = () => ({
     slots: page.kitWeaponSlots?.map(w => ({ ...w })) ?? null,
     handSlot: page.handSlot,
-    weaponBarUp: performance.now() < page.weaponBarUntil,
+    weaponBarUp: !!page.weaponBar?.selecting,
+    // The HUD `Weapon` group whole (`weapon-bar.js`): the highlight, the item
+    // in hand, `NumberOfItems`, the icons and the timer.
+    weaponBar: page.weaponBar?.snapshot() ?? null,
   });
   window.__selectKitWeapon = page.selectKitWeapon;
   window.__cycleKitWeapon = page.cycleKitWeapon;

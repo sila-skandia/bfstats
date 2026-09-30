@@ -20,8 +20,10 @@ from bf42.kit import (  # noqa: E402
     kit_parts,
     level_loadouts,
     parse_level_kits,
+    pose_candidate_sets,
     pose_candidates,
     primary_weapon,
+    spell_soldiers,
 )
 
 # The real vanilla install, if this machine has one. `RealPatchTests` below
@@ -289,6 +291,113 @@ class PoseCandidateTests(unittest.TestCase):
 
     def test_a_kit_with_nothing_posable_has_no_candidates(self) -> None:
         self.assertEqual([], pose_candidates(self.kit(None, ["Binoculars"]), self.POSABLE))
+
+
+class RandomItemTests(unittest.TestCase):
+    """A kit's `setRandomGeometries` child is a roll, never an item of its
+    own name (ledger KIT-1): FHSW's British tank commander, as its files
+    declare him."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/BritKit/5TankCommanderNo2Smoke2R/Objects.con", """
+ObjectTemplate.create Kit 5GB_TankCommanderNo2Smoke2R
+ObjectTemplate.setType Engineer
+ObjectTemplate.addTemplate Brit_TankOfficer_Beret
+ObjectTemplate.addTemplate RandomGBTankcommander
+ObjectTemplate.setRandomGeometries 4
+ObjectTemplate.addTemplate KnifeAllies
+ObjectTemplate.addTemplate RandomSmokeItem4M8
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate RepairPack
+""")
+        library.add_con("Objects/Items/BritKit/Common/Objects.con", """
+ObjectTemplate.create KitPart Brit_TankOfficer_Beret
+ObjectTemplate.geometry Brit_TankOfficer_Beret
+ObjectTemplate.setBoneName A
+""")
+        # `!_PACK_COMMON/Compressed.con`: three No2s and a Sten, each its own
+        # template including the weapon it is.
+        library.add_con("Objects/HandWeapons/!_PACK_COMMON/Compressed.con", """
+ObjectTemplate.create HandFireArms RandomGBTankcommander1
+ObjectTemplate.itemIndex 3
+ObjectTemplate.create HandFireArms RandomGBTankcommander2
+ObjectTemplate.itemIndex 3
+ObjectTemplate.create HandFireArms RandomGBTankcommander3
+ObjectTemplate.itemIndex 3
+ObjectTemplate.create HandFireArms randomGBTankCommander4
+ObjectTemplate.itemIndex 3
+ObjectTemplate.create HandFireArms RandomSmokeItem4M81
+ObjectTemplate.itemIndex 4
+ObjectTemplate.create HandFireArms KnifeAllies
+ObjectTemplate.itemIndex 1
+ObjectTemplate.create HandFireArms RepairPack
+ObjectTemplate.itemIndex 6
+""")
+        return library
+
+    def kit(self) -> Kit:
+        return collect(self.library())["5gb_tankcommanderno2smoke2r"]
+
+    def test_every_rolled_child_is_listed_in_roll_order(self) -> None:
+        rolled = self.kit().random
+        self.assertEqual([("RandomGBTankcommander", 4), ("RandomSmokeItem4M8", 3)],
+                         [(r.template, r.count) for r in rolled])
+
+    def test_each_variant_is_spelled_as_its_create_line_or_absent(self) -> None:
+        tank, smoke = self.kit().random
+        self.assertEqual(["RandomGBTankcommander1", "RandomGBTankcommander2",
+                          "RandomGBTankcommander3", "randomGBTankCommander4"], tank.variants)
+        # A roll the mod never declared a template for gives nothing (KIT-3).
+        self.assertEqual(["RandomSmokeItem4M81", None, None], smoke.variants)
+
+    def test_a_rolled_spawn_weapon_is_the_primary_by_its_bundle_name(self) -> None:
+        # Its variants sit at slot 3; which one is in hand is the spawn's roll.
+        self.assertEqual("RandomGBTankcommander", self.kit().primary)
+
+    def test_the_carried_list_keeps_the_bundle(self) -> None:
+        self.assertEqual(["RandomGBTankcommander", "KnifeAllies", "RandomSmokeItem4M8",
+                          "RepairPack"], self.kit().carried)
+
+    def test_variants_of_a_bundle_and_of_a_plain_item(self) -> None:
+        kit = self.kit()
+        self.assertEqual(["RandomSmokeItem4M81"], kit.variants_of("randomsmokeitem4m8"))
+        self.assertIsNone(kit.variants_of("KnifeAllies"))
+
+    def test_every_variant_leads_a_pose_job_of_its_own(self) -> None:
+        kit = self.kit()
+        posable = {"randomgbtankcommander1": "RandomGBTankcommander1",
+                   "randomgbtankcommander2": "RandomGBTankcommander2",
+                   "randomgbtankcommander3": "RandomGBTankcommander3",
+                   "randomgbtankcommander4": "RandomGBTankcommander4",
+                   "knifeallies": "KnifeAllies"}
+        self.assertEqual(
+            [("RandomGBTankcommander1", "KnifeAllies"), ("RandomGBTankcommander2", "KnifeAllies"),
+             ("RandomGBTankcommander3", "KnifeAllies"), ("RandomGBTankcommander4", "KnifeAllies")],
+            pose_candidate_sets(kit, posable))
+
+    def test_a_kit_with_nothing_rolled_is_one_pose_job(self) -> None:
+        kit = Kit(template="K", source="", nation=None, kit_class="Base",
+                  carried=["Thompson", "Colt"], primary="Thompson")
+        self.assertEqual([("Thompson", "Colt")],
+                         pose_candidate_sets(kit, {"thompson": "Thompson", "colt": "Colt"}))
+
+
+class SpellSoldiersTests(unittest.TestCase):
+    """The engine finds a template whatever its case (ledger LOAD-7); the
+    files are named after its `create` line."""
+
+    def test_a_team_skin_is_respelled_as_the_template_spells_it(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Soldiers/French/Objects.con",
+                        "ObjectTemplate.create BFSoldier FrenchSoldier\n")
+        teams = parse_level_kits("game.setTeamSkin 2 frenchsoldier\n"
+                                 "game.setTeamSkin 1 NoSuchSoldier\n")
+        loadouts = {"Counterattack-1950": teams}
+        spell_soldiers(loadouts, library)
+        self.assertEqual("FrenchSoldier", teams[2].soldier)
+        # A name the library lacks is kept as the level wrote it.
+        self.assertEqual("NoSuchSoldier", teams[1].soldier)
 
 
 class BrowsableTests(unittest.TestCase):

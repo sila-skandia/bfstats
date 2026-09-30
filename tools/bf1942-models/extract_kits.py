@@ -169,7 +169,7 @@ def main() -> int:
     if args.maps:
         baked = {entry["name"].lower() for entry in json.loads(args.maps.read_text())}
         swept = [(name, path) for name, path in levels if name.lower() in baked]
-    read = kit_mod.sweep_levels(kits, swept)
+    read = kit_mod.sweep_levels(kits, swept, library)
     chosen = (sorted(kits.values(), key=lambda k: k.template)
               if args.all else kit_mod.browsable(kits))
 
@@ -266,6 +266,7 @@ def main() -> int:
                    if record else {"glb": None}),
             })
         pickup = exported.get(pickup_of.get(kit.template.lower(), "").lower())
+        rolled = {item.template.lower(): item for item in kit.random}
         rows.append({
             "template": kit.template,
             "nation": kit.nation,
@@ -286,7 +287,14 @@ def main() -> int:
             # Declaration order is the in-game slot order, so this list is not
             # sorted: a mod that puts the satchel first is showing you what it
             # does. Behaviour-only flags (`nochute`) are already filtered out.
-            "items": [{"template": name} for name in kit.carried],
+            #
+            # A rolled item (`setRandomGeometries`) is a bundle the engine
+            # never instantiates: `variants` lists what a spawn can hand out
+            # in its place, one per roll 1..N (null where undeclared).
+            "items": [{"template": name,
+                       **({"variants": rolled[name.lower()].variants}
+                          if name.lower() in rolled else {})}
+                      for name in kit.carried],
             "source": kit.source,
         })
 

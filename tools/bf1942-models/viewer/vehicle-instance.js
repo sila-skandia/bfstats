@@ -254,6 +254,7 @@ export class VehicleRegistry {
       this.leave(playerId);
       return null;
     }
+    this.#syncEngine(inst);
     if (inst.drive) this.rootFlights.set(root, { drive: inst.drive, kind: inst.rootKind });
     inst.occupancy.rigFor(seat);
     this.#collect(inst, seat);
@@ -279,6 +280,7 @@ export class VehicleRegistry {
     inst.seats.set(seatId, playerId);
     handle.seatId = seatId;
     this.#ensureDrive(inst, seatId);
+    this.#syncEngine(inst);
     inst.occupancy.rigFor(seatId);
     this.#collect(inst, seatId);
     this.#mountAll(inst);
@@ -309,6 +311,7 @@ export class VehicleRegistry {
     this.#vacate(inst, seatId);
     inst.seats.delete(seatId);
     inst.handles.delete(playerId);
+    this.#syncEngine(inst);
     this.seated.delete(playerId);
     this.env.world?.()?.clearPlayerVehicle(playerId);
     this.env.releaseAudio?.(playerId, inst.root);
@@ -362,6 +365,24 @@ export class VehicleRegistry {
     if (seatId !== inst.rootId || inst.drive || !inst.drivable) return;
     const drive = this.env.buildDrive ? this.env.buildDrive(inst) : null;
     if (drive) this.env.adopt?.(drive);
+  }
+
+  /**
+   * `Engine+0x142`, the hull's running byte, follows the driver's seat.
+   * `BFPlayer::_setVehicle` (lnxded `0x080523d0`) sends TemplateMessage 5
+   * then 3 to the seat a player leaves (`0x08052500`) and 2 then 4 to the one
+   * he takes (`0x080524d6`); getting out is `PlayerControlObject::exit`
+   * (`0x08317d00`) setting his vehicle back to his own soldier, through the
+   * same function. `PlayerControlObject::handleMessage` (`0x083189e0`) hands a
+   * player's message on to its children only when `player->getInputId()`
+   * (`+0x54`, the seat he sat in) equals its own `getPcoId()`, so the root's
+   * Engines hear 4 and 5 from the driver alone: they run while his seat is
+   * held and stop when he leaves it, whoever else is aboard (ledger PHY-14).
+   * A drive with no running byte is left alone.
+   */
+  #syncEngine(inst) {
+    const drive = inst.drive;
+    if (drive && 'engineRunning' in drive) drive.engineRunning = inst.holder(inst.rootId) != null;
   }
 
   /** The seat's gun groups: the root seat's own FireArms from the drive when

@@ -147,11 +147,18 @@ export function ammoRowsFromBotMags(mags, weaponData = {}) {
 /**
  * Every kit lying in the world. One record per drop:
  * `{ id, kit, x, y, z, yaw, normal, spin, bornAt, ttl, yawSpeed, radius,
- *    ammo, by, team }` -- `kit` the template, `spin` the degrees it has turned
- * since it landed, `radius` its bounding radius for the pickup reach (the
- * page fills it in from the mesh; until then the query radius alone reaches
- * it), `ammo` the rows its weapons carry, `by` and `team` who dropped it
- * (informational: nothing reads a kit's team).
+ *    ammo, by, team, objectId }` -- `kit` the template, `spin` the degrees it
+ * has turned since it landed, `radius` its bounding radius for the pickup
+ * reach (the page fills it in from the mesh; until then the query radius
+ * alone reaches it), `ammo` the rows its weapons carry, `by` and `team` who
+ * dropped it (informational: nothing reads a kit's team). `objectId` names the
+ * engine's kit object when something outlives the record and asks after it: a
+ * kit a map's ObjectSpawner put on a pad is one object from the pad through
+ * every hand that takes it to the drop it ends in, and the pad's slot stays
+ * full while it lives (`deployables.js` `SpawnerPad`). A pad's kit lies with
+ * `ttl` Infinity: `Kit::enable` 0x08296710, which posts the 30 s message, is
+ * never run on a spawned kit (`createObjectOnAllClients` 0x08133a10 calls
+ * `init` and, for a kit, `addWeaponsToNetworkManager`, and nothing else).
  */
 export class KitDrops {
   constructor() {
@@ -162,14 +169,14 @@ export class KitDrops {
 
   /** Lay a kit down at `place` (`restingPlace`'s answer) now. */
   drop(place, { kit, ammo = [], by = null, team = null, radius = 0,
-               ttl = KIT_TIME_TO_LIVE, yawSpeed = KIT_YAW_SPEED } = {}) {
+               ttl = KIT_TIME_TO_LIVE, yawSpeed = KIT_YAW_SPEED, objectId = null } = {}) {
     if (!kit || !place) return null;
     const record = {
       id: this.nextId++, kit,
       x: place.x, y: place.y, z: place.z, yaw: place.yaw ?? 0,
       normal: place.normal ?? [0, 1, 0],
       spin: 0, bornAt: this.clock, ttl, yawSpeed, radius,
-      ammo: ammo.map(row => ({ ...row })), by, team,
+      ammo: ammo.map(row => ({ ...row })), by, team, objectId,
     };
     this.drops.push(record);
     return record;
@@ -195,6 +202,12 @@ export class KitDrops {
   /** Seconds until `record` goes. */
   timeLeft(record) {
     return record ? Math.max(0, record.ttl - (this.clock - record.bornAt)) : 0;
+  }
+
+  /** The record lying with engine object `objectId`, or null. */
+  byObject(objectId) {
+    if (objectId == null) return null;
+    return this.drops.find(d => d.objectId === objectId) ?? null;
   }
 
   /** `findKitObject`: the nearest kit whose origin is within the query radius
@@ -232,8 +245,10 @@ export class KitDrops {
       x: +d.x.toFixed(3), y: +d.y.toFixed(3), z: +d.z.toFixed(3),
       normal: d.normal.map(v => +v.toFixed(3)),
       yaw: +d.yaw.toFixed(3), spin: +d.spin.toFixed(2),
-      age: +(this.clock - d.bornAt).toFixed(3), left: +this.timeLeft(d).toFixed(3),
+      age: +(this.clock - d.bornAt).toFixed(3),
+      left: Number.isFinite(d.ttl) ? +this.timeLeft(d).toFixed(3) : null,
       radius: +(d.radius ?? 0).toFixed(3), ammo: d.ammo.map(r => ({ ...r })),
+      objectId: d.objectId ?? null,
     }));
   }
 }

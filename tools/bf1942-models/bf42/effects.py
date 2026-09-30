@@ -90,6 +90,7 @@ _PARTICLE_CURVE = {
     "gravitymodifierovertime": "gravityModifierOverTime",
     "dragovertime": "dragOverTime",
     "alphaovertime": "alphaOverTime",
+    # The one colour word: four values a point (`con.curve`'s `channels`).
     "colorrgbaovertime": "colorRGBAOverTime",
     "xysizeratioovertime": "xySizeRatioOverTime",
     "rotationspeedovertime": "rotationSpeedOverTime",
@@ -239,7 +240,9 @@ def particle_spec(payload: con_mod.ObjectTemplate) -> dict | None:
         if (raw := props.get(cmd)) and (value := con_mod.crd4(raw.split()[0])) is not None:
             spec[key] = value
     for cmd, key in _PARTICLE_CURVE.items():
-        if (raw := props.get(cmd, "").strip()) and (curve := con_mod.curve(raw.split()[0])):
+        channels = 4 if cmd == "colorrgbaovertime" else 1
+        if (raw := props.get(cmd, "").strip()) and (
+                curve := con_mod.curve(raw.split()[0], channels)):
             spec[key] = curve
     for cmd, key in _PARTICLE_BOOL.items():
         if cmd in props:

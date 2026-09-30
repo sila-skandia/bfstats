@@ -106,6 +106,43 @@ export function listSeatFireArms(root) {
 }
 
 /** The FireArms node under `root` a spec's bare name refers to. */
+/**
+ * A gun spec's burst edges, built beside its firing patch: `press` (the
+ * latched Fire Loop's one-shots, once a burst) and `release` (slot -> patch,
+ * what a stop triggers), from `extract_map._trigger_slots`. Looping layers
+ * are left out: nothing releases slots 2..4 (`FireArms::updateSound` releases
+ * only slot 5), so a loop in them would never stop, and no published script
+ * puts one there. A table from before the edges existed gives none.
+ */
+export async function loadBurstEdges(spec, options) {
+  const oneShots = layers => (layers || []).filter(layer => !layer.loop);
+  const build = layers => {
+    const kept = oneShots(layers);
+    return kept.length ? loadEngineAudio({ ...spec, layers: kept }, options) : null;
+  };
+  const press = await build(spec.press);
+  const release = new Map();
+  for (const [slot, layers] of Object.entries(spec.release || {})) {
+    const audio = await build(layers);
+    if (audio) release.set(slot, audio);
+  }
+  return { press, release };
+}
+
+/** A gun's burst-edge patches (`loadBurstEdges`). */
+function edgePatches(weapon) {
+  const edges = weapon.edges;
+  if (!edges) return [];
+  const list = edges.press ? [edges.press] : [];
+  for (const audio of edges.release.values()) list.push(audio);
+  return list;
+}
+
+/** Every patch a gun sounds through: the rounds' own, then the edges. */
+function weaponPatches(weapon) {
+  return [weapon.audio, ...edgePatches(weapon)];
+}
+
 export function fireArmsNode(root, fireArms) {
   if (!root || !fireArms) return null;
   const exact = root.getObjectByName(fireArms);
@@ -170,7 +207,9 @@ class VehicleAudio {
   dispose() {
     this.engineAudio?.dispose();
     this.engineAudio = null;
-    for (const weapon of this.weapons) weapon.audio.dispose();
+    for (const weapon of this.weapons) {
+      for (const audio of weaponPatches(weapon)) audio.dispose();
+    }
     this.weapons = [];
     this.engineNode = null;
     this.built = false;
@@ -182,7 +221,9 @@ class VehicleAudio {
 
   release() {
     this.engineAudio?.release();
-    for (const weapon of this.weapons) weapon.audio.release();
+    for (const weapon of this.weapons) {
+      for (const audio of weaponPatches(weapon)) audio.release();
+    }
   }
 
   /**
@@ -465,22 +506,26 @@ export class VehicleAudioRack {
         }
       }
       const weapons = [];
+      const gunOptions = {
+        listener,
+        getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
+        // The gun bus keeps its own scale — measured against the hand
+        // weapon it is already where it should be (D5's whole lesson).
+        headroom: WEAPON_HEADROOM,
+        // A gun patch is the report of one round, so its one-shots wait for
+        // `trigger()` instead of firing once at setup and leaving nothing
+        // behind to un-mute.
+        oneShotsOnTrigger: true,
+      };
       for (const spec of specs) {
-        const audio = await loadEngineAudio(spec, {
-          listener,
-          getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
-          // The gun bus keeps its own scale — measured against the hand
-          // weapon it is already where it should be (D5's whole lesson).
-          headroom: WEAPON_HEADROOM,
-          // A gun patch is the report of one round, so its one-shots wait for
-          // `trigger()` instead of firing once at setup and leaving nothing
-          // behind to un-mute.
-          oneShotsOnTrigger: true,
-        });
+        const audio = await loadEngineAudio(spec, gunOptions);
         if (audio) {
           weapons.push({
             spec,
             audio,
+            // The burst's edges, `press` and `release` (SND-12, SND-16).
+            edges: await loadBurstEdges(spec, gunOptions),
+            burst: false,
             // The voices belong on the gun, not the vehicle origin: a
             // Corsair's guns are 2.2 m out each wing.
             node: fireArmsNode(node, spec.fireArms) || node,
@@ -492,7 +537,9 @@ export class VehicleAudioRack {
       if (gen !== this.generation || this.disposed || !entry.want
           || this.vehicles.get(entry.key) !== entry) {
         engineAudio?.dispose();
-        for (const weapon of weapons) weapon.audio.dispose();
+        for (const weapon of weapons) {
+          for (const audio of weaponPatches(weapon)) audio.dispose();
+        }
         return;
       }
 
@@ -503,6 +550,7 @@ export class VehicleAudioRack {
       for (const weapon of weapons) {
         weapon.audio.setMaster(0);   // silent until the trigger is pulled
         weapon.audio.start();
+        for (const audio of edgePatches(weapon)) audio.start();
       }
       entry.engineAudio = engineAudio;
       entry.engineNode = engineNode;
@@ -548,9 +596,35 @@ export class VehicleAudioRack {
     return null;
   }
 
-  /** Pull the trigger on `groupNode`'s patch, if this rack holds one. */
+  /**
+   * One round out of `groupNode`, if this rack holds its patch: Fire and Fire
+   * Loop (SND-13). The first round of a burst also starts the latched Fire
+   * Loop's one-shots, once (SND-14): a minigun's spin-up.
+   */
   trigger(groupNode) {
-    this.weaponFor(groupNode)?.audio.trigger();
+    const weapon = this.weaponFor(groupNode);
+    if (!weapon) return;
+    if (!weapon.burst) {
+      weapon.burst = true;
+      weapon.edges?.press?.trigger();
+    }
+    weapon.audio.trigger();
+  }
+
+  /**
+   * The rounds out of `groupNode` have stopped (`gun-cycle.js`, SND-12,
+   * SND-16): Release and Shell Bounce every time, MG distance when `distance`
+   * says its 0.5..1.5 s gate has opened. The loops fall silent with the
+   * trigger's gain gate, as they always have.
+   */
+  release(groupNode, { distance = false } = {}) {
+    const weapon = this.weaponFor(groupNode);
+    if (!weapon) return;
+    weapon.burst = false;
+    for (const [slot, audio] of weapon.edges?.release ?? []) {
+      if (slot === '4' && !distance) continue;
+      audio.trigger();
+    }
   }
 
   /** One frame. `listenerPosition` and `listenerForward` are the camera's;
@@ -582,7 +656,10 @@ export class VehicleAudioRack {
       const near = at ? this._distance(entry, at) <= AUDIBLE_RANGE : true;
       const entryMaster = near ? master : 0;
       if (entry.engineAudio) {
-        entry.engineAudio.setMaster(entryMaster);
+        // `Engine::updateSound` (lnxded `0x0823e930`) stops the patch while
+        // the Engine's running byte is clear, i.e. while nobody holds the
+        // driver's seat (ledger PHY-14); a drive that keeps no byte plays.
+        entry.engineAudio.setMaster(entry.drive?.engineRunning === false ? 0 : entryMaster);
         entry.engineAudio.setAttachedToListener(
           this._attached(entry, entry.engineNode, entry.engineSpec, 'engine'));
         const control = this._engineControl(entry, dt, listenerPosition);
@@ -598,8 +675,14 @@ export class VehicleAudioRack {
           weapon.audio.hasLoops && !this._gunFiring(entry, weapon.spec.fireArms) ? 0 : entryMaster);
         weapon.audio.setAttachedToListener(
           this._attached(entry, weapon.node, weapon.spec, 'weapon'));
+        // The edges are one-shots only, so no gain gate: silent between
+        // their own triggers.
+        for (const audio of edgePatches(weapon)) {
+          audio.setMaster(entryMaster);
+          audio.setAttachedToListener(weapon.audio.attached);
+        }
         this._weaponControl(weapon, dt, listenerPosition, listenerForward);
-        patches.push(weapon.audio);
+        for (const audio of weaponPatches(weapon)) patches.push(audio);
       }
     }
     // Every patch evaluated and none applied: the one moment the twins
@@ -652,8 +735,10 @@ export class VehicleAudioRack {
       // The already-spooled engine value, NOT the stick. Aircraft chase the
       // pedal at Physics.con's slew rate; cars write gearbox revs; tanks
       // write the feedbackLoop load reading. Land `.ssc` scripts read the
-      // same value as controlSource Default.
-      rpm: state ? state.throttle : 0,
+      // same value as controlSource Default. A helicopter answers for the
+      // Engine its script is loaded on: that engine's own revs
+      // (`Aircraft.engineRpm`, `Engine::updateSound` `0x0823e930`).
+      rpm: entry.drive?.engineRpm?.(entry.engineSpec?.engine) ?? (state ? state.throttle : 0),
       speed,
       acceleration: entry.accel,
       diveAngle,
@@ -676,13 +761,14 @@ export class VehicleAudioRack {
       weapon._pos.x = e[12]; weapon._pos.y = e[13]; weapon._pos.z = e[14];
       quatFromElements(e, weapon._quat);
     }
-    weapon.audio.evaluate({
+    const control = {
       dt,
       position: weapon._pos,
       quaternion: weapon._quat,
       listenerPosition,
       listenerForward,
-    });
+    };
+    for (const audio of weaponPatches(weapon)) audio.evaluate(control);
   }
 
   /**
@@ -724,6 +810,10 @@ export class VehicleAudioRack {
           fireArms: w.spec.fireArms,
           node: w.node?.name ?? null,
           ...w.audio.snapshot(),
+          burst: w.burst,
+          press: w.edges?.press?.snapshot() ?? null,
+          release: Object.fromEntries([...(w.edges?.release ?? [])]
+            .map(([slot, audio]) => [slot, audio.snapshot()])),
         })),
       });
     }

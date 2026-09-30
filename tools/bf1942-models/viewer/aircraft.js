@@ -6,6 +6,10 @@ import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
 import { hullGeometry } from './ship-spec.js';
 import { LIFT_ENGINE_ANGLE, VectoredEngine, engineGeometry } from './vectored-engines.js';
+import {
+  COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
+  GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
+} from './body-friction.js';
 
 // --- flight model ----------------------------------------------------------
 //
@@ -219,8 +223,10 @@ function boxInertia(mass, size, modifier, law = 'box') {
  * constructor mirrors Z into the glb frame the extracted scenes are in, which
  * negates the rotations about X and Y and leaves the one about Z alone — the
  * same conjugation `bf42/gltf.py`'s `quat_from_ypr` applies to the meshes.
+ *
+ * Exported for `amphibious.js`: an amphibian's two rudders are `Wing`s too.
  */
-class Surface {
+export class Surface {
   constructor(spec) {
     this.id = spec.id;
     const lift = (spec.wingLift || 0) + (spec.flapLift || 0);
@@ -336,6 +342,44 @@ const _g2 = new THREE.Vector3();
 const _g3 = new THREE.Vector3();
 const _g4 = new THREE.Vector3();
 const _basis = new THREE.Matrix4();
+const _identityQuat = new THREE.Quaternion();
+const _authority = new THREE.Vector3();
+const _gfDv = new THREE.Vector3();
+const _gfMoment = new THREE.Vector3();
+const _gfWant = new THREE.Vector3();
+const _gfAxle = new THREE.Vector3();
+
+/**
+ * `materialFriction` of a vehicle's own parts: every vehicle material takes
+ * the `Material` default, 1.0 (collision-response.md §8). The ground's when
+ * the page has said nothing: material 0's, also 1.0.
+ */
+const WHEEL_MATERIAL_FRICTION = 1.0;
+const DEFAULT_SURFACE_FRICTION = 1.0;
+
+/** A vectored airframe with no `Spring` in its tree stands on its origin's
+ *  column, by plain contact. */
+const BELLY_CONTACT = { grip: 'c_PGFContactGrip', contact: [0, 0, 0], axle: [1, 0, 0] };
+
+/** `ObjectTemplate.Grip`'s names to their bits (physics.md §6). */
+const GRIP_BITS = {
+  c_pgfnogrip: 0, c_pgfcontactgrip: 1, c_pgfrollgrip: 2, c_pgfenginegrip: 4,
+  c_pgfrollgripwhenoccupied: 8, c_pgfdummygrip: 0x20, c_pgfenginedummygrip: 0x24,
+};
+
+/**
+ * A wheel's live grip byte, the way `PhysicsSpring::updatePhysics` leaves it:
+ * `c_PGFRollGripWhenOccupied` rewritten to RollGrip while occupied and to
+ * ContactGrip while empty. A name the table does not know (or none) is plain
+ * contact.
+ */
+function liveGrip(name, occupied) {
+  let grip = GRIP_BITS[String(name ?? '').toLowerCase()] ?? GRIP_CONTACT;
+  if (grip & GRIP_ROLL_WHEN_OCCUPIED) {
+    grip = GRIP_ROLL_WHEN_OCCUPIED | (occupied ? GRIP_ROLL : GRIP_CONTACT);
+  }
+  return grip;
+}
 
 /**
  * The Corsair, entirely from data.
@@ -422,6 +466,8 @@ const _relPos = new THREE.Vector3();
 const _relQuat = new THREE.Quaternion();
 const _relScale = new THREE.Vector3();
 const _wheelBox = new THREE.Box3();
+const _springBox = new THREE.Box3();
+const _springQuat = new THREE.Quaternion();
 
 /**
  * An aircraft's own physics table, read off its extracted node tree: the
@@ -470,6 +516,7 @@ export function aircraftSpec(root) {
   };
   const engines = [];
   const surfaces = [];
+  const wheels = [];
   let throttleRate = CORSAIR.throttleRate;
   let wheelBottom = Infinity;
   root.traverse(node => {
@@ -479,6 +526,9 @@ export function aircraftSpec(root) {
       engines.push({
         id: node.name,
         engineType: part.engineType,
+        // Whether this Engine turns a rotor or a propeller (`spinsChildren`,
+        // `RiggedPart`): a vectored airframe's rotor visual follows its revs.
+        spins: Array.isArray(data.spinsChildren) && data.spinsChildren.length > 0,
         position: frame(node).position,
         differential: part.differential ?? 1,
         torque: part.torque,
@@ -512,12 +562,26 @@ export function aircraftSpec(root) {
     } else if (data.templateKind === 'Spring') {
       // The wheel's own mesh: the node's, or its untagged per-material
       // children. Not the dust and splash emitters hung beneath it.
+      _springBox.makeEmpty();
       for (const mesh of [node, ...node.children.filter(c => !c.userData?.templateKind)]) {
         if (!mesh.isMesh || !mesh.geometry || mesh.userData?.collision || /collision/i.test(mesh.name || '')) continue;
         mesh.geometry.computeBoundingBox();
         _wheelBox.copy(mesh.geometry.boundingBox).applyMatrix4(_rel.multiplyMatrices(_relInv, mesh.matrixWorld));
         wheelBottom = Math.min(wheelBottom, _wheelBox.min.y);
+        _springBox.union(_wheelBox);
       }
+      // Where the wheel meets the ground, in the root's frame (the glb's, z
+      // not mirrored), its grip and its axle: `groundFriction`'s contacts.
+      _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _springQuat, _relScale);
+      const axle = new THREE.Vector3(1, 0, 0).applyQuaternion(_springQuat);
+      wheels.push({
+        id: node.name,
+        grip: part?.grip ?? null,
+        contact: _springBox.isEmpty()
+          ? [_relPos.x, _relPos.y, _relPos.z]
+          : [(_springBox.min.x + _springBox.max.x) / 2, _springBox.min.y, (_springBox.min.z + _springBox.max.z) / 2],
+        axle: [axle.x, axle.y, axle.z],
+      });
     }
   });
   if (!engines.length) return null;
@@ -536,6 +600,7 @@ export function aircraftSpec(root) {
     gearDownAltitude: CORSAIR.gearDownAltitude,
     engines,
     surfaces,
+    wheels,
   };
 }
 
@@ -597,6 +662,21 @@ export class Aircraft extends Vehicle {
      */
     this.engineRunning = true;
     this._inputOf = name => this.input(name);
+    /**
+     * The engine whose revs a vectored airframe's rotor turns at and the
+     * `state.throttle` its note reads: the first Engine that spins a rotor
+     * (`spinsChildren`), else the first. `engineRpm` answers by name for the
+     * one the `.ssc` is loaded on.
+     */
+    this.rotorEngine = this.vectored
+      ? (this.vectoredEngines[this.spec.engines.findIndex(engine => engine.spins)] ?? this.vectoredEngines[0])
+      : null;
+    /** The ground's `materialFriction` under a world (x, z), injected like
+     *  `groundHeight` (`level-terrain.js`); a vectored airframe's wheels spend
+     *  it (`groundFriction`). */
+    this.surfaceFriction = typeof options.surfaceFriction === 'function' ? options.surfaceFriction : null;
+    /** Each wheel's static latch (`addFriction`'s bit 0x80), by index. */
+    this._wheelLatch = [];
     this.inertia = boxInertia(this.spec.mass, this.spec.size,
                               this.spec.inertiaModifier, this.spec.inertiaLaw);
     this.groundHeight = () => -Infinity;
@@ -806,7 +886,14 @@ export class Aircraft extends Vehicle {
     for (const engine of this.vectoredEngines) {
       engine.advance(dt, engine.input ? this.input(engine.input) : 0, this.engineRunning);
     }
-    this.advancePropeller(dt);
+    // What the rotor turns at and the note reads is the rev state, not the
+    // collective: `Engine::updateSound` (lnxded `0x0823e930`) hands the patch
+    // `|PhysicsEngine+0xa0|` as its control 0, `Engine::Rpm`, and stops the
+    // patch while `Engine+0x142` is clear; the rotor's spin is the same revs
+    // (`PhysicsEngine::updatePhysics`'s tail, `0x0824cc9c`). The spool above
+    // stays the fixed-wing path's: the pedal is what they are calibrated on.
+    if (this.rotorEngine) s.throttle = clamp(Math.abs(this.rotorEngine.revs), 0, 1);
+    this.advancePropeller(dt, this.vectored ? this.engineRunning : true);
 
     const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
     const h = dt / steps;
@@ -951,9 +1038,190 @@ export class Aircraft extends Vehicle {
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
       this.settle(h);
+      if (this.vectored) this.groundFriction(h);
     } else {
       s.grounded = false;
+      if (this.vectored) this._wheelLatch.length = 0;
     }
+  }
+
+  /**
+   * What holds a helicopter still on the ground: its wheels' friction.
+   *
+   * Every Desert Combat helicopter stands on `c_PGFDummyGrip` springs (the
+   * AH-64's three, the UH-60's three, the Mi-24's four), and a bare DummyGrip
+   * (0x20) runs the ordinary contact path of `ResponsePhysics::addFriction`
+   * (lnxded `0x0825b6e0`; physics.md §6, ledger PHY-2): each touching wheel asks
+   * for its whole tangential contact velocity back, clamped to a Coulomb disc
+   * of `A * N.y * 1.5 * 9.82 / 30` m/s a tick, and latches static once it fits
+   * inside that, holding until a demand passes 1.5 times it. `A` is the mean of
+   * the two materials' `materialFriction` (a vehicle's is the `Material`
+   * default 1.0, collision-response.md §8). No normal load enters it: a
+   * helicopter light on its skids is held as hard as a parked one. A
+   * `c_PGFRollGripWhenOccupied` wheel (DC Final's Mi-24 and Mi-8, the Harrier)
+   * is rewritten each tick to RollGrip while the hull is occupied and to
+   * ContactGrip while it is empty (`PhysicsSpring::updatePhysics`); RollGrip
+   * asks back only the velocity along the wheel's axle.
+   *
+   * The idle floor's thrust is well under the airframe's weight, but its axis
+   * is the engine's own and a hull standing nose-high on its gear tilts it, so
+   * without this the AH-64 crept off at 2.6 m/s after 10 s with nobody
+   * touching it. The engine's grip is a velocity change per 30 Hz tick; here
+   * it is taken per sub-step, at the same budget per second, and applied as a
+   * velocity change, so a held contact cancels the sub-step's creep outright.
+   * The contact normal is the clamp's own, straight up: the aircraft model
+   * stands a hull on the heightfield by its lowest wheel and has no slope under
+   * it. Fixed-wing aircraft do not come here; their ground roll is calibrated
+   * without it.
+   */
+  groundFriction(h) {
+    const s = this.state;
+    const wheels = this.spec.wheels?.length ? this.spec.wheels : [BELLY_CONTACT];
+    const ground = this.surfaceFriction ? this.surfaceFriction(s.position.x, s.position.z) : DEFAULT_SURFACE_FRICTION;
+    const mu = 0.5 * (WHEEL_MATERIAL_FRICTION + (Number.isFinite(ground) ? ground : DEFAULT_SURFACE_FRICTION));
+    // Per second, `A * 1.5 * 9.82`; this sub-step's share of it.
+    const kinetic = mu * COULOMB_KINETIC_COEFFICIENT * COULOMB_GRAVITY * h;
+    const breakaway = COULOMB_STATIC_MULTIPLIER * kinetic;
+    _gfDv.set(0, 0, 0);
+    _gfMoment.set(0, 0, 0);
+    let touching = 0;
+    for (let i = 0; i < wheels.length; i++) {
+      const wheel = wheels[i];
+      const grip = liveGrip(wheel.grip, this.engineRunning);
+      // EngineDummyGrip spins the wheel and leaves the solver; NoGrip clears
+      // the latch. Neither is a sample in the mean.
+      if (grip === 0 || (grip & GRIP_ENGINE_DUMMY) === GRIP_ENGINE_DUMMY) {
+        this._wheelLatch[i] = false;
+        continue;
+      }
+      _r.set(wheel.contact[0], wheel.contact[1], wheel.contact[2]).applyQuaternion(s.orientation);
+      _gfWant.copy(s.velocity).add(_arm.crossVectors(s.angularVelocity, _r));
+      _gfWant.y = 0;
+      if (grip & GRIP_ROLL) {
+        _gfAxle.set(wheel.axle[0], wheel.axle[1], wheel.axle[2]).applyQuaternion(s.orientation);
+        _gfAxle.y = 0;
+        const len = _gfAxle.length();
+        if (len < 1e-6) { _gfWant.set(0, 0, 0); } else {
+          _gfAxle.divideScalar(len);
+          _gfWant.copy(_gfAxle).multiplyScalar(-_gfWant.dot(_gfAxle));
+        }
+      } else {
+        _gfWant.negate();
+      }
+      const demand = _gfWant.length();
+      let latched = this._wheelLatch[i] === true;
+      if (latched) {
+        if (demand > breakaway) { latched = false; _gfWant.multiplyScalar(kinetic / demand); }
+      } else if (demand > kinetic) {
+        _gfWant.multiplyScalar(kinetic / demand);
+      } else {
+        latched = true;
+      }
+      this._wheelLatch[i] = latched;
+      _gfDv.add(_gfWant);
+      _gfMoment.add(_arm.crossVectors(_r, _gfWant));
+      touching += 1;
+    }
+    if (!touching) return;
+    // `addFrictionAtAbsolutePosition`: a MEAN over the touching parts, at each
+    // one's own contact, so the rotation takes its share through the inertia.
+    // Only the share about the vertical: the wheels' pitch and roll moments
+    // are answered in the engine by the same wheels' contact impulses, which
+    // this model stands in for with its clamp and `settle`, so passing them
+    // on here tipped a parked AH-64 back 12 degrees in 20 s.
+    s.velocity.addScaledVector(_gfDv, 1 / touching);
+    _qi.copy(s.orientation).invert();
+    _omega.set(0, _gfMoment.y * this.spec.mass / touching, 0).applyQuaternion(_qi);
+    const I = this.inertia;
+    _omega.set(_omega.x / I.x, _omega.y / I.y, _omega.z / I.z).applyQuaternion(s.orientation);
+    s.angularVelocity.add(_omega);
+  }
+
+  /**
+   * Whether this airframe hovers on its collective: a vectored airframe whose
+   * `c_PIThrottle` engines, weighted by their thrust ratio, push more up than
+   * forward (every DC helicopter). The Harrier does not: W opens its forward
+   * engine and closes its lift jets (their throttle axis runs the other way),
+   * so it is flown like a plane.
+   */
+  get hovers() {
+    if (!this.vectored) return false;
+    if (this._hovers !== undefined) return this._hovers;
+    let up = 0, ahead = 0;
+    for (const engine of this.vectoredEngines) {
+      if (engine.input !== 'c_PIThrottle' || !((engine.throttle?.direction ?? 1) > 0)) continue;
+      engine.pose(_identityQuat, _fwd, _r);
+      up += engine.ratio * Math.max(0, _fwd.y);
+      ahead += engine.ratio * Math.max(0, -_fwd.z);
+    }
+    this._hovers = up > ahead;
+    return this._hovers;
+  }
+
+  /**
+   * How hard each stick channel turns the airframe from a hover, rad/s^2 per
+   * unit of input: `{ pitch, roll, yaw }`, about the body's right, forward and
+   * up axes. For a pilot that has to fly airframes whose cyclic authority
+   * differs tenfold (an AH-64 rolls 17 degrees in the first second of full
+   * stick, a Mi-24 two), not an engine quantity.
+   *
+   * Every vectored engine is taken at its share of a hover (its ratio times
+   * how far it points up, scaled so the lift is `g`), posed once with its
+   * racks at rest and once with each channel's racks at full deflection (the
+   * `automaticReset` law's `input * maxRotation`), and the difference of
+   * `r x F` goes through the inertia.
+   */
+  controlAuthority() {
+    if (!this.vectored) return null;
+    if (this._authority) return this._authority;
+    let lift = 0;
+    for (const engine of this.vectoredEngines) {
+      engine.pose(_identityQuat, _fwd, _r);
+      lift += engine.ratio * Math.max(0, _fwd.y);
+    }
+    const scale = lift > 0 ? this.spec.gravity / lift : 0;
+    const out = { pitch: 0, roll: 0, yaw: 0 };
+    for (const [channel, input] of [['pitch', 'c_PIPitch'], ['roll', 'c_PIRoll'], ['yaw', 'c_PIYaw']]) {
+      _authority.set(0, 0, 0);
+      for (const engine of this.vectoredEngines) {
+        const thrust = engine.ratio * scale;
+        engine.pose(_identityQuat, _g1, _r);
+        const saved = [];
+        for (const segment of engine.chain) {
+          for (const a of segment.axes) {
+            saved.push(a.reg.angle);
+            if (a.axis.input === input && a.axis.automaticReset) {
+              const x = a.axis.direction < 0 ? -1 : 1;
+              a.reg.angle = clamp(x * (a.axis.max ?? 0), a.axis.min ?? 0, a.axis.max ?? 0);
+            }
+          }
+        }
+        engine.pose(_identityQuat, _g2, _arm);
+        let n = 0;
+        for (const segment of engine.chain) for (const a of segment.axes) a.reg.angle = saved[n++];
+        _g2.sub(_g1).multiplyScalar(thrust);
+        _authority.add(_g3.crossVectors(_arm, _g2));
+      }
+      // Per unit mass to angular acceleration, in the body frame.
+      const I = this.inertia;
+      const m = this.spec.mass;
+      const alpha = [_authority.x * m / I.x, _authority.y * m / I.y, _authority.z * m / I.z];
+      out[channel] = Math.abs(channel === 'pitch' ? alpha[0] : channel === 'roll' ? alpha[2] : alpha[1]);
+    }
+    this._authority = out;
+    return out;
+  }
+
+  /**
+   * `Engine::Rpm` for the Engine named `name` (the one its `.ssc` is loaded
+   * on): `|PhysicsEngine+0xa0|`, `Engine::updateSound` `0x0823e930`, clamped
+   * to the patch's 0..1. A vectored airframe answers from that engine's own
+   * gearbox; anything else returns null and its note keeps `state.throttle`.
+   */
+  engineRpm(name) {
+    if (!this.vectored) return null;
+    const engine = (name && this.vectoredEngines.find(e => e.id === name)) || this.rotorEngine;
+    return engine ? clamp(Math.abs(engine.revs), 0, 1) : null;
   }
 
   /**

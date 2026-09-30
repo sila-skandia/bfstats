@@ -900,6 +900,12 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     level_dir = name
     thumbnail = None
     modes: set[str] = set()
+    # The two scripts Instant Battle runs, one per side the player picks
+    # (`SinglePlayerAllied.con` / `SinglePlayerAxis.con` at the level's root):
+    # `LevelManager::addNewLevel` (BF1942.exe 0x006d0ff0) asks the file
+    # manager for each and sets the level's `+0x70` / `+0x71` flags, and the
+    # Instant Battle list (0x006dca20) keeps a level only when one is set.
+    root_scripts: set[str] = set()
     for path in paths:
         with RfaArchive(path) as arch:
             for entry in arch.entries:
@@ -909,6 +915,8 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                 # so something has to follow it.
                 if len(parts) >= 5 and parts[1].lower() == "levels":
                     modes.add(parts[3].lower())
+                if len(parts) == 4 and parts[1].lower() == "levels":
+                    root_scripts.add(parts[3].lower())
                 if low.endswith("/init.con") and "/menu/" not in low:
                     if len(parts) >= 3:
                         level_dir = parts[2]
@@ -929,11 +937,16 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
         # What the loading screen calls it, which is a different table and
         # for four levels a different string.
         "loadingTitle": format_map_title(level_dir),
-        # Whether the real game's Instant Battle list would hold this level:
-        # it lists the levels with bot support, and bot support is a
-        # `SinglePlayer` mode directory in the level archive. This site
-        # lists every extracted level anyway - see `inGameList` below.
-        "singlePlayer": "singleplayer" in modes,
+        # Whether the real game's Instant Battle list holds this level, and
+        # which sides it can be played from: a root `SinglePlayerAllied.con`
+        # or `SinglePlayerAxis.con` (see `root_scripts` above). A
+        # `SinglePlayer/` layer directory alone is not enough: DC Final's
+        # Medina Ridge ships one and neither script, and is not listed.
+        "singlePlayer": bool({"singleplayerallied.con", "singleplayeraxis.con"} & root_scripts),
+        "singlePlayerSides": {
+            "axis": "singleplayeraxis.con" in root_scripts,
+            "allied": "singleplayerallied.con" in root_scripts,
+        },
     }
     for team, key in ((AXIS, "axis"), (ALLIED, "allied")):
         skin = skins.get(team)
@@ -1024,14 +1037,14 @@ def extract_levels(archives, out_dir: Path, force: bool,
         # The rule the real game's list follows, and this site's departure
         # from it. Recorded per level as `singlePlayer`.
         "inGameList": {
-            "rule": "Instant Battle lists the levels with bot support, which "
-                    "is a SinglePlayer mode directory in the level archive. "
-                    "Conquest-only levels are not offered.",
-            "checked": f"{listed} of {len(levels)} level archives ship one",
-            "departure": "this site lists every extracted level. It has no "
-                         "bots and launches Conquest, so hiding a playable "
-                         "level would only lose it. Filter on `singlePlayer` "
-                         "to draw the list the game would draw.",
+            "rule": "Instant Battle lists a level when its root holds "
+                    "SinglePlayerAllied.con or SinglePlayerAxis.con "
+                    "(LevelManager::addNewLevel 0x006d0ff0 sets +0x70/+0x71 "
+                    "from them; the list at 0x006dca20 skips a level with "
+                    "neither), and offers the sides whose script exists "
+                    "(`singlePlayerSides`). The round runs that side's script "
+                    "under Conquest's rules (setGamePlayMode(2), 0x0044eb19).",
+            "checked": f"{listed} of {len(levels)} levels ship one",
         },
         "levels": levels,
     }

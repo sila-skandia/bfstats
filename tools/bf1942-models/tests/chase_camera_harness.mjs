@@ -7,7 +7,7 @@
 import {
   CHASE_RADIUS_SCALE, CHASE_UP_FRACTION, CHASE_SPEED_LAG, CHASE_EASE_RATE,
   CHASE_FLOOR_CLEARANCE, CHASE_BEHIND, CHASE_AHEAD,
-  boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor,
+  boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor, chaseFrameNode,
 } from './chase-camera.js';
 
 const results = {};
@@ -77,8 +77,36 @@ results.law = {
   defaultPlain: chaseLawFor(null, false),
   engineTurret: chaseLawFor('engine', true),
   enginePlain: chaseLawFor('engine', false),
+  turretTurret: chaseLawFor('turret', true),
+  turretPlain: chaseLawFor('turret', false),
   legacyTurret: chaseLawFor('legacy', true),
   unknownTurret: chaseLawFor('nonsense', true),
 };
+
+// A pintle MG whose mount is turned round (the M1A1 commander's, the
+// Sherman's): hull forward -Z, the Camera's own forward -Z along the gun, and
+// the Camera's parent, the console, forward +Z. Each node is plain axes.
+{
+  const hull = { name: 'hull', forward: [0, 0, -1], up: [0, 1, 0] };
+  const camera = { name: 'camera', forward: [0, 0, -1], up: [0, 1, 0] };
+  const parent = { name: 'parent', forward: [0, 0, 1], up: [0, 1, 0] };
+  const behind = node => chaseTarget(node.forward, node.up, 4, CHASE_BEHIND);
+  const byDefault = chaseFrameNode(chaseLawFor(null, true), hull, camera);
+  const byTurret = chaseFrameNode(chaseLawFor('turret', true), hull, camera);
+  results.flipped = {
+    defaultNode: byDefault.name,
+    turretNode: byTurret.name,
+    legacyNode: chaseFrameNode(chaseLawFor('legacy', true), hull, camera).name,
+    nullLawNode: chaseFrameNode(null, hull, camera).name,
+    defaultTarget: behind(byDefault),
+    turretTarget: behind(byTurret),
+    // What the old default (the Camera's parent) asked for.
+    parentTarget: behind(parent),
+  };
+  // The gun swung 90 degrees right: its Camera looks down +X, the hull does not.
+  const yawedCamera = { name: 'camera', forward: [1, 0, 0], up: [0, 1, 0] };
+  results.flipped.defaultTargetYawed = behind(chaseFrameNode(chaseLawFor(null, true), hull, yawedCamera));
+  results.flipped.turretTargetYawed = behind(chaseFrameNode(chaseLawFor('turret', true), hull, yawedCamera));
+}
 
 process.stdout.write(JSON.stringify(results));

@@ -319,15 +319,21 @@ class LevelRecordTests(unittest.TestCase):
             self.assertEqual(record["loadingTitle"], record["title"])
 
     def test_bot_support_is_what_the_real_list_holds(self) -> None:
-        # The game's Instant Battle list offers the levels with bots, and
-        # bot support is a `SinglePlayer` mode directory in the level
-        # archive. Aberdeen, Coral Sea, Invasion of the Philippines and
-        # Liberation of Caen ship Conquest only, and the reference capture
-        # has none of them.
+        # The game's Instant Battle list keeps a level whose root ships
+        # `SinglePlayerAllied.con` or `SinglePlayerAxis.con`
+        # (`LevelManager::addNewLevel` 0x006d0ff0 sets `+0x70` / `+0x71`
+        # from them; the list 0x006dca20 skips a level with neither).
+        # Aberdeen, Coral Sea, Invasion of the Philippines and Liberation of
+        # Caen ship Conquest only, and the reference capture has none of them.
         self.assertTrue(self.records["midway"]["singlePlayer"])
         self.assertTrue(self.records["wake"]["singlePlayer"])
         self.assertFalse(self.records["aberdeen"]["singlePlayer"])
         self.assertFalse(self.records["coral_sea"]["singlePlayer"])
+        # Every vanilla level that is listed can be played from both sides.
+        self.assertEqual({"axis": True, "allied": True},
+                         self.records["wake"]["singlePlayerSides"])
+        self.assertEqual({"axis": False, "allied": False},
+                         self.records["aberdeen"]["singlePlayerSides"])
 
     def test_every_level_resolves_both_nations(self) -> None:
         missing = []
@@ -871,3 +877,33 @@ class NodeSuiteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DC_FINAL = GAME_DIR / "Mods" / "DC_Final"
+
+
+@unittest.skipUnless(DC_FINAL.is_dir(), "DC_Final not installed")
+class InstantBattleListTests(unittest.TestCase):
+    """The list rule across a mod: a `SinglePlayer/` layer directory is not
+    a single-player script. DC Final's Medina Ridge ships the directory and
+    neither `SinglePlayer<Side>.con`, so the game's list leaves it out."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        chain = mod_chain(GAME_DIR, "DC_Final")
+        cls.by_name = eml.chain_level_archives(chain)
+        cls.records = {name: eml.level_record(name, cls.by_name[name], None, False)
+                       for name in ("dc_medina_ridge", "dc_basrahs_edge", "dc_sea_rigs")
+                       if name in cls.by_name}
+
+    def test_medina_ridge_is_not_an_instant_battle(self) -> None:
+        self.assertFalse(self.records["dc_medina_ridge"]["singlePlayer"])
+
+    def test_basrahs_edge_is_from_both_sides(self) -> None:
+        record = self.records["dc_basrahs_edge"]
+        self.assertTrue(record["singlePlayer"])
+        self.assertEqual({"axis": True, "allied": True}, record["singlePlayerSides"])
+
+    def test_a_conquest_only_level_is_not_listed(self) -> None:
+        self.assertFalse(self.records["dc_sea_rigs"]["singlePlayer"])
+

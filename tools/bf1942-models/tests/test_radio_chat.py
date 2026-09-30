@@ -18,7 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("radio_chat_harness.mjs")
-MODULES = {"radio.js": VIEWER / "radio.js", "chat-log.js": VIEWER / "chat-log.js"}
+MODULES = {"radio.js": VIEWER / "radio.js", "chat-log.js": VIEWER / "chat-log.js",
+           "announcer.js": VIEWER / "announcer.js"}
 
 
 def run_harness() -> dict:
@@ -115,6 +116,71 @@ class RadioTests(unittest.TestCase):
         self.assertEqual([0.5], l["conquestF4"])
         self.assertEqual([1.0], l["tdmF4"])
         self.assertEqual(1, l["idle"])
+
+
+class LanguageTests(unittest.TestCase):
+    """A side rolls a patch over the lines its language ships (0x00802E00)."""
+
+    r: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()
+
+    def test_a_language_with_every_line_keeps_them_all(self) -> None:
+        self.assertEqual(["RogerThat1", "RogerThat2", "RogerThat3", "RogerThat4"],
+                         self.r["nationStems"]["usRoger"])
+
+    def test_a_language_with_none_of_them_is_silent(self) -> None:
+        # DC Final's British side: the engine drops every absent load, so the
+        # patch has nothing to play -- not the American line.
+        self.assertEqual([], self.r["nationStems"]["britRoger"])
+
+    def test_a_language_with_some_rolls_over_those(self) -> None:
+        self.assertEqual(["ProtectOurFlag"], self.r["nationStems"]["britProtect"])
+
+    def test_a_folder_the_tree_never_wrote_keeps_every_stem(self) -> None:
+        self.assertEqual(4, len(self.r["nationStems"]["unknownNation"]))
+        self.assertEqual(["ProtectOurFlag", "ProtectOurFlag2"], self.r["nationStems"]["noManifest"])
+
+
+class AnnouncerTests(unittest.TestCase):
+    """`viewer/announcer.js`: GamePlay.ssc's patches 2..4 (ledger RADIO-9..11)."""
+
+    r: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()
+
+    def test_the_game_play_modes(self) -> None:
+        # CTF 1, Conquest 2, TDM 3, Co-op 4 (the SinglePlayer layer), Objective 5.
+        self.assertEqual([2, 1, 3, 4, 4, 5, 2], self.r["gpm"])
+        self.assertEqual([2, 3, 4], self.r["announcer"]["ids"])
+
+    def test_heavy_casualties_is_the_enemys_weight_reaching_100(self) -> None:
+        self.assertEqual([[], [2], [], [], [2], []], self.r["announcer"]["heavy"])
+
+    def test_heavy_casualties_only_where_tickets_bleed(self) -> None:
+        a = self.r["announcer"]
+        self.assertEqual([[]], a["heavyTdm"])
+        self.assertEqual([[]], a["heavyCtf"])
+        self.assertEqual([[2]], a["heavyCoop"])
+
+    def test_objective_mode_counts_tickets_and_has_no_ticket_low(self) -> None:
+        self.assertEqual([[], [2]], self.r["announcer"]["objective"])
+
+    def test_tickets_low_once_in_the_band(self) -> None:
+        a = self.r["announcer"]
+        self.assertEqual([[], [3], [], [], [], [3]], a["low"])
+        self.assertEqual([[]], a["lowAlreadyUnderFloor"])
+        self.assertEqual([[]], a["lowRoundOver"])
+        self.assertEqual([[]], a["lowNoSide"])
+
+    def test_leaving_the_area_after_a_whole_second_once_per_excursion(self) -> None:
+        a = self.r["announcer"]
+        self.assertEqual([[], [], [4], [], [], [4]], a["leaving"])
+        self.assertEqual([[]], a["leavingSpawnedOutside"])
 
 
 class ChatLogTests(unittest.TestCase):

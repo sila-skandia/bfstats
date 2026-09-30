@@ -1,10 +1,13 @@
 // Drives `viewer/armor.js` outside a browser and prints one JSON blob.
 // The module imports nothing, so this is the whole harness: no vendored
 // three.js needed (contrast `ground_harness.mjs`).
-import { Armor, DEATH_EPSILON, MAX_HITPOINTS_CEILING } from './armor.mjs';
+import {
+  Armor, DEATH_EPSILON, MAX_HITPOINTS_CEILING, TEMPLATE_HITPOINTS_DEFAULT,
+  templateHitPoints,
+} from './armor.mjs';
 
 const out = {};
-out.constants = { DEATH_EPSILON, MAX_HITPOINTS_CEILING };
+out.constants = { DEATH_EPSILON, MAX_HITPOINTS_CEILING, TEMPLATE_HITPOINTS_DEFAULT };
 
 // A fresh soldier: 30/30, alive.
 {
@@ -90,11 +93,69 @@ out.constants = { DEATH_EPSILON, MAX_HITPOINTS_CEILING };
   out.applyDamageLethal = { hp: a.hitPoints, destroyed: a.destroyed };
 }
 
-// setMaxHitPoints' 128 ceiling (R4-5) — this file's constructor applies it
-// once, up front, since nothing here ever raises maxHitPoints later.
+// The spawn (HP-3, HP-17): setMaxHitPoints' 128 ceiling first, then
+// setHitPoints, which raises the max to the starting value. An Elco80's
+// 500/500 and DC's AC-130's 2000/2000 come through whole.
 {
-  const a = new Armor(500, 500);
-  out.ceiling = { max: a.maxHitPoints, hp: a.hitPoints };
+  const elco = new Armor(500, 500);
+  const ac130 = new Armor(2000);
+  out.spawnAboveCeiling = {
+    elco: { max: elco.maxHitPoints, hp: elco.hitPoints, destroyed: elco.destroyed },
+    ac130: { max: ac130.maxHitPoints, hp: ac130.hitPoints, destroyed: ac130.destroyed },
+  };
+  // Damage and heal work against the raised max.
+  ac130.damage(700);
+  const afterDamage = ac130.hitPoints;
+  const gained = ac130.heal(5000);
+  out.raisedMaxHeals = { afterDamage, gained, hp: ac130.hitPoints, max: ac130.maxHitPoints };
+  // A pad respawn restores the raised max.
+  ac130.damage(10000);
+  ac130.reset();
+  out.raisedMaxReset = { hp: ac130.hitPoints, max: ac130.maxHitPoints, destroyed: ac130.destroyed };
 }
+
+// Where the ceiling still bites: a start below an over-128 max (FHSW's
+// BrokenTiger, 40 of 155) spawns under a 128 max.
+{
+  const a = new Armor(155, 40);
+  out.ceilingBelowStart = { max: a.maxHitPoints, hp: a.hitPoints };
+}
+
+// A start above a max under the ceiling raises the max (DC's Forklift, 80
+// hit points over a max of 50).
+{
+  const a = new Armor(50, 80);
+  out.startAboveMax = { max: a.maxHitPoints, hp: a.hitPoints };
+}
+
+// The two setters on their own.
+{
+  const a = new Armor(30);
+  a.setMaxHitPoints(600);
+  const afterSetMax = { max: a.maxHitPoints, hp: a.hitPoints };
+  a.setHitPoints(600);
+  const afterSetHp = { max: a.maxHitPoints, hp: a.hitPoints };
+  a.setHitPoints(20);
+  const afterLower = { max: a.maxHitPoints, hp: a.hitPoints };
+  a.setHitPoints(0.0005);
+  const afterEpsilon = { hp: a.hitPoints, destroyed: a.destroyed };
+  a.setHitPoints(50);
+  const afterDeath = { hp: a.hitPoints, destroyed: a.destroyed };
+  out.setters = { afterSetMax, afterSetHp, afterLower, afterEpsilon, afterDeath };
+}
+
+// A starting value at or below the epsilon spawns dead, at exactly 0.
+{
+  const a = new Armor(30, 0.0005);
+  out.spawnDead = { hp: a.hitPoints, destroyed: a.destroyed };
+}
+
+// The template words: rounded up, and 10 when never authored.
+out.templateWords = {
+  authored: templateHitPoints(2000),
+  fraction: templateHitPoints(12.2),
+  missing: templateHitPoints(undefined),
+  nullish: templateHitPoints(null),
+};
 
 process.stdout.write(JSON.stringify(out, null, 2));

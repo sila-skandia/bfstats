@@ -189,8 +189,22 @@ class StateMachine:
             # clips resolve through its own clone.
             clone.weapon_state = _substitute(
                 latest.weapon_state, src_weapon, new_weapon)
-        for clip in latest.clips:
-            donor = donor_1p if clip.is_first_person else donor_3p
+        # Which donor a clip takes is the engine's slot rule, not the clip's
+        # path (`AnimationStateMachine::copyState`, lnxded 0x08327c70, ANIM-24):
+        # slot 0 takes the 3P donor and slot 1 the 1P donor, except that a
+        # state with one clip whose new name does not start `ub_`
+        # (strncasecmp against .rodata 0x086e2203) takes the 1P donor. So a
+        # gun's own single-clip states (`WeaponFire<W>`, `WeaponReload<W>`)
+        # and the lower body's follow the second donor: FHSW's
+        # `RandomGerSeizedRifle1` (`copyState ... No4 1.0 Mas36 1.0`) is a
+        # Mas36 whose bolt cycles as a Mas36's, under the No4's 3P arms.
+        single_non_upper = (len(latest.clips) == 1
+                            and not new_name.lower().startswith("ub_"))
+        for index, clip in enumerate(latest.clips):
+            if single_non_upper or index >= 1:
+                donor = donor_1p
+            else:
+                donor = donor_3p
             replacement = donor if donor is not None else new_weapon
             clone.clips.append(ClipRef(
                 _substitute(clip.path, src_weapon, replacement),

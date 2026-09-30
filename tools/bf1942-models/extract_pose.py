@@ -2410,7 +2410,7 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
     `BFSoldier` template.
     """
     kits = kit_mod.collect(library)
-    kit_mod.sweep_levels(kits, levels)
+    kit_mod.sweep_levels(kits, levels, library)
     posable = {name.lower(): name
                for name in machine.weapons(f"{UPPER_PREFIX}{state}")
                if library.object(name) is not None}
@@ -2420,8 +2420,10 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
     for kit in sorted(kits.values(), key=lambda k: k.template.lower()):
         if not kit.live:
             continue
-        candidates = tuple(kit_mod.pose_candidates(kit, posable))
-        if not candidates:
+        # One set per weapon a spawn can hand out: a kit whose spawn weapon
+        # is rolled (`setRandomGeometries`) is seen holding each variant.
+        sets = kit_mod.pose_candidate_sets(kit, posable)
+        if not sets:
             unposable.append(kit.template)
             continue
         for name in kit.soldiers:
@@ -2429,7 +2431,8 @@ def kit_pose_plan(library: con_mod.ObjectLibrary,
             if soldier is None or soldier.kind.lower() != "bfsoldier":
                 unknown.add(name)
                 continue
-            jobs.setdefault((soldier.name, candidates), []).append(kit.template)
+            for candidates in sets:
+                jobs.setdefault((soldier.name, candidates), []).append(kit.template)
     return jobs, {"unposableKits": unposable, "unknownSoldiers": sorted(unknown)}
 
 
@@ -2542,6 +2545,32 @@ def extract_kit_poses(args, chain: list[Path], context: dict) -> int:
 
 
 # -- CLI -------------------------------------------------------------------- #
+
+POSE_INDEX_FORMAT = "bf1942-pose-index/1"
+
+
+def write_pose_index(out: Path) -> dict:
+    """`index.json` in a poses tree: the stem of every pose it holds, split by
+    kind -- `recipe` for a `<Soldier>__<Pose>.pose.json` recipe (the split
+    tree, `pose-compose.js` composes it), `glb` for a monolithic
+    `.pose.glb`.
+
+    What the viewer resolves a (soldier, pose) pair through, case-blind and
+    before it asks for any file: the engine finds a template whatever its
+    case (LOAD-7), while a tree's files carry whichever spelling the
+    extractor was handed -- FHSW's `GermanSoldier__MP40` for a kit that holds
+    `Mp40`, its `FrenchSoldier__Mas36` for a level that dresses
+    `frenchsoldier`. It also says which tree holds a pair at all, so a mod
+    tree's own single-file pose is found ahead of vanilla's recipe for the
+    same pair. Rewritten from the directory listing every run, so it is
+    always the set of files actually there.
+    """
+    recipes = sorted(p.name[:-len(".pose.json")] for p in out.glob("*.pose.json"))
+    glbs = sorted(p.name[:-len(".pose.glb")] for p in out.glob("*.pose.glb"))
+    index = {"format": POSE_INDEX_FORMAT, "recipe": recipes, "glb": glbs}
+    (out / "index.json").write_text(json.dumps(index, indent=1) + "\n")
+    return index
+
 
 def report_rigs(rigs: dict[str, dict]) -> dict[str, dict]:
     """Print the rig pass's summary to stderr; return it."""
@@ -2673,6 +2702,12 @@ def main() -> int:
                          "full --matrix product, which for FHSW is tens of "
                          "thousands. Writes poses-matrix.json and the gait "
                          "sidecars; --soldiers/--weapons narrow it")
+    ap.add_argument("--index-only", action="store_true",
+                    help="write only --out's index.json (every pose's stem, "
+                         "recipe or glb, which the viewer resolves pairs "
+                         "through case-blind) from the files already there, "
+                         "without reading the game. Every other mode writes "
+                         "it too when it finishes")
     ap.add_argument("--split-only", action="store_true",
                     help="with --split: write the rigs and the recipes and no "
                          "monolithic .glb at all. This is the cutover — it is "
@@ -2687,6 +2722,14 @@ def main() -> int:
         # names them the same way a monolithic glb's `gaitAssets` does.
         ap.error("--split writes the gaits as sidecars: use --gaits shared "
                  "(the default), or drop --split")
+
+    if args.index_only:
+        if not args.out.is_dir():
+            ap.error(f"--index-only: no such poses tree: {args.out}")
+        index = write_pose_index(args.out)
+        print(f"{args.out / 'index.json'}: {len(index['recipe'])} recipes, "
+              f"{len(index['glb'])} glbs", file=sys.stderr)
+        return 0
 
     if not args.matrix and not args.kit_poses and not args.seat_poses \
             and not args.parachute and not args.swim and not args.die \
@@ -3142,4 +3185,14 @@ if __name__ == "__main__":
     # Every glb this wrote moves its textures into the shared store
     # (optimise_mesh.py, features/mesh-asset-size); `--no-optimise` opts out.
     from optimise_mesh import run_then_optimise
-    raise SystemExit(run_then_optimise(main, Path(__file__).resolve().parent / "out"))
+    default_out = Path(__file__).resolve().parent / "out"
+    code = run_then_optimise(main, default_out)
+    # Whatever the mode wrote, the tree's pose index is rewritten from what
+    # is on disk now (`write_pose_index`).
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--out", type=Path, default=default_out)
+    known, rest = pre.parse_known_args(sys.argv[1:])
+    if known.out.is_dir() and not {"-h", "--help"} & set(rest) \
+            and (any(known.out.glob("*.pose.glb")) or any(known.out.glob("*.pose.json"))):
+        write_pose_index(known.out)
+    raise SystemExit(code)

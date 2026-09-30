@@ -80,6 +80,9 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     """
     rows: dict[str, dict] = {}
     levels: dict[str, dict] = {}
+    # The soldier as his `create` line spells him, not as `setTeamSkin` does:
+    # every pose, rig and viewmodel is named after the former.
+    kit_mod.spell_soldiers(loadouts, library)
     for level_name, teams in sorted(loadouts.items()):
         level_entry: dict[str, dict] = {}
         for team_id, team in sorted(teams.items()):
@@ -114,8 +117,23 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                     weapon_icons = (list(kit_template.kit_weapon_icons)
                                     if kit_template else [])
                     weapons = []
+                    rolled = {entry.template.lower(): entry for entry in kit.random}
                     for carry_index, item in enumerate(kit.carried):
                         item_template = library.object(item)
+                        if item.lower() in rolled:
+                            # A rolled item keeps the kit's name here, at its
+                            # variants' slot (they include one weapon's
+                            # file); the page rolls which variant a spawn
+                            # holds (`random`, below).
+                            item_template = next(
+                                (library.object(v) for v in rolled[item.lower()].variants
+                                 if v), None)
+                            if item_template is None or item_template.item_index is None:
+                                continue
+                            weapons.append({"slot": item_template.item_index,
+                                            "weapon": item,
+                                            "carryIndex": carry_index})
+                            continue
                         if item_template is None or item_template.item_index is None:
                             continue
                         weapons.append({
@@ -169,6 +187,12 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                             if kit_template else []),
                         "hitpoints": hitpoints,
                         "maxHitpoints": max_hitpoints,
+                        # Every child the kit rolls on a spawn, in the order
+                        # the engine rolls them (`bf42/kit.py` `RandomItem`):
+                        # worn parts too, since they bump the same counter.
+                        # A carried item named here is a bundle; the page
+                        # swaps it for the variant its roll lands on.
+                        "random": [entry.as_dict() for entry in kit.random],
                     }
             level_entry[str(team_id)] = {"soldier": team.soldier, "slots": slots}
         levels[level_name.lower()] = level_entry
@@ -179,7 +203,10 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     # (research README §6.2-6.3, bot-behaviours.md §3).
     ai_weapons: dict[str, dict] = {}
     for row in rows.values():
-        for item in row["items"]:
+        held = list(row["items"])
+        for entry in row["random"]:
+            held.extend(v for v in entry["variants"] if v)
+        for item in held:
             if item in ai_weapons:
                 continue
             template = library.object(item)

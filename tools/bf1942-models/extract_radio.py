@@ -27,11 +27,16 @@ Three things come out of the game, all under a `_shared` directory:
     Both load `Sound/@RTD/@Language/<stem>.wav`, `@Language` being the side's
     `ObjectTemplate.setRadioLanguage` (see `extract_capture_voices.py`), so
     each stem is written once per nation folder the capture voices already
-    use. `Bf1942/Game/GamePlay.ssc`'s `RadioCrackle` patch, the
-    language-free `Sound/@RTD/radiomess.wav`, lands at `voices/radiomess.mp3`.
-    The manifest lists both scripts' patches in file order -- the order is
-    the patch index the engine plays by -- with each patch's stems, whether
-    it picks one at random, and the local patches' distance ramp.
+    use. `Bf1942/Game/GamePlay.ssc` is the side's announcer (a point won and
+    lost, heavy casualties, tickets low, leaving the combat area), in the
+    same language folders; its `RadioCrackle` patch, the language-free
+    `Sound/@RTD/radiomess.wav`, lands at `voices/radiomess.mp3`.
+    The manifest lists the three scripts' patches in file order -- the order
+    is the patch index the engine plays by -- with each patch's stems, whether
+    it picks one at random, and the local patches' distance ramp. A stem a
+    language does not ship is listed under `missing`: the engine drops a load
+    whose file is absent before it counts it (0x00802E00), so that nation
+    rolls over the stems it has, and a patch with none plays nothing.
 
     python3 extract_radio.py --out /tmp/radio            # -> /tmp/radio/{hud,voices}
     python3 extract_radio.py --out ... --no-transcode    # manifests only
@@ -239,6 +244,13 @@ def _patches(text: str, source: str) -> list[dict]:
     return out
 
 
+def _language_stems(text: str, source: str) -> set[str]:
+    """The stems a script loads from `Sound/@RTD/@Language/`: the ones written
+    per nation. `RadioCrackle`'s `radiomess.wav` sits outside it."""
+    return {_stem(s.file) for patch in parse_ssc(text, level="high", source=source)
+            for s in patch.samples if "@language/" in s.file.lower()}
+
+
 def _ssc_text(pool, name: str) -> str:
     raw = pool.try_read(name)
     if raw is None:
@@ -255,18 +267,20 @@ def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict
             game = archives / "bf1942"
             if game.is_dir():
                 pool.add_dir(game, ("game",))
-    radio = _patches(_ssc_text(pool, RADIO_SSC), RADIO_SSC)
-    local = _patches(_ssc_text(pool, LOCAL_SSC), LOCAL_SSC)
-    gameplay = _patches(_ssc_text(pool, GAMEPLAY_SSC), GAMEPLAY_SSC)
+    texts = {name: _ssc_text(pool, name) for name in (RADIO_SSC, LOCAL_SSC, GAMEPLAY_SSC)}
+    radio = _patches(texts[RADIO_SSC], RADIO_SSC)
+    local = _patches(texts[LOCAL_SSC], LOCAL_SSC)
+    gameplay = _patches(texts[GAMEPLAY_SSC], GAMEPLAY_SSC)
     crackle = next((p for p in gameplay if p["stems"] == ["radiomess"]), None)
     manifest: dict = {
         "mod": mod,
-        "sources": {"radio": RADIO_SSC, "local": LOCAL_SSC, "crackle": GAMEPLAY_SSC},
-        "radio": radio, "local": local,
+        "sources": {"radio": RADIO_SSC, "local": LOCAL_SSC, "gameplay": GAMEPLAY_SSC,
+                    "crackle": GAMEPLAY_SSC},
+        "radio": radio, "local": local, "gameplay": gameplay,
         "crackle": "radiomess" if crackle else None,
         "nations": {}, "missing": [],
     }
-    stems = sorted({s for p in radio + local for s in p["stems"]})
+    stems = sorted(set().union(*(_language_stems(text, name) for name, text in texts.items())))
     for language, nation in LANGUAGE_NATIONS.items():
         written = []
         for stem in stems:
@@ -464,7 +478,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.layout_only:
         return 0
     voices = extract_voices(game_dir, args.mod, args.out, not args.no_transcode)
-    print(f"voices: {len(voices['radio'])} radio + {len(voices['local'])} local patches; "
+    print(f"voices: {len(voices['radio'])} radio + {len(voices['local'])} local + "
+          f"{len(voices['gameplay'])} gameplay patches; "
           + ", ".join(f"{n} {r['stems']}" for n, r in voices["nations"].items()))
     for miss in voices["missing"]:
         print("missing:", miss)

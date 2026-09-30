@@ -69,7 +69,9 @@ import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
   MAX_OVERRUN,
 } from './suspension.js';
-import { clamp, EngineState } from './ground-engine.js';
+import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
+import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
+import { AmphibiousKit, bedGroundHeight } from './amphibious.js';
 
 // The body frame `wheeled-vehicle.js` documents (-Z forward, +Y up, +X starboard),
 // declared here rather than shared so no module hands another a live
@@ -198,6 +200,18 @@ export class TrackedVehicle extends Vehicle {
     this.hullContacts = [];
     this.hullSolved = false;
 
+    /** An amphibian's water engine, floats and rudders (`amphibious.js`),
+     * or null for a hull with none. One that has them stands on the sea
+     * bed rather than on the sea, or its floats would never get wet. */
+    this.amphibious = AmphibiousKit.of(node, {
+      waterLevel: options.waterLevel ?? this.collider?.waterLevel,
+      mass: this.mass, drag: this.drag,
+    });
+    if (this.amphibious) {
+      this.groundHeight = bedGroundHeight(this.collider, this.amphibious.waterLevel, this.groundHeight);
+    }
+    this._inputOf = name => this.input(name);
+
     // Scratch, so a tick allocates nothing — the same set `GroundVehicle`
     // keeps, for the same reason.
     this._q = new THREE.Quaternion();
@@ -260,6 +274,11 @@ export class TrackedVehicle extends Vehicle {
     this.node.traverse(obj => {
       const data = obj.userData || {};
       if (data.templateKind === 'Engine' && data.physics) {
+        // An amphibian's water engine (`c_ETShip`, bit 0 set) drives no
+        // spring: it is `amphibious.js`'s. Taking it for the drivetrain
+        // because the walk met it last left a BMP-2's tracks on a screw's
+        // gearbox.
+        if (engineTypeBits(data.physics.engineType) & ENGINE_BIT_THRUST) return;
         // The whole drivetrain, from the template. `noPropellerEffectAtSpeed`
         // is deliberately NOT read: it lives inside `updatePhysics`'s
         // `& 1`-and-`& 8` block, which a `c_ETTank` never reaches (TANK-7).
@@ -330,6 +349,13 @@ export class TrackedVehicle extends Vehicle {
    */
   advancePropeller() {}
 
+  /** `Engine+0x142` for every Engine on the hull (the drivetrain's and an
+   * amphibian's screw): TemplateMessage 4 sets it when the driver's seat is
+   * taken, 5 clears it when he leaves (ledger PHY-14). While it is clear the
+   * inputs are zeroed and the revs held at 0. */
+  get engineRunning() { return this.engine.running; }
+  set engineRunning(on) { this.engine.running = !!on; }
+
   /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
    * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
    * hands it.
@@ -371,6 +397,9 @@ export class TrackedVehicle extends Vehicle {
     this.applyTransform();
     this.applyRig();
     this.#applyWheels();
+    // The belts' texture at this tick's engine state, each at its own side's
+    // `ratio * diffRPM` (`track-scroll.js`, AnimatedBundle::updateAnimations).
+    scrollBeltsByEngine(this.node, this.engine, dt);
   }
 
   #step(h) {
@@ -664,6 +693,13 @@ export class TrackedVehicle extends Vehicle {
       staticBudget /= tanCount;
     }
 
+    // An amphibian's water half: its screw, floats, rudders and the
+    // submerged drag, every tick whether it is wet or not (`amphibious.js`).
+    if (this.amphibious) {
+      this.amphibious.step(h, { q, qInv, position: s.position, vBody, w, force, torque,
+        surfaces: s.surfaces, running: engine.running, inputOf: this._inputOf });
+    }
+
     s.grounded = loaded > 0;
     s.airspeed = speed;
 
@@ -687,10 +723,16 @@ export class TrackedVehicle extends Vehicle {
     // gets its own, far lighter one, because differential steering IS the
     // yaw torque and the rollover cases were never about heading — see
     // `TANK.yawDamping`.
-    const yawDamping = k.yawDamping ?? k.angularDamping;
-    w.x += (torque.x / this._inertia.x - k.angularDamping * w.x) * h;
+    //
+    // Neither damper is the engine's, and a swimming amphibian has no track
+    // on anything: afloat, its turn is damped by its own rudders and its roll
+    // and pitch by its floats (`amphibious.js`), as a ship's are.
+    const swimming = this.amphibious?.afloat && loaded === 0;
+    const damping = swimming ? 0 : k.angularDamping;
+    const yawDamping = swimming ? 0 : (k.yawDamping ?? k.angularDamping);
+    w.x += (torque.x / this._inertia.x - damping * w.x) * h;
     w.y += (torque.y / this._inertia.y - yawDamping * w.y) * h;
-    w.z += (torque.z / this._inertia.z - k.angularDamping * w.z) * h;
+    w.z += (torque.z / this._inertia.z - damping * w.z) * h;
     if (w.lengthSq() > 0) {
       this._spin.setFromEuler(this._euler.set(w.x * h, w.y * h, w.z * h, 'XYZ'));
       s.orientation.multiply(this._spin).normalize();
@@ -767,6 +809,9 @@ export class TrackedVehicle extends Vehicle {
     }
     super.presentKinematic(dt, throttle, running);
     this.#applyWheels();
+    // No engine is recorded to scroll the belts from: each runs at its side's
+    // contact speed off the recorded motion (`track-scroll.js`).
+    scrollBeltsByMotion(this.node, bodyMotion(s.orientation, s.velocity, s.angularVelocity), dt);
   }
 
   /** Suspension lift + roll onto the scene graph — `GroundVehicle`'s own
@@ -806,6 +851,7 @@ export class TrackedVehicle extends Vehicle {
     // Back to the engine's own construction state: gear 1, no revs, and the
     // gear-change lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
     this.engine.reset();
+    this.amphibious?.reset();
     this._staticQuiet = 0;
     this._staticHeld = false;
     s.position.copy(this.node.userData.spawnPosition || s.position);

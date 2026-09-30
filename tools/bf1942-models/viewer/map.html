@@ -173,6 +173,7 @@ import { createBotReferee } from './bot-referee.js';
 import { createBotRounds } from './bot-rounds.js';
 import { createBotUnits } from './bot-units.js';
 import { createBotVisuals } from './bot-visuals.js';
+import { createBotNamer, levelNameLists, loadBotNames } from './bot-names.js';
 import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
 import { createScoreboardScreen } from './scoreboard-screen.js';
@@ -180,12 +181,15 @@ import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
-import { clampMaxPlayers, createRoundState, TICKET_BASE_PLAYERS } from './round-state.js';
+import {
+  clampMaxPlayers, createRoundState, holdWeight, scaleTickets, TICKET_BASE_PLAYERS,
+} from './round-state.js';
 import { createHudFeed } from './hud-feed.js';
 import { createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createKitDropsPage } from './kit-drops-page.js';
+import { createDeployablesPage } from './deployables-page.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
@@ -207,6 +211,7 @@ import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
 import { createComms } from './comms.js';
 import { modelFileStem } from './model-file.js';
+import { createSoldierArmorEffects } from './soldier-armor-effects.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -532,7 +537,7 @@ const pageInput = createPageInput(bag(
   from(() => scoreboard, `scoreboardOpen scoreFromSpawn setScoreboard`),
   from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
-    selectKitWeapon startReload`),
+    selectKitWeapon startReload weaponBarFire`),
   from(() => kitDrops, `pickup:pickupKit`),
   from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
@@ -949,6 +954,14 @@ guns.onImpact = record => {
   if (record.firerGroup?.replay) return;
   vehicleHits.applyVehicleHit(record);
 };
+// A burst's end (`gun-cycle.js` `releaseTick`, ledger SND-12, SND-16): the
+// release patches of whichever gun stopped, a hull's through its rack and the
+// hand weapon's through its own report (`hand-fire-sound.js`).
+guns.onRelease = (group, info) => {
+  pageAudio.vehicleAudio?.release(group?.node, info);
+  const hw = soldierKit.handWeapon;
+  if (hw && group === hw.group) hw.fire?.playRelease?.(info);
+};
 guns.bodyCast = vehicleHits.roundBodyCast;
 // The struck hull's own `angleMod`, for the direct hit's angle term.
 guns.angleModOf = vehicleHits.angleModOf;
@@ -978,6 +991,20 @@ const effects = new EffectPlayer({
   onSoundStop: token => effectAudio.stop(token),
 });
 guns.effects = effects;
+// A soldier's own `addArmorEffect` tiers (Desert Combat's dropped helmet),
+// read off his model report and played on the effect player at his death.
+const soldierArmorEffects = createSoldierArmorEffects({
+  get MODELS_BASE() { return MODELS_BASE; }, bust: () => bust(),
+  get effects() { return effects; },
+});
+/** Play a soldier's death tier where he fell on foot: `at` his feet and
+ *  heading (`{ x, y, z, yaw }`), `velocity` his body's at the blow. */
+function playSoldierDeathEffects(team, at, velocity = null) {
+  soldierArmorEffects.died({
+    template: soldierKit.soldierTemplateFor({ team }),
+    x: at.x, y: at.y, z: at.z, yaw: at.yaw, velocity,
+  });
+}
 let effectsLoad = null;
 function loadEffectLibrary() {
   if (effectsLoad || params.get('effects') === 'off') return effectsLoad;
@@ -1072,7 +1099,7 @@ const soldierHud = createSoldierHud(bag(
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `playSoldierHurtSound`),
   from(() => soldierKit, `carriedKit handSlot handWeapon isZoomed kitLoadout kitWeaponSlots loadouts
-    WEAPON_ICON_VARS weaponBarUntil`),
+    WEAPON_ICON_VARS weaponBar`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => ticketFeed, `feedFlagIconVars feedTicketVars`),
   {
@@ -1106,6 +1133,15 @@ const BOT_DEBUG = params.has('botDebug');
 /** `?doctrine=`: who orders the bots (doctrine.js `parseDoctrineSpec`):
  *  the garrison by default (doctrine-garrison.js), `sai` for the engine's. */
 const BOT_DOCTRINE = params.get('doctrine') || 'garrison';
+/**
+ * The names the server gives its bots on each level of this maps tree
+ * (`_shared/bot-names.json`, bot-names.js). Null until it arrives, and for a
+ * tree without the file, whose bots keep bot.js's stand-in table.
+ */
+let botNameManifest = null;
+if (BOT_COUNT > 0) {
+  loadBotNames(`${MAPS_BASE}/_shared/bot-names.json${bust()}`).then(m => { botNameManifest = m; });
+}
 /**
  * The bots' referee (bot-referee.js, the same copy `sim/match.mjs` runs): the
  * bots, their clock, nav map, strategic AI and covers, and everything a
@@ -1192,8 +1228,14 @@ const referee = createBotReferee({
     const at = bot.getPosition();
     pageAudio.playSoldierDeathSound({ x: at[0], y: at[1] + 1.2, z: at[2] },
       soldierKit.teamVoice(bot.team));
-    // His kit where he fell, when he fell on foot (`kit-drops-page.js`).
+    // His kit where he fell, when he fell on foot (`kit-drops-page.js`),
+    // and his side's death tier (`soldier-armor-effects.js`).
     kitDrops.botDied(bot, opts);
+    if (!opts?.seated) {
+      const soldier = level.world?.player(bot.playerId)?.soldier;
+      playSoldierDeathEffects(bot.team, { x: at[0], y: at[1], z: at[2], yaw: soldier?.yaw ?? bot.yaw ?? 0 },
+        soldier?.body?.velocity);
+    }
     comms.onKill(botSpeaker(bot), speakerOf(attackerId), opts);
     // The round's own tally: the killer's kill (a team kill when the two are
     // on one side, or when he shot himself), and the dead player's death,
@@ -1337,6 +1379,11 @@ function syncTickets() {
  *  wrote the round's moving counts over them: a replay's estimate starts
  *  from these (replay-round.js). */
 let levelTicketsAtStart = null;
+/** The counts each side started the round with, `Game::getNumberOfTickets`:
+ *  what the announcer's "running low on reinforcements" share is taken over.
+ *  A room's are its server's (`server/level-data.mjs` scales the level's by
+ *  its 16 slots), the page's its own round's. */
+let roundStartTickets = null;
 
 function startRound() {
   const tickets = level.extras?.tickets ?? null;
@@ -1348,6 +1395,33 @@ function startRound() {
     tickets,
     rates: tickets?.lossPerMin ?? null,
     maxPlayers: ROUND_MAX_PLAYERS,
+  });
+  roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
+}
+
+/** The side's announcer (`announcer.js`, `comms.gameplayFrame`): heavy
+ *  casualties, tickets low and the combat-area warning, off the numbers the
+ *  HUD draws -- the counts in `extras.tickets`, the weights the flags hold and
+ *  the local player's seconds outside the area (`combat-area.js`). */
+function announceGameplay() {
+  const counts = level.extras?.tickets;
+  const tickets = counts ? { 1: counts.team1, 2: counts.team2 } : null;
+  let start = roundStartTickets;
+  if (room.roomJoined) {
+    const scaled = scaleTickets(levelTicketsAtStart, TICKET_BASE_PLAYERS);
+    start = scaled ? { 1: scaled.team1, 2: scaled.team2 } : null;
+  }
+  comms.gameplayFrame({
+    team: localSpeaker().team,
+    playing: room.roomJoined ? !(tickets && (tickets[1] <= 0 || tickets[2] <= 0))
+      : !!round && !round.over,
+    held: holdWeight(level.extras?.controlPoints),
+    tickets,
+    start,
+    // The accumulator itself, not this frame's record: a frame the world did
+    // not tick carries no record, and reading that as "inside" re-armed the
+    // warning line every frame.
+    outsideFor: level.combatArea?.active ? level.combatArea.outsideFor : 0,
   });
 }
 
@@ -1369,6 +1443,21 @@ function resetBots() {
   startRound();
 }
 
+/**
+ * Names this level's bots the way the server does: its `Skirmish.con` lists
+ * paired by index, drawn at random, none a player already has, the human's
+ * name included (bot-names.js). Null, and bot.js's stand-in table, when the
+ * tree has no `_shared/bot-names.json` or it has not arrived.
+ */
+function botNamerForLevel() {
+  try {
+    const lists = levelNameLists(botNameManifest, level.currentDir);
+    return lists ? createBotNamer({ lists, taken: [room.roomName] }) : null;
+  } catch (err) {
+    console.warn('[bots] names unavailable', err);
+    return null;
+  }
+}
 /**
  * Spawn bots on both sides, the way the engine's bot manager tops up each
  * team. Called once per level load, after the world is built.
@@ -1395,6 +1484,7 @@ function spawnBotsForLevel() {
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
     kitFor: soldierKit.botKitFor,
+    nameFor: botNamerForLevel(),
     viewDistance: level.world.extras?.ai?.settings?.viewDistance ?? null,
   });
   const nav = referee.navGrid;
@@ -1442,6 +1532,25 @@ const kitDrops = createKitDropsPage(bag(
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
     get scene() { return scene; },
+  },
+));
+/** What an ObjectSpawner puts in the world on foot: the mortar the Support
+ *  kit's round places, and the kits a map lays on pads (`deployables-page.js`).
+ *  After the hand weapon, whose `guns.onShot` it chains onto. */
+const deployables = createDeployablesPage(bag(
+  from(() => level, `bindDynamicShading collider currentRoot extras groundHeight isCollision
+    spawnersRoot world`),
+  from(() => localPlayer, `soldier soldierDead`),
+  from(() => room, `roomJoined`),
+  from(() => soldierKit, `currentKit handWeapon loadouts`),
+  from(() => vehicleEntry, `dropEntryPoints`),
+  {
+    get bust() { return bust; }, get camera() { return camera; },
+    get effects() { return effects; }, get guns() { return guns; },
+    get kitDrops() { return kitDrops; }, get loader() { return loader; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MODELS_BASE() { return MODELS_BASE; },
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get params() { return params; }, get vehicles() { return vehicles; },
   },
 ));
 
@@ -1550,6 +1659,8 @@ const soldierView = createSoldierView(bag(
     dieOnFoot: () => {
       localPlayer.dieOnFoot();
       kitDrops.localDied();
+      const s = localPlayer.soldier;
+      if (s) playSoldierDeathEffects(spawning.deployTeamId, s, s.body?.velocity);
     },
     // Where the last man to hit the human stood (the message log's record of
     // the attack): the side the corpse cam looks from.
@@ -1664,8 +1775,8 @@ const spawning = createSpawning(bag(
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses roomJoined`),
   from(() => scoreboard, `setScoreboard`),
-  from(() => soldierKit, `disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
-    kitRowLayoutText soldierMaxHp`),
+  from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
+    kitRowLayoutText loadouts soldierMaxHp`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },
@@ -1900,6 +2011,7 @@ replayController = createReplayController({
   playWorldShot: (weapon, x, y, z) => pageAudio.playWorldShot(weapon, x, y, z),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
+  playSoldierDeathEffects: (at, team, velocity) => playSoldierDeathEffects(team, at, velocity),
   playRefillSound: at => pageAudio.playRefillSound(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),
   // The page's mix where it leaves for the speakers, for a creator's clip
@@ -2148,6 +2260,8 @@ function simulate(dt, input, look) {
   // The kits on the ground turn and time out on the world's own ticks: one
   // `Item::handleUpdate` and one message-clock step per world update.
   kitDrops.tick(step.ticks / 30);
+  // The deployed mortars' clocks and the kit pads, on the same ticks.
+  deployables.tick(step.ticks / 30);
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
   referee.captureTick(step.ticks / 30);
@@ -2178,6 +2292,7 @@ function simulate(dt, input, look) {
   combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
   if (local?.look) soldierKit.addFootLook(local.look);
+  if (!replayController?.active()) announceGameplay();
   return step;
 }
 
@@ -2418,7 +2533,7 @@ const testHooks = installTestHooks(bag(
   from(() => soldierKit, `altFireDemolitions crosshairEl cycleKitWeapon detonatorTemplate
     explosivesTemplate handFireLoop handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor thrownPackGroup
-    viewmodelRigFor vmCamera vmRoot vmScene weaponBarUntil weaponTemplateFor`),
+    viewmodelRigFor vmCamera vmRoot vmScene weaponBar weaponTemplateFor`),
   from(() => soldierView, `canopySpan foot3pRel footView3p supplyField`),
   from(() => spawning, `cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
     deployUnchosen selectDeployFlag`),

@@ -79,6 +79,28 @@ class PoseBasesTests(unittest.TestCase):
         self.assertEqual(2, self.r["none"]["asked"])
         self.assertIn("404", self.r["none"]["rejected"])
 
+    def test_a_manifest_answers_a_name_in_any_case(self) -> None:
+        # The exact key first, then the key in another case (ledger LOAD-7).
+        self.assertEqual({"exact": "gaits/exact.gait.glb", "otherCase": "gaits/MP40.gait.glb",
+                          "upper": "gaits/No2.gait.glb", "missing": None, "noTable": None},
+                         self.r["byName"])
+
+    def test_a_tree_without_an_index_is_guessed_recipe_then_glb(self) -> None:
+        n = self.r["noIndex"]
+        self.assertEqual([
+            {"base": "models/mods/fhsw", "stem": "GermanSoldier__K98", "kind": "recipe"},
+            {"base": "models/mods/fhsw", "stem": "GermanSoldier__K98", "kind": "glb"},
+            {"base": "models", "stem": "GermanSoldier__K98", "kind": "recipe"},
+            {"base": "models", "stem": "GermanSoldier__K98", "kind": "glb"},
+        ], n["sources"])
+        self.assertEqual(["models/mods/fhsw/poses/index.json", "models/poses/index.json"],
+                         n["asked"])
+
+    def test_a_missing_index_is_remembered_and_a_failed_fetch_is_not(self) -> None:
+        n = self.r["noIndex"]
+        self.assertEqual(2, n["askedAfterSecond"])
+        self.assertEqual(2, n["retriedAfterError"])
+
 
 if __name__ == "__main__":
     unittest.main()

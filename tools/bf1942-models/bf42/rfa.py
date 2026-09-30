@@ -242,6 +242,11 @@ class ArchivePool:
         self._alternative_dirs: list[str] = []
         # Entries `try_read` has already warned about, so a second pass is quiet.
         self._unreadable: set[str] = set()
+        # The order a level load runs its own scripts in (lower-case archive
+        # paths), from `add_level_objects(runs=)` given a list: where two of
+        # them declare one name the first to run owns it (LOAD-1), and
+        # `extract_map.LevelFirst` lists them in this order.
+        self.run_order: list[str] = []
 
     def set_alternative_paths(self, dirs: list[str]) -> None:
         self._alternative_dirs = [d.replace("\\", "/").strip("/").lower() for d in dirs if d]
@@ -340,7 +345,8 @@ class ArchivePool:
         return added
 
     def add_level_objects(self, path: Path, label: str | None = None,
-                          extra: frozenset[str] | set[str] = frozenset()) -> int:
+                          extra: frozenset[str] | set[str] = frozenset(),
+                          runs=None) -> int:
         """Register object templates a level defines for itself.
 
         A level may ship whole ObjectTemplates inside its own archive, under
@@ -361,15 +367,32 @@ class ArchivePool:
         already handles on the texture side and which have no business in the
         object namespace.
 
+        `runs` is a level load: the archive paths (lower case) of every script
+        the level's `Init.con` runs, `Objects/` included, in the order it runs
+        them (`extract_map.level_run_scripts`; kept in `run_order`). Then a
+        `.con` under `Objects/` that
+        nothing runs is left out. The engine never walks a level's `Objects/`
+        on its own: `Game::loadAllConFiles("objects/")` lists only the
+        archives mounted under `objects` (LOAD-5), so a script the level ships
+        and does not run declares nothing. DC Final's Lost Village carries
+        the nochute kits Lost Village nopara runs, and runs none of them. The
+        census callers (every level's templates, for a catalogue) pass no
+        `runs` and keep the whole folder.
+
         Entries are registered under their full archive path, which is what
         `build_library` iterates, and additionally under the tail from
         `Objects/` onward so a `Geometries.con` reference resolves the same
-        way it would for a global template. Global templates keep priority:
-        this only ever fills gaps, so a level cannot shadow a stock object.
+        way it would for a global template. Global templates keep priority
+        in the pool; which declaration wins a name is the library's order
+        (`extract_map.LevelFirst`).
         """
         archive = RfaArchive(path)
         label = label or path.stem
         self._archives.append((label, archive))
+        if runs is not None and not isinstance(runs, (set, frozenset)):
+            known = set(self.run_order)
+            self.run_order.extend(p for p in runs if p not in known)
+            runs = set(runs)
         added = 0
         for name in archive.entries:
             parts = name.replace("\\", "/").split("/")
@@ -383,9 +406,19 @@ class ArchivePool:
             try:
                 start = lowered.index("objects")
             except ValueError:
-                continue
+                start = -1
             # `Levels/<Map>/Objects/...`, not some other folder called objects.
-            if start < 2 or lowered[start - 2] != "levels":
+            under_objects = start >= 2 and lowered[start - 2] == "levels"
+            if runs is not None and name.lower().endswith(".con"):
+                if name.lower() not in runs:
+                    continue
+                if not under_objects:
+                    entry = (label, archive, name)
+                    if name.lower() not in self._index:
+                        self._index[name.lower()] = entry
+                        added += 1
+                    continue
+            if not under_objects:
                 continue
             entry = (label, archive, name)
             for key in (name.lower(), "/".join(parts[start:]).lower()):

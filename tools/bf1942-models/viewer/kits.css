@@ -230,6 +230,15 @@ button.kit .maps { color: var(--muted); font-size: 10px; font-variant-numeric: t
 .stat span:last-child { color: var(--accent); }
 .stat span:last-child.muted { color: var(--muted); }
 #maps { color: var(--muted); font-size: 10px; line-height: 1.6; }
+#variants {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--accent);
+  background: var(--mm-bg-soft);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
 #note {
   margin-top: 8px;
   padding: 7px 9px;

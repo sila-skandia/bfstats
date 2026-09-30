@@ -53,7 +53,13 @@ MODULES = {
     "ground-specs.js": VIEWER / "ground-specs.js",
     "ground-contact.js": VIEWER / "ground-contact.js",
     "ground-engine.js": VIEWER / "ground-engine.js",
+    # Both drives scroll their belts (`track-scroll.js`, which reads the engine).
+    "track-scroll.js": VIEWER / "track-scroll.js",
     "tracked-vehicle.js": VIEWER / "tracked-vehicle.js",
+    # An amphibian's water engine, floats and rudders (`amphibious.js`), which
+    # read the buoyancy law (`body-float.js`).
+    "amphibious.js": VIEWER / "amphibious.js",
+    "body-float.js": VIEWER / "body-float.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
