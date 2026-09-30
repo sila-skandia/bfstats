@@ -70,6 +70,8 @@ _VIEWER_MODULES = [
     "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
     # vehicle-base.js spells a template name as its model file.
     "model-file",
+    # world-soldier-tick.js carries the weapon's recoil.
+    "recoil",
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
     # enterable; it re-exports seats.js's occupancy.
     "vehicle-instance",
