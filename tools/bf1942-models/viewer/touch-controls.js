@@ -5,11 +5,13 @@
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `captured`, `car`, `cycleView`, `ensureAudioContext`,
- * `enterVehicle`, `exitSeat`, `footView3p`, `isTouchDevice`, `mannedActive`,
- * `mouseInput`, `nearEntry`, `noteSeatToggle`, `occupancy`, `optOnFoot`,
- * `optPilot`, `releaseButtons`, `seatToggleReady`, `setFly`,
- * `setTouchTriggers`, `soldier`, `soldierDead`, `view`.
+ * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
+ * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
+ * `keys`, `kitOffer`, `mannedActive`, `mouseInput`, `nearEntry`, `noteSeatToggle`,
+ * `occupancy`, `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`,
+ * `releaseButtons`, `seatToggleReady`, `setFly`, `setTouchAltFire`,
+ * `setTouchTriggers`, `soldier`, `soldierDead`, `startReload`, `switchSeat`,
+ * `toggleProne`, `view`.
  */
 export function createTouchControls(page) {
   const touchControls = {};
@@ -19,22 +21,37 @@ export function createTouchControls(page) {
   const mobilePadPuck = document.getElementById('mobile-pad-puck');
   const mobilePadLabel = document.getElementById('mobile-pad-label');
   const mobileFireBtn = document.getElementById('mobile-fire-btn');
+  const mobileFire2Btn = document.getElementById('mobile-fire2-btn');
+  const mobileAdsBtn = document.getElementById('mobile-ads-btn');
+  const mobileReloadBtn = document.getElementById('mobile-reload-btn');
+  const mobileSwapBtn = document.getElementById('mobile-swap-btn');
   const mobileUseBtn = document.getElementById('mobile-use-btn');
   const mobileViewBtn = document.getElementById('mobile-view-btn');
   const mobileJumpBtn = document.getElementById('mobile-jump-btn');
+  const mobileMapBtn = document.getElementById('mobile-map-btn');
+  const mobilePickupBtn = document.getElementById('mobile-pickup-btn');
+  const mobileSeatsBtn = document.getElementById('mobile-seats-btn');
+  const mobileCrouchBtn = document.getElementById('mobile-crouch-btn');
   const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
   const mobileThrottleInput = document.getElementById('mobile-throttle');
   const mobileThrottleValue = document.getElementById('mobile-throttle-value');
   const MOBILE_PAD_RADIUS = 48;
   const MOBILE_AIM_PIXELS_PER_SECOND = 720;
+  // Hold the CROUCH button this long and the soldier goes prone as well,
+  // COD Mobile's crouch-over-prone stack: crouch is a hold (`c_PICrouch`),
+  // prone is an edge (`c_PILie`), and the button covers both.
+  const MOBILE_PRONE_HOLD_MS = 500;
+  const CROUCH_CODE = 'ControlLeft';
   const mobilePadVector = { x: 0, y: 0 };
   touchControls.mobilePadPointerId = null;
   touchControls.mobilePadHeld = false;
   touchControls.mobileFireHeld = false;
   touchControls.mobileJumpHeld = false;
+  touchControls.mobileCrouchHeld = false;
   touchControls.mobileThrottle = 0;
   touchControls.mobileThrottleTouched = false;
   touchControls.mobileControlsSignature = '';
+  let proneHoldTimer = 0;
 
   function clampMobileInput(value) {
     return Math.max(-1, Math.min(1, value));
@@ -81,7 +98,11 @@ export function createTouchControls(page) {
     touchControls.mobileThrottle = 0;
     touchControls.mobileThrottleTouched = false;
     page.releaseButtons();
+    releaseMobileCrouch();
     mobileFireBtn.classList.remove('is-active');
+    mobileFire2Btn.classList.remove('is-active');
+    mobileAdsBtn.classList.remove('is-active');
+    mobileCrouchBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
     mobilePadPuck.classList.remove('is-firing');
     mobileThrottleInput.value = '0';
@@ -114,9 +135,20 @@ export function createTouchControls(page) {
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
       && page.occupancy.activeFireArmsNodes().length > 0);
+    const canAim = onFoot || (seated && (driving || flying || aimable)
+      && page.occupancy.activeFireArmsNodes().length > 0);
+    const canReload = onFoot && !!(page.handWeapon?.data?.magazine);
+    // A kit in reach: the same question `c_PIDrop` answers, polled so the
+    // button appears the moment the soldier walks up to one.
+    const canPickup = !!(onFoot && page.kitOffer?.());
+    // Seats besides the driver's root: the digit row's own job seated, one
+    // button that walks the vehicle's spawn-declared order to the next free
+    // seat. Empty when every other seat is taken, as the keys' misses are.
+    const freeSeat = seated && page.occupancy ? mobileNextFreeSeat() : -1;
     const signature = [
       show, padMode, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
+      canFire, canAim, canReload, canPickup, freeSeat,
     ].join('|');
     if (signature === touchControls.mobileControlsSignature) return;
     touchControls.mobileControlsSignature = signature;
@@ -127,8 +159,19 @@ export function createTouchControls(page) {
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
+    mobileFire2Btn.hidden = !canFire;
+    mobileFire2Btn.disabled = !canFire;
+    mobileAdsBtn.hidden = !canAim;
+    mobileAdsBtn.disabled = !canAim;
+    mobileReloadBtn.hidden = !canReload;
+    mobileReloadBtn.disabled = !canReload;
+    mobileSwapBtn.hidden = !onFoot;
+    mobilePickupBtn.hidden = !canPickup;
+    mobileSeatsBtn.hidden = freeSeat < 0;
     mobileJumpBtn.hidden = !onFoot;
+    mobileCrouchBtn.hidden = !onFoot;
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld && onFoot);
+    mobileCrouchBtn.classList.toggle('is-active', touchControls.mobileCrouchHeld && onFoot);
     mobileUseBtn.hidden = !(onFoot || seated);
     mobileUseBtn.disabled = onFoot ? !page.nearEntry : !seated;
     mobileUseBtn.textContent = onFoot ? (page.nearEntry ? `ENTER ${page.nearEntry.control}` : 'ENTER') : 'EXIT';
@@ -170,7 +213,60 @@ export function createTouchControls(page) {
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
+    mobileFire2Btn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
+  }
+
+  /** The ADS button: the touch twin of the right mouse button. On foot it
+   *  holds the soldier's aim (zoom); seated it holds the seat's
+   *  `c_PIAltFire` (a Sherman's coax, a Corsair's bombs). */
+  function setMobileAim(on) {
+    page.setTouchAltFire(
+      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead,
+      on && page.optPilot.checked && !!page.occupancy
+        && (page.occupancy.isActiveRoot() || page.mannedActive()));
+    mobileAdsBtn.classList.toggle('is-active', on);
+  }
+
+  /** Crouch is a hold, prone its long press. The held key is the same
+   *  `e.code` the keyboard path records (`c_PICrouch`, LeftCtrl), so the
+   *  engine's per-frame held read sees one key, wherever it came from. */
+  function holdMobileCrouch(on) {
+    if (on) {
+      page.setFly(true);
+      touchControls.mobileCrouchHeld = true;
+      page.keys.add(CROUCH_CODE);
+      mobileCrouchBtn.classList.add('is-active');
+      clearTimeout(proneHoldTimer);
+      proneHoldTimer = setTimeout(() => {
+        if (page.optOnFoot.checked && page.soldier && !page.soldierDead) page.toggleProne();
+      }, MOBILE_PRONE_HOLD_MS);
+    } else {
+      touchControls.mobileCrouchHeld = false;
+      page.keys.delete(CROUCH_CODE);
+      mobileCrouchBtn.classList.remove('is-active');
+    }
+  }
+
+  function releaseMobileCrouch() {
+    clearTimeout(proneHoldTimer);
+    if (touchControls.mobileCrouchHeld || page.keys.has(CROUCH_CODE)) holdMobileCrouch(false);
+  }
+
+  /** The next free seat after the active one, walked in the vehicle's
+   *  spawn-declaration order — the digit row's own job (`c_PIMenuSelectN`
+   *  seated, `VehicleOccupancy.seatIdAt`), as one button. Returns the
+   *  position to hand `switchSeat`, or -1 when every other seat is taken. */
+  function mobileNextFreeSeat() {
+    const seat = page.occupancy;
+    if (!seat) return -1;
+    const order = seat.order ?? [];
+    for (let position = 0; position < order.length; position++) {
+      const id = order[position];
+      if (id === undefined || id === seat.activeSeatId) continue;
+      if (seat.instance.holder(id) == null) return position;
+    }
+    return -1;
   }
 
   function setMobileJump(on) {
@@ -257,6 +353,102 @@ export function createTouchControls(page) {
   mobileJumpBtn.addEventListener('pointerup', releaseMobileJump);
   mobileJumpBtn.addEventListener('pointercancel', releaseMobileJump);
 
+  mobileFire2Btn.addEventListener('pointerdown', event => {
+    if (mobileFire2Btn.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    try { mobileFire2Btn.setPointerCapture(event.pointerId); } catch {}
+    setMobileFire(true);
+  });
+  mobileFire2Btn.addEventListener('pointerup', releaseMobileFire);
+  mobileFire2Btn.addEventListener('pointercancel', releaseMobileFire);
+
+  function releaseMobileAim(event) {
+    try {
+      if (mobileAdsBtn.hasPointerCapture(event.pointerId)) mobileAdsBtn.releasePointerCapture(event.pointerId);
+    } catch {}
+    setMobileAim(false);
+  }
+
+  mobileAdsBtn.addEventListener('pointerdown', event => {
+    if (mobileAdsBtn.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    try { mobileAdsBtn.setPointerCapture(event.pointerId); } catch {}
+    setMobileAim(true);
+  });
+  mobileAdsBtn.addEventListener('pointerup', releaseMobileAim);
+  mobileAdsBtn.addEventListener('pointercancel', releaseMobileAim);
+
+  function releaseMobileCrouchPointer(event) {
+    try {
+      if (mobileCrouchBtn.hasPointerCapture(event.pointerId)) mobileCrouchBtn.releasePointerCapture(event.pointerId);
+    } catch {}
+    releaseMobileCrouch();
+  }
+
+  mobileCrouchBtn.addEventListener('pointerdown', event => {
+    if (mobileCrouchBtn.disabled || mobileCrouchBtn.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    page.ensureAudioContext();
+    try { mobileCrouchBtn.setPointerCapture(event.pointerId); } catch {}
+    holdMobileCrouch(true);
+  });
+  mobileCrouchBtn.addEventListener('pointerup', releaseMobileCrouchPointer);
+  mobileCrouchBtn.addEventListener('pointercancel', releaseMobileCrouchPointer);
+
+  mobileReloadBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileReloadBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    // The keyboard's guard: reload once there is a magazine to reload.
+    if (page.handWeapon?.data?.magazine) page.startReload?.();
+  });
+
+  mobileSwapBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileSwapBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.cycleKitWeapon?.(1);
+  });
+
+  // The map: the M key's own body, dispatched through the same trigger
+  // path the keyboard runs (`c_PIMap`: on foot it opens the deploy map,
+  // otherwise it toggles the full map).
+  mobileMapBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileMapBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.padTriggerDown('c_PIMap');
+  });
+
+  // Pick up the kit in reach: the G key's body, `c_PIDrop`.
+  mobilePickupBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobilePickupBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.pickupKit?.();
+  });
+
+  // Switch to the next free seat: the digit row's job, one button.
+  mobileSeatsBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileSeatsBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    const position = mobileNextFreeSeat();
+    if (position >= 0) page.switchSeat(position);
+  });
+
   mobileUseBtn.addEventListener('pointerdown', event => event.stopPropagation());
   mobileUseBtn.addEventListener('click', event => {
     event.preventDefault();
@@ -287,14 +479,18 @@ export function createTouchControls(page) {
   Object.assign(touchControls, {
     clampMobileInput,
     feedMobileTurretAim,
+    holdMobileCrouch,
+    mobileNextFreeSeat,
     mobilePadAxis,
     mobilePadVector,
     mobileSeatToggle,
+    releaseMobileCrouch,
     releaseMobileFire,
     releaseMobileJump,
     releaseMobilePad,
     resetMobileControls,
     resetMobilePad,
+    setMobileAim,
     setMobileFire,
     setMobileJump,
     syncMobileThrottle,

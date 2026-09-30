@@ -440,6 +440,12 @@ export function createPageInput(page) {
     pageInput.clickQueued = foot;
     pageInput.seatFire = seat;
   };
+  /** The touch ADS button: the soldier's aim (zoom) and the seat's
+   *  `c_PIAltFire`, the touch twins of setTouchTriggers' right-hand paths. */
+  pageInput.setTouchAltFire = (foot, seat) => {
+    pageInput.aimHeld = foot;
+    pageInput.seatAltFire = seat;
+  };
   /** SEAT-6's cooldown, shared by the E key and the touch ENTER button. */
   pageInput.seatToggleReady = () => performance.now() - pageInput.lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS;
   pageInput.noteSeatToggle = () => { pageInput.lastSeatToggle = performance.now(); };

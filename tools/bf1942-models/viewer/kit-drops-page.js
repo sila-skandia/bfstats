@@ -290,6 +290,15 @@ export function createKitDropsPage(page) {
     return { s, ok: pickupAllowed({ onFoot, ready, now: drops.clock, lastPickupAt: kitDrops.lastPickupAt }) };
   }
 
+  /** The touch PICKUP button's reach check, `pickup` without the side effects:
+   *  the record a pickup would take right now, or null. */
+  kitDrops.offer = () => {
+    if (page.roomJoined) return null;
+    const { s, ok } = humanGate();
+    if (!ok || !s) return null;
+    return drops.nearest(s.x, s.y, s.z);
+  };
+
   /** `c_PIDrop`: take the nearest kit in reach, dropping his own where he
    *  stands. Returns the record taken, or null. */
   kitDrops.pickup = () => {

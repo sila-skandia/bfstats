@@ -146,6 +146,7 @@ folder answers.
 | [authentic-spawn-map](authentic-spawn-map/README.md) | build | How are the spawn screen and minimap built from the game's own menu data? |
 | [deploy-screen-spawn-points](deploy-screen-spawn-points/README.md) | build | Why were spawn rings missing, and where do ship deck spawns come from? |
 | [briefing-screen](briefing-screen/README.md) | build | How is the briefing screen drawn from game assets and gated before spawning? |
+| [mobile-four-finger-controls](mobile-four-finger-controls/README.md) | research | What should each of the four fingers control on the map page's touch layout? |
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |
 | [hit-direction-wash](hit-direction-wash/README.md) | build | How does retail draw the red damage wash and hit-direction arc? |
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
