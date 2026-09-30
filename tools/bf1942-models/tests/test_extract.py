@@ -469,7 +469,9 @@ include  Sounds\\SmokeIdleXpack.con
         library = ObjectLibrary()
         library.add_con("Objects/Effects/e_SmokeIdleXpack/Effects.con", text)
 
-        self.assertEqual("SmokeIdle.ssc",
+        # The script sits beside the included file, not beside Effects.con
+        # (ledger CON-14), so the path comes out rebased onto Effects.con.
+        self.assertEqual("Sounds/SmokeIdle.ssc",
                          library.object("e_SmokeIdleXpack").sound_script)
 
     def test_an_unresolvable_include_fails_soft(self) -> None:
@@ -515,6 +517,94 @@ include A.inc
         # The cycle is broken (no RecursionError); the directive that reached
         # before the repeat was detected still lands.
         self.assertEqual(5.0, library.object("Root").hitpoints)
+
+
+class IncludedSoundScriptPathTests(unittest.TestCase):
+    """A `loadSoundScript` path is relative to the file the line is in.
+
+    The engine prefixes the console's working path (client `0x0054d8ba`), and
+    `include` sets that to the included file's own folder until it returns
+    (lnxded `OldConsole::include` `0x083ed110`; ledger CON-14). FHSW's
+    `objects/Handweapons/!_PACK_COMMON/Compressed.con` includes
+    `../K98/K98.inc`, whose `loadSoundScript Sounds/k98.ssc` means
+    `Handweapons/K98/Sounds/k98.ssc`; read against the pack file it named a
+    script that does not exist, and 277 hand weapons were silent.
+    """
+
+    PACK = "objects/Handweapons/!_PACK_COMMON/Compressed.con"
+
+    def library(self, files: dict[str, bytes], path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, _inline_includes(FakeObjects(files), path, text))
+        return library
+
+    def test_a_script_named_in_an_include_resolves_beside_the_include(self) -> None:
+        from bf42.level import resolve_ssc_path
+        library = self.library({
+            "objects/Handweapons/K98/K98.inc": b"""
+ObjectTemplate.networkableInfo HandFireArmsInfo
+ObjectTemplate.loadSoundScript Sounds/k98.ssc
+""",
+        }, self.PACK, """
+ObjectTemplate.create HandFireArms K98
+include ../K98/K98.inc
+ObjectTemplate.numOfMag 10
+""")
+        k98 = library.object("K98")
+
+        self.assertEqual("../K98/Sounds/k98.ssc", k98.sound_script)
+        self.assertEqual("objects/Handweapons/K98/Sounds/k98.ssc",
+                         resolve_ssc_path(k98.source, k98.sound_script))
+
+    def test_a_path_the_pack_already_wrote_relative_to_itself_is_left_alone(self) -> None:
+        # The FH packer rewrote the lines it copied into Compressed.con
+        # (`../345RCL/Sounds/345RCL.ssc`); those are the pack file's own.
+        library = self.library({}, self.PACK, """
+ObjectTemplate.create HandFireArms RCL345
+ObjectTemplate.loadSoundScript ../345RCL/Sounds/345RCL.ssc
+""")
+        self.assertEqual("../345RCL/Sounds/345RCL.ssc",
+                         library.object("RCL345").sound_script)
+
+    def test_an_include_in_the_same_folder_keeps_its_path(self) -> None:
+        library = self.library({
+            "objects/Handweapons/SuomiKP31/SuomiKP31_71.inc":
+                b"ObjectTemplate.loadSoundScript Sounds/SuomiKP31.ssc\n",
+        }, "objects/Handweapons/SuomiKP31/Objects.con", """
+ObjectTemplate.create HandFireArms SuomiKP31_71
+include SuomiKP31_71.inc
+""")
+        self.assertEqual("Sounds/SuomiKP31.ssc",
+                         library.object("SuomiKP31_71").sound_script)
+
+    def test_a_nested_include_resolves_beside_the_innermost_file(self) -> None:
+        # The SVT40 shape one level deeper: AKT40.inc names SVT40's script
+        # relative to itself, and is reached through a second include.
+        from bf42.level import resolve_ssc_path
+        library = self.library({
+            "objects/Handweapons/AKT40/AKT40.inc":
+                b"include Common/AKT40Sound.inc\n",
+            "objects/Handweapons/AKT40/Common/AKT40Sound.inc":
+                b"ObjectTemplate.loadSoundScript ../../SVT40/Sounds/SVT40.ssc\n",
+        }, self.PACK, """
+ObjectTemplate.create HandFireArms AKT40
+include ../AKT40/AKT40.inc
+""")
+        akt = library.object("AKT40")
+
+        self.assertEqual("objects/Handweapons/SVT40/Sounds/SVT40.ssc",
+                         resolve_ssc_path(akt.source, akt.sound_script))
+
+    def test_a_quoted_backslash_path_is_rebased_too(self) -> None:
+        library = self.library({
+            "Objects/Soldiers/Common/Sounds/SoldierSound.inc":
+                b'ObjectTemplate.loadSoundScript "High\\SoldierStop.ssc"\n',
+        }, "Objects/Soldiers/USSoldier/Objects.con", """
+ObjectTemplate.create BFSoldier USSoldier
+include ../Common/Sounds/SoldierSound.inc
+""")
+        self.assertEqual("../Common/Sounds/High/SoldierStop.ssc",
+                         library.object("USSoldier").sound_script)
 
 
 if __name__ == "__main__":

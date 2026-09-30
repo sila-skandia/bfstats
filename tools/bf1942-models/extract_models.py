@@ -372,6 +372,10 @@ def _inline_includes(objects: ArchivePool, path: str, text: str,
     scan (`con.strip_comments` already runs on the merged result inside
     `add_con`, so this only has to guard against a `rem`/`beginrem` line that
     happens to start with the word "include" being mistaken for a directive).
+
+    A spliced file's `loadSoundScript` paths are relative to that file, not to
+    the includer, so they are rebased on the way in (`_rebase_sound_scripts`,
+    ledger CON-14).
     """
     # Cheap rejection first: the overwhelming majority of files never
     # mention "include" at all, and stripping comments is a full regex pass
@@ -399,8 +403,47 @@ def _inline_includes(objects: ArchivePool, path: str, text: str,
         if included is None:
             continue  # unresolved include -- fails soft, same as a missing texture
         inner = included.decode("latin-1", "replace")
-        out_lines.append(_inline_includes(objects, resolved, inner, _seen | {key}))
+        inner = _inline_includes(objects, resolved, inner, _seen | {key})
+        inner_folder = resolved.rsplit("/", 1)[0] if "/" in resolved else ""
+        out_lines.append(_rebase_sound_scripts(inner, inner_folder, folder))
     return "\n".join(out_lines)
+
+
+# `ObjectTemplate.loadSoundScript <path>`, the one directive whose argument is
+# a path relative to the file the line is in (ledger CON-14). Texture and icon
+# arguments (`setAmmoBar "Ingame/..."`, `createSkeleton animations/...`) are
+# rooted at their archive, not at a folder, and are left alone.
+_LOAD_SOUND_SCRIPT = re.compile(
+    r"^([ \t]*objecttemplate\.loadsoundscript[ \t]+)(\S.*?)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE)
+
+
+def _rebase_sound_scripts(text: str, from_folder: str, to_folder: str) -> str:
+    """`text`'s `loadSoundScript` paths, moved from `from_folder` to `to_folder`.
+
+    The engine joins that argument to the console's working path (client
+    `0x0054d8c3`), and `include` sets the working path to the included file's
+    own folder while its lines run (lnxded `OldConsole::include`
+    `0x083ed110`, the assign at `0x083edc57`). So a line an `.inc` supplies
+    names a script beside the `.inc`. Splicing loses which file a line came
+    from, and `ObjectLibrary` resolves every path against the including
+    file (`template.source`), so the path is rewritten here to name the same
+    script from the includer's folder: FHSW's `K98.inc` says
+    `Sounds/k98.ssc`, which from `Handweapons/!_PACK_COMMON/Compressed.con`
+    is `../K98/Sounds/k98.ssc`. Nested includes are rebased once per level
+    on the way out, innermost first.
+    """
+    if not text or from_folder.lower() == to_folder.lower():
+        return text
+    step = posixpath.relpath(from_folder or ".", to_folder or ".")
+
+    def rebase(match: re.Match) -> str:
+        path = match.group(2).strip().strip('"').replace("\\", "/")
+        if not path:
+            return match.group(0)
+        return match.group(1) + posixpath.normpath(posixpath.join(step, path))
+
+    return _LOAD_SOUND_SCRIPT.sub(rebase, text)
 
 
 def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
