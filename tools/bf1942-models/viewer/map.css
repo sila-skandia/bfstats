@@ -597,6 +597,39 @@ a { color: var(--accent); }
 .mobile-action-btn[hidden],
 .mobile-throttle[hidden],
 #mobile-pad[hidden] { display: none; }
+
+/* The index-finger ("claw") buttons: FIRE in the upper left, ADS / reload /
+   swap in the upper right, each in the zone a curled index finger reaches
+   with the phone held normally. Both thumbs stay on move and look.
+   features/mobile-four-finger-controls. */
+.mobile-claw-col {
+  position: absolute;
+  bottom: 34vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+#mobile-claw-left {
+  left: 6px;
+  align-items: flex-start;
+}
+#mobile-claw-right {
+  right: 6px;
+  align-items: flex-end;
+}
+.mobile-claw-col .claw-btn {
+  min-width: 76px;
+  height: 52px;
+  font-size: 11px;
+}
+.mobile-claw-col .fire-btn {
+  min-width: 88px;
+  height: 64px;
+  font-size: 12px;
+}
+#mobile-claw-left[hidden],
+#mobile-claw-right[hidden] { display: none; }
 .mobile-throttle {
   display: flex;
   align-items: center;

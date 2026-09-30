@@ -678,7 +678,11 @@ export function createLocalPlayer(page) {
           + page.mobilePadAxis('y')),
         strafe: page.clampMobileInput(
           axis('c_PIYaw') + page.mobilePadAxis('x')),
-        walk: heldTrigger('c_PIWalk'),
+        walk: heldTrigger('c_PIWalk')
+          // Joystick Sprint, COD Mobile's setting: full-forward on the pad
+          // holds the game's own walk/sprint trigger (`c_PIWalk`, Shift on
+          // the keyboard) so no thumb has to leave the stick to run.
+          || (page.mobilePadHeld && page.mobilePadAxis('y') < -0.9),
         crouch: heldTrigger('c_PICrouch'),
         prone: localPlayer.prone,
         jump: heldTrigger('c_PIAction') || page.mobileJumpHeld,
