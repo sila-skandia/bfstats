@@ -74,6 +74,12 @@ def strip_comments(text: str) -> str:
 # Treating every Engine as a rate spins that 1 degree lean forever, and since a
 # tank's tracks and road wheels are children of its Engine, the whole running gear
 # orbits the hull.
+#
+# On an Engine, `position` means the servo holds an angle the gearbox reads, not a
+# pose: no Engine axis ever poses its node (ledger PHY-15). Desert Combat fills the
+# gap between the two vanilla populations -- its Humvee, Pickup and Lada declare
+# their throttle over roll -100..100 -- and a viewer that posed that swung every
+# wheel 100 degrees round the hull.
 ACCUMULATOR_SPAN = 360.0
 
 PLAYER_INPUTS = {

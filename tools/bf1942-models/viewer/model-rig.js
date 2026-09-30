@@ -40,7 +40,7 @@ export function createModelRig(page) {
   // conjugates rotations about X and Y, and leaves those about Z alone.
   const SIGN = { yaw: -1, pitch: -1, roll: 1 };
 
-  const rigged = [];              // { node, base:Quaternion, axes, driver, key }
+  const rigged = [];              // { node, base:Quaternion, axes, control, posesNode? }
   const inputValues = new Map();  // "<control>/<input>" -> -1..1
   const rateAngle = new Map();    // same key -> accumulated degrees, for Engines
 
@@ -68,7 +68,8 @@ export function createModelRig(page) {
         e[AXIS[axis]] = THREE.MathUtils.degToRad(deg * SIGN[axis]);
         q.multiply(new THREE.Quaternion().setFromEuler(e));
       }
-      part.node.quaternion.copy(q);
+      // `false` only on an Engine's position axes: see `collectRig`.
+      if (part.posesNode !== false) part.node.quaternion.copy(q);
     }
   }
 
@@ -166,9 +167,15 @@ export function createModelRig(page) {
         axes.filter(([, specification]) => specification.driver === 'rate'));
       const poseAxes = Object.fromEntries(
         axes.filter(([, specification]) => specification.driver !== 'rate'));
-      const isDrivetrain = obj.userData.templateKind?.toLowerCase() === 'engine'
-        && Object.keys(rateAxes).length;
+      const isEngine = obj.userData.templateKind?.toLowerCase() === 'engine';
+      const isDrivetrain = isEngine && Object.keys(rateAxes).length;
 
+      // An Engine's position axes are kept for the crew console -- they are
+      // the inputs it offers, and a tank's throttle is what scrolls its
+      // tracks -- but never pose the Engine node (ledger PHY-15,
+      // `vehicle-base.js` `RiggedPart.posesNode`): Desert Combat's Humvee
+      // declares its throttle over roll -100..100, and posing it rolled every
+      // wheel 100 degrees round the hull.
       if (isDrivetrain) {
         drivetrains.push({
           node: obj,
@@ -181,6 +188,7 @@ export function createModelRig(page) {
             base: obj.quaternion.clone(),
             axes: poseAxes,
             control: rig.control || 'vehicle',
+            posesNode: false,
           });
         }
       } else {
@@ -189,6 +197,7 @@ export function createModelRig(page) {
           base: obj.quaternion.clone(),
           axes: rig.axes,
           control: rig.control || 'vehicle',
+          posesNode: !isEngine,
         });
       }
     });

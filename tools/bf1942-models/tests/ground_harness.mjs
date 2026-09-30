@@ -27,6 +27,7 @@ import {
   EngineState, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
 } from './ground-engine.js';
 import { GRAVITY } from './physics.js';
+import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -238,6 +239,81 @@ function kubel({ ground = () => 0, y = 0.6, speed = 0, surface } = {}) {
   s.position.set(0, y, 0);
   s.velocity.set(0, 0, -speed);
   return truck;
+}
+
+/**
+ * Desert Combat's Humvee, transcribed node for node off
+ * `viewer/models/mods/desertcombat/Humvee.glb` (which is
+ * `Objects/Vehicles/Land/Humvee/{Objects,Physics}.con` in DC's `OBJECTS.rfa`
+ * run through the assembler): the Willy's shape, with the one difference that
+ * matters here. `HumveeEngine` declares its throttle as a POSITION axis --
+ * `setMinRotation 0/0/-100` .. `setMaxRotation 0/0/100`, `setMaxSpeed 0/0/100`,
+ * `setAcceleration 0/0/3000`, span 200, below the 360 an accumulator needs
+ * (`con.ACCUMULATOR_SPAN`) -- where the Willy's is a +-5000 rate. The Pickup,
+ * Technical, Lada, DPV and EE-9 declare the same range, and every wheel hangs
+ * under the Engine, the fronts inside their `c_PIYaw` bundles.
+ */
+function humveeNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Humvee';
+  root.userData = {
+    control: 'Humvee',
+    templateKind: 'PlayerControlObject',
+    physics: { mass: 3000, drag: 0.5, vehicleCategory: 'VCLand' },
+  };
+
+  const engine = new THREE.Object3D();
+  engine.name = 'HumveeEngine';
+  engine.position.set(0, 0.35, 0.25);
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETCar', torque: 10, differential: 7,
+      numberOfGears: 4, gearUp: 0.95, gearDown: 0.4, gearChangeTime: 0.01,
+      maxRotation: [0, 0, 100], maxSpeed: [0, 0, 100], acceleration: [0, 0, 3000],
+    },
+    rig: {
+      control: 'Humvee', automaticReset: true,
+      axes: {
+        roll: {
+          input: 'c_PIThrottle', min: -100, max: 100, free: false,
+          driver: 'position', maxSpeed: 100, direction: 1, acceleration: 3000,
+        },
+      },
+    },
+  };
+  root.add(engine);
+
+  const steerRig = {
+    control: 'Humvee', automaticReset: true,
+    axes: {
+      yaw: {
+        input: 'c_PIYaw', min: -50, max: 50, free: false,
+        driver: 'position', maxSpeed: 200, direction: 1, acceleration: 200,
+      },
+    },
+  };
+  const grip = { grip: 'c_PGFEngineGrip', gripFlags: 4, strength: 30, damping: 5 };
+  for (const side of [1, -1]) {
+    const bundle = new THREE.Object3D();
+    bundle.name = side > 0 ? 'HumveeFrontWheelR' : 'HumveeFrontWheelL';
+    bundle.position.set(0.9 * side, 0.1, -1.0);
+    bundle.userData = { templateKind: 'RotationalBundle', rig: steerRig };
+    const front = new THREE.Object3D();
+    front.name = side > 0 ? 'HumveeFrontSpringR' : 'HumveeFrontSpringL';
+    front.position.set(0, -0.599, 0);
+    const wheel = side > 0 ? 'Humvee_WheelR_M1' : 'Humvee_WheelL_M1';
+    front.userData = { templateKind: 'Spring', geometry: wheel, physics: { ...grip } };
+    bundle.add(front);
+    engine.add(bundle);
+
+    const rear = new THREE.Object3D();
+    rear.name = side > 0 ? 'HumveeBackSpringR' : 'HumveeBackSpringL';
+    rear.position.set(0.9 * side, -0.372, 2.5);
+    rear.userData = { templateKind: 'Spring', geometry: wheel, physics: { ...grip } };
+    engine.add(rear);
+  }
+  return root;
 }
 
 /** A jeep standing on (or dropped just above) analytic ground. */
@@ -760,6 +836,92 @@ for (const [name, make] of [
     };
   };
   results.kubelwagen = { kubel: turnOf(kubel), willy: turnOf(jeep) };
+}
+
+// --- an Engine's position axis poses nothing (ledger PHY-15) ----------------
+//
+// Throttle and full lock held, and every wheel read back in the hull's own
+// frame. `Engine::handleUpdate` never turns its angles into a transform, so
+// the Engine node must stay where the glb put it whatever its span, a wheel's
+// centre may only move up and down its spring, and a steered wheel turns
+// about its own bundle. Before the fix `applyRig` posed the Humvee's Engine
+// at the full 100 degrees of its throttle roll and all four wheels orbited
+// the hull about 1.5 m; the Kubelwagen's +-1 degree lean moved its wheels by
+// a centimetre, which nobody saw. The Willy, whose throttle is a rate axis,
+// is the control: it never posed.
+{
+  const hullFrame = truck => {
+    truck.node.updateMatrixWorld(true);
+    const inverse = truck.node.matrixWorld.clone().invert();
+    const out = {};
+    truck.node.traverse(obj => {
+      if (obj.userData?.templateKind !== 'Spring') return;
+      const m = new THREE.Matrix4().multiplyMatrices(inverse, obj.matrixWorld);
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+      m.decompose(p, q, s);
+      const axle = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+      out[obj.name] = { pos: p, axleYaw: Math.atan2(-axle.z, axle.x) * DEG, axleUp: axle.y };
+    });
+    return out;
+  };
+  const engineTurn = root => {
+    let deg = null;
+    root.traverse(obj => {
+      if (obj.userData?.templateKind === 'Engine') {
+        deg = 2 * Math.acos(Math.min(1, Math.abs(obj.quaternion.w))) * DEG;
+      }
+    });
+    return deg;
+  };
+  const poseOf = build => {
+    const truck = build();
+    drive(truck, 1);
+    const rest = hullFrame(truck);
+    drive(truck, 2, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+    const held = hullFrame(truck);
+    const wheels = Object.fromEntries(Object.entries(held).map(([name, w]) => {
+      const r = rest[name];
+      return [name, {
+        horizontalShift: round(Math.hypot(w.pos.x - r.pos.x, w.pos.z - r.pos.z), 4),
+        verticalShift: round(w.pos.y - r.pos.y, 4),
+        steerDeg: round(w.axleYaw - r.axleYaw, 2),
+        axleUp: round(w.axleUp, 4),
+      }];
+    }));
+    const throttleKey = [...truck.state.surfaces.keys()].find(k => k.endsWith('/c_PIThrottle/roll'));
+    return {
+      engineTurnDeg: round(engineTurn(truck.node), 4),
+      // The servo still runs: only the pose is gone.
+      throttleSurface: throttleKey ? round(truck.state.surfaces.get(throttleKey), 3) : null,
+      steered: truck.wheels.filter(w => w.steered).map(w => w.node.name).sort(),
+      travelled: round(truck.state.position.length(), 1),
+      wheels,
+    };
+  };
+  const humvee = () => {
+    const truck = new GroundVehicle(humveeNode(), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    return truck;
+  };
+  results.enginePosesNothing = { humvee: poseOf(humvee), kubel: poseOf(kubel), willy: poseOf(jeep) };
+
+  // The model browser's rig (`model-rig.js`) and the controls preview that
+  // shares it, on the same tree: the throttle is still offered, the steering
+  // bundle still turns, and the Engine does not.
+  const rig = createModelRig({ rememberMap() {} });
+  const root = humveeNode();
+  rig.collectRig(root);
+  rig.setInput(modelKeyOf('Humvee', 'c_PIThrottle'), 1);
+  rig.setInput(modelKeyOf('Humvee', 'c_PIYaw'), 1);
+  rig.applyRig();
+  const bundle = root.getObjectByName('HumveeFrontWheelR');
+  const engine = root.getObjectByName('HumveeEngine');
+  results.enginePosesNothing.modelRig = {
+    engineTurnDeg: round(engineTurn(root), 4),
+    bundleTurnDeg: round(2 * Math.acos(Math.min(1, Math.abs(bundle.quaternion.w))) * DEG, 2),
+    throttleOffered: rig.rigged.some(part => part.node === engine
+      && part.axes.roll?.input === 'c_PIThrottle'),
+  };
 }
 
 // Hands off the wheel again: the steering servo's automatic reset must

@@ -423,6 +423,17 @@ are numbers for the gearbox, not a pose. What tilts a hover engine is the
 separate `RotationalBundle` it hangs under, and that tilt reaches the thrust
 through §5's `fwd`.
 
+And for every span, on a client as on the host (2026-09-30, PHY-15). The
+Engine vtable's `+0x54` is `Engine::handleUpdate`, the slot where a bundle has
+`RotationalBundle::handleUpdate`, and only the bundle's version calls
+`setRotation`, `getBundleTransformation` and the node setter. The Engine's
+networkable is its own `EngineNetworkable`, whose `predict` (`0x08228710`)
+copies angles into registers and builds no transform. The viewer had applied
+this section to rate axes only, and posed an Engine's position axes. Vanilla's
+position axes are a +-1 degree lean, so nobody saw it. Desert Combat's
+Humvee, Pickup, Technical, Lada, DPV and EE-9 declare their throttle over roll
+-100..100, and posed that way every wheel rolled 100 degrees round the hull.
+
 ---
 
 ## 8. Soldier locomotion is hardcoded

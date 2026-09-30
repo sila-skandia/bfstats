@@ -105,6 +105,7 @@ folder answers.
 | [teamonvehicle-is-a-bool](teamonvehicle-is-a-bool/README.md) | fix | Why did Midway spawn two Japanese fleets, and what does teamOnVehicle mean? |
 | [vehicle-camera-toggle-sweep](vehicle-camera-toggle-sweep/README.md) | build | Which seats may cycle camera views, and what is the aircraft nose cam? |
 | [bf1942-camera-pivot](bf1942-camera-pivot/README.md) | fix | Where does a vehicle seat's first-person eye sit, and what does setPivotPosition do? |
+| [engine-axis-poses-nothing](engine-axis-poses-nothing/README.md) | fix | Why did Desert Combat's Humvee wheels orbit the hull, and does an Engine's axis ever pose it? |
 
 ### Collision
 
