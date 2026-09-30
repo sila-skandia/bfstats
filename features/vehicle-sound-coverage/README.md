@@ -772,3 +772,74 @@ All five are ledger rows with their addresses; this is what they say.
   leave eight plays ringing, oldest stolen; a roll onto a silence plays nothing;
   the case-blind lookups.
 
+
+# D10 — FHSW's hand weapons named scripts beside the wrong file (2026-09-30)
+
+Found by the FHSW audit: 277 hand weapons (K98, MP40, No4, Colt, Thompson,
+Springfield03, Sten, ...) were quiet with `sound script missing:
+objects/Handweapons/!_PACK_COMMON/Sounds/<name>.ssc`.
+
+## The engine rule (ledger CON-14)
+
+A `loadSoundScript` path is relative to the file its line is in. The client
+joins the console's working path to the argument (`0x0054d8c3`), and `include`
+and `run` set the working path to the opened file's folder while its lines run
+and restore it after (lnxded `OldConsole::include` `0x083ed110`). FH's packer
+rewrote the lines it copied into each `!_PACK_*/Compressed.con`
+(`../345RCL/Sounds/345RCL.ssc`) and left the `.inc` files it includes alone:
+`K98.inc` says `Sounds/k98.ssc`, meaning `Handweapons/K98/Sounds/k98.ssc`.
+
+## What was wrong, and what changed
+
+`extract_models._inline_includes` splices an include's text in place, which
+loses which file each line came from, and `ObjectLibrary` resolves every
+template's `sound_script` against `template.source`, the including file. The
+splice now rebases each spliced `loadSoundScript` onto the includer's folder
+(`_rebase_sound_scripts`), innermost include first, so every consumer of
+`sound_script` (`extract_weapon_sounds`, `effects.bundle_sound_scripts`, the
+weapon stats) gets a path that names the script the game loads.
+
+Blast radius, measured by resolving every template's script in every chain
+before and after: only misses turn into hits, none moves. FHSW 317
+templates (the hand weapons plus the soldiers), FH 16, EoD 19, XPack1 11
+(its soldiers and `e_SmokeIdleXpack`), XPack2 10, DC 9, DC Final 9, vanilla 8
+(the soldiers' `SoldierSound.inc`, which no output reads). `weapons.json` is
+byte-identical for vanilla, XPack1, XPack2, DC, DC Final and EoD.
+
+| FHSW hand weapons (869) | before | after |
+|---|---|---|
+| reach their script | 494 | 778 |
+| with a fire sound in `weapons.json` | 307 | 501 |
+| with a sounding Reload slot | 289 | 570 |
+
+## Not done here
+
+* 277 FHSW weapons stay quiet because their wav is in no installed archive
+  (FHSW ships no `sound.rfa`; the game mounts FH's and vanilla's). The game
+  plays nothing for those loads either (SND-16): `grenthrow1.wav` (76 weapons),
+  `KampfPistole.wav` (45), `20mmS18-1000ST.wav` (17), `no2ST.wav` (16),
+  `M1917_ST.wav` (9) and a tail of others. 47 name a script the install does
+  not ship (the `Deploy_*` family), and 44 declare none.
+* `weapons.json` `randomPlay` lists a load whose wav is missing as `null`, which
+  counts it in the roll; the engine drops it (SND-16).
+* `extract_map.find_engine_script`, `_weapon_script` and
+  `level._find_template_sound_script` re-read the raw `.con` at
+  `template.source` and so miss any `loadSoundScript` an include supplies. No
+  vehicle, gun or static in the eight surveyed chains takes its script through
+  an include (only hand weapons, soldiers and one XPack1 effect do), so nothing
+  is lost today.
+* `build_library`'s `Compressed.con` split looks for `rem folder =` markers
+  after `_inline_includes` has stripped comments, so any pack file with an
+  include (all of FHSW's) is never split and every template in it has the pack
+  file as its `source`. Correct for path resolution (the pack file is where
+  the engine's working path points); what else keys on `source` was not
+  audited.
+
+## Verified / tests
+
+* `tests/test_extract.py` `IncludedSoundScriptPathTests`: the K98 shape, a pack
+  line left alone, a same-folder include, a nested include, a quoted
+  backslash path; the XPack1 `e_SmokeIdleXpack` test now expects
+  `Sounds/SmokeIdle.ssc`.
+* Scratch runs in `~/.cache/fix-sounds/{before,after}` (`weap-<mod>/`,
+  `lib-<mod>.json`).
