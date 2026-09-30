@@ -60,6 +60,16 @@
     <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
   <div id="mobile-controls" hidden>
+    <!-- The index-finger buttons: the claw layout's whole point is firing
+         and aiming while both thumbs are busy (features/mobile-four-finger-controls). -->
+    <div id="mobile-claw-left">
+      <button type="button" id="mobile-fire2-btn" class="mobile-action-btn fire-btn claw-btn" aria-label="Fire weapon (index finger)">FIRE</button>
+    </div>
+    <div id="mobile-claw-right">
+      <button type="button" id="mobile-ads-btn" class="mobile-action-btn claw-btn" aria-label="Aim down sights">ADS</button>
+      <button type="button" id="mobile-reload-btn" class="mobile-action-btn claw-btn" aria-label="Reload">RLD</button>
+      <button type="button" id="mobile-swap-btn" class="mobile-action-btn claw-btn" aria-label="Swap kit weapon">SWAP</button>
+    </div>
     <div id="mobile-pad" aria-label="Movement control">
       <div id="mobile-pad-puck"><span id="mobile-pad-label">MOVE</span></div>
     </div>
@@ -69,7 +79,13 @@
         <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
       </div>
       <div class="mobile-action-row">
+        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
+        <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
+        <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
+      </div>
+      <div class="mobile-action-row">
         <button type="button" id="mobile-jump-btn" class="mobile-action-btn" aria-label="Jump" hidden>JUMP</button>
+        <button type="button" id="mobile-crouch-btn" class="mobile-action-btn" aria-label="Crouch, hold to go prone" hidden>CROUCH</button>
         <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
       </div>
       <div class="mobile-action-row">
@@ -565,11 +581,13 @@ const freeCamera = createFreeCamera(bag(
 ));
 const touchControls = createTouchControls(bag(
   from(() => localLook, `mouseInput`),
-  from(() => localPlayer, `aircraft car occupancy soldier soldierDead`),
+  from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
+  from(() => localPlayer, `aircraft car occupancy soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),
-  from(() => pageInput, `captured noteSeatToggle releaseButtons seatToggleReady setFly
-    setTouchTriggers`),
+  from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
+    setTouchAltFire setTouchTriggers`),
   from(() => seatCamera, `cycleView mannedActive view`),
+  from(() => soldierKit, `cycleKitWeapon handWeapon startReload`),
   from(() => soldierView, `footView3p`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {
@@ -2433,6 +2451,11 @@ function paintHud(dt) {
   // Every frame, not just an on-foot one: a seat has a crosshair too, and it
   // is `crosshairAim` that decides whose.
   vehicleHud.updateCrosshair();
+  // The touch buttons that depend on polled state: a kit walked into reach
+  // (the PICKUP offer) or a seat gone free (SEATS) show on the next frame,
+  // without any event of their own. Signature-gated inside, so a steady
+  // state is one string compare.
+  touchControls.updateMobileControls();
   hudFeed.gameHud.paint(hudW, hudH);
   // A replay runs the message log on the recording's clock: its speed while
   // it plays, stopped while it is paused. Without one the rate is 1.
