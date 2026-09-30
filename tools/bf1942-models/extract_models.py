@@ -465,7 +465,9 @@ def load_order(names: list[str]) -> list[str]:
     order they came in, after the rest.
     """
     level = [n for n in names if n.lower().startswith("bf1942/levels/")]
-    rest = [n for n in names if not n.lower().startswith("bf1942/levels/")]
+    rest = [n for n in names
+            if not n.lower().startswith("bf1942/levels/")
+            and "/ai/" not in n.replace("\\", "/").lower()]
     return sorted(rest, key=lambda n: n.replace("\\", "/").translate(_ASCII_FOLD)) + level
 
 

@@ -28,6 +28,7 @@ import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { weaponNodeOf } from './soldier-dress.js';
 import { byName, modelFileStem } from './model-file.js';
+import { motionBetween, scrollBeltsByMotion } from './track-scroll.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -249,7 +250,11 @@ export function createRemoteRenderer(ctx) {
     group.name = `remote vehicle ${id} ${template}`;
     group.visible = false;
     root.add(group);
-    v = { id, template, group, survey: null, occupied: false, loaded: false };
+    v = {
+      id, template, group, survey: null, occupied: false, loaded: false,
+      // The pose drawn last frame, for the belts' motion (`update`).
+      drawn: false, lastPos: null, lastQuat: null,
+    };
     vehicles.set(id, v);
     model(template).then(m => {
       if (!m || vehicles.get(id) !== v) return;
@@ -411,8 +416,24 @@ export function createRemoteRenderer(ctx) {
       v.occupied = true;
       if (v.loaded) {
         v.group.visible = true;
+        // The pose it was drawn at last frame, before this frame's replaces it.
+        if (v.drawn) {
+          v.lastPos.copy(v.group.position);
+          v.lastQuat.copy(v.group.quaternion);
+        }
         v.group.position.set(pose.x, pose.y, pose.z);
         v.group.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+        // A remote's engine is not in the snapshot: its belts run at each
+        // side's contact speed off the drawn motion (`track-scroll.js`). The
+        // first frame drawn has no motion to measure.
+        if (v.drawn) {
+          scrollBeltsByMotion(v.group,
+            motionBetween(v.lastPos, v.lastQuat, v.group.position, v.group.quaternion, dt), dt);
+        } else {
+          v.lastPos = v.group.position.clone();
+          v.lastQuat = v.group.quaternion.clone();
+          v.drawn = true;
+        }
       }
     }
   }

@@ -168,6 +168,34 @@ as its `create` line spells it, which is the key into `kits`. Only kits some
 level binds are listed. A level naming a kit the library does not declare keeps
 the raw name in its slot, so the gap is visible in the file rather than dropped.
 
+**A level's own kits (2026-09-30).** A level that runs its own copy of a kit
+hands out that copy: its declaration of the name comes first and the mod's
+`create` makes nothing (ledger LOAD-1, LOAD-2), and only the scripts its
+`Init.con` runs count (LOAD-5). Such a row goes in `levelKits`, keyed like
+`levels`, under the kit's name as `kits` spells it; `kits` keeps the mod's
+row, so a page that does not know `levelKits` still finds a kit for every
+slot. `kit-loadout.js` `levelLoadouts` hands every reader the file as the
+current level sees it (`kits` with `levelKits[currentDir]` over it).
+
+```json
+"levelKits": {
+  "dc_first_light": { "US_AT3": { "items": ["SMAW", "KnifeAllies", "M9_beretta",
+                                            "GrenadeAllies", "Landmine"], "...": "..." } },
+  "dc_lostvillage_nopara": { "Us_Assault": { "overrideAirMovementInhibitations": true,
+                                             "...": "..." } }
+}
+```
+
+`overrideAirMovementInhibitations: true` (written only when set) is a kit
+carrying an `ActiveKitPart` with that word, a `nochute`: its soldier never
+enters free fall (PARA-11, `features/viewer-parachute`). In the trees on this
+PC: DC Final's First Light (`US_AT3` and `Iraq_AT3` with a Landmine) and Lost
+Village nopara (eleven kits with a nochute; its own `Iraq_Assault2` carries
+one in `kits`), and in both DC trees vanilla's Kasserine Pass, whose own
+`MedPack` sits at slot 5 where Desert Combat's sits at 2 (neither DC tree
+bakes the level). XPack2's `GermanElite_JetPack` and EoD's every non-`_CHUTE`
+kit carry the flag in `kits`.
+
 One shared file per mod rather than a field per level: `scene.json` carried
 nothing about teams or kits, so adding it there would have meant re-extracting
 every level (minutes each) for 400 bytes of `Init.con`, and the readers that

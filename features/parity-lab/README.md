@@ -111,7 +111,8 @@ Measured on the lab, 2026-09-26, against `bf1942_lnxded.static` sha256
   which is also `sim/run.mjs`'s default.
 - **Identity.** Bots take player ids from 255 downwards. The event log has no
   `createPlayer` for them, so during a round ids and teams come from
-  `spawnEvent`. Their names (from `SinglePlayer/Bots.con`'s lists) arrive in
+  `spawnEvent`. Their names (from `SinglePlayer/Skirmish.con`'s lists, not
+  `Bots.con`'s: Wake's Allies were British, ledger AI-134) arrive in
   the client stream's `CreatePlayer` (`ai: 1`) at the join, and in the log's
   `<bf:roundstats>` at the round's end (`player_name`, `is_ai 1`, score,
   kills, deaths, captures per player).

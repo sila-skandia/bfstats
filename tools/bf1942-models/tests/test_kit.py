@@ -19,6 +19,7 @@ from bf42.kit import (  # noqa: E402
     collect,
     kit_parts,
     level_loadouts,
+    overrides_air_movement,
     parse_level_kits,
     pose_candidate_sets,
     pose_candidates,
@@ -147,6 +148,37 @@ ObjectTemplate.create ProjectileLauncher Thompson
         library = self.library()
         worn, _ = kit_parts(library, library.object("US_Medic"))
         self.assertNotIn("nochute", [part.template for part in worn])
+
+    def test_a_nochute_part_overrides_air_movement(self) -> None:
+        """`overrideAirMovementInhibitations` on an `ActiveKitPart` the kit
+        wears keeps the soldier out of free fall (PARA-1); the word is read
+        back from the part's own create block, case and all."""
+        library = self.library()
+        sources = {
+            "Objects/Items/USKit/Common/Objects.con": b"""
+ObjectTemplate.create KitPart Medic_helm_us
+ObjectTemplate.setBoneName A
+
+rem ObjectTemplate.OverrideAirMovementInhibitations 1 belongs to the next one
+ObjectTemplate.create ActiveKitPart nochute
+ObjectTemplate.setBoneName backpack
+ObjectTemplate.OverrideAirMovementInhibitations 1
+""",
+        }
+        self.assertTrue(overrides_air_movement(
+            library, library.object("US_Medic"), sources.get))
+        # The same part with the word off, or a kit without the part.
+        sources["Objects/Items/USKit/Common/Objects.con"] = sources[
+            "Objects/Items/USKit/Common/Objects.con"].replace(b"Inhibitations 1", b"Inhibitations 0")
+        self.assertFalse(overrides_air_movement(
+            library, library.object("US_Medic"), sources.get))
+        library.add_con("Objects/Items/USKit/Assault/Objects.con", """
+ObjectTemplate.create Kit US_Assault
+ObjectTemplate.addTemplate Medic_helm_us
+ObjectTemplate.addTemplate Thompson
+""")
+        self.assertFalse(overrides_air_movement(
+            library, library.object("US_Assault"), lambda path: None))
 
     def test_a_geometryless_part_resolves_through_its_holder(self) -> None:
         # FH writes `ObjectTemplate.geometry` with no argument and hangs the
