@@ -105,7 +105,7 @@ In this table `subsystems/` means `features/bf1942-engine-reference/subsystems/`
 | Damage, hit points, armour, fall damage, friendly fire | subsystems/hitpoints-and-damage.md; `HP` `DMG` `ARM` `FF` | damage-parity, viewer-collision-damage, bot-friendly-fire, vehicle-rounds-hit-soldiers; 3d/fall-damage-research-groundwork-2026-09-17.md predates PARA-10 |
 | Parachute and free fall | `PARA` | viewer-parachute, where section 0 overrules sections 4 and 5 |
 | Tanks and ground vehicles: drivetrain, steering | subsystems/tank-driving.md; `TANK` | 3d/ground-vehicles.md, viewer-ground-hull-collision, articulated-hull-collision |
-| Aircraft | `MLK`; the flight law is AI-60 | flyable-vehicles, pilot-mouse-look, bf1942-cockpit-graft-hosts, bf109-cockpit-and-vehicle-gun-audio |
+| Aircraft | `MLK`; the flight law is AI-60; helicopters and lift jets (engines off the nose) are PHY-12..PHY-14 and subsystems/physics.md §5 | flyable-vehicles (helicopters.md for the helicopters), pilot-mouse-look, bf1942-cockpit-graft-hosts, bf109-cockpit-and-vehicle-gun-audio |
 | Ships, boats, floating, carriers | `PHY-3`; the SHIP and SPAWN rows in section 10 of bf1942-ships-research-2026-09-22 | bf1942-ships-research-2026-09-22, viewer-ships, carrier-destroyer-parity, maps-viewer-drivable-decks-and-reload-sound |
 | Bombs and torpedoes | subsystems/bombs-and-torpedoes.md; `BOMB` | plane-bombs-and-torpedoes: README.md is the design, BUILD.md what was built |
 | Seats, entry, manned guns | subsystems/seats-and-entry-points.md, subsystems/manned-guns.md; `SEAT` `CVM` `GUN` | bf1942-seat-defects-2026-09-20, vehicle-entry-team-rule, teamonvehicle-is-a-bool, 3d/seats-and-manned-guns.md, 3d/vehicle-occupant-pose-plan.md |

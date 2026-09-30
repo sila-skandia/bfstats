@@ -8790,13 +8790,22 @@
    "note": "lnxded. [R1] writes engine '+0xb4' brake, decays '+0xb8 READ IN FULL 2026-09-20 (v4-gearbox, all 0x307 bytes hand-traced): this is the whole gearbox. revs += 0.05*((T1 - L) - 0.5*revs), clamped to [-1.0, +1.2] (arms 0x0823e2f4-0x0823e309 against 0x086c4f64 = 1.2f and 0x0823e30b-0x0823e31e against 0x086b05ec = -1.0f) and stored to PhysicsEngine+0xa0 at 0x0823e37f. The 0.05 (ds:0x86c08a8) is PER CALL, not scaled by dt. T1 IS NOT THE PEDAL: 0x0823e1e0-0x0823e1f4 computes Engine+0x10c / getMaxRotation().z, the clipped RotationalBundle roll angle over maxRotation; the sibling Engine+0x104 / maxRotation.x becomes PhysicsEngine+0xb0, the steering term. The raw roll input Engine+0x124 is read only at 0x0823e260, to set the brake byte PhysicsEngine+0xb4 = 1 iff the pedal opposes the rev direction (thresholds ds:0x86cf658 = -0.1 and ds:0x86ba1d8 = +0.1, doubles; set 0x0823e2b8, cleared 0x0823e472). Gear up 0x0823e391-0x0823e3c7 needs revs > gearUp AND +0xb8 == 0 AND gear < numberOfGears; gear down 0x0823e3d0-0x0823e3f1 needs revs < gearDown and gear > 1, with no +0xb8 gate. gearUp/gearDown/gearChangeTime are read here and NOWHERE else. edx = [edi+0x60] is the PhysicsEngine (proved by the 0x0823e499 error path printing \"No physicsNodeComp!\", 0x086c11e3). The [esi+0x528]/[esi+0x52c] block at 0x0823e320-0x0823e371 is engine HEAT, not drivetrain, and no ground vehicle enters it. Ledger TANK-12."
   },
   {
+   "address": "0x0823e5e0",
+   "name": "dice::ref2::world::Engine::handlePlayerInput(IPlayer*, PlayerInput const&, float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-30-helicopters",
+   "note": "lnxded. Writes Engine+0x11c/+0x120/+0x124 from PlayerInput[tmpl->inputToYaw/Pitch/Roll] (present-mask gated like RotationalBundle::handlePlayerInput) only while the WORD at +0x142 is 1 (cmp WORD [ecx+0x142],1 at 0x0823e5ef: running byte set, +0x143 clear); otherwise writes zeros. Ledger PHY-14."
+  },
+  {
    "address": "0x0823e730",
    "name": "dice::ref2::world::Engine::handleMessage(TemplateMessage,IPlayer*)",
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-17-effect-cadence",
-   "note": "lnxded. Resolves an Armor twice (0x823e7b3, 0x823e8c3) and calls vtable +0x94 = Armor::isSendingMessage() each time. Not a damage gate -- see ledger ARM-6."
+   "source": "research-2026-09-17-effect-cadence; research-2026-09-30-helicopters",
+   "note": "lnxded. Resolves an Armor twice (0x823e7b3, 0x823e8c3) and calls vtable +0x94 = Armor::isSendingMessage() each time. Not a damage gate -- see ledger ARM-6. 2026-09-30: +0x142 is the engine-running byte: set on TemplateMessage 4 (0x0823e779, unless +0x143), cleared on 5 (0x0823e787) and on 0x14/0x15 (0x0823e899; +0x143 = 1 there when the Armor is sending, 0x0823e91a). Engine::Engine sends itself 4 when engineType & 0x10. Ledger PHY-14."
   },
   {
    "address": "0x0823ef60",
@@ -8930,8 +8939,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "verdict-2026-09-20-gearbox",
-   "note": "lnxded. RETURNS AT ITS SECOND INSTRUCTION unless getEngineType() & 1: 0x0824cc04 mov eax,[edi+0x9c] (the EngineTemplate cached by PhysicsEngine::init 0x0824c82f), 0x0824cc10 call [edx+0xa0], 0x0824cc16 and eax,0x1, 0x0824cc1e jne 0x0824cc28, fall-through 0x0824cc20 = the epilogue. c_ETCar (2) and c_ETTank (6) clear bit 0, so a ground vehicle gets NO hull thrust, no feedbackLoop from this path and never reaches noPropellerEffectAtSpeed (tmpl+0x520, read only at 0x0824cf45). Within the body, & 8 at 0x0824cc89 picks thrust (ship, torpedo) over propeller spin (plane, rocket) and & 8 again at 0x0824d047 pins PhysicsEngine+0xa0 to 1.0 at 0x0824d06d. Ledger TANK-7."
+   "source": "verdict-2026-09-20-gearbox; research-2026-09-30-helicopters",
+   "note": "lnxded. RETURNS AT ITS SECOND INSTRUCTION unless getEngineType() & 1: 0x0824cc04 mov eax,[edi+0x9c] (the EngineTemplate cached by PhysicsEngine::init 0x0824c82f), 0x0824cc10 call [edx+0xa0], 0x0824cc16 and eax,0x1, 0x0824cc1e jne 0x0824cc28, fall-through 0x0824cc20 = the epilogue. c_ETCar (2) and c_ETTank (6) clear bit 0, so a ground vehicle gets NO hull thrust, no feedbackLoop from this path and never reaches noPropellerEffectAtSpeed (tmpl+0x520, read only at 0x0824cf45). Within the body, & 8 at 0x0824cc89 picks thrust (ship, torpedo) over propeller spin (plane, rocket) and & 8 again at 0x0824d047 pins PhysicsEngine+0xa0 to 1.0 at 0x0824d06d. Ledger TANK-7. 2026-09-30 (helicopters): the thrust axis is the engine's OWN: call [eax+0x20] at 0x0824ce88 on this (PhysicsNode::getAbsoluteTransformation 0x08254950 -> composite object vt+0x40) and row 2 (+0x20/+0x24/+0x28) copied at 0x0824ce8e-0x0824cea0, re-read at 0x0824cfce for the force; applied on the root via vt+0x68 addAccelerationAtAbsolutePosition (0x0824d020) at this engine's getAbsolutePosition (+0x2c, 0x0824cc30); the speed term reads the root's getPositionalSpeed (+0x38, 0x0824cf10). So an Engine placed setRotation 0/270/0 under an input-driven RotationalBundle (DC's hover engines) pushes up and tilts with the rack. Ledger PHY-12."
   },
   {
    "address": "0x0824d2b0",
@@ -9256,6 +9265,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] F2"
+  },
+  {
+   "address": "0x08254950",
+   "name": "dice::ref2::world::PhysicsNode::getAbsoluteTransformation() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-30-helicopters",
+   "note": "lnxded. Forwards to the composite object (this+0xc) vtable +0x40: a child PhysicsNode's absolute transform IS its object's, including every posed RotationalBundle above it. PhysicsEngine vtable slot +0x20. Ledger PHY-12."
   },
   {
    "address": "0x08254a90",

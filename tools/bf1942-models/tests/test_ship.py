@@ -41,6 +41,8 @@ MODULES = {
     "model-file.js": VIEWER / "model-file.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
+    # `aircraft.js`'s engine law for an airframe with engines off its nose.
+    "vectored-engines.js": VIEWER / "vectored-engines.js",
     "body-float.js": VIEWER / "body-float.js",
     # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
     # of its own) and the Coulomb constants the beaching friction uses.
