@@ -461,7 +461,8 @@ Symbol-level detail is in the scratch report
   Its `.con` behaviour `BBFireDriver` builds `BBFireArtilleryDriver`
   (`0x0856a650`). With the gun seat occupied it returns the large-bore
   urgency scored from that seat. With the seat empty it returns
-  `BBFireUnarmed`. Its plan `BBPFire2dDriver` (`0x08596fa0`) only moves and
+  `BBFireUnarmed`'s result, which is always 0 (SPOT-16). Its plan
+  `BBPFire2dDriver` (`0x08596fa0`) only moves and
   turns the hull toward an enemy object, and never fires. Nothing reads a
   marker or a map point.
 - **An unfinished request-driven design is dead code.** `BBIndirect` and
@@ -483,9 +484,13 @@ Symbol-level detail is in the scratch report
   or 59 `RMArtillerySupport`.
 
 For the viewer this means bot artillery stays target-driven, as `bot-fire.js`
-has it. One gap was noticed in passing: `bot-perception.js fireMode` treats the
-type-14 hull as an armed large-bore seat, whereas the engine's hull only
-drives.
+has it. The type-14 hull's driver is built to the engine's rule since
+2026-09-30 (ledger SPOT-16): his Fire is the gun seat's large-bore urgency while
+the gun is manned and 0 while it is empty (`BBFireUnarmed` returns 0), and his
+plan turns and places the hull for the gun and never fires. The viewer had
+scored the hull seat with its own weapons: none on the Priest and Wespe, so the
+driver never turned the hull for his gunner, and the Flakpanzer's coaxial MG,
+so that driver fought with it.
 
 ## 9. Who has it: the data survey
 

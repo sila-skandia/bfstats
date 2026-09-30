@@ -452,11 +452,11 @@ export function approachGoal(nav, target, from, radius) {
 
 /**
  * A self-propelled gun's driver in Fire (`BBPFire2dDriver::createPlan`
- * 0x08596fa0, read 2026-09-30, ledger SPOT-15). The plan is the hull's
+ * 0x08596fa0, read 2026-09-30, ledger SPOT-16). The plan is the hull's
  * alone: it moves and turns it for the gun seat and has no trigger and no
  * look. `createPlan` rebuilds it whenever the target, the sight state or the
  * too-close flag changes (the kept plan is compared on all three,
- * 0x08597350..0x0859739a); its `If`s re-read their conditions every tick
+ * 0x0859a546..0x0859a567); its `If`s re-read their conditions every tick
  * (`BAPFlowCIf`, last argument 1). With the gun seat's chosen weapon's
  * `min` / `max` range and `d` the 3D distance from the hull to the target:
  *
@@ -468,11 +468,11 @@ export function approachGoal(nav, target, from, radius) {
  *    `BAPConObjectMoved(target, 10)`; a target off the unit's map gives a
  *    `BAPAMoveToFinding` to the trace's valid point at `(max - min) 0.1 +
  *    min`);
- *  * too close (`d < min + 0.5`, 0x08597303): back off to a point `2 min +
- *    5` from the target (`TraceUtils::tracePointOnCircle` 0x086584a0 from
- *    the target's bearing to the hull, turned 0, +15, -15, +30 .. 90 deg; the
- *    first whose map line from the hull is clear, `AIPathfinding::trace`
- *    vt+0x4c), until `d > min + 1`;
+ *  * too close (`d < min + 0.5`, the `fucompp` at 0x0859730d): back off to
+ *    a point `2 min + 5` from the target (`TraceUtils::tracePointOnCircle`
+ *    0x086584a0 from the target's bearing to the hull, turned 0, +15, -15,
+ *    +30 .. 90 deg; the first whose map line from the hull is clear,
+ *    `AIPathfinding::trace` vt+0x4c), until `d > min + 1`;
  *  * else: inside `min + 0.5`, nothing; beyond `0.9 max`, or the gun unable
  *    to aim at it, close in as above; else, when the hull's Mobile template
  *    has `isTurnable` (AITemplateMobile +0x30, ConsoleClass540 0x08503dd9),

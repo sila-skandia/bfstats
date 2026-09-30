@@ -641,7 +641,7 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
 
 /**
  * `BAPWrapperAiming::execute` 0x08559770 as `BBPFire2dDriver` builds it (read
- * 2026-09-30, ledger SPOT-15): the aim of ANOTHER seat's gun, the hull's
+ * 2026-09-30, ledger SPOT-16): the aim of ANOTHER seat's gun, the hull's
  * gun seat, for a self-propelled gun's driver. The seat's chosen weapon
  * (its Armament's current one, weapon vt+0x38 +0x30 the muzzle), the lead
  * `Aimer::getFiringDirection` finds at precision 0.5 with the weapon's

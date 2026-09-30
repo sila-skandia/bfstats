@@ -180,7 +180,7 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
 
 /**
  * `EntryTankTurnTo::execute` 0x08624ff0 and `TankControl::turnTowardsDirection`
- * 0x0862d630 (read 2026-09-30, ledger SPOT-15): the hull turned toward a
+ * 0x0862d630 (read 2026-09-30, ledger SPOT-16): the hull turned toward a
  * direction without driving to it, the `TankTurnTo` entry a
  * `BAPATurnTowardsObject` runs. `angle` is the signed angle from the hull's
  * heading to the direction (tankControl's sign), `tolerance` the action's
