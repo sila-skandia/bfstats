@@ -179,6 +179,29 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
 }
 
 /**
+ * `EntryTankTurnTo::execute` 0x08624ff0 and `TankControl::turnTowardsDirection`
+ * 0x0862d630 (read 2026-09-30, ledger SPOT-15): the hull turned toward a
+ * direction without driving to it, the `TankTurnTo` entry a
+ * `BAPATurnTowardsObject` runs. `angle` is the signed angle from the hull's
+ * heading to the direction (tankControl's sign), `tolerance` the action's
+ * (+0x18; 5 deg from `BBPFire2dDriver`). Inside it the drive is reset
+ * (`resetControls(1, 0, 0)`); outside, full lock toward the direction
+ * (steer channel, ControlInfo +0x54) and a forward throttle (+0x50) of
+ * `highThrottle` while the hull's ground speed is at or under
+ * `min(1, velocityLimitModifier x angle^2)` (the `fucompp` at 0x0862d94c
+ * jumps to the high branch on <=), else `lowThrottle`. The three are the
+ * file's tweak globals 0x08762c9c / 0x08762ca4 / 0x08762ca0.
+ */
+export const TANK_TURN = { velocityLimitModifier: 0.3, highThrottle: 1.0, lowThrottle: 0.4 };
+
+export function tankTurnTowards({ angle, speed = 0, tolerance = 0 }) {
+  if (!(Math.abs(angle) > tolerance)) return { throttle: 0, steer: 0, turning: false };
+  const limit = Math.min(1, angle * angle * TANK_TURN.velocityLimitModifier);
+  const throttle = speed <= limit ? TANK_TURN.highThrottle : TANK_TURN.lowThrottle;
+  return { throttle, steer: Math.sign(angle), turning: true };
+}
+
+/**
  * `AIPathfinding::getBox` 0x0847d140 -> `AStarLocalSearch::initSearchBox`
  * 0x085f3060 -> `getSearchBox` 0x085f4180: the box a hull stands in on its
  * map. The level is `getLandLevel` 0x085f3f90's, the largest level from the

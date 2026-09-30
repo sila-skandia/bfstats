@@ -73,7 +73,7 @@ export const VEHICLE_RADIUS = 3.0;
  *  the law's angle is `-(bearing - yaw)` and a positive `c_PIYaw` turns the
  *  hull toward -yaw (`ground.js`), so the steer passes straight through.
  *  Calibrated on El Alamein's Kubelwagen (2026-09-23). */
-const VEHICLE_YAW_SIGN = 1;
+export const VEHICLE_YAW_SIGN = 1;
 /** The largest pyramid level a hull's box is taken at. `getLandLevel`
  *  0x085f3f90 walks from the vehicle's `+0xc4a8` down to its `+0xc4a4`,
  *  and `Vehicle::Vehicle` 0x0860b2c0 copies `+0xc4a8` from its `LocalMap`'s

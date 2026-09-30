@@ -4,15 +4,18 @@
 // instruction set. Plain functions of the `BotController` (bot.js), which
 // delegates its methods here.
 
-import { isWalkable } from './nav-grid.js';
+import { isWalkable, traceClear } from './nav-grid.js';
 import { playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
 import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
-import { hullDecision } from './bot-route.js';
-import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape } from './bot-aim.js';
+import { hullDecision, VEHICLE_YAW_SIGN } from './bot-route.js';
+import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape,
+  gunSeatAim, gunSeatIndirectLine } from './bot-aim.js';
+import { tankTurnTowards } from './bot-vehicle.js';
+import { isArtilleryDriver } from './bot-perception.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { planAirAvoid, execPlaneAvoid } from './bot-pilot.js';
 
@@ -28,6 +31,9 @@ export const PLAN_ACTION = {
   /** `BBPFireInfantery`'s move for a tank: hold with a shot, else close by
    *  `BAPAMoveToObjectFinding` (bot-fire.js `fireApproachStep`). */
   FireApproach: 'FireApproach',
+  /** `BBPFire2dDriver`: a self-propelled gun's driver turns and places the
+   *  hull for its gun seat, and never fires (`execArtilleryDriver`). */
+  ArtilleryDriver: 'ArtilleryDriver',
   /** `BAPAMoveToDirect` under a boat's helm: a straight run, no route. */
   BoatMoveToDirect: 'BoatMoveToDirect',
   EnterVehicle: 'EnterVehicle',
@@ -153,6 +159,15 @@ export function planFire(bot, now) {
   if (bot.planBehaviour === BEHAVIOUR.Fire && cur.length && cur.targetId === bot.firingTarget
       && !bot._firePlanDone(cur, now)) {
     return cur;
+  }
+  if (isArtilleryDriver(bot.vehicle)) {
+    // `BBPFire2dDriver::createPlan` 0x08596fa0: one statement for the hull,
+    // re-read every tick (`execArtilleryDriver`); no look, no trigger.
+    const plan = [{ type: PLAN_ACTION.ArtilleryDriver, targetId: bot.firingTarget, targetPos: [...bot.targetPosition],
+                    persistent: true }];
+    plan.targetId = bot.firingTarget;
+    plan.startedAt = now;
+    return plan;
   }
   const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
   if (approachesByFinding(bot)) {
@@ -435,9 +450,217 @@ export function approachGoal(nav, target, from, radius) {
   return null;
 }
 
+/**
+ * A self-propelled gun's driver in Fire (`BBPFire2dDriver::createPlan`
+ * 0x08596fa0, read 2026-09-30, ledger SPOT-15). The plan is the hull's
+ * alone: it moves and turns it for the gun seat and has no trigger and no
+ * look. `createPlan` rebuilds it whenever the target, the sight state or the
+ * too-close flag changes (the kept plan is compared on all three,
+ * 0x08597350..0x0859739a); its `If`s re-read their conditions every tick
+ * (`BAPFlowCIf`, last argument 1). With the gun seat's chosen weapon's
+ * `min` / `max` range and `d` the 3D distance from the hull to the target:
+ *
+ *  * sight: the bot's memory record of the target is seen (1), else the
+ *    gun has an indirect line of fire to it (2, `hasIndirectLineOfFire`,
+ *    bot-aim.js `gunSeatIndirectLine`), else neither (0);
+ *  * sight 0: close in (`BAPAMoveToObjectFinding`, the object-finding radius
+ *    `min(0.95 max, 0.75 d)`, re-routed when the target moves 10 m,
+ *    `BAPConObjectMoved(target, 10)`; a target off the unit's map gives a
+ *    `BAPAMoveToFinding` to the trace's valid point at `(max - min) 0.1 +
+ *    min`);
+ *  * too close (`d < min + 0.5`, 0x08597303): back off to a point `2 min +
+ *    5` from the target (`TraceUtils::tracePointOnCircle` 0x086584a0 from
+ *    the target's bearing to the hull, turned 0, +15, -15, +30 .. 90 deg; the
+ *    first whose map line from the hull is clear, `AIPathfinding::trace`
+ *    vt+0x4c), until `d > min + 1`;
+ *  * else: inside `min + 0.5`, nothing; beyond `0.9 max`, or the gun unable
+ *    to aim at it, close in as above; else, when the hull's Mobile template
+ *    has `isTurnable` (AITemplateMobile +0x30, ConsoleClass540 0x08503dd9),
+ *    the gun's yaw inside its window holds the hull (`ResetControls(1, 1,
+ *    1)` while the target lives and the gun seat is held) and outside it
+ *    turns the hull toward the target (`BAPATurnTowardsObject`, 5 deg,
+ *    bot-vehicle.js `tankTurnTowards`); a hull without it tests yaw and pitch
+ *    together and holds. "Able to aim" is the pitch alone when turnable,
+ *    both otherwise (`BAPConObjectValidPitchAiming` 0x08553060 /
+ *    `ValidAiming` 0x08552710 over `BAPWrapperAiming` 0x08559770's aim).
+ *
+ * The object finding's goal radius follows AI-126's reading of
+ * `initObjectFinding` (`min(r, 1.1 x the target's radius)`), and its speed
+ * terms are not ported, as for the tank's approach. The `BAPIWFire` info
+ * wrapper round the plan has no action of its own.
+ */
+export const ARTILLERY_DRIVER = {
+  tooClose: 0.5,
+  backOffDone: 1.0,
+  circleScale: 2.0,
+  circlePad: 5.0,
+  circleStep: 15 * Math.PI / 180,
+  circleSweep: 90 * Math.PI / 180,
+  inRange: 0.9,
+  approachRangeFraction: 0.95,
+  approachDistFraction: 0.75,
+  offMapArriveSpan: 0.1,
+  turnTolerance: 0.08726646,
+  targetMoved: 10.0,
+};
+
+export function execArtilleryDriver(bot, action, dt) {
+  const A = ARTILLERY_DRIVER;
+  const m = bot.vehicle;
+  const gun = m?.gunSeat;
+  const p = bot.world?.players?.get(action.targetId);
+  const pos = playerPosition(p) ?? action.targetPos;
+  if (!gun || !pos) { action.ended = true; return true; }
+  const weapon = gun.weapons?.[bot.weaponIndex] ?? gun.weapons?.[0] ?? {};
+  const min = weapon.minRange ?? 0, max = weapon.maxRange ?? 0;
+  const [x, y, z] = bot.position;
+  const dist = Math.hypot(pos[0] - x, pos[1] - y, pos[2] - z);
+  const point = firingPoint(bot);
+  const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
+  const vel = tv ? [tv.x ?? tv[0] ?? 0, tv.y ?? tv[1] ?? 0, tv.z ?? tv[2] ?? 0] : [0, 0, 0];
+  const seen = !!bot.senses?.memory?.get(action.targetId)?.seen;
+  const sight = seen ? 1 : gunSeatIndirectLine(bot, point, (a, b) => bot._lineClear(a, b)) ? 2 : 0;
+  const tooClose = dist < min + A.tooClose;
+  const key = `${sight}:${tooClose}`;
+  if (action.key !== key) {
+    // `createPlan` builds a new plan: a new route, `d` taken now.
+    action.key = key;
+    action.d0 = dist;
+    action.goal = null;
+    action.move = null;
+    bot.route = null;
+  }
+  let step, pitch = null, yaw = null;
+  if (sight === 0) step = 'close';
+  else if (tooClose) step = 'back';
+  else {
+    const aim = gunSeatAim(bot, point, vel);
+    pitch = gunSeatPitchValid(bot, aim);
+    yaw = gunSeatYawValid(bot, aim);
+    if (dist > A.inRange * max || !pitch || (!m.isTurnable && !yaw)) step = 'close';
+    else step = m.isTurnable && !yaw ? 'turn' : 'hold';
+  }
+  bot._artilleryDbg = { step, sight, dist, pitch, yaw };
+  if (step !== 'close' && step !== 'back') {
+    action.move = null;
+    if (step === 'hold') {
+      bot.moveForward = 0; bot.moveStrafe = 0; bot._lastThrottle = 0;
+      return false;
+    }
+    // `EntryTankTurnTo::execute` 0x08624ff0: the angle to the target against
+    // the heading (tankControl's sign), the law in bot-vehicle.js.
+    const f = bot._vehicleForward();
+    const dx = pos[0] - x, dz = pos[2] - z;
+    const len = Math.hypot(dx, dz) || 1;
+    const angle = Math.atan2(f[0] * dz / len - f[1] * dx / len, f[0] * dx / len + f[1] * dz / len);
+    const v = m.drive?.state?.velocity;
+    const r = tankTurnTowards({ angle, speed: v ? Math.hypot(v.x, v.z) : 0, tolerance: A.turnTolerance });
+    bot.moveForward = r.throttle;
+    bot.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
+    bot._lastThrottle = 0;
+    return false;
+  }
+  if (step === 'back') {
+    if (dist > min + A.backOffDone) { bot.moveForward = 0; bot.moveStrafe = 0; return false; }
+    action.goal ??= backOffPoint(bot, pos, A.circleScale * min + A.circlePad);
+    action.move ??= { waypoint: action.goal };
+    bot._execInfantryMoveTo(action.move, dt);
+    return false;
+  }
+  // Close in: the target's own point on the unit's map, else the trace's
+  // valid point toward the hull (`approachGoal`, no radius cap here).
+  const nav = bot._nav?.();
+  const onMap = !nav || isWalkable(nav, pos[0], pos[2]);
+  if (!action.move || (onMap && action.goal
+      && Math.hypot(pos[0] - action.goal[0], pos[2] - action.goal[2]) > A.targetMoved)) {
+    const goal = approachGoal(nav, pos, bot.position, Infinity);
+    if (!goal) { action.ended = true; action.noGoal = true; return true; }
+    const ext = bot._unitInfo?.(action.targetId)?.extents ?? [0.6, 1.8, 0.6];
+    const radius = Math.min(A.approachRangeFraction * max, A.approachDistFraction * action.d0);
+    action.goal = [pos[0], pos[1], pos[2]];
+    action.move = { waypoint: goal, arrive: onMap
+      ? Math.min(radius, FIRE_APPROACH.arriveTargetScale * 0.5 * Math.hypot(ext[0], ext[1], ext[2]))
+      : (max - min) * A.offMapArriveSpan + min };
+    bot.route = null;
+  }
+  bot._execInfantryMoveTo(action.move, dt);
+  return false;
+}
+
+/**
+ * `BAPConObjectValidPitchAiming` 0x08553060 and `BAPConObjectValidYawAiming`
+ * 0x08553730 on the gun seat: false unless the wrapper's aim is valid, then
+ * `AIObjectControlInfo::validateCameraDirectionPitch` / `Yaw` of the seat's
+ * ControlInfo on the aim's direction. The pitch is taken against the hull's
+ * up axis inside the camera window (`cameraMinDeg` / `cameraMaxDeg` y, the
+ * engine's pitch negative up), as `approachAimValid` takes a tank's (AI-128);
+ * the yaw against the hull's heading inside the gun rig's traverse, as
+ * `fixedAimable` takes a fixed gun's, else the ControlInfo's yaw window
+ * (INFERRED: the vanilla guns' two agree, the Priest's +-25 deg, the
+ * Wespe's +-20). No window, no limit.
+ */
+export function gunSeatPitchValid(bot, aim) {
+  if (!aim?.valid) return false;
+  const c = bot.vehicle?.gunSeat?.controlInfo;
+  const lo = c?.cameraMinDeg?.[1], hi = c?.cameraMaxDeg?.[1];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return true;
+  const u = hullUp(bot);
+  const s = Math.max(-1, Math.min(1, aim.dir[0] * u[0] + aim.dir[1] * u[1] + aim.dir[2] * u[2]));
+  const up = Math.asin(s) * 180 / Math.PI;
+  return up >= -hi && up <= -lo;
+}
+
+export function gunSeatYawValid(bot, aim) {
+  if (!aim?.valid) return false;
+  const gun = bot.vehicle?.gunSeat;
+  let limits = gun?.yawLimits ?? null;
+  if (!limits) {
+    const lo = gun?.controlInfo?.cameraMinDeg?.[0], hi = gun?.controlInfo?.cameraMaxDeg?.[0];
+    if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) limits = [lo * Math.PI / 180, hi * Math.PI / 180];
+  }
+  if (!limits) return true;
+  const want = wrapAngle(Math.atan2(aim.dir[0], aim.dir[2]) - bot.yaw);
+  return want >= limits[0] && want <= limits[1];
+}
+
+/**
+ * The back-off point (`TraceUtils::tracePointOnCircle` 0x086584a0, swept by
+ * `createPlan`): `R` from the target along its bearing to the hull turned by
+ * 0, +15, -15, +30, -30 .. 90 deg, the first whose map line from the hull is
+ * clear (`AIPathfinding::trace` vt+0x4c; INFERRED: a clear trace hands back
+ * the circle's point, which already lies farther than `R - 1`, so the sweep
+ * stops there); the hull's own position when none is.
+ */
+export function backOffPoint(bot, target, R) {
+  const A = ARTILLERY_DRIVER;
+  const [x, y, z] = bot.position;
+  let dx = x - target[0], dz = z - target[2];
+  const len = Math.hypot(dx, dz);
+  if (len > 1e-3) { dx /= len; dz /= len; } else { dx = 1; dz = 0; }
+  const nav = bot._nav?.();
+  for (let a = 0, i = 0; Math.abs(a) <= A.circleSweep + 1e-6; i++) {
+    const c = Math.cos(a), s = Math.sin(a);
+    const px = target[0] + (dx * c - dz * s) * R, pz = target[2] + (dx * s + dz * c) * R;
+    if (!nav || traceClear(nav, x, z, px, pz, bot.obstacles)) return [px, y, pz];
+    a = -a;
+    if (a >= 0) a += A.circleStep;
+  }
+  return [x, y, z];
+}
+
 /** The fire plan's end conditions: target dead, timeout, shots spent. */
 export function firePlanDone(bot, plan, now) {
   if (plan.some(a => a.type === PLAN_ACTION.FireApproach && a.ended)) return true;
+  const driver = plan.find(a => a.type === PLAN_ACTION.ArtilleryDriver);
+  if (driver) {
+    // The hold's `BAPFlowCWhile` runs while the target has health and the
+    // gun seat is held (`BAPConObjectHealth(target, 0)` 0x08550bd0,
+    // `BAPConObjectOccupied(gun seat)` 0x08551e50); the plan has no
+    // timeout, no shot count and no magazine.
+    if (driver.ended) return true;
+    if (bot.world?.armorOf?.(plan.targetId)?.destroyed || !bot.world?.players?.get(plan.targetId)) return true;
+    return !bot.vehicle?.gunSeatHeld?.();
+  }
   const attack = plan.find(a => a.type === PLAN_ACTION.PlaneAttack);
   if (attack) {
     // The loop's conditions: the target exists with health, the magazine
@@ -725,6 +948,8 @@ export function executeAction(bot, action, dt, now) {
       return bot._execInfantryMoveToDirection(action, dt, now);
     case PLAN_ACTION.FireApproach:
       return execFireApproach(bot, action, dt);
+    case PLAN_ACTION.ArtilleryDriver:
+      return execArtilleryDriver(bot, action, dt);
     case PLAN_ACTION.BoatMoveToDirect:
       // The boat's own helm (`BoatControl::towardsDirection` with its box
       // state machine, as `_steerToward` runs it on a route leg) straight at
