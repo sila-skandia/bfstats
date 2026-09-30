@@ -2,14 +2,16 @@
 
 Status: built 2026-09-30 for the Desert Combat and DC Final level audit. The
 two DC trees are re-baked and patched; vanilla, XPack1, XPack2 and EoD are not
-(section 7 lists what a re-bake would change there).
+(section 7 lists what a re-bake would change there). Section 8, from the FHSW
+level audit the same day, narrows section 5 to the scripts `Init.con` reaches
+and orders the mod's `objects/` the engine's way; no tree is re-baked for it.
 
 A level bake read a level as if it were one archive plus the mod's global
 objects. The engine does not: every level archive of the mod chain is mounted
 at its own path, a level's `Init.con` runs its own object scripts before the
 mod's `objects/`, `textureManager.alternativePath` builds a list, and a child
 template is found by name wherever it is declared. Each difference cost Desert
-Combat something visible or playable. The engine rows are LOAD-1..LOAD-4,
+Combat something visible or playable. The engine rows are LOAD-1..LOAD-6,
 SPAWN-8, SPAWNGRP-8 and SPAWNGRP-9 in the
 [ledger](../bf1942-engine-reference/ledger.md).
 
@@ -161,3 +163,80 @@ Al Nas and Coastal Hammer spawned a grounded soldier on each.
 * The model catalogue's per-level skins (`level_texture_names`) still read only
   `AltTextures/`, `Texture(s)/` and `Custom Textures/`, not `CustomTextures/`
   or `objectTexture(s)/`.
+
+## 8. The FHSW audit: which level scripts run, and in what order
+
+Section 5 put every `.con` of a level archive ahead of the mod's. The engine
+runs only what the level's `Init.con` reaches: the level archive is mounted at
+`bf1942/levels/<L>/`, outside the `objects/` listing `loadAllConFiles` walks
+(LOAD-2). FHSW's Fall of Berlin ships `Objects/lightingfix/`, 16 geometry
+redeclarations of FH's market stalls, stairs and temple ruin poles against
+`*_fix` meshes no archive holds, and its `Objects.con` has
+`rem run lightingfix/go`; the bake drew the `_fix` names and lost 125 placed
+objects.
+`extract_map.level_run_order` follows the run graph (comments and untaken `if`
+arms dropped, `_host_lines`; each `run`/`include` resolved from the running
+file, `_resolve_run`), and `LevelFirst(pool, run_order)` puts the reached
+scripts first in the order they run, then the mod's `objects/`, then the
+unreached level scripts, which only fill a name nothing else declares.
+`LevelContext.ordered_objects` is that pool, for the library and the carried
+spawns alike.
+
+The mod's `objects/` scripts run in case-insensitive path order, not nearest
+mod first (LOAD-5): one key per path, opened from the nearest mod, so a nearer
+mod's redeclaration under another folder loses to a parent's path that sorts
+first (FH's `Items/BritKit/Medic/` over FHSW's `MedicNo4/` for
+`medic_helm_brit`, FH's `Vegetation/Common/HedgerowGold1/` over FHSW's
+`Vegetation/FHT/`). `extract_models.load_order` sorts, and `build_library`
+reads every pool in it, so the model, kit and pose catalogues change with it:
+nearest-mod-first and the engine's order disagree on 147 FHSW templates, 22 FH,
+15 XPack1, 16 XPack2, 61 DesertCombat, 79 DC_Final, 41 EoD and no vanilla one.
+
+Checked with a resolution fingerprint (every placed static's template tree:
+declaring file, geometry, whether its `.sm` resolves, and the carried spawns
+per mode), HEAD against this change, on every level of vanilla (23), XPack1
+(6), XPack2 (9), DesertCombat (35), DC_Final (48) and EoD (237): no level's
+placed, unresolved, missing-mesh or spawn counts moved. The level-sourced
+template changes are all scripts nothing runs: Kasserine Pass runs
+`axisairplaneammo/go` twice and its `AlliedAirplaneAmmo/` never, DC_DustBowl
+has `remrun armory_stinger_uni/...`, DC_First_Light's `air_runway_m1/`,
+DC_Urban_Siege's `sidewalkI_m1/` and EoD Battle of Britain's factory ladder are
+run by no line. Basrah Nights, Bragg, Twin Rivers and No Fly Zone Day 2 keep
+their own templates and spawns. The FHSW levels:
+
+| Level | Placed objects missing a mesh | Missing meshes | Templates resolved to another file |
+|---|---|---|---|
+| Fall_of_Berlin-1945 | 1090 -> 965 | 139 -> 124 | 9 (and 20 geometries, 15 of them `lightingfix`) |
+| Seelow-Heights-1945 | 74 | 40 | 19 |
+| Gold_Beach-1944, Counterattack-1950 | 0 | 0 | 9 each (`HedgerowGold1`, `Aspen_bush2`) |
+| Guadalcanal | 0 | 0 | 4 (its `Objects/objects.con` is FH's copy; FHSW's `Init.con` runs `objects/go`) |
+| Aberdeen, Tobruk, Bougainville, Gazaps | unchanged | unchanged | 1 to 3 |
+
+The rest of Fall of Berlin's missing meshes (`o_*` buildings) ship in no
+archive of the chain.
+
+Three more fixes from the same audit:
+
+* The model catalogue skipped every template whose hull is a random pick
+  (`setRandomGeometries`, LOAD-6) as "no geometry": FH's `gmc`, `Bedford`,
+  `Opelblitz`, `Zis5` and their ammo trucks, `M4A1ShermanRandom`,
+  `PantherDKingtigerRandom`. `extract_all.has_renderable_geometry` follows the
+  pick to `<name>1`, as the extractor draws it: 21 FHSW and 14 FH templates
+  are admitted (`gmc.glb`, 3,123 triangles, extracted in a scratch tree).
+  The engine never uses the base name when a count is set and deals variants
+  round-robin across the process; `con.instance_template_name` still prefers
+  the base name when it exists.
+* A level's loading picture is looked up in every copy of the level down the
+  mod chain (`extract_loading_assets.find_in_level_archives`): FHSW's Gold
+  Beach names `../../bf1942/Levels/Gold_Beach-1944/Textures/gold.tga`, which
+  only FH's copy ships. 16 FHSW levels get their own picture instead of
+  `western`; every other mod's rows are unchanged.
+* The two level-declared kits the audit found missing from FHSW's
+  `loadouts.json` (`4Rus_TankhunterPPshArmour`, Fall of Berlin;
+  `4German_AT_Haft-Hohlladung_EihGr39`, Seelow) are read since `1bdb7298`; the
+  published file predates it (845 kits; a run of HEAD gives 1,204).
+  `2German_AssaultSg44HEAT61` (Gazaps) and `1Rus_AssaultAVT40Spotter` (Fall of
+  Berlin) are declared in no archive of the chain.
+
+Not re-baked or re-extracted here: the FHSW levels, the catalogues and the
+loading rows of every mod pick this up on their next run.
