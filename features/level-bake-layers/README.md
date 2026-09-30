@@ -18,7 +18,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | Layer | `scene.json` keys (and per-mode keys under `modes.<mode>`) | Side files it writes | Reads |
 |---|---|---|---|
 | `controlPoints` | `controlPoints`; `modes.*.controlPoints` | none | `<mode>/ControlPoint*.con`, the placed-flag list from `objects.placedControlPoints` |
-| `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the ships' `Objects.con`, `Game/GlobalSpawnGroups.con`, the control points |
+| `spawns` | `soldierSpawns`, `vehicleSoldierSpawns`, `objectSpawns`; the same under `modes.*` | none | `SoldierSpawn*.con`, `ObjectSpawn*.con`, the template of every object a spawner places and the bundles it adds, found by name wherever declared (`extract_map.TemplateIndex`: ships, DC's buildings and AC-130), `Game/GlobalSpawnGroups.con`, the control points |
 | `game` | `gameplayMode`, `combatArea`, `tickets`, `gameTypes`, `briefing`; `modes.*.gameTypes/tickets/combatArea` | none | each game type's script (the level's root `<Mode>.con`, which the server runs; `GameTypes/*.con` says which exist), `Init.con`, `Menu/Init.con`, the chain's `lexiconAll.dat` |
 | `environment` | `waterLevel`, `fogColor`, `fogStart`, `fogEnd`, `sunDirection`, `camera`, `lighting`, `drawDistance` | none | `Init.con`, `Init/SkyAndSun.con`, `Init/Terrain.con` |
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |

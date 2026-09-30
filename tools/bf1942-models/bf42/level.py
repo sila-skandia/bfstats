@@ -546,6 +546,11 @@ class LevelInfo:
     view_distance: float | None = None      # renderer.setViewdistance
     game_view_distance: float | None = None  # Game.setViewDistance
     texture_alternative_path: str = ""      # textureManager.alternativePath
+    # Every `textureManager.alternativePath`, in the order declared. The word
+    # appends (BF1942.exe 0x5a66d0 -> TextureManager vt+0x78 0x643570 -> the
+    # list insert at 0x6435d0) and a texture load probes the list front to
+    # back, taking the first directory that holds the file (0x642459..0x642529).
+    texture_alternative_paths: list[str] = field(default_factory=list)
     sounds: LevelSounds = field(default_factory=LevelSounds)
     # Every `ObjectTemplate.create LensFlare <name>` the level's con files
     # declare, by template name, plus the `Object.create`/`Object.name` pairs
@@ -2143,6 +2148,7 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 pass
         elif ns == "texturemanager" and cmd == "alternativepath" and tokens:
             info.texture_alternative_path = tokens[0].replace("\\", "/").strip("/")
+            info.texture_alternative_paths.append(info.texture_alternative_path)
         elif ns == "sky":
             if cmd == "sunlightdirectionvec" and tokens:
                 try:
