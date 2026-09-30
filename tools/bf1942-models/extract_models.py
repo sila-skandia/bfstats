@@ -446,9 +446,38 @@ def _rebase_sound_scripts(text: str, from_folder: str, to_folder: str) -> str:
     return _LOAD_SOUND_SCRIPT.sub(rebase, text)
 
 
+# `strcasecmp` folds A-Z only (the C locale); `str.lower` would fold more.
+_ASCII_FOLD = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+def load_order(names: list[str]) -> list[str]:
+    """An objects pool's script names in the order the engine runs them.
+
+    `Game::loadAllConFiles` (lnxded 0x0805a830) lists `objects/` through the
+    FileManager, keys every name holding `.con` (less `/ai/` paths) into a
+    `std::map` ordered by `NoCaseStringCompare` (`insert_unique` at
+    0x0805b284), and runs the map front to back (0x0805ab6d). One path
+    shipped by two mods is one key, opened from the nearest mod (RFA-1); the
+    order is the paths', not the mods'. With the first `create` of a name
+    winning (LOAD-1), FH's `Items/BritKit/Medic/` declares `medic_helm_brit`
+    before FHSW's `Items/BritKit/MedicNo4/` redeclares it (LOAD-5). A level's
+    own scripts (`bf1942/levels/...`) are not under `objects/`; they keep the
+    order they came in, after the rest.
+    """
+    level = [n for n in names if n.lower().startswith("bf1942/levels/")]
+    rest = [n for n in names if not n.lower().startswith("bf1942/levels/")]
+    return sorted(rest, key=lambda n: n.replace("\\", "/").translate(_ASCII_FOLD)) + level
+
+
 def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
+    """Every template the pool's scripts declare, the first declaration of a
+    name winning (LOAD-1), read in the engine's order (`load_order`; a
+    `extract_map.LevelFirst` pool is already in it)."""
     library = con_mod.ObjectLibrary()
-    for name in objects.names():
+    names = objects.names()
+    if not getattr(objects, "in_load_order", False):
+        names = load_order(names)
+    for name in names:
         if not name.lower().endswith(".con"):
             continue
         if (blob := objects.try_read(name)) is None:

@@ -61,6 +61,7 @@ from extract_models import (  # noqa: E402
     build_pools,
     discover_level_textures,
     load_damage_tables,
+    load_order,
     mod_chain,
 )
 
@@ -183,33 +184,33 @@ def chain_level_archives(chain: list[Path]) -> list[Path]:
 _SCRIPTS_READ_ELSEWHERE = ("init", "sound", "sounds", "menu")
 
 
-def level_object_scripts(files: LevelFiles) -> set[str]:
-    """The object scripts the level's `Init.con` runs outside its `Objects/`.
+def level_run_order(files: LevelFiles) -> list[str]:
+    """Every script the level's `Init.con` runs, in the order a host enters
+    them, as lower-case archive paths, `Init.con` first.
 
-    `Game::load` runs the level's `Init.con` (lnxded 0x0805b785) and every
-    template a script it `run`s declares is the level's. Most levels keep
-    them under `Objects/` (`run objects/objects`), which `add_level_objects`
-    takes whole; some do not: Al Nas runs a root `objects.con` (its bridges,
-    bridge huts and market stands), Twin Rivers another, and Coastal Hammer
-    `CustomObjects/INIT` (its houses, sidewalk blocks and planks). The run
-    graph is followed the way a host runs it (`_host_lines`, `_resolve_run`),
-    and returned as lower-case archive paths for `add_level_objects(extra=)`.
+    `Game::load` runs the level's `Init.con` (lnxded 0x0805b785) and nothing
+    else of the level archive: `loadAllConFiles("objects/")` (0x0805bc39)
+    lists the mod's `objects/` tree, and a level's scripts sit under
+    `bf1942/levels/<L>/`. A script the run graph never reaches declares
+    nothing. FHSW's Fall of Berlin ships `Objects/lightingfix/`, 16 of FH's
+    market stall, stair and ruin pole geometries redeclared against `*_fix`
+    meshes no archive holds, and its `Objects.con` has `rem run
+    lightingfix/go`; the engine draws FH's (125 placed objects). The graph is followed the way a host runs it: comments
+    and untaken `if` arms dropped (`_host_lines`), each `run`/`include`
+    resolved from the running file (`_resolve_run`).
     """
-    from bf42.level import _INCLUDE_LINE, _host_lines, _level_relative, _resolve_run
+    from bf42.level import _INCLUDE_LINE, _host_lines, _resolve_run
     init = files.find("Init.con")
     if init is None:
-        return set()
-    found: set[str] = set()
+        return []
+    order: list[str] = []
     seen: set[str] = set()
 
     def walk(path: str, depth: int) -> None:
         if path.lower() in seen or depth > 12:
             return
         seen.add(path.lower())
-        rel = _level_relative(files, path).replace("\\", "/").lower()
-        head = rel.split("/", 1)[0] if "/" in rel else ""
-        if depth and head not in _SCRIPTS_READ_ELSEWHERE and head != "objects":
-            found.add(path.lower())
+        order.append(path.lower())
         text = files.read(path).decode("latin-1", "replace")
         for line in _host_lines(text, []):
             match = _INCLUDE_LINE.match(line)
@@ -219,6 +220,27 @@ def level_object_scripts(files: LevelFiles) -> set[str]:
                     walk(target, depth + 1)
 
     walk(init, 0)
+    return order
+
+
+def level_object_scripts(files: LevelFiles) -> set[str]:
+    """The object scripts the level's `Init.con` runs outside its `Objects/`.
+
+    Every template a script `Init.con` runs declares is the level's. Most
+    levels keep them under `Objects/` (`run objects/objects`), which
+    `add_level_objects` takes whole; some do not: Al Nas runs a root
+    `objects.con` (its bridges, bridge huts and market stands), Twin Rivers
+    another, and Coastal Hammer `CustomObjects/INIT` (its houses, sidewalk
+    blocks and planks). Returned from `level_run_order` as lower-case archive
+    paths for `add_level_objects(extra=)`.
+    """
+    from bf42.level import _level_relative
+    found: set[str] = set()
+    for path in level_run_order(files)[1:]:
+        rel = _level_relative(files, path).replace("\\", "/").lower()
+        head = rel.split("/", 1)[0] if "/" in rel else ""
+        if head not in _SCRIPTS_READ_ELSEWHERE and head != "objects":
+            found.add(path)
     return found
 
 
@@ -2299,13 +2321,14 @@ class _Block:
 
 
 class LevelFirst:
-    """An objects pool whose `names()` list the level's own scripts first.
+    """An objects pool whose `names()` list its scripts in the engine's load order.
 
     On a level load the engine empties the template namespace
     (`Game::load` 0x0805b4b0 calls `ObjectTemplateManager::deleteAll`,
     vtable +0x2c, at 0x0805b77b), runs the level's `Init.con` and the object
     scripts it runs (0x0805b785..), and only then every `.con` under
-    `objects/` (`Game::loadAllConFiles` at 0x0805bc39); the client loads in
+    `objects/` (`Game::loadAllConFiles` at 0x0805bc39), in case-insensitive
+    path order (LOAD-5, `extract_models.load_order`); the client loads in
     the same order (BF1942.exe 0x00410d2a..0x00410e5c, then `objects/` at
     0x00410fba). A `create` of a name already declared makes nothing, for an
     ObjectTemplate (`ObjectTemplateManager::createTemplate` 0x081d5a30) and a
@@ -2313,18 +2336,35 @@ class LevelFirst:
     0x0838ad40: the name is found, the active template is set to none). So a
     template a level declares beats the mod's own of the same name: Basrah
     Nights' street lamp (its own mesh, its own alpha-tested light cone) over
-    Desert Combat's, Operation Bragg's cockpits, Twin Rivers' fences. The
-    library and the `TemplateIndex` read the pool in this order; the pool's
-    paths keep their own rule (`ArchivePool.add_level_objects`).
+    Desert Combat's, Operation Bragg's cockpits, Twin Rivers' fences.
+
+    `run_order` is the level's run graph (`level_run_order`): the level's
+    scripts it reaches go first, in the order they run, and the ones it never
+    reaches go last, where they only fill a name nothing else declares (the
+    rule before LOAD-2 was read). Without it every level script goes first.
+    The library and the `TemplateIndex` read the pool in this order; the
+    pool's paths keep their own rule (`ArchivePool.add_level_objects`).
     """
 
-    def __init__(self, pool) -> None:
+    # `build_library` takes `names()` as they are, not re-sorted.
+    in_load_order = True
+
+    def __init__(self, pool, run_order: list[str] | None = None) -> None:
         self._pool = pool
+        self._run_order = run_order
 
     def names(self) -> list[str]:
         names = self._pool.names()
         own = [n for n in names if n.lower().startswith("bf1942/levels/")]
-        return own + [n for n in names if not n.lower().startswith("bf1942/levels/")]
+        rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")])
+        if self._run_order is None:
+            return own + rest
+        by_path: dict[str, str] = {}
+        for name in own:
+            by_path.setdefault(name.lower(), name)
+        reached = [by_path[p] for p in self._run_order if p in by_path]
+        ran = {n.lower() for n in reached}
+        return reached + rest + [n for n in own if n.lower() not in ran]
 
     def __getattr__(self, name: str):
         return getattr(self._pool, name)
@@ -2349,15 +2389,16 @@ class TemplateIndex:
     `ObjectTemplateManager::createTemplate` 0x081d5a30 finds the name and
     returns with no active template, so the lines that follow configure
     nothing. The first file to declare a name owns it, in the order the
-    engine runs them (`LevelFirst`: the level's own scripts, then the mod
-    chain's, nearest first). `active <name>` reopens a template wherever it
-    was declared.
+    engine runs them (`LevelFirst`: the level's own scripts, then the mod's
+    `objects/` in case-insensitive path order). `active <name>` reopens a
+    template wherever it was declared.
     """
 
     def __init__(self, objects) -> None:
         self.blocks: dict[str, _Block] = {}
         seen: set[str] = set()
-        for name in LevelFirst(objects).names():
+        ordered = objects if isinstance(objects, LevelFirst) else LevelFirst(objects)
+        for name in ordered.names():
             lower = name.lower()
             if not lower.endswith(".con") or lower in seen:
                 continue
