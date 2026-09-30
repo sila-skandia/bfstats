@@ -139,6 +139,20 @@ const PITCH_TAU = 0.1;
 // Below this an AudioParam write is not worth an automation event.
 const EPSILON = 1e-4;
 
+// How many plays of one sample may sound at once (ledger SND-14). Each trigger
+// of a patch with no looping sample starts every sample on a NEW instance of
+// its buffer and leaves the last one to play out (BF1942.exe 0x008022a0 ->
+// 0x008010f0), and a buffer holds at most `DAT_0095ac98` = 8 instances
+// (0x00800600): a ninth takes a free one, or steals one (0x00800aa0). DC
+// Final's MG42 plays a 1.7 s shot-and-tail (`mg_temp.wav`) every 67 ms
+// (`roundOfFire 15`), which is 26 tails deep uncapped; the game holds it at
+// eight. The client counts per buffer across every object; this counts per
+// layer, because the engine only starts a layer whose volume is above zero and
+// so plays one layer of a near/far hand-over per round where the viewer starts
+// all of them, muted. Which instance a steal takes is not traced; the oldest
+// goes here.
+export const INSTANCES_PER_SAMPLE = 8;
+
 /** One `load` from the script: a buffer, a gain, and where it points. */
 class Voice {
   constructor(ctx, layer, buffer, panner) {
@@ -149,6 +163,9 @@ class Voice {
     this.gain.gain.value = 0;
     this.gain.connect(panner);
     this.source = null;
+    // This layer's one-shot plays still sounding, oldest first: the newest
+    // (`source`) and the ones `trigger()` left to play out.
+    this.instances = [];
     this.volumeMods = (layer.modulators || []).filter(m => m.dest === 'volume');
     this.pitchMods = (layer.modulators || []).filter(m => m.dest === 'pitch');
     // `randomStartPitch a/b` is a two-sided per-play pitch offset, and it is
@@ -344,6 +361,13 @@ export class EngineAudio {
    * Re-rolled per trigger, which is what makes eight ricochet samples read as
    * eight different ricochets rather than one on repeat. A patch that is not
    * `randomPlay` admits all of its voices.
+   *
+   * The engine rolls `rand() % n` over every `load` of the patch (BF1942.exe
+   * 0x008030a0, ledger SND-15), and a `silence.wav` load, or one a vehicle
+   * gun's patch pick leaves out, is a slot that plays nothing. Layers that say
+   * so (`slot` of `slots`, from `extract_map._sound_layers`) are picked that
+   * way, so a roll can land on nothing; layers without the keys (an effect
+   * ships every load, silence included) pick among themselves as before.
    */
   #rollRandomPlay() {
     this.chosen = new Set();
@@ -353,6 +377,14 @@ export class EngineAudio {
         continue;
       }
       if (!group.voices.length) continue;
+      const slots = group.voices[0].layer.slots;
+      if (slots > 0) {
+        const slot = Math.min(slots - 1, Math.floor(this.rand() * slots));
+        for (const voice of group.voices) {
+          if (voice.layer.slot === slot) this.chosen.add(voice);
+        }
+        continue;
+      }
       const pick = Math.min(group.voices.length - 1,
                             Math.floor(this.rand() * group.voices.length));
       this.chosen.add(group.voices[pick]);
@@ -435,7 +467,10 @@ export class EngineAudio {
       try { source.disconnect(); } catch (_) {}
     }
     this.live.clear();
-    for (const voice of this.voices) voice.source = null;
+    for (const voice of this.voices) {
+      voice.source = null;
+      voice.instances.length = 0;
+    }
     // A loop still waiting on the context to wake must not spring to life
     // after the patch it belonged to has been cut -- a level change or a
     // voice steal silencing this patch has to be the end of it, resume or not.
@@ -485,7 +520,8 @@ export class EngineAudio {
    * A one-shot already sounding is not cut: the previous source is orphaned to
    * play out while a new one takes the voice's slot, so a burst stacks instead
    * of clipping its own tail. `#play`'s `onended` only clears the slot it
-   * still owns, which is what makes that safe.
+   * still owns, which is what makes that safe. The stack stops at the game's
+   * `INSTANCES_PER_SAMPLE`, past which the oldest tail goes.
    *
    * @returns {number} how many layers actually started.
    */
@@ -557,8 +593,21 @@ export class EngineAudio {
     voice.source = source;
     this.live.add(source);
     if (!source.loop) {
+      // The buffer's instance pool (`INSTANCES_PER_SAMPLE`): a play past it
+      // takes the oldest one still sounding.
+      while (voice.instances.length >= INSTANCES_PER_SAMPLE) {
+        const stolen = voice.instances.shift();
+        stolen.onended = null;
+        try { stolen.stop(); } catch (_) {}
+        try { stolen.disconnect(); } catch (_) {}
+        this.live.delete(stolen);
+        this.stolen = (this.stolen || 0) + 1;
+      }
+      voice.instances.push(source);
       source.onended = () => {
         this.live.delete(source);
+        const at = voice.instances.indexOf(source);
+        if (at >= 0) voice.instances.splice(at, 1);
         if (voice.source === source) voice.source = null;
       };
     }

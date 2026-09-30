@@ -29,6 +29,7 @@ reported as "missing" by the bake and are not missing; they are audible.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -42,8 +43,8 @@ from bf42.assemble import Assembler, Report  # noqa: E402
 from bf42.level import parse_ssc  # noqa: E402
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 from extract_map import (  # noqa: E402
-    SOUND_ARCHIVES, VEHICLE_RATES, TranscodeError, ffmpeg_available,
-    load_damage_tables, resolve_sound, transcode_to_mp3,
+    SOUND_ARCHIVES, VEHICLE_RATES, SampleNames, TranscodeError,
+    ffmpeg_available, load_damage_tables, resolve_sound, transcode_to_mp3,
 )
 from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, mod_chain  # noqa: E402
 
@@ -100,15 +101,20 @@ def build_sound_manifest(names, library, objects: ArchivePool,
 
     Bundle keys are lower-cased, matching `EffectLibrary`'s own lookup.
     """
-    seen: dict[str, str] = {}
+    seen: dict[tuple[str, str], str] = {}
+    # The level extractor's own naming rule, so a sample both write lands
+    # under one name, and two different wavs of one name under two.
+    sample_names = SampleNames(sounds)
 
     def write(resolved: tuple[str, bytes]) -> str:
         basename, data = resolved
-        if basename in seen:
-            return seen[basename]
+        key = (basename, hashlib.sha1(data).hexdigest())
+        if key in seen:
+            return seen[key]
         shared_dir.mkdir(parents=True, exist_ok=True)
+        stem = sample_names.stem(basename, data)
         if audio_format == "mp3":
-            target = shared_dir / (Path(basename).stem + ".mp3")
+            target = shared_dir / (stem + ".mp3")
             # The level extractor fills this same directory, and for the same
             # reason: a sample another level (or another run) already
             # transcoded is left alone. `explgas.wav` is an ambient bed's
@@ -116,12 +122,12 @@ def build_sound_manifest(names, library, objects: ArchivePool,
             if not target.is_file():
                 transcode_to_mp3(data, target)
         else:
-            target = shared_dir / basename
+            target = shared_dir / (stem + Path(basename).suffix)
             if not target.is_file():
                 target.write_bytes(data)
         rel = str(Path(target).relative_to(rel_base)).replace("\\", "/") \
             if shared_dir.is_relative_to(rel_base) else target.name
-        seen[basename] = rel
+        seen[key] = rel
         return rel
 
     def read_script(path: str) -> str | None:
@@ -201,6 +207,9 @@ def main() -> int:
     ap.add_argument("--audio-format", choices=("mp3", "wav"), default="mp3")
     ap.add_argument("--no-sound", action="store_true",
                     help="bake the geometry only, leaving effects.sounds.json alone")
+    ap.add_argument("--sound-only", action="store_true",
+                    help="write effects.sounds.json and its samples only, "
+                         "leaving effects.glb and effects.report.json alone")
     args = ap.parse_args()
 
     started = time.time()
@@ -209,6 +218,8 @@ def main() -> int:
     library = build_library(objects)
     tables = load_damage_tables(game)
     names = effect_names(tables, library, args.name)
+    if args.sound_only:
+        return write_sound_manifest(args, chain, names, library, objects)
 
     assembler = Assembler(meshes, textures, objects, library,
                           include_collision=False, max_texture=args.max_texture)
@@ -237,6 +248,11 @@ def main() -> int:
 
     if args.no_sound:
         return 0
+    return write_sound_manifest(args, chain, names, library, objects)
+
+
+def write_sound_manifest(args, chain, names, library, objects) -> int:
+    """`effects.sounds.json` and the samples it names."""
     if not ffmpeg_available() and args.audio_format == "mp3":
         print("ffmpeg not found — effect sound skipped (the samples ship as "
               "mp3 or not at all)", file=sys.stderr)

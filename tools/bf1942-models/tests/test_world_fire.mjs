@@ -294,7 +294,7 @@ function loopFire(ctx, clock, duration = 0.09) {
   await settle();
   // Before any frame: the listener's own world point (the fake's origin).
   fire.play('BAR1918', { x: 40, y: 0, z: 0 });
-  let snap = fire.weapons.get('BAR1918').slots[0].audio.snapshot();
+  let snap = fire.weapons.get('bar1918').slots[0].audio.snapshot();
   assert.ok(Math.abs(snap.layers[0].distance - 40) < 1e-6, `measured from the listener: ${snap.layers[0].distance}`);
   assert.equal(snap.layers[0].gain, 0, 'the near layer is out at 40 m');
   assert.ok(snap.layers[1].gain > 0.4, `the far layer sounds at 40 m: ${snap.layers[1].gain}`);
@@ -302,7 +302,7 @@ function loopFire(ctx, clock, duration = 0.09) {
   fire.update(1 / 30, { x: -20, y: 0, z: 0 });
   await new Promise(r => setTimeout(r, 1100));
   fire.play('BAR1918', { x: 40, y: 0, z: 0 });
-  snap = fire.weapons.get('BAR1918').slots.find(s => s._pos.x === 40).audio.snapshot();
+  snap = fire.weapons.get('bar1918').slots.find(s => s._pos.x === 40).audio.snapshot();
   assert.ok(Math.abs(snap.layers[1].distance - 60) < 1e-6, `from the camera the page tracks: ${snap.layers[1].distance}`);
   assert.ok(snap.layers[1].rolloff < 1, 'and DirectSound\'s fall-off applies past the minimum distance');
   fire.dispose();

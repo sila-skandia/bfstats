@@ -2274,6 +2274,15 @@
    "note": "Base class (vehicle guns): fire(+0x1ac) -= fireDev.c (no devMod), clamp 0; total(+0x1a8) = minDev(+0x4f8) + fire + aiPending(+0x1b0, zeroed). Matches lnxded 0x0828d410. Tail-called by HandFireArms::updateDeviation when holder is not a BFSoldier."
   },
   {
+   "address": "0x00539fb0",
+   "name": "FireArms__updateSound",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Client twin of lnxded 0x0828cc10. Once no round for 1/soundStreamUpdateFrequency: release patch 5, trigger 2 and 3, and 4 at most once per 0.5..1.5 s; then setAttachToListener. Ledger SND-12, SND-3."
+  },
+  {
    "address": "0x0053a110",
    "name": "FireArmsTemplate::makeScript",
    "kind": "function",
@@ -2288,8 +2297,8 @@
    "kind": "function",
    "subsystem": "weapons",
    "confidence": "verified",
-   "source": "research-2026-09-27-round-replay",
-   "note": "Client twin of lnxded 0x0828a090 (thiscall, one IPlayer*). Every round the client simulates goes through it: its own player's from input, every remote player's (bots included) from the replicated fire flags via GameClient's loop 0x004b90d0 -> vehicle handleMessage(6/7). Remote tracers are local projectiles. bf42plus hooks its commit point 0x0053dcb1. features/round-replay-capture/README.md 14."
+   "source": "research-2026-09-27-round-replay; ghidra-headless-2026-09-30-dc-sound",
+   "note": "Client twin of lnxded 0x0828a090 (thiscall, one IPlayer*). Every round the client simulates goes through it: its own player's from input, every remote player's (bots included) from the replicated fire flags via GameClient's loop 0x004b90d0 -> vehicle handleMessage(6/7). Remote tracers are local projectiles. bf42plus hooks its commit point 0x0053dcb1. features/round-replay-capture/README.md 14. 2026-09-30: per round, past the rate gate and with ammunition, sound(+0x110)->vt+0xc(0) (the patch list) then trigger(0) and trigger(5) at 0x0053d8c2..0x0053d8e4; +0x260 = 0, +0x255 = 1, +0x256 = 0. Ledger SND-13."
   },
   {
    "address": "0x0053dcb1",
@@ -5550,6 +5559,15 @@
    "note": "Top-level `.ssc` parse: open, then `while (!atEof()) { readLine 0x007f9ed0; handleLine 0x007fb150 -> 0x007fb0e0; }`, then finalize 0x007f9db0 and resetParseState 0x007fb040. The EOF test walks the include stack (the stream array at 0x00a8fc5c), so every `#include` is read through this same loop and the same globals."
   },
   {
+   "address": "0x007fdb10",
+   "name": "SoundScript__cmdRandomPlay",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Command 18 of the .ssc table: patch description vt+0x30 (0x007ffd00) with atoi(arg). Ledger SND-15."
+  },
+  {
    "address": "0x007fde70",
    "name": "SoundScript__registerCommands",
    "kind": "function",
@@ -5559,6 +5577,15 @@
    "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order \u2014 load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it \u2014 they are handled by the pipeline filters ahead of it."
   },
   {
+   "address": "0x007ffd00",
+   "name": "SoundPatchDesc__setRandomPlay",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Stores the randomPlay word on the CURRENT sample description (+4 -> +0x30). Ledger SND-15."
+  },
+  {
    "address": "0x007fff80",
    "name": "TransformNode__getPosition",
    "kind": "function",
@@ -5566,6 +5593,105 @@
    "confidence": "verified",
    "source": "research-2026-09-15-minimap",
    "note": "return this+0xc (the position Vec2). BfMap__animate writes the minimap's position through it."
+  },
+  {
+   "address": "0x00800600",
+   "name": "SoundBuffer__ctor",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Sound buffer object (0xa4 bytes, vtable 0x00947b38); instance cap +0x3c = DAT_0095ac98 = 8. Ledger SND-14."
+  },
+  {
+   "address": "0x00800aa0",
+   "name": "SoundBuffer__stealInstance",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "A request past the 8-instance cap takes one from a priority heap (0x00801f30); a non-looping buffer always steals, a looping one only from a quieter voice. Ledger SND-14 (which one: inferred)."
+  },
+  {
+   "address": "0x008010f0",
+   "name": "SoundBuffer__newInstance",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Buffer vtable 0x00947b38 slot +0x20: frees or reuses an instance (0x00800be0) and returns a new instance id (+0x40). Ledger SND-14."
+  },
+  {
+   "address": "0x008020a0",
+   "name": "SoundPatch__setRandomPlay",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Patch vtable slot +0x18: if (value < loads so far) +0x5c = value. Called per load in order, so the last load decides. Ledger SND-15."
+  },
+  {
+   "address": "0x008022a0",
+   "name": "SoundPatch__startSample",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Starts sample i on a NEW buffer instance: resets the voice handle (0x007fc1b0), allocates (0x007fcc80 -> buffer vt+0x20) and plays (0x007fcd90); the previous instance is left to play out. Ledger SND-14."
+  },
+  {
+   "address": "0x008024c0",
+   "name": "SoundPatch__hasLoopingSample",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "True when any runtime sample (+0x2c[i]) has +0xc (the loop word) set; the trigger latch. Ledger SND-14."
+  },
+  {
+   "address": "0x00802580",
+   "name": "SoundPatch__release",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Patch vtable slot +0x0c. Stops looping samples unless stop FinishSample; one-shots play out. Ledger SND-14."
+  },
+  {
+   "address": "0x00802a40",
+   "name": "SoundPatch__updateSample",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Per-sample update: volume <= 0 stops a loop only (0x00802210); else starts it (0x008022a0) when just triggered, looping, released or not yet started. Ledger SND-14."
+  },
+  {
+   "address": "0x00802db0",
+   "name": "SoundPatch__addSample",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Adds one load: a path containing /silence.wav (string 0x00a8ff98) gets null slots but still counts; otherwise registers the buffer by (name, 3D, loop, stream). Ledger SND-15."
+  },
+  {
+   "address": "0x00803020",
+   "name": "SoundPatch__build",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Builds a runtime patch from its description: per load, 0x00802db0 (counts silence.wav as a load), then slot +0x18 (0x008020a0) with the load's randomPlay word, then 0x00802120. Ledger SND-15."
+  },
+  {
+   "address": "0x008030a0",
+   "name": "SoundPatch__trigger",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Patch vtable 0x00947bb8 slot +0x08. Ignored while latched (+0x59); else +0x58 = 1, clears per-sample started/played flags, latches when any sample loops (0x008024c0); randomPlay (+0x5c) pushes rand() % loads onto +0x78. Ledger SND-14, SND-15."
   },
   {
    "address": "0x00804af0",
@@ -6412,6 +6538,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-mesh-formats",
    "note": "Eight u32: 4, 1, 2, 3, 4, 5, 6, 4. RendPCDX8_drawPrimitives (0x00667dee) indexes it by primitive type with no range check: 1-6 map to themselves (the D3DPRIMITIVETYPE values), 0 and 7 fall back to 4, the triangle list."
+  },
+  {
+   "address": "0x0095ac98",
+   "name": "g_soundInstancesPerBuffer",
+   "kind": "data",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-dc-sound",
+   "note": "Instances per sound buffer, 8. Read by 0x00800600 into +0x3c. Ledger SND-14."
   },
   {
    "address": "0x0095f8d4",
@@ -8905,6 +9040,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-baf-tomat",
    "note": "lnxded twin of client 0x00461690, the same formula term for term, hand-traced through the x87 stack: fdivr against 2.0 at 0x086c08c4, the same six zeroed indices, and index 15 a fld1 that survives to its fst, i.e. 1.0."
+  },
+  {
+   "address": "0x08228710",
+   "name": "dice::ref2::world::EngineNetworkable::predict(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-30-dc-wheels",
+   "note": "lnxded. A remote client's Engine state: after the running-byte early-out (+0x1d) it queryInterfaces the composite (vtable +0x28) for the PhysicsEngine and copies the received record into registers only -- Engine+0x142/+0x143 (running), PhysicsEngine+0xb4 (brake), +0xbc (gear), Engine+0x104/+0x108/+0x10c (the three clipped angles, pitch zeroed), +0x110..+0x118 (angular speeds), PhysicsEngine+0xa0 (revs) and +0xb0 (steering term). No setState, setRotation or transform setter anywhere in 0x08228710-0x08228950, so an Engine's angles never pose its node on a client either. Ledger PHY-15."
   },
   {
    "address": "0x0823e120",
@@ -12523,6 +12667,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-vehicle-hud",
    "note": "lnxded. The ICameraObject group starts at sym+0x148, so its vptr is sym+0x150 and getViewMode() const is at vptr+0x14 - the slot the client calls to test == 3 for ShowTurretIcon. See ledger VHUD-9 and SEAT-10."
+  },
+  {
+   "address": "0x0872bc60",
+   "name": "vtable for dice::ref2::world::Engine",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-30-dc-wheels",
+   "note": "lnxded, nm -C. vptr = symbol + 8. +0x54 is Engine::handleUpdate 0x0823e120 (overriding RotationalBundle::handleUpdate 0x081d78e0, which alone of the two calls setRotation 0x08060d30, Bundle::getBundleTransformation 0x081a7440 and the node's setter), +0x98 handlePlayerInput 0x0823e5e0, +0x9c handleMessage 0x0823e730, +0xcc initNetworkableComp 0x0823ebe0 (an EngineNetworkable, not a RotationalBundleNetworkable), +0xe0 updateSound 0x0823e930. Ledger PHY-15."
   },
   {
    "address": "0x0872bd80",

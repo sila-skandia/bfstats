@@ -314,6 +314,13 @@ one of them groups under the same `patch: -1` and plays exactly as before.
 Closing G12 for FireArms (11 of 171 patches) and HandFireArms (20 of 113)
 means changing `_sound_layers` and re-extracting every level.
 
+*2026-09-30:* read out of the client (ledger SND-15). `randomPlay` does mean
+pick one, but it is stored on the load it follows and the patch picks only when
+its LAST load carries it; the roll counts `silence.wav` loads. `_sound_layers`
+now stamps `patch`, `randomPlay`, `slot` and `slots` on a picking patch's
+layers (`features/vehicle-sound-coverage/README.md` D9); the DC trees are
+re-extracted, the vanilla packs' are not yet.
+
 ### The voice budget is the game's own number
 
 `.ssc` has **no instance-limit word at all**. A census of every directive in
