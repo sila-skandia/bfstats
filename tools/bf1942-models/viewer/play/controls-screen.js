@@ -25,6 +25,7 @@ import { createMenuPack } from './menu-pack.js';
 import { elementVisible, inRect, measureText, paintElement, stageScale } from './menu-screen.js';
 import { beginStage, pointerToVirtual } from './stage.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
+import { stored, VANILLA } from '../mods.js';
 import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
 import { createControlsPreview } from '../controls-preview.js';
 
@@ -145,7 +146,14 @@ export function createControlsScreen({
 
   // --- loading ---------------------------------------------------------------
 
-  async function load(modId = 'bf1942') {
+  /** `modId` defaults to the active mod the other tabs follow (`?mod=`, else
+   *  the one CUSTOM GAME last picked): its pack carries its own background
+   *  plate, so Desert Combat's OPTIONS is Desert Combat's. The profile folder
+   *  the help text names stays `Mods/BF1942/Settings/Profiles` under every
+   *  mod: `settingsPath` starts as `mods/BF1942/` (BF1942.exe 0x00456f63) and
+   *  switching mods moves only the mod path (0x004560d6), so a mod reads the
+   *  same profiles vanilla does. */
+  async function load(modId = (qs.get('mod') || stored() || VANILLA.id).toLowerCase()) {
     hudPaths = await loadHudPaths(modId, { bust, root }).catch(() => hudPaths);
     layout = await json(packUrl('controls-layout.json'));
     pack.use(layout);

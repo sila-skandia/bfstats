@@ -328,6 +328,8 @@ export function leafText(el, vars) {
  * Paint a flat draw list onto a 2D context already scaled to the layout's
  * virtual units. `res` is the page's end of it:
  *   texture(name)                      -> a drawable with width/height, or null
+ *   boundTexture(name)                 -> the same for a bound picture's live
+ *                                         value (optional; `texture` if absent)
  *   measure(fontId, text)              -> the face's advance, virtual units
  *   drawText(ctx, fontId, text, x, y, rgb)
  *   lineHeight(fontId)                 -> the face's line height
@@ -355,7 +357,14 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
         break;
       case 'picture': {
         const live = el.var ? vars[el.var] : null;
-        const img = res.texture(typeof live === 'string' && live ? textureKey(live) : el.texture);
+        // A bound picture shows the live value's art, which is the page's (the
+        // side's ticket flag), so `boundTexture` resolves it when the caller
+        // has one: the board's own copy of `flag_ticket_ger` is whatever the
+        // layout's literal default happened to be, not the mod's.
+        const bound = typeof live === 'string' && live;
+        const img = bound
+          ? (res.boundTexture || res.texture)(textureKey(live))
+          : res.texture(el.texture);
         if (!img) break;
         ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
         ctx.drawImage(img, x, y, w, h);

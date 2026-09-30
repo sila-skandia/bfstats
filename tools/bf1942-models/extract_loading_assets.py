@@ -262,15 +262,25 @@ def find_mod_music_file(
 
 
 def find_level_archives(levels_dir: Path | None, level_name: str) -> list[Path]:
-    """Find all RFA archives matching a level name, sorted patch-first (e.g. _003, _000, base)."""
+    """Find all RFA archives matching a level name, sorted patch-first (e.g. _003, _000, base).
+
+    A patch is `<name>_<digits>`, the way `bf42.level._level_archives_in`
+    and `bf42.modmenu._archives_in` read it. Any `<name>_` prefix used to
+    match, so Desert Combat's `Bocage_Day2.rfa` and `Bocage_Day3.rfa` -- two
+    other levels -- were taken as patches of `Bocage`, sorted ahead of it,
+    and Bocage loaded behind Day3's `setLoadPicture` (`dc_harrier`) instead
+    of its own `DC_Gazelle`. `El_Alamein`, `Kharkov`, `DC_No_Fly_Zone`,
+    `DC_Al_Nas` and `DC_LostVillage` were matched the same way; their
+    variants happen to name the same picture, so only Bocage's row moved.
+    """
     if not levels_dir or not levels_dir.is_dir():
         return []
     target = level_name.lower()
+    patch = re.compile(rf"^{re.escape(target)}(?:_\d+)?$")
     matches: list[Path] = []
     for f in levels_dir.iterdir():
         if f.is_file() and f.suffix.lower() == ".rfa":
-            stem = f.stem.lower()
-            if stem == target or stem.startswith(f"{target}_"):
+            if patch.match(f.stem.lower()):
                 matches.append(f)
     # Sort reverse so patches (e.g. _003) precede base archive
     return sorted(matches, key=lambda p: p.stem.lower(), reverse=True)

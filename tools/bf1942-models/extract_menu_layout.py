@@ -784,7 +784,7 @@ def level_title(level_dir: str, titles: dict[str, tuple[str, str]] | None) -> tu
     return format_map_title(level_dir), "extract_loading_assets.format_map_title"
 
 
-def load_flag_mesh_nations(mod_id: str) -> dict[str, str]:
+def load_flag_mesh_nations(mod_id: str, hud_pack: Path | None = None) -> dict[str, str]:
     """The mod's own `hud.json['flagMeshNation']` -- the exact table
     `viewer/nation.js` fetches into `hudPack.nations` at runtime, read from
     the same file rather than re-derived, so a level's team nation computed
@@ -793,8 +793,14 @@ def load_flag_mesh_nations(mod_id: str) -> dict[str, str]:
     `extract_hud_pack.py`/`extract_hud_mods.py` normally runs first -- so a
     level still gets a nation, just SKIN_NATION's rather than the level's
     own.
+
+    `hud_pack` is the complete sprite pack to read, when it is not the
+    mod's published one: `extract_hud_mods.py` builds a mod's pack in a
+    staging directory and runs this before anything reaches the
+    destination, so reading `hud_dir_for(mod_id)` there found last run's
+    pack, or none, and a mod pack's levels came out with no nation.
     """
-    path = hud_dir_for(mod_id) / "hud.json"
+    path = (hud_pack or hud_dir_for(mod_id)) / "hud.json"
     try:
         data = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
@@ -803,6 +809,20 @@ def load_flag_mesh_nations(mod_id: str) -> dict[str, str]:
               "will fall back to SKIN_NATION alone", file=sys.stderr)
         return {}
     return data.get("flagMeshNation") or {}
+
+
+def load_soldier_nations(mod_id: str, hud_pack: Path | None = None) -> dict[str, str]:
+    """soldier template (lowercased) -> the nation its own team art names
+    (`soldier-icons.json`, `extract_hud_pack.py`): IraqSoldier -> `ger`,
+    Desert Combat's Iraqi art in the German slot. Empty when the pack has no
+    such file (one built before it existed); `SKIN_NATION` then stands in."""
+    path = (hud_pack or hud_dir_for(mod_id)) / "soldier-icons.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {name: entry["nation"] for name, entry in data.items()
+            if isinstance(entry, dict) and entry.get("nation")}
 
 
 def team_nation_from_level(gameplay, team: int,
@@ -864,7 +884,8 @@ def team_nation_from_level(gameplay, team: int,
 
 def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                  force: bool, titles: dict[str, tuple[str, str]] | None = None,
-                 nations: dict[str, str] | None = None
+                 nations: dict[str, str] | None = None,
+                 soldier_nations: dict[str, str] | None = None
                  ) -> dict | None:
     """One level: its title, both sides' nations and its menu thumbnail.
 
@@ -920,7 +941,12 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
             nation = team_nation_from_level(gameplay, team, nations or {})
             nation_source = "level"
             if nation is None:
-                nation = SKIN_NATION.get(skin.lower())
+                # The skin's own team art first (`soldier-icons.json`): the
+                # nation its `setTeamFlagIcon`/`setControlPointIcon` name,
+                # which covers a mod's army this table never listed (Desert
+                # Combat's IraqSoldier on Midway, which flies no flag).
+                nation = ((soldier_nations or {}).get(skin.lower())
+                          or SKIN_NATION.get(skin.lower()))
                 nation_source = "skin"
             record[key] = {"skin": skin, "nation": nation,
                            "flag": f"icon_flag_{nation}" if nation else None,
@@ -966,16 +992,18 @@ def chain_level_archives(chain: list[Path]) -> dict[str, list[Path]]:
 
 def extract_levels(archives, out_dir: Path, force: bool,
                    titles: dict[str, tuple[str, str]] | None = None,
-                   nations: dict[str, str] | None = None) -> dict:
+                   nations: dict[str, str] | None = None,
+                   soldier_nations: dict[str, str] | None = None) -> dict:
     """`archives` is either one `Archives` directory or a name -> archives
     mapping already merged over a mod chain. `nations` is
-    `load_flag_mesh_nations`'s table for this mod."""
+    `load_flag_mesh_nations`'s table for this mod, `soldier_nations`
+    `load_soldier_nations`'s."""
     by_name = (archives if isinstance(archives, dict)
                else level_archives(archives))
     levels = []
     for name, paths in sorted(by_name.items()):
         record = level_record(name, paths, out_dir / "thumbnails", force,
-                              titles, nations)
+                              titles, nations, soldier_nations)
         if record is not None:
             levels.append(record)
     listed = sum(1 for level in levels if level["singlePlayer"])
@@ -985,7 +1013,8 @@ def extract_levels(archives, out_dir: Path, force: bool,
                   "flag (its uncapturable main base first, otherwise the "
                   "majority of the flags the team starts holding -- "
                   "team_nation_from_level, the flag-mesh table from "
-                  "flag_mesh_nations), falling back to SKIN_NATION only "
+                  "flag_mesh_nations), falling back to the skin's own team "
+                  "art (soldier-icons.json) and then SKIN_NATION only "
                   "when the level gives no answer (see each level's own "
                   "nationSource). Menu/thumbnail.[dds|tga], title from "
                   "lexiconAll.dat keyed on the level's directory name "
@@ -1021,6 +1050,10 @@ def main() -> None:
                              f"pack dir, {VIEWER_MENU_DIR} for vanilla)")
     parser.add_argument("--force", action="store_true",
                         help="re-encode textures, thumbnails and font atlases")
+    parser.add_argument("--hud-pack", type=Path, default=None,
+                        help="the complete sprite pack whose hud.json and "
+                             "soldier-icons.json give each level's nations "
+                             "(default: the mod's own pack dir)")
     args = parser.parse_args()
 
     game_dir = args.game_dir.expanduser()
@@ -1041,9 +1074,10 @@ def main() -> None:
     # The same flag-mesh table `viewer/nation.js` fetches into `hudPack.nations`
     # for this mod, so a level's nation here can never drift from the one the
     # live scene draws for it.
-    nations = load_flag_mesh_nations(sources.mod_id)
+    nations = load_flag_mesh_nations(sources.mod_id, args.hud_pack)
     levels = extract_levels(chain_level_archives(sources.chain), out,
-                            args.force, titles, nations)
+                            args.force, titles, nations,
+                            load_soldier_nations(sources.mod_id, args.hud_pack))
     (out / "menu-levels.json").write_text(json.dumps(levels, indent=1) + "\n")
 
     # Decoded after the levels, because which nation flags the screen needs

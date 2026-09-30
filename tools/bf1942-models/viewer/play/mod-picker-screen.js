@@ -21,7 +21,7 @@ import { beginStage, pointerToVirtual } from './stage.js';
 import { loadMods, remember, servable, stored, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import {
-  hitTestPanel, paintPanel, scrollBy as pickerScrollBy,
+  hitTestPanel, paintPanel, scrollBy as pickerScrollBy, webAddress,
 } from './mod-picker.js';
 
 /**
@@ -139,7 +139,7 @@ export function createModPicker({
       return;
     }
     if (hit.kind === 'button' && hit.action === 'website') {
-      const url = picker.mods.find(m => m.id === picker.activeId)?.url;
+      const url = webAddress(picker.mods.find(m => m.id === picker.activeId));
       if (url) window.open(url, '_blank', 'noopener,noreferrer');
     }
   }

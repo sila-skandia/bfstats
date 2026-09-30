@@ -173,9 +173,17 @@ function paintThumb(ctx, layout, box, ui) {
   ctx.fillRect(tx, ty + span[0] * th, tw, span[1] * th);
 }
 
+/** The mod's `setCustomGameUrl` when it is a web address, else null. The
+ *  dialog prints the line whatever it says, but DC Final's is a sentence
+ *  ("The final installment...."), and VISIT WEB PAGE opens only an address. */
+export function webAddress(mod) {
+  const url = mod?.url;
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+}
+
 function paintWebsiteButton(ctx, layout, ui, env) {
   const mod = ui.mods.find(m => m.id === ui.activeId);
-  if (!mod?.url) return;
+  if (!webAddress(mod)) return;
   const font = env.font('standard6');
   const rect = footerButton(layout);
   const over = ui.hover?.kind === 'button' && ui.hover.action === 'website';
@@ -207,6 +215,6 @@ export function hitTestPanel(layout, ui, x, y) {
     if (by) return { kind: 'arrow', by, rect: el.rect };
   }
   const mod = ui.mods.find(m => m.id === ui.activeId);
-  if (mod?.url && inRect(footerButton(layout), x, y)) return { kind: 'button', action: 'website' };
+  if (webAddress(mod) && inRect(footerButton(layout), x, y)) return { kind: 'button', action: 'website' };
   return null;
 }

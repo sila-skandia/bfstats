@@ -374,5 +374,13 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(94, names[0][2])
 
 
+    def test_a_bound_picture_resolves_through_the_hud_pack_first(self) -> None:
+        # The live ticket flag is the mod's own HUD art; the board's copy of
+        # the same name is the layout's literal default (audit H2).
+        b = self.results["bound"]
+        self.assertEqual(["hud:flag_ticket_ger", "board:flag_ticket_ger"], b["drawn"])
+        self.assertEqual(["board:flag_ticket_ger"], b["withoutBound"])
+
+
 if __name__ == "__main__":
     unittest.main()

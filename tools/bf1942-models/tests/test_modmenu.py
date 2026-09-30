@@ -40,6 +40,23 @@ HAVE_EOD = EOD_MENU.exists()
 # --------------------------------------------------------------- LayeredArchive
 
 @unittest.skipUnless(HAVE_GAME, "needs the BF1942 install")
+class HudModsStepsTests(unittest.TestCase):
+    """What a mod pack is built from (audit H2, M1, H4)."""
+
+    def test_the_board_and_the_front_end_are_built_per_mod(self) -> None:
+        steps = dict(ehm.STEPS)
+        self.assertEqual("scoreboard", steps["extract_scoreboard_layout.py"])
+        self.assertEqual("menu", steps["extract_main_menu_layout.py"])
+        self.assertEqual("menu", steps["extract_controls_menu_layout.py"])
+
+    def test_the_instant_battle_levels_read_this_runs_sprite_pack(self) -> None:
+        order = [script for script, _ in ehm.STEPS]
+        self.assertLess(order.index("extract_hud_pack.py"), order.index("extract_menu_layout.py"))
+        staging = Path("/staging/pack")
+        self.assertEqual(["--hud-pack", str(staging)],
+                         ehm.EXTRA_ARGS["extract_menu_layout.py"](staging))
+
+
 class OneArchiveChainTests(unittest.TestCase):
     """A chain of one is that archive: same names, same order, same bytes.
 
