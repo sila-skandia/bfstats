@@ -98,8 +98,10 @@ from bf42.level import (  # noqa: E402
     parse_static_objects,
     parse_terrain_con,
     parse_soldier_spawn_templates,
+    SoldierSpawnTemplate,
     tickets_for_mode,
     _commands,
+    _opt_int,
     resolve_ssc_path,
     spawn_vehicle,
 )
@@ -142,6 +144,80 @@ def _mod_dirs(game_dir: Path, names: list[str]) -> list[Path]:
         seen.add(hit.name.lower())
         out.append(hit)
     return out
+
+
+def chain_level_archives(chain: list[Path]) -> list[Path]:
+    """Every level archive the mod chain mounts, in first-wins order.
+
+    The nearest mod first, and each level's numbered patches (highest first)
+    ahead of its base, the way `game.addModPath` and the patch overlay
+    resolve one path. A parent's copy of a level still answers for the files
+    the nearer copy does not ship (DC Final's `DC_Basrah_Nights.rfa` carries
+    four files; Desert Combat's carries the level).
+    """
+    from bf42.roster import level_patches
+    from bf42.rfa import find_levels_dir
+    out: list[Path] = []
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        levels_dir = find_levels_dir(archives) if archives is not None else None
+        if levels_dir is None:
+            continue
+        found = sorted((p for p in levels_dir.iterdir()
+                        if p.is_file() and p.suffix.lower() == ".rfa"),
+                       key=lambda p: p.name.lower())
+        stems = {p.stem.lower() for p in found}
+        for child in found:
+            base, sep, suffix = child.stem.rpartition("_")
+            if sep and suffix.isdigit() and base.lower() in stems:
+                continue                    # a patch: listed with its base
+            out.extend([*level_patches(child), child])
+    return out
+
+
+# The first folder of a script the pipeline reads with a reader of its own,
+# not as object templates: the level's settings (`Init.con`,
+# `Init/SkyAndSun.con`, `Init/Terrain.con`), its sound scripts and its menu.
+_SCRIPTS_READ_ELSEWHERE = ("init", "sound", "sounds", "menu")
+
+
+def level_object_scripts(files: LevelFiles) -> set[str]:
+    """The object scripts the level's `Init.con` runs outside its `Objects/`.
+
+    `Game::load` runs the level's `Init.con` (lnxded 0x0805b785) and every
+    template a script it `run`s declares is the level's. Most levels keep
+    them under `Objects/` (`run objects/objects`), which `add_level_objects`
+    takes whole; some do not: Al Nas runs a root `objects.con` (its bridges,
+    bridge huts and market stands), Twin Rivers another, and Coastal Hammer
+    `CustomObjects/INIT` (its houses, sidewalk blocks and planks). The run
+    graph is followed the way a host runs it (`_host_lines`, `_resolve_run`),
+    and returned as lower-case archive paths for `add_level_objects(extra=)`.
+    """
+    from bf42.level import _INCLUDE_LINE, _host_lines, _level_relative, _resolve_run
+    init = files.find("Init.con")
+    if init is None:
+        return set()
+    found: set[str] = set()
+    seen: set[str] = set()
+
+    def walk(path: str, depth: int) -> None:
+        if path.lower() in seen or depth > 12:
+            return
+        seen.add(path.lower())
+        rel = _level_relative(files, path).replace("\\", "/").lower()
+        head = rel.split("/", 1)[0] if "/" in rel else ""
+        if depth and head not in _SCRIPTS_READ_ELSEWHERE and head != "objects":
+            found.add(path.lower())
+        text = files.read(path).decode("latin-1", "replace")
+        for line in _host_lines(text, []):
+            match = _INCLUDE_LINE.match(line)
+            if match:
+                target = _resolve_run(files, path, match.group(1))
+                if target is not None:
+                    walk(target, depth + 1)
+
+    walk(init, 0)
+    return found
 
 
 def _vanilla_texture_rfa_present(chain: list[Path]) -> bool:
@@ -2069,159 +2145,250 @@ def _global_spawn_group_teams(game) -> dict[int, int]:
     return parse_spawn_point_manager(text)
 
 
-_OBJECT_CREATE = re.compile(r"(?im)^\s*objecttemplate\.create\s+\S+\s+(\S+)")
-# Per objects pool: template name (lower) -> the Objects.con that creates it.
-_objects_con_index: "weakref.WeakKeyDictionary[object, dict[str, str]]" = \
-    weakref.WeakKeyDictionary()
+class _Block:
+    """One `ObjectTemplate.create` block: its kind, its children, and, for a
+    `SpawnPoint`, the words the spawn report reads."""
+
+    __slots__ = ("name", "kind", "source", "order", "children", "spawn")
+
+    def __init__(self, name: str, kind: str | None, source: str, order: int) -> None:
+        self.name = name
+        self.kind = kind
+        self.source = source
+        self.order = order
+        # [child (lower), (x, y, z), yaw] per `addTemplate`, in the order added.
+        self.children: list[list] = []
+        self.spawn: SoldierSpawnTemplate | None = None
 
 
-def _created_templates(text: str) -> set[str]:
-    return {m.group(1).lower() for m in _OBJECT_CREATE.finditer(con_mod.strip_comments(text))}
+class LevelFirst:
+    """An objects pool whose `names()` list the level's own scripts first.
 
-
-def _vehicle_objects_con(objects, vehicle: str) -> str | None:
-    """The text of the `Objects.con` that `ObjectTemplate.create`s `vehicle`.
-
-    A ship's folder is usually named after it, but not always: Omaha Beach's
-    destroyer is `Fletcher2`, the second hull `Sea/fletcher/Objects.con`
-    creates, and Midway, Guadalcanal and the Philippines spawn it and
-    `Hatsuzuki2` too. The folder guesses go first, since they are the pool's
-    own priority for that path (Coral Sea's carriers override from the
-    level's archive); anything else is found by scanning the pool's
-    `Vehicles/Sea` Objects.con files once.
+    On a level load the engine empties the template namespace
+    (`Game::load` 0x0805b4b0 calls `ObjectTemplateManager::deleteAll`,
+    vtable +0x2c, at 0x0805b77b), runs the level's `Init.con` and the object
+    scripts it runs (0x0805b785..), and only then every `.con` under
+    `objects/` (`Game::loadAllConFiles` at 0x0805bc39); the client loads in
+    the same order (BF1942.exe 0x00410d2a..0x00410e5c, then `objects/` at
+    0x00410fba). A `create` of a name already declared makes nothing, for an
+    ObjectTemplate (`ObjectTemplateManager::createTemplate` 0x081d5a30) and a
+    GeometryTemplate alike (`GeometryTemplateManager::createTemplate`
+    0x0838ad40: the name is found, the active template is set to none). So a
+    template a level declares beats the mod's own of the same name: Basrah
+    Nights' street lamp (its own mesh, its own alpha-tested light cone) over
+    Desert Combat's, Operation Bragg's cockpits, Twin Rivers' fences. The
+    library and the `TemplateIndex` read the pool in this order; the pool's
+    paths keep their own rule (`ArchivePool.add_level_objects`).
     """
-    key = vehicle.lower()
-    for rel in (f"Objects/Vehicles/Sea/{vehicle}/Objects.con",
-                # Coral Sea's carriers live in the level's own archive,
-                # directly under `Objects/` — no Vehicles/Sea rung.
-                f"Objects/{vehicle}/Objects.con"):
-        blob = objects.try_read(rel)
-        if blob is not None:
-            text = blob.decode("latin-1", "replace")
-            if key in _created_templates(text):
-                return text
-    index = _objects_con_index.get(objects)
-    if index is None:
-        index = {}
-        for name in objects.names():
+
+    def __init__(self, pool) -> None:
+        self._pool = pool
+
+    def names(self) -> list[str]:
+        names = self._pool.names()
+        own = [n for n in names if n.lower().startswith("bf1942/levels/")]
+        return own + [n for n in names if not n.lower().startswith("bf1942/levels/")]
+
+    def __getattr__(self, name: str):
+        return getattr(self._pool, name)
+
+
+class TemplateIndex:
+    """Every ObjectTemplate an objects pool declares, found by name.
+
+    The engine keeps one template namespace. A level's `Init.con` runs its own
+    object scripts (`run objects/objects`, DC Final's `run CustomObjects/INIT`)
+    and the server then runs every `.con` under `objects/`
+    (`Game::loadAllConFiles` 0x0805a830, called from `Game::load` at
+    0x0805bc39), and an `addTemplate` names a child that may be declared in any
+    of those files: No Fly Zone Day 2's hangars (level folder
+    `air_hangar_bunker_m1`) add `Opp_Airbase_Spawn`, a bundle its own file
+    `Opp_Airbase_Spawn_group/Opp_Airbase_Spawn.con` declares, which adds the
+    `SpawnPoint` that is the Iraqi side's only way onto the map. Urban Siege's
+    Nimitz is `Nimitz_Static_Heli_UrbS` in folder `objects/Nimitz`. Guessing
+    the file from the template's name found neither.
+
+    A second `create` of a name already declared makes nothing:
+    `ObjectTemplateManager::createTemplate` 0x081d5a30 finds the name and
+    returns with no active template, so the lines that follow configure
+    nothing. The first file to declare a name owns it, in the order the
+    engine runs them (`LevelFirst`: the level's own scripts, then the mod
+    chain's, nearest first). `active <name>` reopens a template wherever it
+    was declared.
+    """
+
+    def __init__(self, objects) -> None:
+        self.blocks: dict[str, _Block] = {}
+        seen: set[str] = set()
+        for name in LevelFirst(objects).names():
             lower = name.lower()
-            # Hulls only. XPack2's ParatrooperSpawner also creates SpawnPoints,
-            # but its group 101 is bound by no file, so the engine leaves it at
-            # team -1 and Essen's paradrop is dead in retail (SPAWNGRP-2).
-            if not (lower.endswith("objects.con") and "vehicles/sea/" in lower):
+            if not lower.endswith(".con") or lower in seen:
                 continue
+            seen.add(lower)
             blob = objects.try_read(name)
             if blob is None:
                 continue
-            for created in _created_templates(blob.decode("latin-1", "replace")):
-                index.setdefault(created, name)
-        _objects_con_index[objects] = index
-    rel = index.get(key)
-    blob = objects.try_read(rel) if rel else None
-    return blob.decode("latin-1", "replace") if blob is not None else None
+            text = blob.decode("latin-1", "replace")
+            if "objecttemplate" in text.lower():
+                self._add(name, text)
 
-
-def _scoped_child_offsets(text: str, root: str,
-                          wanted: set[str]) -> dict[str, list[tuple[float, float, float]]]:
-    """Where each `wanted` template sits in `root`'s bundle, in root's frame.
-
-    Only `root`'s own create block and the blocks it `addTemplate`s from the
-    same file count. One Objects.con holds several complete hulls — the
-    fletcher file creates `Fletcher` (spawn groups 68/69), `FletcherStatic`
-    (68/69 again) and `Fletcher2` (80/81) — and reading every `addTemplate` in
-    the file hung all of them on each hull. Most ships add their deck points
-    one level down, `Enterprise` -> `lodEnterprise` -> `EnterpriseComplex`,
-    so the walk follows children, composing each one's `setPosition` and yaw.
-    A template added twice yields one entry per add, port and starboard.
-    """
-    children: dict[str, list[list]] = {}
-    current: list[list] | None = None
-    last: list | None = None
-    for ns, cmd, args in _commands(text):
-        if ns != "objecttemplate":
-            continue
-        tokens = args.split()
-        if cmd == "create":
-            current = children.setdefault(tokens[1].lower(), []) if len(tokens) >= 2 else None
-            last = None
-        elif cmd in ("active", "activesafe"):
-            current = children.setdefault(tokens[-1].lower(), []) if tokens else None
-            last = None
-        elif current is None:
-            continue
-        elif cmd == "addtemplate":
-            last = [tokens[0].lower(), (0.0, 0.0, 0.0), 0.0] if tokens else None
-            if last is not None:
-                current.append(last)
-        elif cmd in ("setposition", "setrotation") and last is not None:
-            try:
-                values = tuple(float(v) for v in args.split("/")[:3])
-            except ValueError:
+    def _add(self, source: str, text: str) -> None:
+        current: _Block | None = None
+        last: list | None = None
+        for ns, cmd, args in _commands(text):
+            if ns != "objecttemplate":
                 continue
-            if len(values) != 3:
+            tokens = args.split()
+            if cmd == "create":
+                last = None
+                current = None
+                if len(tokens) < 2:
+                    continue
+                key = tokens[1].lower()
+                block = self.blocks.get(key)
+                if block is None:
+                    block = self.blocks[key] = _Block(
+                        key, tokens[0].lower(), source, len(self.blocks))
+                elif block.kind is not None:
+                    continue            # declared already: this one makes nothing
+                else:                   # reopened by `active` before its create
+                    block.kind, block.source = tokens[0].lower(), source
+                current = block
+                if block.kind == "spawnpoint":
+                    block.spawn = SoldierSpawnTemplate(name=tokens[1])
+            elif cmd in ("active", "activesafe"):
+                last = None
+                current = None
+                if tokens:
+                    key = tokens[-1].lower()
+                    current = self.blocks.setdefault(
+                        key, _Block(key, None, source, len(self.blocks)))
+            elif current is None:
                 continue
-            if cmd == "setposition":
-                last[1] = values
-            else:
-                last[2] = values[0]
+            elif cmd == "addtemplate":
+                last = [tokens[0].lower(), (0.0, 0.0, 0.0), 0.0] if tokens else None
+                if last is not None:
+                    current.children.append(last)
+            elif cmd in ("setposition", "setrotation"):
+                # The child the last `addTemplate` added, and nothing else
+                # (`BundleTemplate::setPosition`, see `ObjectLibrary.add_con`).
+                if last is None:
+                    continue
+                try:
+                    values = tuple(float(v) for v in args.split("/")[:3])
+                except ValueError:
+                    continue
+                if len(values) != 3:
+                    continue
+                if cmd == "setposition":
+                    last[1] = values
+                else:
+                    last[2] = values[0]
+            elif current.spawn is not None:
+                spawn = current.spawn
+                if cmd == "setspawnid":
+                    spawn.spawn_id = _opt_int(tokens)
+                elif cmd == "setgroup":
+                    spawn.group = _opt_int(tokens)
+                elif cmd == "setspawnasparatroper":
+                    spawn.paratrooper = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
+                elif cmd == "setenteronspawn":
+                    spawn.enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
 
-    out: dict[str, list[tuple[float, float, float]]] = {}
+    def get(self, name: str) -> _Block | None:
+        block = self.blocks.get(name.lower())
+        return block if block is not None and block.kind is not None else None
 
-    def walk(name: str, origin: tuple[float, float, float], yaw: float,
-             stack: tuple[str, ...]) -> None:
-        cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
-        for child, (lx, ly, lz), child_yaw in children.get(name, []):
-            # The same con-frame yaw the hull's own pose applies below.
-            pos = (origin[0] + lx * cos_y + lz * sin_y,
-                   origin[1] + ly,
-                   origin[2] - lx * sin_y + lz * cos_y)
-            if child in wanted:
-                out.setdefault(child, []).append(pos)
-            elif child in children and child not in stack and len(stack) < 16:
-                walk(child, pos, yaw + child_yaw, stack + (child,))
+    def spawn_points(self, root: str) -> list[tuple[_Block, tuple[float, float, float]]]:
+        """Every `SpawnPoint` in `root`'s tree, with its offset in root's frame.
 
-    root = root.lower()
-    walk(root, (0.0, 0.0, 0.0), 0.0, (root,))
-    return out
+        Children are followed by name into whatever file declares them, one
+        `addTemplate` at a time, composing each one's `setPosition` and yaw:
+        most ships add their deck points one level down (`Enterprise` ->
+        `lodEnterprise` -> `EnterpriseComplex`), No Fly Zone's hangars two
+        (hangar -> `Opp_Airbase_Spawn` -> `Airbase_SoldierSpawn`), and a
+        template added twice yields one entry per add. Only root's own tree
+        counts: one Objects.con holds several complete hulls (the fletcher
+        file creates `Fletcher`, `FletcherStatic` and `Fletcher2`), and their
+        points are theirs. Grouped by spawn template in declaration order, each
+        template's points in the order the walk meets them.
+        """
+        found: dict[str, list[tuple[float, float, float]]] = {}
+
+        def walk(block: _Block, origin: tuple[float, float, float], yaw: float,
+                 stack: tuple[str, ...]) -> None:
+            cos_y, sin_y = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+            for child, (lx, ly, lz), child_yaw in block.children:
+                # The same con-frame yaw the hull's own pose applies below.
+                pos = (origin[0] + lx * cos_y + lz * sin_y,
+                       origin[1] + ly,
+                       origin[2] - lx * sin_y + lz * cos_y)
+                sub = self.get(child)
+                if sub is None:
+                    continue
+                if sub.spawn is not None:
+                    found.setdefault(child, []).append(pos)
+                elif sub.children and child not in stack and len(stack) < 16:
+                    walk(sub, pos, yaw + child_yaw, stack + (child,))
+
+        top = self.get(root)
+        if top is None:
+            return []
+        walk(top, (0.0, 0.0, 0.0), 0.0, (top.name,))
+        out = []
+        for name in sorted(found, key=lambda n: self.blocks[n].order):
+            out.extend((self.blocks[name], pos) for pos in found[name])
+        return out
+
+
+# Per objects pool, built on first use: a level's report asks once per mode.
+_template_indexes: "weakref.WeakKeyDictionary[object, TemplateIndex]" = \
+    weakref.WeakKeyDictionary()
+
+
+def template_index(objects) -> TemplateIndex:
+    index = _template_indexes.get(objects)
+    if index is None:
+        index = _template_indexes[objects] = TemplateIndex(objects)
+    return index
 
 
 def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                                   gameplay=None) -> list[dict]:
-    """The fleet's deck spawn points, reconstructed from the vehicle templates.
+    """The spawn points the spawned objects carry, from their templates.
 
-    A ship's own `Objects/Vehicles/Sea/<ship>/Objects.con` adds `SpawnPoint`
-    children — Wake's carrier carries three groups (the helm point and the
-    deck points by the boats and the aircraft), its destroyer two — and
-    `Game/GlobalSpawnGroups.con` binds each group to a side, so a team with no
-    flag of its own still has somewhere to spawn: Wake's Japanese round opens
-    on their ships. Each child is `addTemplate`-ed into the ship's bundle with
-    its own `setPosition` offset along the hull, so the points are spread
-    down the deck the way the spawn screen draws them, and the world position
-    here is the spawner's pad pose with that offset rotated through it.
+    A ship's template adds `SpawnPoint` children — Wake's carrier carries
+    three groups (the helm point and the deck points by the boats and the
+    aircraft), its destroyer two — and `Game/GlobalSpawnGroups.con` binds each
+    group to a side, so a team with no flag of its own still has somewhere to
+    spawn: Wake's Japanese round opens on their ships. A building an
+    ObjectSpawner places does the same: every spawn point of No Fly Zone Day
+    2 is inside a hangar, tower or radar dome (bundles such as
+    `Opp_Airbase_Spawn`, groups 97..99, the level's `SoldierSpawns.con` is
+    empty), and Weapon Bunkers' Iraqis spawn only in their bunkers. Each
+    child is `addTemplate`-ed into the object's bundle with its own
+    `setPosition` offset, so the points are spread down the deck the way the
+    spawn screen draws them, and the world position here is the spawner's pad
+    pose with that offset rotated through it. The children are found by name
+    wherever they are declared (`TemplateIndex`).
     """
     global_teams = _global_spawn_group_teams(game)
     layer_groups = (info.gameplay if gameplay is None else gameplay).spawn_groups
     spawns = info.spawn_objects if gameplay is None else gameplay.object_spawns
-    # Not `templates`: the loop below rebinds that name to the *ship's* own
-    # soldier-spawn templates, and reusing it here would feed the next
-    # iteration's `spawn_vehicle` a dictionary of SpawnPoints.
     spawner_specs = (info.spawn_templates if gameplay is None
                      else gameplay.object_spawn_templates)
+    index = template_index(objects)
     out: list[dict] = []
     seen_pads = set()
     for inst in spawns:
         vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
             continue
-        text = _vehicle_objects_con(objects, vehicle)
-        if text is None:
-            continue
-        templates = parse_soldier_spawn_templates(text)
-        # Each SpawnPoint instance in this hull's bundle, in the ship's local
-        # frame. A SpawnPoint the file defines but this hull never adds is
-        # another hull's, and gets no entry.
-        offsets = _scoped_child_offsets(text, vehicle, set(templates))
-        if not offsets:
+        # Each SpawnPoint instance in this object's tree, in its local frame.
+        # A SpawnPoint declared beside it that it never adds is another
+        # object's, and gets no entry.
+        points = index.spawn_points(vehicle)
+        if not points:
             continue
         # One transform per pad: the ships spawn at their spawner's pose.
         ox, oy, oz = inst.position
@@ -2232,59 +2399,59 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
             continue
         seen_pads.add(pad)
         pad_id = len(seen_pads)   # stable within one level report
-        for name, tpl in templates.items():
+        for block, (lx, ly, lz) in points:
+            tpl, name = block.spawn, block.name
             # A live `setEnterOnSpawn 1` is a seat-entry point, not a place to
             # stand; the helm points the fleet ships leave remmed are kept.
             if tpl.enter_on_spawn or tpl.group is None:
                 continue
-            for lx, ly, lz in offsets.get(name, []):
-                # Mirror the offset's z into the viewer's frame BEFORE rotating
-                # it. The pad origin is mirrored at output (`-oz` below) and the
-                # hull node carries `Ry(-yaw_con)` (`gltf.quat_from_ypr`), so
-                # rotating an unmirrored offset by `+yaw_con` and then mirroring
-                # the sum applies the flip twice and inverts both cross terms.
-                # This is `shipNode.localToWorld(lx, ly, -lz)` written out:
-                # rotating (lx, -lz) by -yaw_con.
-                #
-                # It put 26 of Midway's 26 deck spawns off their own hull, 21 of
-                # them over open water, which is why selecting a ship on the
-                # spawn screen dropped the soldier into the sea at the water
-                # level. Hatsuzuki's driver pad moved 41 m. Pad 8 appeared to
-                # work only because its yaw is 88.19 degrees, where cos is 0.03
-                # and the mis-signed term is worth under a metre.
-                vx = lx * cos_y + lz * sin_y
-                vz = lx * sin_y - lz * cos_y
-                # The LEVEL's own `spawnPointManagerSettings.con` first.
-                # `Game/GlobalSpawnGroups.con` binds the 64..77 range to the
-                # fleet's decks, and a level is free to reuse those numbers
-                # for something else entirely — Battle of Britain gives all
-                # four of its radar towers a group in that range and declares
-                # every one of them `groupTeam 2`. Reading the global file
-                # alone put three of the four on the German side of the
-                # spawn screen, which is the wrong end of the English Channel.
-                settings = layer_groups.get(tpl.group)
-                team = (settings.team if settings and settings.team is not None
-                        else global_teams.get(tpl.group))
-                # A group neither file binds keeps the engine's -1 and no side
-                # can spawn on it (ledger SPAWNGRP-2), so it is not a spawn;
-                # the spawner's own team is not a stand-in.
-                if team is None:
-                    continue
-                entry = {
-                    "vehicle": vehicle,
-                    "spawner": inst.template,
-                    "pad": pad_id,
-                    "name": name,
-                    "group": tpl.group,
-                    "team": team,
-                    "position": [round(ox + vx, 3), round(oy + ly, 3),
-                                 round(-oz + vz, 3)],
-                    "rotation": list(inst.rotation),
-                }
-                if tpl.paratrooper:
-                    entry["paratrooper"] = True
-                _stamp_audience(entry, settings)
-                out.append(entry)
+            # Mirror the offset's z into the viewer's frame BEFORE rotating
+            # it. The pad origin is mirrored at output (`-oz` below) and the
+            # hull node carries `Ry(-yaw_con)` (`gltf.quat_from_ypr`), so
+            # rotating an unmirrored offset by `+yaw_con` and then mirroring
+            # the sum applies the flip twice and inverts both cross terms.
+            # This is `shipNode.localToWorld(lx, ly, -lz)` written out:
+            # rotating (lx, -lz) by -yaw_con.
+            #
+            # It put 26 of Midway's 26 deck spawns off their own hull, 21 of
+            # them over open water, which is why selecting a ship on the
+            # spawn screen dropped the soldier into the sea at the water
+            # level. Hatsuzuki's driver pad moved 41 m. Pad 8 appeared to
+            # work only because its yaw is 88.19 degrees, where cos is 0.03
+            # and the mis-signed term is worth under a metre.
+            vx = lx * cos_y + lz * sin_y
+            vz = lx * sin_y - lz * cos_y
+            # The LEVEL's own `spawnPointManagerSettings.con` first.
+            # `Game/GlobalSpawnGroups.con` binds the 64..77 range to the
+            # fleet's decks, and a level is free to reuse those numbers
+            # for something else entirely — Battle of Britain gives all
+            # four of its radar towers a group in that range and declares
+            # every one of them `groupTeam 2`. Reading the global file
+            # alone put three of the four on the German side of the
+            # spawn screen, which is the wrong end of the English Channel.
+            settings = layer_groups.get(tpl.group)
+            team = (settings.team if settings and settings.team is not None
+                    else global_teams.get(tpl.group))
+            # A group neither file binds keeps the engine's -1 and no side
+            # can spawn on it (ledger SPAWNGRP-2), so it is not a spawn;
+            # the spawner's own team is not a stand-in.
+            if team is None:
+                continue
+            entry = {
+                "vehicle": vehicle,
+                "spawner": inst.template,
+                "pad": pad_id,
+                "name": name,
+                "group": tpl.group,
+                "team": team,
+                "position": [round(ox + vx, 3), round(oy + ly, 3),
+                             round(-oz + vz, 3)],
+                "rotation": list(inst.rotation),
+            }
+            if tpl.paratrooper:
+                entry["paratrooper"] = True
+            _stamp_audience(entry, settings)
+            out.append(entry)
     return out
 
 
@@ -2696,6 +2863,39 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     return builder.build(roots, extras={"level": info.name}), extras
 
 
+def mount_level_pools(ctx) -> None:
+    """Put the level's own textures and meshes, and every other level
+    archive of the chain, into the context's texture and mesh pools, the way
+    the engine mounts them for this level. Once per bake, before anything
+    resolves a texture or a mesh.
+    """
+    meshes, textures, _objects, _game = ctx.pools
+    info, paths = ctx.info, ctx.paths
+    textures.absorb_images(meshes)
+    # The level's own archives before any other level's, nearest mod and
+    # newest patch first (`paths` is farthest first, and the pool keeps the
+    # first registration): a texture two levels ship is this level's. Then the
+    # other levels, which only fill gaps.
+    for path in reversed(paths):
+        textures.add_level(path, label=info.name)
+    for level_name, level_path in discover_level_textures(ctx.chain):
+        textures.add_level(level_path, label=level_name)
+    # Every `textureManager.alternativePath`, probed in the order declared.
+    textures.set_alternative_paths(info.texture_alternative_paths)
+    # And its own meshes: a level's `StandardMesh/` folder is resolved by the
+    # engine exactly like the global archive, and it is where every mesh the
+    # vanilla extraction used to report missing actually lives.
+    for path in reversed(paths):
+        meshes.add_level_meshes(path, label=f"{info.name} meshes")
+    # Every level archive of the chain is mounted at its own path, so a level
+    # can name another's files: No Fly Zone Day 2's airbase is
+    # `../bf1942/levels/DC_No_Fly_Zone/standardMesh/...` and its
+    # `alternativePath` is that level's `Textures/`.
+    for level_path in chain_level_archives(ctx.chain):
+        textures.mount_level(level_path, (".dds", ".tga"))
+        meshes.mount_level(level_path, (".sm", ".rs"))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -2793,18 +2993,7 @@ def main() -> int:
     # round of material X does to a surface of material Y, and which authored
     # EffectBundle the impact plays. `terrain.materials` labels by it too.
     damage_tables = ctx.damage_tables
-    textures.absorb_images(meshes)
-    for level_name, level_path in discover_level_textures(ctx.chain):
-        textures.add_level(level_path, label=level_name)
-    for path in paths:
-        textures.add_level(path, label=info.name)
-    if info.texture_alternative_path:
-        textures.set_alternative_paths([info.texture_alternative_path])
-    # And its own meshes: a level's `StandardMesh/` folder is resolved by the
-    # engine exactly like the global archive, and it is where every mesh the
-    # vanilla extraction used to report missing actually lives.
-    for path in paths:
-        meshes.add_level_meshes(path, label=f"{info.name} meshes")
+    mount_level_pools(ctx)
     # The library carries the level's own templates and its control point
     # templates with the flag cloth detached (`LevelContext.library`).
     library = ctx.library
