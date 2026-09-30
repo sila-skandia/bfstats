@@ -185,6 +185,10 @@ export function createLevelTerrain(page) {
    *  (`bakedSearchMaps`, as the headless runner's `level.mjs` does), and
    *  `buildCollider` hands them to the collider, where `buildNavMap` looks. */
   async function loadSearchMaps(dir) {
+    // A level the game ships no AI for has no `ai` block and no `pathfinding/`
+    // (every level in every tree agrees); asking anyway is a 404 per load, on
+    // 13 DC and 25 DC Final levels.
+    if (!page.extras?.ai) return null;
     return loadBakedSearchMaps(`${page.MAPS_BASE}/${dir}`, { suffix: page.bust() });
   }
 

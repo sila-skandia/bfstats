@@ -1,6 +1,6 @@
 // A team's art is its SOLDIER's: the client takes each side's control-point
 // marker, base flag, ticket flag and team flag off the template
-// `Game::getTeamSkin(team)` names (BF1942.exe 0x006ac800, ledger HUD-20..22),
+// `Game::getTeamSkin(team)` names (BF1942.exe 0x006ac800, ledger HUD-11..13),
 // and draws every point on the map with its holder's (0x0046c1fb). The
 // pack carries each soldier's art as `soldier-icons.json`
 // (`extract_hud_pack.py`), and `soldierNation` below is the side's code from

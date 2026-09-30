@@ -114,7 +114,7 @@ export function createSoldierHud(page) {
   const soldierHud = {};
 
   // The stance icon is the local soldier's own template's
-  // (BF1942.exe 0x006ad639..0x006ad6ce, ledger HUD-22): its class checked
+  // (BF1942.exe 0x006ad639..0x006ad6ce, ledger HUD-12): its class checked
   // against the soldier's, then `getSoldierStandingIcon` / `Crouch` / `Prone`
   // (vtable +0xa0/+0xa8/+0xb0) by stance, handed to the HUD at 0x006e9430.
   // The pack's `soldier-icons.json` carries each template's three paths, so a
