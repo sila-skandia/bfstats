@@ -39,7 +39,9 @@ class CaptureOnlyFlagTests(unittest.TestCase):
 
     def test_a_spawnless_point_is_a_flag_after_the_others(self) -> None:
         flags = self.r["midway"]
-        self.assertEqual(["The_Airfield", "The_Radar_Bunker", "Enterprise", "Shokaku", "North_Midway", "South_Midway"],
+        # The two carriers' deck flags are labelled by their spawn points' own
+        # names: the spawn screen names no group, carried or not (SPAWNGRP-10).
+        self.assertEqual(["The_Airfield", "The_Radar_Bunker", "deck_us", "deck_jp", "North_Midway", "South_Midway"],
                          [f["name"] for f in flags])
         self.assertEqual([False, False, False, False, True, True], [f["captureOnly"] for f in flags])
         for sea in flags[4:]:
@@ -70,7 +72,7 @@ class CaptureOnlyFlagTests(unittest.TestCase):
     def test_the_law_takes_a_sea_area_and_the_round_weighs_it(self) -> None:
         law = self.r["law"]
         # The American starts on his carrier's deck, the side's one flag.
-        self.assertEqual("Enterprise", law["start"])
+        self.assertEqual("deck_us", law["start"])
         got = [(e["flag"], e["got"], e["from"]) for e in law["events"]]
         self.assertEqual([("North_Midway", 2, 0), ("South_Midway", 2, 0), ("The_Airfield", 2, 0)], got)
         # Ten seconds alone in each: `timeToGetControl 10`.

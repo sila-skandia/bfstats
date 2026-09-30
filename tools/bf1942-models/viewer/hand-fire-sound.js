@@ -81,7 +81,22 @@ export function createHandFireSound(page) {
       picks = await Promise.all(spec.randomPlay.map(file => (
         !file ? null : file === spec.file ? buffer : page.modelSoundBuffer(`sounds/${file}`))));
     }
-    return { spec, buffer, picks };
+    // The burst's edges (`extract_weapon_sounds._burst_edges`): the Fire
+    // Loop's one-shots once a press, and what a stop triggers. Decoded up
+    // front with the report; a manifest from before them has neither.
+    const decode = async pick => {
+      const edge = await page.modelSoundBuffer(`sounds/${pick.file}`);
+      return edge ? { ...pick, buffer: edge } : null;
+    };
+    const press = (await Promise.all((spec.press || []).map(decode))).filter(Boolean);
+    const release = [];
+    for (const group of spec.release || []) {
+      const loaded = (await Promise.all((group.picks || []).map(decode))).filter(Boolean);
+      if (loaded.length) release.push({ ...group, picks: loaded });
+    }
+    const fire = { spec, buffer, picks, press, release };
+    fire.playRelease = info => playHandRelease(fire, info);
+    return fire;
   }
 
   /** One more try for a weapon whose report never landed, asked from the shot
@@ -120,6 +135,9 @@ export function createHandFireSound(page) {
 
   function startHandFireLoop(fire) {
     if (sound.handFireLoop || !fire || !page.audioListener || page.masterVolume() <= 0) return;
+    // A new loop is a new press of the latched Fire Loop: its one-shots (a
+    // spin-up) sound once, with the loop (ledger SND-14).
+    for (const pick of fire.press || []) playEdge(pick);
     const ctx = page.audioListener.context;
     const source = ctx.createBufferSource();
     source.buffer = fire.buffer;
@@ -141,6 +159,60 @@ export function createHandFireSound(page) {
     // FinishSample: the cycle in flight completes, nothing is cut.
     if (sound.handFireLoop) sound.handFireLoop.source.loop = false;
     sound.handFireLoop = null;
+  }
+
+  /** One edge sample, as a round's one-shot plays: its own gain, jitter and
+   *  time gate, on the shared bus, under the same instance cap. */
+  function playEdge(pick) {
+    if (!pick?.buffer || !page.audioListener || page.masterVolume() <= 0) return;
+    const ctx = page.audioListener.context;
+    const source = ctx.createBufferSource();
+    source.buffer = pick.buffer;
+    const [up = 0, down = 0] = pick.randomStartPitch || [];
+    source.playbackRate.value = 1 + (Math.random() * (up + down) - down);
+    const gain = ctx.createGain();
+    gain.gain.value = Math.min(pick.volume ?? 1, 1);
+    source.connect(gain);
+    gain.connect(ensureHandFireBus(ctx));
+    capInstances(pick.buffer, source, gain);
+    try { source.start(ctx.currentTime + (pick.delay || 0)); } catch (_) {}
+  }
+
+  /**
+   * The burst is over (`gun-cycle.js` `releaseTick`, ledger SND-12, SND-16):
+   * Release and Shell Bounce, and MG distance when `distance` says its gate
+   * opened. A `randomPlay` patch rolls one of its `loads` (silence counted,
+   * SND-15), and a roll onto a load the shooter does not hear plays nothing.
+   */
+  function playHandRelease(fire, { distance = false } = {}) {
+    for (const group of fire?.release || []) {
+      if (group.slot === 4 && !distance) continue;
+      if (group.randomPlay) {
+        const load = Math.floor(Math.random() * (group.loads || group.picks.length));
+        playEdge(group.picks.find(pick => pick.load === load));
+      } else {
+        for (const pick of group.picks) playEdge(pick);
+      }
+    }
+  }
+
+  /** Hold `buffer` to the game's eight instances (SND-14), oldest out first. */
+  function capInstances(buffer, source, gain) {
+    let plays = handFirePlays.get(buffer);
+    if (!plays) handFirePlays.set(buffer, plays = []);
+    while (plays.length >= INSTANCES_PER_SAMPLE) {
+      const stolen = plays.shift();
+      stolen.source.onended = null;
+      try { stolen.source.stop(); } catch (_) {}
+      try { stolen.source.disconnect(); stolen.gain.disconnect(); } catch (_) {}
+    }
+    const play = { source, gain };
+    plays.push(play);
+    source.onended = () => {
+      const at = plays.indexOf(play);
+      if (at >= 0) plays.splice(at, 1);
+      try { source.disconnect(); gain.disconnect(); } catch (_) {}
+    };
   }
 
   function playHandFire(fire) {
@@ -177,21 +249,7 @@ export function createHandFireSound(page) {
     gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
     source.connect(gain);
     gain.connect(ensureHandFireBus(ctx));
-    let plays = handFirePlays.get(buffer);
-    if (!plays) handFirePlays.set(buffer, plays = []);
-    while (plays.length >= INSTANCES_PER_SAMPLE) {
-      const stolen = plays.shift();
-      stolen.source.onended = null;
-      try { stolen.source.stop(); } catch (_) {}
-      try { stolen.source.disconnect(); stolen.gain.disconnect(); } catch (_) {}
-    }
-    const play = { source, gain };
-    plays.push(play);
-    source.onended = () => {
-      const at = plays.indexOf(play);
-      if (at >= 0) plays.splice(at, 1);
-      try { source.disconnect(); gain.disconnect(); } catch (_) {}
-    };
+    capInstances(buffer, source, gain);
     // `delay` is the script's own `Volume <- Time` gate — the knife's swish
     // lands 0.4 s into the swing, and starting it early would un-author that.
     try { source.start(ctx.currentTime + (fire.spec.delay || 0)); } catch (_) {}
@@ -201,6 +259,7 @@ export function createHandFireSound(page) {
     ensureHandFireBus,
     fetchHandFireSound,
     playHandFire,
+    playHandRelease,
     refetchHandFireSound,
     releaseHandFireLoop,
     weaponSoundsManifest,

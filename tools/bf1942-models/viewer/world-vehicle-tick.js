@@ -147,8 +147,27 @@ export function vehicleTick(world, player, dt, integrators) {
         // setting and it stays there, which is what a throttle quadrant
         // does. `forwardKeys` is the page's raw pair: the pad's Y is the
         // stick's pitch, never the throttle.
+        //
+        // Not for an airframe flown on the engine's own law (`vectored`: the
+        // helicopters, the Harrier). Retail's W/S is a held axis:
+        // `addKeysToAxisMapping c_PIThrottle IDKey_W IDKey_S` resolves through
+        // `ControlMap::buttonsToAxis` (lnxded `0x083f2080`), which ramps to
+        // +1 or -1 while a key is down and back to 0 when it is let go, at a
+        // rise and fall time the `ControlMap` ctor seeds to 0.001 s
+        // (`0x083f05e3`/`0x083f05ea`) and no shipped `.con` sets. The Engine's
+        // own roll axis does the rest (`vectored-engines.js`): under
+        // `setAutomaticReset 1` it ramps to `input * maxRotation` and back
+        // (GUN-2), and its clip holds a hover engine's released collective on
+        // the idle floor (PHY-13). The fixed-wing aircraft keep the latch.
+        // A key let go is written back to 0 once, so the touch slider, which
+        // sets the channel itself, is not zeroed under the player's thumb.
         const power = input.forwardKeys;
-        if (power !== 0) {
+        if (vehicle.vectored) {
+          if (power !== 0 || vehicle.keyedCollective) {
+            vehicle.setInput('c_PIThrottle', Math.max(-1, Math.min(1, power)));
+            vehicle.keyedCollective = power !== 0;
+          }
+        } else if (power !== 0) {
           vehicle.setInput('c_PIThrottle', Math.max(0, Math.min(1,
             vehicle.input('c_PIThrottle') + power * dt)));
         }

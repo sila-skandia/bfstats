@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MouseInput, profileFor } from './mouse-input.js';
 import { MOUSE_LOOK_TRIGGER, seatNeedsMouseLookKey, recentreLook } from './mouse-look-key.js';
+import { presentBelts } from './track-scroll.js';
 
 /**
  * The human's mouse look on the engine's own tick, and the render
@@ -431,6 +432,8 @@ export function createLocalLook(page) {
         rec.posDraw.lerpVectors(rec.posPrev, rec.posCur, alpha);
         rec.root.position.copy(rec.posDraw);
         rec.root.quaternion.slerpQuaternions(rec.quatPrev, rec.quatCur, alpha);
+        // Its belts' texture, between the last two ticks' (`track-scroll.js`).
+        presentBelts(rec.root, alpha);
       }
       for (const part of rec.parts) {
         part.node.quaternion.slerpQuaternions(part.prev, part.cur, alpha);

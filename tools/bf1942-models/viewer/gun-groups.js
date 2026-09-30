@@ -247,8 +247,9 @@ export function collectGroups(guns, root, options = {}) {
       aimRay: aimRay ?? (cameraNode ? cameraLaunch(obj, cameraNode) : null),
       cameraNode,
       spreadDeg,
-      // 1 = barrel home; a shot resets to 0 and it eases forward again.
-      recoil: stats.recoil ? 1 : null,
+      // Seconds of kick left (the engine's `FireArms+0x250`, GUN-12): 0 is
+      // the barrel home, a round sets `3.14 / recoilSpeed`. Null never moves.
+      recoil: stats.recoil ? 0 : null,
     };
     guns.groups.push(group);
     found.push(group);

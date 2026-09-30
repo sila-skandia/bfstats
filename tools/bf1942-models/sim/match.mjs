@@ -138,6 +138,11 @@ export class Match {
     this.navMs = Math.round(this.referee.spawn({
       count: 2 * this.botsPerSide, botSkill: this.botSkill, teams: [1, 2],
       kitFor: (team, i) => level.kits.kitFor(team, i),
+      // The level's own names, on dice of their own so the seeded
+      // `Math.random` stream the match replays is the one it always was.
+      nameFor: level.botNames
+        ? M.createBotNamer({ lists: level.botNames, random: M.mulberry32((this.seed ^ 0x6e616d65) >>> 0) })
+        : null,
       viewDistance: extras?.ai?.settings?.viewDistance ?? null,
     }));
     // The round as the page plays it on a `maxPlayers` server (`round-state.js`

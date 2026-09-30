@@ -326,6 +326,41 @@ function stationaryBrowning() {
   };
 }
 
+// --- classification: a root carrying more than one Engine type --------------
+//
+// Every Engine runs its own physics in the engine; the viewer has one drive
+// per hull, picked by the hull's `setVehicleCategory` and the engine that
+// model owns (`rootDriveKind`). The last Engine the walk met used to win.
+{
+  const hull = (name, category, engines, springs = 0) => {
+    const kids = engines.map((type, i) => node(`${name}Engine${i}`, {
+      templateKind: 'Engine', control: name, physics: { engineType: type } }));
+    for (let i = 0; i < springs; i++) {
+      kids.push(node(`${name}Wheel${i}`, { templateKind: 'Spring', control: name,
+        physics: { grip: 'c_PGFEngineGrip' } }));
+    }
+    kids.push(node(`${name}Entry`, { templateKind: 'EntryPoint', seat: { control: name, entryRadius: 2 } }));
+    return node(name, { control: name, templateKind: 'PlayerControlObject',
+      physics: category ? { mass: 1000, vehicleCategory: category } : { mass: 1000 } }, ...kids);
+  };
+  results.mixedEngines = {
+    // DC's BMP-2 (tank, then its water engine) and BRDM-2 (car, then water).
+    bmp2: classifyRoot(hull('BMP2', 'VCLand', ['c_ETTank', 'c_ETShip'], 4)),
+    brdm2: classifyRoot(hull('BRDM2', 'VCLand', ['c_ETCar', 'c_ETShip'], 4)),
+    // Vanilla's Elco80: the screw, then two `c_ETCar` beach engines.
+    elco80: classifyRoot(hull('Elco80', 'VCSea', ['c_ETShip', 'c_ETCar', 'c_ETCar'])),
+    // EoD's Huey Dustoff: hover engines, then a `c_ETCar` door engine.
+    huey: classifyRoot(hull('Huey', 'VCAir', ['c_ETPlane', 'c_ETPlane', 'c_ETCar'])),
+    // FHSW's CharB1: a tank with two `c_ETPlane` traverse engines.
+    charB1: classifyRoot(hull('CharB1', 'VCLand', ['c_ETTank', 'c_ETPlane', 'c_ETPlane'], 4)),
+    // XPack2's LVT4: its driven springs are `createInvisible` and not in the
+    // tree, so a land model would have nothing to drive; it stays a boat.
+    lvt4: classifyRoot(hull('LVT4', 'VCLand', ['c_ETTank', 'c_ETShip'], 0)),
+    // No category: the old rule, the last Engine.
+    uncategorised: classifyRoot(hull('Thing', null, ['c_ETTank', 'c_ETShip'], 4)),
+  };
+}
+
 // --- seat order (SEAT-24: driver=position0=key1, gunner=position1=key2) -----
 
 {

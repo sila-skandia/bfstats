@@ -93,6 +93,78 @@ class ExtractRadioTests(unittest.TestCase):
         self.assertEqual([10.0, 55.0, 1.0, -1.0], local[20]["ramp"])
         self.assertEqual("radiomess", self.voices["crackle"])
 
+    def test_the_announcer_script_in_patch_order(self) -> None:
+        # GamePlay.ssc, the patch index the client triggers: 0 a point won,
+        # 1 lost, 2 heavy casualties, 3 tickets low, 4 leaving the combat
+        # area, 5 the chat beep.
+        g = self.voices["gameplay"]
+        self.assertEqual(6, len(g))
+        self.assertEqual(["WeNowHaveControlOver", "WeNowHaveControlOver2", "WeNowHaveControlOver3"],
+                         g[0]["stems"])
+        self.assertTrue(g[1]["random"])
+        self.assertEqual(["WeAreTakingHeavyCasualities"], g[2]["stems"])
+        self.assertEqual(["WeAreRunningLowOnReinforce"], g[3]["stems"])
+        self.assertEqual(["WarningDesertersShot", "WarningDesertersShotALT"], g[4]["stems"])
+        self.assertTrue(g[4]["random"])
+        self.assertEqual(["radiomess"], g[5]["stems"])
+        self.assertEqual(64, self.voices["nations"]["us"]["stems"])
+
+    def test_only_language_loads_are_written_per_nation(self) -> None:
+        stems = self.er._language_stems(
+            "newPatch\nload @ROOT/Sound/@RTD/@Language/WeNowHaveControlOver.wav\n"
+            "newPatch\nload @ROOT/Sound/@RTD/radiomess.wav\n", "GamePlay.ssc")
+        self.assertEqual({"WeNowHaveControlOver"}, stems)
+
+
+DC = DEFAULT_GAME_DIR / "Mods" / "DesertCombat" / "Archives"
+
+
+@unittest.skipUnless(DC.is_dir(), "Desert Combat is not installed")
+class DesertCombatRadioTests(unittest.TestCase):
+    """Desert Combat keeps the exe's message -> patch table and rewrites what
+    stands behind it: its lexicon's strings and its scripts' patches, paired."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import extract_radio as er
+        from bf42.modmenu import MenuSources
+        from extract_models import mod_chain
+        from extract_spawn_layout import load_chain_lexicon
+        cls.voices = er.extract_voices(DEFAULT_GAME_DIR, "DesertCombat", Path("/nonexistent"),
+                                       transcode=False)
+        cls.lexicon = load_chain_lexicon(
+            MenuSources(mod_chain(DEFAULT_GAME_DIR, "DesertCombat")).lexicon_paths)
+
+    def test_the_rewritten_lines_match_the_rewritten_strings(self) -> None:
+        local, radio, lex = self.voices["local"], self.voices["radio"], self.lexicon
+        # 39 Fire in the hole -> patch 9; 41 Take cover -> patch 10; 45 -> 16.
+        self.assertEqual("Take Cover!", lex["RADIO_LOCAL_FIRE_IN_HOLE"])
+        self.assertEqual(["TakeCover1", "TakeCover2", "TakeCover3"], local[9]["stems"])
+        self.assertEqual("Cover me while I reload!", lex["RADIO_LOCAL_TAKE_COVER"])
+        self.assertEqual(["Reloading1", "Reloading2", "Reloading3"], local[10]["stems"])
+        self.assertEqual("Area secured!", lex["RADIO_LOCAL_GO_FOR_ENEMY_FLAG"])
+        self.assertEqual(["AreaSecure1", "AreaSecure2", "AreaSecure3"], local[16]["stems"])
+        # 11 Naval support -> patch 9; 14 APC support -> 13; 17 Unit -> 16; 21 Scout -> 20.
+        self.assertEqual("Requesting air defense support", lex["RADIO_NAVAL_SUPPORT"])
+        self.assertEqual(["AirDefense"], radio[9]["stems"])
+        self.assertEqual("Engineer on duty!", lex["RADIO_APC_SUPPORT"])
+        self.assertEqual(["engineer1", "engineer2"], radio[13]["stems"])
+        self.assertEqual("Enemy helo spotted", lex["RADIO_UNIT_SPOTTED"])
+        self.assertEqual(["Helos"], radio[16]["stems"])
+        self.assertEqual("Mines! Watch it!", lex["RADIO_SCOUT_SPOTTED"])
+        self.assertEqual(["Mines1", "Mines2"], radio[20]["stems"])
+
+    def test_both_sides_speak_every_line_and_the_rest_are_listed_absent(self) -> None:
+        stems = {s for script in ("radio", "local", "gameplay") for p in self.voices[script]
+                 for s in p["stems"] if s != "radiomess"}
+        nations = self.voices["nations"]
+        self.assertEqual(len(stems), nations["us"]["stems"])
+        self.assertEqual(len(stems), nations["iraq"]["stems"])
+        self.assertEqual("Iraqi", nations["iraq"]["language"])
+        brit = next(m for m in self.voices["missing"] if m["nation"] == "brit")
+        self.assertIn("RogerThat1", brit["stems"])
+        self.assertEqual(len(stems) - nations["brit"]["stems"], len(brit["stems"]))
+
 
 
 class SoldierLanguageTests(unittest.TestCase):

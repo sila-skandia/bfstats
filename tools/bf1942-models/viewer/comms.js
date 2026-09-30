@@ -18,11 +18,13 @@ import {
   RADIO_MESSAGES, CLOSEST_CONTROL_POINT, LOCAL_RANGE, ICON_ON_FOOT,
   pressRadioKey, isTeamMessage, remapLocal, closestControlPoint, radioChatText,
   radioPatch, RadioSpamLimit, radioGameMode, radioVars, visibleLeaves, leafText,
+  nationStems,
 } from './radio.js';
 import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, deathLines, captureLine,
   allPointsLine, rowGeometry, dividerGeometry, lineColor,
 } from './chat-log.js';
+import { GameplayAnnouncer, gamePlayMode } from './announcer.js';
 
 const VIRTUAL_W = 800;
 const VIRTUAL_H = 600;
@@ -218,6 +220,13 @@ export function createComms(page) {
   function receive(id, speaker, listener = null) {
     const msg = RADIO_MESSAGES[id];
     if (!msg) return;
+    // Both handlers return before the line and the voice unless the LOCAL
+    // player is alive as well as the speaker: the BFPlayer alive byte +0xa9
+    // (cleared on a death at 0x004946B2, set on a spawn at 0x004946E3) is
+    // read for the listener at 0x006D344A (team radio) and 0x006D27DC (a
+    // shout). So the spawn screen hears no radio. A replay's listener is the
+    // recording's player, whose feed carries only what he got.
+    if (!listener && page.localAlive && !page.localAlive()) return;
     const listenerTeam = listener ? listener.team ?? 0 : page.localTeam?.() ?? 0;
     const team = msg.kind === 'team';
     let defend = false;
@@ -298,28 +307,76 @@ export function createComms(page) {
    * speaker's `SoldierVoice.ssc` patch in the speaker's language, in 3D on
    * his soldier: `minDistance 3` and a Distance -> Volume ramp, full to 10 m
    * and gone at 55 m -- a linear panner between those two distances. The
-   * speaker's own shout is his own voice at his own ear.
+   * speaker's own shout is his own voice at his own ear. The side's
+   * announcer (`GamePlay.ssc`) is flat 2D like the radio.
+   *
+   * Resolves to what played, `[{ dir, stem }]`, empty when nothing did.
    */
   async function playVoice(script, index, nation, position) {
-    if (page.AUDIO_OFF || !sounds || page.masterVolume() <= 0) return;
+    const played = [];
+    if (page.AUDIO_OFF || !sounds || page.masterVolume() <= 0) return played;
     const patch = sounds[script]?.[index];
-    if (!patch?.stems?.length) return;
+    if (!patch?.stems?.length) return played;
+    const present = nationStems(sounds, patch, nation);
+    if (!present.length) return played;
     page.ensureAudioContext();
     const listener = page.audioListener;
-    if (!listener || listener.context.state === 'suspended') return;
+    if (!listener || listener.context.state === 'suspended') return played;
     // `randomPlay 1` picks one sample; otherwise every sample is a layer.
     const stems = patch.random
-      ? [patch.stems[Math.floor(Math.random() * patch.stems.length)]]
-      : patch.stems;
+      ? [present[Math.floor(Math.random() * present.length)]]
+      : present;
     for (const stem of stems) {
       let buffer = null;
+      let from = null;
       for (const dir of voiceDirs(nation)) {
         buffer = await voiceBuffer(`${dir}/${stem}.mp3`);
-        if (buffer) break;
+        if (buffer) { from = dir; break; }
       }
-      if (buffer) playBuffer(listener, buffer, patch, position);
+      if (!buffer) continue;
+      playBuffer(listener, buffer, patch, position);
+      played.push({ dir: from, stem });
     }
+    return played;
   }
+
+  // --- the side's announcer ---------------------------------------------------
+
+  const announcer = new GameplayAnnouncer();
+  /** The level the latches belong to: a new one starts them again. */
+  let announcerLevel = null;
+
+  /**
+   * One of the side's announcer lines, `GamePlay.ssc` patch `index` (0 a
+   * point won, 1 lost, 2 heavy casualties, 3 tickets low, 4 leaving the
+   * combat area), in `team`'s language: the client loads the script with the
+   * local side's radio language (0x006A5BB0) and triggers it flat, the way
+   * 0x006A5510 does. Null when the tree's manifest carries no announcer (it
+   * was extracted before it did), so a caller can keep its own; otherwise a
+   * promise of what played.
+   */
+  comms.playGameplay = (index, team = page.localTeam?.() ?? 0) => {
+    if (!sounds?.gameplay?.[index]?.stems?.length) return null;
+    return playVoice('gameplay', index, voiceOf(team), null);
+  };
+
+  /**
+   * One drawn frame of the announcer's own lines (`announcer.js`): heavy
+   * casualties, tickets low and leaving the combat area. `state` is what
+   * `GameplayAnnouncer.frame` reads, less the mode, which is the level's.
+   * Returns the patch indices it triggered.
+   */
+  comms.gameplayFrame = state => {
+    if (announcerLevel !== page.extras) {
+      announcerLevel = page.extras;
+      announcer.reset();
+    }
+    const fired = announcer.frame({
+      ...state, mode: gamePlayMode(page.extras?.gameplayMode),
+    });
+    for (const index of fired) comms.playGameplay(index, state.team);
+    return fired;
+  };
 
   function playBuffer(listener, buffer, patch, position) {
     const ctx = listener.context;

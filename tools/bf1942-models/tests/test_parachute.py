@@ -219,6 +219,29 @@ class ParachuteTests(unittest.TestCase):
                 # What the body actually did, which HP-14 would have billed.
                 self.assertAlmostEqual(13.681, landing["bodyImpactSpeed"], places=2)
 
+    def test_a_nochute_kit_never_falls_free(self) -> None:
+        # `ActiveKitPartTemplate::setOverrideAirMovementInhibitations`
+        # (0x08263c70, template +0x188), read off every active kit part at
+        # 0x08275e70-0x08275ea4: set, and the free-fall branch is skipped.
+        bar = self.results["kitBar"]
+        self.assertEqual("none", bar["barred"])
+        self.assertEqual(0, bar["barredEvents"])
+        self.assertEqual("falling", bar["function"])
+        self.assertEqual(1, bar["functionCalls"])
+        self.assertEqual(0, bar["idleCalls"])
+        self.assertIs(True, bar["survivesReset"])
+
+    def test_a_nochute_bail_out_opens_nothing_and_lands_in_full(self) -> None:
+        # 9 pressed all the way down: without `Lb_ParachuteFall` there is no
+        # chute to open (PARA-4), and PARA-10 spares only an open one.
+        drop = self.results["nochute"]
+        self.assertFalse(drop["everFell"])
+        self.assertIsNone(drop["trace"]["openedAt"])
+        self.assertEqual("none", drop["state"])
+        self.assertFalse(drop["landing"]["underCanopy"])
+        self.assertGreater(drop["landing"]["impactSpeed"], 40)
+        self.assertGreater(drop["landing"]["hp"], 30)
+
     def test_no_chute_is_still_lethal(self) -> None:
         free = self.results["freeFall"]
         self.assertIsNone(free["trace"]["openedAt"])

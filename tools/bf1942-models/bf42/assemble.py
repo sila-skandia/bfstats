@@ -41,11 +41,13 @@ BLEED_CUTOUT_ALPHA = 16
 def geometry_is_first_person(geometry_name: str | None) -> bool:
     """Cockpit / 1P view meshes are named `1P_...` (or `1PPT_...`, `1PBritBody`).
 
-    The name is the only reliable tell. The *template* names are not: vanilla's
-    cockpit alternatives are called `...CockpitInternal` on 11 aircraft but
-    `bf109CockpitBlurred` on the bf109, `KatyushaInterior` on the Katyusha and
-    `...HighRSteering` on every steering wheel. The geometry name is uniform
-    across all 72 of them.
+    The name is the only reliable tell a mesh carries. The *template* names
+    are not: vanilla's cockpit alternatives are called `...CockpitInternal` on
+    11 aircraft but `bf109CockpitBlurred` on the bf109, `KatyushaInterior` on
+    the Katyusha and `...HighRSteering` on every steering wheel. The geometry
+    name is uniform across all 72 of them. It is not what the engine goes by:
+    a cockpit is the alternative its selector shows in the Inside view
+    (`inside_view_alternative`), and mods do not name those `1P`.
 
     Why 1P geometry is skipped by default (both the mesh load in `build_node`
     and the alternative steering in `_select_lod_children`), rather than merely
@@ -129,17 +131,87 @@ def near_rung_is_first_person(library: con_mod.ObjectLibrary,
         if (child := library.object(ref.template)) is not None)
 
 
+def _alternatives_draw_alike(library: con_mod.ObjectLibrary,
+                             a: con_mod.ChildRef, b: con_mod.ChildRef) -> bool:
+    """Whether two alternatives of one LodObject put the same thing on screen:
+    one template twice (DC's Humvee, Ural and CIWS name their exterior on both
+    sides), two childless templates placed alike that draw one geometry (the
+    UH-60's fuselage), or two that draw nothing wherever they sit (the
+    M-109's two empty halves)."""
+    if a.template.lower() == b.template.lower():
+        return a.position == b.position and a.rotation == b.rotation
+    first, second = library.object(a.template), library.object(b.template)
+    if first is None or second is None or first.children or second.children:
+        return False
+    if all(not t.geometry or t.invisible for t in (first, second)):
+        return True
+    return ((first.geometry or "").lower() == (second.geometry or "").lower()
+            and first.invisible == second.invisible
+            and a.position == b.position and a.rotation == b.rotation)
+
+
+def inside_view_alternative(library: con_mod.ObjectLibrary,
+                            template: con_mod.ObjectTemplate,
+                            ) -> con_mod.ChildRef | None:
+    """The alternative a LodObject shows only in the Inside view, or None.
+
+    The Inside view flips a cockpit by its selector's class and nothing else:
+    `lodObjectOn` (lnxded 0x081adbb0) sets the compare value of a
+    `DistCompareSelector` to 1, the other views set it to 0 (ledger LOD-2),
+    and `LodObject::getChild` draws whatever alternative that names, whatever
+    its geometry is called (LOD-1). Desert Combat calls its interiors
+    `F16_1P`, `AH64_1p`, `Mig29_Cockpit`, `M2A3_Interior`, and vanilla its
+    Kubelwagen's `Kubelwagen_1P_M1`; none starts `1P`, so a name test left
+    every one of them drawing the exterior around the camera.
+
+    `lodObjectOn` flips only the first such LodObject its search meets below
+    the seat's PlayerControlObject (`internalFindFirstChildOfCID` 0x080b71a0:
+    declaration order, a nested PlayerControlObject ends the walk, and a
+    LodObject of another kind is searched through the alternative it shows).
+    Simulated over every seat of vanilla, XPack1, XPack2, DC, DC Final and
+    EoD, that is the only one in the seat's scope wherever this rule decides,
+    so every one is taken here.
+
+    Where an alternative is named first person the name keeps deciding, as it
+    always has: on 36 of vanilla's 38 such selectors the name and the
+    selector pick the same alternative, and the M3A1 and the Priest name
+    both. A swap
+    between two alternatives that draw alike changes nothing on screen and is
+    not one (`_alternatives_draw_alike`).
+    """
+    if not template.is_lod_selector or len(template.children) < 2:
+        return None
+    selector = library.selector(template.lod_selector)
+    if selector is None or not selector.flips_in_inside_view:
+        return None
+    inside = selector.compared_alternative(1.0)
+    outside = selector.compared_alternative(0.0)
+    children = template.children
+    if inside == outside or max(inside, outside) >= len(children):
+        return None
+    if any(geometry_is_first_person(child.geometry)
+           for ref in children
+           if (child := library.object(ref.template)) is not None):
+        return None
+    if _alternatives_draw_alike(library, children[inside], children[outside]):
+        return None
+    return children[inside]
+
+
 def alternative_is_first_person(library: con_mod.ObjectLibrary,
                                 lod_template: con_mod.ObjectTemplate,
                                 ref: con_mod.ChildRef) -> bool:
     """Whether one alternative of a LodObject is its first-person half.
 
-    Either its geometry is named first person (`geometry_is_first_person`), or
-    it is the near rung of a selector too short for any third-person camera
-    (`near_rung_is_first_person`).
+    Either its geometry is named first person (`geometry_is_first_person`),
+    or it is the near rung of a selector too short for any third-person camera
+    (`near_rung_is_first_person`), or the Inside view is what selects it
+    (`inside_view_alternative`).
     """
     child = library.object(ref.template)
     if geometry_is_first_person(child.geometry if child else None):
+        return True
+    if ref is inside_view_alternative(library, lod_template):
         return True
     return (bool(lod_template.children) and ref is lod_template.children[0]
             and near_rung_is_first_person(library, lod_template))
@@ -162,6 +234,8 @@ def reaches_first_person(library: con_mod.ObjectLibrary, template_name: str, *,
     if geometry_is_first_person(template.geometry):
         return True
     if near_rung_is_first_person(library, template):
+        return True
+    if inside_view_alternative(library, template) is not None:
         return True
     key = template.name.lower()
     if key in stack:
@@ -2287,9 +2361,10 @@ class Assembler:
         selected = self._lod_alternative(template, children_refs)
         if self.first_person:
             # The cockpit export wants exactly the alternative every other
-            # export refuses. Only the geometry name can find it: the exterior
+            # export refuses. The index alone cannot find it: the exterior
             # sits first under a cockpit `DistCompareSelector` and second under
-            # a steering wheel's `DistanceSelector`.
+            # a steering wheel's `DistanceSelector`. See
+            # `alternative_is_first_person`.
             first_person = next(
                 (child for child in children_refs
                  if self._alternative_is_first_person(template, child)),
@@ -2334,9 +2409,17 @@ class Assembler:
         """
         if not self._alternative_is_first_person(template, selected):
             return None
+
+        # The graft matches by node name, so name the nodes this export
+        # writes: an alternative declared `setRandomGeometries` is built as
+        # `<name>1` (`con.instance_template_name`). DC's Lada and Pickup named
+        # a bare `LadaCockpitExternal` here and hid nothing.
+        def node_name(ref: con_mod.ChildRef) -> str:
+            return con_mod.instance_template_name(ref, self.library.object) or ref.template
+
         swap = {
-            "selected": selected.template,
-            "replaces": [child.template for child in children_refs
+            "selected": node_name(selected),
+            "replaces": [node_name(child) for child in children_refs
                          if child is not selected],
         }
         if selector := self.library.selector(template.lod_selector):
@@ -2562,12 +2645,15 @@ class Assembler:
             children_refs = selected_refs
 
         # The near rung of a short `DistanceSelector` is first person by where
-        # it is drawn, not by what it is called, so everything under it is
-        # the cockpit export's, whatever its meshes are named.
+        # it is drawn, and a cockpit selector's inside alternative by the view
+        # that selects it, not by what either is called, so everything under
+        # them is the cockpit export's, whatever its meshes are named.
         child_first_person_branch = first_person_branch or (
             template.is_lod_selector and bool(children_refs)
-            and children_refs[0] is template.children[0]
-            and near_rung_is_first_person(self.library, template))
+            and ((children_refs[0] is template.children[0]
+                  and near_rung_is_first_person(self.library, template))
+                 or children_refs[0] is inside_view_alternative(
+                     self.library, template)))
 
         child_indices: list[int] = []
         built_children: list[tuple[con_mod.ChildRef, str, int]] = []

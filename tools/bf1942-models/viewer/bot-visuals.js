@@ -50,6 +50,7 @@ import { trackNodes } from './clip-nodes.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
+import { byName } from './model-file.js';
 
 /** The sphere a live body on foot is culled by, about a point this far over
  *  his feet and this wide: any pose of the rig fits (a prone man's boots are
@@ -184,7 +185,7 @@ export function createBotVisuals(page) {
     const standUpper = byName.get(FAMILY_HALVES.stand.upper);
     if (!standLower || !standUpper) return null;
     const mixer = new THREE.AnimationMixer(scene);
-    const speeds = stateMachine?.weaponSpeeds?.[weapon] ?? {};
+    const speeds = byName(stateMachine?.weaponSpeeds, weapon) ?? {};
     const clipless = stateMachine?.clipless ?? {};
 
     /** A clip's time scale for this weapon: its baked length times the rate

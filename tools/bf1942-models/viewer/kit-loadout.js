@@ -7,6 +7,7 @@
 // (features/vehicle-instance-refactor).
 
 import { kitRowLabel } from './kit-icon.js';
+import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -100,11 +101,58 @@ export function createKitLoadout(page) {
     return loadout.carriedKit ?? kitLoadout(team, page.deployKit).kit;
   }
 
+  // The local soldier's rolled items (`random-items.js`): what this life's
+  // kit object handed out in place of each `Random*` bundle it carries.
+  // `{ kit, rolls }`, set by `rollSpawnKit` on every spawn and by
+  // `adoptKitRolls` on a pickup; a kit that is not the one rolled answers
+  // with the roll it would get next (`peekKit`), so the deploy screen can
+  // name a weapon before the spawn.
+  loadout.spawnRolls = null;
+
+  /** Roll the chosen kit's rolled items for a new life: the engine makes a
+   *  kit object on every spawn (ledger KIT-4), and each one rolls. */
+  function rollSpawnKit(flag) {
+    const { kit } = kitLoadout(flag?.team, page.deployKit);
+    const row = kit ? loadout.loadouts?.kits?.[kit] : null;
+    loadout.spawnRolls = { kit, rolls: rollKit(row) };
+    return loadout.spawnRolls;
+  }
+
+  /** A picked-up kit's rolls: the variants its last owner was handed are the
+   *  ones its ammo rows name (a pickup makes no new kit object, so nothing
+   *  rolls); an item he never raised left no row, and takes the next roll's
+   *  answer without spending it. */
+  function adoptKitRolls(kitName, ammo = []) {
+    const row = kitName ? loadout.loadouts?.kits?.[kitName] : null;
+    const rolls = peekKit(row);
+    const carried = new Set((ammo ?? []).map(r => String(r?.name ?? '').toLowerCase()));
+    for (const entry of row?.random ?? []) {
+      const seen = (entry.variants ?? []).find(v => v && carried.has(v.toLowerCase()));
+      if (seen) rolls.set(String(entry.template).toLowerCase(), seen);
+    }
+    loadout.spawnRolls = { kit: kitName, rolls };
+    return loadout.spawnRolls;
+  }
+
+  /** The rolls in force for `kit`: this life's, else the next roll's. */
+  function rollsFor(kit) {
+    if (!kit) return null;
+    if (loadout.spawnRolls?.kit === kit) return loadout.spawnRolls.rolls;
+    return peekKit(loadout.loadouts?.kits?.[kit]);
+  }
+
+  /** `kit`'s loadouts row with its rolled items resolved (`resolveKitRow`). */
+  function kitRowFor(kit) {
+    const row = kit ? loadout.loadouts?.kits?.[kit] : null;
+    return row ? resolveKitRow(row, rollsFor(kit)) : null;
+  }
+
   /** What the chosen kit hands a soldier of `team` on this level: the kit the
    *  level binds to that row (`game.setKit <team> <row> <kit>`), the weapon at
    *  its `itemIndex 3`, and the soldier template the team wears. Every field
    *  null where `_shared/loadouts.json` is absent or does not name the level;
-   *  `weaponTemplateFor` then falls back to the vanilla table by nation. */
+   *  `weaponTemplateFor` then falls back to the vanilla table by nation. A
+   *  rolled primary (FHSW's `Random*`) is the variant this life holds. */
   function kitLoadout(team, kitName = page.deployKit) {
     const side = loadout.loadouts?.levels?.[page.currentDir]?.[team];
     if (!side) return { kit: null, primary: null, soldier: null };
@@ -119,7 +167,7 @@ export function createKitLoadout(page) {
     }
     return {
       kit,
-      primary: loadout.loadouts.kits?.[kit]?.primary || null,
+      primary: heldItem(loadout.loadouts.kits?.[kit]?.primary || null, rollsFor(kit)) || null,
       soldier: side.soldier || null,
     };
   }
@@ -204,7 +252,7 @@ export function createKitLoadout(page) {
    *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
   function kitSlotsFor(flag) {
     const { kit } = kitLoadout(flag?.team, page.deployKit);
-    const weapons = kit ? loadout.loadouts?.kits?.[kit]?.weapons : null;
+    const weapons = kitRowFor(kit)?.weapons;
     return Array.isArray(weapons) && weapons.length ? weapons : null;
   }
 
@@ -220,15 +268,18 @@ export function createKitLoadout(page) {
    * A bot's kit: uniform among the side's kits on this level (the engine's
    * `findKitDiff` weight is 1 for every allowed kit), with the AI weapon
    * templates of its items (`aiWeapons` in `_shared/loadouts.json`), the
-   * primary first.
+   * primary first. Dealing it makes a kit object, which rolls its `Random*`
+   * items on the page's one counter (`random-items.js`), so the bot holds
+   * the variant -- a No2 or a Sten -- and never the bundle.
    */
   function botKitFor(team, index) {
     const slots = loadout.loadouts?.levels?.[page.currentDir]?.[team]?.slots;
     const names = (Array.isArray(slots) ? slots : Object.values(slots ?? {})).filter(Boolean);
     if (!names.length) return null;
     const kitName = names[Math.floor(Math.random() * names.length)];
-    const kit = loadout.loadouts?.kits?.[kitName];
-    if (!kit) return null;
+    const row = loadout.loadouts?.kits?.[kitName];
+    if (!row) return null;
+    const kit = resolveKitRow(row, rollKit(row));
     const items = [...(kit.items ?? [])];
     if (kit.primary) items.sort((a, b) => (a === kit.primary ? -1 : 0) - (b === kit.primary ? -1 : 0));
     const weapons = items.map(item => {
@@ -292,14 +343,17 @@ export function createKitLoadout(page) {
 
   Object.assign(loadout, {
     KIT_ROW_KEYS,
+    adoptKitRolls,
     botKitFor,
     currentKit,
     kitLoadout,
+    kitRowFor,
     kitRowLabelFor,
     kitRowLayoutText,
     kitSlotsFor,
     loadoutsLoad,
     healingPack,
+    rollSpawnKit,
     localWeaponSoundRadius,
     slotOf,
     soldierMaxHp,

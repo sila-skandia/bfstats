@@ -2228,4 +2228,119 @@ for (const [name, build, radius] of [
 }
 
 
+// --- an amphibian: a tank on land, a boat afloat (`amphibious.js`) ----------
+//
+// Desert Combat's BMP-2 as its glb carries it: the Sherman fixture's tracks on
+// a `c_ETTank` Engine, and beside them the `BMP2_WaterEngine` (`c_ETShip`,
+// 0/-0.75/-1, differential 2.3, torque 1.5, roll -5..20 on `c_PIThrottle`),
+// four `BMP2_Floater`s (`hullHeight 3.4`, lift 3.2..3.4) and two rudder
+// `Wing`s on `c_PIYaw`, rolled 90 degrees. The water engine is the LAST
+// Engine the walk meets, which is what used to make the whole hull a Ship.
+function amphibianNode() {
+  const root = shermanNode();
+  root.name = 'BMP2';
+  root.userData = { control: 'BMP2', templateKind: 'PlayerControlObject',
+                    physics: { mass: 25000, drag: 2, vehicleCategory: 'VCLand' } };
+  root.traverse(node => { if (node.userData?.rig) node.userData.rig.control = 'BMP2'; });
+  const complex = root.getObjectByName('ShermanComplex');
+  // The hull's own mesh: `hullGeometry`'s box (floats' footprint, drag faces).
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.1, 2.1, 6.7).translate(0, 0.45, 0));
+  hull.name = 'BMP2_Hull_m1';
+  complex.add(hull);
+  const water = new THREE.Object3D();
+  water.name = 'BMP2_WaterEngine';
+  water.position.set(0, -0.75, 1);
+  water.userData = {
+    templateKind: 'Engine', control: 'BMP2',
+    physics: { engineType: 'c_ETShip', torque: 1.5, differential: 2.3, noPropellerEffectAtSpeed: 20,
+               maxRotation: [0, 0, 20], maxSpeed: [0, 0, 20], acceleration: [0, 0, 15] },
+    rig: { control: 'BMP2', automaticReset: true,
+           axes: { roll: { input: 'c_PIThrottle', min: -5, max: 20, free: false, driver: 'position', maxSpeed: 20, direction: 1 } } },
+  };
+  complex.add(water);
+  for (const [z, direction] of [[-2, -1], [2, 1]]) {
+    const rudder = new THREE.Object3D();
+    rudder.name = z < 0 ? 'BMP2_RudderStern' : 'BMP2_RudderAft';
+    rudder.position.set(0, -0.3, z);
+    rudder.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI / 2);
+    rudder.userData = {
+      templateKind: 'Wing', control: 'BMP2',
+      physics: { wingLift: 0, flapLift: 1, positionOffset: [0, 0, 0] },
+      rig: { control: 'BMP2', automaticReset: true,
+             axes: { pitch: { input: 'c_PIYaw', min: -7, max: 7, free: false, driver: 'position', maxSpeed: 18, direction } } },
+    };
+    complex.add(rudder);
+  }
+  for (const [x, y, z] of [[2.5, 0.97, 2.5], [-2.5, 0.97, 2.5], [2.5, 0.93, -2.5], [-2.5, 0.93, -2.5]]) {
+    const float = new THREE.Object3D();
+    float.name = 'BMP2_Floater';
+    float.position.set(x, y, z);
+    float.userData = { templateKind: 'FloatingBundle', control: 'BMP2',
+                       physics: { hullHeight: 3.4, floatMaxLift: 3.4, floatMinLift: 3.2, sinkingSpeedMod: 5 } };
+    root.add(float);
+  }
+  return root;
+}
+
+{
+  // A bank at z = -40 running down 1 in 5 to a 6 m deep bed; the sea at -1.
+  const WL = -1;
+  const bed = (x, z) => (z > -40 ? 0 : Math.max(-6, (z + 40) / 5));
+  const collider = { heightfield: { height: bed }, waterLevel: WL, deckHeight: () => NaN, sweepSphere: () => null };
+  // The page's own ground: the sea is a floor to it (`WorldCollider.surfaceHeight`).
+  const surface = (x, z) => Math.max(bed(x, z), WL);
+  const amphibian = () => {
+    const truck = new TrackedVehicle(amphibianNode(), null, {
+      cockpit: false, groundHeight: surface, collider, waterLevel: WL,
+      surfaceFriction: (x, z) => (bed(x, z) <= WL ? 0.1 : 1.0),
+    });
+    truck.state.position.set(0, 0.6, 0);
+    return truck;
+  };
+  const out = {};
+  {
+    const truck = amphibian();
+    out.engineType = truck.engine.engineType;
+    out.hasKit = !!truck.amphibious;
+    out.kit = { engines: truck.amphibious.engines.length, floats: truck.amphibious.floats.length,
+                rudders: truck.amphibious.surfaces.length };
+    // Ten seconds on the flat, as the Sherman: the water engine's revs pin at
+    // 1.0 on the first press and it pushes nothing (`0x0824d047`).
+    drive(truck, 5, holding({ c_PIThrottle: 1 }));
+    out.land = { along: round(alongOf(truck), 2), wrevs: round(truck.amphibious.revs, 3),
+                 afloat: truck.amphibious.afloat, grounded: truck.state.grounded };
+    const sherman = tank(shermanNode, { ground: () => 0 });
+    drive(sherman, 5, holding({ c_PIThrottle: 1 }));
+    out.land.sherman = round(alongOf(sherman), 2);
+    // On down the bank and out to sea: afloat, pushed by the screw.
+    drive(truck, 35, holding({ c_PIThrottle: 1 }));
+    const s = truck.state;
+    out.sea = { z: round(s.position.z, 1), y: round(s.position.y, 2), along: round(alongOf(truck), 2),
+                wrevs: round(truck.amphibious.revs, 3), afloat: truck.amphibious.afloat,
+                grounded: s.grounded, bedUnder: round(bed(s.position.x, s.position.z), 1),
+                pitch: round(pitchDeg(truck), 2), roll: round(rollDeg(truck), 2) };
+    // The rudders turn her afloat: `c_PIYaw` right.
+    const f0 = forwardOf(truck);
+    drive(truck, 5, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+    const f1 = forwardOf(truck);
+    const turned = Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG;
+    out.turn = { deg: round(turned, 1), roll: round(rollDeg(truck), 2) };
+    // Let go of the throttle: she slows and stays afloat.
+    drive(truck, 20, holding({ c_PIThrottle: 0, c_PIYaw: 0 }));
+    out.coast = { speed: round(truck.state.velocity.length(), 2), afloat: truck.amphibious.afloat,
+                  y: round(truck.state.position.y, 2) };
+  }
+  // With nobody at the wheel (`Engine+0x142` clear) neither engine runs.
+  {
+    const truck = amphibian();
+    truck.engineRunning = false;
+    drive(truck, 3, holding({ c_PIThrottle: 1 }));
+    out.stopped = { along: round(alongOf(truck), 3), revs: truck.engine.revs, wrevs: truck.amphibious.revs };
+  }
+  // A plain tank carries no kit, and stands on the sea like every land
+  // vehicle the viewer drives.
+  out.shermanKit = tank(shermanNode).amphibious;
+  results.amphibian = out;
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

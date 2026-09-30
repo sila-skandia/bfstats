@@ -24,6 +24,15 @@
  * speaker's team gets the chat line (0x006d2790). `key` is the lexicon string
  * the chat line prints. `sign` is the hand-signal animation the speaker plays
  * on foot (`HandSign_*`, 0x004feb20).
+ *
+ * The table is the exe's, and no mod can change it: the key, the patch index
+ * and the lexicon key are constants in the two receive handlers (team radio's
+ * switch at 0x006d37c4, jump table 0x006d3fd4; the shout's at 0x006d286a,
+ * table 0x006d3190). A mod changes what stands behind them -- its lexicon's
+ * strings and its scripts' patches -- and Desert Combat rewrote both to
+ * match: `RADIO_LOCAL_FIRE_IN_HOLE` reads "Take Cover!" and SoldierVoice
+ * patch 9 is `TakeCover1..3`; `RADIO_LOCAL_TAKE_COVER` reads "Cover me while
+ * I reload!" and patch 10 is `Reloading1..3` (ledger RADIO-2, RADIO-5).
  */
 export const RADIO_MESSAGES = {
   1: { kind: 'team', key: 'RADIO_ROGER', patch: 0 },
@@ -222,6 +231,29 @@ export function radioPatch(id, defend = false) {
   if (!msg) return null;
   if (msg.cp != null) return { script: 'radio', patch: defend ? PATCH_DEFEND : PATCH_ATTACK };
   return { script: msg.kind === 'local' ? 'local' : 'radio', patch: msg.patch };
+}
+
+/**
+ * The stems of a voice patch that `nation`'s language ships, out of
+ * `radio-sounds.json` (`sounds`). The mod's script decides WHICH line a
+ * message plays -- the engine hard-codes only the patch index -- and the
+ * language decides which of its loads exist. A `load` whose file is absent
+ * never joins its patch: 0x00802DB0 asks for the buffer (0x007FD150, which
+ * answers 0 when the file will not open) and returns at 0x00802E00 before
+ * it counts the load. So a side rolls `randomPlay` over the stems it has,
+ * and a patch with none of them is silent: DC's four `RogerThat` lines
+ * exist only in UsEnglish and Iraqi, and a British side in DC Final says
+ * nothing where borrowing the US folder gave him an American voice. The
+ * manifest names each nation's absent stems (`missing`); a nation the tree
+ * wrote no folder for keeps every stem.
+ */
+export function nationStems(sounds, patch, nation) {
+  const stems = patch?.stems ?? [];
+  if (!nation || !sounds?.nations?.[nation]) return stems;
+  const absent = new Set((sounds.missing || [])
+    .filter(m => m && m.nation === nation && Array.isArray(m.stems))
+    .flatMap(m => m.stems));
+  return absent.size ? stems.filter(stem => !absent.has(stem)) : stems;
 }
 
 /**

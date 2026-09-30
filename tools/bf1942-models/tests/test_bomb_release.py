@@ -217,12 +217,13 @@ class BombReleaseTests(unittest.TestCase):
         self.assertEqual([-1, 1, -1, 1, -1, 1, -1, 1], xs)
 
     def test_the_stick_is_spaced_by_the_rate_of_fire(self) -> None:
-        # `roundOfFire 4` is a bomb every 0.25 s; at 60 m/s that is 15 m of
-        # along-track spacing, and eight bombs span about 105 m.
+        # `roundOfFire 4` sets the fire timer to 0.25 s, and the 30 Hz tick
+        # spends it in eight whole ticks (GUN-13): a bomb every 0.267 s, 16 m
+        # of along-track spacing at 60 m/s, eight bombs over 1.87 s.
         stick = self.results["stick"]
-        self.assertAlmostEqual(15.0, stick["spacingMetres"], delta=1.0)
-        self.assertAlmostEqual(1.75, stick["releaseTimes"][-1]
-                               - stick["releaseTimes"][0], delta=0.1)
+        self.assertAlmostEqual(16.0, stick["spacingMetres"], delta=0.1)
+        self.assertAlmostEqual(7 * 8 / 30, stick["releaseTimes"][-1]
+                               - stick["releaseTimes"][0], delta=0.01)
 
     # --- the fall ----------------------------------------------------------
 

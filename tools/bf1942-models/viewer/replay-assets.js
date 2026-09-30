@@ -6,7 +6,7 @@
 import { isPropellerBlurPair } from './vehicle-base.js';
 import { createPoseComposer } from './pose-compose.js';
 import { bundleClips } from './soldier-actions.js';
-import { modelFileStem } from './model-file.js';
+import { byName, modelFileStem } from './model-file.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -241,8 +241,8 @@ export class ReplayAssets {
   // weapon -- or sharing a donor grip -- fetch its bundle once.
   async gaitClipsFor(weapon) {
     const manifest = await this.gaitsManifest();
-    const grip = manifest.weaponGrip?.[weapon] ?? weapon;
-    const gripPath = manifest.grips?.[grip];
+    const grip = byName(manifest.weaponGrip, weapon) ?? weapon;
+    const gripPath = byName(manifest.grips, grip);
     if (!manifest.lower) return [];
     let upper = gripPath ? await this.gaitBundle(gripPath) : [];
     if ((!upper || !upper.length) && gripPath !== 'gaits/Colt.gait.glb') {

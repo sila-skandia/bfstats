@@ -24,6 +24,13 @@
 //
 // Room play: nothing here is replicated, so a joined room neither drops nor
 // takes kits (`roomJoined`).
+//
+// A kit a map puts on a pad (DC Final's M82 and Stinger kits,
+// `deployables-page.js`) lies here too, placed with `placeKit`: the same mesh,
+// the same spin and the same key, but no clock -- a spawned kit is never
+// enabled, so nothing ever posts it the 30 s message -- and an `objectId`,
+// because its pad asks after that one kit object for as long as it lives:
+// on the pad, in the human's hands (`carried`), and in the drop it ends in.
 
 import * as THREE from 'three';
 import { KitDrops, ammoRowsFromBotMags, pickupAllowed, restingPlace } from './kit-drops.js';
@@ -45,6 +52,11 @@ export function createKitDropsPage(page) {
   kitDrops.drops = drops;
   /** When the human last took a kit, on `drops.clock` (`BFPlayer` +0x84). */
   kitDrops.lastPickupAt = -Infinity;
+  /** The kit object the human carries when a pad is waiting on it:
+   *  `{ objectId, kit }`, or null. It lives until he drops it (a swap, a
+   *  death on foot, and then the drop's own 30 s) or it is destroyed with him
+   *  (a death in a seat, `killPlayer`'s `destroyObject`, KITDROP-1). */
+  kitDrops.carried = null;
 
   const root = new THREE.Group();
   root.name = 'kit drops';
@@ -206,14 +218,39 @@ export function createKitDropsPage(page) {
 
   /** Lay `kit` down where a soldier at `at` (`{ x, y, z, yaw }`, his feet)
    *  fell or stood, with the rows of ammunition its weapons carry. */
-  function layDown(kit, at, { ammo = [], by = null, team = null } = {}) {
+  function layDown(kit, at, { ammo = [], by = null, team = null, objectId = null } = {}) {
     if (!kit || !at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return null;
     const place = restingPlace(at, ground, CHARACTER_HEIGHT);
-    const record = drops.drop(place, { kit, ammo, by, team });
+    const record = drops.drop(place, { kit, ammo, by, team, objectId });
     if (record) showMesh(record);
     return record;
   }
   kitDrops.layDown = layDown;
+
+  /** A kit an ObjectSpawner put in the world (`deployables-page.js`): lying
+   *  at `place` (`{ x, y, z, yaw, normal }`, the pad's own pose: the kit has
+   *  no mobile physics and does not fall) until it is taken, full, under
+   *  engine object `objectId`. */
+  kitDrops.placeKit = (kit, place, { objectId = null } = {}) => {
+    if (!kit || !place || page.roomJoined) return null;
+    const record = drops.drop(place, { kit, objectId, ttl: Infinity });
+    if (record) showMesh(record);
+    return record;
+  };
+
+  /** Whether engine kit object `objectId` still exists: lying somewhere, or
+   *  in the human's hands. */
+  kitDrops.objectAlive = objectId =>
+    objectId != null && (!!drops.byObject(objectId) || kitDrops.carried?.objectId === objectId);
+
+  /** Where engine kit object `objectId` is: `[x, y, z]`, or null. */
+  kitDrops.objectPosition = objectId => {
+    const record = drops.byObject(objectId);
+    if (record) return [record.x, record.y, record.z];
+    const s = page.soldier;
+    if (kitDrops.carried?.objectId === objectId && s) return [s.x, s.y, s.z];
+    return null;
+  };
 
   /** A bot's death (the referee's `onDeath`): on foot, his kit stays. */
   kitDrops.botDied = (bot, opts = {}) => {
@@ -230,9 +267,12 @@ export function createKitDropsPage(page) {
   kitDrops.localDied = () => {
     const s = page.soldier;
     if (page.roomJoined || !s) return null;
+    const objectId = kitDrops.carried?.objectId ?? null;
+    kitDrops.carried = null;
     return layDown(page.currentKit?.(page.deployTeamId) ?? null,
       { x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? 0 },
-      { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId });
+      { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId,
+        objectId });
   };
 
   // --- the human's key ---------------------------------------------------------
@@ -264,9 +304,12 @@ export function createKitDropsPage(page) {
     const mine = page.currentKit?.(page.deployTeamId) ?? null;
     if (mine) {
       layDown(mine, { x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? 0 },
-        { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId });
+        { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId,
+          objectId: kitDrops.carried?.objectId ?? null });
     }
     page.equipKit?.(record.kit, record.ammo, { team: page.deployTeamId });
+    // The object he now carries is the one he took: a pad's kit keeps its id.
+    kitDrops.carried = record.objectId != null ? { objectId: record.objectId, kit: record.kit } : null;
     kitDrops.lastPickupAt = drops.clock;
     return record;
   };
@@ -277,6 +320,15 @@ export function createKitDropsPage(page) {
    *  turns, and those whose 30 s are up go. */
   kitDrops.tick = dt => {
     for (const gone of drops.tick(dt)) hideMesh(gone);
+    // The carried kit object is destroyed with a man who died anywhere but on
+    // foot (on foot `localDied` has already laid it down and let go of it),
+    // and a fresh soldier carries a fresh kit.
+    const carried = kitDrops.carried;
+    if (carried && (page.soldierDead || !page.soldier
+                    || String(page.currentKit?.(page.deployTeamId) ?? '').toLowerCase()
+                       !== String(carried.kit).toLowerCase())) {
+      kitDrops.carried = null;
+    }
     for (const record of drops.drops) {
       const obj = meshes.get(record.id);
       if (obj) pose(obj, record);
@@ -289,6 +341,7 @@ export function createKitDropsPage(page) {
     drops.clear();
     drops.clock = 0;
     kitDrops.lastPickupAt = -Infinity;
+    kitDrops.carried = null;
     for (const pending of sources.values()) {
       pending.then(src => src?.scene.traverse(obj => {
         if (!obj.isMesh) return;
@@ -321,7 +374,8 @@ export function createKitDropsPage(page) {
         return taken ? { id: taken.id, kit: taken.kit, by: taken.by } : null;
       },
       advance: seconds => { kitDrops.tick(Number(seconds) || 0); return drops.snapshot(); },
-      carried: () => ({ kit: page.currentKit?.(page.deployTeamId) ?? null, ammo: page.carriedAmmo?.() ?? [] }),
+      carried: () => ({ kit: page.currentKit?.(page.deployTeamId) ?? null, ammo: page.carriedAmmo?.() ?? [],
+                        objectId: kitDrops.carried?.objectId ?? null }),
       layDown: (kit, x, y, z, yaw = 0) => {
         const r = layDown(kit, { x, y, z, yaw });
         return r ? { id: r.id, y: r.y, normal: r.normal } : null;

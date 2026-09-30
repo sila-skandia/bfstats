@@ -52,7 +52,7 @@ from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
     FIRE_LOOP_SLOT, RELEASE_AFTER, RELEASE_SLOTS,
     SOUND_ARCHIVES, VEHICLE_RATES, _SILENCE, TranscodeError,
-    _firing_patch, _sound_layers, sample_writer,
+    _firing_patch, _sound_layers, _trigger_slots, sample_writer,
     ffmpeg_available, resolve_sound, transcode_to_mp3,
 )
 from extract_models import (
@@ -274,7 +274,79 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     picks = _alternates(name, sample, patches, sounds, out, previous)
     if picks:
         entry["randomPlay"] = picks
+    press, release = _burst_edges(name, sample, slot, patches, sounds, out,
+                                  previous)
+    if press:
+        entry["press"] = press
+    if release:
+        entry["release"] = release
     return entry, None
+
+
+def _burst_edges(name: str, sample: SoundSample, slot: str, patches,
+                 sounds: ArchivePool, out: Path, previous: dict | None
+                 ) -> tuple[list[dict], list[dict]]:
+    """The shooter's spin-up and release tail: `(press, release)`.
+
+    The same two edges `extract_map._trigger_slots` gives a vehicle gun
+    (ledger SND-12, SND-14, SND-16), for the ear at the muzzle: a loop pick's
+    patch plays its one-shots once a press, and a stop triggers Release,
+    Shell Bounce and MG distance -- DC's `akm_release`, `m16_release`,
+    `hk_fire_release`, vanilla's casings. Only loads audible at the muzzle get
+    a file (`<Name>.p<n>.mp3`, `<Name>.r<slot>.<load>.mp3`); a patch that
+    rolls one load a trigger (`randomPlay`, SND-15) keeps its `loads` count so
+    a roll can land on one the shooter does not hear. A weapon whose report
+    already comes out of the release slots (`slot == "release"`) has none.
+    """
+    home = next((p for p in patches if any(s is sample for s in p.samples)),
+                None)
+    chosen = [sample] if home is None else [
+        s for s in home.samples if bool(s.loop) is bool(sample.loop)]
+    press, release = _trigger_slots(patches, chosen or [sample])
+    if slot == "release":
+        release = {}
+    before = {pick.get("file"): pick.get("wav")
+              for group in ((previous or {}).get("release") or [])
+              for pick in group.get("picks", [])}
+    before.update({pick.get("file"): pick.get("wav")
+                   for pick in ((previous or {}).get("press") or [])})
+
+    def write(load: SoundSample, target: Path) -> dict | None:
+        if muzzle_gain(load, at_time=None) <= 0:
+            return None
+        resolved = resolve_sound(load.file, None, sounds, VEHICLE_RATES)
+        if resolved is None:
+            return None
+        wav, data = resolved
+        _write_mp3(data, target, target.exists()
+                   and before.get(target.name) not in (None, wav))
+        pick = {"file": target.name, "wav": wav, "volume": load.volume}
+        if load.random_start_pitch:
+            pick["randomStartPitch"] = list(load.random_start_pitch)
+        if (delay := fire_delay(load)) > 0:
+            pick["delay"] = delay
+        return pick
+
+    press_picks = [pick for index, load in enumerate(press)
+                   if (pick := write(load, out / f"{name}.p{index}.mp3"))]
+    release_groups = []
+    for index, loads in release.items():
+        patch = patches[index]
+        picks = []
+        for load_index, load in enumerate(patch.samples):
+            if not any(load is kept for kept in loads):
+                continue
+            pick = write(load, out / f"{name}.r{index}.{load_index}.mp3")
+            if pick:
+                picks.append({"load": load_index, **pick})
+        if not picks:
+            continue
+        group = {"slot": index, "picks": picks}
+        if patch.random_play:
+            group["randomPlay"] = True
+            group["loads"] = len(patch.samples)
+        release_groups.append(group)
+    return press_picks, release_groups
 
 
 def _write_mp3(data: bytes, target: Path, stale: bool) -> None:

@@ -30,7 +30,7 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { loadFirst, poseBases, poseUrls, rigUrls, weaponUrls } from './pose-bases.js';
+import { loadFirst, poseBases, poseSources, rigUrls, weaponUrls } from './pose-bases.js';
 import { boneKey } from './skeleton-hit.js';
 
 export { boneKey };
@@ -250,26 +250,23 @@ export function createPoseComposer(ctx) {
     return assetCache.get(key);
   }
 
-  /** A pose's recipe, from the mod tree then vanilla's. */
-  async function recipe(soldier, pose) {
-    for (const url of poseUrls(value(ctx.modelsBase),
-                               `${soldier}__${pose}.pose.json`, bust())) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) continue;
-        const doc = await response.json();
-        if (String(doc?.format || '').startsWith(RECIPE_FORMAT_PREFIX)) return doc;
-      } catch { /* the next root, or a tree with no recipes at all */ }
+  /** The recipe at one source (`pose-bases.js` `poseSources`), or null. */
+  async function recipe(source) {
+    try {
+      const response = await fetch(`${source.base}/poses/${source.stem}.pose.json${bust()}`);
+      if (!response.ok) return null;
+      const doc = await response.json();
+      return String(doc?.format || '').startsWith(RECIPE_FORMAT_PREFIX) ? doc : null;
+    } catch {
+      return null;   // the next source, or a tree with no recipes at all
     }
-    return null;
   }
 
-  /** The monolithic pose, for a tree that has no recipe for this pair. */
-  async function monolithic(soldier, pose) {
+  /** The monolithic pose at one source, or null. */
+  async function monolithic(source) {
     try {
       const gltf = await loadFirst(value(ctx.loader),
-                                   poseUrls(value(ctx.modelsBase),
-                                            `${soldier}__${pose}.pose.glb`, bust()));
+                                   [`${source.base}/poses/${source.stem}.pose.glb${bust()}`]);
       hideUnlit(gltf.scene);
       ctx.shade?.(gltf.scene);
       return { scene: gltf.scene, animations: gltf.animations ?? [],
@@ -287,10 +284,12 @@ export function createPoseComposer(ctx) {
    *
    * Each half resolves across the trees on its own (`pose-bases.js`), so a mod
    * recipe naming a vanilla soldier and a mod weapon gets vanilla's rig and the
-   * mod's weapon.
+   * mod's weapon. The rig is looked for from the recipe's own tree (`from`)
+   * onward: a vanilla recipe names a vanilla soldier, so no mod tree is asked
+   * for a rig it cannot hold.
    */
-  async function compose(doc) {
-    const rigGltf = await asset(rigUrls(value(ctx.modelsBase), doc.soldier, bust()));
+  async function compose(doc, from = value(ctx.modelsBase)) {
+    const rigGltf = await asset(rigUrls(from, doc.soldier, bust()));
     if (!rigGltf) return null;
     // A clone per pose: the rig is one document per soldier, and two poses of
     // the same soldier are drawn at once. `skeletonClone` rebinds every skinned
@@ -340,14 +339,21 @@ export function createPoseComposer(ctx) {
              weaponName: doc.weapon ?? null, recipe: doc };
   }
 
-  /** The split pose when the tree has one, the monolithic glb when it does not. */
+  /** The pair from the first tree that holds it, in that tree's own form: the
+   *  mod tree's single-file pose beats vanilla's recipe for the same pair, and
+   *  a tree's index hands back the file's own spelling (`poseSources`). */
   async function load(soldier, pose) {
-    const doc = await recipe(soldier, pose);
-    if (doc) {
-      const composed = await compose(doc);
-      if (composed) return composed;
+    for (const source of await poseSources(value(ctx.modelsBase), soldier, pose, bust())) {
+      if (source.kind === 'recipe') {
+        const doc = await recipe(source);
+        const composed = doc ? await compose(doc, source.base) : null;
+        if (composed) return composed;
+      } else {
+        const got = await monolithic(source);
+        if (got) return got;
+      }
     }
-    return monolithic(soldier, pose);
+    return null;
   }
 
   function cached(store, key, load) {

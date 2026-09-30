@@ -598,6 +598,18 @@ class TestModRigSelection(unittest.TestCase):
         self.assertEqual(extract_viewmodel.kit_pairs(self.KITS, {"basra"}), [
             ("USSoldier", "M16"), ("USSoldier", "Binoculars"), ("IraqSoldier", "AK47")])
 
+    def test_a_rolled_item_asks_for_each_variant_not_the_bundle(self):
+        # FHSW's `RandomGBTankcommander` is never held (ledger KIT-1); each
+        # variant plays its own numbered states, so each gets arms.
+        kits = {"kits": [{"soldiers": ["FrenchSoldier"], "levels": None, "items": [
+            {"template": "RandomGBTankcommander",
+             "variants": ["RandomGBTankcommander1", None, "RandomGBTankcommander3"]},
+            {"template": "KnifeAllies"}]}]}
+        self.assertEqual(extract_viewmodel.kit_pairs(kits), [
+            ("FrenchSoldier", "RandomGBTankcommander1"),
+            ("FrenchSoldier", "RandomGBTankcommander3"),
+            ("FrenchSoldier", "KnifeAllies")])
+
     def test_index_lists_every_rig_in_the_tree(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

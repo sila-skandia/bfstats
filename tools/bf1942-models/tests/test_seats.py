@@ -163,6 +163,23 @@ class SeatsModuleTests(unittest.TestCase):
         the drive model and `'ship'` is the kind."""
         self.assertEqual("ship", self.results["classify"]["shipRoot"])
 
+    def test_a_hull_with_two_engine_types_is_driven_by_its_category(self) -> None:
+        """Every Engine runs its own physics in the engine (a land engine
+        returns at `updatePhysics`'s second instruction, `0x0824cc20`, and
+        drives its springs; a `c_ETShip` pushes only under water,
+        `0x0824cc89`), so the viewer's one drive per hull is picked by the
+        hull's `setVehicleCategory` and the engine that model owns, not by
+        the last Engine the walk meets."""
+        kinds = self.results["mixedEngines"]
+        self.assertEqual("tank", kinds["bmp2"])
+        self.assertEqual("ground", kinds["brdm2"])
+        self.assertEqual("ship", kinds["elco80"])
+        self.assertEqual("air", kinds["huey"])
+        self.assertEqual("tank", kinds["charB1"])
+        # No driven spring in the tree: the land model has nothing to push.
+        self.assertEqual("ship", kinds["lvt4"])
+        self.assertEqual("ship", kinds["uncategorised"])
+
     # --- seat order matches SEAT-24's own reading ---------------------------
 
     def test_root_is_always_seat_position_zero(self) -> None:

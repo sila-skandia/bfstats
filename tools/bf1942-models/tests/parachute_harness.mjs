@@ -171,9 +171,11 @@ function flatWorld(worldSize = 2048, dim = 32, height = 0) {
 const WORLD = 2048;
 const MID_X = WORLD / 2, MID_Z = -WORLD / 2;
 
-function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}) {
+function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0,
+  barred = false, pressNine = false } = {}) {
   const collider = flatWorld(WORLD);
   const soldier = new Soldier({ collider, worldSize: WORLD });
+  soldier.chute.freeFallBarred = barred;
   soldier.bailOut(MID_X, from, MID_Z, Math.PI / 2, 0, 0, vz);
   soldier.pitch = pitch;
   const trace = { fallFiredAt: null, openedAt: null, landedAt: null };
@@ -189,8 +191,9 @@ function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}
   let lastDescent = 0, lastGlide = 0;
   for (let i = 0; i < 60 * 120; i++) {
     t += dt;
-    deploy = deployAt != null && soldier.parachuteState === 'falling'
-      && t >= deployAt && soldier.parachuteState !== 'open';
+    deploy = (deployAt != null && soldier.parachuteState === 'falling'
+      && t >= deployAt && soldier.parachuteState !== 'open')
+      || (pressNine && i % 2 === 0);
     soldier.step(dt, { deploy });
     for (const e of soldier.drainParachuteEvents()) {
       if (e.type === 'state' && e.state === 'falling' && trace.fallFiredAt == null) {
@@ -221,6 +224,7 @@ function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}
   return {
     t, y: soldier.y, x: soldier.x - MID_X, z: soldier.z - MID_Z,
     state: soldier.parachuteState,
+    everFell: trace.fallFiredAt != null,
     peakFall, descent, glide,
     landing: landing
       ? {
@@ -245,6 +249,34 @@ function armsAt(feet) {
   return soldier.parachuteState;
 }
 results.gateOnTheOrigin = { feet96: armsAt(9.6), feet89: armsAt(8.9) };
+
+// A kit wearing a `nochute` (`overrideAirMovementInhibitations`): the whole
+// free-fall branch is skipped (0x08275e70-0x08275ea4), so nothing arms, 9
+// opens nothing, and the landing is billed in full.
+{
+  const barred = new Parachute();
+  barred.freeFallBarred = true;
+  barred.update({ dt: TICK_DT, velocityY: -30, height: 200, forward: down, deploy: true });
+  const asked = new Parachute();
+  let calls = 0;
+  asked.freeFallBarred = () => { calls++; return false; };
+  asked.update({ dt: TICK_DT, velocityY: -30, height: 200, forward: down });
+  const idle = new Parachute();
+  let idleCalls = 0;
+  idle.freeFallBarred = () => { idleCalls++; return true; };
+  idle.update({ dt: TICK_DT, velocityY: 0, height: 0, grounded: true });
+  barred.reset();
+  results.kitBar = {
+    barred: barred.state,
+    barredEvents: barred.events.length,
+    function: asked.state,
+    functionCalls: calls,
+    // Asked only when the other gates would arm it.
+    idleCalls,
+    survivesReset: barred.freeFallBarred,
+  };
+}
+results.nochute = bail({ from: 120, deployAt: null, pitch: 0, barred: true, pressNine: true });
 
 // Straight down, no chute: free fall the whole way, and it is lethal.
 results.freeFall = bail({ from: 120, deployAt: null, pitch: -Math.PI / 2 });

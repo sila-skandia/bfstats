@@ -7755,6 +7755,15 @@
    "note": "lnxded twin of client 0x004b0330. Nearest Armor up from the object (queryComponent 0xc4a4, +0x50 parents); isDestroyed (Armor vt+0xc8) returns; template queryImplementation(0x947e) == 0 returns before any damage. alpha = clamp(damage / armor.getMaxHitPoints(), 0, 0.75). Walks up to the first IPlayerControlObject (0xc4c5), takes getPcos (IPCO vt+0x40) and for every seat's getOccupingPlayer (vt+0xc) that resolves to a BFPlayer: the kill bookkeeping when this damage kills, then the octant from the damaged object's getAbsolutePosition (vt+0x38) and getAbsoluteTransformation (vt+0x40, rows +0x20/+0) toward Pos3 (calcLookAtMatrix 0x08159b80), HitFromPosEvent to his client. Finally the object's handleDamage (vt+0xd8). Ledger HFD-2, HFD-3, HFD-10, HFD-11."
   },
   {
+   "address": "0x0814c990",
+   "name": "dice::bf::GameServer::spawnPlayer(BFPlayer*)",
+   "kind": "function",
+   "subsystem": "kit",
+   "confidence": "working",
+   "source": "research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. Creates the soldier and the kit with createObjectOnAllClients; the kit's construction rolls its Random children (Kit -> Item -> Bundle ctor -> KitTemplate vt+0x7c addBundleChilds). Ledger KIT-4."
+  },
+  {
    "address": "0x0814e67b",
    "name": "exitVehicle enterVehicle call site (the only force = true)",
    "kind": "patch_site",
@@ -8005,6 +8014,15 @@
    "confidence": "verified",
    "source": "research-2026-09-27-tickets",
    "note": "lnxded. Logs a roundInit whose two ticket params are both team 1's, as gameStatusFirstPlaying does (push 0x1 at 0x08157fab and 0x08157ff9). Ledger TKT-6."
+  },
+  {
+   "address": "0x08158700",
+   "name": "dice::bf::GameServer::changeKit(BFPlayer*, unsigned char)",
+   "kind": "function",
+   "subsystem": "kit",
+   "confidence": "verified",
+   "source": "research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. Looks the kit up by (team*256 + slot), createObjectOnAllClients, then selectBestLoadedWeapon: a new kit object, so a new roll. Ledger KIT-4."
   },
   {
    "address": "0x08158aa0",
@@ -8923,6 +8941,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
    "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) \u2014 never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
+  },
+  {
+   "address": "0x081d5f10",
+   "name": "dice::ref2::world::ObjectTemplateManager::getTemplate(std::string const&) const",
+   "kind": "function",
+   "subsystem": "load",
+   "confidence": "verified",
+   "source": "research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. calcStringHashValueNoCase 0x081d5f47 + strcasecmp 0x081d5f88: template names are case-blind. Ledger LOAD-5."
   },
   {
    "address": "0x081d7490",
@@ -10581,6 +10608,15 @@
    "note": "lnxded, inside 0x08277260 (dispatch at 0x0827728b, cmp edi,0x12). Takes the message only when animMachine[lower].getCurrentState() == BFSoldierTemplate+0x1e4 (Lb_ParachuteFall), then setIsParachuting(true) at 0x08277ba7. Blocked outright by the dead byte at BFSoldier+0x245. Ledger PARA-4."
   },
   {
+   "address": "0x08278460",
+   "name": "dice::ref2::world::BFSoldier::enableItem(char)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. Raises an item: setAnimationState(1, \"Ub_...RaiseWeapon\" + the item's template name, 1) at 0x08278731 (.rodata 0x086d20f7). Ledger ANIM-15."
+  },
+  {
    "address": "0x0827a730",
    "name": "BFSoldierTemplate::init()",
    "kind": "function",
@@ -11632,6 +11668,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded, vtable+0xc (not +0x1c)."
+  },
+  {
+   "address": "0x08327c70",
+   "name": "dice::anim::AnimationStateMachine::copyState(std::string, std::string const&, std::string const&, float, std::string const&, float)",
+   "kind": "function",
+   "subsystem": "anim",
+   "confidence": "verified",
+   "source": "research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. Clones the latest state (at most 2 clips): slot 0 donor A, slot 1 donor B; a one-clip state whose new name does not start ub_ (strncasecmp .rodata 0x086e2203) takes B; each copied clip's rate is the donor's float. Ledger ANIM-13, ANIM-14."
   },
   {
    "address": "0x0832ae90",
@@ -13030,12 +13075,13 @@
   },
   {
    "address": "0x08720754",
-   "name": "BundleTemplate random-geometry counter",
+   "address": "0x08720754",
+   "name": "dice::ref2::world::randomCounter",
    "kind": "data",
    "subsystem": "world",
    "confidence": "verified",
-   "source": "fhsw-level-audit-2026-09-30",
-   "note": "lnxded. Global int that addBundleChilds 0x081a8300 increments for every child with setRandomGeometries N, wrapping to 1 past N; the child created is sprintf(\"%s%d\", name, counter). Ledger LOAD-6."
+   "source": "fhsw-level-audit-2026-09-30; research-2026-09-30-fhsw-random-kit-items",
+   "note": "lnxded. Global int that addBundleChilds 0x081a8300 increments for every child with setRandomGeometries N, wrapping to 1 past N; the child created is sprintf(\"%s%d\", name, counter). Ledger LOAD-6. The one counter every BundleTemplate::addBundleChilds roll bumps (inc; set to 1 once > N), never reset. Ledger KIT-2."
   },
   {
    "address": "0x087209a0",

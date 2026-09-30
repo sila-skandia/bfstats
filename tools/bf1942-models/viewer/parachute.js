@@ -374,6 +374,25 @@ export const CHUTE_LAND_HAS_NO_SCRIPT = true;
 export class Parachute {
   constructor({ random = Math.random } = {}) {
     this.random = random;
+    /**
+     * Whether the soldier's kit keeps him out of free fall: a boolean, or a
+     * function asked at the moment the gates would arm it (the kit can change
+     * under him: a pickup is a new kit). **Verified.**
+     *
+     * The whole free-fall branch of `BFSoldier::handlePlayerInput` is skipped
+     * when any active kit part he wears has a set byte at template `+0x188`
+     * (`0x08275e70`-`0x08275ea4`), which is
+     * `ActiveKitPartTemplate::setOverrideAirMovementInhibitations`
+     * (`0x08263c70`; the console word `overrideAirMovementInhibitations`,
+     * `0x082fe723`). EoD's and DC Final's `nochute`, FH's `Chutedisabler`
+     * and XPack2's rocket pack set it. Without `Lb_ParachuteFall` there is
+     * nothing for 9 to open (PARA-4), no free-fall steering and no scream,
+     * and the landing is billed in full (PARA-10 spares only the open chute).
+     * The page sets it from `_shared/loadouts.json`
+     * (`overrideAirMovementInhibitations`, `kit-loadout.js`); it survives a
+     * `reset`, which is a new life, not a new kit.
+     */
+    this.freeFallBarred = false;
     this.reset();
   }
 
@@ -443,13 +462,15 @@ export class Parachute {
     }
 
     if (this.state === PARA_NONE) {
-      // `BFSoldier::handlePlayerInput` 0x08275eaa-0x08275f5d, both gates.
+      // `BFSoldier::handlePlayerInput` 0x08275eaa-0x08275f5d, both gates,
+      // behind the kit's (`freeFallBarred`, 0x08275e70-0x08275ea4).
       // A non-finite height means the caller has no terrain to measure
       // against; the engine always has one (`terrainBase` is a singleton), so
       // the honest answer for a level with no collider is "no free fall"
       // rather than a height of infinity that arms it everywhere.
       if (!grounded && velocityY < FALL_STATE_SPEED
-        && Number.isFinite(height) && height > FALL_STATE_HEIGHT) {
+        && Number.isFinite(height) && height > FALL_STATE_HEIGHT
+        && !this.#barred()) {
         this.state = PARA_FALLING;
         this.fallTime = 0;
         this._fired.clear();
@@ -503,6 +524,12 @@ export class Parachute {
       this.#steer(bodyForward, false);
     }
     return this;
+  }
+
+  /** `freeFallBarred`, asked now. */
+  #barred() {
+    const barred = this.freeFallBarred;
+    return typeof barred === 'function' ? !!barred() : !!barred;
   }
 
   #toNone() {

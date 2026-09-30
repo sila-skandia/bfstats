@@ -857,6 +857,68 @@ class FlightModelTests(unittest.TestCase):
         self.assertLess(h["underWater"]["vy"], -10.0)
         self.assertTrue(h["reset"])
 
+    def test_a_parked_helicopter_stays_where_it_stands(self) -> None:
+        # Pilot aboard, collective released, 6 degrees nose-up and 3 over: the
+        # idle floor's thrust leans off the vertical and the wheels' contact
+        # friction (`addFriction`'s plain-contact arm, which a bare
+        # `c_PGFDummyGrip` takes; physics.md 6) holds it. Before, nothing did.
+        parked = self.results["helicopter"]["parked"]
+        self.assertLess(parked["running"]["moved"], 0.1)
+        self.assertLess(parked["running"]["speed"], 0.02)
+        self.assertGreater(parked["running"]["revs"], 0.25)
+        self.assertTrue(parked["running"]["grounded"])
+        # Pilot's seat empty: the engine is stopped (TemplateMessage 5, PHY-14).
+        self.assertEqual(0, parked["stopped"]["revs"])
+        self.assertLess(parked["stopped"]["moved"], 0.1)
+
+    def test_the_wheels_brake_a_landing_and_let_a_lift_off_go(self) -> None:
+        h = self.results["helicopter"]
+        # 10 m/s against mu * 1.5 * 9.82 = 14.73 m/s^2: 2.6 m/s left at 0.5 s,
+        # stopped by 1 s.
+        self.assertAlmostEqual(10 - 14.73 * 0.5, h["slide"]["half"], delta=0.3)
+        self.assertLess(h["slide"]["speed"], 0.01)
+        self.assertGreater(h["liftOff"]["agl"], 20.0)
+        self.assertFalse(h["liftOff"]["grounded"])
+        # The fixed-wing ground roll is not this law's: a Corsair rolls on.
+        self.assertGreater(h["fixedWingRolls"], 8.5)
+
+    def test_the_collective_is_held_and_falls_back_to_its_floor(self) -> None:
+        # W is a held axis (`ControlMap::buttonsToAxis` 0x083f2080), and the
+        # hover engine's own automaticReset roll axis returns to 1500/5000
+        # when it is let go.
+        held = self.results["helicopter"]["collectiveHeld"]
+        self.assertAlmostEqual(1.0, held["up"], places=4)
+        self.assertAlmostEqual(0.3, held["released"], places=4)
+
+    def test_the_note_and_the_rotor_read_the_engines_revs(self) -> None:
+        # `Engine::updateSound` 0x0823e930 hands the patch |revs| of the Engine
+        # it is loaded on; the rotor turns on the rotor engine's revs.
+        rpm = self.results["helicopter"]["rpm"]
+        self.assertAlmostEqual(rpm["dummyRevs"], rpm["dummy"], places=4)
+        self.assertAlmostEqual(rpm["hoverRevs"], rpm["hover"], places=4)
+        self.assertEqual("AH64DummyEngine", rpm["rotor"])
+        self.assertAlmostEqual(rpm["dummyRevs"], rpm["throttle"], places=4)
+        self.assertIsNone(rpm["fixedWing"])
+
+    def test_a_helicopter_hovers_on_its_collective_and_says_how_it_steers(self) -> None:
+        h = self.results["helicopter"]
+        self.assertTrue(h["hovers"])
+        for axis in ("pitch", "roll", "yaw"):
+            self.assertGreater(h["authority"][axis], 0.05, axis)
+
+    def test_the_bot_law_flies_a_helicopter_to_its_point_and_lands_it(self) -> None:
+        pilot = self.results["helicopter"]["pilot"]
+        self.assertIsNotNone(pilot["arrived"])
+        self.assertLess(pilot["arrived"], 60)
+        self.assertIsNotNone(pilot["landed"])
+        self.assertLess(pilot["maxTilt"], 35)
+        # It clears the hill on the way and holds over the point.
+        self.assertGreater(pilot["minAgl"], 15)
+        self.assertLess(pilot["hoverDrift"], 5)
+        self.assertTrue(pilot["final"]["grounded"])
+        self.assertLess(pilot["final"]["off"], 5)
+        self.assertLess(pilot["final"]["speed"], 0.1)
+
     def test_calculate_and_clip_angle_runs_both_of_its_laws(self) -> None:
         c = self.results["clipAngle"]
         # automaticReset: straight to input*max at |acceleration| deg/s, clipped.
@@ -888,6 +950,21 @@ class FlightModelTests(unittest.TestCase):
         for name, plane in real["planes"].items():
             self.assertFalse(plane["vectored"], name)
             self.assertIsNone(plane["inertiaLaw"], name)
+            self.assertFalse(plane["hovers"], name)
+        for name, heli in real["helicopters"].items():
+            self.assertTrue(heli["hovers"], name)
+        if "harrier" in real:
+            self.assertTrue(real["harrier"]["vectored"])
+            self.assertFalse(real["harrier"]["hovers"])
+        for name, parked in real["parked"].items():
+            self.assertLess(parked["moved"], 0.1, name)
+            self.assertEqual(["c_PGFDummyGrip"], parked["grips"], name)
+        for name, pilot in real["pilot"].items():
+            self.assertIsNotNone(pilot["arrived"], name)
+            self.assertIsNotNone(pilot["landed"], name)
+            self.assertLess(pilot["maxTilt"], 40, name)
+            self.assertLess(pilot["off"], 10, name)
+            self.assertTrue(pilot["grounded"], name)
 
 
 if __name__ == "__main__":

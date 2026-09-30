@@ -1,7 +1,8 @@
 // Drives `viewer/pose-bases.js` outside a browser and prints one JSON blob.
 // `tests/test_pose_bases.py` copies the module in under its own name.
 
-import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst } from './pose-bases.js';
+import { poseBases, poseUrls, rigUrls, weaponUrls, loadFirst, poseSources, forgetPoseIndexes } from './pose-bases.js';
+import { byName } from './model-file.js';
 
 const out = {};
 out.bases = {
@@ -49,5 +50,37 @@ function fakeLoader(have) {
   } catch (error) {
     out.none = { rejected: String(error.message), asked: l.asked.length };
   }
+}
+// A manifest looked up by a template name, whatever its case (ledger LOAD-7).
+{
+  const grips = { MP40: 'gaits/MP40.gait.glb', Mp40: 'gaits/exact.gait.glb', No2: 'gaits/No2.gait.glb' };
+  out.byName = {
+    exact: byName(grips, 'Mp40'),
+    otherCase: byName(grips, 'mp40'),
+    upper: byName(grips, 'NO2'),
+    missing: byName(grips, 'Sten') ?? null,
+    noTable: byName(null, 'No2') ?? null,
+  };
+}
+// Where a pair is looked for when neither tree publishes an index: each tree's
+// recipe then its glb, the mod tree's first, under the asked spelling.
+{
+  forgetPoseIndexes();
+  const asked = [];
+  globalThis.fetch = async url => { asked.push(url); return { ok: false, status: 404 }; };
+  out.noIndex = {
+    sources: await poseSources('models/mods/fhsw', 'GermanSoldier', 'K98'),
+    asked,
+  };
+  // A 404 is remembered: a second pair asks for no index again.
+  await poseSources('models/mods/fhsw', 'GermanSoldier', 'Mp40');
+  out.noIndex.askedAfterSecond = asked.length;
+  // Any other failure is not: the next pair asks again.
+  forgetPoseIndexes();
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error('network'); };
+  await poseSources('models', 'USSoldier', 'Colt');
+  await poseSources('models', 'USSoldier', 'Colt');
+  out.noIndex.retriedAfterError = calls;
 }
 console.log(JSON.stringify(out));

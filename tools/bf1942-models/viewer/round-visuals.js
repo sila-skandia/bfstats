@@ -83,18 +83,29 @@ function softDisc() {
 
 const impactGeometry = new THREE.PlaneGeometry(1, 1);
 
-/** Piecewise-linear sample of an over-time ramp at `phase` (0..100). */
+/**
+ * Piecewise-linear sample of an over-time ramp at `phase` (0..100).
+ *
+ * A timeless point (`[]`, `null`) is passed over, as `effects-core.js`
+ * `sampleCurve` does (ledger EMT-9), and a ramp with nothing readable in it
+ * answers `[]` rather than throwing: every caller here reads `[0]` or
+ * destructures the result on the per-frame path.
+ */
 export function sampleCurve(points, phase) {
-  if (phase <= points[0][0]) return points[0].slice(1);
-  for (let i = 1; i < points.length; i++) {
-    if (phase <= points[i][0]) {
-      const [t0, ...v0] = points[i - 1];
-      const [t1, ...v1] = points[i];
+  let a = null;
+  for (let i = 0; i < (points?.length ?? 0); i++) {
+    const b = points[i];
+    if (!b || !b.length) continue;
+    if (phase <= b[0]) {
+      if (a === null) return b.slice(1);
+      const [t0, ...v0] = a;
+      const [t1, ...v1] = b;
       const k = t1 === t0 ? 1 : (phase - t0) / (t1 - t0);
       return v0.map((v, j) => v + (v1[j] - v) * k);
     }
+    a = b;
   }
-  return points[points.length - 1].slice(1);
+  return a === null ? [] : a.slice(1);
 }
 
 /**
