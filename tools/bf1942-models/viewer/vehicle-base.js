@@ -163,6 +163,27 @@ class RiggedPart {
       }
     }
     this.spunBases = this.spun.map(n => n.quaternion.clone());
+
+    // And an Engine's POSITION axis never poses it either, at any span
+    // (ledger PHY-15). `Engine::handleUpdate` (Engine vtable `+0x54`, lnxded
+    // `0x0823e120`) clips all three angles and hands them to the gearbox --
+    // the roll angle over `maxRotation.z` is the throttle term T1 (TANK-12),
+    // the yaw angle the steering term -- and never calls `setRotation`,
+    // `setState` or `Bundle::getBundleTransformation`, which
+    // `RotationalBundle::handleUpdate` (`0x081d78e0`) does. A remote client's `EngineNetworkable::predict`
+    // (`0x08228710`) writes the same angle registers and no transform either.
+    //
+    // Vanilla hid this: its Engine axes are either an accumulator (Willy
+    // +-5000, every propeller) or a +-1 degree lean (every tank, the
+    // Kubelwagen), and a one-degree roll of the running gear is invisible.
+    // Desert Combat's Humvee, Pickup, Technical, Lada, DPV and EE-9 declare
+    // `setMinRotation 0/0/-100` .. `setMaxRotation 0/0/100` with
+    // `setInputToRoll c_PIThrottle`: a position axis, and posing it swung all
+    // four wheels 100 degrees about the Engine's origin the moment the driver
+    // opened the throttle -- tyres lying flat on the bonnet and under the sill.
+    // The servo still runs (the surfaces are shared with the steering bundles
+    // and the drivetrains read the Engine's own numbers); only the pose goes.
+    this.posesNode = node.userData?.templateKind !== 'Engine';
   }
 }
 
@@ -745,7 +766,9 @@ export class Vehicle {
           axisAngle(spec, surfaces.get(key) ?? 0) * SIGN[axis]);
         q.multiply(new THREE.Quaternion().setFromEuler(e));
       }
-      part.node.quaternion.copy(q);
+      // An Engine's position axes are gearbox numbers, never a pose (see
+      // `RiggedPart.posesNode`): its node stays where the glb put it.
+      if (part.posesNode) part.node.quaternion.copy(q);
       if (!spinning) continue;
       // Pre-multiplied: the spin is about the Engine's axis, which the child
       // sees outside its own authored rotation. Same convention as the baked
