@@ -2571,6 +2571,15 @@
    "note": "c_PGFNoGrip=0, c_PGFContactGrip=1(default case), c_PGFRollGrip=2, c_PGFEngineGrip=4, c_PGFRollGripWhenOccupied=8, c_PGFDummyGrip=0x20, c_PGFEngineDummyGrip=0x24=Engine|Dummy, c_PGFStaticFriction=0x80. It is a bitfield. Force semantics of each bit live in the response solver (open)."
   },
   {
+   "address": "0x0054d890",
+   "name": "SimpleSoundTemplate__loadSoundScript",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-fhsw-sound",
+   "note": "Client. Stores mainConsole working path (vt+0x74) + argument via std::operator+ at 0x0054d8c3, then SoundScript__parse 0x007fb1c0 at 0x0054d8e9. Called from the loadSoundScript console object at 0x00516f16. lnxded 0x081de9a0 is an empty stub. Ledger CON-14."
+  },
+  {
    "address": "0x0054edd0",
    "name": "AnimationState clips.size() (AnimationInfo count, stride 12)",
    "kind": "function",
@@ -3145,6 +3154,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-jump-velocity",
    "note": "Client twin of lnxded addConstantHelper 0x08298280, by its calls: the constant's name as a std::string in ecx, its value in edx. Registers the same 21 c_Sst* sound triggers with the same values in the same order, from 0x004c466e."
+  },
+  {
+   "address": "0x005a1f00",
+   "name": "OldConsole__getWorkingPath",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-fhsw-sound",
+   "note": "Client, OldConsole vtable 0x009033a8 slot +0x74: lea eax,[ecx+0x16c]. Slot +0x70 (0x005a1ef0) returns the useRelativePaths byte at +0x168. lnxded keeps the pair at +0x178/+0x17c (getWorkingPath 0x083eef30). Ledger CON-14."
   },
   {
    "address": "0x005a1fa0",
@@ -5816,8 +5834,8 @@
    "kind": "function",
    "subsystem": "sound",
    "confidence": "verified",
-   "source": "ghidra-headless-2026-09-30-dc-sound",
-   "note": "Adds one load: a path containing /silence.wav (string 0x00a8ff98) gets null slots but still counts; otherwise registers the buffer by (name, 3D, loop, stream). Ledger SND-15."
+   "source": "ghidra-headless-2026-09-30-fhsw-sound",
+   "note": "Adds one load: a path containing /silence.wav (string 0x00a8ff98) gets null slots but still counts; otherwise looks the buffer up (0x007fd150), creating it through 0x007fcf80, whose vt+0x04 load failing gives a null handle; addSample then returns false at 0x00802e00 with no slot and no count. Ledger SND-15, SND-16."
   },
   {
    "address": "0x00803020",
@@ -12064,6 +12082,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-console",
    "note": "lnxded. Marker block 0x083ec287 pushes the sixty '+' (0x086e38e0) and BOTH its exits (0x083ec2cd jg, 0x083ec2df jmp) land on 0x083ec1ff, which strlens the edit buffer at this+0x60, appends it to the prompt copy and pushes that -- the same instruction the unscrolled path reaches from 0x083ec1f6. Short path 0x083ec147; dec edi 0x083ec174. Ledger CON-10."
+  },
+  {
+   "address": "0x083ed110",
+   "name": "dice::ref2::io::OldConsole::include",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "ghidra-headless-2026-09-30-fhsw-sound",
+   "note": "lnxded. With useRelativePaths (+0x178) a path not starting with / or backslash gets the working path (+0x17c) prefixed; the working path is saved (0x083ed42c), set to the included file's folder (rfind 0x083edc29, assign 0x083edc57) and restored after the lines run (0x083ed898). Ledger CON-14; the line counter is CON-8."
   },
   {
    "address": "0x083f7f40",
