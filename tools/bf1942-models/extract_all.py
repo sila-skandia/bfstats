@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from optimise_mesh import optimise_bake  # noqa: E402
 from extract_models import (  # noqa: E402
-    DEFAULT_GAME_DIR, build_library, build_pools, catalogue, discover_levels,
-    mod_chain, own_templates, spawned_templates,
+    DEFAULT_GAME_DIR, add_level_objects, build_library, build_pools, catalogue,
+    discover_levels, mod_chain, own_templates, spawned_templates,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -113,12 +113,16 @@ def main() -> int:
         sys.exit(f"game dir not found: {game_dir}")
 
     # The same catalogue --list prints, derived from the archives: the object
-    # folders, and every template a level's spawners field (`Fletcher2`).
+    # folders, and every template a level's spawners field (`Fletcher2`),
+    # including the ones a level declares for itself (`Ju88A`), which only
+    # its own archive knows.
     chain = mod_chain(game_dir, args.mod)
     _meshes, _textures, objects, _game = build_pools(chain, [])
+    levels = discover_levels(chain)
+    add_level_objects(objects, levels, chain)
     library = build_library(objects)
-    entries = catalogue(objects, library,
-                        spawned=spawned_templates(discover_levels(chain)))
+    entries = catalogue(objects, library, spawned=spawned_templates(levels, chain),
+                        own_levels={stem.lower() for stem, _ in discover_levels(chain[:1])})
 
     # An expansion inherits its parent wholesale, so most of its catalogue is
     # vanilla's. Extracting that again writes a second copy of every vanilla
