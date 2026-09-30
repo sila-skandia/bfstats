@@ -18,6 +18,9 @@ route-by-route fixing with a guard on the invariant itself. **D8 (2026-09-29) is
 the fourth time: two patches rather than two layers of one, so D7's guard, which
 runs inside a patch, never saw it. The guard now runs across the rack too.**
 
+**D9 (2026-09-30) is not the horn: DC Final's guns, grenade launchers and forests,
+and three engine rules the extractor had guessed at (ledger SND-12..15, SSC-6).**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -698,3 +701,74 @@ every built entry's `engineAudio` and `weapons[].audio`, each voice's
 `source.playbackRate.value`, `gain.gain.value` times the patch's `bus.gain.value`,
 and `suppressed`. Group by `voice.buffer`. Pin every loop's `jitter` to 1 first
 if you want the worst case rather than the session's draw.
+
+---
+
+# D9 — guns whose Fire Loop loops nothing, and what `randomPlay` really picks (2026-09-30)
+
+Reported by the DC sound audit: DC Final's MG42 (22 levels' `Stationary_mg42`
+and the pintle guns of eleven hulls) played only its shell casings, the M2A3,
+M6 Linebacker and BMP-2 cannons only `tigerrev`, and the CAR-15, M203,
+AK47GP30 and Skorpion nothing at all; every tree on a DC Final forest level
+sang the same bird; helicopters and jets shared one another's samples.
+
+## The engine rules, read out of the client
+
+All five are ledger rows with their addresses; this is what they say.
+
+* **SND-13.** Every round a FireArms lets out triggers slot 0 (Fire) and slot 5
+  (Fire Loop) of its script, whatever they hold (`FireArms::Fire`, lnxded
+  `0x0828a090`, client `0x0053d7b0`). A script with fewer than six patches has
+  no slot 5.
+* **SND-12.** When the rounds stop (no round for 1 / 20 s), slot 5 is released
+  and slots 2 (Release) and 3 (Shell Bounce) triggered, slot 4 (MG distance) at
+  most once per 0.5..1.5 s (`FireArms::updateSound`, `0x0828cc10`).
+* **SND-14.** A patch holding a `loop` sample latches on its first trigger and
+  ignores the rest until it stops: the Fire Loop of every vanilla MG starts once
+  per trigger press. A patch without one starts every sample again on every
+  trigger, each on a NEW instance of its buffer, the old one left to ring; a
+  buffer holds at most eight instances and a ninth steals one.
+* **SND-15.** `randomPlay n` is stored on the sample it follows, and the patch
+  takes the value of each load in turn, so it picks exactly when its LAST load
+  carries it. A trigger then plays one load, `rand() % loads`, and a
+  `silence.wav` load counts and plays nothing.
+* **SSC-6.** `#templateLevel` is per file, and an `#include` under another tier
+  is never opened.
+
+## What was wrong, and what changed
+
+| | cause | fix |
+|---|---|---|
+| H1 MG42, M2A3, BMP-2 | DC Final took `loop` off the Fire Loop samples (`mg_temp.wav`, `autocannon_loop_*`, `bmp-2_*`: one shot and its tail each); `_firing_patch` found no loop and took the first sounding patch, Shell Bounce | `_firing_patch`: with the Fire slot silent, slot 5 is the round's voice, looping or not; with slots 0 and 5 both silent, the release slots 2..4 (never Reload). The viewer's `trigger()` already plays a gun's one-shots per round |
+| H2 CAR-15, Skorpion, M203, AK47GP30 | `fire_sample` took only looped samples from the Fire Loop | the same two rules; slot `release` carries `delay` 0.05 s (SND-12). DC Final's CAR-15 Fire Loop is a `randomPlay` of two recordings: `weapons.json` `randomPlay` lists one mp3 per load (`null` where a roll plays nothing at the muzzle) and `hand-fire-sound.js` rolls one per shot |
+| instance pool | `trigger()` stacked every round's tail unbounded: 26 deep for the MG42 (1.7 s at `roundOfFire 15`) | `INSTANCES_PER_SAMPLE` = 8 in `engine-audio.js` and `hand-fire-sound.js`, oldest stolen (which one the engine steals is inferred) |
+| M1 shared names | `sample_writer` named an mp3 by the wav's file name, first writer wins: DC Final's `Helicopter_far.wav` is four recordings, `enginewhine.wav` three | `extract_map.SampleNames`: a wav keeps its bare name when it is the only one of its name at its rate, the one at the rate root, or byte-identical to one of those; any other is `<stem>~<sha1[:8]>`. One wav, one name, so the coherent-twin guards still see twins. The effect extractor uses the same rule |
+| M5 bombs and mines | `_sound_layers` dropped `randomPlay`, so a release played `bmbreal1` and `bmbreal3` together (vanilla too) | layers of a picking patch carry `patch`, `randomPlay`, `slot`, `slots`; `EngineAudio.#rollRandomPlay` rolls over `slots` when a layer says so |
+| M4 birds | `discover_level_sounds` kept a looping pick's first load: every tree on kursk sang `Env_Birds5` (1,334 emitters) | `picked_voice` rolls each emitter's load once (a stable hash of template and position) over every load, silences included: 8 of 27 on `birds_eu.ssc`. Kursk 1,334 emitters to 410, eight different birds |
+| parser | `parse_ssc` set `random_play` on the patch wherever `randomPlay` appeared, and opened MEDIUM files at HIGH, whose own includes then leaked HIGH samples into the open patch (46 into vanilla `Browning.ssc`'s Fire Loop, with `randomPlay`) | SND-15 and SSC-6 as read. Vanilla's M1 Garand, Type 5, Gewehr43 and shotgun Fire patches stop being picks; 28 vanilla effect scripts lose phantom patches |
+| H3 soldier | DC trees had no `soldier.json`, and the page asked again on every footstep | extracted for both trees (DC's own footstep wavs); `page-audio.js` remembers a 404 per models base |
+| L1 | DC places no depot whose give sound is `Ammorefill.wav` | `extract_vehicle_sounds.write_refill_sample` writes `SoldierRefillAmmo.ssc`'s sample into every tree's `_shared/sounds` |
+| L2 | `kits.json` `MK23` against `weapons.json` `Mk23` | `weaponSpec` in `hand-fire-sound.js`, and `world-fire.js` keys by lower case |
+| level-local scripts | a template the level declares in its own root `objects.con` names a script only its archive holds (DC Al Nas's radios) | `discover_level_sounds` reads the script from the level archive when the objects pool has none |
+
+## Not done here
+
+* Release tails (SND-12): the viewer does not trigger slots 2..4 on release. At
+  5.7 and 5.1 rounds a second the M2A3 and BMP-2 release between every round, so
+  the game also plays `tigerrev` after each; the MG42 at 15 does so only when a
+  frame lands past 50 ms.
+* One-shots inside a looping Fire Loop (the stationary MG's shell layers): the
+  engine plays them once per press (the latch), the viewer drops them.
+* When a static object's sound is triggered is not traced; the per-emitter roll
+  stands in for it.
+
+## Verified / tests
+
+* `tests/test_sound_slots_and_picks.py`: the tier include, the last-load rule,
+  the bird roll's share (8 of 27), the slot picks for the MG42 and M203 shapes,
+  the layer keys, the naming rule, the weapon alternates and delay, the in-place
+  rewrite of a stale weapon mp3.
+* `tests/test_gun_one_shots.mjs` (run by `test_gun_one_shots.py`): 26 rounds
+  leave eight plays ringing, oldest stolen; a roll onto a silence plays nothing;
+  the case-blind lookups.
+

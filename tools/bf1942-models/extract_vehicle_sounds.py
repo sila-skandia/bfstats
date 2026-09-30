@@ -197,11 +197,44 @@ def build_table(sources: ModSources, write,
 
 
 def level_relative_writer(tree: Path, shared_sounds: Path | None = None,
-                          audio_format: str = "mp3"):
+                          audio_format: str = "mp3",
+                          sounds: ArchivePool | None = None):
     """`extract_map.sample_writer` into the tree's shared samples, with paths
-    measured from a level directory of that tree."""
+    measured from a level directory of that tree. `sounds` is the chain's
+    sound pool, which names two different wavs of one name apart
+    (`extract_map.SampleNames`) exactly as a level bake does."""
     return em.sample_writer(shared_sounds or (tree / "_shared" / "sounds"),
-                            tree / LEVEL_STAND_IN, audio_format)
+                            tree / LEVEL_STAND_IN, audio_format, sounds)
+
+
+# The soldier's own resupply sound. `BFSoldier::triggerRefillAmmoSound` (lnxded
+# 0x0827ebc0) plays it when a depot hands him ammunition, and `page-audio.js`
+# `playRefillSound` plays it at a replayed soldier from the tree's shared
+# samples, `_shared/sounds/Ammorefill.mp3`. Vanilla's and Road to Rome's trees
+# have it only because their depots' give sound is the same wav; Desert Combat
+# places no depot that loads it, so the file was never written there and every
+# replayed refill asked for a 404.
+REFILL_SCRIPT = "Objects/Soldiers/Common/Sounds/SoldierRefillAmmo.ssc"
+
+
+def write_refill_sample(sources: ModSources, write) -> list[str]:
+    """The HIGH patch of `SoldierRefillAmmo.ssc`, written through `write`."""
+    def read_script(path: str) -> str | None:
+        hit = sources.objects.find(path)
+        return sources.objects.read(hit).decode("latin-1") if hit else None
+
+    text = read_script(REFILL_SCRIPT)
+    if text is None:
+        return []
+    patches = em.parse_ssc(text, level=em.VEHICLE_SOUND_LEVEL,
+                           include=read_script, source=REFILL_SCRIPT)
+    written = []
+    for sample in em._non_silence(patches[0].samples if patches else []):
+        resolved = em.resolve_sound(sample.file, None, sources.sounds,
+                                    em.VEHICLE_RATES)
+        if resolved is not None:
+            written.append(write(resolved))
+    return written
 
 
 def dump(table: dict) -> str:
@@ -220,8 +253,10 @@ def write_table(game_dir: Path, mod: str, tree: Path, *,
     """
     shared_sounds = shared_sounds or (tree / "_shared" / "sounds")
     before = {p.name for p in shared_sounds.iterdir()} if shared_sounds.is_dir() else set()
-    table, asked = build_table(load_sources(game_dir, mod),
-                               level_relative_writer(tree, shared_sounds, audio_format))
+    sources = load_sources(game_dir, mod)
+    write = level_relative_writer(tree, shared_sounds, audio_format, sources.sounds)
+    table, asked = build_table(sources, write)
+    write_refill_sample(sources, write)
     path = tree / "_shared" / TABLE_NAME
     text = dump(table)
     changed = text != (path.read_text() if path.is_file() else None)

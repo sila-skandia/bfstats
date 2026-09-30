@@ -124,7 +124,9 @@ export class WorldFire {
       // on disk keeps the script's own `loop` flag for anything else reading
       // it (the player's `playHandFire` still wants to know).
       const layers = raw.map(layer => ({ ...layer, loop: false }));
-      this.weapons.set(name, {
+      // Keyed without case: `kits.json` says `MK23` where this says `Mk23`,
+      // and the engine matches template names case-insensitively.
+      this.weapons.set(name.toLowerCase(), {
         name,
         layers,
         fallback: !spec?.layers?.length,
@@ -139,12 +141,12 @@ export class WorldFire {
   }
 
   has(name) {
-    return this.weapons.has(name);
+    return !!name && this.weapons.has(String(name).toLowerCase());
   }
 
   /** Decode a weapon's samples and build its first pool slot. Fire-and-forget. */
   prime(name) {
-    const entry = this.weapons.get(name);
+    const entry = name ? this.weapons.get(String(name).toLowerCase()) : null;
     if (!entry || entry.slots.length || entry.pending || this.disposed) {
       return entry?.pending ?? Promise.resolve(entry ?? null);
     }
@@ -216,7 +218,7 @@ export class WorldFire {
    */
   play(name, position) {
     if (this.disposed || !name) return false;
-    const entry = this.weapons.get(name);
+    const entry = this.weapons.get(String(name).toLowerCase());
     if (!entry) return false;
     this.shots += 1;
     const now = this.now();
