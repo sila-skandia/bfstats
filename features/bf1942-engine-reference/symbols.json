@@ -186,6 +186,15 @@
    "note": "Site referencing the string \"old handleCollision\" (0x008c514c); in lnxded dice::bf::Game::handleCollisionForProjectile 0x0805f640 is a debug stub that only formats that string. The live override is GameServer/GameClient::handleCollisionForProjectile (lnxded server 0x08153ba0: getEffectTemplate(att, def, |v.n|), playCollisionEffect at other.pos+relPos, then splash damage). Client override not located; undefined code."
   },
   {
+   "address": "0x0040c490",
+   "name": "Game::checkIfLocalPlayersArtCameraIsRemoved (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Client twin of 0x0805f940."
+  },
+  {
    "address": "0x0040cd5e",
    "name": "patch__cdkey_validation1",
    "kind": "patch_site",
@@ -229,6 +238,15 @@
    "confidence": "verified",
    "source": "ghidra",
    "note": "Defined as a function in Ghidra 2026-09-15 (was undefined bytes; body 0x35 to the 'ret 8' at 0x0040ece2). Game::addPlayerInput(int playerId, PlayerInput&): map<int,list<PlayerInput>*>::find on Game+0x2c (FUN_0063c8a0), then list::push_back (0x0040e270) of the 236-byte input. Pure enqueue, no dt. Twin of lnxded 0x0805d900 (same shape). Game vtable slot vptr+0x2c; the slot before it (vptr+0x28) is update(int nTicks, float tickDt): 0x0040c170 Game, 0x0048fca0 GameClient, 0x00495d00 GameClientServer, read out of the three DATA xrefs 0x008c53fc/0x008d8dd4/0x008d94cc."
+  },
+  {
+   "address": "0x0040ee00",
+   "name": "Game::placeScoutCamera (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Client twin of 0x0805e740; also, when the owner (+0x120) is the local player, 0x006a6540 (log + team radio 59). SPOT-5."
   },
   {
    "address": "0x0040f660",
@@ -417,7 +435,7 @@
    "subsystem": "game",
    "confidence": "verified",
    "source": "ghidra",
-   "note": "Per-player hand-off from Setup::updateInputs: handles chat/console swallowing (Setup+0x154 countdown zeroes the 55-channel input) then ends in g_game->vtable+0x2c = Game::addPlayerInput (0x0040ecb0). Name is descriptive, not recovered."
+   "note": "Per-player hand-off from Setup::updateInputs: handles chat/console swallowing (Setup+0x154 countdown zeroes the 55-channel input) then ends in g_game->vtable+0x2c = Game::addPlayerInput (0x0040ecb0). Name is descriptive, not recovered. SPOT-8/9: c_PIAltFire (0x17) press at 0x00449089 -> 0x006a6a60; c_PINextItem (0x2e) / c_PIPrevItem (0x2f) -> scout-camera next/previous under 0x006a65b0."
   },
   {
    "address": "0x00449470",
@@ -1029,7 +1047,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-15-minimap",
-   "note": "Calls TransformNode's ctor 0x007e95b0 first, then installs vtable 0x008d6700 and loads the HUD icon textures (minimap-and-fullmap.md section 2). Zeroes +0x40 (zoom), +0x44, +0x48, +0x5c, +0x60, +0x64 (rotation), +0x68 (target angle); sets +0x4c and +0x50 (alpha, alpha target) to 1.0, +0x38 to -1, bytes +0x3c and +0x3d to 0."
+   "note": "Calls TransformNode's ctor 0x007e95b0 first, then installs vtable 0x008d6700 and loads the HUD icon textures (minimap-and-fullmap.md section 2). Zeroes +0x40 (zoom), +0x44, +0x48, +0x5c, +0x60, +0x64 (rotation), +0x68 (target angle); sets +0x4c and +0x50 (alpha, alpha target) to 1.0, +0x38 to -1, bytes +0x3c and +0x3d to 0. SPOT-13: loads Minimap/artillery_minimap_camview_128x128.tga into +0xe4 (other markers) and +0xe8 (the viewed one, blinking)."
   },
   {
    "address": "0x0046f4c0",
@@ -1464,6 +1482,15 @@
    "note": "Allocated 0x104 bytes by the factory 0x00483040 (the server's size). Score table +0x3c death -1, +0x40 kill 3, +0x44 tk -3, +0x48 capture 20, +0x4c/+0x50/+0x54 attack/defence/objective 5, +0x58 objectivetk -15 (round-state.js SCORE_DEFAULTS); two TeamScores zeroed at +0x60 and +0xb0."
   },
   {
+   "address": "0x004a3c10",
+   "name": "ReqScoutCameraEvent::deSerialize (client)",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Client twin of 0x0811fd10."
+  },
+  {
    "address": "0x004a4a60",
    "name": "HitFromPosEvent::HitFromPosEvent(char octant, char alphaByte)",
    "kind": "function",
@@ -1534,6 +1561,24 @@
    "confidence": "verified",
    "source": "ghidra",
    "note": "twin of lnxded GameServer::checkPlayerTriggers 0x0814f2c0, by call position in GameClient__simulatePlayerUpdate 0x004b6a30 (immediately before handleInput on the playing path)."
+  },
+  {
+   "address": "0x004ace10",
+   "name": "GameServer::toggleScoutCamera(u16, u8) (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Client twin of 0x08158aa0 (listen server)."
+  },
+  {
+   "address": "0x004acf70",
+   "name": "GameServer::toggleScoutCamera(unsigned) (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Client twin of 0x08158e10; adds HUD 0x006a9b20(1/0)."
   },
   {
    "address": "0x004b0330",
@@ -1705,6 +1750,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b8af0",
+   "name": "GameClient::toggleScoutCamera(unsigned) (client)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "Pure client; no Ghidra function defined. On success sends ReqScoutCameraEvent (vtable 0x008db934); sends nothing on turning off. SPOT-10."
   },
   {
    "address": "0x004b8ce0",
@@ -2427,6 +2481,15 @@
    "note": "Created at the MSVC prologue after FUN_005419e0; serialises the client ProjectileTemplate. Offsets: timeToLive CRD ~+0x1f8, endEffectTemplate +0x21c/+0x230, gravityModifier +0x214 (default 1.0), damageType +0x210, material +0x10c, material2 +0x298, radius +0x270 (default 10), invisible +0x28a, stopAtEndEffect +0x289, dieAfterColl +0x287 (default 1), hasOnTimeEffect +0x285, hasCollisionEffect +0x284, detonateOnWaterCollision +0x28c, explodeNearEnemyDistance +0x218 (default -1). minDamage/distToStartLoseDamage/distToMinDamage at +0x278/+0x27c/+0x280 from the console accessors FUN_004da6a0/FUN_004da850/FUN_004daa00 (+0x1a0 bytes each: registrar, execute, get/set)."
   },
   {
+   "address": "0x00541ed0",
+   "name": "Projectile remaining life (client)",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "timeToLive CRD (template +0x260) - (now - birth +0x13c)."
+  },
+  {
    "address": "0x00541f50",
    "name": "Projectile__resetProjectile",
    "kind": "function",
@@ -2533,6 +2596,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Decompiled in full; identical algorithm to lnxded 0x08293e80. The deviation combine rule: per tick, additive channels speed(+0x2f0)/turn(+0x2ec)/misc(+0x2f4)/fire(+0x1ac); each raises by devMod^2*terms, caps at arg_a*devMod, decays arg_decay/devMod; total(+0x1a8)=minDev+fire+speed+turn+misc+aiPending. No zoom/aim term. No dt. Full write-up: subsystems/handweapon-view-and-deviation.md"
+  },
+  {
+   "address": "0x005561d0",
+   "name": "PlayerInput id -> name switch (client)",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "0x17 c_PIAltFire, 0x2e c_PINextItem, 0x2f c_PIPrevItem, 0x37 c_PINone; agrees with lnxded operator<<(PlayerInputMap) 0x081d89f0."
   },
   {
    "address": "0x00567c00",
@@ -4065,6 +4137,60 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x006a6540",
+   "name": "called for artillery (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "No Ghidra function. Logs PLAYER_CALLED_FOR_ARTILLERY and sends team radio 59 via 0x006d4590(0x3b). SPOT-5."
+  },
+  {
+   "address": "0x006a65b0",
+   "name": "canUseScoutCamera (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "SPOT-8: local vehicle is an artPos PCO and a marker's owner (getPlayerFromId(+0x120)) is on the player's team (+0xac)."
+  },
+  {
+   "address": "0x006a66b0",
+   "name": "scout camera selector (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "SPOT-9: pick/drop the marker, 'Scout: <name>' via 0x006a7900, game vt+0x9c toggle; ignores the toggle's result."
+  },
+  {
+   "address": "0x006a6a60",
+   "name": "scout camera toggle input (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "c_PIAltFire press -> selector(1); sets Camera/CameraFade on success."
+  },
+  {
+   "address": "0x006a6a80",
+   "name": "scout camera next (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "SPOT-9: from the selected marker to the next node, wrap, no team check on the new node."
+  },
+  {
+   "address": "0x006a6b80",
+   "name": "scout camera previous (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "SPOT-9: mirror of 0x006a6a80."
+  },
+  {
    "address": "0x006a76b0",
    "name": "BfMenu__setInfoMessage",
    "kind": "function",
@@ -4072,6 +4198,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: UI / BfMenu"
+  },
+  {
+   "address": "0x006a7900",
+   "name": "HUD set Camera/CameraTimerText + CameraTimer (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "One reader: wstring at HUD +0x680, int at +0x678 (HUD object 0x00973ab8). SPOT-13."
   },
   {
    "address": "0x006a7d00",
@@ -4278,7 +4413,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-16-soldier-hud",
-   "note": "Runs soldier pose/icon/health-bar-icon refresh once per RENDERED FRAME (exactly 2 call sites, both Renderer_drawFrame 0x00466d80), not the 30 Hz tick. See ledger HUD-3."
+   "note": "Runs soldier pose/icon/health-bar-icon refresh once per RENDERED FRAME (exactly 2 call sites, both Renderer_drawFrame 0x00466d80), not the 30 Hz tick. See ledger HUD-3. SPOT-13 (one reader): DirectionBar show/values at 0x006ae63e..0x006aeb44, shown when CameraPlaced != 0 and the view mode is 17."
   },
   {
    "address": "0x006adf69",
@@ -4711,6 +4846,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-damage",
    "note": "Client. Name string 0x00925920, the member after ShowHealIcon's; see 0x006e3174 and ledger SUP-17. Neighbouring strings in the same block - ShowControlPoints, ShowNonTakeableFlagIcon, ShowFlagIcon, CameraPlaced, EngineerNeeded, MedicNeeded, ShowParachute - identify it as the world-icon group, and VHUD-7's IconLookRotation site 0x006e2013 is in the same block."
+  },
+  {
+   "address": "0x006e3510",
+   "name": "HUD set CameraPlaced (client)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "One reader: [[0x00a5f1a8]+0x44]+0x20, from BfMap__update in artPos seats. SPOT-13."
   },
   {
    "address": "0x006e4290",
@@ -6963,6 +7107,33 @@
    "note": "lnxded. The ONLY consumer of the collision-severity arithmetic computed by handleCollisionLandOrWater and handleCollisionObjectVsObject: an audio/visual effect spawn. 352-byte leaf; its own one direct call and indirect offsets {0x8,0xc,0x14,0x2c,0x3c,0x40,0x44,0x74,0x78,0x9c} include no Armor HP mutator. See ledger HP-6. [CORRECTED 2026-09-19] Not the only consumer: both handlers also pass the severity to GameServer::giveDamage 0x0814b2e0 through the GameServer's own vtable slot +0x15c. See ledger HP-6, COL-3, COL-4."
   },
   {
+   "address": "0x0805e740",
+   "name": "Game::placeScoutCamera(IObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded Game vt+0x88. SPOT-4: removeScoutCamera then insert before begin() of the list at Game+0x5c (newest-first)."
+  },
+  {
+   "address": "0x0805e7a0",
+   "name": "Game::removeScoutCamera(IObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded Game vt+0x8c. SPOT-4: unlink, then checkIfLocalPlayersArtCameraIsRemoved."
+  },
+  {
+   "address": "0x0805f940",
+   "name": "Game::checkIfLocalPlayersArtCameraIsRemoved(unsigned)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-12: artPos seat, view mode 17, same id -> toggleScoutCamera(-1). Client twin 0x0040c490."
+  },
+  {
    "address": "0x08060420",
    "name": "dice::bf::Game::getNumberOfTickets(unsigned int)",
    "kind": "function",
@@ -6988,6 +7159,15 @@
    "confidence": "verified",
    "source": "research-2026-09-27-tickets",
    "note": "lnxded. Writes +0x10, the GPM: 1 CTF, 2 CQ, 3 TDM, 4 COOP, 5 OBJECTIVEMODE (startHostGame's switch, 0x080c42bf). gamaStatusFirstPreGame and gameStatusPlaying branch on 5. Ledger TKT-1, TKT-3."
+  },
+  {
+   "address": "0x080617d0",
+   "name": "Game::getScoutCameraList()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded Game vt+0x90: returns Game+0x5c."
   },
   {
    "address": "0x08061800",
@@ -7204,6 +7384,15 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x0811fd10",
+   "name": "ReqScoutCameraEvent::deSerialize(BitStream*)",
+   "kind": "function",
+   "subsystem": "gameevent",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. u8 player id (+0xc), u16 marker network id (+0xd). Client twin 0x004a3c10."
   },
   {
    "address": "0x08131cd0",
@@ -7789,6 +7978,33 @@
    "confidence": "verified",
    "source": "research-2026-09-27-tickets",
    "note": "lnxded. Logs a roundInit whose two ticket params are both team 1's, as gameStatusFirstPlaying does (push 0x1 at 0x08157fab and 0x08157ff9). Ledger TKT-6."
+  },
+  {
+   "address": "0x08158aa0",
+   "name": "GameServer::toggleScoutCamera(unsigned short, unsigned char)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-10: handler of ReqScoutCameraEvent (game event 0x26, case at 0x08136a28); 'on' for that player's camera, no id recorded."
+  },
+  {
+   "address": "0x08158e10",
+   "name": "GameServer::toggleScoutCamera(unsigned)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded Game vt+0x9c. SPOT-10: on = extern matrix, save mode/FOV, setViewMode(17); off = restore, only in an artPos PCO."
+  },
+  {
+   "address": "0x08159b80",
+   "name": "calcLookAtMatrix<float>(Mat4&, from, to, up)",
+   "kind": "function",
+   "subsystem": "math",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. row2 = normalize(to-from), row0 = up x fwd, row1 = fwd x right, row3 = from; parallel to up leaves rows 0,1,3 identity."
   },
   {
    "address": "0x0815b5e0",
@@ -8565,13 +8781,22 @@
    "note": "lnxded."
   },
   {
+   "address": "0x081aaf90",
+   "name": "Camera::getTransformation(float, Mat4&)",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. CVM-2/CVM-3; SPOT-11 mode 17: lookAt(+0x240 eye, +0x1ec look-at eased 10% to the trace object or eye+20*fwd, +0x220 up)."
+  },
+  {
    "address": "0x081ac7c0",
    "name": "dice::ref2::world::Camera::setViewMode(int)",
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-21-camera",
-   "note": "lnxded. Jump table 0x086c5040 (cmp edi,0x11; ja -> 0x081ac7f0 = xor eax,eax; ret). Each live arm tests one byte of the camera template [esi+0x4c] and returns 0 when zero: 3->+0x1bc, 12->+0x1bd, 13->+0x1c1, 14->+0x1be, 16->+0x1bf, 17->+0x1c0; mode 0 folds into mode 3's arm. EXACTLY TWO call sites in the whole image (0x081a9a4a, 0x081a9e3a), neither on an input path. Ledger CAM-1, CAM-2."
+   "note": "lnxded. Jump table 0x086c5040 (cmp edi,0x11; ja -> 0x081ac7f0 = xor eax,eax; ret). Each live arm tests one byte of the camera template [esi+0x4c] and returns 0 when zero: 3->+0x1bc, 12->+0x1bd, 13->+0x1c1, 14->+0x1be, 16->+0x1bf, 17->+0x1c0; mode 0 folds into mode 3's arm. EXACTLY TWO call sites in the whole image (0x081a9a4a, 0x081a9e3a), neither on an input path. Ledger CAM-1, CAM-2. SPOT-7: case 0x11 (CVMExternTrace, +0x1c0) refuses an extern matrix whose position is 0 and seeds the look-at at eye + 20 x forward."
   },
   {
    "address": "0x081acc20",
@@ -8599,6 +8824,24 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded."
+  },
+  {
+   "address": "0x081ada00",
+   "name": "Camera::setTraceObjectId(unsigned)",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. +0x254. ICameraObject slot 0x30; set by FireArms::fireBarrel on every camera of the firing PCO."
+  },
+  {
+   "address": "0x081ada50",
+   "name": "Camera::setExternCameraTrans(Mat4)",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. Stores the scout marker matrix at Camera+0x210. ICameraObject slot 0x38."
   },
   {
    "address": "0x081adbb0",
@@ -9049,6 +9292,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-dc-wheels",
    "note": "lnxded. A remote client's Engine state: after the running-byte early-out (+0x1d) it queryInterfaces the composite (vtable +0x28) for the PhysicsEngine and copies the received record into registers only -- Engine+0x142/+0x143 (running), PhysicsEngine+0xb4 (brake), +0xbc (gear), Engine+0x104/+0x108/+0x10c (the three clipped angles, pitch zeroed), +0x110..+0x118 (angular speeds), PhysicsEngine+0xa0 (revs) and +0xb0 (steering term). No setState, setRotation or transform setter anywhere in 0x08228710-0x08228950, so an Engine's angles never pose its node on a client either. Ledger PHY-15."
+  },
+  {
+   "address": "0x08232be0",
+   "name": "ProjectileNetworkable::setNetUpdate(...)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-4: an update that ran activate() on a damageType-3 projectile calls game->placeScoutCamera (0x08232f95). Client twin around 0x0055ec89..0x0055ed57."
   },
   {
    "address": "0x0823e120",
@@ -10425,7 +10677,7 @@
    "subsystem": "weapons",
    "confidence": "verified",
    "source": "research-2026-09-22-bombs",
-   "note": "lnxded. Already cited by ledger FA-1 for fireingForce. Read in full 2026-09-22 for the barrel dispatch (BOMB-1..BOMB-5): barrelCount = (tmpl[0x214]-tmpl[0x210])/12; 0 -> fireBarrel(-1), 1 -> fireBarrel(0), >1 and tmpl+0x338 clear -> fireBarrel(i) for every i, >1 and tmpl+0x338 set -> one round-robin barrel off the counter at this+0x296. Partial salvo above the loop: mags != -1 && mags < barrelCount && tmpl+0x348 clear -> fire only mags barrels."
+   "note": "lnxded. Already cited by ledger FA-1 for fireingForce. Read in full 2026-09-22 for the barrel dispatch (BOMB-1..BOMB-5): barrelCount = (tmpl[0x214]-tmpl[0x210])/12; 0 -> fireBarrel(-1), 1 -> fireBarrel(0), >1 and tmpl+0x338 clear -> fireBarrel(i) for every i, >1 and tmpl+0x338 set -> one round-robin barrel off the counter at this+0x296. Partial salvo above the loop: mags != -1 && mags < barrelCount && tmpl+0x348 clear -> fire only mags barrels. SPOT-1: template +0x230 (magType) == 2 -> placeScoutCamera(player) and return."
   },
   {
    "address": "0x0828aba0",
@@ -10434,7 +10686,7 @@
    "subsystem": "weapons",
    "confidence": "verified",
    "source": "research-2026-09-22-bombs",
-   "note": "lnxded. Spawns one projectile from barrel index N (-1 = the FireArms' own transform). Touches no ammunition counter -- the charge is in fireFinished 0x08288470."
+   "note": "lnxded. Spawns one projectile from barrel index N (-1 = the FireArms' own transform). Touches no ammunition counter -- the charge is in fireFinished 0x08288470. SPOT-11: sets every camera of the firing PCO to trace the new shell (IPlayerControlObject::getCameras slot 0x34, ICameraObject::setTraceObjectId slot 0x30)."
   },
   {
    "address": "0x0828ca40",
@@ -10446,6 +10698,15 @@
    "note": "lnxded. Accessor for the current magazine counter. -1 is GUN-4's unlimited sentinel and short-circuits the whole spend block in fireFinished."
   },
   {
+   "address": "0x0828cdc0",
+   "name": "FireArms::getFireArmsTransformation()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded FireArms vt+0x108: the player's camera matrix when fireInCameraDof (template +0x264), else the FireArms'."
+  },
+  {
    "address": "0x0828d490",
    "name": "FireArms::getHasHeat()",
    "kind": "function",
@@ -10453,6 +10714,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded. template+0x300 > template+0x304 -- strict greater-than, not equality as first read. Fields' meaning still unestablished."
+  },
+  {
+   "address": "0x0828dde0",
+   "name": "FireArms::placeScoutCamera(IPlayer*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-2/3: server only; ray 10000 from the fire matrix; marker = lookAt(eye+(0,30,0), hit, up); +0x134 target, +0x108 owner, +0x12c team; game vt+0x88."
   },
   {
    "address": "0x0828e3b0",
@@ -10561,6 +10831,24 @@
    "confidence": "verified",
    "source": "research-2026-09-26-barbed-wire",
    "note": "lnxded. Reads/writes getActiveTemplate(CID_BFSoldierTemplate)+0x2f8; name string \"slowDownMod\" at 0x86d55ff, registered at 0x082b0e6e. BFSoldierTemplate ctor default 0x3ecccccd (0.4) at 0x0827a3ae. No pack sets it. Ledger OBS-5."
+  },
+  {
+   "address": "0x082c9440",
+   "name": "ConsoleClass289::executeObjectMethod (ObjectTemplate.magType)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. Writes FireArms template +0x230."
+  },
+  {
+   "address": "0x082dc1e0",
+   "name": "ConsoleClass377::executeObjectMethod (ObjectTemplate.damageType)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. Writes Projectile template +0x160."
   },
   {
    "address": "0x082df7b0",
@@ -10705,6 +10993,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response; research-2026-09-26-barbed-wire",
    "note": "lnxded. [lead] matOther 99 -> giveDamage 1e10; other is an ObstacleTemplate (0x94af) -> other->handleMessage(0,0), return 0; else SimpleObject::handleCollision. [2026-09-26, barbed wire] Ledger OBS-3: every PlayerControlObject (land, sea, air, stationary) rolls through wire and messages it; the message is the scrape (OBS-8)."
+  },
+  {
+   "address": "0x08318c10",
+   "name": "PlayerControlObject::getArtPos()",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-6: template +0x1f0 (artPos)."
   },
   {
    "address": "0x08318d20",
@@ -10860,6 +11157,15 @@
    "note": "lnxded, IPlayerControlObjectTemplate vptr+0x60 - the slot the client calls at 0x006ae5b9 after querying IID 0xc4c4 on the template. The .con word setHasTurretIcon is declared on 7 distinct vanilla templates (Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha; 10 sites with the per-level Kasserine copies) and 4195 times across 18 installs, 4160 of them 1 and 35 of them 0, always on the vehicle ROOT PCO template. bf42/con.py does not parse it. See ledger VHUD-9."
   },
   {
+   "address": "0x0831bb50",
+   "name": "PlayerControlObjectTemplate::setArtPos(bool)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded template vt+0x130; writes +0x1f0. Console word artPos = world ConsoleClass489 0x082f0020."
+  },
+  {
    "address": "0x0831c7c0",
    "name": "postInitPcoId(IObject*)",
    "kind": "function",
@@ -10921,6 +11227,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-occupant",
    "note": "lnxded. Walks a PCO's subtree for a SeatObject -- the predicate behind 'a seat draws an occupant iff its subtree reaches a SeatObject'. It has NO CALLER in lnxded, which is what you would expect of a drawing concern on a dedicated server, so the rule is confirmed as a predicate the engine carries and its call site needs the client. Ledger SEAT-25."
+  },
+  {
+   "address": "0x0831e610",
+   "name": "Projectile::destroy()",
+   "kind": "function",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. damageType (template +0x160) == 3 -> game->removeScoutCamera."
   },
   {
    "address": "0x0831e680",
@@ -12030,6 +12345,15 @@
    "note": "lnxded. fld [this+0x1b8]; Bot vtable +0x84. The 'when did I acquire this target' stamp in the deviation formula."
   },
   {
+   "address": "0x0856a650",
+   "name": "BBFireArtilleryDriver::calculateUrgency(Bot*, bool, float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. SPOT-14 (one reader): gun seat occupied -> its large-bore urgency, else BBFireUnarmed."
+  },
+  {
    "address": "0x085d63b0",
    "name": "dice::bf::ai::AIObjectPhysical::disablePhysics(int)",
    "kind": "function",
@@ -12082,6 +12406,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. The plan instruction that pulls the trigger; calls Weapon::setBotSkill through vtable +0x84 at 0x08625dc9 (args read off the pushes at 0x08625daf-0x08625dc9). The C term is an ANTI-AIRCRAFT penalty on the shooter: getCurrentEquipment (Bot vptr +0xd0) at 0x08625cf0 and getFiringTarget (+0x80) at 0x08625dd7, branches 0x08625d81/0x08625e18/0x08625e5c/0x08625e64. TriggerContinously twin 0x08625ff0. Ledger AI-16, AI-18."
+  },
+  {
+   "address": "0x08634850",
+   "name": "SAI::distributeArtillery()",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-spotting",
+   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). SPOT-14."
   },
   {
    "address": "0x086b01ac",
