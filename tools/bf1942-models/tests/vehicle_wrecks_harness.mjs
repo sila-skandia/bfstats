@@ -69,4 +69,51 @@ function respawn(wreck) {
   return { faded, body: state(h.body.material), smoke: state(h.smoke), shown: h.body.visible };
 }
 
-process.stdout.write(JSON.stringify({ wreck: respawn(true), noWreck: respawn(false) }));
+/**
+ * Which URLs a dying hull's wreck is fetched from (`wreckUrls`), against
+ * stub catalogues: DC Final's tree lists its own templates, vanilla's lists
+ * the Sherman, and neither lists vanilla's level-declared Ju88A.
+ */
+async function wreckLookups() {
+  const catalogues = {
+    'models/mods/dc_final/models.json': [
+      { name: 'FlagBox', variants: [
+        { glb: 'FlagBox.glb', configuration: 'complex' },
+        { glb: 'FlagBox.wreck.glb', configuration: 'wreck', level: null },
+        { glb: 'FlagBox.wreck.DC_Medina_Ridge.glb', configuration: 'wreck', level: 'DC_Medina_Ridge' },
+      ] },
+      { name: 'nx_M-923', variants: [{ glb: 'nx_M-923.glb', configuration: 'complex' }] },
+    ],
+    'models/models.json': [
+      { name: 'Sherman', variants: [
+        { glb: 'Sherman.glb', configuration: 'complex' },
+        { glb: 'Sherman.wreck.glb', configuration: 'wreck', level: null },
+      ] },
+    ],
+  };
+  const asked = [];
+  globalThis.fetch = async url => {
+    asked.push(url);
+    const body = catalogues[url];
+    return { ok: !!body, json: async () => body };
+  };
+  const wrecks = (base, level) => createVehicleWrecks({
+    ...page(), MODELS_BASE: base, extras: { level },
+  });
+  const dc = wrecks('models/mods/dc_final', 'DC_Medina_Ridge');
+  const out = {
+    levelReskin: await dc.wreckUrls('flagbox'),
+    noWreck: await dc.wreckUrls('NX_M-923'),
+    inherited: await dc.wreckUrls('Sherman'),
+    unlisted: await dc.wreckUrls('Flak18/36'),
+    unlistedMeshless: await dc.wreckUrls('ISK', { drawn: false }),
+    otherLevel: await wrecks('models/mods/dc_final', 'DC_Oil_Fields').wreckUrls('FlagBox'),
+    vanilla: await wrecks('models', 'Battle_of_Britain').wreckUrls('Ju88A'),
+  };
+  out.catalogueFetches = asked.filter(url => url.startsWith('models/mods/dc_final/')).length;
+  return out;
+}
+
+process.stdout.write(JSON.stringify({
+  wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
+}));

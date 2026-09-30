@@ -1440,3 +1440,22 @@ is [`surveys/mode_script_root_vs_gametypes.py`](surveys/mode_script_root_vs_game
 | TKT-7 | (none: read so as not to mistake it for TKT-1) | — | **verified**, unused | `game.setNumberOfTicketPerPlayer` (ConsoleClass645 `0x08098790` → `0x08153920`) writes `trunc(n × (+0x2bc / +0x2c0) × (+0x1c / 2))` for team 1, and the inverse ratio for team 2, into the raw field `setNumberOfTickets` writes (`setTeamRatio` `0x0813d940` holds the two `serverXTeamRatio` settings), so the round start would multiply by max players / 16 again. No mode script in the 16 installs uses it |
 
 ---
+
+## LOD objects: which alternative is drawn (2026-09-30; the client's copy of these functions and `internalFindFirstChildOfCID`'s search order stay unread)
+
+Read for Desert Combat's empty first-person cockpits and its AC-130 reticle drawn in the
+world ([`features/bf1942-cockpit-graft-hosts/README.md`](../bf1942-cockpit-graft-hosts/README.md),
+"2026-09-30"). All addresses `bf1942_lnxded.static`, from the headless decompile; the
+comparison directions of LOD-2 and LOD-1's index arithmetic were checked in `objdump -M
+intel`. The client is stripped and was not read; these are the shared `world` library.
+Built in `bf42/assemble.py` (`build_node`, `near_rung_is_first_person`) and
+`viewer/vehicle-base.js` (`CockpitSwap`).
+
+| # | Assumption in our code | Where | Status | Evidence |
+|---|---|---|---|---|
+| LOD-1 | A LodObject draws exactly one alternative, the one its selector names, whatever that alternative draws | `assemble.py` `_select_lod_children` | **confirmed** | `LodObject::addChild` `0x08216d30` appends every child to the vector at `+0x10c`, unconditionally; `LodObject::getChild` `0x08216ce0` returns `lodChilds[selector->getLodLevel(this)]` (`call [eax+0xc]`, `shl eax,2`, `add` the vector base, `0x08216d17`..`0x08216d26`), child 0 while `m_forceHighestLod` is set. Nothing asks whether the child has geometry |
+| LOD-2 | A cockpit LodObject shows alternative 1 in the Inside view and alternative 0 in every other, whatever the distance | `assemble.py` `_lod_swap`; `vehicle-base.js` `setFirstPerson` | **confirmed** (closes the "strong inference" of `flyable-vehicles/input-and-cockpit.md` on what feeds the comparison) | `Camera::setViewMode` `0x081ac7c0` calls `lodObjectOn` `0x081adbb0` on mode 3 (Inside) and `lodObjectOff` `0x081adcf0` on 12, 13, 14, 16 and 17. `lodObjectOn` climbs from the camera to its PlayerControlObject, descends to the first LodObject (CID `0x94a7`) whose selector's class is `DistCompareLodSelector` (`0x94b1`) and calls `setLodSelectorCompareValue(1.0)` (vt `+0x10`); `lodObjectOff` writes 0. `DistCompareLodSelector::getLodLevelRelative` `0x08213e10`: with exactly one comparison equal to 0.5 (`fucomp` against `0x86b05e8` = 0.5, `0x08213f4a`) it returns 1 when the compare value is at least 0.5 (`0x08213f5b`..`0x08213f64`) and 0 otherwise, and never reads the distance. All 33 vanilla cockpit selectors declare that one 0.5 (`flyable-vehicles/input-and-cockpit.md`), as do DC's |
+| LOD-3 | A `DistanceSelector` shows alternative 0 only inside its first distance | `assemble.py` `near_rung_is_first_person` (`NEAR_RUNG_FIRST_PERSON_M`, 2 m, is ours) | **confirmed** | `DistLodSelector::init` `0x08215aa0` squares each `addLodDistance`; `getLodLevelRelative` `0x08215b30` is `lower_bound(distances², (\|camera − object\|² − radius²) × LodObject::m_distanceLodFactor × fov²)`, the radius from the object's vt `+0x48` unless bit 3 of its byte `+6` is set, the FOV term from `renderView` vt `+0x18` |
+| LOD-4 | An alternative whose mesh cannot be had is not an object | `assemble.py` `build_node` (dropped it, and the cockpit swap with it) | **refuted**: the object is built with no geometry | `SimpleObject::SimpleObject` `0x081da0d0` calls `world::setGeometry` `0x0818d3c0` when the template names a geometry and ignores its result. `setGeometry` returns 0 having set nothing when `GeometryTemplateManager::getTemplate` `0x0838b1e0` finds no such template (EoD's Chi-ha names `1P_PanzerIV_Gunner_M1`, which nothing creates) or `createGeometry` `0x083a5b90` returns null, which it does when `load(false)` `0x083a6050` cannot open `<folder><file>.sm` (DC's `1p_M1A1_Gunner_m1`, whose `GeometryTemplate.file` is commented out). With LOD-1 and LOD-2, first person on DC's M1A1, T72, Shilka and SCUD-B hides the exterior half of the cockpit pair and draws nothing in its place |
+
+---

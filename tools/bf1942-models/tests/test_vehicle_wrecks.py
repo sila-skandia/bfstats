@@ -54,5 +54,44 @@ class RespawnMaterialTests(unittest.TestCase):
         self.assertEqual(SMOKE, run["smoke"])
 
 
+class WreckLookupTests(unittest.TestCase):
+    """Where a wreck is fetched from (`wreckUrls`).
+
+    A mod inherits its parents' templates, so the active tree and then
+    vanilla's are asked, and the first catalogue that lists the template
+    decides, down to "no wreck at all".
+    """
+
+    lookups: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.lookups = run_harness()["lookups"]
+
+    def test_the_level_on_screen_gets_its_own_reskin(self) -> None:
+        self.assertEqual(["models/mods/dc_final/FlagBox.wreck.DC_Medina_Ridge.glb"],
+                         self.lookups["levelReskin"])
+        self.assertEqual(["models/mods/dc_final/FlagBox.wreck.glb"],
+                         self.lookups["otherLevel"])
+
+    def test_a_listed_template_with_no_wreck_is_not_fetched(self) -> None:
+        self.assertEqual([], self.lookups["noWreck"])
+
+    def test_an_inherited_template_falls_back_to_vanilla(self) -> None:
+        self.assertEqual(["models/Sherman.wreck.glb"], self.lookups["inherited"])
+
+    def test_an_unlisted_template_is_probed_down_the_chain(self) -> None:
+        self.assertEqual(["models/mods/dc_final/Flak18_36.wreck.glb",
+                          "models/Flak18_36.wreck.glb"], self.lookups["unlisted"])
+        self.assertEqual(["models/Ju88A.wreck.glb"], self.lookups["vanilla"])
+
+    def test_an_unlisted_meshless_node_asks_for_nothing(self) -> None:
+        self.assertEqual([], self.lookups["unlistedMeshless"])
+
+    def test_each_catalogue_is_read_once(self) -> None:
+        # Two `createVehicleWrecks` on DC Final, one read each.
+        self.assertEqual(2, self.lookups["catalogueFetches"])
+
+
 if __name__ == "__main__":
     unittest.main()

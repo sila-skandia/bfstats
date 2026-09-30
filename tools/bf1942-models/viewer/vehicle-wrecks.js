@@ -10,6 +10,8 @@ import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
 import { AIRBORNE_MARGIN } from './airborne.js';
 import { restoreLift } from './world-vehicle-tick.js';
+import { modelFileStem } from './model-file.js';
+import { loadFirst, poseBases } from './pose-bases.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -186,8 +188,76 @@ export function createVehicleWrecks(page) {
   const LANDING_SPEED = 1.5;     // m/s: quiet enough to be down
   const LANDING_HOLD = 1.0;      // seconds of stillness that mean it
 
-  // Wreck glbs, by template name, shared across every vehicle of that type.
+  // Wreck glbs, by level and template name, shared across every vehicle of
+  // that type.
   const wreckModels = new Map();
+  // Each model tree's `models.json`, by base, read once: template (lower
+  // case) -> its catalogue entry.
+  const catalogues = new Map();
+
+  function catalogue(base) {
+    if (!catalogues.has(base)) {
+      catalogues.set(base, fetch(`${base}/models.json${page.bust?.() ?? ''}`)
+        .then(response => (response.ok ? response.json() : null))
+        .then(list => new Map((Array.isArray(list) ? list : [])
+          .filter(entry => entry?.name)
+          .map(entry => [String(entry.name).toLowerCase(), entry])))
+        .catch(() => new Map()));
+    }
+    return catalogues.get(base);
+  }
+
+  /**
+   * Where `template`'s wreck is: the URLs to try in order, none when the
+   * game gives it no wreck.
+   *
+   * A mod inherits every template of the mods under it (`game.addModPath`),
+   * so the trees are asked the way the engine resolves a name: the active
+   * mod's first, then vanilla's (`poseBases`), and the first catalogue that
+   * lists the template decides. XPack1's and XPack2's trees hold only what
+   * the pack declares (`extract_all.py --own`), so a Sherman dying on a pack
+   * map asked the pack's tree alone, 404'd, and burned out wearing its intact
+   * mesh. A catalogue entry with no `wreck` variant is a template with no
+   * destroyed alternative (`LodSelectorTemplate.hasDestroyedLod`), and
+   * nothing is fetched for it. Among wreck variants the level's own reskin
+   * wins, as the replay's does (`replay-assets.js` `modelFile`).
+   *
+   * A template no catalogue lists is still probed in each tree, when its
+   * placed node draws anything (`drawn`): vanilla's Battle of Britain Ju88A
+   * has its wreck glbs but predates the catalogue that lists level-declared
+   * templates. One that draws nothing has no LodObject to be destroyed in:
+   * Desert Combat's Operation Bragg groups its Talil airbase spawns under
+   * armoured, meshless `UST`/`IST`/`USK`/`ISK`, and each of their deaths
+   * asked two trees for a wreck that exists in neither.
+   */
+  async function wreckUrls(template, { drawn = true } = {}) {
+    const key = String(template || '').toLowerCase();
+    if (!key) return [];
+    const level = String(page.extras?.level ?? '').toLowerCase();
+    const bases = poseBases(page.MODELS_BASE);
+    const bust = page.bust?.() ?? '';
+    for (const base of bases) {
+      const entry = (await catalogue(base)).get(key);
+      if (!entry) continue;
+      const wrecks = (entry.variants || []).filter(variant =>
+        variant?.glb && variant.configuration === 'wreck' && !variant.firstPerson);
+      const pick = wrecks.find(variant => String(variant.level ?? '').toLowerCase() === level)
+        ?? wrecks.find(variant => !variant.level)
+        ?? wrecks[0];
+      return pick ? [`${base}/${pick.glb}${bust}`] : [];
+    }
+    if (!drawn) return [];
+    return bases.map(base => `${base}/${modelFileStem(template)}.wreck.glb${bust}`);
+  }
+
+  /** Whether a placed node draws anything a wreck could stand in for. */
+  function drawsMesh(node) {
+    let found = false;
+    node?.traverse?.(obj => {
+      if (!found && obj.isMesh && !page.isCollision?.(obj)) found = true;
+    });
+    return found;
+  }
 
   /**
    * The template name behind a placed node. GLTFLoader suffixes duplicate names,
@@ -375,11 +445,15 @@ export function createVehicleWrecks(page) {
   async function placeWreck(visual, vehicle) {
     const template = templateNameOf(visual.node);
     try {
-      if (!wreckModels.has(template)) {
-        wreckModels.set(template, page.loader.loadAsync(
-          `${page.MODELS_BASE}/${template}.wreck.glb${page.bust()}`).then(g => g.scene, () => null));
+      // Per level as well as per template: the wreck picked is the level's
+      // own reskin where it has one.
+      const cacheKey = `${String(page.extras?.level ?? '').toLowerCase()}|${template}`;
+      if (!wreckModels.has(cacheKey)) {
+        wreckModels.set(cacheKey, wreckUrls(template, { drawn: drawsMesh(visual.node) })
+          .then(urls => (urls.length ? loadFirst(page.loader, urls) : null))
+          .then(g => g?.scene ?? null, () => null));
       }
-      const scene = await wreckModels.get(template);
+      const scene = await wreckModels.get(cacheKey);
       // The vehicle may have been cleared (level change) while the glb was in
       // flight, and `damageVisuals` is rebuilt per level — so re-check.
       if (!scene || damageVisuals.get(vehicle?.owner) !== visual) return;
@@ -724,6 +798,7 @@ export function createVehicleWrecks(page) {
     killOccupantInSeat,
     stepWrecks,
     templateNameOf,
+    wreckUrls,
     wreckVehicle,
   });
   return wrecks;
