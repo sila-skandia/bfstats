@@ -1623,6 +1623,23 @@ ObjectTemplate.setAmmoBarTextPosY 10
             "textPosY": 10.0,
         }, stats["hud"])
 
+    def test_zoom_carries_the_sight_icon(self) -> None:
+        # SCOPE-2's fourth picture word. Desert Combat's optics all name
+        # `scope_blank.tga`; without it the HUD drew the binoculars' ring.
+        library = self.library(
+            "Objects/HandWeapons/M25Sniper/Objects.con",
+            """
+ObjectTemplate.create HandFireArms M25Sniper
+ObjectTemplate.useScope 1
+ObjectTemplate.setScopeIcon "m25_scope.tga"
+ObjectTemplate.setSightIcon "scope_blank.tga"
+ObjectTemplate.setSniperSight 0
+""")
+        zoom = library.object("M25Sniper").weapon_stats()["zoom"]
+        self.assertEqual("m25_scope.tga", zoom["icon"])
+        self.assertEqual("scope_blank.tga", zoom["sightIcon"])
+        self.assertFalse(zoom["sniperSight"])
+
     def test_weapon_stats_carries_the_throw_block(self) -> None:
         # Objects/HandWeapons/GrenadeAllies/Objects.con, the four lines that
         # make a throw a throw. Only the four hand weapons that let go of what

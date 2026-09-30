@@ -1,17 +1,47 @@
-// A team's nation is a property of the LEVEL, not of the soldier skin
-// painted on the men who hold it: the flag its own control points fly.
+// A team's art is its SOLDIER's: the client takes each side's control-point
+// marker, base flag, ticket flag and team flag off the template
+// `Game::getTeamSkin(team)` names (BF1942.exe 0x006ac800, ledger HUD-20..22),
+// and draws every point on the map with its holder's (0x0046c1fb). The
+// pack carries each soldier's art as `soldier-icons.json`
+// (`extract_hud_pack.py`), and `soldierNation` below is the side's code from
+// it. Desert Combat's `IraqSoldier` flies Iraq's art in the `ger` slot on
+// every level, including Iwo Jima, whose flag meshes are Japanese.
+//
+// Where the pack has no such file, or the level's soldier is unknown, the
+// old reading stands: the flag the side's own control points fly.
 // `extract_menu_layout.py`'s `flag_mesh_nation` / `team_nation_from_level`
-// run the identical rule in Python, reading the identical `hud.json` this
-// page fetches into `nations` (`extract_hud_pack.py`'s `flag_mesh_nations`),
-// so the Instant Battle screen and this page can never draw two different
-// flags for the same level. See `features/authentic-spawn-map/README.md`
-// section 11.
+// run that rule in Python, reading the identical `hud.json` this page
+// fetches into `nations` (`extract_hud_pack.py`'s `flag_mesh_nations`). It
+// also still stands for the pole cloth, which is a mesh the level authors
+// per point and team (`setTeamGeometry`), not HUD art. See
+// `features/authentic-spawn-map/README.md` section 11.
 //
 // Free of `three` and of every other module-level state in `map.html` on
 // purpose, so `tests/nation_harness.mjs` can drive it under node the same
 // way `hud-pack.js` is driven.
 
 const FLAG_MESH_RE = /^flag([a-z]+)_/i;
+
+/** `Soldier/Icon_us_marine_standing.tga` -> `icon_us_marine_standing`: a
+ *  texture path as the `.con` data spells it, as the sprite pack keys it. */
+export function iconKey(path) {
+  const base = String(path || '').replace(/\\/g, '/').split('/').pop();
+  const dot = base.lastIndexOf('.');
+  return (dot > 0 ? base.slice(0, dot) : base).toLowerCase();
+}
+
+/** A soldier template's team art (`soldier-icons.json`'s entry, keyed by
+ *  the lowercased template), or null when the pack or the name is missing. */
+export function soldierArt(soldiers, soldier) {
+  if (!soldiers || !soldier) return null;
+  return soldiers[String(soldier).toLowerCase()] || null;
+}
+
+/** The nation code a soldier's art names (`conp_ger.tga` -> `ger`), the one
+ *  every per-nation sprite name is built on, or null. */
+export function soldierNation(soldiers, soldier) {
+  return soldierArt(soldiers, soldier)?.nation || null;
+}
 
 /** `flagus_m1` -> `us` through `nations` (`hud.json`'s own `flagMeshNation`).
  *  `null` for a mesh the table has never heard of -- Pathet Lao's
@@ -59,8 +89,10 @@ export function heldNation(cp, nations, nationOf) {
   return cp.team === meshTeam(cp) ? cpNation(cp, nations) : nationOf(cp.team);
 }
 
-/** The nation a whole side flies on this level: the flag most of its
- *  control points hoist. Wake's Axis are Japanese, Kharkov's Allies Soviet.
+/** The nation a whole side flies on this level. `fromSoldier` is its
+ *  soldier's own (`soldierNation`), and wins whenever it is known. Without
+ *  it: the flag most of its control points hoist. Wake's Axis are Japanese,
+ *  Kharkov's Allies Soviet.
  *
  *  `vehicleNation` is the caller's own vehicle-based guess for the levels
  *  where a side holds no control point at the start and arrives by sea or
@@ -81,7 +113,10 @@ export function heldNation(cp, nations, nationOf) {
  *  (`meshTeam`), not by who holds the point now: Omaha's Americans taking a
  *  German bunker must not start flying German flags, sleeves and ticket
  *  art. */
-export function teamNation(controlPoints, team, nations, vehicleNation) {
+export function teamNation(controlPoints, team, nations, vehicleNation, fromSoldier = null) {
+  // The side's own soldier, when the pack knows him: the engine's answer
+  // (0x006ac800), whatever the level's flags or vehicles say.
+  if (fromSoldier) return fromSoldier;
   const tally = new Map();
   for (const cp of controlPoints || []) {
     if (meshTeam(cp) !== team || !cp.flagMesh) continue;

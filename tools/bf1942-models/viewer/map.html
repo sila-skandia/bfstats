@@ -1066,7 +1066,7 @@ const vehicleHud = createVehicleHud(bag(
 ));
 const soldierHud = createSoldierHud(bag(
   from(() => controls, `crossHairColor`),
-  from(() => hudFeed, `gameHud`),
+  from(() => hudFeed, `gameHud hudPack`),
   from(() => level, `combatArea currentDir`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
   from(() => mapSurfaces, `teamNation`),
@@ -1284,7 +1284,7 @@ const flagCapture = createFlagCapture(bag(
   from(() => level, `cull currentRoot ensureFlagMixer extras flattenCull levelClips tagCull thaw
     world`),
   from(() => localPlayer, `soldier soldierDead`),
-  from(() => mapSurfaces, `drawFullMap drawMinimap localMapTeam teamNation`),
+  from(() => mapSurfaces, `drawFullMap drawMinimap localMapTeam teamClothNation teamNation`),
   from(() => soldierKit, `teamVoice`),
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume playSoldierOneShot`),
@@ -1591,6 +1591,7 @@ const mapSurfaces = createMapSurfaces(bag(
   from(() => localPlayer, `aircraft car occupancy`),
   from(() => pageInput, `capture captured release`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
+  from(() => soldierKit, `kitLoadout loadouts`),
   from(() => spawning, `activeDeployGroup deployFlagIndices deployRejoin deployTeamId
     deployUnchosen`),
   {
@@ -1607,7 +1608,8 @@ const ticketFeed = createTicketFeed(bag(
   from(() => hudFeed, `hudPack`),
   from(() => level, `currentDir extras spawnersRoot world`),
   from(() => localPlayer, `soldier soldierDead`),
-  from(() => mapSurfaces, `teamNation`),
+  from(() => mapSurfaces, `teamArt teamNation`),
+  from(() => soldierKit, `loadouts`),
   from(() => spawning, `deployTeamId`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
@@ -1637,7 +1639,7 @@ const scoreboard = createScoreboardScreen(bag(
   from(() => mapSurfaces, `fullmapBox`),
   from(() => referee, `bots`),
   from(() => room, `roomClient roomJoined roomName`),
-  from(() => soldierKit, `loadouts`),
+  from(() => soldierKit, `carriedKit kitLoadout loadouts`),
   from(() => spawning, `deployKit deployRejoin deployTeamId`),
   from(() => ticketFeed, `ticketFlagTexture`),
   {

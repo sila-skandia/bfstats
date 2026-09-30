@@ -43,7 +43,16 @@ export function createHudFeed(page) {
   // `ObjectTemplate.setMinimapIcon` per vehicle template, read from the mod's
   // own `Objects.rfa` chain. They are point art and are drawn unsmoothed at
   // whole multiples where the surface allows.
-  const hudPack = { sprites: new Map(), icons: {}, nations: {}, scoreSettings: null };
+  // `levelIcons` (`minimap-level-icons.json`) is the icons a level's own
+  // `.con` files give templates, by level; `soldiers` (`soldier-icons.json`)
+  // each soldier template's team art, which the HUD takes for the side the
+  // level dresses in it (`nation.js`); `scopes` (`scopes.json`) each hand
+  // weapon's optic. All three are optional: a pack built before them leaves
+  // them null and every reader falls back to what it did without.
+  const hudPack = {
+    sprites: new Map(), icons: {}, nations: {}, scoreSettings: null,
+    levelIcons: null, soldiers: null, scopes: null,
+  };
 
   /** The player marker ships as a black cut-out — a solid arrowhead inside a
    *  translucent disc, colour left to the engine. Painted once the way the HUD
@@ -80,6 +89,13 @@ export function createHudFeed(page) {
       .then(r => (r.ok ? r.json() : null))
       .then(settings => { hudPack.scoreSettings = settings || null; })
       .catch(() => {});
+    for (const [key, file] of [['levelIcons', 'minimap-level-icons.json'],
+                               ['soldiers', 'soldier-icons.json'], ['scopes', 'scopes.json']]) {
+      fetch(`${page.hudPaths.url(file)}${page.bust()}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => { hudPack[key] = data && typeof data === 'object' ? data : null; })
+        .catch(() => {});
+    }
     let manifest, icons;
     try {
       [manifest, icons] = await Promise.all([
