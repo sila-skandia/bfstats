@@ -783,6 +783,239 @@ GeometryTemplate.create StandardMesh PT_Steering_M1
         self.assertIn("1P_PT_Str_M1", report.missing_meshes)
         self.assertNotIn("PT_Steering_M1", report.missing_meshes)
 
+    def test_a_cockpit_interior_that_draws_nothing_still_swaps_out_the_exterior(self) -> None:
+        """DC's M1A1 names a gunner interior whose mesh ships nowhere.
+
+        `Geometries.con` creates `1p_M1A1_Gunner_m1` with its
+        `GeometryTemplate.file` line commented out ("Todo, make M1A1
+        Cockpit"). In the game the Inside view still selects that
+        alternative, so first person hides `M1A1CockpitExternal` and draws
+        nothing in its place. The cockpit export used to drop the wrapper for
+        having neither a mesh nor a child, and wrote one bare root node: no
+        swap, so the viewer kept drawing the turret face at the camera.
+        """
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/M1A1/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject M1A1
+ObjectTemplate.addTemplate M1A1GunBase
+
+ObjectTemplate.create Bundle M1A1GunBase
+ObjectTemplate.addTemplate lodM1A1Cockpit
+ObjectTemplate.setPosition 0/1.2/0
+
+ObjectTemplate.create LodObject lodM1A1Cockpit
+ObjectTemplate.addTemplate M1A1CockpitExternal
+ObjectTemplate.addTemplate M1A1CockpitInternal
+ObjectTemplate.lodSelector M1A1cockpitSelector
+
+ObjectTemplate.create SimpleObject M1A1CockpitExternal
+ObjectTemplate.geometry M1A1_Canon1_M1
+
+ObjectTemplate.create SimpleObject M1A1CockpitInternal
+ObjectTemplate.geometry 1p_M1A1_Gunner_m1
+
+LodSelectorTemplate.create DistCompareSelector M1A1cockpitSelector
+LodSelectorTemplate.addLodDistance 1
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh 1p_M1A1_Gunner_m1
+GeometryTemplate.create StandardMesh M1A1_Canon1_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        # The exterior's mesh is there; the interior's is not.
+        stub_meshes(assembler, builder, "M1A1_Canon1_M1")
+        report = Report(root="M1A1", configuration="complex", lod=0,
+                        first_person=True)
+
+        root = assembler.build_node(builder, "M1A1", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertEqual(["lodM1A1Cockpit", "M1A1GunBase", "M1A1"], names)
+        wrapper = document["nodes"][names.index("lodM1A1Cockpit")]
+        self.assertNotIn("mesh", wrapper)
+        self.assertEqual([], wrapper.get("children", []))
+        swap = wrapper["extras"]["lodAlternative"]
+        self.assertEqual("M1A1CockpitInternal", swap["selected"])
+        self.assertEqual(["M1A1CockpitExternal"], swap["replaces"])
+        self.assertEqual([0.5], swap["comparisons"])
+        # Placed where the ordinary export places it, so the graft lands.
+        self.assertEqual([0.0, 1.2, 0.0], wrapper["translation"])
+        self.assertIn("1p_M1A1_Gunner_m1", report.missing_meshes)
+        self.assertEqual(
+            ["lodM1A1Cockpit: M1A1CockpitInternal replaces M1A1CockpitExternal"],
+            report.cockpit_swaps)
+        self.assertEqual(0, report.parts)
+
+    def test_a_cockpit_interior_with_no_geometry_template_still_swaps(self) -> None:
+        # EoD's Chi-ha and PanzerIV name `1P_PanzerIV_Gunner_M1`, which no
+        # `GeometryTemplate.create` declares. The engine's `setGeometry` finds
+        # no template and leaves the alternative empty; the swap is the same.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Chi-ha/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Chi-ha
+ObjectTemplate.addTemplate lodChi-ha_Cockpit
+
+ObjectTemplate.create LodObject lodChi-ha_Cockpit
+ObjectTemplate.addTemplate Chi-ha_CockpitExternal
+ObjectTemplate.addTemplate Chi-ha_CockpitInternal
+ObjectTemplate.lodSelector Chi-haCockpitSelector
+
+ObjectTemplate.create SimpleObject Chi-ha_CockpitExternal
+ObjectTemplate.geometry Chi-ha_Canon1_M1
+
+ObjectTemplate.create SimpleObject Chi-ha_CockpitInternal
+ObjectTemplate.geometry 1P_PanzerIV_Gunner_M1
+
+LodSelectorTemplate.create DistCompareSelector Chi-haCockpitSelector
+LodSelectorTemplate.addLodDistance 1
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Chi-ha_Canon1_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Chi-ha", configuration="complex", lod=0,
+                        first_person=True)
+
+        root = assembler.build_node(builder, "Chi-ha", report)
+        document = glb_document(builder.build([root], extras={}))
+        swap = next(node["extras"]["lodAlternative"] for node in document["nodes"]
+                    if node["name"] == "lodChi-ha_Cockpit")
+        self.assertEqual(["Chi-ha_CockpitExternal"], swap["replaces"])
+        self.assertIn("1P_PanzerIV_Gunner_M1", report.missing_geometry_templates)
+
+    GUNSIGHT_CON = """
+ObjectTemplate.create PlayerControlObject AH64
+ObjectTemplate.geometry AH64_Fus_M1
+ObjectTemplate.addTemplate AH64NoseSensors
+
+ObjectTemplate.create Bundle AH64NoseSensors
+ObjectTemplate.addTemplate AC-130_Howitzer_Cockpit
+ObjectTemplate.setPosition 0/0.3/1
+
+ObjectTemplate.create LodObject AC-130_Howitzer_Cockpit
+ObjectTemplate.addTemplate AC-130_Sight_Internal
+ObjectTemplate.addTemplate AC-130_Sight_External
+ObjectTemplate.lodSelector AC-130_Sight_Selector
+
+ObjectTemplate.create SimpleObject AC-130_Sight_External
+LodSelectorTemplate.create DistanceSelector AC-130_Sight_Selector
+LodSelectorTemplate.addLodDistance 1
+
+ObjectTemplate.create SimpleObject AC-130_Sight_Internal
+ObjectTemplate.geometry AC-130_Sight
+
+GeometryTemplate.create StandardMesh AH64_Fus_M1
+GeometryTemplate.create StandardMesh AC-130_Sight
+"""
+
+    def gunsight_library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/AH64/Objects.con", self.GUNSIGHT_CON)
+        return library
+
+    def test_a_one_metre_gunsight_is_not_drawn_in_the_world(self) -> None:
+        """DC's AC-130 reticle pane shows only within 1 m of its LodObject.
+
+        A `DistanceSelector` picks alternative 0 while the camera is inside
+        its first distance (`DistLodSelector::getLodLevelRelative`), and no
+        third-person camera gets within a metre of a helicopter's nose. The
+        ordinary export used to take the near rung, as it does for a
+        building, and the viewer drew a green pane in front of every AH-64.
+        """
+        library = self.gunsight_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "AH64_Fus_M1", "AC-130_Sight")
+        report = Report(root="AH64", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "AH64", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertEqual(["AC-130_Howitzer_Cockpit -> AC-130_Sight_External"],
+                         report.selected_lod_alternatives)
+        self.assertNotIn("AC-130_Sight_Internal", names)
+        # The wrapper stays, empty, as the graft host.
+        wrapper = document["nodes"][names.index("AC-130_Howitzer_Cockpit")]
+        self.assertNotIn("mesh", wrapper)
+        self.assertEqual([], wrapper.get("children", []))
+        self.assertTrue(reaches_first_person(library, "AH64"))
+
+    def test_the_cockpit_export_carries_the_gunsight_and_its_swap(self) -> None:
+        library = self.gunsight_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "AH64_Fus_M1", "AC-130_Sight")
+        report = Report(root="AH64", configuration="complex", lod=0,
+                        first_person=True)
+
+        root = assembler.build_node(builder, "AH64", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        # The pane is loaded although its mesh is not called `1P_`: it is
+        # first person by where it is drawn. The fuselage is not.
+        self.assertEqual(["AC-130_Sight_Internal", "AC-130_Howitzer_Cockpit",
+                          "AH64NoseSensors", "AH64"], names)
+        self.assertIn("mesh", document["nodes"][names.index("AC-130_Sight_Internal")])
+        self.assertNotIn("mesh", document["nodes"][names.index("AH64")])
+        swap = document["nodes"][names.index("AC-130_Howitzer_Cockpit")][
+            "extras"]["lodAlternative"]
+        self.assertEqual("AC-130_Sight_Internal", swap["selected"])
+        self.assertEqual(["AC-130_Sight_External"], swap["replaces"])
+        self.assertEqual("DistanceSelector", swap["selectorKind"])
+        self.assertEqual([1.0], swap["distances"])
+
+    def test_a_building_ladder_still_draws_its_near_rung(self) -> None:
+        # 70 m is a LOD ladder, not a seat: the near rung is the interior a
+        # soldier walks into (`select_lod_alternative`), and stays.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Buildings/Supplyde/Objects.con",
+            """
+ObjectTemplate.create LodObject lodSupplyde
+ObjectTemplate.addTemplate SupplydeInterior
+ObjectTemplate.addTemplate SupplydeExterior
+ObjectTemplate.lodSelector SupplydeSelector
+
+ObjectTemplate.create SimpleObject SupplydeInterior
+ObjectTemplate.geometry Supplyde_M1
+ObjectTemplate.create SimpleObject SupplydeExterior
+ObjectTemplate.geometry Supplyde_M2
+
+LodSelectorTemplate.create DistanceSelector SupplydeSelector
+LodSelectorTemplate.addLodDistance 70
+
+GeometryTemplate.create StandardMesh Supplyde_M1
+GeometryTemplate.create StandardMesh Supplyde_M2
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Supplyde_M1", "Supplyde_M2")
+        report = Report(root="lodSupplyde", configuration="complex", lod=0)
+        assembler.build_node(builder, "lodSupplyde", report)
+        self.assertEqual(["lodSupplyde -> SupplydeInterior"],
+                         report.selected_lod_alternatives)
+        self.assertFalse(reaches_first_person(library, "lodSupplyde"))
+
     def test_a_cockpit_pair_with_no_third_person_mesh_keeps_its_wrapper(self) -> None:
         """The M3A1 and the Priest name both cockpit alternatives after `1P_*`.
 

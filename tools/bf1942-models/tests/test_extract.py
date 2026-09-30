@@ -18,7 +18,10 @@ from extract_models import (  # noqa: E402
     build_pools,
     catalogue,
     discover_levels,
+    home_levels,
     mod_chain,
+    own_templates,
+    template_category,
     spawn_folder,
     spawned_templates,
     spawner_templates,
@@ -238,16 +241,71 @@ ObjectTemplate.geometry USSoldier
 
         self.assertEqual({"Fletcher", "Fletcher2"}, names)
 
-    def test_a_spawned_template_outside_the_category_folders_stays_out(self) -> None:
+    def test_a_spawned_kit_stays_out(self) -> None:
         # Secret Weapons' levels spawn the elite jet pack, a Kit filed under
-        # `Objects/Items/`: a spawner's word admits a template in a category
-        # folder, it does not invent a category.
+        # `Objects/Items/`: a pickup, and `extract_kits.py`'s, not a model.
         library = library_with(("Objects/Items/GerEliteKit/JetPack/Objects.con", """
 ObjectTemplate.create Kit GermanElite_JetPack
 ObjectTemplate.geometry JetPack
 """))
 
         self.assertEqual([], catalogue(None, library, spawned={"germanelite_jetpack"}))
+
+    def test_a_template_a_level_declares_and_spawns_is_catalogued(self) -> None:
+        # Al Nas's mobile spawn truck lives in the level's own archive and
+        # nowhere else; only the category prefix was asked, so no tree had it.
+        library = library_with(("bf1942/levels/DC_Al_Nas/objects/nx_M-923/Objects.con",
+                                NX_M923))
+
+        self.assertEqual([], catalogue(None, library))
+        self.assertEqual(
+            [("nx_M-923", "land", "bf1942/levels/DC_Al_Nas/objects/nx_M-923/Objects.con")],
+            catalogue(None, library, spawned={"nx_m-923"}))
+        # Its own map tree bakes Al Nas; a mod that only inherits the level
+        # does not.
+        self.assertEqual(1, len(catalogue(None, library, spawned={"nx_m-923"},
+                                          own_levels={"dc_al_nas"})))
+        self.assertEqual([], catalogue(None, library, spawned={"nx_m-923"},
+                                       own_levels={"dc_weapon_bunkers"}))
+
+    def test_an_objective_with_no_seat_is_an_object(self) -> None:
+        # Weapon Bunkers' bunkers say `VCLand` like every DC PlayerControlObject,
+        # but nobody gets into one.
+        library = library_with(("bf1942/levels/DC_Weapon_Bunkers/objects/mil_wpbunker_m1/Objects.con", """
+ObjectTemplate.create PlayerControlObject mil_wpbunkerleft_des
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.geometry mil_wpbunker_m1
+"""))
+
+        self.assertEqual("object", template_category(library, "mil_wpbunkerleft_des"))
+
+    def test_a_level_copy_of_the_stock_layout_is_filed_the_same_way(self) -> None:
+        library = library_with(
+            ("bf1942/levels/Raid_on_Agheila/Objects/Vehicles/Air/Flettner/Objects.con", """
+ObjectTemplate.create PlayerControlObject Flettner
+ObjectTemplate.geometry Flettner_Hull_M1
+"""),
+            ("Objects/Buildings/Armory/DC_Armory_M82/Objects.con", """
+ObjectTemplate.create Bundle Armory_M82
+ObjectTemplate.geometry armory_m82
+"""))
+
+        self.assertEqual("air", template_category(library, "Flettner"))
+        # A spawned prop from a folder that is no category at all.
+        self.assertEqual(
+            [("Armory_M82", "object", "Objects/Buildings/Armory/DC_Armory_M82/Objects.con")],
+            catalogue(None, library, spawned={"armory_m82"}))
+
+
+# Al Nas's `objects/nx_M-923/Objects.con`, cut down to what the catalogue reads.
+NX_M923 = """
+ObjectTemplate.create PlayerControlObject nx_M-923
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.geometry nx_M-923_Hull_M1
+ObjectTemplate.addTemplate nx_M-923Entry
+
+ObjectTemplate.create EntryPoint nx_M-923Entry
+"""
 
 
 # Midway's `Conquest/ObjectSpawnTemplates.con`, the ships only: each spawner
@@ -299,6 +357,58 @@ class RetailSpawnedCatalogueTests(unittest.TestCase):
         self.assertLessEqual({"Fletcher", "Fletcher2", "Hatsuzuki", "Hatsuzuki2"}, names)
         # Everything the folder rule already listed is still listed.
         self.assertLessEqual({name for name, _c, _s in catalogue(objects, library)}, names)
+
+
+def _dc_final_chain() -> list[Path] | None:
+    game = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+    if not (game / "Mods" / "DC_Final").is_dir():
+        return None
+    return mod_chain(game, "DC_Final")
+
+
+@unittest.skipIf(_dc_final_chain() is None, "no Desert Combat Final install")
+class RetailLevelTemplateTests(unittest.TestCase):
+    """DC Final's Battle of Britain: its own Ju88A scripts over vanilla's level."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.chain = _dc_final_chain()
+        _meshes, _textures, cls.objects, _game = build_pools(cls.chain, [])
+        cls.levels = discover_levels(cls.chain)
+        from extract_models import add_level_objects
+        add_level_objects(cls.objects, cls.levels, cls.chain)
+        cls.library = build_library(cls.objects)
+
+    def test_the_level_is_read_through_every_copy_of_it(self) -> None:
+        # DC Final's copy ships the Ju88A scripts and no Conquest spawners;
+        # the round runs vanilla's, so read nearest-only nothing spawned it.
+        nearest = spawned_templates(self.levels)
+        underlay = spawned_templates(self.levels, self.chain)
+        self.assertNotIn("ju88a", nearest)
+        self.assertIn("ju88a", underlay)
+        self.assertLessEqual(nearest, underlay)
+
+    def test_a_level_template_is_built_from_its_levels_archives(self) -> None:
+        home = home_levels(self.chain, self.library, "Ju88A")
+        mods = [path.parents[3].name for _label, path in home]
+        self.assertEqual("DC_Final", mods[0])
+        self.assertIn("bf1942", mods)
+        self.assertTrue(all(path.stem.lower().startswith("battle_of_britain")
+                            for _label, path in home))
+        self.assertEqual([], home_levels(self.chain, self.library, "M1A1"))
+
+    def test_the_catalogue_has_the_level_templates_its_maps_spawn(self) -> None:
+        own = {stem.lower() for stem, _ in discover_levels(self.chain[:1])}
+        names = {name for name, _c, _s in catalogue(
+            self.objects, self.library,
+            spawned=spawned_templates(self.levels, self.chain), own_levels=own)}
+        self.assertLessEqual({"Ju88A", "nx_M-923", "nx_M-923c", "camel2", "Landslide",
+                              "mil_wpbunkerleft_des", "air_radardome_des"}, names)
+        # A spawned kit stays with the kits.
+        self.assertNotIn("US_Sniper_hvy", names)
+
+    def test_a_mods_own_level_templates_are_its_own(self) -> None:
+        self.assertIn("nx_m-923", own_templates(self.chain, self.library))
 
 
 class FakeObjects:

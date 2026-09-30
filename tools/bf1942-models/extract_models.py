@@ -53,6 +53,18 @@ CATEGORY_PREFIXES = {
     "objects/handweapons/": "handweapon",
 }
 
+# `setVehicleCategory`, as a catalogue category. Nine `Sea` and one `Land`
+# across the installed mods drop the `VC` prefix (`con.py`), so it is optional.
+VEHICLE_CATEGORIES = {"land": "land", "air": "air", "sea": "sea"}
+
+# A level archive's own tree: `bf1942/levels/<Map>/`, what a template the
+# level declares for itself has in front of its `Objects/...` path.
+LEVEL_SOURCE = re.compile(r"^bf1942/levels/[^/]+/", re.IGNORECASE)
+
+# Kinds a level's ObjectSpawner may field that are not models: a spawned kit
+# is a pickup, and `extract_kits.py` owns kits.
+NOT_CATALOGUED_KINDS = frozenset({"kit"})
+
 # Template kinds that are a spawnable object wherever they are declared.
 #
 # The folder rule below — a template named after the directory holding its
@@ -217,7 +229,8 @@ def discover_levels(chain: list[Path]) -> list[tuple[str, Path]]:
     return results
 
 
-def add_level_objects(objects: ArchivePool, levels: list[tuple[str, Path]]) -> int:
+def add_level_objects(objects: ArchivePool, levels: list[tuple[str, Path]],
+                      chain: list[Path] | None = None) -> int:
     """Every level's own `Objects/` templates, behind the chain's `Objects.rfa`.
 
     A level can declare templates in its own archive, and the engine resolves
@@ -228,10 +241,16 @@ def add_level_objects(objects: ArchivePool, levels: list[tuple[str, Path]]) -> i
     are added before its base, as the engine overlays them. Global templates
     keep priority, and where two levels declare one name the first level in
     `discover_levels` order wins. Returns the entries registered.
+
+    With `chain`, each level is read through every copy of it down the chain
+    (`level_underlay`): DC Final's Liberation of Caen spawns vanilla's
+    `CDNRaft`, which only vanilla's copy of the level declares.
     """
     added = 0
     for name, path in levels:
-        for layer in [*roster_mod.level_patches(path), path]:
+        layers = (level_underlay(chain, path.stem) if chain is not None
+                  else [*roster_mod.level_patches(path), path])
+        for layer in layers:
             try:
                 added += objects.add_level_objects(layer, label=f"{name} objects")
             except Exception as exc:
@@ -262,6 +281,65 @@ def add_level_textures(textures: ArchivePool, levels: list[tuple[str, Path]]) ->
             except Exception as exc:
                 print(f"  {layer.name}: textures unreadable ({exc})", file=sys.stderr)
     return added
+
+
+def level_underlay(chain: list[Path], stem: str) -> list[Path]:
+    """Every archive of one level down the mod chain, in the order it is read.
+
+    The engine reads `bf1942/levels/<Level>/...` along `game.addModPath`,
+    nearest mod first, and a mod's copy of a level may ship only part of it
+    (the skill's section 3). Each copy's numbered patches come ahead of it.
+    """
+    out: list[Path] = []
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        levels_dir = find_levels_dir(archives) if archives is not None else None
+        if levels_dir is None:
+            continue
+        for child in sorted(levels_dir.iterdir()):
+            if (child.is_file() and child.suffix.lower() == ".rfa"
+                    and child.stem.lower() == stem.lower()):
+                out += [*roster_mod.level_patches(child), child]
+    return out
+
+
+def home_levels(chain: list[Path], library: con_mod.ObjectLibrary,
+                name: str) -> list[tuple[str, Path]]:
+    """The level archives a template declared inside a level is built from.
+
+    `Ju88A` exists only in Battle of Britain's archive, and there is a copy
+    of that archive in every mod down the chain: DC Final's carries the Ju88A
+    scripts, vanilla's the `StandardMesh/` they name, and the engine reads the
+    level through all of them nearest first (the underlay). So every archive
+    of that level along the chain, each with its patches ahead of it. Empty
+    for a template the global archives declare.
+    """
+    template = library.object(name)
+    match = LEVEL_SOURCE.match(template.source) if template is not None else None
+    if match is None:
+        return []
+    stem = match.group(0).rstrip("/").rsplit("/", 1)[-1]
+    return [(layer.stem, layer) for layer in level_underlay(chain, stem)]
+
+
+def with_level_archives(pool: ArchivePool,
+                        archives: list[tuple[str, Path]]) -> ArchivePool:
+    """`pool`, then `archives` behind it: they only ever fill its gaps.
+
+    Registered whole, as `--level-all` registers a level (`ArchivePool.add`),
+    and in a pool of its own, so the one template that needs its level's
+    meshes and textures gets them and no other template in the run does.
+    """
+    if not archives:
+        return pool
+    local = ArchivePool()
+    local.extend_from(pool)
+    for label, path in archives:
+        try:
+            local.add(path, label=label)
+        except Exception as exc:
+            print(f"  {path.name}: level archive unreadable ({exc})", file=sys.stderr)
+    return local
 
 
 RE_FOLDER = re.compile(r"^\s*rem\s+folder\s*=\s*(.+)$", re.IGNORECASE)
@@ -384,6 +462,8 @@ def own_templates(chain: list[Path], library: con_mod.ObjectLibrary) -> set[str]
     if archives is None:
         return {name.lower() for name in library.objects}
     own.add_dir(archives, OBJECT_ARCHIVES)
+    # A template one of the mod's own levels declares is the mod's too.
+    add_level_objects(own, discover_levels(chain[:1]))
     declared: set[str] = set()
     for template in library.objects.values():
         if own.try_read(template.source) is not None:
@@ -425,7 +505,8 @@ def spawner_templates(text: str) -> set[str]:
             for vehicle in spec.vehicles.values()}
 
 
-def spawned_templates(levels: list[tuple[str, Path]]) -> set[str]:
+def spawned_templates(levels: list[tuple[str, Path]],
+                      chain: list[Path] | None = None) -> set[str]:
     """Every template a level's ObjectSpawners put in the world, lower case.
 
     Every game mode's `ObjectSpawnTemplates.con` of every level in `levels`
@@ -438,11 +519,25 @@ def spawned_templates(levels: list[tuple[str, Path]]) -> set[str]:
     Level-declared templates (Coral Sea's carriers) come back too; the object
     library decides whether they are extractable. One unreadable level costs
     only its own spawners.
+
+    With `chain`, each level is read through every copy of it down the chain
+    (`level_underlay`), as the engine reads it. DC Final's Battle of Britain
+    ships its own `Objects/Ju88A/` but no Conquest spawners, so the vanilla
+    level's are the ones its round runs, and read from the nearest copy alone
+    the Ju88A was spawned by nothing.
     """
     names: set[str] = set()
     for name, path in levels:
         try:
-            pool = roster_mod.level_pool(path)
+            if chain is not None:
+                pool = ArchivePool()
+                for layer in level_underlay(chain, path.stem):
+                    try:
+                        pool.add(layer)
+                    except Exception as exc:
+                        print(f"  {layer.name}: unreadable ({exc})", file=sys.stderr)
+            else:
+                pool = roster_mod.level_pool(path)
             if pool is None:
                 continue
             for entry in pool.names():
@@ -458,6 +553,7 @@ def spawned_templates(levels: list[tuple[str, Path]]) -> set[str]:
 
 def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
               spawned: set[str] | frozenset[str] = frozenset(),
+              own_levels: set[str] | frozenset[str] | None = None,
               ) -> list[tuple[str, str, str]]:
     """Every template a category folder declares as a spawnable object.
 
@@ -471,15 +567,39 @@ def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
     without it a round replay had no model for Midway's second destroyer. A
     template that satisfies more than one (`K98` is a `HandFireArms` *and*
     named after `HandWeapons/K98/`) appears once: the library is keyed by name.
+
+    "Whichever folder" includes a level's own archive and the folders that are
+    not a category. A level declares templates for itself and the engine
+    resolves them by name like any other (`add_level_objects`, which the
+    caller runs so `library` has them): Al Nas's mobile spawn trucks
+    `nx_m-923`/`nx_m-923c` and its `camel2`, Battle of Britain's `Ju88A`,
+    Weapon Bunkers' `mil_wpbunker*_des`, No Fly Zone Day 2's radar domes and
+    hangars. Only the category prefix was ever asked, so none had a model or
+    a wreck, and a dead one kept its intact mesh. Those are categorised by
+    `template_category`; a spawned kit is a pickup and stays out.
+
+    A level template exists only while its level is loaded, and a mod's map
+    tree bakes the levels the mod ships itself. `own_levels`, when given,
+    is those (lower case), and a level template declared elsewhere stays
+    out: Desert Combat's chain reaches vanilla's Battle of Britain, and its
+    tree has no use for a Ju88A.
     """
     spawned = {name.lower() for name in spawned}
     out: list[tuple[str, str, str]] = []
     for template in library.objects.values():
         source = template.source.lower()
         category = next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), None)
-        if category is None:
-            continue
         kind = template.kind.lower()
+        if category is None:
+            level = LEVEL_SOURCE.match(source)
+            if (template.name.lower() in spawned
+                    and kind not in NOT_CATALOGUED_KINDS
+                    and (level is None or own_levels is None
+                         or level.group(0).rstrip("/").rsplit("/", 1)[-1] in own_levels)):
+                out.append((template.name,
+                            template_category(library, template.name),
+                            template.source))
+            continue
         # A soldier folder also holds his parachute and his 1P arms; only the
         # BFSoldier is a thing you can spawn.
         if category == "soldier" and kind != "bfsoldier":
@@ -493,11 +613,41 @@ def catalogue(objects: ArchivePool, library: con_mod.ObjectLibrary, *,
 
 
 def template_category(library: con_mod.ObjectLibrary, name: str) -> str:
+    """The browse category: where the template is filed, else what it says it is.
+
+    A level's own copy of the stock layout (`bf1942/levels/<Map>/Objects/
+    Vehicles/Air/...`) files it the same way; anything else a level declares
+    goes by its own `setVehicleCategory` (`Ju88A` air, Al Nas's trucks land),
+    and a destructible objective with none is an `object`.
+    """
     template = library.object(name)
     if template is None:
         return "object"
     source = template.source.lower()
-    return next((v for k, v in CATEGORY_PREFIXES.items() if source.startswith(k)), "object")
+    for candidate in (source, LEVEL_SOURCE.sub("", source)):
+        category = next((v for k, v in CATEGORY_PREFIXES.items()
+                         if candidate.startswith(k)), None)
+        if category is not None:
+            return category
+    # Desert Combat files its radar domes and bunkers `VCLand` too: only a
+    # thing a soldier can get into is a vehicle.
+    declared = (template.vehicle_category or "").lower().removeprefix("vc")
+    if declared in VEHICLE_CATEGORIES and _can_be_entered(library, name):
+        return VEHICLE_CATEGORIES[declared]
+    return "object"
+
+
+def _can_be_entered(library: con_mod.ObjectLibrary, name: str, *,
+                    depth: int = 0, seen: frozenset[str] = frozenset()) -> bool:
+    """Whether an `EntryPoint` sits anywhere in this template's tree."""
+    template = library.object(name)
+    if template is None or depth > 24 or template.name.lower() in seen:
+        return False
+    if template.kind.lower() == "entrypoint":
+        return True
+    seen = seen | {template.name.lower()}
+    return any(_can_be_entered(library, ref.template, depth=depth + 1, seen=seen)
+               for ref in template.children)
 
 
 def model_file_stem(name: str) -> str:
@@ -608,7 +758,9 @@ def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> No
     chain = [Path(p) for p in chain_paths]
     fallbacks = [Path(p) for p in fallback_paths]
     meshes, base_textures, objects, _game = build_pools(chain, fallbacks)
+    add_level_objects(objects, discover_levels(chain), chain)
     library = build_library(objects)
+    _worker_state["chain"] = chain
     _worker_state["meshes"] = meshes
     _worker_state["base_textures"] = base_textures
     _worker_state["objects"] = objects
@@ -619,10 +771,18 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
                     objects: ArchivePool, library: con_mod.ObjectLibrary, *,
                     configurations: list[str], lod: int, max_texture: int,
                     out: Path, level_sources: list[tuple[str, Path]],
-                    cockpit: bool = False) -> tuple[list[dict], int]:
-    """Every variant of one template: configurations x theatre skins, + cockpit."""
+                    cockpit: bool = False,
+                    home: list[tuple[str, Path]] | None = None,
+                    ) -> tuple[list[dict], int]:
+    """Every variant of one template: configurations x theatre skins, + cockpit.
+
+    `home` is the level a level-declared template lives in (`home_levels`):
+    its meshes and textures are there and nowhere else.
+    """
     variants: list[dict] = []
     failures = 0
+    meshes = with_level_archives(meshes, home or [])
+    base_textures = with_level_archives(base_textures, home or [])
     for configuration in configurations:
         requested: set[str] = set()
         base = export_one(
@@ -701,6 +861,7 @@ def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
             out=Path(out_path_str),
             level_sources=[(n, Path(p)) for n, p in level_sources_tuples],
             cockpit=cockpit,
+            home=home_levels(_worker_state["chain"], _worker_state["library"], name),
         )
         return name, variants, failures
     except Exception as exc:
@@ -780,6 +941,10 @@ def main() -> int:
         meshes.add(path, label=name)
         base_textures.add(path, label=name)
 
+    # Every level's own templates, behind the global ones, whether or not the
+    # level reskins anything: Al Nas's trucks are declared nowhere else.
+    levels = discover_levels(chain)
+    add_level_objects(objects, levels, chain)
     library = build_library(objects)
     damage_tables = load_damage_tables(game)
     weapons = collect_weapons(objects)
@@ -803,7 +968,6 @@ def main() -> int:
         print(f"levels:     {', '.join(n for n, _ in level_sources)}", file=sys.stderr)
 
     # Browse facets: who fielded the thing, and on which maps.
-    levels = discover_levels(chain)
     roster, kit_count, level_count = roster_mod.build(library, levels)
     print(f"roster:     {kit_count} kits, {level_count} levels -> "
           f"{len(roster.factions)} templates with a faction", file=sys.stderr)
@@ -812,8 +976,10 @@ def main() -> int:
               file=sys.stderr)
 
     if args.list:
+        own_levels = {stem.lower() for stem, _ in discover_levels(chain[:1])}
         for name, category, source in catalogue(objects, library,
-                                                spawned=spawned_templates(levels)):
+                                                spawned=spawned_templates(levels, chain),
+                                                own_levels=own_levels):
             print(f"{category:12s} {name:28s} {source}")
         return 0
 
@@ -874,6 +1040,7 @@ def main() -> int:
                 name, meshes, base_textures, objects, library,
                 configurations=configurations, lod=lod, max_texture=max_texture,
                 out=args.out, level_sources=level_sources, cockpit=want_cockpit,
+                home=home_levels(chain, library, name),
             )
             template_variants[name] = variants
             failures += f_count

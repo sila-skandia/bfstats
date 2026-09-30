@@ -325,3 +325,39 @@ the vanilla armies it inherits (DC and DC Final until 2026-09-30):
 - `python3 extract_tree_billboards.py --mod <Mod> --out maps/mods/<id>/_shared`
   writes `trees.json` and `trees/`, the cards distant trees are drawn as.
   DC and DC Final ship no tree meshes, so theirs are vanilla's strips.
+
+## Templates a level declares, and wrecks down the mod chain (2026-09-30)
+
+A level can declare templates in its own archive and spawn them: DC Final's Al Nas
+fields `nx_M-923`/`nx_M-923c` and `camel1`/`camel2`, Weapon Bunkers and No Fly Zone
+their destructible objectives, Medina Ridge its `Landslide` and flag boxes, and DC
+Final's Battle of Britain vanilla's `Ju88A`, factory and radar towers. The catalogue
+only ever asked the category prefix, so none had a model or a wreck, and a dead one
+kept its intact mesh. Now (`extract_models.py`):
+
+* `catalogue` admits a spawned template from any folder, a kit excepted, and
+  `template_category` files it by its path inside the level, else by
+  `setVehicleCategory` when something can be entered, else `object`.
+* `own_levels` keeps a level template to the levels the mod ships: DesertCombat's
+  chain reaches vanilla's Battle of Britain, and its tree has no use for a Ju88A.
+* A level is read through every copy of it down the chain (`level_underlay`), for
+  its spawners and its objects: DC Final's Battle of Britain ships the Ju88A scripts
+  but runs vanilla's Conquest spawners, and its Liberation of Caen spawns vanilla's
+  `CDNRaft`.
+* A level template is built from its own level's archives (`home_levels`), in a pool
+  of its own, so no other template in the run gains a level's meshes.
+
+`vehicle-wrecks.js` looks a wreck up in the active tree's `models.json`, then
+vanilla's, and the first that lists the template decides: its level reskin, its
+plain wreck, or nothing at all. XPack1's and XPack2's trees are `--own`, so a vanilla
+hull dying on a pack map used to ask the pack's tree alone and 404. A template no
+catalogue lists is still probed down the chain unless its placed node draws nothing
+(Operation Bragg's `UST`/`IST`/`USK`/`ISK` spawn groupings).
+
+Extracted 2026-09-30: 13 templates into `models/mods/desertcombat`, 30 into
+`models/mods/dc_final`, with thumbnails. Vanilla's catalogue gains 12 (Ju88A, the
+Battle of Britain factory and radar towers, Caen's Pak40 and CDNRaft, Coral Sea's
+carriers) and XPack2's 6 (Raid on Agheila's), on their next extraction; until then
+vanilla's Britain_Factory still 404s its wreck. DC's manifests predate the roster fix
+of 64844779 (`factions` lacks `Iraqi` on most rows); only the rows written here are
+current.

@@ -78,6 +78,73 @@ def geometry_is_first_person(geometry_name: str | None) -> bool:
     return base.lower().startswith("1p")
 
 
+# The farthest a `DistanceSelector`'s first rung may reach and still be a part
+# only a seated player ever sees. See `near_rung_is_first_person`.
+NEAR_RUNG_FIRST_PERSON_M = 2.0
+
+
+def near_rung_is_first_person(library: con_mod.ObjectLibrary,
+                              template: con_mod.ObjectTemplate) -> bool:
+    """Whether this LodObject's alternative 0 is its first-person half by place.
+
+    A `DistanceSelector` shows alternative 0 while the camera is within its
+    first `addLodDistance` of the LodObject, and the next one past it.
+    `DistLodSelector::init` (lnxded 0x08215aa0) squares the declared
+    distances; `getLodLevelRelative` (0x08215b30) takes the camera's squared
+    distance to the object less its bounding radius squared, scales it by
+    `LodObject::m_distanceLodFactor` and the render view's FOV factor, and
+    `lower_bound`s it into them. Nothing else picks the rung.
+
+    Desert Combat builds gunner sights that way: `AC-130_Howitzer_Cockpit`
+    puts `AC-130_Sight_Internal` (a 50-triangle reticle pane) in front of a
+    meshless `AC-130_Sight_External` at 1 m, and hangs it on the AC-130's
+    howitzer, the Stryker's gun and DC Final's AH-64 nose. The game draws the
+    pane for the gunner whose eye is at it, and nothing to anyone else. The
+    geometry name carries no `1P` tell, so the ordinary export took the near
+    rung as it does a building's interior (70 m and up, where near is right)
+    and the viewer drew a green pane in front of every parked AH-64.
+
+    No third-person view comes that close: a chase camera sits at least 1.2
+    bounding radii off the hull (CVM-2). Every vanilla, XPack1 and XPack2
+    selector this short already names a `1P_` mesh (the B17's guns at 1 m, the
+    SCUD-B's wheel at 2 m), and every other one there is 10 m or longer.
+
+    Only a LodObject none of whose alternatives is named first person
+    qualifies. Where one is, the name keeps deciding, as it always has:
+    `ranks_by_distance` found eight steering and cockpit selectors authored
+    far-rung first (EoD's Katyusha puts a meshless `KatyushaLowSteering`
+    ahead of its `1P_` wheel at 2 m), and the name picks the wheel whatever
+    the order says.
+    """
+    if not template.is_lod_selector or len(template.children) < 2:
+        return False
+    selector = library.selector(template.lod_selector)
+    if (selector is None or not selector.ranks_by_distance
+            or not selector.distances
+            or selector.distances[0] > NEAR_RUNG_FIRST_PERSON_M):
+        return False
+    return not any(
+        geometry_is_first_person(child.geometry)
+        for ref in template.children
+        if (child := library.object(ref.template)) is not None)
+
+
+def alternative_is_first_person(library: con_mod.ObjectLibrary,
+                                lod_template: con_mod.ObjectTemplate,
+                                ref: con_mod.ChildRef) -> bool:
+    """Whether one alternative of a LodObject is its first-person half.
+
+    Either its geometry is named first person (`geometry_is_first_person`), or
+    it is the near rung of a selector too short for any third-person camera
+    (`near_rung_is_first_person`).
+    """
+    child = library.object(ref.template)
+    if geometry_is_first_person(child.geometry if child else None):
+        return True
+    return (bool(lod_template.children) and ref is lod_template.children[0]
+            and near_rung_is_first_person(library, lod_template))
+
+
 def reaches_first_person(library: con_mod.ObjectLibrary, template_name: str, *,
                          depth: int = 0,
                          stack: frozenset[str] = frozenset()) -> bool:
@@ -93,6 +160,8 @@ def reaches_first_person(library: con_mod.ObjectLibrary, template_name: str, *,
     if template is None or template.invisible:
         return False
     if geometry_is_first_person(template.geometry):
+        return True
+    if near_rung_is_first_person(library, template):
         return True
     key = template.name.lower()
     if key in stack:
@@ -2176,9 +2245,9 @@ class Assembler:
             f"{child_name} -> {skeleton.bones[index].name} (relative to {main})")
         return rotation, translation, skeleton.bones[index].name
 
-    def _geometry_is_first_person(self, template_name: str) -> bool:
-        child = self.library.object(template_name)
-        return geometry_is_first_person(child.geometry if child else None)
+    def _alternative_is_first_person(self, template: con_mod.ObjectTemplate,
+                                     ref: con_mod.ChildRef) -> bool:
+        return alternative_is_first_person(self.library, template, ref)
 
     def _reaches_first_person(self, template_name: str) -> bool:
         key = template_name.lower()
@@ -2223,15 +2292,15 @@ class Assembler:
             # a steering wheel's `DistanceSelector`.
             first_person = next(
                 (child for child in children_refs
-                 if self._geometry_is_first_person(child.template)),
+                 if self._alternative_is_first_person(template, child)),
                 None)
             if first_person is not None:
                 selected = first_person
-        elif self._geometry_is_first_person(selected.template):
+        elif self._alternative_is_first_person(template, selected):
             third_person = next(
                 (child for child in children_refs
                  if child is not selected
-                 and not self._geometry_is_first_person(child.template)),
+                 and not self._alternative_is_first_person(template, child)),
                 None)
             if third_person is not None:
                 selected = third_person
@@ -2263,7 +2332,7 @@ class Assembler:
         is. The distance reads as a precondition on the occupancy test, and it
         can never veto for an observer sitting at the eye point.
         """
-        if not self._geometry_is_first_person(selected.template):
+        if not self._alternative_is_first_person(template, selected):
             return None
         swap = {
             "selected": selected.template,
@@ -2324,11 +2393,11 @@ class Assembler:
         children = template.children
         if template.is_lod_selector and children:
             selected = self._lod_alternative(template, children)
-            if self._geometry_is_first_person(selected.template):
+            if self._alternative_is_first_person(template, selected):
                 third_person = next(
                     (child for child in children
                      if child is not selected
-                     and not self._geometry_is_first_person(child.template)),
+                     and not self._alternative_is_first_person(template, child)),
                     None)
                 if third_person is not None:
                     selected = third_person
@@ -2392,6 +2461,7 @@ class Assembler:
                    bind: tuple[ske.Matrix3, ske.Vector3, str] | None = None,
                    skeleton_scope: tuple[ske.Skeleton | None, int | None, str | None]
                    = (None, None, None),
+                   first_person_branch: bool = False,
                    ) -> int | None:
         if depth > 24:
             return None
@@ -2436,11 +2506,13 @@ class Assembler:
         # A cockpit export is the exact complement of an ordinary one: the only
         # geometry it may carry is first person, and the only geometry every
         # other export may carry is not. Neither ever draws both, because the
-        # two are alternatives of the same surface.
+        # two are alternatives of the same surface. First person is the mesh's
+        # name, or a place: the near rung a short `DistanceSelector` chose.
+        node_first_person = (geometry_is_first_person(template.geometry)
+                             or first_person_branch)
         mesh_index, triangles = (None, 0)
         collision_meshes: list[tuple[int, int, str]] = []
-        if (template.geometry
-                and geometry_is_first_person(template.geometry) == self.first_person):
+        if template.geometry and node_first_person == self.first_person:
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
             # `_collision_only_node`. StandardMesh still attaches freely.
@@ -2466,7 +2538,7 @@ class Assembler:
         cockpit_host = (
             not self.first_person
             and template.is_lod_selector
-            and any(self._geometry_is_first_person(ref.template)
+            and any(self._alternative_is_first_person(template, ref)
                     for ref in children_refs)
         )
         if template.is_lod_selector and children_refs:
@@ -2488,6 +2560,14 @@ class Assembler:
                                 donor, self.library.object) or "") > drawn):
                     collision_makeup = donor
             children_refs = selected_refs
+
+        # The near rung of a short `DistanceSelector` is first person by where
+        # it is drawn, not by what it is called, so everything under it is
+        # the cockpit export's, whatever its meshes are named.
+        child_first_person_branch = first_person_branch or (
+            template.is_lod_selector and bool(children_refs)
+            and children_refs[0] is template.children[0]
+            and near_rung_is_first_person(self.library, template))
 
         child_indices: list[int] = []
         built_children: list[tuple[con_mod.ChildRef, str, int]] = []
@@ -2519,7 +2599,8 @@ class Assembler:
             # the whole vehicle and emit a second, mesh-less copy of its
             # drivetrain, guns and camera — nodes that already exist in the
             # export this one gets grafted onto, under the same names.
-            if self.first_person and not self._reaches_first_person(child_name):
+            if (self.first_person and not child_first_person_branch
+                    and not self._reaches_first_person(child_name)):
                 continue
             # The soldier's parachute, and anything else bound to a skeleton this
             # parent cannot pose — see `is_foreign_skeleton_part`. Scoped to
@@ -2543,6 +2624,7 @@ class Assembler:
                 bind=self._bind_pose(
                     ref, child_name, skeleton_scope[0], skeleton_scope[1], report),
                 skeleton_scope=skeleton_scope,
+                first_person_branch=child_first_person_branch,
             )
             if child is not None:
                 if held_record is not None:
@@ -2708,9 +2790,29 @@ class Assembler:
         # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`
         # bundles are meshless and childless and are nothing *but* that, so
         # without this they would be dropped and their IK with them.
+        #
+        # A cockpit swap whose interior draws nothing is still a swap. DC's
+        # M1A1, T72 and Shilka name a gunner interior (`1p_M1A1_Gunner_m1`)
+        # whose `GeometryTemplate.file` is commented out, and the SCUD-B one
+        # whose `.sm` ships nowhere; EoD's Chi-ha names a GeometryTemplate
+        # nobody creates. The engine draws the selected alternative anyway,
+        # and nothing in its place: the Inside view sets the cockpit
+        # selector's compare value to 1 (`Camera::setViewMode` 0x081ac7c0 ->
+        # `lodObjectOn` 0x081adbb0), which picks alternative 1 without
+        # consulting the children (`DistCompareLodSelector::
+        # getLodLevelRelative` 0x08213e10); `LodObject::getChild` 0x08216ce0
+        # returns that child as is; and the child exists with no geometry,
+        # because `SimpleObject`'s constructor ignores a `world::setGeometry`
+        # (0x0818d3c0) that came back empty when the template was never
+        # created or its `.sm` would not open (`load` 0x083a6050). So first
+        # person hides the exterior half and shows nothing, and the wrapper
+        # is kept here with its `lodAlternative` stamp so the viewer's graft
+        # hides the same thing. Dropped, the cockpit glb came out one bare
+        # root node and the turret face stayed drawn around the camera.
         if (mesh_index is None and not child_indices
                 and not (is_camera or is_placement or is_supply_depot or physics
-                         or template.skeleton_ik_bones or cockpit_host)):
+                         or template.skeleton_ik_bones or cockpit_host
+                         or lod_swap is not None)):
             return None
 
         if mesh_index is not None:
@@ -3023,7 +3125,7 @@ class Assembler:
         # own `.skn` never emits a chain; `_mesh_index` checks that.)
         if (self.lod_chains and mesh_index is not None and not template.skeleton
                 and template.geometry
-                and geometry_is_first_person(template.geometry) == self.first_person):
+                and node_first_person == self.first_person):
             geom_template = self.library.geometry(template.geometry)
             child_indices.extend(self._lod_children_for(
                 builder, template.geometry,

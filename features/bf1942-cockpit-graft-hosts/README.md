@@ -75,3 +75,55 @@ geometry outside a cockpit export.
   its windshield frame. Wake's Hatsuzuki gun gained its blast shields and
   barrel; Kharkov's Katyusha gained its steering wheel and dashboard. The
   Sherman, Panzer IV, Hanomag, Willy, flak38 and BF109 re-shot unchanged.
+
+## 2026-09-30: interiors that draw nothing, and interiors that are a place
+
+Two Desert Combat defects of the same graft, settled against the engine in the
+ledger's LOD section (LOD-1..LOD-4).
+
+**An interior with no mesh is still a swap.** DC's M1A1, T72 and Shilka name a
+gunner interior (`1p_M1A1_Gunner_m1`) whose `GeometryTemplate.file` line is
+commented out ("Todo, make M1A1 Cockpit"); the SCUD-B's `.sm` ships nowhere, and
+the BRDM2's `1P_BRDM2_Str_M1` wheel likewise. EoD's Chi-ha names a geometry no
+script creates. The engine builds that alternative anyway, with no geometry
+(LOD-4), and the Inside view selects it (LOD-2), so first person hides the
+exterior half and draws nothing. The cockpit export dropped the empty wrapper
+and wrote a bare root, so the viewer grafted nothing and kept drawing the turret
+face at the camera. `build_node` now keeps a wrapper that carries a
+`lodAlternative` stamp; the viewer's `CockpitSwap` already hides `replaces`
+with an empty interior.
+
+**An interior can be first person by where it is drawn.** DC's
+`AC-130_Howitzer_Cockpit` puts the `AC-130_Sight_Internal` reticle pane ahead of
+a meshless `AC-130_Sight_External` under a 1 m `DistanceSelector`. The engine
+draws the pane only for a camera within a metre of it (LOD-3), which is the
+gunner's eye; the ordinary export took the near rung as it does a building's
+interior and the viewer drew a green pane in front of every AC-130, Stryker and
+DC Final AH-64. `near_rung_is_first_person` makes the near rung of a
+`DistanceSelector` whose first distance is at most `NEAR_RUNG_FIRST_PERSON_M`
+(2 m, our number) the first-person half, but only where no alternative is named
+`1P_`: the name keeps deciding where it exists (EoD's Katyusha wheel is authored
+far-rung first). Everything under such a rung belongs to the cockpit export
+whatever its meshes are called (`build_node`'s `first_person_branch`).
+
+What moved:
+
+* DC and DC Final: every `.cockpit.glb` of M1A1, T72, SCUD-B, Shilka, BRDM2,
+  BRDM2_Spandrel (and DC Final's SA-9_Gaskin) now carries its swaps; AC-130 and
+  Stryker lost the pane in their ordinary exports and gained a cockpit glb that
+  carries it for the gunner's seat. DC Final's AH64 needs the same re-extraction
+  (a helicopter, sequenced separately), and the DC level scenes that place these
+  hulls bake the old pane until their scene layer is re-baked.
+* Vanilla, XPack1, XPack2: no output moves.
+* EoD: the Chi-ha, PanzerIV and monster_gaz cockpit glbs gain their swaps.
+* FH and FHSW: 95 and 158 LodObjects (control sticks, pedals, throttles, gun
+  sights at 0.1-1.8 m) change sides, so their
+  ordinary and cockpit exports and level scenes move on the next bake.
+
+Checked with `tests/test_assemble.py` (`CockpitExportTests`), and in the browser
+(Playwright, DC Final's 73 Easting): before, entering an M1A1, T72 or SCUD-B
+grafted nothing (`__cockpitReady()` false) and the exterior stayed drawn in the
+cockpit view; after, the swap grafts, the entered hull's `M1A1CockpitExternal`,
+`T72CockpitExternal` and `SCUD-BExterior` hide in the cockpit view and show again
+in the chase view. The pre-fix glbs were served through `page.route` for the
+before run.

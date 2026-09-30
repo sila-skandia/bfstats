@@ -8196,6 +8196,15 @@
    "note": "lnxded. [R4] pre-existing decomp; one-line field reads"
   },
   {
+   "address": "0x0818d3c0",
+   "name": "dice::ref2::world::setGeometry(IObject*, std::string const&)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-4: geometryTemplateManager->getTemplate(name)->createGeometry(); returns 0 with no geometry set when either is null"
+  },
+  {
    "address": "0x0818d4b0",
    "name": "dice::ref2::world::getRootParent(dice::ref2::world::ICompositeObject const*)",
    "kind": "function",
@@ -8421,6 +8430,24 @@
    "note": "lnxded."
   },
   {
+   "address": "0x081adbb0",
+   "name": "dice::ref2::world::lodObjectOn(ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-2: from the camera up to its PlayerControlObject, the first LodObject (CID 0x94a7) down whose selector is a DistCompareLodSelector (CID 0x94b1) gets setLodSelectorCompareValue(1.0)"
+  },
+  {
+   "address": "0x081adcf0",
+   "name": "dice::ref2::world::lodObjectOff(IObject*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-2: the same LodObject gets compare value 0"
+  },
+  {
    "address": "0x081ae030",
    "name": "EntryPoint::enter(IPlayer*, int&)",
    "kind": "function",
@@ -8563,6 +8590,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded, writes +0x1a7."
+  },
+  {
+   "address": "0x081da0d0",
+   "name": "dice::ref2::world::SimpleObject::SimpleObject(SimpleObjectTemplate const*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result"
   },
   {
    "address": "0x081dab40",
@@ -8770,6 +8806,60 @@
    "confidence": "verified",
    "source": "research-2026-09-15-emitters",
    "note": "lnxded. Calls its ParticleSystem (this+0xd8) directly - update(float) at 0x083a9350, empty on the server - then bookkeeping. SpriteParticleNew::addParticle 0x0820c730 is a direct jump to ParticleSystem::addParticle 0x083a9340, also empty: the server never simulates sprite particles (ledger SPR-1)."
+  },
+  {
+   "address": "0x08213e10",
+   "name": "dice::ref2::world::DistCompareLodSelector::getLodLevelRelative(ICompositeObject const*) const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-2: one comparison of exactly 0.5 -> 1 if compare value (+0x2c) >= 0.5 else 0, distance never read"
+  },
+  {
+   "address": "0x08215aa0",
+   "name": "dice::ref2::world::DistLodSelector::init(DistLodSelectorTemplate*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-3: squares each addLodDistance into +0x20"
+  },
+  {
+   "address": "0x08215b30",
+   "name": "dice::ref2::world::DistLodSelector::getLodLevelRelative(ICompositeObject const*) const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-3: lower_bound(distances^2, (|cam-obj|^2 - radius^2) * m_distanceLodFactor * fov^2)"
+  },
+  {
+   "address": "0x08216ce0",
+   "name": "dice::ref2::world::LodObject::getChild() const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-1: returns lodChilds[+0x10c][selector(+0x118)->getLodLevel(this)], child 0 when m_forceHighestLod; no check of what the child draws"
+  },
+  {
+   "address": "0x08216d30",
+   "name": "dice::ref2::world::LodObject::addChild(dice::ref2::world::ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-1: appends every child to the lodChilds vector (+0x10c), unconditionally"
+  },
+  {
+   "address": "0x08221b80",
+   "name": "dice::ref2::world::PathLodSelector::getLodLevel(ILodObject const*) const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "working",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. Selector vt+0xc: walks the selector's path from the LodObject, then calls getLodLevelRelative (vt+0x1c)"
   },
   {
    "address": "0x08226180",
@@ -11182,6 +11272,33 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] BSP segment walk + back-face cull"
+  },
+  {
+   "address": "0x0838b1e0",
+   "name": "dice::ref2::geom::GeometryTemplateManager::getTemplate(std::string const&)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-4: case-insensitive map lookup; a name never created returns null unless it carries a ':' type prefix"
+  },
+  {
+   "address": "0x083a5b90",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<IStandardMeshTemplate,StandardMesh,StandardMeshBlock>::createGeometry()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-4: null when the template is not loaded and load(false) fails"
+  },
+  {
+   "address": "0x083a6050",
+   "name": "dice::ref2::geom::BStandardMeshTemplate<IStandardMeshTemplate,StandardMesh,StandardMeshBlock>::load(bool)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-30-lod-selection",
+   "note": "lnxded. LOD-4: opens folder+file+'.sm' via fileManager; false when it will not open"
   },
   {
    "address": "0x083a6200",
