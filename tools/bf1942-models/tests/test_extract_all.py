@@ -45,6 +45,20 @@ class RenderableGeometryTests(unittest.TestCase):
         ]))
         self.assertFalse(has_renderable_geometry(library, "Loop"))
 
+    def test_a_random_pick_child_is_followed_to_its_first_variant(self) -> None:
+        # FH's GMC: the hull is `GMC_Random` with `setRandomGeometries 3`,
+        # and only `GMC_Random1`..`3` are declared (LOAD-6).
+        library = library_from("\n".join([
+            "ObjectTemplate.create PlayerControlObject GMC",
+            "ObjectTemplate.addTemplate GMC_Random",
+            "ObjectTemplate.setRandomGeometries 3",
+            "ObjectTemplate.create Bundle GMC_Random1",
+            "ObjectTemplate.geometry GMC_m1",
+            "ObjectTemplate.create Bundle GMC_Random2",
+            "ObjectTemplate.geometry GMC_m2",
+        ]))
+        self.assertTrue(has_renderable_geometry(library, "GMC"))
+
     def test_an_unknown_template_is_not_renderable(self) -> None:
         self.assertFalse(
             has_renderable_geometry(con_mod.ObjectLibrary(), "Ghost"))

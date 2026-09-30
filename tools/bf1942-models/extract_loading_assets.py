@@ -922,6 +922,28 @@ class LoadingAssetExtractor:
             logger.info("[%s] Updated %d entries in manifest %s", mod, updated, manifest_path)
             self.summary.manifest_entries_updated += updated
 
+    def find_in_level_archives(
+        self,
+        rfas: list[Path],
+        path: str,
+    ) -> tuple[ArchiveReader, str] | None:
+        """The first of `rfas` holding exactly `path` (or its `.dds` twin of a
+        `.tga`), as the engine opens a file along the mounted archives."""
+        if not path.startswith("bf1942/levels/"):
+            return None
+        stem, ext = posixpath.splitext(path)
+        for rfa_path in rfas:
+            try:
+                reader = self.reader(rfa_path)
+            except Exception as exc:
+                logger.debug("Error reading archive %s: %s", rfa_path, exc)
+                continue
+            for candidate in (path, f"{stem}.dds" if ext.lower() == ".tga" else None):
+                entry = candidate and reader.exact(candidate)
+                if entry:
+                    return reader, entry
+        return None
+
     def resolve_level_background(
         self,
         map_name: str,
@@ -939,17 +961,20 @@ class LoadingAssetExtractor:
         """
         slug = map_name.lower()
 
-        # Search level archives across mod directory chain (nearest mod first)
+        # Search level archives across mod directory chain (nearest mod first).
+        # The nearest mod's copy holds the level's `Menu/init.con`; every
+        # copy down the chain is mounted too, and answers its own paths.
         found_rfas: list[Path] = []
+        chain_rfas: list[Path] = []
         for mdir in mod_dirs:
             archives_dir = resolve_case_insensitive(mdir, "Archives")
             if archives_dir:
                 levels_dir = resolve_case_insensitive(archives_dir, "bf1942/levels")
                 if levels_dir:
                     rfas = find_level_archives(levels_dir, map_name)
-                    if rfas:
-                        found_rfas.extend(rfas)
-                        break  # Highest-priority mod containing this level wins
+                    chain_rfas.extend(rfas)
+                    if rfas and not found_rfas:
+                        found_rfas.extend(rfas)  # Highest-priority mod containing this level wins
 
         for rfa_path in found_rfas:
             try:
@@ -976,8 +1001,20 @@ class LoadingAssetExtractor:
                                 raw = reader.read(override_entry)
                                 return (f"{slug}/load.webp", (raw, Path(slug) / "load.webp"))
 
+                            engine_path = posixpath.normpath(
+                                f"menu/texture/{arg}".replace("\\", "/")).lower()
+                            # A level picture another copy of the level ships:
+                            # every level archive of the mod chain is mounted at
+                            # its own path (LOAD-4), so FHSW's Gold Beach loads
+                            # `../../bf1942/Levels/Gold_Beach-1944/Textures/gold.tga`
+                            # out of FH's archive, which alone holds it.
+                            found_level = self.find_in_level_archives(chain_rfas, engine_path)
+                            if found_level:
+                                level_reader, entry = found_level
+                                raw = level_reader.read(entry)
+                                return (f"{slug}/load.webp", (raw, Path(slug) / "load.webp"))
+
                             # A menu picture, from the nearest menu archive
-                            engine_path = posixpath.normpath(f"menu/texture/{arg}").lower()
                             found = self.find_in_menus(mod_dirs, path=engine_path)
                             if found:
                                 menu_reader, entry = found

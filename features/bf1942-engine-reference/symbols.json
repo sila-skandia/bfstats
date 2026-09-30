@@ -7080,6 +7080,15 @@
    "note": "lnxded. Writes the event log's <bf:server> header (ServerSettings copy from Setup+0x270, map id); called first in gamaStatusFirstPreGame, before the tickets are set. The roundInit event is gameStatusFirstPlaying's (0x08150b20). Ledger TKT-6."
   },
   {
+   "address": "0x0805a830",
+   "name": "dice::bf::Game::loadAllConFiles(std::string const&)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "fhsw-level-audit-2026-09-30",
+   "note": "lnxded. Lists the directory through the FileManager (vt+0x28, recursive), keeps names containing .con whose lower case has no /ai/ or \\ai\\, keys dir+name into a std::map ordered by NoCaseStringCompare (insert_unique 0x0805b284) and runs it front to back: objects/ scripts run in strcasecmp path order, one key per path whichever mods ship it. Ledger LOAD-5."
+  },
+  {
    "address": "0x0805b4b0",
    "name": "dice::bf::Game::load(std::string const&, std::string const&, std::string const&)",
    "kind": "function",
@@ -13018,6 +13027,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-weapons",
    "note": "lnxded static pointer, named in the symbol table: the object manager updateFlags notifies on bookkeeping-bit changes. Presumably the server twin of the client's objectManager 0x0097d764; not cross-checked."
+  },
+  {
+   "address": "0x08720754",
+   "name": "BundleTemplate random-geometry counter",
+   "kind": "data",
+   "subsystem": "world",
+   "confidence": "verified",
+   "source": "fhsw-level-audit-2026-09-30",
+   "note": "lnxded. Global int that addBundleChilds 0x081a8300 increments for every child with setRandomGeometries N, wrapping to 1 past N; the child created is sprintf(\"%s%d\", name, counter). Ledger LOAD-6."
   },
   {
    "address": "0x087209a0",

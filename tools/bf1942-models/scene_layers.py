@@ -133,6 +133,7 @@ class LevelContext:
         self.placed_flags: set[str] | None = None
         self._loaded = False
         self._pools = None
+        self._ordered_objects = None
         self._library = None
         self._library_done = False
         self._damage_tables = None
@@ -221,6 +222,16 @@ class LevelContext:
         return self._pools
 
     @property
+    def ordered_objects(self):
+        """The objects pool in the order the engine runs its scripts: what
+        the level's `Init.con` reaches, then the mod's `objects/`
+        (`em.LevelFirst`, `em.level_run_order`)."""
+        if self._ordered_objects is None:
+            self._ordered_objects = em.LevelFirst(
+                self.pools[2], em.level_run_order(self.files))
+        return self._ordered_objects
+
+    @property
     def library(self):
         """The object library with the level's control point templates in,
         flag cloth detached (what the assembler places), and the level's
@@ -230,7 +241,7 @@ class LevelContext:
             if self.include_objects:
                 info, files = self.info, self.files
                 # The level's own templates first: they win (`em.LevelFirst`).
-                library = build_library(em.LevelFirst(self.pools[2]))
+                library = build_library(self.ordered_objects)
                 # A level's flags live in `<mode>/ControlPointTemplates.con`,
                 # which `build_library` never reads.
                 if info.gameplay.mode:
@@ -265,10 +276,10 @@ class LevelContext:
         if self._by_mode is None:
             self._by_mode = {}
             if self.include_objects:
-                _m, _t, objects, game = self.pools
+                game = self.pools[3]
                 for name, layer in self.info.modes.items():
                     self._by_mode[name] = em._vehicle_soldier_spawn_report(
-                        self.info, objects, game, layer)
+                        self.info, self.ordered_objects, game, layer)
         return self._by_mode
 
 

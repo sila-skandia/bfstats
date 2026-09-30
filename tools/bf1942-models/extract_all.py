@@ -52,6 +52,14 @@ def has_renderable_geometry(library, root_name: str, *, depth: int = 0,
     muzzle-flash and shell-eject logic of a tank's coax MG — the visible
     barrel belongs to the tank mesh. Asking the extractor for them just earns
     a "nothing renderable" error, so they are skipped up front with a reason.
+
+    A child added with `setRandomGeometries N` names no template of its own:
+    `BundleTemplate::addBundleChilds` (lnxded 0x081a8300) creates
+    `sprintf("%s%d", name, k)`, `k` a global counter that runs 1..N (LOAD-6).
+    FH's trucks (`GMC`, `Bedford`, `OpelBlitz`, `Zis5` and their ammo
+    variants) and `M4A1ShermanRandom` carry their whole hull that way; the
+    child is followed as `con.instance_template_name` names it, `<name>1`,
+    the variant the extractor draws.
     """
     if depth > 24:
         return False
@@ -65,10 +73,18 @@ def has_renderable_geometry(library, root_name: str, *, depth: int = 0,
         return True
     seen = seen | {key}
     return any(
-        has_renderable_geometry(library, child.template,
+        has_renderable_geometry(library, _child_template(library, child),
                                 depth=depth + 1, seen=seen)
         for child in template.children
     )
+
+
+def _child_template(library, child) -> str:
+    """The template a child instantiates: itself, or for a random pick
+    that names none, its first variant (`con.instance_template_name`)."""
+    if child.random_geometries and library.object(child.template) is None:
+        return f"{child.template}1"
+    return child.template
 
 
 def main() -> int:

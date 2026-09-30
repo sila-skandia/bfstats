@@ -244,6 +244,34 @@ class TestLevelAssetResolver(unittest.TestCase):
         self.assertEqual(source_bg[0], dummy_tga)
         self.assertEqual(source_bg[1], Path("battle_of_britain") / "load.webp")
 
+    def test_resolve_level_picture_from_a_parent_mods_copy(self):
+        # FHSW's Gold Beach names a picture only FH's copy of the level ships.
+        dummy_tga = make_dummy_tga(800, 600)
+        near = self.base / "Mods" / "FHSW" / "Archives" / "bf1942" / "levels"
+        far = self.base / "Mods" / "FH" / "Archives" / "bf1942" / "levels"
+        near.mkdir(parents=True)
+        far.mkdir(parents=True)
+        (near / "Gold_Beach-1944.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Gold_Beach-1944/Menu/init.con": (
+                b"game.setLoadPicture ../../bf1942/Levels/Gold_Beach-1944/Textures/gold.tga\n"
+            ),
+        }))
+        (far / "Gold_Beach-1944.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Gold_Beach-1944/Textures/gold.tga": dummy_tga,
+        }))
+
+        extractor = ela.LoadingAssetExtractor(
+            bf1942_dir=self.base,
+            output_dir=self.base / "viewer" / "maps",
+        )
+        bg_ref, source_bg = extractor.resolve_level_background(
+            "Gold_Beach-1944", "fhsw",
+            [self.base / "Mods" / "FHSW", self.base / "Mods" / "FH"],
+        )
+        self.assertEqual(bg_ref, "gold_beach-1944/load.webp")
+        self.assertIsNotNone(source_bg)
+        self.assertEqual(source_bg[0], dummy_tga)
+
     def test_resolve_eod_loader_tga(self):
         # Create synthetic EoD level RFA containing loader.tga
         dummy_tga = make_dummy_tga(800, 600)
