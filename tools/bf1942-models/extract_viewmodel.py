@@ -521,7 +521,14 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
 
     resolved, clip_report = resolve_families(machine, weapon)
     if PRIMARY not in resolved:
-        raise PoseError(clip_report[PRIMARY]["error"])
+        # Numbered aim states only (`Ub_StandAim<W>1..n`) are not one weapon's
+        # idle: FHSW's `Random*` kit items name one state per weapon they can
+        # issue. Which one a soldier holds is not settled here, so the pair is
+        # skipped rather than the whole run.
+        primary = clip_report.get(PRIMARY, {})
+        raise PoseError(primary.get("error") or
+                        f"no plain Ub_StandAim{weapon}, only numbered states "
+                        f"{primary.get('variants')}")
     result["clips"] = clip_report
 
     # The static base pose: the idle 1P clip over the skeleton's own rest,
