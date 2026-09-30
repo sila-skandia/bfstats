@@ -7,6 +7,9 @@
 
 import { Hud } from './hud.js';
 
+/** HUD sprites loading at once; the rest wait their turn. */
+const HUD_SPRITE_LOADS = 8;
+
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
@@ -110,9 +113,20 @@ export function createHudFeed(page) {
     }
     hudPack.nations = manifest.flagMeshNation || {};
     hudPack.icons = icons || {};
-    for (const [name, entry] of Object.entries(manifest.sprites || {})) {
+    // A few at a time, not all at once: FHSW's pack is 3,555 sprites, and
+    // starting every one together left the browser out of sockets
+    // (ERR_INSUFFICIENT_RESOURCES) for the level's own textures, which then
+    // drew white.
+    const queue = Object.entries(manifest.sprites || {});
+    const next = () => {
+      const item = queue.shift();
+      if (item) loadSprite(...item);
+    };
+    for (let i = 0; i < HUD_SPRITE_LOADS; i++) next();
+    function loadSprite(name, entry) {
       const img = new Image();
       img.onload = () => {
+        next();
         hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
           ? tintPlayerRing(img) : img);
         // A cached sprite can finish while the page module is still
@@ -131,7 +145,7 @@ export function createHudFeed(page) {
           }
         } catch (_) {}
       };
-      img.onerror = () => {};
+      img.onerror = () => next();
       img.src = `${page.hudPaths.url(entry.file)}${page.bust()}`;
     }
   }
