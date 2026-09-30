@@ -4,7 +4,10 @@
 placing a marker, sharing it, looking through it, the view, and the inputs.
 The HUD (section 7) and the bots (section 8) were read by one researcher
 each and spot-checked. Sections 1 to 6 were re-derived by a second reader.
-**Nothing is built in the viewer yet.** The ledger rows are SPOT-1..SPOT-15.
+**Built in the viewer: the type-14 artillery driver's Fire** (SPOT-16, a
+fix to `bot-perception.js` and friends, tested by
+`test_sim_vehicles.py` / `test_bot_ai.py`). The rest is not built. The
+ledger rows are SPOT-1..SPOT-16.
 
 The question came from FHSW. The Cromwell's commander seat has an "Artillery
 Spotting" weapon. The owner's reading was that it marks a point for friendly
@@ -599,6 +602,13 @@ In the order a player would meet it:
 - The cadence of the 10% easing (per frame or per tick).
 - Whether `c_NIGhostAlways` really sends the marker to every client whatever
   its distance.
+- FHSW bots (section 8): whether `choseWeapon` ever prefers `BinocularAI` over
+  the kit's other weapons; what target the type-14 driver's plan uses while
+  its gun seat is empty; and which condition list feeds which plan branch.
+  FHSW's `Artillery_Spotter` names the AI template `Jagd_BinocularAI`, which
+  has no matching `weaponTemplate` in its `objects.rfa`.
+- `getSAIUpdateFrequency`'s default and the `TTN*Artillery` temperature-tree
+  nodes' role (AI-38; the tree is empty in vanilla data, SPOT-14).
 
 ## Evidence index
 
