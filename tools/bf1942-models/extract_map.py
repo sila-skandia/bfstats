@@ -42,6 +42,7 @@ see `features/mesh-mod-assets/audio-compression.md` for the measurements.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -511,6 +512,20 @@ def _non_silence(samples):
             if not s.file.replace("\\", "/").lower().endswith(_SILENCE)]
 
 
+# The two slots a round triggers. `FireArms::Fire` (lnxded 0x0828a090, client
+# 0x0053d8c2..0x0053d8e4) calls the weapon's sound `trigger(0)` then
+# `trigger(5)` on every round it lets out, Fire and Fire Loop (ledger SND-13).
+FIRE_SLOT = 0
+FIRE_LOOP_SLOT = 5
+# And the slots `FireArms::updateSound` (lnxded 0x0828cc10, client 0x00539fb0)
+# triggers once the rounds stop: Release and Shell Bounce every time, MG
+# distance at most once per 0.5..1.5 s. "Stopped" is no round for
+# 1 / `Sound.soundStreamUpdateFrequency` (`Settings/Default.con` sets 20, the
+# `SoundSetup` default 0x14), so a single shot's release lands that far behind it.
+RELEASE_SLOTS = (2, 3, 4)
+RELEASE_AFTER = 1 / 20
+
+
 def _firing_patch(patches, release=False):
     """The patch a held trigger plays.
 
@@ -519,6 +534,23 @@ def _firing_patch(patches, release=False):
     report. When the Fire Loop wins, keep only its looping layers — that patch
     also stacks shell-eject and distance one-shots the continuous gain-gate
     path cannot play.
+
+    A Fire Loop with nothing looping in it is still the voice of the round
+    when the Fire slot is silence. DC Final took `loop` off its machine guns'
+    and autocannons' Fire Loop samples (`mg_temp.wav`, `autocannon_loop_*`,
+    `bmp-2_*`: one shot and its tail each), and "first sounding patch" then
+    landed on the Shell Bounce slot, so an MG42 played only its casings and an
+    M2A3 only `tigerrev`. The engine triggers slot 5 every round whatever it
+    holds, and a patch with no looping sample is not latched, so each trigger
+    starts every sample again on a new voice while the last one plays out
+    (ledger SND-13, SND-14): a one-shot per round, which is what the viewer's
+    `trigger()` already does with a gun patch's one-shots.
+
+    With the Fire and Fire Loop slots both silent, what a single shot is heard
+    by is its release: Release, Shell Bounce and MG distance together
+    (`RELEASE_SLOTS`), never the Reload slot "first sounding" would reach. DC's
+    grenade launchers keep their report there (`extract_weapon_sounds.
+    fire_sample`), and a bystander heard the M203 reload on every round.
 
     `release` inverts that preference, and a bomb rack is why. A rack's script
     is the PROJECTILE's `Bomb.ssc`, whose first sounding patch is the falling
@@ -540,6 +572,15 @@ def _firing_patch(patches, release=False):
         wanted = [s for s in samples if bool(s.loop) is not release]
         if wanted:
             return wanted
+    if not release and patches and not _non_silence(patches[FIRE_SLOT].samples):
+        if len(patches) > FIRE_LOOP_SLOT:
+            fire_loop = _non_silence(patches[FIRE_LOOP_SLOT].samples)
+            if fire_loop:
+                return fire_loop
+        released = [s for index in RELEASE_SLOTS if index < len(patches)
+                    for s in _non_silence(patches[index].samples)]
+        if released:
+            return released
     return first or []
 
 
@@ -622,7 +663,8 @@ def transcode_to_mp3(data: bytes, dest: Path) -> None:
         tmp_mp3.unlink(missing_ok=True)
 
 
-def sample_writer(shared_dir: Path, rel_base: Path, audio_format: str = "mp3"):
+def sample_writer(shared_dir: Path, rel_base: Path, audio_format: str = "mp3",
+                  sounds: ArchivePool | None = None):
     """The `(basename, bytes) -> relative path` sink every sound report writes
     through.
 
@@ -632,31 +674,104 @@ def sample_writer(shared_dir: Path, rel_base: Path, audio_format: str = "mp3"):
     either: a second encoder setting is a second copy of the same sample under
     the same name, and a second naming rule is a 404 for every level that
     already points at the first.
+
+    `sounds` is the mod's sound archive pool, which `SampleNames` reads to tell
+    two different wavs of one name apart. Every caller writing into a mod's
+    shared directory passes it; without it every sample keeps its bare name.
     """
-    seen: dict[str, str] = {}
+    seen: dict[tuple[str, str], str] = {}
+    names = SampleNames(sounds)
 
     def write(resolved: tuple[str, bytes]) -> str:
         basename, data = resolved
-        if basename in seen:
-            return seen[basename]
+        key = (basename, hashlib.sha1(data).hexdigest())
+        if key in seen:
+            return seen[key]
         shared_dir.mkdir(parents=True, exist_ok=True)
+        stem = names.stem(basename, data)
         if audio_format == "mp3":
-            target = shared_dir / (Path(basename).stem + ".mp3")
+            target = shared_dir / (stem + ".mp3")
             # Another level may have transcoded it already: this directory is
             # shared across every level in the mod and across runs.
             if not target.is_file():
                 transcode_to_mp3(data, target)
         else:
-            target = shared_dir / basename
+            target = shared_dir / (stem + Path(basename).suffix)
             if not target.is_file():
-                tmp = shared_dir / f"{basename}.{os.getpid()}.part"
+                tmp = shared_dir / f"{target.name}.{os.getpid()}.part"
                 tmp.write_bytes(data)
                 os.replace(tmp, target)
         rel = os.path.relpath(target, rel_base).replace(os.sep, "/")
-        seen[basename] = rel
+        seen[key] = rel
         return rel
 
     return write
+
+
+class SampleNames:
+    """The file stem a sample ships under: its wav's, unless that is ambiguous.
+
+    Samples are named for the wav (`Helicopter_far.wav` -> `Helicopter_far.mp3`)
+    in one directory the whole mod shares, and a file already there is never
+    re-encoded. So two *different* wavs with one file name shared one mp3, the
+    first writer's. Desert Combat keeps its vehicles' samples in folders of
+    their own and reuses names across them: DC Final's `Helicopter_far.wav` is
+    four recordings (AH-64, Mi-24, UH-60 ...), and every helicopter played
+    whichever one a level happened to transcode first; `enginewhine.wav` is
+    three, and every jet played the F-14's.
+
+    So a wav keeps its bare stem when it is the only wav of that name at its
+    sample rate in the sound archives, or is the one at the root of the rate
+    directory (`Sound/44kHz/<name>.wav`, what a script's `@RTD/<name>.wav`
+    names), or is byte-identical to one of those. Any other wav of the name
+    (a folder's own recording, a level's own copy that matches none of the
+    archives') is qualified with the first eight hex digits of its SHA-1:
+    `Helicopter_far~1a2b3c4d`. Two copies of one wav always get one name, so
+    the page still decodes them into one buffer and the coherent-twin guards
+    (`ssc-coherent.js`) still see them as twins. The rule reads only the
+    archives and the bytes, never what is on disk, so it answers the same in
+    every level, every run and every process of a parallel bake.
+    """
+
+    def __init__(self, sounds: ArchivePool | None) -> None:
+        self.sounds = sounds if isinstance(sounds, ArchivePool) else None
+        self._by_name: dict[str, list[str]] | None = None
+        self._groups_by_name: dict[str, dict[str, dict[str, bool]]] = {}
+
+    def stem(self, basename: str, data: bytes) -> str:
+        stem = Path(basename).stem
+        groups = self._groups(Path(basename).name.lower())
+        if not groups:
+            return stem
+        digest = hashlib.sha1(data).hexdigest()
+        for group in groups.values():
+            if digest in group and (len(group) == 1 or group[digest]):
+                return stem
+        return f"{stem}~{digest[:8]}"
+
+    def _groups(self, name: str) -> dict[str, dict[str, bool]]:
+        """`{rate directory: {sha1: whether a copy sits at the rate root}}`."""
+        if self.sounds is None:
+            return {}
+        if name in self._groups_by_name:
+            return self._groups_by_name[name]
+        if self._by_name is None:
+            self._by_name = {}
+            for path in self.sounds.names():
+                key = path.replace("\\", "/").lower()
+                self._by_name.setdefault(key.rsplit("/", 1)[-1], []).append(key)
+        groups: dict[str, dict[str, bool]] = {}
+        for path in self._by_name.get(name, []):
+            data = self.sounds.try_read(path)
+            if data is None:
+                continue
+            parts = path.split("/")
+            rate = parts[1] if len(parts) > 2 and parts[0] == "sound" else ""
+            digest = hashlib.sha1(data).hexdigest()
+            group = groups.setdefault(rate, {})
+            group[digest] = group.get(digest, False) or len(parts) == 3
+        self._groups_by_name[name] = groups
+        return groups
 
 
 def extract_sounds(info: LevelInfo, level_files: LevelFiles,
@@ -692,7 +807,7 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
     # yields the staging depth — `../../../_shared/...` for a path that needs
     # to be `../_shared/...`, pointing outside the published tree.
     rel_base = final_dir or out_dir
-    write = sample_writer(shared_dir, rel_base, audio_format)
+    write = sample_writer(shared_dir, rel_base, audio_format, sounds)
 
     if info.sounds.ambient is not None:
         resolved = resolve_sound(info.sounds.ambient.file, level_files, sounds)
@@ -870,7 +985,7 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 # engine sound.
                 samples = patches[0].samples if patches else []
                 layers = _sound_layers(samples, sounds, write,
-                                       level_files)
+                                       level_files, patches)
                 if layers:
                     engine_tmpl = library.objects.get(engine_name.lower())
                     entry = {
@@ -892,12 +1007,11 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
             arms_text = read_script(arms_script)
             if arms_text is None:
                 continue
+            arms_patches = parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
+                                     include=read_script, source=arms_script)
             arms_layers = _sound_layers(
-                _firing_patch(parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
-                                        include=read_script,
-                                        source=arms_script),
-                              release=from_round),
-                sounds, write, level_files)
+                _firing_patch(arms_patches, release=from_round),
+                sounds, write, level_files, arms_patches)
             if not arms_layers:
                 continue
             arms_tmpl = library.objects.get(arms_name.lower())
@@ -925,21 +1039,43 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
 
 
 def _sound_layers(samples, sounds: ArchivePool, write,
-                  level_files: LevelFiles | None = None) -> list[dict]:
+                  level_files: LevelFiles | None = None,
+                  patches=None) -> list[dict]:
     """One `.ssc` patch's samples as the viewer's layer dicts, wavs written.
 
     Shared by the engine and the guns because a layer is a layer: the viewer
     evaluates whatever modulators come with it, so nothing here needs to know
     which one it is looking at.
+
+    `patches` is the parsed script the samples came out of. A layer whose patch
+    says `randomPlay 1` carries `patch`, `randomPlay`, and its `slot` among
+    the patch's `slots` loads, the keys `bf42/effects.py` already ships: every
+    trigger of such a patch plays ONE of its loads, `rand() % slots` (client
+    0x008030a0), and a `silence.wav` load is a slot like any other that plays
+    nothing (0x00802db0). Without them a bomb release played `bmbreal1` and
+    `bmbreal3` together. A patch without it gets no new key, so no other layer
+    changes.
     """
+    home: dict[int, tuple[int, object]] = {}
+    for index, patch in enumerate(patches or []):
+        for sample in patch.samples:
+            home[id(sample)] = (index, patch)
     layers: list[dict] = []
     for sample in samples:
         resolved = resolve_sound(sample.file, level_files, sounds,
                                  VEHICLE_RATES)
         if resolved is None:
             continue
+        index, patch = home.get(id(sample), (None, None))
+        picked = {}
+        if patch is not None and patch.random_play:
+            picked = {"patch": index, "randomPlay": True,
+                      "slot": next(i for i, s in enumerate(patch.samples)
+                                   if s is sample),
+                      "slots": len(patch.samples)}
         layers.append({
             "file": write(resolved),
+            **picked,
             "loop": sample.loop,
             "volume": sample.volume,
             "minDistance": sample.min_distance,

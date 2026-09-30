@@ -12,6 +12,7 @@ import math
 import posixpath
 import re
 import struct
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -404,7 +405,8 @@ class SoundSample:
 
     Every sample a patch loads plays *simultaneously*; they are layers. The one
     exception is `randomPlay 1`, which turns the patch's samples into a pick-one
-    list (crackle loops, bomb-release clacks).
+    list (crackle loops, bomb-release clacks) when it follows the patch's LAST
+    `load` (`SoundPatch.random_play`, ledger SND-15).
     """
 
     file: str
@@ -427,6 +429,9 @@ class SoundSample:
     # z forward), e.g. the Corsair's two cockpit whine layers at +-.9/.3/-4.2.
     relative_position: tuple[float, float, float] | None = None
     effects: list[SoundEffect] = field(default_factory=list)
+    # `randomPlay n` as the engine stores it: on the sample it follows, not on
+    # the patch (`SoundPatch.random_play` says what the patch makes of it).
+    random_play: int = 0
 
 
 @dataclass
@@ -448,6 +453,16 @@ class SoundPatch:
     ramp_start_val: float | None = None
     ramp_delta_val: float | None = None
     samples: list[SoundSample] = field(default_factory=list)
+    # Whether a trigger plays ONE of the patch's loads (`rand() % loads`,
+    # silence included) instead of all of them. `randomPlay n` is stored on the
+    # sample it follows (BF1942.exe command 18, 0x007fdb10 -> 0x007ffd00, the
+    # sample description's +0x30), and building the patch hands each sample's
+    # value to the patch in load order, taken only while it is below the
+    # number of loads so far (0x00803064 -> 0x008020a0). So the last load
+    # decides: `bomb.ssc` closes its two release clacks with `randomPlay 1`
+    # and picks one, while the M1 Garand's Fire patch includes a shell-bounce
+    # file ending in `randomPlay 1` and then loads four more layers, and plays
+    # every one of them (ledger SND-15).
     random_play: bool = False
 
 
@@ -2411,7 +2426,8 @@ def resolve_ssc_path(source: str, relative: str) -> str:
 def _ssc_lines(text: str, source: str,
                include: Callable[[str], str | None] | None,
                depth: int = 0, level: str = "high",
-               skipping: list[bool] | None = None):
+               skipping: list[bool] | None = None,
+               want: str | None = None):
     """Flatten a script's lines, expanding `#include` where it appears.
 
     `#include` is textual for *patch* state — a file included between
@@ -2426,6 +2442,17 @@ def _ssc_lines(text: str, source: str,
     tiers internally, and the includer's tier resumes when it returns —
     emitted here as a synthetic `#templateLevel` line so the parser needs no
     notion of file boundaries.
+
+    And an `#include` that sits under a tier other than `want` is never
+    opened (ledger SSC-6). The engine keeps one tier per open file
+    (`BF1942.exe` deque 0x00a8fca8: an include pushes an empty tier,
+    0x007fa3c4, end of file pops it, 0x007f9e7a) and drops a line whose file's
+    tier is set and is not the wanted one *before* `#include` is looked at
+    (0x007fa010 runs ahead of 0x007fa3f0 in 0x007fb0e0). Expanding it anyway
+    is not harmless: `Browning.ssc` includes `Medium.ssc` under MEDIUM, whose
+    own includes (`ShellBounce.ssc`, `MGdist.ssc`) open a HIGH section of
+    their own, so at HIGH their 46 shell and distance samples, and their
+    `randomPlay 1`, landed in the Fire Loop patch the HIGH file had left open.
 
     Skipped regions are dropped here too, because the engine drops them before
     it looks at any directive: `/*` and `beginSkip` are *one* mechanism, a
@@ -2469,12 +2496,14 @@ def _ssc_lines(text: str, source: str,
             tokens = line.split(None, 1)
             if include is None or len(tokens) < 2 or depth >= _SSC_MAX_INCLUDE_DEPTH:
                 continue
+            if want is not None and level != want:
+                continue
             target = resolve_ssc_path(source, tokens[1].strip())
             nested = include(target)
             if nested is None:
                 continue
             yield from _ssc_lines(nested, target, include, depth + 1, level,
-                                  skipping)
+                                  skipping, want)
             # An include that ran off the end still skipping leaves the flag
             # set, and the engine's tier is global, so nothing is restored.
             if not skipping[0]:
@@ -2492,6 +2521,52 @@ def _ssc_floats(tokens: list[str]) -> list[float]:
         except ValueError:
             pass
     return out
+
+
+def _project_layer(patch: SoundPatch, sample: SoundSample) -> None:
+    """Write `sample` into `patch`'s single-voice view (file, loop, volume,
+    minimum distance and its first `Volume <- Distance` ramp)."""
+    patch.file = sample.file
+    patch.loop = sample.loop
+    patch.volume = sample.volume
+    patch.min_distance = sample.min_distance
+    patch.near_distance = patch.far_distance = None
+    patch.ramp_start_val = patch.ramp_delta_val = None
+    for eff in sample.effects:
+        if eff.source == "distance" and eff.destination == "volume" \
+                and eff.envelope == "ramp":
+            if len(eff.params) >= 2:
+                patch.near_distance = eff.params[0]
+                patch.far_distance = eff.params[1]
+            if len(eff.params) >= 4:
+                patch.ramp_start_val = eff.params[2]
+                patch.ramp_delta_val = eff.params[3]
+            break
+
+
+def picked_voice(patch: SoundPatch, key: str) -> SoundPatch | None:
+    """The one layer a looping `randomPlay` patch sounds for one emitter.
+
+    A trigger of a `randomPlay` patch rolls `rand() % loads` over every load,
+    `silence.wav` included (BF1942.exe 0x008030a0; a silence load counts,
+    0x00802db0, and plays nothing), and a patch holding a loop is not
+    triggered again while it sounds (0x008030a0's latch, 0x008024c0): so each
+    emitter keeps the one pick it rolled when it started (ledger SND-15).
+    DC Final's `birds_eu.ssc` is eight bird loops and nineteen silences: seven
+    trees in ten are quiet and the rest carry one of eight birds, where every
+    tree used to sing `Env_Birds5`. The roll here is a stable hash of `key`
+    (the template and where it stands), so a re-bake picks the same tree for
+    the same bird; the game's own roll is `rand()` at run time.
+
+    Returns a one-layer view of the picked load, or None for a silence.
+    """
+    slot = zlib.crc32(key.encode("utf-8")) % len(patch.samples)
+    sample = patch.samples[slot]
+    if sample.file.replace("\\", "/").lower().endswith("silence.wav"):
+        return None
+    voice = SoundPatch(level=patch.level, file=sample.file, samples=[sample])
+    _project_layer(voice, sample)
+    return voice
 
 
 def parse_ssc(text: str, *, level: str | None = None,
@@ -2521,23 +2596,14 @@ def parse_ssc(text: str, *, level: str | None = None,
         """Project the first layer onto the patch's single-voice view."""
         if patch is None or not patch.samples:
             return
-        first = patch.samples[0]
-        patch.file = first.file
-        patch.loop = first.loop
-        patch.volume = first.volume
-        patch.min_distance = first.min_distance
-        for eff in first.effects:
-            if eff.source == "distance" and eff.destination == "volume" \
-                    and eff.envelope == "ramp":
-                if len(eff.params) >= 2:
-                    patch.near_distance = eff.params[0]
-                    patch.far_distance = eff.params[1]
-                if len(eff.params) >= 4:
-                    patch.ramp_start_val = eff.params[2]
-                    patch.ramp_delta_val = eff.params[3]
-                break
+        flag = 0
+        for loaded, smp in enumerate(patch.samples, start=1):
+            if 0 <= smp.random_play < loaded:
+                flag = smp.random_play
+        patch.random_play = flag != 0
+        _project_layer(patch, patch.samples[0])
 
-    for line in _ssc_lines(text, source, include):
+    for line in _ssc_lines(text, source, include, want=want):
         if not line or line.startswith("rem") or line.startswith("//") \
                 or line.startswith("***") or line.startswith(";"):
             continue
@@ -2619,10 +2685,12 @@ def parse_ssc(text: str, *, level: str | None = None,
             continue
         if current is None:
             continue
-        if cmd == "randomplay":
-            current.random_play = len(parts) < 2 or parts[1] != "0"
-            continue
         if sample is None:
+            continue
+        if cmd == "randomplay":
+            # `atoi` of the next token, so a bare `randomPlay` is 0.
+            found = re.match(r"[+-]?\d+", parts[1]) if len(parts) > 1 else None
+            sample.random_play = int(found.group()) if found else 0
             continue
         if cmd == "loop":
             sample.loop = True
@@ -2957,8 +3025,8 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
 
     # 4. Building sounds from static objects with loadSoundScript in their template tree
     if library is not None and objects is not None:
-        # Cache parsed sound info per template to avoid re-parsing
-        template_sounds: dict[str, tuple | None] = {}
+        # Cache the parsed patch per template to avoid re-parsing
+        template_sounds: dict[str, SoundPatch | None] = {}
 
         for inst, modes in placements:
             template_key = inst.template.lower()
@@ -2975,59 +3043,71 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
                 # Resolve script path relative to the .con file
                 ssc_path = resolve_ssc_path(source_con, script_path)
 
-                # Try to read the .ssc file from objects pool
+                # Try to read the .ssc file from objects pool, then from the
+                # level archive: a template the level declares in its own
+                # root `objects.con` (DC Al Nas's `iraq_radio2`) names a
+                # script beside it, `bf1942/levels/<level>/Sounds/Radio.ssc`,
+                # which only the level archive holds.
+                source = objects
                 ssc_hit = objects.find(ssc_path)
+                if ssc_hit is None and files.find(ssc_path) is not None:
+                    source, ssc_hit = files, ssc_path
                 if ssc_hit is None:
                     template_sounds[template_key] = None
                     continue
 
                 try:
-                    ssc_txt = objects.read(ssc_hit).decode("latin-1", "replace")
+                    ssc_txt = source.read(ssc_hit).decode("latin-1", "replace")
                     patches = parse_ssc(ssc_txt)
                 except Exception:
                     template_sounds[template_key] = None
                     continue
 
-                # Find first non-silence patch
+                # Find first non-silence patch: its first layer, or any of a
+                # pick's (DC's birds lead with a bird, but a pick's silences
+                # may come first).
                 patch = None
                 for p in patches:
-                    if p.file and not p.file.lower().endswith("silence.wav"):
+                    sounding = [not smp.file.lower().endswith("silence.wav")
+                                for smp in p.samples]
+                    if sounding and (any(sounding) if p.random_play else sounding[0]):
                         patch = p
                         break
-                if patch is None:
-                    template_sounds[template_key] = None
-                    continue
+                template_sounds[template_key] = patch
 
-                # Default sound parameters for building ambience
-                # Most building sounds are continuous loops with modest range
-                near_dist = patch.near_distance if patch.near_distance is not None else 10.0
-                far_dist = patch.far_distance if patch.far_distance is not None else 40.0
-                vol = patch.volume if patch.volume > 0 else (
-                    patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.5
-                )
-
-                first = patch.samples[0] if patch.samples else None
-                offset = first.relative_position if first is not None else None
-                # A one-shot's pick list (`randomPlay 1`): the event plays one
-                # of them. Loops keep their single-voice view.
-                pick = None
-                if (patch.random_play and not patch.loop
-                        and len(patch.samples) > 1):
-                    pick = [smp.file for smp in patch.samples if smp.file]
-                pitch = first.random_start_pitch if first is not None else None
-                # Cache the sound info
-                template_sounds[template_key] = (
-                    patch.file, vol, near_dist, far_dist, patch.min_distance,
-                    _distance_volume(patch), patch.loop, offset, pick, pitch)
-
-            # Get cached sound info
-            sound_info = template_sounds[template_key]
-            if sound_info is None:
+            patch = template_sounds[template_key]
+            if patch is None:
                 continue
 
-            (sound_file, vol, near_dist, far_dist, min_dist, ramp, loop,
-             offset, pick, pitch) = sound_info
             ox, oy, oz = inst.position
+            # A looping pick (`randomPlay 1` over loops, DC's tree birds):
+            # this emitter's own roll, and nothing at all for a silence.
+            if patch.random_play and len(patch.samples) > 1 and any(
+                    smp.loop for smp in patch.samples):
+                patch = picked_voice(
+                    patch, f"{inst.template.lower()}|{ox:.2f}|{oy:.2f}|{oz:.2f}")
+                if patch is None:
+                    continue
+
+            # Default sound parameters for building ambience
+            # Most building sounds are continuous loops with modest range
+            near_dist = patch.near_distance if patch.near_distance is not None else 10.0
+            far_dist = patch.far_distance if patch.far_distance is not None else 40.0
+            vol = patch.volume if patch.volume > 0 else (
+                patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.5
+            )
+
+            first = patch.samples[0] if patch.samples else None
+            offset = first.relative_position if first is not None else None
+            # A one-shot's pick list (`randomPlay 1`): the event plays one
+            # of them.
+            pick = None
+            if (patch.random_play and not patch.loop
+                    and len(patch.samples) > 1):
+                pick = [smp.file for smp in patch.samples if smp.file]
+            pitch = first.random_start_pitch if first is not None else None
+            sound_file, min_dist, ramp, loop = (
+                patch.file, patch.min_distance, _distance_volume(patch), patch.loop)
             # Point emitter at the building's position. The client stands a
             # voice at its owner's transform times `relativePosition`
             # (0x00802620); only the height is carried here, which needs no

@@ -50,6 +50,7 @@ from bf42 import con as con_mod
 from bf42.level import SoundSample, parse_ssc, resolve_ssc_path
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
+    FIRE_LOOP_SLOT, RELEASE_AFTER, RELEASE_SLOTS,
     SOUND_ARCHIVES, VEHICLE_RATES, _SILENCE, TranscodeError,
     _firing_patch, _sound_layers, sample_writer,
     ffmpeg_available, resolve_sound, transcode_to_mp3,
@@ -133,21 +134,42 @@ def fire_sample(patches) -> tuple[SoundSample | None, str]:
     whatever patch is open. Taking only the looped samples is what keeps that
     scatter out of the pick.
 
+    A Fire Loop slot (patch 5) that loops nothing is still the round's voice:
+    the engine triggers it every round and starts each of its samples again
+    on a new voice (ledger SND-13, SND-14), so it plays per shot like a Fire
+    slot. DC's CAR-15 and Skorpion are authored that way (`Car15s_*`,
+    `scorpion_fire*`, one shot and its tail).
+
+    Past that, a weapon whose Fire and Fire Loop slots are both silent or
+    absent is heard only from the slots `FireArms::updateSound` triggers when
+    the rounds stop (Release, Shell Bounce, MG distance; lnxded 0x0828cc10),
+    which for a single-shot weapon is every shot, `RELEASE_AFTER` behind it.
+    DC's grenade launchers are authored that way: the M203 and AK47GP30 keep
+    `M203_fire_*` in the MG distance slot of a five-patch script (DC 0.7) or
+    the Shell Bounce and Release slots of a four- and three-patch one (DC
+    Final). Slot `release` says so, and the delay rides out with the pick.
+
     Returns `(None, reason)` when there is nothing to play, in words the
     manifest can carry.
     """
     if not patches:
         return None, "script declares no patches"
-    candidates = _non_silence(patches[0].samples)
-    if candidates:
+
+    def loudest(candidates):
         immediate = [s for s in candidates if muzzle_gain(s) > 0]
         pool = immediate or [s for s in candidates
                              if muzzle_gain(s, at_time=None) > 0]
-        if pool:
-            best = max(enumerate(pool),
-                       key=lambda pair: (muzzle_gain(pair[1], at_time=None),
-                                         pair[1].priority or 0, -pair[0]))
-            return best[1], "fire"
+        if not pool:
+            return None
+        return max(enumerate(pool),
+                   key=lambda pair: (muzzle_gain(pair[1], at_time=None),
+                                     pair[1].priority or 0, -pair[0]))[1]
+
+    candidates = _non_silence(patches[0].samples)
+    if candidates:
+        best = loudest(candidates)
+        if best is not None:
+            return best, "fire"
     for patch in reversed(patches):
         loops = [s for s in _non_silence(patch.samples) if s.loop]
         audible = [s for s in loops if muzzle_gain(s) > 0]
@@ -156,13 +178,32 @@ def fire_sample(patches) -> tuple[SoundSample | None, str]:
                        key=lambda pair: (muzzle_gain(pair[1]),
                                          pair[1].priority or 0, -pair[0]))
             return best[1], "fireLoop"
+    if len(patches) > FIRE_LOOP_SLOT:
+        best = loudest(_non_silence(patches[FIRE_LOOP_SLOT].samples))
+        if best is not None:
+            return best, "fireLoop"
+    # All three sound together on a release, so the loudest of them is the
+    # report: DC 0.7's M203 puts its shell casings in slot 2, the distant
+    # rattle in 3 and its report in 4.
+    released = [s for index in RELEASE_SLOTS if index < len(patches)
+                for s in _non_silence(patches[index].samples)]
+    best = loudest(released)
+    if best is not None:
+        return best, "release"
     return None, "every patch is silence"
 
 
 def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
                          objects: ArchivePool, sounds: ArchivePool,
-                         out: Path) -> tuple[dict | None, str | None]:
-    """One weapon: `(manifest entry, None)` or `(None, why it is quiet)`."""
+                         out: Path, previous: dict | None = None
+                         ) -> tuple[dict | None, str | None]:
+    """One weapon: `(manifest entry, None)` or `(None, why it is quiet)`.
+
+    `previous` is the weapon's entry in the manifest already on disk. An mp3
+    already there is kept, unless that entry says it was made from another
+    wav: a pick that moves (the parser's tier fix moved none, DC's CAR-15
+    gained one) must not leave the old recording under the weapon's name.
+    """
     template = library.object(name)
     if template is None:
         return None, "template not found"
@@ -192,8 +233,8 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     # Named for the weapon, not the wav: two weapons sharing rktfireST.wav
     # (Bazooka, Panzershreck) each get their own file, small and cheap, and
     # the viewer needs no lookup beyond the name it already holds.
-    if not target.exists():
-        transcode_to_mp3(data, target)
+    stale = previous is not None and previous.get("wav") != basename
+    _write_mp3(data, target, stale)
 
     entry = {
         "file": target.name,
@@ -206,6 +247,8 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     if sample.random_start_pitch:
         entry["randomStartPitch"] = list(sample.random_start_pitch)
     delay = fire_delay(sample)
+    if slot == "release":
+        delay += RELEASE_AFTER
     if delay > 0:
         entry["delay"] = delay
     # The whole firing patch, near and far, for a listener who is not the
@@ -220,14 +263,83 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     # this pass has no level archive for) must not cost it. `world-fire`
     # falls back to `FALLBACK_RAMP` over that pick.
     try:
-        write = sample_writer(out, out)
-        layers = _sound_layers(_firing_patch(patches), sounds, write)
+        write = sample_writer(out, out, sounds=sounds)
+        layers = _sound_layers(_firing_patch(patches), sounds, write,
+                               patches=patches)
     except Exception as exc:            # noqa: BLE001 - a sample must not kill the armoury
         print(f"  {name}: layers skipped ({exc})", file=sys.stderr)
         layers = []
     if layers:
         entry["layers"] = layers
+    picks = _alternates(name, sample, patches, sounds, out, previous)
+    if picks:
+        entry["randomPlay"] = picks
     return entry, None
+
+
+def _write_mp3(data: bytes, target: Path, stale: bool) -> None:
+    """`target` from `data`: made when missing, remade in place when `stale`.
+
+    In place (the same inode) because `viewer/models` has hard-link mirrors
+    that must see the new bytes too.
+    """
+    if target.exists() and not stale:
+        return
+    if not target.exists():
+        transcode_to_mp3(data, target)
+        return
+    fresh = target.with_name(target.name + ".new.mp3")
+    try:
+        transcode_to_mp3(data, fresh)
+        with open(target, "wb") as handle:
+            handle.write(fresh.read_bytes())
+    finally:
+        fresh.unlink(missing_ok=True)
+
+
+def _alternates(name: str, sample: SoundSample, patches, sounds: ArchivePool,
+                out: Path, previous: dict | None) -> list[str | None] | None:
+    """A `randomPlay` fire patch's picks, one mp3 per load, for the shooter.
+
+    Every round rolls one load of such a patch (`rand() % loads`, silence
+    included; ledger SND-15), so the shooter hears a different recording
+    per shot: DC Final's CAR-15 has two, `Car15s_ST` and `Car15s_ST2`. The
+    list is in load order; a load that is silence, or that is silent at the
+    muzzle (a far layer), is `None`, because a roll that lands on it plays
+    nothing where the shooter stands. The pick itself keeps `<Name>.mp3`;
+    the other loads are `<Name>.<load>.mp3`. None when the patch is not one.
+    """
+    home = next((p for p in patches if any(s is sample for s in p.samples)), None)
+    if home is None or not home.random_play:
+        return None
+    before = (previous or {}).get("randomPlay") or []
+    picks: list[str | None] = []
+    # One file per wav: a load that repeats the pick's wav (the landmine's two
+    # `minedeploy`) is the pick's file.
+    made = {sample.file.lower(): f"{name}.mp3"}
+    for index, load in enumerate(home.samples):
+        if load is sample or load.file.lower() in made:
+            if muzzle_gain(load, at_time=None) > 0:
+                picks.append(made[load.file.lower()] if load is not sample
+                             else f"{name}.mp3")
+            else:
+                picks.append(None)
+            continue
+        if not _non_silence([load]) or muzzle_gain(load, at_time=None) <= 0:
+            picks.append(None)
+            continue
+        resolved = resolve_sound(load.file, None, sounds, VEHICLE_RATES)
+        if resolved is None:
+            picks.append(None)
+            continue
+        target = out / f"{name}.{index}.mp3"
+        # No wav name is kept per alternate; a list that moved is the sign.
+        stale = index >= len(before) or before[index] != target.name
+        _write_mp3(resolved[1], target, stale and target.exists())
+        made[load.file.lower()] = target.name
+        picks.append(target.name)
+    # A pick every roll of which plays the same file needs no list.
+    return picks if any(p != f"{name}.mp3" for p in picks) else None
 
 
 def main() -> int:
@@ -265,10 +377,14 @@ def main() -> int:
     weapons: dict[str, dict] = {}
     silent: dict[str, str] = {}
     failures = 0
+    try:
+        before = json.loads((args.out / "weapons.json").read_text())["weapons"]
+    except (OSError, ValueError, KeyError):
+        before = {}
     for name in names:
         try:
             entry, reason = extract_weapon_sound(
-                name, library, objects, sounds, args.out)
+                name, library, objects, sounds, args.out, before.get(name))
         except TranscodeError as exc:
             print(f"  {name}: {exc}", file=sys.stderr)
             failures += 1

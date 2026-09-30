@@ -3,7 +3,25 @@
 // the bus and the loop voice. Lifted out of hand-weapon.js
 // (features/vehicle-instance-refactor).
 
-import { WEAPON_HEADROOM } from './engine-audio.js';
+import { INSTANCES_PER_SAMPLE, WEAPON_HEADROOM } from './engine-audio.js';
+
+/**
+ * `name`'s entry in a `weapons.json`, matched without regard to case. The
+ * kit data and the weapon manifest spell some names differently (`kits.json`
+ * `MK23`, `BrowningHipo`, `grenadeallies` against `Mk23`, `Browninghipo`,
+ * `GrenadeAllies`), and the engine looks templates up case-insensitively.
+ */
+export function weaponSpec(manifest, name) {
+  const weapons = manifest?.weapons;
+  if (!weapons || !name) return null;
+  if (weapons[name]) return weapons[name];
+  if (!manifest._byLowerName) {
+    Object.defineProperty(manifest, '_byLowerName', {
+      value: new Map(Object.entries(weapons).map(([key, spec]) => [key.toLowerCase(), spec])),
+    });
+  }
+  return manifest._byLowerName.get(String(name).toLowerCase()) ?? null;
+}
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -51,10 +69,19 @@ export function createHandFireSound(page) {
   async function fetchHandFireSound(name) {
     if (page.AUDIO_OFF) return null;
     const manifest = await weaponSoundsManifest();
-    const spec = manifest?.weapons?.[name];
+    const spec = weaponSpec(manifest, name);
     if (!spec) return null;   // a quiet weapon (binoculars), or a mod without the tree
     const buffer = await page.modelSoundBuffer(`sounds/${spec.file}`);
-    return buffer ? { spec, buffer } : null;
+    if (!buffer) return null;
+    // A `randomPlay` fire patch: one load per round (ledger SND-15), `null`
+    // for a load that is silent at the muzzle. Decoded up front, like the
+    // pick itself, so a round never waits on one.
+    let picks = null;
+    if (Array.isArray(spec.randomPlay) && spec.randomPlay.length > 1) {
+      picks = await Promise.all(spec.randomPlay.map(file => (
+        !file ? null : file === spec.file ? buffer : page.modelSoundBuffer(`sounds/${file}`))));
+    }
+    return { spec, buffer, picks };
   }
 
   /** One more try for a weapon whose report never landed, asked from the shot
@@ -68,6 +95,12 @@ export function createHandFireSound(page) {
       if (fire && page.weaponToken === token) hw.fire = fire;
     });
   }
+
+  // The plays of each sample still sounding, oldest first: the game's buffer
+  // instance pool (`INSTANCES_PER_SAMPLE`, ledger SND-14) holds eight, and a
+  // ninth takes the oldest. A 13-round-a-second Skorpion over a 0.66 s
+  // shot-and-tail is nine deep without it.
+  const handFirePlays = new Map();
 
   function ensureHandFireBus(ctx) {
     if (!sound.handFireBus) {
@@ -124,8 +157,15 @@ export function createHandFireSound(page) {
       startHandFireLoop(fire);
       return;
     }
+    // This round's load of a `randomPlay` patch; a roll onto a load that is
+    // silent where the shooter stands plays nothing.
+    let buffer = fire.buffer;
+    if (fire.picks) {
+      buffer = fire.picks[Math.floor(Math.random() * fire.picks.length)] ?? null;
+      if (!buffer) return;
+    }
     const source = ctx.createBufferSource();
-    source.buffer = fire.buffer;
+    source.buffer = buffer;
     // The same per-play jitter DICE puts on the loops, applied per shot: a
     // burst reads as many rounds rather than one report stuttering.
     const [up = 0, down = 0] = fire.spec.randomStartPitch || [];
@@ -137,7 +177,19 @@ export function createHandFireSound(page) {
     gain.gain.value = Math.min(fire.spec.volume ?? 1, 1);
     source.connect(gain);
     gain.connect(ensureHandFireBus(ctx));
+    let plays = handFirePlays.get(buffer);
+    if (!plays) handFirePlays.set(buffer, plays = []);
+    while (plays.length >= INSTANCES_PER_SAMPLE) {
+      const stolen = plays.shift();
+      stolen.source.onended = null;
+      try { stolen.source.stop(); } catch (_) {}
+      try { stolen.source.disconnect(); stolen.gain.disconnect(); } catch (_) {}
+    }
+    const play = { source, gain };
+    plays.push(play);
     source.onended = () => {
+      const at = plays.indexOf(play);
+      if (at >= 0) plays.splice(at, 1);
       try { source.disconnect(); gain.disconnect(); } catch (_) {}
     };
     // `delay` is the script's own `Volume <- Time` gate — the knife's swish

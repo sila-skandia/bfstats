@@ -707,10 +707,21 @@ export function createPageAudio(page) {
   pageAudio.lastHurtSoundTime = 0;
   pageAudio.lastWorldHurtSoundTime = 0;
 
+  // A tree that has no `soldier.json` answers 404 for good: remembered per
+  // models base, so every footstep of a round does not ask again. Anything
+  // else that comes back empty (a network hiccup, a fetch that lost the load
+  // storm) is still asked again next time.
+  pageAudio.soldierSoundsMissing = null;
+
   function soldierSoundsManifest() {
+    const base = page.MODELS_BASE;
+    if (pageAudio.soldierSoundsMissing === base) return Promise.resolve(null);
     if (!pageAudio.soldierSoundsIndex) {
-      pageAudio.soldierSoundsIndex = fetch(`${page.MODELS_BASE}/sounds/soldier.json${page.bust()}`)
-        .then(r => (r.ok ? r.json() : null))
+      pageAudio.soldierSoundsIndex = fetch(`${base}/sounds/soldier.json${page.bust()}`)
+        .then(r => {
+          if (r.status === 404) pageAudio.soldierSoundsMissing = base;
+          return r.ok ? r.json() : null;
+        })
         .catch(() => null)
         .then(doc => { if (!doc) pageAudio.soldierSoundsIndex = null; return doc; });
     }

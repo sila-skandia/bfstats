@@ -494,6 +494,17 @@ sound and must survive untouched. The rate test (`COHERENT_RATE_TOL`, 0.4%) is t
 of the line between a hand-over and a detune. Two *different* samples at one point
 (the Spitfire's SFMG1/SFMG2, incommensurate combs) never contest either.
 
+### What a trigger plays (ledger SND-12..15, SSC-6)
+
+Read before deciding which patch of a gun is "the fire sound". Every round
+triggers slot 0 (Fire) and slot 5 (Fire Loop), looping or not; the release
+slots 2..4 sound when the rounds stop. A patch with a `loop` sample starts once
+per press; one without restarts every sample per trigger on a new instance
+(eight per buffer), which is how DC Final's MG42 plays `mg_temp.wav` per round.
+`randomPlay` picks only when it follows the patch's LAST load, and the roll
+counts `silence.wav` loads. An `#include` under another `#templateLevel` is
+never opened. `features/vehicle-sound-coverage/README.md` D9 has the fixes.
+
 ### Measuring it
 
 Never argue about this from a waveform or an opinion — render it:
