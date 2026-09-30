@@ -270,14 +270,18 @@ export function weaponGroup(bot) {
  *  A bomb's `velocity 0` is kept (the plane's own speed is added by
  *  `planeAimFor`), and the gravity is the engine's 14.73, not 9.81. */
 export function gunBallistics(bot) {
-  const g = weaponGroup(bot);
+  return groupBallistics(weaponGroup(bot), bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600);
+}
+
+/** One gun group's exit velocity and gravity (`gunBallistics`), `speed`
+ *  standing in until its stats load. */
+export function groupBallistics(g, speed = 600) {
   const st = g?.stats ?? {};
   const v = st.velocity ?? st.projectile?.velocity;
-  const speed = Number.isFinite(v) ? v : (bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600);
   // `gravityModifier` as the extractor names it (`projectile.gravity`); a
   // tracer round's is 0, a shell's defaults to 1 (gunfire.js).
   const gm = Number.isFinite(st.projectile?.gravity) ? st.projectile.gravity : (st.projectile?.kind === 'shell' ? 1 : 0);
-  return { speed, gravity: GRAVITY * gm, node: g?.node ?? null };
+  return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, node: g?.node ?? null };
 }
 
 /**

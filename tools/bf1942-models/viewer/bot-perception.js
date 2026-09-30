@@ -5,7 +5,7 @@
 // which delegates its methods here.
 
 import { lineClear, playerPosition, sensedPoint, sCurveExact } from './bot-sense.js';
-import { scoreTargets, scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
+import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
 import { unitTable } from './bot-strength.js';
@@ -285,6 +285,25 @@ export function myType(bot) {
 export function chooseVehicleTarget(bot, now) {
   const m = bot.vehicle;
   const air = m.kind === 'air';
+  // A self-propelled gun's driver (type 14): `BBFireArtilleryDriver::
+  // calculateUrgency` 0x0856a650 asks whether the hull's gun seat is held
+  // (`AIObjectUnit::isOccupied` 0x085dc0d0 at 0x0856a735). Held, it returns
+  // `BBFireLargeBore::calculateUrgency` 0x0856b390 (the 5-argument form, at
+  // 0x0856a768) with the gun seat's Information and the hull's Mobile
+  // plug-in: the gun's weapons, table and position, a mobile unit (no camera
+  // test, the out-of-range escape term at the hull's top speed), the
+  // driver's own spotted list and `getEnemyObjects` (the hull's position
+  // stands for the gun seat's, INFERRED: they share a transform to within the
+  // seat's offset). Empty, it returns
+  // `BBFireUnarmed::calculateUrgency` 0x0856eb90, whose only `ret`
+  // (0x0856ec35) follows `fldz`: its threat score goes to
+  // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`; not
+  // modelled) and the Fire urgency is 0 (ledger SPOT-15).
+  const gun = isArtilleryDriver(m) ? m.gunSeat : null;
+  if (isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) {
+    return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
+  }
+  const weapons = gun ? gunWeapons(m) : bot.weapons;
   const spotted = bot.senses.spottedEnemies();
   // `getEnemyObjects`: the enemy objects around that are not spotted.
   const radius = air ? VEHICLE_FIRE.environmentRadiusAir
@@ -302,7 +321,7 @@ export function chooseVehicleTarget(bot, now) {
   const aimable = (!m.drives && m.occupancy?.turret) ? (dir) => bot._turretCanPoint(dir) : null;
   return scoreVehicleTargets({
     spotted, environment, position: bot.position, forward: bot._unitForward3(), velocity: bot._unitVelocity(),
-    weapons: bot.weapons, now,
+    weapons, now,
     attackedBy: id => bot.senses.attackedBy(id),
     velocityOf: id => {
       const p = bot.world.players.get(id);
@@ -312,17 +331,17 @@ export function chooseVehicleTarget(bot, now) {
       return s ? [Math.sin(s.yaw) * (s.speed ?? 0), 0, Math.cos(s.yaw) * (s.speed ?? 0)] : null;
     },
     infoOf: id => bot._unitInfo(id),
-    myType: bot._myType(), myTable: unitTable(bot.weapons), air, maxSpeed: m.maxSpeed ?? m.hullMaxSpeed ?? 0,
+    myType: bot._myType(), myTable: unitTable(weapons), air, maxSpeed: m.maxSpeed ?? m.hullMaxSpeed ?? 0,
     // The unit's Armament plug-in (`setIsAntiAircraft`, read back by
     // `IPIArmamentReal::isAntiAircraft` 0x085e9b00), carried on the mount.
     // No AI weapon entry has the word, so reading it off the weapons left
     // every AA gun a non-AA one: blind to an aircraft past 150 m or faster
     // than 15 m/s, which is every aircraft in flight.
-    isAntiAircraft: !!m.antiAircraft || bot.weapons.some(w => w.isAntiAircraft),
+    isAntiAircraft: (gun ? gun.antiAircraft : !!m.antiAircraft) || weapons.some(w => w.isAntiAircraft),
     currentTarget: bot.firingTarget, currentScore: bot.targetScore,
     insideOrderedArea: bot._insideOrderedArea(),
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
-    vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : fireMode(m),
+    vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore',
     fixed: FIXED_EQUIPMENT.has(m.equipmentType) || !m.drives,
     lineOfFire: (rec) => {
       const p = bot.world?.players?.get(rec.id);
@@ -348,9 +367,30 @@ export function chooseVehicleTarget(bot, now) {
  */
 const INFANTRY_FIRE_EQUIPMENT = new Set([0, 4, 11]);
 const FIXED_EQUIPMENT = new Set([4, 11]);
+/** `ArtilleryDriver` (14): `BBFireDriver` -> `BBFireArtilleryDriver`, whose
+ *  plan `BBPFire2dDriver` drives and turns the hull and never fires
+ *  (`chooseVehicleTarget`, bot-plans.js `execArtilleryDriver`). */
+const ARTILLERY_DRIVER_EQUIPMENT = 14;
 export function fireMode(m) {
+  if (m?.equipmentType === ARTILLERY_DRIVER_EQUIPMENT) return 'artilleryDriver';
   if (Number.isInteger(m?.equipmentType)) return INFANTRY_FIRE_EQUIPMENT.has(m.equipmentType) ? 'infantry' : 'largeBore';
   return m?.drives && m?.kind === 'tank' ? 'infantry' : 'largeBore';
+}
+
+/** The seat a bot drives from is a self-propelled gun's hull (type 14). */
+export function isArtilleryDriver(m) {
+  return !!m?.drives && fireMode(m) === 'artilleryDriver';
+}
+
+/** A type-14 driver's gun seat's AI weapons, in the Fire behaviour's form
+ *  (bot-mount.js hands a seat's its own the same way). */
+export function gunWeapons(m) {
+  const list = m?.gunSeat?.weapons ?? [];
+  if (!m._gunWeapons || m._gunWeaponsOf !== list) {
+    m._gunWeapons = list.map(weaponAiOf);
+    m._gunWeaponsOf = list;
+  }
+  return m._gunWeapons;
 }
 
 /** What a target is: the page's description, else an infantryman. */

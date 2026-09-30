@@ -32,6 +32,7 @@ import { traceValidPoint, isWalkable } from './nav-grid.js';
 import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
+import { isArtilleryDriver } from './bot-perception.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -73,6 +74,16 @@ export const URGENCY_CURVE = {
 const CURVE_OF = { Avoid: URGENCY_CURVE.union, MoveTo: URGENCY_CURVE.union, Idle: URGENCY_CURVE.union,
   Fire: URGENCY_CURVE.fire, Special: URGENCY_CURVE.union, Scout: URGENCY_CURVE.scout, TakeCover: URGENCY_CURVE.union,
   Change: URGENCY_CURVE.union };
+
+/** The active behaviour's urge curve for this bot's unit row. The
+ *  `ArtilleryDriver` row's Fire is `UCUnion` (`Game/AIbehaviours.con`:
+ *  `setVehicleBehaviour ArtilleryDriver Fire BBFireDriver BBPFire2dDriver 6
+ *  0 UCUnion UnitWeights`), where every armed row's is `UCFire`: a
+ *  self-propelled gun's driver does not tire of his Fire after 5.9 s. */
+export function curveOf(bot, name) {
+  if (name === BEHAVIOUR.Fire && isArtilleryDriver(bot.vehicle)) return URGENCY_CURVE.union;
+  return CURVE_OF[name] ?? URGENCY_CURVE.union;
+}
 /** `decisionMaking`'s hysteresis band on `urgency / activeUrgency`. */
 const HYSTERESIS_LOW = 0.87;
 const HYSTERESIS_HIGH = 1.15;
@@ -168,7 +179,7 @@ export function decisionMaking(bot, now, dt) {
   for (const name of bot._registered()) {
     let mod = bot._currentMod(name);
     if (active) {
-      const curve = name === active ? (CURVE_OF[active] ?? URGENCY_CURVE.union)(activeFor) : 1.0;
+      const curve = name === active ? curveOf(bot, active)(activeFor) : 1.0;
       mod *= curve * ((INHIBITOR[active] ?? UNIT_WEIGHTS)[name] ?? 1.0);
     }
     if (mod > 0) bot.urgency[name] = bot._generate(name, mod, now, dt, true);
