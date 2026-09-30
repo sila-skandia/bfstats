@@ -38,6 +38,7 @@ Everything the old lumped model was calibrated against — `K_LIFT`, `AOA_CLAMP`
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,14 @@ MODULES = {
     "aircraft.js": VIEWER / "aircraft.js",
     "ship-spec.js": VIEWER / "ship-spec.js",
     "bot-vehicle-air.js": VIEWER / "bot-vehicle-air.js",
+    # `aircraft.js` flies an airframe whose engines point off its nose (a
+    # helicopter) through `vectored-engines.js`, which runs the gearbox
+    # (`engine-revs.js`) at the engine tick rate (`body-friction.js`, which
+    # imports `rigid-body.js`).
+    "vectored-engines.js": VIEWER / "vectored-engines.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
+    "body-friction.js": VIEWER / "body-friction.js",
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     # The bare specifier `three` is an import map entry in the page; node needs
@@ -95,9 +104,12 @@ def run_harness() -> dict:
         (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
         (work / "package.json").write_text('{"type":"module"}\n')
         shutil.copyfile(HARNESS, work / "harness.mjs")
+        # The extracted model tree is not in the repository; when this PC has
+        # one, the harness also flies the real Desert Combat glbs out of it.
+        env = {**os.environ, "BF42_VIEWER_MODELS": str(VIEWER / "models")}
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],
-            capture_output=True, text=True, timeout=900)
+            capture_output=True, text=True, timeout=900, env=env)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stderr}")
     return json.loads(proc.stdout)
@@ -727,6 +739,155 @@ class FlightModelTests(unittest.TestCase):
         # The chase rig is 17 m back and 4.2 up, so a little over 17 away.
         self.assertGreater(camera["chaseBehind"], 15.0)
         self.assertLess(camera["chaseBehind"], 20.0)
+
+    # --- helicopters: engines off the nose (ledger PHY-12..PHY-14) ----------
+
+    def test_a_fixed_wing_airframe_stays_on_the_nose_thrust_path(self) -> None:
+        # Every engine of a fixed-wing aircraft points at its nose, so the
+        # engine law in `vectored-engines.js` never runs for one and the
+        # numbers every test above pins cannot move.
+        s = self.results["spitfire"]
+        self.assertFalse(s["vectored"])
+        self.assertEqual(0, s["vectoredEngines"])
+        self.assertFalse(s["specVectored"])
+        self.assertIsNone(s["specInertiaLaw"])
+        self.assertAlmostEqual(0.0, s["engineOffNose"], places=2)
+
+    def test_an_ah64_is_read_as_a_vectored_airframe(self) -> None:
+        spec = self.results["helicopter"]["spec"]
+        self.assertTrue(spec["vectored"])
+        # Nothing was ever calibrated on a helicopter: it takes the engine's
+        # own /3 geometry inertia (collision-response.md 4.2).
+        self.assertEqual("geometry", spec["inertiaLaw"])
+        self.assertEqual(5, spec["engines"])
+        self.assertAlmostEqual(1.819, spec["groundClearance"], places=3)
+        for name in ("AH64HoverEngine1", "AH64HoverEngine2", "AH64HoverEngine3", "AH64DummyEngine"):
+            self.assertAlmostEqual(90.0, spec["offNose"][name], places=1)
+        self.assertAlmostEqual(0.0, spec["offNose"]["AH64DummyRearEngine"], places=1)
+        self.assertEqual([{"id": "AH64EngineRack3", "axes": ["pitch", "roll"], "roll": "c_PIRoll"}], spec["chain"])
+        self.assertEqual({"input": "c_PIThrottle", "min": 1500, "max": 5000, "automaticReset": True,
+                          "acceleration": 15000}, spec["throttle"])
+        self.assertEqual(5000, spec["maxRotationZ"])
+
+    def test_a_hover_engine_pushes_along_its_own_axis_through_its_rack(self) -> None:
+        # `fwd` is row 2 of the engine's own absolute transform (0x0824cbb0 via
+        # vtable +0x20): straight up at rest, and tilted 20 degrees by a rack
+        # at full deflection. Stick forward tips it forward (-Z), stick right
+        # to starboard (+X), and the pedals tip the front and rear racks
+        # opposite ways: a yaw couple.
+        axis = self.results["helicopter"]["axis"]
+        self.assertEqual([0, 1, 0], axis["rest"]["dir"])
+        self.assertEqual([0, 2, 0], axis["rest"]["arm"])
+        self.assertEqual([0, 0.94, -0.342], axis["pitch"]["dir"])
+        self.assertEqual([0.342, 0.94, 0], axis["roll"]["dir"])
+        self.assertEqual([0.342, 0.94, 0], axis["yawFront"])
+        self.assertEqual([-0.342, 0.94, 0], axis["yawRear"])
+
+    def test_a_rack_left_deflected_is_not_read_as_its_rest(self) -> None:
+        # The page leaves a rack posed where the last pilot's stick had it;
+        # the next Aircraft on the hull reads the rest pose it first saw.
+        reentry = self.results["helicopter"]["reentry"]
+        self.assertEqual([0, 1, 0], reentry["first"])
+        self.assertEqual([0, 1, 0], reentry["second"])
+        self.assertAlmostEqual(90.0, reentry["offNose"], places=2)
+
+    def test_the_collective_has_an_idle_floor(self) -> None:
+        # `setMinRotation .../1500` over `setMaxRotation .../5000`: the clipped
+        # throttle angle never goes below 1500, so T1 is 0.3 with the
+        # collective down and still 0.3 with it reversed. It ramps at the
+        # engine's own 15000 deg/s: six ticks from the floor is 0.6.
+        idle = self.results["helicopter"]["idle"]
+        self.assertAlmostEqual(0.3, idle["t1"], places=4)
+        self.assertAlmostEqual(0.3, idle["t1Reversed"], places=4)
+        self.assertAlmostEqual(0.6, idle["t1After6Ticks"], places=4)
+        self.assertAlmostEqual(1.0, idle["t1Full"], places=4)
+        # The floor keeps the revs up, and on its own does not lift it.
+        self.assertGreater(idle["revs"], 0.25)
+        self.assertTrue(idle["grounded"])
+        self.assertAlmostEqual(1.819, idle["y"], places=3)
+
+    def test_the_gearbox_settles_on_its_own_fixed_point(self) -> None:
+        # revs = 2*(T1 - L) with L the load feedbackLoop accumulated, as the
+        # harness re-derives it from engine-revs.js, idle and at full power.
+        gearbox = self.results["helicopter"]["gearbox"]
+        self.assertAlmostEqual(gearbox["idleExpected"], gearbox["idle"], places=3)
+        self.assertAlmostEqual(gearbox["fullExpected"], gearbox["full"], delta=0.01)
+        # Full collective does not reach the 1.2 clamp: the load holds it down.
+        self.assertLess(gearbox["full"], 0.8)
+
+    def test_full_collective_climbs_and_letting_go_comes_back_down(self) -> None:
+        climb = self.results["helicopter"]["climb"]
+        self.assertGreater(climb["y"], 50.0)
+        self.assertGreater(climb["vy"], 15.0)
+        self.assertLess(climb["releasedVy"], -10.0)
+        self.assertAlmostEqual(0.3, climb["releasedT1"], places=4)
+        self.assertLess(abs(climb["releasedRevs"] - self.results["helicopter"]["gearbox"]["idle"]), 0.02)
+        self.assertTrue(climb["landed"])
+        self.assertAlmostEqual(1.819, climb["landedY"], places=3)
+
+    def test_it_hovers_between_the_floor_and_full_collective(self) -> None:
+        hover = self.results["helicopter"]["hover"]
+        self.assertGreater(hover["collective"], 0.5)
+        self.assertLess(hover["collective"], 0.8)
+        self.assertLess(abs(hover["vy"]), 0.1)
+        self.assertLess(abs(hover["nose"]), 2.0)
+        self.assertLess(abs(hover["bank"]), 2.0)
+
+    def test_cyclic_forward_noses_it_down_and_flies_it_forward(self) -> None:
+        cyclic = self.results["helicopter"]["cyclic"]
+        self.assertLess(cyclic["pitchRate"], 0.0)
+        self.assertLess(cyclic["nose"], -5.0)
+        self.assertGreater(cyclic["forward"], 2.0)
+
+    def test_the_stick_and_pedals_turn_it_the_way_they_turn_a_plane(self) -> None:
+        # One input convention for both, because both read the same data: a
+        # positive c_PIRoll / c_PIYaw / c_PIPitch turns an AH-64 about the same
+        # body axis, the same way, as it turns a Corsair.
+        signs = self.results["helicopter"]["signs"]
+        for axis in ("roll", "yaw", "pitch"):
+            heli, plane = signs[axis]
+            self.assertNotEqual(0.0, heli, axis)
+            self.assertEqual(heli > 0, plane > 0, axis)
+
+    def test_a_stopped_engine_or_a_drowned_one_makes_nothing(self) -> None:
+        h = self.results["helicopter"]
+        self.assertEqual(0, h["engineOff"]["revs"])
+        self.assertLess(h["engineOff"]["vy"], -10.0)
+        self.assertEqual(0, h["underWater"]["revs"])
+        self.assertLess(h["underWater"]["vy"], -10.0)
+        self.assertTrue(h["reset"])
+
+    def test_calculate_and_clip_angle_runs_both_of_its_laws(self) -> None:
+        c = self.results["clipAngle"]
+        # automaticReset: straight to input*max at |acceleration| deg/s, clipped.
+        self.assertEqual(1500, c["floor"])
+        self.assertEqual(3000, c["up"])
+        self.assertEqual(1500, c["reversed"])
+        # The servo law: the Flettner's collective stays where it was left.
+        self.assertEqual(40, c["latchFloor"])
+        self.assertGreater(c["latchRaised"], 55)
+        self.assertGreater(c["latchHeld"], c["latchRaised"])
+        self.assertLess(c["latchHeld"], 80)
+        self.assertEqual(40, c["latchLowered"])
+        # A negative maxSpeed cancels a negative acceleration in the servo law
+        # and does not in the automaticReset one.
+        self.assertGreater(c["servoSigned"], 0)
+        self.assertEqual(-20, c["resetSigned"])
+        self.assertEqual(-170, c["wrapped"])
+        self.assertEqual(7, c["frozen"])
+
+    def test_the_extracted_desert_combat_helicopters_fly(self) -> None:
+        real = self.results.get("realGlbs")
+        if real is None:
+            self.skipTest("no extracted Desert Combat models on this machine")
+        for name, heli in real["helicopters"].items():
+            self.assertTrue(heli["vectored"], name)
+            self.assertAlmostEqual(0.0, heli["idleY"], places=3, msg=name)
+            self.assertGreater(heli["climbed"], 30.0, name)
+            self.assertLessEqual(heli["releasedVy"], 0.0, name)
+        for name, plane in real["planes"].items():
+            self.assertFalse(plane["vectored"], name)
+            self.assertIsNone(plane["inertiaLaw"], name)
 
 
 if __name__ == "__main__":

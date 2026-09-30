@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
 import { hullGeometry } from './ship-spec.js';
+import { LIFT_ENGINE_ANGLE, VectoredEngine, engineGeometry } from './vectored-engines.js';
 
 // --- flight model ----------------------------------------------------------
 //
@@ -447,6 +448,16 @@ const _wheelBox = new THREE.Box3();
  *
  * Returns null for a root that carries no body physics or no plane engine,
  * which keeps every hand-built test aircraft on `CORSAIR`.
+ *
+ * An airframe with an engine pointing more than `LIFT_ENGINE_ANGLE` off its
+ * nose — Desert Combat's helicopters, the Harrier's lift jets — comes back
+ * `vectored`: each engine also carries `engineGeometry`'s bundle chain, rest
+ * pose and throttle axis, and `Aircraft` flies every one of its engines on
+ * the engine's own law (`vectored-engines.js`, ledger PHY-12..PHY-14) instead
+ * of pushing them all along the nose on the pedal. Such an airframe takes the
+ * engine's own `/3` geometry inertia (collision-response.md §4.2): the solid
+ * box is kept only for the fixed-wing aircraft calibrated on it, and nothing
+ * was ever calibrated on a helicopter.
  */
 export function aircraftSpec(root) {
   const physics = root?.userData?.physics;
@@ -472,6 +483,7 @@ export function aircraftSpec(root) {
         differential: part.differential ?? 1,
         torque: part.torque,
         noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? 70,
+        ...engineGeometry(root, node),
       });
       // `setMaxSpeed` over the rev span, as `CORSAIR.throttleRate` reads it.
       const span = Math.abs(part.maxRotation?.[2] ?? 0);
@@ -509,10 +521,12 @@ export function aircraftSpec(root) {
     }
   });
   if (!engines.length) return null;
+  const vectored = engines.some(engine => engine.offNose > LIFT_ENGINE_ANGLE);
   return {
     mass: physics.mass,
     drag: physics.drag ?? CORSAIR.drag,
     dragLaw: 'box',
+    ...(vectored ? { vectored: true, inertiaLaw: 'geometry' } : {}),
     gravity: GRAVITY,
     inertiaModifier: physics.inertiaModifier || [1, 1, 1],
     size: hullGeometry(root).size,
@@ -564,6 +578,25 @@ export class Aircraft extends Vehicle {
       differential: engine.differential,
       fadeSpeed: engine.noPropellerEffectAtSpeed,
     }));
+    /**
+     * An airframe with an engine off its nose (`aircraftSpec`'s `vectored`)
+     * flies every engine on the engine's own law: its own axis through the
+     * bundles above it, its own throttle axis with its idle floor, its own
+     * gearbox. `this.engines` stays built for the code that only reads
+     * positions (audio, bots); the thrust comes from these.
+     */
+    this.vectored = !!this.spec.vectored;
+    this.vectoredEngines = this.vectored
+      ? this.spec.engines.map(engine => new VectoredEngine(engine)) : [];
+    /**
+     * `Engine+0x142`, the running flag, for the vectored engines: while it is
+     * clear they take no input and their revs are held at zero. The engine
+     * sets it on TemplateMessage 4 and clears it on 5 and on critical damage
+     * (0x14/0x15, `Engine::handleMessage` `0x0823e730`); a page that knows
+     * when the seat empties or the hull goes critical should say so here.
+     */
+    this.engineRunning = true;
+    this._inputOf = name => this.input(name);
     this.inertia = boxInertia(this.spec.mass, this.spec.size,
                               this.spec.inertiaModifier, this.spec.inertiaLaw);
     this.groundHeight = () => -Infinity;
@@ -769,6 +802,10 @@ export class Aircraft extends Vehicle {
     // has always fed to the thrust law directly; a ship's rev state is
     // `ship.js`'s (`engine-revs.js`, ledger TANK-12/TANK-13).
     this.advanceEngines(dt);
+    // A vectored airframe's gearboxes, one per engine, in the same slot.
+    for (const engine of this.vectoredEngines) {
+      engine.advance(dt, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+    }
     this.advancePropeller(dt);
 
     const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
@@ -872,32 +909,8 @@ export class Aircraft extends Vehicle {
     // thrust does not fade with altitude — it grows, because a high aircraft's
     // propeller does not know how fast it is going. The 1000 m ceiling is a
     // lift ceiling only.
-    _fwd.copy(FORWARD).applyQuaternion(s.orientation);
-    const along = s.velocity.dot(_fwd);
-    for (const engine of this.engines) {
-      _r.copy(engine.position).applyQuaternion(s.orientation);
-      // The water gate. `engineType` bit 3 (`c_ETShip` = 9, `c_ETTorpedo` =
-      // 0x19) versus bit 3 clear (`c_ETPlane` = 1) picks opposite rules at
-      // `0x0824cc89`/`0x0824d047`, and an aircraft's is "an engine under water
-      // makes no thrust". `waterGate` answers for both; the default is an
-      // aircraft's, so nothing here changes for one.
-      const throttle = this.waterGate(engine, s.position.y + _r.y);
-      if (throttle === null) continue;
-      const rho = 1 - clamp((s.position.y + _r.y) / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
-      const e = throttle - rho * along / engine.fadeSpeed;
-      const k = ENGINE_IDLE * Math.abs(throttle) + e * Math.abs(e);
-      const a = k * engine.ratio;
-      // `PhysicsEngine::feedbackLoop(K*fwd, fwd)` at `0x0824cfc1`, whose one
-      // effect that survives the tick is the load the gearbox reads next tick.
-      // Empty for an aircraft: `flight.js` feeds the pedal straight through, so
-      // there is no rev state for a load to pull down.
-      this.noteThrust(engine, k, throttle);
-      _force.copy(_fwd).multiplyScalar(a);
-      _accel.add(_force);
-      // At the engine node, not the centre of mass — a nacelle 0.45 m above the
-      // CoM and four nacelles out on a B17's wings.
-      _moment.add(_arm.crossVectors(_r, _force));
-    }
+    if (this.vectored) this.vectoredThrust(h);
+    else this.noseThrust();
 
     // Anything the body carries that is neither a surface nor an engine. Empty
     // for an aircraft; a ship's eight `FloatingBundle`s are here, and because
@@ -940,6 +953,73 @@ export class Aircraft extends Vehicle {
       this.settle(h);
     } else {
       s.grounded = false;
+    }
+  }
+
+  /**
+   * The fixed-wing thrust: every engine pushes along the NOSE on the spooled
+   * pedal. Exactly what `step` has always done for an airframe whose engines
+   * all point that way, and deliberately unchanged — see `advanceEngines` for
+   * why the pedal reaches the law directly here.
+   */
+  noseThrust() {
+    const s = this.state;
+    _fwd.copy(FORWARD).applyQuaternion(s.orientation);
+    const along = s.velocity.dot(_fwd);
+    for (const engine of this.engines) {
+      _r.copy(engine.position).applyQuaternion(s.orientation);
+      // The water gate. `engineType` bit 3 (`c_ETShip` = 9, `c_ETTorpedo` =
+      // 0x19) versus bit 3 clear (`c_ETPlane` = 1) picks opposite rules at
+      // `0x0824cc89`/`0x0824d047`, and an aircraft's is "an engine under water
+      // makes no thrust". `waterGate` answers for both; the default is an
+      // aircraft's, so nothing here changes for one.
+      const throttle = this.waterGate(engine, s.position.y + _r.y);
+      if (throttle === null) continue;
+      const rho = 1 - clamp((s.position.y + _r.y) / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
+      const e = throttle - rho * along / engine.fadeSpeed;
+      const k = ENGINE_IDLE * Math.abs(throttle) + e * Math.abs(e);
+      const a = k * engine.ratio;
+      // `PhysicsEngine::feedbackLoop(K*fwd, fwd)` at `0x0824cfc1`, whose one
+      // effect that survives the tick is the load the gearbox reads next tick.
+      // Empty for an aircraft: `flight.js` feeds the pedal straight through, so
+      // there is no rev state for a load to pull down.
+      this.noteThrust(engine, k, throttle);
+      _force.copy(_fwd).multiplyScalar(a);
+      _accel.add(_force);
+      // At the engine node, not the centre of mass — a nacelle 0.45 m above the
+      // CoM and four nacelles out on a B17's wings.
+      _moment.add(_arm.crossVectors(_r, _force));
+    }
+  }
+
+  /**
+   * The engine's own thrust law for a vectored airframe, one sub-step.
+   *
+   * `PhysicsEngine::updatePhysics` (`0x0824cbb0`) per engine, on the
+   * `VectoredEngine`'s own state: the bundles above it step first (a
+   * helicopter's cyclic and pedals are `RotationalBundle`s tilting the hover
+   * engines ±20 degrees), then the engine's `fwd` is read off the posed chain
+   * and `F = fwd * K * getCurrentRatio()` goes on the root at the engine's own
+   * position. `K` reads the gearbox's revs, which carry the throttle axis's
+   * idle floor (`setMinRotation .../1500` holds `T1` at 0.3 with the
+   * collective down).
+   *
+   * The water rule is `c_ETPlane`'s (bit 3 clear, `0x0824cc89`): an engine
+   * under the surface has its revs zeroed and makes nothing at all this
+   * evaluation — the engine jumps straight to the propeller visual.
+   */
+  vectoredThrust(h) {
+    const s = this.state;
+    for (const engine of this.vectoredEngines) {
+      engine.stepBundles(h, this._inputOf);
+      engine.pose(s.orientation, _fwd, _r);
+      const worldY = s.position.y + _r.y;
+      if (worldY < this.waterHeight) { engine.revs = 0; continue; }
+      const rho = 1 - clamp(worldY / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
+      const k = engine.thrust(s.velocity.dot(_fwd), rho);
+      _force.copy(_fwd).multiplyScalar(k * engine.ratio);
+      _accel.add(_force);
+      _moment.add(_arm.crossVectors(_r, _force));
     }
   }
 
@@ -993,6 +1073,7 @@ export class Aircraft extends Vehicle {
     s.surfaces.clear();
     s.inputs.clear();
     s.inputs.set('c_PILandingGear', 0);
+    for (const engine of this.vectoredEngines) engine.reset();
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

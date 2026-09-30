@@ -282,6 +282,28 @@ speculative and "not needed".
 speed term, so a high propeller does not know how fast it is going. The 1000 m
 figure is a *lift* ceiling only.
 
+### `fwd` is the engine's own axis, which is how a helicopter flies (2026-09-30, ledger PHY-12..PHY-14)
+
+`fwd` is not the hull's nose. It is row 2 of the engine's **own** absolute
+transformation (lnxded `0x0824ce88`: vtable `+0x20`,
+`PhysicsNode::getAbsoluteTransformation` `0x08254950`, which forwards to the
+Engine object's transform), and the force lands on the root at the engine's own
+absolute position. That transform carries the engine's `setRotation` and every
+`RotationalBundle` above it, posed each update from its clipped angles.
+
+Refractor has no helicopter class, and needs none. Desert Combat's AH-64 is
+three `c_ETPlane` Engines placed `0/270/0`, so pointing straight up, each under
+a `RotationalBundle` rack the stick tilts ±20 degrees: `c_PIPitch` on every
+rack's pitch axis, `c_PIRoll` on the middle rack's roll axis, and `c_PIYaw` on
+the front and rear racks' roll axes in opposite senses, which is the yaw couple.
+The "throttle" is still the rev state (§5 above, TANK-12), fed by the clipped
+roll angle over `maxRotation.z`, so a hover engine's `setMinRotation .../1500`
+over `.../5000` is an idle floor: `T1` never drops below 0.3, collective
+released or reversed. The AH-64 settles at revs 0.320 on the floor, climbs at
+0.741, and hovers at `T1` 0.647. The engine runs on its own running byte
+`Engine+0x142` (TemplateMessage 4 on, 5 and critical damage off); while it is
+clear the inputs are zeroed and the revs held at 0 (PHY-14).
+
 ### The gear-ratio curve — `EngineTemplate::EngineTemplate`, `0x005715d0`
 
 101 floats at `template+0x42c`, filled 1.0, then five control points:
@@ -393,6 +415,13 @@ So the axis never poses the Engine node, and never poses its children. The `.con
 syntax looks like it spins the engine and does not. A viewer that falls back to
 rotating the Engine node takes the landing gear and wheels round the prop shaft
 with it — which is exactly what shipped to production for two days.
+
+Read again for the helicopters (2026-09-30, PHY-13): `Engine::handleUpdate`
+runs `calculateAndClipAngle` for all three of the Engine's axes and tail-calls
+`Engine::updateSound` (vtable `+0xe0`), never `setState`. An Engine's own axes
+are numbers for the gearbox, not a pose. What tilts a hover engine is the
+separate `RotationalBundle` it hangs under, and that tilt reaches the thrust
+through §5's `fwd`.
 
 ---
 
@@ -794,3 +823,4 @@ bounding radius stays inferred.
 | **The server's tick rate (LOOP-1, opened 2026-09-20)** | **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
+| Who sends an Engine TemplateMessage 4 and 5 (PHY-14, opened 2026-09-30) | `Engine+0x142` gates the inputs and holds the revs at 0 while clear. 4 sets it, 5 and critical damage (0x14/0x15) clear it, and a rocket sends itself 4. The crewed-vehicle sender is not traced. Boarding and leaving is the reading, and it is unproven |

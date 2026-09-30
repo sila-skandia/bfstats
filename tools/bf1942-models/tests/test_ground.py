@@ -61,6 +61,11 @@ MODULES = {
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
     "ship-spec.js": VIEWER / "ship-spec.js",
+    # `aircraft.js`'s engine law for an airframe with engines off its nose.
+    "vectored-engines.js": VIEWER / "vectored-engines.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
+    "body-friction.js": VIEWER / "body-friction.js",
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
