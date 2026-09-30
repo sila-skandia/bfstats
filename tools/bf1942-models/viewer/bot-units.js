@@ -286,12 +286,12 @@ export function createBotUnits(env) {
    * `BBFireArtilleryDriver::calculateUrgency` 0x0856a650 and `BBPFire2dDriver::
    * createPlan` 0x08596fa0 both take the root's first secondary object
    * (`getFirstSecondaryObject`, IAIObject vt+0x80, then vt+0x58 for the
-   * bot's side) and score, aim and range from it (ledger SPOT-15). Here that
+   * bot's side) and score, aim and range from it (ledger SPOT-16). Here that
    * is the first seat the template marks `secondary`, in the order the
    * extractor kept (`Objects.con`'s; INFERRED: the vanilla and expansion
-   * hulls have one). Its AI weapons, strength table, ControlInfo (the camera
-   * window `validateCameraDirectionPitch` / `Yaw` read), the rig's traverse
-   * and its Armament's anti-aircraft word.
+   * hulls have one). Its AI weapons (the table is theirs), ControlInfo (the
+   * camera window `validateCameraDirectionPitch` / `Yaw` read), the rig's
+   * traverse and its Armament's anti-aircraft word.
    */
   function artilleryGunSeat(node, ai) {
     if (ai?.equipmentType !== 14) return null;
@@ -299,9 +299,7 @@ export function createBotUnits(env) {
     if (!entry) return null;
     const [seatId, s] = entry;
     const weapons = Object.entries(s.aiWeapons ?? {}).map(([name, w]) => ({ ...w, name }));
-    const table = {};
-    for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) table[k] = Math.max(table[k] ?? 0, v ?? 0);
-    return { seatId, weapons, table, controlInfo: s.controlInfo ?? null, yawLimits: units.seatYawLimits(node, seatId),
+    return { seatId, weapons, controlInfo: s.controlInfo ?? null, yawLimits: units.seatYawLimits(node, seatId),
              antiAircraft: !!s.isAntiAircraft };
   }
 

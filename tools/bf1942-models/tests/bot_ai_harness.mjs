@@ -25,7 +25,10 @@ import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js
 import * as THREE from 'three';
 import { TurretRig } from './turret-rig.js';
 import * as aiming from './bot-aim.js';
-import { approachAimValid, backOffGoal } from './bot-plans.js';
+import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from './bot-plans.js';
+import { fireMode, isArtilleryDriver } from './bot-perception.js';
+import { tankTurnTowards } from './bot-vehicle.js';
+import { curveOf } from './bot-decision.js';
 import { doorApproach, fixedAimable } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
@@ -1294,6 +1297,23 @@ results.briefL = {
   aaCrossWithCorrection: aaCorrectionRun(true, { start: [-400, 90, 150], vel: [55, 0, 0], seconds: 16 }),
   aaCrossWithout: aaCorrectionRun(false, { start: [-400, 90, 150], vel: [55, 0, 0], seconds: 16 }),
   senseReset: senseResetScenario(),
+};
+
+// A self-propelled gun's driver (ledger SPOT-16): the unit row, the urge
+// curve, the hull-turn law and the back-off point.
+results.artilleryDriver = {
+  modes: [fireMode({ equipmentType: 14, drives: true }), fireMode({ equipmentType: 13 }), fireMode({ equipmentType: 0 })],
+  drivers: [isArtilleryDriver({ equipmentType: 14, drives: true }), isArtilleryDriver({ equipmentType: 14, drives: false }),
+            isArtilleryDriver({ equipmentType: 0, drives: true })],
+  curves: [curveOf({ vehicle: { equipmentType: 14, drives: true } }, 'Fire')(10),
+           curveOf({ vehicle: { equipmentType: 0, drives: true } }, 'Fire')(10)],
+  turn: [
+    tankTurnTowards({ angle: 0.5, speed: 0, tolerance: ARTILLERY_DRIVER.turnTolerance }),
+    tankTurnTowards({ angle: 0.5, speed: 0.1, tolerance: ARTILLERY_DRIVER.turnTolerance }),
+    tankTurnTowards({ angle: -2.0, speed: 0.9, tolerance: ARTILLERY_DRIVER.turnTolerance }),
+    tankTurnTowards({ angle: -0.05, speed: 0, tolerance: ARTILLERY_DRIVER.turnTolerance }),
+  ],
+  back: backOffPoint({ position: [3, 7, 4], _nav: () => null }, [0, 0, 0], 25),
 };
 
 process.stdout.write(JSON.stringify(results));

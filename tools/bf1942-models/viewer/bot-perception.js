@@ -298,7 +298,7 @@ export function chooseVehicleTarget(bot, now) {
   // `BBFireUnarmed::calculateUrgency` 0x0856eb90, whose only `ret`
   // (0x0856ec35) follows `fldz`: its threat score goes to
   // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`; not
-  // modelled) and the Fire urgency is 0 (ledger SPOT-15).
+  // modelled) and the Fire urgency is 0 (ledger SPOT-16).
   const gun = isArtilleryDriver(m) ? m.gunSeat : null;
   if (isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) {
     return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };

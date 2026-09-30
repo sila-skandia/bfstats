@@ -205,6 +205,60 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreater(r["rounds"]["axis"] + r["rounds"]["allied"], 0)
         self.assertIsNotNone(r["firstRound"])
 
+    def test_a_self_propelled_guns_driver_turns_the_hull_for_its_gunner(self) -> None:
+        # Ledger SPOT-16: AI type 14 (`ArtilleryDriver`) runs
+        # `BBFireArtilleryDriver` 0x0856a650, the large-bore urgency scored
+        # from the held gun seat, and `BBPFire2dDriver` 0x08596fa0, which only
+        # moves and turns the hull. El Alamein's Priest, a soldier 150 m out
+        # 32 deg off the nose, past the gun's +-25 deg. Before, the hull seat
+        # scored nothing with no weapons of its own: MoveTo for the whole
+        # minute and the hull never turned (32 deg at the end).
+        r = recipe("artilleryCrew")
+        self.assertEqual(r["gunSeat"], "Priest_Gunner_PCO1")
+        self.assertGreaterEqual(r["behs"]["driver"].get("Fire", 0), 50, r)
+        self.assertGreaterEqual(r["driverTarget"], 50)
+        self.assertGreater(r["steps"].get("turn", 0), 0, r["steps"])
+        self.assertGreater(r["steps"].get("hold", 0), 0, r["steps"])
+        # Turned until the gun's yaw was valid, and no further (the hold
+        # takes over at the traverse's edge), in place.
+        self.assertLess(r["offEnd"], 25.0)
+        self.assertGreater(r["offEnd"], 15.0)
+        self.assertLess(r["moved"], 3.0)
+        self.assertEqual(r["rounds"]["driver"], 0, "the plan has no trigger")
+
+    def test_a_self_propelled_guns_driver_with_the_gun_empty_has_no_fire(self) -> None:
+        # The same hull with nobody on the gun: `BBFireUnarmed::
+        # calculateUrgency` 0x0856eb90 returns 0 (its one `ret` follows
+        # `fldz`), so the driver's Fire never runs and the hull stays put.
+        r = recipe("artilleryCrewEmptyGun")
+        self.assertNotIn("Fire", r["behs"]["driver"])
+        self.assertEqual(r["driverTarget"], 0)
+        self.assertLess(abs(r["minOff"] - r["off0"]), 0.5)
+        self.assertEqual(r["rounds"]["driver"], 0)
+
+    def test_the_flakpanzer_driver_never_fights_with_his_coax(self) -> None:
+        # XPack2's Flakpanzer: the type-14 driver seat reaches the coaxial MG.
+        # Before, it scored targets with it and ran a tank's fire approach
+        # (Fire the whole run, the hull driven 9 m and turned 23 deg off the
+        # soldier); the engine's driver Fire is the gun seat's or nothing.
+        if not (ASSETS / "maps" / "mods" / "xpack2" / "telemark" / "scene.glb").exists():
+            self.skipTest("no XPack2 Telemark bake")
+        alone = recipe("flakpanzerDriver")
+        self.assertEqual(alone["gunSeat"], "FlakPanzerPCO1")
+        self.assertNotIn("Fire", alone["behs"]["driver"])
+        self.assertEqual(alone["driverTarget"], 0)
+        self.assertLess(alone["moved"], 1.0)
+        self.assertEqual(alone["rounds"]["driver"], 0)
+        # With the gun manned the driver's Fire holds the hull (the gun's
+        # traverse is unlimited, so its yaw is always valid) and the gunner
+        # does the shooting.
+        crewed = recipe("flakpanzerCrew")
+        self.assertGreaterEqual(crewed["steps"].get("hold", 0), 20, crewed["steps"])
+        self.assertLess(crewed["moved"], 5.0)
+        self.assertEqual(crewed["rounds"]["driver"], 0)
+        self.assertGreater(crewed["rounds"]["gunner"], 0)
+        self.assertTrue(crewed["killed"])
+
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
         self.assertTrue(r["parked"], "a parked body")

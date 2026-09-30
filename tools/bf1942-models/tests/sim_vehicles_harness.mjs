@@ -554,7 +554,7 @@ const recipes = {
 
   async tankApproachControl() { return recipes.tankApproach(true); },
 
-  /** A self-propelled gun's crew (ledger SPOT-14, SPOT-15). A driver in the
+  /** A self-propelled gun's crew (ledger SPOT-14, SPOT-16). A driver in the
    *  hull (AI type 14, `ArtilleryDriver`) and, with `gunner`, a second bot of
    *  his side on the gun (the hull's first secondary seat), their orders held
    *  on the hull's pad; the hull moved `ahead` metres along its nose first

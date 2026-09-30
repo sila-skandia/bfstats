@@ -12426,13 +12426,67 @@
    "note": "lnxded. fld [this+0x1b8]; Bot vtable +0x84. The 'when did I acquire this target' stamp in the deviation formula."
   },
   {
+   "address": "0x0852e320",
+   "name": "BotMain::addToFireInclination(float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. BotMain vt+0x164: +0x1ac += x; every Fire behaviour calls it with its urgency; getFireInclination (vt+0x16c, +0x1a4 after stepFireInclination) is read by BBChange / BBChangeLandingCraft / BBChangeTeleport. Not modelled in the viewer."
+  },
+  {
+   "address": "0x08553060",
+   "name": "BAPConObjectValidPitchAiming::evaluate(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: internalAiming (the wrapper variables when given) valid, then the unit (+0xc, else the bot) ControlInfo validateCameraDirectionPitch."
+  },
+  {
+   "address": "0x08553730",
+   "name": "BAPConObjectValidYawAiming::evaluate(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: as ValidPitchAiming, with validateCameraDirectionYaw."
+  },
+  {
+   "address": "0x08559770",
+   "name": "BAPWrapperAiming::execute(Bot*, bool&, bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: the aim of another unit (+0x9c, the gun seat) at the target (+0xa0): its current weapon, Aimer::getFiringDirection (precision 0.5, the weapon indirect byte) into the Vec3 / bool variables the ValidAiming conditions read."
+  },
+  {
    "address": "0x0856a650",
    "name": "BBFireArtilleryDriver::calculateUrgency(Bot*, bool, float)",
    "kind": "function",
    "subsystem": "ai",
    "confidence": "verified",
-   "source": "research-2026-09-30-artillery-spotting",
-   "note": "lnxded. SPOT-14 (one reader): gun seat occupied -> its large-bore urgency, else BBFireUnarmed."
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: the hull's first secondary object (vt+0x80, vt+0x58 side) is the gun seat; isOccupied (0x0856a735) -> BBFireLargeBore 5-arg urgency with the gun seat Information and the hull Mobile (0x0856a768), else (+0x28)->vt+0x28 BBFireUnarmed, which returns 0; either result is stored at +0x14[bot], the urgency getUrgency reads."
+  },
+  {
+   "address": "0x0856eb90",
+   "name": "BBFireUnarmed::calculateUrgency(Bot*, bool, float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: returns 0 on every path (one ret, 0x0856ec35, after fldz); its score (spotted enemies within 250 m, Declein(2 best) x radio) goes to +0x28[bot] and BotMain::addToFireInclination (vt+0x164), not to +0x14."
+  },
+  {
+   "address": "0x08596fa0",
+   "name": "BBPFire2dDriver::createPlan(Bot*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: the type-14 driver plan: sight (memory seen / hasIndirectLineOfFire / none), too close d < min+0.5, back off on a 2 min+5 circle, close in (MoveToObjectFinding min(0.95 max, 0.75 d)), else isTurnable ? If(ValidYaw, hold, TurnTowardsObject 5 deg) : hold, wrapped in BAPIWFire. No trigger, no look."
   },
   {
    "address": "0x085d63b0",
@@ -12451,6 +12505,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. PlayerAction::set + ActionBuffer::pushBack; BFPlayer+0x144 holds a POINTER to the buffer, not the buffer inline. This is why a bot is indistinguishable from a networked human below the input layer. Ledger AI-1."
+  },
+  {
+   "address": "0x085e3520",
+   "name": "BFEnvironment::hasIndirectLineOfFire(Weapon*, Vec3 const&, Vec3 const&, vector<IAIObject*> const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. IAIEnvironment vt+0x58. SPOT-16: the weapon lead with indirect forced on, the arc top (Aimer::getVerticalExtreme), true when neither leg (muzzle-top, top-target) hits in collideLineWithWorld."
   },
   {
    "address": "0x085ee580",
@@ -12480,6 +12543,15 @@
    "note": "lnxded. Five int32 header validated against CellMap+0x18/0x20/0x10/0x2c/0x24 (ctor 0x085f7af0), then a special-cell count and (1<<(p6-p5))<<(p7-p5) row records. Row encoding UNREAD. Ledger AI-13."
   },
   {
+   "address": "0x08624ff0",
+   "name": "EntryTankTurnTo::execute(BotScript*, Bot*, bool&, bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: signed angle hull -> direction; inside the action tolerance resetControls(1,0,0), else TankControl::turnTowardsDirection(angle, tol, forward)."
+  },
+  {
    "address": "0x086257d0",
    "name": "dice::bf::ai::EntryTrigger::execute(BotScript*,Bot*,bool&,bool&)",
    "kind": "function",
@@ -12489,6 +12561,15 @@
    "note": "lnxded. The plan instruction that pulls the trigger; calls Weapon::setBotSkill through vtable +0x84 at 0x08625dc9 (args read off the pushes at 0x08625daf-0x08625dc9). The C term is an ANTI-AIRCRAFT penalty on the shooter: getCurrentEquipment (Bot vptr +0xd0) at 0x08625cf0 and getFiringTarget (+0x80) at 0x08625dd7, branches 0x08625d81/0x08625e18/0x08625e5c/0x08625e64. TriggerContinously twin 0x08625ff0. Ledger AI-16, AI-18."
   },
   {
+   "address": "0x0862d630",
+   "name": "TankControl::turnTowardsDirection(float, float, bool, Information*, IPIMobile*, IPIControlInfo*, PlayerInput*, bool*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: steer channel (ControlInfo +0x54) -sign(angle) x fwd; throttle (+0x50) 1.0 while |v_xz| <= min(1, 0.3 a^2) (fucompp 0x0862d94c), else 0.4 (tweaks 0x08762ca4 / 0x08762c9c / 0x08762ca0)."
+  },
+  {
    "address": "0x08634850",
    "name": "SAI::distributeArtillery()",
    "kind": "function",
@@ -12496,6 +12577,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). SPOT-14."
+  },
+  {
+   "address": "0x086584a0",
+   "name": "TraceUtils::tracePointOnCircle(Vec2 const&, Vec2 const&, Vec2 const&, int, float, float, Pos2&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-30-artillery-driver",
+   "note": "lnxded. SPOT-16: point = centre + rot(dir, angle) x R; returns AIPathfinding::trace (vt+0x4c) from the third argument to it."
   },
   {
    "address": "0x086b01ac",
