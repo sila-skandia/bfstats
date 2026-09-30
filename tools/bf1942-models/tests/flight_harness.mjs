@@ -31,6 +31,9 @@ import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
 import { aimAtDirection } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
+import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
+import { currentRatio, currentTorque } from './engine-revs.js';
+import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -1250,7 +1253,443 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
     top40: top(40), top200: top(200),
     // A tree with no body physics is still a Corsair.
     fallback: new Aircraft(corsairNode(), null, { cockpit: false }).spec === CORSAIR,
+    // A fixed-wing airframe stays on the pedal-and-nose thrust path.
+    vectored: new Aircraft(spitfireNode(), null, { cockpit: false }).vectored,
+    vectoredEngines: new Aircraft(spitfireNode(), null, { cockpit: false }).vectoredEngines.length,
+    specVectored: !!spec.vectored, specInertiaLaw: spec.inertiaLaw ?? null,
+    engineOffNose: round(spec.engines[0].offNose, 3),
   };
+}
+
+
+// --- Desert Combat's AH-64: hover engines on input-driven racks -------------
+//
+// Refractor has no helicopter class. The AH-64 is `AH64/Objects.con` and
+// `Physics.con` in DesertCombat's OBJECTS.rfa: three `Engine`s placed
+// `setRotation 0/270/0` under three `RotationalBundle` racks that the stick
+// and pedals tilt +-20 degrees, a dummy engine on a +-2 degree rack that turns
+// the rotor, and a dummy tail engine. The tree below is that, as the extracted
+// glb carries it: glb positions (z mirrored), the engines' 0/270/0 as the
+// quaternion (-0.7071, 0, 0, -0.7071) that stands their thrust axis straight
+// up, each rack's and engine's `rig` extras as `con.py` emits them, and the
+// fuselage box (the union of the `AH64_Fus_M1` sub-meshes) and wheels the
+// inertia and ride height come from.
+const UPRIGHT = [-0.7071068, 0, 0, -0.7071068];
+const HOVER_PHYSICS = {
+  engineType: 'c_ETPlane', torque: 13.5, differential: 3.5, noPropellerEffectAtSpeed: 3000,
+  maxRotation: [5000, 5000, 5000], maxSpeed: [50, 50, 9500], acceleration: [50, 50, 15000],
+};
+const HOVER_THROTTLE = {
+  input: 'c_PIThrottle', min: 1500, max: 5000, free: false, driver: 'rate', maxSpeed: 9500, direction: 1, acceleration: 15000,
+};
+
+function ah64Node() {
+  const root = new THREE.Object3D();
+  root.name = 'AH64';
+  root.userData = { control: 'AH64', templateKind: 'PlayerControlObject',
+                    physics: { mass: 2500, drag: 0.8, inertiaModifier: [0.4, 0.4, 0.4] } };
+  const lod = new THREE.Object3D();
+  lod.userData = { templateKind: 'LodObject' };
+  const complex = new THREE.Object3D();
+  complex.name = 'AH64Complex';
+  complex.userData = { templateKind: 'Bundle' };
+  root.add(lod); lod.add(complex);
+  const cockpitLod = new THREE.Object3D();
+  cockpitLod.userData = { templateKind: 'LodObject' };
+  const fuselage = new THREE.Mesh(new THREE.BoxGeometry(5.054, 4.187, 14.447).translate(0, 0.4465, -0.0395));
+  fuselage.name = 'AH64CockpitExternal';
+  fuselage.userData = { templateKind: 'Bundle' };
+  complex.add(cockpitLod); cockpitLod.add(fuselage);
+  for (const [name, x, y, z] of [['AH64WheelLeftSpring', -0.961, -1.63, -3.763],
+                                  ['AH64WheelRightSpring', 0.961, -1.63, -3.763],
+                                  ['AH64WheelBackSpring', 0, -0.961, 6.986]]) {
+    const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.106, 0.378, 0.396));
+    wheel.name = name;
+    wheel.position.set(x, y, z);
+    wheel.userData = { templateKind: 'Spring' };
+    complex.add(wheel);
+  }
+  const rack = (name, position, axes) => {
+    const node = new THREE.Object3D();
+    node.name = name;
+    node.position.set(...position);
+    node.userData = { templateKind: 'RotationalBundle', rig: { control: 'AH64', automaticReset: true, axes } };
+    complex.add(node);
+    return node;
+  };
+  const tilt = (input, limit, direction) => ({ input, min: -limit, max: limit, free: false, driver: 'position',
+                                               maxSpeed: 150 * direction, direction, acceleration: 150 });
+  const engine = (parent, name, physics, roll, automaticReset = true, quaternion = UPRIGHT) => {
+    const node = new THREE.Object3D();
+    node.name = name;
+    if (quaternion) node.quaternion.set(...quaternion);
+    node.userData = { templateKind: 'Engine', control: 'AH64', physics,
+                      rig: { control: 'AH64', automaticReset, axes: { roll } } };
+    parent.add(node);
+    return node;
+  };
+  engine(rack('AH64DummyEngineRack', [0, 1.4, -2.2], { pitch: tilt('c_PIPitch', 2, 1), roll: tilt('c_PIRoll', 2, -1) }),
+         'AH64DummyEngine',
+         { engineType: 'c_ETPlane', torque: 0.1, differential: 0.1, noPropellerEffectAtSpeed: 50,
+           maxRotation: [0, 0, 1000], maxSpeed: [0, 0, 9500], acceleration: [0, 0, 15000] },
+         { input: 'c_PIThrottle', min: 50, max: 1000, free: false, driver: 'rate', maxSpeed: 9500, direction: 1, acceleration: 15000 });
+  const tail = new THREE.Object3D();
+  tail.name = 'AH64DummyRearEngineRack';
+  tail.position.set(0, 1.884, 6.116);
+  tail.userData = { templateKind: 'Bundle' };
+  complex.add(tail);
+  engine(tail, 'AH64DummyRearEngine',
+         { engineType: 'c_ETPlane', torque: 0.1, differential: 0.1, noPropellerEffectAtSpeed: 100,
+           maxRotation: [0, 0, 500], maxSpeed: [0, 0, 1], acceleration: [0, 0, 100] },
+         { input: 'c_PIThrottle', min: 50, max: 500, free: false, driver: 'rate', maxSpeed: 1, direction: 1, acceleration: 100 },
+         false, null);
+  // Front and rear racks take the PEDALS on their roll axis, in opposite
+  // senses: that is the yaw couple. The middle one takes the stick's roll.
+  engine(rack('AH64EngineRack1', [0, 2, -2.5], { pitch: tilt('c_PIPitch', 20, 1), roll: tilt('c_PIYaw', 20, -1) }),
+         'AH64HoverEngine1', HOVER_PHYSICS, HOVER_THROTTLE);
+  engine(rack('AH64EngineRack2', [0, 2, 2.5], { pitch: tilt('c_PIPitch', 20, 1), roll: tilt('c_PIYaw', 20, 1) }),
+         'AH64HoverEngine2', HOVER_PHYSICS, HOVER_THROTTLE);
+  engine(rack('AH64EngineRack3', [0, 2, 0], { pitch: tilt('c_PIPitch', 20, 1), roll: tilt('c_PIRoll', 20, -1) }),
+         'AH64HoverEngine3', HOVER_PHYSICS, HOVER_THROTTLE);
+  return root;
+}
+
+/** An AH-64 on flat ground at 0 (or in the air), collective set. */
+function ah64({ altitude = null, collective = 0 } = {}) {
+  const heli = new Aircraft(ah64Node(), null, { cockpit: false });
+  heli.groundHeight = () => 0;
+  heli.state.position.set(0, altitude ?? heli.spec.groundClearance, 0);
+  heli.setInput('c_PIThrottle', collective);
+  return heli;
+}
+const hoverEngine = heli => heli.vectoredEngines.find(e => e.id === 'AH64HoverEngine3');
+/** Body angular rates, rad/s: x pitch (nose-up +), y yaw (nose-left +), z roll. */
+const bodyRates = plane => plane.state.angularVelocity.clone()
+  .applyQuaternion(plane.state.orientation.clone().invert());
+const vec = v => [round(v.x), round(v.y), round(v.z)];
+
+{
+  const spec = aircraftSpec(ah64Node());
+  const hover = spec.engines.find(e => e.id === 'AH64HoverEngine3');
+  const helicopter = {
+    spec: {
+      vectored: !!spec.vectored, inertiaLaw: spec.inertiaLaw ?? null, liftEngineAngle: LIFT_ENGINE_ANGLE,
+      engines: spec.engines.length, groundClearance: round(spec.groundClearance), size: spec.size.map(v => round(v)),
+      offNose: Object.fromEntries(spec.engines.map(e => [e.id, round(e.offNose, 2)])),
+      chain: hover.chain.map(c => ({ id: c.id, axes: Object.keys(c.axes), roll: c.axes.roll.input })),
+      throttle: { input: hover.throttle.input, min: hover.throttle.min, max: hover.throttle.max,
+                  automaticReset: hover.throttle.automaticReset, acceleration: hover.throttle.acceleration },
+      maxRotationZ: hover.maxRotationZ,
+    },
+  };
+
+  // The thrust axis, as the rack stands: straight up at rest, tilted by the
+  // rack's own servo once the stick moves it.
+  {
+    const heli = ah64();
+    const engine = hoverEngine(heli);
+    const dir = new THREE.Vector3(), arm = new THREE.Vector3();
+    const at = inputs => {
+      engine.reset();
+      engine.stepBundles(1, name => inputs[name] ?? 0);
+      engine.pose(heli.state.orientation, dir, arm);
+      return { dir: vec(dir), arm: vec(arm) };
+    };
+    helicopter.axis = { rest: at({}), pitch: at({ c_PIPitch: 1 }), roll: at({ c_PIRoll: 1 }),
+                        yawFront: (() => { const e = heli.vectoredEngines.find(x => x.id === 'AH64HoverEngine1');
+                          e.stepBundles(1, n => (n === 'c_PIYaw' ? 1 : 0)); e.pose(heli.state.orientation, dir, arm); return vec(dir); })(),
+                        yawRear: (() => { const e = heli.vectoredEngines.find(x => x.id === 'AH64HoverEngine2');
+                          e.stepBundles(1, n => (n === 'c_PIYaw' ? 1 : 0)); e.pose(heli.state.orientation, dir, arm); return vec(dir); })() };
+  }
+
+  // The idle floor: collective down (or reversed) the throttle angle clips at
+  // setMinRotation's 1500 of 5000, and the revs settle on it.
+  {
+    const heli = ah64({ collective: 0 });
+    const engine = hoverEngine(heli);
+    fly(heli, 6);
+    const idle = { t1: round(engine.t1, 4), revs: round(engine.revs, 4), y: round(heli.state.position.y),
+                   grounded: heli.state.grounded };
+    heli.setInput('c_PIThrottle', -1);
+    fly(heli, 1);
+    idle.t1Reversed = round(engine.t1, 4);
+    heli.setInput('c_PIThrottle', 1);
+    fly(heli, 6 * DT);
+    idle.t1After6Ticks = round(engine.t1, 4);
+    fly(heli, 0.5);
+    idle.t1Full = round(engine.t1, 4);
+    helicopter.idle = idle;
+  }
+
+  // The gearbox's own fixed point, re-derived here from engine-revs.js:
+  // `revs = 2*(T1 - L)`, `L` the per-tick mean of `0.99*K*ratio/
+  // getCurrentTorque()` over the frame's four evaluations, `K = 0.1*revs +
+  // e*|e|`, `e = revs - rho*(v.fwd)/3000` (`speedTerm`). Found by bisection:
+  // the map's slope is steep enough near full power that plain iteration
+  // oscillates.
+  const fixedPoint = (t1, speedTerm = 0) => {
+    const ratio = currentRatio(3.5);
+    const residual = r => {
+      const e = r - speedTerm;
+      const l0 = (0.1 * Math.abs(r) + e * Math.abs(e)) * ratio / currentTorque(13.5, r);
+      let load = 0;
+      for (let n = 0; n < 4; n++) load = 0.99 * (load * n + l0) / (n + 1);
+      return r - Math.max(-1, Math.min(1.2, 2 * (t1 - load)));
+    };
+    let lo = 0, hi = 1.2;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (residual(mid) > 0) hi = mid; else lo = mid;
+    }
+    return (lo + hi) / 2;
+  };
+  {
+    const measured = collective => {
+      const heli = ah64({ collective });
+      fly(heli, 12);
+      return round(hoverEngine(heli).revs, 4);
+    };
+    helicopter.gearbox = { idleExpected: round(fixedPoint(0.3), 4), idle: measured(0) };
+  }
+
+  // Collective up: it lifts off and climbs. Down again: it comes back to the
+  // idle floor and sinks, and lands.
+  {
+    const heli = ah64({ collective: 1 });
+    const engine = hoverEngine(heli);
+    fly(heli, 6);
+    const climb = { y: round(heli.state.position.y), vy: round(heli.state.velocity.y), revs: round(engine.revs, 4) };
+    // The same fixed point at full collective, climbing: the speed term is the
+    // climb rate along the (near-vertical) thrust axis, rho at the engine.
+    const dir = new THREE.Vector3(), arm = new THREE.Vector3();
+    engine.pose(heli.state.orientation, dir, arm);
+    const rho = 1 - Math.min(1, (heli.state.position.y + arm.y) / 1000);
+    helicopter.gearbox.fullExpected = round(fixedPoint(1, rho * heli.state.velocity.dot(dir) / 3000), 4);
+    heli.setInput('c_PIThrottle', 0);
+    fly(heli, 8);
+    climb.releasedVy = round(heli.state.velocity.y);
+    climb.releasedRevs = round(engine.revs, 4);
+    climb.releasedT1 = round(engine.t1, 4);
+    fly(heli, 30);
+    climb.landedY = round(heli.state.position.y);
+    climb.landed = heli.state.grounded;
+    helicopter.climb = climb;
+    helicopter.gearbox.full = climb.revs;
+  }
+
+  // The collective that holds altitude, by bisection on the settled vertical
+  // speed at 100 m, with a pilot holding the attitude level on the cyclic.
+  // The AH-64 does not hold it hands-off: its rotor-turning dummy engine sits
+  // 2.2 m forward of the others and pushes up, a slow nose-up moment the data
+  // carries and the pilot has to fly against.
+  {
+    const levelling = collective => heli => {
+      const attitude = new THREE.Euler().setFromQuaternion(heli.state.orientation, 'YXZ');
+      const w = bodyRates(heli);
+      const stick = v => Math.max(-1, Math.min(1, v));
+      heli.setInput('c_PIThrottle', collective);
+      heli.setInput('c_PIPitch', stick(0.05 * attitude.x * DEG + 0.2 * w.x * DEG));
+      heli.setInput('c_PIRoll', stick(0.05 * attitude.z * DEG + 0.2 * w.z * DEG));
+    };
+    const settle = collective => {
+      const heli = ah64({ altitude: 100, collective });
+      fly(heli, 20, levelling(collective));
+      return heli;
+    };
+    let lo = 0.3, hi = 1;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (settle(mid).state.velocity.y > 0) hi = mid; else lo = mid;
+    }
+    const collective = (lo + hi) / 2;
+    const heli = settle(collective);
+    const attitude = new THREE.Euler().setFromQuaternion(heli.state.orientation, 'YXZ');
+    helicopter.hover = { collective: round(collective, 4), vy: round(heli.state.velocity.y),
+                         y: round(heli.state.position.y), revs: round(hoverEngine(heli).revs, 4),
+                         t1: round(hoverEngine(heli).t1, 4), nose: round(attitude.x * DEG, 2),
+                         bank: round(attitude.z * DEG, 2) };
+
+    // Cyclic forward from that hover: nose down, and it flies forward.
+    const cyclic = settle(collective);
+    cyclic.setInput('c_PIRoll', 0);
+    cyclic.setInput('c_PIPitch', 0.5);
+    fly(cyclic, 0.5);
+    const pushRate = bodyRates(cyclic).x;
+    cyclic.setInput('c_PIPitch', 0);
+    fly(cyclic, 2.5);
+    helicopter.cyclic = { pitchRate: round(pushRate, 4), nose: round(noseDeg(cyclic), 2),
+                          forward: round(alongOf(cyclic)), vx: round(cyclic.state.velocity.x),
+                          vz: round(cyclic.state.velocity.z) };
+
+    // Roll and pedals from the same hover, against the Corsair's own answer
+    // to the same stick: the sign convention is the data's, so they agree.
+    const rate = (make, input) => {
+      const plane = make();
+      fly(plane, 0.5);
+      plane.setInput(input, 1);
+      fly(plane, 0.5);
+      return bodyRates(plane);
+    };
+    const heliAt = () => ah64({ altitude: 100, collective });
+    const plane = () => aircraft({ speed: 60, altitude: 300 });
+    const heliRoll = rate(heliAt, 'c_PIRoll'), planeRoll = rate(plane, 'c_PIRoll');
+    const heliYaw = rate(heliAt, 'c_PIYaw'), planeYaw = rate(plane, 'c_PIYaw');
+    const heliPitch = rate(heliAt, 'c_PIPitch'), planePitch = rate(plane, 'c_PIPitch');
+    helicopter.signs = {
+      roll: [round(heliRoll.z, 4), round(planeRoll.z, 4)],
+      yaw: [round(heliYaw.y, 4), round(planeYaw.y, 4)],
+      pitch: [round(heliPitch.x, 4), round(planePitch.x, 4)],
+    };
+  }
+
+  // The engine switched off (`Engine+0x142` clear): no input, revs held at
+  // zero, and it drops. Under water the same, by the aircraft's water rule.
+  {
+    const heli = ah64({ altitude: 100, collective: 1 });
+    fly(heli, 2);
+    heli.engineRunning = false;
+    fly(heli, 2);
+    const off = { revs: hoverEngine(heli).revs, vy: round(heli.state.velocity.y) };
+    const wet = ah64({ altitude: 30, collective: 1 });
+    wet.groundHeight = () => -1000;
+    wet.waterHeight = 50;
+    fly(wet, 1);
+    helicopter.engineOff = off;
+    helicopter.underWater = { revs: Math.max(...wet.vectoredEngines.map(e => Math.abs(e.revs))),
+                              vy: round(wet.state.velocity.y) };
+  }
+
+  // A seat left with the stick over leaves the rack node posed; the next
+  // Aircraft on the same hull must still read the rack's authored rest.
+  {
+    const node = ah64Node();
+    const first = new Aircraft(node, null, { cockpit: false });
+    node.getObjectByName('AH64EngineRack3').quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -20 * Math.PI / 180);
+    const second = new Aircraft(node, null, { cockpit: false });
+    const dir = new THREE.Vector3(), arm = new THREE.Vector3();
+    const up = heli => vec(hoverEngine(heli).pose(new THREE.Quaternion(), dir, arm));
+    helicopter.reentry = { first: up(first), second: up(second),
+                           offNose: round(second.spec.engines.find(e => e.id === 'AH64HoverEngine3').offNose, 3) };
+  }
+
+  // reset() parks it with every engine back at rest.
+  {
+    const heli = ah64({ collective: 1 });
+    fly(heli, 3);
+    heli.reset();
+    helicopter.reset = heli.vectoredEngines.every(e => e.revs === 0 && e.roll.angle === 0
+      && e.chain.every(c => c.axes.every(a => a.reg.angle === 0)));
+  }
+
+  results.helicopter = helicopter;
+}
+
+// --- `calculateAndClipAngle`'s two laws, on their own -----------------------
+{
+  const tick = (axis, reg, input, seconds, dt = 1 / 30) => {
+    for (let t = 0; t < seconds - 1e-9; t += dt) clipAngleStep(reg, axis, input, dt);
+    return round(reg.angle, 3);
+  };
+  // An AH-64 hover engine's throttle: automaticReset, 1500..5000 at 15000 deg/s.
+  const throttle = { min: 1500, max: 5000, free: false, maxSpeed: 9500, direction: 1, acceleration: 15000, automaticReset: true };
+  const t = { angle: 0, speed: 0 };
+  const floor = tick(throttle, t, 0, 1 / 30);
+  const up = tick(throttle, t, 1, 0.1);
+  const reversed = tick(throttle, t, -1, 1);
+  // The Flettner's hover engine: NO automaticReset, 40..100, maxSpeed 100 at
+  // 750 deg/s^2 — the servo law, so the collective stays where it was left.
+  const latch = { min: 40, max: 100, free: false, maxSpeed: 100, direction: 1, acceleration: 750, automaticReset: false };
+  const f = { angle: 0, speed: 0 };
+  const latchFloor = tick(latch, f, 0, 1 / 30);
+  const latchRaised = tick(latch, f, 1, 0.3);
+  const latchHeld = tick(latch, f, 0, 1);
+  const latchLowered = tick(latch, f, -1, 2);
+  // A negative maxSpeed with a negative acceleration: the servo law turns the
+  // same way as 150/150, the automaticReset law the other way.
+  const signed = { min: -20, max: 20, free: false, maxSpeed: -150, direction: -1, acceleration: 150 };
+  const servoSigned = tick({ ...signed, automaticReset: false }, { angle: 0, speed: 0 }, 1, 0.2);
+  const resetSigned = tick({ ...signed, automaticReset: true }, { angle: 0, speed: 0 }, 1, 0.2);
+  // Both bounds zero: a single +-360 wrap.
+  const wrapped = tick({ min: 0, max: 0, free: true, maxSpeed: 100, direction: 1, acceleration: 1e9, automaticReset: false },
+                       { angle: 170, speed: 100 }, 1, 0.2, 0.2);
+  // No acceleration and no continuous rotation: the engine returns untouched.
+  const frozen = tick({ min: -20, max: 20, free: false, maxSpeed: 150, direction: 1, acceleration: 0, automaticReset: true },
+                      { angle: 7, speed: 0 }, 1, 1);
+  results.clipAngle = { floor, up, reversed, latchFloor, latchRaised, latchHeld, latchLowered,
+                        servoSigned, resetSigned, wrapped, frozen };
+}
+
+// --- the extracted glbs, when this PC has them --------------------------------
+//
+// Optional: the model tree is not in the repository. When it is there, the
+// real Desert Combat helicopters are built from their own glbs and flown, and
+// two fixed-wing aircraft are checked to stay off the engine law.
+{
+  const base = process.env.BF42_VIEWER_MODELS;
+  const glb = path => {
+    const data = readFileSync(path);
+    let offset = 12, json = null, bin = null;
+    while (offset + 8 <= data.length) {
+      const length = data.readUInt32LE(offset), type = data.readUInt32LE(offset + 4);
+      offset += 8;
+      if (type === 0x4e4f534a) json = JSON.parse(data.toString('utf8', offset, offset + length));
+      else if (type === 0x4e4942) bin = data.subarray(offset, offset + length);
+      offset += length;
+    }
+    // No images under node: the textures are dropped, the geometry kept.
+    delete json.images; delete json.textures; delete json.samplers;
+    for (const material of json.materials || []) {
+      const pbr = material.pbrMetallicRoughness || {};
+      delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture;
+      delete material.normalTexture; delete material.occlusionTexture; delete material.emissiveTexture;
+      delete material.extensions;
+    }
+    for (const key of ['extensionsUsed', 'extensionsRequired']) {
+      if (json[key]) json[key] = json[key].filter(name => !/texture/i.test(name));
+    }
+    const pad = (bytes, fill) => Buffer.concat([bytes, Buffer.alloc((4 - bytes.length % 4) % 4, fill)]);
+    const chunk = (bytes, type) => {
+      const header = Buffer.alloc(8);
+      header.writeUInt32LE(bytes.length, 0); header.writeUInt32LE(type, 4);
+      return [header, bytes];
+    };
+    const body = Buffer.concat([...chunk(pad(Buffer.from(JSON.stringify(json)), 0x20), 0x4e4f534a),
+                                ...(bin ? chunk(pad(Buffer.from(bin), 0), 0x4e4942) : [])]);
+    const head = Buffer.alloc(12);
+    head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + body.length, 8);
+    const out = Buffer.concat([head, body]);
+    return new Promise((resolve, reject) => new GLTFLoader().parse(
+      out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength), 'file:///', g => resolve(g.scene.children[0]), reject));
+  };
+  const helis = ['AH64', 'Mi24D', 'UH-60', 'Mi8', 'AH-6', 'SA-342G', 'MH-53'];
+  const planes = ['F-15C', 'A10', 'Mig29'];
+  const dc = name => `${base}/mods/desertcombat/${name}.glb`;
+  if (base && [...helis, ...planes].every(name => existsSync(dc(name)))) {
+    const real = { helicopters: {}, planes: {} };
+    for (const name of helis) {
+      const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, heli.spec.groundClearance, 0);
+      heli.setInput('c_PIThrottle', 0);
+      fly(heli, 3);
+      const idleY = heli.state.position.y - heli.spec.groundClearance;
+      heli.setInput('c_PIThrottle', 1);
+      fly(heli, 6);
+      const climbed = heli.state.position.y - heli.spec.groundClearance;
+      heli.setInput('c_PIThrottle', 0);
+      fly(heli, 8);
+      real.helicopters[name] = { vectored: heli.vectored, engines: heli.vectoredEngines.length,
+                                 idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y) };
+    }
+    for (const name of planes) {
+      const plane = new Aircraft(await glb(dc(name)), null, { cockpit: false });
+      real.planes[name] = { vectored: plane.vectored, inertiaLaw: plane.spec.inertiaLaw ?? null,
+                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)) };
+    }
+    results.realGlbs = real;
+  } else {
+    results.realGlbs = null;
+  }
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));
