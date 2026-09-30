@@ -22,7 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("kit_level_harness.mjs")
-MODULES = ("kit-loadout.js", "kit-icon.js", "kit-panels.js")
+MODULES = ("kit-loadout.js", "kit-icon.js", "kit-panels.js", "random-items.js",
+           "model-file.js")
 
 
 def run_harness() -> dict:

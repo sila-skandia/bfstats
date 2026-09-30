@@ -65,6 +65,8 @@ _MODULE_NAMES = [
     # world-soldier-tick.js and world-bodies.js bill barbed wire.
     "obstacle",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
+    # world-soldier-tick.js carries the weapon's recoil.
+    "recoil", "model-file",
     # Reached through seats.js: the salvo arithmetic and the HUD
     # weapon-slot order, and an aircraft torpedo's water run.
     "bomb-release", "torpedo-run",
