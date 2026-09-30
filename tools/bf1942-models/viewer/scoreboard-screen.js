@@ -14,7 +14,8 @@ import { boardRows, boardVars, paintLeaves, listFloor, listGeometry, rowColor }
  * `deployVars`, `drawBitmapText`, `extras`, `fullmapBox`, `hudPack`,
  * `hudPaths`, `LOCAL_PLAYER`, `loadouts`, `measureText`, `optOnFoot`,
  * `placeHit`, `roomClient`, `roomJoined`, `roomName`, `round`, `soldier`,
- * `soldierDead`, `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
+ * `soldierDead`, `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`, and
+ * `carriedKit`/`kitLoadout` (the local row's kit).
  */
 export function createScoreboardScreen(page) {
   const scoreboard = {};
@@ -70,13 +71,25 @@ export function createScoreboardScreen(page) {
   }
   loadScoreLayout();
 
+  /** The class glyph the local player's row draws: his kit's own `class`
+   *  (`_shared/loadouts.json`, the kit's `setType`), as a bot's row already
+   *  reads it. The deploy row's name is only the row he clicked: Desert
+   *  Combat files Heavy Assault in the third row, which vanilla calls
+   *  `medic`, and Special Ops in a sixth the class set has no name for. A
+   *  kit picked up off the ground is the one he carries. Falls back to the
+   *  row name where the file does not know the kit. */
+  function localKitClass(team) {
+    const kit = page.carriedKit ?? page.kitLoadout?.(team, page.deployKit)?.kit;
+    return (kit && page.loadouts?.kits?.[kit]?.class) || page.deployKit;
+  }
+
   /** Everyone the page really knows about: the local player, the bots this
    *  page spawned (`spawnBotsForLevel`), and in a room the roster the server
    *  sent. Nobody else is ever listed.
    *
    *  Each row's `kit` is what the first column's glyph is drawn from
-   *  (`scoreboard.js` `rowIcon`): the local player's is the spawn screen's
-   *  chosen row (`deployKit`, already a class key), a bot's is its kit
+   *  (`scoreboard.js` `rowIcon`): the local player's is his kit's own
+   *  `class` (`localKitClass`), a bot's is its kit
    *  template's `class` in `_shared/loadouts.json` (`botKitFor` picked the
    *  template). The room protocol carries no kit, so a remote player draws no
    *  glyph rather than a guessed one. `dead` is the skull: the local soldier's
@@ -84,6 +97,7 @@ export function createScoreboardScreen(page) {
    *  same reads the death cam and `botRespawnTick` make. */
   function scoreboardPlayers() {
     const inRoom = page.roomJoined && page.roomClient;
+    const team = inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId;
     const players = [{
       slot: inRoom ? page.roomClient.slot : null,
       // The round's own key for this player (`round-state.js`), which is what
@@ -91,9 +105,9 @@ export function createScoreboardScreen(page) {
       // the server's, so they carry no id.
       id: page.LOCAL_PLAYER,
       name: page.roomName,
-      team: inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId,
+      team,
       local: true,
-      kit: page.deployKit,
+      kit: localKitClass(team),
       dead: !page.soldier || !!page.soldierDead,
     }];
     for (const bot of page.bots) {
@@ -130,6 +144,11 @@ export function createScoreboardScreen(page) {
     // The board's own plates first; a bound picture (the two ticket flags) is
     // one of the HUD pack's sprites.
     texture: name => scoreLayout.textures.get(name) || page.sprite(name),
+    // A bound picture's live value the other way round: the HUD pack is the
+    // mod's own art (Desert Combat's `flag_ticket_ger` is Iraq's), while the
+    // board's copy of the same name is the layout's literal default, and in
+    // a pack built before the mod's own board existed, vanilla's German flag.
+    boundTexture: name => page.sprite(name) || scoreLayout.textures.get(name),
     measure: (fontId, text) => {
       const font = scoreLayout.fonts.get(fontId);
       return font ? page.measureText(font, text) : 0;

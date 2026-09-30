@@ -1053,6 +1053,11 @@ class ObjectTemplate:
     use_scope: bool | None = None
     sniper_sight: bool | None = None
     scope_icon: str | None = None
+    # `setSightIcon`, the picture drawn over the scope when `setSniperSight`
+    # is 0 (SCOPE-2 `SightIcon`, SCOPE-3): the binoculars' range ring, and
+    # Desert Combat's `scope_blank.tga` on every optic that draws its whole
+    # reticle in the scope picture.
+    sight_icon: str | None = None
     # Seconds of magnification lost after a shot — the sniper's 3 s of being
     # kicked out of the scope by his own bolt.
     unzoom_between_fire_time: float | None = None
@@ -1561,6 +1566,7 @@ class ObjectTemplate:
             "scope": self.use_scope,
             "sniperSight": self.sniper_sight,
             "icon": self.scope_icon,
+            "sightIcon": self.sight_icon,
             "unZoomBetweenFire": self.unzoom_between_fire_time,
             "toggle": self.alt_fire_once,
         })
@@ -2504,12 +2510,14 @@ class ObjectLibrary:
                 elif cmd == "loadsoundscript":
                     if token := args.strip().strip('"'):
                         obj.sound_script = token.replace("\\", "/")
-                elif cmd in ("setscopeicon", "setcrosshairtype", "sethudammotype"):
+                elif cmd in ("setscopeicon", "setsighticon", "setcrosshairtype",
+                             "sethudammotype"):
                     # `setScopeIcon "sniper.tga"` is quoted; the other two are
                     # bare enum names.
                     if token := args.strip().strip('"'):
                         setattr(obj, {
                             "setscopeicon": "scope_icon",
+                            "setsighticon": "sight_icon",
                             "setcrosshairtype": "cross_hair_type",
                             "sethudammotype": "hud_ammo_type",
                         }[cmd], token.split()[0])

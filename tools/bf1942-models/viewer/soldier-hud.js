@@ -1,4 +1,5 @@
 import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
+import { soldierArt } from './nation.js';
 
 // c_BfSoldierStanding/Crouching/Lying, the engine's own pose vocabulary
 // (CommonSoldierData.inc), against the sprite pack's own suffix — a direct
@@ -104,7 +105,7 @@ export function writeSoldierAmmo(vars, data, rounds, mags) {
  * page, as getters (a binding the page reassigns is read live):
  * `carriedKit`, `combatArea`, `combatFrame`, `crossHairColor`, `currentDir`, `deployKit`, `deployTeamId`,
  * `feedFlagIconVars`, `feedTicketVars`, `gameHud`, `handSlot`, `handWeapon`,
- * `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
+ * `hudPack`, `isZoomed`, `kitLoadout`, `kitWeaponSlots`, `loadouts`, `occupancy`,
  * `optOnFoot`, `optPilot`, `playSoldierHurtSound`, `soldier`,
  * `soldierArmor`, `soldierDead`, `teamNation`, `WEAPON_ICON_VARS`,
  * `weaponBarUntil`.
@@ -112,14 +113,16 @@ export function writeSoldierAmmo(vars, data, rounds, mags) {
 export function createSoldierHud(page) {
   const soldierHud = {};
 
-  // OPEN [R1-12]: the nation key BFSoldierHud's stance icon actually reads was
-  // never traced (verify-r1.md leaves it open). Approximated with the same
-  // per-side nation the deploy screen's own kit art already resolves
-  // (`teamNation`), translated only where the icon set's own filenames spell a
-  // nation differently from the flag-mesh table (`jap`, where `hud.json`'s
-  // `flagMeshNation` says `jp`) — an asset-naming difference this file already
-  // has to bridge elsewhere, not a new engine fact.
+  // The stance icon is the local soldier's own template's
+  // (BF1942.exe 0x006ad639..0x006ad6ce, ledger HUD-22): its class checked
+  // against the soldier's, then `getSoldierStandingIcon` / `Crouch` / `Prone`
+  // (vtable +0xa0/+0xa8/+0xb0) by stance, handed to the HUD at 0x006e9430.
+  // The pack's `soldier-icons.json` carries each template's three paths, so a
+  // US Marine gets `Icon_us_marine_*` and a Secret Weapons commando
+  // `icon_EliteBrit_*`. Only a pack without that file falls back to the old
+  // approximation: the side's nation, spelled the icon set's way (`jap`).
   const STANCE_NATION = { us: 'us', ger: 'ger', brit: 'brit', rus: 'rus', jp: 'jap' };
+  const STANCE_WORD = { stand: 'standing', crouch: 'crouch', prone: 'prone' };
 
   // The kit's own health-bar art, memoised: `kitLoadout` allocates a small
   // object per call, so this only re-resolves it when the level/team/kit
@@ -159,13 +162,30 @@ export function createSoldierHud(page) {
   soldierHud.nationArtDir = null;
   soldierHud.nationArtTeam = null;
   soldierHud.nationArtCache = null;
+  soldierHud.nationArtSoldiers = null;
+  soldierHud.nationArtLoadouts = null;
+  soldierHud.stanceArtCache = null;
   function stanceNation(team) {
-    if (team !== soldierHud.nationArtTeam || page.currentDir !== soldierHud.nationArtDir) {
+    stanceArt(team);
+    return soldierHud.nationArtCache;
+  }
+  /** The soldier template's own three stance paths, or null for a pack
+   *  without `soldier-icons.json`. Memoised with the nation: both land
+   *  asynchronously, so their identities are part of the key. */
+  function stanceArt(team) {
+    const soldiers = page.hudPack?.soldiers ?? null;
+    const loadouts = page.loadouts ?? null;
+    if (team !== soldierHud.nationArtTeam || page.currentDir !== soldierHud.nationArtDir
+        || soldiers !== soldierHud.nationArtSoldiers || loadouts !== soldierHud.nationArtLoadouts) {
       soldierHud.nationArtDir = page.currentDir;
       soldierHud.nationArtTeam = team;
+      soldierHud.nationArtSoldiers = soldiers;
+      soldierHud.nationArtLoadouts = loadouts;
       soldierHud.nationArtCache = STANCE_NATION[page.teamNation(team)] || (team === 1 ? 'ger' : 'us');
+      const own = soldierArt(soldiers, page.kitLoadout?.(team)?.soldier);
+      soldierHud.stanceArtCache = own?.standing ? own : null;
     }
-    return soldierHud.nationArtCache;
+    return soldierHud.stanceArtCache;
   }
 
   /**
@@ -370,9 +390,15 @@ export function createSoldierHud(page) {
 
     if (!page.soldier) return;
 
-    const iconNation = stanceNation(page.deployTeamId);
-    const stanceWord = STANCE_TEXTURE[page.soldier.stance] || 'standing';
-    vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
+    const own = stanceArt(page.deployTeamId);
+    const ownIcon = own && (own[STANCE_WORD[page.soldier.stance]] || own.standing);
+    if (ownIcon) {
+      vars['Soldier/SoldierIcon'] = ownIcon;
+    } else {
+      const iconNation = stanceNation(page.deployTeamId);
+      const stanceWord = STANCE_TEXTURE[page.soldier.stance] || 'standing';
+      vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
+    }
 
     // The kit glyph is baked into these two textures already (opened
     // healthbar_full_scout_64x64.png directly: the scout scope icon sits in the
@@ -418,17 +444,25 @@ export function createSoldierHud(page) {
     // in hud.js turns `sniper.tga` into atlas key `sniper`. The group is forced
     // up here for the one layout that could not otherwise show it: one from
     // before the hit marks' binding, whose group stays down in hip fire.
+    // The pack's `scopes.json` is the weapon's own four words out of the
+    // mod's `Objects.rfa` (SCOPE-2), which a viewmodel baked before
+    // `setSightIcon` was read does not carry: Desert Combat's M25, RPG-7 and
+    // the rest name `scope_blank.tga` there, and without it they drew the
+    // binoculars' range ring over their own reticle.
     const zoom = hw.data?.zoom;
-    const scoped = !!(zoom?.scope && page.isZoomed());
+    const optic = page.hudPack?.scopes?.[String(hw.name || '').toLowerCase()] ?? null;
+    const scoped = !!((optic?.useScope ?? zoom?.scope) && page.isZoomed());
     if (scoped) {
+      const sniperSight = !!(optic?.sniperSight ?? zoom?.sniperSight);
       vars['CrossHair/ShowCrossHair'] = true;
       vars['CrossHair/ScopeIndex'] = 1;
-      vars['CrossHair/SniperSight'] = !!zoom.sniperSight;
-      vars['CrossHair/ScopeIcon'] = zoom.icon || 'sniper.tga';
-      if (!zoom.sniperSight) {
-        // Binoculars branch (SCOPE-3): ring via SightIcon. sightIcon is not yet
-        // extracted on weaponStats — fall back to the layout's authored default.
-        vars['CrossHair/SightIcon'] = zoom.sightIcon || 'scout_ring_128x128.tga';
+      vars['CrossHair/SniperSight'] = sniperSight;
+      vars['CrossHair/ScopeIcon'] = optic?.scopeIcon || zoom?.icon || 'sniper.tga';
+      if (!sniperSight) {
+        // Binoculars branch (SCOPE-3): the ring, or whatever the weapon's
+        // own `setSightIcon` names; the layout's authored default only for a
+        // weapon that names none.
+        vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || 'scout_ring_128x128.tga';
       }
     }
     writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags);

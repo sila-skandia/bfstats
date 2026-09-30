@@ -255,4 +255,23 @@ results.floor = listFloor(elements, box);
   results.paintNoIcons = { unloaded, noManifest: { texts: texts2.length } };
 }
 
+// A bound picture (the ticket flag) through `boundTexture`, a literal plate
+// through `texture`: Desert Combat's board carries vanilla's German flag under
+// the same name as the HUD pack's Iraqi one.
+{
+  const { ctx, calls } = recorder();
+  const flagLeaf = { kind: 'picture', rect: [10, 10, 32, 16], var: 'AxisTicketFlag',
+                     texture: 'flag_ticket_ger' };
+  const plateLeaf = { kind: 'picture', rect: [0, 0, 64, 64], texture: 'flag_ticket_ger' };
+  const board = name => ({ name: `board:${name}`, width: 32, height: 16 });
+  const hudPack = name => ({ name: `hud:${name}`, width: 32, height: 16 });
+  const res = { texture: board, boundTexture: hudPack, measure: () => 0, drawText() {}, lineHeight: () => 8 };
+  paintLeaves(ctx, {}, [flagLeaf, plateLeaf], { AxisTicketFlag: 'flag_ticket_ger.tga' }, res);
+  const drawn = calls.filter(c => c[0] === 'drawImage').map(c => c[1]);
+  const plain = recorder();
+  paintLeaves(plain.ctx, {}, [flagLeaf], { AxisTicketFlag: 'flag_ticket_ger.tga' },
+              { ...res, boundTexture: undefined });
+  results.bound = { drawn, withoutBound: plain.calls.filter(c => c[0] === 'drawImage').map(c => c[1]) };
+}
+
 console.log(JSON.stringify(results));

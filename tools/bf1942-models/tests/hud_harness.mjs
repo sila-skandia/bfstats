@@ -663,4 +663,45 @@ for (const [name, dt] of [['at144', 1 / 144], ['at20', 1 / 20]]) {
 }
 results.hitClock = clock;
 
+// The stance icon and the scope overlay, with a body on foot: the soldier's
+// own `soldier-icons.json` art (0x006ad639) when the pack has it, the nation
+// approximation when it does not; the weapon's `scopes.json` optic over what
+// its viewmodel carries.
+function footPage({ soldiers = null, stance = 'crouch', weapon = null, zoomed = false } = {}) {
+  const s = soldierPage();
+  Object.assign(s.page, {
+    soldier: { stance }, soldierArmor: null,
+    currentDir: 'dc_medina_ridge', deployTeamId: 2, deployKit: 'assault', carriedKit: null,
+    loadouts: { kits: {} },
+    kitLoadout: team => ({ kit: null, primary: null, soldier: team === 2 ? 'USMarineSoldier' : 'IraqSoldier' }),
+    teamNation: team => (team === 2 ? 'brit' : 'ger'),
+    hudPack: { soldiers, scopes: {
+      m25sniper: { useScope: true, sniperSight: false, scopeIcon: 'm25_scope.tga', sightIcon: 'scope_blank.tga' },
+    } },
+    handWeapon: weapon, isZoomed: () => zoomed, handSlot: 1, kitWeaponSlots: null,
+  });
+  s.hud.updateSoldierHud(1 / 60);
+  return s.vars;
+}
+const MARINE = { usmarinesoldier: {
+  standing: 'Soldier/Icon_us_marine_standing.tga', crouch: 'Soldier/Icon_us_marine_crouching.tga',
+  prone: 'Soldier/Icon_us_marine_lying.tga', nation: 'us' } };
+const m25 = { name: 'M25Sniper', data: { zoom: { scope: true, sniperSight: false, icon: 'm25_scope.tga' } } };
+const binoculars = { name: 'Binoculars', data: { zoom: { scope: true, sniperSight: false, icon: 'binocular.tga' } } };
+results.soldierArt = {
+  own: footPage({ soldiers: MARINE })['Soldier/SoldierIcon'],
+  ownProne: footPage({ soldiers: MARINE, stance: 'prone' })['Soldier/SoldierIcon'],
+  noPack: footPage({ soldiers: null })['Soldier/SoldierIcon'],
+  unknownSoldier: footPage({ soldiers: { ussoldier: MARINE.usmarinesoldier } })['Soldier/SoldierIcon'],
+};
+const pick = v => ({
+  scopeIcon: v['CrossHair/ScopeIcon'], sightIcon: v['CrossHair/SightIcon'],
+  sniperSight: v['CrossHair/SniperSight'], scopeIndex: v['CrossHair/ScopeIndex'],
+});
+results.scope = {
+  m25: pick(footPage({ weapon: m25, zoomed: true })),
+  binoculars: pick(footPage({ weapon: binoculars, zoomed: true })),
+  m25Unzoomed: pick(footPage({ weapon: m25, zoomed: false })),
+};
+
 console.log(JSON.stringify(results));

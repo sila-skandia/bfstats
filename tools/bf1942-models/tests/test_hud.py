@@ -19,7 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("hud_harness.mjs")
-MODULES = {"hud.js": VIEWER / "hud.js", "soldier-hud.js": VIEWER / "soldier-hud.js"}
+MODULES = {"hud.js": VIEWER / "hud.js", "soldier-hud.js": VIEWER / "soldier-hud.js",
+           "nation.js": VIEWER / "nation.js"}
 
 
 def run_harness() -> dict:
@@ -441,6 +442,47 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual([3, 3, 3], cleared["before"])
         self.assertEqual([0], cleared["cleared"])
         self.assertEqual([6] * 6 + [0, 0], cleared["after"])
+
+
+class SoldierArtTests(unittest.TestCase):
+    """The stance icon is the local soldier's own template's (BF1942.exe
+    0x006ad639, ledger HUD-22), out of the pack's `soldier-icons.json`; a
+    pack without the file keeps the nation approximation."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.art = run_harness()["soldierArt"]
+
+    def test_the_soldiers_own_icon_by_stance(self) -> None:
+        self.assertEqual("Soldier/Icon_us_marine_crouching.tga", self.art["own"])
+        self.assertEqual("Soldier/Icon_us_marine_lying.tga", self.art["ownProne"])
+
+    def test_a_pack_without_the_file_keeps_the_nation_spelling(self) -> None:
+        self.assertEqual("Soldier/Icon_brit_soldier_crouching.tga", self.art["noPack"])
+
+    def test_a_soldier_the_pack_does_not_know_keeps_it_too(self) -> None:
+        self.assertEqual("Soldier/Icon_brit_soldier_crouching.tga", self.art["unknownSoldier"])
+
+
+class ScopeTableTests(unittest.TestCase):
+    """`scopes.json` (SCOPE-2's four words out of `Objects.rfa`) over what a
+    viewmodel baked before `setSightIcon` was read carries: Desert Combat's
+    M25 draws its own scope and a blank sight, not the binoculars' ring."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.scope = run_harness()["scope"]
+
+    def test_the_m25_draws_its_own_scope_and_no_ring(self) -> None:
+        self.assertEqual({"scopeIcon": "m25_scope.tga", "sightIcon": "scope_blank.tga",
+                          "sniperSight": False, "scopeIndex": 1}, self.scope["m25"])
+
+    def test_a_weapon_the_table_does_not_name_keeps_its_viewmodels_words(self) -> None:
+        self.assertEqual({"scopeIcon": "binocular.tga", "sightIcon": "scout_ring_128x128.tga",
+                          "sniperSight": False, "scopeIndex": 1}, self.scope["binoculars"])
+
+    def test_nothing_is_written_while_not_zoomed(self) -> None:
+        self.assertIsNone(self.scope["m25Unzoomed"].get("scopeIcon"))
 
 
 if __name__ == "__main__":

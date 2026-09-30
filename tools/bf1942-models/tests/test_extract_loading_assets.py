@@ -134,6 +134,30 @@ class TestConScriptParser(unittest.TestCase):
         self.assertEqual(res.get("setloadpicture"), "Load/Desert.tga")
 
 
+class TestLevelArchiveMatching(unittest.TestCase):
+    """A level's archives are its base and its numbered patches, never
+    another level whose name starts with it (Bocage_Day2/Day3, audit M3)."""
+
+    def test_only_numbered_patches_join_a_level(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            levels = Path(tmp)
+            for name in ("Bocage.rfa", "Bocage_000.rfa", "Bocage_003.rfa",
+                         "Bocage_Day2.rfa", "Bocage_Day3.rfa", "BocageX.rfa"):
+                (levels / name).write_bytes(b"")
+            found = [p.name for p in ela.find_level_archives(levels, "Bocage")]
+            self.assertEqual(["Bocage_003.rfa", "Bocage_000.rfa", "Bocage.rfa"], found)
+            self.assertEqual(["Bocage_Day2.rfa"],
+                             [p.name for p in ela.find_level_archives(levels, "bocage_day2")])
+
+    def test_menu_patches_still_found(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archives = Path(tmp)
+            for name in ("menu.rfa", "menu_001.rfa", "menu_extra.rfa"):
+                (archives / name).write_bytes(b"")
+            self.assertEqual(["menu_001.rfa", "menu.rfa"],
+                             [p.name for p in ela.find_level_archives(archives, "menu")])
+
+
 class TestTitleFormatter(unittest.TestCase):
     """Test in-game map title formatting and canonical overrides."""
 

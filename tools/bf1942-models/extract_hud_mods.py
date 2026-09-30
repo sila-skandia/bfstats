@@ -60,20 +60,38 @@ STEPS: list[tuple[str, str]] = [
     ("extract_spawn_layout.py", ""),
     ("extract_hud_layout.py", ""),
     ("extract_menu_layout.py", "menu"),
+    # MULTIPLAY, CREATE GAME and the rest of the front end: a mod's lexicon
+    # renames the team columns (Desert Combat's Opposition/Coalition) and
+    # CREATE_GAME_TEAM_RATIO, and without its own copy the page drew vanilla's.
+    ("extract_main_menu_layout.py", "menu"),
+    # OPTIONS > CONTROLS: its pages sit on the mod's own `menu/Background`.
+    ("extract_controls_menu_layout.py", "menu"),
+    # The Tab board: its team headings are literal lexicon strings and its
+    # ticket flag and class glyphs the mod's own art.
+    ("extract_scoreboard_layout.py", "scoreboard"),
     ("extract_console_font.py", "console"),
     ("extract_radio.py", ""),
     ("extract_score_settings.py", ""),
 ]
 
-#: Arguments a step needs beyond `--mod/--game-dir/--out`.
-EXTRA_ARGS = {"extract_radio.py": ["--layout-only"]}
+#: Arguments a step needs beyond `--mod/--game-dir/--out`, given the staging
+#: directory. `extract_menu_layout.py` reads the sprite pack's `hud.json` and
+#: `soldier-icons.json` for each level's nations; pointed at the destination
+#: (its default) it read a pack this run had not written yet, or none at all,
+#: and every level of every mod pack came out with no nation of its own.
+EXTRA_ARGS = {
+    "extract_radio.py": lambda staging: ["--layout-only"],
+    "extract_menu_layout.py": lambda staging: ["--hud-pack", str(staging)],
+}
 
 #: Steps whose failure is survivable: the pack simply does not carry that
 #: file and the viewer falls back to vanilla's. `extract_hud_layout.py` is
 #: the one that can genuinely fail on a mod -- `find_top` refuses to guess
 #: when a mod has restructured `menu/InGame` -- and a mod HUD that falls back
 #: to vanilla's layout is much better than no pack at all.
-OPTIONAL = {"extract_hud_layout.py", "extract_menu_layout.py"}
+OPTIONAL = {"extract_hud_layout.py", "extract_menu_layout.py",
+            "extract_main_menu_layout.py", "extract_controls_menu_layout.py",
+            "extract_scoreboard_layout.py"}
 
 
 def vanilla_twin(rel: Path, vanilla_hud: Path, vanilla_fonts: Path) -> Path:
@@ -132,8 +150,10 @@ def run_steps(mod: str, game_dir: Path, staging: Path, force: bool) -> list[str]
     failed: list[str] = []
     for script, sub in STEPS:
         out = staging / sub if sub else staging
+        extra = EXTRA_ARGS.get(script)
         cmd = [sys.executable, str(HERE / script), "--mod", mod,
-               "--game-dir", str(game_dir), "--out", str(out), *EXTRA_ARGS.get(script, [])]
+               "--game-dir", str(game_dir), "--out", str(out),
+               *(extra(staging) if extra else [])]
         if force:
             cmd.append("--force")
         result = subprocess.run(cmd)

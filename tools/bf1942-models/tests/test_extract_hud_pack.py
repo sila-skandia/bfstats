@@ -168,6 +168,154 @@ class SelectButtonPlateTests(unittest.TestCase):
         self.assertEqual([], self.plates("Pirates"))
 
 
+class _BytesMenu(_StubMenu):
+    """`_StubMenu` whose entries all decode (the decoders are stubbed)."""
+
+
+def _sprites(entries, referenced=()):
+    menu = _BytesMenu(entries)
+    originals = {name: getattr(ehp, name)
+                 for name in ("decode_dds", "decode_tga", "encode_png")}
+    try:
+        ehp.decode_dds = lambda raw: (16, 16, bytes(16 * 16 * 4))
+        ehp.decode_tga = lambda raw: (16, 16, bytes(16 * 16 * 4))
+        ehp.encode_png = lambda w, h, rgba, drop_alpha=True: b"png"
+        with tempfile.TemporaryDirectory() as tmp:
+            return ehp.extract_sprites(menu, Path(tmp), force=False,
+                                       referenced=referenced)
+    finally:
+        for name, fn in originals.items():
+            setattr(ehp, name, fn)
+
+
+class MinimapIconGlobTests(unittest.TestCase):
+    """A mod's own `minimap_icon_*` files come into its pack; Desert Combat's
+    helicopters and jets drew the vehicle dot without them (audit H1)."""
+
+    def test_a_mods_own_icons_are_taken(self) -> None:
+        manifest = _sprites([
+            "MENU/Texture/Minimap/minimap_icon_heli1_16x16.dds",
+            "MENU/Texture/Minimap/minimap_icon_nimitz_64x64.dds",
+        ])
+        self.assertIn("minimap_icon_heli1_16x16", manifest)
+        self.assertEqual("Minimap/minimap_icon_nimitz_64x64.tga",
+                         manifest["minimap_icon_nimitz_64x64"]["ref"])
+
+    def test_only_the_prefix_and_only_the_directory_root(self) -> None:
+        manifest = _sprites([
+            "menu/Texture/Minimap/map_medic.dds",
+            "menu/Texture/Minimap/artillery_minimap_camview_128x128.dds",
+            "menu/Texture/Minimap/Deeper/minimap_icon_x_16x16.dds",
+            "menu/Texture/Minimap/Thumbs.db",
+        ])
+        self.assertEqual({}, manifest)
+
+
+class ReferencedTextureTests(unittest.TestCase):
+    """The weapons' `setScopeIcon`/`setSightIcon` pictures, resolved under
+    `menu/Texture/` the way the engine's loader does (0x00664aa0)."""
+
+    def test_named_textures_are_taken_whatever_the_extension_says(self) -> None:
+        manifest = _sprites(["MENU/Texture/m25_scope.dds", "MENU/Texture/scope_blank.dds"],
+                            referenced=["m25_scope.tga", "scope_blank", "not_shipped.tga"])
+        self.assertEqual(["m25_scope", "scope_blank"], sorted(manifest))
+        self.assertEqual("MENU/Texture/m25_scope.dds", manifest["m25_scope"]["source"])
+
+    def test_a_name_already_in_the_pack_keeps_its_entry(self) -> None:
+        manifest = _sprites(["menu/Texture/sniper.tga"], referenced=["sniper.tga"])
+        self.assertEqual("sniper.tga", manifest["sniper"]["ref"])
+
+
+SOLDIER_CON = """
+ObjectTemplate.create Soldier IraqSoldier
+ObjectTemplate.setSoldierStandingIcon "Soldier/Icon_ger_soldier_standing.tga"
+ObjectTemplate.setSoldierCrouchIcon "Soldier/Icon_ger_soldier_crouching.tga"
+ObjectTemplate.setSoldierProneIcon "Soldier/Icon_ger_soldier_lying.tga"
+ObjectTemplate.setMinimapIcon "flag_ger.tga"
+ObjectTemplate.setControlPointIcon "conp_ger.tga"
+ObjectTemplate.setTicketIcon "flag_ticket_ger.tga"
+ObjectTemplate.setTeamFlagIcon "Icon_flag_ger.tga"
+ObjectTemplate.create Kit Iraq_Assault
+ObjectTemplate.setMinimapIcon "flag_ger.tga"
+ObjectTemplate.create HandFireArms M25Sniper
+ObjectTemplate.useScope 1
+ObjectTemplate.setScopeIcon "m25_scope.tga"
+ObjectTemplate.setSightIcon "scope_blank.tga"
+ObjectTemplate.setSniperSight 0
+ObjectTemplate.create HandFireArms Mp5
+ObjectTemplate.useScope 0
+"""
+
+
+class TemplateTableTests(unittest.TestCase):
+    def test_soldier_icons_carry_their_nation(self) -> None:
+        soldiers = ehp.soldier_icons_in([SOLDIER_CON])
+        self.assertEqual(["iraqsoldier"], list(soldiers))
+        self.assertEqual({
+            "standing": "Soldier/Icon_ger_soldier_standing.tga",
+            "crouch": "Soldier/Icon_ger_soldier_crouching.tga",
+            "prone": "Soldier/Icon_ger_soldier_lying.tga",
+            "minimap": "flag_ger.tga", "controlPoint": "conp_ger.tga",
+            "ticket": "flag_ticket_ger.tga", "teamFlag": "Icon_flag_ger.tga",
+            "nation": "ger"}, soldiers["iraqsoldier"])
+
+    def test_scope_map_takes_only_weapons_with_a_picture(self) -> None:
+        self.assertEqual({"m25sniper": {"useScope": True, "sniperSight": False,
+                                        "scopeIcon": "m25_scope.tga",
+                                        "sightIcon": "scope_blank.tga"}},
+                         ehp.scope_map_in([SOLDIER_CON]))
+
+    def test_icon_nation(self) -> None:
+        self.assertEqual("ger", ehp.icon_nation("conp_ger.tga"))
+        self.assertEqual("brit", ehp.icon_nation("flag_ticket_brit.dds"))
+        self.assertEqual("us", ehp.icon_nation("Icon_flag_us.tga"))
+        self.assertIsNone(ehp.icon_nation("Soldier/Icon_us_soldier_standing.tga"))
+
+
+@unittest.skipUnless((GAME_DIR / "Mods/DesertCombat").is_dir(), "needs Desert Combat installed")
+class InstalledTemplateTableTests(unittest.TestCase):
+    """Read off this PC's archives."""
+
+    @staticmethod
+    def chain(mod: str):
+        from extract_models import mod_chain
+        return mod_chain(GAME_DIR, mod)
+
+    def test_desert_combats_armies_fly_their_own_art(self) -> None:
+        soldiers = ehp.extract_soldier_icons(self.chain("DesertCombat"))
+        self.assertEqual("ger", soldiers["iraqsoldier"]["nation"])
+        self.assertEqual("us", soldiers["ussoldier"]["nation"])
+
+    def test_every_vanilla_soldier_names_one_nation_in_all_three_icons(self) -> None:
+        for name, entry in ehp.extract_soldier_icons(self.chain("bf1942")).items():
+            codes = {ehp.icon_nation(entry.get(k)) for k in ("controlPoint", "ticket", "teamFlag")}
+            self.assertEqual({entry["nation"]}, codes, name)
+
+    def test_desert_combats_optics(self) -> None:
+        scopes = ehp.extract_scope_map(self.chain("DesertCombat"))
+        for weapon in ("m25sniper", "m82sniper", "tabuksniper", "vss", "car-15",
+                       "rpg7", "smaw", "ak47gp30", "m203"):
+            self.assertIn(scopes[weapon]["sightIcon"], ("scope_blank.tga", "scope_blank"), weapon)
+            self.assertFalse(scopes[weapon]["sniperSight"], weapon)
+        self.assertEqual("binocular.tga", scopes["binoculars"]["scopeIcon"])
+
+    def test_level_local_icons_are_per_level_and_drawable(self) -> None:
+        from extract_models import mod_chain
+        chain = mod_chain(GAME_DIR, "DesertCombat")
+        icons = ehp.extract_icon_map(chain)
+        sprites = {name: {} for name in ("minimap_icon_nimitz_64x64", "minimap_icon_none",
+                                          "minimap_icon_stationary_16x16",
+                                          "minimap_icon_plane_16x16",
+                                          "minimap_icon_aircraft_carrier_64x64",
+                                          "minimap_icon_tank_16x16")}
+        levels = ehp.extract_level_icon_map(GAME_DIR, chain, icons, sprites)
+        self.assertEqual({"icon": "minimap_icon_nimitz_64x64", "size": 64},
+                         levels["dc_urban_siege"]["nimitz_static_heli_urbs"])
+        # No Fly Zone's buildings name pictures no menu archive holds, so no
+        # level carries them.
+        self.assertNotIn("dc_no_fly_zone", levels)
+
+
 class IconKeyTests(unittest.TestCase):
     def test_strips_directory_and_extension_and_lowercases(self) -> None:
         self.assertEqual("minimap_icon_tank_16x16",

@@ -8,7 +8,7 @@
 // `team_nation_from_level` is fed in the Python-side test that runs
 // alongside this one.
 
-import { flagMeshNation, cpNation, heldNation, teamNation } from './nation.js';
+import { flagMeshNation, cpNation, heldNation, iconKey, soldierArt, soldierNation, teamNation } from './nation.js';
 
 const results = {};
 
@@ -167,6 +167,35 @@ results.captured = {
   neutralised: heldNation({ team: 0, foundingTeam: 1, flagMesh: 'flagge_m1' }, VANILLA, () => 'x'),
   // An entry no capture has touched carries no `foundingTeam`: its own mesh.
   untouched: heldNation({ team: 2, flagMesh: 'flaguk_m1' }, VANILLA, () => 'x'),
+};
+
+// --- the soldier's own team art (0x006ac800) ----------------------------------
+// Desert Combat's Medina Ridge: IraqSoldier and USSoldier, the Coalition's
+// points flying British cloth. The soldier wins; without the table the flags.
+const DC_SOLDIERS = {
+  iraqsoldier: { controlPoint: 'conp_ger.tga', ticket: 'flag_ticket_ger.tga',
+                 teamFlag: 'Icon_flag_ger.tga', nation: 'ger' },
+  ussoldier: { controlPoint: 'conp_us.tga', ticket: 'flag_ticket_us.tga',
+               teamFlag: 'Icon_flag_us.tga', nation: 'us' },
+};
+const medina = [
+  { team: 1, flagMesh: 'flagge_m1' }, { team: 1, flagMesh: 'flagge_m1' },
+  { team: 2, flagMesh: 'flaguk_m1' },
+];
+results.soldier = {
+  art: soldierArt(DC_SOLDIERS, 'USSoldier'),
+  nation: soldierNation(DC_SOLDIERS, 'IraqSoldier'),
+  unknown: soldierNation(DC_SOLDIERS, 'NoSuchSoldier'),
+  noTable: soldierNation(null, 'USSoldier'),
+  alliedFromSoldier: teamNation(medina, 2, VANILLA, null, soldierNation(DC_SOLDIERS, 'USSoldier')),
+  alliedFromFlags: teamNation(medina, 2, VANILLA, null, null),
+  // Iwo Jima in Desert Combat: Iraqis on Japanese flag meshes.
+  iwoAxis: teamNation([{ team: 1, flagMesh: 'flagJp_m1' }], 1, VANILLA, null,
+                      soldierNation(DC_SOLDIERS, 'IraqSoldier')),
+  // Midway: no flags; the vehicle guess loses to the soldier.
+  midwayAllied: teamNation([], 2, VANILLA, 'brit', soldierNation(DC_SOLDIERS, 'USSoldier')),
+  keys: [iconKey('Soldier/Icon_us_marine_standing.tga'), iconKey('conp_ger.tga'),
+         iconKey('Soldier\\icon_EliteBrit_soldier_lying.dds'), iconKey('scope_blank')],
 };
 
 console.log(JSON.stringify(results, null, 1));

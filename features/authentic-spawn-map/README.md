@@ -1185,10 +1185,83 @@ Opposition TabukSniper, AK47, RPG7, PKM, Saiga12k, AKS-74U).
 
 ### Still open
 
-- The scoreboard draws the local player's class glyph from the row name
+- ~~The scoreboard draws the local player's class glyph from the row name
   (`scoreboard-screen.js`), which is vanilla's class only for vanilla's own
   bindings. DC's slot 3 is Heavy Assault and shows the medic glyph; slot 5
-  shows none. Bots already use their kit's `class`; the local row should too.
+  shows none. Bots already use their kit's `class`; the local row should too.~~
+  Done in section 16.
 - `server/authority.mjs` keeps its own five-name `KITS` and, like before,
   reads the spawn row's name as a kit template, so a room spawn's Armor falls
   back to slot 0 for every row. Unchanged here.
+
+## 16. A side's art is its soldier's; DC's own icons, board and optics (2026-09-30)
+
+A review of Desert Combat and DC Final against the game found the HUD drawing
+vanilla's art wherever a mod had its own. The engine facts are ledger HUD-11
+(each side's control-point, base-flag, ticket and team-flag art is read off
+the soldier template `Game::getTeamSkin(team)` names, client `0x006ac800`),
+MMAP-4 (a point on the map is drawn with its holder's icon, `0x0046c1fb`),
+HUD-12 (the stance icon is the local soldier's own template's, closing
+R1-12) and HUD-13 (HUD textures open under `Menu/Texture/` only).
+
+### What changed
+
+- `extract_hud_pack.py` writes three more files: `soldier-icons.json` (each
+  soldier's team art and the nation code it names), `scopes.json` (each hand
+  weapon's four optic words) and `minimap-level-icons.json` (the icons a
+  level's own templates carry, per level, where the picture is in the menu
+  chain). The sprite pack takes a mod's own `Minimap/minimap_icon_*` files
+  and every picture a `setScopeIcon`/`setSightIcon` names. Vanilla's sprite
+  manifest gains one entry, `binocular`.
+- `extract_hud_mods.py` builds the scoreboard, the front end
+  (`main-menu-layout.json`) and OPTIONS (`controls-layout.json`) per mod, and
+  points `extract_menu_layout.py` at the staging pack it is building
+  (`--hud-pack`), which it used to read from the destination before that
+  existed: every mod pack's `menu-levels.json` had no level nations.
+  `menu-levels.json` now falls back to the skin's own art where the level
+  flies no flag (DC Midway's `IraqSoldier`).
+- `extract_loading_assets.py` takes only numbered patches as a level's
+  archives; `Bocage_Day2`/`Day3` had been read as patches of `Bocage`.
+- `bf42/con.py` reads `setSightIcon` into the weapon's `zoom` block.
+- Viewer: `nation.js` `soldierNation`; `map-surfaces.js` `teamArt`, which
+  `teamNation` answers with first, a held point's marker from its holder, a
+  level's own minimap icons first; `teamClothNation` keeps the flag-mesh vote
+  for the pole cloth, which is the level's `setTeamGeometry` mesh, not HUD
+  art; `ticket-feed.js` the soldier's own `ticketIcon`; `soldier-hud.js` the
+  soldier's own stance icons and the pack's optic table; the Tab board
+  resolves a bound picture (the ticket flags) through the HUD pack first and
+  names the local row's class from his kit (`localKitClass`); OPTIONS loads
+  the active mod's pack; the Custom Game dialog opens only a web address.
+
+Rebuilt on this PC, not published: the DC and DC Final HUD packs, the
+`Bocage` row of both trees' `maps.json` (`dc_gazelle`, was `dc_harrier`) and
+`models/mods.json` (DC Final's `url`). OPTIONS keeps naming
+`Mods/BF1942/Settings/Profiles` under a mod: that is where the game keeps
+profiles for every mod (ledger MEME-19).
+
+### Verified
+
+DC Medina Ridge: Coalition ticket flag and base flag American (were British),
+the Opposition's Iraqi; the M25 draws `m25_scope` with a blank sight, the
+binoculars their own picture and ring; the Tab board reads Opposition /
+Coalition with Iraq's flag; Heavy Assault's row the assault glyph. Urban
+Siege draws its carrier silhouette. DC Final Midway's briefing reads Iraq
+against the United States (was Britain against Japan). Vanilla El Alamein and Wake are
+unchanged. Vanilla, EoD and the other mods' outputs were rebuilt to scratch
+against HEAD's code: the only differences are the ones listed above.
+
+### Still open
+
+- The Instant Battle preview keeps the level-first nation rule
+  (`team_nation_from_level`): DC Medina Ridge shows a British flag for the
+  Coalition and DC Iwo Jima a Japanese one for the Iraqis, where the in-game
+  HUD now shows the soldiers' art. Nothing in the menu layout places those
+  flags and the engine code that draws them was not read.
+- Vanilla's pack, and every other mod's, is not rebuilt: until it is, vanilla
+  draws the old flag-mesh answer (British Americans on Iwo Jima, Midway,
+  Truk and Kasserine, German Japanese on Coral Sea, Canadians on Liberation
+  of Caen where the soldier is British) and the K98 scope for the binoculars.
+- Level-local icons outside the menu chain (DC's `Tower.dds`,
+  `BunkerHangar.dds`, `VehicleBunker.dds`; vanilla Battle of Britain's factory
+  and radar icons) are not drawn: see HUD-13.
+

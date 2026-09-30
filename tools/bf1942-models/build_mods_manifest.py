@@ -75,7 +75,12 @@ MOD_INFO = {
             "Gooooooooooooood Morning Vietnaaaaaaaaaaaam !"),
     "desertcombat": ("0.7", "http://www.DesertCombat.com",
                      "Developed by Trauma Studios, Inc."),
-    "dc_final": ("0.8", None, "The final installment of Desert Combat."),
+    # DC Final's `game.setCustomGameUrl` is a sentence, not an address: the
+    # dialog prints it as the game does, and VISIT WEB PAGE stays off for
+    # it (`viewer/play/mod-picker.js` `webAddress`). Without it the line
+    # fell back to the layout's own vanilla `battlefield1942.com`.
+    "dc_final": ("0.8", "The final installment....",
+                 "The final installment of Desert Combat."),
     "fh": ("0.7", "http://www.fhmod.org", None),
     "fhsw": ("0.73", "http://wbmuse.blog89.fc2.com/", None),
     "gcmod": ("8.5", "http://www.galacticconquest.rf.gd",

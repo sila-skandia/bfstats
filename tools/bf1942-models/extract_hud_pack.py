@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Extract the shared HUD/menu sprite pack the map viewer draws with.
 
-Two artifacts, both one-time and shared by every level of one mod:
+Five artifacts, all one-time and shared by every level of one mod:
 
   viewer/maps/_shared/hud/*.png + hud.json
       The map sprites and spawn-screen chrome out of
@@ -22,6 +22,21 @@ Two artifacts, both one-time and shared by every level of one mod:
       (directory prefix dropped, extension dropped, lowercased); the engine's
       own strings say `.tga` while the shipped files are `.dds`, so the name
       is normalised rather than trusted.
+
+  viewer/maps/_shared/hud/minimap-level-icons.json
+      The same, per level, for the templates a level's own `.con` files
+      define or re-icon (Urban Siege's `Nimitz_Static_Heli_UrbS`), where the
+      picture is in the menu chain (ledger HUD-13).
+
+  viewer/maps/_shared/hud/soldier-icons.json
+      Each soldier template's team art: its control-point, ticket, team-flag,
+      minimap and three stance icons, and the nation code they name. The HUD
+      draws a side's flags off the soldier the level dresses it in (ledger
+      HUD-11, HUD-12, MMAP-4).
+
+  viewer/maps/_shared/hud/scopes.json
+      Each hand weapon's optic (`useScope`, `setScopeIcon`, `setSightIcon`,
+      `setSniperSight`, SCOPE-2); the pictures they name join the sprites.
 
 `--mod` picks the game. Every archive this reads is resolved along the mod's
 `game.addModPath` chain, nearest child first (`bf42.modmenu.MenuSources`), so
@@ -51,6 +66,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 import sys
 from pathlib import Path
 
@@ -59,7 +75,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
 from bf42 import meme  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
-from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
+from bf42.level import find_level_archives  # noqa: E402
+from bf42.rfa import ArchivePool, RfaArchive, find_archives_dir, find_levels_dir  # noqa: E402
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, encode_png  # noqa: E402
@@ -227,6 +244,21 @@ SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapo
 # nothing and the vanilla manifest is unchanged, key for key and in order.
 SPRITE_NATION_PREFIXES: tuple[str, ...] = (
     "conp_", "baseflag_conp_", "icon_flag_", "flag_ticket_")
+
+# A mod's own vehicle silhouettes. `SPRITES` names the twelve the base game
+# ships, and a mod files its own beside them, directly under
+# `menu/Texture/Minimap/`, with the same prefix: Desert Combat adds 16
+# (`minimap_icon_heli1_16x16`, `_plane3_`, `_nimitz_64x64`, `_none`, ...), DC
+# Final about 60 per-vehicle ones (`minimap_icon_m1a1_16x16`, `_uh60_`, ...),
+# Secret Weapons 7, Eve of Destruction 9. Each mod's `Objects.rfa` names them
+# (`minimap-icons.json`) whether or not the pack holds them, so without this a
+# template naming one drew the vehicle dot (`map-surfaces.js`). The root of
+# the directory only, and the prefix only: vanilla's `Minimap/` also holds
+# `map_engineer`, `map_medic` and the artillery camera view, which no minimap
+# icon names, and on vanilla every `minimap_icon_*` file is already in
+# `SPRITES`, so its manifest is unchanged.
+MINIMAP_ICON_DIR = "menu/texture/minimap/"
+MINIMAP_ICON_PREFIX = "minimap_icon_"
 
 # `Ammo/Icon_demokit.dds` (the HUD ammo-panel icon a weapon's `setAmmoIcon`
 # can point at) and `Weapon/Icon_demokit.dds` (the weapon-select bar icon a
@@ -410,12 +442,21 @@ def select_button_plates(menu) -> list[str]:
     return stems
 
 
-def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
+def extract_sprites(menu, out_dir: Path, force: bool,
+                    referenced: list[str] | tuple[str, ...] = ()) -> dict:
     """Decode the sprite list to PNGs, returning the manifest dict.
 
     `menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
     With a one-mod chain that is the single archive, entry for entry and in
     its own order, which is what keeps the vanilla manifest unchanged.
+
+    `referenced` is texture names the `.con` data hands the HUD by name, as
+    it spells them (`"m25_scope.tga"`, `"scope_blank"`): the weapons'
+    `setScopeIcon`/`setSightIcon` (`extract_scope_map`). The engine resolves
+    each under `menu/Texture/` (the loader at 0x00664aa0 prefixes
+    `Menu/Texture/`, string 0x00914864), so that is the only place looked;
+    one no archive in the chain holds is skipped. They come last, so every
+    sprite already named keeps its place and its `ref`.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
@@ -513,6 +554,30 @@ def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
                 continue
             decode_and_write(name, entry, sprite_ref_from_entry(entry))
 
+    for entry in menu.entries:
+        low = entry.lower()
+        if not low.startswith(MINIMAP_ICON_DIR) or "/" in entry[len(MINIMAP_ICON_DIR):]:
+            continue
+        if not low.endswith((".dds", ".tga")):
+            continue
+        name = Path(entry).stem.lower()
+        if name in manifest or not name.startswith(MINIMAP_ICON_PREFIX):
+            continue
+        decode_and_write(name, entry, sprite_ref_from_entry(entry))
+
+    for ref in referenced:
+        stem = ref.replace("\\", "/").strip("/")
+        if stem.lower().endswith((".dds", ".tga")):
+            stem = stem.rsplit(".", 1)[0]
+        name = Path(stem).name.lower()
+        if not stem or name in manifest:
+            continue
+        entry = next((index[k] for k in (f"menu/texture/{stem}.dds".lower(),
+                                          f"menu/texture/{stem}.tga".lower())
+                      if k in index), None)
+        if entry:
+            decode_and_write(name, entry, sprite_ref_from_entry(entry))
+
     if missing:
         print(f"warning: {len(missing)} sprites not in the "
               f"{'/'.join(menu.labels)} menu chain: {', '.join(missing)}",
@@ -532,17 +597,9 @@ def icon_key(path: str) -> str:
     return leaf.rsplit(".", 1)[0].lower()
 
 
-def extract_icon_map(chain: list[Path]) -> dict[str, dict]:
-    """template (lowercased) -> {icon, size} from every Objects archive.
-
-    `size` is the engine's `setMinimapIconSize` draw size in pixels where one
-    is declared (the 32/64 px ship icons), and absent otherwise — the default
-    is the sprite's own 16 px.
-
-    `chain` is the mod path, nearest first, so a mod's own `Objects.rfa` both
-    adds its templates and overrides the vanilla ones it redefines — the same
-    first-hit rule `ArchivePool` applies everywhere else.
-    """
+def objects_con_texts(chain: list[Path]):
+    """Every `.con` file of the chain's `Objects.rfa`, decoded, nearest mod's
+    copy of a path first-hit (`ArchivePool`)."""
     pool = ArchivePool()
     found = False
     for mod_dir in chain:
@@ -554,15 +611,20 @@ def extract_icon_map(chain: list[Path]) -> dict[str, dict]:
     if not found:
         sys.exit(f"no Archives directory anywhere in "
                  f"{[d.name for d in chain]}")
-    templates: dict[str, dict] = {}
     for entry in pool.names():
         if not entry.lower().endswith(".con"):
             continue
         text = pool.try_read(entry)
-        if text is None:
-            continue
+        if text is not None:
+            yield text.decode("latin-1", "replace")
+
+
+def minimap_icons_in(texts) -> dict[str, dict]:
+    """template (lowercased) -> {icon, size} over `.con` texts, in order."""
+    templates: dict[str, dict] = {}
+    for text in texts:
         current: str | None = None
-        for line in text.decode("latin-1", "replace").splitlines():
+        for line in text.splitlines():
             line = line.strip()
             if m := _CREATE.match(line):
                 current = m.group(1).lower()
@@ -572,6 +634,210 @@ def extract_icon_map(chain: list[Path]) -> dict[str, dict]:
                 templates.setdefault(current, {})["size"] = int(m.group(1))
     # A size with no icon declares nothing drawable; drop the strays.
     return {k: v for k, v in sorted(templates.items()) if "icon" in v}
+
+
+def extract_icon_map(chain: list[Path]) -> dict[str, dict]:
+    """template (lowercased) -> {icon, size} from every Objects archive.
+
+    `size` is the engine's `setMinimapIconSize` draw size in pixels where one
+    is declared (the 32/64 px ship icons), and absent otherwise — the default
+    is the sprite's own 16 px.
+
+    `chain` is the mod path, nearest first, so a mod's own `Objects.rfa` both
+    adds its templates and overrides the vanilla ones it redefines — the same
+    first-hit rule `ArchivePool` applies everywhere else.
+    """
+    return minimap_icons_in(objects_con_texts(chain))
+
+
+def template_words(texts, words: dict[str, str]) -> dict[str, dict[str, str]]:
+    """template (lowercased) -> {key: value} for each `ObjectTemplate.<word>`
+    in `words` (lowercased word -> output key), the value as the data spells
+    it with its quotes dropped. Last declaration wins, the way a `.con` run
+    overwrites a property."""
+    pattern = re.compile(
+        r'(?i)^ObjectTemplate\.(' + "|".join(map(re.escape, words)) +
+        r')\s+"?([^"\s]+)"?')
+    templates: dict[str, dict[str, str]] = {}
+    for text in texts:
+        current: str | None = None
+        for line in text.splitlines():
+            line = line.strip()
+            if m := _CREATE.match(line):
+                current = m.group(1).lower()
+            elif (m := pattern.match(line)) and current:
+                templates.setdefault(current, {})[words[m.group(1).lower()]] = m.group(2)
+    return dict(sorted(templates.items()))
+
+
+# The soldier template's own team art, as `BFSoldierTemplate` stores it
+# (property ctors 0x004cb877.., getters on its vtable: standing +0xa0, crouch
+# +0xa8, prone +0xb0, controlPoint +0xb8, minimap +0xc0, ticket +0xc8,
+# teamFlag +0xd0 in the client; lnxded's `BFSoldierTemplate::get*Icon` in the
+# same order). The client reads them back per team off the template
+# `Game::getTeamSkin(team)` names (0x006ac800, ledger HUD rows), and the
+# stance icon off the local soldier's own template (0x006ad639).
+SOLDIER_ICON_WORDS = {
+    "setsoldierstandingicon": "standing",
+    "setsoldiercrouchicon": "crouch",
+    "setsoldierproneicon": "prone",
+    "setcontrolpointicon": "controlPoint",
+    "setminimapicon": "minimap",
+    "setticketicon": "ticket",
+    "setteamflagicon": "teamFlag",
+}
+_NATION_ICON = re.compile(r"(?i)^(?:conp_|flag_ticket_|icon_flag_)([a-z]+)$")
+
+
+def icon_nation(icon: str | None) -> str | None:
+    """`conp_ger.tga` / `flag_ticket_ger.tga` / `Icon_flag_ger.tga` -> `ger`,
+    the nation code every per-nation sprite name in the pack is built on."""
+    if not icon:
+        return None
+    m = _NATION_ICON.match(icon_key(icon))
+    return m.group(1).lower() if m else None
+
+
+def soldier_icons_in(texts) -> dict[str, dict]:
+    """soldier template (lowercased) -> its team art, for every template
+    that declares any of the three team icons. `nation` is the code the
+    control-point icon names (else the ticket's, else the team flag's), the
+    one the page builds `conp_`/`baseflag_conp_`/`flag_ticket_`/`icon_flag_`
+    sprite names from; every soldier in vanilla, Road to Rome, Secret
+    Weapons, Desert Combat and DC Final names one code across all three."""
+    out: dict[str, dict] = {}
+    for name, found in template_words(texts, SOLDIER_ICON_WORDS).items():
+        if not {"controlPoint", "ticket", "teamFlag"} & set(found):
+            continue
+        entry = dict(found)
+        nation = (icon_nation(found.get("controlPoint"))
+                  or icon_nation(found.get("ticket"))
+                  or icon_nation(found.get("teamFlag")))
+        if nation:
+            entry["nation"] = nation
+        out[name] = entry
+    return out
+
+
+def extract_soldier_icons(chain: list[Path]) -> dict[str, dict]:
+    return soldier_icons_in(objects_con_texts(chain))
+
+
+# A hand weapon's optic, SCOPE-2: the four words the HUD sync (0x006e9dd0)
+# copies into the `CrossHair` group.
+SCOPE_WORDS = {
+    "usescope": "useScope",
+    "setscopeicon": "scopeIcon",
+    "setsighticon": "sightIcon",
+    "setsnipersight": "sniperSight",
+}
+
+
+def scope_map_in(texts) -> dict[str, dict]:
+    """weapon template (lowercased) -> {useScope, scopeIcon, sightIcon,
+    sniperSight}, for every template that names a scope or sight picture.
+    The flags are booleans, the pictures as the data spells them."""
+    out: dict[str, dict] = {}
+    for name, found in template_words(texts, SCOPE_WORDS).items():
+        if "scopeIcon" not in found and "sightIcon" not in found:
+            continue
+        entry: dict = {}
+        for key in ("useScope", "sniperSight"):
+            if key in found:
+                entry[key] = found[key].strip() not in ("0", "")
+        for key in ("scopeIcon", "sightIcon"):
+            if key in found:
+                entry[key] = found[key].replace("\\", "/")
+        out[name] = entry
+    return out
+
+
+def extract_scope_map(chain: list[Path]) -> dict[str, dict]:
+    return scope_map_in(objects_con_texts(chain))
+
+
+def scope_textures(scopes: dict[str, dict]) -> list[str]:
+    """The pictures `scopes` names, once each, in template order."""
+    seen: dict[str, None] = {}
+    for entry in scopes.values():
+        for key in ("scopeIcon", "sightIcon"):
+            if entry.get(key):
+                seen.setdefault(entry[key], None)
+    return list(seen)
+
+
+def chain_level_names(chain: list[Path]) -> list[str]:
+    """Every level the chain's `Archives/bf1942/levels/` hold, by the name
+    its base archive spells, patches (`_000`, `_003`) folded in."""
+    names: dict[str, str] = {}
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        levels = find_levels_dir(archives) if archives is not None else None
+        if levels is None:
+            continue
+        for child in sorted(levels.iterdir(), key=lambda p: p.name.lower()):
+            if not child.is_file() or child.suffix.lower() != ".rfa":
+                continue
+            stem = re.sub(r"_\d+$", "", child.stem)
+            names.setdefault(stem.lower(), stem)
+    return sorted(names.values(), key=str.lower)
+
+
+def level_con_texts(paths: list[Path]):
+    """The `.con` files of one level's archives, a later archive's copy of a
+    path replacing an earlier one's (`find_level_archives` overlay order)."""
+    files: dict[str, tuple[Path, str]] = {}
+    for path in paths:
+        with RfaArchive(path) as arch:
+            for entry in arch.entries:
+                if entry.lower().endswith(".con"):
+                    files[entry.replace("\\", "/").lower()] = (path, entry)
+    by_archive: dict[Path, list[str]] = {}
+    for path, entry in files.values():
+        by_archive.setdefault(path, []).append(entry)
+    for path, entries in by_archive.items():
+        with RfaArchive(path) as arch:
+            for entry in sorted(entries):
+                yield arch.read(entry).decode("latin-1", "replace")
+
+
+def extract_level_icon_map(game_dir: Path, chain: list[Path],
+                           global_icons: dict[str, dict],
+                           sprites: dict) -> dict[str, dict]:
+    """level (lowercased) -> {template: {icon, size}} for the minimap icons a
+    level's own `.con` files declare that `Objects.rfa` does not already
+    give the same template: Urban Siege's `Nimitz_Static_Heli_UrbS`, Al
+    Nas's `nx_m-923`. Per level, because two levels give one template name
+    different icons (`mil_wpbunker_des`: No Fly Zone's building, Weapon
+    Bunkers' bunker).
+
+    Only icons whose picture is in this pack's own sprites are kept. The
+    engine opens an icon under `Menu/Texture/` (0x00664aa0), and the ones
+    that are not there -- DC's `bf1942/levels/DC_No_Fly_Zone/menu/Tower.dds`,
+    vanilla Battle of Britain's `minimap_icon_Factory_32x32` that its level
+    archive files under its own `Menu/Texture/` -- need either a path the
+    loader does not build or a per-level search root nobody has read out of
+    the binary; they stay the vehicle dot until that is settled."""
+    out: dict[str, dict] = {}
+    mod = chain[0].name if chain else "bf1942"
+    for level in chain_level_names(chain):
+        paths = find_level_archives(game_dir, mod, level, chain=chain)
+        if not paths:
+            continue
+        try:
+            found = minimap_icons_in(level_con_texts(paths))
+        except (OSError, ValueError, struct.error) as exc:
+            # Six FHSW/FHSW Europe level archives on this PC are truncated
+            # (skill `bf1942-mod-extraction` section 12); a level the reader
+            # cannot open loses its own icons, not the whole pack.
+            print(f"warning: {level}: level archives unreadable ({exc}); "
+                  f"its own minimap icons are left out", file=sys.stderr)
+            continue
+        own = {template: entry for template, entry in found.items()
+               if entry["icon"] in sprites and global_icons.get(template) != entry}
+        if own:
+            out[level.lower()] = own
+    return dict(sorted(out.items()))
 
 
 def main() -> None:
@@ -591,8 +857,10 @@ def main() -> None:
     sources = MenuSources(mod_chain(game_dir, args.mod))
     out = args.out or hud_dir_for(sources.mod_id)
 
+    scopes = extract_scope_map(sources.chain)
     with sources.open_menu() as menu:
-        sprites = extract_sprites(menu, out, args.force)
+        sprites = extract_sprites(menu, out, args.force,
+                                  referenced=scope_textures(scopes))
     (out / "hud.json").write_text(json.dumps({
         "sprites": sprites,
         "flagMeshNation": flag_mesh_nations(sprites),
@@ -600,8 +868,21 @@ def main() -> None:
     icons = extract_icon_map(sources.chain)
     (out / "minimap-icons.json").write_text(
         json.dumps(icons, indent=1) + "\n")
-    print(f"{sources.mod_id}: {len(sprites)} sprites and {len(icons)} "
-          f"template icons -> {out}")
+    # The icons a level's own `.con` files give templates, per level.
+    level_icons = extract_level_icon_map(game_dir, sources.chain, icons, sprites)
+    (out / "minimap-level-icons.json").write_text(
+        json.dumps(level_icons, indent=1) + "\n")
+    # Each soldier template's team art: what the HUD draws for the team whose
+    # `game.setTeamSkin` names it (ledger HUD rows on 0x006ac800).
+    soldiers = extract_soldier_icons(sources.chain)
+    (out / "soldier-icons.json").write_text(
+        json.dumps(soldiers, indent=1) + "\n")
+    # Each hand weapon's optic (SCOPE-2), for the scope overlay.
+    (out / "scopes.json").write_text(json.dumps(scopes, indent=1) + "\n")
+    print(f"{sources.mod_id}: {len(sprites)} sprites, {len(icons)} template "
+          f"icons, {sum(map(len, level_icons.values()))} level-local icons over "
+          f"{len(level_icons)} levels, {len(soldiers)} soldiers, "
+          f"{len(scopes)} scoped weapons -> {out}")
 
 
 if __name__ == "__main__":

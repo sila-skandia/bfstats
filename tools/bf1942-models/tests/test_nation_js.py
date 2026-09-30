@@ -167,6 +167,36 @@ class NationJsTests(unittest.TestCase):
         self.assertEqual("us", c["alliedNation"])
 
 
+class SoldierArtTests(unittest.TestCase):
+    """A side's HUD art is its soldier's (BF1942.exe 0x006ac800: the template
+    `Game::getTeamSkin(team)` names, its control-point, ticket and team-flag
+    icons), whatever the level's flag meshes or vehicles say; the flag rule
+    only stands in where the pack or the level does not name the soldier."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.soldier = run_harness()["soldier"]
+
+    def test_the_soldier_wins_over_the_flags(self) -> None:
+        self.assertEqual("us", self.soldier["alliedFromSoldier"])
+        self.assertEqual("ger", self.soldier["iwoAxis"])
+        self.assertEqual("us", self.soldier["midwayAllied"])
+
+    def test_without_the_table_the_flags_answer(self) -> None:
+        self.assertEqual("brit", self.soldier["alliedFromFlags"])
+        self.assertIsNone(self.soldier["noTable"])
+        self.assertIsNone(self.soldier["unknown"])
+
+    def test_lookup_is_by_lowercased_template(self) -> None:
+        self.assertEqual("conp_us.tga", self.soldier["art"]["controlPoint"])
+        self.assertEqual("ger", self.soldier["nation"])
+
+    def test_icon_keys_are_the_packs(self) -> None:
+        self.assertEqual(["icon_us_marine_standing", "conp_ger",
+                          "icon_elitebrit_soldier_lying", "scope_blank"],
+                         self.soldier["keys"])
+
+
 class NationParityTests(unittest.TestCase):
     """The round's own requirement: the flag-mesh table and the rule built
     on it must agree between `viewer/nation.js` and

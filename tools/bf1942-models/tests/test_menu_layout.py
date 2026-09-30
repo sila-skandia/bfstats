@@ -455,6 +455,22 @@ class LoadFlagMeshNationsTests(unittest.TestCase):
     def test_a_pack_that_has_not_been_built_degrades_to_empty(self) -> None:
         self.assertEqual({}, eml.load_flag_mesh_nations("no-such-mod-at-all"))
 
+    def test_a_staging_pack_is_read_instead_of_the_destination(self) -> None:
+        # `extract_hud_mods.py` builds the sprite pack into staging and runs
+        # this before anything lands; reading the destination gave every
+        # level of every mod pack no nation of its own (audit H4).
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            pack = Path(tmp)
+            (pack / "hud.json").write_text(json.dumps({"flagMeshNation": {"ge": "ger"}}))
+            (pack / "soldier-icons.json").write_text(json.dumps({
+                "iraqsoldier": {"controlPoint": "conp_ger.tga", "nation": "ger"},
+                "nobody": {"ticket": "flag_ticket.tga"}}))
+            self.assertEqual({"ge": "ger"}, eml.load_flag_mesh_nations("no-such-mod", pack))
+            self.assertEqual({"iraqsoldier": "ger"}, eml.load_soldier_nations("no-such-mod", pack))
+        self.assertEqual({}, eml.load_soldier_nations("no-such-mod-at-all"))
+
 
 @unittest.skipUnless(MENU_RFA.exists(), "needs the BF1942 install")
 class LevelNationFromArchivesTests(unittest.TestCase):
@@ -511,6 +527,26 @@ class LevelNationFromArchivesTests(unittest.TestCase):
                 if b != a:
                     moved.append((name, side, b, a))
         self.assertEqual([("liberation_of_caen", "allied", "brit", "can")], moved)
+
+
+@unittest.skipUnless((GAME_DIR / "Mods/DesertCombat").is_dir(), "needs Desert Combat installed")
+class DesertCombatLevelNationTests(unittest.TestCase):
+    """Midway gives the Opposition no flag at all; its soldier's own team art
+    (`soldier-icons.json`) answers where `SKIN_NATION` never listed
+    `IraqSoldier` and the preview drew no Iraqi flag."""
+
+    def test_midway_takes_the_iraqi_soldiers_art(self) -> None:
+        import extract_hud_pack as ehp
+        chain = mod_chain(GAME_DIR, "DesertCombat")
+        by_name = eml.chain_level_archives(chain)
+        soldiers = {name: entry["nation"]
+                    for name, entry in ehp.extract_soldier_icons(chain).items()}
+        record = eml.level_record("midway", by_name["midway"], None, False,
+                                  nations={}, soldier_nations=soldiers)
+        self.assertEqual("IraqSoldier", record["axis"]["skin"])
+        self.assertEqual("ger", record["axis"]["nation"])
+        self.assertEqual("icon_flag_ger", record["axis"]["flag"])
+        self.assertEqual("skin", record["axis"]["nationSource"])
 
 
 @unittest.skipUnless(EOD_MENU_RFA is not None and EOD_MENU_RFA.exists(),

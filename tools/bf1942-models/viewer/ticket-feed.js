@@ -6,7 +6,8 @@
  * page, as getters (a binding the page reassigns is read live):
  * `capturePosition`, `currentDir`, `deployTeamId`, `extras`, `hudPack`,
  * `LOCAL_PLAYER`, `nearestEnemyFlag`, `optOnFoot`, `round`, `soldier`,
- * `soldierDead`, `spawnersRoot`, `teamNation`, `world`.
+ * `soldierDead`, `spawnersRoot`, `teamArt`, `teamNation`, `world`, and
+ * `loadouts` (a memo key).
  */
 export function createTicketFeed(page) {
   const ticketFeed = {};
@@ -35,9 +36,12 @@ export function createTicketFeed(page) {
    * at all.
    */
   function ticketFlagTexture(team) {
-    // The layout's own literal is `flag_ticket_ger.tga` and the pack ships
-    // brit/can/ger/jp/rus/us. `teamNation` answers in exactly those codes.
-    return `flag_ticket_${page.teamNation(team)}.tga`;
+    // The side's soldier's own `setTicketIcon` (BF1942.exe 0x006ac8a6: the
+    // template `getTeamSkin(team)` names, vtable +0xc8, into the ticket
+    // pictures), where the pack knows it. Otherwise the layout's own literal
+    // family, `flag_ticket_<nation>.tga`, which `teamNation` answers in.
+    const own = page.teamArt?.(team)?.ticket;
+    return own ? own.replace(/\\/g, '/').split('/').pop() : `flag_ticket_${page.teamNation(team)}.tga`;
   }
 
   /* The four strings the group needs, memoised on the level.
@@ -79,6 +83,8 @@ export function createTicketFeed(page) {
   ticketFeed.ticketMemoDir = null;
   ticketFeed.ticketMemoExtras = null;
   ticketFeed.ticketMemoNations = null;
+  ticketFeed.ticketMemoSoldiers = null;
+  ticketFeed.ticketMemoLoadouts = null;
   ticketFeed.ticketMemoSpawners = null;
   ticketFeed.ticketMemoCounts = null;
   const ticketMemo = {
@@ -93,6 +99,8 @@ export function createTicketFeed(page) {
     const counts = page.extras.tickets;
     if (ticketFeed.ticketMemoDir === page.currentDir && ticketFeed.ticketMemoExtras === page.extras
         && ticketFeed.ticketMemoNations === page.hudPack.nations
+        && ticketFeed.ticketMemoSoldiers === page.hudPack.soldiers
+        && ticketFeed.ticketMemoLoadouts === page.loadouts
         && ticketFeed.ticketMemoSpawners === page.spawnersRoot
         && ticketFeed.ticketMemoCounts === counts) {
       return ticketMemo;
@@ -100,6 +108,10 @@ export function createTicketFeed(page) {
     ticketFeed.ticketMemoDir = page.currentDir;
     ticketFeed.ticketMemoExtras = page.extras;
     ticketFeed.ticketMemoNations = page.hudPack.nations;
+    // The soldiers' art and the level's team skins, which name the flags now
+    // and both land asynchronously, like the flag-mesh table.
+    ticketFeed.ticketMemoSoldiers = page.hudPack.soldiers;
+    ticketFeed.ticketMemoLoadouts = page.loadouts;
     ticketFeed.ticketMemoSpawners = page.spawnersRoot;
     ticketFeed.ticketMemoCounts = counts;
     const t = counts;

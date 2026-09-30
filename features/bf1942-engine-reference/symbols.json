@@ -897,6 +897,24 @@
    "note": "bf42plus section: Renderer Patches"
   },
   {
+   "address": "0x00467af0",
+   "name": "BfMap_setTeam1ControlPointIcon",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "disassembly-2026-09-30",
+   "note": "BfMap: team-1 control point icon and Baseflag_ variant (+0x94/+0xa0) (HUD-11, MMAP-4)"
+  },
+  {
+   "address": "0x00467b80",
+   "name": "BfMap_setTeam2ControlPointIcon",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "disassembly-2026-09-30",
+   "note": "BfMap: team-2 control point icon and baseflag_ variant (+0x90/+0x9c) (HUD-11, MMAP-4)"
+  },
+  {
    "address": "0x00467c10",
    "name": "GameClient__func_467C10",
    "kind": "function",
@@ -3885,6 +3903,15 @@
    "note": "DX8 material flush for the SIMPLE texture path (param+0x90008 texture cache): stage0 MODULATE(1x, TEXTURE x DIFFUSE); no-texture SELECTARG DIFFUSE; +0x5e flag path ADD(TEXTURE,TFACTOR) then stage1 MODULATE(CURRENT,DIFFUSE). NOT the StandardMesh path - vehicles/statics go through StandardMeshSubShader_applyRenderState 0x005bf690 which uses MODULATE2X. Do not calibrate mesh lighting off this function."
   },
   {
+   "address": "0x00664aa0",
+   "name": "HudTexture_loadFromMenuTexture",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "disassembly-2026-09-30",
+   "note": "HUD texture load: 'Menu/Texture/' + name (HUD-13)"
+  },
+  {
    "address": "0x00667680",
    "name": "RendPCDX8_clear",
    "kind": "function",
@@ -4216,6 +4243,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x006ac800",
+   "name": "BfHud_loadTeamIcons",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "working",
+   "source": "disassembly-2026-09-30",
+   "note": "per side: getTeamSkin -> soldier template -> minimap/controlPoint/ticket/teamFlag icons into the map object and HUD pictures (HUD-11)"
   },
   {
    "address": "0x006acb60",

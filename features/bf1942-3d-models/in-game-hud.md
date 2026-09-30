@@ -122,13 +122,12 @@ seat.
 
 ## Approximations, each with its open question
 
-- **Nation key for the stance icon (R1-12, open).** The engine's own lookup
-  was never traced. Approximated with the same per-side nation the deploy
-  screen's kit art already resolves (`teamNation`), translated only where the
-  icon set's own filenames diverge from `hud.json`'s `flagMeshNation` table —
-  Japan is `icon_jap_soldier_*` in the sprite pack but `jp` in that table, an
-  asset-naming difference this file already had to bridge for other reasons,
-  not a new engine fact.
+- **Nation key for the stance icon (R1-12, closed 2026-09-30 by ledger
+  HUD-12).** There is no nation key: the icon is the local soldier's own
+  template's `setSoldierStandingIcon`/`CrouchIcon`/`ProneIcon`, and
+  `soldier-hud.js` draws it from the pack's `soldier-icons.json`. The old
+  approximation (the side's `teamNation`, `jp` spelled `jap`) stands only for
+  a pack built before that file.
 - **`Soldier/SoldierHitPoints`/`MaxHitPoints` (30/30 seed).** This is P3's
   variable pair (BRIEFING2's supply-and-health section); nothing in this
   worktree tracks damage. Seeded once with vanilla's real constant

@@ -15,7 +15,7 @@ import { nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
  * `audioListener`, `audioLoader`, `bust`, `cull`, `currentRoot`,
  * `drawFullMap`, `drawMinimap`, `ensureAudioContext`, `ensureFlagMixer`,
  * `extras`, `flattenCull`, `levelClips`, `localMapTeam`, `masterVolume`,
- * `paintDeployChrome`, `playSoldierOneShot`, `tagCull`, `teamNation`,
+ * `paintDeployChrome`, `playSoldierOneShot`, `tagCull`, `teamClothNation`, `teamNation`,
  * `thaw`, `world`.
  */
 export function createFlagCapture(page) {
@@ -87,7 +87,12 @@ export function createFlagCapture(page) {
     // whose answer is 'unknown' (a `flagpl_m1` the pack has no art for) there
     // is no cell and the point keeps its old colours — the same neutral-plate
     // rule `drawControlPoint` applies on the map.
-    const nation = team === 1 || team === 2 ? page.teamNation(team) : null;
+    // The cloth is the level's own mesh for that side (`setTeamGeometry`),
+    // not its soldier's HUD art: `teamClothNation` keeps the flag-mesh vote
+    // where `teamNation` now answers with the soldier (Medina Ridge's
+    // Coalition flies British cloth under American HUD flags).
+    const nationOf = page.teamClothNation ?? page.teamNation;
+    const nation = team === 1 || team === 2 ? nationOf(team) : null;
     return (nation && FLAG_UV_CELLS[nation]) || null;
   }
   /** The stored UV range of a cloth geometry: [u0,v0,u1,v1]. Every baked cloth

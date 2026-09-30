@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
-import { heldNation, teamNation as teamNationRule } from './nation.js';
+import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
@@ -31,7 +31,8 @@ import { mapAngle, minimapMarksKey } from './replay-minimap.js';
  * `flags`, `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`,
  * `mapVehicles`, `occupancy`, `release`, `replayMinimap`, `scoreFromSpawn`,
  * `setScoreboard`, `spawnersRoot`, `spawnFlagSelect`, `sprite`, `stage`,
- * `vehicleSpawnActive`, `world`.
+ * `vehicleSpawnActive`, `world`, and `kitLoadout`/`loadouts` (each side's
+ * soldier).
  */
 export function createMapSurfaces(page) {
   const mapSurfaces = {};
@@ -109,10 +110,52 @@ export function createMapSurfaces(page) {
    *  point's sprite is the flag it flies now: its own mesh's nation for its
    *  founding owner, the taker's nation once it has changed hands. */
   function cpNation(cp) {
+    // A held point is drawn with its holder's own control-point icon
+    // (BF1942.exe 0x0046c1fb: one texture per team, picked by the point's
+    // team at +0x190, `baseflag_` + it when the template cannot change
+    // hands), never the point's own flag mesh, once the soldier is known.
+    if (cp.team && teamArt(cp.team)) return teamNation(cp.team);
     return heldNation(cp, page.hudPack.nations, teamNation);
   }
 
+  /** The team art of the soldier `team` wears on this level (the level's
+   *  `game.setTeamSkin`, `_shared/loadouts.json`), out of the pack's
+   *  `soldier-icons.json`; null while either is missing. Memoised on the
+   *  level and on the two files' identities, both of which land
+   *  asynchronously: the minimap asks for it per point per frame. */
+  const teamArtMemo = { dir: undefined, soldiers: undefined, loadouts: undefined, 1: undefined, 2: undefined };
+  function teamArt(team) {
+    const { soldiers } = page.hudPack;
+    const loadouts = page.loadouts;
+    if (teamArtMemo.dir !== page.currentDir || teamArtMemo.soldiers !== soldiers
+        || teamArtMemo.loadouts !== loadouts) {
+      teamArtMemo.dir = page.currentDir;
+      teamArtMemo.soldiers = soldiers;
+      teamArtMemo.loadouts = loadouts;
+      teamArtMemo[1] = teamArtMemo[2] = undefined;
+    }
+    if (team !== 1 && team !== 2) return null;
+    if (teamArtMemo[team] === undefined) {
+      teamArtMemo[team] = soldierArt(soldiers, page.kitLoadout?.(team)?.soldier);
+    }
+    return teamArtMemo[team];
+  }
+
   function teamNation(team) {
+    // The soldier's own first, and without walking the level for the rest.
+    const own = teamArt(team)?.nation;
+    if (own) return own;
+    return teamNationRule(page.extras.controlPoints || [], team, page.hudPack.nations,
+                          nationFromVehicles(team));
+  }
+
+  /** The nation of the cloth a point hoists for `team` when it takes one:
+   *  the flag meshes the level authored for that side, not its soldier's HUD
+   *  art. The engine swaps a point's geometry to the template's own
+   *  `setTeamGeometry <team>` mesh, and the side's own points are the
+   *  scene's record of which mesh that is (Medina Ridge's Coalition flies
+   *  `flaguk_m1` in both). */
+  function teamClothNation(team) {
     return teamNationRule(page.extras.controlPoints || [], team, page.hudPack.nations,
                           nationFromVehicles(team));
   }
@@ -272,7 +315,12 @@ export function createMapSurfaces(page) {
       // `Kubelwagen_1`, and a name lookup gave every one after the first the
       // plain vehicle dot.
       const template = (vehicle.userData?.control || vehicle.name).toLowerCase();
-      const entry = page.hudPack.icons[template] ?? page.hudPack.icons[vehicle.name.toLowerCase()];
+      // A level's own templates first (`minimap-level-icons.json`): Urban
+      // Siege's carrier is its own `Nimitz_Static_Heli_UrbS`, which no
+      // `Objects.rfa` defines.
+      const levelIcons = page.hudPack.levelIcons?.[page.currentDir];
+      const entry = levelIcons?.[template] ?? page.hudPack.icons[template]
+        ?? levelIcons?.[vehicle.name.toLowerCase()] ?? page.hudPack.icons[vehicle.name.toLowerCase()];
       const icon = entry?.icon && !entry.icon.startsWith('flag_') ? entry.icon : null;
       // The silhouettes point up the sprite and the game turns them with the
       // vehicle; same forward axis and the same screen angle as the player.
@@ -809,6 +857,8 @@ export function createMapSurfaces(page) {
     loadMapArt,
     localMapTeam,
     projectToArt,
+    teamArt,
+    teamClothNation,
     teamNation,
     /** Every control point's sprite as the surfaces draw it, for the hooks. */
     controlPointSprites: () => (page.extras.controlPoints || [])
