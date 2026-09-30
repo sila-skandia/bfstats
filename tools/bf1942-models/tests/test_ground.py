@@ -57,6 +57,8 @@ MODULES = {
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
+    # The model browser's rig, for the Engine-poses-nothing check.
+    "model-rig.js": VIEWER / "model-rig.js",
     "model-file.js": VIEWER / "model-file.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
@@ -622,6 +624,53 @@ class GroundModelTests(unittest.TestCase):
                                delta=abs(willy["turnedDeg"]) * 0.25)
         # And it turns rather than slides: the velocity stays near the nose.
         self.assertLess(kubel["worstSlipDeg"], 45.0)
+
+    def test_an_engines_position_axis_poses_nothing(self) -> None:
+        """Ledger PHY-15: the Engine node stays put, whatever its span.
+
+        `Engine::handleUpdate` (lnxded `0x0823e120`, Engine vtable `+0x54`)
+        clips its three angles for the gearbox and never builds a transform
+        from them. Desert Combat's Humvee declares its throttle as roll
+        -100..100 -- a position axis, since the span is under the 360 an
+        accumulator needs -- and `applyRig` used to pose it: at full throttle
+        the Engine rolled 100 degrees and took all four wheels round the hull,
+        each one 0.7 to 1.4 m off its spring with its axle stood on end. The
+        tyres lay flat on the bonnet and under the sill on play.bfstats.io.
+        """
+        cars = self.results["enginePosesNothing"]
+        for name in ("humvee", "kubel", "willy"):
+            with self.subTest(car=name):
+                car = cars[name]
+                self.assertEqual(0, car["engineTurnDeg"])
+                self.assertEqual(4, len(car["wheels"]))
+                for wheel, pose in car["wheels"].items():
+                    # A wheel's centre moves only along its spring (the hull's
+                    # own up), and its axle stays in the hull's horizontal.
+                    self.assertAlmostEqual(0, pose["horizontalShift"], places=3, msg=wheel)
+                    self.assertLess(abs(pose["verticalShift"]), 0.1, msg=wheel)
+                    self.assertAlmostEqual(0, pose["axleUp"], places=3, msg=wheel)
+                    front = "Front" in wheel
+                    # A front wheel turns about its own bundle, to the bundle's
+                    # own lock; a rear wheel does not turn at all.
+                    lock = 50 if name == "humvee" else 30
+                    self.assertAlmostEqual(-lock if front else 0, pose["steerDeg"],
+                                           places=1, msg=wheel)
+                self.assertEqual(sorted(w for w in car["wheels"] if "Front" in w),
+                                 car["steered"])
+        # The servo itself still runs, full scale: only the pose is gone.
+        self.assertEqual(1, cars["humvee"]["throttleSurface"])
+        self.assertEqual(1, cars["kubel"]["throttleSurface"])
+        # It drove: the pose change is presentation, not physics.
+        self.assertGreater(cars["humvee"]["travelled"], 5)
+
+    def test_the_model_browser_does_not_pose_an_engine_either(self) -> None:
+        # `model-rig.js` (the model browser and OPTIONS > CONTROLS preview):
+        # the Humvee's throttle stays on the crew console, its steering bundle
+        # turns to the full 50 degrees, and the Engine stays at rest.
+        rig = self.results["enginePosesNothing"]["modelRig"]
+        self.assertEqual(0, rig["engineTurnDeg"])
+        self.assertEqual(50, rig["bundleTurnDeg"])
+        self.assertTrue(rig["throttleOffered"])
 
     def test_a_floored_jeep_now_comes_out_of_a_hard_turn(self) -> None:
         """Pinned as a measurement, not defended as a fidelity claim.
