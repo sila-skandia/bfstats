@@ -339,19 +339,37 @@ export function createPoseComposer(ctx) {
              weaponName: doc.weapon ?? null, recipe: doc };
   }
 
-  /** The pair from the first tree that holds it, in that tree's own form: the
-   *  mod tree's single-file pose beats vanilla's recipe for the same pair, and
-   *  a tree's index hands back the file's own spelling (`poseSources`). */
   async function load(soldier, pose) {
     for (const source of await poseSources(value(ctx.modelsBase), soldier, pose, bust())) {
       if (source.kind === 'recipe') {
         const doc = await recipe(source);
+        // A graft recipe (`extract_pose.py` `export_graft`: a weapon the
+        // state machine never names, the weld alone) composes nothing by
+        // itself: it is handed back as `{ graft }` for `pose` to hang on
+        // the pose held before.
+        if (doc?.graft) return { graft: doc };
         const composed = doc ? await compose(doc, source.base) : null;
         if (composed) return composed;
       } else {
         const got = await monolithic(source);
         if (got) return got;
       }
+    }
+    return null;
+  }
+
+  /** `graft`'s weapon in the pose of `statesFrom`: that recipe's joints,
+   *  clips and gaits, this one's weapon at its own weld. The engine keeps the
+   *  upper body in the state it was in when the raised weapon names none
+   *  (`BFSoldier::enableItem` lnxded 0x08278460 / `setAnimationState`
+   *  0x0826cee0). */
+  async function loadGraft(soldier, graft, statesFrom) {
+    for (const source of await poseSources(value(ctx.modelsBase), soldier, statesFrom, bust())) {
+      if (source.kind !== 'recipe') continue;
+      const donor = await recipe(source);
+      if (!donor || donor.graft) continue;
+      return compose({ ...donor, weapon: graft.weapon, attach: graft.attach },
+                     source.base);
     }
     return null;
   }
@@ -363,10 +381,18 @@ export function createPoseComposer(ctx) {
   }
 
   return {
-    /** `soldier` holding `weapon`. */
-    pose(soldier, weapon) {
-      return cached(poses, `${soldier}|${weapon}|${bases().join(',')}`,
-                    () => load(soldier, weapon));
+    /** `soldier` holding `weapon`. A weapon shipped as a graft needs the
+     *  weapon held before it, `statesFrom`, whose pose it is drawn in; the
+     *  answer then carries `graftOf`. Without one a graft answers null. */
+    pose(soldier, weapon, statesFrom = null) {
+      const key = `${soldier}|${weapon}|${bases().join(',')}`;
+      return cached(poses, key, () => load(soldier, weapon)).then(result => {
+        if (!result?.graft) return result;
+        if (!statesFrom) return null;
+        return cached(poses, `${key}|${statesFrom}`,
+                      () => loadGraft(soldier, result.graft, statesFrom))
+          .then(composed => (composed ? { ...composed, graftOf: statesFrom } : null));
+      });
     },
     /** `soldier` in the seat pose `pose` (`SitInVehicle`, `PassengerInWilly`). */
     seat(soldier, pose) {

@@ -50,6 +50,20 @@ whatever per-template `material` value a `.con` file specifies. Anything
 that reads an Armor's material for damage routing is reading a constant,
 not authored data.
 
+**What that order does to a hull authored above 128 (HP-17, 2026-09-30).**
+`setMaxHitPoints(template max)` stores `min(max, 128)`, and then
+`setHitPoints(template hitPoints)` stores the starting value and raises the
+max to it when it is higher, with no ceiling. So a hull spawns at its authored
+`hitPoints`, with a max of `max(min(maxHitPoints, 128), hitPoints)`: an Elco80
+500/500, a Yamato 600/600, DC's AC-130 2000/2000. The ceiling bites only where
+the starting value is under an over-128 max (FHSW's `BrokenTiger`, 40 of 155,
+spawns 40/128). The retail client measures the same: bf42plus recordings read
+its live Armor's max as 500, 450, 200, 150 and 130 on the hulls authored so. The
+two template words are unsigned ints (the console stores `ceil(v)`), and a word
+a `.con` never sets is 10. The viewer clamped both values to 128 until
+2026-09-30, which put every hull authored above it at 128 and started the
+Elco80, Type38 and AC-130 under their own critical thresholds, burning.
+
 **Console property names are case-insensitive in practice (HP-4).**
 Vanilla ships both `hitPoints`/`maxHitPoints` (camelCase) and
 `Stationary_Browning`'s `HasArmor`/`HitPoints`/`MaxHitPoints`
@@ -70,6 +84,19 @@ itself (`hpLostWhileCriticalDamage`, `hpLostWhileUpSideDown`,
 `hpLostWhileDamageFromWater`, `hpLostWhileDamageFromDeepWater`) is a flat
 amount per firing, **not scaled by `dt`** — a longer frame does not lose
 more HP per water tick, it just checks in less often.
+
+**Correction for the critical and upside-down ticks (HP-17, 2026-09-30):**
+those two bill `accumulated seconds x rate` (`+0xe8 x +0x11c` at
+`0x08173640`/`0x08173649`), then zero the accumulator, so a firing covers 1.0 s
+plus the last tick's overshoot; only the water ticks are flat. The critical
+test is `hitPoints <= criticalDamage` on the two floats (`0x081732f2`), not the
+critical flag, and the accumulator runs whether the hull is critical or not, so
+the first bill after a hull crosses its threshold comes 0 to 1 s later. The flag
+itself (`+0x111`) moves only on a crossing inside `status()`, and no hull is
+flagged at spawn: `setHitPoints` runs before `setCriticalDamage`, while the
+threshold is still the constructor's 0. A template authored at or under its own
+threshold (DC's `flagkill`, EoD's `LtnFX`) is a scripted burn-down: it bleeds
+from its first second and is never flagged.
 
 ## 3. A collision costs hit points
 
@@ -448,7 +475,7 @@ the side effects around each call site:
 
 | id | site | what `status()` does around it | meaning |
 |---|---|---|---|
-| `0x14` | `0x08173ad6` | then `+0x110 = 0`, `+0x111 = 1`, `+0x128 = 0` | revived from destroyed **into critical** |
+| `0x14` | `0x08173ad6` | then `+0x110 = 0`, `+0x111 = 1`, `+0x128 = 0` | a crossing **into critical**, from safe or revived from destroyed (the safe case added 2026-09-30, HP-17) |
 | `0x13` | `0x08173bfd` | then `+0x110 = 0`, `+0x111 = 0` | recovered **to safe** |
 | `0x15` | `0x08173d62` | reached **after** `+0x110 = 1, +0x111 = 1`, immediately before the on-death explosion | **destroyed** |
 

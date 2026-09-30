@@ -13,11 +13,12 @@ profile's `GeneralOptions.con`.
 | Piece | File |
 |---|---|
 | Extractor: `menu/RadioMenu` to `radio-layout.json`, the 55 radio icons, `menu/InGame`'s chat box to `chat-layout.json`, every radio and shouted voice line per nation | `tools/bf1942-models/extract_radio.py` (also a step of `extract_hud_mods.py`, `--layout-only`) |
-| Menu behaviour: message table, key handler, remaps, chat text, spam limit | `viewer/radio.js` |
+| Menu behaviour: message table, key handler, remaps, chat text, spam limit, which of a patch's lines a language has | `viewer/radio.js` |
+| The side's announcer's own lines: heavy casualties, tickets low, leaving the combat area | `viewer/announcer.js`, driven from `map.html` `announceGameplay` through `comms.gameplayFrame` |
 | Message log: sections, timers, geometry, colours, line text | `viewer/chat-log.js` |
 | Page: overlay canvas, F1..F8, voices, hooks for kills, deaths and captures | `viewer/comms.js`, wired in `map.html`, `page-input.js`, `capture.js`, `net-room.js` |
 | Room relay: team radio to the team, shouts within 70 m | `server/rooms.mjs` `#onRadio`, `netcode-client.js` `radio()` |
-| Tests | `tests/test_radio_chat.py` (+ `radio_chat_harness.mjs`), `tests/test_extract_radio.py` |
+| Tests | `tests/test_radio_chat.py` (+ `radio_chat_harness.mjs`, which also drives `announcer.js`), `tests/test_extract_radio.py`, `tests/test_radio_voice_trees.py` (the extracted trees) |
 
 Assets: `maps/_shared/hud/{radio-layout.json,chat-layout.json,radio/}`,
 `maps/_shared/voices/<nation>/*.mp3` (54 stems per nation) with
@@ -88,6 +89,83 @@ MINES, ...).
   colour; all points held, grey. The victim also gets the line in the centre
   of the screen (`KillMessage`, 10 s).
 
+## Mods, languages and the side's announcer (2026-09-30)
+
+Reported: in Desert Combat on play.bfstats.io "a lot of the sounds in the
+radio calls are missing". Engine rows RADIO-1..RADIO-14.
+
+**What the engine does.** The key -> message and message -> voice patch
+tables are constants in the exe (RADIO-1, RADIO-2); a mod cannot change them,
+only what stands behind them: the lexicon's strings for the fixed keys and its
+own scripts' patches at the fixed indices. Desert Combat and DC Final rewrote
+23 strings and the matching patches together (RADIO-5: F6 item 4 prints "Take
+Cover!" and plays `TakeCover1..3`, item 6 "Cover me while I reload!" and
+`Reloading1..3`), and use vanilla's `RadioMenu` and icons. Team radio is in
+the listener's side's language, a shout in the speaker's (RADIO-3, RADIO-4). A
+load whose file the language does not ship is dropped before it is counted
+(RADIO-6), so a side rolls over the lines it has and a patch with none is
+silent. Neither receive handler runs while the local player is dead (RADIO-7).
+Nothing sends radio by itself except the artillery call (RADIO-8, SPOT-5). The
+side's announcer, `Bf1942/Game/GamePlay.ssc`, has three lines besides the
+capture pair: heavy casualties, tickets low and leaving the combat area
+(RADIO-9..RADIO-12).
+
+**What was measured first.** Every F-page item was pressed once per side on
+DC_Basrahs_Edge in Desert Combat and DC Final and on El Alamein in vanilla,
+the spam limit respected, measuring what the page STARTED (a hook on
+`AudioBufferSourceNode.start`, buffers traced back to their URLs), not what it
+requested. Before any change, every item that sends a message played its
+line, in the side's own language (`iraq` / `us` / `ger` / `brit`), with the
+mod's text: 38 sending items per side, and the three F4 slots past the
+level's three points sending nothing, as the engine. The menu path was already right; the earlier live probe had
+pressed digit keys, which are not radio keys, and read request logs through a
+URL cache. Desert Combat had no voice tree at all until `b2118040` (published
+08:52 the same morning), and its radio was silent before that, which fits the
+report. Every line of both trees is on the live volume (`?cb=` fetches).
+
+**What changed.**
+
+- `extract_radio.py` writes `GamePlay.ssc`'s patches into
+  `radio-sounds.json` (`gameplay`) and its lines into every nation folder;
+  the capture pair's files were already there, byte-identical.
+- `radio.js` `nationStems`: a patch is rolled over the stems the nation ships
+  (the manifest's `missing`). DC Final's Liberation of Caen British side, and
+  every non-US, non-Iraqi side in the Desert Combat trees, no longer borrows
+  the American folder for Desert Combat's own lines; Eve of Destruction's
+  French side loses the seven lines its language lacks.
+- `comms.js`: no radio line or voice while the local player is dead;
+  `playGameplay(index, team)`; `gameplayFrame(state)` runs `announcer.js`.
+- `announcer.js`: the three rules. `map.html` `announceGameplay` feeds it the
+  counts in `extras.tickets`, the round's starting counts (a room's scaled as
+  its server scales them), the weights the flags hold and the combat area's
+  accumulator.
+- `capture.js`: the capture pair plays the tree's own `GamePlay.ssc` patches 0
+  and 1 when the manifest has them, through the same path as the radio (at the
+  radio's level, 2.5 dB above the one-shot bus it used), else its own stems.
+
+**Written** (both Desert Combat trees, for publishing):
+`voices/radio-sounds.json` and, in each of `us iraq brit can ger jp rus`,
+`WeAreTakingHeavyCasualities.mp3`, `WeAreRunningLowOnReinforce.mp3`,
+`WarningDesertersShot.mp3`, `WarningDesertersShotALT.mp3`: 58 files. Vanilla
+was built to scratch only: the same `gameplay` key and 24 new files, plus a
+`languages.json` its tree predates.
+
+**Checked.** The same press-every-item run after the change, plus the messages
+no key sends on foot (the vehicle remaps 51..54, the CTF orders 55..58, the
+artillery call 59) through `__comms.receive`, the five announcer lines through
+`__comms.playGameplay`, the combat-area line by moving the boundary away
+(`__combatArea({ rect })`: one line after a whole second outside, not one per
+frame), and a teammate's radio while dead (no line, no voice). Desert Combat:
+all 110 rows played, both sides; DC Final the same; vanilla the same except
+the three new announcer lines, silent until its tree is extracted again (its
+manifest has no `gameplay`; the capture pair keeps its own stems). The rule
+tests: `tests/test_radio_chat.py` (the rules), `tests/test_extract_radio.py`
+(the manifests, Desert Combat's paired strings and patches),
+`tests/test_radio_voice_trees.py` (every line a nation speaks is on disk).
+A headless check on a loaded machine must leave the spam limit more than four
+seconds OF PAGE CLOCK: the limit's clock runs on the page's frames, and a
+page crawling at a quarter speed refused every press after the seventh.
+
 ## Deliberate choices and open items
 
 | Item | Status |
@@ -104,3 +182,9 @@ MINES, ...).
 | The browser pane never delivers F-keys | test through `window.__comms.press('F4')` under `?shots` |
 | A tank kill printed `Hans is no more` | fixed 2026-09-24: a hull's crew dies to the attacker of the lethal hit (`GameServer::_giveDamage`, ledger AI-76), `killer [Sherman] victim`, the human, a bot, or the human killed in his own hull alike; the lines are `chat-log.js deathLines` |
 | A hull that burns out after a hit | `is no more`, as the engine: the critical burn damages with attacker -1 (`Armor::update` 0x0817322a) |
+| The artillery call (radio 59 and "You called for artillery!") | the receive side plays; the trigger, a binocular marker, is not built (`features/artillery-spotting`, SPOT-5) |
+| The heartbeat under 5 % tickets (`Heartbeats.ssc`, RADIO-14) | read, not built |
+| The CTF announcer (`CTF.ssc`, RADIO-12) | read, not built: the viewer has no CTF round |
+| Heavy casualties at the end of a round (a side with no living player found first and no spawn point, RADIO-9) | not modelled, as TKT-5 |
+| `Outside/OutsideTime` | the client writes `allowance - trunc(seconds outside)` from the first whole second (RADIO-11); `combat-area.js` still draws `ceil(remaining)` at once. The world's report also carries no combat record on a frame it did not tick, so the HUD's `page.combatFrame` reads "inside" on those frames |
+| A language with no line for a DC patch | silent, as the engine (RADIO-6); a nation the tree has no folder for still falls back to the US folder |

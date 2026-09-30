@@ -21,7 +21,10 @@ Two kinds of file come out, both small:
 
 Plus `kits.json`, the manifest: one row per kit that a level actually binds,
 naming its nation, class, worn parts, the weapon it spawns with, its weapons
-and maps. Kits a level declares in its own archive count like any other.
+and maps. Kits a level declares in its own archive count like any other, and
+a level that runs its own copy of a kit the mod also declares hands out that
+copy: the row lists it under `levelVariants`, with what it changes
+(`level_variants`; ledger LOAD-1, LOAD-2, LOAD-5).
 
 Standard library plus the system liblzo2, same as the rest of the pipeline.
 """
@@ -41,9 +44,10 @@ from bf42 import roster as roster_mod
 from bf42.assemble import Assembler
 from bf42.rfa import ArchivePool
 
-from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, add_level_objects,
-                            add_level_textures, build_library, build_pools,
-                            discover_levels, mod_chain)
+import extract_map as em
+from extract_loadouts import read_chain_levels
+from extract_models import (DEFAULT_GAME_DIR, OBJECT_ARCHIVES, add_level_textures,
+                            build_pools, discover_levels, mod_chain)
 from bf42.rfa import find_archives_dir
 
 # The rotation that seats a part on its bone is NOT computed here. It is the
@@ -91,7 +95,8 @@ def side_label(nation: str | None) -> str | None:
     return roster_mod.side_of(nation) if nation in WWII_NATIONS else None
 
 
-def export_part(name: str, make_assembler, out: Path) -> dict | None:
+def export_part(name: str, make_assembler, out: Path,
+                stem: str | None = None) -> dict | None:
     """One worn part or pickup mesh as its own `.glb`.
 
     Takes a factory, not an Assembler: an Assembler caches resolved textures as
@@ -111,7 +116,7 @@ def export_part(name: str, make_assembler, out: Path) -> dict | None:
         print(f"  {name}: {exc}", file=sys.stderr)
         return None
 
-    stem = f"{name}.kit"
+    stem = f"{stem or name}.kit"
     (out / f"{stem}.glb").write_bytes(glb)
     (out / f"{stem}.report.json").write_text(json.dumps(report.as_dict(), indent=2))
     missing = sorted(set(report.missing_textures))
@@ -125,6 +130,85 @@ def export_part(name: str, make_assembler, out: Path) -> dict | None:
         "texturesResolved": len(report.resolved_textures),
         "texturesMissing": missing,
     }
+
+
+def _geometry_file(library: con_mod.ObjectLibrary, template: str) -> tuple:
+    """What a worn part draws: its geometry and the mesh file that names."""
+    resolved = library.object(template)
+    geometry = (resolved.geometry or "") if resolved else ""
+    found = library.geometries.get(geometry.lower()) if geometry else None
+    return (geometry.lower(), (found.file or "").lower() if found else "",
+            library.geometry_dir.get(geometry.lower(), "").lower())
+
+
+def _kit_content(kit: kit_mod.Kit, library: con_mod.ObjectLibrary, read) -> dict:
+    """The fields of a kit a level's own declaration can change, comparable."""
+    template = library.object(kit.template)
+    return {
+        "nation": kit.nation,
+        "class": kit.kit_class,
+        "team": kit.team,
+        "primary": kit.primary,
+        "items": list(kit.carried),
+        "pickup": kit.pickup,
+        "worn": [(part.template, part.slot, part.bone, part.position, part.rotation,
+                  tuple(part.alternatives), part.via_holder,
+                  _geometry_file(library, part.template))
+                 for part in kit.worn],
+        "overrideAirMovementInhibitations": bool(
+            template is not None
+            and kit_mod.overrides_air_movement(library, template, read)),
+    }
+
+
+def level_variants(chosen: list[kit_mod.Kit], census, loadouts,
+                   level_loads) -> dict[str, list[dict]]:
+    """Per kit (lower case), the levels that hand out their own kit of that
+    name, with what differs, grouped where levels agree.
+
+    A level's declaration of a template beats the mod's (LOAD-1, LOAD-2), so
+    a level that runs its own copy of a kit hands out that copy: DC Final's
+    First Light gives `US_AT3` a Landmine; Lost Village nopara wears its own
+    parts and a `nochute` on all twelve of its kits. Only the levels that bind
+    the kit are asked (EoD's `browsable` folds a `_CHUTE` twin's levels into
+    its base, and those levels bind the twin). Each entry is
+    `{"levels", "kit": Kit, "library", "content"}`.
+    """
+    base_content = {kit.template.lower(): _kit_content(kit, census.library, census.read)
+                    for kit in chosen}
+    out: dict[str, list[dict]] = {}
+    # One level's load materialized at a time, released unless it keeps a
+    # variant (`entry["library"]`, which the assembler's worn-part pass reads
+    # back): holding every level's library alive at once ran the process out
+    # of memory (FHSW: ~200 levels, 1,397 of its kits declared in level
+    # archives).
+    for level, load in sorted(level_loads.items()):
+        bound = {name.lower() for team in loadouts.get(level, {}).values()
+                 for name in team.slots.values()}
+        library = load.library
+        own_kits = kit_mod.collect(library)
+        kept = False
+        for kit in chosen:
+            key = kit.template.lower()
+            if key not in bound or key not in base_content:
+                continue
+            own = own_kits.get(key)
+            if own is None:
+                continue
+            content = _kit_content(own, library, load.read)
+            if content == base_content[key]:
+                continue
+            kept = True
+            for entry in out.setdefault(key, []):
+                if entry["content"] == content:
+                    entry["levels"].append(level)
+                    break
+            else:
+                out[key].append({"levels": [level], "kit": own,
+                                 "library": library, "content": content})
+        if not kept:
+            load.release()
+    return out
 
 
 def main() -> int:
@@ -157,12 +241,13 @@ def main() -> int:
         return 1
     meshes, textures, objects, game = build_pools(chain, [])
     # Kits a level declares in its own archive are bound by name like any
-    # other, and FHSW declares 1,397 of its kits that way. Its levels also
-    # hold the only copy of some parts' textures.
+    # other, and FHSW declares 1,397 of its kits that way: the scripts each
+    # level's `Init.con` runs, behind the chain's (`read_chain_levels`,
+    # LOAD-5). Its levels also hold the only copy of some parts' textures.
     levels = discover_levels(chain)
-    add_level_objects(objects, levels)
+    census, loadouts, level_loads = read_chain_levels(chain, objects=objects)
     add_level_textures(textures, levels)
-    library = build_library(objects)
+    library = census.library
 
     kits = kit_mod.collect(library)
     swept = levels
@@ -185,8 +270,9 @@ def main() -> int:
             own_pool = ArchivePool()
             own_pool.add_dir(archives, OBJECT_ARCHIVES)
             # A kit one of this mod's own levels declares is this mod's too.
-            add_level_objects(own_pool, [(name, path) for name, path in levels
-                                         if path.is_relative_to(chain[0])])
+            for name, path in levels:
+                if path.is_relative_to(chain[0]):
+                    em.add_level_run_objects(own_pool, chain[:1], name)
             before = len(chosen)
             chosen = [k for k in chosen if own_pool.try_read(k.source) is not None]
             print(f"  --own: {len(chosen)} of {before} kits are this mod's",
@@ -195,6 +281,11 @@ def main() -> int:
     print(f"{args.mod}: {len(kits)} kits declared, {read} levels swept, "
           f"{sum(1 for k in kits.values() if k.live)} bound, "
           f"{len(chosen)} browsable", file=sys.stderr)
+    variants = level_variants(chosen, census, loadouts, level_loads)
+    for key, entries in sorted(variants.items()):
+        for entry in entries:
+            print(f"  {entry['kit'].template}: its own on "
+                  f"{', '.join(entry['levels'])}", file=sys.stderr)
 
     # One file per distinct geometry, not per kit: seven German kits naming the
     # same helmet is one helmet. Keyed on the geometry rather than the template
@@ -223,6 +314,24 @@ def main() -> int:
             wanted.setdefault(holder, (holder, "", "pickup"))
             pickup_of[kit.template.lower()] = holder
 
+    # A level's own kit wears parts through the level's library. A part that
+    # draws what the mod's part of that name draws shares the mod's glb; one
+    # that does not gets a glb of its own, named for the level.
+    variant_parts: dict[tuple[str, str], tuple] = {}
+    for key, entries in variants.items():
+        for entry in entries:
+            level = entry["levels"][0]
+            for part in entry["kit"].worn:
+                for template in [part.template, *part.alternatives]:
+                    own = _geometry_file(entry["library"], template)
+                    if not own[0]:
+                        continue
+                    if own == _geometry_file(library, template):
+                        wanted.setdefault(template, (template, part.bone, part.slot))
+                    else:
+                        variant_parts[(template.lower(), level.lower())] = (
+                            template, level, entry["library"])
+
     if args.list:
         for kit in chosen:
             worn = ", ".join(f"{p.slot}:{p.geometry or p.template}" for p in kit.worn)
@@ -243,13 +352,29 @@ def main() -> int:
         record = export_part(name, make_assembler, out)
         if record is not None:
             exported[template.lower()] = record
+    for (key, level_key), (template, level, own_library) in sorted(variant_parts.items()):
+        def make_level_assembler(own_library=own_library) -> Assembler:
+            return Assembler(meshes, textures, objects, own_library,
+                             lod=0, max_texture=MAX_TEXTURE,
+                             configuration="complex", include_collision=False)
+        record = export_part(template, make_level_assembler, out,
+                             stem=f"{template}@{level}")
+        if record is not None:
+            exported[f"{key}@{level_key}"] = record
 
-    rows = []
-    for kit in chosen:
-        worn = []
-        for part in kit.worn:
-            record = exported.get(part.template.lower())
-            worn.append({
+    def worn_rows(worn: list[kit_mod.WornPart], level: str | None = None) -> list[dict]:
+        """`worn` as the manifest lists it, each part with its glb. A level's
+        own part that draws something else than the mod's is `<Part>@<Level>`."""
+        def record_of(template: str) -> dict | None:
+            if level is not None:
+                own = exported.get(f"{template.lower()}@{level.lower()}")
+                if own is not None:
+                    return own
+            return exported.get(template.lower())
+        listed = []
+        for part in worn:
+            record = record_of(part.template)
+            listed.append({
                 "template": part.template,
                 "geometry": part.geometry,
                 "slot": part.slot,
@@ -258,13 +383,18 @@ def main() -> int:
                 "rotation": list(part.rotation),
                 "viaHolder": part.via_holder,
                 "alternatives": [
-                    {"template": alt, **({"glb": exported[alt.lower()]["glb"]}
-                                         if alt.lower() in exported else {})}
+                    {"template": alt, **({"glb": record_of(alt)["glb"]}
+                                         if record_of(alt) else {})}
                     for alt in part.alternatives],
                 **({"glb": record["glb"], "triangles": record["triangles"],
                     "texturesMissing": record["texturesMissing"]}
                    if record else {"glb": None}),
             })
+        return listed
+
+    rows = []
+    for kit in chosen:
+        worn = worn_rows(kit.worn)
         pickup = exported.get(pickup_of.get(kit.template.lower(), "").lower())
         rolled = {item.template.lower(): item for item in kit.random}
         rows.append({
@@ -297,6 +427,32 @@ def main() -> int:
                       for name in kit.carried],
             "source": kit.source,
         })
+        # The levels that hand out a kit of their own under this name, and
+        # only what their copy changes: its items, its worn parts, its
+        # pickup, whether it wears a `nochute` (`level_variants`). `levels`
+        # above still lists them, because they bind the name.
+        entries = variants.get(kit.template.lower(), [])
+        if entries:
+            base = _kit_content(kit, library, census.read)
+            listed = []
+            for entry in entries:
+                own, content = entry["kit"], entry["content"]
+                variant = {"levels": sorted(entry["levels"]), "source": own.source}
+                for field in ("nation", "class", "team", "primary"):
+                    if content[field] != base[field]:
+                        variant[field] = content[field]
+                if content["items"] != base["items"]:
+                    variant["items"] = [{"template": name} for name in own.carried]
+                if content["worn"] != base["worn"]:
+                    variant["worn"] = worn_rows(own.worn, entry["levels"][0])
+                if content["pickup"] != base["pickup"]:
+                    variant["pickup"] = {"geometry": own.pickup, "glb": None}
+                if (content["overrideAirMovementInhibitations"]
+                        != base["overrideAirMovementInhibitations"]):
+                    variant["overrideAirMovementInhibitations"] = (
+                        content["overrideAirMovementInhibitations"])
+                listed.append(variant)
+            rows[-1]["levelVariants"] = listed
 
     manifest = {
         "mod": args.mod,

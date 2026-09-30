@@ -10,6 +10,38 @@ import { kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 
 /**
+ * `_shared/loadouts.json` as one level sees it: `kits` with the level's own
+ * rows (`levelKits[dir]`) over the mod's. A level's declaration of a template
+ * beats the mod's (ledger LOAD-1, LOAD-2), so a level that runs its own copy
+ * of a kit hands out that copy: DC Final's First Light gives `US_AT3` a
+ * Landmine, Lost Village nopara puts a `nochute` on every kit. The file
+ * itself comes back for a level with no rows of its own and for a file
+ * written before `levelKits` existed, so a reader that memoizes on the
+ * object sees one object per level. `cache` holds the views made so far.
+ */
+export function levelLoadouts(file, dir, cache = new Map()) {
+  const own = dir ? file?.levelKits?.[dir] : null;
+  if (!own) return file;
+  let view = cache.get(dir);
+  if (!view || view.file !== file) {
+    view = { file, loadouts: { ...file, kits: { ...file.kits, ...own } } };
+    cache.set(dir, view);
+  }
+  return view.loadouts;
+}
+
+/**
+ * Whether `kit` carries an `ActiveKitPart` with
+ * `overrideAirMovementInhibitations` -- a `nochute` -- by its row in
+ * `loadouts` (the level's view, `levelLoadouts`). Such a soldier never enters
+ * free fall, so 9 has no chute to open (`parachute.js` `freeFallBarred`,
+ * ledger PARA-1, PARA-4). False for a file written before the field existed.
+ */
+export function kitOverridesAirMovement(loadouts, kit) {
+  return !!(kit && loadouts?.kits?.[kit]?.overrideAirMovementInhibitations);
+}
+
+/**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
  * `bust`, `currentDir`, `deployKit`, `deployTeamId`, `handWeapon`, `KITS`,
@@ -26,10 +58,20 @@ export function createKitLoadout(page) {
   // slot the engine selects on spawn). `extract_loadouts.py` reads both through
   // the kit readers and writes them as `_shared/loadouts.json` beside the
   // levels; `kitPrimary` below looks the answer up by level, team and row.
-  loadout.loadouts = null;
+  //
+  // `loadout.loadouts` is the file as the current level sees it
+  // (`levelLoadouts`): every reader of `kits[...]` gets the level's own kit
+  // where it declares one.
+  let loadoutsFile = null;
+  const levelViews = new Map();
+  Object.defineProperty(loadout, 'loadouts', {
+    get: () => levelLoadouts(loadoutsFile, page.currentDir, levelViews),
+    set: data => { loadoutsFile = data; },
+    enumerable: true,
+  });
   const loadoutsLoad = fetch(`${page.MAPS_BASE}/_shared/loadouts.json${page.bust()}`)
     .then(r => (r.ok ? r.json() : null))
-    .then(data => { loadout.loadouts = data; return data; })
+    .then(data => { loadoutsFile = data; return data; })
     .catch(err => { console.warn('loadouts unavailable', err); return null; });
   // The voice folder each soldier template speaks from, keyed lowercased
   // (`_shared/voices/languages.json`, extract_radio.py): its own

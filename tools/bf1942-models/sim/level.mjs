@@ -21,6 +21,8 @@
 //    .slots`, the page's `botKitFor`), each weapon's fire data from its model
 //    glb's `extras.weapon` (the page's `botWeaponData`), and a round's damage
 //    from `damage.json` (`botRoundDamage`).
+//  * The bots' names from `_shared/bot-names.json` (the page's
+//    `botNamerForLevel`); null without the file, and the table's names.
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -400,6 +402,10 @@ export async function realLevel(M, { maps, models, map }) {
     }).filter(Boolean);
     return { name: kitName, primary: kit.primary ?? items[0] ?? null, weapons };
   };
+  // The lists the level's `Skirmish.con` loads (bot-names.js).
+  const namesFile = path.join(maps, '_shared', 'bot-names.json');
+  const botNames = existsSync(namesFile)
+    ? M.levelNameLists(JSON.parse(readFileSync(namesFile, 'utf8')), map) : null;
   const maxHp = (kitName) => {
     const hp = loadouts?.kits?.[kitName]?.maxHitpoints;
     return Number.isFinite(hp) ? hp : 30;
@@ -467,6 +473,7 @@ export async function realLevel(M, { maps, models, map }) {
     collider: null,
     stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, vehicleAi: vehicleJson?.vehicles ?? {} },
     kits: { kitFor, maxHp },
+    botNames,
     weaponFire,
     roundDamage,
     vehicleAi: (template) => vehicleByName.get(String(template).toLowerCase()) ?? null,

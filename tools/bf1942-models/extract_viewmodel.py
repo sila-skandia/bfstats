@@ -86,6 +86,7 @@ from extract_pose import (
     read_clip,
     read_skeleton,
     state_machine,
+    weapon_has_upper_states,
 )
 
 # The `.baf` nominal frame rate. UNVERIFIED (first-person-soldier.md §7): 25
@@ -519,6 +520,13 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     if skeleton is None:
         raise PoseError(f"skeleton unreadable: {root_template.skeleton}")
 
+    if not weapon_has_upper_states(machine, weapon):
+        # No `Ub_*<W>` state at all: the engine keeps the arms in the state
+        # they were in (`export_graft`), so the rig is the weapon and its weld.
+        return export_graft(soldier, weapon, objects=objects, meshes=meshes,
+                            textures=textures, library=library,
+                            max_texture=max_texture, out=out)
+
     resolved, clip_report = resolve_families(machine, weapon)
     if PRIMARY not in resolved:
         # Numbered aim states only (`Ub_StandAim<W>1..n`) are not one weapon's
@@ -827,6 +835,86 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     extras = {key: value for key, value in result.items()
               if key not in ("soldierParts", "weaponParts")}
     target.write_bytes(builder.build(roots, extras=extras))
+    result["glb"] = target.name
+    (out / f"{soldier}__{weapon}.fp.report.json").write_text(
+        json.dumps(result, indent=2))
+    return result
+
+
+def export_graft(soldier: str, weapon: str, *, objects, meshes, textures,
+                 library, max_texture: int, out: Path | None) -> dict:
+    """A weapon the state machine never names, as a first-person graft: the
+    weapon welded under a `<weapon> grip` node and nothing else -- no sleeves,
+    no hands, no clips.
+
+    `BFSoldier::enableItem` (lnxded 0x08278460) raises a weapon with
+    `setAnimationState(1, "Ub_{Stand,Crouch,Lie}RaiseWeapon" + <template>)`,
+    and `setAnimationState` (0x0826cee0) does nothing when `findState` misses,
+    so the arms stay in the state they were in: the weapon held before, its
+    clip on the 1P skeleton and its transitions answering fire and reload.
+    What `enableItem` does change is the rig's offset -- `soldierCameraPosition`
+    of the new weapon is copied onto the soldier (+0x248..+0x250) before the
+    state is asked for -- and the first-person field of view. So this file
+    carries the weld (the weapon's own `.ske`, `useSkeletonPartAsMain`), the
+    weapon's armoury block and its view numbers, and `extras.graft`; the
+    viewer hangs the grip under the hand of the rig already mounted
+    (`viewer/arms-rig.js` `graftRig`). Desert Combat's `Mortar_weap`, whose
+    machine declares only the seat's `Ub_/Lb_KneelMortar`, is the case.
+    """
+    result: dict = {"soldier": soldier, "weapon": weapon, "graft": True, "clips": {}}
+    root_template = library.object(soldier)
+    if root_template is None or not root_template.skeleton:
+        raise PoseError(f"{soldier} declares no skeleton")
+    weapon_template = library.object(weapon)
+    if weapon_template is None:
+        raise PoseError(f"no such weapon template: {weapon}")
+    weapon_skeleton = (read_skeleton(meshes, weapon_template.skeleton)
+                       if weapon_template.skeleton else None)
+    if weapon_skeleton is not None:
+        main_index = weapon_skeleton.main_index(
+            weapon_template.skeleton_main, weapon)
+        attach = pose_mod.weapon_attachment(weapon_skeleton, main_index,
+                                            clip_posed=True)
+    else:
+        attach = (pose_mod.CLIP_WORLD_YAW, (0.0, 0.0, 0.0))
+        result["weaponSkeleton"] = "unreadable, attached at hand root"
+    result["view"] = {
+        **soldier_view_constants(objects, root_template),
+        "soldierCameraPosition": (
+            list(weapon_template.soldier_camera_position)
+            if weapon_template.soldier_camera_position else None),
+        "soldierZoomPosition": (
+            list(weapon_template.soldier_zoom_position)
+            if weapon_template.soldier_zoom_position else None),
+        "soldierZoomFov": weapon_template.soldier_zoom_fov,
+        "zoomFov": weapon_template.zoom_fov,
+    }
+    stats = weapon_template.weapon_stats()
+    if stats:
+        result["weaponStats"] = stats
+    if out is None:
+        return result
+
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False)
+    weapon_report = Report(root=weapon, configuration="complex", lod=0)
+    weapon_node = assembler.build_node(builder, weapon, weapon_report)
+    if weapon_node is None:
+        raise PoseError(f"{weapon} produced no mesh")
+    grip = builder.add_node(gltf.Node(
+        name=f"{weapon} grip",
+        translation=attach[1],
+        rotation=gltf.quat_from_matrix(attach[0]),
+        children=[weapon_node],
+        extras={"weapon": weapon, "weldBone": "Bip01 R Hand"},
+    ))
+    result["weaponParts"] = weapon_report.parts
+    result["texturesMissing"] = sorted(set(weapon_report.missing_textures))
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / f"{soldier}__{weapon}.fp.glb"
+    extras = {key: value for key, value in result.items() if key != "weaponParts"}
+    target.write_bytes(builder.build([grip], extras=extras))
     result["glb"] = target.name
     (out / f"{soldier}__{weapon}.fp.report.json").write_text(
         json.dumps(result, indent=2))

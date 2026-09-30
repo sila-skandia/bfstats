@@ -27,6 +27,7 @@ import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
 import { createDemolitions } from './demolitions.js';
 import { createHandFire } from './hand-fire.js';
+import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -167,14 +168,15 @@ export function createHandWeapon(page) {
 
   soldierKit.kitWeaponSlots = null;  // [{ slot, weapon, icon }] for the spawned kit
   soldierKit.handSlot = null;        // the slot number currently in hand, or null
-  // How long the weapon bar stays up after the last selection input. The
-  // engine's own read is `Weapon/SelectingWeapon`, whose client write site was
-  // never identified (the layout's gating var is certain, its lifetime is not);
-  // ~2 s after the last input matches the retail rhythm of scroll-and-fade.
-  const WEAPON_BAR_MS = 2000;
-  soldierKit.weaponBarUntil = 0;     // performance.now() deadline for the weapon bar
-  // The weapon-bar icon variable names, built once (rule 5: nothing per frame).
-  const WEAPON_ICON_VARS = Array.from({ length: 8 },
+  // The weapon-select bar: the client HUD's `Weapon` group, whose every field
+  // the layout reads (`weapon-bar.js`, ledger HUD-14..HUD-17). The wheel only
+  // moves its highlight; Fire commits it; an item change raises it for 1.5
+  // menu-seconds, or takes it down when it was already up.
+  const weaponBar = new WeaponBar();
+  soldierKit.weaponBar = weaponBar;
+  // The weapon-bar icon variable names, built once (rule 5: nothing per frame):
+  // all ten the group registers, of which a layout draws six (FHSW eight).
+  const WEAPON_ICON_VARS = Array.from({ length: ICON_SLOTS },
     (_, i) => `Weapon/Icon/WeaponIcon${i + 1}`);
 
   /**
@@ -202,12 +204,19 @@ export function createHandWeapon(page) {
 
   /** Raise the weapon in `slot` (1..N) — the engine's
    *  `c_PIMenuSelect<slot>` (`c_PIWeaponSelect1..6` on the MemeFile side).
-   *  Selecting the slot already in hand is a no-op, like the engine's. */
+   *  Selecting the slot already in hand is a no-op, like the engine's: the
+   *  soldier's `enableItem` (client 0x004f9a00) returns before it tells the
+   *  HUD anything, so the bar does not come up either. */
   function selectKitWeapon(slot) {
     if (!page.optOnFoot.checked || !page.soldier || page.optPilot.checked) return false;
     // `handleMessage`'s gate: a MenuSelect never reaches the dispatch while
     // `c_AsmHideWeapon` is up, so a swimmer cannot change weapon.
     if (itemsLocked()) return false;
+    // And its MenuSelect cases (lnxded 0x082772ea..0x08277302) drop the press
+    // while the last shot's recoil ride is still running (`recoil.js`): 20
+    // ticks for a goBack weapon, 8 without. The other half of that gate,
+    // `isNotFireingOrHaveRecoil`'s fire-cycle timing, is not modelled.
+    if (page.soldier?.recoil?.count) return false;
     const entry = soldierKit.kitWeaponSlots?.find(w => w.slot === slot);
     if (!entry) return false;
     // `cantSelectWhenNoAmmo 1`: the engine refuses to raise a weapon with
@@ -216,30 +225,39 @@ export function createHandWeapon(page) {
     // detonator, which is how you reach the plunger after putting all four
     // charges down. See `demolitions.js`.
     if (isExplosives(entry.weapon) && !packsLeft()) return selectDetonator();
-    showWeaponBar();
     if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
     soldierKit.handSlot = entry.slot;
     loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
+    // `enableItem` tells the HUD last (0x004f9b3e -> 0x006d4b50).
+    weaponBar.itemEnabled(entry.slot);
     return true;
   }
 
-  /** Put the weapon bar up: `WEAPON_BAR_MS` from now. */
-  function showWeaponBar() {
-    soldierKit.weaponBarUntil = performance.now() + WEAPON_BAR_MS;
+  /** The HUD's item-changed call for a weapon raised outside
+   *  `selectKitWeapon` (the plunger with no kit slot): the item index in hand. */
+  function showWeaponBar(slot = soldierKit.handSlot) {
+    if (Number.isInteger(slot)) weaponBar.itemEnabled(slot);
   }
 
-  /** Scroll the inventory one entry `dir`(+1/-1) through slot order, wrapping —
-   *  the wheel's own behaviour in the game. */
+  /** The wheel (`c_PINextItem` / `c_PIPrevItem`, `dir` +1/-1): the bar's
+   *  highlight moves one icon, wrapping, and nothing is raised until Fire
+   *  commits it (`weaponBarFire`). True when the bar took the step. */
   function cycleKitWeapon(dir) {
-    if (!soldierKit.kitWeaponSlots || soldierKit.kitWeaponSlots.length < 2) return false;
-    const order = soldierKit.kitWeaponSlots.map(w => w.slot);
-    const at = order.indexOf(soldierKit.handSlot ?? order[0]);
-    const next = order[(at + dir + order.length) % order.length];
-    return selectKitWeapon(next);
+    return dir > 0 ? weaponBar.next() : weaponBar.prev();
+  }
+
+  /** A press of Fire or AltFire, offered to the bar first, as the client's
+   *  input dispatcher does (0x00448e41). True when the bar swallowed it; the
+   *  commit is the MenuSelect of the highlighted slot. */
+  function weaponBarFire() {
+    const slot = weaponBar.firePress();
+    if (slot < 0) return false;
+    if (slot > 0) selectKitWeapon(slot);
+    return true;
   }
 
   /** Tear down the viewmodel, its gun group and the HUD it owns. */
-  function disposeHandWeapon() {
+  function disposeHandWeapon({ keepArms = false } = {}) {
     releaseHandFireLoop();
     const hw = soldierKit.handWeapon;
     soldierKit.weaponToken++;
@@ -255,12 +273,19 @@ export function createHandWeapon(page) {
       const index = page.guns.groups.indexOf(hw.group);
       if (index >= 0) page.guns.groups.splice(index, 1);
     }
-    armsRig.disposeRig(hw);
     // An aim in progress was narrowing the FOV; hand the soldier his own back.
     if (page.optOnFoot.checked && page.soldier) {
       page.camera.fov = FOOT_FOV;
       page.camera.updateProjectionMatrix();
     }
+    // Kept for `loadHandWeapon` to graft the next weapon into (an arms rig
+    // only): hidden, and handed back.
+    if (keepArms && hw.rigFile && hw.mixer) {
+      hw.rig.visible = false;
+      return hw;
+    }
+    armsRig.disposeRig(hw);
+    return null;
   }
 
   /** Load the weapon into hand — the arms rig where one is extracted for
@@ -268,13 +293,16 @@ export function createHandWeapon(page) {
    *  camera-following `vmRoot` and index its gun. The template name must not be called `soldier`:
    *  that would shadow the live soldier the guard and `platformVelocity` read. */
   async function loadHandWeapon(name, soldierName = null) {
-    disposeHandWeapon();
+    // The arms in hand, kept until the new weapon is known: one the state
+    // machine never names is drawn in them (`arms-rig.js` `graftRig`).
+    const held = disposeHandWeapon({ keepArms: true });
     const token = soldierKit.weaponToken;
+    const release = () => { if (held) armsRig.disposeRig(held); };
     // The third-person body carries the same weapon welded into its hand, so it
     // is rebuilt beside the arms rig rather than only on spawn — raising the
     // knife has to change the body too. Fire-and-forget: it has its own token and
-    // cannot delay the arms.
-    page.ensureFootBody(soldierName, name).catch(
+    // cannot delay the arms. A graft's body wears the pose held before it.
+    page.ensureFootBody(soldierName, name, held ? (held.graftOf ?? held.name) : null).catch(
       err => console.warn('3P body:', err));
     // Kicked off now, in parallel with the (usually much bigger) visual load
     // below, rather than after `hw` exists: a JSON manifest plus one small mp3
@@ -289,12 +317,19 @@ export function createHandWeapon(page) {
     // on Wake's Marine Garand once it gained its own first-person rig (a much
     // bigger fetch to queue behind) via the kit-loadout fix.
     const firePromise = fetchHandFireSound(name);
-    const fetched = await armsRig.fetchRig(name, soldierName);
-    if (!fetched) return null;
+    const fetched = await armsRig.fetchRig(name, soldierName, { arms: !!held });
+    if (!fetched) { release(); return null; }
     const { gltf, fp, rigFile } = fetched;
-    if (token !== soldierKit.weaponToken || !page.optOnFoot.checked || !page.soldier) return null;
+    if (token !== soldierKit.weaponToken || !page.optOnFoot.checked || !page.soldier) {
+      release();
+      return null;
+    }
+    const graft = fp && !!held && armsRig.isGraft(gltf);
+    if (!graft) release();
     const { doc, data, rig, fov1p, viewHip, viewZoom, mixer, actions, fireVariants,
-            fidgetNames, weaponNode } = armsRig.mountRig(gltf, fp, name, token);
+            fidgetNames, weaponNode, detached } = graft
+      ? armsRig.graftRig(held, gltf, name)
+      : armsRig.mountRig(gltf, fp, name, token);
     const magazine = data?.magazine || null;
     const hw = {
       name, data, rig,
@@ -312,7 +347,7 @@ export function createHandWeapon(page) {
       fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
                              // weapon's aim state registers several (the knife)
       clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
-      active: null,          // the clip currently owning the arms
+      active: graft ? held.active : null,   // the clip currently owning the arms
       fidgetNames,           // baked idle fidget families (`idle1..idleN`)
       fidget: null,          // the fidget selected/playing, or null
       fidgetTimer: null,     // seconds left of the ANIM-6 dwell, null = parked
@@ -334,6 +369,10 @@ export function createHandWeapon(page) {
       reloadPlayed: false,  // the arms' reload clip has been started for this magazine
       cool: 0,         // seconds until a semi-auto weapon has cycled
       weaponNode,      // the welded weapon inside the rig, or null when bare
+      // A graft: the weapon whose arms and clips it is drawn in, and the
+      // weapon nodes it took off the hand (`arms-rig.js` `graftRig`).
+      graftOf: graft ? (held.graftOf ?? held.name) : null,
+      detached: detached ?? null,
       hideFire: 0,     // seconds of `hideDuringFireTime` left on the weapon mesh
       throwWind: 0,    // seconds of `fireDelay` wind-up left before the round leaves
       throwBegun: false,  // the wind-up already played this round's clip and report
@@ -390,7 +429,7 @@ export function createHandWeapon(page) {
       }
     }
     soldierKit.handWeapon = hw;
-    if (mixer && actions.idle) {
+    if (mixer && actions.idle && !graft) {
       // Idle underneath from the first frame — the breathing sway, slow enough
       // at its declared 0.1x to read as stillness — and the raise over it:
       // §11's deploy one-shot on spawn.
@@ -435,6 +474,11 @@ export function createHandWeapon(page) {
     kitAmmo.reset();
     const name = weaponTemplateFor(flag);
     soldierKit.handSlot = soldierKit.kitWeaponSlots ? slotOf(soldierKit.kitWeaponSlots, name) : null;
+    // A new life's bar: down, its highlight on the item he spawned holding.
+    weaponBar.reset(soldierKit.handSlot);
+    // ...and no recoil left over from the last one (`recoil.js`): the ride is
+    // the soldier's, and in the engine a new life is a new soldier.
+    if (page.soldier?.recoil) page.soldier.recoil.count = 0;
     const who = soldierTemplateFor(flag);
     if (soldierKit.handWeapon?.name === name
         && (soldierKit.handWeapon.rigFile || null) === (viewmodelRigFor(name, who) || null)
@@ -477,6 +521,9 @@ export function createHandWeapon(page) {
     const entry = weapons?.find(w => w.slot === primarySlot) ?? null;
     const name = entry?.weapon ?? row.primary ?? weapons?.[0]?.weapon ?? row.items?.[0] ?? null;
     soldierKit.handSlot = entry?.slot ?? (weapons && name ? slotOf(weapons, name) : null);
+    // `pickupKit`'s `enableItem(2)` then `enableItem(3)` raise the bar and take
+    // it down again; what is left is the new item in hand.
+    weaponBar.reset(soldierKit.handSlot);
     if (name) loadHandWeapon(name, soldierTemplateFor(flag));
     return true;
   }
@@ -666,6 +713,7 @@ export function createHandWeapon(page) {
     vmRoot,
     vmScene,
     vmSun,
+    weaponBarFire,
     weaponSoundsManifest,
     weaponTemplateFor,
   });

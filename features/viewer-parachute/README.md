@@ -825,3 +825,31 @@ is untouched (looking down still dives).
 A viewer number, marked so in the code. If the engine's real bound is ever
 found, it replaces this.
 
+
+---
+
+## 12. A kit with a nochute never falls free (2026-09-30)
+
+PARA-11. `overrideAirMovementInhibitations` on an `ActiveKitPart` is the byte
+at template `+0x188` (`ActiveKitPartTemplate::setOverrideAirMovementInhibitations`
+`0x08263c70`), and PARA-1's "`+0x62`" is that byte as the decompiler indexed
+it. `BFSoldier::handlePlayerInput` checks every active kit part the soldier
+wears before the free-fall gates (`0x08275e70`-`0x08275ea4`); one set byte and
+`Lb_ParachuteFall` is never entered, so 9 has nothing to open (PARA-4), there
+is no scream and no look-steering, and the landing is billed in full (PARA-10
+spares only an open chute). The kits that carry one: DC Final's Lost Village
+nopara (every kit, its own copies, the level's point), EoD's non-`_CHUTE` kits
+(`nochute`), FH's `Chutedisabler` and XPack2's rocket pack.
+
+The page: `extract_loadouts.py` writes `overrideAirMovementInhibitations: true`
+on such a kit's row (`bf42/kit.py` `overrides_air_movement` reads the part's
+own create block back), per level where the level runs its own copy
+(`levelKits`, `features/bf1942-3d-models/kit-loadouts.md`). `spawning.js` hands
+the soldier's `Parachute` a `freeFallBarred` function at every spawn; it asks
+`kit-loadout.js` `kitOverridesAirMovement` about the kit he wears
+(`currentKit`, so a kit picked up off the ground counts) when the gates would
+arm free fall. `tests/test_parachute.py` pins the gate and a 120 m drop with 9
+held: no free fall, no chute, a lethal landing.
+
+Not done: the bots' soldiers are not barred (a bot never bails out today), and
+the room server and `sim/` do not read the flag.

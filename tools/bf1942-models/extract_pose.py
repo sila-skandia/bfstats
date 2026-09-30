@@ -1862,6 +1862,70 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     return result
 
 
+def weapon_has_upper_states(machine, weapon: str) -> bool:
+    """Whether the state machine declares any upper-body state for `weapon`
+    (`Ub_<anything><Weapon>`)."""
+    suffix = weapon.lower()
+    return any(name.lower().startswith("ub_") and name.lower().endswith(suffix)
+               for name in machine.states)
+
+
+def export_graft(soldier: str, weapon: str, *, machine, meshes, library,
+                 out: Path | None) -> dict:
+    """A weapon the state machine never names, as a graft recipe: the weld and
+    nothing else.
+
+    `BFSoldier::enableItem` (lnxded 0x08278460) raises a weapon by asking
+    `setAnimationState(1, "Ub_{Stand,Crouch,Lie}RaiseWeapon" + <template>)`,
+    and `BFSoldier::setAnimationState` (0x0826cee0) does nothing when
+    `AnimationStateMachine::findState` misses (the `-1 < state` gate at its
+    top). So a weapon with no `Ub_*<W>` state of its own is drawn in the hand
+    of whatever upper-body state the soldier was already in -- the weapon he
+    held before it, with that weapon's transitions still answering fire and
+    reload. Desert Combat's `Mortar_weap` is the case: the machine declares
+    only the seat's `Ub_/Lb_KneelMortar`. The recipe carries the weapon's own
+    weld (its `.ske`, here `animations/ExpPack.ske`); the viewer takes the
+    joints, clips and gaits from the pose held before
+    (`viewer/pose-compose.js`).
+    """
+    if weapon_has_upper_states(machine, weapon):
+        raise PoseError(f"{weapon} has upper-body states of its own: not a graft")
+    root_template = library.object(soldier)
+    if root_template is None or root_template.kind.lower() != "bfsoldier":
+        raise PoseError(f"no such soldier: {soldier}")
+    weapon_template = library.object(weapon)
+    if weapon_template is None:
+        raise PoseError(f"no such weapon template: {weapon}")
+    weapon_skeleton = (read_skeleton(meshes, weapon_template.skeleton)
+                       if weapon_template.skeleton else None)
+    result: dict = {"soldier": soldier, "weapon": weapon, "graft": True}
+    if weapon_skeleton is not None:
+        main_index = weapon_skeleton.main_index(
+            weapon_template.skeleton_main, weapon)
+        attach = pose_mod.weapon_attachment(weapon_skeleton, main_index,
+                                            clip_posed=True)
+    else:
+        attach = (pose_mod.CLIP_WORLD_YAW, (0.0, 0.0, 0.0))
+        result["weaponSkeleton"] = "unreadable, attached at hand root"
+    attach_trs = recipe_mod.trs(attach)
+    result["weaponAttach"] = {"bone": recipe_mod.WELD_BONE,
+                              "q": attach_trs[:4], "t": attach_trs[4:]}
+    if out is None:
+        return result
+    doc = recipe_mod.document(
+        kind="weapon", soldier=soldier, pose=weapon,
+        rig=recipe_mod.rig_rel(soldier),
+        root={"name": f"{soldier} holding {weapon}",
+              "q": list(gltf.quat_from_ypr(0.0, -90.0, 0.0))},
+        joints={}, clips={}, weapon=weapon, attach=result["weaponAttach"],
+        graft=True,
+    )
+    result["recipe"] = recipe_mod.write(out, soldier, weapon, doc).name
+    (out / f"{soldier}__{weapon}.pose.report.json").write_text(
+        json.dumps(result, indent=2))
+    return result
+
+
 def export_rig(soldier: str, *, meshes, textures, objects, library,
                max_texture: int, out: Path) -> dict:
     """A soldier's rig: body, face, hands, skeleton, binds and textures.
@@ -2712,6 +2776,11 @@ def main() -> int:
                     help="with --split: write the rigs and the recipes and no "
                          "monolithic .glb at all. This is the cutover — it is "
                          "only safe once every reader takes the recipe path.")
+    ap.add_argument("--graft", action="store_true",
+                    help="the pairs are weapons the state machine never names "
+                         "(Desert Combat's Mortar_weap): write a graft recipe "
+                         "per pair, the weld alone, which the viewer hangs on "
+                         "the pose the soldier already held (export_graft)")
     args = ap.parse_args()
     if args.split_only:
         args.split = True
@@ -2884,6 +2953,20 @@ def main() -> int:
         for name, why in sorted((canopy.get("errors") or {}).items()):
             print(f"  error:  {name}: {why}", file=sys.stderr)
         return 0 if (body.get("asset") and canopy.get("asset")) else 1
+
+    if args.graft:
+        args.out.mkdir(parents=True, exist_ok=True)
+        failures = 0
+        for soldier, weapon in zip(args.pairs[::2], args.pairs[1::2]):
+            try:
+                result = export_graft(soldier, weapon, machine=machine,
+                                      meshes=meshes, library=library, out=args.out)
+            except PoseError as exc:
+                print(f"{soldier} + {weapon}: {exc}", file=sys.stderr)
+                failures += 1
+                continue
+            print(f"{soldier} + {weapon}: graft -> {result['recipe']}", file=sys.stderr)
+        return 1 if failures else 0
 
     if args.seat_poses:
         return extract_seat_poses(machine, meshes, textures, objects, library,

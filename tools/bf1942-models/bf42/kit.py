@@ -286,6 +286,53 @@ def kit_parts(library: con_mod.ObjectLibrary,
     return worn, carried
 
 
+# `ObjectTemplate.overrideAirMovementInhibitations <bool>` inside a create block.
+_AIR_MOVEMENT = re.compile(
+    r"^\s*objecttemplate\.overrideairmovementinhibitations\s+(\S+)", re.IGNORECASE)
+_CREATE = re.compile(r"^\s*objecttemplate\.create\s+\S+\s+(\S+)", re.IGNORECASE)
+
+
+def overrides_air_movement(library: con_mod.ObjectLibrary,
+                           kit: con_mod.ObjectTemplate, read) -> bool:
+    """Whether the kit carries an `ActiveKitPart` that sets
+    `overrideAirMovementInhibitations` -- EoD's and DC Final's `nochute`,
+    FH's `Chutedisabler`, XPack2's rocket pack.
+
+    The word writes `ActiveKitPartTemplate+0x188` (`setOverrideAirMovement
+    Inhibitations` 0x08263c70, console word at 0x082fe723), and
+    `BFSoldier::handlePlayerInput` reads it off every active kit part the
+    soldier wears: any set byte skips the free-fall branch (0x08275e70 ..
+    0x08275ea4), so the soldier never enters `Lb_ParachuteFall` and 9 never
+    opens a chute (PARA-1, PARA-4). The library keeps no such field, so the
+    part's own create block is read back: `read(path)` returns the bytes of
+    the `.con` that declared it (the objects pool's `try_read`), or None.
+    """
+    for child in kit.children:
+        part = library.object(child.template)
+        if part is None or part.kind.lower() != "activekitpart":
+            continue
+        blob = read(part.source) if part.source else None
+        if not blob:
+            continue
+        current = None
+        text = con_mod.strip_comments(blob.decode("latin-1", "replace"))
+        for line in text.splitlines():
+            created = _CREATE.match(line)
+            if created:
+                current = created.group(1).lower()
+                continue
+            if current != part.name.lower():
+                continue
+            word = _AIR_MOVEMENT.match(line)
+            if word:
+                try:
+                    if float(word.group(1)) != 0:
+                        return True
+                except ValueError:
+                    continue
+    return False
+
+
 def carried_templates(library: con_mod.ObjectLibrary,
                       kit: con_mod.ObjectTemplate, depth: int = 4) -> list[str]:
     """Every template a kit reaches through `addTemplate`, declaration order.
