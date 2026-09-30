@@ -47,6 +47,7 @@ import json
 import math
 import os
 import re
+import struct
 import subprocess
 import sys
 import weakref
@@ -3028,8 +3029,15 @@ def mount_level_pools(ctx) -> None:
     # `../bf1942/levels/DC_No_Fly_Zone/standardMesh/...` and its
     # `alternativePath` is that level's `Textures/`.
     for level_path in chain_level_archives(ctx.chain):
-        textures.mount_level(level_path, (".dds", ".tga"))
-        meshes.mount_level(level_path, (".sm", ".rs"))
+        # A truncated archive (four of FHSW's in this install end before
+        # their index) is one level the game could not load either, not a
+        # reason to fail every other level's bake.
+        try:
+            textures.mount_level(level_path, (".dds", ".tga"))
+            meshes.mount_level(level_path, (".sm", ".rs"))
+        except (OSError, struct.error, ValueError) as exc:
+            print(f"  skipping unreadable level archive {level_path.name}: {exc}",
+                  file=sys.stderr)
 
 
 def main() -> int:
