@@ -28,9 +28,10 @@ let wreckLoader = null;
 const M = await loadViewerModules(viewerDir(path.join(HERE, '..', 'viewer')));
 routeConsole(true);
 
-async function start(map, botsPerSide = 4, seed = SEED) {
+async function start(map, botsPerSide = 4, seed = SEED, mod = null) {
   seedMathRandom(seed);
-  const level = await realLevel(M, { maps: path.join(assets, 'maps'), models: path.join(assets, 'models'), map });
+  const maps = mod ? path.join(assets, 'maps', 'mods', mod) : path.join(assets, 'maps');
+  const level = await realLevel(M, { maps, models: path.join(assets, 'models'), map });
   seedMathRandom(seed);
   const match = new Match({ M, level, botsPerSide, duration: 3600, seed, sink: null, wreckLoader });
   match.setup();
@@ -552,6 +553,98 @@ const recipes = {
   },
 
   async tankApproachControl() { return recipes.tankApproach(true); },
+
+  /** A self-propelled gun's crew (ledger SPOT-14, SPOT-15). A driver in the
+   *  hull (AI type 14, `ArtilleryDriver`) and, with `gunner`, a second bot of
+   *  his side on the gun (the hull's first secondary seat), their orders held
+   *  on the hull's pad; the hull moved `ahead` metres along its nose first
+   *  (the recipes' `place`). A frozen enemy soldier stands `dist` m out,
+   *  `bearing` deg to the right of the nose. The driver's Fire
+   *  (`BBFireArtilleryDriver`) is scored from the gun seat while it is held
+   *  and is 0 while it is empty (`BBFireUnarmed` returns 0); its plan
+   *  (`BBPFire2dDriver`) turns and places the hull and never fires. */
+  async artilleryCrew({ template = 'Priest', map = 'el_alamein', mod = null, gunner = true, bearing = 32,
+                        dist = 150, ahead = 0, seconds = 60 } = {}) {
+    const match = await start(map, 4, SEED, mod);
+    const driver = match.bots.find(o => o.team === 2);
+    const loader = match.bots.find(o => o.team === 2 && o !== driver);
+    const target = match.bots.find(o => o.team !== driver.team);
+    const hull = mount(match, driver, template);
+    if (gunner) {
+      const gun = match.stage.units.candidates().find(c => c.vehicleId === hull.vehicleId && !c.isRoot && !c.occupiedBy
+        && c.weapons?.length);
+      if (!gun || !match.referee.enterVehicle(loader, gun)) throw new Error(`could not seat the ${template} gunner`);
+    }
+    const crew = gunner ? [driver, loader] : [driver];
+    freezeOthers(match, crew.map(b => b.playerId));
+    let pad = [hull.pos[0], hull.pos[2]];
+    if (ahead) {
+      const h = hullFrame(match, driver);
+      const x = h.x + h.fx * ahead, z = h.z + h.fz * ahead;
+      const s = driver.vehicle.drive.state;
+      s.position.set(x, match.groundAt(x, z) + 1.0, z);
+      s.velocity?.set?.(0, 0, 0);
+      s.angularVelocity?.set?.(0, 0, 0);
+      driver.setPosition(x, match.groundAt(x, z) + 1.0, z);
+      pad = [x, z];
+    }
+    redirectOrders(match, Object.fromEntries(crew.map(b => [b.playerId, { point: pad, radius: 20 }])));
+    run(match, 1);
+    const h0 = hullFrame(match, driver);
+    const a = bearing * Math.PI / 180;
+    // The nose turned `bearing` toward the hull's right, (-fz, fx) on x/z.
+    const dir = [h0.fx * Math.cos(a) - h0.fz * Math.sin(a), h0.fz * Math.cos(a) + h0.fx * Math.sin(a)];
+    const tx = h0.x + dir[0] * dist, tz = h0.z + dir[1] * dist;
+    plant(match, target, tx, tz, Math.atan2(-dir[0], -dir[1]));
+    const armor = match.world.armorOf(target.playerId);
+    const off = () => {
+      const h = hullFrame(match, driver);
+      const bx = tx - h.x, bz = tz - h.z;
+      const len = Math.hypot(bx, bz) || 1;
+      return Math.abs(Math.atan2(h.fx * bz / len - h.fz * bx / len, h.fx * bx / len + h.fz * bz / len)) * 180 / Math.PI;
+    };
+    const off0 = off();
+    const behs = { driver: {}, gunner: {} };
+    const steps = {};
+    let next = 0, minOff = off0, firstRound = null, driverTarget = 0;
+    const roundsOf = b => match.stats.get(b.playerId).vehicleRounds;
+    run(match, seconds, () => {
+      minOff = Math.min(minOff, off());
+      if (firstRound === null && gunner && roundsOf(loader) > 0) firstRound = round(match.clock);
+      if (match.clock >= next) {
+        next = match.clock + 1;
+        behs.driver[driver.currentBehaviour] = (behs.driver[driver.currentBehaviour] ?? 0) + 1;
+        if (gunner) behs.gunner[loader.currentBehaviour] = (behs.gunner[loader.currentBehaviour] ?? 0) + 1;
+        if (driver.firingTarget === target.playerId) driverTarget++;
+        const step = driver.currentBehaviour === 'Fire' ? (driver._artilleryDbg?.step ?? '-') : '-';
+        steps[step] = (steps[step] ?? 0) + 1;
+        driver._artilleryDbg = null;
+      }
+      return armor.destroyed || !driver.vehicle;
+    });
+    const h1 = hullFrame(match, driver);
+    return {
+      template, gunner, bearing, gunSeat: hull.gunSeat?.seatId ?? null, off0: round(off0), minOff: round(minOff),
+      offEnd: round(off()), moved: round(Math.hypot(h1.x - h0.x, h1.z - h0.z)), behs, steps, driverTarget, firstRound,
+      rounds: { driver: roundsOf(driver), gunner: gunner ? roundsOf(loader) : 0 },
+      fired: [...new Set(eventsOf(match, 'vehicle_fire').map(e => `${e.template}:${e.gun}`))],
+      killed: armor.destroyed, clock: round(match.clock),
+    };
+  },
+
+  async artilleryCrewEmptyGun() { return recipes.artilleryCrew({ gunner: false }); },
+
+  /** XPack2's Flakpanzer: its driver seat (type 14) reaches the coaxial MG
+   *  (`Coaxial_MG42AI`); the flak gun is its type-4 secondary seat. A
+   *  soldier 60 m dead ahead, the gun seat empty, then held. */
+  async flakpanzerDriver() {
+    return recipes.artilleryCrew({ template: 'Flakpanzer', map: 'telemark', mod: 'xpack2', gunner: false,
+                                   bearing: 0, dist: 60, seconds: 30 });
+  },
+  async flakpanzerCrew() {
+    return recipes.artilleryCrew({ template: 'Flakpanzer', map: 'telemark', mod: 'xpack2', gunner: true,
+                                   bearing: 0, dist: 60, seconds: 30 });
+  },
 
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on

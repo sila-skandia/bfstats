@@ -281,6 +281,31 @@ export function createBotUnits(env) {
   };
 
   /**
+   * The gun seat of a self-propelled gun's hull (AI type 14, `ArtilleryDriver`:
+   * the Priest, the Wespe, XPack2's Flakpanzer), or null for any other unit.
+   * `BBFireArtilleryDriver::calculateUrgency` 0x0856a650 and `BBPFire2dDriver::
+   * createPlan` 0x08596fa0 both take the root's first secondary object
+   * (`getFirstSecondaryObject`, IAIObject vt+0x80, then vt+0x58 for the
+   * bot's side) and score, aim and range from it (ledger SPOT-15). Here that
+   * is the first seat the template marks `secondary`, in the order the
+   * extractor kept (`Objects.con`'s; INFERRED: the vanilla and expansion
+   * hulls have one). Its AI weapons, strength table, ControlInfo (the camera
+   * window `validateCameraDirectionPitch` / `Yaw` read), the rig's traverse
+   * and its Armament's anti-aircraft word.
+   */
+  function artilleryGunSeat(node, ai) {
+    if (ai?.equipmentType !== 14) return null;
+    const entry = Object.entries(ai.seatsAi ?? {}).find(([, s]) => s?.secondary);
+    if (!entry) return null;
+    const [seatId, s] = entry;
+    const weapons = Object.entries(s.aiWeapons ?? {}).map(([name, w]) => ({ ...w, name }));
+    const table = {};
+    for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) table[k] = Math.max(table[k] ?? 0, v ?? 0);
+    return { seatId, weapons, table, controlInfo: s.controlInfo ?? null, yawLimits: units.seatYawLimits(node, seatId),
+             antiAircraft: !!s.isAntiAircraft };
+  }
+
+  /**
    * The seats a bot may take right now (`BBChange`'s environment list): every
    * door of every enterable unit with AI data -- a land vehicle's driver seat,
    * its gunner and passenger seats, a fixed gun -- with the seat's own AI
@@ -367,6 +392,7 @@ export function createBotUnits(env) {
         // `calculateFireStrength` adds and the seat swap's alternatives.
         const seats = [];
         const entries = [];
+        const gunSeat = artilleryGunSeat(node, ai);
         for (const door of doors) {
           if (seen.has(door.seatId)) continue;
           seen.add(door.seatId);
@@ -412,6 +438,9 @@ export function createBotUnits(env) {
             // `aiTemplatePlugIn.equipmentType`: the seat's `AIbehaviours.con`
             // vehicle row, which picks its Fire behaviour (bot-perception.js).
             equipmentType: seatAi?.equipmentType ?? (isRoot ? ai.equipmentType : null) ?? null,
+            // A type-14 root's gun seat (`artilleryGunSeat`) and the hull's
+            // `isTurnable` (AITemplateMobile +0x30), which its Fire reads.
+            gunSeat: isRoot ? gunSeat : null, isTurnable: !!ai.isTurnable,
             // `Information+0x14`, which `calculateVehicleUrgency` 0x08583b10
             // adds to the unit's urgency (`fadds 0x14(%esi)` at 0x08583c34):
             // the seat's own `aiTemplate.basicTemp` (ConsoleClass489
@@ -481,6 +510,12 @@ export function createBotUnits(env) {
       maxSpeed: cand.maxSpeed,
       weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
       controlInfo: cand.controlInfo ?? null, equipmentType: cand.equipmentType ?? null,
+      // A type-14 driver's gun seat, whether anyone holds it now
+      // (`AIObjectUnit::isOccupied` 0x085dc0d0: any player), and its gun
+      // groups while it is held (bot-aim.js `gunSeatAim`).
+      gunSeat: cand.gunSeat ?? null, isTurnable: !!cand.isTurnable,
+      gunSeatHeld: () => !!cand.gunSeat && units.seatHolder(node, cand.gunSeat.seatId) != null,
+      gunGroups: () => (cand.gunSeat ? inst.groupsOf(cand.gunSeat.seatId) : null),
       // A rider's move term follows whoever drives the hull right now.
       hullMaxSpeed: ai?.maxSpeed ?? 0,
       driverOf: () => env.vehicles.driverOf(node),

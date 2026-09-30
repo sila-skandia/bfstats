@@ -16,7 +16,7 @@
 // turret Browning rests facing aft) is aimed by where it points.
 
 import { sCurveExact } from './bot-sense.js';
-import { weaponGroup, gunBallistics } from './bot-pilot.js';
+import { weaponGroup, gunBallistics, groupBallistics } from './bot-pilot.js';
 import { POSE_EYE } from './bot-pose.js';
 
 /** The 55-channel PlayerInputMap indices, from the research document §1.2. */
@@ -637,6 +637,75 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
     rec.aimPoint = [origin[0] + aim.predicted[0], origin[1] + aim.predicted[1], origin[2] + aim.predicted[2]];
   }
   return aim;
+}
+
+/**
+ * `BAPWrapperAiming::execute` 0x08559770 as `BBPFire2dDriver` builds it (read
+ * 2026-09-30, ledger SPOT-15): the aim of ANOTHER seat's gun, the hull's
+ * gun seat, for a self-propelled gun's driver. The seat's chosen weapon
+ * (its Armament's current one, weapon vt+0x38 +0x30 the muzzle), the lead
+ * `Aimer::getFiringDirection` finds at precision 0.5 with the weapon's
+ * `indirect` byte, from the muzzle to the target's sensed point (the memory
+ * record's, else its position), the target's velocity less the hull's.
+ * `{ valid, dir }`: valid when the search found a solution (the wrapper's
+ * bool), `dir` the lead, else the straight line. The seat's gun groups are
+ * collected only while someone holds it, which is when the driver's Fire
+ * runs; without them the hull's position and 600 m/s stand in (INVENTION).
+ */
+export function gunSeatAim(bot, targetPoint, targetVel = [0, 0, 0]) {
+  const g = gunSeatGun(bot);
+  if (!g) return null;
+  const { origin, weapon, ballistics: b } = g;
+  const rel = [targetPoint[0] - origin[0], targetPoint[1] - origin[1], targetPoint[2] - origin[2]];
+  const own = unitVelocity(bot);
+  const relVel = [targetVel[0] - own[0], targetVel[1] - own[1], targetVel[2] - own[2]];
+  const lead = firingDirection({ rel, relVel, speed: b.speed, gravity: b.gravity, indirect: !!weapon?.indirect });
+  return { valid: !!lead, dir: lead?.dir ?? unit3(rel) ?? [0, 0, 1], origin };
+}
+
+/**
+ * `BFEnvironment::hasIndirectLineOfFire` 0x085e3520 (IAIEnvironment vt+0x58),
+ * which `BBPFire2dDriver` asks when its bot has no sight of the target: the
+ * gun's lead with `indirect` forced on, the arc's top (`Aimer::
+ * getVerticalExtreme`, the flight time to it: the muzzle plus the lead times
+ * the speed times that time, plus half the gravity times its square), and
+ * two world lines, muzzle to top and top to the target's point
+ * (`collideLineWithWorld` vt+0x54, the bot's unit and the target skipped);
+ * clear when neither hits. `lineClear(a, b)` is the bot's.
+ */
+export function gunSeatIndirectLine(bot, targetPoint, lineClear) {
+  const g = gunSeatGun(bot);
+  if (!g || !lineClear) return false;
+  const { origin, ballistics: b } = g;
+  const rel = [targetPoint[0] - origin[0], targetPoint[1] - origin[1], targetPoint[2] - origin[2]];
+  const lead = firingDirection({ rel, speed: b.speed, gravity: b.gravity, indirect: true });
+  if (!lead) return false;
+  const t = b.gravity < 0 ? Math.max(0, (lead.dir[1] * b.speed) / -b.gravity) : 0;
+  const top = [origin[0] + lead.dir[0] * b.speed * t, origin[1] + lead.dir[1] * b.speed * t + 0.5 * b.gravity * t * t,
+               origin[2] + lead.dir[2] * b.speed * t];
+  return !!(lineClear(origin, top) && lineClear(top, targetPoint));
+}
+
+/** The gun seat's chosen weapon, its gun group (the seat's own, keyed by the
+ *  weapon's `weaponFire` input as `weaponGroup` keys the bot's own), the
+ *  muzzle and the round's ballistics; null for a unit with no gun seat. */
+function gunSeatGun(bot) {
+  const m = bot.vehicle;
+  const gun = m?.gunSeat;
+  if (!gun) return null;
+  const groups = m.gunGroups?.();
+  const list = groups?.manned?.length ? groups.manned : (groups?.driven ?? []);
+  const weapon = gun.weapons?.[bot.weaponIndex] ?? gun.weapons?.[0] ?? null;
+  const input = weapon?.weaponFire ? `c_${weapon.weaponFire}` : null;
+  const group = (input && list.find(g => (g.stats?.input ?? g.input) === input)) ?? list[0] ?? null;
+  const node = group?.muzzles?.[0] ?? group?.node;
+  let origin = bot.position;
+  if (node?.matrixWorld) {
+    node.updateWorldMatrix?.(true, false);
+    const e = node.matrixWorld.elements;
+    origin = [e[12], e[13], e[14]];
+  }
+  return { weapon, group, origin, ballistics: groupBallistics(group, 600) };
 }
 
 // --- The fire correction: `FireCorrectionData`, BotMain +0x138 --------------
