@@ -184,6 +184,38 @@ def chain_level_archives(chain: list[Path]) -> list[Path]:
 _SCRIPTS_READ_ELSEWHERE = ("init", "sound", "sounds", "menu")
 
 
+def _run_walk(files: "LevelFiles", order: list[str], found: dict[str, str]) -> None:
+    """Walk `Init.con`'s run graph the way a host runs it: comments and
+    untaken `if` arms dropped (`_host_lines`), each `run`/`include` resolved
+    from the running file (`_resolve_run`). Every reached path is appended to
+    `order` (lower case, `Init.con` first); every reached path but `Init.con`
+    itself is recorded in `found` with its first level-relative folder."""
+    from bf42.level import _INCLUDE_LINE, _host_lines, _level_relative, _resolve_run
+    init = files.find("Init.con")
+    if init is None:
+        return
+    seen: set[str] = set()
+
+    def walk(path: str, depth: int) -> None:
+        if path.lower() in seen or depth > 12:
+            return
+        seen.add(path.lower())
+        order.append(path.lower())
+        rel = _level_relative(files, path).replace("\\", "/").lower()
+        head = rel.split("/", 1)[0] if "/" in rel else ""
+        if depth:
+            found[path.lower()] = head
+        text = files.read(path).decode("latin-1", "replace")
+        for line in _host_lines(text, []):
+            match = _INCLUDE_LINE.match(line)
+            if match:
+                target = _resolve_run(files, path, match.group(1))
+                if target is not None:
+                    walk(target, depth + 1)
+
+    walk(init, 0)
+
+
 def level_run_order(files: LevelFiles) -> list[str]:
     """Every script the level's `Init.con` runs, in the order a host enters
     them, as lower-case archive paths, `Init.con` first.
@@ -195,53 +227,75 @@ def level_run_order(files: LevelFiles) -> list[str]:
     nothing. FHSW's Fall of Berlin ships `Objects/lightingfix/`, 16 of FH's
     market stall, stair and ruin pole geometries redeclared against `*_fix`
     meshes no archive holds, and its `Objects.con` has `rem run
-    lightingfix/go`; the engine draws FH's (125 placed objects). The graph is followed the way a host runs it: comments
-    and untaken `if` arms dropped (`_host_lines`), each `run`/`include`
-    resolved from the running file (`_resolve_run`).
+    lightingfix/go`; the engine draws FH's (125 placed objects).
     """
-    from bf42.level import _INCLUDE_LINE, _host_lines, _resolve_run
-    init = files.find("Init.con")
-    if init is None:
-        return []
     order: list[str] = []
-    seen: set[str] = set()
-
-    def walk(path: str, depth: int) -> None:
-        if path.lower() in seen or depth > 12:
-            return
-        seen.add(path.lower())
-        order.append(path.lower())
-        text = files.read(path).decode("latin-1", "replace")
-        for line in _host_lines(text, []):
-            match = _INCLUDE_LINE.match(line)
-            if match:
-                target = _resolve_run(files, path, match.group(1))
-                if target is not None:
-                    walk(target, depth + 1)
-
-    walk(init, 0)
+    _run_walk(files, order, {})
     return order
+
+
+def _run_graph(files: LevelFiles) -> dict[str, str]:
+    """Every script the level's `Init.con` runs, keyed by its lower-case
+    archive path, valued with its first level-relative folder (lower case,
+    "" at the level root). `Init.con` itself is left out."""
+    found: dict[str, str] = {}
+    _run_walk(files, [], found)
+    return found
+
+
+def level_run_scripts(files: LevelFiles) -> list[str]:
+    """Every object script the level's `Init.con` runs, `Objects/` included,
+    in the order it runs them.
+
+    These are the only level scripts a level load runs. `Game::load` runs the
+    level's `Init.con` (lnxded 0x0805b785) and then `loadAllConFiles
+    ("objects/")` (0x0805bc39), which lists every `.con` of the archives
+    mounted under the key `objects` (`FileManager::findFiles` 0x0841e5d0,
+    `findAllMatchingArchives` 0x0841fff0): each mod's `Objects.rfa`, never a
+    level archive, which is mounted as `bf1942/levels/<L>` (LOAD-5). So a
+    script in a level's `Objects/` that nothing runs declares nothing: DC
+    Final's Lost Village ships the nochute kits Lost Village nopara runs, and
+    runs none of them itself. Returned as lower-case archive paths for
+    `ArchivePool.add_level_objects(runs=)`; the scripts other readers own
+    (`Init/`, `Sound(s)/`, `Menu/`) are left out. The order is a host's,
+    depth first (a `run` executes before the line after it), which is the
+    order `LevelFirst` gives a load's own declarations: Lost Village nopara
+    declares `Bacpac_Big_ger` in its HeavyAssault and its Support kit files,
+    and the first run owns it (LOAD-1).
+    """
+    return [path for path, head in _run_graph(files).items()
+            if head not in _SCRIPTS_READ_ELSEWHERE]
 
 
 def level_object_scripts(files: LevelFiles) -> set[str]:
     """The object scripts the level's `Init.con` runs outside its `Objects/`.
 
-    Every template a script `Init.con` runs declares is the level's. Most
-    levels keep them under `Objects/` (`run objects/objects`), which
-    `add_level_objects` takes whole; some do not: Al Nas runs a root
-    `objects.con` (its bridges, bridge huts and market stands), Twin Rivers
-    another, and Coastal Hammer `CustomObjects/INIT` (its houses, sidewalk
-    blocks and planks). Returned from `level_run_order` as lower-case archive
-    paths for `add_level_objects(extra=)`.
+    Most levels keep them under `Objects/` (`run objects/objects`); some do
+    not: Al Nas runs a root `objects.con` (its bridges, bridge huts and market
+    stands), Twin Rivers another, and Coastal Hammer `CustomObjects/INIT` (its
+    houses, sidewalk blocks and planks). `level_run_scripts` without the
+    `Objects/` ones, for `add_level_objects(extra=)`.
     """
-    from bf42.level import _level_relative
-    found: set[str] = set()
-    for path in level_run_order(files)[1:]:
-        rel = _level_relative(files, path).replace("\\", "/").lower()
-        head = rel.split("/", 1)[0] if "/" in rel else ""
-        if head not in _SCRIPTS_READ_ELSEWHERE and head != "objects":
-            found.add(path)
-    return found
+    return {path for path, head in _run_graph(files).items()
+            if head not in _SCRIPTS_READ_ELSEWHERE and head != "objects"}
+
+
+def add_level_run_objects(objects: ArchivePool, chain: list[Path],
+                          level: str) -> list[str]:
+    """Register in `objects` what loading `level` declares, and nothing else
+    of its archives: the scripts its `Init.con` runs (`level_run_scripts`),
+    from every copy of the level down the mod chain, nearest mod and newest
+    patch first. Returns those scripts (empty for a level with no
+    `Init.con`). The kit extractors' level load; a bake does the same through
+    `scene_layers.LevelContext.pools`."""
+    game_dir = chain[0].parent.parent if chain else Path()
+    paths = find_level_archives(game_dir, chain[0].name, level, chain=chain)
+    if not paths:
+        return []
+    runs = level_run_scripts(load_level_files(paths, level))
+    for path in reversed(paths):
+        objects.add_level_objects(path, label=f"{level} objects", runs=runs)
+    return runs
 
 
 def _vanilla_texture_rfa_present(chain: list[Path]) -> bool:
@@ -605,6 +659,44 @@ def _firing_patch(patches, release=False):
         if released:
             return released
     return first or []
+
+
+def _trigger_slots(patches, chosen, from_round=False):
+    """What a burst plays besides its rounds: `(press, release)`.
+
+    `chosen` is `_firing_patch`'s pick, the layers every round triggers.
+    `press` is the rest of the latched patch it came from: a patch with a
+    `loop` sample starts once per press and ignores the rounds after it until
+    it stops sounding (ledger SND-14), so its one-shots play once a burst.
+    DC Final's miniguns put `avenger_spinup.wav` there beside the spinning
+    loop; `_firing_patch` keeps the loops, which dropped the spin-up.
+
+    `release` is `{slot: samples}` for the patches `FireArms::updateSound`
+    triggers when the rounds stop: Release (2) and Shell Bounce (3) every
+    time, MG distance (4) at most once per 0.5..1.5 s (SND-12, SND-16). The
+    spin-down, the casings and every `*_release.wav` tail live there. None
+    for a weapon whose rounds are already heard out of those slots (a grenade
+    launcher's report, `_firing_patch`'s last resort) or whose script came off
+    its projectile (a bomb's whistle and release thump, `from_round`).
+    """
+    home = None
+    for index, patch in enumerate(patches):
+        if chosen and any(sample is chosen[0] for sample in patch.samples):
+            home = index
+            break
+    press = []
+    if (home in (FIRE_SLOT, FIRE_LOOP_SLOT)
+            and any(bool(sample.loop) for sample in chosen)):
+        press = [sample for sample in _non_silence(patches[home].samples)
+                 if not sample.loop]
+    release = {}
+    if not from_round and home not in RELEASE_SLOTS:
+        for index in RELEASE_SLOTS:
+            if index < len(patches):
+                samples = _non_silence(patches[index].samples)
+                if samples:
+                    release[index] = samples
+    return press, release
 
 
 def _modulator_report(effect) -> dict:
@@ -1032,19 +1124,34 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 continue
             arms_patches = parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
                                      include=read_script, source=arms_script)
+            chosen = _firing_patch(arms_patches, release=from_round)
             arms_layers = _sound_layers(
-                _firing_patch(arms_patches, release=from_round),
-                sounds, write, level_files, arms_patches)
+                chosen, sounds, write, level_files, arms_patches)
             if not arms_layers:
                 continue
             arms_tmpl = library.objects.get(arms_name.lower())
-            weapons.append({
+            weapon = {
                 "fireArms": arms_name,
                 "script": arms_script,
                 "layers": arms_layers,
                 "attachToListener": bool(
                     arms_tmpl and arms_tmpl.attach_to_listener),
-            })
+            }
+            # The burst's own edges: the latched patch's one-shots once a
+            # press (a minigun's spin-up), and the slots a stop triggers
+            # (its spin-down, the casings, the `*_release` tail).
+            press, release = _trigger_slots(arms_patches, chosen, from_round)
+            press_layers = _sound_layers(press, sounds, write, level_files,
+                                         arms_patches)
+            if press_layers:
+                weapon["press"] = press_layers
+            release_layers = {
+                str(index): layers for index, samples in release.items()
+                if (layers := _sound_layers(samples, sounds, write,
+                                            level_files, arms_patches))}
+            if release_layers:
+                weapon["release"] = release_layers
+            weapons.append(weapon)
         if entry is None and weapons:
             entry = {
                 "template": template,
@@ -2287,6 +2394,23 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
             entry["maxSpawnDelay"] = window[1]
         if spec and spec.spawn_delay_at_start is not None:
             entry["spawnDelayAtStart"] = spec.spawn_delay_at_start
+        # The engine's own join of a pad to its flag: `Object.setOSId` against
+        # the control point's `objectSpawnerId`. `CPEnable` / `CPDisable`
+        # (lnxded 0x082840e0 / 0x08284200) give the spawner the point's team
+        # and switch it on and off, and the team picks the `setObjectTemplate`
+        # entry (SPAWN-2). The nearest-point guess above stays for the pads a
+        # level files under no id.
+        if inst.os_id is not None and inst.os_id > 0:
+            entry["osId"] = inst.os_id
+        # Both sides' entries when they differ (DC Final's Lost Village hands
+        # out `Iraq_AA` to team 1 and `US_AA` to team 2 from one pad), or when
+        # a side has none (that side's pad spawns nothing), so the side that
+        # holds the pad's flag gets its own; `vehicle` is the entry for the
+        # placement's own team, as before. Absent: both sides get `vehicle`.
+        if spec and (len({name.lower() for name in spec.vehicles.values()}) > 1
+                     or set(spec.vehicles) != {1, 2}):
+            entry["templates"] = {str(team): name
+                                  for team, name in sorted(spec.vehicles.items())}
         out.append(entry)
     return out
 
@@ -2357,12 +2481,17 @@ class LevelFirst:
         names = self._pool.names()
         own = [n for n in names if n.lower().startswith("bf1942/levels/")]
         rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")])
-        if self._run_order is None:
+        # The run order the caller computed, or the one the pool recorded
+        # when it took the level's scripts (`add_level_objects(runs=)`).
+        run_order = self._run_order
+        if run_order is None:
+            run_order = getattr(self._pool, "run_order", None) or None
+        if run_order is None:
             return own + rest
         by_path: dict[str, str] = {}
         for name in own:
             by_path.setdefault(name.lower(), name)
-        reached = [by_path[p] for p in self._run_order if p in by_path]
+        reached = [by_path[p] for p in run_order if p in by_path]
         ran = {n.lower() for n in reached}
         return reached + rest + [n for n in own if n.lower() not in ran]
 

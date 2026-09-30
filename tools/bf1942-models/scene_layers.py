@@ -39,6 +39,7 @@ from pathlib import Path
 
 import extract_map as em
 from bf42.ai_level import add_cover_values, load_level_ai, write_level_search_maps
+from bf42.ctf import TemplateBlocks, flag_bases
 from bf42.level import discover_level_sounds, load_briefing, load_tickets
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_models import build_library, build_pools, load_damage_tables, mod_chain
@@ -50,7 +51,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "spawns": (("soldierSpawns", "vehicleSoldierSpawns", "objectSpawns"),
                ("soldierSpawns", "objectSpawns", "vehicleSoldierSpawns")),
     "game": (("gameplayMode", "combatArea", "tickets", "gameTypes", "briefing"),
-             ("gameTypes", "tickets", "combatArea")),
+             ("gameTypes", "tickets", "combatArea", "flagBases")),
     "environment": (("waterLevel", "fogColor", "fogStart", "fogEnd",
                      "sunDirection", "camera", "lighting", "drawDistance",
                      "targetTriCount"), ()),
@@ -79,7 +80,7 @@ REPORT_ORDER = (
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
-                  "combatArea")
+                  "combatArea", "flagBases")
 
 LAYER_KEYS = {key for top, _ in LAYERS.values() for key in top}
 
@@ -212,12 +213,13 @@ class LevelContext:
             # A level can declare ObjectTemplates of its own; they have to be
             # in the pool before the library is built. See `add_level_objects`.
             # Nearest mod and newest patch first: the pool keeps the first
-            # registration of a path, and `paths` is farthest first. The
-            # object scripts `Init.con` runs outside `Objects/` go in too.
-            scripts = em.level_object_scripts(self.files)
+            # registration of a path, and `paths` is farthest first. Only the
+            # scripts `Init.con` runs, wherever they sit: a load never walks a
+            # level's `Objects/` on its own (LOAD-5).
+            runs = em.level_run_scripts(self.files)
             for path in reversed(self.paths):
                 objects.add_level_objects(path, label=f"{self.info.name} objects",
-                                          extra=scripts)
+                                          runs=runs)
             self._pools = (meshes, textures, objects, game)
         return self._pools
 
@@ -268,6 +270,30 @@ class LevelContext:
                 print(f"damage:   tables unavailable ({exc})", file=sys.stderr)
                 self._damage_tables = None
         return self._damage_tables
+
+    def flag_templates(self, game_type=None) -> TemplateBlocks:
+        """The `FlagBase`, `Flag` and `AnimatedBundle` templates a level load
+        declares, first `create` winning, in the order it runs its scripts:
+        the level's `Init.con`, every object script (the level's own first,
+        `em.LevelFirst`), then the game type's own script (`bf42/ctf.py`)."""
+        blocks = TemplateBlocks()
+        init = self.files.find("Init.con")
+        if init:
+            blocks.add_text(self.files.read(init).decode("latin-1", "replace"))
+        objects = self.pools[2]
+        for name in em.LevelFirst(objects).names():
+            if not name.lower().endswith(".con"):
+                continue
+            blob = objects.try_read(name)
+            if blob is not None and b"bjecttemplate" in blob.lower():
+                blocks.add_text(blob.decode("latin-1", "replace"))
+        source = getattr(game_type, "source", None)
+        if source:
+            try:
+                blocks.add_text(self.files.read(source).decode("latin-1", "replace"))
+            except KeyError:
+                pass
+        return blocks
 
     @property
     def vehicle_soldier_spawns_by_mode(self) -> dict[str, list[dict]]:
@@ -379,6 +405,16 @@ def layer_game(ctx: LevelContext):
         # archives measured); written per mode so the merge is one rule.
         "combatArea": area,
     } for name in info.modes}
+    # Capture the Flag's two flag bases, on the layer the Ctf game type loads
+    # (`bf42/ctf.py`; viewer/ctf.js plays them). Only a game type the menu
+    # offers (a `GameTypes/Ctf.con`) has any: the 40 root `Ctf.con` scripts
+    # with no GameTypes entry are never run.
+    for gt in info.game_types.values():
+        if gt.name.lower() != "ctf" or gt.mode not in modes:
+            continue
+        bases = flag_bases(gt.objects, ctx.flag_templates(gt), em._to_gltf_vec)
+        if bases:
+            modes[gt.mode]["flagBases"] = bases
     return top, modes
 
 

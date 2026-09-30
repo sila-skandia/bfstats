@@ -180,9 +180,9 @@ export function createBotVisuals(page) {
    * then draws the way the bots always were.
    */
   function buildHalfBodyRig(scene, clips, weapon, stateMachine) {
-    const byName = new Map(clips.map(c => [c.name, c]));
-    const standLower = byName.get(FAMILY_HALVES.stand.lower);
-    const standUpper = byName.get(FAMILY_HALVES.stand.upper);
+    const clipsByName = new Map(clips.map(c => [c.name, c]));
+    const standLower = clipsByName.get(FAMILY_HALVES.stand.lower);
+    const standUpper = clipsByName.get(FAMILY_HALVES.stand.upper);
     if (!standLower || !standUpper) return null;
     const mixer = new THREE.AnimationMixer(scene);
     const speeds = byName(stateMachine?.weaponSpeeds, weapon) ?? {};
@@ -191,12 +191,12 @@ export function createBotVisuals(page) {
     /** A clip's time scale for this weapon: its baked length times the rate
      *  the weapon's own state plays it at. */
     const timeScale = name => {
-      const clip = byName.get(name);
+      const clip = clipsByName.get(name);
       const speed = speeds[name] ?? clip?.userData?.speed;
       return clip && Number.isFinite(speed) && speed !== 0 && clip.duration > 0
         ? clip.duration * Math.abs(speed) : 1;
     };
-    const info = name => stateInfo(byName.get(name), name, clipless);
+    const info = name => stateInfo(clipsByName.get(name), name, clipless);
 
     const actions = new Map();
     for (const clip of clips) {
@@ -219,7 +219,7 @@ export function createBotVisuals(page) {
       has: name => actions.has(name),
       info,
       duration: name => {
-        const clip = byName.get(name);
+        const clip = clipsByName.get(name);
         return clip ? clip.duration / timeScale(name) : 0;
       },
     });

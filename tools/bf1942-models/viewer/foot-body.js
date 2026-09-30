@@ -183,8 +183,8 @@ export function createFootBody(page) {
     return footBundle(manifest?.die);
   }
 
-  function footPosePair(soldierName, weapon) {
-    return footPoses.pose(soldierName, weapon);
+  function footPosePair(soldierName, weapon, statesFrom = null) {
+    return footPoses.pose(soldierName, weapon, statesFrom);
   }
 
   function footCanopyAsset() {
@@ -323,19 +323,24 @@ export function createFootBody(page) {
    * welded weapon — swapping to the knife has to change the body, not just the
    * arms rig. A repeat call for the pair already loaded is a no-op, so a respawn
    * with the same kit costs nothing. */
-  async function ensureFootBody(soldierName, weapon) {
+  async function ensureFootBody(soldierName, weapon, statesFrom = null) {
     if (!soldierName || !weapon) return null;
-    if (footBodies.footBody && footBodies.footBody.soldier === soldierName
-        && footBodies.footBody.weapon === weapon) {
+    // `statesFrom` is the weapon held before this one: the pose a graft (a
+    // weapon the state machine never names) is drawn in (`pose-compose.js`).
+    const held = footBodies.footBody;
+    if (held && held.soldier === soldierName && held.weapon === weapon
+        && (!held.graftOf || held.graftOf === statesFrom)) {
       dressFootBody();
       return footBodies.footBody;
     }
     const mine = ++footBodies.footBodyToken;
-    const [pair, clips, canopy] = await Promise.all([
-      footPosePair(soldierName, weapon),
+    const [pair, weaponClips, canopy] = await Promise.all([
+      footPosePair(soldierName, weapon, statesFrom),
       footBodyClips(weapon),
       footCanopyAsset(),
     ]);
+    // A graft's upper half plays the grip of the pose it wears.
+    const clips = pair?.graftOf ? await footBodyClips(pair.graftOf) : weaponClips;
     if (mine !== footBodies.footBodyToken) return null;
     if (!pair) return null;
     disposeFootBody();
@@ -349,7 +354,8 @@ export function createFootBody(page) {
     // `extras.weapon`, so this is read out of the file rather than guessed.
     const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-                 want: null, soldier: soldierName, weapon, weaponNode, kit: null };
+                 want: null, soldier: soldierName, weapon, weaponNode, kit: null,
+                 graftOf: pair.graftOf ?? null };
     dressFootBody();
     if (canopy) {
       const chute = skeletonClone(canopy.scene);

@@ -582,6 +582,15 @@
    "note": "return BfMenu+0x6dc in {0,1,4}. See 0x0045cff0. Ledger MMAP-3."
   },
   {
+   "address": "0x0045d080",
+   "name": "BfMenu__radioLanguageOf",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. A side's template name -> ObjectTemplate vt+0xd8 (getRadioLanguage), else the install language 0x006b2f00. Ledger RADIO-4."
+  },
+  {
    "address": "0x0045d110",
    "name": "BfMenu__func_45D110",
    "kind": "function",
@@ -1815,6 +1824,15 @@
    "note": "CLIENT twin of lnxded 0x081739e0. Both the 0x13 and 0x14 message branches end by clearing +0x110 and +0x128, so a recovering or revived object resumes per-tick tier evaluation. Three direct callers (setHitPoints 0x004bbf80, damage 0x004bbfe0, heal 0x004bc040), matching HP-2. See ledger ARM-1, ARM-4."
   },
   {
+   "address": "0x004bbd40",
+   "name": "Armor::setMaxHitPoints(float) [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-30-armor-spawn",
+   "note": "CLIENT twin of lnxded 0x08173680 (vtable 0x008dc7a8 slot +0x10): stores 128.0 (0x008d6368) when v > 128, else v, to +0x3c. Ledger HP-17."
+  },
+  {
    "address": "0x004bbde0",
    "name": "Armor::addColObject",
    "kind": "function",
@@ -1831,6 +1849,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "client. [R5] vtable+0x12c; 0 code-level xrefs"
+  },
+  {
+   "address": "0x004bbf80",
+   "name": "Armor::setHitPoints(float) [client]",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-30-armor-spawn",
+   "note": "CLIENT twin of lnxded 0x081726c0 (slot +0x18): snaps v <= 0.001 (0x008d5bc4) to 0, calls status 0x004bbad0, stores +0x38, and stores +0x3c too when v > max (0x004bbfd2). No ceiling. Ledger HP-17."
   },
   {
    "address": "0x004bc240",
@@ -2020,6 +2047,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, engine-wide. Reads a {dist, a, b, mirror} block from ecx; with mirror set it draws random bits (0x004f56f0) and negates when ((bits | 0x80) >> 7 + 1) * 2^-24 <= 0.5; the value comes from 0x004f58d0. The client twin of CRD-1's Random::getContinuousRandom."
+  },
+  {
+   "address": "0x004f5c20",
+   "name": "BFSoldier__playVoice",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client twin of lnxded BFSoldier::playVoice(RadioVoice) 0x0826e5d0: +0x5b8 = n; sound +0x110 vt+0xc(0x17) (slot 23, SoldierVoice.ssc) -> vt+0xc(n). Callers 0x006d3123, 0x006d3168 only. Ledger RADIO-3."
   },
   {
    "address": "0x004f5c60",
@@ -4155,6 +4191,69 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x006a54e0",
+   "name": "BfMenu__playLeavingCombat",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. GamePlay.ssc patch 4 (WarningDesertersShot), gated on +0x17d. Only caller 0x0046dc84 (the map draw). Ledger RADIO-11."
+  },
+  {
+   "address": "0x006a5510",
+   "name": "BfMenu__playGamePlayPatch",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(n): GamePlay.ssc (+0x6f4) patch n. Only caller the playGamePlaySoundDebug console command 0x0041cec0. Ledger RADIO-12."
+  },
+  {
+   "address": "0x006a5530",
+   "name": "BfMenu__playCTFPatch",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(n): CTF.ssc (+0x6f8) patch n. Only caller the playCTFSoundDebug console command 0x0041d040. Ledger RADIO-12."
+  },
+  {
+   "address": "0x006a5550",
+   "name": "BfMenu__playChatBeep",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. GamePlay.ssc patch 5 (radiomess), gated on +0x17d. Callers addPlayerChatMessage 0x006a8ebc and 0x006a921f; not the radio chat line. Ledger RADIO-12."
+  },
+  {
+   "address": "0x006a5580",
+   "name": "BfMenu__playRadioPatch",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(n): BfMenu+0x6f0 (MenuRadioSound.ssc) vt+0xc(0) -> vt+0xc(n), gated on +0x17d. Only caller 0x006d3f8f (team receive). Ledger RADIO-2."
+  },
+  {
+   "address": "0x006a5630",
+   "name": "BfMenu__loadMenuSounds",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. Sets @RTD by the sound quality and @Language (from [[0x00a5c630]+0x10]+0x38 or the install language 0x006b2f00), then loads MenuSound (+0x6ec), MenuRadioSound (+0x6f0), GamePlay (+0x6f4), CTF (+0x6f8). Ledger RADIO-4."
+  },
+  {
+   "address": "0x006a5bb0",
+   "name": "BfMenu__setRadioLanguage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. The local team's soldier template (+0x128 team 2 / +0x10c) -> 0x0045d080 (getRadioLanguage) -> if it differs, set @Language and reload the four menu scripts. Ledger RADIO-4."
+  },
+  {
    "address": "0x006a6540",
    "name": "called for artillery (client)",
    "kind": "function",
@@ -4641,6 +4740,24 @@
    "note": "bf42plus section: Patched Locations (for reference)"
   },
   {
+   "address": "0x006d3200",
+   "name": "RadioMenu__remapLocal",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. The shout's vehicle remap: 47->51, 40->54 in any vehicle; 41->52 when the vehicle category (vt+0x78) is 2, 42->53 when 1. Ledger RADIO-1."
+  },
+  {
+   "address": "0x006d3320",
+   "name": "RadioMenu__sendLocal",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. Shout send (SendLocalMessage), twin of 0x006d41c0 ending in 0x006d2790. Only caller 0x006d43ee. Ledger RADIO-8."
+  },
+  {
    "address": "0x006d3400",
    "name": "SpawnScreen__func_6D3400",
    "kind": "function",
@@ -4648,6 +4765,33 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Spawn/Death Screen"
+  },
+  {
+   "address": "0x006d41c0",
+   "name": "RadioMenu__sendTeam",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. Team radio send (SendRadioMessage): spam limit +0x2a8/+0x2ac/+0x2b0, the event or the listen server, then the local receive 0x006d3400. Callers 0x006d43fe (keys), 0x006d4597 (0x006d4590). Ledger RADIO-1, RADIO-8."
+  },
+  {
+   "address": "0x006d42a0",
+   "name": "RadioMenu__handleKey",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. The F1..F8 key handler: category +0x10, point count +0x14, game mode +0x1c; key -> message id and the team/shout split at 0x006d43d1..0x006d43fe. Ledger RADIO-1."
+  },
+  {
+   "address": "0x006d4590",
+   "name": "RadioMenu__sendRadioMessage",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(id): +0xc = id; tail to 0x006d41c0. Only caller 0x006a6599 (the artillery call, id 0x3b). Ledger RADIO-8, SPOT-5."
   },
   {
    "address": "0x006d5340",
@@ -4873,6 +5017,42 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "One reader: [[0x00a5f1a8]+0x44]+0x20, from BfMap__update in artPos seats. SPOT-13."
+  },
+  {
+   "address": "0x006e3680",
+   "name": "HudTickets__heavyCasualtiesTeam2",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(bool): team 2's AutoLoseTickets flag; modes 2/4/5; for a local team-2 player, GamePlay patch 2 on the rising edge (latch +0x30). Callers 0x0046e1b2, 0x006e3ac8. Ledger RADIO-9."
+  },
+  {
+   "address": "0x006e3760",
+   "name": "HudTickets__heavyCasualtiesTeam1",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. Team 1's twin of 0x006e3680 (flag at +0x9). Callers 0x0046e19f, 0x006e3ad1. Ledger RADIO-9."
+  },
+  {
+   "address": "0x006e3840",
+   "name": "HudTickets__ticketLowAndHeartbeat",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. thiscall(float tickets, float start) for the local side: GamePlay patch 3 once in (0.05, 0.2], latch +0x2f; the Heartbeats.ssc volume under 0.05 (Objective: under 10 tickets). Ledger RADIO-10, RADIO-14."
+  },
+  {
+   "address": "0x006e3be0",
+   "name": "HudTickets__update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. The ticket HUD's per-frame update (callers 0x006aab95, 0x006ad5c9): the two counters and 0x006e3840 for the local side with Game vt+0xfc (getNumberOfTickets). Ledger RADIO-10."
   },
   {
    "address": "0x006e4290",
@@ -5719,6 +5899,24 @@
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
    "note": "Top-level `.ssc` parse: open, then `while (!atEof()) { readLine 0x007f9ed0; handleLine 0x007fb150 -> 0x007fb0e0; }`, then finalize 0x007f9db0 and resetParseState 0x007fb040. The EOF test walks the include stack (the stream array at 0x00a8fc5c), so every `#include` is read through this same loop and the same globals."
+  },
+  {
+   "address": "0x007fcf80",
+   "name": "SoundBuffer__load",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. A new buffer (0x007fe8b0), vt+4 load; destroyed and 0 returned on failure. Ledger RADIO-6."
+  },
+  {
+   "address": "0x007fd150",
+   "name": "SoundBuffer__lookupOrLoad",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-30-radio",
+   "note": "Client. A sample's buffer by path: cached, else 0x007fcf80 loads it; 0 when the file will not load. Ledger RADIO-6."
   },
   {
    "address": "0x007fdb10",
@@ -8932,6 +9130,24 @@
    "confidence": "verified",
    "source": "research-2026-09-24-hull-wash",
    "note": "lnxded. Console word 'hasArmor' (string 0x086c581f, registered at 0x081b7b1e). Set: getActiveTemplate(0x947e)->[+0x7c] = arg (0x081c100e); get reads the same byte. SimpleObject::SimpleObject 0x081da450 calls setArmorComponent (template vt+0x74) only when that byte is set. Ledger HFD-11."
+  },
+  {
+   "address": "0x081c1820",
+   "name": "ConsoleClass105::executeObjectMethod (ObjectTemplate.hitPoints)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-30-armor-spawn",
+   "note": "lnxded. Console word hitPoints (string 0x086c5815). Set: ceil(v) (round-up control word, frndint, fistpll) stored as uint32 to getActiveTemplate(0x947e)+0x80. Template default 10 (0x081dbd38). setArmorComponent passes it to Armor::setHitPoints. Ledger HP-17."
+  },
+  {
+   "address": "0x081c1c80",
+   "name": "ConsoleClass106::executeObjectMethod (ObjectTemplate.maxHitPoints)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-30-armor-spawn",
+   "note": "lnxded. Console word maxHitPoints (string 0x086c5808). Set: ceil(v) stored as uint32 to getActiveTemplate(0x947e)+0x84. Template default 10 (0x081dbd42). setArmorComponent passes it to Armor::setMaxHitPoints, before setHitPoints. Ledger HP-17."
   },
   {
    "address": "0x081d4c90",

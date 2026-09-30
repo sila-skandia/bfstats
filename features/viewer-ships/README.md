@@ -1154,9 +1154,22 @@ cd <repo root> && python3 -m unittest discover -s tools/bf1942-models/tests   # 
 
 ## 23. What is still open
 
-1. ~~**Every ship in the viewer has 128 max hit points**, so the level assembler
-   must be dropping `maxHitpoints`.~~ **NOT A DEFECT — closed by the lead,
-   2026-09-22.** The authored values are real (Fletcher 300, Gato/Sub7C 200,
+1. **Every ship in the viewer had 128 max hit points. That WAS a defect, in
+   `viewer/armor.js`, and it is fixed (2026-09-30, ledger HP-17).** The closing
+   note below read `setMaxHitPoints` alone and it is wrong about the hull.
+   `setArmorComponent` calls `setMaxHitPoints` and then `setHitPoints` (HP-3),
+   and `setHitPoints` raises the max to its value with no ceiling (HP-1), so an
+   authored 300/300 Fletcher spawns 300/300 and a Yamato 600/600. The retail
+   client agrees: bf42plus recordings read its live Armor as 500 on the Elco80
+   and Type38, 200 on the Gato and Fletcher2, 150 on the Lcvp. The clamp made
+   the Elco80 and Type38 (critical at 350) spawn critical and sink untouched.
+   Every hit-point number measured in this document before 2026-09-30 (§18,
+   §20, the Fletcher's "128 down to 45" in §6) was taken on a 128 max; the
+   mechanisms they tested are unchanged, the totals are not. The 2026-09-22
+   closing note follows for its history; its reading of `setMaxHitPoints`
+   stands and its conclusion does not:
+
+   **NOT A DEFECT — closed by the lead, 2026-09-22.** The authored values are real (Fletcher 300, Gato/Sub7C 200,
    PrinceOW/Elco80/Type38 500, Enterprise/Shokaku/Yamato 600, Lcvp/Daihatsu 150,
    the rafts 35) and the extractor emits them correctly. **The engine itself
    clamps them.** `Armor::setMaxHitPoints` (lnxded `0x08173680`) is eleven

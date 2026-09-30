@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import ObjectLibrary  # noqa: E402
 from bf42.kit import TeamLoadout, collect, parse_level_kits  # noqa: E402
-from extract_loadouts import build_manifest, read_chain  # noqa: E402
+from extract_loadouts import build_manifest, read_chain, read_chain_levels  # noqa: E402
 
 
 class LoadoutManifestTests(unittest.TestCase):
@@ -407,18 +408,111 @@ class LevelDeclaredKitTests(unittest.TestCase):
                 "L.rfa": {
                     "bf1942/levels/L/Init.con":
                         b"game.setTeamSkin 2 USSoldier\n"
-                        b"game.setKit 2 0 US_AA2\n",
+                        b"game.setKit 2 0 US_AA2\n"
+                        b"run objects/AntiAir2/Objects\n",
                     "bf1942/levels/L/objects/AntiAir2/Objects.con":
                         b"ObjectTemplate.create Kit US_AA2\n"
                         b"ObjectTemplate.setType AT\n"
                         b"ObjectTemplate.addTemplate Stinger\n",
                 },
             }
-            with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+            with _archives(content):
                 library, loadouts = read_chain([mod])
             manifest = build_manifest(library, collect(library), loadouts, "M")
         self.assertEqual("US_AA2", manifest["levels"]["l"]["2"]["slots"]["0"])
         self.assertEqual("Stinger", manifest["kits"]["US_AA2"]["primary"])
+
+
+def _archives(content: dict[str, dict[str, bytes]]):
+    """Both readers of level archives (the pool's and `LevelFiles`') on
+    `_fake_archives`."""
+    fake = _fake_archives(content)
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch("bf42.rfa.RfaArchive", fake))
+    stack.enter_context(mock.patch("bf42.level.RfaArchive", fake))
+    return stack
+
+
+class LevelLoadTests(unittest.TestCase):
+    """A level load declares what its `Init.con` runs, first (LOAD-1, LOAD-2,
+    LOAD-5): DC Final's Lost Village nopara hands out its own kits, each with
+    a `nochute`; First Light its own `US_AT3`, with a Landmine; Lost Village,
+    which ships the same kit files and runs none of them, the mod's."""
+
+    MOD_KIT = (b"ObjectTemplate.create Kit US_AT3\n"
+               b"ObjectTemplate.setType AT\n"
+               b"ObjectTemplate.setKitTeam 2\n"
+               b"ObjectTemplate.addTemplate SMAW\n")
+    OWN_KIT = MOD_KIT + (b"ObjectTemplate.addTemplate Landmine\n"
+                         b"ObjectTemplate.addTemplate nochute\n")
+    NOCHUTE = (b"ObjectTemplate.create ActiveKitPart nochute\n"
+               b"ObjectTemplate.setBoneName backpack\n"
+               b"ObjectTemplate.overrideAirMovementInhibitations 1\n")
+
+    def manifest(self, levels: dict[str, dict[str, bytes]]) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "M"
+            level_dir = mod / "Archives" / "bf1942" / "levels"
+            level_dir.mkdir(parents=True)
+            (mod / "Archives" / "objects.rfa").touch()
+            content = {"objects.rfa": {
+                "Objects/Items/USKit/AntiArmor3/Objects.con": self.MOD_KIT,
+                "Objects/HandWeapons/SMAW/Objects.con":
+                    b"ObjectTemplate.create HandFireArms SMAW\n"
+                    b"ObjectTemplate.itemIndex 3\n",
+                "Objects/HandWeapons/Landmine/Objects.con":
+                    b"ObjectTemplate.create HandFireArms Landmine\n"
+                    b"ObjectTemplate.itemIndex 5\n",
+            }}
+            for name, files in levels.items():
+                (level_dir / f"{name}.rfa").touch()
+                content[f"{name}.rfa"] = {f"bf1942/levels/{name}/{path}": data
+                                          for path, data in files.items()}
+            with _archives(content):
+                census, loadouts, own = read_chain_levels([mod])
+                # A level's own load materializes lazily (`LevelLoad`), so
+                # the manifest is built with the archives still in place -
+                # as the real run does.
+                return build_manifest(census.library, collect(census.library), loadouts,
+                                      "M", level_loads=own, read=census.read)
+
+    def test_a_level_that_runs_its_own_kit_hands_it_out(self) -> None:
+        manifest = self.manifest({
+            "Own": {
+                "Init.con": b"game.setKit 2 2 US_AT3\nrun Objects/Objects\n",
+                "Objects/Objects.con": b"run AntiArmor3/Objects\nrun Common/Objects\n",
+                "Objects/AntiArmor3/Objects.con": self.OWN_KIT,
+                "Objects/Common/Objects.con": self.NOCHUTE,
+            },
+            "Plain": {"Init.con": b"game.setKit 2 2 US_AT3\n"},
+        })
+        self.assertEqual(["SMAW"], manifest["kits"]["US_AT3"]["items"])
+        self.assertNotIn("overrideAirMovementInhibitations", manifest["kits"]["US_AT3"])
+        own = manifest["levelKits"]["own"]["US_AT3"]
+        # The flag is behaviour, not an item (`kit.kit_parts`).
+        self.assertEqual(["SMAW", "Landmine"], own["items"])
+        self.assertEqual([3, 5], [weapon["slot"] for weapon in own["weapons"]])
+        self.assertIs(True, own["overrideAirMovementInhibitations"])
+        self.assertEqual({"own"}, set(manifest["levelKits"]))
+        # The slot still names the kit as the mod spells it.
+        self.assertEqual("US_AT3", manifest["levels"]["own"]["2"]["slots"]["2"])
+
+    def test_a_kit_file_nothing_runs_declares_nothing(self) -> None:
+        manifest = self.manifest({
+            "Shipped": {
+                "Init.con": b"game.setKit 2 2 US_AT3\ngame.setKit 2 0 US_Only\n"
+                            b"run Objects/Objects\n",
+                "Objects/Objects.con": b"remrun AntiArmor3/Objects\n",
+                "Objects/AntiArmor3/Objects.con": self.OWN_KIT,
+                "Objects/Only/Objects.con": b"ObjectTemplate.create Kit US_Only\n",
+            },
+        })
+        self.assertNotIn("levelKits", manifest)
+        self.assertEqual(["SMAW"], manifest["kits"]["US_AT3"]["items"])
+        # Declared only by a script the level never runs: the slot keeps the
+        # raw name and no kit row answers it.
+        self.assertEqual("US_Only", manifest["levels"]["shipped"]["2"]["slots"]["0"])
+        self.assertNotIn("US_Only", manifest["kits"])
 
 
 if __name__ == "__main__":

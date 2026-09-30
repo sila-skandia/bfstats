@@ -206,7 +206,7 @@ their own templates and spawns. The FHSW levels:
 
 | Level | Placed objects missing a mesh | Missing meshes | Templates resolved to another file |
 |---|---|---|---|
-| Fall_of_Berlin-1945 | 1090 -> 965 | 139 -> 124 | 9 (and 20 geometries, 15 of them `lightingfix`) |
+| Fall_of_Berlin-1945 | 1090 -> 965 | 139 -> 124 (the audit bake's own `cmpbake` basis: 233 -> 218) | 9 (and 20 geometries, 15 of them `lightingfix`) |
 | Seelow-Heights-1945 | 74 | 40 | 19 |
 | Gold_Beach-1944, Counterattack-1950 | 0 | 0 | 9 each (`HedgerowGold1`, `Aspen_bush2`) |
 | Guadalcanal | 0 | 0 | 4 (its `Objects/objects.con` is FH's copy; FHSW's `Init.con` runs `objects/go`) |

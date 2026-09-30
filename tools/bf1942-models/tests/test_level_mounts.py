@@ -229,6 +229,76 @@ class MountTests(unittest.TestCase):
                                      "bf1942/levels/L/x.con", "objects/a_b/x.con"]),
                          ["objects/_a/x.con", "Objects/A/x.con", "objects/a_b/x.con",
                           "objects/b/x.con", "bf1942/levels/L/x.con"])
+        # `/ai/` paths are never run (`loadAllConFiles` keys less them),
+        # however much a name they hold would sort ahead.
+        self.assertEqual(load_order(["objects/ai/z.con", "objects/a/x.con",
+                                     "objects/v/4,1inchl65skc33/ai/objects.con"]),
+                         ["objects/a/x.con"])
+
+    def test_a_level_load_takes_only_the_objects_scripts_it_runs(self) -> None:
+        """LOAD-8: `loadAllConFiles("objects/")` never walks a level archive,
+        so a level's `Objects/` script that nothing runs declares nothing. DC
+        Final's Lost Village ships the nochute kits and runs none of them."""
+        own = self._rfa("L.rfa", {
+            "bf1942/levels/L/Init.con": b"run Init/Terrain\nrun Objects/Objects\n",
+            "bf1942/levels/L/Init/Terrain.con": b"",
+            "bf1942/levels/L/Objects/Objects.con":
+                b"run wires/wires\nremrun USKit/Assault/Objects\n",
+            "bf1942/levels/L/Objects/wires/wires.con": b"run objects\n",
+            "bf1942/levels/L/Objects/wires/objects.con":
+                b"ObjectTemplate.create SimpleObject wires_m1\n",
+            "bf1942/levels/L/Objects/wires/geometries.con":
+                b"GeometryTemplate.create StandardMesh wires_m1\n",
+            "bf1942/levels/L/Objects/USKit/Assault/Objects.con":
+                b"ObjectTemplate.create Kit US_Assault\n",
+            "bf1942/levels/L/Objects/wires/Sounds/wire.ssc": b"newPatch\n",
+        })
+        files = level.LevelFiles([RfaArchive(own)], "L")
+        runs = em.level_run_scripts(files)
+        # In the order a host runs them: a `run` executes before the next line.
+        self.assertEqual(runs, [
+            "bf1942/levels/l/objects/objects.con",
+            "bf1942/levels/l/objects/wires/wires.con",
+            "bf1942/levels/l/objects/wires/objects.con",
+        ])
+        self.assertEqual(em.level_object_scripts(files), set())
+        objects = ArchivePool()
+        objects.add_level_objects(own, runs=runs)
+        names = {n.lower() for n in objects.names()}
+        self.assertIn("bf1942/levels/l/objects/wires/objects.con", names)
+        self.assertNotIn("bf1942/levels/l/objects/wires/geometries.con", names)
+        self.assertNotIn("bf1942/levels/l/objects/uskit/assault/objects.con", names)
+        # What is not a script stays: the object's sound, its textures.
+        self.assertIn("bf1942/levels/l/objects/wires/sounds/wire.ssc", names)
+        index = em.TemplateIndex(objects)
+        self.assertIsNotNone(index.get("wires_m1"))
+        self.assertIsNone(index.get("us_assault"))
+        # The census (no `runs`) still takes the whole folder.
+        census = ArchivePool()
+        census.add_level_objects(own)
+        self.assertIn("bf1942/levels/l/objects/uskit/assault/objects.con",
+                      {n.lower() for n in census.names()})
+
+    def test_the_first_script_a_level_runs_owns_a_name(self) -> None:
+        """Two of a level's scripts declare one kit part (Lost Village nopara's
+        `Bacpac_Big_ger`, in its HeavyAssault and Support files): the one the
+        level runs first owns it (LOAD-1), whatever the archive's order."""
+        own = self._rfa("L.rfa", {
+            "bf1942/levels/L/Init.con": b"run Objects/Objects\n",
+            "bf1942/levels/L/Objects/Objects.con": b"run Zulu/Objects\nrun Alpha/Objects\n",
+            "bf1942/levels/L/Objects/Alpha/Objects.con":
+                b"ObjectTemplate.create KitPart Pack\nObjectTemplate.geometry pack_alpha\n",
+            "bf1942/levels/L/Objects/Zulu/Objects.con":
+                b"ObjectTemplate.create KitPart Pack\nObjectTemplate.geometry pack_zulu\n",
+        })
+        files = level.LevelFiles([RfaArchive(own)], "L")
+        objects = ArchivePool()
+        objects.add_level_objects(own, runs=em.level_run_scripts(files))
+        from extract_models import build_library
+        library = build_library(em.LevelFirst(objects))
+        self.assertEqual("pack_zulu", library.object("Pack").geometry)
+        self.assertEqual("L/Objects/Zulu/Objects.con",
+                         em.TemplateIndex(objects).get("pack").source.split("levels/", 1)[1])
 
 
 def _game_dir() -> Path | None:
