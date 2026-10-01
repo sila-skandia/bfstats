@@ -159,15 +159,20 @@ free camera's id -- the cause of "every player has the same kit".
 
 ### Still open
 
+- Playtest 2026-10-02 (Dylan, viewer): the parked AichiVal shows no
+  propeller and no engine sound. A parked plane not spinning is the engine
+  model working; the silent engine is the next item.
+- Engine running/disabled flags and the throttle servo are read at the
+  client's Engine offsets (`+0x15c`, `+0x15d`, `+0x124`) without server-side
+  verification -- the silent engine note on a running vehicle is the symptom
+  of that guess being wrong. RECORDER_DEBUG dumps one engine's dwords
+  0x100-0x1c0 per process for exactly that check; the revs themselves
+  (`pe+0xA0`) are verified.
 - `st` aim pitch/torso twist are written as 0: the server's storage for the
   replicated aim was not found (the client's BFSoldierNetworkable offsets do
   not exist on the server's own BFSoldier). Soldier head-aim therefore does
   not track in replays; the anim state names table (`anim` line) is also
   unwritten, so states play by index.
-- Engine running/disabled flags and the throttle servo are read at the
-  client's Engine offsets (`+0x15c`, `+0x15d`, `+0x124`) without server-side
-  verification (RECORDER_DEBUG dumps one engine's dwords 0x100-0x1c0 per
-  process for exactly that check).
 - `addEventToSendQueue` events only exist when a real client joins
   (`sendDatabase`): on a live server with human players the joins, and the
   `createObject`/`destroyObject`/`pickupKit` flows it drives, will arrive as
