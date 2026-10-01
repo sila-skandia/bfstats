@@ -145,6 +145,23 @@ reach gating both ways, seat walk skipping an occupied seat and hiding when
 full, map dispatch) plus the repo's page-wiring and kit-drop suites (270
 tests, all green).
 
+## Built (third pass, 2026-10-01): the entry-state bugs
+
+The first phone test found two real bugs, both reproduced headless on the
+real page (aberdeen, phone-sized touch Chromium, the probe drives the real
+ENTER and EXIT buttons):
+
+- The touch EXIT press climbed back into the tank instead of leaving:
+  `mobileSeatToggle` asked the on-foot branch first, and the tank's own
+  door is in reach while seated, so the press re-entered. Fixed by asking
+  the seat branch first, exactly as the keyboard's `useKey` does.
+- JUMP and CROUCH showed in the tank: entering a vehicle unticks no box, so
+  the HUD's on-foot check (`optOnFoot && soldier`) stayed true while
+  seated. The HUD now derives both states from the seat itself:
+  `onFoot` requires `!page.occupancy`, `seated` is `!!page.occupancy`,
+  and the fire, aim, jump and prone gates refuse to write the foot inputs
+  while a seat is held.
+
 ## Next steps
 
 1. Playtest on a real phone with the grip, and tune button sizes and the
