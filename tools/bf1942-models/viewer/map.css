@@ -486,10 +486,12 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
-/* The mobile HUD. Two invisible sense zones take the top corners of the
-   stage: top-left pans the camera (drag to look), top-right moves (a
-   floating stick appears under the finger). Every game control is a tiny
-   button in the bottom thumb cluster. features/mobile-four-finger-controls. */
+/* The mobile HUD. The top-left look zone takes the left index finger's drag;
+   the FIXED move ring sits at the top-right, a home spot the right index
+   finger finds without looking (its own touch target; a drag anywhere else on
+   the stage is the look). FIRE is the left thumb's button bottom-left, every
+   other game control a tiny button in the right thumb cluster.
+   features/mobile-four-finger-controls. */
 .mobile-zone {
   position: absolute;
   top: 0;
@@ -502,18 +504,26 @@ a { color: var(--accent); }
 }
 .mobile-zone[hidden] { display: none; }
 #mobile-zone-pan { left: 0; width: 50%; }
-#mobile-zone-move { right: 0; width: 50%; }
 
 #mobile-controls {
+  /* A stage-wide glass pane: the cluster anchors to its bottom-right corner,
+     FIRE to its bottom-left. `pointer-events: none` lets the whole area fall
+     through to the canvas look handlers; the buttons opt back in. */
   position: absolute;
-  right: 10px; bottom: 12px;
+  inset: 0;
   z-index: 9;
   pointer-events: none;
 }
 #mobile-controls[hidden] { display: none; }
 #mobile-pad {
-  position: fixed;
-  width: 96px; height: 96px;
+  /* FIXED, in stage coordinates beside the look zone: right edge, below the
+     minimap's box. 64 px across, and the 28 px ball's 18 px of travel is the
+     whole input range. MOBILE_PAD_TRAVEL in touch-controls.js describes the
+     same geometry; keep the three together. */
+  position: absolute;
+  top: 172px;
+  right: 14px;
+  width: 64px; height: 64px;
   z-index: 10;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -521,9 +531,8 @@ a { color: var(--accent); }
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  transform: translate(-50%, -50%);
-  /* The move zone owns the input; the ring is art only. */
-  pointer-events: none;
+  /* The ring itself owns the input. */
+  pointer-events: auto;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -534,28 +543,38 @@ a { color: var(--accent); }
   position: absolute;
   background: rgba(190, 190, 175, 0.18);
 }
-#mobile-pad::before { left: 50%; top: 10px; bottom: 10px; width: 1px; }
-#mobile-pad::after { top: 50%; left: 10px; right: 10px; height: 1px; }
+#mobile-pad::before { left: 50%; top: 8px; bottom: 8px; width: 1px; }
+#mobile-pad::after { top: 50%; left: 8px; right: 8px; height: 1px; }
 #mobile-pad.is-active { border-color: var(--accent); }
 #mobile-pad-puck {
   position: absolute;
   left: 50%; top: 50%;
-  width: 40px; height: 40px;
+  width: 28px; height: 28px;
   border: 1px solid var(--accent);
   border-radius: 50%;
   background: rgba(42, 42, 35, 0.94);
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  font-size: 8px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
-#mobile-pad-puck.is-firing { border-color: var(--warn); color: var(--warn); }
+#mobile-pad-puck.is-firing { border-color: var(--warn); }
+/* The mode caption (MOVE / DRIVE / AIM / STICK) under the ring: the ball is
+   too small to carry a label. */
+#mobile-pad-label {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .mobile-action-cluster {
+  position: absolute;
+  right: 10px; bottom: 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -601,10 +620,16 @@ a { color: var(--accent); }
   background: rgba(18, 17, 14, 0.62);
 }
 .mobile-action-btn.fire-btn {
-  min-width: 56px;
-  height: 36px;
+  /* The left thumb's button, out of the cluster at the bottom-left. Sized for
+     a thumb rather than the cluster's 28 px rows. */
+  position: absolute;
+  left: 18px; bottom: 26px;
+  min-width: 96px;
+  height: 68px;
+  border-radius: 6px;
   border-color: var(--warn);
   color: var(--warn);
+  font-size: 11px;
 }
 .mobile-action-btn.fire-btn.is-active {
   background: rgba(105, 35, 25, 0.92);
@@ -613,46 +638,6 @@ a { color: var(--accent); }
 .mobile-action-btn[hidden],
 .mobile-throttle[hidden],
 #mobile-pad[hidden] { display: none; }
-
-/* SWAP sits in a relative wrapper so its option menu opens anchored to the
-   button itself: the thumb taps SWAP and the kit's weapons appear right
-   there, no second reach. */
-.mobile-swap-wrap {
-  position: relative;
-  display: inline-flex;
-  pointer-events: none;
-}
-.mobile-swap-wrap .mobile-action-btn { pointer-events: auto; }
-.mobile-swap-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 4px);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 3px;
-  background: rgba(18, 17, 14, 0.95);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  pointer-events: auto;
-}
-.mobile-swap-menu[hidden] { display: none; }
-.mobile-swap-opt {
-  min-width: 64px;
-  height: 22px;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text);
-  font: 8px var(--mm-font-mono);
-  letter-spacing: .04em;
-  text-align: left;
-  cursor: pointer;
-}
-.mobile-swap-opt:hover,
-.mobile-swap-opt:active { border-color: var(--accent); color: var(--accent); }
 
 .mobile-throttle {
   display: flex;
@@ -691,27 +676,18 @@ a { color: var(--accent); }
   .mobile-zone {
     height: 40vh;
   }
-  #mobile-controls {
+  .mobile-action-cluster {
     bottom: 10px;
     gap: 6px;
   }
-  #mobile-pad {
-    width: 88px;
-    height: 88px;
-  }
-  #mobile-pad-puck {
-    width: 36px;
-    height: 36px;
-  }
+  /* No pad-size override here on purpose: the ring and ball carry the input
+     geometry (MOBILE_PAD_TRAVEL in touch-controls.js), so one CSS size keeps
+     the two honest. */
   .mobile-action-btn {
     min-width: 40px;
     height: 26px;
     padding: 0 5px;
     font-size: 7px;
-  }
-  .mobile-action-btn.fire-btn {
-    min-width: 52px;
-    height: 34px;
   }
   .mobile-throttle input {
     width: 64px;
