@@ -668,6 +668,15 @@ export function createPageInput(page) {
     }
   }
 
+  /** Drag-to-fly-forward is the free camera's gesture only: with a soldier
+   *  on foot or in a seat, a canvas drag is the LOOK, and walking belongs to
+   *  the MOVE pad (the viewer's own separation,
+   *  features/mobile-four-finger-controls). */
+  function syncTouchFlying() {
+    pageInput.touchFlying = !((page.optOnFoot.checked && page.soldier)
+      || page.occupancy);
+  }
+
   page.renderer.domElement.addEventListener('pointerdown', e => {
     // The mission briefing owns the pane while it is up, the way it owns the
     // keyboard. A click behind it would `capture()` the pointer — and once
@@ -685,7 +694,7 @@ export function createPageInput(page) {
         pageInput.lastPointerX = e.clientX;
         pageInput.lastPointerY = e.clientY;
         pageInput.dragging = true;
-        pageInput.touchFlying = true;
+        syncTouchFlying();
         pageInput.isPanning = false;
       } else if (activeTouches.size === 2) {
         pageInput.touchFlying = false;
@@ -746,7 +755,7 @@ export function createPageInput(page) {
         const remaining = activeTouches.values().next().value;
         pageInput.lastPointerX = remaining.x;
         pageInput.lastPointerY = remaining.y;
-        pageInput.touchFlying = true;
+        syncTouchFlying();
         pageInput.isPanning = false;
       } else {
         const geom = getTouchesCenterAndDist();

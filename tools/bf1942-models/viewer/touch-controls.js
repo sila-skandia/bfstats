@@ -135,7 +135,8 @@ export function createTouchControls(page) {
     const aimable = manned && page.occupancy.turret;
     const driving = activeSeat && page.car;
     const flying = activeSeat && page.aircraft;
-    const show = page.captured && !deployOpen && (onFoot || seated);
+    const freeCam = !onFoot && !seated;
+    const show = page.captured && !deployOpen && (onFoot || seated || freeCam);
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
       && page.occupancy.activeFireArmsNodes().length > 0);
@@ -428,15 +429,18 @@ export function createTouchControls(page) {
     page.cycleKitWeapon?.(1);
   });
 
-  // The map: the M key's own body, dispatched through the same trigger
-  // path the keyboard runs (`c_PIMap`: on foot it opens the deploy map,
-  // otherwise it toggles the full map).
+  // The map: with a live soldier it is the M key's `c_PIMap` (on foot the
+  // deploy map IS the spawn screen, seated the plain map); with nobody
+  // alive — the free camera a closed spawn screen left — it is the game's
+  // "bring the spawn interface back" trigger (`c_GIInGameMenu`, Caps Lock /
+  // Enter on the keyboard), the only road back a phone has.
   mobileMapBtn.addEventListener('pointerdown', event => event.stopPropagation());
   mobileMapBtn.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
-    page.padTriggerDown('c_PIMap');
+    if (page.soldier && !page.soldierDead) page.padTriggerDown('c_PIMap');
+    else page.padTriggerDown('c_GIInGameMenu');
   });
 
   // Pick up the kit in reach: the G key's body, `c_PIDrop`.

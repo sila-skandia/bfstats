@@ -630,6 +630,18 @@ a { color: var(--accent); }
 }
 #mobile-claw-left[hidden],
 #mobile-claw-right[hidden] { display: none; }
+
+/* The MAP button sits on its own at the top left, across from the minimap,
+   out of the thumb cluster: the spawn screen is the phone's only road back,
+   and the cluster rows are for things a thumb hits while moving
+   (features/mobile-four-finger-controls). */
+#mobile-map-btn {
+  position: absolute;
+  left: 6px;
+  bottom: 74vh;
+  min-width: 64px;
+  height: 40px;
+}
 .mobile-throttle {
   display: flex;
   align-items: center;
