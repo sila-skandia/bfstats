@@ -34,7 +34,7 @@ recorder's map walk and name reading had to be re-derived.
 ## Verified live (wine, 2026-10-01, Berlin and Wake)
 
 The recorder builds as a 32-bit proxy `WINMM.dll`
-(`src/w32ded-recorder.c`, `build.sh`), dropped next to `BF1942_w32ded.exe`;
+(`src/target_w32ded.c`, `build.sh`), dropped next to `BF1942_w32ded.exe`;
 Windows loads it via the standard search order and its DllMain reroutes the
 game's four winmm imports to the system winmm.dll (IAT patch), so winmm
 callers keep working. Under wine the same dll loads with no override needed
@@ -74,7 +74,7 @@ key at node[3], value written at `*piVar1+0x10`, nil test on byte node+0x15):
 
 Walk law: start at `_Myhead->_Left` (leftmost), in-order successor =
 right subtree's leftmost, else climb while this is a right child. Identical
-algorithm to the SGI walk in recorder.c; only field offsets differ.
+algorithm to the SGI walk in `src/target_lnxded.c`; only field offsets differ.
 
 ## Engine layout carried over unchanged (verified)
 
@@ -110,13 +110,11 @@ algorithm to the SGI walk in recorder.c; only field offsets differ.
 
 ## Open
 
-- **Player list / roster: deliberately not started.** The w32ded recording
-  has an empty player list, and the lnxded recorder's stage-2 roster work
-  (README "Not done yet") is in progress against the same issue. Wait for
-  that to resolve, then port: the lnxded offsets in the main README
-  (playerManager walk, BFPlayer fields) cross-match here through the same
-  anchor chain (objectManager -> OM vtable -> GameServer) that produced this
-  table.
+- **Player list / roster: not ported yet.** The lnxded side has finished its
+  roster work (README stage 3: it synthesises createPlayer/control and kits
+  from the playerManager walk), so the port is unblocked: cross-match the
+  playerManager global, the BFPlayer fields and the detour sites through
+  the anchor chain that produced this table.
 - Template `tid` (object-template id) offset: re-derive from live memory
   (lnxded +0x10 / +0x14 both wrong here; candidate +0x34 unconfirmed).
 - Template names: 62% live coverage; the nameless remainder is the same gap
@@ -129,3 +127,89 @@ algorithm to the SGI walk in recorder.c; only field offsets differ.
 - Event switch (lnxded `handleGameEventManagerEvent` 0x08135cb0, 20 event
   cases): w32ded counterpart unknown; anchor = "createPlayer in Game are not
   in use any more" string or the GameServer vtable.
+
+## Stage-3 cross-match, pass 2 (2026-10-02, resumed session)
+
+All of the below decompiled from the same Ghidra project (headless, scripts in
+/tmp/w32probe, dumps in /tmp/w32out). Note: no RTTI in this binary (no .?AV
+type descriptors) -- vtables are found by xrefs, not by name.
+
+- **GameEventMgr::addEvent** = `0x00478a50` (thiscall; arg1 = event*).
+  Evidence: references "Trying to send unregistred GameEvent " (0x006e986c);
+  body = vcall [ev] (getType) -> `0x0046d820` (getEventMaker, reads the
+  DAT_0074c08c-keyed table entry +0x10) -> clone vcall -> `0x00478490`.
+  Identical to lnxded `GameEventManager::addEvent` 0x0812d610 (getType ->
+  getEventMaker -> maker->vt[1] clone -> addEventToSendQueue).
+- **GameEventManager::addEventToSendQueue** = `0x00478490`  **(hook site 1)**.
+  Evidence: body sets `ev+4 = GEM+0x7c` (sequence counter, then ++), then pushes
+  into the queue: first `GEM+0x14`, last `GEM+0x18`, count `GEM+0x20`, next at
+  `ev+8`; returns 1. Byte-identical semantics to lnxded 0x0812d730 (sets
+  ev+4 = GEM+0xa4, calls GameEventList::pushBack(GEM+0x14, ev)).
+- **scoreManager global** = `0x00749c70`. Evidence: the status-line printer
+  `0x0043ed60` (has "Tickets: Axis ") reads `*DAT_00749c70`, calls vt+0x10
+  (getTeamScore) and prints TeamScore+0x48 as tickets (also +0x20 score in CQ,
+  +0x8 captures). Matches lnxded getTeamScore 0x081616c0 / tickets +0x48.
+- **ScoreManager ctor** = `0x00466930` (registered as classManager id 0xc4b9,
+  name "dice.ref2.world.ScoreManager", by registrar `0x0044ff00` -> factory
+  `0x0044f130` -> ctor). Team array: `this+0x60`, two teams, stride 0x14 dwords
+  = **0x50** (lnxded base 0x10 + team*0x50; w32 base is 0x60).
+- **playerManager global** = `0x0074c534` (strong candidate). Evidence:
+  `0x0043ed60` walks `(**(code **)(*DAT_0074c534 + 0x2c))()` which returns a
+  list head, iterating `p = *p` while `p != head` -- the player list walk.
+  Also `0x00475330` uses vt+0x20 on it. lnxded pm sits right after om/tm in
+  the globals cluster; w32ded om=0x0074c52c, so tm would be 0x0074c530 and pm
+  0x0074c534 -- same cluster.
+- **GameServer global** = `0x00747278` (the instance; written by the GameServer
+  ctor `0x0043aef0` -- big ctor, "BF1942"/"ServerSettings.con" strings, quit
+  event "bf1942_server_quit_event"). Fields seen: gpm enum at **+0x3a8**
+  (switch 3=score / 1=captures / else tickets in 0x0043ed60; lnxded reads the
+  same value from Setup+0x240), player counts +0x52c/+0x5a0, HANDLE +0xaa0.
+- **GameServer player/connection set** = `this+0x150` (MSVC std::set; lnxded
+  walked +0x100): iterated with successor `0x0047ccc0`; node+0x10 = connection
+  object whose byte +8 is the in-game flag; per-node fields seen at +0x44
+  (name/id), +0x9c, +0xa9, +0xac, +0x150.
+
+## Pass 3: stage-3 anchors (Ghidra headless, 2026-10-02, scripts in /tmp/w32probe, decompiles in /tmp/w32out)
+
+- **CreatePlayer event builder = `0x004787e0`** (the richest find). Pool
+  alloc `0x0046beb0`, event vptr `0x006e927c`. Fills:
+  - name chars `ev+0xf` (cap 0x1f, via BFPlayer vcall **vt+0x18** = getName)
+  - ai `ev+0x2f` (vcall vt+0x44 = getIsAIPlayer)
+  - **id `ev+0x30` = BFPlayer+0x0c** (u16, same as lnxded)
+  - **team `ev+0xc` = BFPlayer+0xac** (lnxded +0x7c)
+  - `ev+0xd` = BFPlayer+0xc4 (lnxded +0x90)
+  - **vehicle-netid `ev+0x34` from object at BFPlayer+0xa4**
+  - **camera-netid `ev+0x32` from object at BFPlayer+0x98**
+    (note: net-id read = word at obj+0x68+4, same shape as lnxded; which of
+    0x98/0xa4 is soldier-vehicle vs camera needs the live check)
+  - `ev+0x36` = kit netid. Kit derivation: template obj+0x4c -> getClassID
+    (tmpl vt+0xc) == **0x9493 (same as lnxded)** -> getKit at **soldier
+    vt+0x100** (lnxded vptr+0x17c) -> objectManager lookup om vt+0x20,
+    fallback +0x24 (same).
+  -> w32ded BFPlayer: `bf_id_off=0x0c, bf_team_off=0xac,
+  bf_veh/cam_off=0x98/0xa4`; name and ai are virtual calls (no plain field
+  located yet).
+- **GameEventMgr::addEvent** = `0x00478a50` (refs "Trying to send
+  unregistred GameEvent " @0x006e986c). Mirror of lnxded 0x0812d610.
+- **PlayerManager vtable = `0x00709b78`** (ctor `0x005342f0`, 0x5c-byte
+  object, two 0xc-byte list nodes at +0x10/+0x1c). The player list is
+  reached through **pm vtable+0x2c**, not a plain field -- lnxded's
+  `pm+0xc` field walk must NOT be copied; read vtable slot 0x2c to find the
+  real list offset.
+- Anchors staged, not finished: rotBundle class name `0x006f7ad4` xrefs ->
+  `0x00454800`, `0x004d0f7a` (RotationalBundle vtable leads); Armor key
+  0xc4a4 pushed at `0x004044c0/0x004044f0/0x00450910`, CMP'd at
+  `0x0047ef62`; Armor vtable `0x006e7c60` xref -> `0x00462e94`
+  (/tmp/w32out/armor_462e94.c).
+- Still open: `sendGameEventToAll` w32 address (hunt the GameServer
+  event-send cluster 0x454xxx-0x457xxx, or GameServer vptr from ctor
+  `0x0043aef0` and compare slot 134 vs lnxded's setTicketRatio signature:
+  writes this+0x1f4 / this+0xc0+team*4); `fireBarrel`; RotationalBundle
+  vtable; BFSoldier anim offsets (+0x2b4/0x2f8/0x3b8/0x3e6 unverified);
+  Armor component read -- CAUTION: the earlier hp +0x104/+0x108/+0x164 rows
+  came from the save() dumper and disagree with lnxded's Armor-component
+  +0x38/+0x3c/+0xf0; reconcile before trusting. Detour site prologue bytes
+  for the patch installer; pm list offset; the VirtualProtect detour
+  implementation; -DREC_STAGE3=1 in build.sh; the wine live run.
+- No RTTI in this binary -- vtables via xrefs only. Strings dump:
+  /tmp/w32strings.txt.

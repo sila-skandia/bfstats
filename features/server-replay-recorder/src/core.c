@@ -1,8 +1,10 @@
 /*
- * Server-side round replay recorder (stage 3: parity with the client recorder).
+ * Server-side round replay recorder -- shared core (see core.h for layout).
  *
- * A 32-bit ELF shared object loaded into bf1942_lnxded via LD_PRELOAD
- * (the lab's scenario `preload` key). Two capture surfaces:
+ * Captures the whole battlefield from inside the dedicated server as
+ * newline-delimited JSON in the bf42plus client recorder's format, played by
+ * tools/bf1942-models/viewer/replay-recording.js. Two capture surfaces
+ * (stage 3, lnxded today):
  *
  *   1. A sampler thread polls the object manager's registered-object map and
  *      the player list at a fixed rate: root object transforms, ARMOR hit
@@ -15,13 +17,9 @@
  *      with the weapon, chat, radio, tickets' game flow) and
  *      FireArms::fireBarrel (every round any player or bot fires).
  *
- * Output is newline-delimited JSON in the bf42plus client recorder's format
- * v5, played by tools/bf1942-models/viewer/replay-recording.js.
- *
- * Everything about the target's layout was read out of the server binary
- * itself (each offset in a comment below names the accessor or ctor it was
- * read from); the addresses are in README.md. Addresses valid for the lab's
- * bf1942_lnxded (non-PIE ET_EXEC: load address == static address).
+ * Everything about a target's layout is read out of its binary and lives in
+ * the target's `struct rec_target` (each field's comment in core.h names the
+ * accessor or ctor it was read from; addresses in README.md).
  *
  * Config: <cwd>/mods/bf1942/settings/recorder.con, one key per line:
  *   recordReplays 1        off unless present
@@ -30,50 +28,29 @@
  * Writes replays/replay_<unixts>.ndjson under the server's cwd.
  */
 
-#define _FILE_OFFSET_BITS 64
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <fcntl.h>
 #include <math.h>
-#include <stdarg.h>
 #include <time.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/mman.h>
 
-/* --- target addresses (nm / decompile, see README.md) ------------------- */
+#include "core.h"
 
-#define OBJECT_MANAGER_PTR   0x0871dc24u  /* dice::ref2::world::objectManager */
-#define PLAYER_MANAGER_PTR   0x0871dc2cu  /* dice::ref2::world::playerManager */
-#define TEMPLATE_MANAGER_PTR 0x0871dc28u  /* dice::ref2::world::objectTemplateManager */
-#define SETUP_PTR            0x08716b64u  /* dice::bf::setup (score manager at +0x410) */
+#if !defined(REC_STAGE3)
+#error "build must define REC_STAGE3 (1 = lnxded stage-3 target, 0 = stage-1 w32ded)"
+#endif
 
-/* vtable symbols; a gcc vptr holds symbol + 8 (first virtual entry). */
-#define VT_ROT_BUNDLE        0x08724e08u  /* RotationalBundle: turret, propeller, gun mount */
-#define VT_ENGINE            0x0872bc68u  /* Engine (extends RotationalBundle) */
-#define VT_SOLDIER           0x0872f048u  /* BFSoldier */
-#define VT_PHYS_ENGINE       0x0872d608u  /* PhysicsEngine */
-
-/* Functions the detours call or patch. */
-#define ADD_EVENT_SEND_QUEUE 0x0812d730u  /* GameEventManager::addEventToSendQueue */
-#define SEND_EVENT_TO_ALL    0x08153b10u  /* GameServer::sendGameEventToAll(const&, bool) */
-#define FIRE_BARREL          0x0828aba0u  /* FireArms::fireBarrel(IPlayer*, Mat4&, int) */
-#define GET_ROOT_PARENT      0x0818d4b0u  /* getRootParent(ICompositeObject const*) */
-#define GET_BF_PLAYER        0x08052ac0u  /* getBFPlayer(IPlayer*) */
-
-static const uint32_t FLAG_ROOT = 0x02000000u;   /* byte at obj+7 bit 1 (getRootParent 0x0818d4b0) */
-static const uint32_t FLAG_DISABLED = 1u;
+const struct rec_target *T;
 
 /* --- config ------------------------------------------------------------ */
 
 static volatile int g_on = 0;
 static int g_hz = 10;
-static int g_debug = 0;
-static volatile int g_hook_active = 0;  /* addEventToSendQueue patched */
+int g_debug = 0;
+volatile int g_hook_active = 0;  /* addEventToSendQueue patched (the lnxded
+                                  * detour installer sets it) */
 
 static void read_config(void)
 {
@@ -107,13 +84,13 @@ static void read_config(void)
 /* --- output ------------------------------------------------------------ */
 
 static FILE *g_file = 0;
-static pthread_mutex_t g_write_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* The clock every line shares: 0 at file open, so both writers agree and the
  * viewer's sanity gate (LONGEST_RECORDING, 12 h) stays happy. The sampler
  * seeds g_t0; the game-thread hooks read it (0 until then: they buffer). */
 static double g_t0 = 0.0;
 
+__attribute__((unused))
 static void json_escape(const char *in, char *out, size_t cap)
 {
     size_t o = 0;
@@ -128,7 +105,7 @@ static void json_escape(const char *in, char *out, size_t cap)
 
 static void open_file_locked(void)
 {
-    (void)system("mkdir -p replays");
+    (void)T->make_replays_dir();
     char name[256];
     snprintf(name, sizeof(name), "replays/replay_%ld.ndjson", (long)time(0));
     g_file = fopen(name, "w");
@@ -139,172 +116,31 @@ static void open_file_locked(void)
     char iso[64];
     time_t now = time(0);
     strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%S", localtime(&now));
-    /* v5: keyed moving parts (`jn`), so the viewer can mount them on nodes. */
     fprintf(g_file,
-            "{\"k\":\"h\",\"v\":5,\"plus\":\"server-replay-recorder\","
-            "\"start\":\"%s\",\"hz\":%d}\n", iso, g_hz);
+            "{\"k\":\"h\",\"v\":%d,\"plus\":\"%s\","
+            "\"start\":\"%s\",\"hz\":%d}\n", T->header_version, T->header_plus,
+            iso, g_hz);
     fprintf(stderr, "recorder: recording to %s\n", name);
 }
 
 static void write_line(const char *line)
 {
-    pthread_mutex_lock(&g_write_lock);
+    T->rec_lock();
     if (g_file) {
         fputs(line, g_file);
         fputc('\n', g_file);
-        fflush(g_file);
+        if (T->flush_each_line) fflush(g_file);
     }
-    pthread_mutex_unlock(&g_write_lock);
+    T->rec_unlock();
 }
 
 /* --- safe reads --------------------------------------------------------- */
 
-/* A torn read or a pointer racing a destroy must not kill the server.
- * Read through the kernel's copy of our own address space. Offsets are
- * 64-bit even in this 32-bit process: heap addresses top out in 0xf7xxxxxx,
- * which a 32-bit off_t sign-extends and fails on. */
-static int mem_fd = -1;
-static int mem_fd_write = -1;
-
-static int safe_read(void *dst, size_t len, uintptr_t addr)
-{
-    if (mem_fd < 0) mem_fd = open("/proc/self/mem", O_RDONLY);
-    if (mem_fd < 0) return 0;
-    return pread(mem_fd, dst, len, (off_t)addr) == (ssize_t)len;
-}
-
-static uint32_t read_u32(uintptr_t addr)
+uint32_t read_u32(uintptr_t addr)
 {
     uint32_t v = 0;
-    safe_read(&v, 4, addr);
+    T->safe_read(&v, 4, addr);
     return v;
-}
-
-/* The detour installer: .text is mapped read-only, /proc/self/mem writes
- * through the page protection (the standard self-patching route). */
-static int patch_write(uintptr_t addr, const void *src, size_t len)
-{
-    if (mem_fd_write < 0) mem_fd_write = open("/proc/self/mem", O_WRONLY);
-    if (mem_fd_write < 0) return 0;
-    return pwrite(mem_fd_write, src, len, (off_t)addr) == (ssize_t)len;
-}
-
-/* --- std::string / names ------------------------------------------------- */
-
-/* A std::string in this libstdc++ (SGI) is one pointer to the chars. */
-static void read_string(uintptr_t str_obj, char *out, size_t cap)
-{
-    out[0] = 0;
-    if (str_obj < 0x1000) return;
-    uint32_t sp = read_u32(str_obj);
-    if (sp < 0x1000) return;
-    char buf[128];
-    if (!safe_read(buf, sizeof(buf), sp)) return;
-    buf[sizeof(buf) - 1] = 0;
-    size_t n = strnlen(buf, sizeof(buf) - 1);
-    if (n >= cap) n = cap - 1;
-    memcpy(out, buf, n);
-    out[n] = 0;
-}
-
-/* The networkable's u16 id: IObject+0x68 -> NetworkableBase, word at +4
- * (the shape GameEventManager::createPlayer 0x0812d080 reads to fill an
- * event's netId fields; verified live on a soldier). The getNetworkable
- * virtual is NOT the way on the server: the IObject slots past +0xb4 are
- * pure-virtual in BObject<IObject>'s vtable. */
-static uint32_t net_id_of(uintptr_t obj)
-{
-    uint32_t net = read_u32(obj + 0x68);
-    if (net < 0x1000) return 0;
-    return read_u32(net + 4) & 0xffff;
-}
-
-static double now_s(void)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
-}
-
-/* A template by its network id (createObject events, kills' weapon names):
- * ObjectTemplateManager::getTemplate(unsigned) 0x081d5ed0 reads the
- * u32->template map at manager+8, value at node+0x14. */
-static uintptr_t rbtree_find_value(uintptr_t mapaddr, uint32_t key);
-
-static uintptr_t template_by_id(uint32_t tid)
-{
-    uint32_t mgr = read_u32(TEMPLATE_MANAGER_PTR);
-    if (mgr < 0x1000) return 0;
-    return rbtree_find_value(mgr + 8, tid);
-}
-
-static void template_name_by_id(uint32_t tid, char *out, size_t cap)
-{
-    out[0] = 0;
-    if (tid == 0 || tid > 0x00ffffff) return;
-    uintptr_t tmpl = template_by_id(tid);
-    if (tmpl < 0x1000) return;
-    read_string(tmpl + 8, out, cap);   /* ObjectTemplate::getName 0x081d4c60 */
-}
-
-/* --- an SGI-STL rb-tree find ---------------------------------------------- */
-
-/* This libstdc++'s map for scalar keys: header-node pointer at `mapaddr`,
- * node count at mapaddr+4; a node: color 0, parent +4, left +8, right +0xc,
- * pair key +0x10, value +0x14 (the shape the registered-objects map at
- * om+0x94 and ObjectTemplateManager's at mgr+8 share). Returns the node's
- * VALUE for `key`, or 0. Bounded to the map's count + 8. */
-static uintptr_t rbtree_find_value(uintptr_t mapaddr, uint32_t key)
-{
-    uint32_t header = read_u32(mapaddr);
-    if (header < 0x1000) return 0;
-    uint32_t count = read_u32(mapaddr + 4);
-    if (count > 100000) return 0;
-    uint32_t node = read_u32(header + 8);       /* header->left: leftmost */
-    uint32_t steps = count + 8;
-    while (node >= 0x1000 && node != header && steps--) {
-        uint32_t nkey = read_u32(node + 0x10);
-        if (nkey == key) return read_u32(node + 0x14);
-        if (key < nkey) node = read_u32(node + 8);       /* left */
-        else node = read_u32(node + 0xc);                /* right */
-    }
-    return 0;
-}
-
-/* --- armor ----------------------------------------------------------------- */
-
-/* Armor holds an object's hit points. The getters read the same offsets as
- * the client's: getHitPoints 0x08173f30 +0x38, getMaxHitPoints 0x08173f20
- * +0x3c, getCriticalDamage 0x081741b0 +0xf0, getLastHitPlayer 0x081740d0
- * +0x14, TeamScore-style setTickets-verified field shapes. The Armor
- * component itself is found in the object's component map, the rb-tree at
- * IObject+0xb8 (BObject<ICompositeObject>::queryComponent 0x08193fd0's
- * fallback: key 0xc4a4, SmartPtr value at node+0x14) -- read directly, no
- * virtual call from a thread that is not the game's. */
-static const uint32_t IID_ARMOR = 0xc4a4u;
-
-typedef struct {
-    float hitPoints;
-    float maxHitPoints;
-    float criticalDamage;
-    int32_t lastHitPlayer;
-} ArmorFields;
-
-static int read_armor_at(uintptr_t armor, ArmorFields *out)
-{
-    memset(out, 0, sizeof(*out));
-    if (armor < 0x1000) return 0;
-    return safe_read(&out->hitPoints, 4, armor + 0x38)
-        && safe_read(&out->maxHitPoints, 4, armor + 0x3c)
-        && safe_read(&out->criticalDamage, 4, armor + 0xf0)
-        && safe_read(&out->lastHitPlayer, 4, armor + 0x14);
-}
-
-/* The Armor component, looked up once per object (the pointer lives as long
- * as the object does; the object is gone from the map before it frees). */
-static uintptr_t find_armor(uintptr_t obj)
-{
-    return rbtree_find_value(obj + 0xb8, IID_ARMOR);
 }
 
 /* --- transforms ------------------------------------------------------------ */
@@ -346,6 +182,8 @@ static void to_quat(const Mat4 *m, float *q)
     }
 }
 
+#if REC_STAGE3
+
 static void quat_conj(float *o, const float *q)
 {
     o[0] = -q[0]; o[1] = -q[1]; o[2] = -q[2]; o[3] = q[3];
@@ -368,35 +206,43 @@ static void local_pos(const Mat4 *m, const float *p, float *out)
     out[2] = dx * m->c[0] + dy * m->c[1] + dz * m->c[2];
 }
 
-/* The root of `obj`'s parent chain: parent at IObject+0x50 (getRootParent
+/* The root of `obj`'s parent chain: parent at obj_parent_off (getRootParent
  * 0x0818d4b0), root flag byte at obj+7 bit 1. Bounded walk. */
 static uintptr_t root_of(uintptr_t obj)
 {
     uintptr_t root = obj;
     for (int depth = 0; depth < 32; depth++) {
-        if ((read_u32(root + 4) & FLAG_ROOT) || root < 0x1000) break;
-        uintptr_t parent = read_u32(root + 0x50);
+        if ((read_u32(root + 4) & 0x02000000u) || root < 0x1000) break;
+        uintptr_t parent = read_u32(root + T->obj_parent_off);
         if (parent < 0x1000) break;
         root = parent;
     }
     return root;
 }
 
+#endif /* REC_STAGE3 */
+
 /* --- objects --------------------------------------------------------------- */
 
 /* Every root object the map holds (Wake: ~4.6k registered). State persists
  * across samples; a per-sample generation marks who was seen. */
 #define MAX_TRACKED 8192
+#define FLAG_ROOT 0x02000000u   /* byte at obj+7 bit 1 (getRootParent 0x0818d4b0) */
+#define FLAG_DISABLED 1u
 
 typedef struct {
-    uint32_t key; /* the registered map's key (IObject+0x58) */
-    uint32_t nid; /* the networkable's id: what the viewer's ids are */
+    uint32_t key; /* the registered map's key (the gid) */
+    uint32_t nid; /* the networkable's id: what the viewer's ids are
+                   * (a stage-1 target without a net-id read keys on the
+                   * map key) */
     uint32_t gen;
     float x, y, z, qx, qy, qz, qw;
+#if REC_STAGE3
     int has_armor;
-    uintptr_t armor_ptr;   /* the Armor component, found once (components map at IObject+0xb8) */
+    uintptr_t armor_ptr;   /* the Armor component, found once (components map) */
     float hp;
     int32_t last_hit;
+#endif
 } Tracked;
 
 static Tracked *g_tracked;
@@ -436,6 +282,85 @@ static void hash_insert(uint32_t key, int idx, uint32_t h)
 static uint32_t hash_of(uint32_t key)
 {
     return (key * 0x9e3779b9u) & (HASH_SLOTS - 1);
+}
+
+#if REC_STAGE3
+
+/* --- stage 3: an SGI-STL rb-tree find --------------------------------------- */
+
+/* ObjectTemplateManager's map for scalar keys: header-node pointer at
+ * `mapaddr`, node count at mapaddr+4; a node: color 0, parent +4, left +8,
+ * right +0xc, pair key +0x10, value +0x14. Returns the node's VALUE for
+ * `key`, or 0. Bounded to the map's count + 8. (The SGI map-object shape;
+ * an MSVC map object is laid out differently -- parameterize here when the
+ * w32ded stage-3 port needs it.) */
+static uintptr_t rbtree_find_value(uintptr_t mapaddr, uint32_t key);
+
+static uintptr_t template_by_id(uint32_t tid)
+{
+    uint32_t mgr = read_u32(T->template_manager_ptr);
+    if (mgr < 0x1000) return 0;
+    return rbtree_find_value(mgr + 8, tid);
+}
+
+static void template_name_by_id(uint32_t tid, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (tid == 0 || tid > 0x00ffffff) return;
+    uintptr_t tmpl = template_by_id(tid);
+    if (tmpl < 0x1000) return;
+    T->read_string(tmpl + 8, out, cap);   /* ObjectTemplate::getName 0x081d4c60 */
+}
+
+static uintptr_t rbtree_find_value(uintptr_t mapaddr, uint32_t key)
+{
+    uint32_t header = read_u32(mapaddr);
+    if (header < 0x1000) return 0;
+    uint32_t count = read_u32(mapaddr + 4);
+    if (count > 100000) return 0;
+    uint32_t node = read_u32(header + 8);       /* header->left: leftmost */
+    uint32_t steps = count + 8;
+    while (node >= 0x1000 && node != header && steps--) {
+        uint32_t nkey = read_u32(node + 0x10);
+        if (nkey == key) return read_u32(node + 0x14);
+        if (key < nkey) node = read_u32(node + 8);       /* left */
+        else node = read_u32(node + 0xc);                /* right */
+    }
+    return 0;
+}
+
+/* --- armor ----------------------------------------------------------------- */
+
+/* Armor holds an object's hit points. The getters read the same offsets as
+ * the client's: getHitPoints 0x08173f30 +0x38, getMaxHitPoints 0x08173f20
+ * +0x3c, getCriticalDamage 0x081741b0 +0xf0, getLastHitPlayer 0x081740d0
+ * +0x14. The Armor component itself is found in the object's component map,
+ * the rb-tree at obj_compmap_off (BObject<ICompositeObject>::queryComponent
+ * 0x08193fd0's fallback: key armor_iid, SmartPtr value at node+0x14) -- read
+ * directly, no virtual call from a thread that is not the game's. */
+
+typedef struct {
+    float hitPoints;
+    float maxHitPoints;
+    float criticalDamage;
+    int32_t lastHitPlayer;
+} ArmorFields;
+
+static int read_armor_at(uintptr_t armor, ArmorFields *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (armor < 0x1000) return 0;
+    return T->safe_read(&out->hitPoints, 4, armor + T->armor_hp_off)
+        && T->safe_read(&out->maxHitPoints, 4, armor + T->armor_maxhp_off)
+        && T->safe_read(&out->criticalDamage, 4, armor + T->armor_crit_off)
+        && T->safe_read(&out->lastHitPlayer, 4, armor + T->armor_lasthit_off);
+}
+
+/* The Armor component, looked up once per object (the pointer lives as long
+ * as the object does; the object is gone from the map before it frees). */
+static uintptr_t find_armor(uintptr_t obj)
+{
+    return rbtree_find_value(obj + T->obj_compmap_off, T->armor_iid);
 }
 
 /* --- moving parts (v5: jn / j / g lines) ------------------------------------ */
@@ -553,8 +478,15 @@ static int kit_watch_pending(uint32_t nid)
     return 0;
 }
 
+#endif /* REC_STAGE3 */
+
 static double g_t;   /* the current sample's stamp */
 static void sample_object(uint32_t node);
+#if REC_STAGE3
+static uint32_t g_score_manager;   /* ScoreManager found by vtable (sample_tickets) */
+#endif
+
+#if REC_STAGE3
 
 /* The watched kit object, emitted as its own o record even while DISABLED
  * (a carried kit is disabled until dropped): the viewer needs its template
@@ -563,14 +495,14 @@ static void kit_watch_emit(uint32_t obj, uint32_t nid, uint32_t key)
 {
     for (int i = 0; i < g_kit_watch_n; i++) {
         if (g_kit_watch[i].done || g_kit_watch[i].nid != nid) continue;
-        uint32_t tmpl = read_u32(obj + 0x4c);
+        uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
         char name[128];
-        read_string(tmpl + 8, name, sizeof(name));
-        uint32_t tid = tmpl > 0x1000 ? read_u32(tmpl + 0x10) : 0;
+        T->read_string(tmpl + 8, name, sizeof(name));
+        uint32_t tid = tmpl > T->min_tmpl_addr ? read_u32(tmpl + T->tmpl_id_off) : 0;
         Mat4 m;
         float q[4] = {0, 0, 0, 1};
         float px = 0, py = 0, pz = 0;
-        if (safe_read(&m, sizeof(m), obj + 0x74)) {
+        if (T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) {
             to_quat(&m, q);
             px = m.p[0]; py = m.p[1]; pz = m.p[2];
         }
@@ -607,7 +539,6 @@ static int g_level_written;
 /* ScoreManager: the global `dice::ref2::world::scoreManager` 0x0871bb58
  * (getTeamScore 0x081616c0 = this + 0x10 + team*0x50; the live count at
  * TeamScore+0x48, TeamScore::setTickets 0x081610a0). */
-#define SCORE_MANAGER_PTR 0x0871bb58u
 static int g_tickets[2] = { -1, -1 };
 
 /* ScoreManager instance, found in the registered map by vtable
@@ -617,13 +548,13 @@ static uint32_t g_score_manager = 0;
 static void sample_tickets(double t)
 {
     /* The global may hold the manager or a pointer to it; accept either. */
-    uint32_t at = read_u32(SCORE_MANAGER_PTR);
+    uint32_t at = read_u32(T->score_manager_ptr);
     uint32_t mgr = 0;
-    if (at >= 0x1000 && read_u32(at) == 0x0871c008u) mgr = at;
-    else if (read_u32(SCORE_MANAGER_PTR) == 0x0871c008u) mgr = SCORE_MANAGER_PTR;
+    if (at >= 0x1000 && read_u32(at) == T->vt_score_manager) mgr = at;
+    else if (read_u32(T->score_manager_ptr) == T->vt_score_manager) mgr = T->score_manager_ptr;
     if (!mgr) return;
-    int t1 = (int)read_u32(mgr + 0x10 + 1 * 0x50 + 0x48);
-    int t2 = (int)read_u32(mgr + 0x10 + 2 * 0x50 + 0x48);
+    int t1 = (int)read_u32(mgr + T->score_base_off + 1 * T->score_stride_off + T->score_tickets_off);
+    int t2 = (int)read_u32(mgr + T->score_base_off + 2 * T->score_stride_off + T->score_tickets_off);
     if (t1 == g_tickets[0] && t2 == g_tickets[1]) return;
     g_tickets[0] = t1;
     g_tickets[1] = t2;
@@ -632,60 +563,67 @@ static void sample_tickets(double t)
     write_line(line);
 }
 
-/* --- sampling: one registered object ------------------------------------------ */
+#endif /* REC_STAGE3 */
 
-static void kit_watch_emit(uint32_t obj, uint32_t nid, uint32_t key);
-static void sample_object(uint32_t node);
+/* --- sampling: one registered object ------------------------------------------ */
 
 /* One node of the registered-objects map. Lines go straight to the file:
  * thousands of objects a sample would overflow any assembled buffer. */
 static void sample_object(uint32_t node)
 {
-    uint32_t key = read_u32(node + 0x10);
-    uint32_t obj = read_u32(node + 0x14);
-    if (!obj || obj < 0x1000) return;
+    uint32_t key = read_u32(node + T->node_key_off);
+    uint32_t obj = read_u32(node + T->node_value_off);
+    if (!obj || obj < T->min_addr) return;
 
-    uint32_t flags = read_u32(obj + 4);
+    uint32_t flags = read_u32(obj + T->obj_flags_off);
     if (flags & FLAG_DISABLED) return;
 
-    uint32_t nid = net_id_of(obj);
-
-    uint32_t vptr = read_u32(obj);
-    int is_rot = vptr == VT_ROT_BUNDLE;
-    int is_engine = vptr == VT_ENGINE;
+    uint32_t nid = T->net_id_of(obj);
+    /* The record's id: the networkable's id, or -- for a target without a
+     * net-id read (w32ded stage 1) -- the registered map's key, which is the
+     * object's own gid. */
+    uint32_t id = nid ? nid : key;
 
     /* Root pass: transforms and armor. */
     int is_root = (flags & FLAG_ROOT) != 0;
     if (is_root) {
+#if REC_STAGE3
         /* The replicated ScoreManager registers as a world object: found by
          * vtable, the tickets read off it (sample_tickets). */
-        if (vptr == 0x0871c008u) g_score_manager = obj;   /* legacy find path */
-        if (!nid) return;
+        uint32_t vptr = read_u32(obj);
+        if (vptr == T->vt_score_manager) g_score_manager = obj;   /* legacy find path */
+#endif
+        if (!id) return;
         Mat4 m;
-        if (!safe_read(&m, sizeof(m), obj + 0x74)) return;
+        if (!T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) return;
 
-        uint32_t tmpl = read_u32(obj + 0x4c);
+        uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
         char name[128];
-        read_string(tmpl + 8, name, sizeof(name));
-        uint32_t tid = tmpl > 0x1000 ? read_u32(tmpl + 0x10) : 0;
+        T->read_template_name(tmpl, name, sizeof(name));
+        uint32_t tid = tmpl > T->min_tmpl_addr ? read_u32(tmpl + T->tmpl_id_off) : 0;
+#if REC_STAGE3
         uint32_t gid = key;   /* the registered map's key: obj+0x48 (registerObject 0x0819b4a0) */
+#else
+        uint32_t gid = read_u32(obj + T->obj_id_off);
+#endif
 
         float q[4];
         to_quat(&m, q);
 
-        ArmorFields armor;
         int ti = hash_find(key, hash_of(key));
         if (ti < 0) {
             if (g_tracked_n >= MAX_TRACKED) return;
             ti = g_tracked_n++;
             g_tracked[ti].key = key;
-            g_tracked[ti].nid = nid;
+            g_tracked[ti].nid = id;
             hash_insert(key, ti, hash_of(key));
             Tracked *tr = &g_tracked[ti];
             tr->x = m.p[0]; tr->y = m.p[1]; tr->z = m.p[2];
             tr->qx = q[0]; tr->qy = q[1]; tr->qz = q[2]; tr->qw = q[3];
             tr->gen = g_gen;
+#if REC_STAGE3
             tr->armor_ptr = find_armor(obj);
+            ArmorFields armor;
             int has_armor = read_armor_at(tr->armor_ptr, &armor);
             tr->has_armor = has_armor;
             tr->hp = has_armor ? armor.hitPoints : 0.0f;
@@ -698,13 +636,15 @@ static void sample_object(uint32_t node)
                 snprintf(line, sizeof(line),
                     "{\"k\":\"o\",\"t\":%.3f,\"id\":%u,\"gid\":%u,\"tmpl\":\"%s\",\"tid\":%u"
                     ",\"maxhp\":%.1f,\"crit\":%.1f}",
-                    g_t, nid, gid, name, tid, armor.maxHitPoints, armor.criticalDamage);
+                    g_t, id, gid, name, tid, armor.maxHitPoints, armor.criticalDamage);
                 write_line(line);
-            } else {
+            } else
+#endif
+            {
                 char line[512];
                 snprintf(line, sizeof(line),
                     "{\"k\":\"o\",\"t\":%.3f,\"id\":%u,\"gid\":%u,\"tmpl\":\"%s\",\"tid\":%u}",
-                    g_t, nid, gid, name, tid);
+                    g_t, id, gid, name, tid);
                 write_line(line);
             }
             return;
@@ -712,26 +652,31 @@ static void sample_object(uint32_t node)
 
         Tracked *tr = &g_tracked[ti];
         tr->gen = g_gen;
+#if REC_STAGE3
         ArmorFields armor_now;
         int has_armor = read_armor_at(tr->armor_ptr, &armor_now);
+#endif
         float dx = tr->x - m.p[0], dy = tr->y - m.p[1], dz = tr->z - m.p[2];
         float dq = tr->qx - q[0] + tr->qy - q[1] + tr->qz - q[2] + tr->qw - q[3];
         int moved = dx * dx + dy * dy + dz * dz >= 1e-4f || !(dq < 0.008f && dq > -0.008f);
+#if REC_STAGE3
         int hp_changed = has_armor && (!tr->has_armor
             || fabsf(armor_now.hitPoints - tr->hp) > 0.05f
             || armor_now.lastHitPlayer != tr->last_hit);
+#endif
         if (moved) {
             tr->x = m.p[0]; tr->y = m.p[1]; tr->z = m.p[2];
             tr->qx = q[0]; tr->qy = q[1]; tr->qz = q[2]; tr->qw = q[3];
             char line[512];
             snprintf(line, sizeof(line),
                 "{\"k\":\"s\",\"t\":%.3f,\"o\":[[%u,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f]]}",
-                g_t, nid, m.p[0], m.p[1], m.p[2], q[0], q[1], q[2], q[3]);
+                g_t, id, m.p[0], m.p[1], m.p[2], q[0], q[1], q[2], q[3]);
             write_line(line);
         }
         /* Hit points change on every hit, and fall steadily on their own once
          * below the critical threshold (burning): the smoke, fire and
          * destruction timeline, and the damage events the viewer feeds. */
+#if REC_STAGE3
         if (hp_changed) {
             tr->has_armor = 1;
             tr->hp = armor_now.hitPoints;
@@ -739,24 +684,26 @@ static void sample_object(uint32_t node)
             char line[256];
             snprintf(line, sizeof(line),
                 "{\"k\":\"a\",\"t\":%.3f,\"a\":[[%u,%.1f,%d]]}",
-                g_t, nid, armor_now.hitPoints, armor_now.lastHitPlayer);
+                g_t, id, armor_now.hitPoints, armor_now.lastHitPlayer);
             write_line(line);
         }
+#endif
         return;
     }
 
+#if REC_STAGE3
     /* Non-root pass 1: a watched kit (needs its net id). */
     if (nid) {
         for (int i = 0; i < g_kit_watch_n; i++) {
             if (!g_kit_watch[i].done && g_kit_watch[i].nid == nid) {
-                uint32_t tmpl = read_u32(obj + 0x4c);
+                uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
                 char name[128];
-                read_string(tmpl + 8, name, sizeof(name));
-                uint32_t tid = tmpl > 0x1000 ? read_u32(tmpl + 0x10) : 0;
+                T->read_string(tmpl + 8, name, sizeof(name));
+                uint32_t tid = tmpl > T->min_tmpl_addr ? read_u32(tmpl + T->tmpl_id_off) : 0;
                 Mat4 m;
                 float q[4] = {0, 0, 0, 1};
                 float px = 0, py = 0, pz = 0;
-                if (safe_read(&m, sizeof(m), obj + 0x74)) {
+                if (T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) {
                     to_quat(&m, q);
                     px = m.p[0]; py = m.p[1]; pz = m.p[2];
                 }
@@ -775,23 +722,26 @@ static void sample_object(uint32_t node)
     /* Non-root pass 2: moving parts and engines under a root. A child's
      * networkable carries no id (getID() 0 for every child), so the pass
      * does not need one -- the gate above only applied to the kit watch. */
+    uint32_t vptr = read_u32(obj);
+    int is_rot = vptr == T->vt_rot_bundle;
+    int is_engine = vptr == T->vt_engine;
     if (!is_rot && !is_engine) return;
 
     uintptr_t root = root_of(obj);
     if (root < 0x1000 || root == obj) return;
-    uint32_t root_nid = net_id_of(root);
+    uint32_t root_nid = T->net_id_of(root);
     if (!root_nid) return;
 
     Mat4 top, part;
     const Mat4 *top_m, *part_m;
-    if (!safe_read(&top, sizeof(top), root + 0x74)) return;
-    if (!safe_read(&part, sizeof(part), obj + 0x74)) return;
+    if (!T->safe_read(&top, sizeof(top), root + T->obj_mat_off)) return;
+    if (!T->safe_read(&part, sizeof(part), obj + T->obj_mat_off)) return;
     top_m = &top;
     part_m = &part;
 
-    uint32_t tmpl = read_u32(obj + 0x4c);
+    uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
     int first = 0;
-    int id = part_id_of(obj, root_nid, tmpl, &first);
+    int id2 = part_id_of(obj, root_nid, tmpl, &first);
 
     if (is_rot) {
         /* The part's rotation relative to its root: the turret's traverse,
@@ -807,21 +757,21 @@ static void sample_object(uint32_t node)
              * viewer finds the part in the root's model by template name,
              * and among same-named parts (a ship's AA guns) by place. */
             char name[128];
-            read_string(tmpl + 8, name, sizeof(name));
+            T->read_string(tmpl + 8, name, sizeof(name));
             float at[3];
             local_pos(top_m, part_m->p, at);
             char line[512];
             snprintf(line, sizeof(line),
                 "{\"k\":\"jn\",\"t\":%.3f,\"o\":[[%u,%d,\"%s\",%.2f,%.2f,%.2f]]}",
-                g_t, root_nid, id, name, at[0], at[1], at[2]);
+                g_t, root_nid, id2, name, at[0], at[1], at[2]);
             write_line(line);
-            if (id >= g_part_state_n) {
-                for (int i = g_part_state_n; i <= id; i++)
+            if (id2 >= g_part_state_n) {
+                for (int i = g_part_state_n; i <= id2; i++)
                     memset(&g_part_state[i], 0, sizeof(PartState));
-                g_part_state_n = id + 1;
+                g_part_state_n = id2 + 1;
             }
         } else {
-            PartState *ps = &g_part_state[id];
+            PartState *ps = &g_part_state[id2];
             if (fabsf(ps->qx - qr[0]) < 0.002f && fabsf(ps->qy - qr[1]) < 0.002f
                 && fabsf(ps->qz - qr[2]) < 0.002f && fabsf(ps->qw - qr[3]) < 0.002f)
                 return;
@@ -830,45 +780,47 @@ static void sample_object(uint32_t node)
         char line[512];
         snprintf(line, sizeof(line),
             "{\"k\":\"j\",\"t\":%.3f,\"o\":[[%u,%d,%.4f,%.4f,%.4f,%.4f]]}",
-            g_t, root_nid, id, qr[0], qr[1], qr[2], qr[3]);
+            g_t, root_nid, id2, qr[0], qr[1], qr[2], qr[3]);
         write_line(line);
         return;
     }
 
-    /* Engine: PhysicsEngine at Engine+0x60 (the physicsNode field; verified
-     * against the vptr), revs +0xA0 (PhysicsEngine::updatePhysics 0x0824cbb0
-     * reads and writes it), gear +0xBC (PhysicsEngine ctor sets 1). The
-     * running/disabled flags and the throttle servo are read at the client
-     * recorder's offsets until a live run verifies them (RECORDER_DEBUG
-     * dumps an engine's dwords for exactly that check). */
-    uint32_t pe = read_u32(obj + 0x60);
-    if (pe < 0x1000 || read_u32(pe) != VT_PHYS_ENGINE) return;
+    /* Engine: PhysicsEngine at eng_pe_off (the physicsNode field; verified
+     * against the vptr), revs at pe_revs_off (PhysicsEngine::updatePhysics
+     * 0x0824cbb0 reads and writes it), gear at pe_gear_off (PhysicsEngine
+     * ctor sets 1). The running/disabled flags and throttle are verified
+     * server-side: running Engine+0x142 (TemplateMessage 4 sets, 5 clears),
+     * disabled +0x143 (0x14/0x15 on critical damage, 0x13 repair clears),
+     * throttle +0x124 (handlePlayerInput gates all input on the word == 1;
+     * handleUpdate forces revs 0 when running == 0). */
+    uint32_t pe = read_u32(obj + T->eng_pe_off);
+    if (pe < 0x1000 || read_u32(pe) != T->vt_phys_engine) return;
     float revs;
-    if (!safe_read(&revs, 4, pe + 0xa0)) return;
-    int32_t gear = (int32_t)read_u32(pe + 0xbc);
+    if (!T->safe_read(&revs, 4, pe + T->pe_revs_off)) return;
+    int32_t gear = (int32_t)read_u32(pe + T->pe_gear_off);
     uint8_t flags2[2];
-    safe_read(flags2, 2, obj + 0x15c);
+    T->safe_read(flags2, 2, obj + T->eng_flags_off);
     float throttle;
-    safe_read(&throttle, 4, obj + 0x124);
+    T->safe_read(&throttle, 4, obj + T->eng_throttle_off);
     int eflags = (flags2[0] ? 1 : 0) | (flags2[1] ? 2 : 0);
 
     static float last_revs[MAX_PARTS];
     static int last_gear[MAX_PARTS];
     static float last_throttle[MAX_PARTS];
     static int last_flags[MAX_PARTS];
-    if (id < MAX_PARTS && !first) {
-        if (fabsf(last_revs[id] - revs) < 0.01f && last_gear[id] == gear
-            && fabsf(last_throttle[id] - throttle) < 0.01f && last_flags[id] == eflags)
+    if (id2 < MAX_PARTS && !first) {
+        if (fabsf(last_revs[id2] - revs) < 0.01f && last_gear[id2] == gear
+            && fabsf(last_throttle[id2] - throttle) < 0.01f && last_flags[id2] == eflags)
             return;
-        last_revs[id] = revs;
-        last_gear[id] = gear;
-        last_throttle[id] = throttle;
-        last_flags[id] = eflags;
+        last_revs[id2] = revs;
+        last_gear[id2] = gear;
+        last_throttle[id2] = throttle;
+        last_flags[id2] = eflags;
     }
     char line[512];
     snprintf(line, sizeof(line),
         "{\"k\":\"g\",\"t\":%.3f,\"o\":[[%u,%.3f,%.3f,%d,%d,%d]]}",
-        g_t, root_nid, revs, throttle, eflags, gear, id);
+        g_t, root_nid, revs, throttle, eflags, gear, id2);
     write_line(line);
 
     if (g_debug) {
@@ -881,7 +833,10 @@ static void sample_object(uint32_t node)
             fprintf(stderr, "\n");
         }
     }
+#endif /* REC_STAGE3 */
 }
+
+#if REC_STAGE3
 
 /* Soldier pass (roots only, vtable-identified): the animation state machines
  * (BFSoldier::getAnimationState 0x0826d060: soldier+0x2b4 + i*0x44 -- lower
@@ -889,11 +844,11 @@ static void sample_object(uint32_t node)
  * +0x3b8) and the state bits (getStateBits 0x0827e1c0: +0x3e6). */
 static void sample_soldier(uint32_t obj, uint32_t nid)
 {
-    int lower = (int)read_u32(obj + 0x2b4);
-    int upper = (int)read_u32(obj + 0x2f8);
-    int item = (int)read_u32(obj + 0x3b8);
+    int lower = (int)read_u32(obj + T->sol_lower_off);
+    int upper = (int)read_u32(obj + T->sol_upper_off);
+    int item = (int)read_u32(obj + T->sol_item_off);
     int bits = 0;
-    safe_read(&bits, 2, obj + 0x3e6);
+    T->safe_read(&bits, 2, obj + T->sol_bits_off);
 
     SoldierTracked *s = 0;
     for (int i = 0; i < g_soldiers_n; i++)
@@ -919,60 +874,34 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
     if (!g_anim_written) { write_anim_states(g_t, obj); g_anim_written = 1; }
 }
 
-/* The registered-objects map (ObjectManager::registerObject 0x0819b4a0)
- * is an old SGI-STL _Rb_tree at om+0x94: header-node pointer at om+0x94,
- * node count at om+0x98. A node: parent +4, left +8, right +0xc; value
- * pair key +0x10, IObject* +0x14. Walk from the leftmost (header.left),
- * in-order successor: right subtree's leftmost, else climb to the ancestor
- * whose left child this is. */
-static uint32_t successor(uint32_t node, uint32_t header)
-{
-    uint32_t right = read_u32(node + 0xc);
-    if (right != header && right) {
-        node = right;
-        for (;;) {
-            uint32_t left = read_u32(node + 8);
-            if (!left || left == header) break;
-            node = left;
-        }
-        return node;
-    }
-    uint32_t parent = read_u32(node + 4);
-    while (parent && parent != header) {
-        if (read_u32(parent + 8) == node) return parent;
-        node = parent;
-        parent = read_u32(node + 4);
-    }
-    return header;
-}
-
 /* --- the roster and the level ---------------------------------------------- */
 
 static uint32_t kit_net_id_of(uint32_t soldier);
 
-/* PlayerManager::getPlayers: the list at pm+0xc; a node: next +0,
- * BFPlayer* +8 (GameServer::updateGameLogic walks it so). BFPlayer: id u16
- * +0xc, name string +0x44, ai byte +0x78, team +0x7c, and -- the fields
- * GameEventManager::createPlayer 0x0812d080 fills its event from: the
- * controlled object (vehicle) +0x68, the camera +0x74. The kit is NOT a
- * BFPlayer field (the event builder takes it from the soldier's template,
- * class id 0x9493): the real createPlayer/pickupKit events the detour
- * captures carry it, so with the hook active no kit is written here. */
+/* PlayerManager::getPlayers: the list at pm_list_off; a node: next +0,
+ * BFPlayer* at pl_node_player_off (GameServer::updateGameLogic walks it so).
+ * BFPlayer: id u16 bf_id_off, name string bf_name_off, ai byte bf_ai_off,
+ * team bf_team_off, and -- the fields GameEventManager::createPlayer
+ * 0x0812d080 fills its event from: the controlled object (vehicle)
+ * bf_veh_off, the camera bf_cam_off. The kit is NOT a BFPlayer field (the
+ * event builder takes it from the soldier's template, class id 0x9493): the
+ * real createPlayer/pickupKit events the detour captures carry it, so with
+ * the hook active no kit is written here. */
 static void sample_players(void)
 {
-    uint32_t pm = read_u32(PLAYER_MANAGER_PTR);
+    uint32_t pm = read_u32(T->player_manager_ptr);
     if (!pm || pm < 0x1000) return;
 
-    uint32_t list = pm + 0xc;
+    uint32_t list = pm + T->pm_list_off;
     uint32_t node = read_u32(list);
     int walking = 0;
     for (int i = 0; node && node != list && i < MAX_PLAYERS + 8; i++) {
-        uint32_t p = read_u32(node + 8);
+        uint32_t p = read_u32(node + T->pl_node_player_off);
         node = read_u32(node);
         walking++;
         if (!p || p < 0x1000) break;
 
-        int pid = read_u32(p + 0xc) & 0xffff;
+        int pid = read_u32(p + T->bf_id_off) & 0xffff;
         if (!pid) continue;
 
         Plyr *pl = 0;
@@ -980,11 +909,11 @@ static void sample_players(void)
             if (g_players[j].pid == pid) { pl = &g_players[j]; break; }
 
         char name[64];
-        read_string(p + 0x44, name, sizeof(name));
-        int ai = read_u32(p + 0x78) & 0xff;
-        int team = read_u32(p + 0x7c);
-        uint32_t veh = read_u32(p + 0x68);
-        uint32_t nid = veh > 0x1000 ? net_id_of(veh) : 0;
+        T->read_string(p + T->bf_name_off, name, sizeof(name));
+        int ai = read_u32(p + T->bf_ai_off) & 0xff;
+        int team = read_u32(p + T->bf_team_off);
+        uint32_t veh = read_u32(p + T->bf_veh_off);
+        uint32_t nid = veh > 0x1000 ? T->net_id_of(veh) : 0;
 
         /* The kit he carries: resolved only when his controlled object
          * changes (a spawn binds a fresh soldier and a fresh kit). */
@@ -1013,11 +942,11 @@ static void sample_players(void)
             json_escape(name, pl->name, sizeof(pl->name));
             pl->kit_nid = kit_nid;
             /* Synthesised createPlayer (hook inactive or the join's events
-             * went by): the ids the event builder fills from +0x68 and
-             * +0x74 -- vehicle/controlled and camera. No kit here. */
-            uint32_t cam = read_u32(p + 0x74);
-            uint32_t cam_nid = cam > 0x1000 ? net_id_of(cam) : 0;
-            uint32_t veh_nid = veh > 0x1000 ? net_id_of(veh) : 0;
+             * went by): the ids the event builder fills from bf_veh_off and
+             * bf_cam_off -- vehicle/controlled and camera. No kit here. */
+            uint32_t cam = read_u32(p + T->bf_cam_off);
+            uint32_t cam_nid = cam > 0x1000 ? T->net_id_of(cam) : 0;
+            uint32_t veh_nid = veh > 0x1000 ? T->net_id_of(veh) : 0;
             char line[512];
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createPlayer\",\"pid\":%d,"
@@ -1068,45 +997,45 @@ static void sample_players(void)
 static uint32_t kit_net_id_of(uint32_t soldier)
 {
     if (soldier < 0x1000) return 0;
-    uint32_t tmpl = read_u32(soldier + 0x4c);
+    uint32_t tmpl = read_u32(soldier + T->obj_tmpl_off);
     if (tmpl < 0x1000) return 0;
     uint32_t tv = read_u32(tmpl);
     if (tv < 0x1000) return 0;
     uint32_t fn = read_u32(tv + 0xc);
     if (fn < 0x1000) return 0;
-    if (((uint32_t (*)(uint32_t))fn)(tmpl) != 0x9493u) return 0;
+    if (((uint32_t (*)(uint32_t))fn)(tmpl) != T->kit_class_id) return 0;
     uint32_t sv = read_u32(soldier);
     if (sv < 0x1000) return 0;
-    uint32_t gk = read_u32(sv + 0x17c);
+    uint32_t gk = read_u32(sv + T->kit_getkit_slot);
     if (gk < 0x1000) return 0;
     uint32_t key = ((uint32_t (*)(uint32_t))gk)(soldier);
     if (!key) return 0;
-    uint32_t om = read_u32(OBJECT_MANAGER_PTR);
+    uint32_t om = read_u32(T->object_manager_ptr);
     if (om < 0x1000) return 0;
     uint32_t ov = read_u32(om);
     if (ov < 0x1000) return 0;
     uint32_t kit = 0;
-    uint32_t f1 = read_u32(ov + 0x20);
+    uint32_t f1 = read_u32(ov + T->om_get_slot1);
     if (f1 >= 0x1000) kit = ((uint32_t (*)(uint32_t, uint32_t))f1)(om, key);
     if (kit < 0x1000) {
-        uint32_t f2 = read_u32(ov + 0x24);
+        uint32_t f2 = read_u32(ov + T->om_get_slot2);
         if (f2 >= 0x1000) kit = ((uint32_t (*)(uint32_t, uint32_t))f2)(om, key);
     }
-    return kit >= 0x1000 ? net_id_of(kit) : 0;
+    return kit >= 0x1000 ? T->net_id_of(kit) : 0;
 }
 
 /* The level and the mode, from the setup's current level entry
- * (Setup::getCurrentLevel 0x080bfeb0: the entry at this+0x23c, name
+ * (Setup::getCurrentLevel 0x080bfeb0: the entry at setup_level_off, name
  * string +0, gpm enum +4; the enum's words from stringToGPM 0x08060620:
  * CQ=2, TDM=3, COOP=4, OBJECTIVEMODE=5). */
 static void write_level(void)
 {
-    uint32_t setup = read_u32(SETUP_PTR);
+    uint32_t setup = read_u32(T->setup_ptr);
     if (!setup || setup < 0x1000) return;
     char level[64];
-    read_string(setup + 0x23c, level, sizeof(level));
+    T->read_string(setup + T->setup_level_off, level, sizeof(level));
     if (!level[0]) return;
-    uint32_t gpm = read_u32(setup + 0x240);
+    uint32_t gpm = read_u32(setup + T->setup_gpm_off);
     const char *mode = gpm == 2 ? "Conquest" : gpm == 3 ? "Tdm"
                      : gpm == 4 ? "CoOp" : gpm == 5 ? "ObjectiveMode"
                      : gpm == 1 ? "Ctf" : "";
@@ -1200,7 +1129,7 @@ void recorder_on_event(uint32_t ev)
 
     const uint8_t *p = (const uint8_t *)(uintptr_t)ev + 12;
 
-    double t = g_t0 > 0.0 ? now_s() - g_t0 : 0.0;
+    double t = g_t0 > 0.0 ? T->now_s() - g_t0 : 0.0;
 
     /* A new join starts a new file; the held events (last join's) drop. */
     if (type == 0x1a && g_file) {
@@ -1209,9 +1138,9 @@ void recorder_on_event(uint32_t ev)
         char line[64];
         snprintf(line, sizeof(line), "{\"k\":\"end\",\"t\":%.3f}", t);
         write_line(line);
-        pthread_mutex_lock(&g_write_lock);
+        T->rec_lock();
         if (g_file) { fflush(g_file); fclose(g_file); g_file = 0; }
-        pthread_mutex_unlock(&g_write_lock);
+        T->rec_unlock();
         parts_reset();
         g_players_n = 0;
         g_kit_watch_n = 0;
@@ -1444,239 +1373,81 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
  * the weapon's template, its root's net id, the firing player's id, and the
  * Mat4 the round left along (rows a, b, c are the X, Y, Z axes; a round
  * leaves along +Z). */
-static uint32_t (*get_bf_player)(uint32_t) = (uint32_t(*)(uint32_t))GET_BF_PLAYER;
-static uint32_t (*get_root_parent)(uint32_t) = (uint32_t(*)(uint32_t))GET_ROOT_PARENT;
-
 void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
 {
     if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000) return;
 
-    uint32_t tmpl = read_u32(fire_arms + 0x4c);
+    uint32_t tmpl = read_u32(fire_arms + T->obj_tmpl_off);
     char name[96];
-    read_string(tmpl + 8, name, sizeof(name));
+    T->read_string(tmpl + 8, name, sizeof(name));
 
     int pid = -1;
     if (player >= 0x1000) {
-        uint32_t bf = get_bf_player(player);
-        if (bf >= 0x1000) pid = (int)(read_u32(bf + 0xc) & 0xffff);
+        uint32_t bf = ((uint32_t (*)(uint32_t))T->get_bf_player_addr)(player);
+        if (bf >= 0x1000) pid = (int)(read_u32(bf + T->bf_id_off) & 0xffff);
     }
 
     int root_nid = -1;
     if (fire_arms >= 0x1000) {
-        uint32_t root = get_root_parent(fire_arms);
-        if (root >= 0x1000) root_nid = (int)net_id_of(root);
+        uint32_t root = ((uint32_t (*)(uint32_t))T->get_root_parent_addr)(fire_arms);
+        if (root >= 0x1000) root_nid = (int)T->net_id_of(root);
     }
 
     Mat4 m;
-    if (!safe_read(&m, sizeof(m), mat4_addr)) return;
+    if (!T->safe_read(&m, sizeof(m), mat4_addr)) return;
 
     char esc[112]; json_escape(name, esc, sizeof(esc));
     char line[512];
     snprintf(line, sizeof(line),
         "{\"k\":\"f\",\"t\":%.3f,\"id\":%d,\"pid\":%d,\"w\":\"%s\""
         ",\"p\":[%.2f,%.2f,%.2f],\"d\":[%.3f,%.3f,%.3f]}",
-        now_s() - g_t0, root_nid, pid, esc,
+        T->now_s() - g_t0, root_nid, pid, esc,
         m.p[0], m.p[1], m.p[2], m.c[0], m.c[1], m.c[2]);
     write_line(line);
 }
 
+#endif /* REC_STAGE3 */
+
 /* --- the sampler ------------------------------------------------------------------ */
-
-/* --- detour stubs and installation ------------------------------------------------- */
-
-/* The stubs live in this .so's .text; the copied prologue bytes need
- * executable memory: one RWX page, trampolines written at install. */
-static uint8_t *g_tramp_page;
-static size_t g_tramp_used;
-
-/* addEventToSendQueue's prologue, copied (objdump 0x0812d730):
- *   55              push %ebp
- *   31 c0           xor  %eax,%eax
- *   89 e5           mov  %esp,%ebp
- *   81 ec 48 01 00 00  sub $0x148,%esp
- * (11 bytes; next instruction at 0x0812d73b). */
-static const uint8_t AETSQ_ORIG[] = { 0x55, 0x31, 0xc0, 0x89, 0xe5, 0x81, 0xec, 0x48, 0x01, 0x00, 0x00 };
-#define AETSQ_LEN 11
-#define AETSQ_BACK (ADD_EVENT_SEND_QUEUE + AETSQ_LEN)
-
-/* fireBarrel's prologue (objdump 0x0828aba0), the same shape as
- * sendGameEventToAll's:
- *   55              push %ebp
- *   89 e5           mov  %esp,%ebp
- *   57              push %edi
- *   56              push %esi
- *   53              push %ebx
- * (6 bytes; next instruction at +6). */
-static const uint8_t FIRE_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
-#define FIRE_LEN 6
-#define FIRE_BACK (FIRE_BARREL + FIRE_LEN)
-
-static const uint8_t TOALL_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
-#define TOALL_LEN 6
-#define TOALL_BACK (SEND_EVENT_TO_ALL + TOALL_LEN)
-
-__asm__(
-".text\n"
-".globl recorder_stub_event\n"
-"recorder_stub_event:\n"          /* jmp'd here from 0x0812d730 */
-"  pusha\n"
-"  pushfl\n"
-"  movl  44(%esp), %eax\n"        /* the event pointer ([esp+4] at entry) */
-"  pushl %eax\n"
-"  call  recorder_on_event\n"
-"  addl  $4, %esp\n"
-"  popfl\n"
-"  popa\n"
-"  jmp   *recorder_tramp_event\n"
-".globl recorder_stub_fire\n"
-"recorder_stub_fire:\n"           /* jmp'd here from 0x0828aba0 */
-"  pusha\n"
-"  pushfl\n"
-"  movl  40(%esp), %eax\n"        /* this    ([esp+4] at entry) */
-"  movl  44(%esp), %edx\n"        /* player  */
-"  movl  48(%esp), %ecx\n"        /* Mat4*   */
-"  pushl %ecx\n"
-"  pushl %edx\n"
-"  pushl %eax\n"
-"  call  recorder_on_fire\n"
-"  addl  $12, %esp\n"
-"  popfl\n"
-"  popa\n"
-"  jmp   *recorder_tramp_fire\n"
-".globl recorder_stub_toall\n"
-"recorder_stub_toall:\n"          /* jmp'd here from 0x08153b10 */
-"  pusha\n"
-"  pushfl\n"
-"  movl  44(%esp), %eax\n"        /* the event ([esp+8] at entry) */
-"  pushl %eax\n"
-"  call  recorder_on_event\n"
-"  addl  $4, %esp\n"
-"  popfl\n"
-"  popa\n"
-"  jmp   *recorder_tramp_toall\n"
-".data\n"
-".globl recorder_tramp_event\n"
-".align 4\n"
-"recorder_tramp_event: .long 0\n"
-".globl recorder_tramp_fire\n"
-".align 4\n"
-"recorder_tramp_fire: .long 0\n"
-".globl recorder_tramp_toall\n"
-".align 4\n"
-"recorder_tramp_toall: .long 0\n"
-);
-
-extern char recorder_stub_event;
-extern char recorder_stub_fire;
-extern char recorder_stub_toall;
-extern uint32_t recorder_tramp_event;
-extern uint32_t recorder_tramp_fire;
-extern uint32_t recorder_tramp_toall;
-
-/* A trampoline in the RWX page: the copied bytes, then a jmp back. */
-static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
-                            uintptr_t *out)
-{
-    if (!g_tramp_page) {
-        g_tramp_page = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
-                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (g_tramp_page == MAP_FAILED) { g_tramp_page = 0; return 0; }
-    }
-    uintptr_t at = (uintptr_t)g_tramp_page + g_tramp_used;
-    if (g_tramp_used + len + 5 > 4096) return 0;
-    memcpy((void *)at, orig_bytes, len);
-    uint8_t jmp[5];
-    jmp[0] = 0xe9;
-    int32_t rel = (int32_t)(back_to - (at + len + 5));
-    memcpy(jmp + 1, &rel, 4);
-    memcpy((void *)(at + len), jmp, 5);
-    g_tramp_used += len + 5;
-    *out = at;
-    return 1;
-}
-
-static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
-                          void *stub, const uint8_t *orig_bytes, uintptr_t back_to,
-                          uintptr_t *tramp_out)
-{
-    uint8_t have[16];
-    if (!safe_read(have, len, site) || memcmp(have, expected, len) != 0) {
-        fprintf(stderr, "recorder: %08lx is not the expected code, detour skipped\n",
-                (unsigned long)site);
-        return 0;
-    }
-    if (!build_trampoline(orig_bytes, len, back_to, tramp_out)) return 0;
-    uint8_t jmp[5];
-    jmp[0] = 0xe9;
-    int32_t rel = (int32_t)((uintptr_t)stub - (site + 5));
-    memcpy(jmp + 1, &rel, 4);
-    if (!patch_write(site, jmp, 5)) {
-        fprintf(stderr, "recorder: patch at %08lx failed\n", (unsigned long)site);
-        return 0;
-    }
-    {
-        uint8_t back[5] = {};
-        safe_read(back, 5, site);
-        fprintf(stderr, "recorder: %08lx now %02x %02x %02x %02x %02x (stub %p)\n",
-                (unsigned long)site, back[0], back[1], back[2], back[3], back[4], stub);
-    }
-    return 1;
-}
-
-static void install_hooks(void)
-{
-    uintptr_t tramp_event = 0, tramp_fire = 0, tramp_toall = 0;
-    if (install_detour(ADD_EVENT_SEND_QUEUE, AETSQ_ORIG, AETSQ_LEN,
-                       &recorder_stub_event, AETSQ_ORIG, AETSQ_BACK, &tramp_event)) {
-        *(uint32_t *)&recorder_tramp_event = (uint32_t)tramp_event;
-        g_hook_active = 1;
-        fprintf(stderr, "recorder: event queue hooked at %08x\n", (unsigned)ADD_EVENT_SEND_QUEUE);
-    }
-    if (install_detour(SEND_EVENT_TO_ALL, TOALL_ORIG, TOALL_LEN,
-                       &recorder_stub_toall, TOALL_ORIG, TOALL_BACK, &tramp_toall)) {
-        *(uint32_t *)&recorder_tramp_toall = (uint32_t)tramp_toall;
-        fprintf(stderr, "recorder: sendGameEventToAll hooked at %08x\n", (unsigned)SEND_EVENT_TO_ALL);
-    }
-    if (install_detour(FIRE_BARREL, FIRE_ORIG, FIRE_LEN,
-                       &recorder_stub_fire, FIRE_ORIG, FIRE_BACK, &tramp_fire)) {
-        *(uint32_t *)&recorder_tramp_fire = (uint32_t)tramp_fire;
-        fprintf(stderr, "recorder: fireBarrel hooked at %08x\n", (unsigned)FIRE_BARREL);
-    }
-}
-
-/* --- sampling ------------------------------------------------------------ */
 
 static void *sampler(void *arg)
 {
     (void)arg;
-    const struct timespec tick = { 0, (long)(1e9 / 30.0) };
     double next_sample = 0.0;
 
     for (;;) {
-        nanosleep(&tick, 0);
+        T->rec_sleep();
         if (!g_on) continue;
         if (!g_file) {
-            pthread_mutex_lock(&g_write_lock);
+            T->rec_lock();
             if (!g_file) {
                 open_file_locked();
-                if (g_file) { g_t0 = now_s(); next_sample = 1.0 / g_hz; held_flush(); }
+                if (g_file) {
+                    g_t0 = T->now_s();
+#if REC_STAGE3
+                    next_sample = 1.0 / g_hz;
+                    held_flush();
+#endif
+                }
             }
-            pthread_mutex_unlock(&g_write_lock);
+            T->rec_unlock();
             if (!g_file) { g_on = 0; continue; }
         }
 
-        double t = now_s() - g_t0;
+        double t = T->now_s() - g_t0;
         if (t < next_sample) continue;
-        next_sample += 1.0 / g_hz;
+        if (T->sample_reset_next) next_sample = t + 1.0 / g_hz;
+        else next_sample += 1.0 / g_hz;
 
-        uint32_t om = read_u32(OBJECT_MANAGER_PTR);
-        if (!om || om < 0x1000) continue;
+        uint32_t om = read_u32(T->object_manager_ptr);
+        if (!om || om < T->min_addr) continue;
 
-        uint32_t header = read_u32(om + 0x94);
-        if (!header || header < 0x1000) continue;
+        uint32_t header = read_u32(om + T->map_head_off);
+        if (!header || header < T->min_addr) continue;
 
         if (g_debug) {
             static double last_dbg = 0.0;
+#if REC_STAGE3
             static int census_done = 0;
             if (!census_done && g_tracked_n > 0) {
                 census_done = 1;
@@ -1684,12 +1455,12 @@ static void *sampler(void *arg)
                  * flags word, to see which classes the map holds. */
                 struct { uint32_t vt; int n; } top[32] = {};
                 int ntop = 0;
-                uint32_t n2 = read_u32(header + 8);
-                uint32_t ms2 = read_u32(om + 0x98) + 16;
+                uint32_t n2 = read_u32(header + T->node_leftmost_off);
+                uint32_t ms2 = read_u32(om + T->map_count_off) + 16;
                 uint32_t st2 = 0;
                 while (n2 && n2 != header && st2 < ms2) {
                     st2++;
-                    uint32_t o2 = read_u32(n2 + 0x14);
+                    uint32_t o2 = read_u32(n2 + T->node_value_off);
                     if (o2 >= 0x1000) {
                         uint32_t v2 = read_u32(o2);
                         int found = 0;
@@ -1697,19 +1468,19 @@ static void *sampler(void *arg)
                             if (top[i].vt == v2) { top[i].n++; found = 1; break; }
                         if (!found && ntop < 32) { top[ntop].vt = v2; top[ntop++].n = 1; }
                     }
-                    n2 = successor(n2, header);
+                    n2 = T->tree_successor(n2, header);
                 }
                 fprintf(stderr, "recorder dbg: vptr census:");
                 for (int i = 0; i < ntop; i++)
                     fprintf(stderr, " %08x:%d", top[i].vt, top[i].n);
                 fprintf(stderr, "\n");
                 fprintf(stderr, "recorder dbg: expect rot=%08x engine=%08x soldier=%08x\n",
-                        VT_ROT_BUNDLE, VT_ENGINE, VT_SOLDIER);
+                        T->vt_rot_bundle, T->vt_engine, T->vt_soldier);
             }
             if (t - last_dbg > 5.0) {
                 last_dbg = t;
                 fprintf(stderr, "recorder dbg: count=%u tracked=%d players=%d parts=%d held=%d scoremgr=%08x evcalls=%d\n",
-                        read_u32(om + 0x98), g_tracked_n, g_players_n, g_parts_n, g_held_n, g_score_manager, g_event_calls);
+                        read_u32(om + T->map_count_off), g_tracked_n, g_players_n, g_parts_n, g_held_n, g_score_manager, g_event_calls);
                 if (g_debug) {
                     fprintf(stderr, "recorder dbg: types:");
                     for (int ty = 0; ty < 64; ty++)
@@ -1717,28 +1488,42 @@ static void *sampler(void *arg)
                     fprintf(stderr, "\n");
                 }
             }
+#else
+            if (t - last_dbg > 5.0) {
+                last_dbg = t;
+                fprintf(stderr, "recorder dbg: count=%u tracked=%d\n",
+                        read_u32(om + T->map_count_off), g_tracked_n);
+            }
+#endif
         }
 
         g_t = t;
         g_gen++;
+#if REC_STAGE3
         for (int i = 0; i < g_soldiers_n; i++) g_soldiers[i].seen = 0;
 
         if (!g_level_written) write_level();
+#endif
 
-        uint32_t node = read_u32(header + 8);
-        uint32_t max_steps = read_u32(om + 0x98) + 16;
+        /* Walk bounded to the map's own count + 16: during map load a node
+         * can be walked whose successor cycles (the same spin the lnxded
+         * sampler hit; see README stage 2). */
+        uint32_t node = read_u32(header + T->node_leftmost_off);
+        uint32_t count = read_u32(om + T->map_count_off);
+        uint32_t max_steps = (T->walk_clamp_count && count > 100000u ? 100000u : count) + 16;
         uint32_t steps = 0;
         while (node && node != header && steps < max_steps) {
             steps++;
-            uint32_t obj = read_u32(node + 0x14);
-            if (obj >= 0x1000) {
-                uint32_t flags = read_u32(obj + 4);
-                uint32_t nid = net_id_of(obj);
+            uint32_t obj = read_u32(node + T->node_value_off);
+            if (obj >= T->min_addr) {
+#if REC_STAGE3
+                uint32_t flags = read_u32(obj + T->obj_flags_off);
+                uint32_t nid = T->net_id_of(obj);
                 uint32_t vptr = read_u32(obj);
                 /* A watched kit is emitted however it is flagged: a carried
                  * kit sits disabled in the map until dropped. */
                 if (nid && kit_watch_pending(nid)) {
-                    uint32_t key = read_u32(node + 0x10);
+                    uint32_t key = read_u32(node + T->node_key_off);
                     kit_watch_emit(obj, nid, key);
                 }
                 /* Child bundles and engines carry no net id: they are
@@ -1747,14 +1532,19 @@ static void *sampler(void *arg)
                 if (!(flags & FLAG_DISABLED) && (nid || !(flags & FLAG_ROOT)))
                     sample_object(node);
                 if (nid && !(flags & FLAG_DISABLED) && (flags & FLAG_ROOT)
-                    && vptr == VT_SOLDIER)
+                    && vptr == T->vt_soldier)
                     sample_soldier(obj, nid);
+#else
+                sample_object(node);
+#endif
             }
-            node = successor(node, header);
+            node = T->tree_successor(node, header);
         }
 
+#if REC_STAGE3
         sample_players();
         sample_tickets(t);
+#endif
 
         /* vanishings: ids whose generation is behind, compacted away. */
         int w = 0;
@@ -1773,32 +1563,53 @@ static void *sampler(void *arg)
             g_tracked_n = w;
             hash_rebuild();
         }
+#if !REC_STAGE3
+        fflush(g_file);
+#endif
     }
     return 0;
 }
 
 /* --- entry --------------------------------------------------------------- */
 
-__attribute__((constructor))
-static void recorder_init(void)
+void recorder_core_init(const struct rec_target *target)
 {
+    T = target;
     read_config();
     if (!g_on) return;
     g_tracked = calloc(MAX_TRACKED, sizeof(Tracked));
     g_hash = calloc(HASH_SLOTS, sizeof(int32_t));
-    g_parts = calloc(MAX_PARTS, sizeof(PartId));
-    g_part_state = calloc(MAX_PARTS + 1, sizeof(PartState));
-    g_players = calloc(MAX_PLAYERS, sizeof(Plyr));
-    g_held = calloc(HELD_MAX, sizeof(HeldEvent));
-    if (!g_tracked || !g_hash || !g_parts || !g_part_state || !g_players || !g_held) {
+    if (!g_tracked || !g_hash) {
         fprintf(stderr, "recorder: out of memory at load, not started\n");
         g_on = 0;
         return;
     }
+#if REC_STAGE3
+    g_parts = calloc(MAX_PARTS, sizeof(PartId));
+    g_part_state = calloc(MAX_PARTS + 1, sizeof(PartState));
+    g_players = calloc(MAX_PLAYERS, sizeof(Plyr));
+    g_held = calloc(HELD_MAX, sizeof(HeldEvent));
+    if (!g_parts || !g_part_state || !g_players || !g_held) {
+        fprintf(stderr, "recorder: out of memory at load, not started\n");
+        g_on = 0;
+        return;
+    }
+#endif
     hash_rebuild();
-    install_hooks();
-    pthread_t th;
-    if (pthread_create(&th, 0, sampler, 0) == 0)
-        pthread_detach(th);
+#if REC_STAGE3
+    T->install_detours();
+#else
+    if (T->install_detours) T->install_detours();   /* w32ded: stubbed */
+#endif
+    T->start_sampler_thread(sampler);
     fprintf(stderr, "recorder: sampler thread started\n");
+}
+
+/* Detach: close the recording if one is open (the w32ded DllMain calls it
+ * at DLL_PROCESS_DETACH; the lnxded constructor target never unloads). */
+void recorder_core_shutdown(void)
+{
+    T->rec_lock();
+    if (g_file) { fflush(g_file); fclose(g_file); g_file = 0; }
+    T->rec_unlock();
 }
