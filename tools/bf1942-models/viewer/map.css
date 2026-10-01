@@ -486,13 +486,17 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
-/* The mobile HUD, split by FINGER (features/mobile-four-finger-controls).
-   The left thumb owns the MOVE ring at the bottom-left, the posture pair
-   stacked above it (JUMP, CROUCH) and the MORE tab over those; the right
-   thumb owns FIRE at the bottom-right, AIM above it, the weapon pair above
-   that, and the look drag over the whole right half. That is what makes
-   "shoot while jumping while prone" three fingers instead of one, and it is
-   why the right side carries four controls where it once carried twelve.
+/* The mobile HUD (features/mobile-four-finger-controls).
+   The whole stage is the look surface and the buttons are islands on it, so a
+   finger steers from wherever it happens to be and the buttons go wherever a
+   thumb naturally rests. That is the tenth pass's answer to "I have to move
+   the view, then fire": aiming is not a place you have to put your thumb, it
+   is everywhere the button is not.
+   Three places, and nothing else:
+     the MOVE ring at the bottom-left corner (112 px hit box, 64 px visible),
+     one band of six buttons across the middle, 6 px between neighbours, so a
+     thumb never travels more than one button width,
+     the right corner with RELOAD against FIRE, and MORE on the bottom centre.
    z order, bottom to top: the look zone (9), the sheet's scrim (10), the
    buttons (11), the move ring (12). A tap with the sheet open closes the
    sheet instead of turning the camera, and the ring is never under it. */
@@ -507,7 +511,9 @@ a { color: var(--accent); }
   -webkit-user-select: none;
 }
 .mobile-zone[hidden] { display: none; }
-#mobile-zone-look { right: 0; width: 50%; }
+/* The whole stage, not a half and not two margins: any touch that starts
+   where there is no button is the camera. */
+#mobile-zone-look { inset: 0; }
 
 #mobile-controls {
   /* A stage-wide glass pane: the buttons anchor to their own corners.
@@ -595,60 +601,70 @@ a { color: var(--accent); }
   white-space: nowrap;
   pointer-events: none;
 }
-/* The left thumb's column, directly above the ring: JUMP nearest the thumb,
-   then CROUCH, PRONE, and the MORE tab over those. The ring's hit box ends
-   136 px up the left edge, so the column starts at 148 and the two never fight
-   over a touch. `pointer-events: none` on the column, `auto` on the buttons,
-   so the gaps between them fall through. */
-.mobile-vert-stack {
+/* The band: six buttons in one row across the middle, equal widths so the
+   gaps are equal too. It sits above the ring's 112 px hit box, which ends 134
+   px up the left edge, and above the right corner's 102 px. `pointer-events:
+   none` on the row and `auto` on the buttons, so the 6 px between two
+   neighbours falls through and pans like any other open screen. */
+.mobile-band {
   position: absolute;
-  left: 16px;
-  bottom: 148px;
+  left: 12px;
+  right: 12px;
+  bottom: 144px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  align-items: stretch;
+  gap: 6px;
   pointer-events: none;
 }
-.mobile-posture-btn {
-  width: 62px;
-  height: 62px;
+.mobile-band-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 56px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 50%;
+  border-radius: 28px;
   background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text);
-  font: 8px var(--mm-font-mono);
-  letter-spacing: .04em;
+  font: 9px var(--mm-font-mono);
+  letter-spacing: .02em;
   text-transform: uppercase;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
+  /* `none`, not `manipulation`: every action runs on its pointerdown edge,
+     because a tap the browser has to synthesise a `click` for is a tap the
+     browser drops when a second finger is already down. */
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: pointer;
 }
-.mobile-posture-btn:active,
-.mobile-posture-btn.is-active {
+.mobile-band-btn:active,
+.mobile-band-btn.is-active {
   border-color: var(--accent);
   background: rgba(72, 72, 58, 0.92);
 }
-/* PRONE is a toggle where CROUCH and JUMP are holds, and the button has to say
-   so: the fill is the held look, so a lit PRONE reads as the state it is, and
-   the solid border marks it as the odd one out of the three. */
-.mobile-posture-btn.prone-btn.is-active {
+/* PRONE is a toggle where the rest of the band is holds, and the button has to
+   say so: a lit PRONE reads as the state it is, in the warn colour the rest of
+   the HUD uses for the trigger. */
+.mobile-band-btn.prone-btn.is-active {
   border-color: var(--warn);
   background: rgba(88, 60, 28, 0.92);
   color: #f0e0c8;
 }
+/* The tab for the sheet, in the bottom gap between the ring's hit box (ends
+   128 px) and RELOAD (starts 200 px). It is placed on those numbers rather than
+   centred on the screen, because centring it put it under RELOAD. */
 .mobile-more-btn {
-  width: 62px;
-  height: 34px;
+  position: absolute;
+  left: 136px;
+  bottom: 28px;
+  width: 56px;
+  height: 36px;
   padding: 0;
   border: 1px dashed var(--line);
-  border-radius: 17px;
+  border-radius: 18px;
   background: rgba(18, 17, 14, 0.66);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -668,21 +684,15 @@ a { color: var(--accent); }
   border-color: var(--accent);
   color: var(--text);
 }
-/* The right thumb's arc, above FIRE: the weapon pair over AIM. */
-.mobile-thumb-stack {
+/* The right corner: RELOAD against FIRE. Reloading is common, so it is the
+   button next to the trigger rather than a tab's worth of taps away. */
+.mobile-fire-cluster {
   position: absolute;
-  right: 14px;
-  bottom: 116px;
+  right: 12px;
+  bottom: 20px;
   display: flex;
-  flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-  pointer-events: none;
-}
-.mobile-thumb-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   pointer-events: none;
 }
 .mobile-action-btn {
@@ -720,31 +730,31 @@ a { color: var(--accent); }
   border-color: var(--line);
   background: rgba(18, 17, 14, 0.62);
 }
-.mobile-action-btn.aim-btn {
-  width: 58px;
-  height: 58px;
-  padding: 0;
-  border-radius: 50%;
-}
 .mobile-action-btn.fire-btn {
   /* The right thumb's button, at the bottom-right corner, so moving (left
      thumb, ring) and firing happen at the same time. Big enough to hold and
      still drag off, since a deliberate drag off a held FIRE turns the camera. */
-  position: absolute;
-  right: 14px; bottom: 20px;
-  width: 112px;
-  height: 84px;
-  border-radius: 10px;
+  width: 104px;
+  height: 82px;
+  padding: 0;
+  border-radius: 12px;
   border-color: var(--warn);
   color: var(--warn);
   font-size: 12px;
+}
+.mobile-fire-cluster #mobile-reload-btn {
+  width: 66px;
+  height: 66px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 9px;
 }
 .mobile-action-btn.fire-btn.is-active {
   background: rgba(105, 35, 25, 0.92);
   color: #f4d7cf;
 }
 .mobile-action-btn[hidden],
-.mobile-posture-btn[hidden],
+.mobile-band-btn[hidden],
 .mobile-more-btn[hidden],
 .mobile-throttle[hidden],
 #mobile-more-sheet[hidden],
@@ -823,13 +833,10 @@ a { color: var(--accent); }
   /* No pad-size override here on purpose: the ring and ball carry the input
      geometry (MOBILE_PAD_TRAVEL in touch-controls.js), so one CSS size keeps
      the two honest, and the phone is the case that matters, so there is
-     nothing to shrink to. */
-  .mobile-thumb-stack {
-    gap: 6px;
-  }
+     nothing to shrink to. The band's own size is set by the flex row, so it
+     is never smaller than a 56 px target either. */
   .mobile-action-btn {
     min-width: 44px;
-    height: 38px;
     padding: 0 6px;
     font-size: 8px;
   }
@@ -865,19 +872,9 @@ a { color: var(--accent); }
     bottom: auto;
   }
 }
-/* Landscape on a phone: the stage is short, and the posture column (a 34 px
-   tab plus three 62 px buttons and their gaps) has no room above the ring, so
-   it lies down to the right of it. The row is 226 px wide and the stage in
-   landscape is the phone's long axis, so it fits with the right thumb's stack
-   untouched. */
-@media (max-height: 560px) {
-  .mobile-vert-stack {
-    left: 136px;
-    bottom: 24px;
-    flex-direction: row;
-    align-items: center;
-  }
-}
+/* Landscape on a phone needs nothing special: the band is already a row and
+   the corner cluster is 102 px tall whatever the stage height. The one thing
+   that moves is the ring, which wants the bottom corner of a wide screen. */
 
 /* The room join modal (P3): the game's own overlay for a room that will
    not open -- a missing room server, a full room, a bad code. The panel

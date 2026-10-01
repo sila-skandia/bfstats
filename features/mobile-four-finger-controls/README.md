@@ -334,6 +334,67 @@ chain out of `handlePlayerInput`. On a phone this is a mild annoyance (from
 prone you must tap PRONE before CROUCH does anything) and on the keyboard it is
 invisible, so it is filed rather than guessed at.
 
+## Built (tenth pass, 2026-10-01): an open screen that steers
+
+Three complaints, and the first one is the diagnosis for the other two: moving
+the controls about left dead space between the thumbs to reach jump and crouch,
+reloading is common and wants to be near firing, and aiming while firing is not
+gelling ("I have to move the view then fire").
+
+The cause of all three was the same. Splitting the screen into halves gave the
+camera a PLACE, and a place you have to put your thumb is a place your thumb
+cannot leave, so aiming and firing could not be the same moment. The owner's own
+fix for it is the design: leave the open screen to panning and moving, and the
+buttons then go wherever the fingers want them.
+
+There is no pan half and no pan margin now. `#mobile-zone-look` is the whole
+stage UNDER the buttons, so a touch that starts anywhere that is not a button is
+the camera, and the margins, the top and the middle all steer equally. What pays
+for it is the buttons being few, small and low.
+
+The whole HUD is three things and nothing else, measured on a 390x844 phone
+(`features/mobile-four-finger-controls/hud-play.jpg`):
+
+| Where | What | Measured |
+| --- | --- | --- |
+| bottom-left corner | the MOVE ring | 112 px hit box, 64 px visible |
+| bottom-centre | the MORE tab | 56x36 at 28 px up |
+| bottom-right corner | RELOAD against FIRE | 66x66 against 104x82 |
+| one row across the middle | JUMP, CROUCH, PRONE, AIM, PREV, NEXT | six equal 56 px targets, 6 px apart |
+
+That row is the answer to the dead space. It is one horizontal line of six equal
+targets, so a thumb never travels more than one button width, and the middle of
+the screen is buttons rather than the gap between two thumbs. The three left of
+centre are the left thumb's (JUMP, CROUCH, PRONE) and the three right of centre
+are the right thumb's (AIM, PREV, NEXT), which puts each control under the thumb
+that presses it. RELOAD is the button next to FIRE because reloading is common,
+and MORE moved to the bottom row between the ring and the corner so either
+thumb can roll onto it.
+
+Measured coverage: the buttons are 15% of the stage. The other 85% is open
+screen, so a finger can be anywhere.
+
+One consequence of making the zone the whole stage: a finger lying on open glass
+would walk the view off its own micro drift. `MOBILE_LOOK_DEAD` (8 px) comes
+first, the same reason the ring and the drag off FIRE have one.
+
+Verified with the stub-DOM smoke (70 claims) and the live phone probe (49
+claims). On the live page: the look zone measures the whole stage
+(390x768 of 390x768), the six band targets are 56 px each with 6 px between
+neighbours and 6 px between the ring, MORE and RELOAD, a drag on the RIGHT
+margin, on the LEFT margin, at the TOP of the screen and just above the band all
+steer by the same 0.54 rad for the same 40 px of finger, a finger resting on
+open glass moves the view 0.0000 rad, and the tenth pass's stance loop still
+reads (PRONE prone then stand, a 900 ms rest on CROUCH still a crouch).
+
+One probe lesson from this pass, and it is a trap: a CDP touch point is a
+circle of `radiusX: 8`, so a probe press 4 px from a button lands ON that
+button. Three "the margin does not steer" failures were the probe pressing JUMP
+and NEXT through the touch radius, while `document.elementFromPoint` on the same
+coordinates said `#mobile-zone-look`. Keep probe press points clear of every
+button by more than the touch radius, and do not trust a synthetic coordinate
+that close to a target.
+
 ## Next steps
 
 1. Playtest on a real phone, and judge the one judgement call in this pass: the
