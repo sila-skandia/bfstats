@@ -124,8 +124,12 @@ export function createTouchControls(page) {
   function updateMobileControls() {
     if (!page.isTouchDevice) return;
     const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
-    const onFoot = page.optOnFoot.checked && page.soldier && !page.soldierDead;
-    const seated = page.optPilot.checked && page.occupancy;
+    const onFoot = page.optOnFoot.checked && page.soldier && !page.soldierDead
+      && !page.occupancy;
+    // The seat, not the box: the page keeps both mode boxes ticked through an
+    // entry (the box unticks when the soldier leaves, not when the seat is
+    // taken), so the seat itself is the truth the HUD must show.
+    const seated = !!page.occupancy;
     const activeSeat = seated && page.occupancy.isActiveRoot();
     const manned = seated && page.mannedActive();
     const aimable = manned && page.occupancy.turret;
@@ -209,7 +213,7 @@ export function createTouchControls(page) {
   function setMobileFire(on) {
     touchControls.mobileFireHeld = on;
     page.setTouchTriggers(
-      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead,
+      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead && !page.occupancy,
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
@@ -222,7 +226,7 @@ export function createTouchControls(page) {
    *  `c_PIAltFire` (a Sherman's coax, a Corsair's bombs). */
   function setMobileAim(on) {
     page.setTouchAltFire(
-      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead,
+      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead && !page.occupancy,
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileAdsBtn.classList.toggle('is-active', on);
@@ -239,7 +243,7 @@ export function createTouchControls(page) {
       mobileCrouchBtn.classList.add('is-active');
       clearTimeout(proneHoldTimer);
       proneHoldTimer = setTimeout(() => {
-        if (page.optOnFoot.checked && page.soldier && !page.soldierDead) page.toggleProne();
+        if (page.optOnFoot.checked && page.soldier && !page.soldierDead && !page.occupancy) page.toggleProne();
       }, MOBILE_PRONE_HOLD_MS);
     } else {
       touchControls.mobileCrouchHeld = false;
@@ -270,23 +274,28 @@ export function createTouchControls(page) {
   }
 
   function setMobileJump(on) {
-    touchControls.mobileJumpHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
+    touchControls.mobileJumpHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead && !page.occupancy;
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld);
   }
 
+  /** The touch twin of the keyboard's `useKey`: the seat decides, and the
+   *  SEAT branch is asked FIRST — standing in a tank whose own door is in
+   *  reach, a press must leave, not climb back in. */
   function mobileSeatToggle() {
     if (!page.seatToggleReady()) return;
-    // The same press-time lookup the keyboard's E does (`page-input.js`
-    // `useKey`): the engine's `c_PIUse` edge searches for a door where the
-    // player stands, rather than using the HUD's cached offer.
-    const entry = page.nearestEntry() ?? page.nearEntry;
-    if (page.optOnFoot.checked && page.soldier && entry) {
-      page.setFly(true);
-      page.enterVehicle(entry);
-      page.noteSeatToggle();
-    } else if (page.optPilot.checked && page.occupancy) {
+    if (page.occupancy) {
       page.exitSeat();
       page.noteSeatToggle();
+    } else {
+      // The same press-time lookup the keyboard's E does (`page-input.js`
+      // `useKey`): the engine's `c_PIUse` edge searches for a door where the
+      // player stands, rather than using the HUD's cached offer.
+      const entry = page.nearestEntry() ?? page.nearEntry;
+      if (page.optOnFoot.checked && page.soldier && entry) {
+        page.setFly(true);
+        page.enterVehicle(entry);
+        page.noteSeatToggle();
+      }
     }
     resetMobileControls();
   }
