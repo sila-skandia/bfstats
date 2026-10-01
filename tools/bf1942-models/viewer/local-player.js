@@ -26,7 +26,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `clampMobileInput`, `clearVehicleHud`, `axis`, `deployActive`,
  * `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
- * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
+ * `feedMobileLook`, `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
  * `footLookPair`, `forgetSeatViews`, `handleParachuteEvent`, `handleSoldierFootstep`,
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `lookKeyHeld`, `lookNeedsKey`,
@@ -627,8 +627,11 @@ export function createLocalPlayer(page) {
     if (seated) {
       // The pad's deflection must land in the device stage BEFORE the pump
       // turns the counts into an axis, or this frame's pad aim arrives a
-      // frame late (the page's original feed-then-pump order).
+      // frame late (the page's original feed-then-pump order). The look drag
+      // rides the same stage for the same reason: it is a per-frame rate, and
+      // the pump must turn this frame's rate into this frame's axis.
       page.feedMobileTurretAim(dt);
+      page.feedMobileLook(dt);
       page.pumpLook(lookTicks);
       // The engine's PlayerInput, named by action. `forwardKeys` and
       // `rudder` are the aircraft's throttle latch and rudder spring — raw
@@ -657,6 +660,7 @@ export function createLocalPlayer(page) {
       routeFlightInput(input, page.lookNeedsKey() && page.lookKeyHeld());
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
     } else if (onFoot) {
+      page.feedMobileLook(dt);
       page.pumpLook(lookTicks);
       const held = page.captured ? page.keys : page.EMPTY_KEYS;
       // The water takes the lower body out of `Lb_Lie` (`swim.js`: the swim

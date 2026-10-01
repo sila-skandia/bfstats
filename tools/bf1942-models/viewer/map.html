@@ -755,8 +755,8 @@ const localPlayer = createLocalPlayer(bag(
   from(() => soldierKit, `disposeHandWeapon releaseFireTrigger`),
   from(() => soldierView, `EMPTY_KEYS onFootCamera`),
   from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
-  from(() => touchControls, `clampMobileInput feedMobileTurretAim mobileJumpHeld mobilePadAxis
-    mobilePadHeld mobilePadVector updateMobileControls`),
+  from(() => touchControls, `clampMobileInput feedMobileLook feedMobileTurretAim mobileJumpHeld
+    mobilePadAxis mobilePadHeld mobilePadVector updateMobileControls`),
   from(() => vehicleHits, `pickVehicle`),
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
   from(() => wrecks, `killOccupantInSeat`),
