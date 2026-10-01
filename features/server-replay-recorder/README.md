@@ -15,14 +15,39 @@ side recorder (bf42plus `recordReplays`, dsound.dll side-car) sees the round
 through one connection; the server sees the authoritative world for every
 player and bot, no client cooperation needed.
 
+An agent picking this feature up: read
+["Where things are at (handoff)"](#where-things-are-at-handoff-2026-10-02)
+first -- it states the two-source situation and the consolidation plan.
+
 ## What exists
 
-- `src/recorder.c`: the recorder (plain C, `gcc -m32 -shared`).
-- `src/w32ded-recorder.c`: the same recorder ported to the **Windows
-  dedicated server** (`BF1942_w32ded.exe`, retail v1.61), built as a proxy
-  `WINMM.dll` that the exe loads by name (Windows search order; winmm
-  imports rerouted to the system dll). Derivation and live run:
-  [w32ded-offsets.md](w32ded-offsets.md).
+The recorder is one shared core plus two thin target layers, selected at
+build time:
+
+- `src/core.c`: everything target-independent -- config read, tracking
+  hash, quaternion math, the ndjson emitters, the sampler, vanish logic,
+  and the stage-3 capture logic (detour callbacks, joints, engines, armor,
+  tickets, kits, roster synthesis). Every address, struct offset and OS
+  call goes through the target table in `src/core.h`.
+- `src/core.h`: the target contract: the offset table (globals, map and
+  object layouts, stage-3 layouts) plus the platform shims (safe read,
+  clock, string reads, tree successor, locks, sleep, detour install,
+  thread start).
+- `src/target_lnxded.c`: bf1942_lnxded -- SGI-STL layouts, /proc/self/mem
+  preads, ELF-constructor entry + pthread, and the stage-3 RWX-trampoline
+  detours. Built with `-DREC_STAGE3=1`.
+- `src/target_w32ded.c`: BF1942_w32ded.exe -- proxy `WINMM.dll`, MSVC
+  (VC7/Dinkumware) layouts, `IsBadReadPtr` reads, DllMain +
+  CreateThread entry, winmm IAT reroute. Built with `-DREC_STAGE3=0`:
+  stage 1 only (object map walk, transforms, destruction, template
+  names), detour layer stubbed until its sites are cross-matched.
+
+The stage-3 code paths are compiled out of the w32ded target; porting
+them means filling in that target's table (see the handoff below), not
+copying code. Same ndjson as the lnxded recorder (the w32ded one at
+format v4, stage 1), playable by
+tools/bf1942-models/viewer/replay-recording.js.
+
 - `build.sh`: builds both (`recorder.so` into the lab as
   `~/bf1942-lab/server/recorder.so`, `build/WINMM.dll`).
 - `tools/bf1942-models/lab/scenarios/wake-coop-rec.json`: wake-coop with the
@@ -162,12 +187,19 @@ free camera's id -- the cause of "every player has the same kit".
 - Playtest 2026-10-02 (Dylan, viewer): the parked AichiVal shows no
   propeller and no engine sound. A parked plane not spinning is the engine
   model working; the silent engine is the next item.
-- Engine running/disabled flags and the throttle servo are read at the
+- Engine running/disabled flags and the throttle input were first read at the
   client's Engine offsets (`+0x15c`, `+0x15d`, `+0x124`) without server-side
   verification -- the silent engine note on a running vehicle is the symptom
-  of that guess being wrong. RECORDER_DEBUG dumps one engine's dwords
+  of that guess being wrong. The server's own layout (`+0x142` running,
+  `+0x143` disabled, `+0x124` throttle input, confirmed live 2026-10-02:
+  engines at revs 0.795 read running=1) comes from `Engine::handleMessage`
+  `0x0823e730` / `Engine::handlePlayerInput` `0x0823e5e0`. RECORDER_DEBUG
+  dumps one engine's dwords
   0x100-0x1c0 per process for exactly that check; the revs themselves
-  (`pe+0xA0`) are verified.
+  (`pe+0xA0`) are verified. The consolidation briefly reverted this fix
+  (rebuilt from pre-fix source); re-applied and re-verified 2026-10-02 in
+  `replay_1790896490.ndjson` (1446 engine samples, all running=1, revs to
+  1.15, zero running=0 samples).
 - `st` aim pitch/torso twist are written as 0: the server's storage for the
   replicated aim was not found (the client's BFSoldierNetworkable offsets do
   not exist on the server's own BFSoldier). Soldier head-aim therefore does
@@ -182,13 +214,138 @@ free camera's id -- the cause of "every player has the same kit".
   during map load; the same feature set in the final build ran 100 s and
   3+ min clean twice. If it recurs, the coredump is the tool
   (`coredumpctl dump <pid> -o /tmp/core && gdb bf1942_lnxded /tmp/core`).
-- `src/w32ded-recorder.c` (the Windows server port) is still stage 2: it
-  has none of this -- the three detours, parts, engines, armor, tickets and
-  the kit derivation. Every offset above was read from the lnxded binary;
-  the w32ded offsets will differ and `w32ded-offsets.md` has the method.
+- The w32ded target (`src/target_w32ded.c`, built with -DREC_STAGE3=0)
+  has none of stage 3 -- the three detours, parts, engines, armor, tickets and
+  the kit derivation. Its object sampler, template names and destruction
+  are verified live (see the Windows server port section above); every
+  offset above was read from the lnxded binary and the w32ded cross-match
+  table so far is in `w32ded-offsets.md`, with the same anchor-chain method.
 - Config is read once at load; live toggle is later.
 
+## Where things are at (handoff, 2026-10-02)
+
+The consolidation is done. One shared core plus two thin target layers,
+selected at build time (see "What exists" above):
+
+- `src/core.c` + `src/core.h` — the config read, tracking hash, quaternion
+  math, ndjson emitters, sampler, vanish logic, and the whole stage-3
+  capture logic (detour callbacks, joints, engines, armor, tickets, kits,
+  roster synthesis). Every address, struct offset and OS call goes through
+  the `struct rec_target` table in `core.h`.
+- `src/target_lnxded.c` — the lnxded layer: SGI-STL layouts, /proc/self/mem
+  preads, ELF-constructor entry + pthread, and the stage-3 RWX-trampoline
+  detours (`-DREC_STAGE3=1`). Stage 3 complete and verified live after the
+  split (wake-coop 138 s, v5, all record kinds, viewer parse clean).
+- `src/target_w32ded.c` — the w32ded layer: proxy `WINMM.dll`, MSVC
+  (VC7/Dinkumware) layouts, IsBadReadPtr reads, DllMain + CreateThread,
+  winmm IAT reroute (`-DREC_STAGE3=0`). Stage 1 only: its stage-3 code
+  paths are compiled out and its detour layer is a deliberate no-op stub.
+
+The old fork (`recorder.c`, `w32ded-recorder.c`) is gone; do not resurrect
+it. The former ~250 copy-identical lines now exist once, in the core.
+
+**The plan for whoever implements the w32ded stage-3 port** (do not copy
+stage 3 -- it lives in the core already):
+
+1. Cross-match the stage-3 sites and layouts through the anchor chain:
+   the three detour targets (addEventToSendQueue, sendGameEventToAll,
+   fireBarrel -- their addresses in `src/target_lnxded.c`'s defines), the
+   playerManager/BFPlayer fields, the ScoreManager global, the Engine/
+   PhysicsEngine and BFSoldier offsets, and the Armor component map.
+   Fill them into `struct rec_target` in `src/target_w32ded.c` (the
+   stage-3 rows are there, zeros where unverified).
+2. Read a std::string: the lnxded shim is the SGI one-pointer shape
+   (`src/target_lnxded.c`'s read_string); the Dinkumware shape for the
+   w32ded shim is open (the template-name reader in the same file is the
+   live-verified reference for template names specifically).
+   Also parameterize `rbtree_find_value` in `src/core.c` (it hardcodes the
+   SGI map-object shape -- header ptr at mapaddr, count at +4; an MSVC map
+   object is laid out differently).
+3. Replace the stub `install_detours` with a Windows mechanism (IAT
+   patches or VirtualProtect byte patches; the /proc/self/mem RWX
+   trampoline has no Windows equivalent) and set `-DREC_STAGE3=1` in
+   build.sh's w32ded line when it lands.
+4. The stage-3 header version (5) and the detour-driven write lock
+   (`flush_each_line`) follow from step 3, not by hand.
+
+Porting inputs, in reading order:
+
+1. `w32ded-offsets.md` -- the anchor chain method (classManager IDs, culler
+   strings, BObject ctor constants locate lnxded's named functions inside
+   the stripped w32ded) and the cross-match table so far.
+2. The lnxded stage-3 section above -- the capture surface to replicate and
+   its lnxded offsets (also in `src/target_lnxded.c`'s table, with each
+   field naming the accessor or ctor it was read from).
+3. The lnxded "Still open" list -- several items (engine flags read at
+   client offsets, `st` aim pitch unwritten) are guesses to re-derive
+   server-side, not copy.
+
+Not committed as of this note: README/w32ded-offsets.md edits, the w32ded
+spin-bound fix, the untracking of `build/` artifacts.
+
+## Windows server port (BF1942_w32ded.exe)
+
+The same recorder runs inside the Windows dedicated server as a proxy
+`WINMM.dll` (`src/target_w32ded.c`; derivation and evidence in
+[w32ded-offsets.md](w32ded-offsets.md)).
+
+**How it loads.** w32ded imports winmm (`timeGetTime` and friends). Windows
+resolves DLL imports from the application directory before System32, so a
+`WINMM.dll` built next to the exe is loaded by the loader itself; its
+DllMain reroutes the game's winmm IAT entries to the real system winmm.dll
+and starts the sampler thread. No injected code, no game logic touched; on
+a Windows host nothing beyond copying the file, under wine the same file
+loads. Antivirus may quarantine a locally placed `WINMM.dll` (hijacking is
+also a malware technique) -- whitelist it on the server host.
+
+**Offsets, cross-matched from lnxded.** The two servers are one source tree
+compiled twice (GCC 3.2.3 vs MSVC 7): the classManager registration IDs
+(`0xc355/6/7`, `0xc35b`), the culler error strings and the `BObject` ctor's
+field constants locate lnxded's named functions inside the stripped w32ded.
+Engine class layout carries over unchanged; the STL does not, and every
+STL-typed read was re-derived from the w32ded disassembly.
+
+| what | lnxded | w32ded |
+|---|---|---|
+| objectManager global | `0x0871dc24` | `0x0074c52c` |
+| ObjectManager ctor | `0x08199650` | `0x004c8960` |
+| registerObject | OM vtable+0xd8 (`0x0819b4a0`) | OM vtable+0xd8 (`0x004c7440`) |
+| registered map | om+0x94, SGI: header ptr, node parent+4 left+8 right+0xc key+0x10 obj+0x14 | om+0xa0, MSVC: head +4 size +8, node left+0 parent+4 right+8 key+0xc obj+0x10 nil byte+0x15 |
+| `BObject` fields | flags +4, template +0x4c, id +0x48, Mat4 +0x74 | identical (ctor `0x004d0220`) |
+| ObjectTemplate name | std::string +8 (chars via one ptr) | getName = vtable+0x14, returns this+8; live reader: chars +0x0c, len +0x1c (62% of roots named) |
+| hp / maxhp / criticalDamage | +0x100 / +0x104 / +0x160 | +0x104 / +0x108 / +0x164 (save `0x004fdc80`) |
+
+**What the run showed.** Wine, Wake GPM_CQ: 844 root objects of 1,140
+registered, movement at 10 Hz with sane Wake coordinates, destruction
+lines, template names on 62% of roots (`PALMHIGH_M1`, `tankobs_ste_M1`,
+`stebarbwire_m1`...). Same ndjson the viewer parses.
+
+**Launch gotchas.** `+game bf1942` and a `mods/bf1942/init.con` copy are
+required, or the server dialogs "couldn't find current mod from
+maplist.con". w32ded's SetConsoleMode dialogs "couldn't change console
+flags" when stdin/stdout are pipes with no console attached -- run it with
+a real console/pty:
+
+```
+script -qec "wine BF1942_w32ded.exe +game bf1942 +restart 1 +dedicated 1" out.log
+```
+
+**Status.** Stage-2 equivalent: the object sampler, template names and
+destruction only. The stage-3 surfaces (the three detours, joints, engines,
+armor, tickets, kits) are not ported; each detour site needs its w32ded
+address through the anchor chain in w32ded-offsets.md. With the lnxded
+stage-3 work above landed, that port is unblocked.
+
 Run it:
+
+```bash
+features/server-replay-recorder/build.sh            # build/WINMM.dll
+# copy WINMM.dll next to BF1942_w32ded.exe with its game dir, recorder.con
+# in mods/bf1942/settings/, then launch as above; the recording is in
+# replays/ under the exe's cwd
+```
+
+Run it (linux):
 
 ```bash
 features/server-replay-recorder/build.sh

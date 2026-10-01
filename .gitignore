@@ -326,3 +326,6 @@ keys/
 
 # reference screenshots dropped into the repo root for a chat, not assets
 /*.webp
+
+# Recorder build artifacts, built by features/server-replay-recorder/build.sh
+features/server-replay-recorder/build/
