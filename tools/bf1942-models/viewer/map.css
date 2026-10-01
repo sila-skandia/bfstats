@@ -486,28 +486,44 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
+/* The mobile HUD. Two invisible sense zones take the top corners of the
+   stage: top-left pans the camera (drag to look), top-right moves (a
+   floating stick appears under the finger). Every game control is a tiny
+   button in the bottom thumb cluster. features/mobile-four-finger-controls. */
+.mobile-zone {
+  position: absolute;
+  top: 0;
+  height: 42vh;
+  z-index: 9;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mobile-zone[hidden] { display: none; }
+#mobile-zone-pan { left: 0; width: 50%; }
+#mobile-zone-move { right: 0; width: 50%; }
+
 #mobile-controls {
   position: absolute;
-  left: 12px; right: 12px; bottom: 72px;
+  right: 10px; bottom: 12px;
   z-index: 9;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
   pointer-events: none;
 }
 #mobile-controls[hidden] { display: none; }
 #mobile-pad {
-  position: relative;
-  flex: 0 0 128px;
-  width: 128px; height: 128px;
+  position: fixed;
+  width: 96px; height: 96px;
+  z-index: 10;
   border: 1px solid var(--line);
   border-radius: 50%;
   background: rgba(18, 17, 14, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  /* The move zone owns the input; the ring is art only. */
+  pointer-events: none;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -518,21 +534,21 @@ a { color: var(--accent); }
   position: absolute;
   background: rgba(190, 190, 175, 0.18);
 }
-#mobile-pad::before { left: 50%; top: 14px; bottom: 14px; width: 1px; }
-#mobile-pad::after { top: 50%; left: 14px; right: 14px; height: 1px; }
+#mobile-pad::before { left: 50%; top: 10px; bottom: 10px; width: 1px; }
+#mobile-pad::after { top: 50%; left: 10px; right: 10px; height: 1px; }
 #mobile-pad.is-active { border-color: var(--accent); }
 #mobile-pad-puck {
   position: absolute;
   left: 50%; top: 50%;
-  width: 52px; height: 52px;
+  width: 40px; height: 40px;
   border: 1px solid var(--accent);
   border-radius: 50%;
   background: rgba(42, 42, 35, 0.94);
   color: var(--text);
   display: grid;
   place-items: center;
-  font-size: 9px;
-  letter-spacing: .1em;
+  font-size: 8px;
+  letter-spacing: .08em;
   text-transform: uppercase;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
   transform: translate(-50%, -50%);
@@ -543,27 +559,27 @@ a { color: var(--accent); }
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 7px;
+  gap: 4px;
   pointer-events: none;
 }
 .mobile-action-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   pointer-events: none;
 }
 .mobile-action-btn {
-  min-width: 64px;
-  height: 40px;
-  padding: 0 12px;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 6px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 3px;
   background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text);
-  font: 10px var(--mm-font-mono);
-  letter-spacing: .08em;
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .06em;
   text-transform: uppercase;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
@@ -585,8 +601,8 @@ a { color: var(--accent); }
   background: rgba(18, 17, 14, 0.62);
 }
 .mobile-action-btn.fire-btn {
-  min-width: 76px;
-  height: 52px;
+  min-width: 56px;
+  height: 36px;
   border-color: var(--warn);
   color: var(--warn);
 }
@@ -598,73 +614,69 @@ a { color: var(--accent); }
 .mobile-throttle[hidden],
 #mobile-pad[hidden] { display: none; }
 
-/* The index-finger ("claw") buttons: FIRE in the upper left, ADS / reload /
-   swap in the upper right, each in the zone a curled index finger reaches
-   with the phone held normally. Both thumbs stay on move and look.
-   features/mobile-four-finger-controls. */
-.mobile-claw-col {
-  position: absolute;
-  bottom: 34vh;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* SWAP sits in a relative wrapper so its option menu opens anchored to the
+   button itself: the thumb taps SWAP and the kit's weapons appear right
+   there, no second reach. */
+.mobile-swap-wrap {
+  position: relative;
+  display: inline-flex;
   pointer-events: none;
 }
-#mobile-claw-left {
-  left: 6px;
-  align-items: flex-start;
-}
-#mobile-claw-right {
-  right: 6px;
-  align-items: flex-end;
-}
-.mobile-claw-col .claw-btn {
-  min-width: 76px;
-  height: 52px;
-  font-size: 11px;
-}
-.mobile-claw-col .fire-btn {
-  min-width: 88px;
-  height: 64px;
-  font-size: 12px;
-}
-#mobile-claw-left[hidden],
-#mobile-claw-right[hidden] { display: none; }
-
-/* The MAP button sits on its own at the top left, across from the minimap,
-   out of the thumb cluster: the spawn screen is the phone's only road back,
-   and the cluster rows are for things a thumb hits while moving
-   (features/mobile-four-finger-controls). */
-#mobile-map-btn {
+.mobile-swap-wrap .mobile-action-btn { pointer-events: auto; }
+.mobile-swap-menu {
   position: absolute;
-  left: 6px;
-  bottom: 74vh;
-  min-width: 64px;
-  height: 40px;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(18, 17, 14, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
 }
+.mobile-swap-menu[hidden] { display: none; }
+.mobile-swap-opt {
+  min-width: 64px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .04em;
+  text-align: left;
+  cursor: pointer;
+}
+.mobile-swap-opt:hover,
+.mobile-swap-opt:active { border-color: var(--accent); color: var(--accent); }
+
 .mobile-throttle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 9px;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 6px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 3px;
   background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--muted);
-  font: 9px var(--mm-font-mono);
-  letter-spacing: .08em;
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .06em;
   pointer-events: auto;
   touch-action: none;
 }
 .mobile-throttle input {
-  width: 92px;
+  width: 72px;
   accent-color: var(--accent);
 }
 .mobile-throttle output {
-  min-width: 25px;
+  min-width: 22px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -676,27 +688,33 @@ a { color: var(--accent); }
     top: 34px;
     right: 10px;
   }
+  .mobile-zone {
+    height: 40vh;
+  }
   #mobile-controls {
-    bottom: 78px;
-    gap: 8px;
+    bottom: 10px;
+    gap: 6px;
   }
   #mobile-pad {
-    flex-basis: 112px;
-    width: 112px;
-    height: 112px;
+    width: 88px;
+    height: 88px;
+  }
+  #mobile-pad-puck {
+    width: 36px;
+    height: 36px;
   }
   .mobile-action-btn {
-    min-width: 56px;
-    height: 38px;
-    padding: 0 8px;
-    font-size: 9px;
+    min-width: 40px;
+    height: 26px;
+    padding: 0 5px;
+    font-size: 7px;
   }
   .mobile-action-btn.fire-btn {
-    min-width: 64px;
-    height: 48px;
+    min-width: 52px;
+    height: 34px;
   }
   .mobile-throttle input {
-    width: 76px;
+    width: 64px;
   }
 
   #side {
