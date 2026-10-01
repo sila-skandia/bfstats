@@ -582,3 +582,56 @@ Chromium grants the pointer lock at the deploy close, and under the lock
 pointer events carry `clientX = 0` with only `movementX/Y` live, which
 poisons every coordinate-based touch claim. Drop the lock and re-take the
 page capture with a canvas press before driving real touch input.
+
+## The eleventh pass: panning is smooth again
+
+The owner reported that the touch HUD felt good but panning had become jumpy,
+and that it had been smoother before. The buttons and the layout were fine. The
+camera stepped.
+
+The cause, measured. The look stage converts accumulated pointer pixels into a
+per-frame axis (`mouse-input.js` `pump`: `counts / elapsedSeconds`), and the
+old touch path called `lookDelta(dx * TOUCH_LOOK_SCALE)` once per
+`pointermove`, forwarding each event's raw travel. Touch does not arrive one
+event per frame: the digitiser samples on its own clock, so one frame gets
+several moves and the next gets none. A burst's whole rotation therefore landed
+on the frames that received events, and the frames in between rotated by
+exactly nothing. Probed on the real page (aberdeen, phone viewport, a steady
+drag): 32 of 120 frames rotated by exactly 0 degrees, each bracketed by a
+full-rotation frame, with single-frame steps up to 19 degrees. That is what
+"jumpy panning" looks like when the total rotation is correct and its
+distribution is not.
+
+The fix. Both look drags, the open-screen zone and the drag off a held FIRE,
+now measure the finger into a smoothed velocity and are fed once a frame as
+`speed x dt` (`feedMobileLook`, beside `feedMobileTurretAim` in
+`local-player.js`), the same units the move ring already used. The smoothing is
+a time constant (`MOBILE_LOOK_TAU`, 60 ms, about four frames) rather than a
+per-sample fraction, so the window is the same however the OS spaced its
+samples. A frame that received no event now turns by the steady rate, and a
+frame that received five turns by the same rate. `TOUCH_LOOK_SCALE` keeps its
+meaning as the same multiple on the same pixel count, and the sensitivity
+profiles, the plus-or-minus 16 saturation and `countsPerPixel` reach the rate
+unchanged.
+
+The fix needed two details, both caught by the stub smoke. A finger that comes
+to rest stops sending samples, and nothing would ever return the stored speed
+to zero, so a held-still drag would turn the view forever. `feedLookVelocity`
+eases the aim to a halt over the same time constant once the samples go stale,
+measured from `vel.at`, which only a real pointermove stamps, so the staleness
+test stays inside one clock. The decay cannot be measured against a per-feed
+clock, because consecutive fed frames each see only one frame's gap and that
+gate would never trip. The release paths zero the speed, so a released drag
+cannot coast.
+
+Verified. Re-probed on the live page: the staircase is gone (1 zero-gap frame,
+was 32, with the 26 former gaps covered by the steady rate) and the per-frame
+rotation is a tight continuous band (tail p05 1.05 degrees, p95 3.00 degrees,
+max 3.84 degrees, no dead frames). A 220 px drag still pans 106.8 degrees, a
+5 px sub-dead-circle wobble still turns 0.0 degrees, and FIRE still acts on its
+down edge (live pass, all claims green). A throwaway stub-DOM smoke
+(scratchpad/touchpan/, gitignored, since the module has no committed Node
+harness) asserts the burst-feeds-once, rested-decay, and released-is-a-no-op
+contracts. `./scripts/verify.sh --skip-e2e` runs the same 4,554 tests with the
+same five pre-existing failures (extractor tables, baked-nav route, scene-layer
+mode layer), none of which this touches.

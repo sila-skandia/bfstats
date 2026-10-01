@@ -33,7 +33,11 @@
  *
  * `TOUCH_LOOK_SCALE` is the look multiplier the look zone and the drag off
  * FIRE apply to the raw finger travel; `?touchlook=<n>` overrides it for
- * on-device tuning.
+ * on-device tuning. Both look drags measure the finger into a smoothed
+ * velocity and are fed ONCE A FRAME as `speed x dt` (`feedMobileLook`), not
+ * per event: touch samples arrive in bursts, and a per-event feed handed the
+ * sim one lump on the frames that received events and zero on the frames that
+ * did not, which read as jumpy panning.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
@@ -112,6 +116,41 @@ export function createTouchControls(page) {
   // otherwise walk the view off its own micro drift. Same reason the ring and
   // the drag off FIRE have one.
   const MOBILE_LOOK_DEAD = 8;
+  // The time constant of the fed look VELOCITY's smoothing, in seconds.
+    //
+    // WHY A VELOCITY AND NOT THE RAW PER-EVENT TRAVEL. Touch input is delivered
+    // in bursts: the digitiser samples on its own clock, so one animation frame
+    // often gets several `pointermove`s and the next gets none. The look stage
+    // converts accumulated PIXELS into a per-frame axis (`mouse-input.js`
+    // `pump`: `counts / elapsedSeconds`), so forwarding each event's raw travel
+    // hands the sim one lump on the frames that received events and zero on the
+    // frames that did not — a staircase the player reads as "jumpy panning".
+    // Measured on the page (scratchpad/touchpan): during a steady drag 32 of 120
+    // frames rotated by exactly 0 deg, each bracketed by a full-rotation frame.
+    //
+    // So the look is fed the way the move ring is (see `accumulateDeflection`):
+    // each event's position delta over its own time delta recovers the finger's
+    // true speed regardless of how the OS batched it, that speed is smoothed, and
+    // each FRAME then contributes `smoothedSpeed x dt`. Frame-to-frame smoothness
+    // depends on the smoothed rate, not on event cadence, so a frame that
+    // received no event still turns by the steady rate and the staircase is gone.
+    // The rate is in the same pixel currency as the mouse, so the sensitivity
+    // profiles, the +-16 saturation and `countsPerPixel` reach it unchanged, and
+    // `TOUCH_LOOK_SCALE` keeps its meaning (the same multiple on the same pixel
+    // count).
+    //
+    // The smoothing is a TIME constant, not a per-sample fraction: the samples
+    // are unevenly spaced, so a fixed fraction would make the window breathe
+    // with the sample rate and the fed rate would still jitter. Each sample eases
+    // the rate a fraction `1 - exp(-step / TAU)` of the way to its own
+    // measurement, which is the same window whatever the spacing. It has to span
+    // several frames (60 ms is ~4) for the fed rate to be steady frame to frame,
+    // and it is short enough that a swipe still starts and stops promptly.
+    const MOBILE_LOOK_TAU = 0.06;
+    // The floor on the interval between two touch samples when recovering their
+    // speed. Two samples can share a millisecond, and `travel / 0` would be a
+    // spike; this also keeps the easing fraction sane at that spacing.
+    const MOBILE_LOOK_MIN_STEP = 0.004;
   // How far a held FIRE has to travel before it turns the camera. PUBG Mobile
   // lets a drag off the fire button aim while the trigger stays down, which is
   // the whole reason the right thumb sits on FIRE; the slop keeps a thumb
@@ -136,6 +175,11 @@ export function createTouchControls(page) {
   let lookArmed = false;
   let lookOriginX = 0;
   let lookOriginY = 0;
+  // The smoothed look VELOCITY, in finger pixels per second, and when it was
+  // last measured. Fed once a frame as `velocity x dt` (see
+  // `feedMobileLook`); measured per event so a burst cannot jolt it. Reset on
+  // every arm and every release, so a drag never inherits the last one's speed.
+  const lookVel = { x: 0, y: 0, at: 0 };
   // The held FIRE's own look: armed only once the drag clears the dead circle,
   // and remembering where the last look sample was left so the frame that
   // crosses the threshold does not apply the slop as one jump.
@@ -145,6 +189,10 @@ export function createTouchControls(page) {
   let fireLookOriginY = 0;
   let fireLookLastX = 0;
   let fireLookLastY = 0;
+  // The drag off FIRE's smoothed velocity, same units and same reason as the
+  // zone's above: fire-and-aim on a phone is a held thumb drifting, and a
+  // thumb's touch samples arrive in bursts exactly as a pan's do.
+  const fireLookVel = { x: 0, y: 0, at: 0 };
   // The fixed ring's centre, read once on the down event.
   let padCentreX = 0;
   let padCentreY = 0;
@@ -198,6 +246,76 @@ export function createTouchControls(page) {
       mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
   }
 
+  /** Fold one touch sample's travel into a smoothed finger VELOCITY, in
+   *  pixels per second.
+   *
+   *  `dx, dy` are this event's raw travel from the previous sample and `now`
+   *  its timestamp. The interval is floored at `MOBILE_LOOK_MIN_STEP` because
+   *  two samples can share a millisecond, and `travel / 0` would be an
+   *  infinite speed that the smooth would then have to spend many frames
+   *  decaying. The measurement is eased toward, not snapped to, so one bursty
+   *  sample nudges the rate instead of replacing it. Returns nothing; the
+   *  smoothed pair is the caller's own state. */
+  function measureLookVelocity(dx, dy, now, vel) {
+    const step = Math.max((now - vel.at) / 1000, MOBILE_LOOK_MIN_STEP);
+    const measuredX = dx / step;
+    const measuredY = dy / step;
+    // Ease a TIME-constant's worth of the way to this measurement, so the
+    // window is the same however the OS spaced its samples (see the constant).
+    const ease = 1 - Math.exp(-step / MOBILE_LOOK_TAU);
+    vel.x += (measuredX - vel.x) * ease;
+    vel.y += (measuredY - vel.y) * ease;
+    vel.at = now;
+  }
+
+  /** This frame's contribution from a held look drag: the smoothed finger
+   *  speed turned into the pixel travel this frame represents.
+   *
+   *  Called ONCE A FRAME (beside `feedMobileTurretAim`) rather than once per
+   *  touch event, and that is the whole fix. Feeding `speed x dt` gives the sim
+   *  a rate that is steady across frames, so the look no longer depends on how
+   *  many `pointermove`s the OS happened to deliver in each one. A frame that
+   *  received no event still turns by `speed x dt`; a frame that received five
+   *  turns by the same `speed x dt`. The staircase measured before this (frames
+   *  at exactly 0 deg between full-rotation frames) is what that removes.
+   *
+   *  A finger that comes to rest stops sending samples, and nothing would ever
+   *  bring the stored speed back to zero, so a held-still drag would turn the
+   *  view forever. When the last sample is stale the speed eases to rest over
+   *  the same time constant the measurement uses, so the aim coasts to a halt
+   *  in a few frames instead of drifting. `vel` is already zero unless a drag
+   *  is armed, and the release paths zero it, so a released drag cannot coast
+   *  at all. */
+  function feedLookVelocity(dt, vel) {
+    if (!vel.x && !vel.y) return;
+    // Ease the aim to a stop once the SAMPLES go stale. `vel.at` is stamped
+    // only by a real pointermove (on `performance.now`, the same clock as
+    // here), so a finger that has come to rest — and thus stopped sampling —
+    // leaves `vel.at` behind and the aim coasts to a halt over the same time
+    // constant the measurement uses. (Staleness cannot be measured against a
+    // per-feed clock: consecutive fed frames each see only one frame's gap, so
+    // that never crosses the gate and the rate would pin forever.)
+    const idle = (performance.now() - vel.at) / 1000;
+    if (vel.at && idle >= MOBILE_LOOK_TAU * 0.5) {
+      const ease = 1 - Math.exp(-dt / MOBILE_LOOK_TAU);
+      vel.x -= vel.x * ease;
+      vel.y -= vel.y * ease;
+    }
+    if (!vel.x && !vel.y) return;
+    page.lookDelta(vel.x * dt * TOUCH_LOOK_SCALE, vel.y * dt * TOUCH_LOOK_SCALE);
+  }
+
+  /** This frame's look contribution from whichever drag is armed, if any.
+   *
+   *  The zone drag and the drag off a held FIRE are mutually exclusive (the
+   *  fire button is a button, so a finger on it never reaches the zone), so
+   *  at most one of the two velocities is non-zero and one call serves both.
+   *  Exported for the same per-frame call as `feedMobileTurretAim`. */
+  function feedMobileLook(dt) {
+    feedLookVelocity(dt, lookVel);
+    feedLookVelocity(dt, fireLookVel);
+  }
+
   // The ring is FIXED: a release only centres the ball again, it never hides
   // the ring (the floating stick's hide-on-release is what made the thumb
   // hunt for it before every move).
@@ -215,6 +333,12 @@ export function createTouchControls(page) {
     resetMobilePad();
     setMobileSheet(false);
     fireLookArmed = false;
+    // A global reset is a release: neither drag may keep its aim after it, or
+    // the next frame's `feedMobileLook` would turn a view nobody is dragging.
+    lookVel.x = 0;
+    lookVel.y = 0;
+    fireLookVel.x = 0;
+    fireLookVel.y = 0;
     mobileFireHeldPointerId = null;
     touchControls.mobileFireHeld = false;
     touchControls.mobileJumpHeld = false;
@@ -507,6 +631,12 @@ export function createTouchControls(page) {
     lookArmed = false;
     lookOriginX = event.clientX;
     lookOriginY = event.clientY;
+    // The velocity starts at rest, timed now, so the first measured sample is
+    // the press point's own interval and a fresh drag never inherits the
+    // previous one's speed.
+    lookVel.x = 0;
+    lookVel.y = 0;
+    lookVel.at = performance.now();
     trackPointer(event.pointerId, () => releaseMobileLook(event));
     try { mobileZoneLook.setPointerCapture(event.pointerId); } catch {}
   });
@@ -522,15 +652,18 @@ export function createTouchControls(page) {
       if (dist < MOBILE_LOOK_DEAD) return;
       lookArmed = true;
       // Resume from the edge of the dead circle, so the frame that crosses it
-      // does not apply the slop as one jump.
+      // does not apply the slop as one jump. The velocity is timed from here,
+      // which is what makes the circle the true origin of the drag.
       panLastX = lookOriginX + (dx0 / dist) * MOBILE_LOOK_DEAD;
       panLastY = lookOriginY + (dy0 / dist) * MOBILE_LOOK_DEAD;
+      lookVel.at = performance.now();
     }
-    const dx = (event.clientX - panLastX) * TOUCH_LOOK_SCALE;
-    const dy = (event.clientY - panLastY) * TOUCH_LOOK_SCALE;
+    // Measure the travel into the smoothed velocity; `feedMobileLook` turns it
+    // into the frame's rotation once a frame.
+    measureLookVelocity(event.clientX - panLastX, event.clientY - panLastY,
+      performance.now(), lookVel);
     panLastX = event.clientX;
     panLastY = event.clientY;
-    page.lookDelta(dx, dy);
   });
 
   function releaseMobileLook(event) {
@@ -542,6 +675,10 @@ export function createTouchControls(page) {
     } catch {}
     panPointerId = null;
     lookArmed = false;
+    // A released drag is at rest. Zeroing here is what stops a fast pan from
+    // coasting on after the finger lifts.
+    lookVel.x = 0;
+    lookVel.y = 0;
   }
 
   mobileZoneLook.addEventListener('pointerup', releaseMobileLook);
@@ -614,6 +751,11 @@ export function createTouchControls(page) {
     fireLookOriginY = event.clientY;
     fireLookLastX = event.clientX;
     fireLookLastY = event.clientY;
+    // At rest until the drag clears the dead circle, so a resting thumb never
+    // walks the view however long it is held.
+    fireLookVel.x = 0;
+    fireLookVel.y = 0;
+    fireLookVel.at = performance.now();
     mobileFireHeldPointerId = event.pointerId;
     setMobileFire(true);
   });
@@ -635,12 +777,15 @@ export function createTouchControls(page) {
       const uy = dy0 / dist;
       fireLookLastX = fireLookOriginX + ux * MOBILE_FIRE_LOOK_DEAD;
       fireLookLastY = fireLookOriginY + uy * MOBILE_FIRE_LOOK_DEAD;
+      // Timed from the dead circle's edge, like the zone's drag.
+      fireLookVel.at = performance.now();
     }
-    const dx = (event.clientX - fireLookLastX) * TOUCH_LOOK_SCALE;
-    const dy = (event.clientY - fireLookLastY) * TOUCH_LOOK_SCALE;
+    // Measured, not forwarded: the thumb's samples burst exactly as a pan's
+    // do, and the smoothing is what keeps a held FIRE from stepping the view.
+    measureLookVelocity(event.clientX - fireLookLastX, event.clientY - fireLookLastY,
+      performance.now(), fireLookVel);
     fireLookLastX = event.clientX;
     fireLookLastY = event.clientY;
-    page.lookDelta(dx, dy);
   }
 
   mobileFireBtn.addEventListener('pointermove', event => {
@@ -654,6 +799,9 @@ export function createTouchControls(page) {
    *  state, the capture, and the trigger. */
   function endMobileFire() {
     fireLookArmed = false;
+    // The thumb is off the trigger, so the aim it was carrying stops here.
+    fireLookVel.x = 0;
+    fireLookVel.y = 0;
     mobileFireHeldPointerId = null;
     setMobileFire(false);
   }
@@ -813,6 +961,7 @@ export function createTouchControls(page) {
     edgeButton,
     endMobileFire,
     feedMobileFireLook,
+    feedMobileLook,
     feedMobileTurretAim,
     holdMobileCrouch,
     mobileCycleWeapon,
