@@ -517,36 +517,47 @@ a { color: var(--accent); }
 }
 #mobile-controls[hidden] { display: none; }
 #mobile-pad {
-  /* FIXED, in stage coordinates at the bottom-left under the left thumb. 64
-     px across, and the 28 px ball's 18 px of travel is the whole input range.
-     MOBILE_PAD_TRAVEL in touch-controls.js describes the same geometry; keep
-     the three together. */
+  /* FIXED, in stage coordinates at the bottom-left under the left thumb. The
+     112 px box is the HIT AREA; the visible ring is its inner 64 px circle
+     (#mobile-pad-ring) and the 28 px ball's 18 px of travel is the whole
+     input range. MOBILE_PAD_TRAVEL in touch-controls.js describes the same
+     geometry; keep the three together. The generous hit box is load bearing:
+     a thumb aiming for the ring and landing a little off a 64 px target
+     fell through to the pan zone and snapped the view. */
   position: absolute;
   left: 16px;
   bottom: 24px;
-  width: 64px; height: 64px;
+  width: 112px; height: 112px;
   z-index: 10;
-  border: 1px solid var(--line);
   border-radius: 50%;
-  background: rgba(18, 17, 14, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   /* The ring itself owns the input. */
   pointer-events: auto;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
-#mobile-pad::before,
-#mobile-pad::after {
+#mobile-pad-ring {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 64px; height: 64px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(18, 17, 14, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+#mobile-pad-ring::before,
+#mobile-pad-ring::after {
   content: '';
   position: absolute;
   background: rgba(190, 190, 175, 0.18);
 }
-#mobile-pad::before { left: 50%; top: 8px; bottom: 8px; width: 1px; }
-#mobile-pad::after { top: 50%; left: 8px; right: 8px; height: 1px; }
-#mobile-pad.is-active { border-color: var(--accent); }
+#mobile-pad-ring::before { left: 50%; top: 8px; bottom: 8px; width: 1px; }
+#mobile-pad-ring::after { top: 50%; left: 8px; right: 8px; height: 1px; }
+#mobile-pad.is-active #mobile-pad-ring { border-color: var(--accent); }
 #mobile-pad-puck {
   position: absolute;
   left: 50%; top: 50%;
