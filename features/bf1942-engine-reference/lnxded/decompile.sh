@@ -14,6 +14,9 @@
 # script therefore works on a throwaway COPY of the project and never touches
 # the original or the GUI's open project. About 15 s plus 0.1 s per function.
 set -euo pipefail
+# mktemp's default template contains a dot, which Ghidra's project-path
+# check refuses ("Path element starting with '.' is not permitted"); pin /tmp.
+export TMPDIR=/tmp
 here="$(cd "$(dirname "$0")" && pwd)"
 bin=/home/dylan/projects/public/bf42plus/bf1942_lnxded.static
 proj_src="${LNXDED_GHIDRA_PROJECT:-$HOME/ghidra}"
