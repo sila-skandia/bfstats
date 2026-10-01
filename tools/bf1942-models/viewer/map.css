@@ -492,11 +492,13 @@ a { color: var(--accent); }
    thumb naturally rests. That is the tenth pass's answer to "I have to move
    the view, then fire": aiming is not a place you have to put your thumb, it
    is everywhere the button is not.
-   Three places, and nothing else:
+   Four places, and nothing else:
      the MOVE ring at the bottom-left corner (112 px hit box, 64 px visible),
-     one band of six buttons across the middle, 6 px between neighbours, so a
-     thumb never travels more than one button width,
-     the right corner with RELOAD against FIRE, and MORE on the bottom centre.
+     a short row of three above it on the left (JUMP, CROUCH, PRONE),
+     a short row of three above the corner on the right (AIM, PREV, NEXT),
+     the bottom row with RELOAD against FIRE and the MORE tab in between.
+   Nothing crosses the middle, and nothing reaches the top two thirds, so the
+   game is what you are looking at.
    z order, bottom to top: the look zone (9), the sheet's scrim (10), the
    buttons (11), the move ring (12). A tap with the sheet open closes the
    sheet instead of turning the camera, and the ring is never under it. */
@@ -601,28 +603,30 @@ a { color: var(--accent); }
   white-space: nowrap;
   pointer-events: none;
 }
-/* The band: six buttons in one row across the middle, equal widths so the
-   gaps are equal too. It sits above the ring's 112 px hit box, which ends 134
-   px up the left edge, and above the right corner's 102 px. `pointer-events:
-   none` on the row and `auto` on the buttons, so the 6 px between two
-   neighbours falls through and pans like any other open screen. */
-.mobile-band {
+/* Two short rows of three, one per thumb, at the same height above the bottom
+   row. They hug the sides and stop well short of the middle, so the centre
+   corridor and the whole upper screen stay clear for the game and for
+   dragging. 50 px targets with 6 px between neighbours, so a thumb never
+   travels more than one button width. `pointer-events: none` on the row and
+   `auto` on the buttons, so the gaps fall through and pan like any other open
+   screen. */
+.mobile-row {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 144px;
+  bottom: 146px;
   display: flex;
   align-items: stretch;
   gap: 6px;
   pointer-events: none;
 }
+.mobile-row-left { left: 14px; }
+.mobile-row-right { right: 14px; }
 .mobile-band-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 56px;
+  flex: 0 0 auto;
+  width: 50px;
+  height: 50px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 28px;
+  border-radius: 25px;
   background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
