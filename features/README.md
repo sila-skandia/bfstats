@@ -33,6 +33,7 @@ folder answers.
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
+| [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
 | [vehicle-instance-refactor](vehicle-instance-refactor/README.md) | build | Who owns vehicle, seat and page state now, and where did map.html code move? |
 | [unreal-reimagining](unreal-reimagining/README.md) | design | How will BF1942 be ported to Unreal Engine 5, and in what order? |
 

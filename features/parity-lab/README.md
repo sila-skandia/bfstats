@@ -235,14 +235,14 @@ the replay at the same instant. Stays manual.
       Candidate first question: the Wake coop opening (vehicle uptake,
       landings, first capture and capture order) over at least five real
       rounds and five seeds.
-- [ ] **3. Server recorder.** A 32-bit `.so` under `LD_PRELOAD` in the lab's
-      `bf1942_lnxded` (dynamically linked; `gcc -m32` builds here; 54,895
-      symbols, but DWARF only for libstdc++, so struct layouts come from the
-      engine-reference corpus). Sample after `Game::updateWorld(float)`
-      0x0805d9b0: `ObjectManager::getAllRegisteredObjects()` 0x0819b590 and
-      `getProjectileMap()` 0x081a34e0. Write the client recorder's NDJSON plus
-      velocity and bot state, so `replay.js` plays it unchanged. A scenario's
-      `preload` key already hands it to the server.
+- [~] **3. Server recorder.** Started: `features/server-replay-recorder/`
+      records `h/o/s/d` in this format from inside the server via the
+      `preload` key (verified 2026-10-01: 880 root objects of ~4.6k
+      registered, template names for some classes, 10 Hz thread sampling).
+      Still to close: level/roster lines, template names for most statics,
+      tick-aligned sampling on `Game::updateWorld` `0x0805d9b0`, and the
+      full client-recorder surface (hp, tickets, events). Status and the
+      verified layout: `features/server-replay-recorder/README.md`.
 - [ ] **4. Micro-scenarios (B)** with the input stream logged by bf42plus and
       a viewer harness that plays it back.
 - [ ] **5. Unattended runs.** A spectator client that joins by itself with

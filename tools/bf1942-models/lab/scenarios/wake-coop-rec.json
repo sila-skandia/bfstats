@@ -1,0 +1,23 @@
+{
+  "name": "wake-coop-rec",
+  "description": "wake-coop with the server-side replay recorder preloaded: a 32-bit recorder.so samples every registered object from inside bf1942_lnxded (config: mods/bf1942/settings/recorder.con, off by default). Same round as wake-coop so the two recordings can be compared.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. Let the round run at least 60 s of fighting, then `lab.py stop`."
+}
