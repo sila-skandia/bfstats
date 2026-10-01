@@ -486,16 +486,17 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
-/* The mobile HUD. The top-left look zone takes the left index finger's drag;
-   the FIXED move ring sits at the top-right, a home spot the right index
-   finger finds without looking (its own touch target; a drag anywhere else on
-   the stage is the look). FIRE is the left thumb's button bottom-left, every
-   other game control a tiny button in the right thumb cluster.
-   features/mobile-four-finger-controls. */
+/* The mobile HUD. The LEFT half is both movement controls: its drag pans the
+   camera (left index finger, or the left thumb when it is off the ring) and
+   the FIXED move ring sits at its bottom-left under the left thumb. The right
+   side is actions only: FIRE on the right thumb at the bottom-right, every
+   other game control a tiny button in the cluster above it. A drag on the
+   action side does nothing (page-input.js), so a firing thumb cannot jerk the
+   camera. features/mobile-four-finger-controls. */
 .mobile-zone {
   position: absolute;
   top: 0;
-  height: 42vh;
+  height: 100%;
   z-index: 9;
   pointer-events: auto;
   touch-action: none;
@@ -516,13 +517,13 @@ a { color: var(--accent); }
 }
 #mobile-controls[hidden] { display: none; }
 #mobile-pad {
-  /* FIXED, in stage coordinates beside the look zone: right edge, below the
-     minimap's box. 64 px across, and the 28 px ball's 18 px of travel is the
-     whole input range. MOBILE_PAD_TRAVEL in touch-controls.js describes the
-     same geometry; keep the three together. */
+  /* FIXED, in stage coordinates at the bottom-left under the left thumb. 64
+     px across, and the 28 px ball's 18 px of travel is the whole input range.
+     MOBILE_PAD_TRAVEL in touch-controls.js describes the same geometry; keep
+     the three together. */
   position: absolute;
-  top: 172px;
-  right: 14px;
+  left: 16px;
+  bottom: 24px;
   width: 64px; height: 64px;
   z-index: 10;
   border: 1px solid var(--line);
@@ -574,7 +575,7 @@ a { color: var(--accent); }
 }
 .mobile-action-cluster {
   position: absolute;
-  right: 10px; bottom: 12px;
+  right: 10px; bottom: 104px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -620,10 +621,11 @@ a { color: var(--accent); }
   background: rgba(18, 17, 14, 0.62);
 }
 .mobile-action-btn.fire-btn {
-  /* The left thumb's button, out of the cluster at the bottom-left. Sized for
+  /* The right thumb's button, out of the cluster at the bottom-right, so
+     moving (left thumb, ring) and firing happen at the same time. Sized for
      a thumb rather than the cluster's 28 px rows. */
   position: absolute;
-  left: 18px; bottom: 26px;
+  right: 14px; bottom: 22px;
   min-width: 96px;
   height: 68px;
   border-radius: 6px;
@@ -673,11 +675,7 @@ a { color: var(--accent); }
     top: 34px;
     right: 10px;
   }
-  .mobile-zone {
-    height: 40vh;
-  }
   .mobile-action-cluster {
-    bottom: 10px;
     gap: 6px;
   }
   /* No pad-size override here on purpose: the ring and ball carry the input

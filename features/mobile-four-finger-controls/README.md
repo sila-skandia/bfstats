@@ -276,3 +276,39 @@ rounds. The full viewer suite runs 4,554 tests with five failures that
 reproduce with these files reverted (the vehicle-sound published tables, the
 bocage baked nav routes, the scene-layer mode merge), so they predate this
 work. The API tier passes 714 tests.
+
+## Built (sixth pass, 2026-10-01): navigation left, actions right
+
+The follow-up playtest had one layout complaint and one that passed. Moving
+and firing at the same time was hard with the ring at the top-right and FIRE
+at the bottom-left, and the pan sensitivity of the fifth pass passed testing
+unchanged (the 8x multiplier stands, `?touchlook=` still tunes it).
+
+The screen is now split by job. The LEFT half carries both movement
+controls: dragging it pans the camera (the left index finger, or the left
+thumb when it is off the ring) and the fixed ring sits at its bottom-left
+under the left thumb. The RIGHT half is actions only: FIRE at the
+bottom-right (96x68 px) and the button cluster above it (AIM, RELOAD, JUMP,
+CROUCH, PREV, NEXT, MAP, ENTER/EXIT, VIEW, PICKUP, SEATS, THR). Moving and
+firing is now one thumb each, held at the same time.
+
+A drag on the action side no longer pans. In play only the left half feeds
+the look (`page-input.js` gates the canvas drag on `touchFlying`, which is
+free roam only), so a firing thumb slipping off the button cannot jerk the
+camera. Free roam keeps its drag-to-fly look, since that gesture is the free
+camera's only movement.
+
+The look zone is the full left half now and steps aside while the
+map-controls panel is expanded: the panel sits under it in z order
+(`#side` is z 3, the zone z 9), so without the gate the panel's left half is
+untappable. `updateMobileControls` hides the zone while the panel is open
+(`sideOpen` joined the visibility signature).
+
+Verified with the stub-DOM smoke (28 claims) and the live phone probe on
+aberdeen (21 claims). The ring measures at the bottom-left (16 px from the
+left edge, 24 px up), FIRE at the bottom-right (14 px from the right edge),
+the two do not overlap, a held ring deflection and a held FIRE run together
+(`forward 0.615`, six rounds fired while moving), and a canvas drag on the
+action side turns the camera 0.0000 rad while the same drag on the left half
+turns it 0.508 rad. The viewer suite runs the same 4,554 tests with the same
+five pre-existing failures as the fifth pass.
