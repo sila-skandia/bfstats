@@ -1,35 +1,63 @@
 /**
- * The touch controls: two sense zones (top-left pans the camera, top-right
- * moves with a floating stick), the small game buttons and the swap menu, and
- * what each feeds the input word. Split out of `page-input.js`, which keeps
- * the keyboard and the mouse.
+ * The touch controls: the top-left look zone (left index finger), the FIXED
+ * move ring at the top-right (right index finger), FIRE on the left thumb and
+ * the small game buttons on the right thumb, and what each feeds the input
+ * word. Split out of `page-input.js`, which keeps the keyboard and the mouse.
+ *
+ * Four-finger play, per the owner's playtest rework
+ * (features/mobile-four-finger-controls): the index fingers do the movements
+ * (a drag anywhere in the look zone turns the view, the ring moves), the
+ * thumbs fire and work the buttons. The ring is FIXED and small, and the
+ * ball's whole 18 px of travel is the input range, so movement answers a
+ * twitch. The weapon pair (PREV/NEXT) steps and RAISES the kit's weapons
+ * instead of the old SWAP menu. `TOUCH_LOOK_SCALE` is the look multiplier
+ * both this module's zone and page-input.js's canvas-drag look apply to the
+ * raw finger travel; `?touchlook=<n>` overrides it for on-device tuning.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
  * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
- * `keys`, `kitOffer`, `kitWeaponSlots`, `lookDelta`, `mannedActive`,
- * `mouseInput`, `nearEntry`, `noteSeatToggle`, `occupancy`, `optOnFoot`,
- * `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
- * `seatToggleReady`, `selectKitWeapon`, `setFly`, `setTouchAltFire`,
+ * `keys`, `kitOffer`, `lookDelta`, `mannedActive`,
+ * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`,
+ * `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
+ * `seatToggleReady`, `setFly`, `setTouchAltFire`,
  * `setTouchTriggers`, `soldier`, `soldierDead`, `startReload`, `switchSeat`,
- * `toggleProne`, `view`.
+ * `toggleProne`, `view`, `weaponBarFire`.
  */
+/**
+ * The look multiplier for touch drags: raw finger pixels in, engine look
+ * counts out. Retail's on-foot law is 0.1215 degrees of yaw per pixel
+ * (`mouse-input.js`, GUN-2b), which needs ~1,480 px of travel for a 180,
+ * several phone screens' worth. The owner's playtest asked for "way more
+ * responsive", so a touch drag gets `TOUCH_LOOK_SCALE` times the mouse's
+ * currency: at 8 a 180 is ~185 px of finger travel (about half a phone
+ * width). The +-16 axis saturation of the retail pipeline still caps fast
+ * flicks at ~1,440 deg/s, which is transcribed behaviour, not a touch
+ * choice. `?touchlook=<n>` overrides the default for on-device tuning
+ * (the `?turret=` knob on `countsPerPixel` is the same idea).
+ */
+export const TOUCH_LOOK_SCALE = (() => {
+  const raw = globalThis.location
+    ? new URLSearchParams(globalThis.location.search).get('touchlook')
+    : null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 8;
+})();
+
 export function createTouchControls(page) {
   const touchControls = {};
 
   const mobileControls = document.getElementById('mobile-controls');
   const mobileZonePan = document.getElementById('mobile-zone-pan');
-  const mobileZoneMove = document.getElementById('mobile-zone-move');
   const mobilePad = document.getElementById('mobile-pad');
   const mobilePadPuck = document.getElementById('mobile-pad-puck');
   const mobilePadLabel = document.getElementById('mobile-pad-label');
   const mobileFireBtn = document.getElementById('mobile-fire-btn');
   const mobileAimBtn = document.getElementById('mobile-aim-btn');
   const mobileReloadBtn = document.getElementById('mobile-reload-btn');
-  const mobileSwapBtn = document.getElementById('mobile-swap-btn');
-  const mobileSwapWrap = document.getElementById('mobile-swap-wrap');
-  const mobileSwapMenu = document.getElementById('mobile-swap-menu');
+  const mobileWPrevBtn = document.getElementById('mobile-wprev-btn');
+  const mobileWNextBtn = document.getElementById('mobile-wnext-btn');
   const mobileUseBtn = document.getElementById('mobile-use-btn');
   const mobileViewBtn = document.getElementById('mobile-view-btn');
   const mobileJumpBtn = document.getElementById('mobile-jump-btn');
@@ -40,9 +68,20 @@ export function createTouchControls(page) {
   const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
   const mobileThrottleInput = document.getElementById('mobile-throttle');
   const mobileThrottleValue = document.getElementById('mobile-throttle-value');
-  // The floating stick is 96 px wide; its vector clamps to this radius.
-  const MOBILE_PAD_RADIUS = 44;
-  const MOBILE_AIM_PIXELS_PER_SECOND = 720;
+  // The fixed move ring: 64 px across with a 28 px ball (`map.css`, keep the
+  // three together). The ball's whole travel is 18 px and that travel IS the
+  // input range, with full deflection where the ball touches the ring, so the
+  // stick answers a twitch. The 5 px dead circle at the centre is what lets a
+  // resting finger stand still. This is the viewer's own touch choice, stated
+  // rather than transcribed (BF1942 has no touch device to read).
+  const MOBILE_PAD_TRAVEL = 18;
+  const MOBILE_PAD_DEAD = 5;
+  // Full pad deflection is a hand moving this many pixels a second (see
+  // `feedMobileTurretAim`). Raised from 720 in the playtest rework: at retail
+  // scale 720 px/s is only ~87 deg/s of turret yaw, sluggish next to the
+  // reworked look drag; 2200 is ~270 deg/s, a rate stick that turns a 180 in
+  // under a second at full tilt and still tracks finely at half deflection.
+  const MOBILE_AIM_PIXELS_PER_SECOND = 2200;
   // Hold the CROUCH button this long and the soldier goes prone as well,
   // COD Mobile's crouch-over-prone stack: crouch is a hold (`c_PICrouch`),
   // prone is an edge (`c_PILie`), and the button covers both.
@@ -61,6 +100,9 @@ export function createTouchControls(page) {
   let panPointerId = null;
   let panLastX = 0;
   let panLastY = 0;
+  // The fixed ring's centre, read once on the down event.
+  let padCentreX = 0;
+  let padCentreY = 0;
 
   function clampMobileInput(value) {
     return Math.max(-1, Math.min(1, value));
@@ -91,6 +133,9 @@ export function createTouchControls(page) {
       mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
   }
 
+  // The ring is FIXED: a release only centres the ball again, it never hides
+  // the ring (the floating stick's hide-on-release is what made the thumb
+  // hunt for it before every move).
   function resetMobilePad() {
     touchControls.mobilePadPointerId = null;
     touchControls.mobilePadHeld = false;
@@ -98,7 +143,6 @@ export function createTouchControls(page) {
     mobilePadVector.y = 0;
     mobilePadPuck.style.transform = 'translate(-50%, -50%)';
     mobilePad.classList.remove('is-active');
-    mobilePad.hidden = true;
   }
 
   function resetMobileControls() {
@@ -129,43 +173,16 @@ export function createTouchControls(page) {
     mobileThrottleValue.value = String(Math.round(touchControls.mobileThrottle * 100));
   }
 
-  /** The kit's weapon names, one short line each, for the swap menu. The
-   *  `weapon` field is a template name ("KnifeAllies", "Colt"); the menu is
-   *  tiny, so the nation suffixes come off. */
-  function swapOptionLabel(entry) {
-    const name = String(entry?.weapon || '');
-    return name.replace(/(Allies|Axis)$/i, '') || `slot ${entry?.slot}`;
-  }
-
-  /** The SWAP option menu, built fresh each time it opens from the spawned
-   *  kit's slots, and anchored to the SWAP button itself: the thumb taps
-   *  SWAP and the options appear where the thumb already is. */
-  function openSwapMenu() {
-    const slots = Array.isArray(page.kitWeaponSlots) ? page.kitWeaponSlots : [];
-    if (!slots.length) return;
-    mobileSwapMenu.replaceChildren();
-    for (const entry of slots) {
-      const opt = document.createElement('button');
-      opt.type = 'button';
-      opt.className = 'mobile-swap-opt';
-      opt.dataset.slot = String(entry.slot);
-      opt.textContent = swapOptionLabel(entry);
-      opt.addEventListener('pointerdown', event => event.stopPropagation());
-      opt.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        closeSwapMenu();
-        page.setFly(true);
-        if (page.selectKitWeapon) page.selectKitWeapon(entry.slot);
-      });
-      mobileSwapMenu.append(opt);
-    }
-    mobileSwapMenu.hidden = false;
-  }
-
-  function closeSwapMenu() {
-    mobileSwapMenu.hidden = true;
-    mobileSwapMenu.replaceChildren();
+  /** The weapon pair: one press steps the kit's weapon bar one slot and then
+   *  COMMITS it, so the press raises the weapon instead of only moving the
+   *  bar's highlight the way the mouse wheel does (the wheel leaves the raise
+   *  to Fire; a phone has no wheel to hover over, and the owner wants to
+   *  memorise the cycle over time). `cycleKitWeapon` is `c_PINextItem` /
+   *  `c_PIPrevItem` (wrapping), `weaponBarFire` is the Fire press that turns
+   *  the highlight into the slot's `c_PIMenuSelect`. */
+  function mobileCycleWeapon(dir) {
+    if (!page.cycleKitWeapon(dir)) return;
+    page.weaponBarFire();
   }
 
   function updateMobileControls() {
@@ -207,10 +224,10 @@ export function createTouchControls(page) {
     touchControls.mobileControlsSignature = signature;
 
     mobileControls.hidden = !show;
-    // The zones follow the cluster: hidden with it, and the move zone only
-    // where a stick has something to do (free-roam has no soldier to move).
+    // The look zone follows the cluster; the FIXED move ring shows wherever a
+    // stick has something to do (free-roam has no soldier to move).
     mobileZonePan.hidden = !show;
-    mobileZoneMove.hidden = !(show && padUsable);
+    mobilePad.hidden = !(show && padUsable);
     if (!show && touchControls.mobilePadHeld) resetMobilePad();
     mobilePadLabel.textContent = padMode;
     mobileFireBtn.hidden = !canFire;
@@ -220,8 +237,8 @@ export function createTouchControls(page) {
     mobileAimBtn.disabled = !canAim;
     mobileReloadBtn.hidden = !canReload;
     mobileReloadBtn.disabled = !canReload;
-    mobileSwapBtn.hidden = !onFoot;
-    if (!onFoot) closeSwapMenu();
+    mobileWPrevBtn.hidden = !onFoot;
+    mobileWNextBtn.hidden = !onFoot;
     mobilePickupBtn.hidden = !canPickup;
     mobileSeatsBtn.hidden = freeSeat < 0;
     mobileJumpBtn.hidden = !onFoot;
@@ -237,41 +254,35 @@ export function createTouchControls(page) {
     mobileControls.dataset.mode = padMode;
   }
 
-  /** The floating move stick. The zone places the pad ring under the finger
-   *  that touched it, then the usual deflection math runs from that spot. */
-  function placeMobilePad(event) {
-    mobilePad.style.left = `${event.clientX}px`;
-    mobilePad.style.top = `${event.clientY}px`;
-    mobilePad.hidden = false;
-    mobilePad.classList.add('is-active');
-    mobilePadPuck.style.transform = 'translate(-50%, -50%)';
-    const rect = mobilePad.getBoundingClientRect();
-    updateMobilePadVector(event, rect.left + rect.width / 2, rect.top + rect.height / 2);
-  }
-
+  /** The FIXED move ring's deflection. The ball tracks the finger's offset
+   *  from the ring's centre and clamps inside it; the input range is the
+   *  ball's whole travel, with a dead circle at the centre so a resting
+   *  finger stands still. */
   function updateMobilePadVector(event, cx, cy) {
     const dx = event.clientX - cx;
     const dy = event.clientY - cy;
     const dist = Math.hypot(dx, dy);
-    const clamped = Math.min(dist, MOBILE_PAD_RADIUS);
-    const angle = Math.atan2(dy, dx);
-    const px = Math.cos(angle) * clamped;
-    const py = Math.sin(angle) * clamped;
-    mobilePadVector.x = clampMobileInput(px / MOBILE_PAD_RADIUS);
-    mobilePadVector.y = clampMobileInput(-py / MOBILE_PAD_RADIUS);
-    mobilePadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
+    const inv = dist > 0 ? 1 / dist : 0;
+    // Full deflection where the ball touches the ring (MOBILE_PAD_TRAVEL),
+    // zero inside the dead circle.
+    const deflect = Math.max(0, Math.min(1,
+      (dist - MOBILE_PAD_DEAD) / (MOBILE_PAD_TRAVEL - MOBILE_PAD_DEAD)));
+    mobilePadVector.x = dx * inv * deflect;
+    mobilePadVector.y = -(dy * inv) * deflect;
+    const vis = Math.min(dist, MOBILE_PAD_TRAVEL);
+    mobilePadPuck.style.transform =
+      `translate(calc(-50% + ${(dx * inv * vis).toFixed(1)}px), calc(-50% + ${(dy * inv * vis).toFixed(1)}px))`;
   }
 
   function updateMobilePad(event) {
-    const rect = mobilePad.getBoundingClientRect();
-    updateMobilePadVector(event, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    updateMobilePadVector(event, padCentreX, padCentreY);
   }
 
   function releaseMobilePad(event) {
     if (touchControls.mobilePadPointerId !== null && event.pointerId !== touchControls.mobilePadPointerId) return;
     try {
-      if (mobileZoneMove.hasPointerCapture(event.pointerId)) {
-        mobileZoneMove.releasePointerCapture(event.pointerId);
+      if (mobilePad.hasPointerCapture(event.pointerId)) {
+        mobilePad.releasePointerCapture(event.pointerId);
       }
     } catch {}
     resetMobilePad();
@@ -368,7 +379,9 @@ export function createTouchControls(page) {
 
   // The top-left zone pans the camera: a drag here is the look, exactly like
   // a drag on the canvas, held on one pointer. The zone owns the input; the
-  // canvas underneath never sees the touches.
+  // canvas underneath never sees the touches. `TOUCH_LOOK_SCALE` times the
+  // raw finger travel: retail's look law needs several phone screens of drag
+  // for a 180, which is the sensitivity the owner's playtest rejected.
   mobileZonePan.addEventListener('pointerdown', event => {
     if (panPointerId !== null) return;
     event.preventDefault();
@@ -385,8 +398,8 @@ export function createTouchControls(page) {
     if (event.pointerId !== panPointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    const dx = event.clientX - panLastX;
-    const dy = event.clientY - panLastY;
+    const dx = (event.clientX - panLastX) * TOUCH_LOOK_SCALE;
+    const dy = (event.clientY - panLastY) * TOUCH_LOOK_SCALE;
     panLastX = event.clientX;
     panLastY = event.clientY;
     page.lookDelta(dx, dy);
@@ -405,9 +418,11 @@ export function createTouchControls(page) {
   mobileZonePan.addEventListener('pointerup', releaseMobilePan);
   mobileZonePan.addEventListener('pointercancel', releaseMobilePan);
 
-  // The top-right zone moves: the stick appears at the touch point and the
-  // deflection feeds the same pad the bottom-left ring used to.
-  mobileZoneMove.addEventListener('pointerdown', event => {
+  // The FIXED move ring is its own touch target: the right index finger finds
+  // it at its home spot and the ball tracks the offset from the ring's centre.
+  // A drag anywhere else on the stage is still the look (the canvas handlers
+  // in page-input.js), so the ring is the only place movement lives.
+  mobilePad.addEventListener('pointerdown', event => {
     if (touchControls.mobilePadPointerId !== null) return;
     event.preventDefault();
     event.stopPropagation();
@@ -415,20 +430,24 @@ export function createTouchControls(page) {
     page.ensureAudioContext();
     touchControls.mobilePadPointerId = event.pointerId;
     touchControls.mobilePadHeld = true;
-    try { mobileZoneMove.setPointerCapture(event.pointerId); } catch {}
-    placeMobilePad(event);
+    try { mobilePad.setPointerCapture(event.pointerId); } catch {}
+    const rect = mobilePad.getBoundingClientRect();
+    padCentreX = rect.left + rect.width / 2;
+    padCentreY = rect.top + rect.height / 2;
+    mobilePad.classList.add('is-active');
+    updateMobilePad(event);
     updateMobileControls();
   });
 
-  mobileZoneMove.addEventListener('pointermove', event => {
+  mobilePad.addEventListener('pointermove', event => {
     if (!touchControls.mobilePadHeld || event.pointerId !== touchControls.mobilePadPointerId) return;
     event.preventDefault();
     event.stopPropagation();
     updateMobilePad(event);
   });
 
-  mobileZoneMove.addEventListener('pointerup', releaseMobilePad);
-  mobileZoneMove.addEventListener('pointercancel', releaseMobilePad);
+  mobilePad.addEventListener('pointerup', releaseMobilePad);
+  mobilePad.addEventListener('pointercancel', releaseMobilePad);
 
   mobileFireBtn.addEventListener('pointerdown', event => {
     if (mobileFireBtn.disabled) return;
@@ -515,21 +534,22 @@ export function createTouchControls(page) {
     if (page.handWeapon?.data?.magazine) page.startReload?.();
   });
 
-  mobileSwapBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileSwapBtn.addEventListener('click', event => {
+  // The weapon pair, bottom-right on the right thumb: one press per step,
+  // wrapping, and the step raises the weapon (see `mobileCycleWeapon`).
+  mobileWPrevBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileWPrevBtn.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
-    if (mobileSwapMenu.hidden) openSwapMenu();
-    else closeSwapMenu();
+    mobileCycleWeapon(-1);
   });
 
-  // A tap anywhere else closes the swap menu: the thumb that opened it is on
-  // the SWAP button, and the options sit right under that thumb.
-  document.addEventListener('pointerdown', event => {
-    if (mobileSwapMenu.hidden) return;
-    if (event.target === mobileSwapBtn || mobileSwapWrap.contains(event.target)) return;
-    closeSwapMenu();
+  mobileWNextBtn.addEventListener('pointerdown', event => event.stopPropagation());
+  mobileWNextBtn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    mobileCycleWeapon(1);
   });
 
   // The map: with a live soldier it is the M key's `c_PIMap` (on foot the
@@ -594,14 +614,13 @@ export function createTouchControls(page) {
 
   Object.assign(touchControls, {
     clampMobileInput,
-    closeSwapMenu,
     feedMobileTurretAim,
     holdMobileCrouch,
+    mobileCycleWeapon,
     mobileNextFreeSeat,
     mobilePadAxis,
     mobilePadVector,
     mobileSeatToggle,
-    openSwapMenu,
     releaseMobileCrouch,
     releaseMobileFire,
     releaseMobileJump,
