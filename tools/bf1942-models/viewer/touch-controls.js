@@ -1,19 +1,28 @@
 /**
- * The touch controls, split by FINGER rather than by screen half.
+ * The touch controls: an open screen that steers, with buttons as islands on it.
  *
- * LEFT thumb: the FIXED move ring at the bottom-left, then the posture
- * buttons stacked above it (JUMP, CROUCH, PRONE) and the MORE tab over those.
- * Those three are here rather than on the right because they are the actions
- * you need WHILE the other thumb is shooting, and one thumb cannot hold FIRE,
- * jump and crouch at once. Each is one retail binding and nothing more:
- * CROUCH holds `c_PICrouch` (LeftCtrl), PRONE toggles `c_PILie` (Z).
- * RIGHT thumb: FIRE at the bottom-right (a deliberate drag off a held FIRE
- * turns the camera), AIM above it, the kit's weapon pair above that, and the
- * look drag over the whole right half. A drag that is not on a button is the
- * camera, as on a console pad.
- * Everything a firefight does not need (reload, pickup, seats, enter, view,
- * map, throttle) is one MORE tap away in the action sheet, so the play screen
- * carries seven controls instead of twelve.
+ * There is no pan half and no pan margin. `mobileZoneLook` is the whole stage
+ * UNDER the buttons, so a touch that starts anywhere that is not a button is
+ * the camera. A finger can be up and across the screen anywhere and it steers,
+ * which is what makes aiming and firing the same moment rather than two: you
+ * do not put your thumb somewhere special to look, you look with whatever
+ * finger is spare.
+ *
+ * That is only possible because the buttons are few and small, and placed where
+ * thumbs already sit:
+ *   the MOVE ring at the bottom-left corner (FIXED, so the thumb finds it
+ *   without looking),
+ *   one band of six across the middle, 6 px between neighbours, so a thumb
+ *   never travels more than one button width: JUMP, CROUCH, PRONE for the left
+ *   thumb, AIM and the weapon pair for the right,
+ *   RELOAD against FIRE at the bottom-right corner, because reloading is
+ *   common and belongs next to the trigger,
+ *   the MORE tab on the bottom centre, opening the sheet that holds reload,
+ *   pickup, seats, enter, view, map and throttle.
+ *
+ * Each button is one retail binding and nothing more: JUMP is `c_PIAction`
+ * (Space), CROUCH holds `c_PICrouch` (LeftCtrl), PRONE toggles `c_PILie` (Z).
+ * A hold and a toggle cannot share one target.
  *
  * Every button acts on its `pointerdown` EDGE, never on a synthesised
  * `click`: while a second finger is down, panning or on the ring, the
@@ -98,6 +107,11 @@ export function createTouchControls(page) {
   // reworked look drag; 2200 is ~270 deg/s, a rate stick that turns a 180 in
   // under a second at full tilt and still tracks finely at half deflection.
   const MOBILE_AIM_PIXELS_PER_SECOND = 2200;
+  // How far a finger has to travel on the open screen before it steers. The
+  // zone is the WHOLE stage now, so a thumb or index lying on the glass would
+  // otherwise walk the view off its own micro drift. Same reason the ring and
+  // the drag off FIRE have one.
+  const MOBILE_LOOK_DEAD = 8;
   // How far a held FIRE has to travel before it turns the camera. PUBG Mobile
   // lets a drag off the fire button aim while the trigger stays down, which is
   // the whole reason the right thumb sits on FIRE; the slop keeps a thumb
@@ -118,6 +132,10 @@ export function createTouchControls(page) {
   let panPointerId = null;
   let panLastX = 0;
   let panLastY = 0;
+  // The open-screen drag's own rest threshold state.
+  let lookArmed = false;
+  let lookOriginX = 0;
+  let lookOriginY = 0;
   // The held FIRE's own look: armed only once the drag clears the dead circle,
   // and remembering where the last look sample was left so the frame that
   // crosses the threshold does not apply the slop as one jump.
@@ -307,7 +325,8 @@ export function createTouchControls(page) {
     // free camera's own canvas drag is the look and the zone would eat it), and
     // the open sheet (where a tap outside is a CLOSE, not a camera move). The
     // FIXED move ring shows wherever a stick has something to do (free-roam
-    // has no soldier to move).
+    // has no soldier to move). It covers the whole stage otherwise, so the
+    // margins and the top steer like the middle does.
     mobileZoneLook.hidden = !show || sideOpen || freeCam || sheetOpen;
     // A hidden surface must stop driving input: the browser may drop its
     // pointer with no end event at all, and the vector would then freeze at
@@ -469,9 +488,11 @@ export function createTouchControls(page) {
     resetMobileControls();
   }
 
-  // The RIGHT-half zone is the look: a drag that is not on a button pans the
-  // camera, exactly like the free-roam canvas drag, held on one pointer. The
-  // zone owns the input; the canvas underneath never sees the touches.
+  // The zone is the look, and it is the WHOLE stage under the buttons, so a
+  // drag that did not start on a button pans the camera however far across the
+  // screen it happens to run. Held on one pointer; the canvas underneath never
+  // sees the touches. `MOBILE_LOOK_DEAD` px of rest before it engages, because
+  // a finger lying on open glass would otherwise walk the view.
   // `TOUCH_LOOK_SCALE` times the raw finger travel: retail's look law needs
   // several phone screens of drag for a 180, which is the sensitivity the
   // owner's playtest rejected.
@@ -483,6 +504,9 @@ export function createTouchControls(page) {
     panPointerId = event.pointerId;
     panLastX = event.clientX;
     panLastY = event.clientY;
+    lookArmed = false;
+    lookOriginX = event.clientX;
+    lookOriginY = event.clientY;
     trackPointer(event.pointerId, () => releaseMobileLook(event));
     try { mobileZoneLook.setPointerCapture(event.pointerId); } catch {}
   });
@@ -491,6 +515,17 @@ export function createTouchControls(page) {
     if (event.pointerId !== panPointerId) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!lookArmed) {
+      const dx0 = event.clientX - lookOriginX;
+      const dy0 = event.clientY - lookOriginY;
+      const dist = Math.hypot(dx0, dy0);
+      if (dist < MOBILE_LOOK_DEAD) return;
+      lookArmed = true;
+      // Resume from the edge of the dead circle, so the frame that crosses it
+      // does not apply the slop as one jump.
+      panLastX = lookOriginX + (dx0 / dist) * MOBILE_LOOK_DEAD;
+      panLastY = lookOriginY + (dy0 / dist) * MOBILE_LOOK_DEAD;
+    }
     const dx = (event.clientX - panLastX) * TOUCH_LOOK_SCALE;
     const dy = (event.clientY - panLastY) * TOUCH_LOOK_SCALE;
     panLastX = event.clientX;
@@ -506,6 +541,7 @@ export function createTouchControls(page) {
       }
     } catch {}
     panPointerId = null;
+    lookArmed = false;
   }
 
   mobileZoneLook.addEventListener('pointerup', releaseMobileLook);
