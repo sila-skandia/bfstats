@@ -1,18 +1,19 @@
 /**
- * The touch controls: the top-left look zone (left index finger), the FIXED
- * move ring at the top-right (right index finger), FIRE on the left thumb and
- * the small game buttons on the right thumb, and what each feeds the input
- * word. Split out of `page-input.js`, which keeps the keyboard and the mouse.
+ * The touch controls: the LEFT half carries both movement controls (its drag
+ * pans the camera, the FIXED move ring at its bottom-left moves), FIRE sits at
+ * the bottom-right on the right thumb and the small game buttons in the
+ * cluster above it. Split out of `page-input.js`, which keeps the keyboard and
+ * the mouse.
  *
- * Four-finger play, per the owner's playtest rework
- * (features/mobile-four-finger-controls): the index fingers do the movements
- * (a drag anywhere in the look zone turns the view, the ring moves), the
- * thumbs fire and work the buttons. The ring is FIXED and small, and the
- * ball's whole 18 px of travel is the input range, so movement answers a
- * twitch. The weapon pair (PREV/NEXT) steps and RAISES the kit's weapons
- * instead of the old SWAP menu. `TOUCH_LOOK_SCALE` is the look multiplier
- * both this module's zone and page-input.js's canvas-drag look apply to the
- * raw finger travel; `?touchlook=<n>` overrides it for on-device tuning.
+ * The layout is the owner's playtest rework
+ * (features/mobile-four-finger-controls): navigation on the left, actions on
+ * the right, so moving (left thumb) and firing (right thumb) happen at the
+ * same time. The ring is FIXED and small, and the ball's whole 18 px of
+ * travel is the input range, so movement answers a twitch. The weapon pair
+ * (PREV/NEXT) steps and RAISES the kit's weapons instead of the old SWAP
+ * menu. `TOUCH_LOOK_SCALE` is the look multiplier both this module's zone and
+ * page-input.js's free-roam drag apply to the raw finger travel;
+ * `?touchlook=<n>` overrides it for on-device tuning.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
@@ -188,6 +189,10 @@ export function createTouchControls(page) {
   function updateMobileControls() {
     if (!page.isTouchDevice) return;
     const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
+    // The expanded map-controls panel sits UNDER the look zone (z 3 vs 9), so
+    // the zone steps aside while it is open or the panel's left half is
+    // untappable. `setFly` collapses the panel on any control press.
+    const sideOpen = !document.getElementById('side')?.classList.contains('side-collapsed');
     const onFoot = page.optOnFoot.checked && page.soldier && !page.soldierDead
       && !page.occupancy;
     // The seat, not the box: the page keeps both mode boxes ticked through an
@@ -218,15 +223,16 @@ export function createTouchControls(page) {
     const signature = [
       show, padMode, padUsable, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
-      canFire, canAim, canReload, canPickup, freeSeat,
+      canFire, canAim, canReload, canPickup, freeSeat, sideOpen,
     ].join('|');
     if (signature === touchControls.mobileControlsSignature) return;
     touchControls.mobileControlsSignature = signature;
 
     mobileControls.hidden = !show;
-    // The look zone follows the cluster; the FIXED move ring shows wherever a
-    // stick has something to do (free-roam has no soldier to move).
-    mobileZonePan.hidden = !show;
+    // The look zone follows the cluster, stepping aside for the expanded
+    // map-controls panel; the FIXED move ring shows wherever a stick has
+    // something to do (free-roam has no soldier to move).
+    mobileZonePan.hidden = !show || sideOpen;
     mobilePad.hidden = !(show && padUsable);
     if (!show && touchControls.mobilePadHeld) resetMobilePad();
     mobilePadLabel.textContent = padMode;
@@ -377,11 +383,11 @@ export function createTouchControls(page) {
     resetMobileControls();
   }
 
-  // The top-left zone pans the camera: a drag here is the look, exactly like
-  // a drag on the canvas, held on one pointer. The zone owns the input; the
-  // canvas underneath never sees the touches. `TOUCH_LOOK_SCALE` times the
-  // raw finger travel: retail's look law needs several phone screens of drag
-  // for a 180, which is the sensitivity the owner's playtest rejected.
+  // The left-half zone pans the camera: a drag here is the look, exactly like
+  // the free-roam canvas drag, held on one pointer. The zone owns the input;
+  // the canvas underneath never sees the touches. `TOUCH_LOOK_SCALE` times
+  // the raw finger travel: retail's look law needs several phone screens of
+  // drag for a 180, which is the sensitivity the owner's playtest rejected.
   mobileZonePan.addEventListener('pointerdown', event => {
     if (panPointerId !== null) return;
     event.preventDefault();
@@ -418,10 +424,11 @@ export function createTouchControls(page) {
   mobileZonePan.addEventListener('pointerup', releaseMobilePan);
   mobileZonePan.addEventListener('pointercancel', releaseMobilePan);
 
-  // The FIXED move ring is its own touch target: the right index finger finds
-  // it at its home spot and the ball tracks the offset from the ring's centre.
-  // A drag anywhere else on the stage is still the look (the canvas handlers
-  // in page-input.js), so the ring is the only place movement lives.
+  // The FIXED move ring is its own touch target: the left thumb finds it at
+  // its home spot (bottom-left) and the ball tracks the offset from the
+  // ring's centre. The left-half zone above it is the pan; a drag on the
+  // action side does nothing (page-input.js), so the ring is the only place
+  // movement lives.
   mobilePad.addEventListener('pointerdown', event => {
     if (touchControls.mobilePadPointerId !== null) return;
     event.preventDefault();

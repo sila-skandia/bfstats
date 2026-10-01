@@ -863,10 +863,13 @@ export function createPageInput(page) {
 
       if (pageInput.isPanning) {
         page.panCamera(dx, dy);
-      } else {
-        // A touch drag is the look at `TOUCH_LOOK_SCALE` times the mouse's
-        // currency (touch-controls.js): retail's look law needs several phone
-        // screens of finger travel for a 180.
+      } else if (pageInput.touchFlying) {
+        // Free roam only: the drag flies the free camera forward and looks
+        // with it. In play the left-half look zone owns the pan
+        // (features/mobile-four-finger-controls: navigation on the left,
+        // actions on the right), so a stray drag on the action side must not
+        // jerk the camera while the right thumb is firing. `TOUCH_LOOK_SCALE`
+        // times the raw finger travel (touch-controls.js).
         page.lookDelta(dx * TOUCH_LOOK_SCALE, dy * TOUCH_LOOK_SCALE);
       }
       return;
