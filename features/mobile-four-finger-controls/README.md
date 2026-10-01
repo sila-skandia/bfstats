@@ -1,7 +1,7 @@
 # Mobile four-finger controls
 
-Status: built and playtested on a phone (fifth pass, the playtest rework
-below). This doc maps how
+Status: built and playtested on a phone (eighth pass, the finger split and the
+tap bug below). This doc maps how
 modern mobile FPS games use four fingers, compares that with what
 `tools/bf1942-models/viewer/map.html` does today on touch, records what each
 finger controls, and lists what was built.
@@ -188,15 +188,98 @@ The phone test's remaining complaints, all reproduced or confirmed headless:
   across from the minimap, per the COD grab's controls-away-from-the-action
   layout.
 
+## Built (eighth pass, 2026-10-01): split by finger, and the tap bug
+
+The playtest reported two things. Every control was crammed into buttons on the
+right side, which does not feel intuitive, and a player wants to be shooting and
+jumping and going prone in the same moment. Separately, only JUMP and CROUCH
+could be tapped while panning or moving; PREV and NEXT needed both hands free.
+
+### The tap bug
+
+JUMP and CROUCH ran their action on the `pointerdown` edge. Every other button
+ran it on a `click`, which the browser synthesises after the tap. While a second
+finger is already down, whether that finger is on the pan or on the move ring,
+Chromium drops the synthesised click, so those buttons were dead exactly when a
+player needs them. That is the whole of the reported symptom, and it is why the
+two working buttons were the two that never used a `click`.
+
+Every button now runs on its down edge through one `edgeButton` helper in
+`touch-controls.js`, which also carries that button's own enabled and hidden
+guard. No button in the module listens for a `click` any more, and the stub
+smoke asserts exactly that.
+
+### The layout
+
+The HUD is split by FINGER rather than by screen half. A thumb has one job at a
+time, and the previous split gave the right thumb four jobs at once.
+
+| Zone | Controls |
+| --- | --- |
+| Left thumb | the MOVE ring at the bottom-left, JUMP above it, CROUCH above that, the MORE tab over those |
+| Right thumb | FIRE at the bottom-right, AIM above it, the weapon pair above that |
+| Right half, not on a button | the look drag |
+
+JUMP and CROUCH moved to the left on purpose. They are the actions a player
+needs while the other thumb is shooting, so putting them on the firing thumb is
+what made "shoot and jump" impossible. The play screen now carries seven
+controls where it carried twelve.
+
+The look drag moved from the left half to the right half, where the right thumb
+already is, and a drag off a held FIRE turns the camera as well. That is PUBG
+Mobile's fire-and-aim, and it is what frees the right thumb to live on FIRE
+rather than to alternate between the trigger and the camera. A 14 px dead circle
+(`MOBILE_FIRE_LOOK_DEAD`) comes first, so a thumb simply resting on the button
+does not walk the view, which is the complaint that put the fire side on its own
+half in the sixth pass. The look zone steps aside in free roam, where the free
+camera's own canvas drag is the look, and while the map-controls panel is open.
+
+The remaining controls (RELOAD, PICKUP, SEATS, ENTER, VIEW, MAP, throttle) are
+one MORE tap away in an action sheet that hangs from the top of the stage. It is
+a drop-down rather than a bottom sheet because both bottom corners belong to a
+thumb, and a bottom sheet would either cover the posture column or need an
+offset tuned per screen height. Its scrim sits under the buttons and over the
+look zone, so a tap anywhere else closes the sheet instead of turning the
+camera.
+
+`map.css` gained `.mobile-vert-stack` / `.mobile-posture-btn` /
+`.mobile-more-btn` / `.mobile-thumb-stack` / `#mobile-more-sheet` and lost
+`.mobile-action-cluster`. The map-controls FAB moved to the top-left corner on a
+phone, where it no longer sits under FIRE.
+
+One bug the stub smoke caught while this was being written: `updateMobileControls`
+returns early on an unchanged visibility signature, and the sheet's open flag was
+collapsed after that early return. A MORE press landing on a state with no HUD
+(the deploy screen) therefore left the flag set and the sheet popped open by
+itself later. The flag is now collapsed before the compare.
+
+Verified with the stub-DOM smoke (56 claims, including the tap bug reproduced as
+a hold on the look zone plus a hold on the ring plus a tap on NEXT) and the live
+phone probe on aberdeen (390x844 touch Chromium, real CDP multi-touch, 33
+claims). On the live page: the look zone measures the right half (x 195, 195 px
+wide), the ring sits at the bottom-left with JUMP, CROUCH and MORE stacked above
+it clear of one another, FIRE is 112x84 at the bottom-right with AIM and the
+weapon pair above it, a held ring and a held look drag both stay live while NEXT
+raises the weapon (Bar1918 to GrenadeAllies at 6.00 speed), a held FIRE drops
+rounds (20 to 17) while a JUMP tap lands, a 7 px wobble on FIRE moves the view
+0.002 rad and a 54 px drag moves it 0.78 while the trigger stays down, and the
+sheet clears the ring, the posture pair and FIRE.
+
+Screenshots of the play screen and the open sheet are in this folder as
+`hud-play.jpg` and `hud-sheet.jpg` (390x844 phone viewport, aberdeen). The whole
+change is where the thumbs land, so these two are worth a look before the next
+phone pass.
+
 ## Next steps
 
-1. Playtest on a real phone with the grip, and tune button sizes and the
-   34vh index-finger row against the placement rules above.
-2. Left to a later pass: kit selection beyond pickups happens on the deploy
-   screen already (its own UI), so the remaining gaps are the turret-aim
-   split (the pad is still the only turret aim input), an aircraft stick
-   pair replacing the throttle slider, radio calls, and a two-thumb fallback
-   that hides the claw buttons for players who do not adopt the grip.
+1. Playtest on a real phone, and judge the one judgement call in this pass: the
+   drag off a held FIRE. `?touchlook=` still tunes the multiplier and
+   `MOBILE_FIRE_LOOK_DEAD` is the slop in front of it.
+2. Left to a later pass: a claw row along the top edge for players who adopt the
+   four-finger grip (the look zone's left half is currently not a look at all,
+   so a left index finger has nothing to do); the turret-aim split (the pad is
+   still the only turret aim input); an aircraft stick pair replacing the
+   throttle slider; radio calls.
 
 ## Built (first pass, 2026-10-01)
 

@@ -1,19 +1,29 @@
 /**
- * The touch controls: the LEFT half carries both movement controls (its drag
- * pans the camera, the FIXED move ring at its bottom-left moves), FIRE sits at
- * the bottom-right on the right thumb and the small game buttons in the
- * cluster above it. Split out of `page-input.js`, which keeps the keyboard and
- * the mouse.
+ * The touch controls, split by FINGER rather than by screen half.
  *
- * The layout is the owner's playtest rework
- * (features/mobile-four-finger-controls): navigation on the left, actions on
- * the right, so moving (left thumb) and firing (right thumb) happen at the
- * same time. The ring is FIXED and small, and the ball's whole 18 px of
- * travel is the input range, so movement answers a twitch. The weapon pair
- * (PREV/NEXT) steps and RAISES the kit's weapons instead of the old SWAP
- * menu. `TOUCH_LOOK_SCALE` is the look multiplier both this module's zone and
- * page-input.js's free-roam drag apply to the raw finger travel;
- * `?touchlook=<n>` overrides it for on-device tuning.
+ * LEFT thumb: the FIXED move ring at the bottom-left, then the posture pair
+ * stacked above it (JUMP, CROUCH) and the MORE tab over those. Those two are
+ * here rather than on the right because they are the actions you need WHILE
+ * the other thumb is shooting, and one thumb cannot hold FIRE, jump and crouch
+ * at once.
+ * RIGHT thumb: FIRE at the bottom-right (a deliberate drag off a held FIRE
+ * turns the camera), AIM above it, the kit's weapon pair above that, and the
+ * look drag over the whole right half. A drag that is not on a button is the
+ * camera, as on a console pad.
+ * Everything a firefight does not need (reload, pickup, seats, enter, view,
+ * map, throttle) is one MORE tap away in the action sheet, so the play screen
+ * carries seven controls instead of twelve.
+ *
+ * Every button acts on its `pointerdown` EDGE, never on a synthesised
+ * `click`: while a second finger is down, panning or on the ring, the
+ * browser drops the tap and the button is dead, which is exactly the bug the
+ * playtest reported for PREV / NEXT. The held buttons (FIRE, AIM, JUMP,
+ * CROUCH, the ring, the look drag) track the pointer that drives them and die
+ * with it wherever it ends.
+ *
+ * `TOUCH_LOOK_SCALE` is the look multiplier the look zone and the drag off
+ * FIRE apply to the raw finger travel; `?touchlook=<n>` overrides it for
+ * on-device tuning.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
@@ -50,7 +60,10 @@ export function createTouchControls(page) {
   const touchControls = {};
 
   const mobileControls = document.getElementById('mobile-controls');
-  const mobileZonePan = document.getElementById('mobile-zone-pan');
+  const mobileZoneLook = document.getElementById('mobile-zone-look');
+  const mobileMoreScrim = document.getElementById('mobile-more-scrim');
+  const mobileMoreSheet = document.getElementById('mobile-more-sheet');
+  const mobileMoreBtn = document.getElementById('mobile-more-btn');
   const mobilePad = document.getElementById('mobile-pad');
   const mobilePadPuck = document.getElementById('mobile-pad-puck');
   const mobilePadLabel = document.getElementById('mobile-pad-label');
@@ -87,6 +100,12 @@ export function createTouchControls(page) {
   // COD Mobile's crouch-over-prone stack: crouch is a hold (`c_PICrouch`),
   // prone is an edge (`c_PILie`), and the button covers both.
   const MOBILE_PRONE_HOLD_MS = 500;
+  // How far a held FIRE has to travel before it turns the camera. PUBG Mobile
+  // lets a drag off the fire button aim while the trigger stays down, which is
+  // the whole reason the right thumb sits on FIRE; the slop keeps a thumb
+  // simply RESTING on the button from walking the view, which is the complaint
+  // that put the fire side back on its own half in the sixth pass.
+  const MOBILE_FIRE_LOOK_DEAD = 14;
   const CROUCH_CODE = 'ControlLeft';
   const mobilePadVector = { x: 0, y: 0 };
   touchControls.mobilePadPointerId = null;
@@ -97,10 +116,20 @@ export function createTouchControls(page) {
   touchControls.mobileThrottle = 0;
   touchControls.mobileThrottleTouched = false;
   touchControls.mobileControlsSignature = '';
+  touchControls.mobileSheetOpen = false;
   let proneHoldTimer = 0;
   let panPointerId = null;
   let panLastX = 0;
   let panLastY = 0;
+  // The held FIRE's own look: armed only once the drag clears the dead circle,
+  // and remembering where the last look sample was left so the frame that
+  // crosses the threshold does not apply the slop as one jump.
+  let mobileFireHeldPointerId = null;
+  let fireLookArmed = false;
+  let fireLookOriginX = 0;
+  let fireLookOriginY = 0;
+  let fireLookLastX = 0;
+  let fireLookLastY = 0;
   // The fixed ring's centre, read once on the down event.
   let padCentreX = 0;
   let padCentreY = 0;
@@ -169,6 +198,9 @@ export function createTouchControls(page) {
   function resetMobileControls() {
     heldPointers.clear();
     resetMobilePad();
+    setMobileSheet(false);
+    fireLookArmed = false;
+    mobileFireHeldPointerId = null;
     touchControls.mobileFireHeld = false;
     touchControls.mobileJumpHeld = false;
     touchControls.mobileThrottle = 0;
@@ -182,6 +214,15 @@ export function createTouchControls(page) {
     mobileThrottleInput.value = '0';
     mobileThrottleValue.value = '0';
     if (page.aircraft) page.aircraft.setInput('c_PIThrottle', 0);
+    updateMobileControls();
+  }
+
+  /** The action sheet: the controls that are not a firefight's business, one
+   *  MORE tap away. The scrim closes it on any tap that is not a button, and
+   *  the sheet goes away by itself when the HUD it belongs to does. */
+  function setMobileSheet(open) {
+    touchControls.mobileSheetOpen = !!open;
+    mobileMoreBtn.classList.toggle('is-active', touchControls.mobileSheetOpen);
     updateMobileControls();
   }
 
@@ -210,9 +251,10 @@ export function createTouchControls(page) {
   function updateMobileControls() {
     if (!page.isTouchDevice) return;
     const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
-    // The expanded map-controls panel sits UNDER the look zone (z 3 vs 9), so
-    // the zone steps aside while it is open or the panel's left half is
-    // untappable. `setFly` collapses the panel on any control press.
+    // The expanded map-controls panel sits UNDER the look zone (z 3 vs 9), and on
+    // a phone it is a full-width bottom sheet, so it covers the foot of the
+    // look zone as well as FIRE. The zone steps aside while it is open.
+    // `setFly` collapses the panel on any control press.
     const sideOpen = !document.getElementById('side')?.classList.contains('side-collapsed');
     const onFoot = page.optOnFoot.checked && page.soldier && !page.soldierDead
       && !page.occupancy;
@@ -241,25 +283,39 @@ export function createTouchControls(page) {
     // button that walks the vehicle's spawn-declared order to the next free
     // seat. Empty when every other seat is taken, as the keys' misses are.
     const freeSeat = seated && page.occupancy ? mobileNextFreeSeat() : -1;
+    // A sheet with nothing in it is a dead tap, so it only exists for a state
+    // that has something to offer, and it closes itself the moment it does not.
+    const sheetOpen = touchControls.mobileSheetOpen && show;
     const signature = [
       show, padMode, padUsable, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
-      canFire, canAim, canReload, canPickup, freeSeat, sideOpen,
+      canFire, canAim, canReload, canPickup, freeSeat, sideOpen, sheetOpen,
     ].join('|');
+    // Collapse the open intent BEFORE the compare. A MORE press that lands on a
+    // state with no HUD (the deploy screen) would otherwise leave the flag set,
+    // the compare would skip the write, and the sheet would pop open by itself
+    // the moment the HUD came back.
+    touchControls.mobileSheetOpen = sheetOpen;
+    mobileMoreBtn.classList.toggle('is-active', sheetOpen);
     if (signature === touchControls.mobileControlsSignature) return;
     touchControls.mobileControlsSignature = signature;
 
     mobileControls.hidden = !show;
-    // The look zone follows the cluster, stepping aside for the expanded
-    // map-controls panel; the FIXED move ring shows wherever a stick has
-    // something to do (free-roam has no soldier to move).
-    mobileZonePan.hidden = !show || sideOpen;
-    mobilePad.hidden = !(show && padUsable);
+    // The look zone follows the cluster, and steps aside for three things: the
+    // expanded map-controls panel (which sits under it), free roam (where the
+    // free camera's own canvas drag is the look and the zone would eat it), and
+    // the open sheet (where a tap outside is a CLOSE, not a camera move). The
+    // FIXED move ring shows wherever a stick has something to do (free-roam
+    // has no soldier to move).
+    mobileZoneLook.hidden = !show || sideOpen || freeCam || sheetOpen;
     // A hidden surface must stop driving input: the browser may drop its
     // pointer with no end event at all, and the vector would then freeze at
     // its last value ("sticks the movement").
     if (mobilePad.hidden && touchControls.mobilePadHeld) resetMobilePad();
-    if (mobileZonePan.hidden && panPointerId !== null) panPointerId = null;
+    if (mobileZoneLook.hidden && panPointerId !== null) panPointerId = null;
+    mobileMoreScrim.hidden = !sheetOpen;
+    mobileMoreSheet.hidden = !sheetOpen;
+    mobilePad.hidden = !(show && padUsable);
     mobilePadLabel.textContent = padMode;
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
@@ -408,12 +464,13 @@ export function createTouchControls(page) {
     resetMobileControls();
   }
 
-  // The left-half zone pans the camera: a drag here is the look, exactly like
-  // the free-roam canvas drag, held on one pointer. The zone owns the input;
-  // the canvas underneath never sees the touches. `TOUCH_LOOK_SCALE` times
-  // the raw finger travel: retail's look law needs several phone screens of
-  // drag for a 180, which is the sensitivity the owner's playtest rejected.
-  mobileZonePan.addEventListener('pointerdown', event => {
+  // The RIGHT-half zone is the look: a drag that is not on a button pans the
+  // camera, exactly like the free-roam canvas drag, held on one pointer. The
+  // zone owns the input; the canvas underneath never sees the touches.
+  // `TOUCH_LOOK_SCALE` times the raw finger travel: retail's look law needs
+  // several phone screens of drag for a 180, which is the sensitivity the
+  // owner's playtest rejected.
+  mobileZoneLook.addEventListener('pointerdown', event => {
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
@@ -421,11 +478,11 @@ export function createTouchControls(page) {
     panPointerId = event.pointerId;
     panLastX = event.clientX;
     panLastY = event.clientY;
-    trackPointer(event.pointerId, () => releaseMobilePan(event));
-    try { mobileZonePan.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, () => releaseMobileLook(event));
+    try { mobileZoneLook.setPointerCapture(event.pointerId); } catch {}
   });
 
-  mobileZonePan.addEventListener('pointermove', event => {
+  mobileZoneLook.addEventListener('pointermove', event => {
     if (event.pointerId !== panPointerId) return;
     event.preventDefault();
     event.stopPropagation();
@@ -436,24 +493,40 @@ export function createTouchControls(page) {
     page.lookDelta(dx, dy);
   });
 
-  function releaseMobilePan(event) {
+  function releaseMobileLook(event) {
     if (event.pointerId !== panPointerId) return;
     try {
-      if (mobileZonePan.hasPointerCapture(event.pointerId)) {
-        mobileZonePan.releasePointerCapture(event.pointerId);
+      if (mobileZoneLook.hasPointerCapture(event.pointerId)) {
+        mobileZoneLook.releasePointerCapture(event.pointerId);
       }
     } catch {}
     panPointerId = null;
   }
 
-  mobileZonePan.addEventListener('pointerup', releaseMobilePan);
-  mobileZonePan.addEventListener('pointercancel', releaseMobilePan);
+  mobileZoneLook.addEventListener('pointerup', releaseMobileLook);
+  mobileZoneLook.addEventListener('pointercancel', releaseMobileLook);
+
+  // The MORE tab opens and closes the action sheet. It lives on the LEFT thumb's
+  // column so the right thumb never leaves FIRE to reach it.
+  mobileMoreBtn.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    setMobileSheet(!touchControls.mobileSheetOpen);
+  });
+  // The scrim closes the sheet on any tap that is not a button. Without the
+  // stopPropagation the tap would also reach the look zone under it, which the
+  // zone's own hiding makes moot but the capture order does not.
+  mobileMoreScrim.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setMobileSheet(false);
+  });
 
   // The FIXED move ring is its own touch target: the left thumb finds it at
   // its home spot (bottom-left) and the ball tracks the offset from the
-  // ring's centre. The left-half zone above it is the pan; a drag on the
-  // action side does nothing (page-input.js), so the ring is the only place
-  // movement lives. Last press wins: a press while a stale pointer is still
+  // ring's centre. Last press wins: a press while a stale pointer is still
   // tracked re-arms the ring instead of dead-ending behind it.
   mobilePad.addEventListener('pointerdown', event => {
     event.preventDefault();
@@ -489,15 +562,66 @@ export function createTouchControls(page) {
     page.setFly(true);
     page.ensureAudioContext();
     try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
-    trackPointer(event.pointerId, () => setMobileFire(false));
+    // The tracked release is the same teardown as the pointerup path, so a
+    // pointer that ends on another element (or is cancelled) leaves no look
+    // state behind for the next press to inherit.
+    trackPointer(event.pointerId, () => endMobileFire());
+    // Where this press started, for the drag-off look below. Armed from the
+    // dead circle, not from the press, so a held thumb cannot drift the view.
+    fireLookArmed = false;
+    fireLookOriginX = event.clientX;
+    fireLookOriginY = event.clientY;
+    fireLookLastX = event.clientX;
+    fireLookLastY = event.clientY;
+    mobileFireHeldPointerId = event.pointerId;
     setMobileFire(true);
   });
+
+  /** A held FIRE that is then DRAGGED turns the camera while the trigger stays
+   *  down: PUBG Mobile's fire-and-aim, and the reason the right thumb can live
+   *  on FIRE at all. `MOBILE_FIRE_LOOK_DEAD` px of slop first, so a thumb
+   *  resting on the button does not walk the view; the frame that crosses the
+   *  slop starts from the edge of the dead circle instead of applying it as a
+   *  jump. `TOUCH_LOOK_SCALE` is the same multiplier the look zone uses. */
+  function feedMobileFireLook(event) {
+    const dx0 = event.clientX - fireLookOriginX;
+    const dy0 = event.clientY - fireLookOriginY;
+    const dist = Math.hypot(dx0, dy0);
+    if (!fireLookArmed) {
+      if (dist < MOBILE_FIRE_LOOK_DEAD) return;
+      fireLookArmed = true;
+      const ux = dx0 / dist;
+      const uy = dy0 / dist;
+      fireLookLastX = fireLookOriginX + ux * MOBILE_FIRE_LOOK_DEAD;
+      fireLookLastY = fireLookOriginY + uy * MOBILE_FIRE_LOOK_DEAD;
+    }
+    const dx = (event.clientX - fireLookLastX) * TOUCH_LOOK_SCALE;
+    const dy = (event.clientY - fireLookLastY) * TOUCH_LOOK_SCALE;
+    fireLookLastX = event.clientX;
+    fireLookLastY = event.clientY;
+    page.lookDelta(dx, dy);
+  }
+
+  mobileFireBtn.addEventListener('pointermove', event => {
+    if (!touchControls.mobileFireHeld || event.pointerId !== mobileFireHeldPointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    feedMobileFireLook(event);
+  });
+
+  /** Everything a held FIRE has to let go of when its pointer ends: the look
+   *  state, the capture, and the trigger. */
+  function endMobileFire() {
+    fireLookArmed = false;
+    mobileFireHeldPointerId = null;
+    setMobileFire(false);
+  }
 
   function releaseMobileFire(event) {
     try {
       if (mobileFireBtn.hasPointerCapture(event.pointerId)) mobileFireBtn.releasePointerCapture(event.pointerId);
     } catch {}
-    setMobileFire(false);
+    endMobileFire();
   }
 
   mobileFireBtn.addEventListener('pointerup', releaseMobileFire);
@@ -562,81 +686,60 @@ export function createTouchControls(page) {
   mobileCrouchBtn.addEventListener('pointerup', releaseMobileCrouchPointer);
   mobileCrouchBtn.addEventListener('pointercancel', releaseMobileCrouchPointer);
 
-  mobileReloadBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileReloadBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
+  /** An EDGE button: the action runs on the `pointerdown` edge, never on a
+   *  synthesised `click`. A tap the browser has to turn into a `click` is a
+   *  tap the browser DROPS whenever a second finger is already down, whether
+   *  that is the pan or the move ring. That is exactly why only JUMP and CROUCH
+   *  (the two that always ran on their own down edge) worked while the player
+   *  was panning or moving. `guard` is that button's own enabled/hidden check. */
+  function edgeButton(element, action, guard) {
+    element.addEventListener('pointerdown', event => {
+      if (guard && !guard()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      page.setFly(true);
+      page.ensureAudioContext();
+      action();
+    });
+  }
+
+  edgeButton(mobileReloadBtn, () => {
     // The keyboard's guard: reload once there is a magazine to reload.
     if (page.handWeapon?.data?.magazine) page.startReload?.();
-  });
+  }, () => !mobileReloadBtn.disabled && !mobileReloadBtn.hidden);
 
-  // The weapon pair, bottom-right on the right thumb: one press per step,
+  // The weapon pair, in the right thumb's arc over AIM: one press per step,
   // wrapping, and the step raises the weapon (see `mobileCycleWeapon`).
-  mobileWPrevBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileWPrevBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    mobileCycleWeapon(-1);
-  });
-
-  mobileWNextBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileWNextBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    mobileCycleWeapon(1);
-  });
+  edgeButton(mobileWPrevBtn, () => mobileCycleWeapon(-1),
+    () => !mobileWPrevBtn.disabled && !mobileWPrevBtn.hidden);
+  edgeButton(mobileWNextBtn, () => mobileCycleWeapon(1),
+    () => !mobileWNextBtn.disabled && !mobileWNextBtn.hidden);
 
   // The map: with a live soldier it is the M key's `c_PIMap` (on foot the
   // deploy map IS the spawn screen, seated the plain map); with nobody
   // alive — the free camera a closed spawn screen left — it is the game's
   // "bring the spawn interface back" trigger (`c_GIInGameMenu`, Caps Lock /
   // Enter on the keyboard), the only road back a phone has.
-  mobileMapBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileMapBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
+  edgeButton(mobileMapBtn, () => {
     if (page.soldier && !page.soldierDead) page.padTriggerDown('c_PIMap');
     else page.padTriggerDown('c_GIInGameMenu');
-  });
+  }, () => !mobileMapBtn.disabled && !mobileMapBtn.hidden);
 
   // Pick up the kit in reach: the G key's body, `c_PIDrop`.
-  mobilePickupBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobilePickupBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    page.pickupKit?.();
-  });
+  edgeButton(mobilePickupBtn, () => page.pickupKit?.(),
+    () => !mobilePickupBtn.disabled && !mobilePickupBtn.hidden);
 
   // Switch to the next free seat: the digit row's job, one button.
-  mobileSeatsBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileSeatsBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
+  edgeButton(mobileSeatsBtn, () => {
     const position = mobileNextFreeSeat();
     if (position >= 0) page.switchSeat(position);
-  });
+  }, () => !mobileSeatsBtn.disabled && !mobileSeatsBtn.hidden);
 
-  mobileUseBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileUseBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    mobileSeatToggle();
-  });
+  edgeButton(mobileUseBtn, () => mobileSeatToggle(),
+    () => !mobileUseBtn.disabled && !mobileUseBtn.hidden);
 
-  mobileViewBtn.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileViewBtn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    page.cycleView();
-  });
+  edgeButton(mobileViewBtn, () => page.cycleView(),
+    () => !mobileViewBtn.disabled && !mobileViewBtn.hidden);
 
   mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
   mobileThrottleInput.addEventListener('pointerdown', event => event.stopPropagation());
@@ -651,6 +754,9 @@ export function createTouchControls(page) {
 
   Object.assign(touchControls, {
     clampMobileInput,
+    edgeButton,
+    endMobileFire,
+    feedMobileFireLook,
     feedMobileTurretAim,
     holdMobileCrouch,
     mobileCycleWeapon,
@@ -667,6 +773,7 @@ export function createTouchControls(page) {
     setMobileAim,
     setMobileFire,
     setMobileJump,
+    setMobileSheet,
     syncMobileThrottle,
     updateMobileControls,
     updateMobilePad,
