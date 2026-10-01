@@ -486,13 +486,16 @@ a { color: var(--accent); }
 .controls-collapse-btn { display: inline-flex; }
 .map-controls-fab { display: inline-flex; }
 
-/* The mobile HUD. The LEFT half is both movement controls: its drag pans the
-   camera (left index finger, or the left thumb when it is off the ring) and
-   the FIXED move ring sits at its bottom-left under the left thumb. The right
-   side is actions only: FIRE on the right thumb at the bottom-right, every
-   other game control a tiny button in the cluster above it. A drag on the
-   action side does nothing (page-input.js), so a firing thumb cannot jerk the
-   camera. features/mobile-four-finger-controls. */
+/* The mobile HUD, split by FINGER (features/mobile-four-finger-controls).
+   The left thumb owns the MOVE ring at the bottom-left, the posture pair
+   stacked above it (JUMP, CROUCH) and the MORE tab over those; the right
+   thumb owns FIRE at the bottom-right, AIM above it, the weapon pair above
+   that, and the look drag over the whole right half. That is what makes
+   "shoot while jumping while prone" three fingers instead of one, and it is
+   why the right side carries four controls where it once carried twelve.
+   z order, bottom to top: the look zone (9), the sheet's scrim (10), the
+   buttons (11), the move ring (12). A tap with the sheet open closes the
+   sheet instead of turning the camera, and the ring is never under it. */
 .mobile-zone {
   position: absolute;
   top: 0;
@@ -504,18 +507,26 @@ a { color: var(--accent); }
   -webkit-user-select: none;
 }
 .mobile-zone[hidden] { display: none; }
-#mobile-zone-pan { left: 0; width: 50%; }
+#mobile-zone-look { right: 0; width: 50%; }
 
 #mobile-controls {
-  /* A stage-wide glass pane: the cluster anchors to its bottom-right corner,
-     FIRE to its bottom-left. `pointer-events: none` lets the whole area fall
-     through to the canvas look handlers; the buttons opt back in. */
+  /* A stage-wide glass pane: the buttons anchor to their own corners.
+     `pointer-events: none` lets the whole area fall through; the buttons
+     and the sheet opt back in. */
   position: absolute;
   inset: 0;
-  z-index: 9;
+  z-index: 11;
   pointer-events: none;
 }
 #mobile-controls[hidden] { display: none; }
+#mobile-more-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(8, 8, 8, 0.38);
+  touch-action: none;
+}
+#mobile-more-scrim[hidden] { display: none; }
 #mobile-pad {
   /* FIXED, in stage coordinates at the bottom-left under the left thumb. The
      112 px box is the HIT AREA; the visible ring is its inner 64 px circle
@@ -528,7 +539,7 @@ a { color: var(--accent); }
   left: 16px;
   bottom: 24px;
   width: 112px; height: 112px;
-  z-index: 10;
+  z-index: 12;
   border-radius: 50%;
   /* The ring itself owns the input. */
   pointer-events: auto;
@@ -584,37 +595,107 @@ a { color: var(--accent); }
   white-space: nowrap;
   pointer-events: none;
 }
-.mobile-action-cluster {
+/* The left thumb's column, directly above the ring: JUMP nearest the thumb,
+   CROUCH above it, the MORE tab over those. The ring's hit box ends 136 px up
+   the left edge, so the column starts at 148 and the two never fight over a
+   touch. `pointer-events: none` on the column, `auto` on the buttons, so the
+   gaps between them fall through. */
+.mobile-vert-stack {
   position: absolute;
-  right: 10px; bottom: 104px;
+  left: 16px;
+  bottom: 148px;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  pointer-events: none;
-}
-.mobile-action-row {
-  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   pointer-events: none;
 }
-.mobile-action-btn {
-  min-width: 44px;
-  height: 28px;
-  padding: 0 6px;
+.mobile-posture-btn {
+  width: 62px;
+  height: 62px;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 50%;
   background: rgba(18, 17, 14, 0.82);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--text);
   font: 8px var(--mm-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.mobile-posture-btn:active,
+.mobile-posture-btn.is-active {
+  border-color: var(--accent);
+  background: rgba(72, 72, 58, 0.92);
+}
+.mobile-more-btn {
+  width: 62px;
+  height: 34px;
+  padding: 0;
+  border: 1px dashed var(--line);
+  border-radius: 17px;
+  background: rgba(18, 17, 14, 0.66);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--muted);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.36);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.mobile-more-btn.is-active {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--text);
+}
+/* The right thumb's arc, above FIRE: the weapon pair over AIM. */
+.mobile-thumb-stack {
+  position: absolute;
+  right: 14px;
+  bottom: 116px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+.mobile-thumb-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.mobile-action-btn {
+  min-width: 48px;
+  height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(18, 17, 14, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font: 9px var(--mm-font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
-  touch-action: manipulation;
+  /* `none`, not `manipulation`: every action runs on its pointerdown edge,
+     because a tap the browser has to synthesise a `click` for is a tap the
+     browser drops when a second finger is already down. */
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: pointer;
@@ -631,26 +712,71 @@ a { color: var(--accent); }
   border-color: var(--line);
   background: rgba(18, 17, 14, 0.62);
 }
+.mobile-action-btn.aim-btn {
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border-radius: 50%;
+}
 .mobile-action-btn.fire-btn {
-  /* The right thumb's button, out of the cluster at the bottom-right, so
-     moving (left thumb, ring) and firing happen at the same time. Sized for
-     a thumb rather than the cluster's 28 px rows. */
+  /* The right thumb's button, at the bottom-right corner, so moving (left
+     thumb, ring) and firing happen at the same time. Big enough to hold and
+     still drag off, since a deliberate drag off a held FIRE turns the camera. */
   position: absolute;
-  right: 14px; bottom: 22px;
-  min-width: 96px;
-  height: 68px;
-  border-radius: 6px;
+  right: 14px; bottom: 20px;
+  width: 112px;
+  height: 84px;
+  border-radius: 10px;
   border-color: var(--warn);
   color: var(--warn);
-  font-size: 11px;
+  font-size: 12px;
 }
 .mobile-action-btn.fire-btn.is-active {
   background: rgba(105, 35, 25, 0.92);
   color: #f4d7cf;
 }
 .mobile-action-btn[hidden],
+.mobile-posture-btn[hidden],
+.mobile-more-btn[hidden],
 .mobile-throttle[hidden],
+#mobile-more-sheet[hidden],
 #mobile-pad[hidden] { display: none; }
+
+/* The action sheet: a three-column grid of full-size buttons hanging from the
+   TOP of the stage. A drop-down rather than a bottom sheet, because both bottom
+   corners already belong to a thumb and a bottom sheet would either cover the
+   posture column or need an offset tuned per screen height. Up here it is clear
+   of the ring, the posture pair, FIRE and AIM in every orientation, and it is
+   inside index-finger reach. */
+#mobile-more-sheet {
+  position: absolute;
+  left: 10px; right: 10px; top: 12px;
+  z-index: 12;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(19, 19, 19, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.mobile-more-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.mobile-more-grid .mobile-action-btn {
+  min-width: 0;
+  height: 54px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+#mobile-more-grid .mobile-throttle,
+.mobile-more-grid .mobile-throttle {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
 
 .mobile-throttle {
   display: flex;
@@ -686,17 +812,22 @@ a { color: var(--accent); }
     top: 34px;
     right: 10px;
   }
-  .mobile-action-cluster {
-    gap: 6px;
-  }
   /* No pad-size override here on purpose: the ring and ball carry the input
      geometry (MOBILE_PAD_TRAVEL in touch-controls.js), so one CSS size keeps
-     the two honest. */
+     the two honest, and the phone is the case that matters, so there is
+     nothing to shrink to. */
+  .mobile-thumb-stack {
+    gap: 6px;
+  }
   .mobile-action-btn {
-    min-width: 40px;
-    height: 26px;
-    padding: 0 5px;
-    font-size: 7px;
+    min-width: 44px;
+    height: 38px;
+    padding: 0 6px;
+    font-size: 8px;
+  }
+  .mobile-more-grid .mobile-action-btn {
+    height: 52px;
+    font-size: 9px;
   }
   .mobile-throttle input {
     width: 64px;
@@ -718,8 +849,12 @@ a { color: var(--accent); }
   .controls-collapse-btn { display: inline-flex; }
   .map-controls-fab {
     display: inline-flex;
-    bottom: 18px;
-    right: 12px;
+    /* Top-left, out of both thumb arcs: the bottom-right corner belongs to
+       FIRE and the bottom-left to the move ring. */
+    top: 10px;
+    left: 12px;
+    right: auto;
+    bottom: auto;
   }
 }
 /* The room join modal (P3): the game's own overlay for a room that will

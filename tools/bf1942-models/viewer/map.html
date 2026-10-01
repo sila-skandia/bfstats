@@ -59,46 +59,64 @@
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
-  <!-- The touch HUD (features/mobile-four-finger-controls): navigation on
-       the left (the drag pans, the FIXED ring at its bottom-left moves),
-       actions on the right (FIRE on the right thumb, the small game buttons
-       in the cluster above it). A drag on the action side does nothing. -->
-  <div id="mobile-zone-pan" class="mobile-zone" aria-label="Drag to look around" hidden></div>
+  <!-- The touch HUD (features/mobile-four-finger-controls), split by FINGER
+       and not by screen half, which is the whole point of this pass. The left
+       thumb takes the MOVE ring at the bottom-left, with JUMP and CROUCH
+       stacked above it and the MORE tab over those. The right thumb takes
+       FIRE at the bottom-right, with AIM above it, the kit's weapon pair above
+       that, and the look drag over the whole right half. Shooting while
+       jumping, and shooting while prone, each cost one thumb between them,
+       and the right side carries four controls where it carried twelve.
+       Everything a firefight does not need is one tap away in the sheet. -->
+  <!-- The look zone is the RIGHT half, where the right thumb already is: a
+       drag that is not on a button is the camera, as on a console pad. It
+       steps aside in free roam (the free camera drags on the canvas), while
+       the map-controls panel is expanded, and while the sheet is up. -->
+  <div id="mobile-zone-look" class="mobile-zone" aria-label="Drag to look around" hidden></div>
   <!-- The fixed move ring: a home spot the left thumb finds without looking.
        The ring never moves, the ball never leaves it, and the ball's whole
        travel is the input range. The outer box is the hit area (the ring
        visual is its inner 64 px circle): a thumb aiming for the ring and
-       landing a little off it must drive the ring, never the pan zone. -->
+       landing a little off it must drive the ring, never the look zone. -->
   <div id="mobile-pad" aria-label="Movement control" hidden>
     <div id="mobile-pad-ring"></div>
     <div id="mobile-pad-puck"></div>
     <span id="mobile-pad-label">MOVE</span>
   </div>
+  <!-- The sheet's scrim: under the buttons (a live FIRE keeps working with the
+       sheet open) and over the look zone, so a tap anywhere else closes the
+       sheet instead of turning the camera. -->
+  <div id="mobile-more-scrim" hidden></div>
   <div id="mobile-controls" hidden>
-    <!-- FIRE is the right thumb's button, out of the cluster at the
-         bottom-right so moving and firing happen at the same time. -->
-    <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon">FIRE</button>
-    <div class="mobile-action-cluster">
-      <div class="mobile-action-row">
-        <button type="button" id="mobile-aim-btn" class="mobile-action-btn" aria-label="Aim, hold">AIM</button>
-        <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
-      </div>
-      <div class="mobile-action-row">
-        <button type="button" id="mobile-jump-btn" class="mobile-action-btn" aria-label="Jump" hidden>JUMP</button>
-        <button type="button" id="mobile-crouch-btn" class="mobile-action-btn" aria-label="Crouch, hold to go prone" hidden>CROUCH</button>
+    <!-- The left thumb's column, above the ring: the posture pair you need
+         WHILE the right thumb is shooting, then the tab for everything else. -->
+    <div class="mobile-vert-stack">
+      <button type="button" id="mobile-more-btn" class="mobile-more-btn" aria-label="More actions">MORE</button>
+      <button type="button" id="mobile-crouch-btn" class="mobile-posture-btn" aria-label="Crouch, hold to go prone" hidden>CROUCH</button>
+      <button type="button" id="mobile-jump-btn" class="mobile-posture-btn" aria-label="Jump" hidden>JUMP</button>
+    </div>
+    <!-- The right thumb's arc, above the bottom-right corner: FIRE at the
+         corner, AIM (hold) above it, the weapon pair above that. Dragging off
+         a held FIRE turns the camera, which is PUBG Mobile's fire-and-aim,
+         so tracking a target never costs the trigger. -->
+    <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon, drag to aim">FIRE</button>
+    <div class="mobile-thumb-stack">
+      <div class="mobile-thumb-row">
         <button type="button" id="mobile-wprev-btn" class="mobile-action-btn" aria-label="Previous weapon" hidden>PREV</button>
         <button type="button" id="mobile-wnext-btn" class="mobile-action-btn" aria-label="Next weapon" hidden>NEXT</button>
       </div>
-      <div class="mobile-action-row">
-        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
-        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
-        <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
-      </div>
-      <div class="mobile-action-row">
+      <button type="button" id="mobile-aim-btn" class="mobile-action-btn aim-btn" aria-label="Aim, hold">AIM</button>
+    </div>
+    <!-- The sheet: the controls a firefight does not need, out of the thumb
+         arcs. One tap of MORE opens it, a tap of the scrim closes it. -->
+    <div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
+      <div class="mobile-more-grid">
+        <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
         <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
         <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
-      </div>
-      <div class="mobile-action-row">
+        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
+        <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
+        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
         <label class="mobile-throttle" id="mobile-throttle-wrap" hidden>THR <input id="mobile-throttle" type="range" min="0" max="100" value="0" aria-label="Aircraft throttle"><output id="mobile-throttle-value" for="mobile-throttle">0</output></label>
       </div>
     </div>
