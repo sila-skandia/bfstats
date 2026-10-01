@@ -59,34 +59,39 @@
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
+  <!-- The sense zones: two invisible drag areas, top-left pans the camera
+       and top-right moves, so each index finger rests on its own mechanic
+       and the thumb cluster below stays tiny (features/mobile-four-finger-controls). -->
+  <div id="mobile-zone-pan" class="mobile-zone" aria-label="Drag to look around" hidden></div>
+  <div id="mobile-zone-move" class="mobile-zone" aria-label="Drag to move" hidden></div>
   <div id="mobile-controls" hidden>
-    <!-- The index-finger buttons: the claw layout's whole point is firing
-         and aiming while both thumbs are busy (features/mobile-four-finger-controls). -->
-    <div id="mobile-claw-left">
-      <button type="button" id="mobile-fire2-btn" class="mobile-action-btn fire-btn claw-btn" aria-label="Fire weapon (index finger)">FIRE</button>
-    </div>
-    <div id="mobile-claw-right">
-      <button type="button" id="mobile-ads-btn" class="mobile-action-btn claw-btn" aria-label="Aim down sights">ADS</button>
-      <button type="button" id="mobile-reload-btn" class="mobile-action-btn claw-btn" aria-label="Reload">RLD</button>
-      <button type="button" id="mobile-swap-btn" class="mobile-action-btn claw-btn" aria-label="Swap kit weapon">SWAP</button>
-    </div>
-    <div id="mobile-pad" aria-label="Movement control">
+    <!-- The floating move stick. It is placed under the finger by the move
+         zone and hidden again on release; the zone owns the input. -->
+    <div id="mobile-pad" aria-label="Movement control" hidden>
       <div id="mobile-pad-puck"><span id="mobile-pad-label">MOVE</span></div>
     </div>
     <div class="mobile-action-cluster">
       <div class="mobile-action-row">
         <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon">FIRE</button>
-        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
-      </div>
-      <div class="mobile-action-row">
-        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
-        <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
-        <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
+        <button type="button" id="mobile-aim-btn" class="mobile-action-btn" aria-label="Aim, hold">AIM</button>
+        <button type="button" id="mobile-reload-btn" class="mobile-action-btn" aria-label="Reload" hidden>RELOAD</button>
       </div>
       <div class="mobile-action-row">
         <button type="button" id="mobile-jump-btn" class="mobile-action-btn" aria-label="Jump" hidden>JUMP</button>
         <button type="button" id="mobile-crouch-btn" class="mobile-action-btn" aria-label="Crouch, hold to go prone" hidden>CROUCH</button>
+        <span class="mobile-swap-wrap">
+          <button type="button" id="mobile-swap-btn" class="mobile-action-btn" aria-label="Choose kit weapon" hidden>SWAP</button>
+          <div id="mobile-swap-menu" class="mobile-swap-menu" hidden></div>
+        </span>
+      </div>
+      <div class="mobile-action-row">
+        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
+        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
         <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
+      </div>
+      <div class="mobile-action-row">
+        <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
+        <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
       </div>
       <div class="mobile-action-row">
         <label class="mobile-throttle" id="mobile-throttle-wrap" hidden>THR <input id="mobile-throttle" type="range" min="0" max="100" value="0" aria-label="Aircraft throttle"><output id="mobile-throttle-value" for="mobile-throttle">0</output></label>
@@ -580,14 +585,14 @@ const freeCamera = createFreeCamera(bag(
   },
 ));
 const touchControls = createTouchControls(bag(
-  from(() => localLook, `mouseInput`),
+  from(() => localLook, `lookDelta mouseInput`),
   from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
   from(() => localPlayer, `aircraft car occupancy soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),
   from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
     setTouchAltFire setTouchTriggers`),
   from(() => seatCamera, `cycleView mannedActive view`),
-  from(() => soldierKit, `cycleKitWeapon handWeapon startReload`),
+  from(() => soldierKit, `cycleKitWeapon handWeapon kitWeaponSlots selectKitWeapon startReload`),
   from(() => soldierView, `footView3p`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
   {

@@ -1,15 +1,17 @@
 /**
- * The touch controls: the pad, the FIRE, JUMP, ENTER and VIEW buttons and
- * the throttle slider, and what each feeds the input word. Split out of
- * `page-input.js`, which keeps the keyboard and the mouse.
+ * The touch controls: two sense zones (top-left pans the camera, top-right
+ * moves with a floating stick), the small game buttons and the swap menu, and
+ * what each feeds the input word. Split out of `page-input.js`, which keeps
+ * the keyboard and the mouse.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
  * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
- * `keys`, `kitOffer`, `mannedActive`, `mouseInput`, `nearEntry`, `noteSeatToggle`,
- * `occupancy`, `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`,
- * `releaseButtons`, `seatToggleReady`, `setFly`, `setTouchAltFire`,
+ * `keys`, `kitOffer`, `kitWeaponSlots`, `lookDelta`, `mannedActive`,
+ * `mouseInput`, `nearEntry`, `noteSeatToggle`, `occupancy`, `optOnFoot`,
+ * `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
+ * `seatToggleReady`, `selectKitWeapon`, `setFly`, `setTouchAltFire`,
  * `setTouchTriggers`, `soldier`, `soldierDead`, `startReload`, `switchSeat`,
  * `toggleProne`, `view`.
  */
@@ -17,14 +19,17 @@ export function createTouchControls(page) {
   const touchControls = {};
 
   const mobileControls = document.getElementById('mobile-controls');
+  const mobileZonePan = document.getElementById('mobile-zone-pan');
+  const mobileZoneMove = document.getElementById('mobile-zone-move');
   const mobilePad = document.getElementById('mobile-pad');
   const mobilePadPuck = document.getElementById('mobile-pad-puck');
   const mobilePadLabel = document.getElementById('mobile-pad-label');
   const mobileFireBtn = document.getElementById('mobile-fire-btn');
-  const mobileFire2Btn = document.getElementById('mobile-fire2-btn');
-  const mobileAdsBtn = document.getElementById('mobile-ads-btn');
+  const mobileAimBtn = document.getElementById('mobile-aim-btn');
   const mobileReloadBtn = document.getElementById('mobile-reload-btn');
   const mobileSwapBtn = document.getElementById('mobile-swap-btn');
+  const mobileSwapWrap = document.getElementById('mobile-swap-wrap');
+  const mobileSwapMenu = document.getElementById('mobile-swap-menu');
   const mobileUseBtn = document.getElementById('mobile-use-btn');
   const mobileViewBtn = document.getElementById('mobile-view-btn');
   const mobileJumpBtn = document.getElementById('mobile-jump-btn');
@@ -35,7 +40,8 @@ export function createTouchControls(page) {
   const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
   const mobileThrottleInput = document.getElementById('mobile-throttle');
   const mobileThrottleValue = document.getElementById('mobile-throttle-value');
-  const MOBILE_PAD_RADIUS = 48;
+  // The floating stick is 96 px wide; its vector clamps to this radius.
+  const MOBILE_PAD_RADIUS = 44;
   const MOBILE_AIM_PIXELS_PER_SECOND = 720;
   // Hold the CROUCH button this long and the soldier goes prone as well,
   // COD Mobile's crouch-over-prone stack: crouch is a hold (`c_PICrouch`),
@@ -52,6 +58,9 @@ export function createTouchControls(page) {
   touchControls.mobileThrottleTouched = false;
   touchControls.mobileControlsSignature = '';
   let proneHoldTimer = 0;
+  let panPointerId = null;
+  let panLastX = 0;
+  let panLastY = 0;
 
   function clampMobileInput(value) {
     return Math.max(-1, Math.min(1, value));
@@ -89,6 +98,7 @@ export function createTouchControls(page) {
     mobilePadVector.y = 0;
     mobilePadPuck.style.transform = 'translate(-50%, -50%)';
     mobilePad.classList.remove('is-active');
+    mobilePad.hidden = true;
   }
 
   function resetMobileControls() {
@@ -100,11 +110,9 @@ export function createTouchControls(page) {
     page.releaseButtons();
     releaseMobileCrouch();
     mobileFireBtn.classList.remove('is-active');
-    mobileFire2Btn.classList.remove('is-active');
-    mobileAdsBtn.classList.remove('is-active');
+    mobileAimBtn.classList.remove('is-active');
     mobileCrouchBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
-    mobilePadPuck.classList.remove('is-firing');
     mobileThrottleInput.value = '0';
     mobileThrottleValue.value = '0';
     if (page.aircraft) page.aircraft.setInput('c_PIThrottle', 0);
@@ -119,6 +127,45 @@ export function createTouchControls(page) {
       mobileThrottleInput.value = String(Math.round(touchControls.mobileThrottle * 100));
     }
     mobileThrottleValue.value = String(Math.round(touchControls.mobileThrottle * 100));
+  }
+
+  /** The kit's weapon names, one short line each, for the swap menu. The
+   *  `weapon` field is a template name ("KnifeAllies", "Colt"); the menu is
+   *  tiny, so the nation suffixes come off. */
+  function swapOptionLabel(entry) {
+    const name = String(entry?.weapon || '');
+    return name.replace(/(Allies|Axis)$/i, '') || `slot ${entry?.slot}`;
+  }
+
+  /** The SWAP option menu, built fresh each time it opens from the spawned
+   *  kit's slots, and anchored to the SWAP button itself: the thumb taps
+   *  SWAP and the options appear where the thumb already is. */
+  function openSwapMenu() {
+    const slots = Array.isArray(page.kitWeaponSlots) ? page.kitWeaponSlots : [];
+    if (!slots.length) return;
+    mobileSwapMenu.replaceChildren();
+    for (const entry of slots) {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = 'mobile-swap-opt';
+      opt.dataset.slot = String(entry.slot);
+      opt.textContent = swapOptionLabel(entry);
+      opt.addEventListener('pointerdown', event => event.stopPropagation());
+      opt.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        closeSwapMenu();
+        page.setFly(true);
+        if (page.selectKitWeapon) page.selectKitWeapon(entry.slot);
+      });
+      mobileSwapMenu.append(opt);
+    }
+    mobileSwapMenu.hidden = false;
+  }
+
+  function closeSwapMenu() {
+    mobileSwapMenu.hidden = true;
+    mobileSwapMenu.replaceChildren();
   }
 
   function updateMobileControls() {
@@ -137,6 +184,7 @@ export function createTouchControls(page) {
     const flying = activeSeat && page.aircraft;
     const freeCam = !onFoot && !seated;
     const show = page.captured && !deployOpen && (onFoot || seated || freeCam);
+    const padUsable = !!(onFoot || driving || flying || aimable);
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
       && page.occupancy.activeFireArmsNodes().length > 0);
@@ -151,7 +199,7 @@ export function createTouchControls(page) {
     // seat. Empty when every other seat is taken, as the keys' misses are.
     const freeSeat = seated && page.occupancy ? mobileNextFreeSeat() : -1;
     const signature = [
-      show, padMode, onFoot, seated, manned, driving, flying, aimable,
+      show, padMode, padUsable, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
       canFire, canAim, canReload, canPickup, freeSeat,
     ].join('|');
@@ -159,18 +207,21 @@ export function createTouchControls(page) {
     touchControls.mobileControlsSignature = signature;
 
     mobileControls.hidden = !show;
-    mobilePad.hidden = !(onFoot || driving || flying || aimable);
+    // The zones follow the cluster: hidden with it, and the move zone only
+    // where a stick has something to do (free-roam has no soldier to move).
+    mobileZonePan.hidden = !show;
+    mobileZoneMove.hidden = !(show && padUsable);
+    if (!show && touchControls.mobilePadHeld) resetMobilePad();
     mobilePadLabel.textContent = padMode;
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
-    mobileFire2Btn.hidden = !canFire;
-    mobileFire2Btn.disabled = !canFire;
-    mobileAdsBtn.hidden = !canAim;
-    mobileAdsBtn.disabled = !canAim;
+    mobileAimBtn.hidden = !canAim;
+    mobileAimBtn.disabled = !canAim;
     mobileReloadBtn.hidden = !canReload;
     mobileReloadBtn.disabled = !canReload;
     mobileSwapBtn.hidden = !onFoot;
+    if (!onFoot) closeSwapMenu();
     mobilePickupBtn.hidden = !canPickup;
     mobileSeatsBtn.hidden = freeSeat < 0;
     mobileJumpBtn.hidden = !onFoot;
@@ -186,10 +237,19 @@ export function createTouchControls(page) {
     mobileControls.dataset.mode = padMode;
   }
 
-  function updateMobilePad(event) {
+  /** The floating move stick. The zone places the pad ring under the finger
+   *  that touched it, then the usual deflection math runs from that spot. */
+  function placeMobilePad(event) {
+    mobilePad.style.left = `${event.clientX}px`;
+    mobilePad.style.top = `${event.clientY}px`;
+    mobilePad.hidden = false;
+    mobilePad.classList.add('is-active');
+    mobilePadPuck.style.transform = 'translate(-50%, -50%)';
     const rect = mobilePad.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    updateMobilePadVector(event, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+
+  function updateMobilePadVector(event, cx, cy) {
     const dx = event.clientX - cx;
     const dy = event.clientY - cy;
     const dist = Math.hypot(dx, dy);
@@ -200,13 +260,19 @@ export function createTouchControls(page) {
     mobilePadVector.x = clampMobileInput(px / MOBILE_PAD_RADIUS);
     mobilePadVector.y = clampMobileInput(-py / MOBILE_PAD_RADIUS);
     mobilePadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
-    mobilePad.classList.add('is-active');
+  }
+
+  function updateMobilePad(event) {
+    const rect = mobilePad.getBoundingClientRect();
+    updateMobilePadVector(event, rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
   function releaseMobilePad(event) {
     if (touchControls.mobilePadPointerId !== null && event.pointerId !== touchControls.mobilePadPointerId) return;
     try {
-      if (mobilePad.hasPointerCapture(event.pointerId)) mobilePad.releasePointerCapture(event.pointerId);
+      if (mobileZoneMove.hasPointerCapture(event.pointerId)) {
+        mobileZoneMove.releasePointerCapture(event.pointerId);
+      }
     } catch {}
     resetMobilePad();
   }
@@ -218,11 +284,10 @@ export function createTouchControls(page) {
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
-    mobileFire2Btn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
   }
 
-  /** The ADS button: the touch twin of the right mouse button. On foot it
+  /** The AIM button: the touch twin of the right mouse button. On foot it
    *  holds the soldier's aim (zoom); seated it holds the seat's
    *  `c_PIAltFire` (a Sherman's coax, a Corsair's bombs). */
   function setMobileAim(on) {
@@ -230,7 +295,7 @@ export function createTouchControls(page) {
       on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead && !page.occupancy,
       on && page.optPilot.checked && !!page.occupancy
         && (page.occupancy.isActiveRoot() || page.mannedActive()));
-    mobileAdsBtn.classList.toggle('is-active', on);
+    mobileAimBtn.classList.toggle('is-active', on);
   }
 
   /** Crouch is a hold, prone its long press. The held key is the same
@@ -301,7 +366,48 @@ export function createTouchControls(page) {
     resetMobileControls();
   }
 
-  mobilePad.addEventListener('pointerdown', event => {
+  // The top-left zone pans the camera: a drag here is the look, exactly like
+  // a drag on the canvas, held on one pointer. The zone owns the input; the
+  // canvas underneath never sees the touches.
+  mobileZonePan.addEventListener('pointerdown', event => {
+    if (panPointerId !== null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    page.setFly(true);
+    page.ensureAudioContext();
+    panPointerId = event.pointerId;
+    panLastX = event.clientX;
+    panLastY = event.clientY;
+    try { mobileZonePan.setPointerCapture(event.pointerId); } catch {}
+  });
+
+  mobileZonePan.addEventListener('pointermove', event => {
+    if (event.pointerId !== panPointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = event.clientX - panLastX;
+    const dy = event.clientY - panLastY;
+    panLastX = event.clientX;
+    panLastY = event.clientY;
+    page.lookDelta(dx, dy);
+  });
+
+  function releaseMobilePan(event) {
+    if (event.pointerId !== panPointerId) return;
+    try {
+      if (mobileZonePan.hasPointerCapture(event.pointerId)) {
+        mobileZonePan.releasePointerCapture(event.pointerId);
+      }
+    } catch {}
+    panPointerId = null;
+  }
+
+  mobileZonePan.addEventListener('pointerup', releaseMobilePan);
+  mobileZonePan.addEventListener('pointercancel', releaseMobilePan);
+
+  // The top-right zone moves: the stick appears at the touch point and the
+  // deflection feeds the same pad the bottom-left ring used to.
+  mobileZoneMove.addEventListener('pointerdown', event => {
     if (touchControls.mobilePadPointerId !== null) return;
     event.preventDefault();
     event.stopPropagation();
@@ -309,20 +415,20 @@ export function createTouchControls(page) {
     page.ensureAudioContext();
     touchControls.mobilePadPointerId = event.pointerId;
     touchControls.mobilePadHeld = true;
-    try { mobilePad.setPointerCapture(event.pointerId); } catch {}
-    updateMobilePad(event);
+    try { mobileZoneMove.setPointerCapture(event.pointerId); } catch {}
+    placeMobilePad(event);
     updateMobileControls();
   });
 
-  mobilePad.addEventListener('pointermove', event => {
+  mobileZoneMove.addEventListener('pointermove', event => {
     if (!touchControls.mobilePadHeld || event.pointerId !== touchControls.mobilePadPointerId) return;
     event.preventDefault();
     event.stopPropagation();
     updateMobilePad(event);
   });
 
-  mobilePad.addEventListener('pointerup', releaseMobilePad);
-  mobilePad.addEventListener('pointercancel', releaseMobilePad);
+  mobileZoneMove.addEventListener('pointerup', releaseMobilePad);
+  mobileZoneMove.addEventListener('pointercancel', releaseMobilePad);
 
   mobileFireBtn.addEventListener('pointerdown', event => {
     if (mobileFireBtn.disabled) return;
@@ -363,36 +469,24 @@ export function createTouchControls(page) {
   mobileJumpBtn.addEventListener('pointerup', releaseMobileJump);
   mobileJumpBtn.addEventListener('pointercancel', releaseMobileJump);
 
-  mobileFire2Btn.addEventListener('pointerdown', event => {
-    if (mobileFire2Btn.disabled) return;
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    page.ensureAudioContext();
-    try { mobileFire2Btn.setPointerCapture(event.pointerId); } catch {}
-    setMobileFire(true);
-  });
-  mobileFire2Btn.addEventListener('pointerup', releaseMobileFire);
-  mobileFire2Btn.addEventListener('pointercancel', releaseMobileFire);
-
   function releaseMobileAim(event) {
     try {
-      if (mobileAdsBtn.hasPointerCapture(event.pointerId)) mobileAdsBtn.releasePointerCapture(event.pointerId);
+      if (mobileAimBtn.hasPointerCapture(event.pointerId)) mobileAimBtn.releasePointerCapture(event.pointerId);
     } catch {}
     setMobileAim(false);
   }
 
-  mobileAdsBtn.addEventListener('pointerdown', event => {
-    if (mobileAdsBtn.disabled) return;
+  mobileAimBtn.addEventListener('pointerdown', event => {
+    if (mobileAimBtn.disabled) return;
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
     page.ensureAudioContext();
-    try { mobileAdsBtn.setPointerCapture(event.pointerId); } catch {}
+    try { mobileAimBtn.setPointerCapture(event.pointerId); } catch {}
     setMobileAim(true);
   });
-  mobileAdsBtn.addEventListener('pointerup', releaseMobileAim);
-  mobileAdsBtn.addEventListener('pointercancel', releaseMobileAim);
+  mobileAimBtn.addEventListener('pointerup', releaseMobileAim);
+  mobileAimBtn.addEventListener('pointercancel', releaseMobileAim);
 
   function releaseMobileCrouchPointer(event) {
     try {
@@ -426,7 +520,16 @@ export function createTouchControls(page) {
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
-    page.cycleKitWeapon?.(1);
+    if (mobileSwapMenu.hidden) openSwapMenu();
+    else closeSwapMenu();
+  });
+
+  // A tap anywhere else closes the swap menu: the thumb that opened it is on
+  // the SWAP button, and the options sit right under that thumb.
+  document.addEventListener('pointerdown', event => {
+    if (mobileSwapMenu.hidden) return;
+    if (event.target === mobileSwapBtn || mobileSwapWrap.contains(event.target)) return;
+    closeSwapMenu();
   });
 
   // The map: with a live soldier it is the M key's `c_PIMap` (on foot the
@@ -491,12 +594,14 @@ export function createTouchControls(page) {
 
   Object.assign(touchControls, {
     clampMobileInput,
+    closeSwapMenu,
     feedMobileTurretAim,
     holdMobileCrouch,
     mobileNextFreeSeat,
     mobilePadAxis,
     mobilePadVector,
     mobileSeatToggle,
+    openSwapMenu,
     releaseMobileCrouch,
     releaseMobileFire,
     releaseMobileJump,
