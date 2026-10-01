@@ -596,10 +596,10 @@ a { color: var(--accent); }
   pointer-events: none;
 }
 /* The left thumb's column, directly above the ring: JUMP nearest the thumb,
-   CROUCH above it, the MORE tab over those. The ring's hit box ends 136 px up
-   the left edge, so the column starts at 148 and the two never fight over a
-   touch. `pointer-events: none` on the column, `auto` on the buttons, so the
-   gaps between them fall through. */
+   then CROUCH, PRONE, and the MORE tab over those. The ring's hit box ends
+   136 px up the left edge, so the column starts at 148 and the two never fight
+   over a touch. `pointer-events: none` on the column, `auto` on the buttons,
+   so the gaps between them fall through. */
 .mobile-vert-stack {
   position: absolute;
   left: 16px;
@@ -634,6 +634,14 @@ a { color: var(--accent); }
 .mobile-posture-btn.is-active {
   border-color: var(--accent);
   background: rgba(72, 72, 58, 0.92);
+}
+/* PRONE is a toggle where CROUCH and JUMP are holds, and the button has to say
+   so: the fill is the held look, so a lit PRONE reads as the state it is, and
+   the solid border marks it as the odd one out of the three. */
+.mobile-posture-btn.prone-btn.is-active {
+  border-color: var(--warn);
+  background: rgba(88, 60, 28, 0.92);
+  color: #f0e0c8;
 }
 .mobile-more-btn {
   width: 62px;
@@ -857,6 +865,20 @@ a { color: var(--accent); }
     bottom: auto;
   }
 }
+/* Landscape on a phone: the stage is short, and the posture column (a 34 px
+   tab plus three 62 px buttons and their gaps) has no room above the ring, so
+   it lies down to the right of it. The row is 226 px wide and the stage in
+   landscape is the phone's long axis, so it fits with the right thumb's stack
+   untouched. */
+@media (max-height: 560px) {
+  .mobile-vert-stack {
+    left: 136px;
+    bottom: 24px;
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
 /* The room join modal (P3): the game's own overlay for a room that will
    not open -- a missing room server, a full room, a bad code. The panel
    is this page's tokens, the deploy screen's family; pre-game it floats
