@@ -312,3 +312,51 @@ the two do not overlap, a held ring deflection and a held FIRE run together
 action side turns the camera 0.0000 rad while the same drag on the left half
 turns it 0.508 rad. The viewer suite runs the same 4,554 tests with the same
 five pre-existing failures as the fifth pass.
+
+## Built (seventh pass, 2026-10-01): two-finger input made robust
+
+The playtest report read "it only supports one touch at a time": go forward
+then pan and the movement sticks, pan first then move and the view snaps
+around. Real multi-touch input (CDP touch events, one event per touch-point
+change) reproduced both halves.
+
+The snap is the thumb missing the ring. Its hit area was exactly the 64 px
+ring, so a thumb press 2 px outside it fell through to the pan zone and
+became the pan, where the thumb's settling jitter turned the camera (0.135
+rad from an 11 px jitter, measured). The stick is the same class of fault. A
+held input whose pointer ends without reaching its own element (a finger
+sliding off a 64 px target, or a browser cancelling one pointer when a second
+finger starts a gesture) left the input frozen at its last value, and the
+surface then refused new presses behind a stale pointer.
+
+Three fixes, aimed at the class rather than the symptom.
+
+- The ring keeps its 64 px visual and gains a 112 px round HIT AREA
+  (`#mobile-pad` over the inner `#mobile-pad-ring` in map.css). A thumb
+  aiming for the ring and landing up to 56 px off it drives the ring, never
+  the pan.
+- Every held input (ring, pan, FIRE, AIM, JUMP, CROUCH) tracks the pointer
+  that drives it and dies with that pointer wherever it ends: its own
+  element, any other element, or a `pointercancel` /
+  `lostpointercapture`. `touch-controls.js` keeps the map (`trackPointer` /
+  `endPointer`, listeners on the window) and a missed release can no longer
+  leave an input stuck on.
+- Last press wins on the ring and the pan zone: a press while a stale
+  pointer is still tracked re-arms the surface instead of dead-ending behind
+  it. A surface that hides also stops driving input immediately, since the
+  vector would otherwise freeze at its last value.
+
+Verified with the multi-touch probe (aberdeen, real CDP touch input, 17
+claims). Move-then-pan holds both inputs live (the ring keeps steering
+during the pan, `strafe -0.615`), lifting the ring finger stops movement
+while the pan finger keeps panning, pan-then-move shows a 0.000 rad snap on
+the ring press, and a press just off the ring drives the ring
+(`strafe 0.98`) with no view movement. The single-touch probe (21 claims)
+and the stub-DOM smoke (28 claims) stay green, and the viewer suite runs the
+same 4,554 tests with the same five pre-existing failures.
+
+One probe lesson worth keeping (references/mobile-touch-probe.md): headless
+Chromium grants the pointer lock at the deploy close, and under the lock
+pointer events carry `clientX = 0` with only `movementX/Y` live, which
+poisons every coordinate-based touch claim. Drop the lock and re-take the
+page capture with a canvas press before driving real touch input.
