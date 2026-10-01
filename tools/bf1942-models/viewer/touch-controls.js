@@ -105,6 +105,26 @@ export function createTouchControls(page) {
   let padCentreX = 0;
   let padCentreY = 0;
 
+  // Every held input tracks the pointer that drives it and dies with that
+  // pointer wherever it ends: its own element, another element, or a
+  // `pointercancel` from the browser's gesture recognizer when a second
+  // finger starts one. A missed or mis-targeted release otherwise leaves the
+  // input stuck on or the surface dead, which is what the owner's "it only
+  // supports one touch at a time" was.
+  const heldPointers = new Map();
+  function trackPointer(pointerId, release) {
+    heldPointers.set(pointerId, release);
+  }
+  function endPointer(event) {
+    const release = heldPointers.get(event.pointerId);
+    if (!release) return;
+    heldPointers.delete(event.pointerId);
+    release();
+  }
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    window.addEventListener(type, endPointer, true);
+  }
+
   function clampMobileInput(value) {
     return Math.max(-1, Math.min(1, value));
   }
@@ -147,6 +167,7 @@ export function createTouchControls(page) {
   }
 
   function resetMobileControls() {
+    heldPointers.clear();
     resetMobilePad();
     touchControls.mobileFireHeld = false;
     touchControls.mobileJumpHeld = false;
@@ -234,7 +255,11 @@ export function createTouchControls(page) {
     // something to do (free-roam has no soldier to move).
     mobileZonePan.hidden = !show || sideOpen;
     mobilePad.hidden = !(show && padUsable);
-    if (!show && touchControls.mobilePadHeld) resetMobilePad();
+    // A hidden surface must stop driving input: the browser may drop its
+    // pointer with no end event at all, and the vector would then freeze at
+    // its last value ("sticks the movement").
+    if (mobilePad.hidden && touchControls.mobilePadHeld) resetMobilePad();
+    if (mobileZonePan.hidden && panPointerId !== null) panPointerId = null;
     mobilePadLabel.textContent = padMode;
     mobileFireBtn.hidden = !canFire;
     mobileFireBtn.disabled = !canFire;
@@ -389,7 +414,6 @@ export function createTouchControls(page) {
   // the raw finger travel: retail's look law needs several phone screens of
   // drag for a 180, which is the sensitivity the owner's playtest rejected.
   mobileZonePan.addEventListener('pointerdown', event => {
-    if (panPointerId !== null) return;
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
@@ -397,6 +421,7 @@ export function createTouchControls(page) {
     panPointerId = event.pointerId;
     panLastX = event.clientX;
     panLastY = event.clientY;
+    trackPointer(event.pointerId, () => releaseMobilePan(event));
     try { mobileZonePan.setPointerCapture(event.pointerId); } catch {}
   });
 
@@ -428,15 +453,16 @@ export function createTouchControls(page) {
   // its home spot (bottom-left) and the ball tracks the offset from the
   // ring's centre. The left-half zone above it is the pan; a drag on the
   // action side does nothing (page-input.js), so the ring is the only place
-  // movement lives.
+  // movement lives. Last press wins: a press while a stale pointer is still
+  // tracked re-arms the ring instead of dead-ending behind it.
   mobilePad.addEventListener('pointerdown', event => {
-    if (touchControls.mobilePadPointerId !== null) return;
     event.preventDefault();
     event.stopPropagation();
     page.setFly(true);
     page.ensureAudioContext();
     touchControls.mobilePadPointerId = event.pointerId;
     touchControls.mobilePadHeld = true;
+    trackPointer(event.pointerId, () => releaseMobilePad(event));
     try { mobilePad.setPointerCapture(event.pointerId); } catch {}
     const rect = mobilePad.getBoundingClientRect();
     padCentreX = rect.left + rect.width / 2;
@@ -463,6 +489,7 @@ export function createTouchControls(page) {
     page.setFly(true);
     page.ensureAudioContext();
     try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, () => setMobileFire(false));
     setMobileFire(true);
   });
 
@@ -482,6 +509,7 @@ export function createTouchControls(page) {
     event.stopPropagation();
     page.setFly(true);
     try { mobileJumpBtn.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, () => setMobileJump(false));
     setMobileJump(true);
   });
 
@@ -509,6 +537,7 @@ export function createTouchControls(page) {
     page.setFly(true);
     page.ensureAudioContext();
     try { mobileAimBtn.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, () => setMobileAim(false));
     setMobileAim(true);
   });
   mobileAimBtn.addEventListener('pointerup', releaseMobileAim);
@@ -527,6 +556,7 @@ export function createTouchControls(page) {
     event.stopPropagation();
     page.ensureAudioContext();
     try { mobileCrouchBtn.setPointerCapture(event.pointerId); } catch {}
+    trackPointer(event.pointerId, releaseMobileCrouch);
     holdMobileCrouch(true);
   });
   mobileCrouchBtn.addEventListener('pointerup', releaseMobileCrouchPointer);

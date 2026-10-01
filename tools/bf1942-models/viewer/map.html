@@ -66,8 +66,11 @@
   <div id="mobile-zone-pan" class="mobile-zone" aria-label="Drag to look around" hidden></div>
   <!-- The fixed move ring: a home spot the left thumb finds without looking.
        The ring never moves, the ball never leaves it, and the ball's whole
-       travel is the input range. -->
+       travel is the input range. The outer box is the hit area (the ring
+       visual is its inner 64 px circle): a thumb aiming for the ring and
+       landing a little off it must drive the ring, never the pan zone. -->
   <div id="mobile-pad" aria-label="Movement control" hidden>
+    <div id="mobile-pad-ring"></div>
     <div id="mobile-pad-puck"></div>
     <span id="mobile-pad-label">MOVE</span>
   </div>
