@@ -162,6 +162,31 @@ ENTER and EXIT buttons):
   and the fire, aim, jump and prone gates refuse to write the foot inputs
   while a seat is held.
 
+## Built (fourth pass, 2026-10-01): free-roam escape hatch, drag separation
+
+The phone test's remaining complaints, all reproduced or confirmed headless:
+
+- Closing the spawn screen without spawning strands the phone in the free
+  camera: the page drops to free roam (the keyboard's Caps Lock / Enter
+  brings the spawn screen back; a phone has neither) and the whole touch
+  cluster hid with no soldier alive, so there was no way back at all. Fixed
+  two ways: the cluster now stays up in free roam (MAP is its only button,
+  everything else stays contextual), and the MAP button opens the spawn
+  screen again — with a live soldier it dispatches `c_PIMap` (the M key's
+  body), with nobody alive it dispatches `c_GIInGameMenu`, the game's own
+  "bring the spawn interface back" trigger.
+- "Move and look are connected in one pad": the real culprit was
+  `touchFlying` — any canvas drag on foot walked the soldier forward while
+  he looked, because the free camera's drag-to-fly flag was set on every
+  first touch. `syncTouchFlying` now sets it only when there is no soldier
+  and no seat, so the MOVE pad is the only walking input and a canvas drag
+  is purely the look, on foot and in a seat alike. The free camera keeps
+  its fly-forward drag. Verified headless: a canvas drag on foot reports
+  `touchFlying false` and moves the soldier 0.
+- The MAP button moved out of the thumb cluster to the top-left corner,
+  across from the minimap, per the COD grab's controls-away-from-the-action
+  layout.
+
 ## Next steps
 
 1. Playtest on a real phone with the grip, and tune button sizes and the

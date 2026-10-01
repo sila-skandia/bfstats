@@ -101,6 +101,9 @@ export function installTestHooks(page) {
     installWorldHooks(page);
     installLadderHooks(page);
     window.__look = page.look;
+    // The touch drag's meaning (`page-input.js` `syncTouchFlying`): true is
+    // the free camera's drag-to-fly-forward, false the soldier's drag-to-look.
+    Object.defineProperty(window, '__touchFlying', { get: () => page.touchFlying });
     // The view rig, which the mouse and the C key drive and a headless run cannot.
     // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40
     // degrees off the nose, so framing them means looking at them — and the orbit
