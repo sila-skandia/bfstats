@@ -1,6 +1,7 @@
 # Mobile four-finger controls
 
-Status: built (first pass). No playtest on a real phone yet. This doc maps how
+Status: built and playtested on a phone (fifth pass, the playtest rework
+below). This doc maps how
 modern mobile FPS games use four fingers, compares that with what
 `tools/bf1942-models/viewer/map.html` does today on touch, records what each
 finger controls, and lists what was built.
@@ -220,3 +221,58 @@ The phone test's remaining complaints, all reproduced or confirmed headless:
   ads on foot and seated, crouch hold and release, reload, swap, reset) plus
   the repo's page-wiring test suites (mouse input, held input, page_source
   users: 263 tests, all green).
+
+## Built (fifth pass, 2026-10-01): the playtest rework
+
+The owner played the build on a phone and rejected three things. Each one and
+what it became.
+
+- Look was far too slow. Retail's on-foot law is 0.1215 degrees of yaw per
+  pixel (`mouse-input.js`, GUN-2b), so a 180 took about 1,480 px of finger
+  travel, several phone screens. Every touch look drag now runs at
+  `TOUCH_LOOK_SCALE` (8) times the mouse's currency, both the top-left look
+  zone and the canvas drag in `page-input.js`, which puts a 180 at about half
+  a phone width. Measured on the live probe: 30 px of drag turns 0.508 rad,
+  about 29 degrees. The multiplier lives in `touch-controls.js` and
+  `page-input.js` imports it, and `?touchlook=<n>` overrides it on the
+  device, the same idea as the `?turret=` knob on `countsPerPixel`.
+- The floating move stick was tap-to-find-then-move, and the thumb had to
+  hunt for it before every move. The ring is now FIXED at its home spot (the
+  right edge, 172 px down in stage coordinates, below the minimap box) and is
+  its own touch target, so the right index finger finds it by muscle memory
+  and movement starts on the touch. It is 64 px across with a 28 px ball, and
+  the ball's whole 18 px of travel is the input range: full deflection where
+  the ball touches the ring, a 5 px dead circle at the centre so a resting
+  finger stands still. The ball clamps inside the ring, the ring never moves,
+  and a drag anywhere else on the stage is the look, so the ring is the only
+  place movement lives.
+- The SWAP menu is gone, replaced by a PREV / NEXT pair on the right thumb.
+  One press steps the kit's weapon bar (`c_PINextItem` / `c_PIPrevItem`) and
+  then COMMITS it through `weaponBarFire`, so the press raises the weapon
+  instead of only moving the highlight the way the mouse wheel does. The
+  owner wants to memorise the cycle over time. FIRE moved out of the cluster
+  to the left thumb at the bottom-left, 96x68 px.
+
+The ring doubles as the turret's aim stick in AIM mode, and its rate went
+from 720 to 2200 px/s of equivalent hand travel, about 270 deg/s of turret
+yaw at full deflection, because a held stick suffers the same "too slow"
+complaint.
+
+Four-finger assignment after this pass. The left index drags the top-left
+look zone, the right index works the fixed ring, the left thumb fires, and
+the right thumb works the bottom-right cluster (AIM, RELOAD, JUMP, CROUCH,
+PREV, NEXT, MAP, ENTER/EXIT, VIEW, PICKUP, SEATS, THR).
+
+Keep together when tuning. `MOBILE_PAD_TRAVEL` and `MOBILE_PAD_DEAD` in
+`touch-controls.js` describe the ring's input geometry, and the ring (64 px)
+and ball (28 px) sizes in `map.css` are the same geometry in pixels.
+
+Verified with the stub-DOM smoke (28 claims) and the live phone probe on
+aberdeen (390x844 touch Chromium, 18 claims). The ball clamps at 18 px, a
+13 px deflection reads `forward 0.615` in the input word and a release reads
+0, the ring does not move under the finger, NEXT raises the next weapon and
+PREV walks back (Sg44 -> GrenadeAxis -> Sg44), and a FIRE press drops six
+rounds. The full viewer suite runs 4,554 tests with five failures that
+reproduce with these files reverted (the vehicle-sound published tables, the
+bocage baked nav routes, the scene-layer mode merge), so they predate this
+work. The API tier passes 714 tests.

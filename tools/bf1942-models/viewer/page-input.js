@@ -7,6 +7,7 @@
 // refactor Part 2).
 
 import { GameConsole } from './console.js';
+import { TOUCH_LOOK_SCALE } from './touch-controls.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -863,7 +864,10 @@ export function createPageInput(page) {
       if (pageInput.isPanning) {
         page.panCamera(dx, dy);
       } else {
-        page.lookDelta(dx, dy);
+        // A touch drag is the look at `TOUCH_LOOK_SCALE` times the mouse's
+        // currency (touch-controls.js): retail's look law needs several phone
+        // screens of finger travel for a 180.
+        page.lookDelta(dx * TOUCH_LOOK_SCALE, dy * TOUCH_LOOK_SCALE);
       }
       return;
     }
