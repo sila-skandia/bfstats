@@ -59,20 +59,21 @@
   <div id="minimap" hidden>
     <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
-  <!-- The touch HUD (features/mobile-four-finger-controls): the top-left look
-       zone for the left index finger, the FIXED move ring for the right index
-       finger (its own touch target; a drag anywhere else is the look), FIRE on
-       the left thumb and the small game buttons on the right thumb. -->
+  <!-- The touch HUD (features/mobile-four-finger-controls): navigation on
+       the left (the drag pans, the FIXED ring at its bottom-left moves),
+       actions on the right (FIRE on the right thumb, the small game buttons
+       in the cluster above it). A drag on the action side does nothing. -->
   <div id="mobile-zone-pan" class="mobile-zone" aria-label="Drag to look around" hidden></div>
-  <!-- The fixed move ring: a home spot the finger finds without looking. The
-       ring never moves, the ball never leaves it, and the ball's whole travel
-       is the input range. -->
+  <!-- The fixed move ring: a home spot the left thumb finds without looking.
+       The ring never moves, the ball never leaves it, and the ball's whole
+       travel is the input range. -->
   <div id="mobile-pad" aria-label="Movement control" hidden>
     <div id="mobile-pad-puck"></div>
     <span id="mobile-pad-label">MOVE</span>
   </div>
   <div id="mobile-controls" hidden>
-    <!-- FIRE is the left thumb's button, out of the cluster on the left. -->
+    <!-- FIRE is the right thumb's button, out of the cluster at the
+         bottom-right so moving and firing happen at the same time. -->
     <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon">FIRE</button>
     <div class="mobile-action-cluster">
       <div class="mobile-action-row">
