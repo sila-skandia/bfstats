@@ -70,9 +70,9 @@
          for the right), the MORE tab on the bottom centre, and RELOAD beside
          FIRE at the bottom-right because reloading is common and belongs
          against the trigger.
-       The band is one row of six with 6 px between neighbours, so a thumb
-       never travels more than one button width, and the middle of the screen
-       is buttons rather than dead space. -->
+       Two short rows of three, one per thumb, at the same height, hugging the
+       sides: nothing crosses the middle, nothing reaches the top of the screen,
+       and the game stays what you are looking at. -->
   <!-- The look zone is the WHOLE stage under the buttons (z 9 against their
        11), which leaves the margins, the top and the middle all live. It
        steps aside in free roam (the free camera drags on the canvas), while
@@ -93,15 +93,19 @@
        sheet instead of turning the camera. -->
   <div id="mobile-more-scrim" hidden></div>
   <div id="mobile-controls" hidden>
-    <!-- The band: six buttons in one row across the middle. Each is the retail
-         binding and nothing else, because a hold and a toggle cannot share
-         one button: JUMP is `c_PIAction` (Space), CROUCH holds `c_PICrouch`
+    <!-- Two short rows of three, one per thumb, hugging the sides at the same
+         height. Not one bar across the middle: that ate the whole width and
+         left the centre of the screen with nothing in it. Each is the retail
+         binding and nothing else, because a hold and a toggle cannot share one
+         button: JUMP is `c_PIAction` (Space), CROUCH holds `c_PICrouch`
          (LeftCtrl), PRONE toggles `c_PILie` (Z), AIM holds `c_PIAltFire`, and
          the pair steps and raises the kit's weapons. -->
-    <div class="mobile-band">
+    <div class="mobile-row mobile-row-left">
       <button type="button" id="mobile-jump-btn" class="mobile-band-btn" aria-label="Jump" hidden>JUMP</button>
       <button type="button" id="mobile-crouch-btn" class="mobile-band-btn" aria-label="Crouch, hold" hidden>CROUCH</button>
       <button type="button" id="mobile-prone-btn" class="mobile-band-btn prone-btn" aria-label="Go prone, tap again to stand" hidden>PRONE</button>
+    </div>
+    <div class="mobile-row mobile-row-right">
       <button type="button" id="mobile-aim-btn" class="mobile-band-btn" aria-label="Aim, hold">AIM</button>
       <button type="button" id="mobile-wprev-btn" class="mobile-band-btn" aria-label="Previous weapon" hidden>PREV</button>
       <button type="button" id="mobile-wnext-btn" class="mobile-band-btn" aria-label="Next weapon" hidden>NEXT</button>
