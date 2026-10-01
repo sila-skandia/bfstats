@@ -270,6 +270,70 @@ Screenshots of the play screen and the open sheet are in this folder as
 change is where the thumbs land, so these two are worth a look before the next
 phone pass.
 
+## Built (ninth pass, 2026-10-01): you could get down and not back up
+
+The report was "if you crouch or prone you can't get back up", with the owner's
+guess that it is a broken mechanic in our port and that retail lets you press
+space to get up.
+
+Measured on the live page first, driving the real keys with the real bindings
+(`LeftCtrl` = `c_PICrouch`, `Z` = `c_PILie`, `Space` = `c_PIAction`, all three
+from the shipped `Infantry.con` in `controls-defaults.js`). The keyboard path
+was already correct and matches retail:
+
+| Input | Stance after |
+| --- | --- |
+| LeftCtrl held | crouch |
+| LeftCtrl released | stand |
+| Z | prone |
+| Z again | stand |
+| LeftCtrl held from a crouch | crouch, rising to stand on release |
+| Space while prone | prone, unchanged |
+
+So the sim law is not the fault. Two things settled the last row and one open
+question. The engine sets the jump bit only when neither the crouch nor the
+prone flag is set (client `0x00500628`-`0x0050067a`, `symbols.json`
+`BFSoldier_jumpFlagSet`), so a prone man's Space press does nothing at all and
+is not a way out. BODY-1 gives the two chains that are: `Lb_LieToCrouch` when
+the crouch channel is asserted while lying, and `Lb_LieToStand` when it lets
+go.
+
+The fault was touch-only, and it was one button doing two jobs. Prone was the
+CROUCH button's 500 ms long press, which made an ordinary thumb-rest into a
+permanent one-way trip: a hold and a toggle on one target cannot both work,
+and nothing on the phone carried the toggle, so the only roads back were the
+keyboard's Z and the keyboard's LeftCtrl.
+
+The fix gives each posture button one retail binding and nothing else. CROUCH
+is the `c_PICrouch` hold again and the long-press timer is gone, so resting on
+it can no longer put the soldier down. PRONE is a new button in the same column
+and is the literal `c_PILie` toggle: tap for prone, tap again for the
+`Lb_LieToStand` rise. It lights in the warn colour when he is down, which is
+also how a toggle reads differently from the two holds next to it, and the
+visibility pass refreshes on the press rather than on the next frame. `prone`
+joins the touchControls page bag and the visibility signature, so the keyboard's
+Z lights the same button.
+
+The column is four items now (MORE, PRONE, CROUCH, JUMP, 250 px tall above a
+148 px ring), which fits a portrait phone with 374 px to spare. It does not fit
+a landscape one, so a `max-height: 560px` rule lays the column down to the right
+of the ring instead.
+
+Verified with the stub-DOM smoke (67 claims) and the live phone probe (39
+claims). On the live page: PRONE goes prone and stands him up again, a 900 ms
+rest on CROUCH reads `crouch` and never `prone`, releasing it reads `stand`, and
+the whole column measures clear of the ring and of the top of the stage.
+
+One parity question left open, recorded so the next pass does not re-derive it.
+Our law is `prone ? prone : (crouch ? crouch : stand)`, so while `c_PILie` is
+asserted the crouch channel is ignored: holding Ctrl from prone does not bring
+him to a crouch, and releasing Ctrl while prone leaves him prone. BODY-1's
+`Lb_LieToCrouch` chain exists and has to be entered by something, and the
+crouch channel is the only candidate. Nobody has read which channel picks which
+chain out of `handlePlayerInput`. On a phone this is a mild annoyance (from
+prone you must tap PRONE before CROUCH does anything) and on the keyboard it is
+invisible, so it is filed rather than guessed at.
+
 ## Next steps
 
 1. Playtest on a real phone, and judge the one judgement call in this pass: the

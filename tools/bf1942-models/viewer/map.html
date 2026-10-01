@@ -88,11 +88,17 @@
        sheet instead of turning the camera. -->
   <div id="mobile-more-scrim" hidden></div>
   <div id="mobile-controls" hidden>
-    <!-- The left thumb's column, above the ring: the posture pair you need
-         WHILE the right thumb is shooting, then the tab for everything else. -->
+    <!-- The left thumb's column, above the ring: the posture buttons you need
+         WHILE the right thumb is shooting, then the tab for everything else.
+         Each is the retail binding and nothing else, because a hold and a
+         toggle cannot share one button: CROUCH holds `c_PICrouch` (LeftCtrl),
+         PRONE toggles `c_PILie` (Z), JUMP is `c_PIAction` (Space). With the
+         old long-press, a thumb that rested on CROUCH for half a second went
+         prone and nothing on the phone could bring him back up. -->
     <div class="mobile-vert-stack">
       <button type="button" id="mobile-more-btn" class="mobile-more-btn" aria-label="More actions">MORE</button>
-      <button type="button" id="mobile-crouch-btn" class="mobile-posture-btn" aria-label="Crouch, hold to go prone" hidden>CROUCH</button>
+      <button type="button" id="mobile-prone-btn" class="mobile-posture-btn prone-btn" aria-label="Go prone, tap again to stand" hidden>PRONE</button>
+      <button type="button" id="mobile-crouch-btn" class="mobile-posture-btn" aria-label="Crouch, hold" hidden>CROUCH</button>
       <button type="button" id="mobile-jump-btn" class="mobile-posture-btn" aria-label="Jump" hidden>JUMP</button>
     </div>
     <!-- The right thumb's arc, above the bottom-right corner: FIRE at the
@@ -610,7 +616,7 @@ const freeCamera = createFreeCamera(bag(
 const touchControls = createTouchControls(bag(
   from(() => localLook, `lookDelta mouseInput`),
   from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
-  from(() => localPlayer, `aircraft car occupancy soldier soldierDead switchSeat toggleProne`),
+  from(() => localPlayer, `aircraft car occupancy prone soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),
   from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
     setTouchAltFire setTouchTriggers`),

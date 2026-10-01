@@ -1,11 +1,12 @@
 /**
  * The touch controls, split by FINGER rather than by screen half.
  *
- * LEFT thumb: the FIXED move ring at the bottom-left, then the posture pair
- * stacked above it (JUMP, CROUCH) and the MORE tab over those. Those two are
- * here rather than on the right because they are the actions you need WHILE
- * the other thumb is shooting, and one thumb cannot hold FIRE, jump and crouch
- * at once.
+ * LEFT thumb: the FIXED move ring at the bottom-left, then the posture
+ * buttons stacked above it (JUMP, CROUCH, PRONE) and the MORE tab over those.
+ * Those three are here rather than on the right because they are the actions
+ * you need WHILE the other thumb is shooting, and one thumb cannot hold FIRE,
+ * jump and crouch at once. Each is one retail binding and nothing more:
+ * CROUCH holds `c_PICrouch` (LeftCtrl), PRONE toggles `c_PILie` (Z).
  * RIGHT thumb: FIRE at the bottom-right (a deliberate drag off a held FIRE
  * turns the camera), AIM above it, the kit's weapon pair above that, and the
  * look drag over the whole right half. A drag that is not on a button is the
@@ -29,7 +30,7 @@
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
  * `enterVehicle`, `exitSeat`, `footView3p`, `handWeapon`, `isTouchDevice`,
- * `keys`, `kitOffer`, `lookDelta`, `mannedActive`,
+ * `keys`, `kitOffer`, `lookDelta`, `mannedActive`, `prone`,
  * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`,
  * `optOnFoot`, `optPilot`, `padTriggerDown`, `pickupKit`, `releaseButtons`,
  * `seatToggleReady`, `setFly`, `setTouchAltFire`,
@@ -75,6 +76,7 @@ export function createTouchControls(page) {
   const mobileUseBtn = document.getElementById('mobile-use-btn');
   const mobileViewBtn = document.getElementById('mobile-view-btn');
   const mobileJumpBtn = document.getElementById('mobile-jump-btn');
+  const mobileProneBtn = document.getElementById('mobile-prone-btn');
   const mobileMapBtn = document.getElementById('mobile-map-btn');
   const mobilePickupBtn = document.getElementById('mobile-pickup-btn');
   const mobileSeatsBtn = document.getElementById('mobile-seats-btn');
@@ -96,10 +98,6 @@ export function createTouchControls(page) {
   // reworked look drag; 2200 is ~270 deg/s, a rate stick that turns a 180 in
   // under a second at full tilt and still tracks finely at half deflection.
   const MOBILE_AIM_PIXELS_PER_SECOND = 2200;
-  // Hold the CROUCH button this long and the soldier goes prone as well,
-  // COD Mobile's crouch-over-prone stack: crouch is a hold (`c_PICrouch`),
-  // prone is an edge (`c_PILie`), and the button covers both.
-  const MOBILE_PRONE_HOLD_MS = 500;
   // How far a held FIRE has to travel before it turns the camera. PUBG Mobile
   // lets a drag off the fire button aim while the trigger stays down, which is
   // the whole reason the right thumb sits on FIRE; the slop keeps a thumb
@@ -117,7 +115,6 @@ export function createTouchControls(page) {
   touchControls.mobileThrottleTouched = false;
   touchControls.mobileControlsSignature = '';
   touchControls.mobileSheetOpen = false;
-  let proneHoldTimer = 0;
   let panPointerId = null;
   let panLastX = 0;
   let panLastY = 0;
@@ -211,6 +208,7 @@ export function createTouchControls(page) {
     mobileAimBtn.classList.remove('is-active');
     mobileCrouchBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
+    mobileProneBtn.classList.remove('is-active');
     mobileThrottleInput.value = '0';
     mobileThrottleValue.value = '0';
     if (page.aircraft) page.aircraft.setInput('c_PIThrottle', 0);
@@ -286,10 +284,13 @@ export function createTouchControls(page) {
     // A sheet with nothing in it is a dead tap, so it only exists for a state
     // that has something to offer, and it closes itself the moment it does not.
     const sheetOpen = touchControls.mobileSheetOpen && show;
+    // The prone flag is in the signature because the Z key can flip it with no
+    // touch of its own, and PRONE has to read as held either way.
+    const prone = !!page.prone;
     const signature = [
       show, padMode, padUsable, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
-      canFire, canAim, canReload, canPickup, freeSeat, sideOpen, sheetOpen,
+      canFire, canAim, canReload, canPickup, freeSeat, sideOpen, sheetOpen, prone,
     ].join('|');
     // Collapse the open intent BEFORE the compare. A MORE press that lands on a
     // state with no HUD (the deploy screen) would otherwise leave the flag set,
@@ -330,8 +331,10 @@ export function createTouchControls(page) {
     mobileSeatsBtn.hidden = freeSeat < 0;
     mobileJumpBtn.hidden = !onFoot;
     mobileCrouchBtn.hidden = !onFoot;
+    mobileProneBtn.hidden = !onFoot;
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld && onFoot);
     mobileCrouchBtn.classList.toggle('is-active', touchControls.mobileCrouchHeld && onFoot);
+    mobileProneBtn.classList.toggle('is-active', prone && onFoot);
     mobileUseBtn.hidden = !(onFoot || seated);
     mobileUseBtn.disabled = onFoot ? !page.nearEntry : !seated;
     mobileUseBtn.textContent = onFoot ? (page.nearEntry ? `ENTER ${page.nearEntry.control}` : 'ENTER') : 'EXIT';
@@ -396,19 +399,22 @@ export function createTouchControls(page) {
     mobileAimBtn.classList.toggle('is-active', on);
   }
 
-  /** Crouch is a hold, prone its long press. The held key is the same
-   *  `e.code` the keyboard path records (`c_PICrouch`, LeftCtrl), so the
-   *  engine's per-frame held read sees one key, wherever it came from. */
+  /** Crouch is a hold and only a hold: the same `e.code` the keyboard path
+   *  records (`c_PICrouch`, LeftCtrl, `c_CMPushAndHold` in the shipped
+   *  Infantry.con), so the engine's per-frame held read sees one key wherever
+   *  it came from. Releasing stands the soldier back up, which BODY-1 reads
+   *  off `Lb_Crouch`'s own `returnToState Lb_CrouchToStand`.
+   *
+   *  Prone used to be this button's 500 ms long press, and that was wrong in
+   *  two ways at once: a hold and a toggle cannot share one target, and
+   *  nothing on the phone could undo the toggle. Prone is its own button now
+   *  (`c_PILie`, the Z key, `c_CMNonRepetitive`). */
   function holdMobileCrouch(on) {
     if (on) {
       page.setFly(true);
       touchControls.mobileCrouchHeld = true;
       page.keys.add(CROUCH_CODE);
       mobileCrouchBtn.classList.add('is-active');
-      clearTimeout(proneHoldTimer);
-      proneHoldTimer = setTimeout(() => {
-        if (page.optOnFoot.checked && page.soldier && !page.soldierDead && !page.occupancy) page.toggleProne();
-      }, MOBILE_PRONE_HOLD_MS);
     } else {
       touchControls.mobileCrouchHeld = false;
       page.keys.delete(CROUCH_CODE);
@@ -417,7 +423,6 @@ export function createTouchControls(page) {
   }
 
   function releaseMobileCrouch() {
-    clearTimeout(proneHoldTimer);
     if (touchControls.mobileCrouchHeld || page.keys.has(CROUCH_CODE)) holdMobileCrouch(false);
   }
 
@@ -707,6 +712,21 @@ export function createTouchControls(page) {
     // The keyboard's guard: reload once there is a magazine to reload.
     if (page.handWeapon?.data?.magazine) page.startReload?.();
   }, () => !mobileReloadBtn.disabled && !mobileReloadBtn.hidden);
+
+  // Prone, the Z key's own toggle (`c_PILie`, `c_CMNonRepetive`). Tapping it a
+  // second time is the road back up, exactly as on the keyboard, and the
+  // soldier rises through `Lb_LieToStand` (BODY-1). Jump is deliberately not
+  // that road: the engine sets the jump bit only when neither the crouch nor
+  // the prone flag is set (client `0x00500628`-`0x0050067a`, symbols.json
+  // `BFSoldier_jumpFlagSet`), so a prone man's Space press does nothing at all.
+  //
+  // The visibility pass is called straight on rather than left to the next
+  // `paintHud`, because this is the one button whose own lit state the press
+  // changes, and a frame of latency on "am I prone" is a frame of doubt.
+  edgeButton(mobileProneBtn, () => {
+    page.toggleProne();
+    updateMobileControls();
+  }, () => !mobileProneBtn.disabled && !mobileProneBtn.hidden);
 
   // The weapon pair, in the right thumb's arc over AIM: one press per step,
   // wrapping, and the step raises the weapon (see `mobileCycleWeapon`).
