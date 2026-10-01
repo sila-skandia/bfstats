@@ -352,40 +352,54 @@ stage UNDER the buttons, so a touch that starts anywhere that is not a button is
 the camera, and the margins, the top and the middle all steer equally. What pays
 for it is the buttons being few, small and low.
 
-The whole HUD is three things and nothing else, measured on a 390x844 phone
+The whole HUD is four things and nothing else, measured on a 390x844 phone
 (`features/mobile-four-finger-controls/hud-play.jpg`):
 
 | Where | What | Measured |
 | --- | --- | --- |
 | bottom-left corner | the MOVE ring | 112 px hit box, 64 px visible |
+| left side, 572 px up | JUMP, CROUCH, PRONE | three 50 px targets, 6 px apart |
+| right side, 572 px up | AIM, PREV, NEXT | three 50 px targets, 6 px apart |
 | bottom-centre | the MORE tab | 56x36 at 28 px up |
 | bottom-right corner | RELOAD against FIRE | 66x66 against 104x82 |
-| one row across the middle | JUMP, CROUCH, PRONE, AIM, PREV, NEXT | six equal 56 px targets, 6 px apart |
 
-That row is the answer to the dead space. It is one horizontal line of six equal
-targets, so a thumb never travels more than one button width, and the middle of
-the screen is buttons rather than the gap between two thumbs. The three left of
-centre are the left thumb's (JUMP, CROUCH, PRONE) and the three right of centre
-are the right thumb's (AIM, PREV, NEXT), which puts each control under the thumb
-that presses it. RELOAD is the button next to FIRE because reloading is common,
-and MORE moved to the bottom row between the ring and the corner so either
-thumb can roll onto it.
+Two short rows of three, one per thumb, at the same height and hugging the
+sides. A thumb never travels more than one button width, each control sits under
+the thumb that presses it, and 38 px of centre corridor is left between the two
+rows. RELOAD is the button next to FIRE because reloading is common, and MORE
+sits in the bottom row between the ring and the corner.
 
-Measured coverage: the buttons are 15% of the stage. The other 85% is open
-screen, so a finger can be anywhere.
+What that leaves is the point of the whole exercise, so the probe asserts it
+rather than the buttons:
+
+| Claim | Measured |
+| --- | --- |
+| the top of the screen is completely clear of buttons | 572 px of 768, so 74% of the height |
+| a centre corridor at button height | 38 px (x 176 to 214) |
+| the left margin is clear from the top down to its row | x 0 to 14 clear at button height |
+| the right margin likewise | x 376 to 390 |
+| buttons as a share of the stage | 14% covered, 86% open |
+
+The tenth pass put ONE row of six across the middle and called the result an
+open screen. It was not: the row crossed the full width, so the left and right
+margins were covered at that height and the centre of the screen had a bar
+through it. Two rows of three that stop short of each other is the same set of
+controls over half the width.
 
 One consequence of making the zone the whole stage: a finger lying on open glass
 would walk the view off its own micro drift. `MOBILE_LOOK_DEAD` (8 px) comes
 first, the same reason the ring and the drag off FIRE have one.
 
-Verified with the stub-DOM smoke (70 claims) and the live phone probe (49
+Verified with the stub-DOM smoke (70 claims) and the live phone probe (54
 claims). On the live page: the look zone measures the whole stage
-(390x768 of 390x768), the six band targets are 56 px each with 6 px between
-neighbours and 6 px between the ring, MORE and RELOAD, a drag on the RIGHT
-margin, on the LEFT margin, at the TOP of the screen and just above the band all
+(390x768 of 390x768), the six targets are 50 px each with 6 px between
+neighbours and 8 px between the ring, MORE and RELOAD, a drag on the RIGHT
+margin, on the LEFT margin, at the TOP of the screen and just above the rows all
 steer by the same 0.54 rad for the same 40 px of finger, a finger resting on
-open glass moves the view 0.0000 rad, and the tenth pass's stance loop still
-reads (PRONE prone then stand, a 900 ms rest on CROUCH still a crouch).
+open glass moves the view 0.0000 rad, and the stance loop still reads (PRONE
+prone then stand, a 900 ms rest on CROUCH still a crouch). The viewer suite runs
+4,554 with the same five pre-existing failures, and the nine suites that read
+`map.html` through `page_source` pass 216.
 
 One probe lesson from this pass, and it is a trap: a CDP touch point is a
 circle of `radiusX: 8`, so a probe press 4 px from a button lands ON that
