@@ -2432,6 +2432,7 @@ const replayHudArt = {
   stanceNation: team => soldierHud.stanceNation(team),
   kitHealthArt: (team, kit) => (kit ? soldierHud.kitHealthArt(team, null, kit) : null),
   ammoBarCode: name => vehicleHud.ammoBarCode(name),
+  hitMarks: () => soldierHud.layoutHasHitMarks(),
 };
 
 /** The HUD feed and paint, last, over everything. */

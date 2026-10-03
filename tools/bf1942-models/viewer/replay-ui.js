@@ -811,7 +811,7 @@ export class ReplayUi {
       ]],
       ['Camera', [
         [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
-        [k(['C']), 'Next camera'],
+        [k(['C']), 'Next camera (in a plane, the nose cam after the cockpit)'],
         ['Drag, wheel', 'Orbit and zoom'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
         [k(['A', 'D']), 'Orbit (free: strafe)'],
@@ -967,6 +967,14 @@ export class ReplayUi {
     }
     const wasAuto = Boolean(highlights?.auto);
     highlights?.setAuto(false, true);
+    // First person again, in an aircraft: its other view, as the game's
+    // first-person key does on a second press.
+    if (mode === 'pov' && !wasAuto && this.player.camera.mode === 'pov') {
+      const view = this.player.camera.toggleNose();
+      if (view) this.flash(view === 'nose' ? 'Nose camera' : 'Cockpit');
+      this.syncMode();
+      return;
+    }
     if (this.player.camera.setMode(mode) || wasAuto) {
       // On a touch screen the free camera's flying is the thumbstick's, which
       // nothing else would say is there.
@@ -1400,6 +1408,12 @@ export class ReplayUi {
       case 'Digit3': case 'Numpad3': if (once) this.setMode('free'); return true;
       case 'KeyC':
         if (once) {
+          // In an aircraft the first person goes on from the cockpit to the
+          // nose cam before the next camera.
+          if (this.uiMode() === 'pov' && camera.povView === 'cockpit' && camera.sight?.nose) {
+            this.setMode('pov');
+            return true;
+          }
           const cycle = ['orbit', 'pov', 'free', 'auto'];
           this.setMode(cycle[(cycle.indexOf(this.uiMode()) + 1) % cycle.length]);
         }
