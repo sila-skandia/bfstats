@@ -130,6 +130,7 @@ struct rec_target {
     uint32_t score_tickets_off; /* the ticket count in a TeamScore */
     uint32_t setup_level_off;
     uint32_t setup_gpm_off;
+    uint32_t fa_fake_off;       /* FireArms: the fakeFire byte (setFakeFire) */
     /* functions the fire detour calls in the target */
     uint32_t get_bf_player_addr;   /* getBFPlayer(IPlayer*) */
     uint32_t get_root_parent_addr; /* getRootParent(ICompositeObject const*) */

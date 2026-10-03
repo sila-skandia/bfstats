@@ -132,7 +132,7 @@ Two sampler bugs fixed on the way, both worth knowing:
 Three capture surfaces, all verified in live wake-coop runs and by parsing the
 resulting file through `replay-recording.js` (the viewer's own parser):
 
-1. **Three game-thread detours** (RWX trampolines, patched through
+1. **Four game-thread detours** (RWX trampolines, patched through
    `/proc/self/mem`; each site's bytes are checked before anything is
    written, and a mismatch skips the hook):
    - `GameServer::sendGameEventToAll` `0x08153b10` -- every to-all event once:
@@ -154,9 +154,21 @@ resulting file through `replay-recording.js` (the viewer's own parser):
    - `FireArms::fireBarrel(IPlayer*, Mat4&, int)` `0x0828aba0` -- `f`
      records with the weapon template, its root's net id and the firing
      player's id (`getBFPlayer 0x08052ac0`): the gunfire sound timeline for
-     the whole map, not one client's ~520 m window. Every call is written
-     (RECORDER_DEBUG counts them: 160/160 on El Alamein), but the calls are
-     few: see the open item.
+     the whole map, not one client's ~520 m window. One call is one
+     projectile.
+   - Fake rounds: `FireArms::Fire` at `0x0828a230`, past its `fakeFire`
+     test. A bot shooting a bot that no human is near fires *fake*: the
+     timer, recoil, heat and ammo run, but `fireBarrel` is skipped and the
+     AI rolls the hit (`EntryInfoWrapper::execute` `0x08617f30` sets it
+     through `FireArms::setFakeFire` `0x0828e310`; the `InfoWrapper`
+     interpreter entries in `AIbehaviours.con` turn it on for every armed
+     type). Every round passes `0x0828a230` once; the fake ones are written
+     there as `f` with `"fake":1`, the launch matrix (`ebp-0x58`) as their
+     transform. Without them a bots-only round had about 4 `f` per kill,
+     led by aircraft and ship guns; with them the first five minutes of
+     Wake held 1834 fake rounds (Browning 1496, MG42 334) beside 136 real.
+     Kills from fake fire carry no weapon (`GameServer::giveDamage` gets
+     weapon id -1): the 49 `(none)` kills of a Wake round.
 2. **Sampler additions** (same thread as stage 2):
    - Moving parts: every registered `RotationalBundle` (122 of them on Wake:
      turrets, gun mounts, Daihatsu ramps and MG mounts, M3A1 wheels and
@@ -224,15 +236,6 @@ free camera's id -- the cause of "every player has the same kit".
   not exist on the server's own BFSoldier). Soldier head-aim therefore does
   not track in replays; the anim state names table (`anim` line) is also
   unwritten, so states play by index.
-- **Most gunfire never reaches `fireBarrel`.** The server files hold about
-  4 `f` records per kill across the whole map (Wake 557 for 133 kills,
-  Midway 885 for 40), led by aircraft guns, ship guns and bombs. The
-  client recorder's files hold about 25 per kill within one client's
-  window (Bocage, 3935 for 159), led by MG42, Thompson and MP40, which
-  barely appear in the server's. `createProjectile` is only called from
-  `fireBarrel` (and `placeScoutCamera`), so automatic fire on the server
-  takes another path, or one `Fire` stands for a burst. Find it before
-  trusting the server's `f` timeline for small arms.
 - No run has had a real client connected. With one, a join's database
   (createPlayer for every player, createObject for every object, pickupKit)
   lands in the file on top of the sampler's synthetic roster, and the
@@ -291,6 +294,8 @@ the first four.
   sample, done kits are dropped, and a player missing from three complete
   roster walks gets `destroyPlayer` (a renamed pid gets `destroyPlayer`
   then `createPlayer`).
+- **Most gunfire was missing.** See fake rounds above: bot-on-bot fire
+  away from humans never reaches `fireBarrel`.
 - **Kill weapons were garbage.** The server's `ScoreMsgEvent` is packed:
   the weapon is payload +6 and the next field +10 (`ScoreMsgEvent::serialize`
   `0x0811c8d0`), not the client struct's +8/+12. Every kill had
@@ -301,6 +306,8 @@ the first four.
   game-thread entry points assume 16-byte stack alignment that GCC 3.2
   callers do not give (`force_align_arg_pointer` now; this .so is built for
   SSE). `system("mkdir")` forked the server at every open (`mkdir(2)`).
+  The lnxded installer published each trampoline pointer after patching
+  its site (safe only because the constructor runs before any game thread).
   `build.sh` copied over the lab's `recorder.so` in place, rewriting the
   pages a running server executes (now an atomic rename). The w32ded
   `sendGameEventToAll` trampoline copied the whole 94-byte body, two
@@ -314,7 +321,10 @@ Wake round played to its end at 809 s and the server's next round (the file
 closed 0.1 s after `gameStatus` 2, and the next opened with the new round's
 world); El Alamein co-op 7.8 min (54/54 kits bound, a German bot's `ü`
 the first non-ASCII name); Midway co-op 9.5 min (289 parts, 63 engines,
-885 fire records).
+885 fire records); the final build through a 31-minute Wake round (file
+closed 0.3 s after `gameStatus` 2: the split waits three samples); Wake with
+the fake-round hook, a round over in 385 s (2802 `f`, 2481 of them fake;
+12 of its 24 kills carry no weapon in the event log).
 
 ## Where things are at (handoff, 2026-10-02)
 

@@ -156,6 +156,7 @@ extern int g_debug;
 #define ADD_EVENT_SEND_QUEUE 0x0812d730u  /* GameEventManager::addEventToSendQueue */
 #define SEND_EVENT_TO_ALL    0x08153b10u  /* GameServer::sendGameEventToAll(const&, bool) */
 #define FIRE_BARREL          0x0828aba0u  /* FireArms::fireBarrel(IPlayer*, Mat4&, int) */
+#define FIRE_POST_FAKE_TEST  0x0828a230u  /* inside FireArms::Fire, past the fakeFire test */
 
 /* The stubs live in this .so's .text; the copied prologue bytes need
  * executable memory: one RWX page, trampolines written at install. */
@@ -187,6 +188,20 @@ static const uint8_t FIRE_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 static const uint8_t TOALL_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 #define TOALL_LEN 6
 #define TOALL_BACK (SEND_EVENT_TO_ALL + TOALL_LEN)
+
+/* FireArms::Fire 0x0828a090 at 0x0828a230 (objdump), mid-function: the
+ * fakeFire test's fall-through (`cmpb $0,0x295(this)`; `je` to the barrel
+ * dispatch at 0x0828a217..22a) and the target of all five dispatch exits
+ * (0x0828a625, 6ca, 709, 792, 7d3), so every round passes once; no branch
+ * lands in 0x0828a231..235.
+ *   83 ec 0c        sub  $0xc,%esp
+ *   8b 75 08        mov  0x8(%ebp),%esi
+ * (6 bytes, nothing relative; the call at 0x0828a237 is not copied.) Fire's
+ * ebp frame is built: this at ebp+8, the IPlayer* (NULL from handleUpdate's
+ * auto-fire site) at ebp+0xc, the launch Mat4 copied to ebp-0x58. */
+static const uint8_t FAKE_ORIG[] = { 0x83, 0xec, 0x0c, 0x8b, 0x75, 0x08 };
+#define FAKE_LEN 6
+#define FAKE_BACK (FIRE_POST_FAKE_TEST + FAKE_LEN)
 
 __asm__(
 ".text\n"
@@ -227,6 +242,21 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_toall\n"
+".globl recorder_stub_fakefire\n"
+"recorder_stub_fakefire:\n"       /* jmp'd here from 0x0828a230, inside Fire's frame */
+"  pusha\n"
+"  pushfl\n"
+"  leal  -0x58(%ebp), %ecx\n"     /* the launch Mat4 */
+"  movl  12(%ebp), %edx\n"        /* IPlayer* */
+"  movl  8(%ebp), %eax\n"         /* this */
+"  pushl %ecx\n"
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  recorder_on_fake_fire\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_fakefire\n"
 ".data\n"
 ".globl recorder_tramp_event\n"
 ".align 4\n"
@@ -237,14 +267,19 @@ __asm__(
 ".globl recorder_tramp_toall\n"
 ".align 4\n"
 "recorder_tramp_toall: .long 0\n"
+".globl recorder_tramp_fakefire\n"
+".align 4\n"
+"recorder_tramp_fakefire: .long 0\n"
 );
 
 extern char recorder_stub_event;
 extern char recorder_stub_fire;
 extern char recorder_stub_toall;
+extern char recorder_stub_fakefire;
 extern uint32_t recorder_tramp_event;
 extern uint32_t recorder_tramp_fire;
 extern uint32_t recorder_tramp_toall;
+extern uint32_t recorder_tramp_fakefire;
 
 /* A trampoline in the RWX page: the copied bytes, then a jmp back. */
 static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
@@ -268,9 +303,12 @@ static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_t
     return 1;
 }
 
+/* `tramp_global` is the pointer the stub jumps through: it is live before
+ * the site is patched (the constructor runs before any game thread, but a
+ * stub jumping through a null pointer is the w32 port's first crash). */
 static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
                           void *stub, const uint8_t *orig_bytes, uintptr_t back_to,
-                          uintptr_t *tramp_out)
+                          uint32_t *tramp_global)
 {
     uint8_t have[16];
     if (!lnxded_safe_read(have, len, site) || memcmp(have, expected, len) != 0) {
@@ -278,7 +316,9 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
                 (unsigned long)site);
         return 0;
     }
-    if (!build_trampoline(orig_bytes, len, back_to, tramp_out)) return 0;
+    uintptr_t tramp = 0;
+    if (!build_trampoline(orig_bytes, len, back_to, &tramp)) return 0;
+    *tramp_global = (uint32_t)tramp;
     uint8_t jmp[5];
     jmp[0] = 0xe9;
     int32_t rel = (int32_t)((uintptr_t)stub - (site + 5));
@@ -298,23 +338,20 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
 
 static int lnxded_install_detours(void)
 {
-    uintptr_t tramp_event = 0, tramp_fire = 0, tramp_toall = 0;
     if (install_detour(ADD_EVENT_SEND_QUEUE, AETSQ_ORIG, AETSQ_LEN,
-                       &recorder_stub_event, AETSQ_ORIG, AETSQ_BACK, &tramp_event)) {
-        *(uint32_t *)&recorder_tramp_event = (uint32_t)tramp_event;
+                       &recorder_stub_event, AETSQ_ORIG, AETSQ_BACK, &recorder_tramp_event)) {
         g_hook_active = 1;
         fprintf(stderr, "recorder: event queue hooked at %08x\n", (unsigned)ADD_EVENT_SEND_QUEUE);
     }
     if (install_detour(SEND_EVENT_TO_ALL, TOALL_ORIG, TOALL_LEN,
-                       &recorder_stub_toall, TOALL_ORIG, TOALL_BACK, &tramp_toall)) {
-        *(uint32_t *)&recorder_tramp_toall = (uint32_t)tramp_toall;
+                       &recorder_stub_toall, TOALL_ORIG, TOALL_BACK, &recorder_tramp_toall))
         fprintf(stderr, "recorder: sendGameEventToAll hooked at %08x\n", (unsigned)SEND_EVENT_TO_ALL);
-    }
     if (install_detour(FIRE_BARREL, FIRE_ORIG, FIRE_LEN,
-                       &recorder_stub_fire, FIRE_ORIG, FIRE_BACK, &tramp_fire)) {
-        *(uint32_t *)&recorder_tramp_fire = (uint32_t)tramp_fire;
+                       &recorder_stub_fire, FIRE_ORIG, FIRE_BACK, &recorder_tramp_fire))
         fprintf(stderr, "recorder: fireBarrel hooked at %08x\n", (unsigned)FIRE_BARREL);
-    }
+    if (install_detour(FIRE_POST_FAKE_TEST, FAKE_ORIG, FAKE_LEN,
+                       &recorder_stub_fakefire, FAKE_ORIG, FAKE_BACK, &recorder_tramp_fakefire))
+        fprintf(stderr, "recorder: Fire's fake rounds hooked at %08x\n", (unsigned)FIRE_POST_FAKE_TEST);
     return 1;
 }
 
@@ -323,6 +360,7 @@ static int lnxded_install_detours(void)
 extern void recorder_on_event(uint32_t ev);
 extern void recorder_on_queue_event(uint32_t ev);
 extern void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
+extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",
@@ -402,6 +440,7 @@ const struct rec_target lnxded_target = {
     .score_tickets_off = 0x48u,         /* TeamScore::setTickets 0x081610a0 */
     .setup_level_off = 0x23cu,          /* Setup::getCurrentLevel 0x080bfeb0 */
     .setup_gpm_off = 0x240u,
+    .fa_fake_off = 0x295u,              /* FireArms::setFakeFire 0x0828e310 writes it; Fire tests it at 0x0828a217 */
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
     .get_root_parent_addr = 0x0818d4b0u,
 
