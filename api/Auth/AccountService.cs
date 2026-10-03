@@ -35,6 +35,15 @@ public class AccountService(
 
     internal static bool IsTombstoned(User user) => user.Email == TombstoneEmail(user.Id);
 
+    /// <summary>
+    /// Users.Email for password accounts is a keyed hash or a no-email
+    /// sentinel, not an address — an export hands back a blank there.
+    /// </summary>
+    internal static string MaskStoredEmail(string email) =>
+        email.StartsWith("email-hmac$", StringComparison.Ordinal) || email.EndsWith("@users.bfstats.io")
+            ? ""
+            : email;
+
     public async Task<AccountExport?> ExportAsync(int userId, CancellationToken cancellationToken = default)
     {
         var user = await context.Users.AsNoTracking()
@@ -125,7 +134,7 @@ public class AccountService(
         return new AccountExport(
             ExportedAtUtc: DateTime.UtcNow.ToString("O"),
             Profile: new AccountExportProfile(
-                user.Id, user.Email, user.Role, user.CreatedAt, user.LastLoggedIn, user.IsActive),
+                user.Id, MaskStoredEmail(user.Email), user.Role, user.CreatedAt, user.LastLoggedIn, user.IsActive),
             LinkedPlayerNames: aliases,
             FavouriteServers: favourites,
             Buddies: buddies,
@@ -221,6 +230,9 @@ public class AccountService(
         foreach (var post in posts) post.CreatedByUserEmail = tombstone;
 
         user.Email = tombstone;
+        user.Username = null;
+        user.PasswordHash = null;
+        user.AuthProvider = "deleted";
         user.Role = null;
         user.IsActive = false;
 

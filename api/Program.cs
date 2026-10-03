@@ -518,6 +518,9 @@ try
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
+    builder.Services.AddSingleton<IPasswordHashService, PasswordHashService>();
+    builder.Services.AddSingleton<IEmailHashService, EmailHashService>();
+    builder.Services.AddSingleton<IEmailSender, NoOpEmailSender>();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
     {

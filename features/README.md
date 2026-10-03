@@ -249,6 +249,7 @@ folder answers.
 - [admin-v4-migration](admin-v4-migration/README.md): Admin V4 Migration — `/admin/data` to Neutral Depth
 - [account-deletion-and-legal](account-deletion-and-legal/README.md): Account deletion, data export, and legal pages
 - [oauth-implementation](oauth-implementation/OAUTH_IMPLEMENTATION_GUIDE.md): OAuth 2.0 Clean Implementation Guide
+- [username-password-auth](username-password-auth/README.md): First-party username + password sign-in next to Discord
 - [discord-oauth-backend-setup](discord-oauth-backend-setup/DISCORD_OAUTH_BACKEND_SETUP.md): Discord OAuth Backend Setup Guide
 - [discord-oauth-quick-start](discord-oauth-quick-start/DISCORD_OAUTH_QUICK_START.md): Discord OAuth - Quick Start
 - [logout-csrf-cors-mismatch](logout-csrf-cors-mismatch/README.md): Logout CSRF vs leftover munyard.dev CORS origin

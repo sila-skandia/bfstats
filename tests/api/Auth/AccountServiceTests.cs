@@ -92,6 +92,23 @@ public sealed class AccountServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteAsync_WipesThePasswordCredentialAndUsername()
+    {
+        var user = await CreateUserAsync("email-hmac$AAAA", role: null);
+        user.Username = "PattonsGhost";
+        user.PasswordHash = "pbkdf2-sha256$210000$abc$def";
+        user.AuthProvider = "password";
+        await dbContext.SaveChangesAsync();
+
+        await service.DeleteAsync(user.Id);
+
+        var tombstoned = await dbContext.Users.AsNoTracking().FirstAsync(u => u.Id == user.Id);
+        Assert.Null(tombstoned.Username);
+        Assert.Null(tombstoned.PasswordHash);
+        Assert.Equal("deleted", tombstoned.AuthProvider);
+    }
+
+    [Fact]
     public async Task DeleteAsync_SucceedsForATournamentOrganiserAndKeepsTheTournament()
     {
         // The case a hard DELETE FROM Users would fail on: Tournament pins its

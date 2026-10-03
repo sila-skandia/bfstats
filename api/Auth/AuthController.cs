@@ -6,6 +6,8 @@ using api.Auth.Models;
 using Microsoft.Extensions.Configuration;
 using api.PlayerTracking;
 using Microsoft.Extensions.Logging;
+using api.Caching;
+using System.Text.RegularExpressions;
 
 namespace api.Auth;
 
@@ -18,6 +20,10 @@ public class AuthController(
     ITokenService tokenService,
     IRefreshTokenService refreshTokenService,
     IAccountService accountService,
+    IPasswordHashService passwordHashService,
+    IEmailHashService emailHashService,
+    IEmailSender emailSender,
+    ICacheService cacheService,
     IConfiguration configuration) : ControllerBase
 {
     private const int MaxBulkPlayerNames = 1000;
@@ -36,6 +42,36 @@ public class AuthController(
                 var discordPayload = await discordAuthService.ExchangeCodeForUserAsync(request.DiscordCode, request.RedirectUri, ipAddress);
                 email = discordPayload.Email;
                 name = discordPayload.Username;
+            }
+            else if (!string.IsNullOrEmpty(request.Username) && !string.IsNullOrEmpty(request.Password))
+            {
+                if (!await CheckPasswordLoginRateLimitAsync(ipAddress))
+                    return StatusCode(429, new { message = "Too many sign-in attempts. Try again later." });
+
+                var pwUser = await FindPasswordUserAsync(request.Username);
+                if (pwUser == null || pwUser.PasswordHash == null
+                    || !passwordHashService.Verify(request.Password, pwUser.PasswordHash))
+                {
+                    // Same message for unknown name and wrong password: no
+                    // account enumeration on the username/password path.
+                    await IncrementPasswordLoginAttemptsAsync(ipAddress);
+                    return Unauthorized(new { message = "Invalid username or password" });
+                }
+
+                pwUser.LastLoggedIn = DateTime.UtcNow;
+                pwUser.IsActive = true;
+                await context.SaveChangesAsync();
+
+                var (pwAccess, pwExpires) = tokenService.CreateAccessToken(pwUser);
+                var (pwRawRefresh, pwRtEntity) = await refreshTokenService.CreateAsync(pwUser, ipAddress, Request.Headers.UserAgent.ToString());
+                refreshTokenService.SetCookie(Response, pwRawRefresh, pwRtEntity.ExpiresAt);
+
+                return Ok(new LoginResponse
+                {
+                    User = new UserDto { Id = pwUser.Id, Email = MaskEmail(pwUser.Email), Name = pwUser.Username ?? request.Username },
+                    AccessToken = pwAccess,
+                    ExpiresAt = pwExpires
+                });
             }
             else if ((configuration["ASPNETCORE_ENVIRONMENT"] == "Development" || string.Equals(configuration["Auth:AllowDevLogin"], "true", StringComparison.OrdinalIgnoreCase)) && request.DevBypass == true)
             {
@@ -70,6 +106,192 @@ public class AuthController(
             logger.LogError(ex, "Login error");
             return StatusCode(500, new { message = "Login failed" });
         }
+    }
+
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    {
+        try
+        {
+            var ipAddress = GetClientIpAddress();
+            if (!await CheckPasswordLoginRateLimitAsync(ipAddress))
+                return StatusCode(429, new { message = "Too many sign-up attempts. Try again later." });
+
+            var usernameError = ValidateUsername(request.Username);
+            if (usernameError != null)
+                return BadRequest(new { message = usernameError });
+
+            if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
+                return BadRequest(new { message = "Password must be at least 8 characters" });
+
+            var name = request.Username.Trim();
+            if (await context.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == name.ToLower()))
+                return Conflict(new { message = "That username is already taken" });
+
+            var now = DateTime.UtcNow;
+            var user = new User
+            {
+                Email = string.IsNullOrWhiteSpace(request.Email)
+                    ? $"no-email-{Guid.NewGuid():N}@users.bfstats.io"
+                    : emailHashService.Hash(request.Email),
+                Username = name,
+                PasswordHash = passwordHashService.Hash(request.Password),
+                AuthProvider = "password",
+                CreatedAt = now,
+                LastLoggedIn = now,
+                IsActive = true
+            };
+
+            // Optional alias link during sign-up. A name that matches no
+            // tracked player yet is still linked — the alias table allows
+            // that on purpose (see OnModelCreating) — so the account is
+            // ready when the player first shows up on a server.
+            if (!string.IsNullOrWhiteSpace(request.PlayerName))
+            {
+                user.PlayerNames.Add(new UserPlayerName
+                {
+                    PlayerName = request.PlayerName.Trim(),
+                    CreatedAt = now
+                });
+            }
+
+            context.Users.Add(user);
+            await context.SaveChangesAsync();
+            logger.LogInformation("Created new password account {UserId}", user.Id);
+
+            var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
+            var (rawRefresh, rtEntity) = await refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString());
+            refreshTokenService.SetCookie(Response, rawRefresh, rtEntity.ExpiresAt);
+
+            return Ok(new LoginResponse
+            {
+                User = new UserDto { Id = user.Id, Email = MaskEmail(user.Email), Name = name },
+                AccessToken = accessToken,
+                ExpiresAt = expiresAt
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Registration error");
+            return StatusCode(500, new { message = "Registration failed" });
+        }
+    }
+
+    /// <summary>
+    /// Forgotten password. Uniform 200 whether or not the pair matched — the
+    /// response never confirms an account exists. Delivery currently goes to
+    /// NoOpEmailSender: there is no SMTP relay on the node, so the lookup and
+    /// send plumbing is real but nothing leaves the server yet.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        try
+        {
+            var user = await context.Users.FirstOrDefaultAsync(u =>
+                u.Username != null && u.Username.ToLower() == request.Username.Trim().ToLower());
+
+            if (user != null
+                && user.AuthProvider == "password"
+                && emailHashService.IsHashedEmail(user.Email)
+                && emailHashService.Matches(request.Email, user.Email))
+            {
+                // No email contents in the log — same rule as the Discord path.
+                logger.LogInformation("Forgotten-password request matched account; sending reset instructions");
+                await emailSender.SendAsync(
+                    request.Email,
+                    "bfstats.io password reset",
+                    "A password reset was requested for your bfstats.io account.",
+                    HttpContext.RequestAborted);
+            }
+
+            return Ok(new { message = "If the username and email match an account, reset instructions have been sent." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Forgot-password error");
+            // Uniform response even on failure: no signal, no enumeration.
+            return Ok(new { message = "If the username and email match an account, reset instructions have been sent." });
+        }
+    }
+
+    [HttpPost("password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+                return BadRequest(new { message = "New password must be at least 8 characters" });
+
+            var user = await GetCurrentUserAsync();
+            if (user == null)
+                return Unauthorized(new { message = "Not signed in" });
+
+            if (user.AuthProvider != "password" || user.PasswordHash == null)
+                return BadRequest(new { message = "This account signs in with Discord and has no password to change" });
+
+            if (!passwordHashService.Verify(request.CurrentPassword, user.PasswordHash))
+                return Unauthorized(new { message = "Current password is incorrect" });
+
+            user.PasswordHash = passwordHashService.Hash(request.NewPassword);
+            await context.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Change-password error");
+            return StatusCode(500, new { message = "Could not change password" });
+        }
+    }
+
+    private static string? ValidateUsername(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return "Username is required";
+        var name = username.Trim();
+        if (name.Length < 3 || name.Length > 24)
+            return "Username must be 3-24 characters";
+        if (!UsernamePattern.IsMatch(name))
+            return "Username may only contain letters, digits, and _ . -";
+        return null;
+    }
+
+    // 3-24 chars: letters, digits, underscore, dot, hyphen. Uniqueness is
+    // compared case-insensitively in the queries; the index catches the
+    // exact-case collisions, this pattern keeps the name URL-safe.
+    private static readonly Regex UsernamePattern = new("^[A-Za-z0-9_.-]+$", RegexOptions.Compiled);
+
+    private Task<User?> FindPasswordUserAsync(string username) =>
+        context.Users.FirstOrDefaultAsync(u =>
+            u.AuthProvider == "password"
+            && u.Username != null
+            && u.Username.ToLower() == username.Trim().ToLower());
+
+    /// <summary>
+    /// Users.Email for password accounts is a hash or a sentinel, never a
+    /// displayable address — hand the client a mask instead.
+    /// </summary>
+    private static string MaskEmail(string email) =>
+        email.StartsWith("email-hmac$", StringComparison.Ordinal) || email.EndsWith("@users.bfstats.io")
+            ? ""
+            : email;
+
+    // Same per-IP budget the Discord exchange enforces; both paths share the
+    // key so one address cannot work each in parallel.
+    private async Task<bool> CheckPasswordLoginRateLimitAsync(string? ipAddress)
+    {
+        if (string.IsNullOrEmpty(ipAddress)) return true;
+        var data = await cacheService.GetAsync<RateLimitData>($"auth_attempts:{ipAddress}");
+        return (data?.Attempts ?? 0) < 20;
+    }
+
+    private async Task IncrementPasswordLoginAttemptsAsync(string? ipAddress)
+    {
+        if (string.IsNullOrEmpty(ipAddress)) return;
+        var key = $"auth_attempts:{ipAddress}";
+        var data = await cacheService.GetAsync<RateLimitData>(key);
+        await cacheService.SetAsync(key, new RateLimitData { Attempts = (data?.Attempts ?? 0) + 1 }, TimeSpan.FromHours(1));
     }
 
     [HttpPost("refresh")]
@@ -183,7 +405,12 @@ public class AuthController(
             return Ok(new UserProfileResponse
             {
                 Id = userWithData.Id,
-                Email = userWithData.Email,
+                // Password accounts store a hash or sentinel here, never an
+                // address — surface a blank rather than the stored bytes.
+                Email = userWithData.Email.StartsWith("email-hmac$", StringComparison.Ordinal)
+                            || userWithData.Email.EndsWith("@users.bfstats.io")
+                    ? ""
+                    : userWithData.Email,
                 CreatedAt = userWithData.CreatedAt,
                 LastLoggedIn = userWithData.LastLoggedIn,
                 IsActive = userWithData.IsActive,
