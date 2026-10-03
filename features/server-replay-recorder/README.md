@@ -16,9 +16,10 @@ through one connection; the server sees the authoritative world for every
 player and bot, no client cooperation needed.
 
 An agent picking this feature up: read
-["Review: sampling, and the send path"](#review-sampling-and-the-send-path-2026-10-04)
-first -- why the server's replays play worse than the client's, what each gap
-is, and the plan. "Where things are at (handoff)" below is the 2026-10-02
+["The best capture"](#the-best-capture-2026-10-04) first -- the design this
+POC is to be replaced by, and the experiments that come before it. "Review:
+sampling, and the send path" before it measures why the POC's replays play
+worse than the client's. "Where things are at (handoff)" below is the 2026-10-02
 state of the w32ded port.
 
 ## What exists
@@ -601,3 +602,85 @@ Keep the server recorder. Use the send path as its clock and its spec:
    every mask bit is parity with any client.
 4. Write the velocity into `s`. The viewer can then ease between samples on a
    curve, which no client recording allows.
+
+## The best capture (2026-10-04)
+
+The owner's follow-up: cost is no object and the POC is not the design; what
+captures a round at full fidelity? Three readings settle it (ledger P-3, P-4,
+AI-135):
+
+- **Inputs alone cannot rebuild a round.** The bots' scheduler runs tasks
+  until the wall clock passes a frame budget, and the random numbers are
+  seeded from `time(0)` (AI-135). The truly event-based recording, inputs
+  plus a re-simulation, is out.
+- **The server builds a client's view of an object only while a client
+  ghosts it.** A probe recorder on a bots-only round read every soldier's,
+  turret's and steered wheel's replication ring: index 0, default values, in
+  every sample (P-3). Hooking the send therefore records nothing without
+  clients, and with clients only what each is sent. The fields those rings
+  are copied from are all live on the server objects, and the copy routine
+  (`updateStateMask`) is the engine's own list of what a player can ever be
+  shown (P-4).
+- **The client derives some of what it draws.** Bots on a bots-only server
+  never reach `Lb_RunForward` in the state the server would send; a client
+  recording of a lab round shows bots in it 18% of the time. Either the client
+  computes locomotion from motion, or the server simulates a bot far from any
+  human in less detail (its AI LOD, which also makes its fire fake, AI-134).
+  Open.
+
+### The options, ranked by what they can hold
+
+| | Coverage | Rate | Precision | Server truth (projectiles, hits) | Client-derived cosmetics |
+|---|---|---|---|---|---|
+| Inputs + re-simulation | everything | any | exact | yes | yes |
+| **Omniscient state capture in the server** | every object | every 30 Hz tick | unquantized | yes | derived by the viewer |
+| Spectator client, relevance lifted | every object, if the budget allows | 0.1 s ghosts (P-2) | wire-quantized | no (its own re-simulation) | yes |
+| Tap or phantom connection on the send path | what the connection is sent | 0.1 s | wire-quantized | no | no |
+
+The first is impossible (AI-135). The spectator client's ceiling is the
+wire's: one 1,024-byte send stream per connection (J-1) carrying the whole
+map, so the priority scheduler starves the far objects. It also needs a
+client process and a player slot per server, and whether a spectator raises
+nearby bots' AI LOD, and so changes the round it records, is unread. The tap
+records less than the rings it serializes.
+
+### Recommended: the omniscient state capture
+
+A recorder in the server that does, every tick and for every object, what
+`updateStateMask` does for one connection's relevant set, and keeps what no
+client is sent:
+
+1. **Clock.** On the game thread, after each `simulateFrame` (GameServer
+   vslot 0x140, D-1), stamped with the tick number. Direct reads (the game
+   thread owns the world), no `/proc/self/mem`, no torn transforms.
+2. **The client-visible state, unquantized.** Per networkable class, the live
+   fields its `updateStateMask` copies: soldiers per P-4, vehicles
+   (`SimpleObjectNetworkable`), turrets (`RotationalBundleNetworkable`),
+   wheels and suspension (`SpringNetworkable`), engines, control points,
+   kits, projectiles. The 13 classes are the checklist.
+3. **The server's truth.** Every projectile in the projectile map each tick
+   (flight and impact, which no client has: a client flies its own copy),
+   every damage application with attacker, weapon and amount, every shot real
+   and fake, each bot's AI LOD (so the viewer knows when the server itself
+   simplified a bot), the seats (`getVehicle` `+0x4c`, `+0x54`), and each
+   player's consumed `PlayerAction` (D-3), the input every client cosmetic is
+   derived from.
+4. **The events,** as now, plus the join database synthesised at file start.
+5. **Binary records** into a buffer on the game thread, compressed and
+   written by a writer thread; a converter to ndjson for the viewer.
+
+The viewer derives the cosmetics a client computes (locomotion, steered
+wheels) from motion and input. It does that today for client files that
+lack them.
+
+### Experiments, in order
+
+1. **The parity oracle.** One lab round with a human client recording beside
+   the server recorder. Every record in the client's file, for objects in its
+   relevance set, must be reproducible from the server's. It settles P-4's
+   open question and is the acceptance test for the capture.
+2. **Server projectiles.** Walk the projectile map per tick; check real
+   rounds' flights against the event log's kills.
+3. **AI LOD.** Record it per bot; a lab round with the LOD manager disabled
+   (`AILODManager::lodEnable` `0x08476290`) shows what full detail looks like
+   on a bots-only server.

@@ -186,6 +186,13 @@ RotationalBundle `predict` that interpolates between the two records around
 P-2 name, on vtable `0x008D8DA8`, belong to the client's local-host server. The
 two readings disagree and the question is open.*
 
+**The server builds a snapshot only for ghosting (P-3, P-4, 2026-10-04).**
+Each networkable keeps a 16-record ring that `getNetUpdate` serializes from;
+`updateStateMask` advances it and copies the live object in. With no client
+connected the rings never move, so the replicated view of an object exists
+only while some connection ghosts it. P-4 lists the soldier record's fields
+and the live BFSoldier fields they come from.
+
 ## 5. Rates and the choke
 
 - Default per-connection send rate **20 Hz** (`conn+0xc`), minimum **10**,
