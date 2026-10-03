@@ -132,11 +132,12 @@ export function playerHref(name) {
   return `${LIVE_API}/v4/players/${encodeURIComponent(name)}`;
 }
 
-/** Where a visitor signs in: bfstats.io's own Discord sign-in, which sends
- *  them back to `returnTo` (ui/src/views/DiscordStart.vue). */
+/** Where a visitor signs in: bfstats.io's own sign-in page, which offers
+ *  Discord and username+password and sends them back to `returnTo`
+ *  (ui/src/views/v4/AuthSignInV4.vue). */
 export function signInHref(returnTo, page = globalThis.location) {
   const host = /(^|\.)bfstats\.io$/i.test(page.hostname) ? LIVE_API : page.origin;
-  return `${host}/auth/discord/start?returnTo=${encodeURIComponent(returnTo)}`;
+  return `${host}/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
 /** One client per API on a page (`createRecordingsApi`): the comments, the

@@ -111,8 +111,10 @@ bfstats.io is signed in here, and the page fetches its own access token with
 `POST /stats/auth/refresh`. It does that only when it holds none: two refreshes
 racing on one cookie trip the refresh token's reuse detection and revoke the
 whole session, bfstats.io's included. A visitor who is not signed in goes to
-`bfstats.io/auth/discord/start?returnTo=<the page>`, through Discord, and back
-(`ui/src/views/DiscordStart.vue`, `ui/src/services/authReturn.ts`). Only
+`bfstats.io/auth/login?returnTo=<the page>`, picks Discord or a
+username+password (the same combined sign-in page as the dashboard,
+`ui/src/views/v4/AuthSignInV4.vue`), and comes back
+(`ui/src/services/authReturn.ts`). Only
 bfstats.io's own hosts are taken as a place to go back to, and a return
 address older than 15 minutes is dropped, so an abandoned sign-in cannot
 hijack a later one.

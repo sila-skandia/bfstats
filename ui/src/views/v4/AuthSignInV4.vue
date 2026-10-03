@@ -2,13 +2,26 @@
 // Sign-in / sign-up page: username+password, with Discord as the other
 // option. Email on sign-up is optional and stored only as a keyed hash —
 // the copy below has to keep saying that, it is the whole trust pitch.
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
+import { rememberReturnUrl, safeReturnUrl, takeReturnUrl } from '@/services/authReturn'
 import '@/styles/modern-minimal.css'
 
 const router = useRouter()
 const route = useRoute()
+
+// Sign-in on behalf of another bfstats site (play.bfstats.io's REPLAY feed):
+// /auth/login?returnTo=<page>. Remembered on the way in, honoured once on the
+// way out — for both the password form and the Discord button.
+const returnUrl = ref<string | null>(null)
+onMounted(() => {
+  const requested = safeReturnUrl(new URLSearchParams(window.location.search).get('returnTo'))
+  if (requested) {
+    returnUrl.value = requested
+    rememberReturnUrl(requested)
+  }
+})
 
 const isRegister = computed(() => route.path === '/auth/register')
 
@@ -142,9 +155,13 @@ const submit = async () => {
     } else {
       await authService.loginWithPassword(username.value.trim(), password.value)
     }
-    // discord-auth-success handling (composables/useAuth.ts) does the redirect;
-    // fall back to the dashboard in case this view never registered it.
-    router.push('/v4/dashboard')
+    // The cross-site sign-in return address wins: takeReturnUrl is consumed
+    // once, so the dashboard only gets the visitor when there is nowhere
+    // they came from. The discord-auth-success handler (useAuth.ts) pushes
+    // the dashboard itself for the Discord path; for password sign-in we do
+    // the redirect here.
+    const destination = takeReturnUrl() ?? '/v4/dashboard'
+    router.push(destination)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Something went wrong'
   } finally {
@@ -164,7 +181,11 @@ const submitForgot = async () => {
   }
 }
 
-const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '/v4/dashboard' })
+const signInWithDiscord = () => {
+  // The return address is already in storage (onMounted); pass it through so
+  // the Discord callback goes back to the calling site, not the dashboard.
+  authService.initiateDiscordLogin({ returnPath: '/v4/dashboard', returnUrl: returnUrl.value })
+}
 </script>
 
 <template>
