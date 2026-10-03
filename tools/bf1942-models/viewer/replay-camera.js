@@ -6,7 +6,8 @@
 //   pov    through his eyes: on foot his recorded body turned by his torso
 //          twist and raised by his aim pitch (lying down, on the slope he
 //          lies on), on the axis each of his rounds left along; in a seat
-//          the seat's own Camera node (the cockpit view's eye).
+//          the seat's own Camera node (the cockpit view's eye), or in an
+//          aircraft its nose cam (`povView`).
 //   free   a fly camera, moved with the keys (a thumbstick on a touch
 //          screen), looked with the mouse or a finger.
 //
@@ -24,6 +25,7 @@ import { toViewPosition, toViewQuaternion } from './replay-actors.js';
 import { nextSpawn } from './replay-chapters.js';
 import { finite, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { noseCamOffset } from './seat-view.js';
 
 export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
 
@@ -205,6 +207,13 @@ export class ReplayCamera {
     this.player = player;
     const cam = player.ctx.camera;
     this.mode = 'orbit';
+    // A seat's first person: its cockpit, or the nose cam of an aircraft
+    // whose Camera has one (seat-view.js): the same eye pushed past the
+    // propeller, no cockpit drawn, the reticle over open air. The game's
+    // first-person key reaches it on a second press; C does here
+    // (replay-ui.js). Kept while the first person is, so it comes back
+    // when he climbs into the next aircraft.
+    this.povView = 'cockpit';
     // Orbit: the wanted angles and zoom, and the eased ones drawn.
     this.yaw = -Math.PI / 4;
     this.pitch = 0.35;
@@ -276,6 +285,7 @@ export class ReplayCamera {
   setMode(mode) {
     if (!CAMERA_MODES.includes(mode) || mode === this.mode) return false;
     const cam = this.player.ctx.camera;
+    if (mode !== 'pov') this.povView = 'cockpit';
     if (mode === 'free') {
       this.free.pos.copy(cam.position);
       _e.setFromQuaternion(cam.quaternion, 'YXZ');
@@ -306,6 +316,14 @@ export class ReplayCamera {
     if (mode === 'pov') this.pov.ready = false;
     this.mode = mode;
     return true;
+  }
+
+  /** The first person's other seat view, the cockpit or the nose cam: what
+   *  it went to, or null where he sits in nothing that has a nose cam. */
+  toggleNose() {
+    if (this.mode !== 'pov' || this.sight?.kind !== 'seat' || !this.sight.nose) return null;
+    this.povView = this.povView === 'nose' ? 'cockpit' : 'nose';
+    return this.povView;
   }
 
   cycleMode() {
@@ -753,10 +771,15 @@ export class ReplayCamera {
       eye.updateWorldMatrix(true, false);
       eye.getWorldPosition(cam.position);
       eye.getWorldQuaternion(cam.quaternion);
+      // The nose cam: `OutsideHudOffset` along the Camera's own axes, the
+      // hull drawn from outside (vehicle-camera.js places the page's own).
+      const offset = player.rec.noseCam === false ? null : noseCamOffset(eye.name, eye.userData?.cameraView);
+      const nose = this.povView === 'nose' && offset !== null;
+      if (nose) cam.position.add(_v.fromArray(offset).applyQuaternion(cam.quaternion));
       this.hidePid = player.followPid;
-      this.povHull = seat === 0 ? hull : null;
+      this.povHull = seat === 0 && !nose ? hull : null;
       this.pov.ready = false;
-      this.sight = { kind: 'seat', life, hull, seat };
+      this.sight = { kind: 'seat', life, hull, seat, nose: offset !== null, view: nose ? 'nose' : 'cockpit' };
       lens = 'seat';
     }
     this.applyLook(dt, cam);

@@ -108,6 +108,12 @@ land right of the cross.
 - **Tests:** `test_camera_dof.py` (new) and the modules that load
   `gun-groups.js`.
 
+## In a replay (2026-10-04)
+
+A replay's first person shows the followed player's marks too. No recording
+holds them, so they are worked out from his rounds and his victims' hit
+points: [round-replay-hud](../round-replay-hud/README.md), "The hit marks".
+
 ## Open
 
 - The exporter does not write `fireInCameraDof` on vehicle FireArms

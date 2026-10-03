@@ -396,6 +396,9 @@ export function parseRecording(text) {
     // The server's `serverCrossHairCenterPoint` (GameRulesEvent 0x16's last
     // byte), whether the crosshair has its centre dot; null unannounced.
     crosshairCentrePoint: null,
+    // `serverAllowNoseCam` (GameRulesEvent 0x16's second byte): whether an
+    // aircraft's nose cam was open to its pilot; null unannounced.
+    noseCam: null,
     // A merged file's sources (replay-merge.js): `[{ file, start, offset, drift, local }]`,
     // `local` each file's recording player. null for one client's file.
     merged: null,
@@ -714,9 +717,11 @@ export function parseRecording(text) {
         return;
       case 'gameRules':
         // The rules as the server announced them (at the join, each
-        // pre-game and each change): only the crosshair's centre dot is
-        // drawn from them (replay-hud.js).
+        // pre-game and each change): the crosshair's centre dot is drawn
+        // from them (replay-hud.js), and the nose cam is reached only where
+        // the server allowed it (replay-camera.js).
         if (r.crosshair !== undefined) rec.crosshairCentrePoint = Boolean(r.crosshair);
+        if (r.noseCam !== undefined) rec.noseCam = Boolean(r.noseCam);
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;

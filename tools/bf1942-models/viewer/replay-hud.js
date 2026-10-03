@@ -21,7 +21,9 @@
 //   - his zoom: the body record's state bit (replay-recording.js
 //     `ZOOM_BIT`), the server's for every soldier: the weapon's zoom lens
 //     (replay-camera.js) and a scoped rifle's scope in place of the cross;
-//   - not recorded: the hit marks, which the server never sent this client.
+//   - the hit marks round the cross: not recorded (the server sends them as
+//     one bool the recorder does not read), worked out from his rounds and
+//     his victims' hit points (replay-hitmarks.js).
 
 import { DeviationModel, TICK_HZ } from './deviation.js';
 import { AmmoEntry } from './kit-ammo.js';
@@ -29,6 +31,8 @@ import { FireState } from './fire-state.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { motionAt } from './replay-kinematics.js';
+import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
+import { weaponOfProjectile } from './replay-props.js';
 import { modelFileStem } from './model-file.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
@@ -265,6 +269,18 @@ export class ReplayHud {
     this.written = null;        // 'foot' | 'seat' | null: which variables the page holds of ours
     this.sightShown = false;    // the page's `replay-sight` class
     this.events = new WeakMap(); // life -> Map<weapon or gun, its recorded rounds (and reloads)>
+    this.hitMarks = null;       // pid -> his hit marks' times (replay-hitmarks.js), once
+  }
+
+  /** `CrossHair/HitIndicationTime` for `pid` at `t`: his hit marks, worked
+   *  out for every player the first time anyone's are asked for. */
+  hitMarkOf(pid, t) {
+    if (!this.hitMarks) {
+      const thrown = new Set([...(this.player.networkedRounds ?? [])]
+        .map(weaponOfProjectile).filter(Boolean).map(lower));
+      this.hitMarks = inferHitMarks(this.player.rec, { thrown });
+    }
+    return hitMarkAt(this.hitMarks.get(pid), t);
   }
 
   /** `weaponEvents` for `life` and `weapon`, gathered once. */
@@ -330,7 +346,7 @@ export class ReplayHud {
       const events = weapon ? this.eventsOf(life, weapon) : null;
       const refills = refillsOf(rec, pid, this.player.recordingPid);
       return {
-        kind: 'foot', pid, team, life, kit: life.kitTemplate ?? null,
+        kind: 'foot', pid, team, life, kit: life.kitTemplate ?? null, hitMark: this.hitMarkOf(pid, t),
         stance: body?.stance ?? 'stand',
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
         hp: hpAt(life, t), maxhp: life.maxhp || null,
@@ -355,7 +371,7 @@ export class ReplayHud {
     }
     const guns = occupancy.fireArmsNodesOf(seatId).slice(0, 2).map(node => this.seatGun(hull, life, node, t));
     return {
-      kind: 'seat', pid, team, life, hull, seat, seatId, hud, rootHud,
+      kind: 'seat', pid, team, life, hull, seat, seatId, hud, rootHud, hitMark: this.hitMarkOf(pid, t),
       hp: hpAt(life, t), maxhp: life.maxhp || rootHud?.maxHitpoints || null,
       dots: occupancy.seatDotsAt(seatId, others, team),
       turret: occupancy.showsTurretIconAt(seatId, true) ? this.lookRotation(hull) : undefined,
@@ -448,6 +464,14 @@ export class ReplayHud {
     if (this.written && this.written !== kind) this.clear(vars);
     this.written = kind;
     if (!s) return;
+    // His hit marks: the layout's crosshair group draws them at its corners,
+    // over a scope or no cross at all (XHIT-1), and is up whenever he is in
+    // the world (soldier-hud.js, which puts it down in a replay). Dragged off
+    // his aim, the centre is not his and they go with the cross.
+    if (art.hitMarks?.() ?? true) {
+      vars['CrossHair/ShowCrossHair'] = true;
+      vars['CrossHair/HitIndicationTime'] = this.player.camera?.sight?.looking ? 0 : s.hitMark ?? 0;
+    }
     const soldier = s.kind === 'foot' ? s : s.soldier;
     vars['Soldier/ShowSoldierIcon'] = true;
     const nation = art.stanceNation?.(s.team) ?? (s.team === 1 ? 'ger' : 'us');

@@ -51,7 +51,7 @@ timeline or any button.
 | Orbit around the player | drag with either button | A / D, Q / E tilt |
 | Zoom in / out | wheel | W / S |
 | Reset the orbit | | R |
-| Camera: orbit, first person, free | mode buttons | 1, 2, 3; C cycles |
+| Camera: orbit, first person, free | mode buttons | 1, 2, 3; C cycles. In an aircraft, C (or 2 again) goes from the cockpit to the nose cam before the next camera ([round-replay-hud](../round-replay-hud/README.md), "The nose cam") |
 | First person: look around, back to the orbit | drag (springs back), wheel out | 1 |
 | Free camera: look | hold the right button (pointer locked while held), or drag | |
 | Free camera: move | wheel moves along the view | W A S D, Q / E down / up, Shift fast |
