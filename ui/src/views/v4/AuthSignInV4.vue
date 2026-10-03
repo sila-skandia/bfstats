@@ -2,7 +2,7 @@
 // Sign-in / sign-up page: username+password, with Discord as the other
 // option. Email on sign-up is optional and stored only as a keyed hash —
 // the copy below has to keep saying that, it is the whole trust pitch.
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
 import '@/styles/modern-minimal.css'
@@ -23,6 +23,106 @@ const busy = ref(false)
 const forgotMode = ref(false)
 const forgotEmail = ref('')
 const forgotMessage = ref<string | null>(null)
+
+// Live username availability. Advisory only: the field never blocks on it,
+// register is the authority. Debounced so typing does not hammer the API.
+const usernameStatus = ref<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle')
+let usernameTimer: number | null = null
+watch(username, (value) => {
+  if (usernameTimer !== null) clearTimeout(usernameTimer)
+  const name = value.trim()
+  if (!isRegister.value || name.length < 3) {
+    usernameStatus.value = 'idle'
+    return
+  }
+  usernameStatus.value = 'checking'
+  usernameTimer = window.setTimeout(async () => {
+    try {
+      const result = await authService.usernameAvailable(name)
+      if (username.value.trim() !== name) return // stale answer
+      usernameStatus.value = result.available ? 'available' : (result.reason === 'invalid' ? 'invalid' : 'taken')
+    } catch {
+      usernameStatus.value = 'idle'
+    }
+  }, 350)
+})
+
+// Player alias typeahead against the tracked-players search. Click or
+// Enter picks a suggestion; the field stays free text when the exact
+// alias is not tracked yet, since the backend links anything.
+interface AliasSuggestion {
+  playerName: string
+  totalPlayTimeMinutes?: number
+  lastSeen?: string
+}
+const aliasSuggestions = ref<AliasSuggestion[]>([])
+const aliasOpen = ref(false)
+const aliasHighlighted = ref(-1)
+const aliasSearching = ref(false)
+let aliasTimer: number | null = null
+watch(playerName, (value) => {
+  if (aliasTimer !== null) clearTimeout(aliasTimer)
+  const query = value.trim()
+  aliasHighlighted.value = -1
+  if (query.length < 2) {
+    aliasSuggestions.value = []
+    aliasOpen.value = false
+    return
+  }
+  aliasTimer = window.setTimeout(async () => {
+    aliasSearching.value = true
+    try {
+      const response = await fetch(`/stats/Players/search?query=${encodeURIComponent(query)}&pageSize=8`)
+      if (!response.ok) throw new Error('search failed')
+      const data = await response.json()
+      const items = data.items ?? data
+      if (playerName.value.trim() !== query) return // stale answer
+      aliasSuggestions.value = items.map((it: { playerName: string; totalPlayTimeMinutes?: number; lastSeen?: string }) => ({
+        playerName: it.playerName,
+        totalPlayTimeMinutes: it.totalPlayTimeMinutes,
+        lastSeen: it.lastSeen,
+      }))
+      aliasOpen.value = aliasSuggestions.value.length > 0
+    } catch {
+      aliasSuggestions.value = []
+      aliasOpen.value = false
+    } finally {
+      aliasSearching.value = false
+    }
+  }, 300)
+})
+
+const pickAlias = (name: string) => {
+  playerName.value = name
+  aliasOpen.value = false
+  aliasSuggestions.value = []
+}
+
+const onAliasKeydown = (event: KeyboardEvent) => {
+  if (!aliasOpen.value || aliasSuggestions.value.length === 0) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    aliasHighlighted.value = Math.min(aliasHighlighted.value + 1, aliasSuggestions.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    aliasHighlighted.value = Math.max(aliasHighlighted.value - 1, 0)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    if (aliasHighlighted.value >= 0) pickAlias(aliasSuggestions.value[aliasHighlighted.value].playerName)
+  } else if (event.key === 'Escape') {
+    aliasOpen.value = false
+  }
+}
+
+const closeAliasOnBlur = () => {
+  // Delay so the click on a suggestion lands before the list closes.
+  window.setTimeout(() => { aliasOpen.value = false }, 150)
+}
+
+onBeforeUnmount(() => {
+  if (usernameTimer !== null) clearTimeout(usernameTimer)
+  if (aliasTimer !== null) clearTimeout(aliasTimer)
+})
 
 const submit = async () => {
   error.value = null
@@ -80,12 +180,12 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
           Enter the username and the email you registered with. If they match,
           reset instructions are sent to that address.
         </p>
-        <label class="mm-signin__label">
-          Username
+        <label class="mm-signin__field">
+          <span class="mm-signin__field-label">Username</span>
           <input v-model="username" type="text" class="mm-signin__input" autocomplete="username" required />
         </label>
-        <label class="mm-signin__label">
-          Email
+        <label class="mm-signin__field">
+          <span class="mm-signin__field-label">Email</span>
           <input v-model="forgotEmail" type="email" class="mm-signin__input" autocomplete="email" required />
         </label>
         <p v-if="forgotMessage" class="mm-signin__note">{{ forgotMessage }}</p>
@@ -112,20 +212,30 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
         </div>
 
         <form class="mm-signin__form" @submit.prevent="submit">
-          <label class="mm-signin__label">
-            Username
+          <label class="mm-signin__field">
+            <span class="mm-signin__field-label">Username</span>
             <input
               v-model="username"
               type="text"
               class="mm-signin__input"
-              :autocomplete="isRegister ? 'username' : 'username'"
+              autocomplete="username"
               required
               minlength="3"
               maxlength="24"
             />
+            <span
+              v-if="isRegister && usernameStatus !== 'idle'"
+              class="mm-signin__status"
+              :class="`mm-signin__status--${usernameStatus}`"
+            >
+              <template v-if="usernameStatus === 'checking'">Checking…</template>
+              <template v-else-if="usernameStatus === 'available'">Available</template>
+              <template v-else-if="usernameStatus === 'taken'">Already taken</template>
+              <template v-else>Use 3-24 letters, digits, or _ . -</template>
+            </span>
           </label>
-          <label class="mm-signin__label">
-            Password
+          <label class="mm-signin__field">
+            <span class="mm-signin__field-label">Password</span>
             <input
               v-model="password"
               type="password"
@@ -137,8 +247,8 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
           </label>
 
           <template v-if="isRegister">
-            <label class="mm-signin__label">
-              Confirm password
+            <label class="mm-signin__field">
+              <span class="mm-signin__field-label">Confirm password</span>
               <input
                 v-model="confirmPassword"
                 type="password"
@@ -148,22 +258,47 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
                 minlength="8"
               />
             </label>
-            <label class="mm-signin__label">
-              Email
-              <span class="mm-signin__hint">Optional — used only for password recovery. Stored as a one-way code, never as the address itself.</span>
+            <label class="mm-signin__field">
+              <span class="mm-signin__field-label">Email</span>
+              <span class="mm-signin__hint">Optional. Used only for password recovery, stored as a one-way code, never as the address itself.</span>
               <input v-model="email" type="email" class="mm-signin__input" autocomplete="email" />
             </label>
-            <label class="mm-signin__label">
-              Your player name
-              <span class="mm-signin__hint">Optional — links your tracked in-game alias to this account.</span>
-              <input v-model="playerName" type="text" class="mm-signin__input" />
-            </label>
+            <div class="mm-signin__field">
+              <span class="mm-signin__field-label">Your player name</span>
+              <span class="mm-signin__hint">Optional. Links your tracked in-game alias to this account.</span>
+              <div class="mm-signin__typeahead">
+                <input
+                  v-model="playerName"
+                  type="text"
+                  class="mm-signin__input"
+                  autocomplete="off"
+                  @keydown="onAliasKeydown"
+                  @focus="aliasSuggestions.length > 0 && (aliasOpen = true)"
+                  @blur="closeAliasOnBlur"
+                />
+                <ul v-if="aliasOpen" class="mm-signin__suggestions">
+                  <li
+                    v-for="(s, i) in aliasSuggestions"
+                    :key="s.playerName"
+                    class="mm-signin__suggestion"
+                    :class="{ 'mm-signin__suggestion--active': i === aliasHighlighted }"
+                    @mousedown.prevent="pickAlias(s.playerName)"
+                    @mouseenter="aliasHighlighted = i"
+                  >
+                    <span class="mm-signin__suggestion-name">{{ $pn(s.playerName) }}</span>
+                    <span v-if="s.totalPlayTimeMinutes != null" class="mm-signin__suggestion-meta">
+                      {{ Math.round(s.totalPlayTimeMinutes / 60) }}h
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </template>
 
           <p v-if="error" class="mm-signin__error">{{ error }}</p>
 
           <div class="mm-signin__actions">
-            <button type="submit" class="mm-btn mm-btn--accent" :disabled="busy">
+            <button type="submit" class="mm-btn mm-btn--accent mm-signin__submit" :disabled="busy">
               {{ busy ? 'Working…' : isRegister ? 'Create account' : 'Sign in' }}
             </button>
             <button
@@ -202,11 +337,12 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
   width: 100%;
   border: 1px solid var(--mm-rule);
   border-radius: 2px;
-  padding: 32px;
+  padding: 36px 32px;
   background: var(--mm-bg-soft);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
 .mm-signin__tabs {
@@ -225,6 +361,10 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
   text-decoration: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  transition: color 0.15s ease;
+}
+.mm-signin__tab:hover {
+  color: var(--mm-ink);
 }
 .mm-signin__tab--active {
   color: var(--mm-ink);
@@ -234,13 +374,16 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
 .mm-signin__form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
-.mm-signin__label {
+.mm-signin__field {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.mm-signin__field-label {
   font-family: var(--mm-font-mono);
   font-size: 10.5px;
   letter-spacing: 0.08em;
@@ -251,8 +394,6 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
 .mm-signin__hint {
   font-family: var(--mm-font-body);
   font-size: 11.5px;
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--mm-ink-soft);
   line-height: 1.4;
 }
@@ -264,17 +405,82 @@ const signInWithDiscord = () => authService.initiateDiscordLogin({ returnPath: '
   color: var(--mm-ink);
   font-family: var(--mm-font-body);
   font-size: 14px;
-  padding: 8px 10px;
+  padding: 9px 11px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .mm-signin__input:focus {
   outline: none;
   border-color: var(--mm-accent);
+  box-shadow: 0 0 0 3px rgba(125, 136, 73, 0.18);
+}
+
+/* Live availability status under the username field */
+.mm-signin__status {
+  font-family: var(--mm-font-body);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.mm-signin__status--checking { color: var(--mm-ink-soft); }
+.mm-signin__status--available { color: var(--mm-success); }
+.mm-signin__status--taken,
+.mm-signin__status--invalid { color: var(--mm-danger); }
+
+/* Alias typeahead */
+.mm-signin__typeahead {
+  position: relative;
+}
+
+.mm-signin__suggestions {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.mm-signin__suggestion {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.mm-signin__suggestion--active {
+  background: var(--mm-accent-soft);
+}
+
+.mm-signin__suggestion-name {
+  font-family: var(--mm-font-body);
+  font-size: 13px;
+  color: var(--mm-ink);
+}
+
+.mm-signin__suggestion-meta {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  color: var(--mm-ink-soft);
+  flex-shrink: 0;
 }
 
 .mm-signin__actions {
   display: flex;
   align-items: center;
   gap: 16px;
+  margin-top: 2px;
+}
+
+.mm-signin__submit {
+  min-width: 140px;
 }
 
 .mm-signin__link {

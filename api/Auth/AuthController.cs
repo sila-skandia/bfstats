@@ -128,12 +128,22 @@ public class AuthController(
             if (await context.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == name.ToLower()))
                 return Conflict(new { message = "That username is already taken" });
 
+            // Deterministic hashes make this check exact: a taken email is a
+            // taken hash. Cheaper to say so here than inside a constraint.
+            string emailHash = "";
+            if (!string.IsNullOrWhiteSpace(request.Email))
+            {
+                emailHash = emailHashService.Hash(request.Email);
+                if (await context.Users.AnyAsync(u => u.Email == emailHash))
+                    return Conflict(new { message = "An account with that email already exists. Try signing in instead, or leave the email blank." });
+            }
+
             var now = DateTime.UtcNow;
             var user = new User
             {
                 Email = string.IsNullOrWhiteSpace(request.Email)
                     ? $"no-email-{Guid.NewGuid():N}@users.bfstats.io"
-                    : emailHashService.Hash(request.Email),
+                    : emailHash,
                 Username = name,
                 PasswordHash = passwordHashService.Hash(request.Password),
                 AuthProvider = "password",
@@ -170,11 +180,42 @@ public class AuthController(
                 ExpiresAt = expiresAt
             });
         }
+        catch (Exception ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // The unique indexes fire on a username or email-hash race (or a
+            // double submit). Say which one, plainly.
+            logger.LogInformation("Registration rejected: value already in use");
+            return Conflict(new { message = "That username or email is already registered. Try signing in instead." });
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Registration error");
             return StatusCode(500, new { message = "Registration failed" });
         }
+    }
+
+    private static bool IsUniqueConstraintViolation(Exception ex) =>
+        ex is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }
+        || (ex.InnerException is Microsoft.Data.Sqlite.SqliteException inner && inner.SqliteErrorCode == 19);
+
+    /// <summary>
+    /// Live availability check for the register form's username field. The
+    /// field never blocks on this (the form submits regardless; register is
+    /// the authority), it just shows a hint while typing. The same per-IP
+    /// budget as login guards bulk scraping of the namespace.
+    /// </summary>
+    [HttpGet("username-available")]
+    public async Task<IActionResult> UsernameAvailable([FromQuery] string username)
+    {
+        var name = username?.Trim() ?? "";
+        if (name.Length < 3 || name.Length > 24 || !UsernamePattern.IsMatch(name))
+            return Ok(new { available = false, reason = "invalid" });
+
+        if (!await CheckPasswordLoginRateLimitAsync(GetClientIpAddress()))
+            return StatusCode(429, new { message = "Too many requests" });
+
+        var taken = await context.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == name.ToLower());
+        return Ok(new { available = !taken });
     }
 
     /// <summary>
