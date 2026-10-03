@@ -615,7 +615,6 @@ game.setKit 2 2 Us_AT
         self.assertEqual({0: "US_Scout", 2: "Us_AT"}, teams[2].slots)
 
     def test_a_later_binding_replaces_the_slot(self) -> None:
-        # Liberation_of_Caen sets team 2 twice; the Canadians never load.
         teams = parse_level_kits("""
 game.setTeamSkin 2 CanadianSoldier
 game.setKit 2 0 Canadian_Scout
@@ -626,6 +625,25 @@ game.setKit 2 1 GB_Assault
 """)
         self.assertEqual("BritishSoldier", teams[2].soldier)
         self.assertEqual({0: "GB_Scout", 1: "GB_Assault"}, teams[2].slots)
+
+    def test_a_beginrem_block_does_not_replace_the_binding(self) -> None:
+        # Liberation_of_Caen sets team 2 twice: the live Canadian binding, then
+        # the British one the level author parked in `beginrem .. endrem`. The
+        # engine's parser does not execute that block — a MoonGamers round's
+        # recorded join database carries the `Canadian_*` kit objects — so the
+        # Canadians keep the team.
+        teams = parse_level_kits("""
+game.setTeamSkin 2 CanadianSoldier
+game.setKit 2 0 Canadian_Scout
+game.setKit 2 1 Canadian_Assault
+beginrem
+game.setTeamSkin 2 BritishSoldier
+game.setKit 2 0 GB_Scout
+game.setKit 2 1 GB_Assault
+endrem
+""")
+        self.assertEqual("CanadianSoldier", teams[2].soldier)
+        self.assertEqual({0: "Canadian_Scout", 1: "Canadian_Assault"}, teams[2].slots)
 
     def test_case_and_indentation_do_not_matter(self) -> None:
         teams = parse_level_kits("   Game.SetKit 1 4 German_Engineer\n")

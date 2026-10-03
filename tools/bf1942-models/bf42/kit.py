@@ -493,18 +493,25 @@ def parse_level_kits(text: str) -> dict[int, TeamLoadout]:
     Last write wins, per team and per slot, because that is what the engine
     does: `Init.con` is executed top to bottom and a later
     `game.setKit 2 0 <x>` replaces slot 0 rather than adding to it.
-
-    This is not pedantry. `Liberation_of_Caen` sets team 2 twice — the five
-    `Canadian_*` kits under `CanadianSoldier`, then immediately the five `GB_*`
-    kits under `BritishSoldier`. Counting mentions makes all five Canadian kits
-    look live; replaying the file shows they are overwritten before the map
-    ever loads, and Canada is a nation whose kits never spawn anywhere in
-    vanilla. That is also why all five wear the same `Canadian_helmet` and why
-    `CanadianKit/Medic/Objects.con` declares a `Medic_helm_brit` part it never
-    uses: unfinished content.
+    `beginrem .. endrem` blocks are skipped (the engine's parser does not
+    execute them): `Liberation_of_Caen` sets team 2 twice, the five
+    `Canadian_*` kits under `CanadianSoldier` live, then immediately the five
+    `GB_*` kits under `BritishSoldier` inside a `beginrem` block. A MoonGamers
+    round's recorded join database carries the `Canadian_*` kit objects, so
+    the live server runs the Canadian binding and the block is a comment.
     """
     teams: dict[int, TeamLoadout] = {}
-    for line in text.splitlines():
+    in_block = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        low = line.lower()
+        if in_block:
+            if low.startswith("endrem"):
+                in_block = False
+            continue
+        if low.startswith("beginrem"):
+            in_block = True
+            continue
         skin = SET_TEAM_SKIN.match(line)
         if skin:
             teams.setdefault(int(skin.group(1)), TeamLoadout()).soldier = skin.group(2)

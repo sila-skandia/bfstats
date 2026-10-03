@@ -1866,7 +1866,8 @@ function kitRow(tmpl) {
   if (!m) return null;
   const prefix = m[1].toLowerCase();
   const nation = prefix.startsWith('jap') ? 'jp' : prefix.startsWith('ger') ? 'ger'
-    : prefix.startsWith('brit') ? 'brit' : prefix.startsWith('rus') ? 'rus'
+    : prefix.startsWith('brit') || prefix.startsWith('canadian') ? 'brit'
+    : prefix.startsWith('rus') ? 'rus'
     : prefix.startsWith('us') ? 'us' : null;
   return nation ? { nation, row: KIT_ROWS.indexOf(m[2].toLowerCase()) } : null;
 }
