@@ -136,7 +136,7 @@ change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
 | a vehicle's icon, health, seat dots, turret dial | the seat's `hud` block, the hull's `a` records, the recorded crew, `IconLookRotation` from the camera against the hull | exact |
 | ammunition on foot | counted from a full kit at his spawn: one round per `f`, a magazine change `reloadTime` after his torso's reload state or a dry magazine (the old magazine's rounds are lost, as in `hand-fire.js`), refills (`special` 0) | exact for a recording player. For anyone else it is an estimate: a client can miss a remote player's single taps, and nobody else's refills reach it |
 | a seat gun's ammunition, heat, readiness | the page's `FireState` run over the gun's recorded rounds since the hull's spawn | the same estimate for anyone but a recording player |
-| the hit marks | not recorded | the server raises them with SpecialGameEvent 1 (XHIT-4), and none of the six recordings has one, so this client was never sent them |
+| the hit marks | his rounds against his victims' hit points (`replay-hitmarks.js`) | worked out. The server sends them, but as one bool the recorder does not read: see "The hit marks" |
 
 ## Files
 
@@ -216,9 +216,117 @@ through a 5.73 degree lens with no cross; skandia's BAR at 55.6 s a 28.65
 degree lens with the cross, its gap the same 2.25 degrees through the
 narrower lens.
 
+## The hit marks (2026-10-04)
+
+Asked: "do you think it would be possible to show cross hair hit indicators?
+Right now we render the cross hair, but not the hit indicator. Not sure if
+that's something we capture, or can recreate from the data."
+
+**Not captured.** The table above used to say the server raises the marks
+with SpecialGameEvent 1 and that this client was never sent one. That is the
+listen-server path. On a dedicated server the shooter's mark rides one bool
+of his control object's state (XHIT-6: `writeControlObjectState` sends it,
+the client sets its player's `+0x1cc` to 1.0), and the recorder does not read
+that bool. So every client was sent its marks, and none of the recordings
+kept them.
+
+**Worked out instead** (`replay-hitmarks.js`), from what every recording has:
+each round (`f`, its origin and axis) and each object's hit points (`a`).
+
+- A hit is a victim's hit points dropping within 0.8 s of a round passing
+  within 1 m of his body (his origin -0.9 to +0.7 m), sampled along the
+  round's flight. A hull's window is 2.5 s and its radius 4 m about its
+  origin, and an empty hull never marks (XHIT-5).
+- When rounds from two players pass him, the drop goes to the closest. The
+  drop that kills him goes to the killer the kill log names, if one of the
+  killer's rounds of that weapon passed within 3 m. A gun kill the hit points
+  never show (the victim was out of the client's reach) marks at the
+  killer's last round of that weapon.
+- What is thrown or laid is left out: explosions never mark in the game
+  (XHIT-4).
+- One drop is one mark, at the round's time plus its flight at 700 m/s,
+  capped by the drop. The hit points come ten times a second, so a burst that
+  lands inside one sample is one mark. That shows nothing different on
+  screen: each mark only restarts the fade.
+- The HUD feeds `CrossHair/HitIndicationTime` = 1 - (t - the last mark),
+  floored at 0 (XHIT-3), and puts the layout's crosshair group up in his
+  first person, on foot or in a seat. The group carries the four diagonals
+  only. The page's DOM cross is still the cross. The marks go with the cross
+  when the view is dragged off his aim. A `hud-layout.json` without the
+  marks' binding keeps the group down, as `soldier-hud.js` does.
+- Worked out once for every player, the first time a first person asks
+  (46 ms for the 26-minute `replay_20261001-144253`).
+
+It cannot see a hit on a teammate with friendly fire off (the game marks it,
+but no hit points move), a hit on a soldier the recording has no hit points
+for, unless it killed him, or a bot's fake rounds (no `f` at all).
+
+**Checked against the server's own numbers:**
+
+- Gun kills (the kill log names the killer and the weapon) with the killer's
+  mark between 0.8 s before and 0.3 s after the kill: 99% of 227 in
+  `replay_20261001-144253`, 96% of 67 in `replay_20260928-133433`, 97% of 61
+  in `replay_20260928-214112`, 100% of 35 in `replay_20260927-203459`, 92% of
+  257 in `replay_20260928-161948`. The median mark is 0 to 0.07 s before the
+  kill. Before the kill log credited the killing drop, this was 79-86%.
+- The round-end tallies (`roundStats` `hit`, per player and weapon) in
+  `replay_20261001-144253`. With one mark per drop and the closest round, the
+  marks cover 73% of the 979 hand-weapon hits and put 15 marks too many. The
+  shortfall is mostly bursts inside one sample. Crediting every round that
+  passed within the radius covers 94% but puts 402 too many: misses in a
+  burst that hit. One mark a drop was kept.
+- Headless, Bocage round: the Bofors' hit on a Mustang at 40.9 s reads
+  `HitIndicationTime` 0.98 in the frame after it, and the four marks are drawn
+  in the gun's ring sight, then fade over the second.
+
+## The nose cam (2026-10-04)
+
+Asked: "when you're in a vehicle we can go POV, which is the default camera,
+but most players will switch to the second camera which is the full screen
+view with just the cross hair (and ammo / health). Could we add that as a
+camera when we're cycling through with C".
+
+That view is retail's nose cam: the seat's eye pushed `OutsideHudOffset`
+along the Camera's own axes, past the propeller, with no cockpit drawn. The
+data gives it to every aircraft Camera and nothing else
+([vehicle-camera-toggle-sweep](../vehicle-camera-toggle-sweep/README.md),
+`seat-view.js` `NOSE_CAM_OFFSETS`). A tank or a gun has none in retail
+either, so it has none here.
+
+- In first person in an aircraft, C goes from the cockpit to the nose cam,
+  then on to the free camera. 2 pressed again toggles the two, as the game's
+  first-person key does on a second press. The help sheet says so.
+- The eye is `noseCamOffset` from the seat's Camera node, in the node's
+  frame. The hull is drawn from outside, not through its cockpit graft. The
+  HUD is the seat's: the reticle, the vehicle's health, its ammunition.
+- The recording's `gameRules` carries the server's `serverAllowNoseCam`
+  (`noseCam`, now `rec.noseCam`). A server that switched it off gets no nose
+  cam.
+- The choice holds while the first person does. If he climbs out and into
+  another aircraft, it comes back. Leaving the first person resets it to the
+  cockpit.
+- Headless, Midway round, skandia's Zero at 713 s: the cockpit, then after C
+  the eye 5.26 m on (ZeroCamera's 0/-0.8/5.2, 2.3 m ahead of the propeller
+  hub), no cockpit, the reticle and the Zero's HUD. C again goes to the free
+  camera. 2, then 2 again, goes back to the nose cam.
+
+Tests: `tests/test_replay_hitmarks.py` (`replay_hitmarks_harness.mjs`): a
+round through a soldier whose hit points drop, a miss with no drop, a drop
+with no round, a grenade's blast, the killing drop credited to the killer over
+a closer round, an empty and then a manned Sherman, a kill with no hit points,
+the timer, the HUD's variables (an old layout, the view dragged off), and the
+nose cam (its offset, no cockpit, back and forth, reset by the free camera, a
+tank's Camera and a closed server).
+
 ## Open
 
-- The hit marks: see the table.
+- **Recording the marks exactly.** The recorder could read its own player's
+  `HitIndicationTime` (BFPlayer `+0x1cc`, XHIT-2) each sample. The timer runs
+  down at one per second from 1.0, so a sample of `v` at `t` puts the last
+  hit at `t - (1 - v)`, to the frame. That is exact for the recording player,
+  and the inference would stand in for everyone else. It is a bf42plus change
+  (`src/replay.cpp` `samplePlayers`). That checkout had another session's
+  uncommitted edits on 2026-10-04, so it was left alone.
 - A seat camera is the model's Camera node on the recorded hull and turret.
   It is not laid on the rounds' axes, even for a gun that fires along the
   camera (a coax or a pintle MG).

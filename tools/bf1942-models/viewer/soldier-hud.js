@@ -479,6 +479,7 @@ export function createSoldierHud(page) {
   Object.assign(soldierHud, {
     clearHitIndicator,
     kitHealthArt,
+    layoutHasHitMarks,
     raiseHitIndication,
     stanceNation,
     triggerHitIndicator,
