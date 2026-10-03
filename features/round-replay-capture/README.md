@@ -888,6 +888,13 @@ subsections show (`working` unless marked, from decompiling the live
 
 ### 13.1 `ObjectManager::getProjectileMap` is a real, general registry, not mine-only
 
+> **Corrected 2026-10-04.** It is mine-only after all, as bf42plus's comment
+> says: `Projectile::activate` (lnxded `0x0831e30b`) calls `addProjectile`
+> only when the projectile template's byte `+0x1d0` is set. Every projectile
+> is still a root object in the registered map (Projectile vptr
+> `0x0873f2c8`), which is where the server recorder finds rounds in flight
+> (`features/server-replay-recorder`, "The parity round").
+
 `bf42plus/src/bf/object.cpp:7-15` is a working, bound function (vtable slot
 `+0x98`, declared `object.h:285`); its only call site today is the 3D
 mine-warning HUD (`renderer.cpp:314-324`), which is why its header comment
