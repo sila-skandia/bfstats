@@ -169,6 +169,13 @@ class AuthService {
     this.completeLogin(await response.json());
   }
 
+  /** Live username availability for the register form (advisory only; register is the authority). */
+  async usernameAvailable(username: string): Promise<{ available: boolean; reason?: string }> {
+    const response = await fetch(`/stats/auth/username-available?username=${encodeURIComponent(username)}`);
+    if (!response.ok) throw new Error('unavailable');
+    return response.json();
+  }
+
   /** Forgotten password: uniform response either way — never tells the caller if the pair matched. */
   async forgotPassword(username: string, email: string): Promise<string> {
     const response = await fetch('/stats/auth/forgot-password', {
