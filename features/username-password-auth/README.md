@@ -61,6 +61,11 @@ refresh-token cookies and roles are unchanged, so nothing downstream moves.
   endpoint can only prove nothing left the server).
 - Player-name autocomplete on the register form (free text now; backend
   accepts any name and links it).
+- Registering with an email that already belongs to a Discord account is
+  allowed on purpose. The hash check cannot match Discord rows (they store
+  the plaintext address), and it grants the registrant nothing: the stored
+  value is a hash, so the admin-role email comparison and password takeover
+  of the Discord account are both out of reach.
 - If a user forgets both username and email, there is no self-service
   recovery. The admin Access tab regenerates a temporary password for
   password accounts instead (`POST stats/admin/data/users/{id}/reset-password`):
