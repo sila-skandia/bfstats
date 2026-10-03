@@ -1,0 +1,23 @@
+{
+  "name": "elalamein-coop-rec",
+  "description": "El Alamein co-op with the server-side recorder preloaded: desert armour (tanks, APCs, artillery) for the recorder's turret, engine and armour tracks.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. Let the round run at least 60 s of fighting, then `lab.py stop`."
+}

@@ -337,14 +337,14 @@ def finish(st: dict) -> None:
     }
     (run / "run.json").write_text(json.dumps(meta, indent=2) + "\n")
     print(f"stopped after {meta['seconds']:.0f} s; run in {run}")
-    for kind in ("serverlog", "client"):
-        for f in collected[kind]:
+    for kind in ("serverlog", "client", "server"):
+        for f in collected.get(kind, []):
             note = " (still open: quit the game before `stop` for a closed file)" \
                 if kind == "client" and not recording_closed(run / f) else ""
             print(f"  {kind}: {f}{note}")
     for f in collected["elsewhere"]:
         print(f"  not collected: {f}, not the lab")
-    if not collected["client"]:
+    if not collected["client"] and not collected.get("server"):
         print("  no client recording joined the lab during the run (recordReplays on in bf42plus.ini?)")
     for url in viewer_urls(st, collected):
         print(f"viewer: {url}")
@@ -353,7 +353,7 @@ def finish(st: dict) -> None:
 def collect(run: Path, started: float, stopped: float) -> dict[str, list[str]]:
     """Move the run's event logs out of the install and copy the client
     recordings made while it ran; stage both under viewer/replays/<run>/."""
-    out: dict[str, list[str]] = {"serverlog": [], "client": [], "elsewhere": []}
+    out: dict[str, list[str]] = {"serverlog": [], "client": [], "server": [], "elsewhere": []}
     (run / "serverlog").mkdir(exist_ok=True)
     for log in new_logs(started):
         shutil.move(str(log), run / "serverlog" / log.name)
@@ -374,10 +374,21 @@ def collect(run: Path, started: float, stopped: float) -> dict[str, list[str]]:
                 continue
             shutil.copy2(rec, run / "client" / rec.name)
             out["client"].append(f"client/{rec.name}")
+    # The server-side recorder (a scenario's `preload`) writes into the
+    # install's replays/, one file per level, named for the moment it opened.
+    server_recs = INSTALL / "replays"
+    if server_recs.is_dir():
+        for rec in sorted(server_recs.glob("replay_*.ndjson")):
+            opened = server_recording_opened(rec)
+            if opened is None or not started - 5 <= opened <= stopped:
+                continue
+            (run / "server").mkdir(exist_ok=True)
+            shutil.copy2(rec, run / "server" / rec.name)
+            out["server"].append(f"server/{rec.name}")
     stage = VIEWER_REPLAYS / run.name
-    if out["serverlog"] or out["client"]:
+    if out["serverlog"] or out["client"] or out["server"]:
         stage.mkdir(parents=True, exist_ok=True)
-        for rel in out["serverlog"] + out["client"]:
+        for rel in out["serverlog"] + out["client"] + out["server"]:
             shutil.copy2(run / rel, stage / Path(rel).name)
     return out
 
@@ -385,6 +396,12 @@ def collect(run: Path, started: float, stopped: float) -> dict[str, list[str]]:
 def recording_opened(rec: Path) -> float | None:
     m = re.fullmatch(r"replay_(\d{8}-\d{6})\.ndjson", rec.name)
     return dt.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S").timestamp() if m else None
+
+
+def server_recording_opened(rec: Path) -> float | None:
+    """The server recorder names a file replay_<unix seconds>[-<n>].ndjson."""
+    m = re.fullmatch(r"replay_(\d{9,11})(?:-\d+)?\.ndjson", rec.name)
+    return float(m.group(1)) if m else None
 
 
 def recording_server(rec: Path) -> str | None:
@@ -420,7 +437,7 @@ def log_opened(log: Path) -> float | None:
 def log_for(recording: str, logs: list[str]) -> str | None:
     """The event log covering a recording: the last level load before the
     client joined (a minute's slack for the log name's resolution)."""
-    opened = recording_opened(Path(recording))
+    opened = recording_opened(Path(recording)) or server_recording_opened(Path(recording))
     dated = [(log_opened(Path(lg)), lg) for lg in logs]
     before = [lg for t, lg in sorted((t, lg) for t, lg in dated if t is not None) if opened is None or t <= opened + 60]
     return before[-1] if before else (logs[-1] if logs else None)
@@ -431,7 +448,7 @@ def viewer_urls(st: dict, collected: dict[str, list[str]]) -> list[str]:
     lv = st["levels"][0]
     mode = VIEWER_MODE.get(lv.get("mode", "GPM_COOP").upper(), "")
     urls = []
-    for rec in collected["client"]:
+    for rec in collected["client"] + collected.get("server", []):
         log = log_for(rec, collected["serverlog"])
         overlay = f"&serverlog=replays/{st['run']}/{Path(log).name}" if log else ""
         urls.append(f"{base}/map.html?replay=replays/{st['run']}/{Path(rec).name}{overlay}&mode={mode}")

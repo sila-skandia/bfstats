@@ -139,17 +139,24 @@ resulting file through `replay-recording.js` (the viewer's own parser):
      kills (`score` with the weapon's template name), chat, radio,
      gameStatus, gameRules, the 10 s world clock. This is the event surface
      the client recorder reconstructs from the wire; here it is captured at
-     the source. NOTE: `GameEventManager::addEventToSendQueue` `0x0812d730`
-     is also hooked but is dead in the lab -- createPlayer, createObject,
-     destroyObject and pickupKit are only *built* for a real client's join
-     database (`GameServer::sendDatabase`), never streamed as events, so a
-     recorder that starts with the round sees none of them. The sampler
-     synthesises the roster (createPlayer/control) and kits itself instead.
-   - `FireArms::fireBarrel(IPlayer*, Mat4&, int)` `0x0828aba0` -- every round
-     any player or bot fires, as `f` records with the weapon template, its
-     root's net id and the firing player's id (`getBFPlayer 0x08052ac0`).
-     This is the gunfire sound timeline, and on the server it is every shot
-     on the map, not one client's ~520 m window.
+     the source. `GameEventManager::addEventToSendQueue` `0x0812d730` is
+     hooked too. It is reached through `GameEventManager::addEvent`, which
+     every per-client sender calls once per connected client
+     (sendGameEventToAll's own fan-out, enterVehicle, exitVehicle,
+     radioMessage, handlePickup, handleDrop, _giveDamage,
+     triggerObjectSpawner, ...), and from the builders a joining client's
+     database is made of. With no client connected it is never reached,
+     which is why the lab saw nothing there; the sampler synthesises the
+     roster (createPlayer/control) and kits itself. With N clients connected,
+     one event reaches the hooks N (+1) times back to back with the same
+     payload, and `on_event` drops the copies (same type and payload within
+     5 ms).
+   - `FireArms::fireBarrel(IPlayer*, Mat4&, int)` `0x0828aba0` -- `f`
+     records with the weapon template, its root's net id and the firing
+     player's id (`getBFPlayer 0x08052ac0`): the gunfire sound timeline for
+     the whole map, not one client's ~520 m window. Every call is written
+     (RECORDER_DEBUG counts them: 160/160 on El Alamein), but the calls are
+     few: see the open item.
 2. **Sampler additions** (same thread as stage 2):
    - Moving parts: every registered `RotationalBundle` (122 of them on Wake:
      turrets, gun mounts, Daihatsu ramps and MG mounts, M3A1 wheels and
@@ -168,15 +175,27 @@ resulting file through `replay-recording.js` (the viewer's own parser):
      (`IObject+0xb8`), no virtual call.
    - Tickets: `tk` records from the `ScoreManager` global (`0x0871bb58`).
    - Kits: when a player's controlled object changes, the recorder
-     replicates `GameEventManager::createPlayer`'s kit lookup (template
-     class id 0x9493 -> `getKit` -> objectManager) and writes a
+     replicates `GameEventManager::createPlayer`'s kit lookup by safe reads:
+     the template's vptr is `BFSoldierTemplate`'s (the only vtable whose
+     getClassID answers 0x9493), the kit id is `soldier+0x408` (the body of
+     `getKitId`, the vslot 0x17c call), and the kit object is a find in the
+     objectManager's id maps at `om+0x48`, then `om+0x60` (the bodies of
+     vslots 0x20 and 0x24). It used to make those three virtual calls from
+     the sampler thread, and the last is a `std::map::find` racing the game
+     thread's inserts and erases. It writes a
      `pickupKit` event plus the kit object's own `o` record -- which sits
      DISABLED in the registered map until dropped, so the watch pass emits
      it however it is flagged. A live run: 33/33 pickups bound, and the
      viewer parsed 30/30 soldiers with distinct kit templates (Medic,
      Scout, Engineer, AT, Assault, both sides).
-   - The format is v5 (`jn` needs it for keyed parts), and a mid-round
-     seek keeps one file per join like the client recorder.
+   - The format is v5 (`jn` needs it for keyed parts).
+   - One file per round. The sampler closes the file, with its `end`
+     record, when the registered-object count falls below a quarter of the
+     file's peak (the level unloading; a round restart on the same map
+     unloads too) or the setup names another level. It opens the next once
+     the count climbs again. A client's join does not split the file:
+     `ServerInfoEvent` (0x1a), which used to, is only built by
+     `GameServer::processReceivedPackets`, the join handshake.
 
 The header lies: `BFPlayer+0x4c` and `+0x50` were listed as vehicle and
 camera in stage 2 and every kitNetId the old sampler wrote was actually the
@@ -205,22 +224,97 @@ free camera's id -- the cause of "every player has the same kit".
   not exist on the server's own BFSoldier). Soldier head-aim therefore does
   not track in replays; the anim state names table (`anim` line) is also
   unwritten, so states play by index.
-- `addEventToSendQueue` events only exist when a real client joins
-  (`sendDatabase`): on a live server with human players the joins, and the
-  `createObject`/`destroyObject`/`pickupKit` flows it drives, will arrive as
-  real events on top of the sampler's synthetic ones. Check for duplicates
-  on the first real-server run.
+- **Most gunfire never reaches `fireBarrel`.** The server files hold about
+  4 `f` records per kill across the whole map (Wake 557 for 133 kills,
+  Midway 885 for 40), led by aircraft guns, ship guns and bombs. The
+  client recorder's files hold about 25 per kill within one client's
+  window (Bocage, 3935 for 159), led by MG42, Thompson and MP40, which
+  barely appear in the server's. `createProjectile` is only called from
+  `fireBarrel` (and `placeScoutCamera`), so automatic fire on the server
+  takes another path, or one `Fire` stands for a burst. Find it before
+  trusting the server's `f` timeline for small arms.
+- No run has had a real client connected. With one, a join's database
+  (createPlayer for every player, createObject for every object, pickupKit)
+  lands in the file on top of the sampler's synthetic roster, and the
+  per-client senders' events (enterVehicle, exitVehicle, radio, damage)
+  start arriving. The fan-out copies are dropped (`tests/run.sh` covers it
+  with a fake target); whether the viewer copes with the join database's
+  duplicates is unchecked.
 - One build of the recorder (00:15 run, 2026-10-02) segfaulted the sampler
-  during map load; the same feature set in the final build ran 100 s and
-  3+ min clean twice. If it recurs, the coredump is the tool
+  during map load. The kit lookup's virtual calls from the sampler thread
+  (a `std::map::find` racing the game thread) fit that, and are safe reads
+  now. If it recurs, the coredump is the tool
   (`coredumpctl dump <pid> -o /tmp/core && gdb bf1942_lnxded /tmp/core`).
-- The w32ded target (`src/target_w32ded.c`, built with -DREC_STAGE3=0)
-  has none of stage 3 -- the three detours, parts, engines, armor, tickets and
-  the kit derivation. Its object sampler, template names and destruction
-  are verified live (see the Windows server port section above); every
-  offset above was read from the lnxded binary and the w32ded cross-match
-  table so far is in `w32ded-offsets.md`, with the same anchor-chain method.
+- A lab-stopped file has no `end` record: the server dies by SIGINT's
+  default action, so no exit handler runs. Every line is flushed as written,
+  so nothing else is lost.
+- The w32ded target (`src/target_w32ded.c`) is built with -DREC_STAGE3=1:
+  the addEventToSendQueue and sendGameEventToAll detours, the roster walk,
+  engines, armor, tickets and kits, with several table rows still marked
+  candidate there and in `w32ded-offsets.md` pass 4. fireBarrel's w32
+  address is not located. Nothing past stage 1 is verified live, and never
+  with a client connected.
 - Config is read once at load; live toggle is later.
+
+## Adversarial review (2026-10-03)
+
+What a read of `src/` turned up, and what each fix was checked against.
+`tests/run.sh` drives the core through a fake target (no server) and covers
+the first four.
+
+- **A client's join froze the server.** `ServerInfoEvent` (0x1a), sent to
+  every joining client, closed the file from the game thread. The join's
+  next events were held, and the sampler flushed them through `write_line`
+  while it already held the write lock. That is a default pthread mutex, so
+  the sampler deadlocked holding it, and the game thread's next write
+  (a shot, a kill, the 10 s clock) hung on it forever. Reproduced with the
+  fake target: `HANG`. Now a join is recorded and nothing more; splits are
+  the sampler's; held events flush with the lock already held.
+- **The game thread reset the sampler's tables mid-walk.** The same 0x1a
+  path zeroed the tracking hash, the parts, players and soldiers while the
+  sampler was using them.
+- **Same-second files truncated each other.** `replay_<unix>.ndjson` was
+  opened with "w", so a split in the same second as the last open
+  overwrote that file (the reproduction lost the whole first file). A taken
+  name now gets `-<n>`.
+- **Every connected client duplicated every event.** See the
+  addEventToSendQueue note above.
+- **The part-state array could be overrun.** Part ids grew without bound
+  (each re-keyed slot took a new one) and indexed a `MAX_PARTS + 1` array:
+  heap corruption once a long round respawned enough vehicles. The state
+  lives in the part's slot now, and slots of parts unseen for 5 s are
+  reused.
+- **Tables that filled for good.** The soldier table (128) and the kit
+  watch (256) were never pruned. After that many spawns, new soldiers got
+  no `st` lines and new kits no `o` record. The roster never noticed a player
+  leaving, nor a reused pid with a new name. Soldiers are pruned every
+  sample, done kits are dropped, and a player missing from three complete
+  roster walks gets `destroyPlayer` (a renamed pid gets `destroyPlayer`
+  then `createPlayer`).
+- **Kill weapons were garbage.** The server's `ScoreMsgEvent` is packed:
+  the weapon is payload +6 and the next field +10 (`ScoreMsgEvent::serialize`
+  `0x0811c8d0`), not the client struct's +8/+12. Every kill had
+  `weaponName ""`. After the fix, 65/65 kills of a Wake round match the
+  server event log's weapons (49 `(none)`, AichiVal 8, Hatsuzuki 6,
+  Corsair 1, Bar1918 1).
+- **Smaller ones.** Template and level names went into JSON unescaped. The
+  game-thread entry points assume 16-byte stack alignment that GCC 3.2
+  callers do not give (`force_align_arg_pointer` now; this .so is built for
+  SSE). `system("mkdir")` forked the server at every open (`mkdir(2)`).
+  `build.sh` copied over the lab's `recorder.so` in place, rewriting the
+  pages a running server executes (now an atomic rename). The w32ded
+  `sendGameEventToAll` trampoline copied the whole 94-byte body, two
+  `call rel32` included, which land in the heap once a client is connected
+  (now a 10-byte prologue with nothing relative in it). Its fire stub read
+  the return address as `this` (latent: no fire site yet).
+
+Runs after the fixes (`~/bf1942-lab/runs/20261003-*`): Wake co-op 21 min
+(31 MB, parts table flat at ~144, 163/163 kits with their `o` record); a
+Wake round played to its end at 809 s and the server's next round (the file
+closed 0.1 s after `gameStatus` 2, and the next opened with the new round's
+world); El Alamein co-op 7.8 min (54/54 kits bound, a German bot's `ü`
+the first non-ASCII name); Midway co-op 9.5 min (289 parts, 63 engines,
+885 fire records).
 
 ## Where things are at (handoff, 2026-10-02)
 
@@ -349,12 +443,17 @@ Run it (linux):
 
 ```bash
 features/server-replay-recorder/build.sh
+features/server-replay-recorder/tests/run.sh      # the core against a fake target
 python3 tools/bf1942-models/lab/lab.py start tools/bf1942-models/lab/scenarios/wake-coop-rec.json
 # let a round run 60 s+, then:
 python3 tools/bf1942-models/lab/lab.py stop
-# the recording is in ~/bf1942-lab/server/replays/ (copy into the run dir by hand;
-# lab.py stop does not stage the server's replays/ yet)
+# stop copies the server's recordings into the run dir's server/ and the
+# viewer's replays/<run>/, and prints a viewer URL for each
 ```
+
+Scenarios with the recorder preloaded: `wake-coop-rec`, `elalamein-coop-rec`
+(armour), `midway-coop-rec` (aircraft and ships), `mapchange-coop-rec`
+(a Wake round to its end and the next, for the per-round split).
 
 Check the result in the viewer (serve `tools/bf1942-models/viewer/` and open
 `map.html?replay=replays/<file>.ndjson`), or assert the parse directly:
