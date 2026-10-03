@@ -109,6 +109,10 @@ export interface UserWithRoleResponse {
   userId: number;
   email: string;
   role: string;
+  /** Login name; only password accounts have one. */
+  username?: string | null;
+  /** "discord" | "password" | "deleted". */
+  authProvider?: string;
 }
 
 export interface ServerSearchResult {
@@ -429,6 +433,16 @@ class AdminDataService {
 
   async listUsers(): Promise<UserWithRoleResponse[]> {
     return this.request<UserWithRoleResponse[]>('/users', { method: 'GET' });
+  }
+
+  /**
+   * Generates a temporary password for a password account. The plaintext
+   * comes back once, in this response; the server keeps only the hash and
+   * revokes the user's live sessions.
+   */
+  async resetPassword(userId: number): Promise<{ userId: number; username: string; temporaryPassword: string }> {
+    return this.request<{ userId: number; username: string; temporaryPassword: string }>(
+      `/users/${userId}/reset-password`, { method: 'POST' });
   }
 
   async getAIChatFeedback(

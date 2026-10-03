@@ -9,6 +9,7 @@ import { decodePlayerName } from '../utils/playerName'
 // pages live under /v4/* now.
 const DiscordCallback = () => import('../views/DiscordCallback.vue')
 const DiscordStart = () => import('../views/DiscordStart.vue')
+const AuthSignInV4 = () => import('../views/v4/AuthSignInV4.vue')
 const TournamentDetails = () => import('../views/TournamentDetails.vue')
 // Public tournament pages route through a gate that renders the legacy layout
 // (LayoutVersion 1) or the V2 league layout (LayoutVersion 2) per tournament.
@@ -278,6 +279,24 @@ const routes: RouteRecordRaw[] = [
       meta: {
         title: 'Discord Authentication · bfstats.io',
         description: 'Signing in with Discord.'
+      }
+    },
+    {
+      path: '/auth/login',
+      name: 'auth-login',
+      component: AuthSignInV4,
+      meta: {
+        title: 'Sign in · bfstats.io',
+        description: 'Sign in with a username and password, or with Discord.'
+      }
+    },
+    {
+      path: '/auth/register',
+      name: 'auth-register',
+      component: AuthSignInV4,
+      meta: {
+        title: 'Create account · bfstats.io',
+        description: 'Create a bfstats.io account with a username and password.'
       }
     },
     {

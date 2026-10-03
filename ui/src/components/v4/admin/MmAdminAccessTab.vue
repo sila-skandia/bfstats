@@ -32,35 +32,62 @@
         <table class="mm-admin-table">
           <thead>
             <tr>
-              <th>Email</th>
+              <th>Account</th>
+              <th>Type</th>
               <th>Role</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            <tr
-              v-for="u in users"
-              :key="u.userId"
-            >
-              <td class="mm-admin-mono">{{ u.email }}</td>
-              <td>
-                <select
-                  :value="u.role"
-                  :disabled="u.role === 'Admin' || savingId === u.userId"
-                  class="mm-admin-select mm-admin-access__select"
-                  @change="onRoleChange(u.userId, ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="User">User</option>
-                  <option value="Support">Support</option>
-                  <option value="Admin" disabled>Admin (fixed)</option>
-                </select>
-              </td>
-              <td>
-                <span v-if="u.role === 'Admin'" class="mm-admin-access__fixed">—</span>
-                <span v-else-if="savingId === u.userId" class="mm-admin-access__saving">Saving…</span>
-                <span v-else-if="saveErrorId === u.userId" class="mm-admin-access__err">{{ saveError }}</span>
-              </td>
-            </tr>
+            <template v-for="u in users" :key="u.userId">
+              <tr>
+                <td class="mm-admin-mono">{{ u.username || u.email }}</td>
+                <td>
+                  <span v-if="u.authProvider === 'password'" class="mm-admin-access__provider">Password</span>
+                  <span v-else-if="u.authProvider === 'deleted'" class="mm-admin-access__provider mm-admin-access__provider--deleted">Erased</span>
+                  <span v-else class="mm-admin-access__provider">Discord</span>
+                </td>
+                <td>
+                  <select
+                    :value="u.role"
+                    :disabled="u.role === 'Admin' || savingId === u.userId"
+                    class="mm-admin-select mm-admin-access__select"
+                    @change="onRoleChange(u.userId, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="User">User</option>
+                    <option value="Support">Support</option>
+                    <option value="Admin" disabled>Admin (fixed)</option>
+                  </select>
+                </td>
+                <td>
+                  <span v-if="u.role === 'Admin'" class="mm-admin-access__fixed">—</span>
+                  <span v-else-if="savingId === u.userId" class="mm-admin-access__saving">Saving…</span>
+                  <span v-else-if="saveErrorId === u.userId" class="mm-admin-access__err">{{ saveError }}</span>
+                  <button
+                    v-else-if="u.authProvider === 'password'"
+                    type="button"
+                    class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+                    :disabled="resettingId === u.userId"
+                    @click="onResetPassword(u)"
+                  >
+                    {{ resettingId === u.userId ? 'Generating…' : 'Reset password' }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="generated?.userId === u.userId">
+                <td colspan="4" class="mm-admin-access__reset-cell">
+                  <span class="mm-admin-access__reset-label">
+                    Temporary password for {{ generated.username }}. Shown once. Ask them to sign in and change it.
+                  </span>
+                  <code class="mm-admin-access__reset-password">{{ generated.temporaryPassword }}</code>
+                  <button
+                    type="button"
+                    class="mm-admin-btn mm-admin-btn--ghost mm-admin-btn--sm"
+                    @click="copyTempPassword"
+                  >{{ copied ? 'Copied' : 'Copy' }}</button>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -83,12 +110,41 @@ const error = ref<string | null>(null)
 const savingId = ref<number | null>(null)
 const saveError = ref<string | null>(null)
 const saveErrorId = ref<number | null>(null)
+const resettingId = ref<number | null>(null)
+const generated = ref<{ userId: number; username: string; temporaryPassword: string } | null>(null)
+const copied = ref(false)
 
 const ALLOWED_ROLES = [ROLE_USER, ROLE_SUPPORT]
+
+async function onResetPassword(u: UserWithRoleResponse) {
+  resettingId.value = u.userId
+  error.value = null
+  generated.value = null
+  copied.value = false
+  try {
+    generated.value = await adminDataService.resetPassword(u.userId)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to generate password'
+  } finally {
+    resettingId.value = null
+  }
+}
+
+async function copyTempPassword() {
+  if (!generated.value) return
+  try {
+    await navigator.clipboard.writeText(generated.value.temporaryPassword)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    // Clipboard blocked; the password stays on screen to copy by hand.
+  }
+}
 
 async function load() {
   loading.value = true
   error.value = null
+  generated.value = null
   try {
     users.value = await adminDataService.listUsers()
   } catch (e) {
@@ -162,5 +218,36 @@ defineExpose({ load })
 .mm-admin-access__err {
   font-size: 12px;
   color: var(--mm-danger);
+}
+
+.mm-admin-access__provider {
+  font-size: 12px;
+  color: var(--mm-ink-muted);
+}
+.mm-admin-access__provider--deleted {
+  color: var(--mm-ink-faint);
+}
+
+.mm-admin-access__reset-cell {
+  background: var(--mm-bg-soft);
+  padding: 10px 14px;
+  font-size: 12.5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.mm-admin-access__reset-label {
+  color: var(--mm-ink-muted);
+  line-height: 1.4;
+}
+
+.mm-admin-access__reset-password {
+  font-family: var(--mm-font-mono);
+  font-size: 13px;
+  color: var(--mm-ink);
+  letter-spacing: 0.04em;
+  user-select: all;
 }
 </style>
