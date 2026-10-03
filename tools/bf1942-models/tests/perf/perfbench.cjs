@@ -22,7 +22,8 @@
 //
 // The renderer-settings matrix (features/mesh-viewer-performance, renderer
 // settings):
-//   --aa 0              the page's `?aa=0`: no MSAA on the WebGL context
+//   --aa 0|1            the page's `?aa=0|1`: MSAA off or on; absent, the page
+//                       picks (off on an Intel GPU under Mesa, which is this PC)
 //   --pixel-ratio <r>   the page's `?dpr=<r>`: the WebGL canvas's pixel ratio,
 //                       replacing min(devicePixelRatio, 2); --dpr stays the
 //                       window's device scale factor
@@ -70,7 +71,7 @@ const opts = {
   width: 1600, height: 900,
   dpr: 1, throttle: 1, realtime: 60, headed: false,
   out: null, dir: null, seed: 7, profile: true,
-  aa: 1, 'pixel-ratio': null, uncap: false, 'gpu-timer': false, fire: 1, still: false, mapgate: 1,
+  aa: null, 'pixel-ratio': null, uncap: false, 'gpu-timer': false, fire: 1, still: false, mapgate: 1,
 };
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -121,7 +122,7 @@ async function load(page) {
   // `nopreserve` drops the per-frame drawing-buffer copy `?shots` turns on,
   // so a pacing run measures the page a player gets; `shot` mode needs the
   // buffer kept for toDataURL and does not pass it.
-  const settings = `${opts.aa === 0 ? '&aa=0' : ''}${opts['pixel-ratio'] ? `&dpr=${opts['pixel-ratio']}` : ''}`;
+  const settings = `${opts.aa === 0 || opts.aa === 1 ? `&aa=${opts.aa}` : ''}${opts['pixel-ratio'] ? `&dpr=${opts['pixel-ratio']}` : ''}`;
   const url = `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&weapon=${opts.weapon}&shots${opts.preserve ? '' : '&nopreserve'}${settings}`;
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'load', timeout: 300000 });
