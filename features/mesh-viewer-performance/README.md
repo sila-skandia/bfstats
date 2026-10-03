@@ -419,6 +419,9 @@ The frame is CPU-bound at every setting: unthrottled, the page's own loop callba
 is 2.08-3.47 ms of a 2.29-3.84 ms frame. The defaults stay as they are; `?aa=0`
 and `?dpr=<ratio>` exist now so the trade can be measured, and a "low" preset would
 buy about 1.1 ms unthrottled at DPR 2.
+(2026-10-03: MSAA is now off by default on an Intel GPU under Mesa, which locks
+up drawing the effects into it; `?aa=1` forces it back on. See
+[intel-gpu-msaa-hang](../intel-gpu-msaa-hang/README.md).)
 
 **Every DPR 2 number in this document describes a hi-DPI visitor, not this
 machine.** Dylan's displays are all `<scale>1</scale>` with text scaling 1.0, so his
