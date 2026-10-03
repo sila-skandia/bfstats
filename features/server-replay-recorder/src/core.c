@@ -1019,10 +1019,11 @@ static void sample_players(void)
         node = read_u32(node);
         if (!p || p < 0x1000) break;
 
+        /* getId: 0 is a real player (the first human to join), so a failed
+         * read shows as an empty name below, not as pid 0. */
         int pid = read_u32(p + T->bf_id_off) & 0xffff;
-        if (!pid) continue;
 
-        char name[64];
+        char name[64] = "";
         /* w32: the plain name field is being located live (the createPlayer
          * builder gets the name via a virtual; a virtual call from this
          * thread on a racing destroy faults). While bf_name_off is 0, dump
@@ -1036,6 +1037,7 @@ static void sample_players(void)
         }
         if (T->read_player_name) T->read_player_name(p, name, sizeof(name));
         else T->read_string(p + T->bf_name_off, name, sizeof(name));
+        if (!name[0]) continue;
         int ai = T->read_player_ai
             ? T->read_player_ai(p) : (int)(read_u32(p + T->bf_ai_off) & 0xff);
         int team = read_u32(p + T->bf_team_off);

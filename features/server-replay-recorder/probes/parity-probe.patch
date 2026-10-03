@@ -1,0 +1,139 @@
+--- a/src/core.c
++++ b/src/core.c
+@@ -917,6 +917,25 @@
+     int item = (int)read_u32(obj + T->sol_item_off);
+     int bits = 0;
+     T->safe_read(&bits, 2, obj + T->sol_bits_off);
++    {   /* PROBE xs: [nid, ringIdx, ringLower, ringUpper, ringAimA, ringAimB, liveAimA(+0x284), liveAimB(+0x288), liveLower, liveUpper, ringVel x,y,z] */
++        uint32_t net = read_u32(obj + 0x68);
++        uint32_t idx = net >= 0x1000 ? read_u32(net + 0x28) : 99;
++        uint32_t ring = net >= 0x1000 ? read_u32(net + 0x4c) : 0;
++        float la = 0, lb = 0;
++        T->safe_read(&la, 4, obj + 0x284); T->safe_read(&lb, 4, obj + 0x288);
++        int rl = -9, ru = -9; float ra = 0, rb = 0, v[3] = {0, 0, 0};
++        if (ring >= 0x1000 && idx < 16) {
++            uint32_t r = ring + idx * 0x88;
++            rl = (int)read_u32(r + 0x70); ru = (int)read_u32(r + 0x74);
++            T->safe_read(&ra, 4, r + 0x68); T->safe_read(&rb, 4, r + 0x6c);
++            T->safe_read(v, 12, r + 0x14);
++        }
++        char pl[384];
++        snprintf(pl, sizeof(pl),
++            "{\"k\":\"xs\",\"t\":%.3f,\"o\":[%u,%u,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%d,%.2f,%.2f,%.2f]}",
++            g_t, nid, idx, rl, ru, ra, rb, la, lb, lower, upper, v[0], v[1], v[2]);
++        write_line(pl);
++    }
+ 
+     SoldierTracked *s = 0;
+     for (int i = 0; i < g_soldiers_n; i++)
+@@ -1043,6 +1062,37 @@
+         int team = read_u32(p + T->bf_team_off);
+         uint32_t veh = read_u32(p + T->bf_veh_off);
+         uint32_t nid = veh > 0x1000 ? T->net_id_of(veh) : 0;
++        {   /* PROBE xp: [pid, ai, ctrlNid(+0x4c), ctrlRootNid, seat(+0x54), bodyNid(+0x68), trig148, trig149, lod] */
++            uint32_t ctrl = read_u32(p + 0x4c);
++            uint32_t cn = ctrl > 0x1000 ? T->net_id_of(ctrl) : 0;
++            uintptr_t cr = ctrl > 0x1000 ? root_of(ctrl) : 0;
++            uint32_t crn = cr > 0x1000 ? T->net_id_of(cr) : 0;
++            uint8_t tr[2] = {0, 0};
++            T->safe_read(tr, 2, p + 0x148);
++            int lod = -1;
++            uint32_t inst = read_u32(0x0874ffe8u);
++            uint32_t bm = 0;
++            if (inst > 0x1000) {
++                if (read_u32(inst - 4) == 0x0874f768u) bm = inst - 4;
++                else if (read_u32(inst) == 0x0874f768u) bm = inst;
++            }
++            if (bm && pid < 256) {
++                uint32_t tbl = read_u32(bm + 0x38);
++                uint32_t bi = tbl > 0x1000 ? read_u32(tbl + pid * 4) : 0xffffffffu;
++                uint32_t vb = read_u32(bm + 0x20), ve = read_u32(bm + 0x24);
++                if (bi != 0xffffffffu && vb > 0x1000 && ve >= vb && bi < (ve - vb) / 4) {
++                    uint32_t e = read_u32(vb + bi * 4);
++                    uint32_t bot = e > 0x1000 ? read_u32(e) : 0;
++                    if (bot > 0x1000) lod = (int)read_u32(bot + 0x10);
++                }
++            }
++            char pl[256];
++            snprintf(pl, sizeof(pl),
++                "{\"k\":\"xp\",\"t\":%.3f,\"o\":[%d,%d,%u,%u,%d,%u,%u,%u,%d]}",
++                g_t, pid, (int)(read_u32(p + T->bf_ai_off) & 0xff), cn, crn,
++                (int)read_u32(p + 0x54), nid, tr[0], tr[1], lod);
++            write_line(pl);
++        }
+ 
+         Plyr *pl = 0;
+         for (int j = 0; j < g_players_n; j++)
+@@ -1692,6 +1742,29 @@
+     fprintf(stderr, "recorder: file closed (%s)\n", why);
+ }
+ 
++/* PROBE xu: live Projectile objects (vptr 0x0873f2c8) in the registered map */
++static char g_pp[16384]; static int g_pp_len, g_pp_n, g_pp_pool;
++static void probe_proj_add(uint32_t node, uint32_t obj, uint32_t nid, uint32_t flags)
++{
++    if (flags & FLAG_DISABLED) { g_pp_pool++; return; }
++    if (g_pp_len > (int)sizeof(g_pp) - 256) return;
++    Mat4 m;
++    if (!T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) return;
++    char nm[96] = "";
++    tmpl_name_json(read_u32(obj + T->obj_tmpl_off), nm, sizeof(nm));
++    g_pp_len += snprintf(g_pp + g_pp_len, sizeof(g_pp) - g_pp_len, "%s[%u,\"%s\",%u,%u,%.2f,%.2f,%.2f]",
++        g_pp_n ? "," : "", read_u32(node + T->node_key_off), nm, nid, (flags & FLAG_ROOT) ? 1u : 0u,
++        m.p[0], m.p[1], m.p[2]);
++    g_pp_n++;
++}
++static void probe_proj_flush(double t)
++{
++    char line[16640];
++    snprintf(line, sizeof(line), "{\"k\":\"xu\",\"t\":%.3f,\"pool\":%d,\"o\":[%s]}", t, g_pp_pool, g_pp);
++    if (g_pp_n || g_pp_pool) write_line(line);
++    g_pp_len = 0; g_pp_n = 0; g_pp_pool = 0; g_pp[0] = 0;
++}
++
+ static void *sampler(void *arg)
+ {
+     (void)arg;
+@@ -1910,6 +1983,7 @@
+                 uint32_t flags = read_u32(obj + T->obj_flags_off);
+                 uint32_t nid = T->net_id_of(obj);
+                 uint32_t vptr = read_u32(obj);
++                if (vptr == 0x0873f2c8u) probe_proj_add(node, obj, nid, flags);
+                 /* A watched kit is emitted however it is flagged: a carried
+                  * kit sits disabled in the map until dropped. */
+                 if (nid && kit_watch_pending(nid)) {
+@@ -1934,6 +2008,34 @@
+ #if REC_STAGE3
+         soldiers_prune();
+         sample_players();
++        probe_proj_flush(t);
++        {   /* PROBE xq: ObjectManager::getProjectileMap 0x081a34e0 = om+0x128 (SGI map: header ptr, count +4) */
++            uint32_t ph = read_u32(om + 0x128);
++            uint32_t pc = read_u32(om + 0x12c);
++            if (ph >= T->min_addr && pc < 5000) {
++                uint32_t n = read_u32(ph + T->node_leftmost_off);
++                uint32_t steps = 0;
++                char pl[4096]; int len = snprintf(pl, sizeof(pl), "{\"k\":\"xq\",\"t\":%.3f,\"n\":%u,\"o\":[", t, pc);
++                int first = 1;
++                while (n && n != ph && steps < pc + 16 && steps < 200) {
++                    steps++;
++                    uint32_t key = read_u32(n + T->node_key_off);
++                    uint32_t po = read_u32(n + T->node_value_off);
++                    if (po >= T->min_addr) {
++                        Mat4 m;
++                        char nm[96] = "";
++                        uint32_t tm = read_u32(po + T->obj_tmpl_off);
++                        tmpl_name_json(tm, nm, sizeof(nm));
++                        if (T->safe_read(&m, sizeof(m), po + T->obj_mat_off) && len < (int)sizeof(pl) - 200)
++                            len += snprintf(pl + len, sizeof(pl) - len, "%s[%u,\"%s\",%u,%.2f,%.2f,%.2f]",
++                                first ? "" : ",", key, nm, read_u32(po + T->obj_flags_off), m.p[0], m.p[1], m.p[2]);
++                        first = 0;
++                    }
++                    n = T->tree_successor(n, ph);
++                }
++                if (len < (int)sizeof(pl) - 4) { snprintf(pl + len, sizeof(pl) - len, "]}"); if (pc) write_line(pl); }
++            }
++        }
+         sample_tickets(t);
+         kit_watch_compact();
+         if (g_gen % 10 == 0) parts_prune(g_gen);
