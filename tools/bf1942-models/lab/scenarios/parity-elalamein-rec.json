@@ -1,0 +1,23 @@
+{
+  "name": "parity-elalamein-rec",
+  "description": "El Alamein co-op with a human client recording beside a probe build of the server recorder: the parity oracle of features/server-replay-recorder 'The best capture'. The probe also writes seats, triggers, bot AI LOD, live soldier aim and the server's projectile map (xs/xp/xq/xr/xn records).",
+  "preload": "~/bf1942-lab/server/recorder-probe.so",
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 90,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "Join during the pregame with the recorder on. Play normally: drive a tank and a jeep, ride as a gunner, run around near bots, fire a few kinds of weapons. Stay until the round ends or 8-10 minutes."
+}

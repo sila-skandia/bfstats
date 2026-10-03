@@ -105,7 +105,10 @@ static uint32_t lnxded_tree_successor(uint32_t node, uint32_t header)
     uint32_t right = read_u32(node + 0xc);
     if (right != header && right) {
         node = right;
-        for (;;) {
+        /* Bounded: a node the game thread frees mid-walk can point anywhere,
+         * and an unbounded descent or climb then spins the sampler for good
+         * (a client's disconnect, 2026-10-04). A tree this size is < 64 deep. */
+        for (int d = 0; d < 64; d++) {
             uint32_t left = read_u32(node + 8);
             if (!left || left == header) break;
             node = left;
@@ -113,7 +116,7 @@ static uint32_t lnxded_tree_successor(uint32_t node, uint32_t header)
         return node;
     }
     uint32_t parent = read_u32(node + 4);
-    while (parent && parent != header) {
+    for (int d = 0; d < 64 && parent && parent != header; d++) {
         if (read_u32(parent + 8) == node) return parent;
         node = parent;
         parent = read_u32(node + 4);
