@@ -184,6 +184,7 @@ folder answers.
 | [round-replay-highlights](round-replay-highlights/README.md) | build | How does the replay find battles, streaks and top plays worth watching? |
 | [round-replay-ux](round-replay-ux/README.md) | build | How does a viewer watch a replay: cameras, timeline, keys, layout, phones? |
 | [round-replay-resilience](round-replay-resilience/README.md) | fix | Why could the replay freeze in first person, and how does it recover now? |
+| [intel-gpu-msaa-hang](intel-gpu-msaa-hang/README.md) | fix | Why did replays hang Intel GPUs under Linux and crash Firefox, and why is MSAA off there? |
 | [replay-creator-view](replay-creator-view/README.md) | build | How does the replay's creator view work, and who can open it? |
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [gameplay-recordings](gameplay-recordings/README.md) | pipeline | How do I publish a recording and share a link that opens the replay? |

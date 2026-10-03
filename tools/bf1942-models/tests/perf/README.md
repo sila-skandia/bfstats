@@ -139,7 +139,9 @@ node perfbench.cjs bench --headed --uncap --gpu-timer --skip-stepped --dpr 2 \
   --pixel-ratio 1.5 --aa 0 --realtime 20 --out x.json
 ```
 
-- `--aa 0` / `--pixel-ratio <r>` load the page with `?aa=0` / `?dpr=<r>`; the
+- `--aa 0|1` / `--pixel-ratio <r>` load the page with `?aa=0|1` / `?dpr=<r>`.
+  Without `--aa` the page picks, and on this PC's Intel GPU it picks no MSAA
+  (features/intel-gpu-msaa-hang), so an MSAA-on run needs `--aa 1`. The
   `renderer` line records what the context actually came up with (MSAA
   samples, `preserveDrawingBuffer`, pixel ratio, drawing-buffer size).
 - `--uncap` adds `--disable-gpu-vsync --disable-frame-rate-limit`, so a frame's
