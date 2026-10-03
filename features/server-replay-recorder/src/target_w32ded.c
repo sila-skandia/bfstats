@@ -11,17 +11,12 @@
  * engine class layout matches bf1942_lnxded, the STL does not, so the
  * registered-objects map is the MSVC (VC7/Dinkumware) layout.
  *
- * Stage-1 port (REC_STAGE3=0): object map walk, transforms, template names,
- * destruction -- the h/o/s/d records, format v4. The stage-3 surfaces (the
- * three detours, joints, engines, armor, tickets, kits) live in the shared
- * core already and are NOT compiled in; porting them means cross-matching
- * the detour sites and stage-3 layouts through the anchor chain in
- * w32ded-offsets.md and filling this target's table, not copying code.
- *
- * The detour layer is a deliberate stub: RWX trampolines patched through
- * /proc/self/mem have no Windows equivalent; the Windows side wants IAT
- * patches or VirtualProtect byte patches. install_detours is a no-op until
- * then.
+ * Stage-1 port history: object map walk, transforms, template names,
+ * destruction (the h/o/s/d records). Stage 3 is now in: the two detour
+ * sites (addEventToSendQueue 0x00478490, sendGameEventToAll 0x00471090),
+ * the roster walk, engines, armor, tickets and kits live in the shared
+ * core; their w32 layouts are in w32ded-offsets.md pass 4. fireBarrel's
+ * w32 address is still open (FIRE_SITE 0 = the detour is not installed).
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -80,22 +75,26 @@ static int w32_safe_read(void *dst, size_t len, uintptr_t addr)
     return 1;
 }
 
-/* Stage 3 patches .text through /proc/self/mem on lnxded. On Windows the
- * detour layer is stubbed until its sites are cross-matched (w32ded wants
- * IAT patches or VirtualProtect byte patches). */
+/* Stage 3 patches .text: VirtualProtect to RWX, copy, restore, flush. */
 static int w32_patch_write(uintptr_t addr, const void *src, size_t len)
 {
-    (void)addr; (void)src; (void)len;
-    return 0;
+    DWORD old;
+    if (!VirtualProtect((void *)addr, len + 16, PAGE_EXECUTE_READWRITE, &old))
+        return 0;
+    memcpy((void *)addr, src, len);
+    DWORD tmp;
+    VirtualProtect((void *)addr, len + 16, old, &tmp);
+    FlushInstructionCache(GetCurrentProcess(), (void *)addr, len);
+    return 1;
 }
 
 static uint32_t w32_net_id_of(uintptr_t obj)
 {
-    /* The net-id read is a stage-3 layout item (lnxded: IObject+0x68 ->
-     * NetworkableBase, word at +4); unverified on w32ded, so a stage-1
-     * record keys on the registered map's key. */
-    (void)obj;
-    return 0;
+    /* IObject+0x68 -> NetworkableBase, u16 at +4 (the read the createPlayer
+     * event builder 0x004787e0 makes for vehicle/camera/kit net ids). */
+    uint32_t net = read_u32(obj + 0x68);
+    if (net < 0x1000) return 0;
+    return read_u32(net + 4) & 0xffff;
 }
 
 /* Stage 3 reads a player name / kit name through a std::string; the SGI
@@ -106,6 +105,89 @@ static void w32_read_string(uintptr_t str_obj, char *out, size_t cap)
 {
     (void)str_obj; (void)cap;
     out[0] = 0;
+}
+
+/* A VC7.0 Dinkumware string by value (the shape the live template-name
+ * reader confirmed): 28 bytes, chars inline at +4 (16-byte buffer) with the
+ * length at +0x14; longer strings keep a pointer at +0. */
+static void w32_dinkum_string(char *s, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (!w32_safe_read(s, 0x1c, (uintptr_t)s)) return;
+    uint32_t len = read_u32((uintptr_t)s + 0x14);
+    if (len == 0 || len > 63) return;
+    uintptr_t chars = len <= 15 ? (uintptr_t)s + 4 : read_u32((uintptr_t)s);
+    if (chars < 0x10000) return;
+    if (len >= cap) len = cap - 1;
+    if (!w32_safe_read(out, len, chars)) { out[0] = 0; return; }
+    out[len] = 0;
+}
+
+/* SEH is unavailable on i386 mingw, so every sampler-thread virtual call is
+ * guarded instead: IsBadCodePtr vetoes wild/garbage slot values (a dead
+ * object's freed vtable reads zeros or reuse garbage; the live coop crash
+ * was a call through such a pointer). */
+static int w32_vt_call_ok(uint32_t fn)
+{
+    if (fn < 0x10000 || (fn & 3)) return 0;
+    return !IsBadCodePtr((FARPROC)(uintptr_t)fn);
+}
+
+static int w32_seh_name(uintptr_t player, char *buf)
+{
+    uint32_t vt = read_u32(player);
+    if (vt < 0x10000) return 0;
+    uint32_t fn = read_u32(vt + 0x18);
+    if (!w32_vt_call_ok(fn)) return 0;
+    ((void (REC_VTCALL *)(void *, char *))fn)((void *)player, buf);
+    return 1;
+}
+
+static int w32_seh_ai(uintptr_t player)
+{
+    uint32_t vt = read_u32(player);
+    if (vt < 0x10000) return 0;
+    uint32_t fn = read_u32(vt + 0x44);
+    if (!w32_vt_call_ok(fn)) return 0;
+    return (int)(((uint32_t (REC_VTCALL *)(void *))fn)((void *)player)) & 0xff;
+}
+
+/* BFPlayer::getName is virtual (vt slot 6, the call the createPlayer event
+ * builder makes); there is no plain name field on w32ded. Returns the string
+ * by value (hidden return buffer as the first stack argument). */
+static void w32_read_player_name(uintptr_t player, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (player < 0x10000) return;
+    char buf[32] = {};
+    if (!w32_seh_name(player, buf)) return;
+    w32_dinkum_string(buf, out, cap);
+}
+
+/* BFPlayer::getIsAIPlayer, virtual vt slot 17 (createPlayer's ev+0x2f fill). */
+static int w32_read_player_ai(uintptr_t player)
+{
+    if (player < 0x10000) return 0;
+    return w32_seh_ai(player);
+}
+
+/* getBFPlayer(IPlayer*) is the identity on the server (lnxded 0x08052ac0 is
+ * literally mov eax,[esp+4]; the w32 IPlayer is the BFPlayer). */
+static uint32_t w32_get_bf_player(uint32_t p) { return p; }
+
+/* getRootParent(ICompositeObject const*) 0x0818d4b0's walk: root-flagged
+ * objects return themselves, everything else climbs +0x50 until the root
+ * flag (same layout: w32 BObject zeroes +0x50/+0x54 in its ctor). */
+static uint32_t w32_root_parent(uint32_t obj)
+{
+    uint32_t cur = obj;
+    for (int i = 0; i < 32 && cur >= 0x1000; i++) {
+        if (read_u32(cur + 4) & 0x02000000u) return cur;
+        uint32_t parent = read_u32(cur + 0x50);
+        if (parent < 0x1000) return cur;
+        cur = parent;
+    }
+    return cur;
 }
 
 static double w32_now_s(void)
@@ -219,12 +301,25 @@ static uint32_t w32_tree_successor(uint32_t node, uint32_t head)
     return head;
 }
 
-/* ------------------------------------------------------------------ */
-/* threads and file plumbing                                           */
+/* --- threads and file plumbing                                           */
 /* ------------------------------------------------------------------ */
 
-static void w32_lock(void)   { }
-static void w32_unlock(void) { }
+static CRITICAL_SECTION g_rec_cs;
+static int g_rec_cs_init;
+
+static void w32_lock(void)
+{
+    if (!g_rec_cs_init) {
+        InitializeCriticalSection(&g_rec_cs);
+        g_rec_cs_init = 1;
+    }
+    EnterCriticalSection(&g_rec_cs);
+}
+
+static void w32_unlock(void)
+{
+    if (g_rec_cs_init) LeaveCriticalSection(&g_rec_cs);
+}
 
 static void w32_sleep(void)
 {
@@ -301,27 +396,215 @@ static void iat_hook(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* stage 3: the detour layer (VirtualProtect byte patches + RWX        */
+/* trampolines; sites and prologues in w32ded-offsets.md pass 4)       */
+/* ------------------------------------------------------------------ */
+
+extern volatile int g_hook_active;
+extern void recorder_on_event(uint32_t ev);
+extern void recorder_on_queue_event(uint32_t ev);
+extern void recorder_on_fire(uint32_t fire_arms, uint32_t player,
+                             uint32_t mat4_addr);
+
+#define AETSQ_SITE  0x00478490u  /* GameEventManager::addEventToSendQueue */
+#define TOALL_SITE  0x00471090u  /* GameServer::sendGameEventToAll */  /* GameServer::sendGameEventToAll */
+#define FIRE_SITE   0u           /* FireArms::fireBarrel: not located yet */
+
+/* addEventToSendQueue's prologue, 13 bytes (objdump 0x00478490):
+ *   8b 44 24 04     mov  0x4(%esp),%eax     ; the event ([esp+4] at entry)
+ *   85 c0           test %eax,%eax
+ *   75 05           jne  +5
+ *   32 c0           xor  %al,%al
+ *   c2 04 00        ret  $0x4               ; next instruction 0x0047849d */
+static const uint8_t AETSQ_ORIG[] = {
+    0x8b, 0x44, 0x24, 0x04, 0x85, 0xc0, 0x75, 0x05,
+    0x32, 0xc0, 0xc2, 0x04, 0x00
+};
+#define AETSQ_LEN sizeof(AETSQ_ORIG)
+
+/* sendGameEventToAll's first 10 bytes (objdump 0x00471090):
+ *   51                 push %ecx
+ *   56                 push %esi
+ *   8b f1              mov  %ecx,%esi
+ *   8b 86 d8 01 00 00  mov  0x1d8(%esi),%eax
+ * None of them is relative, and no branch in the body lands inside them
+ * (its targets are +0x28, +0x36, +0x42, +0x59), so the trampoline carries
+ * these and jumps back to 0x0047109a. The 14-byte cut would take the
+ * `je +0x4b` along (relative, wrong once copied), and copying the whole
+ * 94-byte body is worse: its two `call rel32` (addEvent 0x00478a50, the
+ * set iterator 0x0047ccc0) are relative too, and run off into the heap the
+ * first time a client is connected. */
+static const uint8_t TOALL_ORIG[] = {
+    0x51, 0x56, 0x8b, 0xf1, 0x8b, 0x86, 0xd8, 0x01, 0x00, 0x00
+};
+#define TOALL_LEN sizeof(TOALL_ORIG)
+#define TOALL_BACK (TOALL_SITE + TOALL_LEN)
+
+/* The stubs: entered by a jmp, so the caller's frame is intact -- pusha
+ * (32) + pushfl (4) puts entry [esp+0] at [esp+36]. thiscall: [esp+4] at
+ * entry is the first stack argument (the event / the player). */
+__asm__(
+".text\n"
+".globl _recorder_stub_event\n"
+"_recorder_stub_event:\n"          /* addEventToSendQueue(ecx=GEM, ev@+4) */
+"  pusha\n"
+"  pushfl\n"
+"  movl  40(%esp), %eax\n"         /* the event */
+"  pushl %eax\n"
+"  call  _recorder_on_queue_event\n"
+"  addl  $4, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_event\n"
+".globl _recorder_stub_toall\n"
+"_recorder_stub_toall:\n"          /* sendGameEventToAll(ecx=this, ev@+4, bool@+8) */
+"  pusha\n"
+"  pushfl\n"
+"  movl  40(%esp), %eax\n"         /* the event */
+"  pushl %eax\n"
+"  call  _recorder_on_event\n"
+"  addl  $4, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_toall\n"
+".globl _recorder_stub_fire\n"
+"_recorder_stub_fire:\n"           /* fireBarrel(ecx=this, player@+4, Mat4&@+8, barrel@+0xc) */
+"  pusha\n"
+"  pushfl\n"
+"  movl  28(%esp), %eax\n"         /* this: pusha's saved ecx (36 is the return address) */
+"  movl  40(%esp), %edx\n"         /* player */
+"  movl  44(%esp), %ecx\n"         /* Mat4* */
+"  pushl %ecx\n"
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  _recorder_on_fire\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_fire\n"
+".data\n"
+".globl _recorder_tramp_event\n"
+".align 4\n"
+"_recorder_tramp_event: .long 0\n"
+".globl _recorder_tramp_fire\n"
+"_recorder_tramp_fire: .long 0\n"
+".globl _recorder_tramp_toall\n"
+"_recorder_tramp_toall: .long 0\n"
+);
+
+extern char recorder_stub_event;
+extern char recorder_stub_fire;
+extern char recorder_stub_toall;
+extern uint32_t recorder_tramp_event;
+extern uint32_t recorder_tramp_fire;
+extern uint32_t recorder_tramp_toall;
+
+/* One RWX page holds every trampoline: the copied prologue, then a jmp
+ * back to the first unpatched instruction. */
+static uint8_t *g_tramp_page;
+static size_t g_tramp_used;
+
+static int build_trampoline(const void *orig_bytes, size_t len,
+                            uintptr_t back_to, uintptr_t *out)
+{
+    if (!g_tramp_page) {
+        g_tramp_page = VirtualAlloc(NULL, 4096,
+                                    MEM_COMMIT | MEM_RESERVE,
+                                    PAGE_EXECUTE_READWRITE);
+        if (!g_tramp_page) return 0;
+    }
+    uintptr_t at = (uintptr_t)g_tramp_page + g_tramp_used;
+    if (g_tramp_used + len + 5 > 4096) return 0;
+    memcpy((void *)at, orig_bytes, len);
+    uint8_t jmp[5];
+    jmp[0] = 0xe9;
+    int32_t rel = (int32_t)(back_to - (at + len + 5));
+    memcpy(jmp + 1, &rel, 4);
+    memcpy((void *)(at + len), jmp, 5);
+    FlushInstructionCache(GetCurrentProcess(), (void *)at, len + 5);
+    g_tramp_used += len + 5;
+    *out = at;
+    return 1;
+}
+
+static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
+                          void *stub, const uint8_t *orig_bytes,
+                          uintptr_t back_to, uint32_t *tramp_out)
+{
+    if (!site) return 0;
+    uint8_t have[20];
+    if (!w32_safe_read(have, len, site) || memcmp(have, expected, len) != 0) {
+        fprintf(stderr, "recorder: %08lx is not the expected code, detour skipped\n",
+                (unsigned long)site);
+        return 0;
+    }
+    uintptr_t tramp = 0;
+    if (!build_trampoline(orig_bytes, len, back_to, &tramp)) {
+        fprintf(stderr, "recorder: trampoline for %08lx failed\n", (unsigned long)site);
+        return 0;
+    }
+    /* The tramp pointer MUST be live before the site is patched: another
+     * thread can hit the jmp the instant the bytes land (first live run
+     * died exactly there -- the stub jumped through a still-null pointer). */
+    *tramp_out = (uint32_t)tramp;
+    uint8_t patch[160];
+    patch[0] = 0xe9;
+    int32_t rel = (int32_t)((uintptr_t)stub - (site + 5));
+    memcpy(patch + 1, &rel, 4);
+    for (size_t i = 5; i < len; i++) patch[i] = 0x90;   /* jmp + trailing nops */
+    if (len > sizeof(patch)) return 0;
+    if (!w32_patch_write(site, patch, len)) {
+        fprintf(stderr, "recorder: patch at %08lx failed\n", (unsigned long)site);
+        return 0;
+    }
+    {
+        uint8_t back[8] = {};
+        w32_safe_read(back, 5, site);
+        fprintf(stderr, "recorder: %08lx now %02x %02x %02x %02x %02x (stub %p)\n",
+                (unsigned long)site, back[0], back[1], back[2], back[3],
+                back[4], stub);
+    }
+    *tramp_out = (uint32_t)tramp;
+    return 1;
+}
+
+static int w32_install_detours(void)
+{
+    uint32_t t3 = 0;
+    /* tramp_out points straight at the globals the stubs jump through:
+     * they must be live before the site bytes land (see install_detour). */
+    g_hook_active = 1;
+    install_detour(AETSQ_SITE, AETSQ_ORIG, AETSQ_LEN,
+                   &recorder_stub_event, AETSQ_ORIG,
+                   AETSQ_SITE + AETSQ_LEN, &recorder_tramp_event);
+    install_detour(TOALL_SITE, TOALL_ORIG, TOALL_LEN,
+                   &recorder_stub_toall, TOALL_ORIG,
+                   TOALL_BACK, &recorder_tramp_toall);
+    if (FIRE_SITE) install_detour(FIRE_SITE, 0, 0, 0, 0, 0, &t3);
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
 /* the target table (w32ded-offsets.md)                                */
 /* ------------------------------------------------------------------ */
 
 const struct rec_target w32ded_target = {
     .name = "w32ded",
     .header_plus = "server-replay-recorder-w32ded",
-    .header_version = 4,
+    .header_version = 5,
 
     .object_manager_ptr = 0x0074c52cu,  /* dice::ref2::world::objectManager */
-
-    /* stage 3: not ported; sites and layouts to cross-match through the
-     * anchor chain in w32ded-offsets.md. */
-    .player_manager_ptr = 0u,
-    .template_manager_ptr = 0u,
-    .setup_ptr = 0u,
-    .score_manager_ptr = 0u,
+    .player_manager_ptr = 0x0074c534u,  /* dice::ref2::world::playerManager */
+    .template_manager_ptr = 0x0074c530u,/* dice::ref2::world::objectTemplateManager */
+    .setup_ptr = 0u,                    /* not located; write_level skips */
+    .score_manager_ptr = 0x00749c70u,   /* the "Tickets: Axis" printer's global */
+    /* vtables: MSVC vptr = the vtable itself. rot/engine/soldier/physengine
+     * come from the live vptr census (no RTTI in this binary). */
     .vt_rot_bundle = 0u,
     .vt_engine = 0u,
     .vt_soldier = 0u,
     .vt_phys_engine = 0u,
-    .vt_score_manager = 0u,
+    .vt_score_manager = 0x006e8858u,    /* ScoreManager ctor 0x00466930 */
 
     /* The MSVC registered-objects tree at om+0xa0: om+0xa4 _Myhead
      * (sentinel), om+0xa8 _Mysize; node _Left +0, _Parent +4, _Right +8,
@@ -344,59 +627,63 @@ const struct rec_target w32ded_target = {
     .obj_mat_off = 0x74u,               /* Mat4: rows a,b,c then position */
     .tmpl_id_off = 0x34u,               /* candidate: 0x181 seen at +0x34; verify in run */
 
-    /* stage 3: unverified on w32ded (all zeros until cross-matched). */
-    .obj_parent_off = 0u,
-    .obj_compmap_off = 0u,
-    .armor_iid = 0u,
-    .armor_hp_off = 0x104u,             /* save 0x004fdc80 (hitPoints) */
-    .armor_maxhp_off = 0x108u,
-    .armor_crit_off = 0x164u,
-    .armor_lasthit_off = 0u,
-    .eng_pe_off = 0u,
-    .pe_revs_off = 0u,
-    .pe_gear_off = 0u,
-    .eng_flags_off = 0x142u,            /* engine layout carries over (running +0x142, disabled +0x143) */
-    .eng_throttle_off = 0x124u,         /* engine layout carries over */
-    .sol_lower_off = 0u,
-    .sol_upper_off = 0u,
-    .sol_item_off = 0u,
-    .sol_bits_off = 0u,
-    .pm_list_off = 0u,
-    .pl_node_player_off = 0u,
-    .bf_id_off = 0u,
-    .bf_name_off = 0u,
-    .bf_ai_off = 0u,
-    .bf_team_off = 0u,
-    .bf_veh_off = 0u,
-    .bf_cam_off = 0u,
-    .kit_class_id = 0u,
-    .kit_getkit_slot = 0u,
-    .om_get_slot1 = 0u,
-    .om_get_slot2 = 0u,
-    .score_base_off = 0u,
-    .score_stride_off = 0u,
-    .score_tickets_off = 0u,
+    /* stage 3 (w32ded-offsets.md pass 4) */
+    .obj_parent_off = 0x50u,            /* BObject ctor zeroes +0x50/+0x54 */
+    .obj_compmap_off = 0xe0u,           /* candidate: ctor zeroes +0xe0..+0xe8; verify in run */
+    .armor_iid = 0xc4a4u,               /* the queryComponent key (0x004044cb) */
+    .armor_hp_off = 0x38u,              /* Armor ctor 0x0047f9f0: heal/damage read/write +0x38 */
+    .armor_maxhp_off = 0x3cu,           /* setter clamps at 128 (slot 4) */
+    .armor_crit_off = 0xf0u,            /* carried over from lnxded (class layout) */
+    .armor_lasthit_off = 0x14u,         /* setter skips -1 (slot 29) */
+    .eng_pe_off = 0x60u,                /* PhysicsEngine* (layout carries over) */
+    .pe_revs_off = 0xa0u,
+    .pe_gear_off = 0xbcu,
+    .eng_flags_off = 0x142u,            /* running +0x142, disabled +0x143 */
+    .eng_throttle_off = 0x124u,
+    .sol_lower_off = 0x2b4u,            /* BFSoldier anim machines (carried over; verify) */
+    .sol_upper_off = 0x2f8u,
+    .sol_item_off = 0x3b8u,
+    .sol_bits_off = 0x3e6u,
+    .pm_list_off = 0x10u,               /* sentinel node pointer (ctor 0x005342f0) */
+    .pl_node_player_off = 8u,           /* node {next+0, prev+4, BFPlayer*+8} */
+    .pm_sentinel_indirect = 1,          /* walk starts at *(pm+0x10) */
+    .bf_id_off = 0xcu,                  /* createPlayer builder: ev id = BFPlayer+0x0c */
+    .bf_name_off = 0u,                  /* virtual only: read_player_name */
+    .bf_ai_off = 0u,                    /* virtual only: read_player_ai */
+    .bf_team_off = 0xacu,
+    .bf_veh_off = 0xa4u,                /* controlled object (ev vehicle net id) */
+    .bf_cam_off = 0x98u,                /* free camera */
+    .kit_class_id = 0x9493u,            /* BFSoldier template class id (id table 0x6ea4a0) */
+    .kit_getkit_slot = 0x100u,          /* soldier vt+0x100 = getKit */
+    .om_get_slot1 = 0x20u,              /* objectManager lookup vslots */
+    .om_get_slot2 = 0x24u,
+    .score_base_off = 0x60u,            /* ScoreManager ctor: team array */
+    .score_stride_off = 0x50u,
+    .score_tickets_off = 0x48u,         /* the "Tickets: Axis" row */
     .setup_level_off = 0u,
     .setup_gpm_off = 0u,
-    .get_bf_player_addr = 0u,
-    .get_root_parent_addr = 0u,
+    .get_bf_player_addr = (uint32_t)w32_get_bf_player,  /* identity */
+    .get_root_parent_addr = (uint32_t)w32_root_parent,
 
     .walk_clamp_count = 1,      /* clamp the walk bound's count at 100000 */
     .sample_reset_next = 1,     /* next_sample = t + 1/hz */
-    .flush_each_line = 0,       /* the sampler flushes once per pass */
+    .flush_each_line = 1,       /* the detour threads also write */
 
     .safe_read = w32_safe_read,
     .patch_write = w32_patch_write,
     .now_s = w32_now_s,
     .net_id_of = w32_net_id_of,
     .read_string = w32_read_string,
+    .read_player_name = w32_read_player_name,
+    .read_player_ai = w32_read_player_ai,
+    .vt_call_ok = w32_vt_call_ok,
     .read_template_name = w32_read_template_name,
     .tree_successor = w32_tree_successor,
     .make_replays_dir = w32_make_replays_dir,
     .rec_lock = w32_lock,
     .rec_unlock = w32_unlock,
     .rec_sleep = w32_sleep,
-    .install_detours = 0,       /* stubbed: no detours at stage 1 */
+    .install_detours = w32_install_detours,
     .start_sampler_thread = w32_start_sampler_thread,
 };
 

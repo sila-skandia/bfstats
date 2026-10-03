@@ -9,6 +9,7 @@ pair each kill with its victim's death to get the distance.
 
 from __future__ import annotations
 
+import datetime as dt
 import importlib.util
 import tempfile
 import unittest
@@ -156,6 +157,19 @@ class EventLog(unittest.TestCase):
         self.assertEqual(lab.log_for("client/replay_20260926-230510.ndjson", logs), logs[0])
         self.assertEqual(lab.log_for("client/replay_20260926-232130.ndjson", logs), logs[1])
         self.assertIsNone(lab.log_for("client/replay_20260926-232130.ndjson", []))
+
+    def test_a_server_recording_is_named_for_the_second_it_opened(self):
+        # The server recorder: replay_<unix seconds>, -<n> when a second file
+        # opened in the same second.
+        self.assertEqual(lab.server_recording_opened(Path("replay_1790896490.ndjson")), 1790896490.0)
+        self.assertEqual(lab.server_recording_opened(Path("replay_1790896490-2.ndjson")), 1790896490.0)
+        self.assertIsNone(lab.server_recording_opened(Path("replay_20260926-224904.ndjson")))
+
+    def test_a_server_recording_gets_the_log_of_its_level(self):
+        logs = ["serverlog/ev_14568-20260926_2300.xml", "serverlog/ev_14568-20260926_2321.xml"]
+        opened = int(dt.datetime(2026, 9, 26, 23, 22, 5).timestamp())
+        self.assertEqual(lab.log_for(f"server/replay_{opened}.ndjson", logs), logs[1])
+        self.assertEqual(lab.log_for(f"server/replay_{opened - 1200}.ndjson", logs), logs[0])
 
 
 if __name__ == "__main__":

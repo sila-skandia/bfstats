@@ -1,0 +1,29 @@
+{
+  "name": "mapchange-coop-rec",
+  "description": "A Wake co-op round played to its end (about 13 min), then the server's next round, with the server-side recorder preloaded: exercises the recorder's one-file-per-round split. The server stayed on Wake for the second round rather than moving to El Alamein, and serverTicketRatio does not shorten a co-op round (tickets still start at 200).",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    },
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10,
+    "serverTicketRatio": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed. Stop once the second file has opened (about 14 min in)."
+}

@@ -65,10 +65,15 @@ worktree prints a URL that 404s.
    recording's relevance centre: the client only receives motion within about
    520 m of it.
 
-5. **The round ends.** A 32-player Wake co-op round lasts about 7 minutes. The
-   game then closes itself: BF1942 restarts its process between maps, that
-   restart does not come back under Wine, and with one round a map every round
-   end is a map change. This is expected, and it closes the recording cleanly.
+5. **The round ends.** A 32-player Wake co-op round has lasted about 7 minutes
+   with a client in it; with bots alone it ran 13.5 minutes once and was at
+   64/106 tickets after 21 minutes another time (2026-10-03).
+   `serverTicketRatio` does not shorten a co-op round. The game then closes
+   itself: BF1942 restarts its process between maps, that restart does not
+   come back under Wine, and with one round a map every round end is a map
+   change. This is expected, and it closes the recording cleanly. The server
+   carries on: it played a second Wake round even with El Alamein next in
+   the map list.
 
 6. **Stop and collect.** `python3 lab/lab.py stop`. It prints:
    - the run directory `~/bf1942-lab/runs/<yyyymmdd-hhmmss>-<scenario>/`
@@ -77,8 +82,11 @@ worktree prints a URL that 404s.
      server while the lab ran;
    - `(still open ...)` if the game was still running, in which case the copy
      has no `end` record;
-   - the viewer URL. It carries `&serverlog=` and `&mode=CoOp`, and loads from
-     :5273.
+   - `server: server/replay_<unix>.ndjson` for each file the server-side
+     recorder wrote (the `*-rec` scenarios preload it; one file per round,
+     see `features/server-replay-recorder/README.md`);
+   - a viewer URL per recording. It carries `&serverlog=` and `&mode=CoOp`,
+     and loads from :5273.
 
 7. **Report.** Give the user the viewer URL and the highlights of
    `python3 lab/lab.py summary ~/bf1942-lab/runs/<run>`: players per side,
