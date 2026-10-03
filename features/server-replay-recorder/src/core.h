@@ -13,14 +13,13 @@
  *                         detours (REC_STAGE3=1)
  *   src/target_w32ded.c   BF1942_w32ded.exe: MSVC-STL layouts, IsBadReadPtr
  *                         reads, DllMain + CreateThread entry, proxy-WINMM
- *                         winmm IAT reroute; detour layer STUBBED (no-op)
- *                         until its sites are cross-matched (REC_STAGE3=0)
+ *                         winmm IAT reroute, VirtualProtect detours
+ *                         (REC_STAGE3=1 REC_MSVC_VT=1; fireBarrel unlocated)
  *
  * The core is written against the target contract: every address, struct
  * offset and platform call goes through the `struct rec_target` table.
- * Stage-3 code paths are compiled out of the w32ded target with
- * -DREC_STAGE3=0 (the port has not landed; do not copy stage 3 by hand --
- * it lives here already).
+ * A target built with -DREC_STAGE3=0 compiles the stage-3 paths out (do not
+ * copy stage 3 into a target by hand -- it lives here already).
  */
 
 #include <stdint.h>
@@ -29,6 +28,16 @@
 
 #ifndef RECORDER_CORE_H
 #define RECORDER_CORE_H
+
+/* A virtual call through a raw vtable slot. GCC (lnxded) member functions
+ * pass `this` on the stack like any first argument; MSVC (w32ded) passes it
+ * in ECX. The w32 build defines REC_MSVC_VT=1 so the indirect calls below
+ * use GCC's __attribute__((thiscall)). */
+#ifdef REC_MSVC_VT
+#define REC_VTCALL __attribute__((thiscall))
+#else
+#define REC_VTCALL
+#endif
 
 /*
  * The target contract. Addresses and struct offsets are per binary; the
@@ -94,6 +103,9 @@ struct rec_target {
     uint32_t sol_bits_off;
     uint32_t pm_list_off;       /* playerManager: the list */
     uint32_t pl_node_player_off;/* a list node: the BFPlayer* */
+    int pm_sentinel_indirect;   /* 1: *(pm+pm_list_off) is the sentinel node
+                                 * pointer (MSVC); 0: pm+pm_list_off is the
+                                 * embedded header node itself (SGI/lnxded) */
     uint32_t bf_id_off;
     uint32_t bf_name_off;
     uint32_t bf_ai_off;
@@ -104,6 +116,15 @@ struct rec_target {
     uint32_t kit_getkit_slot;   /* BFSoldier's getKit vtable slot */
     uint32_t om_get_slot1;      /* objectManager lookup vslots */
     uint32_t om_get_slot2;
+    /* The kit lookup by safe reads (no virtual call from the sampler
+     * thread): the BFSoldierTemplate vptr, the soldier's kit id field
+     * (getKitId's body) and the two id maps the objectManager lookups find
+     * in. sol_kitid_off 0 = the target has not verified them; the lookup
+     * falls back to the virtual calls above. */
+    uint32_t vt_soldier_tmpl;
+    uint32_t sol_kitid_off;
+    uint32_t om_objmap1_off;
+    uint32_t om_objmap2_off;
     uint32_t score_base_off;    /* ScoreManager: first TeamScore */
     uint32_t score_stride_off;  /* TeamScore stride */
     uint32_t score_tickets_off; /* the ticket count in a TeamScore */
@@ -125,9 +146,19 @@ struct rec_target {
     double (*now_s)(void);
     uint32_t (*net_id_of)(uintptr_t obj);   /* 0 when the target has none */
     void (*read_string)(uintptr_t str_obj, char *out, size_t cap);
+    /* A BFPlayer's name/ai: lnxded reads plain fields (bf_name_off /
+     * bf_ai_off); w32ded has no plain fields there, the target calls
+     * BFPlayer's virtuals instead. NULL = read the fields. */
+    void (*read_player_name)(uintptr_t player, char *out, size_t cap);
+    int (*read_player_ai)(uintptr_t player);
+    /* veto a raw vtable-slot function pointer before an indirect virtual
+     * call from the sampler (w32ded: no SEH on i386). NULL = allow all. */
+    int (*vt_call_ok)(uint32_t fn);
     void (*read_template_name)(uintptr_t tmpl, char *out, size_t cap);
     uint32_t (*tree_successor)(uint32_t node, uint32_t head);
     void (*make_replays_dir)(void);
+    /* Not re-entrant on lnxded (a default pthread mutex): nothing called
+     * with it held may take it again. */
     void (*rec_lock)(void);
     void (*rec_unlock)(void);
     void (*rec_sleep)(void);                /* one 30 Hz tick */

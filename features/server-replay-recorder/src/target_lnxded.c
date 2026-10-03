@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <time.h>
 
 #include "core.h"
@@ -135,7 +136,7 @@ static void lnxded_sleep(void)
 
 static void lnxded_make_replays_dir(void)
 {
-    (void)system("mkdir -p replays");
+    (void)mkdir("replays", 0755);   /* EEXIST is fine */
 }
 
 static int lnxded_start_sampler_thread(void *(*fn)(void *))
@@ -191,11 +192,11 @@ __asm__(
 ".text\n"
 ".globl recorder_stub_event\n"
 "recorder_stub_event:\n"          /* jmp'd here from 0x0812d730 */
-"  pusha\n"
+"  pusha\n"                        /* 32 bytes + pushfl 4: entry [esp] at 36 */
 "  pushfl\n"
-"  movl  44(%esp), %eax\n"        /* the event pointer ([esp+4] at entry) */
+"  movl  44(%esp), %eax\n"        /* the event ([esp+8] at entry; this at +4) */
 "  pushl %eax\n"
-"  call  recorder_on_event\n"
+"  call  recorder_on_queue_event\n"
 "  addl  $4, %esp\n"
 "  popfl\n"
 "  popa\n"
@@ -204,7 +205,7 @@ __asm__(
 "recorder_stub_fire:\n"           /* jmp'd here from 0x0828aba0 */
 "  pusha\n"
 "  pushfl\n"
-"  movl  40(%esp), %eax\n"        /* this    ([esp+4] at entry) */
+"  movl  40(%esp), %eax\n"        /* this    ([esp+4] at entry: gcc passes it on the stack) */
 "  movl  44(%esp), %edx\n"        /* player  */
 "  movl  48(%esp), %ecx\n"        /* Mat4*   */
 "  pushl %ecx\n"
@@ -219,7 +220,7 @@ __asm__(
 "recorder_stub_toall:\n"          /* jmp'd here from 0x08153b10 */
 "  pusha\n"
 "  pushfl\n"
-"  movl  44(%esp), %eax\n"        /* the event ([esp+8] at entry) */
+"  movl  44(%esp), %eax\n"        /* the event ([esp+8] at entry; this at +4) */
 "  pushl %eax\n"
 "  call  recorder_on_event\n"
 "  addl  $4, %esp\n"
@@ -320,6 +321,7 @@ static int lnxded_install_detours(void)
 /* --- the target table ------------------------------------------------------ */
 
 extern void recorder_on_event(uint32_t ev);
+extern void recorder_on_queue_event(uint32_t ev);
 extern void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
 
 const struct rec_target lnxded_target = {
@@ -391,6 +393,10 @@ const struct rec_target lnxded_target = {
     .kit_getkit_slot = 0x17cu,          /* BFSoldier's getKit vtable slot */
     .om_get_slot1 = 0x20u,              /* objectManager lookup vslots */
     .om_get_slot2 = 0x24u,
+    .vt_soldier_tmpl = 0x0872eec8u,     /* BFSoldierTemplate (symbol 0x0872eec0 + 8): the only vtable whose getClassID (0x0827fc80) answers kit_class_id */
+    .sol_kitid_off = 0x408u,            /* BFSoldier::getKitId 0x0827f910 = the vslot 0x17c call: mov 0x408(%eax),%eax */
+    .om_objmap1_off = 0x48u,            /* ObjectManager::getObjectFromGrid 0x0819d310 (vslot 0x20): map<uint, IObject*> find at om+0x48 */
+    .om_objmap2_off = 0x60u,            /* getObjectFromNoCollisionGrid 0x0819d350 (vslot 0x24): the same at om+0x60 */
     .score_base_off = 0x10u,            /* getTeamScore 0x081616c0 */
     .score_stride_off = 0x50u,
     .score_tickets_off = 0x48u,         /* TeamScore::setTickets 0x081610a0 */
@@ -424,4 +430,12 @@ __attribute__((constructor))
 static void recorder_init(void)
 {
     recorder_core_init(&lnxded_target);
+}
+
+/* A normal exit closes the file with its end record. SIGINT, which lab.py
+ * stop sends, ends the server without running exit handlers. */
+__attribute__((destructor))
+static void recorder_fini(void)
+{
+    recorder_core_shutdown();
 }

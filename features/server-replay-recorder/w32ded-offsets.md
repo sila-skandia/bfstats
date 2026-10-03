@@ -108,6 +108,72 @@ algorithm to the SGI walk in `src/target_lnxded.c`; only field offsets differ.
 - Test dir used: exe + WINMM.dll + bfcprt.dll + msvcr70.dll + mods/ (symlink
   Archives) + cache/. Maplist from Mods/BF1942/Settings/maplist.con.
 
+## Stage-3 cross-match, pass 4 (2026-10-02, resumed session B)
+
+All raw-checked against `objdump` of the exe (no Ghidra-only guesses below unless
+said so). Object dump: `/tmp/w32.dis`.
+
+- **sendGameEventToAll = `0x00471090`** (hook site 2). thiscall(this, const
+  GameEvent& ev, bool onlyInGame). Prologue, 14 position-independent bytes
+  (`0x471090..0x47109e`; the next instruction `mov ecx,[esi+0x150]` spans the
+  16-byte line, so the patch cuts at 14): `51 56 8b f1` `8b 86 d8 01 00 00`
+  `85 c0` `74 4b`. Body then walks the connection set at `this+0x150` with
+  successor `0x0047ccc0`, in-game byte at node+0x10's +8, and
+  `addEvent 0x00478a50(ev)`. Semantics byte-for-byte the lnxded 0x08153b10
+  shape. **GameServer event-manager pointer = this+0x1d8** (lnxded +0x18c).
+  Detour: patch 14 bytes, trampoline jmps back to `0x0047109e`.
+- **playerManager roster list**: pm vtable slot 0x2c (`0x005a7500`) = `lea
+  eax,[ecx+0xc]` — returns pm+0xc, the address of list #1's header. Raw walk
+  (GameServer update loop `0x00473887`..): `sentinel = *(pm+0x10)` (the
+  ctor-allocated 0xc-byte head node; ctor `0x005342f0`), `node = *sentinel`,
+  player = `*(node+8)`, advance `node = *node` until `node == sentinel`.
+  Node = {next +0, prev +4, BFPlayer* +8} (SGI shape, like lnxded). Second list
+  at pm+0x1c/pm+0x20. Walk law for the shared core: `head = *(pm+pm_list_off)`
+  with pm_list_off = 0x10, then node = *head, player = node+8 — a one-flag
+  difference from lnxded (embedded header vs sentinel pointer).
+- **Armor reconcile: the +0x104/+0x108/+0x164 rows are ObjectTemplate fields,
+  NOT Armor.** The save() dumper `0x004fdc80` prints template hitPoints/
+  maxHitPoints/criticalDamage (per-template values). The Armor *component*
+  keeps the lnxded offsets: Armor factory `0x00461490` -> ctor **`0x0047f9f0`**
+  (vtable **`0x006e9f38`**): maxHitPoints setter clamps at 128 -> **+0x3c**
+  (slot 4), damage/heal paths read/write **+0x38** with max clamp from +0x3c
+  (`0x0047f790`/`0x0047f7f0`), lastHitPlayer setter skips -1 -> **+0x14**
+  (slot 29). So armor_hp/maxhp/crit/lasthit = lnxded 0x38/0x3c/0xf0/0x14
+  unchanged; the Armor component key stays 0xc4a4 (getter wrappers at
+  `0x004044c0/0x004044f0/0x00450910`: this->vt+0x38 -> root, root->vt+0x24
+  (0xc4a4, 0xc4a4) -> component). Armor class id 0xc4a5 (registrar
+  `0x00462e94`).
+- **BObject layout deltas (w32 ctor `0x004d0220`, raw)**: +0x04 flags 0x02090400,
+  +0x48 id, +0x4c template, +0x50/+0x54 parent/root slots zeroed, member
+  component SmartPtrs +0x58..+0x68 zeroed, +0x6c secondary vptr, Mat4 +0x74,
+  0.01f +0xb4, **std::string +0xc4 (ctor `FUN_005500d0`) — not +0xb8**,
+  +0xe0/+0xe4/+0xe8 zeroed (candidate root cache / component map trio — to be
+  confirmed live; lnxded's +0xd4 cache and +0xb8 map sit at the same slot
+  shifted by the string's 0xc-byte growth).
+- **net-id read verified**: createPlayer builder reads the u16 at
+  `*(obj+0x68)+4` for vehicle/camera/kit — same as lnxded's net_id_of.
+- **template classManager global = `0x0074c530`** (the registration loop
+  `0x00487a7a`+: `ecx = *0x74c530; call vt+0xc(name, id)`). Same cluster as
+  om/pm: om 0x74c52c, **tm 0x74c530**, pm 0x74c534. Template class ids from the
+  id table `.rdata 0x006ea490+` (8-byte name-id stride): **BFSoldier = 0x9493**
+  (this is the "kit template" class id the createPlayer builder tests — lnxded's
+  0x9493 was BFSoldier's getClassID all along), **FireArms = 0x9494**,
+  HandFireArms 0x9497, names at 0x006ec0xx ("BFSoldier" 0x6ec078, "FireArms"
+  0x6ec06c).
+- **ScoreManager vtable = `0x006e8858`** (ctor `0x00466930` first store).
+  Team array base 0x60, stride 0x50, tickets +0x48 stand.
+- BFSoldier/Engine/RotationalBundle/PhysicsEngine vtables: to be taken from the
+  live vptr census (RECORDER_DEBUG) — no RTTI and the template-driven
+  registration does not carry a static world-class vtable reference. Engine
+  *field* layout carries over (running +0x142, disabled +0x143, throttle +0x124,
+  pe +0x60, revs pe+0xA0, gear pe+0xBC — verified earlier).
+- fireBarrel w32: not yet located statically (lnxded 0x0828aba0; its w32 twin
+  evades the anchor scans — FireArms field offsets differ from lnxded, so the
+  lnxded constants don't hit). Open item; the detour site is a table entry, so
+  it slots in without code changes.
+- Setup/level: `write_level` will skip on w32 for now (setup global not
+  located; gpm is mirrored at GameServer+0x3a8).
+
 ## Open
 
 - **Player list / roster: not ported yet.** The lnxded side has finished its
