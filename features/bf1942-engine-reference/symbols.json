@@ -10959,6 +10959,15 @@
    "note": "lnxded. Already cited by ledger FA-1 for fireingForce. Read in full 2026-09-22 for the barrel dispatch (BOMB-1..BOMB-5): barrelCount = (tmpl[0x214]-tmpl[0x210])/12; 0 -> fireBarrel(-1), 1 -> fireBarrel(0), >1 and tmpl+0x338 clear -> fireBarrel(i) for every i, >1 and tmpl+0x338 set -> one round-robin barrel off the counter at this+0x296. Partial salvo above the loop: mags != -1 && mags < barrelCount && tmpl+0x348 clear -> fire only mags barrels. SPOT-1: template +0x230 (magType) == 2 -> placeScoutCamera(player) and return."
   },
   {
+   "address": "0x0828a230",
+   "name": "FireArms::Fire past the fakeFire test",
+   "kind": "patch_site",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "server-replay-recorder-2026-10-03",
+   "note": "lnxded. Every round passes once (fake fall-through at 0x0828a22a and the five barrel-dispatch exits). Bytes 83 ec 0c 8b 75 08 copy safely; this at ebp+8, IPlayer* at ebp+0xc (NULL from the auto-fire site), launch Mat4 at ebp-0x58. The server recorder hooks it. AI-134."
+  },
+  {
    "address": "0x0828aba0",
    "name": "dice::ref2::world::FireArms::fireBarrel(IPlayer*, Mat4&, int)",
    "kind": "function",
@@ -11002,6 +11011,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. SPOT-2/3: server only; ray 10000 from the fire matrix; marker = lookAt(eye+(0,30,0), hit, up); +0x134 target, +0x108 owner, +0x12c team; game vt+0x88."
+  },
+  {
+   "address": "0x0828e310",
+   "name": "dice::ref2::world::FireArms::setFakeFire(bool)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "server-replay-recorder-2026-10-03",
+   "note": "lnxded. Writes FireArms+0x295 (fakeFire). AI-134."
   },
   {
    "address": "0x0828e3b0",
@@ -12579,6 +12597,15 @@
    "note": "lnxded. Plan step: (getBotSkill()*0.1 + 0.1) * getTimeIncrease(), constant [0x086b1ca0] = 0.1. One of getBotSkill's ten call sites. Ledger AI-15."
   },
   {
+   "address": "0x0849c660",
+   "name": "dice::bf::ai::BotManager::registerDamageOnBot(float, int, int)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "server-replay-recorder-2026-10-03",
+   "note": "lnxded. Where a fake round lands its rolled hit; updateDamages 0x0849c690 hands it to GameServer::giveDamage with weapon id -1. AI-134."
+  },
+  {
    "address": "0x084a2050",
    "name": "dice::bf::ai static initializer",
    "kind": "function",
@@ -12757,6 +12784,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. Five int32 header validated against CellMap+0x18/0x20/0x10/0x2c/0x24 (ctor 0x085f7af0), then a special-cell count and (1<<(p6-p5))<<(p7-p5) row records. Row encoding UNREAD. Ledger AI-13."
+  },
+  {
+   "address": "0x08617f30",
+   "name": "dice::bf::ai::EntryInfoWrapper::execute(BotScript*, Bot*, bool&, bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "server-replay-recorder-2026-10-03",
+   "note": "lnxded. Calls setFakeFire through weapon vslot 0x78: 0 at 0x08618083 (shooter +4 & 0x10, target bot LOD 0, or AI weapon template byte +1), 1 at 0x086180c8 otherwise. AI-134; its accuracy roll is AI-15."
   },
   {
    "address": "0x08624ff0",
@@ -13380,7 +13416,6 @@
    "note": "lnxded static pointer, named in the symbol table: the object manager updateFlags notifies on bookkeeping-bit changes. Presumably the server twin of the client's objectManager 0x0097d764; not cross-checked."
   },
   {
-   "address": "0x08720754",
    "address": "0x08720754",
    "name": "dice::ref2::world::randomCounter",
    "kind": "data",

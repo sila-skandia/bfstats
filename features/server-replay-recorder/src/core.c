@@ -1586,11 +1586,11 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
  * the weapon's template, its root's net id, the firing player's id, and the
  * Mat4 the round left along (rows a, b, c are the X, Y, Z axes; a round
  * leaves along +Z). */
-REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
+/* One f record. `fake`: a round the AI rolled instead of firing (see
+ * recorder_on_fake_fire): no projectile, the hit is statistical, and the
+ * transform is the launch matrix rather than the barrel's. */
+static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, int fake)
 {
-    g_fire_calls++;
-    if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000) return;
-
     uint32_t tmpl = read_u32(fire_arms + T->obj_tmpl_off);
     char name[96];
     T->read_template_name(tmpl, name, sizeof(name));
@@ -1602,10 +1602,8 @@ REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player,
     }
 
     int root_nid = -1;
-    if (fire_arms >= 0x1000) {
-        uint32_t root = ((uint32_t (*)(uint32_t))T->get_root_parent_addr)(fire_arms);
-        if (root >= 0x1000) root_nid = (int)T->net_id_of(root);
-    }
+    uint32_t root = ((uint32_t (*)(uint32_t))T->get_root_parent_addr)(fire_arms);
+    if (root >= 0x1000) root_nid = (int)T->net_id_of(root);
 
     Mat4 m;
     if (!T->safe_read(&m, sizeof(m), mat4_addr)) return;
@@ -1614,11 +1612,34 @@ REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player,
     char line[512];
     snprintf(line, sizeof(line),
         "{\"k\":\"f\",\"t\":%.3f,\"id\":%d,\"pid\":%d,\"w\":\"%s\""
-        ",\"p\":[%.2f,%.2f,%.2f],\"d\":[%.3f,%.3f,%.3f]}",
+        ",\"p\":[%.2f,%.2f,%.2f],\"d\":[%.3f,%.3f,%.3f]%s}",
         T->now_s() - g_t0, root_nid, pid, esc,
-        m.p[0], m.p[1], m.p[2], m.c[0], m.c[1], m.c[2]);
+        m.p[0], m.p[1], m.p[2], m.c[0], m.c[1], m.c[2], fake ? ",\"fake\":1" : "");
     write_line(line);
     g_fire_written++;
+}
+
+REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
+{
+    g_fire_calls++;
+    if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000) return;
+    write_fire(fire_arms, player, mat4_addr, 0);
+}
+
+/* FireArms::Fire past its fakeFire test (0x0828a217): every round, real or
+ * fake, passes here once. Real rounds already went through fireBarrel, so
+ * only the fake ones are written here. A bot shooting a bot that no human is
+ * near fires fake: the timer, recoil, heat and ammo run, but no projectile
+ * is made and the AI rolls the hit (EntryInfoWrapper::execute 0x08617f30
+ * sets it through setFakeFire 0x0828e310). Most of a bots-only round's
+ * small-arms fire is fake. */
+REC_GAME_THREAD_ENTRY void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
+{
+    if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000 || !T->fa_fake_off) return;
+    uint8_t fake = 0;
+    if (!T->safe_read(&fake, 1, fire_arms + T->fa_fake_off) || !fake) return;
+    g_fire_calls++;
+    write_fire(fire_arms, player, mat4_addr, 1);
 }
 
 #endif /* REC_STAGE3 */
