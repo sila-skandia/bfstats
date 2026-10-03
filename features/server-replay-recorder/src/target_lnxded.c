@@ -421,7 +421,8 @@ const struct rec_target lnxded_target = {
     .sol_bits_off = 0x3e6u,             /* getStateBits 0x0827e1c0 */
     .pm_list_off = 0xcu,                /* GameServer::updateGameLogic 0x081505c0 */
     .pl_node_player_off = 8u,
-    .bf_id_off = 0xcu,                  /* getId 0x080560e0 */
+    .bf_id_off = 0x58u,                 /* getId 0x080560e0; +0xc is the player's
+                                         * network id, createPlayer's next field */
     .bf_name_off = 0x44u,               /* getName 0x08056070 */
     .bf_ai_off = 0x78u,                 /* getIsAIPlayer 0x08056120 */
     .bf_team_off = 0x7cu,               /* setTeam 0x080556b0 */
