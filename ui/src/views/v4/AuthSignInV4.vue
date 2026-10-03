@@ -156,12 +156,14 @@ const submit = async () => {
       await authService.loginWithPassword(username.value.trim(), password.value)
     }
     // The cross-site sign-in return address wins: takeReturnUrl is consumed
-    // once, so the dashboard only gets the visitor when there is nowhere
-    // they came from. The discord-auth-success handler (useAuth.ts) pushes
-    // the dashboard itself for the Discord path; for password sign-in we do
-    // the redirect here.
-    const destination = takeReturnUrl() ?? '/v4/dashboard'
-    router.push(destination)
+    // once. It is an absolute URL on another bfstats host, so it leaves via
+    // the browser, not the router (the same way DiscordCallback goes back).
+    // The dashboard only gets the visitor when there is nowhere they came
+    // from. The discord-auth-success handler (useAuth.ts) pushes the
+    // dashboard for the Discord path; for password sign-in we go here.
+    const destination = takeReturnUrl()
+    if (destination) window.location.replace(destination)
+    else router.push('/v4/dashboard')
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Something went wrong'
   } finally {
