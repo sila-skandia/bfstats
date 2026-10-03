@@ -17,6 +17,9 @@ The viewer code this settles: [`viewer/effects-core.js`](../../../tools/bf1942-m
 (three.js), [`bf42/effects.py`](../../../tools/bf1942-models/bf42/effects.py) and
 [`extract_effects.py`](../../../tools/bf1942-models/extract_effects.py) (the bake).
 
+Not every round is a projectile: a bot shooting a bot that no human is near
+fires *fake*, with no projectile and a hit the AI rolls (ledger AI-134).
+
 ---
 
 ## 1. The chain, from contact to picture
