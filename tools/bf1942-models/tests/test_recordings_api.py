@@ -85,9 +85,9 @@ class RecordingsApiTests(unittest.TestCase):
         sign_in = self.results["signIn"]
         self.assertEqual(
             sign_in["play"],
-            "https://bfstats.io/auth/discord/start?returnTo=https%3A%2F%2Fplay.bfstats.io%2Fplay%2F%3Ftab%3Dreplay%26rec%3Dabcdefghjk")
+            "https://bfstats.io/auth/login?returnTo=https%3A%2F%2Fplay.bfstats.io%2Fplay%2F%3Ftab%3Dreplay%26rec%3Dabcdefghjk")
         # A page served from this PC signs in on its own origin (a local UI).
-        self.assertTrue(sign_in["local"].startswith("http://localhost:5273/auth/discord/start?returnTo="))
+        self.assertTrue(sign_in["local"].startswith("http://localhost:5273/auth/login?returnTo="))
 
     def test_watching_names_the_mod_the_level_and_the_moment(self) -> None:
         watch = self.results["watch"]
