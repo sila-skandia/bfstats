@@ -280,6 +280,15 @@ public class PlayerTrackerDbContext : DbContext
             .HasIndex(u => u.Email)
             .IsUnique();
 
+        // Password accounts log in by name; Discord accounts leave it null and
+        // SQLite's unique index skips nulls, so the backfill needed nothing.
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Username)
+            .IsUnique();
+
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.AuthProvider);
+
         // Configure UserPlayerName entity
         modelBuilder.Entity<UserPlayerName>()
             .HasKey(upn => upn.Id);
@@ -1645,7 +1654,22 @@ public class ServerPlayerRanking
 public class User
 {
     public int Id { get; set; }
+    /// <summary>
+    /// Identity + uniqueness column for every account kind. Discord users keep
+    /// their real verified address. Password sign-ups store an EmailHashService
+    /// HMAC instead — same column, same unique index, address never stored —
+    /// or a per-user no-email sentinel when they skip the optional address.
+    /// </summary>
     public string Email { get; set; } = "";
+    /// <summary>
+    /// Login name for password accounts. Null for Discord accounts, so the
+    /// unique index never has to invent one for rows that don't log in by name.
+    /// </summary>
+    public string? Username { get; set; }
+    /// <summary>PasswordHashService output; null for Discord accounts.</summary>
+    public string? PasswordHash { get; set; }
+    /// <summary>"discord" or "password". Existing rows backfilled to discord.</summary>
+    public string AuthProvider { get; set; } = "discord";
     /// <summary>Assigned role: User (default) or Support. Admin is determined by email only, not stored here.</summary>
     public string? Role { get; set; }
     public DateTime CreatedAt { get; set; }

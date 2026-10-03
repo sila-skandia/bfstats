@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using api.Caching;
 using NSubstitute;
 
 namespace api.tests.Controllers;
@@ -49,6 +50,10 @@ public class AuthControllerTests
             tokenService,
             _refreshTokenService,
             _accountService,
+            Substitute.For<IPasswordHashService>(),
+            Substitute.For<IEmailHashService>(),
+            Substitute.For<IEmailSender>(),
+            Substitute.For<ICacheService>(),
             configuration)
         {
             ControllerContext = new ControllerContext
@@ -377,7 +382,7 @@ public class AuthControllerTests
         var logger = Substitute.For<ILogger<AuthController>>();
         var discordAuth = Substitute.For<IDiscordAuthService>();
 
-        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), config)
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), Substitute.For<IPasswordHashService>(), Substitute.For<IEmailHashService>(), Substitute.For<IEmailSender>(), Substitute.For<ICacheService>(), config)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -400,7 +405,7 @@ public class AuthControllerTests
         var logger = Substitute.For<ILogger<AuthController>>();
         var discordAuth = Substitute.For<IDiscordAuthService>();
 
-        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), config)
+        var controller = new AuthController(_dbContext, discordAuth, logger, tokenService, refreshTokenService, Substitute.For<IAccountService>(), Substitute.For<IPasswordHashService>(), Substitute.For<IEmailHashService>(), Substitute.For<IEmailSender>(), Substitute.For<ICacheService>(), config)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -469,6 +474,10 @@ public class AuthControllerTests
             Substitute.For<ITokenService>(),
             refreshTokenService,
             Substitute.For<IAccountService>(),
+            Substitute.For<IPasswordHashService>(),
+            Substitute.For<IEmailHashService>(),
+            Substitute.For<IEmailSender>(),
+            Substitute.For<ICacheService>(),
             config)
         {
             ControllerContext = new ControllerContext

@@ -111,6 +111,75 @@ class AuthService {
     window.location.href = discordAuthUrl;
   }
 
+  /** Shared tail of every login path: persist token + profile, announce success. */
+  private completeLogin(loginData: { accessToken: string; user: { id: number; name: string; email: string }; expiresAt?: string }, roles?: string[]): AuthState {
+    const userProfile: UserProfile = {
+      id: loginData.user.id,
+      name: loginData.user.name,
+      email: loginData.user.email,
+      roles: roles ?? this.getRolesFromToken(loginData.accessToken),
+    };
+
+    const authState: AuthState = {
+      isAuthenticated: true,
+      token: loginData.accessToken,
+      user: userProfile,
+    };
+
+    localStorage.setItem('authToken', loginData.accessToken);
+    localStorage.setItem('userProfile', JSON.stringify(userProfile));
+    if (loginData.expiresAt) {
+      localStorage.setItem('tokenExpiresAt', loginData.expiresAt);
+    }
+
+    window.dispatchEvent(new CustomEvent('discord-auth-success', { detail: authState }));
+    return authState;
+  }
+
+  /** Username + password sign-in against /stats/auth/login. */
+  async loginWithPassword(username: string, password: string): Promise<void> {
+    const response = await fetch('/stats/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      if (response.status === 429) throw new Error('Too many attempts. Try again later.');
+      throw new Error(errorData.message || 'Sign-in failed');
+    }
+
+    this.completeLogin(await response.json());
+  }
+
+  /** Username + password sign-up. Email and player link are optional. */
+  async register(input: { username: string; password: string; email?: string | null; playerName?: string | null }): Promise<void> {
+    const response = await fetch('/stats/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Registration failed');
+    }
+
+    this.completeLogin(await response.json());
+  }
+
+  /** Forgotten password: uniform response either way — never tells the caller if the pair matched. */
+  async forgotPassword(username: string, email: string): Promise<string> {
+    const response = await fetch('/stats/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email }),
+    });
+    const data = await response.json().catch(() => ({}));
+    return data.message || 'If the username and email match an account, reset instructions have been sent.';
+  }
+
   async handleDiscordCallback(code: string): Promise<void> {
     try {
       // Send the authorization code to our backend

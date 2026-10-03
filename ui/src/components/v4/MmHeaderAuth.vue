@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useBuddiesOnline } from '@/composables/useBuddiesOnline'
 
 const router = useRouter()
-const { isAuthenticated, user, loginWithDiscord } = useAuth()
+const { isAuthenticated, user } = useAuth()
 const { onlineCount, hasOnlineBuddies } = useBuddiesOnline()
 
 // Two-letter monogram fallback when there's no avatar URL on file
@@ -23,8 +23,11 @@ const onAvatarClick = () => {
   router.push('/v4/dashboard')
 }
 
-const onSignIn = async () => {
-  try { await loginWithDiscord() } catch { /* user-cancelled — silent */ }
+const onSignIn = () => {
+  // Both sign-in options (username/password and Discord) now live on the
+  // dedicated page — the header button hands off rather than launching
+  // Discord directly.
+  router.push('/auth/login')
 }
 </script>
 
