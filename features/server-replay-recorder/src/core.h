@@ -20,6 +20,13 @@
  * offset and platform call goes through the `struct rec_target` table.
  * A target built with -DREC_STAGE3=0 compiles the stage-3 paths out (do not
  * copy stage 3 into a target by hand -- it lives here already).
+ *
+ * Two ways to drive the capture, chosen at build time:
+ *   REC_TICK=1  (lnxded) the game thread samples the world inside the
+ *               GameServer::simulateFrame hook, with plain reads behind a
+ *               SIGSEGV guard; a writer thread does the file I/O
+ *   REC_TICK=0  (w32ded, the POC) a sampler thread polls the world through
+ *               the target's safe reads
  */
 
 #include <stdint.h>
@@ -28,6 +35,10 @@
 
 #ifndef RECORDER_CORE_H
 #define RECORDER_CORE_H
+
+#ifndef REC_TICK
+#define REC_TICK 0
+#endif
 
 /* A virtual call through a raw vtable slot. GCC (lnxded) member functions
  * pass `this` on the stack like any first argument; MSVC (w32ded) passes it
@@ -135,6 +146,34 @@ struct rec_target {
     uint32_t get_bf_player_addr;   /* getBFPlayer(IPlayer*) */
     uint32_t get_root_parent_addr; /* getRootParent(ICompositeObject const*) */
 
+    /* --- the tick capture (REC_TICK; 0 = not verified on this target, the
+     * record it feeds is left out) --- */
+    uint32_t gs_simulate_slot;  /* GameServer vtable's simulateFrame slot (address) */
+    uint32_t gs_simulate_fn;    /* what that slot must hold before it is patched */
+    uint32_t sol_aim_pitch_off; /* BFSoldier: the aim pitch the client is sent */
+    uint32_t sol_aim_twist_off; /* BFSoldier: the torso twist */
+    uint32_t bf_ctrl_off;       /* BFPlayer::getVehicle: the control object (seat) */
+    uint32_t bf_seat_off;       /* the seat setVehicle stores beside it */
+    uint32_t bf_trig_off;       /* fire and altfire bytes */
+    uint32_t anim_asm_ptr;      /* activeAnimationStateMachine (a pointer) */
+    uint32_t asm_states_off;    /* its states vector (begin, end) */
+    uint32_t asm_names_off;     /* its name -> index map */
+    uint32_t state_flags_off;   /* an AnimationState's flags */
+    uint32_t vt_control_point;  /* ControlPoint vptr */
+    uint32_t cp_team_off;       /* ControlPoint: team */
+    uint32_t cpt_name_off;      /* ControlPointTemplate: controlPointName */
+    uint32_t vt_projectile;     /* Projectile vptr */
+    uint32_t bm_iface_ptr;      /* IBotManager::instance */
+    uint32_t vt_bot_manager;    /* BotManager vptr */
+    uint32_t bm_iface_adj;      /* BotManager = instance - adj */
+    uint32_t bm_pid_table_off;  /* player id -> bot index table */
+    uint32_t bm_bots_off;       /* bots vector (begin, end) of Bot** */
+    uint32_t bot_lod_off;       /* BotMain: LOD level */
+    uint32_t om_register_slot;  /* ObjectManager vtable: registerObject's slot (address) */
+    uint32_t om_register_fn;
+    uint32_t om_unregister_slot;
+    uint32_t om_unregister_fn;
+
     /* --- behavior switches --- */
     int walk_clamp_count;   /* clamp the walk bound's count at 100000 (w32) */
     int sample_reset_next;  /* next_sample = t + 1/hz rather than += 1/hz */
@@ -175,6 +214,12 @@ void recorder_core_init(const struct rec_target *target);
 
 /* Detach: close the recording if one is open (w32ded's DllMain). */
 void recorder_core_shutdown(void);
+
+#if REC_TICK
+/* One simulated tick, on the game thread (the GameServer::simulateFrame
+ * hook calls it; the harness calls it directly). */
+void recorder_core_tick(void);
+#endif
 
 /* Core helpers a target may need. */
 uint32_t read_u32(uintptr_t addr);

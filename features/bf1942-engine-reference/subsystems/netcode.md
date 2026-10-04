@@ -193,6 +193,10 @@ connected the rings never move, so the replicated view of an object exists
 only while some connection ghosts it. P-4 lists the soldier record's fields
 and the live BFSoldier fields they come from.
 
+**How far behind a client draws the world (P-5, measured 2026-10-05).** A
+LAN client draws every object it does not control 0.12 s behind the server,
+and its own predicted control object on time.
+
 ## 5. Rates and the choke
 
 - Default per-connection send rate **20 Hz** (`conn+0xc`), minimum **10**,

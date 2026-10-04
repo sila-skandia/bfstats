@@ -10,7 +10,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/build"
 mkdir -p "$out"
-gcc -m32 -O2 -Wall -Wextra -fPIC -shared -DREC_STAGE3=1 -o "$out/recorder.so" \
+gcc -m32 -O2 -Wall -Wextra -fPIC -shared -DREC_STAGE3=1 -DREC_TICK=1 -o "$out/recorder.so" \
     "$here/src/core.c" "$here/src/target_lnxded.c" -lpthread
 lab="${BF42_LAB:-$HOME/bf1942-lab}/server"
 if [ -d "$lab" ]; then
