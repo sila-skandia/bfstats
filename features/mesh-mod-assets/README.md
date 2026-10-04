@@ -357,7 +357,15 @@ catalogue lists is still probed down the chain unless its placed node draws noth
 Extracted 2026-09-30: 13 templates into `models/mods/desertcombat`, 30 into
 `models/mods/dc_final`, with thumbnails. Vanilla's catalogue gains 12 (Ju88A, the
 Battle of Britain factory and radar towers, Caen's Pak40 and CDNRaft, Coral Sea's
-carriers) and XPack2's 6 (Raid on Agheila's), on their next extraction; until then
-vanilla's Britain_Factory still 404s its wreck. DC's manifests predate the roster fix
+carriers) and XPack2's 6 (Raid on Agheila's), extracted 2026-10-04 (below). DC's manifests predate the roster fix
 of 64844779 (`factions` lacks `Iraqi` on most rows); only the rows written here are
 current.
+
+Extracted 2026-10-04 and live: vanilla's 12 and XPack2's 6, with thumbnails, and
+`mods.json` rebuilt (the live copy still counted DC 220, DC Final 246 and FHSW 338
+pose pairs against manifests of 233, 276 and 583). Until then a round replay drew
+no Hornet or Hiryu. The replay hides the level's baked vehicles and draws each
+recorded hull from `models/<Template>.glb`, so every craft on those two decks hung
+in the air. `cfpgwfjku8` (Coral Sea on a server that adds Enterprise and Shokaku
+beside them) showed it. `ParatrooperSpawner` and the coax MGs have no geometry and
+stay out (`extract_all.py`).
