@@ -83,16 +83,18 @@ loading the round again.
 
 ## Short links
 
-Built 2026-10-05. A shared recording's link is `play.bfstats.io/replay/<slug>`,
+Built 2026-10-05. A shared recording's link is `replay.bfstats.io/<slug>`,
 and `?t=<seconds>` opens it at a moment. Copy link on a recording's page
 hands it out, and so does More > Copy link at this moment in the replay, at
 the playhead. When a round plays merged, the moment is put on the first
 recording's own clock: the link opens that recording alone, with the round's
 switch a press away. The slug is the one the feed always had (ten characters
 with no 0/o, 1/l or i), so a short link needs no table of its own, and one
-retyped in capitals still opens.
+retyped in capitals still opens. The bare host goes to the feed.
 
-HAProxy sends the play host's `/replay/` to the API (`deploy/app/ingress`).
+The first form, `play.bfstats.io/replay/<slug>`, was handed out for an hour
+on the first day and still works: HAProxy sends both to the API's
+`/replay/<slug>` (`deploy/app/ingress`, the replay host's path rewritten).
 The API answers with a page, not a redirect: Discord, Slack and the messengers
 unfurl a link by reading the page it names, and behind a redirect they would
 read map.html's tags, the same for every recording. The page
@@ -100,16 +102,17 @@ read map.html's tags, the same for every recording. The page
 `Wake · Conquest · 2:43 · MoonGamers.com · shared by skandia`, the cover (the
 round's when the recording has none of its own), and a zero-second refresh to
 the address Copy link handed out before
-(`/map.html?mod=…&map=…&replay=/stats/recordings/<slug>.ndjson…`). A refresh
-replaces the history entry, so Back from the replay goes to the page the link
-was on. A link to no recording gets a 404 page that leads to the feed. The
-title is escaped, and the page loads nothing (`default-src 'none'`).
-`Recordings__PlayOrigin` (default `https://play.bfstats.io`) is the origin
-the page's tags name.
+(`https://play.bfstats.io/map.html?mod=…&map=…&replay=/stats/recordings/<slug>.ndjson…`).
+A refresh replaces the history entry, so Back from the replay goes to the page
+the link was on. A link to no recording gets a 404 page that leads to the
+feed. The title is escaped, and the page loads nothing (`default-src 'none'`).
+`Recordings__PlayOrigin` (default `https://play.bfstats.io`) is where the page
+sends the browser and finds the cover; `Recordings__ShortLinkOrigin` (default
+`https://replay.bfstats.io`) is the host its tags name.
 
 A page served from this PC hands out the short link for the live feed's
-recordings, which play.bfstats.io answers. For a recording on this PC's own
-API it hands out the long link, since no host answers a short link for that.
+recordings. For a recording on this PC's own API it hands out the long link,
+since no host answers a short link for that.
 
 ## Signing in
 
@@ -664,9 +667,12 @@ recording as a plain card. The admin link of the first real pair
 weak for the admins, and its merged replay plays nj2dyh58te alone with the
 reason; Take out of this round on either page parts them for good.
 
-**Short links** (2026-10-05): push, then HAProxy (step 3's apply and restart)
-for the play host's `/replay/` route. Before the restart a short link is the
-mesh nginx's 404; the API's route is harmless without it.
+**Short links** (2026-10-05): the API's page first, then the host (the CNAME
+`replay`, the cloudflared and HAProxy ConfigMaps, both restarted;
+`deploy/app/ingress/README.md`), and only once `replay.bfstats.io/<slug>`
+answers, the viewer that hands those links out. The first push did it the
+other way round: for the minutes before HAProxy was applied, Copy link on the
+live site handed out play.bfstats.io links that were the mesh nginx's 404.
 
 ## Trying it locally
 
@@ -866,6 +872,10 @@ Short links (2026-10-05):
   404 page (and no lookup for a malformed slug), `?t=` read as whole seconds.
   `test_recordings_api.py`: which short link a page hands out, on the play
   host, for the live feed from this PC, and none for a local API.
+- HAProxy with stub backends, after the replay host was added:
+  `replay.bfstats.io/<slug>` (with `?t=`, in capitals, with a trailing
+  slash) reached the API as `/replay/<slug>`, the bare host was a 302 to the
+  feed, and every route below was unchanged.
 - HAProxy 3.2 on this PC with the ConfigMap's config and stub backends: the
   play host's `/replay/<slug>` went to the API, while `/replay.js`,
   `/replay-social.js`, `/replays/…`, `/` and `/netcode/rooms` went where they
