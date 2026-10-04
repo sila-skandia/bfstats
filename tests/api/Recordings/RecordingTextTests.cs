@@ -43,5 +43,11 @@ public class RecordingTextTests
     public void Id_TakesOnlyAViewerIdentifier(string value, string id) => Assert.Equal(id, RecordingText.Id(value));
 
     [Fact]
-    public void Titled_WordsALevelFolder() => Assert.Equal("El Alamein", RecordingText.Titled("el_alamein"));
+    public void Titled_WordsALevelFolder()
+    {
+        Assert.Equal("El Alamein", RecordingText.Titled("el_alamein"));
+        Assert.Equal("Liberation of Caen", RecordingText.Titled("liberation_of_caen"));
+        Assert.Equal("Battle of the Bulge", RecordingText.Titled("Battle_of_the_Bulge"));
+        Assert.Equal("The Rhine", RecordingText.Titled("the_rhine"));
+    }
 }
