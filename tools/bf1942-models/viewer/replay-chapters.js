@@ -7,7 +7,7 @@
 // features/round-replay-ux/README.md is the design.
 
 import {
-  controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, soldierLivesOf, teamAt, teamName,
+  controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, shownWeapon, soldierLivesOf, teamAt, teamName,
 } from './replay-recording.js';
 import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat-log.js';
 
@@ -98,6 +98,14 @@ export function killsOf(rec, serverRows = []) {
   });
 }
 
+/** The bracketed word of a kill line in the replay: the server's weapon in
+ *  the game's own word (chat-log.js `killWord`), else the replay's guess
+ *  (`inferredWeapon`) marked with a `?`, else the game's `killed`. */
+export function shownKillWord(kill, strings = null, names = null) {
+  const { weapon, inferred } = shownWeapon(kill);
+  return `${killWord(weapon, strings, names)}${inferred ? '?' : ''}`;
+}
+
 /** Each control point's team at `t`, as the message log's capture check
  *  reads flags: `{ name, team, controlPointName }`. */
 export function pointsAt(rec, t) {
@@ -184,7 +192,8 @@ function spawnPoint(rec, life) {
 
 /**
  * The round's chapters, in time order: `{ t, kind, lead, team, ... }` with
- * `kind` one of kill, teamkill, death (`killer`, `victim`, `weapon`),
+ * `kind` one of kill, teamkill, death (`killer`, `victim`, `weapon`, and
+ * `inferredWeapon` where the replay guessed one),
  * vehicle (`tmpl`, `crew` the players aboard, `by` the destroyer when the
  * server's log names him), capture (`name`, `team`), spawn (the recording
  * player's: `pid`, `at` the control point), round-start and round-end
@@ -196,7 +205,7 @@ export function buildChapters(rec, serverRows = [], kills = killsOf(rec, serverR
 
   for (const k of kills) {
     const team = k.kind === 'death' ? victimTeamOf(rec, k) : killerTeamOf(rec, k);
-    add({ t: k.t, kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon, team });
+    add({ t: k.t, kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon, inferredWeapon: k.inferredWeapon ?? null, team });
   }
 
   // Vehicles destroyed: the recording's own (a hull whose hit points reached
@@ -259,7 +268,7 @@ export function chapterText(rec, ch, lexicon = null) {
   const display = key => (key ? names?.[key] ?? key : '');
   const name = pid => playerName(rec, pid, ch.t);
   switch (ch.kind) {
-    case 'kill': return killLine(name(ch.killer), name(ch.victim), killWord(ch.weapon, strings, names));
+    case 'kill': return killLine(name(ch.killer), name(ch.victim), shownKillWord(ch, strings, names));
     case 'teamkill': return `${teamKillLine(name(ch.killer), strings)}: ${name(ch.victim)}`;
     case 'death': return deathLine(name(ch.victim), strings);
     case 'vehicle': return `${display(ch.tmpl)} destroyed${ch.by !== null && ch.by !== undefined ? ` by ${name(ch.by)}` : ''}`;
@@ -423,17 +432,18 @@ export function rosterOf(rec, t = null) {
 
 /**
  * The lines the game's message log printed, in time order (comms.js writes
- * them): `{ t, type: 'kill', kind, killer, victim, weapon, killerTeam,
- * victimTeam }`, `{ t, type: 'capture', name, team }`, `{ t, type: 'chat',
- * text, team }` and `{ t, type: 'radio', pid, msg, global }`, the radio the
- * recording player heard. A v3+ recording has the chat box itself
- * (`rec.chat`, the line as shown); an older one only the fragments its feed
- * rows carry.
+ * them): `{ t, type: 'kill', kind, killer, victim, weapon, inferredWeapon,
+ * killerTeam, victimTeam }`, `{ t, type: 'capture', name, team }`,
+ * `{ t, type: 'chat', text, team }` and `{ t, type: 'radio', pid, msg,
+ * global }`, the radio the recording player heard. A v3+ recording has the
+ * chat box itself (`rec.chat`, the line as shown); an older one only the
+ * fragments its feed rows carry.
  */
 export function feedEvents(rec, kills = rec.kills) {
   const out = [];
   for (const k of kills) {
     out.push({ t: k.t, type: 'kill', kind: k.kind, killer: k.killer, victim: k.victim, weapon: k.weapon,
+               inferredWeapon: k.inferredWeapon ?? null,
                killerTeam: k.killer === null || k.killer === undefined ? 0 : killerTeamOf(rec, k),
                victimTeam: victimTeamOf(rec, k) });
   }

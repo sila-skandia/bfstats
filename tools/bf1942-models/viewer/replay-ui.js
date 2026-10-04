@@ -12,7 +12,7 @@
 // allows it.
 
 import { GameConsole } from './console.js';
-import { fmtHp, nameAt, roundClock, teamAt } from './replay-recording.js';
+import { fmtHp, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './replay-recording.js';
 import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 
@@ -41,6 +41,17 @@ const STICK_ZONE = 0.4;
 const STICK_R = 48;
 /** How often the card and the open scoreboard redraw, seconds. */
 const SLOW_TICK = 0.2;
+
+/** The card's words for a bot the server ran in less detail, by AI LOD
+ *  (AI-136; the hull and walk-cycle shares measured in
+ *  features/round-replay-fidelity, "A bot's AI LOD"). */
+const LOD_NOTE = {
+  1: 'Away from humans, the server runs this bot in less detail: a hull can slide and a soldier move with no walk cycle. The server did it, not the recording.',
+  2: 'Far from every human, the server runs this bot in its least detail: a hull can slide and a soldier move with no walk cycle. The server did it, not the recording.',
+};
+
+/** A weapon in brackets with a `?` is the replay's guess. */
+const INFERRED_NOTE = 'The kill named no weapon: this is the one he last fired, or the vehicle he was in';
 
 function fmtTime(seconds) {
   const s = Math.max(0, seconds);
@@ -331,6 +342,9 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-card-state { display: flex; align-items: center; gap: 8px; color: var(--rp-muted); font-size: 11px; white-space: nowrap; overflow: hidden; }
 .rp-card-state .dead { color: var(--rp-axis); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rp-card-state .range { color: #b7c27a; }
+/* The server's AI LOD for a bot it ran in less detail. */
+.rp-card-state .lod { flex: none; padding: 0 4px; border: 1px solid currentColor; border-radius: 2px; color: #b7c27a;
+  font: 700 9px/1.5 var(--rp-font); letter-spacing: .08em; }
 /* Waiting to spawn: the time left, and a beat while it runs. */
 .rp-card-state .spawn { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--rp-life); }
 .rp-card-state .spawn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
@@ -1632,10 +1646,13 @@ export class ReplayUi {
       }
       case 'dead': {
         const k = status.killedBy;
+        // A weapon the kill named none for is the replay's guess, marked.
+        const { weapon, inferred } = shownWeapon(k);
         const by = k && k.killer !== null && k.killer !== undefined && k.killer !== pid
-          ? `killed by ${nameAt(rec, k.killer, k.t)}${k.weapon ? ` [${display(k.weapon)}]` : ''}`
+          ? `killed by ${nameAt(rec, k.killer, k.t)}${weapon ? ` [${display(weapon)}${inferred ? '?' : ''}]` : ''}`
           : 'dead';
-        html = `<span class="dead">${esc(by)}</span>`;
+        const note = inferred && by !== 'dead' ? ` title="${INFERRED_NOTE}"` : '';
+        html = `<span class="dead"${note}>${esc(by)}</span>`;
         break;
       }
       case 'spawning': html = spawn === null ? 'spawn screen' : ''; break;
@@ -1654,6 +1671,10 @@ export class ReplayUi {
       html += `<span class="range" title="Beyond ${whose} view distance: the server sent no updates, so this is where he was last seen">`
         + `out of range${since !== null ? ` since ${fmtTime(since)}` : ''}</span>`;
     }
+    // A bot the server ran in less detail (a server recording's AI LOD,
+    // AI-136): his sliding hull or stiff body is the server's, not a fault.
+    const lod = status.state === 'foot' || status.state === 'vehicle' ? lodAt(rec, pid, t) : null;
+    if (lod > 0) html += `<span class="lod" title="${LOD_NOTE[lod] ?? LOD_NOTE[2]}">AI LOD ${lod}</span>`;
     if (this.loadingText) html = esc(this.loadingText);
     else if (player.highlights && (status.state === 'foot' || status.state === 'vehicle')) {
       html += streakMark(player.highlights.streakOf(pid, t));

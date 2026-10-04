@@ -80,8 +80,12 @@ export class ReplayFeed {
       const killer = e.killer === null || e.killer === undefined ? null : this.speaker(e.killer, e.t, false, e.killerTeam);
       // The server's own word for it: a kill (3) is a kill line whatever
       // sides the log would read now, and a team kill (6) is the team-kill
-      // pair.
-      comms.onKill(victim, killer, { weapon: e.weapon ?? null, teamKill: e.kind === 'teamkill' });
+      // pair. A kill that named no weapon shows the replay's guess, marked
+      // (replay-recording.js `inferKillWeapon`).
+      const inferred = !e.weapon && Boolean(e.inferredWeapon);
+      comms.onKill(victim, killer, {
+        weapon: (inferred ? e.inferredWeapon : e.weapon) || null, inferred, teamKill: e.kind === 'teamkill',
+      });
     } else if (e.type === 'radio') {
       // What the recording player heard, as his client printed and played
       // it: team radio in his side's tongue, a shout in the speaker's voice
