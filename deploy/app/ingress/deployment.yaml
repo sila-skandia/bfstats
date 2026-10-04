@@ -33,6 +33,7 @@ data:
       acl host_staging_bfstats req.hdr(host) -i staging.bfstats.io
       acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
       acl host_play_bfstats req.hdr(host) -i play.bfstats.io
+      acl host_replay_bfstats req.hdr(host) -i replay.bfstats.io
       acl is_play_root path -i /
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
@@ -58,6 +59,13 @@ data:
       # below is path-based and rides this host too.
       http-request set-path /map.html if host_play_bfstats is_play_root
 
+      # replay.bfstats.io/<slug>, a shared recording's short link: the path
+      # becomes the API's /replay/<slug> (the play host's /replay/<slug>
+      # below, its first form, which links already handed out still use).
+      # The bare host goes to the feed.
+      http-request redirect location https://play.bfstats.io/play/?tab=replay code 302 if host_replay_bfstats { path / }
+      http-request set-path /replay%[path] if host_replay_bfstats
+
       # Dedicated mesh viewer host — before the shared /stats and default UI routes
       use_backend mesh_frontend if host_mesh_bfstats
       # play.bfstats.io/replay/<slug>, a shared recording's short link: the API
@@ -65,6 +73,7 @@ data:
       # (features/replay-feed, "Short links"). Before the play host's
       # catch-all below, which would send it to the mesh nginx.
       use_backend stats_api if host_play_bfstats is_replay_link
+      use_backend stats_api if host_replay_bfstats
       # !is_netcode: use_backend is first-match-wins, and without it this
       # rule would swallow /netcode/* on the play host before the path-based
       # netcode route below is ever evaluated. !is_stats likewise: the play

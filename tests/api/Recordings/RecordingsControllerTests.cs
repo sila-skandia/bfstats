@@ -12,6 +12,8 @@ namespace api.tests.Recordings;
 public sealed class RecordingsControllerTests : IDisposable
 {
     private const string Slug = "abcdefghjk";
+    private const string Play = "https://play.bfstats.io";
+    private const string Link = "https://replay.bfstats.io";
 
     private readonly string directory = Path.Combine(Path.GetTempPath(), $"bfstats-recordings-controller-{Guid.NewGuid():N}");
     private readonly RecordingStorage storage;
@@ -85,10 +87,10 @@ public sealed class RecordingsControllerTests : IDisposable
         Assert.Equal("text/html; charset=utf-8", result.ContentType);
         var html = result.Content!;
         Assert.Contains(
-            "<meta http-equiv=\"refresh\" content=\"0; url=/map.html?mod=bf1942&amp;map=bocage"
+            "<meta http-equiv=\"refresh\" content=\"0; url=https://play.bfstats.io/map.html?mod=bf1942&amp;map=bocage"
             + "&amp;replay=/stats/recordings/abcdefghjk.ndjson&amp;serverlog=/stats/recordings/abcdefghjk.xml&amp;t=95\">",
             html);
-        Assert.Contains("<meta property=\"og:url\" content=\"https://play.bfstats.io/replay/abcdefghjk\">", html);
+        Assert.Contains("<meta property=\"og:url\" content=\"https://replay.bfstats.io/abcdefghjk\">", html);
         Assert.Contains(
             "<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/recordings/abcdefghjk.jpg?v=5\">", html);
         Assert.Contains("<meta name=\"twitter:card\" content=\"summary_large_image\">", html);
@@ -111,13 +113,13 @@ public sealed class RecordingsControllerTests : IDisposable
             "bbbbbbbbbb", "Other side", "Rut", null, "Rut", 600, 60, "/stats/recordings/bbbbbbbbbb.ndjson", null,
             "/stats/recordings/bbbbbbbbbb.jpg?v=2", "detected", 30, 1.0);
 
-        var withRound = RecordingShortLink.Page(Detail(round: [member]), "https://play.bfstats.io", null);
-        var bare = RecordingShortLink.Page(Detail(serverLogUrl: null), "https://play.bfstats.io", null);
+        var withRound = RecordingShortLink.Page(Detail(round: [member]), Play, Link, null);
+        var bare = RecordingShortLink.Page(Detail(serverLogUrl: null), Play, Link, null);
 
         Assert.Contains("content=\"https://play.bfstats.io/stats/recordings/bbbbbbbbbb.jpg?v=2\"", withRound);
         Assert.DoesNotContain("og:image", bare);
         Assert.Contains("<meta name=\"twitter:card\" content=\"summary\">", bare);
-        Assert.Contains("url=/map.html?mod=bf1942&amp;map=bocage&amp;replay=/stats/recordings/abcdefghjk.ndjson\"", bare);
+        Assert.Contains("url=https://play.bfstats.io/map.html?mod=bf1942&amp;map=bocage&amp;replay=/stats/recordings/abcdefghjk.ndjson\"", bare);
     }
 
     [Theory]
@@ -132,7 +134,7 @@ public sealed class RecordingsControllerTests : IDisposable
 
         Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
         Assert.Equal("text/html; charset=utf-8", result.ContentType);
-        Assert.Contains("/play/?tab=replay", result.Content);
+        Assert.Contains("href=\"https://play.bfstats.io/play/?tab=replay\"", result.Content);
         if (malformed) await recordings.DidNotReceiveWithAnyArgs().GetAsync(default!, default, default);
     }
 

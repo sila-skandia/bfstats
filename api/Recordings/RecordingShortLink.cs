@@ -8,12 +8,13 @@ using api.Utils;
 namespace api.Recordings;
 
 /// <summary>
-/// A recording's short link, <c>play.bfstats.io/replay/&lt;slug&gt;[?t=&lt;seconds&gt;]</c>
-/// (features/replay-feed, "Short links"). HAProxy sends the play host's <c>/replay/</c> to the
-/// API. The answer is a page that sends the browser on to the replay, the address the feed's
-/// Copy link used to hand out, and that tells whatever unfurls the link (Discord, a
-/// messenger) the recording's title, round and cover: behind a redirect it would see only
-/// map.html's own tags, the same for every recording.
+/// A recording's short link, <c>replay.bfstats.io/&lt;slug&gt;[?t=&lt;seconds&gt;]</c>
+/// (features/replay-feed, "Short links"), and the first form of it,
+/// <c>play.bfstats.io/replay/&lt;slug&gt;</c>. HAProxy sends both to the API's
+/// <c>/replay/&lt;slug&gt;</c>. The answer is a page that sends the browser on to the replay on
+/// the play host, the address the feed's Copy link used to hand out, and that tells whatever
+/// unfurls the link (Discord, a messenger) the recording's title, round and cover: behind a
+/// redirect it would see only map.html's own tags, the same for every recording.
 /// </summary>
 public static class RecordingShortLink
 {
@@ -37,12 +38,13 @@ public static class RecordingShortLink
             .Select(p => $"{p.Name}={Readable(p.Value!)}"));
     }
 
-    /// <summary>The page for a recording: its preview tags, and a refresh to the replay (a
-    /// refresh replaces the history entry, so Back leaves the replay for where the link was).</summary>
-    public static string Page(RecordingDetailDto recording, string origin, int? at)
+    /// <summary>The page for a recording: its preview tags, and a refresh to the replay on
+    /// <paramref name="playOrigin"/> (a refresh replaces the history entry, so Back leaves the
+    /// replay for where the link was). <paramref name="linkOrigin"/> is the short link's host.</summary>
+    public static string Page(RecordingDetailDto recording, string playOrigin, string linkOrigin, int? at)
     {
-        var watch = WatchPath(recording, at);
-        var self = $"{origin}/replay/{recording.Slug}";
+        var watch = playOrigin + WatchPath(recording, at);
+        var self = $"{linkOrigin}/{recording.Slug}";
         var cover = recording.ThumbnailUrl
             ?? recording.Round?.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
         var html = new StringBuilder();
@@ -55,7 +57,7 @@ public static class RecordingShortLink
         Meta(html, "property", "og:title", recording.Title);
         Meta(html, "property", "og:description", Description(recording));
         Meta(html, "property", "og:url", self);
-        if (cover is not null) Meta(html, "property", "og:image", origin + cover);
+        if (cover is not null) Meta(html, "property", "og:image", playOrigin + cover);
         Meta(html, "name", "twitter:card", cover is null ? "summary" : "summary_large_image");
         Meta(html, "name", "theme-color", "#a39c6c");
         html.Append($"<link rel=\"canonical\" href=\"{Encode(self)}\">\n");
@@ -67,14 +69,14 @@ public static class RecordingShortLink
 
     /// <summary>The page for a link to no recording: one deleted, one whose file has gone, a
     /// slug mistyped.</summary>
-    public static string Missing() =>
+    public static string Missing(string playOrigin) =>
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
         "<meta name=\"color-scheme\" content=\"dark light\">\n" +
         "<meta name=\"robots\" content=\"noindex\">\n" +
         "<title>Recording not found · BF1942 replay</title>\n" +
         "</head>\n<body>\n" +
         "<p>This recording is not shared any more.</p>\n" +
-        "<p><a href=\"/play/?tab=replay\">The replays</a></p>\n" +
+        $"<p><a href=\"{Encode(playOrigin)}/play/?tab=replay\">The replays</a></p>\n" +
         "</body>\n</html>\n";
 
     /// <summary>A link's <c>?t=</c>: whole seconds into the recording, or null for none.</summary>
