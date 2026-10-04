@@ -270,15 +270,52 @@ export class ReplayHud {
     this.sightShown = false;    // the page's `replay-sight` class
     this.events = new WeakMap(); // life -> Map<weapon or gun, its recorded rounds (and reloads)>
     this.hitMarks = null;       // pid -> his hit marks' times (replay-hitmarks.js), once
+    this.hitMarkFuses = null;   // the projectile table they were worked out with
+    this.weapons = undefined;   // weapon -> { speed, projectile }, null until fetched
+  }
+
+  /** Each weapon's muzzle velocity and round, `weapons[]` in the models
+   *  tree's `damage.json` (the speed the page's drawn round flies at),
+   *  fetched once. The marks are worked out again when it lands. */
+  weaponTable() {
+    if (this.weapons !== undefined) return this.weapons;
+    this.weapons = null;
+    const ctx = this.player.ctx;
+    if (!ctx.modelsBase || typeof fetch !== 'function') return null;
+    fetch(`${ctx.modelsBase}/damage.json${ctx.bust?.() ?? ''}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(doc => {
+        const weapons = new Map();
+        for (const w of doc?.weapons ?? []) {
+          if (w?.name) weapons.set(lower(w.name), { speed: Number.isFinite(w.velocity) ? w.velocity : null, projectile: lower(w.projectile) });
+        }
+        if (!weapons.size) return;
+        this.weapons = weapons;
+        this.hitMarks = null;
+      })
+      // A tree without one times the marks at a stock speed.
+      .catch(() => {});
+    return null;
   }
 
   /** `CrossHair/HitIndicationTime` for `pid` at `t`: his hit marks, worked
-   *  out for every player the first time anyone's are asked for. */
+   *  out for every player the first time anyone's are asked for. A mark goes
+   *  up when the round arrives, at its weapon's muzzle velocity; a flak
+   *  shell's fuse comes from the level's projectile table (the page's guns
+   *  hold it once the level is built), and the marks are worked out again
+   *  when it is. */
   hitMarkOf(pid, t) {
-    if (!this.hitMarks) {
+    const weapons = this.weaponTable();
+    const fuses = this.player.ctx.guns?.projectileMaterials ?? null;
+    if (!this.hitMarks || fuses !== this.hitMarkFuses) {
       const thrown = new Set([...(this.player.networkedRounds ?? [])]
         .map(weaponOfProjectile).filter(Boolean).map(lower));
-      this.hitMarks = inferHitMarks(this.player.rec, { thrown });
+      const fuseOf = w => {
+        const projectile = weapons?.get(w)?.projectile;
+        return (projectile && fuses?.[projectile]?.explodeNearEnemyDistance) || null;
+      };
+      this.hitMarks = inferHitMarks(this.player.rec, { thrown, speedOf: w => weapons?.get(w)?.speed ?? null, fuseOf });
+      this.hitMarkFuses = fuses;
     }
     return hitMarkAt(this.hitMarks.get(pid), t);
   }
