@@ -359,6 +359,7 @@ public sealed class RecordingRoundServiceTests : IDisposable
     [InlineData("https://play.bfstats.io/stats/recordings/abcdefghjk.ndjson", "abcdefghjk")]
     [InlineData("https://play.bfstats.io/map.html?mod=bf1942&map=bocage&replay=/stats/recordings/abcdefghjk.ndjson", "abcdefghjk")]
     [InlineData("https://play.bfstats.io/play/index.html?tab=replay&rec=abcdefghjk", "abcdefghjk")]
+    [InlineData("https://play.bfstats.io/replay/abcdefghjk?t=95", "abcdefghjk")]
     [InlineData("abcdefghj", null)]
     [InlineData("ABCDEFGHJK", null)]
     [InlineData("", null)]

@@ -63,7 +63,7 @@ public sealed partial class RecordingRoundService(
     private static readonly string[] LocalFormats =
         ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"];
 
-    [GeneratedRegex(@"(?:rec=|/recordings/)([a-z0-9]{10})(?![a-z0-9])", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    [GeneratedRegex(@"(?:rec=|/recordings/|/replay/)([a-z0-9]{10})(?![a-z0-9])", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex SlugInLink();
 
     public async Task<int> DetectAsync(int recordingId, CancellationToken ct)
@@ -505,7 +505,8 @@ public sealed partial class RecordingRoundService(
     }
 
     /// <summary>The recording a slug or a link names: <c>abcdefghjk</c>,
-    /// <c>…/stats/recordings/abcdefghjk.ndjson</c>, <c>…?tab=replay&amp;rec=abcdefghjk</c>.</summary>
+    /// <c>…/stats/recordings/abcdefghjk.ndjson</c>, <c>…?tab=replay&amp;rec=abcdefghjk</c>,
+    /// <c>…/replay/abcdefghjk</c> (its short link).</summary>
     internal static string? SlugIn(string? text)
     {
         var trimmed = (text ?? "").Trim();
