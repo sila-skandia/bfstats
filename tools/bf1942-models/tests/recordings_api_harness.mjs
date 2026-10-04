@@ -66,13 +66,14 @@ results.watch = {
   localApi: feed.watchHref(recording, { root: '../', fileUrl: p => `http://localhost:9222${p}` }),
 };
 
-// A recording's short link: the play host's /replay/<slug>, which the API
-// answers; none for a recording on this PC's own API.
+// A recording's short link: replay.bfstats.io/<slug>, which the API answers;
+// none for a recording on this PC's own API.
 results.short = {
   play: api.shortHref('abcdefghjk', { base: '' }, page),
   at: api.shortHref('abcdefghjk', { base: '', at: 95.8 }, page),
   liveFromHere: api.shortHref('abcdefghjk', { base: 'https://bfstats.io' }, local),
   localApi: api.shortHref('abcdefghjk', { base: 'http://localhost:9222' }, local),
+  sameOnThisPc: api.shortHref('abcdefghjk', { base: '' }, local),
 };
 
 // Whom a shared recording goes up under: the recording player as the file

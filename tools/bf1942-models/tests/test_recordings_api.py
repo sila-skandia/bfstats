@@ -102,12 +102,14 @@ class RecordingsApiTests(unittest.TestCase):
 
     def test_a_recording_is_linked_by_its_short_link(self) -> None:
         self.assertEqual(self.results["short"], {
-            "play": "https://play.bfstats.io/replay/abcdefghjk",
-            "at": "https://play.bfstats.io/replay/abcdefghjk?t=95",
-            # The live feed read from this PC: its recordings are the play host's.
-            "liveFromHere": "https://play.bfstats.io/replay/abcdefghjk",
-            # This PC's own API: no host answers a short link for its recordings.
+            "play": "https://replay.bfstats.io/abcdefghjk",
+            "at": "https://replay.bfstats.io/abcdefghjk?t=95",
+            # The live feed read from this PC: its recordings are the live ones.
+            "liveFromHere": "https://replay.bfstats.io/abcdefghjk",
+            # This PC's own API, however the page reaches it: no host answers
+            # a short link for its recordings.
             "localApi": None,
+            "sameOnThisPc": None,
         })
 
     def test_a_recording_is_shared_under_the_player_who_recorded_it(self) -> None:

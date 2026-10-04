@@ -12,8 +12,8 @@
 
 export const LIVE_API = 'https://bfstats.io';
 export const LOCAL_API = 'http://localhost:9222';
-/** The play site, where the live feed's short links are answered. */
-export const PLAY_ORIGIN = 'https://play.bfstats.io';
+/** The short links' host: a shared recording's is `replay.bfstats.io/<slug>`. */
+export const SHORT_ORIGIN = 'https://replay.bfstats.io';
 const API_KEY = 'bf42-mesh-api';
 const AUTH_KEY = 'bf42-mesh-auth';
 /** A token this close to expiring is refreshed before use. */
@@ -346,16 +346,13 @@ async function gzipped(file) {
 }
 
 /** A shared recording's short link (features/replay-feed, "Short links"):
- *  `play.bfstats.io/replay/<slug>`, with `?t=` for a moment in it. HAProxy
- *  sends the play host's /replay/ to the API, so it is this page's origin when
- *  the API is (play.bfstats.io), and the play host's for the live feed read
- *  from elsewhere; null for a recording on this PC's own API, which no host
- *  answers a short link for. */
+ *  `replay.bfstats.io/<slug>`, with `?t=` for a moment in it, for a recording
+ *  of the live feed, read on a bfstats.io host or from this PC; null for one on
+ *  this PC's own API, which no host answers a short link for. */
 export function shortHref(slug, { base = '', at = null } = {}, page = globalThis.location) {
-  const mode = apiMode(base, page);
-  const origin = mode === 'same' ? page.origin : base === LIVE_API ? PLAY_ORIGIN : null;
-  if (!origin) return null;
-  return `${origin}/replay/${slug}${at === null ? '' : `?t=${Math.max(0, Math.floor(at))}`}`;
+  const live = apiMode(base, page) === 'same' ? /(^|\.)bfstats\.io$/i.test(page.hostname) : base === LIVE_API;
+  if (!live) return null;
+  return `${SHORT_ORIGIN}/${slug}${at === null ? '' : `?t=${Math.max(0, Math.floor(at))}`}`;
 }
 
 /** A query string whose paths keep their slashes and colons
