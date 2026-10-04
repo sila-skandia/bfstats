@@ -182,8 +182,156 @@ and where the replay presents it:
 | `special` (type 0) | 12 | the recording player's refill sound |
 | `gameStatus` | 10 | a replay log row for a change of status only |
 
+## What a server recording adds (2026-10-05)
+
+Three things the server recorder writes or settles
+([server-replay-recorder](../server-replay-recorder/README.md), "The new
+recorder") that a client's file lacks. Client files are the main source, so
+each is optional data or a rule a client file passes through unchanged except
+where said. Checked by parsing 12 client recordings and 9 server recordings
+before and after: in every client file the only fields that moved are the
+kill lines' new `inferredWeapon` / `inferredFrom`, those kills' replay-log
+rows, and an empty `rec.lods`. The server files also gained the `fake` mark
+on their rounds. Tests: `ReplayServerOnlyTests` in
+`tools/bf1942-models/tests/test_replay_models.py`.
+
+The recordings: the client files `replay_20260927-075756`, `-140921`,
+`-190946`, `-203459`, `replay_20260928-133433`, `-161948`, `-214112`,
+`replay_20260929-063209`, `-063300`, `replay_20261001-144253`,
+`replay_20261004-085232` and `replay_20261005-071010`; the server files
+`replay_1791148138` (the parity round, the same round as `-071010`; server
+time = client time + 72.475 s), the seven soak rounds
+`replay_17911{01345,03311,05832,08228,10875,13496,15588}`, and the probe
+build's `replay_1791066665`.
+
+### A bot's AI LOD
+
+`lod` records (`[pid, lod]` on change, AI-136) go into `rec.lods`, and
+`lodAt(rec, pid, t)` gives a bot's LOD at a time. It is null for a client
+file, a human, or a time before the bot's first record. While the followed
+player is alive at LOD 1 or 2, his card carries an `AI LOD 1` or `AI LOD 2`
+tag. The tag's title says the server ran him in less detail, so a sliding
+hull or a body moving with no walk cycle is the server's doing, not a
+recording fault. LOD 0 shows nothing.
+
+LOD 1 is tagged as well as LOD 2 because it is simplified too. Measured on
+the parity round's server file after the pre-game (every bot reads 0 in
+pre-game and 2 from the round's start; only a human's approach moves one):
+
+| LOD | on-foot samples in a moving lower state | ground hulls over 4 m/s, more than 10 degrees off heading |
+|---|---|---|
+| 0 | 36% of 340 | 0.1% of 2,950 |
+| 1 | 10% of 166 | 17% of 2,409 |
+| 2 | 0.1% of 2,878 | 22% of 100,914 |
+
+### Kills that name no weapon
+
+A kill whose score event has weapon -1 can come from a bot's fake fire
+(AI-134), a crew lost with its hull, or a crash. The owner's BF109 kill of a
+Sherman crewman at server 231.064 s is a crash: his plane hit the Sherman, 16
+s after his last burst. For such a kill the parser stores a guess as
+`inferredWeapon`, never as `weapon`, and `inferredFrom` says where the guess
+came from:
+
+1. `round`: the killer's last `f` from 5 s before the kill to 0.1 s after
+   it. A client is sent a kill before the round that made it: in 802 of
+   1,796 named kills in client files, the killer's last round of that weapon
+   (up to 0.25 s on) came after the kill line. The name is the one the kill
+   log uses (chat-log.js `killStamp`): the hull the round hangs under for a
+   seated man (`BF109`, `PanzerIV` for its coaxial MG42), else the hand
+   weapon.
+2. `seat`: else the hull he held in the 0.5 s up to the kill. This covers
+   the BF109 crash, where his control had passed to the free camera 0.07 s
+   before the kill.
+
+A kill that names its weapon keeps it, and a server log's weapon (`killsOf`)
+still wins. The game's message log, the timeline, the card's "killed by" and
+the creator panel's kill and death rows print a guess with a `?`:
+`skandia [BF109?] Will Rolfe`. The replay log row says `with BF109
+(inferred)`. Tallies, medals and hit marks read `weapon` only, so they never
+count a guess.
+
+The window was chosen on the kills that do name a weapon, by running the rule
+as if they named none. In client files, the gap from a named kill back to
+the killer's last round of that weapon is 0.07 s at the median, 3.0 s at
+p90 and 5.5 s at p95, and 94.5% are within 5 s (1,796 kills). In server
+files it is 3.0 s at the median, 5.3 s at p90 and at most 9.8 s (105 kills;
+artillery and bombs, whose crews are seated, so the seat rule takes the
+rest). On the client
+files, with the round rule alone, widening the window from 4 to 5 s added 7
+right guesses and no wrong ones, and widening it to 7.5 s added 15 right and
+5 wrong. The shipped rule:
+
+| | named kills guessed right | wrong | no guess | weapon -1 kills given one |
+|---|---|---|---|---|
+| 12 client files | 1,708 of 1,832 (93.2%) | 37 (2.0%) | 87 | 238 of 250 |
+| 8 server files (new recorder) | 103 of 105 (98.1%) | 0 | 2 | 335 of 336 |
+
+Almost every wrong guess is a thrown or placed weapon: a grenade or a mine
+that killed after the killer had gone back to his gun. In the parity pair the
+client and server files make the same guess for all six kills they share. The
+probe build's file (`replay_1791066665`) guesses 5 of 13 right because its
+round ids resolve to the wrong lives (`BinocularsProjectile` for a Priest).
+
+### Neutral points in a client file
+
+The server recorder's README (Still open) said a client writes -1 for a
+neutral point it was never sent a side for, so a client file would never show
+a neutral point's first capture. No recording bears that out. In all 12
+client files, a point read -1 only until the join's update, 0.30 to 0.86 s
+after first sight, and that update included 0 for a neutral point (all three
+El Alamein outposts in `-071010` at 11.71 s). The first capture of a neutral
+outpost already showed: East_outpost at 21.29 s in `-071010` is the server's
+93.63 s.
+
+The parser now also covers the case the README described. A point still -1
+more than 2 s after first sight was never sent a side, so its first side is a
+capture from neutral (`CP_JOIN_SETTLE`). A side arriving inside the 2 s is
+how the round stood at the join. No recording has such a point, so no file's
+captures changed.
+
+Ground truth is the capture's own score. An ATTACK score event (kind 1) goes
+to every man who raises a flag from neutral. The server event log of the
+parity round has 10 ATTACK clusters, one for each of the server file's 10
+captures, each capture 2.05 to 2.13 s ahead of its log line.
+
+| file | captures | ATTACK clusters | matched |
+|---|---|---|---|
+| `-071010` (parity client) | 3 | 3 | 3 |
+| `replay_1791148138` (parity server) | 10 | 10 (event log 10) | 10 |
+| `-133433` (Bocage, conquest flags) | 8 | 9 | 8 |
+| `replay_20261001-144253` | 54 | 54 | 53 |
+| the other 9 client files | 107 | 101 | 101 |
+| the 7 soak rounds | 117 | 116 | 116 |
+
+There are more captures than clusters where two points fell in one tick,
+such as the two Bridge points of Bocage or the three 1st_Line_Bunkers. The
+only ATTACKs without a capture are at a join: 13.0 s in `-133433` and 12.0 s
+in `-144253`, 0.5 s after the client's database completed. They arrived in
+the burst of events the server held while the client loaded, so the capture
+took place before the client had the point. The side the point was sent a
+moment later is already the captor's, and no client file can say which point
+it was or when it fell.
+
 ## Open
 
+- **Server files mark hulls and soldiers as kits.** `parseRecording` marks a
+  life as a kit by network id whatever the time (`kitIds`), then marks every
+  life of a kit's template (`kitTemplates`). In a server file, a later object
+  on a kit's old id becomes a kit, and its template then makes every life of
+  that template a kit. In the soak round `replay_1791103311`, Shermans,
+  PanzerIVs, Kubelwagens, Willys (`Willy`) and `BritishSoldier` /
+  `GermanDesertSoldier` lives carry `kit`. None of the 12 client files has a life like that. The
+  weapon guess works around it (`hullLike`), but whatever else skips a
+  `kit` life (`rootOf`, `markRounds`, the props) still does.
+- A kill by a grenade or a mine that went off after the killer went back to
+  his gun gets the gun (most of the 37 wrong guesses in client files). The
+  `f` of the throw is there; telling a fuse's kill from a shot's would need
+  the round's flight.
+- A capture made while the client loaded (the join-time ATTACKs above) is
+  not shown.
+- The AI LOD shows only on the followed player's card. A sliding hull under a
+  bot nobody follows is not marked.
 - **A round begun after the join with the new recorder** (bf42plus
   `0254e92`, installed 2026-09-27 22:52): the file should open with every
   player's `createPlayer`, every standing object's `createObject`, the pools

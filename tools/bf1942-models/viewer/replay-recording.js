@@ -40,6 +40,27 @@ const GAME_STATUS = { 1: 'round playing', 2: 'round over', 3: 'pre-game', 4: 'pa
 // vanilla hull carries is an M3A1's seven.
 const MAX_SEATS = 12;
 
+// A kill the score event names no weapon for (`weapon` -1: a bot's fake
+// fire, AI-134; a crew lost with its hull; a crash) is given the one its
+// killer most likely used, as `inferredWeapon`, never as `weapon`: the
+// kill log's own word for what he fired last, a seated man's hull and a man
+// on foot his hand weapon (chat-log.js `killStamp`). Measured on the kills
+// that do name one, in 12 client and 8 server recordings
+// (features/round-replay-fidelity, "Kills that name no weapon"): his last
+// round no more than KILL_ROUND_WINDOW before the kill, or KILL_ROUND_LEAD
+// after it (a client is sent the kill before the shot that made it), else
+// the hull he held within KILL_SEAT_WINDOW of it.
+const KILL_ROUND_WINDOW = 5;
+const KILL_ROUND_LEAD = 0.1;
+const KILL_SEAT_WINDOW = 0.5;
+
+// A client writes -1 for a control point it has not been sent a side for,
+// and is sent every point's side (0 for neutral) 0.30 to 0.86 s after first
+// sight in every client recording so far (features/round-replay-fidelity,
+// "Neutral points in a client file"). A point still -1 past CP_JOIN_SETTLE
+// was never sent one, and was neutral: its first side is a capture.
+const CP_JOIN_SETTLE = 2;
+
 export const teamName = team => (team === 1 ? 'Axis' : team === 2 ? 'Allies' : 'no team');
 export const fmtHp = v => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
@@ -383,8 +404,13 @@ export function parseRecording(text) {
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
     tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
     // { t, kind, killer, victim, weapon, killerTeam, victimTeam } one per
-    // line the kill log printed, both sides as they stood when it was scored
+    // line the kill log printed, both sides as they stood when it was scored;
+    // a kill that names no weapon may carry `inferredWeapon` and
+    // `inferredFrom` ('round' or 'seat'), the viewer's guess, not the server's
     kills: [],
+    // pid -> [{ t, lod }] a bot's AI LOD as the server set it (a server
+    // recording's `lod`, AI-136): 0 with a human near, 2 far from every one
+    lods: new Map(),
     radio: [],            // { t, pid, msg, global } radio messages the recording player heard (0x3A)
     unseenDestroys: [],   // { t, nid } an object removed (0x06) that no life of the recording holds
     refills: [],          // { t } the recording player's ammo refilled at a depot (0x27, type 0)
@@ -415,6 +441,7 @@ export function parseRecording(text) {
   const kitPickups = [];        // { t, pid, nid }
   const nidEvents = [];         // { t, pid, nid } every report of what a player controls
   const plainDeaths = [];       // { t, victim } score DEATH (4): "is no more", unless a team kill wrote it
+  const killRows = new Map();   // a kill -> its feed row
   let joined = -Infinity;
   let sawPregame = false;
   let lastStatus = null;
@@ -662,16 +689,18 @@ export function parseRecording(text) {
         rec.matchable.push({ t, kind: 'setTeam' });
         return;
       }
-      case 'score':
+      case 'score': {
+        let kill = null;
         if (t < rec.roundEnded) {
           if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
             rec.deaths.push({ t, pid: r.victim, killer: r.pid, weapon: r.weaponName ?? null });
             // The kill log's line (chat-log.js `deathLines`): a kill names its
             // killer and his weapon, a team kill only the killer. The kind is
             // the server's word for it, and the sides are as they stood.
-            rec.kills.push({ t, kind: r.kind === SCORE.TEAMKILL ? 'teamkill' : 'kill',
-                             killer: r.pid, victim: r.victim, weapon: r.weaponName ?? null,
-                             killerTeam: teamNow(r.pid), victimTeam: teamNow(r.victim) });
+            kill = { t, kind: r.kind === SCORE.TEAMKILL ? 'teamkill' : 'kill',
+                     killer: r.pid, victim: r.victim, weapon: r.weaponName ?? null,
+                     killerTeam: teamNow(r.pid), victimTeam: teamNow(r.victim) };
+            rec.kills.push(kill);
           } else if (r.kind === SCORE.DEATH || r.kind === SCORE.DEATH_NO_MSG) {
             rec.deaths.push({ t, pid: r.pid, killer: null, weapon: null });
             if (r.kind === SCORE.DEATH) plainDeaths.push({ t, victim: r.pid, victimTeam: teamNow(r.pid) });
@@ -681,13 +710,15 @@ export function parseRecording(text) {
           row(t, 'spawn', `${playerName(r.pid, t)} spawned`);
         } else if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
           const how = r.weaponName ? ` with ${r.weaponName}` : '';
-          row(t, 'kill', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]} ${playerName(r.victim, t)}${how}`);
+          const line = row(t, 'kill', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]} ${playerName(r.victim, t)}${how}`);
+          if (kill) killRows.set(kill, line);
         } else if (SCORE_TEXT[r.kind]) {
           // Deaths (4, 5) are skipped: a kill row carries them, and the rest
           // are the round-end teardown.
           row(t, 'score', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]}`);
         }
         return;
+      }
       case 'radio':
         // RadioMessageEvent (0x3A): `msg` the engine's message id (radio.js
         // `RADIO_MESSAGES`), `global` 1 for team radio and 0 for a shout. The
@@ -938,17 +969,22 @@ export function parseRecording(text) {
           // goes through neutral: 2, then 0 as the flag comes down, then 1 as
           // the attackers raise theirs (Landing_Beach at 185.5 and 195.5 s in
           // replay_20260927-075756), so a point turning to a side from neutral
-          // is taken as well as one turning from the other side.
+          // is taken as well as one turning from the other side. A client's
+          // -1 that outlasts the join (CP_JOIN_SETTLE) was a neutral point it
+          // was never sent a side for, and the side it then turns to is taken
+          // from neutral; one that arrives within it is how the round stood.
+          const seen = before?.seen ?? t;
+          const fromNeutral = Boolean(before) && !before.opened && r.team > 0 && t - seen > CP_JOIN_SETTLE;
           const opened = Boolean(before?.opened) || r.team >= 0;
-          cpState.set(r.id, { name, team: r.team, opened });
+          cpState.set(r.id, { name, team: r.team, opened, seen });
           if (!rec.controlPoints.has(r.id)) {
             rec.controlPoints.set(r.id, { id: r.id, name, tmpl: r.tmpl ?? '', pos: r.pos ?? null, changes: [] });
           }
           const point = rec.controlPoints.get(r.id);
           point.name = name;
           if (r.team >= 0 && point.changes[point.changes.length - 1]?.team !== r.team) point.changes.push({ t, team: r.team });
-          if (before?.opened && r.team > 0 && before.team !== r.team) {
-            rec.captures.push({ t, id: r.id, name, team: r.team, from: before.team });
+          if ((before?.opened && r.team > 0 && before.team !== r.team) || fromNeutral) {
+            rec.captures.push({ t, id: r.id, name, team: r.team, from: fromNeutral ? 0 : before.team });
             row(t, 'flag', `${name} taken by ${teamName(r.team)}`);
           }
           break;
@@ -960,9 +996,21 @@ export function parseRecording(text) {
           // v4: one round leaving a weapon, any weapon the client simulates.
           // `id` the root object it hangs under, `w` the weapon's template,
           // `p`/`d` the muzzle and the round's direction.
+          // A server recording marks a bot's fake round (`fake`, AI-134):
+          // the shot ran, no projectile was made, the AI rolled the hit.
           rec.fires.push({ t, pid: r.pid ?? null, nid: r.id ?? null, kind: r.alt ? 2 : 1,
                            weapon: r.w ?? '', pos: vec3(r.p), dir: vec3(r.d), press: false,
-                           local: Boolean(r.local) });
+                           local: Boolean(r.local), ...(r.fake ? { fake: true } : {}) });
+          break;
+        case 'lod':
+          // A server recording's bots' AI LOD, `[pid, lod]` on change
+          // (AI-136; features/server-replay-recorder). A client has none.
+          for (const [pid, lod] of r.o ?? []) {
+            if (!Number.isFinite(pid) || !Number.isFinite(lod)) continue;
+            if (!rec.lods.has(pid)) rec.lods.set(pid, []);
+            const list = rec.lods.get(pid);
+            if (list[list.length - 1]?.lod !== lod) list.push({ t, lod });
+          }
           break;
         case 'jn':
           // A moving part's name, on first sight: `[root, part, template]`, and
@@ -1090,6 +1138,7 @@ export function parseRecording(text) {
   }
   for (const list of rec.stances.values()) ordered(list);
   for (const list of rec.seats.values()) ordered(list);
+  for (const list of rec.lods.values()) ordered(list);
   for (const parts of rec.joints.values()) for (const part of parts.values()) ordered(part.keys);
   for (const engines of rec.engines.values()) for (const list of engines.values()) ordered(list);
 
@@ -1323,6 +1372,19 @@ export function parseRecording(text) {
   }
   rec.kills.sort((a, b) => a.t - b.t);
 
+  // A kill that names no weapon, given the one its killer most likely used
+  // (`inferKillWeapon`), beside the server's empty one; its feed row says so.
+  const rounds = roundsByPlayer(rec);
+  for (const k of rec.kills) {
+    if (k.kind !== 'kill' || k.weapon || k.killer === null || k.killer === undefined || k.killer === k.victim) continue;
+    const guess = inferKillWeapon(rec, k.killer, k.t, rounds);
+    if (!guess) continue;
+    k.inferredWeapon = guess.weapon;
+    k.inferredFrom = guess.from;
+    const line = killRows.get(k);
+    if (line) line.text += ` with ${guess.weapon} (inferred)`;
+  }
+
   rec.events.sort((a, b) => a.t - b.t);
   rec.clocks.sort((a, b) => a.t - b.t);
   // Players were still being put to their soldiers while the lives were
@@ -1508,6 +1570,93 @@ export function crewOf(rec, life, t) {
     if (root?.life === life) crew.push({ pid, seat: root.seat });
   }
   return crew;
+}
+
+// --- a kill that names no weapon ----------------------------------------------
+
+/** Every round (`f`, not a v3 trigger press) by its shooter, `Map<pid, [fire]>`
+ *  in time order. */
+export function roundsByPlayer(rec) {
+  const out = new Map();
+  for (const f of rec.fires) {
+    if (f.press || f.pid === null || f.pid === undefined) continue;
+    if (!out.has(f.pid)) out.set(f.pid, []);
+    out.get(f.pid).push(f);
+  }
+  for (const list of out.values()) if (list.some((f, i) => i && f.t < list[i - 1].t)) list.sort((a, b) => a.t - b.t);
+  return out;
+}
+
+/** A life a seated man's hull can be: anything but a man or his camera. A
+ *  life's kit mark is not asked: it goes by network id whatever the time, so
+ *  a hull given a kit's old id carries it (Sherman 1097 of the soak round
+ *  replay_1791103311). */
+const hullLike = life => Boolean(life?.tmpl) && !life.soldier && !life.camera;
+
+/** The kill log's word for what a round came from: the hull it hangs under
+ *  for a seated man (his tank, his plane, the gun emplacement he mans), else
+ *  the hand weapon that fired it. */
+function roundWeapon(rec, f) {
+  const life = f.nid !== null && f.nid !== undefined ? lifeAtIn(rec.lives, f.nid, f.t) : null;
+  return hullLike(life) ? life.tmpl : f.weapon || null;
+}
+
+/** The hull `pid` held last in the KILL_SEAT_WINDOW up to `t`, or null. */
+function seatWeapon(rec, pid, t) {
+  const list = rec.playerNids?.get(pid);
+  if (!list?.length) return null;
+  let i = latestIndex(list, t);
+  for (; i >= 0; i--) {
+    const to = list[i + 1]?.t ?? Infinity;
+    if (to < t - KILL_SEAT_WINDOW) break;
+    // Inside the hold, and late enough in it for its seat record to be in.
+    const at = Math.max(list[i].t, Math.min(t, to - 0.001));
+    const life = rootOf(rec, list[i].nid, at, pid)?.life;
+    if (hullLike(life)) return life.tmpl;
+  }
+  return null;
+}
+
+/**
+ * The weapon a kill at `t` by `pid` most likely came from, for a kill whose
+ * score event names none: `{ weapon, from }`, `from` 'round' for his last
+ * round within KILL_ROUND_WINDOW before the kill (or KILL_ROUND_LEAD after
+ * it), 'seat' for the hull he held within KILL_SEAT_WINDOW of it; null for
+ * neither. The name is the kill log's own (`roundWeapon`). `rounds` is
+ * `roundsByPlayer(rec)`.
+ */
+export function inferKillWeapon(rec, pid, t, rounds = roundsByPlayer(rec)) {
+  const list = rounds.get(pid);
+  const i = latestIndex(list, t + KILL_ROUND_LEAD);
+  if (i >= 0 && list[i].t >= t - KILL_ROUND_WINDOW) {
+    const weapon = roundWeapon(rec, list[i]);
+    if (weapon) return { weapon, from: 'round' };
+  }
+  const weapon = seatWeapon(rec, pid, t);
+  return weapon ? { weapon, from: 'seat' } : null;
+}
+
+/** A kill line's weapon to show: the server's, else the viewer's guess
+ *  (`inferredWeapon`); `inferred` says which. */
+export function shownWeapon(kill) {
+  if (kill?.weapon) return { weapon: kill.weapon, inferred: false };
+  if (kill?.inferredWeapon) return { weapon: kill.inferredWeapon, inferred: true };
+  return { weapon: null, inferred: false };
+}
+
+// --- a bot's AI LOD -----------------------------------------------------------------
+
+/**
+ * Bot `pid`'s AI LOD at `t` (a server recording's `lod`, AI-136): 0 with a
+ * human near, 1 farther, 2 far from every human, where the server runs him
+ * in less detail. null for a file without it (every client recording), a
+ * human, or a time before his first.
+ */
+export function lodAt(rec, pid, t) {
+  const entry = latestAt(rec.lods?.get(pid), t);
+  if (!entry) return null;
+  if (playerAt(rec, pid, t)?.ai === false) return null;
+  return entry.lod;
 }
 
 /** Seconds into the round at recording time `t`: the exact 0x04 clock where

@@ -2753,4 +2753,113 @@ const read = scene => {
   };
 }
 
+// Three things a server recording carries and a client's lacks, read so a
+// client's file plays as it did (features/round-replay-fidelity): a bot's
+// AI LOD (`lod`), a weapon for a kill that names none (the killer's last
+// round, else his hull), and the first capture of a neutral point a client
+// was never sent a side for.
+{
+  const [chapters, chatLog, { ReplayUi }] = await Promise.all([imp('replay-chapters.js'), imp('chat-log.js'), imp('replay-ui.js')]);
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 30 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 0, name: 'Owner', team: 1, ai: 0 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 5, name: 'Tanker', team: 2, ai: 1 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 6, name: 'Rifle', team: 2, ai: 1 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 7, name: 'Gunner', team: 1, ai: 1 }),
+    line({ k: 'lod', t: 0, o: [[5, 0], [6, 0], [7, 0], [0, 0]] }),
+    line({ k: 'lod', t: 20, o: [[5, 2], [6, 2], [7, 2]] }),
+    line({ k: 'lod', t: 40, o: [[5, 1]] }),
+    line({ k: 'lod', t: 41, o: [[5, 1]] }),
+    // A base, a point whose side comes with the join, one the client was
+    // never sent a side for, and one sent as neutral.
+    line({ k: 'cp', t: 1, id: 20, name: 'Base', tmpl: 'AxisBase', pos: [0, 0, 0], team: 1 }),
+    line({ k: 'cp', t: 1, id: 21, name: 'Joined', tmpl: 'JoinedCP', pos: [10, 0, 0], team: -1 }),
+    line({ k: 'cp', t: 1, id: 22, name: 'Unsent', tmpl: 'UnsentCP', pos: [20, 0, 0], team: -1 }),
+    line({ k: 'cp', t: 1, id: 23, name: 'Sent', tmpl: 'SentCP', pos: [30, 0, 0], team: -1 }),
+    line({ k: 'cp', t: 1.86, id: 21, team: 2 }),
+    line({ k: 'cp', t: 1.86, id: 23, team: 0 }),
+    line({ k: 'cp', t: 30, id: 22, team: 2 }),
+    line({ k: 'cp', t: 35, id: 23, team: 1 }),
+    line({ k: 'e', t: 2, e: 'createObject', tid: 1, netId: 600, tmpl: 'GermanSoldier', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 2, e: 'control', pid: 7, netId: 600 }),
+    line({ k: 'e', t: 2, e: 'createObject', tid: 2, netId: 700, tmpl: 'Sherman', pos: [50, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 2, e: 'createObject', tid: 3, netId: 610, tmpl: 'BritishSoldier', pos: [60, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 2, e: 'control', pid: 5, netId: 610 }),
+    line({ k: 'e', t: 2, e: 'createObject', tid: 3, netId: 620, tmpl: 'BritishSoldier', pos: [70, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'e', t: 2, e: 'control', pid: 6, netId: 620 }),
+    line({ k: 'e', t: 3, e: 'enterVehicle', pid: 5, netId: 700 }),
+    line({ k: 'p', t: 3.05, p: [[5, 2, 700, 700, 0, 0], [7, 1, 600, 600, 0, 0]] }),
+    line({ k: 'f', t: 9.95, id: 600, pid: 7, w: 'Mp40', p: [0, 1, 0], d: [1, 0, 0], fake: 1 }),
+    line({ k: 'f', t: 21, id: 700, pid: 5, w: 'ShermanGunBarrel', p: [50, 2, 0], d: [1, 0, 0] }),
+    // A bot's fake-fire kill: his Mp40, from his round.
+    line({ k: 'e', t: 10, e: 'score', kind: 3, pid: 7, victim: 6, weapon: -1, weaponName: '' }),
+    // A round from a hull's gun: the hull, as the kill log names one.
+    line({ k: 'e', t: 22, e: 'score', kind: 3, pid: 5, victim: 7, weapon: -1, weaponName: '' }),
+    // No round for 29 s, but seated: the hull he sits in.
+    line({ k: 'e', t: 50, e: 'score', kind: 3, pid: 5, victim: 0, weapon: -1 }),
+    // A kill that names its weapon keeps it, whatever he fired.
+    line({ k: 'e', t: 51, e: 'score', kind: 3, pid: 7, victim: 0, weapon: 2, weaponName: 'K98' }),
+    // Nothing to go on: no round, on foot.
+    line({ k: 'e', t: 60, e: 'score', kind: 3, pid: 6, victim: 7, weapon: -1 }),
+    // Out of the hull 0.3 s before the kill: still his hull; 1.3 s: nothing.
+    line({ k: 'e', t: 64.7, e: 'exitVehicle', pid: 5 }),
+    line({ k: 'e', t: 64.7, e: 'control', pid: 5, netId: 610 }),
+    line({ k: 'p', t: 64.75, p: [[5, 2, 610, 610, 0, 0]] }),
+    line({ k: 'e', t: 65, e: 'score', kind: 3, pid: 5, victim: 0, weapon: -1 }),
+    line({ k: 'e', t: 66, e: 'score', kind: 3, pid: 5, victim: 6, weapon: -1 }),
+    // A client is sent the kill before the round that made it: 0.05 s after
+    // counts, 0.2 s after does not.
+    line({ k: 'f', t: 80.05, id: 600, pid: 7, w: 'Mp40', p: [0, 1, 0], d: [1, 0, 0] }),
+    line({ k: 'e', t: 80, e: 'score', kind: 3, pid: 7, victim: 6, weapon: -1 }),
+    line({ k: 'f', t: 90.2, id: 600, pid: 7, w: 'Mp40', p: [0, 1, 0], d: [1, 0, 0] }),
+    line({ k: 'e', t: 90, e: 'score', kind: 3, pid: 7, victim: 6, weapon: -1 }),
+    line({ k: 'end', t: 100 }),
+  ].join('\n'));
+  const lexicon = { strings: { DEFAULT_KILL_TEXT: 'killed' }, names: { Mp40: 'MP 40' } };
+  const kills = chapters.killsOf(rec, []);
+  const list = chapters.buildChapters(rec, [], kills);
+  const killer = { id: 7, name: 'Gunner', team: 1, vehicle: null, weapon: null };
+  const victim = { id: 6, name: 'Rifle', team: 2, vehicle: null, weapon: null };
+  // A client's file of the same: no `lod`.
+  const client = recording.parseRecording([line({ k: 'h', v: 5 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 5, name: 'Tanker', team: 2, ai: 1 })].join('\n'));
+  // The followed player's card, its DOM stood in for: what its state line
+  // says of each player at a time.
+  const card = (r, pid, t) => {
+    const ui = Object.assign(Object.create(ReplayUi.prototype), {
+      player: { rec: r, followPid: pid, kills: chapters.killsOf(r, []), camera: { mode: 'orbit' }, kitClass: () => null,
+                heldWeapon: () => null, hulls: new Map(), highlights: null, recordingPids: [], recordingPid: null },
+      cardName: { dataset: {}, textContent: '', className: '', append() {} },
+      cardFlag: { classList: { toggle() {} }, src: '' },
+      cardState: { innerHTML: '', textContent: '' },
+      ctx: { teamFlag: () => null },
+      lexicon: () => lexicon,
+      loadingText: null,
+    });
+    ui.renderCard(t);
+    return ui.cardState.innerHTML;
+  };
+  results.serverOnly = {
+    lod: [[5, -1], [5, 10], [5, 25], [5, 40.5], [5, 99], [6, 99], [0, 25], [9, 25]].map(([pid, t]) => recording.lodAt(rec, pid, t)),
+    lodList: rec.lods.get(5).map(e => [e.t, e.lod]),
+    clientLod: [recording.lodAt(client, 5, 25), client.lods.size],
+    fake: rec.fires.map(f => Boolean(f.fake)),
+    kills: rec.kills.filter(k => k.kind === 'kill').map(k => [k.t, k.weapon || null, k.inferredWeapon ?? null, k.inferredFrom ?? null]),
+    rows: rec.events.filter(e => e.kind === 'kill').map(e => e.text),
+    texts: list.filter(ch => ch.kind === 'kill').map(ch => chapters.chapterText(rec, ch, lexicon)),
+    feed: chapters.feedEvents(rec, kills).filter(e => e.type === 'kill').map(e => [e.weapon || null, e.inferredWeapon]),
+    logLine: [
+      chatLog.deathLines(victim, killer, lexicon.strings, lexicon.names, { weapon: 'Mp40', inferred: true }).lines[0].text,
+      chatLog.deathLines(victim, killer, lexicon.strings, lexicon.names, { weapon: 'Mp40' }).lines[0].text,
+    ],
+    captures: rec.captures.map(c => [c.t, c.name, c.team, c.from]),
+    flagRows: rec.events.filter(e => e.kind === 'flag').map(e => e.text),
+    card: {
+      lod2: card(rec, 5, 25), lod1: card(rec, 5, 45), lod0: card(rec, 5, 10),
+      human: card(rec, 0, 25), clientBot: card(client, 5, 25), killedBy: card(rec, 6, 12),
+    },
+  };
+}
+
 console.log(JSON.stringify(results));

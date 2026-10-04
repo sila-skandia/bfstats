@@ -791,7 +791,10 @@ v5, readable by the viewer as it stands. New against the POC:
 | `pn` / `pj` / `pd` | a projectile's flight: named, placed each sample, ended | Projectile roots (vptr `0x0873f2c8`) |
 | `perf` | once a minute: the sample's and the server's tick cost, objects, faults, dropped output | |
 
-The viewer skips `lod`, `pn`/`pj`/`pd` and `perf` today.
+The viewer skips `pn`/`pj`/`pd` and `perf` today. It reads `lod` into
+`rec.lods` and tags a bot at LOD 1 or 2 on the followed player's card, and
+it reads `fake` on an `f` record
+([round-replay-fidelity](../round-replay-fidelity/README.md#what-a-server-recording-adds-2026-10-05)).
 
 ### What it costs
 
@@ -884,13 +887,15 @@ has had its exact duplicates removed; the run directory keeps the original.
 
 ### Still open
 
-- A neutral control point is team 0 on the server and -1 in a client file
-  (the client's never-set value). The viewer treats a point's first team as
-  how the round opened it, so a server file's first capture of a neutral
-  point is a capture; a client file's is not.
+- ~~A neutral control point is team 0 on the server and -1 in a client file
+  (the client's never-set value), so a client file never shows a neutral
+  point's first capture.~~ Not so (2026-10-05): every client file is sent 0
+  for a neutral point 0.30 to 0.86 s after first sight, and already showed
+  those captures. A -1 that outlasts the join is now read as neutral anyway
+  ([round-replay-fidelity](../round-replay-fidelity/README.md#neutral-points-in-a-client-file)).
 - Rounds that hit inside one tick (rifle bullets at close range) have an `f`
   and no flight. A hook on projectile creation would give them one.
-- The viewer does not use `lod`, `pn`/`pj`/`pd` yet: it could draw the
-  server's own projectile flights, and mark a bot at LOD 2 (a sliding hull,
-  no locomotion) as the server's simplification.
+- The viewer does not use `pn`/`pj`/`pd` yet: it could draw the server's
+  own projectile flights. It marks a bot at AI LOD 1 or 2 on the followed
+  player's card (round-replay-fidelity).
 - w32ded is still the POC sampler thread (stage 1 verified).

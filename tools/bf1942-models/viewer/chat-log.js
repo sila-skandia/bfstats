@@ -160,7 +160,8 @@ export function deathLine(name, strings) {
  * being `'killer'` or `'victim'` (whose buddy colour the line takes).
  * `victim` and `killer` are `{ id, name, team, vehicle, weapon }`, `killer`
  * null for a death nobody caused; `how` is the killing damage's
- * `{ weapon, splash, roadkill }` (`killStamp`).
+ * `{ weapon, splash, roadkill }` (`killStamp`), `inferred` when a replay
+ * guessed the weapon.
  *
  * A death is the same event whatever killed him: a soldier shot on foot and a
  * crewman who dies with his hull both come off the server as score event 3
@@ -186,7 +187,11 @@ export function deathLines(victim, killer, strings, names, how = null) {
         centre: tk,
       };
     }
-    const text = killLine(killer.name, victim.name, killWord(killStamp(killer, how), strings, names));
+    // A replay's guess at a weapon the kill named none for (`how.inferred`,
+    // replay-feed.js) is marked: `[BF 109?]`.
+    const stamp = killStamp(killer, how);
+    const guessed = Boolean(how?.inferred) && stamp !== null && stamp === how.weapon;
+    const text = killLine(killer.name, victim.name, `${killWord(stamp, strings, names)}${guessed ? '?' : ''}`);
     return { lines: [{ text, team: killer.team, who: 'killer' }], centre: text };
   }
   const text = deathLine(victim.name, strings);

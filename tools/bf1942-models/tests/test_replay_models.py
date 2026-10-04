@@ -488,6 +488,71 @@ class ReplayUxTests(unittest.TestCase):
         self.assertEqual(view["reset"], [-1, 0])
 
 
+class ReplayServerOnlyTests(unittest.TestCase):
+    """What a server recording carries beside a client's, read so a client's
+    file plays as it did (features/round-replay-fidelity, 2026-10-05): a
+    bot's AI LOD, a weapon for a kill that names none, and the first capture
+    of a neutral point a client was never sent a side for."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["serverOnly"]
+
+    def test_a_bots_ai_lod(self) -> None:
+        r = self.results
+        # Before his first record, then 0, 2, 1 as the server set them; the
+        # repeat at 41 s is no change. A human has none, nor an unknown pid.
+        self.assertEqual(r["lod"], [None, 0, 2, 1, 1, 2, None, None])
+        self.assertEqual(r["lodList"], [[0, 0], [20, 2], [40, 1]])
+        # A client's file has no `lod`: nothing to show.
+        self.assertEqual(r["clientLod"], [None, 0])
+        # A server's fake round is marked as one.
+        self.assertEqual(r["fake"], [True, False, False, False])
+
+    def test_the_card_says_when_the_server_simplified_a_bot(self) -> None:
+        card = self.results["card"]
+        self.assertIn('<span class="lod" title="Far from every human', card["lod2"])
+        self.assertTrue(card["lod2"].endswith(">AI LOD 2</span>"))
+        self.assertTrue(card["lod1"].endswith(">AI LOD 1</span>"))
+        # Near a human, a human himself, or a client's file: nothing.
+        for key in ("lod0", "human", "clientBot"):
+            self.assertNotIn("AI LOD", card[key], key)
+        # A death by a guessed weapon says it is one.
+        self.assertIn("killed by Gunner [MP 40?]", card["killedBy"])
+        self.assertIn('title="The kill named no weapon', card["killedBy"])
+
+    def test_a_kill_that_names_no_weapon_gets_a_marked_guess(self) -> None:
+        r = self.results
+        self.assertEqual(r["kills"], [
+            [10, None, "Mp40", "round"],      # a fake-fire kill: his last round
+            [22, None, "Sherman", "round"],   # a hull's gun: the hull, as the log names it
+            [50, None, "Sherman", "seat"],    # no round for 29 s, but seated
+            [51, "K98", None, None],          # the server's own weapon is kept
+            [60, None, None, None],           # nothing to go on
+            [65, None, "Sherman", "seat"],    # out of the hull 0.3 s before
+            [66, None, None, None],           # 1.3 s before: on foot
+            [80, None, "Mp40", "round"],      # the round 0.05 s after the kill
+            [90, None, None, None],           # 0.2 s after: not his
+        ])
+        # The guess never becomes `weapon`, and every surface marks it.
+        self.assertEqual([w for w, _ in r["feed"]], [None, None, None, "K98", None, None, None, None, None])
+        self.assertEqual(r["rows"][0], "Gunner killed Rifle with Mp40 (inferred)")
+        self.assertEqual(r["rows"][3], "Gunner killed Owner with K98")
+        self.assertEqual(r["texts"][0], "Gunner [MP 40?] Rifle")
+        self.assertEqual(r["texts"][3], "Gunner [K98] Owner")
+        self.assertEqual(r["texts"][4], "Rifle [killed] Gunner")
+        self.assertEqual(r["logLine"], ["Gunner [MP 40?] Rifle", "Gunner [MP 40] Rifle"])
+
+    def test_a_neutral_points_first_capture(self) -> None:
+        # The join's side (-1, then 2 0.86 s on) is how the round stood; a -1
+        # never sent a side turns to Allies at 30 s, taken from neutral; one
+        # sent 0 is taken from it as before.
+        self.assertEqual(self.results["captures"], [[30, "Unsent", 2, 0], [35, "Sent", 1, 0]])
+        self.assertEqual(self.results["flagRows"], ["Unsent taken by Allies", "Sent taken by Axis"])
+
+
 class ReplaySoldierFeetTests(unittest.TestCase):
     """A replayed soldier stands on the ground.
 
