@@ -100,6 +100,16 @@ class RecordingsApiTests(unittest.TestCase):
             "https://play.bfstats.io/map.html?mod=bf1942&map=midway&replay=/stats/recordings/abcdefghjk.ndjson&t=21")
         self.assertIn("replay=http://localhost:9222/stats/recordings/abcdefghjk.ndjson", watch["localApi"])
 
+    def test_a_recording_is_linked_by_its_short_link(self) -> None:
+        self.assertEqual(self.results["short"], {
+            "play": "https://play.bfstats.io/replay/abcdefghjk",
+            "at": "https://play.bfstats.io/replay/abcdefghjk?t=95",
+            # The live feed read from this PC: its recordings are the play host's.
+            "liveFromHere": "https://play.bfstats.io/replay/abcdefghjk",
+            # This PC's own API: no host answers a short link for its recordings.
+            "localApi": None,
+        })
+
     def test_a_recording_is_shared_under_the_player_who_recorded_it(self) -> None:
         # The name the share dialogs offer first, found as the API finds it
         # (RecordingInspectorTests): the roster's local player, the pid of his

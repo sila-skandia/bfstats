@@ -35,7 +35,7 @@
 
 import {
   ago, apiMode, clock, commentRuns, commentTarget, count, readableQuery, resolveApi, roundMoment, sharedRecordingsApi,
-  roundRuns, sharedRecordingOf, sourceClock, watchHref, watchRoundHref,
+  roundRuns, sharedRecordingOf, shortHref, sourceClock, watchHref, watchRoundHref,
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
 import { recorderName } from './replay-chapters.js';
@@ -58,6 +58,7 @@ const ICON = {
   play: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
   pencil: '<path d="M10.6 2.6l2.8 2.8-7.6 7.6H3v-2.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   trash: '<path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.4 4.5l.7 8.7h5.8l.7-8.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  link: '<path d="M6.6 9.4l2.8-2.8M7.5 4.7l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.5 11.3l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
 };
 const svg = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name] ?? ''}</svg>`;
 
@@ -118,7 +119,7 @@ const STYLE = `
 .rs-dialog label > span { display: block; margin-bottom: 4px; color: var(--rp-muted); font: 700 10px/1 var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
 .rs-cover { width: 100%; aspect-ratio: 16 / 9; border-radius: 5px; border: 1px solid var(--rp-edge); background: #000 center / cover no-repeat; }
 .rs-ask { margin: 0; color: var(--rp-ink); font: 700 13px/1.4 var(--rp-font); overflow-wrap: anywhere; }
-/* The recording's own items in the menu: the cover, Rename, Delete. */
+/* The recording's items in the menu: Copy link, and for its uploader the cover, Rename, Delete. */
 .rs-menu-rule { flex: none; height: 1px; margin: 3px 6px; background: var(--rp-edge); }
 /* The round's switch: merged, or each recording alone. Its menu is the bar's
    own (.rp-more-menu), opening upward. */
@@ -311,6 +312,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     ui.timeline.el.append(nodes.marks);
     nodes.bubbles = el('div', 'rs-bubbles');
     ui.root.append(nodes.bubbles);
+    addLinkItem();
     if (detail?.canManage) addOwnItems();
     buildSwitch();
     // One panel on the right at a time: the replay log opening shuts this.
@@ -768,27 +770,54 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
     }
   }
 
+  /** An item of this recording's in the bar's menu. */
+  function menuItem(className, icon, text, onClick, key = '') {
+    const b = el('button', `rp-mi ${className}`);
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.innerHTML = `${svg(icon)}<span></span>${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
+    b.querySelector('span').textContent = text;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      ui.closeMore();
+      onClick();
+    });
+    ui.moreMenu.append(b);
+  }
+
+  /** The menu's Copy link, for anyone. */
+  function addLinkItem() {
+    if (!ui?.moreMenu || ui.moreMenu.querySelector('.rs-link-item')) return;
+    ui.moreMenu.append(el('div', 'rs-menu-rule'));
+    menuItem('rs-link-item', 'link', 'Copy link at this moment', copyLink);
+  }
+
+  /** The recording's short link at the moment on screen, on its own clock
+   *  when the page plays its round merged: the link opens it alone, the round's
+   *  switch a press away. */
+  async function copyLink() {
+    if (!slug || !detail) return;
+    const merged = mergedSources();
+    const own = !player ? 0 : merged ? sourceClock(merged[0]).fromRound(player.time) : player.time;
+    const at = own >= 1 ? Math.min(own, detail.durationSeconds ?? own) : null;
+    const href = shortHref(slug, { base: api.base, at })
+      ?? watchHref(detail, { root: './', fileUrl: p => new URL(api.fileUrl(p), location.href).href, at });
+    try {
+      await navigator.clipboard.writeText(href);
+      ui.flash(at === null ? 'Link copied' : `Link copied at ${clock(at)}`, 1600);
+    } catch {
+      window.prompt('The link to this moment:', href);
+    }
+  }
+
   /** The menu's items for its uploader or an admin: the frame on screen as
    *  the cover (F), Rename and Delete. */
   function addOwnItems() {
     if (!ui?.moreMenu || ui.moreMenu.querySelector('.rs-cover-item')) return;
-    const item = (className, icon, text, onClick, key = '') => {
-      const b = el('button', `rp-mi ${className}`);
-      b.type = 'button';
-      b.setAttribute('role', 'menuitem');
-      b.innerHTML = `${svg(icon)}<span></span>${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
-      b.querySelector('span').textContent = text;
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        ui.closeMore();
-        onClick();
-      });
-      ui.moreMenu.append(b);
-    };
     ui.moreMenu.append(el('div', 'rs-menu-rule'));
-    item('rs-cover-item', 'frame', 'Use this frame as the cover', takeCover, 'F');
-    item('rs-rename-item', 'pencil', 'Rename', openRename);
-    item('rs-delete-item', 'trash', 'Delete', openDelete);
+    menuItem('rs-cover-item', 'frame', 'Use this frame as the cover', takeCover, 'F');
+    menuItem('rs-rename-item', 'pencil', 'Rename', openRename);
+    menuItem('rs-delete-item', 'trash', 'Delete', openDelete);
     ui.useFrameKey?.(takeCover);
   }
 

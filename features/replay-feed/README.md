@@ -39,8 +39,8 @@ rest of the screen.
   a narrowed feed can be linked and Back undoes a change. Not by mod, yet.
 - **The cover plays the round; the title opens its page.** The page has the
   facts (level, game type, server, when and by whom it was recorded, length,
-  players), Watch, Copy link, and for its uploader or an admin Rename and
-  Delete (below, "Renaming and deleting").
+  players), Watch, Copy link (the short link, below, "Short links"), and for
+  its uploader or an admin Rename and Delete (below, "Renaming and deleting").
 - **A card's menu** (the dots beside its title), for its uploader or an admin:
   Rename and Delete.
 - **Comments**, newest first or in round order. A time in one (`0:21`,
@@ -71,6 +71,7 @@ shared recording:
 - marks each timed comment on the timeline; a click jumps there;
 - brings each timed comment up as the round passes its moment, while the
   panel is shut;
+- has More > Copy link at this moment, for anyone: the short link with `?t=`;
 - for its uploader or an admin, F or More > Use this frame as the cover (for
   anyone else F says who can), and More > Rename and Delete;
 - leads back to its page in the feed from the Escape menu.
@@ -79,6 +80,36 @@ A recording opened **from disk** gets a Share button on the bar: the frame F
 picked, or else the frame on screen, is its cover, and once shared the page
 carries on as the shared recording (its address, its comments) without
 loading the round again.
+
+## Short links
+
+Built 2026-10-05. A shared recording's link is `play.bfstats.io/replay/<slug>`,
+and `?t=<seconds>` opens it at a moment. Copy link on a recording's page
+hands it out, and so does More > Copy link at this moment in the replay, at
+the playhead. When a round plays merged, the moment is put on the first
+recording's own clock: the link opens that recording alone, with the round's
+switch a press away. The slug is the one the feed always had (ten characters
+with no 0/o, 1/l or i), so a short link needs no table of its own, and one
+retyped in capitals still opens.
+
+HAProxy sends the play host's `/replay/` to the API (`deploy/app/ingress`).
+The API answers with a page, not a redirect: Discord, Slack and the messengers
+unfurl a link by reading the page it names, and behind a redirect they would
+read map.html's tags, the same for every recording. The page
+(`RecordingShortLink`) carries the title, a line like
+`Wake · Conquest · 2:43 · MoonGamers.com · shared by skandia`, the cover (the
+round's when the recording has none of its own), and a zero-second refresh to
+the address Copy link handed out before
+(`/map.html?mod=…&map=…&replay=/stats/recordings/<slug>.ndjson…`). A refresh
+replaces the history entry, so Back from the replay goes to the page the link
+was on. A link to no recording gets a 404 page that leads to the feed. The
+title is escaped, and the page loads nothing (`default-src 'none'`).
+`Recordings__PlayOrigin` (default `https://play.bfstats.io`) is the origin
+the page's tags name.
+
+A page served from this PC hands out the short link for the live feed's
+recordings, which play.bfstats.io answers. For a recording on this PC's own
+API it hands out the long link, since no host answers a short link for that.
 
 ## Signing in
 
@@ -633,6 +664,10 @@ recording as a plain card. The admin link of the first real pair
 weak for the admins, and its merged replay plays nj2dyh58te alone with the
 reason; Take out of this round on either page parts them for good.
 
+**Short links** (2026-10-05): push, then HAProxy (step 3's apply and restart)
+for the play host's `/replay/` route. Before the restart a short link is the
+mesh nginx's 404; the API's route is harmless without it.
+
 ## Trying it locally
 
 The viewer (`python3 -m http.server 5273 --directory tools/bf1942-models/viewer`)
@@ -823,6 +858,26 @@ The feed and the upload (2026-09-28):
     and picking Rut shared a Kursk round as Rut, recorded by skandia. Share
     on the replay's bar, for a Bocage round watched from disk, offered
     skandia and shared it, cover and all.
+
+Short links (2026-10-05):
+
+- `tests/api/Recordings/RecordingsControllerTests.cs`: the page's refresh
+  target, preview tags and escaped title, the round's cover standing in, the
+  404 page (and no lookup for a malformed slug), `?t=` read as whole seconds.
+  `test_recordings_api.py`: which short link a page hands out, on the play
+  host, for the live feed from this PC, and none for a local API.
+- HAProxy 3.2 on this PC with the ConfigMap's config and stub backends: the
+  play host's `/replay/<slug>` went to the API, while `/replay.js`,
+  `/replay-social.js`, `/replays/…`, `/` and `/netcode/rooms` went where they
+  went before, as did `/replay/<slug>` on the mesh host and on bfstats.io.
+- Against a throwaway API with a recording shared through it, behind a stand-in
+  for the play host (the viewer, with `/stats` and `/replay/` sent on), in
+  headless Chromium (Vulkan): a link followed from another page landed on
+  `map.html?…&t=95` with the round at 1:35, and Back went to the page the link
+  was on. More > Copy link at this moment, at 2:00.6, copied `…/replay/<slug>?t=120`
+  and flashed "Link copied at 2:00". The feed's Copy link copied
+  `…/replay/<slug>`. Capitals and a trailing slash opened the recording, and an
+  unknown slug got the 404 page.
 
 ## Later
 

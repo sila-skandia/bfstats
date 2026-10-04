@@ -104,6 +104,12 @@ REPLAY feed (features/replay-feed) calls it on its own origin, so bfstats.io's
 sign-in cookie (`Domain=bfstats.io; Path=/stats`) comes along. Apply and
 restart HAProxy as above.
 
+Since 2026-10-05 the play host's `/replay/<slug>` goes to the API too
+(`use_backend stats_api if host_play_bfstats is_replay_link`, before the play
+host's catch-all): a shared recording's short link, answered with a page that
+goes on to the replay and carries the recording's preview tags
+(features/replay-feed, "Short links"). Apply and restart HAProxy as above.
+
 Since 2026-09-27 the map page is this host's alone: `mesh/nginx.conf` sends
 `mesh.bfstats.io/map.html` and `/play/…` here with a 301, keyed on `$host`, so
 HAProxy needs no change for it
