@@ -5,9 +5,11 @@ using api.Authorization;
 using api.Recordings.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace api.Recordings;
 
@@ -25,7 +27,8 @@ public class RecordingsController(
     IRecordingStorage storage,
     IRecordingViewCounter views,
     IConfiguration configuration,
-    IRecordingRoundService rounds) : ControllerBase
+    IRecordingRoundService rounds,
+    IOptions<RecordingsOptions> options) : ControllerBase
 {
     /// <summary>The whole upload body: the largest recording and server log the options
     /// allow, and the multipart framing round them.</summary>
@@ -65,6 +68,33 @@ public class RecordingsController(
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<RecordingDetailDto>> Get(string slug, CancellationToken ct) =>
         await recordings.GetAsync(slug, Actor(), ct) is { } detail ? Ok(detail) : NotFound();
+
+    /// <summary>A recording's short link (features/replay-feed, "Short links"), on the play
+    /// host, which HAProxy sends here: a page that goes on to the replay at <c>?t=</c>, with
+    /// the title, round and cover for whatever unfurls the link. A slug retyped in capitals
+    /// still finds its recording.</summary>
+    [HttpGet("/replay/{slug}")]
+    public async Task<ContentResult> ShortLink(string slug, [FromQuery] string? t, CancellationToken ct)
+    {
+        var detail = RecordingStorage.CleanSlug(slug.ToLowerInvariant()) is { } clean
+            ? await recordings.GetAsync(clean, null, ct)
+            : null;
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.ContentSecurityPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        if (detail is null)
+        {
+            return new ContentResult
+            {
+                Content = RecordingShortLink.Missing(),
+                ContentType = "text/html; charset=utf-8",
+                StatusCode = StatusCodes.Status404NotFound,
+            };
+        }
+        Response.Headers.CacheControl = "public, max-age=300";
+        return Content(
+            RecordingShortLink.Page(detail, options.Value.PlayOrigin.TrimEnd('/'), RecordingShortLink.Moment(t)),
+            "text/html; charset=utf-8");
+    }
 
     /// <summary>The recording, gzipped on disk and sent as it is (<c>Content-Encoding:
     /// gzip</c>): the browser unpacks it, and nothing here spends CPU compressing.</summary>

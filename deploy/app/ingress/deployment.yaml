@@ -42,6 +42,9 @@ data:
       # load them never starts.
       acl is_netcode path /netcode
       acl is_netcode path_beg /netcode/
+      # A recording's short link, /replay/<slug>. With the slash: the viewer's
+      # own /replay.js and /replay-*.js modules, and /replays/, stay the mesh's.
+      acl is_replay_link path_beg /replay/
 
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"
@@ -57,6 +60,11 @@ data:
 
       # Dedicated mesh viewer host — before the shared /stats and default UI routes
       use_backend mesh_frontend if host_mesh_bfstats
+      # play.bfstats.io/replay/<slug>, a shared recording's short link: the API
+      # answers it with a page that goes on to the replay
+      # (features/replay-feed, "Short links"). Before the play host's
+      # catch-all below, which would send it to the mesh nginx.
+      use_backend stats_api if host_play_bfstats is_replay_link
       # !is_netcode: use_backend is first-match-wins, and without it this
       # rule would swallow /netcode/* on the play host before the path-based
       # netcode route below is ever evaluated. !is_stats likewise: the play

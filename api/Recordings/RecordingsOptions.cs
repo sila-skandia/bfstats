@@ -40,6 +40,10 @@ public record RecordingsOptions
 
     public double MinFreeFraction { get; init; } = 0.15;
 
+    /// <summary>The play site, where a recording's short link (<c>/replay/&lt;slug&gt;</c>) and its
+    /// replay are: the origin the link's preview tags name.</summary>
+    public string PlayOrigin { get; init; } = "https://play.bfstats.io";
+
     /// <summary>A viewer's watching counts once in this many hours.</summary>
     public double ViewWindowHours { get; init; } = 6;
 

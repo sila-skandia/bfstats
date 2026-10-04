@@ -25,7 +25,7 @@
 // own sign-in lands, or after a sign-in or out.
 
 import {
-  ago, clock, commentRuns, count, createRecordingsApi, feedCount, playerHref, readableQuery, resolveApi, size,
+  ago, clock, commentRuns, count, createRecordingsApi, feedCount, playerHref, readableQuery, resolveApi, shortHref, size,
   watchHref, watchRoundHref,
 } from '../recordings-api.js';
 import { describeRecording, isRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
@@ -1479,7 +1479,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   }
 
   async function copyLink(recording, target) {
-    const href = watchHref(recording, { root, fileUrl: p => absolute(state.api.fileUrl(p)) });
+    const href = shortHref(recording.slug, { base: state.api.base })
+      ?? watchHref(recording, { root, fileUrl: p => absolute(state.api.fileUrl(p)) });
     try {
       await navigator.clipboard.writeText(href);
       target.querySelector('span').textContent = 'Link copied';
