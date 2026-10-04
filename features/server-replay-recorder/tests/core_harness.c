@@ -11,6 +11,12 @@
  *   3. a to-all event fanned out to three clients is written once
  *   4. the world unloading closes the file with its end record; the next
  *      opens when the next level loads, under a name of its own
+ *
+ *   5. (tick mode) a read that faults ends that sample, not the process
+ *   6. ENDMAP (gameStatus 5) is on disk as soon as it is written
+ *
+ * run.sh builds it twice: the sampler thread (REC_TICK=0) and the tick
+ * capture (REC_TICK=1), and holds both to the same files.
  */
 #define _FILE_OFFSET_BITS 64
 #include <stdint.h>
@@ -22,6 +28,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <signal.h>
+#include <sys/mman.h>
 #include "core.h"
 
 static int fd = -1;
@@ -67,6 +74,16 @@ static void ev(int queue, int type, int byte0) {
     if (queue) recorder_on_queue_event((uint32_t)(uintptr_t)&e);
     else recorder_on_event((uint32_t)(uintptr_t)&e);
 }
+/* The harness thread plays the game thread. Thread mode: the sampler thread
+ * runs by itself, the harness sleeps. Tick mode: the harness ticks the
+ * recorder at 30 Hz, the way the simulateFrame hook does. */
+static void run_for(int ms) {
+#if REC_TICK
+    for (int t = 0; t < ms; t += 33) { recorder_core_tick(); usleep(33000); }
+#else
+    usleep(ms * 1000);
+#endif
+}
 static void on_alarm(int s) { (void)s; static const char m[] = "HANG: a recorder lock was never released\n"; if (write(2, m, sizeof m - 1)) {} _exit(3); }
 
 int main(void) {
@@ -77,25 +94,51 @@ int main(void) {
     /* 1: events before any level is loaded are held */
     ev(0, 0x24, 1);                       /* gameStatus 1 */
     ev(0, 0x16, 0);                       /* gameRules */
-    usleep(200000);
+    run_for(200);
     fake_om[1] = 5000;                    /* the level loads: the file opens, held flushed at t 0 */
-    usleep(300000);
+    run_for(300);
     /* 2: a client joins mid-round: handshake 0x1a then its database */
     ev(1, 0x1a, 0); ev(1, 0x1b, 0); ev(1, 0x08, 7);
-    usleep(100000);
+    run_for(100);
     /* 3: a to-all kill with 3 clients connected: toall once + 3 queue clones */
     ev(0, 0x2a, 9); ev(1, 0x2a, 9); ev(1, 0x2a, 9); ev(1, 0x2a, 9);
-    usleep(20000);
+    run_for(20);
     ev(0, 0x2a, 9);                       /* the same payload 20 ms later: a new event */
-    usleep(200000);
+    run_for(200);
+#if REC_TICK
+    /* 5: a pointer the sample follows into an unreadable page: the guard
+     * cuts that sample short, the server (this process) lives on, and the
+     * recording carries on (step 4's events land after it). */
+    void *bad = mmap(0, 4096, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    fake_om[0] = (uint32_t)(uintptr_t)bad;
+    run_for(100);
+    fake_om[0] = 0;
+#endif
     /* 4: the level unloads; the next opens in the same second */
-    fake_om[1] = 900; usleep(150000);     /* split here (900 < 5000/4) */
-    fake_om[1] = 300; usleep(150000);     /* still unloading: no file */
+    fake_om[1] = 900; run_for(150);     /* split here (900 < 5000/4) */
+    fake_om[1] = 300; run_for(150);     /* still unloading: no file */
     ev(0, 0x24, 2);                       /* held for the next file */
-    fake_om[1] = 10;  usleep(150000);
-    fake_om[1] = 4000; usleep(300000);    /* next level: second file */
+    fake_om[1] = 10;  run_for(150);
+    fake_om[1] = 4000; run_for(300);    /* next level: second file */
     ev(0, 0x29, 0);
-    usleep(150000);
+    run_for(150);
+    /* 6: ENDMAP is on disk at once (the server restarts its process right
+     * after it, with no exit handlers): read the newest file before any
+     * writer wake-up or shutdown drain. */
+    ev(0, 0x24, 5);
+    {
+        FILE *ls = popen("ls -t replays/*.ndjson | head -1", "r");
+        char name[256] = "";
+        if (ls && fgets(name, sizeof name, ls)) name[strcspn(name, "\n")] = 0;
+        if (ls) pclose(ls);
+        FILE *f = name[0] ? fopen(name, "r") : 0;
+        char line[512];
+        int found = 0;
+        while (f && fgets(line, sizeof line, f)) if (strstr(line, "\"status\":5")) found = 1;
+        if (f) fclose(f);
+        fprintf(stderr, found ? "harness: endmap on disk\n" : "harness: endmap NOT on disk\n");
+    }
+    recorder_core_shutdown();   /* tick mode: the writer drains here */
     fprintf(stderr, "harness: done\n");
     return 0;
 }
