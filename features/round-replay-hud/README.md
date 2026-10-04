@@ -233,20 +233,43 @@ kept them.
 **Worked out instead** (`replay-hitmarks.js`), from what every recording has:
 each round (`f`, its origin and axis) and each object's hit points (`a`).
 
-- A hit is a victim's hit points dropping within 0.8 s of a round passing
-  within 1 m of his body (his origin -0.9 to +0.7 m), sampled along the
-  round's flight. A hull's window is 2.5 s and its radius 4 m about its
-  origin, and an empty hull never marks (XHIT-5).
-- When rounds from two players pass him, the drop goes to the closest. The
-  drop that kills him goes to the killer the kill log names, if one of the
-  killer's rounds of that weapon passed within 3 m. A gun kill the hit points
-  never show (the victim was out of the client's reach) marks at the
-  killer's last round of that weapon.
-- What is thrown or laid is left out: explosions never mark in the game
-  (XHIT-4).
-- One drop is one mark, at the round's time plus its flight at 700 m/s,
-  capped by the drop. The hit points come ten times a second, so a burst that
-  lands inside one sample is one mark. That shows nothing different on
+- A hit is a victim's hit points dropping just after one of the shooter's
+  rounds reached him. The round flies at its weapon's muzzle velocity, the
+  `weapons[].velocity` of the models tree's `damage.json`. That is the speed
+  the page's own drawn round flies at: a Bar1918 1000 m/s, an aircraft's guns
+  400, the Bofors and tank guns 300, a bazooka 85. The victim's place is
+  taken when the round gets to him, a sample either side. The round must
+  pass within 1 m of a soldier's body (his origin -0.9 to +0.7 m) or 4 m of
+  a hull's origin. The drop must come between 0.05 s before the arrival and
+  0.6 s after it (1.5 s for a weapon with no listed speed).
+- **The mark goes up when the round arrives, not when it is fired**
+  (reported 2026-10-04: "the hit indicator will appear instantly as the
+  round fires, not accounting for the travel time"). Before, the mark was
+  the fire time plus the distance at a stock 700 m/s, and the matcher took
+  the round that passed closest. In a burst that is any of them, often the
+  first, so the mark came up to 0.8 s before the round that hit.
+- Of the shooter's rounds, the drop goes to the one whose arrival best
+  explains when it came. Over 92 kills made with a single rifle or pistol
+  round in five recordings, a remote shooter's victim's hit points drop
+  -0.05 to 0.23 s after the round's arrival, median 0.06. The recording
+  player's own come about 0.24 s after: his round goes to the server and
+  the hit points come back (one kill measured, 0.24; the Bofors' drops on a
+  BF109 in the Bocage round, 0.5 to 0.64).
+- When rounds from two players reach him, the drop goes to the closest.
+  The drop that kills him goes to the killer the kill log names, if one of
+  the killer's rounds of that weapon passed within 3 m. A gun kill the hit
+  points never show (the victim was out of the client's reach) marks at the
+  killer's last round of that weapon, as long before the kill as a drop
+  follows a hit.
+- **What never marks.** What is thrown or laid: explosions never mark in
+  the game (XHIT-4). A flak shell that reaches a moving hull (2.5 m/s or
+  more): its proximity fuse bursts it beside the hull first (PROX-3), so the
+  drop is the burst's. The fuse distance is the level's projectile table's
+  `explodeNearEnemyDistance` (the page's guns hold it). Soldiers never set a
+  fuse off (PROX-2), so a Bofors round that hits a soldier marks. An empty
+  hull never marks (XHIT-5).
+- One drop is one mark. The hit points come ten times a second, so a burst
+  that lands inside one sample is one mark. That shows nothing different on
   screen: each mark only restarts the fade.
 - The HUD feeds `CrossHair/HitIndicationTime` = 1 - (t - the last mark),
   floored at 0 (XHIT-3), and puts the layout's crosshair group up in his
@@ -254,8 +277,9 @@ each round (`f`, its origin and axis) and each object's hit points (`a`).
   only. The page's DOM cross is still the cross. The marks go with the cross
   when the view is dragged off his aim. A `hud-layout.json` without the
   marks' binding keeps the group down, as `soldier-hud.js` does.
-- Worked out once for every player, the first time a first person asks
-  (46 ms for the 26-minute `replay_20261001-144253`).
+- Worked out once for every player the first time a first person asks (62
+  ms for the 26-minute `replay_20261001-144253`). They are worked out again
+  when the speed table lands and when the level's projectile table does.
 
 It cannot see a hit on a teammate with friendly fire off (the game marks it,
 but no hit points move), a hit on a soldier the recording has no hit points
@@ -267,17 +291,22 @@ for, unless it killed him, or a bot's fake rounds (no `f` at all).
   mark between 0.8 s before and 0.3 s after the kill: 99% of 227 in
   `replay_20261001-144253`, 96% of 67 in `replay_20260928-133433`, 97% of 61
   in `replay_20260928-214112`, 100% of 35 in `replay_20260927-203459`, 92% of
-  257 in `replay_20260928-161948`. The median mark is 0 to 0.07 s before the
-  kill. Before the kill log credited the killing drop, this was 79-86%.
+  257 in `replay_20260928-161948`. The marks sit 0.08 to 0.20 s before the
+  kill at the 10th percentile, the median about at it. With the stock speed
+  and the closest round they sat 0.33 to 0.44 s before it at the 10th
+  percentile, and before the kill log credited the killing drop only 79-86%
+  had a mark.
 - The round-end tallies (`roundStats` `hit`, per player and weapon) in
-  `replay_20261001-144253`. With one mark per drop and the closest round, the
-  marks cover 73% of the 979 hand-weapon hits and put 15 marks too many. The
-  shortfall is mostly bursts inside one sample. Crediting every round that
-  passed within the radius covers 94% but puts 402 too many: misses in a
-  burst that hit. One mark a drop was kept.
-- Headless, Bocage round: the Bofors' hit on a Mustang at 40.9 s reads
-  `HitIndicationTime` 0.98 in the frame after it, and the four marks are drawn
-  in the gun's ring sight, then fade over the second.
+  `replay_20261001-144253`: the marks number about what they say (pid 0, 103
+  marks against 108 hand-weapon hits; pid 9, 272 against 296). The shortfall
+  is mostly bursts inside one sample.
+- Headless, Bocage round, skandia (pid 3): the Bar1918 burst that kills at
+  156.82 s marks at 156.524, 156.654 and 156.794 s. Each mark is 0.037 s
+  after the round that hit (156.487, 156.617, 156.757): 37 m at 1000 m/s.
+  Its first eight rounds mark nothing. In the page the timer reads 0 at
+  156.4 s and 0.994 at 156.8 s. His Bofors at the BF109 from 39 s marks
+  nothing: every drop there is a burst beside a moving plane. The first
+  version marked it at 40.9 s.
 
 ## The nose cam (2026-10-04)
 

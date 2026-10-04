@@ -12,9 +12,11 @@ one bool on his control object's state (ledger XHIT-6), which the recorder
 does not read. replay-hitmarks.js works them out instead: a victim's hit
 points dropping with a round passing through him, the killing drop credited
 to the killer the kill log names. The marks run down over a second (XHIT-3),
-and an empty hull never marks (XHIT-5). The second view is retail's nose cam,
-which only an aircraft's Camera has (seat-view.js), and only where the server
-allowed it (the recording's gameRules).
+and an empty hull never marks (XHIT-5). A mark goes up when the round
+arrives, at its weapon's muzzle velocity, and a flak shell that reaches a
+moving hull bursts beside it, which never marks (PROX-3). The second view
+is retail's nose cam, which only an aircraft's Camera has (seat-view.js),
+and only where the server allowed it (the recording's gameRules).
 
 Run under node through `replay_hitmarks_harness.mjs`.
 """
@@ -61,14 +63,40 @@ class ReplayHitMarkTests(unittest.TestCase):
         self.assertIn(28.086, shooter)
         self.assertEqual(self.results["marks"]["crew"], [])
 
-    def test_a_kill_with_no_hit_points_marks_at_the_killers_last_round(self) -> None:
-        self.assertEqual(self.results["marks"]["shooter"][-1], 32)
-        self.assertEqual(len(self.results["marks"]["shooter"]), 3)
+    def test_a_kill_with_no_hit_points_marks_just_before_the_kill(self) -> None:
+        # His last Bar1918 round before the kill at 32.2, the mark a remote
+        # drop's 0.06 s before the kill rather than at the shot.
+        self.assertIn(32.14, self.results["marks"]["shooter"])
         self.assertEqual(self.results["marks"]["victim"], [])
+
+    def test_the_mark_goes_up_when_the_round_arrives(self) -> None:
+        # The bazooka at 36.0, 85 m/s over 60 m.
+        self.assertIn(36.706, self.results["marks"]["shooter"])
+
+    def test_a_burst_marks_the_round_whose_arrival_explains_the_drop(self) -> None:
+        # Mp40 rounds 40.0-40.7 at 1000 m/s over 31.6 m; the drop at 40.75 is
+        # 0.06 s after the 40.7 round's arrival, not the first's.
+        self.assertIn(40.732, self.results["marks"]["shooter"])
+
+    def test_a_flak_shell_bursts_beside_a_moving_hull_and_does_not_mark(self) -> None:
+        # The Bofors at 45.0 reaches the crossing BF109 at 45.37: without the
+        # fuse it would mark, with it the drop is the burst's (PROX-3,
+        # XHIT-4). At 47.0 the same gun hits a soldier, whom no fuse sees.
+        self.assertIn(45.37, self.results["unfused"])
+        self.assertNotIn(45.37, self.results["marks"]["shooter"])
+        self.assertIn(47.105, self.results["marks"]["shooter"])
+        self.assertEqual(len(self.results["marks"]["shooter"]), 6)
 
     def test_the_timer_runs_down_over_a_second_and_restarts(self) -> None:
         self.assertEqual(self.results["timer"], [0, 1, 0.5, 0.001, 0, 1, 0.75, 0])
         self.assertEqual(self.results["timerNone"], 0)
+
+    def test_the_speeds_come_from_the_models_trees_damage_json(self) -> None:
+        speeds = self.results["speeds"]
+        self.assertEqual(speeds["asked"], ["models/mods/xpack1/damage.json?v=1"])
+        # 60 m at the stock 700 m/s, then at the bazooka's own 85.
+        self.assertEqual(speeds["before"], 36.086)
+        self.assertEqual(speeds["after"], 36.706)
 
     def test_the_hud_feeds_the_layouts_marks(self) -> None:
         hud = self.results["hud"]
