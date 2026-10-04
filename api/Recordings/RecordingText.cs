@@ -95,9 +95,14 @@ public static partial class RecordingText
 
     private static int Number(Group group) => int.Parse(group.Value, CultureInfo.InvariantCulture);
 
-    /// <summary>A level's folder in words: <c>el_alamein</c> is <c>El Alamein</c>.</summary>
+    /// <summary>A level's folder in words, as the viewer's <c>titled</c> says it:
+    /// <c>el_alamein</c> is <c>El Alamein</c>, <c>liberation_of_caen</c> <c>Liberation of Caen</c>.</summary>
     public static string Titled(string level) =>
-        CultureInfo.InvariantCulture.TextInfo.ToTitleCase(level.Replace('_', ' ').ToLowerInvariant());
+        string.Join(' ', level.Replace('_', ' ').ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select((word, i) => i > 0 && SmallWords.Contains(word) ? word : char.ToUpperInvariant(word[0]) + word[1..]));
+
+    private static readonly HashSet<string> SmallWords = ["of", "the", "and", "in", "on", "at", "to", "for", "a", "an"];
 
     private static string Clean(string? text, bool multiline)
     {
