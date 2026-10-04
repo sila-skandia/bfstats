@@ -69,10 +69,10 @@ public class RecordingsController(
     public async Task<ActionResult<RecordingDetailDto>> Get(string slug, CancellationToken ct) =>
         await recordings.GetAsync(slug, Actor(), ct) is { } detail ? Ok(detail) : NotFound();
 
-    /// <summary>A recording's short link (features/replay-feed, "Short links"), on the play
-    /// host, which HAProxy sends here: a page that goes on to the replay at <c>?t=</c>, with
-    /// the title, round and cover for whatever unfurls the link. A slug retyped in capitals
-    /// still finds its recording.</summary>
+    /// <summary>A recording's short link (features/replay-feed, "Short links"): HAProxy sends
+    /// <c>replay.bfstats.io/&lt;slug&gt;</c> and the play host's <c>/replay/&lt;slug&gt;</c> here. A
+    /// page that goes on to the replay at <c>?t=</c>, with the title, round and cover for
+    /// whatever unfurls the link. A slug retyped in capitals still finds its recording.</summary>
     [HttpGet("/replay/{slug}")]
     public async Task<ContentResult> ShortLink(string slug, [FromQuery] string? t, CancellationToken ct)
     {
@@ -81,18 +81,19 @@ public class RecordingsController(
             : null;
         Response.Headers.XContentTypeOptions = "nosniff";
         Response.Headers.ContentSecurityPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        var play = options.Value.PlayOrigin.TrimEnd('/');
         if (detail is null)
         {
             return new ContentResult
             {
-                Content = RecordingShortLink.Missing(),
+                Content = RecordingShortLink.Missing(play),
                 ContentType = "text/html; charset=utf-8",
                 StatusCode = StatusCodes.Status404NotFound,
             };
         }
         Response.Headers.CacheControl = "public, max-age=300";
         return Content(
-            RecordingShortLink.Page(detail, options.Value.PlayOrigin.TrimEnd('/'), RecordingShortLink.Moment(t)),
+            RecordingShortLink.Page(detail, play, options.Value.ShortLinkOrigin.TrimEnd('/'), RecordingShortLink.Moment(t)),
             "text/html; charset=utf-8");
     }
 

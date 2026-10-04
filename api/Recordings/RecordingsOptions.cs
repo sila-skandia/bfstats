@@ -40,9 +40,12 @@ public record RecordingsOptions
 
     public double MinFreeFraction { get; init; } = 0.15;
 
-    /// <summary>The play site, where a recording's short link (<c>/replay/&lt;slug&gt;</c>) and its
-    /// replay are: the origin the link's preview tags name.</summary>
+    /// <summary>The play site, where a recording's replay and cover are: where its short link's
+    /// page sends the browser, and the cover its preview tags name.</summary>
     public string PlayOrigin { get; init; } = "https://play.bfstats.io";
+
+    /// <summary>The short links' own host: a recording's is <c>&lt;this&gt;/&lt;slug&gt;</c>.</summary>
+    public string ShortLinkOrigin { get; init; } = "https://replay.bfstats.io";
 
     /// <summary>A viewer's watching counts once in this many hours.</summary>
     public double ViewWindowHours { get; init; } = 6;
