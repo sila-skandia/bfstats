@@ -31,7 +31,7 @@
 
 import { MULTI_GAP, MULTI_WORD, NOT_AIMED } from './replay-medals.js';
 import { whereIs } from './replay-battles.js';
-import { nameAt, playerAt, teamAt } from './replay-recording.js';
+import { nameAt, playerAt, shownWeapon, teamAt } from './replay-recording.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 // --- tuning -------------------------------------------------------------------------
@@ -368,6 +368,12 @@ export function dossierOf(rec, pid, {
   const player = playerAt(rec, pid, t);
   const his = at => playerAt(rec, pid, at) === player;
   const shown = w => (w ? display(w) : null);
+  // A kill line's weapon as its row shows it: the server's, else the
+  // replay's guess marked `?` (`weapon` stays the server's alone).
+  const shownOf = k => {
+    const { weapon, inferred } = shownWeapon(k);
+    return weapon ? `${display(weapon)}${inferred ? '?' : ''}` : null;
+  };
   const named = (who, at) => (who === null || who === undefined ? null : nameAt(rec, who, at));
 
   // One row per kill line, shared by every list it is in.
@@ -377,7 +383,7 @@ export function dossierOf(rec, pid, {
     if (!row) {
       const fact = facts.get(k);
       row = {
-        t: k.t, victim: k.victim, victimName: named(k.victim, k.t), weapon: k.weapon ?? null, weaponName: shown(k.weapon),
+        t: k.t, victim: k.victim, victimName: named(k.victim, k.t), weapon: k.weapon || null, weaponName: shownOf(k),
         distance: fact?.distance ?? null, from: fact?.from ?? null, round: fact?.round ?? null, teamkill: k.kind === 'teamkill',
       };
       rows.set(k, row);
@@ -474,7 +480,7 @@ export function dossierOf(rec, pid, {
 
   const deaths = deathLines.map(k => ({
     t: k.t, kind: k.kind, killer: k.killer ?? null, killerName: named(k.killer, k.t),
-    weapon: k.weapon ?? null, weaponName: shown(k.weapon), distance: facts.get(k)?.distance ?? null,
+    weapon: k.weapon || null, weaponName: shownOf(k), distance: facts.get(k)?.distance ?? null,
   }));
 
   // Each play's final form: the last medal of each key.
