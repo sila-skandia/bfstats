@@ -53,16 +53,17 @@ const soldier = (pid, nid, team, pos, hp = true) => {
   lines.push(line({ k: 'e', t: 1, e: 'control', pid, netId: nid }));
   lines.push(line({ k: 'o', t: 1, id: nid, gid: 1, tmpl: 'USSoldier', tid: 1763, team, maxhp: 30 }));
   if (hp) lines.push(line({ k: 'a', t: 1, a: [[nid, 30, -1]] }));
-  for (let i = 0; i <= 400; i++) lines.push(line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[nid, ...pos, 0, 0, 0, 1]] }));
+  for (let i = 0; i <= 500; i++) lines.push(line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[nid, ...pos, 0, 0, 0, 1]] }));
 };
 soldier(3, 10, 2, [0, 1, 0]);
 soldier(4, 11, 2, [5, 1, 0]);
 soldier(5, 20, 1, [0, 1, 30]);
 soldier(7, 40, 1, [20, 1, 30], false);
+soldier(8, 45, 1, [-10, 1, 30]);
 lines.push(line({ k: 'e', t: 1, e: 'createObject', tid: 900, netId: 30, tmpl: 'Sherman', pos: [0, 1, 60], rot: [0, 0, 0] }));
 lines.push(line({ k: 'o', t: 1, id: 30, gid: 1, tmpl: 'Sherman', tid: 900, team: 0, maxhp: 900 }));
 lines.push(line({ k: 'a', t: 1, a: [[30, 900, -1]] }));
-for (let i = 0; i <= 400; i++) lines.push(line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[30, 0, 1, 60, 0, 0, 0, 1]] }));
+for (let i = 0; i <= 500; i++) lines.push(line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[30, 0, 1, 60, 0, 0, 0, 1]] }));
 const eye3 = [0, 1.65, 0];
 const eye4 = [5, 1.65, 0];
 const round = (t, pid, nid, w, p, d) => lines.push(line({ k: 'f', t, id: nid, pid, w, p, d }));
@@ -93,17 +94,47 @@ lines.push(line({ k: 'p', t: 27, p: [[6, 1, 30, 30, 0, 0]] }));
 round(28, 3, 10, 'Bar1918', eye3, toward(eye3, [0, 1, 60]));
 lines.push(line({ k: 'a', t: 28.3, a: [[30, 700, -1]] }));
 // 32.0: a kill the hit points never show (no `a` for pid 7): his last round
-// of the weapon that killed.
+// of the weapon that killed, as long before the kill as a drop follows a
+// hit.
 round(31.6, 3, 10, 'Bar1918', eye3, toward(eye3, [20, 1.3, 30]));
 round(32, 3, 10, 'Bar1918', eye3, toward(eye3, [20, 1.3, 30]));
 lines.push(line({ k: 'e', t: 32.2, e: 'score', kind: 3, pid: 3, victim: 7, weaponName: 'Bar1918' }));
-lines.push(line({ k: 'end', t: 40 }));
+// 36.0: a bazooka rocket at the manned Sherman, 85 m/s over 60 m: it lands
+// 0.7 s after it leaves, and the mark goes up then, not at the shot.
+round(36, 3, 10, 'Bazooka', eye3, toward(eye3, [0, 1, 60]));
+lines.push(line({ k: 'a', t: 36.8, a: [[30, 600, -1]] }));
+// 40.0-40.7: an Mp40 burst through pid 8, every round dead centre, and one
+// drop at 40.75: the round whose arrival explains it, not the first.
+const eyeTo8 = toward(eye3, [-10, 1.3, 30]);
+for (let i = 0; i < 8; i++) round(+(40 + i * 0.1).toFixed(1), 3, 10, 'Mp40', eye3, eyeTo8);
+lines.push(line({ k: 'a', t: 40.75, a: [[45, 22, -1]] }));
+// 45.0: a Bofors shell (300 m/s, a 10 m proximity fuse) at a manned BF109
+// crossing at 50 m/s: it bursts beside the plane, and the drop is the
+// burst's, which never marks. 47.0: the same gun at pid 8, whom the fuse
+// ignores: a direct hit, which marks.
+lines.push(line({ k: 'e', t: 1, e: 'createObject', tid: 901, netId: 60, tmpl: 'BF109', pos: [0, 50, 100], rot: [0, 0, 0] }));
+lines.push(line({ k: 'o', t: 1, id: 60, gid: 1, tmpl: 'BF109', tid: 901, team: 0, maxhp: 130 }));
+lines.push(line({ k: 'a', t: 1, a: [[60, 130, -1]] }));
+lines.push(line({ k: 'p', t: 1, p: [[9, 1, 60, 60, 0, 0]] }));
+for (let i = 0; i <= 500; i++) {
+  const t = +(1 + i * 0.1).toFixed(1);
+  lines.push(line({ k: 's', t, o: [[60, (t - 45.37) * 50, 50, 100, 0, 0, 0, 1]] }));
+}
+round(45, 3, 10, 'AA_Allies_GunBarrel', eye3, toward(eye3, [0, 50, 100]));
+lines.push(line({ k: 'a', t: 45.6, a: [[60, 110, -1]] }));
+round(47, 3, 10, 'AA_Allies_GunBarrel', eye3, eyeTo8);
+lines.push(line({ k: 'a', t: 47.3, a: [[45, 10, -1]] }));
+lines.push(line({ k: 'end', t: 52 }));
 const rec = recording.parseRecording(lines.join('\n'));
 
 {
-  const marks = inferHitMarks(rec, { thrown: new Set(['grenadeallies']) });
+  const speedOf = w => ({ bazooka: 85, mp40: 1000, aa_allies_gunbarrel: 300 })[w] ?? null;
+  const fuseOf = w => (w === 'aa_allies_gunbarrel' ? 10 : null);
+  const marks = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf, fuseOf });
+  const unfused = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf });
   const of = pid => (marks.get(pid) ?? []).map(r3);
   results.marks = { shooter: of(3), other: of(4), crew: of(6), victim: of(5) };
+  results.unfused = (unfused.get(3) ?? []).map(r3);
   const times = [5, 7];
   results.timer = [4.9, 5, 5.5, 5.999, 6.5, 7, 7.25, 9].map(t => r3(hitMarkAt(times, t)));
   results.timerNone = hitMarkAt([], 5);
@@ -135,6 +166,24 @@ const rec = recording.parseRecording(lines.join('\n'));
   };
   player.camera.sight.looking = true;
   results.hud.looking = at(mark);
+
+  // The speeds: the models tree's damage.json, fetched once; the marks are
+  // timed again when it lands. With the bazooka's 85 m/s unknown, its mark
+  // sits at a stock speed's arrival; with it, at the rocket's.
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async url => {
+    asked.push(url);
+    return { ok: true, json: async () => ({ weapons: [{ name: 'Bazooka', velocity: 85 }, { name: 'Mp40', velocity: 1000 }] }) };
+  };
+  const fetched = new hud.ReplayHud({ ...player, ctx: { ...player.ctx, modelsBase: 'models/mods/xpack1', bust: () => '?v=1' } });
+  const rocket = list => r3(list.find(m => m > 36 && m < 38));
+  fetched.hitMarkOf(3, 0);
+  const before = rocket(fetched.hitMarks.get(3));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  fetched.hitMarkOf(3, 0);
+  results.speeds = { asked, before, after: rocket(fetched.hitMarks.get(3)) };
+  globalThis.fetch = realFetch;
 }
 
 // --- the nose cam: C from the cockpit, in an aircraft only --------------------------
