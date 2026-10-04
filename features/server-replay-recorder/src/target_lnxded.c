@@ -367,7 +367,7 @@ extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t 
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",
-    .header_plus = "server-replay-recorder",
+    .header_plus = "server-replay-recorder/2",
     .header_version = 5,
 
     .object_manager_ptr = 0x0871dc24u,  /* dice::ref2::world::objectManager */
@@ -448,9 +448,36 @@ const struct rec_target lnxded_target = {
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
     .get_root_parent_addr = 0x0818d4b0u,
 
+    /* the tick capture (README "The new recorder"; ledger P-3, P-4, AI-136) */
+    .gs_simulate_slot = 0x0871b228u,    /* vtable for GameServer 0x0871b0e0 + 8 + 0x140, in .data */
+    .gs_simulate_fn = 0x0815c2a0u,      /* GameServer::simulateFrame(float) */
+    .sol_aim_pitch_off = 0x284u,        /* BFSoldierNetworkable::updateStateMask 0x082224e0 -> record +0x68 */
+    .sol_aim_twist_off = 0x288u,        /* -> record +0x6c */
+    .bf_ctrl_off = 0x4cu,               /* BFPlayer::getVehicle 0x080560c0 */
+    .bf_seat_off = 0x54u,               /* BFPlayer::setVehicle 0x08052310 stores its int here */
+    .bf_trig_off = 0x148u,              /* GameServer::checkPlayerTriggers 0x0814f2c0: +0x148 fire, +0x149 altfire */
+    .anim_asm_ptr = 0x0873fc9cu,        /* dice::anim::activeAnimationStateMachine */
+    .asm_states_off = 0x10u,            /* AnimationStateMachine::getState 0x083285b0 */
+    .asm_names_off = 0x41cu,            /* AnimationStateMachine::findState 0x08328610 */
+    .state_flags_off = 0x24u,           /* AnimationStateMachineInstance::getCurrentStateFlags 0x0832b110 */
+    .vt_control_point = 0x0872f948u,    /* vtable for ControlPoint 0x0872f940 + 8 */
+    .cp_team_off = 0x174u,              /* ControlPoint::setTeam 0x08284490 */
+    .cpt_name_off = 0x1e4u,             /* controlPointName's setter 0x08309c90 */
+    .vt_projectile = 0x0873f2c8u,       /* vtable for Projectile 0x0873f2c0 + 8 */
+    .bm_iface_ptr = 0x0874ffe8u,        /* IBotManager::instance */
+    .vt_bot_manager = 0x0874f768u,      /* vtable for BotManager 0x0874f760 + 8 */
+    .bm_iface_adj = 4u,                 /* the IBotManager thunks adjust this by -4 (0x0849cc40) */
+    .bm_pid_table_off = 0x38u,          /* BotManager::getBotFromPlayerId 0x0849c460 */
+    .bm_bots_off = 0x20u,               /* BotManager::getBotFromId 0x08498f80 */
+    .bot_lod_off = 0x10u,               /* BotMain::getLodLevel 0x0852c7f0 */
+    .om_register_slot = 0x087204e0u,    /* vtable for ObjectManager 0x08720400 + 8 + 0xd8, in .data */
+    .om_register_fn = 0x0819b4a0u,      /* ObjectManager::registerObject */
+    .om_unregister_slot = 0x087204e4u,  /* + 0xdc */
+    .om_unregister_fn = 0x0819b530u,    /* ObjectManager::unregisterObject (erases by obj+0x48) */
+
     .walk_clamp_count = 0,
     .sample_reset_next = 0,
-    .flush_each_line = 1,
+    .flush_each_line = 0,               /* tick mode: the writer thread flushes */
 
     .safe_read = lnxded_safe_read,
     .patch_write = lnxded_patch_write,

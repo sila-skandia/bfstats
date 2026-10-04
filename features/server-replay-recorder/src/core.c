@@ -6,11 +6,15 @@
  * tools/bf1942-models/viewer/replay-recording.js. Two capture surfaces
  * (stage 3, lnxded today):
  *
- *   1. A sampler thread polls the object manager's registered-object map and
- *      the player list at a fixed rate: root object transforms, ARMOR hit
- *      points, moving parts (RotationalBundle: turrets, gun mounts, airplane
- *      propellers), engines (revs/gear: the sound note), soldiers' animation
- *      states, and the two sides' tickets.
+ *   1. The world, sampled from the object manager's registered-object map
+ *      and the player list: root object transforms, ARMOR hit points, moving
+ *      parts (RotationalBundle: turrets, gun mounts, airplane propellers),
+ *      engines (revs/gear: the sound note), soldiers' bodies and aim, seats,
+ *      bots' AI LOD, control points, projectiles in flight, the animation
+ *      state table and the two sides' tickets. REC_TICK=1 (lnxded) samples on
+ *      the game thread after a simulated tick (the GameServer::simulateFrame
+ *      vtable slot), every tick at 30 Hz; REC_TICK=0 (w32ded) polls from a
+ *      sampler thread through safe reads.
  *   2. Inline detours on the game thread capture what the server BUILDS for
  *      clients: GameEventManager::addEventToSendQueue (every game event:
  *      createPlayer with the real kit, pickupKit, enter/exitVehicle, kills
@@ -23,7 +27,8 @@
  *
  * Config: <cwd>/mods/bf1942/settings/recorder.con, one key per line:
  *   recordReplays 1        off unless present
- *   replaySampleHz 10      samples per second (client recorder used 10)
+ *   replaySampleHz 30      samples per second; tick mode rounds it to a
+ *                          whole number of 30 Hz ticks (client recorder: 10)
  * RECORDER_DEBUG=1 in the environment prints one diagnostic line every 5 s.
  * Writes replays/replay_<unixts>[-<n>].ndjson under the server's cwd, one
  * file per round.
@@ -38,6 +43,13 @@
 #include <time.h>
 
 #include "core.h"
+
+#if REC_TICK
+#include <pthread.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <unistd.h>
+#endif
 
 #if !defined(REC_STAGE3)
 #error "build must define REC_STAGE3 (1 = lnxded stage-3 target, 0 = stage-1 w32ded)"
@@ -84,8 +96,6 @@ static void read_config(void)
 
 /* --- output ------------------------------------------------------------ */
 
-static FILE *g_file = 0;
-
 /* The clock every line shares: 0 at file open, so both writers agree and the
  * viewer's sanity gate (LONGEST_RECORDING, 12 h) stays happy. The sampler
  * seeds g_t0; the game-thread hooks read it (0 until then: they buffer). */
@@ -94,7 +104,7 @@ static double g_t0 = 0.0;
 /* An ISO-8859-1 byte string as a JSON string's contents, the client
  * recorder's law (bf42plus replay.cpp jsonEscape): a name's high bytes
  * become \u00XX, so the file stays UTF-8 and the viewer's name decoding gets
- * the bytes the server holds ("Julius Hai\u00fcller", not a raw 0xfc). */
+ * the bytes the server holds ("Julius Haiüller", not a raw 0xfc). */
 static void json_escape(const char *in, char *out, size_t cap)
 {
     size_t o = 0;
@@ -115,32 +125,207 @@ static void tmpl_name_json(uintptr_t tmpl, char *out, size_t cap)
     json_escape(raw, out, cap);
 }
 
-static void open_file_locked(void)
+/* The next file's name: replays/replay_<unix>[-<n>].ndjson, never one on
+ * disk (a file split off in the same second as the last one opened must not
+ * truncate it) and never one this process already handed out (tick mode
+ * names a file before its writer creates it). */
+static void next_file_name(char *name, size_t cap)
 {
-    (void)T->make_replays_dir();
-    /* A name per open: a file split off in the same second as the last one
-     * opened must not truncate it. */
-    char name[256];
+    static long last_ts;
+    static int last_n;
     long ts = (long)time(0);
-    snprintf(name, sizeof(name), "replays/replay_%ld.ndjson", ts);
-    for (int n = 1; n < 100; n++) {
+    int n = ts == last_ts ? last_n + 1 : 0;
+    for (; n < 100; n++) {
+        if (n) snprintf(name, cap, "replays/replay_%ld-%d.ndjson", ts, n);
+        else snprintf(name, cap, "replays/replay_%ld.ndjson", ts);
         FILE *exists = fopen(name, "r");
         if (!exists) break;
         fclose(exists);
-        snprintf(name, sizeof(name), "replays/replay_%ld-%d.ndjson", ts, n);
     }
+    last_ts = ts;
+    last_n = n;
+}
+
+static void header_line(char *out, size_t cap)
+{
+    char iso[64];
+    time_t now = time(0);
+    strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%S", localtime(&now));
+    snprintf(out, cap,
+             "{\"k\":\"h\",\"v\":%d,\"plus\":\"%s\","
+             "\"start\":\"%s\",\"hz\":%d}", T->header_version, T->header_plus,
+             iso, g_hz);
+}
+
+#if REC_TICK
+
+/* Tick mode: every line is made on the game thread (the tick sample, the
+ * event and fire hooks) and none of it touches the disk there. Lines go into
+ * an in-memory queue; a writer thread swaps it out a few times a second and
+ * writes it. Opening and closing a file are markers in the same stream (a
+ * line starting \x01; JSON lines never hold a raw control byte), so a split
+ * lands between the right two lines. The write lock guards only the queue. */
+typedef struct { char *p; size_t n, cap; } Buf;
+
+static Buf g_q[2];          /* g_q[g_qcur] fills, the other drains */
+static int g_qcur;
+static int g_open;          /* a file is open, as the producer sees it */
+static Buf g_sbuf;          /* the current tick sample's lines */
+static int g_in_sample;     /* game thread: lines go to g_sbuf */
+static pthread_mutex_t g_drain_lock = PTHREAD_MUTEX_INITIALIZER;
+static FILE *g_wfile;       /* the writer's file */
+static volatile int g_writer_quit;
+static volatile uint32_t g_q_dropped;
+
+static void buf_put(Buf *b, const char *s, size_t n)
+{
+    if (b->n + n > b->cap) {
+        size_t cap = b->cap ? b->cap : 1 << 16;
+        while (cap < b->n + n) cap *= 2;
+        /* 64 MB of undrained lines: the disk is gone; drop rather than grow. */
+        if (cap > (64u << 20)) { g_q_dropped++; return; }
+        char *p = realloc(b->p, cap);
+        if (!p) { g_q_dropped++; return; }
+        b->p = p;
+        b->cap = cap;
+    }
+    memcpy(b->p + b->n, s, n);
+    b->n += n;
+}
+
+static void put_line(Buf *b, const char *line)
+{
+    buf_put(b, line, strlen(line));
+    buf_put(b, "\n", 1);
+}
+
+/* With the write lock held: the sample's lines so far go to the queue (a
+ * file open or close must come after them). */
+static void sbuf_commit_locked(void)
+{
+    if (g_sbuf.n) buf_put(&g_q[g_qcur], g_sbuf.p, g_sbuf.n);
+    g_sbuf.n = 0;
+}
+
+static int file_is_open(void) { return g_open; }
+
+static void file_open_locked(void)
+{
+    sbuf_commit_locked();
+    char name[256], line[512];
+    next_file_name(name, sizeof(name));
+    snprintf(line, sizeof(line), "\x01O%s", name);
+    put_line(&g_q[g_qcur], line);
+    header_line(line, sizeof(line));
+    put_line(&g_q[g_qcur], line);
+    g_open = 1;
+    fprintf(stderr, "recorder: recording to %s\n", name);
+}
+
+static void file_close_locked(double t)
+{
+    sbuf_commit_locked();
+    if (!g_open) return;
+    char line[64];
+    snprintf(line, sizeof(line), "{\"k\":\"end\",\"t\":%.3f}", t);
+    put_line(&g_q[g_qcur], line);
+    put_line(&g_q[g_qcur], "\x01" "C");
+    g_open = 0;
+}
+
+static void write_line_locked(const char *line)
+{
+    if (!g_open) return;
+    put_line(g_in_sample ? &g_sbuf : &g_q[g_qcur], line);
+}
+
+static void write_line(const char *line)
+{
+    if (g_in_sample) {   /* game thread, inside the sample: no lock needed */
+        if (g_open) put_line(&g_sbuf, line);
+        return;
+    }
+    T->rec_lock();
+    write_line_locked(line);
+    T->rec_unlock();
+}
+
+/* The writer: one drained buffer, file markers acted on in order. */
+static void drain_buffer(Buf *b)
+{
+    size_t i = 0;
+    while (i < b->n) {
+        if (b->p[i] == '\x01') {
+            char *nl = memchr(b->p + i, '\n', b->n - i);
+            size_t end = nl ? (size_t)(nl - b->p) : b->n;
+            if (b->p[i + 1] == 'O') {
+                char name[256];
+                size_t len = end - (i + 2);
+                if (len >= sizeof(name)) len = sizeof(name) - 1;
+                memcpy(name, b->p + i + 2, len);
+                name[len] = 0;
+                if (g_wfile) fclose(g_wfile);
+                T->make_replays_dir();
+                g_wfile = fopen(name, "w");
+                if (!g_wfile) fprintf(stderr, "recorder: cannot open %s\n", name);
+            } else if (b->p[i + 1] == 'C') {
+                if (g_wfile) fclose(g_wfile);
+                g_wfile = 0;
+            }
+            i = end + 1;
+            continue;
+        }
+        char *m = memchr(b->p + i, '\x01', b->n - i);
+        size_t end = m ? (size_t)(m - b->p) : b->n;
+        if (g_wfile) fwrite(b->p + i, 1, end - i, g_wfile);
+        i = end;
+    }
+    b->n = 0;
+    if (g_wfile) fflush(g_wfile);
+}
+
+/* Swap the queue out and write it. g_drain_lock keeps the exit drain and
+ * the writer thread from interleaving. */
+static void drain_once(void)
+{
+    pthread_mutex_lock(&g_drain_lock);
+    T->rec_lock();
+    int full = g_qcur;
+    g_qcur ^= 1;
+    T->rec_unlock();
+    drain_buffer(&g_q[full]);
+    pthread_mutex_unlock(&g_drain_lock);
+}
+
+static void *writer(void *arg)
+{
+    (void)arg;
+    while (!g_writer_quit) {
+        const struct timespec quarter = { 0, 250000000L };
+        nanosleep(&quarter, 0);
+        drain_once();
+    }
+    return 0;
+}
+
+#else /* !REC_TICK: the sampler thread and the hooks write the file */
+
+static FILE *g_file = 0;
+
+static int file_is_open(void) { return g_file != 0; }
+
+static void file_open_locked(void)
+{
+    (void)T->make_replays_dir();
+    char name[256], line[512];
+    next_file_name(name, sizeof(name));
     g_file = fopen(name, "w");
     if (!g_file) {
         fprintf(stderr, "recorder: cannot open %s\n", name);
         return;
     }
-    char iso[64];
-    time_t now = time(0);
-    strftime(iso, sizeof(iso), "%Y-%m-%dT%H:%M:%S", localtime(&now));
-    fprintf(g_file,
-            "{\"k\":\"h\",\"v\":%d,\"plus\":\"%s\","
-            "\"start\":\"%s\",\"hz\":%d}\n", T->header_version, T->header_plus,
-            iso, g_hz);
+    header_line(line, sizeof(line));
+    fprintf(g_file, "%s\n", line);
     fprintf(stderr, "recorder: recording to %s\n", name);
 }
 
@@ -155,6 +340,17 @@ static void write_line_locked(const char *line)
     }
 }
 
+static void file_close_locked(double t)
+{
+    if (!g_file) return;
+    char line[64];
+    snprintf(line, sizeof(line), "{\"k\":\"end\",\"t\":%.3f}", t);
+    write_line_locked(line);
+    fflush(g_file);
+    fclose(g_file);
+    g_file = 0;
+}
+
 static void write_line(const char *line)
 {
     T->rec_lock();
@@ -162,13 +358,62 @@ static void write_line(const char *line)
     T->rec_unlock();
 }
 
-/* --- safe reads --------------------------------------------------------- */
+#endif /* REC_TICK */
+
+/* Everything written so far, on disk now. */
+static void out_sync(void)
+{
+#if REC_TICK
+    drain_once();
+    drain_once();   /* the other buffer too, if the writer swapped meanwhile */
+#else
+    T->rec_lock();
+    if (g_file) fflush(g_file);
+    T->rec_unlock();
+#endif
+}
+
+/* --- reads ------------------------------------------------------------------- */
+
+#if REC_TICK
+/* Set by the tick sample, on the game thread, inside the fault guard: the
+ * world is the game thread's and stands still while it reads, so a plain
+ * load is exact; a bad pointer faults into the guard, not the server. */
+static int g_direct;
+#endif
+
+static int rd(void *dst, size_t len, uintptr_t addr)
+{
+#if REC_TICK
+    if (g_direct) {
+        if (addr < 0x1000) return 0;
+        memcpy(dst, (const void *)addr, len);
+        return 1;
+    }
+#endif
+    return T->safe_read(dst, len, addr);
+}
 
 uint32_t read_u32(uintptr_t addr)
 {
     uint32_t v = 0;
-    T->safe_read(&v, 4, addr);
+    rd(&v, 4, addr);
     return v;
+}
+
+/* A NUL-terminated string's bytes at `chars` (an SGI std::string's one
+ * pointer), read through rd: a direct read in the tick sample. */
+static void read_chars(uintptr_t chars, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (chars < 0x1000 || cap < 2) return;
+    size_t n = 0;
+    while (n + 1 < cap) {
+        char c;
+        if (!rd(&c, 1, chars + n) || !c) break;
+        out[n++] = c;
+    }
+    out[n] = 0;
 }
 
 /* --- transforms ------------------------------------------------------------ */
@@ -384,10 +629,10 @@ static int read_armor_at(uintptr_t armor, ArmorFields *out)
 {
     memset(out, 0, sizeof(*out));
     if (armor < 0x1000) return 0;
-    return T->safe_read(&out->hitPoints, 4, armor + T->armor_hp_off)
-        && T->safe_read(&out->maxHitPoints, 4, armor + T->armor_maxhp_off)
-        && T->safe_read(&out->criticalDamage, 4, armor + T->armor_crit_off)
-        && T->safe_read(&out->lastHitPlayer, 4, armor + T->armor_lasthit_off);
+    return rd(&out->hitPoints, 4, armor + T->armor_hp_off)
+        && rd(&out->maxHitPoints, 4, armor + T->armor_maxhp_off)
+        && rd(&out->criticalDamage, 4, armor + T->armor_crit_off)
+        && rd(&out->lastHitPlayer, 4, armor + T->armor_lasthit_off);
 }
 
 /* The Armor component, looked up once per object (the pointer lives as long
@@ -404,9 +649,6 @@ static uintptr_t find_armor(uintptr_t obj)
  * pointer, re-keyed when the root or the template changes -- an address the
  * allocator handed to an object under another root is a new part. */
 #define MAX_PARTS 4096
-/* Samples a part may go unseen before its slot is reused (its object was
- * freed: a destroyed vehicle's turret). */
-#define PART_STALE_SAMPLES 50
 
 /* One part and its last written state. The id is a label in the file, so it
  * may grow without bound (every respawned vehicle's parts get new ones); the
@@ -429,11 +671,30 @@ static int g_next_part_id = 1;
 
 /* The part for `obj`, re-keyed (a new id) when the root or the template
  * changed under that address. NULL when the table is full of live parts. */
+/* Index over g_parts by object pointer (slot + 1; 0 empty): a part is
+ * looked up every sample, a linear scan of a few hundred parts each time is
+ * O(parts^2) a sample. Rebuilt whenever slots move. */
+#define PART_IDX_SLOTS 8192
+static uint16_t g_part_idx[PART_IDX_SLOTS];
+
+static uint32_t part_hash(uintptr_t obj) { return ((uint32_t)obj * 0x9e3779b1u) >> 19; }
+
+static void part_idx_rebuild(void)
+{
+    memset(g_part_idx, 0, sizeof(g_part_idx));
+    for (int i = 0; i < g_parts_n; i++) {
+        uint32_t h = part_hash(g_parts[i].obj);
+        while (g_part_idx[h]) h = (h + 1) & (PART_IDX_SLOTS - 1);
+        g_part_idx[h] = (uint16_t)(i + 1);
+    }
+}
+
 static Part *part_of(uintptr_t obj, uint32_t root_nid, uintptr_t tmpl, uint32_t gen, int *first)
 {
     *first = 0;
-    for (int i = 0; i < g_parts_n; i++) {
-        Part *p = &g_parts[i];
+    uint32_t h = part_hash(obj);
+    for (; g_part_idx[h]; h = (h + 1) & (PART_IDX_SLOTS - 1)) {
+        Part *p = &g_parts[g_part_idx[h] - 1];
         if (p->obj != obj) continue;
         if (p->root_nid != root_nid || p->tmpl != tmpl) {
             memset(p, 0, sizeof(*p));
@@ -454,26 +715,32 @@ static Part *part_of(uintptr_t obj, uint32_t root_nid, uintptr_t tmpl, uint32_t 
     p->tmpl = tmpl;
     p->id = g_next_part_id++;
     p->gen = gen;
+    g_part_idx[h] = (uint16_t)g_parts_n;
     *first = 1;
     return p;
 }
 
-/* Drop the slots of parts not seen for PART_STALE_SAMPLES samples. */
+/* Drop the slots of parts not seen for about five seconds of samples. */
 static void parts_prune(uint32_t gen)
 {
+    uint32_t stale = (uint32_t)(5 * g_hz);
     int w = 0;
     for (int i = 0; i < g_parts_n; i++) {
-        if (gen - g_parts[i].gen > PART_STALE_SAMPLES) continue;
+        if (gen - g_parts[i].gen > stale) continue;
         if (w != i) g_parts[w] = g_parts[i];
         w++;
     }
-    g_parts_n = w;
+    if (w != g_parts_n) {
+        g_parts_n = w;
+        part_idx_rebuild();
+    }
 }
 
 static void parts_reset(void)
 {
     g_parts_n = 0;
     g_next_part_id = 1;
+    part_idx_rebuild();
 }
 
 /* --- soldiers (st lines) ---------------------------------------------------- */
@@ -483,6 +750,7 @@ static void parts_reset(void)
 typedef struct {
     uint32_t nid;
     int lower, upper, item, bits;
+    float pitch, twist;
     int seen;
 } SoldierTracked;
 
@@ -490,21 +758,51 @@ static SoldierTracked g_soldiers[MAX_SOLDIERS];
 static int g_soldiers_n;
 static int g_anim_written;
 
-/* The animation state table, once per file: index, name, flags. The server's
- * BFSoldier::getAnimationState 0x0826d060 indexes machines at soldier+0x2b4
- * + i*0x44; the state objects hang off those machines with their name
- * std::string at +0x130 and flags at +0x2c (the shape the client's
- * getCurrentStateFlags 0x00613440 reads, verified against this binary's
- * machine array by the offsets' consistency in the field run). */
-static void write_anim_states(double t, uintptr_t soldier)
+/* The animation state table, once per file: [index, name, flags], what the
+ * client recorder writes from its own copy (the indices are the same: a
+ * server state number mapped through a client file's table names the right
+ * pose, 2026-10-04). activeAnimationStateMachine holds the states in a
+ * vector at asm_states_off (getState 0x083285b0) with each state's flags at
+ * state_flags_off (getCurrentStateFlags 0x0832b110), and their names in the
+ * std::map<string,int> findState 0x08328610 searches at asm_names_off: an SGI
+ * map (header pointer, count), a node's key string at +0x10 and its index at
+ * +0x14. */
+static void write_anim_states(double t)
 {
-    /* The lower machine's state objects' table: state at machine+0x20
-     * (client's getCurrentStateFlags), but the server layout of a machine is
-     * not verified yet -- the st records carry indices, which the viewer
-     * names from this table when it can and numbers when it cannot. Left
-     * until a run where the names can be checked against a client recording
-     * of the same round; the indices alone still drive the animations. */
-    (void)t; (void)soldier;
+    if (!T->anim_asm_ptr) return;
+    uint32_t sm = read_u32(T->anim_asm_ptr);
+    if (sm < 0x1000) return;
+    uint32_t vb = read_u32(sm + T->asm_states_off);
+    uint32_t ve = read_u32(sm + T->asm_states_off + 4);
+    if (vb < 0x1000 || ve < vb || (ve - vb) / 4 > 8192) return;
+    uint32_t nstates = (ve - vb) / 4;
+    uint32_t header = read_u32(sm + T->asm_names_off);
+    uint32_t count = read_u32(sm + T->asm_names_off + 4);
+    if (header < 0x1000 || count > 8192) return;
+    size_t cap = 64 + (size_t)count * 96;
+    char *line = malloc(cap);
+    if (!line) return;
+    size_t n = (size_t)snprintf(line, cap, "{\"k\":\"anim\",\"t\":%.3f,\"states\":[", t);
+    int first = 1;
+    uint32_t node = read_u32(header + T->node_leftmost_off);
+    for (uint32_t steps = 0; node && node != header && steps < count + 16; steps++) {
+        uint32_t idx = read_u32(node + T->node_value_off);
+        char raw[80], esc[200];
+        read_chars(read_u32(node + T->node_key_off), raw, sizeof(raw));
+        uint32_t flags = 0;
+        if (idx < nstates) {
+            uint32_t st = read_u32(vb + idx * 4);
+            if (st >= 0x1000) flags = read_u32(st + T->state_flags_off);
+        }
+        json_escape(raw, esc, sizeof(esc));
+        if (raw[0] && n + 160 < cap)
+            n += (size_t)snprintf(line + n, cap - n, "%s[%u,\"%s\",%u]", first ? "" : ",", idx, esc, flags);
+        first = 0;
+        node = T->tree_successor(node, header);
+    }
+    snprintf(line + n, cap - n, "]}");
+    write_line(line);
+    free(line);
 }
 
 /* --- kits -------------------------------------------------------------------- */
@@ -561,7 +859,118 @@ static int kit_watch_pending(uint32_t nid)
 #endif /* REC_STAGE3 */
 
 static double g_t;   /* the current sample's stamp */
-static void sample_object(uint32_t node);
+
+/* --- fast number formatting --------------------------------------------------- */
+
+/* The per-sample entries are numbers, thirty times a second for every moving
+ * object; printf's float conversion was most of a sample's cost once the
+ * walk was gone. These write what "%u", "%d" and "%.Nf" would, byte for
+ * byte (a non-finite value as 0). */
+static char *put_u(char *o, uint32_t v)
+{
+    char tmp[12];
+    int n = 0;
+    do { tmp[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (n) *o++ = tmp[--n];
+    return o;
+}
+
+static char *put_i(char *o, int32_t v)
+{
+    if (v < 0) { *o++ = '-'; return put_u(o, (uint32_t)(-(int64_t)v)); }
+    return put_u(o, (uint32_t)v);
+}
+
+static char *put_f(char *o, float fv, int dec)
+{
+    static const int64_t pow10[] = { 1, 10, 100, 1000, 10000, 100000 };
+    double v = fv;
+    if (!(v == v) || v > 1e9 || v < -1e9) v = 0.0;   /* NaN, inf */
+    int neg = v < 0.0 || (v == 0.0 && 1.0 / v < 0.0);
+    if (neg) v = -v;
+    /* A float times 10^dec (dec <= 4) is exact in a double, so a tie is
+     * exactly .5 and rounds to even, as printf does. */
+    double x = v * (double)pow10[dec];
+    int64_t scaled = (int64_t)x;
+    double frac = x - (double)scaled;
+    if (frac > 0.5 || (frac == 0.5 && (scaled & 1))) scaled++;
+    int64_t ip = scaled / pow10[dec], fp = scaled % pow10[dec];
+    if (neg) *o++ = '-';
+    o = put_u(o, (uint32_t)ip);
+    if (dec) {
+        *o++ = '.';
+        for (int k = dec - 1; k >= 0; k--) { o[k] = (char)('0' + fp % 10); fp /= 10; }
+        o += dec;
+    }
+    return o;
+}
+
+/* --- batched records ---------------------------------------------------------- */
+
+/* One line per kind per sample, the client recorder's shape:
+ * {"k":"s","t":..,"o":[[...],[...]]}. A kind's entries flush at the end of
+ * the sample, or early once the line passes ACC_FLUSH bytes. */
+#define ACC_FLUSH (48 * 1024)
+
+typedef struct { const char *k, *arr; char *p; size_t n, cap; } Acc;
+
+static Acc g_acc_s = { "s", "o", 0, 0, 0 };
+static Acc g_acc_a = { "a", "a", 0, 0, 0 };
+#if REC_STAGE3
+static Acc g_acc_j = { "j", "o", 0, 0, 0 };
+static Acc g_acc_g = { "g", "o", 0, 0, 0 };
+static Acc g_acc_st = { "st", "o", 0, 0, 0 };
+static Acc g_acc_p = { "p", "p", 0, 0, 0 };
+static Acc g_acc_lod = { "lod", "o", 0, 0, 0 };
+static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
+#endif
+
+static void acc_flush(Acc *a)
+{
+    if (!a->n) return;
+    size_t cap = a->n + 96;
+    char *line = malloc(cap);
+    if (line) {
+        int head = snprintf(line, cap, "{\"k\":\"%s\",\"t\":%.3f,\"%s\":[", a->k, g_t, a->arr);
+        memcpy(line + head, a->p, a->n);
+        memcpy(line + head + a->n, "]}", 3);
+        write_line(line);
+        free(line);
+    }
+    a->n = 0;
+}
+
+static void acc_add(Acc *a, const char *entry)
+{
+    size_t len = strlen(entry);
+    if (a->n + len + 2 > a->cap) {
+        size_t cap = a->cap ? a->cap * 2 : 4096;
+        while (cap < a->n + len + 2) cap *= 2;
+        char *p = realloc(a->p, cap);
+        if (!p) return;
+        a->p = p;
+        a->cap = cap;
+    }
+    if (a->n) a->p[a->n++] = ',';
+    memcpy(a->p + a->n, entry, len);
+    a->n += len;
+    if (a->n > ACC_FLUSH) acc_flush(a);
+}
+
+static void acc_flush_all(void)
+{
+    acc_flush(&g_acc_s);
+    acc_flush(&g_acc_a);
+#if REC_STAGE3
+    acc_flush(&g_acc_j);
+    acc_flush(&g_acc_g);
+    acc_flush(&g_acc_st);
+    acc_flush(&g_acc_p);
+    acc_flush(&g_acc_lod);
+    acc_flush(&g_acc_pj);
+#endif
+}
+static void sample_object(uint32_t key, uint32_t obj);
 #if REC_STAGE3
 static uint32_t g_score_manager;   /* ScoreManager found by vtable (sample_tickets) */
 #endif
@@ -582,7 +991,7 @@ static void kit_watch_emit(uint32_t obj, uint32_t nid, uint32_t key)
         Mat4 m;
         float q[4] = {0, 0, 0, 1};
         float px = 0, py = 0, pz = 0;
-        if (T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) {
+        if (rd(&m, sizeof(m), obj + T->obj_mat_off)) {
             to_quat(&m, q);
             px = m.p[0]; py = m.p[1]; pz = m.p[2];
         }
@@ -608,6 +1017,12 @@ typedef struct {
     int team;
     int missing;   /* consecutive complete roster walks without him */
     char name[64]; /* raw, as the server holds it */
+    /* the last p entry written: [pid, team, vehicle, root, seat, triggers] */
+    int p_written;
+    uint32_t p_vehicle, p_root;
+    int p_seat, p_trig, p_team;
+    int lod;       /* the last AI LOD written; -2 none yet */
+    uint32_t bf, name_ptr;   /* the BFPlayer and its name string, when name was read */
 } Plyr;
 
 /* Complete roster walks a player may be absent from before he is written as
@@ -666,12 +1081,10 @@ static void sample_tickets(double t)
 
 /* --- sampling: one registered object ------------------------------------------ */
 
-/* One node of the registered-objects map. Lines go straight to the file:
- * thousands of objects a sample would overflow any assembled buffer. */
-static void sample_object(uint32_t node)
+/* One registered object: `key` is its key in the registered-objects map
+ * (its gid, obj+0x48). */
+static void sample_object(uint32_t key, uint32_t obj)
 {
-    uint32_t key = read_u32(node + T->node_key_off);
-    uint32_t obj = read_u32(node + T->node_value_off);
     if (!obj || obj < T->min_addr) return;
 
     uint32_t flags = read_u32(obj + T->obj_flags_off);
@@ -694,17 +1107,7 @@ static void sample_object(uint32_t node)
 #endif
         if (!id) return;
         Mat4 m;
-        if (!T->safe_read(&m, sizeof(m), obj + T->obj_mat_off)) return;
-
-        uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
-        char name[128];
-        tmpl_name_json(tmpl, name, sizeof(name));
-        uint32_t tid = tmpl > T->min_tmpl_addr ? read_u32(tmpl + T->tmpl_id_off) : 0;
-#if REC_STAGE3
-        uint32_t gid = key;   /* the registered map's key: obj+0x48 (registerObject 0x0819b4a0) */
-#else
-        uint32_t gid = read_u32(obj + T->obj_id_off);
-#endif
+        if (!rd(&m, sizeof(m), obj + T->obj_mat_off)) return;
 
         float q[4];
         to_quat(&m, q);
@@ -712,6 +1115,17 @@ static void sample_object(uint32_t node)
         int ti = hash_find(key, hash_of(key));
         if (ti < 0) {
             if (g_tracked_n >= MAX_TRACKED) return;
+            /* First sight: the template's name (a string read the target
+             * may make through a system call) only here, not every sample. */
+            uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
+            char name[128];
+            tmpl_name_json(tmpl, name, sizeof(name));
+            uint32_t tid = tmpl > T->min_tmpl_addr ? read_u32(tmpl + T->tmpl_id_off) : 0;
+#if REC_STAGE3
+            uint32_t gid = key;   /* the registered map's key: obj+0x48 (registerObject 0x0819b4a0) */
+#else
+            uint32_t gid = read_u32(obj + T->obj_id_off);
+#endif
             ti = g_tracked_n++;
             g_tracked[ti].key = key;
             g_tracked[ti].nid = id;
@@ -766,11 +1180,12 @@ static void sample_object(uint32_t node)
         if (moved) {
             tr->x = m.p[0]; tr->y = m.p[1]; tr->z = m.p[2];
             tr->qx = q[0]; tr->qy = q[1]; tr->qz = q[2]; tr->qw = q[3];
-            char line[512];
-            snprintf(line, sizeof(line),
-                "{\"k\":\"s\",\"t\":%.3f,\"o\":[[%u,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f]]}",
-                g_t, id, m.p[0], m.p[1], m.p[2], q[0], q[1], q[2], q[3]);
-            write_line(line);
+            char entry[160], *e = entry;
+            *e++ = '['; e = put_u(e, id);
+            for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], 2); }
+            for (int k = 0; k < 4; k++) { *e++ = ','; e = put_f(e, q[k], 3); }
+            *e++ = ']'; *e = 0;
+            acc_add(&g_acc_s, entry);
         }
         /* Hit points change on every hit, and fall steadily on their own once
          * below the critical threshold (burning): the smoke, fire and
@@ -780,11 +1195,10 @@ static void sample_object(uint32_t node)
             tr->has_armor = 1;
             tr->hp = armor_now.hitPoints;
             tr->last_hit = armor_now.lastHitPlayer;
-            char line[256];
-            snprintf(line, sizeof(line),
-                "{\"k\":\"a\",\"t\":%.3f,\"a\":[[%u,%.1f,%d]]}",
-                g_t, id, armor_now.hitPoints, armor_now.lastHitPlayer);
-            write_line(line);
+            char entry[96];
+            snprintf(entry, sizeof(entry), "[%u,%.1f,%d]",
+                id, armor_now.hitPoints, armor_now.lastHitPlayer);
+            acc_add(&g_acc_a, entry);
         }
 #endif
         return;
@@ -810,8 +1224,8 @@ static void sample_object(uint32_t node)
 
     Mat4 top, part;
     const Mat4 *top_m, *part_m;
-    if (!T->safe_read(&top, sizeof(top), root + T->obj_mat_off)) return;
-    if (!T->safe_read(&part, sizeof(part), obj + T->obj_mat_off)) return;
+    if (!rd(&top, sizeof(top), root + T->obj_mat_off)) return;
+    if (!rd(&part, sizeof(part), obj + T->obj_mat_off)) return;
     top_m = &top;
     part_m = &part;
 
@@ -848,11 +1262,11 @@ static void sample_object(uint32_t node)
         }
         pt->has_j = 1;
         pt->qx = qr[0]; pt->qy = qr[1]; pt->qz = qr[2]; pt->qw = qr[3];
-        char line[512];
-        snprintf(line, sizeof(line),
-            "{\"k\":\"j\",\"t\":%.3f,\"o\":[[%u,%d,%.4f,%.4f,%.4f,%.4f]]}",
-            g_t, root_nid, pt->id, qr[0], qr[1], qr[2], qr[3]);
-        write_line(line);
+        char entry[128], *e = entry;
+        *e++ = '['; e = put_u(e, root_nid); *e++ = ','; e = put_i(e, pt->id);
+        for (int k = 0; k < 4; k++) { *e++ = ','; e = put_f(e, qr[k], 4); }
+        *e++ = ']'; *e = 0;
+        acc_add(&g_acc_j, entry);
         return;
     }
 
@@ -869,12 +1283,12 @@ static void sample_object(uint32_t node)
      * comes from the live census) -- trust the pe pointer alone. */
     if (pe < 0x1000 || (T->vt_phys_engine && read_u32(pe) != T->vt_phys_engine)) return;
     float revs;
-    if (!T->safe_read(&revs, 4, pe + T->pe_revs_off)) return;
+    if (!rd(&revs, 4, pe + T->pe_revs_off)) return;
     int32_t gear = (int32_t)read_u32(pe + T->pe_gear_off);
     uint8_t flags2[2] = { 0, 0 };
-    T->safe_read(flags2, 2, obj + T->eng_flags_off);
+    rd(flags2, 2, obj + T->eng_flags_off);
     float throttle = 0.0f;
-    T->safe_read(&throttle, 4, obj + T->eng_throttle_off);
+    rd(&throttle, 4, obj + T->eng_throttle_off);
     int eflags = (flags2[0] ? 1 : 0) | (flags2[1] ? 2 : 0);
 
     if (pt->has_g && fabsf(pt->revs - revs) < 0.01f && pt->gear == gear
@@ -885,11 +1299,12 @@ static void sample_object(uint32_t node)
     pt->gear = gear;
     pt->throttle = throttle;
     pt->eflags = eflags;
-    char line[512];
-    snprintf(line, sizeof(line),
-        "{\"k\":\"g\",\"t\":%.3f,\"o\":[[%u,%.3f,%.3f,%d,%d,%d]]}",
-        g_t, root_nid, revs, throttle, eflags, gear, pt->id);
-    write_line(line);
+    char entry[128], *e = entry;
+    *e++ = '['; e = put_u(e, root_nid);
+    *e++ = ','; e = put_f(e, revs, 3); *e++ = ','; e = put_f(e, throttle, 3);
+    *e++ = ','; e = put_i(e, eflags); *e++ = ','; e = put_i(e, gear); *e++ = ','; e = put_i(e, pt->id);
+    *e++ = ']'; *e = 0;
+    acc_add(&g_acc_g, entry);
 
     if (g_debug) {
         static int dumped = 0;
@@ -916,7 +1331,15 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
     int upper = (int)read_u32(obj + T->sol_upper_off);
     int item = (int)read_u32(obj + T->sol_item_off);
     int bits = 0;
-    T->safe_read(&bits, 2, obj + T->sol_bits_off);
+    rd(&bits, 2, obj + T->sol_bits_off);
+    /* The aim the client is sent (BFSoldierNetworkable::updateStateMask
+     * 0x082224e0 copies these two into its +0x68/+0x6c; a client file's
+     * pitch and twist are the same numbers, ledger P-4). */
+    float pitch = 0.0f, twist = 0.0f;
+    if (T->sol_aim_pitch_off) rd(&pitch, 4, obj + T->sol_aim_pitch_off);
+    if (T->sol_aim_twist_off) rd(&twist, 4, obj + T->sol_aim_twist_off);
+    if (!(pitch > -360.0f && pitch < 360.0f)) pitch = 0.0f;
+    if (!(twist > -360.0f && twist < 360.0f)) twist = 0.0f;
 
     SoldierTracked *s = 0;
     for (int i = 0; i < g_soldiers_n; i++)
@@ -929,17 +1352,17 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
         s->lower = -1; s->upper = -1; s->item = -1; s->bits = -1;
     }
     s->seen = 1;
-    if (s->lower == lower && s->upper == upper && s->item == item && s->bits == bits) return;
+    if (s->lower == lower && s->upper == upper && s->item == item && s->bits == bits
+        && fabsf(s->pitch - pitch) < 0.25f && fabsf(s->twist - twist) < 0.25f) return;
     s->lower = lower; s->upper = upper; s->item = item; s->bits = bits;
-    /* Aim pitch and torso twist are the client recorder's soldier-view
-     * refinements, read where the client has applied the replicated aim; the
-     * server's own storage for them is not verified yet (0: no head aim). */
-    char line[384];
-    snprintf(line, sizeof(line),
-        "{\"k\":\"st\",\"t\":%.3f,\"o\":[[%u,%d,%d,%.1f,%.1f,%d,%d]]}",
-        g_t, nid, lower, upper, 0.0, 0.0, item, bits);
-    write_line(line);
-    if (!g_anim_written) { write_anim_states(g_t, obj); g_anim_written = 1; }
+    s->pitch = pitch; s->twist = twist;
+    char entry[128], *e = entry;
+    *e++ = '['; e = put_u(e, nid); *e++ = ','; e = put_i(e, lower); *e++ = ','; e = put_i(e, upper);
+    *e++ = ','; e = put_f(e, pitch, 1); *e++ = ','; e = put_f(e, twist, 1);
+    *e++ = ','; e = put_i(e, item); *e++ = ','; e = put_i(e, bits);
+    *e++ = ']'; *e = 0;
+    acc_add(&g_acc_st, entry);
+    if (!g_anim_written) { write_anim_states(g_t); g_anim_written = 1; }
 }
 
 /* Drop the soldiers this sample's walk did not see as live roots: the dead
@@ -1009,6 +1432,21 @@ static void sample_players(void)
         ? read_u32(pm + T->pm_list_off) : pm + T->pm_list_off;
     if (list < 0x1000) return;
     uint32_t node = read_u32(list);
+    /* The BotManager, by its vptr: IBotManager::instance holds it, or its
+     * IBotManager base bm_iface_adj into it. */
+    uint32_t bm = 0;
+    if (T->bm_iface_ptr) {
+        static int said;
+        uint32_t inst = read_u32(T->bm_iface_ptr);
+        if (inst >= 0x1000 && read_u32(inst) == T->vt_bot_manager) bm = inst;
+        else if (inst >= 0x1000 && read_u32(inst - T->bm_iface_adj) == T->vt_bot_manager)
+            bm = inst - T->bm_iface_adj;
+        if (bm && !said) {
+            said = 1;
+            fprintf(stderr, "recorder: BotManager at IBotManager::instance%s\n",
+                    bm == inst ? "" : " - adj");
+        }
+    }
     /* Who this walk saw, by index into g_players. */
     unsigned char seen[MAX_PLAYERS] = { 0 };
     int complete = 0;
@@ -1035,8 +1473,18 @@ static void sample_players(void)
                 fprintf(stderr, " +%x=%08x", w, read_u32(p + w));
             fprintf(stderr, "\n");
         }
-        if (T->read_player_name) T->read_player_name(p, name, sizeof(name));
-        else T->read_string(p + T->bf_name_off, name, sizeof(name));
+        /* The name only when the player object or its name string changed
+         * since the last walk (the read can be a system call a player). */
+        uint32_t name_ptr = T->bf_name_off ? read_u32(p + T->bf_name_off) : 0;
+        Plyr *known = 0;
+        for (int j = 0; j < g_players_n; j++)
+            if (g_players[j].pid == pid) { known = &g_players[j]; break; }
+        if (known && name_ptr && known->bf == p && known->name_ptr == name_ptr) {
+            snprintf(name, sizeof(name), "%s", known->name);
+        } else {
+            if (T->read_player_name) T->read_player_name(p, name, sizeof(name));
+            else T->read_string(p + T->bf_name_off, name, sizeof(name));
+        }
         if (!name[0]) continue;
         int ai = T->read_player_ai
             ? T->read_player_ai(p) : (int)(read_u32(p + T->bf_ai_off) & 0xff);
@@ -1044,9 +1492,7 @@ static void sample_players(void)
         uint32_t veh = read_u32(p + T->bf_veh_off);
         uint32_t nid = veh > 0x1000 ? T->net_id_of(veh) : 0;
 
-        Plyr *pl = 0;
-        for (int j = 0; j < g_players_n; j++)
-            if (g_players[j].pid == pid) { pl = &g_players[j]; break; }
+        Plyr *pl = known;
 
         /* A pid the server handed to someone else since we last looked (a
          * public server reuses them): the old player left, a new one came. */
@@ -1081,6 +1527,7 @@ static void sample_players(void)
             if (g_players_n >= MAX_PLAYERS) continue;
             pl = &g_players[g_players_n++];
             memset(pl, 0, sizeof(*pl));
+            pl->lod = -2;
             pl->pid = pid;
             snprintf(pl->name, sizeof(pl->name), "%s", name);
             pl->kit_nid = kit_nid;
@@ -1098,6 +1545,8 @@ static void sample_players(void)
             }
         }
         pl->missing = 0;
+        pl->bf = p;
+        pl->name_ptr = name_ptr;
         seen[pl - g_players] = 1;
 
         /* What the player controls now: his soldier on spawning, his free
@@ -1112,6 +1561,57 @@ static void sample_players(void)
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"control\",\"pid\":%d,\"netId\":%u}",
                     g_t, pid, nid);
                 write_line(line);
+            }
+        }
+
+        /* The seat: the client's p entry [pid, team, vehicle, root, seat,
+         * triggers]. The control object is what the ghost manager replicates
+         * as the client's (GhostManager::updatePlayerControlObject 0x08142210
+         * calls getVehicle 0x080560c0: BFPlayer+0x4c): the soldier on foot,
+         * the seat's object in a vehicle, the free camera when dead. Its root
+         * is the hull; the seat is the int setVehicle 0x08052310 stores beside
+         * it. Matched the client's p records seat for seat (2026-10-04). */
+        if (T->bf_ctrl_off) {
+            uint32_t ctrl = read_u32(p + T->bf_ctrl_off);
+            uint32_t vehicle = ctrl >= 0x1000 ? T->net_id_of(ctrl) : 0;
+            uintptr_t croot = ctrl >= 0x1000 ? root_of(ctrl) : 0;
+            uint32_t root = croot >= 0x1000 ? T->net_id_of(croot) : 0;
+            int seat = (int)read_u32(p + T->bf_seat_off);
+            if (seat < 0 || seat > 64) seat = 0;
+            uint8_t tb[2] = { 0, 0 };
+            rd(tb, 2, p + T->bf_trig_off);
+            int trig = (tb[0] ? 1 : 0) | (tb[1] ? 2 : 0);
+            if (vehicle && (!pl->p_written || vehicle != pl->p_vehicle || root != pl->p_root
+                            || seat != pl->p_seat || trig != pl->p_trig || team != pl->p_team)) {
+                pl->p_written = 1;
+                pl->p_vehicle = vehicle; pl->p_root = root; pl->p_seat = seat;
+                pl->p_trig = trig; pl->p_team = team;
+                char entry[96];
+                snprintf(entry, sizeof(entry), "[%d,%d,%u,%u,%d,%d]",
+                         pid, team, vehicle, root ? root : vehicle, seat, trig);
+                acc_add(&g_acc_p, entry);
+            }
+        }
+
+        /* A bot's AI LOD (AI-136): 0 near a human, 2 far from all of them.
+         * At 2 the server runs it in less detail (no locomotion states, fake
+         * fire, a hull that slides): the viewer can tell that from a capture
+         * fault. BotManager::getBotFromPlayerId 0x0849c460's lookup. */
+        if (ai && bm && pid < 256) {
+            int lod = -1;
+            uint32_t tbl = read_u32(bm + T->bm_pid_table_off);
+            uint32_t bi = tbl >= 0x1000 ? read_u32(tbl + (uint32_t)pid * 4) : 0xffffffffu;
+            uint32_t vb = read_u32(bm + T->bm_bots_off), ve = read_u32(bm + T->bm_bots_off + 4);
+            if (bi != 0xffffffffu && vb >= 0x1000 && ve >= vb && bi < (ve - vb) / 4) {
+                uint32_t e = read_u32(vb + bi * 4);
+                uint32_t bot = e >= 0x1000 ? read_u32(e) : 0;
+                if (bot >= 0x1000) lod = (int)read_u32(bot + T->bot_lod_off);
+            }
+            if (lod >= 0 && lod < 8 && lod != pl->lod) {
+                pl->lod = lod;
+                char entry[48];
+                snprintf(entry, sizeof(entry), "[%d,%d]", pid, lod);
+                acc_add(&g_acc_lod, entry);
             }
         }
     }
@@ -1252,7 +1752,7 @@ static int held_kind(int type)
 }
 
 /* With the write lock held: game-thread events and the sampler's open race
- * for g_file, so the check and the push are one locked step (emit_line). */
+ * for the file, so the check and the push are one locked step (emit_line). */
 static void held_push_locked(const char *line, int type)
 {
     if (!g_held) return;   /* buffer only once a run's config turned recording on */
@@ -1288,7 +1788,7 @@ static void held_flush_locked(void)
 static void emit_line(const char *line, int type)
 {
     T->rec_lock();
-    if (g_file) write_line_locked(line);
+    if (file_is_open()) write_line_locked(line);
     else held_push_locked(line, type);
     T->rec_unlock();
 }
@@ -1577,6 +2077,11 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
     if (!line[0]) return;
 
     emit_line(line, type);
+    /* ENDMAP: the server restarts its process for the next map without
+     * running exit handlers (each round of a lab run is a new process), so
+     * what the round wrote is put on disk now, not at the writer's next
+     * wake-up. Once a map, on the game thread. */
+    if (type == 0x24 && p[0] == 5) out_sync();
 }
 
 /* --- the fire detour (game thread) --------------------------------------------- */
@@ -1608,7 +2113,7 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
     if (root >= 0x1000) root_nid = (int)T->net_id_of(root);
 
     Mat4 m;
-    if (!T->safe_read(&m, sizeof(m), mat4_addr)) return;
+    if (!rd(&m, sizeof(m), mat4_addr)) return;
 
     char esc[112]; json_escape(name, esc, sizeof(esc));
     char line[512];
@@ -1624,7 +2129,7 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
 REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
 {
     g_fire_calls++;
-    if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000) return;
+    if (!file_is_open() || fire_arms < 0x1000 || mat4_addr < 0x1000) return;
     write_fire(fire_arms, player, mat4_addr, 0);
 }
 
@@ -1637,14 +2142,385 @@ REC_GAME_THREAD_ENTRY void recorder_on_fire(uint32_t fire_arms, uint32_t player,
  * small-arms fire is fake. */
 REC_GAME_THREAD_ENTRY void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr)
 {
-    if (!g_file || fire_arms < 0x1000 || mat4_addr < 0x1000 || !T->fa_fake_off) return;
+    if (!file_is_open() || fire_arms < 0x1000 || mat4_addr < 0x1000 || !T->fa_fake_off) return;
     uint8_t fake = 0;
-    if (!T->safe_read(&fake, 1, fire_arms + T->fa_fake_off) || !fake) return;
+    if (!rd(&fake, 1, fire_arms + T->fa_fake_off) || !fake) return;
     g_fire_calls++;
     write_fire(fire_arms, player, mat4_addr, 1);
 }
 
 #endif /* REC_STAGE3 */
+
+/* --- control points and projectiles ---------------------------------------- */
+
+#if REC_STAGE3
+
+/* A control point, keyed by the registered map's key like the client
+ * recorder's getID: [cp] on first sight with its name, template, place and
+ * team, then a line per team change (the client's `cp` records). The team is
+ * ControlPoint+0x174 (ControlPoint::setTeam 0x08284490; the networkable
+ * replicates that field, ControlPointNetworkable::updateStateMask
+ * 0x08226cb0), the name the template's controlPointName (+0x1e4, the
+ * console setter at 0x08309c90). */
+#define MAX_CPS 64
+
+typedef struct { uint32_t key; int team; } CpTracked;
+static CpTracked g_cps[MAX_CPS];
+static int g_cps_n;
+
+static void sample_cp(uint32_t obj, uint32_t key)
+{
+    int team = (int)read_u32(obj + T->cp_team_off);
+    for (int i = 0; i < g_cps_n; i++) {
+        if (g_cps[i].key != key) continue;
+        if (g_cps[i].team == team) return;
+        g_cps[i].team = team;
+        char line[128];
+        snprintf(line, sizeof(line), "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"team\":%d}", g_t, key, team);
+        write_line(line);
+        return;
+    }
+    if (g_cps_n >= MAX_CPS) return;
+    g_cps[g_cps_n].key = key;
+    g_cps[g_cps_n].team = team;
+    g_cps_n++;
+    uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
+    char tname[128], raw[80], cname[200];
+    tmpl_name_json(tmpl, tname, sizeof(tname));
+    raw[0] = 0;
+    if (tmpl >= 0x1000 && T->cpt_name_off) read_chars(read_u32(tmpl + T->cpt_name_off), raw, sizeof(raw));
+    json_escape(raw, cname, sizeof(cname));
+    Mat4 m;
+    if (!rd(&m, sizeof(m), obj + T->obj_mat_off)) memset(&m, 0, sizeof(m));
+    char line[640];
+    snprintf(line, sizeof(line),
+        "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"name\":\"%s\",\"tmpl\":\"%s\",\"pos\":[%.2f,%.2f,%.2f],\"team\":%d}",
+        g_t, key, cname, tname, m.p[0], m.p[1], m.p[2], team);
+    write_line(line);
+}
+
+/* Projectiles in flight: every Projectile root the map holds enabled (the
+ * projectile map at om+0x128 holds only the mine-warning ones). A pooled
+ * projectile is disabled between flights, so one key flies many times: `pn`
+ * names a flight as it starts, `pj` places it each sample, `pd` ends it. */
+#define MAX_PROJ 1024
+
+typedef struct { uint32_t key; uint32_t gen; } ProjTracked;
+static ProjTracked g_proj[MAX_PROJ];
+static int g_proj_n;
+
+static void sample_projectile(uint32_t obj, uint32_t key)
+{
+    int i = 0;
+    for (; i < g_proj_n; i++) if (g_proj[i].key == key) break;
+    if (i == g_proj_n) {
+        if (g_proj_n >= MAX_PROJ) return;
+        g_proj[g_proj_n++].key = key;
+        char tname[128], line[256];
+        tmpl_name_json(read_u32(obj + T->obj_tmpl_off), tname, sizeof(tname));
+        snprintf(line, sizeof(line), "{\"k\":\"pn\",\"t\":%.3f,\"o\":[[%u,\"%s\"]]}", g_t, key, tname);
+        write_line(line);
+    }
+    g_proj[i].gen = g_gen;
+    Mat4 m;
+    if (!rd(&m, sizeof(m), obj + T->obj_mat_off)) return;
+    char entry[96], *e = entry;
+    *e++ = '['; e = put_u(e, key);
+    for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], 2); }
+    *e++ = ']'; *e = 0;
+    acc_add(&g_acc_pj, entry);
+}
+
+static void projectiles_gone(void)
+{
+    char line[4096];
+    size_t n = 0;
+    int w = 0;
+    for (int i = 0; i < g_proj_n; i++) {
+        if (g_proj[i].gen == g_gen) { g_proj[w++] = g_proj[i]; continue; }
+        if (!n) n = (size_t)snprintf(line, sizeof(line), "{\"k\":\"pd\",\"t\":%.3f,\"o\":[%u", g_t, g_proj[i].key);
+        else if (n + 16 < sizeof(line)) n += (size_t)snprintf(line + n, sizeof(line) - n, ",%u", g_proj[i].key);
+    }
+    g_proj_n = w;
+    if (n) { snprintf(line + n, sizeof(line) - n, "]}"); write_line(line); }
+}
+
+#endif /* REC_STAGE3 */
+
+/* --- one object of the world ------------------------------------------------- */
+
+/* What a sample does with one registered object. Returns 1 when the object
+ * is one the capture reads (a net id, or a class it samples without one):
+ * the live set keeps only those in its per-tick list. */
+static int visit_object(uint32_t key, uint32_t obj)
+{
+#if REC_STAGE3
+    uint32_t flags = read_u32(obj + T->obj_flags_off);
+    uint32_t nid = T->net_id_of(obj);
+    uint32_t vptr = read_u32(obj);
+    /* A watched kit is emitted however it is flagged: a carried kit sits
+     * disabled in the map until dropped. */
+    if (nid && kit_watch_pending(nid)) kit_watch_emit(obj, nid, key);
+    /* Child bundles and engines carry no net id: they are sampled for their
+     * parts regardless. Roots without one are skipped (the viewer has no id
+     * space for them). */
+    if (!(flags & FLAG_DISABLED) && (nid || !(flags & FLAG_ROOT)))
+        sample_object(key, obj);
+    if (nid && !(flags & FLAG_DISABLED) && (flags & FLAG_ROOT) && vptr == T->vt_soldier)
+        sample_soldier(obj, nid);
+    /* Control points and projectiles in flight: roots the viewer keys by the
+     * map's own key (a projectile has no net id). */
+    int cp = T->vt_control_point && vptr == T->vt_control_point;
+    int proj = T->vt_projectile && vptr == T->vt_projectile;
+    if (!(flags & FLAG_DISABLED) && (flags & FLAG_ROOT)) {
+        if (cp) sample_cp(obj, key);
+        else if (proj) sample_projectile(obj, key);
+    }
+    return nid || cp || proj || vptr == T->vt_rot_bundle || vptr == T->vt_engine
+        || vptr == T->vt_soldier;
+#else
+    sample_object(key, obj);
+    return 1;
+#endif
+}
+
+#if REC_TICK
+
+/* The live set. The registered-objects map holds ~5,000 objects on a 32-slot
+ * level, nearly all of them scenery that never moves; walking it is nine
+ * tenths of a sample's cost (461 of 520 us, El Alamein 2026-10-04). The
+ * registerObject and unregisterObject hooks keep the set exact; a new object
+ * is looked at for PENDING_SAMPLES samples (its networkable may come after
+ * its registration), then kept in g_dense or set aside as scenery. */
+#define LIVE_SLOTS 32768            /* power of two; ~5k objects */
+#define LIVE_REBUILD (30 * 10)      /* samples between full-walk rebuilds */
+#define PENDING_SAMPLES 30
+
+enum { LIVE_EMPTY = 0, LIVE_PENDING, LIVE_KEPT, LIVE_SCENERY, LIVE_DEAD };
+
+typedef struct { uint32_t obj; uint32_t vptr; int32_t dense; uint16_t state; uint16_t age; uint32_t gen; } LiveEnt;
+
+static LiveEnt *g_live;
+static int32_t *g_dense;            /* indices into g_live */
+static int g_dense_n;
+static int g_live_used;             /* occupied + dead slots */
+static int g_live_ok;               /* hooks in, one thread: the live set drives the samples */
+static uint32_t g_live_age, g_live_count;
+static pthread_t g_reg_thread;
+static int g_reg_thread_set;
+
+static uint32_t live_hash(uint32_t obj) { return (obj * 0x9e3779b1u) & (LIVE_SLOTS - 1); }
+
+static int live_find(uint32_t obj)
+{
+    for (uint32_t i = live_hash(obj), n = 0; n < LIVE_SLOTS; i = (i + 1) & (LIVE_SLOTS - 1), n++) {
+        if (g_live[i].state == LIVE_EMPTY) return -1;
+        if (g_live[i].obj == obj && g_live[i].state != LIVE_DEAD) return (int)i;
+    }
+    return -1;
+}
+
+static void live_rehash(void);
+
+static void dense_remove(int d)
+{
+    int slot = g_dense[d];
+    g_live[slot].dense = -1;
+    if (d != g_dense_n - 1) {
+        g_dense[d] = g_dense[g_dense_n - 1];
+        g_live[g_dense[d]].dense = d;
+    }
+    g_dense_n--;
+}
+
+/* `vptr`: 0 while the object may still be in its constructors (registration
+ * can come before the most derived one sets it); set on first visit. */
+static void live_add(uint32_t obj, uint32_t vptr)
+{
+    if (obj < 0x1000 || live_find(obj) >= 0) return;
+    if (g_live_used >= LIVE_SLOTS * 3 / 4) live_rehash();
+    if (g_live_used >= LIVE_SLOTS * 3 / 4) { g_live_ok = 0; return; }   /* full: back to walking */
+    uint32_t i = live_hash(obj);
+    while (g_live[i].state != LIVE_EMPTY && g_live[i].state != LIVE_DEAD) i = (i + 1) & (LIVE_SLOTS - 1);
+    if (g_live[i].state == LIVE_EMPTY) g_live_used++;
+    g_live[i].obj = obj;
+    g_live[i].vptr = vptr;
+    g_live[i].state = LIVE_PENDING;
+    g_live[i].age = 0;
+    g_live[i].dense = g_dense_n;
+    g_dense[g_dense_n++] = (int32_t)i;
+}
+
+static void live_remove(uint32_t obj)
+{
+    int i = live_find(obj);
+    if (i < 0) return;
+    if (g_live[i].dense >= 0) dense_remove(g_live[i].dense);
+    g_live[i].state = LIVE_DEAD;
+}
+
+/* Rehash: the dead slots go, every live entry keeps its state. */
+static void live_rehash(void)
+{
+    LiveEnt *old = malloc(sizeof(LiveEnt) * LIVE_SLOTS);
+    if (!old) { g_live_ok = 0; return; }
+    memcpy(old, g_live, sizeof(LiveEnt) * LIVE_SLOTS);
+    memset(g_live, 0, sizeof(LiveEnt) * LIVE_SLOTS);
+    g_live_used = 0;
+    g_dense_n = 0;
+    for (int k = 0; k < LIVE_SLOTS; k++) {
+        LiveEnt *o = &old[k];
+        if (o->state == LIVE_EMPTY || o->state == LIVE_DEAD) continue;
+        uint32_t i = live_hash(o->obj);
+        while (g_live[i].state != LIVE_EMPTY) i = (i + 1) & (LIVE_SLOTS - 1);
+        g_live[i] = *o;
+        g_live_used++;
+        g_live[i].dense = -1;
+        if (o->state != LIVE_SCENERY) {
+            g_live[i].dense = g_dense_n;
+            g_dense[g_dense_n++] = (int32_t)i;
+        }
+    }
+    free(old);
+}
+
+/* Reconcile with a full walk, the safety net for anything the hooks did not
+ * see: objects the map holds and the set does not are added (pending), and
+ * entries the map no longer holds are dropped. What the set already knows
+ * keeps its state, so the scenery is not looked at again. */
+static uint32_t g_live_gen;
+
+static void live_rebuild(uint32_t header, uint32_t count)
+{
+    g_live_age = 0;
+    g_live_gen++;
+    uint32_t node = read_u32(header + T->node_leftmost_off);
+    uint32_t steps = 0;
+    while (node && node != header && steps < count + 16) {
+        steps++;
+        uint32_t obj = read_u32(node + T->node_value_off);
+        if (obj >= T->min_addr) {
+            int i = live_find(obj);
+            if (i < 0) {
+                live_add(obj, read_u32(obj));
+                i = live_find(obj);
+            }
+            if (i >= 0) g_live[i].gen = g_live_gen;
+        }
+        node = T->tree_successor(node, header);
+    }
+    int dead = 0;
+    for (int k = 0; k < LIVE_SLOTS; k++) {
+        LiveEnt *e = &g_live[k];
+        if (e->state == LIVE_EMPTY || e->state == LIVE_DEAD) { dead += e->state == LIVE_DEAD; continue; }
+        if (e->gen == g_live_gen) continue;
+        if (e->dense >= 0) dense_remove(e->dense);
+        e->state = LIVE_DEAD;
+        dead++;
+    }
+    if (dead > LIVE_SLOTS / 8) live_rehash();
+}
+
+/* One sample over the live set: the kept and the pending. */
+static void live_visit(void)
+{
+    for (int d = 0; d < g_dense_n; ) {
+        LiveEnt *e = &g_live[g_dense[d]];
+        uint32_t vptr = read_u32(e->obj);
+        if (!e->vptr) e->vptr = vptr;
+        else if (vptr != e->vptr) {
+            /* Destroyed without an unregisterObject we saw: drop it. */
+            e->state = LIVE_DEAD;
+            dense_remove(d);
+            continue;
+        }
+        int keep = visit_object(read_u32(e->obj + T->obj_id_off), e->obj);
+        if (e->state == LIVE_PENDING) {
+            if (keep) e->state = LIVE_KEPT;
+            else if (++e->age >= PENDING_SAMPLES) {
+                e->state = LIVE_SCENERY;
+                dense_remove(d);
+                continue;
+            }
+        }
+        d++;
+    }
+}
+
+/* ObjectManager::registerObject / unregisterObject, through their vtable
+ * slots (every call is virtual: 164 and 60 call sites, none direct). */
+static uint32_t g_orig_register, g_orig_unregister;
+static uint32_t g_reg_calls, g_unreg_calls;
+
+static void live_check_thread(void)
+{
+    if (!g_reg_thread_set) { g_reg_thread = pthread_self(); g_reg_thread_set = 1; return; }
+    if (g_live_ok && !pthread_equal(g_reg_thread, pthread_self())) {
+        g_live_ok = 0;
+        fprintf(stderr, "recorder: objects registered from two threads; sampling walks the map\n");
+    }
+}
+
+REC_GAME_THREAD_ENTRY uint32_t recorder_register_object(void *om, uint32_t obj)
+{
+    uint32_t r = ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_register)(om, obj);
+    g_reg_calls++;
+    if (g_live) {
+        live_check_thread();
+        if (g_live_ok) live_add(obj, 0);
+    }
+    return r;
+}
+
+REC_GAME_THREAD_ENTRY uint32_t recorder_unregister_object(void *om, uint32_t obj)
+{
+    g_unreg_calls++;
+    if (g_live) {
+        live_check_thread();
+        if (g_live_ok) live_remove(obj);
+    }
+    return ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_unregister)(om, obj);
+}
+
+static int patch_slot(uint32_t slot, uint32_t expect, void *mine, uint32_t *orig, const char *what)
+{
+    uint32_t have = 0;
+    if (!slot || !T->safe_read(&have, 4, slot) || have != expect) {
+        fprintf(stderr, "recorder: %s slot %08x holds %08x, not %08x: not hooked\n", what, slot, have, expect);
+        return 0;
+    }
+    *orig = have;
+    uint32_t p = (uint32_t)(uintptr_t)mine;
+    if (!T->patch_write(slot, &p, 4)) {
+        fprintf(stderr, "recorder: could not patch the %s slot\n", what);
+        return 0;
+    }
+    return 1;
+}
+
+static void install_live_hooks(void)
+{
+    if (!T->om_register_slot) return;
+    g_live = calloc(LIVE_SLOTS, sizeof(LiveEnt));
+    g_dense = calloc(LIVE_SLOTS, sizeof(int32_t));
+    if (!g_live || !g_dense) { free(g_live); free(g_dense); g_live = 0; g_dense = 0; return; }
+    /* Unregister first: a register hooked alone would keep the dead. */
+    if (!patch_slot(T->om_unregister_slot, T->om_unregister_fn, recorder_unregister_object,
+                    &g_orig_unregister, "unregisterObject"))
+        return;
+    if (!patch_slot(T->om_register_slot, T->om_register_fn, recorder_register_object,
+                    &g_orig_register, "registerObject")) {
+        /* Put unregister back: the set would never grow. */
+        T->patch_write(T->om_unregister_slot, &g_orig_unregister, 4);
+        return;
+    }
+    g_live_ok = 1;
+    g_live_age = LIVE_REBUILD;   /* the first sample builds it from the map */
+    fprintf(stderr, "recorder: live set hooked (registerObject %08x, unregisterObject %08x)\n",
+            T->om_register_slot, T->om_unregister_slot);
+}
+
+#endif /* REC_TICK */
 
 /* --- the sampler ------------------------------------------------------------------ */
 
@@ -1652,7 +2528,7 @@ REC_GAME_THREAD_ENTRY void recorder_on_fake_fire(uint32_t fire_arms, uint32_t pl
  * is loaded (or loading), not the empty manager of a server between maps. */
 #define OPEN_MIN_OBJECTS 64
 
-/* Round state that belongs to one file (sampler thread). */
+/* Round state that belongs to one file (the sampling side's). */
 static void reset_file_state(void)
 {
     g_tracked_n = 0;
@@ -1669,233 +2545,243 @@ static void reset_file_state(void)
     g_anim_written = 0;
     g_tickets[0] = g_tickets[1] = -1;
     g_score_manager = 0;
+    g_cps_n = 0;
+    g_proj_n = 0;
 #endif
 }
 
-/* Close this file with its end record; the next tick opens a fresh one
- * with a fresh clock (sampler thread: the only thread that touches the
- * round state it resets). */
+/* Close this file with its end record; the next sample opens a fresh one
+ * with a fresh clock. */
 static void split_file(const char *why)
 {
+    acc_flush_all();
     T->rec_lock();
-    if (g_file) {
-        char line[64];
-        snprintf(line, sizeof(line), "{\"k\":\"end\",\"t\":%.3f}", T->now_s() - g_t0);
-        write_line_locked(line);
-        fflush(g_file);
-        fclose(g_file);
-        g_file = 0;
-    }
+    file_close_locked(T->now_s() - g_t0);
     g_t0 = 0.0;
     T->rec_unlock();
     reset_file_state();
     fprintf(stderr, "recorder: file closed (%s)\n", why);
 }
 
-static void *sampler(void *arg)
+/* The sampling side's state across samples. */
+static double s_next_sample;
+static uint32_t s_peak_count;      /* this file's most registered objects */
+static double s_next_level_check;
+/* After an unload split: the fewest objects seen since. The next file opens
+ * once the count climbs OPEN_MIN_OBJECTS above it (the next level loading),
+ * not on the way down. */
+static int s_after_unload;
+static uint32_t s_trough;
+static int s_low_samples;          /* consecutive samples under peak / 4 */
+static char s_other_level[64];     /* a different level name, seen once */
+static uint32_t s_last_count;      /* registered objects at the last sample */
+
+/* One sample of the world. Tick mode calls it on the game thread when a
+ * sample is due; the sampler thread calls it every 30 Hz wake-up and it
+ * decides by the clock. */
+static void sampler_step(int tick_mode)
 {
-    (void)arg;
-    double next_sample = 0.0;
-    uint32_t peak_count = 0;      /* this file's most registered objects */
-    double next_level_check = 0.0;
-    /* After an unload split: the fewest objects seen since. The next file
-     * opens once the count climbs OPEN_MIN_OBJECTS above it (the next level
-     * loading), not on the way down. */
-    int after_unload = 0;
-    uint32_t trough = 0;
-    /* Debounce: one odd read must not split a file. */
-    int low_samples = 0;          /* consecutive samples under peak / 4 */
-    char other_level[64] = "";    /* a different level name, seen once */
+    uint32_t om = read_u32(T->object_manager_ptr);
+    uint32_t count = om >= T->min_addr ? read_u32(om + T->map_count_off) : 0;
+    s_last_count = count;
 
-    for (;;) {
-        T->rec_sleep();
-        if (!g_on) continue;
-
-        uint32_t om = read_u32(T->object_manager_ptr);
-        uint32_t count = om >= T->min_addr ? read_u32(om + T->map_count_off) : 0;
-
-        if (!g_file) {
-            if (after_unload) {
-                if (count < trough) trough = count;
-                if (count < trough + OPEN_MIN_OBJECTS) continue;
-                after_unload = 0;
-            }
-            if (count < OPEN_MIN_OBJECTS) continue;
-            T->rec_lock();
-            if (!g_file && g_on) {   /* g_on: shutdown may have run meanwhile */
-                open_file_locked();
-                if (g_file) {
-                    g_t0 = T->now_s();
-                    next_sample = 1.0 / g_hz;
-                    next_level_check = 2.0;
-                    peak_count = 0;
-#if REC_STAGE3
-                    held_flush_locked();
-#endif
-                }
-            }
-            T->rec_unlock();
-            if (!g_file) { g_on = 0; continue; }
+    if (!file_is_open()) {
+        if (s_after_unload) {
+            if (count < s_trough) s_trough = count;
+            if (count < s_trough + OPEN_MIN_OBJECTS) return;
+            s_after_unload = 0;
         }
-
-        double t = T->now_s() - g_t0;
-        if (t < next_sample) continue;
-        if (T->sample_reset_next) next_sample = t + 1.0 / g_hz;
-        else next_sample += 1.0 / g_hz;
-
-        if (!om || om < T->min_addr) continue;
-
-        /* A map change: the world emptied (the level unloading -- a
-         * same-map reload changes no name), or the setup names another
-         * level than the one this file announced. One file per level. */
-        if (count > peak_count && count <= 1000000u) peak_count = count;
-        if (peak_count >= 4 * OPEN_MIN_OBJECTS && count < peak_count / 4) {
-            if (++low_samples >= 3) {
-                low_samples = 0;
-                split_file("world unloaded");
-                after_unload = 1;
-                trough = count;
-                continue;
+        if (count < OPEN_MIN_OBJECTS) return;
+        T->rec_lock();
+        if (!file_is_open() && g_on) {   /* g_on: shutdown may have run meanwhile */
+            file_open_locked();
+            if (file_is_open()) {
+                g_t0 = T->now_s();
+                s_next_sample = 1.0 / g_hz;
+                s_next_level_check = 2.0;
+                s_peak_count = 0;
+#if REC_STAGE3
+                held_flush_locked();
+#endif
             }
+        }
+        T->rec_unlock();
+        if (!file_is_open()) { g_on = 0; return; }
+    }
+
+    double t = T->now_s() - g_t0;
+    if (!tick_mode) {
+        if (t < s_next_sample) return;
+        if (T->sample_reset_next) s_next_sample = t + 1.0 / g_hz;
+        else s_next_sample += 1.0 / g_hz;
+    }
+
+    if (!om || om < T->min_addr) return;
+
+    /* A map change: the world emptied (the level unloading -- a same-map
+     * reload changes no name), or the setup names another level than the one
+     * this file announced. One file per level. */
+    if (count > s_peak_count && count <= 1000000u) s_peak_count = count;
+    if (s_peak_count >= 4 * OPEN_MIN_OBJECTS && count < s_peak_count / 4) {
+        if (++s_low_samples >= 3) {
+            s_low_samples = 0;
+            split_file("world unloaded");
+            s_after_unload = 1;
+            s_trough = count;
+            return;
+        }
+    } else {
+        s_low_samples = 0;
+    }
+#if REC_STAGE3
+    if (g_level_written && t >= s_next_level_check) {
+        s_next_level_check = t + 2.0;
+        char level[64];
+        uint32_t gpm;
+        read_level(level, sizeof(level), &gpm);
+        if (level[0] && strcmp(level, g_level_name) != 0) {
+            if (!strcmp(level, s_other_level)) {
+                s_other_level[0] = 0;
+                split_file("level changed");
+                return;
+            }
+            snprintf(s_other_level, sizeof(s_other_level), "%s", level);
         } else {
-            low_samples = 0;
+            s_other_level[0] = 0;
         }
-#if REC_STAGE3
-        if (g_level_written && t >= next_level_check) {
-            next_level_check = t + 2.0;
-            char level[64];
-            uint32_t gpm;
-            read_level(level, sizeof(level), &gpm);
-            if (level[0] && strcmp(level, g_level_name) != 0) {
-                if (!strcmp(level, other_level)) {
-                    other_level[0] = 0;
-                    split_file("level changed");
-                    continue;
-                }
-                snprintf(other_level, sizeof(other_level), "%s", level);
-            } else {
-                other_level[0] = 0;
-            }
-        }
+    }
 #endif
 
-        uint32_t header = read_u32(om + T->map_head_off);
-        if (!header || header < T->min_addr) continue;
+    uint32_t header = read_u32(om + T->map_head_off);
+    if (!header || header < T->min_addr) return;
 
-        if (g_debug) {
-            static double last_dbg = 0.0;
+    if (g_debug) {
+        static double last_dbg = 0.0;
 #if REC_STAGE3
-            static int census_done = 0;
-            if (!census_done && g_tracked_n > 0) {
-                census_done = 1;
-                /* One-shot census: every registered object's vptr, and the
-                 * flags word, to see which classes the map holds. */
-                struct { uint32_t vt; int n; } top[32] = {};
-                int ntop = 0;
-                uint32_t n2 = read_u32(header + T->node_leftmost_off);
-                uint32_t ms2 = read_u32(om + T->map_count_off) + 16;
-                uint32_t st2 = 0;
-                while (n2 && n2 != header && st2 < ms2) {
-                    st2++;
-                    uint32_t o2 = read_u32(n2 + T->node_value_off);
-                    if (o2 >= 0x1000) {
-                        uint32_t v2 = read_u32(o2);
-                        int found = 0;
-                        for (int i = 0; i < ntop; i++)
-                            if (top[i].vt == v2) { top[i].n++; found = 1; break; }
-                        if (!found && ntop < 32) { top[ntop].vt = v2; top[ntop++].n = 1; }
-                    }
-                    n2 = T->tree_successor(n2, header);
+        static int census_done = 0;
+        if (!census_done && g_tracked_n > 0) {
+            census_done = 1;
+            /* One-shot census: every registered object's vptr, and the
+             * flags word, to see which classes the map holds. */
+            struct { uint32_t vt; int n; } top[32] = {};
+            int ntop = 0;
+            uint32_t n2 = read_u32(header + T->node_leftmost_off);
+            uint32_t ms2 = read_u32(om + T->map_count_off) + 16;
+            uint32_t st2 = 0;
+            while (n2 && n2 != header && st2 < ms2) {
+                st2++;
+                uint32_t o2 = read_u32(n2 + T->node_value_off);
+                if (o2 >= 0x1000) {
+                    uint32_t v2 = read_u32(o2);
+                    int found = 0;
+                    for (int i = 0; i < ntop; i++)
+                        if (top[i].vt == v2) { top[i].n++; found = 1; break; }
+                    if (!found && ntop < 32) { top[ntop].vt = v2; top[ntop++].n = 1; }
                 }
-                fprintf(stderr, "recorder dbg: vptr census:");
-                for (int i = 0; i < ntop; i++) {
-                    fprintf(stderr, " %08x:%d", top[i].vt, top[i].n);
-                }
-                fprintf(stderr, "\n");
-                /* Name one object of each top vptr (from the object's own
-                 * template): tells the rot/engine/soldier vtables apart. */
-                uint32_t n3 = read_u32(header + T->node_leftmost_off);
-                uint32_t ms3 = read_u32(om + T->map_count_off) + 16;
-                uint32_t st3 = 0;
-                while (n3 && n3 != header && st3 < ms3) {
-                    st3++;
-                    uint32_t o3 = read_u32(n3 + T->node_value_off);
-                    if (o3 >= 0x1000) {
-                        uint32_t v3 = read_u32(o3);
-                        for (int i = 0; i < ntop; i++) {
-                            if (top[i].vt != v3 || top[i].n < 1) continue;
-                            if (top[i].n == -1) break;
-                            uint32_t t3 = read_u32(o3 + T->obj_tmpl_off);
-                            char nm[64] = "";
-                            if (t3 >= T->min_tmpl_addr)
-                                T->read_template_name(t3, nm, sizeof(nm));
-                            fprintf(stderr, "recorder dbg: vt %08x count %d tmpl '%s'\n",
-                                    top[i].vt, top[i].n, nm);
-                            top[i].n = -1;   /* named */
-                        }
-                    }
-                    n3 = T->tree_successor(n3, header);
-                }
-                fprintf(stderr, "recorder dbg: expect rot=%08x engine=%08x soldier=%08x\n",
-                        T->vt_rot_bundle, T->vt_engine, T->vt_soldier);
-                /* w32 layout probes: the playerManager's list fields, and one
-                 * root object's tail (+0xb0..+0x110: root cache / component
-                 * map region, see w32ded-offsets.md pass 4). */
-                uint32_t pmx = read_u32(T->player_manager_ptr);
-                fprintf(stderr, "recorder dbg: pm %08x:", pmx);
-                if (pmx >= 0x1000)
-                    for (int w = 0; w < 0x40; w += 4)
-                        fprintf(stderr, " +%x=%08x", w, read_u32(pmx + w));
-                fprintf(stderr, "\n");
-                uint32_t n4 = read_u32(header + T->node_leftmost_off);
-                uint32_t ms4 = read_u32(om + T->map_count_off) + 16;
-                uint32_t st4 = 0;
-                while (n4 && n4 != header && st4 < ms4) {
-                    st4++;
-                    uint32_t o4 = read_u32(n4 + T->node_value_off);
-                    n4 = T->tree_successor(n4, header);
-                    if (o4 < 0x1000) continue;
-                    if ((read_u32(o4 + 4) & 0x02000000u) &&
-                        T->net_id_of(o4) && !(read_u32(o4 + 4) & 1u)) {
-                        fprintf(stderr, "recorder dbg: root %08x tail:",
-                                o4);
-                        for (int w = 0xb0; w < 0x110; w += 4)
-                            fprintf(stderr, " +%x=%08x", w, read_u32(o4 + w));
-                        fprintf(stderr, "\n");
-                        break;
-                    }
-                }
+                n2 = T->tree_successor(n2, header);
             }
-            if (t < last_dbg) last_dbg = t;   /* a new file's clock */
-            if (t - last_dbg > 5.0) {
-                last_dbg = t;
-                fprintf(stderr, "recorder dbg: count=%u tracked=%d players=%d parts=%d soldiers=%d kitwatch=%d held=%d evcalls=%d fires=%d/%d\n",
-                        read_u32(om + T->map_count_off), g_tracked_n, g_players_n, g_parts_n, g_soldiers_n,
-                        g_kit_watch_n, g_held_n, g_event_calls, g_fire_written, g_fire_calls);
-                if (g_debug) {
-                    fprintf(stderr, "recorder dbg: types:");
-                    for (int ty = 0; ty < 64; ty++)
-                        if (g_event_type_hist[ty]) fprintf(stderr, " %02x:%d", ty, g_event_type_hist[ty]);
+            fprintf(stderr, "recorder dbg: vptr census:");
+            for (int i = 0; i < ntop; i++) {
+                fprintf(stderr, " %08x:%d", top[i].vt, top[i].n);
+            }
+            fprintf(stderr, "\n");
+            /* Name one object of each top vptr (from the object's own
+             * template): tells the rot/engine/soldier vtables apart. */
+            uint32_t n3 = read_u32(header + T->node_leftmost_off);
+            uint32_t ms3 = read_u32(om + T->map_count_off) + 16;
+            uint32_t st3 = 0;
+            while (n3 && n3 != header && st3 < ms3) {
+                st3++;
+                uint32_t o3 = read_u32(n3 + T->node_value_off);
+                if (o3 >= 0x1000) {
+                    uint32_t v3 = read_u32(o3);
+                    for (int i = 0; i < ntop; i++) {
+                        if (top[i].vt != v3 || top[i].n < 1) continue;
+                        if (top[i].n == -1) break;
+                        uint32_t t3 = read_u32(o3 + T->obj_tmpl_off);
+                        char nm[64] = "";
+                        if (t3 >= T->min_tmpl_addr)
+                            T->read_template_name(t3, nm, sizeof(nm));
+                        fprintf(stderr, "recorder dbg: vt %08x count %d tmpl '%s'\n",
+                                top[i].vt, top[i].n, nm);
+                        top[i].n = -1;   /* named */
+                    }
+                }
+                n3 = T->tree_successor(n3, header);
+            }
+            fprintf(stderr, "recorder dbg: expect rot=%08x engine=%08x soldier=%08x\n",
+                    T->vt_rot_bundle, T->vt_engine, T->vt_soldier);
+            /* w32 layout probes: the playerManager's list fields, and one
+             * root object's tail (+0xb0..+0x110: root cache / component
+             * map region, see w32ded-offsets.md pass 4). */
+            uint32_t pmx = read_u32(T->player_manager_ptr);
+            fprintf(stderr, "recorder dbg: pm %08x:", pmx);
+            if (pmx >= 0x1000)
+                for (int w = 0; w < 0x40; w += 4)
+                    fprintf(stderr, " +%x=%08x", w, read_u32(pmx + w));
+            fprintf(stderr, "\n");
+            uint32_t n4 = read_u32(header + T->node_leftmost_off);
+            uint32_t ms4 = read_u32(om + T->map_count_off) + 16;
+            uint32_t st4 = 0;
+            while (n4 && n4 != header && st4 < ms4) {
+                st4++;
+                uint32_t o4 = read_u32(n4 + T->node_value_off);
+                n4 = T->tree_successor(n4, header);
+                if (o4 < 0x1000) continue;
+                if ((read_u32(o4 + 4) & 0x02000000u) &&
+                    T->net_id_of(o4) && !(read_u32(o4 + 4) & 1u)) {
+                    fprintf(stderr, "recorder dbg: root %08x tail:",
+                            o4);
+                    for (int w = 0xb0; w < 0x110; w += 4)
+                        fprintf(stderr, " +%x=%08x", w, read_u32(o4 + w));
                     fprintf(stderr, "\n");
+                    break;
                 }
             }
-#else
-            if (t - last_dbg > 5.0) {
-                last_dbg = t;
-                fprintf(stderr, "recorder dbg: count=%u tracked=%d\n",
-                        read_u32(om + T->map_count_off), g_tracked_n);
-            }
-#endif
         }
+        if (t < last_dbg) last_dbg = t;   /* a new file's clock */
+        if (t - last_dbg > 5.0) {
+            last_dbg = t;
+            fprintf(stderr, "recorder dbg: count=%u tracked=%d players=%d parts=%d soldiers=%d kitwatch=%d held=%d evcalls=%d fires=%d/%d\n",
+                    read_u32(om + T->map_count_off), g_tracked_n, g_players_n, g_parts_n, g_soldiers_n,
+                    g_kit_watch_n, g_held_n, g_event_calls, g_fire_written, g_fire_calls);
+            if (g_debug) {
+                fprintf(stderr, "recorder dbg: types:");
+                for (int ty = 0; ty < 64; ty++)
+                    if (g_event_type_hist[ty]) fprintf(stderr, " %02x:%d", ty, g_event_type_hist[ty]);
+                fprintf(stderr, "\n");
+            }
+        }
+#else
+        if (t - last_dbg > 5.0) {
+            last_dbg = t;
+            fprintf(stderr, "recorder dbg: count=%u tracked=%d\n",
+                    read_u32(om + T->map_count_off), g_tracked_n);
+        }
+#endif
+    }
 
-        g_t = t;
-        g_gen++;
+    g_t = t;
+    g_gen++;
 #if REC_STAGE3
-        for (int i = 0; i < g_soldiers_n; i++) g_soldiers[i].seen = 0;
+    for (int i = 0; i < g_soldiers_n; i++) g_soldiers[i].seen = 0;
 
-        if (!g_level_written) write_level();
+    if (!g_level_written) write_level();
 #endif
 
+#if REC_TICK
+    /* The live set: every registered object, kept by the registerObject /
+     * unregisterObject hooks, and the ones worth a look in g_dense. Rebuilt
+     * from a full walk every LIVE_REBUILD samples, and at once when the world
+     * shrinks by half (a level unloading with deleteAllRegisteredObjects,
+     * which three direct calls reach without unregisterObject). */
+    if (g_live_ok) {
+        if (++g_live_age >= LIVE_REBUILD || count < g_live_count / 2) live_rebuild(header, count);
+        g_live_count = count;
+        live_visit();
+    } else
+#endif
+    {
         /* Walk bounded to the map's own count + 16: during map load a node
          * can be walked whose successor cycles (the same spin the lnxded
          * sampler hit; see README stage 2). */
@@ -1905,63 +2791,241 @@ static void *sampler(void *arg)
         while (node && node != header && steps < max_steps) {
             steps++;
             uint32_t obj = read_u32(node + T->node_value_off);
-            if (obj >= T->min_addr) {
-#if REC_STAGE3
-                uint32_t flags = read_u32(obj + T->obj_flags_off);
-                uint32_t nid = T->net_id_of(obj);
-                uint32_t vptr = read_u32(obj);
-                /* A watched kit is emitted however it is flagged: a carried
-                 * kit sits disabled in the map until dropped. */
-                if (nid && kit_watch_pending(nid)) {
-                    uint32_t key = read_u32(node + T->node_key_off);
-                    kit_watch_emit(obj, nid, key);
-                }
-                /* Child bundles and engines carry no net id: they are
-                 * sampled for their parts regardless. Roots without one are
-                 * skipped (the viewer has no id space for them). */
-                if (!(flags & FLAG_DISABLED) && (nid || !(flags & FLAG_ROOT)))
-                    sample_object(node);
-                if (nid && !(flags & FLAG_DISABLED) && (flags & FLAG_ROOT)
-                    && vptr == T->vt_soldier)
-                    sample_soldier(obj, nid);
-#else
-                sample_object(node);
-#endif
-            }
+            if (obj >= T->min_addr) visit_object(read_u32(node + T->node_key_off), obj);
             node = T->tree_successor(node, header);
         }
+    }
 
 #if REC_STAGE3
-        soldiers_prune();
-        sample_players();
-        sample_tickets(t);
-        kit_watch_compact();
-        if (g_gen % 10 == 0) parts_prune(g_gen);
+    soldiers_prune();
+    sample_players();
+    projectiles_gone();
+    sample_tickets(t);
+    kit_watch_compact();
+    if (g_gen % 10 == 0) parts_prune(g_gen);
 #endif
 
-        /* vanishings: ids whose generation is behind, compacted away. */
-        int w = 0;
-        for (int i = 0; i < g_tracked_n; i++) {
-            if (g_tracked[i].gen != g_gen) {
-                char line[128];
-                snprintf(line, sizeof(line), "{\"k\":\"d\",\"t\":%.3f,\"id\":%u}",
-                         t, g_tracked[i].nid);
-                write_line(line);
-                continue;
-            }
-            if (w != i) g_tracked[w] = g_tracked[i];
-            w++;
+    /* vanishings: ids whose generation is behind, compacted away. */
+    int w = 0;
+    for (int i = 0; i < g_tracked_n; i++) {
+        if (g_tracked[i].gen != g_gen) {
+            char line[128];
+            snprintf(line, sizeof(line), "{\"k\":\"d\",\"t\":%.3f,\"id\":%u}",
+                     t, g_tracked[i].nid);
+            write_line(line);
+            continue;
         }
-        if (w != g_tracked_n) {
-            g_tracked_n = w;
-            hash_rebuild();
-        }
-#if !REC_STAGE3
-        fflush(g_file);
+        if (w != i) g_tracked[w] = g_tracked[i];
+        w++;
+    }
+    if (w != g_tracked_n) {
+        g_tracked_n = w;
+        hash_rebuild();
+    }
+    acc_flush_all();
+#if !REC_STAGE3 && !REC_TICK
+    fflush(g_file);
 #endif
+}
+
+#if !REC_TICK
+static void *sampler(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        T->rec_sleep();
+        if (!g_on) continue;
+        sampler_step(0);
     }
     return 0;
 }
+#endif
+
+/* --- tick mode: the game thread samples ------------------------------------------- */
+
+#if REC_TICK
+
+/* The fault guard. The tick sample reads the game's memory with plain loads
+ * (exact, and a few hundred times cheaper than a /proc/self/mem pread). A
+ * pointer the recorder misjudges must not take the server down: a SIGSEGV
+ * or SIGBUS on the game thread inside the sample jumps back to the tick
+ * entry, which ends the sample there. Any other fault goes to whatever
+ * handler was installed before ours, or to the default action. */
+static sigjmp_buf g_guard_jmp;
+static volatile sig_atomic_t g_guard_on;
+static pthread_t g_game_thread;
+static struct sigaction g_prev_segv, g_prev_bus;
+static int g_faults;
+#define MAX_FAULTS 64
+
+static void guard_handler(int sig, siginfo_t *si, void *uc)
+{
+    if (g_guard_on && pthread_equal(pthread_self(), g_game_thread)) {
+        g_guard_on = 0;
+        siglongjmp(g_guard_jmp, sig);
+    }
+    struct sigaction *prev = sig == SIGBUS ? &g_prev_bus : &g_prev_segv;
+    if ((prev->sa_flags & SA_SIGINFO) && prev->sa_sigaction) {
+        prev->sa_sigaction(sig, si, uc);
+        return;
+    }
+    if (!(prev->sa_flags & SA_SIGINFO) && prev->sa_handler != SIG_DFL && prev->sa_handler != SIG_IGN) {
+        prev->sa_handler(sig);
+        return;
+    }
+    /* Nothing before us: restore the default; the faulting instruction runs
+     * again and the process dies as it would have without the recorder. */
+    struct sigaction dfl;
+    memset(&dfl, 0, sizeof(dfl));
+    dfl.sa_handler = SIG_DFL;
+    sigaction(sig, &dfl, 0);
+}
+
+/* Ours, ahead of whatever the server installed (checked each sample: the
+ * engine may install its own after we did). */
+static void guard_install(void)
+{
+    struct sigaction cur;
+    if (sigaction(SIGSEGV, 0, &cur) == 0 && (cur.sa_flags & SA_SIGINFO) && cur.sa_sigaction == guard_handler)
+        return;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = guard_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, &g_prev_segv);
+    sigaction(SIGBUS, &sa, &g_prev_bus);
+}
+
+/* Samples per tick: the server simulates at 30 Hz (D-1); replaySampleHz is
+ * rounded to a whole number of ticks. */
+static uint32_t g_tick_n, g_tick_div = 1;
+
+static double g_server_sum, g_server_max;
+static uint32_t g_server_n;
+
+/* What the sample costs the game thread, written once a minute as a `perf`
+ * line (the viewer skips it) and to stderr. */
+static double g_perf_sum, g_perf_max, g_perf_next, g_perf_last_t;
+static uint32_t g_perf_n, g_perf_bursts;
+
+void recorder_core_tick(void)
+{
+    if (!g_on) return;
+    if (++g_tick_n % g_tick_div) return;
+    g_game_thread = pthread_self();
+    guard_install();
+    double t0 = T->now_s();
+    g_in_sample = 1;
+    if (sigsetjmp(g_guard_jmp, 1) == 0) {
+        g_guard_on = 1;
+        g_direct = 1;
+        sampler_step(1);
+        g_direct = 0;
+        g_guard_on = 0;
+    } else {
+        g_direct = 0;
+        g_guard_on = 0;
+        g_faults++;
+        if (g_faults <= 5)
+            fprintf(stderr, "recorder: a read faulted in the tick sample (%d); that sample is cut short\n", g_faults);
+        if (g_faults >= MAX_FAULTS) {
+            g_on = 0;
+            fprintf(stderr, "recorder: %d faulted samples, recording stopped\n", g_faults);
+        }
+        acc_flush_all();   /* what the sample made before the fault is good */
+    }
+    g_in_sample = 0;
+    T->rec_lock();
+    sbuf_commit_locked();
+    T->rec_unlock();
+
+    double t1 = T->now_s();
+    double us = (t1 - t0) * 1e6;
+    g_perf_sum += us;
+    if (us > g_perf_max) g_perf_max = us;
+    g_perf_n++;
+    /* Two samples closer than half a sample period: the server stepped
+     * several ticks in one frame (a catch-up, D-4), and the stamps bunch. */
+    if (g_perf_last_t > 0.0 && t0 - g_perf_last_t < 0.5 * g_tick_div / 30.0) g_perf_bursts++;
+    g_perf_last_t = t0;
+    if (t1 >= g_perf_next) {
+        if (g_perf_next > 0.0 && g_perf_n && file_is_open()) {
+            char line[256];
+            double server_mean = g_server_n ? g_server_sum / g_server_n : 0.0;
+            snprintf(line, sizeof(line),
+                "{\"k\":\"perf\",\"t\":%.3f,\"samples\":%u,\"mean_us\":%.0f,\"max_us\":%.0f"
+                ",\"tick_mean_us\":%.0f,\"tick_max_us\":%.0f"
+                ",\"objects\":%u,\"bursts\":%u,\"faults\":%d,\"dropped\":%u}",
+                t1 - g_t0, g_perf_n, g_perf_sum / g_perf_n, g_perf_max, server_mean, g_server_max,
+                s_last_count, g_perf_bursts, g_faults, g_q_dropped);
+            write_line(line);
+            fprintf(stderr, "recorder: %u samples, %.0f us mean, %.0f us max; the server's tick %.0f us mean, "
+                    "%.0f max; %u objects, %u bursts\n",
+                    g_perf_n, g_perf_sum / g_perf_n, g_perf_max, server_mean, g_server_max,
+                    s_last_count, g_perf_bursts);
+            int pending = 0, kept = 0, dead = 0;
+            for (int k = 0; g_live && k < LIVE_SLOTS; k++) {
+                pending += g_live[k].state == LIVE_PENDING;
+                kept += g_live[k].state == LIVE_KEPT;
+                dead += g_live[k].state == LIVE_DEAD;
+            }
+            fprintf(stderr, "recorder: live set %s: dense %d (kept %d, pending %d), dead slots %d, used %d; "
+                    "registered %u, unregistered %u this minute\n", g_live_ok ? "on" : "off",
+                    g_dense_n, kept, pending, dead, g_live_used, g_reg_calls, g_unreg_calls);
+            g_reg_calls = g_unreg_calls = 0;
+        }
+        g_perf_sum = g_perf_max = 0.0;
+        g_perf_n = g_perf_bursts = 0;
+        g_server_sum = g_server_max = 0.0;
+        g_server_n = 0;
+        g_perf_next = t1 + 60.0;
+    }
+}
+
+/* GameServer::simulateFrame, through its vtable slot: the server's one tick.
+ * Called once per tick from GameServer::update's tick loop (0x081329a6);
+ * returns 1 in eax (no x87 result to preserve). The float is passed through
+ * as its bits. */
+static uint32_t g_orig_simulate;
+
+/* The server's own tick is timed beside ours for the perf line
+ * (g_server_*). */
+
+REC_GAME_THREAD_ENTRY uint32_t recorder_simulate_frame(void *self, uint32_t dt_bits)
+{
+    double t0 = g_on ? T->now_s() : 0.0;
+    uint32_t r = ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_simulate)(self, dt_bits);
+    if (g_on) {
+        double us = (T->now_s() - t0) * 1e6;
+        g_server_sum += us;
+        if (us > g_server_max) g_server_max = us;
+        g_server_n++;
+    }
+    recorder_core_tick();
+    return r;
+}
+
+static int install_tick_hook(void)
+{
+    if (!T->gs_simulate_slot) return 0;
+    uint32_t have = 0;
+    if (!T->safe_read(&have, 4, T->gs_simulate_slot) || have != T->gs_simulate_fn) {
+        fprintf(stderr, "recorder: simulateFrame slot %08x holds %08x, not %08x: no tick hook\n",
+                T->gs_simulate_slot, have, T->gs_simulate_fn);
+        return 0;
+    }
+    g_orig_simulate = have;
+    uint32_t mine = (uint32_t)(uintptr_t)recorder_simulate_frame;
+    if (!T->patch_write(T->gs_simulate_slot, &mine, 4)) {
+        fprintf(stderr, "recorder: could not patch the simulateFrame slot\n");
+        return 0;
+    }
+    fprintf(stderr, "recorder: tick hook in GameServer::simulateFrame's slot %08x\n", T->gs_simulate_slot);
+    return 1;
+}
+
+#endif /* REC_TICK */
 
 /* --- entry --------------------------------------------------------------- */
 
@@ -1993,8 +3057,17 @@ void recorder_core_init(const struct rec_target *target)
 #else
     if (T->install_detours) T->install_detours();   /* w32ded: stubbed */
 #endif
+#if REC_TICK
+    g_tick_div = (uint32_t)((30.0 / g_hz) + 0.5);
+    if (g_tick_div < 1) g_tick_div = 1;
+    install_tick_hook();   /* the harness has no slot: it calls recorder_core_tick */
+    install_live_hooks();
+    T->start_sampler_thread(writer);
+    fprintf(stderr, "recorder: writer thread started; sampling every %u tick(s)\n", g_tick_div);
+#else
     T->start_sampler_thread(sampler);
     fprintf(stderr, "recorder: sampler thread started\n");
+#endif
 }
 
 /* Detach: close the recording with its end record (w32ded's DllMain at
@@ -2003,12 +3076,12 @@ void recorder_core_shutdown(void)
 {
     if (!T) return;
     T->rec_lock();
-    g_on = 0;   /* the sampler opens no new file after this */
-    if (g_file) {
-        fprintf(g_file, "{\"k\":\"end\",\"t\":%.3f}\n", T->now_s() - g_t0);
-        fflush(g_file);
-        fclose(g_file);
-        g_file = 0;
-    }
+    g_on = 0;   /* nothing opens a new file after this */
+    file_close_locked(T->now_s() - g_t0);
     T->rec_unlock();
+#if REC_TICK
+    g_writer_quit = 1;
+    drain_once();
+    drain_once();   /* both buffers: the writer may have swapped meanwhile */
+#endif
 }

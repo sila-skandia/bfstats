@@ -1,14 +1,14 @@
 # Server-side round replay recorder
 
-Stage 2 (watchable): a 32-bit `.so` loaded into `bf1942_lnxded` with the lab's
-scenario `preload` key records the whole battlefield from inside the server as
-newline-delimited JSON in the bf42plus client recorder's format
-(`h`/`e`/`o`/`s`/`d` lines), so
-`tools/bf1942-models/viewer/replay-recording.js` can play the file: it writes
-the `setLevel` line (the viewer's level question, answered server-side), the
-roster (`createPlayer` with bot names, teams, ai), and `control` events
-binding each player to the object he controls (his soldier on spawning, his
-free camera on death), then samples every networked root object's transform.
+A 32-bit `.so` loaded into `bf1942_lnxded` (the lab's scenario `preload` key)
+records the whole battlefield from inside the server as newline-delimited JSON
+in the bf42plus client recorder's format, so
+`tools/bf1942-models/viewer/replay-recording.js` plays it as it plays a
+client's file. Since 2026-10-05 it samples on the server's own game thread
+after every simulated tick, 30 times a second, and records everything a
+client is sent plus what no client has: seats, aim and bodies, bots' AI LOD,
+control points and every projectile in flight. See
+["The new recorder"](#the-new-recorder-2026-10-05).
 
 Where this sits: `features/parity-lab/README.md` phase plan item 3. The client
 side recorder (bf42plus `recordReplays`, dsound.dll side-car) sees the round
@@ -16,11 +16,12 @@ through one connection; the server sees the authoritative world for every
 player and bot, no client cooperation needed.
 
 An agent picking this feature up: read
-["The best capture"](#the-best-capture-2026-10-04) first -- the design this
-POC is to be replaced by, and the experiments that come before it. "Review:
-sampling, and the send path" before it measures why the POC's replays play
-worse than the client's. "Where things are at (handoff)" below is the 2026-10-02
-state of the w32ded port.
+["The new recorder"](#the-new-recorder-2026-10-05) first -- what is built,
+how it was checked against a client and what is open. "The best capture" and
+"The parity round" before it are why it is built this way; the sections
+between are the POC's history. "Where things are at (handoff)" is the
+2026-10-02 state of the w32ded port, which still runs the POC's sampler
+thread.
 
 ## What exists
 
@@ -63,8 +64,12 @@ tools/bf1942-models/viewer/replay-recording.js.
 
 ```
 recordReplays 1
-replaySampleHz 10
+replaySampleHz 30
 ```
+
+`replaySampleHz` is rounded to a whole number of the server's 30 Hz ticks
+(30, 15, 10, ...). The lab's `settings-template/recorder.con` says 30 since
+2026-10-04.
 
 Off unless present. The shipped server's own config parser is not touched:
 the recorder reads its own file, so no console round-trip is needed and an
@@ -692,8 +697,9 @@ not hold: locomotion states are the server's, for any bot a human is near.
 `~/bf1942-lab/runs/20261004-083100-parity-elalamein-rec`: El Alamein co-op,
 30 bots, the owner's client recording 78 s
 (`client/replay_20261004-085232.ndjson`) beside a probe build of this
-recorder (`server/replay_1791066665.ndjson`; the probe is
-`probes/parity-probe.patch`, scenario `lab/scenarios/parity-elalamein-rec.json`).
+recorder (`server/replay_1791066665.ndjson`; the probe build was
+`probes/parity-probe.patch`, in git at `cb3a15ce`, superseded by the new
+recorder; scenario `lab/scenarios/parity-elalamein-rec.json`).
 He rode a PanzerIV (net id 558) as gunner behind a bot driver, then drove it
 with a bot gunner. Server time = client time + 1069.8 s, from his 30 shots
 and two vehicle entries; six moving objects' tracks agree at 1069.75, to 5 to
@@ -733,3 +739,128 @@ Two recorder defects the round found, both fixed in `src/`:
   while the server ran on. `tree_successor`'s descent and climb were
   unbounded, and a node the game thread frees mid-walk can make them cycle;
   both are bounded at 64 now. Likely, not proven (no stack was taken).
+
+## The new recorder (2026-10-05)
+
+"The best capture" built for lnxded (`-DREC_TICK=1`). The w32ded target and
+the test harness's thread mode still run the POC's sampler thread from the
+same core.
+
+### How it captures
+
+- **The clock.** GameServer's vtable slot 0x140 (`simulateFrame`,
+  `0x0815c2a0`; the vtable is in `.data` at `0x0871b0e0`) is replaced by a
+  wrapper that runs the server's tick and then samples. A sample is the
+  world after a tick, stamped on the same monotonic clock as the event and
+  fire hooks. `simulateFrame` returns 1 in `eax`; the float argument passes
+  through as its bits.
+- **The reads.** Plain loads on the game thread, which owns the world and is
+  not changing it while the sample runs. A SIGSEGV or SIGBUS on the game
+  thread inside a sample jumps back to the tick entry (`sigsetjmp`), ends
+  that sample and lets the server run on; any other fault goes to the
+  handler that was there before ours. After 64 faulted samples the recorder
+  stops. `tests/run.sh` points the sample at a `PROT_NONE` page to prove it.
+- **The live set.** Walking all ~5,000 registered objects was 461 of a
+  sample's 520 us. `registerObject` and `unregisterObject` are called only
+  through the ObjectManager vtable (164 and 60 call sites, none direct; slots
+  `0x087204e0`/`0x087204e4`, in `.data`), so two slot hooks keep an exact set
+  of live objects. A new object is looked at for 30 samples and then kept in
+  the per-tick list (~600 on El Alamein) or set aside as scenery. A full walk
+  every 10 s, and at once when the world halves (`deleteAllRegisteredObjects`
+  has three direct calls), reconciles the set and keeps what it knows.
+- **The output.** Lines are made on the game thread into memory; a writer
+  thread swaps the buffer out every 250 ms and writes it. Opening and closing
+  a file are markers in the same stream. Each kind of per-sample record is
+  one line per sample (`{"k":"s","t":..,"o":[[...],...]}`, the client's
+  shape). Numbers are formatted by a small fixed-point writer that matches
+  printf byte for byte (4 million values checked). `gameStatus` 5 (ENDMAP)
+  is written to disk at once: the server restarts its process for the next
+  map without running exit handlers, so a file has no `end` record.
+
+### What it writes
+
+v5, readable by the viewer as it stands. New against the POC:
+
+| `k` | what | from |
+|---|---|---|
+| `p` | `[pid, team, vehicle, root, seat, triggers]`, the client's seat record, on change | `BFPlayer::getVehicle` `+0x4c`, its root, `+0x54`, triggers `+0x148/+0x149` |
+| `st` | aim pitch and torso twist now real | `BFSoldier+0x284/+0x288` (P-4) |
+| `anim` | `[index, name, flags]`, once a file | the name map at `activeAnimationStateMachine+0x41c`, flags `state+0x24` |
+| `cp` | control points: id, name, template, place, team; then team changes | `ControlPoint+0x174`, template `+0x1e4` |
+| `lod` | `[pid, lod]` for bots, on change (AI-136) | `BotMain+0x10` through `IBotManager::instance` (the BotManager itself) |
+| `pn` / `pj` / `pd` | a projectile's flight: named, placed each sample, ended | Projectile roots (vptr `0x0873f2c8`) |
+| `perf` | once a minute: the sample's and the server's tick cost, objects, faults, dropped output | |
+
+The viewer skips `lod`, `pn`/`pj`/`pd` and `perf` today.
+
+### What it costs
+
+The sample's time on the game thread, with the server's own tick for scale
+(`perf` lines):
+
+| round | recorder per sample | server's tick |
+|---|---|---|
+| El Alamein, 30 bots, no human | 100 us mean, 430-810 us max | 720-860 us |
+| the same with a human flying | 225-265 us mean, ~1.1 ms max | 2.4-2.9 ms |
+| 13 h soak, 7 rounds (below) | 87-269 us per-minute means; one 14 ms worst sample | 0.6-2.4 ms |
+
+About 0.3-0.8% of one core. It got there from 544 us: the live set took the
+walk away, template and player names (a `/proc/self/mem` read each) moved to
+first sight, the part table gained an index, and printf left the hot path.
+What is left is mostly formatting; moving it to the writer thread is the
+next step if a 64-player server needs it.
+
+### How it was checked
+
+- **Bots-only El Alamein.** Every real shot (fireBarrel) has a projectile
+  flight within 0.1 s, in a full-walk run (493 of 493) and in a live-set run
+  (101 of 101). Objects seen twice are soldiers leaving and re-entering
+  vehicles, the same in both modes. In the viewer's own crew logic
+  (`crewOf`), hulls are crewed in 604 of 1,668 moments; the POC's file had
+  none of 5,833.
+- **The second parity round** (`~/bf1942-lab/runs/20261005-070852-parity-elalamein-rec`):
+  the owner flew a BF109 for 2.7 minutes with his client recording. Server
+  time = client time + 72.475 s (his plane's track).
+  - Every object his client did not control is drawn 0.12 s behind the
+    server; allowing for it, vehicles and soldiers agree to 5-9 cm at the
+    median and aircraft to ~0.4 m. His own plane, which his client predicts,
+    agrees to 0.38 m with no lag. The server has it every 0.033 s, the client
+    every 0.108 s.
+  - Seats: the same transitions (soldier 961, BF109 575, the free camera),
+    within the client's 0.1 s.
+  - The animation table: 1,395 states, identical in index, name and flags.
+  - Body states: lower 92%, upper 89% the same (with no lag shift); 165 of
+    the 189 upper mismatches are the same state within 0.3 s, most of the
+    rest the client's weapon-specific variant (`Ub_LieToStandK98`) of the
+    server's generic one. Where his client showed a soldier running, the
+    server agreed 91%. Aim: pitch 0.0 degrees apart at the median, 0.2 at
+    p90; twist 0.0 and 1.6.
+  - Engine revs of his plane: 0.005 apart at the median.
+  - Tickets and control points: the same values, names and owners.
+  - His shots: 468 on the server, 279 on the client. The server writes one
+    `f` per barrel (`fireBarrel`), the client one per trigger pull: 189
+    BF109 bursts x 2 barrels + 90 StG 44 rounds = 468. All 378 BF109 rounds
+    have a flight (12 samples over ~160 m at the median); 59 of 90 StG 44
+    rounds do, the rest hit inside one tick.
+  - The viewer parses the 15-minute file in 0.4 s with nothing skipped, and
+    crews hulls in 2,275 of 8,356 moments (seats 0, 1 and 2).
+- **A 13-hour soak** (`20261004-180859-parity-elalamein-rec`): seven rounds,
+  one file each, zero faults, zero dropped output, every line valid JSON. The
+  laptop slept from 22:26 to 06:35 in the seventh round; the server and the
+  recorder carried on after it. The recorder's `t` is `CLOCK_MONOTONIC`,
+  which stops in a suspend, so that file's 3,232 s are 1,231 s before the
+  sleep and 2,001 s after it, with the server event log's 8-hour gap folded
+  out.
+
+### Still open
+
+- A neutral control point is team 0 on the server and -1 in a client file
+  (the client's never-set value). The viewer treats a point's first team as
+  how the round opened it, so a server file's first capture of a neutral
+  point is a capture; a client file's is not.
+- Rounds that hit inside one tick (rifle bullets at close range) have an `f`
+  and no flight. A hook on projectile creation would give them one.
+- The viewer does not use `lod`, `pn`/`pj`/`pd` yet: it could draw the
+  server's own projectile flights, and mark a bot at LOD 2 (a sliding hull,
+  no locomotion) as the server's simplification.
+- w32ded is still the POC sampler thread (stage 1 verified).
