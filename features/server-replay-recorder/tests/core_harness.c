@@ -8,7 +8,8 @@
  *      the file nor hangs the game thread (the sampler used to re-take its
  *      own lock in held_flush, and the game thread's next write hung); a
  *      name's high bytes are written \u00XX, the file stays UTF-8
- *   3. a to-all event fanned out to three clients is written once
+ *   3. a to-all event fanned out to three clients is written once, though
+ *      each copy has different bytes past its payload
  *   4. the world unloading closes the file with its end record; the next
  *      opens when the next level loads, under a name of its own
  *
@@ -66,8 +67,18 @@ static struct rec_target fake = {
 extern void recorder_on_event(uint32_t ev);
 extern void recorder_on_queue_event(uint32_t ev);
 
+/* What lies past an event's payload is its heap neighbours, different for
+ * every copy: the recorder must read and compare the payload alone. */
+static int payload_len(int type) {
+    switch (type) {
+        case 0x08: return 45; case 0x16: return 19; case 0x1a: return 51;
+        case 0x1b: return 33; case 0x24: return 39; case 0x29: return 8;
+        case 0x2a: return 14; default: return 0;
+    }
+}
 static void ev(int queue, int type, int byte0) {
     struct fake_ev e; memset(&e, 0, sizeof e);
+    for (int i = payload_len(type); i < (int)sizeof e.payload; i++) e.payload[i] = (uint8_t)rand();
     e.vptr = (uint32_t)(uintptr_t)vtbl; e.type = type; e.payload[0] = (uint8_t)byte0;
     static const char cp1252_name[] = "Julius Haim\xfc" "ller";   /* a bot of El Alamein's */
     if (type == 0x08) memcpy(e.payload + 3, cp1252_name, sizeof cp1252_name);

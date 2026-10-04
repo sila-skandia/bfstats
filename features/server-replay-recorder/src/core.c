@@ -1804,17 +1804,17 @@ static volatile int g_event_calls;
 static int g_event_type_hist[64];
 static volatile int g_fire_calls, g_fire_written;
 
-/* The last event recorded (game thread only). sendGameEventToAll hands its
- * event to GameEventManager::addEvent once per connected client, which
- * clones it into addEventToSendQueue; the per-client GameServer senders
- * (enterVehicle, radioMessage, handlePickup, ...) loop the same way. With N
- * clients one event reaches the hooks N (+1) times, back to back, with the
- * same payload: those copies are dropped here. */
-static int g_last_type;
-static size_t g_last_size;
-static uint8_t g_last_payload[256];
-static double g_last_at;
+/* The events recorded in the last few milliseconds (game thread only).
+ * sendGameEventToAll hands its event to GameEventManager::addEvent once per
+ * connected client, which clones it into addEventToSendQueue; the per-client
+ * GameServer senders (enterVehicle, radioMessage, handlePickup, ...) loop the
+ * same way. With N clients one event reaches the hooks N (+1) times with the
+ * same payload: those copies are dropped here. A ring, not only the last
+ * event, so two fan-outs that interleave still collapse. */
 #define FANOUT_WINDOW_S 0.005
+#define FANOUT_RING 16
+static struct { int type; size_t len; uint8_t payload[160]; double at; } g_recent[FANOUT_RING];
+static int g_recent_next;
 
 static void on_event(uint32_t ev)
 {
@@ -1840,36 +1840,47 @@ static void on_event(uint32_t ev)
      * recorded like any other event. Map changes are the sampler's to find
      * (split_if_new_level). */
 
-    /* Read the payload into a local buffer: every read through the game's
-     * own memory on the game thread. */
-    uint8_t buf[256];
-    size_t size = 0;
-    /* Sizes from the event structs (bf42plus gameevent.h); unknown sizes
-     * read 64 bytes and are dropped. */
+    /* Each event's size with its 12-byte header, from its maker's
+     * `mov ecx, sizeof(T)` (round-replay-capture section 2.2's table). The
+     * payload is size - 12: exactly that is copied and compared. Copying
+     * `size` from the payload read 12 bytes past the event, so a clone (whose
+     * neighbours differ) never matched its original and every to-all event was
+     * written once per connected client, plus once (2026-10-05). */
     static const struct { int type; size_t size; } sizes[] = {
         { 0x04, 17 }, { 0x05, 22 }, { 0x06, 14 }, { 0x07, 43 }, { 0x08, 57 },
-        { 0x09, 15 }, { 0x0a, 15 }, { 0x0b, 14 }, { 0x0c, 13 }, { 0x16, 31 },
-        { 0x1a, 63 }, { 0x1b, 45 }, { 0x24, 51 }, { 0x27, 13 }, { 0x28, 38 },
-        { 0x29, 20 }, { 0x2a, 26 }, { 0x34, 12 }, { 0x36, 128 }, { 0x39, 14 },
-        { 0x3a, 16 }, { 0x23, 15 },
+        { 0x09, 15 }, { 0x0a, 15 }, { 0x0b, 14 }, { 0x0c, 13 }, { 0x14, 52 },
+        { 0x16, 31 }, { 0x1a, 63 }, { 0x1b, 45 }, { 0x23, 15 }, { 0x24, 51 },
+        { 0x27, 13 }, { 0x28, 38 }, { 0x29, 20 }, { 0x2a, 26 }, { 0x34, 12 },
+        { 0x36, 158 }, { 0x39, 14 }, { 0x3a, 16 },
     };
+    size_t size = 0;
     for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
         if (sizes[i].type == type) { size = sizes[i].size; break; }
-    if (!size) return;
-    if (size > sizeof(buf)) size = sizeof(buf);
-    memcpy(buf, p, size);
+    if (size < 12) return;   /* an event this recorder does not decode */
+    size_t len = size - 12;
 
-    if (type == g_last_type && size == g_last_size && now - g_last_at < FANOUT_WINDOW_S
-        && memcmp(buf, g_last_payload, size) == 0) {
-        g_last_at = now;   /* a long fan-out stays one window */
+    /* The payload into a zeroed local buffer: every read through the game's
+     * own memory on the game thread, none past the event. */
+    uint8_t buf[160];
+    memset(buf, 0, sizeof(buf));
+    if (len > sizeof(buf)) len = sizeof(buf);
+    memcpy(buf, p, len);
+
+    for (int i = 0; i < FANOUT_RING; i++) {
+        if (g_recent[i].type != type || g_recent[i].len != len) continue;
+        if (now - g_recent[i].at >= FANOUT_WINDOW_S) continue;
+        if (memcmp(buf, g_recent[i].payload, len) != 0) continue;
+        g_recent[i].at = now;   /* a long fan-out stays one window */
         return;
     }
-    g_last_type = type;
-    g_last_size = size;
-    memcpy(g_last_payload, buf, size);
-    g_last_at = now;
+    int slot = g_recent_next;
+    g_recent_next = (g_recent_next + 1) % FANOUT_RING;
+    g_recent[slot].type = type;
+    g_recent[slot].len = len;
+    memcpy(g_recent[slot].payload, buf, len);
+    g_recent[slot].at = now;
 
-    emit_event_json(type, buf, size, t);
+    emit_event_json(type, buf, len, t);
 }
 
 /* Entered from GCC 3.2 code, which keeps the stack 4-byte aligned; this
@@ -1926,9 +1937,12 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             break;
         case 0x2a: {  /* ScoreMsgEvent: kills name the weapon */
             /* The server's object is packed: kind +0xc, player +0x10, victim
-             * +0x11, weapon +0x12, then +0x16 (ScoreMsgEvent::serialize
+             * +0x11, weapon +0x12, body part +0x16 (ScoreMsgEvent::serialize
              * 0x0811c8d0) -- payload 0, 4, 5, 6, 10, not the client
              * struct's 8 and 12. */
+            /* Victim, weapon and body part (one byte) are only serialized
+             * for a kill or a team kill (kinds 3 and 6); for the others the
+             * object holds whatever was there, so they are left out. */
             int kind = I32(0);
             if (kind == 3 || kind == 6) {
                 uint32_t wid = U32(6);
@@ -1936,13 +1950,12 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 char esc[128]; json_escape(name, esc, sizeof(esc));
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"score\",\"kind\":%d,\"pid\":%u"
-                    ",\"victim\":%u,\"weapon\":%d,\"bodypart\":%d,\"weaponName\":\"%s\"}",
-                    t, kind, U8(4), U8(5), (int32_t)wid, I32(10), esc);
+                    ",\"victim\":%u,\"weapon\":%d,\"bodypart\":%u,\"weaponName\":\"%s\"}",
+                    t, kind, U8(4), U8(5), (int32_t)wid, U8(10), esc);
             } else {
                 snprintf(line, sizeof(line),
-                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"score\",\"kind\":%d,\"pid\":%u"
-                    ",\"victim\":%u,\"weapon\":%d,\"bodypart\":%d}",
-                    t, kind, U8(4), U8(5), I32(6), I32(10));
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"score\",\"kind\":%d,\"pid\":%u}",
+                    t, kind, U8(4));
             }
             break;
         }
@@ -1989,13 +2002,21 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 t, U8(0), U16(1));
             break;
         case 0x07: {  /* CreateObjectEvent */
+            /* The server's object (CreateObjectEvent::serialize 0x0811d360):
+             * template id +0, net id +4, a has-transform flag +6, then the
+             * position +7 and rotation +0x13 only when it is set. */
             template_name_by_id(U32(0), name, sizeof(name));
             char esc[128]; json_escape(name, esc, sizeof(esc));
-            snprintf(line, sizeof(line),
-                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
-                ",\"tmpl\":\"%s\",\"pos\":[%.2f,%.2f,%.2f],\"rot\":[%.2f,%.2f,%.2f]}",
-                t, U32(0), U16(4), esc, F32(8), F32(12), F32(16),
-                F32(20), F32(24), F32(28));
+            if (U8(6))
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
+                    ",\"tmpl\":\"%s\",\"pos\":[%.2f,%.2f,%.2f],\"rot\":[%.2f,%.2f,%.2f]}",
+                    t, U32(0), U16(4), esc, F32(7), F32(11), F32(15),
+                    F32(19), F32(23), F32(27));
+            else
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
+                    ",\"tmpl\":\"%s\"}", t, U32(0), U16(4), esc);
             break;
         }
         case 0x36: {  /* SetLevelEvent */

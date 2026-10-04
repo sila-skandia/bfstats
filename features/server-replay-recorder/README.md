@@ -852,6 +852,36 @@ next step if a 64-player server needs it.
   sleep and 2,001 s after it, with the server event log's 8-hour gap folded
   out.
 
+### Events against a client (2026-10-05)
+
+The owner saw one kill of his twice at 3:50. Every to-all event was written
+once per connected client plus once: the event hook copied `size` bytes from
+the payload, but the size table is the maker's `sizeof`, header included, so
+it read 12 bytes past each event, and a client's clone (different heap
+neighbours) never matched its original. It now copies and compares the
+payload alone, against the last 16 events rather than the last one. The same
+read could fault at a page's end; it no longer leaves the event. Checked
+event by event against the owner's client file of the same round, three
+decoders were also wrong for the server's own objects and are fixed:
+
+- `createObject` (CreateObjectEvent::serialize `0x0811d360`): a
+  has-transform flag at payload +6, the position at +7 and the rotation at
+  +19 only when it is set. The decoder read +8 and +20 (positions like
+  -134217728).
+- `score` (ScoreMsgEvent::serialize `0x0811c8d0`): victim, weapon and body
+  part are serialized only for kinds 3 and 6, and the body part is one byte;
+  other kinds are written with the kind and player alone.
+- `challenge` (0x14, 52 bytes) was missing from the table, so never written.
+
+`destroyObject`, `exitVehicle`, `serverInfo`, `serverName`, `setLevel`,
+`simStart` and `clock` matched the client's; `enterVehicle` matched once the
+client's 9 s delay in taking the join's database is allowed for.
+`tests/run.sh` now gives every copy of a fake event different bytes past its
+payload; the old core fails it with the field's numbers (one kill written
+five times for three clients). The viewer's copy of that round
+(`viewer/replays/20261005-070852-parity-elalamein-rec/replay_1791148138.ndjson`)
+has had its exact duplicates removed; the run directory keeps the original.
+
 ### Still open
 
 - A neutral control point is team 0 on the server and -1 in a client file
