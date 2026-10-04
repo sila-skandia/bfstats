@@ -115,6 +115,25 @@ Since 2026-09-27 the map page is this host's alone: `mesh/nginx.conf` sends
 HAProxy needs no change for it
 ([mesh-site](../../../features/mesh-site/README.md#maps-moved-to-playbfstatsio-2026-09-27)).
 
+## `replay.bfstats.io` — recordings' short links
+
+`replay.bfstats.io/<slug>` is a shared recording's short link
+(features/replay-feed, "Short links"). Like the play host it needs no pod of
+its own:
+
+1. `deployment.yaml`'s ConfigMap: `acl host_replay_bfstats`, a 302 from the
+   bare host to the feed, `http-request set-path /replay%[path]` (so `/<slug>`
+   reaches the API's `/replay/<slug>`, the route behind the play host's
+   `/replay/<slug>`), and `use_backend stats_api if host_replay_bfstats`.
+2. `cloudflared-tunnel.yml`: the hostname rule to the same haproxy service.
+3. DNS: CNAME `replay` -> `a363a103-18d0-439f-afdc-b427e9e6a6ad.cfargotunnel.com`,
+   proxied (the same `cert.pem` zone trap as `mesh` above).
+
+Apply both ConfigMaps, then restart cloudflared and HAProxy as for the play
+host. The API's page for a short link sends the browser to the play host
+(`Recordings__PlayOrigin`) and names the short link's host in its preview
+tags (`Recordings__ShortLinkOrigin`).
+
 ## The netcode room server route (`/netcode`)
 
 The BF1942 multiplayer room server (P2 of
