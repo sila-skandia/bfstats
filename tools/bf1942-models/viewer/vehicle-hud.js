@@ -13,6 +13,8 @@
  * `replayAim`, `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
  */
 
+import { crossGunOf } from './fire-state.js';
+
 /** The HUD's virtual screen, the frame the cross is measured in. */
 const CROSSHAIR_VIRTUAL = [800, 600];
 
@@ -32,6 +34,9 @@ const CROSSHAIR_SIZE_PER_DEGREE = 5;
  *  fill at (400,300). The Wake footage the cross was first measured on had
  *  none, so that server ran with it off. */
 const SERVER_CROSSHAIR_CENTER_POINT = true;
+
+/** A seat with no guns: one shared empty list, not one a frame. */
+const NO_GUNS = Object.freeze([]);
 
 export function createVehicleHud(page) {
   const vehicleHud = {};
@@ -276,12 +281,7 @@ export function createVehicleHud(page) {
     // same declaration-order assumption SEAT-22's own seat-position map already
     // rests on; the extracted data has no independent primary/secondary tag to
     // cross-check it against.
-    let nodes = [];
-    if (page.mannedActive()) {
-      nodes = page.occupancy.activeFireArmsNodes();
-    } else if (page.occupancy.isActiveRoot() && (page.aircraft || page.car)) {
-      nodes = page.occupancy.seatInfo(page.occupancy.rootId)?.fireArms || [];
-    }
+    const nodes = seatGunNodes();
     const primary = nodes[0] ? page.fireStateFor(nodes[0]) : null;
     const secondary = nodes[1] ? page.fireStateFor(nodes[1]) : null;
     // `hud-layout.json`'s vehicle-skin ammo panel prints `Ammo/{Primary,Secondary}
@@ -320,6 +320,16 @@ export function createVehicleHud(page) {
     // for the same per-tick reason as `heated` above.
     setHudVar('Ammo/ReloadTime', readyFraction(primary, nodes[0]));
     setHudVar('Ammo/ReloadTimeSecondary', readyFraction(secondary, nodes[1]));
+  }
+
+  /** The active seat's FireArms nodes, primary first: the ammo panel's
+   *  `nodes[0]`/`[1]` (`feedVehicleHud`) and the cross's gun (`crossGunOf`). */
+  function seatGunNodes() {
+    if (page.mannedActive()) return page.occupancy.activeFireArmsNodes();
+    if (page.occupancy.isActiveRoot() && (page.aircraft || page.car)) {
+      return page.occupancy.seatInfo(page.occupancy.rootId)?.fireArms || NO_GUNS;
+    }
+    return NO_GUNS;
   }
 
   /** The `GunFire` group that actually fires this FireArms node — `mannedGuns`
@@ -400,11 +410,11 @@ export function createVehicleHud(page) {
    *
    * The page used to ask only the hand weapon, and only on foot, so a
    * CHTCrossHair tank drew nothing and a CHTIcon launcher drew a bare dot.
-   * `deviation` is the hand weapon's whole cone in degrees, `minDev`
-   * included. A seat gun has no deviation model here, so its bars meet at
-   * centre: right for a tank's main gun, which ships no deviation words, and
-   * short of retail for the hull and stationary MGs, whose `setMinDev` and
-   * `setFireDev` open the cross the same way (XHIT-15).
+   * `deviation` is the weapon's whole cone in degrees, `minDev` included:
+   * the hand weapon's, or the seat gun's (`FireState.spread`, run per round
+   * and per tick like the hand weapon's, XHIT-15). A tank's main gun ships
+   * no deviation words and its bars meet at centre; the hull and stationary
+   * MGs open the cross by their `setMinDev` and `setFireDev`.
    */
   function crosshairAim() {
     // A replay's first person draws the followed player's own cross: his
@@ -419,8 +429,9 @@ export function createVehicleHud(page) {
       // is declared — a Sherman's driver and its hull gunner are two PCOs and
       // answer separately. A scene extracted before the word was carried has
       // none, and an absent word draws nothing rather than a guess.
+      const gun = crossGunOf(seatGunNodes());
       return { style: page.occupancy?.activeHud?.()?.crossHairType ?? null,
-               deviation: 0, scoped: false };
+               deviation: gun ? page.fireStateFor(gun).spread : 0, scoped: false };
     }
     const hw = page.handWeapon;
     // No active item, no `setCrossHairType` to read: the item gate takes the
@@ -554,6 +565,7 @@ export function createVehicleHud(page) {
     insideView,
     readyFraction,
     remoteSeatOccupants,
+    seatGunNodes,
     setCrosshairVar,
     setHudVar,
     turretDialAngle,

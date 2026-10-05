@@ -62,6 +62,8 @@ MODULES = {
     "entry-points.js": VIEWER / "entry-points.js",
     "spawned-craft.js": VIEWER / "spawned-craft.js",
     "fire-state.js": VIEWER / "fire-state.js",
+    # fire-state.js runs a seat gun's cone (XHIT-15).
+    "deviation.js": VIEWER / "deviation.js",
     "seat-dots.js": VIEWER / "seat-dots.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "world-collider.js": VIEWER / "world-collider.js",
