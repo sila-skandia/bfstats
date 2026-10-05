@@ -434,11 +434,23 @@ export function parseRecording(text) {
   };
   const current = new Map();
   const tidNames = new Map();
-  const kitIds = new Set();
   const cpTemplates = new Set();
   const cpState = new Map();
   const deferred = [];
+  const kitMarks = [];          // { t, nid } every kit id a pickup named, with or without a player
   const kitPickups = [];        // { t, pid, nid }
+  // A server recording (features/server-replay-recorder, header `plus`
+  // `server-replay-recorder...`) ends no life by event: its soak rounds carry
+  // no createObject or destroyObject at all, and later ones only while a
+  // client is connected. Its `d` is the object leaving the server's
+  // registered map, which a soldier boarding a vehicle also does, so it ends
+  // nothing either. What tells two objects on one id apart is the registry
+  // key every `o` carries (`gid`): another key is another object. Without
+  // that, a later object on a reused id was folded into the first life on
+  // it, under the first one's template (kit 789, German_AT_Desert at 731 s
+  // of replay_1791103311, went into soldier 789's life of 21.7 s).
+  let serverFile = false;
+  const gidOf = new Map();      // life -> the registry key its `o` named (server files only)
   const nidEvents = [];         // { t, pid, nid } every report of what a player controls
   const plainDeaths = [];       // { t, victim } score DEATH (4): "is no more", unless a team kill wrote it
   const killRows = new Map();   // a kill -> its feed row
@@ -520,6 +532,27 @@ export function parseRecording(text) {
     const last = life.replicated[life.replicated.length - 1];
     if (last && last[1] === Infinity) last[1] = t;
   };
+  /** A server file's life on `nid`, for an object named at `t` by an `o`,
+   *  a createObject or a pool: the open life, unless that is another object
+   *  -- another registry key (`gid`), or another template (`tmpl`; one object
+   *  never changes its template in any of the 21 server files so far) -- which
+   *  then ends at `t`, where the new one begins. The server never says when
+   *  the old one went, only that something else holds its id now. */
+  const serverLifeFor = (nid, t, { gid, tmpl } = {}) => {
+    const open = current.get(nid);
+    if (open && open.destroyed === Infinity && open.created < t) {
+      const known = gidOf.get(open);
+      const otherKey = gid !== undefined && known !== undefined && known !== gid;
+      const otherTemplate = Boolean(tmpl) && Boolean(open.tmpl) && open.tmpl !== tmpl;
+      if (otherKey || otherTemplate) {
+        open.destroyed = t;
+        closeReplicated(open, t);
+      }
+    }
+    const life = lifeFor(nid, t);
+    if (gid !== undefined && !gidOf.has(life)) gidOf.set(life, gid);
+    return life;
+  };
   // A v4 recorder keyed every part 0 and wrote a part only when it differed
   // from the last part it wrote, whichever hull's that was (bf42plus 4fc0352
   // `sampleParts`). Its walk is the object manager's registry, so a record
@@ -546,7 +579,7 @@ export function parseRecording(text) {
   /** A pool of rounds a kit carries, `count` objects from `first`. */
   function projectilePool(t, tid, first, count, tmpl) {
     for (let i = 0; i < Math.max(0, Math.min(count, 64)); i++) {
-      const life = lifeFor(first + i, t);
+      const life = serverFile ? serverLifeFor(first + i, t, { tmpl }) : lifeFor(first + i, t);
       life.tid = tid;
       if (tmpl) life.tmpl = tmpl;
       life.created = Math.min(life.created, t);
@@ -605,7 +638,7 @@ export function parseRecording(text) {
         rec.matchable.push({ t, kind: 'exitVehicle' });
         return;
       case 0x23:
-        kitIds.add(u16(1));
+        kitMarks.push({ t, nid: u16(1) });
         kitPickups.push({ t, pid: b[0], nid: u16(1) });
         rec.matchable.push({ t, kind: 'pickupKit' });
         return;
@@ -776,7 +809,7 @@ export function parseRecording(text) {
         return;
       case 'createObject': {
         if (r.netId) {
-          const life = lifeFor(r.netId, t);
+          const life = serverFile ? serverLifeFor(r.netId, t, { tmpl: r.tmpl }) : lifeFor(r.netId, t);
           if (r.tmpl) life.tmpl = r.tmpl;
           if (r.tid) {
             life.tid = r.tid;
@@ -824,7 +857,7 @@ export function parseRecording(text) {
         return;
       case 'pickupKit':
         rec.matchable.push({ t, kind: 'pickupKit' });
-        if (r.netId) kitIds.add(r.netId);
+        if (r.netId) kitMarks.push({ t, nid: r.netId });
         if (r.pid !== undefined && r.netId) kitPickups.push({ t, pid: r.pid, nid: r.netId });
         return;
       case 'setLevel':
@@ -895,6 +928,7 @@ export function parseRecording(text) {
           rec.version = r.v ?? 1;
           rec.start = r.start ?? '';
           rec.merged = Array.isArray(r.merged) ? r.merged : null;
+          serverFile = /^server-replay-recorder/.test(String(r.plus ?? ''));
           break;
         case 'e':
           // An event with `ago` arrived before the file began and heads it (a
@@ -906,7 +940,7 @@ export function parseRecording(text) {
           break;
         case 'o': {
           if (!Number.isFinite(r.id)) break;
-          const life = lifeFor(r.id, t);
+          const life = serverFile ? serverLifeFor(r.id, t, { gid: r.gid, tmpl: r.tmpl }) : lifeFor(r.id, t);
           if (!life.tmpl) life.tmpl = r.tmpl || '';
           if (!life.tid) life.tid = r.tid || 0;
           life.team = r.team ?? life.team;
@@ -1171,23 +1205,38 @@ export function parseRecording(text) {
     if (!life.tmpl && life.tid) life.tmpl = tidNames.get(life.tid) || '';
     classify(life);
     if (life.soldier) standOnFeet(life);
-    life.kit = kitIds.has(life.nid);
+    life.kit = false;   // marked below, by time
     life.controlPoint = cpTemplates.has(life.tmpl);
     // DataBaseComplete arrives after the join-time burst of creations, so
     // whether an object spawned during play can only be decided here.
     life.spawnedLate = Boolean(life.announced) && life.created > joined + 1;
   }
-  // A kit is also whatever a player carried at the join, before any pickup,
-  // and anything else of a template a kit was: a kit dropped by a dead man
-  // lies on the ground as the same template until somebody takes it.
+  // A kit is the life a pickup (0x23, a server file's pickupKit) names at the
+  // pickup's time, as each soldier's kit is bound below, and whatever a
+  // player carried at the join, before any pickup; and anything else of a
+  // template a kit was: a kit dropped by a dead man lies on the ground as the
+  // same template until somebody takes it. A server file reuses ids within
+  // the window (soldier 789 at 21.7 s, kit 789 at 731 s of replay_1791103311),
+  // and a mark by id alone landed on the soldier's life; the template spread
+  // then made every BritishSoldier a kit. A man, his camera, a control point
+  // and anything with hit points (`maxhp`: every soldier and hull has an
+  // Armor component, no kit has one) is never a kit, nor is anything of
+  // their templates, whatever id a pickup named.
+  const notKitLife = life => life.soldier || life.camera || life.controlPoint || life.maxhp > 0;
+  const notKitTemplates = new Set(rec.lives.filter(l => l.tmpl && notKitLife(l)).map(l => l.tmpl.toLowerCase()));
+  const mayBeKit = life => !notKitLife(life) && !(life.tmpl && notKitTemplates.has(life.tmpl.toLowerCase()));
+  for (const { t, nid } of kitMarks) {
+    const kit = lifeAtIn(rec.lives, nid, t + 0.5);
+    if (kit && mayBeKit(kit)) kit.kit = true;
+  }
   const allSessions = [...rec.sessions.values()].flat();
   for (const player of allSessions) {
     const kit = player.joinKitNid ? lifeAtIn(rec.lives, player.joinKitNid, player.joinT) : null;
-    if (kit) kit.kit = true;
+    if (kit && mayBeKit(kit)) kit.kit = true;
   }
   const kitTemplates = new Set(rec.lives.filter(l => l.kit && l.tmpl).map(l => l.tmpl.toLowerCase()));
   for (const life of rec.lives) {
-    if (!life.kit && life.tmpl && kitTemplates.has(life.tmpl.toLowerCase())) life.kit = true;
+    if (!life.kit && life.tmpl && kitTemplates.has(life.tmpl.toLowerCase()) && mayBeKit(life)) life.kit = true;
   }
   // A round is anything else of a template a pool made: the boats at the
   // join laid mines from pools the recording never saw made.
@@ -1244,7 +1293,8 @@ export function parseRecording(text) {
   }
 
   // Each soldier's kit: what his player picked up at the spawn (0x23), or
-  // carried at the join (CreatePlayer's kit id). Never another player's.
+  // carried at the join (CreatePlayer's kit id). Never another player's, and
+  // never a life that is no kit (a pickup naming a hull's id).
   const soldierOf = (pid, t) => {
     let best = null;
     for (const life of soldierLivesOf(rec, pid)) {
@@ -1261,14 +1311,14 @@ export function parseRecording(text) {
   for (const { t, pid, nid } of kitPickups) {
     const soldier = soldierOf(pid, t);
     const kit = lifeAtIn(rec.lives, nid, t + 0.5);
-    if (soldier && kit?.tmpl) soldier.kitTemplate = kit.tmpl;
+    if (soldier && kit?.kit && kit.tmpl) soldier.kitTemplate = kit.tmpl;
   }
   for (const player of allSessions) {
     const soldier = player.joinNid ? lifeAtIn(rec.lives, player.joinNid, player.joinT) : null;
     if (!soldier?.soldier || soldier.kitTemplate) continue;
     if (soldier.pid === undefined) soldier.pid = player.pid;
     const kit = player.joinKitNid ? lifeAtIn(rec.lives, player.joinKitNid, player.joinT) : null;
-    if (kit?.tmpl) soldier.kitTemplate = kit.tmpl;
+    if (kit?.kit && kit.tmpl) soldier.kitTemplate = kit.tmpl;
   }
 
   // Each soldier's death: the score stream's death for his player, else the
@@ -1588,9 +1638,10 @@ export function roundsByPlayer(rec) {
 }
 
 /** A life a seated man's hull can be: anything but a man or his camera. A
- *  life's kit mark is not asked: it goes by network id whatever the time, so
- *  a hull given a kit's old id carries it (Sherman 1097 of the soak round
- *  replay_1791103311). */
+ *  life's kit mark is not asked. Until 2026-10-05 it went by network id
+ *  whatever the time, so a hull given a kit's old id carried it (Sherman
+ *  1097 of the soak round replay_1791103311); the guess was measured
+ *  without it, and a round never hangs under a kit. */
 const hullLike = life => Boolean(life?.tmpl) && !life.soldier && !life.camera;
 
 /** The kill log's word for what a round came from: the hull it hangs under
