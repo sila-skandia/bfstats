@@ -1,5 +1,8 @@
-// A seated gun's magazine, reload and heat (GUN-12), and the `onShot`
-// splice that bills it. Split out of `seats.js`, which re-exports both.
+// A seated gun's magazine, reload, heat and cone (GUN-12, XHIT-15), the
+// `onShot` splice that bills it, and which of a seat's guns the cross reads.
+// Split out of `seats.js`, which re-exports the first two.
+
+import { DeviationModel, TICK_HZ } from './deviation.js';
 
 // --- firing: magazine, reload, auto-reload, heat (verify-r6.md GUN-12) --
 //
@@ -50,6 +53,23 @@ export class FireState {
     this.heat = 0;
     this.reloadRemaining = 0;
     this.overheatRemaining = 0;
+    // The gun's cone, `stats.deviation` = `{ min, fire }` off a plain
+    // FireArms (the exporter's `_fire_arms`), null on one that ships no
+    // words, a tank's main gun. `FireArms::updateDeviation` (client
+    // 0x00539620) is the hand weapon's rule without a soldier: no stance
+    // multiplier, no speed, turn or misc channel, so `minDev + fire`, the
+    // bloom raised per pull and decayed a 1/30 s tick (handweapon-view-and-
+    // deviation §2). The vehicle HUD feed hands the cross that total (XHIT-15).
+    const fire = stats.deviation?.fire;
+    this.cone = stats.deviation ? new DeviationModel({ deviation: stats.deviation }) : null;
+    // Seconds the bloom takes from its cap to nothing, and a tick over.
+    this.coneSettle = fire?.[2] > 0 ? ((fire[0] ?? 0) / fire[2] + 1) / TICK_HZ : 1 / TICK_HZ;
+  }
+
+  /** The cone's total right now, degrees, floor included: what the cross
+   *  opens by (vehicle-hud.js `updateCrosshair`). 0 with no words. */
+  get spread() {
+    return this.cone ? this.cone.current() : 0;
   }
 
   get canFire() {
@@ -82,6 +102,10 @@ export class FireState {
     if (this.hasHeat && this.heat > 0) {
       this.heat = Math.max(0, this.heat - (this.stats.coolDownPerSec || 0) * dt);
     }
+    // The bloom's ticks. Nothing to run once it is back on the floor, and no
+    // more than it takes to get there, so a replay's long step between two
+    // rounds (replay-hud.js `gunStateAt`) costs a few dozen ticks at most.
+    if (this.cone?.fire > 0) this.cone.update(Math.min(dt, this.coneSettle));
   }
 
   /**
@@ -104,6 +128,9 @@ export class FireState {
    * citation was wrong.
    */
   registerShot(rounds = 1) {
+    // The bloom, once a pull like the heat: `fire = min(fire + b, a)` in
+    // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3.
+    this.cone?.onShot();
     if (this.hasHeat) {
       this.heat = Math.min(1, this.heat + this.stats.heatAddWhenFire);
       if (this.heat >= 1) this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
@@ -115,6 +142,35 @@ export class FireState {
       }
     }
   }
+}
+
+/**
+ * Of a seat's FireArms nodes, primary first, the one whose cone the cross
+ * opens by, or null.
+ *
+ * The vehicle HUD feed (client `0x006d7050`) walks the seat's FireArms for the
+ * two ammo panels, and in the same loop writes `CrossHair/Radius` and
+ * `Deviation` from each weapon it takes (`0x006d71be`, `0x006d71d9`): at most
+ * two, one with the same template name as the one before skipped
+ * (`0x006d7142`-`0x006d7157`). The last write stands, so the cross is the
+ * second weapon's when the seat has one: a Sherman driver's is his coax's,
+ * 3.75 units open at rest, and his cannon's own nothing (XHIT-15). Plain loop:
+ * the page asks every frame.
+ */
+export function crossGunOf(nodes) {
+  let gun = null;
+  let previous = null;
+  let taken = 0;
+  for (const node of nodes ?? []) {
+    if (!node?.userData?.fireArms) continue;
+    // GLTFLoader suffixes a repeated node name `_1`, `_2` ...
+    const name = String(node.name ?? '').toLowerCase().replace(/_\d+$/, '');
+    if (name === previous) continue;
+    previous = name;
+    gun = node;
+    if (++taken === 2) break;
+  }
+  return gun;
 }
 
 /**
