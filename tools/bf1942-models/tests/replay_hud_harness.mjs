@@ -423,4 +423,36 @@ const life = rec.lives.find(l => l.nid === 50);
   results.pageAim = { replay: vehicleHud.crosshairAim(), none: plain.crosshairAim() };
 }
 
+// --- the cross's geometry: 5 units a degree, no lens in it (XHIT-14) ---------------
+{
+  // A 1600x1200 stage is 2 px a unit on both axes; a 16:9 one stretches
+  // the units per axis. The lens is passed and must not matter.
+  const crossAt = (deviation, width, height, fov) => {
+    const props = {};
+    const el = {
+      hidden: true,
+      classList: { contains: () => false, toggle() {}, add() {} },
+      style: { getPropertyValue: k => props[k] ?? '', setProperty: (k, v) => { props[k] = v; } },
+      querySelector: () => ({ style: {} }),
+    };
+    const vehicleHud = createVehicleHud({
+      replayAim: { style: 'CHTCrossHair', deviation, scoped: false, centre: true },
+      crosshairEl: el, fullmapBox: { hidden: true }, crossHairColor: () => [255, 255, 0],
+      renderer: { getPixelRatio: () => 1, domElement: { width, height } },
+      camera: { fov },
+    });
+    vehicleHud.updateCrosshair();
+    const px = k => Number.parseFloat(props[k]);
+    return { shown: !el.hidden, gapX: px('--ch-gap-x'), gapY: px('--ch-gap-y'),
+             lenX: px('--ch-len-x'), lenY: px('--ch-len-y'), ux: px('--ch-ux'), uy: px('--ch-uy') };
+  };
+  results.cross = {
+    still: crossAt(0.4, 1600, 1200, 57.3),
+    running: crossAt(1.36, 1600, 1200, 57.3),
+    zoomed: crossAt(1.36, 1600, 1200, 28.6),
+    wide: crossAt(0.75, 2560, 1440, 57.3),
+    none: crossAt(0, 1600, 1200, 57.3),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));

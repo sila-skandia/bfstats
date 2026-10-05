@@ -91,28 +91,23 @@ label.opt {
   cursor: pointer;
 }
 /* On-foot fire control. The crosshair is DOM over the canvas rather than
-   painted into it: four bars around a zero-size anchor at screen centre,
-   the bar gap driven per frame through --ch-gap by the deviation cone
-   mapped through the camera projection (updateCrosshair()). The weapon's
-   own crossHairType decides the shape: CHTCrossHair is the full cross,
-   CHTIcon is the game's own `hk.tga` at the size and place menu/InGame
-   draws it, CHTNone and a scoped aim draw nothing. The dot survives only
-   as the fallback for a pack that has no `hk` in it.
+   painted into it: four bars around a zero-size anchor at screen centre.
+   The weapon's own crossHairType decides the shape: CHTCrossHair is the
+   full cross, CHTIcon is the game's own `hk.tga` at the size and place
+   menu/InGame draws it, CHTNone and a scoped aim draw nothing. The dot
+   survives only as the fallback for a pack that has no `hk` in it.
 
-   The look is measured off retail footage, not styled: no crosshair
-   texture exists in any archive (the engine draws it, `BfCrosshairNode`).
-   Two captures agree once they are read in the HUD's 800x600 virtual
-   screen, stretched per axis like the rest of the HUD (VHUD-11): a 960-wide
-   one of the Thompson on Wake (bars 13 px long, 10.8 units) and the owner's
-   2560x1440 one (every arm 10 units long, 1 unit thick -- the node's own
-   `Thickness 1` -- and the gap 3.75 units on both axes while moving; ledger
-   XHIT-11). So the sizes below are units, `--ch-ux`/`--ch-uy` px each, set
-   per frame by updateCrosshair(), and the arms MEET at centre when the
-   shooter stands still. Each arm, and the 1x1 centre point the owner's
-   server draws (`serverCrossHairCenterPoint`, the layout's fill at
-   (400,300)), sits on the (400..401) line, just below and right of the
-   exact centre. The ink is the profile's `game.setCrossHairColor` / 256,
-   written by updateCrosshair(); the fallback here is the shipped profile's. */
+   The cross is `BfCrosshairNode`'s, read out of the client (ledger XHIT-14):
+   in the HUD's 800x600 virtual screen, stretched per axis like the rest of
+   the HUD (VHUD-11), each arm runs from `--ch-gap` off centre to
+   `--ch-gap + --ch-len`, both 5 units per degree of the weapon's whole
+   deviation plus the rect's 10, and is 1 unit thick (`Thickness 1`). So
+   the sizes below are units, `--ch-ux`/`--ch-uy` px each, set per frame by
+   updateCrosshair(). Each arm, and the 1x1 centre point the owner's server
+   draws (`serverCrossHairCenterPoint`, the layout's fill at (400,300)),
+   sits on the (400..401) line, just below and right of the exact centre.
+   The ink is the profile's `game.setCrossHairColor` / 256, written by
+   updateCrosshair(); the fallback here is the shipped profile's. */
 #crosshair {
   position: absolute;
   z-index: 2;
@@ -123,6 +118,8 @@ label.opt {
   --ch-uy: 1.2px;
   --ch-gap-x: 0px;
   --ch-gap-y: 0px;
+  --ch-len-x: 12px;
+  --ch-len-y: 12px;
   --ch-ink: rgb(254, 254, 0);
 }
 #crosshair[hidden] { display: none; }
@@ -148,10 +145,10 @@ label.opt {
   top: calc(var(--ch-icon-h, 20px) / -2);
 }
 #crosshair.ch-icon.ch-art .ch-pic { display: block; }
-#crosshair .ch-n { width: var(--ch-ux); height: calc(10 * var(--ch-uy)); left: 0; bottom: var(--ch-gap-y); }
-#crosshair .ch-s { width: var(--ch-ux); height: calc(10 * var(--ch-uy)); left: 0; top: var(--ch-gap-y); }
-#crosshair .ch-w { height: var(--ch-uy); width: calc(10 * var(--ch-ux)); top: 0; right: var(--ch-gap-x); }
-#crosshair .ch-e { height: var(--ch-uy); width: calc(10 * var(--ch-ux)); top: 0; left: var(--ch-gap-x); }
+#crosshair .ch-n { width: var(--ch-ux); height: var(--ch-len-y); left: 0; bottom: var(--ch-gap-y); }
+#crosshair .ch-s { width: var(--ch-ux); height: var(--ch-len-y); left: 0; top: var(--ch-gap-y); }
+#crosshair .ch-w { height: var(--ch-uy); width: var(--ch-len-x); top: 0; right: var(--ch-gap-x); }
+#crosshair .ch-e { height: var(--ch-uy); width: var(--ch-len-x); top: 0; left: var(--ch-gap-x); }
 #crosshair.ch-icon .ch-n, #crosshair.ch-icon .ch-s,
 #crosshair.ch-icon .ch-w, #crosshair.ch-icon .ch-e { display: none; }
 /* The in-game HUD proper -- health bar, stance figure, magazine picture,

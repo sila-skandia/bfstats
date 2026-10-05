@@ -130,7 +130,7 @@ change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
 |---|---|---|
 | the cross's type | his weapon's `setCrossHairType` (glb `weapon.crossHair`), or in a seat the seat's (`hud.crossHairType`) | exact. A K98 sniper's is `CHTNone`, a grenade's the `hk` icon, and the Bofors draws none: its ring sight is on the gun |
 | the centre dot | the server's `serverCrossHairCenterPoint`, `gameRules`' last byte | exact |
-| the cross's spread | his weapon's deviation (`deviation.js`) run tick by tick over his recorded stance, his legs' state (walk, run and strafe mean the key was down; a jump) and his rounds, from as far back as the weapon takes to settle (`settleTime`: a BAR's bloom 3.9 s, a Thompson's 1.3) | computed |
+| the cross's spread | his weapon's deviation (`deviation.js`) run tick by tick over his recorded stance, his legs' state (walk, run and strafe mean the key was down; a jump) and his rounds, from as far back as the weapon takes to settle (`settleTime`: a BAR's bloom 3.9 s, a Thompson's 1.3). The cross opens 5 HUD units a degree of the whole cone, whatever the lens ("The cross's size") | computed |
 | his zoom | the body record's state bit `0x20` (`ZOOM_BIT`), which the server sends for every soldier, not only the recording client's own | recorded. The view takes the weapon's `zoomFov` (a BAR's 28.6 degrees, a sniper rifle's 5.7), eased 0.3 a frame as the page eases its own; a scoped rifle draws the layout's scope and no cross, as in play |
 | his health bar, stance icon, kit art | `a` records (hit points), `st` (stance), his kit | exact. A soldier with no recorded hit points (18 of 214 in the Bocage round) shows his spawn's full bar |
 | a vehicle's icon, health, seat dots, turret dial | the seat's `hud` block, the hull's `a` records, the recorded crew, `IconLookRotation` from the camera against the hull | exact |
@@ -172,9 +172,10 @@ change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
   the replay first.
 - Headless on the Bocage round (Vulkan Chromium, the page's own renderer):
   skandia on foot with the BAR at 205.8 s: the cross at the stage's centre
-  (640, 360), spread 2.25 degrees running (34.5 x 25.9 px), his recorded
+  (640, 360), spread 2.25 degrees running (34.5 x 25.9 px, the projection
+  "The cross's size" replaced), his recorded
   10/30 on the assault kit's bar, the BAR at 0 rounds and 4 spares mid-change.
-  Prone at 217.6 s: the cross closed. The grenade at 73 s: the `hk` icon, 2
+  Prone at 217.6 s: the cross closed (now 3.75 units open, the BAR's floor). The grenade at 73 s: the `hk` icon, 2
   left. The KettenKrad's MG seat at 248 s: the KettenKrad's icon at 23/50,
   462 rounds, the cross. The Bofors at 101 s: no HUD cross. The orbit: nothing.
 
@@ -214,7 +215,8 @@ BFSoldier `+0x416`) is the zoom:
 Headless on the Bocage round: Skipjack's K98 sniper at 153 s draws the scope
 through a 5.73 degree lens with no cross; skandia's BAR at 55.6 s a 28.65
 degree lens with the cross, its gap the same 2.25 degrees through the
-narrower lens.
+narrower lens (twice as wide on screen; retail keeps the cross as it was,
+"The cross's size").
 
 ## The hit marks (2026-10-04)
 
@@ -347,8 +349,48 @@ the timer, the HUD's variables (an old layout, the view dragged off), and the
 nose cam (its offset, no cockpit, back and forth, reset by the free camera, a
 tank's Camera and a closed server).
 
+## The cross's size (2026-10-06)
+
+Players said the replay's cross looked a bit bigger than the game's. It was.
+The page drew the gap as the deviation above the weapon's `setMinDev`,
+projected through the camera: about 9.6 HUD units a degree through the
+replay's 57.3-degree lens, and about 20.5 zoomed to an SMG's or a BAR's
+28.6 degrees.
+
+Retail draws it with no camera in it (ledger XHIT-14, XHIT-15):
+`CrossHair/Radius` and `CrossHair/Deviation` are the weapon's whole deviation
+in degrees, floor included, times 5 (`Game.setCrossHairRadius 5`,
+`Game.setCrossHairSize 5`). Each arm starts Radius units off centre and is
+10 + Deviation - Radius units long, so 10. Zoom changes the lens, not the
+cross.
+
+| | before (hip / zoomed), units | retail and now, units |
+|---|---|---|
+| Thompson standing still (0.4 degrees) | 0 / 0 | 2 |
+| Thompson running (1.36) | 9.2 / 19.7 | 6.8 |
+| Thompson at its fire cap (2.4) | 19.2 / 41.0 | 12 |
+| BAR running (3.0) | 21.6 / 46.2 | 15 |
+
+On a 1280x720 stage a unit is 1.6 px across and 1.2 px down.
+
+`replay-hud.js` `spreadAt` returns the whole cone now, and `crosshairAim`
+hands it over in degrees. `vehicle-hud.js` `updateCrosshair` sets
+`--ch-gap` and `--ch-len` from the two factors. The page's own soldier uses
+the same law. `tests/test_replay_hud.py` checks the spread values and the
+geometry: 2 units still, 6.8 running, the same zoomed, and the DP's
+3.75 units at its floor on a 2560x1440 stage, the gap XHIT-11 measured on
+the owner's capture.
+
+Still short of retail: a seat MG's cross (the coax and pintle guns, the
+stationary MG42 and Browning) stays closed. Retail opens it by the gun's
+`setMinDev` and `setFireDev`, through the same feed, but the exporter does
+not carry deviation on vehicle FireArms. A tank's main gun ships none, so its
+closed cross is right.
+
 ## Open
 
+- A seat MG's cross stays closed: vehicle FireArms carry no deviation in the
+  glbs ("The cross's size").
 - **Recording the marks exactly.** The recorder could read its own player's
   `HitIndicationTime` (BFPlayer `+0x1cc`, XHIT-2) each sample. The timer runs
   down at one per second from 1.0, so a sample of `v` at `t` puts the last

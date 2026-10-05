@@ -1145,10 +1145,10 @@ const vehicleHud = createVehicleHud(bag(
   from(() => room, `forgetOccupiedVehicle netOccupiedVehicleId occupiedVehicleIdFor roomClient
     roomJoined`),
   from(() => seatCamera, `mannedActive view`),
-  from(() => soldierKit, `crosshairEl DEG_TO_RAD handWeapon isZoomed itemsLocked`),
+  from(() => soldierKit, `crosshairEl handWeapon isZoomed itemsLocked`),
   from(() => vehicleHits, `occupiedVehicleDamage`),
   {
-    get bust() { return bust; }, get camera() { return camera; },
+    get bust() { return bust; },
     get fireStateFor() { return fireStateFor; }, get hudPaths() { return hudPaths; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get renderer() { return renderer; },

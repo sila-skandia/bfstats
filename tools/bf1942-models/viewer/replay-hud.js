@@ -180,14 +180,15 @@ export function settleTime(deviation) {
 }
 
 /**
- * How far `life`'s aim had spread at `t`, degrees above its floor, with a
- * weapon whose glb block is `deviation` and whose rounds he fired at
- * `rounds` (times, sorted): the weapon's own cone (deviation.js
+ * How far `life`'s aim had spread at `t`, degrees, with a weapon whose glb
+ * block is `deviation` and whose rounds he fired at `rounds` (times, sorted):
+ * the weapon's whole cone, `setMinDev` included (deviation.js
  * `DeviationModel`), run tick by tick from as far back as its channels take
  * to settle (`settleTime`) over his recorded stance, movement keys (his legs'
  * state: walking, running or strafing means the key was down; a jump), and
- * those rounds. The crosshair's gap is this spread (vehicle-hud.js
- * `updateCrosshair`): at the floor the still cross's arms meet.
+ * those rounds. The game hands the crosshair this same total
+ * (`getMenuCrossHairRadius`, XHIT-14), so a still Thompson's arms stand
+ * 2 units apart, not touching (vehicle-hud.js `updateCrosshair`).
  */
 export function spreadAt(rec, life, deviation, rounds, t) {
   if (!deviation) return 0;
@@ -224,7 +225,7 @@ export function spreadAt(rec, life, deviation, rounds, t) {
     }
     model.update(step * 1.000001, { stance, throttle, strafe, jumping });
   }
-  return Math.max(0, model.current() - model.floor());
+  return Math.max(0, model.current());
 }
 
 /**
@@ -473,7 +474,8 @@ export class ReplayHud {
   }
 
   /** The crosshair `vehicle-hud.js` draws, `{ style, deviation, scoped,
-   *  centre }`, or null when the view is not his first person. */
+   *  centre }` with `deviation` his weapon's whole cone in degrees, or null
+   *  when the view is not his first person. */
   crosshairAim() {
     const s = this.state;
     if (!s) return null;
@@ -483,7 +485,7 @@ export class ReplayHud {
     if (s.kind === 'foot') {
       // A scoped weapon zoomed draws its scope, not the cross (feed).
       const scoped = Boolean(s.zoomed && s.zoom?.scope);
-      return { style: s.data?.crossHair ?? null, deviation: s.spread * Math.PI / 180, scoped, centre };
+      return { style: s.data?.crossHair ?? null, deviation: s.spread, scoped, centre };
     }
     return { style: s.hud?.crossHairType ?? null, deviation: 0, scoped: false, centre };
   }

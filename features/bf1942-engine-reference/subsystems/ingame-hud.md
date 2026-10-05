@@ -360,7 +360,7 @@ vehicle-health bar must bind to the vehicle **root**, not the occupied seat;
 switching seats within one vehicle never changes the displayed HP (see also
 [hitpoints-and-damage.md](hitpoints-and-damage.md) HP-12).
 
-## 7. Crosshair hit indication (XHIT-1..XHIT-10, 2026-09-24)
+## 7. Crosshair hit indication (XHIT-1..XHIT-10, 2026-09-24) and the cross (XHIT-14, XHIT-15)
 
 The four short diagonals that flash at the corners of the crosshair when the
 local player's round hits someone. Asked from the owner's recording (Berlin,
@@ -440,6 +440,31 @@ predicted mark centres land within a pixel of the capture's.
 marks off before `t` reaches 0 — the capture cannot say through its H.264 skip
 blocks); XHIT-5's keep-team template flag; XHIT-10's callers of the
 `CrossHair` group's `show()`/`hide()`.
+
+### The cross itself and how far it opens (XHIT-14, XHIT-15, 2026-10-06)
+
+`BfCrosshairNode::draw` (`0x007db970`) draws four arms around the centre of
+its rect (390,290,20,20 in `menu/InGame`). Each arm starts `Radius` units off
+centre and ends at the rect's half-size, 10, plus `Deviation`, and is
+`Thickness` (1) wide on the 400..401 / 300..301 line. Four more quads, in the
+node's `outline` colour, run along the lower side of the horizontal arms and
+the right side of the vertical ones. They are `outline thickness` wide, which
+ships 0, so nothing draws.
+
+The soldier HUD feed (`0x006e9690`) and the vehicle one (`0x006d71be`) write
+`Radius` and `Deviation` from the same number: the held FireArms' total
+deviation in degrees (`getMenuCrossHairRadius`, floor included), times 5 each
+(`Game.setCrossHairRadius 5`, `Game.setCrossHairSize 5`). So the cross opens
+5 units a degree, the arms stay 10 long, and no field of view enters: zoom
+leaves the cross as it was. A still Thompson stands 2 units off centre, and a
+DP at its floor 3.75, the gap measured in XHIT-11.
+
+The viewer (`vehicle-hud.js` `updateCrosshair`) drew the gap as the deviation
+above `minDev`, projected through the camera's vertical FOV. With the replay's
+57.3° lens that is about 9.6 units a degree, and about 20.5 zoomed to an SMG's
+28.6°, against retail's 5. That made the cross too wide whenever the player
+moved, fired or zoomed, and closed it when he stood still. Fixed 2026-10-06.
+Seat MGs still draw closed in the viewer: their deviation is not exported.
 
 ## 8. Hit direction and the red wash (HFD-1..HFD-13, 2026-09-24)
 
