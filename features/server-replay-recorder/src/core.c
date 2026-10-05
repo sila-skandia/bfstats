@@ -1756,6 +1756,9 @@ static int held_kind(int type)
 static void held_push_locked(const char *line, int type)
 {
     if (!g_held) return;   /* buffer only once a run's config turned recording on */
+    /* A destroy between files is the last level's teardown: nothing the next
+     * file has, and a level's worth of them would fill the ring. */
+    if (type == 0x06) return;
     int kind = held_kind(type);
     if (kind) {
         for (int i = 0; i < g_held_n; i++)
@@ -1795,6 +1798,8 @@ static void emit_line(const char *line, int type)
 
 /* ScoreMsgEvent kind names for the debug log. */
 static void emit_event_json(int type, const uint8_t *payload, size_t size, double t);
+static void pool_heard(uint32_t first, uint32_t tid, int32_t count);
+static void pool_forget(uint32_t first);
 
 /* Called from the stubs with the event the server just built. Payload after
  * the 12-byte GameEvent header (vptr, sequenceNumber, nextEvent). Struct
@@ -1815,6 +1820,7 @@ static volatile int g_fire_calls, g_fire_written;
 #define FANOUT_RING 16
 static struct { int type; size_t len; uint8_t payload[160]; double at; } g_recent[FANOUT_RING];
 static int g_recent_next;
+static void record_event(int type, const uint8_t *buf, size_t len, double now, double t);
 
 static void on_event(uint32_t ev)
 {
@@ -1866,6 +1872,15 @@ static void on_event(uint32_t ev)
     if (len > sizeof(buf)) len = sizeof(buf);
     memcpy(buf, p, len);
 
+    record_event(type, buf, len, now, t);
+}
+
+/* One event's payload: written unless the same was in the last few
+ * milliseconds (a fan-out's copies, or an event the recorder made itself for
+ * a round with no client and then heard from the queue as well). */
+static void record_event(int type, const uint8_t *buf, size_t len, double now, double t)
+{
+    if (len > sizeof(g_recent[0].payload)) len = sizeof(g_recent[0].payload);
     for (int i = 0; i < FANOUT_RING; i++) {
         if (g_recent[i].type != type || g_recent[i].len != len) continue;
         if (now - g_recent[i].at >= FANOUT_WINDOW_S) continue;
@@ -1900,6 +1915,52 @@ REC_GAME_THREAD_ENTRY void recorder_on_queue_event(uint32_t ev)
 {
     on_event(ev);
 }
+
+#if REC_TICK
+/* GameServer::destroyObject(IObject*), through its vtable slot (it has no
+ * direct caller): where every DestroyObjectEvent (0x06) is built, one per
+ * connected client, from the object's net id. With no client there is no
+ * event, and a server file went without the end of every object: an id
+ * reused by the next object (a soldier on a dead weapon's grenade's id) read
+ * as the old one to the viewer. The record is made here once the server has
+ * destroyed it; with a client connected the event came first and this copy
+ * is dropped as one of its fan-out. It returns 1 when it destroyed. */
+static uint32_t g_orig_destroy;
+
+REC_GAME_THREAD_ENTRY uint32_t recorder_destroy_object(void *self, uint32_t obj)
+{
+    /* The id before the object goes: its networkable, as the server reads it. */
+    uint32_t nid = g_on && obj >= T->min_addr ? T->net_id_of(obj) : 0;
+    uint32_t r = ((uint32_t (*)(void *, uint32_t))(uintptr_t)g_orig_destroy)(self, obj);
+    if (r && nid) {
+        uint8_t buf[160];
+        memset(buf, 0, sizeof(buf));
+        buf[0] = (uint8_t)nid;
+        buf[1] = (uint8_t)(nid >> 8);
+        double now = T->now_s();
+        record_event(0x06, buf, 2, now, g_t0 > 0.0 ? now - g_t0 : 0.0);
+    }
+    return r;
+}
+
+static void install_destroy_hook(void)
+{
+    if (!T->gs_destroy_slot) return;
+    uint32_t have = 0;
+    if (!T->safe_read(&have, 4, T->gs_destroy_slot) || have != T->gs_destroy_fn) {
+        fprintf(stderr, "recorder: destroyObject slot %08x holds %08x, not %08x: no destroy hook\n",
+                T->gs_destroy_slot, have, T->gs_destroy_fn);
+        return;
+    }
+    g_orig_destroy = have;
+    uint32_t mine = (uint32_t)(uintptr_t)recorder_destroy_object;
+    if (!T->patch_write(T->gs_destroy_slot, &mine, 4)) {
+        fprintf(stderr, "recorder: could not patch the destroyObject slot\n");
+        return;
+    }
+    fprintf(stderr, "recorder: destroy hook in GameServer::destroyObject's slot %08x\n", T->gs_destroy_slot);
+}
+#endif
 
 static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
 {
@@ -1995,6 +2056,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"destroyObject\",\"netId\":%u}",
                 t, U16(0));
+            pool_forget(U16(0));   /* a pool's first round gone: its weapon was released */
             break;
         case 0x09:
             snprintf(line, sizeof(line),
@@ -2017,6 +2079,20 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"createObject\",\"tid\":%u,\"netId\":%u"
                     ",\"tmpl\":\"%s\"}", t, U32(0), U16(4), esc);
+            break;
+        }
+        case 0x05: {  /* CreateMultipleObjectsEvent: a weapon's projectile pool */
+            /* The server's object (GameEventManager::createMultipleObjects
+             * 0x0812d510, CreateMultipleObjectsEvent::serialize 0x0811d500):
+             * template id +0, first net id +4 (u16), count +6 (i32; 4 bits
+             * on the wire) -- the client's layout. */
+            uint32_t tid = U32(0);
+            template_name_by_id(tid, name, sizeof(name));
+            char esc[128]; json_escape(name, esc, sizeof(esc));
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"projPool\",\"tid\":%u,\"tmpl\":\"%s\""
+                ",\"netId\":%u,\"count\":%d}", t, tid, esc, U16(4), I32(6));
+            pool_heard(U16(4), tid, I32(6));
             break;
         }
         case 0x36: {  /* SetLevelEvent */
@@ -2266,6 +2342,102 @@ static void projectiles_gone(void)
     if (n) { snprintf(line + n, sizeof(line) - n, "]}"); write_line(line); }
 }
 
+/* Projectile pools: the client's `projPool` (CreateMultipleObjectsEvent,
+ * 0x05). A weapon whose projectile is networked -- grenades, mines,
+ * charges, binoculars' spots, the PT boat's FloatingMineLauncher's
+ * FloatingMine -- makes its rounds once, in its constructor
+ * (FireArms::initProjectilePool 0x08287a80 -> GameServer::spawnMultipleObjects
+ * 0x081324a0), and throws the same objects again and again. The server
+ * builds the event there, one per connected client and never again (a
+ * joining client's database carries the rounds as single createObjects,
+ * not the pool; ledger J-5), so the hook sees it only while a client is
+ * connected. The tick sample reads the same pool off the
+ * weapon: the template at fa_proj_tmpl_off, the objects at fa_pool_off and
+ * the count at fa_pool_count_off, and writes it with the event's fields.
+ *
+ * What a file has announced, by the pool's first net id (u16): a pool is
+ * written once a file, by whichever sees it first. The hook always writes
+ * (it is a new pool); the sample skips a pool its file has, either from its
+ * own weapon or from the hook with the same template and count (fa 0,
+ * adopted). A pool whose first id a destroyed weapon's pool had is another
+ * weapon, so it is written. */
+typedef struct { uint32_t fa, tid; int32_t count; uint32_t file; } PoolSeen;
+static PoolSeen *g_pools;          /* 65536, by first net id */
+static uint32_t g_pool_file = 1;   /* entries of another file are stale */
+static int g_pools_due = 1;        /* live set: look at every weapon once */
+static uint32_t g_pools_written;
+
+/* The thread mode's sampler thread and the game thread's hook share it. */
+#if REC_TICK
+#define POOL_LOCK() ((void)0)
+#define POOL_UNLOCK() ((void)0)
+#else
+#define POOL_LOCK() T->rec_lock()
+#define POOL_UNLOCK() T->rec_unlock()
+#endif
+
+/* The hook's event: always written; noted for the sample to skip. */
+static void pool_heard(uint32_t first, uint32_t tid, int32_t count)
+{
+    if (!g_pools || !first || first > 0xffff) return;
+    POOL_LOCK();
+    g_pools[first] = (PoolSeen){ 0, tid, count, g_pool_file };
+    g_pools_written++;
+    POOL_UNLOCK();
+}
+
+/* A destroyObject: if the id began a pool, the pool is gone (its weapon's
+ * releaseProjectilePool destroys every round), and a pool on it again is a
+ * new one. */
+static void pool_forget(uint32_t first)
+{
+    if (!g_pools || !first || first > 0xffff) return;
+    POOL_LOCK();
+    g_pools[first].file = 0;
+    POOL_UNLOCK();
+}
+
+/* One weapon (FireArms or HandFireArms, enabled or not: a carried kit's
+ * weapons are disabled and keep their pools). */
+static void sample_pool(uint32_t fa)
+{
+    if (!g_pools) return;
+    uint32_t tmpl = read_u32(fa + T->fa_proj_tmpl_off);
+    if (tmpl < T->min_tmpl_addr) return;
+    uint32_t begin = read_u32(fa + T->fa_pool_off);
+    uint32_t end = read_u32(fa + T->fa_pool_off + 4);
+    int32_t count = (int32_t)read_u32(fa + T->fa_pool_count_off);
+    /* No pool: a round nobody else is told about (bullets, shells), or a
+     * spawnMultipleObjects that made nothing, which sends no event either.
+     * initProjectilePool pushes exactly `count` objects. */
+    if (begin < T->min_addr || end <= begin || count <= 0 || (end - begin) / 4 != (uint32_t)count) return;
+    uint32_t obj = read_u32(begin);
+    uint32_t first = obj >= T->min_addr ? T->net_id_of(obj) : 0;
+    if (!first || first > 0xffff) return;
+    uint32_t tid = read_u32(tmpl + T->tmpl_id_off);
+
+    POOL_LOCK();
+    PoolSeen *p = &g_pools[first];
+    int known = p->file == g_pool_file && p->tid == tid && p->count == count
+        && (p->fa == fa || p->fa == 0);
+    if (!known) g_pools_written++;
+    *p = (PoolSeen){ fa, tid, count, g_pool_file };
+    POOL_UNLOCK();
+    if (known) return;
+
+    char tname[128], line[320];
+    tmpl_name_json(tmpl, tname, sizeof(tname));
+    snprintf(line, sizeof(line),
+        "{\"k\":\"e\",\"t\":%.3f,\"e\":\"projPool\",\"tid\":%u,\"tmpl\":\"%s\",\"netId\":%u,\"count\":%d}",
+        g_t, tid, tname, first, count);
+    write_line(line);
+}
+
+static int is_fire_arms(uint32_t vptr)
+{
+    return T->vt_fire_arms && (vptr == T->vt_fire_arms || vptr == T->vt_hand_fire_arms);
+}
+
 #endif /* REC_STAGE3 */
 
 /* --- one object of the world ------------------------------------------------- */
@@ -2297,6 +2469,10 @@ static int visit_object(uint32_t key, uint32_t obj)
         if (cp) sample_cp(obj, key);
         else if (proj) sample_projectile(obj, key);
     }
+    /* A weapon's projectile pool, made in its constructor and kept for its
+     * life: looked at while the object is new (and once a file, live_pools),
+     * not kept in the per-tick list for it. */
+    if (is_fire_arms(vptr)) sample_pool(obj);
     return nid || cp || proj || vptr == T->vt_rot_bundle || vptr == T->vt_engine
         || vptr == T->vt_soldier;
 #else
@@ -2468,6 +2644,21 @@ static void live_visit(void)
     }
 }
 
+#if REC_STAGE3
+/* Once a file: every weapon in the set, scenery included, for the pools a
+ * new file must announce (a weapon is looked at only while it is new). */
+static void live_pools(void)
+{
+    g_pools_due = 0;
+    for (int k = 0; k < LIVE_SLOTS; k++) {
+        LiveEnt *e = &g_live[k];
+        if (e->state == LIVE_EMPTY || e->state == LIVE_DEAD || !is_fire_arms(e->vptr)) continue;
+        if (read_u32(e->obj) != e->vptr) continue;   /* gone without an unregister */
+        sample_pool(e->obj);
+    }
+}
+#endif
+
 /* ObjectManager::registerObject / unregisterObject, through their vtable
  * slots (every call is virtual: 164 and 60 call sites, none direct). */
 static uint32_t g_orig_register, g_orig_unregister;
@@ -2568,6 +2759,12 @@ static void reset_file_state(void)
     g_score_manager = 0;
     g_cps_n = 0;
     g_proj_n = 0;
+    /* The next file announces every pool standing again. */
+    POOL_LOCK();
+    g_pool_file++;
+    g_pools_due = 1;
+    g_pools_written = 0;
+    POOL_UNLOCK();
 #endif
 }
 
@@ -2800,6 +2997,9 @@ static void sampler_step(int tick_mode)
         if (++g_live_age >= LIVE_REBUILD || count < g_live_count / 2) live_rebuild(header, count);
         g_live_count = count;
         live_visit();
+#if REC_STAGE3
+        if (g_pools_due) live_pools();
+#endif
     } else
 #endif
     {
@@ -2992,8 +3192,8 @@ void recorder_core_tick(void)
                 dead += g_live[k].state == LIVE_DEAD;
             }
             fprintf(stderr, "recorder: live set %s: dense %d (kept %d, pending %d), dead slots %d, used %d; "
-                    "registered %u, unregistered %u this minute\n", g_live_ok ? "on" : "off",
-                    g_dense_n, kept, pending, dead, g_live_used, g_reg_calls, g_unreg_calls);
+                    "registered %u, unregistered %u this minute; %u pools this file\n", g_live_ok ? "on" : "off",
+                    g_dense_n, kept, pending, dead, g_live_used, g_reg_calls, g_unreg_calls, g_pools_written);
             g_reg_calls = g_unreg_calls = 0;
         }
         g_perf_sum = g_perf_max = 0.0;
@@ -3071,6 +3271,8 @@ void recorder_core_init(const struct rec_target *target)
         g_on = 0;
         return;
     }
+    /* Without it the sample writes no pools; the hook's events still go. */
+    if (T->vt_fire_arms) g_pools = calloc(65536, sizeof(PoolSeen));
 #endif
     hash_rebuild();
 #if REC_STAGE3
@@ -3083,6 +3285,9 @@ void recorder_core_init(const struct rec_target *target)
     if (g_tick_div < 1) g_tick_div = 1;
     install_tick_hook();   /* the harness has no slot: it calls recorder_core_tick */
     install_live_hooks();
+#if REC_STAGE3
+    install_destroy_hook();
+#endif
     T->start_sampler_thread(writer);
     fprintf(stderr, "recorder: writer thread started; sampling every %u tick(s)\n", g_tick_div);
 #else

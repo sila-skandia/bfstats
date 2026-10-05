@@ -37,14 +37,49 @@ assert [r["status"] for r in ev(first, "gameStatus")] == [1] and ev(first, "game
 assert ev(first, "gameRules") and ev(first, "gameRules")[0]["t"] == 0
 # 2: the join is recorded in the same file, its name escaped
 assert ev(first, "serverInfo") and ev(first, "serverName") and ev(first, "createPlayer")
-assert ev(first, "createPlayer")[0]["name"] == "Julius Haim\u00fcller"
+assert ev(first, "createPlayer")[0]["name"] == "Julius Haimüller"
 assert all(b < 0x80 for f in files for b in f.read_bytes()), "a raw high byte in a recording"
 # 3: one kill fanned out to toall + 3 clients, then the same payload 20 ms later
 assert len(ev(first, "score")) == 2, ev(first, "score")
+# 7: pools. The hook's 599 once (its copies and the sample's sight of the
+# same pool are one); the launcher's 700 from the sample, twice (a new
+# launcher with the same ids); each written again in the next file.
+pools = lambda rows: [(r["netId"], r["tid"], r["count"], r["tmpl"]) for r in ev(rows, "projPool")]
+assert sorted(p[:3] for p in pools(first)) == [(599, 1293, 3), (700, 4242, 4), (700, 4242, 4)], pools(first)
+assert [p[3] for p in pools(first) if p[0] == 700] == ["FloatingMine"] * 2, pools(first)
+assert sorted(pools(second)) == [(599, 1293, 3, "GrenadeAxisProjectile"), (700, 4242, 4, "FloatingMine")], pools(second)
 # 4: the unload closes the file; the next file starts with what was held
 assert first[-1]["k"] == "end"
 assert [r["status"] for r in ev(second, "gameStatus")][:1] == [2] and ev(second, "gameStatus")[0]["t"] == 0
 assert ev(second, "clock")
 print(f"recorder core ({'tick' if sys.argv[2] == '1' else 'thread'} mode): ok ({files[0].name}, {files[1].name})")
 PY
+if [ "$tick" = 1 ]; then
+    # The live set (tick mode): a weapon looked at while new, then scenery.
+    mkdir "$work/live" && cd "$work/live"
+    printf 'recordReplays 1\nreplaySampleHz 10\n' > recorder.con
+    mkdir replays
+    timeout 30 ../harness live 2> harness.err || { cat harness.err; exit 1; }
+    grep -q 'live set hooked' harness.err || { echo "live: the set was not hooked"; cat harness.err; exit 1; }
+    python3 - "$work/live/replays" <<'PY'
+import json, sys
+from pathlib import Path
+files = sorted(Path(sys.argv[1]).glob("replay_*.ndjson"))
+assert len(files) == 2, f"expected two recordings, got {[f.name for f in files]}"
+first, second = ([json.loads(l) for l in f.read_text().splitlines()] for f in files)
+pools = lambda rows: sorted((r["netId"], r["tmpl"]) for r in rows if r.get("e") == "projPool")
+# The launcher at the level's load and again when it respawned, the kit's
+# grenades once; the next file has the two standing, though both are scenery.
+assert pools(first) == [(599, "GrenadeAxisProjectile"), (700, "FloatingMine"), (700, "FloatingMine")], pools(first)
+assert pools(second) == [(599, "GrenadeAxisProjectile"), (700, "FloatingMine")], pools(second)
+# The launcher's rounds destroyed through the server's destroyObject: one
+# record each, the first also heard from a client; the teardown between
+# files in neither.
+destroys = lambda rows: sorted(r["netId"] for r in rows if r.get("e") == "destroyObject")
+assert destroys(first) == [700, 701, 702, 703], destroys(first)
+assert destroys(second) == [], destroys(second)
+print("recorder core (tick mode, live set): ok")
+PY
+    cd "$work"
+fi
 done

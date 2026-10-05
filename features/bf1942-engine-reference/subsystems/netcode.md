@@ -130,6 +130,20 @@ stub — there is no join, host or reservation logic and no handshake anywhere
 in them. The design README's "a dedicated host service, joiners connect to
 it" must not be built on these classes (J-2).
 
+**A joining client is sent the world's objects, not its pools.**
+`GameServer::sendDatabase` (`0x08134400`) sends a `createObject` per
+networkable, a `createPlayer` per player, their scores and teams,
+`DataBaseCompleteEvent` and the game status, then sets the connection's `+8`
+byte. A weapon's projectile pool (FA-2) is announced only when it is made,
+by `GameServer::spawnMultipleObjects` (`0x081324a0`), to the connections
+whose `+8` is already set, as `CreateMultipleObjectsEvent` (0x05) straight
+into each one's send queue. Nothing sends it again: a client that joins
+later gets the pool's rounds as single `createObject`s at the origin and
+never learns they are a pool (J-5). An object's end is the same kind of
+event: `GameServer::destroyObject` (`0x08131a20`, vtable slot 0x54 only)
+sends `DestroyObjectEvent` (0x06) to each connection whose `+8` is set, then
+frees the net id for the next object (J-6).
+
 **Leaving is an explicit packet.** `GameClient::disconnect` (`0x00490f00`,
 client): `push 0xd; call [vtable+0x18]` at `0x490f47` sends packet type
 **0xd**, then teardown — `+0x88` cleared, connection state `+0x8` and `+0xc`

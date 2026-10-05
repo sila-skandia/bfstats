@@ -451,6 +451,10 @@ const struct rec_target lnxded_target = {
     /* the tick capture (README "The new recorder"; ledger P-3, P-4, AI-136) */
     .gs_simulate_slot = 0x0871b228u,    /* vtable for GameServer 0x0871b0e0 + 8 + 0x140, in .data */
     .gs_simulate_fn = 0x0815c2a0u,      /* GameServer::simulateFrame(float) */
+    /* Every DestroyObjectEvent (0x06) a client is sent is built in it, one
+     * per connection; it has no direct caller (ledger J-6). */
+    .gs_destroy_slot = 0x0871b13cu,     /* vtable for GameServer 0x0871b0e0 + 8 + 0x54, in .data */
+    .gs_destroy_fn = 0x08131a20u,       /* GameServer::destroyObject(IObject*) */
     .sol_aim_pitch_off = 0x284u,        /* BFSoldierNetworkable::updateStateMask 0x082224e0 -> record +0x68 */
     .sol_aim_twist_off = 0x288u,        /* -> record +0x6c */
     .bf_ctrl_off = 0x4cu,               /* BFPlayer::getVehicle 0x080560c0 */
@@ -464,6 +468,16 @@ const struct rec_target lnxded_target = {
     .cp_team_off = 0x174u,              /* ControlPoint::setTeam 0x08284490 */
     .cpt_name_off = 0x1e4u,             /* controlPointName's setter 0x08309c90 */
     .vt_projectile = 0x0873f2c8u,       /* vtable for Projectile 0x0873f2c0 + 8 */
+    /* A weapon's projectile pool, what CreateMultipleObjectsEvent (0x05)
+     * announces: FireArms::initProjectilePool 0x08287a80, run by both
+     * FireArms ctors, keeps GameServer::spawnMultipleObjects' objects in the
+     * vector at +0x1d8 and its count at +0x1e4 (getNumProjectiles
+     * 0x08288030); the template is +0x194. */
+    .vt_fire_arms = 0x08730da8u,        /* vtable for FireArms 0x08730da0 + 8 */
+    .vt_hand_fire_arms = 0x087318c8u,   /* vtable for HandFireArms 0x087318c0 + 8 */
+    .fa_proj_tmpl_off = 0x194u,
+    .fa_pool_off = 0x1d8u,
+    .fa_pool_count_off = 0x1e4u,
     .bm_iface_ptr = 0x0874ffe8u,        /* IBotManager::instance */
     .vt_bot_manager = 0x0874f768u,      /* vtable for BotManager 0x0874f760 + 8 */
     .bm_iface_adj = 4u,                 /* the IBotManager thunks adjust this by -4 (0x0849cc40) */
