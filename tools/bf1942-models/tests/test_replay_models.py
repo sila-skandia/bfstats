@@ -553,6 +553,56 @@ class ReplayServerOnlyTests(unittest.TestCase):
         self.assertEqual(self.results["flagRows"], ["Unsent taken by Allies", "Sent taken by Axis"])
 
 
+class ReplayServerKitTests(unittest.TestCase):
+    """A server recording reuses network ids and ends no life by event
+    (features/round-replay-fidelity, 2026-10-05). In the soak round
+    `replay_1791103311` kit 789 (731 s) went into soldier 789's life (21.7 s)
+    and kit 1286 into a Sherman's; the pickups marked the soldier and the
+    Sherman as kits, and the template spread every BritishSoldier and
+    Sherman. A new registry key (`gid`) on an id is a new life, a kit is the
+    life its pickup names at its time, and nothing armoured is ever a kit."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["serverKits"]
+
+    def test_a_reused_id_is_a_new_life(self) -> None:
+        # [nid, template, created, destroyed, kit, soldier]
+        self.assertEqual(self.results["lives"], [
+            [789, "BritishSoldier", 21.666, 731.037, False, True],
+            [793, "GB_AT", 21.699, None, True, False],
+            # Out of the walk in a vehicle and back: one object, one life.
+            [900, "BritishSoldier", 22, None, False, True],
+            [1300, "Sherman", 22, None, False, False],
+            [1286, "Sherman", 505.769, 1229.34, False, False],
+            [785, "GermanDesertSoldier", 731.004, None, False, True],
+            [789, "German_AT_Desert", 731.037, None, True, False],
+            [1290, "GermanDesertSoldier", 1229.307, None, False, True],
+            [1286, "German_Scout_Desert", 1229.34, None, True, False],
+        ])
+
+    def test_each_soldier_wears_his_own_kit(self) -> None:
+        # Hans's later pickup names the live Sherman 1300: no kit, so his
+        # soldier keeps the scout kit.
+        self.assertEqual(self.results["kitsOf"], [
+            [[789, "GB_AT"]], [[785, "German_AT_Desert"]], [[1290, "German_Scout_Desert"]],
+        ])
+
+    def test_the_hull_is_a_hull_at_its_time(self) -> None:
+        self.assertEqual(self.results["shermanRoot"], "Sherman")
+        self.assertIsNone(self.results["kitRoot"])
+
+    def test_a_client_file_is_read_by_id_and_no_man_or_hull_is_a_kit(self) -> None:
+        # Without the server's header nothing is split (a client's reuse
+        # comes with its destroy and create events); the guard alone keeps
+        # the men and the hulls off the kits.
+        lives = self.results["client"]
+        self.assertEqual(len(lives), 7)
+        self.assertEqual([l[0] for l in lives if l[4]], [793])
+
+
 class ReplaySoldierFeetTests(unittest.TestCase):
     """A replayed soldier stands on the ground.
 

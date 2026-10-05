@@ -313,9 +313,68 @@ took place before the client had the point. The side the point was sent a
 moment later is already the captor's, and no client file can say which point
 it was or when it fell.
 
+### Kits in a server file (2026-10-05)
+
+Server files marked soldiers and hulls as kits. In the soak round
+`replay_1791103311`, 561 of 650 lives carried `kit`, including every
+`BritishSoldier` and `GermanDesertSoldier` life and the Shermans, PanzerIVs,
+Kubelwagens and Willys. So `rootOf` found no hull under a seat, `markRounds`
+skipped the rounds, and soldiers wore a soldier's template as their kit.
+
+The kit mark was only half of it. A server file ends no life by event. The
+soak rounds have no createObject or destroyObject at all, and the parity round
+has them only while a client is connected. Its `d` means the object left the
+server's registered map, and a soldier boarding a vehicle does that too. So
+every object that ever held an id was folded into the first life on that id,
+under the first object's template. A 2,500 s file with three rounds on one map
+reuses most ids. Kit 789 (`German_AT_Desert`, 731 s, after a round restart)
+went into soldier 789's life from 21.7 s. The pickup then marked that life by
+id, and the template spread made every `BritishSoldier` a kit. Kit 1286 at
+1229 s went into Sherman 1286's life the same way.
+
+The fix, in `parseRecording`:
+
+- In a server file (header `plus` starting with `server-replay-recorder`), a
+  new life starts when an `o` carries a registry key (`gid`) other than the
+  open life's, or when an `o`, a createObject or a pool names a different
+  template. The old life ends there. The same key after a `d` is the same
+  object, for example a soldier getting out of a vehicle. A client file's
+  lives are read as before.
+- A pickup marks the life its id names at the pickup's time (`t + 0.5`, the
+  rule that already bound a soldier's kit), not every life of that id.
+- A man, a camera, a control point, anything with hit points, and anything
+  of their templates is never a kit, whatever id a pickup names. Every
+  soldier and hull carries `maxhp`; no kit in any recording does. A soldier's
+  kit binds only to a life marked as a kit. A guard on "a life some player
+  controlled" failed: seat 1511 of hull 1510 has no `o` of its own, so a
+  hold on it found the kit that last had the id.
+
+Checked by parsing every recording with the old and the new parser. In the 12
+client files and the two test fixtures, every parsed field and every life are
+identical. The server files, lives by class:
+
+| file | lives | kit | soldier | hull | round |
+|---|---|---|---|---|---|
+| `replay_1791103311` (soak) | 650 -> 883 | 561 -> 304 | 0 -> 304 | 53 -> 221 | 1 -> 19 |
+| the other six soak rounds | 3,727 -> 4,845 | 3,143 -> 1,643 | 0 -> 1,643 | 336 -> 1,275 | 38 -> 74 |
+| `replay_1791148138` (parity) | 494 -> 557 | 344 -> 121 | 44 -> 121 | 70 -> 125 | 0 -> 154 |
+| `replay_1791066665` (probe build) | 477 -> 580 | 396 -> 125 | 0 -> 125 | 47 -> 129 | 3 -> 170 |
+| the 11 earlier rounds and the Wake projPool round | unchanged | | | | |
+
+After the fix, in all 22 server files, every life marked as a kit has a
+template that a pickupKit or createPlayer names (the `o` written for that id).
+Every pickup resolves to a kit life, and every soldier's kit is a kit
+template. Before the fix, 2,644 kit lives in 9 rounds had a non-kit template.
+In the parity pair, all 308 lives that both files hold (server time = client
+time + 72.475 s) agree on template and class. Before the fix, 178 disagreed:
+8 hulls, 150 rounds and 20 soldiers were kits on the server side. The client
+file's 57 other rounds have no server life, because that server file has no
+`projPool`. Test: `ReplayServerKitTests` in `test_replay_models.py`. Run on
+the old parser, it reproduces the bug.
+
 ## Open
 
-- **Server files mark hulls and soldiers as kits.** `parseRecording` marks a
+- ~~**Server files mark hulls and soldiers as kits.** `parseRecording` marks a
   life as a kit by network id whatever the time (`kitIds`), then marks every
   life of a kit's template (`kitTemplates`). In a server file, a later object
   on a kit's old id becomes a kit, and its template then makes every life of
@@ -323,7 +382,9 @@ it was or when it fell.
   PanzerIVs, Kubelwagens, Willys (`Willy`) and `BritishSoldier` /
   `GermanDesertSoldier` lives carry `kit`. None of the 12 client files has a life like that. The
   weapon guess works around it (`hullLike`), but whatever else skips a
-  `kit` life (`rootOf`, `markRounds`, the props) still does.
+  `kit` life (`rootOf`, `markRounds`, the props) still does.~~ Fixed
+  2026-10-05: server files folded every object on a reused id into one life.
+  See [Kits in a server file](#kits-in-a-server-file-2026-10-05).
 - A kill by a grenade or a mine that went off after the killer went back to
   his gun gets the gun (most of the 37 wrong guesses in client files). The
   `f` of the throw is there; telling a fuse's kill from a shot's would need
