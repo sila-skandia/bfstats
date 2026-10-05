@@ -789,6 +789,8 @@ v5, readable by the viewer as it stands. New against the POC:
 | `cp` | control points: id, name, template, place, team; then team changes | `ControlPoint+0x174`, template `+0x1e4` |
 | `lod` | `[pid, lod]` for bots, on change (AI-136) | `BotMain+0x10` through `IBotManager::instance` (the BotManager itself) |
 | `pn` / `pj` / `pd` | a projectile's flight: named, placed each sample, ended | Projectile roots (vptr `0x0873f2c8`) |
+| `e` `projPool` | a weapon's pool of networked rounds, as the client's event 0x05 (since 2026-10-05, [below](#projectile-pools-2026-10-05)) | the event with a client connected; the weapon's own pool always |
+| `e` `destroyObject` | a networked object's end, as the client's event 0x06, with no client connected too (same section) | `GameServer::destroyObject`'s vtable slot |
 | `perf` | once a minute: the sample's and the server's tick cost, objects, faults, dropped output | |
 
 The viewer skips `pn`/`pj`/`pd` and `perf` today. It reads `lod` into
@@ -885,6 +887,109 @@ five times for three clients). The viewer's copy of that round
 (`viewer/replays/20261005-070852-parity-elalamein-rec/replay_1791148138.ndjson`)
 has had its exact duplicates removed; the run directory keeps the original.
 
+### Projectile pools (2026-10-05)
+
+The client's `projPool` (event 0x05, `CreateMultipleObjectsEvent`, 22 bytes
+with its header) tells the viewer which networked objects are a weapon's
+rounds: grenades, mines, charges, the binoculars' spot and the PT boat's
+`FloatingMine`. `classify()` in `replay-recording.js` makes a pool's objects,
+and every object of a template a pool made, projectiles. A server file had
+none, so it classified by the `Projectile` suffix alone, and a dropped
+`FloatingMine` was a hull asking for a `FloatingMine.glb`.
+
+**Where the server builds it** (ledger FA-2, J-5). A weapon makes its
+networked rounds once, in its constructor: `FireArms::initProjectilePool`
+`0x08287a80` calls `GameServer::spawnMultipleObjects` `0x081324a0`, which
+makes `count` objects and, for every connection whose database has gone
+(`+8`), calls `GameEventManager::createMultipleObjects` `0x0812d510`. That
+puts the event straight into the client's send queue. Nothing sends it
+again: a joining client's database (`sendDatabase` `0x08134400`) carries the
+rounds as single `createObject`s at the origin. With no client connected the
+event is never built, which is why the hooks never saw one.
+
+**Layouts.** The server's event object (vptr `0x0871a7c8`, 0x16 bytes) holds
+the template id at `+0xc`, the first object's net id at `+0x10` (u16) and the
+count at `+0x12` (i32). `serialize` `0x0811d500` writes 32, 16 and 4 bits of
+them. In the payload they sit at 0, 4 and 6, as in the client's struct. The
+pool stays on the weapon for its life: the projectile template at
+`FireArms+0x194`, the objects in a `vector<IObject*>` at `+0x1d8`/`+0x1dc`, the
+count at `+0x1e4`. A weapon is a `FireArms` (vptr `0x08730da8`) or a
+`HandFireArms` (`0x087318c8`), and both are in the registered map.
+
+**What the recorder writes.** The client's record:
+
+```
+{"k":"e","t":20.058,"e":"projPool","tid":1293,"tmpl":"GrenadeAxisProjectile","netId":590,"count":3}
+```
+
+- With a client connected, from the event (`emit_event_json`; held, like any
+  event, until a file opens).
+- Always, from the tick sample. A weapon is read while it is new in the live
+  set, and every weapon in the set is read once when a file opens
+  (`live_pools`), because weapons are not kept in the per-tick list. A table
+  by first net id keeps one record per pool per file, whichever path saw it
+  first. A weapon whose pool reuses a dead weapon's ids is written again.
+
+So a server file has every pool standing when it opens and every pool made
+after. A client file has only the pools made after its join.
+
+**And `destroyObject` with no client.** Pools alone made server files worse.
+The server reuses a dead object's net id for the next one, and a server
+file with no client had no `destroyObject` (0x06): the event is built only
+per connection, in `GameServer::destroyObject` (ledger J-6). The viewer
+keeps a life by id until a `destroyObject` ends it, so a soldier or kit made
+on a dead weapon's grenade ids became part of that pooled life: kept the
+grenade's template, counted as a projectile, and was not drawn as a soldier.
+A 25-minute El Alamein file had 109 such objects. Without pools the same
+merging happened, more rarely: 10 objects in the 15-minute parity file took
+an earlier object's life. (The viewer was changed the same day to start a
+new life on another template or registry key in a server file,
+round-replay-fidelity; the record below is what a client file says.) The
+recorder now hooks
+`GameServer::destroyObject`'s vtable slot (`0x0871b13c`) and writes the
+client's `destroyObject` for every networked object the server destroys.
+With a client connected, the event comes first and the hook's copy is
+dropped by the fan-out check. A destroy while no file is open is the last
+level's teardown and is not held for the next file. A `destroyObject` on a
+pool's first id also clears that pool from the table.
+
+**How it was checked.**
+
+- `tests/run.sh`, both modes. The event fanned out to three clients is
+  written once, and the sample does not write it again. A disabled
+  `HandFireArms` and a `FireArms` are written once a file and again in the
+  next, and a respawned launcher on the same ids is written again.
+  `harness live` runs the live set: a weapon that has become scenery is
+  written again when the next file opens. It fails without the hook's note
+  (the event's pool written twice) and without the file-open pass (no pools
+  in the live set's second file). It also destroys a launcher's rounds
+  through the hooked slot, the first with a client's event before it: one
+  `destroyObject` each, and none for a destroy between files.
+- Bots-only lab rounds, no client, so every record is the sample's or the
+  destroy hook's:
+  - Wake (`~/bf1942-lab/runs/20261005-082144-projpool-wake-rec`, 7.5 min):
+    76 pools, the client's counts and templates (`GrenadeAxisProjectile` and
+    `GrenadeAlliesProjectile` 3, `LandmineProjectile` and
+    `ExpPackProjectile` 9, `BinocularsProjectile` 1). Each pool's ids end at
+    or just below the `pickupKit` made at the same spawn, as in client files
+    (599 x3, then kit 602).
+  - El Alamein (`20261005-082947-projpool-elalamein-rec`, 25 min of round):
+    217 pools, the one grenade thrown (`o` 618 at 990 s) inside a pool of its
+    template, 11 pools written twice on the same ids, each at a new kit. It
+    showed the 109 merged lives above.
+  - El Alamein again with the destroy hook
+    (`20261005-191346-projpool-elalamein-rec`, 12 min to the round's end):
+    68 pools and 401 `destroyObject`, none twice. The rounds of every pool
+    are destroyed, the ones standing at the round's end in its teardown.
+    No `o` record reuses an id another template had without a
+    `destroyObject` in between.
+  - The viewer's `parseRecording` (in Node) marks every life of the five
+    pool templates `pooled` and `projectile` in all three files.
+- No vanilla co-op map the lab server has carries a `FloatingMineLauncher`
+  (Truk does, and the server install has no Truk). The harness's file with
+  a dropped `FloatingMine` added: with its `projPool` the viewer makes the
+  mine a projectile, without it a hull.
+
 ### Still open
 
 - ~~A neutral control point is team 0 on the server and -1 in a client file
@@ -898,4 +1003,9 @@ has had its exact duplicates removed; the run directory keeps the original.
 - The viewer does not use `pn`/`pj`/`pd` yet: it could draw the server's
   own projectile flights. It marks a bot at AI LOD 1 or 2 on the followed
   player's card (round-replay-fidelity).
-- w32ded is still the POC sampler thread (stage 1 verified).
+- w32ded is still the POC sampler thread (stage 1 verified). It has no pool
+  reads and no destroy hook: its table leaves those fields 0.
+- A real `FloatingMine` pool has not been recorded: the lab server has no
+  co-op level with PT boats. A Truk archive in the lab's own tree would give
+  one (its `archives` is server1's, so that is a lab change, not a file
+  copy).
