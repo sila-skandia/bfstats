@@ -19,9 +19,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, recording, { ReplayCamera, eyeAim }, hud, { createVehicleHud }] = await Promise.all([
+const [THREE, recording, { ReplayCamera, eyeAim }, hud, { createVehicleHud }, { FireState }] = await Promise.all([
   imp('vendor/three.module.js'), imp('replay-recording.js'), imp('replay-camera.js'), imp('replay-hud.js'),
-  imp('vehicle-hud.js'),
+  imp('vehicle-hud.js'), imp('fire-state.js'),
 ]);
 
 const results = {};
@@ -453,6 +453,95 @@ const life = rec.lives.find(l => l.nid === 50);
     wide: crossAt(0.75, 2560, 1440, 57.3),
     none: crossAt(0, 1600, 1200, 57.3),
   };
+}
+
+// --- a seat gun's cone: the coax's floor, a burst, back to the floor (XHIT-15) ------
+{
+  // Vanilla's Coaxial_browning: `setMinDev 0.75`, `setFireDev 1.9 0.26 0.05`,
+  // 12 rounds a second. A Sherman's cannon ships no deviation words.
+  const coax = { magSize: 400, numOfMag: 1, reloadTime: 0.1, roundOfFire: 12, autoReload: true,
+                 deviation: { min: 0.75, fire: [1.9, 0.26, 0.05] } };
+  const cannonStats = { magSize: 1, numOfMag: 30, reloadTime: 0.35, roundOfFire: 0.35 };
+  const burst = Array.from({ length: 30 }, (_, i) => 1 + i / 12);
+  const last = burst.at(-1);
+  const gunAt = t => r3(hud.gunStateAt(coax, burst, t).state.spread);
+  results.seatSpread = {
+    rest: gunAt(0.5),
+    first: gunAt(1),
+    rising: [gunAt(burst[0]), gunAt(burst[4]), gunAt(burst[9])],
+    end: gunAt(last),
+    half: gunAt(last + 0.5),
+    settled: gunAt(last + 2),
+    cannon: hud.gunStateAt(cannonStats, [1], 1).state.spread,
+  };
+
+  const gunNode = (name, stats) => {
+    const n = new THREE.Object3D();
+    n.name = name;
+    n.userData.fireArms = stats;
+    return n;
+  };
+
+  // The page: the seat's cross reads its second gun's FireState.
+  {
+    const cannon = gunNode('ShermanGunBarrel', cannonStats);
+    const coaxNode = gunNode('Coaxial_browning', coax);
+    const twin = gunNode('Coaxial_browning_1', coax);
+    const states = new Map();
+    const fireStateFor = n => {
+      if (!states.has(n)) states.set(n, new FireState(n.userData.fireArms));
+      return states.get(n);
+    };
+    let seatNodes = [cannon, coaxNode];
+    const occupancy = { activeHud: () => ({ crossHairType: 'CHTCrossHair' }),
+                        activeFireArmsNodes: () => seatNodes, isActiveRoot: () => false };
+    const vehicleHud = createVehicleHud({ replayAim: null, occupancy, mannedActive: () => true, fireStateFor });
+    const aimNow = () => r3(vehicleHud.crosshairAim().deviation);
+    const seat = { style: vehicleHud.crosshairAim().style, rest: aimNow() };
+    fireStateFor(coaxNode).registerShot(1);
+    seat.shot = aimNow();
+    fireStateFor(coaxNode).step(0.1);
+    seat.later = aimNow();
+    fireStateFor(cannon).registerShot(1);
+    seat.cannonShot = aimNow();
+    seatNodes = [cannon];
+    seat.cannonOnly = vehicleHud.crosshairAim().deviation;
+    // Two of one template are one weapon to the feed: the first one's cone.
+    seatNodes = [coaxNode, twin];
+    fireStateFor(twin).registerShot(1);
+    seat.twin = aimNow();
+    results.pageSeat = seat;
+  }
+
+  // The replay: the same coax's recorded rounds, beside the cannon.
+  {
+    const cannon = gunNode('ShermanGunBarrel', cannonStats);
+    const coaxNode = gunNode('Coaxial_browning', coax);
+    const occupancy = {
+      rootId: 'root', order: ['root'],
+      hudOf: () => ({ crossHairType: 'CHTCrossHair' }),
+      seatInfo: () => null,
+      fireArmsNodesOf: () => [cannon, coaxNode],
+      seatDotsAt: () => [],
+      showsTurretIconAt: () => false,
+    };
+    const hull = { occupancy, root: new THREE.Object3D(), seatIdAt: i => occupancy.order[i] ?? null,
+                   groups: [{ node: cannon, muzzles: [{}] }, { node: coaxNode, muzzles: [{}] }] };
+    const tankLife = { nid: 901, created: 0, destroyed: Infinity, hp: [{ t: 0, hp: 900 }], maxhp: 900 };
+    const fires = [{ t: 2, nid: 901, weapon: 'ShermanGunBarrel', press: false },
+                   ...burst.map(t => ({ t: t + 2, nid: 901, weapon: 'Coaxial_browning', press: false }))];
+    const player = { rec: { ...rec, fires, lives: [...rec.lives, tankLife] }, followPid: 3, recordingPid: 3,
+      soldiers: null, ctx: { loadouts: () => null }, camera: { sight: { kind: 'seat', life: tankLife, hull, seat: 0 } } };
+    const replayHud = new hud.ReplayHud(player);
+    const seatAt = t => {
+      replayHud.update(t);
+      return r3(replayHud.crosshairAim().deviation);
+    };
+    results.replaySeat = {
+      rest: seatAt(1.5), cannon: seatAt(2.01), end: seatAt(last + 2), half: seatAt(last + 2.5),
+      settled: seatAt(last + 4),
+    };
+  }
 }
 
 process.stdout.write(JSON.stringify(results));

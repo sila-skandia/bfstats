@@ -43,6 +43,8 @@ MODULES = {
     "entry-points.js": VIEWER / "entry-points.js",
     "spawned-craft.js": VIEWER / "spawned-craft.js",
     "fire-state.js": VIEWER / "fire-state.js",
+    # fire-state.js runs a seat gun's cone (XHIT-15).
+    "deviation.js": VIEWER / "deviation.js",
     # `bomb-release.js` (the salvo arithmetic, the release speed and the
     # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
     # both reached through gunfire.js / seats.js.

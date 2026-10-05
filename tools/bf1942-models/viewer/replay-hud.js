@@ -12,7 +12,8 @@
 //   - the cross itself: his weapon's or his seat's `setCrossHairType`, and
 //     the server's centre point (`gameRules`);
 //   - its spread: his weapon's deviation (deviation.js) run over his recorded
-//     stance, movement and rounds;
+//     stance, movement and rounds, or in a seat the gun's (fire-state.js
+//     `FireState.spread`) over its recorded rounds;
 //   - ammunition: counted down from a full kit at his spawn by his recorded
 //     rounds, magazine changes (his torso's reload states) and refills. Exact
 //     for a recording player, whose every round and refill the file has; for
@@ -27,7 +28,7 @@
 
 import { DeviationModel, TICK_HZ } from './deviation.js';
 import { AmmoEntry } from './kit-ammo.js';
-import { FireState } from './fire-state.js';
+import { FireState, crossGunOf } from './fire-state.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { motionAt } from './replay-kinematics.js';
@@ -230,8 +231,9 @@ export function spreadAt(rec, life, deviation, rounds, t) {
 
 /**
  * A seat gun's state at `t` (fire-state.js `FireState`, the page's own): its
- * magazine, spares, reload and heat, run over the rounds its FireArms fired
- * from the hull's spawn (`rounds`, times) at `perPull` rounds a pull.
+ * magazine, spares, reload, heat and cone, run over the rounds its FireArms
+ * fired from the hull's spawn (`rounds`, times) at `perPull` rounds a pull.
+ * Each recorded round is a pull, and a pull raises the bloom once.
  */
 export function gunStateAt(stats, rounds, t, perPull = 1) {
   const state = new FireState(stats);
@@ -407,13 +409,20 @@ export class ReplayHud {
       const at = occupancy.order.indexOf(hull.seatIdAt(member.seat));
       if (at >= 0) others.push({ seat: at, team: teamAt(rec, member.pid, t) });
     }
-    const guns = occupancy.fireArmsNodesOf(seatId).slice(0, 2).map(node => this.seatGun(hull, life, node, t));
+    const nodes = occupancy.fireArmsNodesOf(seatId);
+    const guns = nodes.slice(0, 2).map(node => this.seatGun(hull, life, node, t));
+    // The cross opens by the seat's second gun when it has one, a Sherman
+    // driver's coax (fire-state.js `crossGunOf`, XHIT-15), as the gun's own
+    // cone stood at `t` over its recorded rounds.
+    const cross = crossGunOf(nodes);
+    const crossGun = cross ? (guns[nodes.indexOf(cross)] ?? this.seatGun(hull, life, cross, t)) : null;
     return {
       kind: 'seat', pid, team, life, hull, seat, seatId, hud, rootHud, hitMark: this.hitMarkOf(pid, t),
       hp: hpAt(life, t), maxhp: life.maxhp || rootHud?.maxHitpoints || null,
       dots: occupancy.seatDotsAt(seatId, others, team),
       turret: occupancy.showsTurretIconAt(seatId, true) ? this.lookRotation(hull) : undefined,
       guns,
+      spread: crossGun?.state.spread ?? 0,
       // The soldier in the seat: his stance icon and his health stay up.
       soldier: this.seatedSoldier(pid, t),
     };
@@ -474,8 +483,8 @@ export class ReplayHud {
   }
 
   /** The crosshair `vehicle-hud.js` draws, `{ style, deviation, scoped,
-   *  centre }` with `deviation` his weapon's whole cone in degrees, or null
-   *  when the view is not his first person. */
+   *  centre }` with `deviation` his weapon's or his seat gun's whole cone in
+   *  degrees, or null when the view is not his first person. */
   crosshairAim() {
     const s = this.state;
     if (!s) return null;
@@ -487,7 +496,7 @@ export class ReplayHud {
       const scoped = Boolean(s.zoomed && s.zoom?.scope);
       return { style: s.data?.crossHair ?? null, deviation: s.spread, scoped, centre };
     }
-    return { style: s.hud?.crossHairType ?? null, deviation: 0, scoped: false, centre };
+    return { style: s.hud?.crossHairType ?? null, deviation: s.spread ?? 0, scoped: false, centre };
   }
 
   /**

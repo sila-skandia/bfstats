@@ -205,6 +205,41 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual([wide["gapX"], wide["gapY"]], [12, 9])
         self.assertEqual([wide["lenX"], wide["lenY"]], [32, 24])
 
+    def test_a_seat_gun_opens_the_cross_by_its_own_cone(self) -> None:
+        """The vehicle HUD feed (client 0x006d71be/0x006d71d9) writes the
+        cross from the seat FireArms' total deviation, as the soldier feed
+        does from his weapon's. A plain FireArms has no stance multiplier and
+        no speed, turn or misc channel: `minDev + fire`, the bloom raised
+        `setFireDev` b a pull up to a and decayed c a 1/30 s tick (XHIT-15).
+        The coax: `setMinDev 0.75`, `setFireDev 1.9 0.26 0.05`."""
+        spread = self.results["seatSpread"]
+        self.assertEqual(spread["rest"], 0.75, "at rest: the floor, 3.75 units")
+        self.assertEqual(spread["first"], 1.01, "one round: 0.26 over it")
+        self.assertLess(spread["rising"][0], spread["rising"][1])
+        self.assertLess(spread["rising"][1], spread["rising"][2])
+        self.assertEqual(spread["end"], 2.65, "a long burst: the bloom at its 1.9 cap")
+        self.assertEqual(spread["half"], 1.9, "half a second on: 15 ticks of 0.05 off the cap")
+        self.assertEqual(spread["settled"], 0.75)
+        self.assertEqual(spread["cannon"], 0, "a tank's main gun ships no deviation words")
+
+    def test_the_pages_seat_cross_is_its_second_guns(self) -> None:
+        """The feed's loop (client 0x006d7050) writes the cross from each of
+        the seat's first two weapons in turn, so the second stands: a
+        Sherman driver's cross is his coax's. One with the template name of
+        the weapon before it is skipped."""
+        seat = self.results["pageSeat"]
+        self.assertEqual(seat["style"], "CHTCrossHair")
+        self.assertEqual(seat["rest"], 0.75, "cannon then coax: the coax's floor")
+        self.assertEqual(seat["shot"], 1.01)
+        self.assertEqual(seat["later"], 0.86, "three ticks of decay")
+        self.assertEqual(seat["cannonShot"], 0.86, "the cannon's round moves nothing")
+        self.assertEqual(seat["cannonOnly"], 0)
+        self.assertEqual(seat["twin"], 0.86, "two of one template: the first one's cone")
+
+    def test_a_replays_seat_cross_runs_the_guns_recorded_rounds(self) -> None:
+        seat = self.results["replaySeat"]
+        self.assertEqual(seat, {"rest": 0.75, "cannon": 0.75, "end": 2.65, "half": 1.9, "settled": 0.75})
+
 
 if __name__ == "__main__":
     unittest.main()
