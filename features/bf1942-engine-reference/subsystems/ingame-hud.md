@@ -464,7 +464,24 @@ above `minDev`, projected through the camera's vertical FOV. With the replay's
 57.3° lens that is about 9.6 units a degree, and about 20.5 zoomed to an SMG's
 28.6°, against retail's 5. That made the cross too wide whenever the player
 moved, fired or zoomed, and closed it when he stood still. Fixed 2026-10-06.
-Seat MGs still draw closed in the viewer: their deviation is not exported.
+
+In a seat the feed is the loop that fills the two ammo panels
+(`0x006d7050`). It walks the seat's FireArms range, skips one whose template
+name equals the weapon before it (`std::operator==` at `0x006d714c`), and
+for each of the first two it takes (`ebp` 1..2) writes the heat/reload bar,
+then `Radius` and `Deviation` from that weapon's total, then its ammo panel.
+The cross write is not gated on the panel, so the second weapon's total
+stands. A tank driver's cross is his coax's (`setMinDev 0.75`, 3.75 units at
+rest), not his main gun's, which ships no deviation words. A seat with one
+gun shows that gun's: a pintle Browning 2.5 units, a stationary MG42 3.5. A
+vehicle gun is a plain `FireArms`, so its total is `minDev` plus the fire
+bloom with no stance multiplier (handweapon-view-and-deviation §2).
+
+The viewer exports the words on a plain FireArms as `fireArms.deviation`
+(`bf42/assemble.py` `_fire_arms`), runs the cone in `fire-state.js`
+`FireState.spread` and picks the cross's gun with `crossGunOf`, on the page
+and in the replay (2026-10-06). Not yet footage-checked: a still Sherman
+driver should show the coax's 3.75-unit gap.
 
 ## 8. Hit direction and the red wash (HFD-1..HFD-13, 2026-09-24)
 

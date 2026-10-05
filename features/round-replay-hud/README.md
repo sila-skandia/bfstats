@@ -135,7 +135,7 @@ change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
 | his health bar, stance icon, kit art | `a` records (hit points), `st` (stance), his kit | exact. A soldier with no recorded hit points (18 of 214 in the Bocage round) shows his spawn's full bar |
 | a vehicle's icon, health, seat dots, turret dial | the seat's `hud` block, the hull's `a` records, the recorded crew, `IconLookRotation` from the camera against the hull | exact |
 | ammunition on foot | counted from a full kit at his spawn: one round per `f`, a magazine change `reloadTime` after his torso's reload state or a dry magazine (the old magazine's rounds are lost, as in `hand-fire.js`), refills (`special` 0) | exact for a recording player. For anyone else it is an estimate: a client can miss a remote player's single taps, and nobody else's refills reach it |
-| a seat gun's ammunition, heat, readiness | the page's `FireState` run over the gun's recorded rounds since the hull's spawn | the same estimate for anyone but a recording player |
+| a seat gun's ammunition, heat, readiness, spread | the page's `FireState` run over the gun's recorded rounds since the hull's spawn; the cross takes the seat's second gun when it has one ("A seat gun's cross") | the same estimate for anyone but a recording player |
 | the hit marks | his rounds against his victims' hit points (`replay-hitmarks.js`) | worked out. The server sends them, but as one bool the recorder does not read: see "The hit marks" |
 
 ## Files
@@ -381,16 +381,95 @@ geometry: 2 units still, 6.8 running, the same zoomed, and the DP's
 3.75 units at its floor on a 2560x1440 stage, the gap XHIT-11 measured on
 the owner's capture.
 
-Still short of retail: a seat MG's cross (the coax and pintle guns, the
-stationary MG42 and Browning) stays closed. Retail opens it by the gun's
-`setMinDev` and `setFireDev`, through the same feed, but the exporter does
-not carry deviation on vehicle FireArms. A tank's main gun ships none, so its
-closed cross is right.
+### A seat gun's cross
+
+A seat MG opens the cross by its own deviation, as retail does. The vehicle
+HUD feed (client `0x006d7050`) writes `CrossHair/Radius` and `Deviation` from
+the seat FireArms' total, the same law as on foot (XHIT-15). A vehicle gun is
+a plain `FireArms`: no stance multiplier and no speed, turn or misc channel,
+so its total is `setMinDev` plus the fire bloom, raised `setFireDev` b a pull
+up to a and decayed c a 1/30 s tick.
+
+The feed walks the seat's weapons for the two ammo panels and writes the cross
+from each of the first two in the same loop, skipping one with the template
+name of the weapon before it. The second write stands. So a tank driver's
+cross is his coax's, not his main gun's, and a pintle or stationary MG's seat
+shows that gun's own.
+
+| seat gun (vanilla) | `setMinDev`, `setFireDev` | at rest, units | at the bloom's cap |
+|---|---|---|---|
+| `Coaxial_browning`, `Coaxial_MG42` (a tank driver's cross) | 0.75; 1.9 0.26 0.05 | 3.75 | 13.25 |
+| `MG42`, `MG42_unlimited` | 0.7; 0.9 0.25 0.05 | 3.5 | 8 |
+| `Browning`, `Browning_unlimited`, `Elco80_SideGunner`, `Type38_Oerlikon` | 0.5; 0.7 0.3 0.048 | 2.5 | 6 |
+| `MG42_Air`, `Browning_Air` | 0.2; a cap of 0.2 | 1 | 2 |
+| the naval guns (`fletcher_GunBarrel`, `YamatoFatCannon` ...), where the seat draws a cross | 1 or 2, no bloom | 5 or 10 | the same |
+
+XPack2 adds `FlakPanzer_MG42` (the coax's numbers), `HDBrowning` (the
+Browning's), `SturmTigerGunBarrel` (2) and `WasserFallGuns` (15; 10 0 0).
+A tank's main gun ships no words, so a seat whose only weapon it is stays
+closed.
+
+The exporter carries the words as `fireArms.deviation = {min, fire}` on a
+plain FireArms (`bf42/assemble.py` `_fire_arms`). `fire-state.js` `FireState`
+runs the cone (`spread`, a `DeviationModel` over that block, `onShot` once a
+pull, ticked by `step`), and `crossGunOf` picks the gun the feed leaves on the
+cross. The page's seat reads it in `vehicle-hud.js` `crosshairAim`. The replay
+runs the same `FireState` over the gun's recorded rounds (`gunStateAt`), so a
+server recording and a bf42plus client recording open it alike: a coax at
+0.75 degrees, 2.65 after a long burst, back to 0.75 1.3 s later.
+`tests/test_replay_hud.py` checks all three. The glbs carry the block only
+after the re-extract and re-bake below; until then the cross stays closed in a
+seat.
+
+**What the export change reaches** (scanned 2026-10-06: a plain FireArms node
+named for a template with deviation words, in each glb's JSON chunk). A spot
+extract of the Sherman and the MG42 changed only `fireArms.deviation` on those
+nodes; the document extras, the reports and `scene.json` do not move.
+
+| tree | templates with words | model glbs | levels (`scene.glb`) |
+|---|---|---|---|
+| vanilla | 16 | 71 of 650 | 23 of 23 |
+| XPack1 | 16 (vanilla's) | 9 of 75 | 29 of 29 (own and inherited) |
+| XPack2 | 20 | 31 of 134 | 32 of 32 |
+
+Old viewer code ignores the new key and new code reads no key as a closed
+cross, so the trees and the page can go live in either order. From
+`tools/bf1942-models`, with this change checked out:
+
+```bash
+S=~/.cache/seat-gun-deviation   # on disk, not /tmp (quota; hard links)
+python3 extract_all.py --level-all --configuration-all --cockpit -j 6 --out $S/models
+python3 extract_all.py --mod XPack1 --own --level-all --configuration-all --cockpit -j 6 --out $S/models/mods/xpack1
+python3 extract_all.py --mod XPack2 --own --level-all --configuration-all --cockpit -j 6 --out $S/models/mods/xpack2
+# Install every $S/models/**/*.glb that differs from viewer/models/<same path>,
+# with its .glb.gz, writing through the existing inode (cat new > old) for the
+# hard-link mirrors. Not models.json, damage.json or the thumbs.
+python3 optimise_mesh.py <the installed glbs>        # no-op if the .gz match
+python3 extract_maps_all.py --out viewer/maps -j 8
+python3 extract_maps_all.py --mod XPack1 --out viewer/maps/mods/xpack1 -j 8
+python3 extract_maps_all.py --mod XPack2 --out viewer/maps/mods/xpack2 -j 8
+cd ../.. && scripts/publish-mesh-delta.py models maps --hash --dry-run --list
+```
+
+The level bakes optimise as they promote, and each promote replaces the
+level's directory: check nobody else is extracting into `viewer/maps` first,
+and list the delta against the volume (to send and volume-only) before the
+real send. The expected send is the 111 model glbs and 84 `scene.glb`, each
+with its `.gz`. Publish them from a staging root of exactly those files
+(`--root <stage> --hash --hash-remote`) if the hash record is stale.
 
 ## Open
 
-- A seat MG's cross stays closed: vehicle FireArms carry no deviation in the
-  glbs ("The cross's size").
+- A seat gun's cross needs the vehicle models and every level re-extracted
+  and re-baked (vanilla, XPack1, XPack2) before it opens: the exporter change
+  is in, the trees are not ("A seat gun's cross").
+- A seat gun's rounds do not wander inside its cone yet: `gun-groups.js`
+  passes no `spreadDeg` for a vehicle group, and `FireArms::fireBarrel`
+  applies the cone to any gun whose total is over 0.01. The cone is now on
+  `FireState.spread` for it to read.
+- A tank driver's cross reading the coax rests on the client's feed loop, not
+  on footage. A capture of a Sherman driver standing still would show 3.75
+  units of gap.
 - **Recording the marks exactly.** The recorder could read its own player's
   `HitIndicationTime` (BFPlayer `+0x1cc`, XHIT-2) each sample. The timer runs
   down at one per second from 1.0, so a sample of `v` at `t` puts the last
