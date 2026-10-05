@@ -5,7 +5,7 @@
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `bust`, `camera`, `car`, `crossHairColor`, `crosshairEl`, `DEG_TO_RAD`,
+ * `aircraft`, `bust`, `car`, `crossHairColor`, `crosshairEl`,
  * `fireStateFor`, `forgetOccupiedVehicle`, `fullmapBox`, `gameHud`,
  * `handWeapon`, `hudPaths`, `isZoomed`, `itemsLocked`, `LOCAL_PLAYER`,
  * `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
@@ -15,6 +15,16 @@
 
 /** The HUD's virtual screen, the frame the cross is measured in. */
 const CROSSHAIR_VIRTUAL = [800, 600];
+
+/** HUD units per degree of the weapon's whole deviation, floor included:
+ *  `Game.setCrossHairRadius 5` and `Game.setCrossHairSize 5` in the shipped
+ *  `Game/Init/Menu.con`. The feed writes `CrossHair/Radius` = total x the
+ *  first and `CrossHair/Deviation` = total x the second; `BfCrosshairNode`
+ *  draws each arm from Radius off centre out to its rect's half-size (10)
+ *  plus Deviation. No camera term: the gap is the same zoomed or not
+ *  (XHIT-14, XHIT-15). */
+const CROSSHAIR_RADIUS_PER_DEGREE = 5;
+const CROSSHAIR_SIZE_PER_DEGREE = 5;
 
 /** `game.serverCrossHairCenterPoint` -- 1 in the shipped
  *  `Settings/ServerSettings.con` -- which the owner's recording shows as a
@@ -376,18 +386,6 @@ export function createVehicleHud(page) {
   }
 
   /**
-   * The crosshair's gap, in CSS pixels: the deviation ABOVE the stationary
-   * floor, projected through the camera — `0.5 x height x tan(dev - floor) /
-   * tan(vfov / 2)`.
-   *
-   * Subtracting the floor is measured, not derived: in retail footage a still
-   * Thompson (minDev 0.4 deg, never zero) draws its arms MEETING at centre,
-   * and they part when the shooter moves, turns or fires. So the gap tracks
-   * the acquired spread, not the whole cone. OPEN: whether the engine's own
-   * mapping is this projection or a linear scale — a corpus question
-   * (crosshair draw path, client side); the footage pins only the endpoints.
-   */
-  /**
    * What is under the trigger this frame, as the crosshair needs to know it:
    * the `setCrossHairType` word of the weapon in hand, or of the seat.
    *
@@ -402,8 +400,11 @@ export function createVehicleHud(page) {
    *
    * The page used to ask only the hand weapon, and only on foot, so a
    * CHTCrossHair tank drew nothing and a CHTIcon launcher drew a bare dot.
-   * `deviation` is the hand weapon's acquired spread; a vehicle gun has no
-   * deviation model here, and the bars meet at centre the way a tank's do.
+   * `deviation` is the hand weapon's whole cone in degrees, `minDev`
+   * included. A seat gun has no deviation model here, so its bars meet at
+   * centre: right for a tank's main gun, which ships no deviation words, and
+   * short of retail for the hull and stationary MGs, whose `setMinDev` and
+   * `setFireDev` open the cross the same way (XHIT-15).
    */
   function crosshairAim() {
     // A replay's first person draws the followed player's own cross: his
@@ -427,10 +428,9 @@ export function createVehicleHud(page) {
     if (!page.optOnFoot.checked || !page.soldier || !hw || page.itemsLocked()) {
       return { style: null, deviation: 0, scoped: false };
     }
-    const floor = (hw.model.floor?.() ?? 0) * page.DEG_TO_RAD;
     return {
       style: hw.data?.crossHair ?? null,
-      deviation: Math.max(0, hw.model.current() * page.DEG_TO_RAD - floor),
+      deviation: Math.max(0, hw.model.current()),
       scoped: !!hw.data?.zoom?.scope && page.isZoomed(),
     };
   }
@@ -499,8 +499,8 @@ export function createVehicleHud(page) {
     const width = page.renderer.domElement.width / ratio || 1280;
     // The cross is drawn in the HUD's 800x600 virtual screen, stretched on each
     // axis like the rest of it (hud.js `_scaleFor`, VHUD-11), so its sizes are
-    // per-axis units: the owner's 2560x1440 recording measures every arm 10
-    // units long and 1 unit thick, and the gap 3.75 units on both axes (XHIT-11).
+    // per-axis units: 1 unit thick (the node's `Thickness 1`), on the
+    // (400..401) line (XHIT-11).
     const ux = width / CROSSHAIR_VIRTUAL[0];
     const uy = height / CROSSHAIR_VIRTUAL[1];
     setCrosshairVar('--ch-ux', ux);
@@ -512,14 +512,15 @@ export function createVehicleHud(page) {
       setCrosshairVar('--ch-icon-h', leaf.rect[3] * height / leaf.virtual[1]);
       return;
     }
-    // The deviation still reaches the gap through the camera projection (the
-    // endpoints were pinned on footage; the engine's own mapping is OPEN), read
-    // off as vertical pixels and taken back to units, so that the horizontal
-    // arms part by the same number of units, not of pixels.
-    const gapUnits = 0.5 * height * Math.tan(deviation)
-      / Math.tan(page.camera.fov * page.DEG_TO_RAD / 2) / uy;
-    setCrosshairVar('--ch-gap-x', gapUnits * ux);
-    setCrosshairVar('--ch-gap-y', gapUnits * uy);
+    // Each arm runs from Radius off centre to the rect's half-size plus
+    // Deviation, both a fixed number of units per degree (XHIT-14): the
+    // same number of units on both axes, and no field of view in it.
+    const radius = CROSSHAIR_RADIUS_PER_DEGREE * deviation;
+    const length = 10 + CROSSHAIR_SIZE_PER_DEGREE * deviation - radius;
+    setCrosshairVar('--ch-gap-x', radius * ux);
+    setCrosshairVar('--ch-gap-y', radius * uy);
+    setCrosshairVar('--ch-len-x', length * ux);
+    setCrosshairVar('--ch-len-y', length * uy);
   }
 
   function setCrosshairVar(name, px) {
