@@ -114,11 +114,13 @@ class ReplayFirstPersonTests(unittest.TestCase):
                          [[1, 5, False], [0, 5, True], [1, 4, False], [1, 4, False]])
 
     def test_the_spread_is_his_weapons_deviation_over_what_he_did(self) -> None:
+        # The whole cone, `setMinDev 0.4` included: the game hands the cross
+        # the total (`getMenuCrossHairRadius`, XHIT-14), not the part above it.
         spread = self.results["spread"]
-        self.assertEqual(spread["still"], 0, "standing still, the cross is closed")
-        self.assertAlmostEqual(spread["burst"], 0.6, places=3)
-        self.assertEqual(spread["settled"], 0)
-        self.assertAlmostEqual(spread["running"], 0.96, places=3, msg="the speed channel's cap, 0.8 x 1.2")
+        self.assertAlmostEqual(spread["still"], 0.4, places=3, msg="standing still: the floor")
+        self.assertAlmostEqual(spread["burst"], 1.0, places=3)
+        self.assertAlmostEqual(spread["settled"], 0.4, places=3)
+        self.assertAlmostEqual(spread["running"], 1.36, places=3, msg="the floor and the speed channel's cap, 0.8 x 1.2")
         self.assertEqual(spread["none"], 0)
         self.assertEqual(spread["settle"], [1.333, 3.889])
 
@@ -137,8 +139,9 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual(foot["ammo"], [1, 3, 20, 5])
         self.assertFalse(foot["vehicle"])
         self.assertTrue(foot["weapon"])
-        self.assertEqual(feed["aim"], {"style": "CHTCrossHair", "centre": False, "deviation": 0},
-                         "the server's rule: no centre dot")
+        # No centre dot: the server's rule. The deviation is degrees, the
+        # weapon's whole cone: its 0.75 floor and the tail of his last steps.
+        self.assertEqual(feed["aim"], {"style": "CHTCrossHair", "centre": False, "deviation": 0.765})
         self.assertIsNone(feed["looking"], "dragged off his aim, no cross")
         self.assertEqual(feed["after"], {"shown": False, "hp": None, "ammo": None, "aim": None})
 
@@ -178,6 +181,29 @@ class ReplayFirstPersonTests(unittest.TestCase):
         aim = self.results["pageAim"]
         self.assertEqual(aim["replay"], {"style": "CHTIcon", "deviation": 0, "scoped": False, "centre": False})
         self.assertEqual(aim["none"], {"style": None, "deviation": 0, "scoped": False})
+
+    def test_the_cross_opens_five_units_a_degree_whatever_the_lens(self) -> None:
+        """`BfCrosshairNode::draw` (client 0x007db970) runs each arm from
+        `Radius` off centre to the rect's half-size 10 plus `Deviation`; the
+        soldier HUD feed (0x006e9690) writes both as the weapon's total
+        deviation times `Game.setCrossHairRadius` / `setCrossHairSize`, 5 in
+        the shipped `Game/Init/Menu.con` (XHIT-14). No field of view in it."""
+        cross = self.results["cross"]
+        for case in cross.values():
+            self.assertTrue(case["shown"])
+        # 1600x1200: 2 px a unit. A still Thompson (0.4 degrees): 2 units of
+        # gap, not closed; arms always 10 units long.
+        self.assertEqual([cross["still"][k] for k in ("gapX", "gapY", "lenX", "lenY")], [4, 4, 20, 20])
+        self.assertEqual([cross["running"][k] for k in ("gapX", "gapY", "lenX", "lenY")], [13.6, 13.6, 20, 20])
+        self.assertEqual(cross["zoomed"], cross["running"], "zooming changes the lens, not the cross")
+        self.assertEqual([cross["none"][k] for k in ("gapX", "gapY")], [0, 0])
+        # 2560x1440 stretches the units 3.2 x 2.4: the DP at its floor
+        # (0.75 degrees) parts 3.75 units on both axes, the owner's
+        # capture (XHIT-11).
+        wide = cross["wide"]
+        self.assertEqual([wide["ux"], wide["uy"]], [3.2, 2.4])
+        self.assertEqual([wide["gapX"], wide["gapY"]], [12, 9])
+        self.assertEqual([wide["lenX"], wide["lenY"]], [32, 24])
 
 
 if __name__ == "__main__":

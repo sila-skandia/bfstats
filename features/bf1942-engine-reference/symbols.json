@@ -2364,6 +2364,15 @@
    "note": "Base class (vehicle guns): fire(+0x1ac) -= fireDev.c (no devMod), clamp 0; total(+0x1a8) = minDev(+0x4f8) + fire + aiPending(+0x1b0, zeroed). Matches lnxded 0x0828d410. Tail-called by HandFireArms::updateDeviation when holder is not a BFSoldier."
   },
   {
+   "address": "0x00539680",
+   "name": "FireArms::getMenuCrossHairRadius",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "fld [ecx+0x1a8]; ret: the total deviation, degrees. Called directly (devirtualised) from the soldier HUD feed 0x006e978d/0x006e97a8, the vehicle one 0x006d71be/0x006d71d9 and 0x00464790. lnxded getMenuCrossHairRadius/Size 0x0828d470/0x0828d480 both return the same +0x188 field. Ledger XHIT-15."
+  },
+  {
    "address": "0x00539fb0",
    "name": "FireArms__updateSound",
    "kind": "function",
@@ -4632,6 +4641,24 @@
    "note": "bf42plus section: Loading Screen"
   },
   {
+   "address": "0x006b4dc0",
+   "name": "console crossHairRadius ctor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "Game.setCrossHairRadius: get/set 0x006b4f30 on [[0x00a5f1a8]+0x1c]+0x3c, the CrossHair group's Radius factor (ctor default 5.0, shipped Game/Init/Menu.con 5). Ledger XHIT-15."
+  },
+  {
+   "address": "0x006b4f80",
+   "name": "console crossHairSize ctor",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "Game.setCrossHairSize: get/set 0x006b50d0 on [[0x00a5f1a8]+0x1c]+0x40, the CrossHair group's Deviation factor (ctor default 5.0, shipped Game/Init/Menu.con 5). Ledger XHIT-15."
+  },
+  {
    "address": "0x006bc9e0",
    "name": "Game__setSkirmishAiSkill::executeObjectMethod",
    "kind": "function",
@@ -5136,6 +5163,15 @@
    "note": "Dtor."
   },
   {
+   "address": "0x006e9690",
+   "name": "SoldierHud crosshair feed",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "Per held weapon: CrossHair group sync 0x006e9dd0 (SCOPE-2), then CrossHair/Radius (+0x34) = getMenuCrossHairRadius() x group+0x3c and CrossHair/Deviation (+0x38) = the same total x group+0x40 (0x006e978d / 0x006e97a8). Ledger XHIT-15."
+  },
+  {
    "address": "0x006e9820",
    "name": "OverheatHud registerVariables (the 'Overheat' group)",
    "kind": "function",
@@ -5160,7 +5196,7 @@
    "subsystem": "ui",
    "confidence": "verified",
    "source": "research-2026-09-24-crosshair-hit-indication",
-   "note": "vtable 0x0092604c; ShowCrossHair (+0x8) = 1 and ShowCenterPoint (+0x85) = 1 at construction, ScopeIndex (+0x30) = 0. Stored at HUD +0x1c (0x006a9921). See ledger XHIT-10/XHIT-11."
+   "note": "vtable 0x0092604c; ShowCrossHair (+0x8) = 1 and ShowCenterPoint (+0x85) = 1 at construction, ScopeIndex (+0x30) = 0. Stored at HUD +0x1c (0x006a9921). See ledger XHIT-10/XHIT-11. Radius and Deviation factors +0x3c/+0x40 = 5.0f (0x006e9d4d), the Game.setCrossHairRadius/Size console words (XHIT-15)."
   },
   {
    "address": "0x006e9f30",
@@ -5298,13 +5334,22 @@
    "note": "vtable +0x68. Draws the plate +0x2c with 0x004681c0 + 0x007ed7e0, the same two calls BfButtonNode's +0x68 (0x007da600) makes: texture at its own size (MEME-7), Width/Height is only the pointer region."
   },
   {
+   "address": "0x007db870",
+   "name": "BfCrosshairNode bind properties",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "Binds Radius -> +0x10, Thickness -> +0x8, 'outline thickness' -> +0xc, Deviation -> +0x14, color -> +0x18, outline -> +0x1c through the reader's vtable +0x6c. Ledger XHIT-14."
+  },
+  {
    "address": "0x007db970",
    "name": "BfCrosshairNode draw (vtable +0x68)",
    "kind": "function",
    "subsystem": "ui",
-   "confidence": "working",
-   "source": "research-2026-09-24-crosshair-hit-indication",
-   "note": "vtable 0x0093e998 (factory 0x007dc0e0, class-name string 0x0093ea60). Reads Radius/Thickness/outline thickness/Deviation Data (+0x8/+0xc/+0x10/+0x14) and the two BfColorData (+0x18 colour, +0x1c outline); builds eight quads through the effect chain (0x007ed7e0): four arms, four outline. Function created in Ghidra 2026-09-24; its x87 stack is lost in the decompile, so the gap law is not read. See ledger XHIT-11."
+   "confidence": "verified",
+   "source": "research-2026-10-06-crosshair-gap",
+   "note": "vtable 0x0093e998 (factory 0x007dc0e0, class-name string 0x0093ea60). Reads Thickness/outline thickness/Radius/Deviation Data (+0x8/+0xc/+0x10/+0x14) and the two BfColorData (+0x18 colour, +0x1c outline); builds eight quads through 0x007ed7e0. Each arm runs from Radius off the rect centre to the rect half-size plus Deviation, Thickness wide; the four outline quads are drop-shadow strips on the +y/+x side, 'outline thickness' wide. Decoded 2026-10-06 from objdump (Ghidra's decompile loses the x87 stack). See ledger XHIT-14."
   },
   {
    "address": "0x007dc170",
