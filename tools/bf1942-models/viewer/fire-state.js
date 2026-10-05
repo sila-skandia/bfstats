@@ -152,10 +152,10 @@ export class FireState {
  * two ammo panels, and in the same loop writes `CrossHair/Radius` and
  * `Deviation` from each weapon it takes (`0x006d71be`, `0x006d71d9`): at most
  * two, one with the same template name as the one before skipped
- * (`0x006d7142`-`0x006d7157`). The last write stands, so the cross is the
- * second weapon's when the seat has one: a Sherman driver's is his coax's,
- * 3.75 units open at rest, and his cannon's own nothing (XHIT-15). Plain loop:
- * the page asks every frame.
+ * (`0x006d7134`-`0x006d7157`, `std::operator==` against the last name). The
+ * last write stands, so the cross is the second weapon's when the seat has
+ * one: a Sherman driver's is his coax's, 3.75 units open at rest, and his
+ * cannon's own nothing (XHIT-15). Plain loop: the page asks every frame.
  */
 export function crossGunOf(nodes) {
   let gun = null;
