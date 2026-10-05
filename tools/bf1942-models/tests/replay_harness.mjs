@@ -2862,4 +2862,67 @@ const read = scene => {
   };
 }
 
+// A server recording reuses network ids within its window and ends no life
+// by event (no createObject / destroyObject in its soak rounds; its `d` is
+// also a soldier boarding a vehicle). The soak round replay_1791103311 had
+// soldier 789 from 21.7 s and, after a round restart, kit 789 from 731 s;
+// Sherman 1286 until 699 s and kit 1286 from 1229 s. Read by id, both kits
+// went into the first life on their id, the pickups marked the soldier and
+// the Sherman as kits, and every BritishSoldier and Sherman with them.
+{
+  const line = o => JSON.stringify(o);
+  const lines = [
+    line({ k: 'h', v: 5, plus: 'server-replay-recorder/2', start: '', hz: 30 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 239, name: 'Tommy', team: 2, ai: 1, vehNetId: 0, camNetId: 0, kitNetId: 0 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 237, name: 'Fritz', team: 1, ai: 1, vehNetId: 0, camNetId: 0, kitNetId: 0 }),
+    line({ k: 'e', t: 0, e: 'createPlayer', pid: 241, name: 'Hans', team: 1, ai: 1, vehNetId: 0, camNetId: 0, kitNetId: 0 }),
+    // Round one: Tommy spawns as soldier 789 with kit 793; another
+    // BritishSoldier and a second Sherman are about.
+    line({ k: 'e', t: 21.633, e: 'pickupKit', pid: 239, netId: 793 }),
+    line({ k: 'e', t: 21.633, e: 'control', pid: 239, netId: 789 }),
+    line({ k: 'o', t: 21.666, id: 789, gid: 6679, tmpl: 'BritishSoldier', tid: 1700, maxhp: 30, crit: 0 }),
+    line({ k: 'o', t: 21.699, id: 793, gid: 6691, tmpl: 'GB_AT', tid: 1424, pos: [0, 0, 0], rot: [0, 0, 0, 1] }),
+    line({ k: 'o', t: 22, id: 900, gid: 7000, tmpl: 'BritishSoldier', tid: 1700, maxhp: 30, crit: 0 }),
+    line({ k: 'o', t: 22, id: 1300, gid: 7100, tmpl: 'Sherman', tid: 2914, maxhp: 100, crit: 12 }),
+    line({ k: 's', t: 22.1, o: [[789, 10, 0, 10, 0, 0, 0, 1], [1300, 50, 0, 50, 0, 0, 0, 1]] }),
+    // Soldier 900 boards a vehicle (his root leaves the walk) and gets out:
+    // the same object, the same key, one life.
+    line({ k: 'd', t: 30, id: 900 }),
+    line({ k: 'o', t: 35, id: 900, gid: 7000, tmpl: 'BritishSoldier', tid: 1700, maxhp: 30, crit: 0 }),
+    line({ k: 'd', t: 39.833, id: 789 }),
+    line({ k: 'o', t: 505.769, id: 1286, gid: 11240, tmpl: 'Sherman', tid: 2914, maxhp: 100, crit: 12 }),
+    line({ k: 's', t: 506, o: [[1286, 60, 0, 60, 0, 0, 0, 1]] }),
+    line({ k: 'd', t: 699.15, id: 1286 }),
+    // Round two: Fritz spawns as soldier 785 with kit 789, Tommy's old id.
+    line({ k: 'e', t: 729.137, e: 'gameStatus', status: 1 }),
+    line({ k: 'e', t: 731.004, e: 'pickupKit', pid: 237, netId: 789 }),
+    line({ k: 'e', t: 731.004, e: 'control', pid: 237, netId: 785 }),
+    line({ k: 'o', t: 731.004, id: 785, gid: 16801, tmpl: 'GermanDesertSoldier', tid: 1500, maxhp: 30, crit: 0 }),
+    line({ k: 'o', t: 731.037, id: 789, gid: 16813, tmpl: 'German_AT_Desert', tid: 1476, pos: [0, 0, 0], rot: [0, 0.981, 0, -0.194] }),
+    // Hans spawns with kit 1286, the dead Sherman's id.
+    line({ k: 'e', t: 1229.307, e: 'pickupKit', pid: 241, netId: 1286 }),
+    line({ k: 'e', t: 1229.307, e: 'control', pid: 241, netId: 1290 }),
+    line({ k: 'o', t: 1229.307, id: 1290, gid: 21900, tmpl: 'GermanDesertSoldier', tid: 1500, maxhp: 30, crit: 0 }),
+    line({ k: 'o', t: 1229.34, id: 1286, gid: 21911, tmpl: 'German_Scout_Desert', tid: 1484, pos: [0, 0, 0], rot: [0, 0, 0, 1] }),
+    // A pickup naming the live Sherman 1300 whose kit never got an `o`: an
+    // armoured life is never a kit.
+    line({ k: 'e', t: 1300, e: 'pickupKit', pid: 241, netId: 1300 }),
+    line({ k: 'end', t: 1400 }),
+  ];
+  const describe = r => r.lives.map(l => [l.nid, l.tmpl, l.created, Number.isFinite(l.destroyed) ? l.destroyed : null, Boolean(l.kit), Boolean(l.soldier)]);
+  const server = recording.parseRecording(lines.join('\n'));
+  const soldierOf = (r, pid) => r.lives.filter(l => l.soldier && l.pid === pid).map(l => [l.nid, l.kitTemplate ?? null]);
+  results.serverKits = {
+    lives: describe(server),
+    kitsOf: [239, 237, 241].map(pid => soldierOf(server, pid)),
+    // The Sherman is a hull at its time, its seat resolving to it.
+    shermanRoot: recording.rootOf(server, 1286, 600)?.life.tmpl ?? null,
+    kitRoot: recording.rootOf(server, 1286, 1300)?.life.tmpl ?? null,
+    // The same records without the server's header: a client file's id
+    // reuse comes with its destroy and create events, so its lives are
+    // read as before, by id. Its guard still keeps men and hulls off kits.
+    client: describe(recording.parseRecording(lines.slice(1).join('\n').replace(/^/, `${line({ k: 'h', v: 5 })}\n`))),
+  };
+}
+
 console.log(JSON.stringify(results));
