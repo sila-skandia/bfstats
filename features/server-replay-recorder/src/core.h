@@ -150,6 +150,8 @@ struct rec_target {
      * record it feeds is left out) --- */
     uint32_t gs_simulate_slot;  /* GameServer vtable's simulateFrame slot (address) */
     uint32_t gs_simulate_fn;    /* what that slot must hold before it is patched */
+    uint32_t gs_destroy_slot;   /* GameServer vtable's destroyObject(IObject*) slot (address) */
+    uint32_t gs_destroy_fn;
     uint32_t sol_aim_pitch_off; /* BFSoldier: the aim pitch the client is sent */
     uint32_t sol_aim_twist_off; /* BFSoldier: the torso twist */
     uint32_t bf_ctrl_off;       /* BFPlayer::getVehicle: the control object (seat) */
@@ -163,6 +165,11 @@ struct rec_target {
     uint32_t cp_team_off;       /* ControlPoint: team */
     uint32_t cpt_name_off;      /* ControlPointTemplate: controlPointName */
     uint32_t vt_projectile;     /* Projectile vptr */
+    uint32_t vt_fire_arms;      /* FireArms vptr: a weapon, its projectile pool */
+    uint32_t vt_hand_fire_arms; /* HandFireArms vptr, FireArms' one subclass */
+    uint32_t fa_proj_tmpl_off;  /* FireArms: the projectile template */
+    uint32_t fa_pool_off;       /* FireArms: the pool, a vector (begin, end) of IObject* */
+    uint32_t fa_pool_count_off; /* FireArms: the count the pool was made with */
     uint32_t bm_iface_ptr;      /* IBotManager::instance */
     uint32_t vt_bot_manager;    /* BotManager vptr */
     uint32_t bm_iface_adj;      /* BotManager = instance - adj */

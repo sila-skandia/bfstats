@@ -7611,6 +7611,15 @@
    "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
   },
   {
+   "address": "0x0811d500",
+   "name": "dice::bf::CreateMultipleObjectsEvent::serialize(BitStream*)",
+   "kind": "function",
+   "subsystem": "netcode",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded. Writes 32 bits template id (+0xc), 16 bits first net id (+0x10), 4 bits count (+0x12); with a count of 16 or more it writes no count and returns 0 (failed). Ledger J-5."
+  },
+  {
    "address": "0x0811fd10",
    "name": "ReqScoutCameraEvent::deSerialize(BitStream*)",
    "kind": "function",
@@ -7618,6 +7627,24 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. u8 player id (+0xc), u16 marker network id (+0xd). Client twin 0x004a3c10."
+  },
+  {
+   "address": "0x0812d510",
+   "name": "dice::bf::GameEventManager::createMultipleObjects(unsigned int, unsigned short, int)",
+   "kind": "function",
+   "subsystem": "netcode",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded. CreateMultipleObjectsEvent (0x05) from GameEvent::mMemoryPool, 0x16 bytes, vptr 0x0871a7c8: template id +0xc, first net id +0x10 (u16), count +0x12 (i32); straight to addEventToSendQueue. Only caller spawnMultipleObjects. Ledger J-5."
+  },
+  {
+   "address": "0x08131a20",
+   "name": "dice::bf::GameServer::destroyObject(IObject*)",
+   "kind": "function",
+   "subsystem": "netcode",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded, GameServer vtable slot 0x54 (0x0871b13c), no direct caller. Per connection with +8 set: GameEventManager::destroyObject(conn+0x20, networkable id) = event 0x06 (its only call site 0x08131c8a); none with no client. Frees the id (networkManager vslot 0x24), releases the object (vslot 0x18), returns 1; 0 when the object's vslot 0x20 refuses. The server recorder hooks the slot. Ledger J-6."
   },
   {
    "address": "0x08131cd0",
@@ -7645,6 +7672,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. Mode 2 runs <level>SinglePlayer/Bots.con (0x086bff2d), any other mode SinglePlayer/Skirmish.con (0x086bff13). Called from startServer at 0x08133582. Ledger AI-8."
+  },
+  {
+   "address": "0x081324a0",
+   "name": "dice::bf::GameServer::spawnMultipleObjects(IObjectTemplate const*, int)",
+   "kind": "function",
+   "subsystem": "netcode",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded, GameServer vtable slot 0x4c. Creates count objects (template vslot 0x2c), registers each networkable (networkManager vslot 0x14), keeps them in the vector at GameServer+0xd4 (returned). Then for each connection in the map at +0x100 whose +8 byte is set calls GameEventManager::createMultipleObjects(conn+0x20, template id, first object's net id, count): event 0x05, only here. Ledger FA-2, J-5."
   },
   {
    "address": "0x08132940",
@@ -7735,6 +7771,15 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "Writes the per-connection send rate to conn+0xc; the choke's write path (R-1). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08134400",
+   "name": "dice::bf::GameServer::sendDatabase(int)",
+   "kind": "function",
+   "subsystem": "netcode",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded. A joining client's database: createObject per networkable (pool rounds included, one by one), createPlayer per player, ScoreMsgEvent + SetTeamEvent, DataBaseCompleteEvent, addStaticGhosts, GameStatusEvent; sets connection +8 and +10. No createMultipleObjects. Ledger J-5."
   },
   {
    "address": "0x081378d0",
@@ -10939,6 +10984,33 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Builds the position-id->seat map the number-key switch queries."
+  },
+  {
+   "address": "0x08287a80",
+   "name": "dice::ref2::world::FireArms::initProjectilePool()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded. Called only by the two FireArms ctors. A pool only when the projectile template (+0x194) has a networkableInfo (vslot 0x54), is not a PlayerControlObject (0xc4c2) and the game answers queryInterface(0x1d4c1) (the server). game vslot 0x4c = GameServer::spawnMultipleObjects makes the objects; each resetProjectile'd into the vector at +0x1d8 (end +0x1dc), count +0x1e4, next index +0x1e8 = 0. Ledger FA-2."
+  },
+  {
+   "address": "0x08287ee0",
+   "name": "dice::ref2::world::FireArms::releaseProjectilePool()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded, from ~FireArms. Each pool object (vector +0x1d8, count +0x1e4) to GameServer::destroyObject (game vslot 0x54). Ledger FA-2."
+  },
+  {
+   "address": "0x08288030",
+   "name": "dice::ref2::world::FireArms::getNumProjectiles()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-05-projpool",
+   "note": "lnxded. The pool's count, FireArms+0x1e4, under initProjectilePool's own gates. Ledger FA-2."
   },
   {
    "address": "0x08288470",
