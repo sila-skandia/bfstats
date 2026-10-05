@@ -2110,6 +2110,17 @@ class Assembler:
             "rotationalSpeed": (list(template.rotational_speed)
                                 if template.rotational_speed else None),
         }.items() if value is not None}
+        # A seat gun's cone, in the hand weapon's block shape (deviation.js
+        # `DeviationModel`): plain FireArms only, whose total is `minDev +
+        # fire` -- no stance multiplier (`getDevMod` is 1.0 off a soldier) and
+        # no speed, turn or misc channel (handweapon-view-and-deviation §2). The
+        # vehicle HUD feed hands the cross that total (XHIT-15). A HandFireArms
+        # already carries its whole block in the document's `weapon` extras.
+        deviation = ({key: value for key, value in {
+            "min": template.min_dev,
+            "fire": list(template.fire_dev) if template.fire_dev else None,
+        }.items() if value is not None}
+            if template.kind.lower() == "firearms" else {})
         extras = {key: value for key, value in {
             "projectile": projectile_spec,
             "roundOfFire": template.round_of_fire,
@@ -2159,6 +2170,7 @@ class Assembler:
             "recoil": ({"size": template.recoil_size,
                         "speed": template.recoil_speed}
                        if template.recoil_size else None),
+            "deviation": deviation or None,
         }.items() if value is not None}
         report.fire_arms.append(
             f"[{control or 'vehicle'}] {template.name}: {len(muzzles)} muzzle(s)"

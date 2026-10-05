@@ -2309,6 +2309,71 @@ GeometryTemplate.create StandardMesh Plane_hull
         self.assertEqual(0.3, fire["coolDownPerSec"])
         self.assertEqual(2.0, fire["timeDelayOnOverheat"])
 
+    def test_a_seat_gun_carries_its_deviation_floor_and_bloom(self) -> None:
+        # Vanilla's Coaxial_browning: `setMinDev 0.75`, `setFireDev 1.9 0.26
+        # 0.05`. The vehicle HUD feed hands the cross `minDev + fire` (XHIT-15);
+        # a plain FireArms has no stance multiplier and no speed/turn/misc
+        # channel, so a stray `setDevMod` stays behind. A gun with no words
+        # (a tank's main gun) carries no block at all.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+ObjectTemplate.addTemplate PlaneCannon
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.setMinDev 0.75
+ObjectTemplate.setFireDev 1.9 0.26 0.05
+ObjectTemplate.setDevMod 1 0.5 0.25
+
+ObjectTemplate.create FireArms PlaneCannon
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.roundOfFire 0.35
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertEqual({"min": 0.75, "fire": [1.9, 0.26, 0.05]},
+                         nodes["PlaneGuns"]["extras"]["fireArms"]["deviation"])
+        self.assertNotIn("deviation", nodes["PlaneCannon"]["extras"]["fireArms"])
+
+        # A HandFireArms keeps its block in the document's `weapon` extras
+        # (`weapon_stats`), not on its muzzle's FireArms extras.
+        rifle, _ = self._assemble_root("PlaneRifle", """
+ObjectTemplate.create HandFireArms PlaneRifle
+ObjectTemplate.geometry Plane_hull
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.setMinDev 0.4
+ObjectTemplate.setFireDev 1.5 0.2 0.04
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        fire = next(node for node in rifle["nodes"]
+                    if node["name"] == "PlaneRifle")["extras"]["fireArms"]
+        self.assertNotIn("deviation", fire)
+
+    def _assemble_root(self, root: str, con_text: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Weapons/Handheld/Test/Objects.con", con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(
+            positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+            indices=[0, 1, 2])
+        mesh_index = builder.add_mesh("Plane_hull", [triangle])
+        assembler._geom_mesh["plane_hull"] = (mesh_index, 1)
+        assembler._geom_collisions["plane_hull"] = []
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
     def test_unresolved_projectile_still_types_as_bullet(self) -> None:
         document, _ = self._assemble(self.GUNS_CON)
         fire = next(node for node in document["nodes"]
