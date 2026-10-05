@@ -4857,6 +4857,15 @@
    "note": "Client, decompiled and confirmed verbatim. f = heat > 0.1 ? heat/heatMax : (reload > 0.1 ? reload/reloadMax : 0.0); selector 1 writes 1 - f to *(float*)([this+0x14]+0x8) and selector 2 to +0xc. Inverted feed, heat wins, a strict 0.1 dead band on the raw values. DO NOT record field names for the destinations: [this+0x14] is an unidentified group object (its single caller 0x006d71ad passes ECX = EDI and reads [EDI+0xc] as the weapon-icon group, so EDI is a container of group pointers), and +0xc being written as a float is inconsistent with the Overheat group's int at +0xc. See ledger VHUD-10."
   },
   {
+   "address": "0x006d7050",
+   "name": "Hud_feedSeatWeapons",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-06-seat-cross",
+   "note": "The vehicle HUD's per-seat weapon feed (no Ghidra function object; read with objdump on the corpus exe). Arg: the controlled seat. Walks its FireArms range from [esp+0x24]..[esp+0x28] (loop head 0x006d70f2), ebp = 1..2 (0x006d70fc cmp ebp,3); skips a null entry, a template class other than [0x008dcd14] (0x006d7121) and a template name equal to the previous weapon's (0x006d714c call [0x008c3194] = std::operator==(const string&, const string&); the name is kept at 0x006d7201 via [0x008c3138] string::operator=). For each weapon taken: Hud_setHeatOrReloadBar 0x006d6af0 (0x006d71ad), then CrossHair/Radius and Deviation = FireArms::getMenuCrossHairRadius 0x00539680 x the CrossHair group's +0x3c/+0x40 into its +0x34/+0x38 (0x006d71be, 0x006d71d9; [edi+0xc] is the CrossHair group), then the ammo panel 0x006e9180 on [edi+0x8] with isPrimary = (ebp == 1) (0x006d71e5); inc ebp at 0x006d720b. The cross write is not gated on ebp, so the second weapon's total stands: a tank driver's cross is his coax's. Ledger XHIT-15, VHUD-10."
+  },
+  {
    "address": "0x006d8060",
    "name": "SpawnScreen__func_6D8060",
    "kind": "function",
