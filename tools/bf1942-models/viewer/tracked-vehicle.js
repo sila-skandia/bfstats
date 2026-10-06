@@ -101,7 +101,7 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
  * @returns {number|null} metres, or null if the node (and nothing under it)
  *   carries geometry to measure
  */
-function measureWheelRadius(node) {
+export function measureWheelRadius(node) {
   let target = node.geometry ? node : null;
   if (!target) {
     node.traverse(child => { if (!target && child.geometry) target = child; });
