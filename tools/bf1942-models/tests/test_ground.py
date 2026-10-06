@@ -1388,6 +1388,19 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertGreater(turn["front"], 30)
         self.assertGreater(turn["rear"], 30)
 
+    def test_an_origin_near_the_rear_axle_spins_a_full_lock_turn(self) -> None:
+        # The body turns about its origin and each tyre's moment is taken from
+        # it (collision-response sections 4.1, 4.2). The Humvee as authored
+        # holds a full-lock turn from 15 m/s; with its origin where DC's Desert
+        # Patrol Vehicle has its own, 0.94 m ahead of the rear axle, the same
+        # chassis spins and stalls. That placement, not a tyre constant, is
+        # the DPV's spin.
+        lever = self.results["originLever"]
+        self.assertLess(lever["asAuthored"]["turned"], 90)
+        self.assertGreater(lever["asAuthored"]["along"], 15)
+        self.assertGreater(lever["dpvPlace"]["turned"], 180)
+        self.assertLess(lever["dpvPlace"]["along"], 5)
+
     # --- land hulls in the sea ---------------------------------------------
 
     def test_a_land_hull_sinks_to_the_bed(self) -> None:
