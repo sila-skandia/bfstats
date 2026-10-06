@@ -206,6 +206,18 @@ first second. Against a wall the table names `BazookaCascadesStone` =
 `e_ExplBazooka` (flash, fireball, cloud 2 s, smoke 4 s, sparks) +
 `e_RichoCascadesStone` (`Gibb_concret45/60_m1` debris objects).
 
+### Spawn effects (EMT-10)
+
+An emitter with `isSpawnEffect 1` spawns no particle. Its template becomes a
+real object, created at the spawn point in the spawn frame by
+`GameServer::spawnObject` and sent to every client. The dedicated server's
+`Emitter::handleUpdate` runs only these emitters, and it asks for no camera.
+Vanilla's sinking PT boat and Type 38 leave their raft this way, and XPack2's
+Essen silo and Eagle's Nest safe leave their wrecks. Desert Combat's objective
+buildings leave their ruin through a copy of the raft emitter: a PCO of
+999999 HP that burns at its own `1000000` tier. What removes a spawned object,
+and the client's half of the same emitter, were not read.
+
 ## 4. Open
 
 - ~~Which `Emitter::handleUpdate` branch spawns~~ — closed 2026-09-16 (ledger
