@@ -1,7 +1,10 @@
 # A level's own effects, and the objects spawn effects stand up
 
 Built 2026-10-07 in the Desert Combat parity round (package `dof-effects`,
-finding MS-5 of `~/.cache/dc-sweep/reports/adv-modsystem.md`).
+finding MS-5 of `~/.cache/dc-sweep/reports/adv-modsystem.md`). The objects
+spawn effects stand up got their bodies, their place in the collider and the
+damageables, their lifetime and the levels' sounds the same day (package
+`spawned-objects`, the section of that name below).
 
 Destroying an objective building on Desert Combat's No Fly Zone (both days)
 or Weapon Bunkers showed nothing. Its death tier names a bundle such as
@@ -42,8 +45,8 @@ Ju88's `e_ScrapMetal_Ju88A`.
 - `viewer/effects.js`: `EffectLibrary.setLevel` puts a level's library in
   front of the mod's. `EffectPlayer` clones an object emitter's tree into the
   world at the spawn point and frame (`#spawnObject`). The view and
-  `lodDistance` culls do not apply to it, and the object stays until `clear()`
-  (a level change).
+  `lodDistance` culls do not apply to it. (What removes it since is in the
+  `spawned-objects` section: its Armor and the round, EMT-11.)
 - `viewer/effect-objects.js` (`onObject`) lights the object, hides its
   collision hulls and starts its own living tier (`tierAt` on
   `ceil(hitPoints)`).
@@ -133,44 +136,175 @@ Then publish the level glbs, their `.gz`, the four `maps.json` files and the
 `_shared/effects.*` files with `scripts/publish-mesh-delta.py`. A `maps.json`
 row without the `effects` key loads exactly as before.
 
+## Spawned objects: a body, a place in the world, a lifetime, sounds
+
+Built 2026-10-07 (package `spawned-objects`), from the gaps the `dof-effects`
+fix report and its review left. Each item is its own commit.
+
+### What the game does
+
+- **PHY-17.** A spawned object is built from its template like any other, so
+  its `hasMobilePhysics` bit picks its physics node. DC's ruins write 0 and
+  never move. Both PT boat rafts write 1, so their four `FloatingBundle`s act
+  on them (the ship float law, PHY-3).
+- **HP-19.** A destroyed object stays its template's `timeToLiveAfterDeath`
+  (`SimpleObject::handleUpdate` lnxded `0x081db2e0`), which is 10 s where it
+  is not written, after a one-tick latch. Then the server destroys it. With
+  `fadeAtTimeToLiveAfterDeath` (on by default) it fades out from
+  `timeToStartFadeAfterDeath` (8 s by default). `resetWhenRemoved` gives the
+  hit points back instead, and `stayAsDestroyed` never removes it. The
+  server's `sinkInToLandAfterDeathSpeed` setter writes those defaults back
+  and keeps no speed. HP-15's "wreck-respawn timer" is this clock, and its
+  clears are the `resetWhenRemoved` branch.
+- **HP-20.** The first tick of the end game destroys every root
+  PlayerControlObject (`clearWorld` `0x081578f0`), and a map restart
+  destroys every object.
+- **EMT-11.** Nothing else removes a spawned object. `GameServer::spawnObject`
+  arms no spawner's abandon clock: the PCO keeps the constructor's -1 there.
+  A raft (`timeToLiveAfterDeath 0`) is gone the tick after it is sunk. A ruin
+  of 999999 hit points stands until the round ends.
+- **ARM-11, the water key.** A hull that dies afloat dies on the `-1` tier.
+  That tier holds the Elco80's `e_PTBoatWreck`, so it is where the raft comes
+  from.
+
+### What was built
+
+1. **A body** (`viewer/effect-objects.js` `bodyKindOf`, `hold`, `step`). The
+   emitter spec carries the payload's `hasMobilePhysics` (`bf42/effects.py`).
+   The bake builds the object at depth 0, as a placed root, so PHY-17's stamp
+   lands on it too. There are three kinds of body:
+   - **Static.** The bit is clear (the engine default). The object stays
+     where it was stood up.
+   - **Float.** The object hangs float nodes over water. It gets a
+     `FloatingHull`, the ship law stepped on the world's 30 Hz ticks, with
+     the sea bed as a floor.
+   - **Ground.** Any other mobile object falls under gravity until its
+     geometry box meets the terrain. This is a viewer simplification: it
+     keeps its spawn frame.
+
+   A raft stood up 0.47 m under rises to +0.068 in about 2 s. A drop from
+   4.4 m (Pirates' dinghy) bounces twice and then floats, because
+   `FloatingHull` has no box drag, an open item of `body-float.js`.
+2. **Part of the world.** `CollisionIndex.addOwner` (`static-index.js`)
+   appends one object's hulls under a new owner id and re-packs the grid. It
+   keeps every id already handed out. `WorldCollider.addOwner` wraps it. The
+   object's Armor joins the damageables under the same id
+   (`vehicle-wrecks.js` `registerDamageable`, split out of
+   `registerDamageables`). From then on its living tier is the damage
+   system's. A float body reports its pose through `setMovedOwner` and the
+   world's positions. The effects bake now includes a spawned object's
+   collision hulls, which it left out along with every particle's.
+3. **What removes it.** `vehicle-wrecks.js` calls back when a spawned
+   owner's clock runs out, and the round's end (`round.over`) removes every
+   spawned PCO (`endOfRound`). Either way the object leaves the scene, the
+   collider and the damageables (`EffectPlayer.removeObject`,
+   `unregisterDamageable`). `vehicle-hits.js` and `__damageVehicle` now pass
+   the world's water test to the immediate death re-pick. Before this, no
+   PT boat killed by a round left a raft.
+4. **`timeToLiveAfterDeath` for every damageable** (`vehicle-wrecks.js`
+   `afterDeath`, `afterDeathOpacity`). The exporter writes the five words
+   into the armour block (`bf42/con.py`, `bf42/assemble.py`) beside an
+   Armor's own words, and the wreck clock reads them.
+   - A template that writes none now goes at 10 s and fades from 8 s. Before
+     this it went at 12.5 s, after a 2.5 s house-rule fade.
+   - The removal hides whatever of the object still draws.
+   - A wreck glb that arrives after the object is gone stands nothing up.
+5. **Level bundle sounds** (`extract_effects.py` `level_sound_manifest`,
+   `write_level_sounds`).
+   - `--levels` writes `<level>/effects.sounds.json` from the level's own
+     pool and files first. The samples go in the tree's `_shared/sounds`,
+     and the row names the file as `effectSounds`.
+   - The page fetches it with the level. `EffectAudio.setLevel` puts it in
+     front of the mod's set. A bundle the level declares sounds as the level
+     wrote it, a silent copy included.
+   - Battle of Britain's chimneys (their `e_ExplGas` child), Kasserine
+     Pass's own `e_Fire` (`vefr1..3`) and DC Final First Light's
+     `e_OilFireSuper` (`rcktlp1`, `vefr1`) resolve.
+   - Kasserine's own `e_ExplAni01` includes a `../../Common` path its level
+     copy does not have, so it is silent there, and its `silent` entry
+     blocks the mod's sound.
+
+### How it was checked
+
+- **Node harnesses**:
+  - `tests/effect_objects_harness.mjs` with `test_effect_objects.py`:
+    - The bodies, with a baked vanilla `e_PTBoatWreck` from the install.
+    - The real collider, damage set and wreck module: a boot stops on a ruin
+      roof, a round lands on its wall, the moved raft is met where it floats.
+    - The removals, and the boat's water death.
+  - `tests/vehicle_wrecks_harness.mjs` with `test_vehicle_wrecks.py`: the
+    after-death clock, and a late wreck glb.
+  - `test_effect_audio.mjs`: `setLevel`.
+- **Python tests**:
+  - `test_effects.py`: the spec flag, the armour block, the level sound
+    files, Battle of Britain and Kasserine from the install.
+  - `test_con.py`: the words, and the `sinkInToLand` order.
+- **In the page** (port 5647, under the browser lock,
+  `~/.cache/dc-sweep/spawned-objects/inpage.cjs`, scratch bakes routed in).
+  - **The raft.** Vanilla Midway places no PT boat in the page's conquest
+    set, so the raft ran on Invasion of the Philippines. Killing an `Elco80`
+    gave tier `-1`. Its raft floated at water + 0.07 at 0.5 s and + 0.068
+    from 1 s on, upright. It is a 35 HP damageable, and a cast down meets it
+    at its new pose (`inpage/midway-raft-afloat.jpg`).
+  - **The ruin.** On DC No Fly Zone Day 2, the live scene had the tower's two
+    new words patched in memory (`hasMobilePhysics false`,
+    `timeToLiveAfterDeath 0`). The kill stood one upright ruin up, and the
+    tower stopped drawing (`inpage/nfz-ruin.jpg`).
+    - A soldier walking at the ruin from 30 m stopped 13.04 m from its
+      centre, its hull's wall. With its owner disabled he walked 41 m
+      through it.
+    - Fifteen AK rounds landed on it (material 93, priced 0 against that
+      material), and a 500-point `__roundHit` took it to 999499.
+    - The ruin's shell is open at the top, so a soldier dropped on it lands
+      inside.
+    - Before the death latch was added, the same run stood no ruin up: the
+      tower went in the frame it died and stopped its own death tier.
+
+### Re-extract (the lead runs these; adds to the list above)
+
+- **Full scene re-bake of every tree** (vanilla, XPack1, XPack2, DC, DC
+  Final): `extract_maps_all.py --mod M`, then `optimise_mesh` and publish.
+  The armour block's after-death words are on placed nodes in every
+  `scene.glb` (the Defgun's 85 s and the AA guns' 0 s are on most vanilla
+  levels). Until then every hull uses the template default, 10 s fading
+  from 8.
+- **Model trees**, for the same armour words on the model glbs: the next
+  model extract of each tree.
+- The **effects bakes** listed above, rerun after this merge: the `_shared`
+  bakes (rafts with their hulls and the mobile flag) and the `--levels` bakes
+  (ruins with their hulls, and the new `effects.sounds.json`). Without
+  `--no-sound`, a level run needs ffmpeg. It transcodes into each tree's
+  `_shared/sounds`, so publish that directory's new files with the
+  `effects.sounds.json` files and the `maps.json` rows.
+
 ## Open
 
-- The ruin draws, burns and stays. It is not in the level's collider or its
-  damageables, so nothing stands on it or shoots it further. A raft does not
-  float or drive.
-- **A spawned hull stays at its spawn point, which is not where it rests.**
-  The raft is a mobile PCO with four floaters (`hasMobilePhysics 1`); the
-  game drops or lifts it onto the water. Measured through the page's own
-  modules (review, 2026-10-07): an `Elco80` floating where `body-float.js`
-  puts it (root 1.87 m under the water) stands its raft up with the root
-  0.47 m under the water, 0.54 m below where its own floaters hold it, so it
-  shows half sunk. A recorded Midway raft (`replay_20260927-203459`, object
-  681) rides at water + 0.07 to 0.12 m, which is the float law's +0.068. A boat
-  that sank before it died puts it deeper. Other mods hit the same gap on
-  their next effects bake: Pirates' Privateer dinghy (`0/5/3`) would hang
-  4.4 m above the water, FHSW's `Independence` carriers put two rafts at
-  their own origin height (`±14/0/85`), and FH's bee nest spawns an
-  `Elco80Raft` on dry ground. The fix is a body for
-  the adopted object (`body-float.js` `FloatingHull` over water, the ground
-  otherwise), not a snap to the water level.
-- What removes a spawned object in the game was not read. The page keeps it
-  until the level changes.
-- The client's half of a spawn emitter was not read (EMT-10 is the server's).
-- A level bundle's sound is not exported. The level-only bundles with a
-  script are `e_BritainFactory_SmokeStacks` and `e_Fire` (vanilla) and
-  `e_OilFireSuper` (DC Final). They play silent.
-- The building's own `.wreck.glb` (its destroyed LOD) lingers 10 s and fades
-  over the ruin. The tower declares `timeToLiveAfterDeath 0`, which the wreck
-  code does not read.
-- Found in the page, for other packages:
-  - No Fly Zone Day 2's objective PCOs leave their baked pose under the page's
-    physics. The tower ended about 6 m higher and on its side, and hangars
-    floated. They declare `hasMobilePhysics 0`. The ruin stands up in the
-    dying tower's frame (ARM-11, EMT-10), so until that is fixed the Day 2
-    ruin lies on its side too (review re-run, 2026-10-07).
-  - The day-1 bake has the buildings' plain bundles (`air_control_tower_m1`)
-    but none of the objective PCOs, so on day 1 nothing can be destroyed
-    (MS-9's unreached scripts).
-- `soldier-armor-effects.js` cites ledger ARM-8..ARM-10, and the code cites
-  EMT-9 for the ramp read. None of these rows exist in the ledger. ARM-11 and
-  EMT-10 were numbered past them.
+- **A raft cannot be entered or driven.** It is a VCSea PCO with a ship
+  Engine and two seats, and the page builds no vehicle instance for an
+  object that arrives after the load.
+- **The bots know nothing of a spawned object.** The nav map and the cover
+  list are built at load, so they neither path round a ruin nor hide behind
+  it.
+- **A ground body keeps its spawn frame.** It is not tipped onto the slope
+  (a simplification).
+- **A float body has no box drag** (`body-float.js`), so a drop from height
+  bounces before it settles.
+- **The spawn path's soldier clearance (SPAWN-14) is not applied.** In the
+  engine, `createObjectOnAllClients` refuses a VCLand object while a live
+  soldier's origin is within 2 m, which DC's ruins are.
+- **A spawned object with no hulls registers nowhere.** COL-17 gives it none
+  when `hasCollisionPhysics` is clear, and without an owner id, splash
+  cannot reach its Armor.
+- **The round's end removes only spawned PCOs in the page.** HP-20 removes
+  the level's own hulls too, and the page has no map restart.
+- **A falling plane's clock still restarts when it lands** (the page's
+  rule). HP-19's clock runs from the death.
+- **Not read:** the client's half of a spawn emitter (EMT-10 is the
+  server's).
+- **For other packages:**
+  - No Fly Zone Day 2's other objective PCOs (hangars, radar domes) move
+    under the page's physics in the live 2026-09-30 bake. PHY-17's stamp
+    fixes them on the re-bake.
+  - The day-1 bake has none of the objective PCOs (MS-9).
+- **Missing ledger rows.** `soldier-armor-effects.js` cites ARM-8..ARM-10,
+  and the code cites EMT-9 for the ramp read. None of these rows exist.
