@@ -157,6 +157,24 @@ body against the map, not the Change law, and was there before. On Basrah's
 Edge one DPV's order point has no strategic path (section 3), so it
 re-routes every tick (8,940 failures).
 
+**The final branch** (every section, rebased on main a8bbe93e), the same
+matches against main's viewer at the start of the round:
+
+| level | frozen | route failures | mounts | kills | captures | vehicle rounds |
+|---|---|---|---|---|---|---|
+| DC Basrah's Edge | 4 -> 0 | 51,793 -> 17,253 | 9 -> 15 | 0 -> 0 | 1 -> 0 | 0 -> 0 |
+| DC Desert Shield | 3 -> 1 | 10,742 -> 13,272 | 18 -> 23 | 0 -> 2 | 1 -> 1 | 9 -> 223 |
+| DC Kharkov Day 2 | 5 -> 3 | 180 -> 1 | 9 -> 10 | 0 -> 0 | 3 -> 2 | 0 -> 0 |
+| DC Battleaxe | 3 -> 0 | 201 -> 3 | 10 -> 15 | 1 -> 4 | 0 -> 0 | 652 -> 3,968 |
+| vanilla Battleaxe | 3 -> 0 | 199 -> 5 | 12 -> 18 | 1 -> 0 | 0 -> 0 | 564 -> 3,248 |
+| vanilla Kharkov | 3 -> 0 | 4 -> 0 | 9 -> 27 | 0 -> 5 | 3 -> 4 | 132 -> 653 |
+| vanilla El Alamein | 0 -> 0 | 0 -> 0 | 15 -> 50 | 0 -> 5 | 3 -> 3 | 33 -> 216 |
+| vanilla Bocage | 0 -> 0 | 7 -> 0 | 34 -> 40 | 6 -> 3 | 3 -> 3 | 192 -> 343 |
+
+Basrah's Edge's failures are two drivers, a DPV's and a pickup's (8,934 and
+8,090), re-routing every tick toward order points with no strategic path
+(section 3). Kharkov Day 2's three are still the wedged US soldiers.
+
 **Vanilla El Alamein and Bocage over four seeds.** One seed was not enough to
 call Bocage's capture drop, so both levels were run at seeds 1 to 4 (6 a
 side, 300 s, fixed vanilla loadouts). "Section 2" is this section's snapshot.
