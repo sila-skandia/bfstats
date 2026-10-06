@@ -8,6 +8,7 @@
 
 import { kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
+import { soldierTemplateValue } from './soldier-death.js';
 
 /**
  * `_shared/loadouts.json` as one level sees it: `kits` with the level's own
@@ -45,7 +46,8 @@ export function kitOverridesAirMovement(loadouts, kit) {
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
  * `bust`, `currentDir`, `deployKit`, `deployTeamId`, `handWeapon`, `KITS`,
- * `MAPS_BASE`, `params`, `SOLDIER_MAX_HP_FALLBACK`, `spawnLayout`,
+ * `MAPS_BASE`, `params`, `SOLDIER_MAX_HP_FALLBACK`, `soldierBody` (optional:
+ * `gaits.json`'s, the soldier templates' own numbers), `spawnLayout`,
  * `teamNation`.
  */
 export function createKitLoadout(page) {
@@ -348,26 +350,34 @@ export function createKitLoadout(page) {
 
   /** `BFSoldier::useMedPack`'s parameters, from the soldier template's own
    *  registered properties (supply-depots.md §6): the heal sweep's reach
-   *  (`healDistance`, +0x2f4 — vanilla `CommonSoldierData.inc` 10.0) and the
-   *  HP per invocation (each round of the held trigger is one invocation, at
-   *  the pack's `roundOfFire` 10/s): allies take `healFactor` (+0x2d8, 0.25),
-   *  the holder himself takes `selfHealFactor` (+0x2dc, 0.15). A mod kit may
-   *  re-register the three, and the viewer does not extract them yet — these
-   *  are the vanilla numbers, the same stand-in `FALLBACK_PRIMARIES` is. */
+   *  (`healDistance`, +0x2f4) and the HP per invocation (each round of the
+   *  held trigger is one invocation, at the pack's `roundOfFire` 10/s):
+   *  allies take `healFactor` (+0x2d8), the holder himself takes
+   *  `selfHealFactor` (+0x2dc). Read off the holder's template
+   *  (`gaits.json` `soldierBody`, `soldierTemplateValue`); these are vanilla
+   *  `CommonSoldierData.inc`'s 10.0 / 0.25 / 0.15, the stand-in for a tree
+   *  published before the manifest carried them, as `FALLBACK_PRIMARIES` is. */
   const MEDIC_PACK = { radius: 10.0, allyHeal: 0.25, selfHeal: 0.15 };
 
   /** `BFSoldier::useRepairPack`'s parameters (supply-depots.md §6, the
    *  function at `0x08276100`): the reach past a target's hull
-   *  (`repairDistance`, +0x2ec — vanilla 2.0), and the HP per invocation
-   *  (`repairFactor`, +0x2e0 — vanilla 0.15). The function itself gates each
-   *  candidate on `distanceSqr <= (target.getRadius() + repairDistance)²`
-   *  (`0x08276762`, the `+0x2ec` add; the pose branch adds `+0x2f0`, which
-   *  vanilla registers at the same 2.0), keeps only wounded, undestroyed
-   *  armour, and heals the closest one it kept — so a wounded vehicle at
-   *  0.15 HP/round, 10 rounds/s: 1.5 HP/s. As with the medic bag the
-   *  registered numbers are engine properties the extractor does not carry
-   *  yet, so these are the vanilla values. */
+   *  (`repairDistance`, +0x2ec), and the HP per invocation (`repairFactor`,
+   *  +0x2e0). The function itself gates each candidate on `distanceSqr <=
+   *  (target.getRadius() + repairDistance)²` (`0x08276762`, the `+0x2ec` add;
+   *  the pose branch adds `+0x2f0`, which vanilla registers at the same 2.0),
+   *  keeps only wounded, undestroyed armour, and heals the closest one it
+   *  kept — so a wounded vehicle at vanilla's 0.15 HP/round, 10 rounds/s:
+   *  1.5 HP/s, and Desert Combat's 0.20: 2.0 HP/s. Read off the holder's
+   *  template like the medic bag's; vanilla's 2.0 / 0.15 stand in. */
   const REPAIR_PACK = { radius: 2.0, repairHeal: 0.15 };
+
+  /** The local holder's soldier template's `key` (`soldierTemplateValue`), or
+   *  `fallback` where the tree's manifest predates it. */
+  function holderValue(key, fallback) {
+    const template = soldierTemplateFor({ team: page.deployTeamId });
+    const v = soldierTemplateValue(page.soldierBody, template, key);
+    return Number.isFinite(v) ? v : fallback;
+  }
 
   /** The healing pack in hand, with its use parameters — or null. The game's
    *  own discriminator between the medic bag and the wrench is the AI
@@ -379,8 +389,19 @@ export function createKitLoadout(page) {
   function healingPack() {
     const ai = localAiWeapon();
     if (!ai?.healing) return null;
-    if ((ai.strength?.Infantry ?? 0) > 0) return { ...MEDIC_PACK, kind: 'medic' };
-    return { ...REPAIR_PACK, kind: 'repair' };
+    if ((ai.strength?.Infantry ?? 0) > 0) {
+      return {
+        radius: holderValue('healDistance', MEDIC_PACK.radius),
+        allyHeal: holderValue('healFactor', MEDIC_PACK.allyHeal),
+        selfHeal: holderValue('selfHealFactor', MEDIC_PACK.selfHeal),
+        kind: 'medic',
+      };
+    }
+    return {
+      radius: holderValue('repairDistance', REPAIR_PACK.radius),
+      repairHeal: holderValue('repairFactor', REPAIR_PACK.repairHeal),
+      kind: 'repair',
+    };
   }
 
   Object.assign(loadout, {

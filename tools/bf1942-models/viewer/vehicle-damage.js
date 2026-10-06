@@ -576,7 +576,9 @@ export class VehicleDamageSet {
       // A soldier's own Armor takes no attacker; a hull records who hit it.
       const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);
       if (lost > 0) {
-        out.push({ vehicle: victim, target, lost, amount, distance, exposure: seen });
+        // `raw` is what `calcDamage` was asked; a soldier's push is scaled by
+        // its answer over it (`knockback.js`, KNOCK-4).
+        out.push({ vehicle: victim, target, lost, amount, raw, distance, exposure: seen });
       }
     }
     return out;

@@ -244,15 +244,17 @@ export function installWorldHooks(page) {
   // of the MaterialManager tables (DMG-1). Only the geometry is passed in.
   // Defaults are a hand grenade's — material2 205, radius 10,
   // `YModOnExplosion` 1.0.
+  // `force` is the round's `forceOnExplosion`, the push (`knockback.js`);
+  // omitted, the engine's 150.
   window.__blast = (point, {
-    radius = 10, material2 = 205, yMod = 1, firer = -1,
+    radius = 10, material2 = 205, yMod = 1, firer = -1, force = null,
   } = {}) => {
     if (!Array.isArray(point) || point.length !== 3) return null;
     const before = page.splashTargets().filter(t => t.soldier)
       .map(t => t.armor.hitPoints);
     page.applyVehicleHit({
       splashPoint: point, splashRadius: radius,
-      splashMaterial2: material2, splashYMod: yMod, firer,
+      splashMaterial2: material2, splashYMod: yMod, splashForce: force, firer,
     });
     const after = window.__soldiers(point);
     return after.map((row, i) => ({ ...row, lost: before[i] - row.hp }));
