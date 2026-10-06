@@ -61,7 +61,9 @@ LOD rungs and the undrawn alternative's hull. A ladder's climb measure stays
 the file's, because LADDER-3 reads the instance's bounding box, which SM-13
 leaves unscaled. The mesh scales about its own origin, so the part's node, its child
 parts and their placements are untouched. The node and its collision nodes
-carry `extras.geometryScale`. A body's vertex probes read the file unscaled in
+carry `extras.geometryScale`, and so do a gun's drawn round and tracer nodes
+(review fix: DC's `projectile_40mm` is drawn at 0.6 on the OSA, the AC-130's
+40 mm and the Mk19). A body's vertex probes read the file unscaled in
 the engine (SM-13), and a consumer that wants that can divide the scale back
 out.
 
@@ -348,7 +350,33 @@ them. With the assets above:
 - No viewer code reads `collision-meshes.json`'s `scales` yet. A face-side
   hull of a scaled geometry (the AC-130 fuselage, the Pickup hull) is still
   read unscaled by `hull-bodies.js`.
-- `test_nav_baked.RunnerOnBakedMapTests.test_bocage_match_route_failures`
-  fails in the whole-suite run (306 route failures, against a limit of 100).
-  It runs the JS sim on the owner's live baked maps. This package touches no
-  sim or viewer code and no tree.
+- The engine draws a scaled mesh scaled but measures it unscaled: the
+  instance's bounding box and radius are the file's (SM-13; the template's
+  `loadHeader` `0x083a6200` reads the box off the file and nothing but the
+  instance ctor and `getScale` reads the template's scale), and so are the
+  vertex probes. Baking the scale into the glb's positions makes every viewer
+  measurement taken off the drawn mesh read the scaled size instead. None of
+  these divide `geometryScale` back out yet (review, 2026-10-07):
+  - `aircraft.js` takes a Spring's ground contact off its drawn wheel. The
+    AC-130's main wheels (x1.15) now meet the ground 0.107 m lower and its
+    nose wheels (x0.88) 0.085 m higher; the engine's probes are the file's
+    B17 wheel at 0.688 m below the axle.
+  - `tracked-vehicle.js` `measureWheelRadius` (the M-109's and M2A3's front
+    wheels, x0.9 and x0.92): the spin rate, and the contact depth when the
+    spring has no col0 probe. The engine's `SpinWheel` `0x0825b440` takes its
+    radius off the wheel's collision interface (IID `0x492fe0fe`, vt `+0x1c`),
+    which is unscaled.
+  - `seat-camera.js` `chaseRadiusTree` (`getBoundingRadius`): the AC-130,
+    Pickup and Technicals, and XPack2's Wasserfall (3.82 m file, 3.36 m drawn).
+  - `gun-groups.js` `meshRadius`, a round's drag radius: DC's 40 mm rounds at
+    0.6, inert today because none of them carries `mass` and `drag`.
+  - `hand-fire.js`'s repair and heal reach (`getRadius() + repairDistance`).
+- XPack2's Flettner loses its three `FlettnerInvisibleWheel` springs with
+  their collision, because the assembler drops a `createInvisible` part
+  whole. The engine only hides it. The real gear (y -2.3 to -2.35) still
+  carries the hull on flat ground; the invisible ones sit higher (y -2.1) and
+  wider (x +-1.3, z -2.5 and 3.0), so what goes is the outrigger that stops it
+  tipping. The same rule already drops Elco's Willy wheels and some KettenKrad
+  springs.
+- `test_nav_baked` Bocage passes on the merge with current main (review,
+  2026-10-07); the 306 failures were the branch base's.
