@@ -4,6 +4,18 @@
 
 import { DeviationModel, TICK_HZ } from './deviation.js';
 
+// The heat's clock: `FireArms::handleUpdate` drains it once a 1/30 s tick
+// (GUN-15), its timers counted down in float32 as the engine stores them. The
+// clock itself is the page's seconds: a world tick's `dt` is one tick.
+const HEAT_TICK = 1 / TICK_HZ;
+const HEAT_TICK_F32 = Math.fround(HEAT_TICK);
+
+/** `timeToFireFinished` as a round sets it (GUN-13): `gun-cycle.js`
+ *  `firePeriod`'s rule, a template with no rate keeping the ctor's 10. */
+function firePeriod(roundOfFire) {
+  return Math.fround(1 / Math.fround(roundOfFire > 0 ? roundOfFire : 10));
+}
+
 // --- firing: magazine, reload, auto-reload, heat (verify-r6.md GUN-12) --
 //
 // `gunfire.js`'s own `advance()` already paces shots at `stats.roundOfFire`
@@ -15,7 +27,8 @@ import { DeviationModel, TICK_HZ } from './deviation.js';
 // template+0x304`, corrected from an earlier equality reading, fields still
 // unidentified -- has no equivalent in this viewer's extracted data, so
 // "has heat" here is the practical proxy the extraction actually gives:
-// the `.con` declared `heatAddWhenFire` at all. GUN-12's two unidentified
+// the `.con` declared `heatAddWhenFire` at all, and not `velocityDependentOnHeat`,
+// which makes it a grenade's throw charge (GUN-14). GUN-12's two unidentified
 // instance flags and its `timeToEjectClipFinished` (distinct from the reload
 // timer, per the verifier) have no data of their own here either; ejecting is
 // folded into the one `reloadTime` window rather than invented a second one.
@@ -49,10 +62,15 @@ export class FireState {
     // 30 shells its `.con` declares rather than 30 plus a free reload.
     this.magsLeft = stats.numOfMag == null || stats.numOfMag < 0
       ? Infinity : Math.max(0, stats.numOfMag - 1);
-    this.hasHeat = stats.heatAddWhenFire != null;
+    this.hasHeat = stats.heatAddWhenFire != null && !stats.velocityDependentOnHeat;
     this.heat = 0;
     this.reloadRemaining = 0;
     this.overheatRemaining = 0;
+    // `timeToFireFinished` (GUN-13), kept here only as the heat's gate: the
+    // barrel drains only once it has run out (GUN-15). `gunfire.js` keeps the
+    // copy that paces the rounds.
+    this.fireRemaining = 0;
+    this.heatClock = 0;   // seconds owed to the heat's next tick
     // The gun's cone, `stats.deviation` = `{ min, fire }` off a plain
     // FireArms (the exporter's `_fire_arms`), null on one that ships no
     // words, a tank's main gun. `FireArms::updateDeviation` (client
@@ -75,16 +93,9 @@ export class FireState {
   get canFire() {
     if (this.reloadRemaining > 0) return false;
     if (this.overheatRemaining > 0) return false;
-    // NOT the same comparison GUN-12 corrected to strict-greater-than: that
-    // fix was to `getHasHeat()`, a template-level "does this weapon have a
-    // heat mechanic at all" predicate on two still-unidentified fields,
-    // distinct from `isReadyToUseFire`'s own overheat gate (a countdown
-    // timer, `timeToOverHeatFinished()>0`) and from what actually starts
-    // that timer, which the report never pins down. `heat>=1` here is this
-    // viewer's own approximation of the trigger, following the corrected
-    // report's Viewer Recipe ("clamp [0,1] ... block fire ... on reaching
-    // 1.0") rather than a confirmed engine comparison — `>` would never fire
-    // on this clamped scale, since `heat` never exceeds 1.
+    // A pull made at heat 1 or more fires nothing (GUN-14: `Fire` compares
+    // the heat against 1.0 before anything else and returns), whether or not
+    // the lockout below it has started yet.
     if (this.hasHeat && this.heat >= 1) return false;
     if (!this.unlimited && this.ammo <= 0) return false;
     return true;
@@ -98,14 +109,40 @@ export class FireState {
         if (this.magsLeft !== Infinity) this.magsLeft = Math.max(0, this.magsLeft - 1);
       }
     }
-    if (this.overheatRemaining > 0) this.overheatRemaining = Math.max(0, this.overheatRemaining - dt);
-    if (this.hasHeat && this.heat > 0) {
-      this.heat = Math.max(0, this.heat - (this.stats.coolDownPerSec || 0) * dt);
-    }
+    if (this.hasHeat) this.stepHeat(dt);
     // The bloom's ticks. Nothing to run once it is back on the floor, and no
     // more than it takes to get there, so a replay's long step between two
     // rounds (replay-hud.js `gunStateAt`) costs a few dozen ticks at most.
     if (this.cone?.fire > 0) this.cone.update(Math.min(dt, this.coneSettle));
+  }
+
+  /**
+   * The heat's own ticks (GUN-15, `FireArms::handleUpdate`): each 1/30 s the
+   * fire timer and the overheat timer run down, and only once both have run
+   * out does the barrel drain, by `coolDownPerSec / 30`, floored at 0. So
+   * nothing cools through the `timeDelayOnOverHeat` lockout, and a held burst
+   * drains only for the tick a round's timer runs out before the next round:
+   * the M249 nets +0.0165 a round and locks at about its 60th. Draining every
+   * second of a burst instead (this class's earlier rule) took a whole round's
+   * heat off between rounds at the guns' 10 a second, and neither hand MG nor
+   * a pintle Browning ever overheated. A cold, idle barrel stops counting.
+   */
+  stepHeat(dt) {
+    const drain = Math.fround((this.stats.coolDownPerSec || 0) / TICK_HZ);
+    for (this.heatClock += dt; this.heatClock >= HEAT_TICK - 1e-9; this.heatClock -= HEAT_TICK) {
+      if (this.fireRemaining > 0) this.fireRemaining = Math.max(0, Math.fround(this.fireRemaining - HEAT_TICK_F32));
+      if (this.overheatRemaining > 0) {
+        this.overheatRemaining = Math.max(0, Math.fround(this.overheatRemaining - HEAT_TICK_F32));
+      }
+      if (this.fireRemaining > 0 || this.overheatRemaining > 0) continue;
+      if (!(this.heat > 0)) {
+        // This tick is spent and the rest would do nothing: keep only the
+        // part of a tick still owed.
+        this.heatClock = Math.max(0, (this.heatClock - HEAT_TICK) % HEAT_TICK);
+        break;
+      }
+      this.heat = Math.max(0, this.heat - drain);
+    }
   }
 
   /**
@@ -131,9 +168,17 @@ export class FireState {
     // The bloom, once a pull like the heat: `fire = min(fire + b, a)` in
     // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3.
     this.cone?.onShot();
+    // The heat (GUN-14): added once a pull, with no clamp, and the round sets
+    // the fire timer the drain waits on. The engine starts the lockout at the
+    // next pull, the one the heat refuses; this starts it on the round that
+    // crosses 1, which a held trigger reaches one round period later, and
+    // which differs only for a trigger let go on exactly that round.
     if (this.hasHeat) {
-      this.heat = Math.min(1, this.heat + this.stats.heatAddWhenFire);
-      if (this.heat >= 1) this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
+      this.heat += this.stats.heatAddWhenFire;
+      this.fireRemaining = firePeriod(this.stats.roundOfFire);
+      if (this.heat >= 1 && !(this.overheatRemaining > 0)) {
+        this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
+      }
     }
     if (!this.unlimited) {
       this.ammo = Math.max(0, this.ammo - Math.max(0, rounds));
