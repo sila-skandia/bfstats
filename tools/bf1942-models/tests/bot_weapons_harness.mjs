@@ -23,6 +23,7 @@ const { firePlanDone, PLAN_ACTION, heatHolds } = await imp('bot-plans.js');
 const { FireState } = await imp('fire-state.js');
 const { firePeriod } = await imp('gun-cycle.js');
 const { fireArmsHeat } = await imp('bot-barrels.js');
+const { botDeviate, BOT_DEVIATION_POINTS, BOT_INPUT_INDEX } = await imp('bot-deviation.js');
 const { launchesDrawnRound } = await imp('bot-rounds.js');
 const { createVehicleHits } = await imp('vehicle-hits.js');
 seedMathRandom(3);
@@ -415,6 +416,26 @@ out.flown = {
   out.billing = {
     hullAttackers: applyHitAttackers, splashAttackers,
     splashOnBot: landed.map(l => ({ id: l.id, attacker: l.attacker, splash: !!l.opts?.splash, weapon: l.opts?.weapon ?? null })),
+  };
+}
+
+// --- the bots' deviation point (bot-deviation.js, ledger AI-145) -------------
+{
+  const off = (d, total, barrel) => {
+    const v = botDeviate(d, total, barrel);
+    return v.map(x => +x.toFixed(7));
+  };
+  out.devPoint = {
+    index: BOT_INPUT_INDEX,
+    points: BOT_DEVIATION_POINTS.length,
+    // Looking down -z: right is +x, up is +y, each u x total / 100.
+    north: off([0, 0, -1], 1.0, 0),
+    north2: off([0, 0, -1], 2.0, 0),
+    floor: off([0, 0, -1], 0.01, 0),
+    barrel1: off([0, 0, -1], 1.0, 1),
+    // Looking east (+x): the right is +z in the viewer's frame.
+    east: off([1, 0, 0], 1.0, 0),
+    table: BOT_DEVIATION_POINTS,
   };
 }
 

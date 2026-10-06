@@ -44,6 +44,7 @@ import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
+import { botDeviate } from './bot-deviation.js';
 import { FireState } from './fire-state.js';
 import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
@@ -81,7 +82,6 @@ export const BOT_SOLDIER_TABLE = { Infantry: 4.0, LightArmour: 2.0, HeavyArmour:
 /** How far to the side of a hull a bot's body stands up (`botLeaveVehicle`). */
 export const BOT_EXIT_OFFSET = 3.5;
 
-const DEG_TO_RAD = Math.PI / 180;
 
 // --- the capture law ---------------------------------------------------------
 
@@ -308,39 +308,6 @@ export function lineOfSight(collider, from, to) {
     if (surface > from[1] + dy * t + 0.5) return false;
   }
   return true;
-}
-
-/**
- * Roll a direction into a deviation cone of half-angle `spreadRad`, exactly as
- * `round-launch.js` `wander` does: theta = spread * sqrt(u), azimuth free, about
- * the frame u = normalize(ref x r), v = r x u. `r` must be unit length.
- *
- * TODO(DEV-9): this disc in degrees is not the engine's cone. `FireArms::
- * fireBarrel` 0x0828aba0 pushes a round off its line by `u * total / 100`
- * on each of the launch frame's up and right axes, `u` uniform in (-1, +1]
- * per axis, and draws nothing at a total of 0.01 or less: a square in
- * hundredths of a radian. The rounds package's `round-launch.js deviate`
- * (commit 17da3b54) builds that sampler and is not on main yet. When it
- * lands, call it here (and so in bot-rounds.js, which rolls through this)
- * rather than copying it, and take `bot.aimDeviation` as the cone's total,
- * not as degrees.
- */
-export function rollCone(r, spreadRad) {
-  const [rx, ry, rz] = r;
-  if (!(spreadRad > 0)) return [rx, ry, rz];
-  const theta = spreadRad * Math.sqrt(Math.random());
-  const phi = Math.random() * Math.PI * 2;
-  let ux, uy, uz;
-  if (Math.abs(ry) > 0.99) { ux = 0; uy = -rz; uz = ry; } else { ux = rz; uy = 0; uz = -rx; }
-  const ul = Math.hypot(ux, uy, uz) || 1;
-  ux /= ul; uy /= ul; uz /= ul;
-  const vx = ry * uz - rz * uy, vy = rz * ux - rx * uz, vz = rx * uy - ry * ux;
-  const c = Math.cos(theta), s = Math.sin(theta);
-  return [
-    rx * c + ux * s * Math.cos(phi) + vx * s * Math.sin(phi),
-    ry * c + uy * s * Math.cos(phi) + vy * s * Math.sin(phi),
-    rz * c + uz * s * Math.cos(phi) + vz * s * Math.sin(phi),
-  ];
 }
 
 /**
@@ -750,7 +717,7 @@ export function createBotReferee(env) {
    * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
    * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
    */
-  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null) => {
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, barrel = 0) => {
     const w = world();
     const { origin, dir } = ray ?? bot.aimRay();
     let d = dir;
@@ -762,7 +729,9 @@ export function createBotReferee(env) {
       d = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
     }
     const len = Math.hypot(d[0], d[1], d[2]) || 1;
-    const [cx, cy, cz] = rollCone([d[0] / len, d[1] / len, d[2] / len], (bot.aimDeviation ?? 0) * DEG_TO_RAD);
+    // The cone's total in its own unit, hundredths of a radian, and the
+    // bots' one point of its square (bot-deviation.js, ledger AI-145).
+    const [cx, cy, cz] = botDeviate([d[0] / len, d[1] / len, d[2] / len], bot.aimDeviation ?? 0, barrel);
     const me = w.player(bot.playerId);
     let best = null, bestT = Infinity;
     for (const [id, player] of w.players) {
@@ -904,9 +873,10 @@ export function createBotReferee(env) {
       // with the round's full damage. A weapon with one plain barrel keeps
       // the one ray down the eye.
       const eye = bot.aimRay();
-      for (const ray of barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null]) {
+      const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
+      for (const [barrel, ray] of rays.entries()) {
         const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                        (material, distance) => env.roundDamage(stats, material, distance), ray);
+                                        (material, distance) => env.roundDamage(stats, material, distance), ray, barrel);
         if (!hit) continue;
         bot.recordHit(hit.targetId);
         env.onHit?.(bot, hit);

@@ -242,3 +242,63 @@ class BotHeatHoldTests(unittest.TestCase):
         # Without the hold the same trigger runs on into the lockout.
         self.assertTrue(hand["freeLocked"])
 
+
+class BotDeviationPointTests(unittest.TestCase):
+    """A bot's round lands on one fixed point of the DEV-9 square, scaled by
+    the total (ledger AI-145, bot-deviation.js)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.d = run_harness()["devPoint"]
+
+    def test_the_point_is_input_index_617_on_the_frames_up_and_right(self) -> None:
+        self.assertEqual(self.d["index"], 617)
+        x, y, z = self.d["north"]
+        # u_right 0.2325 to the right (+x), u_up 0.9517 up, in hundredths.
+        n = (1 + 0.009517212 ** 2 + 0.002325311 ** 2) ** 0.5
+        self.assertAlmostEqual(x, 0.002325311 / n, places=6)
+        self.assertAlmostEqual(y, 0.009517212 / n, places=6)
+        self.assertLess(z, -0.9999)
+
+    def test_it_scales_with_the_total_and_draws_nothing_at_the_floor(self) -> None:
+        self.assertAlmostEqual(self.d["north2"][1] / self.d["north"][1], 2.0, places=3)
+        self.assertEqual(self.d["floor"], [0, 0, -1])
+
+    def test_each_barrel_has_its_own_point_and_the_right_turns_with_the_line(self) -> None:
+        self.assertNotEqual(self.d["barrel1"], self.d["north"])
+        self.assertGreater(self.d["points"], 8)
+        x, y, z = self.d["east"]
+        # Facing +x, the shooter's right is +z.
+        self.assertAlmostEqual(z, self.d["north"][0], places=6)
+        self.assertAlmostEqual(y, self.d["north"][1], places=6)
+
+    def test_the_table_is_the_binarys_own_draws(self) -> None:
+        # `fireBarrel` 0x0828aba0's generator over `random_seeds` (.data
+        # 0x0872fc80), when the server binary is on this PC.
+        binary = Path.home() / "projects/public/bf42plus/bf1942_lnxded.static"
+        if not binary.exists():
+            self.skipTest("the lnxded binary is not on this machine")
+        import struct
+        with binary.open("rb") as fh:
+            fh.seek(0x6c4500 + (0x0872fc80 - 0x0870d500))
+            seeds = struct.unpack("<1025I", fh.read(4 * 1025))
+        m = 0xffffffff
+        s32 = lambda x: (x & m) - (1 << 32) if x & 0x80000000 else x & m
+
+        def schrage(y, a):
+            lo = ((y & 0xffff) * a) & m
+            hi = ((s32(lo) >> 16) + (s32(y) >> 16) * a) & m
+            x = ((s32(hi) >> 15) + (lo & 0xffff) + ((hi & 0x7fff) << 16)) & m
+            z = (x - 0x7fffffff) & m
+            return x if s32(z) < 0 else z
+
+        def draw(k):
+            r = schrage(schrage((seeds[k] + k) & m, 0x5e30), 0x661f)
+            return (((s32(r) >> 7) | 1) + 1) * 5.9604645e-08 * 2.0 - 1.0
+
+        for barrel, (up, right) in enumerate(self.d["table"]):
+            k = (617 + barrel) & 0x3ff
+            k2 = k + 0x200 if k + 0x200 <= 0x400 else k - 0x200
+            self.assertAlmostEqual(up, draw(k), places=6)
+            self.assertAlmostEqual(right, draw(k2), places=6)
+
