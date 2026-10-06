@@ -125,6 +125,19 @@ class NetcodeClientTests(unittest.TestCase):
         self.assertEqual(self.results["diedText"], "X died")
         self.assertEqual(self.results["ticketText"], "Axis tickets: 95")
         self.assertEqual(self.results["capturedText"], "Axis captured West_outpost")
+        self.assertEqual(self.results["ticketCount"], 95)
+
+    def test_ctf_rows_reach_the_page_whole(self):
+        # `ctf-page.js` `onRow` places the flag from the event's kind, actor
+        # and position; a row stripped to the feed's common keys arrived
+        # with none of them and every room client ignored it. The message
+        # log prints nothing for them (the page writes the CTF line itself).
+        self.assertEqual(self.results["ctfRows"], [
+            {"type": "ctf", "kind": "dropped", "flag": 1, "player": 2, "team": 2,
+             "position": [10, 41.5, -20], "text": ""},
+            {"type": "ctf", "kind": "home", "flag": 1, "player": None, "team": 0,
+             "position": [0, 7.6, 0], "text": ""},
+        ])
 
     def test_explicit_leave(self):
         self.assertTrue(self.results["pingFrame"])
