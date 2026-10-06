@@ -990,7 +990,8 @@ export function createBotReferee(env) {
       const side = p.team;
       const seat = u?.seatOf(id) ?? null;
       if (seat) {
-        const c = cands.find(x => x.vehicleId === seat.vehicleId && x.seatId === seat.seatId)
+        const c = (u.seatCandidate?.(seat.vehicleId, seat.seatId)
+          ?? cands.find(x => x.vehicleId === seat.vehicleId && x.seatId === seat.seatId))
           ?? cands.find(x => x.vehicleId === seat.vehicleId && x.isRoot) ?? null;
         out.push({ id, side, table: c?.strengths ?? {}, type: c?.strType ?? seat.strType ?? p.vehicleStrType ?? 'LightArmour',
                    template: c?.template ?? null });
@@ -1142,7 +1143,10 @@ export function createBotReferee(env) {
         } else if (bot.switchRequest) {
           const req = bot.switchRequest;
           bot.switchRequest = null;
-          const cand = cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
+          // A door-less seat too (the artillery driver's, bot-units.js
+          // `doorless`): the swap is `enterVehicle`, which tests no door.
+          const cand = u.seatCandidate?.(req.vehicleId, req.seatId)
+            ?? cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
           if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId && referee.switchSeat(bot, cand)) {
             if (env.debug) console.log(`[bots] ${bot.playerId} switches to seat ${cand.seatId} of the ${cand.template}`);
           }

@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { fixedAimable, planChange, execEnterVehicle, behindUnit } from './bot-mount.js';
+import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1280,6 +1280,24 @@ function stalemateScenario() {
     })(),
     behind: [behindUnit(hull, [0, 0, -5]), behindUnit(hull, [2, 0, -5]), behindUnit(hull, [5, 0, 0]), behindUnit(hull, [0, 0, 5])],
   };
+  // The seat swap reaches a seat with no door of its own: the gun seat of an
+  // M-109 whose driver's PCO has none (bot-units.js `doorless`).
+  const swap = (() => {
+    const unit = (seatId, isRoot, extra) => ({ id: `m:${seatId}`, vehicleId: 'm', seatId, isRoot, drives: isRoot,
+      kind: 'tank', maxSpeed: isRoot ? 12 : 0, value: isRoot ? 20 : 5, weapons: [], strengths: {}, ...extra });
+    const root = unit('M-109', true, { door: false });
+    const gunner = unit('M-109_Gunner_PCO1', false, { door: true, doorless: [root] });
+    const seats = [{ seatId: 'M-109', isRoot: true, door: false }, { seatId: 'M-109_Gunner_PCO1', isRoot: false, door: true }];
+    gunner.seats = seats; root.seats = seats;
+    const bot = { playerId: 'b', vehicle: { id: gunner.id, vehicleId: 'm', seatId: gunner.seatId, drives: false, kind: 'tank',
+                                             seats, hullMaxSpeed: 12 },
+                  vehicleCandidates: [gunner], waypoints: null, botSkill: 0.75, enterRequest: null,
+                  _candidateFire: () => 0, _hasPlan: () => true };
+    const withDoorless = urgencyChangeTeleport(bot, { mine: gunner, selfU: 1, split: [0.5, 0.5], driver: null, health: 1 });
+    const without = urgencyChangeTeleport({ ...bot, vehicleCandidates: [{ ...gunner, doorless: [] }] },
+                                          { mine: { ...gunner, doorless: [] }, selfU: 1, split: [0.5, 0.5], driver: null, health: 1 });
+    return { to: withDoorless?.best?.cand?.seatId ?? null, teleport: !!withDoorless?.teleport, without: without?.best?.cand?.seatId ?? null };
+  })();
   // The back-off for a target above the gun: 20 m up at 30 m.
   const tankBelow = { position: [0, 0, 30], _aimOrigin: () => [0, 2, 30], _nav: () => null,
     vehicle: { controlInfo: ctl } };
@@ -1310,7 +1328,7 @@ function stalemateScenario() {
     noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
     flatUp11: approachAimValid(botAt(null), up11),
     flatUp25: approachAimValid(botAt(null), up25),
-    change,
+    change, swap,
     backDist: back ? Math.hypot(back[0], back[2]) : null,
   };
 }

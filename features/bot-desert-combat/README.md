@@ -184,3 +184,33 @@ no strategic path, there as here. That is what fails the Lada walk the
 Iraqis froze on and the DPV's order point (425, -516). `nav-search.js
 regionedNear` moves only a region-less end (INVENTION, unchanged); widening
 it to these pixels would be a second invention, left for a decision.
+
+## 4. Door-less artillery driver seats
+
+DC's M-109, M-1974, MLRS, BM-21 and SCUD-B hang every door under the gun
+seat's PCO; the driver's PCO has none (`door_census.py`: these five, no
+vanilla, XPack1 or XPack2 hull). A bot's Use reaches a seat only through a
+door in its own subtree (`getEntryPoint`, AI-138), so no bot can board such a
+driver seat on foot. The seat swap can: `BBChangeTeleport` weighs the hull's
+root and seats as units and switches with the seat's select key, and the
+switch (`enterVehicle`) tests no door (AI-52, SEAT-26). The engine's on-foot
+Change also weighs the door-less root (AI-139), which it then cannot enter;
+whether retail ever ranks it first is open, and the page does not offer it.
+
+**What changed.** `bot-units.js` gives each hull's door-less seats full
+candidates of their own (`doorless`, riding on the hull's door candidates,
+outside the list every other consumer reads), the seat swap and the seated
+bot's own record look there (`bot-mount.js hullCandidates`), and the referee
+finds them for the switch (`units.seatCandidate`).
+
+**How it was checked.** `tests/test_bot_ai.py`
+`test_the_seat_swap_reaches_a_driver_seat_with_no_door` (from the gun seat of
+an M-109 the swap goes to the door-less root; without the door-less list it
+goes nowhere). Runner, DC El Alamein, a bot seated in the M-109's gun seat
+(`~/.cache/dc-sweep/bots/probe_swap.mjs`): on main the hull's candidates are
+its two door seats and the swap can only go to the MG; now the root is
+weighed from the first tick (swap urgency 3.9). With one bot a side it takes
+the driver's seat at 2 s and drives (MoveTo); with four a side Fire outbids
+the swap until its urge curve runs out, by when the MG seat, with an enemy
+in its reach, scores higher, as before. Which seat wins is the swap law's
+(AI-52).
