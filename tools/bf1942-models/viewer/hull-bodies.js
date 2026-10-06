@@ -155,38 +155,89 @@ export function createHullBodies(page) {
    * authored rather than dropped through the sea bed.
    */
   /**
-   * A burning ship stops being a spawn point.
+   * A burning carrier stops being a spawn point, whatever it is: a ship, Weapon
+   * Bunkers' three bunkers, No Fly Zone Day 2's hangars and towers, Bragg's
+   * Talil statics, the AC-130.
    *
    * `BFSpawnPoint::getActive(bool, int)` (`0x08163dd0`) walks the chain to the
    * nearest `IID_IArmor` (`0xc4a4`) and returns 0 when it reports
    * `isCriticalDamaged()` (Armor vtable `+0xcc`, `0x08174320`) — the same
-   * threshold that arms the sink, so the moment a destroyer starts going down it
-   * stops offering her decks. Answered per hull here because the world's flag
-   * list is built once at load and the state is live.
+   * threshold that arms a ship's sink, so the moment a destroyer starts going
+   * down it stops offering her decks (SPAWN-5). The test is per point, and a
+   * group's spawn takes one of its active points (SPAWNGRP-10), so a flag is
+   * out only when every point it offers is: `spawn-flags.js` gives a carried
+   * flag `inactive` off its points' own, which `bindCarriers` answers. A
+   * carrier its pad has not stood up (Bragg's `UST` while Talil is neutral)
+   * carries nothing at all.
    */
   function shipFlagInactive(flag) {
-    if (!flag?.vehicle || !flag.position) return false;
-    for (const host of floatHosts) {
-      // A landing craft beside her stern is not the ship her decks belong to
-      // (`deckSpawnHost`).
-      if (host.launched) continue;
-      if (host.sinking) {
-        const p = host.sinking.body.pos;
-        if (Math.hypot(flag.position[0] - p[0], flag.position[2] - p[2])
-            <= host.radius + 40) return true;
-        continue;
-      }
-      // The hull where she is NOW, not where she was authored: a flag whose rings
-      // have been rebased onto a carrier under way has to be matched against the
-      // carrier under way.
-      host.node.updateWorldMatrix(true, false);
-      const e = host.node.matrixWorld.elements;
-      const d = Math.hypot(flag.position[0] - e[12], flag.position[2] - e[14]);
-      if (d > host.radius + 40) continue;
-      const owner = page.collider?.statics?.ownerOf?.(host.node) ?? -1;
-      return !!(owner >= 0 && page.vehicleDamage?.get(owner)?.critical);
+    return !!flag?.inactive;
+  }
+
+  /**
+   * Give every carried spawn point (`vehicleSoldierSpawns`) a live `inactive`:
+   * its carrier gone, not stood up by its pad, or critically damaged. The
+   * carrier is the ship the point was authored on (`deckSpawnHost`), else the
+   * placed object of the point's template nearest the points of its pad.
+   * Non-enumerable, on the scene's own entries, which the flags' `spawns`
+   * already hold (as `rebaseDeckSpawns` moves their `position` in place).
+   */
+  function bindCarriers() {
+    const spawns = page.extras?.vehicleSoldierSpawns;
+    if (!spawns?.length) return;
+    const placed = [];
+    const at = new THREE.Vector3();
+    for (const [owner, visual] of page.damageVisuals ?? []) {
+      const node = visual?.node;
+      if (!node) continue;
+      node.getWorldPosition(at);
+      placed.push({ owner, node, at: [at.x, at.y, at.z],
+                    template: String(node.userData?.control || node.name || '').replace(/_\d+$/, '').toLowerCase() });
     }
-    return false;
+    // The points of one carrier, by their pad: bound once, to the object of
+    // their template nearest their middle.
+    const byPad = new Map();
+    for (const spawn of spawns) {
+      if (!spawn?.position) continue;
+      const key = `${String(spawn.vehicle ?? '').toLowerCase()}|${spawn.pad ?? spawn.spawner ?? ''}`;
+      if (!byPad.has(key)) byPad.set(key, []);
+      byPad.get(key).push(spawn);
+    }
+    for (const points of byPad.values()) {
+      const want = String(points[0].vehicle ?? '').toLowerCase();
+      const mid = [0, 1, 2].map(i => points.reduce((sum, p) => sum + (p.deckBake ?? p.position)[i], 0) / points.length);
+      let carrier = null;
+      let best = Infinity;
+      for (const c of placed) {
+        if (c.template !== want) continue;
+        const d = Math.hypot(c.at[0] - mid[0], c.at[2] - mid[2]);
+        if (d < best) { best = d; carrier = c; }
+      }
+      for (const spawn of points) {
+        const host = floatHosts.length && spawn.deckBake ? deckSpawnHost(spawn) : null;
+        const binding = host ? { host } : carrier;
+        Object.defineProperty(spawn, 'inactive', {
+          configurable: true, enumerable: false, get: () => carrierDown(binding),
+        });
+      }
+    }
+  }
+
+  function carrierDown(binding) {
+    if (!binding) return false;
+    if (binding.host) {
+      const host = binding.host;
+      if (host.sinking) return true;
+      const owner = page.collider?.statics?.ownerOf?.(host.node) ?? -1;
+      if (owner < 0) return false;
+      return !page.vehicleSpawnActive(host.node) || !!page.vehicleDamage?.get(owner)?.critical;
+    }
+    const { node, owner } = binding;
+    if (!page.vehicleSpawnActive(node)) return true;
+    const visual = page.damageVisuals?.get(owner);
+    if (visual?.wrecked || visual?.removed) return true;
+    const vehicle = page.vehicleDamage?.get(owner);
+    return !!(vehicle && (vehicle.critical || vehicle.destroyed));
   }
 
   function floatPlacedVehicles(ownerRoots, waterLevel) {
@@ -857,6 +908,8 @@ export function createHullBodies(page) {
   function setupVehicleBodies() {
     hookHoldIntoTick(page.world);
     spawnShown.clear();
+    // The carried spawn points' carriers, before anything can return early.
+    bindCarriers();
     bodyScene.clear();
     hullBodies.bodyWorld = null;
     const heightfield = page.collider?.heightfield;
@@ -1360,6 +1413,7 @@ export function createHullBodies(page) {
     settlePlacedVehicles,
     setupVehicleBodies,
     shipDeckAt,
+    bindCarriers,
     shipFlagInactive,
     stepSinkingHulls,
     stepVehicleBodies,
