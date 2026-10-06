@@ -1094,4 +1094,134 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   results.w = { ctf: JSON.parse(JSON.stringify(hello.ctf)), conquest: conquest.ctf };
 }
 
+// --- (x) the round's end and the restart (ROUND-9, ROUND-11, HP-20) ---------------
+// The flat test level with two tickets for the Axis and no bleed: two deaths
+// end the round on tickets (ROUND-2). The room sends the result, clears the
+// world (`clearWorld`: the living killed, nothing spent), refuses a human's
+// spawn while the round is over (`spawnPlayer`'s `[+0x58] == 1`), and ten
+// seconds later restarts: the tickets made again, the rounds won kept, every
+// flag back on its level team, and the spawn taken again.
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'round-end',
+    extras: { ...base.extras, tickets: { team1: 2, team2: 100, lossPerMin: { team1: 0, team2: 0 } } },
+    vehicles: [],
+  };
+  core.levels.set('round-end', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  sendJson(pA, MSG_JOIN, { room: 'END', name: 'Axe', team: 1, level: 'round-end' });
+  sendJson(pB, MSG_JOIN, { room: 'END', name: 'Ally', team: 2, level: 'round-end' });
+  const room = core.room('END');
+  const w = room.world;
+  const rowsOf = peer => peer.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow);
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 1, kit: 'assault' });
+  step(2);
+  for (let death = 0; death < 2; death++) {
+    w.armorOf(1).applyDamage(999);
+    step(2);
+    if (death === 0) {
+      sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+      step(1);
+      // The Allies take the Axis flag before the end (after A stands on it:
+      // a spawn on a flag of the other side's moves him to it): the restart
+      // must hand it back.
+      w.flags[0].team = 2;
+    }
+  }
+  step(2);
+  const endRows = rowsOf(pB);
+  const end = endRows.find(r => r.type === 'roundEnd');
+  const cleared = endRows.filter(r => r.type === 'killed' && r.cleared).map(r => r.slot);
+  const ticketsAtEnd = { ...w.tickets };
+  const bAliveAfterEnd = !w.armorOf(2)?.destroyed;
+  const helloDuringEnd = room.helloRow({ slot: 9, team: 1, name: 'Late' }).round;
+  // A spawn while the round is over is refused, to that player alone.
+  pA.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(1);
+  const refused = rowsOf(pA).some(r => r.type === 'spawnRefused');
+  const aDeadDuringEnd = room.authority.dead.has(1);
+  // The countdown: nothing at 9 s, the restart by 10 s and a tick or two.
+  pB.sent.length = 0;
+  step(Math.round(9 * 30));
+  const restartedEarly = rowsOf(pB).some(r => r.type === 'restart');
+  step(Math.round(1.2 * 30));
+  const restart = rowsOf(pB).find(r => r.type === 'restart');
+  const roundAfter = { status: room.authority.round.status, tickets: { ...room.authority.round.tickets },
+                       roundsWon: { ...room.authority.round.roundsWon } };
+  // And the spawn screen works again.
+  pB.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(1);
+  const respawned = rowsOf(pB).some(r => r.type === 'spawn' && r.slot === 1)
+    && !room.authority.dead.has(1);
+  results.x = {
+    end: end ? { winner: end.winner, victoryType: end.victoryType, reason: end.reason,
+                 restartIn: end.restartIn, roundsWon: end.roundsWon,
+                 medals: end.medals?.length ?? null } : null,
+    cleared, ticketsAtEnd: { team1: ticketsAtEnd.team1, team2: ticketsAtEnd.team2 },
+    bAliveAfterEnd, helloDuringEnd: helloDuringEnd && { status: helloDuringEnd.status,
+                                                        winner: helloDuringEnd.winner },
+    refused, aDeadDuringEnd, restartedEarly,
+    restart: restart ? { tickets: restart.tickets, flags: restart.flags, roundsWon: restart.roundsWon } : null,
+    roundAfter, flagsAfter: w.flags.map(f => f.team), respawned,
+    ticketsAfter: { team1: w.tickets.team1, team2: w.tickets.team2 },
+  };
+}
+
+// --- (y) a room plays the layer it was made on -------------------------------------
+// The page's `?mode=` law on the server (`selectGameMode`): a room created
+// with a mode plays that layer's flags, tickets and CTF bases; one created
+// with none plays the level's default, and the HELLO says which.
+{
+  const point = (name, team, at) => ({ name, team, areaValue: 50, spawnGroupId: team, position: at });
+  const spawn = (name, group, team, at) => ({ name, group, team, position: at, rotation: [180, 0, 0] });
+  const conquest = {
+    controlPoints: [point('North', 1, [10, 0, 10]), point('South', 2, [-10, 0, -10])],
+    tickets: { team1: 100, team2: 100, lossPerMin: { team1: 30, team2: 30 } },
+  };
+  const ctfLayer = {
+    controlPoints: [point('AxisBase', 1, [0, 0, -100]), point('AlliedBase', 2, [0, 0, 100])],
+    soldierSpawns: [spawn('A1', 1, 1, [0, 0, -100]), spawn('B1', 2, 2, [0, 0, 100])],
+    tickets: null,
+    flagBases: [
+      { name: 'AlliedFlag', position: [0, 0, 100], team: 2, radius: 5, flagLocation: [0, 7.6, 0],
+        flag: { radius: 5, timeToRespawn: 30 } },
+      { name: 'AxisFlag', position: [0, 0, -100], team: 1, radius: 5, flagLocation: [0, 7.6, 0],
+        flag: { radius: 5, timeToRespawn: 30 } },
+    ],
+  };
+  const descriptor = {
+    name: 'layers',
+    extras: {
+      worldSize: 600, gameplayMode: 'Conquest', ...conquest,
+      soldierSpawns: [spawn('N1', 1, 1, [10, 0, 10]), spawn('S1', 2, 2, [-10, 0, -10])],
+      modes: { Conquest: { ...conquest }, Ctf: ctfLayer },
+    },
+    collider: { waterLevel: null, heightfield: null, statics: null, surfaceHeight() { return 0; } },
+    vehicles: [],
+  };
+  core.levels.set('layers', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pC = attachPeer(core, String(nextTag++));
+  sendJson(pC, MSG_JOIN, { room: 'LAYCTF', name: 'C', team: 0, level: 'layers', mode: 'ctf' });
+  const helloCtf = jsonRow(pC.sent.find(b => b[0] === MSG_HELLO));
+  const pD = attachPeer(core, String(nextTag++));
+  sendJson(pD, MSG_JOIN, { room: 'LAYDEF', name: 'D', team: 0, level: 'layers' });
+  const helloDef = jsonRow(pD.sent.find(b => b[0] === MSG_HELLO));
+  const ctfRoom = core.room('LAYCTF');
+  results.y = {
+    ctf: { mode: helloCtf.mode, modeDefault: helloCtf.modeDefault,
+           flags: helloCtf.flags.map(f => f.name), tickets: helloCtf.tickets,
+           ctf: Array.isArray(helloCtf.ctf), law: !!ctfRoom.authority.ctf,
+           list: core.roomList().find(r => r.code === 'LAYCTF')?.mode },
+    def: { mode: helloDef.mode, modeDefault: helloDef.modeDefault,
+           flags: helloDef.flags.map(f => f.name), tickets: helloDef.tickets?.team1 ?? null,
+           ctf: helloDef.ctf },
+  };
+}
+
 console.log(JSON.stringify(results));

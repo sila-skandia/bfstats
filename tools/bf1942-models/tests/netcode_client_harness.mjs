@@ -149,8 +149,20 @@ client.handleMessage(frame(MSG_EVENT, { t: 128, type: 'ctf', kind: 'dropped', fl
                                         team: 2, position: [10, 41.5, -20] }));
 client.handleMessage(frame(MSG_EVENT, { t: 129, type: 'ctf', kind: 'home', flag: 1, player: null,
                                         team: 0, position: [0, 7.6, 0] }));
+// A row type's own keys ride through whole: a round's result, with its
+// medals and the restart's countdown, and the restart's flags and tickets.
+client.handleMessage(frame(MSG_EVENT, { t: 130, type: 'roundEnd', winner: 2, victoryType: 3,
+                                        reason: 'tickets', restartIn: 10, roundsWon: { 1: 0, 2: 1 },
+                                        medals: [{ slot: 2, team: 2, medal: 'gold', score: 4 }] }));
+client.handleMessage(frame(MSG_EVENT, { t: 131, type: 'restart', tickets: { team1: 100, team2: 100 },
+                                        flags: [{ team: 1 }, { team: 2 }], roundsWon: { 1: 0, 2: 1 } }));
+client.handleMessage(frame(MSG_EVENT, { t: 132, type: 'killed', slot: 2, cleared: true }));
+out.roundRows = handed.slice(2).map(r => ({ type: r.type, winner: r.winner ?? null, medals: r.medals ?? null,
+                                            restartIn: r.restartIn ?? null, flags: r.flags ?? null,
+                                            tickets: r.tickets ?? null, cleared: r.cleared ?? null,
+                                            text: r.text }));
 client.onevent = null;
-out.ctfRows = handed.map(r => ({ type: r.type, kind: r.kind, flag: r.flag, player: r.player,
+out.ctfRows = handed.slice(0, 2).map(r => ({ type: r.type, kind: r.kind, flag: r.flag, player: r.player,
                                  team: r.team, position: r.position, text: r.text }));
 out.rosterAfterLeave = client.nameOf(3);
 out.teamOfA = client.teamOf(1);

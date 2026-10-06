@@ -34,10 +34,12 @@ import { createControlChannel } from './room-control.mjs';
 export class Room {
   #control;
 
-  constructor({ code, level, now = null }) {
+  constructor({ code, level, mode = null, now = null }) {
     this.code = code;
     this.levelData = level;           // the shared LevelData
-    this.instance = level.instantiate();
+    // The layer the room plays: the one the creating join asked for
+    // (`?mode=`, resolved the page's way), else the level's default.
+    this.instance = level.instantiate(mode);
     this.world = this.instance.world;
     this.now = now || (() => performance.now());
     this.tick = 0;                    // engine ticks run (MSG_EVENT's `t`)
@@ -55,6 +57,12 @@ export class Room {
       levelDir: level?.name ?? null,
       ownerOf: root => this.instance.ownerOf(root),
       onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
+      // `clearWorld` empties the seats before it kills; the pads' half of it
+      // and of the restart is the room's.
+      onClearWorld: () => {
+        for (const connection of this.players.values()) this.#unmount(connection);
+      },
+      onRestart: () => {},
     });
     // The control channel's seat, spawn and radio actions (room-control.mjs).
     this.#control = createControlChannel({
@@ -64,7 +72,10 @@ export class Room {
   }
 
   level() { return this.levelData.name; }
-  mode() { return this.levelData.extras?.gameplayMode || null; }
+  mode() { return this.instance.extras?.gameplayMode || null; }
+  /** Whether the room plays the level's default layer, which a page whose
+   *  URL names no `?mode=` loads too. */
+  defaultMode() { return this.mode() === (this.levelData.modeOf(null) ?? this.mode()); }
   playerCount() { return this.players.size; }
   capacity() { return MAX_PLAYERS; }
 
@@ -148,6 +159,11 @@ export class Room {
       // so a client joining mid-round draws a carried or dropped flag where
       // it is rather than on its pole; null on any other layer.
       ctf: this.authority.ctf?.snapshot() ?? null,
+      // Whether the room plays the level's default layer (a page with no
+      // `?mode=` has loaded the right one), and the round: playing, or
+      // ended with its result and the restart's countdown.
+      modeDefault: this.defaultMode(),
+      round: this.authority.roundState(),
     };
   }
 
