@@ -6,7 +6,9 @@
 // `deployables-page.js`'s and `kit-drops-page.js`'s. Every number is read out
 // of `bf1942_lnxded.static` (addresses are lnxded's);
 // `features/dc-mortar-and-kit-pads/README.md` has the derivation and the
-// ledger rows (SPAWN-9..SPAWN-16).
+// ledger rows (SPAWN-9..SPAWN-16). The map's vehicle pads run the same
+// `SpawnerPad` (`level-statics.js`, `vehicle-wrecks.js`, SPAWN-17..SPAWN-20,
+// `features/vehicle-spawner-pads/README.md`).
 //
 //   Bomb      `Mortar_weap` fires `mortarbomb` from the camera
 //             (`fireInCameraDof`, XHIT-12): `projectilePosition` in the view
@@ -191,10 +193,34 @@ export class AbandonClock {
 }
 
 /** `ObjectSpawner::calcSpawnDelay` 0x08314430: the full window with no
- *  players, the minimum with the server full. */
+ *  players, the minimum with the server full. No random (ledger SPAWN-18):
+ *  `players` is the whole player list, bots too, and `maxPlayers` the
+ *  server's slot count. */
 export function calcSpawnDelay(min, max, players = 0, maxPlayers = 0) {
   const fill = maxPlayers > 0 ? Math.min(1, Math.max(0, players / maxPlayers)) : 0;
   return min + (max - min) * (1 - fill);
+}
+
+/** `spawnDelayAtStart` as the engine reads it: a bool through `istream >>
+ *  bool` (SPAWN-17), so only a 1 sets it. Any other number fails the parse
+ *  and keeps the last good line's value, which for every such line Desert
+ *  Combat ships (`scudspawner 60`, `ac 15`) is the 0 above it. */
+export function delayAtStart(value) {
+  return value === true || value === 1;
+}
+
+/**
+ * The control point a pad is filed under, by name: `Object.setOSId` against
+ * the points' `objectSpawnerId` (SPAWN-12, SPAWN-19). A level whose scene carries no
+ * `osId` at all was exported before the exporter wrote it, and keeps the
+ * nearest point the exporter guessed (`controlPointName`); in a scene that
+ * carries them, a pad with none is filed under no point, as in the engine.
+ */
+export function padControlPoint(spawn, controlPoints = [], anyOsId = false) {
+  if (Number.isFinite(spawn?.osId)) {
+    return controlPoints.find(p => p?.objectSpawnerId === spawn.osId)?.name ?? null;
+  }
+  return anyOsId ? null : (spawn?.controlPointName ?? null);
 }
 
 /**
@@ -202,6 +228,8 @@ export function calcSpawnDelay(min, max, players = 0, maxPlayers = 0) {
  * name }, team, minSpawnDelay, maxSpawnDelay, spawnDelayAtStart, maxNr,
  * nrToSpawn, radius }`. The slot holds the id of the object it spawned while
  * that object lives; the page answers `alive(id)` and `distance(id)`.
+ * `players` / `maxPlayers` are the server the next delay is drawn for; the
+ * page writes them before a tick.
  */
 export class SpawnerPad {
   constructor(spec = {}) {
@@ -209,7 +237,7 @@ export class SpawnerPad {
     this.team = spec.team ?? 0;
     this.min = Number.isFinite(spec.minSpawnDelay) ? spec.minSpawnDelay : 30;
     this.max = Number.isFinite(spec.maxSpawnDelay) ? spec.maxSpawnDelay : 60;
-    this.atStart = !!spec.spawnDelayAtStart;
+    this.atStart = delayAtStart(spec.spawnDelayAtStart);
     this.radius = Number.isFinite(spec.radius) ? spec.radius : PAD_RADIUS;
     this.nrToSpawn = Number.isFinite(spec.nrToSpawn) ? spec.nrToSpawn : -1;
     this.slots = new Array(Math.max(1, spec.maxNr ?? 1)).fill(null);

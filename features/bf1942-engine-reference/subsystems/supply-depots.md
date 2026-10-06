@@ -152,6 +152,23 @@ template, but not universally: FHSW's `LST-1_MovableRampKiller`/
 finite-reserve clamp branch. Do not assume every `addVehicleType` reserve is
 `-1` once a mod's content is in play.
 
+**What a cycle does, read 2026-10-06 (SUP-18 to SUP-20).** A due cycle
+works on every soldier and every root hull in reach. Within it the ammo and
+the heal both run: `workOnSoldiers` calls `reloadAmmo` and then
+`healSoldier`, and `workOnVehicles` calls `reloadAmmo` and then
+`repairVehicle`. Neither starves the other (SUP-18).
+
+A hull, crewed or empty, on its own team or a neutral depot, is repaired by
+the first row naming its root template, matched without regard to case.
+Unlimited, it gets `Armor::heal(rate)` with the row's rate as written, once
+per cycle: the rate is hit points per cycle, not per second. Finite, it gets
+`min(reserve, rate)`, and the reserve pays at most the missing hit points.
+`setHealth` never reaches a hull. A negative rate is a kill, which is how DC
+Medina Ridge's `fk1` (`-1 -1000 0`) works (SUP-19).
+
+A seated soldier is served only by a depot on his own vehicle (SUP-20). A
+depot stops while the nearest Armor above it is destroyed.
+
 ## 6. The five properties this class does not consume: the medic pack and the wrench
 
 `healDistance`, `healFactor`, `selfHealFactor`, `repairDistance` and

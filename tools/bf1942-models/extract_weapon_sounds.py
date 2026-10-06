@@ -50,7 +50,7 @@ from bf42 import con as con_mod
 from bf42.level import SoundSample, parse_ssc, resolve_ssc_path
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
-    FIRE_LOOP_SLOT, RELEASE_AFTER, RELEASE_SLOTS,
+    FIRE_LOOP_SLOT, RELEASE_AFTER, RELEASE_SLOTS, RELOAD_SLOT,
     SOUND_ARCHIVES, VEHICLE_RATES, _SILENCE, TranscodeError,
     _firing_patch, _sound_layers, _trigger_slots, sample_writer,
     ffmpeg_available, resolve_sound, transcode_to_mp3,
@@ -280,6 +280,9 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
         entry["press"] = press
     if release:
         entry["release"] = release
+    reload = _reload_edge(name, patches, sounds, out, previous)
+    if reload:
+        entry["reload"] = reload
     return entry, None
 
 
@@ -305,48 +308,111 @@ def _burst_edges(name: str, sample: SoundSample, slot: str, patches,
     press, release = _trigger_slots(patches, chosen or [sample])
     if slot == "release":
         release = {}
-    before = {pick.get("file"): pick.get("wav")
-              for group in ((previous or {}).get("release") or [])
-              for pick in group.get("picks", [])}
-    before.update({pick.get("file"): pick.get("wav")
-                   for pick in ((previous or {}).get("press") or [])})
-
-    def write(load: SoundSample, target: Path) -> dict | None:
-        if muzzle_gain(load, at_time=None) <= 0:
-            return None
-        resolved = resolve_sound(load.file, None, sounds, VEHICLE_RATES)
-        if resolved is None:
-            return None
-        wav, data = resolved
-        _write_mp3(data, target, target.exists()
-                   and before.get(target.name) not in (None, wav))
-        pick = {"file": target.name, "wav": wav, "volume": load.volume}
-        if load.random_start_pitch:
-            pick["randomStartPitch"] = list(load.random_start_pitch)
-        if (delay := fire_delay(load)) > 0:
-            pick["delay"] = delay
-        return pick
-
+    before = _edge_wavs(previous)
     press_picks = [pick for index, load in enumerate(press)
-                   if (pick := write(load, out / f"{name}.p{index}.mp3"))]
+                   if (pick := _edge_pick(load, out / f"{name}.p{index}.mp3",
+                                          sounds, before))]
     release_groups = []
     for index, loads in release.items():
-        patch = patches[index]
-        picks = []
-        for load_index, load in enumerate(patch.samples):
-            if not any(load is kept for kept in loads):
-                continue
-            pick = write(load, out / f"{name}.r{index}.{load_index}.mp3")
-            if pick:
-                picks.append({"load": load_index, **pick})
-        if not picks:
-            continue
-        group = {"slot": index, "picks": picks}
-        if patch.random_play:
-            group["randomPlay"] = True
-            group["loads"] = len(patch.samples)
-        release_groups.append(group)
+        group = _slot_group(name, index, patches[index], loads, sounds, out,
+                            before)
+        if group:
+            release_groups.append(group)
     return press_picks, release_groups
+
+
+def _reload_edge(name: str, patches, sounds: ArchivePool, out: Path,
+                 previous: dict | None) -> dict | None:
+    """The Reload slot (patch 1), as the shooter and a bystander hear it.
+
+    `FireArms::Reload` triggers patch 1 once, at the start of a magazine
+    change (lnxded `0x08289d80`, client `0x00539c80`, the call at
+    `0x00539cdf`; ledger SND-17), and every reload goes through it: R, the
+    automatic change on a dry magazine, and `Fire` on an empty `autoReload`
+    one (AI-133). Each load waits for its own `Volume <- Time` gate, which is
+    how DC's M16 lays thirteen recordings over its 2.6 s change (`delay` per
+    pick, as the knife's swish has always had it).
+
+    `picks` are the loads audible at the muzzle, one mp3 each
+    (`<Name>.r1.<load>.mp3`, the release groups' naming), for the shooter's
+    ear; `layers` is the whole patch through `_sound_layers` for
+    `world-fire.js`, whose `Volume <- Distance` ramps are why nobody hears
+    another soldier reload: every one of vanilla's 239 reload loads stops at
+    1 m, and 563 of Desert Combat's 573. None when the slot is silent.
+    """
+    if len(patches) <= RELOAD_SLOT:
+        return None
+    patch = patches[RELOAD_SLOT]
+    loads = _non_silence(patch.samples)
+    if not loads:
+        return None
+    group = _slot_group(name, RELOAD_SLOT, patch, loads, sounds, out,
+                        _edge_wavs(previous))
+    if not group:
+        return None
+    try:
+        write = sample_writer(out, out, sounds=sounds)
+        layers = _sound_layers(loads, sounds, write, patches=patches)
+    except Exception as exc:            # noqa: BLE001 - the shooter's picks stand
+        print(f"  {name}: reload layers skipped ({exc})", file=sys.stderr)
+        layers = []
+    if layers:
+        group["layers"] = layers
+    return group
+
+
+def _edge_wavs(previous: dict | None) -> dict[str, str]:
+    """`file -> wav` for every edge pick the manifest on disk already names."""
+    previous = previous or {}
+    before = {pick.get("file"): pick.get("wav")
+              for group in (previous.get("release") or [])
+              for pick in group.get("picks", [])}
+    before.update({pick.get("file"): pick.get("wav")
+                   for pick in (previous.get("press") or [])})
+    before.update({pick.get("file"): pick.get("wav")
+                   for pick in (previous.get("reload") or {}).get("picks", [])})
+    return before
+
+
+def _edge_pick(load: SoundSample, target: Path, sounds: ArchivePool,
+               before: dict[str, str]) -> dict | None:
+    """One edge load as an mp3 the shooter hears, or None where he does not."""
+    if muzzle_gain(load, at_time=None) <= 0:
+        return None
+    resolved = resolve_sound(load.file, None, sounds, VEHICLE_RATES)
+    if resolved is None:
+        return None
+    wav, data = resolved
+    _write_mp3(data, target, target.exists()
+               and before.get(target.name) not in (None, wav))
+    pick = {"file": target.name, "wav": wav, "volume": load.volume}
+    if load.random_start_pitch:
+        pick["randomStartPitch"] = list(load.random_start_pitch)
+    if (delay := fire_delay(load)) > 0:
+        pick["delay"] = delay
+    return pick
+
+
+def _slot_group(name: str, index: int, patch, loads, sounds: ArchivePool,
+                out: Path, before: dict[str, str]) -> dict | None:
+    """Patch `index`'s `loads` as `{slot, picks}`, with `randomPlay` and
+    `loads` kept for a patch that rolls one load a trigger (SND-15). None
+    when the shooter hears none of them."""
+    picks = []
+    for load_index, load in enumerate(patch.samples):
+        if not any(load is kept for kept in loads):
+            continue
+        pick = _edge_pick(load, out / f"{name}.r{index}.{load_index}.mp3",
+                          sounds, before)
+        if pick:
+            picks.append({"load": load_index, **pick})
+    if not picks:
+        return None
+    group = {"slot": index, "picks": picks}
+    if patch.random_play:
+        group["randomPlay"] = True
+        group["loads"] = len(patch.samples)
+    return group
 
 
 def _write_mp3(data: bytes, target: Path, stale: bool) -> None:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import con as con_mod
@@ -297,6 +297,81 @@ def retail_lod_chain(lods) -> int:
         if last_vertices < RETAIL_LOD_MIN_VERTICES:
             return index + 1
     return len(lods)
+
+
+def geometry_scale(template: con_mod.GeometryTemplate | None
+                   ) -> tuple[float, float, float] | None:
+    """A geometry's `GeometryTemplate.scale`, or None when it draws at 1/1/1.
+
+    StandardMesh only. A TreeMesh or AnimatedMesh template takes the word too
+    (`TreeMeshTemplate::setScale`, lnxded 0x083be010), and other mods write it
+    on one (FH's and bf1918's hedgerow TreeMeshes, FHSW's Panzer track
+    AnimatedMeshes, SM-13), but what those setters do is unread, so those
+    paths still draw the file's size.
+    """
+    if template is None or template.kind.lower() != "standardmesh":
+        return None
+    scale = template.scale
+    if scale is None or all(component == 1.0 for component in scale):
+        return None
+    return scale
+
+
+def scale_standard_mesh(mesh: stdmesh.StandardMesh,
+                        scale: tuple[float, float, float] | None,
+                        ) -> stdmesh.StandardMesh:
+    """`mesh` with its geometry's `GeometryTemplate.scale` baked into the vertices.
+
+    The scale belongs to the geometry, not to the object that draws it: the
+    mesh instance keeps it (`BStandardMesh::setScale`, lnxded 0x083b4640) and
+    draws through `diag(scale) * world` with the translation put back
+    (`BStandardMesh::scale`, 0x083b47d0), so it scales the mesh in its own axes
+    and never the object's child parts. A ray or a body probing the mesh is
+    scaled the same way: `BStandardMesh::getDistanceToGeometry` (0x083b4fd0)
+    hands the scale to `SimpleCollisionMesh::getDistanceToGeometry`
+    (0x083c9f70), which divides the query into the file's frame and multiplies
+    the hit back out (SM-13). So both the drawn levels and the collision
+    layers carry it; normals take the inverse scale, renormalised. The
+    instance's bounding box does not, so a ladder's climb measure reads the
+    file (`_ladder_spec_for`).
+    """
+    if scale is None:
+        return mesh
+    sx, sy, sz = scale
+
+    def material(m: stdmesh.Material) -> stdmesh.Material:
+        step = m.engine_stride // 4
+        values = list(m.vertices)
+        if len(values) < step * m.vertex_count:
+            values += [0.0] * (step * m.vertex_count - len(values))
+        position, normal = m.component("position"), m.component("normal")
+        for i in range(m.vertex_count):
+            if position is not None:
+                p = i * step + position.offset // 4
+                values[p] *= sx
+                values[p + 1] *= sy
+                values[p + 2] *= sz
+            if normal is not None and 0.0 not in scale:
+                n = i * step + normal.offset // 4
+                nx, ny, nz = values[n] / sx, values[n + 1] / sy, values[n + 2] / sz
+                length = (nx * nx + ny * ny + nz * nz) ** 0.5
+                if length > 0.0:
+                    values[n:n + 3] = nx / length, ny / length, nz / length
+        return replace(m, vertices=values)
+
+    return replace(
+        mesh,
+        bounds_min=(mesh.bounds_min[0] * sx, mesh.bounds_min[1] * sy,
+                    mesh.bounds_min[2] * sz),
+        bounds_max=(mesh.bounds_max[0] * sx, mesh.bounds_max[1] * sy,
+                    mesh.bounds_max[2] * sz),
+        collision_layers=[
+            replace(layer, vertices=[(x * sx, y * sy, z * sz)
+                                     for x, y, z in layer.vertices])
+            for layer in mesh.collision_layers],
+        lods=[replace(lod, materials=[material(m) for m in lod.materials])
+              for lod in mesh.lods],
+    )
 
 
 def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
@@ -589,6 +664,114 @@ def ladder_spec_from_positions(
     }
 
 
+# --- which hulls the engine tests (ledger COL-16..COL-18) ----------------------
+#
+# `hasCollisionPhysics` becomes object flag 0x200 in the object's constructor
+# and nowhere else, and it defaults off (COL-16). The broadphase keeps a ROOT
+# only when it carries 0x200, so a root that never says 1 is passed through by
+# everything that moves, rounds included, and nothing under it collides. A part
+# joins its root's test only when it carries 0x200 itself (COL-17). The root is
+# tested with its own mesh or, lacking one, the LOD-0 mesh it borrows (COL-18):
+# that is how a house collides, a geometry-less `Bundle` saying 1 over a
+# LodObject whose detailed alternative declares nothing.
+
+# Not passed: the node is an engine root, and its scope is worked out there.
+_UNSCOPED = object()
+
+
+@dataclass(frozen=True)
+class CollisionScope:
+    """One engine root's collision rule. `lent` is the lower-case name of the
+    template whose geometry a geometry-less root borrows (COL-18)."""
+    collides: bool
+    lent: str | None = None
+
+
+# A LodObject alternative the engine never tests: nothing under it collides.
+_NEVER_TESTED = CollisionScope(collides=False)
+
+
+def _child_template(library: con_mod.ObjectLibrary, ref: con_mod.ChildRef):
+    """The object an `addTemplate` makes, hidden or not: the engine creates
+    every child, whatever the exporter later chooses to draw."""
+    found = library.object(ref.template)
+    if found is None and ref.random_geometries:
+        found = library.object(f"{ref.template}1")
+    return found
+
+
+def lent_lod_template(library: con_mod.ObjectLibrary,
+                      root: con_mod.ObjectTemplate):
+    """The template whose geometry a root with none borrows, or None.
+
+    `findLodGeometry` (lnxded 0x0818d860): when the first child is a LodObject,
+    its highest LOD, which is its first alternative (`LodObject::getChild`
+    0x08216ce0 under `m_forceHighestLod`). Failing that, the first LodObject
+    with a `DistCompareSelector` found depth-first under the root, first child
+    before next sibling, where a PlayerControlObject ends the search along its
+    sibling chain (`internalFindChildOfLodSelectorCID` 0x0818db50). Either way
+    only an alternative that names a geometry lends one.
+    """
+    def first_alternative(lod):
+        alternative = (_child_template(library, lod.children[0])
+                       if lod.children else None)
+        return alternative if alternative is not None and alternative.geometry else None
+
+    first = _child_template(library, root.children[0]) if root.children else None
+    if first is not None and first.is_lod_selector:
+        lent = first_alternative(first)
+        if lent is not None:
+            return lent
+
+    def children_of(node):
+        # A LodObject's child, to this walk, is the alternative it holds; the
+        # first stands for it, as in the chain build.
+        refs = node.children[:1] if node.is_lod_selector else node.children
+        return [_child_template(library, ref) for ref in refs]
+
+    def search(nodes, depth: int):
+        for node in nodes:
+            if node is None or depth > 32:
+                continue
+            if node.kind.lower() == "playercontrolobject":
+                return None
+            selector = library.selector(node.lod_selector) if node.is_lod_selector else None
+            if selector is not None and selector.flips_in_inside_view:
+                return node
+            found = search(children_of(node), depth + 1)
+            if found is not None:
+                return found
+        return None
+
+    lod = search(children_of(root), 0)
+    return first_alternative(lod) if lod is not None else None
+
+
+def keeps_old_collision_rule(template: con_mod.ObjectTemplate) -> bool:
+    """A vehicle or gun, or a projectile: the subtree keeps every hull.
+
+    A PlayerControlObject's collision has not been moved over to the engine's
+    rule yet (features/dc-engine-reads §3). A projectile's template constructor
+    sets `hasCollisionPhysics` itself (`ProjectileTemplate()` ORs 0x0f into
+    +0x70, lnxded 0x0831faa9), and `con.py` cannot tell that default from an
+    unset word on another class.
+    """
+    return template.kind.lower() in ("playercontrolobject", "projectile")
+
+
+def collision_scope_for(library: con_mod.ObjectLibrary,
+                        root: con_mod.ObjectTemplate) -> CollisionScope | None:
+    """The collision rule for everything under the engine root `root`, or
+    None where the old rule stands (`keeps_old_collision_rule`)."""
+    if keeps_old_collision_rule(root):
+        return None
+    lent = None
+    if root.has_collision_physics and not root.geometry:
+        borrowed = lent_lod_template(library, root)
+        lent = borrowed.name.lower() if borrowed is not None else None
+    return CollisionScope(collides=root.has_collision_physics, lent=lent)
+
+
 class Assembler:
     def __init__(self, meshes: ArchivePool, textures: ArchivePool,
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -645,6 +828,13 @@ class Assembler:
         # size is its texture's alpha > 0.7 core (`MuzzHeavy_m1.rs`), not its
         # soft halo (features/muzzle-effects-parity).
         self.additive_alpha_test = False
+        # The engine's one round-robin counter for `setRandomGeometries`
+        # children (`world::randomCounter`, ledger KIT-2: starts at 1, `inc`,
+        # back to 1 past N, never reset, shared by every rolled child). None
+        # builds variant 1 throughout, as every model export does; a level bake
+        # (`extract_map.level_assembler`) sets it to 1, so each placed Lada or
+        # Pickup rolls its own paint in placement order.
+        self.random_counter: int | None = None
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
@@ -662,6 +852,8 @@ class Assembler:
         # Face counts per geometry, for ranking a LodObject's alternatives
         # against each other before any of them is built.
         self._geom_collision_faces: dict[str, int] = {}
+        # A geometry's `.sm` header box, for a full body's drag (`_geometry_box`).
+        self._geom_boxes: dict[str, list[float] | None] = {}
         self._collision_material_cache: dict[int, int] = {}
         self._first_person_reach: dict[str, bool] = {}
         self._skin_cache: dict[str, skin.Skin | None] = {}
@@ -986,7 +1178,8 @@ class Assembler:
         layers where `afr_house1_ste_m1` has 224 verts / 359 faces over five
         materials. The engine keeps both alternatives loaded and hangs the
         physics body off the Bundle root (`setHasCollisionPhysics 1`), so the
-        hull is the object's, not the near-LOD's.
+        hull is the object's, not the near-LOD's: a geometry-less root borrows
+        its first alternative's mesh (COL-18, `lent_lod_template`).
 
         This is the entry point for the alternative nobody draws: it parses the
         `.sm` for its collision block only and never touches materials,
@@ -1025,7 +1218,8 @@ class Assembler:
             self._geom_collisions[cache_key] = []
             return []
         try:
-            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
+                                       geometry_scale(template))
         except stdmesh.MeshError:
             self._geom_collisions[cache_key] = []
             return []
@@ -1082,31 +1276,62 @@ class Assembler:
         return count
 
     def _object_emits_geometry_collision(
-            self, template: con_mod.ObjectTemplate) -> bool:
+            self, template: con_mod.ObjectTemplate,
+            scope: CollisionScope | None = None, *, root: bool = False) -> bool:
         """Whether this object template's geometry hull should be attached.
 
-        StandardMesh buildings hang the hull off the Bundle regardless of a
-        per-object HCP bit in practice. TreeMesh is different (TM-5): emit
-        only when `setHasCollisionPhysics 1` **and** the `.tm` has an SCM —
-        the SCM half is resolved when the mesh is built; this gate is HCP.
+        Under an engine root's `scope` (COL-16..COL-18): nothing when the root
+        does not say `hasCollisionPhysics 1`; the root's own mesh, and the
+        LOD-0 mesh a geometry-less root borrows, whatever their template says;
+        any other part only when it says 1 itself. A TreeMesh's SCM half
+        (TM-5) is resolved when the mesh is built.
+
+        Without a scope -- a vehicle, a gun, a projectile, anything inside
+        one (`keeps_old_collision_rule`) -- the rule this exporter always had:
+        every StandardMesh hull, and a tree's only when it says 1.
         """
         if not template.geometry:
             return False
-        geom = self.library.geometry(template.geometry)
-        if geom is not None and geom.kind.lower() == "treemesh":
-            return template.has_collision_physics
-        return True
+        if scope is None:
+            geom = self.library.geometry(template.geometry)
+            if geom is not None and geom.kind.lower() == "treemesh":
+                return template.has_collision_physics
+            return True
+        if not scope.collides:
+            return False
+        if root or template.name.lower() == scope.lent:
+            return True
+        return template.has_collision_physics
+
+    def _collision_extras(self, template: con_mod.ObjectTemplate, layer: int,
+                          role: str) -> dict:
+        """`extras` of a collision node. A scaled geometry's hull is drawn
+        scaled and says by how much: a body's own vertex probes read the file
+        unscaled in the engine (SM-13)."""
+        extras = {
+            "collision": True,
+            "collisionLayer": layer,
+            "collisionRole": role,
+            "sourceTemplate": template.name,
+            "sourceGeometry": template.geometry,
+        }
+        if scale := geometry_scale(self.library.geometry(template.geometry)):
+            extras["geometryScale"] = list(scale)
+        return extras
 
     def _collision_only_node(self, builder: gltf.GlbBuilder, template_name: str,
                              report: Report, *, position, rotation,
                              depth: int = 0,
-                             stack: frozenset[str] = frozenset()) -> int | None:
+                             stack: frozenset[str] = frozenset(),
+                             scope: CollisionScope | None = None) -> int | None:
         """A transform-faithful skeleton of a subtree carrying only its hulls.
 
         The undrawn LOD alternative is walked for its collision and nothing
         else: no render meshes, no materials, no FireArms, no cameras. Child
         placements are kept because they are what puts a barrack's beds and a
-        hangar's crates where the player will shoot them.
+        hangar's crates where the player will shoot them. `scope` is the
+        engine root's collision rule (`collision_scope_for`); this walk never
+        starts at a root.
         """
         template = self.library.object(template_name)
         if template is None or depth > 16 or template.invisible:
@@ -1115,27 +1340,25 @@ class Assembler:
         if key in stack:
             return None
         stack = stack | {key}
+        if keeps_old_collision_rule(template):
+            scope = None
 
         children: list[int] = []
         if (template.geometry
-                and self._object_emits_geometry_collision(template)):
+                and self._object_emits_geometry_collision(template, scope)):
             for mesh_index, layer, role in (
                     self._collision_for_geometry(
                         builder, template.geometry, report)):
                 children.append(builder.add_node(gltf.Node(
                     name=f"{template.name} collision {layer}",
                     mesh=mesh_index,
-                    extras={
-                        "collision": True,
-                        "collisionLayer": layer,
-                        "collisionRole": role,
-                        "sourceTemplate": template.name,
-                        "sourceGeometry": template.geometry,
-                    },
+                    extras=self._collision_extras(template, layer, role),
                 )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
-            child_refs = [self._collision_alternative(child_refs, template)]
+            # Under a root's scope, the alternative the engine tests (COL-17).
+            child_refs = ([child_refs[0]] if scope is not None
+                          else [self._collision_alternative(child_refs, template)])
         for ref in child_refs:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
@@ -1143,7 +1366,7 @@ class Assembler:
             child = self._collision_only_node(
                 builder, child_name, report,
                 position=ref.position, rotation=ref.rotation,
-                depth=depth + 1, stack=stack)
+                depth=depth + 1, stack=stack, scope=scope)
             if child is not None:
                 children.append(child)
         if not children:
@@ -1250,6 +1473,10 @@ class Assembler:
         if not entry:
             return None
         try:
+            # Unscaled on purpose: the climb reads the ladder's bounding box
+            # (LADDER-3), and a mesh instance's box is the file's whatever its
+            # `GeometryTemplate.scale` (SM-13). DC's Pantsyr ladder is drawn at
+            # 0.65 and climbed at its full length.
             mesh = stdmesh.parse(self.meshes.read(entry), entry)
         except stdmesh.MeshError:
             return None
@@ -1303,7 +1530,9 @@ class Assembler:
             return None, 0
 
         try:
-            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+            # Drawn levels and collision alike (SM-13).
+            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
+                                       geometry_scale(template))
         except stdmesh.MeshError as exc:
             report.missing_meshes.append(f"{mesh_file} ({exc})")
             self._geom_mesh[cache_key] = (None, 0)
@@ -1800,6 +2029,39 @@ class Assembler:
                     "effect": {"kind": "bundle"}},
         ))
 
+    def _geometry_box(self, geometry_name: str) -> list[float] | None:
+        """A StandardMesh geometry's box, as its extents `[DX, DY, DZ]`, or None.
+
+        This is the box a full physics body drags by (PHY-4, PHY-22, COL-14):
+        `PhysicsNode::updatePhysics` (lnxded `0x082543d0`) takes min and max
+        from the geometry's `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`),
+        which the `BStandardMesh` constructor (`0x083b4410`) copies from its
+        template's `+0x40`, which `loadHeader` (`0x083a6200`) reads straight out
+        of the `.sm` header. It is not the drawn LOD's extent, and not the
+        `visibleDummyProjectileTemplate`'s: Desert Combat's AT-2 draws 1.44 m
+        across against a 0.25 m header, its AIM-9 0.45 m tall against 0.64 m.
+        """
+        key = geometry_name.lower()
+        if key in self._geom_boxes:
+            return self._geom_boxes[key]
+        box = None
+        template = self.library.geometry(geometry_name)
+        if template is not None and template.kind.lower() == "standardmesh":
+            entry = self.meshes.resolve_ext(
+                f"standardMesh/{template.mesh_file}", (".sm",))
+            if entry:
+                try:
+                    mesh = stdmesh.parse(self.meshes.read(entry), entry)
+                except stdmesh.MeshError:
+                    mesh = None
+                if mesh is not None:
+                    extents = [round(float(hi - lo), 4) for lo, hi
+                               in zip(mesh.bounds_min, mesh.bounds_max)]
+                    if all(extent > 0 for extent in extents):
+                        box = extents
+        self._geom_boxes[key] = box
+        return box
+
     def _projectile_has_rocket_engine(self, template: con_mod.ObjectTemplate,
                                       depth: int = 0) -> bool:
         """Whether a projectile carries a `setEngineType c_ETRocket` Engine.
@@ -1995,6 +2257,11 @@ class Assembler:
                            ("stopAtEndEffect", projectile.stop_at_end_effect)):
             if value is not None:
                 spec[key] = value
+        # The box a full body drags by is its own geometry's `.sm` header box,
+        # whatever is drawn in its place (`_geometry_box`).
+        if projectile.has_point_physics is False and projectile.geometry:
+            if box := self._geometry_box(projectile.geometry):
+                spec["box"] = box
         radius = projectile.explosion_radius
         if (radius is None
                 and projectile.damage_type in (1, 4)
@@ -2011,6 +2278,9 @@ class Assembler:
                 "damageType": projectile.damage_type,
                 "hasCollisionEffect": projectile.has_collision_effect,
                 "dieAfterColl": projectile.die_after_coll,
+                # What `timeToLive` running out does (PROX-7): burst when set,
+                # vanish when not. Constructor default 0.
+                "hasOnTimeEffect": projectile.has_on_time_effect,
                 "yModOnExplosion": projectile.y_mod_on_explosion,
                 # The third "what happens on contact" word, and the one the
                 # aircraft torpedo is built on: `Projectile::handleCollision`'s
@@ -2040,12 +2310,18 @@ class Assembler:
             if self.include_effects:
                 mesh_index, _ = self._mesh_index(builder, body.geometry, report)
                 if mesh_index is not None:
+                    extras = {"templateKind": body.kind,
+                              "projectileMesh": {"template": body.name,
+                                                 "geometry": body.geometry}}
+                    # Drawn scaled, measured unscaled (SM-13): the viewer
+                    # takes the round's drag radius off this mesh, and the
+                    # engine's `getBoundingRadius` is the file's.
+                    if scale := geometry_scale(self.library.geometry(body.geometry)):
+                        extras["geometryScale"] = list(scale)
                     nodes.append(builder.add_node(gltf.Node(
                         name=f"{template.name} projectile",
                         mesh=mesh_index,
-                        extras={"templateKind": body.kind,
-                                "projectileMesh": {"template": body.name,
-                                                   "geometry": body.geometry}},
+                        extras=extras,
                     )))
         trail, payload = self._projectile_trail_spec(projectile)
         if trail is not None:
@@ -2106,6 +2382,15 @@ class Assembler:
                     tracer["timeToLive"] = projectile.time_to_live
                 if projectile.tracer_scaler is not None:
                     tracer["scaler"] = projectile.tracer_scaler
+                # The tracer is a round of its own in flight, so it falls by
+                # its own `gravityModifier`, 1.0 when it declares none (IMP-7).
+                # Written resolved, so a viewer can tell "falls at 1.0" from a
+                # glb baked before the tracer carried it. Vanilla's
+                # `Tracer_Projectile` declares 0.0; Desert Combat's `20mm_`,
+                # `50cal_Tracer_Projectile` and `Minigun_Tracer` declare 1.
+                tracer["gravity"] = (projectile.gravity_modifier
+                                     if projectile.gravity_modifier is not None
+                                     else 1.0)
                 # The tracer is the only part of a bullet the game ever draws,
                 # so unlike the projectile body it is never optional: bake its
                 # mesh the same way, as a hidden tagged node, and the streak
@@ -2117,13 +2402,18 @@ class Assembler:
                         builder, projectile.geometry, report)
                     if mesh_index is not None:
                         tracer["geometry"] = projectile.geometry
+                        extras = {"templateKind": projectile.kind,
+                                  "tracerMesh": {
+                                      "template": projectile.name,
+                                      "geometry": projectile.geometry}}
+                        # Drawn scaled, like the round's body above (SM-13).
+                        if scale := geometry_scale(
+                                self.library.geometry(projectile.geometry)):
+                            extras["geometryScale"] = list(scale)
                         nodes.append(builder.add_node(gltf.Node(
                             name=f"{template.name} tracer",
                             mesh=mesh_index,
-                            extras={"templateKind": projectile.kind,
-                                    "tracerMesh": {
-                                        "template": projectile.name,
-                                        "geometry": projectile.geometry}},
+                            extras=extras,
                         )))
         projectile_spec, projectile_nodes = self._projectile_spec(
             builder, template, report)
@@ -2166,6 +2456,9 @@ class Assembler:
             # templates; the B17's bomb rack is the one that matters, and
             # without this word its stick of eight is a salvo of two.
             "asynchronyFire": template.asynchrony_fire,
+            # A salvo that costs one round and never fires short (BOMB-13):
+            # the shotguns' pellets, FHSW's canister and shrapnel shells.
+            "blastAmmoCount": template.blast_ammo_count,
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win
@@ -2457,14 +2750,26 @@ class Assembler:
         # The graft matches by node name, so name the nodes this export
         # writes: an alternative declared `setRandomGeometries` is built as
         # `<name>1` (`con.instance_template_name`). DC's Lada and Pickup named
-        # a bare `LadaCockpitExternal` here and hid nothing.
+        # a bare `LadaCockpitExternal` here and hid nothing. A level bake
+        # rolls the variant per placement (`_rolled_template_name`), so the
+        # swap names every declared variant; the graft hides whichever one
+        # the hull it lands on carries.
         def node_name(ref: con_mod.ChildRef) -> str:
             return con_mod.instance_template_name(ref, self.library.object) or ref.template
 
+        def node_names(ref: con_mod.ChildRef) -> list[str]:
+            count = ref.random_geometries or 0
+            if count > 1 and self.library.object(ref.template) is None:
+                variants = [f"{ref.template}{k}" for k in range(1, count + 1)
+                            if self.library.object(f"{ref.template}{k}") is not None]
+                if variants:
+                    return variants
+            return [node_name(ref)]
+
         swap = {
             "selected": node_name(selected),
-            "replaces": [node_name(child) for child in children_refs
-                         if child is not selected],
+            "replaces": [name for child in children_refs if child is not selected
+                         for name in node_names(child)],
         }
         if selector := self.library.selector(template.lod_selector):
             swap.update(selector.as_dict())
@@ -2500,6 +2805,49 @@ class Assembler:
         if not mesh_file:
             return None
         return self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
+
+    def _rolled_template_name(self, ref: con_mod.ChildRef) -> str | None:
+        """The template a child builds, rolled when a level bake rolls.
+
+        `BundleTemplate::addBundleChilds` (`0x081a8300`, ledger KIT-1, KIT-2):
+        a child with `setRandomGeometries N` bumps the one counter and creates
+        `<name><counter>`; a variant the data never declared adds nothing
+        (KIT-3). Without a counter, or for a child whose bare name exists (the
+        exporter's standing reading of LOAD-6), this is
+        `con.instance_template_name`.
+        """
+        name = con_mod.instance_template_name(ref, self.library.object)
+        count = ref.random_geometries or 0
+        if (name is None or self.random_counter is None or count < 1
+                or self.library.object(ref.template) is not None):
+            return name
+        self.random_counter += 1
+        if self.random_counter > count:
+            self.random_counter = 1
+        rolled = f"{ref.template}{self.random_counter}"
+        return rolled if self.library.object(rolled) is not None else None
+
+    def _carries_engine(self, template_name: str, *,
+                        depth: int = 0,
+                        stack: frozenset[str] = frozenset()) -> bool:
+        """Whether an Engine sits anywhere under the template, every LOD
+        alternative and nested seat included: an Engine pushes on the root
+        object's physics node wherever in the tree it is (PHY-17)."""
+        if depth > 24:
+            return False
+        template = self.library.object(template_name)
+        if template is None:
+            return False
+        if template.kind.lower() == "engine":
+            return True
+        key = template.name.lower()
+        if key in stack:
+            return False
+        stack = stack | {key}
+        return any(
+            self._carries_engine(name, depth=depth + 1, stack=stack)
+            for ref in template.children
+            if (name := con_mod.instance_template_name(ref, self.library.object)))
 
     def _has_visible_spring(self, template_name: str, *,
                             depth: int = 0,
@@ -2589,6 +2937,7 @@ class Assembler:
                    skeleton_scope: tuple[ske.Skeleton | None, int | None, str | None]
                    = (None, None, None),
                    first_person_branch: bool = False,
+                   collision_scope: CollisionScope | None | object = _UNSCOPED,
                    ) -> int | None:
         if depth > 24:
             return None
@@ -2602,6 +2951,14 @@ class Assembler:
         if key in stack:
             return None  # a template that contains itself; the engine LODs out of it
         stack = stack | {key}
+        # A placement, a model export or a spawner's held object is an engine
+        # root, and its `hasCollisionPhysics` rules everything under it
+        # (COL-17). A gun or vehicle inside it keeps the old rule.
+        collision_root = collision_scope is _UNSCOPED
+        if collision_root:
+            collision_scope = collision_scope_for(self.library, template)
+        elif keeps_old_collision_rule(template):
+            collision_scope = None
 
         # Physics-only parts (Elco's Willy wheels, some KettenKrad springs).
         # The engine still steers them; it just does not draw the mesh.
@@ -2643,7 +3000,8 @@ class Assembler:
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
             # `_collision_only_node`. StandardMesh still attaches freely.
-            if self._object_emits_geometry_collision(template):
+            if self._object_emits_geometry_collision(
+                    template, collision_scope, root=collision_root):
                 collision_meshes = self._geom_collisions.get(
                     template.geometry.lower(), [])
 
@@ -2677,15 +3035,22 @@ class Assembler:
                     selected_refs, self.library.selector(template.lod_selector)):
                 propeller_blur = self._propeller_blur(template, selected_refs)
             if self.include_collision and not self.first_person:
-                donor = self._collision_alternative(children_refs, template)
-                drawn = self._collision_triangles(
-                    con_mod.instance_template_name(
-                        selected_refs[0], self.library.object) or "")
-                if (donor is not selected_refs[0]
-                        and self._collision_triangles(
-                            con_mod.instance_template_name(
-                                donor, self.library.object) or "") > drawn):
-                    collision_makeup = donor
+                if collision_scope is not None:
+                    # The engine tests a LodObject at its highest LOD, the
+                    # first alternative, whichever one is drawn (COL-17), so
+                    # that one's hulls are the object's and no other's are.
+                    if not any(ref is children_refs[0] for ref in selected_refs):
+                        collision_makeup = children_refs[0]
+                else:
+                    donor = self._collision_alternative(children_refs, template)
+                    drawn = self._collision_triangles(
+                        con_mod.instance_template_name(
+                            selected_refs[0], self.library.object) or "")
+                    if (donor is not selected_refs[0]
+                            and self._collision_triangles(
+                                con_mod.instance_template_name(
+                                    donor, self.library.object) or "") > drawn):
+                        collision_makeup = donor
             children_refs = selected_refs
 
         # The near rung of a short `DistanceSelector` is first person by where
@@ -2702,7 +3067,7 @@ class Assembler:
         child_indices: list[int] = []
         built_children: list[tuple[con_mod.ChildRef, str, int]] = []
         for ref in children_refs:
-            child_name = con_mod.instance_template_name(ref, self.library.object)
+            child_name = self._rolled_template_name(ref)
             if child_name is None:
                 continue
             # A child ObjectSpawner is not a part — it is the engine's parked
@@ -2755,6 +3120,14 @@ class Assembler:
                     ref, child_name, skeleton_scope[0], skeleton_scope[1], report),
                 skeleton_scope=skeleton_scope,
                 first_person_branch=child_first_person_branch,
+                # What a spawner holds is a root of its own in the engine; an
+                # alternative the engine does not test carries no hull.
+                collision_scope=(_UNSCOPED if held_record is not None
+                                 else _NEVER_TESTED
+                                 if (collision_scope is not None
+                                     and template.is_lod_selector
+                                     and ref is not template.children[0])
+                                 else collision_scope),
             )
             if child is not None:
                 if held_record is not None:
@@ -2846,13 +3219,7 @@ class Assembler:
                 child_indices.append(builder.add_node(gltf.Node(
                     name=f"{template.name} collision {layer}",
                     mesh=collision_mesh,
-                    extras={
-                        "collision": True,
-                        "collisionLayer": layer,
-                        "collisionRole": role,
-                        "sourceTemplate": template.name,
-                        "sourceGeometry": template.geometry,
-                    },
+                    extras=self._collision_extras(template, layer, role),
                 )))
             if collision_makeup is not None:
                 donor_name = con_mod.instance_template_name(
@@ -2861,7 +3228,7 @@ class Assembler:
                     builder, donor_name or "", report,
                     position=collision_makeup.position,
                     rotation=collision_makeup.rotation,
-                    depth=depth + 1, stack=stack)
+                    depth=depth + 1, stack=stack, scope=collision_scope)
                 if hull is not None:
                     child_indices.append(hull)
                     report.collision_makeup.append(
@@ -2916,6 +3283,23 @@ class Assembler:
         is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
+        if (depth == 0 and not template.has_mobile_physics
+                and kind not in con_mod._EFFECT_KINDS
+                and (template.mobile_physics_declared
+                     or (is_vehicle_root and self._carries_engine(template.name)))):
+            # PHY-17: a root whose `hasMobilePhysics` bit is clear gets a
+            # `StaticPhysicsNode`; it never integrates, every push on it
+            # (its own Engines, Wings and floats, gravity, a contact) is a
+            # bare `ret`, and it stays where it was placed whoever is aboard.
+            # Stamped only on the placed root (a nested part's own bit moves
+            # nothing: every push lands on the root's node), and only where
+            # the `.con` says so or an Engine could have driven it: DC's
+            # `Nimitz_Static*` carriers, its objective buildings (No Fly
+            # Zone's towers and hangars, Medina Ridge's `flagkill`) and
+            # vanilla Battle of Britain's factories and radar towers. The
+            # stationary guns, whose bit is clear because they never write
+            # the word, keep their extras as they were (viewer-ships 25).
+            physics = {**(physics or {}), "hasMobilePhysics": False}
         # A node carrying `addSkeletonIK` is a placement datum too: it is where
         # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`
         # bundles are meshless and childless and are nothing *but* that, so
@@ -3018,6 +3402,16 @@ class Assembler:
             extras["cameraView"] = {"control": control or "vehicle"}
             if template.camera_view_modes:
                 extras["cameraView"]["cvm"] = dict(template.camera_view_modes)
+            # Every camera says it, false included: the template's constructor
+            # seeds the byte 0, so a missing field only means an older asset.
+            extras["cameraView"]["toggleMouseLook"] = bool(template.toggle_mouse_look)
+            # The look itself: each bound axis's input, limits, gain and signed
+            # acceleration, the camera template's own `rig()`. The node never
+            # carries `rig` (no mesh, no children), yet the held look's sense on
+            # screen is this pitch `direction` times the profile's invert box
+            # (MLK-13, GUN-2), and the shipped pilots' cameras differ in it.
+            if (look := template.rig()) is not None:
+                extras["cameraView"]["look"] = look
             if template.outside_hud_offset is not None:
                 # The nose cam's stand-off from this Camera, Z-mirrored into
                 # glTF like every other position the exporter writes, so the
@@ -3218,6 +3612,11 @@ class Assembler:
             if geom and geom.skin:
                 extras["skin"] = geom.skin
                 report.skinned_parts.append(f"{template.name} skin {geom.skin}")
+            if scale := geometry_scale(geom):
+                # Already in the mesh's vertices; said here because the
+                # engine's own bounding box and a body's vertex probes read
+                # the file unscaled (SM-13), which a consumer may want back.
+                extras["geometryScale"] = list(scale)
         if template.animated_texture_speed:
             u, v = template.animated_texture_speed
             # The exporter mirrors Z to get from left-handed Refractor to glTF, and

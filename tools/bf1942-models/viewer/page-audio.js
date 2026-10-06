@@ -25,7 +25,7 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
- * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`,
+ * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`, `optPilot`,
  * `optSound`, `optSoundVol`, `scene`, `soldier`, `teamNation`, `vehicleGuns`,
  * `view`, `weaponSoundsManifest`.
@@ -521,6 +521,8 @@ export function createPageAudio(page) {
       shared: () => sharedVehicleSounds(),
       dir: () => page.currentDir,
       master: () => masterVolume(),
+      // A seated gun's magazine change, off its `FireState` (SND-17).
+      reloadOf: node => page.fireStates?.get(node)?.reloadRemaining ?? 0,
     });
     return pageAudio.vehicleAudio;
   }
@@ -589,6 +591,14 @@ export function createPageAudio(page) {
     if (!weaponName || page.AUDIO_OFF) return;
     ensureWorldFire().then(fire => {
       fire?.play(weaponName, { x, y, z });
+    });
+  }
+
+  /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
+  function playWorldReload(weaponName, x, y, z) {
+    if (!weaponName || page.AUDIO_OFF) return;
+    ensureWorldFire().then(fire => {
+      fire?.playReload(weaponName, { x, y, z });
     });
   }
 
@@ -1014,6 +1024,7 @@ export function createPageAudio(page) {
     playSoldierOneShot,
     playSupplyGive,
     playWorldShot,
+    playWorldReload,
     releaseVehicleAudio,
     setupSounds,
     soundBuffer,

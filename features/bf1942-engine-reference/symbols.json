@@ -2238,6 +2238,15 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x00508de0",
+   "name": "Object__getRoot",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Walks +0x50 (parent) up to the object whose +0x04 flags carry 0x2000000, caching the answer at +0xec. The patch's velocity sampler (0x008026d0) takes its owner's root through it. Ledger SND-18."
+  },
+  {
    "address": "0x00509470",
    "name": "ParticleCurve_seed",
    "kind": "function",
@@ -2319,6 +2328,15 @@
    "note": "client. [R5] reached via '\"...ResponsePhysicsManager.Basic\"' string 0x008f628c"
   },
   {
+   "address": "0x00536e10",
+   "name": "SimpleObject__initSound",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client object sound setup: builds the sound (0x0057b940), adds each script (vt+0x04), owner (+0x20), then +0x10 triggers every patch: every object's patches start once at creation. lnxded SimpleObject::initSound 0x081db810 is empty. Ledger SND-19."
+  },
+  {
    "address": "0x005384d0",
    "name": "ParticleTemplate::makeScript",
    "kind": "function",
@@ -2371,6 +2389,15 @@
    "confidence": "verified",
    "source": "research-2026-10-06-crosshair-gap",
    "note": "fld [ecx+0x1a8]; ret: the total deviation, degrees. Called directly (devirtualised) from the soldier HUD feed 0x006e978d/0x006e97a8, the vehicle one 0x006d71be/0x006d71d9 and 0x00464790. lnxded getMenuCrossHairRadius/Size 0x0828d470/0x0828d480 both return the same +0x188 field. Ledger XHIT-15."
+  },
+  {
+   "address": "0x00539c80",
+   "name": "FireArms::Reload",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded FireArms::Reload 0x08289d80 (one caller, 0x0053efd5): magSize +0x394 non-zero, magType +0x39c not 1, byte +0x545 clear or magazine empty; sets timeToReloadFinished (0x00539950) to reloadtime +0x3a8; sound(+0x110)->list(0)->trigger(1) at 0x00539cdf, the Reload slot. Ledger SND-17."
   },
   {
    "address": "0x00539fb0",
@@ -2985,6 +3012,15 @@
    "note": "Thrust. Found via the PhysicsEngine vtable at 0x008fdf50. rho = 1 - clamp(pos.y/getAirDensityZeroAtHeight(), 0, 1); e = throttle - rho*(vel . fwd)/EngineTemplate.setNoPropellerEffectAtSpeed; K = 0.1*|throttle| + e*|e| (a SIGNED SQUARE, not the linear fade flight-model.md 6 assumes); force = fwd * K * getCurrentRatio(), applied at the ENGINE NODE'S OWN POSITION (not the CoM) via rootNode vtable+0x68. setTorque is absent from this expression. Medium gate: an engine runs only when its EngineTemplate flag bit 3 matches the medium (submerged vs air), which is what separates c_ETShip from c_ETPlane. Tail is prop visuals: spin rate = throttle*400 below |throttle|<0.08, else throttle*20. Linux twin: 0x0824cbb0."
   },
   {
+   "address": "0x0057cc40",
+   "name": "dice::ref2::world::RotationalBundle::updateSound",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded 0x081d8630, called from RotationalBundle::handleUpdate's slot +0xd8 at 0x0057d455. Skips a LandingGear (class vs ds:0x8dcd70); rate = max over axes |+0x128..| + |tmpl+0x23c..|, 0 while +0x159; >0: sound +0x10 trigger all, +0x18(0, rate) Default, +0x24 attach; else +0x14 release all. Ledger SND-20."
+  },
+  {
    "address": "0x0057d470",
    "name": "RotationalBundle::setState() (client)",
    "kind": "function",
@@ -3028,6 +3064,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "calculateNeutralLift(const Vec3& refFlow, float minusPitchOffset, float coeff). Builds identity Mat4, rotates it by the passed angle (= -WingTemplate.setPitchOffset), composes with the wing's parent transform, extracts row 1, and calls calculateLift with it. So it is the lift the surface WOULD make undeflected at its authored incidence; setWingToRegulatorRatio weights it into the regulator error. This is the only place setPitchOffset is read in the update path - whether it also biases the surface's rest orientation at setup is NOT established. Linux twin: 0x08250690."
+  },
+  {
+   "address": "0x005803d0",
+   "name": "dice::ref2::world::Wing::handleUpdate",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "working",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Beside Wing::calculateNeutralLift (0x00580280), the handleUpdate of vtable 0x008feb78; it never calls slot +0xd8 (updateSound) nor chains to RotationalBundle::handleUpdate 0x0057d010, as lnxded Wing::handleUpdate 0x08250950 does not. Ledger SND-22."
+  },
+  {
+   "address": "0x00580680",
+   "name": "dice::ref2::world::LandingGear::handleUpdate",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded 0x08241470. Sound block 0x005807b3..0x00580843: patch 0 (up) / 1 (down) via list +0x34; up and moving (0x004404f0 angles changed) trigger 0 release 1, up still release 0, down moving trigger 1 release 0, down still release 1. State byte +0x15c. Ledger SND-21."
   },
   {
    "address": "0x00580eb0",
@@ -3235,6 +3289,24 @@
    "confidence": "verified",
    "source": "research-2026-09-19-console",
    "note": "Client twin of lnxded 0x083dbfc0. Writes prompt \"> \" (0x008c3978), max line 0x4d, page size 8, scrollback cap [esi+0x18] = 1024 (0x005a224c), command history [esi+0x34] = 10 (0x005a226e). Object is 0x918 bytes. Ledger CON-13."
+  },
+  {
+   "address": "0x005ac6f0",
+   "name": "ConsoleObjects__findInMultiMap",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "working",
+   "source": "lnxded twin 0x08359a90",
+   "note": "CON-15: first isActive entry of the no-case multimap for a key (object name + method name)"
+  },
+  {
+   "address": "0x005ac750",
+   "name": "ConsoleObjects__getConsoleObject",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "lnxded twin dice::ref2::ConsoleObjects::getConsoleObject 0x08359b10",
+   "note": "CON-15: looks up object+method case-blind (0x005ac6f0); on a miss strips a leading get (0x008d187c, keeps getType 1 or 3) then set (0x008d18e4, keeps 1 or 2) over 3 chars and looks up again"
   },
   {
    "address": "0x005ac970",
@@ -6117,6 +6189,15 @@
    "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order — load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it — they are handled by the pipeline filters ahead of it."
   },
   {
+   "address": "0x007ff740",
+   "name": "SoundScript__registerControlSources",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Numbers the controlSource words: Default 0, Extern 1, Speed 2, Acceleration 3, Distance 4, Altitude 5, Time 6, TimeRelease 7 (stored at +0x28 of each map entry). Ledger SND-18."
+  },
+  {
    "address": "0x007ffd00",
    "name": "SoundPatchDesc__setRandomPlay",
    "kind": "function",
@@ -6198,6 +6279,15 @@
    "note": "Patch vtable slot +0x0c. Stops looping samples unless stop FinishSample; one-shots play out. Ledger SND-14."
   },
   {
+   "address": "0x008026d0",
+   "name": "SoundPatch__sampleOwnerMotion",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Called first by every update of a patch that still sounds (0x00802f70, the call at 0x00802fad). Owner +0xbc (set by patch +0x28 0x00802110): queryInterface 0xc378, its root (0x00508de0), that root's physics node +0x60 vt+0x38 velocity into +0xb0 (Speed); +0xa0 (Acceleration) is the change over dt. No owner: both zero. Ledger SND-18."
+  },
+  {
    "address": "0x00802a40",
    "name": "SoundPatch__updateSample",
    "kind": "function",
@@ -6232,6 +6322,15 @@
    "confidence": "verified",
    "source": "ghidra-headless-2026-09-30-dc-sound",
    "note": "Patch vtable 0x00947bb8 slot +0x08. Ignored while latched (+0x59); else +0x58 = 1, clears per-sample started/played flags, latches when any sample loops (0x008024c0); randomPlay (+0x5c) pushes rand() % loads onto +0x78. Ledger SND-14, SND-15."
+  },
+  {
+   "address": "0x00803870",
+   "name": "SoundPatch__controlValue",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "A control source's value (jump table 0x008038e8): 0 the object's control slot 0, 1 slot k, 2 |velocity|, 3 |acceleration|, 4 distance, 5 altitude, 6 Time, 7 TimeRelease; an empty control array reads 0.0. Filled per update by 0x00802950. Ledger SND-18."
   },
   {
    "address": "0x00804af0",
@@ -7602,6 +7701,15 @@
    "note": "lnxded. Writes +0x10, the GPM: 1 CTF, 2 CQ, 3 TDM, 4 COOP, 5 OBJECTIVEMODE (startHostGame's switch, 0x080c42bf). gamaStatusFirstPreGame and gameStatusPlaying branch on 5. Ledger TKT-1, TKT-3."
   },
   {
+   "address": "0x08061780",
+   "name": "dice::bf::Game::getMaxNrOfPlayers()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Game+0x1c, the server's slot count (TKT-2). Ledger SPAWN-18."
+  },
+  {
    "address": "0x080617d0",
    "name": "Game::getScoutCameraList()",
    "kind": "function",
@@ -8466,6 +8574,15 @@
    "note": "lnxded, signature pulled from nm -C debug info. Sweeps a spatial index, calls handleExplosionOnObject once per found object. [2026-09-24] The index query is objectManager+0x30 through ObjectFlagPredicator(0x2000000) (0x08156f2d): roots only. After handleExplosionOnObject(root) 0x081570ed it walks the root's getPcos (0x08157167) and, for each seat's getOccupingObject (IPCO +0x10, 0x08157189) whose [obj+4] & 1 is clear (0x08157198) and that has an Armor up its parents (0x081571f6), calls handleExplosionOnObject(occupant) 0x08157271. Ledger HFD-11, HFD-12."
   },
   {
+   "address": "0x08157790",
+   "name": "dice::bf::GameServer::resetTimers()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. GameServer vtable +0x278; sets game status 3 (PreGame) through vt+0x78. restartMap calls it (0x08158050) after the control-point and spawner resets."
+  },
+  {
    "address": "0x08157cb0",
    "name": "dice::bf::GameServer::restartMap()",
    "kind": "function",
@@ -8628,6 +8745,24 @@
    "note": "lnxded. TeamScore+0x48 = max(0, +0x48 - n). Ledger TKT-4."
   },
   {
+   "address": "0x08163c50",
+   "name": "dice::bf::BFSpawnPoint::immediateDestroy()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Removes the point from its group (BFSpawnPointManager::remove 0x08167c10). Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08163dd0",
+   "name": "dice::bf::BFSpawnPoint::getActive(bool, int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. 0 when the nearest IArmor up the parent chain is isCriticalDamaged (vt+0xcc), outside the combat area, on the veto material, or the entry test fails. Ledger SPAWN-5."
+  },
+  {
    "address": "0x08164570",
    "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
    "kind": "function",
@@ -8689,6 +8824,33 @@
    "confidence": "verified",
    "source": "research-2026-09-24-hull-wash",
    "note": "lnxded. Writes the parent at +0x50 (0x08166083) and zeroes +0x54. A real parent clears object flag 0x2000000 (and ebx,0xfdffffff at 0x081660a3); a null parent sets it (0x081660eb). addChild (vt+0x80) calls it (vt+0x90). Ledger HFD-10, HFD-11."
+  },
+  {
+   "address": "0x08166d90",
+   "name": "dice::bf::BFSpawnGroup::calcNewPos()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. The group's ring: average of the points whose nearest IArmor is not isCriticalDamaged (vt+0xcc); (0,0,0) for none. Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08166f60",
+   "name": "dice::bf::BFSpawnGroup::getSpawnPoint(bool) const",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. rand() % among the points BFSpawnPoint::getActive passes; null when none. Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08167ae0",
+   "name": "dice::bf::BFSpawnPointManager::getGroupsForTeam(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Every group of the team with at least one point registered, active or not. Ledger SPAWNGRP-10, TKT-5."
   },
   {
    "address": "0x0816af60",
@@ -9120,7 +9282,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag (byte +7 bit 0) gates BOTH tries: clear, it returns 0 at 0x0818d874. Set, it tries the first child's alternative 0, and when that has no geometry findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. The flag is the has-a-child bit: BCompositeObject::addChild sets it with the first child (0x0816597d, 0x081949dd; LodObject::addChild 0x08216df3), so every vehicle root has it. COL-14"
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag (byte +7 bit 0) gates BOTH tries: clear, it returns 0 at 0x0818d874. Set, it tries the first child's alternative 0, and when that has no geometry findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. The flag is the has-a-child bit: BCompositeObject::addChild sets it with the first child (0x0816597d, 0x081949dd; LodObject::addChild 0x08216df3), so every vehicle root has it. COL-14 | lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | lnxded. A root's collision geometry when it has none of its own (StaticResponsePhysics::getFaceCollision 0x0825ef80): its first child, when that is a LodObject, at the highest LOD (children[0], LodObject::getChild 0x08216ce0 under m_forceHighestLod); else findChildOfLodSelectorCID 0x0818daf0 -> internalFindChildOfLodSelectorCID 0x0818db50, a depth-first search not entering a PlayerControlObject (CID 0xc4c2) for a LodObject (0x94a7) whose selector is a DistCompareLodSelector (0x94b1). Returns that alternative's geometry (+0x5c) (COL-18)."
   },
   {
    "address": "0x0818d910",
@@ -9155,8 +9317,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash",
-   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11."
+   "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash; engine-reads-2026-10-06",
+   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11. | lnxded. (object.flags & mask) == mask: every bit of the mask is required. getCollisionObjects' 0x2000200 therefore needs both 0x200 (hasCollisionPhysics) and 0x2000000 (set by setParent(null): a root) (COL-17)."
   },
   {
    "address": "0x0818df50",
@@ -9186,6 +9348,15 @@
    "note": "lnxded mov dword [edi+0x4], 0x2090400 inside BObject<ICompositeObject> ctor. Establishes that compositeObject byte +0x7 bit 0x4 starts clear. Client equivalents embed the same immediate at 0x0050dc84 / 0x0050e0a4 / 0x0050eba4."
   },
   {
+   "address": "0x08193390",
+   "name": "dice::ref2::world::BObject<dice::ref2::world::ICompositeObject>::updateFlags(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded (weak). Sets/clears object flags at +0x4 and tells the ObjectManager (mObjectManagerImpl): newly set 0x1000 -> vt+0xec addObjectToUpdate, cleared 0x1000 -> vt+0xf0 removeObjectFromUpdate; 0x800 -> vt+0xf4/+0x104; bit 1 with 0x2000000 set and 0x8 clear -> vt+0x68. Ledger PHY-18."
+  },
+  {
    "address": "0x081935c0",
    "name": "BPlayerObject<IPlayerObject>::handleMessage(TemplateMessage, IPlayer*)",
    "kind": "function",
@@ -9193,6 +9364,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-damage",
    "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
+  },
+  {
+   "address": "0x0819bd20",
+   "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Inserts the object into the update map at ObjectManager+0x3c (keyed by object +0x48), which updateObjects 0x0819be10 walks calling handleUpdate (vt+0x54). Reached through BObject::updateFlags 0x08193390 when flag 0x1000 is newly set; RotationalBundle's ctor 0x081d73d0 sets it, so every Engine (a projectile's included) is updated every tick. Ledger PHY-18."
   },
   {
    "address": "0x0819be10",
@@ -9456,6 +9636,15 @@
    "note": "lnxded. calcStringHashValueNoCase 0x081d5f47 + strcasecmp 0x081d5f88: template names are case-blind. Ledger LOAD-5."
   },
   {
+   "address": "0x081d73d0",
+   "name": "dice::ref2::world::RotationalBundle::RotationalBundle(dice::ref2::world::RotationalBundleTemplate const*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Bundle ctor, then zeroes the axis registers +0x104..+0x138, +0x13c = 1.0, byte +0x140 = 1, +0x141 = 0, and updateFlags(0x1000) then updateFlags(8): every RotationalBundle and Engine joins the ObjectManager update map. Ledger PHY-18."
+  },
+  {
    "address": "0x081d7490",
    "name": "RotationalBundle::calculateAndClipAngle(RotationalBundleTemplate const*, int axis, float delta)",
    "kind": "function",
@@ -9578,8 +9767,8 @@
    "kind": "function",
    "subsystem": "geom",
    "confidence": "verified",
-   "source": "research-2026-09-30-lod-selection",
-   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result"
+   "source": "research-2026-09-30-lod-selection; engine-reads-2026-10-06",
+   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result | lnxded. 0x081da190..0x081da19a: tests template +0x70 bit 1 (hasCollisionPhysics) and, when set, calls updateFlags(0x200, 0) at 0x081da420..0x081da429. The only place a SimpleObject (and so every Bundle, LodObject, PCO, FireArms) gets object flag 0x200; the client does the same at 0x005370c2 with template +0xf8 (COL-16)."
   },
   {
    "address": "0x081dab40",
@@ -9623,8 +9812,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults"
+   "source": "research-2026-09-19-collision-response; engine-reads-2026-10-06",
+   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults | lnxded. 0x081dbd04..0x081dbd19: +0x70 = (old | 0x10) & 0x90, so hasCollisionPhysics (bit 1), hasMobilePhysics (bit 0) and hasPointPhysics (bit 3) default clear. ProjectileTemplate's ctor ORs 0x0f (0x0831faa9) (COL-16)."
   },
   {
    "address": "0x081dbf00",
@@ -10527,6 +10716,15 @@
    "note": "lnxded. h = 0.25*dt (fld [0x086c08ac]; fmul [ebp+0xc] at 0x082560c8), then FOUR semi-implicit sub-steps v += a*h; p += v*h, so a tick's total is Delta-v = a*dt. It then ZEROES the acceleration accumulator at 0x082562aa-0x082562b0 ([ebx+0x1c] = [esi+0x4] = [esi+0x8] = 0), which is the first of the three locks that make the jump exactly one tick. Client twin 0x00578aa0 region; see physics.md section 3."
   },
   {
+   "address": "0x08256620",
+   "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtAbsolutePosition(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Adds the vector to the accumulator +0x1c..+0x24 and ignores the position: a point body takes no torque from its children (a point-physics rocket's nose stays where it was launched). Ledger PHY-21."
+  },
+  {
    "address": "0x08256650",
    "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtRelativePosition(Vec3 const&, Vec3 const&)",
    "kind": "function",
@@ -10941,6 +11139,15 @@
    "note": "lnxded. [R1] terrain as IVectorCollider 0xb54616fc, cached '+8"
   },
   {
+   "address": "0x0825e440",
+   "name": "dice::ref2::world::StaticPhysicsNode::StaticPhysicsNode()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. 0x10-byte node; built by SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd760 when template +0x70 bit 0 is clear, then never addPhysicsNode'd. PHY-17."
+  },
+  {
    "address": "0x0825e4a0",
    "name": "dice::ref2::world::StaticPhysicsNode::updatePositionalDragSimple(float, float)",
    "kind": "function",
@@ -10948,6 +11155,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-drag",
    "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret), like every StaticPhysicsNode drag/physics method: static geometry computes no drag at all."
+  },
+  {
+   "address": "0x0825e500",
+   "name": "dice::ref2::world::StaticPhysicsNode::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). A root whose template +0x70 bit 0 is clear (hasMobilePhysics 0 or absent) gets this node and never integrates; PHY-17 (DC Nimitz_Static*)."
+  },
+  {
+   "address": "0x0825e740",
+   "name": "dice::ref2::world::StaticPhysicsNode::addAccelerationAtAbsolutePosition(Pos3 const&, Vec3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. Empty: an Engine/Wing/float push on a static root is dropped. PHY-17."
   },
   {
    "address": "0x0825e750",
@@ -11011,6 +11236,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x08262410",
+   "name": "dice::ref2::world::PlayerManager::getNumberOfPlayers()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. The length of the player list, bots included (std::distance over +0xc). Ledger SPAWN-18."
   },
   {
    "address": "0x082628e0",
@@ -11256,6 +11490,42 @@
    "note": "lnxded. Builds the position-id->seat map the number-key switch queries."
   },
   {
+   "address": "0x08283a90",
+   "name": "dice::ref2::world::ControlPoint::init()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. On the server, runs control(0) (the enable of its spawners with the point's team) only when the point's team +0x174 is not 0: a point that opens neutral leaves its pads with their own team, on. Ledger SPAWN-19."
+  },
+  {
+   "address": "0x08283f70",
+   "name": "dice::ref2::world::ControlPoint::gotControl(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. setTeam(team) then the enable on the point's objectSpawnerId spawners. Ledger SPAWN-19."
+  },
+  {
+   "address": "0x08284090",
+   "name": "dice::ref2::world::ControlPoint::lostControl(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. setTeam(0) then the disable. Ledger SPAWN-19."
+  },
+  {
+   "address": "0x08284640",
+   "name": "dice::ref2::world::ControlPoint::reset()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06; spawner-pads-review-2026-10-07",
+   "note": "lnxded. Called only from GameServer::restartMap (0x08157d31): reloads the template team (+0x1e0); a side runs the enable (spawners setTeam(team), setActive(1)), team 0 the disable (setTeam(0), setActive(0)). restartMap then runs ObjectSpawner::reset on every spawner, which undoes the disable. Not the first round's start. Ledger SPAWN-19."
+  },
+  {
    "address": "0x08287a80",
    "name": "dice::ref2::world::FireArms::initProjectilePool()",
    "kind": "function",
@@ -11344,6 +11614,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded. template+0x300 > template+0x304 -- strict greater-than, not equality as first read. Fields' meaning still unestablished."
+  },
+  {
+   "address": "0x0828d4e0",
+   "name": "dice::ref2::world::FireArmsTemplate::FireArmsTemplate()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Writes velocity +0x2e8 = 0x43480000 = 200.0 at 0x0828d808 (the twin ctor 0x0828d8c0 at 0x0828dbe8); makeScript 0x0828e3b0 prints +0x2e8 as 'ObjectTemplate.velocity '. A FireArms that declares no velocity launches at 200 m/s. Ledger FA-3."
   },
   {
    "address": "0x0828dde0",
@@ -11508,6 +11787,15 @@
    "note": "lnxded. getActiveTemplate(CID_ProjectileTemplate 0x86c2b90) then writes +0x190. The property is declared INT - its own ConsoleClass instance carries the name at +0x0c and the type at +0x4c, and of the six registrations of the name 'radius' only this one is an int - so it is parsed by istream >> int at 0x082df83f and fild-ed into the float field at 0x082df8ef. A .con therefore cannot give a projectile a fractional radius: 340 mod templates write one and every one truncates at parse (FH BismarckFatProjectile 17.63 -> 17; DC 50calSniper_Projectile 0.25 -> 0, which with the strict radius > d gate means no splash at all). The impact path's own truncation at 0x08153f23-0x08153f58 is real code but a no-op in practice. See ledger HP-9. EXTENDED 2026-09-20 (damage review): there is no rejection path in front of it. Its sibling ConsoleClass390::setArgFromString 0x082df7b0 runs istream >> int and returns void without consulting the stream state, and ConsoleObjectBaseImpl::execute 0x08359460 ignores the return and calls this unconditionally -- so radius 0.25 becomes 0 and 7.5 becomes 7, silently. Ledger HP-9."
   },
   {
+   "address": "0x082e5770",
+   "name": "ConsoleClass421::setArgFromString (ObjectTemplate.spawnDelayAtStart)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. std::istream >> bool into a function-static, no fail check; GCC 3.x libstdc++ accepts only 0/1. Ledger SPAWN-17."
+  },
+  {
    "address": "0x083138c0",
    "name": "dice::ref2::world::ObjectSpawner::handleFrameUpdate(float)",
    "kind": "function",
@@ -11515,6 +11803,24 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] held object: reset() each frame; on release setSleepiness(0) + carrier tangent speed"
+  },
+  {
+   "address": "0x08314430",
+   "name": "dice::ref2::world::ObjectSpawner::calcSpawnDelay()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. +0x120 = min + (max - min) * (1 - getNumberOfPlayers / getMaxNrOfPlayers), template +0x14c/+0x150; no random. Ledger SPAWN-10, SPAWN-18."
+  },
+  {
+   "address": "0x08314880",
+   "name": "dice::ref2::world::ObjectSpawner::reset()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-review-2026-10-07",
+   "note": "lnxded. From GameServer::restartMap (0x081581d1, after every ControlPoint::reset): active +0x130 = template +0x161 (1), last id +0x11c = -1, +0x148 = template nrOfObjectToSpawn, team +0x134 = +0x138 (written by setTeam only in game status 3), every slot -1 and its TimeToLive refilled; then, if active, the delay is -1, or calcSpawnDelay when spawnDelayAtStart. Ledger SPAWN-19."
   },
   {
    "address": "0x08314a50",
@@ -13646,8 +13952,8 @@
    "kind": "string",
    "subsystem": "weapons",
    "confidence": "inferred",
-   "source": "research-2026-09-22-bombs",
-   "note": "lnxded .rodata. Descriptor object 0x087a4840, vtable 0x08738aa8, ctor 0x082db580, registered at 0x082ab5f8. The leading candidate for the second single-round flag at FireArmsTemplate+0x348 (ledger BOMB-4) -- NOT proven: the descriptor does not carry its target offset in the vtable and makeScript never emits the word. 0 declarations across all 14 installs, so it is moot for shipped data."
+   "source": "research-2026-09-22-bombs; engine-reads-2026-10-06",
+   "note": "lnxded .rodata. Descriptor object 0x087a4840, vtable 0x08738aa8, ctor 0x082db580, registered at 0x082ab5f8. The leading candidate for the second single-round flag at FireArmsTemplate+0x348 (ledger BOMB-4) -- NOT proven: the descriptor does not carry its target offset in the vtable and makeScript never emits the word. 0 declarations across all 14 installs, so it is moot for shipped data. | REFUTED 2026-10-06 (BOMB-4, BOMB-13): this word's setter ConsoleClass370::executeObjectMethod 0x082db8e0 writes +0x164 of another template class (CID 0x86c2ba0), not FireArmsTemplate+0x348; +0x348 is blastAmmoCount (setter 0x082d8380)."
   },
   {
    "address": "0x086d51c9",
@@ -14080,6 +14386,114 @@
    "confidence": "verified",
    "source": "dc-ground-chassis-2026-10-06",
    "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-14)"
+  },
+  {
+   "address": "0x004d74b0",
+   "name": "ConsoleClass::executeObjectMethod [blastAmmoCount] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. Client copy of the blastAmmoCount setter: BYTE [FireArmsTemplate+0x544]; vtable 0x008e2ed8, name 0x008e2f3c, arg type 'bool' 0x008c58e8; setArgFromString 0x004d7450 reads into static 0x0097ffd0 through MSVCP70 operator>>(bool&). Readers: fireFinished analog 0x0053b100, Fire analog 0x0053dc40, the server's law (BOMB-13)."
+  },
+  {
+   "address": "0x0051a280",
+   "name": "ConsoleClass::executeObjectMethod [automaticYawStabilization] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. RotationalBundleTemplate+0x255 (vtable 0x008ef3e8, name 0x008ef44c); the pitch word is 0x0051a430 writing +0x256 (vtable 0x008ef468, name 0x008ef4cc). No other byte access to +0x255/+0x256 on a RotationalBundle template in the client; the client's calculateAndClipAngle region (0x0057c885 rememberExcessInput, 0x0057c96a automaticReset) reads neither (GUN-17)."
+  },
+  {
+   "address": "0x081bcd20",
+   "name": "dice::ref2::world::(anon)::ConsoleClass83::executeObjectMethod() [hasCollisionPhysics]",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-16)."
+  },
+  {
+   "address": "0x081d06b0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass209::executeObjectMethod() [automaticYawStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [getActiveTemplate(CID_RotationalBundleTemplate)+0x1a5]; name 0x086c545c, object 0x08791520. The only other readers of +0x1a5 in the image are this getter branch and RotationalBundleTemplate::makeScript 0x081d9a69: nothing in the simulation reads it (GUN-17)."
+  },
+  {
+   "address": "0x081d0ac0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass210::executeObjectMethod() [automaticPitchStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [RotationalBundleTemplate+0x1a6]; name 0x086c5440, object 0x087915e0. Read only by this getter branch and makeScript 0x081d9a77 (GUN-17)."
+  },
+  {
+   "address": "0x0825ed50",
+   "name": "dice::ref2::world::StaticResponsePhysics::shouldCheckCollision()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-17)."
+  },
+  {
+   "address": "0x0825ede0",
+   "name": "dice::ref2::world::StaticResponsePhysics::addToTmpResponseList(IObject const*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-17)."
+  },
+  {
+   "address": "0x0825ef80",
+   "name": "dice::ref2::world::StaticResponsePhysics::getFaceCollision(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-18)."
+  },
+  {
+   "address": "0x082d8280",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::setArgFromString(int, std::string const&) [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-17)."
+  },
+  {
+   "address": "0x082d8380",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::executeObjectMethod() [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Setter of ObjectTemplate.blastAmmoCount (descriptor object 0x087a3e80, name 0x086d5237, registered at 0x082ac0b5, arg type 'bool'): writes BYTE [getActiveTemplate(CID_FireArmsTemplate 0x9494)+0x348] from its one bool argument (BOMB-13)."
+  },
+  {
+   "address": "0x08359b10",
+   "name": "dice::ref2::ConsoleObjects::getConsoleObject(std::string const&, std::string const&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Looks object+'.'+method up in a case-insensitive multimap; failing that strips a leading 'get' (strncasecmp vs 0x086c543c) keeping the hit only for getType() 1 or 3, then a leading 'set' (0x086be2d9) keeping type 1 or 2. ObjectTemplate properties are type 1, so setX and X are one word (CON-15)."
+  },
+  {
+   "address": "0x08679888",
+   "name": "std::num_get<char>::do_get(..., bool&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-17)."
   }
  ]
 }

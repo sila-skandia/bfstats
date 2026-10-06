@@ -185,8 +185,11 @@ export function resolveAcross(patches) {
     for (const voice of patch.voices ?? []) {
       const held = voice.held;
       voice.held = false;
-      if (!(bus > 0) || !voice.layer.loop || !voice.source || !voice.buffer
-          || voice.suppressed) continue;
+      if (!(bus > 0) || !voice.layer.loop || !voice.buffer || voice.suppressed) continue;
+      // A loop contests once it runs, and on the frame its `trigger Volume`
+      // latch is armed: `apply` starts it after this, so left out it would
+      // sound that frame beside its twin (DC's right-hand tracks).
+      if (!voice.source && !(voice.layer.trigger === 'volume' && voice.volumeArmed)) continue;
       const out = voice.targetGain * voice.rolloff * bus;
       if (!(out > 0)) continue;
       let set = byBuffer.get(voice.buffer);
