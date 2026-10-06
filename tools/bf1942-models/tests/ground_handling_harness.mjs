@@ -254,4 +254,46 @@ for (const name of ['T72', 'M1A1', 'BMP2', 'M2A3']) {
   pivot[name] = { yawRate: round(Math.abs(turned) / 3, 2), speed: round(drive.state.velocity.length(), 2) };
 }
 
-console.log(JSON.stringify({ lock: lockSummary, cruise, pivot }));
+// --- critical ---------------------------------------------------------------
+// A driver holding full throttle through the page's own seat tick
+// (`world-vehicle-tick.js` `vehicleTick`), with the page's `DamageableVehicle`
+// off the glb's armour standing in for `World.occupiedDamageable`. Into
+// critical the Engine's running byte is cleared and latched (PHY-14: 0x14
+// from `Armor::status`), so the drivetrain's revs are held at 0 and the hull
+// stops; a re-boarding mid-critical is undone on the next tick; out of
+// critical (0x13) the occupied engine starts again.
+const { vehicleTick } = await imp('world-vehicle-tick.js');
+const { bufferInput } = await imp('world-input.js');
+const { DamageableVehicle } = await imp('vehicle-damage.js');
+const critical = {};
+for (const name of ['Humvee', 'T72']) {
+  const drive = await build(name);
+  const hull = new DamageableVehicle(drive.node.userData.armor);
+  const seat = {
+    id: 'driver', kind: 'ground', vehicle: drive,
+    occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
+    gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
+    stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
+  };
+  const world = { occupiedDamageable: () => hull, falling: null, fireStateFor: () => null, guns: null };
+  const integrators = new Map([[drive, seat]]);
+  const phase = seconds => {
+    for (let i = 0; i < Math.round(seconds * 30); i++) {
+      bufferInput(seat, { forward: 1 });
+      vehicleTick(world, seat, DT, integrators);
+    }
+    return { running: drive.engineRunning, revs: round(drive.revs, 3),
+      speed: round(forwardOf(drive).dot(drive.state.velocity), 2) };
+  };
+  const driving = phase(4);
+  hull.damage(hull.hitPoints - hull.criticalDamage + 1);
+  const crippled = phase(4);
+  drive.engineRunning = true;
+  phase(1 / 30);
+  const reboarded = drive.engineRunning;
+  hull.heal(hull.maxHitPoints);
+  const recovered = phase(3);
+  critical[name] = { driving, crippled, reboarded, recovered, wasCritical: hull.criticalDamage != null };
+}
+
+console.log(JSON.stringify({ lock: lockSummary, cruise, pivot, critical }));
