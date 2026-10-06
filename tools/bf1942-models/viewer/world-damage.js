@@ -38,6 +38,7 @@ export function damageTick(world, dt) {
   const crews = [];
   const changes = world.vehicleDamage.update(dt, {
     inWaterOwners: inWaterOwners(world),
+    upsideDownOwners: upsideDownOwners(world),
     ticks: world.report.timedDamage,
     // `submarineData` reads the hull's `underWater` (PHY-3): the body
     // world's own vertices, the rule `checkVsTerrain` writes it by.
@@ -46,6 +47,98 @@ export function damageTick(world, dt) {
   });
   for (const change of changes) world.report.damage.push(change);
   for (const crew of crews) suffocateCrew(world, crew);
+}
+
+/** `Armor::update`'s tilt bound, `[0x86c030c]` = 0.3: the hull's up axis
+ *  against the ground's normal (`0x08173443`) or against world up
+ *  (`0x081734d8`). About 72.5 degrees past upright. */
+export const UPSIDE_DOWN_COS = 0.3;
+
+/** `mFramesBeforeSafeToSleep`: a root that has been still this many ticks
+ *  is asleep (collision-response.md section 4.3). */
+const SLEEP_TICKS = 100;
+
+/**
+ * Which hulls `Armor::update` (`0x08172f40`) would bill
+ * `hpLostWhileUpSideDown` this tick: the test it runs once its one-second
+ * bank is full, read 2026-10-06 (ledger HP-18).
+ *
+ *   gate      `hpLostWhileUpSideDown > 0.01` (`0x08173320`), and the Armor
+ *             touched something this frame (`+0x129`, which `Armor::collision`
+ *             `0x08174470` sets from `SimpleObject::handleCollision`) or the
+ *             root node sleeps (`0x08173360`)
+ *   near      `pos.y - 2 x boundingRadius < terrain height` (`0x081733d3`)
+ *   tilt      when the last contact's height is below `terrain + 0.1`
+ *             (`0x0817340a`), the hull's up row against the terrain normal,
+ *             else against world up; either under 0.3 is upside down
+ *
+ * The last contact height (`Armor+0x28`) is the object's own origin height at
+ * contact, raised while it is airborne, so at a frame where the gate passes it
+ * is taken here to be the origin's height now. "Touched" is the engine's own
+ * `handleCollision` test for terrain, a tested col0 vertex at or under the
+ * ground moving faster than `sqrt 0.1` (collision-response.md section 7), or a
+ * hull contact the body world resolved; "asleep" is a parked body's own sleep,
+ * or for a driven one 100 ticks under the speed and spin wake bounds (the
+ * acceleration bound is not tested).
+ */
+export function upsideDownOwners(world) {
+  const owners = new Set();
+  const field = world.collider?.heightfield;
+  if (!field || typeof field.height !== 'function') return owners;
+  for (const [owner, entry] of world.bodyWorld?.entries ?? []) {
+    const body = entry.driven ?? entry.parked?.body;
+    if (!body?.pos || !body.axes) continue;
+    // The sleep proxy runs every tick, whatever else this tick decides.
+    if (entry.driven) {
+      const v = body.v, w = body.w;
+      const still = v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < 0.25
+        && w[0] * w[0] + w[1] * w[1] + w[2] * w[2] < 0.25;
+      entry._quietTicks = still ? (entry._quietTicks ?? 0) + 1 : 0;
+    }
+    const vehicle = world.vehicleDamage.get(owner);
+    if (!vehicle || vehicle.destroyed || !(vehicle.hpLostWhileUpSideDown > 0.01)) continue;
+    const [x, y, z] = body.pos;
+    const ground = field.height(x, z);
+    if (!Number.isFinite(ground)) continue;
+    const radius = entry.spec?.boundingRadius ?? 0;
+    if (!(y - 2 * radius < ground)) continue;
+    const up = body.axes[1];
+    let tilt = up[1];
+    if (y < ground + 0.1 && typeof field.normal === 'function') {
+      field.normal(x, z, _normal);
+      tilt = up[0] * _normal[0] + up[1] * _normal[1] + up[2] * _normal[2];
+    }
+    if (!(tilt < UPSIDE_DOWN_COS)) continue;
+    const asleep = entry.driven ? (entry._quietTicks ?? 0) >= SLEEP_TICKS : !!body.sleeping;
+    if (asleep || touchesSomething(entry, body, field)) owners.add(owner);
+  }
+  return owners;
+}
+
+const _normal = [0, 1, 0];
+const _contact = [0, 0, 0];
+const _speed = [0, 0, 0];
+
+/** `handleCollision` fired for this hull this tick: a resolved hull contact,
+ *  or any part's tested col0 vertex at or under the terrain moving faster
+ *  than `sqrt 0.1` (`checkVsTerrain`, collision-response.md section 7). */
+function touchesSomething(entry, body, field) {
+  if (entry.driven?.vehicle?.hullContacts?.length) return true;
+  for (const part of entry.parts) {
+    const layer = part.shape?.layers?.[0];
+    if (!layer?.vertices?.length || typeof part.worldVertex !== 'function') continue;
+    const count = layer.vertices.length / 3;
+    const n = count <= 3 ? 1 : count;
+    for (let i = 0; i < n; i++) {
+      part.worldVertex(0, i, _vertex);
+      const h = field.height(_vertex[0], _vertex[2]);
+      if (!(_vertex[1] - h <= 0)) continue;
+      _contact[0] = _vertex[0]; _contact[1] = h; _contact[2] = _vertex[2];
+      body.tangentSpeed(_contact, _speed);
+      if (_speed[0] * _speed[0] + _speed[1] * _speed[1] + _speed[2] * _speed[2] > 0.1) return true;
+    }
+  }
+  return false;
 }
 
 /**

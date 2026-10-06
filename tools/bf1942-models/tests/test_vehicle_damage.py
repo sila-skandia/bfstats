@@ -606,6 +606,42 @@ class CrewWashFeedTests(unittest.TestCase):
         self.assertEqual({"amount": 10, "lost": 10}, amounts["splash"])
 
 
+class UpsideDownTickTests(unittest.TestCase):
+    """HP-17/HP-18: the upside-down bill is the whole one-second bank times
+    `hpLostWhileUpSideDown`, and the bank runs from spawn whether the hull is
+    upside down or not, so a roll is billed 0 to 1 s later."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["upsideDown"]
+
+    def test_the_bank_bills_its_whole_contents(self) -> None:
+        bills = self.results["fromSpawn"]["bills"]
+        # 30 steps of 1/30 s land just under 1.0, so the bank fires on the
+        # 31st holding 1.033 s, and bills 10.33 of the Sherman's 10 a second.
+        self.assertEqual(3, len(bills))
+        for bill in bills:
+            self.assertAlmostEqual(10.333, bill["amount"], places=3)
+        self.assertAlmostEqual(69, self.results["fromSpawn"]["hp"], places=3)
+
+    def test_a_late_roll_waits_for_the_bank_and_is_billed_all_of_it(self) -> None:
+        late = self.results["rolledLate"]
+        self.assertEqual(1, len(late["bills"]))
+        self.assertAlmostEqual(1.033, late["bills"][0]["at"], places=3)
+        self.assertAlmostEqual(10.333, late["bills"][0]["amount"], places=3)
+
+    def test_an_upright_hull_is_never_billed_but_its_bank_still_turns(self) -> None:
+        upright = self.results["upright"]
+        self.assertEqual([], upright["bills"])
+        self.assertEqual(100, upright["hp"])
+        self.assertLess(upright["bank"], 1)
+
+    def test_a_long_frame_is_one_bill_of_the_whole_frame(self) -> None:
+        self.assertEqual([{"at": 2, "amount": 20}], self.results["longFrame"]["bills"])
+
+
 class SubmarineDataTests(unittest.TestCase):
     """PHY-3: `submarineData` on a hull's depth (`underWater`). Half a second
     is banked and then paid on the whole bank: the hull loses `elapsed x 7th`
