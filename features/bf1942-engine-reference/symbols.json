@@ -5289,6 +5289,15 @@
    "note": "Client. Group name string 0x00926038 = 'Overheat', and it registers exactly three: OverHeat float +0x8 (0x006e9934), ShowRecover INT +0xc (0x006e9971), Recover float +0x10 (0x006e999f). SniperSight is NOT in this group - see 0x006e9a60. See ledger VHUD-10."
   },
   {
+   "address": "0x006e9a50",
+   "name": "Overheat group setOverHeat(weapon)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. fld [weapon+0x268] (the FireArms heat); fstp [this+0x8] (Overheat/OverHeat). Called from the soldier HUD feed 0x006e9690 at 0x006e9773 and 0x006e97dc with the held weapon, every frame. Ledger GUN-16."
+  },
+  {
    "address": "0x006e9a60",
    "name": "CrossHairHud registerVariables (the 'CrossHair' group)",
    "kind": "function",

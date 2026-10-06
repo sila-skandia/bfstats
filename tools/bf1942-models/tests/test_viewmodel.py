@@ -271,6 +271,44 @@ class FidgetFamilyTests(unittest.TestCase):
         self.assertIn("Ub_IdleColt1", report["idle1"]["error"])
 
 
+class WeaponBlockHeatTests(unittest.TestCase):
+    """`weaponStats.heat`: the heat words a hand weapon declares, under their
+    FireArms names, which is what the hand path builds its `FireState` from
+    (ledger GUN-14, GUN-15)."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        # Desert Combat's M249 and GrenadeAllies and vanilla's Thompson, the
+        # lines that matter.
+        library.add_con("Objects/HandWeapons/M249/Objects.con", """
+ObjectTemplate.create HandFireArms M249
+ObjectTemplate.roundOfFire 13.5
+objectTemplate.heatAddWhenFire 0.0265
+objectTemplate.coolDownPerSec 0.3
+objectTemplate.timeDelayOnOverHeat 2
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.velocityDependentOnHeat 1
+ObjectTemplate.heatAddWhenFire 0.03
+ObjectTemplate.create HandFireArms Thompson
+ObjectTemplate.roundOfFire 10
+""")
+        return library
+
+    def test_a_machine_gun_carries_its_heat(self) -> None:
+        block = extract_viewmodel.weapon_block(self.library().object("M249"))
+        self.assertEqual({"heatAddWhenFire": 0.0265, "coolDownPerSec": 0.3,
+                          "timeDelayOnOverheat": 2.0}, block["heat"])
+        self.assertEqual(13.5, block["roundOfFire"])
+
+    def test_a_grenade_carries_its_charge_flag(self) -> None:
+        block = extract_viewmodel.weapon_block(self.library().object("GrenadeAllies"))
+        self.assertEqual({"heatAddWhenFire": 0.03, "velocityDependentOnHeat": True},
+                         block["heat"])
+
+    def test_a_rifle_has_no_heat_block(self) -> None:
+        self.assertNotIn("heat", extract_viewmodel.weapon_block(self.library().object("Thompson")))
+
+
 class ClipTimesTests(unittest.TestCase):
     """The engine has no frame rate: a pass of a clip lasts 1/|speed| s
     (`updateState` advances a normalized phase by dt*speed and
