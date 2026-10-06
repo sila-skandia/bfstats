@@ -96,7 +96,8 @@ Vec3 raw). Vanilla's BF109 (`setAcceleration 5000/5000/0`, `setMaxSpeed
 
 - Unit tests:
   - `tests/test_con.py`: `ConsoleSpellingTests` (7 tests), `GeometryScaleTests` (2) and `ToggleMouseLookTests` (1).
-  - `tests/test_assemble.py`: `GeometryScaleExportTests` (5) and `CameraToggleMouseLookExportTests` (2).
+  - `tests/test_assemble.py`: `GeometryScaleExportTests` (5), `ScaledRoundExportTests` (1, review) and `CameraToggleMouseLookExportTests` (2; the look test uses the shipped BF109 and Spitfire numbers since the review).
+  - `tests/test_effects.py`: `test_particle_collision_reads_under_either_console_spelling` (review).
   - The whole suite: see section 8.
 - The parsed libraries before and after, for vanilla, XPack1, XPack2, DC 0.7
   and DC Final (`libdump.py`/`libdiff.py`), and every level folder's own con
@@ -184,7 +185,10 @@ glb.
 
 The Pantsyr ladder's climb measure stays the file's (LADDER-3 reads the
 unscaled bounding box), and the run caught that: a first version moved its
-`isLadder`.
+`isLadder`. The `after` scratch in `~/.cache/dc-sweep/con-reader/after` is that
+first version's for the two Pantsyr glbs per DC tree (length 1.7573 there); a
+targeted re-extract at the fix gives the file's 2.7035 (review, 2026-10-07).
+The table's counts are unchanged by it.
 
 **Other trees and side files:**
 
