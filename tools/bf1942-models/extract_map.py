@@ -2139,6 +2139,11 @@ def _stamp_audience(entry: dict, settings) -> None:
     is inside the bunker, under a 2.25 m ceiling — a player handed it spawns
     in a room and cannot get out. Written only when true, so the key's absence
     keeps meaning "no filter" in every tree extracted before this.
+
+    `groupEnableToChangeTeam 0` rides along as `changeTeam: false`, also
+    only when set: the end of a round asks whether a side could ever take a
+    group of another side's (`canTeamGetAnySpawnGroup`, ledger TKT-8), and
+    DC Weapon Bunkers' two groups say it never can.
     """
     if settings is None:
         return
@@ -2146,6 +2151,8 @@ def _stamp_audience(entry: dict, settings) -> None:
         entry["onlyForAI"] = True
     if settings.only_for_human:
         entry["onlyForHuman"] = True
+    if not settings.enable_to_change_team:
+        entry["changeTeam"] = False
 
 
 def _pose_key(inst) -> tuple:

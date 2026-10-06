@@ -79,6 +79,12 @@ export const SCORE_DEFAULTS = Object.freeze({
 /** The enemy weight above which a side bleeds: `cmp [ebp-0x1dc],0x63`. */
 export const BLEED_WEIGHT = 99;
 
+/** Tickets a minute a side with no spawn groups bleeds at the end of a round
+ *  (`GameServer+0x1ec`): `GameServer::init` writes 1000.0 raw (0x08131d34);
+ *  only `game.setTicketLostAtEndPerMin` scales it by max players / 16
+ *  (0x081537f0), and no shipped level declares it (ledger TKT-8). */
+export const TICKETS_LOST_AT_END_PER_MIN = 1000;
+
 /** `Game::getGamePlayMode` (`+0x10`): what `stringToGPM` makes of a mode's
  *  name (ledger RADIO-13). Instant Battle plays Conquest's rules on the
  *  level's `SinglePlayer<Side>.con` (the client's `setGamePlayMode(2)`,
@@ -327,6 +333,8 @@ export function holdWeight(points) {
  *                server; `singlePlayer` true keeps the round in EndGame until
  *                the page restarts it, as `gameStatusEndGame` does with
  *                `Setup+0x15c` (the `game.gameMode` word) at 0;
+ *  - `atEndRate` tickets a minute a side with no spawn groups bleeds at the
+ *                end of a round (`TICKETS_LOST_AT_END_PER_MIN`);
  *  - `objectives` an ObjectiveMode layer's live objectives
  *                (`objectives.js` `createObjectives`), or null. Read only
  *                while the mode is ObjectiveMode: its defender, its death
@@ -342,6 +350,7 @@ export function createRoundState({
   scoreLimit = 0, gameTime = 0,
   minorVictory = MINOR_VICTORY, majorVictory = MAJOR_VICTORY,
   restartDelay = RESTART_DELAY, singlePlayer = false, objectives = null,
+  atEndRate = TICKETS_LOST_AT_END_PER_MIN,
 } = {}) {
   const readSettings = typeof settings === 'function' ? settings : () => settings;
   const readMode = typeof mode === 'function' ? mode : () => mode;
@@ -449,6 +458,31 @@ export function createRoundState({
     // side, and an infinite interval is exactly "never".
     intervals[team] = bleedInterval(rate, serverPlayers);
     round.countdowns[team] = intervals[team];
+  }
+
+  /** The at-end rate's interval (`60 / +0x1ec`). */
+  const atEndInterval = 60 / (Number(atEndRate) > 0 ? Number(atEndRate) : TICKETS_LOST_AT_END_PER_MIN);
+
+  /**
+   * The four flags `gameStatusPlaying` sets for the end of a round (TKT-5):
+   * "no live player" starts 1 for both sides and is cleared, at the first
+   * living player of a side, only on a frame where some side holds no spawn
+   * group; "nowhere to spawn" is read only for a side that holds none.
+   */
+  function endOfRoundFlags(sides) {
+    const noGroups = { 1: false, 2: false };
+    const noLive = { 1: true, 2: true };
+    const cantSpawn = { 1: false, 2: false };
+    if (!sides) return { any: false, noGroups, noLive, cantSpawn };
+    for (const team of [1, 2]) noGroups[team] = Number(sides[team]?.groups) === 0;
+    const any = noGroups[1] || noGroups[2];
+    if (any) {
+      for (const team of [1, 2]) {
+        noLive[team] = !sides[team]?.alive;
+        cantSpawn[team] = noGroups[team] && !sides[team]?.canGet;
+      }
+    }
+    return { any, noGroups, noLive, cantSpawn };
   }
 
   /** A player's tally, created empty on first use. */
@@ -712,17 +746,24 @@ export function createRoundState({
    * The countdown runs in real time, the engine's rule while both sides have
    * spawn groups, which is all of normal play, and a shut gate refills it, so
    * each bleed's first ticket comes a whole interval after it starts (TKT-4).
-   * Two end-of-round rules for a side left with no spawn groups are not
-   * modelled (ledger TKT-5): it bleeds at `setTicketLostAtEndPerMin`'s rate
-   * whatever the weights once it has nobody alive or nowhere to spawn, and
-   * meanwhile its enemy, if it has a live player, has its countdown run at
-   * (the weight the side holds) / 100.
+   *
+   * `sides`, when the page passes it, is what `gameStatusPlaying` counts for
+   * the end of a round (TKT-5, TKT-8): `{ 1: { groups, canGet, alive }, 2 }`,
+   * the spawn groups the side holds that still have a point, whether any other
+   * side's group with a point could become its own (`groupEnableToChangeTeam`
+   * set), and whether it has a living player. While both sides hold a group
+   * nothing changes. Once one holds none, the two flags are read: that side,
+   * with nobody alive or nowhere to spawn, bleeds whatever the weights, at the
+   * at-end rate (`TICKETS_LOST_AT_END_PER_MIN`); otherwise, as the other side
+   * does while it has a living player, its countdown runs at the enemy's
+   * weight / 100 a second instead of one, still only past 99. Without `sides`
+   * (the runner, an old caller) the round plays normal play's rule only.
    *
    * CTF and TDM have no bleed (the weight block runs for modes 2, 4 and 5
    * only). After the bleed the round is decided on tickets and on the time
    * limit; once it is over, only the restart countdown runs.
    */
-  function tick(dt, points) {
+  function tick(dt, points, sides = null) {
     const held = holdWeight(points);
     round.held = held;
     const lost = { 1: 0, 2: 0 };
@@ -739,9 +780,14 @@ export function createRoundState({
     if (!playing()) return lost;
     const bleeds = ticketsDecide(round.gamePlayMode);
     const live = round.real ?? round.tickets;
+    const end = endOfRoundFlags(sides);
+    round.endOfRound = end.any ? end : null;
     for (const team of [1, 2]) {
       const enemy = team === 1 ? 2 : 1;
-      const running = bleeds && playing() && held[enemy] > BLEED_WEIGHT
+      // 0x08151c98..0x08151d05 (team 2), 0x08151e22..0x08151e45 (team 1).
+      const stranded = end.noGroups[team] && (end.noLive[team] || end.cantSpawn[team]);
+      const gate = stranded || held[enemy] > BLEED_WEIGHT;
+      const running = bleeds && playing() && gate
         && Number.isFinite(intervals[team]) && live[team] > 0;
       round.bleeding[team] = running;
       if (!running) {
@@ -751,13 +797,18 @@ export function createRoundState({
         round.countdowns[team] = intervals[team];
         continue;
       }
-      round.countdowns[team] -= dt;
+      // Normal play's "no live player" flags stay at their initial 1, so
+      // the plain `dt`; the weighted run is for a side whose flags were read
+      // and came out alive, with somewhere to spawn.
+      const plain = stranded || end.noLive[team] || end.cantSpawn[team];
+      round.countdowns[team] -= plain ? dt : held[enemy] * dt / 100;
+      const interval = stranded ? atEndInterval : intervals[team];
       // A frame long enough to cross the interval more than once spends more
       // than one ticket, which is what the engine's per-frame subtract does.
       while (round.countdowns[team] <= 0) {
         if (!spend(team, 1)) break;
         lost[team] += 1;
-        round.countdowns[team] += intervals[team];
+        round.countdowns[team] += interval;
       }
     }
     showObjectiveTickets();
