@@ -64,8 +64,21 @@ function decodeAccessor(gltf, bin, accessorIndex) {
  * emits), all of which is public law, not engine law.
  */
 export function decodeMaterialIds(png) {
+  const { width, height, channels, data } = decodePng(png, 'materials.png');
+  const out = new Uint8Array(width * height);
+  for (let i = 0; i < out.length; i++) out[i] = data[i * channels];
+  return out;
+}
+
+/**
+ * An 8-bit, non-interlaced PNG the exporter wrote, every channel:
+ * `{width, height, channels, data}`, `data` row-major, `channels` bytes a
+ * pixel. `terrain/heightmap.png` is read through it (high byte red, low byte
+ * green: `viewer/heightfield.js` `heightfieldFromSamples`).
+ */
+export function decodePng(png, label = 'png') {
   if (png.length < 33 || png[0] !== 0x89 || png[1] !== 0x50) {
-    throw new Error('materials.png: not a PNG');
+    throw new Error(`${label}: not a PNG`);
   }
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
@@ -73,11 +86,11 @@ export function decodeMaterialIds(png) {
   const colorType = png[25];
   const interlace = png[28];
   if (bitDepth !== 8 || interlace !== 0) {
-    throw new Error(`materials.png: unsupported (depth ${bitDepth}, interlace ${interlace})`);
+    throw new Error(`${label}: unsupported (depth ${bitDepth}, interlace ${interlace})`);
   }
   const channels = colorType === 6 ? 4 : colorType === 2 ? 3
     : colorType === 0 ? 1 : 0;
-  if (!channels) throw new Error(`materials.png: unsupported colorType ${colorType}`);
+  if (!channels) throw new Error(`${label}: unsupported colorType ${colorType}`);
   const idat = [];
   let at = 8;
   while (at + 8 <= png.length) {
@@ -88,7 +101,7 @@ export function decodeMaterialIds(png) {
   }
   const raw = inflateSync(Buffer.concat(idat));
   const stride = width * channels;
-  const out = new Uint8Array(width * height);
+  const out = new Uint8Array(stride * height);
   let prev = new Uint8Array(stride);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
@@ -109,10 +122,10 @@ export function decodeMaterialIds(png) {
       }
       row[x] = v;
     }
-    for (let x = 0; x < width; x++) out[y * width + x] = row[x * channels];
+    out.set(row, y * stride);
     prev = row;
   }
-  return out;
+  return { width, height, channels, data: out };
 }
 
 /**
