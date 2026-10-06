@@ -328,9 +328,28 @@ under 0.5 and spread from 0.56 to 0.78, with none at 0.8 or above
 
 **Open.** The empty magazine is the `Or`'s other half: the engine holds the
 plan, presses reload and keeps aiming, while `firePlanDone` ends the plan
-on it (AI-130's reading). A bot's hand weapon keeps its rate's fraction from
-round to round, where the engine fires on whole ticks (GUN-13), so a bot's
-M249 runs at 13.5 rounds a second and its first hold comes at round 33, not
-48. The planes' attack plan reads its own heat limits (`PLANE_FIRE
-weaponHeatSmall`, `weaponHeatVehicle`), which nothing applies yet.
+on it (AI-130's reading). The planes' attack plan reads its own heat limits
+(`PLANE_FIRE weaponHeatSmall`, `weaponHeatVehicle`), which nothing applies
+yet.
+
+## 9. A bot's hand weapon fires on whole ticks
+
+**What was wrong.** The referee's rate-of-fire timer carried its fraction
+from round to round, so a bot fired at its `roundOfFire` exactly: the M249 at
+13.5 rounds a second, the Mp40 at 9. The engine sets `timeToFireFinished` to
+`1 / roundOfFire` with each round and runs it down a tick at a time (GUN-13),
+so a gun's rate is `30 / ceil(30 / roundOfFire)`: the M249 fires 10 a second
+and the Mp40 7.5, as the human's guns already do (`gun-cycle.js
+advanceGroups`). With the carried fraction a bot's M249 also heated faster
+than the law allows (one drain every fourth round instead of every round)
+and held at its 33rd round instead of its 48th.
+
+**What changed.** `bot-referee.js fireTick` sets the timer to
+`gun-cycle.js firePeriod(roundOfFire)` with each round and runs it down in
+float32 on the world's ticks, floored at 0.
+
+**Checked.** `tests/test_bot_weapons.py`: a held Mp40 empties its 32 rounds
+over 31 periods of four ticks (4.13 s), an M249's rounds are 0.1 s apart, a
+Thompson still fires 10 a second, and a bot's M249 holds at its 48th round,
+where the heat law first reaches 0.8.
 

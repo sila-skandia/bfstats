@@ -45,6 +45,7 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
 import { FireState } from './fire-state.js';
+import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
@@ -855,28 +856,27 @@ export function createBotReferee(env) {
         env.mountedFire?.(bot, dt);
         continue;
       }
-      // The rate-of-fire timer runs down whether or not the trigger is held
-      // and keeps its fraction across a held burst, as the human's gun does
-      // (gun-cycle.js `advanceGroups`): an idle gun owes nothing (floored
-      // at 0), a held one fires at its own `roundOfFire` whatever the frame
-      // rate. Restarted from a full period each round, a 9 rps Mp40 fired
-      // 8.57 rounds a second at 60 fps (7 frames a round) and 7.5 at 30.
-      // It is the engine's `timeToFireFinished`, and it runs down before the
-      // magazine's tick, whose reload waits for it, as `FireArms::
-      // handleUpdate` 0x08288890 counts it down before it asks for one.
-      bot._fireCooldown = (bot._fireCooldown ?? 0) - dt;
+      // The rate-of-fire timer is the engine's `timeToFireFinished`: a round
+      // sets it to `1 / roundOfFire`, it is not added to, and it runs down a
+      // tick at a time, so a gun fires on whole ticks (GUN-13) as the human's
+      // does (gun-cycle.js `advanceGroups`): a 9 rps Mp40 fires 7.5 a second
+      // and the M249's 13.5 fires 10. Carrying the fraction from round to
+      // round fired them at 9 and 13.5. The referee runs on the world's
+      // ticks. The timer runs down before the magazine's tick, whose reload
+      // waits for it, as `FireArms::handleUpdate` 0x08288890 counts it down
+      // before it asks for one; an idle gun owes nothing (floored at 0).
+      bot._fireCooldown = Math.max(0, Math.fround((bot._fireCooldown ?? 0) - Math.fround(dt)));
       const mag = referee.magazineTick(bot, dt);
       // The held item's heat runs its own ticks, and a pull at heat 1 or
       // more, or in the lockout, fires nothing (`FireArms::Fire`, GUN-14).
       const heat = referee.heatOf(bot, bot.weaponAi?.name ?? bot.kitPrimary ?? null);
       heat?.step(dt);
       const ready = mag.canFire && (!heat || heat.canFire);
-      if (!bot.isFiring || !ready) bot._fireCooldown = Math.max(0, bot._fireCooldown);
       if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
       const stats = referee.weaponDataOf(bot);
       const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
-      bot._fireCooldown = Math.max(-1 / rof, bot._fireCooldown) + 1 / rof;
+      bot._fireCooldown = firePeriod(rof);
       referee.magazineShot(bot, mag);
       heat?.registerShot(1);
       bot.deviation.onShot();
