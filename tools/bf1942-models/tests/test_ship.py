@@ -100,6 +100,13 @@ class ShipSpecTests(unittest.TestCase):
         self.assertEqual(g["size"], [3.5, 3.4, 14.1])
         self.assertEqual(g["keel"], -1.83)
 
+    def test_a_door_beside_the_cockpit_lod_is_not_the_hull(self) -> None:
+        # The LCVP's `Lcvp_Door` is a Bundle with a mesh of its own: an object
+        # of its own, which the box never is (COL-14).
+        g = self.out["doorGeometry"]
+        self.assertEqual(g["size"], [3.4, 3.005, 11.063])
+        self.assertEqual(g["keel"], 0.468)
+
     def test_the_spec_is_read_off_the_hull_not_guessed(self):
         spec = self.out["spec"]
         self.assertEqual(spec["mass"], 2500000)
