@@ -53,11 +53,23 @@
 // pilots' cameras -- 13 vanilla, 2 Road to Rome, 7 Secret Weapons -- each the
 // Camera of a `setVehicleCategory VCAir` PlayerControlObject, and on none of
 // the gunners' (B17_Camera2/3, StukaRearCamera, the `_For_PCO1` rear seats:
-// all VCLand, all free to look). The extracted trees do not carry the word
-// (`assemble.py` writes `cameraView` without it), so the viewer applies the
-// shipped data's own rule: the pilot's seat of an aircraft, i.e. the root seat
-// of a hull the viewer classifies `air`. A ship shares the aircraft's drive
-// class and is not `air`; a gunner's seat is never the root.
+// all VCLand, all free to look). Desert Combat puts it on passengers too: the
+// MH-6's and the SA-342's passenger cameras, and the MH-53 co-pilot's, which is
+// the pilot's own `MH53PilotCamera` (ledger MLK-14). A glb baked with the
+// word carries it as `cameraView.toggleMouseLook`, and the seat's camera
+// answers for itself. A tree baked before that carries nothing, and the viewer
+// falls back to the shipped data's rule -- the root seat of a hull the viewer
+// classifies `air` -- plus the one thing such a tree can still prove: a seat
+// whose camera is the pilot's own template (the same node name) has the
+// pilot's byte. A ship shares the aircraft's drive class and is not `air`.
+//
+// WHICH MAP. A seat is its own PlayerControlObject, and entering it makes it
+// the player's vehicle (`PlayerControlObject::enter` lnxded 0x08316f00 calls
+// `setVehicle(this)` at 0x08317035), so the control map and the mouse profile
+// follow the seat's own `setVehicleCategory`, not the hull's (MLK-14, MLK-8):
+// DC's `VCAir` co-pilots and passengers fly the Air map, Left Shift and all,
+// on the Air sensitivity and the Air invert box. The glb carries the category
+// on each seat's PCO node (`physics.vehicleCategory`).
 
 /** The trigger the profile binds the key to (Air.con only, in shipped data). */
 export const MOUSE_LOOK_TRIGGER = 'c_PIMouseLook';
@@ -91,14 +103,143 @@ export const LOOK_REST = 1e-6;
 
 /**
  * Does this seat's camera need the key to look around -- the engine's
- * `getToggleMouseLook()`, answered by the shipped data's rule (header).
+ * `getToggleMouseLook()`: the camera's own word when its glb carries it, else
+ * the shipped data's rule (header).
  *
- * @param {{rootKind?: string, root?: boolean} | null} seat
+ * @param {{rootKind?: string, root?: boolean, cameraView?: object | null,
+ *   cameraKey?: string | null, rootCameraKey?: string | null} | null} seat
  *   `rootKind` the hull's classification, `root` whether the seat taken is
- *   the hull's root seat (the pilot's).
+ *   the hull's root seat (the pilot's), `cameraView` the seat camera's extras,
+ *   `cameraKey`/`rootCameraKey` the bare node names of the seat's camera and
+ *   the root seat's (`describeSeat`).
  */
 export function seatNeedsMouseLookKey(seat) {
-  return !!seat && seat.rootKind === 'air' && seat.root === true;
+  if (!seat) return false;
+  const word = seat.cameraView?.toggleMouseLook;
+  if (typeof word === 'boolean') return word;
+  if (seat.rootKind !== 'air') return false;
+  if (seat.root === true) return true;
+  // The same Camera template as the pilot's is the same byte (MLK-1): DC's
+  // `MH53CoPilot` sits behind `MH53PilotCamera` itself.
+  return !!seat.cameraKey && seat.cameraKey === seat.rootCameraKey;
+}
+
+/** `VehicleCategory` as `operator>>` reads the word (lnxded 0x0829b580):
+ *  VCLand/Land 0, VCSea/Sea 1, VCAir/Air 2; any other spelling is 3. */
+const CATEGORY_PROFILE = Object.freeze({
+  vcland: 'landSea', land: 'landSea', vcsea: 'landSea', sea: 'landSea',
+  vcair: 'air', air: 'air',
+});
+
+/**
+ * The control map and mouse profile a seat flies on: its own PCO's category
+ * (MLK-14). 0 and 1 pick LandSea, 2 Air, and 3 -- a word `operator>>` did not
+ * know -- changes nothing, so the soldier's Infantry map stays (`mouse-input.js`
+ * `profileFor` has the client read). A seat that names no category (a stub
+ * with no seat table, or a PCO node without the word) keeps the rule the page
+ * always used, the pilot of an `air` hull on Air and everything else on
+ * LandSea.
+ *
+ * @returns {'air' | 'landSea' | 'infantry'}
+ */
+export function seatProfile(seat) {
+  if (!seat) return 'infantry';
+  const category = seat.vehicleCategory;
+  if (typeof category === 'string' && category) {
+    return CATEGORY_PROFILE[category.toLowerCase()] ?? 'infantry';
+  }
+  return seat.rootKind === 'air' && seat.root === true ? 'air' : 'landSea';
+}
+
+/**
+ * Which way the seat camera turns for a positive `c_PIMouseLookX`/`Y`, per
+ * axis: the sign of its servo's gain, `setAcceleration`'s sign times
+ * `setMaxSpeed`'s (GUN-2, MLK-13), or 0 where the camera cannot turn that way
+ * at all. Read off the camera's own look rig, which a glb baked with the word
+ * carries as `cameraView.look` and an older one only where the Camera had
+ * children of its own (`rig`, DC's `H6CoPilotCamera`).
+ *
+ * The engine's speed register ramps at `|acceleration|` toward
+ * `sign(acceleration) x input x maxSpeed`, and the `maxSpeed` there is the
+ * template's as written: `calculateAndClipAngle` multiplies by it with no
+ * `fabs` (lnxded 0x081d7866), and the `maxSpeed` console word
+ * (`ConsoleClass194` 0x081ce090) stores it raw. So vanilla's BF109
+ * (`setAcceleration 5000/5000/0`, `setMaxSpeed 90/-90/0`) turns the same way
+ * as the Spitfire (`-5000` with `90`), and the rig's `direction` alone (the
+ * acceleration's sign) is not the answer. An axis the Camera binds no look
+ * input to, or declares no acceleration or a zero `maxSpeed` on, does not
+ * move: XPack2's `C47Camera` (`setAcceleration 5000/0/0`) looks sideways and
+ * never up, DC's `F14BRIOCamera` (`0/5000/0`) the other way round. The rig
+ * omits a zero acceleration, and an undeclared one is the template's 0.1
+ * deg/s^2 (`RotationalBundleTemplate` ctor lnxded 0x081d913c), which is as
+ * still. A rig with no `maxSpeed` at all takes the ctor's positive 1.0
+ * (0x081d9130). That is applied on the Air profile, the seats this package
+ * reads; a LandSea seat's free look stays the page's own where its camera
+ * says nothing usable (`features/pilot-mouse-look`, Open).
+ *
+ * Unread, each sign is the shipped majority of the profile: pitch negative
+ * on Air (every key camera of vanilla, XPack1, XPack2 and DC 0.7, every DC
+ * 0.7 co-pilot and keyed passenger), positive on LandSea (every vanilla look
+ * camera); yaw positive on both.
+ *
+ * @returns {{yaw: -1 | 0 | 1, pitch: -1 | 0 | 1}}
+ */
+export function seatLookSigns(seat, profile = seatProfile(seat)) {
+  const axes = (seat?.cameraView?.look ?? seat?.cameraRig)?.axes;
+  const air = profile === 'air';
+  const sign = (name, input, unread) => {
+    if (!axes) return unread;
+    const spec = axes[name];
+    const speed = Number(spec?.maxSpeed ?? 1);
+    const gain = (Number(spec?.direction) < 0 ? -1 : 1) * Math.sign(Number.isFinite(speed) ? speed : 1);
+    const moves = spec && spec.input === input && Number(spec.acceleration) > 0 && gain !== 0;
+    if (!moves) return air ? 0 : unread;
+    return gain;
+  };
+  return {
+    yaw: sign('yaw', 'c_PIMouseLookX', 1),
+    pitch: sign('pitch', 'c_PIMouseLookY', air ? -1 : 1),
+  };
+}
+
+/** A node's name without the scene document's duplicate-instance suffix. */
+function nodeKey(node) {
+  const name = node?.name;
+  return name ? String(name).toLowerCase().replace(/_\d+$/, '') : null;
+}
+
+const SEAT_CACHE = new WeakMap();
+
+/**
+ * What the rules above read about the seat an occupancy holds (a
+ * `SeatHandle`, `vehicle-instance.js`): the hull's kind, whether it is the
+ * root seat, the seat PCO's category, and its camera. Cached per surveyed
+ * seat, whose node and camera never change. An occupancy without a seat table
+ * (a test's stub) gets `rootKind` and `root` alone.
+ */
+export function describeSeat(occupancy) {
+  if (!occupancy) return null;
+  const id = occupancy.activeSeatId ?? occupancy.seatId;
+  const info = typeof occupancy.seatInfo === 'function' ? occupancy.seatInfo(id) : null;
+  const root = typeof occupancy.isActiveRoot === 'function' ? occupancy.isActiveRoot() : undefined;
+  if (!info) return { rootKind: occupancy.rootKind, root };
+  const cached = SEAT_CACHE.get(info);
+  if (cached && cached.rootKind === occupancy.rootKind && cached.root === root) return cached;
+  const rootInfo = occupancy.rootId != null ? occupancy.seatInfo(occupancy.rootId) : null;
+  const camera = info.camera ?? null;
+  const described = {
+    rootKind: occupancy.rootKind,
+    root,
+    // The node's own word first: the survey reads it when it first meets the
+    // seat, which can be through a child before the PCO node itself.
+    vehicleCategory: info.node?.userData?.physics?.vehicleCategory ?? info.vehicleCategory ?? null,
+    cameraView: camera?.userData?.cameraView ?? null,
+    cameraRig: camera?.userData?.rig ?? null,
+    cameraKey: nodeKey(camera),
+    rootCameraKey: nodeKey(rootInfo?.camera),
+  };
+  SEAT_CACHE.set(info, described);
+  return described;
 }
 
 /**
