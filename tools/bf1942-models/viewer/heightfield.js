@@ -93,6 +93,41 @@ export class Heightfield {
 }
 
 /**
+ * The height lattice straight from the level's own `Heightmap.raw`
+ * (`scene.json` `heightmap`, `terrain/heightmap.png`), every sample drawn or
+ * not.
+ *
+ * The tiles a bake draws are not the whole terrain: an undrawn patch (the sea
+ * floor of 29 levels; Midway leaves 240 of its 256 patches undrawn) gave the
+ * tile-snapped lattice NaN there, so a hull driven off a Guadalcanal beach found
+ * no bed 40 m out. `PatchTerrain` collides against the whole heightmap
+ * (collision-response.md section 7), so this is the collider wherever a level
+ * ships it, and `buildHeightfield` is the fall-back for a tree baked before.
+ *
+ * `rgba` is the decoded image, `channels` bytes a pixel, high byte in red and
+ * low byte in green (`bf42/terrain.py` `heightmap_png`). The lattice is
+ * `(dim + 1)^2` like the tile-snapped one: the tiles' last row and column
+ * repeat the heightmap's (`Heightmap.height_at` clamps), and each sample is
+ * `raw / 65535 * heightUnits` rounded to float32, the glb's own arithmetic,
+ * so where a tile was drawn the two lattices agree to the bit.
+ */
+export function heightfieldFromSamples(rgba, { dim, spacing, heightUnits, channels = 4 }) {
+  if (!(dim > 0) || !(spacing > 0) || !(heightUnits > 0)) return null;
+  if (!rgba || rgba.length < dim * dim * channels) return null;
+  const n = dim + 1;
+  const heights = new Float32Array(n * n);
+  for (let iz = 0; iz < n; iz++) {
+    const row = Math.min(iz, dim - 1) * dim;
+    for (let ix = 0; ix < n; ix++) {
+      const at = (row + Math.min(ix, dim - 1)) * channels;
+      const raw = (rgba[at] << 8) | rgba[at + 1];
+      heights[iz * n + ix] = raw / 65535 * heightUnits;
+    }
+  }
+  return new Heightfield(dim, spacing, heights, { coverage: 1 });
+}
+
+/**
  * Rebuild the height lattice from the terrain tiles already in the scene.
  *
  * The exporter writes tile vertices at their absolute world positions on exact

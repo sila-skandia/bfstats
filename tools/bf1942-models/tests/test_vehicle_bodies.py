@@ -179,6 +179,54 @@ class VehicleBodiesTests(unittest.TestCase):
     def test_the_hull_contact_list_is_capped(self) -> None:
         self.assertEqual(8, self.r["hullContactsCap"])
 
+    # --- a driven land hull meets the ground (checkVsTerrain) ----------------------
+
+    def test_a_driven_land_hull_is_pushed_out_of_flat_ground(self) -> None:
+        # Its floor 0.2 m under the ground and closing at 2 m/s: out at once,
+        # and half the closing speed back (solveImpulse's 30 * 0.5).
+        g = self.r["drivenGroundFlat"]
+        self.assertAlmostEqual(0.5, g["y"], places=9)
+        self.assertAlmostEqual(-1.0, g["vy"], places=9)
+        # ... and the drive's friction is handed the contact.
+        self.assertEqual(1, g["contacts"])
+        self.assertAlmostEqual(1.0, g["normalY"], places=9)
+
+    def test_an_aircraft_hull_is_billed_but_not_pushed(self) -> None:
+        g = self.r["drivenGroundAircraft"]
+        self.assertAlmostEqual(0.3, g["y"], places=9)
+        self.assertAlmostEqual(-2.0, g["vy"], places=9)
+        self.assertIsNone(g["contacts"])
+
+    def test_a_hull_driven_into_a_55_degree_face_is_pushed_back_along_its_normal(self) -> None:
+        # The nose 0.15 m (vertically) into the face at 10 m/s: the push-out is
+        # that depth ALONG the sloped normal, and half the speed into the face
+        # is taken back. No launch: nothing is added beyond the normal share.
+        g = self.r["drivenGroundFace"]
+        start = self.r["drivenGroundFaceStart"]
+        nx, ny, _ = g["n"]
+        self.assertAlmostEqual(0.15 * nx, g["x"], places=9)
+        self.assertAlmostEqual(start["y"] + 0.15 * ny, g["y"], places=9)
+        closing = start["vx"] * nx
+        self.assertAlmostEqual(start["vx"] - 0.5 * closing * nx, g["vx"], places=9)
+        self.assertAlmostEqual(-0.5 * closing * ny, g["vy"], places=9)
+        speed = (g["vx"] ** 2 + g["vy"] ** 2) ** 0.5
+        self.assertLess(speed, start["vx"])
+        self.assertAlmostEqual(ny, g["normalY"], places=9)
+
+    def test_a_hull_on_a_structure_over_the_sea_is_not_settled_onto_the_bed(self) -> None:
+        # The load settle meets the terrain alone, so a hull the level stands
+        # on a pier or an oil rig (Sea Rigs' Forklifts, 47 m over the sea)
+        # would fall to the bed; it is left where it was put. One a spawner
+        # set high over dry ground still drops, as the engine's does.
+        s = self.r["standsOverTheSea"]
+        self.assertAlmostEqual(9.3, s["lowest"]["clearance"], places=6)
+        self.assertAlmostEqual(9.3, s["lowest"]["lowest"], places=6)
+        self.assertTrue(s["pier"])
+        self.assertFalse(s["highOverLand"])
+        self.assertFalse(s["onTheBeach"])
+        self.assertFalse(s["wading"])
+        self.assertFalse(s["noSea"])
+
     # --- one tick of everything ---------------------------------------------------
 
     def test_a_parked_vehicle_settles_where_the_spring_law_puts_it_and_sleeps(self) -> None:
