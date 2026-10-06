@@ -280,6 +280,25 @@ for (const c of spec.cases) {
   out.cross = { pairs, agree: pairs.every(([a, b]) => a === b) };
 }
 
+// A bot pilot's own guns stay on their line: the lab's jets fit no draw
+// index (seat-cone.js, OPEN). A bot in an aircraft's gunner seat is drawn.
+{
+  const browning = spec.cases.find(c => c.name === 'Browning')?.stats;
+  const p = page(19);
+  const pilot = mount(p, browning, { firer: 'pilot' });
+  const gunner = mount(p, browning, { firer: 'gunner' });
+  p.bots.set('pilot', { vehicle: { kind: 'air', drives: true }, deviation: { aiPending: AI_TERM } });
+  p.bots.set('gunner', { vehicle: { kind: 'air', drives: false }, deviation: { aiPending: AI_TERM } });
+  const shot = g => {
+    const q = muzzleFrame(g.group.muzzles[0]);
+    g.state.step(1);
+    p.guns.fireShot(g.group);
+    const o = offsets(p.launched.at(-1).v, q);
+    return { up: r4(o.up), right: r4(o.right) };
+  };
+  out.air = { pilot: shot(pilot), gunner: shot(gunner) };
+}
+
 // A replayed round has no firer the page can name: it flies down its line.
 {
   const browning = spec.cases.find(c => c.name === 'Browning')?.stats;
