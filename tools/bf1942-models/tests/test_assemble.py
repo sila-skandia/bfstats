@@ -3632,6 +3632,55 @@ GeometryTemplate.file Shared_m1
             GeometryTemplate(name="B", kind="StandardMesh", scale=(1.25, 1.25, 1.25))))
 
 
+class ScaledRoundExportTests(unittest.TestCase):
+    """A gun's drawn round and tracer are baked through the same scaled mesh
+    path as any part (DC's `projectile_40mm` at 0.6 on the OSA, the AC-130's
+    40 mm and the Mk19), so they say so too: the viewer measures a round's
+    drag radius off this mesh, and the engine's own radius is the file's
+    (SM-13)."""
+
+    LIBRARY = """
+ObjectTemplate.create FireArms Gun
+ObjectTemplate.projectileTemplate Round
+ObjectTemplate.setTracerTemplate Round
+ObjectTemplate.addFireArmsPosition 0/0/1 0/0/0
+
+ObjectTemplate.create Projectile Round
+ObjectTemplate.geometry Round_m1
+
+GeometryTemplate.create StandardMesh Round_m1
+GeometryTemplate.file Shared_m1
+GeometryTemplate.scale 0.5
+"""
+
+    def build(self) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Shared_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read", return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse",
+                                        side_effect=lambda *a, **k: GeometryScaleExportTests.mesh()), \
+             unittest.mock.patch("bf42.rs.parse", return_value={}), \
+             unittest.mock.patch.object(assembler, "_texture_index", return_value=None):
+            report = Report(root="Gun", configuration="complex", lod=0)
+            node = assembler.build_node(builder, "Gun", report)
+        return glb_document(builder.build([node]))
+
+    def test_the_round_and_its_tracer_draw_scaled_and_say_so(self) -> None:
+        document = self.build()
+        by_name = {n["name"]: n for n in document["nodes"]}
+        for name in ("Gun projectile", "Gun tracer"):
+            node = by_name[name]
+            self.assertEqual(([0.0, 0.0, -1.0], [0.5, 0.5, 0.0]),
+                             GeometryScaleExportTests.positions_extent(document, node["mesh"]),
+                             name)
+            self.assertEqual([0.5, 0.5, 0.5], node["extras"]["geometryScale"], name)
+
+
 class CameraToggleMouseLookExportTests(unittest.TestCase):
     def test_every_camera_says_whether_it_needs_the_key(self) -> None:
         # CW13: the word per Camera, false included, so the viewer reads it

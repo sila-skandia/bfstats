@@ -2106,12 +2106,18 @@ class Assembler:
             if self.include_effects:
                 mesh_index, _ = self._mesh_index(builder, body.geometry, report)
                 if mesh_index is not None:
+                    extras = {"templateKind": body.kind,
+                              "projectileMesh": {"template": body.name,
+                                                 "geometry": body.geometry}}
+                    # Drawn scaled, measured unscaled (SM-13): the viewer
+                    # takes the round's drag radius off this mesh, and the
+                    # engine's `getBoundingRadius` is the file's.
+                    if scale := geometry_scale(self.library.geometry(body.geometry)):
+                        extras["geometryScale"] = list(scale)
                     nodes.append(builder.add_node(gltf.Node(
                         name=f"{template.name} projectile",
                         mesh=mesh_index,
-                        extras={"templateKind": body.kind,
-                                "projectileMesh": {"template": body.name,
-                                                   "geometry": body.geometry}},
+                        extras=extras,
                     )))
         trail, payload = self._projectile_trail_spec(projectile)
         if trail is not None:
@@ -2183,13 +2189,18 @@ class Assembler:
                         builder, projectile.geometry, report)
                     if mesh_index is not None:
                         tracer["geometry"] = projectile.geometry
+                        extras = {"templateKind": projectile.kind,
+                                  "tracerMesh": {
+                                      "template": projectile.name,
+                                      "geometry": projectile.geometry}}
+                        # Drawn scaled, like the round's body above (SM-13).
+                        if scale := geometry_scale(
+                                self.library.geometry(projectile.geometry)):
+                            extras["geometryScale"] = list(scale)
                         nodes.append(builder.add_node(gltf.Node(
                             name=f"{template.name} tracer",
                             mesh=mesh_index,
-                            extras={"templateKind": projectile.kind,
-                                    "tracerMesh": {
-                                        "template": projectile.name,
-                                        "geometry": projectile.geometry}},
+                            extras=extras,
                         )))
         projectile_spec, projectile_nodes = self._projectile_spec(
             builder, template, report)
