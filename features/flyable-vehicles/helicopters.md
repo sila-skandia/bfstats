@@ -167,6 +167,14 @@ There are two gaps, and neither touches a DC helicopter:
   since its pitch axis became its light one (`0.8/2.5/1.5`, COL-13; it was
   11 degrees on the yaw/pitch/roll reading). It is the data's, and was not
   measured against the game.
+- **Some airframes read the wrong box.** The geometry inertia and the box
+  drag come from `hullGeometry`'s first-child walk, not the engine's search
+  (COL-14). The DC and DC Final H6 family (AH-6, MH-6, OH-6, MH-500, MD-500)
+  dead-ends in `H6Common` before reaching `AH6Parts` > `lodH6Cockpit`. The EoD
+  helicopters and the XPack2 and FHSW Flettners have a `SimpleObject`
+  exterior that the walk does not enter. All of them fall back to every mesh
+  under the root, rotor disc included: the AH-6's span reads 9.1 m and a
+  Huey's 15.2 m. Found in review, 2026-10-06.
 - **The rack visuals share a servo.** The racks' visual tilt comes from the
   shared rig servo: one entry per control, input and axis, and the first part
   claiming the key sets the rate. So the ±2 degree rotor rack and the ±20
