@@ -231,9 +231,218 @@ So that nobody planning viewer work meets the old story first:
 | `features/bf1942-3d-models/ground-vehicles.md`, `parity-gaps.md` | "no hull collision" now points at the engine spec; a new parity-gap row for vehicle-vs-vehicle push and crash damage |
 | `features/bf1942-parity-round-2026-09-19/README.md` | left to that round's lead session, which has the suggested row |
 
+## A part's own mesh is not the airframe's box (2026-10-07, vehicle-part-collision)
+
+**The report.** Re-extracted with con-reader (CON-15), DC's helicopters flew
+wrong: on the fresh glbs the AH-64 climbed 0.5 m on full collective where it
+climbed over 30, leaned 95 degrees on the pedal alone, DC Final's parked
+Mi-24D turned 180 degrees, and the critical-damage recovery came back with
+its revs at -0.02. Con-reader reads DC's bare `geometry` word, so parts that
+used to be empty now carry a mesh and a hull: the AH-64's `AH64HydraBundle`,
+the Mi-24's tail stand (`Mi24D_RearStand`), S-5 pods and AT-2 trays, the H6
+family's `AH6Parts`, the Harrier's nozzles.
+
+**The cause is the mesh, not the hull.** Over the fresh extracts
+(`~/.cache/dc-sweep/rex/{desertcombat,dc_final}`), with `test_flight.py`
+pointed at a scratch tree (`BF42_VIEWER_MODELS`, which it now honours):
+
+| Tree | `test_flight.py` |
+|---|---|
+| fresh glbs | 4 failures (the four above) |
+| fresh glbs, the new parts' collision nodes removed | the same 4 failures, the same numbers |
+| fresh glbs, the new parts' render meshes removed | 87 pass |
+| fresh glbs, this fix | 87 pass (88 with the regression test) |
+
+`ship-spec.js` `hullGeometry`, which gives an aircraft its box (`aircraftSpec`
+`size`: the box drag and the inertia), walks down the LOD chain to the first
+node with meshes. It counted a node's `Bundle`- or `LodObject`-tagged mesh
+children as the node's own geometry, so `AH64Complex`'s new
+`AH64HydraBundle` child made the pods the AH-64's box (5.08 x 0.48 x 1.65 m
+against the fuselage's 5.05 x 4.19 x 14.45), and `Mi24D_RearStand` made a
+tail stand the Mi-24's (0.09 x 0.06 x 0.29 m against 7.89 x 4.98 x 19.83).
+The box is the object's own geometry (COL-14), and a tagged child is an
+object of its own; only the untagged per-material sub-meshes join it, which
+is what `ownGeometryMeshes` beside it already does. That is the fix.
+
+**What it moves.** `hullGeometry` on every root with body physics in the live
+vanilla, XPack1, XPack2, DC and DC Final trees (1,185 glbs) and the fresh DC
+and DC Final extracts (767), before and after. Every move goes to, or toward,
+the node the engine's walk picks (`inertiaGeometryNode`):
+
+| Root | Before | After | Engine walk's node |
+|---|---|---|---|
+| DC, DC Final `AH64` (fresh) | the rocket pods, 5.08 x 0.48 x 1.65 | 5.05 x 4.19 x 14.45 | `AH64CockpitExternal`, the same box |
+| DC, DC Final `Mi24D` (fresh) | the tail stand, 0.09 x 0.06 x 0.29 | 7.89 x 4.98 x 19.83 | `Mi24DCockpitExternal`, the same |
+| DC, DC Final `AH-6`, `MH-6`, `OH-6` (fresh) | `AH6Parts`, 3.5 x 1.2 x 2.0 and smaller | 9.1 x 3.86 x 10.86, every mesh, as before con-reader | wrong in the viewer too (open, COL-14) |
+| DC, DC Final `MH-53` | its gear legs, 5.1 x 1.16 x 8.9 | 8.36 x 6.8 x 27.85 | `MH53CockpitExternal`, the same |
+| DC, DC Final `Nimitz` family (8 each) | its elevators, 70.9 x 14.0 x 151.9 | 72.6 x 2.94 x 325.0 | `NimitzComplex`, the same |
+| vanilla `Lcvp`, XPack1 `ItLcvp` | `Lcvp_Door`, 0.66 x 1.2 x 0.15, keel 2.05 m over the origin | every mesh, 3.4 x 3.37 x 11.55, keel 0.47 | `LcvpCockpitExternal`, 3.4 x 3.0 x 11.06, col0 bottom 0.39 |
+
+Nothing else moved in those five trees: no land vehicle, no other ship, no
+fixed-wing aircraft. The other mods' trees do move (review census, both
+`models/` and every `scene.glb`): FHSW's LCVPs as vanilla's; FHSW's
+`Bf109-G` family from a 0.8 m part to every mesh; the keels of FHSW's
+destroyers and carriers (`Hamakaze`, `Shokaku`, `Junyo`, `Dithmarschen`: from
+10 to 15 m over the origin to the box bottom); EoD's `LCT-Mk6` and Loaches to
+every mesh. FHSW's `Zuiho_1944` goes the wrong way, from an AA battery
+(8.6 x 2.6 x 46 m) to one 25 mm mount (1.5 x 0.29 x 1.5 m), because the
+chain walk still descends into a mesh-carrying `Bundle` it meets first
+(below, Open). No hull set changes and no model or level needs re-extracting
+for it: the fix is the viewer's, and it reads the glbs and baked levels
+already on disk (the DC collision sidecars are stale for another reason,
+below).
+
+**Checked.**
+
+- `test_flight.py` 88/88 on the live tree and on the fresh extracts; the new
+  `test_a_part_with_a_mesh_beside_the_cockpit_is_not_the_box` flies a
+  synthetic AH-64 with and without the pods (identical box, climb and lean)
+  and fails on the old rule with the pods' box. `test_ship.py`'s
+  `test_a_door_beside_the_cockpit_lod_is_not_the_hull` is the LCVP's shape.
+- `test_ship`, `test_world_ship_pitch`, `test_body_float`,
+  `test_deck_spawn_host`, `test_deck_spawn_transform`, `test_ground`,
+  `test_hull_wash`, `test_landing`, `test_vehicle_bodies`, `test_collision`,
+  `test_sim_vehicles`: all pass.
+- The page builds placed and spawner vehicles from the level's baked
+  `scene.glb` (`vehicle-discovery.js` `findVehicles` under `spawners`,
+  `spawned-craft.js`), not from `models/`, so the baked DC levels, which now
+  carry the new parts, are what a player meets. On DC El Alamein's live bake,
+  boarded through `__enterSeat` and stepped with `__stepSim`, unfixed
+  `ship-spec.js` routed in against the worktree's:
+
+  | | Box | Climb, 6 s full collective | Tilt, then 2 s of pedal |
+  |---|---|---|---|
+  | AH-64 before | 5.08 x 0.48 x 1.65 | 0.9 m | 47.5 degrees |
+  | AH-64 after | 5.05 x 4.19 x 14.45 | 78.6 m | 10.7 degrees |
+  | Mi-24D before | 0.09 x 0.06 x 0.29 | 80.8 m | 62.6 degrees |
+  | Mi-24D after | 7.89 x 4.98 x 19.83 | 49.3 m | 2.5 degrees |
+
+  The tilt is the hull's own from vertical, so it includes what the climb
+  left; `test_flight.py` measures the pedal's share against a no-pedal
+  control (under 1 degree for both, after). Parked for 10 s in the body world
+  before boarding, neither moved, before or after.
+- The vanilla LCVP, the one vanilla root the fix moves, on Iwo Jima's page:
+  boarded, then full ahead up a synthetic beach (the bed 8 m under her start,
+  rising 1 in 12.5 along her heading; `page_lcvp.cjs` in the scratch dir).
+  On the door's box she reached 25.7 m/s, swung round off her heading with
+  the rudder centred (100 m along at 10 s, 35 m behind her start at 20 s)
+  and grounded after 36 s. On the every-mesh box she holds her heading at
+  15.6 m/s and grounds 130 m up the beach after 16 s, the bed 2.4 m over her
+  start and her keel 0.47 m over her origin (the engine's col0 bottom is
+  0.39 m over it, `LcvpCockpitExternal`).
+- Review, real landings in the headless runner (bots under the SAI's own
+  beach order, seed 7, a scratch copy of `tests/sim_vehicles_harness.mjs`'s
+  `beach` recipe pointed at an LCVP,
+  `~/.cache/dc-sweep/review-vehicle-part-collision/lcvp_recipe.mjs`; every
+  craft of the side on Iwo Jima, 4, and Midway, 8). Main beaches all 12 in
+  their zones. This branch beaches 10 of 12, and 8
+  of those 10 sooner (Midway's median bail 115 s against 178 s). The other
+  two (Iwo pick 0 at 13 s, Midway pick 5 at 36 s) hit the `Enterprise`'s
+  side, roll past the 46 degrees at which bots bail (`upsideDownCos` 0.6914)
+  and leave the craft at sea. The engine walk's own box (3.4 x 3.0 x 11.06,
+  keel 0.39) does the same on Iwo pick 0, so the cause is the hull-vs-hull
+  contact, not this box. Retail LCVPs are tipped by contacts too: on the
+  lab's first Midway round two climbed each other to 82 degrees at the beach.
+- Review, the LCVP's speed against retail (`~/bf1942-lab/runs/*midway*`, the
+  server recorder, 45 bot-driven craft in two rounds): 13.1 m/s at best over
+  any 5 s (13.10 to 13.17 for every craft), and 20.8 deg/s at 10.8 m/s in a
+  full turn. The viewer's `Ship` in deep water, full ahead: 18.6 m/s on this
+  box, 37 deg/s at 18.2 m/s on full rudder; 17.9 m/s on the engine's header
+  box. On the door's box she was unstable: 18 to 37 m/s, and a full-rudder
+  turn spun her at 26 rad/s with 80 degrees of list. The gap left is not the
+  box (Open). In the runner both trees' craft make 13 to 14.6 m/s over 5 s.
+
+- With ground-handling's `72cf9934` merged in (the exporter keeps invisible
+  `Spring`s as undrawn wheels): the KettenKrad, R75, HD_XA42 and LVT4
+  extracted into scratch with the merged exporter keep their hidden wheels'
+  col0 probes, and drive ground-handling's battery (`fleet_drive.mjs`: settle,
+  top speed, lock, reverse, pivot, AI cruise) identically with and without
+  this fix (KettenKrad 28.1 m/s top, R75 30.9 m/s and -6.9 m/s reverse, as that
+  commit reports). The two branches touch no file in common.
+- The DC and DC Final collision sidecars (`_shared/collision-meshes.json`,
+  written 2026-09-30) predate con-reader. They have no entry for the nine new
+  part meshes (`ah64_hydras`, `mi24d_rearstand`, `mi24d_rcktpod`,
+  `mi24d_rckttray` and the H6 family's five `*_parts`) and no `scales` map
+  (SM-13: 25 DC geometries, 31 DC Final). The body world skips a collision
+  node it cannot resolve, so the page's parked and driven bodies leave those
+  parts out. Re-extracted into scratch with this branch's code, vanilla's is
+  unchanged entry for entry; DC's and DC Final's gain those nine meshes and
+  the scales and change no existing entry. The fresh helicopters' parked
+  bodies (`describeVehicleParts` + `buildParkedVehicle`, 10 s on flat ground)
+  settle the same with and without the new parts: AH-64 at 1.479 m and
+  -3.26 degrees of pitch, Mi-24D 1.926 and -2.70, AH-6 1.868 and -0.74,
+  UH-60 1.775 and -2.72, in both trees. No new part reaches the ground.
+
+**COL-17 on vehicles (COL-19) — read, not built.** The report suspected the
+new parts' hulls. The engine tests them: every part con-reader brought in says
+`hasCollisionPhysics 1`, and a part needs only one collision layer to join
+its root's chain (COL-19 reads the layer test COL-17 summarised as "both
+layers"). So the engine's rule keeps every new hull, and moving vehicles onto
+it would not have touched the regression. Measured over the same five trees
+with the exporter's own `collision_scope_for` / `lent_lod_template`
+(`~/.cache/dc-sweep/vehicle-part-collision/col17_census.py`), what it would
+take off:
+
+| Tree | Vehicle roots | Roots whose hull set changes | Hulls taken off |
+|---|---|---|---|
+| vanilla | 68 | 35 | 97 of 594 |
+| XPack1 (its own nine) | 9 | 4 | 14 of 84 |
+| XPack2 | 25 | 14 | 35 of 210 |
+| Desert Combat (fresh extract) | 134 | 66 | 178 of 1,277 |
+| DC Final (fresh extract) | 163 | 73 | 191 of 1,525 |
+
+The helicopters: the AH-64 loses its two rotors' static alternatives and the
+M230; the Mi-24 its two rotors; the UH-60 its tail rotor and rear flap; the
+MH-53 its lower ramp, door gun and `MH53Simple`; the AH-6, Mi-8 and SA-342
+nothing. The per-vehicle lists are `col17-<tree>.txt` beside the script.
+
+What goes is gun barrels and MGs (`FireArms`), tracked vehicles' drawn road
+wheels (`SimpleObject`, not their `Spring`s), propellers and tail rotors,
+hatches, doors and ramps, the Yamato's secondary turrets, a few later LOD
+alternatives (`A10Simple`, `AV8Simple`) and DC's Pantsyr launcher, radar and
+base. No `Spring` anywhere says 0, so no wheel loses its contact, and every
+root says 1. Rounds would pass through the barrels and the turrets that say
+0, which is the gameplay change; it is its own package (the exporter's
+vehicle branch, `keeps_old_collision_rule`; `describeVehicleParts` and the
+round paths read whatever the glb carries), with every model tree and every
+level bake re-extracted after it.
+
 ## Open
 
 Listed at the end of `collision-response.md`. The two that matter most for a
 port: the client's own `handleCollision` override was not located (so "the
 client computes no damage" is strongly inferred, not read), and the
 soldier-vs-soldier push was read in the decompile only.
+
+Added 2026-10-07 (vehicle-part-collision):
+
+- **COL-17 on vehicles is not built.** The exporter keeps every hull under a
+  PlayerControlObject (`assemble.py` `keeps_old_collision_rule`). The census
+  above is what moving them over takes off; it needs its own package, a
+  round-hit check on the barrels and turrets that say 0, and every tree
+  re-extracted, levels included.
+- **The aircraft box is not the engine's walk yet.** `hullGeometry` is still
+  the chain walk with an every-mesh fallback; the H6 family and the LCVPs sit
+  on the fallback (the AH-6 measures its rotor disc, 9.1 m). The engine's
+  walk is `inertiaGeometryNode`, which on the H6 family answers
+  `H6ControlStick_High` because the glb carries no selector class (COL-14).
+  That move is the fixed-wing package's.
+- **A parked body's box is its largest hull part's.** `describeVehicleParts`
+  takes the biggest collision bbox for the inertia, which on the Mi-24D is its
+  main rotor's static alternative (16.1 x 15.5 x 0.56 m), a part COL-17 does
+  not even test. The engine's is the root's geometry (COL-14).
+- **The chain walk still takes a mesh-carrying `Bundle` it meets first.**
+  `hullGeometry` no longer counts a tagged child as a node's own geometry,
+  but when a node has none it still descends into its first `Bundle` or
+  `LodObject` child, and a `Bundle` with a mesh there becomes the box. COL-14's
+  walk only ever answers a LodObject's alternative. DC's AH-64 is right only
+  because `lodAH64Cockpit` is listed before `AH64HydraBundle`; built the
+  other way round, the pods are the box again. FHSW's `Zuiho_1944` hits it
+  today. Skipping a mesh-carrying tagged child except as a LodObject's
+  alternative fixes both and moves 75 other roots (radar towers, the
+  Flakturm battery, two wrecks), none of them a vanilla ship or aircraft;
+  not done here.
+- **The LCVP is faster and turns harder than retail** (18.6 m/s and 37 deg/s
+  in deep water against 13.1 m/s and 20.8 deg/s), on the engine's box too.
+- **A driven landing craft that hits a carrier's side can be thrown past the
+  bots' bail angle**, on this box and the engine's (2 of 12 runner landings).
