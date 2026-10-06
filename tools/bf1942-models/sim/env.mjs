@@ -113,12 +113,15 @@ export async function loadViewerModules(viewer) {
     stage: null,
     loadStage: async function loadStage() {
       if (this.stage) return this.stage;
-      const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats] =
+      const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats,
+        seatCone] =
         await Promise.all([
           imp('vehicle-instance.js'), imp('bot-units.js'), imp('hull-bodies.js'), imp('vehicle-hits.js'),
           imp('vehicle-wrecks.js'), imp('level-statics.js'), imp('level-terrain.js'), imp('vehicle-entry.js'),
           imp('gunfire.js'), imp('aircraft.js'), imp('wheeled-vehicle.js'), imp('tracked-vehicle.js'), imp('ship.js'),
           imp('game-modes.js'), imp('seats.js'),
+          // Absent from a viewer older than the file (a `--viewer` before/after run).
+          imp('seat-cone.js').catch(() => null),
         ]);
       this.stage = {
         VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
@@ -132,6 +135,8 @@ export async function loadViewerModules(viewer) {
         Ship: ship.Ship, selectGameMode: modes.selectGameMode, pruneToMode: modes.pruneToMode,
         detachSpawnedCraft: seats.detachSpawnedCraft, chainOnShot: seats.chainOnShot,
         findAllVehicleRoots: seats.findAllVehicleRoots,
+        // A seat gun's deviation cone (seat-cone.js, ledger DEV-11).
+        seatConeOf: seatCone?.seatConeOf ?? null,
       };
       return this.stage;
     },

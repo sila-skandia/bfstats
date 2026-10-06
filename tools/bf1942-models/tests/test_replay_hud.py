@@ -214,13 +214,16 @@ class ReplayFirstPersonTests(unittest.TestCase):
         does from his weapon's. A plain FireArms has no stance multiplier and
         no speed, turn or misc channel: `minDev + fire`, the bloom raised
         `setFireDev` b a pull up to a and decayed c a 1/30 s tick (XHIT-15).
+        The cross reads the total the tick's update stored, so a pull shows
+        at the next tick, one decay down (DEV-12).
         The coax: `setMinDev 0.75`, `setFireDev 1.9 0.26 0.05`."""
         spread = self.results["seatSpread"]
         self.assertEqual(spread["rest"], 0.75, "at rest: the floor, 3.75 units")
-        self.assertEqual(spread["first"], 1.01, "one round: 0.26 over it")
+        self.assertEqual(spread["first"], 0.75, "the round's own pull is not in the stored total yet")
+        self.assertEqual(spread["firstTick"], 0.96, "a tick on: 0.26 over it, one 0.05 decay down")
         self.assertLess(spread["rising"][0], spread["rising"][1])
         self.assertLess(spread["rising"][1], spread["rising"][2])
-        self.assertEqual(spread["end"], 2.65, "a long burst: the bloom at its 1.9 cap")
+        self.assertEqual(spread["end"], 2.55, "a long burst: the bloom two ticks off its 1.9 cap at the last round")
         self.assertEqual(spread["half"], 1.9, "half a second on: 15 ticks of 0.05 off the cap")
         self.assertEqual(spread["settled"], 0.75)
         self.assertEqual(spread["cannon"], 0, "a tank's main gun ships no deviation words")
@@ -233,7 +236,8 @@ class ReplayFirstPersonTests(unittest.TestCase):
         seat = self.results["pageSeat"]
         self.assertEqual(seat["style"], "CHTCrossHair")
         self.assertEqual(seat["rest"], 0.75, "cannon then coax: the coax's floor")
-        self.assertEqual(seat["shot"], 1.01)
+        self.assertEqual(seat["shot"], 0.75, "the pull waits for the next tick (DEV-12)")
+        self.assertEqual(seat["tick"], 0.96)
         self.assertEqual(seat["later"], 0.86, "three ticks of decay")
         self.assertEqual(seat["cannonShot"], 0.86, "the cannon's round moves nothing")
         self.assertEqual(seat["cannonOnly"], 0)
@@ -241,7 +245,7 @@ class ReplayFirstPersonTests(unittest.TestCase):
 
     def test_a_replays_seat_cross_runs_the_guns_recorded_rounds(self) -> None:
         seat = self.results["replaySeat"]
-        self.assertEqual(seat, {"rest": 0.75, "cannon": 0.75, "end": 2.65, "half": 1.9, "settled": 0.75})
+        self.assertEqual(seat, {"rest": 0.75, "cannon": 0.75, "end": 2.55, "half": 1.9, "settled": 0.75})
 
 
 if __name__ == "__main__":

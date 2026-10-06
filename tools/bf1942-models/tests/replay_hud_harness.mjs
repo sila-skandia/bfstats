@@ -468,6 +468,8 @@ const life = rec.lives.find(l => l.nid === 50);
   results.seatSpread = {
     rest: gunAt(0.5),
     first: gunAt(1),
+    // The round's own pull reaches the stored total at the next tick (DEV-12).
+    firstTick: gunAt(1 + 1 / 30),
     rising: [gunAt(burst[0]), gunAt(burst[4]), gunAt(burst[9])],
     end: gunAt(last),
     half: gunAt(last + 0.5),
@@ -500,7 +502,9 @@ const life = rec.lives.find(l => l.nid === 50);
     const seat = { style: vehicleHud.crosshairAim().style, rest: aimNow() };
     fireStateFor(coaxNode).registerShot(1);
     seat.shot = aimNow();
-    fireStateFor(coaxNode).step(0.1);
+    fireStateFor(coaxNode).step(1 / 30);
+    seat.tick = aimNow();
+    fireStateFor(coaxNode).step(2 / 30);
     seat.later = aimNow();
     fireStateFor(cannon).registerShot(1);
     seat.cannonShot = aimNow();
