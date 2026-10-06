@@ -151,10 +151,11 @@ up for their life (the viewer caps a round at 20 s):
 | `SA-3Rocket` (1.3 s) | 250 | 237 | | | point | 274 |
 | `DefenderTOW` (DC Final) | 150 | 189 | 515 | 817 | point | 400 |
 
-Speeds in m/s. Every full body finds a top speed. The Hellfire (`drag 2`,
-`mass 5`), the AA-10 and the AT-2 (whose `Rocket_AT2` box is 1.44 x 1.46 m
-across) find a slow one: their authored drag over their geometry outweighs
-the motor. The placeholder slowed them too, under the point body's sphere law.
+Speeds in m/s, on the drawn bodies' boxes and with no lid on the summed push,
+as built on 2026-10-06. Both were wrong (§3a): on its own `.sm` header box
+the AT-2 is 0.25 m across, not 1.44, and flies at 105 m/s, not 16; the Hydra
+reaches 281 and the AIM-9 settles at 86. Every full body finds a top speed.
+The placeholder slowed them too, under the point body's sphere law.
 The TOW is a point body of 500 kg at `drag 0.1`, so only the thrust law
 limits it, at about 1.5 km/s.
 
