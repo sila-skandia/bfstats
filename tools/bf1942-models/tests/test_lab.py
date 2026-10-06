@@ -171,6 +171,78 @@ class EventLog(unittest.TestCase):
         self.assertEqual(lab.log_for(f"server/replay_{opened}.ndjson", logs), logs[1])
         self.assertEqual(lab.log_for(f"server/replay_{opened - 1200}.ndjson", logs), logs[0])
 
+    def test_a_mods_run_url_names_the_mod(self):
+        st = {"run": "r", "levels": [{"map": "el_alamein", "mode": "GPM_COOP", "mod": "desertcombat"}]}
+        (url,) = lab.viewer_urls(st, {"client": [], "server": ["server/replay_1.ndjson"], "serverlog": []})
+        self.assertTrue(url.endswith("&mode=CoOp&mod=desertcombat"), url)
+        st["levels"][0]["mod"] = "bf1942"
+        (url,) = lab.viewer_urls(st, {"client": [], "server": ["server/replay_1.ndjson"], "serverlog": []})
+        self.assertIn("&mod=bf1942", url)
+
+
+class Preload(unittest.TestCase):
+    def test_one_path_or_a_list_becomes_ld_preload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "recorder.so", Path(tmp) / "realfire.so"
+            a.write_text("")
+            b.write_text("")
+            self.assertEqual(lab.preload_value(str(a)), str(a.resolve()))
+            self.assertEqual(lab.preload_value([str(a), str(b)]), f"{a.resolve()}:{b.resolve()}")
+
+    def test_a_missing_preload_stops_the_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                lab.preload_value([str(Path(tmp) / "nope.so")])
+
+
+class ClientMod(unittest.TestCase):
+    """`setup --mods-from-client`: a client mod becomes a lower-case tree of
+    links, because the 1.6 Linux server lower-cases every path it opens."""
+
+    def make_client(self, root: Path) -> Path:
+        mod = root / "game" / "Mods" / "DesertCombat"
+        for rel in ("init.con", "lexiconall.dat", "DCreadme.txt", "Movies/intro.bik",
+                    "Archives/OBJECTS.rfa", "Archives/GUI_RFAPack.exe",
+                    "Archives/bf1942/game.rfa", "Archives/bf1942/Levels/El_Alamein.rfa"):
+            (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+            (mod / rel).write_text(rel)
+        return mod
+
+    def test_the_tree_is_lower_case_links_to_what_a_server_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = self.make_client(tmp)
+            dest = lab.link_client_mod("desertcombat", tmp / "mods", tmp / "game")
+            self.assertEqual(dest, tmp / "mods" / "desertcombat")
+            files = sorted(str(p.relative_to(dest)) for p in dest.rglob("*")
+                           if p.is_symlink())
+            self.assertEqual(files, ["archives/bf1942/game.rfa", "archives/bf1942/levels/el_alamein.rfa",
+                                     "archives/objects.rfa", "init.con", "lexiconall.dat"])
+            link = dest / "archives/bf1942/levels/el_alamein.rfa"
+            self.assertEqual(link.resolve(), (src / "Archives/bf1942/Levels/El_Alamein.rfa").resolve())
+            # A rebuild replaces its own tree, and keeps nothing stale.
+            (src / "Archives/OBJECTS.rfa").unlink()
+            lab.link_client_mod("DesertCombat", tmp / "mods", tmp / "game")
+            self.assertFalse((dest / "archives/objects.rfa").exists())
+
+    def test_a_mod_it_did_not_build_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            self.make_client(tmp)
+            (tmp / "mods" / "desertcombat").mkdir(parents=True)
+            with self.assertRaises(SystemExit):
+                lab.link_client_mod("DesertCombat", tmp / "mods", tmp / "game")
+
+    def test_two_names_one_file_to_the_server_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = self.make_client(tmp)
+            (src / "Archives/objects.rfa").write_text("twin")
+            if len(list((src / "Archives").glob("*.rfa"))) < 2:
+                self.skipTest("case-insensitive filesystem")
+            with self.assertRaises(SystemExit):
+                lab.link_client_mod("DesertCombat", tmp / "mods", tmp / "game")
+
 
 if __name__ == "__main__":
     unittest.main()

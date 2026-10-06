@@ -1,0 +1,23 @@
+{
+  "name": "dc-basrahs_edge-coop-rec",
+  "description": "Desert Combat Basrah's Edge co-op with the server-side recorder preloaded, bots only: a DC-made level with DC's own AI data, whose tank search map the viewer decodes 81.5% blocked inside the combat area (the levels census: 4 of 6 Iraqi bots frozen in the viewer's runner). Do retail bots move here? Also the DPV, MH-6, UH-60, Humvee/Technical/Lada/Pickup, M2A3/BMP-2, M163/Shilka. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "dc_basrahs_edge",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. One round, then `lab.py stop`."
+}
