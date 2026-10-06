@@ -50,6 +50,9 @@ MODULES = {
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 for name in ("Common.con", "Infantry.con", "Air.con", "Land.con"):
     MODULES[f"fixtures/controls-profile-skandia/{name}"] = FIXTURES / name
+# The seat trees of a re-baked export (`cameraView.toggleMouseLook` and
+# `.look` on every Camera), cut down from the con-reader package's glbs.
+MODULES["fixtures/air-seats.json"] = TESTS / "fixtures" / "air-seats.json"
 THREE_PACKAGE = json.dumps({
     "name": "three", "version": "0.0.0", "type": "module",
     "main": "three.module.js", "exports": "./three.module.js",
@@ -495,6 +498,78 @@ class OtherSeatTests(_Harness):
         self.assertFalse(p["needsKey"])
         self.assertAlmostEqual(20 * HEAD_SENS_DEG, p["knock"]["pitch"], places=4)
         self.assertAlmostEqual(-20 * HEAD_SENS_DEG, p["heldPitchBoxOff"], places=4)
+
+
+class RebakedExportTests(_Harness):
+    """The same rules over the con-reader export (`fixtures/air-seats.json`),
+    where every Camera carries its word and its look rig."""
+
+    def rules(self, model: str, seat: str) -> dict:
+        return self.results["rebaked"][model][seat]
+
+    def test_the_keyed_seats_are_the_ones_dcs_data_keys(self) -> None:
+        keyed = {
+            ("DesertCombat/MH-6", "MH-6"), ("DesertCombat/MH-6", "MH6Passenger_PCO3"),
+            ("DesertCombat/MH-6", "MH6Passenger_PCO6"), ("DesertCombat/SA-342G", "SA-342G"),
+            ("DesertCombat/SA-342G", "SA342Passenger3"), ("DesertCombat/SA-342G", "SA342Passenger4"),
+            ("DesertCombat/MH-53", "MH-53"), ("DesertCombat/MH-53", "MH53CoPilot"),
+            ("DesertCombat/Mi8", "Mi8"), ("DesertCombat/Mi8", "Mi8_CoPilot"),
+            ("DesertCombat/F-14B", "F-14B"), ("DC_Final/MH-6", "MH-6"),
+            ("XPack2/C47", "C47"), ("bf1942/Corsair", "Corsair"), ("bf1942/BF109", "BF109"),
+            ("bf1942/B17", "B17"),
+        }
+        for model, seats in self.results["rebaked"].items():
+            if model == "page":
+                continue
+            for seat, rules in seats.items():
+                with self.subTest(model=model, seat=seat):
+                    want = (model, seat) in keyed or (
+                        model == "DesertCombat/MH-6" and seat.startswith("MH6Passenger"))
+                    self.assertEqual(want, rules["needsKey"])
+
+    def test_the_co_pilots_whose_word_dc_remmed_look_freely(self) -> None:
+        # `rem ObjectTemplate.toggleMouseLook 1` ("Tan mod remmed to give
+        # freelook") on H6CoPilotCamera and SA342CoPilotCamera.
+        for model, seat in (("DesertCombat/MH-6", "H6CoPilot"), ("DesertCombat/SA-342G", "SA342CoPilot")):
+            with self.subTest(seat=seat):
+                r = self.rules(model, seat)
+                self.assertEqual("air", r["profile"])
+                self.assertFalse(r["needsKey"])
+
+    def test_the_seat_categories(self) -> None:
+        self.assertEqual("air", self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["profile"])
+        self.assertEqual("air", self.rules("DesertCombat/F-14B", "F14BRIO")["profile"])
+        self.assertEqual("landSea", self.rules("DesertCombat/MH-53", "MH53_Passenger3_PCO")["profile"])
+        self.assertEqual("landSea", self.rules("DesertCombat/Mi8", "Mi8_CoPilot")["profile"])
+        self.assertEqual("landSea", self.rules("bf1942/B17", "B17_PCO1")["profile"])
+
+    def test_the_signs_are_each_cameras(self) -> None:
+        self.assertEqual(-1, self.rules("bf1942/Corsair", "Corsair")["pitchSign"])
+        self.assertEqual(1, self.rules("bf1942/BF109", "BF109")["pitchSign"])
+        self.assertEqual(1, self.rules("DC_Final/MH-6", "MH6Passenger_PCO3")["pitchSign"])
+        # setAcceleration 5000/0/0 and 0/5000/0: an axis that cannot turn.
+        self.assertEqual(0, self.rules("XPack2/C47", "C47")["pitchSign"])
+        self.assertEqual(0, self.rules("DesertCombat/F-14B", "F14BRIO")["yawSign"])
+
+    def test_the_neck_is_each_cameras(self) -> None:
+        self.assertEqual((40, -5), (self.rules("bf1942/Corsair", "Corsair")["lookUp"],
+                                    self.rules("bf1942/Corsair", "Corsair")["lookDown"]))
+        self.assertEqual((40, 0), (self.rules("bf1942/B17", "B17")["lookUp"],
+                                   self.rules("bf1942/B17", "B17")["lookDown"]))
+        self.assertEqual((60, -45), (self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["lookUp"],
+                                     self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["lookDown"]))
+
+    def test_the_page_turns_each_seat_by_its_camera(self) -> None:
+        p = self.results["rebaked"]["page"]
+        yaw, pitch = -100 * HEAD_SENS_DEG, -20 * HEAD_SENS_DEG
+        self.assertAlmostEqual(yaw, p["mh6Bench"]["yaw"], places=4)
+        self.assertAlmostEqual(pitch, p["mh6Bench"]["pitch"], places=4)
+        self.assertAlmostEqual(yaw, p["c47Pilot"]["yaw"], places=4)
+        self.assertEqual(0, p["c47Pilot"]["pitch"])
+        self.assertEqual(0, p["f14Rio"]["yaw"])
+        # The RIO's camera is positive: inverted on the shipped Air box.
+        self.assertAlmostEqual(-pitch, p["f14Rio"]["pitch"], places=4)
+        self.assertAlmostEqual(-pitch, p["bf109Pilot"]["pitch"], places=4)
 
 
 class NeckTests(_Harness):
