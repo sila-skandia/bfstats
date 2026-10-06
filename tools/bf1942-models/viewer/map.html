@@ -256,6 +256,7 @@ import { createFlagCapture } from './capture.js';
 import { createCtfPage } from './ctf-page.js';
 import { createRoundEnd } from './round-end.js';
 import { createObjectives, matchTargets } from './objectives.js';
+import { spawnGroupCensus } from './spawn-flags.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
 import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
@@ -1557,6 +1558,21 @@ function startRound() {
   controlPointStart = (level.extras?.controlPoints ?? []).map(cp => [cp.name, cp.team ?? 0]);
 }
 
+/** What the end of a round's bleed counts each tick (round-state.js `tick`,
+ *  ledger TKT-5, TKT-8): the spawn groups each side holds and could take
+ *  (`spawnGroupCensus`), and whether it has a living player. */
+function roundSides() {
+  const w = level.world;
+  if (!w?.flags) return null;
+  const sides = spawnGroupCensus(w.flags);
+  sides[1].alive = false;
+  sides[2].alive = false;
+  for (const [id, p] of w.players ?? []) {
+    if ((p?.team === 1 || p?.team === 2) && !w.armorOf?.(id)?.destroyed) sides[p.team].alive = true;
+  }
+  return sides;
+}
+
 /** The points' holders at the round's start (`startRound`). */
 let controlPointStart = null;
 
@@ -2567,7 +2583,8 @@ function simulate(dt, input, look) {
   // Not under a replay: its round is the recording's (replay-round.js), and
   // this one would bleed the level's starting flags into the counter.
   if (!replayController?.active()) {
-    if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
+    if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints,
+      step.ticks > 0 ? roundSides() : null);
     syncTickets();
     // The end of the round, once the tick above has decided it: the
     // debriefing, the cue, the countdown and the restart (round-end.js).

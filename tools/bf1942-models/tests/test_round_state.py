@@ -297,6 +297,26 @@ class RoundStateTests(unittest.TestCase):
         self.assertIsNone(room["none"])
 
 
+    def test_a_side_with_no_spawn_group_bleeds_out(self) -> None:
+        e = self.results["endOfRound"]
+        # Normal play: 60 s at 5 a minute is five US tickets, Iraq untouched.
+        self.assertEqual({"1": 100, "2": 145}, e["standing"]["tickets"])
+        self.assertIsNone(e["standing"]["flags"])
+        # The bunkers gone: the countdown the shut gate left full (60 / 5 =
+        # 12 s) runs out first, then the other 99 go at one per 0.06 s, and
+        # the US win on tickets: 12 + 99 * 0.06 = 17.94 s.
+        gone = e["gone"]
+        self.assertEqual(("endGame", 2, "tickets"), (gone["status"], gone["winner"], gone["reason"]))
+        self.assertGreater(gone["seconds"], 17.9)
+        self.assertLess(gone["seconds"], 18.05)
+        self.assertEqual(0, gone["tickets"]["1"])
+        # A side that can still take a group and has a man alive is not out.
+        self.assertEqual({"1": 100, "2": 147}, e["canTake"]["tickets"])
+        self.assertEqual({"1": False, "2": True}, e["canTake"]["bleeding"])
+        self.assertEqual(("endGame", 2), (e["lastMan"]["status"], e["lastMan"]["winner"]))
+        self.assertEqual({"1": 100, "2": 145}, e["noCensus"]["tickets"])
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -438,4 +458,3 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual(["gold", "silver", "bronze"], [m["medal"] for m in wake["medals"]])
         self.assertEqual([1, 2], [m["playerId"] for m in wake["medals"][:2]])
         self.assertGreater(wake["medals"][0]["score"], wake["medals"][1]["score"])
-
