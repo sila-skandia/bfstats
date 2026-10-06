@@ -5,7 +5,9 @@ engine. This page is the other half: the real game, recorded. Bots-only DC
 co-op rounds on the lab server (`tools/bf1942-models/lab`), each written whole
 by the server recorder (`features/server-replay-recorder`), read back by
 `tools/bf1942-models/lab/dc_truth.py` into per-template numbers. The numbers
-are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page, and
+are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page (the
+ten DC runs from El Alamein to the Day 2 LOD 0 round; the Gazala LOD 0 and
+Basrah's Edge runs are counted in the text only), and
 the two vanilla LOD 0 rounds' in
 [`lab-ground-truth-vanilla.json`](lab-ground-truth-vanilla.json).
 
@@ -543,8 +545,8 @@ stops rounds and bodies cannot be read from these recordings:
 
 Settling it needs a human on the lab server (Conquest on Bragg: shoot at
 and walk into the `Mi24DWreck`), or a co-op layer added to Bragg, which this
-lab cannot load (see the water attempt below: the server rejects archives it
-did not write).
+lab could not do (see the water attempt below: the server rejected every
+archive the lab wrote).
 
 ### A land hull in deep water (ground census root cause 2): not measured
 
