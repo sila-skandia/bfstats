@@ -1465,6 +1465,9 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
             if merged["air_s"]:
                 entry = {"kind": aloft, **summarise_air(merged)}
                 if surface:
+                    # Not an aircraft: a surface hull 15 m over the heightmap
+                    # for 10 s (a bridge, a ledge, the LOD 2 mover).
+                    entry["kind"] = "aloft"
                     entry["lives_aloft"] = kinds[aloft]
                     entry["lives_surface"] = sum(kinds[k] for k in surface)
                 out["air"][tmpl] = entry
@@ -1668,7 +1671,7 @@ COMPACT_AIR = ("kind", "air_s", "speed_p05", "speed_p50", "speed_p95", "speed_ma
                "yaw_rate_p95", "roll_rate_held_0.5s", "pitch_rate_held_0.5s", "bank_p95", "liftoff_speed_p50",
                "handsoff_runs", "handsoff_s", "handsoff_fit", "handsoff_decay_runs", "handsoff_w1_over_w0_p50",
                "hover_s", "hover_pitch_p05_p50_p95", "hover_bank_p05_p50_p95", "hover_pitch_rate_p05_p50_p95",
-               "hover_rate_p95")
+               "hover_rate_p95", "lives_aloft", "lives_surface")
 
 
 def compact(res: dict) -> dict:
