@@ -384,6 +384,58 @@ ObjectTemplate.create PlayerControlObject PitGun
         self.assertIsNone(collision_scope_for(library, library.object("Gunpit")).lent)
 
 
+# The two cases the scope tests above settle only on paper, through the real
+# build: a borrowed mesh found deep under a part that says nothing, and a root
+# with a mesh of its own over a LodObject, which borrows nothing.
+DEEP_CON = STATICS_CON + """
+LodSelectorTemplate.create DistCompareSelector CabSelector
+
+ObjectTemplate.create Bundle Cab
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate CabFrame
+
+ObjectTemplate.create Bundle CabFrame
+ObjectTemplate.addTemplate lodCab
+
+ObjectTemplate.create LodObject lodCab
+ObjectTemplate.lodSelector CabSelector
+ObjectTemplate.addTemplate CabInside
+ObjectTemplate.addTemplate CabOutside
+
+ObjectTemplate.create SimpleObject CabInside
+ObjectTemplate.geometry House_m1
+
+ObjectTemplate.create SimpleObject CabOutside
+ObjectTemplate.geometry Barracks_m2
+
+ObjectTemplate.create Bundle Tower_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.geometry Shed_m1
+ObjectTemplate.addTemplate lodHouse
+"""
+
+
+class CollisionGateBuildTests(unittest.TestCase):
+
+    def deep(self, root: str) -> list[str]:
+        nodes = assemble(DEEP_CON, root, STATIC_MESHES)
+        return sorted(n["extras"]["sourceTemplate"] for n in nodes.values()
+                      if (n.get("extras") or {}).get("collision"))
+
+    def test_a_mesh_lent_from_deep_down_ships_under_a_silent_part(self) -> None:
+        # COL-18's second try: `CabFrame` says nothing and is no LodObject, so
+        # the search finds `lodCab` under it, and its first alternative's mesh
+        # is the root's. The far alternative, never tested, ships nothing.
+        self.assertEqual(["CabInside"], self.deep("Cab"))
+
+    def test_a_root_with_a_mesh_of_its_own_borrows_nothing(self) -> None:
+        # `getFaceCollision` takes the root's own geometry and never calls
+        # `findLodGeometry`, so the house under it is just a part: its first
+        # alternative says nothing and is not tested; the crate inside it says
+        # 1 and is.
+        self.assertEqual(["Crate_m1", "Tower_m1"], self.deep("Tower_m1"))
+
+
 class CollisionHarnessTests(unittest.TestCase):
     """The exporter's decision, through the real collider.
 
