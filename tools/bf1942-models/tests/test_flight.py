@@ -1060,6 +1060,22 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(c["recovered"]["revs"], 0.3)
         self.assertGreater(c["recovered"]["vy"], c["critical"]["vy"])
 
+    def test_a_landed_helicopters_nose_stops_on_its_tail_wheel(self) -> None:
+        # Set down turning nose-up at 10 deg/s, collective down. The tail
+        # wheel (6.99 m aft, 0.96 m down) reaches the ground at 5.75 degrees
+        # with the origin on its clamp, and the contact it makes stops the
+        # turn there (checkVsTerrain + solveImpulse, collision-response.md
+        # sections 6.4 and 7). Before, nothing did: 60 degrees in six seconds.
+        up = self.results["helicopter"]["landedNoseUp"]
+        self.assertTrue(up["grounded"])
+        self.assertLess(max(up["trace"]), 6.5)
+        self.assertGreater(up["trace"][0], 4.0)                 # it did turn onto it
+        self.assertLess(abs(up["trace"][-1] - up["trace"][1]), 0.5)   # and holds
+        self.assertLess(abs(up["rate"]), 0.5)
+        # Nose-down is the dig rule's, as it was: levelled, not held under.
+        down = self.results["helicopter"]["landedNoseDown"]
+        self.assertLess(abs(down["trace"][-1]), 0.5)
+
     def test_pedal_alone_turns_a_helicopter_and_nothing_else(self) -> None:
         # Two seconds of D in a hover, measured against the same hover flown
         # without it. No gyroscopic term (COL-8): the yaw stays a yaw.
