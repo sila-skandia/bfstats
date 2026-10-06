@@ -1122,6 +1122,17 @@ class FlightModelTests(unittest.TestCase):
         self.assertEqual([-1, -1, -1, -1, -1, -1, -0.46, -0.46],
                          self.results["excessInput"]["halfSteps"])
 
+    def test_a_negative_max_speed_turns_a_servo_part_the_other_way(self) -> None:
+        # DC's CIWS barrel (`setMaxSpeed 0/0/-10000` over `setAcceleration
+        # 0/0/-10000`, no `setAutomaticReset`): `calculateAndClipAngle`'s
+        # servo multiplies by `maxSpeed` signed (lnxded 0x081d7866), so the
+        # trigger turns it positive. `advanceSurfaces` used its magnitude only
+        # and turned it negative, which is what `automaticReset` would do.
+        r = self.results["signedServo"]
+        self.assertGreater(r["servo"], 0.0)
+        self.assertLess(r["reset"], 0.0)
+        self.assertAlmostEqual(r["servo"], -r["reset"], places=2)
+
     def test_a_ships_ramp_servo_carries_a_keys_step(self) -> None:
         # Lcvp_Ramp: 45 deg/s over 90 degrees is half its travel a second;
         # the step holds it at its bound and the release brings it back at

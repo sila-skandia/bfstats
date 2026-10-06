@@ -189,7 +189,10 @@ export class TurretAxis {
     // `maxSpeed` is the deg/s it buys per unit of it. No clamp to +-1 here:
     // that clamp lives only inside the engine's `rememberExcessInput` branch,
     // which no turret, manned gun or tank in any of 18 installs declares.
-    const cap = Math.abs(this.spec.maxSpeed || 0);
+    // Signed: `calculateAndClipAngle` multiplies by the template's
+    // `maxSpeed` with no `fabs` (lnxded `0x081d7866`), so a negative one
+    // turns the servo the other way. No look-bound turret declares one.
+    const cap = this.spec.maxSpeed || 0;
     // `direction` is `sign(acceleration)`, the engine's own
     // `fchs`-on-negative-acceleration; `inputScale` is HP-15's 0.2.
     const input = this._input * (this.spec.direction || 1) * inputScale;
