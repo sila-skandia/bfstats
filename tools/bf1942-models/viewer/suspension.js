@@ -177,9 +177,11 @@ export function probeAlongAxis(groundHeight, attach, axisWorld, fromY) {
   // leaning into a 45-degree rise read the ground metres ABOVE its own start
   // and a buried axle (`newton` < 0), the bump stop answered with 100 m/s^2
   // a wheel, and a Willy left Gazala's escarpment at 94 m/s. Where the step
-  // lands on the ground, as it does on anything a wheel normally meets, its
-  // answer stands; where it does not, the crossing is bracketed and solved.
-  // [free, numerics]
+  // lands within PROBE_TOLERANCE of the ground its answer stands; where it
+  // does not, the crossing is bracketed and solved. That is not only steep
+  // faces: with the axis leaning about 18 degrees or more (a side slope, a
+  // hull rolling in a turn) the step misses by 2 to 9 cm, and the solve moves
+  // ordinary driving by that much (review, 2026-10-07). [free, numerics]
   const miss = probeGap(groundHeight, attach, axisWorld, fromY, newton);
   if (!(Math.abs(miss) > PROBE_TOLERANCE)) return newton;
   return solveProbe(groundHeight, attach, axisWorld, fromY, drop, newton);
