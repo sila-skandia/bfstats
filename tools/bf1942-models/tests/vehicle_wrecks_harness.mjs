@@ -56,7 +56,7 @@ function respawn(wreck) {
   wrecks.damageVisuals.set('pad', visual);
   let faded = null;
   if (!wreck) {
-    Object.assign(visual, { removed: false, respawnIn: null, wreckAge: 1e3 });
+    Object.assign(visual, { removed: false, respawnIn: null, wreckAge: 1e3, latched: true });
     wrecks.stepWrecks(1 / 60);      // past linger and fade: opacity 0
     faded = { body: state(h.body.material), smoke: state(h.smoke) };
     visual.hidden = [h.body];
@@ -162,8 +162,11 @@ async function lateWreck() {
   const visual = { node: h.node, anchors: new Map(), handles: [], spawnDelay: null };
   wrecks.damageVisuals.set(3, visual);
   const dying = wrecks.wreckVehicle({ owner: 3, effects: [], killedBy: null });
+  // The death's latch tick (HP-19), then the clock: 0 s is gone on the second.
   wrecks.stepWrecks(1 / 30);
-  const gone = { removed: !!visual.removed, drawn: h.body.visible };
+  const latched = { removed: !!visual.removed };
+  wrecks.stepWrecks(1 / 30);
+  const gone = { latchTick: latched, removed: !!visual.removed, drawn: h.body.visible };
   release();
   await dying;
   return { ...gone, wreckAfterLoad: !!visual.wreck, drawnAfterLoad: h.node.children.some(c => c.visible) };
