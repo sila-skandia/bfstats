@@ -1277,6 +1277,39 @@ bake of `dc_sea_rigs`, `dc_urban_siege`, `midway`, `wake` and `iwo_jima` in
 both trees. `iwo_jima` places only the plain `Nimitz`, so its glb does not
 change; it is listed only so the set is complete.
 
+### 25.2 Every placed root, not only a hull (2026-10-07)
+
+PHY-16 is about the root's physics node, so it holds for any placed object.
+DC's objective buildings are PlayerControlObjects with armor and no Engine:
+No Fly Zone's control towers, hangars and radar domes, and Medina Ridge's
+`flagkill`. They write `hasMobilePhysics 0`. The page settled each one onto
+the heightfield (`settlePlacedVehicles`) and parked it in the body world like
+a jeep. On a No Fly Zone Day 2 load, `air_control_tower_des` rose 6.2 m and
+lay at 84 degrees, a radar dome moved 127 m, and a hangar rose 80 m.
+
+- **Exporter:** a depth-0 root of any kind except an effect is stamped when it
+  writes the word 0 (either spelling), or when it carries an Engine and its
+  bit is clear. `con.py` keeps `mobile_physics_declared`.
+- **Viewer** (`hull-bodies.js`): a stamped root is never settled, floated or
+  parked. It stays scenery in the static index at its authored pose. On Sea
+  Rigs that puts the carrier at y 80.0, her authored pose, where before she
+  was floated to 81.4.
+
+Measured with `static_roots_sim.mjs` (session scratch), 30 s of a match after
+setup. Live bake: the eight objective roots moved 7.8, 30, 36, 80, 127 and
+175 m, and two did not move. A scratch bake with this exporter: all eight
+stayed at 0.00 m with no tilt. Vanilla Battle of Britain's factories and
+radar towers write the word too. They did not move before (no body spec), and
+they get the stamp at their next bake.
+
+The stationary guns still get no stamp. Their bit is clear because they never
+write the word, so the engine holds them still as well. The page parks them,
+and they can be shoved. Stamping them changes every level in every tree, so
+that is left for a decision: a follow-up, not in this change.
+
+`tests/test_deck_spawn_host.py` `test_a_static_carrier_is_not_floated`;
+`test_assemble.py` `test_a_root_that_declares_no_mobile_physics_is_stamped_static`.
+
 Open:
 
 1. Bots skip every seat of a hull whose root classifies as a `seat`
