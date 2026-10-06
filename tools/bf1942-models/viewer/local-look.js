@@ -480,7 +480,9 @@ export function createLocalLook(page) {
     return false;
   }
 
-  function lookDelta(dx, dy) {
+  /** `source.touch`: the delta is a finger on the touch look zone
+   *  (`touch-controls.js` `feedLookVelocity`), not the mouse. */
+  function lookDelta(dx, dy, source = null) {
     if (!dx && !dy) return;
     // P2's one necessary touch outside its owned-function list (see its final
     // report): a bare gun/seat root has no `view` (`VehicleCamera`) to turn at
@@ -526,18 +528,27 @@ export function createLocalLook(page) {
       // which the frame pumps on the Air profile, and the pilot's input word
       // reads the pumped pair as his stick (`local-player.js` `sampleInput`
       // through the Air map's `c_PIRoll`/`c_PIPitch` mouse lines). The view
-      // does not move.
+      // does not move. A finger on the touch look zone is not the mouse and
+      // never reached the stick: it does nothing here, as it always did.
       if (lookNeedsKey()) {
         if (!lookKeyHeld()) {
-          mouseInput.accumulate(dx, dy);
+          if (!source?.touch) mouseInput.accumulate(dx, dy);
           return;
         }
-        // Held by the key, the vertical takes the Air profile's invert: it is
-        // the device's Y the box turns round (`mouse-input.js`
-        // `invertProfile`), so the shipped `game.setAirMouseInvert 1` inverts
-        // the held look exactly as it inverts the stick. A finger dragging the
-        // view on a touch screen is not the mouse and keeps its own sense.
-        const flip = page.held(MOUSE_LOOK_TRIGGER) && mouseInput.invertFor('air') ? -1 : 1;
+        // Held by the key, the head is the Camera's own RotationalBundle on
+        // `c_PIMouseLookY` (MLK-3): its speed follows `sign(acceleration) x
+        // input` (GUN-2), and the input is the device's Y, which the Air box
+        // turns round (MLK-8). What the hand does to the view is therefore the
+        // camera's pitch-acceleration sign times the box (MLK-13). The glbs
+        // carry neither the sign nor the word, and nearly every shipped pilot
+        // camera is negative (`CorsairCamera` `setAcceleration 5000/-5000/0`):
+        // its minus undoes the shipped box, so with the box on the held look
+        // keeps its plain sense, and turning the box off inverts it. The
+        // positive cameras (BF109, Mustang, B17, the Aichi Vals, DC's AC-130,
+        // several DC Final helicopters) are inverted in retail and not here.
+        // A finger dragging the view on a touch screen is not the mouse and
+        // keeps its own sense.
+        const flip = page.held(MOUSE_LOOK_TRIGGER) && !mouseInput.invertFor('air') ? -1 : 1;
         page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS * flip);
         return;
       }

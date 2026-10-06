@@ -464,6 +464,22 @@ function offForward(view) {
   look.lookDelta(0, 30);
   s.touchPitch = deg(view.look.pitch - touchBefore);
   state.touch = false;
+  for (let i = 0; i < 120; i += 1) look.stepMouseLookKey(1 / 60);
+
+  // The touch look zone in a pilot's seat: the seat is not touchFlying, the
+  // key is up, and `touch-controls.js` hands its drag over as a finger.
+  {
+    look.pumpLook(1);
+    const before = lookOf(view);
+    look.lookDelta(30, 30, { touch: true });
+    const pending = { ...look.mouseInput.pendingPixels };
+    const after = lookOf(view);
+    s.touchZone = {
+      pending,
+      look: { yaw: after.yaw - before.yaw, pitch: after.pitch - before.pitch },
+      roll: controls.axis('c_PIRoll', frame(0, 0)),
+    };
+  }
 
   // The owner's profile flies on the joystick: its Air map binds no mouse
   // axis to the stick, so the mouse flies nothing.

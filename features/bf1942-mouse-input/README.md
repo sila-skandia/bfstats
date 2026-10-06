@@ -302,7 +302,8 @@ consumer is GUN-2's `calculateAndClipAngle` (`Wing::handleUpdate` calls it
 ungated): an `automaticReset` surface ramps to `input x maxRotation` and stops
 at its bound, so the stick takes this file's rate as it stands. The Air box
 `setAirMouseInvert 1` turns the device's Y, the stick's pitch and the held look
-alike (MLK-8).
+alike (MLK-8). On screen the held look also takes the pilot camera's own pitch
+acceleration sign, which for nearly every shipped camera undoes the box (MLK-13).
 
 ## The one unproven unit
 
