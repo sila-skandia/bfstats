@@ -1,23 +1,38 @@
 // The world's input word and its tick law: a player's input shaped into the
 // engine's PlayerInput, buffered engine-FIFO, and consumed exactly one per
 // 30 Hz tick (LOOP-1; `world.js`'s header has the whole law), plus the stick
-// spring the aircraft and ship paths shape an axis with. Split out of
-// `world.js`, which re-exports the stick rates.
+// spring the ship path still shapes its pitch with. Split out of `world.js`,
+// which re-exports the stick rates.
+
+import { AXIS_RANGE } from './mouse-input.js';
 
 /**
- * Stick spring rates, moved verbatim from map.html (before this file owned
- * the aircraft drivetrain's input shaping): full deflection in ~0.4 s, and
- * back to centre a little faster.
+ * Stick spring rates, moved verbatim from map.html: full deflection in
+ * ~0.4 s, and back to centre a little faster. The viewer's own, and spent now
+ * only by a ship's `c_PIPitch` (ramps, dive planes).
+ *
+ * The aircraft no longer take it. A key pair on the Air map resolves through
+ * `ControlMap::buttonsToAxis` (lnxded 0x083f2080, client twin 0x0061b850):
+ * held, the value climbs by `dt / riseTime`, released it falls by
+ * `dt / fallTime`, both seeded 0.001 s by the `ControlMap` ctor (0x083f0540,
+ * `0x3a83126f` at `+0x28`/`+0x2c`; the client keeps them at `+0x40`/`+0x44`).
+ * `ControlMap.setButtonRiseTime`/`setButtonFallTime` exist as console words
+ * (client registrars 0x0058a840 / 0x0058a9d0) and no shipped `.con` calls
+ * them, so one 33 ms pump carries a key from 0 to 1 and back: the channel is a
+ * step. The part's own servo is the only shaping, as it always was for the
+ * ground vehicles. `game.setAirKeyboardSensitivity 0.5` does not touch it
+ * either: it is stored at `ControlSettings+0x18` (setter 0x00803640, reached
+ * from the console body 0x006bc4e0 via 0x006c57c0), bound to the options
+ * slider (0x006ec49d) and written back by the profile save (0x006ecbe2), and
+ * nothing reads it for play -- the settings object has a getter for every
+ * other field of the four profiles and none for this one.
  */
 export const STICK_RATE = 2.4;
 export const STICK_RETURN = 3.2;
 
 /**
- * Move an axis toward a held key's demand, and spring it back when released.
- * A digital key on an analogue surface needs this or every input is a slam.
- * The page's aircraft path applied this per frame at the display rate; the
- * world applies the same law per 30 Hz tick with the world's own dt, which
- * is the engine's arrangement (the server shaped the stick at its tick).
+ * Move an axis toward a held key's demand, and spring it back when released,
+ * per 30 Hz tick with the world's own dt. The ship path's pitch only (above).
  */
 export function axisToward(current, demand, dt) {
   const rate = (demand === 0 ? STICK_RETURN : STICK_RATE) * dt;
@@ -51,16 +66,19 @@ const ENGINE_IDLE = Object.freeze({
 function shapeInput(input) {
   const i = input || IDLE_INPUT;
   const clamp11 = v => Math.max(-1, Math.min(1, v));
+  const clampWire = v => Math.max(-AXIS_RANGE, Math.min(AXIS_RANGE, Number.isFinite(v) ? v : 0));
   return {
     forward: clamp11(i.forward ?? 0),
     strafe: clamp11(i.strafe ?? 0),
     // The raw W/S and A/D pairs: the aircraft's throttle latch and rudder
-    // spring take the keys alone — the pad's Y is the stick's pitch and its
-    // X is roll, so folding the pad in would be double-paying it. Ground
+    // take the control map alone — the pad's Y is the stick's pitch and its
+    // X is roll, so folding the pad in would be double-paying it. The rudder
+    // is clipped at the wire's +-16 like the stick, for a profile that binds
+    // the mouse to it. Ground
     // vehicles and the on-foot body use `forward`/`strafe`, pad included,
     // exactly as the page always split them.
     forwardKeys: clamp11(i.forwardKeys ?? 0),
-    rudder: clamp11(i.rudder ?? 0),
+    rudder: clampWire(i.rudder ?? 0),
     walk: !!i.walk,
     crouch: !!i.crouch,
     prone: !!i.prone,
@@ -76,12 +94,15 @@ function shapeInput(input) {
     // latches into these before setInput.
     fire: !!i.fire,
     altFire: !!i.altFire,
-    // The aircraft stick axes (c_PIRoll/c_PIPitch), arrows on the page and a
-    // touch pad's deflection on mobile. `pad` is the page's mobile override:
-    // the pad feeds the stick directly, bypassing the spring, which is what
-    // the page always did for it.
-    roll: clamp11(i.roll ?? 0),
-    pitch: clamp11(i.pitch ?? 0),
+    // The aircraft stick axes (c_PIRoll/c_PIPitch): the control map's value,
+    // keys or a joystick in -1..1, the mouse's rate beyond it (mouse-input.js,
+    // up to the wire's own +-16, `PlayerAction::set` 0x081128a0), and a touch
+    // pad's deflection on mobile. `pad` is the page's mobile override, which
+    // the mouse-look router leaves alone (`routeFlightInput`). The consumer
+    // clips: a rack at its `maxRotation`, a fixed-wing surface at +-1
+    // (`world-vehicle-tick.js`).
+    roll: clampWire(i.roll ?? 0),
+    pitch: clampWire(i.pitch ?? 0),
     pad: !!i.pad,
   };
 }

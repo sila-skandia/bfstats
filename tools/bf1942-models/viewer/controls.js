@@ -10,11 +10,21 @@
 // Device model: `IDFKeyboard` is the browser keyboard (`IDKey_*` names a
 // DirectInput scancode, the same physical-key identity as `event.code`),
 // `IDFMouse` is the pointer (mouse-button and wheel bindings — the page's
-// mouse stages keep their own plumbing; only the look axes were ever mouse
-// channels), and `IDFGameController_0` is the first gamepad the browser
+// mouse stages keep their own plumbing; its axes are converted by
+// mouse-input.js, and `axis(trigger, mouse)` folds that pumped pair into any
+// other channel the map binds them to: the Air map's stick), and
+// `IDFGameController_0` is the first gamepad the browser
 // reports, polled once a frame (`pollGamepad`) for button levels, edges and
 // axis values. A joystick therefore lands on the same channels the profile
 // bound: the Air map's `IDAxis_0..3` are the stick's roll/pitch/yaw/throttle.
+//
+// Slots: the engine keeps two mappings per channel, a primary and a
+// secondary (`AxisRemap`, 0xa8 bytes: two `AxisMapping`s at +0 and +0x50),
+// and the `.con` line's last flag says which one it fills
+// (`ControlMap::addAxisMapping` lnxded 0x083f0a50 and 0x083f1430: the
+// trailing bool picks +0x50). `ControlMap::update` (lnxded 0x083f1d70, client
+// twin 0x0061bef0) resolves both and keeps the one of larger magnitude, the
+// primary on a tie: a channel's two devices never add.
 //
 // Context overlay: the engine merges the game map (`c_GI*`) and the common
 // player map under one context map — Infantry on foot, Air in an aircraft,
@@ -124,24 +134,39 @@ export function parseCon(text) {
       const pos = keyIdToCode(a[2]);
       const neg = keyIdToCode(a[3]);
       if (dev?.device === 'keyboard' && pos && neg) {
+        // The one trailing number is the slot (`addAxisMapping(int,
+        // InputDeviceFlags, InputDeviceKeys, InputDeviceKeys, bool)` lnxded
+        // 0x083f1430 writes +0x50 when it is set). A key pair has no invert:
+        // the same function stores 0 at `AxisMapping+0x4c`.
         bindings.push({ kind: 'axis', device: 'keyboard', index: 0,
-                        trigger: a[0], codes: [pos, neg], flags: a[4] || '' });
+                        trigger: a[0], codes: [pos, neg], flags: a[4] || '',
+                        secondary: Number(a[4]) === 1 });
       }
     } else if (verb === 'ControlMap.addAxisToAxisMapping') {
       const dev = deviceOf(a[1]);
       const axis = idNumber(a[2], 'IDAxis_');
-      if (dev && s31(axis) && dev.device !== 'mouse') {
-        // The mouse's two axes are the look stage's channels (`c_PIMouseLookX/Y`),
-        // which mouse-input.js owns with its own engine law; a keyboard-only
-        // parse of them would be an empty alias. Everything else — the
-        // controller axes — is what this module is here for. The first
-        // trailing number is the invert flag (`AxisMapping+0x4c`, the same
-        // word mouse-input.js reads on the look axes); a second one appears
-        // on some joystick lines and its meaning is unchased, so it is kept
-        // nothing — a guessed deadzone would be worse than none.
+      if (dev && s31(axis)) {
+        // `<trigger> <device> <axis> <invert> [<secondary>]`: the console word
+        // (`ConsoleClass392::executeObjectMethod` lnxded 0x0840cd70, four or
+        // five arguments typed int / InputDeviceFlags / InputDeviceAxes /
+        // bool / bool) hands them in that order to `addAxisMapping(int,
+        // InputDeviceFlags, InputDeviceAxes, bool, bool)` 0x083f1030, whose
+        // first bool is the invert (`AxisMapping+0x4c`, negated at
+        // `resolveAxisMapping` 0x083f1f57) and the second the slot. The
+        // owner's profile shows the pair: its joystick yaw and throttle
+        // (`IDAxis_2 0 1`, `IDAxis_3 1 1`) sit in the secondary slot behind
+        // the keys, its pitch (`IDAxis_1 1`) inverted in the primary.
+        //
+        // A mouse axis is recorded like a stick's. Its value is not this
+        // module's to read -- mouse-input.js turns counts into the device's
+        // rate -- so it only reaches a channel when the caller hands that
+        // pumped pair to `axis` (the pilot's stick). The look axes'
+        // `c_PIMouseLookX/Y` lines are recorded too and asked for by nobody:
+        // the look stage reads the pair itself.
         bindings.push({ kind: 'axis', device: dev.device, index: dev.index,
                         trigger: a[0], axis,
-                        invert: Number(a[3]) === 1 });
+                        invert: Number(a[3]) === 1,
+                        secondary: Number(a[4]) === 1 });
       }
     } else if (verb === 'ControlMap.addAxisToTriggerMapping') {
       // The wheel pair (`c_PINextItem/c_PIPrevItem`, `c_GIMouseWheelUp/Down`):
@@ -156,6 +181,18 @@ export function parseCon(text) {
     // formats) is out of the shipped grammar and ignored.
   }
   return { bindings, vars, maps };
+}
+
+/**
+ * One channel's two slots folded the engine's way: `ControlMap::update`
+ * (lnxded 0x083f1d70) resolves the primary into `AxisRemap+0xa4`, then the
+ * secondary, and replaces the primary only when `|secondary| > |primary|`
+ * (the client twin 0x0061bef0 does the same compare, `fcompp` at 0x0061bf63);
+ * a tie keeps the primary. Two devices on one channel never add: a stick
+ * held at 0.5 against a key pressed the other way reads -1, not -0.5.
+ */
+export function resolveAxisSlots(primary, secondary) {
+  return Math.abs(secondary) > Math.abs(primary) ? secondary : primary;
 }
 
 /** Which of the four contexts a `.con` file feeds, from its own content —
@@ -388,17 +425,22 @@ export function createControls(page) {
 
   const heldKeys = () => (page.captured ? page.keys : null);
 
-  /** Channel value for an axis trigger in [-1, 1]: the keyboard's two keys
-   *  of the pair and the controller's axes, summed and clamped — the engine
-   *  folds every binding of a channel the same way. Mouse axes are the look
-   *  stage's and never come through here. Zero unless the page is captured:
-   *  the input word is the device stage's, and the free camera's WASD is not
-   *  the player's. */
-  controls.axis = trigger => (page.captured
-    ? axisIn(trigger, controls.context(), heldKeys()) : 0);
+  /** Channel value for an axis trigger: the keyboard's two keys of the pair
+   *  and the controller's axes, summed and clamped to [-1, 1] (the viewer's
+   *  fold, kept for every device it always served), then the mouse when the
+   *  caller hands in its pumped pair `{x, y}` (mouse-input.js's device rate,
+   *  the profile's sensitivity and invert already in it). A mouse binding
+   *  takes the engine's own slot rule against the rest (`resolveAxisSlots`)
+   *  and is NOT clamped: it is a rate, up to the wire's +-16, and its
+   *  consumer clips it. Zero unless the page is captured: the input word is
+   *  the device stage's, and the free camera's WASD is not the player's. */
+  controls.axis = (trigger, mouse = null) => (page.captured
+    ? axisIn(trigger, controls.context(), heldKeys(), mouse) : 0);
 
-  function axisIn(trigger, context, keys) {
+  function axisIn(trigger, context, keys, mouse = null) {
     let v = 0;
+    let fromMouse = null;
+    let mousePrimary = false;
     for (const b of bindingsFor(trigger, context)) {
       if (b.kind !== 'axis') continue;
       if (b.device === 'keyboard') {
@@ -409,9 +451,20 @@ export function createControls(page) {
         const mag = Math.abs(raw) < JOY_DEADZONE
           ? 0 : (raw - Math.sign(raw) * JOY_DEADZONE) / (1 - JOY_DEADZONE);
         v += mag * (b.invert ? -1 : 1);
+      } else if (b.device === 'mouse' && mouse) {
+        // DirectInput's axis 0 is X and 1 is Y; the wheel (2) is a trigger
+        // pair, never an axis-to-axis line in shipped data.
+        const raw = b.axis === 0 ? mouse.x : b.axis === 1 ? mouse.y : 0;
+        const value = (Number.isFinite(raw) ? raw : 0) * (b.invert ? -1 : 1);
+        if (fromMouse === null || Math.abs(value) > Math.abs(fromMouse)) {
+          fromMouse = value;
+          mousePrimary = !b.secondary;
+        }
       }
     }
-    return Math.max(-1, Math.min(1, v));
+    v = Math.max(-1, Math.min(1, v));
+    if (fromMouse === null) return v;
+    return mousePrimary ? resolveAxisSlots(fromMouse, v) : resolveAxisSlots(v, fromMouse);
   }
 
   /** Whether a trigger is held at level: any of its keyboard bindings down,
