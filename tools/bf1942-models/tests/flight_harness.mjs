@@ -33,6 +33,8 @@ import { aimAtDirection, helicopterControl } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
+import { vehicleTick } from './world-vehicle-tick.js';
+import { bufferInput } from './world-input.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
@@ -1820,6 +1822,85 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       fly(heli, 20);
       real.parked[name] = { moved: round(Math.hypot(heli.state.position.x, heli.state.position.z), 3),
                             grips: [...new Set(heli.spec.wheels.map(w => w.grip))] };
+    }
+    // The `c_PGFRollGripWhenOccupied` airframes, parked level with the seat
+    // taken: the Harrier, and DC Final's helicopters, which stand on one
+    // DummyGrip wheel and RollGrip mains. RollGrip asks back only the velocity
+    // along the axle (PHY-2), so these roll freely; `groundFriction` once read
+    // that velocity after overwriting it and pushed every such wheel along
+    // -axle, and a parked Harrier slid 247 m and turned 61 degrees in 20 s, a
+    // DC Final UH-60 63 m and 176 degrees. They are stood level rather than
+    // at the six degrees above: a hull nose-high on rolling mains with its
+    // idle thrust tilted back does roll back on them, a few millimetres a
+    // second, which is the law and not the bug.
+    const dcf = name => `${base}/mods/dc_final/${name}.glb`;
+    real.rollGripParked = {};
+    for (const [name, path] of [['AV-8B', dc('AV-8B')], ['dc_final/UH-60', dcf('UH-60')],
+                                ['dc_final/Mi24D', dcf('Mi24D')], ['dc_final/Mi8', dcf('Mi8')]]) {
+      if (!existsSync(path)) continue;
+      const craft = new Aircraft(await glb(path), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      craft.groundHeight = () => 0;
+      craft.state.position.set(0, craft.spec.groundClearance, 0);
+      craft.setInput('c_PIThrottle', 0);
+      let turned = 0;
+      const nose = new THREE.Vector3();
+      for (let i = 0; i < 20 * 60; i++) {
+        craft.integrate(DT);
+        nose.set(0, 0, -1).applyQuaternion(craft.state.orientation);
+        turned = Math.max(turned, Math.abs(Math.atan2(-nose.x, -nose.z)) * DEG);
+      }
+      real.rollGripParked[name] = {
+        occupied: craft.engineRunning,
+        moved: round(Math.hypot(craft.state.position.x, craft.state.position.z), 3),
+        turned: round(turned, 2),
+        grips: [...new Set(craft.spec.wheels.map(w => w.grip))],
+      };
+    }
+    // The owner's Harrier flight, key by key through the page's own air-seat
+    // tick (`world-vehicle-tick.js` `vehicleTick`, which shapes W/S into the
+    // held `c_PIThrottle` and springs the arrows through `axisToward`): S for
+    // 3 s to lift on the jets, W for 4 s to transition, ArrowDown (Air.con's
+    // `c_PIPitch` -1) for 1 s to pull up, then 2 s more on W. With the RollGrip
+    // bug it left the pad already turning and was banked 41 degrees by the
+    // end of the W, and the pull dropped the nose.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      harrier.groundHeight = () => 0;
+      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+      const seat = {
+        id: 'pilot', kind: 'air', vehicle: harrier,
+        occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
+        gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
+        stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
+      };
+      const world = { occupiedDamageable: () => null, falling: null, fireStateFor: () => null, guns: null };
+      const integrators = new Map([[harrier, seat]]);
+      const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
+      let maxBank = 0;
+      const attitude = () => {
+        const q = harrier.state.orientation;
+        fwd.set(0, 0, -1).applyQuaternion(q); right.set(1, 0, 0).applyQuaternion(q); up.set(0, 1, 0).applyQuaternion(q);
+        return { pitch: Math.asin(Math.max(-1, Math.min(1, fwd.y))) * DEG, bank: Math.atan2(-right.y, up.y) * DEG,
+                 heading: Math.atan2(-fwd.x, -fwd.z) * DEG, y: harrier.state.position.y };
+      };
+      const hold = (seconds, keys) => {
+        for (let i = 0; i < Math.round(seconds * 30); i++) {
+          bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: 0, roll: 0, pitch: keys.pitch ?? 0 });
+          vehicleTick(world, seat, 1 / 30, integrators);
+          maxBank = Math.max(maxBank, Math.abs(attitude().bank));
+        }
+        return attitude();
+      };
+      hold(1, {});
+      const lifted = hold(3, { forward: -1 });
+      const transitioned = hold(4, { forward: 1 });
+      const pulled = hold(1, { forward: 1, pitch: -1 });
+      const after = hold(2, { forward: 1 });
+      real.harrierOwner = {
+        liftedY: round(lifted.y, 1), maxBank: round(maxBank, 2), heading: round(after.heading, 2),
+        pitchBeforePull: round(transitioned.pitch, 2), pitchAtRelease: round(pulled.pitch, 2),
+        pitchAfter: round(after.pitch, 2), climbedAfter: round(after.y - transitioned.y, 1),
+      };
     }
     // The bot's law flies each of them 700 m and puts it down on the point.
     real.pilot = {};

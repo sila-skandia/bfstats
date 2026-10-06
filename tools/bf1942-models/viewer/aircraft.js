@@ -1103,7 +1103,13 @@ export class Aircraft extends Vehicle {
         const len = _gfAxle.length();
         if (len < 1e-6) { _gfWant.set(0, 0, 0); } else {
           _gfAxle.divideScalar(len);
-          _gfWant.copy(_gfAxle).multiplyScalar(-_gfWant.dot(_gfAxle));
+          // The contact's own velocity along the axle, taken before `_gfWant`
+          // is overwritten: read after the copy it was the axle against
+          // itself, 1, and every occupied RollGrip wheel pushed a constant
+          // -axle whatever the hull was doing (the Harrier slid off its pad
+          // and yawed into a spin with nobody touching a key).
+          const along = _gfWant.dot(_gfAxle);
+          _gfWant.copy(_gfAxle).multiplyScalar(-along);
         }
       } else {
         _gfWant.negate();
