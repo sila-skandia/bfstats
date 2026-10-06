@@ -296,7 +296,9 @@ export function createNetRoom(page) {
       else if (node?.levelNode != null) hit = { node: node.levelNode };
     }
     if (!hit && !splash) return;
-    const point = record.point;
+    // A fuse's end-of-life blast stands on the round (`point`); a hand-built
+    // one (`__blast`) may name only its centre.
+    const point = record.point ?? record.splashPoint;
     if (!Array.isArray(point) || point.length !== 3) return;
     netSendAction({
       type: 'impact', point: point.map(Number),
@@ -749,7 +751,8 @@ export function createNetRoom(page) {
         hulls: room.roomJoined ? [...room.roomClient.vehicles.values()].map(v => {
           const hull = pageHullOf(v);
           return { id: v.id, template: v.template, pad: v.pad ?? null, live: !!v.live,
-                   hp: v.hp ?? null, page: hull ? page.vehiclePads.vehicleSpawnActive(hull.node) : null,
+                   hp: v.hp ?? null, owner: hull?.owner ?? null,
+                   page: hull ? page.vehiclePads.vehicleSpawnActive(hull.node) : null,
                    pageHp: hull ? page.vehicleDamage?.get(hull.owner)?.hitPoints ?? null : null };
         }) : [],
         ack: room.netReconciler?.lastAck() ?? 0,
