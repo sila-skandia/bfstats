@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { doorApproach, fixedAimable } from './bot-mount.js';
+import { fixedAimable, planChange, execEnterVehicle, behindUnit } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1247,11 +1247,39 @@ function stalemateScenario() {
   const down12 = [0, -Math.tan(12 * Math.PI / 180) * 100 - 1, -100];
   const up25 = [0, Math.tan(25 * Math.PI / 180) * 100 - 1, -100];
   const up11 = [0, Math.tan(11 * Math.PI / 180) * 45 - 1, -45];
-  // The door walk: a Tiger's door on its centreline, a soldier behind the hull.
-  const node = { matrixWorld: new THREE.Matrix4() };
-  const behind = doorApproach([0, 0], 3.5, node, [0.5, 0, 6]);
-  const beside = doorApproach([0, 0], 3.5, node, [-5, 0, 0.5]);
-  const tiny = doorApproach([0, 0], 1.5, node, [0, 0, 6]);
+  // The Change plan on foot (`BBPChange::createPlan` 0x0858b5c0, AI-138): a
+  // hull's seat at the origin, its door 2 m to the side, a bot at d metres.
+  const changePlan = (cand, at) => {
+    const bot = { _changeResult: { best: { cand } }, vehicle: null, planBehaviour: null, currentPlan: [],
+                  position: at, navGrid: null, _planIdle: () => [], vehicleCandidates: [cand] };
+    const plan = planChange(bot, 0);
+    const enter = plan.find(a => a.type === 'EnterVehicle');
+    const presses = [];
+    for (const z of [30, 12.6, 12.3, 2]) {
+      bot.position = [0, 0, z];
+      bot.enterRequest = null;
+      execEnterVehicle(bot, enter);
+      presses.push(!!bot.enterRequest);
+    }
+    return { types: plan.map(a => a.type), afterMove: plan.map(a => !!a.afterMove),
+             walk: plan.find(a => a.waypoint)?.waypoint ?? null, presses };
+  };
+  const hull = { id: 'h:Lada', vehicleId: 'h', seatId: 'Lada', kind: 'ground', pos: [0, 0, 0], seatPos: [0, 0, 0],
+                 entry: [2, 0], entryRadius: 2.3, hullYaw: 0 };
+  const change = {
+    near: changePlan(hull, [0, 0, 8]),
+    far: changePlan(hull, [0, 0, 30]),
+    // A sandbagged MG (`setUseNoPathfindingToGetToObject`) facing +z: walked
+    // to from 12 m behind, Use only from behind it.
+    gunBehind: changePlan({ ...hull, kind: 'gun', noPathfinding: true }, [0, 0, -8]),
+    gunFront: (() => {
+      const gun = { ...hull, kind: 'gun', noPathfinding: true };
+      const bot = { position: [0, 0, 8], vehicle: null, vehicleCandidates: [gun], enterRequest: null };
+      execEnterVehicle(bot, { vehicleId: gun.id, seatId: gun.seatId, behind: CHANGE.behindCos });
+      return !!bot.enterRequest;
+    })(),
+    behind: [behindUnit(hull, [0, 0, -5]), behindUnit(hull, [2, 0, -5]), behindUnit(hull, [5, 0, 0]), behindUnit(hull, [0, 0, 5])],
+  };
   // The back-off for a target above the gun: 20 m up at 30 m.
   const tankBelow = { position: [0, 0, 30], _aimOrigin: () => [0, 2, 30], _nav: () => null,
     vehicle: { controlInfo: ctl } };
@@ -1282,7 +1310,7 @@ function stalemateScenario() {
     noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
     flatUp11: approachAimValid(botAt(null), up11),
     flatUp25: approachAimValid(botAt(null), up25),
-    behind, beside, tiny,
+    change,
     backDist: back ? Math.hypot(back[0], back[2]) : null,
   };
 }

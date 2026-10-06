@@ -754,19 +754,24 @@ class StalemateTests(unittest.TestCase):
         self.assertTrue(self.s["flatUp11"])
         self.assertFalse(self.s["flatUp25"])
 
-    def test_the_door_walk_ends_beside_the_hull(self) -> None:
-        b = self.s["behind"]
-        # From behind: out to the side line first, then abreast of the door,
-        # 2.75 m (3.5 - 0.75) to the soldier's side.
-        self.assertAlmostEqual(b["goal"][0], 2.75, places=6)
-        self.assertAlmostEqual(b["goal"][1], 0.0, places=6)
-        self.assertAlmostEqual(b["pre"][0], 2.75, places=6)
-        self.assertAlmostEqual(b["pre"][1], 6.0, places=6)
-        side = self.s["beside"]
-        self.assertAlmostEqual(side["goal"][0], -2.75, places=6)
-        self.assertIsNone(side["pre"])
-        # A door too small to stand off from: walk to the door.
-        self.assertIsNone(self.s["tiny"])
+    def test_the_change_plan_is_the_engines(self) -> None:
+        # `BBPChange::createPlan` 0x0858b5c0 (AI-138): inside 12.5 m no walk,
+        # only the Use key; it runs beside the walk, not after it.
+        c = self.s["change"]
+        self.assertEqual(c["near"]["types"], ["EnterVehicle"])
+        self.assertEqual(c["far"]["types"], ["InfanteryMoveTo", "EnterVehicle"])
+        self.assertEqual(c["far"]["afterMove"], [False, False])
+        # Beyond 12.5 m the walk goes to the unit itself (the finding's goal,
+        # no map here), not to its door.
+        self.assertEqual(c["far"]["walk"], [0, 0, 0])
+        # Use is pressed within 12.375 m of the seat (30, 12.6, 12.3, 2 m).
+        self.assertEqual(c["far"]["presses"], [False, False, True, True])
+        # A no-pathfinding gun facing +z: walked to from 12 m behind, Use
+        # only from behind it (`BAPConObjectBehind` -0.8).
+        self.assertEqual(c["gunBehind"]["walk"], [0, 0, -12])
+        self.assertEqual(c["gunBehind"]["types"], ["InfanteryMoveTo", "EnterVehicle"])
+        self.assertFalse(c["gunFront"])
+        self.assertEqual(c["behind"], [True, True, False, False])
 
     def test_a_tank_under_a_high_target_backs_off(self) -> None:
         # 20 m of rise (the aim point 1 m up the target, the barrel 2 m up
