@@ -111,7 +111,7 @@ def collect_geometry_scales(library: con_mod.ObjectLibrary,
     file at two scales (DC's `AC-130_prp2` is `B17_prp1_M2` at 1.4) and because
     that is what the engine's vertex side reads: `BStandardMesh::getVertices`
     (lnxded 0x083b52f0) returns the template's arrays, and the instance's
-    bounding box is the file's (SM-12). A body probing one of these meshes as
+    bounding box is the file's (SM-13). A body probing one of these meshes as
     the face side meets it scaled, `diag(scale)` in the mesh's own axes, which
     the Z mirror leaves as it is.
     """
