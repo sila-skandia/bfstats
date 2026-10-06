@@ -51,6 +51,11 @@ export function findWeaponSpecs(report, template) {
     level: vehicle.level,
     layers: weapon.layers,
     attachToListener: weapon.attachToListener,
+    // The burst's edges (`extract_map._trigger_slots`): dropped here, the
+    // rack's `loadBurstEdges` saw none on any tree and no stop ever played
+    // its Release, Shell Bounce or MG-distance patch (SND-12).
+    press: weapon.press,
+    release: weapon.release,
   }));
 }
 
@@ -80,6 +85,8 @@ export function findWeaponSpecsByFireArms(report, names) {
           level: vehicle.level,
           layers: weapon.layers,
           attachToListener: weapon.attachToListener,
+          press: weapon.press,
+          release: weapon.release,
         });
       }
     }

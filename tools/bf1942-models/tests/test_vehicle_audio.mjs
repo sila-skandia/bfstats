@@ -8,6 +8,8 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES } from '../viewer/vehicle-audio.js';
 
 function stubCtx() {
@@ -704,9 +706,14 @@ async function panzer(x = 10) {
 // guns stood at one point (the worst case: nothing tells them apart), heard
 // from where heads are: inside, in the coax overlap, beside, and down the
 // field. Skips without a `viewer/maps` tree (CI, a fresh worktree).
+// `VEHICLE_AUDIO_MAPS` points the sweep at another tree (a mod's, or a scratch
+// tree a sounds-layer patch was written to):
+//   VEHICLE_AUDIO_MAPS=viewer/maps/mods/desertcombat node tests/test_vehicle_audio.mjs
 
 {
-  const mapsDir = new URL('../viewer/maps/', import.meta.url);
+  const mapsDir = process.env.VEHICLE_AUDIO_MAPS
+    ? pathToFileURL(`${path.resolve(process.env.VEHICLE_AUDIO_MAPS)}/`)
+    : new URL('../viewer/maps/', import.meta.url);
   let levels = [];
   try {
     levels = fs.readdirSync(mapsDir).filter(
