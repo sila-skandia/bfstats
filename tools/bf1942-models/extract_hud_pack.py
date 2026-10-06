@@ -148,6 +148,16 @@ SPRITES: list[str] = [
     *[f"Texture/Menu/knapp{k}" for k in ("ext_n", "ext_mo", "3_n", "3_mo")],
     *[f"Texture/Debriefing/classes/class_{k}_16x16"
       for k in ("scout", "assault", "at", "medic", "engineer")],
+    # The end of a round (`round-end.js`, ledger ROUND-8/ROUND-9): the
+    # multiplayer debriefing plate `menu/LoadMenu` draws and `giveMedal`'s
+    # three medals per side, the 8x8 row marks and the 32x32 ones, with the
+    # empty slot. (The `*_win_camp` / `*_lose_camp` pictures beside them are
+    # the single-player campaign's.)
+    "Texture/Debriefing/MP_debriefing_512x512",
+    *[f"Texture/Debriefing/medals/{side}_{size}{metal}_{px}"
+      for side in ("allied", "axis") for metal in ("gold", "silver", "bronze")
+      for size, px in (("", "8x8"), ("xl_", "32x32"))],
+    "Texture/Debriefing/medals/empty_8x8",
     "Texture/icon_ticketbar",
     *[f"Texture/flag_ticket_{n}" for n in NATIONS],
     # The text-message plates. The 3-line one is the combat-area warning's
