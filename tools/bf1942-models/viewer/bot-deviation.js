@@ -105,6 +105,19 @@ export function deviationIndex(inputIndex, barrels = 0, barrel = 0) {
   return (inputIndex + (barrels > 0 ? barrel : -1)) & 0x3ff;
 }
 
+/**
+ * How many `addFireArmsPosition` barrels a gun declares, from its glb's
+ * muzzles (`bot-barrels.js fireArmsBarrels`). The exporter gives a gun that
+ * declares none one muzzle at its `projectilePosition` (assemble.py
+ * `_fire_arms`), so one muzzle reads as none: right for every vanilla hand
+ * weapon and all of Desert Combat's but the RPG-7 and SA-7, which declare
+ * one and so draw one index lower than the engine's (a life's index is a
+ * draw either way, so nothing tells the two apart).
+ */
+export function declaredBarrels(barrels) {
+  return Array.isArray(barrels) && barrels.length > 1 ? barrels.length : 0;
+}
+
 /** The input index a bot fires at: its seat's while seated, else its own
  *  life's (`Bot.inputIndex`), else the seat's. */
 export function botInputIndex(bot) {

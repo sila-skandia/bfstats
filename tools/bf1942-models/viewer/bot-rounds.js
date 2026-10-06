@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { botDeviate, botInputIndex, deviationIndex } from './bot-deviation.js';
+import { botDeviate, botInputIndex, declaredBarrels, deviationIndex } from './bot-deviation.js';
 import { isFuseRound } from './effects-core.js';
 import { modelFileStem } from './model-file.js';
 
@@ -170,9 +170,9 @@ export function createBotRounds(page) {
     if (!h) return false;
     const { origin, dir } = bot.aimRay();
     const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    // Its one round at the bot's input index: barrel 0 of a launcher that
-    // declares one (DC's RPG-7 and SA-7), else -1 (AI-145).
-    const barrels = Array.isArray(stats?.barrels) ? stats.barrels.length : 0;
+    // Its one round at the bot's input index, as a barrel-less gun's: -1
+    // (AI-145; bot-deviation.js `declaredBarrels`).
+    const barrels = declaredBarrels(stats?.barrels);
     const [x, y, z] = botDeviate([dir[0] / len, dir[1] / len, dir[2] / len], bot.aimDeviation ?? 0,
                                  deviationIndex(botInputIndex(bot), barrels, 0));
     h.ray.origin.set(origin[0], origin[1], origin[2]);
