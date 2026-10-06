@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import con as con_mod
@@ -297,6 +297,77 @@ def retail_lod_chain(lods) -> int:
         if last_vertices < RETAIL_LOD_MIN_VERTICES:
             return index + 1
     return len(lods)
+
+
+def geometry_scale(template: con_mod.GeometryTemplate | None
+                   ) -> tuple[float, float, float] | None:
+    """A geometry's `GeometryTemplate.scale`, or None when it draws at 1/1/1.
+
+    StandardMesh only. A TreeMesh or AnimatedMesh template takes the word too
+    (`TreeMeshTemplate::setScale`, lnxded 0x083be010), but no installed mod
+    writes it on one, so those paths do not apply it.
+    """
+    if template is None or template.kind.lower() != "standardmesh":
+        return None
+    scale = template.scale
+    if scale is None or all(component == 1.0 for component in scale):
+        return None
+    return scale
+
+
+def scale_standard_mesh(mesh: stdmesh.StandardMesh,
+                        scale: tuple[float, float, float] | None,
+                        ) -> stdmesh.StandardMesh:
+    """`mesh` with its geometry's `GeometryTemplate.scale` baked into the vertices.
+
+    The scale belongs to the geometry, not to the object that draws it: the
+    mesh instance keeps it (`BStandardMesh::setScale`, lnxded 0x083b4640) and
+    draws through `diag(scale) * world` with the translation put back
+    (`BStandardMesh::scale`, 0x083b47d0), so it scales the mesh in its own axes
+    and never the object's child parts. A ray or a body probing the mesh is
+    scaled the same way: `BStandardMesh::getDistanceToGeometry` (0x083b4fd0)
+    hands the scale to `SimpleCollisionMesh::getDistanceToGeometry`
+    (0x083c9f70), which divides the query into the file's frame and multiplies
+    the hit back out (SM-12). So both the drawn levels and the collision
+    layers carry it; normals take the inverse scale, renormalised.
+    """
+    if scale is None:
+        return mesh
+    sx, sy, sz = scale
+
+    def material(m: stdmesh.Material) -> stdmesh.Material:
+        step = m.engine_stride // 4
+        values = list(m.vertices)
+        if len(values) < step * m.vertex_count:
+            values += [0.0] * (step * m.vertex_count - len(values))
+        position, normal = m.component("position"), m.component("normal")
+        for i in range(m.vertex_count):
+            if position is not None:
+                p = i * step + position.offset // 4
+                values[p] *= sx
+                values[p + 1] *= sy
+                values[p + 2] *= sz
+            if normal is not None and 0.0 not in scale:
+                n = i * step + normal.offset // 4
+                nx, ny, nz = values[n] / sx, values[n + 1] / sy, values[n + 2] / sz
+                length = (nx * nx + ny * ny + nz * nz) ** 0.5
+                if length > 0.0:
+                    values[n:n + 3] = nx / length, ny / length, nz / length
+        return replace(m, vertices=values)
+
+    return replace(
+        mesh,
+        bounds_min=(mesh.bounds_min[0] * sx, mesh.bounds_min[1] * sy,
+                    mesh.bounds_min[2] * sz),
+        bounds_max=(mesh.bounds_max[0] * sx, mesh.bounds_max[1] * sy,
+                    mesh.bounds_max[2] * sz),
+        collision_layers=[
+            replace(layer, vertices=[(x * sx, y * sy, z * sz)
+                                     for x, y, z in layer.vertices])
+            for layer in mesh.collision_layers],
+        lods=[replace(lod, materials=[material(m) for m in lod.materials])
+              for lod in mesh.lods],
+    )
 
 
 def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
@@ -1025,7 +1096,8 @@ class Assembler:
             self._geom_collisions[cache_key] = []
             return []
         try:
-            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
+                                       geometry_scale(template))
         except stdmesh.MeshError:
             self._geom_collisions[cache_key] = []
             return []
@@ -1097,6 +1169,22 @@ class Assembler:
             return template.has_collision_physics
         return True
 
+    def _collision_extras(self, template: con_mod.ObjectTemplate, layer: int,
+                          role: str) -> dict:
+        """`extras` of a collision node. A scaled geometry's hull is drawn
+        scaled and says by how much: a body's own vertex probes read the file
+        unscaled in the engine (SM-12)."""
+        extras = {
+            "collision": True,
+            "collisionLayer": layer,
+            "collisionRole": role,
+            "sourceTemplate": template.name,
+            "sourceGeometry": template.geometry,
+        }
+        if scale := geometry_scale(self.library.geometry(template.geometry)):
+            extras["geometryScale"] = list(scale)
+        return extras
+
     def _collision_only_node(self, builder: gltf.GlbBuilder, template_name: str,
                              report: Report, *, position, rotation,
                              depth: int = 0,
@@ -1125,13 +1213,7 @@ class Assembler:
                 children.append(builder.add_node(gltf.Node(
                     name=f"{template.name} collision {layer}",
                     mesh=mesh_index,
-                    extras={
-                        "collision": True,
-                        "collisionLayer": layer,
-                        "collisionRole": role,
-                        "sourceTemplate": template.name,
-                        "sourceGeometry": template.geometry,
-                    },
+                    extras=self._collision_extras(template, layer, role),
                 )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
@@ -1250,7 +1332,8 @@ class Assembler:
         if not entry:
             return None
         try:
-            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
+                                       geometry_scale(template))
         except stdmesh.MeshError:
             return None
         if not mesh.lods:
@@ -1303,7 +1386,9 @@ class Assembler:
             return None, 0
 
         try:
-            mesh = stdmesh.parse(self.meshes.read(entry), entry)
+            # Drawn levels and collision alike (SM-12).
+            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
+                                       geometry_scale(template))
         except stdmesh.MeshError as exc:
             report.missing_meshes.append(f"{mesh_file} ({exc})")
             self._geom_mesh[cache_key] = (None, 0)
@@ -2814,13 +2899,7 @@ class Assembler:
                 child_indices.append(builder.add_node(gltf.Node(
                     name=f"{template.name} collision {layer}",
                     mesh=collision_mesh,
-                    extras={
-                        "collision": True,
-                        "collisionLayer": layer,
-                        "collisionRole": role,
-                        "sourceTemplate": template.name,
-                        "sourceGeometry": template.geometry,
-                    },
+                    extras=self._collision_extras(template, layer, role),
                 )))
             if collision_makeup is not None:
                 donor_name = con_mod.instance_template_name(
@@ -2986,6 +3065,9 @@ class Assembler:
             extras["cameraView"] = {"control": control or "vehicle"}
             if template.camera_view_modes:
                 extras["cameraView"]["cvm"] = dict(template.camera_view_modes)
+            # Every camera says it, false included: the template's constructor
+            # seeds the byte 0, so a missing field only means an older asset.
+            extras["cameraView"]["toggleMouseLook"] = bool(template.toggle_mouse_look)
             if template.outside_hud_offset is not None:
                 # The nose cam's stand-off from this Camera, Z-mirrored into
                 # glTF like every other position the exporter writes, so the
@@ -3186,6 +3268,11 @@ class Assembler:
             if geom and geom.skin:
                 extras["skin"] = geom.skin
                 report.skinned_parts.append(f"{template.name} skin {geom.skin}")
+            if scale := geometry_scale(geom):
+                # Already in the mesh's vertices; said here because the
+                # engine's own bounding box and a body's vertex probes read
+                # the file unscaled (SM-12), which a consumer may want back.
+                extras["geometryScale"] = list(scale)
         if template.animated_texture_speed:
             u, v = template.animated_texture_speed
             # The exporter mirrors Z to get from left-handed Refractor to glTF, and
