@@ -1031,6 +1031,21 @@ typedef struct {
 
 static Plyr *g_players;
 static int g_players_n;
+
+/* The last control object and the last kit written for each player id, by
+ * either path: the sampler makes these two events itself (a round with no
+ * client has no event stream for them), and with a client connected the
+ * server sends the real ones a tick or so apart. A repeat of what the file
+ * already says for that player is dropped, whichever came first. */
+static uint32_t g_last_control[256], g_last_kit[256];
+
+static int already_said(uint32_t *table, int pid, uint32_t nid)
+{
+    if (pid < 0 || pid > 255 || !nid) return 0;
+    if (table[pid] == nid) return 1;
+    table[pid] = nid;
+    return 0;
+}
 static int g_level_written;
 static int g_player_dump_done;
 
@@ -1511,6 +1526,8 @@ static void sample_players(void)
             kit_nid = nid ? kit_net_id_of(veh) : 0;
             if (kit_nid) {
                 kit_watch_add(kit_nid);
+            }
+            if (kit_nid && !already_said(g_last_kit, pid, kit_nid)) {
                 /* The pickupKit event the engine would have sent (the join's
                  * database sends it once; a recorder that starts with the
                  * round catches none). The viewer binds the soldier's kit
@@ -1555,7 +1572,7 @@ static void sample_players(void)
          * folds both into the same control store. */
         if (nid != pl->soldier_nid) {
             pl->soldier_nid = nid;
-            if (nid) {
+            if (nid && !already_said(g_last_control, pid, nid)) {
                 char line[256];
                 snprintf(line, sizeof(line),
                     "{\"k\":\"e\",\"t\":%.3f,\"e\":\"control\",\"pid\":%d,\"netId\":%u}",
@@ -2047,6 +2064,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
                 line[0] = 0;
             break;
         case 0x23:  /* PickupKitEvent */
+            if (already_said(g_last_kit, U8(0), U16(1))) { kit_watch_add(U16(1)); line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"pickupKit\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
@@ -2059,6 +2077,7 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double t)
             pool_forget(U16(0));   /* a pool's first round gone: its weapon was released */
             break;
         case 0x09:
+            if (already_said(g_last_control, U8(0), U16(1))) { line[0] = 0; break; }
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"control\",\"pid\":%u,\"netId\":%u}",
                 t, U8(0), U16(1));
@@ -2759,6 +2778,8 @@ static void reset_file_state(void)
     g_score_manager = 0;
     g_cps_n = 0;
     g_proj_n = 0;
+    memset(g_last_control, 0, sizeof(g_last_control));
+    memset(g_last_kit, 0, sizeof(g_last_kit));
     /* The next file announces every pool standing again. */
     POOL_LOCK();
     g_pool_file++;
