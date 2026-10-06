@@ -1131,10 +1131,14 @@ ObjectTemplate.setRegulateToLift 4.91
 ObjectTemplate.setWingToRegulatorRatio 1
 """, "Objects/Vehicles/Air/Corsair/Physics.con")
 
+        # A regulator binds no input, so its servo's limits ride here too
+        # (`viewer/aircraft.js` runs it on GUN-2's velocity servo); only what
+        # the `.con` declares.
         self.assertEqual(
             {"flapLift": 4.0, "pitchOffset": 0.5,
              "positionOffset": [2.564, 0.135, -0.895],
-             "regulateToLift": 4.91, "wingToRegulatorRatio": 1.0},
+             "regulateToLift": 4.91, "wingToRegulatorRatio": 1.0,
+             "minRotation": [0.0, -2.0, 0.0], "maxRotation": [0.0, 2.0, 0.0]},
             library.object("CorsairFlapLeftMiddle").physics(),
         )
 
