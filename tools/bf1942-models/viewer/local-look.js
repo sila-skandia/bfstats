@@ -544,20 +544,23 @@ export function createLocalLook(page) {
         return;
       }
       // The head is the Camera's own RotationalBundle on `c_PIMouseLookY`
-      // (MLK-3): its speed follows `sign(acceleration) x input` (GUN-2), and
-      // the input is the device's Y, which the profile's INVERT MOUSE box
-      // turns round (MLK-8). What the hand does to the view is therefore the
-      // camera's pitch-acceleration sign times the box (MLK-13), against the
-      // plain sense of a positive camera with the box off. Nearly every pilot
-      // and DC 0.7 passenger camera is negative (`CorsairCamera`
-      // `setAcceleration 5000/-5000/0`), so on the shipped Air box their look
-      // keeps the plain sense, and turning the box off inverts it; a positive
-      // one (BF109, Mustang, B17, the Aichi Vals, DC's AC-130, DC Final's
-      // passengers) is inverted at the shipped box once its glb carries the
-      // sign, and a camera that cannot turn one way (XPack2's C47 pilot has
-      // no vertical look) does not (`seatLookSigns`). A LandSea seat's camera
-      // is positive with the box off: unchanged. A finger dragging the view
-      // on a touch screen is not the mouse and keeps its own sense.
+      // (MLK-3): its speed follows `sign(acceleration) x input x maxSpeed`,
+      // `maxSpeed` signed (GUN-2), and the input is the device's Y, which the
+      // profile's INVERT MOUSE box turns round (MLK-8). What the hand does to
+      // the view is therefore the camera's pitch gain sign times the box
+      // (MLK-13), against the plain sense of a positive camera with the box
+      // off. Every key camera of vanilla, XPack1, XPack2 and DC 0.7 that
+      // looks up and down is negative: the Corsair's `setAcceleration 5000/-5000/0` with
+      // `setMaxSpeed 90/90/0`, and the BF109's, Mustang's, B17's and Aichi
+      // Vals' and DC's AC-130's `5000/5000/0` with `90/-90/0` alike. On the
+      // shipped Air box their look keeps the plain sense, and turning the box
+      // off inverts it. A positive one (DC Final's helicopter pilots, its
+      // benches, DC's F-14 RIO) is inverted at the shipped box once its glb
+      // carries the rig, and a camera that cannot turn one way (XPack2's C47
+      // pilot has no vertical look) does not (`seatLookSigns`). A LandSea
+      // seat's camera is positive with the box off: unchanged. A finger
+      // dragging the view on a touch screen is not the mouse and keeps its
+      // own sense.
       const mouse = keyed ? !!page.held(MOUSE_LOOK_TRIGGER) && !source?.touch : !source?.touch;
       const seat = describeSeat(page.occupancy);
       const profile = seatProfile(seat);
