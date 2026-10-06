@@ -361,7 +361,7 @@ function stationaryBrowning() {
   };
 }
 
-// --- a root with `hasMobilePhysics` clear drives nothing (PHY-16) -----------
+// --- a root with `hasMobilePhysics` clear drives nothing (PHY-17) -----------
 //
 // DC's `Nimitz_Static*` carriers write `hasMobilePhysics 0` on the root and
 // carry a `c_ETShip`; the exporter stamps `physics.hasMobilePhysics = false`

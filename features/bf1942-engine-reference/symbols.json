@@ -10731,7 +10731,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "lnxded. 0x10-byte node; built by SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd760 when template +0x70 bit 0 is clear, then never addPhysicsNode'd. PHY-16."
+   "note": "lnxded. 0x10-byte node; built by SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd760 when template +0x70 bit 0 is clear, then never addPhysicsNode'd. PHY-17."
   },
   {
    "address": "0x0825e4a0",
@@ -10749,7 +10749,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). A root whose template +0x70 bit 0 is clear (hasMobilePhysics 0 or absent) gets this node and never integrates; PHY-16 (DC Nimitz_Static*)."
+   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). A root whose template +0x70 bit 0 is clear (hasMobilePhysics 0 or absent) gets this node and never integrates; PHY-17 (DC Nimitz_Static*)."
   },
   {
    "address": "0x0825e740",
@@ -10758,7 +10758,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "ghidra-session",
-   "note": "lnxded. Empty: an Engine/Wing/float push on a static root is dropped. PHY-16."
+   "note": "lnxded. Empty: an Engine/Wing/float push on a static root is dropped. PHY-17."
   },
   {
    "address": "0x0825e750",

@@ -2514,7 +2514,7 @@ class Assembler:
                         stack: frozenset[str] = frozenset()) -> bool:
         """Whether an Engine sits anywhere under the template, every LOD
         alternative and nested seat included: an Engine pushes on the root
-        object's physics node wherever in the tree it is (PHY-16)."""
+        object's physics node wherever in the tree it is (PHY-17)."""
         if depth > 24:
             return False
         template = self.library.object(template_name)
@@ -2950,7 +2950,7 @@ class Assembler:
                 and kind not in con_mod._EFFECT_KINDS
                 and (template.mobile_physics_declared
                      or (is_vehicle_root and self._carries_engine(template.name)))):
-            # PHY-16: a root whose `hasMobilePhysics` bit is clear gets a
+            # PHY-17: a root whose `hasMobilePhysics` bit is clear gets a
             # `StaticPhysicsNode`; it never integrates, every push on it
             # (its own Engines, Wings and floats, gravity, a contact) is a
             # bare `ret`, and it stays where it was placed whoever is aboard.

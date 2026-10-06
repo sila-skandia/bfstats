@@ -750,7 +750,7 @@ class ObjectTemplate:
     # landing gear hangs off its Engine yet does not turn with the propeller).
     # Clear (the template constructor's default, or an explicit 0) is a
     # `StaticPhysicsNode`, and on a placed root that holds the whole object
-    # still (PHY-16): `Assembler` stamps it on such a root as
+    # still (PHY-17): `Assembler` stamps it on such a root as
     # `extras.physics.hasMobilePhysics = false`. `mobile_physics_declared`
     # says the `.con` wrote the word at all, either value.
     has_mobile_physics: bool = False

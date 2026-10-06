@@ -1239,7 +1239,7 @@ full throttle, the carrier made 7.2 m/s after 48 s and was still speeding up
 (186.7 m in 50 s). The plain `Nimitz` (Midway, Iwo Jima and Wake conquest)
 carries no Engine and was a bare seat already.
 
-In the engine the hull cannot move at all, whoever is aboard (PHY-16). A clear
+In the engine the hull cannot move at all, whoever is aboard (PHY-17). A clear
 bit 0 in the root template's `+0x70` makes `setPhysicsNodeComponent` build a
 `StaticPhysicsNode`. That node's update and every one of its adders is a bare
 `ret`, and an Engine pushes on the root's node. The engine default for the bit
@@ -1279,7 +1279,7 @@ change; it is listed only so the set is complete.
 
 ### 25.2 Every placed root, not only a hull (2026-10-07)
 
-PHY-16 is about the root's physics node, so it holds for any placed object.
+PHY-17 is about the root's physics node, so it holds for any placed object.
 DC's objective buildings are PlayerControlObjects with armor and no Engine:
 No Fly Zone's control towers, hangars and radar domes, and Medina Ridge's
 `flagkill`. They write `hasMobilePhysics 0`. The page settled each one onto

@@ -69,7 +69,7 @@ class DeckSpawnHostTests(unittest.TestCase):
                 self.assertLess(self.out["spawnSlide"][name], 0.01)
 
     def test_a_static_carrier_is_not_floated(self):
-        # PHY-16: a root stamped `hasMobilePhysics` false has a
+        # PHY-17: a root stamped `hasMobilePhysics` false has a
         # StaticPhysicsNode and stays at its authored pose; the Fletcher beside
         # her, with the same eight floats, is floated to her draft.
         self.assertEqual(self.out["staticCarrierDrop"], 0)

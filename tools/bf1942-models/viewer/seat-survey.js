@@ -124,7 +124,7 @@ export function surveyVehicle(root) {
         drivenSprings: 0,
         // `false` only where the exporter stamped a root whose
         // `hasMobilePhysics` bit is clear and whose tree carries an Engine
-        // (PHY-16); absent on every other seat and in older bakes.
+        // (PHY-17); absent on every other seat and in older bakes.
         mobilePhysics: node?.userData?.physics?.hasMobilePhysics ?? null,
       };
       seats.set(id, seat);
@@ -334,7 +334,7 @@ const ENGINE_DRIVE_KIND = {
  * land model would have nothing to push it, and it stays a boat until the
  * exporter keeps them.
  *
- * A root whose `hasMobilePhysics` is clear drives nothing at all (PHY-16): its
+ * A root whose `hasMobilePhysics` is clear drives nothing at all (PHY-17): its
  * physics node is a `StaticPhysicsNode`, and every push its Engines, Wings and
  * floats make on it is a bare `ret`. DC's `Nimitz_Static*` carriers carry a
  * `c_ETShip` and stay where the level put them; the helm is still a seat.

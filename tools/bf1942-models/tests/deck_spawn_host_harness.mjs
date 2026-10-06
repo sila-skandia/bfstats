@@ -50,7 +50,7 @@ const lcvp = hull('Lcvp', { heldSpawner: { spawner: 'FletcherLcvpSpawner', vehic
                   lcvpPad, { count: 4, hullHeight: 2.8, lift: 6, relY: 3.1, scale: 0.05 });
 root.add(lcvp);
 // DC's static carrier: floats like any ship but stamped `hasMobilePhysics`
-// false (PHY-16), so she stays at her authored pose.
+// false (PHY-17), so she stays at her authored pose.
 const carrier = hull('Nimitz_Static_Heli', {}, [PAD[0] + 400, 25, PAD[2]],
                      { count: 8, hullHeight: 20, lift: 2, relY: 7.5, scale: 1 });
 carrier.userData.physics.hasMobilePhysics = false;
