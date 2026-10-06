@@ -218,6 +218,7 @@ import { TrackedVehicle } from './tracked-vehicle.js';
 import { Ship } from './ship.js';
 import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
+import { seatConeOf } from './seat-cone.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { chooseAntialias } from './render-antialias.js';
@@ -1173,6 +1174,13 @@ function fireStateFor(node) {
   }
   return state;
 }
+// A seat gun's rounds leave in its own cone: the FireState's stored total,
+// a bot's AI term on top and his fixed point of it (seat-cone.js, DEV-11).
+guns.coneOf = seatConeOf({
+  stateOf: node => fireStates.get(node),
+  firerOf: group => vehicles.firerOf(group),
+  botOf: id => referee.bots.find(b => b.playerId === id) ?? null,
+});
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),
   from(() => mapSurfaces, `drawFullMap`),

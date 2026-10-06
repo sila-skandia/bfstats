@@ -410,11 +410,14 @@ export function createVehicleHud(page) {
    *
    * The page used to ask only the hand weapon, and only on foot, so a
    * CHTCrossHair tank drew nothing and a CHTIcon launcher drew a bare dot.
-   * `deviation` is the weapon's whole cone in degrees, `minDev` included:
-   * the hand weapon's, or the seat gun's (`FireState.spread`, run per round
-   * and per tick like the hand weapon's, XHIT-15). A tank's main gun ships
-   * no deviation words and its bars meet at centre; the hull and stationary
-   * MGs open the cross by their `setMinDev` and `setFireDev`.
+   * `deviation` is the weapon's whole cone, `minDev` included, in the
+   * cone's own unit (DEV-9): the hand weapon's, or the seat gun's
+   * (`FireState.spread`, XHIT-15). The seat gun's is the total its update
+   * stored at the last tick, the same number its rounds are drawn in
+   * (`seat-cone.js`, DEV-12), so the bars part exactly as wide as the rounds
+   * scatter. A tank's main gun ships no deviation words and its bars meet at
+   * centre; the hull and stationary MGs open the cross by their `setMinDev`
+   * and `setFireDev`.
    */
   function crosshairAim() {
     // A replay's first person draws the followed player's own cross: his

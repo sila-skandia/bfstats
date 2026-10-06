@@ -145,6 +145,14 @@ export class GunFire {
     // UUIDs, so a build that clones one material more or less per pool miss
     // would fire a different burst and fail a pixel diff for no reason.
     this.rand = Math.random;
+    // A seat gun's deviation cone (ledger DEV-11, DEV-12): `(group, barrel)
+    // => { total, dice } | null`, the FireArms' stored total in hundredths of
+    // a radian and the dice its two draws come from (null: `rand` above; a
+    // bot's fixed point, AI-145). Asked per barrel for a group with no
+    // `spreadDeg` of its own, which is every gun but a hand weapon. The page
+    // and the runner wire `seat-cone.js` here; null (the model browser)
+    // launches every vehicle round down its line, as before.
+    this.coneOf = null;
     // The clock the rounds run on, against the page's: 1 in play. A round
     // replay sets its playback rate here (0 while it is paused), so a bomb
     // in the air holds still with everything else in a paused replay and
@@ -369,7 +377,7 @@ export class GunFire {
     group.soundHeld = true;
     group.soundReleased = false;
     for (const barrel of pull.barrels) {
-      fireBarrel(this, group, group.muzzles[barrel]);
+      fireBarrel(this, group, group.muzzles[barrel], barrel);
     }
   }
 
