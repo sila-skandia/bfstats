@@ -182,7 +182,7 @@ const sum = (rows, key) => rows.reduce((n, r) => n + r[key], 0);
  *  own sample values under what this page actually knows.
  *
  *  `state`: { fromSpawn, inRoom, alive, serverName, serverIp, mapName,
- *             axisFlag, alliedFlag, rows, visibleRows }.
+ *             axisFlag, alliedFlag, rows, visibleRows, endGame, roundsWon }.
  *  Everything a lone viewer cannot do is off: no remote admin, no buddy list,
  *  no votes (so the four buttons draw in the file's own disabled 0.5 alpha in
  *  a room, and not at all in single player, where the file culls them). */
@@ -192,7 +192,9 @@ export function boardVars(layoutVars, state) {
   const vars = { ...(layoutVars || {}) };
   vars['Scoreboard/SpawnScoreBoard'] = true;
   vars['Scoreboard/FromSpawnScoreboard'] = !!state.fromSpawn;
-  vars['Scoreboard/GameStatusEndGame'] = false;
+  // The round is over (`Game+0x58` 2, ledger ROUND-1): the file culls the
+  // button frame and every button under it, so the board stands alone.
+  vars['Scoreboard/GameStatusEndGame'] = !!state.endGame;
   vars['Scoreboard/GameStatusSinglePlayer'] = !state.inRoom;
   vars['Scoreboard/RemoteAdmin'] = false;
   vars['Scoreboard/EnableAddBuddy'] = false;
@@ -202,9 +204,11 @@ export function boardVars(layoutVars, state) {
   vars['Kit/IsAlive'] = !!state.alive;
   vars['Scoreboard/ShowScrollBarAxis'] = rows[1].length > visible;
   vars['Scoreboard/ShowScrollBarAllied'] = rows[2].length > visible;
-  // Rounds won: this page plays one round and never ends it.
-  vars['Scoreboard/AxisRoundWon'] = 0;
-  vars['Scoreboard/AlliedRoundWon'] = 0;
+  // Rounds won on this level: `setWinner`'s count per side, which a restart
+  // keeps (`round-state.js` `roundsWon`, ledger ROUND-5). Zero in a room,
+  // whose round is the server's.
+  vars['Scoreboard/AxisRoundWon'] = Number(state.roundsWon?.[1]) || 0;
+  vars['Scoreboard/AlliedRoundWon'] = Number(state.roundsWon?.[2]) || 0;
   for (const [team, side] of [[1, 'Axis'], [2, 'Allied']]) {
     vars[`Scoreboard/${side}PlayerTotal`] = rows[team].length;
     vars[`Scoreboard/${side}ScoreTotal`] = sum(rows[team], 'score');

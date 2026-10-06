@@ -1,0 +1,24 @@
+{
+  "name": "kursk-coop-lod0-rec",
+  "description": "Vanilla Kursk co-op with the server-side recorder and `aiSettings.lodEnable 0` (every bot at AI LOD 0: physics-driven hulls, real fire): the T-34, Tiger, Panzer IV, the Willys and Kubelwagen, the Wespe and Priest on open ground.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "kursk",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30",
+    "aiSettings.lodEnable 0"
+  ],
+  "human": "No client needed: the server records itself. One or two rounds, then `lab.py stop`."
+}

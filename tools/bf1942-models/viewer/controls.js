@@ -22,9 +22,12 @@
 // secondary (`AxisRemap`, 0xa8 bytes: two `AxisMapping`s at +0 and +0x50),
 // and the `.con` line's last flag says which one it fills
 // (`ControlMap::addAxisMapping` lnxded 0x083f0a50 and 0x083f1430: the
-// trailing bool picks +0x50). `ControlMap::update` (lnxded 0x083f1d70, client
-// twin 0x0061bef0) resolves both and keeps the one of larger magnitude, the
-// primary on a tie: a channel's two devices never add.
+// trailing bool picks +0x50). A later line for a slot replaces the earlier
+// one, and a secondary line for a channel with no primary yet is refused
+// (ledger MLK-15). `ControlMap::update` (lnxded 0x083f1d70, client twin
+// 0x0061bef0) resolves both and keeps the one of larger magnitude, the
+// primary on a tie: a channel's two devices never add (MLK-9), on foot, in a
+// vehicle and in the air alike.
 //
 // Context overlay: the engine merges the game map (`c_GI*`) and the common
 // player map under one context map — Infantry on foot, Air in an aircraft,
@@ -34,6 +37,7 @@
 
 import { GameConsole } from './console.js';
 import { CONTROLS_DEFAULTS } from './controls-defaults.js';
+import { describeSeat, seatProfile } from './mouse-look-key.js';
 
 const STORAGE_KEY = 'viewer.controls.profile';
 
@@ -397,9 +401,10 @@ export function createControls(page) {
 
   /** The active context map, the engine's overlay: game + common + the one
    *  context the player is in. The same rule mouse-input.js's `profileFor`
-   *  already applies to the sensitivity: VCLand/VCSea are the LandSea map,
-   *  VCAir the Air one, only a pilot flies on Air, and the soldier keeps
-   *  Infantry. */
+   *  already applies to the sensitivity, off the seat's own PCO (ledger
+   *  MLK-14, `mouse-look-key.js` `seatProfile`): VCLand/VCSea are the LandSea
+   *  map, VCAir the Air one -- a pilot, and DC's co-pilots and passengers --
+   *  and the soldier keeps Infantry. */
   controls.context = () => {
     // The seat first: a soldier who climbed in keeps his on-foot flag (he is
     // suspended in the seat, rifle slung), and a pilot read as infantry flew
@@ -407,8 +412,11 @@ export function createControls(page) {
     // but a profile's stick and its joystick fire, bound only on Air, did
     // nothing. Local-look's `lookProfile` has always asked in this order.
     if (page.optPilot?.checked && page.occupancy) {
-      const pilot = page.occupancy.isActiveRoot?.() ?? true;
-      return page.occupancy.rootKind === 'air' && pilot ? 'air' : 'land';
+      const seat = describeSeat(page.occupancy);
+      // An occupancy that cannot say which seat it holds is the root's.
+      if (seat.root === undefined) seat.root = true;
+      const profile = seatProfile(seat);
+      return profile === 'air' ? 'air' : profile === 'infantry' ? 'infantry' : 'land';
     }
     if (page.optOnFoot?.checked && page.soldier) return 'infantry';
     return null;    // free camera: the game map and common still answer
@@ -425,46 +433,60 @@ export function createControls(page) {
 
   const heldKeys = () => (page.captured ? page.keys : null);
 
-  /** Channel value for an axis trigger: the keyboard's two keys of the pair
-   *  and the controller's axes, summed and clamped to [-1, 1] (the viewer's
-   *  fold, kept for every device it always served), then the mouse when the
-   *  caller hands in its pumped pair `{x, y}` (mouse-input.js's device rate,
-   *  the profile's sensitivity and invert already in it). A mouse binding
-   *  takes the engine's own slot rule against the rest (`resolveAxisSlots`)
-   *  and is NOT clamped: it is a rate, up to the wire's +-16, and its
-   *  consumer clips it. Zero unless the page is captured: the input word is
-   *  the device stage's, and the free camera's WASD is not the player's. */
+  /** Channel value for an axis trigger, as `ControlMap::update` makes it: the
+   *  channel's two slots, each holding the last line that named it, each read
+   *  off its own device, and the larger magnitude kept, the primary on a tie
+   *  (`resolveAxisSlots`, ledger MLK-9). Two devices on one channel never add:
+   *  a joystick at 0.4 against a key the other way reads -1, and a key pair
+   *  with both keys down reads its first key's +1. The mouse slot reads the
+   *  pumped pair `{x, y}` the caller hands in (mouse-input.js's device rate,
+   *  the profile's sensitivity and invert already in it), unclamped: it is a
+   *  rate, up to the wire's +-16, and its consumer clips it. A caller that
+   *  hands no pair gets 0 from a mouse slot. Zero unless the page is
+   *  captured: the input word is the device stage's, and the free camera's
+   *  WASD is not the player's. */
   controls.axis = (trigger, mouse = null) => (page.captured
     ? axisIn(trigger, controls.context(), heldKeys(), mouse) : 0);
 
   function axisIn(trigger, context, keys, mouse = null) {
-    let v = 0;
-    let fromMouse = null;
-    let mousePrimary = false;
+    // The map's own fill, line by line (MLK-15): a line writes the slot it
+    // names and a later one for that slot replaces it; a secondary line for
+    // a channel no primary line has created yet is refused (`addAxisMapping`
+    // lnxded 0x083f0a50 / 0x083f1430 return 0 before allocating the remap).
+    let primary = null;
+    let secondary = null;
     for (const b of bindingsFor(trigger, context)) {
       if (b.kind !== 'axis') continue;
-      if (b.device === 'keyboard') {
-        if (keys.has(b.codes[0])) v += 1;
-        if (keys.has(b.codes[1])) v -= 1;
-      } else if (b.device === 'controller' && b.index === 0) {
-        const raw = padAxes[b.axis] ?? 0;
-        const mag = Math.abs(raw) < JOY_DEADZONE
-          ? 0 : (raw - Math.sign(raw) * JOY_DEADZONE) / (1 - JOY_DEADZONE);
-        v += mag * (b.invert ? -1 : 1);
-      } else if (b.device === 'mouse' && mouse) {
-        // DirectInput's axis 0 is X and 1 is Y; the wheel (2) is a trigger
-        // pair, never an axis-to-axis line in shipped data.
-        const raw = b.axis === 0 ? mouse.x : b.axis === 1 ? mouse.y : 0;
-        const value = (Number.isFinite(raw) ? raw : 0) * (b.invert ? -1 : 1);
-        if (fromMouse === null || Math.abs(value) > Math.abs(fromMouse)) {
-          fromMouse = value;
-          mousePrimary = !b.secondary;
-        }
-      }
+      if (!b.secondary) primary = b;
+      else if (primary) secondary = b;
     }
-    v = Math.max(-1, Math.min(1, v));
-    if (fromMouse === null) return v;
-    return mousePrimary ? resolveAxisSlots(fromMouse, v) : resolveAxisSlots(v, fromMouse);
+    if (!primary) return 0;
+    const first = slotValue(primary, keys, mouse);
+    return secondary ? resolveAxisSlots(first, slotValue(secondary, keys, mouse)) : first;
+  }
+
+  /** One slot's value, off its own device (`resolveAxisMapping` 0x083f1ef0). */
+  function slotValue(b, keys, mouse) {
+    if (b.device === 'keyboard') {
+      // `buttonsToAxis` 0x083f2080: the first key is tested before the
+      // second, and the 0.001 s rise and fall make either a step (MLK-10).
+      if (keys.has(b.codes[0])) return 1;
+      return keys.has(b.codes[1]) ? -1 : 0;
+    }
+    if (b.device === 'controller') {
+      if (b.index !== 0) return 0;
+      const raw = padAxes[b.axis] ?? 0;
+      const mag = Math.abs(raw) < JOY_DEADZONE
+        ? 0 : (raw - Math.sign(raw) * JOY_DEADZONE) / (1 - JOY_DEADZONE);
+      return mag * (b.invert ? -1 : 1);
+    }
+    if (b.device === 'mouse' && mouse) {
+      // DirectInput's axis 0 is X and 1 is Y; the wheel (2) is a trigger
+      // pair, never an axis-to-axis line in shipped data.
+      const raw = b.axis === 0 ? mouse.x : b.axis === 1 ? mouse.y : 0;
+      return (Number.isFinite(raw) ? raw : 0) * (b.invert ? -1 : 1);
+    }
+    return 0;
   }
 
   /** Whether a trigger is held at level: any of its keyboard bindings down,
