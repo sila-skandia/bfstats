@@ -749,10 +749,12 @@ class ObjectTemplate:
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
     # Clear (the template constructor's default, or an explicit 0) is a
-    # `StaticPhysicsNode`, and on a vehicle's root that holds the whole hull
-    # still (COL-27): `Assembler` stamps it on such a root as
-    # `extras.physics.hasMobilePhysics = false`.
+    # `StaticPhysicsNode`, and on a placed root that holds the whole object
+    # still (PHY-16): `Assembler` stamps it on such a root as
+    # `extras.physics.hasMobilePhysics = false`. `mobile_physics_declared`
+    # says the `.con` wrote the word at all, either value.
     has_mobile_physics: bool = False
+    mobile_physics_declared: bool = False
     # `setAttachToListener 1`: a bool at SimpleSoundTemplate +4 (lnxded
     # 0x081de9c0/0x081de9d0, ledger SND-1). Its sound is placed at the listener
     # while he sits Inside the PlayerControlObject this part belongs to: every
@@ -2119,6 +2121,7 @@ class ObjectLibrary:
                     # reads them: DC and DC Final write `setHasMobilePhysics`
                     # on their projectiles and deployables, no vehicle part.
                     obj.has_mobile_physics = args.strip().startswith("1")
+                    obj.mobile_physics_declared = True
                 elif cmd == "setattachtolistener":
                     try:
                         obj.attach_to_listener = int(args.split()[0]) != 0
