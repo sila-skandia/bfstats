@@ -136,3 +136,24 @@ nearest-flag join. Two things change, and both are engine-correct:
 - `deployables-page.js` (the kit pads) keeps its own copy of the join. That
   copy does not switch a neutral flag's pad off at the start, as
   `ControlPoint::reset` does.
+
+## The Forklift parks as a car (2026-10-06)
+
+Desert Combat's Forklift is the one `VCSea` hull that drives on land. Its
+root is `setVehicleCategory VCSea`, but it carries two `c_ETCar` wheels and
+no `c_ETShip`, so `seat-survey.js` `rootDriveKind` already drove it as a car.
+`hull-bodies.js` `isSeaHull` read the category alone, though, and gave it no
+parked body. It stood where it was authored, one of them 1.16 m in the air
+over Al Khafji's docks.
+
+A `VCSea` hull is now a sea hull unless its drive kind is a land one
+(`ground` or `tank`). The `adv-conwords` sweep's CW10 found this.
+
+To check it, `~/.cache/dc-sweep/spawner-pads/seahulls.mjs` classified every
+`VCSea` placement on every level of the DC, vanilla, XPack1 and XPack2 trees.
+Only the Forklift changes: three on Al Khafji Docks and two on Sea Rigs. The
+ships (Fletcher, Hatsuzuki, Elco80, Lcvp, Raft and the rest) still classify
+as `ship`. The engineless carriers (Nimitz, Hornet, Hiryu) classify as `seat`
+and stay sea hulls too. On Al Khafji the three Forklifts now carry parked
+bodies and rest at 78.89 m, 0.29 m above the 78.60 m ground. The three Lcvps
+are unchanged.

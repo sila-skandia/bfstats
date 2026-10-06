@@ -12,6 +12,7 @@ import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
 import { spawnHoldOf } from './spawned-craft.js';
+import { classifyRoot } from './seat-survey.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -93,9 +94,20 @@ export function createHullBodies(page) {
   }
 
   /** A floating hull: the one vehicle category that stays out of the parked body
-   *  world and enters the driven one instead. */
+   *  world and enters the driven one instead. `VCSea` names it, unless the
+   *  hull's own engines make it a land vehicle (`seat-survey.js`
+   *  `rootDriveKind`): Desert Combat's Forklift is `VCSea` with two `c_ETCar`
+   *  wheels and no `c_ETShip`, and drives as a car, so it parks on its springs
+   *  like one. A `VCSea` hull with no engine at all (the static Nimitz) stays
+   *  a ship. */
+  const seaHulls = new WeakMap();
   function isSeaHull(node) {
-    return node?.userData?.physics?.vehicleCategory === 'VCSea';
+    if (node?.userData?.physics?.vehicleCategory !== 'VCSea') return false;
+    if (!seaHulls.has(node)) {
+      const kind = classifyRoot(node);
+      seaHulls.set(node, kind !== 'ground' && kind !== 'tank');
+    }
+    return seaHulls.get(node);
   }
 
   /**
@@ -186,7 +198,7 @@ export function createHullBodies(page) {
     }
     if (!Number.isFinite(waterLevel)) { pinHeldCraft(); return; }
     for (const node of ownerRoots) {
-      if (node?.userData?.physics?.vehicleCategory !== 'VCSea') continue;
+      if (!isSeaHull(node)) continue;
       const floats = floatNodesOf(node);
       if (!floats.length) continue;
       node.updateWorldMatrix(true, false);
