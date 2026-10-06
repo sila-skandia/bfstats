@@ -180,7 +180,18 @@ export function calculateLift(velocity, surfaceUp, coeff) {
 /**
  * Principal inertia from the mesh bounding box and `inertiaModifier`.
  *
- * The modifier triple is [data] and is yaw/pitch/roll.
+ * The modifier triple is [data]. Two readings of it, by `pairing`:
+ *
+ *  - `'ypr'` (the default, and what every fixed-wing aircraft here is
+ *    calibrated against) takes it as yaw/pitch/roll.
+ *  - `'xyz'` is the engine's: the `.con` triple is a plain Vec3, copied
+ *    straight from the template's `+0x64` to `PhysicsNode+0x7c..+0x84`
+ *    (`setPhysicsNodeComponent` `0x081dd490`, `setInertiaModifier`
+ *    `0x0824d320`; `makeScript` `0x081dc190` prints it back the same way), and
+ *    `updateRotationalPhysics` divides the body-X (right, pitch) share by
+ *    `+0x7c`, body-Y (yaw) by `+0x80` and body-Z (roll) by `+0x84` (ledger
+ *    COL-8, COL-13). A DC UH-60's `.2/.6/.6` is a light pitch axis, not a
+ *    light yaw one.
  *
  * Two laws, chosen by `spec.inertiaLaw`:
  *
@@ -201,12 +212,13 @@ export function calculateLift(velocity, surfaceUp, coeff) {
  *
  * @param {number} mass kg
  * @param {[number, number, number]} size span (x), height (y), length (z), metres
- * @param {[number, number, number]} modifier `inertiaModifier`, yaw/pitch/roll
+ * @param {[number, number, number]} modifier `inertiaModifier`, as the `.con` writes it
  * @param {'box'|'geometry'} law which divisor
+ * @param {'ypr'|'xyz'} pairing which axis each modifier scales
  */
-function boxInertia(mass, size, modifier, law = 'box') {
+function boxInertia(mass, size, modifier, law = 'box', pairing = 'ypr') {
   const [w, h, l] = size;
-  const [yaw, pitch, roll] = modifier;
+  const [yaw, pitch, roll] = pairing === 'xyz' ? [modifier[1], modifier[0], modifier[2]] : modifier;
   const divisor = law === 'geometry' ? 3 : 12;
   return {
     x: mass * (l * l + h * h) / divisor * pitch,
@@ -501,9 +513,11 @@ const _springQuat = new THREE.Quaternion();
  * pose and throttle axis, and `Aircraft` flies every one of its engines on
  * the engine's own law (`vectored-engines.js`, ledger PHY-12..PHY-14) instead
  * of pushing them all along the nose on the pedal. Such an airframe takes the
- * engine's own `/3` geometry inertia (collision-response.md §4.2): the solid
- * box is kept only for the fixed-wing aircraft calibrated on it, and nothing
- * was ever calibrated on a helicopter.
+ * engine's own rotation (collision-response.md §4.2): the `/3` geometry
+ * inertia, `inertiaModifier` read as x/y/z (COL-13), and no gyroscopic term
+ * (COL-8). The solid box, the yaw/pitch/roll reading and the term are kept
+ * only for the fixed-wing aircraft calibrated on them, and nothing was ever
+ * calibrated on a helicopter.
  */
 export function aircraftSpec(root) {
   const physics = root?.userData?.physics;
@@ -590,7 +604,7 @@ export function aircraftSpec(root) {
     mass: physics.mass,
     drag: physics.drag ?? CORSAIR.drag,
     dragLaw: 'box',
-    ...(vectored ? { vectored: true, inertiaLaw: 'geometry' } : {}),
+    ...(vectored ? { vectored: true, inertiaLaw: 'geometry', inertiaPairing: 'xyz' } : {}),
     gravity: GRAVITY,
     inertiaModifier: physics.inertiaModifier || [1, 1, 1],
     size: hullGeometry(root).size,
@@ -678,7 +692,8 @@ export class Aircraft extends Vehicle {
     /** Each wheel's static latch (`addFriction`'s bit 0x80), by index. */
     this._wheelLatch = [];
     this.inertia = boxInertia(this.spec.mass, this.spec.size,
-                              this.spec.inertiaModifier, this.spec.inertiaLaw);
+                              this.spec.inertiaModifier, this.spec.inertiaLaw,
+                              this.spec.inertiaPairing);
     this.groundHeight = () => -Infinity;
     // Below this a surface is in the water and makes ten times the lift.
     // Off by default: the page that knows where the sea is should say so.
@@ -1009,14 +1024,24 @@ export class Aircraft extends Vehicle {
     this.applyDrag(_accel, h, _moment);
 
     // Angular, in the body frame, which is the only one the inertia tensor is
-    // diagonal in. The gyroscopic term matters here: a Corsair's yaw inertia is
-    // nearly three times its pitch one.
+    // diagonal in. The fixed-wing aircraft carry a gyroscopic term, and are
+    // calibrated on it: a Corsair's yaw inertia is nearly three times its
+    // pitch one. The engine has none (`updateRotationalPhysics` `0x082539e0`,
+    // ledger COL-8): it adds each body axis's share of the torque over that
+    // axis's inertia to a world-axis omega and turns the body about it, which
+    // is this step without `omega x I.omega`. A vectored airframe runs that.
+    // With the term, a DC UH-60 (`inertiaModifier .2/.6/.6`) turned two
+    // seconds of pedal into a 38 deg/s roll.
     _qi.copy(s.orientation).invert();
     _torque.copy(_moment).applyQuaternion(_qi).multiplyScalar(k.mass);
     _omega.copy(s.angularVelocity).applyQuaternion(_qi);
     const I = this.inertia;
-    _iw.set(I.x * _omega.x, I.y * _omega.y, I.z * _omega.z);
-    _gyro.crossVectors(_omega, _iw);
+    if (this.vectored) {
+      _gyro.set(0, 0, 0);
+    } else {
+      _iw.set(I.x * _omega.x, I.y * _omega.y, I.z * _omega.z);
+      _gyro.crossVectors(_omega, _iw);
+    }
     _omega.x += (_torque.x - _gyro.x) / I.x * h;
     _omega.y += (_torque.y - _gyro.y) / I.y * h;
     _omega.z += (_torque.z - _gyro.z) / I.z * h;
