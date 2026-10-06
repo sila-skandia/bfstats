@@ -193,11 +193,82 @@ Each level's `objectSpawns` gains only the three words. Gazala's 49 pads come
 out at 45 s / 40 m / 10 hp/s (4 of them at 20 hp/s). Weapon Bunkers' three
 bunkers come out at 9999 s.
 
+## A dead carrier stops being a spawn
+
+Some spawn points ride an object. Iraq's only spawns on Weapon Bunkers are 35
+points in three bunkers whose pads never respawn (9999 s). No Fly Zone Day 2
+puts its airbases' groups in hangars, a radar dome and a tower. Bragg's
+Talil spawns ride the meshless `UST` and `IST`, each on a pad filed under
+the neutral oil pump station.
+
+In the engine each such point is inactive while the nearest Armor up its
+parent chain is critically damaged (SPAWN-5). A carrier that was never
+spawned, or has been removed, carries no points at all. The group's ring
+averages only the active points, and a spawn takes one of them at random;
+with none left, the spawn is refused (SPAWNGRP-10). The viewer only did this
+for floating ships, and flag by flag.
+
+What changed:
+
+- **`hull-bodies.js` `bindCarriers`.** At body setup this gives every carried
+  point (`vehicleSoldierSpawns`) a live `inactive`.
+  - The carrier is the ship the point was authored on (`deckSpawnHost`), else
+    the placed object of the point's template nearest its pad's points.
+  - A point is inactive when its carrier is critical, destroyed or cleared,
+    or not stood up by its pad. A sinking ship counts as critical.
+  - `shipFlagInactive(flag)`, still under its old name, now reads the flag's
+    own `inactive`.
+- **`spawn-flags.js`.**
+  - A carried flag is `inactive` when every point is.
+  - `groupSpot` averages only the live points. With none left it keeps the
+    average of all of them, where the engine would put (0,0,0).
+  - `pickSpawn` never hands out a dead point, and returns nothing rather
+    than falling back to one.
+- **`world-players.js` `spawnPlayer`.** An inactive flag is refused and never
+  picked. A side whose own flags are all down waits rather than going to the
+  enemy's.
+- **`bot-referee.js` `respawnTick`.** It leaves inactive flags out. A bot with
+  nowhere to stand up stays down and asks again the next tick, as the
+  engine's bot keeps choosing a group `spawnPlayer` refuses. Before, it stood
+  up on its corpse.
+- **The human.** `spawnAtFlag` refuses an inactive flag, as it did a burning
+  ship. The deploy screen still lists it, as retail lists the group while
+  its wrecks stand.
+
+How it was checked:
+
+- `tests/test_carried_spawn_flags.py`, `deadCarriers`: Weapon Bunkers' group
+  99 over three bunkers.
+  - With the middle bunker down, the ring moves to the other four points'
+    average, and its two points leave the pick.
+  - With all three down, the flag is inactive, every pick is refused, and
+    `spawnPlayer` spawns nobody there. An Iraqi asking with no flag gets
+    nothing rather than the US flag.
+- Runner, DC Weapon Bunkers (`~/.cache/dc-sweep/spawner-pads/bunkers.mjs`,
+  4 bots a side, under the sim lock):
+  - All three bunkers destroyed and every Iraqi bot killed at t = 20 s: the
+    flag goes inactive, and all four Iraqi bots are still down at 120 s.
+  - The control run kills the bots and leaves the bunkers standing: all four
+    stand up again on the bunkers' points.
+- Runner, DC Operation Bragg (`~/.cache/dc-sweep/spawner-pads/bragg.mjs`):
+  - At the start, both Talil groups (7, US, and 8, Iraq) are off. Their
+    carriers' pads are under the neutral oil pump station.
+  - The US take it: `UST` stands, group 7 is on, and group 8 stays off. Iraq
+    take it: `IST`, group 8 on, group 7 off.
+  - The station's other pads switch side with it: M1A1 to T72, AH-6 to MH-500,
+    A10_B to SU-25. The census's "both Talil spawn sets are live from round
+    start" is gone.
+
 ## Open
 
 - A wreck away from its pad delays its pad's next vehicle until it clears
   (see "One node per template").
 - The abandoned hull's out-of-world bill (SPAWN-20).
+- A side with no spawn group left: `gameStatusPlaying`'s end-of-round bleed
+  (TKT-5) is not built in `round-state.js`. With its bunkers gone and its
+  players dead, Iraq should bleed out. Today it only stops spawning.
+- The AC-130's spawn point does not ride the aircraft. `rebaseDeckSpawns`
+  moves only the points of floating hulls. Its point does die with it.
 - `deployables-page.js` (the kit pads) keeps its own copy of the join. That
   copy does not switch a neutral flag's pad off at the start, as
   `ControlPoint::reset` does.
