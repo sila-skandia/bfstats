@@ -380,6 +380,89 @@ for (const name of Object.keys(MOTORS)) {
                                    marks: [0.5, 1, 2, 5, 10, 20, 40] });
 }
 
+// --- expiry: only a round that sets `hasOnTimeEffect` bursts (PROX-7) --------
+
+/** Shells off their glbs, with the damage table row `extract_map.py` writes. */
+const EXPIRING = {
+  // vanilla AA_Allies.glb: CRD_UNIFORM/0.8/1.4 at 300 m/s, hasOnTimeEffect 1
+  AA_Allies_Projectile: {
+    velocity: 300, body: [0.1, 0.1, 0.4],
+    projectile: { template: 'AA_Allies_Projectile', kind: 'shell',
+                  timeToLive: 0.8, gravity: 0.0, material: 228,
+                  stopAtEndEffect: true, endEffect: 'e_FlakBig',
+                  damage: { radius: 20.0, material2: 199, damageType: 4,
+                            hasCollisionEffect: true, dieAfterColl: true } },
+    entry: { material: 228, timeToLive: ['u', 0.8, 1.4, 0], hasOnTimeEffect: true,
+             explodeNearEnemyDistance: 10.0, proximityFusePrimer: 0.1 },
+  },
+  // vanilla flak38.glb: CRD_UNIFORM/0.8/1.2
+  Flak38_Projectile: {
+    velocity: 300, body: [0.1, 0.1, 0.4],
+    projectile: { template: 'Flak38_Projectile', kind: 'shell',
+                  timeToLive: 0.8, gravity: 0.0, material: 228,
+                  stopAtEndEffect: true, endEffect: 'e_FlakBig',
+                  damage: { radius: 20.0, material2: 199, damageType: 4,
+                            hasCollisionEffect: true } },
+    entry: { material: 228, timeToLive: ['u', 0.8, 1.2, 0], hasOnTimeEffect: true,
+             explodeNearEnemyDistance: 10.0 },
+  },
+  // desertcombat Shilka.glb: 1 s, 5 m splash, `hasOnTimeEffect 0` since DC
+  // took its proximity fuse out
+  ShilkaProjectile: {
+    velocity: 1000, body: [0.05, 0.05, 0.2],
+    projectile: { template: 'ShilkaProjectile', kind: 'shell', timeToLive: 1.0,
+                  gravity: 0.0, material: 501, stopAtEndEffect: true,
+                  damage: { radius: 5.0, material2: 500, damageType: 1,
+                            hasCollisionEffect: true, dieAfterColl: true } },
+    entry: { material: 501, hasOnTimeEffect: false },
+  },
+  // The same shell from assets baked before the word: the old burst.
+  staleShilka: {
+    velocity: 1000, body: [0.05, 0.05, 0.2],
+    projectile: { template: 'ShilkaProjectile', kind: 'shell', timeToLive: 1.0,
+                  gravity: 0.0, material: 501, stopAtEndEffect: true,
+                  damage: { radius: 5.0, material2: 500, damageType: 1,
+                            hasCollisionEffect: true, dieAfterColl: true } },
+    entry: { material: 501 },
+  },
+};
+
+/** One shell fired 80 degrees up with the fuse die at `roll`: what its
+ *  expiry does and how far out. */
+function expire(name, roll) {
+  const round = EXPIRING[name];
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
+                             viewportHeight: () => 900 });
+  guns.rand = () => roll;
+  guns.collider = world();
+  guns.projectileMaterials = { [round.projectile.template.toLowerCase()]: round.entry };
+  const [group] = guns.collect(launcher(round, name, 80, 2), {
+    replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
+    tracerLength: 'data',
+  });
+  const records = [];
+  guns.onImpact = record => records.push(record);
+  guns.setFiring(group, true);
+  guns.advance(1 / 60);
+  guns.setFiring(group, false);
+  const shot = guns.projectiles[0];
+  const start = shot.mesh.position.clone();
+  for (let i = 0; i < 600 && guns.projectiles.includes(shot); i++) guns.advance(1 / 60);
+  const burst = records.find(r => r.kind === 'endOfLife') ?? null;
+  return {
+    gone: !guns.projectiles.includes(shot),
+    burst: !!burst,
+    records: records.length,
+    at: burst ? round3(new THREE.Vector3(...burst.point).distanceTo(start)) : null,
+  };
+}
+
+out.expiry = {};
+for (const name of Object.keys(EXPIRING)) {
+  out.expiry[name] = [0, 0.5, 0.999].map(roll => expire(name, roll));
+}
+
 // --- bullets: the tracer path falls by its own data -------------------------
 
 /**

@@ -1496,6 +1496,12 @@ def projectile_materials(library) -> dict[str, dict]:
         crd_ttl = template.time_to_live_crd
         if crd_ttl and crd_ttl[0] != "n":
             entry["timeToLive"] = crd_ttl
+        # What the end of that lifetime does (`Projectile::handleMessage`
+        # 0x0831e8f0, ledger PROX-7): `detonate` for a round that sets
+        # `hasOnTimeEffect`, a silent `resetProjectile` for one that does not.
+        # The constructor default is 0 (0x0831f9ec). Written resolved for every
+        # round, so a table without it is a table baked before it existed.
+        entry["hasOnTimeEffect"] = bool(template.has_on_time_effect)
         # The proximity fuse (`Projectile::handleUpdate` 0x0831e940, ledger
         # PROX-1..PROX-6). Off unless the distance is positive (the engine's
         # own `0 < +0x168` gate), so the default -1 is never written.
