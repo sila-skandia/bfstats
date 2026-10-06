@@ -768,6 +768,11 @@ export function createLevel(page) {
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       get pads() { return statics.pads; },
+      // A room's server runs the pads (`net-room.js`): the page's stand down
+      // and stand what its rows say.
+      setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,
+      get remotePads() { return !!statics.remotePads; },
+      set remotePads(on) { statics.remotePads = !!on; },
     },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,
