@@ -79,6 +79,19 @@ class TileWindowTests(unittest.TestCase):
         self.assertTrue(tile_in_window(-10, 5, 16))
         self.assertFalse(tile_in_window(-10, 6, 16))
 
+    def test_the_limit_compare_is_unsigned(self) -> None:
+        # Client 0x00681fbe/0x00681fc4 compare the patch with `P - |offset|`
+        # by `jae`: a limit below zero bounds nothing. An offset under -P draws
+        # every file 0..P-1 on its own patch; one over P draws nothing (each
+        # file index c - offset is negative). No installed level gets here.
+        self.assertTrue(tile_in_window(-10, 0, 8))
+        self.assertTrue(tile_in_window(-10, 7, 8))
+        self.assertFalse(tile_in_window(-10, 8, 8))
+        self.assertFalse(tile_in_window(10, 0, 8))
+        # A limit of exactly zero leaves no patch.
+        self.assertFalse(tile_in_window(-8, 0, 8))
+        self.assertFalse(tile_in_window(8, 0, 8))
+
     def test_a_tile_outside_the_window_leaves_its_patch_to_the_default(self) -> None:
         info = parse_terrain_con(
             "GeometryTemplate.worldSize 8192\nGeometryTemplate.texOffsetX 4\n"

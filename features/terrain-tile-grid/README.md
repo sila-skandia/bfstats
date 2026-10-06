@@ -28,7 +28,8 @@ Two ledger rows, both read in the client and the Linux server:
 - **TERR-2: only the files inside a window are drawn.** World patch `c` asks for
   file `c - texOffset` (or `c` when the offset is negative), and only while that
   index is non-negative and `c < P - |texOffset|`. Every other patch gets the
-  default texture. A shipped file outside the window is never drawn.
+  default texture. The limit is compared unsigned, so an offset below `-P`
+  would draw every file; no installed level has `|texOffset| >= P`. A shipped file outside the window is never drawn.
 
 TERR-3 (the detail map's repeat) and TERR-4 (the template's defaults) were read
 on the way. TERR-3 says the engine's detail UV is the sample index times
