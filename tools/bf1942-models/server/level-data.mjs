@@ -125,8 +125,13 @@ export class LevelData {
 
     // Parked hulls on their own springs (map.html setupVehicleBodies).
     if (haveGround) {
+      // The static world as the page hands it (`hull-bodies.js`
+      // `setupVehicleBodies`): a driven hull's col0 against the buildings is
+      // the contact solver's, and its drive's swept sphere stands down.
       world.setupBodies({ tables: this.damageTables,
-                           terrain: bodyTerrainOf(heightfield, waterLevel) });
+                           terrain: bodyTerrainOf(heightfield, waterLevel),
+                           statics: collider?.statics && typeof collider.staticProbe === 'function'
+                             ? collider.staticProbe() : null });
       for (const [owner, node] of ownerRoots.entries()) {
         const spec = node?.userData?.armor ? bodySpecFor(node, this) : null;
         if (!spec) continue;

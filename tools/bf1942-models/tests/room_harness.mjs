@@ -48,6 +48,7 @@ import {
   RoomServerCore, frame,
 } from './server/rooms.mjs';
 import { buildLevelFromDescriptor, loadRealLevel } from './server/level.mjs';
+import { bodySpecFor } from './server/level-bodies.mjs';
 import { loadVehicleTree } from './server/glb-tree.mjs';
 import {
   MSG_JOIN, MSG_ACTION, MSG_INPUT, MSG_LEAVE, MSG_SNAPSHOT, MSG_EVENT,
@@ -418,7 +419,38 @@ let nextTag = 1;
       mountOk = Boolean(m?.vehicle) && drivable.driver === 1;
       unmountOk = Boolean(m && inst.unmountFromSeat(w, 1, drivable));
     }
+    // A land hull's drive gets the page's inputs (`map.html`
+    // `buildHullDrive`): the collider and the sea, so it finds the sea BED
+    // (PHY-16); each wheel a radius off its own mesh, which the room's scene
+    // used to leave undecoded (-Infinity: no wheel ever touched the ground);
+    // its col0 probe depth and the root part the sea depth is taken on.
+    const landEntry = inst.table.find(v => ['ground', 'tank'].includes(v.kind));
+    let land = null;
+    if (landEntry) {
+      w.addPlayer(2, { team: landEntry.team ?? 1 });
+      const lm = inst.mountIntoSeat(w, 2, landEntry, 0);
+      const drive = lm?.vehicle;
+      if (drive) {
+        const p0 = drive.state.position.clone();
+        for (let t = 0; t < 60; t++) {
+          w.player(2).pending = { input: { forward: 1, strafe: 0 }, lookX: 0, lookY: 0 };
+          w.step(1 / 30);
+        }
+        land = {
+          template: landEntry.template,
+          collider: Boolean(drive.collider?.heightfield),
+          waterLevel: Number.isFinite(drive.water?.waterLevel ?? drive.amphibious?.waterLevel ?? w.collider?.waterLevel),
+          radiiFinite: drive.wheels.every(wh => Number.isFinite(wh.radius) && wh.radius > 0),
+          probeDepths: drive.wheels.filter(wh => Number.isFinite(wh.contactDepth)).length,
+          wheels: drive.wheels.length,
+          moved: drive.state.position.distanceTo(p0),
+          grounded: drive.state.grounded,
+          waterPart: Boolean(bodySpecFor(landEntry.root, data)?.waterPart),
+        };
+      }
+    }
     results.i = {
+      land,
       loaded: true,
       dim: hf.dim,
       spacing: hf.spacing,
