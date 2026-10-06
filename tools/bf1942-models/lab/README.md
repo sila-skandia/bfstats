@@ -14,6 +14,7 @@ From `tools/bf1942-models/`:
 
 ```sh
 python3 lab/lab.py setup                              # once: build ~/bf1942-lab/server from server1
+python3 lab/lab.py setup --mods-from-client DesertCombat  # add a mod server1 lacks, from the Wine client
 python3 lab/lab.py start lab/scenarios/wake-coop.json # render settings, start, wait for the round
 python3 lab/lab.py status                             # uptime, players spawned, kits, vehicles, kills
 python3 lab/lab.py stop                               # stop, collect the run, stage it for the viewer
@@ -50,6 +51,24 @@ made on another server while the lab ran is named and left out.
 | `autoexec` | console lines appended to `ServerAutoExec.con`; `aiSettings.setMaxNBots N` sets the bot count, split evenly between the sides |
 | `preload` | a 32-bit `.so` for `LD_PRELOAD` (the server recorder, when it exists) |
 | `human` | what the person at the client does |
+
+## A mod server1 does not have
+
+server1 carries `bf1942`, `xpack1` and `xpack2` only. `setup --mods-from-client
+<Mod>` builds `~/bf1942-lab/server/mods/<mod>/` from the Wine client's
+`Mods/<Mod>/`: a lower-case tree of links to its `.con`, `.dat` and `.rfa`
+files, because the 1.6 Linux server lower-cases every path before it opens it
+(server1's `readmes/readme-linux.txt`). Nothing is copied, the client install
+is never written, and `setup --force` keeps the mods `SOURCE.json` lists. A
+scenario then names the mod per level (`"mod": "desertcombat"`), and the
+viewer URL `stop` prints carries `&mod=`. A mod level writes its event log to
+that mod's own `logs/`, which `stop` collects too.
+
+Desert Combat 0.7 runs this way (2026-10-06): `dc-*-coop-rec` scenarios, the
+server recorder preloaded, bots only. DC's overlays of vanilla levels
+(El Alamein, Gazala, ...) take their AI data from vanilla's archives through
+DC's `addModPath Mods/BF1942/`. The runs and what they measured are in
+`features/desert-combat-parity/lab-ground-truth.md`.
 
 ## Where things live
 
