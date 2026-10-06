@@ -296,6 +296,14 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(d["hullIsPco"])
         self.assertEqual(d["hullTemplate"], "F-14B")
 
+    def test_a_depot_is_not_there_while_its_object_is_not(self) -> None:
+        # Medina Ridge's fk1 on a flagkill no pad has stood up, or one the
+        # end of the round took off the field, kills nobody; standing, it
+        # kills at -1000 a cycle.
+        k = self.results["killDepot"]
+        self.assertEqual((100, 100), (k["absent"], k["cleared"]))
+        self.assertTrue(k["standingDestroyed"])
+
     def test_a_seated_soldier_is_served_only_by_his_own_hulls_depot(self) -> None:
         """SUP-20 through the world pass: a half-track's own locker heals
         its rider, a ground locker on the same spot does not, a rider in
