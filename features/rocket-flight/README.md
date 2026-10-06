@@ -413,3 +413,12 @@ the live trees' reports (§6).
    (inferred: the writer of a bot's buffer was not read). The viewer's bots
    roll a fresh disc per shot (`bot-referee.js` `rollCone`), the bots
    package's.
+10. **An Engine's own `setRotation` is not honoured.** `pushMotors` pushes
+    along the round's nose (a full body's flight path, a point body's launch
+    axis), and every `c_ETRocket` in vanilla, DC, DC Final and EoD sits on the
+    axis at `0/0/0`. FHSW's do not: 66 of its 237 (the `*NordenBomb`s and
+    `NordenClusterFrag*` at `0/30/0`, `lanternProjectile` at `0/90/0`) push
+    off the axis in the engine (PHY-20: along the engine's own row 2). Here
+    they push along the path. Before this package they flew as `kind:
+    'rocket'` rounds with no gravity and a flat 25 m/s^2, so this is no worse,
+    but it is not the engine's.
