@@ -299,13 +299,14 @@ wheel forward — **unscaled**; the `×30` at `0x0825bc67` happens afterwards.
 ```
 L0 = dot(v, fwd) * getCurrentRatio() / getCurrentTorque()
   & 2 (car, tank) : clamp L0 to [-1, 1] and rescale v by the ratio
-  & 4 (tank)      : L = frame MIN of L0 when revs > 0, MAX when revs <= 0
+  & 4 (tank)      : L = frame MAX of L0 when revs >= 0, MIN when revs < 0
   otherwise (car) : L = (L*n + L0) * 0.99 / (n + 1)
 ```
 
 `0x0824c877` dot, `0x0824c885` `fmulp`, `0x0824c89d` `fdivrp`; `& 2` test
 `0x0824c8ab`; `& 4` test `0x0824c90f` with the min/max block
-`0x0824c917`–`0x0824c950`; car mean `0x0824c952`–`0x0824c97e` with `0.99` at
+`0x0824c917`–`0x0824c950` (the MAX for revs ≥ 0, read off `0x0824c91d`–`0x0824c937`;
+this line said MIN until 2026-10-07, TANK-13); car mean `0x0824c952`–`0x0824c97e` with `0.99` at
 `ds:0x86d0cdc` and the count at `+0xac`.
 
 ### Shifting
