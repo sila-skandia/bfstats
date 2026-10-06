@@ -1244,10 +1244,15 @@ function spitfireNode() {
                    ...(axis ? { rig: { control: 'Spitfire', automaticReset: true, axes: { pitch: axis } } } : {}) };
     complex.add(n);
   };
+  // The regulators bind no input; their servo's limits and rates ride in
+  // their `physics` (`con.py`): -2..2 at 30 deg/s, 120 deg/s^2.
+  const regulator = { minRotation: [0, -2, 0], maxRotation: [0, 2, 0], maxSpeed: [0, 30, 0], acceleration: [0, 120, 0] };
   wing('SpitfireAirbreakLeft', [-1.538, 0.05, 0.882], [0.007997, -0.06052, -0.043527, 0.997185],
-       { flapLift: 2, pitchOffset: 0.5, positionOffset: [1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1 });
+       { flapLift: 2, pitchOffset: 0.5, positionOffset: [1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1,
+         ...regulator });
   wing('SpitfireAirbreakRight', [1.539, 0.05, 0.882], [0.007997, 0.060511, 0.043536, 0.997186],
-       { flapLift: 2, pitchOffset: 0.5, positionOffset: [-1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1 });
+       { flapLift: 2, pitchOffset: 0.5, positionOffset: [-1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1,
+         ...regulator });
   wing('SpitfireRudderBackVertical', [0, 1.244, 5.452], [0, 0, -0.707101, 0.707113],
        { wingLift: 1.5, flapLift: 1.5, positionOffset: [0, -0.5, 0] },
        { input: 'c_PIYaw', min: -15, max: 15, free: false, driver: 'position', maxSpeed: 60, direction: 1 });
@@ -1396,6 +1401,13 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
     specPairing: spec.inertiaPairing ?? null,
     throttleAxis: (({ min, max, acceleration, automaticReset }) => ({ min, max, acceleration, automaticReset }))(spec.engines[0].throttle),
     engineOffNose: round(spec.engines[0].offNose, 3),
+    regulator: (({ servoLaw, min, max, maxSpeed, acceleration }) => ({ servoLaw, min, max, maxSpeed, acceleration }))(
+      spec.surfaces.find(x => x.id === 'SpitfireAirbreakLeft')),
+    regulatorTrim: (() => {
+      const plane = spitfire({ speed: 50, altitude: 125 });
+      fly(plane, 20, holdingAltitude(125, 0.6));
+      return round(plane.deflection(plane.surfaces.find(x => x.id === 'SpitfireAirbreakLeft')), 2);
+    })(),
   };
 }
 
