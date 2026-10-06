@@ -72,13 +72,18 @@ export function hullGeometry(root) {
   // Fletcher's geometry is nineteen `Fletch_hull_M1*` children of
   // `FletcherComplex` rather than a mesh on it, while the standalone glb puts the
   // mesh on the node. A child with a `templateKind` is a separate object with
-  // geometry of its own and is never in it.
+  // geometry of its own and is never in it, a `Bundle` included: the box is
+  // the object's own geometry (`+0x5c`, COL-14). Once con-reader read DC's
+  // bare `geometry` word, the AH-64's `AH64HydraBundle` and the Mi-24's
+  // `Mi24D_RearStand`, Bundles beside the cockpit LOD, carried meshes, and
+  // taking them here shrank the AH-64's box to its rocket pods (5.1 x 0.48 x
+  // 1.65 m) and the Mi-24's to its tail stand (0.09 x 0.06 x 0.29 m).
   const meshesOf = node => {
     const found = [];
     if (node.isMesh && node.geometry && !isCollisionNode(node)) found.push(node);
     for (const child of node.children) {
       if (isCollisionNode(child) || !child.isMesh || !child.geometry) continue;
-      if (!GEOMETRY_CHAIN_KINDS.has(child.userData?.templateKind)) continue;
+      if (child.userData?.templateKind) continue;
       found.push(child);
     }
     return found;

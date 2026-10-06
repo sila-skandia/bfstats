@@ -118,7 +118,10 @@ def run_harness() -> dict:
         shutil.copyfile(HARNESS, work / "harness.mjs")
         # The extracted model tree is not in the repository; when this PC has
         # one, the harness also flies the real Desert Combat glbs out of it.
-        env = {**os.environ, "BF42_VIEWER_MODELS": str(VIEWER / "models")}
+        # `BF42_VIEWER_MODELS` set by the caller flies another tree (a fresh
+        # extract in a scratch directory, laid out as `models/`).
+        env = {**os.environ}
+        env.setdefault("BF42_VIEWER_MODELS", str(VIEWER / "models"))
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],
             capture_output=True, text=True, timeout=900, env=env)
@@ -882,6 +885,15 @@ class FlightModelTests(unittest.TestCase):
         # Pilot's seat empty: the engine is stopped (TemplateMessage 5, PHY-14).
         self.assertEqual(0, parked["stopped"]["revs"])
         self.assertLess(parked["stopped"]["moved"], 0.1)
+
+    def test_a_part_with_a_mesh_beside_the_cockpit_is_not_the_box(self) -> None:
+        # DC's AH-64 rocket pods (`AH64HydraBundle`) and the Mi-24's tail
+        # stand are Bundles beside the cockpit LOD that name a geometry of
+        # their own. The box is the fuselage's (COL-14), pods or no pods.
+        parts = self.results["helicopter"]["withPods"]
+        self.assertEqual([5.054, 4.187, 14.447], parts["pods"]["size"])
+        self.assertEqual(parts["bare"], parts["pods"])
+        self.assertGreater(parts["pods"]["climbed"], 30.0)
 
     def test_the_wheels_brake_a_landing_and_let_a_lift_off_go(self) -> None:
         h = self.results["helicopter"]
