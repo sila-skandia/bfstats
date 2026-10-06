@@ -717,6 +717,20 @@ const seatRules = occupancy => {
     c47Pilot: lookOver('XPack2/C47', 'C47'),
     f14Rio: lookOver('DesertCombat/F-14B', 'F14BRIO'),
     bf109Pilot: lookOver('bf1942/BF109', 'BF109'),
+    corsairPilot: lookOver('bf1942/Corsair', 'Corsair'),
+    b17Pilot: lookOver('bf1942/B17', 'B17'),
+  };
+  // The gain's sign is the acceleration's times the signed `maxSpeed`
+  // (GUN-2, `calculateAndClipAngle` lnxded 0x081d7866): each pairing on the
+  // Air profile, and a zero or absent `maxSpeed`.
+  const gainOf = (direction, maxSpeed) => {
+    const pitch = { input: 'c_PIMouseLookY', direction, acceleration: 5000 };
+    if (maxSpeed !== undefined) pitch.maxSpeed = maxSpeed;
+    return seatLookSigns({ cameraView: { look: { axes: { pitch } } } }, 'air').pitch;
+  };
+  results.lookGain = {
+    spitfire: gainOf(-1, 90), bf109: gainOf(1, -90), both: gainOf(-1, -90), plain: gainOf(1, 90),
+    zeroSpeed: gainOf(1, 0), noSpeed: gainOf(-1, undefined),
   };
   results.rebaked = x;
 }

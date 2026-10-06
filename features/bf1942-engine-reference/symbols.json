@@ -9429,6 +9429,15 @@
    "note": "lnxded. Console word maxHitPoints (string 0x086c5808). Set: ceil(v) stored as uint32 to getActiveTemplate(0x947e)+0x84. Template default 10 (0x081dbd42). setArmorComponent passes it to Armor::setMaxHitPoints, before setHitPoints. Ledger HP-17."
   },
   {
+   "address": "0x081ce090",
+   "name": "ConsoleClass194::executeObjectMethod (ObjectTemplate.maxSpeed)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "review-2026-10-07-air-input-2",
+   "note": "lnxded. Console word maxSpeed (string 0x086c54f2, object 0x8790e60, vtable 0x8721fa8). Set: copies the Vec3 as written into getActiveTemplate(0x947d)+0x174..+0x17c, the RotationalBundleTemplate maxSpeed that calculateAndClipAngle 0x081d7866 multiplies by with no fabs; get reads them back. So a negative maxSpeed reverses a servo's sense. Ledger MLK-13, GUN-2."
+  },
+  {
    "address": "0x081d4c90",
    "name": "dice::ref2::world::ObjectTemplate::updateFlags(unsigned int, unsigned int)",
    "kind": "function",

@@ -153,27 +153,34 @@ export function seatProfile(seat) {
 
 /**
  * Which way the seat camera turns for a positive `c_PIMouseLookX`/`Y`, per
- * axis: the sign of its `setAcceleration` (GUN-2, MLK-13), or 0 where the
- * camera cannot turn that way at all. Read off the camera's own look rig,
- * which a glb baked with the word carries as `cameraView.look` and an older
- * one only where the Camera had children of its own (`rig`, DC's
- * `H6CoPilotCamera`).
+ * axis: the sign of its servo's gain, `setAcceleration`'s sign times
+ * `setMaxSpeed`'s (GUN-2, MLK-13), or 0 where the camera cannot turn that way
+ * at all. Read off the camera's own look rig, which a glb baked with the word
+ * carries as `cameraView.look` and an older one only where the Camera had
+ * children of its own (`rig`, DC's `H6CoPilotCamera`).
  *
  * The engine's speed register ramps at `|acceleration|` toward
- * `sign(acceleration) x input x maxSpeed`, so an axis the Camera binds no
- * look input to, or declares no acceleration on, does not move: XPack2's
- * `C47Camera` (`setAcceleration 5000/0/0`) looks sideways and never up, DC's
- * `F14BRIOCamera` (`0/5000/0`) the other way round. The rig omits a zero
- * acceleration, and an undeclared one is the template's 0.1 deg/s^2
- * (`RotationalBundleTemplate` ctor lnxded 0x081d913c), which is as still.
- * That is applied on the Air profile, the seats this package reads; a
- * LandSea seat's free look stays the page's own where its camera says
- * nothing usable (`features/pilot-mouse-look`, Open).
+ * `sign(acceleration) x input x maxSpeed`, and the `maxSpeed` there is the
+ * template's as written: `calculateAndClipAngle` multiplies by it with no
+ * `fabs` (lnxded 0x081d7866), and the `maxSpeed` console word
+ * (`ConsoleClass194` 0x081ce090) stores it raw. So vanilla's BF109
+ * (`setAcceleration 5000/5000/0`, `setMaxSpeed 90/-90/0`) turns the same way
+ * as the Spitfire (`-5000` with `90`), and the rig's `direction` alone (the
+ * acceleration's sign) is not the answer. An axis the Camera binds no look
+ * input to, or declares no acceleration or a zero `maxSpeed` on, does not
+ * move: XPack2's `C47Camera` (`setAcceleration 5000/0/0`) looks sideways and
+ * never up, DC's `F14BRIOCamera` (`0/5000/0`) the other way round. The rig
+ * omits a zero acceleration, and an undeclared one is the template's 0.1
+ * deg/s^2 (`RotationalBundleTemplate` ctor lnxded 0x081d913c), which is as
+ * still. A rig with no `maxSpeed` at all takes the ctor's positive 1.0
+ * (0x081d9130). That is applied on the Air profile, the seats this package
+ * reads; a LandSea seat's free look stays the page's own where its camera
+ * says nothing usable (`features/pilot-mouse-look`, Open).
  *
  * Unread, each sign is the shipped majority of the profile: pitch negative
- * on Air (every vanilla pilot camera but five, 23 of DC's 24, every DC 0.7
- * co-pilot and passenger), positive on LandSea (46 of 50 vanilla look
- * cameras); yaw positive on both.
+ * on Air (every key camera of vanilla, XPack1, XPack2 and DC 0.7, every DC
+ * 0.7 co-pilot and keyed passenger), positive on LandSea (every vanilla look
+ * camera); yaw positive on both.
  *
  * @returns {{yaw: -1 | 0 | 1, pitch: -1 | 0 | 1}}
  */
@@ -183,9 +190,11 @@ export function seatLookSigns(seat, profile = seatProfile(seat)) {
   const sign = (name, input, unread) => {
     if (!axes) return unread;
     const spec = axes[name];
-    const moves = spec && spec.input === input && Number(spec.acceleration) > 0;
+    const speed = Number(spec?.maxSpeed ?? 1);
+    const gain = (Number(spec?.direction) < 0 ? -1 : 1) * Math.sign(Number.isFinite(speed) ? speed : 1);
+    const moves = spec && spec.input === input && Number(spec.acceleration) > 0 && gain !== 0;
     if (!moves) return air ? 0 : unread;
-    return Number(spec.direction) < 0 ? -1 : 1;
+    return gain;
   };
   return {
     yaw: sign('yaw', 'c_PIMouseLookX', 1),

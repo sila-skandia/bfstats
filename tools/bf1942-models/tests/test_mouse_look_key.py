@@ -545,8 +545,13 @@ class RebakedExportTests(_Harness):
 
     def test_the_signs_are_each_cameras(self) -> None:
         self.assertEqual(-1, self.rules("bf1942/Corsair", "Corsair")["pitchSign"])
-        self.assertEqual(1, self.rules("bf1942/BF109", "BF109")["pitchSign"])
+        # The BF109 and B17 declare `setAcceleration 5000/5000/0` with
+        # `setMaxSpeed 90/-90/0`: the same gain as the Corsair's `-5000` with
+        # `90` (GUN-2, maxSpeed signed; lnxded 0x081d7866).
+        self.assertEqual(-1, self.rules("bf1942/BF109", "BF109")["pitchSign"])
+        self.assertEqual(-1, self.rules("bf1942/B17", "B17")["pitchSign"])
         self.assertEqual(1, self.rules("DC_Final/MH-6", "MH6Passenger_PCO3")["pitchSign"])
+        self.assertEqual(1, self.rules("DC_Final/MH-6", "MH-6")["pitchSign"])
         # setAcceleration 5000/0/0 and 0/5000/0: an axis that cannot turn.
         self.assertEqual(0, self.rules("XPack2/C47", "C47")["pitchSign"])
         self.assertEqual(0, self.rules("DesertCombat/F-14B", "F14BRIO")["yawSign"])
@@ -569,7 +574,22 @@ class RebakedExportTests(_Harness):
         self.assertEqual(0, p["f14Rio"]["yaw"])
         # The RIO's camera is positive: inverted on the shipped Air box.
         self.assertAlmostEqual(-pitch, p["f14Rio"]["pitch"], places=4)
-        self.assertAlmostEqual(-pitch, p["bf109Pilot"]["pitch"], places=4)
+        # The BF109's and B17's are negative once the signed maxSpeed is
+        # read, as the Corsair's is: the plain sense on the shipped box.
+        self.assertAlmostEqual(pitch, p["bf109Pilot"]["pitch"], places=4)
+        self.assertAlmostEqual(pitch, p["b17Pilot"]["pitch"], places=4)
+        self.assertAlmostEqual(pitch, p["corsairPilot"]["pitch"], places=4)
+
+    def test_the_gain_is_the_acceleration_times_the_signed_max_speed(self) -> None:
+        g = self.results["lookGain"]
+        self.assertEqual(-1, g["spitfire"])
+        self.assertEqual(-1, g["bf109"])
+        self.assertEqual(1, g["both"])
+        self.assertEqual(1, g["plain"])
+        # A zero maxSpeed commands no speed: the axis is still.
+        self.assertEqual(0, g["zeroSpeed"])
+        # No maxSpeed at all is the template's own positive 1.0 (0x081d9130).
+        self.assertEqual(-1, g["noSpeed"])
 
 
 class NeckTests(_Harness):
