@@ -80,11 +80,21 @@ class ParseTests(_Harness):
 
     def test_the_first_trailing_axis_flag_is_invert(self) -> None:
         # `AxisMapping+0x4c`, the word mouse-input.js already reads on the
-        # look axes. A second trailing number appears on some joystick lines
-        # (yaw, throttle) and its meaning is unchased — parsed as nothing.
+        # look axes.
         s = self.results["parse"]["sample"]
         self.assertTrue(s["pitchInvert"])
         self.assertFalse(s["yawInvert"])
+
+    def test_the_last_trailing_flag_is_the_slot(self) -> None:
+        # `ConsoleClass392::executeObjectMethod` lnxded 0x0840cd70 hands
+        # `<invert> [<secondary>]` to `addAxisMapping(int, InputDeviceFlags,
+        # InputDeviceAxes, bool, bool)` 0x083f1030, whose second bool writes
+        # the AxisRemap's +0x50 mapping; a four-argument line pushes 0
+        # (0x0840ce18). A key pair's one flag is the same slot (0x083f1430).
+        s = self.results["parse"]["sample"]
+        self.assertFalse(s["pitchSecondary"])
+        self.assertTrue(s["yawSecondary"])
+        self.assertFalse(s["throttleKeysSecondary"])
 
     def test_a_file_classifies_by_its_own_content(self) -> None:
         c = self.results["parse"]["classify"]
@@ -146,6 +156,37 @@ class DefaultsTests(_Harness):
         d = self.results["defaults"]
         self.assertEqual(1.0, d["pitchArrow"])
         self.assertEqual(-1.0, d["rollArrow"])
+
+    def test_the_shipped_air_map_binds_the_mouse_to_the_stick(self) -> None:
+        # Air.con: `c_PIPitch IDFMouse IDAxis_1 0`, `c_PIRoll IDFMouse IDAxis_0 0`
+        # in the primary slot, the arrows behind them (`... 1`), and the look
+        # axes on the same two mouse axes.
+        d = self.results["defaults"]
+        lines = {line["trigger"]: line for line in d["mouseLines"]}
+        self.assertEqual({"c_PIPitch", "c_PIRoll", "c_PIMouseLookX", "c_PIMouseLookY"}, set(lines))
+        self.assertEqual(1, lines["c_PIPitch"]["axis"])
+        self.assertEqual(0, lines["c_PIRoll"]["axis"])
+        for line in lines.values():
+            self.assertFalse(line["invert"])
+            self.assertFalse(line["secondary"])
+        self.assertTrue(d["arrowsSecondary"])
+
+    def test_a_pumped_mouse_pair_reaches_the_stick_unclamped(self) -> None:
+        # The caller's pair is the device's rate; nothing here clips it.
+        d = self.results["defaults"]
+        self.assertEqual(2.5, d["mouseRoll"])
+        self.assertEqual(-0.5, d["mousePitch"])
+        self.assertEqual(0.0, d["mouseYaw"])
+        self.assertEqual(0.0, d["footThrottleWithMouse"])
+
+    def test_the_mouse_and_the_keys_fold_by_magnitude(self) -> None:
+        # `ControlMap::update` 0x083f1d70: the larger of the two slots, the
+        # primary on a tie.
+        d = self.results["defaults"]
+        self.assertEqual(1.0, d["mouseRollAgainstKey"])
+        self.assertEqual(-1.5, d["mouseRollPastKey"])
+        self.assertEqual({"primaryLarger": -2, "secondaryLarger": -1, "tie": 1, "bothRest": 0},
+                         d["slots"])
 
     def test_the_context_follows_the_seat_category(self) -> None:
         # The same rule mouse-input.js's profileFor applies to sensitivity:

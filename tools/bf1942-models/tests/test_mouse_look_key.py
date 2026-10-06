@@ -5,7 +5,10 @@ features/pilot-mouse-look. The sentence these tests defend:
     in an aircraft pilot's seat the mouse turns the view only while
     `c_PIMouseLook` is held (Left Shift in the shipped Air map), the released
     view eases back to straight ahead at 0.75 a 30 Hz tick, and holding the
-    key takes the rudder and the stick away from the aircraft
+    key takes the rudder and the stick away from the aircraft; with the key
+    up the same mouse flies it, `c_PIRoll`/`c_PIPitch` being the device's
+    rate on the Air profile (`0.001 x counts/s x 3.85`, its Y inverted by
+    `game.setAirMouseInvert 1`) wherever the profile's Air map binds it
 
 which is `BFPlayer::handleInput` (lnxded 0x08052530, client 0x00407ec0) and
 `Camera::handlePlayerInput` (lnxded 0x081aa490, client 0x00564af0) for a
@@ -192,6 +195,14 @@ class RouterTests(_Harness):
         self.assertEqual(-0.4, pad["pitch"])
         self.assertIsNone(self.results["route"]["nullWord"])
 
+    def test_released_the_look_axes_are_the_ones_dropped(self) -> None:
+        # Channels 4 and 5 zeroed while the key is up (0x08052674 onward);
+        # held, the look pair is the look's.
+        r = self.results["route"]
+        self.assertEqual({"x": 0, "y": 0}, r["lookReleased"])
+        self.assertEqual({"x": 2.5, "y": -1.2}, r["lookHeld"])
+        self.assertIsNone(r["lookNull"])
+
 
 class BindingTests(_Harness):
     """The key is the control map's, so a profile moves it."""
@@ -236,7 +247,8 @@ class PageTests(_Harness):
     """`createLocalLook` + `VehicleCamera`: the gate and the recentre where the
     page runs them."""
 
-    def test_a_knock_of_the_mouse_does_nothing_in_the_cockpit(self) -> None:
+    def test_a_knock_of_the_mouse_does_not_turn_the_view(self) -> None:
+        # It flies the aircraft instead (StickTests); the head stays put.
         p = self.results["page"]
         self.assertEqual({"needsKey": True, "held": False, "heldWithKey": True}, p["pilotGate"])
         self.assertEqual({"yaw": 0, "pitch": 0}, p["pilotKnock"]["look"])
@@ -288,6 +300,104 @@ class PageTests(_Harness):
                 self.assertFalse(p[seat]["needsKey"])
                 self.assertAlmostEqual(-300 * HEAD_SENS_DEG, p[seat]["turned"]["yaw"], places=4)
                 self.assertEqual(p[seat]["turned"], p[seat]["oneSecondLater"])
+
+
+def wire(value: float) -> float:
+    """`floatToFixed(v, 12, 16)` then `PlayerAction::get`'s decode and 0.01
+    snap, as mouse-input.js has them (and `test_mouse_input.py` pins)."""
+    x = max(-1.0, min(1.0, value / 16.0))
+    n = math.trunc((x + 1) * 0.5 * 4095)
+    v = ((2 * n) / 4095 - 1) * 16
+    return round(v * 100) / 100
+
+
+class StickTests(_Harness):
+    """Key up, the mouse flies the aircraft: the Air map's
+    `c_PIRoll IDFMouse IDAxis_0` and `c_PIPitch IDFMouse IDAxis_1` lines carry
+    the look stage's own rate onto the stick (mouse-input.js: one register per
+    mouse axis, read by every mapping of it)."""
+
+    # 30 px in one 1/30 s tick is 900 counts a second; the Air profile's
+    # 0.75 is a scale of 3.85.
+    RATE = 0.001 * 900 * 3.85
+
+    def test_the_counts_reach_the_stage_and_not_the_view(self) -> None:
+        s = self.results["stick"]
+        self.assertEqual({"yaw": 0, "pitch": 0}, s["knockView"])
+        self.assertEqual({"x": 30, "y": 30}, s["knockPending"])
+        self.assertEqual("air", s["profile"])
+        self.assertAlmostEqual(3.85, s["scale"], places=12)
+
+    def test_mouse_x_is_the_roll_at_the_air_rate(self) -> None:
+        s = self.results["stick"]
+        self.assertAlmostEqual(wire(self.RATE), s["roll"], places=9)
+        self.assertEqual(3.46, s["roll"])
+        self.assertEqual(s["expected"]["right30"], s["roll"])
+        # Past full deflection: a rate, not a position. The part clips it.
+        self.assertGreater(s["roll"], 1)
+
+    def test_mouse_y_is_the_pitch_inverted_by_the_air_box(self) -> None:
+        # Pulled toward the player (browser +y, DirectInput +lY) is a negative
+        # c_PIPitch -- ArrowDown's sense, the nose coming up -- because the
+        # shipped `game.setAirMouseInvert 1` turns the device's Y round.
+        s = self.results["stick"]
+        self.assertAlmostEqual(wire(-self.RATE), s["pitch"], places=9)
+        self.assertEqual(-3.47, s["pitch"])
+        # The box off, the same hand is nose down.
+        self.assertEqual(3.46, s["pitchUninverted"])
+
+    def test_the_sensitivity_is_the_air_profiles(self) -> None:
+        # `game.setAirMouseSensitivity 0.25`: scale 1.35, a third of the rate.
+        s = self.results["stick"]
+        self.assertAlmostEqual(wire(0.001 * 900 * 1.35), s["rollAtAQuarter"], places=9)
+        self.assertEqual(s["expected"]["right30quarter"], s["rollAtAQuarter"])
+
+    def test_a_still_mouse_is_a_centred_stick(self) -> None:
+        self.assertEqual(0, self.results["stick"]["rollStill"])
+
+    def test_the_rudder_and_a_bare_axis_take_no_mouse(self) -> None:
+        # The shipped Air map binds the mouse to roll and pitch only, and a
+        # caller that hands no pair gets the keys alone.
+        s = self.results["stick"]
+        self.assertEqual(0, s["yaw"])
+        self.assertEqual(0, s["rollWithoutTheMouse"])
+
+    def test_the_keys_and_the_mouse_share_one_channel_by_magnitude(self) -> None:
+        # `ControlMap::update` 0x083f1d70: primary (the mouse line) and
+        # secondary (the arrows, `... IDKey_ArrowDown 1`), the larger kept, the
+        # primary on a tie. They never add.
+        sl = self.results["stick"]["slots"]
+        self.assertEqual(1, sl["keyAlone"])
+        self.assertEqual(-3.47, sl["keyAgainstAFastHand"])
+        self.assertEqual(1, sl["keyAgainstASlowHand"])
+        self.assertEqual(-1, sl["keyAgainstAnEqualHand"])
+
+    def test_left_shift_routes_the_mouse_to_the_look(self) -> None:
+        # Held: the counts turn the head and never reach the stage, so the
+        # stick reads zero (and the router zeroes it anyway).
+        s = self.results["stick"]
+        self.assertTrue(s["heldNeedsKey"])
+        self.assertEqual({"x": 0, "y": 0}, s["heldPending"])
+        self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["heldLook"]["yaw"], places=4)
+        self.assertEqual(0, s["heldStick"])
+
+    def test_the_held_look_takes_the_same_invert(self) -> None:
+        # The box is on the device's Y, so the look's vertical turns round with
+        # the stick's: 30 px toward the player looks up the other way.
+        s = self.results["stick"]
+        self.assertAlmostEqual(30 * HEAD_SENS_DEG, s["heldLook"]["pitch"], places=4)
+        self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["heldPitchUninverted"], places=4)
+        # A finger on a touch screen is not the mouse.
+        self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["touchPitch"], places=4)
+
+    def test_the_owners_joystick_profile_binds_no_mouse_to_the_stick(self) -> None:
+        self.assertEqual({"roll": 0, "pitch": 0}, self.results["stick"]["owner"])
+
+    def test_a_gunners_map_binds_the_mouse_to_the_look_alone(self) -> None:
+        g = self.results["stick"]["gunner"]
+        self.assertEqual("land", g["context"])
+        self.assertEqual(0, g["roll"])
+        self.assertEqual(0, g["pitch"])
 
 
 if __name__ == "__main__":

@@ -11,10 +11,13 @@
 // one push-and-hold trigger decides which of the two a tick's input reaches:
 // `c_PIMouseLook`, Left Shift (`Settings/Default/Controls/Air.con:21`, and the
 // same line in `Settings/Profiles/Default/Controls/Air.con`). No other shipped
-// map binds it. The viewer never flew the plane on the mouse and still does
-// not; what it takes from the engine is the gate, the recentre, and what
-// holding the key costs the stick. features/pilot-mouse-look has the whole
-// read; the addresses are here so the numbers below can be re-derived.
+// map binds it. With the key up the mouse flies the aircraft: the same device
+// rate the look would have had (mouse-input.js, Air profile, `5 x 0.75 + 0.1`
+// = 3.85, its Y inverted by `game.setAirMouseInvert 1`) is the stick's
+// `c_PIRoll` and `c_PIPitch`, through whatever the profile's Air map binds
+// (`controls.js` `axis(trigger, mouse)`). Held, the stick is let go and the
+// head turns. features/pilot-mouse-look has the whole read; the addresses are
+// here so the numbers below can be re-derived.
 //
 // THE CAMERA WORD. `ObjectTemplate.toggleMouseLook` is a byte on the Camera
 // template: lnxded `CameraTemplate+0x1c2`, seeded 0 by the constructor
@@ -137,4 +140,18 @@ export function routeFlightInput(input, held) {
     input.pitch = 0;
   }
   return input;
+}
+
+/**
+ * The router's released branch on the look pair: with the key up the tick's
+ * `c_PIMouseLookX/Y` (channels 4 and 5) read zero, so the counts the mouse
+ * sent fly the aircraft and turn nothing (`BFPlayer::handleInput` lnxded
+ * 0x08052674 onward, client `[ESP+0x20]`/`[+0x24]` under mask bits 0x10/0x20).
+ * Held, the pair is the look's and is left alone. Returns the pair.
+ */
+export function routeLookPair(look, held) {
+  if (held || !look) return look;
+  look.x = 0;
+  look.y = 0;
+  return look;
 }
