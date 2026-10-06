@@ -3141,6 +3141,18 @@ class Assembler:
                 "damageFromWater": template.damage_from_water,
                 "splashMaterial": template.material,
             }.items() if value is not None}
+            if armor or template.has_armor:
+                # How long the object stays once destroyed, and how it goes
+                # (HP-19). An absent word is the template default, 10 s with a
+                # fade from 8 s. Only beside an Armor's own words: a block
+                # with nothing else in it would make a placed PCO look armoured.
+                armor.update({key: value for key, value in {
+                    "timeToLiveAfterDeath": template.time_to_live_after_death,
+                    "fadeAtTimeToLiveAfterDeath": template.fade_at_time_to_live_after_death,
+                    "timeToStartFadeAfterDeath": template.time_to_start_fade_after_death,
+                    "resetWhenRemoved": template.reset_when_removed,
+                    "stayAsDestroyed": template.stay_as_destroyed,
+                }.items() if value is not None})
             if template.armor_effects:
                 armor["effects"] = [
                     {"hp": threshold, "effect": name,

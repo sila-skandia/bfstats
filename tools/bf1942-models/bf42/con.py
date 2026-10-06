@@ -960,8 +960,20 @@ class ObjectTemplate:
     # <stretch> <material>` in declaration order (the engine tests them in
     # that order and takes the first hit; `viewer/skeleton-hit.js`).
     collision_bones: list[dict] = field(default_factory=list)
-    # `timeToLiveAfterDeath`: how long a dead soldier's body stays.
+    # `timeToLiveAfterDeath`: how long a dead soldier's body stays, and how
+    # long any destroyed object stays before the server removes it (HP-19,
+    # `SimpleObjectTemplate+0xc4`, 10 where never written).
     time_to_live_after_death: float | None = None
+    # The rest of that clock, on the same template (HP-19): whether the object
+    # fades out over its last seconds (`fadeAtTimeToLiveAfterDeath`, +0xc8, on
+    # by default) and from how long after its death (`timeToStartFadeAfterDeath`,
+    # +0xcc, 8 by default); `resetWhenRemoved` (+0xd0), which at the end gives
+    # it its hit points back where it stands instead of removing it; and
+    # `stayAsDestroyed` (+0x107), which never removes it. None: never written.
+    fade_at_time_to_live_after_death: bool | None = None
+    time_to_start_fade_after_death: float | None = None
+    reset_when_removed: bool | None = None
+    stay_as_destroyed: bool | None = None
     # A projectile's looping in-flight effect (`startEffectTemplate
     # e_KatyushaFume` — the rocket's smoke trail).
     start_effect_template: str | None = None
@@ -2202,6 +2214,29 @@ class ObjectLibrary:
                         obj.time_to_live_after_death = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
+                elif cmd == "timetostartfadeafterdeath":
+                    try:
+                        obj.time_to_start_fade_after_death = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd in ("fadeattimetoliveafterdeath", "resetwhenremoved",
+                             "stayasdestroyed"):
+                    if (value := truthy(args)) is not None:
+                        setattr(obj, {
+                            "fadeattimetoliveafterdeath": "fade_at_time_to_live_after_death",
+                            "resetwhenremoved": "reset_when_removed",
+                            "stayasdestroyed": "stay_as_destroyed",
+                        }[cmd], value)
+                elif cmd == "sinkintolandafterdeathspeed":
+                    # The server's setter keeps no speed at all: it writes the
+                    # three after-death defaults back (`SimpleObjectTemplate::
+                    # setSinkInToLandAfterDeathSpeed` lnxded 0x081ddfb0: +0xc4
+                    # 10, +0xcc 8, +0xc8 1), so a time to live written before
+                    # it is lost (HP-19). DC Final's camels and tossed turrets
+                    # write it after one.
+                    obj.time_to_live_after_death = 10.0
+                    obj.time_to_start_fade_after_death = 8.0
+                    obj.fade_at_time_to_live_after_death = True
                 elif cmd in (
                     "hitpoints",
                     "maxhitpoints",

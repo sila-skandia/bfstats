@@ -1572,6 +1572,7 @@ ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.addTemplate Elco80RaftHull
 ObjectTemplate.hasArmor 1
 ObjectTemplate.hitpoints 200
+ObjectTemplate.timetoliveafterdeath 0
 
 ObjectTemplate.create SimpleObject Elco80RaftHull
 ObjectTemplate.geometry Raft_m1
@@ -1658,6 +1659,8 @@ ObjectTemplate.create PlayerControlObject Shed_wreck
         self.assertEqual("Elco80Raft", raft["name"])
         self.assertEqual("PlayerControlObject", raft["extras"]["templateKind"])
         self.assertEqual(200, raft["extras"]["armor"]["hitpoints"])
+        # HP-19: how long it stays once destroyed rides with its Armor.
+        self.assertEqual(0, raft["extras"]["armor"]["timeToLiveAfterDeath"])
         hull = nodes[raft["children"][0]]
         self.assertIn("mesh", hull)
 
