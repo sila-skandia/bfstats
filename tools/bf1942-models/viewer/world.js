@@ -78,7 +78,7 @@ import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
 import { soldierTick } from './world-soldier-tick.js';
 import { assignIntegrators, stepFallingWrecks, vehicleTick } from './world-vehicle-tick.js';
-import { combatTick, supplyTick, supplyTarget } from './world-fields.js';
+import { combatTick, supplyFieldTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
 
 // The world is split one subsystem to a module, each a set of plain
@@ -182,6 +182,12 @@ export class World {
     const vehicle = this.vehicleDamage.add(owner, armorExtras, {
       name, submarineData: node?.userData?.physics?.submarineData ?? null });
     if (vehicle && position) this.positions.set(owner, position);
+    // What a repair depot matches (SUP-19): only a root PlayerControlObject
+    // is worked on, by its root template's `addVehicleType` row.
+    if (vehicle && node) {
+      vehicle.isPco = node.userData?.templateKind === 'PlayerControlObject';
+      vehicle.template = node.userData?.control ?? null;
+    }
     return vehicle;
   }
 
@@ -444,7 +450,6 @@ export class World {
       if (player.occupancy) vehicleTick(this, player, dt, this.#integrators);
       else soldierTick(this, player, dt);
       if (combatTick(this, player, dt)) combatStepped = true;
-      supplyTick(this, player, dt);
       this.report.players[player.id] = {
         gate: { ...player.gate },
         look: { yaw: player.lookApplied.yaw - before.yaw,
@@ -453,6 +458,10 @@ export class World {
         supply: player.supplyResult,
       };
     }
+    // The depots, once for the whole world: every soldier and hull a due
+    // cycle reaches (`world-fields.js`). It fills the `supplyResult` each
+    // player's report entry above holds.
+    supplyFieldTick(this, dt);
     // Free fly is the one state with no engine counterpart — no player object
     // to accrue against — so the accumulator is reset rather than frozen, and
     // no player gets a combat frame, which culls the warning group. With

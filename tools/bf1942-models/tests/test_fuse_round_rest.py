@@ -40,6 +40,9 @@ MODULES = {
     "round-impact.js": VIEWER / "round-impact.js",
     "projectile-flight.js": VIEWER / "projectile-flight.js",
     "round-launch.js": VIEWER / "round-launch.js",
+    # round-launch.js builds a rocket's motor (features/rocket-flight).
+    "rocket-motor.js": VIEWER / "rocket-motor.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
     "camera-dof.js": VIEWER / "camera-dof.js",

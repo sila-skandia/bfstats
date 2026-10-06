@@ -37,10 +37,24 @@ import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 // widening (`advanceTracers`), so past convergence the pair fades to the faint
 // specks retail shows instead of running on as two bright lines.
 export const TRACER_MIN_SCREEN_PX = 2.5;
-// c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
-// kick without turning the rocket into a bullet.
-const ROCKET_ACCEL = 25;         // m/s^2
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
+/** The ellipse inscribed in each face of the drag box (physics.md section 3), with
+ *  the engine's own `3.14f` for pi (`ds:0x86d1384`, read at `0x082545b8`). */
+const BOX_AREA = 3.14 * 0.25;
+/**
+ * The most a full physics body's summed acceleration can be in one tick, m/s^2
+ * (ledger COL-8, collision-response.md section 4.2).
+ * `PhysicsNode::updatePositionalPhysics` (lnxded `0x08253570`) scales the
+ * accumulator `+0x28` back to 1000 when its squared length passes `1e6`, before
+ * it integrates it, and everything that pushes the body this tick is in it: the
+ * box drag, a motor's push, the gravity seeded at the end of the last tick
+ * (`updatePhysics` `0x082543d0`). A Desert Combat AIM-9 or AA-10 leaving a jet
+ * at 510-520 m/s loses exactly 33.3 m/s a tick for its first three or four
+ * ticks in the lab's recordings, both alike, before the drag falls under the
+ * lid (`features/rocket-flight`, section 3). Without it the box law at 30 Hz
+ * overshoots a stiff body and runs away (an AT-2 at `drag 1`, `mass 5`).
+ */
+export const MAX_BODY_ACCELERATION = 1000;
 // Per-frame lid on collision queries. `features/flyable-vehicles/collision-and-crash.md`
 // budgets the swept narrowphase at 0.1-0.3 ms worst case for one body; a held
 // burst from a twelve-round-a-second gun keeps tens of rounds in the air, and
@@ -54,6 +68,9 @@ const _step = new THREE.Vector3();
 // The drag acceleration of one round, per frame. Scratch, like every other
 // vector on this page: a round in flight must not allocate.
 const _drag = new THREE.Vector3();
+// Everything that pushes a ballistic round this frame, summed before it is
+// integrated (`MAX_BODY_ACCELERATION`).
+const _accel = new THREE.Vector3();
 const _tip = new THREE.Vector3();
 // Where a fuse round stood at the top of the frame, so the distance it
 // actually travelled under the contact solver can be measured rather than
@@ -64,6 +81,83 @@ const _restN = new THREE.Vector3();
 const _restF = new THREE.Vector3();
 const _restR = new THREE.Vector3();
 const _restM = new THREE.Matrix4();
+// Scratch for the motor and the box drag law.
+const _nose = new THREE.Vector3();
+const _engineAt = new THREE.Vector3();
+// Scratch for a falling tracer-path round: where the round is, and its heading.
+const _head = new THREE.Vector3();
+const _turn = new THREE.Vector3();
+
+/**
+ * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-18..21).
+ *
+ * The push is along the engine's own forward axis, which for every rocket in
+ * vanilla, Desert Combat, DC Final and EoD is the round's nose (each Engine
+ * sits on the axis with `setRotation 0/0/0`), at the engine's own height for
+ * the air density and the water test. FHSW's Norden bombs (`0/30/0`) and
+ * lantern (`0/90/0`) turn theirs, and the turn is not honoured here
+ * (`features/rocket-flight` Open item 10).
+ * Where the nose points is the body's business:
+ *
+ *  - a full physics body (`setHasPointPhysics 0`, `shot.dragBox` set) has its
+ *    tail `Wing` weathervane it into the flow: `PhysicsWing` pushes along
+ *    `-surfaceUp` at the wing's own position, behind the centre of mass. The
+ *    viewer has no inertia for a round, so the weathervaning is taken as
+ *    complete, the nose as the flight path and the wing's lift, at zero
+ *    incidence, as zero (inferred, not read; `features/rocket-flight` open
+ *    item 2);
+ *  - a point body never turns (`PointPhysicsNode` has no torque and keeps
+ *    only `addAccelerationAtAbsolutePosition`'s linear part, `0x08256620`), so
+ *    its nose is where the muzzle pointed (`shot.thrustAxis`). Every shipped
+ *    point-body rocket also declares `gravityModifier 0`.
+ *
+ * `timeScale` is 1 on the map page; the model browser slows fast rounds, and
+ * the motor then reads the real speed and its push is scaled by the square,
+ * as `gravityScale` is. The push is added to `out`, an acceleration.
+ */
+function pushMotors(guns, shot, dt, out) {
+  const scale = shot.timeScale || 1;
+  const q = shot.mesh.quaternion;
+  if (shot.thrustAxis) _nose.copy(shot.thrustAxis);
+  else if (shot.velocity.lengthSq() > 1e-12) _nose.copy(shot.velocity).normalize();
+  else _nose.set(0, 0, -1).applyQuaternion(q);
+  const along = shot.velocity.dot(_nose) / scale;
+  const water = guns.collider?.waterLevel;
+  for (const motor of shot.motors) {
+    const p = motor.position;
+    _engineAt.set(p[0], p[1], p[2]).applyQuaternion(q).add(shot.mesh.position);
+    const underWater = Number.isFinite(water) && _engineAt.y < water;
+    const accel = motor.tick(dt * scale, along, _engineAt.y, underWater);
+    if (accel) out.addScaledVector(_nose, accel * scale * scale);
+  }
+}
+
+/**
+ * The box drag law of a full physics body (PHY-4; `PhysicsNode::
+ * updatePositionalDragAdvanced` lnxded `0x08252f50`), into `out`:
+ *
+ *   accel = -drag*|v|/mass * (Ax proj0(v) + Ay proj1(v) + Az proj2(v))
+ *
+ * with `Ax = (pi/4) DY DZ` and the rest, the ellipses in the geometry box's
+ * faces, and `projN` the flow along the body's own axis N. A round's nose is
+ * held on its flight path here (its fins' work, see `pushMotors`), so the flow
+ * is all along its own Z and the law is `-drag*|v|/mass * Az * v`: the
+ * frontal ellipse alone. Projecting onto the drawn mesh instead, whose
+ * orientation is a frame old, put a sliver of the flow on the long side faces
+ * (6.6 times the frontal area on an MLRS round) and flew a lift whose size
+ * depended on the frame rate. Quadratic in speed, so a slowed round needs no
+ * correction. The submersion scale is left at 1: a round that runs in water
+ * is `torpedo-run.js`'s, and every other one bursts on it. The full form is
+ * `aircraft.js` `applyBoxDrag`.
+ */
+function boxDrag(spec, velocity, box, out) {
+  out.set(0, 0, 0);
+  const mass = spec?.mass, drag = spec?.drag;
+  const speed = velocity.length();
+  if (!(mass > 0) || !(drag > 0) || !(speed > 0)) return out;
+  const frontal = BOX_AREA * box[0] * box[1];
+  return out.copy(velocity).multiplyScalar(-drag * speed * frontal / mass);
+}
 
 /**
  * Lay a fuse round on the surface it is touching, instead of pointing it down
@@ -365,9 +459,30 @@ export function advanceTracers(guns, dt) {
   for (let i = guns.tracers.length - 1; i >= 0; i--) {
     const tracer = guns.tracers[i];
     tracer.age += dt;
-    const step = tracer.velocity.length() * dt;
+    // A round that declares a `gravityModifier` falls by it (IMP-7), on the
+    // tracer path as on the shell path; `tracerGravity` in round-launch.js
+    // says which word applies. Zero for every retail rifle and MG round.
+    let step;
+    if (tracer.gravity) {
+      // The round is `lead` ahead of the drawn mesh's origin along its flight
+      // (the stand-in cylinder is drawn centred). It is the ROUND that falls:
+      // step it, then hang the mesh `lead` behind it on the new heading.
+      // Stepping the mesh instead swung a 50 m stand-in's head through the
+      // turn, and a CBU-87 bomblet landed 20 m from where it fell.
+      _head.copy(tracer.velocity).normalize()
+        .multiplyScalar(tracer.lead).add(tracer.mesh.position);
+      tracer.velocity.y += GRAVITY * tracer.gravity * tracer.gravityScale * dt;
+      step = tracer.velocity.length() * dt;
+      _head.addScaledVector(tracer.velocity, dt);
+      _turn.copy(tracer.velocity).normalize();
+      tracer.mesh.position.copy(_head).addScaledVector(_turn, -tracer.lead);
+      // Pointed down its velocity, as `spawnTracer` points it at launch.
+      tracer.mesh.lookAt(_aimBack.copy(tracer.mesh.position).add(_turn));
+    } else {
+      step = tracer.velocity.length() * dt;
+      tracer.mesh.position.addScaledVector(tracer.velocity, dt);
+    }
     tracer.travelled += step;
-    tracer.mesh.position.addScaledVector(tracer.velocity, dt);
     const struck = sweep(guns, tracer.group, tracer.mesh.position,
                                tracer.velocity, step, tracer.lead);
     if (struck) {
@@ -457,25 +572,42 @@ export function advanceProjectiles(guns, dt) {
         continue;
       }
     } else if (!shot.resting) {
-      if (shot.kind === 'rocket') {
-        const speed = shot.velocity.length();
-        shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
-      }
+      // The motor, from the round's own baked Engine (`pushMotors`). It used
+      // to be a flat 25 m/s^2 for every `kind: 'rocket'` round (parity-audit
+      // P-2), with no top speed.
+      // A full physics body (`shot.dragBox`) sums what pushes it, at the
+      // frame's starting velocity, and integrates the sum under the engine's
+      // 1000 m/s^2 lid (`MAX_BODY_ACCELERATION`); a point body keeps its own
+      // order, each term applied as it comes.
+      _accel.set(0, 0, 0);
+      if (shot.motors) pushMotors(guns, shot, dt, _accel);
       // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
-      // it per projectile: 0 on every bullet (a tracer never reaches this
-      // loop at all), 0.5 on the Panzer IV's and the Chi-ha's rounds, and
-      // unset — so 1 — on every other tank gun, howitzer, naval gun, bomb
-      // and torpedo.
-      if (shot.gravity) {
-        shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
+      // it per projectile (IMP-7): 0.5 on the Panzer IV's and the Chi-ha's
+      // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
+      // — on every other tank gun, howitzer, naval gun, bomb, torpedo and
+      // artillery rocket.
+      if (shot.gravity) _accel.y += GRAVITY * shot.gravity * shot.gravityScale;
+      if (!shot.dragBox) {
+        shot.velocity.addScaledVector(_accel, dt);
+        _accel.set(0, 0, 0);
       }
       // Aerodynamic drag, the engine's own law (PHY-7,
       // `updatePositionalDragSimple` `0x00578990`). Inert until this round's
       // extractor change, because no projectile carried `mass` or `drag`; for
       // a 250 kg bomb at `drag 0.08` it is about 0.12 m/s^2 at 150 m/s, so it
       // is a correction and not a change of shape. `speedScale` is 1 wherever
-      // this matters, so the term is applied on real time.
-      if (shot.boundingRadius) {
+      // this matters, so the term is applied on real time. A full physics
+      // body (`setHasPointPhysics 0`: the rockets, the bombs, the torpedo in
+      // the air) takes the box law instead, which is the engine's for it.
+      if (shot.dragBox) {
+        boxDrag(shot.group.stats.projectile, shot.velocity, shot.dragBox, _drag);
+        _accel.add(_drag);
+        // The lid is the engine's in real units; a slowed round's are scaled
+        // by the square of its display scale, as its gravity is.
+        const lid = MAX_BODY_ACCELERATION * shot.gravityScale;
+        if (_accel.lengthSq() > lid * lid) _accel.setLength(lid);
+        shot.velocity.addScaledVector(_accel, dt);
+      } else if (shot.boundingRadius) {
         dragAcceleration(shot.group.stats.projectile, shot.velocity,
                          shot.boundingRadius, 0, _drag);
         shot.velocity.addScaledVector(_drag, dt);
@@ -508,6 +640,13 @@ export function advanceProjectiles(guns, dt) {
       continue;
     }
     const expired = shot.age > shot.ttl;
+    if (expired && shot.onTimeEffect === false) {
+      // The fuse ran out on a round that does not set `hasOnTimeEffect`:
+      // `resetProjectile`, with no effect and no splash (PROX-7). Only a round
+      // whose assets say so; `null` (too old to say) keeps the burst below.
+      recycle(guns, shot, i);
+      continue;
+    }
     if (expired || shot.travelled > shot.group.maxRange) {
       // Only on `timeToLive`, never on the range cap: `maxRange` is this
       // viewer's own recycling guard (1,500 m on the map page, further than

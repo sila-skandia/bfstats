@@ -8,6 +8,8 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES } from '../viewer/vehicle-audio.js';
 
 function stubCtx() {
@@ -95,6 +97,23 @@ function childNode(parent, name) {
   node.userData.fireArms = true;
   parent.children.push(node);
   return node;
+}
+
+/** A part under `parent` (a turret, a track): no FireArms mark, and a local
+ *  rotation for the rack to read its turn off. */
+function partChild(parent, name) {
+  const node = sceneNode(name);
+  node.quaternion = { x: 0, y: 0, z: 0, w: 1 };
+  node.turned = 0;
+  parent.children.push(node);
+  return node;
+}
+
+/** Half a degree more about the vertical: 15 deg/s at the sweep's 30 Hz. */
+function turnBy(node) {
+  node.turned += 0.5;
+  const half = node.turned * Math.PI / 360;
+  node.quaternion = { x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) };
 }
 
 const LAYER = (file) => ({
@@ -704,9 +723,14 @@ async function panzer(x = 10) {
 // guns stood at one point (the worst case: nothing tells them apart), heard
 // from where heads are: inside, in the coax overlap, beside, and down the
 // field. Skips without a `viewer/maps` tree (CI, a fresh worktree).
+// `VEHICLE_AUDIO_MAPS` points the sweep at another tree (a mod's, or a scratch
+// tree a sounds-layer patch was written to):
+//   VEHICLE_AUDIO_MAPS=viewer/maps/mods/desertcombat node tests/test_vehicle_audio.mjs
 
 {
-  const mapsDir = new URL('../viewer/maps/', import.meta.url);
+  const mapsDir = process.env.VEHICLE_AUDIO_MAPS
+    ? pathToFileURL(`${path.resolve(process.env.VEHICLE_AUDIO_MAPS)}/`)
+    : new URL('../viewer/maps/', import.meta.url);
   let levels = [];
   try {
     levels = fs.readdirSync(mapsDir).filter(
@@ -718,26 +742,41 @@ async function panzer(x = 10) {
   Math.random = () => 0.5;
   const offences = [];
   let contested = 0;
+  let partsHeard = 0;
+  let partsMet = 0;
   try {
     for (const level of levels) {
       const scene = JSON.parse(fs.readFileSync(new URL(`${level}/scene.json`, mapsDir), 'utf8'));
       for (const vehicle of scene.sounds?.vehicles ?? []) {
         const loops = (vehicle.weapons ?? []).filter(w => w.layers?.some(l => l.loop));
-        if (loops.length < 2) continue;
+        // The parts too (`PART_RULES`): every turret turning, the gear up and
+        // travelling, the hull at 8 m/s so its tracks and flaps sound.
+        const parts = vehicle.parts ?? [];
+        if (loops.length < 2 && !parts.length) continue;
         const { rack } = sharedBufferRack(report([vehicle]));
         const node = sceneNode(vehicle.template, 0);
         if (vehicle.engine) childNode(node, vehicle.engine);
         const groups = loops.map(w => ({ node: childNode(node, w.fireArms), firing: true }));
-        rack.claim({ seatKey: 'sweep', node, template: vehicle.template,
-                     drive: vehicle.layers?.length ? drive(0) : null, groups });
+        const partNodes = parts.map(p => partChild(node, p.node));
+        const hullDrive = vehicle.layers?.length || parts.length ? drive(0) : null;
+        if (parts.length) {
+          hullDrive.state.velocity = { x: 8, y: 0, z: 0, length() { return 8; } };
+          hullDrive.input = () => 1;
+        }
+        rack.claim({ seatKey: 'sweep', node, template: vehicle.template, drive: hullDrive, groups });
         await settle();
         for (const distance of [0.3, 1.4, 3, 16, 60]) {
+          partNodes.forEach(turnBy);
           rack.update(1 / 30, { x: distance, y: 0, z: 0 });
           const snap = rack.snapshot().vehicles[0];
-          const patches = [snap.engine, ...snap.weapons].filter(Boolean);
+          const patches = [snap.engine, ...snap.weapons,
+                           ...snap.parts.flatMap(p => p.patches)].filter(Boolean);
           const heard = patches.flatMap((p, patch) => (p.master > 0 ? p.layers : [])
             .filter(l => l.loop && l.output > 0.02).map(l => ({ ...l, patch })));
           contested += patches.flatMap(p => p.layers).filter(l => l.suppressed).length;
+          partsHeard += snap.parts.flatMap(p => p.patches).filter(Boolean)
+            .flatMap(p => p.layers).filter(l => l.loop && l.output > 0.02).length;
+          partsMet += parts.length ? 1 : 0;
           // Between patches only: a spread one patch authors at two offsets
           // is its own business (test_engine_audio_default.mjs).
           heard.forEach((a, i) => heard.slice(i + 1).forEach(b => {
@@ -758,8 +797,9 @@ async function panzer(x = 10) {
   if (levels.length) {
     assert.ok(contested > 0, 'the sweep met no twins at all, so it proved nothing');
   }
+  if (partsMet) assert.ok(partsHeard > 0, 'the hulls carried parts and none of them sounded');
   console.log(`  swept ${levels.length} extracted level(s) for twins between patches`
-    + (levels.length ? ` (${contested} arbitrated)` : ' (none extracted)'));
+    + (levels.length ? ` (${contested} arbitrated, ${partsHeard} part loops heard)` : ' (none extracted)'));
 }
 
 console.log('vehicle-audio: all assertions passed');

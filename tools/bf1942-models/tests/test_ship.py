@@ -461,6 +461,22 @@ class ShipReefTests(unittest.TestCase):
         self.assertLess(reef["speed"], 0.05)
         self.assertLess(abs(reef["heldAhead"]), 0.5)
 
+    def test_a_hull_ashore_with_a_spin_is_stopped_by_the_ground(self):
+        """The OSA-2 on Midway's beach. `checkVsTerrain` measures a contact's
+        speed as the tangent speed at the contact point, `v + omega x r`, and
+        `solveImpulse` applies the correction there (collision-response.md
+        sections 6.4 and 7), so the ground stops a hull's spin as well as its
+        fall. Measured at the centre and pushed at the centre, a Fletcher set
+        down on dry land with 0.15 rad/s of pitch pivoted end over end on her
+        own footprint, the push-out lifting her origin 62 m, and ended 6 m up
+        and clear of the ground."""
+        a = self.out["ashoreSpinning"]
+        self.assertLess(a["highestAboveRest"], 0.5)
+        self.assertLess(abs(a["finalAboveRest"]), 0.25)
+        self.assertLess(a["spin"], 0.01)
+        self.assertLess(abs(a["pitch"]), 2.0)
+        self.assertTrue(a["aground"])
+
     def test_she_is_not_perched_above_the_waterline(self):
         """The push-out is along the bed's own normal (`impulseOn`, section 7),
         so a hull that meets the FACE of a reef is shoved back off it rather
