@@ -1,0 +1,31 @@
+**Verdict: LAND WITH FIXES.** My fixes are `add090f7`, `37d4a7e5`, `6ca58ae5`, plus two doc commits (`e54e54fb`, `ef552230`). Main (3cc3ff27) merged cleanly as `03bfc81e`. Branch `worktree-agent-a7ae19bac47017fc1`, nothing pushed.
+
+**Tests on the final branch:** 5029 tests, 1 failure. The failure is `test_carried_spawn_flags` (Battle of Britain). Main fails it too in a clean worktree, because the live Battle of Britain `scene.json` was re-baked at 05:50 today. The 4 `test_flight` helicopter failures are gone.
+
+I also re-ran the agent's page check on the merge, on port 5657 under the lock. An Elco80 killed by a round died on the `-1` tier, and its raft floated at water +0.068 from 1 s on: upright, a 35 HP damageable, solid to a downward cast, no page errors. Headless matches (Midway, DC El Alamein, 300 s each) ran clean.
+
+**The tank wreck clock.** The word that gives 60 is already read. DC writes it in lowercase (`ObjectTemplate.timetoliveafterdeath 60`) on the T72, M1A1, BMP2, M2A3, BRDM2 and BRDM2_Spandrel. I extracted those models with the branch exporter and ran them through the real wreck clock: those six go at 60.07 s, while the Humvee, Technical and Shilka go at 10.07 s, fading from 8 s. That matches the lab's retail times. Until the scenes are re-baked, tanks go at 10 s (main gave 12.5 s). The live No Fly Zone scene re-baked at 06:07 today carries the word on none of its 55 armoured nodes, so that bake predates this exporter.
+
+| Finding | Evidence | Severity | Fixed here? |
+|---|---|---|---|
+| HP-19, HP-20, EMT-11 hold up in the binary | Read in lnxded: the one-tick latch; destruction only once the timer goes strictly below 0; the fade maths, checked from the raw opcode bytes; `Armor::update` always returns 1, so the clock always runs; template defaults 10 / fade on / 8 / no reset in both constructors; `timeToLiveAfterDeath` writes `+0xc4`; the `sinkInToLandAfterDeathSpeed` setter really writes 10, 8 and the fade flag back; the PCO constructor writes -1.0 to `+0x17c` and `+0x180`; `spawnObject` makes no `setTimeToLiveUnused` call | n/a | n/a |
+| HP-19's census listed only the M1A1 and T72 as 60 s | The BMP2, M2A3, both BRDM-2s and the EE-9 also write 60, and the Pickup 40 | Low | Yes (`e54e54fb`); the row now cites the lab's retail times |
+| Pads got late: a 60 s wreck away from its pad held the next hull back to 60 s | The page reuses one node per template. A probe on the real wreck module showed an M2A3 killed 200 m off its pad returning at 60.07 s against a 37.5 s delay; retail brought one back at 40.0 s with its wreck still standing | **Medium** (DC armour respawns, after the re-bake) | Yes (`add090f7`, new pad test). The wreck now goes when the hull is due, since the page cannot draw both; a falling wreck or a live hull still makes the pad wait |
+| A hull-less spawned object's burning tier outlived it at the round's end | `adopt` dropped the run handles; the new harness case fails without the fix | Low (no shipped payload lacks hulls) | Yes (`37d4a7e5`) |
+| A spawned object came out hollow if a particle baked first used the same mesh | Vanilla raft with a debris of its own `PTRaft_Hull_M1` sorted first: 1 hull node instead of 2. Model exports (Sherman, Elco80, Hatsuzuki, B17) and Kursk's scene bake are byte-identical after the fix | Low (no shipped particle shares a payload mesh) | Yes (`6ca58ae5`, install-gated test) |
+| Water death tier | New `water_death_tier_harness.mjs` on vanilla's tier tables, killed by a round, a bomb splash and a crash. All three agree: Elco80 afloat gets `-1` (raft); a Sherman in a river and a ditched Spitfire get their own `WaterWaterExplosion`; a Spitfire over the sea and a Sherman on a bridge get their land tier; a destroyer (no `-1`) gets `0`. On main only the crash path got the water tier | Agent's fix correct | Test added |
+| `addOwner` costs 10–25 ms per call on No Fly Zone, not "a few ms" | 48,639 triangles, 202,948 cells; a one-triangle object costs the same, so it is the full re-pack. Six ruins in one frame is about a 100 ms hitch. Ids stay stable: 3,200 casts answer as before except the 4 that now meet the new ruins; no owner or node ids drift | Low | Docstring corrected |
+| `world-collider.js` `obstacleOf.kind` is sized once, so new owners recompute each call | Code read | Low (performance only) | No |
+| Level bundle sounds | No doubled loop at one rate in the Battle of Britain or Kasserine manifests. Kasserine's `e_Fire` is a death tier, so it stops when the wreck goes. `e_OilFireSuper` only resolves in the manifest: nothing in the page plays a placed object's child bundles, so it never starts, and no loop can get stuck today | Info (the claim overstates) | No |
+| Minor ledger gaps | `gameStatusFirstEndGame`, `createObjectOnAllClients` and `setTimeToLiveUnused` are cited but not in `symbols.json` | Low | No |
+
+**New gaps for other packages:**
+- **Replay:** `replay-hulls.js` plays death tiers through the page's effect player. A replayed DC objective death now stands a solid, damageable ruin up, costing one `addOwner` re-pack each time, and these build up across seeks until the round ends. The replay should skip spawn emitters.
+- **Rooms / netcode:** spawned-object owner ids are local to each client and depend on spawn order. Nothing sends them over the wire yet, but two clients can give the same ruin different ids once the room server spawns objects.
+- **The page's round restart:** XPack2's silo and safe wrecks are SimpleObjects. The round's end correctly leaves them, but retail's `restartMap` would destroy them and the page has no map restart, so they carry over into the next round.
+- **Placed effect bundles:** a placed object's child bundle (DC Final First Light's oil fires, Battle of Britain's factory fumes) is neither drawn nor sounded by the page.
+- **Bots** still ignore spawned objects, as the agent documented.
+
+**For the lead:** the re-bake list in the fix report stands. Full scene re-bakes and model extracts carry the after-death words, and the `_shared` and `--levels` effects bakes carry the hulls and `effects.sounds.json`. My pad fix matters only once the 60 s wreck times are in the scenes.
+
+Scratch scripts and results are in `~/.cache/dc-sweep/review-spawned-objects/`.

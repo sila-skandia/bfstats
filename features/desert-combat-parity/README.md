@@ -7,6 +7,69 @@ been run**, so the live trees still show the old data for every exporter-side
 fix below. This page is the tracker for the round: what the census found, what
 each package changed, how it was checked, and what is still open.
 
+## Resume here
+
+Do these in order. Each step says where its work is.
+
+1. **Review and land fixed-wing.** Branch `dc-parity/fixed-wing` on origin
+   (local `worktree-agent-af900aeea9f96ae0a`, worktree
+   `.claude/worktrees/agent-af900aeea9f96ae0a`). This is the fix for the
+   original complaint: the Harrier and Black Hawk answering input the wrong
+   way. Its implementer's report is
+   [sweep/reports/fixed-wing.md](sweep/reports/fixed-wing.md).
+   - Give one reviewer [sweep/REVIEW_BRIEF.md](sweep/REVIEW_BRIEF.md) and these
+     checks:
+     - Merge main into the branch. In `viewer/ship-spec.js`, both box changes
+       must survive (test_flight's AH-64 pods case and AH-6 stick case).
+     - In `world-vehicle-tick.js`, the condition becomes `(engineLaw ||
+       landDrive || shipDrive) && activeRoot`. In the ledger, PHY-24 is
+       ground-handling's and PHY-25..27 are fixed-wing's.
+     - Fly the DC AV-8B on a live and a re-extracted glb: take-off, hover,
+       transition, and the sign of every input.
+     - Check the UH-60 and AH-64 still fly; a human's held W and its release
+       in a Spitfire; and the sim's air scenarios, `deckAir` included.
+     - Read PHY-25 or the throttle spring-back in lnxded.
+   - Land it the usual way. Merge `--no-ff` in a landing worktree, run the full
+     suite, fast-forward local main (check the main checkout's dirty files
+     first), then push.
+2. **Finish bot-gunners.** Branch `dc-parity/bot-gunners-wip` (local
+   `worktree-agent-ab6c80a912c4768e8`). It is one WIP commit, 5d2b2233,
+   stopped mid-investigation, unreviewed and never suite-run: bots bail from
+   fixed guns and freeze in `Change` (`bot-decision.js`, `bot-mount.js`,
+   `bot-referee.js`, `bot-vehicle.js`, `bot.js`, `strategic-ai.js`).
+   - Restart one agent on it with [sweep/FIX_BRIEF.md](sweep/FIX_BRIEF.md).
+     It merges main first, since bots, rooms and round-gaps have landed since.
+   - The bots package's report, [sweep/reports/review-bots.md](sweep/reports/review-bots.md),
+     has the background.
+3. **Run the one asset pass** under "Assets" in [Open](#open). Until it runs,
+   the live trees carry none of the exporter-side fixes. The local DC tree's
+   helicopters and Harriers are a stopgap: glbs from the old exporter
+   (b85016b5). The pass replaces them; the old helicopter test failures are
+   fixed by vehicle-part-collision.
+   - `~/.cache/dc-sweep/rex/` holds new DC/DC Final helicopter glbs (1.7 GB).
+     They were extracted before fixed-wing's exporter change, so re-extract
+     rather than reuse them.
+4. **Real play.** A person at the client works through
+   [Needs real play](#needs-real-play) on the lab server (skill
+   `bf1942-server-lab`).
+5. **The next sweep round** takes its items from "Gaps found and not built"
+   below.
+
+How the round was run, so it can be run again:
+
+- [sweep/](sweep/) holds the agents' briefs (census, fix, review,
+  adversarial), the agent registry (`AGENTS.md`), the census scorecard and
+  every agent's final report under `sweep/reports/`.
+- Agents claim ledger IDs in `sweep/LEDGER_IDS.md` before writing a row;
+  parallel agents collided on IDs before it existed.
+- `sweep/install-models.py` installs re-extracted glbs in place and merges
+  `models.json` rows, keeping `thumb`.
+- `sweep/extract_report.py <agent.output> <out.md>` pulls an agent's final
+  report out of its transcript.
+- The live copy of these files was `~/.cache/dc-sweep/`. That directory also
+  holds the agents' scratch (sims, probes, decompiles), which is not copied
+  here.
+
 ## How the round ran
 
 1. **Census** (2026-10-06): five read-only agents sized DC 0.7 in the browser
