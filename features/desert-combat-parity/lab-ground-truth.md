@@ -225,24 +225,36 @@ pilot and two gunners):
 
 ### Spawner pads (levels census items 23-25)
 
-- **A captured pad spawns the capturer's hull** (item 24, the census's
-  "Broken"): El Alamein's North outpost pads gave team 2 an M2A3 and a Humvee
-  and team 1 a BMP-2 and a BRDM-2; the East outpost an MLRS or a BM-21, the
-  South outpost a Humvee_TOW or a BRDM2_Spandrel, as the flag stood when the
-  hull spawned (SPAWN-2's team pick, seen in play).
+- **A captured pad spawns the capturer's hull, at once** (item 24, the
+  census's "Broken"). Over three El Alamein rounds (one at LOD 0), every
+  capture of a flag whose pads were empty spawned the capturer's template on
+  each of them in the same tick (0.00-0.05 s after the flag's record): East
+  outpost to team 2, an MLRS and an M1A1; to team 1, a BM-21 and a T-72; South
+  outpost to team 1, a T-72 and a BRDM2_Spandrel; to team 2, an M1A1 and a
+  Humvee_TOW; North outpost a BRDM-2 and a BMP-2, or a Humvee and an M2A3
+  (SPAWN-2's team pick, `CPEnable`). A hull still standing on a pad when its
+  flag changes hands, either side's, is left alone and the pad spawns
+  nothing until it dies. A flag going neutral spawns nothing and removes
+  nothing. A delay already running when the flag changes is drawn again from
+  the change: the East outpost's BM-21 died in the neutral spell, the flag
+  went to team 2 at 181.2 s and the MLRS came 41.3 s later, which is the
+  MLRS window (40-60) at 30 of 32 players, counted from the capture
+  (`ObjectSpawner::setActive` 0x083143f0, as `deployables.js` has it).
 - **The respawn delay is `calcSpawnDelay` with the bots counted, drawn when
   the previous hull spawned, and it runs from that hull's destruction (hit
   points 0), not from its wreck's removal.** Against each spawner's authored
   window (the level's `SinglePlayer/ObjectSpawnTemplates`), a hull that was
-  placed at the level's load (0 players) respawned at its maximum: 25 of 26,
-  fill (max - delay) / (max - min) between -0.007 and 0. One spawned during
-  play (30 bots of 32) respawned at fill 0.927-0.937 (38 of 40), which is
-  30/32 = 0.9375: `min + (max - min)(1 - 30/32)`. The odd ones out are a
-  helicopter pad with `maxNrOfObjectSpawned 2` (two hulls on one pad) and a
-  pad whose flag changed hands in the wait (fill 0.43; `setActive` draws the
-  delay again). A pad does not respawn before its wreck has gone (a T-72's
-  60.1 s delay ended as its 60 s wreck went). The viewer draws the delay
-  uniformly in the window (`vehicle-wrecks.js`) and counts it from the wreck.
+  placed at the level's load (0 players) respawned at its maximum: every
+  such case in three rounds (36), fill (max - delay) / (max - min) between
+  -0.015 and 0. One spawned during play (30 bots of 32) respawned at fill
+  0.924-0.937 (39 of 41), which is 30/32 = 0.9375:
+  `min + (max - min)(1 - 30/32)`. The odd ones out are a helicopter pad with
+  `maxNrOfObjectSpawned 2` (two hulls on one pad) and a pad whose flag
+  changed hands in the wait (fill 0.43, above). The next hull does not wait
+  for the last one's wreck: an M2A3 (60 s wreck, 35-40 s window) came back
+  40.0 s after its death with the wreck still on the pad. The viewer draws
+  the delay uniformly in the window (`vehicle-wrecks.js`) and counts it from
+  the wreck's removal.
 - **A wreck stands for the template's `timeToLiveAfterDeath`**, 10 s by
   default: 60.0 s for DC's T-72, M1A1, BMP-2, M2A3, BRDM-2 and
   BRDM2_Spandrel (their `objects.con` set 60), 10.0 s for the Humvee, DPV,
@@ -255,6 +267,11 @@ pilot and two gunners):
   points a second (DC's `damageWhenLost 10`, billed per step) to 0, then it
   is a wreck. The longer idles (64-150 s) had a soldier within 5-50 m of the
   hull part of the time. Nothing in the viewer runs this clock for a vehicle.
+  The LOD 0 round agrees (48.2-48.8 s idle, 9.2-10.0 hp/s, five cases).
+- **DC Weapon Bunkers (levels census item 22) cannot be run with bots**: its
+  archive ships no `SinglePlayer/` layer and no AI data, and bots exist only
+  in `GPM_COOP`, which plays that layer. Whether the Iraqi spawns vanish with
+  the bunkers needs a Conquest round with humans.
 
 ### What the bots use
 
