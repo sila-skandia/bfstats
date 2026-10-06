@@ -118,6 +118,12 @@ class Pieces(unittest.TestCase):
         self.assertAlmostEqual(f[0], 1.0, places=6)
         self.assertAlmostEqual(dc.rot_angle(q), 90.0, places=6)
 
+    def test_the_end_tickets_are_not_the_next_rounds_reset(self):
+        from types import SimpleNamespace
+        rec = SimpleNamespace(tickets=[(0.0, 200, 200), (500.0, 40, 90), (990.048, 0, 10), (1000.033, 200, 200)],
+                              round_end=990.048)
+        self.assertEqual(dc._tickets(rec), [(200, 200), (0, 10)])
+
 
 if __name__ == "__main__":
     unittest.main()
