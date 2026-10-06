@@ -507,6 +507,26 @@ def clip_loops(ref: animstates.ClipRef) -> bool:
     return flag in ("1", "c_asmlooping", "true")
 
 
+def weapon_block(template: con_mod.ObjectTemplate) -> dict | None:
+    """`weapon_stats()` plus the weapon's heat (ledger GUN-14, GUN-15).
+
+    `heat` carries the words under their FireArms names, the shape
+    `fire-state.js` `FireState` reads off a vehicle gun's extras, and
+    `velocityDependentOnHeat`, which makes the same field a grenade's throw
+    charge instead of an overheat. Absent on a weapon that declares none.
+    """
+    stats = template.weapon_stats() or {}
+    heat = {key: value for key, value in {
+        "heatAddWhenFire": template.heat_add_when_fire,
+        "coolDownPerSec": template.cool_down_per_sec,
+        "timeDelayOnOverheat": template.time_delay_on_overheat,
+        "velocityDependentOnHeat": template.velocity_dependent_on_heat,
+    }.items() if value is not None}
+    if heat:
+        stats["heat"] = heat
+    return stats or None
+
+
 def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                      objects, library, max_texture: int, out: Path | None,
                      ) -> dict:
@@ -621,7 +641,7 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     # (clip_span), whatever its frame count. Every family's `duration`
     # below is that number.
     result["clipTiming"] = "1/speed"
-    stats = weapon_template.weapon_stats()
+    stats = weapon_block(weapon_template)
     if stats:
         result["weaponStats"] = stats
 
@@ -889,7 +909,7 @@ def export_graft(soldier: str, weapon: str, *, objects, meshes, textures,
         "soldierZoomFov": weapon_template.soldier_zoom_fov,
         "zoomFov": weapon_template.zoom_fov,
     }
-    stats = weapon_template.weapon_stats()
+    stats = weapon_block(weapon_template)
     if stats:
         result["weaponStats"] = stats
     if out is None:
@@ -933,7 +953,8 @@ def kit_pairs(kits: dict, levels: set[str] | None = None) -> list[tuple[str, str
         if levels is not None and used is not None \
                 and not {level.lower() for level in used} & levels:
             continue
-        for soldier in kit.get("soldiers") or []:
+        # A kit a pad lays down is anyone's to take (`pickupSoldiers`).
+        for soldier in [*(kit.get("soldiers") or []), *(kit.get("pickupSoldiers") or [])]:
             for item in kit.get("items") or []:
                 # A rolled item is never held: each variant it can hand out
                 # is (`Ub_StandAim<Bundle>N`, the arms that variant plays).

@@ -72,6 +72,18 @@ MODULES = {
     "engine-revs.js": VIEWER / "engine-revs.js",
     "body-friction.js": VIEWER / "body-friction.js",
     "rigid-body.js": VIEWER / "rigid-body.js",
+    # The page's air-seat tick (`vehicleTick`), so the owner's Harrier flight
+    # is keyed through the same W/S and stick shaping the page applies; it
+    # reaches `vehicle-damage.js` for the HP-15 gate, which needs the other three.
+    "world-vehicle-tick.js": VIEWER / "world-vehicle-tick.js",
+    "world-input.js": VIEWER / "world-input.js",
+    # The air-input package's `world-input.js` imports it (the wire's axis
+    # range); staged already so the two land in either order.
+    "mouse-input.js": VIEWER / "mouse-input.js",
+    "vehicle-damage.js": VIEWER / "vehicle-damage.js",
+    "armor.js": VIEWER / "armor.js",
+    "effects-core.js": VIEWER / "effects-core.js",
+    "projectile-damage.js": VIEWER / "projectile-damage.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     # The bare specifier `three` is an import map entry in the page; node needs
@@ -1004,14 +1016,21 @@ class FlightModelTests(unittest.TestCase):
         for name, plane in real["planes"].items():
             self.assertFalse(plane["vectored"], name)
             self.assertIsNone(plane["inertiaLaw"], name)
+            # The fixed-wing aircraft keep the yaw/pitch/roll reading they
+            # are calibrated on (AI-80); the engine's is x/y/z (COL-13).
+            self.assertIsNone(plane["inertiaPairing"], name)
             self.assertFalse(plane["hovers"], name)
         for name, heli in real["helicopters"].items():
             self.assertTrue(heli["hovers"], name)
+            self.assertEqual("xyz", heli["inertiaPairing"], name)
         if "harrier" in real:
             self.assertTrue(real["harrier"]["vectored"])
             self.assertFalse(real["harrier"]["hovers"])
         for name, parked in real["parked"].items():
-            self.assertLess(parked["moved"], 0.1, name)
+            # Walking off was 2.6 m/s; the bound leaves room for the origin's
+            # swing as a hull staged nose-high rocks onto its gear (the
+            # harness's note on the UH-60).
+            self.assertLess(parked["moved"], 0.2, name)
             self.assertEqual(["c_PGFDummyGrip"], parked["grips"], name)
         for name, pilot in real["pilot"].items():
             self.assertIsNotNone(pilot["arrived"], name)
@@ -1019,6 +1038,96 @@ class FlightModelTests(unittest.TestCase):
             self.assertLess(pilot["maxTilt"], 40, name)
             self.assertLess(pilot["off"], 10, name)
             self.assertTrue(pilot["grounded"], name)
+
+    def test_a_parked_rollgrip_airframe_neither_slides_nor_turns(self) -> None:
+        # The Harrier and DC Final's UH-60, Mi-24 and Mi-8, seat taken. Their
+        # `c_PGFRollGripWhenOccupied` wheels are RollGrip while occupied, which
+        # asks back only the velocity along the axle (PHY-2); reading that
+        # velocity after overwriting it pushed every such wheel along -axle,
+        # and they slid tens of metres and spun on the spot.
+        real = self.results.get("realGlbs")
+        if real is None or not real.get("rollGripParked"):
+            self.skipTest("no extracted Desert Combat models on this machine")
+        for name, parked in real["rollGripParked"].items():
+            self.assertTrue(parked["occupied"], name)
+            self.assertIn("c_PGFRollGripWhenOccupied", parked["grips"], name)
+            self.assertLess(parked["moved"], 0.05, name)
+            self.assertLess(parked["turned"], 0.5, name)
+
+    def test_the_owners_harrier_lifts_transitions_and_pulls_up_level(self) -> None:
+        # S 3 s, W 4 s, ArrowDown 1 s, W 2 s, through the page's air-seat
+        # tick. The report was "responds almost in the opposite direction to
+        # the input; keying down makes it rotate sideways like a chopper".
+        real = self.results.get("realGlbs")
+        if real is None or "harrierOwner" not in real:
+            self.skipTest("no extracted Desert Combat AV-8B on this machine")
+        h = real["harrierOwner"]
+        self.assertGreater(h["liftedY"], 20.0)
+        self.assertLess(h["maxBank"], 2.0)
+        self.assertLess(abs(h["heading"]), 2.0)
+        # The pull is answered nose up, and the climb comes with it.
+        self.assertGreater(h["pitchAtRelease"], h["pitchBeforePull"])
+        self.assertGreater(h["pitchAfter"], h["pitchBeforePull"] + 3.0)
+        self.assertGreater(h["climbedAfter"], 10.0)
+
+    def test_a_bot_flies_the_harrier_on_the_plane_law(self) -> None:
+        # DC's AV-8 AI is a jet's ControlInfo3d, and its positive throttle is
+        # the forward engine, so it is no hover airframe: the plane law takes
+        # it off the strip on the forward engine and out to its point.
+        real = self.results.get("realGlbs")
+        if real is None or "harrierBot" not in real:
+            self.skipTest("no extracted Desert Combat AV-8B on this machine")
+        bot = real["harrierBot"]
+        self.assertFalse(bot["hovers"])
+        self.assertIsNotNone(bot["liftedAt"])
+        self.assertLess(bot["liftedAt"], 15.0)
+        self.assertIsNotNone(bot["arrived"])
+        self.assertGreater(bot["minY"], 20.0)
+        self.assertLess(bot["maxBank"], 30.0)
+        self.assertLess(bot["swerve"], 2.0)
+
+    def test_a_critically_damaged_helicopter_loses_its_engines(self) -> None:
+        # Armor::status's 0x14 stops every Engine and latches it; full
+        # collective cannot bring it back until 0x13 (PHY-14, HP-13).
+        real = self.results.get("realGlbs")
+        if real is None or "criticalStops" not in real:
+            self.skipTest("no extracted Desert Combat models on this machine")
+        c = real["criticalStops"]
+        self.assertTrue(c["climb"]["running"])
+        self.assertGreater(c["climb"]["revs"], 0.25)
+        self.assertFalse(c["critical"]["running"])
+        self.assertEqual(0, c["critical"]["revs"])
+        self.assertLess(c["critical"]["vy"], -10.0)
+        # The latch: boarding again while critical (message 4) does not
+        # restart it.
+        self.assertTrue(c["wasCritical"])
+        self.assertFalse(c["reboarded"])
+        self.assertTrue(c["recovered"]["running"])
+        self.assertGreater(c["recovered"]["revs"], 0.3)
+        self.assertGreater(c["recovered"]["vy"], c["critical"]["vy"])
+
+    def test_pedal_alone_turns_a_helicopter_and_nothing_else(self) -> None:
+        # Two seconds of D in a hover, measured against the same hover flown
+        # without it. No gyroscopic term (COL-8): the yaw stays a yaw.
+        real = self.results.get("realGlbs")
+        if real is None or not real.get("yawOnly"):
+            self.skipTest("no extracted Desert Combat models on this machine")
+        for name, yaw in real["yawOnly"].items():
+            self.assertGreater(yaw["yawRate"], 5.0, name)
+            self.assertLess(yaw["lean"], 1.0, name)
+            self.assertLess(yaw["pitchRate"], 1.0, name)
+            self.assertLess(yaw["rollRate"], 1.0, name)
+
+    def test_a_free_spin_keeps_its_world_axis_rate(self) -> None:
+        # No torque, a skew rate: the engine's omega lives in world axes and
+        # takes no gyroscopic term (COL-8, collision-response.md §4.2), so it
+        # stays put while the body turns about it.
+        real = self.results.get("realGlbs")
+        if real is None or "torqueFree" not in real:
+            self.skipTest("no extracted Desert Combat models on this machine")
+        spin = real["torqueFree"]
+        self.assertGreater(spin["turned"], 30.0)
+        self.assertLess(spin["drift"], 1e-9)
 
 
 if __name__ == "__main__":

@@ -141,6 +141,12 @@ def promote(staging: Path, out: Path,
                 if old.is_file() and not new.exists():
                     new.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(old), str(new))
+                    # A kept glb's `.gz` twin goes with it: the publisher
+                    # refuses a glb without one (a level's `effects.glb`,
+                    # which `extract_effects.py --levels` writes and names).
+                    gz = old.with_name(old.name + ".gz")
+                    if old.suffix == ".glb" and gz.is_file():
+                        shutil.move(str(gz), str(new.with_name(new.name + ".gz")))
         if target.is_dir():
             shutil.rmtree(target, ignore_errors=True)
         elif target.exists():

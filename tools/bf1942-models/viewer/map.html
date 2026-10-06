@@ -270,6 +270,7 @@ import { bag, from } from './page-bag.js';
 import { createComms } from './comms.js';
 import { modelFileStem } from './model-file.js';
 import { createSoldierArmorEffects } from './soldier-armor-effects.js';
+import { createEffectObjects } from './effect-objects.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -834,6 +835,8 @@ function buildHullDrive(instance) {
   const occ = instance.occupancy;
   const drive = occ.ensureDrive(level.currentRoot, {
     groundHeight: level.groundHeight, surfaceFriction: level.surfaceFriction, deckNormal: level.deckNormal, collider: hullBodies.bodyAwareCollider(),
+    // The `.sm` header boxes a land hull's inertia and box drag read (COL-14).
+    collisionMeshes: hullBodies.collisionMeshes,
     // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
     // `f` against it, and its two rudders make lift at all only because
     // `PhysicsWing` gives a submerged surface a medium of 10.
@@ -1054,8 +1057,15 @@ const effects = new EffectPlayer({
   onMesh: mesh => level.bindDynamicShading(mesh),
   onSound: (name, position, opts) => effectAudio.play(name, position, opts),
   onSoundStop: token => effectAudio.stop(token),
+  // What a spawn effect stands up (a ruined objective, a PT boat's raft).
+  onObject: object => effectObjects.adopt(object),
 });
 guns.effects = effects;
+const effectObjects = createEffectObjects({
+  get effects() { return effects; },
+  isCollision: node => level.isCollision(node),
+  bindDynamicShading: root => level.bindDynamicShading(root),
+});
 // A soldier's own `addArmorEffect` tiers (Desert Combat's dropped helmet),
 // read off his model report and played on the effect player at his death.
 const soldierArmorEffects = createSoldierArmorEffects({
@@ -1072,12 +1082,39 @@ function playSoldierDeathEffects(team, at, velocity = null) {
 }
 let effectsLoad = null;
 function loadEffectLibrary() {
-  if (effectsLoad || params.get('effects') === 'off') return effectsLoad;
-  effectsLoad = EffectLibrary.load(`${MAPS_BASE}/_shared/effects.glb${bust()}`, loader)
-    .then(library => { effects.library = library; return library; })
-    .catch(err => { console.warn('effects library unavailable', err); return null; });
-  loadEffectSounds();
-  return effectsLoad;
+  if (params.get('effects') === 'off') return effectsLoad;
+  if (!effectsLoad) {
+    effectsLoad = EffectLibrary.load(`${MAPS_BASE}/_shared/effects.glb${bust()}`, loader)
+      .then(library => { effects.library = library; return library; })
+      .catch(err => { console.warn('effects library unavailable', err); return null; });
+    loadEffectSounds();
+  }
+  // Resolves to the mod's library once the level's own set is in front of it.
+  return loadLevelEffects().then(() => effectsLoad);
+}
+// The bundles the level's own scripts declare (`<level>/effects.glb`, which
+// its `maps.json` row names as `effects`; `extract_effects.py --levels`), in
+// front of the mod's while that level is up: a level's scripts run first and
+// its name wins. No row key, no fetch. Called on every level load.
+let mapRows = [];
+const levelEffects = { url: undefined, load: Promise.resolve(null) };
+function loadLevelEffects() {
+  const name = String(level.extras?.level ?? '').toLowerCase();
+  const rel = mapRows.find(row => String(row.name).toLowerCase() === name)?.effects;
+  const url = rel ? `${MAPS_BASE}/${rel}${bust()}` : null;
+  if (url === levelEffects.url) return levelEffects.load;
+  levelEffects.url = url;
+  const load = url
+    ? EffectLibrary.load(url, loader).catch(err => {
+      console.warn('level effects unavailable', err);
+      return null;
+    })
+    : Promise.resolve(null);
+  levelEffects.load = Promise.all([effectsLoad, load]).then(([library, own]) => {
+    if (levelEffects.url === url) library?.setLevel(own);
+    return own;
+  });
+  return levelEffects.load;
 }
 let effectSoundsLoad = null;
 function loadEffectSounds() {
@@ -1565,6 +1602,7 @@ const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
   from(() => footBodies, `ensureFootBody`),
   from(() => level, `currentDir isCollision vehicleDamage warmSubtree warmups world`),
+  from(() => localLook, `mouseInput`),
   from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive vehicleAudio`),
@@ -1943,6 +1981,7 @@ const comms = createComms(bag(
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
   .catch(() => []);
+mapRows = manifest;
 const select = document.getElementById('maps');
 if (!manifest.length) {
   select.hidden = true;
@@ -2349,14 +2388,12 @@ function simulate(dt, input, look) {
   room.sendTickInputs(step.ticks, input, look, dt);
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
-  // spend, the combat-area frame for the warning group and the `?data` hook,
-  // and the on-foot look this tick actually applied, for the deviation
-  // model's |MouseLookX/Y| drain (footFire reads the accumulated pair).
+  // spend, and the combat-area frame for the warning group and the `?data`
+  // hook.
   const local = step.players[LOCAL_PLAYER] ?? null;
   vehicleHits.readGate(local?.gate);
   combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
-  if (local?.look) soldierKit.addFootLook(local.look);
   if (!replayController?.active()) announceGameplay();
   return step;
 }

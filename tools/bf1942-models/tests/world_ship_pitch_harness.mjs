@@ -1,8 +1,8 @@
 // Drives `viewer/world.js` headless with mocked drivetrains to pin the Issue 2
 // input routing: a ship's `c_PIPitch` consumers (landing-craft ramps,
-// Gato/Sub7C dive planes + float trim) are fed from the pitch axis, while
-// ground/tank hulls -- which bind no `c_PIPitch` anywhere in the corpus --
-// never see it, and the air branch is unchanged.
+// Gato/Sub7C dive planes + float trim) are fed from the pitch axis, a land
+// hull's only when its own rig binds it (DC's Forklift and Ural5323), every
+// other ground/tank hull never sees it, and the air branch is unchanged.
 //
 // Run by `tests/test_world_ship_pitch.py`, which stands the modules up
 // exactly as `test_world.py` does. The drivetrains here are stubs recording
@@ -34,9 +34,13 @@ const IDLE = { forward: 0, strafe: 0, forwardKeys: 0, rudder: 0, walk: false,
                altFire: false, roll: 0, pitch: 0, pad: false };
 
 /** The drive model's input surface, and a record of what each integrate saw. */
-function makeVehicle() {
+function makeVehicle(servos = null) {
   const inputs = new Map();
   return {
+    // A drive's own servo table (`vehicle-base.js` `servoAxes`), when it has
+    // one: the land branch reads `c_PIPitch` only for a drive whose rig takes
+    // it (`world-vehicle-tick.js` `bindsPitch`).
+    ...(servos ? { servoAxes: () => new Map(servos) } : {}),
     state: { position: { x: 0, y: 0, z: 0 } },
     seen: [],
     setInput(name, value) { inputs.set(name, value); },
@@ -63,11 +67,11 @@ function makeOccupancy() {
   };
 }
 
-function mounted(kind) {
+function mounted(kind, servos = null) {
   const world = new World({ collider, extras: EXTRAS,
                             groundHeight: () => 0 });
   world.addPlayer('P', { team: 1 });
-  const vehicle = makeVehicle();
+  const vehicle = makeVehicle(servos);
   const occupancy = makeOccupancy();
   world.setPlayerVehicle('P', { occupancy, vehicle, kind,
                                 groups: [], manned: [] });
@@ -75,8 +79,8 @@ function mounted(kind) {
 }
 
 /** Feed one word per 30 Hz tick, exactly the way the page feeds the world. */
-function drive(kind, words) {
-  const m = mounted(kind);
+function drive(kind, words, servos = null) {
+  const m = mounted(kind, servos);
   for (const w of words) {
     m.world.setInput('P', { ...IDLE, ...w });
     m.world.step(1 / 30);
@@ -129,9 +133,8 @@ const release = {
   pitchFirstReleased: shipRelease.vehicle.seen[30].pitch,
 };
 
-// Ground and tank hulls bind no c_PIPitch anywhere in the corpus, so a held
-// pitch word must never reach their drivetrains -- while their own throttle
-// and steer keep working.
+// A ground or tank hull whose rig binds no c_PIPitch (every vanilla one) must
+// never see a held pitch word -- while its own throttle and steer keep working.
 const groundHeld = drive('ground', rep(10, { forward: 1, pitch: 1 }));
 const tankHeld = drive('tank', rep(10, { forward: 1, pitch: 1 }));
 const ground = {
@@ -141,6 +144,19 @@ const ground = {
 const tank = {
   pitches: tankHeld.vehicle.seen.map(s => s.pitch),
   throttles: tankHeld.vehicle.seen.map(s => s.throttle),
+};
+
+// Two Desert Combat land hulls DO bind it: the Forklift's lift and forks and
+// the Ural5323's ramp, on the driver's own rig. Such a drive reads the axis
+// as the ships do, a step from the first tick (MLK-10), and the parts' own
+// `setMaxSpeed` servo moves the forks (`ground_harness.mjs` `forkServo`);
+// its throttle still works.
+const FORKS = [['Forklift/c_PIPitch/pitch', { input: 'c_PIPitch', min: -160, max: 20 }],
+               ['Forklift/c_PIYaw/yaw', { input: 'c_PIYaw', min: -20, max: 20 }]];
+const forkHeld = drive('ground', rep(30, { forward: 1, pitch: 1 }), FORKS);
+const forklift = {
+  pitches: forkHeld.vehicle.seen.map(s => s.pitch),
+  throttles: forkHeld.vehicle.seen.map(s => s.throttle),
 };
 
 // The air branch takes the key as the control map does, a step on the first
@@ -162,5 +178,6 @@ console.log(JSON.stringify({
   release,
   ground,
   tank,
+  forklift,
   air,
 }));

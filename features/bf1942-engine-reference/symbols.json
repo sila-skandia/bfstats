@@ -1740,7 +1740,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "client. [R5] twin of lnxded 'GameServer::simulatePlayerCollisions' (0x0815c0a0) \u2192 'performMobileCollisionUpdate' (0x08147580) chain"
+   "note": "client. [R5] twin of lnxded 'GameServer::simulatePlayerCollisions' (0x0815c0a0) → 'performMobileCollisionUpdate' (0x08147580) chain"
   },
   {
    "address": "0x004b7b70",
@@ -2389,6 +2389,15 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "Serializes the template back to .con - the offset->property rosetta for the client FireArmsTemplate: UnZoomBetweenFireTime +0x3d0, useScope +0x3d4, zoomFov +0x3d8, SoldierZoomFov +0x3dc, soldierZoomPosition +0x3e0, soldierCameraPosition +0x3ec, fireDev.c +0x4f0, minDev +0x4f8. lnxded equivalent 0x0828e3b0."
+  },
+  {
+   "address": "0x0053c3f0",
+   "name": "FireArmsTemplate ctor",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. Vtables 0x008f7188/0x008f7174, base ctor 0x00550d40. Builds ScopeIcon (+0x494) from 'sniper.tga' (0x0053c610), SightIcon (+0x4b0) from 'scout_ring_128x128.tga' (0x0053c621), CrossHairIcon (+0x478) from 'hk.tga' (0x0053c5e8); clears CrossHairType +0x474, SniperSight +0x4cc, useScope +0x3d8, fireInCameraDof +0x3cc, heatAddWhenFire +0x4fc, coolDownPerSec +0x500. Ledger SCOPE-6."
   },
   {
    "address": "0x0053d7b0",
@@ -4173,6 +4182,24 @@
    "note": "Sibling of 0x006773d0: RendPCDX8_createVertexBlock 0x0063ed70 picks it when blockFormat & 0x20 and allocates 0x48 bytes for it, against 0x50 for the base ctor. vtable 0x0091b6d0; same 0x00672a40 call and field layout for stride/bytes/FVF."
   },
   {
+   "address": "0x006819a0",
+   "name": "PatchTerrain_init",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "Client twin of lnxded PatchTerrain::init 0x083d5460 (fields +0xc from the server: P at +0xa4, samples/patch +0xac, patch metres +0xb0). The Tx loop 0x00681f60..0x00682039 names patch (c, r) texBaseName + %0.2dx%0.2d of (c - texOffsetX, r - texOffsetY), the offset dropped when negative, only while the index is >= 0 and c < P - |off| (compared unsigned, so a negative limit bounds nothing); else Patch_init with no name (default texture). Ledger TERR-1, TERR-2."
+  },
+  {
+   "address": "0x006837e0",
+   "name": "PatchTerrain_prepareCells",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "inferred",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "Client. Walks the visible patches and builds each cell with PatchCell_buildVertices, passing template vt+0x48 getDetailTexScale as its last argument. Ledger TERR-3."
+  },
+  {
    "address": "0x006937d0",
    "name": "CompressedAnim::GetQuat(int bone, int frame, Quat&)",
    "kind": "function",
@@ -4189,6 +4216,24 @@
    "confidence": "verified",
    "source": "ghidra-session-2026-09-15-1p-pose",
    "note": "lnxded 0x0832fcf0: three GetValue(bone, frame, channel 4..6) calls, so every bone of a .baf always carries a translation track; nothing falls back to the rest translation."
+  },
+  {
+   "address": "0x00697720",
+   "name": "Patch_init",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "Client. (x0, z0, name): stores the patch origin in heightmap samples at +0/+4 and loads name as its texture (+0x14); a name that resolves to the defaultTexture stand-in, or none, leaves the slot empty. Ledger TERR-2."
+  },
+  {
+   "address": "0x00699650",
+   "name": "PatchCell_buildVertices",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "working",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "Client. Writes 0x1c-byte terrain vertices: position in samples, UV0 = (sample - patch origin) * arg5 (1/64, terrain +0xd4) so a Tx tile spans one patch, UV1 = (sample + wrap) * arg6 (detailTexScale) - a block offset kept inside +-40. Ledger TERR-1, TERR-3."
   },
   {
    "address": "0x0069b810",
@@ -5253,6 +5298,15 @@
    "note": "Client. Group name string 0x00926038 = 'Overheat', and it registers exactly three: OverHeat float +0x8 (0x006e9934), ShowRecover INT +0xc (0x006e9971), Recover float +0x10 (0x006e999f). SniperSight is NOT in this group - see 0x006e9a60. See ledger VHUD-10."
   },
   {
+   "address": "0x006e9a50",
+   "name": "Overheat group setOverHeat(weapon)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. fld [weapon+0x268] (the FireArms heat); fstp [this+0x8] (Overheat/OverHeat). Called from the soldier HUD feed 0x006e9690 at 0x006e9773 and 0x006e97dc with the held weapon, every frame. Ledger GUN-16."
+  },
+  {
    "address": "0x006e9a60",
    "name": "CrossHairHud registerVariables (the 'CrossHair' group)",
    "kind": "function",
@@ -5269,6 +5323,15 @@
    "confidence": "verified",
    "source": "research-2026-09-24-crosshair-hit-indication",
    "note": "vtable 0x0092604c; ShowCrossHair (+0x8) = 1 and ShowCenterPoint (+0x85) = 1 at construction, ScopeIndex (+0x30) = 0. Stored at HUD +0x1c (0x006a9921). See ledger XHIT-10/XHIT-11. Radius and Deviation factors +0x3c/+0x40 = 5.0f (0x006e9d4d), the Game.setCrossHairRadius/Size console words (XHIT-15)."
+  },
+  {
+   "address": "0x006e9dd0",
+   "name": "CrossHair group weapon sync",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "Client. Called from the soldier HUD feed 0x006e9690 at 0x006e96d4 with the held weapon's template. Copies CrossHairType (+0x474), CrossHairIcon (+0x478), ScopeIcon (+0x494, at 0x006e9e49), SightIcon (+0x4b0, at 0x006e9eac), SniperSight (+0x4cc) into the group, unconditionally. Ledger SCOPE-2, SCOPE-6."
   },
   {
    "address": "0x006e9f30",
@@ -5952,7 +6015,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "First stage of the `.ssc` per-line pipeline and the whole of the engine's comment handling. `/*` and `beginSkip` are one mechanism, not two: `if (line == \"endSkip\" || line.find(\"*/\") != npos) { g_sscSkipping = 0; return 1; }` then `if (g_sscSkipping) return 1;` then `if (line == \"beginSkip\" || line.find(\"/*\") != npos) { g_sscSkipping = 1; return 1; }` else return 0. Consequences, all relied on by shipped data: the unit is the LINE, not the character span (`/*load @ROOT/...` in XPack2 `Gewehr43_zf4/Sounds/High.ssc` loses the `load` with it); the close test runs first and unconditionally, so a `*/` with no opener is silently eaten (vanilla `KettenKradEngine.ssc`) and a self-contained `/* ... */` on one line never opens a skip; and an opener needs no terminator \u2014 it skips to the end of the parse (vanilla `LynxHorn.ssc`, and 373 of the 849 scripts that use the markers). Returning 1 means the line is consumed, so being first it also swallows `#include` and `#templateLevel` inside a skipped region."
+   "note": "First stage of the `.ssc` per-line pipeline and the whole of the engine's comment handling. `/*` and `beginSkip` are one mechanism, not two: `if (line == \"endSkip\" || line.find(\"*/\") != npos) { g_sscSkipping = 0; return 1; }` then `if (g_sscSkipping) return 1;` then `if (line == \"beginSkip\" || line.find(\"/*\") != npos) { g_sscSkipping = 1; return 1; }` else return 0. Consequences, all relied on by shipped data: the unit is the LINE, not the character span (`/*load @ROOT/...` in XPack2 `Gewehr43_zf4/Sounds/High.ssc` loses the `load` with it); the close test runs first and unconditionally, so a `*/` with no opener is silently eaten (vanilla `KettenKradEngine.ssc`) and a self-contained `/* ... */` on one line never opens a skip; and an opener needs no terminator — it skips to the end of the parse (vanilla `LynxHorn.ssc`, and 373 of the 849 scripts that use the markers). Returning 1 means the line is consumed, so being first it also swallows `#include` and `#templateLevel` inside a skipped region."
   },
   {
    "address": "0x007f9ed0",
@@ -5961,7 +6024,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Reads one `.ssc` line from the current include stream: clears the string, then appends bytes until `\\n`, discarding `\\r`. No trimming \u2014 the line handed to the filters carries its own leading whitespace, so `beginSkip`/`endSkip` match only unindented (their test is `operator==`), while `/*` and `*/` are substring searches and match anywhere on the line."
+   "note": "Reads one `.ssc` line from the current include stream: clears the string, then appends bytes until `\\n`, discarding `\\r`. No trimming — the line handed to the filters carries its own leading whitespace, so `beginSkip`/`endSkip` match only unindented (their test is `operator==`), while `/*` and `*/` are substring searches and match anywhere on the line."
   },
   {
    "address": "0x007fa010",
@@ -5970,7 +6033,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "`#templateLevel` for `.ssc` \u2014 the Options -> Sound detail tier. Second in the per-line pipeline, after the skip filter."
+   "note": "`#templateLevel` for `.ssc` — the Options -> Sound detail tier. Second in the per-line pipeline, after the skip filter."
   },
   {
    "address": "0x007fa3f0",
@@ -5997,7 +6060,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Clears all `.ssc` parser globals after a top-level parse: the skip flag 0x00a8fb30, the current patch/sample pointers 0x00a8fb28 / 0x00a8fb2c, the `#beginMap` channel 0x0095ac7c / 0x00a8fb34, and the patch list at 0x00a8fcc0. Called once from SoundScript__parse 0x007fb1c0, never per included file \u2014 which is what makes the skip flag outlive an include."
+   "note": "Clears all `.ssc` parser globals after a top-level parse: the skip flag 0x00a8fb30, the current patch/sample pointers 0x00a8fb28 / 0x00a8fb2c, the `#beginMap` channel 0x0095ac7c / 0x00a8fb34, and the patch list at 0x00a8fcc0. Called once from SoundScript__parse 0x007fb1c0, never per included file — which is what makes the skip flag outlive an include."
   },
   {
    "address": "0x007fb0e0",
@@ -6051,7 +6114,7 @@
    "subsystem": "io",
    "confidence": "verified",
    "source": "ghidra 2026-09-16",
-   "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order \u2014 load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it \u2014 they are handled by the pipeline filters ahead of it."
+   "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order — load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it — they are handled by the pipeline filters ahead of it."
   },
   {
    "address": "0x007ffd00",
@@ -6862,6 +6925,15 @@
    "confidence": "verified",
    "source": "research-2026-09-15-menu-actions",
    "note": "Sixteen code pointers at +0x00..+0x3c: +0x00 an unrelated array-count helper (0x0065b120, (end - start) >> 4 over +0x80 / +0x84), +0x20 Font__loadFontFile 0x0065d1a0, +0x24 Font__buildQuads 0x0065ce10. Whether +0x40 (0x00412370, a one-line getter referenced from 2,251 places) is a seventeenth slot is unresolved; the row format string '%c %f %f %f' starts at 0x009190dc."
+  },
+  {
+   "address": "0x0091bea0",
+   "name": "str_TxTileFormat",
+   "kind": "string",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "Client \"%s%0.2dx%0.2d\": the Tx tile name; referenced from PatchTerrain_init 0x00681fe0, 0x0067f61e (the lightmap merge loop, same window) and 0x00686ab3. Ledger TERR-2."
   },
   {
    "address": "0x00923cc8",
@@ -8535,7 +8607,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 \u2014 the constant exists but never targets object flags."
+   "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 — the constant exists but never targets object flags."
   },
   {
    "address": "0x081610a0",
@@ -8847,10 +8919,10 @@
    "address": "0x08174470",
    "name": "dice::ref2::world::Armor::collision()",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] sets byte +0x129."
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. vtable +0xe8: sets Armor+0x129 = 1 (touched this frame), called from SimpleObject::handleCollision 0x081dae3e; Armor::update clears it. One of HP-18 upside-down gates"
   },
   {
    "address": "0x08174480",
@@ -8863,12 +8935,12 @@
   },
   {
    "address": "0x08174490",
-   "name": "dice::ref2::world::Armor::getLastCollisionHeight() const",
+   "name": "dice::ref2::world::Armor::getLastCollisionHeight()",
    "kind": "function",
-   "subsystem": "hitpoints",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-19-damage",
-   "note": "lnxded, Armor vtable +0xfc, returns the plain float at Armor+0x28 that setLastCollisionHeight (+0xf8) wrote as the colliding object's raw world Y. Read back at 0x08154d37 in the soldier fall branch to form F = lastCollisionHeight - pos.y. Whether that field tracks the apex of a fall was not verified."
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. vtable +0xfc: returns Armor+0x28; read by Armor::update for HP-18 (terrain + 0.1 picks the normal or world-up tilt test) as well as by handleCollisionLandOrWater (HP-6d)"
   },
   {
    "address": "0x081744d0",
@@ -9048,7 +9120,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000"
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag (byte +7 bit 0) gates BOTH tries: clear, it returns 0 at 0x0818d874. Set, it tries the first child's alternative 0, and when that has no geometry findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. The flag is the has-a-child bit: BCompositeObject::addChild sets it with the first child (0x0816597d, 0x081949dd; LodObject::addChild 0x08216df3), so every vehicle root has it. COL-14"
   },
   {
    "address": "0x0818d910",
@@ -9058,6 +9130,24 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] geometry -> ICollisionMesh, LodObject fallback"
+  },
+  {
+   "address": "0x0818daf0",
+   "name": "dice::ref2::world::findChildOfLodSelectorCID(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. internalFindChildOfLodSelectorCID on obj->getChild(), then queryInterface ILodObject 0xc4e0. COL-14"
+  },
+  {
+   "address": "0x0818db50",
+   "name": "dice::ref2::world::internalFindChildOfLodSelectorCID(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Depth-first from the first child (ICompositeObject vt+0x7c getChild, sibling at +0x54); a node whose template CID equals arg4 (0xc4c2 PCO) ends the branch and its later siblings; returns the first LodObject (template CID arg2 0x94a7) whose selector getClassID (vt+0x18) equals arg3 (0x94b1 DistCompareLodSelector). COL-14"
   },
   {
    "address": "0x0818dc60",
@@ -9345,7 +9435,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) \u2014 never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
+   "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) — never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
   },
   {
    "address": "0x081d5f10",
@@ -9561,7 +9651,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R4] decompiled this track; sets 'ResponsePhysics', not 'Armor'/'PhysicsNode' \u2014 not used"
+   "note": "lnxded. [R4] decompiled this track; sets 'ResponsePhysics', not 'Armor'/'PhysicsNode' — not used"
   },
   {
    "address": "0x081dd1d0",
@@ -9579,7 +9669,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 \u2014 flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F9; template vtbl +0x64 | lnxded. [R4] pre-existing decomp; the mass/drag/inertia/centerOfMass binding anchor"
+   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 — flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F9; template vtbl +0x64 | lnxded. [R4] pre-existing decomp; the mass/drag/inertia/centerOfMass binding anchor"
   },
   {
    "address": "0x081ddae0",
@@ -9699,6 +9789,15 @@
    "note": "lnxded. LOD-2: one comparison of exactly 0.5 -> 1 if compare value (+0x2c) >= 0.5 else 0, distance never read"
   },
   {
+   "address": "0x08214340",
+   "name": "dice::ref2::world::DistCompareLodSelector2::getLodLevelRelative(dice::ref2::world::ICompositeObject const*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Returns level 0 while the static m_comparisonLodSelectorValue (0x087296c4) is 0; else the destroyed level when +0x20 == 0x101, else lower_bound of distance^2 * m_distanceLodFactor * fov^2 over the squared distances. COL-14"
+  },
+  {
    "address": "0x08215aa0",
    "name": "dice::ref2::world::DistLodSelector::init(DistLodSelectorTemplate*)",
    "kind": "function",
@@ -9720,10 +9819,10 @@
    "address": "0x08216ce0",
    "name": "dice::ref2::world::LodObject::getChild() const",
    "kind": "function",
-   "subsystem": "geom",
+   "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-30-lod-selection",
-   "note": "lnxded. LOD-1: returns lodChilds[+0x10c][selector(+0x118)->getLodLevel(this)], child 0 when m_forceHighestLod; no check of what the child draws"
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. m_forceHighestLod set: entry 0 of +0x10c; else the selector (+0x118 vt+0xc) picks the index (COL-14; entry 0 on the physics path, COL-15)"
   },
   {
    "address": "0x08216d30",
@@ -9940,6 +10039,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R4] weak ('W') symbols, read via 'nm', confirmed against the vtable dump"
+  },
+  {
+   "address": "0x0824d320",
+   "name": "dice::ref2::world::PhysicsNode::setInertiaModifier(dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Copies the Vec3 straight to +0x7c/+0x80/+0x84 (x scales Ix, the pitch axis). COL-13"
   },
   {
    "address": "0x0824d3a0",
@@ -12408,6 +12516,24 @@
    "note": "Returns this+0x24 (the last hit ray's segment vector), bone index out via this+0x30 (ledger DIE-3)."
   },
   {
+   "address": "0x083b4410",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::BStandardMesh(StandardMeshTemplate&)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "working",
+   "source": "review-2026-10-07-air-flight",
+   "note": "lnxded. Copies template+0x40..+0x54 (the LocalBoundingBox loadHeader 0x083a6200 reads at 0x083a624c) into this+0x28..+0x3c at 0x083b4460-0x083b4484. COL-14"
+  },
+  {
+   "address": "0x083b4e40",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::getBoundingBox()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "review-2026-10-07-air-flight",
+   "note": "lnxded. Returns this+0x28, the box the ctor copies from the template's header box (StandardMesh vt+0x1c, the slot getGeometryInertia and updatePositionalDragAdvanced call). So the drag and inertia box is the .sm file's boundsMin/boundsMax, not the vertex extents; setScale 0x083b4640 scales it. COL-14"
+  },
+  {
    "address": "0x083b4fd0",
    "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
    "kind": "function",
@@ -12507,6 +12633,24 @@
    "note": "lnxded. giveVerticesMaterial() then a tail jump into buildBsp (0x083ca980): the last step of the procedural beginCreation / addVertex / addFace / endCreation authoring API, not of file loading."
   },
   {
+   "address": "0x083d5460",
+   "name": "dice::ref2::geom::PatchTerrain::init()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "lnxded. Patches per axis P = heightmap dim >> 6 (+0x98), 64 samples per patch (+0xa0 = dim >> log2 P), patch metres getSizeX()/P truncated (+0xa4); fails unless dim and P are powers of 2. Ledger TERR-1."
+  },
+  {
+   "address": "0x083d5f80",
+   "name": "dice::ref2::geom::PatchTerrain::getSizeX() const",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "lnxded. Returns +0xb4, worldSize truncated by init; getSizeZ 0x083d5fa0 returns the same field. Ledger TERR-1."
+  },
+  {
    "address": "0x083d6800",
    "name": "dice::ref2::geom::PatchTerrain::getMaterial(float, float) const",
    "kind": "function",
@@ -12532,6 +12676,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R1] returns '*(this+0x30)', ignores x,z"
+  },
+  {
+   "address": "0x083d8280",
+   "name": "dice::ref2::geom::PatchTerrainTemplate::PatchTerrainTemplate()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "dc-terrain-grid-2026-10-06",
+   "note": "lnxded. Defaults: detailTexScale 0.5 (+0x28), texOffsetX/Y 4 (+0x2c/+0x30), targetTriCount 5000 (+0x34), worldSize 4096 (+0x38), yScale 0.6 (+0x3c), materialSize 256 (+0x1c). Ledger TERR-4."
   },
   {
    "address": "0x083dbfc0",
@@ -13909,6 +14062,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] global candidate vector"
+  },
+  {
+   "address": "0x08213fa0",
+   "name": "dice::ref2::world::DistCompareLodSelector::getClassID() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "dc-ground-chassis-2026-10-06",
+   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-14)"
   }
  ]
 }

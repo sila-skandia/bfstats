@@ -27,6 +27,7 @@ import {
   EngineState, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
 } from './ground-engine.js';
 import { GRAVITY } from './physics.js';
+import { HullWater } from './amphibious.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 
 const DEG = 180 / Math.PI;
@@ -2228,6 +2229,181 @@ for (const [name, build, radius] of [
 }
 
 
+// --- a wheeled hull reads its own chassis (`GroundVehicle`, 2026-10-06) ------
+//
+// The Willy as its real glb nests it: the hull mesh is `WillyCockpitExternal`'s
+// (`Willy_Hull_M1`, 1.734 x 1.523 x 3.636 off its `.sm` header), under the
+// cockpit `LodObject`, under the root's own `lodWilly` and `WillyComplex`, with
+// the passenger's `PlayerControlObject` after it. That is where the engine's
+// inertia geometry search lands (`inertiaGeometryNode`, COL-14, COL-15), and the same
+// tree scaled to a SCUD-B's box stands in for a heavy truck. The springs carry
+// a wheel mesh, so each wheel's radius is measured rather than the table's.
+function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,
+                       passengerFirst = false, wheelRadius = 0.364 } = {}) {
+  const root = willyNode();
+  root.userData.physics = { ...root.userData.physics, mass, drag };
+  const lod = new THREE.Object3D();
+  lod.name = 'lodWilly';
+  lod.userData = { templateKind: 'LodObject', geometry: null };
+  const complex = new THREE.Object3D();
+  complex.name = 'WillyComplex';
+  complex.userData = { templateKind: 'Bundle', geometry: null };
+  const cockpitLod = new THREE.Object3D();
+  cockpitLod.name = 'lodWillyCockpit';
+  cockpitLod.userData = { templateKind: 'LodObject', geometry: null };
+  const external = new THREE.Object3D();
+  external.name = 'WillyCockpitExternal';
+  external.userData = { templateKind: 'SimpleObject', geometry: 'Willy_Hull_M1' };
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(...size).translate(0, size[1] / 2 - 0.19, 0.49));
+  hull.name = 'Willy_Hull_M1';
+  external.add(hull);
+  cockpitLod.add(external);
+  const passenger = new THREE.Object3D();
+  passenger.name = 'WillyPassengerPCO';
+  passenger.userData = { templateKind: 'PlayerControlObject', control: 'WillyPassengerPCO' };
+  const parts = [...root.children];
+  for (const part of parts) root.remove(part);
+  root.add(lod);
+  lod.add(complex);
+  if (passengerFirst) complex.add(passenger, cockpitLod);
+  else complex.add(cockpitLod, passenger);
+  for (const part of parts) complex.add(part);
+  root.traverse(node => {
+    if (node.userData?.templateKind !== 'Spring') return;
+    const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.21, 2 * wheelRadius, 2 * wheelRadius));
+    wheel.name = `${node.name}_wheel`;
+    node.add(wheel);
+  });
+  return root;
+}
+
+{
+  const build = options => {
+    const truck = new GroundVehicle(nestedWilly(options), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    return truck;
+  };
+  const describe = truck => ({
+    box: truck.geometryBox && truck.geometryBox.map(v => round(v, 4)),
+    inertia: [truck._inertia.x, truck._inertia.y, truck._inertia.z].map(v => round(v, 4)),
+    mass: truck.mass, drag: truck.drag,
+    boundingRadius: round(truck._boundingRadius, 4),
+    wheelRadius: truck.wheels.map(w => round(w.radius, 4)),
+  });
+  // The yaw rate one second into a full-lock turn from 10 m/s: the transient
+  // the inertia sets. Same springs and engine and the same `drag / mass`, so
+  // the box is what differs (it also sizes the drag radius, which at 10 m/s
+  // is worth a few hundredths of a m/s^2).
+  const turnIn = truck => {
+    drive(truck, 1);
+    truck.state.velocity.set(0, 0, -10);
+    drive(truck, 0.5, holding({ c_PIThrottle: 0.3 }));
+    drive(truck, 1, holding({ c_PIThrottle: 0.3, c_PIYaw: 1 }));
+    return round(Math.abs(truck.state.angularVelocity.y) * DEG, 2);
+  };
+  const scud = { size: [3.42, 2.16, 11.57], mass: 10000, drag: 6 };
+  results.ownChassis = {
+    willy: describe(build()),
+    passengerFirst: describe(build({ passengerFirst: true })),
+    kubel: describe(build({ size: [1.625, 1.245, 3.715], wheelRadius: 0.34 })),
+    scud: describe(build(scud)),
+    willyTable: [WILLYS.inertiaPitch, WILLYS.inertiaYaw, WILLYS.inertiaRoll],
+    turnIn: { willy: turnIn(build()), scud: turnIn(build(scud)) },
+  };
+  // Given the level's collision sidecar the box is the mesh's `.sm` header box
+  // (its `bbox`, `headerGeometryBox`, COL-14), not the glb's vertex box: a DC
+  // Humvee's header is 2.545 x 1.905 x 5.008 against vertices of 2.33 x 1.905
+  // x 4.945. A sidecar that does not know the mesh leaves the vertex box.
+  const sidecar = {
+    geometries: { willy_hull_m1: 'willy_hul_m1' },
+    meshes: { willy_hul_m1: { bbox: [[-1.2, -0.3, -2.4], [1.2, 1.7, 2.6]] } },
+  };
+  const withSidecar = collisionMeshes => new GroundVehicle(nestedWilly(), null,
+    { cockpit: false, groundHeight: () => 0, collisionMeshes });
+  results.ownChassis.header = describe(withSidecar(sidecar));
+  results.ownChassis.headerUnknown = describe(withSidecar({ geometries: {}, meshes: {} }));
+  results.ownChassis.headerWater = HullWater.of(nestedWilly(), { waterLevel: 0, collisionMeshes: sidecar })
+    .size.map(v => round(v, 4));
+}
+
+
+// --- a rear-steered hull: the Forklift's arrangement on the Willy's chassis -
+//
+// DC's Forklift drives its front axle and steers its rear one, whose two
+// bundles declare `direction -1` (`setAcceleration -50/0/0`): the same right
+// stick turns them the other way, and the truck goes right. Built here by
+// swapping the Willy's axles: the steering bundles move aft and take the
+// reversed direction, the driven springs move forward.
+function rearSteerWilly() {
+  const root = willyNode();
+  const engine = root.getObjectByName('WillyEngine');
+  for (const node of [...engine.children]) {
+    if (node.userData?.templateKind === 'RotationalBundle') {
+      node.position.z = 1.21 + 0.25;            // the rear axle, in the engine's frame
+      node.userData = { ...node.userData, rig: { ...node.userData.rig,
+        axes: { yaw: { ...node.userData.rig.axes.yaw, direction: -1 } } } };
+      const spring = node.children[0];
+      spring.userData = { ...spring.userData, physics: { ...spring.userData.physics, grip: 'c_PGFRollGrip' } };
+    } else if (node.userData?.templateKind === 'Spring') {
+      node.position.z = -1.0 - 0.25 + 0.25;     // the front axle
+      node.userData = { ...node.userData, physics: { ...node.userData.physics, grip: 'c_PGFEngineGrip' } };
+    }
+  }
+  return root;
+}
+
+{
+  const turn = (node) => {
+    const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 1);
+    drive(truck, 3, holding({ c_PIThrottle: 0.3 }));
+    const f0 = forwardOf(truck);
+    drive(truck, 3, holding({ c_PIThrottle: 0.3, c_PIYaw: 1 }));
+    const f1 = forwardOf(truck);
+    // Positive is a turn to the right (x toward the nose's right).
+    return round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1);
+  };
+  results.steerDirection = { front: turn(willyNode()), rear: turn(rearSteerWilly()) };
+}
+
+
+// --- where the origin sits decides whether a full-lock turn holds ----------
+//
+// The body turns about its ORIGIN and every friction sample's moment is taken
+// from it (collision-response.md sections 4.1 and 4.2), so a tyre's lever is
+// its distance from the origin, not from any centre of mass. DC's Desert
+// Patrol Vehicle stands 2.57 m behind its front axle and 0.94 m ahead of its
+// rear one: the steered front tyres turn it on a long lever and the rear ones
+// hold it on a short one, and at full lock from 15 m/s it spins. The Humvee,
+// the same 4x4 on the same 50 degree lock, stands 0.75 m behind its front axle
+// and holds its turn. Move the Humvee's origin to the DPV's place and it spins
+// too; that is the whole of the DPV's spin.
+{
+  const turnFrom = (dz) => {
+    const node = humveeNode();
+    for (const child of node.children) child.position.z += dz;
+    const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 1);
+    drive(truck, 6, t => {
+      t.setInput('c_PIThrottle', alongOf(t) < 15 ? 1 : 0.5);
+    });
+    let turned = 0;
+    let last = forwardOf(truck);
+    drive(truck, 3, t => {
+      t.setInput('c_PIThrottle', 1);
+      t.setInput('c_PIYaw', 1);
+      const f = forwardOf(t);
+      turned += Math.atan2(last.x * f.z - last.z * f.x, last.x * f.x + last.z * f.z) * DEG;
+      last = f;
+    });
+    return { turned: round(turned, 1), along: round(alongOf(truck), 2) };
+  };
+  results.originLever = { asAuthored: turnFrom(0), dpvPlace: turnFrom(-1.81) };
+}
+
+
 // --- an amphibian: a tank on land, a boat afloat (`amphibious.js`) ----------
 //
 // Desert Combat's BMP-2 as its glb carries it: the Sherman fixture's tracks on
@@ -2337,10 +2513,93 @@ function amphibianNode() {
     drive(truck, 3, holding({ c_PIThrottle: 1 }));
     out.stopped = { along: round(alongOf(truck), 3), revs: truck.engine.revs, wrevs: truck.amphibious.revs };
   }
-  // A plain tank carries no kit, and stands on the sea like every land
-  // vehicle the viewer drives.
+  // A plain tank carries no kit.
   out.shermanKit = tank(shermanNode).amphibious;
   results.amphibian = out;
+
+  // ... and since 2026-10-06 neither it nor a jeep stands on the sea: the
+  // floor is the bed for every land hull (`checkVsTerrain`, water makes no
+  // impulse) and below the sea the hull's box drag takes the submerged
+  // multiplier (`HullWater`). Both drive off the same bank at full throttle.
+  const sinker = (kind, withSea = true) => {
+    const node = kind === 'jeep' ? nestedWilly() : (() => {
+      const root = shermanNode();
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(2.49, 1.6, 5.76).translate(0, 0.6, 0));
+      hull.name = 'Sherman_Hull_M1';
+      root.getObjectByName('ShermanComplex').add(hull);
+      return root;
+    })();
+    const Cls = kind === 'jeep' ? GroundVehicle : TrackedVehicle;
+    const truck = new Cls(node, null, {
+      cockpit: false, groundHeight: surface,
+      ...(withSea ? { collider, waterLevel: WL } : {}),
+      surfaceFriction: (x, z) => (bed(x, z) <= WL ? 0.1 : 1.0),
+    });
+    truck.state.position.set(0, 0.6, 0);
+    let fastest = 0;
+    drive(truck, 30, t => {
+      t.setInput('c_PIThrottle', 1);
+      if (t.state.position.z < -70) fastest = Math.max(fastest, t.state.velocity.length());
+    });
+    const s = truck.state;
+    return {
+      hasWater: !!truck.water, z: round(s.position.z, 1),
+      aboveBed: round(s.position.y - bed(s.position.x, s.position.z), 2),
+      belowSea: round(WL - s.position.y, 2), depth: round(truck.water?.depth ?? 0, 2),
+      fastestDeep: round(fastest, 2), grounded: s.grounded,
+    };
+  };
+  results.landHullsInTheSea = {
+    jeep: sinker('jeep'), tank: sinker('tank'),
+    // The same jeep with no sea handed to it keeps the page's floor.
+    jeepNoSea: sinker('jeep', false),
+  };
+}
+
+// --- the Forklift's forks: a step on the axis, the part's own servo -------
+//
+// The world feeds a land drive's `c_PIPitch` as a step (MLK-10; no spring of
+// the viewer's in front of it), so the rate the forks move at is the parts'
+// own: `Forklift_Fork` and `Forklift_Lift1` are `setMaxSpeed 0/60/0` over
+// -160..20 and `Forklift_Lift2` `0/120/0` over -40..320 (DC
+// `Objects/Vehicles/Land/Forklift/Objects.con`, carried as the glb's rig
+// extras). The three share one servo key, the first part's spec; both specs
+// give 0.375 of full deflection a second. Hung on the Willy's chassis.
+{
+  const FORK_RIG = {
+    control: 'Willy', automaticReset: false,
+    axes: {
+      pitch: {
+        input: 'c_PIPitch', min: -160, max: 20, free: false,
+        driver: 'position', maxSpeed: 60, direction: 1, acceleration: 1000,
+      },
+    },
+  };
+  const node = willyNode();
+  const fork = new THREE.Object3D();
+  fork.name = 'Forklift_Fork';
+  fork.position.set(0, 0.5, -1.5);
+  fork.userData = { templateKind: 'RotationalBundle', rig: FORK_RIG };
+  node.add(fork);
+  const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+  truck.state.position.set(0, 0.6, 0);
+  drive(truck, 1);
+  const forkKey = () => [...truck.state.surfaces.keys()].find(k => k.includes('c_PIPitch'));
+  const held = [];
+  drive(truck, 1, t => {
+    t.setInput('c_PIPitch', 1);
+    held.push(t.state.surfaces.get(forkKey()) ?? 0);
+  });
+  // `drive` records before each integrate: the value after tick n is the
+  // next entry, and the last tick's is read here.
+  held.push(truck.state.surfaces.get(forkKey()) ?? 0);
+  results.forkServo = {
+    bound: !!forkKey(),
+    dt: DT,
+    firstStep: round(held[1], 5),
+    afterOneSecond: round(held.at(-1), 4),
+    rate: FORK_RIG.axes.pitch.maxSpeed / 160,
+  };
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));

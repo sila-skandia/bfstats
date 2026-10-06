@@ -147,10 +147,17 @@ function writeAtlasUv(geometry, col, row, cell) {
  * `effectEmitter` is recorded with its transform relative to the root, so a
  * play needs only the root frame. Sprite materials are shared across the
  * library by the exporter and cloned per particle here.
+ *
+ * `level` is a second library, the bundles the loaded level's own scripts
+ * declare (`<level>/effects.glb`, `extract_effects.py --levels`). The engine
+ * runs a level's scripts before the mod's and the first `create` of a name
+ * wins (`extract_map.LevelFirst`), so a name the level declares answers from
+ * there, and every other name from the mod's `_shared/effects.glb`.
  */
 export class EffectLibrary {
   constructor(root) {
     this.root = root;
+    this.level = null;
     this.bundles = new Map();
     root.updateWorldMatrix(true, true);
     for (const bundle of root.children) {
@@ -184,9 +191,20 @@ export class EffectLibrary {
     return new EffectLibrary(gltf.scene);
   }
 
-  has(name) { return !!name && this.bundles.has(name.toLowerCase()); }
-  get(name) { return name ? this.bundles.get(name.toLowerCase()) : undefined; }
-  get names() { return [...this.bundles.values()].map(b => b.name); }
+  /** Put a level's own bundles in front of these, or take them away (null). */
+  setLevel(library) { this.level = library && library !== this ? library : null; }
+  has(name) { return !!name && (!!this.level?.has(name) || this.bundles.has(name.toLowerCase())); }
+  get(name) {
+    if (!name) return undefined;
+    return this.level?.get(name) ?? this.bundles.get(name.toLowerCase());
+  }
+  /** Every bundle a play can find: the level's, then the mod's it does not shadow. */
+  *all() {
+    const level = this.level?.bundles ?? new Map();
+    yield* level.values();
+    for (const [key, bundle] of this.bundles) if (!level.has(key)) yield bundle;
+  }
+  get names() { return [...this.all()].map(b => b.name); }
 }
 
 /**
@@ -204,7 +222,7 @@ export class EffectLibrary {
 export class EffectPlayer {
   constructor({ scene, camera, library = null, gravity = GRAVITY,
                 onMaterial = null, onMesh = null, onSound = null,
-                onSoundStop = null, firstPerson = false } = {}) {
+                onSoundStop = null, onObject = null, firstPerson = false } = {}) {
     this.scene = scene;
     this.camera = camera;
     // Called with `(bundleName, [x, y, z], { follow, token })` the instant a
@@ -246,10 +264,20 @@ export class EffectPlayer {
     // its own lighting — the map page binds the engine's MODULATE2X combine
     // there, which is how a `lighting true` decal is lit in the game.
     this.onMesh = onMesh;
+    // Called with `(object, spec)` for every object a spawn effect stands up
+    // (ledger EMT-10: `isSpawnEffect`, a real object, not a particle), once it
+    // is in the scene: the page lights it, hides its collision hulls and
+    // starts its own armour tier. Desert Combat's ruined objectives arrive
+    // this way.
+    this.onObject = onObject;
     this.firstPerson = firstPerson;
     this.runs = [];
     this.particles = [];
     this.decals = [];
+    // What spawn effects stood up. They are objects of the world, not of the
+    // run that made them: nothing ends them but `clear()`.
+    this.objects = [];
+    this.objectRecord = null;
     this.spritePool = new Map();   // material uuid -> Mesh[]
     this.meshPool = new Map();     // template node uuid -> Mesh[]
     // Spent particle records and finished pooled runs, reused rather than
@@ -355,8 +383,13 @@ export class EffectPlayer {
     const seen = view ?? (this.firstPerson ? 'first' : 'third');
     for (const emitter of bundle.emitters) {
       const spec = emitter.spec;
-      if (spec.view && spec.view !== seen) continue;
-      if (spec.lodDistance && distance > spec.lodDistance) continue;
+      // A spawn effect is the server's (EMT-10): lnxded's `Emitter::handleUpdate`
+      // runs only those and asks for no camera, and the object it makes goes
+      // to every client. Where this one looks from cannot stop it, so neither
+      // the view nor `lodDistance` (375 m on Desert Combat's ruins) does.
+      const spawns = spec.particle?.kind === 'object';
+      if (!spawns && spec.view && spec.view !== seen) continue;
+      if (!spawns && spec.lodDistance && distance > spec.lodDistance) continue;
       if (spec.startProbability != null && this.rand() > spec.startProbability) continue;
       if (pooled) {
         let slot = run.slots[run.emitters.length];
@@ -401,6 +434,8 @@ export class EffectPlayer {
     this.decals.length = 0;
     for (const run of this.runs) if (run.pooled) this.#retire(run);
     this.runs.length = 0;
+    for (const object of this.objects) object.removeFromParent();
+    this.objects.length = 0;
   }
 
   /**
@@ -445,9 +480,11 @@ export class EffectPlayer {
   warm() {
     const materials = new Set();
     if (!this.library) return materials;
-    for (const bundle of this.library.bundles.values()) {
+    for (const bundle of this.library.all()) {
       for (const template of bundle.emitters) {
         const spec = template.spec;
+        // A spawn effect's object is a model, not a pooled particle.
+        if (spec.particle?.kind === 'object') continue;
         // The bundle-level `spec` is the *emitter's* own object; `kind`,
         // `numAnimationFrames`, `alphaOverTime` and every other per-particle
         // field live one level down, under `.particle`
@@ -487,6 +524,8 @@ export class EffectPlayer {
       dropped: this.dropped,
       faults: this.faults,
       bundles: this.library?.bundles.size ?? 0,
+      levelBundles: this.library?.level?.bundles.size ?? 0,
+      objects: this.objects.length,
     };
   }
 
@@ -577,6 +616,10 @@ export class EffectPlayer {
   }
 
   #spawn(run, emitter, emitterVelocity) {
+    if (emitter.spec.particle?.kind === 'object') {
+      this.#spawnObject(run, emitter, emitterVelocity);
+      return;
+    }
     if (this.particles.length >= MAX_PARTICLES) { this.dropped++; return; }
     // The emitter's own frame: the bundle's, then its authored placement.
     _q.copy(run.quaternion).multiply(emitter.template.quaternion);
@@ -623,6 +666,42 @@ export class EffectPlayer {
     this.particles.push(p);
     this.spawned++;
     this.#draw(p);
+  }
+
+  /**
+   * A spawn effect's one "particle": its template as an object of the world
+   * (ledger EMT-10). `Emitter::handleUpdate` (lnxded 0x081e3200) hands the
+   * template, the spawn point and `getRotation` of the spawn matrix to
+   * `GameServer::spawnObject` (0x08132440), which creates it on every
+   * client. So the object stands where a particle of this emitter would have
+   * been born, in the same rolled frame (`spawnParticleInto`: EMT-3, EMT-4),
+   * and takes no speed — the call has no velocity to give it. The bake hangs
+   * the object's tree under the emitter node; each spawn is a clone of it,
+   * sharing its geometry and materials, and it stays until `clear()`.
+   */
+  #spawnObject(run, emitter, emitterVelocity) {
+    const source = emitter.template.node.children[0];
+    if (!source) { this.dropped++; return; }
+    _q.copy(run.quaternion).multiply(emitter.template.quaternion);
+    _pos.copy(emitter.template.position).applyQuaternion(run.quaternion).add(run.origin);
+    const basis = quaternionFrame(_q, _frame);
+    _origin[0] = _pos.x; _origin[1] = _pos.y; _origin[2] = _pos.z;
+    const at = spawnParticleInto(this.objectRecord ??= newParticleRecord(),
+                                 emitter.spec, basis, _origin, emitterVelocity, this.rand);
+    const object = source.clone(true);
+    object.visible = true;
+    object.position.set(at.position[0], at.position[1], at.position[2]);
+    frameQuaternion(at.frame, object.quaternion);
+    object.userData = { ...object.userData, spawnedBy: run.name };
+    this.scene.add(object);
+    object.updateMatrixWorld(true);
+    this.objects.push(object);
+    this.spawned++;
+    try {
+      this.onObject?.(object, emitter.spec);
+    } catch (error) {
+      this.#fault(emitter.spec.particle.template, error);
+    }
   }
 
   #acquire(emitter, p) {

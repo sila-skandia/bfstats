@@ -173,8 +173,10 @@ scale = 1 + 24·min(depth / DY, 1)                // depth at client +0x8c; DY v
 `projN` projects onto row N of the object's absolute transform (reading the rows
 as X, Y, Z is inferred from how the areas pair with them). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
-`BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
-neither law, and nothing calls its setter.
+`BStandardMesh::queryInterface` answers with itself; a root with no geometry of
+its own is measured on the geometry `findLodGeometry` finds (ledger COL-14, an
+aircraft's cockpit-LOD exterior), and a root it finds none for takes no drag at
+all. `dragOffset` is read by neither law, and nothing calls its setter.
 
 **The selector bit is never set (ledger PHY-4, settled 2026-09-17).** Object
 ctors write default flags `0x2090400` at `+0x4` (lnxded `0x08191811` /
@@ -818,6 +820,13 @@ scale = 1 + min(underWater / getBoundingRadius(), 1) * (25.0 - 1)      // 25.0 =
 i.e. the familiar `1 + 24·min(uw/r, 1)`, with the 25.0 now read out of the
 binary. `first-person-soldier.md` §7's entry can be closed; the soldier's own
 bounding radius stays inferred.
+
+**A land vehicle in the sea (ledger PHY-16, 2026-10-06).** `checkVsTerrain`
+writes the depth on the part's own node, and a vehicle's root part is the root
+object, so the root node holds `water − lowest col0 vertex`. Water pushes
+nothing: a hull with no `FloatingBundle` sinks until its springs find the bed,
+and drives there under the box drag above, whose `DY` is the same geometry box
+as its inertia (ledger COL-14, COL-15). `submarineData` reads the same depth (PHY-3).
 
 ---
 

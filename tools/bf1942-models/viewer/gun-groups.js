@@ -24,8 +24,10 @@ const _camQuat = new THREE.Quaternion();
  * the view axis, whatever the gun's own mount says. `muzzle` is the barrel
  * the shot leaves from; its transform relative to the FireArms node is that
  * offset and turn. Returns the `aimRay` contract `round-launch.js` reads.
+ * A hand weapon fires through the same law with the player's eye for the
+ * camera (`hand-aim.js`).
  */
-function cameraLaunch(node, camera) {
+export function cameraLaunch(node, camera) {
   const origin = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const ray = { origin, dir };

@@ -43,6 +43,7 @@ folder answers.
 |---|---|---|
 | [level-bake-layers](level-bake-layers/README.md) | pipeline | Which layer and command ship a given level-data change without a full re-bake? |
 | [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |
+| [terrain-tile-grid](terrain-tile-grid/README.md) | fix | How big is the patch each Tx tile covers, which tiles does the engine draw, and why was Medina Ridge's ground scrambled? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |
 | [mesh-mod-assets](mesh-mod-assets/README.md) | pipeline | Where do mod extracts live, how are they published, and how is audio compressed? |
@@ -80,12 +81,15 @@ folder answers.
 |---|---|---|
 | [grenade-viewmodel-and-throw](grenade-viewmodel-and-throw/README.md) | fix | Why was the held grenade misplaced and the thrown one invisible? |
 | [kit-drops](kit-drops/README.md) | build | What happens to a dead soldier's kit, and who can pick it up? |
+| [dc-mortar-and-kit-pads](dc-mortar-and-kit-pads/README.md) | build | How does Desert Combat's mortar deploy, and how do a map's kit pads hand out the M82 and Stinger kits? |
 | [fhsw-random-kit-items](fhsw-random-kit-items/README.md) | fix | Which weapon does an FHSW `Random*` kit item hand a spawn, and why did FHSW soldiers wear vanilla uniforms? |
 | [muzzle-effects-parity](muzzle-effects-parity/README.md) | build | Where do a gun's muzzle flash and casings come from, and how big are they? |
+| [level-effects](level-effects/README.md) | build | How does a level ship its own effects, and what does a spawn effect (a ruined objective, a raft) stand up? |
 | [flak-proximity-fuse](flak-proximity-fuse/README.md) | fix | Why did AA shells pass through planes, and how does the proximity fuse work? |
 | [bf1942-blast-and-bounce](bf1942-blast-and-bounce/README.md) | build | How much does a blast hurt a soldier, and why do fused rounds bounce? |
 | [plane-bombs-and-torpedoes](plane-bombs-and-torpedoes/README.md) | design | How do retail plane bombs and torpedoes behave, and how were they built? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
+| [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, and what opens the cone on a swing? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
 | [viewer-collision-damage](viewer-collision-damage/README.md) | research | What does retail do when vehicles collide, burn and are destroyed? |
 | [viewer-demolitions-and-spawn-safety](viewer-demolitions-and-spawn-safety/README.md) | fix | How do ExpPack and detonator work, and why did soldiers spawn inside buildings? |

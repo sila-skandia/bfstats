@@ -28,6 +28,10 @@ def run_harness() -> dict:
         work = Path(tmp)
         shutil.copyfile(VIEWER / "kit-drops.js", work / "kit-drops.mjs")
         shutil.copyfile(VIEWER / "kit-ammo.js", work / "kit-ammo.mjs")
+        # An item's heat is the vehicle guns' `FireState` (`itemHeat`).
+        for module in ("fire-state.js", "deviation.js"):
+            shutil.copyfile(VIEWER / module, work / module)
+        (work / "package.json").write_text('{"type":"module"}\n')
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")],
                               capture_output=True, text=True, timeout=60)

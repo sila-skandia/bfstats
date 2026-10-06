@@ -16,8 +16,12 @@
 // The rig is a presentation object and is destroyed on every switch; the
 // counts belong here, keyed by item template, owned by the kit.
 //
+// The item's heat lives here too (`itemHeat`), for the same reason.
+//
 // No DOM and no three.js: `tests/kit_ammo_harness.mjs` drives this under
 // plain node.
+
+import { FireState } from './fire-state.js';
 
 /** Rounds a full magazine holds. A negative `magSize` is the engine's
  *  unlimited ammo (the knife's -1), read as Infinity so a trigger gate and a
@@ -46,6 +50,12 @@ export class AmmoEntry {
     this.spares = spareMagazines(magazine);
     this.rounds = this.size;
     this.mags = this.spares;
+    // The item's heat, a `FireState` over its heat words, built the first
+    // time the item is raised (`itemHeat`); null for a
+    // weapon with none. A depot gives rounds, not a cold barrel, so `refill`
+    // leaves it; a new life is a new entry, and so is a kit picked up off the
+    // ground (`adopt`), which comes up cold.
+    this.heat = null;
   }
 
   /** Nothing to give: the engine's depot ticks every half second for as
@@ -62,6 +72,26 @@ export class AmmoEntry {
     this.mags = this.spares;
     return true;
   }
+}
+
+/**
+ * An item's heat (ledger GUN-14, GUN-15): the M249's and the PKM's
+ * `heatAddWhenFire`, `coolDownPerSec` and `timeDelayOnOverHeat`, under the law
+ * the vehicle guns already run (`fire-state.js` `FireState`, built over the
+ * heat words alone, so its magazine half is unlimited and the entry keeps the
+ * rounds). Built once per `entry`, so it lasts the life the counts do: the
+ * heat is a field of the item's own FireArms, which a holster and a raise
+ * leave as they were (`HandFireArms::disable` / `enable`), so a hot gun
+ * swapped away comes back hot. `data` is the weapon's block (`hw.data`), whose
+ * `heat` carries the words. A weapon with none gets null, and so does a thrown
+ * one: `velocityDependentOnHeat` makes the same field the throw's charge,
+ * which the pull resets and nothing overheats.
+ */
+export function itemHeat(entry, data) {
+  const words = data?.heat;
+  if (!entry || !(words?.heatAddWhenFire > 0) || words.velocityDependentOnHeat) return null;
+  entry.heat ??= new FireState({ ...words, roundOfFire: data.roundOfFire });
+  return entry.heat;
 }
 
 /** The whole kit's ammunition, keyed by item template. Case-insensitive,

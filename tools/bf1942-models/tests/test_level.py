@@ -761,10 +761,12 @@ GeometryTemplate.texOffsetY 0
         self.assertIn((3, 3), missing)
 
     def test_tex_offset_moves_the_covered_cells(self) -> None:
-        # Wake: texOffset 2/2, so file Tx00x00 covers world patch (2, 2).
+        # Wake: texOffset 2/2 on its 8-patch 2048 m world, so file Tx00x00
+        # covers world patch (2, 2). (On a 4-patch world an offset of 2 leaves
+        # the engine no window to draw a tile in at all: TERR-2.)
         info = parse_terrain_con(
             """
-GeometryTemplate.worldSize 1024
+GeometryTemplate.worldSize 2048
 GeometryTemplate.texOffsetX 2
 GeometryTemplate.texOffsetY 2
 """

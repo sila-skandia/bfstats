@@ -40,12 +40,25 @@
 // contribute nothing and the rudders a little air lift; in the water the
 // hull floats, the screw pushes and the rudders steer.
 //
+// What every land hull has, amphibian or not (2026-10-06): it stands on the sea
+// BED (`bedGroundHeight`), because `checkVsTerrain` meets the heightfield and
+// water produces no impulse (collision-response.md section 7), and below the
+// sea its box drag takes the submerged multiplier (`HullWater`). A Humvee
+// driven off a pier used to ride the water at 31 m/s: the sea surface was its
+// floor, as it still is for a soldier's feet.
+//
+// The hull's geometry box, which the inertia, the box drag and that
+// multiplier's `DY` all read, is the one the engine finds (`inertiaGeometryNode`,
+// COL-14, COL-15): `updatePhysics` asks `queryComponent(IGeometry)` and falls back to
+// `findLodGeometry` (`0x08254527`, `0x08254694`) for the drag exactly as
+// `updateRotationalPhysics` does for the inertia.
+//
 // Divergences, all of them:
 //
-//  - A land hull stands on the sea BED here (`bedGroundHeight`), not on the
-//    sea surface every other land vehicle in the viewer treats as a floor.
-//  - `underWater` is the collision box bottom's depth under the hull's origin,
-//    as `ship.js` takes it, not the lowest col0 vertex's.
+//  - `underWater` is the lowest of the root part's col0 vertices once the page
+//    hands them over (`HullWater.useCollisionPart`, on boarding); before that,
+//    and in a harness, the lowest corner of the glb's own collision box, which
+//    is the mesh's last layer and not col0.
 //  - Only `c_ETShip` / `c_ETTorpedo` engines are run. A land hull carrying a
 //    `c_ETPlane` (FHSW's CharB1 traverse engines) keeps it idle, as before.
 
@@ -53,7 +66,15 @@ import * as THREE from 'three';
 import { Surface, calculateLift } from './aircraft.js';
 import { VectoredEngine, engineGeometry } from './vectored-engines.js';
 import { floatNodesOf, floatAcceleration } from './body-float.js';
-import { hullGeometry } from './ship-spec.js';
+import {
+  hullGeometry, ownGeometryMeshes as ownMeshes, inertiaGeometryNode, headerGeometryBox,
+} from './ship-spec.js';
+
+// The engine's own hull-geometry search lives beside `hullGeometry`; the land
+// drives import it from here.
+export {
+  inertiaGeometryNode, inertiaGeometryBox, headerGeometryBox, geometryInertia, rootCollisionPart,
+} from './ship-spec.js';
 import { axisAngle, keyOf } from './vehicle-base.js';
 
 /** `engineType` values with bit 3 set: the ship's water rule. */
@@ -100,17 +121,190 @@ const _v = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _qs = new THREE.Quaternion();
 
+/** A node's collision meshes, as `hullGeometry` finds them: its own collision
+ *  children and its meshes'. */
+function collisionMeshes(node) {
+  const isCollision = n => Boolean(n.userData?.collision || n.geometry?.userData?.collision
+    || /collision/i.test(n.name || ''));
+  const found = [];
+  for (const host of [node, ...ownMeshes(node)]) {
+    for (const child of host.children) {
+      if (child.isMesh && child.geometry && isCollision(child)) found.push(child);
+    }
+  }
+  return found;
+}
+
 /**
- * The ground under a land hull that can swim: the terrain and any drivable
- * deck, never the sea surface.
+ * What the water reads off a land hull: the geometry box (`DX, DY, DZ`, the
+ * box drag's faces and the multiplier's `DY`) and the eight corners, in the
+ * root's frame, of the box the depth is measured on.
+ *
+ * The depth belongs to the root part's col0 mesh, which `getVertexCollision`
+ * finds by the same search (`findLodCollisionMesh` `0x0818d910`, the same
+ * CIDs) and whose vertices `checkVsTerrain` measures. The glb carries a mesh's
+ * LAST collision layer instead (`assemble.py` `_collision_mesh_indices`), so
+ * the depth box is that layer's box, the drawn box where there is none. Their
+ * bottoms against col0's (`collision-meshes.json`): BRDM-2 +0.075 against
+ * +0.075, Humvee +0.045 against -0.02, BMP-2 -1.005 against -0.486, M1A1
+ * -0.317 against +0.217. A tree in which the search finds nothing (a test
+ * double, a hull mesh straight under the chain) keeps `hullGeometry`'s
+ * reading, which is what the amphibians ran on before. Given the level's
+ * collision sidecar the box's size is the mesh's `.sm` header box
+ * (`headerGeometryBox`, COL-14), which on a BMP-2 is 1.156 m tall against its
+ * vertices' 1.36.
+ */
+export function hullWaterShape(root, sidecar = null) {
+  root.updateWorldMatrix(true, true);
+  const node = inertiaGeometryNode(root);
+  const inverse = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const local = new THREE.Matrix4();
+  const boxOf = meshes => {
+    const union = new THREE.Box3();
+    const box = new THREE.Box3();
+    for (const mesh of meshes) {
+      mesh.geometry.computeBoundingBox();
+      box.copy(mesh.geometry.boundingBox).applyMatrix4(local.multiplyMatrices(inverse, mesh.matrixWorld));
+      union.union(box);
+    }
+    return union;
+  };
+  let geometry = node ? boxOf(ownMeshes(node)) : new THREE.Box3();
+  let depthBox = node ? boxOf(collisionMeshes(node)) : new THREE.Box3();
+  if (geometry.isEmpty()) {
+    const hull = hullGeometry(root);
+    const [dx, dy, dz] = hull.size.map(v => (Number.isFinite(v) ? v : 0));
+    const [cx, cz] = hull.centre ?? [0, 0];
+    geometry = new THREE.Box3(new THREE.Vector3(cx - dx / 2, hull.bottom, cz - dz / 2),
+                              new THREE.Vector3(cx + dx / 2, hull.bottom + dy, cz + dz / 2));
+    depthBox = geometry.clone();
+    depthBox.min.y = Number.isFinite(hull.keel) ? hull.keel : hull.bottom;
+  } else if (depthBox.isEmpty()) {
+    depthBox = geometry.clone();
+  }
+  const size = geometry.getSize(new THREE.Vector3());
+  const corners = [];
+  for (const x of [depthBox.min.x, depthBox.max.x]) {
+    for (const y of [depthBox.min.y, depthBox.max.y]) {
+      for (const z of [depthBox.min.z, depthBox.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    }
+  }
+  const header = node ? headerGeometryBox(node, sidecar) : null;
+  return { size: header ?? [size.x, size.y, size.z], keel: depthBox.min.y, corners };
+}
+
+/**
+ * A land hull's share of the sea (physics.md section 3, collision-response.md
+ * section 7): how deep its root part's lowest point is under the water level,
+ * which is what `checkVsTerrain` hands the root node's `setUnderWater`
+ * (`0x0825ac60`; `0x0825ad41` writes 0 above the sea), and the extra box drag
+ * that depth costs, `1 + 24 min(depth/DY, 1)` squared over the dry law.
+ *
+ * Water pushes nothing: there is no buoyancy here, and a land hull with no
+ * `FloatingBundle` sinks until its springs find the bed. Its springs then work
+ * on the bed as on land (their contacts are `checkVsTerrain`'s too). The depth
+ * is also what `submarineData` reads (`PlayerControlObject::handleFrameUpdate`
+ * `0x08318dc1`, `[this+0x60]` vtable `+0xc4` = `PhysicsNode::getUnderWater`
+ * `0x0824d450`), and `damageTick` takes it from here.
+ */
+export class HullWater {
+  /** One for a land hull on a level with a sea; null on a dry level. */
+  static of(root, options = {}) {
+    if (!root || !Number.isFinite(options.waterLevel)) return null;
+    return new HullWater(root, options);
+  }
+
+  constructor(root, { waterLevel = -Infinity, mass, drag, collisionMeshes = null } = {}) {
+    const physics = root.userData?.physics || {};
+    this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : -Infinity;
+    /** The hull's own `ObjectTemplate.mass` / `drag`. */
+    this.mass = physics.mass > 0 ? physics.mass : (mass ?? 1);
+    this.drag = Number.isFinite(physics.drag) ? physics.drag : (drag ?? 0);
+    const shape = hullWaterShape(root, collisionMeshes);
+    /** `[DX, DY, DZ]`. */
+    this.size = shape.size;
+    /** The depth box's bottom in the root's frame: an upright hull's depth is
+     *  `waterLevel - (y + keel)`. */
+    this.keel = shape.keel;
+    this.corners = shape.corners;
+    const [dx, dy, dz] = this.size;
+    this._area = [BOX_AREA * dy * dz, BOX_AREA * dx * dz, BOX_AREA * dx * dy];
+    /** This sub-step's `underWater`, metres, 0 above the sea. */
+    this.depth = 0;
+    this._corner = new THREE.Vector3();
+  }
+
+  /**
+   * Measure on the root part's own col0 from here on, when the page has it:
+   * `describeVehicleParts`' root part (`vehicle-bodies.js`), handed over by
+   * `hull-bodies.js` when the hull is boarded. Its tested vertices (one when
+   * the layer has three or fewer, as `checkVsTerrain` samples) replace the
+   * box corners, so the depth is the engine's own lowest-vertex reading.
+   * Returns whether it took them.
+   */
+  useCollisionPart(part) {
+    const v = part?.shape?.layers?.[0]?.vertices;
+    if (!v?.length || !part.offset || !part.rot) return false;
+    const { offset, rot } = part;
+    const count = v.length / 3;
+    const n = count <= 3 ? 1 : count;
+    const corners = [];
+    for (let i = 0; i < n; i++) {
+      const [a, b, c] = [v[3 * i], v[3 * i + 1], v[3 * i + 2]];
+      corners.push(new THREE.Vector3(
+        offset[0] + a * rot[0][0] + b * rot[1][0] + c * rot[2][0],
+        offset[1] + a * rot[0][1] + b * rot[1][1] + c * rot[2][1],
+        offset[2] + a * rot[0][2] + b * rot[1][2] + c * rot[2][2]));
+    }
+    this.corners = corners;
+    this.keel = Math.min(...corners.map(p => p.y));
+    return true;
+  }
+
+  /** `underWater` for a hull at `position` turned by `q`. */
+  measure(position, q) {
+    if (!Number.isFinite(this.waterLevel)) return (this.depth = 0);
+    let low = Infinity;
+    for (const corner of this.corners) {
+      const y = this._corner.copy(corner).applyQuaternion(q).y;
+      if (y < low) low = y;
+    }
+    this.depth = Math.max(0, this.waterLevel - (position.y + low));
+    return this.depth;
+  }
+
+  /**
+   * One sub-step: measure, then add the multiplier's excess over the dry box
+   * law to `force` (body frame, per unit mass). The land classes still run
+   * their own dry drag, which is the sphere law and not the box law (PHY-4);
+   * the excess is the box law's, as `ship.js` runs it.
+   */
+  step(ctx) {
+    const depth = this.measure(ctx.position, ctx.q);
+    const dy = this.size[1];
+    if (!(depth > 0) || !(dy > 0) || !(this.drag > 0)) return depth;
+    const { vBody, force } = ctx;
+    const scale = 1 + (SUBMERGED_DRAG_TOP - 1) * Math.min(depth / dy, 1);
+    const coefficient = -this.drag * vBody.length() / this.mass * (scale * scale - 1);
+    force.x += vBody.x * this._area[0] * coefficient;
+    force.y += vBody.y * this._area[1] * coefficient;
+    force.z += vBody.z * this._area[2] * coefficient;
+    return depth;
+  }
+}
+
+/**
+ * The ground under a land hull: the terrain and any drivable deck, never the
+ * sea surface.
  *
  * `WorldCollider.surfaceHeight` answers `max(terrain, water)`, which is right
- * for a soldier's feet and for every land vehicle that cannot float, and is
- * wrong for one that can: its wheels would stand on the water and its floats
- * would never get wet. The engine's own `checkVsTerrain` (`0x0825a960`) meets
- * the heightfield and lets water produce no impulse at all
- * (collision-response.md §7). With no heightfield to ask (a harness, a level
- * with none) the page's own function is kept.
+ * for a soldier's feet and wrong for every land hull: the engine's own
+ * `checkVsTerrain` (`0x0825a960`) meets the heightfield and lets water produce
+ * no impulse at all (collision-response.md §7), so a Humvee driven into the
+ * sea sinks onto the bed and an amphibian's floats get wet. Every land drive
+ * takes this since 2026-10-06; before, only an amphibian did, and the rest
+ * drove on the sea. With no heightfield to ask (a harness, a level with none)
+ * the page's own function is kept.
  *
  * @param {object|null} collider the page's `WorldCollider` (or a wrapper of it)
  * @param {number} waterLevel the level's flat sea
@@ -232,19 +426,24 @@ export class AmphibiousKit {
         local: new THREE.Vector3(float.offsetX, float.offsetY, float.offsetZ).applyQuaternion(inverse),
       }));
 
-    const hull = hullGeometry(root);
-    const [dx, dy, dz] = hull.size.map(v => (Number.isFinite(v) ? v : 0));
+    /** The hull's depth and its submerged drag, which every land hull has
+     *  (`HullWater`); the kit adds the screw, the floats and the rudders. */
+    this.water = new HullWater(root, {
+      waterLevel: this.waterLevel, mass: this.mass, drag: this.drag, collisionMeshes: options.collisionMeshes,
+    });
+    const [dx, dy, dz] = this.water.size;
     this.size = [dx, dy, dz];
     /** `DX*DZ`, the footprint the float damping scales with. */
     this.footprint = dx * dz;
-    /** The collision box's bottom, what `setUnderWater` measures. */
-    this.keel = Number.isFinite(hull.keel) ? hull.keel : 0;
-    this._area = [BOX_AREA * dy * dz, BOX_AREA * dx * dz, BOX_AREA * dx * dy];
 
     /** This sub-step's reading, for harnesses and `window.__drive()`. */
     this.depth = 0;
     this.afloat = false;
   }
+
+  /** The depth points' bottom in the root's frame, what `setUnderWater`
+   *  measures (`HullWater.keel`). */
+  get keel() { return this.water.keel; }
 
   /** The water engine's rev state (the first one's), for audio and probes. */
   get revs() { return this.engines[0]?.revs ?? 0; }
@@ -322,15 +521,7 @@ export class AmphibiousKit {
     }
 
     // The submerged multiplier's share of the hull's box drag.
-    this.depth = Number.isFinite(water) ? Math.max(0, water - (position.y + this.keel)) : 0;
+    this.depth = this.water.step(ctx);
     this.afloat = this.depth > 0;
-    const dy = this.size[1];
-    if (this.depth > 0 && dy > 0 && this.drag > 0) {
-      const scale = 1 + (SUBMERGED_DRAG_TOP - 1) * Math.min(this.depth / dy, 1);
-      const coefficient = -this.drag * vBody.length() / this.mass * (scale * scale - 1);
-      force.x += vBody.x * this._area[0] * coefficient;
-      force.y += vBody.y * this._area[1] * coefficient;
-      force.z += vBody.z * this._area[2] * coefficient;
-    }
   }
 }

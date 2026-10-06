@@ -89,7 +89,9 @@ from bf42.level import (  # noqa: E402
     load_gameplay_objects,
     borrowed_levels,
     load_level_files,
+    patch_grid,
     terrain_file,
+    tile_in_window,
     load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
@@ -2844,6 +2846,11 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     tiles = files.tiles()
     terrain_report = {"tiles": len(tiles), "triangles": 0, "missingTiles": [],
                       "detail": False, "defaultTiles": 0}
+    # The engine's patch: 64 heightmap samples, one Tx tile each (TERR-1).
+    # 256 m on every vanilla level; Medina Ridge's 512-sample heightmap over
+    # 1024 m makes 128 m, and drawing its 8x8 tiles at 256 m stretched the
+    # top-left quadrant over the whole map and dropped the other 48.
+    per_axis, patch = patch_grid(info.terrain.world_size, heightmap.dim)
 
     detail = None
     if info.terrain.detail_tex:
@@ -2873,7 +2880,12 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             terrain_report["detailRepeats"] = DETAIL_REPEATS
 
     for col, row, entry in tiles:
-        primitive = tile_mesh(heightmap, info.terrain, col, row)
+        # A shipped file outside the engine's window is never drawn (TERR-2);
+        # it is reported like a tile that lands off the heightmap, which is
+        # what every such file in vanilla (Kbely_Airfield's ninth row) is.
+        drawn = (tile_in_window(info.terrain.tex_offset_x, col, per_axis)
+                 and tile_in_window(info.terrain.tex_offset_y, row, per_axis))
+        primitive = tile_mesh(heightmap, info.terrain, col, row, patch) if drawn else None
         if primitive is None:
             terrain_report["missingTiles"].append(f"Tx{col:02d}x{row:02d}")
             continue
@@ -2920,8 +2932,8 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         default_material = builder.add_material(
             name=default_kind, texture=tex, double_sided=False)
         dry_only = default_kind == "textureDefault"
-        for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles]):
-            primitive = patch_mesh(heightmap, col, row)
+        for col, row in default_patches(info.terrain, [(c, r) for c, r, _ in tiles], patch):
+            primitive = patch_mesh(heightmap, col, row, patch)
             if primitive is None:
                 continue
             if dry_only and max(p[1] for p in primitive.positions) <= info.terrain.water_level + 0.5:

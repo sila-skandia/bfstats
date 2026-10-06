@@ -1333,6 +1333,12 @@ class ObjectTemplate:
     heat_add_when_fire: float | None = None
     cool_down_per_sec: float | None = None
     time_delay_on_overheat: float | None = None
+    # `velocityDependentOnHeat 1` (FireArmsTemplate+0x333, lnxded `makeScript`
+    # 0x0828eb4b): the heat is a thrown weapon's charge, not an overheat. The
+    # pull resets it, nothing overheats, and the round's velocity is scaled by
+    # it (ledger GUN-14). Every grenade declares it beside its
+    # `heatAddWhenFire 0.03`.
+    velocity_dependent_on_heat: bool | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -2658,6 +2664,9 @@ class ObjectLibrary:
                             "stopatendeffect": "stop_at_end_effect",
                             "setasynchronyfire": "asynchrony_fire",
                         }[cmd], value)
+                elif cmd == "velocitydependentonheat":
+                    if (value := truthy(args)) is not None:
+                        obj.velocity_dependent_on_heat = value
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
                     if (values := floats(args)) is not None:
