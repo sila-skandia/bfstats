@@ -204,7 +204,7 @@ for (const c of spec.cases) {
     p.guns.advance(TICK);
     for (const round of p.launched.slice(before)) {
       const o = offsets(round.v, q);
-      rows.push({ total: round.cone.total, uUp: o.up / round.cone.total, uRight: o.right / round.cone.total });
+      rows.push({ tick, total: round.cone.total, uUp: o.up / round.cone.total, uRight: o.right / round.cone.total });
     }
   }
   // Two barrels of one pull: barrel i takes point i.
@@ -221,6 +221,8 @@ for (const c of spec.cases) {
     spreadUp: r4(Math.max(...rows.map(r => r.uUp)) - Math.min(...rows.map(r => r.uUp))),
     spreadRight: r4(Math.max(...rows.map(r => r.uRight)) - Math.min(...rows.map(r => r.uRight))),
     n: rows.length,
+    ticks: rows.map(r => r.tick),
+    totals: rows.map(r => r4(r.total)),
     pull,
     points: BOT_DEVIATION_POINTS.slice(0, 2).map(([a, b]) => [r4(a), r4(b)]),
   };

@@ -86,6 +86,24 @@ export class FireState {
     // the floor. A fresh gun stands at the floor, as one tick leaves it.
     this.total = this.cone ? this.cone.current() : 0;
     this.coneClock = 0;   // seconds owed to the cone's next tick
+    // Ticks a bot's trigger statement still runs its own update (DEV-13,
+    // `holdAI`).
+    this.aiHold = 0;
+  }
+
+  /**
+   * A bot is firing this gun: its trigger statement runs `WeaponFireArm::
+   * setBotSkill` (lnxded 0x085ee580; a hull's bundle `WeaponBundle::
+   * setBotSkill` 0x085ed050) every tick it executes, which stores the AI term
+   * and calls this FireArms' update once more (slot +0x128), so the bloom
+   * decays twice a tick while a bot holds the trigger (DEV-13). The AI term
+   * itself rides on the cone's total in `seat-cone.js`. The viewer's bot plan
+   * does not tell the guns when its statement runs, so each of the bot's
+   * rounds holds the extra update for `ticks` more ticks, the gap to the
+   * next round of a held burst (a stand-in, not the engine's window).
+   */
+  holdAI(ticks) {
+    if (ticks > this.aiHold) this.aiHold = ticks;
   }
 
   /** The stored total (DEV-12), floor included, in the cone's own unit,
@@ -135,8 +153,14 @@ export class FireState {
       const before = cone.fire;
       // Exactly one tick: `update` counts `dt x 30`, and (1/30) x 30 is 1.
       cone.update(HEAT_TICK);
+      // A bot's trigger statement's own update, the same tick (DEV-13).
+      if (this.aiHold > 0) {
+        this.aiHold -= 1;
+        cone.update(HEAT_TICK);
+      }
       this.total = cone.current();
       if (cone.fire === before) {
+        this.aiHold = 0;
         this.coneClock = Math.max(0, (this.coneClock - HEAT_TICK) % HEAT_TICK);
         break;
       }
