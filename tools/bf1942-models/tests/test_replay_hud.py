@@ -126,7 +126,10 @@ class ReplayFirstPersonTests(unittest.TestCase):
 
     def test_a_seat_guns_magazine_heat_and_reload(self) -> None:
         gun = self.results["gun"]
-        self.assertEqual([gun["ammo"], gun["magsLeft"], gun["heat"], gun["last"]], [18, 2, 0.3, 2.1])
+        # Twelve rounds at 0.05 is 0.6; the barrel drains 0.2/30 a tick only
+        # once a round's 0.1 s timer has run out (ledger GUN-15): the third
+        # tick of each 0.1 s gap, and ten of the twelve ticks after the last.
+        self.assertEqual([gun["ammo"], gun["magsLeft"], gun["heat"], gun["last"]], [18, 2, 0.46, 2.1])
         self.assertEqual(gun["cannon"], {"ammo": 0, "reloading": 3, "magsLeft": 19})
 
     def test_on_foot_the_hud_is_his(self) -> None:
