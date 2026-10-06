@@ -2231,9 +2231,11 @@ GeometryTemplate.create StandardMesh Muzz_m1
         self.assertEqual(900, fire["magSize"])
         self.assertEqual(400.0, fire["velocity"])
         self.assertEqual(2, fire["muzzles"])
+        # This `Tracer_Projectile` declares no `gravityModifier`, so it carries
+        # the engine's 1.0 (IMP-7); retail's own declares 0.0.
         self.assertEqual(
             {"template": "Tracer_Projectile", "interval": 3,
-             "timeToLive": 3.0, "scaler": 50.0},
+             "timeToLive": 3.0, "scaler": 50.0, "gravity": 1.0},
             fire["tracer"])
         # The gun bundle's own placement (0/0/1 -> glTF z=-1) survives.
         self.assertEqual([0.0, 0.0, -1.0], guns["translation"])
@@ -2475,6 +2477,19 @@ GeometryTemplate.create StandardMesh Rocket_m1
         assert node is not None
         return glb_document(builder.build([node], extras=report.as_dict())), report
 
+    def test_the_damage_block_says_what_expiry_does(self) -> None:
+        # PROX-7: `hasOnTimeEffect` decides whether `timeToLive` running out
+        # bursts the round or recycles it, so it rides with the contact words.
+        self.ROCKET_CON = ProjectileBakeTests.ROCKET_CON.replace(
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n",
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n"
+            "ObjectTemplate.damageType 1\n"
+            "ObjectTemplate.hasOnTimeEffect 0\n")
+        document, _ = self._assemble("RocketRamp")
+        projectile = {node["name"]: node for node in document["nodes"]}[
+            "RocketRamp"]["extras"]["fireArms"]["projectile"]
+        self.assertIs(False, projectile["damage"]["hasOnTimeEffect"])
+
     def test_rocket_projectile_is_typed_and_baked_under_the_gun(self) -> None:
         document, report = self._assemble("RocketRamp")
         nodes = {node["name"]: node for node in document["nodes"]}
@@ -2676,6 +2691,23 @@ GeometryTemplate.create StandardMesh TLight_m1
         self.assertIn("mesh", streak)
         self.assertIn(document["nodes"].index(streak),
                       nodes["WingGuns"]["children"])
+
+    def test_tracer_carries_its_own_gravity(self) -> None:
+        # Retail's `Tracer_Projectile` flies flat (`gravityModifier 0.0`);
+        # Desert Combat's heavy tracers declare 1 and drop away from rounds
+        # that do not. The tracer is its own round, so its own word rides.
+        for declared, expected in (("0.0", 0.0), ("1", 1.0), (None, 1.0)):
+            con = self.GUN_CON
+            if declared is not None:
+                con = con.replace(
+                    "ObjectTemplate.tracerScaler 50.0\n",
+                    "ObjectTemplate.tracerScaler 50.0\n"
+                    f"ObjectTemplate.gravityModifier {declared}\n")
+            with self.subTest(declared=declared):
+                document = self._assemble(con, "WingGuns")
+                tracer = {node["name"]: node for node in document["nodes"]}[
+                    "WingGuns"]["extras"]["fireArms"]["tracer"]
+                self.assertEqual(expected, tracer["gravity"])
 
     def test_tracer_without_geometry_bakes_no_node(self) -> None:
         con = self.GUN_CON.replace("ObjectTemplate.geometry TLight_m1\n", "")
