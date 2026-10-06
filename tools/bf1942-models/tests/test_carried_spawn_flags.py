@@ -127,5 +127,19 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertEqual([478, 74, -813], down["ring"])
 
 
+    def test_the_end_of_round_census_counts_groups_with_points(self) -> None:
+        c = self.r["census"]
+        both = {"1": {"groups": 1, "canGet": False}, "2": {"groups": 1, "canGet": False}}
+        self.assertEqual(both, c["standing"])
+        # One bunker left still holds group 99 for Iraq.
+        self.assertEqual(both, c["oneLeft"])
+        # All three gone: group 99 has no point, and the US group cannot
+        # change sides, so Iraq has neither a group nor one to take.
+        self.assertEqual({"1": {"groups": 0, "canGet": False}, "2": {"groups": 1, "canGet": False}},
+                         c["allGone"])
+        self.assertEqual({"1": {"groups": 0, "canGet": True}, "2": {"groups": 1, "canGet": False}},
+                         c["changeable"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -235,8 +235,26 @@ export function createHullBodies(page) {
         Object.defineProperty(spawn, 'inactive', {
           configurable: true, enumerable: false, get: () => carrierDown(binding),
         });
+        // Out of its group altogether once the carrier is gone, not merely
+        // down (`BFSpawnPoint::immediateDestroy` 0x08163c50, ledger TKT-8):
+        // what the end-of-round count reads (`spawn-flags.js`
+        // `spawnGroupCensus`).
+        Object.defineProperty(spawn, 'absent', {
+          configurable: true, enumerable: false, get: () => carrierGone(binding),
+        });
       }
     }
+  }
+
+  /** The carrier is not in the world: its pad has not stood it up, or its
+   *  wreck has cleared (`vehicle-wrecks.js` `clearWreck`). */
+  function carrierGone(binding) {
+    if (!binding) return false;
+    const node = binding.host ? binding.host.node : binding.node;
+    if (!node) return false;
+    if (!page.vehicleSpawnActive(node)) return true;
+    const owner = binding.host ? page.collider?.statics?.ownerOf?.(node) ?? -1 : binding.owner;
+    return !!page.damageVisuals?.get(owner)?.removed;
   }
 
   function carrierDown(binding) {
