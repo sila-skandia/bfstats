@@ -12453,6 +12453,24 @@
    "note": "Returns this+0x24 (the last hit ray's segment vector), bone index out via this+0x30 (ledger DIE-3)."
   },
   {
+   "address": "0x083b4410",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::BStandardMesh(StandardMeshTemplate&)",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "working",
+   "source": "review-2026-10-07-air-flight",
+   "note": "lnxded. Copies template+0x40..+0x54 (the LocalBoundingBox loadHeader 0x083a6200 reads at 0x083a624c) into this+0x28..+0x3c at 0x083b4460-0x083b4484. COL-14"
+  },
+  {
+   "address": "0x083b4e40",
+   "name": "dice::ref2::geom::BStandardMesh<IStandardMesh, StandardMeshTemplate>::getBoundingBox()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "review-2026-10-07-air-flight",
+   "note": "lnxded. Returns this+0x28, the box the ctor copies from the template's header box (StandardMesh vt+0x1c, the slot getGeometryInertia and updatePositionalDragAdvanced call). So the drag and inertia box is the .sm file's boundsMin/boundsMax, not the vertex extents; setScale 0x083b4640 scales it. COL-14"
+  },
+  {
    "address": "0x083b4fd0",
    "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
    "kind": "function",
