@@ -122,6 +122,10 @@ export function surveyVehicle(root) {
         // carries. Read for the root only (`rootDriveKind`).
         vehicleCategory: node?.userData?.physics?.vehicleCategory ?? null,
         drivenSprings: 0,
+        // `false` only where the exporter stamped a root whose
+        // `hasMobilePhysics` bit is clear and whose tree carries an Engine
+        // (PHY-16); absent on every other seat and in older bakes.
+        mobilePhysics: node?.userData?.physics?.hasMobilePhysics ?? null,
       };
       seats.set(id, seat);
       order.push(id);
@@ -329,8 +333,14 @@ const ENGINE_DRIVE_KIND = {
  * templates, so its extracted tree has only the twelve spin-only rollers: a
  * land model would have nothing to push it, and it stays a boat until the
  * exporter keeps them.
+ *
+ * A root whose `hasMobilePhysics` is clear drives nothing at all (PHY-16): its
+ * physics node is a `StaticPhysicsNode`, and every push its Engines, Wings and
+ * floats make on it is a bare `ret`. DC's `Nimitz_Static*` carriers carry a
+ * `c_ETShip` and stay where the level put them; the helm is still a seat.
  */
 export function rootDriveKind(seat) {
+  if (seat?.mobilePhysics === false) return null;
   const types = seat?.engineTypes?.length ? seat.engineTypes
     : (seat?.engineType ? [seat.engineType] : []);
   if (!types.length) return null;

@@ -10725,6 +10725,15 @@
    "note": "lnxded. [R1] terrain as IVectorCollider 0xb54616fc, cached '+8"
   },
   {
+   "address": "0x0825e440",
+   "name": "dice::ref2::world::StaticPhysicsNode::StaticPhysicsNode()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. 0x10-byte node; built by SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd760 when template +0x70 bit 0 is clear, then never addPhysicsNode'd. PHY-16."
+  },
+  {
    "address": "0x0825e4a0",
    "name": "dice::ref2::world::StaticPhysicsNode::updatePositionalDragSimple(float, float)",
    "kind": "function",
@@ -10732,6 +10741,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-drag",
    "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret), like every StaticPhysicsNode drag/physics method: static geometry computes no drag at all."
+  },
+  {
+   "address": "0x0825e500",
+   "name": "dice::ref2::world::StaticPhysicsNode::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. Empty (push ebp; mov ebp,esp; pop ebp; ret). A root whose template +0x70 bit 0 is clear (hasMobilePhysics 0 or absent) gets this node and never integrates; PHY-16 (DC Nimitz_Static*)."
+  },
+  {
+   "address": "0x0825e740",
+   "name": "dice::ref2::world::StaticPhysicsNode::addAccelerationAtAbsolutePosition(Pos3 const&, Vec3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "ghidra-session",
+   "note": "lnxded. Empty: an Engine/Wing/float push on a static root is dropped. PHY-16."
   },
   {
    "address": "0x0825e750",
