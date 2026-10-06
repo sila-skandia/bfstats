@@ -748,6 +748,10 @@ class ObjectTemplate:
     # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
+    # Clear (the template constructor's default, or an explicit 0) is a
+    # `StaticPhysicsNode`, and on a vehicle's root that holds the whole hull
+    # still (COL-27): `Assembler` stamps it on such a root as
+    # `extras.physics.hasMobilePhysics = false`.
     has_mobile_physics: bool = False
     # `setAttachToListener 1`: a bool at SimpleSoundTemplate +4 (lnxded
     # 0x081de9c0/0x081de9d0, ledger SND-1). Its sound is placed at the listener
@@ -2110,7 +2114,10 @@ class ObjectLibrary:
                     # (every hand-weapon bullet declares it — only the tracer
                     # is ever visible).
                     obj.invisible = args.strip().startswith("1")
-                elif cmd == "hasmobilephysics":
+                elif cmd in ("hasmobilephysics", "sethasmobilephysics"):
+                    # Both spellings, as `extract_deployables.block_words`
+                    # reads them: DC and DC Final write `setHasMobilePhysics`
+                    # on their projectiles and deployables, no vehicle part.
                     obj.has_mobile_physics = args.strip().startswith("1")
                 elif cmd == "setattachtolistener":
                     try:

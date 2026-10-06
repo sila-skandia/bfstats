@@ -1476,6 +1476,7 @@ class PhysicsExportTests(unittest.TestCase):
 
     SHIP_CON = """
 ObjectTemplate.create PlayerControlObject Fletcher
+ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.mass 2500000
 ObjectTemplate.drag 3
 ObjectTemplate.setVehicleCategory VCSea
@@ -1602,6 +1603,64 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
         self.assertEqual(
             {"hullHeight": 20.0, "floatMaxLift": 2.0, "floatMinLift": 2.0},
             nodes["Fletcher_Floater"]["extras"]["physics"])
+
+    def test_a_root_without_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-16: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
+        root that carries a `c_ETShip`. The bit clear is a
+        `StaticPhysicsNode`, which nothing moves, so the root says so; the
+        word is stamped nowhere else -- not on a root that writes 1, not on
+        a gun with no Engine (its bit is clear too), not on a nested seat."""
+        static_con = self.SHIP_CON.replace(
+            "ObjectTemplate.hasMobilePhysics 1", "ObjectTemplate.hasMobilePhysics 0")
+        document, _ = self._assemble(
+            static_con, "Fletcher", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(False, nodes["Fletcher"]["extras"]["physics"]["hasMobilePhysics"])
+        self.assertNotIn("hasMobilePhysics", nodes["Fletcher_Engine"]["extras"]["physics"])
+
+        mobile, _ = self.ship()
+        self.assertNotIn("hasMobilePhysics", mobile["Fletcher"]["extras"]["physics"])
+
+        # The same static hull nested under a mobile root is that root's
+        # body: its own bit moves nothing, and it is not stamped.
+        nested_con = static_con + """
+ObjectTemplate.create PlayerControlObject Mothership
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.addTemplate Fletcher
+"""
+        nested, _ = self._assemble(
+            nested_con, "Mothership", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        inner = next(node for node in nested["nodes"] if node["name"] == "Fletcher")
+        self.assertNotIn("hasMobilePhysics", inner["extras"]["physics"])
+
+        gun_con = """
+ObjectTemplate.create PlayerControlObject AA_Gun
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate AA_GunBase
+ObjectTemplate.create SimpleObject AA_GunBase
+ObjectTemplate.geometry AA_Gun_Base
+GeometryTemplate.create StandardMesh AA_Gun_Base
+"""
+        gun, _ = self._assemble(gun_con, "AA_Gun", "Objects/Vehicles/Land/AA_Gun/Objects.con",
+                                geometry="AA_Gun_Base")
+        root = next(node for node in gun["nodes"] if node["name"] == "AA_Gun")
+        self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
+
+    def test_both_spellings_of_mobile_physics_are_read(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/x.con", """
+ObjectTemplate.create Projectile A
+ObjectTemplate.setHasMobilePhysics 1
+ObjectTemplate.create Projectile B
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.create PlayerControlObject C
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertTrue(library.object("A").has_mobile_physics)
+        self.assertTrue(library.object("B").has_mobile_physics)
+        self.assertFalse(library.object("C").has_mobile_physics)
 
     def test_bow_and_stern_surfaces_deflect_opposite_ways(self) -> None:
         """`setAcceleration` -10 against +10 is what makes the hull carve.

@@ -2469,6 +2469,28 @@ class Assembler:
             return None
         return self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
 
+    def _carries_engine(self, template_name: str, *,
+                        depth: int = 0,
+                        stack: frozenset[str] = frozenset()) -> bool:
+        """Whether an Engine sits anywhere under the template, every LOD
+        alternative and nested seat included: an Engine pushes on the root
+        object's physics node wherever in the tree it is (PHY-16)."""
+        if depth > 24:
+            return False
+        template = self.library.object(template_name)
+        if template is None:
+            return False
+        if template.kind.lower() == "engine":
+            return True
+        key = template.name.lower()
+        if key in stack:
+            return False
+        stack = stack | {key}
+        return any(
+            self._carries_engine(name, depth=depth + 1, stack=stack)
+            for ref in template.children
+            if (name := con_mod.instance_template_name(ref, self.library.object)))
+
     def _has_visible_spring(self, template_name: str, *,
                             depth: int = 0,
                             stack: frozenset[str] = frozenset()) -> bool:
@@ -2884,6 +2906,17 @@ class Assembler:
         is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
+        if (is_vehicle_root and depth == 0 and not template.has_mobile_physics
+                and self._carries_engine(template.name)):
+            # PHY-16: a root whose `hasMobilePhysics` bit is clear gets a
+            # `StaticPhysicsNode`, every push its Engines, Wings and floats
+            # make on it is a bare `ret`, and the hull never moves whoever
+            # is at the helm. Stamped only on the placed root (a nested
+            # seat's own bit moves nothing: every Engine pushes on the
+            # root's node) and only where an Engine could have driven it --
+            # DC's `Nimitz_Static*` carriers -- so the stationary guns (no
+            # Engine, the bit clear too) keep their extras as they were.
+            physics = {**(physics or {}), "hasMobilePhysics": False}
         # A node carrying `addSkeletonIK` is a placement datum too: it is where
         # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`
         # bundles are meshless and childless and are nothing *but* that, so

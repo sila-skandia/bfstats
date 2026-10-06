@@ -1228,3 +1228,63 @@ sinking), `fall.mjs` (the soldier), `cons/` (the extracted
 decompilations of `checkVsTerrain`, `handleCollisionLandOrWater`,
 `SimpleObject::handleCollision`, `PatchTerrain::getMaterial`,
 `getHeightAndNormal`, `Armor::isInColList`).
+
+## 25. DC's static carriers stay where the level put them (2026-10-06)
+
+Desert Combat writes `ObjectTemplate.hasMobilePhysics 0` on every Nimitz root.
+`Nimitz_Static`, `Nimitz_Static_Empty`, `Nimitz_Static_Heli` and Urban Siege's
+level-local `Nimitz_Static_Heli_UrbS` also carry a `c_ETShip` `Nimitz_Engine`,
+so `rootDriveKind` classed them as ships and the helm sailed. On Sea Rigs, at
+full throttle, the carrier made 7.2 m/s after 48 s and was still speeding up
+(186.7 m in 50 s). The plain `Nimitz` (Midway, Iwo Jima and Wake conquest)
+carries no Engine and was a bare seat already.
+
+In the engine the hull cannot move at all, whoever is aboard (PHY-16). A clear
+bit 0 in the root template's `+0x70` makes `setPhysicsNodeComponent` build a
+`StaticPhysicsNode`. That node's update and every one of its adders is a bare
+`ret`, and an Engine pushes on the root's node. The engine default for the bit
+is clear too. Every engine-carrying root in vanilla, XPack1, XPack2, DC and DC
+Final writes `1`, except these carriers and XPack2's unplaced `Jetpack`.
+
+- **Exporter** (`bf42/assemble.py`): a PlayerControlObject built at depth 0 whose
+  bit is clear and which has an Engine anywhere under it gets
+  `extras.physics.hasMobilePhysics = false`. It gets nothing else. A root
+  writing `1`, a stationary gun with no Engine (its bit is clear too) and a
+  nested seat all keep their extras byte for byte. `con.py` now reads
+  `setHasMobilePhysics` as well; only projectiles and deployables use that
+  spelling.
+- **Viewer** (`seat-survey.js`): the seat carries `mobilePhysics`, and
+  `rootDriveKind` returns null when it is `false`. The root then classifies as
+  a `seat`: it can still be entered, `ensureDrive` builds nothing, and the
+  hull stays at its placement. An older bake has no key and is unchanged.
+
+Checked:
+
+- `ground_sim.mjs throttle dc_sea_rigs Nimitz 50`, on a Sea Rigs bake made with
+  this exporter in scratch. A bot is put at the helm (the probe offers the hull
+  as a ship candidate, because bots never pick a `seat` root), full throttle is
+  held for 50 s, and the hull moves **0 m** (186.7 m before).
+- Vanilla Midway's Enterprise moves 167.3 m in 20 s before and after (14.1 m/s).
+- Before/after exports of `Nimitz_Static_Heli`, `Nimitz`, `Enterprise` and
+  `Nimitz_CIWS_1`: the only node that differs is the `Nimitz_Static_Heli` root,
+  by the one key.
+- `test_seats.py` `test_a_root_without_mobile_physics_drives_nothing`,
+  `test_assemble.py` `test_a_root_without_mobile_physics_is_stamped_static`
+  and `test_both_spellings_of_mobile_physics_are_read`.
+
+Re-bake owed: the Nimitz models in the DC and DC Final model trees, and a full
+bake of `dc_sea_rigs`, `dc_urban_siege`, `midway`, `wake` and `iwo_jima` in
+both trees. `iwo_jima` places only the plain `Nimitz`, so its glb does not
+change; it is listed only so the set is complete.
+
+Open:
+
+1. Bots skip every seat of a hull whose root classifies as a `seat`
+   (`bot-units.js` `candidates`, the kind filter). The CIWS and Sea Sparrow
+   seats on the plain `Nimitz` were never offered to bots. After this change
+   the same is true of `Nimitz_Static` on DC Midway (SinglePlayer) and Wake. Retail's AI offers a
+   non-mobile root's seats without the map test (`BBChange::calculateUrgency`,
+   quoted there). This belongs to the bots package.
+2. FH's and FHSW's `FletcherStatic`, `Lexington` and `Saratoga` roots never
+   write the word, so the engine holds them still as well. Their trees pick
+   the key up at their next bake.
