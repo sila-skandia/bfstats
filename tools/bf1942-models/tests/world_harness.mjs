@@ -393,6 +393,31 @@ const reach = {
   tanks: tankHulls.map(h => h.hitPoints),
 };
 
+// --- scenario 12: a depot whose object is not in the world ------------------
+// Medina Ridge's `fk1` rides the `flagkill` an `ofk` pad stands up only while
+// its point is Iraqi: a soldier on the flag with the pad's object absent
+// (`padAbsent`, `level-statics.js` `markAbsent`) or off the field at the end
+// of a round (`cleared`) is not touched; with it standing, -1000 a cycle.
+const worldK = makeWorld();
+const victim = worldK.addPlayer('K1', { team: 2 });
+worldK.setPlayerArmor('K1', new Armor(100, 100));
+const fkNode = { name: 'flagkill', userData: { templateKind: 'PlayerControlObject', control: 'flagkill', padAbsent: true } };
+worldK.addDamageable(30, fkNode, { hitpoints: 20, maxHitpoints: 20 }, { name: 'flagkill', position: [0, 0, 0] });
+worldK.setSupplyDepots([
+  new SupplyDepot({ x: victim.soldier.x, y: victim.soldier.y, z: victim.soldier.z },
+                  { radius: 2, team: 0, health: [-1, -1000, 0], workOnSoldiers: true }, 'fk1', { root: fkNode }),
+]);
+for (let i = 0; i < 2 * SECOND; i++) worldK.step(1 / 30);
+const killDepot = { absent: worldK.players.get('K1').armor.hitPoints };
+fkNode.userData.padAbsent = false;
+fkNode.userData.cleared = true;
+for (let i = 0; i < 2 * SECOND; i++) worldK.step(1 / 30);
+killDepot.cleared = worldK.players.get('K1').armor.hitPoints;
+fkNode.userData.cleared = false;
+for (let i = 0; i < 2 * SECOND; i++) worldK.step(1 / 30);
+killDepot.standing = worldK.players.get('K1').armor.hitPoints;
+killDepot.standingDestroyed = worldK.players.get('K1').armor.destroyed;
+
 console.log(JSON.stringify({
   tickRate: WORLD_TICK_RATE,
   tickDt: WORLD_TICK_DT,
@@ -449,4 +474,5 @@ console.log(JSON.stringify({
   falling,
   depots,
   reach,
+  killDepot,
 }));

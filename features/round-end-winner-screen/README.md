@@ -1,6 +1,8 @@
 # Round end: winner screen, reset, and the delay
 
-Status: built 2026-10-06 (Desert Combat parity round, package `round-rules`).
+Status: built 2026-10-06 (Desert Combat parity round, package `round-rules`);
+ObjectiveMode's end, the end game's cleared field and the restart's fresh
+hulls built 2026-10-07 (package `round-gaps`, section 6).
 Section 5 is what was built and how it was checked. The engine law is now
 ledger rows ROUND-1..ROUND-9, which supersede sections 1 to 3 where they
 differ. Sections 1 to 4 are the research of 2026-09-26 and the design it led
@@ -185,7 +187,7 @@ Choices the game was not read for:
 - **Vehicles.** `ObjectSpawner::reset` is not run, so the hulls keep the state
   the round left: a hull a bot or the human was in stays where it was, and a
   Corsair the human was flying at 260 m over Wake hung there, unpiloted,
-  through three restarts (review 2026-10-07).
+  through three restarts (review 2026-10-07). **Built 2026-10-07, section 6.**
 
 ### How it was checked
 
@@ -250,23 +252,106 @@ restarts the round, with the English titles, no level line and a plain plate.
 - The client's `Show*TicketBlink` writer and threshold (the counters do not
   blink).
 - The `+0x473` override of the time-limit share comparison (ROUND-3).
-- **ObjectiveMode rounds do not end on the page** unless `?gameTime=` sets a
-  time limit. Retail ends them through an objective's `TeamWinsAward`
-  (ROUND-2): Battle of Britain's `ObjectiveMode/ObjectiveCommon.con` gives
-  the Allies a `TimerObjective` of 900 s and the Axis an
-  `ANDCompositeObjective` of five `DestroyTargetObjective`s. No objective is
-  exported or modelled. That covers every ObjectiveMode level in the trees:
-  Battle of Britain (vanilla and the XPack1, XPack2 and DC Final copies),
-  XPack2's Eagle's Nest, Essen, Hellendoorn, Kbely Airfield, Mimoyecques and
-  Telemark, and FHSW's. Ending them on tickets instead, as the page did
-  before ROUND-2 was read, ends them on the first frame: each layer sets one
-  side's tickets only, so the other starts at 0, and the round would restart
-  every 10 s.
-- ObjectiveMode's own debriefing, `VICTORY` or `DEFEAT` over the level's
-  `setObjective<Side>Victory/Defeat` line (ROUND-8). A time-limit end on an
-  ObjectiveMode layer is titled as Conquest's.
+- ~~ObjectiveMode rounds do not end on the page~~: built 2026-10-07,
+  section 6.
+- ~~ObjectiveMode's own debriefing~~: built 2026-10-07, section 6.
 - What sets `GameServer+0xd0`, which a multiplayer server needs to give
   medals at all (ROUND-9).
 - `menu/LoadMenu`'s own layout, for the exact placement.
 - ~~A room's end of round on the page.~~ Built 2026-10-07 (the netcode
   README's round section).
+
+## 6. ObjectiveMode, the end game and the restart (2026-10-07)
+
+Package `round-gaps` of the Desert Combat parity round. The engine law is
+ledger OBJ-1..OBJ-6 (the objectives, their awards, ObjectiveMode's tickets and
+words) and ROUND-10 (the end game's `clearWorld`, the restart's
+`ObjectSpawner::reset`), read out of the Linux server; ROUND-2 and ROUND-8 are
+marked built.
+
+**ObjectiveMode.** Every ObjectiveMode layer sets only one side's tickets
+because the server gives the defender a flat 100 at the first pre-game, and
+the round is won by an objective, never on tickets.
+
+| Piece | File |
+|---|---|
+| The ObjectiveMode script's run graph read for its objectives, the spawners that stand them up, `objectiveManager`'s words and the pads a DestroyTarget watches; the pads join the layer as vehicle pads | `bf42/level.py` `script_files`, `parse_objective_setup`, `add_objective_targets`; `extract_map.py` `load_level` |
+| `scene.json.modes.ObjectiveMode.objectives` (the game layer) and `briefing.debriefing.objective`, the `VICTORY` / `DEFEAT` titles | `scene_layers.py` `_objectives_report`; `bf42/level.py` `DEBRIEFING_VERBS` |
+| The objectives' frame, completion and awards | `viewer/objectives.js` |
+| The defender's 100, the deaths a side pays, the HUD's counts scaled by the enemy root objective, the win | `viewer/round-state.js` `objectiveStart`, `showObjectiveTickets`, `deathCosts`, `objectiveScore`, `objectiveWin` |
+| The debriefing's ObjectiveMode branch | `viewer/round-end.js` `debriefingOf` |
+| Each target found among the vehicle pads by spawner and position | `viewer/objectives.js` `matchTargets`; `viewer/map.html` `levelObjectives`; `viewer/vehicle-wrecks.js` `damageOfNode` |
+
+**The end game.** On the first EndGame tick, once the debriefing has read the
+medals, the page empties the field as `clearWorld` does: every bot is killed
+in his seat or out, the human's soldier is taken (the camera stays where it
+was; the engine moves it to the level's before-spawn camera), every hull goes
+with no wreck left, the kits go. The human cannot spawn until the round plays
+again (`spawning.js`). The pads keep running.
+
+**The restart.** `restartRound` clears the field again and resets every pad
+(`level-statics.js` `restartVehiclePads`): its slots empty, its pre-game team,
+on as the round opened, its delay -1 or `spawnDelayAtStart`'s. Each stands a
+fresh hull on its own spot on its next frame; a hull no pad names comes back
+where it was placed (`vehicle-wrecks.js` `restartHulls`).
+
+### How it was checked
+
+- `tests/test_objectives.py` (`objectives_harness.mjs`): Battle of Britain's
+  start (Axis 200 at 32 slots, the Allies' flat 100), the timer's win 3 s
+  after 900 s, `objectiveAttackerTicketsMod` 50 halving it, the targets'
+  completion on the Allied count (half the factory is 90), a destroyer paid
+  `objective` or `objectiveTK` by side, the composite's win 3 s after the
+  fifth target, deaths, the restart, an absent target, Eagle's Nest's swapped
+  sides, the target matching, and Conquest unchanged.
+- `tests/test_objective_setup.py`: the parser on Battle of Britain's own
+  lines (the factory pad's redefinition, a malformed vector) and on the
+  shipped archive; the report; the objective debriefing lines.
+- `tests/test_round_end.py`: the ObjectiveMode titles and lines, and the field
+  cleared once on the end game's first tick, after the medals.
+- `tests/test_vehicle_pads.py`, `tests/test_vehicle_wrecks.py`: every pad
+  standing its hull up again after a restart, back to its opening team; an
+  intact, a burning and a wrecked hull all off the field at the end, and fresh
+  after.
+- In the page (`~/.cache/dc-sweep/round-gaps/objective_page.cjs`, vanilla
+  Battle of Britain ObjectiveMode at 32 slots, a scratch bake served by
+  `page.route`):
+  - **The targets.** The five targets stood on their pads (the factory 1000 HP,
+    the towers 600); half the factory took the Allied count to 90, all five
+    destroyed took it to 0, and 3 s later the Axis won, a total victory. The
+    Allied player read DEFEAT and Battle of Britain's Allied objective defeat
+    line, with the lose cue. During the end game no player was alive and every
+    target pad was empty; after the restart all five stood at full health,
+    every objective was fresh and the counts were 198 / 100.
+  - **The timer.** With the live tree's glb (no targets), the timer set to
+    895 s ended the round 3 s after 900 s for the Allies: VICTORY, the Allied
+    objective victory line, the win cue, a total victory; the restart made the
+    objectives fresh.
+
+### What the lead runs
+
+The ObjectiveMode layers gain their target pads, so the eight levels need a
+**scene re-bake** (`extract_map.py <level> --mod <M>`, `optimise_mesh.py`,
+publish): vanilla `Battle_of_Britain`, DC Final `Battle_of_Britain`, and
+XPack2 `Eagles_Nest`, `Essen`, `Hellendoorn`, `Kbely_Airfield`,
+`Mimoyecques`, `Telemark`. Every tree then needs the **game layer**
+(`patch_scene.py --layer game --mod <M> --all`: the objectives and the
+objective debriefing lines and titles) and the **spawns layer** (the target
+pads in `modes.ObjectiveMode.objectSpawns`). The models trees have no
+`Factory_Objective.wreck.glb`, so the destroyed factory fades its intact mesh.
+
+### Still open
+
+- The objectives' HUD (the objective icons and their completion bars) is not
+  drawn.
+- The time limit's share in ObjectiveMode divides by the level's raw count,
+  which Battle of Britain does not set for the defender (0); with a time
+  limit set, the defender's share reads 0.
+- The engine's before-spawn camera at the end game, and the pre-game between
+  a restart and play, are not modelled.
+- In a room the server clears and restarts its own field (ROUND-11,
+  `server/room-pads.mjs`), and the page's end game stands down: `clearWorld`,
+  the pad resets and `restartHulls` do nothing there, and the page follows
+  the server's rows. The spawn refusal is one check for both. The room's
+  capture law writes no `spawnsEnabled`, so SPAWN-22 does not reach a room's
+  pads yet; SPAWN-21 does (`resetPads({ preGame })`).

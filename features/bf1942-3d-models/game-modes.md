@@ -709,14 +709,12 @@ nothing at all.
 
 ## 7. Not done
 
-* **ObjectiveMode's own objects.** `ObjectiveMode/` ships
-  `ObjectiveCommon.con`, `ObjectiveSpawners.con` and
-  `ObjectiveSpawnerTemplates.con` alongside the usual files, and
-  `objectiveManager.registerObjectSpawner` binds a spawner to an objective.
-  The layer's control points, soldier spawns and vehicles are extracted like
-  any other; the objective bindings are not parsed, so Battle of Britain's
-  ObjectiveMode reads as a flag layout rather than a bombing run. 67 levels
-  ship it (28 in FHSW, 18 in bg42, 6 in XPack2, 1 vanilla).
+* ~~ObjectiveMode's own objects~~: built 2026-10-07. `bf42/level.py`
+  `parse_objective_setup` reads the objectives, the spawners that stand them
+  up and the pads their targets stand on; they ship as
+  `scene.json.modes.ObjectiveMode.objectives` and the page ends the round on
+  them (`features/round-end-winner-screen`, section 6). The objectives' HUD
+  is not drawn.
 * **`Ctf.con`'s flag bases.** A CTF level's root `Ctf.con` creates `usbase` /
   `jpbase` objects (or `FlagPole` on a join) outside any layer directory. Those
   are the capturable flags of the mode and nothing places them.

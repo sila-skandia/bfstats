@@ -116,4 +116,37 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
                                defaultPick: spawnPlayer(world, 'bot_0', {})?.flag?.name ?? null };
 }
 
+// The end of a round's census (TKT-5, TKT-8): Weapon Bunkers' group 99 is
+// Iraq's while a bunker stands; a dead bunker whose object is gone (`absent`,
+// `bindCarriers`) takes its points out of the group, and with all three gone
+// Iraq holds none. Both groups say `groupEnableToChangeTeam 0`, so neither
+// side can ever take the other's.
+{
+  const { spawnGroupCensus } = await import(path.join(viewer, 'spawn-flags.js'));
+  const gone = { left: false, middle: false, right: false };
+  const pt = (bunker, x) => {
+    const p = { vehicle: `mil_wpbunker${bunker}_des`, spawner: `wpbunker${bunker}spawner`, pad: bunker,
+                group: 99, team: 1, name: 'wb_soldierspawn', position: [x, 74, -813], rotation: [180, 0, 0],
+                changeTeam: false };
+    Object.defineProperty(p, 'absent', { get: () => gone[bunker] });
+    return p;
+  };
+  const extras = {
+    controlPoints: [{ name: 'CoallitionBase', team: 2, spawnGroupId: 2, radius: 10, areaValue: 50 }],
+    soldierSpawns: [{ group: 2, team: 2, position: [0, 70, 0], name: 'us', changeTeam: false }],
+    vehicleSoldierSpawns: [pt('left', 400), pt('middle', 476), pt('right', 555)],
+  };
+  const flags = spawnFlags(extras);
+  const census = { standing: spawnGroupCensus(flags) };
+  gone.left = true; gone.middle = true;
+  census.oneLeft = spawnGroupCensus(flags);
+  gone.right = true;
+  census.allGone = spawnGroupCensus(flags);
+  // The same level with the default `groupEnableToChangeTeam 1`: the US group
+  // is one Iraq could take, if it ever held the base.
+  for (const s of extras.soldierSpawns) delete s.changeTeam;
+  census.changeable = spawnGroupCensus(spawnFlags(extras));
+  out.census = census;
+}
+
 process.stdout.write(JSON.stringify(out));

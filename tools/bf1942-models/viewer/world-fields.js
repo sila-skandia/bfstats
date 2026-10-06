@@ -168,9 +168,13 @@ function hullPosition(world, owner) {
   return world.positions.get(owner) ?? null;
 }
 
-/** A depot riding a hull stops with it (`update`'s first test, SUP-19). */
+/** A depot riding a hull stops with it (`update`'s first test, SUP-19), and
+ *  is not there at all while its hull is not: a pad has not stood it up, or
+ *  the end of the round took it off the field (`level-statics.js`
+ *  `markAbsent`, `vehicle-wrecks.js` `clearWorld`). */
 function depotSuspended(world, depot) {
   if (!depot.root) return false;
+  if (depot.root.userData?.padAbsent || depot.root.userData?.cleared) return true;
   const owner = world.nodeOwners.get(depot.root);
   if (owner === undefined) return false;
   return !!world.vehicleDamage.get(owner)?.destroyed;

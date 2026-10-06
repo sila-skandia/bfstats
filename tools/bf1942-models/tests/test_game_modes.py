@@ -331,6 +331,21 @@ class UnionTests(unittest.TestCase):
         self.assertEqual([u[1] for u in extract_map.union_object_spawns(info)],
                          ["A", "B", "C"])
 
+    def test_two_pads_one_layer_puts_on_one_spot_are_two_nodes(self) -> None:
+        """DC Medina Ridge's `ofk` and `cfk` both stand a `flagkill` on Outpost
+        Pass: two spawners, two objects. The count matches them across layers:
+        a layer with one there shares the first."""
+        info = self._info({
+            "Conquest": _layer("Conquest",
+                               spawns=[_inst("ofk", 4, 4), _inst("cfk", 4, 4)],
+                               specs=[_spawner("ofk", "flagkill"), _spawner("cfk", "flagkill")]),
+            "Ctf": _layer("Ctf", spawns=[_inst("ofk", 4, 4)],
+                          specs=[_spawner("ofk", "flagkill")]),
+        })
+        union = extract_map.union_object_spawns(info)
+        self.assertEqual([(u[0].template, u[3]) for u in union],
+                         [("ofk", ["Conquest", "Ctf"]), ("cfk", ["Conquest"])])
+
     def test_modes_that_time_a_pad_differently_get_a_per_mode_table(self) -> None:
         info = self._info({
             "Conquest": _layer("Conquest", spawns=[_inst("p", 5, 5)],

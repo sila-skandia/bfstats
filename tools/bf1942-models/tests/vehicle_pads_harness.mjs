@@ -226,5 +226,84 @@ const out = {};
   out.legacy.roadAfter = live(st, spawners).filter(n => n === 'UAZ' || n === 'Humvee');
 }
 
+// --- a point switched off while it keeps its side (SPAWN-22) ------------------
+// The village's tank pad: its point running down with `disableWhenLosingControl`
+// (`spawnsEnabled` false, `controlPointStep`) stops the pad on team 2; held
+// again, it runs.
+{
+  const env = await build({ osId: true });
+  const { st, flags } = env;
+  run(env, 1 / 30);
+  const tank = padBy(st, 'heavytankspawner');
+  const village = flags.find(f => f.controlPointName === 'village');
+  const before = { team: tank.pad.team, active: tank.pad.active };
+  village.spawnsEnabled = false;
+  run(env, 1 / 30);
+  const off = { team: tank.pad.team, active: tank.pad.active };
+  village.spawnsEnabled = true;
+  run(env, 1 / 30);
+  out.switched = { before, off, on: { team: tank.pad.team, active: tank.pad.active } };
+}
+
+// --- the restart (ROUND-10): the field cleared, every pad reset --------------
+// The village goes to team 1 and its M1A1 drives off; the round ends, the end
+// game takes every hull, and the restart resets the pads: each stands its own
+// fresh hull up on its next frame, the village's for its owner at the start.
+{
+  const env = await build({ osId: true });
+  const { st, spawners, flags, state } = env;
+  run(env, 1 / 30);
+  const tank = padBy(st, 'heavytankspawner');
+  const village = flags.find(f => f.controlPointName === 'village');
+  village.team = 0; run(env, 1); village.team = 1; run(env, 1);
+  const before = live(st, spawners);
+  // `clearWorld`: every hull off the field.
+  for (const record of st.pads) for (const node of record.live) state.set(node, 'removed');
+  run(env, 1 / 30);
+  const cleared = live(st, spawners);
+  // `ControlPoint::reset`, then `ObjectSpawner::reset`.
+  village.team = 2;
+  st.restartVehiclePads({ players: 8, maxPlayers: 16 });
+  const reset = { team: tank.pad.team, active: tank.pad.active, delay: tank.pad.delay };
+  run(env, 1 / 30);
+  out.restart = { before, cleared, reset, after: live(st, spawners), tankTeam: tank.pad.team };
+}
+
+// --- spawnDelayAtStart against the pre-game `setTeam` (SPAWN-21) ------------
+// DC Final DC_Cornered: pads under owned points with `spawnDelayAtStart 1`
+// and their own `Object.setTeam`. The level loads in the pre-game, the
+// `setTeam` cancels the delay, and the first round's first frame has them;
+// after a restart the delay holds (40 s at 8 of 16). A pad with the word and
+// neither a team nor an owning point keeps it from the start.
+{
+  const lv = level({ osId: true });
+  const atStart = [
+    { spawner: 'mlrsspawner', vehicle: 'MLRS', team: 2, position: [900, 0, 0], osId: 3,
+      templates: { 2: 'MLRS' }, minSpawnDelay: 20, maxSpawnDelay: 60, spawnDelayAtStart: 1 },
+    { spawner: 'scudspawner', vehicle: 'Scud', team: null, position: [950, 0, 0],
+      templates: { 1: 'Scud' }, minSpawnDelay: 20, maxSpawnDelay: 60, spawnDelayAtStart: 1 },
+  ];
+  for (const p of atStart) { lv.extras.objectSpawns.push(p); lv.spawners.add(hull(p.vehicle, p.position)); }
+  await loadPadVariants(lv.root, lv.extras, { load });
+  const page = {
+    camera: new THREE.PerspectiveCamera(), drawDistance: () => 1000, extras: lv.extras,
+    levelClips: [], optEntire: { checked: true }, optVehicles: { checked: true },
+    templateNameOf: tplOf, world: { flags: lv.flags },
+  };
+  const st = createLevelStatics(page);
+  st.indexScene(lv.root);
+  const w = wrecks();
+  const env = { st, world: w.world };
+  const mlrs = padBy(st, 'mlrsspawner');
+  const scud = padBy(st, 'scudspawner');
+  const first = { mlrs: { delay: mlrs.pad.delay, live: mlrs.live.size },
+                  scud: { delay: Math.round(scud.pad.delay * 100) / 100, live: scud.live.size } };
+  for (const record of st.pads) for (const node of record.live) w.state.set(node, 'removed');
+  run(env, 1 / 30);
+  st.restartVehiclePads({ players: 8, maxPlayers: 16 });
+  run(env, 1 / 30);
+  out.atStart = { first, restart: { mlrs: { delay: Math.round(mlrs.pad.delay * 100) / 100, live: mlrs.live.size } } };
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));
