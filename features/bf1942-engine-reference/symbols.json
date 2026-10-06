@@ -2238,6 +2238,15 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x00508de0",
+   "name": "Object__getRoot",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Walks +0x50 (parent) up to the object whose +0x04 flags carry 0x2000000, caching the answer at +0xec. The patch's velocity sampler (0x008026d0) takes its owner's root through it. Ledger SND-18."
+  },
+  {
    "address": "0x00509470",
    "name": "ParticleCurve_seed",
    "kind": "function",
@@ -6124,6 +6133,15 @@
    "confidence": "verified",
    "source": "ghidra-headless-2026-09-30-dc-sound",
    "note": "Patch vtable slot +0x0c. Stops looping samples unless stop FinishSample; one-shots play out. Ledger SND-14."
+  },
+  {
+   "address": "0x008026d0",
+   "name": "SoundPatch__sampleOwnerMotion",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Called first by every update of a patch that still sounds (0x00802f70, the call at 0x00802fad). Owner +0xbc (set by patch +0x28 0x00802110): queryInterface 0xc378, its root (0x00508de0), that root's physics node +0x60 vt+0x38 velocity into +0xb0 (Speed); +0xa0 (Acceleration) is the change over dt. No owner: both zero. Ledger SND-18."
   },
   {
    "address": "0x00802a40",
