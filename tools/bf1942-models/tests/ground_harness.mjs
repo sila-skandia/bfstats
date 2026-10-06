@@ -2353,6 +2353,42 @@ function rearSteerWilly() {
 }
 
 
+// --- where the origin sits decides whether a full-lock turn holds ----------
+//
+// The body turns about its ORIGIN and every friction sample's moment is taken
+// from it (collision-response.md sections 4.1 and 4.2), so a tyre's lever is
+// its distance from the origin, not from any centre of mass. DC's Desert
+// Patrol Vehicle stands 2.57 m behind its front axle and 0.94 m ahead of its
+// rear one: the steered front tyres turn it on a long lever and the rear ones
+// hold it on a short one, and at full lock from 15 m/s it spins. The Humvee,
+// the same 4x4 on the same 50 degree lock, stands 0.75 m behind its front axle
+// and holds its turn. Move the Humvee's origin to the DPV's place and it spins
+// too; that is the whole of the DPV's spin.
+{
+  const turnFrom = (dz) => {
+    const node = humveeNode();
+    for (const child of node.children) child.position.z += dz;
+    const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 1);
+    drive(truck, 6, t => {
+      t.setInput('c_PIThrottle', alongOf(t) < 15 ? 1 : 0.5);
+    });
+    let turned = 0;
+    let last = forwardOf(truck);
+    drive(truck, 3, t => {
+      t.setInput('c_PIThrottle', 1);
+      t.setInput('c_PIYaw', 1);
+      const f = forwardOf(t);
+      turned += Math.atan2(last.x * f.z - last.z * f.x, last.x * f.x + last.z * f.z) * DEG;
+      last = f;
+    });
+    return { turned: round(turned, 1), along: round(alongOf(truck), 2) };
+  };
+  results.originLever = { asAuthored: turnFrom(0), dpvPlace: turnFrom(-1.81) };
+}
+
+
 // --- an amphibian: a tank on land, a boat afloat (`amphibious.js`) ----------
 //
 // Desert Combat's BMP-2 as its glb carries it: the Sherman fixture's tracks on
