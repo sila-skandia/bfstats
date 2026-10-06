@@ -767,12 +767,13 @@ export function createHullBodies(page) {
    */
   function settlePlacedVehicles(ownerRoots, heightfield) {
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
-    // A pad's other-side vehicle stands on the same slab as the one its pad
-    // has out (`level-statics.js` `loadPadVariants`); settled together, the
-    // two would be pushed apart. Each settles in a world of its own kind.
-    const live = node => page.vehicleSpawnActive?.(node) ?? true;
-    settleSome(ownerRoots, heightfield, node => live(node));
-    settleSome(ownerRoots, heightfield, node => !live(node));
+    // A pad's other-side vehicle stands on the same slab as the one the level
+    // baked there (`level-statics.js` `loadPadVariants`); settled together,
+    // the two would be pushed apart. The loaded ones settle in a world of
+    // their own, and the level's own exactly as they always did.
+    const loaded = node => !!node?.userData?.padVariant;
+    settleSome(ownerRoots, heightfield, node => !loaded(node));
+    settleSome(ownerRoots, heightfield, node => loaded(node));
   }
 
   function settleSome(ownerRoots, heightfield, wanted) {
