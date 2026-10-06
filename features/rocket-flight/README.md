@@ -168,8 +168,8 @@ speed is a tick's displacement times 30. Flown in the harness as they were
 launched, the section 3 laws missed in two places, both now fixed:
 
 - **The drag box is the round's `.sm` header box**, not the drawn body's
-  extent (PHY-22: `getBoundingBox` returns what `loadHeader` read from the
-  file). The two differ on five of Desert Combat's eight full-body rockets,
+  extent (ledger COL-14, which the air-flight review read the same day:
+  `getBoundingBox` returns what `loadHeader` read from the file). The two differ on five of Desert Combat's eight full-body rockets,
   most on the AT-2 (drawn 1.44 m across, header 0.25 m), the Hydra (0.24 m
   square, header 0.11 m) and the AIM-9 (0.45 m tall, header 0.64 m), because
   the drawn body is often a `visibleDummyProjectileTemplate`. `assemble.py`

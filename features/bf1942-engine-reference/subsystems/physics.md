@@ -177,19 +177,8 @@ read, not inferred (ledger PHY-22, 2026-10-06): `updatePhysics` (lnxded
 second on row 1 and its third on row 0. The engine's π here is `3.14f`
 (`ds:0x86d1384`). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
-`BStandardMesh::queryInterface` answers with itself — and it is the `.sm`
-header's box: `getBoundingBox` (`0x083b4e40`) returns the mesh's `+0x28`, copied
-by the `BStandardMesh` constructor (`0x083b4410`) from the template's `+0x40`,
-which `loadHeader` (`0x083a6200`) reads from the file (ledger PHY-22). It is not
-the extent of the drawn LOD. `dragOffset` is read by
+`BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
 neither law, and nothing calls its setter.
-
-`PhysicsNode::updatePositionalPhysics` (`0x08253570`) then integrates the
-accumulator, and first scales it back to 1000 m/s² when it is longer (ledger
-COL-8, collision-response.md §4.2): drag, the children's pushes and the gravity
-seeded the tick before together never change a full body's speed by more than
-33.3 m/s a tick. A round obeys it as a vehicle does; the lab's Desert Combat
-AA-10s, leaving a jet at 520 m/s, lose exactly that for their first five ticks.
 
 **The selector bit is never set (ledger PHY-4, settled 2026-09-17).** Object
 ctors write default flags `0x2090400` at `+0x4` (lnxded `0x08191811` /
@@ -201,6 +190,15 @@ sets object flag `0x8`). So every live `PhysicsNode` takes the box branch; the
 sphere-`r = 0.1` arm is dead. Vehicles in the viewer therefore need the box law,
 not `−drag·v` (`flight.js`) and not the PointPhysics sphere form (`ground.js` /
 `physics.js`).
+
+**A round is a full body like any other (2026-10-07).** A projectile that
+declares `setHasPointPhysics 0` drags by this law on its own `.sm` header box
+(ledger COL-14), not on the mesh drawn for it, and `updatePositionalPhysics`
+(`0x08253570`) holds its summed push to 1000 m/s² as it does a vehicle's
+(COL-8, collision-response.md §4.2). The lab's Desert Combat rockets show both:
+an AA-10 leaving a jet at 520 m/s loses exactly 33.3 m/s a tick for five ticks,
+and with the header box the recorded MLRS, AIM-9 and AA-10 flights are flown
+within 1% (ledger PHY-22, `features/rocket-flight` section 3a).
 
 ---
 

@@ -589,7 +589,7 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // every live `PhysicsNode` drags by the box law (PHY-4), not the point
     // body's sphere: its geometry box. That is the round's own `.sm` header
     // box, which the exporter writes as `spec.box` (`assemble.py`
-    // `_geometry_box`, PHY-22), not the drawn body's extent; a glb baked
+    // `_geometry_box`, ledger COL-14), not the drawn body's extent; a glb baked
     // before it carried the word falls back to the drawn body, measured here
     // once per group. A round that declares nothing is a point body (the
     // `ProjectileTemplate` constructor sets the flag, collision-response.md
