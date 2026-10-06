@@ -5,8 +5,10 @@
 // (`fire-state.js` `FireState`, ledger GUN-14 and GUN-15).
 //
 // The held trigger is the page's order (`hold`, below), each pull billed once
-// (`registerShot(1)`, the hand weapon's `onShot`). The magazine is left out:
-// this is the barrel alone.
+// (`registerShot(1)`, the hand weapon's `onShot`) and the trigger reported
+// ahead of the step (`trigger`, GUN-17). The magazine is left out: this is the
+// barrel alone. `engineHold` is the binary's own law, in float32, to hold the
+// page against.
 
 import { KitAmmo, itemHeat } from './kit-ammo.mjs';
 import { FireState } from './fire-state.js';
@@ -85,7 +87,7 @@ const out = {};
  * (`gun-cycle.js`: a round sets the timer to `1 / roundOfFire` and the tick
  * takes its 1/30 s off it, so a gun fires on whole ticks).
  */
-function hold(data, seconds, fps = 60) {
+function hold(data, seconds, fps = 60, releaseAtCross = false) {
   const kit = new KitAmmo();
   const heat = itemHeat(kit.entry('gun', data.magazine), data);
   const dt = 1 / fps;
@@ -94,16 +96,20 @@ function hold(data, seconds, fps = 60) {
   let clock = 0;
   let cooldown = 0;
   let rounds = 0;
+  // The first pull the heat refused: the lockout's start (GUN-17).
   let firstRefused = null;
   let peak = 0;
   const shots = [];
+  let held = true;
   for (let frame = 0, t = 0; t < seconds; frame++, t = frame * dt) {
+    heat.trigger(held);
     heat.step(dt);
-    const firing = heat.canFire;
-    if (!firing && firstRefused === null) firstRefused = { t, rounds };
+    if (heat.overheatRemaining > 0 && firstRefused === null) firstRefused = { t, rounds };
+    const firing = held && heat.canFire;
     for (clock += dt; clock >= 1 / 30 - 1e-9; clock -= 1 / 30) {
       if (firing && cooldown <= 0) {
         heat.registerShot(1);
+        if (releaseAtCross && heat.heat >= 1) held = false;
         rounds += 1;
         shots.push(t);
         peak = Math.max(peak, heat.heat);
@@ -116,46 +122,98 @@ function hold(data, seconds, fps = 60) {
   const late = shots.filter(s => s >= seconds - 10).length / 10;
   return { rounds, firstRefused, peak, lateRate: late, heatAtEnd: heat.heat };
 }
+
+/**
+ * The binary's law for a held trigger, float32, the trigger's pull first in
+ * each tick (GUN-15's assumed order): `handleMessage` passes the pull to `Fire`
+ * once the lockout and the round's timer have run out (GUN-17); `Fire` fires
+ * below heat 1 (the heat added, the timer set, GUN-13/14) and otherwise starts
+ * the lockout; then `handleUpdate` counts both timers down and drains once
+ * both are out (GUN-15). `shots` are tick numbers.
+ */
+function engineHold({ roundOfFire, heatAddWhenFire, coolDownPerSec, timeDelayOnOverheat }, seconds) {
+  const f = Math.fround;
+  const dt = f(1 / 30), add = f(heatAddWhenFire), drain = f(f(coolDownPerSec) / 30);
+  const period = f(1 / f(roundOfFire)), delay = f(timeDelayOnOverheat);
+  let heat = f(0), fireT = f(0), lock = f(0), firstRefused = null;
+  const shots = [];
+  for (let k = 0; k < seconds * 30; k++) {
+    if (!(fireT > 0) && !(lock > 0)) {
+      if (heat < 1) { fireT = period; heat = f(heat + add); shots.push(k); }
+      else { if (firstRefused === null) firstRefused = shots.length; lock = delay; }
+    }
+    if (fireT > 0) fireT = f(fireT - dt);
+    if (lock > 0) lock = f(lock - dt);
+    if (!(fireT > 0) && !(lock > 0)) { const h = f(heat - drain); heat = h > 0 ? h : f(0); }
+  }
+  return { rounds: shots.length, firstRefused, shots,
+           lateRate: shots.filter(k => k >= (seconds - 10) * 30).length / 10 };
+}
+const handHeat = data => ({ roundOfFire: data.roundOfFire, ...data.heat });
 out.hold = {
   m249: hold(M249, 30),
   pkm: hold(PKM, 30),
   m249At30: hold(M249, 30, 30),
+  m249Released: hold(M249, 10, 60, true),
+  m249Engine: engineHold(handHeat(M249), 30),
+  pkmEngine: engineHold(handHeat(PKM), 30),
 };
+delete out.hold.m249Engine.shots;
+delete out.hold.pkmEngine.shots;
 
 /**
- * A seat's gun held for `seconds`: `world-vehicle-tick.js` steps its
- * `FireState` once a world tick and gates the trigger on it, and the gun
- * fires in that tick's `guns.advance`. Vanilla's own numbers (the glbs'
- * FireArms extras): the stationary MG42, the pintle Browning, the coaxial
- * Browning.
+ * A seat's gun held for `seconds`: `world-vehicle-tick.js` reports the trigger
+ * and steps its `FireState` once a world tick, gates the trigger on it, and
+ * the gun fires in that tick's `guns.advance`. `shots` are tick numbers.
  */
 function holdSeat(stats, seconds) {
   const state = new FireState(stats);
   const tick = Math.fround(1 / 30);
   const period = Math.fround(1 / Math.fround(stats.roundOfFire));
   let cooldown = 0;
-  let rounds = 0;
   let firstRefused = null;
-  for (let i = 0; i * (1 / 30) < seconds; i++) {
+  const shots = [];
+  for (let i = 0; i < seconds * 30; i++) {
+    state.trigger(true);
     state.step(1 / 30);
-    const firing = state.canFire;
-    if (!firing && firstRefused === null) firstRefused = { t: i / 30, rounds };
-    if (firing && cooldown <= 0) {
+    if (state.overheatRemaining > 0 && firstRefused === null) firstRefused = shots.length;
+    if (state.canFire && cooldown <= 0) {
       state.registerShot(1);
-      rounds += 1;
+      shots.push(i);
       cooldown = period;
     }
     if (cooldown > 0) cooldown = Math.max(0, Math.fround(cooldown - tick));
   }
-  return { rounds, firstRefused };
+  return { rounds: shots.length, firstRefused, shots,
+           lateRate: shots.filter(k => k >= (seconds - 10) * 30).length / 10 };
 }
+// Vanilla's own seat guns (the glbs' FireArms extras): the stationary MG42,
+// the pintle Browning, the coaxial Browning.
 const heatOnly = (roundOfFire, heatAddWhenFire, coolDownPerSec) =>
   ({ magSize: -1, roundOfFire, heatAddWhenFire, coolDownPerSec, timeDelayOnOverheat: 2 });
-out.seats = {
-  mg42: holdSeat(heatOnly(15, 0.04, 0.4), 20),
-  browning: holdSeat(heatOnly(10, 0.04, 0.4), 20),
-  coax: holdSeat(heatOnly(12, 0.05, 0.3), 20),
-};
+out.seats = {};
+for (const [name, gun] of Object.entries({
+  mg42: heatOnly(15, 0.04, 0.4), browning: heatOnly(10, 0.04, 0.4), coax: heatOnly(12, 0.05, 0.3),
+})) {
+  const page = holdSeat(gun, 30);
+  const engine = engineHold(gun, 30);
+  // Every round on the engine's tick: the page's tick is the engine's pull
+  // then `handleUpdate`, half a tick on, so the same tick number.
+  page.sameTicks = page.shots.length === engine.shots.length
+    && page.shots.every((k, i) => k === engine.shots[i]);
+  delete page.shots;
+  delete engine.shots;
+  out.seats[name] = page;
+  out.seats[`${name}Engine`] = engine;
+}
+// A caller that never reports its trigger (the replay's `gunStateAt`) keeps
+// the lockout at the crossing round.
+{
+  const state = new FireState(heatOnly(15, 0.04, 0.4));
+  let rounds = 0;
+  while (state.heat < 1) { state.registerShot(1); rounds += 1; state.step(1 / 15); }
+  out.seats.unreported = { rounds, locked: state.overheatRemaining > 0 };
+}
 
 // --- cooling off --------------------------------------------------------------
 {
