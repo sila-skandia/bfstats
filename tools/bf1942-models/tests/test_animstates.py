@@ -331,12 +331,16 @@ class CameraShakeTests(unittest.TestCase):
         self.assertEqual(0.0, shake[0]["minFactor"])
         self.assertNotIn("active", shake[0])
 
-    def test_a_clone_inherits_no_shake(self) -> None:
-        # `copyStateData` copies neither block (CS-10): `Ub_FireColt` was
-        # cloned after the roll line and carries none of it, and a time limit
-        # alone sets no block's active byte.
-        self.assertIsNotNone(self.machine.state("Ub_FireColt"))
-        self.assertIsNone(self.machine.state("Ub_FireColt").camera_shake_extras())
+    def test_a_clone_takes_the_shake_its_source_has_at_the_copy(self) -> None:
+        # `copyStateData` copies both blocks (CS-10): `Ub_FireColt` was cloned
+        # after the roll line and carries it, but not the Thompson's lines set
+        # after the copy, and a time limit alone sets no block's active byte.
+        shake = self.machine.state("Ub_FireColt").camera_shake_extras()
+        self.assertEqual(1, len(shake))
+        self.assertEqual([0.25, 800.0], shake[0]["roll"])
+        self.assertEqual([0.0, 0.0], shake[0]["pitch"])
+        self.assertEqual([0.05, 900.0],
+                         self.machine.state("Ub_FireThompson").camera_shake_extras()[0]["pitch"])
 
     def test_a_state_that_does_not_exist_takes_nothing(self) -> None:
         # Not the state named before it: the Thompson keeps its own channels.

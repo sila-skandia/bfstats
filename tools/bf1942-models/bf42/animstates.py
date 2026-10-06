@@ -132,9 +132,12 @@ class State:
     flags: list[str] = field(default_factory=list)
     # `setCameraShake* <slot> ...` — the state's camera shake, one block per
     # slot (`SHAKE_DEFAULTS` above), or None while the state declares none. A
-    # clone does not inherit it: `copyStateData` (lnxded 0x08327780) copies
-    # neither of the two 0x44-byte shake blocks at +0x38 (CS-10), which is why
-    # `AnimationStatesCameraShakes.con` names every weapon's state itself.
+    # clone takes the shake its source has at the time of the copy:
+    # `copyStateData` (lnxded 0x08327780) copies both 0x44-byte blocks from
+    # +0x38 (`rep movsl`, 0x0832796d..0x0832798b; CS-10). The weapons' own
+    # shakes are set after the clones (`AnimationStatesCameraShakes.con`
+    # names every weapon's state itself), so in the shipped packs only
+    # FHSW's lower-body clones carry one, which the view never plays (CS-6).
     camera_shake: list[dict | None] | None = None
 
     def shake_slot(self, slot: int) -> dict | None:
@@ -233,6 +236,13 @@ class StateMachine:
         new_name = _substitute(latest.name, src_weapon, new_weapon)
         clone = State(new_name, morph_factor=latest.morph_factor,
                       random_start=latest.random_start, flags=list(latest.flags))
+        # Both shake blocks as they stand (CS-10): later lines on either
+        # state reach only that one.
+        if latest.camera_shake is not None:
+            clone.camera_shake = [None if block is None else
+                                  {k: list(v) if isinstance(v, list) else v
+                                   for k, v in block.items()}
+                                  for block in latest.camera_shake]
         if latest.return_to:
             clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon)
         # The aim states carry their fidget registrations into the clone the
