@@ -213,6 +213,14 @@ class VehicleDeviationTests(unittest.TestCase):
         self.assertGreater(len(cross["pairs"]), 10)
         self.assertTrue(cross["agree"], cross["pairs"])
 
+    def test_a_bot_pilots_guns_stay_on_their_line(self) -> None:
+        """The lab's jet guns land at a direction no draw index gives, so a
+        bot pilot's own guns are left out (open); a bot gunner in an
+        aircraft's turret seat is drawn like any seat MG."""
+        air = self.results["air"]
+        self.assertEqual(air["pilot"], {"up": 0, "right": 0})
+        self.assertEqual(air["gunner"], {"up": round(0.9517212 * 0.8125, 4), "right": round(0.2325311 * 0.8125, 4)})
+
     def test_a_round_with_no_firer_or_no_hook_flies_its_line(self) -> None:
         """A replayed round (no seat holder) and the model browser (no hook)."""
         self.assertEqual(self.results["replay"], {"up": 0, "right": 0})
