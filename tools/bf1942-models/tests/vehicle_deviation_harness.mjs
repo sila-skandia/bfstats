@@ -21,7 +21,7 @@ import { mulberry32 } from '../sim/rng.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { GunFire }, { FireState }, { seatConeOf }, { BOT_DEVIATION_POINTS }, { cameraLaunch },
+const [THREE, { GunFire }, { FireState }, { seatConeOf }, { deviationPoint }, { cameraLaunch },
   { createVehicleHud }] = await Promise.all([
   imp('vendor/three.module.js'), imp('gunfire.js'), imp('fire-state.js'), imp('seat-cone.js'),
   imp('bot-deviation.js'), imp('gun-groups.js'), imp('vehicle-hud.js'),
@@ -189,7 +189,8 @@ for (const c of spec.cases) {
 }
 
 // A bot on the Sherman's hull Browning: every round on one point of the square
-// (AI-145), the AI term on the FireArms' own total.
+// (AI-145), index 617 for a gun with no barrels, the AI term on the FireArms'
+// own total.
 {
   const browning = spec.cases.find(c => c.name === 'Browning')?.stats;
   const p = page(3);
@@ -224,7 +225,9 @@ for (const c of spec.cases) {
     ticks: rows.map(r => r.tick),
     totals: rows.map(r => r4(r.total)),
     pull,
-    points: BOT_DEVIATION_POINTS.slice(0, 2).map(([a, b]) => [r4(a), r4(b)]),
+    // A seated bot's input index is 618 (AI-145): a two-barrel gun's pull
+    // draws at 618 and 619.
+    points: [618, 619].map(k => deviationPoint(k).map(r4)),
   };
 }
 
