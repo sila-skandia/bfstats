@@ -81,6 +81,14 @@ export function loadRealLevel({ viewerDir, name }) {
   const damageTables = readShared(sharedDir, levelDir, extras.damage?.path, 'damage.json');
   const collisionMeshes = readShared(sharedDir, levelDir, null, 'collision-meshes.json');
   const loadouts = readShared(sharedDir, levelDir, null, 'loadouts.json');
+  // The soldier templates' body words (`explosionForceMod`/`Max`, KNOCK-7),
+  // which the tree's gait manifest carries (`extract_pose.py`); the page reads
+  // the same file (`foot-body.js`). Null for a tree without it.
+  const gaitsPath = join(modelsDirOf(viewerDir), 'poses', 'gaits', 'gaits.json');
+  let soldierBody = null;
+  if (existsSync(gaitsPath)) {
+    try { soldierBody = JSON.parse(readFileSync(gaitsPath, 'utf8'))?.soldierBody ?? null; } catch { /* none */ }
+  }
 
   // The published template trees, cached per template name: every layer's
   // (a room may play any of them, `LevelData.instantiate(mode)`), and every
@@ -105,7 +113,7 @@ export function loadRealLevel({ viewerDir, name }) {
 
   return new LevelData({
     name, extras, sceneRoot: root, heightfield, damageTables,
-    collisionMeshes, templates, colliderMock: null, loadouts,
+    collisionMeshes, templates, colliderMock: null, loadouts, soldierBody,
   });
 }
 

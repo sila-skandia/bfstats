@@ -31,6 +31,7 @@ import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
  * `LOCAL_PLAYER`, `noteLocalAttack` (optional: the message log's record of
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
  * `raiseHitIndication` (optional: a headless runner has no crosshair),
+ * `reportImpact` (optional: in a room, the server prices the landing instead),
  * `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierBody` (optional: `gaits.json`'s, for the
  * blast's push), `soldierDead`, `soldierTemplateFor` (optional), `stepWrecks`,
@@ -386,6 +387,16 @@ export function createVehicleHits(page) {
     // Asked before any damage lands, as the engine asks before it prices the
     // round: the hit that wrecks a manned hull still marks.
     const marks = marksTheCrosshair(record);
+    // In a room the server prices every landing (`server/room-hits.mjs`): the
+    // page reports where its own round met what, and its hit points, wrecks
+    // and pushes come back as the server's rows (`net-room.js`). The marks
+    // are the shooter's own screen, raised here as the engine raises them
+    // before it prices anything.
+    if (page.reportImpact) {
+      if (marks) page.raiseHitIndication?.();
+      page.reportImpact(record);
+      return;
+    }
     if (record?.target != null) applyRoundToSoldier(record);
     // Whose round it is (`roundFirer`): the seat's holder, else the hand
     // weapon's own tag -- the human's, or a bot's rocket launcher

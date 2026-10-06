@@ -44,6 +44,16 @@ export const SPAWN_INDEX_MAX = 0xffff;
  *  `GameServer::radioMessage` (lnxded 0x0813a120). */
 export const RADIO_LOCAL_RANGE = 70;
 
+/** A reload row's weapon: a template name's shape (letters, digits, `_`,
+ *  `-`, `.`), at most 64 long. */
+export const WEAPON_NAME_OK = /^[A-Za-z0-9_.-]{1,64}$/;
+
+/** The least time between two relayed magazine changes from one player: the
+ *  shortest non-zero `reloadTime` any tree ships is 0.1 s (the first-person
+ *  reports under `viewer/models/viewmodels`, every mod), so a faster pair is
+ *  a page repeating itself, not a second change. */
+export const RELOAD_GAP_MS = 100;
+
 /** The room clock's own frame cadence (33.33 ms); the FixedStep interior
  *  means the cadence is a target, not a law. */
 export const FRAME_MS = Math.max(1, Math.round(WORLD_TICK_DT * 1000));

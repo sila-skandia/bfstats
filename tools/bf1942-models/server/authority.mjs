@@ -293,7 +293,8 @@ export function createAuthority(ctx) {
       }
       for (const change of step?.damage ?? []) {
         if (!change.died) continue;
-        const victim = ownerToPlayer(change.vehicle);
+        // The damage pass reports the DamageableVehicle, which knows its owner.
+        const victim = ownerToPlayer(change.vehicle?.owner ?? change.vehicle);
         if (victim != null && !killers.has(victim)) killers.set(victim, null);
       }
       // The general pass: a player with a destroyed Armor is dead, once.

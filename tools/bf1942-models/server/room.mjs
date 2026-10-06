@@ -18,6 +18,8 @@ import {
 import { encodeJsonMsg, eventRow, frame, parseJson, serverTimeBytes } from './room-wire.mjs';
 import { chokeRates, sendSnapshots, snapshotRecord } from './room-stream.mjs';
 import { createControlChannel } from './room-control.mjs';
+import { createRoomPads } from './room-pads.mjs';
+import { createRoomHits } from './room-hits.mjs';
 
 // --- the room ----------------------------------------------------------------
 
@@ -61,13 +63,30 @@ export class Room {
       // and of the restart is the room's.
       onClearWorld: () => {
         for (const connection of this.players.values()) this.#unmount(connection);
+        this.pads.clearWorld();
       },
-      onRestart: () => {},
+      onRestart: () => this.pads.restart(),
     });
     // The control channel's seat, spawn and radio actions (room-control.mjs).
     this.#control = createControlChannel({
       room: this,
       event: (type, connection, extra) => this.#event(type, connection, extra),
+    });
+    // The vehicle pads and the wrecks (room-pads.mjs), whose rows go to
+    // everyone as the authority's do.
+    this.pads = createRoomPads({
+      room: this,
+      onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
+      unmount: slot => {
+        const connection = this.players.get(slot);
+        if (connection) this.#unmount(connection);
+      },
+    });
+    // The hits and blasts the players' pages report, priced here
+    // (room-hits.mjs).
+    this.hits = createRoomHits({
+      room: this,
+      onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
     });
   }
 
@@ -164,6 +183,8 @@ export class Room {
       // ended with its result and the restart's countdown.
       modeDefault: this.defaultMode(),
       round: this.authority.roundState(),
+      // The hulls and statics not at full hit points (`room-pads.mjs`).
+      damage: this.pads.damageState(),
     };
   }
 
@@ -172,10 +193,15 @@ export class Room {
     return this.instance.flags.map(f => ({ name: f.name, team: f.team }));
   }
 
-  /** [{id, template}] — the room-side seat table; ids are reused by
-   *  MSG_ACTION {type:'seat', vehicle: <id>} and the snapshot records. */
+  /** [{id, template, pad, node, live}] — the room-side seat table; ids are
+   *  reused by MSG_ACTION {type:'seat', vehicle: <id>}, the snapshot records
+   *  and the pad rows. `pad` is the entry's `objectSpawns` row, `node` its
+   *  hull's index in `scene.glb` (null for a hull the level does not place:
+   *  a pad's other-side vehicle), which is how the page finds its own copy;
+   *  `live` whether it stands in the world now (`room-pads.mjs`). */
   vehiclesForWire() {
-    return this.instance.table.map(v => ({ id: v.id, template: v.template }));
+    return this.instance.table.map(v => ({ id: v.id, template: v.template, pad: v.pad ?? null,
+                                           node: v.node ?? null, live: !!v.live }));
   }
 
   // --- inbound messages ------------------------------------------------------
@@ -285,9 +311,14 @@ export class Room {
     this.tick++;
     const world = this.world;
     const step = world.step(WORLD_TICK_DT);
+    // A hull that died this step takes its crew with it, before the death
+    // pass reads their Armors.
+    this.pads.hullDeaths(step);
     // P3: death decree, ticket bleeds, flag captures — the authority's own
     // half after every world step (all damage funnels landed during it).
     this.authority.afterStep(step, WORLD_TICK_DT);
+    // The pads and the wrecks, after the captures (the page's order).
+    this.pads.step(WORLD_TICK_DT);
     const nowMs = this.now();
     for (const [slot, connection] of this.players) {
       const player = world.player(slot);

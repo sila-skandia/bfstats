@@ -65,10 +65,17 @@ export function fakeLevelDescriptor({ viewerDir }) {
 export function buildLevelFromDescriptor({ viewerDir, descriptor = null }) {
   const spec = descriptor || fakeLevelDescriptor({ viewerDir });
   const templates = new Map();
-  for (const v of spec.vehicles || []) {
-    const name = String(v.vehicle || '').toLowerCase();
-    if (templates.has(name)) continue;
-    const path = resolveTemplatePath(modelsDirOf(viewerDir), String(v.vehicle || ''));
+  // The descriptor's own rows, else its pads (`extras.objectSpawns`, with the
+  // templates each hands out per side, SPAWN-2).
+  const names = [];
+  for (const v of spec.vehicles || spec.extras?.objectSpawns || []) {
+    names.push(String(v.vehicle || ''));
+    for (const name of Object.values(v.templates || {})) names.push(String(name || ''));
+  }
+  for (const raw of names) {
+    const name = raw.toLowerCase();
+    if (!name || templates.has(name)) continue;
+    const path = resolveTemplatePath(modelsDirOf(viewerDir), raw);
     if (!existsSync(path)) continue;
     templates.set(name, loadVehicleTree(path));
   }
