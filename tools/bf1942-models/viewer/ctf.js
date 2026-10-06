@@ -1,7 +1,7 @@
 /**
  * Capture the Flag: the flag bases, the flags, who carries them and the
  * scores a round of them pays, read out of the Linux server
- * (`bf1942_lnxded.static`; ledger CTF-1..CTF-8, features/ctf-round).
+ * (`bf1942_lnxded.static`; ledger CTF-1..CTF-8, features/ctf-mode).
  *
  * A CTF level's root `Ctf.con` places, on a host, one `FlagBase` per side
  * (`object.create UKbase`, `GEbase`, `redBase`, ...). The base's template
@@ -9,7 +9,7 @@
  * `Flag` it raises (`flagTemplate`), a radius and where the flag hangs
  * (`setFlagLocation 0/7.6/0`); the flag's names its team, its own radius and
  * `TimeToReSpawn` (30 on every shipped flag). `scene.json.modes.Ctf.flagBases`
- * carries both, resolved by `bf42/level.py` `load_flag_bases`.
+ * carries both, resolved by `bf42/ctf.py` `flag_bases`.
  *
  * What the server does with them, per frame:
  *
@@ -34,7 +34,13 @@
  *
  * "Soldier" is the controlled object's class (`0x9493`, `BFSoldier`): a
  * player in a vehicle neither picks up, returns nor captures, and a carrier
- * who climbs into one keeps the flag.
+ * who climbs into one keeps the flag. The engine picks the nearest thief at a
+ * base before it asks whether he lives (CTF-3), so a dead body nearest the
+ * pole blocks a live thief for that frame; this offers living soldiers only.
+ *
+ * The law runs wherever the round is owned: the page's own round, or a room's
+ * authority (`server/authority.mjs`), whose clients replay its events through
+ * `applyEvent` rather than running the law themselves.
  *
  * The client's side of it (0x006e4290): each pick-up, capture and return is a
  * game-information line in the actor's team colour (`<name> [axis]: stole the
@@ -171,6 +177,9 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
     const event = {
       kind, flag: flag.index, flagTeam: flag.team,
       player: player?.id ?? null, team: player?.team ?? 0, name: player?.name ?? '',
+      // Where the flag is once the event has happened: home, or where a dead
+      // carrier let it fall. A room's clients place it from this.
+      position: flag.position.slice(),
     };
     events.push(event);
     return event;
@@ -250,9 +259,10 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
         if (p.team !== base.team || !soldier(p)) continue;
         const carried = carriedBy(p.id);
         if (!carried || dist(p.position, base.position) >= base.radius) continue;
-        emit(events, 'captured', carried, p);
+        const event = emit(events, 'captured', carried, p);
         score(p, SCORE_MSG.flagCapture);
         sendHome(carried);
+        event.position = carried.position.slice();
       }
       // The nearest enemy soldier inside the radius takes the flag.
       const thief = nearest(players, p => p.team !== base.team && (p.team === 1 || p.team === 2)
@@ -276,9 +286,10 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
       const radius = flag.base.flag.radius;
       const own = nearest(players, p => p.team === flag.team && soldier(p), flag.position, radius);
       if (own) {
-        emit(events, 'returned', flag, own);
+        const event = emit(events, 'returned', flag, own);
         score(own, SCORE_MSG.defence);
         sendHome(flag);
+        event.position = flag.position.slice();
         continue;
       }
       const thief = nearest(players, p => p.team !== flag.team && (p.team === 1 || p.team === 2)
@@ -295,11 +306,74 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
     ctf.events = [];
   }
 
+  /**
+   * One event of a law run elsewhere (a room's authority), applied to this
+   * copy: who carries what and where a dropped flag lies. Pays nothing; the
+   * authority's round has paid it already. Returns the flag, or null for an
+   * event this copy cannot place.
+   */
+  function applyEvent(event) {
+    const flag = flags.find(f => f.index === event?.flag) ?? null;
+    if (!flag) return null;
+    if (event.kind === 'stole') {
+      flag.home = false;
+      flag.carrier = event.player;
+      flag.carrierTeam = event.team;
+      flag.respawnIn = flag.base.flag.timeToRespawn;
+    } else if (event.kind === 'dropped') {
+      flag.home = false;
+      flag.carrier = null;
+      flag.carrierTeam = 0;
+      if (Array.isArray(event.position)) flag.position = event.position.map(Number);
+      flag.respawnIn = flag.base.flag.timeToRespawn;
+    } else if (event.kind === 'captured' || event.kind === 'returned' || event.kind === 'home') {
+      sendHome(flag);
+    } else {
+      return null;
+    }
+    return flag;
+  }
+
+  /** Every flag as it stands, for a client joining a room mid-round (the
+   *  room's HELLO): `[{ flag, home, carrier, carrierTeam, position,
+   *  respawnIn }]`. */
+  function snapshot() {
+    return flags.map(f => ({ flag: f.index, home: f.home, carrier: f.carrier,
+                             carrierTeam: f.carrierTeam, position: f.position.slice(),
+                             respawnIn: f.respawnIn }));
+  }
+
+  /** A `snapshot` applied to this copy: the flags where the room's law has
+   *  them when this client joined. A row for no flag of this copy is skipped. */
+  function restore(rows) {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const flag = flags.find(f => f.index === row?.flag);
+      if (!flag) continue;
+      if (row.home) { sendHome(flag); continue; }
+      flag.home = false;
+      flag.carrier = row.carrier ?? null;
+      flag.carrierTeam = flag.carrier != null ? (row.carrierTeam ?? 0) : 0;
+      if (Array.isArray(row.position)) flag.position = row.position.map(Number);
+      flag.respawnIn = Number.isFinite(row.respawnIn) ? row.respawnIn : flag.base.flag.timeToRespawn;
+    }
+  }
+
+  /** A carried flag follows its carrier between law ticks (a room's client
+   *  has no law tick at all): `positionOf(id)` answers `[x, y, z]` or null. */
+  function follow(positionOf) {
+    for (const flag of flags) {
+      if (flag.carrier == null) continue;
+      const at = positionOf(flag.carrier);
+      if (Array.isArray(at)) flag.position = at.slice();
+    }
+  }
+
   /** The flag a team raised, by its base's team. */
   function flagOf(team) {
     return flags.find(f => f.team === team) ?? null;
   }
 
-  Object.assign(ctf, { tick, reset, carriedBy, flagOf, homePosition });
+  Object.assign(ctf, { tick, reset, carriedBy, flagOf, homePosition, applyEvent, follow,
+                       snapshot, restore });
   return ctf;
 }

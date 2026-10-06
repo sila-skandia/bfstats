@@ -161,7 +161,8 @@ folder answers.
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
 | [hud-text-baseline-and-minimap-size](hud-text-baseline-and-minimap-size/README.md) | fix | Why was the minimap too wide and HUD text drawn too high? |
 | [scoreboard-row-colour-and-alignment](scoreboard-row-colour-and-alignment/README.md) | fix | What colours and vertical alignment do retail scoreboard rows use, and why? |
-| [round-end-winner-screen](round-end-winner-screen/README.md) | research | What does retail do when tickets hit zero: winner, delay, reset? |
+| [round-end-winner-screen](round-end-winner-screen/README.md) | build | What does retail do when a round ends: winner, debriefing, medals, cue, delay, reset? |
+| [ctf-mode](ctf-mode/README.md) | build | How does retail Capture the Flag play, and how does the page draw, score and replicate it? |
 | [viewer-demokit-icon](viewer-demokit-icon/README.md) | fix | Why did the ExpPack and Detonator show the medkit icon? |
 | [viewer-map-focus-and-hint-line](viewer-map-focus-and-hint-line/README.md) | fix | Why were controls dead after closing the map, and where did the hint line go? |
 | [multiplay-front-end](multiplay-front-end/README.md) | build | How is the MULTIPLAY server browser drawn from the game's own menu files? |
