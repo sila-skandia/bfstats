@@ -1488,7 +1488,7 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   };
 }
 
-// --- (z2) the pre-game's setTeam (SPAWN-21) -----------------------------------
+// --- (preGame) the pre-game's setTeam (SPAWN-21) -----------------------------------
 // The room loads its pads in the pre-game, so a `spawnDelayAtStart` pad with
 // its own `Object.setTeam` stands its hull at once; one with no side of its
 // own keeps the delay (`deployables.js` `preGameSetTeam`, the page's law).
@@ -1506,8 +1506,7 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   const pQ = attachPeer(core, String(nextTag++));
   sendJson(pQ, MSG_JOIN, { room: 'PREGAME', name: 'Early', team: 1, level: 'pregame' });
   const room = core.room('PREGAME');
-  results.z2 = room.pads.records.map(r => ({
-    template: r.spawn.vehicle, live: r.live.size, waiting: r.pad.delay > 0 }));
+  results.preGame = room.pads.records.map(r => ({ template: r.spawn.vehicle, live: r.live.size }));
 }
 
 console.log(JSON.stringify(results));
