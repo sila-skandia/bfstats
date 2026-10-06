@@ -471,3 +471,42 @@ export function wheelFrictionOpts(part) {
 }
 const _axle = [0, 0, 0];
 const _frictionOpts = { axle: _axle, engineSurfaceSpeed: [0, 0, 0] };
+
+/**
+ * A tracked drive meets the ground at `radius` below each axle, the drawn
+ * wheel's size (`measureWheelRadius`, 0.255 m on a Sherman). The parked body
+ * meets it at the wheel's own collision probe: `checkVsTerrain` (0x0825a960)
+ * drops a spring part's col0 vertices on the ground, vertex 0 alone when the
+ * layer has three or fewer (`body-ground.js terrainContact`), and a Sherman
+ * road wheel's probe sits 0.304 m under its axle. With the same springs the
+ * two rest 0.049 m apart, so a Sherman sank that much when it was boarded
+ * and rose it again when it was left. The drive is handed each wheel's probe
+ * depth (`wheel.contactDepth`), matched to its spring part by the axle's
+ * place in the hull; the drawn radius still turns the wheel. The page
+ * (`hull-bodies.js` `adoptDrivenBody`) and the room server
+ * (`server/level-instance.mjs`) both call it on boarding.
+ */
+export function wheelContactDepths(vehicle, spec) {
+  if (!vehicle?.wheels?.length || !('radius' in vehicle.wheels[0])) return;
+  const springs = (spec?.parts ?? []).filter(p => p.kind === 'spring' && p.shape?.layers?.[0]?.vertices?.length);
+  for (const wheel of vehicle.wheels) {
+    if (!wheel.rest) continue;
+    let best = null, bestD = Infinity;
+    for (const part of springs) {
+      const d = Math.hypot(part.offset[0] - wheel.rest.x, part.offset[2] - wheel.rest.z);
+      if (d < bestD) { bestD = d; best = part; }
+    }
+    if (!best || bestD > 0.25) continue;
+    const v = best.shape.layers[0].vertices;
+    const count = v.length / 3 <= 3 ? 1 : v.length / 3;
+    const rot = best.rot;
+    let low = Infinity;
+    for (let i = 0; i < count; i++) {
+      const j = i * 3;
+      const y = best.offset[1] + v[j] * rot[0][1] + v[j + 1] * rot[1][1] + v[j + 2] * rot[2][1];
+      if (y < low) low = y;
+    }
+    const depth = wheel.rest.y - low;
+    if (depth > 0.05 && depth < 2) wheel.contactDepth = depth;
+  }
+}

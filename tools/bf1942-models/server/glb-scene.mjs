@@ -201,13 +201,26 @@ export function buildSceneTree(gltf, bin) {
     if (!prim) continue;
     const obj = made[i];
     const extras = obj.userData;
+    // A wheel's drawn mesh too: a land drive rolls each wheel on the radius
+    // measured off it (`tracked-vehicle.js` `measureWheelRadius`), and an
+    // empty geometry measured -Infinity, which left every room's tank and
+    // jeep with no wheel on the ground at all, sat on its failsafe.
     const want = Boolean(
       extras.kind === 'terrain' || extras.collision
-      || obj.parent?.userData?.collision || prim.extras?.collision);
+      || obj.parent?.userData?.collision || prim.extras?.collision
+      || underSpring(obj));
     obj.isMesh = true;
     obj.geometry = want ? geometryFor(prim) : new THREE.BufferGeometry();
     if (extras.kind === 'terrain') terrainTiles.push(obj);
   }
   root.updateMatrixWorld(true);
   return { root, terrainTiles };
+}
+
+/** A `Spring` node (a wheel) or a node under one. */
+function underSpring(obj) {
+  for (let p = obj; p; p = p.parent) {
+    if (p.userData?.templateKind === 'Spring') return true;
+  }
+  return false;
 }
