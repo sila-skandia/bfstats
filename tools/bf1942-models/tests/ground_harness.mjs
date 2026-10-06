@@ -2312,6 +2312,47 @@ function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,
 }
 
 
+// --- a rear-steered hull: the Forklift's arrangement on the Willy's chassis -
+//
+// DC's Forklift drives its front axle and steers its rear one, whose two
+// bundles declare `direction -1` (`setAcceleration -50/0/0`): the same right
+// stick turns them the other way, and the truck goes right. Built here by
+// swapping the Willy's axles: the steering bundles move aft and take the
+// reversed direction, the driven springs move forward.
+function rearSteerWilly() {
+  const root = willyNode();
+  const engine = root.getObjectByName('WillyEngine');
+  for (const node of [...engine.children]) {
+    if (node.userData?.templateKind === 'RotationalBundle') {
+      node.position.z = 1.21 + 0.25;            // the rear axle, in the engine's frame
+      node.userData = { ...node.userData, rig: { ...node.userData.rig,
+        axes: { yaw: { ...node.userData.rig.axes.yaw, direction: -1 } } } };
+      const spring = node.children[0];
+      spring.userData = { ...spring.userData, physics: { ...spring.userData.physics, grip: 'c_PGFRollGrip' } };
+    } else if (node.userData?.templateKind === 'Spring') {
+      node.position.z = -1.0 - 0.25 + 0.25;     // the front axle
+      node.userData = { ...node.userData, physics: { ...node.userData.physics, grip: 'c_PGFEngineGrip' } };
+    }
+  }
+  return root;
+}
+
+{
+  const turn = (node) => {
+    const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 1);
+    drive(truck, 3, holding({ c_PIThrottle: 0.3 }));
+    const f0 = forwardOf(truck);
+    drive(truck, 3, holding({ c_PIThrottle: 0.3, c_PIYaw: 1 }));
+    const f1 = forwardOf(truck);
+    // Positive is a turn to the right (x toward the nose's right).
+    return round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1);
+  };
+  results.steerDirection = { front: turn(willyNode()), rear: turn(rearSteerWilly()) };
+}
+
+
 // --- an amphibian: a tank on land, a boat afloat (`amphibious.js`) ----------
 //
 // Desert Combat's BMP-2 as its glb carries it: the Sherman fixture's tracks on

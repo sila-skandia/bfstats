@@ -32,7 +32,7 @@
 // replaceable without anything outside noticing.
 
 import * as THREE from 'three';
-import { Vehicle } from './vehicle-base.js';
+import { Vehicle, axisAngle } from './vehicle-base.js';
 import { GRAVITY } from './physics.js';
 import { WILLYS } from './ground-specs.js';
 import {
@@ -251,6 +251,7 @@ export class GroundVehicle extends Vehicle {
       const rest = new THREE.Vector3().setFromMatrixPosition(local);
       let steered = false;
       let steerMax = this.spec.maxSteer;
+      let steerAxis = null;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
         // A `RotationalBundle` ancestor only, the same guard `TrackedVehicle`
         // carries. A car's Engine was assumed never to bind yaw; vanilla's
@@ -269,11 +270,17 @@ export class GroundVehicle extends Vehicle {
           steered = true;
           const span = Math.max(Math.abs(yaw.min ?? 0), Math.abs(yaw.max ?? 0));
           if (span > 0) steerMax = span;
+          steerAxis = yaw;
           break;
         }
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
       wheel.steerMax = steerMax;
+      // The bundle's own yaw axis: its direction and its two locks. A
+      // forklift steers its REAR axle, whose bundles declare `direction -1`
+      // (`setAcceleration -50/0/0`), so the same `c_PIYaw` turns them the
+      // other way; read per wheel, as `applyRig` poses each bundle.
+      wheel.steerAxis = steerAxis;
       // Each wheel's own rolling radius off its own mesh, as `TrackedVehicle`
       // measures it: a BM-21's front tyres are 0.53 m and its rears 0.59, a
       // Kubelwagen's 0.34 against the Willy's 0.364 every car used to share.
@@ -570,7 +577,15 @@ export class GroundVehicle extends Vehicle {
       // The tyre's own frame: forward steered or straight, lateral to its
       // right. Rotation about +Y, so a negative steer angle points the wheel
       // starboard — the right turn the sign convention above promises.
-      const steer = steerNorm * (wheel.steerMax ?? k.maxSteer) * DEG;
+      // The wheel's angle is its own bundle's, the pose `applyRig` draws: the
+      // engine reads the axle off the wheel node's transform, which carries the
+      // bundle's rotation (`addFriction` row 0, collision-response.md section
+      // 8), so the physics turns each axle exactly as far, and as the way, as
+      // its bundle does. `axisAngle` is positive for a left turn; the tyre
+      // frame below wants a right turn negative.
+      const steer = wheel.steerAxis
+        ? -axisAngle(wheel.steerAxis, steerInput) * DEG
+        : steerNorm * (wheel.steerMax ?? k.maxSteer) * DEG;
       const dir = this._dir.set(-Math.sin(steer), 0, -Math.cos(steer));
       if (!wheel.steered) dir.set(0, 0, -1);
       const lat = this._lat.crossVectors(dir, UP);
