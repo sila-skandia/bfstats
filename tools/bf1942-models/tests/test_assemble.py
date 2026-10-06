@@ -3651,6 +3651,57 @@ ObjectTemplate.setMaxRotation 70/5/0
                           "HeliRearCamera": False},
                          {name: view["toggleMouseLook"] for name, view in views.items()})
 
+    def test_the_look_carries_each_axis_sign_and_limits(self) -> None:
+        # MLK-13: the held look's sense is the camera's pitch acceleration
+        # sign times the invert box; vanilla's BF109 is one of the positive
+        # pilots, the Spitfire one of the negative. A camera that binds no
+        # look axis has no `look`.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Test/Objects.con", """
+ObjectTemplate.create PlayerControlObject Plane
+ObjectTemplate.addTemplate BF109Camera
+ObjectTemplate.addTemplate SpitfireCamera
+ObjectTemplate.addTemplate FixedCamera
+
+ObjectTemplate.create Camera BF109Camera
+ObjectTemplate.setMinRotation -180/-50/0
+ObjectTemplate.setMaxRotation 180/80/0
+ObjectTemplate.setMaxSpeed 7000/7000/0
+ObjectTemplate.setAcceleration 5000/5000/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create Camera SpitfireCamera
+ObjectTemplate.setMinRotation -180/-50/0
+ObjectTemplate.setMaxRotation 180/80/0
+ObjectTemplate.setMaxSpeed 7000/7000/0
+ObjectTemplate.setAcceleration -5000/-5000/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create Camera FixedCamera
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Plane", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Plane", report)
+        document = glb_document(builder.build([node]))
+        views = {n["name"]: n["extras"]["cameraView"] for n in document["nodes"]
+                 if "cameraView" in (n.get("extras") or {})}
+        bf109 = views["BF109Camera"]["look"]["axes"]["pitch"]
+        self.assertEqual(("c_PIMouseLookY", -50.0, 80.0, 1.0, 5000.0),
+                         (bf109["input"], bf109["min"], bf109["max"],
+                          bf109["direction"], bf109["acceleration"]))
+        spitfire = views["SpitfireCamera"]["look"]["axes"]
+        self.assertEqual((-1.0, -1.0), (spitfire["pitch"]["direction"],
+                                        spitfire["yaw"]["direction"]))
+        self.assertNotIn("look", views["FixedCamera"])
+        self.assertTrue(all("rig" not in (n.get("extras") or {})
+                            for n in document["nodes"] if n["name"].endswith("Camera")))
+
 
 if __name__ == "__main__":
     unittest.main()

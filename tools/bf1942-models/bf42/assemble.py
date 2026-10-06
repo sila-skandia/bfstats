@@ -3068,6 +3068,13 @@ class Assembler:
             # Every camera says it, false included: the template's constructor
             # seeds the byte 0, so a missing field only means an older asset.
             extras["cameraView"]["toggleMouseLook"] = bool(template.toggle_mouse_look)
+            # The look itself: each bound axis's input, limits, gain and signed
+            # acceleration, the camera template's own `rig()`. The node never
+            # carries `rig` (no mesh, no children), yet the held look's sense on
+            # screen is this pitch `direction` times the profile's invert box
+            # (MLK-13, GUN-2), and the shipped pilots' cameras differ in it.
+            if (look := template.rig()) is not None:
+                extras["cameraView"]["look"] = look
             if template.outside_hud_offset is not None:
                 # The nose cam's stand-off from this Camera, Z-mirrored into
                 # glTF like every other position the exporter writes, so the
