@@ -1379,6 +1379,15 @@ class TrackedVehicleTests(unittest.TestCase):
         # The drag radius is the box's, so a long truck's is a long truck's.
         self.assertGreater(chassis["scud"]["boundingRadius"], 3 * chassis["willy"]["boundingRadius"] / 2)
 
+    def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
+        # The Forklift's rear bundles declare direction -1: each wheel turns as
+        # its own bundle does, so right stick is a right turn for both trucks
+        # (it was a left one for the rear-steered, every wheel taking the front
+        # axle's sense).
+        turn = self.results["steerDirection"]
+        self.assertGreater(turn["front"], 30)
+        self.assertGreater(turn["rear"], 30)
+
     # --- land hulls in the sea ---------------------------------------------
 
     def test_a_land_hull_sinks_to_the_bed(self) -> None:
