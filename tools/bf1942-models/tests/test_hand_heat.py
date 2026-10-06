@@ -87,9 +87,12 @@ class HandHeatTests(unittest.TestCase):
         self.assertEqual(50, hold["firstRefused"]["rounds"])
 
     def test_after_the_lockout_a_held_trigger_fires_one_round_a_lockout(self) -> None:
-        # Nothing drains through the 2 s lockout, so the barrel comes out of
-        # it still at 1 and over; a tick or two under 1 buys one round, which
-        # puts it back over (GUN-14, GUN-15).
+        # Nothing drains through the 2 s lockout (GUN-15), so the barrel comes
+        # out of it still at 1 and over. Here a tick or two under 1 buys one
+        # round, which puts it back over: FireState's own rate, not the
+        # engine's. The engine restarts the lockout on every pull refused at
+        # 1 or more (GUN-14), so a held trigger gets one tick of cooling a
+        # lockout and fires about half this often (the feature README, "Open").
         for case in ("m249", "pkm"):
             hold = self.results["hold"][case]
             self.assertAlmostEqual(0.5, hold["lateRate"], delta=0.11, msg=case)
