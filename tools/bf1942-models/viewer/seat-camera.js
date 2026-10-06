@@ -460,8 +460,8 @@ export function createSeatCamera(page) {
     // The world has already run this function's old sim half (world.js
     // #vehicleTick) with its own copy of every rule and comment above: the
     // HP-15 gate is read and `driving`/`flying` below reads its answer; the
-    // throttle latch, the `axisToward` rudder and stick spring (STICK_RATE /
-    // STICK_RETURN now live beside it in world.js, unchanged), the triggers,
+    // throttle latch, the rudder and stick (straight from the control map
+    // since 2026-10-06, no spring; world-vehicle-tick.js), the triggers,
     // `aircraft.integrate`, `occupancy.applyTurrets`, the wreck-safe pump/aim
     // of the turret (the look stage is pumped once a frame in frame(), the rig
     // is aimed and stepped once per world tick — the page's own per-tick

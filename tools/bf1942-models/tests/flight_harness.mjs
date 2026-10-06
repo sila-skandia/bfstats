@@ -1662,9 +1662,9 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       });
       if (out.arrived === null && r.arrived) out.arrived = round(t, 2);
       if (out.landed === null && r.landed) out.landed = round(t, 2);
-      // The world tick's rudder spring (`axisToward`: 2.4/s out, 3.2/s back).
-      const rate = (r.rudder === 0 ? 3.2 : 2.4) / 30;
-      rudder += Math.max(-rate, Math.min(rate, r.rudder - rudder));
+      // The world tick writes the law's rudder straight onto the hull, as it
+      // does the stick (no spring since 2026-10-06, MLK-10).
+      rudder = r.rudder;
       heli.setInput('c_PIThrottle', r.collective);
       heli.setInput('c_PIYaw', rudder);
       heli.setInput('c_PIRoll', r.roll);
@@ -1723,6 +1723,26 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
                       { angle: 7, speed: 0 }, 1, 1);
   results.clipAngle = { floor, up, reversed, latchFloor, latchRaised, latchHeld, latchLowered,
                         servoSigned, resetSigned, wrapped, frozen };
+}
+
+// --- a surface servo stops at full deflection -------------------------------
+//
+// A pilot's mouse is a rate past 1 (MLK-7, up to the wire's +-16), and a
+// vectored airframe's channels reach the hull unclipped, Wings included (a
+// Harrier's ailerons and pitch/roll wings, a helicopter's tail flap). The
+// part's angle stops at its bound (GUN-2), so the servo does too.
+{
+  const plane = aircraft({ speed: 80, altitude: 300 });
+  plane.setInput('c_PIRoll', 3.46);
+  plane.setInput('c_PIPitch', -3.47);
+  for (let i = 0; i < 90; i++) plane.integrate(1 / 30);
+  const over = {};
+  for (const surface of plane.surfaces) {
+    const input = surface.axis?.input;
+    if (input !== 'c_PIRoll' && input !== 'c_PIPitch') continue;
+    over[surface.key] = round(plane.state.surfaces.get(surface.key) ?? 0, 4);
+  }
+  results.surfaceClip = over;
 }
 
 // --- the extracted glbs, when this PC has them --------------------------------

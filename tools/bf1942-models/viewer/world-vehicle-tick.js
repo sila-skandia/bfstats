@@ -71,7 +71,8 @@ export function restoreLift(vehicle) {
 }
 
 /** A stick channel as an aircraft's parts take it (the air branch below): a
- *  vectored airframe's racks clip themselves, a fixed-wing surface gets +-1. */
+ *  vectored airframe's racks clip themselves (and every surface servo clips at
+ *  +-1, `advanceSurfaces`), a fixed-wing surface gets +-1 here too. */
 function surfaceInput(vehicle, value) {
   return vehicle.vectored ? value : Math.max(-1, Math.min(1, value));
 }
@@ -188,12 +189,13 @@ export function vehicleTick(world, player, dt, integrators) {
         //
         // The engine laws clip at the part: an `automaticReset` bundle ramps
         // to `input * maxRotation` and stops at its bounds (GUN-2), so a
-        // vectored airframe takes the value as it is, up to the wire's +-16.
-        // A fixed-wing surface here is a position servo on a -1..1
-        // deflection with no clip of its own (`vehicle-base.js`
-        // `advanceSurfaces`), so it gets the clip as +-1: for an
-        // `automaticReset` wing the same motion exactly, since an input past 1
-        // drives the angle to its bound at the same rate. Not modelled:
+        // vectored airframe takes the value as it is, up to the wire's +-16:
+        // its racks clip themselves (`clipAngleStep`), and its Wings and
+        // flaps, like every surface, are servoed on a -1..1 deflection that
+        // `vehicle-base.js` `advanceSurfaces` clips. A fixed-wing surface gets
+        // the clip here as well, as +-1: for an `automaticReset` wing the same
+        // motion exactly, since an input past 1 drives the angle to its bound
+        // at the same rate. Not modelled:
         // `rememberExcessInput`'s backlog (GUN-2), which on vanilla's elevator
         // Wings spends a mouse flick's excess over later ticks.
         player.stick.roll = input.roll;

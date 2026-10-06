@@ -381,14 +381,25 @@ class StickTests(_Harness):
         self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["heldLook"]["yaw"], places=4)
         self.assertEqual(0, s["heldStick"])
 
-    def test_the_held_look_takes_the_same_invert(self) -> None:
-        # The box is on the device's Y, so the look's vertical turns round with
-        # the stick's: 30 px toward the player looks up the other way.
+    def test_the_held_look_is_the_cameras_sign_times_the_box(self) -> None:
+        # The box is on the device's Y (MLK-8), and the Camera turns by
+        # sign(acceleration) x input (GUN-2). Nearly every shipped pilot camera
+        # is negative (MLK-13), which undoes the shipped box: with it on, 30 px
+        # toward the player looks down as it always did; off, it looks up.
         s = self.results["stick"]
-        self.assertAlmostEqual(30 * HEAD_SENS_DEG, s["heldLook"]["pitch"], places=4)
-        self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["heldPitchUninverted"], places=4)
+        self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["heldLook"]["pitch"], places=4)
+        self.assertAlmostEqual(30 * HEAD_SENS_DEG, s["heldPitchUninverted"], places=4)
         # A finger on a touch screen is not the mouse.
         self.assertAlmostEqual(-30 * HEAD_SENS_DEG, s["touchPitch"], places=4)
+
+    def test_the_touch_look_zone_never_flies_the_aircraft(self) -> None:
+        # A pilot's seat is not touchFlying (page-input.js `syncTouchFlying`),
+        # so with no key the look zone's finger drag reaches neither the
+        # stick's stage nor the view, as before the mouse flew.
+        t = self.results["stick"]["touchZone"]
+        self.assertEqual({"x": 0, "y": 0}, t["pending"])
+        self.assertEqual({"yaw": 0, "pitch": 0}, t["look"])
+        self.assertEqual(0, t["roll"])
 
     def test_the_owners_joystick_profile_binds_no_mouse_to_the_stick(self) -> None:
         self.assertEqual({"roll": 0, "pitch": 0}, self.results["stick"]["owner"])

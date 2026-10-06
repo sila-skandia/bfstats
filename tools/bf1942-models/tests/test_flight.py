@@ -938,6 +938,14 @@ class FlightModelTests(unittest.TestCase):
         self.assertEqual(-170, c["wrapped"])
         self.assertEqual(7, c["frozen"])
 
+    def test_a_surface_servo_stops_at_full_deflection(self) -> None:
+        # A mouse rate of 3.46 on the stick (MLK-7), held for 3 s: every
+        # aileron and elevator servo ends at its bound, +-1, not at 3.46.
+        over = self.results["surfaceClip"]
+        self.assertTrue(over)
+        for key, value in over.items():
+            self.assertEqual(1.0, abs(value), key)
+
     def test_the_extracted_desert_combat_helicopters_fly(self) -> None:
         real = self.results.get("realGlbs")
         if real is None:
