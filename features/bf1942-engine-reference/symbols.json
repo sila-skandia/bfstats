@@ -9159,6 +9159,15 @@
    "note": "lnxded mov dword [edi+0x4], 0x2090400 inside BObject<ICompositeObject> ctor. Establishes that compositeObject byte +0x7 bit 0x4 starts clear. Client equivalents embed the same immediate at 0x0050dc84 / 0x0050e0a4 / 0x0050eba4."
   },
   {
+   "address": "0x08193390",
+   "name": "dice::ref2::world::BObject<dice::ref2::world::ICompositeObject>::updateFlags(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded (weak). Sets/clears object flags at +0x4 and tells the ObjectManager (mObjectManagerImpl): newly set 0x1000 -> vt+0xec addObjectToUpdate, cleared 0x1000 -> vt+0xf0 removeObjectFromUpdate; 0x800 -> vt+0xf4/+0x104; bit 1 with 0x2000000 set and 0x8 clear -> vt+0x68. Ledger PHY-18."
+  },
+  {
    "address": "0x081935c0",
    "name": "BPlayerObject<IPlayerObject>::handleMessage(TemplateMessage, IPlayer*)",
    "kind": "function",
@@ -9166,6 +9175,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-damage",
    "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
+  },
+  {
+   "address": "0x0819bd20",
+   "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Inserts the object into the update map at ObjectManager+0x3c (keyed by object +0x48), which updateObjects 0x0819be10 walks calling handleUpdate (vt+0x54). Reached through BObject::updateFlags 0x08193390 when flag 0x1000 is newly set; RotationalBundle's ctor 0x081d73d0 sets it, so every Engine (a projectile's included) is updated every tick. Ledger PHY-18."
   },
   {
    "address": "0x0819be10",
@@ -9418,6 +9436,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-fhsw-random-kit-items",
    "note": "lnxded. calcStringHashValueNoCase 0x081d5f47 + strcasecmp 0x081d5f88: template names are case-blind. Ledger LOAD-5."
+  },
+  {
+   "address": "0x081d73d0",
+   "name": "dice::ref2::world::RotationalBundle::RotationalBundle(dice::ref2::world::RotationalBundleTemplate const*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Bundle ctor, then zeroes the axis registers +0x104..+0x138, +0x13c = 1.0, byte +0x140 = 1, +0x141 = 0, and updateFlags(0x1000) then updateFlags(8): every RotationalBundle and Engine joins the ObjectManager update map. Ledger PHY-18."
   },
   {
    "address": "0x081d7490",
@@ -10482,6 +10509,15 @@
    "note": "lnxded. h = 0.25*dt (fld [0x086c08ac]; fmul [ebp+0xc] at 0x082560c8), then FOUR semi-implicit sub-steps v += a*h; p += v*h, so a tick's total is Delta-v = a*dt. It then ZEROES the acceleration accumulator at 0x082562aa-0x082562b0 ([ebx+0x1c] = [esi+0x4] = [esi+0x8] = 0), which is the first of the three locks that make the jump exactly one tick. Client twin 0x00578aa0 region; see physics.md section 3."
   },
   {
+   "address": "0x08256620",
+   "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtAbsolutePosition(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Adds the vector to the accumulator +0x1c..+0x24 and ignores the position: a point body takes no torque from its children (a point-physics rocket's nose stays where it was launched). Ledger PHY-21."
+  },
+  {
    "address": "0x08256650",
    "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtRelativePosition(Vec3 const&, Vec3 const&)",
    "kind": "function",
@@ -11299,6 +11335,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded. template+0x300 > template+0x304 -- strict greater-than, not equality as first read. Fields' meaning still unestablished."
+  },
+  {
+   "address": "0x0828d4e0",
+   "name": "dice::ref2::world::FireArmsTemplate::FireArmsTemplate()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-rocket-flight",
+   "note": "lnxded. Writes velocity +0x2e8 = 0x43480000 = 200.0 at 0x0828d808 (the twin ctor 0x0828d8c0 at 0x0828dbe8); makeScript 0x0828e3b0 prints +0x2e8 as 'ObjectTemplate.velocity '. A FireArms that declares no velocity launches at 200 m/s. Ledger FA-3."
   },
   {
    "address": "0x0828dde0",
