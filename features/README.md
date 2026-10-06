@@ -143,6 +143,7 @@ folder answers.
 | [bot-body-animation](bot-body-animation/README.md) | build | Why did bots snap prone, and how do their bodies show stance, fire, reload? |
 | [bot-friendly-fire](bot-friendly-fire/README.md) | build | Do retail rounds hit teammates, and how is friendly damage priced? |
 | [bot-stalemates](bot-stalemates/README.md) | fix | Why did bot tanks and soldiers stop fighting at Bocage's bridges? |
+| [bot-desert-combat](bot-desert-combat/README.md) | fix | Why could bots not board DC's A-10 variants or stood frozen in Change, and which DC hulls have no AI? |
 | [instant-battle-bot-settings](instant-battle-bot-settings/README.md) | build | How do the Instant Battle bot controls map onto botCount and botSkill? |
 
 ### Game modes, spawns, HUD and menus

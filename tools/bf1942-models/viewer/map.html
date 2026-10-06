@@ -229,6 +229,7 @@ import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
 import { createBotReferee } from './bot-referee.js';
 import { createBotRounds } from './bot-rounds.js';
+import { fireArmsBarrels, fireArmsHeat } from './bot-barrels.js';
 import { createBotUnits } from './bot-units.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { createBotNamer, levelNameLists, loadBotNames } from './bot-names.js';
@@ -1778,7 +1779,11 @@ function botWeaponData(name) {
       // `vehicleHits.botRoundDamage` (ledger DMG-3).
       const weapon = json?.extras?.weapon ?? null;
       const round = fireArms?.projectile;
-      return weapon && round && typeof round === 'object' ? { ...weapon, round } : weapon;
+      // Its barrels' turns, which every round of a pull flies down (bot-barrels.js),
+      // and its heat words (bot-referee.js `heatOf`).
+      const barrels = fireArmsBarrels(json);
+      return weapon ? { ...weapon, ...(round && typeof round === 'object' ? { round } : {}), barrels,
+                        heat: weapon.heat ?? fireArmsHeat(fireArms) } : weapon;
     })
     .catch(() => null);
   botWeaponDataCache.set(name, p);
