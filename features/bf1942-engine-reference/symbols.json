@@ -3705,6 +3705,15 @@
    "note": "Client ctor(ParticleSystemTemplate&). Installs vtable 0x00914c14, keeps the template at +0x8, links itself into a global particle-system list (0x009c961c) and, when the template's byte +0x618 is set, a second one (0x009c9610). lnxded twin 0x083a8e60."
   },
   {
+   "address": "0x00610f80",
+   "name": "io::PlayerInput::fromControlMap",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT. For ids 0..0x36: trigger state (map vt+0x64) or axis value (vt+0x5c) straight into PlayerInput::set 0x00407dc0, and isAxisValueAnalogue (vt+0x60) into the +0xe8/+0xec mask via 0x00610db0, which the packer never sends. Ledger MLK-7, MLK-12."
+  },
+  {
    "address": "0x00611690",
    "name": "dice::anim::Skeleton::transform(Mat4 const*, int)",
    "kind": "function",
@@ -3811,6 +3820,33 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, vtable 0x0091516c +0x18 (function created in Ghidra 2026-09-16). If not yet built (+0x38) builds via 0x00618020 (which loads the sprite texture named at +0x58c); then allocates 0xc8 bytes (allocator 0x009c9600) and constructs geom::ParticleSystem 0x0060afe0. FUN_00748870 runs on both the success and failure paths with a stack temporary, so it is a cleanup, not a registration. lnxded twin 0x083aa650."
+  },
+  {
+   "address": "0x0061b6a0",
+   "name": "io::ControlMap::povToAxis",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT. Reads the device's POV angle (vt+0x5c, -1 centred) and ramps the mapping at the same rise/fall times. Matched by shape to lnxded 0x083f0dc0."
+  },
+  {
+   "address": "0x0061b850",
+   "name": "io::ControlMap::buttonsToAxis",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT twin of lnxded 0x083f2080. Key pair: += dt/[map+0x40] (rise), -= dt/[map+0x40], else |v| -= dt/[map+0x44] (fall). Ledger MLK-10."
+  },
+  {
+   "address": "0x0061bef0",
+   "name": "io::ControlMap::update",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT twin of lnxded 0x083f1d70. Per channel: primary AxisMapping resolved into AxisRemap+0xb4, secondary (+0x58) resolved, kept only when |secondary| > |primary| (fcompp 0x0061bf63). Ledger MLK-9."
   },
   {
    "address": "0x0062b2f0",
@@ -4659,6 +4695,15 @@
    "note": "Game.setCrossHairSize: get/set 0x006b50d0 on [[0x00a5f1a8]+0x1c]+0x40, the CrossHair group's Deviation factor (ctor default 5.0, shipped Game/Init/Menu.con 5). Ledger XHIT-15."
   },
   {
+   "address": "0x006bc4e0",
+   "name": "Game__setAirKeyboardSensitivity::executeObjectMethod",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT. -> 0x006c57c0 -> the Air ControlSettings ([ecx+0xc]) -> 0x00803640, a bare store to +0x18. LandSea twin 0x006bc1e0 -> 0x006c5850. Nothing reads +0x18 for play. Ledger MLK-11."
+  },
+  {
    "address": "0x006bc9e0",
    "name": "Game__setSkirmishAiSkill::executeObjectMethod",
    "kind": "function",
@@ -4666,6 +4711,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "CLIENT. Writes SkirmishSettings+0x64 -- which FUN_006dd910 never reads. Siblings: setSkirmishNrOfLives 0x006bcce0 (+0x70), setSkirmishDifficulty 0x006bd1d0 (+0x78), setCampaignAiSkill 0x006bd370 (CampaignSettings+0x48), setCampaignNrOfLives 0x006bd670 (+0x54). Ledger AI-21."
+  },
+  {
+   "address": "0x006c55f0",
+   "name": "ControlSettings::applyMouseSensitivity",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT. (bool invert, float s): invert -> mouse device vt+0x30 setInvertAxis(1, invert) at 0x006c5615-0x006c561c; s -> setAxisScale(0/1, 5s+0.1). Called per vehicle category at 0x006ae639 (VCAir: the Air pair). Ledger MLK-8."
   },
   {
    "address": "0x006c57e0",
@@ -6736,6 +6790,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
    "note": "Client, 8 slots (the next word is FLT_EPSILON). +0x18 = createGeometry 0x006189a0, the same dispatch index at which the server's vtable for ParticleSystemTemplate (0x08746f00 + 8) holds createGeometry()."
+  },
+  {
+   "address": "0x009153d8",
+   "name": "vtable io::ControlMap",
+   "kind": "vtable",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "CLIENT. +0x50 reset 0x0061bc90, +0x54 setButtonRiseTime 0x004a1240 (folded setter of +0x40), +0x58 setButtonFallTime 0x007505d0 (+0x44), +0x5c getAxisValue 0x0061bde0, +0x60 isAxisValueAnalogue 0x0061be20, +0x64 getTriggerState 0x0061be60, +0x6c update 0x0061bef0. The ctor writes it at 0x0061c2e5 and seeds +0x40/+0x44 from ds:0x009153bc = 0.001."
   },
   {
    "address": "0x00916738",
@@ -12523,6 +12586,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. Registers the c_GI* and c_PI* console constants one addConstantHelper call each; the full 55-entry PlayerInputMap enum was decoded here by two independent readers. Ledger AI-2."
+  },
+  {
+   "address": "0x0840cd70",
+   "name": "io::ConsoleClass392::executeObjectMethod",
+   "kind": "function",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-input",
+   "note": "lnxded. ControlMap.addAxisToAxisMapping <int trigger> <flags> <axis> <bool invert> [<bool secondary>] -> the active map vt+0x28 (addAxisMapping 0x083f1030); a 4-arg line pushes 0 (0x0840ce18). Ledger MLK-9."
   },
   {
    "address": "0x08417ae0",
