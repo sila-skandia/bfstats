@@ -587,10 +587,16 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // A round that declares `setHasPointPhysics 0` is a full `PhysicsNode`
     // (`SimpleObjectTemplate::setPhysicsNodeComponent` `0x081dd490`), and
     // every live `PhysicsNode` drags by the box law (PHY-4), not the point
-    // body's sphere: its geometry box, measured here once per group. A round
-    // that declares nothing is a point body (the `ProjectileTemplate`
-    // constructor sets the flag, collision-response.md section 10).
-    dragBox: spec.hasPointPhysics === false ? bodyBox(group) : null,
+    // body's sphere: its geometry box. That is the round's own `.sm` header
+    // box, which the exporter writes as `spec.box` (`assemble.py`
+    // `_geometry_box`, PHY-22), not the drawn body's extent; a glb baked
+    // before it carried the word falls back to the drawn body, measured here
+    // once per group. A round that declares nothing is a point body (the
+    // `ProjectileTemplate` constructor sets the flag, collision-response.md
+    // section 10).
+    dragBox: spec.hasPointPhysics === false
+      ? (Array.isArray(spec.box) && spec.box.length === 3 ? spec.box : bodyBox(group))
+      : null,
     // The round's own motor, when it carries a `c_ETRocket` Engine
     // (`rocket-motor.js`): the rockets, and nothing else in the game.
     motors: rocketMotorsOf(spec),

@@ -42,7 +42,8 @@ const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
  *  the engine's own `3.14f` for pi (`ds:0x86d1384`, read at `0x082545b8`). */
 const BOX_AREA = 3.14 * 0.25;
 /**
- * The most a full physics body's summed acceleration can be in one tick, m/s^2.
+ * The most a full physics body's summed acceleration can be in one tick, m/s^2
+ * (ledger COL-8, collision-response.md section 4.2).
  * `PhysicsNode::updatePositionalPhysics` (lnxded `0x08253570`) scales the
  * accumulator `+0x28` back to 1000 when its squared length passes `1e6`, before
  * it integrates it, and everything that pushes the body this tick is in it: the

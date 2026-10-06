@@ -428,6 +428,33 @@ function speedsPerFrame(name, velocity, frames, frame) {
   }
   return speeds;
 }
+// The three motor-carried rounds the lab's Desert Combat recordings caught in
+// flight, launched as they were and given the drag box the exporter now
+// writes (`spec.box`, the round's `.sm` header box): the MLRS on DC Bocage
+// (100 m/s, 13.6 degrees up, 24 m), an AIM-9 off an F-15C (512 m/s, 18.7
+// degrees, 261 m) and an AA-10 off a MiG-29 (520 m/s, level, 296 m).
+function boxed(round, box) {
+  const copy = JSON.parse(JSON.stringify(round));
+  copy.projectile.box = box;
+  return copy;
+}
+const RECORDED_MARKS = [0.5, 1, 1.5, 2, 3, 5, 10];
+out.recorded = {
+  MLRSRocket: fly('MLRSRocket', 13.6, {
+    round: boxed(ROUNDS.MLRSRocket, [0.268, 0.254, 0.296]), height: 24,
+    frame: 1 / 30, marks: RECORDED_MARKS }).speedAt,
+  Aim9: fly('Aim9', 18.7, {
+    round: { ...boxed(motorRound('Aim9'), [0.387, 0.637, 2.955]), velocity: 512 },
+    height: 261, frame: 1 / 30, marks: RECORDED_MARKS }).speedAt,
+  'AA-10': fly('AA-10', 0, {
+    round: { ...boxed(motorRound('AA-10'), [0.607, 0.607, 3.871]), velocity: 520 },
+    height: 296, frame: 1 / 30, marks: RECORDED_MARKS }).speedAt,
+  // The AT-2 draws 1.44 m across; its header box is 0.25 m.
+  AT2Rocket: fly('AT2Rocket', 0, {
+    round: boxed(motorRound('AT2Rocket'), [0.251, 0.242, 1.6]), height: 60,
+    marks: RECORDED_MARKS }).speedAt,
+};
+
 out.lid = {
   aa10: speedsPerFrame('AA-10', 520, 8, 1 / 30),
   at2At30: speedsPerFrame('AT2Rocket', 350, 150, 1 / 30),
