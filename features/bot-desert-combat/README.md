@@ -353,3 +353,39 @@ over 31 periods of four ticks (4.13 s), an M249's rounds are 0.1 s apart, a
 Thompson still fires 10 a second, and a bot's M249 holds at its 48th round,
 where the heat law first reaches 0.8.
 
+## 10. A bot's round lands on one point of its cone
+
+**What was wrong.** `bot-referee.js rollCone` rolled each round into a fresh
+disc of the total in degrees. The engine's cone is DEV-9's square in
+hundredths of a radian, and a bot's rounds do not roll at all: in the lab's
+server recordings every round of a bot's burst lands on the same point of the
+square, scaled by the total.
+
+**What the engine does** (ledger AI-145). `fireBarrel`'s two draws are a pure
+function of the current input index plus the barrel, over a static table.
+`simulatePlayerUpdate` takes the index from the player's action buffer. A
+human's actions are numbered as they arrive. A bot's are queued with an index
+nobody writes, so it keeps one value. The recordings settle that value. All
+3,394 bot MG rounds, vanilla and Desert Combat, lie along one direction of
+the square. The low edge of their sizes is (minDev + 0.3125) x 0.980 for
+three guns with different minDevs. Only index 617 fits both, so a bot's
+barrel 0 lands at (up 0.9517, right 0.2325) times the total.
+
+**What changed.** `bot-deviation.js` holds index 617's draws for barrels 0 to
+15, taken from the binary's own table and generator, and `botDeviate` hands
+them to `round-launch.js deviate`, the human's square, on a frame whose +X is
+the shooter's right. `resolveShot` and the flown rockets (`bot-rounds.js`)
+call it with the bot's total in the cone's own unit. They used to multiply it
+into degrees. `rollCone` is gone. A shotgun's barrel `i` takes point `i`.
+
+**Checked.** `tests/test_bot_weapons.py BotDeviationPointTests`: facing -z
+at a total of 1 the round is 0.0095 up and 0.0023 right, it scales with the
+total, nothing is drawn at 0.01, each barrel has its own point, the right
+axis turns with the line, and the table matches the binary's generator.
+
+**Open.** The index is measured, not traced: the stack slot `AIPlayer::
+addInput` leaves unwritten was not followed back to its writer. A server tick
+that finds no queued action uses the index + 1 (618). A few percent of the
+recorded rounds sit below the floor, which may be those ticks. The viewer
+does not model them.
+
