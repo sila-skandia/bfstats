@@ -36,6 +36,7 @@ import { currentRatio, currentTorque } from './engine-revs.js';
 import { vehicleTick } from './world-vehicle-tick.js';
 import { bufferInput } from './world-input.js';
 import { DamageableVehicle } from './vehicle-damage.js';
+import { inertiaGeometryNode } from './ship-spec.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
@@ -1336,6 +1337,54 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
     specPairing: spec.inertiaPairing ?? null,
     throttleAxis: (({ min, max, acceleration, automaticReset }) => ({ min, max, acceleration, automaticReset }))(spec.engines[0].throttle),
     engineOffNose: round(spec.engines[0].offNose, 3),
+  };
+}
+
+
+// --- the box the engine finds, by the selector's class ----------------------
+//
+// `findLodGeometry` (COL-14) takes the first LodObject depth first whose
+// selector is a `DistCompareSelector`. DC's AH-6 family meets a control
+// stick's `DistanceSelector` LOD (inside `H6Common`) before its cockpit's: a
+// tree stamped with `selectorKind` (the exporter's) gets the cockpit, an
+// older one the stick.
+{
+  const lod = (name, kind) => {
+    const n = new THREE.Object3D();
+    n.name = name;
+    n.userData = { templateKind: 'LodObject', ...(kind ? { selectorKind: kind } : {}) };
+    return n;
+  };
+  const mesh = (name, geometry, size) => {
+    const n = new THREE.Mesh(new THREE.BoxGeometry(...size));
+    n.name = name;
+    n.userData = { templateKind: 'Bundle', geometry };
+    return n;
+  };
+  const tree = stamped => {
+    const root = new THREE.Object3D();
+    root.userData = { templateKind: 'PlayerControlObject' };
+    const top = lod('lodAH6', stamped && 'DistCompareSelector2');
+    const complex = new THREE.Object3D();
+    complex.userData = { templateKind: 'Bundle' };
+    const common = new THREE.Object3D();
+    common.userData = { templateKind: 'Bundle' };
+    const stickLod = lod('lodH6ControlStick', stamped && 'DistanceSelector');
+    stickLod.add(mesh('H6ControlStick_High', 'H6_ControlStick', [0.09, 0.71, 0.29]));
+    common.add(stickLod);
+    const parts = new THREE.Object3D();
+    parts.userData = { templateKind: 'Bundle' };
+    const cockpit = lod('lodH6Cockpit', stamped && 'DistCompareSelector');
+    cockpit.add(mesh('H6CockpitExternal', 'H6_Fus_M1', [2.41, 3.86, 8.48]));
+    parts.add(cockpit);
+    complex.add(common, parts);
+    top.add(complex);
+    root.add(top);
+    return root;
+  };
+  results.boxSearch = {
+    stamped: inertiaGeometryNode(tree(true))?.name ?? null,
+    unstamped: inertiaGeometryNode(tree(false))?.name ?? null,
   };
 }
 
