@@ -13,7 +13,7 @@ import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.
 import { freeLevel } from './nav-grid.js';
 import { hullDecision, VEHICLE_YAW_SIGN } from './bot-route.js';
 import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape,
-  gunSeatAim, gunSeatIndirectLine } from './bot-aim.js';
+  gunSeatAim, gunSeatIndirectLine, aimerOnlyHolds } from './bot-aim.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { BEHAVIOUR } from './bot-decision.js';
@@ -1081,7 +1081,8 @@ export function execTrigger(bot, action, now) {
     const weapon = bot.weapons?.[bot.weaponIndex];
     const miss = turretMiss(bot, aim);
     action.precisionState ??= {};
-    const holds = precisionHolds(miss, precisionFor(shape.extents, shape.air), !!weapon?.burst, action.precisionState);
+    const holds = aimerOnlyHolds(bot, aim, weapon)
+      || precisionHolds(miss, precisionFor(shape.extents, shape.air), !!weapon?.burst, action.precisionState);
     bot._turretMissDbg = miss;
     // A tank's plan (`createPlanInternal` 0x085a74e0, the tank branch from
     // 0x085a9b7b) wraps its fire plan in `If(Not(S), LookAtObject, fire plan)`

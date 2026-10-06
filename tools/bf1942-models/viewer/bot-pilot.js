@@ -270,14 +270,21 @@ export function weaponGroup(bot) {
  *  A bomb's `velocity 0` is kept (the plane's own speed is added by
  *  `planeAimFor`), and the gravity is the engine's 14.73, not 9.81. */
 export function gunBallistics(bot) {
-  return groupBallistics(weaponGroup(bot), bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600);
+  const weapon = bot.weapons?.[bot.weaponIndex] ?? bot.weapons?.[0] ?? null;
+  return groupBallistics(weaponGroup(bot), bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600, weapon);
 }
 
 /** One gun group's exit velocity and gravity (`gunBallistics`), `speed`
- *  standing in until its stats load. */
-export function groupBallistics(g, speed = 600) {
+ *  standing in until its stats load. The speed is the AI weapon's own
+ *  `weaponTemplate.exitVelocity` where it sets one: `Weapon::getExitVelocity`
+ *  0x085ecb50 reads WeaponTemplate +0x28, which `WeaponTemplate::init`
+ *  0x085efd40 fills from the FireArms' velocity only while it is 0 (AI-143).
+ *  DC's MLRS, BM-21 and SCUD lead at 72, its TOW, Hellfire, AT-5 and
+ *  Spandrel at 300, its Hydra at 150, the CBU and Snakeye at -5. */
+export function groupBallistics(g, speed = 600, weapon = null) {
   const st = g?.stats ?? {};
-  const v = st.velocity ?? st.projectile?.velocity;
+  const own = weapon?.exitVelocity;
+  const v = Number.isFinite(own) && own !== 0 ? own : (st.velocity ?? st.projectile?.velocity);
   // `gravityModifier` as the extractor names it (`projectile.gravity`).
   // `WeaponFireArm::init` (0x085ee220) hands the Aimer the projectile
   // template's own `+0x164`, which the `ProjectileTemplate` constructor sets

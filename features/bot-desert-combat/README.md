@@ -214,3 +214,33 @@ the driver's seat at 2 s and drives (MoveTo); with four a side Fire outbids
 the swap until its urge curve runs out, by when the MG seat, with an enemy
 in its reach, scores higher, as before. Which seat wins is the swap law's
 (AI-52).
+
+## 5. The lead's speed and `useAimerOnly` (census CW12)
+
+**What was wrong.** The bots led every vehicle gun with its FireArms'
+projectile velocity. The engine's Aimer leads with the AI weapon's own
+`weaponTemplate.exitVelocity` where the template sets one, and
+`useAimerOnly` lets the trigger go the moment the barrel lies on the Aimer's
+solution (AI-143). Vanilla sets each once (the Katyusha: 60); Desert Combat
+sets `exitVelocity` 20 times (MLRS, BM-21 and SCUD 72, the TOW, Hellfire,
+AT-5 and Spandrel 300, the Hydra 150, the Pantsyr 400, the Silkworm 120, the
+CBU and Snakeye -5) and `useAimerOnly` 18 times, all on vehicle and
+stationary weapons, none on a hand weapon.
+
+**What changed.** `extract_vehicle_ai.py parse_weapons_con` writes both into
+`vehicle-ai.json`'s AI weapons (`exitVelocity`, `useAimerOnly`; DC spells
+the second `useAimeronly` on half its launchers). `bot-pilot.js
+groupBallistics` leads with the weapon's own exit velocity when it is not 0
+(a negative one stands, as `WeaponTemplate::init` leaves it), and
+`bot-aim.js aimerOnlyHolds` holds the trigger condition before the
+closest-approach miss test (`bot-plans.js execTrigger`).
+
+**How it was checked.** `tests/test_extract_vehicle_ai.py`
+`WeaponTemplateWordsTests` and the DC install test (MLRS 72, aimer-only);
+`tests/test_bot_ai.py test_the_lead_uses_the_weapon_templates_exit_velocity`
+(72, 0 -> the FireArms' 100, none -> 100, -5 kept; the hold only with the
+barrel on the solution and the word set). A short runner match with a bot in
+DC El Alamein's SCUD seat did not get it to fire either way, so the effect on
+a live round is not measured. Publishing: the five `vehicle-ai.json` of
+section 1 carry the two words; only vanilla's Katyusha record changes in
+vanilla, XPack1 and XPack2.
