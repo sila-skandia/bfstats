@@ -239,7 +239,7 @@ lnxded 0x083420f0) sets `root.world = root.local × A` and chains the children.
 |---|---|---|
 | `rotate90aroundX` | static `dice::ref2::world` Mat4, rows (1,0,0,0) (0,0,1,0) (0,−1,0,0) (0,0,0,1): maps skeleton (x,y,z) → (x,−z,y). Built at start-up from cos/sin(−π/2) in both binaries: lnxded `__static_initialization_and_destruction_0` 0x0827ecb0 (site 0x0827eda5; `BaseMatrix4::set` 0x080503b0 stores its four Vec4 args as rows); client initializer at 0x00850d00 (θ = [0x008ea530]=π × [0x008eb504]=−0.5, rows to `Mat4::set` FUN_004020d0) filling `DAT_00990170`. Equal to `setRotateXDeg(+90)` in the engine's own convention (0x08251240: m5=c, m6=s, m9=−s, m10=c). | lnxded 0x0879d340, client 0x00990170 |
 | `T(base + eased)` | the translation row of `S·M` is replaced by `(S·M).t + t·(S·M)_rot` with `t = BFSoldierTemplate+0x15c/0x160/0x164 + soldier+0x254/0x258/0x25c` (client: template +0x20c/0x210/0x214 + soldier +0x27c/0x280/0x284). `t` is therefore expressed in the frame *before* `S·M`: the camera's. | lnxded 0x0826efdd–0x0826f0dd |
-| `S` | `soldier+0x4fc` (client +0x54c), identity from the constructor (lnxded 0x0826b9e5, client `FUN_004ff440`), written on the client by `BFSoldier::updateCameraShake` 0x004facd0: `getCameraShakeTransform` of the lower-body machine (× the shipped-zero `cameraShakeFactor`), the upper-body machine and the trigger machine, multiplied together. It is the "extern camera trans" (`getExternCameraTrans`, a stub on the server) the camera itself rides, so it cancels in view space — the rig is bolted to the shaken camera, not shaken again. | client 0x004facd0 |
+| `S` | `soldier+0x4fc` (client +0x54c), identity from the constructor (lnxded 0x0826b9e5, client `FUN_004ff440`), written on the client by `BFSoldier::updateCameraShake` 0x004facd0: `getCameraShakeTransform` of the lower-body machine (× the shipped-zero `cameraShakeFactor`), the upper-body machine and the trigger machine, multiplied together. The camera itself rides it (`Camera::getTransformation` puts it on the left of the camera's transform, CS-11; `getExternCameraTrans` is a stub on the server), so it cancels in view space — the rig is bolted to the shaken camera, not shaken again. | client 0x004facd0 |
 | `M` | `ICompositeObject::getRelativeTransformation()` of the soldier's active camera (`*(soldier+0x3f0)` → element → `+8` → `queryInterface(IID_ICompositeObject 0xc378)` → vtable slot +0x74 lnxded / +0x70 client). The SoldierCamera's transform relative to the soldier — i.e. the view frame. | Camera vtable 0x087209a0 |
 
 So in view space the whole first-person rig is `rotate90aroundX(skeleton) +
@@ -820,10 +820,10 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
   pass", so (a) waits on the runtime answer the next item is after), (b) how the camera's
   `getRelativeTransformation` `M` relates to the view the pass actually
   renders with — the chain is rigid only if the pass's view is
-  `inverse(M × soldierWorld)`, (c) whether the client camera really rides
-  `S` (inferred from the server stub `getExternCameraTrans`; the `Ub_*`
-  shakes are sinusoidal, so `S` cannot hold a 5° offset but could account
-  for the drift if the camera does not follow it), or (d) the 16:9 capture's
+  `inverse(M × soldierWorld)`, (c) ~~whether the client camera really rides
+  `S`~~ it does: `Camera::getTransformation` multiplies the soldier's `S` on
+  the left of the camera's transform (CS-11, read 2026-10-07), and the `Ub_*`
+  shakes are sinusoidal, so `S` holds no 5° offset, or (d) the 16:9 capture's
   vertical field of view — `Frustum::setupFrustum` takes `fov/2` as the
   vertical half-angle and divides by an aspect the constructor sets to 0.75;
   read since (§3 "The drawFov pass"): `Renderer_initDevice` 0x00462f50 sets

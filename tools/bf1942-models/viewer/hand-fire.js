@@ -13,6 +13,7 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
+import { CameraShake } from './fire-shake.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -149,6 +150,13 @@ export function createHandFire(page) {
     // This also covers the automatic change `footFire` starts on a dry magazine.
     if (page.itemsLocked()) return false;
     if (hw.rounds >= magazine.size) return false;
+    // Not while the last round's fire cycle runs (`hw.cool`, the round's
+    // `1 / roundOfFire`): the reload message is refused while
+    // `timeToFireFinished` is positive (`handleMessage` 0x082899c8), and the
+    // automatic change waits for it the same way (BODY-7). So a Bazooka's
+    // one round plays its fire state out, and its camera shake with it,
+    // before the arms go to the reload.
+    if (hw.cool > 0) return false;
     hw.reload = magazine.reloadTime ?? 2;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
     // `FireArms::Reload` calls setZoom(false): a magazine change drops zoom.
@@ -330,6 +338,11 @@ export function createHandFire(page) {
       const pick = variants.length
         ? variants[Math.floor(Math.random() * variants.length)]
         : fireName;
+      // A one-shot fire state entered anew restarts its camera shake (CS-9):
+      // from the aim state, or once the last one has run out. A pull while it
+      // still runs is the state's own `c_PIFire` transition, which restarts
+      // the clip and not the shake. `stepViewShake` enters the state.
+      if (!(hw.active === pick && hw.actions[pick]?.isRunning())) hw.shake?.enter(null, null);
       page.playViewmodelClip(hw, pick, { restart: true });
     }
   }
@@ -664,6 +677,25 @@ export function createHandFire(page) {
     // must not run itself out behind the water — the engine's upper machine is in
     // `Ub_Floating`, which declares no 1P clip at all.
     if (!locked) page.updateViewmodelAnimation(hw, dt);
+    stepViewShake(hw, dt, locked);
+  }
+
+  /**
+   * The upper machine's camera shake for this frame (`fire-shake.js`, ledger
+   * CS-8..CS-11): the state the arms are in, entered when it changes, and one
+   * frame of its shake, which the page puts on the drawn view
+   * (`soldierKit.shakeView`). The family the rig plays is the upper state
+   * (`Ub_Fire<W>`, `Ub_LieFire<W>`, `Ub_StandAim<W>` ...), and its shake rides
+   * in the viewmodel's clip extras. With no item (swimming) the machine is in
+   * a state that declares none.
+   */
+  function stepViewShake(hw, dt, locked) {
+    hw.shake ??= new CameraShake();
+    const family = locked ? null : hw.active;
+    const key = family ? `${hw.name}:${family}` : null;
+    if (key !== hw.shake.key) hw.shake.enter(key, family ? hw.clips?.[family]?.cameraShake : null);
+    hw.shake.update(dt, hw.viewShake ??= {});
+    hw.viewShakeFresh = true;
   }
 
   Object.assign(fire, {
