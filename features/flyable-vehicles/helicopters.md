@@ -191,7 +191,11 @@ There are two gaps, and neither touches a DC helicopter:
   nose-up about a degree a second. The pilot has to fly against it. Whether
   retail does the same was not measured against the game.
 - **Ground contact.** On the ground the aircraft uses the viewer's clearance
-  clamp and `settle`, as every aircraft does, not the `Spring` wheels.
+  clamp and `settle`, as every aircraft does, not the `Spring` wheels. Since
+  2026-10-07 `settle` stops a nose-up turn on the aft wheel it drives into
+  the ground (the AH-64 at its tail wheel's 5.5 degrees, the AH-6 level);
+  before, a helicopter set down with a pitch rate stood itself on its tail
+  (`features/viewer-ground-hull-collision`, "Terrain contact, 2026-10-07").
 - **A helicopter HUD.** Not started. DC ships no altimeter or helicopter HUD
   art (DC census item 20).
 - **The fixed-wing aircraft beside these** (found in the same round, not this
