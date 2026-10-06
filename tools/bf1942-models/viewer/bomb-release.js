@@ -107,7 +107,7 @@ export function releaseSpeed(stats) {
  * shell, and so are an FHSW canister shell's 57. It changes nothing on a
  * weapon with one barrel or with `asynchronyFire`, which is where every one of
  * Desert Combat's `setBlastAmmoCount 5` and `2` sits -- and those values fail
- * the engine's bool read anyway (CON-16).
+ * the engine's bool read anyway (CON-17).
  *
  * @returns {{barrels: number[], rounds: number}}
  */

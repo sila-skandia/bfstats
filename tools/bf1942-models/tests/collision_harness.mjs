@@ -559,7 +559,7 @@ results.surfaceHeight = {
   results.multiCell = m;
 }
 
-// --- hasCollisionPhysics (COL-15..COL-17) ----------------------------------
+// --- hasCollisionPhysics (COL-16..COL-18) ----------------------------------
 //
 // Fed by `tests/test_dc_engine_reads.py`, which assembles placed statics with
 // the real exporter and writes, per wall, whether it shipped a collision node.

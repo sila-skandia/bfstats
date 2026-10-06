@@ -301,7 +301,7 @@ function armed(scene, { collider = null, platform = null } = {}) {
 // The shipped `Remington.glb` and `A10.glb` (Desert Combat) firing blocks. The
 // Remington declares eight `addFireArmsPosition` pellets and
 // `setBlastAmmoCount 1`; the A-10's `setBlastAmmoCount 5` fails the engine's
-// bool read (CON-16) and reaches the glb as nothing, on a gun with one barrel.
+// bool read (CON-17) and reaches the glb as nothing, on a gun with one barrel.
 
 {
   const PELLET = {

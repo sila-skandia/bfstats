@@ -67,7 +67,7 @@ row is added, so check git before repeating one.
   unused, because being run over is still the old code (PHY-6 for how a soldier
   moves under contact).
 - **Which hulls a vehicle ships.** `hasCollisionPhysics` decides which parts
-  the engine tests (COL-15..COL-17, read 2026-10-06), and the exporter applies
+  the engine tests (COL-16..COL-18, read 2026-10-06), and the exporter applies
   it to everything but vehicles, guns and projectiles
   ([`../dc-engine-reads`](../dc-engine-reads/README.md) §3). A vehicle's wheels,
   barrels, MGs and cockpit externals mostly say nothing, so moving vehicles over

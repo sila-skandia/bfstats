@@ -249,7 +249,7 @@ def truthy(text: str) -> bool | None:
 def engine_bool(text: str) -> bool | None:
     """A `bool` console argument as the engine reads it, or None when it fails.
 
-    Every bool word parses its argument with `istream >> bool` (CON-16): the
+    Every bool word parses its argument with `istream >> bool` (CON-17): the
     server's libstdc++ (`num_get::do_get(bool&)` lnxded 0x08679888) reads an
     integer and stores it only when it is 0 or 1, so `5` sets the stream's
     failbit and stores nothing. The setter then writes whatever the word's own

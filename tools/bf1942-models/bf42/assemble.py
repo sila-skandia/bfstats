@@ -589,14 +589,14 @@ def ladder_spec_from_positions(
     }
 
 
-# --- which hulls the engine tests (ledger COL-15..COL-17) ----------------------
+# --- which hulls the engine tests (ledger COL-16..COL-18) ----------------------
 #
 # `hasCollisionPhysics` becomes object flag 0x200 in the object's constructor
-# and nowhere else, and it defaults off (COL-15). The broadphase keeps a ROOT
+# and nowhere else, and it defaults off (COL-16). The broadphase keeps a ROOT
 # only when it carries 0x200, so a root that never says 1 is passed through by
 # everything that moves, rounds included, and nothing under it collides. A part
-# joins its root's test only when it carries 0x200 itself (COL-16). The root is
-# tested with its own mesh or, lacking one, the LOD-0 mesh it borrows (COL-17):
+# joins its root's test only when it carries 0x200 itself (COL-17). The root is
+# tested with its own mesh or, lacking one, the LOD-0 mesh it borrows (COL-18):
 # that is how a house collides, a geometry-less `Bundle` saying 1 over a
 # LodObject whose detailed alternative declares nothing.
 
@@ -607,7 +607,7 @@ _UNSCOPED = object()
 @dataclass(frozen=True)
 class CollisionScope:
     """One engine root's collision rule. `lent` is the lower-case name of the
-    template whose geometry a geometry-less root borrows (COL-17)."""
+    template whose geometry a geometry-less root borrows (COL-18)."""
     collides: bool
     lent: str | None = None
 
@@ -1095,7 +1095,7 @@ class Assembler:
         materials. The engine keeps both alternatives loaded and hangs the
         physics body off the Bundle root (`setHasCollisionPhysics 1`), so the
         hull is the object's, not the near-LOD's: a geometry-less root borrows
-        its first alternative's mesh (COL-17, `lent_lod_template`).
+        its first alternative's mesh (COL-18, `lent_lod_template`).
 
         This is the entry point for the alternative nobody draws: it parses the
         `.sm` for its collision block only and never touches materials,
@@ -1195,7 +1195,7 @@ class Assembler:
             scope: CollisionScope | None = None, *, root: bool = False) -> bool:
         """Whether this object template's geometry hull should be attached.
 
-        Under an engine root's `scope` (COL-15..COL-17): nothing when the root
+        Under an engine root's `scope` (COL-16..COL-18): nothing when the root
         does not say `hasCollisionPhysics 1`; the root's own mesh, and the
         LOD-0 mesh a geometry-less root borrows, whatever their template says;
         any other part only when it says 1 itself. A TreeMesh's SCM half
@@ -1261,7 +1261,7 @@ class Assembler:
                 )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
-            # Under a root's scope, the alternative the engine tests (COL-16).
+            # Under a root's scope, the alternative the engine tests (COL-17).
             child_refs = ([child_refs[0]] if scope is not None
                           else [self._collision_alternative(child_refs, template)])
         for ref in child_refs:
@@ -2704,7 +2704,7 @@ class Assembler:
         stack = stack | {key}
         # A placement, a model export or a spawner's held object is an engine
         # root, and its `hasCollisionPhysics` rules everything under it
-        # (COL-16). A gun or vehicle inside it keeps the old rule.
+        # (COL-17). A gun or vehicle inside it keeps the old rule.
         collision_root = collision_scope is _UNSCOPED
         if collision_root:
             collision_scope = collision_scope_for(self.library, template)
@@ -2788,7 +2788,7 @@ class Assembler:
             if self.include_collision and not self.first_person:
                 if collision_scope is not None:
                     # The engine tests a LodObject at its highest LOD, the
-                    # first alternative, whichever one is drawn (COL-16), so
+                    # first alternative, whichever one is drawn (COL-17), so
                     # that one's hulls are the object's and no other's are.
                     if not any(ref is children_refs[0] for ref in selected_refs):
                         collision_makeup = children_refs[0]

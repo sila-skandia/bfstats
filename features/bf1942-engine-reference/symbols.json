@@ -8976,7 +8976,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response; engine-reads-2026-10-06",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | lnxded. A root's collision geometry when it has none of its own (StaticResponsePhysics::getFaceCollision 0x0825ef80): its first child, when that is a LodObject, at the highest LOD (children[0], LodObject::getChild 0x08216ce0 under m_forceHighestLod); else findChildOfLodSelectorCID 0x0818daf0 -> internalFindChildOfLodSelectorCID 0x0818db50, a depth-first search not entering a PlayerControlObject (CID 0xc4c2) for a LodObject (0x94a7) whose selector is a DistCompareLodSelector (0x94b1). Returns that alternative's geometry (+0x5c) (COL-17)."
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | lnxded. A root's collision geometry when it has none of its own (StaticResponsePhysics::getFaceCollision 0x0825ef80): its first child, when that is a LodObject, at the highest LOD (children[0], LodObject::getChild 0x08216ce0 under m_forceHighestLod); else findChildOfLodSelectorCID 0x0818daf0 -> internalFindChildOfLodSelectorCID 0x0818db50, a depth-first search not entering a PlayerControlObject (CID 0xc4c2) for a LodObject (0x94a7) whose selector is a DistCompareLodSelector (0x94b1). Returns that alternative's geometry (+0x5c) (COL-18)."
   },
   {
    "address": "0x0818d910",
@@ -8994,7 +8994,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash; engine-reads-2026-10-06",
-   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11. | lnxded. (object.flags & mask) == mask: every bit of the mask is required. getCollisionObjects' 0x2000200 therefore needs both 0x200 (hasCollisionPhysics) and 0x2000000 (set by setParent(null): a root) (COL-16)."
+   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11. | lnxded. (object.flags & mask) == mask: every bit of the mask is required. getCollisionObjects' 0x2000200 therefore needs both 0x200 (hasCollisionPhysics) and 0x2000000 (set by setParent(null): a root) (COL-17)."
   },
   {
    "address": "0x0818df50",
@@ -9246,7 +9246,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-15)."
+   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-16)."
   },
   {
    "address": "0x081c0fd0",
@@ -9426,7 +9426,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "research-2026-09-30-lod-selection; engine-reads-2026-10-06",
-   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result | lnxded. 0x081da190..0x081da19a: tests template +0x70 bit 1 (hasCollisionPhysics) and, when set, calls updateFlags(0x200, 0) at 0x081da420..0x081da429. The only place a SimpleObject (and so every Bundle, LodObject, PCO, FireArms) gets object flag 0x200; the client does the same at 0x005370c2 with template +0xf8 (COL-15)."
+   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result | lnxded. 0x081da190..0x081da19a: tests template +0x70 bit 1 (hasCollisionPhysics) and, when set, calls updateFlags(0x200, 0) at 0x081da420..0x081da429. The only place a SimpleObject (and so every Bundle, LodObject, PCO, FireArms) gets object flag 0x200; the client does the same at 0x005370c2 with template +0xf8 (COL-16)."
   },
   {
    "address": "0x081dab40",
@@ -9471,7 +9471,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response; engine-reads-2026-10-06",
-   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults | lnxded. 0x081dbd04..0x081dbd19: +0x70 = (old | 0x10) & 0x90, so hasCollisionPhysics (bit 1), hasMobilePhysics (bit 0) and hasPointPhysics (bit 3) default clear. ProjectileTemplate's ctor ORs 0x0f (0x0831faa9) (COL-15)."
+   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults | lnxded. 0x081dbd04..0x081dbd19: +0x70 = (old | 0x10) & 0x90, so hasCollisionPhysics (bit 1), hasMobilePhysics (bit 0) and hasPointPhysics (bit 3) default clear. ProjectileTemplate's ctor ORs 0x0f (0x0831faa9) (COL-16)."
   },
   {
    "address": "0x081dbf00",
@@ -10803,7 +10803,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-16)."
+   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-17)."
   },
   {
    "address": "0x0825ede0",
@@ -10812,7 +10812,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-16)."
+   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-17)."
   },
   {
    "address": "0x0825ef80",
@@ -10821,7 +10821,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-17)."
+   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-18)."
   },
   {
    "address": "0x0825f120",
@@ -11343,7 +11343,7 @@
    "subsystem": "console",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-16)."
+   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-17)."
   },
   {
    "address": "0x082d8380",
@@ -13071,7 +13071,7 @@
    "subsystem": "console",
    "confidence": "verified",
    "source": "engine-reads-2026-10-06",
-   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-16)."
+   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-17)."
   },
   {
    "address": "0x086b01ac",

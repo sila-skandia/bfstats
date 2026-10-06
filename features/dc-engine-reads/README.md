@@ -9,16 +9,17 @@ Package H of the Desert Combat sweep's word census
 Each word had two plausible readings that differ in what a player sees, so
 each was read in the Linux server (`bf1942_lnxded.static`, symbols) and the
 client (`BF1942.exe`) before any code. The engine side is in the ledger:
-BOMB-4 (corrected), BOMB-13, CON-15, CON-16, GUN-17 and COL-15..COL-17.
+BOMB-4 (corrected), BOMB-13, CON-17, GUN-17 and COL-16..COL-18. The `set`/`get`
+strip it relies on is CON-15, recorded by the `con-reader` package.
 
 Two console rules the reads turned up apply to every word, not just these:
 
-- **A `set` or `get` prefix names the same word** (CON-15).
+- **A `set` or `get` prefix names the same word** (CON-15, con-reader's row).
   `ObjectTemplate.setBlastAmmoCount` is `blastAmmoCount`;
   `setHasCollisionPhysics` is `hasCollisionPhysics`; `setGeometry` is
   `geometry`. The census's CW1 (`setGeometry` meshes missing on the AH-64,
   Mi-24 and AV-8) rests on this.
-- **A `bool` argument is `0` or `1`** (CON-16). The server's libstdc++ reads
+- **A `bool` argument is `0` or `1`** (CON-17). The server's libstdc++ reads
   `istream >> bool` as an integer and stores it only when it is 0 or 1;
   anything else sets failbit, and the setter then writes whatever that word's
   static argument held from its last good read in the process. `con.py`'s
@@ -104,11 +105,11 @@ angle under its hull (`turret-rig.js`), and the words stay unexported.
 `tests/test_dc_engine_reads.py` (`StabilizationTests`) pins that nothing is
 exported for them.
 
-## 3. `hasCollisionPhysics`: which hulls the engine tests (COL-15..COL-17)
+## 3. `hasCollisionPhysics`: which hulls the engine tests (COL-16..COL-18)
 
 CW14 found that the exporter attached every StandardMesh hull whatever its
 object said, and gated only trees (TM-5), and asked what `hasCollisionPhysics
-0` does on an ordinary mesh. The read (COL-15..COL-17):
+0` does on an ordinary mesh. The read (COL-16..COL-18):
 
 - The word sets bit 1 of the template's `+0x70`; the object's constructor turns
   it into object flag `0x200`, and nothing else ever does. The template default
@@ -176,7 +177,7 @@ one do (`~/.cache/dc-sweep/engine-reads/hcp_level_census.py`). A hull that
 | DC Final | 37 of 48 | 13 | 194 | the same kinds: `DC_slums_fencepost1_m1` (x55), `rooflamp1_m1` on four supply and hospital buildings (x81), `mil_barracks_m1`'s far mesh (x15), the `Armory_*` racks' weapons (x34), the treepots (x4), the Scud cart's missile (x4), `Mi24DWreck` (x1) |
 
 Nothing a player stands on or hides behind in vanilla moves: a roof lamp. The
-houses, bunkers and hangars all keep the hull they had, through COL-17.
+houses, bunkers and hangars all keep the hull they had, through COL-18.
 
 The other installs, out of extraction scope, were measured with a faster
 whole-mod census (one library per mod, every level's `Object.create`; a
