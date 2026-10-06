@@ -170,6 +170,23 @@ class GroundHandlingTests(unittest.TestCase):
                 self.assertTrue(row["recovered"]["running"])
                 self.assertGreater(row["recovered"]["speed"], 10.0)
 
+    def test_critical_damage_stops_a_ships_screws(self) -> None:
+        # The same 0x14 reaches a ship's Engines (HP-15), and an engine that
+        # is off stores its revs as 0 whatever its type (TANK-12), which is
+        # the throttle a c_ETShip's thrust law reads. A critical Elco80 at
+        # full ahead loses her way; repaired, she makes way again.
+        row = self.results["criticalShip"]
+        if row is None:
+            self.skipTest("no vanilla models tree")
+        self.assertTrue(row["wasCritical"])
+        self.assertTrue(row["driving"]["running"])
+        self.assertGreater(row["driving"]["speed"], 9.0)
+        self.assertFalse(row["crippled"]["running"])
+        self.assertEqual(0.0, row["crippled"]["revs"])
+        self.assertLess(row["crippled"]["speed"], 0.5 * row["driving"]["speed"])
+        self.assertTrue(row["recovered"]["running"])
+        self.assertGreater(row["recovered"]["speed"], 9.0)
+
     def test_the_krupp_tops_out_on_its_own_drag(self) -> None:
         # XPack2's Krupp authors `drag 15` on 2,500 kg. Under the engine's box
         # law (PHY-4) that drag is quadratic over its 3.23 m^2 frontal ellipse:

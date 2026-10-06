@@ -146,9 +146,9 @@ export function vehicleTick(world, player, dt, integrators) {
   // (`GroundVehicle`/`TrackedVehicle` `landDrive`), whose revs the byte holds
   // at 0 (`Engine::handleUpdate` `0x0823e2e6`, TANK-12), so every EngineGrip
   // wheel asks for its contact speed back and a critical tank or jeep stops
-  // where it is. The fixed-wing drive does not read the byte; a ship's is
-  // not hooked (PHY-14, open).
-  if ((vehicle?.vectored || vehicle?.landDrive) && activeRoot) {
+  // where it is; and a ship's (`Ship.shipDrive`), whose screws then make no
+  // thrust. The fixed-wing drive does not read the byte.
+  if ((vehicle?.vectored || vehicle?.landDrive || vehicle?.shipDrive) && activeRoot) {
     vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   }
   const inControl = activeRoot && !player.gate.blocked;

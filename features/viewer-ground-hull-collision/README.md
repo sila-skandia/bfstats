@@ -636,11 +636,23 @@ vanilla, XPack1, XPack2 and DC fleets.
 drawn, not being built, and the exporter dropped every invisible template. It
 now keeps an invisible `Spring` as an undrawn node, with its physics, its
 geometry's name and its collision probes (`bf42/assemble.py` `build_node`),
-and leaves out anything else hidden. Four vehicles are affected:
+and leaves out anything else hidden. Six vehicles are affected (a census of
+every `createInvisible` template in the three packs' object libraries):
 - The KettenKrad stands on two hidden RollGrip wheels behind its tracks.
 - The R75 and the HD_XA42 each stand on their sidecar's front wheel.
 - The LVT4 drives through two hidden EngineGrip wheels and is now a tank with
   its water kit.
+- The Elco80 and the Type38 carry their beach wheels (`PT_FrontWheel`,
+  `PT_BackWheel`), which a `Ship` does not drive on.
+
+An undrawn spring has no mesh to measure its radius off, only its col0
+probe, and `measureWheelRadius` took the probe's own extent for one: 0.002 m
+on the bikes' sidecar wheel. It now takes the probe's depth under the axle,
+the contact `hull-bodies.js` `wheelContactDepths` already hands the page
+(0.317 m on the R75, 0.352 on the KettenKrad's and the PT boats', 0.240 on
+the LVT4's). Before that, off the page the bikes leant 9 degrees onto the
+sidecar wheel and crept off at 1.3-2.1 m/s with the throttle closed (review,
+2026-10-07).
 
 Without them, the KettenKrad stood on its fork and fell onto its back. The
 bikes tipped onto their sides and slid off at 30 m/s with the throttle
@@ -651,15 +663,25 @@ Re-extracted into scratch:
 
 | vehicle | top speed (m/s) | reverse (m/s) |
 |---|---|---|
-| KettenKrad | 0.08 -> 28.1 | 0.1 -> -7.1 |
-| R75 | 30.8 -> 30.9 | +25.4 -> -6.9 |
-| HD_XA42 | 30.7 -> 30.8 | -28.2 -> -6.8 |
+| KettenKrad | 0.08 -> 29.6 | 0.1 -> -7.0 |
+| R75 | 30.8 -> 30.9 | +25.4 -> -7.0 |
+| HD_XA42 | 30.7 -> 30.1 | -28.2 -> -7.0 |
 | LVT4 | 14.9 on land | 6.3 afloat |
+
+All three rest level and still at zero throttle (25 s full throttle, 10 s
+reverse, flat analytic ground, with the probe-depth radius).
 
 The Elco80 gains its own two hidden wheels and floats and beaches exactly as
 before. The rule also moves the cars that carry dummy rollers, at full lock
 at speed: Katyusha and BM-21 12.8 -> 20.1 deg/s, Greyhound 11.4 -> 18.0,
-Krupp 16.6 -> 22.1. The live trees need the affected models and level bakes
+Krupp 16.6 -> 22.1. The vanilla lab round on Kursk (`20261007-013855`)
+drove a Katyusha through four full-lock episodes at 5-9 m/s with the throttle
+released; replayed on its own throttle servo and wheel angle, through
+`dc_truth.py`'s estimator on both sides, retail's yaw is 30.5 / 35.5 deg/s
+(p50 / p95) at 2-5 m/s and 36.5 / 41.4 at 5-10 with slip 23.8 / 25.7 and
+16.3 / 20.3; skipping the rollers gives 27.9 / 33.3 and 26.8 / 32.4, slip
+23.7 / 25.1 and 15.0 / 18.9, where counting them gave 20.0 / 21.0 and
+17.6 / 19.9, slip 12.5 / 18.4 and 7.8 / 9.8. The live trees need the affected models and level bakes
 re-extracted before the page sees the hidden wheels. Hidden `LandingGear`
 templates (XPack2's Goblin, Jetpack and Natter) are still dropped; they
 belong to the aircraft.
@@ -667,7 +689,12 @@ belong to the aircraft.
 **Critical damage stops a land drivetrain** (PHY-14). `vehicleTick` sets the
 engine's running byte for a land drive as it does for a vectored airframe. A
 critical Humvee or T-72 stops dead, does not restart on re-boarding, and
-drives again once repaired.
+drives again once repaired. A ship's Engines hear the same message (HP-15):
+`Ship.advanceEngines` stores its revs as 0 while the byte is clear, so a
+critical Elco80 at full ahead loses her screws and coasts (11.1 to 4.2 m/s in
+5 s). Open: a crewed critical ship does not start sinking, because
+`hull-bodies.js` `stepSinkingHulls` arms the sink only for a hull nobody is
+in.
 
 **Drag is the box law** (PHY-4, `ground-contact.js` `addBoxDrag`) over the
 same box, in place of the sphere law. XPack2's Krupp (`drag 15` on 2,500 kg)

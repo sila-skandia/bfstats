@@ -296,6 +296,47 @@ for (const name of ['Humvee', 'T72']) {
   critical[name] = { driving, crippled, reboarded, recovered, wasCritical: hull.criticalDamage != null };
 }
 
+// The same messages reach a ship's Engines (`Bundle::handleMessage`, HP-15),
+// and a `c_ETShip`'s revs are its thrust law's throttle: a critical PT boat
+// (vanilla's Elco80, 350 of 500 hit points) at full ahead in deep water
+// loses her screws and coasts down on her own drag; repaired, she makes
+// way again. Null without the vanilla tree.
+let criticalShip = null;
+{
+  const file = path.join(assets, 'models', 'Elco80.glb');
+  if (fs.existsSync(file)) {
+    const { Ship } = await imp('ship.js');
+    const buf = stripGlb(fs.readFileSync(file));
+    const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(buf, 'file:///', resolve, reject));
+    const drive = new Ship(gltf.scene.children[0], null, { cockpit: false, waterLevel: 0, groundHeight: () => -30 });
+    drive.state.position.set(0, 0.5, 0);
+    for (let i = 0; i < 90; i++) { drive.setInput('c_PIThrottle', 0); drive.integrate(DT); }
+    const hull = new DamageableVehicle(drive.node.userData.armor);
+    const seat = {
+      id: 'driver', kind: 'ship', vehicle: drive,
+      occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
+      gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
+      stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
+    };
+    const world = { occupiedDamageable: () => hull, falling: null, fireStateFor: () => null, guns: null };
+    const integrators = new Map([[drive, seat]]);
+    const phase = seconds => {
+      for (let i = 0; i < Math.round(seconds * 30); i++) {
+        bufferInput(seat, { forward: 1, forwardKeys: 1 });
+        vehicleTick(world, seat, DT, integrators);
+      }
+      return { running: drive.engineRunning, revs: round(drive.revs, 3),
+        speed: round(forwardOf(drive).dot(drive.state.velocity), 2) };
+    };
+    const driving = phase(20);
+    hull.damage(hull.hitPoints - hull.criticalDamage + 1);
+    const crippled = phase(10);
+    hull.heal(hull.maxHitPoints);
+    const recovered = phase(15);
+    criticalShip = { driving, crippled, recovered, wasCritical: hull.criticalDamage != null };
+  }
+}
+
 // --- the Krupp's drag ---------------------------------------------------------
 // XPack2's truck authors `drag 15` (the vanilla trucks 1.5-2), so it is the
 // hull the box law (PHY-4, `ground-contact.js` `addBoxDrag`) moves most: full
@@ -319,4 +360,4 @@ let krupp = null;
   }
 }
 
-console.log(JSON.stringify({ lock: lockSummary, cruise, pivot, critical, krupp }));
+console.log(JSON.stringify({ lock: lockSummary, cruise, pivot, critical, criticalShip, krupp }));
