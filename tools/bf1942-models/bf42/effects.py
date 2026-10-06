@@ -268,7 +268,7 @@ def emitter_spec(emitter: con_mod.ObjectTemplate,
     launch direction. All offsets and speeds are in the emitter's frame:
     `dof` is its forward, `up` its up, `right` its right.
 
-    A spawn effect (`isSpawnEffect 1`, ledger EMT-9) makes no particle at
+    A spawn effect (`isSpawnEffect 1`, ledger EMT-10) makes no particle at
     all: the game creates its template as a real object at the spawn point,
     turned to the emitter's frame (`GameServer::spawnObject`). Its particle
     block is then `{"kind": "object"}` and the bake hangs the object's whole

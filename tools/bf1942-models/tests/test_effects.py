@@ -1583,7 +1583,7 @@ GeometryTemplate.create StandardMesh Raft_m1
 
 
 class SpawnEffectTests(unittest.TestCase):
-    """EMT-9: `isSpawnEffect 1` makes the game create its template as an
+    """EMT-10: `isSpawnEffect 1` makes the game create its template as an
     object (`GameServer::spawnObject`), not a particle."""
 
     def spawn_library(self) -> con_mod.ObjectLibrary:

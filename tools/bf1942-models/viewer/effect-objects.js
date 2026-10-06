@@ -1,7 +1,7 @@
 // What a spawn effect stands up, made part of the level.
 //
 // An emitter with `isSpawnEffect 1` makes no particle: the game creates its
-// template as a real object (ledger EMT-9), and `EffectPlayer` hands each one
+// template as a real object (ledger EMT-10), and `EffectPlayer` hands each one
 // it places to `adopt` (its `onObject`). Desert Combat's objective buildings
 // die this way: the tower's death tier is `e_air_control_tower_desWRECKPCO`,
 // whose one emitter stands up `air_control_tower_des_wreck`, a ruin with
@@ -11,7 +11,7 @@
 // The object is an object with an Armor like any other, so it shows its
 // tier from its first tick: `Armor::getEffect` keyed on `ceil(hitPoints)`
 // (ARM-1, `tierAt`), each effect a child of the object at its offset with no
-// turn of its own (ARM-8). Its collision hulls ride along hidden, as every
+// turn of its own (ARM-11). Its collision hulls ride along hidden, as every
 // placed object's do. It does not join the level's collider or its
 // damageables: nothing can stand on the ruin or shoot it further yet.
 //

@@ -84,6 +84,7 @@ folder answers.
 | [dc-mortar-and-kit-pads](dc-mortar-and-kit-pads/README.md) | build | How does Desert Combat's mortar deploy, and how do a map's kit pads hand out the M82 and Stinger kits? |
 | [fhsw-random-kit-items](fhsw-random-kit-items/README.md) | fix | Which weapon does an FHSW `Random*` kit item hand a spawn, and why did FHSW soldiers wear vanilla uniforms? |
 | [muzzle-effects-parity](muzzle-effects-parity/README.md) | build | Where do a gun's muzzle flash and casings come from, and how big are they? |
+| [level-effects](level-effects/README.md) | build | How does a level ship its own effects, and what does a spawn effect (a ruined objective, a raft) stand up? |
 | [flak-proximity-fuse](flak-proximity-fuse/README.md) | fix | Why did AA shells pass through planes, and how does the proximity fuse work? |
 | [bf1942-blast-and-bounce](bf1942-blast-and-bounce/README.md) | build | How much does a blast hurt a soldier, and why do fused rounds bounce? |
 | [plane-bombs-and-torpedoes](plane-bombs-and-torpedoes/README.md) | design | How do retail plane bombs and torpedoes behave, and how were they built? |

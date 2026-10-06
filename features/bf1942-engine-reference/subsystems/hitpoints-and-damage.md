@@ -670,6 +670,14 @@ templates under its own `objects/Vegetation/BreakableTree/` do declare one, as
 do FH's `EU_pine6_M1_nosway` and DC_Final's `SniperBush_deploy`. Destructible
 vegetation is a mod feature built on exactly this component.
 
+**Where a tier's effects stand (ARM-11).** `playEffect` makes each effect of
+the tier a child of the object, placed at its `addArmorEffect` offset with no
+rotation of its own. The death tier is placed the same way. So a death
+explosion authored 8 m up (Battle of Britain's radar dish scrap) starts 8 m
+up, and a spawn effect in a death tier (EMT-10) stands its object up with the
+dead object's heading. On a death the key is 0 when no hit material is
+recorded, minus the material otherwise, and -1 in water.
+
 ## 9. What else in the engine reads an Armor
 
 Settled 2026-09-17 (ARM-6, ARM-7), by mapping every `push $0xc4a4` — the
