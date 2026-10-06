@@ -2,7 +2,7 @@
 (`viewer/effects.js`, `viewer/effect-objects.js`, `viewer/vehicle-wrecks.js`),
 driven headless by `effect_objects_harness.mjs`.
 
-The engine rules (ledger EMT-9, ARM-8): an emitter with `isSpawnEffect 1`
+The engine rules (ledger EMT-10, ARM-11): an emitter with `isSpawnEffect 1`
 makes no particle, the game creates its template as a real object at the spawn
 point in the emitter's frame (`Emitter::handleUpdate` lnxded 0x081e3200 ->
 `GameServer::spawnObject` 0x08132440); and every armour tier, the death tier
@@ -62,7 +62,7 @@ class SyntheticTests(unittest.TestCase):
         # Before, `showDamageTier` started the death tier and `wreckVehicle`
         # stood it up a second time at the hull's origin on the ground's
         # normal, offsets lost. Now each entry plays once, on an anchor at its
-        # offset, turned with the hull (ARM-8).
+        # offset, turned with the hull (ARM-11).
         plays = [p for p in self.results["deathFrame"] if p["phase"] == "death"]
         self.assertEqual(["e_ExplGas", "e_ScrapAABase", "e_ScrapAABase"],
                          [p["name"] for p in plays])

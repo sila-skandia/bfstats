@@ -1678,7 +1678,7 @@ class Assembler:
         missing: list[str] = []
 
         def spawned_object(name: str) -> int | None:
-            # A spawn effect's payload is a whole object (EMT-9), baked the
+            # A spawn effect's payload is a whole object (EMT-10), baked the
             # way a model or level export bakes it: no `materialDiffuse` and
             # no additive alpha cut, which only effect particles take.
             saved = self.apply_material_diffuse, self.additive_alpha_test
