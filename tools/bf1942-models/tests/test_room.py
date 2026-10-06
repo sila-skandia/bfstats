@@ -31,7 +31,13 @@ What this file pins is the P2 contract of
 * the bleed on the engine's rule (ledger TKT-4), played on the page's own
   round (`round-state.js`): a whole ticket every `60 / (rate * maxPlayers /
   16)` s while the enemy's summed `areaValue` is over 99, a point with no
-  flag counting, and the countdown refilled whole while the gate is shut.
+  flag counting, and the countdown refilled whole while the gate is shut;
+* the round's end in a room (ROUND-2, ROUND-9, ROUND-11, HP-20): the result
+  sent, the world cleared with nothing spent, no human spawn until the
+  restart, and the restart ten seconds on with the tickets made again and the
+  flags back on their level teams;
+* a room's layer: the one its creating join named (`?mode=`), else the
+  level's default, and the HELLO saying which.
 """
 
 from __future__ import annotations
@@ -549,6 +555,68 @@ class RoomTests(unittest.TestCase):
         self.assertEqual((False, 4, 2, [1, 0, -100]),
                          (w["ctf"][1]["home"], w["ctf"][1]["carrier"], w["ctf"][1]["carrierTeam"],
                           w["ctf"][1]["position"]))
+
+    # --- (x) the round's end and the restart -------------------------------------
+
+    def test_a_side_out_of_tickets_ends_the_rooms_round(self) -> None:
+        # ROUND-2: Conquest ends when a side is under one ticket; the other
+        # side wins, and the result goes to everyone with the restart's 10 s.
+        x = self.results["x"]
+        self.assertIsNotNone(x["end"], x)
+        self.assertEqual(2, x["end"]["winner"])
+        self.assertEqual("tickets", x["end"]["reason"])
+        self.assertEqual(10, x["end"]["restartIn"])
+        self.assertEqual(1, x["end"]["roundsWon"]["2"])
+        self.assertEqual(0, x["ticketsAtEnd"]["team1"])
+
+    def test_the_end_clears_the_world_without_spending(self) -> None:
+        # HP-20's `clearWorld`: the living are killed, and the round having
+        # ended, nothing is spent for it (ROUND-7).
+        x = self.results["x"]
+        self.assertEqual([2], x["cleared"])
+        self.assertFalse(x["bAliveAfterEnd"])
+        self.assertEqual(100, x["ticketsAtEnd"]["team2"])
+
+    def test_a_human_cannot_spawn_while_the_round_is_over(self) -> None:
+        # ROUND-11: `spawnPlayer` takes a human only at status 1.
+        x = self.results["x"]
+        self.assertTrue(x["refused"])
+        self.assertTrue(x["aDeadDuringEnd"])
+        self.assertEqual({"status": "endGame", "winner": 2}, x["helloDuringEnd"])
+
+    def test_the_room_restarts_ten_seconds_after_the_end(self) -> None:
+        # ROUND-9: `+0x21c` counts 10 s down, then `restartMap`: the tickets
+        # made again, the rounds won kept, each flag back on its level team.
+        x = self.results["x"]
+        self.assertFalse(x["restartedEarly"])
+        self.assertIsNotNone(x["restart"])
+        self.assertEqual({"team1": 2, "team2": 100}, x["restart"]["tickets"])
+        self.assertEqual([1, 2], [f["team"] for f in x["restart"]["flags"]])
+        self.assertEqual([1, 2], x["flagsAfter"])
+        self.assertEqual({"1": 0, "2": 1}, x["restart"]["roundsWon"])
+        self.assertEqual("playing", x["roundAfter"]["status"])
+        self.assertEqual({"team1": 2, "team2": 100}, x["ticketsAfter"])
+        self.assertTrue(x["respawned"])
+
+    # --- (y) a room's layer ---------------------------------------------------------
+
+    def test_a_room_plays_the_layer_it_was_made_on(self) -> None:
+        y = self.results["y"]
+        self.assertEqual("Ctf", y["ctf"]["mode"])
+        self.assertFalse(y["ctf"]["modeDefault"])
+        self.assertEqual(["AxisBase", "AlliedBase"], y["ctf"]["flags"])
+        self.assertIsNone(y["ctf"]["tickets"])
+        self.assertTrue(y["ctf"]["ctf"])
+        self.assertTrue(y["ctf"]["law"])
+        self.assertEqual("Ctf", y["ctf"]["list"])
+
+    def test_a_room_made_with_no_mode_plays_the_default_layer(self) -> None:
+        y = self.results["y"]
+        self.assertEqual("Conquest", y["def"]["mode"])
+        self.assertTrue(y["def"]["modeDefault"])
+        self.assertEqual(["North", "South"], y["def"]["flags"])
+        self.assertEqual(100, y["def"]["tickets"])
+        self.assertIsNone(y["def"]["ctf"])
 
 
 if __name__ == "__main__":

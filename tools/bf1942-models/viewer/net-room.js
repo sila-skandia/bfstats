@@ -243,7 +243,8 @@ export function createNetRoom(page) {
     if (row.type === 'radio' && Number.isInteger(row.msg) && row.slot != null) {
       const at = Array.isArray(row.at) ? { x: row.at[0], y: row.at[1], z: row.at[2] } : null;
       comms.receive(row.msg, { ...who(row.slot), position: at });
-    } else if (row.type === 'killed' && row.slot != null) {
+    } else if (row.type === 'killed' && row.slot != null && !row.cleared) {
+      // A round's end kills everyone (`clearWorld`) with no line of its own.
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
     } else if (row.type === 'captured' && Number.isInteger(row.flag) && page.flags[row.flag]) {
       comms.onCapture(page.flags[row.flag], row.team);
@@ -290,6 +291,17 @@ export function createNetRoom(page) {
             && page.soldierArmor && !page.soldierDead) {
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
         }
+        // The server would not spawn this body (ROUND-11: the round is not
+        // playing, or the side is out of tickets): the page's own spawn was
+        // only a prediction, so it dies back to the spawn screen.
+        if (row.type === 'spawnRefused' && page.soldierArmor && !page.soldierDead) {
+          page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
+        }
+        // The round's end and the restart are the server's (ROUND-9): the
+        // page's round takes the result and its debriefing shows it; the
+        // restart row puts the field back the way the server has it.
+        if (row.type === 'roundEnd') page.roundEndRow?.(row);
+        if (row.type === 'restart') page.restartRow?.(row);
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
         if (row.type === 'captured' && Number.isInteger(row.flag)
@@ -375,12 +387,24 @@ export function createNetRoom(page) {
         // reload re-joins the same room from the URL and loads once.
         const want = (room.roomClient.hello.level || '').toLowerCase();
         const asked = (page.params.get('map') || '').toLowerCase();
-        if (want && asked !== want && page.manifest.some(e => e.name.toLowerCase() === want)) {
+        // The layer too: a room plays one (`?mode=`, the level's default when
+        // its creator named none), and a page on another has other flags,
+        // pads and vehicles. A page with no `?mode=` already has the default.
+        const wantMode = room.roomClient.hello.mode || '';
+        const askedMode = page.params.get('mode') || '';
+        const otherMode = wantMode
+          && (askedMode ? askedMode.toLowerCase() !== wantMode.toLowerCase()
+            : room.roomClient.hello.modeDefault === false);
+        const otherLevel = want && asked !== want && page.manifest.some(e => e.name.toLowerCase() === want);
+        if (otherLevel || otherMode) {
           const q = new URLSearchParams(location.search);
-          q.set('map', want);
+          if (otherLevel) q.set('map', want);
+          if (otherMode) q.set('mode', wantMode);
           location.replace(`${location.pathname}?${q}`);
           return;
         }
+        // Joined mid-way through a round's end: its debriefing and countdown.
+        if (room.roomClient.hello.round?.status === 'endGame') page.roundEndRow?.(room.roomClient.hello.round);
         page.logToConsole(`room ${room.roomClient.hello.room} · ${room.roomClient.hello.level} · slot ${room.roomClient.slot}`);
         page.logToConsole(`you are on team ${room.roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
         // The room names the team; the deploy screen rides it.
@@ -431,9 +455,10 @@ export function createNetRoom(page) {
         room: roomCode,
         name: roomName,
         team: 0,
-        // Create-on-join names the level the room was made on (rooms.mjs);
-        // joining an existing room ignores it.
+        // Create-on-join names the level the room was made on (rooms.mjs),
+        // and the layer (`?mode=`); joining an existing room ignores both.
         level: page.params.get('map') || undefined,
+        mode: page.params.get('mode') || undefined,
       });
       // Heartbeat from the handshake on: the page's own level load starves
       // its main thread for seconds at a time (GLB parses), and the server's

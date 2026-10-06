@@ -171,8 +171,11 @@ export function createRoundEnd(page) {
     const result = debriefingOf({ winner: round.winner, victoryType: round.victoryType,
                                   localTeam: page.localTeam() });
     const words = debriefingWords(result, page.extras?.briefing ?? null);
-    const medals = round.medals(page.roster?.() ?? []).map(m => ({
-      ...m, name: page.nameOf?.(m.playerId) ?? String(m.playerId), sprite: medalSprite(m.medal, m.team),
+    // A room's medals are its server's (`page.medals`, the `roundEnd` row's),
+    // named there; the page's own round gives them from its tallies.
+    const medals = (page.medals?.() ?? round.medals(page.roster?.() ?? [])).map(m => ({
+      ...m, name: m.name ?? page.nameOf?.(m.playerId) ?? String(m.playerId),
+      sprite: medalSprite(m.medal, m.team),
     }));
     roundEnd.model = { result, words, medals, winner: round.winner, victoryType: round.victoryType,
                        reason: round.endReason, music: result?.music ?? null };
@@ -230,11 +233,14 @@ export function createRoundEnd(page) {
       const text = countdownText(round.restartIn);
       if (parts.countdown.textContent !== text) parts.countdown.textContent = text;
     }
-    if (round.restartDue()) {
+    // In a room the restart is the server's row, which turns the round back
+    // to Playing; the screen waits for it rather than restarting here.
+    if (round.restartDue() && !page.roomJoined) {
       roundEnd.restarts += 1;
       close();
       page.restartRound?.();
     } else if (round.status === 'playing') {
+      if (page.roomJoined) roundEnd.restarts += 1;
       close();
     }
   };

@@ -1527,6 +1527,11 @@ function startRound() {
   roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
   // Who held each point when the round began, for `restartRound`.
   controlPointStart = (level.extras?.controlPoints ?? []).map(cp => [cp.name, cp.team ?? 0]);
+  if (pendingRoomEnd && room.roomJoined) {
+    const row = pendingRoomEnd;
+    pendingRoomEnd = null;
+    roomRoundEnd(row);
+  }
 }
 
 /** The points' holders at the round's start (`startRound`). */
@@ -1543,10 +1548,14 @@ let controlPointStart = null;
  * EndGame, so none of it scores (ROUND-7). `ObjectSpawner::reset` (every hull
  * back on its pad) is not run: the vehicles keep the state the round left.
  */
-function restartRound() {
-  if (!round || room.roomJoined) return;
+function restartRound(fromRoom = null) {
+  if (!round) return;
+  // A room's round is its server's: the countdown here only runs out, and the
+  // restart comes as the server's `restart` row (`server/authority.mjs`),
+  // which calls this with the row.
+  if (room.roomJoined && !fromRoom) return;
   const w = level.world;
-  for (const bot of referee.bots) {
+  for (const bot of fromRoom ? [] : referee.bots) {
     try {
       if (bot.vehicle) referee.leaveVehicle(bot, { silent: true });
       const armor = w?.armorOf(bot.playerId);
@@ -1572,6 +1581,14 @@ function restartRound() {
     commsWasAlive = false;
   }
   const start = new Map(controlPointStart ?? []);
+  // In a room the server names each flag's holder (`ControlPoint::reset` on
+  // its side), in the HELLO's flag order.
+  if (fromRoom && Array.isArray(fromRoom.flags)) {
+    (w?.flags ?? []).forEach((flag, i) => {
+      const team = fromRoom.flags[i]?.team;
+      if (Number.isInteger(team) && flag.controlPointName) start.set(flag.controlPointName, team);
+    });
+  }
   for (const flag of w?.flags ?? []) {
     if (!flag.controlPointName || !start.has(flag.controlPointName)) continue;
     flag.team = start.get(flag.controlPointName);
@@ -1588,8 +1605,33 @@ function restartRound() {
   round.restart();
   ticketsWritten = null;
   syncTickets();
+  if (fromRoom) {
+    if (fromRoom.roundsWon) round.roundsWon = { 1: fromRoom.roundsWon[1] ?? 0, 2: fromRoom.roundsWon[2] ?? 0 };
+    if (fromRoom.tickets && level.extras) level.extras.tickets = { ...level.extras.tickets, ...fromRoom.tickets };
+    roomMedals = null;
+  }
   pageConsole.logToConsole('round restarted');
   if (playing && !params.has('replay')) spawning.openDeploy();
+}
+
+/** The medals of a room's round, `giveMedal`'s three as its server gave
+ *  them (`roundEnd` row), for the debriefing; null off a room. */
+let roomMedals = null;
+/** A `roundEnd` that arrived before the level's round existed. */
+let pendingRoomEnd = null;
+
+/** A room's round has ended (its server's `roundEnd` row, ROUND-9): the
+ *  page's round takes the server's result, so the debriefing, the cue and
+ *  the score board's rounds won read it the way they read the page's own,
+ *  and the countdown runs from the server's seconds. */
+function roomRoundEnd(row) {
+  // A join during the end can land before the level (and its round) has.
+  if (!round) { pendingRoomEnd = row; return; }
+  if (round.status !== 'playing') return;
+  round.endRound(row.winner ?? 0, row.victoryType ?? null, row.reason ?? null);
+  if (Number.isFinite(row.restartIn)) round.restartIn = row.restartIn;
+  if (row.roundsWon) round.roundsWon = { 1: row.roundsWon[1] ?? 0, 2: row.roundsWon[2] ?? 0 };
+  roomMedals = Array.isArray(row.medals) ? row.medals : null;
 }
 
 /** The side's announcer (`announcer.js`, `comms.gameplayFrame`): heavy
@@ -1977,6 +2019,7 @@ const spawning = createSpawning(bag(
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },
+    get round() { return round; },
   },
 ));
 
@@ -2006,6 +2049,9 @@ const room = createNetRoom(bag(
     get scene() { return scene; }, get comms() { return comms; },
     // A CTF row of the server's law (ctf-page.js `onRow`).
     ctfRow: row => ctfPage.onRow(row),
+    // The round's end and the restart, by the server's rows.
+    roundEndRow: row => roomRoundEnd(row),
+    restartRow: row => restartRound(row),
   },
 ));
 
@@ -2126,6 +2172,12 @@ const roundEnd = createRoundEnd(bag(
     holdScoreboard: on => scoreboard.holdOpen(on),
     releasePointer: () => { if (document.pointerLockElement) document.exitPointerLock?.(); },
     restartRound: () => restartRound(),
+    // A room's restart is its server's row, and its medals the server's.
+    get roomJoined() { return room.roomJoined; },
+    medals: () => (room.roomJoined && roomMedals ? roomMedals.map(m => ({
+      playerId: m.slot, team: m.team, medal: m.medal, score: m.score,
+      name: m.slot === room.roomClient?.slot ? room.roomName : room.roomClient?.nameOf?.(m.slot) ?? null,
+    })) : null),
   },
 ));
 
@@ -2540,10 +2592,13 @@ function simulate(dt, input, look) {
   // this one would bleed the level's starting flags into the counter.
   if (!replayController?.active()) {
     if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
+    // A room's round is decided on its server; once that has ended it, only
+    // the restart's countdown runs here (`tick` off Playing does nothing else).
+    if (round && room.roomJoined && round.status !== 'playing') round.tick(step.ticks / 30, null);
     syncTickets();
     // The end of the round, once the tick above has decided it: the
     // debriefing, the cue, the countdown and the restart (round-end.js).
-    if (!room.roomJoined) roundEnd.tick();
+    roundEnd.tick();
   }
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
