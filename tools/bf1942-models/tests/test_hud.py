@@ -464,6 +464,16 @@ class SoldierArtTests(unittest.TestCase):
         self.assertEqual("Soldier/Icon_brit_soldier_crouching.tga", self.art["unknownSoldier"])
 
 
+class GrenadeChargeBarTests(unittest.TestCase):
+    """The bar beside a grenade is its throw's charge (GUN-16, GUN-19)."""
+
+    def test_the_soldier_hud_hands_the_charge_to_the_heat_bar(self) -> None:
+        bar = run_harness()["grenadeBar"]
+        self.assertEqual(0.45, bar["heat"])
+        # `ATIconAndStrengthBar`: the leaf that draws `Overheat/OverHeat`.
+        self.assertEqual(3, bar["ammoType"])
+
+
 class ScopeTableTests(unittest.TestCase):
     """`scopes.json` (SCOPE-2's four words out of `Objects.rfa`) over what a
     viewmodel baked before `setSightIcon` was read carries: Desert Combat's
