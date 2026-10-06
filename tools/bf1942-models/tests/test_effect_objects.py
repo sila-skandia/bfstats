@@ -122,6 +122,47 @@ class SpawnedBodyTests(unittest.TestCase):
                 self.assertAlmostEqual(3.3, self.raft[case]["end"], delta=0.001)
 
 
+class SpawnedWorldTests(unittest.TestCase):
+    """What a spawn effect stands up is an object of the world (EMT-10):
+    solid in the level's collider and shootable through its damageables, the
+    way a placed static is. The real collider, damage set and wreck module,
+    with a ruin shaped like `air_control_tower_des_wreck` and the raft."""
+
+    world: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.world = run_harness()["world"]
+
+    def test_each_object_takes_an_owner_id_after_the_levels_own(self) -> None:
+        self.assertEqual({"ruin": 2, "raft": 1}, self.world["owners"])
+        self.assertEqual(["ground_slab", "Elco80Raft", "air_control_tower_des_wreck"],
+                         self.world["ownerNodes"])
+        self.assertEqual(24, self.world["trisAdded"])   # two boxes of 12
+
+    def test_a_soldier_stands_on_the_ruin(self) -> None:
+        # A 0.4 m sphere coming down onto the 20 m roof stops on it.
+        self.assertEqual({"owner": 2, "y": 20.4}, self.world["boot"])
+
+    def test_a_round_lands_on_the_ruin_and_costs_it_hit_points(self) -> None:
+        self.assertEqual({"owner": 2, "x": 25, "material": 51}, self.world["round"])
+        self.assertEqual({"lost": 50, "hp": 999949}, self.world["hit"])
+        self.assertEqual([1, 2], self.world["damageables"])
+
+    def test_the_floating_raft_is_met_where_it_floats_now(self) -> None:
+        # Registered 0.47 m under; its hull's top is met at +0.068 + 0.5.
+        self.assertEqual(0.068, self.world["raftY"])
+        self.assertEqual({"owner": 1, "y": 0.568}, self.world["raftTop"])
+        self.assertEqual([-30, 0.068, 30], self.world["raftPosition"])
+
+    def test_the_damage_system_shows_its_tier_and_nothing_puts_it_back(self) -> None:
+        self.assertEqual(["e_PanzFire"], self.world["tierPlays"])
+        self.assertEqual(0, self.world["startedByAdopt"])
+        self.assertEqual([{"owner": 1, "spawned": True, "spawnDelay": None},
+                          {"owner": 2, "spawned": True, "spawnDelay": None}],
+                         self.world["visuals"])
+
+
 @unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
 class BakedRaftTests(unittest.TestCase):
     """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft
@@ -151,8 +192,14 @@ class BakedRaftTests(unittest.TestCase):
 
     def test_the_baked_raft_floats_at_the_float_laws_rest(self) -> None:
         self.assertEqual("float", self.result["kind"])
+        self.assertEqual(4, self.result["floats"])
         self.assertEqual(0.068, self.result["rest"])
         self.assertAlmostEqual(0.068, self.result["end"], delta=0.002)
+
+    def test_the_baked_raft_carries_its_hulls(self) -> None:
+        # The effects bake leaves particles hull-less; a spawned object is
+        # solid, so its collision meshes are baked with it.
+        self.assertGreater(self.result["hulls"], 0)
 
 
 @unittest.skipUnless((GAME / "Mods" / "DesertCombat").is_dir(), "no Desert Combat install")

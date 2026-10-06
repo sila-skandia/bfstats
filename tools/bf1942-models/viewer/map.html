@@ -1062,6 +1062,8 @@ guns.effects = effects;
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
   get collider() { return level.collider; },
+  get world() { return level.world; },
+  registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
   isCollision: node => level.isCollision(node),
   bindDynamicShading: root => level.bindDynamicShading(root),
 });
