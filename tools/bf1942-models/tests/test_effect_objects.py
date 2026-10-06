@@ -80,6 +80,81 @@ class SyntheticTests(unittest.TestCase):
                          [{k: p[k] for k in ("name", "attached", "position")} for p in plays])
 
 
+class SpawnedBodyTests(unittest.TestCase):
+    """A spawned object's body is its template's (PHY-17, PHY-3): an
+    `Elco80Raft`-shaped raft stood up 0.47 m under the water, where an
+    `Elco80` afloat stands it, rises to the float law's rest and stays."""
+
+    raft: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raft = run_harness()["raft"]
+
+    def test_a_mobile_raft_floats_up_to_the_float_laws_rest(self) -> None:
+        float_ = self.raft["float"]
+        self.assertEqual("float", float_["kind"])
+        self.assertEqual(0.068, float_["rest"])
+        # It rises, it does not snap: still under after half a second, at rest
+        # within two.
+        trace = dict(float_["trace"])
+        self.assertLess(trace[15], -0.2)
+        self.assertAlmostEqual(0.068, trace[60], delta=0.002)
+        self.assertAlmostEqual(0.068, float_["end"], delta=0.001)
+        self.assertEqual(1, float_["level"])
+
+    def test_a_raft_dropped_from_above_comes_down_onto_the_water(self) -> None:
+        # Pirates' dinghy would be stood up 4.4 m above the water.
+        dropped = self.raft["dropped"]
+        self.assertEqual("float", dropped["kind"])
+        self.assertAlmostEqual(0.068, dropped["end"], delta=0.002)
+
+    def test_without_mobile_physics_it_stays_where_it_was_stood(self) -> None:
+        immobile = self.raft["immobile"]
+        self.assertEqual("static", immobile["kind"])
+        self.assertEqual({-0.47}, {y for _, y in immobile["trace"]})
+
+    def test_on_dry_land_it_falls_onto_the_ground(self) -> None:
+        # The hull box hangs 0.3 m under the origin: it rests 0.3 m over 3.
+        for case in ("dryLand", "noWater"):
+            with self.subTest(case):
+                self.assertEqual("ground", self.raft[case]["kind"])
+                self.assertAlmostEqual(3.3, self.raft[case]["end"], delta=0.001)
+
+
+@unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class BakedRaftTests(unittest.TestCase):
+    """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft
+    carries its four floaters and the bit that makes it mobile."""
+
+    result: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from bf42 import gltf
+        from bf42.assemble import Assembler, Report
+        from extract_models import build_library, build_pools, mod_chain
+        chain = mod_chain(GAME, "bf1942")
+        meshes, textures, objects, _game = build_pools(chain, [])
+        library = build_library(objects)
+        assembler = Assembler(meshes, textures, objects, library,
+                              include_collision=False, max_texture=16)
+        assembler.apply_material_diffuse = True
+        assembler.additive_alpha_test = True
+        builder = gltf.GlbBuilder()
+        report = Report(root="effects", configuration="complex", lod=0)
+        roots, cls.index = assembler.bake_effect_library(builder, ["e_PTBoatWreck"], report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "effects.glb"
+            path.write_bytes(builder.build(roots, extras={"effects": {}}))
+            cls.result = run_harness(f"--raft={path}")["bakedRaft"]
+
+    def test_the_baked_raft_floats_at_the_float_laws_rest(self) -> None:
+        self.assertEqual("float", self.result["kind"])
+        self.assertEqual(0.068, self.result["rest"])
+        self.assertAlmostEqual(0.068, self.result["end"], delta=0.002)
+
+
 @unittest.skipUnless((GAME / "Mods" / "DesertCombat").is_dir(), "no Desert Combat install")
 class NoFlyZoneTowerTests(unittest.TestCase):
     tower: dict
