@@ -1,0 +1,24 @@
+{
+  "name": "dc-basrahs_edge-coop-lod0-rec",
+  "description": "dc-basrahs_edge-coop-rec with `aiSettings.lodEnable 0` (every bot at AI LOD 0, every shot real): the one DC level with a co-op layer that places static wrecks (six `DC_pickup-wreck1_m1`, a `DC_slumwreckage1_m1`), for whether retail rounds and bodies pass through a static that never writes `hasCollisionPhysics 1` (COL-16..18). Also whether retail bots move on its tank search map. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "dc_basrahs_edge",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 15,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30",
+    "aiSettings.lodEnable 0"
+  ],
+  "human": "No client needed: the server records itself. One round, then `lab.py stop`."
+}
