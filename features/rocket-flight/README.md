@@ -52,9 +52,13 @@ streak down its path:
 - a round between tracers is the gun's own projectile: `spec.gravity ?? 1`;
 - a tracer round is the tracer template in flight, so it falls by the
   tracer's own `gravityModifier`. The exporter now writes it into
-  `fireArms.tracer.gravity`, resolved to 1.0 when undeclared. A glb baked
-  before that carries none and keeps the old straight streak, which is right
-  for retail's `Tracer_Projectile` (`gravityModifier 0.0`).
+  `fireArms.tracer.gravity`, resolved to 1.0 when undeclared, and
+  `extract_map.py` writes every round's declared `gravityModifier` into its
+  `damage.json` row, so the damage layer alone brings a tracer's word to a
+  glb baked before (that layer is seconds a tree; the glb route reaches 83 DC
+  and 100 DC Final model glbs and nearly every level). Assets too old for
+  either keep the old straight streak, which is right for retail's
+  `Tracer_Projectile` (`gravityModifier 0.0`).
 
 What changes, from the census (each checked against its `.con`):
 
