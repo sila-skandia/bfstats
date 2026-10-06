@@ -197,6 +197,7 @@ results.normalised = normaliseBase({ team: 1, position: [1, 2, 3] });
                   victoryType: round.victoryType, roundsWon: { ...round.roundsWon },
                   captures: { 1: round.teams[1].captures, 2: round.teams[2].captures },
                   smith: round.tally(11).flags, hans: round.tally(12).flags,
+                  attacks: { 1: round.teams[1].attacks, 2: round.teams[2].attacks },
                   medals: round.medals([{ id: 11, team: 2 }, { id: 12, team: 1 }, { id: 13, team: 1 }]) };
   // After the end: a fourth theft is still the law's (the flag moves), but it
   // pays nothing (ROUND-7, `scoreEvent` returns in EndGame).
