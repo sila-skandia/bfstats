@@ -125,9 +125,10 @@ store).
 ### The other mods (read-only here)
 
 These mods are outside routine extraction, so their trees wait for the owner to
-ask for them by name. The census flagged 26 of their levels. Terrain-only
-scratch bakes (`--terrain-only`, old exporter against new) show which of those
-actually move:
+ask for them by name. The census flagged 24 of their levels, and FHSW's
+D_DAY_drops for its out-of-window files. Terrain-only scratch bakes
+(`--terrain-only`, old exporter against new) of 24 of them (all but bg42's
+4503-tokyo_air_raid, which has no tiles and no bake) show 15 that move:
 
 | Tree | Levels that move | Baked today |
 |---|---|---|
@@ -138,8 +139,8 @@ actually move:
 Eight FHSW levels that ship no tiles (3rd_Solomon_Sea, Battle_of_Leyte_Gulf_day2,
 Escape_from_Leyte, Monster_des_Stahles, Operation_A, Operation_Kikusui_day1,
 Operation_zengen, Surigao_Strait-1944) came out identical. So did FHSW's
-D_DAY_drops: its 37 files outside the window are off the heightmap too, which
-the old bake already left undrawn. When the owner asks, the full bakes are:
+D_DAY_drops: its 37 files outside the window are off the heightmap too, and the
+old bake already left them undrawn. When the owner asks, the full bakes are:
 
     python3 extract_maps_all.py --mod EoD --levels Closefire --out viewer/maps/mods/eod --no-optimise -j 1
     python3 extract_maps_all.py --mod FHSW --levels Coral_Sea Dover_Strait Fall_of_Berlin-1945 \
