@@ -278,9 +278,8 @@ human's hand weapon (`hand-aim.js`) and the vehicle coax fire through.
 own deviation and paying the round's full damage; a gun with one plain
 barrel keeps the one ray down the eye.
 
-**Depends on** branch `worktree-agent-a08365fc0de41111f` (the hand weapons'
-barrels): it exports `cameraLaunch` with the same hunk this commit carries,
-so the two merge cleanly in either order; `hand-aim.js` lands with it.
+`cameraLaunch`'s export came with the hand weapons' barrels
+(features/hand-weapon-barrels-sight-and-heat), on main since 2026-10-07.
 
 **How it was checked.** `tests/test_bot_weapons.py BotBarrelsTests`: a
 Remington pull is eight resolved rounds, each 0.5 to 1.5 degrees off the
