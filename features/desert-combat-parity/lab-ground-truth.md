@@ -157,7 +157,39 @@ seven rounds, and El Alamein. `dc_truth.py`'s hands-off fit and
   0.0 the 1.8 deg/s held. A threshold tighter than 2 degrees finds few
   stretches.
 
-<!-- VANILLA-AIR -->
+### Fixed-wing aircraft, DC and vanilla (air census item 6)
+
+Speeds (m/s) while airborne, "level" with climb or sink under 2 m/s and the
+nose within 5 degrees, a rate "held" when it stayed at or above that for
+0.5 s; bots flying at LOD 2, which the physics flies (rates follow the
+controls, no locked lines).
+
+| aircraft | air s | speed p50 / p95 / max | level p95 / held 3 s | climb p95 / max | roll rate p95 / held 0.5 s | pitch rate held 0.5 s | lift-off |
+|---|---|---|---|---|---|---|---|
+| A-10C | 445 | 68.3 / 79.5 / 103.3 | 78.3 / 71.3 | 21.3 / 41.5 | 62.1 / 87.4 | 54.8 | 46.0 |
+| Su-25 | 1,076 | 66.9 / 77.7 / 94.7 | 75.7 / 73.6 | 21.4 / 38.6 | 68.1 / 116.4 | 49.1 | 44.3 |
+| F-14B | 324 | 88.8 / 109.8 / 124.8 | 115.5 / 107.6 | 37.8 / 57.5 | 94.7 / 112.0 | 53.2 | 55.1 |
+| F-15C | 198 | 78.2 / 149.7 / 164.9 | 85.9 / - | 32.3 / 40.9 | 85.6 / 135.3 | 71.1 | 46.7 |
+| MiG-29 | 267 | 79.8 / 98.0 / 107.3 | 96.0 / - | 30.1 / 41.8 | 87.7 / 114.9 | 70.1 | 46.0 |
+| AV-8B (as a plane) | 132 | 70.6 / 101.9 / 119.3 | 83.2 / - | 28.6 / 40.2 | 29.0 / 118.2 | 43.0 | 47.4 |
+| AC-130 | 142 | 35.1 / 52.4 / 53.7 | 44.8 / 36.7 | 10.7 / 11.4 | 8.0 / 18.7 | 14.7 | 27.1 |
+| vanilla BF109 | 2,716 | 49.8 / 64.3 / 94.5 | 60.8 / 61.2 | 13.9 / 32.2 | 49.3 / 135.0 | 61.7 | 27.6 |
+| vanilla Spitfire | 7,087 | 38.6 / 59.9 / 80.5 | 60.9 / 61.1 | 9.9 / 31.8 | 51.3 / 122.7 | 69.2 | 27.6 |
+| vanilla Stuka | 957 | 42.9 / 53.8 / 62.6 | 54.7 / 52.1 | 11.6 / 20.4 | 33.6 / 69.4 | 47.2 | 30.4 |
+| vanilla B-17 | 3,352 | 35.3 / 68.7 / 96.9 | 61.9 / 57.9 | 18.5 / 26.5 | 17.7 / 47.9 | 35.3 | 25.4 |
+| vanilla Zero | 341 | 39.6 / 59.0 / 65.5 | 56.2 / 53.3 | 12.9 / 25.9 | 48.2 / 72.7 | 52.7 | carrier |
+| vanilla Corsair | 241 | 43.6 / 62.6 / 78.8 | 57.3 / 46.9 | 12.9 / 28.2 | 40.3 / 57.2 | 59.3 | 28.6 |
+| vanilla SBD | 245 | 40.5 / 59.8 / 68.5 | 53.1 / 40.6 | 12.9 / 24.1 | 35.3 / 61.6 | 44.8 | 27.2 |
+| vanilla Aichi Val | 305 | 38.8 / 53.0 / 57.3 | 53.1 / 49.1 | 11.8 / 17.9 | 34.7 / 52.2 | 38.7 | carrier |
+
+(DC: El Alamein, Bocage, Gazala; vanilla: the bots-only El Alamein soak
+`20261004-180859-parity-elalamein-rec` and the `projpool` El Alamein and Wake
+runs, about 4 hours of round. The Zero and the Val leave a carrier deck, so
+they are airborne from the start. A human-flown BF109 in the two parity
+rounds: speed p50 48.4, max 84.4, roll held 118.2.) The census's DC level top
+speeds of 63-87 m/s against an AI maxSpeed of 60: in retail the jets cruise
+66-89 m/s at the median and reach 95-165, so their AI maxSpeed of 60 does not
+cap them.
 
 ### The Harrier: bots fly it as a plane (no hover measured)
 
@@ -248,6 +280,59 @@ M-109, M-1974 or BM-21 (their gunners, yes).
 - Bots stand still rarely: of the soldier lives that lasted 30 s, 2-7 a round
   never got 20 m from where they began without boarding anything (the levels
   census's "frozen in Change" counts in the viewer's runner are 0-5 of 6).
+
+### Rounds in flight (weapons census items 19-24, questions 1 and 4)
+
+From the LOD 0 round (every shot real) and, for the MLRS, a bots-only DC
+Bocage round (artillery fires real at LOD 2). `v0` is the speed over the
+first two ticks; "a along" is the acceleration along the launch direction and
+"g across" the gravity across it, from a quadratic fit over the first 3 s of
+free flight (to the first bounce or hit); speeds are at 0.5-5 s.
+
+| round | fired by | flights | v0 | 0.5 s | 1 s | 2 s | 3 s | 5 s | a along | g across | what it says |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Sabot_Projectile | M1A1 | 12 | 250.1 | 249.4 | 250.5 | | | | -1.7 | 14.74 | gravity 1.0 (IMP-7's 14.73) |
+| T72Projectile | T-72 | 1 | 248.7 | 252.4 | | | | | -0.2 | 14.61 | gravity 1.0 |
+| 25mmChaingunProjectileBMP2 | BMP-2 | 33 | 585.1 | 585.0 | 585.5 | | | | 0.0 | **2.94** | `gravityModifier 0.2` honoured (the viewer flies bullet-kind rounds flat) |
+| SMAWProjectile | SMAW | 44 | 100.0 | 100.0 | 99.9 | 100.3 | | | -0.2 | **5.89** | 0.4 x 14.73 |
+| RPGProjectile | RPG-7 | 14 | 100.0 | 100.0 | 99.7 | 99.7 | 100.1 | | -0.3 | **5.89** | 0.4 |
+| M203projectile, AK47GP30Projectile | M203, GP-30 | 5 | 60.1 | 60.2 | 60.7 | | | | 0.2 | **7.36** | 0.5 |
+| 40mm_Grenade | Humvee Mk19 | 6 | 107.7 | 106.3 | 105.4 | 105.0 | | | -3.5 | 14.73 | 1.0 |
+| TOW_Projectile | M2A3, Humvee TOW | 10 | 100.6 | 106.2 | 107.4 | 100.7 | | | 0.0 | **0.0** | straight, constant speed, turns under 0.1 degrees: no guidance, no gravity |
+| BMP2_AT4_Projectile | BMP-2 AT-5 | 17 | 100.0 | 100.0 | 100.0 | 100.0 | 100.2 | 100.3 | 0.0 | **0.0** | the same |
+| Spandrel_Projectile | BRDM-2 Spandrel | 2 | **191.3** | 191.3 | 191.2 | | | | 0.0 | 0.0 | question 4: the launcher declares no velocity and the round leaves at 191.3, not the viewer's `velocity ?? 100` |
+| AS-7 | Su-25 rack | 32 | 80.1 | 88.4 | 92.1 | 98.3 | 103.3 | | +4.4 | 14.48 | a winged bomb (no Engine in its template: mass 250, drag 0.08, `setWingLift 2`) gaining speed in the dive it is dropped in (12 degrees down: 3.1 m/s^2 of gravity along it), falling at full gravity |
+| MLRSRocket | MLRS ("Blast") | 11 | 97.8 | 88.5 | 91.3 | 101.4 | 109.0 | | +4.0 | **16.8** | **arcs under gravity** (item 22: the viewer sets gravity 0 for every rocket) and speeds up under its `c_ETRocket` motor (torque 50, differential 30, maxRotation 5000; mass 20, drag 1) |
+| Blank_Projectile | MLRS ("Blast") | 11 | 100.1 | 98.6 | 97.8 | 97.6 | 99.4 | 108.8 | -3.5 | 14.73 | a second round per MLRS shot, ballistic, lives 10 s |
+| CBU87Prj | A-10C | 28 | 69.9 | 70.0 | 71.1 | 75.8 | 82.3 | | 0.2 | **14.45** | item 24: the submunitions fall (the viewer flies them level as bullet-kind) |
+| Aim9 | F-15C | 11 | 503.7 | 224.4 | 154.3 | | | | | | slows to a third in 1 s (drag), turns under 0.1 degrees |
+| 30mm / Avenger / .50 / 7.62 / 5.56 | guns | 1,000+ | 973-1,092 | | | | | | 0 | **0** | non-tracer bullets: no gravity |
+| tracers (20 mm, .50, 7.62, Avenger) | guns | 200+ | 973-1,091 | | | | | | | **14.7** | every tracer falls at full gravity |
+
+- **Rocket motors (question 1):** the MLRS rocket, the one recorded round
+  with a `c_ETRocket` Engine, gains about 20 m/s over 3 s (88.5 at 0.5 s to
+  109 at 3 s, on a shallow arc) and falls under at least full gravity (16.8
+  across its path; the Wing's 0.1 lift and the motor's line both feed that
+  number); the TOW and AT-5 neither accelerate nor fall; the Aim-9 loses two
+  thirds of its speed in a second. None of them steers. The viewer's fixed
+  25 m/s^2 with gravity 0 matches none of these. Hellfire, Hydra, Stinger and
+  the Katyusha were not fired in any recorded round.
+
+### A land hull in deep water (ground census root cause 2): not measured
+
+Bots did not drive a land hull into the sea in a 10-minute LOD 0 round of DC
+Guadalcanal (12 land hull types driven, 0 samples under the water plane).
+Putting hulls there failed three ways: `Object.create` / `Object.absolutePosition`
+in the server's autoexec makes nothing (it runs before the level loads); a
+numbered level patch (`guadalcanal_001.rfa` / `_999.rfa` with six extra
+co-op spawners in 2-15 m of water) is not read; and a whole uncompressed copy
+of DC's `GuadalCanal.rfa` with the spawners added is rejected (the server
+falls back to vanilla's Guadalcanal: US Marines, Shermans), with or without a
+148-byte checksum block. So the engine reads only archives it can verify, or
+only compressed ones. Measuring it needs a human driving in, or an archive
+written the way the game writes them (LZO segments and its checksum).
+(`~/.cache/dc-sweep/dc-lab/make_water_patch.py`, `make_water_level.py`; the
+lab's link tree was restored after each try.)
 
 <!-- ROUNDS -->
 
