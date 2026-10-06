@@ -55,12 +55,18 @@ export function launchesADrawnBody(stats, projectileMesh) {
  * bomb forward at 100 m/s (ledger BOMB-8). `0` is a real, authored value on
  * every one of the thirteen vanilla aircraft racks and means precisely what it
  * says: the round leaves at no speed of its own and inherits the platform's.
- * `?? ` instead of `||` is the whole fix; the 100 stays as the fallback for a
- * template that declares no `velocity` at all.
+ * `?? ` instead of `||` is the whole fix. A template that declares no
+ * `velocity` at all gets the engine's own default, 200 m/s (ledger FA-3; the
+ * 100 that stood here was a guess): every `Binoculars` and Desert Combat's
+ * `BRDM2_Spandrel` launcher rely on it.
  */
 export function releaseSpeed(stats) {
-  return stats?.velocity ?? 100;
+  return stats?.velocity ?? FIREARMS_DEFAULT_VELOCITY;
 }
+
+/** `FireArmsTemplate`'s constructor writes 200.0 to `velocity` (`+0x2e8`,
+ *  lnxded `0x0828d808`; ledger FA-3). */
+export const FIREARMS_DEFAULT_VELOCITY = 200;
 
 /**
  * Which barrels fire on one pull, and how many rounds that costs.

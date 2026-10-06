@@ -227,6 +227,12 @@ class RocketFlightTests(unittest.TestCase):
         self.assertEqual(0, rounds[0]["drop"])
         self.assertAlmostEqual(g1, rounds[1]["drop"], delta=0.01)
 
+    def test_a_gun_with_no_velocity_launches_at_two_hundred(self) -> None:
+        # `FireArmsTemplate`'s constructor writes 200.0 (ledger FA-3); an
+        # authored 0 (every aircraft bomb rack) is still 0 (BOMB-8).
+        self.assertEqual({"absent": 200, "zero": 0, "declared": 45},
+                         self.results["velocityDefault"])
+
     def test_vanillas_tracer_flies_flat_fresh_or_stale(self) -> None:
         # `Tracer_Projectile` declares 0.0; a glb baked before the tracer
         # carried its gravity keeps the straight streak.
