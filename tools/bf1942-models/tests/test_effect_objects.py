@@ -80,6 +80,244 @@ class SyntheticTests(unittest.TestCase):
                          [{k: p[k] for k in ("name", "attached", "position")} for p in plays])
 
 
+class SpawnedBodyTests(unittest.TestCase):
+    """A spawned object's body is its template's (PHY-17, PHY-3): an
+    `Elco80Raft`-shaped raft stood up 0.47 m under the water, where an
+    `Elco80` afloat stands it, rises to the float law's rest and stays."""
+
+    raft: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raft = run_harness()["raft"]
+
+    def test_a_mobile_raft_floats_up_to_the_float_laws_rest(self) -> None:
+        float_ = self.raft["float"]
+        self.assertEqual("float", float_["kind"])
+        self.assertEqual(0.068, float_["rest"])
+        # It rises, it does not snap: still under after half a second, at rest
+        # within two.
+        trace = dict(float_["trace"])
+        self.assertLess(trace[15], -0.2)
+        self.assertAlmostEqual(0.068, trace[60], delta=0.002)
+        self.assertAlmostEqual(0.068, float_["end"], delta=0.001)
+        self.assertEqual(1, float_["level"])
+
+    def test_a_raft_dropped_from_above_comes_down_onto_the_water(self) -> None:
+        # Pirates' dinghy would be stood up 4.4 m above the water.
+        dropped = self.raft["dropped"]
+        self.assertEqual("float", dropped["kind"])
+        self.assertAlmostEqual(0.068, dropped["end"], delta=0.002)
+
+    def test_without_mobile_physics_it_stays_where_it_was_stood(self) -> None:
+        immobile = self.raft["immobile"]
+        self.assertEqual("static", immobile["kind"])
+        self.assertEqual({-0.47}, {y for _, y in immobile["trace"]})
+
+    def test_on_dry_land_it_falls_onto_the_ground(self) -> None:
+        # The hull box hangs 0.3 m under the origin: it rests 0.3 m over 3.
+        for case in ("dryLand", "noWater"):
+            with self.subTest(case):
+                self.assertEqual("ground", self.raft[case]["kind"])
+                self.assertAlmostEqual(3.3, self.raft[case]["end"], delta=0.001)
+
+
+class SpawnedWorldTests(unittest.TestCase):
+    """What a spawn effect stands up is an object of the world (EMT-10):
+    solid in the level's collider and shootable through its damageables, the
+    way a placed static is. The real collider, damage set and wreck module,
+    with a ruin shaped like `air_control_tower_des_wreck` and the raft."""
+
+    world: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.world = run_harness()["world"]
+
+    def test_each_object_takes_an_owner_id_after_the_levels_own(self) -> None:
+        self.assertEqual({"ruin": 2, "raft": 1}, self.world["owners"])
+        self.assertEqual(["ground_slab", "Elco80Raft", "air_control_tower_des_wreck"],
+                         self.world["ownerNodes"])
+        self.assertEqual(24, self.world["trisAdded"])   # two boxes of 12
+
+    def test_a_soldier_stands_on_the_ruin(self) -> None:
+        # A 0.4 m sphere coming down onto the 20 m roof stops on it.
+        self.assertEqual({"owner": 2, "y": 20.4}, self.world["boot"])
+
+    def test_a_round_lands_on_the_ruin_and_costs_it_hit_points(self) -> None:
+        self.assertEqual({"owner": 2, "x": 25, "material": 51}, self.world["round"])
+        self.assertEqual({"lost": 50, "hp": 999949}, self.world["hit"])
+        self.assertEqual([1, 2], self.world["damageables"])
+
+    def test_the_floating_raft_is_met_where_it_floats_now(self) -> None:
+        # Registered 0.47 m under; its hull's top is met at +0.068 + 0.5.
+        self.assertEqual(0.068, self.world["raftY"])
+        self.assertEqual({"owner": 1, "y": 0.568}, self.world["raftTop"])
+        self.assertEqual([-30, 0.068, 30], self.world["raftPosition"])
+
+    def test_the_damage_system_shows_its_tier_and_nothing_puts_it_back(self) -> None:
+        self.assertEqual(["e_PanzFire"], self.world["tierPlays"])
+        self.assertEqual(0, self.world["startedByAdopt"])
+        self.assertEqual([{"owner": 1, "spawned": True, "spawnDelay": None},
+                          {"owner": 2, "spawned": True, "spawnDelay": None}],
+                         self.world["visuals"])
+
+
+class SpawnedRemovalTests(unittest.TestCase):
+    """What removes a spawned object (EMT-11): its Armor's death and then its
+    template's `timeToLiveAfterDeath` (HP-19), or the round's end (HP-20).
+    No spawner made it, so nothing else does."""
+
+    removal: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.removal = run_harness()["removal"]
+
+    def test_a_sunk_raft_is_gone_with_its_hull_and_armor(self) -> None:
+        # Both rafts write `timeToLiveAfterDeath 0`.
+        self.assertFalse(self.removal["raftHeld"])
+        self.assertFalse(self.removal["raftInScene"])
+        self.assertEqual("water", self.removal["raftHit"])
+        self.assertFalse(self.removal["raftDamageable"])
+        self.assertEqual(["air_control_tower_des_wreck"], self.removal["objectsAfterRaft"])
+
+    def test_an_unhurt_ruin_stands_until_the_round_ends(self) -> None:
+        self.assertTrue(self.removal["ruinAfterTenMinutes"])
+        self.assertEqual({"held": 0, "objects": 0, "ruinInScene": False, "removed": 2,
+                          "ruinSolid": None, "damageables": []},
+                         self.removal["afterRoundEnd"])
+
+
+class BoatDeathTests(unittest.TestCase):
+    """A boat a round kills afloat dies in the water: the `-1` tier
+    (ARM-11), which is where a PT boat's raft comes from. `reconcileDamaged`
+    re-picked it as if on land, so no shot boat ever left one."""
+
+    def test_afloat_the_water_tier_beached_the_land_one(self) -> None:
+        self.assertEqual({"afloat": [-1], "beached": [0]}, run_harness()["boatDeath"])
+
+
+class HullLessRemovalTests(unittest.TestCase):
+    """A spawned object with no hulls gets no owner id and no damageable, so
+    `adopt` starts its living tier itself; the round's end takes the object
+    and must take that tier's run with it, or a burning loop outlives it."""
+
+    def test_the_round_end_stops_the_tier_adopt_started(self) -> None:
+        hullless = run_harness()["hullless"]
+        self.assertEqual({"owner": -1, "tiers": 1, "stopped": 0}, hullless["before"])
+        self.assertEqual(1, hullless["removed"])
+        self.assertEqual(0, hullless["held"])
+        self.assertEqual(["e_PanzFire"], hullless["stopped"])
+
+
+class WaterDeathTierTests(unittest.TestCase):
+    """Every way a hull dies picks the same death tier (ARM-11: `-1` in the
+    water): a round, a bomb's splash and a crash, on vanilla's own tier
+    tables (`water_death_tier_harness.mjs`). A land vehicle or a plane in the
+    water dies on its own `-1` (`WaterWaterExplosion`), a plane over the sea
+    and a tank on a bridge on their land tier, and a ship with no `-1` on its
+    `0`. Before the round path passed the water test, only a crash could
+    leave a PT boat's raft."""
+
+    WANT = {"elcoAfloat": [-1], "elcoBeached": [0], "shermanInRiver": [-1],
+            "shermanOnLand": [0], "shermanOnBridge": [0], "spitfireOverSea": [0],
+            "spitfireDitched": [-1], "destroyerAfloat": [0]}
+
+    def test_a_round_a_bomb_and_a_crash_agree(self) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        harness = Path(__file__).with_name("water_death_tier_harness.mjs")
+        proc = subprocess.run(["node", str(harness)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        result = json.loads(proc.stdout)
+        for by in ("round", "bomb", "crash"):
+            self.assertEqual(self.WANT, result[by], by)
+
+
+@unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class BakedRaftTests(unittest.TestCase):
+    """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft
+    carries its four floaters and the bit that makes it mobile."""
+
+    result: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from bf42 import gltf
+        from bf42.assemble import Assembler, Report
+        from extract_models import build_library, build_pools, mod_chain
+        chain = mod_chain(GAME, "bf1942")
+        meshes, textures, objects, _game = build_pools(chain, [])
+        library = build_library(objects)
+        assembler = Assembler(meshes, textures, objects, library,
+                              include_collision=False, max_texture=16)
+        assembler.apply_material_diffuse = True
+        assembler.additive_alpha_test = True
+        builder = gltf.GlbBuilder()
+        report = Report(root="effects", configuration="complex", lod=0)
+        roots, cls.index = assembler.bake_effect_library(builder, ["e_PTBoatWreck"], report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "effects.glb"
+            path.write_bytes(builder.build(roots, extras={"effects": {}}))
+            cls.result = run_harness(f"--raft={path}")["bakedRaft"]
+
+    def test_the_baked_raft_floats_at_the_float_laws_rest(self) -> None:
+        self.assertEqual("float", self.result["kind"])
+        self.assertEqual(4, self.result["floats"])
+        self.assertEqual(0.068, self.result["rest"])
+        self.assertAlmostEqual(0.068, self.result["end"], delta=0.002)
+
+    def test_the_baked_raft_carries_its_hulls(self) -> None:
+        # The effects bake leaves particles hull-less; a spawned object is
+        # solid, so its collision meshes are baked with it.
+        self.assertGreater(self.result["hulls"], 0)
+
+
+@unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class SharedMeshHullTests(unittest.TestCase):
+    """A spawned object keeps its hulls when a particle baked before it
+    throws one of its meshes (the effects bake turns hulls on for the object
+    only, and the mesh cache had the particle's hull-less answer)."""
+
+    def hulls(self, names: list[str]) -> int:
+        from bf42 import gltf
+        from bf42.assemble import Assembler, Report
+        from extract_models import build_library, build_pools, mod_chain
+        meshes, textures, objects, _game = build_pools(mod_chain(GAME, "bf1942"), [])
+        library = build_library(objects)
+        # Sorted before `e_PTBoatWreck`, as the bake walks them.
+        library.add_con("Objects/Probe/Effects.con", """
+ObjectTemplate.create EffectBundle e_AaaRaftDebris
+ObjectTemplate.addTemplate Em_AaaRaftDebris
+ObjectTemplate.create Emitter Em_AaaRaftDebris
+ObjectTemplate.template AaaRaftChunk
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.create SimpleObject AaaRaftChunk
+ObjectTemplate.geometry PTRaft_Hull_M1
+""")
+        assembler = Assembler(meshes, textures, objects, library,
+                              include_collision=False, max_texture=16)
+        builder = gltf.GlbBuilder()
+        roots, index = assembler.bake_effect_library(
+            builder, names, Report(root="effects", configuration="complex", lod=0))
+        glb = builder.build(roots, extras={"effects": index})
+        import struct
+        nodes = json.loads(glb[20:20 + struct.unpack_from("<I", glb, 12)[0]])["nodes"]
+        stack = [next(i for i, n in enumerate(nodes) if n.get("name") == "Elco80Raft")]
+        count = 0
+        while stack:
+            node = nodes[stack.pop()]
+            count += bool((node.get("extras") or {}).get("collision"))
+            stack += node.get("children", [])
+        return count
+
+    def test_a_debris_of_the_rafts_own_mesh_leaves_it_solid(self) -> None:
+        alone = self.hulls(["e_PTBoatWreck"])
+        self.assertGreater(alone, 1)
+        self.assertEqual(alone, self.hulls(["e_AaaRaftDebris", "e_PTBoatWreck"]))
+
+
 @unittest.skipUnless((GAME / "Mods" / "DesertCombat").is_dir(), "no Desert Combat install")
 class NoFlyZoneTowerTests(unittest.TestCase):
     tower: dict

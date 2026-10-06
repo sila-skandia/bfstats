@@ -1910,12 +1910,24 @@ class Assembler:
             # A spawn effect's payload is a whole object (EMT-10), baked the
             # way a model or level export bakes it: no `materialDiffuse` and
             # no additive alpha cut, which only effect particles take.
-            saved = self.apply_material_diffuse, self.additive_alpha_test
+            # It is solid, as a placed object is: its collision hulls are baked
+            # with it whatever the bake's own setting. A geometry an effect
+            # particle cached as hull-less while hulls were off is looked at
+            # again.
+            saved = (self.apply_material_diffuse, self.additive_alpha_test,
+                     self.include_collision)
             self.apply_material_diffuse = self.additive_alpha_test = False
+            if not self.include_collision:
+                self.include_collision = True
+                self._geom_collisions = {k: v for k, v in self._geom_collisions.items() if v}
             try:
-                return self.build_node(builder, name, report, depth=1)
+                # Depth 0: the object is a root of the world, as a placed one
+                # is, so whatever a bake stamps on a placed root (PHY-17's
+                # `hasMobilePhysics false`) it stamps on this one too.
+                return self.build_node(builder, name, report, depth=0)
             finally:
-                self.apply_material_diffuse, self.additive_alpha_test = saved
+                (self.apply_material_diffuse, self.additive_alpha_test,
+                 self.include_collision) = saved
 
         def build(node: effects_mod.BundleNode, depth: int) -> int | None:
             children: list[int] = []
@@ -3005,8 +3017,17 @@ class Assembler:
             # `_collision_only_node`. StandardMesh still attaches freely.
             if self._object_emits_geometry_collision(
                     template, collision_scope, root=collision_root):
-                collision_meshes = self._geom_collisions.get(
-                    template.geometry.lower(), [])
+                # Through the hull lookup rather than the cache alone, and
+                # only while hulls are on. The effects bake turns them on for
+                # a spawned object and off again: a mesh a particle built
+                # while they were off is cached with no hull, and
+                # `_mesh_index` hands it back from its own cache without
+                # looking again, so a spawned object sharing it came out
+                # hollow; and a particle built after one took its hulls,
+                # which a mesh particle's clone would draw.
+                collision_meshes = (self._collision_for_geometry(
+                    builder, template.geometry, report)
+                    if self.include_collision else [])
 
         children_refs = template.children
         lod_swap: dict | None = None
@@ -3526,6 +3547,18 @@ class Assembler:
                 "damageFromWater": template.damage_from_water,
                 "splashMaterial": template.material,
             }.items() if value is not None}
+            if armor or template.has_armor:
+                # How long the object stays once destroyed, and how it goes
+                # (HP-19). An absent word is the template default, 10 s with a
+                # fade from 8 s. Only beside an Armor's own words: a block
+                # with nothing else in it would make a placed PCO look armoured.
+                armor.update({key: value for key, value in {
+                    "timeToLiveAfterDeath": template.time_to_live_after_death,
+                    "fadeAtTimeToLiveAfterDeath": template.fade_at_time_to_live_after_death,
+                    "timeToStartFadeAfterDeath": template.time_to_start_fade_after_death,
+                    "resetWhenRemoved": template.reset_when_removed,
+                    "stayAsDestroyed": template.stay_as_destroyed,
+                }.items() if value is not None})
             if template.armor_effects:
                 armor["effects"] = [
                     {"hp": threshold, "effect": name,

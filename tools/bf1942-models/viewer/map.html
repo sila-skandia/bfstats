@@ -1066,11 +1066,16 @@ const effects = new EffectPlayer({
   onSound: (name, position, opts) => effectAudio.play(name, position, opts),
   onSoundStop: token => effectAudio.stop(token),
   // What a spawn effect stands up (a ruined objective, a PT boat's raft).
-  onObject: object => effectObjects.adopt(object),
+  onObject: (object, spec) => effectObjects.adopt(object, spec),
 });
 guns.effects = effects;
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
+  get collider() { return level.collider; },
+  get world() { return level.world; },
+  registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
+  unregisterDamageable: owner => wrecks.unregisterDamageable(owner),
+  get roundOver() { return !!round?.over; },
   isCollision: node => level.isCollision(node),
   bindDynamicShading: root => level.bindDynamicShading(root),
 });
@@ -1122,7 +1127,27 @@ function loadLevelEffects() {
     if (levelEffects.url === url) library?.setLevel(own);
     return own;
   });
+  loadLevelEffectSounds(mapRows.find(row => String(row.name).toLowerCase() === name)?.effectSounds);
   return levelEffects.load;
+}
+// The same level's bundles' sounds (`effectSounds`, `<level>/effects.sounds.json`),
+// in front of the mod's in the effect mixer; no key, the last level's go.
+let levelEffectSounds;
+function loadLevelEffectSounds(rel) {
+  if (AUDIO_OFF || params.get('sound') === 'off') return;
+  const url = rel ? `${MAPS_BASE}/${rel}${bust()}` : null;
+  if (url === levelEffectSounds) return;
+  levelEffectSounds = url;
+  effectAudio.setLevel(null);
+  if (!url) return;
+  fetch(url).then(r => (r.ok ? r.json() : null))
+    .then(manifest => {
+      if (levelEffectSounds !== url || !manifest) return;
+      effectAudio.listener = pageAudio.ensureListener();
+      effectAudio.setLevel(manifest);
+      effectAudio.setMaster(pageAudio.masterVolume());
+    })
+    .catch(err => console.warn('level effect sounds unavailable', err));
 }
 let effectSoundsLoad = null;
 function loadEffectSounds() {
@@ -2575,6 +2600,8 @@ function presentWorld(step, dt) {
   // ... and beside them, the hulls the body world does not carry: a ship that
   // has taken critical damage is going down, and its deck spawns go with it.
   hullBodies.stepSinkingHulls(step);
+  // ... and what spawn effects stood up: a raft floating off its boat.
+  effectObjects.step(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
