@@ -165,7 +165,9 @@ row without the `effects` key loads exactly as before.
 - Found in the page, for other packages:
   - No Fly Zone Day 2's objective PCOs leave their baked pose under the page's
     physics. The tower ended about 6 m higher and on its side, and hangars
-    floated. They declare `hasMobilePhysics 0`.
+    floated. They declare `hasMobilePhysics 0`. The ruin stands up in the
+    dying tower's frame (ARM-11, EMT-10), so until that is fixed the Day 2
+    ruin lies on its side too (review re-run, 2026-10-07).
   - The day-1 bake has the buildings' plain bundles (`air_control_tower_m1`)
     but none of the objective PCOs, so on day 1 nothing can be destroyed
     (MS-9's unreached scripts).
