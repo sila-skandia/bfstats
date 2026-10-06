@@ -195,7 +195,11 @@ the viewer keeps them apart the way the engine does.
 - Crosshair: `FireArms::getMenuCrossHairRadius`/`Size` (0x0828d470/0x0828d480)
   return `total` directly.
 - Ballistics: `FireArms::fireBarrel` (0x0828aba0) applies the random cone only when
-  `total > 0.01` (reads at 0x0828af0b, 0x0828b88c).
+  `total > 0.01` (reads at 0x0828af0b, 0x0828b88c). Each barrel draws its own
+  (DEV-9): a lateral velocity of `total × velocity / 100` on each of the
+  launch frame's up and right axes, uniform in (−total, +total], so the unit is
+  a hundredth of a radian and the shape a square. A shotgun's barrels each
+  turn that frame first (XHIT-16), so its pellets wander about their own turns.
 - **Zoom/aiming appears nowhere in the formula.** There is no aim multiplier, in
   either binary, on any path between the accumulators and the total.
 
