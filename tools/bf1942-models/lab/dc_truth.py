@@ -246,7 +246,32 @@ def read_recording(path: Path, keep_soldiers: float = 1.0) -> Recording:
         if life.ended is None:
             life.ended, life.end_kind = (life.gone, "gone") if life.gone is not None else (rec.duration, "file end")
     cut_at_round_end(rec)
+    for life in rec.lives:
+        on_ticks(life.track, 8)
+    for rd in rec.rounds.values():
+        on_ticks(rd["track"], 4)
     return rec
+
+
+TICK = 1 / 30
+
+
+def on_ticks(tr: array, stride: int) -> None:
+    """Put a track's samples on the server's ticks. The recorder samples once
+    after every 1/30 s tick but stamps the sample with the clock, which
+    jitters with the server's load (a DC Bocage MLRS rocket's samples are
+    0.017-0.045 s apart while it moves the same 2.7 m each), so speeds taken
+    sample to sample swing by half. Each stamp becomes the nearest whole tick
+    from the first, and never the tick of the sample before."""
+    n = len(tr) // stride
+    if n < 2:
+        return
+    t0 = tr[0]
+    last = 0
+    for i in range(1, n):
+        k = max(last + 1, round((tr[i * stride] - t0) / TICK))
+        tr[i * stride] = t0 + k * TICK
+        last = k
 
 
 def cut_at_round_end(rec: Recording) -> None:
@@ -286,7 +311,10 @@ def _event(rec: Recording, t: float, r: dict) -> None:
     if e == "destroyObject":
         rec.end(r.get("netId"), t, "destroyed")
     elif e == "setLevel":
-        rec.level, rec.mode = r.get("level", ""), r.get("mode", "")
+        # The recorder's own names the level; a client's join echoes its path
+        # (`bf1942/levels/el_alamein/`).
+        level = str(r.get("level", "")).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+        rec.level, rec.mode = level, r.get("mode", "")
     elif e == "gameStatus":
         rec.status.append((t, r.get("status")))
     elif e == "createPlayer":
