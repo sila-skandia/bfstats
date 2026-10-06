@@ -11,10 +11,13 @@
 //
 //   gravity  does a rocket that declares no `gravityModifier` fall (IMP-7)
 //   range    does each artillery rocket land, and how far out, at 30 and 45 deg
-//   motor    what the motor does on its own: the speed it settles at, flat
+//   bullets  does an invisible round (and a tracer) fall by its own word, and
+//            does a retail rifle round still fly flat
 
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
+import { fireBarrel } from './round-launch.js';
+import { GRAVITY } from './physics.js';
 import { WorldCollider } from './world-collider.js';
 import { buildHeightfield } from './heightfield.js';
 
@@ -97,6 +100,59 @@ export const ROUNDS = {
           rotation: [0, 0, 0], ...ROCKET_ENGINE },
       ],
     },
+  },
+};
+
+/** Invisible rounds, off the glbs: what the exporter calls `kind: 'bullet'`. */
+export const BULLETS = {
+  // vanilla BritishSoldier__Bar1918.fp.glb: every retail rifle and MG round
+  // declares `gravityModifier 0`
+  barProjectile: {
+    velocity: 1000.0,
+    projectile: { template: 'barProjectile', kind: 'bullet', timeToLive: 1.0,
+                  gravity: 0.0, material: 222,
+                  damage: { hasCollisionEffect: true, dieAfterColl: true } },
+  },
+  // desertcombat AH64.glb `M230Cannon`
+  '25mmChaingunProjectile': {
+    velocity: 1000.0,
+    projectile: { template: '25mmChaingunProjectile', kind: 'bullet',
+                  timeToLive: 4.0, gravity: 0.2, material: 674,
+                  damage: { radius: 5.0, material2: 673, damageType: 1,
+                            hasCollisionEffect: true } },
+  },
+  // desertcombat A10_C.glb `A10_CBU87`: no `gravityModifier`
+  CBU87Prj: {
+    velocity: 15.0,
+    projectile: { template: 'CBU87Prj', kind: 'bullet', timeToLive: 10.0,
+                  material: 853, mass: 25.0, drag: 1.6,
+                  damage: { radius: 15.0, material2: 853, damageType: 1,
+                            hasCollisionEffect: true, dieAfterColl: true },
+                  endEffect: 'e_ExplGranade' },
+  },
+  // desertcombat Browning.glb: a flat round, every second one a tracer that
+  // declares `gravityModifier 1`
+  '50cal_Projectile': {
+    velocity: 1000.0,
+    tracer: { template: '50cal_Tracer_Projectile', interval: 2,
+              timeToLive: 2.0, scaler: 50.0, gravity: 1.0 },
+    projectile: { template: '50cal_Projectile', kind: 'bullet', timeToLive: 2.0,
+                  gravity: 0.0 },
+  },
+  // vanilla's tracer, as a fresh glb carries it and as a stale one does
+  vanillaTracer: {
+    velocity: 1000.0,
+    tracer: { template: 'Tracer_Projectile', interval: 2, timeToLive: 3.0,
+              scaler: 50.0, gravity: 0.0 },
+    projectile: { template: 'BrowningProjectile', kind: 'bullet',
+                  timeToLive: 1.5, gravity: 0.0 },
+  },
+  staleTracer: {
+    velocity: 1000.0,
+    tracer: { template: 'Tracer_Projectile', interval: 2, timeToLive: 3.0,
+              scaler: 50.0 },
+    projectile: { template: 'BrowningProjectile', kind: 'bullet',
+                  timeToLive: 1.5, gravity: 0.0 },
   },
 };
 
@@ -233,6 +289,63 @@ out.frameRate = {
   at30: fly('MLRSRocket', 45, { frame: 1 / 30 }),
   at144: fly('MLRSRocket', 45, { frame: 1 / 144 }),
 };
+
+// --- bullets: the tracer path falls by its own data -------------------------
+
+/**
+ * Two rounds of `name` out of a level barrel 300 m up, the second of them a
+ * tracer when the gun has one, flown `seconds`: how far each has dropped.
+ */
+function drop(name, seconds = 0.5, frame = 1 / 60) {
+  const round = BULLETS[name];
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
+                             viewportHeight: () => 900 });
+  guns.rand = () => 0.5;
+  guns.collider = world();
+  const node = new THREE.Group();
+  node.name = `${name}Gun`;
+  node.userData.fireArms = {
+    projectile: round.projectile, tracer: round.tracer ?? null,
+    roundOfFire: 10, magSize: 100, velocity: round.velocity,
+    input: 'c_PIFire', control: 'vehicle', muzzles: 1,
+  };
+  const muzzle = new THREE.Object3D();
+  muzzle.name = `${node.name} muzzle 1`;
+  muzzle.userData.muzzle = { index: 0 };
+  node.add(muzzle);
+  const root = new THREE.Group();
+  root.add(node);
+  root.position.set(WORLD / 2, 300, -64);
+  root.updateMatrixWorld(true);
+  const [group] = guns.collect(root, {
+    replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
+    tracerLength: 'data',
+  });
+  fireBarrel(guns, group, group.muzzles[0]);
+  fireBarrel(guns, group, group.muzzles[0]);
+  const rounds = guns.tracers.slice();
+  const lead = rounds.map(r => r.lead);
+  const start = rounds.map(r => r.mesh.position.y);
+  for (let t = 0; t < seconds - 1e-9; t += frame) guns.advance(frame);
+  return rounds.map((r, k) => ({
+    bright: r.bright,
+    gravity: r.gravity,
+    flying: guns.tracers.includes(r),
+    drop: round3(start[k] - r.mesh.position.y),
+    lead: lead[k],
+    // The streak turns with its path: the angle of its axis below level.
+    pitchDown: round3(Math.asin(Math.min(1, Math.max(-1,
+      -new THREE.Vector3(0, 0, 1).applyQuaternion(r.mesh.quaternion).y)))
+      * 180 / Math.PI),
+  }));
+}
+
+out.bullets = {};
+for (const name of Object.keys(BULLETS)) out.bullets[name] = drop(name);
+// Semi-implicit Euler at 60 Hz, as the loop runs it: v += g dt, x += v dt.
+out.bullets.expectedDropAtG1 = round3(
+  -GRAVITY * (1 / 60) ** 2 * (30 * 31) / 2);
 
 function round3(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : value;
