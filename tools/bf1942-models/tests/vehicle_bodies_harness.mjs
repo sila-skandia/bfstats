@@ -211,6 +211,47 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
   out.hullContactsCap = vehicle.hullContacts.length;
 }
 
+// --- a driven land hull meets the ground (`checkVsTerrain`, section 7) ------
+//
+// A drive that declares `hullContacts` is a land drive: its hull parts' col0
+// vertices are dropped on the ground and answered as a parked hull's are,
+// pushed out along the normal at once and half the closing speed taken back
+// next tick. One that does not (an aircraft, whose drive keeps its own ground
+// contact) is billed and never pushed.
+{
+  const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+    45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } },
+    modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01 } } };
+  const spec = describeVehicleParts(jeepAt(0, 0, 0), collisionMeshes);
+  const run = (land, { slope = 0, y = 0.3, vx = 0, vy = -2 } = {}) => {
+    const k = Math.tan(slope * Math.PI / 180);
+    const n = [-k / Math.hypot(k, 1), 1 / Math.hypot(k, 1), 0];
+    const terrain = { height: x => k * x,
+      normal: (x, z, o) => { o[0] = n[0]; o[1] = n[1]; o[2] = n[2]; return o; },
+      material: () => 0, waterLevel: null };
+    const world = new BodyWorld({ tables, terrain });
+    const vehicle = { state: { position: { x: 0, y, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 },
+      velocity: { x: vx, y: vy, z: 0 }, angularVelocity: { x: 0, y: 0, z: 0 } } };
+    if (land) vehicle.hullContacts = [];
+    const driven = new DrivenBody(vehicle, spec);
+    world.addDriven(3, driven, collisionPartsFor(spec, driven, { hullOnly: true }), spec);
+    world.tick();
+    const s = vehicle.state;
+    return { y: s.position.y, x: s.position.x, vx: s.velocity.x, vy: s.velocity.y,
+             contacts: vehicle.hullContacts?.length ?? null,
+             normalY: vehicle.hullContacts?.[0]?.normalY ?? null, n };
+  };
+  // Flat ground, the hull's floor 0.2 m under it and closing at 2 m/s.
+  out.drivenGroundFlat = run(true);
+  out.drivenGroundAircraft = run(false);
+  // A 55-degree face it is driven into at 10 m/s, its nose 0.15 m in.
+  // The hull box's front-bottom corner is at (1, -0.5) in x-y here (the
+  // face rises along +x); the face's height there is k * 1.
+  const k55 = Math.tan(55 * Math.PI / 180);
+  out.drivenGroundFace = run(true, { slope: 55, y: k55 * 1 + 0.5 - 0.15, vx: 10, vy: 0 });
+  out.drivenGroundFaceStart = { y: k55 * 1 + 0.5 - 0.15, vx: 10 };
+}
+
 // --- the world loop ---------------------------------------------------------
 {
   const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },

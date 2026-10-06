@@ -1787,6 +1787,30 @@ class DrivetrainConstantTests(unittest.TestCase):
         self.assertAlmostEqual(4.0, fleet["sherman"]["reverse"], places=3)
         self.assertAlmostEqual(5.512, fleet["m3a1"]["reverse"], places=3)
 
+    # --- the spring probe on a steep face --------------------------------------
+
+    def test_the_probe_finds_a_steep_face_where_the_axis_meets_it(self) -> None:
+        # The whole pitched-into-a-face set, 20 to 70 degrees: the answer is
+        # the axis's own crossing, never a buried axle. One Newton step (the
+        # old probe) read a 70-degree face from a hull pitched 50 degrees
+        # several metres BEHIND the axle, and the bump stop answered with its
+        # full load: the Willy that left Gazala's escarpment at 94 m/s. Where
+        # the step lands within the probe's 2 cm of the ground it stands, so
+        # a gentle face is answered to about a centimetre.
+        old_wrong = 0
+        for case in self.results["probeFace"]:
+            with self.subTest(**{k: case[k] for k in ("deg", "pitch", "gap")}):
+                self.assertGreater(case["reach"], 0)
+                self.assertAlmostEqual(case["exact"], case["reach"], delta=0.02)
+            k = math.tan(math.radians(case["deg"]))
+            p = math.radians(case["pitch"])
+            t = case["gap"] / math.cos(p)
+            # the Newton step: the ground at the vertical estimate taken as level
+            newton = t - (t * math.sin(p) * k) / math.cos(p)
+            if abs(newton - case["exact"]) > 0.05:
+                old_wrong += 1
+        self.assertGreater(old_wrong, 6)
+
 
 if __name__ == "__main__":
     unittest.main()

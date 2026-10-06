@@ -286,6 +286,22 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(i["mountOk"])
         self.assertTrue(i["unmountOk"])
 
+    def test_a_rooms_land_drive_gets_the_pages_inputs_and_drives(self) -> None:
+        # map.html's buildHullDrive hands a land drive the collider and the
+        # sea (PHY-16's sea bed), and its wheels a radius off their own mesh.
+        # A room's drive had neither: every wheel measured -Infinity off an
+        # undecoded mesh, no wheel touched the ground, and the hull sat still
+        # on its failsafe at full throttle.
+        land = self.results["i"]["land"]
+        self.assertIsNotNone(land)
+        self.assertTrue(land["collider"])
+        self.assertTrue(land["waterLevel"])
+        self.assertTrue(land["radiiFinite"])
+        self.assertEqual(land["wheels"], land["probeDepths"])
+        self.assertTrue(land["waterPart"])
+        self.assertTrue(land["grounded"])
+        self.assertGreater(land["moved"], 1.0, land)
+
     # --- (j) the glb-tree contract -------------------------------------------------------
 
     def test_template_tree_carries_the_seat_hierarchy(self) -> None:
