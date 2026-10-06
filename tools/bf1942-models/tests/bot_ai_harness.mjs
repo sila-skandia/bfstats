@@ -1279,6 +1279,23 @@ function stalemateScenario() {
       return !!bot.enterRequest;
     })(),
     behind: [behindUnit(hull, [0, 0, -5]), behindUnit(hull, [2, 0, -5]), behindUnit(hull, [5, 0, 0]), behindUnit(hull, [0, 0, 5])],
+    // A gun whose own cell is free on the map (spawned after it was built),
+    // walked to from in front: the trace starts a soldier's radius past its
+    // box, so the walk ends behind it, where Use is pressed.
+    gunOpenCell: (() => {
+      const size = 256;
+      const nav = { blocked: new Uint8Array(size * size).fill(CELL_FREE), width: size, height: size, cellSize: 1 };
+      const gun = { ...hull, kind: 'gun', noPathfinding: true, pos: [100, 0, -100], seatPos: [100, 0, -100], entry: [100, -100],
+                    localBox: { min: [-1, 0, -2], max: [1, 2, 1.5] } };
+      const bot = { _changeResult: { best: { cand: gun } }, vehicle: null, planBehaviour: null, currentPlan: [],
+                    position: [100, 0, -80], navGrid: nav, _planIdle: () => [], vehicleCandidates: [gun], enterRequest: null };
+      const plan = planChange(bot, 0);
+      const walk = plan.find(a => a.waypoint)?.waypoint ?? null;
+      // He stops inside the walk's arrival, on the side he came from.
+      bot.position = walk ? [walk[0], 0, walk[2] + 0.98] : bot.position;
+      execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
+      return { walk, pressed: !!bot.enterRequest };
+    })(),
   };
   // The seat swap reaches a seat with no door of its own: the gun seat of an
   // M-109 whose driver's PCO has none (bot-units.js `doorless`).
