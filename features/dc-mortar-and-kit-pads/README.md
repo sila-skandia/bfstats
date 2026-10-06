@@ -210,3 +210,18 @@ python3 extract_kits.py --mod DC_Final \
 
 Then publish with `scripts/publish-mesh-delta.py`. No level re-bake is
 needed, because the page takes the bake's pile out itself.
+
+The service record's poses-only trees take `extract_kits.py` output too, so
+they move as well (`features/service-record/README.md`, "The mod trees"):
+pads add rows, `pads` and `pickupSoldiers`, and the worn parts of the kits
+only pads place, in FH, bf1918, GCMOD, Interstate and FHSW. Pirates has no
+pad kit. `extract_pose.py --kit-poses` reads no pads, so the poses stay.
+These do not wait on the `ai-scripts` fix.
+
+```bash
+python3 extract_kits.py --mod FH --no-pickups --out viewer/models/mods/fh
+python3 extract_kits.py --mod bf1918 --no-pickups --out viewer/models/mods/bf1918
+python3 extract_kits.py --mod GCMOD --no-pickups --out viewer/models/mods/gcmod
+python3 extract_kits.py --mod interstate --no-pickups --out viewer/models/mods/interstate
+python3 extract_kits.py --mod FHSW --no-pickups --out viewer/models/mods/fhsw
+```
