@@ -3,8 +3,8 @@
 Status (2026-10-06): both are built in the viewer. The mortar deploys on the map
 page; kit pads lay down and hand out every kit the tree's `loadouts.json`
 knows. DC 0.7's own two pad kits (the M82 and the Stinger) reach that file
-once the lead re-extracts its tree (commands below). DC 0.7's mortar not
-clearing its thrower is open.
+once the lead re-extracts its tree, after the `ai-scripts` fix lands
+(commands below). DC 0.7's mortar not clearing its thrower is open.
 
 The engine's ObjectSpawner, as a soldier on foot meets it, in two forms:
 
@@ -66,6 +66,9 @@ DC Final escaped only because some of its levels bind the same kits to slots.
 - `extract_loadouts.py` writes a row for a kit only pads place. Its hit points
   are those of the level's soldier on the kit's side. A kit a slot binds keeps
   the row its slot gives. A level's own copy of a pad kit gets a `levelKits` row.
+  Only the kits among a level's pad templates open its own load
+  (`read_chain_levels`): a vehicle on a pad changes no kit row, and letting
+  them in opened 17 bg42 levels for nothing and ran 7x as long.
 - `extract_kits.py` exports a pad kit's pickup mesh and worn parts. It lists
   `pads` and `pickupSoldiers` on the kit's `kits.json` row, and only on a kit
   some pad places.
@@ -92,7 +95,9 @@ its poses are unchanged.
   the old loadouts it gives no pads and the pile stays.
 - `tests/test_kit.py` (`LevelPadTests`, `BindPadsTests` and
   `RealDesertCombatPadTests` on the installed DC archives),
-  `tests/test_extract_loadouts.py` `PadKitManifestTests`, and
+  `tests/test_extract_loadouts.py` `PadKitManifestTests` and
+  `PadKitLevelLoadTests` (a level's own copy of a pad kit; a vehicle on a
+  pad opens no load), and
   `tests/test_viewmodel.py` `test_a_pad_kit_is_held_in_every_side_s_sleeves`.
 - Every tree was extracted into scratch, with HEAD's code and then this code:
   - Vanilla and XPack1: `loadouts.json`, `kits.json` and every kit glb are
@@ -102,9 +107,12 @@ its poses are unchanged.
     `pads` and `pickupSoldiers` on `GermanElite_JetPack` (Essen, Hellendoorn,
     Kbely Airfield, Raid on Agheila) and `GermanElite_Scout` (Raid on
     Agheila). Both kits were already slot-bound, so the page already made
-    those pads.
+    those pads. The next `extract_viewmodel.py --kits` run of the tree asks
+    for five more rigs, `BritishCommandoSoldier` with the two kits' weapons
+    (`MP40`, `Gewehr43_ZF4`, `WalterP38`, `EliteKnife`, `GrenadeAxis`).
   - DC Final: `loadouts.json` is identical. `kits.json` gains the pad fields
-    on `US_Sniper_hvy`, `US_AA` and `Iraq_AA`.
+    on `US_Sniper_hvy`, `US_AA` and `Iraq_AA`, and their `levels` widen to
+    the levels whose pads place them (7 to 22, 1 to 6 and 1 to 2).
   - DC: the loadouts gain exactly two rows, and the kits gain two rows and
     two pickup glbs (417 and 420 triangles, every texture resolved).
 - The page was checked over the whole tree: every level's and mode's
@@ -151,16 +159,37 @@ its poses are unchanged.
 - Any dropped kit is anyone's (KITDROP-6), but only pad kits ask for the
   other side's sleeves. An Iraqi who takes a dead American's `US_Assault`
   still borrows US arms (`arms-rig.js viewmodelRigFor`).
-- Pad kits are common outside DC. A census of the installed mods found pads
-  that place kits in FH (217 kits), bf1918 (162), bg42 (54), EoD (51),
-  FinnWars (40), Interstate (9) and GCMOD (6); FHSW's census was not
-  finished. Each of those trees moves when its kits are next re-extracted.
+- Pad kits are common outside DC. Over every level of each mod's chain
+  (the review's scan, 2026-10-06), pads place kits in FHSW (1,135 kits, 836
+  of them on pads only), FH (237, 170), bf1918 (164, 115), bg42 (54, 16),
+  EoD (51, 1), FinnWars (41, 29), Interstate (9, 7) and GCMOD (6, 1);
+  Pirates, vanilla and XPack1 have none. Every one is a `Kit` template with
+  soldiers on its level, and the scan raised nowhere. Each of those trees
+  moves when its kits are next re-extracted, FHSW's by far the most.
+- EoD's pads also place ten `_CHUTE` twins. `browsable` folds a twin into
+  its base kit's `levels` but not its `pads` or `pickupSoldiers`, and a
+  twin has no `kits.json` row of its own, so one lying on a pad draws no
+  mesh (as a twin dropped on death already does). EoD is out of the parity
+  scope.
+- **A team switch loses the carried kit.** Retail's `GameServer::setTeam`
+  `0x08131800` kills a live player whose team changes (`killPlayer` at
+  `0x08131950`), so his kit drops at his feet with its 30 s (KITDROP-1),
+  and a pad's kit keeps its slot until then. The deploy screen's switch
+  (`spawning.js` `chooseTeam` -> `local-player.js` `discardSoldier`) takes
+  the soldier away with no death, so `kitDrops.tick` lets go of the carried
+  kit: nothing drops, and a pad refills early. It predates this work
+  (`cd9c15fc`, 2026-09-19) and hits every kit, not only a pad's.
   FHSW's `telemark-1943/ObjectiveMode/ObjectSpawns.con` has ten
   `Object.absolutePosition` lines with no argument, and
   `level.parse_static_objects` raises on them. `level_pads` skips that
   layer, but a bake of that level probably hits the same error.
 
 ## Re-extracting a tree
+
+Run these only after the `ai-scripts` fix to `extract_models.load_order`
+lands. Today's code drops every `/ai/` script, so a DC `loadouts.json`
+written now carries 7 `aiWeapons` against the live file's 44 (the same with
+this work's code and without it), and the bots stop using their rifles.
 
 From `tools/bf1942-models`:
 
