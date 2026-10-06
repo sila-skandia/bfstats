@@ -506,6 +506,20 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(-1, u["legacyRudder"])
         self.assertEqual(1, u["legacyForwardKeys"])
 
+    def test_an_older_page_and_a_newer_one_share_a_room(self) -> None:
+        # A 14-byte record (a cached page from before the analogue channels)
+        # and a 17-byte one in one room: both walk, each sees the other, and
+        # each word reaches the world at its own record's resolution.
+        v = self.results["v"]
+        self.assertEqual([18, 21], v["frameSizes"])
+        self.assertEqual([None, None], v["closed"])
+        self.assertGreater(v["oldTravelled"], 3)
+        self.assertGreater(v["newTravelled"], 3)
+        self.assertGreater(v["oldSeenByNew"], 3)
+        self.assertGreater(v["newSeenByOld"], 3)
+        self.assertEqual({"rudder": -1, "forwardKeys": 1}, v["oldWord"])
+        self.assertEqual({"rudder": -0.37, "forwardKeys": 0.6}, v["newWord"])
+
 
 if __name__ == "__main__":
     unittest.main()
