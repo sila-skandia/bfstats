@@ -108,5 +108,15 @@ class VehiclePadTests(unittest.TestCase):
         self.assertEqual({"team": 2, "active": True}, s["on"])
 
 
+    def test_a_restart_stands_every_pad_up_again(self) -> None:
+        r = self.results["restart"]
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], r["before"])
+        self.assertEqual([], r["cleared"])
+        # Back to the round's opening: team 2's pad, on, delay -1.
+        self.assertEqual({"team": 2, "active": True, "delay": -1}, r["reset"])
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], r["after"])
+        self.assertEqual(2, r["tankTeam"])
+
+
 if __name__ == "__main__":
     unittest.main()

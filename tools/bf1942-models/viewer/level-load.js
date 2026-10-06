@@ -758,6 +758,7 @@ export function createLevel(page) {
     updateTextureFade: shading.updateTextureFade,
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
+      restartVehiclePads: statics.restartVehiclePads,
       get pads() { return statics.pads; },
     },
     vehicleSpawnActive: statics.vehicleSpawnActive,
