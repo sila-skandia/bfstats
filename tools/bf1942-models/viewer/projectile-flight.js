@@ -67,6 +67,9 @@ const _restM = new THREE.Matrix4();
 // Scratch for the motor and the box drag law.
 const _nose = new THREE.Vector3();
 const _engineAt = new THREE.Vector3();
+// Scratch for a falling tracer-path round: where the round is, and its heading.
+const _head = new THREE.Vector3();
+const _turn = new THREE.Vector3();
 
 /**
  * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-16..19).
@@ -439,17 +442,27 @@ export function advanceTracers(guns, dt) {
     // A round that declares a `gravityModifier` falls by it (IMP-7), on the
     // tracer path as on the shell path; `tracerGravity` in round-launch.js
     // says which word applies. Zero for every retail rifle and MG round.
+    let step;
     if (tracer.gravity) {
+      // The round is `lead` ahead of the drawn mesh's origin along its flight
+      // (the stand-in cylinder is drawn centred). It is the ROUND that falls:
+      // step it, then hang the mesh `lead` behind it on the new heading.
+      // Stepping the mesh instead swung a 50 m stand-in's head through the
+      // turn, and a CBU-87 bomblet landed 20 m from where it fell.
+      _head.copy(tracer.velocity).normalize()
+        .multiplyScalar(tracer.lead).add(tracer.mesh.position);
       tracer.velocity.y += GRAVITY * tracer.gravity * tracer.gravityScale * dt;
+      step = tracer.velocity.length() * dt;
+      _head.addScaledVector(tracer.velocity, dt);
+      _turn.copy(tracer.velocity).normalize();
+      tracer.mesh.position.copy(_head).addScaledVector(_turn, -tracer.lead);
+      // Pointed down its velocity, as `spawnTracer` points it at launch.
+      tracer.mesh.lookAt(_aimBack.copy(tracer.mesh.position).add(_turn));
+    } else {
+      step = tracer.velocity.length() * dt;
+      tracer.mesh.position.addScaledVector(tracer.velocity, dt);
     }
-    const step = tracer.velocity.length() * dt;
     tracer.travelled += step;
-    tracer.mesh.position.addScaledVector(tracer.velocity, dt);
-    // The streak was pointed down its velocity at launch (`spawnTracer`'s
-    // `lookAt(position + direction)`); a falling one turns with its path.
-    if (tracer.gravity) {
-      tracer.mesh.lookAt(_aimBack.copy(tracer.mesh.position).add(tracer.velocity));
-    }
     const struck = sweep(guns, tracer.group, tracer.mesh.position,
                                tracer.velocity, step, tracer.lead);
     if (struck) {

@@ -188,6 +188,32 @@ rolls): `AA_Allies_Projectile` bursts at 240, 325 and 420 m and
 `Flak38_Projectile` at 240, 295 and 355 m, before and after; the Shilka shell
 burst 983 m out before and now vanishes with no record.
 
+## 6. The CBU-87
+
+An A-10C's or AV-8C's cluster pull is two guns on `c_PIAltFire`:
+`A10_CBU87Dummy` drops the drawn canister (`CBU87DummyPrj`, 1 s, which bursts
+into its shell halves through `hasOnTimeEffect 1` and carries the
+`e_CBU87Emission2` bomblet emitter as its trail), and `A10_CBU87` fires the
+fourteen invisible `CBU87Prj` submunitions, one per barrel, each down its own
+`addFireArmsPosition 0/0/0 <yaw>/<pitch>/0` turn at 15 m/s on top of the jet,
+from a dispenser pitched 20 degrees down.
+
+- With §2 they fall. Measured (`rocket_flight_harness.mjs`, an A-10C at
+  100 m/s, 150 m up): all fourteen land, each within 1.6 m of where its own
+  barrel and gravity put it, in a pattern 38 m across and 74 m along track,
+  473 m past the release. Before, none of them ever landed.
+- `e_CBU87Emission2` was missing from Desert Combat's and DC Final's
+  `effects.glb`. Its `Fx_CBU87bomb` names its mesh inline,
+  `geometry StandardMesh:DesertCombat/Bomb_CBU87/CBU87bomb_m1`, and the reader
+  looked the path up as a template name. `GeometryTemplateManager::getTemplate`
+  (lnxded `0x0838b1e0`) splits a name it does not know at the ':' and makes a
+  template of that type with the file after it; `con.py`
+  `ObjectLibrary.geometry` now does the same when no template has the bare
+  name (a declared one still wins, so vanilla's shell casings, which use the
+  same form for declared templates, are unchanged). Extracted into scratch:
+  DC's bake gains exactly that one bundle (216 -> 217, nothing else moves),
+  DC Final's likewise (248 -> 249), vanilla's is identical.
+
 ## How it is checked
 
 `tools/bf1942-models/tests/test_rocket_flight.py` runs
@@ -233,3 +259,11 @@ the exporter, `test_bomb_release.py` the bomb under the box law.
 6. Desert Combat's `Silkworm` has a `c_ETRocket` and a `c_ETTorpedo`, two wings
    and four floaters. The rocket flies it in the air; nothing here makes it
    skim the sea.
+7. The CBU canister's bomblet emitter starts 0.9 s after release and emits for
+   0.5 s, but the canister bursts at 1.0 s, and the viewer stops a round's
+   attached bundle when the round ends, so a tenth of a second of bomblets is
+   drawn. Whether the engine keeps a detonated round's child bundle running
+   (`stopAtEndEffect 0`, `invisibleAtEndEffect 0`) is not read.
+8. Desert Combat's `e_ExplAni01_m_dirt` and `_sand` still lose their
+   `Em_dirtgibb*_m` emitters in the effects bake; not the inline-geometry gap
+   (the census finds the form only on the CBU in DC), not looked at further.

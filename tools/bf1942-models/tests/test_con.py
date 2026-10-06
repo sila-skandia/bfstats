@@ -635,6 +635,21 @@ GeometryTemplate.file shell792mmHi_m1
             library.art_dir("StandardMesh:Shell792mmHI_m1"),
         )
 
+    def test_a_qualified_path_with_no_template_is_a_mesh_file(self) -> None:
+        # `GeometryTemplateManager::getTemplate` (lnxded 0x0838b1e0) splits a
+        # name it does not know at the ':' and creates a template of that type
+        # with the FILE after it. Desert Combat's `Fx_CBU87bomb` writes
+        # `geometry StandardMesh:DesertCombat/Bomb_CBU87/CBU87bomb_m1`, a path.
+        library = ObjectLibrary()
+        geometry = library.geometry(
+            "StandardMesh:DesertCombat/Bomb_CBU87/CBU87bomb_m1")
+
+        self.assertIsNotNone(geometry)
+        self.assertEqual("StandardMesh", geometry.kind)
+        self.assertEqual("DesertCombat/Bomb_CBU87/CBU87bomb_m1", geometry.mesh_file)
+        # An unqualified unknown name is still unknown.
+        self.assertIsNone(library.geometry("DesertCombat/Bomb_CBU87/CBU87bomb_m1"))
+
     def test_geometry_qualifier_is_matched_case_insensitively(self) -> None:
         library = ObjectLibrary()
         library.add_con(
