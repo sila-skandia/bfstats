@@ -1745,6 +1745,112 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   results.surfaceClip = over;
 }
 
+// --- rememberExcessInput: a flick's excess is spent over later ticks ---------
+//
+// Ledger MLK-16 and GUN-2: vanilla's elevator Wings (`CorsairFlapTailLeft/
+// Right`, `rememberExcessInput 1`) add each tick's input to a backlog held to
+// +-40, spend `clamp(backlog, +-1)` a tick, and take an input against the
+// backlog's sign whole. The exporter carries the flag in the Wing's
+// `physics`; the ailerons and the rudder do not declare it.
+{
+  const remembering = () => {
+    const root = corsairNode();
+    for (const child of root.children) {
+      if (child.name.startsWith('CorsairFlapTail')) {
+        child.userData.physics = { rememberExcessInput: true };
+      }
+    }
+    return root;
+  };
+  const ELEVATOR = 'Corsair/c_PIPitch/pitch';
+  const AILERON = 'Corsair/c_PIRoll/pitch';
+  const run = (words, node = remembering(), afterTick = null) => {
+    const plane = new Aircraft(node, null, { cockpit: false });
+    plane.groundHeight = () => -100000;
+    plane.state.position.set(0, 300, 0);
+    plane.state.velocity.set(0, 0, -80);
+    const spent = [], surface = [], aileron = [];
+    words.forEach((word, tick) => {
+      plane.setInput('c_PIPitch', word.pitch ?? 0);
+      plane.setInput('c_PIRoll', word.roll ?? 0);
+      plane.integrate(1 / 30);
+      spent.push(round(plane.state.spentInputs.get(ELEVATOR) ?? NaN, 6));
+      surface.push(round(plane.state.surfaces.get(ELEVATOR) ?? 0, 6));
+      aileron.push(round(plane.state.surfaces.get(AILERON) ?? 0, 6));
+      if (afterTick) afterTick(plane, tick);
+    });
+    return { spent, surface, aileron, backlog: round(plane.state.excessInputs.get(ELEVATOR) ?? 0, 6),
+             remembering: [...plane.servoAxes().keys()].filter(k => plane._remembering.has(k)) };
+  };
+  const zeros = n => Array.from({ length: n }, () => ({}));
+  const flick = run([{ pitch: -3.46 }, ...zeros(5)]);
+  const plain = run([{ pitch: -3.46 }, ...zeros(5)], corsairNode());
+  const flip = run([{ pitch: -3.46 }, { pitch: 0.5 }, ...zeros(2)]);
+  const held = run([...Array.from({ length: 90 }, () => ({ pitch: -3.47 })), ...zeros(45)]);
+  const gentle = run(Array.from({ length: 5 }, () => ({ pitch: -0.6 })));
+  const aileronFlick = run([{ roll: 3.46 }, ...zeros(3)]);
+  // The drive's reset (aircraft.js `reset`) clears the servos: no carry.
+  const reset = run([{ pitch: -3.46 }, ...zeros(2)], remembering(), (plane, tick) => {
+    if (tick === 0) { plane.state.surfaces.clear(); plane.state.inputs.clear(); }
+  });
+  // The backlog is spent once a tick however the tick is sub-stepped: the
+  // Corsair's integrate runs eight 1/240 s steps, and a 1/60 s caller two
+  // calls a tick.
+  const halfSteps = (() => {
+    const plane = new Aircraft(remembering(), null, { cockpit: false });
+    const out = [];
+    for (let frame = 0; frame < 8; frame++) {
+      plane.setInput('c_PIPitch', frame < 2 ? -3.46 : 0);
+      plane.integrate(1 / 60);
+      out.push(round(plane.state.spentInputs.get(ELEVATOR) ?? NaN, 6));
+    }
+    return out;
+  })();
+  const heldReleased = held.spent.slice(90);
+  results.excessInput = {
+    remembering: flick.remembering,
+    flickSpent: flick.spent,
+    flickSurface: flick.surface,
+    plainSurface: plain.surface,
+    plainSpent: plain.spent,
+    flipSpent: flip.spent,
+    flipBacklog: flip.backlog,
+    heldFullAfterRelease: heldReleased.filter(v => v === -1).length,
+    heldThen: heldReleased.slice(40, 43),
+    gentleSpent: gentle.spent,
+    gentleBacklog: gentle.backlog,
+    aileronFlick: aileronFlick.aileron,
+    resetSpent: reset.spent,
+    halfSteps,
+  };
+}
+
+// --- a ship's ramp: its own servo carries a key's step ----------------------
+//
+// The LCVP's `Lcvp_Ramp` (`setMaxRotation 0/90/0`, `setMaxSpeed 0/45/0`,
+// `c_PIPitch`) as a rig part: the world hands it the arrows' step (no spring
+// of the viewer's, MLK-10) and `advanceSurfaces` moves it at 45 deg/s over its
+// 90 and stops it at its bound.
+{
+  const root = corsairNode();
+  const ramp = new THREE.Object3D();
+  ramp.name = 'Lcvp_Ramp';
+  ramp.userData = { templateKind: 'RotationalBundle', rig: { control: 'Lcvp', automaticReset: false,
+    axes: { pitch: { input: 'c_PIPitch', min: 0, max: 90, free: false, driver: 'position',
+                     maxSpeed: 45, direction: 1, acceleration: 30 } } } };
+  root.add(ramp);
+  const plane = new Aircraft(root, null, { cockpit: false });
+  const at = [];
+  for (let tick = 0; tick < 120; tick++) {
+    plane.setInput('c_PIPitch', tick < 75 ? 1 : 0);
+    plane.integrate(1 / 30);
+    if (tick === 29 || tick === 59 || tick === 74 || tick === 104) {
+      at.push(round(plane.state.surfaces.get('Lcvp/c_PIPitch/pitch') ?? 0, 4));
+    }
+  }
+  results.rampServo = at;
+}
+
 // --- the extracted glbs, when this PC has them --------------------------------
 //
 // Optional: the model tree is not in the repository. When it is there, the
