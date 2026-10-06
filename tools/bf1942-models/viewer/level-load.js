@@ -588,6 +588,11 @@ export function createLevel(page) {
     const collision = terrain.buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();
+    // The depots work from the level's first tick, on bots and on empty hulls
+    // (SUP-19), not from the local player's first step on foot, which is
+    // where `soldier-view.js` collects them again. After the collider, which
+    // settles and floats the hulls a depot can ride.
+    level.world.setSupplyDepots(collectSupplyDepots(level.currentRoot));
     // Now that the collider exists, spawn the bots so their nav grid and spawn
     // probes see it.
     page.spawnBotsForLevel();

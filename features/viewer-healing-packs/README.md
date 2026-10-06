@@ -165,6 +165,10 @@ Built:
   came due, and an empty hull was never served.
 - `viewer/level-load.js` `collectSupplyDepots`: each depot knows its placed
   root. A depot on a PlayerControlObject reads its node again each cycle.
+  `show()` hands the world its depots once the collider is built, so they
+  work from the level's first tick, on bots and on empty hulls. Before, the
+  world had none until the local player first stood on foot
+  (`soldier-view.js`, which still collects them again then).
 
 Checked: `tests/supply_harness.mjs` and `test_supply.py` (20 cases). These
 cover the carrier pad repairing an empty F-14 at 4 HP a cycle and leaving an
@@ -174,12 +178,23 @@ suspended rules. `world_harness.mjs` scenario 10 (`test_world.py`): two
 soldiers at one locker heal alike over three cycles, and an empty F-14 on
 the pad gains 12 HP in 2 s.
 
+In the page (`depot_page.cjs` in the session scratch, vanilla El Alamein,
+headless, port 5624): a Willy driven onto a `repairpoint` and knocked from
+50 to 40 HP is back to 48 a second later and 50 the next. Left empty on the
+pad and knocked to 40 again, it is at 50 within a second. The level has two
+repair points and they stack (SUP-6). The page threw nothing; the only
+console errors are the tree's existing 404s for three `_shared/hud` side
+files.
+
 Open:
 
 - An empty hull's guns are not rearmed. The world knows a seat's guns only
   while someone holds the seat.
 - The engine seeds each depot's clock at a random phase (SUP-4). The viewer
   starts them all at 0, so they cycle on the same tick.
+- The headless match runner (`sim/stage.mjs`) never gives its world any
+  depots, so bots in `sim/run.mjs` neither heal at lockers nor repair at
+  pads. The page does both.
 - `ShowRepairIcon` is not drawn. `SupplyField.canHeal` answers it for a hull.
 - `repairVehicle`'s skip of a hull whose `PlayerControlObject+0x17c` is 0.0
   is read and not understood (SUP-19).
