@@ -5,7 +5,7 @@
 // cull. Out of level-load.js; `show()` indexes each level through it.
 
 import * as THREE from 'three';
-import { SpawnerPad, calcSpawnDelay, padControlPoint } from './deployables.js';
+import { calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides } from './deployables.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 
 export function isCollision(obj) {
@@ -164,7 +164,7 @@ export function kindOf(obj) {
 
 /** The template a placed node stands for: its `control` tag (GLTFLoader
  *  suffixes a repeated scene name, `Sherman_1`), else its name. */
-function padTemplateOf(node) {
+export function padTemplateOf(node) {
   return String(node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
 }
 
@@ -180,24 +180,13 @@ function findSpawnersRoot(root) {
   return found;
 }
 
-/** The sides that can ever hold a pad (ledger SPAWN-12): both at a point that
- *  changes hands, the point's own at one that cannot, none for a pad filed
- *  under no point (it spawns its own `Object.setTeam` entry all round). */
-function padSides(spawn, points, anyOsId) {
-  const name = padControlPoint(spawn, points, anyOsId);
-  if (!name) return null;
-  const point = points.find(p => p?.name === name);
-  if (!point) return null;
-  if (point.unableToChangeTeam) return point.team === 1 || point.team === 2 ? [point.team] : [];
-  return [1, 2];
-}
-
 const _padAt = new THREE.Vector3();
 
 /** The level's own node for a pad: a spawners child of the pad's template,
  *  the nearest one to the pad within `reach` metres, and not one another pad
- *  has `claimed`. */
-function bakedPadNode(spawners, spawn, reach = 3, claimed = null) {
+ *  has `claimed`. A room's vehicle table finds its pads' nodes with this too
+ *  (`server/vehicle-table.mjs`). */
+export function bakedPadNode(spawners, spawn, reach = 3, claimed = null) {
   const want = String(spawn?.vehicle ?? '').toLowerCase();
   const p = spawn?.position;
   if (!want || !Array.isArray(p) || p.length !== 3) return null;
@@ -471,12 +460,7 @@ export function createLevelStatics(page) {
    *  the first frame, and one with none has team 0 and spawns nothing, so it
    *  is switched off here rather than given the baked vehicle (SPAWN-2). */
   function followPoint(record) {
-    const team = pointTeam(record);
-    if (team == null || team === record.held) return;
-    if (record.held === 1 || record.held === 2) record.pad.disable(0);
-    if (team === 1 || team === 2) record.pad.enable(team);
-    else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
-    record.held = team;
+    followPadPoint(record, pointTeam(record));
   }
 
   /** The node a pad's spawn of `template` stands up. A template whose model
@@ -494,6 +478,7 @@ export function createLevelStatics(page) {
   function buildVehiclePads() {
     statics.pads = [];
     padRecords = new WeakMap();
+    remoteGone = new WeakSet();
     padsWorld = null;
     const spawns = page.extras?.objectSpawns;
     const spawners = statics.spawnersRoot;
@@ -514,17 +499,7 @@ export function createLevelStatics(page) {
       claimed.add(baked);
       const nodes = new Map([[padTemplateOf(baked).toLowerCase(), baked]]);
       for (const node of variants.get(index) ?? []) nodes.set(padTemplateOf(node).toLowerCase(), node);
-      // A pad filed under no point spawns its placement's entry. One with no
-      // side of its own keeps the vehicle the exporter baked for it, the
-      // `vehicles[2] or vehicles[1]` divergence SPAWN-2 records.
-      const team = Number.isInteger(spawn.team) ? spawn.team : 0;
-      const templates = { ...(spawn.templates ?? { 1: spawn.vehicle, 2: spawn.vehicle }) };
-      if (team !== 1 && team !== 2) templates[String(team)] = spawn.vehicle;
-      const pad = new SpawnerPad({
-        templates, team,
-        minSpawnDelay: spawn.minSpawnDelay, maxSpawnDelay: spawn.maxSpawnDelay,
-        spawnDelayAtStart: spawn.spawnDelayAtStart,
-      });
+      const pad = padFromSpawn(spawn);
       baked.getWorldPosition(_padAt);
       const record = {
         spawn, index, pad, baked, nodes, live: new Set(),
@@ -561,6 +536,9 @@ export function createLevelStatics(page) {
    * `players` / `maxPlayers` for the delay's draw.
    */
   function stepVehiclePads(dt, world) {
+    // In a room the server runs the pads (`server/room-pads.mjs`) and the page
+    // stands what its rows say (`setRemoteLive`).
+    if (statics.remotePads) return;
     for (const record of statics.pads) {
       const { pad } = record;
       followPoint(record);
@@ -606,7 +584,29 @@ export function createLevelStatics(page) {
     }
   }
 
+  /** Hulls a room's server has taken out of the world that no pad names
+   *  (a pad's own are its record's `live` set). */
+  let remoteGone = new WeakSet();
+
+  /**
+   * A room's word on a hull (`net-room.js`, from `server/room-pads.mjs`'s
+   * rows): `live` it stands in the world, else it has gone. A pad's node is
+   * its record's to hold, exactly as the page's own pad law holds it; any
+   * other hull is held off the field by the room alone.
+   */
+  function setRemoteLive(node, live) {
+    const record = padRecords.get(node);
+    if (record) {
+      if (live) record.live.add(node);
+      else record.live.delete(node);
+      return;
+    }
+    if (live) remoteGone.delete(node);
+    else remoteGone.add(node);
+  }
+
   function vehicleSpawnActive(vehicle) {
+    if (remoteGone.has(vehicle)) return false;
     const record = padRecords.get(vehicle);
     if (record) return record.live.has(vehicle);
     // A node no pad entry names (a scene written before `objectSpawns`): the
@@ -814,6 +814,7 @@ export function createLevelStatics(page) {
   }
 
   Object.assign(statics, {
+    setRemoteLive,
     applyVisibility,
     cull,
     flattenCull,

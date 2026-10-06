@@ -39,6 +39,17 @@
 //   `FLAG_CAPTURE_RADIUS_MS = 8` and `FLAG_CAPTURE_SECONDS = 8` are authored
 //   constants, named so a P5 corpus read can correct them in one place.
 //
+// * the end of the round and the restart (ledger ROUND-1..ROUND-9, ROUND-11,
+//   HP-20): the round decides itself on the page's own law (`round-state.js`
+//   `tick`), and on the tick it turns to EndGame the room clears the world
+//   (`GameServer::clearWorld` 0x081578f0: every living player killed, every
+//   root PlayerControlObject destroyed) and sends the result; ten seconds
+//   later (`restartIn`) it restarts the map the way `restartMap` 0x08157cb0
+//   does for the parts a room holds: the tickets and the score made again,
+//   every control point back to its level team, the CTF flags home, the hulls
+//   back on their pads. A human spawns only while the round plays
+//   (`GameServer::spawnPlayer` 0x0814c990, ROUND-11).
+//
 // The projectile path (the headless `GunFire` wiring and its splash) is the
 // deliberate remaining gap — P3's second slice, in the feature README.
 // Until it lands the only damage in a room is combat-area, water/critical
@@ -48,6 +59,11 @@ import { Armor } from '../viewer/armor.js';
 import { createCtf } from '../viewer/ctf.js';
 import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS }
   from '../viewer/round-state.js';
+
+/** The game play modes in which `spawnPlayer` asks the side's tickets
+ *  (`[+0x10]` 2, 4 and 5 at 0x0814ca0a..0x0814ca22, ROUND-11). */
+const SPAWN_NEEDS_TICKETS = new Set([GAME_PLAY_MODE.conquest, GAME_PLAY_MODE.coop,
+                                     GAME_PLAY_MODE.objective]);
 
 /** One per death, `setTicketLosePerDeath`. */
 export const LOSS_PER_DEATH = 1;
@@ -73,6 +89,10 @@ const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
  *   ownerOf   (seatRootNode) => the world owner id of the room vehicle
  *             whose subtree that node's root is (the room's table lookup)
  *   onRow     (row) => {}  the room's event broadcaster
+ *   onClearWorld  () => {}  the room's half of `clearWorld` once the round
+ *                 has ended: everyone out of the seats, every hull destroyed
+ *   onRestart     () => {}  the room's half of `restartMap`: the hulls back
+ *                 on their pads (the round, flags and CTF are this file's)
  */
 export function createAuthority(ctx) {
   const { world, loadouts, levelDir, onRow } = ctx;
@@ -85,6 +105,14 @@ export function createAuthority(ctx) {
   /** flag index -> {team, ticks} — an enemy inside the ring, accumulating.
    *  Contested (both teams present) freezes; an empty|defended ring resets. */
   const capture = new Map();
+
+  /** Each flag's team as the level starts it: what `ControlPoint::reset`
+   *  loads back at a restart (its template team, `+0x1e0`, SPAWNGRP-3). */
+  const flagStart = (world.flags ?? []).map(flag => flag.team);
+
+  /** The round's end has been played (the result sent, the world cleared):
+   *  the edge into EndGame happens once a round. */
+  let ended = false;
 
   /** A team's count as `world.tickets` holds it: the room's own copy of the
    *  level's tickets, which the round below starts from and writes every
@@ -189,6 +217,26 @@ export function createAuthority(ctx) {
       return !dead.has(slot);
     },
 
+    /** Whether a human of `team` may spawn now (`GameServer::spawnPlayer`
+     *  0x0814c990, ROUND-11): only while the round plays (`[+0x58] == 1`, a
+     *  bot alone is spared that test), and in Conquest, Co-op and
+     *  ObjectiveMode only while his side has a ticket left (`TeamScore+0x48`
+     *  above 0). */
+    maySpawn(team) {
+      if (round.status !== 'playing') return false;
+      const mode = gamePlayModeOf(world.extras?.gameplayMode);
+      if (world.tickets && SPAWN_NEEDS_TICKETS.has(mode) && !(round.tickets[team] > 0)) return false;
+      return true;
+    },
+
+    /** The round as a client joining now must draw it (the HELLO): playing,
+     *  or ended with its result and the restart's countdown. */
+    roundState() {
+      return round.status === 'playing'
+        ? { status: 'playing', roundsWon: { ...round.roundsWon } }
+        : { status: 'endGame', ...resultRow() };
+    },
+
     /** One world step's worth of the authority: deaths first (every damage
      *  funnel lands on Armors during `step`), then the flags, then the bleed
      *  over the owners the captures just left (the page's and the runner's
@@ -199,6 +247,7 @@ export function createAuthority(ctx) {
       captureFlags(dt);
       ctfTick(dt);
       bleed(dt);
+      roundTick();
     },
 
     /** The CTF law's state (null off a CTF layer), for a check. */
@@ -244,22 +293,111 @@ export function createAuthority(ctx) {
       }
       for (const change of step?.damage ?? []) {
         if (!change.died) continue;
-        const victim = ownerToPlayer(change.vehicle);
+        // The damage pass reports the DamageableVehicle, which knows its owner.
+        const victim = ownerToPlayer(change.vehicle?.owner ?? change.vehicle);
         if (victim != null && !killers.has(victim)) killers.set(victim, null);
       }
       // The general pass: a player with a destroyed Armor is dead, once.
       for (const [slot, player] of world.players) {
         if (!player?.armor?.destroyed || dead.has(slot)) continue;
         dead.add(slot);
-        if (spendTicket(player.team, LOSS_PER_DEATH)) {
+        const other = killers.get(slot) ?? player.armor.lastHit ?? null;
+        if (bookDeath(slot, player.team, other)) {
           onRow({ type: 'ticket', team: player.team,
                   count: ticketsOf(player.team), reason: 'death' });
         }
         const row = { type: 'killed', slot };
-        const other = killers.get(slot) ?? player.armor.lastHit ?? null;
         if (other != null) row.other = other;
         onRow(row);
       }
+  }
+
+  /** A death on the round's own books (`round-state.js` `kill`/`suicide`):
+   *  the dead man's tally and his killer's, the side's `LOSS_PER_DEATH`
+   *  ticket while the round plays (ROUND-7: nothing is paid or spent once it
+   *  has ended). `other` is the killing slot, if a player did it. Returns
+   *  whether a ticket went. */
+  function bookDeath(slot, team, other) {
+    const before = round.tickets[team];
+    const killer = other != null && other !== slot ? world.players.get(other) : null;
+    if (killer) {
+      round.kill({ killer: other, killerTeam: killer.team ?? 0, victim: slot, victimTeam: team });
+    } else {
+      round.suicide({ player: slot, team });
+    }
+    if (!world.tickets || round.tickets[team] === before) return false;
+    writeTickets(team);
+    return true;
+  }
+
+  // --- the round's end and the restart ---------------------------------------
+
+  /** After the bleed has had its say (`round.tick` decides the round): the
+   *  first EndGame tick plays the end (`gameStatusFirstEndGame` 0x08152a60:
+   *  `clearWorld`, then the medals), and when the restart's countdown is out
+   *  the map restarts (`gameStatusEndGame` 0x08152ca0, ROUND-9). */
+  function roundTick() {
+    if (round.status !== 'endGame') return;
+    if (!ended) {
+      ended = true;
+      onRow({ type: 'roundEnd', ...resultRow() });
+      clearWorld();
+    }
+    if (round.restartDue()) restartRound();
+  }
+
+  /** The round's result as the rows carry it: the winner (0 a draw), the
+   *  victory type, why it ended, the seconds to the restart, the rounds each
+   *  side has won and `giveMedal`'s three by score (`round.medals`), each
+   *  named by slot. */
+  function resultRow() {
+    const roster = [...world.players].map(([slot, p]) => ({ id: slot, team: p?.team ?? 0 }));
+    return {
+      winner: round.winner, victoryType: round.victoryType, reason: round.endReason,
+      restartIn: round.restartIn, roundsWon: { ...round.roundsWon },
+      medals: round.medals(roster).map(m => ({ slot: m.playerId, team: m.team,
+                                               medal: m.medal, score: m.score })),
+    };
+  }
+
+  /** `GameServer::clearWorld` 0x081578f0 on the room's players: every living
+   *  one is killed (`killPlayer`), out of his seat first, and nothing is
+   *  paid or spent for it (the round has ended, ROUND-7). The room destroys
+   *  the hulls (`onClearWorld`). */
+  function clearWorld() {
+    ctx.onClearWorld?.();
+    for (const [slot, player] of world.players) {
+      if (dead.has(slot)) continue;
+      dead.add(slot);
+      if (player?.armor && !player.armor.destroyed) player.armor.applyDamage(player.armor.hitPoints + 1);
+      onRow({ type: 'killed', slot, cleared: true });
+    }
+  }
+
+  /** `GameServer::restartMap` 0x08157cb0 for what the authority holds: the
+   *  round made again (`round.restart`: the tickets, the score, the rounds
+   *  won kept), every control point back on its level team with its capture
+   *  clock cleared (`ControlPoint::reset`), the CTF flags home; the room puts
+   *  the hulls back on their pads (`onRestart`, `ObjectSpawner::reset`). The
+   *  players stay dead until each deploys, from the spawn screen the restart
+   *  opens. */
+  function restartRound() {
+    for (const [index, flag] of (world.flags ?? []).entries()) {
+      if (Number.isInteger(flagStart[index])) flag.team = flagStart[index];
+    }
+    capture.clear();
+    ctf?.reset();
+    round.restart();
+    ended = false;
+    for (const team of [1, 2]) if (world.tickets) writeTickets(team);
+    ctx.onRestart?.();
+    onRow({
+      type: 'restart',
+      tickets: world.tickets ? { team1: ticketsOf(1), team2: ticketsOf(2) } : null,
+      flags: (world.flags ?? []).map(flag => ({ team: flag.team })),
+      roundsWon: { ...round.roundsWon },
+      ctf: ctf?.snapshot() ?? null,
+    });
   }
 
   /** One tick of the capture law, at the room's tick cadence. */
@@ -310,8 +448,11 @@ export function createAuthority(ctx) {
    *  `ticket` row for each side it cost, carrying the fresh count however
    *  many the tick took. */
   function bleed(dt) {
-    if (!world.tickets) return;
+    // A layer with no tickets has nothing to bleed or decide while it plays;
+    // once the round has ended the tick is also the restart's countdown.
+    if (!world.tickets && round.status === 'playing') return;
     const lost = round.tick(dt, points);
+    if (!world.tickets) return;
     for (const team of [1, 2]) {
       if (!lost[team]) continue;
       writeTickets(team);
@@ -324,15 +465,6 @@ export function createAuthority(ctx) {
   function captureSeconds(flag) {
     return Number.isFinite(flag.timeToGetControl) && flag.timeToGetControl > 0
       ? flag.timeToGetControl : FLAG_CAPTURE_SECONDS;
-  }
-
-  /** `amount` whole tickets off `team`, spent through the round (which also
-   *  ends its bleed when a side reaches 0, as the page's does); false when
-   *  there were none left to spend. */
-  function spendTicket(team, amount) {
-    if (!world.tickets || !round.spend(team, amount)) return false;
-    writeTickets(team);
-    return true;
   }
 
   /** The round's count for `team`, written into the world's tickets object:
