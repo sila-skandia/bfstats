@@ -51,7 +51,24 @@ export function findWeaponSpecs(report, template) {
     level: vehicle.level,
     layers: weapon.layers,
     attachToListener: weapon.attachToListener,
+    // The burst's edges (`extract_map._trigger_slots`): dropped here, the
+    // rack's `loadBurstEdges` saw none on any tree and no stop ever played
+    // its Release, Shell Bounce or MG-distance patch (SND-12).
+    press: weapon.press,
+    release: weapon.release,
+    reload: weapon.reload,
   }));
+}
+
+/**
+ * The parts of one vehicle that sound by their own class's rule (a turret's
+ * servo, a landing gear, a flap's creak, a track), `extract_map.
+ * find_part_scripts`'s `parts`: each `{ node, kind, script, patches,
+ * attachToListener }`, `patches` one layer list per patch of the script in
+ * its order. A report from before them has none.
+ */
+export function findPartSpecs(report, template) {
+  return findEngineSpec(report, template)?.parts ?? [];
 }
 
 /**
@@ -80,6 +97,9 @@ export function findWeaponSpecsByFireArms(report, names) {
           level: vehicle.level,
           layers: weapon.layers,
           attachToListener: weapon.attachToListener,
+          press: weapon.press,
+          release: weapon.release,
+          reload: weapon.reload,
         });
       }
     }

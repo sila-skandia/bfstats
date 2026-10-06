@@ -344,6 +344,23 @@ export async function realLevel(M, { maps, models, map }) {
   const data = stripTextures(readGlb(sceneGlb));
   const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(data, '', resolve, reject));
   const root = gltf.scene;
+  // The other side's vehicle for each pad that changes hands, from the
+  // models tree as the page loads it (`level-statics.js` `loadPadVariants`):
+  // the template's own glb in `models`, else in the vanilla tree above it.
+  const modelDirs = !models || !existsSync(models) ? []
+    : path.basename(path.dirname(path.resolve(models))) === 'mods'
+      ? [models, path.resolve(models, '..', '..')] : [models];
+  const modelFiles = new Map();
+  for (const dir of modelDirs.slice().reverse()) {
+    for (const f of readdirSync(dir)) if (/\.glb$/i.test(f)) modelFiles.set(f.slice(0, -4).toLowerCase(), path.join(dir, f));
+  }
+  await S.loadPadVariants(root, extras, {
+    load: async template => {
+      const file = modelFiles.get(String(template).replace(/[\\/]/g, '_').toLowerCase());
+      if (!file) return null;
+      return new Promise((resolve, reject) => new GLTFLoader().parse(stripTextures(readGlb(file)), '', resolve, reject));
+    },
+  });
   S.pruneToMode(root, extras.gameplayMode);
   // The ambient clips `show()` plays (flags, windmills), with the tracks
   // whose node the prune took dropped: what `freezeStatics` keeps thawed.

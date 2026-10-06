@@ -102,6 +102,30 @@ class CarriedSpawnFlagTests(unittest.TestCase):
             for label in self.r["levels"][name]["names"]:
                 self.assertFalse(label.startswith(TEMPLATE_NAMES), (name, label))
 
+    def test_a_dead_carriers_points_leave_the_ring_and_the_pick(self) -> None:
+        """Weapon Bunkers' group 99 over three bunkers (SPAWN-5, SPAWNGRP-10):
+        `calcNewPos` and `getSpawnPoint` take only the points whose carrier is
+        not critically damaged."""
+        dead = self.r["deadCarriers"]
+        self.assertEqual([478, 74, -813], dead["allUp"]["ring"])
+        self.assertEqual([400, 402, 476, 478, 555, 557], dead["allUp"]["picks"])
+        middle = dead["middleDown"]
+        self.assertFalse(middle["inactive"])
+        self.assertEqual([478.5, 74, -813], middle["ring"])
+        self.assertNotIn(476, middle["picks"])
+        self.assertNotIn(478, middle["picks"])
+
+    def test_with_every_bunker_down_iraq_has_no_spawn(self) -> None:
+        down = self.r["deadCarriers"]["allDown"]
+        self.assertTrue(down["inactive"])
+        self.assertEqual([None] * 6, down["picks"])
+        # Asked for, the spawn is refused; unasked, the side waits rather than
+        # going to the US flag.
+        self.assertIsNone(down["spawn"])
+        self.assertIsNone(down["defaultPick"])
+        # The ring stays where the group was, not at the world origin.
+        self.assertEqual([478, 74, -813], down["ring"])
+
 
 if __name__ == "__main__":
     unittest.main()

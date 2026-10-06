@@ -17,7 +17,7 @@ import {
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
   TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes, detachSpawnedCraft,
-  spawnHoldOf,
+  spawnHoldOf, DRIVE_KINDS,
 } from './seats.js';
 
 const results = {};
@@ -358,6 +358,33 @@ function stationaryBrowning() {
     lvt4: classifyRoot(hull('LVT4', 'VCLand', ['c_ETTank', 'c_ETShip'], 0)),
     // No category: the old rule, the last Engine.
     uncategorised: classifyRoot(hull('Thing', null, ['c_ETTank', 'c_ETShip'], 4)),
+  };
+}
+
+// --- a root with `hasMobilePhysics` clear drives nothing (PHY-17) -----------
+//
+// DC's `Nimitz_Static*` carriers write `hasMobilePhysics 0` on the root and
+// carry a `c_ETShip`; the exporter stamps `physics.hasMobilePhysics = false`
+// on such a root only. The helm stays a seat with its entry points.
+{
+  const carrier = (name, mobile) => {
+    const physics = { mass: 25000000, vehicleCategory: 'VCSea', vehicleType: 'VTCarrier' };
+    if (mobile !== undefined) physics.hasMobilePhysics = mobile;
+    return node(name, { control: name, templateKind: 'PlayerControlObject', physics },
+      node(`${name}_Engine`, { templateKind: 'Engine', control: name, physics: { engineType: 'c_ETShip' } }),
+      node(`${name}Entry`, { templateKind: 'EntryPoint', seat: { control: name, entryRadius: 4.1 } }));
+  };
+  const staticNimitz = carrier('Nimitz_Static_Heli', false);
+  const occ = new VehicleOccupancy(staticNimitz);
+  results.staticRoot = {
+    nimitzStatic: classifyRoot(staticNimitz),
+    // Vanilla's Enterprise: `hasMobilePhysics 1`, no key stamped.
+    enterprise: classifyRoot(carrier('Enterprise')),
+    // A `true` (never stamped today) keeps the category rule.
+    stampedMobile: classifyRoot(carrier('Mobile', true)),
+    entries: listEntryPoints(staticNimitz).length,
+    drivable: DRIVE_KINDS.includes(occ.rootKind),
+    drive: occ.ensureDrive(null, {}) ?? null,
   };
 }
 

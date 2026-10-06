@@ -147,7 +147,9 @@ scripted fall.
   every cycle; `applyDamage`'s sign convention is the *inverse* of the
   depot's own rate (a positive rate heals, a negative one — an FH-style trap
   no Wake depot ships — damages).
-- **Ammo beats heal on a shared cycle** (SUP-18/19): a depot with both
+- *Corrected 2026-10-06: refuted by ledger SUP-18. A cycle runs the ammo and
+  the heal both; the bullet below is this study's reading and is wrong.*
+  **Ammo beats heal on a shared cycle** (SUP-18/19): a depot with both
   capabilities (Wake's `M3A1SupplyDepot`) only reaches the heal branch on a
   cycle none of its ammo types fired — at 15 units/s against a 0.5s check,
   that is close to never. This is the engine's own dispatch order, proven in
