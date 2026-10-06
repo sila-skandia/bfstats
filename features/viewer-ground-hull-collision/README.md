@@ -3,8 +3,10 @@
 Written by wave-2 stream D (`w2d-drive`) alongside items 15–17 of the
 2026-09-19 parity round. Sections 1 to 5 are the plan. W6-C built it on
 2026-09-22, and [the Built section](#built--2026-09-22-w6-c) below says what
-and where. The newest section (2026-10-06) is the land drives' own chassis,
-the sea and the upside-down clock, with what is still open. The title used to call this a plan, not a build, and this line used
+and where. The 2026-10-06 section is the land drives' own chassis, the sea
+and the upside-down clock; the newest, "Terrain contact, 2026-10-07", is a
+driven hull against the terrain, the ground under an undrawn patch, a room's
+land drive and a landed helicopter, with what is still open. The title used to call this a plan, not a build, and this line used
 to say nothing here is implemented. The plan was written so that
 whoever picks the work up starts from what `viewer/ground.js` already has
 rather than from `collision-response.md` cold.
@@ -589,15 +591,40 @@ and after.
 ### The ground under an undrawn patch
 
 The colliders' lattice was snapped off the drawn tiles, and a patch the bake
-does not draw had none (29 live levels; Midway 240 of 256 patches). A new bake
+does not draw had none (41 levels of the five in-scope trees; Midway 240 of 256 patches). A new bake
 layer, `heightmap` (`features/level-bake-layers/README.md`), ships the whole
 `Heightmap.raw` as `terrain/heightmap.png` and a `heightmap` key, and
 `heightfield.js` `heightfieldFromSamples` builds the lattice from it for the
 page (`level-terrain.js`), the headless runner (`sim/level.mjs`) and the room
 server (`server/level-load.mjs`); a tree baked before falls back to the tile
-snap. Where a tile is drawn the two agree to the bit (Guadalcanal 263,169
-samples of 263,169, Midway 66,049, DC Guadalcanal and Medina Ridge the same),
-and there are no holes.
+snap. Census, the layer patched into scratch copies of the five in-scope
+trees (167 levels: vanilla 23, XPack1 29, XPack2 32, Desert Combat 35, DC
+Final 48; `~/.cache/dc-sweep/terrain-contact/census.sh`): where a tile is
+drawn the two agree to the bit on every level, no level has a hole, 41 levels
+gain ground under undrawn patches, and Sea Rigs (both DC trees), which draws
+no tile at all, gains a heightfield where it had none. 37 MB of PNG in all,
+under a second a level to write.
+
+**Sea Rigs had no heightfield at all**, so no body world, and its hulls stood
+where placed. With one, the load settle (`hull-bodies.js` `settleSome`,
+`server/level-bodies.mjs` `settle`), which meets the terrain alone, dropped
+its two Forklifts 115 m off the rigs onto the sea bed, where they drowned. In
+the engine they rest on the rig by an object contact that a parked body here
+does not have (a parked body meeting statics is this README's own open next
+step). `vehicle-bodies.js` `standsOverTheSea` (every col0 vertex above the
+water, more than 1.5 m clear of the ground, and that ground under the water)
+now leaves such a hull where the level put it, asleep. A hull merely spawned
+high over dry ground still drops (DC El Alamein's M1A1, Humvees and M163,
+2.1 to 2.9 m, as before). Over the five trees it holds, besides the carriers'
+aircraft (held already), Sea Rigs' Forklifts, DC Final Al Nas's Stryker (12 m
+over the water, which the settle used to drop it into) and Medina Ridge's
+inherited hulls off the edge of its 1024 m grid (which used to free-fall).
+
+Sea Rigs' bots change with the heightfield: its search maps are painted from
+the collider (the level ships no AI), and with a sea floor instead of a flat
+water surface a 60 s match's route failures drop from 6,283 to 3,888 and the
+bots no longer take the two LCVPs they took before (every seed alike). The
+bots package should look at it.
 
 A Sherman driven off Guadalcanal's beach (the review's spot, 2528, -1060)
 used to meet the undrawn patch 40 m out, rise 11.8 m in a tick and drive
