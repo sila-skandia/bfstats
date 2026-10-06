@@ -1,4 +1,4 @@
-# Hand weapons: barrels, a scope with no picture, heat and the turn spread
+# Hand weapons: barrels, a scope with no picture, heat, the turn spread and the camera shake
 
 Status: built 2026-10-06 (Desert Combat fix round, package `hand-weapons`):
 the shotgun barrels (section 1), the Stinger's sight, read and confirmed
@@ -6,7 +6,8 @@ the shotgun barrels (section 1), the Stinger's sight, read and confirmed
 (section 3). The page sees the hand MG's heat once the Desert Combat and DC
 Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
 (package `hand-weapons-2`): the refused pull that restarts the lockout
-(section 5).
+(section 5) and the weapon's camera shake (section 6), which the page plays
+once the viewmodels are re-extracted.
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -357,3 +358,110 @@ gets no lockout and is cold again within 10 s.
   the engine's lockout, restarts included. Today it keeps the single lockout.
 - GUN-15's tick-order question stands. Both orders give the same count per
   cycle; they differ only in which half of the tick the drain lands on.
+
+## 6. The weapon's camera shake: the fire kick and the sniper's sway
+
+Built 2026-10-07 (package `hand-weapons-2`; the adversarial sweep's CW15).
+
+**What was missing.** Desert Combat declares 303 `setCameraShake*` lines on its
+`Ub_*` states and vanilla 286 of its own. The Bazooka, Stinger and RPG-7 jolt
+the eye 1 m up and down at 500 rad/s, the M16A2 buzzes at 0.25 degrees, and the
+snipers kick and then sway while aimed. The page played none of them. Only the
+walking bob was built (`soldier.js` `BOB`), and that one is multiplied by a
+shipped zero (CS-6).
+
+**What the engine does.** Read in lnxded and the client for this round:
+
+- CS-8, one shake's life. A state holds two blocks, each with six channels, a
+  fade in, a fade out, a floor and a time limit. The factor snaps or fades in
+  to 1, then fades out at once. Under 0.001 the next slot starts, and a slot
+  with no block ends the shake. A floored shake (the sniper's sway, 0.075)
+  never ends. Each channel is `amplitude × factor × sin(rate × t)`.
+- CS-9, what starts it. Only entering a state unlike the current one restarts
+  its shake. A state's own `c_PIFire` self-transition does not: a looping
+  automatic shakes once a burst, and a one-shot fire state shakes each time it
+  is entered anew from aim.
+- CS-10: a cloned state carries no shake, which is why the scripts name every
+  weapon's states.
+- CS-11, where it goes. `Camera::getTransformation`, the render path, puts the
+  shake on the left of the camera's transform, in the camera's own frame.
+  Rounds launch from the camera's absolute transform, which carries none of
+  it, so a kick moves the picture and the cross while the round flies down the
+  steady axis.
+
+**What was built.**
+
+- `bf42/animstates.py` parses the shake lines onto the state that
+  `createState` or `setActiveState` names. A clone does not copy them, and a
+  `setActiveState` naming no state takes nothing. `State.camera_shake_extras`
+  gives the slots in order.
+- `extract_viewmodel.py` writes each clip family's shake into the viewmodel's
+  extras (`clips.<family>.cameraShake`). The families are the upper states:
+  `fire` is `Ub_Fire<W>`, `proneFire` is `Ub_LieFire<W>`, and `idle`,
+  `crouch` and `prone` are the aim states that carry the sniper sway.
+- `viewer/fire-shake.js`: `CameraShake` is `getCameraShakeTransform` for one
+  instance. `applyViewShake` turns and moves a camera in its own frame, with
+  the engine's signs and channel order.
+- `hand-fire.js` `stepViewShake` enters the state the arms are in
+  (`hw.active`) when it changes, and runs one frame of its shake.
+  `beginHandFire` lets a one-shot fire state restart only when the last pass
+  has run out.
+- `hand-weapon.js` `shakeView` puts that frame on `page.camera` for the draw
+  alone. `map.html` `draw` calls it around the world render and the near pass,
+  then puts the camera back. The rig copies the shaken camera, as the engine's
+  rig rides it, and the rounds, the hitscan and the HUD read the steady one.
+- `hand-fire.js` `startReload` waits for the last round's fire cycle
+  (`hw.cool`, the round's `1 / roundOfFire`). The engine refuses the reload
+  message while `timeToFireFinished` runs (`handleMessage` `0x082899c8`), and
+  its automatic change waits for it (BODY-7). Before this, a dry magazine
+  started the reload on the next frame. That cut the Bazooka's one-second
+  fire state, and its shake, after one frame. The bots got the same fix in
+  AI-133.
+
+**How it was checked.**
+
+- `tests/test_fire_shake.py` (`fire_shake_harness.mjs`): the Bazooka at full
+  strength on its first frame, down to 0.15 at 0.3 s and ended by 0.5 s; the
+  Thompson held at 1 through a 5 s burst; the K98 sniper's kick chaining into
+  its slow drift at 0.27 s; the sniper sway held at 0.075 after 10 s; a fade-in
+  as a rate; a time limit; the restart rule; and the camera's turn and move
+  signs, each undone.
+- The archive case parses the installed packs: vanilla has 42 upper states
+  with a shake, and Desert Combat 101 (vanilla's 42 among them).
+- `tests/test_animstates.py` `CameraShakeTests` covers the parser: clones,
+  missing states, slots, and the clamp.
+
+In the page (`~/.cache/dc-sweep/hand-weapons-2/shake_page.cjs`, El Alamein with
+`?weapon=Bazooka` and then `No4Sniper`, the scratch viewmodels routed in, the
+page's own animation loop stopped, 1/60 s frames), each frame compares the
+camera the world was drawn with to the camera the frame leaves behind:
+
+- Idle Bazooka: no difference.
+- Bazooka shot: the drawn view is off for 20 frames, a third of a second, by
+  up to 1.19 m and 0.63 degrees. It is back on the steady camera from frame
+  22.
+- Bazooka reload: it starts at frame 62, once the 1 s fire cycle has run out.
+  Before the reload fix it started on the frame after the shot, and no shake
+  showed.
+- No4 sniper, aiming: the view sways up to 0.20 degrees.
+
+A scratch extraction (`extract_viewmodel.py --no-optimise --out
+~/.cache/dc-sweep/hand-weapons-2/extract-bf BritishSoldier Bazooka
+BritishSoldier No4Sniper BritishSoldier Thompson`) changes only
+`clips.<family>.cameraShake`. Nodes, meshes, skins and animations are equal to
+the live glbs (`glbdiff.py`).
+
+**Assets.** The page shakes only once the viewmodels are re-extracted, in every
+tree: every vanilla, XPack, Desert Combat and DC Final weapon with a shaking
+state. The lead's commands are in the package report.
+
+**Open.**
+
+- The viewer's arms clip (`hw.active`) stands in for the upper machine's
+  state. The two agree for the fire, aim, reload and deploy families. A clip
+  the viewer cuts short, or holds clamped past the engine's return, moves the
+  shake's end with it.
+- The explosion, hit and death shakes (`BigExplosion`, `HitShake`,
+  `DieShake`, the trigger machine) and the stationary guns'
+  `FireMachineGunShake` are not built.
+- Bots shake nothing. It is a view, and only the human's is drawn.
