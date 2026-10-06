@@ -24,6 +24,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `damage` | `damage` | `<tree>/_shared/damage.json` | `Game.rfa` MaterialManager, the projectile templates |
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds`; `<tree>/_shared/vehicle-sounds.json` (once per run, when the tree has one) | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
+| `heightmap` | `heightmap` (`image`, `dim`, `spacing`, `heightUnits`) | `<level>/terrain/heightmap.png` | the level's `Heightmap.raw` (`load_level`'s `Heightmap`, borrowed terrain included) |
 | `scene` (full bake only) | `level`, `worldSize`, `terrain`, `objects`, `skybox`, `sky`, `water`, `envmap`, `lensFlare`, `minimap` | `scene.glb`, textures, lightmaps, sky, water, minimap | everything the geometry needs |
 
 `controlPoints` implies `spawns`: an object spawn's `controlPointIndex` is the
@@ -46,6 +47,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | The MaterialManager tables, the projectile table (the proximity fuse, `timeToLive`) | `_shared/damage.json` + each `scene.json` | `--layer damage` (one level per mod is enough for the shared file) |
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
+| The terrain the colliders stand on (`terrain/heightmap.png`, every sample, drawn patch or not) | `scene.json` + `terrain/heightmap.png` | `--layer heightmap` |
 | Anything drawn or placed: a flag's or a spawner's position, which vehicle a spawner makes, which modes a placement is in, whether a flag is drawn at all, a static, the terrain, textures, the exporter (`bf42/gltf.py`, `assemble.py`, `rs.py`) | `scene.glb` and its side files | full bake: `extract_maps_all.py --mod M` |
 | The statics a mode script places beyond `StaticObjects.con` (`GameType.objects` -> `union_mode_statics`: Secret Weapons' `AdditionalStaticObjects`) | the glb (the nodes, tagged `extras.modes`) and `objects.modeStatics`; their emitters' `sounds.areas[].modes` and cover values ride the `sounds` and `ai` layers | full bake of the levels that have any: in vanilla and the two packs, XPack2's Hellendoorn, Kbely_Airfield, Mimoyecques and Telemark (`features/mode-script-statics/`) |
 | An ObjectSpawner's respawn window | `scene.json` (`objectSpawns`) AND the glb (the spawner node's `extras.spawner`, which `viewer/vehicle-wrecks.js` prefers) | full bake |
@@ -162,3 +164,42 @@ what made Brief P's five fields a 2.17 GB publish. That is gone.
   script, and the engine runs them on an AI level, which the viewer's game is
   (`extract_models.load_order`). A bake or `--layer ai` patch made in that
   window needs re-running; `tests/test_ai_cover_values.py` pins the count.
+
+## The heightmap layer (2026-10-07)
+
+The viewer's colliders (the page's `level-terrain.js`, the headless runner,
+the room server) built their height lattice off the drawn terrain tiles, so a
+patch the bake does not draw had no ground: the sea floor of 41 of the five in-scope trees' 167 levels
+(Midway 240 of 256 patches, Guadalcanal 192, Tobruk 182), and a hull on the
+bed that reached one was lifted onto the sea. The engine collides against the
+whole heightmap. The `heightmap` layer writes it whole:
+`terrain/heightmap.png`, the u16 samples as RGB (high byte red, low byte
+green, each scan line PNG filter Up; Guadalcanal 232 KB, Midway 41 KB,
+Medina Ridge 60 KB), and `scene.json` `heightmap` with `dim`, `spacing` and
+`heightUnits` (`256 * yScale`). The viewer's `heightfieldFromSamples` rounds
+`raw / 65535 * heightUnits` to float32 as the glb does, so where a tile is
+drawn the lattice is the tile snap to the bit; a tree without the layer falls
+back to the snap (`features/viewer-ground-hull-collision`, "Terrain contact,
+2026-10-07").
+
+It is a layer rather than part of the `scene` bake because nothing drawn
+moves: about a second a level, no glb touched. The full bake writes it too
+(`scene_layers.compute` runs every layer), last in `REPORT_ORDER`, so a tree
+patched now and its next full bake put the key in the same place.
+`tests/test_scene_layers.py` bakes Berlin and patches every layer back over it
+(the heightmap among them: nothing moves); `tests/test_terrain_heightmap.py`
+pins the PNG and the lattice.
+
+To deliver it, every tree:
+
+    cd tools/bf1942-models
+    for m in bf1942 XPack1 XPack2 DesertCombat DC_Final; do
+      python3 patch_scene.py --layer heightmap --mod $m --all
+    done
+    # EoD (241 levels, parked) and FHSW (263) have level trees too; the
+    # other mod trees hold only _shared
+    python3 ../../scripts/publish-mesh-delta.py maps --hash
+
+The `--mod` spelling is the game's folder name (`tree_for` lower-cases it for
+the tree).
+

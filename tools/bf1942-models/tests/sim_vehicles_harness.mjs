@@ -966,6 +966,154 @@ recipes.deckAir = async function deckAir() {
   };
 };
 
+// --- a land hull driven into a steep terrain face ------------------------------
+//
+// The lattice face nearest `deg`: two cells rising steadily along an axis, dry,
+// a flat run-up of six cells behind it and nothing static in the way. Before
+// the driven hull met the terrain (`body-world.js` `#drivenTerrain`) and the
+// spring probe solved its crossing (`suspension.js` `probeAlongAxis`), a Willy
+// left Gazala's 45-degree escarpment at 94 m/s and 174 m up, a Humvee Medina
+// Ridge's at 86 m/s and an M1A1 its 64-degree face at 40 m/s and 59 m up.
+function findFace(match, deg) {
+  const col = match.stage.collider, hf = col.heightfield;
+  const wl = col.waterLevel ?? -Infinity;
+  const n1 = hf.dim + 1, sp = hf.spacing, FACE = 2, RUN = 6, BACK = 18;
+  const h = (i, j) => hf.heights[j * n1 + i];
+  const found = [];
+  for (let j = RUN + 2; j < hf.dim - RUN - FACE - 2; j++) for (let i = RUN + 2; i < hf.dim - RUN - FACE - 2; i++) {
+    if (!(h(i, j) > wl + 1)) continue;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      let lo = 90, hi = 0, ok = true;
+      for (let k = 0; k < FACE; k++) {
+        const a = Math.atan((h(i + di * (k + 1), j + dj * (k + 1)) - h(i + di * k, j + dj * k)) / sp) * 180 / Math.PI;
+        lo = Math.min(lo, a); hi = Math.max(hi, a);
+      }
+      if (!(hi - lo <= 10) || Math.abs((lo + hi) / 2 - deg) >= 6) continue;
+      for (let k = 1; k <= RUN && ok; k++) {
+        const a = h(i - di * k, j - dj * k), b = h(i - di * (k - 1), j - dj * (k - 1));
+        if (!(a > wl + 1) || Math.abs(Math.atan((b - a) / sp)) > 8 * Math.PI / 180) ok = false;
+        const s1 = h(i - di * k + dj, j - dj * k + di), s2 = h(i - di * k - dj, j - dj * k - di);
+        if (!(Math.abs(s1 - a) < sp * 0.15 && Math.abs(s2 - a) < sp * 0.15)) ok = false;
+      }
+      if (ok) found.push({ i, j, di, dj, deg: (lo + hi) / 2 });
+    }
+  }
+  found.sort((a, b) => Math.abs(a.deg - deg) - Math.abs(b.deg - deg));
+  const clear = c => {
+    const x0 = c.i * sp, z0 = -c.j * sp, dx = c.di, dz = -c.dj, len = BACK + FACE * sp + 12;
+    for (const hy of [0.4, 1.4, 2.6]) for (const off of [-1.8, 0, 1.8]) {
+      for (let s = 0; s < len; s += 2) {
+        const px = x0 - dx * BACK - dz * off + dx * s, pz = z0 - dz * BACK + dx * off + dz * s;
+        if (col.statics?.cast(px, hf.height(px, pz) + hy, pz, dx, 0, dz, 2.2, -1, col.hit)) return false;
+      }
+    }
+    return true;
+  };
+  return found.slice(0, 400).find(clear) ?? null;
+}
+
+/** One face, on a match of its own: the hull parked 18 m short of the toe,
+ *  a second to settle, then eight at full throttle. */
+async function faceRun(map, template, deg, mod) {
+  const match = await start(map, 4, SEED, mod);
+  // The first bot that takes the wheel of one: a side's own hulls only.
+  let b = null;
+  for (const c of match.stage.units.candidates()) {
+    if (b || c.occupiedBy || c.template !== template || !c.isRoot) continue;
+    b = match.bots.find(o => match.referee.enterVehicle(o, c) && o.vehicle?.drive) ?? null;
+  }
+  if (!b) throw new Error(`no bot took a ${template}`);
+  freezeOthers(match, []);
+  b.tick = () => {};
+  const drive = b.vehicle.drive;
+  const st = drive.state, hf = match.stage.collider.heightfield;
+  // Crash damage is not what this measures: the bleed is topped up. A nose-in
+  // that wrecks the hull outright (COL-4: a Humvee into Medina's face at
+  // 16 m/s) still puts its driver out, and the numbers end there (`seated`).
+  const owner = match.stage.ownerOf(b.vehicle.node);
+  const hull = () => match.world.vehicleDamage?.get?.(owner);
+  const pl = match.world.player(b.playerId);
+  const face = findFace(match, deg);
+  if (!face) return { deg, face: null };
+  const sp = hf.spacing, dx = face.di, dz = -face.dj;
+  const tx = face.i * sp, tz = -face.j * sp, sx = tx - dx * 18, sz = tz - dz * 18;
+  st.position.set(sx, hf.height(sx, sz) + 1.2, sz);
+  st.velocity.set(0, 0, 0); st.angularVelocity.set(0, 0, 0);
+  st.orientation.setFromAxisAngle(new st.position.constructor(0, 1, 0), Math.atan2(-dx, -dz));
+  let vmax = 0, vyMax = -Infinity, above = -Infinity;
+  const t0 = match.clock;
+  while (match.clock < t0 + 9) {
+    if (hull() && hull().hitPoints < 50) hull().heal(50);
+    pl.pending = { input: { forward: match.clock < t0 + 1 ? 0 : 1, strafe: 0 }, lookX: 0, lookY: 0 };
+    match.step();
+    const P = st.position;
+    vmax = Math.max(vmax, st.velocity.length());
+    vyMax = Math.max(vyMax, st.velocity.y);
+    above = Math.max(above, P.y - hf.height(P.x, P.z));
+  }
+  const P = st.position;
+  return { deg, face: round(face.deg), drive: drive.constructor.name, seated: b.vehicle?.drive === drive,
+           vmax: round(vmax), vyMax: round(vyMax), maxAbove: round(above),
+           along: round((P.x - tx) * dx + (P.z - tz) * dz) };
+}
+
+async function faceRuns(map, template, mod = null) {
+  const runs = [];
+  for (const deg of [45, 55, 70]) runs.push(await faceRun(map, template, deg, mod));
+  return { runs };
+}
+
+recipes.faceWilly = () => faceRuns('gazala', 'Willy');
+recipes.faceM1A1 = () => faceRuns('dc_medina_ridge', 'M1A1', 'desertcombat');
+recipes.faceHumvee = () => faceRuns('dc_medina_ridge', 'Humvee', 'desertcombat');
+
+// --- a land hull at rest meets the terrain with its springs alone ------------
+//
+// The driven hull's own col0 now meets the heightfield (`body-world.js`
+// `#drivenTerrain`). Standing on its wheels on level ground no hull vertex
+// may be in it, or the push-out would hold the hull off its springs at rest.
+// The Sherman's turret part tests one vertex (a three-vertex col0) 0.81 m
+// under the hull origin, 0.17 m over its road wheels' probes: the closest
+// call of the vanilla set. Every land hull of El Alamein, boarded on its
+// flattest open patch, two seconds idle after one of settling.
+recipes.idleHulls = async function idleHulls() {
+  const match = await start('el_alamein', 16);
+  freezeOthers(match, []);
+  const hf = match.stage.collider.heightfield, wl = match.stage.collider.waterLevel ?? -Infinity;
+  const n1 = hf.dim + 1, sp = hf.spacing, H = (i, j) => hf.heights[j * n1 + i];
+  let best = null;
+  for (let j = 20; j < hf.dim - 20; j += 7) for (let i = 20; i < hf.dim - 20; i += 7) {
+    let lo = Infinity, hi = -Infinity;
+    for (let dj = -7; dj <= 7; dj++) for (let di = -7; di <= 7; di++) {
+      const h = H(i + di, j + dj); lo = Math.min(lo, h); hi = Math.max(hi, h);
+    }
+    if (lo > wl + 1 && (!best || hi - lo < best.relief)) best = { i, j, relief: hi - lo };
+  }
+  const cx = best.i * sp, cz = -best.j * sp;
+  const hulls = [], seen = new Set();
+  for (const c of match.stage.units.candidates()) {
+    if (!c.isRoot || c.occupiedBy || seen.has(c.template)) continue;
+    const b = match.bots.find(o => !o.vehicle && match.referee.enterVehicle(o, c) && o.vehicle?.drive);
+    if (!b) continue;
+    const drive = b.vehicle.drive;
+    if (!Array.isArray(drive.hullContacts)) { match.referee.leaveVehicle(b, { silent: true }); continue; }
+    seen.add(c.template);
+    const st = drive.state, pl = match.world.player(b.playerId);
+    st.position.set(cx, hf.height(cx, cz) + 1.5, cz);
+    st.velocity.set(0, 0, 0); st.angularVelocity.set(0, 0, 0); st.orientation.set(0, 0, 0, 1);
+    let contacts = 0;
+    for (let t = 0; t < 90; t++) {
+      pl.pending = { input: { forward: 0, strafe: 0 }, lookX: 0, lookY: 0 };
+      match.step();
+      if (t >= 30 && drive.hullContacts.length) contacts++;
+    }
+    hulls.push({ template: c.template, drive: drive.constructor.name, contacts,
+                 speed: round(st.velocity.length(), 3) });
+    st.position.set(cx + 200, hf.height(cx + 200, cz) + 2, cz);
+  }
+  return { relief: round(best.relief), hulls };
+};
+
 const fn = recipes[recipe];
 if (!fn) throw new Error(`unknown recipe ${recipe} (${Object.keys(recipes).join(', ')})`);
 process.stdout.write(JSON.stringify(await fn()) + '\n');
