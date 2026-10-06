@@ -89,7 +89,7 @@ template class. And it is not moot. No bomb rack declares it, but the shotguns
 do (XPack2's `Shotgun`, Desert Combat's `Remington` and `Saiga12k`: five or
 eight pellets for one shell), and so do 111 of FHSW's canister and shrapnel
 shells, 20 to 155 barrels each. Desert Combat's `setBlastAmmoCount 5` on the
-A-10 and SU-25 guns and the Minigun fails the bool read (CON-16) and sits on
+A-10 and SU-25 guns and the Minigun fails the bool read (CON-17) and sits on
 guns with one barrel or none, where the flag changes nothing either way.
 
 ---

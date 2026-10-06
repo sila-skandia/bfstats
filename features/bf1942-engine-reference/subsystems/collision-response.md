@@ -161,7 +161,7 @@ back by `makeScript` `0x081dc190`):
 | `ObjectTemplate.inertiaModifier x/y/z` | 1/1/1 | §4.2. Authored on every vanilla aircraft, on no land or sea vehicle |
 | `ObjectTemplate.drag` | 0 | physics.md §3 |
 | `ObjectTemplate.centerOfMassOffset` | 0/0/0 | authored by no vehicle in any installed mod checked |
-| `ObjectTemplate.hasCollisionPhysics` | 0 | template bit 1, which the object's constructor turns into flag `0x200` and nothing else does (COL-15); without it a root is never a candidate and a part never joins its root's chain (§5.1, §5.2, COL-16) |
+| `ObjectTemplate.hasCollisionPhysics` | 0 | template bit 1, which the object's constructor turns into flag `0x200` and nothing else does (COL-16); without it a root is never a candidate and a part never joins its root's chain (§5.1, §5.2, COL-17) |
 | `ObjectTemplate.speedMod` | **0.05** | `Armor::getSpeedMod` — §9 |
 | `ObjectTemplate.angleMod` | **0.0** | `Armor::getAngleMod` — §9 |
 | `ObjectTemplate.damageMod` | **1.0** | `Armor::getDamageMod` — §9 |
@@ -310,9 +310,9 @@ queries once per tick and its child parts reuse the list.
 The flag test is `(flags & 0x2000200) == 0x2000200` (`ObjectFlagPredicator`
 `0x0818dc60`): the candidate must be a root (`0x2000000`, set by
 `setParent(null)`) **and** carry `0x200`, which only a template saying
-`hasCollisionPhysics 1` gives an object (COL-15). A placed static whose root
+`hasCollisionPhysics 1` gives an object (COL-16). A placed static whose root
 template does not say so is not found by anything that moves — vehicles,
-soldiers, rounds — and nothing under it collides (COL-16).
+soldiers, rounds — and nothing under it collides (COL-17).
 
 ### 5.2 Pair filter — `checkObjectVsObjects(dt, A)` `0x0825d820`, *client* `0x00579820`
 
@@ -341,7 +341,7 @@ in a root's chain (`getNextToCheck` `0x0825ee70` → `addToTmpResponseList`
 `0x0825ede0`, walked with `LodObject::m_forceHighestLod` set, so a LodObject
 contributes its first alternative). The candidate root itself is tested
 without that check, with its own geometry or, lacking one, the LOD-0 mesh it
-borrows (COL-17, `findLodGeometry` `0x0818d860`): the house case, a
+borrows (COL-18, `findLodGeometry` `0x0818d860`): the house case, a
 geometry-less `Bundle` saying `hasCollisionPhysics 1` over a LodObject whose
 detailed alternative declares nothing.
 

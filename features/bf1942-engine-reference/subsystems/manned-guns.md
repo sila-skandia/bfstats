@@ -198,7 +198,7 @@ barrel round-robin under `asynchronyFire`. `blastAmmoCount` (a bool at
 fire in full even on the last one: a shotgun's pellets, an FHSW canister
 shell. A single-barrel gun is untouched by it, so Desert Combat's
 `setBlastAmmoCount 5` on the A-10's GAU-8 (a value the bool read refuses
-anyway, CON-16) leaves the gun at one round a pull: 1,350 pulls to empty.
+anyway, CON-17) leaves the gun at one round a pull: 1,350 pulls to empty.
 Built in `viewer/bomb-release.js` `salvo()` for every gun the page fires
 ([`features/dc-engine-reads`](../../dc-engine-reads/README.md)).
 
