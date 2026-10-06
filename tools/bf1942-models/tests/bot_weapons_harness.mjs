@@ -1,6 +1,6 @@
 // Pins the bots' hand weapons (features/bot-weapons): the magazine made from
 // the weapon's fire data and never before it (bot-referee.js `magazineOf`),
-// the reload, a held trigger's rate carrying its fraction, the round flown by
+// the reload, a held trigger's rate on whole ticks (GUN-13), the round flown by
 // the caller instead of resolved (`env.launchRound`), a full kit on respawn,
 // the fire plan's empty-magazine end, which rounds are flown (bot-rounds.js
 // `launchesDrawnRound`), and whose damage a bot's flown round is
@@ -244,7 +244,8 @@ function lawReaches(words, level = Math.fround(0.8)) {
       reaches: hand.rounds.findIndex(([, , heat]) => heat >= Math.fround(0.8)) + 1,
       heat: +(hand.bot._heat?.get('M249')?.heat ?? -1).toFixed(4),
       freeRounds: free.rounds.length,
-      freeLocked: (free.bot._heat?.get('M249')?.overheatRemaining ?? 0) > 0 || free.rounds.length < 12 * 13.5 - 2,
+      // The lockout: a 2 s gap in a held trigger's rounds.
+      freeLocked: Math.max(...gaps(free.rounds)) >= 1.9,
     },
   };
 }
@@ -321,11 +322,16 @@ function lawReaches(words, level = Math.fround(0.8)) {
   };
 }
 
-// The held rate at 60 frames a second: the Mp40's 9 rounds a second.
+// The held rate on the world's ticks (GUN-13): the Mp40's `roundOfFire 9`
+// and the M249's 13.5, each a round per whole number of ticks.
 {
-  const r = hold({ kit: ['Mp40'], seconds: 4.4, dataAt: 0, hz: 60 });
-  const first = r.rounds[0][0];
-  out.mp40At60 = { rounds: r.rounds.length, span: +(r.rounds[r.rounds.length - 1][0] - first).toFixed(4) };
+  const span = r => +(r.rounds[r.rounds.length - 1][0] - r.rounds[0][0]).toFixed(4);
+  const mp40 = hold({ kit: ['Mp40'], seconds: 4.4, dataAt: 0 });
+  const m249 = hold({ kit: ['M249'], seconds: 1.0, dataAt: 0 });
+  out.wholeTicks = {
+    mp40: { rounds: mp40.rounds.length, span: span(mp40) },
+    m249: { rounds: m249.rounds.length, gaps: [...new Set(gaps(m249.rounds))] },
+  };
 }
 
 // Without a caller that flies it, the round is the referee's ray.
