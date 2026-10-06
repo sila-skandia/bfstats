@@ -192,6 +192,40 @@ class M16BurstEdgeTests(unittest.TestCase):
     def test_a_silent_mg_distance_slot_ships_nothing(self) -> None:
         self.assertNotIn(4, [group["slot"] for group in self.extract()["release"]])
 
+    def test_a_reload_plays_slot_one_on_its_own_time_gates(self) -> None:
+        # SND-17: `FireArms::Reload` triggers patch 1 once, as the change
+        # starts, and each load waits for its own `Volume <- Time` gate.
+        reload = self.extract()["reload"]
+        self.assertEqual(1, reload["slot"])
+        self.assertNotIn("randomPlay", reload)
+        self.assertEqual([(0, "rl2mp18.wav", 0.55), (1, "SoFa1.wav", 0.7),
+                          (2, "rl1mp18.wav", 1.5)],
+                         [(p["load"], p["wav"], p["delay"]) for p in reload["picks"]])
+        self.assertEqual(["M16.r1.0.mp3", "M16.r1.1.mp3", "M16.r1.2.mp3"],
+                         [p["file"] for p in reload["picks"]])
+        self.assertTrue(all((self.out / p["file"]).is_file() for p in reload["picks"]))
+        sofa = reload["picks"][1]
+        self.assertEqual(0.4, sofa["volume"])
+        self.assertEqual([0.03, 0.0], sofa["randomStartPitch"])
+
+    def test_a_bystander_gets_the_reload_with_its_distance_ramps(self) -> None:
+        # `world-fire.js` plays these at the shooter: the ramps stop every
+        # load at a metre, as the game's own data does.
+        layers = self.extract()["reload"]["layers"]
+        self.assertEqual(3, len(layers))
+        for layer in layers:
+            sources = {(m["source"], m["dest"]) for m in layer["modulators"]}
+            self.assertEqual({("time", "volume"), ("distance", "volume")}, sources)
+
+    def test_a_weapon_without_a_reload_patch_ships_no_reload(self) -> None:
+        # The knife: one patch, no slot 1.
+        self.objects.files["Objects/HandWeapons/M16/Sounds/M16.ssc"] = """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/knf1.wav
+"""
+        self.assertNotIn("reload", self.extract())
+
 
 if __name__ == "__main__":
     unittest.main()

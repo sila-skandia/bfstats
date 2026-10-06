@@ -56,6 +56,7 @@ export function findWeaponSpecs(report, template) {
     // its Release, Shell Bounce or MG-distance patch (SND-12).
     press: weapon.press,
     release: weapon.release,
+    reload: weapon.reload,
   }));
 }
 
@@ -87,6 +88,7 @@ export function findWeaponSpecsByFireArms(report, names) {
           attachToListener: weapon.attachToListener,
           press: weapon.press,
           release: weapon.release,
+          reload: weapon.reload,
         });
       }
     }

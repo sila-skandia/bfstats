@@ -601,6 +601,10 @@ FIRE_LOOP_SLOT = 5
 # `SoundSetup` default 0x14), so a single shot's release lands that far behind it.
 RELEASE_SLOTS = (2, 3, 4)
 RELEASE_AFTER = 1 / 20
+# And the slot a magazine change triggers, once, as it starts: `FireArms::
+# Reload` (lnxded 0x08289d80, client 0x00539c80, the call at 0x00539cdf;
+# ledger SND-17), which every reload goes through (AI-133).
+RELOAD_SLOT = 1
 
 
 def _firing_patch(patches, release=False):
@@ -1151,6 +1155,18 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                                             level_files, arms_patches))}
             if release_layers:
                 weapon["release"] = release_layers
+            # The magazine change's own patch (SND-17): DC's TOW and Spandrel
+            # launchers carry one, no vanilla gun does. Not when the rounds
+            # already play it (`_firing_patch`'s last resort), and not off a
+            # projectile's script, whose slot 1 is something else.
+            reload_samples = (_non_silence(arms_patches[RELOAD_SLOT].samples)
+                              if len(arms_patches) > RELOAD_SLOT and not from_round
+                              else [])
+            if reload_samples and not any(s is chosen[0] for s in reload_samples):
+                reload_layers = _sound_layers(reload_samples, sounds, write,
+                                              level_files, arms_patches)
+                if reload_layers:
+                    weapon["reload"] = reload_layers
             weapons.append(weapon)
         if entry is None and weapons:
             entry = {

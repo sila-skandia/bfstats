@@ -344,7 +344,8 @@ export function rollCone(r, spreadRad) {
  *  - hooks, all optional: `beforeBots()`, `tickBot(bot, dt, now)` (replaces
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
  *    `onRespawned(bot, flag)`, `onShot(bot, at)` (once per round, a flown
- *    one included), `launchRound(bot, stats)` (true: the caller put this
+ *    one included), `onReload(bot, weapon)` (a magazine change has begun),
+ *    `launchRound(bot, stats)` (true: the caller put this
  *    round in flight and bills its landing, so it is not resolved here; the
  *    page's rocket launchers, the runner has none), `onHit(bot, hit)`,
  *    `damageTarget(hit, bot, at)` (true: the caller billed a non-bot target),
@@ -642,6 +643,8 @@ export function createBotReferee(env) {
       // A Bazooka's reload starts a second after its round, so it fires one
       // every 6.6 s, and the round's fire clip plays out before the reload's.
       mag.reloadLeft = mag.reloadTime > 0 ? mag.reloadTime : 1e-6;
+      // `Reload` triggers the weapon's Reload sound slot as it starts (SND-17).
+      env.onReload?.(bot, bot.weaponAi?.name ?? null);
     }
     const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
     bot.magazineEmpty = mag.rounds <= 0;

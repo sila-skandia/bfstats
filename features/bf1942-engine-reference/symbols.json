@@ -2373,6 +2373,15 @@
    "note": "fld [ecx+0x1a8]; ret: the total deviation, degrees. Called directly (devirtualised) from the soldier HUD feed 0x006e978d/0x006e97a8, the vehicle one 0x006d71be/0x006d71d9 and 0x00464790. lnxded getMenuCrossHairRadius/Size 0x0828d470/0x0828d480 both return the same +0x188 field. Ledger XHIT-15."
   },
   {
+   "address": "0x00539c80",
+   "name": "FireArms::Reload",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded FireArms::Reload 0x08289d80 (one caller, 0x0053efd5): magSize +0x394 non-zero, magType +0x39c not 1, byte +0x545 clear or magazine empty; sets timeToReloadFinished (0x00539950) to reloadtime +0x3a8; sound(+0x110)->list(0)->trigger(1) at 0x00539cdf, the Reload slot. Ledger SND-17."
+  },
+  {
    "address": "0x00539fb0",
    "name": "FireArms__updateSound",
    "kind": "function",

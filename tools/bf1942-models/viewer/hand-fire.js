@@ -160,6 +160,8 @@ export function createHandFire(page) {
     if (hw.rounds >= magazine.size) return false;
     hw.reload = magazine.reloadTime ?? 2;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
+    // `FireArms::Reload` triggers the script's Reload slot as it starts (SND-17).
+    hw.fire?.playReload?.();
     // `FireArms::Reload` calls setZoom(false): a magazine change drops zoom.
     hw.zoomed = false;
     hw.rezoom = 0;
