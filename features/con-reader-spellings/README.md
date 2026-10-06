@@ -81,8 +81,14 @@ section 8).
   acceleration.
 
 A Camera node has no mesh and no children, so it never got `extras.rig`. Yet
-the held look's sense on screen is the pitch `direction` times the profile's
-invert box (MLK-13, GUN-2).
+the held look's sense on screen is the camera's own pitch gain times the
+profile's invert box (MLK-13, GUN-2). That gain is `direction` times the sign
+of `maxSpeed`, not `direction` alone: the servo ramps toward
+`sign(acceleration) x input x maxSpeed` with `maxSpeed` signed
+(`calculateAndClipAngle` lnxded `0x081d7866`, `fmul [tmpl+0x174+axis*4]`, no
+`fabs`; `ObjectTemplate.maxSpeed`, ConsoleClass194 `0x081ce090`, stores the
+Vec3 raw). Vanilla's BF109 (`setAcceleration 5000/5000/0`, `setMaxSpeed
+90/-90/0`) and Spitfire (`-5000` with `90/90/0`) therefore look the same way.
 
 ## 3. How it was checked
 
@@ -286,7 +292,9 @@ them. With the assets above:
 
    ```js
    const look = page.occupancy?.cameraNode?.()?.userData?.cameraView?.look;
-   const sign = look ? (look.axes?.pitch?.acceleration ? look.axes.pitch.direction : 0) : -1;
+   const pitch = look?.axes?.pitch;
+   // GUN-2: the servo's gain is sign(acceleration) x maxSpeed, maxSpeed signed.
+   const sign = look ? (pitch?.acceleration ? pitch.direction * Math.sign(pitch.maxSpeed ?? 0) : 0) : -1;
    const flip = page.held(MOUSE_LOOK_TRIGGER) ? sign * (mouseInput.invertFor('air') ? -1 : 1) : 1;
    ```
 
@@ -294,17 +302,19 @@ them. With the assets above:
    binding, or a zero pitch acceleration (XPack2's C47), gets no vertical look
    (GUN-2).
 
-   Read off the extracted trees (`camera_signs.py`), these key cameras are
-   positive:
-
-   | Tree | Positive key cameras |
-   |---|---|
-   | vanilla | AichiVal, Aichival-T, B17_Camera, BF109, Mustang, and Battle of Britain's level-local `Ju88A_Camera`, which MLK-13's `Objects.rfa` survey does not reach |
-   | DC 0.7 | AC-130_Camera, plus the inherited vanilla five |
-   | DC Final | AC-130, AH64, H6Pilot, MH53Pilot, Mi8, SA342Pilot, UH-60, UH-60Q, plus the vanilla six |
-
-   The other key cameras are negative: vanilla 8, DC 30, DC Final 23.
-   XPack2's `C47Camera` has no pitch acceleration.
+   **Do not take `direction` alone as the sign.** Six vanilla pilot cameras
+   (AichiVal, Aichival-T, B17_Camera, BF109, Mustang and Battle of Britain's
+   level-local `Ju88A_Camera`) and the AC-130's declare a positive
+   acceleration with a negative `maxSpeed` (`5000` with `-90`), which is the
+   same gain as the Spitfire's `-5000` with `90`. Read that way, every key
+   camera in vanilla, XPack1, XPack2 and DC 0.7 is negative, which is what
+   `local-look.js` assumes today, so the change moves none of them. The only
+   positive key cameras are DC Final's helicopters: AH64, H6Pilot, MH53Pilot,
+   Mi8, SA342Pilot, UH-60 and UH-60Q (`maxSpeed 90`, `acceleration 5000`).
+   XPack2's `C47Camera` has no pitch acceleration. (Review, 2026-10-07: the
+   first version of this section used `direction` alone and listed the
+   vanilla six and the AC-130 as positive, which would have inverted their
+   held look.)
 
    The camera's own limits are `look.axes.yaw/pitch.min/max` (degrees, `null`
    when free) if the page clamps the held look anywhere.
