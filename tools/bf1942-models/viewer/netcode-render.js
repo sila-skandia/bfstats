@@ -14,8 +14,10 @@
 // stays untouched.
 //
 // What is NOT here, and why: remote turret traverse and aim rigs (P4 feel),
-// remote shot sound (P4), wreck/replace states (P3 authority), name labels
-// (P4), and any correction of the local player (P4).
+// remote shot sound (P4), name labels (P4), and any correction of the local
+// player (P4). A hull's damage, wreck and respawn are drawn on the page's own
+// copy of it, from the room's rows (`net-room.js`, `server/room-pads.mjs`),
+// not on a replica, which stands only while a remote drives.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
