@@ -462,10 +462,10 @@ export function advanceProjectiles(guns, dt) {
         shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
       }
       // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
-      // it per projectile: 0 on every bullet (a tracer never reaches this
-      // loop at all), 0.5 on the Panzer IV's and the Chi-ha's rounds, and
-      // unset — so 1 — on every other tank gun, howitzer, naval gun, bomb
-      // and torpedo.
+      // it per projectile (IMP-7): 0.5 on the Panzer IV's and the Chi-ha's
+      // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
+      // — on every other tank gun, howitzer, naval gun, bomb, torpedo and
+      // artillery rocket.
       if (shot.gravity) {
         shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
       }
