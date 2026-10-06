@@ -228,13 +228,15 @@ export function vehicleTick(world, player, dt, integrators) {
         // Ships ride this branch on player.kind (a Ship IS an Aircraft in
         // ship.js, but world.js branches on the seat kind, and c_ETShip
         // classifies to 'ship'). Their ramps (LCVP/Daihatsu) and dive
-        // planes + float trim (Gato/Sub7C) all bind c_PIPitch, which no
-        // ground/tank hull does -- so only ships read the pitch axis here.
+        // planes + float trim (Gato/Sub7C) all bind c_PIPitch, and so do two
+        // Desert Combat land hulls: the Forklift's lift and forks and the
+        // Ural5323's ramp. No vanilla land hull does. A land drive reads the
+        // axis when its own rig takes it (`bindsPitch`).
         // The same stick spring the aircraft path uses (arrows on desktop,
         // the mobile pad's Y when held, bypassing the spring as the page
         // always did for it); W/S stays c_PIThrottle (ahead/astern) and
         // never drives the pitch.
-        if (player.kind === 'ship') {
+        if (player.kind === 'ship' || bindsPitch(vehicle)) {
           player.stick.pitch = input.pad
             ? input.pitch : axisToward(player.stick.pitch, input.pitch, dt);
           vehicle.setInput('c_PIPitch', player.stick.pitch);
@@ -303,4 +305,14 @@ export function vehicleTick(world, player, dt, integrators) {
       ? (input.altFire && !player.gate.blocked) : fire;
     world.guns?.setFiring(group, trigger && state.canFire);
   }
+}
+
+/** A land drive whose own rig takes `c_PIPitch` (DC's Forklift and Ural5323),
+ *  read once off its servo table. */
+function bindsPitch(vehicle) {
+  if (vehicle._bindsPitch === undefined) {
+    vehicle._bindsPitch = typeof vehicle.servoAxes === 'function'
+      && [...vehicle.servoAxes().values()].some(spec => spec.input === 'c_PIPitch');
+  }
+  return vehicle._bindsPitch;
 }

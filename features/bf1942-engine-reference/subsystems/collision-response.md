@@ -152,6 +152,11 @@ Which node class an object gets is decided by template flag byte `+0x70`
 | `hasMobilePhysics 1` | 0 | `PhysicsNode` | `ResponsePhysics` (CID `0xc42d`) |
 | `hasPointPhysics 1` | 3 | `PointPhysicsNode` | `PointResponsePhysics` (`0xc42e`) — §10 |
 
+A vehicle root that lands in the first row, with the bit clear, never moves.
+Its Engines, Wings and floats push on the root's static node, and every
+adder there is a bare `ret` (PHY-17). DC's `Nimitz_Static*` carriers are
+built this way.
+
 Authored data and engine defaults (template constructor `0x081dbc70`, printed
 back by `makeScript` `0x081dc190`):
 
@@ -161,7 +166,7 @@ back by `makeScript` `0x081dc190`):
 | `ObjectTemplate.inertiaModifier x/y/z` | 1/1/1 | §4.2. Authored on every vanilla aircraft, on no land or sea vehicle |
 | `ObjectTemplate.drag` | 0 | physics.md §3 |
 | `ObjectTemplate.centerOfMassOffset` | 0/0/0 | authored by no vehicle in any installed mod checked |
-| `ObjectTemplate.hasCollisionPhysics` | 0 | template bit 1; presumed to become object flag `0x200`, without which a body is not tested at all (the derivation is unread — see Still open) |
+| `ObjectTemplate.hasCollisionPhysics` | 0 | template bit 1, which the object's constructor turns into flag `0x200` and nothing else does (COL-16); without it a root is never a candidate and a part never joins its root's chain (§5.1, §5.2, COL-17) |
 | `ObjectTemplate.speedMod` | **0.05** | `Armor::getSpeedMod` — §9 |
 | `ObjectTemplate.angleMod` | **0.0** | `Armor::getAngleMod` — §9 |
 | `ObjectTemplate.damageMod` | **1.0** | `Armor::getDamageMod` — §9 |
@@ -247,7 +252,14 @@ Which geometry that is for a vehicle root that has none of its own is ledger
 COL-14: `findLodGeometry` finds the first LodObject with a
 `DistCompareLodSelector`, which on an aircraft is its cockpit LOD, and takes
 its exterior. The `.con` `inertiaModifier` triple is x/y/z in that order
-(COL-13). That is four times a solid box's inertia per unit mass, and it is the only
+(COL-13). On a land vehicle (COL-15) it is the highest alternative of the
+root's first child when that is a `LodObject` with geometry there (a tank's
+`ShermanComplex`), else the cockpit LOD's exterior (a car's `Willy_Hull_M1`),
+and the root part's collision mesh is found by the same walk. The box is that
+mesh's `.sm` header bounds, which on 17 of Desert Combat's land hulls is not
+the mesh's vertex box.
+
+That is four times a solid box's inertia per unit mass, and it is the only
 inertia there is. **Mass never enters rotation**, there is no gyroscopic term,
 `ω` lives in world axes and is not re-expressed as the body turns, and the body
 turns about its **origin**, not its centre of mass. An object with no geometry
@@ -311,6 +323,13 @@ candidates = grid sphere query at  A.pos − 0.5·d,  radius  |d|²·0.25 + 1.0 
 (`|d|²`, not `|d|` — dimensionally odd, and what the code does.) The root
 queries once per tick and its child parts reuse the list.
 
+The flag test is `(flags & 0x2000200) == 0x2000200` (`ObjectFlagPredicator`
+`0x0818dc60`): the candidate must be a root (`0x2000000`, set by
+`setParent(null)`) **and** carry `0x200`, which only a template saying
+`hasCollisionPhysics 1` gives an object (COL-16). A placed static whose root
+template does not say so is not found by anything that moves — vehicles,
+soldiers, rounds — and nothing under it collides (COL-17).
+
 ### 5.2 Pair filter — `checkObjectVsObjects(dt, A)` `0x0825d820`, *client* `0x00579820`
 
 A is stamped with the tick's `collisionCheckedCounter`. For every candidate
@@ -331,8 +350,16 @@ when any of these holds:
    part positions and radii but **root** speeds;
 9. both vertex sets have fewer than 4 vertices.
 
-A collidable part (`shouldCheckCollision` `0x082584e0`) has object flag `0x200`,
-a geometry, a non-empty vertex set and a face collider.
+A collidable part (`shouldCheckCollision` `0x082584e0`, and
+`StaticResponsePhysics`'s copy `0x0825ed50`) has object flag `0x200`, a
+geometry, a non-empty vertex set and a face collider. Only such parts are put
+in a root's chain (`getNextToCheck` `0x0825ee70` → `addToTmpResponseList`
+`0x0825ede0`, walked with `LodObject::m_forceHighestLod` set, so a LodObject
+contributes its first alternative). The candidate root itself is tested
+without that check, with its own geometry or, lacking one, the LOD-0 mesh it
+borrows (COL-18, `findLodGeometry` `0x0818d860`): the house case, a
+geometry-less `Bundle` saying `hasCollisionPhysics 1` over a LodObject whose
+detailed alternative declares nothing.
 
 ### 5.3 Who is the vertex side
 
@@ -814,7 +841,6 @@ was not located; this stays `inferred`.
 | The client's `SimpleObject::handleCollision` and `Game::handleCollision` override | next lead: the client `PlayerControlObject` vtable's `+0x58`; lnxded's tail-calls the base directly |
 | Where `getSpeedDamageMod()` (default 0.1) is consumed | not in either collision handler |
 | What gives projectiles and soldiers their collision-group bit | writers of template `+0x78` |
-| How object flag `0x200` derives from `hasCollisionPhysics` | the ConsoleClass handlers at `0x081b8625`–`0x081b8969` |
 | Which collision LOD is current when `ObjectManager::intersectLine` runs (bullets) | the shared-template LOD state, §5.4 |
 | The soldier-vs-soldier push: signs not re-derived | `checkObjectVsObject` `0x082597xx` |
 | Callers of `addSpeedAtAbsolutePosition` / `…RelativePosition` | slot offsets collide with other interfaces |
