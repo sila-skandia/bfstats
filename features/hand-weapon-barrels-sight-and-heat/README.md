@@ -465,3 +465,55 @@ state. The lead's commands are in the package report.
   `DieShake`, the trigger machine) and the stationary guns'
   `FireMachineGunShake` are not built.
 - Bots shake nothing. It is a view, and only the human's is drawn.
+
+## 7. A hand weapon's pull costs what `salvo()` says
+
+Built 2026-10-07 (package `hand-weapons-2`, asked for by the lead from the
+engine-reads package's BOMB-13).
+
+**What was wrong.** `gunfire.js` hands every `onShot` what a pull cost, from
+`salvo()` (BOMB-1..BOMB-5). The hand weapon ignored it and charged one round
+a pull. It also left `guns.roundsLeft` unanswered for its own group, so
+`salvo()` read it as unlimited. That had two effects:
+
+- A two-barrel hand weapon with no `setAsynchronyFire` fired both barrels and
+  paid one round.
+- At its last round it still fired both barrels (BOMB-5's partial salvo needs
+  the magazine).
+
+Vanilla's and Desert Combat's hand weapons all have one barrel, except the
+shotguns, which declare `blastAmmoCount` and so pay one shell for eight
+pellets. The weapons this fixes are FH's 36, FHSW's 73, bf1918's 20 and
+FinnWars' 2.
+
+**What was built.** `hand-fire.js`:
+
+- `onShot` charges `salvo()`'s answer, through `handCharge`.
+- `handCharge` caps a `blastAmmoCount` weapon at one round (the FireArms
+  extras' `blastAmmoCount`; absent means not set). That holds even before
+  `salvo()` itself is told of the flag, which is the engine-reads branch's
+  change.
+- `roundsLeft` answers `hw.rounds` for the hand weapon's own group.
+
+**How it was checked.** `tests/test_hand_fire.py` (`hand_fire_harness.mjs`,
+`createHandFire` over a stub page, each pull through `salvo()` and then
+`onShot`):
+
+| Weapon | Barrels fired | Rounds charged |
+|---|---|---|
+| A rifle | 1 | 1 |
+| Two barrels | 2 | 2 (1 before) |
+| Two barrels on its last round | 1 | 1 (2 fired before) |
+| Two barrels with asynchrony | 1 | 1 |
+| A `blastAmmoCount` shotgun | 8 | 1 |
+| Unlimited | 2 | 0 |
+
+A gun not in the hand still answers from its `FireState`. The same file pins
+the reload's wait for the fire cycle (section 6).
+
+**Assets.** The shotguns' `blastAmmoCount` reaches the hand weapon only
+through the FireArms extras, which the engine-reads branch adds to
+`bf42/assemble.py`. Until the Desert Combat and DC Final Remington and
+Saiga12k viewmodels are re-extracted with that exporter, the field is absent:
+`salvo()` charges eight rounds a pull, so one pull empties the Remington. Run
+that re-extract in the same pass as section 6's.
