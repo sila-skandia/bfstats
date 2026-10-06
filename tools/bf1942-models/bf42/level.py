@@ -1798,29 +1798,48 @@ def load_tickets(files: LevelFiles, mode: str | None = None) -> TicketInfo | Non
     return None
 
 
+#: `game.set<Side>Debriefing<Class><Result>` -> (side, key): the eight lines
+#: the round's debriefing writes under its title, one per side and result
+#: (`LevelManager::setAlliedDebriefingMajorVictory` 0x08459de0 ..
+#: `setAxisDebriefingMinorDefeat` 0x08459ec0; ledger ROUND-8).
+DEBRIEFING_VERBS = {
+    f"set{side}debriefing{size}{result}": (side, f"{size}{result.title()}")
+    for side in ("allied", "axis")
+    for size in ("major", "minor")
+    for result in ("victory", "defeat")
+}
+
+
 @dataclass
 class BriefingInfo:
-    """The multiplayer trio of `Menu/Init.con` (`level-content.md` Gap 14).
+    """The multiplayer trio of `Menu/Init.con` (`level-content.md` Gap 14),
+    and the round's debriefing lines beside it.
 
     `objectives` and `map_type` hold the raw con values: a localisation key
     (`MULTIPLAYER_BRIEFING_WAKE`, `MULTIPLAYER_MAP_TYPE_ASSAULT_MAP`) or, on
     Kasserine_Pass and Truk, the literal English sentence. `map_id` is the
-    quoted `game.setMapId` string. Resolving the keys against the mod chain's
-    merged lexicon is the caller's job (`resolve_briefing`), because the
-    lexicon is a menu-side file and a test feeds these dataclasses directly.
+    quoted `game.setMapId` string. `debriefing` is `{side: {key: value}}`
+    over `DEBRIEFING_VERBS` (`allied`/`axis`, `majorVictory` ..
+    `minorDefeat`), the same raw values. Resolving the keys against the mod
+    chain's merged lexicon is the caller's job (`resolve_briefing`), because
+    the lexicon is a menu-side file and a test feeds these dataclasses
+    directly.
     """
 
     objectives: str | None = None
     map_type: str | None = None
     map_id: str | None = None
+    debriefing: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def parse_briefing(text: str) -> BriefingInfo:
-    """Read `game.setMultiplayerBriefingObjectives/MapType` and `setMapId`.
+    """Read `game.setMultiplayerBriefingObjectives/MapType` and `setMapId`,
+    and the eight `game.set<Side>Debriefing*` lines.
 
-    Only the multiplayer trio is read. The file's other verbs
-    (`setAlliedCampaign`, `setAxisSkirmish`, the eight debriefings, ...) are
-    single-player screens with no multiplayer role.
+    The debriefing lines are what the end of a round shows under its title
+    (`0x006aad90`, ledger ROUND-8). The file's other verbs
+    (`setAlliedCampaign`, `setAxisSkirmish`, ...) are single-player screens
+    with no multiplayer role and are not read.
 
     `game.setLocalized` is deliberately not consulted to decide key versus
     literal text: Kasserine_Pass and Truk ship `setLocalized 0` and quote
@@ -1839,6 +1858,9 @@ def parse_briefing(text: str) -> BriefingInfo:
             out.map_type = arg
         elif cmd == "setmapid" and arg:
             out.map_id = arg.strip('"')
+        elif cmd in DEBRIEFING_VERBS and arg:
+            side, key = DEBRIEFING_VERBS[cmd]
+            out.debriefing.setdefault(side, {})[key] = arg
     return out
 
 
@@ -1865,6 +1887,14 @@ def resolve_briefing(briefing: BriefingInfo,
         map_type=_unquote(briefing.map_type),
         map_id=briefing.map_id,
     )
+    # A debriefing line resolves the way the map type does: a quoted value is
+    # its own text, a bare word a lexicon key, an unknown key stays the key.
+    for side, lines in briefing.debriefing.items():
+        for key, raw in lines.items():
+            text = _unquote(raw)
+            if text == raw.strip() and lexicon and text in lexicon:
+                text = lexicon[text]
+            resolved.debriefing.setdefault(side, {})[key] = text
     if lexicon:
         if resolved.objectives and resolved.objectives not in lexicon:
             pass  # literal text (or an unresolved key): keep it
@@ -1889,7 +1919,7 @@ def load_briefing(files: LevelFiles,
     text = files.read(hit).decode("latin-1", "replace")
     briefing = parse_briefing(text)
     if briefing.objectives is None and briefing.map_type is None \
-            and briefing.map_id is None:
+            and briefing.map_id is None and not briefing.debriefing:
         return None
     return resolve_briefing(briefing, lexicon)
 
