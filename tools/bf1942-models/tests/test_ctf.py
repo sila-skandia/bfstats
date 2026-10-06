@@ -2,7 +2,7 @@
 headless by `ctf_harness.mjs` with `viewer/round-state.js` behind it.
 
 The law under test is the server's (ledger CTF-1..CTF-8,
-`features/ctf-round/README.md`):
+`features/ctf-mode/README.md`):
 
   - `FlagBase::handleUpdate` (0x08292b30): while a base's own flag is home, a
     carrier of its team on foot inside its radius captures; then the nearest
@@ -129,6 +129,47 @@ class CtfTests(unittest.TestCase):
         # ...but a carrier who climbs in keeps the flag.
         self.assertEqual(2, more["keeps"])
         self.assertTrue(more["resetHome"])
+
+    def test_a_whole_round_ends_on_the_third_capture(self) -> None:
+        r = self.results["round"]
+        # Playing after the first two British captures, over on the third.
+        self.assertEqual([("playing", 1), ("playing", 2), ("endGame", 3)],
+                         [(s["status"], s["britCaps"]) for s in r["statusAfter"]])
+        e = r["ended"]
+        self.assertEqual((2, "score", 1), (e["winner"], e["reason"], e["victoryType"]))
+        self.assertEqual({"1": 0, "2": 1}, e["roundsWon"])
+        self.assertEqual({"1": 1, "2": 3}, e["captures"])
+        self.assertEqual((3, 1), (e["smith"], e["hans"]))
+        self.assertEqual(["stole:1:11", "captured:1:11", "stole:0:12", "captured:0:12",
+                          "stole:1:11", "captured:1:11", "stole:1:11", "captured:1:11",
+                          "stole:1:11"], r["timeline"])
+
+    def test_the_medals_go_by_score(self) -> None:
+        medals = self.results["round"]["ended"]["medals"]
+        self.assertEqual([(11, "gold", 30), (12, "silver", 10), (13, "bronze", 0)],
+                         [(m["playerId"], m["medal"], m["score"]) for m in medals])
+
+    def test_nothing_scores_after_the_end(self) -> None:
+        after = self.results["round"]["afterEnd"]
+        self.assertEqual(1, after["carried"])
+        self.assertEqual(0, after["scoreDelta"])
+
+    def test_the_restart_keeps_the_rounds_won(self) -> None:
+        r = self.results["round"]["restarted"]
+        self.assertEqual("playing", r["status"])
+        self.assertEqual({"1": 0, "2": 0}, r["captures"])
+        self.assertEqual({"1": 0, "2": 1}, r["roundsWon"])
+        self.assertTrue(r["flagsHome"])
+        self.assertTrue(r["replicaHome"])
+
+    def test_a_replica_fed_the_events_agrees_every_frame(self) -> None:
+        r = self.results["round"]
+        self.assertEqual(0, r["mismatches"])
+        self.assertIsNone(r["unknownEvent"])
+
+    def test_an_event_says_where_the_flag_is_now(self) -> None:
+        pos = self.results["round"]["eventPositions"]
+        self.assertEqual(pos["ukHome"], pos["capturedAtHome"])
 
 
 if __name__ == "__main__":
