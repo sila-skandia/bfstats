@@ -3291,6 +3291,24 @@
    "note": "Client twin of lnxded 0x083dbfc0. Writes prompt \"> \" (0x008c3978), max line 0x4d, page size 8, scrollback cap [esi+0x18] = 1024 (0x005a224c), command history [esi+0x34] = 10 (0x005a226e). Object is 0x918 bytes. Ledger CON-13."
   },
   {
+   "address": "0x005ac6f0",
+   "name": "ConsoleObjects__findInMultiMap",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "working",
+   "source": "lnxded twin 0x08359a90",
+   "note": "CON-15: first isActive entry of the no-case multimap for a key (object name + method name)"
+  },
+  {
+   "address": "0x005ac750",
+   "name": "ConsoleObjects__getConsoleObject",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "lnxded twin dice::ref2::ConsoleObjects::getConsoleObject 0x08359b10",
+   "note": "CON-15: looks up object+method case-blind (0x005ac6f0); on a miss strips a leading get (0x008d187c, keeps getType 1 or 3) then set (0x008d18e4, keeps 1 or 2) over 3 chars and looks up again"
+  },
+  {
    "address": "0x005ac970",
    "name": "GameConsole__func1",
    "kind": "function",

@@ -2341,5 +2341,202 @@ ObjectTemplate.geometry ladder_10m_m1
         self.assertTrue(library.object(children[0].template).is_ladder)
 
 
+def _branch_words(namespace: str) -> set[str]:
+    """Every command literal `ObjectLibrary.add_con` compares `cmd` against
+    inside one namespace's branch, read off the source."""
+    import ast
+    import inspect
+
+    from bf42 import con as con_mod
+
+    tree = ast.parse(inspect.getsource(con_mod))
+    constants = {}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            value = node.value
+            if isinstance(value, ast.Call) and value.args:
+                value = value.args[0]
+            if isinstance(value, (ast.Set, ast.Tuple, ast.List)):
+                constants[node.targets[0].id] = {
+                    e.value for e in value.elts if isinstance(e, ast.Constant)}
+    add_con = next(n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == "add_con")
+    words: set[str] = set()
+    for node in ast.walk(add_con):
+        test = node.test if isinstance(node, ast.If) else None
+        if not (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name)
+                and test.left.id == "ns" and isinstance(test.comparators[0], ast.Constant)
+                and test.comparators[0].value == namespace):
+            continue
+        for inner in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+            if not (isinstance(inner, ast.Compare) and isinstance(inner.left, ast.Name)
+                    and inner.left.id == "cmd"):
+                continue
+            for op, right in zip(inner.ops, inner.comparators):
+                if isinstance(op, ast.Eq) and isinstance(right, ast.Constant):
+                    words.add(right.value)
+                elif isinstance(op, ast.In) and isinstance(right, (ast.Tuple, ast.Set)):
+                    words |= {e.value for e in right.elts if isinstance(e, ast.Constant)}
+                elif isinstance(op, ast.In) and isinstance(right, ast.Name):
+                    words |= constants.get(right.id, set())
+    return words
+
+
+class ConsoleSpellingTests(unittest.TestCase):
+    """CON-15: a property answers to `<word>` and `set<word>`, case-blind; a
+    method only to its own name."""
+
+    def test_set_geometry_is_the_geometry_property(self) -> None:
+        # Desert Combat's AH-64 gun mount, verbatim: its only mesh.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/AH64/Objects.con", """
+ObjectTemplate.create Bundle AH64M230Base
+ObjectTemplate.setGeometry AH64_M230Base_m1
+ObjectTemplate.setHasCollisionPhysics 1
+""")
+        self.assertEqual("AH64_M230Base_m1", library.object("AH64M230Base").geometry)
+
+    def test_both_spellings_of_collision_and_mobile_physics(self) -> None:
+        # Vanilla writes the bare `hasCollisionPhysics` 1,923 times; DC Final
+        # writes `setHasMobilePhysics` on its mortar, fuel drum and ammo crate.
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", """
+ObjectTemplate.create SimpleObject Bare
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.create SimpleObject Prefixed
+ObjectTemplate.SetHasCollisionPhysics 1
+ObjectTemplate.create PlayerControlObject Crate
+ObjectTemplate.setHasMobilePhysics 1
+""")
+        self.assertTrue(library.object("Bare").has_collision_physics)
+        self.assertTrue(library.object("Prefixed").has_collision_physics)
+        self.assertTrue(library.object("Crate").has_mobile_physics)
+
+    def test_bare_spring_words_read_like_their_set_spelling(self) -> None:
+        # DC Final's springs write `damping` and `strength` bare.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", """
+ObjectTemplate.create Spring BareSpring
+ObjectTemplate.damping 4
+ObjectTemplate.strength 30
+ObjectTemplate.create Spring SetSpring
+ObjectTemplate.setDamping 4
+ObjectTemplate.setStrength 30
+""")
+        bare, prefixed = library.object("BareSpring"), library.object("SetSpring")
+        self.assertEqual((4.0, 30.0), (bare.damping, bare.strength))
+        self.assertEqual((prefixed.damping, prefixed.strength),
+                         (bare.damping, bare.strength))
+
+    def test_an_object_spawners_set_team_is_its_team(self) -> None:
+        # Seven vanilla ObjectSpawners write `setTeam`. `Object.setTeam` is a
+        # method of the placed object, not an ObjectTemplate word, so the
+        # template line falls through to the `team` property.
+        library = ObjectLibrary()
+        library.add_con("Bf1942/Levels/Test/ObjectSpawnTemplates.con", """
+ObjectTemplate.create ObjectSpawner Spawner_1
+ObjectTemplate.setObjectTemplate 1 Sherman
+ObjectTemplate.setTeam 2
+""")
+        self.assertEqual(2, library.object("Spawner_1").spawner_team)
+
+    def test_methods_answer_only_to_their_own_name(self) -> None:
+        # `setPosition`/`setRotation` are methods: a bare `rotation` is not
+        # theirs, so it does not place the child. `startOnEffects` is not
+        # `setStartOnEffects` either, and `GeometryTemplate.lodDistance` is a
+        # terrain property, not `setLodDistance`.
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", """
+ObjectTemplate.create Bundle Parent
+ObjectTemplate.addTemplate Child
+ObjectTemplate.rotation 90/0/0
+ObjectTemplate.position 1/2/3
+GeometryTemplate.create StandardMesh Mesh_m1
+GeometryTemplate.lodDistance 0 50
+""")
+        child = library.object("Parent").children[0]
+        self.assertEqual((0.0, 0.0, 0.0), child.rotation)
+        self.assertEqual((0.0, 0.0, 0.0), child.position)
+        self.assertEqual([], library.geometry("Mesh_m1").lod_distances)
+
+    def test_the_property_table_names_words_the_branches_read(self) -> None:
+        # Guards the hand table: every entry is a word its branch reads, and
+        # no entry's twin is itself a word the branch reads under that name,
+        # which the mapping would steal from it.
+        from bf42 import con as con_mod
+
+        for namespace, table in (
+                ("objecttemplate", con_mod._OBJECT_TEMPLATE_PROPERTIES),
+                ("geometrytemplate", con_mod._GEOMETRY_TEMPLATE_PROPERTIES)):
+            read = _branch_words(namespace)
+            self.assertEqual(set(), set(table) - read, namespace)
+            self.assertEqual(
+                set(), {con_mod._set_twin(w) for w in table} & read, namespace)
+
+    def test_console_word_maps_only_the_two_tables(self) -> None:
+        from bf42.con import console_word
+
+        self.assertEqual("geometry", console_word("objecttemplate", "setgeometry"))
+        self.assertEqual("sethascollisionphysics",
+                         console_word("objecttemplate", "hascollisionphysics"))
+        self.assertEqual("setposition", console_word("objecttemplate", "setposition"))
+        self.assertEqual("position", console_word("objecttemplate", "position"))
+        self.assertEqual("scale", console_word("geometrytemplate", "setscale"))
+        self.assertEqual("setgeometry", console_word("object", "setgeometry"))
+
+
+class GeometryScaleTests(unittest.TestCase):
+    """CON-16: `GeometryTemplate.scale` reads a Vec3 off a stream."""
+
+    def test_stream_vec3_repeats_the_last_component_it_read(self) -> None:
+        from bf42.con import stream_vec3
+
+        self.assertEqual((1.25, 1.25, 1.25), stream_vec3("1.25"))
+        self.assertEqual((0.3, 1.0, 1.0), stream_vec3("0.3/1/1"))
+        self.assertEqual((2.0, 2.0, 2.0), stream_vec3("2/2/2"))
+        self.assertEqual((0.085, 0.085, 0.085), stream_vec3(".085"))
+        self.assertEqual((1.5, 2.0, 2.0), stream_vec3("1.5/2"))
+        self.assertEqual((15.0, 0.0, 0.0), stream_vec3("15/0/"))
+        self.assertIsNone(stream_vec3("big"))
+
+    def test_scale_is_read_onto_the_geometry_any_case(self) -> None:
+        # DC's AC-130 fuselage and its stationary weapons' tracer (`Scale`).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/AC-130/Geometries.con", """
+GeometryTemplate.create StandardMesh AC-130_fus_M1
+GeometryTemplate.file \\DesertCombat\\AC-130\\AC-130_fus
+GeometryTemplate.scale 1.25
+GeometryTemplate.create StandardMesh glow_tracer
+GeometryTemplate.Scale 300
+GeometryTemplate.create StandardMesh SA3_missile_fly_m1
+GeometryTemplate.scale 0.3/1/1
+GeometryTemplate.create StandardMesh Plain_m1
+GeometryTemplate.scale
+""")
+        self.assertEqual((1.25, 1.25, 1.25), library.geometry("AC-130_fus_M1").scale)
+        self.assertEqual((300.0, 300.0, 300.0), library.geometry("glow_tracer").scale)
+        self.assertEqual((0.3, 1.0, 1.0), library.geometry("SA3_missile_fly_m1").scale)
+        self.assertIsNone(library.geometry("Plain_m1").scale)
+
+
+class ToggleMouseLookTests(unittest.TestCase):
+    def test_the_camera_word_and_its_set_spelling(self) -> None:
+        # CW13: DC puts it on the SA-342's co-pilot camera as well as the
+        # pilot's; a camera that never writes it is None (the byte's 0).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/SA-342/Objects.con", """
+ObjectTemplate.create Camera SA342Camera
+ObjectTemplate.toggleMouseLook 1
+ObjectTemplate.create Camera SA342CoPilotCamera
+ObjectTemplate.setToggleMouseLook 1
+ObjectTemplate.create Camera SA342PassengerCamera
+ObjectTemplate.setMaxRotation 70/5/0
+""")
+        self.assertTrue(library.object("SA342Camera").toggle_mouse_look)
+        self.assertTrue(library.object("SA342CoPilotCamera").toggle_mouse_look)
+        self.assertIsNone(library.object("SA342PassengerCamera").toggle_mouse_look)
+
+
 if __name__ == "__main__":
     unittest.main()
