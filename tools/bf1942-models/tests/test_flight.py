@@ -77,6 +77,9 @@ MODULES = {
     # reaches `vehicle-damage.js` for the HP-15 gate, which needs the other three.
     "world-vehicle-tick.js": VIEWER / "world-vehicle-tick.js",
     "world-input.js": VIEWER / "world-input.js",
+    # The air-input package's `world-input.js` imports it (the wire's axis
+    # range); staged already so the two land in either order.
+    "mouse-input.js": VIEWER / "mouse-input.js",
     "vehicle-damage.js": VIEWER / "vehicle-damage.js",
     "armor.js": VIEWER / "armor.js",
     "effects-core.js": VIEWER / "effects-core.js",
@@ -1049,6 +1052,10 @@ class FlightModelTests(unittest.TestCase):
         self.assertFalse(c["critical"]["running"])
         self.assertEqual(0, c["critical"]["revs"])
         self.assertLess(c["critical"]["vy"], -10.0)
+        # The latch: boarding again while critical (message 4) does not
+        # restart it.
+        self.assertTrue(c["wasCritical"])
+        self.assertFalse(c["reboarded"])
         self.assertTrue(c["recovered"]["running"])
         self.assertGreater(c["recovered"]["revs"], 0.3)
         self.assertGreater(c["recovered"]["vy"], c["critical"]["vy"])
@@ -1064,6 +1071,17 @@ class FlightModelTests(unittest.TestCase):
             self.assertLess(yaw["lean"], 1.0, name)
             self.assertLess(yaw["pitchRate"], 1.0, name)
             self.assertLess(yaw["rollRate"], 1.0, name)
+
+    def test_a_free_spin_keeps_its_world_axis_rate(self) -> None:
+        # No torque, a skew rate: the engine's omega lives in world axes and
+        # takes no gyroscopic term (COL-8, collision-response.md §4.2), so it
+        # stays put while the body turns about it.
+        real = self.results.get("realGlbs")
+        if real is None or "torqueFree" not in real:
+            self.skipTest("no extracted Desert Combat models on this machine")
+        spin = real["torqueFree"]
+        self.assertGreater(spin["turned"], 30.0)
+        self.assertLess(spin["drift"], 1e-9)
 
 
 if __name__ == "__main__":

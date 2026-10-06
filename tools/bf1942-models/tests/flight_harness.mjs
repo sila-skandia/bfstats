@@ -35,6 +35,7 @@ import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
 import { vehicleTick } from './world-vehicle-tick.js';
 import { bufferInput } from './world-input.js';
+import { DamageableVehicle } from './vehicle-damage.js';
 import { existsSync, readFileSync } from 'node:fs';
 
 const DEG = 180 / Math.PI;
@@ -1919,32 +1920,59 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
         pitchAfter: round(after.pitch, 2), climbedAfter: round(after.y - transitioned.y, 1),
       };
     }
-    // Pedal alone in a hover: 3 s holding height on W taps, 2 s of D, 2 s
-    // hands off, against the same hover flown without the pedal (the hover
-    // itself drifts a degree a second in pitch: nothing trims it). The
-    // engine has no gyroscopic term (COL-8); with one, the DC UH-60 rolled
-    // at 38 deg/s and leaned 22 degrees off the hover it would have flown.
     // A helicopter that goes critical in a climb: its engines stop and stay
     // stopped while the pilot holds full collective, and start again once it
     // is out of critical (PHY-14, HP-13: 0x14 stops and latches, 0x13 restarts
-    // an occupied one).
+    // an occupied one). The hull is the page's own `DamageableVehicle` off
+    // the glb's armour, so the hook reads the getters the page has; and a
+    // re-boarding mid-critical (`#syncEngine` setting the byte on message 4)
+    // is undone on the next tick, which is the latch.
     {
-      const heli = new Aircraft(await glb(dc('AH64')), null, { cockpit: false });
+      const root = await glb(dc('AH64'));
+      const heli = new Aircraft(root, null, { cockpit: false });
       heli.groundHeight = () => 0;
       heli.state.position.set(0, 200, 0);
-      const hull = { critical: false, destroyed: false };
+      const hull = new DamageableVehicle(root.userData.armor);
       const pilot = keyed(heli, hull);
       const phase = (seconds, keys) => {
         for (let i = 0; i < Math.round(seconds * 30); i++) pilot.tick(keys);
         return { running: heli.engineRunning, revs: round(heli.rotorEngine.revs, 3), vy: round(heli.state.velocity.y, 2) };
       };
       const climb = phase(3, { forward: 1 });
-      hull.critical = true;
+      hull.damage(hull.hitPoints - hull.criticalDamage + 1);
       const critical = phase(3, { forward: 1 });
-      hull.critical = false;
+      heli.engineRunning = true;
+      pilot.tick({ forward: 1 });
+      const reboarded = heli.engineRunning;
+      hull.heal(hull.maxHitPoints);
       const recovered = phase(3, { forward: 1 });
-      real.criticalStops = { climb, critical, recovered };
+      real.criticalStops = { climb, critical, recovered, reboarded, wasCritical: hull.criticalDamage !== null };
     }
+    // Spinning free, nothing pushing: engines stopped, no gravity, no drag,
+    // at rest, an arbitrary rate about a skew axis. The engine keeps omega in
+    // world axes and has no gyroscopic term (COL-8), so it must not move
+    // while the hull turns 70 degrees; with `omega x I.omega` the UH-60's
+    // .2/.6/.6 tensor precessed it by 0.63 rad/s in 2 s.
+    {
+      const heli = new Aircraft(await glb(dc('UH-60')), null, { cockpit: false });
+      heli.groundHeight = () => -Infinity;
+      heli.spec.gravity = 0;
+      heli.spec.drag = 0;
+      heli.engineRunning = false;
+      heli.state.position.set(0, 500, 0);
+      heli.state.angularVelocity.set(0.3, 0.5, 0.2);
+      const w0 = heli.state.angularVelocity.clone(), q0 = heli.state.orientation.clone();
+      for (let i = 0; i < 60; i++) heli.integrate(1 / 30);
+      real.torqueFree = {
+        drift: heli.state.angularVelocity.clone().sub(w0).length(),
+        turned: round(2 * Math.acos(Math.min(1, Math.abs(heli.state.orientation.dot(q0)))) * DEG, 1),
+      };
+    }
+    // Pedal alone in a hover: 3 s holding height on W taps, 2 s of D, 2 s
+    // hands off, against the same hover flown without the pedal (the hover
+    // itself drifts a degree a second in pitch: nothing trims it). The
+    // engine has no gyroscopic term (COL-8); with one, the DC UH-60 rolled
+    // at 38 deg/s and leaned 22 degrees off the hover it would have flown.
     real.yawOnly = {};
     for (const name of ['UH-60', 'AH64', 'Mi24D']) {
       const fly = async pedal => {
