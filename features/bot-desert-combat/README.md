@@ -156,3 +156,31 @@ obstacle every 5 s (AI-32) and re-routes into the same wall. That is the
 body against the map, not the Change law, and was there before. On Basrah's
 Edge one DPV's order point has no strategic path (section 3), so it
 re-routes every tick (8,940 failures).
+
+## 3. Basrah's Edge vehicle nav: authored, not mis-decoded
+
+`Tank0Level0Map.raw` is 18,464 bytes: a 16 x 16 grid of 64 m blocks, 222 of
+them the all-blocked special cell and 34 mixed (the format of AI-102,
+`CellMap::loadRawFile` 0x085f8930). Decoded (and rendered over the minimap,
+`~/.cache/dc-sweep/bots/render_searchmap.py`, `overlay_nav.py`), the mixed blocks draw one
+connected road network through the centre of the city whose lines run on
+across the block seams, and every ground vehicle the level spawns (BMP-2,
+Technical, M2A3, Humvee, Humvee TOW, M163, DPV) stands on a free cell; only
+the helicopters, the Browning pits and two Ladas parked on the kerb stand on
+blocked ones. A mis-decode would scramble the roads at every seam. The
+infantry map draws the same city with its buildings and yards. 81.5 % of the
+combat area is blocked on the tank map (73.5 % on the infantry map) because
+the city's only drivable cells are its streets and the engine's flood from
+the spawn points blocks the rest; vanilla Kharkov's tank map, the other
+1024 m level, is 76.6 % blocked over the whole map.
+
+What does differ is DC's strategic data. On both DC-made levels checked, a
+free pixel next to a wall can carry an Info value naming a region its 64 m
+cell does not use: 4.6 % of Basrah's Edge's tank-map free pixels, 5.1 % of
+its infantry map's, 0.9 % of Desert Shield's; vanilla El Alamein, Bocage,
+Battleaxe, Kharkov and Wake have none (`info_census.mjs`). The engine hands
+such a pixel's value on as it stands (AI-141), so a goal or start there has
+no strategic path, there as here. That is what fails the Lada walk the
+Iraqis froze on and the DPV's order point (425, -516). `nav-search.js
+regionedNear` moves only a region-less end (INVENTION, unchanged); widening
+it to these pixels would be a second invention, left for a decision.
