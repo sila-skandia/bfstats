@@ -58,16 +58,26 @@ class SyntheticTests(unittest.TestCase):
                          library["during"])
         self.assertEqual({"own": False, "names": 2}, library["after"])
 
-    def test_a_death_tier_plays_in_the_dying_objects_frame(self) -> None:
-        # Before ARM-8 the tier was stood up at the hull's origin on the
-        # ground's normal: the 1.2 m offset was lost and the frame had no
-        # heading. Now it rides an anchor at the offset, turned with the hull.
-        [play] = self.results["deathFrame"]
-        self.assertEqual("e_ExplGas", play["name"])
-        self.assertTrue(play["attached"])
-        self.assertIsNone(play["position"])
-        self.assertEqual([10, 1.2, 20], play["at"]["position"])
-        self.assertEqual([-1, 0, 0], play["at"]["forward"])
+    def test_a_death_tier_plays_once_in_the_dying_objects_frame(self) -> None:
+        # Before, `showDamageTier` started the death tier and `wreckVehicle`
+        # stood it up a second time at the hull's origin on the ground's
+        # normal, offsets lost. Now each entry plays once, on an anchor at its
+        # offset, turned with the hull (ARM-8).
+        plays = [p for p in self.results["deathFrame"] if p["phase"] == "death"]
+        self.assertEqual(["e_ExplGas", "e_ScrapAABase", "e_ScrapAABase"],
+                         [p["name"] for p in plays])
+        self.assertTrue(all(p["attached"] and p["position"] is None for p in plays))
+        self.assertEqual([10, 1.2, 20], plays[0]["at"]["position"])
+        self.assertEqual([-1, 0, 0], plays[0]["at"]["forward"])
+        # Two entries of one bundle are two places: 6.6 m and -4.599 m along
+        # the hull's right (world -z here), both 3 m ahead (glb -z, world -x).
+        self.assertEqual([[7, 0.1, 13.4], [7, 0.1, 24.599]],
+                         [p["at"]["position"] for p in plays[1:]])
+
+    def test_a_hull_with_no_death_tier_gets_the_stand_in_once(self) -> None:
+        plays = [p for p in self.results["standIn"] if p["phase"] == "death"]
+        self.assertEqual([{"name": "e_ExplGas", "attached": False, "position": [-5, 2, 7]}],
+                         [{k: p[k] for k in ("name", "attached", "position")} for p in plays])
 
 
 @unittest.skipUnless((GAME / "Mods" / "DesertCombat").is_dir(), "no Desert Combat install")

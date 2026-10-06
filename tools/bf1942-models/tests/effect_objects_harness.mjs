@@ -28,6 +28,7 @@ const { GLTFLoader } = await imp('vendor/loaders/GLTFLoader.js');
 const { EffectLibrary, EffectPlayer } = await imp('effects.js');
 const { createEffectObjects } = await imp('effect-objects.js');
 const { createVehicleWrecks } = await imp('vehicle-wrecks.js');
+const { deathTier } = await imp('vehicle-damage.js');
 routeConsole(!process.env.HARNESS_VERBOSE);
 
 const round = v => Math.round(v * 1000) / 1000;
@@ -117,7 +118,12 @@ async function kill(effects, node, armor) {
   let phase = 'death';
   const wrecks = createVehicleWrecks(wrecksPage(effects));
   wrecks.damageVisuals.set(7, { node, anchors: new Map(), handles: [], spawnDelay: null });
-  await wrecks.wreckVehicle({ owner: 7, effects: armor.effects, killedBy: null });
+  // As every caller does it (`vehicle-hits.js`): the death comes with its
+  // tier change, then the wreck.
+  const vehicle = { owner: 7, effects: armor.effects, killedBy: null };
+  const death = deathTier(armor.effects, { inWater: false });
+  if (death) wrecks.showDamageTier(vehicle, death);
+  await wrecks.wreckVehicle(vehicle);
   phase = 'after';
   for (let i = 0; i < 4; i++) effects.advance(1 / 30);
   effects.play = play;
@@ -143,22 +149,30 @@ const out = {};
 }
 
 // --- a death tier in the dying object's frame ------------------------------
-// A Kubelwagen's shape: `e_ExplGas` authored 1.2 m up. The hull stands at
-// (10, 0, 20) turned 90 degrees, so the bundle starts 1.2 m above it,
-// facing the hull's own forward.
+// A Kubelwagen's `e_ExplGas` authored 1.2 m up, and Clacton's two
+// `e_ScrapAABase` at two places. The hull stands at (10, 0, 20) turned 90
+// degrees: each bundle starts at its offset in the hull's frame, facing the
+// hull's own forward, and plays once.
 {
   const scene = new THREE.Scene();
-  const effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library: syntheticLibrary(['e_ExplGas']) });
+  const effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(),
+                                     library: syntheticLibrary(['e_ExplGas', 'e_ScrapAABase']) });
   const node = new THREE.Group();
   node.name = 'Kubelwagen';
   node.position.set(10, 0, 20);
   node.rotation.y = Math.PI / 2;
   scene.add(node);
-  const plays = await kill(effects, node, { effects: [
+  out.deathFrame = await kill(effects, node, { effects: [
     { hp: 0, effect: 'e_ExplGas', offset: [0, 1.2, 0] },
+    { hp: 0, effect: 'e_ScrapAABase', offset: [6.6, 0.1, -3] },
+    { hp: 0, effect: 'e_ScrapAABase', offset: [-4.599, 0.1, -3] },
     { hp: -1, effect: 'WaterWaterExplosion', offset: [0, 0, 0] },
   ] });
-  out.deathFrame = plays;
+  // No death tier at all: the stand-in, once, on the ground's normal.
+  const bare = new THREE.Group();
+  bare.position.set(-5, 2, 7);
+  scene.add(bare);
+  out.standIn = await kill(effects, bare, { effects: [{ hp: 20, effect: 'e_PanzFire', offset: [0, 0, 0] }] });
 }
 
 // --- No Fly Zone's control tower, from the install -------------------------
