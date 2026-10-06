@@ -487,7 +487,12 @@ def read_chain_levels(chain: list[Path], objects=None,
             continue
         bound = [kit for team in teams.values() for kit in team.slots.values()]
         bound += [team.soldier for team in teams.values() if team.soldier]
-        bound += list((pads or {}).get(name, {}).values())
+        # Only the kits among what its pads place: a vehicle on a pad changes
+        # no kit row, and a level's own load is a library build (bg42: 17
+        # levels opened for their vehicles, 7x the run time, the same file).
+        bound += [spelled for spelled in (pads or {}).get(name, {}).values()
+                  if (placed := library.object(spelled)) is not None
+                  and placed.kind.lower() == "kit"]
         if not declared[name] & kit_reach(library, bound):
             continue
         own[name] = LevelLoad(chain=chain, name=name)
