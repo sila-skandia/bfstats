@@ -297,16 +297,23 @@ export function createNetRoom(page) {
           yMod: record.splashYMod ?? null, force: record.splashForce ?? null }
       : null;
     let hit = null;
+    let struck = null;
     if (record.owner != null && record.owner >= 0 && record.damage > 0) {
-      const node = page.damageVisuals.get(record.owner)?.node ?? null;
-      const id = node ? netVehicleIdFor(node) : null;
+      struck = page.damageVisuals.get(record.owner)?.node ?? null;
+      const id = struck ? netVehicleIdFor(struck) : null;
       if (id != null) hit = { vehicle: id };
-      else if (node?.levelNode != null) hit = { node: node.levelNode };
+      else if (struck?.levelNode != null) hit = { node: struck.levelNode };
     }
     if (!hit && !splash) return;
     // A fuse's end-of-life blast stands on the round (`point`); a hand-built
-    // one (`__blast`) may name only its centre.
-    const point = record.point ?? record.splashPoint;
+    // one (`__blast`) may name only its centre, and a hand-built direct hit
+    // (`__roundHit`) nothing but the object, whose origin then stands for it.
+    let point = record.point ?? record.splashPoint;
+    if (!Array.isArray(point) && struck) {
+      struck.updateWorldMatrix(true, false);
+      const e = struck.matrixWorld.elements;
+      point = [e[12], e[13], e[14]];
+    }
     if (!Array.isArray(point) || point.length !== 3) return;
     netSendAction({
       type: 'impact', point: point.map(Number),
