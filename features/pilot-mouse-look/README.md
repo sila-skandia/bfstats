@@ -111,8 +111,16 @@ WP3 and items 8 and 9). DC ships no control maps, so this is the vanilla
   It is a rate. A still mouse is a centred stick, and a hand faster than about
   260 counts a second asks for more than full deflection, which the part clips.
 - **The invert box is the device's Y (MLK-8).** `setAirMouseInvert 1` (shipped)
-  inverts the stick's pitch and the held look's vertical together. A pull of
-  the mouse toward you raises the nose.
+  inverts the stick's pitch and the held look's `c_PIMouseLookY` together. A
+  pull of the mouse toward you raises the nose.
+- **What the held look does on screen is the camera's sign times the box
+  (MLK-13).** The pilot's Camera turns by `sign(acceleration) x input`
+  (GUN-2), and nearly every shipped pilot camera has a negative pitch
+  acceleration (`CorsairCamera 5000/-5000/0`, 23 of DC's 24), which undoes the
+  shipped box. With the box on, their held look keeps the plain sense (a pull
+  toward you looks down); off, it is inverted. The positive ones (BF109,
+  Mustang, B17, the Aichi Vals, DC's AC-130, nine DC Final cameras) are
+  inverted at the shipped setting.
 - **Two devices on one channel never add (MLK-9).** A channel has a primary and
   a secondary slot (the line's last flag). `ControlMap::update` keeps the
   larger magnitude, and the primary wins a tie. Shipped Air puts the mouse
@@ -136,8 +144,11 @@ WP3 and items 8 and 9). DC ships no control maps, so this is the vanilla
     slot rule (`resolveAxisSlots`). The mouse value is not clamped.
   The keyboard and joystick fold is unchanged.
 - `viewer/local-look.js`: with the key up, a pilot's counts go into the look
-  stage instead of being dropped. With the key held, the head turns with the
-  Air invert applied to the vertical. A touch drag is not inverted.
+  stage instead of being dropped. With the key held, the head's vertical is
+  the negative camera's sense times the Air box (MLK-13): unchanged with the
+  shipped box, inverted with it off. A touch drag is not inverted, and the
+  touch look zone with the key up does nothing, as before (it is not the
+  mouse and never reaches the stick; `touch-controls.js` tags its delta).
 - `viewer/local-player.js`: the pilot's rudder, roll and pitch come from
   `axis(trigger, mouse)`. With the key up, the look pair is zeroed (MLK-2's
   released branch, `routeLookPair`).
@@ -148,7 +159,12 @@ WP3 and items 8 and 9). DC ships no control maps, so this is the vanilla
 - `viewer/world-vehicle-tick.js`: the air branch no longer springs
   (`STICK_RATE` 2.4/s out, 3.2/s back, now only on a ship's pitch).
   - A vectored airframe takes the value whole, since its racks clip at
-    `maxRotation` (GUN-2).
+    `maxRotation` (GUN-2). Its Wings and flaps (a Harrier's ailerons, flaps
+    and pitch/roll wings, a helicopter's tail flap) are servoed by
+    `vehicle-base.js` `advanceSurfaces`, which clips the target at +-1, as the
+    part's own angle stops at its bound. Without that clip a 500 px/s hand
+    held 1.5 s drove the AV-8B's ailerons to 1.92 of full deflection and it
+    banked 106 degrees at 2 s against 78.5.
   - A fixed-wing surface takes it clipped to +-1, because `advanceSurfaces`
     has no clip of its own. For an `automaticReset` wing this is the same
     motion.
@@ -170,8 +186,10 @@ WP3 and items 8 and 9). DC ships no control maps, so this is the vanilla
     modules. 30 px in a tick (900 counts/s) gives `c_PIRoll` 3.46 and
     `c_PIPitch` -3.47 (3.46 with the box off), and 1.21 at sensitivity 0.25.
     It also covers a still mouse, the slot rule against the arrows, Left Shift
-    routing the counts to the head, the inverted held look, the owner's
-    profile and a gunner.
+    routing the counts to the head, the held look's sign under the box, the
+    touch look zone, the owner's profile and a gunner.
+  - `test_flight.py`: a surface servo held at a mouse rate of 3.46 stops at
+    full deflection.
   - `test_world_air_input.py` (new): a key is full on the first tick and at
     rest the tick after release, on both kinds of airframe. A mouse rate
     reaches a rack whole and a fixed-wing surface clipped. The wire's +-16 is
@@ -217,9 +235,8 @@ The Corsair's 240 deg/s roll is the fixed-wing model's, not the input's
   +-40 input units). The fixed-wing surfaces here clip at +-1 instead. The
   fix belongs in the surface servo (`vehicle-base.js` `advanceSurfaces`, with
   the flag in the surface spec), not in the input stage.
-- Fixed-wing surfaces have no clip of their own, and the world tick supplies
-  it. If `advanceSurfaces` gains the engine's clip, the +-1 in
-  `world-vehicle-tick.js` can go.
+- `advanceSurfaces` clips its target at +-1 now, so the fixed-wing +-1 in
+  `world-vehicle-tick.js` is redundant and can go.
 - `countsPerPixel` (one browser pixel is one count) is still the one unproven
   unit (`bf1942-mouse-input`). It now scales the pilot's stick too.
 - `toggleMouseLook` is not extracted. Mods get the shipped rule, not their own
@@ -232,9 +249,18 @@ The Corsair's 240 deg/s roll is the fixed-wing model's, not the input's
 - The look law while the key is held is still the viewer's. The engine uses
   the camera's own `setMaxSpeed`, and each aircraft has its own clamps: BF109
   `-65/-40..65/5`, B17 `-75/-40..75/0`, Spitfire `..70/1`. Five cameras use
-  `90/-90`, which flips the vertical look. Since 2026-10-06 its vertical takes
-  the Air invert (MLK-8), so with the shipped box a pilot's held look is
-  inverted, as retail's is.
+  `90/-90`, which flips the vertical look. The vertical's sign is the
+  camera's pitch acceleration times the Air box (MLK-13). The glbs carry
+  neither, so the page assumes the negative majority: right for the Corsair,
+  Spitfire, Stuka, Yak-9, Zero, SBDs, Il-2, every XPack1 and XPack2 pilot and
+  23 of DC's 24 cameras; wrong (not inverted) for the BF109, Mustang, B17,
+  Aichi Vals, DC's AC-130 and nine DC Final cameras. The fix is the same as
+  for `toggleMouseLook`: emit the camera's pitch acceleration sign in
+  `cameraView` and multiply by it.
+- The cockpit view's pitch limits (`vehicle-camera.js` `LOOK_LIMITS.cockpit`,
+  40 degrees down and 5 up) look mirrored: the engine's negative pitch is up
+  (`turret-rig.js` `RIG_SIGN.pitch`), so the Corsair camera's `-40..5` is 40
+  up and 5 down. Not checked against a recording.
 - The page never clears held keys on window blur (predates this change).
 - A mouse-button binding of `c_PIMouseLook` is not read by `controls.held`.
 - The live B17 gunner and Sherman readouts were not captured before the budget
