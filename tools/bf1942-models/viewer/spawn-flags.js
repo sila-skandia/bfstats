@@ -148,6 +148,11 @@ export function spawnFlags(extras) {
       vehicle: true,
       groups,
       spawns: points,
+      // Every point it offers is down: each carrier critically damaged, gone
+      // or not stood up by its pad (`BFSpawnPoint::getActive`, SPAWN-5; the
+      // page's `hull-bodies.js` `bindCarriers` gives each point `inactive`).
+      // The group stays listed and spawns nobody (SPAWNGRP-10).
+      get inactive() { return points.every(p => p.inactive); },
     });
   }
   for (const point of zones) flags.push(captureZone(point));
@@ -191,28 +196,33 @@ function carriedGroupSets(carriers) {
 
 /**
  * One ring of a carried group: where `BFSpawnGroup::calcNewPos` (lnxded
- * 0x08166d90) puts it, the plain average of the group's points. Live: the
- * points' own arrays move with a hull under way (`hull-bodies.js`
- * `rebaseDeckSpawns` writes them in place), so the ring is re-averaged into
- * one kept array whenever it is read. The engine also leaves out a point whose
- * carrier is critically damaged; this does not (a burning ship's flag is
- * refused whole, `shipFlagInactive`).
+ * 0x08166d90) puts it, the plain average of the group's points whose carrier
+ * is not critically damaged (SPAWNGRP-10). Live: the points' own arrays move
+ * with a hull under way (`hull-bodies.js` `rebaseDeckSpawns` writes them in
+ * place), and a point goes `inactive` when its carrier does (`bindCarriers`),
+ * so the ring is re-averaged into one kept array whenever it is read. With
+ * every carrier down the engine's average is (0,0,0); the ring keeps the
+ * average of all its points instead, where the group was.
  */
 function groupSpot(group, points) {
   const at = [0, 0, 0];
+  const average = live => {
+    let n = 0;
+    at[0] = 0; at[1] = 0; at[2] = 0;
+    for (const p of points) {
+      if (!p.position || (live && p.inactive)) continue;
+      at[0] += p.position[0]; at[1] += p.position[1]; at[2] += p.position[2];
+      n++;
+    }
+    if (!n) return 0;
+    at[0] /= n; at[1] /= n; at[2] /= n;
+    return n;
+  };
   return {
     group,
     get position() {
-      let n = 0;
-      at[0] = 0; at[1] = 0; at[2] = 0;
-      for (const p of points) {
-        if (!p.position) continue;
-        at[0] += p.position[0]; at[1] += p.position[1]; at[2] += p.position[2];
-        n++;
-      }
-      if (!n) return null;
-      at[0] /= n; at[1] /= n; at[2] /= n;
-      return at;
+      if (average(true) || average(false)) return at;
+      return null;
     },
   };
 }
@@ -371,7 +381,11 @@ function holdGroups(flag, point, owned, start) {
 export function pickSpawn(flag, index = 0, {
   groundAt = null, airborne = 12, group = null, world = null,
 } = {}) {
-  let pool = flag?.spawns || [];
+  // A point whose carrier is down offers nothing (`BFSpawnGroup::
+  // getSpawnPoint` takes only the points `getActive` passes, SPAWNGRP-10), and
+  // with none left the spawn is refused rather than put on one of them.
+  let pool = (flag?.spawns || []).filter(spawn => !spawn.inactive);
+  if (!pool.length) return null;
   if (group != null) {
     const inGroup = pool.filter(spawn => spawn.group === group);
     if (inGroup.length) pool = inGroup;

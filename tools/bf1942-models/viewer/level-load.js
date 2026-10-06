@@ -18,7 +18,8 @@ import * as THREE from 'three';
 import { createLevelSky } from './level-sky.js';
 import { createLevelFlare } from './level-flare.js';
 import { createLevelShading } from './level-shading.js';
-import { createLevelStatics, isCollision } from './level-statics.js';
+import { createLevelStatics, isCollision, loadPadVariants } from './level-statics.js';
+import { loadFirst } from './pose-bases.js';
 import { createLevelTerrain } from './level-terrain.js';
 import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
@@ -40,7 +41,7 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * `ensureBotRoot`, `fireStates`, `floatPlacedVehicles`, `forgetEntryPoints`,
  * `forgetFlagChoice`, `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`,
  * `fullmapName`, `guns`, `hemi`, `leaveOnFoot`, `loadCollisionMeshes`,
- * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`,
+ * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`, `modelUrls`,
  * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optPilot`,
  * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
@@ -238,7 +239,24 @@ export function createLevel(page) {
       if (!data || obj.userData.templateKind !== 'SupplyDepot') return;
       obj.updateWorldMatrix(true, false);
       obj.getWorldPosition(pos);
-      depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name));
+      // The placed root the depot rides: the same owner the collider and
+      // the world key a hull by (a child of the level, or of its spawners).
+      let owner = obj;
+      while (owner.parent && owner.parent !== root && owner.parent !== statics.spawnersRoot) {
+        owner = owner.parent;
+      }
+      // A depot on a hull (a half-track's locker, a Humvee's, a carrier's
+      // pads) goes where the hull goes: the engine measures from the depot's
+      // own absolute position every cycle (`workOnSoldiers` 0x08323dc0,
+      // `workOnVehicles` 0x08323f10), so its node is read again each cycle.
+      const rides = owner !== obj && owner.userData?.templateKind === 'PlayerControlObject';
+      const at = new THREE.Vector3();
+      const locate = rides ? () => {
+        obj.updateWorldMatrix(true, false);
+        return obj.getWorldPosition(at);
+      } : null;
+      depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
+        { root: owner, locate }));
     });
     return depots;
   }
@@ -365,6 +383,15 @@ export function createLevel(page) {
           + `showing ${level.extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`)
       : null;
     if (level.modeNote) console.warn(level.modeNote);
+    // The other side's vehicle for each pad that changes hands, from the
+    // models tree (`level-statics.js` `loadPadVariants`), while the old level
+    // still runs: nothing below has torn it down yet.
+    await loadPadVariants(gltf.scene, level.extras, {
+      load: async template => {
+        const urls = await page.modelUrls(template);
+        return urls.length ? loadFirst(page.loader, urls).catch(() => null) : null;
+      },
+    });
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
     // referee -- against the new World once it is built.
@@ -571,6 +598,11 @@ export function createLevel(page) {
     const collision = terrain.buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();
+    // The depots work from the level's first tick, on bots and on empty hulls
+    // (SUP-19), not from the local player's first step on foot, which is
+    // where `soldier-view.js` collects them again. After the collider, which
+    // settles and floats the hulls a depot can ride.
+    level.world.setSupplyDepots(collectSupplyDepots(level.currentRoot));
     // Now that the collider exists, spawn the bots so their nav grid and spawn
     // probes see it.
     page.spawnBotsForLevel();
@@ -724,6 +756,10 @@ export function createLevel(page) {
     unlitCockpit: shading.unlitCockpit,
     updateSky: sky.updateSky,
     updateTextureFade: shading.updateTextureFade,
+    vehiclePads: {
+      padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
+      get pads() { return statics.pads; },
+    },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,
     warmups,
