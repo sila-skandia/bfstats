@@ -36,6 +36,7 @@ the two vanilla LOD 0 rounds' in
 | levels item 25: abandoned vehicles | hit points drain at 10/s from 46-56 s after the last crewman left | viewer gap confirmed |
 | wrecks | `timeToLiveAfterDeath`: 60 s for DC's tanks, IFVs and BRDM-2s, 10 s otherwise | the viewer's fixed 10 s is wrong for those |
 | levels item 22: Weapon Bunkers spawns | no co-op layer, so no bot round | unmeasured |
+| COL-16..18: a static wreck without `hasCollisionPhysics` passable? | no co-op level places one; Basrah's Edge's wrecks write it and nothing reached them | unmeasured |
 
 ## What the real game says
 
@@ -515,6 +516,36 @@ DEV-9 needs a shooter whose deviation is rolled: a human on the lab server
 (a connected client, 30 or more shots standing still at a wall), or the read
 of where `fireBarrel` (0x0828aba0) perturbs the matrix it was given.
 
+### Static wrecks and collision (COL-16..18): not answerable from bots
+
+Whether a level-placed static that never writes `hasCollisionPhysics 1`
+stops rounds and bodies cannot be read from these recordings:
+
+- **No recorded level places a static wreck.** Vanilla El Alamein, Kursk,
+  Gazala, Guadalcanal, Bocage, Midway and Wake, and DC's El Alamein, Day 2,
+  Gazala, Guadalcanal, Bocage and Bocage Day 2 have no `Object.create
+  *wreck*` in their archives. The levels that do place them (DC Operation
+  Bragg 13: `mi24dwreck`, `t72wreck`, `m1a1wreck`, `brdm2wreck`, `bmp2wreck`;
+  73 Easting 11; Urban Siege 17; Inshallah Valley 2; Basrah Nights 1;
+  vanilla Liberation of Caen 13 aircraft wrecks) ship no `SinglePlayer/`
+  layer, so no bot round can be played on them.
+- **The one co-op level with wrecks has the other kind.** DC Basrah's Edge
+  places six `DC_pickup-wreck1_m1` and a `DC_slumwreckage1_m1`, and both
+  templates do write `ObjectTemplate.setHasCollisionPhysics 1` (collision
+  boxes 2.0 x 1.4 x 5.1 m and 5.9 x 2.6 x 2.0 m). They would be the control,
+  not the case. In 750 s at LOD 0 no round came within 14 m of any of them
+  and the nearest body came 3.0-6.3 m from their origins, so even the
+  control saw nothing (`~/.cache/dc-sweep/dc-lab/probe_wreck_hits.py`,
+  `wreck_near.py`).
+- A destroyed vehicle's wreck in these rounds (a T-72 standing 60 s on its
+  pad) is the same networked hull with its wreck geometry, not a placed
+  static, so it does not settle the static rule either.
+
+Settling it needs a human on the lab server (Conquest on Bragg: shoot at
+and walk into the `Mi24DWreck`), or a co-op layer added to Bragg, which this
+lab cannot load (see the water attempt below: the server rejects archives it
+did not write).
+
 ### A land hull in deep water (ground census root cause 2): not measured
 
 Bots did not drive a land hull into the sea in a 10-minute LOD 0 round of DC
@@ -552,7 +583,7 @@ file a round), the event log in `serverlog/`, `scenario.json`, `settings/` and
 | `20261007-010104-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 584 | ground physics, full lock |
 | `20261007-011049-dc-el_alamein_day2-coop-lod0-rec` | El Alamein Day 2 | **0** | 1 full + a start (2) | 573 | pads and captures, rockets (none fired) |
 | `20261007-015645-dc-gazala-coop-lod0-rec` | Gazala | **0** | 16 full + 2 starts (18) | 12,199 | helicopter rockets (none fired), the M230 |
-| `20261007-052417-dc-basrahs_edge-coop-lod0-rec` | Basrah's Edge | **0** | 1 (1) | BASRAH_S | static wrecks |
+| `20261007-052417-dc-basrahs_edge-coop-lod0-rec` | Basrah's Edge | **0** | most of 1 (1) | 750 | static wrecks (none reached) |
 | `20261007-005321` ... `010013-dc-guadalcanal-coop-lod0-water-rec` | Guadalcanal | 0 | starts only (6) | 40-117 | the failed water placements |
 
 Vanilla rounds recorded for this page (`--mod bf1942`), 30 bots of 32:
