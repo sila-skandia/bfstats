@@ -477,6 +477,12 @@ def driven_at(life: Life, t: float) -> bool:
 NO_SEATS: list = []         # the seats of every life in a file without `p` records
 
 
+def occupied_at(life: Life, t: float) -> bool:
+    if life.seats is NO_SEATS:
+        return True
+    return any(s[3] <= t < s[4] for s in life.seats)
+
+
 def pct(values, q: float):
     """The q-quantile (0..1) of `values`, nearest rank; None when empty."""
     vs = sorted(values)
@@ -577,7 +583,7 @@ def load_spawners(mod: str, level: str, mode: str = "SinglePlayer", game_dir: Pa
 # Harrier's exhaust racks are left out.
 HELI_PART = re.compile(r"enginerack|hoverengine|vtolrack", re.I)
 HARRIER = re.compile(r"^av-?8", re.I)
-PLANE_PART = re.compile(r"flap|rudder|elevator|aileron|gearrot|wheel_back|airbrake|propeller", re.I)
+PLANE_PART = re.compile(r"flap|rudder|elevator|aileron|gearrot|gear_rot|wheel_back|brake|propeller", re.I)
 # A car's steered wheels (HumveeFrontWheelL, DPVFrontWheelR): their turn about
 # the hull's up axis is the steering as the hull took it. Recorded only while
 # the physics drives the hull (a bot at AI LOD 0, or a human).
@@ -892,7 +898,10 @@ def rack_deflection(life: Life, rest: dict, t: float) -> float | None:
 def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str) -> None:
     """A flown aircraft's observations, added to its template's."""
     base = sts[0].p[1] if sts else 0.0
-    flown = [s for s in sts if driven_at(life, s.t)]
+    # Anyone aboard: a bot can fly a jet from a seat other than 0 (DC's F16
+    # pilot reads seat 30, the control object he took), and an aircraft
+    # empty of crew is a wreck or parked.
+    flown = [s for s in sts if occupied_at(life, s.t)]
     if not flown:
         return
     air = []
