@@ -224,10 +224,14 @@ from a dispenser pitched 20 degrees down.
 `rocket_flight_harness.mjs` through the real `gunfire.js` under node: the four
 artillery rockets at 30 and 45 degrees, the landing at 30, 60 and 144 Hz, the
 motor alone tick by tick, every motor-carried round of Desert Combat level
-for its life, and the invisible rounds and tracers. `RoundsMatchTheTrees`
-checks the harness's copies of the rounds against the shipped glbs when they
-are extracted on the machine. `test_assemble.py` pins the tracer's gravity in
-the exporter, `test_bomb_release.py` the bomb under the box law.
+for its life, the invisible rounds and tracers, the flak and Shilka shells'
+expiry, and one A-10C CBU pull. `RoundsMatchTheTrees` checks the harness's
+copies of the rounds and the CBU barrels against the shipped glbs when they
+are extracted on the machine. `test_assemble.py` pins the tracer's gravity and
+`hasOnTimeEffect` in the exporter, `test_collision.py` the damage table's rows,
+`test_con.py` the inline geometry form, `test_bomb_release.py` the bomb under
+the box law. The effects bakes were extracted into scratch and compared with
+the live trees' reports (§6).
 
 ## Open
 
