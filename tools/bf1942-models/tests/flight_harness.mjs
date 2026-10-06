@@ -970,6 +970,65 @@ for (const [name, throttle] of [['hardPull', 1], ['hardPullIdle', 0]]) {
   };
 }
 
+// --- the landing gear ------------------------------------------------------
+//
+// `LandingGear::handleUpdate` (lnxded 0x08241470): down under
+// `setGearDownHeight` with the gear's Engine at or under
+// `setGearDownEngineInput`, up over `setGearUpHeight` with it at or over
+// `setGearUpEngineInput` (the Corsair's 25 m / 0.4 and 23 m / 0.7). Height is
+// the gear's own, over the terrain or the sea.
+{
+  const gear = plane => plane.input('c_PILandingGear');
+  // Parked at idle on the strip, and on a deck 20 m over the sea.
+  const strip = aircraft({ speed: 0, altitude: CORSAIR.groundClearance, throttle: 0, ground: 0 });
+  fly(strip, 3);
+  const deck = aircraft({ speed: 0, altitude: 20 + CORSAIR.groundClearance, throttle: 0, ground: 0 });
+  deck.groundHeight = () => 0;
+  deck.state.velocity.set(0, 0, 0);
+  const deckStates = [];
+  for (let i = 0; i < 3 / DT; i++) { deck.state.position.y = 20 + CORSAIR.groundClearance; deck.state.velocity.set(0, 0, 0);
+    deck.integrate(DT); deckStates.push(gear(deck)); }
+  // A take-off at full power: the height at which it went up.
+  const climb = aircraft({ speed: 0, altitude: CORSAIR.groundClearance, throttle: 0, ground: 0 });
+  let upAt = null, upRevs = null;
+  for (let i = 0; i < 60 / DT && upAt === null; i++) {
+    climb.setInput('c_PIThrottle', 1);
+    climb.setInput('c_PIPitch', climb.state.velocity.length() > 35 ? -0.4 : 0);
+    climb.integrate(DT);
+    if (gear(climb) === 1) { upAt = round(climb.state.position.y, 1); upRevs = round(climb.lawEngines[0].revs, 3); }
+  }
+  // Up at 200 m, throttle shut: it stays up until it is under 25 m.
+  const glide = aircraft({ speed: 50, altitude: 200, throttle: 1, ground: 0 });
+  fly(glide, 1);
+  const upHigh = gear(glide);
+  let downAt = null;
+  for (let i = 0; i < 120 / DT && downAt === null; i++) {
+    holdingPath(-8, 0)(glide);
+    glide.integrate(DT);
+    if (gear(glide) === 0) downAt = round(glide.state.position.y, 1);
+  }
+  // Flown down to 10 m at full power, it stays up.
+  const dive = aircraft({ speed: 60, altitude: 40, throttle: 1, ground: 0 });
+  fly(dive, 1);
+  let lowest = Infinity, stayedUp = true;
+  for (let i = 0; i < 20 / DT; i++) {
+    holdingAltitude(10, 1)(dive);
+    dive.integrate(DT);
+    lowest = Math.min(lowest, dive.state.position.y);
+    if (gear(dive) !== 1) stayedUp = false;
+  }
+  // A replay presents recorded revs: up over 23 m at revs 0.9, down at idle.
+  const replay = aircraft({ speed: 50, altitude: 100, throttle: 0, ground: 0 });
+  replay.presentKinematic(DT, 0.9, true);
+  const replayUp = gear(replay);
+  replay.state.position.y = 10;
+  replay.presentKinematic(DT, 0, true);
+  results.gear = {
+    strip: gear(strip), deck: [...new Set(deckStates)], upAt, upRevs, upHigh, downAt,
+    dive: { lowest: round(lowest, 1), stayedUp }, replay: [replayUp, gear(replay)],
+  };
+}
+
 // --- frame rate ------------------------------------------------------------
 //
 // The world steps the drive at its fixed 30 Hz tick (`WORLD_TICK_DT`), and a
