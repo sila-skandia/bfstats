@@ -553,7 +553,7 @@ const level = createLevel(bag(
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
   from(() => vehicleEntry, `forgetEntryPoints`),
-  from(() => wrecks, `damageVisuals loadFailures registerDamageables templateNameOf wreckState`),
+  from(() => wrecks, `damageVisuals loadFailures modelUrls registerDamageables templateNameOf wreckState`),
   {
     get activeMod() { return activeMod; }, get bust() { return bust; },
     get camera() { return camera; }, get cubeLoader() { return cubeLoader; },
@@ -683,6 +683,7 @@ const pageAudio = createPageAudio(bag(
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
+    get fireStates() { return fireStates; },
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
     get optPilot() { return optPilot; }, get optSound() { return optSound; },
     get optSoundVol() { return optSoundVol; }, get scene() { return scene; },
@@ -835,6 +836,8 @@ function buildHullDrive(instance) {
   const occ = instance.occupancy;
   const drive = occ.ensureDrive(level.currentRoot, {
     groundHeight: level.groundHeight, surfaceFriction: level.surfaceFriction, deckNormal: level.deckNormal, collider: hullBodies.bodyAwareCollider(),
+    // The `.sm` header boxes a land hull's inertia and box drag read (COL-14).
+    collisionMeshes: hullBodies.collisionMeshes,
     // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
     // `f` against it, and its two rudders make lift at all only because
     // `PhysicsWing` gives a submerged surface a medium of 10.
@@ -910,7 +913,7 @@ const wrecks = createVehicleWrecks(bag(
   from(() => freeCamera, `placeCamera`),
   from(() => hullBodies, `respawnVehicleBody retireVehicleBody`),
   from(() => level, `bindDynamicShading collider extras freezeVehicle groundHeight isCollision
-    vehicleDamage world`),
+    vehicleDamage vehiclePads world`),
   from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
     soldierDead standUp useLens`),
   from(() => seatPose, `detachSeatCorpse`),
@@ -923,6 +926,8 @@ const wrecks = createVehicleWrecks(bag(
     get fireStates() { return fireStates; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
+    // The server a pad's delay is drawn for (`calcSpawnDelay`, SPAWN-10).
+    get maxPlayers() { return ROUND_MAX_PLAYERS; },
     // The human died in his hull: whoever killed it killed him (the message
     // log reads it when the death latches, `commsWatchLocalDeath`).
     noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), null, id),
@@ -1289,6 +1294,11 @@ const referee = createBotReferee({
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
     botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
+  },
+  // ...and his magazine change, its Reload slot (ledger SND-17).
+  onReload: (bot, weapon) => {
+    const at = bot.getPosition();
+    pageAudio.playWorldReload(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
@@ -2068,7 +2078,10 @@ replayController = createReplayController({
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const bare = name => String(name || '').replace(/_\d+$/, '');
-    return root.children.filter(node => node.userData?.templateKind).map(node => {
+    // Not a pad's other-side vehicle (`level-statics.js` `loadPadVariants`):
+    // it shares its pad's place, and a second candidate there would leave
+    // replay-standins.js's pairing with more places than roots.
+    return root.children.filter(node => node.userData?.templateKind && !node.userData?.padVariant).map(node => {
       node.matrixWorld.decompose(p, q, s);
       const names = new Set();
       node.traverse(o => { if (o.name) names.add(bare(o.name).toLowerCase()); });
@@ -2624,7 +2637,7 @@ const testHooks = installTestHooks(bag(
   from(() => hullBodies, `bodyScene bodyWorld floatHosts recordCrashes shipFlagInactive
     stepVehicleBodies`),
   from(() => level, `collider combatArea currentDir extras frozenCount groundHeight modeNote
-    spawnersRoot surfaceFriction vehicleDamage vehicleSpawnActive warmups world`),
+    spawnersRoot surfaceFriction vehicleDamage vehiclePads vehicleSpawnActive warmups world`),
   from(() => localLook, `lookDelta mouseInput snapPresentation`),
   from(() => localPlayer, `applyDamageToPlayer frameInputLast holdDeploy parachuteLog soldier soldierArmor
     soldierDead supplyTarget switchSeat`),

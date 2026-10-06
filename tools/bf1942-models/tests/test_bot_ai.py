@@ -784,6 +784,26 @@ class StalemateTests(unittest.TestCase):
         self.assertFalse(g["quiet"][1])
 
 
+class RoundGravityTests(unittest.TestCase):
+    """A bot aims with its round's own `gravityModifier`, 1.0 when undeclared:
+    `WeaponFireArm::init` 0x085ee220 hands the Aimer the projectile
+    template's +0x164 (ledger IMP-7), and the round flies by the same."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.g = BotAiTests.results["roundGravity"] if hasattr(BotAiTests, "results") else run_harness()["roundGravity"]
+
+    def test_an_undeclared_round_falls_whatever_its_kind(self) -> None:
+        self.assertAlmostEqual(-14.73, self.g["rocket"], places=2)
+        self.assertAlmostEqual(-14.73, self.g["bomblet"], places=2)
+        self.assertAlmostEqual(-14.73, self.g["shell"], places=2)
+
+    def test_a_declared_zero_flies_flat(self) -> None:
+        self.assertEqual(0, self.g["flatRocket"])
+        self.assertEqual(0, self.g["rifle"])
+        self.assertEqual(0, self.g["stale"])
+
+
 class ArtilleryDriverTests(unittest.TestCase):
     """Ledger SPOT-16: a self-propelled gun's driver (AI type 14) in
     bot_ai_harness.mjs's `artilleryDriver` block."""
