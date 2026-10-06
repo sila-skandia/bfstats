@@ -4,7 +4,7 @@
 // world's own drive -> integrating-player map.
 
 import { inputGate } from './vehicle-damage.js';
-import { axisToward, consume } from './world-input.js';
+import { consume } from './world-input.js';
 
 /**
  * One hull nobody is in any more, one integration a tick: the wreck of an
@@ -218,14 +218,15 @@ export function vehicleTick(world, player, dt, integrators) {
         // classifies to 'ship'). Their ramps (LCVP/Daihatsu) and dive
         // planes + float trim (Gato/Sub7C) all bind c_PIPitch, which no
         // ground/tank hull does -- so only ships read the pitch axis here.
-        // The same stick spring the aircraft path uses (arrows on desktop,
-        // the mobile pad's Y when held, bypassing the spring as the page
-        // always did for it); W/S stays c_PIThrottle (ahead/astern) and
-        // never drives the pitch.
+        // The tick's value straight onto the hull, as the air branch takes
+        // it: the arrows are a key pair, a step (`ControlMap::buttonsToAxis`,
+        // MLK-10), the mobile pad a deflection, and the parts' own servos
+        // move and stop at their bounds (`vehicle-base.js`
+        // `advanceSurfaces`). W/S stays c_PIThrottle (ahead/astern) and never
+        // drives the pitch.
         if (player.kind === 'ship') {
-          player.stick.pitch = input.pad
-            ? input.pitch : axisToward(player.stick.pitch, input.pitch, dt);
-          vehicle.setInput('c_PIPitch', player.stick.pitch);
+          player.stick.pitch = input.pitch;
+          vehicle.setInput('c_PIPitch', input.pitch);
         }
         vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
         vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
