@@ -33,15 +33,15 @@ and no branch, worktree, stash, reflog entry or dangling object holds them.
 They were written on 2026-10-06 from the code, its citations and a fresh read
 of every cited address. That read corrected one claim: `SpawnerPad.tick`'s
 `critical(id)` hook stands for `Armor::isDestroyed` (vt+0xc8), not critical
-damage (SPAWN-10).
+damage (SPAWN-11).
 
 ## What was built
 
 | Piece | File | What it does |
 |---|---|---|
-| Spawner data | `tools/bf1942-models/extract_deployables.py` -> `models/mods/<mod>/deployables.json` | The weapons whose round carries a spawner, the spawner's fields with the engine's defaults filled in (`ObjectSpawnerTemplate` ctor, SPAWN-11), and the hit points, critical damage and category of each object it places |
-| Rules | `viewer/deployables.js` | The round's flight and death, `spawnClear` (SPAWN-12), `AbandonClock` (SPAWN-13), `calcSpawnDelay` and `SpawnerPad` (SPAWN-9..11, 14). No three.js, so node runs it |
-| Page | `viewer/deployables-page.js` | Follows the human's mortar round (`guns.onShot`), places the tree's own `Mortar.glb` under the level's `spawners` group, where its seats, doors and gun work as on a placed emplacement, and runs its abandon clock. Builds a `SpawnerPad` for each `objectSpawns` entry of the active mode whose template is a kit `loadouts.json` knows (matched case-blind: DC spells `US_Sniper_hvy` three ways). It removes the bake's inert copy at the pad and lays the kit through `kit-drops-page.js` `placeKit`. A pad under a control point (`osId`) follows the flag (SPAWN-14) |
+| Spawner data | `tools/bf1942-models/extract_deployables.py` -> `models/mods/<mod>/deployables.json` | The weapons whose round carries a spawner, the spawner's fields with the engine's defaults filled in (`ObjectSpawnerTemplate` ctor, SPAWN-9), and the hit points, critical damage and category of each object it places |
+| Rules | `viewer/deployables.js` | The round's flight and death, `spawnClear` (SPAWN-14), `AbandonClock` (SPAWN-13), `calcSpawnDelay` and `SpawnerPad` (SPAWN-9..12). No three.js, so node runs it |
+| Page | `viewer/deployables-page.js` | Follows the human's mortar round (`guns.onShot`), places the tree's own `Mortar.glb` under the level's `spawners` group, where its seats, doors and gun work as on a placed emplacement, and runs its abandon clock. Builds a `SpawnerPad` for each `objectSpawns` entry of the active mode whose template is a kit `loadouts.json` knows (matched case-blind: DC spells `US_Sniper_hvy` three ways). It removes the bake's inert copy at the pad and lays the kit through `kit-drops-page.js` `placeKit`. A pad under a control point (`osId`) follows the flag (SPAWN-12) |
 | Kit on a pad | `viewer/kit-drops.js`, `viewer/kit-drops-page.js` | A pad's kit lies with no timer (SPAWN-15), is taken with G like any dropped kit, and keeps its `objectId` through the hands that take it, so the pad stays full while the kit exists |
 | Pad kits in the extractors (2026-10-06) | `bf42/kit.py` `level_pads`, `bind_pads`; `extract_loadouts.py`; `extract_kits.py`; `extract_viewmodel.py` `kit_pairs` | Below |
 
@@ -122,6 +122,15 @@ its poses are unchanged.
   asks for.
 - The weapon sounds, third-person poses and scope art for `M82Sniper` and
   `SA-7` were already in the DC tree.
+- On the page (2026-10-06, headless, the scratch `loadouts.json`, `kits.json`,
+  pickup glb and rigs served over the live tree's with `page.route`), DC's
+  Desert Shield made its 4 M82 pads. The scene's 4 baked piles were gone and
+  the 4 kits lay with their pickup mesh drawn. With the live `loadouts.json`
+  it made no pads and the 4 piles stayed. An Iraqi and then a US soldier
+  each stood on a pad and took the kit (`__kitDrops.pickup`). Each then held
+  `M82Sniper`, 10 rounds and 4 magazines, in his own sleeves
+  (`IraqSoldier__M82Sniper`, `USSoldier__M82Sniper`). The kit kept its pad's
+  `objectId` and the pad's slot stayed full. No page errors.
 
 ## What is open
 
