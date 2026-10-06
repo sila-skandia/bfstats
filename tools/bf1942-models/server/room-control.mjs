@@ -65,6 +65,13 @@ export function createControlChannel({ room, event }) {
     const world = room.world;
     const player = world.player(slot);
     if (!player) return;
+    // `GameServer::spawnPlayer` 0x0814c990 (ROUND-11): a human spawns only
+    // while the round plays, and not on a side out of tickets. The page
+    // keeps its spawn screen up and asks again.
+    if (!room.authority.maySpawn(connection.team)) {
+      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
+      return;
+    }
     if (player.occupancy) unmount(connection);   // defensive
     const flags = room.instance.flags;
     let flag = null;

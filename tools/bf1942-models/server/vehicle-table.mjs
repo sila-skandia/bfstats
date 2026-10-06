@@ -19,10 +19,11 @@ function templateNameOf(node) {
  * `world`): `{id, template, owner, root, kind, window, team, seated,
  * driver}` rows, `id` = 1-based index (see LevelInstance).
  */
-export function buildVehicleTable({ spawnersRoot, ownerRoots, world }, data) {
+export function buildVehicleTable({ spawnersRoot, ownerRoots, world, extras: layer, spawnables },
+                                  data) {
   const table = [];
   const spawners = spawnersRoot?.children || [];
-  const extras = data.extras;
+  const extras = layer ?? data.extras;
   let nextOwner = ownerRoots.length;
 
   const addEntry = (spawn) => {
@@ -88,6 +89,6 @@ export function buildVehicleTable({ spawnersRoot, ownerRoots, world }, data) {
     table.push(entry);
   };
 
-  for (const spawn of data.spawnables) addEntry(spawn);
+  for (const spawn of spawnables ?? data.spawnables) addEntry(spawn);
   return table;
 }
