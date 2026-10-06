@@ -9,6 +9,10 @@ level archive, the mod's object and game archives), so a change to one is
 delivered by recomputing that one and rewriting its keys in every published
 `scene.json` (`patch_scene.py`) rather than re-baking the level.
 
+One layer is terrain the glb need not draw: `heightmap`, the level's whole
+`Heightmap.raw` as `terrain/heightmap.png`, which the viewer's colliders stand
+on (the drawn tiles leave the sea floor of 29 levels undrawn).
+
 The rest of `scene.json` (`terrain`, `objects`, `sky`, `water`, `envmap`,
 `lensFlare`, `minimap`, `skybox`) describes what the full bake wrote beside it
 and is the `scene` layer, which only `extract_map.py` writes.
@@ -58,6 +62,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "damage": (("damage",), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
+    "heightmap": (("heightmap",), ()),
 }
 
 # A layer another reads from: `objectSpawns[].controlPointIndex` is the
@@ -76,7 +81,7 @@ REPORT_ORDER = (
     "gameplayMode",
     "controlPoints", "soldierSpawns", "vehicleSoldierSpawns", "objectSpawns",
     "tickets", "modes", "gameTypes", "briefing", "minimap", "envmap",
-    "lensFlare", "damage", "sounds", "ai",
+    "lensFlare", "damage", "sounds", "ai", "heightmap",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -526,6 +531,14 @@ def layer_ai(ctx: LevelContext):
     return out, {}
 
 
+def layer_heightmap(ctx: LevelContext):
+    # The whole `Heightmap.raw`, drawn patches and undrawn alike: what the
+    # viewer's colliders stand everything on (`viewer/heightfield.js`
+    # `heightfieldFromSamples`). A pure function of the level's terrain, so a
+    # tree gains it without a geometry bake.
+    return {"heightmap": em.write_terrain_heightmap(ctx.heightmap, ctx.level_dir())}, {}
+
+
 COMPUTE = {
     "controlPoints": layer_control_points,
     "spawns": layer_spawns,
@@ -534,6 +547,7 @@ COMPUTE = {
     "damage": layer_damage,
     "sounds": layer_sounds,
     "ai": layer_ai,
+    "heightmap": layer_heightmap,
 }
 
 

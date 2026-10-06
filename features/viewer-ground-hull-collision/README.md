@@ -3,8 +3,10 @@
 Written by wave-2 stream D (`w2d-drive`) alongside items 15–17 of the
 2026-09-19 parity round. Sections 1 to 5 are the plan. W6-C built it on
 2026-09-22, and [the Built section](#built--2026-09-22-w6-c) below says what
-and where. The newest section (2026-10-06) is the land drives' own chassis,
-the sea and the upside-down clock, with what is still open. The title used to call this a plan, not a build, and this line used
+and where. The 2026-10-06 section is the land drives' own chassis, the sea
+and the upside-down clock; the newest, "Terrain contact, 2026-10-07", is a
+driven hull against the terrain, the ground under an undrawn patch, a room's
+land drive and a landed helicopter, with what is still open. The title used to call this a plan, not a build, and this line used
 to say nothing here is implemented. The plan was written so that
 whoever picks the work up starts from what `viewer/ground.js` already has
 rather than from `collision-response.md` cold.
@@ -467,27 +469,13 @@ engine; G5 is open again.
 
 ## Open
 
-- **A land hull on the bed is lifted onto the sea where a terrain patch is
-  undrawn** (review). The heightfield has no samples there, so
-  `bedGroundHeight` falls back to the sea surface: a Sherman driven off a
-  Guadalcanal beach sinks to 8 m, meets the undrawn patch 40 m out, rises
-  11.8 m in a tick and drives on across 800 m of sea at 14.9 m/s. A Willy off
-  Midway or Guadalcanal drowns before it gets there. 29 live levels have
-  undrawn patches. The fix is the level's raw heightmap in the viewer.
-- **The multiplayer authority has none of G2.** `server/level-instance.mjs`
-  builds a drive with neither `collider` nor `waterLevel`, and its
-  `bodySpecFor` tags no `waterPart`, so in a room every land hull still drives
-  on the sea and no amphibian swims (the second predates this round).
+- ~~**A land hull on the bed is lifted onto the sea where a terrain patch is
+  undrawn**~~ and ~~**the multiplayer authority has none of G2**~~: closed,
+  [Terrain contact, 2026-10-07](#terrain-contact-2026-10-07).
 - **The rotational box drag's submerged scale** (PHY-16: once, not squared) is
   not applied; `HullWater` adds the positional excess only.
-- **A land hull driven into a steep face is launched.** Any wheeled or tracked
-  hull driven at full throttle into a dry terrain wall of 45 degrees or more
-  leaves at hundreds of m/s (M1A1 749 m/s at 45 degrees, 874 at 55; Willy 84
-  at 55; the tracked numbers identical on the branch's base): the drive meets
-  terrain only through its springs, so the bump stop is the only barrier, and
-  the engine's hull col0 against the heightfield (`checkVsTerrain`, a push-out
-  along the normal) is not in the drive. Underwater banks are often that steep,
-  so since G2 a hull crawling along the bed reaches one more often.
+- ~~**A land hull driven into a steep face is launched.**~~ Closed,
+  [Terrain contact, 2026-10-07](#terrain-contact-2026-10-07).
 - **The critical bleed** still bills HP-5's flat whole-second ticks, not HP-17's
   bank, and resets its bank on recovery.
 - **The water collision** (`handleCollision` with material 1 every tick a hull
@@ -528,3 +516,216 @@ Willy, and why:
 The KettenKrad does not move on either (0.1 and 0.3 km/h). The pre-existing
 motorbike and KettenKrad faults belong to another package.
 
+
+## Terrain contact, 2026-10-07
+
+Package `terrain-contact` of the Desert Combat round: a land hull against the
+terrain, the ground under an undrawn patch, the same in a room, and a landed
+helicopter's nose.
+
+### A driven hull meets the terrain
+
+**What was wrong.** Any land vehicle driven into a face of about 45 degrees or
+more was thrown off it, on every mod. Two causes, both measured in the
+headless runner (`body-world.js` and the drive classes unmodified):
+
+- `BodyWorld` ran only the damage half of `checkVsTerrain` for a driven hull,
+  so nothing but the drive's springs met the ground.
+- `probeAlongAxis` took one Newton step that takes the ground at the vertical
+  estimate as level. A spring axis leaning into a steep rise stepped past the
+  face and read the ground above its own start: a buried axle, the bump stop
+  at its full load, about 100 m/s^2 a wheel. Four of those, eight ticks, and a
+  Willy left Gazala at 94 m/s.
+
+**What changed.**
+
+- `BodyWorld.#drivenTerrain`: a drive that declares `hullContacts` (the two
+  land drives) has its hull parts' col0 vertices dropped on the heightfield by
+  `body-ground.js` `terrainContact`, exactly as a parked hull's are
+  (collision-response.md section 7): `impulseOn` on every vertex at or under
+  the ground, the push-out along the normal at once, half the closing speed
+  back next tick, and the contact handed to the drive's friction mean
+  (`noteContact`). The heightfield only: a deck meets a driven hull as a
+  static. An aircraft keeps the damage half alone.
+- `suspension.js` `probeAlongAxis`: the Newton answer stands where it lands
+  within 2 cm of the ground; where it misses, the crossing is bracketed from
+  the axle and solved (Illinois regula falsi). A probe that finds no crossing
+  in reach reads no contact. This is the probe's numerics, not the spring law
+  (ground-handling's), and the hunk is that function alone. It does move
+  ordinary driving (review, 2026-10-07): with the axis leaning about 18
+  degrees or more the Newton step misses by 2 to 9 cm, and 13 to 56 % of a
+  drive's probes took the solve on the review's vanilla runs.
+
+**Vanilla before and after (review, 2026-10-07).** Willy, Sherman and
+Kubelwagen on seven vanilla levels (El Alamein, Gazala, Bocage, Kursk,
+Battle of the Bulge, Guadalcanal, Market Garden), each driven from its pad
+(idle, throttle, both turns, reverse; 15 s) and into the lattice face nearest
+6, 12, 18, 24 and 30 degrees, every tick's state compared bit for bit with
+main: 25 of 92 traces are identical, 47 differ on the probe alone and 64 on
+the hull contact alone. None gains a launch (over 6 m above the ground or
+12 m/s upward), a flip or 3 m/s of top speed that main did not have, and 28
+that main launched or flipped no longer do: main's Willy left Guadalcanal's
+pad drive at 76 m/s, 136 m up, and Market Garden's at 72 m/s, 111 m up, in
+ordinary turns. At rest on level ground no vanilla land hull's col0 is in the
+ground (`test_sim_vehicles.py`
+`test_a_land_hull_at_rest_on_level_ground_meets_it_with_its_springs_alone`;
+the Sherman's turret vertex is 4 cm clear). Driven at full throttle on level
+ground the Tiger's `TigerWheelR2_1` body part touches it on 3 to 5 ticks.
+
+**Measured** (`tests/sim_vehicles_harness.mjs` `faceWilly`, `faceM1A1`,
+`faceHumvee`; the lattice face nearest each angle, two cells, a flat run-up,
+nothing static in the way; 1 s settle, 8 s full throttle; main at `e39fc803`
+against the branch):
+
+| Hull, level, face | vmax m/s | upward m/s | over the ground m | after |
+|---|---|---|---|---|
+| Willy, Gazala, 45.0 | 93.9 -> 13.3 | 68.1 -> 7.3 | 174 -> 1.2 | coasts 12 m up, slides back |
+| Willy, Gazala, 56.0 | 83.4 -> 13.6 | 73.6 -> 7.9 | 187 -> 1.8 | stops at the toe |
+| Willy, Gazala, 69.5 | 34.7 -> 13.3 | 34.6 -> 4.0 | 26.9 -> 1.8 | stops |
+| M1A1, Medina Ridge, 46.5 | 16.4 -> 13.7 | 11.8 -> 6.1 | 2.8 -> 2.6 | climbs the 4 m face on its momentum |
+| M1A1, Medina Ridge, 51.5 | 19.0 -> 12.5 | 14.3 -> 3.4 | 7.8 -> 3.0 | stops |
+| M1A1, Medina Ridge, 64.3 | 40.4 -> 12.8 | 37.4 -> 5.7 | 58.6 -> 2.7 | stops |
+| Humvee, Medina Ridge, 46.5 | 85.6 -> 16.3 | 46.9 -> 9.7 | off the map -> 3.1 | climbs; wrecked by the nose-in (COL-4) |
+| Humvee, Medina Ridge, 51.5 | 29.6 -> 31.4 | 20.0 -> 6.3 | 29.2 -> 3.8 | climbs the 5 m face, then its own 31 m/s on the flat top |
+| Humvee, Medina Ridge, 64.3 | 43.8 -> 15.9 | 18.2 -> 3.8 | 21.7 -> 2.5 | stops |
+
+The engine's friction budget is `mu N.y |g|` a tick (PHY-2): on 45 degrees
+about 9.4 m/s^2 against gravity's 10.4 along the face, so no hull climbs one
+under power, only on what it brings. That is what the table shows.
+
+The bare drive with no body world (no hull at all; `~/.cache/dc-sweep/terrain-contact/wall_drive.mjs`
+on an unbounded analytic wall) went from 453 to 1103 m/s down to 22 to 47 m/s:
+its springs still climb a wall that never ends, because the spring pushes along
+the hull's up where the engine's wheel is pushed along the contact normal.
+That law is ground-handling's; nothing the page, the runner or a room runs is
+without the hull.
+
+The vanilla drive, bot and world suites (717 tests: ground, body ground,
+vehicle bodies, body statics, sim vehicles, sim match, world, world damage,
+ship pitch, vehicle instance, idle vehicle, vehicle damage, bot AI, bot route,
+room, level, level mounts, flight, ship, collision, terrain grid) pass before
+and after.
+
+### The ground under an undrawn patch
+
+The colliders' lattice was snapped off the drawn tiles, and a patch the bake
+does not draw had none (41 levels of the five in-scope trees; Midway 240 of 256 patches). A new bake
+layer, `heightmap` (`features/level-bake-layers/README.md`), ships the whole
+`Heightmap.raw` as `terrain/heightmap.png` and a `heightmap` key, and
+`heightfield.js` `heightfieldFromSamples` builds the lattice from it for the
+page (`level-terrain.js`), the headless runner (`sim/level.mjs`) and the room
+server (`server/level-load.mjs`); a tree baked before falls back to the tile
+snap. Census, the layer patched into scratch copies of the five in-scope
+trees (167 levels: vanilla 23, XPack1 29, XPack2 32, Desert Combat 35, DC
+Final 48; `~/.cache/dc-sweep/terrain-contact/census.sh`): where a tile is
+drawn the two agree to the bit on every level, no level has a hole, 41 levels
+gain ground under undrawn patches, and Sea Rigs (both DC trees), which draws
+no tile at all, gains a heightfield where it had none. 37 MB of PNG in all,
+under a second a level to write.
+
+**Sea Rigs had no heightfield at all**, so no body world, and its hulls stood
+where placed. With one, the load settle (`hull-bodies.js` `settleSome`,
+`server/level-bodies.mjs` `settle`), which meets the terrain alone, dropped
+its two Forklifts 115 m off the rigs onto the sea bed, where they drowned. In
+the engine they rest on the rig by an object contact that a parked body here
+does not have (a parked body meeting statics is this README's own open next
+step). `vehicle-bodies.js` `standsOverTheSea` (every col0 vertex above the
+water, more than 1.5 m clear of the ground, and that ground under the water)
+now leaves such a hull where the level put it, asleep. A hull merely spawned
+high over dry ground still drops (DC El Alamein's M1A1, Humvees and M163,
+2.1 to 2.9 m, as before). Over the five trees it holds, besides the carriers'
+aircraft (held already), Sea Rigs' Forklifts, DC Final Al Nas's Stryker (12 m
+over the water, which the settle used to drop it into) and Medina Ridge's
+inherited hulls off the edge of its 1024 m grid (which used to free-fall).
+
+**Review (2026-10-07): `standsOverTheSea` is not the engine's.** A spawned
+hull is awake from its construction (COL-10's addendum: both `PhysicsNode`
+ctors end in `setIsAwake`, and `ObjectSpawner::spawnObject` puts nothing to
+sleep), so in the engine every placed hull falls onto whatever holds it,
+terrain or a static. The rule is a stand-in for that object contact, and it
+is not stable across a level's twins: it holds DC Final Al Nas's Stryker
+12 m over the water, while Al Nas Day 2's Stryker, on the same structure
+2 m away, has one vertex over ground above the water and is still dropped
+17 m into it (the settle census over the five trees: only those three hulls
+change, Sea Rigs' two Forklifts and Al Nas's Stryker). The engine's answer is
+the load settle meeting the statics (or at least the drivable decks, which it
+does not see either), this README's own next step; Sea Rigs'
+`rig_topside_platform1_m1` is not in the drivable set.
+
+Sea Rigs' bots change with the heightfield: its search maps are painted from
+the collider (the level ships no AI), and with a sea floor instead of a flat
+water surface a 60 s match's route failures drop from 6,283 to 3,888 and the
+bots no longer take the two LCVPs they took before (every seed alike). The
+bots package should look at it. The cause (review, 2026-10-07): with no
+heightfield the painter's `terrainSampler` fell back to `surfaceHeight`,
+the water plane, so every sea cell read 0 m deep and walkable; with the sea
+floor every cell off the rigs is deeper than the infantry map's 1.5 m
+(`CELL_WATER`). The infantry map's free cells drop from 10,623 to 1,840 (the
+rig decks), and the cells around the LCVPs at the waterline go from free to
+unreachable, so no foot route ends at a boat. The level ships no search map
+for its boats either (`waterNav` returns null without one).
+
+A Sherman driven off Guadalcanal's beach (the review's spot, 2528, -1060)
+used to meet the undrawn patch 40 m out, rise 11.8 m in a tick and drive
+800 m across the sea at 14.9 m/s. On the heightmap it follows the bed down
+the shelf to 65 m and crawls along it at 6.7 m/s, crushed at 10 HP/s
+(PHY-3's `submarineData`) and wrecked at 13 s.
+
+### A room's land drive
+
+`server/level-instance.mjs` built a drive with no collider, water level or
+collision meshes, and `bodySpecFor` tagged no `waterPart`. Worse, the room's
+scene decoded no render geometry, so `measureWheelRadius` read -Infinity off
+every wheel: no wheel of any room's tank or jeep ever touched the ground, and
+the hull sat on its failsafe 5 cm over the terrain at full throttle. Now the
+drive gets what `map.html` `buildHullDrive` hands it (a body-aware collider,
+the sea, the collision meshes, the deck normal), boarding runs
+`wheelContactDepths` (moved to `vehicle-bodies.js`) and the `waterPart`, the
+room's body world gets the static probe, and `glb-scene.mjs` decodes a
+Spring's meshes. In a room on Guadalcanal the Sherman off the beach gives the
+runner's trace sample for sample, a DC BMP-2 swims at 5.44 m/s, and a Wake
+Willy drives 10.7 m in 2 s (`test_room.py`).
+
+### A landed helicopter's nose
+
+`aircraft.js` `settle` leaves pitch-up alone so a plane can rotate, and
+nothing else answered it: an AH-64, Mi-24 or AH-6 set down turning nose-up at
+10 deg/s stood itself on its tail in 9 s. In the engine the wheel it turns
+onto stops it (`checkVsTerrain` on the spring's col0 vertex, `solveImpulse`).
+`settle` now takes, at each aft wheel contact pushed under the clamp's floor,
+the nose-down turn about the origin that puts it back on the ground, and half
+its closing speed per 30 Hz tick. The AH-64 stops at 5.5 degrees (its tail
+wheel's), the Mi-24 at 5.3, the AH-6 and Mi-8 level; nose-down stays the dig
+rule's. A taildragger's ground pitch is now capped at its three-point angle
+(Spitfire 15.5 degrees); the Spitfire's, B-17's and Zero's takeoffs lift off at
+the same time, speed and pitch as before.
+
+**Review (2026-10-07): those stops are not the airframes' ground attitudes.**
+The contacts' floor is lowered by `groundClearance + lowest contact` (the
+parked springs' sag, 0.34 m on the AH-64, 0.22 m on the Mi-24, 0.37 m on
+the Spitfire) and the turn is about the origin, not the main gear. On the
+real glbs (DC El Alamein, vanilla El Alamein) the engine-law parked settle
+stands the AH-64 at 3.3 degrees, the Mi-24 at 2.7 and the Spitfire at 11.9
+(the drawn wheels' three-point geometry: 3.6, 2.9 and 13.0); the stops are
+5.5, 5.3 and 15.5, with the aft wheel 0.2 to 0.4 m under the real ground.
+After the stop the AH-64 levels to 0 degrees over 4 s with its tail wheel
+0.33 m in the air, as it does on main from rest; the Mi-24 holds about 4.6
+with its rear wheels 0.16 m in the ground. Main stood both on their tails
+(53 and 43 degrees), so this is far better, but it is not yet the attitude
+the springs give.
+
+### Still open
+
+- **The terrain's own height law.** `PatchTerrain::getHeightAndNormal`
+  (`0x083d6f10`) answers off alternating-diagonal triangles with a unit face
+  normal (R1); the viewer's heightfield is bilinear with a central-difference
+  normal. Unported.
+- **The engine's spring reads the hull's own push.** `solveImpulse`'s spring
+  branch takes `posAdjust . n - rootPosAdjustCopy . n`, so a hull pushed out
+  of the ground loads its springs less. The drive's springs run before the
+  body world and never see it. No measured case needs it.
+- `checkVsTerrain`'s `n > 10` bounding-box early-out is not ported (it changes
+  no contact).
+- An aircraft's hull col0 still meets the ground through its drive's clamp and
+  `settle`, not `terrainContact` (damage only).
+- A room's collider has no drivable mask, so a room's hulls meet no decks.
