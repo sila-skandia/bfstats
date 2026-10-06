@@ -1,8 +1,11 @@
 # Desert Combat parity
 
-Status (2026-10-07): the first sweep and its fix round have landed; assets are
-being re-extracted. This page is the tracker for the round: what the census
-found, what each package changed, how it was checked, and what is still open.
+Status (2026-10-07, round paused for quota): the sweep and two fix rounds have
+landed on main except fixed-wing (built, review not finished) and bot-gunners
+(work in progress). **The DC and DC Final asset re-extract and re-bake has not
+been run**, so the live trees still show the old data for every exporter-side
+fix below. This page is the tracker for the round: what the census found, what
+each package changed, how it was checked, and what is still open.
 
 ## How the round ran
 
@@ -56,6 +59,15 @@ and 10 convention gaps the census had missed.
 | data-words | `hasMobilePhysics 0` keeps roots static (Nimitz carriers, No Fly Zone buildings); depots repair by vehicle type, every soldier and hull each cycle; per-placement paints; beached hulls stop spinning | PHY-17, SUP-18..20, FA-4 |
 | round-rules | CTF in the page and in rooms; the round's end, debriefing, medals, music and restart | CTF-1..10, ROUND-1..9 |
 | soldier-blast | Blasts throw soldiers (matched to 114 recorded throws); the soldier template's force and repair numbers from data | KNOCK-4..9 |
+| hand-weapons-2 | The refused-pull lockout, fire camera shakes, grenade charge, kit heat, multi-barrel charge | GUN-18, GUN-19 |
+| spawned-objects | Spawned rafts and ruins get bodies, collision and damage; per-Armor wreck clocks (`after-death.js`); level bundle sounds | HP-19, HP-20 |
+| bots | Each hull's own AI template; the engine's walk to and into vehicles; door-less artillery seats; `exitVelocity`; the 0.8/0.5 heat hold; deviation points | AI-137..145 |
+| terrain-contact | The steep-face launch; sea floor under undrawn patches; rooms drive land hulls; a landed helicopter's nose settles | COL (see viewer-ground-hull-collision) |
+| ground-handling | Tank yaw damping and inertia match the lab's turn-rate table; dummy rollers skipped; box drag on land hulls; hidden wheels are physical (KettenKrad, R75, HD_XA42, LVT4, PT boats); critical damage stops ground and ship engines | PHY-4, PHY-24 |
+| rooms | The room server runs the pads, prices every landing the shooter reports (a departure: retail's server flies rounds), throws soldiers, replicates object damage, relays reloads, ends and restarts its round | ROUND-11 |
+| vehicle-deviation | Vehicle, stationary and aircraft gunner guns fire in their own deviation cone | DEV-11..13 |
+| vehicle-part-collision | A hull's box is its own geometry, never a child part's mesh: the AH-64 was its rocket pods | COL-14, COL-19 |
+| round-gaps | ObjectiveMode rounds end; a side with no spawns bleeds out; the end game clears the field; spawnDelayAtStart and disableWhenLosingControl; carriers' spawn points ride them; two pads on one spot | OBJ-1..6, TKT-5, TKT-8, SPAWN-21, SPAWN-22, ROUND-10 |
 
 Every package's build record is in its own feature folder; the ledger rows
 cite them.
@@ -89,39 +101,68 @@ client on the lab server (skill `bf1942-server-lab`):
 - Whether a static vehicle wreck (`Mi24DWreck` on Bragg) stops rounds and
   soldiers.
 - Whether one browser pixel is one mouse count.
+- A tank's full lock from speed with W held (the viewer peaks at 85-118 deg/s
+  for about a second, then downshifts).
+- A running engine on a slope at zero throttle (the viewer's Willy creeps
+  1.4 m/s down 5.7 degrees).
 
 ## Open
 
-In flight (2026-10-07):
+Not landed:
 
-- **bots**: bots frozen in `Change`, DC route failures, door-less artillery
-  seats, AI records for every DC aircraft, the 0.8/0.5 heat break, the bot
-  cone, `exitVelocity`, static-root seats.
-- **ground-handling**: XPack2's bikes on reverse, the KettenKrad, critical
-  damage stopping ground engines, the Krupp's drag.
-- **terrain-contact**: the steep-face launch (any land vehicle into a 45 degree
-  face is thrown at hundreds of m/s), a sea floor under undrawn terrain
-  patches, the sea bed in rooms, a landed helicopter's rising nose.
-- **hand-weapons-2**: the refused-pull lockout, fire camera shakes, grenade
-  charge, kit heat, the projectile's first sweep, multi-barrel charge.
-- **spawned-objects**: bodies for spawned rafts and ruins, their removal,
-  `timeToLiveAfterDeath` on statics, level bundle sounds.
+- **fixed-wing** (`worktree-agent-af900aeea9f96ae0a`, 14 commits, built and
+  suite-run by its implementer; the adversarial review was stopped before it
+  finished). This is the throttle as the engine's held axis with reverse and
+  gearbox, the rotation law and header box, one step per engine tick, lift
+  regulators on their own servo, landing gear from `LandingGear::handleUpdate`
+  (PHY-25..27, SND-24). Merging it needs care in `viewer/ship-spec.js`: keep
+  both its selector-class box search and vehicle-part-collision's no-child-mesh
+  walk (test_flight covers both). Also `world-vehicle-tick.js`: the condition
+  becomes `(engineLaw || landDrive || shipDrive) && activeRoot`. After a
+  re-extract the AC-130 tops out at 33.9 m/s against retail's 42.8 (its
+  regulators sit at their -30 degree stop); before the branch it could not fly.
+- **bot-gunners** (`worktree-agent-ab6c80a912c4768e8`, one WIP commit
+  5d2b2233, unreviewed and not suite-run): bots bailing from fixed guns, bots
+  frozen in `Change`.
 
-Queued:
+Assets (the next run, in one pass, after fixed-wing lands):
 
-- The fixed-wing engine law: the throttle as retail's held axis with reverse,
-  the rotation law and header box for fixed wings, the AC-130's speed, landing
-  gear from data.
-- Vehicle guns fire with no deviation cone at all.
-- Rooms: pads and respawn, blast splash and throws, object damage and reloads
-  on the wire, CTF layers.
-- ObjectiveMode's objectives, so those rounds end.
-- Artillery spotting (SPOT-1..16); missiles a player flies (SA-3, Tomahawk).
-- Stationary guns as static roots; dividing `geometryScale` back out of
-  physics measurements; projectile flight sounds; bots never firing Hydra,
-  Hellfire or AT-2 in retail (unread why); DC's scripted objectives (Medina
-  Ridge's push).
+1. DC and DC Final models re-extract (`extract_all.py --level-all
+   --configuration-all --cockpit -j 6 --mod M --own` into a scratch `--out`;
+   install in place with `~/.cache/dc-sweep/install-models.py`, which keeps
+   `models.json`'s thumbs).
+2. DC and DC Final full level re-bake, then `collision-meshes.json`,
+   `vehicle-ai.json` and the effects for every tree.
+3. Vanilla, XPack1 and XPack2: the subsets ground-handling (KettenKrad,
+   Elco80, Type38 incl. `--level Truk`; R75, HD_XA42, LVT4), round-gaps
+   (Battle of Britain and XPack2's six objective levels, full scene) and
+   fixed-wing (every model with a LOD selector, gear or regulator) need.
+4. `patch_scene.py --layer game` and `--layer spawns --all` in every tree
+   (round-gaps' objectives and `changeTeam`).
+5. `optimise_mesh.py`, thumbs for changed models, `build_mods_manifest.py`,
+   then `scripts/publish-mesh-delta.py` (stage with `textures/` hard-linked).
 
-Assets: the DC and DC Final model re-extract and full level re-bake carry
-every exporter change above; until they are published, the live trees show
-the old data for the exporter-side fixes.
+Gaps found and not built:
+
+- Ships: the LCVP's speed and turn against retail (13.1 m/s, 20.8 deg/s); a
+  craft that hits a carrier's side rolls past the bots' bail angle (2 of 12
+  runner landings); a crewed critical ship never starts to sink.
+- Rooms: the server flies no rounds (a rifle round never hits another player
+  in a room); no remote gunfire sound; seat-gun reloads not relayed; CTF and
+  TDM rooms never end; SPAWN-22 does not reach a room's pads (the room's
+  capture law never writes `spawnsEnabled`).
+- Fixed-wing (once landed): the AC-130's regulators; ground-roll revs; the
+  idle tail slide; dive-angle sound; the DC F-14A has no physics.
+- Bots: pilots' own guns fly straight (no draw index fits the recordings); the
+  AI term's extra against air targets is never passed; bots never firing
+  Hydra, Hellfire or AT-2 in retail is unread.
+- Hand weapons: under DEV-12 a hand round still carries its own pull's bloom.
+- ObjectiveMode: no objectives HUD; no `Factory_Objective` wreck glb; the
+  defender's share reads 0 with a time limit; Medina Ridge's rock dropper.
+- Artillery spotting (SPOT-1..16); missiles a player flies (SA-3, Tomahawk);
+  stationary guns as static roots; dividing `geometryScale` out of physics;
+  projectile flight sounds.
+- Load settle against statics (replace `standsOverTheSea`); COL-17 for
+  vehicles; the grip test by flag bits, not name (FHSW's
+  `c_PGFEngineDUmmyGrip`); a mesh-carrying Bundle listed before the cockpit LOD
+  still takes the box (FHSW `Zuiho_1944`); FHSW's pad scan memory (36 GB).
