@@ -620,8 +620,9 @@ export function createLocalPlayer(page) {
     let look = null;
     // The control map folds the devices into the engine's channels: the
     // keyboard's key pairs and the joystick's axes are bindings of the same
-    // triggers (`c_PIThrottle`, `c_PIRoll`, ...), and `controls.axis` sums
-    // them. The touch pad stays the page's own override, exactly as before.
+    // triggers (`c_PIThrottle`, `c_PIRoll`, ...) in a channel's two slots,
+    // and `controls.axis` keeps the larger, never the sum (ledger MLK-9,
+    // MLK-15). The touch pad stays the page's own override, exactly as before.
     const axis = t => page.axis(t);
     const heldTrigger = t => page.held(t);
     if (seated) {
@@ -690,9 +691,10 @@ export function createLocalPlayer(page) {
       // water spends it.
       if (localPlayer.soldier?.swim?.swimming) localPlayer.prone = false;
       // The touch drag forwards like a held W (`touchFlying`), but only into
-      // neutral: a held S still brakes, and two held keys cancel as they
-      // always did. `axis` carries the W-S pair; the touch term adds only
-      // when the pair is not already speaking.
+      // neutral: a held S still brakes. `axis` carries the W-S pair, whose
+      // first key wins when both are down (`buttonsToAxis`, MLK-10), so W and
+      // S together walk forward; the touch term adds only when the pair is not
+      // already speaking.
       const throttle = axis('c_PIThrottle');
       input = {
         forward: page.clampMobileInput(
