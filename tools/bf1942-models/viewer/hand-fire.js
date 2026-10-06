@@ -498,7 +498,14 @@ export function createHandFire(page) {
 
     // The barrel cools (and an overheat runs out) on the item's own clock,
     // which, like the reload's below, is not running while he has no item.
-    if (!locked && hw.heat) hw.heat.step(dt);
+    // The trigger goes in first: a held pull the heat refuses is what starts
+    // and restarts the lockout (GUN-17), and a pull mid-reload never reaches
+    // the heat at all.
+    if (!locked && hw.heat) {
+      hw.heat.trigger(page.triggerHeld && (page.captured || page.params.has('shots'))
+        && hw.reload <= 0);
+      hw.heat.step(dt);
+    }
 
     const magazine = hw.data?.magazine;
     if (locked) {

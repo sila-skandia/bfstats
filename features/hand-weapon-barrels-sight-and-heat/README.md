@@ -4,7 +4,9 @@ Status: built 2026-10-06 (Desert Combat fix round, package `hand-weapons`):
 the shotgun barrels (section 1), the Stinger's sight, read and confirmed
 (section 2), and the hand MG's heat with the heat law every gun shares
 (section 3). The page sees the hand MG's heat once the Desert Combat and DC
-Final viewmodels are re-extracted (section 3, "Assets").
+Final viewmodels are re-extracted (section 3, "Assets"). Built 2026-10-07
+(package `hand-weapons-2`): the refused pull that restarts the lockout
+(section 5).
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -186,8 +188,9 @@ change and after it (`~/.cache/dc-sweep/hand-weapons/before/run_heat_before.py`)
 | Vanilla pintle Browning (10 a second) | never | 38, at 3.7 s |
 | Vanilla coaxial Browning (10 a second) | 49, at 4.8 s | 25, at 2.4 s |
 
-After the lockout a held trigger fires one round per lockout here, about one
-every 2 s. The engine is slower; see "Open".
+After the lockout a held trigger fired one round per lockout here, about one
+every 2 s, and the engine is slower. Section 5 builds the engine's refused
+pull, which moves the M249 to 61 and the PKM to 51.
 
 **Checked against the real game (review, 2026-10-07).** The lab's vanilla
 server recordings (35 files under `~/bf1942-lab/runs/2026100[3-6]-*`, every
@@ -232,21 +235,8 @@ overheat. The lead's commands are in the package report.
 
 **Open.**
 
-- The lockout starts on the round that crosses 1, not on the refused pull
-  after it (GUN-14), and `FireState` never restarts it. In the engine every
-  pull refused at heat 1 or more starts the lockout again once the last has run
-  out (`Fire` `0x0828ab30`..`0x0828ab6c`), so a held trigger gets exactly one
-  tick of cooling per lockout. Emulating the binary in float32 (review,
-  `fsnode/hold.mjs`), a held trigger after the first lockout fires 0.2 to 0.3
-  rounds a second; `FireState` fires 0.4 to 0.5. The MG42 needs two lockouts a
-  round and the coax four. The first refused pull agrees for the MG42, Browning
-  and coax (38, 38, 25). The M249 and PKM lock one round early here (60 and 50,
-  against 61 and 51): their crossing round lands within one tick's drain of 1,
-  and the engine drains that tick before it tests. A trigger let go on the
-  crossing round is locked here and not in the engine. The fix is a refused-pull
-  call on `FireState`, made by `hand-fire.js` and `world-vehicle-tick.js`
-  while the trigger is held and `canFire` is false. A getter cannot do it,
-  because the HUD and the hooks read `canFire` every frame.
+- ~~The lockout starts on the round that crosses 1 and is never restarted.~~
+  Built in section 5.
 - Whether a tick runs the soldier's fire message or the weapon's
   `handleUpdate` first decides whether the drain lands before or after the
   round. The round counts assume the trigger first, as `gun-cycle.js` does
@@ -304,3 +294,66 @@ second, input 1.01): the cone went from 0.4 to 2.37 degrees in a second.
 second. How a browser `movementX` pixel maps to a DirectInput count is
 `mouse-input.js`'s one unproven unit, so how hard a viewer player must swing to
 open the M16 depends on it.
+
+## 5. A held trigger's refused pull restarts the lockout
+
+Built 2026-10-07 (package `hand-weapons-2`).
+
+**What was wrong.** `FireState` started the `timeDelayOnOverHeat` lockout on
+the round that crossed heat 1 and never restarted it. The engine starts it on
+the pull after that round, the one the heat refuses, and starts it again on
+every refused pull after it, so a held trigger cooled through every second
+lockout here and fired about twice the engine's rate after the first one. The
+M249 and PKM also locked one round early, and a trigger let go on the crossing
+round locked here when it does not in the engine.
+
+**What the engine does (GUN-17).** `handleMessage`'s fire message reaches
+`Fire` only past the reload timer, the lockout and the round's fire timer, in
+that order. `Fire` refuses the pull at heat 1 or more and starts the lockout
+(GUN-14's restart at `0x0828ab30`). The crossing round starts nothing. With the
+trigger held, each lockout is followed by exactly one drain tick (GUN-15) and
+one more pull. In float32 the M249's 60th round leaves the heat a few ulps
+under 1, and the PKM's 50th crosses at 1.0099996 and drains back under it, so
+the first refusals come after 61 and 51 rounds.
+
+**What was built.**
+
+- `fire-state.js` `FireState.trigger(held)`: the caller reports the trigger
+  before `step`. The heat's tick loop closes each tick with the held pull,
+  which starts the lockout when the reload, the lockout and the fire timer are
+  out and the heat is 1 or more. `canFire` is still a pure getter, because the
+  HUD and the hooks read it every frame.
+- The heat's add and drain are float32, as the engine stores them. In doubles
+  the PKM's 50th round stays over 1 after its drain.
+- `hand-fire.js` reports `triggerHeld` (armed, not reloading) before stepping
+  the item's heat. `world-vehicle-tick.js` reports each seat gun's trigger
+  before its step, a two-hunk change.
+- A caller that never reports the trigger keeps the old rule, the lockout at
+  the crossing round. The only such caller is `replay-hud.js` `gunStateAt`,
+  which has only the recorded rounds. For it a crossing round stands in for a
+  trigger still held.
+
+**How it was checked.** `tests/test_hand_heat.py` now runs the binary's law in
+float32 (`engineHold` in `hand_heat_harness.mjs`: the pull through the three
+gates, then `handleUpdate`) beside the page's order:
+
+| Gun, held 30 s | First refusal, engine | Page, before | Page, now | Rounds in 30 s, engine / now |
+|---|---|---|---|---|
+| DC M249 (hand, 60 fps) | 61 | 60 | 61 | 68 / 68 |
+| DC PKM (hand, 60 fps) | 51 | 50 | 51 | 56 / 56 |
+| Vanilla stationary MG42 (seat) | 38 | 38 | 38 | 44 / 44 |
+| Vanilla pintle Browning (seat) | 38 | 38 | 38 | 44 / 44 |
+| Vanilla coaxial Browning (seat) | 25 | 25 | 25 | 29 / 29 |
+
+The seat guns fire every round on the engine's own tick for the whole 30 s.
+After the first lockout a held trigger fires 0.2 to 0.3 rounds a second, as the
+engine does; before, it fired 0.4 to 0.5. An M249 let go on its crossing round
+gets no lockout and is cold again within 10 s.
+
+**Open.**
+
+- `replay-hud.js` (not this package's file) could report the trigger as held
+  between a crossing round and the next recorded round. It would then show
+  the engine's lockout, restarts included. Today it keeps the single lockout.
+- GUN-15's tick-order question stands. Both orders give the same count per
+  cycle; they differ only in which half of the tick the drain lands on.
