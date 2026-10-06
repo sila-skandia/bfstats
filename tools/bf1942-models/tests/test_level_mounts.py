@@ -229,11 +229,15 @@ class MountTests(unittest.TestCase):
                                      "bf1942/levels/L/x.con", "objects/a_b/x.con"]),
                          ["objects/_a/x.con", "Objects/A/x.con", "objects/a_b/x.con",
                           "objects/b/x.con", "bf1942/levels/L/x.con"])
-        # `/ai/` paths are never run (`loadAllConFiles` keys less them),
-        # however much a name they hold would sort ahead.
-        self.assertEqual(load_order(["objects/ai/z.con", "objects/a/x.con",
-                                     "objects/v/4,1inchl65skc33/ai/objects.con"]),
-                         ["objects/a/x.con"])
+        # LOAD-8: `/ai/` and `\ai\` paths run only on an AI level, which
+        # the viewer's game with bots is, and then in path order with the
+        # rest. A multiplayer load without bots keys less them.
+        names = ["objects/ai/z.con", "objects/a/x.con",
+                 "objects/v/4,1inchl65skc33/ai/objects.con", "Objects\\W\\AI\\Weapons.con"]
+        self.assertEqual(load_order(names),
+                         ["objects/a/x.con", "objects/ai/z.con",
+                          "objects/v/4,1inchl65skc33/ai/objects.con", "Objects\\W\\AI\\Weapons.con"])
+        self.assertEqual(load_order(names, ai_level=False), ["objects/a/x.con"])
 
     def test_a_level_load_takes_only_the_objects_scripts_it_runs(self) -> None:
         """LOAD-8: `loadAllConFiles("objects/")` never walks a level archive,

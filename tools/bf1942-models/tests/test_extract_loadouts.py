@@ -515,5 +515,65 @@ class LevelLoadTests(unittest.TestCase):
         self.assertNotIn("US_Only", manifest["kits"])
 
 
+def _game_dir() -> Path | None:
+    import os
+    from extract_models import DEFAULT_GAME_DIR
+    game = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+    return game if (game / "Mods" / "DesertCombat").is_dir() else None
+
+
+def _retail_manifest(mod: str) -> dict:
+    """`extract_loadouts.py --mod <mod>`'s manifest, without the lexicon."""
+    from extract_loadouts import read_chain_levels
+    from extract_models import mod_chain
+    census, loadouts, level_loads = read_chain_levels(mod_chain(_game_dir(), mod))
+    return build_manifest(census.library, collect(census.library), loadouts, mod,
+                          level_loads=level_loads, read=census.read)
+
+
+@unittest.skipIf(_game_dir() is None, "no Desert Combat install")
+class RetailAiWeaponTests(unittest.TestCase):
+    """Every `weaponTemplate.create` is in a `<weapon>/AI/Weapons.con`, which
+    `loadAllConFiles` runs on an AI level (LOAD-8). With `/ai/` dropped, DC
+    kept 7 of its 44 entries and vanilla 6, all from level copies."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dc = _retail_manifest("DesertCombat")["aiWeapons"]
+        cls.vanilla = _retail_manifest("bf1942")
+
+    def test_desert_combat_keeps_every_firearms_ai(self) -> None:
+        self.assertGreaterEqual(len(self.dc), 44)
+        self.assertEqual({"aiTemplate": "AK47AI", "burst": 1, "deviation": 5.0,
+                          "deviationCorrectionTime": 10.0, "indirect": 0,
+                          "minRange": 0.0, "maxRange": 175.0,
+                          "weaponActivate": "PIMenuSelect3", "weaponFire": "PIFire",
+                          "strength": {"Infantry": 5.0, "LightArmour": 1.0,
+                                       "HeavyArmour": 0.0, "NavalArmour": 0.0,
+                                       "Submarine": 0.0, "Air": 2.0},
+                          "soundSphereRadius": 120.0, "healing": False},
+                         self.dc["AK47"])
+        self.assertEqual("StingerRPG", self.dc["Stinger"]["aiTemplate"])
+        # The tree's file, made 09-30 before `/ai/` was dropped, when present:
+        # every entry it has comes back the same.
+        tree = (Path(__file__).resolve().parents[1] / "viewer" / "maps" / "mods"
+                / "desertcombat" / "_shared" / "loadouts.json")
+        if tree.is_file():
+            import json
+            for name, entry in json.loads(tree.read_text())["aiWeapons"].items():
+                self.assertEqual(entry, self.dc.get(name), name)
+
+    def test_vanilla_gives_every_carried_item_that_names_an_ai_template(self) -> None:
+        ai = self.vanilla["aiWeapons"]
+        self.assertEqual(24, len(ai))
+        held = {item for row in self.vanilla["kits"].values() for item in row["items"]}
+        # The other four carry no `ObjectTemplate.aiTemplate`.
+        self.assertEqual({"Binoculars", "Detonator", "ExpPack", "Landmine"}, held - set(ai))
+        # The mod's own file, not Kasserine Pass's level copy (Infantry 10),
+        # which was the only one left with `/ai/` dropped.
+        self.assertEqual(2.0, ai["Bazooka"]["strength"]["Infantry"])
+        self.assertEqual("K98AI", ai["K98"]["aiTemplate"])
+
+
 if __name__ == "__main__":
     unittest.main()

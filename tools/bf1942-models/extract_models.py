@@ -450,24 +450,34 @@ def _rebase_sound_scripts(text: str, from_folder: str, to_folder: str) -> str:
 _ASCII_FOLD = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 
-def load_order(names: list[str]) -> list[str]:
+def load_order(names: list[str], ai_level: bool = True) -> list[str]:
     """An objects pool's script names in the order the engine runs them.
 
     `Game::loadAllConFiles` (lnxded 0x0805a830) lists `objects/` through the
-    FileManager, keys every name holding `.con` (less `/ai/` paths) into a
-    `std::map` ordered by `NoCaseStringCompare` (`insert_unique` at
-    0x0805b284), and runs the map front to back (0x0805ab6d). One path
-    shipped by two mods is one key, opened from the nearest mod (RFA-1); the
-    order is the paths', not the mods'. With the first `create` of a name
-    winning (LOAD-1), FH's `Items/BritKit/Medic/` declares `medic_helm_brit`
-    before FHSW's `Items/BritKit/MedicNo4/` redeclares it (LOAD-5). A level's
-    own scripts (`bf1942/levels/...`) are not under `objects/`; they keep the
-    order they came in, after the rest.
+    FileManager, keys every name holding `.con` into a `std::map` ordered by
+    `NoCaseStringCompare` (`insert_unique` at 0x0805b284), and runs the map
+    front to back (0x0805ab6d). One path shipped by two mods is one key,
+    opened from the nearest mod (RFA-1); the order is the paths', not the
+    mods'. With the first `create` of a name winning (LOAD-1), FH's
+    `Items/BritKit/Medic/` declares `medic_helm_brit` before FHSW's
+    `Items/BritKit/MedicNo4/` redeclares it (LOAD-5). A level's own scripts
+    (`bf1942/levels/...`) are not under `objects/`; they keep the order they
+    came in, after the rest.
+
+    `/ai/` and `\\ai\\` paths are keyed only on an AI level (LOAD-8): the
+    flag is `game->getIsAiLevel()` (vt+0xb0, read at 0x0805b31e) and, when it
+    is set, the name skips both tests (0x0805b1b3) and sorts with the rest.
+    Every weapon's `weaponTemplate` and every `coverValue` is in such a
+    script. The viewer's game has bots, which is an AI level
+    (`game.isAiLevel 1`, `Bf1942/Game/AIDefault.con`; parity-lab README), so
+    that is the default. `ai_level=False` is a multiplayer load without bots.
+    The `/ai/` scripts of vanilla, XPack1/2, DC and DC Final declare no
+    ObjectTemplate or GeometryTemplate, so models read the same either way.
     """
     level = [n for n in names if n.lower().startswith("bf1942/levels/")]
     rest = [n for n in names
             if not n.lower().startswith("bf1942/levels/")
-            and "/ai/" not in n.replace("\\", "/").lower()]
+            and (ai_level or "/ai/" not in n.replace("\\", "/").lower())]
     return sorted(rest, key=lambda n: n.replace("\\", "/").translate(_ASCII_FOLD)) + level
 
 
