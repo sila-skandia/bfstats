@@ -102,7 +102,8 @@ export function urgencyChange(bot, mod, now) {
     // the other free seats around. `isBailAllowed` 0x0855fd70: a soldier
     // must be able to stand where the hull is (the infantry map).
     const m = bot.vehicle;
-    const mine = cands?.find(c => c.id === m.id) ?? null;
+    // The seat he holds, a door-less one too (the artillery driver's).
+    const mine = hullCandidates(cands, m.vehicleId).find(c => c.id === m.id) ?? null;
     const hull = world?.occupiedDamageable?.(bot.playerId);
     const health = hull?.maxHitPoints > 0 ? hull.hitPoints / hull.maxHitPoints : (mine?.health ?? 1);
     // `calculateVehicleMoveUrgency`: a driver moves the hull; a rider moves
@@ -214,6 +215,9 @@ export function urgencyChange(bot, mod, now) {
   if (!cands?.length) { bot._changeResult = null; return 0; }
   const nav = bot.navGrid;
   const list = [];
+  // The seats a press of Use can reach: each has a door of its own. The
+  // engine also weighs a door-less seat here (AI-139), one its Use never
+  // seats him in; the list leaves those out (bot-units.js `doorless`).
   for (const c of cands) {
     if (c.occupiedBy) continue;
     // `BBChange::isMannedByEnemy` 0x0855fcb0, tested at 0x0855ea07 before
@@ -387,8 +391,11 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   const m = bot.vehicle;
   const seats = mine?.seats ?? m.seats ?? [];
   if (!seats.length) return null;
-  const cands = bot.vehicleCandidates ?? [];
-  const rootCand = cands.find(c => c.vehicleId === m.vehicleId && c.isRoot) ?? null;
+  // `BBChangeTeleport` weighs the hull's root and seats as AI units, door
+  // or none: the driver's seat of DC's artillery, whose doors all hang under
+  // the gun seat, is reached only this way (AI-139).
+  const cands = hullCandidates(bot.vehicleCandidates, m.vehicleId);
+  const rootCand = cands.find(c => c.isRoot) ?? null;
   const rootOccupied = !!(rootCand?.occupiedBy) && rootCand.occupiedBy !== bot.playerId;
   let where = 'root';
   if (!m.drives && !mine?.isRoot) {
@@ -407,7 +414,7 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   const rootU = rootCand && !rootOccupied && where !== 'root' ? uOf(rootCand) : 0;
   const others = [];
   for (const c of cands) {
-    if (c.vehicleId !== m.vehicleId || c.seatId === m.seatId || c.isRoot || c.occupiedBy) continue;
+    if (c.seatId === m.seatId || c.isRoot || c.occupiedBy) continue;
     others.push({ id: c.id, u: uOf(c), cand: c });
   }
   const orderFactor = bot.waypoints ? 1 : bot.botSkill;
@@ -417,6 +424,13 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
   if (!cand) return null;
   return { urgency: r.urgency, best: { id: cand.id, u: r.best.u, dist: 0, cand }, bail: false, teleport: true };
+}
+
+/** The candidates of one hull: its seats with a door, in the list, and the
+ *  seats with none riding on them (`bot-units.js` `doorless`). */
+export function hullCandidates(cands, vehicleId) {
+  const hull = (cands ?? []).filter(c => c.vehicleId === vehicleId);
+  return hull.length ? [...hull, ...(hull[0].doorless ?? [])] : hull;
 }
 
 /** Where `BBPChange`'s distances run from: the seat's own object. */

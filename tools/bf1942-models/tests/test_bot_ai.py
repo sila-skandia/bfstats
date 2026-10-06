@@ -773,6 +773,13 @@ class StalemateTests(unittest.TestCase):
         self.assertFalse(c["gunFront"])
         self.assertEqual(c["behind"], [True, True, False, False])
 
+    def test_the_seat_swap_reaches_a_driver_seat_with_no_door(self) -> None:
+        # `BBChangeTeleport` (AI-52) weighs the root as a unit, door or none.
+        w = self.s["swap"]
+        self.assertTrue(w["teleport"])
+        self.assertEqual(w["to"], "M-109")
+        self.assertIsNone(w["without"])
+
     def test_a_tank_under_a_high_target_backs_off(self) -> None:
         # 20 m of rise (the aim point 1 m up the target, the barrel 2 m up
         # the tank) inside 18 deg (the 20 deg top less 2): 61.6 m out.
