@@ -1366,6 +1366,38 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   }
 }
 
+// --- (z5) an abandoned hull's clock (SPAWN-13) -----------------------------------
+// A pad's hull left farther from its pad than its spawner's `Distance`, with
+// nobody in it and no soldier near, counts `timeToLive` down in 0.5 s steps and
+// then loses `damageWhenLost` a second; one near its pad keeps its clock full.
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'abandon', vehicles: undefined,
+    extras: {
+      ...base.extras,
+      objectSpawns: [{ vehicle: 'Willy', team: 1, position: [40, 0, 40], rotation: [0, 0, 0],
+                       minSpawnDelay: 5, maxSpawnDelay: 10, controlPointName: 'North',
+                       timeToLive: 2, distance: 5, damageWhenLost: 4 }],
+    },
+  };
+  core.levels.set('abandon', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pA = attachPeer(core, String(nextTag++));
+  sendJson(pA, MSG_JOIN, { room: 'ABANDON', name: 'Walker', team: 1, level: 'abandon' });
+  const room = core.room('ABANDON');
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  const willy = room.instance.table.find(e => e.template === 'Willy');
+  const hp = () => room.world.vehicleDamage.get(willy.owner).hitPoints;
+  step(Math.round(4 * 30));
+  const atPad = hp();
+  // Off its pad: the room's own pose answers through `vehiclePose`, and a
+  // descriptor hull with no body answers from its registration pose.
+  room.world.positions.set(willy.owner, [140, 0, 140]);
+  step(Math.round(4 * 30));
+  const away = hp();
+  results.z5 = { max: room.world.vehicleDamage.get(willy.owner).maxHitPoints, atPad, away };
+}
+
 // --- (z) the room's vehicle pads (SPAWN-2, SPAWN-10..SPAWN-19, HP-20) ------------
 // One pad under North, which changes hands: the Axis's Willy, the Allies'
 // Zero. The room stands the holder's template on it, a hull's death takes
