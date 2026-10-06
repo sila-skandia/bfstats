@@ -493,6 +493,19 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"a": 100, "b": 100, "level": 100}, t["before"])
         self.assertEqual({"a": 93, "b": 100, "level": 100}, t["after"])
 
+    def test_a_remote_pilots_rudder_and_lever_arrive_analogue(self) -> None:
+        # c_PIYaw and c_PIThrottle cross as retail's 12-bit channels (W-1,
+        # W-2): -0.37 and 0.6 arrive as -0.37 and 0.6 (the 12-bit step and
+        # the 0.01 snap), not as -1 and 1.
+        u = self.results["u"]
+        self.assertEqual(2, u["buffered"])
+        self.assertEqual(-0.37, u["rudder"])
+        self.assertEqual(0.6, u["forwardKeys"])
+        self.assertEqual(0.5, u["roll"])
+        # An older page's 14-byte record still flies: its signs.
+        self.assertEqual(-1, u["legacyRudder"])
+        self.assertEqual(1, u["legacyForwardKeys"])
+
 
 if __name__ == "__main__":
     unittest.main()
