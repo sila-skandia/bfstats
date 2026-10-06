@@ -46,7 +46,10 @@ the whole rattle when every round plays.
 
 **The rate itself was quantised.** Each round restarted the cooldown from a
 full period, so a round waited for the next whole frame. A 9 rps Mp40 fired
-8.57 rounds a second at 60 fps and 7.5 at 30 Hz.
+8.57 rounds a second at 60 fps and 7.5 at 30 Hz. *Reversed 2026-10-07:* the
+engine fires on whole ticks too (GUN-13: a round sets `timeToFireFinished`,
+it is not added to), so 7.5 at the world's 30 Hz is the engine's rate, and
+the referee sets the timer again (features/bot-desert-combat, section 9).
 
 **A soldier scored every target as infantry.** The weapon is chosen by its
 strength against the target's class, and the class was always Infantry. A
@@ -80,7 +83,7 @@ so he never fired it at a tank.
 | Piece | Where |
 |---|---|
 | A magazine is made only from the weapon's fire data (`magazineOf`), for every weapon carried. The held one reloads, once its last round's fire cycle is spent. A respawn refills the kit. A mounted bot's `magazineEmpty` is cleared, because a plane's attack plan reads it too | `viewer/bot-referee.js` |
-| The rate-of-fire timer keeps its fraction across a held burst and floors at 0 when idle, as the human's gun does (`gun-cycle.js`) | `viewer/bot-referee.js` `fireTick` |
+| The rate-of-fire timer is set to `1 / roundOfFire` by each round and runs down a tick at a time, flooring at 0 when idle, as the human's gun does (`gun-cycle.js`, GUN-13) | `viewer/bot-referee.js` `fireTick` |
 | `env.launchRound(bot, stats)`: true means the caller flew the round, so the referee does not resolve it. `env.onShot` still fires once per round, rockets included. The runner passes no hook and keeps its rays | `viewer/bot-referee.js` `fireTick` |
 | The page flies a rocket launcher's round, collected per bot off a clone of `models/<Weapon>.glb` (the pose glb carries only the drawn weapon). The group is tagged `firer` / `weapon`, fired down the bot's aim ray rolled into its deviation cone, and laid at the bot's drawn weapon node so the rear blast leaves the tube | `viewer/bot-rounds.js` (new); map.html wiring |
 | A round's hull and splash damage are billed to the round's firer (`roundFirer`), which is a bot for his flown rockets | `viewer/vehicle-hits.js` `applyVehicleHit` |
