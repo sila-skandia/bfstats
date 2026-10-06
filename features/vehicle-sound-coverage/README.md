@@ -757,12 +757,12 @@ All five are ledger rows with their addresses; this is what they say.
 
 ## Not done here
 
-* Release tails (SND-12): the viewer does not trigger slots 2..4 on release. At
-  5.7 and 5.1 rounds a second the M2A3 and BMP-2 release between every round, so
-  the game also plays `tigerrev` after each; the MG42 at 15 does so only when a
-  frame lands past 50 ms.
-* One-shots inside a looping Fire Loop (the stationary MG's shell layers): the
-  engine plays them once per press (the latch), the viewer drops them.
+* Release tails (SND-12): built since, and reaching the rack since D11 ("The
+  burst edges reached no rack"). The reading here, that a held M2A3 or BMP-2
+  releases between its rounds, was wrong: `handleMessage` holds +0x225 on
+  every tick the trigger is down, so a held gun releases once a burst.
+* One-shots inside a looping Fire Loop (the stationary MG's shell layers):
+  played once a press as the gun's `press` edge, since D11.
 * When a static object's sound is triggered is not traced; the per-emitter roll
   stands in for it.
 
