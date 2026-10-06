@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
 import { fireBarrel } from './round-launch.js';
+import { RocketMotor, isAirMotor, rocketMotorsOf } from './rocket-motor.js';
 import { GRAVITY } from './physics.js';
 import { WorldCollider } from './world-collider.js';
 import { buildHeightfield } from './heightfield.js';
@@ -156,6 +157,24 @@ export const BULLETS = {
   },
 };
 
+/** The motor-carried rockets of Desert Combat (and DC Final's TOW), off their
+ *  glbs: `[velocity, timeToLive, gravity, mass, drag, hasPointPhysics,
+ *  torque, differential, noPropellerEffectAtSpeed, body]`. Every engine is a
+ *  `c_ETRocket` at `0/0/2` (the SA-3's at 3) with `maxRotation 0/0/5000` and
+ *  `maxSpeed` / `acceleration 0/0/100000` (the Maverick's ten times that). */
+export const MOTORS = {
+  HydraRocket: [150, 20, 0, 5, 1.0, false, 250, 150, 1000, [0.237, 0.237, 1.293]],
+  HellfireRocket: [350, 50, 0, 5, 2.0, false, 150, 90, 1000, [0.221, 0.221, 1.612]],
+  Aim9: [350, 20, 0, 20, 0.5, false, 50, 30, 1000, [0.387, 0.447, 2.938]],
+  'AA-10': [500, 12, 0, 20, 0.5, false, 50, 30, 1000, [0.607, 0.607, 3.871]],
+  Rocket_MagicII: [300, 50, 0, 10, 0.1, false, 250, 150, 1000, [0.522, 0.522, 2.983]],
+  Rocket_Maverick: [200, 20, 0.1, 20, 0.3, false, 150, 30, 1000, [0.504, 0.471, 2.542]],
+  AT2Rocket: [350, 50, 0, 5, 1.0, false, 150, 90, 1000, [1.441, 1.461, 1.6]],
+  StingerMissile: [300, 1.3, 0, 20, 1.0, undefined, 30, 15, 1000, [0.083, 0.083, 1.291]],
+  'SA-3Rocket': [250, 1.3, 0, 500, 0.08, undefined, 100, 30, 250, [1.622, 1.622, 7.008]],
+  DefenderTOW: [150, 25, 0, 500, 0.1, undefined, 150, 90, 1000, [0.129, 0.112, 0.853]],
+};
+
 // --- a world ----------------------------------------------------------------
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -202,9 +221,9 @@ function world() {
   return new WorldCollider({ heightfield: field, waterLevel: null });
 }
 
-/** A launcher with one barrel, pitched `degrees` up, firing `name`'s round. */
-function launcher(name, degrees) {
-  const round = ROUNDS[name];
+/** A launcher with one barrel, pitched `degrees` up, `height` m over the
+ *  ground, firing `round` (one of the tables above, by `name`). */
+function launcher(round, name, degrees, height = 2) {
   const node = new THREE.Group();
   node.name = `${name}Launcher`;
   node.userData.fireArms = {
@@ -225,19 +244,20 @@ function launcher(name, degrees) {
   const root = new THREE.Group();
   root.name = name;
   root.add(node);
-  root.position.set(WORLD / 2, 2, -64);
+  root.position.set(WORLD / 2, height, -64);
   root.updateMatrixWorld(true);
   return root;
 }
 
 /** One round, fired and flown until it lands or its fuse ends. */
-function fly(name, degrees, { frame = 1 / 60 } = {}) {
+function fly(name, degrees, { frame = 1 / 60, round = ROUNDS[name], height = 2,
+                               marks = [1, 2, 5, 10] } = {}) {
   const scene = new THREE.Scene();
   const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
                              viewportHeight: () => 900 });
   guns.rand = () => 0.5;
   guns.collider = world();
-  const [group] = guns.collect(launcher(name, degrees), {
+  const [group] = guns.collect(launcher(round, name, degrees, height), {
     replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
     tracerLength: 'data',
   });
@@ -257,7 +277,7 @@ function fly(name, degrees, { frame = 1 / 60 } = {}) {
     apex = Math.max(apex, shot.mesh.position.y);
     const speed = shot.velocity.length();
     maxSpeed = Math.max(maxSpeed, speed);
-    for (const mark of [1, 2, 5, 10]) {
+    for (const mark of marks) {
       if (speedAt[mark] === undefined && t >= mark - 1e-9) speedAt[mark] = round3(speed);
     }
   }
@@ -289,6 +309,75 @@ out.frameRate = {
   at30: fly('MLRSRocket', 45, { frame: 1 / 30 }),
   at144: fly('MLRSRocket', 45, { frame: 1 / 144 }),
 };
+
+// --- motors: what each rocket's own Engine does to it ------------------------
+
+/** A `MOTORS` row as the round `assemble.py` would bake. */
+function motorRound(name) {
+  const [velocity, ttl, gravity, mass, drag, point, torque, differential,
+         fade, body] = MOTORS[name];
+  const fast = name === 'Rocket_Maverick' ? 1000000 : 100000;
+  return {
+    velocity, body,
+    projectile: {
+      template: name, kind: 'rocket', timeToLive: ttl, gravity, mass, drag,
+      ...(point === undefined ? {} : { hasPointPhysics: point }),
+      damage: { damageType: 1, hasCollisionEffect: true, dieAfterColl: true },
+      parts: [{
+        template: `${name}_Engine`, kind: 'Engine',
+        position: [0, 0, name === 'SA-3Rocket' ? 3 : 2], rotation: [0, 0, 0],
+        engineType: 'c_ETRocket', torque, differential,
+        noPropellerEffectAtSpeed: fade, maxRotation: [0, 0, 5000],
+        maxSpeed: [0, 0, fast], acceleration: [0, 0, fast],
+      }],
+    },
+  };
+}
+
+// The motor on its own, at the engine's 30 Hz: the throttle servo, the revs
+// and the push, held at a constant speed so only the gearbox moves.
+{
+  const part = ROUNDS.MLRSRocket.projectile.parts[1];
+  const motor = new RocketMotor(part);
+  const ticks = [];
+  for (let i = 1; i <= 120; i++) {
+    const accel = motor.tick(1 / 30, 100, 10, false);
+    if ([1, 3, 6, 9, 10, 30, 60, 120].includes(i)) {
+      ticks.push({ tick: i, t1: round3(motor.t1), revs: round3(motor.revs),
+                   accel: round3(accel) });
+    }
+  }
+  const high = new RocketMotor(part);
+  for (let i = 0; i < 120; i++) high.tick(1 / 30, 100, 1000, false);
+  const wet = new RocketMotor(part);
+  for (let i = 0; i < 60; i++) wet.tick(1 / 30, 100, 10, false);
+  const wetPush = wet.tick(1 / 30, 100, -1, true);
+  out.motorAlone = {
+    ticks,
+    ratio: round3(motor.ratio),
+    // At 1000 m the speed term vanishes and K is the revs' own.
+    highK: round3(high.accel / high.ratio), highRevs: round3(high.revs),
+    wet: { push: wetPush, revs: wet.revs },
+    // Which parts get a motor at all.
+    motorsOf: {
+      rocket: isAirMotor({ kind: 'Engine', engineType: 'c_ETRocket' }),
+      torpedo: isAirMotor({ kind: 'Engine', engineType: 'c_ETTorpedo' }),
+      plane: isAirMotor({ kind: 'Engine', engineType: 'c_ETPlane' }),
+      wing: isAirMotor({ kind: 'Wing' }),
+      silkworm: (rocketMotorsOf({ parts: [
+        { kind: 'Engine', engineType: 'c_ETRocket' },
+        { kind: 'Engine', engineType: 'c_ETTorpedo' }] }) || []).length,
+      shell: rocketMotorsOf({ kind: 'shell' }),
+    },
+  };
+}
+
+// Level, 60 m up, where the air density is 0.94 of the ground's.
+out.motor = {};
+for (const name of Object.keys(MOTORS)) {
+  out.motor[name] = fly(name, 0, { round: motorRound(name), height: 60,
+                                   marks: [0.5, 1, 2, 5, 10, 20, 40] });
+}
 
 // --- bullets: the tracer path falls by its own data -------------------------
 
