@@ -106,9 +106,16 @@ Accumulators:
 
 ```
 speedAcc = M·speedDev.b·[|in[3]| > 0.01]  +  M·speedDev.c·[|in[0]| > 0.01]   (binary gates)
-turnAcc  = M·turnDev.b·|in[5]|            +  M·turnDev.c·|in[4]|             (analog scaled)
+turnAcc  = M·turnDev.b·|in[5]|·[|in[5]| > 0.01]
+         + M·turnDev.c·|in[4]|·[|in[4]| > 0.01]                               (analog, gated)
 miscAcc  = M·miscDev.b·[bool arg]                                            (jump, see below)
 ```
+
+`in` is the soldier's stored PlayerInput (`getPlayerInput`, `this + 0x40c`),
+the tick's input copied verbatim before `handlePlayerInput` applies the zoom
+factor and the recoil to its own copy (DEV-10). So the look terms are in the
+input's own unit, GUN-2b's `0.001 x counts/s x (5 x sensitivity + 0.1)`: 1.0
+of `in[4]` turns the soldier 3 degrees a tick, a 90 deg/s swing.
 
 Per-channel update, identical for speed / turn / misc
 (cap = `arg_a·M`, decay = `arg_decay / M`):

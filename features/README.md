@@ -88,7 +88,7 @@ folder answers.
 | [bf1942-blast-and-bounce](bf1942-blast-and-bounce/README.md) | build | How much does a blast hurt a soldier, and why do fused rounds bounce? |
 | [plane-bombs-and-torpedoes](plane-bombs-and-torpedoes/README.md) | design | How do retail plane bombs and torpedoes behave, and how were they built? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
-| [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, and how does a hand MG overheat? |
+| [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, and what opens the cone on a swing? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
 | [viewer-collision-damage](viewer-collision-damage/README.md) | research | What does retail do when vehicles collide, burn and are destroyed? |
 | [viewer-demolitions-and-spawn-safety](viewer-demolitions-and-spawn-safety/README.md) | fix | How do ExpPack and detonator work, and why did soldiers spawn inside buildings? |

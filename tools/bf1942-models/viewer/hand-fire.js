@@ -2,7 +2,6 @@
 // the throw's wind-up), the rounds on the bots, the reload clock, zoom and
 // the two fields of view, the deviation inputs, the recoil kick, and the
 // `guns.onShot` / `roundsLeft` hooks every gun on the page fires through.
-// Owns the mouse-look accumulators the deviation reads (`footLookX/Y`).
 // Lifted out of hand-weapon.js (features/vehicle-instance-refactor).
 
 import * as THREE from 'three';
@@ -21,7 +20,7 @@ import { calcRecoil } from './recoil.js';
  * `aimHeld`, `applyDamage`, `applyHeal`, `bodyAt`, `botRoundDamage`, `bots`, `camera`, `capsulesOf`, `captured`,
  * `clickQueued`, `damageVisuals`, `deployTeamId`, `dropClick`, `fireDetonator`, `fireStates`,
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
- * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `packThrown`, `params`, `playHandFire`,
+ * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `mouseInput`, `packThrown`, `params`, `playHandFire`,
  * `playViewmodelClip`, `refetchHandFireSound`, `releaseHandFireLoop`,
  * `soldier`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
  * `world`.
@@ -125,14 +124,6 @@ export function createHandFire(page) {
   const FOV_SNAP = 0.001;
   const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
   const DEG_TO_RAD = Math.PI / 180;
-
-  fire.footLookX = 0;        // |MouseLookX| radians accumulated since last frame
-  fire.footLookY = 0;        // |MouseLookY| likewise
-  /** The look this tick applied, summed until `footFire` drains it. */
-  fire.addFootLook = look => {
-    fire.footLookX += Math.abs(look.yaw);
-    fire.footLookY += Math.abs(look.pitch);
-  };
 
   /**
    * Is the weapon in hand zoomed right now. Toggle weapons (`altFireOnce`,
@@ -403,12 +394,6 @@ export function createHandFire(page) {
    */
   function footFire(dt, input = null) {
     const hw = page.handWeapon;
-    // Drained even bare-handed, or the first frame holding a weapon would see
-    // every radian turned since it was picked up.
-    const lookX = dt > 0 ? fire.footLookX / dt : 0;
-    const lookY = dt > 0 ? fire.footLookY / dt : 0;
-    fire.footLookX = 0;
-    fire.footLookY = 0;
     if (!hw) return;
     page.guns.firstPerson = true;   // the 0.4 m `em_1P_*` sprite, not the 1.76 m mesh
 
@@ -496,12 +481,18 @@ export function createHandFire(page) {
     // stand-in for that mask. `dt` here is the frame's; the model converts it
     // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
     // so the cone decays at the same rate on every monitor.
+    //
+    // The look is what `updateDeviation` reads off the soldier's stored
+    // PlayerInput (DEV-10): the device's held `c_PIMouseLookX/Y` for this
+    // frame's ticks (`local-look.js`'s `MouseInput`), in the engine's own
+    // unit, before the zoom factor and the recoil ride, which only the
+    // view's copy of the input carries.
     hw.model.update(dt, {
       stance: page.soldier.stance,
       throttle: input?.forward ?? 0,
       strafe: input?.strafe ?? 0,
-      lookX,
-      lookY,
+      lookX: page.mouseInput?.x ?? 0,
+      lookY: page.mouseInput?.y ?? 0,
       jumping: !page.soldier.grounded,
     });
 

@@ -14,13 +14,14 @@
 //   returns 1.0 for a non-soldier holder), per update tick:
 //
 //     speedAcc = M·speed.b·[|throttle| > 0.01] + M·speed.c·[|strafe| > 0.01]
-//     turnAcc  = M·turn.b·|mouseLookY|         + M·turn.c·|mouseLookX|
+//     turnAcc  = M·turn.b·|mouseLookY|·[|mouseLookY| > 0.01]
+//              + M·turn.c·|mouseLookX|·[|mouseLookX| > 0.01]
 //     miscAcc  = M·misc.b·[jumping]
 //
 //   The speed gates are BINARY on the deadzone (constant increments, not
 //   scaled by how fast the soldier actually moves); the turn terms are
-//   analog in the look input. Each channel then updates identically
-//   (cap = a·M, decay = d/M):
+//   analog in the look input behind the same deadzone (DEV-10). Each channel
+//   then updates identically (cap = a·M, decay = d/M):
 //
 //     acc == 0:      state = max(state − decay, 0)
 //     state < cap:   state = clamp(state + M·acc − decay, 0, cap)
@@ -46,10 +47,15 @@
 // one buffered input into `handlePlayerInput(..., 1/30)` (corpus doc §2,
 // "Clock"). So a per-tick amount in a .con file is a per-1/30-s amount.
 //
+// The look is the engine's own unit (DEV-10, closed 2026-10-06): the
+// soldier's stored `PlayerInput[c_PIMouseLookX/Y]`, the device's held axis
+// `0.001 x counts/s x (5 x sensitivity + 0.1)` (GUN-2b, `mouse-input.js`),
+// before the zoom factor and the recoil ride, which only the view's own copy
+// carries. A view swung at 90 deg/s of yaw is `mouseLookX` 1.0 (the soldier
+// turns `3 x` it in degrees a tick). Every vanilla weapon ships
+// `setTurnDev 0 0 0 0`; Desert Combat's rifles and machine guns do not.
+//
 // What remains OPEN, each marked at its declaration:
-//   - The units of MouseLookX/Y. This module takes view slew in rad/s and
-//     samples it per tick; every vanilla weapon ships `setTurnDev 0 0 0 0`,
-//     so nothing shipped can calibrate (or feel) the scale.
 //   - The AT/thrown family (`minDeviation` / `maxDeviation`) speaks a
 //     different .con vocabulary registered in a different console block
 //     (corpus doc §7); the floor-and-lid reading here is the stand-in.
@@ -108,9 +114,10 @@ export class DeviationModel {
     /**
      * The inputs, named for the engine's PlayerInput channels: `throttle` is
      * c_PIThrottle (W/S), `strafe` is c_PIYaw (A/D — strafe, the mouse turns
-     * you), `lookX`/`lookY` are MouseLookX/Y as view slew in rad/s (units
-     * OPEN, see the header), `jumping` gates miscDev. There is deliberately
-     * no `aiming` input: zoom has no effect on deviation.
+     * you), `lookX`/`lookY` are PlayerInput[c_PIMouseLookX/Y] as the tick
+     * reads them (engine units, see the header), `jumping` gates miscDev.
+     * There is deliberately no `aiming` input: zoom has no effect on
+     * deviation.
      */
     this.state = {
       stance: 'stand', throttle: 0, strafe: 0, lookX: 0, lookY: 0,
@@ -175,9 +182,10 @@ export class DeviationModel {
     const s = this.state;
     const M = this.devMod();
     const gate = v => (Math.abs(v) > INPUT_DEADZONE ? 1 : 0);
-    // Per-tick look samples out of the rad/s rates (cadence in the header).
-    const lookY = Math.abs(s.lookY) / TICK_HZ;
-    const lookX = Math.abs(s.lookX) / TICK_HZ;
+    // The look terms: the input's own magnitude, behind the deadzone
+    // (`HandFireArms::updateDeviation` lnxded 0x08293ff6 / 0x08294015).
+    const lookY = gate(s.lookY) * Math.abs(s.lookY);
+    const lookX = gate(s.lookX) * Math.abs(s.lookX);
     if (d.speed) {
       this.speed = this.#channel(this.speed, d.speed[0], d.speed[3], M,
         M * ((d.speed[1] ?? 0) * gate(s.throttle)
