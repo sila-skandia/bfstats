@@ -196,14 +196,29 @@ function clearAndRestart() {
   vehicleDamage.get(1).damage(80);          // burning, not destroyed
   wrecks.damageVisuals.get(2).wrecked = true;
   wrecks.damageVisuals.get(2).hidden = [];
+  // What stays: an armoured object that is not a PlayerControlObject, and one
+  // a spawn effect stood up (its own module removes it, HP-20).
+  const keep = [hull(), hull()];
+  keep[0].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'SimpleObject' };
+  keep[1].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'PlayerControlObject' };
+  wrecks.registerDamageable?.(3, keep[0].node);
+  wrecks.registerDamageable?.(4, keep[1].node, { spawned: true });
+  if (!wrecks.registerDamageable) {
+    // This branch predates `registerDamageable`; the visuals are what count.
+    for (const [o, h] of [[3, keep[0]], [4, keep[1]]]) {
+      wrecks.damageVisuals.set(o, { node: h.node, anchors: new Map(), handles: [], spawnDelay: null });
+    }
+  }
+  wrecks.damageVisuals.get(4).spawned = true;
   wrecks.clearWorld();
+  const kept = keep.map(h => ({ visible: h.node.visible, cleared: !!h.node.userData.cleared }));
   const after = [0, 1, 2].map(o => ({
     removed: !!wrecks.damageVisuals.get(o).removed, alive: wrecks.padWorld.alive(nodes[o].node),
     cleared: !!nodes[o].node.userData.cleared, collision: !disabled.has(o) }));
   const spawned = [0, 1].map(o => wrecks.padWorld.spawn(nodes[o].node));
   wrecks.restartHulls();
   return {
-    after, retired, spawned,
+    after, retired, spawned, kept,
     back: [0, 1, 2].map(o => ({ removed: !!wrecks.damageVisuals.get(o).removed,
                                 cleared: !!nodes[o].node.userData.cleared, hp: vehicleDamage.get(o).hitPoints,
                                 collision: !disabled.has(o) })),
