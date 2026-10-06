@@ -74,10 +74,9 @@ const SLEEP_TICKS = 100;
  *
  * The last contact height (`Armor+0x28`) is the object's own origin height at
  * contact, raised while it is airborne, so at a frame where the gate passes it
- * is taken here to be the origin's height now. "Touched" is the engine's own
- * `handleCollision` test for terrain, a tested col0 vertex at or under the
- * ground moving faster than `sqrt 0.1` (collision-response.md section 7), or a
- * hull contact the body world resolved; "asleep" is a parked body's own sleep,
+ * is taken here to be the origin's height now. "Touched" is the body world's
+ * own `handleCollision` stand-ins this step, which run before the resolve as
+ * the engine's do (`touchesSomething`); "asleep" is a parked body's own sleep,
  * or for a driven one 100 ticks under the speed and spin wake bounds (the
  * acceleration bound is not tested).
  */
@@ -110,7 +109,7 @@ export function upsideDownOwners(world) {
     }
     if (!(tilt < UPSIDE_DOWN_COS)) continue;
     const asleep = entry.driven ? (entry._quietTicks ?? 0) >= SLEEP_TICKS : !!body.sleeping;
-    if (asleep || touchesSomething(entry, body, field)) owners.add(owner);
+    if (asleep || touchesSomething(entry, body, field, world.bodyWorld?.touched?.has?.(owner))) owners.add(owner);
   }
   return owners;
 }
@@ -119,10 +118,22 @@ const _normal = [0, 1, 0];
 const _contact = [0, 0, 0];
 const _speed = [0, 0, 0];
 
-/** `handleCollision` fired for this hull this tick: a resolved hull contact,
- *  or any part's tested col0 vertex at or under the terrain moving faster
- *  than `sqrt 0.1` (`checkVsTerrain`, collision-response.md section 7). */
-function touchesSomething(entry, body, field) {
+/**
+ * `handleCollision` fired for this hull this tick (`Armor+0x129`, HP-18).
+ * First the body world's own record (`BodyWorld.touched`): its contact
+ * handlers run before the resolve, as the engine's do, so a parked hull lying
+ * on its roof is touching every tick it is awake, and retail bills an
+ * unmanned Humvee_TOW on its roof 5 HP at each whole second from the first
+ * (DC lab, 2026-10-07). Then a driven hull's resolved contact, or any part's
+ * tested col0 vertex at or under the terrain: a driven hull's own drive clamps
+ * its velocity at the ground, so the speed read here is after the fact; the
+ * engine's awake body meets the ground at gravity's one tick at least
+ * (0.49 m/s, over `sqrt 0.1`), so for it a vertex in the ground is a contact.
+ * A parked hull's vertex still needs the speed (`checkVsTerrain`,
+ * collision-response.md section 7).
+ */
+function touchesSomething(entry, body, field, touched = false) {
+  if (touched) return true;
   if (entry.driven?.vehicle?.hullContacts?.length) return true;
   for (const part of entry.parts) {
     const layer = part.shape?.layers?.[0];
@@ -133,6 +144,7 @@ function touchesSomething(entry, body, field) {
       part.worldVertex(0, i, _vertex);
       const h = field.height(_vertex[0], _vertex[2]);
       if (!(_vertex[1] - h <= 0)) continue;
+      if (entry.driven) return true;
       _contact[0] = _vertex[0]; _contact[1] = h; _contact[2] = _vertex[2];
       body.tangentSpeed(_contact, _speed);
       if (_speed[0] * _speed[0] + _speed[1] * _speed[1] + _speed[2] * _speed[2] > 0.1) return true;

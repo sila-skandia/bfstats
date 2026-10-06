@@ -250,7 +250,8 @@ export class DamageableVehicle {
     const out = { hull: 0, crew: 0 };
     const sub = this.submarine;
     if (!sub || this.armor.destroyed) return out;
-    this.submarineAccumulator += dt;
+    // A float, as `+0x19c` is: 15 ticks of 1/30 s reach 0.5 here, 16 in a double.
+    this.submarineAccumulator = Math.fround(this.submarineAccumulator + Math.fround(dt));
     if (this.submarineAccumulator < 0.5) return out;
     const elapsed = this.submarineAccumulator;
     this.submarineAccumulator = 0;
@@ -328,9 +329,12 @@ export class DamageableVehicle {
     // holds a second the hull is tested THEN (`upsideDown`, which the caller
     // answers by `world-damage.js` `upsideDownOwners`), billed the whole bank
     // times `hpLostWhileUpSideDown` (`0x081734a6`), and the bank emptied either
-    // way. A hull rolled over is billed 0 to 1 s later, never before.
+    // way. A hull rolled over is billed 0 to 1 s later, never before. The bank
+    // is a float (`fstp` to `+0xe8`): 30 ticks of 1/30 s fill it, where a
+    // double needs 31 and bills 5.17 HP every 1.03 s. Retail bills 5.0 at
+    // each whole second (DC lab, an unmanned Humvee_TOW on its roof).
     if (!this.armor.destroyed) {
-      this.upsideDownAccumulator += dt;
+      this.upsideDownAccumulator = Math.fround(this.upsideDownAccumulator + Math.fround(dt));
       if (this.upsideDownAccumulator >= 1) {
         if (upsideDown && this.hpLostWhileUpSideDown > 0.01) {
           const amount = this.upsideDownAccumulator * this.hpLostWhileUpSideDown;

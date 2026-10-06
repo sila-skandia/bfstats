@@ -415,6 +415,20 @@ own test and `vehicle-damage.js` bills the whole one-second bank (HP-17).
 once it has lain still 3.3 s and is wrecked at 23 s; an AH-64 held on its back
 is billed 103 HP at 4.1 s and wrecked at 5.2 s (`ground_sim.mjs flip`).
 
+**Corrected in review (2026-10-07), against retail.** The DC lab's unmanned
+Humvee_TOW on its roof lost 5 HP at each whole second for the 2.8 s it lay
+there, without sleeping. The engine's contact handlers run before the resolve,
+when a resting body still carries gravity's one tick (0.49 m/s, over
+`sqrt 0.1`), so it is touching every tick it is awake; the viewer had read the
+speed after the resolve. And `Armor+0xe8` is a float, which 30 ticks of 1/30 s
+fill, where a double needs 31 (hence the 5.17 every 1.03 s). Now the body
+world records its own contacts per step (`BodyWorld.touched`), a driven hull
+with its roof in the ground counts as touching, and the bank accumulates as a
+float: the runner's unmanned Humvee_TOW goes 100, 95, 90, 85 at 1.0, 2.0,
+3.0 s, and the dropped Bragg Humvee loses 5 at each whole second from 1.0 s.
+`submarineData`'s 0.5 s bank (`+0x19c`) is a float too and now fills in 15
+ticks.
+
 ## CW10, G7. Steering direction and `c_PIPitch`
 
 Each steered wheel now turns as its own bundle does (`axisAngle` on its own yaw

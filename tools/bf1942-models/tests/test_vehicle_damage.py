@@ -619,18 +619,20 @@ class UpsideDownTickTests(unittest.TestCase):
 
     def test_the_bank_bills_its_whole_contents(self) -> None:
         bills = self.results["fromSpawn"]["bills"]
-        # 30 steps of 1/30 s land just under 1.0, so the bank fires on the
-        # 31st holding 1.033 s, and bills 10.33 of the Sherman's 10 a second.
+        # The bank is a float, as `+0xe8` is: 30 steps of 1/30 s fill it (a
+        # double lands just under 1.0 and needs a 31st), so it bills the
+        # Sherman's 10 a second at each whole second, as retail bills a
+        # Humvee_TOW its 5 (DC lab, 2026-10-07).
         self.assertEqual(3, len(bills))
         for bill in bills:
-            self.assertAlmostEqual(10.333, bill["amount"], places=3)
-        self.assertAlmostEqual(69, self.results["fromSpawn"]["hp"], places=3)
+            self.assertAlmostEqual(10, bill["amount"], places=4)
+        self.assertAlmostEqual(70, self.results["fromSpawn"]["hp"], places=3)
 
     def test_a_late_roll_waits_for_the_bank_and_is_billed_all_of_it(self) -> None:
         late = self.results["rolledLate"]
         self.assertEqual(1, len(late["bills"]))
-        self.assertAlmostEqual(1.033, late["bills"][0]["at"], places=3)
-        self.assertAlmostEqual(10.333, late["bills"][0]["amount"], places=3)
+        self.assertAlmostEqual(1, late["bills"][0]["at"], places=3)
+        self.assertAlmostEqual(10, late["bills"][0]["amount"], places=4)
 
     def test_an_upright_hull_is_never_billed_but_its_bank_still_turns(self) -> None:
         upright = self.results["upright"]
@@ -665,8 +667,8 @@ class SubmarineDataTests(unittest.TestCase):
         # 0.3 s banks; 0.6 s in the bank pays 3 HP at once.
         self.assertEqual(97.5, seen[2]["hp"])
         self.assertAlmostEqual(0.3, seen[2]["bank"])
-        self.assertEqual(94.5, seen[3]["hp"])
-        self.assertEqual(89.5, seen[4]["hp"])
+        self.assertAlmostEqual(94.5, seen[3]["hp"], places=4)
+        self.assertAlmostEqual(89.5, seen[4]["hp"], places=4)
         # No 1st, so the crew never runs short.
         self.assertTrue(all(step["oxygen"] == 1 and step["crew"] == 0 for step in seen))
 
