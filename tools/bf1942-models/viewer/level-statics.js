@@ -5,6 +5,8 @@
 // cull. Out of level-load.js; `show()` indexes each level through it.
 
 import * as THREE from 'three';
+import { SpawnerPad, calcSpawnDelay, padControlPoint } from './deployables.js';
+import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 
 export function isCollision(obj) {
   return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
@@ -160,6 +162,141 @@ export function kindOf(obj) {
   return obj.userData?.kind || '';
 }
 
+/** The template a placed node stands for: its `control` tag (GLTFLoader
+ *  suffixes a repeated scene name, `Sherman_1`), else its name. */
+function padTemplateOf(node) {
+  return String(node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
+}
+
+function isKitNode(node) {
+  return node?.userData?.templateKind?.toLowerCase?.() === 'kit';
+}
+
+function findSpawnersRoot(root) {
+  let found = null;
+  root?.traverse?.(obj => {
+    if (!found && obj !== root && (kindOf(obj) === 'spawners' || obj.name === 'spawners')) found = obj;
+  });
+  return found;
+}
+
+/** The sides that can ever hold a pad (ledger SPAWN-12): both at a point that
+ *  changes hands, the point's own at one that cannot, none for a pad filed
+ *  under no point (it spawns its own `Object.setTeam` entry all round). */
+function padSides(spawn, points, anyOsId) {
+  const name = padControlPoint(spawn, points, anyOsId);
+  if (!name) return null;
+  const point = points.find(p => p?.name === name);
+  if (!point) return null;
+  if (point.unableToChangeTeam) return point.team === 1 || point.team === 2 ? [point.team] : [];
+  return [1, 2];
+}
+
+const _padAt = new THREE.Vector3();
+
+/** The level's own node for a pad: a spawners child of the pad's template,
+ *  the nearest one to the pad within `reach` metres, and not one another pad
+ *  has `claimed`. */
+function bakedPadNode(spawners, spawn, reach = 3, claimed = null) {
+  const want = String(spawn?.vehicle ?? '').toLowerCase();
+  const p = spawn?.position;
+  if (!want || !Array.isArray(p) || p.length !== 3) return null;
+  let best = null;
+  let bestD = reach;
+  for (const child of spawners.children) {
+    if (child.userData?.padVariant || isKitNode(child) || claimed?.has(child)) continue;
+    if (padTemplateOf(child).toLowerCase() !== want) continue;
+    child.getWorldPosition(_padAt);
+    const d = Math.hypot(_padAt.x - p[0], _padAt.y - p[1], _padAt.z - p[2]);
+    if (d < bestD) { best = child; bestD = d; }
+  }
+  return best;
+}
+
+/**
+ * The other side's vehicle for every pad that hands out a different template
+ * per side, added to the level's spawners group beside the one the level
+ * baked, at the same pose. The bake places one vehicle per pad, the one of
+ * the placement's own team; a pad at a flag that changes hands spawns the
+ * holder's (ledger SPAWN-2, SPAWN-12), so the holder's template is loaded
+ * from the models tree here, before anything indexes the scene, and the pad
+ * records (`indexScene`) choose which node stands on the pad. The node is
+ * the model glb's root, which is the scene's pad node less its LOD rungs (a
+ * parked hull draws at full detail anyway, `liftLods`) and its `spawner`
+ * stamp, copied from the baked one.
+ *
+ * `load(template)` resolves to a parsed glTF, or null; a template that does
+ * not load leaves its pad with the baked vehicle, as before (warned once).
+ * Returns the nodes added.
+ */
+export async function loadPadVariants(root, extras, { load = null } = {}) {
+  const spawns = extras?.objectSpawns;
+  const spawners = findSpawnersRoot(root);
+  if (!load || !spawners || !Array.isArray(spawns)) return [];
+  const points = Array.isArray(extras.controlPoints) ? extras.controlPoints : [];
+  const anyOsId = spawns.some(s => Number.isFinite(s?.osId));
+  root.updateMatrixWorld(true);
+  const wanted = [];
+  spawns.forEach((spawn, index) => {
+    if (!spawn?.templates) return;
+    const sides = padSides(spawn, points, anyOsId);
+    if (!sides?.length) return;
+    const baked = bakedPadNode(spawners, spawn);
+    if (!baked) return;
+    const have = new Set([padTemplateOf(baked).toLowerCase()]);
+    for (const team of sides) {
+      const name = spawn.templates[String(team)];
+      if (!name || have.has(name.toLowerCase())) continue;
+      have.add(name.toLowerCase());
+      wanted.push({ index, baked, template: name });
+    }
+  });
+  const loads = new Map();
+  for (const { template } of wanted) {
+    const key = template.toLowerCase();
+    if (!loads.has(key)) {
+      loads.set(key, Promise.resolve().then(() => load(template)).catch(error => {
+        console.warn(`[pads] ${template}: ${error?.message ?? error}`);
+        return null;
+      }));
+    }
+  }
+  const added = [];
+  // The model's root, once per template: the first pad takes it out of its
+  // glTF scene, the others take clones of it.
+  const sources = new Map();
+  const used = new Set();
+  for (const { index, baked, template } of wanted) {
+    const key = template.toLowerCase();
+    if (!sources.has(key)) {
+      const scene = (await loads.get(key))?.scene ?? null;
+      sources.set(key, scene?.children?.find(c => c.userData?.armor || c.userData?.templateKind)
+        ?? scene?.children?.[0] ?? null);
+    }
+    const source = sources.get(key);
+    if (!source) {
+      console.warn(`[pads] no model for ${template}: its pads keep ${padTemplateOf(baked)}`);
+      continue;
+    }
+    // A track is a skinned mesh: a plain clone would stay bound to the
+    // first pad's bones.
+    const node = used.has(source) ? skeletonClone(source) : source;
+    used.add(source);
+    node.position.copy(baked.position);
+    node.quaternion.copy(baked.quaternion);
+    node.scale.copy(baked.scale);
+    if (baked.userData?.spawner) node.userData.spawner = structuredClone(baked.userData.spawner);
+    node.userData.control ??= template;
+    node.userData.padVariant = true;
+    node.userData.objectSpawn = index;
+    baked.parent.add(node);
+    node.updateMatrixWorld(true);
+    added.push(node);
+  }
+  if (added.length) console.log(`[pads] ${added.length} other-side vehicles added`);
+  return added;
+}
+
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
  * as getters (a value the level reassigns is read live):
@@ -235,6 +372,7 @@ export function createLevelStatics(page) {
       cull.push(child);
     }
     tagVehicleControlPoints();
+    buildVehiclePads();
     flattenCull();
     freezeStatics(root);
   }
@@ -246,6 +384,11 @@ export function createLevelStatics(page) {
     const spawns = Array.isArray(page.extras.objectSpawns) ? page.extras.objectSpawns : [];
     const scratch = new THREE.Vector3();
     for (const vehicle of statics.spawnersRoot.children) {
+      // The other side's vehicle on a pad is filed under its pad's own entry.
+      if (vehicle.userData?.padVariant) {
+        vehicle.userData.controlPointName = spawns[vehicle.userData.objectSpawn]?.controlPointName ?? null;
+        continue;
+      }
       vehicle.getWorldPosition(scratch);
       const want = page.templateNameOf(vehicle).toLowerCase();
       let best = null;
@@ -280,7 +423,180 @@ export function createLevelStatics(page) {
     }
   }
 
+  // --- the vehicle pads ------------------------------------------------------
+  //
+  // Each `objectSpawns` entry with a node in the spawners group is one
+  // `SpawnerPad` (deployables.js), the engine's ObjectSpawner law: the side
+  // that holds the pad's flag picks the template (SPAWN-2, SPAWN-12), a pad at
+  // a neutral flag spawns nothing, the delay counts from a hull's destruction
+  // and is drawn by `calcSpawnDelay` (SPAWN-10, SPAWN-11, SPAWN-18), and a hull
+  // already spawned is never touched by the flag (SPAWN-19). `nodes` holds one node per
+  // template the pad can hand out: the level's baked one and the other side's
+  // (`loadPadVariants`), all at the pad's pose. `live` is the nodes standing
+  // in the world: the one the pad spawned last and any wreck of an earlier one
+  // not yet cleared. The ticking is `vehicle-wrecks.js`', which knows what is
+  // alive, destroyed and wrecked; `stepVehiclePads` takes its answers.
+
+  statics.pads = [];
+  let padRecords = new WeakMap();
+  let padsWorld = null;
+
+  /** The pad a spawners child stands on, or null. */
+  function padOf(node) {
+    return padRecords.get(node) ?? null;
+  }
+
+  /** The side holding a control point now: its flag's live team, else the
+   *  level's (a point that is no flag never changes hands); null for no point. */
+  function pointTeam(record) {
+    if (!record.point) return null;
+    if (padsWorld !== page.world) {
+      padsWorld = page.world;
+      for (const r of statics.pads) r.flag = undefined;
+    }
+    if (record.flag === undefined) {
+      record.flag = page.world?.flags?.find(f => f.controlPointName === record.point) ?? null;
+    }
+    if (record.flag) return record.flag.team ?? 0;
+    const point = page.extras?.controlPoints?.find(p => p?.name === record.point);
+    return point ? (point.team ?? 0) : null;
+  }
+
+  /** `ControlPoint::reset` / `gotControl` / `lostControl` on the pads filed
+   *  under the point (SPAWN-12). A decree that jumps sides goes through
+   *  neutral, as the engine always does. */
+  function followPoint(record) {
+    const team = pointTeam(record);
+    if (team == null || team === record.held) return;
+    if (record.held === 1 || record.held === 2) record.pad.disable(0);
+    if (team === 1 || team === 2) record.pad.enable(team);
+    else if (record.held == null) record.pad.disable(0);
+    record.held = team;
+  }
+
+  /** The node a pad's spawn of `template` stands up. A template whose model
+   *  did not load keeps the level's baked vehicle, as before. */
+  function padNode(record, template) {
+    const node = record.nodes.get(String(template).toLowerCase());
+    if (node) return node;
+    if (!record.warned) {
+      record.warned = true;
+      console.warn(`[pads] ${record.spawn.spawner}: no ${template} loaded, keeping ${padTemplateOf(record.baked)}`);
+    }
+    return record.baked;
+  }
+
+  function buildVehiclePads() {
+    statics.pads = [];
+    padRecords = new WeakMap();
+    padsWorld = null;
+    const spawns = page.extras?.objectSpawns;
+    const spawners = statics.spawnersRoot;
+    if (!spawners || !Array.isArray(spawns)) return;
+    const points = Array.isArray(page.extras.controlPoints) ? page.extras.controlPoints : [];
+    const anyOsId = spawns.some(s => Number.isFinite(s?.osId));
+    const variants = new Map();
+    for (const child of spawners.children) {
+      const index = child.userData?.objectSpawn;
+      if (!child.userData?.padVariant || !Number.isInteger(index)) continue;
+      if (!variants.has(index)) variants.set(index, []);
+      variants.get(index).push(child);
+    }
+    const claimed = new Set();
+    spawns.forEach((spawn, index) => {
+      const baked = bakedPadNode(spawners, spawn, 3, claimed);
+      if (!baked) return;
+      claimed.add(baked);
+      const nodes = new Map([[padTemplateOf(baked).toLowerCase(), baked]]);
+      for (const node of variants.get(index) ?? []) nodes.set(padTemplateOf(node).toLowerCase(), node);
+      // A pad filed under no point spawns its placement's entry. One with no
+      // side of its own keeps the vehicle the exporter baked for it, the
+      // `vehicles[2] or vehicles[1]` divergence SPAWN-2 records.
+      const team = Number.isInteger(spawn.team) ? spawn.team : 0;
+      const templates = { ...(spawn.templates ?? { 1: spawn.vehicle, 2: spawn.vehicle }) };
+      if (team !== 1 && team !== 2) templates[String(team)] = spawn.vehicle;
+      const pad = new SpawnerPad({
+        templates, team,
+        minSpawnDelay: spawn.minSpawnDelay, maxSpawnDelay: spawn.maxSpawnDelay,
+        spawnDelayAtStart: spawn.spawnDelayAtStart,
+      });
+      baked.getWorldPosition(_padAt);
+      const record = {
+        spawn, index, pad, baked, nodes, live: new Set(),
+        point: padControlPoint(spawn, points, anyOsId), held: null, flag: undefined,
+        at: [_padAt.x, _padAt.y, _padAt.z],
+        // The first delay is drawn on the round's first tick, with its
+        // players in (`stepVehiclePads`): the bake stands for that frame's
+        // spawn, done here so the scene is right before anything is built.
+        firstDraw: true,
+      };
+      pad.reset();
+      followPoint(record);
+      pad.tick(0, {
+        alive: node => record.live.has(node),
+        critical: () => false,
+        distance: () => 0,
+        spawn: template => {
+          const node = padNode(record, template);
+          record.live.add(node);
+          return node;
+        },
+      });
+      for (const node of nodes.values()) padRecords.set(node, record);
+      statics.pads.push(record);
+    });
+  }
+
+  /**
+   * One frame of every vehicle pad. `world` is the wreck side's:
+   * `alive(node)` (it stands in the world, a wreck included), `destroyed(node)`
+   * (its Armor's `isDestroyed`, what the pad's `critical` hook asks, SPAWN-11),
+   * `position(node)` -> [x, y, z], `destroy(node)` (a wreck on the pad goes
+   * now), `spawn(node)` -> whether a fresh hull now stands there, and
+   * `players` / `maxPlayers` for the delay's draw.
+   */
+  function stepVehiclePads(dt, world) {
+    for (const record of statics.pads) {
+      const { pad } = record;
+      followPoint(record);
+      pad.players = world.players ?? 0;
+      pad.maxPlayers = world.maxPlayers ?? 0;
+      if (record.firstDraw) {
+        record.firstDraw = false;
+        if (pad.slots[0] != null) {
+          pad.delay = calcSpawnDelay(pad.min, pad.max, pad.players, pad.maxPlayers);
+        }
+      }
+      for (const node of record.live) if (!world.alive(node)) record.live.delete(node);
+      pad.tick(dt, {
+        alive: node => record.live.has(node),
+        critical: node => world.destroyed(node),
+        distance: node => {
+          const p = world.position(node);
+          return p ? Math.hypot(p[0] - record.at[0], p[1] - record.at[1], p[2] - record.at[2]) : Infinity;
+        },
+        destroy: node => {
+          world.destroy(node);
+          record.live.delete(node);
+        },
+        spawn: template => {
+          const node = padNode(record, template);
+          // One node per template: an earlier one of the same template still
+          // standing (its wreck away from the pad, which the engine would
+          // leave where it is) has to clear first. The pad tries every frame.
+          if (record.live.has(node) || !world.spawn(node)) return null;
+          record.live.add(node);
+          return node;
+        },
+      });
+    }
+  }
+
   function vehicleSpawnActive(vehicle) {
+    const record = padRecords.get(vehicle);
+    if (record) return record.live.has(vehicle);
+    // A node no pad entry names (a scene written before `objectSpawns`): the
+    // nearest flag's gate it always had.
     const name = vehicle?.userData?.controlPointName;
     if (!name || !page.world?.flags) return true;
     const flag = page.world.flags.find(item => item.controlPointName === name);
@@ -489,6 +805,8 @@ export function createLevelStatics(page) {
     flattenCull,
     freezeVehicle,
     indexScene,
+    padOf,
+    stepVehiclePads,
     tagCull,
     thaw,
     thawVehicle,
