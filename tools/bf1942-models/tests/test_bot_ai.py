@@ -783,6 +783,11 @@ class StalemateTests(unittest.TestCase):
         self.assertEqual(c["gunBehind"]["types"], ["InfanteryMoveTo", "EnterVehicle"])
         self.assertFalse(c["gunFront"])
         self.assertEqual(c["behind"], [True, True, False, False])
+        # A gun whose own cell is free: the walk ends 1.5 m + a soldier's
+        # radius behind it, not on it, and Use is pressed from there.
+        g = c["gunOpenCell"]
+        self.assertEqual([g["walk"][0], g["walk"][2]], [100, -102.5])
+        self.assertTrue(g["pressed"])
 
     def test_the_seat_swap_reaches_a_driver_seat_with_no_door(self) -> None:
         # `BBChangeTeleport` (AI-52) weighs the root as a unit, door or none.

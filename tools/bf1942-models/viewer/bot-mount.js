@@ -21,6 +21,9 @@ import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landin
  *  `0.99 x max(0.5, radius - |sphere offset|)`, a soldier's 1.0 radius. */
 const CHANGE_ARRIVE = 0.99;
 
+/** The soldier's collision radius `CHANGE_ARRIVE` is made from. */
+const SOLDIER_RADIUS = 1.0;
+
 /** `BBChangeLandingCraft::calculateUrgency` 0x085608ea: the bail's urgency. */
 const LANDING_BAIL_URGENCY = 4.0;
 
@@ -506,8 +509,16 @@ export function planChange(bot, now) {
   let goal;
   if (best.noPathfinding) {
     const yaw = best.hullYaw ?? 0;
-    const bx = at[0] - Math.sin(yaw) * CHANGE.behindDistance, bz = at[2] - Math.cos(yaw) * CHANGE.behindDistance;
-    const p = nav ? traceValidPoint(nav, at[0], at[2], bx, bz) : [bx, bz];
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const bx = at[0] - fx * CHANGE.behindDistance, bz = at[2] - fz * CHANGE.behindDistance;
+    // INVENTION: the trace starts behind the unit's own body, a soldier's
+    // radius past its box (local +z is behind). The engine's soldier cannot
+    // stand inside a gun; the viewer's walks through it, and a gun spawned
+    // after the nav map was built has no footprint on it, so the trace
+    // answered the gun's own spot, a bot coming from the front stood on it
+    // and was never behind (vanilla Bocage's AA guns at a taken flag).
+    const s0 = Math.min(Math.max(best.localBox?.max?.[2] ?? 0, 0) + SOLDIER_RADIUS, CHANGE.behindDistance);
+    const p = nav ? traceValidPoint(nav, at[0] - fx * s0, at[2] - fz * s0, bx, bz) : [bx, bz];
     goal = p ? [p[0], bot.position[1], p[1]] : null;
   } else if (d2 > CHANGE.approachFrom ** 2) {
     goal = approachGoal(nav, at, bot.position, CHANGE.approachTo);
