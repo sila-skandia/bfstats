@@ -63,6 +63,8 @@ const page = {
   extras, world, scene,
   get round() { return round; },
   groundHeight: () => 100,
+  // A hillside falling away along +x: a dropped flag lies on its slope (CTF-5).
+  collider: { heightfield: { normal: (x, z, out) => { out[0] = 0.6; out[1] = 0.8; out[2] = 0; return out; } } },
   // The models tree has FlagPole and the AnimatedBundles, not the level's own names.
   loader: { loadAsync: async url => { loads.push(url); if (!/FlagPole|Animated/.test(url)) throw new Error('404'); return { scene: new THREE.Group() }; } },
   MODELS_BASE: 'models/mods/desertcombat', MAPS_BASE: 'maps/mods/desertcombat', bust: () => '',
@@ -95,7 +97,8 @@ const timeline = [];
 // Hans walks into the Coalition base and takes its flag.
 move(5, at(flagBases[0], 1));
 timeline.push(...step());
-const hansCarrying = { hud: hud(), drawn: ctfPage.state().flags[0].drawn, carrier: ctfPage.state().flags[0].carrier };
+const hansCarrying = { hud: hud(), drawn: ctfPage.state().flags[0].drawn, carrier: ctfPage.state().flags[0].carrier,
+                       up: ctfPage.state().flags[0].up };
 // Smith takes the Opposition's flag at its base: his HUD shows it.
 move(0, at(flagBases[1], 0, 0, 1));
 timeline.push(...step());
@@ -109,12 +112,16 @@ timeline.push(...step());
 armors.get(5).destroyed = true;
 timeline.push(...step());
 const dropped = ctfPage.state().flags[0].position.map(v => Math.round(v * 100) / 100);
+const round3 = v => v.map(x => Math.round(x * 1000) / 1000);
+const droppedUp = round3(ctfPage.state().flags[0].up);
 move(0, [dropped[0] + 1, dropped[1] - 1.5, dropped[2]]);
 timeline.push(...step());
+const returnedUp = round3(ctfPage.state().flags[0].up);
 move(0, at(flagBases[0], 0, 0, 1));
 timeline.push(...step());
 results.play = {
-  timeline, hansCarrying, smithCarrying, dropped, lines: lines.slice(),
+  timeline, hansCarrying, smithCarrying, dropped, droppedUp, returnedUp,
+  carriedUp: round3(hansCarrying.up), lines: lines.slice(),
   captures: { 1: round.teams[1].captures, 2: round.teams[2].captures },
   smithScore: round.tally(0).score, afterCapture: hud(),
   marks: ctfPage.mapMarks(), key: ctfPage.marksKey(),

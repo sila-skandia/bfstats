@@ -2027,7 +2027,7 @@ const comms = createComms(bag(
 /** Capture the Flag on a CTF layer (ctf-page.js): the bases, the flags,
  *  their lines and the announcer. */
 const ctfPage = createCtfPage(bag(
-  from(() => level, `bindDynamicShading extras groundHeight world`),
+  from(() => level, `bindDynamicShading collider extras groundHeight world`),
   from(() => mapSurfaces, `teamArt teamNation`),
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume`),
