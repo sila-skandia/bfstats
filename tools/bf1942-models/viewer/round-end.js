@@ -16,6 +16,11 @@
  *    its Minor line for a major or a minor one. Then the win cue
  *    (`setMusic(3)`) or the lose cue (`setMusic(5)`), once; a draw plays
  *    neither;
+ *  - ObjectiveMode is its own branch (`cmp eax,5` at 0x006aae16): a winner's
+ *    title is the bare `VICTORY` or `DEFEAT` whatever the victory type, and
+ *    the line is the level's `game.setObjective<Side>Victory` / `Defeat`
+ *    (0x006ab0bc..0x006ab274); the cues are the same, and a draw takes the
+ *    common `DEBRIEFING_DRAW` path;
  *  - `giveMedal` (ROUND-9) gives the top three by score gold, silver and
  *    bronze, which the multiplayer debriefing lists under `BEST PLAYERS`;
  *  - a multiplayer server restarts the map 10 s later (`+0x21c`, ROUND-9).
@@ -33,7 +38,7 @@
  * `tests/round_end_harness.mjs` runs it; `createRoundEnd` is the page's.
  */
 
-import { VICTORY } from './round-state.js';
+import { GAME_PLAY_MODE, VICTORY } from './round-state.js';
 
 /** The debriefing's titles and heading in vanilla's English, for a tree
  *  whose `scene.json` predates `briefing.debriefing.titles`. */
@@ -42,6 +47,7 @@ export const DEBRIEFING_ENGLISH = Object.freeze({
   DEBRIEFING_MINOR_VICTORY: 'MINOR VICTORY', DEBRIEFING_TOTAL_DEFEAT: 'TOTAL DEFEAT',
   DEBRIEFING_MAJOR_DEFEAT: 'MAJOR DEFEAT', DEBRIEFING_MINOR_DEFEAT: 'MINOR DEFEAT',
   DEBRIEFING_DRAW: 'DRAW', DEBRIEFING_HEADING: 'BEST PLAYERS',
+  VICTORY: 'VICTORY', DEFEAT: 'DEFEAT',
 });
 
 /**
@@ -55,13 +61,26 @@ export const DEBRIEFING_ENGLISH = Object.freeze({
  * for team 2, else 'axis', the client's own `== 2` test), null on a draw;
  * `music` 'win', 'lose' or null.
  */
-export function debriefingOf({ winner = null, victoryType = VICTORY.none, localTeam = 0 } = {}) {
+export function debriefingOf({ winner = null, victoryType = VICTORY.none, localTeam = 0,
+                               objective = false } = {}) {
   if (victoryType === VICTORY.none || victoryType == null) return null;
   const side = localTeam === 2 ? 'allied' : 'axis';
   if (victoryType === VICTORY.draw || (winner !== 1 && winner !== 2)) {
     return { result: 'draw', titleKey: 'DEBRIEFING_DRAW', lineKey: null, side, music: null };
   }
   const won = winner === localTeam;
+  if (objective) {
+    // The level's objective lines: allied victory at `+0x1c`, allied defeat
+    // `+0x38`, axis victory `+0x54`, axis defeat `+0x70` of the block at
+    // `LevelManager+0x308`, by the same `== 2` side test.
+    return {
+      result: won ? 'victory' : 'defeat',
+      titleKey: won ? 'VICTORY' : 'DEFEAT',
+      lineKey: `${side}${won ? 'Victory' : 'Defeat'}`,
+      side: 'objective',
+      music: won ? 'win' : 'lose',
+    };
+  }
   const size = victoryType === VICTORY.total ? 'TOTAL'
     : victoryType === VICTORY.major ? 'MAJOR' : 'MINOR';
   const result = won ? 'victory' : 'defeat';
@@ -169,7 +188,8 @@ export function createRoundEnd(page) {
 
   function open(round) {
     const result = debriefingOf({ winner: round.winner, victoryType: round.victoryType,
-                                  localTeam: page.localTeam() });
+                                  localTeam: page.localTeam(),
+                                  objective: round.gamePlayMode === GAME_PLAY_MODE.objective });
     const words = debriefingWords(result, page.extras?.briefing ?? null);
     const medals = round.medals(page.roster?.() ?? []).map(m => ({
       ...m, name: page.nameOf?.(m.playerId) ?? String(m.playerId), sprite: medalSprite(m.medal, m.team),

@@ -1305,6 +1305,10 @@ class GameType:
     # template the level declares for itself (an objective's spawner, a
     # control point) is told from a static.
     declared: dict[str, str] = field(default_factory=dict)
+    # ObjectiveMode's objectives, when the chain declares any
+    # (`load_objective_setup`; ledger OBJ-1..OBJ-6). None for every other
+    # game type.
+    objectives: "ObjectiveSetup | None" = None
 
     @property
     def composed(self) -> bool:
@@ -1606,6 +1610,302 @@ def script_objects(files: LevelFiles, script: str,
     return out
 
 
+def script_files(files: LevelFiles, script: str,
+                 args: list[str] | None = None) -> list[tuple[str, list[str]]]:
+    """The files a mode script's chain runs on a host, in run order, each
+    with the lines it executes: `(archive path, lines)`, the script first.
+
+    The same walk as `script_objects` (`v_arg1` is `host`, every `if` arm
+    decided, every `run`/`include` followed with the arguments it passes),
+    but the layer files are kept too and nothing is parsed: the caller reads
+    the lines it needs. A file run twice appears twice, as the host runs it.
+    """
+    out: list[tuple[str, list[str]]] = []
+
+    def walk(path: str, argv: list[str], depth: int) -> None:
+        lines = _host_lines(files.read(path).decode("latin-1", "replace"), argv)
+        mine: list[str] = []
+        out.append((path, mine))
+        for line in lines:
+            include = _INCLUDE_LINE.match(line)
+            if include is None:
+                mine.append(line)
+                continue
+            if depth >= _SCRIPT_DEPTH:
+                continue
+            target = _resolve_run(files, path, include.group(1))
+            if target is None:
+                continue
+            callee = [_script_value(token, argv) or ""
+                      for token in include.group(2).split()]
+            walk(target, callee, depth + 1)
+
+    walk(script, list(args) if args is not None else ["host"], 0)
+    return out
+
+
+# --- ObjectiveMode's objectives (ledger OBJ-1..OBJ-6) --------------------------
+#
+# An ObjectiveMode round is won by an objective, not by tickets (ROUND-2). The
+# level declares its objectives as object templates of three kinds and places
+# an `ObjectSpawner` that spawns each one; `objectiveManager.*` names the side
+# that defends, which root objective each side's tickets are scaled by, and
+# who pays a ticket for a death. What the engine then does with them is
+# `viewer/objectives.js`'s.
+
+#: The objective kinds the 16 installs ship (vanilla Battle of Britain, DC
+#: Final's copy of it and Secret Weapons' six), lower case. Each is its own
+#: `ObjectTemplate.create` class (`ClassFactory<...ObjectiveTemplate>`).
+OBJECTIVE_KINDS = ("destroytargetobjective", "andcompositeobjective",
+                   "timerobjective")
+
+
+@dataclass
+class ObjectiveSpec:
+    """One objective template. The defaults are `ObjectiveTemplate`'s ctor
+    (0x08311580: `objectiveDelay` +0x138 0, `team` +0x13c 1) and
+    `TimerObjectiveTemplate`'s (0x08326700: `timeLimit` +0x144 0)."""
+
+    name: str
+    kind: str
+    team: int = 1
+    delay: float = 0.0
+    # DestroyTargetObjective: the object it watches, by `Object.setName`.
+    target: str | None = None
+    # `ObjectTemplate.objectiveName`: the HUD's name for it.
+    objective_name: str | None = None
+    # TimerObjective: seconds, before `game.objectiveAttackerTicketsMod`.
+    time_limit: float = 0.0
+    # ANDCompositeObjective: the objective spawners it waits on, by name.
+    members: list[str] = field(default_factory=list)
+
+
+@dataclass
+class NamedPlacement:
+    """An `Object.create` in the chain with the `Object.setName` it got."""
+
+    template: str
+    name: str | None
+    position: tuple[float, float, float]
+    rotation: tuple[float, float, float]
+    team: int | None
+    source: str
+
+
+@dataclass
+class ObjectiveSetup:
+    """What an ObjectiveMode script's chain declares. `objectiveManager`'s
+    defaults are its ctor's (0x08311a00): no defender (+0x24 0),
+    `defenderLoseTicketsOnDeath` 0 (+0x28), `attackerLoseTicketsOnDeath` 1
+    (+0x29)."""
+
+    defender: int = 0
+    defender_lose_tickets_on_death: bool = False
+    attacker_lose_tickets_on_death: bool = True
+    # `setRootObjectSpawner <team> <spawner>`: the objective each side's
+    # tickets are scaled by the enemy's completion of (OBJ-5).
+    roots: dict[int, str] = field(default_factory=dict)
+    registered: list[str] = field(default_factory=list)
+    objectives: dict[str, ObjectiveSpec] = field(default_factory=dict)
+    spawner_templates: dict[str, SpawnTemplate] = field(default_factory=dict)
+    # A spawner template's own `ObjectTemplate.setTeam`, lower-case name ->
+    # team (`SpawnTemplate` keeps only what a vehicle pad needs).
+    spawner_teams: dict[str, int] = field(default_factory=dict)
+    placements: list[NamedPlacement] = field(default_factory=list)
+
+    def spawner_team(self, placement: NamedPlacement) -> int | None:
+        """The side a placed spawner spawns for: its own `Object.setTeam`,
+        else its template's `ObjectTemplate.setTeam` (`spawn_vehicle`'s
+        reading, SPAWN-2)."""
+        if placement.team is not None:
+            return placement.team
+        return self.spawner_teams.get(placement.template.lower())
+
+    def spawned(self, placement: NamedPlacement) -> str | None:
+        """The template a placed spawner hands out on its side, or None."""
+        spec = self.spawner_templates.get(placement.template.lower())
+        if spec is None:
+            return None
+        team = self.spawner_team(placement)
+        if team is not None and team in spec.vehicles:
+            return spec.vehicles[team]
+        return spec.vehicles.get(2) or spec.vehicles.get(1)
+
+    def objective_spawners(self) -> list[tuple[NamedPlacement, ObjectiveSpec]]:
+        """Every placed spawner that spawns an objective, with it."""
+        out = []
+        for placement in self.placements:
+            made = self.spawned(placement)
+            spec = self.objectives.get(made.lower()) if made else None
+            if spec is not None and placement.name:
+                out.append((placement, spec))
+        return out
+
+    def target_pads(self) -> list[NamedPlacement]:
+        """The placed spawners a DestroyTargetObjective names: the pads that
+        stand up the objects to destroy (`getTargetObject` 0x08285990 takes
+        a spawner's last spawned object)."""
+        targets = {spec.target.lower() for spec in self.objectives.values()
+                   if spec.target}
+        out = []
+        for placement in self.placements:
+            if not placement.name or placement.name.lower() not in targets:
+                continue
+            made = self.spawned(placement)
+            if made and made.lower() not in self.objectives:
+                out.append(placement)
+        return out
+
+
+_OBJECTIVE_WORDS = ("targetname", "objectivename", "objectivedelay", "team",
+                    "timelimit")
+
+
+def _objective_word(cmd: str) -> str:
+    """A property answers to its name and to `set<name>` (CON-15)."""
+    if cmd.startswith("set") and cmd[3:] in _OBJECTIVE_WORDS:
+        return cmd[3:]
+    return cmd
+
+
+def parse_objective_setup(scripts: list[tuple[str, list[str]]]) -> ObjectiveSetup:
+    """Read a chain's objectives out of `script_files`' lines.
+
+    Objective templates, the spawner templates beside them, every named
+    placement and the `objectiveManager` words. The spawner templates are
+    read across the whole chain (`parse_spawn_templates` on its text), so a
+    pad declared in `ObjectSpawnTemplates.con` still resolves.
+    """
+    out = ObjectiveSetup()
+    current: ObjectiveSpec | None = None
+    placement: NamedPlacement | None = None
+    whole: list[str] = []
+    for path, lines in scripts:
+        whole.extend(lines)
+        for ns, cmd, args in _commands("\n".join(lines)):
+            tokens = args.split()
+            if ns == "objecttemplate":
+                if cmd == "create":
+                    current = None
+                    if len(tokens) >= 2 and tokens[0].lower() in OBJECTIVE_KINDS:
+                        current = ObjectiveSpec(name=tokens[1], kind=tokens[0])
+                        out.objectives[tokens[1].lower()] = current
+                    continue
+                if current is None:
+                    continue
+                word = _objective_word(cmd)
+                try:
+                    if word == "targetname" and tokens:
+                        current.target = tokens[0]
+                    elif word == "objectivename" and tokens:
+                        current.objective_name = tokens[0]
+                    elif word == "objectivedelay" and tokens:
+                        current.delay = float(tokens[0])
+                    elif word == "team" and tokens:
+                        current.team = int(float(tokens[0]))
+                    elif word == "timelimit" and tokens:
+                        current.time_limit = float(tokens[0])
+                    elif word == "addobjectivespawnertocomposite" and tokens:
+                        current.members.append(tokens[0])
+                except ValueError:
+                    pass
+            elif ns == "object":
+                if cmd == "create" and tokens:
+                    placement = NamedPlacement(template=tokens[0], name=None,
+                                               position=(0.0, 0.0, 0.0),
+                                               rotation=(0.0, 0.0, 0.0),
+                                               team=None, source=path)
+                    out.placements.append(placement)
+                elif placement is None:
+                    continue
+                elif cmd == "setname" and tokens:
+                    placement.name = tokens[0]
+                elif cmd in ("absoluteposition", "rotation") and tokens:
+                    # A malformed vector keeps the last good one, as
+                    # `parse_static_objects` does (XPack2 Telemark ships
+                    # `1395.9105.547/1317.05`).
+                    try:
+                        vec = con_mod.vec3(tokens[0])
+                    except ValueError:
+                        continue
+                    if cmd == "rotation":
+                        placement.rotation = vec
+                    else:
+                        placement.position = vec
+                elif cmd == "setteam" and tokens:
+                    try:
+                        placement.team = int(float(tokens[0]))
+                    except ValueError:
+                        pass
+            elif ns == "objectivemanager":
+                try:
+                    if cmd == "setdefender" and tokens:
+                        out.defender = int(float(tokens[0]))
+                    elif cmd == "defenderloseticketsondeath" and tokens:
+                        out.defender_lose_tickets_on_death = int(float(tokens[0])) != 0
+                    elif cmd == "attackerloseticketsondeath" and tokens:
+                        out.attacker_lose_tickets_on_death = int(float(tokens[0])) != 0
+                    elif cmd == "setrootobjectspawner" and len(tokens) >= 2:
+                        out.roots[int(float(tokens[0]))] = tokens[1]
+                    elif cmd == "registerobjectspawner" and tokens:
+                        out.registered.append(tokens[0])
+                except ValueError:
+                    pass
+    out.spawner_templates = parse_spawn_templates("\n".join(whole))
+    # A spawner template's own `ObjectTemplate.setTeam`: the side it spawns
+    # for when its placement sets none.
+    spawner = None
+    for ns, cmd, args in _commands("\n".join(whole)):
+        if ns != "objecttemplate":
+            continue
+        tokens = args.split()
+        if cmd == "create":
+            spawner = (tokens[1].lower() if len(tokens) >= 2
+                       and tokens[0].lower() == "objectspawner" else None)
+        elif spawner is not None and _objective_word(cmd) == "team" and tokens:
+            try:
+                out.spawner_teams[spawner] = int(float(tokens[0]))
+            except ValueError:
+                pass
+    return out
+
+
+def add_objective_targets(layer: GameplayObjects, setup: ObjectiveSetup) -> int:
+    """Give the layer an ObjectiveMode game type loads the pads that stand
+    up its objects to destroy, as vehicle pads: `ObjectiveSpawners.con` is
+    not one of the seven layer files, so `load_gameplay_objects` never reads
+    them, and without them a DestroyTargetObjective has nothing to watch.
+
+    The pad's template is the chain's last definition of it (Battle of
+    Britain's `ObjectiveSpawnerTemplates.con` redefines `britain_FactorySpawner`
+    to make `Factory_Objective`, after `ObjectSpawnTemplates.con` made it a
+    `Britain_Factory` pad). Returns how many pads were added.
+    """
+    added = 0
+    have = {(inst.template.lower(), inst.position) for inst in layer.object_spawns}
+    for placement in setup.target_pads():
+        key = placement.template.lower()
+        spec = setup.spawner_templates.get(key)
+        if spec is None:
+            continue
+        layer.object_spawn_templates[key] = spec
+        if (key, placement.position) in have:
+            continue
+        layer.object_spawns.append(StaticInstance(
+            placement.template, placement.position, placement.rotation,
+            team=setup.spawner_team(placement)))
+        have.add((key, placement.position))
+        added += 1
+    return added
+
+
+def load_objective_setup(files: LevelFiles, script: str) -> ObjectiveSetup | None:
+    """The objectives a mode script's chain declares, or None when it
+    declares none (every game type but ObjectiveMode)."""
+    setup = parse_objective_setup(script_files(files, script))
+    return setup if setup.objectives else None
+
+
 # The kinds of object a mode script makes that are the round's machinery, not
 # scenery. The layer files place the first three (`load_gameplay_objects`);
 # a CTF flag base (`FlagBase`, which hangs its `flagTemplate` flag at
@@ -1655,6 +1955,8 @@ def load_game_types(files: LevelFiles) -> dict[str, GameType]:
         gt.source = hit
         made = script_objects(files, hit)
         gt.objects, gt.declared = made.objects, made.declared
+        if any(kind in OBJECTIVE_KINDS for kind in gt.declared.values()):
+            gt.objectives = load_objective_setup(files, hit)
         if not gt.mode:
             # `GameTypes/Conquest.con` that only runs bare scripts still means
             # Conquest: the file name is the game type either way.
@@ -1816,6 +2118,16 @@ DEBRIEFING_VERBS = {
     for size in ("major", "minor")
     for result in ("victory", "defeat")
 }
+#: ObjectiveMode's own four (`game.setObjective<Side><Result>`,
+#: `LevelManager::setObjectiveAlliedVictory` 0x08459fc0 ..
+#: `setObjectiveAxisDefeat` 0x0845a020), which the client's ObjectiveMode
+#: branch shows instead of the eight (ledger ROUND-8). Filed under the
+#: pseudo-side `objective`: `alliedVictory` .. `axisDefeat`.
+DEBRIEFING_VERBS.update({
+    f"setobjective{side}{result}": ("objective", f"{side}{result.title()}")
+    for side in ("allied", "axis")
+    for result in ("victory", "defeat")
+})
 
 
 @dataclass

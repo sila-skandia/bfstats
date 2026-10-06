@@ -974,7 +974,15 @@ export function createVehicleWrecks(page) {
     return out;
   }
 
+  /** The Armor of a placed hull, or null: what an ObjectiveMode target is
+   *  watched through (`objectives.js`). */
+  function damageOfNode(node) {
+    const owner = node ? ownerOfNode.get(node) : null;
+    return owner == null ? null : page.vehicleDamage.get(owner) ?? null;
+  }
+
   Object.assign(wrecks, {
+    damageOfNode,
     damageVisuals,
     loadFailures,
     modelUrls,

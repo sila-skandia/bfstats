@@ -39,6 +39,9 @@ export const MODE_KEYS = [
   // the Ctf entry carries the key, so every other layer reads the top level's
   // absence and has no flags to steal.
   'flagBases',
+  // ObjectiveMode's objectives (`bf42/level.py` `ObjectiveSetup`, played by
+  // `objectives.js`); only that layer's entry carries them.
+  'objectives',
 ];
 
 function modeMap(extras) {
