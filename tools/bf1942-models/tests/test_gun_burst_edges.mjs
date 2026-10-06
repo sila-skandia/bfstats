@@ -211,6 +211,34 @@ async function rig() {
 }
 
 {
+  // A replayed burst (`replay-hulls.js`): no trigger, only the recorded
+  // rounds through `fireShot`, and `group.sounding` held open 1.5 rounds past
+  // each one (`holdSound`). The player behind it held his trigger, so it is
+  // one burst and one release, not a Release tail 50 ms after every round
+  // (9 a second at 10 rounds a second, before).
+  for (const rate of [10, 5.7]) {
+    const { group, guns, run, released, played } = await rig();
+    group.stats.roundOfFire = rate;
+    const dt = 1 / 60;
+    let t = 0;
+    let next = 0;
+    let until = -Infinity;
+    for (let i = 0; i < 90; i++) {
+      if (i < 60 && t >= next - 1e-9) {
+        guns.fireShot(group);
+        next += 1 / rate;
+        until = t + Math.max(0.2, 1.5 / rate);
+      }
+      group.sounding = t < until;
+      run(dt, dt);
+      t += dt;
+    }
+    assert.equal(released.length, 1, `a replayed burst at ${rate} rounds a second releases once`);
+    assert.equal(played().filter(f => f === 'bushmaster_release.mp3').length, 1, 'one Release tail');
+  }
+}
+
+{
   // A gun the rack holds no patch for releases into nothing, quietly; and a
   // gun whose table predates the edges (no `press`, no `release`) still
   // fires its rounds.
