@@ -102,8 +102,8 @@ class AfterDeathClockTests(unittest.TestCase):
 
     def test_a_wreck_glb_that_arrives_after_the_end_stands_nothing_up(self) -> None:
         late = run_harness()["lateWreck"]
-        self.assertEqual({"removed": True, "drawn": False, "wreckAfterLoad": False,
-                          "drawnAfterLoad": False}, late)
+        self.assertEqual({"latchTick": {"removed": False}, "removed": True, "drawn": False,
+                          "wreckAfterLoad": False, "drawnAfterLoad": False}, late)
 
 
 class WreckLookupTests(unittest.TestCase):

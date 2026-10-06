@@ -390,6 +390,7 @@ export function createVehicleWrecks(page) {
     // moment `killOccupantInWreck` has run, and the fall needs the drive.
     const drive = fallingDriveFor(visual.node);
     visual.wrecked = true;
+    visual.latched = false;
     visual.wreckAge = 0;
     visual.landingQuiet = 0;
     visual.hidden = [];
@@ -721,6 +722,11 @@ export function createVehicleWrecks(page) {
         continue;
       }
       if (!visual.wrecked || visual.removed) continue;
+      // `handleUpdate` latches the death for one tick (`+0x100`) before its
+      // clock runs (HP-19), so what the death tier started gets an update
+      // first: a spawn effect stands its object up before a time to live of 0
+      // takes the dead one away.
+      if (!visual.latched) { visual.latched = true; continue; }
       visual.wreckAge += dt;
       // A plane that died in the air is still flying: its crash waits for the
       // ground, and nothing on this clock runs until it gets there — no linger,
@@ -933,6 +939,7 @@ export function createVehicleWrecks(page) {
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    visual.latched = false;
     // A fresh hull: `spawnObject` arms its clock anew.
     abandonClocks.delete(visual.node);
     visual.removed = false;
