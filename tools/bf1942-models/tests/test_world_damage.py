@@ -81,6 +81,19 @@ class UpsideDownTests(unittest.TestCase):
         self.assertTrue(self.results["onSlopeHigh"])
 
 
+    def test_an_upright_hull_on_a_steep_slope_is_not_billed(self) -> None:
+        # Its up is the slope's normal. Origin a metre up: world up, so only a
+        # slope past acos 0.3 (72.5 degrees) bills it, which is the engine's
+        # own answer. Origin on the ground: against the normal, never.
+        flush = self.results["uprightOnSlope"]
+        self.assertFalse(flush["at45"])
+        self.assertFalse(flush["at60"])
+        self.assertFalse(flush["at70"])
+        self.assertTrue(flush["at75"])
+        self.assertFalse(flush["at60Low"])
+        self.assertFalse(flush["at80Low"])
+
+
 class SubmersionDepthTests(unittest.TestCase):
     results: dict
 
