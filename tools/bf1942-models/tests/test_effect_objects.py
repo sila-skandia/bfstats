@@ -198,6 +198,43 @@ class BoatDeathTests(unittest.TestCase):
         self.assertEqual({"afloat": [-1], "beached": [0]}, run_harness()["boatDeath"])
 
 
+class HullLessRemovalTests(unittest.TestCase):
+    """A spawned object with no hulls gets no owner id and no damageable, so
+    `adopt` starts its living tier itself; the round's end takes the object
+    and must take that tier's run with it, or a burning loop outlives it."""
+
+    def test_the_round_end_stops_the_tier_adopt_started(self) -> None:
+        hullless = run_harness()["hullless"]
+        self.assertEqual({"owner": -1, "tiers": 1, "stopped": 0}, hullless["before"])
+        self.assertEqual(1, hullless["removed"])
+        self.assertEqual(0, hullless["held"])
+        self.assertEqual(["e_PanzFire"], hullless["stopped"])
+
+
+class WaterDeathTierTests(unittest.TestCase):
+    """Every way a hull dies picks the same death tier (ARM-11: `-1` in the
+    water): a round, a bomb's splash and a crash, on vanilla's own tier
+    tables (`water_death_tier_harness.mjs`). A land vehicle or a plane in the
+    water dies on its own `-1` (`WaterWaterExplosion`), a plane over the sea
+    and a tank on a bridge on their land tier, and a ship with no `-1` on its
+    `0`. Before the round path passed the water test, only a crash could
+    leave a PT boat's raft."""
+
+    WANT = {"elcoAfloat": [-1], "elcoBeached": [0], "shermanInRiver": [-1],
+            "shermanOnLand": [0], "shermanOnBridge": [0], "spitfireOverSea": [0],
+            "spitfireDitched": [-1], "destroyerAfloat": [0]}
+
+    def test_a_round_a_bomb_and_a_crash_agree(self) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        harness = Path(__file__).with_name("water_death_tier_harness.mjs")
+        proc = subprocess.run(["node", str(harness)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        result = json.loads(proc.stdout)
+        for by in ("round", "bomb", "crash"):
+            self.assertEqual(self.WANT, result[by], by)
+
+
 @unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
 class BakedRaftTests(unittest.TestCase):
     """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft
