@@ -1681,15 +1681,24 @@ class Assembler:
             # A spawn effect's payload is a whole object (EMT-10), baked the
             # way a model or level export bakes it: no `materialDiffuse` and
             # no additive alpha cut, which only effect particles take.
-            saved = self.apply_material_diffuse, self.additive_alpha_test
+            # It is solid, as a placed object is: its collision hulls are baked
+            # with it whatever the bake's own setting. A geometry an effect
+            # particle cached as hull-less while hulls were off is looked at
+            # again.
+            saved = (self.apply_material_diffuse, self.additive_alpha_test,
+                     self.include_collision)
             self.apply_material_diffuse = self.additive_alpha_test = False
+            if not self.include_collision:
+                self.include_collision = True
+                self._geom_collisions = {k: v for k, v in self._geom_collisions.items() if v}
             try:
                 # Depth 0: the object is a root of the world, as a placed one
                 # is, so whatever a bake stamps on a placed root (PHY-17's
                 # `hasMobilePhysics false`) it stamps on this one too.
                 return self.build_node(builder, name, report, depth=0)
             finally:
-                self.apply_material_diffuse, self.additive_alpha_test = saved
+                (self.apply_material_diffuse, self.additive_alpha_test,
+                 self.include_collision) = saved
 
         def build(node: effects_mod.BundleNode, depth: int) -> int | None:
             children: list[int] = []
