@@ -472,11 +472,23 @@ export function createLevelStatics(page) {
    *  is switched off here rather than given the baked vehicle (SPAWN-2). */
   function followPoint(record) {
     const team = pointTeam(record);
-    if (team == null || team === record.held) return;
-    if (record.held === 1 || record.held === 2) record.pad.disable(0);
-    if (team === 1 || team === 2) record.pad.enable(team);
-    else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
-    record.held = team;
+    if (team == null) return;
+    if (team !== record.held) {
+      if (record.held === 1 || record.held === 2) record.pad.disable(0);
+      if (team === 1 || team === 2) record.pad.enable(team);
+      else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
+      record.held = team;
+      record.switchedOff = false;
+    }
+    // The point switched off while it keeps its side (`CPDisable` from
+    // `disableWhenLosingControl` or `disableIfEnemyInsideRadius`, ledger
+    // SPAWN-22) gives its pads its team and stops them; `CPEnable` starts
+    // them again. A point that never says so leaves them as the side has them.
+    const off = (team === 1 || team === 2) && record.flag?.spawnsEnabled === false;
+    if (off !== !!record.switchedOff) {
+      if (off) record.pad.disable(team); else record.pad.enable(team);
+      record.switchedOff = off;
+    }
   }
 
   /** The node a pad's spawn of `template` stands up. A template whose model

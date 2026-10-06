@@ -331,6 +331,9 @@ function holdGroups(flag, point, owned, start) {
   };
   let team = start;
   let spawns = owned;
+  // The point's enabled byte (`ControlPoint+0x178`): on for a point that
+  // holds a side, off for a neutral one (`init` enables only a side's).
+  let enabled = !!sideOf(start);
   const offer = () => {
     const side = sideOf(team);
     spawns = owned.filter(spawn => groupTeam.get(spawn.group) === side);
@@ -351,6 +354,21 @@ function holdGroups(flag, point, owned, start) {
         if (sideOf(team)) disable();
         if (sideOf(next)) enable(sideOf(next));
         team = next;
+        enabled = !!sideOf(next);
+        offer();
+      },
+    },
+    /** `CPEnable` / `CPDisable` while the point keeps its owner (ledger
+     *  SPAWN-22): off writes 0 into both groups, on gives the owner's group
+     *  back to the owner, as a capture does. `controlPointStep` drives it. */
+    spawnsEnabled: {
+      get: () => enabled,
+      set(on) {
+        const next = !!on;
+        if (next === enabled) return;
+        enabled = next;
+        if (!next) disable();
+        else if (sideOf(team)) enable(sideOf(team));
         offer();
       },
     },

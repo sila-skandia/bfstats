@@ -113,5 +113,22 @@ class ControlPointLawTests(unittest.TestCase):
 
 
 
+    def test_a_point_switches_its_spawns_off_while_it_is_taken(self) -> None:
+        s = self.r["switched"]
+        self.assertEqual([[True, 1], [True, 1], [True, 1]], s["start"])
+        # Losing: still Axis, state 2, nothing offered; the plain point keeps
+        # its spawn while it runs down.
+        self.assertEqual([1, False, 0, 2], s["losing"]["bridge"])
+        self.assertEqual([1, True, 1], s["losing"]["plain"])
+        # The defender back alone: held, state 4, the spawn back.
+        self.assertEqual([1, True, 1, 4], s["held"])
+        # Lost to neutral: off, as any lost point is.
+        self.assertEqual([0, False], s["lost"][:2])
+        # Contested with `disableIfEnemyInsideRadius` and no
+        # `loseControlWhenEnemyClose`: held but off; enemy gone, on again.
+        self.assertEqual([2, False, 0, 4], s["contested"])
+        self.assertEqual([2, True, 1], s["cleared"])
+
+
 if __name__ == "__main__":
     unittest.main()
