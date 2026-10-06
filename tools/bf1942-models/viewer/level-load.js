@@ -771,6 +771,7 @@ export function createLevel(page) {
     updateTextureFade: shading.updateTextureFade,
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
+      restartVehiclePads: statics.restartVehiclePads,
       get pads() { return statics.pads; },
       // A room's server runs the pads (`net-room.js`): the page's stand down
       // and stand what its rows say.

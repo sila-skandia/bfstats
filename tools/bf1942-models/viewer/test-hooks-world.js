@@ -122,8 +122,14 @@ export function installWorldHooks(page) {
       endReason: round.endReason, restartIn: round.restartIn, roundsWon: { ...round.roundsWon },
       teams: { 1: { ...round.teams[1] }, 2: { ...round.teams[2] } }, restarts: round.restarts,
       scoreLimit: round.scoreLimit,
+      // ObjectiveMode (`objectives.js`): the real counts and each objective.
+      real: round.real ? { ...round.real } : null,
+      objectives: round.objectives?.state?.() ?? null,
     };
   };
+  // The live objectives themselves, for a check that has to move one on
+  // (a Timer's `elapsed`) rather than wait out fifteen minutes.
+  window.__objectives = () => page.round?.objectives ?? null;
   // A CTF layer's flags (`ctf-page.js`) and the end of a round
   // (`round-end.js`): what each holds and shows.
   window.__ctf = () => page.ctfPage?.state() ?? null;

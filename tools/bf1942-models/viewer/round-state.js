@@ -56,6 +56,16 @@
  * `setTimeBeforeRestartMap` seconds later (10 by default); a single-player
  * one waits for the debriefing's REPLAY or ABORT.
  *
+ * ObjectiveMode (game play mode 5) is decided by its objectives
+ * (`objectives.js`, ledger OBJ-1..OBJ-6), never by tickets (ROUND-2): a
+ * Composite or a Timer that is done wins the round for its side, a total
+ * victory. Its tickets are a scoreboard of the objectives (OBJ-5): the
+ * defender starts on a flat 100 whatever the level sets, each side's real
+ * count pays for its deaths only as `objectiveManager` says (an attacker's
+ * by default, a defender's only with `defenderLoseTicketsOnDeath`), and what
+ * the HUD shows is the real count scaled by how far the enemy's root
+ * objective has got, `trunc(real * (1 - completion))`.
+ *
  * Pure: no `three`, no DOM, no page. `tests/round_state_harness.mjs` drives it.
  */
 
@@ -68,6 +78,12 @@ export const SCORE_DEFAULTS = Object.freeze({
 
 /** The enemy weight above which a side bleeds: `cmp [ebp-0x1dc],0x63`. */
 export const BLEED_WEIGHT = 99;
+
+/** Tickets a minute a side with no spawn groups bleeds at the end of a round
+ *  (`GameServer+0x1ec`): `GameServer::init` writes 1000.0 raw (0x08131d34);
+ *  only `game.setTicketLostAtEndPerMin` scales it by max players / 16
+ *  (0x081537f0), and no shipped level declares it (ledger TKT-8). */
+export const TICKETS_LOST_AT_END_PER_MIN = 1000;
 
 /** `Game::getGamePlayMode` (`+0x10`): what `stringToGPM` makes of a mode's
  *  name (ledger RADIO-13). Instant Battle plays Conquest's rules on the
@@ -316,7 +332,13 @@ export function holdWeight(points) {
  *  - `restartDelay` seconds from EndGame to the restart on a multiplayer
  *                server; `singlePlayer` true keeps the round in EndGame until
  *                the page restarts it, as `gameStatusEndGame` does with
- *                `Setup+0x15c` (the `game.gameMode` word) at 0.
+ *                `Setup+0x15c` (the `game.gameMode` word) at 0;
+ *  - `atEndRate` tickets a minute a side with no spawn groups bleeds at the
+ *                end of a round (`TICKETS_LOST_AT_END_PER_MIN`);
+ *  - `objectives` an ObjectiveMode layer's live objectives
+ *                (`objectives.js` `createObjectives`), or null. Read only
+ *                while the mode is ObjectiveMode: its defender, its death
+ *                rule and its roots' completion drive the tickets there.
  *
  * `counts` is keyed by player id: the page's local player, or a bot's. In a
  * room the page builds none: the server owns the round there, and its
@@ -327,7 +349,8 @@ export function createRoundState({
   maxPlayers = TICKET_BASE_PLAYERS, ticketLosePerDeath = 1,
   scoreLimit = 0, gameTime = 0,
   minorVictory = MINOR_VICTORY, majorVictory = MAJOR_VICTORY,
-  restartDelay = RESTART_DELAY, singlePlayer = false,
+  restartDelay = RESTART_DELAY, singlePlayer = false, objectives = null,
+  atEndRate = TICKETS_LOST_AT_END_PER_MIN,
 } = {}) {
   const readSettings = typeof settings === 'function' ? settings : () => settings;
   const readMode = typeof mode === 'function' ? mode : () => mode;
@@ -387,6 +410,12 @@ export function createRoundState({
     /** A side at zero is out of the round; the engine stops the bleed there and
      *  so does this. True from the end of the round on (`status` EndGame). */
     over: false,
+    /** ObjectiveMode's real counts (`dice::bf::normalTicketCount`, OBJ-5):
+     *  what the deaths and the bleed spend, while `tickets` is what the HUD
+     *  shows. Null in every other mode, where the two are one. */
+    real: null,
+    /** The layer's objectives, when it is ObjectiveMode's. */
+    objectives,
   };
 
   function emptyTeamScore() {
@@ -431,13 +460,39 @@ export function createRoundState({
     round.countdowns[team] = intervals[team];
   }
 
+  /** The at-end rate's interval (`60 / +0x1ec`). */
+  const atEndInterval = 60 / (Number(atEndRate) > 0 ? Number(atEndRate) : TICKETS_LOST_AT_END_PER_MIN);
+
+  /**
+   * The four flags `gameStatusPlaying` sets for the end of a round (TKT-5):
+   * "no live player" starts 1 for both sides and is cleared, at the first
+   * living player of a side, only on a frame where some side holds no spawn
+   * group; "nowhere to spawn" is read only for a side that holds none.
+   */
+  function endOfRoundFlags(sides) {
+    const noGroups = { 1: false, 2: false };
+    const noLive = { 1: true, 2: true };
+    const cantSpawn = { 1: false, 2: false };
+    if (!sides) return { any: false, noGroups, noLive, cantSpawn };
+    for (const team of [1, 2]) noGroups[team] = Number(sides[team]?.groups) === 0;
+    const any = noGroups[1] || noGroups[2];
+    if (any) {
+      for (const team of [1, 2]) {
+        noLive[team] = !sides[team]?.alive;
+        cantSpawn[team] = noGroups[team] && !sides[team]?.canGet;
+      }
+    }
+    return { any, noGroups, noLive, cantSpawn };
+  }
+
   /** A player's tally, created empty on first use. */
   function tally(playerId) {
     let row = round.counts.get(playerId);
     if (!row) {
       row = {
         playerId, score: 0, kills: 0, deaths: 0, suicides: 0, captures: 0,
-        teamKills: 0, attacks: 0, defences: 0, flags: 0, team: 0,
+        teamKills: 0, attacks: 0, defences: 0, flags: 0, objectives: 0,
+        objectiveTks: 0, team: 0,
       };
       round.counts.set(playerId, row);
     }
@@ -445,6 +500,50 @@ export function createRoundState({
   }
 
   const playing = () => round.status === 'playing';
+
+  /** The live objectives, while the round is ObjectiveMode's. */
+  const objectiveMode = () => round.gamePlayMode === GAME_PLAY_MODE.objective
+    && !!round.objectives;
+
+  /**
+   * ObjectiveMode's start (OBJ-5): `gamaStatusFirstPreGame` (0x08150710)
+   * sets the defender's tickets to a flat 100 after the level's own counts
+   * (`push 0x64` at 0x08150885), and keeps both as the real counts. Run at
+   * the round's start and again after each restart, which goes back through
+   * the pre-game state (`resetTimers` 0x08157790 writes status 3).
+   */
+  function objectiveStart() {
+    if (!objectiveMode()) { round.real = null; return; }
+    const defender = Number(round.objectives.defender);
+    if (defender === 1 || defender === 2) round.tickets[defender] = 100;
+    round.real = { 1: round.tickets[1], 2: round.tickets[2] };
+    showObjectiveTickets();
+  }
+
+  /** What the HUD shows of the real counts (0x08151f56..0x0815206c): each
+   *  side's count times one less the completion of the OTHER side's root
+   *  objective, truncated (`fistp` under the truncating control word). */
+  function showObjectiveTickets() {
+    if (!round.real) return;
+    const objectives = round.objectives;
+    for (const team of [1, 2]) {
+      const enemy = team === 1 ? 2 : 1;
+      const done = Number(objectives?.rootCompletion?.(enemy)) || 0;
+      round.tickets[team] = Math.max(0, Math.trunc(round.real[team] * (1 - done)));
+    }
+  }
+
+  /** Whether a death costs its side a ticket. Everywhere but ObjectiveMode it
+   *  does; there `killPlayer` (0x0814ddd0) spends a defender's only with
+   *  `defenderLoseTicketsOnDeath` (`objectiveManager+0x28`, off by default)
+   *  and anyone else's only with `attackerLoseTicketsOnDeath` (`+0x29`, on). */
+  function deathCosts(team) {
+    if (!objectiveMode()) return true;
+    const objectives = round.objectives;
+    return team === Number(objectives.defender)
+      ? !!objectives.defenderLoseTicketsOnDeath
+      : objectives.attackerLoseTicketsOnDeath !== false;
+  }
 
   /** Pay `points` into a player's tally. `key` is a table key. `team` is the
    *  player's side, when the caller knows it: the points go on that side's
@@ -473,9 +572,11 @@ export function createRoundState({
    *  draw rather than a win for whichever bled second. */
   function spend(team, count) {
     if (team !== 1 && team !== 2 || !(count > 0)) return 0;
-    const before = round.tickets[team];
-    round.tickets[team] = Math.max(0, before - count);
-    return before - round.tickets[team];
+    // ObjectiveMode spends the real counts; the HUD's follow on the next tick.
+    const counts = round.real ?? round.tickets;
+    const before = counts[team];
+    counts[team] = Math.max(0, before - count);
+    return before - counts[team];
   }
 
   /** A death, whoever caused it: the dead player's tally and his team's
@@ -484,7 +585,7 @@ export function createRoundState({
     if (playerId == null) return;
     pay(playerId, 'deaths', 'death', 1, team);
     if (suicide && playing()) tally(playerId).suicides += 1;
-    if (playing()) spend(team, round.lossPerDeath);
+    if (playing() && deathCosts(team)) spend(team, round.lossPerDeath);
   }
 
   /** One player killed another. Same team is a team kill: the killer pays the
@@ -550,11 +651,33 @@ export function createRoundState({
     else if (round.teams[2][key] >= round.scoreLimit) endRound(2, VICTORY.minor, 'score');
   }
 
-  /** Each side's share of its starting tickets (`ticketShare`). */
+  /**
+   * An objective's pay (`objectives.js`, OBJ-3): `kind` 'objective' is
+   * `ScoreMsg` 8, the table's `objective`, for a destroyer of the
+   * objective's own side; 'objectiveTk' is 9, its `objectiveTK`, for anyone
+   * else.
+   */
+  function objectiveScore({ player = null, team = 0, kind = 'objective' } = {}) {
+    if (player == null || !playing()) return;
+    if (kind === 'objectiveTk') pay(player, 'objectiveTks', 'objectivetk', 1, team);
+    else pay(player, 'objectives', 'objective', 1, team);
+  }
+
+  /** `TeamWinsAward::give` (0x08310c20): the objective's side wins, a total
+   *  victory, and the status goes to EndGame. */
+  function objectiveWin(team) {
+    if (team !== 1 && team !== 2) return;
+    endRound(team, VICTORY.total, 'objective');
+  }
+
+  /** Each side's share of its starting tickets (`ticketShare`). ObjectiveMode
+   *  weighs its real counts: the time limit is tested after they are put back
+   *  and before the HUD's are made (0x081514c6, 0x0815155e). */
   function shares() {
+    const live = round.real ?? round.tickets;
     return {
-      1: ticketShare(round.tickets[1], counts[1], startPlayers),
-      2: ticketShare(round.tickets[2], counts[2], startPlayers),
+      1: ticketShare(live[1], counts[1], startPlayers),
+      2: ticketShare(live[2], counts[2], startPlayers),
     };
   }
 
@@ -623,17 +746,24 @@ export function createRoundState({
    * The countdown runs in real time, the engine's rule while both sides have
    * spawn groups, which is all of normal play, and a shut gate refills it, so
    * each bleed's first ticket comes a whole interval after it starts (TKT-4).
-   * Two end-of-round rules for a side left with no spawn groups are not
-   * modelled (ledger TKT-5): it bleeds at `setTicketLostAtEndPerMin`'s rate
-   * whatever the weights once it has nobody alive or nowhere to spawn, and
-   * meanwhile its enemy, if it has a live player, has its countdown run at
-   * (the weight the side holds) / 100.
+   *
+   * `sides`, when the page passes it, is what `gameStatusPlaying` counts for
+   * the end of a round (TKT-5, TKT-8): `{ 1: { groups, canGet, alive }, 2 }`,
+   * the spawn groups the side holds that still have a point, whether any other
+   * side's group with a point could become its own (`groupEnableToChangeTeam`
+   * set), and whether it has a living player. While both sides hold a group
+   * nothing changes. Once one holds none, the two flags are read: that side,
+   * with nobody alive or nowhere to spawn, bleeds whatever the weights, at the
+   * at-end rate (`TICKETS_LOST_AT_END_PER_MIN`); otherwise, as the other side
+   * does while it has a living player, its countdown runs at the enemy's
+   * weight / 100 a second instead of one, still only past 99. Without `sides`
+   * (the runner, an old caller) the round plays normal play's rule only.
    *
    * CTF and TDM have no bleed (the weight block runs for modes 2, 4 and 5
    * only). After the bleed the round is decided on tickets and on the time
    * limit; once it is over, only the restart countdown runs.
    */
-  function tick(dt, points) {
+  function tick(dt, points, sides = null) {
     const held = holdWeight(points);
     round.held = held;
     const lost = { 1: 0, 2: 0 };
@@ -643,11 +773,22 @@ export function createRoundState({
       return lost;
     }
     round.clock += dt;
+    // ObjectiveMode's objectives run their frame while the round plays
+    // (`Objective::handleUpdate` returns unless the status is 1); one done
+    // may end the round here, and nothing below runs once it has.
+    if (objectiveMode()) round.objectives.tick?.(dt);
+    if (!playing()) return lost;
     const bleeds = ticketsDecide(round.gamePlayMode);
+    const live = round.real ?? round.tickets;
+    const end = endOfRoundFlags(sides);
+    round.endOfRound = end.any ? end : null;
     for (const team of [1, 2]) {
       const enemy = team === 1 ? 2 : 1;
-      const running = bleeds && playing() && held[enemy] > BLEED_WEIGHT
-        && Number.isFinite(intervals[team]) && round.tickets[team] > 0;
+      // 0x08151c98..0x08151d05 (team 2), 0x08151e22..0x08151e45 (team 1).
+      const stranded = end.noGroups[team] && (end.noLive[team] || end.cantSpawn[team]);
+      const gate = stranded || held[enemy] > BLEED_WEIGHT;
+      const running = bleeds && playing() && gate
+        && Number.isFinite(intervals[team]) && live[team] > 0;
       round.bleeding[team] = running;
       if (!running) {
         // The engine writes `60 / rate` back on every frame the gate is shut
@@ -656,15 +797,21 @@ export function createRoundState({
         round.countdowns[team] = intervals[team];
         continue;
       }
-      round.countdowns[team] -= dt;
+      // Normal play's "no live player" flags stay at their initial 1, so
+      // the plain `dt`; the weighted run is for a side whose flags were read
+      // and came out alive, with somewhere to spawn.
+      const plain = stranded || end.noLive[team] || end.cantSpawn[team];
+      round.countdowns[team] -= plain ? dt : held[enemy] * dt / 100;
+      const interval = stranded ? atEndInterval : intervals[team];
       // A frame long enough to cross the interval more than once spends more
       // than one ticket, which is what the engine's per-frame subtract does.
       while (round.countdowns[team] <= 0) {
         if (!spend(team, 1)) break;
         lost[team] += 1;
-        round.countdowns[team] += intervals[team];
+        round.countdowns[team] += interval;
       }
     }
+    showObjectiveTickets();
     decideOnTickets();
     decideOnTime();
     return lost;
@@ -712,6 +859,10 @@ export function createRoundState({
   function restart() {
     round.tickets[1] = startingTickets(counts[1], startPlayers);
     round.tickets[2] = startingTickets(counts[2], startPlayers);
+    // `restartMap` destroys every objective and `ObjectiveManager::reset`
+    // runs (OBJ-6); their spawners stand fresh ones up.
+    round.objectives?.reset?.();
+    objectiveStart();
     round.counts.clear();
     round.teams = { 1: emptyTeamScore(), 2: emptyTeamScore() };
     for (const team of [1, 2]) {
@@ -729,8 +880,9 @@ export function createRoundState({
   }
 
   Object.assign(round, {
-    tally, kill, suicide, capture, flagScore, tick, spend, endRound, restart,
-    restartDue, shares, medals,
+    tally, kill, suicide, capture, flagScore, objectiveScore, objectiveWin,
+    tick, spend, endRound, restart, restartDue, shares, medals,
   });
+  objectiveStart();
   return round;
 }

@@ -724,6 +724,12 @@ class RoomTests(unittest.TestCase):
         self.assertEqual("Willy", z["restartSpawns"][-1])
         self.assertEqual(["Willy"], z["liveAfter"])
 
+    def test_the_pre_games_set_team_cancels_spawn_delay_at_start(self) -> None:
+        # SPAWN-21: the room loads in the pre-game, so the pad with its own
+        # side stands its hull at once and the one with none waits.
+        self.assertEqual([{"template": "Willy", "live": 1}, {"template": "Zero", "live": 0}],
+                         self.results["preGame"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -111,5 +111,35 @@ class VehiclePadTests(unittest.TestCase):
         self.assertEqual([True, False, False, False, True, False], self.results["delayAtStart"])
 
 
+    def test_a_point_switched_off_stops_its_pads(self) -> None:
+        s = self.results["switched"]
+        self.assertEqual({"team": 2, "active": True}, s["before"])
+        self.assertEqual({"team": 2, "active": False}, s["off"])
+        self.assertEqual({"team": 2, "active": True}, s["on"])
+
+
+    def test_a_restart_stands_every_pad_up_again(self) -> None:
+        r = self.results["restart"]
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], r["before"])
+        self.assertEqual([], r["cleared"])
+        # Back to the round's opening: team 2's pad, on, delay -1.
+        self.assertEqual({"team": 2, "active": True, "delay": -1}, r["reset"])
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], r["after"])
+        self.assertEqual(2, r["tankTeam"])
+
+
+    def test_a_pre_game_set_team_cancels_spawn_delay_at_start(self) -> None:
+        a = self.results["atStart"]
+        # The MLRS's own team and owned point: no delay, so it stands at load
+        # (and the pad has drawn its next window, the full 60 s at 0 of 0).
+        self.assertEqual({"delay": 60, "live": 1}, a["first"]["mlrs"])
+        # No team, no point: the word holds, the full window with no players.
+        self.assertEqual({"delay": 60, "live": 0}, a["first"]["scud"])
+        # After a restart the delay holds: 20 + 40 x (1 - 8/16) = 40 s, one
+        # frame of it run.
+        self.assertEqual(0, a["restart"]["mlrs"]["live"])
+        self.assertAlmostEqual(40 - 1 / 30, a["restart"]["mlrs"]["delay"], places=1)
+
+
 if __name__ == "__main__":
     unittest.main()

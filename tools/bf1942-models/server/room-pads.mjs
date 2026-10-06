@@ -42,6 +42,7 @@ import * as THREE from 'three';
 
 import {
   AbandonClock, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides,
+  preGameSetTeam,
 } from '../viewer/deployables.js';
 import { CHARACTER_HEIGHT } from '../viewer/soldier-pose.js';
 import { afterDeath } from '../viewer/after-death.js';
@@ -146,16 +147,20 @@ export function createRoomPads({ room, onRow, unmount }) {
 
   /** `ObjectSpawner::reset` (SPAWN-19): every pad as the level starts it, its
    *  first delay drawn on the next tick, and the bake's frame stood up now:
-   *  the pad, then the hulls it does not stand taken out of the world. */
-  function resetPads() {
+   *  the pad, then the hulls it does not stand taken out of the world. At
+   *  the load (`preGame`) a pad's `setTeam` cancels its `spawnDelayAtStart`
+   *  (SPAWN-21); at a restart it holds. */
+  function resetPads({ preGame = false } = {}) {
     for (const record of records) {
       record.pad = padFromSpawn(record.spawn);
       record.held = null;
       record.flag = undefined;
+      record.switchedOff = false;
       record.firstDraw = true;
       record.live.clear();
       record.pad.reset();
       followPadPoint(record, pointTeam(record));
+      if (preGame) preGameSetTeam(record);
       record.pad.tick(0, {
         alive: entry => record.live.has(entry),
         critical: () => false,
@@ -406,7 +411,7 @@ export function createRoomPads({ room, onRow, unmount }) {
     }
   }
 
-  resetPads();
+  resetPads({ preGame: true });
 
   return {
     records,

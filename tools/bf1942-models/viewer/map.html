@@ -257,6 +257,8 @@ import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
 import { createCtfPage } from './ctf-page.js';
 import { createRoundEnd } from './round-end.js';
+import { createObjectives, matchTargets } from './objectives.js';
+import { spawnGroupCensus } from './spawn-flags.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
 import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
@@ -1546,11 +1548,38 @@ let levelTicketsAtStart = null;
  *  its 16 slots), the page's its own round's. */
 let roundStartTickets = null;
 
+/**
+ * ObjectiveMode's objectives for the level's layer (objectives.js, ledger
+ * OBJ-1..OBJ-6), or null: each DestroyTarget watches the hull its named pad
+ * last stood up (`getTargetObject`), found among the vehicle pads by the
+ * report's spawner and position; a Composite or a Timer done wins the round.
+ */
+function levelObjectives() {
+  const spec = level.extras?.objectives ?? null;
+  if (!spec || !Array.isArray(spec.objectives) || !spec.objectives.length) return null;
+  let pads = null, byName = new Map();
+  return createObjectives(spec, {
+    target: name => {
+      const now = level.vehiclePads?.pads ?? null;
+      if (now !== pads) { pads = now; byName = matchTargets(spec.targets, now); }
+      const node = byName.get(String(name ?? '').toLowerCase())?.pad?.lastSpawned ?? null;
+      const armor = node ? wrecks.damageOfNode(node) : null;
+      if (!armor) return null;
+      const attacker = armor.killedBy ?? armor.lastHitPlayer ?? null;
+      return { hp: armor.hitPoints, maxHp: armor.maxHitPoints, destroyed: armor.destroyed,
+               attacker, attackerTeam: speakerOf(attacker)?.team ?? 0 };
+    },
+    onAward: award => round?.objectiveScore(award),
+    onWin: team => round?.objectiveWin(team),
+  });
+}
+
 function startRound() {
   const tickets = level.extras?.tickets ?? null;
   levelTicketsAtStart = tickets ? { ...tickets } : null;
   ticketsWritten = null;
   round = createRoundState({
+    objectives: levelObjectives(),
     settings: () => hudFeed.hudPack.scoreSettings,
     mode: () => level.extras?.gameplayMode,
     tickets,
@@ -1570,19 +1599,73 @@ function startRound() {
   }
 }
 
+/** What the end of a round's bleed counts each tick (round-state.js `tick`,
+ *  ledger TKT-5, TKT-8): the spawn groups each side holds and could take
+ *  (`spawnGroupCensus`), and whether it has a living player. */
+function roundSides() {
+  const w = level.world;
+  if (!w?.flags) return null;
+  const sides = spawnGroupCensus(w.flags);
+  sides[1].alive = false;
+  sides[2].alive = false;
+  for (const [id, p] of w.players ?? []) {
+    if ((p?.team === 1 || p?.team === 2) && !w.armorOf?.(id)?.destroyed) sides[p.team].alive = true;
+  }
+  return sides;
+}
+
 /** The points' holders at the round's start (`startRound`). */
 let controlPointStart = null;
 
+/** Whether the human was playing when the round ended (`clearWorld` took his
+ *  soldier), for the restart's spawn screen. */
+let playingAtRoundEnd = null;
+
 /**
- * `GameServer::restartMap` (0x08157cb0, ledger ROUND-9), as far as the page
- * runs it: everyone off the field (the bots out of their seats and back on
- * their own side's flags with a fresh body, the human back to the spawn
- * screen), `ControlPoint::reset` for every point (its holder at the round's
- * start, its capture clock cleared), the dropped kits gone, the flags home,
- * then the round itself (`round.restart`: the tickets re-made, the score
- * wiped, the rounds won kept). The bodies are moved while the status is still
- * EndGame, so none of it scores (ROUND-7). `ObjectSpawner::reset` (every hull
- * back on its pad) is not run: the vehicles keep the state the round left.
+ * The first tick of the end of a round (`gameStatusFirstEndGame` 0x08152a60
+ * -> `clearWorld` 0x081578f0, ledger ROUND-10): every living player is killed
+ * (the round is over, so nothing scores or costs a ticket, ROUND-7), every
+ * hull is taken off the field and the kits on the ground go. Nobody fights
+ * through the debriefing: no bot thinks while the round is over, and the human
+ * cannot spawn until the restart (`GameServer::spawnPlayer` refuses a human
+ * outside status 1, 0x0814c9b8). The engine puts a human's camera at the
+ * level's before-spawn camera; the page leaves it where it was. A room's
+ * server clears its own field (ROUND-11), and the page follows its rows.
+ */
+function clearWorld() {
+  if (!round || room.roomJoined) return;
+  const w = level.world;
+  for (const bot of referee.bots) {
+    try {
+      if (bot.vehicle) referee.leaveVehicle(bot, { silent: true });
+      const armor = w?.armorOf(bot.playerId);
+      if (armor && !armor.destroyed) armor.applyDamage(armor.hitPoints + 1);
+    } catch (err) {
+      console.warn('[round] the end of the round could not kill', bot.playerId, err);
+    }
+  }
+  playingAtRoundEnd = optOnFoot.checked && (!optPilot.checked || !!localPlayer.occupancy);
+  if (localPlayer.soldier && !localPlayer.soldierDead) {
+    try { if (localPlayer.occupancy) vehicleEntry.exitSeat(); } catch (err) { console.warn('[round] exit', err); }
+    w?.removePlayer(LOCAL_PLAYER);
+    localPlayer.discardSoldier();
+    soldierKit.disposeHandWeapon();
+    commsWasAlive = false;
+  }
+  wrecks.clearWorld();
+  kitDrops.reset();
+}
+
+/**
+ * `GameServer::restartMap` (0x08157cb0, ledger ROUND-9, ROUND-10), as far as
+ * the page runs it: everyone off the field (the bots out of their seats and
+ * back on their own side's flags with a fresh body, the human back to the
+ * spawn screen), `ControlPoint::reset` for every point (its holder at the
+ * round's start, its capture clock cleared), the dropped kits gone, the flags
+ * home, `clearWorld` again and `ObjectSpawner::reset` on every pad (a fresh
+ * hull on each), then the round itself (`round.restart`: the tickets re-made,
+ * the score wiped, the rounds won kept). The bodies are moved while the status
+ * is still EndGame, so none of it scores (ROUND-7).
  */
 function restartRound(fromRoom = null) {
   if (!round) return;
@@ -1604,8 +1687,10 @@ function restartRound(fromRoom = null) {
   }
   // A soldier in a seat is playing too: the seat checks the pilot box
   // (`vehicle-entry.js` `markPilot`) and leaves the on-foot one set, so the
-  // pilot box alone would leave him with no body and no spawn screen.
-  const playing = optOnFoot.checked && (!optPilot.checked || !!localPlayer.occupancy);
+  // pilot box alone would leave him with no body and no spawn screen. The
+  // end of the round has taken him already, so its answer stands.
+  const playing = playingAtRoundEnd ?? (optOnFoot.checked && (!optPilot.checked || !!localPlayer.occupancy));
+  playingAtRoundEnd = null;
   if (localPlayer.soldier && !localPlayer.soldierDead) {
     try { if (localPlayer.occupancy) vehicleEntry.exitSeat(); } catch (err) { console.warn('[round] exit', err); }
     w?.removePlayer(LOCAL_PLAYER);
@@ -1638,6 +1723,15 @@ function restartRound(fromRoom = null) {
   kitDrops.reset();
   deployables.restartRound();
   ctfPage.reset();
+  // `restartMap` (ROUND-10): `clearWorld` again, then every pad reset, so each
+  // stands a fresh hull up on its own spot; the hulls no pad names come back
+  // where they were placed. A room's server resets its own pads
+  // (`server/room-pads.mjs`), and its rows stand the hulls here.
+  if (!fromRoom) {
+    wrecks.clearWorld();
+    level.vehiclePads?.restartVehiclePads?.({ players: w?.players?.size ?? 0, maxPlayers: ROUND_MAX_PLAYERS });
+    wrecks.restartHulls();
+  }
   round.restart();
   ticketsWritten = null;
   syncTickets();
@@ -2214,6 +2308,7 @@ const roundEnd = createRoundEnd(bag(
     ],
     holdScoreboard: on => scoreboard.holdOpen(on),
     releasePointer: () => { if (document.pointerLockElement) document.exitPointerLock?.(); },
+    clearWorld: () => clearWorld(),
     restartRound: () => restartRound(),
     // A room's restart is its server's row, and its medals the server's.
     get roomJoined() { return room.roomJoined; },
@@ -2634,7 +2729,8 @@ function simulate(dt, input, look) {
   // Not under a replay: its round is the recording's (replay-round.js), and
   // this one would bleed the level's starting flags into the counter.
   if (!replayController?.active()) {
-    if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints);
+    if (round && !room.roomJoined) round.tick(step.ticks / 30, level.extras?.controlPoints,
+      step.ticks > 0 ? roundSides() : null);
     // A room's round is decided on its server; once that has ended it, only
     // the restart's countdown runs here (`tick` off Playing does nothing else).
     if (round && room.roomJoined && round.status !== 'playing') round.tick(step.ticks / 30, null);

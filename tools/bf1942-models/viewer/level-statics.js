@@ -5,7 +5,9 @@
 // cull. Out of level-load.js; `show()` indexes each level through it.
 
 import * as THREE from 'three';
-import { calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides } from './deployables.js';
+import {
+  calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides, preGameSetTeam,
+} from './deployables.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 
 export function isCollision(obj) {
@@ -512,6 +514,10 @@ export function createLevelStatics(page) {
       };
       pad.reset();
       followPoint(record);
+      // The level loads in the pre-game, where a `setTeam` cancels the pad's
+      // `spawnDelayAtStart` (SPAWN-21); after a restart the delay holds
+      // (`restartVehiclePads`).
+      preGameSetTeam(record);
       pad.tick(0, {
         alive: node => record.live.has(node),
         critical: () => false,
@@ -523,8 +529,50 @@ export function createLevelStatics(page) {
         },
       });
       for (const node of nodes.values()) padRecords.set(node, record);
+      markAbsent(record);
+      // What `ObjectSpawner::reset` puts back at a restart (`+0x138`, the
+      // team the pre-game gave it; on or off as the round opened).
+      record.restart = { team: pad.team, active: pad.active, held: record.held };
       statics.pads.push(record);
     });
+  }
+
+  /** Flag each of a pad's nodes that is not standing in the world: the pad
+   *  has not stood it up (its side does not hold the point, its delay runs) or
+   *  its object is gone. What the object carries goes with it, its supply
+   *  depot first (`world-fields.js` `depotSuspended`): Medina Ridge's `fk1`
+   *  and Bragg's `IS_Kill` / `USS_Kill` work only while their pads' objects
+   *  stand. */
+  function markAbsent(record) {
+    for (const node of record.nodes.values()) {
+      const absent = !record.live.has(node);
+      if (node.userData.padAbsent !== absent) node.userData.padAbsent = absent;
+    }
+  }
+
+  /**
+   * `restartMap`'s `ObjectSpawner::reset` (0x08314880) on every vehicle pad
+   * (ledger ROUND-10): the slots empty, the team the pre-game gave it, on as
+   * the round opened, and the delay -1 or, with `spawnDelayAtStart`, drawn
+   * again for the server as it stands (the status is EndGame, so no `setTeam`
+   * cancels it, SPAWN-21). The hulls are already off the field
+   * (`vehicle-wrecks.js` `clearWorld`); each pad stands a fresh one up on its
+   * own spot on its next frame. The page puts the points back first, as
+   * `restartMap` runs `ControlPoint::reset` before it.
+   */
+  function restartVehiclePads({ players = 0, maxPlayers = 0 } = {}) {
+    for (const record of statics.pads) {
+      const { pad } = record;
+      pad.reset({ players, maxPlayers });
+      const start = record.restart ?? {};
+      if (start.team != null) pad.team = start.team;
+      if (start.active != null) pad.active = start.active;
+      record.held = start.held ?? record.held;
+      record.switchedOff = false;
+      record.firstDraw = false;
+      record.live.clear();
+      markAbsent(record);
+    }
   }
 
   /**
@@ -581,6 +629,7 @@ export function createLevelStatics(page) {
           return node;
         },
       });
+      markAbsent(record);
     }
   }
 
@@ -607,6 +656,9 @@ export function createLevelStatics(page) {
 
   function vehicleSpawnActive(vehicle) {
     if (remoteGone.has(vehicle)) return false;
+    // Off the field since the end of the round (`vehicle-wrecks.js`
+    // `clearWorld`) until it is stood up again.
+    if (vehicle?.userData?.cleared) return false;
     const record = padRecords.get(vehicle);
     if (record) return record.live.has(vehicle);
     // A node no pad entry names (a scene written before `objectSpawns`): the
@@ -821,6 +873,7 @@ export function createLevelStatics(page) {
     freezeVehicle,
     indexScene,
     padOf,
+    restartVehiclePads,
     stepVehiclePads,
     tagCull,
     thaw,

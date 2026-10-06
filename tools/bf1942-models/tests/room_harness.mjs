@@ -1488,4 +1488,25 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   };
 }
 
+// --- (preGame) the pre-game's setTeam (SPAWN-21) -----------------------------------
+// The room loads its pads in the pre-game, so a `spawnDelayAtStart` pad with
+// its own `Object.setTeam` stands its hull at once; one with no side of its
+// own keeps the delay (`deployables.js` `preGameSetTeam`, the page's law).
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const pad = (vehicle, team, x) => ({
+    vehicle, team, position: [x, 0, 40], rotation: [0, 0, 0],
+    minSpawnDelay: 30, maxSpawnDelay: 30, spawnDelayAtStart: 1, controlPointName: 'North',
+  });
+  const descriptor = {
+    ...base, name: 'pregame', vehicles: undefined,
+    extras: { ...base.extras, objectSpawns: [pad('Willy', 1, 40), pad('Zero', 0, 80)] },
+  };
+  core.levels.set('pregame', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pQ = attachPeer(core, String(nextTag++));
+  sendJson(pQ, MSG_JOIN, { room: 'PREGAME', name: 'Early', team: 1, level: 'pregame' });
+  const room = core.room('PREGAME');
+  results.preGame = room.pads.records.map(r => ({ template: r.spawn.vehicle, live: r.live.size }));
+}
+
 console.log(JSON.stringify(results));

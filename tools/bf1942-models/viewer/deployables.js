@@ -263,11 +263,40 @@ export function padFromSpawn(spawn) {
  * vehicle (SPAWN-2).
  */
 export function followPadPoint(record, team) {
-  if (team == null || team === record.held) return;
-  if (record.held === 1 || record.held === 2) record.pad.disable(0);
-  if (team === 1 || team === 2) record.pad.enable(team);
-  else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
-  record.held = team;
+  if (team == null) return;
+  if (team !== record.held) {
+    if (record.held === 1 || record.held === 2) record.pad.disable(0);
+    if (team === 1 || team === 2) record.pad.enable(team);
+    else if (record.held == null && record.pad.team !== 1 && record.pad.team !== 2) record.pad.disable(0);
+    record.held = team;
+    record.switchedOff = false;
+  }
+  // The point switched off while it keeps its side (`CPDisable` from
+  // `disableWhenLosingControl` or `disableIfEnemyInsideRadius`, ledger
+  // SPAWN-22, the flag's `spawnsEnabled` that `bot-referee.js`
+  // `controlPointStep` writes) gives its pads its team and stops them;
+  // `CPEnable` starts them again. A flag that never says so leaves them be.
+  const off = (team === 1 || team === 2) && record.flag?.spawnsEnabled === false;
+  if (off !== !!record.switchedOff) {
+    if (off) record.pad.disable(team); else record.pad.enable(team);
+    record.switchedOff = off;
+  }
+}
+
+/**
+ * The level loads in the pre-game (status 3: `GameServer::init` writes it, and
+ * only `gameStatusPreGame`'s timer writes 1), and `ObjectSpawner::setTeam`
+ * there cancels a pad's `spawnDelayAtStart` (`delay = -1`, ledger SPAWN-21):
+ * its own `Object.setTeam`, or the `CPEnable` of an owned point that files it
+ * by `setOSId`. So the round's first frame stands it up. Run once at load,
+ * after `followPadPoint`; a restart's `ObjectSpawner::reset` runs in the end
+ * game, where nothing cancels the delay. A pad filed only by the
+ * nearest-point guess keeps its delay: nothing says a point gave it a team.
+ */
+export function preGameSetTeam(record) {
+  const own = record.spawn?.team;
+  const owned = Number.isFinite(record.spawn?.osId) && (record.held === 1 || record.held === 2);
+  if (record.pad.atStart && (own === 1 || own === 2 || owned)) record.pad.delay = -1;
 }
 
 /**

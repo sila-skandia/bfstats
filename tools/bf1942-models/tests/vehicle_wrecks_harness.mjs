@@ -220,7 +220,76 @@ function abandoned({ at = 60, seconds = 60, soldier = false, occupied = false, w
   return hp;
 }
 
+/**
+ * The end of a round and the restart (ledger ROUND-10): `clearWorld` takes an
+ * intact hull, a burning one and a wreck off the field at once, with no wreck
+ * left; the pads see them gone (`padWorld.alive`); `respawnVehicle` brings
+ * each back fresh, and a node no pad names comes back through `restartHulls`.
+ */
+function clearAndRestart() {
+  const nodes = [hull(), hull(), hull()];
+  const vehicleDamage = new Map();
+  const disabled = new Set();
+  const retired = [];
+  const p = {
+    ...page(),
+    vehicleDamage,
+    collider: { statics: { disableOwner: o => disabled.add(o), enableOwner: o => disabled.delete(o) },
+                clearMovedOwner() {} },
+    retireVehicleBody: o => retired.push(o),
+    world: {
+      fireStates: new Map(), falling: new Set(), players: new Map(), armorOf: () => null,
+      addDamageable: (owner, node, extras) => {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    // Owner 2 is on no pad.
+    vehiclePads: { pads: null, padOf: node => (node === nodes[2].node ? null : {}), stepVehiclePads() {} },
+  };
+  for (const h of nodes) h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  const wrecks = createVehicleWrecks(p);
+  wrecks.registerDamageables(nodes.map(h => h.node));
+  vehicleDamage.get(1).damage(80);          // burning, not destroyed
+  wrecks.damageVisuals.get(2).wrecked = true;
+  wrecks.damageVisuals.get(2).hidden = [];
+  // What stays: an armoured object that is not a PlayerControlObject, and one
+  // a spawn effect stood up (its own module removes it, HP-20).
+  const keep = [hull(), hull()];
+  keep[0].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'SimpleObject' };
+  keep[1].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'PlayerControlObject' };
+  wrecks.registerDamageable(3, keep[0].node);
+  wrecks.registerDamageable(4, keep[1].node, { spawned: true });
+  wrecks.clearWorld();
+  const kept = keep.map(h => ({ visible: h.node.visible, cleared: !!h.node.userData.cleared }));
+  const after = [0, 1, 2].map(o => ({
+    removed: !!wrecks.damageVisuals.get(o).removed, alive: wrecks.padWorld.alive(nodes[o].node),
+    cleared: !!nodes[o].node.userData.cleared, collision: !disabled.has(o) }));
+  const spawned = [0, 1].map(o => wrecks.padWorld.spawn(nodes[o].node));
+  wrecks.restartHulls();
+  const result = {
+    after, retired, spawned, kept,
+    back: [0, 1, 2].map(o => ({ removed: !!wrecks.damageVisuals.get(o).removed,
+                                cleared: !!nodes[o].node.userData.cleared, hp: vehicleDamage.get(o).hitPoints,
+                                collision: !disabled.has(o) })),
+  };
+  // In a room the server clears and restarts the field (ROUND-11): the
+  // page's own pass stands down and its rows do the work.
+  const roomNodes = [hull(), hull()];
+  for (const h of roomNodes) h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  const roomWrecks = createVehicleWrecks({ ...p, vehicleDamage: new Map(),
+    world: { ...p.world, addDamageable: (owner, node, extras) => new DamageableVehicle(extras, { owner }) },
+    vehiclePads: { ...p.vehiclePads, remotePads: true } });
+  roomWrecks.registerDamageables(roomNodes.map(h => h.node));
+  roomWrecks.clearWorld();
+  roomWrecks.restartHulls();
+  const room = roomNodes.map(h => ({ visible: h.node.visible, cleared: !!h.node.userData.cleared }));
+  return { ...result, room };
+}
+
 process.stdout.write(JSON.stringify({
+  restart: clearAndRestart(),
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
   afterDeath: {
     unwritten: afterDeathRun({}),

@@ -85,6 +85,15 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual(("DRAW", ""), (w["draw"]["title"], w["draw"]["line"]))
         self.assertEqual(("MAJOR VICTORY", ""), (w["bare"]["title"], w["bare"]["line"]))
 
+    def test_objective_mode_has_its_own_titles_and_lines(self) -> None:
+        o = self.results["objective"]
+        self.assertEqual(("VICTORY", "Britain was saved."), (o["alliedWin"]["title"], o["alliedWin"]["line"]))
+        self.assertEqual(("DEFEAT", "Sealion is scrapped."), (o["axisLoss"]["title"], o["axisLoss"]["line"]))
+        # The victory type does not change the title; the cues are the same.
+        self.assertEqual(("VICTORY", "win"), (o["minorStillBare"]["titleKey"], o["minorStillBare"]["music"]))
+        self.assertEqual(("DEBRIEFING_DRAW", None), (o["draw"]["titleKey"], o["draw"]["music"]))
+        self.assertEqual(("DEFEAT", ""), (o["english"]["title"], o["english"]["line"]))
+
     def test_medal_art_is_the_winners_side(self) -> None:
         s = self.results["sprites"]
         self.assertEqual("allied_xl_gold_32x32.png", s["gold2"])
@@ -109,7 +118,9 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual((False, "playing", 1), (after["shown"], after["status"], after["restarts"]))
         self.assertEqual({"1": 0, "2": 1}, after["roundsWon"])
         self.assertEqual({"1": 3, "2": 3}, after["tickets"])
-        self.assertEqual(["pointer", "board:true", "music:win", "board:false", "music:stop", "restart"],
+        # The field is cleared once, on the end game's first tick, after the
+        # medals are read (ROUND-10).
+        self.assertEqual(["clear", "pointer", "board:true", "music:win", "board:false", "music:stop", "restart"],
                          flow["calls"])
 
     def test_a_new_level_closes_the_screen_without_a_restart(self) -> None:
@@ -117,7 +128,7 @@ class RoundEndTests(unittest.TestCase):
         self.assertTrue(second["again"])
         self.assertTrue(second["closedByNewLevel"])
         self.assertEqual(1, second["restarts"])
-        self.assertEqual(["pointer", "board:true", "music:win", "board:false", "music:stop"],
+        self.assertEqual(["clear", "pointer", "board:true", "music:win", "board:false", "music:stop"],
                          second["calls"])
 
     def test_a_draw_plays_no_cue_and_a_single_player_round_waits(self) -> None:

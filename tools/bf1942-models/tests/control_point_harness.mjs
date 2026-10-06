@@ -134,4 +134,46 @@ const results = {
   results.oldLawTrades = trades;
 }
 
+// A point's spawns while it is being taken (SPAWN-22). Telemark's bridge
+// points say `disableWhenLosingControl 1`: an Allied soldier alone on the
+// Axis point runs it down with its spawns off, and the Axis defender
+// stepping back on (no enemy now) holds it and turns them on again. Basrah's
+// Edge's US base says `loseControlWhenEnemyClose 0` and
+// `disableIfEnemyInsideRadius 1`: a defender and an enemy both on it hold it
+// with its spawns off. A point without either keeps them on throughout.
+{
+  const extras = {
+    controlPoints: [
+      { name: 'axis_BASE_bridge', team: 1, spawnGroupId: 8, radius: 15, areaValue: 10,
+        timeToLoseControl: 10, disableWhenLosingControl: true },
+      { name: 'USspawn', team: 2, spawnGroupId: 1, radius: 15, areaValue: 10,
+        disableWhenLosingControl: true, disableIfEnemyInsideRadius: true, loseControlWhenEnemyClose: false },
+      { name: 'plain', team: 1, spawnGroupId: 3, radius: 15, areaValue: 10, timeToLoseControl: 10 },
+    ],
+    soldierSpawns: [
+      { group: 8, team: 1, position: [0, 0, 0], name: 'bridge' },
+      { group: 1, team: 2, position: [100, 0, 0], name: 'us' },
+      { group: 3, team: 1, position: [200, 0, 0], name: 'plain' },
+    ],
+  };
+  const flags = spawnFlags(extras);
+  const [bridge, us, plain] = flags;
+  const spawns = f => f.spawns.length;
+  const step = (f, teams, seconds) => { for (let i = 0; i < Math.round(seconds / DT); i++) controlPointStep(f, teams, DT); };
+  const out = { start: [bridge, us, plain].map(f => [f.spawnsEnabled, spawns(f)]) };
+  step(bridge, [2], 3);
+  step(plain, [2], 3);
+  out.losing = { bridge: [bridge.team, bridge.spawnsEnabled, spawns(bridge), bridge._cp.state],
+                 plain: [plain.team, plain.spawnsEnabled, spawns(plain)] };
+  step(bridge, [1], 1);
+  out.held = [bridge.team, bridge.spawnsEnabled, spawns(bridge), bridge._cp.state];
+  step(bridge, [2], 11);
+  out.lost = [bridge.team, bridge.spawnsEnabled, spawns(bridge)];
+  step(us, [2, 1], 2);
+  out.contested = [us.team, us.spawnsEnabled, spawns(us), us._cp.state];
+  step(us, [2], 1);
+  out.cleared = [us.team, us.spawnsEnabled, spawns(us)];
+  results.switched = out;
+}
+
 process.stdout.write(JSON.stringify(results));

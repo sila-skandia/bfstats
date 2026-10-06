@@ -76,5 +76,15 @@ class DeckSpawnHostTests(unittest.TestCase):
         self.assertNotEqual(self.out["fletcherDrop"], 0)
 
 
+    def test_an_aircrafts_spawn_point_rides_it(self):
+        # SPAWN-4 for a carrier that is no ship: DC's AC-130.
+        ac = self.out["ac130"]
+        for got, want in zip(ac["flown"], ac["expected"]):
+            self.assertAlmostEqual(got, want, places=2)
+        self.assertGreater(ac["flown"][0] - ac["atPad"][0], 790)
+        for got, want in zip(ac["back"], ac["atPad"]):
+            self.assertAlmostEqual(got, want, places=2)
+
+
 if __name__ == "__main__":
     unittest.main()
