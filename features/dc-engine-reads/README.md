@@ -162,6 +162,20 @@ guard below). Basrah's Edge, baked the same way, goes from 902 collision nodes
 to 828: the 55 fenceposts and 4 treepots that say 0, and the 15 weapons and
 helmets in its armory racks, exactly what the census predicts.
 
+The review baked two more levels with con-reader merged, before and after
+this gate (2026-10-07), and probed every lost hull with the viewer's own
+collider, rounds and a 0.3 m soldier sphere at three heights each way. Gazala
+loses its 8 roof lamps and nothing else; a lamp's hull is a 1 cm two-face quad
+(`rooflamp1_m1.sm`), so nothing a player meets changes. Operation Bragg loses
+the 4 roof lamps, the barracks' far-mesh hull (the near mesh still stops every
+sphere), the `Mi24DWreck` (21 x 5 x 17 m, says nothing, like every wreck
+template in vanilla and DC; spheres and rounds now pass), and **6 parts of the
+kit pickups its spawners hold** (`Us_Helmet`, `GrenadeAlliesComplex`): the kit
+says 1 over its own bag mesh and its `KitPart`s say nothing. The census below
+walks placed and mode statics only, so it leaves out what a spawner holds;
+kit pickups add to every tree's count. The hangars, used as controls, block
+the same before and after.
+
 **Blast radius**, measured per level with each level's own library (level
 scripts first, as a bake reads them), both spellings read, over every placed
 static and mode static, by walking each one the way the old build and the new
@@ -210,6 +224,10 @@ warehouse `r_ruswh_m1` (x22), both hangars (x13) and two buildings' ladders.
 This commit must be merged after con-reader's spelling normalisation, or
 together with it, and before any re-bake. `tests/test_dc_engine_reads.py`
 `test_the_bare_spelling_reaches_the_word` fails until then, on purpose.
+Merged with con-reader, one of its fixtures needs the word too:
+`test_assemble.py` `GeometryScaleExportTests.LIBRARY`'s `Hull` bundle must say
+`ObjectTemplate.setHasCollisionPhysics 1`, or this gate rightly ships it no
+hull and `test_the_part_draws_and_collides_scaled_and_says_so` fails.
 
 **Open:**
 
