@@ -312,6 +312,19 @@ async function main() {
     throw new Error(`A walked only ${aMoved.toFixed(2)} m locally`);
   }
 
+  // The pads are the server's (`server/room-pads.mjs`): every hull the room
+  // stands, A's page stands, and every one it holds off the field (a pad's
+  // other side), A's page holds off too; each room vehicle finds its copy.
+  const hulls = await pageA.evaluate(() => window.__net().hulls);
+  const unmatched = hulls.filter(h => h.page === null).map(h => h.template);
+  const disagree = hulls.filter(h => h.page !== null && h.page !== h.live)
+    .map(h => `${h.template}#${h.id} room ${h.live} page ${h.page}`);
+  process.stdout.write(`[A] hulls: ${hulls.length} in the room, ${hulls.filter(h => h.live).length} standing, `
+    + `${unmatched.length} without a page copy, ${disagree.length} disagreeing\n`);
+  if (!hulls.length) throw new Error('the room sent no hulls');
+  if (unmatched.length) throw new Error(`A's page has no copy of ${unmatched.join(', ')}`);
+  if (disagree.length) throw new Error(`A's page and the room disagree: ${disagree.join('; ')}`);
+
   // B joins now and confirms A's server-side state end to end: the wire's
   // ghost sits within 2 m of where the local sim put A (the page and the
   // server spawn the same flag — the smoke's spawn row carries the flag

@@ -245,7 +245,8 @@ export function decodeInputFrame(payload) {
 //   u8  slot           1..16
 //   u8  flags          bit0 alive, bit1 seated, bit2 crouch, bit3 prone,
 //                      bit4 inVehicle (position is the hull's), bits5-7 the
-//                      swim state (`SWIM_WIRE`, 0 = dry)
+//                      swim state (`SWIM_WIRE`, 0 = dry) or a blast's
+//                      flight (`FLIGHT_WIRE`, 6 and 7)
 //   u8  team           1 = Axis, 2 = Allies
 //   f32 x, y, z        soldier feet, or the hull's origin when inVehicle
 //   f32 yaw, pitch     degrees; NaN when seated (the hull owns the facing)
@@ -291,6 +292,24 @@ export function swimWireCode(family) {
   const i = family ? SWIM_WIRE.indexOf(family) : -1;
   return i > 0 ? i : 0;
 }
+
+/**
+ * A blast's flight on the wire, in the same three bits' two codes the swim
+ * states leave free: 6 for `Lb_ExplosionForward`, 7 for `...Backward`
+ * (`knockback.js` `EXPLOSION_CLIPS`, KNOCK-1). The two never hold at once (a
+ * man in the water is not thrown into a flight, and one flying is not
+ * swimming), and a reader from before them decodes either as dry. The engine's
+ * own ghost state carries the soldier's lower state the same way it carries
+ * the swim bit; the record's three bits are where this one has room for it.
+ */
+export const FLIGHT_WIRE = Object.freeze({ 6: 'flyForward', 7: 'flyBackward' });
+
+/** The three bits for a player row: its flight, else its swim state. */
+export function lowerWireCode(p) {
+  if (p?.flight === 'flyForward') return 6;
+  if (p?.flight === 'flyBackward') return 7;
+  return swimWireCode(p?.swim);
+}
 export const SNAPSHOT_VEHICLE_BYTES = 30;
 
 export function encodeSnapshot(tick, players, vehicles) {
@@ -302,7 +321,7 @@ export function encodeSnapshot(tick, players, vehicles) {
   buf.setUint8(o, players.length); o += 1;
   for (const p of players) {
     const flags = (p.alive ? 1 : 0) | (p.seated ? 2 : 0) | (p.crouch ? 4 : 0)
-      | (p.prone ? 8 : 0) | (p.inVehicle ? 16 : 0) | (swimWireCode(p.swim) << 5);
+      | (p.prone ? 8 : 0) | (p.inVehicle ? 16 : 0) | (lowerWireCode(p) << 5);
     buf.setUint8(o, p.slot); o += 1;
     buf.setUint8(o, flags); o += 1;
     buf.setUint8(o, p.team ?? 0); o += 1;
@@ -356,6 +375,7 @@ export function decodeSnapshot(payload) {
       prone: (flags & 8) !== 0,
       inVehicle: (flags & 16) !== 0,
       swim: SWIM_WIRE[(flags >> 5) & 7] ?? null,
+      flight: FLIGHT_WIRE[(flags >> 5) & 7] ?? null,
       team, x, y, z, yaw, pitch,
       hp: hp === 0xffff ? null : hp,
       vehicleId,

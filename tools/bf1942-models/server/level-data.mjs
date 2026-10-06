@@ -29,6 +29,7 @@ export class LevelData {
     this.templates = source.templates;         // name(lower) -> Object3D tree
     this.colliderMock = source.colliderMock;   // fake levels only
     this.loadouts = source.loadouts;           // P3 seam: kit hit points
+    this.soldierBody = source.soldierBody ?? null;   // gaits.json's: a blast's push
     this.descriptor = source.descriptor || null;
     // The default layer's spawn list (`spawnablesFor`); a room on another
     // layer builds its own from that layer's report.
@@ -85,6 +86,9 @@ export class LevelData {
           dstAll[i].isMesh = true;
           dstAll[i].geometry = srcAll[i].geometry;
         }
+        // And the node's `scene.glb` index (`glb-scene.mjs`), which a clone
+        // does not carry either.
+        if (srcAll[i].levelNode != null) dstAll[i].levelNode = srcAll[i].levelNode;
       }
     }
     // The glb holds every layer's vehicles and statics; the page detaches
