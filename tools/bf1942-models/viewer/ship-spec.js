@@ -3,7 +3,7 @@
 // number of which comes out of the glb. Split out of `ship.js`, which
 // re-exports both; its header carries the engine reading, including why the
 // box is the root's own hull mesh and not everything drawn under it. Its tail
-// is the engine's own geometry search (`inertiaGeometryNode`, COL-13), which
+// is the engine's own geometry search (`inertiaGeometryNode`, COL-14, COL-15), which
 // the land drives read their inertia, box drag and sea depth through.
 
 import * as THREE from 'three';
@@ -269,7 +269,7 @@ export function shipSpec(root) {
   };
 }
 
-// --- the engine's own geometry search (COL-13) ------------------------------
+// --- the engine's own geometry search (COL-14, COL-15) ----------------------
 //
 // `hullGeometry` above walks the LOD chain the way a ship's tree is built. The
 // engine's search for the geometry a body's inertia and box drag read, and for
@@ -297,7 +297,7 @@ export function ownGeometryMeshes(node) {
 /**
  * The object whose geometry `PhysicsNode::updateRotationalPhysics`
  * (`0x082539e0`) takes a vehicle's inertia box from, found the way the engine
- * finds it (COL-8, COL-13):
+ * finds it (COL-8, COL-14, COL-15):
  *
  *   1. the root's own `IGeometry` (`queryComponent(0x492fe0fe)` is the
  *      object's `+0x5c`), which no vanilla or DC land root authors;
@@ -383,7 +383,7 @@ export function geometryInertia([dx, dy, dz], out = new THREE.Vector3()) {
 /**
  * The body world's part (`describeVehicleParts`) that is the engine's ROOT
  * part: the one whose collision mesh `getVertexCollision` finds for the root
- * object, by the search `inertiaGeometryNode` runs (COL-13). Not
+ * object, by the search `inertiaGeometryNode` runs (COL-15). Not
  * `part.isRoot`, which is merely the first hull part the tree walk met and on
  * a placed BMP-2 is its gun barrel. Null when no part hangs off that node.
  */

@@ -176,7 +176,7 @@ export class GroundVehicle extends Vehicle {
     this._inputOf = name => this.input(name);
 
     // Body-frame inertia, diagonal, per unit mass: `getGeometryInertia` over
-    // the vehicle's own geometry box (COL-8, COL-13), the law `WILLYS`
+    // the vehicle's own geometry box (COL-8, COL-14), the law `WILLYS`
     // already used over a guessed 1.6 x 1.5 x 3.6 m jeep. The Willy's own box
     // is 1.734 x 1.523 x 3.636, a SCUD-B's 3.42 x 2.16 x 11.57, which is
     // nine times the yaw inertia. `inertiaModifier` is not applied: no
