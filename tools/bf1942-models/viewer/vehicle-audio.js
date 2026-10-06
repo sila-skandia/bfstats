@@ -80,6 +80,21 @@ export const PART_RULES = {
  *  re-applies exactly when nothing moved. */
 export const PART_STILL = 1e-3;
 
+/** A landing gear turning faster than this many times its fastest axis's
+ *  `setMaxSpeed` is being re-posed, not travelling (`_partTick`). Two, not
+ *  one: a leg's axes travel together, each at its own speed. */
+export const GEAR_SNAP = 2;
+
+/** The fastest `maxSpeed` of a part's rig axes, deg/s; Infinity when the node
+ *  carries none, so nothing is taken for a snap. */
+function gearSpeed(node) {
+  let fastest = 0;
+  for (const axis of Object.values(node?.userData?.rig?.axes ?? {})) {
+    fastest = Math.max(fastest, Math.abs(axis?.maxSpeed ?? 0));
+  }
+  return fastest > 0 ? fastest : Infinity;
+}
+
 /**
  * How many occupied hulls keep a sounding graph at once.
  *
@@ -856,7 +871,14 @@ export class VehicleAudioRack {
       const [goingUp, comingDown] = part.patches;
       const up = (entry.drive?.input?.('c_PILandingGear') ?? 0) >= 0.5;
       const [playing, other] = up ? [goingUp, comingDown] : [comingDown, goingUp];
-      if (moving) {
+      // A leg travels at its own `setMaxSpeed` (vehicle-base.js
+      // `advanceSurfaces`). Faster than that is the page re-posing it -- a
+      // replay's seek, a hull put back at its spawn -- not travel, and an
+      // engine object never jumps (the ctor seeds the last angles from the
+      // current ones, lnxded 0x08241350), so nothing plays for it.
+      if (moving && rate > GEAR_SNAP * gearSpeed(part.node)) {
+        part.rate = 0;
+      } else if (moving) {
         playing?.trigger();
         other?.release();
       } else {

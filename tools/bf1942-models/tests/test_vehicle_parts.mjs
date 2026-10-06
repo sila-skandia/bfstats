@@ -241,6 +241,24 @@ assert.deepEqual(Object.keys(PART_RULES).sort(),
 }
 
 {
+  // A leg the page re-poses in one frame (a replay's seek, a hull put back
+  // at its spawn) has not travelled: faster than twice its `setMaxSpeed` is
+  // a snap, and plays nothing.
+  const { ctx, parts, tick, part } = await rig(A10, ['A10_Gear_Front', 'A10FlapLeftOuter']);
+  parts.A10_Gear_Front.userData.rig = { axes: { roll: { maxSpeed: 30 } } };
+  tick();
+  yaw(parts.A10_Gear_Front, 40);
+  tick();
+  tick();
+  assert.equal(ctx.started.filter(s => !s.loop && /^lg/i.test(s.buffer.file)).length, 0,
+    'a 40 degree jump in one frame clunks nothing');
+  assert.equal(part('A10_Gear_Front').patches.some(p => p.active), false, 'and presses nothing');
+  yaw(parts.A10_Gear_Front, 41);
+  tick();
+  assert.equal(part('A10_Gear_Front').patches[1].active, true, 'travel at 30 deg/s still does');
+}
+
+{
   // The flap never touches its sound (SND-22): the creak runs from the claim,
   // on the hull's own acceleration and speed, and its one-shot -- which went
   // off when the plane was made -- is not built.
