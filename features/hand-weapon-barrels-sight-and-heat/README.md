@@ -381,8 +381,9 @@ shipped zero (CS-6).
   its shake. A state's own `c_PIFire` self-transition does not: a looping
   automatic shakes once a burst, and a one-shot fire state shakes each time it
   is entered anew from aim.
-- CS-10: a cloned state carries no shake, which is why the scripts name every
-  weapon's states.
+- CS-10: a clone takes the shake its source has at the time of the copy
+  (corrected by the review: `copyStateData` copies both blocks). The weapons'
+  shakes are set after the clones, so no shipped upper-body clone inherits one.
 - CS-11, where it goes. `Camera::getTransformation`, the render path, puts the
   shake on the left of the camera's transform, in the camera's own frame.
   Rounds launch from the camera's absolute transform, which carries none of
@@ -392,8 +393,8 @@ shipped zero (CS-6).
 **What was built.**
 
 - `bf42/animstates.py` parses the shake lines onto the state that
-  `createState` or `setActiveState` names. A clone does not copy them, and a
-  `setActiveState` naming no state takes nothing. `State.camera_shake_extras`
+  `createState` or `setActiveState` names. A clone copies what its source
+  has at the copy, and a `setActiveState` naming no state takes nothing. `State.camera_shake_extras`
   gives the slots in order.
 - `extract_viewmodel.py` writes each clip family's shake into the viewmodel's
   extras (`clips.<family>.cameraShake`). The families are the upper states:
