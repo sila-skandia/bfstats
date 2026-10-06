@@ -61,6 +61,17 @@ export function findWeaponSpecs(report, template) {
 }
 
 /**
+ * The parts of one vehicle that sound by their own class's rule (a turret's
+ * servo, a landing gear, a flap's creak, a track), `extract_map.
+ * find_part_scripts`'s `parts`: each `{ node, kind, script, patches,
+ * attachToListener }`, `patches` one layer list per patch of the script in
+ * its order. A report from before them has none.
+ */
+export function findPartSpecs(report, template) {
+  return findEngineSpec(report, template)?.parts ?? [];
+}
+
+/**
  * Look up gun patches by FireArms node name across every vehicle in the
  * report. Bare furniture mounts (Stationary MG42 / Browning) have no Engine
  * entry of their own, so `findWeaponSpecs(template)` is empty — but the same

@@ -21,6 +21,10 @@ runs inside a patch, never saw it. The guard now runs across the rack too.**
 **D9 (2026-09-30) is not the horn: DC Final's guns, grenade launchers and forests,
 and three engine rules the extractor had guessed at (ledger SND-12..15, SSC-6).**
 
+**D11 (2026-10-06): a vehicle gun's release tails never reached the rack (the spec
+lookups dropped them), and turrets, gear, flaps and tracks now sound by their own
+classes' rules (ledger SND-18..SND-23).**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -843,3 +847,128 @@ byte-identical for vanilla, XPack1, XPack2, DC, DC Final and EoD.
   `Sounds/SmokeIdle.ssc`.
 * Scratch runs in `~/.cache/fix-sounds/{before,after}` (`weap-<mod>/`,
   `lib-<mod>.json`).
+
+
+# D11 — burst edges that never sounded, and the parts nothing played (2026-10-06)
+
+Built in the Desert Combat parity round (package `sounds`, from the soldier
+census items A2 and A6). Read section 11 of the mod-extraction skill first:
+everything here keeps the one invariant, and both coherence sweeps run with
+the parts in.
+
+## The burst edges reached no rack
+
+D9 left "the viewer does not trigger slots 2..4 on release" open, and 75edb204
+built both halves of that. `gun-cycle.js` `releaseTick` (SND-12) tells the page
+when a burst stops. `map.html` `guns.onRelease` hands it to `vehicle-audio.js`
+`release`, which triggers the gun's Release, Shell Bounce and MG-distance
+patches. A press plays the latched Fire Loop's one-shots once (`trigger`).
+Nothing tested the two halves together, and they never met.
+`ssc-specs.js` `findWeaponSpecs` and `findWeaponSpecsByFireArms` rebuilt each
+gun spec field by field and left out `press` and `release`. So
+`loadBurstEdges` saw no edges on any tree, and no stop played a tail. That
+includes vanilla, whose scenes have carried the edges since the 10-03 sounds
+patch. The lookups now carry `press`, `release` and `reload` (the Reload slot,
+`features/hand-weapon-sound-edges`). No second trigger was added; the one
+trigger now finds its data.
+
+DC's own tree was stale besides: its scene.json files date from 09-30 15:21,
+before the edges existed, and carry none.
+
+## The parts
+
+Only an Engine's and the FireArms' scripts shipped (`extract_vehicle_sounds`).
+So a turret traversed in silence, and so did a gun's elevation, a ramp, a
+landing gear, a flap and a tank's tracks, in every mod. Vanilla binds 82
+RotationalBundle scripts (turrets, the B17's gun mounts), 14 LandingGear, 22
+Wing (the flap creak) and track AnimatedBundles on its tanks. DC binds 148,
+75, 40 and 36, plus the M-109's tracks on a PlayerControlObject.
+
+What plays them was read out of both binaries (ledger SND-18..SND-23):
+
+* Every object's patches all start once, when the client builds its sound
+  (SND-19). The dedicated server builds none, which is why every lnxded sound
+  call is client-only code.
+* A RotationalBundle presses every patch each frame it turns and lets them go
+  each frame it does not. `Default` is its turning rate in deg/s: the largest
+  over its axes of the speed register plus `continousRotationSpeed` (SND-20).
+  DC's `m1turretservo` goes from silent at 0.1 deg/s to full at 20, at pitch
+  0.5 to 0.6 over 0 to 10.
+* A LandingGear is skipped by that rule and runs its own: patch 0 while it
+  travels up, patch 1 while it comes down, and the other one let go. Stopping
+  lets go of the one it played, so its `trigger release` clunk plays and its
+  motor loops fade on `TimeRelease` (SND-21).
+* A Wing, an AnimatedBundle and a PlayerControlObject never touch their sound
+  again, so their scripts play from creation for good. They run on their own
+  Speed and Acceleration, with `Default` 0 (SND-22). That is why a track's
+  `Pitch <- Default` ramp sits at its base.
+* A patch can be pressed and let go over and over: a trigger is ignored while
+  it is latched, a release is one-off, and once nothing of it sounds it starts
+  over on the next trigger (SND-23).
+
+| | change |
+|---|---|
+| extractor | `extract_map.PART_SOUND_KINDS`, `find_part_scripts`: every part of those classes that binds a script, as `sounds.vehicles[].parts[]` `{node, kind, script, patches, attachToListener}`. `patches` is one layer list per patch in script order, silent ones `[]`, because the gear tells its two apart by index. The same entries reach `_shared/vehicle-sounds.json` (`extract_vehicle_sounds`, whose summary now counts parts) |
+| `engine-audio.js` | `relatch`: `trigger()` and `release()` run the engine's patch runtime instead of the engine's one-way release. Loops run from `start()`, held at nothing while the patch is idle, and while it is released unless they fade on `TimeRelease`. `control.default` feeds `Default` where an object writes its own; unset, `Default` still reads the rpm as before |
+| `vehicle-audio.js` | `PART_RULES` (`turn`, `gear`, `always`) by `kind`. Each part's patches are relatched `EngineAudio`s on its own node (`partNodeOf`), built idle, except an `always` part's loops, which are pressed at the claim (its one-shots went off when the object was made, so they are not built). Each frame `_partTick` reads the part's turn off its node's local rotation (`turnRate`), applies its rule, and evaluates. Every part patch goes into `resolveAcross` with the engine and the guns. The rack also reads a gun's `FireState` reload clock (`reloadOf`) for its Reload slot |
+| `ssc-specs.js` | `findPartSpecs`; the gun lookups carry their edges |
+| `ssc-curves.js` | `Default` reads `c.default ?? c.rpm` |
+
+The twins this makes are arbitrated, not shipped. A Corsair's two legs both
+play `LandingGear.ssc`, an M1A1's two tracks both run `moderntreads` at the
+one pitch `Default` 0 gives, and a Sherman's two tracks both play
+`VEALTTRACK`. `resolveAcross` keeps the louder copy as heard.
+
+## Verified / tests
+
+* `tests/test_vehicle_parts.mjs` (run by `test_vehicle_parts.py`), on DC's own
+  M1A1 tower and track scripts and an A-10's gear and flap:
+  - The tower is silent at rest. Turning at 20 deg/s plays the servo at full
+    volume and pitch 0.6, and 5 deg/s at the ramp's 0.246 and 0.55. It stops
+    the frame the tower stops (no `TimeRelease`) and starts again on the next
+    turn.
+  - The tracks are silent at rest. At 5 m/s they sound at half volume, pitch
+    0.8, and both tracks are one voice.
+  - The gear is silent and clunks nothing when built. Retracting presses
+    patch 0, not patch 1, and plays its start one-shot once per travel.
+    Stopping plays `LG2` once, and its motor fades out over 0.4 s. Coming down
+    presses patch 1.
+  - The flap's creak runs from the claim on the hull's acceleration and speed,
+    and its creation one-shot is not built.
+* `tests/test_vehicle_part_sounds.py`: `find_part_scripts` by class, a
+  parts-only hull still gets an entry, a SimpleObject's script is not a part,
+  the gear keeps its two patches in order with an empty one, and the flap
+  ships its creak.
+* `tests/test_gun_burst_edges.mjs` (run by `test_gun_burst_edges.py`): gun-cycle
+  and the rack wired as `map.html` wires them, plus a sweep of every edge of
+  every level. Vanilla: 230 guns. DC live: 0, since its scenes predate the
+  edges. DC patched into scratch: 565 guns and 581 edge samples.
+* The coherence sweeps take a tree from the environment
+  (`VEHICLE_AUDIO_MAPS`, `ENGINE_AUDIO_MAPS`). With the parts in, every turret
+  turning, the gear travelling and the hull at 8 m/s, both pass on the live
+  vanilla tree and on scratch trees with the sounds layer patched by this code
+  (`~/.cache/dc-sweep/sounds/maps-after/{bf1942,desertcombat}`). Between
+  patches: vanilla 731 arbitrated and 3,409 part loops heard (279 before the
+  parts), DC 1,229 and 5,384 (100 before). Inside a patch: no offence in
+  either tree.
+
+## Not done here
+
+* `Speed` and `Acceleration` are the voice's own motion in the engine (patch
+  +0xb0, +0xa0). What writes them was not traced. A part gets its hull's speed
+  and the rack's smoothed hull acceleration, which is 0 on a hull built
+  without an engine patch.
+* A part's turn is read off its node's local rotation. At a stop, the engine's
+  speed register can stay non-zero while the angle is clipped, so the servo
+  would keep running under a hand that pushes against the stop. The node does
+  not move there, and the viewer falls silent.
+* The creation trigger's one-shots, and the release a spawn frame gives a
+  RotationalBundle or a gear, are not played: the rack builds a hull when it
+  is claimed, not when it spawns.
+* A part template met twice under one hull sounds from its first node only.
+* Unoccupied hulls are not in the rack, so a parked tank's tracks and a
+  dropped plane's creak are not heard. Both need Speed, so they are near
+  silent anyway.
+* FloatingBundle and Camera inherit the RotationalBundle rule if their
+  `handleUpdate` chains to it (not checked). No surveyed tree binds a script
+  to either.
