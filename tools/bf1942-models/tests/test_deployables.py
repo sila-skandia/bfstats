@@ -10,18 +10,20 @@ from `objectSpawns` and a loadouts file, and the kits they lay down.
 
 What each test pins, against the lnxded reading the module header cites:
 
-  SPAWN-9   a pad spawns in its first update and holds its slot while the
-            object lives anywhere; the delay runs once it is gone.
-  SPAWN-11  the clearance: no spawn while a live human soldier's origin is
-            within 2 m of the point, for a land hull or a non-0x24 air hull.
-  SPAWN-12  the abandoned clock: 0.5 s steps, a countdown that runs only when
+  SPAWN-9   the template's 5 m `radius`.
+  SPAWN-10  a pad spawns in its first update; `calcSpawnDelay` shrinks the
+            window with the player count, and `setActive` redraws a running
+            delay.
+  SPAWN-11  a pad holds its slot while the object lives anywhere; the delay
+            runs once it is gone.
+  SPAWN-12  a pad hands out the entry of its team, and nothing for a team it
+            has none for; `CPDisable` stops it.
+  SPAWN-13  the abandoned clock: 0.5 s steps, a countdown that runs only when
             nobody is near or seated and the spawner is far or gone, then
             hit points billed per step.
-  SPAWN-13  a pad hands out the entry of its team, and nothing for a team it
-            has none for; `CPDisable` stops it.
-  SPAWN-14  `calcSpawnDelay` and `setActive`: the window shrinks with the
-            player count, and switching a pad redraws a running delay.
-  SPAWN-15  the template's 5 m `radius`.
+  SPAWN-14  the clearance: no spawn while a live human soldier's origin is
+            within 2 m of the point, for a land hull or a non-0x24 air hull.
+  SPAWN-16  DC 0.7's mortar never clears its thrower (below).
   Pads      a kit pad is made only for a kit the loadouts file knows, matched
             case-blind (DC's levels spell `US_Sniper_hvy` three ways), and
             the level's baked copy is taken out. DC 0.7's loadouts lacked its
