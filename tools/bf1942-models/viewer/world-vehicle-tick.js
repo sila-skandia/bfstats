@@ -141,11 +141,16 @@ export function vehicleTick(world, player, dt, integrators) {
   // handleMessage` hands them to every child, and `Engine::handleMessage`
   // (lnxded 0x0823e730) stops the engine and latches it against a restart
   // (`+0x143`); 0x13, the recovery, clears the latch and restarts it while
-  // the PCO is occupied (ledger PHY-14, HP-13). Vectored airframes only, so
-  // far: the fixed-wing drive does not read the byte, and the ground drives
-  // (`TrackedVehicle`/`WheeledVehicle` `engineRunning`), which do, are not
-  // hooked yet (PHY-14, open).
-  if (vehicle?.vectored && activeRoot) vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
+  // the PCO is occupied (ledger PHY-14, HP-13). The drives that read the
+  // byte: a vectored airframe's engines, and both land drivetrains
+  // (`GroundVehicle`/`TrackedVehicle` `landDrive`), whose revs the byte holds
+  // at 0 (`Engine::handleUpdate` `0x0823e2e6`, TANK-12), so every EngineGrip
+  // wheel asks for its contact speed back and a critical tank or jeep stops
+  // where it is; and a ship's (`Ship.shipDrive`), whose screws then make no
+  // thrust. The fixed-wing drive does not read the byte.
+  if ((vehicle?.vectored || vehicle?.landDrive || vehicle?.shipDrive) && activeRoot) {
+    vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
+  }
   const inControl = activeRoot && !player.gate.blocked;
   // Exactly one entry for this tick: the buffer's oldest, else the page's
   // pending freshest, else the engine's zeroed idle word.

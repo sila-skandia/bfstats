@@ -296,7 +296,23 @@ export const TANK = {
   // tests/test_ground.py and were re-run against this value). Still fitted,
   // not measured — the same standing ask every other [free] constant here
   // carries. [free]
-  yawDamping: 2.0,
+  //
+  // **Measured now, and the engine has none (2026-10-07).** A `PhysicsNode`'s
+  // only rotational loss is the box drag's `-drag |w| / mass` term
+  // (physics.md section 3, PHY-4), about 1e-4 per second on a 25 t hull, so the
+  // hull turns as fast as its tracks' friction turns it. The 2.0 that stood
+  // here was sized against a yaw inertia half the engine's (the wheel
+  // footprint's, before `getGeometryInertia`'s own box, COL-15) and a turn
+  // nobody had recorded. The lab's bots at AI LOD 0 have: a Sherman turning on
+  // the spot at 0.5-2 m/s reaches 62 deg/s (p99; max 64), a Panzer IV 60, a
+  // Tiger 76, a T-72 78, an M1A1 80, a BMP-2 86, an M163 112. At 2.0 the
+  // viewer's Sherman pivoted at 17-22 deg/s on full throttle and full lock,
+  // and every other hull at a third to three fifths of its retail rate; at 0 the
+  // Sherman turns 63, the Tiger 85, the T-72 92, the M1A1 83, the BMP-2 101,
+  // the M163 155 (features/viewer-ground-hull-collision/README.md, "Tank turn
+  // and the AI's cruise"). Both rollover cases are roll-axis and keep
+  // `angularDamping`.
+  yawDamping: 0,
 
   // A steered front axle's lock, used only if its own bundle somehow
   // declares no min/max at all to measure. M3A1's own is +-40 (TANK-15),

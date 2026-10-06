@@ -329,10 +329,11 @@ const ENGINE_DRIVE_KIND = {
  *
  * So does a `VCLand` hull whose tree carries no `c_PGFEngineGrip` spring for
  * its land engine to drive. XPack2's LVT4 authors its two driven springs
- * (`LVT4_S_Wheel_L3/R3`) `createInvisible 1` and the exporter drops invisible
- * templates, so its extracted tree has only the twelve spin-only rollers: a
- * land model would have nothing to push it, and it stays a boat until the
- * exporter keeps them.
+ * (`LVT4_S_Wheel_L3/R3`) `createInvisible 1`, and until 2026-10-07 the
+ * exporter dropped invisible templates, so a tree extracted before then has
+ * only the twelve spin-only rollers and stays a boat. The exporter now keeps
+ * an invisible Spring as an undrawn node (`bf42/assemble.py` `build_node`),
+ * and a re-extracted LVT4 is a tank with its water kit.
  *
  * A root whose `hasMobilePhysics` is clear drives nothing at all (PHY-17): its
  * physics node is a `StaticPhysicsNode`, and every push its Engines, Wings and
