@@ -2807,11 +2807,15 @@ def level_assembler(meshes: ArchivePool, textures: ArchivePool,
     (`liftLods` in viewer/level-statics.js), and nothing that loads a model
     glb does.
     """
-    return Assembler(meshes, textures, objects, library,
-                     lod=0, max_texture=max_texture,
-                     include_collision=include_collision,
-                     lod_chains=True,
-                     lightmaps=lightmaps)
+    assembler = Assembler(meshes, textures, objects, library,
+                          lod=0, max_texture=max_texture,
+                          include_collision=include_collision,
+                          lod_chains=True,
+                          lightmaps=lightmaps)
+    # A level is spawned, so its `setRandomGeometries` children roll (KIT-2):
+    # DC's Ladas and Pickups come in their three paints, in placement order.
+    assembler.random_counter = 1
+    return assembler
 
 
 def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,

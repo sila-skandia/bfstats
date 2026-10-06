@@ -645,6 +645,13 @@ class Assembler:
         # size is its texture's alpha > 0.7 core (`MuzzHeavy_m1.rs`), not its
         # soft halo (features/muzzle-effects-parity).
         self.additive_alpha_test = False
+        # The engine's one round-robin counter for `setRandomGeometries`
+        # children (`world::randomCounter`, ledger KIT-2: starts at 1, `inc`,
+        # back to 1 past N, never reset, shared by every rolled child). None
+        # builds variant 1 throughout, as every model export does; a level bake
+        # (`extract_map.level_assembler`) sets it to 1, so each placed Lada or
+        # Pickup rolls its own paint in placement order.
+        self.random_counter: int | None = None
         self._visible_springs = True
         self._shader_cache: dict[str, dict[str, rs.Shader]] = {}
         self._texture_cache: dict[str, int | None] = {}
@@ -2425,14 +2432,26 @@ class Assembler:
         # The graft matches by node name, so name the nodes this export
         # writes: an alternative declared `setRandomGeometries` is built as
         # `<name>1` (`con.instance_template_name`). DC's Lada and Pickup named
-        # a bare `LadaCockpitExternal` here and hid nothing.
+        # a bare `LadaCockpitExternal` here and hid nothing. A level bake
+        # rolls the variant per placement (`_rolled_template_name`), so the
+        # swap names every declared variant; the graft hides whichever one
+        # the hull it lands on carries.
         def node_name(ref: con_mod.ChildRef) -> str:
             return con_mod.instance_template_name(ref, self.library.object) or ref.template
 
+        def node_names(ref: con_mod.ChildRef) -> list[str]:
+            count = ref.random_geometries or 0
+            if count > 1 and self.library.object(ref.template) is None:
+                variants = [f"{ref.template}{k}" for k in range(1, count + 1)
+                            if self.library.object(f"{ref.template}{k}") is not None]
+                if variants:
+                    return variants
+            return [node_name(ref)]
+
         swap = {
             "selected": node_name(selected),
-            "replaces": [node_name(child) for child in children_refs
-                         if child is not selected],
+            "replaces": [name for child in children_refs if child is not selected
+                         for name in node_names(child)],
         }
         if selector := self.library.selector(template.lod_selector):
             swap.update(selector.as_dict())
@@ -2468,6 +2487,27 @@ class Assembler:
         if not mesh_file:
             return None
         return self.lightmaps.get(object_lightmap_key(mesh_file, world_origin))
+
+    def _rolled_template_name(self, ref: con_mod.ChildRef) -> str | None:
+        """The template a child builds, rolled when a level bake rolls.
+
+        `BundleTemplate::addBundleChilds` (`0x081a8300`, ledger KIT-1, KIT-2):
+        a child with `setRandomGeometries N` bumps the one counter and creates
+        `<name><counter>`; a variant the data never declared adds nothing
+        (KIT-3). Without a counter, or for a child whose bare name exists (the
+        exporter's standing reading of LOAD-6), this is
+        `con.instance_template_name`.
+        """
+        name = con_mod.instance_template_name(ref, self.library.object)
+        count = ref.random_geometries or 0
+        if (name is None or self.random_counter is None or count < 1
+                or self.library.object(ref.template) is not None):
+            return name
+        self.random_counter += 1
+        if self.random_counter > count:
+            self.random_counter = 1
+        rolled = f"{ref.template}{self.random_counter}"
+        return rolled if self.library.object(rolled) is not None else None
 
     def _carries_engine(self, template_name: str, *,
                         depth: int = 0,
@@ -2692,7 +2732,7 @@ class Assembler:
         child_indices: list[int] = []
         built_children: list[tuple[con_mod.ChildRef, str, int]] = []
         for ref in children_refs:
-            child_name = con_mod.instance_template_name(ref, self.library.object)
+            child_name = self._rolled_template_name(ref)
             if child_name is None:
                 continue
             # A child ObjectSpawner is not a part — it is the engine's parked
