@@ -313,6 +313,16 @@ export function lineOfSight(collider, from, to) {
  * Roll a direction into a deviation cone of half-angle `spreadRad`, exactly as
  * `round-launch.js` `wander` does: theta = spread * sqrt(u), azimuth free, about
  * the frame u = normalize(ref x r), v = r x u. `r` must be unit length.
+ *
+ * TODO(DEV-9): this disc in degrees is not the engine's cone. `FireArms::
+ * fireBarrel` 0x0828aba0 pushes a round off its line by `u * total / 100`
+ * on each of the launch frame's up and right axes, `u` uniform in (-1, +1]
+ * per axis, and draws nothing at a total of 0.01 or less: a square in
+ * hundredths of a radian. The rounds package's `round-launch.js deviate`
+ * (commit 17da3b54) builds that sampler and is not on main yet. When it
+ * lands, call it here (and so in bot-rounds.js, which rolls through this)
+ * rather than copying it, and take `bot.aimDeviation` as the cone's total,
+ * not as degrees.
  */
 export function rollCone(r, spreadRad) {
   const [rx, ry, rz] = r;
