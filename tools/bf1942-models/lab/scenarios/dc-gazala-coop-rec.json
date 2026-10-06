@@ -1,0 +1,23 @@
+{
+  "name": "dc-gazala-coop-rec",
+  "description": "Desert Combat Gazala co-op with the server-side recorder preloaded, bots only: DC's overlay of the vanilla level (vanilla's AI data), the co-op layer that places the AC-130 (El Alamein Day 2's names it in its templates and places none). Also Mi-24/Mi-8/AH-64/UH-60L, MiG-29/Su-25/F-16/F-15C/A-10B, the DPV, T-72/M1A1, BMP-2/M2A3, M163/Shilka, BM-21/MLRS, M-109/M-1974. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "gazala",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. One round, then `lab.py stop`."
+}

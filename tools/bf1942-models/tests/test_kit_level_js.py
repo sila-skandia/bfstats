@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("kit_level_harness.mjs")
 MODULES = ("kit-loadout.js", "kit-icon.js", "kit-panels.js", "random-items.js",
-           "model-file.js")
+           "model-file.js", "soldier-death.js", "skeleton-hit.js")
 
 
 def run_harness() -> dict:
@@ -78,6 +78,20 @@ class KitLevelTests(unittest.TestCase):
         self.assertEqual("Us_Assault", page["noparaKit"])
         self.assertIs(True, page["noparaNoChute"])
         self.assertIs(False, page["plainNoChute"])
+
+    def test_the_packs_read_the_holders_soldier_template(self) -> None:
+        # S8: `kit-loadout.js` used to hard-code vanilla's 0.15 wrench, where
+        # Desert Combat's `CommonSoldierData.inc` registers 0.20.
+        packs = self.results["packs"]
+        vanilla_medic = {"radius": 10, "allyHeal": 0.25, "selfHeal": 0.15, "kind": "medic"}
+        vanilla_repair = {"radius": 2, "repairHeal": 0.15, "kind": "repair"}
+        for case in ("oldTree", "vanilla"):
+            self.assertEqual(vanilla_medic, packs[case]["medic"], case)
+            self.assertEqual(vanilla_repair, packs[case]["repair"], case)
+        self.assertEqual(vanilla_medic, packs["dc"]["medic"])
+        self.assertEqual(0.2, packs["dc"]["repair"]["repairHeal"])
+        # Case-blind, and the holder's own row over the tree's first soldier.
+        self.assertEqual(0.3, packs["ownTemplate"]["repair"]["repairHeal"])
 
     def test_the_kits_page_names_each_level_variant(self) -> None:
         notes = self.results["notes"]
