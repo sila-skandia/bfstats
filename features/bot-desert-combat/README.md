@@ -244,3 +244,18 @@ DC El Alamein's SCUD seat did not get it to fire either way, so the effect on
 a live round is not measured. Publishing: the five `vehicle-ai.json` of
 section 1 carry the two words; only vanilla's Katyusha record changes in
 vanilla, XPack1 and XPack2.
+
+## 6. A capture time of 0 (census CW9)
+
+`captureDuration` read `timeToGetControl 0` as unset and gave the point 5 s.
+`ControlPoint::handleFrameUpdate` tests the get timer before it runs it: above
+0 it counts down (`gettingControl`), otherwise the point is taken the same
+frame (`gotControl`), and every reset reloads the timer from the template
+(AI-142). DC Medina Ridge sets 0 on all four of its points (radius 2 m, a
+push map), so one side alone on one now takes it on the first frame.
+`bot-referee.js captureDuration` keeps any number the level gives; pinned by
+`tests/test_control_point_law.py test_a_zero_capture_time_takes_the_point_at_once`
+(taken at 1/30 s).
+
+**Open, not this package's file:** `server/authority.mjs` (the multiplayer
+room's capture, `FLAG_CAPTURE_SECONDS`) has the same `> 0` guard.

@@ -87,10 +87,19 @@ export function captureRadius(flag) {
   return Number.isFinite(flag?.radius) && flag.radius > 0 ? flag.radius : 8;
 }
 
-/** Seconds on a flag to take it: its `timeToGetControl`, else the fallback. */
+/**
+ * Seconds on a flag to take it: its `timeToGetControl`, else the fallback.
+ * `ControlPoint::handleFrameUpdate` 0x08283b00 runs `gettingControl`
+ * 0x08283f20 (the get timer +0x16c less the frame) only while the timer is
+ * above 0 (`fldz; flds 0x16c; fxch; fucompp; test $0x1,%ah; jne` at
+ * 0x08283c65..0x08283c76) and calls `gotControl` 0x08283f70 otherwise, the
+ * same frame; `faildGettingControl` 0x08283ef0 and `control` reload the timer
+ * from the template's +0x1f4 (AI-142). So a 0 is taken on the first frame one
+ * side alone holds the point (DC Medina Ridge's `oasis_town`, `outpost_pass`
+ * and `opposition_base`), and a negative value likewise.
+ */
 export function captureDuration(flag) {
-  return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0
-    ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
+  return Number.isFinite(flag?.timeToGetControl) ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
 }
 
 /**
