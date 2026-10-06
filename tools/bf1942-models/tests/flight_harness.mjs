@@ -1949,8 +1949,9 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
         });
         if (arrived === null && r.arrived) arrived = round(t, 2);
         if (landed === null && r.landed) landed = round(t, 2);
-        const rate = (r.rudder === 0 ? 3.2 : 2.4) / 30;
-        rudder += Math.max(-rate, Math.min(rate, r.rudder - rudder));
+        // The world writes the law's rudder straight onto the hull (no
+        // spring of the viewer's, MLK-10), as the scenario above does.
+        rudder = r.rudder;
         heli.setInput('c_PIThrottle', r.collective);
         heli.setInput('c_PIYaw', rudder);
         heli.setInput('c_PIRoll', r.roll);
