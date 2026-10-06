@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { GroundVehicle } from './wheeled-vehicle.js';
-import { TrackedVehicle } from './tracked-vehicle.js';
+import { TrackedVehicle, measureWheelRadius } from './tracked-vehicle.js';
 import { WILLYS, TANK } from './ground-specs.js';
 import {
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
@@ -2703,6 +2703,40 @@ function kettenKradNode({ rearWheels = true } = {}) {
     firstStep: round(held[1], 5),
     afterOneSecond: round(held.at(-1), 4),
     rate: FORK_RIG.axes.pitch.maxSpeed / 160,
+  };
+}
+
+// --- an undrawn wheel's radius: its probe, not the probe's extent ----------
+//
+// XPack2's R75 sidecar wheel (`R75FrontSpringR`, `createInvisible 1`) comes
+// out of the exporter as a Spring with no drawn mesh and one child, its col0
+// probe: three vertices 0.317 m under the axle. Measured like a wheel mesh,
+// that triangle is 0.002 m, and the bike leant onto it at rest and crept
+// off. A drawn wheel whose collision child happens to come first keeps its
+// own mesh's radius.
+{
+  const probe = (name) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(
+      [-0.0056, -0.317, -0.0047, 0.0026, -0.317, 0.0047, 0.0026, -0.317, -0.0047], 3));
+    const m = new THREE.Mesh(g);
+    m.name = `${name} collision 0`;
+    m.userData = { collision: true, collisionLayer: 0 };
+    return m;
+  };
+  const undrawn = new THREE.Object3D();
+  undrawn.name = 'R75FrontSpringR';
+  undrawn.userData = { templateKind: 'Spring', physics: { grip: 'c_PGFRollGrip', strength: 25, damping: 5 } };
+  undrawn.add(probe(undrawn.name));
+  const drawn = new THREE.Object3D();
+  drawn.name = 'R75FrontSpringL';
+  drawn.userData = { templateKind: 'Spring', physics: { grip: 'c_PGFRollGrip', strength: 25, damping: 5 } };
+  drawn.add(probe(drawn.name));
+  drawn.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.628, 0.628)));
+  results.undrawnWheel = {
+    undrawn: round(measureWheelRadius(undrawn), 3),
+    drawn: round(measureWheelRadius(drawn), 3),
+    bare: measureWheelRadius(new THREE.Object3D()),
   };
 }
 

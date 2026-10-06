@@ -1508,6 +1508,18 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(k["reverse"], -3.0)
         self.assertGreater(k["noRearPitch"], 45.0)
 
+    def test_an_undrawn_wheel_stands_on_its_probe(self) -> None:
+        # A `createInvisible` Spring is kept with its col0 probe and no mesh
+        # (`bf42/assemble.py` `build_node`). Its radius is the probe's depth
+        # under the axle, the contact `checkVsTerrain` makes and the depth
+        # `hull-bodies.js` `wheelContactDepths` hands the page; the probe's
+        # own extent (0.002 m on the R75's sidecar wheel) is not a radius. A
+        # drawn wheel is measured off its mesh even past a collision child.
+        w = self.results["undrawnWheel"]
+        self.assertAlmostEqual(0.317, w["undrawn"], places=3)
+        self.assertAlmostEqual(0.314, w["drawn"], places=3)
+        self.assertIsNone(w["bare"])
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):

@@ -100,20 +100,45 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
  * rather than needing a per-vehicle number — the same thing `WillyRadius`
  * already established no `.con` file ever declares.
  *
+ * A collision probe is never the wheel's mesh. A spring the `.con` authors
+ * `createInvisible` (`bf42/assemble.py` `build_node`: the KettenKrad's rear
+ * wheels, the R75's and HD_XA42's sidecar wheel, the LVT4's driven pair, a
+ * PT boat's beach wheels) carries no drawn mesh, only its col0 probe, and
+ * the half-extent of that probe (a 3-vertex triangle under the axle on the
+ * R75, 0.002 m) put its contact at the axle. It takes the probe's depth
+ * under its origin instead, where `checkVsTerrain` meets the ground and the
+ * depth `hull-bodies.js` `wheelContactDepths` hands the page's drive.
+ *
  * @returns {number|null} metres, or null if the node (and nothing under it)
  *   carries geometry to measure
  */
 export function measureWheelRadius(node) {
-  let target = node.geometry ? node : null;
+  const drawn = obj => obj.geometry && !obj.userData?.collision;
+  let target = drawn(node) ? node : null;
   if (!target) {
-    node.traverse(child => { if (!target && child.geometry) target = child; });
+    node.traverse(child => { if (!target && drawn(child)) target = child; });
   }
-  if (!target) return null;
+  if (!target) return probeDepth(node);
   const geometry = target.geometry;
   if (!geometry.boundingBox) geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   if (!box) return null;
   return ((box.max.y - box.min.y) + (box.max.z - box.min.z)) / 4;
+}
+
+/** An undrawn wheel's contact depth: the lowest vertex of the collision
+ *  probes hung directly under it, in its own frame. Null with none. */
+function probeDepth(node) {
+  let low = Infinity;
+  const box = new THREE.Box3();
+  for (const child of node.children) {
+    if (!child.geometry || !child.userData?.collision) continue;
+    child.updateMatrix();
+    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+    box.copy(child.geometry.boundingBox).applyMatrix4(child.matrix);
+    low = Math.min(low, box.min.y);
+  }
+  return low < 0 ? -low : null;
 }
 
 /** Sub-steps per second `TrackedVehicle.integrate` clamps to — the engine's
