@@ -344,6 +344,55 @@ const depots = {
   hullTemplate: f14.template,
 };
 
+// --- scenario 11: who a depot reaches through the world pass ---------------
+// One spot holds a half-track's own locker (riding hull A), a neutral medical
+// locker on the ground, a soldier seated in A, one seated in another hull B
+// and one on foot. A seated soldier is served only by a depot riding his own
+// hull (SUP-20): A's rider heals at the locker's one rate, B's not at all,
+// the man on foot at both. An Axis-only repair pad (SUP-5's team rule against
+// the hull's side, 0 when empty, SEAT-27) repairs an Axis-crewed hull and
+// neither an Allied-crewed one nor an empty one.
+const worldR = makeWorld();
+const at = { x: 100, y: 0, z: 100 };
+const hullA = { name: 'Hanomag', userData: { templateKind: 'PlayerControlObject', control: 'Hanomag' } };
+const hullB = { name: 'Willy', userData: { templateKind: 'PlayerControlObject', control: 'Willy' } };
+const tanks = ['AxisTank', 'AlliedTank', 'EmptyTank'].map(name => ({
+  name: 'Sherman', userData: { templateKind: 'PlayerControlObject', control: 'Sherman' } }));
+const seatOf = root => ({ occupancy: { root, turret: null, isActiveRoot: () => false,
+  activeFireArmsNodes: () => [], applyTurrets: () => {} }, vehicle: null, kind: 'seat' });
+const riders = {
+  inA: worldR.addPlayer('RA', { team: 1 }), inB: worldR.addPlayer('RB', { team: 1 }),
+  onFoot: worldR.addPlayer('RF', { team: 1 }),
+  axisCrew: worldR.addPlayer('TX', { team: 1 }), alliedCrew: worldR.addPlayer('TY', { team: 2 }),
+};
+for (const id of ['RA', 'RB', 'RF']) worldR.setPlayerArmor(id, new Armor(100, 10));
+worldR.addDamageable(10, hullA, { hitpoints: 100, maxHitpoints: 100 }, { name: 'Hanomag', position: [at.x, 0, at.z] });
+worldR.addDamageable(11, hullB, { hitpoints: 100, maxHitpoints: 100 }, { name: 'Willy', position: [at.x, 0, at.z] });
+const tankHulls = tanks.map((node, i) => worldR.addDamageable(20 + i, node,
+  { hitpoints: 50, maxHitpoints: 100 }, { name: 'Sherman', position: [300, 0, 300 + i] }));
+worldR.setPlayerVehicle('RA', seatOf(hullA));
+worldR.setPlayerVehicle('RB', seatOf(hullB));
+worldR.setPlayerVehicle('TX', seatOf(tanks[0]));
+worldR.setPlayerVehicle('TY', seatOf(tanks[1]));
+riders.onFoot.soldier.spawn(at.x, 0, at.z, 0);
+worldR.setSupplyDepots([
+  new SupplyDepot(at, { radius: 3, health: [-1, 4.0, 0] }, 'hanomagSupplyDepot', { root: hullA }),
+  new SupplyDepot(at, { radius: 3, team: 0, health: [-1, 4.0, 0], workOnSoldiers: true }, 'mediclocker'),
+  new SupplyDepot({ x: 300, y: 0, z: 301 }, { radius: 10, team: 1, workOnSoldiers: false, workOnVehicles: true,
+    vehicleTypes: [['sherman', -1, 4, 0]] }, 'repairpoint'),
+]);
+for (let i = 0; i < 2 * SECOND; i++) {
+  // The registry's publish, as the page's and the runner's onTick do.
+  for (const id of ['RA', 'RB', 'TX', 'TY']) worldR.setPlayerPosition(id, id.startsWith('R') ? [at.x, 0.5, at.z] : [300, 1, 300]);
+  worldR.step(1 / 30);
+}
+const reach = {
+  inA: worldR.players.get('RA').armor.hitPoints,
+  inB: worldR.players.get('RB').armor.hitPoints,
+  onFoot: worldR.players.get('RF').armor.hitPoints,
+  tanks: tankHulls.map(h => h.hitPoints),
+};
+
 console.log(JSON.stringify({
   tickRate: WORLD_TICK_RATE,
   tickDt: WORLD_TICK_DT,
@@ -399,4 +448,5 @@ console.log(JSON.stringify({
   water,
   falling,
   depots,
+  reach,
 }));
