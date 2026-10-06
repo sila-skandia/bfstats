@@ -194,6 +194,25 @@ class RocketFlightTests(unittest.TestCase):
         # e = -sqrt(0.1 revs), i.e. 1000 * (1.2 + sqrt(0.12)) = 1546 m/s.
         self.assertLess(self.results["motor"]["DefenderTOW"]["maxSpeed"], 1546)
 
+    # --- the CBU-87 ----------------------------------------------------------
+
+    def test_a_cbu_pull_lands_all_fourteen_in_the_authored_spread(self) -> None:
+        # An A-10C at 100 m/s, 150 m up: one pull fires all fourteen barrels
+        # (BOMB-1), each down its own `addFireArmsPosition` turn at 15 m/s on
+        # top of the jet's speed, and each falls at 1.0. Flying level, as they
+        # did on the old no-gravity tracer path, none of them ever landed.
+        cbu = self.results["cbu"]
+        self.assertEqual(14, cbu["fired"])
+        self.assertEqual(14, cbu["landed"])
+        # Every bomblet lands where its own barrel and gravity put it, to
+        # within one frame's travel.
+        self.assertLess(cbu["worstMiss"], 2.5)
+        # The pattern the turns (up to 19 degrees) authored: about 38 m across
+        # and 74 m along track, 473 m past the release.
+        self.assertAlmostEqual(38.5, cbu["across"], delta=2)
+        self.assertAlmostEqual(73.9, cbu["along"], delta=3)
+        self.assertAlmostEqual(472.8, cbu["throw"], delta=10)
+
     # --- expiry: hasOnTimeEffect (PROX-7) -------------------------------------
 
     def test_a_flak_shell_that_sets_the_word_still_bursts_in_its_window(self) -> None:
@@ -301,6 +320,33 @@ class RoundsMatchTheTrees(unittest.TestCase):
         tables = json.loads(proc.stdout)
         cls.rounds = tables["ROUNDS"]
         cls.bullets = tables["BULLETS"]
+        start = text.index("export const CBU = {")
+        end = text.index("\n};\n", start) + 3
+        proc = subprocess.run(
+            ["node", "--input-type=module", "-e",
+             text[start:end].replace("export const", "const")
+             + "\nconsole.log(JSON.stringify(CBU));"],
+            capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            raise AssertionError(proc.stderr)
+        cls.cbu = json.loads(proc.stdout)
+
+    def test_the_cbu_barrels_match_the_a10c(self) -> None:
+        path = VIEWER / "models/mods/desertcombat/A10_C.glb"
+        if not path.exists():
+            self.skipTest("A10_C.glb is not extracted on this machine")
+        nodes = glb_json(path)["nodes"]
+        rack = next(n for n in nodes if n.get("name") == "A10_CBU87"
+                    and (n.get("extras") or {}).get("fireArms"))
+        self.assertEqual(self.cbu["node"]["translation"], rack["translation"])
+        for a, b in zip(self.cbu["node"]["rotation"], rack["rotation"]):
+            self.assertAlmostEqual(a, b, places=6)
+        muzzles = [nodes[c]["rotation"] for c in rack["children"]
+                   if (nodes[c].get("extras") or {}).get("muzzle") is not None]
+        self.assertEqual(14, len(muzzles))
+        for ours, theirs in zip(self.cbu["muzzles"], muzzles):
+            for a, b in zip(ours, theirs):
+                self.assertAlmostEqual(a, b, places=5)
 
     def test_each_copy_matches_its_glb(self) -> None:
         checked = 0

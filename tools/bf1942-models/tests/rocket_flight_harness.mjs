@@ -499,13 +499,15 @@ function drop(name, seconds = 0.5, frame = 1 / 60) {
   fireBarrel(guns, group, group.muzzles[0]);
   const rounds = guns.tracers.slice();
   const lead = rounds.map(r => r.lead);
-  const start = rounds.map(r => r.mesh.position.y);
+  // The round itself, `lead` ahead of the drawn mesh's origin along its flight.
+  const head = r => r.mesh.position.y + r.velocity.y / r.velocity.length() * r.lead;
+  const start = rounds.map(head);
   for (let t = 0; t < seconds - 1e-9; t += frame) guns.advance(frame);
   return rounds.map((r, k) => ({
     bright: r.bright,
     gravity: r.gravity,
     flying: guns.tracers.includes(r),
-    drop: round3(start[k] - r.mesh.position.y),
+    drop: round3(start[k] - head(r)),
     lead: lead[k],
     // The streak turns with its path: the angle of its axis below level.
     pitchDown: round3(Math.asin(Math.min(1, Math.max(-1,
@@ -525,6 +527,85 @@ out.velocityDefault = {
 // Semi-implicit Euler at 60 Hz, as the loop runs it: v += g dt, x += v dt.
 out.bullets.expectedDropAtG1 = round3(
   -GRAVITY * (1 / 60) ** 2 * (30 * 31) / 2);
+
+// --- the CBU-87: fourteen submunitions per pull, in the authored spread -------
+
+/** desertcombat A10_C.glb `A10_CBU87`: the dispenser node (pitched 20 deg
+ *  down), and its fourteen `addFireArmsPosition 0/0/0 <yaw>/<pitch>/0` barrels
+ *  as `quat_from_ypr` bakes them. */
+export const CBU = {
+  node: { translation: [0, -1.7, -0.6], rotation: [-0.17364817766693033, 0, 0, 0.984807753012208] },
+  muzzles: [
+    [-0.016741, 0.039777, 0.000667, 0.999068], [0.054384, -0.039724, 0.002165, 0.997727],
+    [-0.068033, -0.098048, -0.006719, 0.992831], [-0.158461, 0.022745, 0.003651, 0.987097],
+    [-0.041304, 0.164559, 0.006897, 0.985478], [0.149617, 0.088917, -0.013511, 0.984645],
+    [0.057963, -0.1479, 0.008683, 0.987264], [0.008376, -0.019895, 0.000167, 0.999767],
+    [-0.027218, 0.019888, 0.000542, 0.999432], [0.03416, 0.04917, -0.001683, 0.998205],
+    [0.079498, -0.011482, 0.000916, 0.996768], [0.020871, -0.082616, 0.001731, 0.996361],
+    [-0.07525, -0.044886, -0.003391, 0.996148], [-0.029236, 0.074251, 0.002178, 0.996809],
+  ],
+};
+
+{
+  const scene = new THREE.Scene();
+  const guns = new GunFire({ scene, camera: new THREE.PerspectiveCamera(),
+                             viewportHeight: () => 900 });
+  guns.rand = () => 0.5;
+  guns.collider = world();
+  const platform = new THREE.Vector3(0, 0, -100);
+  const rack = new THREE.Group();
+  rack.name = 'A10_CBU87';
+  rack.position.set(...CBU.node.translation);
+  rack.quaternion.set(...CBU.node.rotation);
+  rack.userData.fireArms = {
+    projectile: BULLETS.CBU87Prj.projectile, roundOfFire: 2, magSize: 112,
+    numOfMag: 2, reloadTime: 2.5, autoReload: true, velocity: 15,
+    input: 'c_PIAltFire', control: 'A10_C', muzzles: 14,
+  };
+  CBU.muzzles.forEach((q, k) => {
+    const muzzle = new THREE.Object3D();
+    muzzle.name = `A10_CBU87 muzzle ${k + 1}`;
+    muzzle.userData.muzzle = { index: k };
+    muzzle.quaternion.set(...q);
+    rack.add(muzzle);
+  });
+  const plane = new THREE.Group();
+  plane.name = 'A10_C';
+  plane.add(rack);
+  plane.position.set(WORLD / 2, 150, -64);
+  plane.updateMatrixWorld(true);
+  const [group] = guns.collect(plane, {
+    replace: true, speedScale: 1, maxRange: 1e6, roundLifetime: 'data',
+    tracerLength: 'data', platformVelocity: () => platform,
+  });
+  const landed = [];
+  guns.onImpact = record => { if (record.kind === 'terrain') landed.push(record.point); };
+  // One pull: every barrel, one projectile each (BOMB-1, BOMB-2).
+  for (const muzzle of group.muzzles) fireBarrel(guns, group, muzzle);
+  // The prediction from the same numbers: each round leaves its barrel's
+  // forward at 15 m/s on top of the jet's 100 m/s and falls at 1.0, stepped
+  // the way the loop steps it (v += g dt, x += v dt).
+  const predicted = guns.tracers.map(t => {
+    const p = t.mesh.position.clone().addScaledVector(t.velocity.clone().normalize(), t.lead);
+    const v = t.velocity.clone();
+    while (p.y > 0) { v.y += GRAVITY / 60; p.addScaledVector(v, 1 / 60); }
+    return p;
+  });
+  const fired = guns.tracers.length;
+  for (let i = 0; i < 600 && guns.tracers.length; i++) guns.advance(1 / 60);
+  const xs = landed.map(p => p[0]), zs = landed.map(p => p[2]);
+  // Each landing against its nearest prediction.
+  const misses = landed.map(p => Math.min(...predicted.map(
+    q => Math.hypot(p[0] - q.x, p[2] - q.z))));
+  out.cbu = {
+    fired, landed: landed.length,
+    across: round3(Math.max(...xs) - Math.min(...xs)),
+    along: round3(Math.max(...zs) - Math.min(...zs)),
+    worstMiss: round3(Math.max(...misses)),
+    // How far ahead of the release point the pattern's middle lands.
+    throw: round3(-((Math.max(...zs) + Math.min(...zs)) / 2 - (-64))),
+  };
+}
 
 function round3(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : value;
