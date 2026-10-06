@@ -7440,6 +7440,15 @@
    "note": "lnxded. Writes +0x10, the GPM: 1 CTF, 2 CQ, 3 TDM, 4 COOP, 5 OBJECTIVEMODE (startHostGame's switch, 0x080c42bf). gamaStatusFirstPreGame and gameStatusPlaying branch on 5. Ledger TKT-1, TKT-3."
   },
   {
+   "address": "0x08061780",
+   "name": "dice::bf::Game::getMaxNrOfPlayers()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Game+0x1c, the server's slot count (TKT-2). Ledger SPAWN-18."
+  },
+  {
    "address": "0x080617d0",
    "name": "Game::getScoutCameraList()",
    "kind": "function",
@@ -8466,6 +8475,24 @@
    "note": "lnxded. TeamScore+0x48 = max(0, +0x48 - n). Ledger TKT-4."
   },
   {
+   "address": "0x08163c50",
+   "name": "dice::bf::BFSpawnPoint::immediateDestroy()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Removes the point from its group (BFSpawnPointManager::remove 0x08167c10). Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08163dd0",
+   "name": "dice::bf::BFSpawnPoint::getActive(bool, int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. 0 when the nearest IArmor up the parent chain is isCriticalDamaged (vt+0xcc), outside the combat area, on the veto material, or the entry test fails. Ledger SPAWN-5."
+  },
+  {
    "address": "0x08164570",
    "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
    "kind": "function",
@@ -8527,6 +8554,33 @@
    "confidence": "verified",
    "source": "research-2026-09-24-hull-wash",
    "note": "lnxded. Writes the parent at +0x50 (0x08166083) and zeroes +0x54. A real parent clears object flag 0x2000000 (and ebx,0xfdffffff at 0x081660a3); a null parent sets it (0x081660eb). addChild (vt+0x80) calls it (vt+0x90). Ledger HFD-10, HFD-11."
+  },
+  {
+   "address": "0x08166d90",
+   "name": "dice::bf::BFSpawnGroup::calcNewPos()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. The group's ring: average of the points whose nearest IArmor is not isCriticalDamaged (vt+0xcc); (0,0,0) for none. Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08166f60",
+   "name": "dice::bf::BFSpawnGroup::getSpawnPoint(bool) const",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. rand() % among the points BFSpawnPoint::getActive passes; null when none. Ledger SPAWNGRP-10."
+  },
+  {
+   "address": "0x08167ae0",
+   "name": "dice::bf::BFSpawnPointManager::getGroupsForTeam(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Every group of the team with at least one point registered, active or not. Ledger SPAWNGRP-10, TKT-5."
   },
   {
    "address": "0x0816af60",
@@ -10797,6 +10851,15 @@
    "note": "lnxded. [R1] empty"
   },
   {
+   "address": "0x08262410",
+   "name": "dice::ref2::world::PlayerManager::getNumberOfPlayers()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. The length of the player list, bots included (std::distance over +0xc). Ledger SPAWN-18."
+  },
+  {
    "address": "0x082628e0",
    "name": "dice::ref2::world::ActiveKitPart::update(dice::ref2::io::PlayerInput const&, int, dice::ref2::world::IPlayer*)",
    "kind": "function",
@@ -11038,6 +11101,33 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Builds the position-id->seat map the number-key switch queries."
+  },
+  {
+   "address": "0x08283f70",
+   "name": "dice::ref2::world::ControlPoint::gotControl(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. setTeam(team) then the enable on the point's objectSpawnerId spawners. Ledger SPAWN-19."
+  },
+  {
+   "address": "0x08284090",
+   "name": "dice::ref2::world::ControlPoint::lostControl(int)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. setTeam(0) then the disable. Ledger SPAWN-19."
+  },
+  {
+   "address": "0x08284640",
+   "name": "dice::ref2::world::ControlPoint::reset()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. Round start: reloads the template team (+0x1e0); a side runs the enable (spawners setTeam(team), setActive(1)), team 0 the disable (setTeam(0), setActive(0)). Ledger SPAWN-19."
   },
   {
    "address": "0x08287a80",
@@ -11292,6 +11382,15 @@
    "note": "lnxded. getActiveTemplate(CID_ProjectileTemplate 0x86c2b90) then writes +0x190. The property is declared INT - its own ConsoleClass instance carries the name at +0x0c and the type at +0x4c, and of the six registrations of the name 'radius' only this one is an int - so it is parsed by istream >> int at 0x082df83f and fild-ed into the float field at 0x082df8ef. A .con therefore cannot give a projectile a fractional radius: 340 mod templates write one and every one truncates at parse (FH BismarckFatProjectile 17.63 -> 17; DC 50calSniper_Projectile 0.25 -> 0, which with the strict radius > d gate means no splash at all). The impact path's own truncation at 0x08153f23-0x08153f58 is real code but a no-op in practice. See ledger HP-9. EXTENDED 2026-09-20 (damage review): there is no rejection path in front of it. Its sibling ConsoleClass390::setArgFromString 0x082df7b0 runs istream >> int and returns void without consulting the stream state, and ConsoleObjectBaseImpl::execute 0x08359460 ignores the return and calls this unconditionally -- so radius 0.25 becomes 0 and 7.5 becomes 7, silently. Ledger HP-9."
   },
   {
+   "address": "0x082e5770",
+   "name": "ConsoleClass421::setArgFromString (ObjectTemplate.spawnDelayAtStart)",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. std::istream >> bool into a function-static, no fail check; GCC 3.x libstdc++ accepts only 0/1. Ledger SPAWN-17."
+  },
+  {
    "address": "0x083138c0",
    "name": "dice::ref2::world::ObjectSpawner::handleFrameUpdate(float)",
    "kind": "function",
@@ -11299,6 +11398,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] held object: reset() each frame; on release setSleepiness(0) + carrier tangent speed"
+  },
+  {
+   "address": "0x08314430",
+   "name": "dice::ref2::world::ObjectSpawner::calcSpawnDelay()",
+   "kind": "function",
+   "subsystem": "spawn",
+   "confidence": "verified",
+   "source": "spawner-pads-2026-10-06",
+   "note": "lnxded. +0x120 = min + (max - min) * (1 - getNumberOfPlayers / getMaxNrOfPlayers), template +0x14c/+0x150; no random. Ledger SPAWN-10, SPAWN-18."
   },
   {
    "address": "0x08314a50",
