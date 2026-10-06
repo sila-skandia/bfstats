@@ -183,7 +183,8 @@ export class World {
    */
   addDamageable(owner, node = null, armorExtras = null, { name = null, position = null } = {}) {
     if (node) this.nodeOwners.set(node, owner);
-    const vehicle = this.vehicleDamage.add(owner, armorExtras, { name });
+    const vehicle = this.vehicleDamage.add(owner, armorExtras, {
+      name, submarineData: node?.userData?.physics?.submarineData ?? null });
     if (vehicle && position) this.positions.set(owner, position);
     return vehicle;
   }

@@ -2421,10 +2421,47 @@ function amphibianNode() {
     drive(truck, 3, holding({ c_PIThrottle: 1 }));
     out.stopped = { along: round(alongOf(truck), 3), revs: truck.engine.revs, wrevs: truck.amphibious.revs };
   }
-  // A plain tank carries no kit, and stands on the sea like every land
-  // vehicle the viewer drives.
+  // A plain tank carries no kit.
   out.shermanKit = tank(shermanNode).amphibious;
   results.amphibian = out;
+
+  // ... and since 2026-10-06 neither it nor a jeep stands on the sea: the
+  // floor is the bed for every land hull (`checkVsTerrain`, water makes no
+  // impulse) and below the sea the hull's box drag takes the submerged
+  // multiplier (`HullWater`). Both drive off the same bank at full throttle.
+  const sinker = (kind, withSea = true) => {
+    const node = kind === 'jeep' ? nestedWilly() : (() => {
+      const root = shermanNode();
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(2.49, 1.6, 5.76).translate(0, 0.6, 0));
+      hull.name = 'Sherman_Hull_M1';
+      root.getObjectByName('ShermanComplex').add(hull);
+      return root;
+    })();
+    const Cls = kind === 'jeep' ? GroundVehicle : TrackedVehicle;
+    const truck = new Cls(node, null, {
+      cockpit: false, groundHeight: surface,
+      ...(withSea ? { collider, waterLevel: WL } : {}),
+      surfaceFriction: (x, z) => (bed(x, z) <= WL ? 0.1 : 1.0),
+    });
+    truck.state.position.set(0, 0.6, 0);
+    let fastest = 0;
+    drive(truck, 30, t => {
+      t.setInput('c_PIThrottle', 1);
+      if (t.state.position.z < -70) fastest = Math.max(fastest, t.state.velocity.length());
+    });
+    const s = truck.state;
+    return {
+      hasWater: !!truck.water, z: round(s.position.z, 1),
+      aboveBed: round(s.position.y - bed(s.position.x, s.position.z), 2),
+      belowSea: round(WL - s.position.y, 2), depth: round(truck.water?.depth ?? 0, 2),
+      fastestDeep: round(fastest, 2), grounded: s.grounded,
+    };
+  };
+  results.landHullsInTheSea = {
+    jeep: sinker('jeep'), tank: sinker('tank'),
+    // The same jeep with no sea handed to it keeps the page's floor.
+    jeepNoSea: sinker('jeep', false),
+  };
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));

@@ -606,5 +606,61 @@ class CrewWashFeedTests(unittest.TestCase):
         self.assertEqual({"amount": 10, "lost": 10}, amounts["splash"])
 
 
+class SubmarineDataTests(unittest.TestCase):
+    """PHY-3: `submarineData` on a hull's depth (`underWater`). Half a second
+    is banked and then paid on the whole bank: the hull loses `elapsed x 7th`
+    deeper than the 6th, the crew's air falls by `elapsed x 1st` deeper than
+    the 5th and refills by `elapsed x 2nd` otherwise, and once spent each
+    soldier aboard is owed `elapsed x 3rd`."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["submarine"]
+
+    def test_a_tank_is_crushed_below_its_depth_and_not_above_it(self) -> None:
+        seen = self.results["m1a1"]["seen"]
+        self.assertTrue(self.results["m1a1"]["armed"])
+        # 1.4 m against a 1.5 m crush depth: the bank is paid, nothing lost.
+        self.assertEqual(100, seen[0]["hp"])
+        # 6.7 m: 0.5 s x 5 HP.
+        self.assertEqual(97.5, seen[1]["hp"])
+        # 0.3 s banks; 0.6 s in the bank pays 3 HP at once.
+        self.assertEqual(97.5, seen[2]["hp"])
+        self.assertAlmostEqual(0.3, seen[2]["bank"])
+        self.assertEqual(94.5, seen[3]["hp"])
+        self.assertEqual(89.5, seen[4]["hp"])
+        # No 1st, so the crew never runs short.
+        self.assertTrue(all(step["oxygen"] == 1 and step["crew"] == 0 for step in seen))
+
+    def test_a_crush_depth_of_zero_turns_it_off(self) -> None:
+        self.assertFalse(self.results["off"]["armed"])
+        self.assertTrue(all(step["hp"] == 100 for step in self.results["off"]["seen"]))
+
+    def test_the_air_drains_below_the_5th_and_refills_capped_above_it(self) -> None:
+        seen = self.results["stryker"]["seen"]
+        self.assertAlmostEqual(0.9955, seen[0]["oxygen"], places=4)
+        self.assertAlmostEqual(0.991, seen[1]["oxygen"], places=4)
+        self.assertEqual(1, seen[2]["oxygen"])
+        # And 20 m is past the Stryker's 2.9 m crush depth.
+        self.assertEqual(97.5, seen[0]["hp"])
+
+    def test_spent_air_costs_the_crew_only_once_it_would_go_negative(self) -> None:
+        seen = self.results["drowning"]["seen"]
+        self.assertEqual([0.75, 0.5, 0.25, 0, 0], [step["oxygen"] for step in seen[:5]])
+        # Reaching exactly 0 is not spending it; the next half second is.
+        self.assertEqual([0, 0, 0, 0, 2], [step["crew"] for step in seen[:5]])
+        # Shallow again, it refills from 0.
+        self.assertAlmostEqual(0.125, seen[5]["oxygen"])
+        # The crush runs beside it: 0.5 x 1 HP every half second below 3 m.
+        self.assertEqual(97.5, seen[4]["hp"])
+
+    def test_the_fleet_hands_a_depth_only_to_a_hull_that_authors_it(self) -> None:
+        self.assertEqual(95, self.results["set"]["armed"])
+        self.assertEqual(100, self.results["set"]["plain"])
+        self.assertEqual(0, self.results["set"]["crews"])
+
+
 if __name__ == "__main__":
     unittest.main()

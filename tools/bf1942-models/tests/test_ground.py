@@ -1379,6 +1379,39 @@ class TrackedVehicleTests(unittest.TestCase):
         # The drag radius is the box's, so a long truck's is a long truck's.
         self.assertGreater(chassis["scud"]["boundingRadius"], 3 * chassis["willy"]["boundingRadius"] / 2)
 
+    # --- land hulls in the sea ---------------------------------------------
+
+    def test_a_land_hull_sinks_to_the_bed(self) -> None:
+        # Water makes no impulse (collision-response section 7): the springs
+        # find the bed 6 m down and the hull rests on them there.
+        for kind in ("jeep", "tank"):
+            hull = self.results["landHullsInTheSea"][kind]
+            self.assertTrue(hull["hasWater"], kind)
+            self.assertTrue(hull["grounded"], kind)
+            self.assertGreater(hull["belowSea"], 4, kind)
+            self.assertGreater(hull["depth"], 4, kind)
+            self.assertGreater(hull["aboveBed"], 0.2, kind)
+            self.assertLess(hull["aboveBed"], 1.2, kind)
+
+    def test_the_sea_holds_a_land_hull_to_a_crawl(self) -> None:
+        # Fully under, the box drag takes 25 x its relative speed, squared
+        # over the dry law: the jeep crawls on the bed at a tenth of its road
+        # speed, the tank at under half of its own.
+        sea = self.results["landHullsInTheSea"]
+        self.assertLess(sea["jeep"]["fastestDeep"], 5)
+        self.assertLess(sea["tank"]["fastestDeep"], 9)
+        # Handed no sea, the same jeep keeps the page's floor and drives on it.
+        self.assertFalse(sea["jeepNoSea"]["hasWater"])
+        self.assertGreater(sea["jeepNoSea"]["fastestDeep"], 25)
+
+    def test_an_amphibian_still_swims(self) -> None:
+        amphibian = self.results["amphibian"]
+        self.assertTrue(amphibian["sea"]["afloat"])
+        self.assertFalse(amphibian["sea"]["grounded"])
+        self.assertGreater(amphibian["sea"]["along"], 4)
+        self.assertGreater(abs(amphibian["turn"]["deg"]), 30)
+        self.assertIsNone(amphibian["shermanKit"])
+
     def test_a_long_truck_turns_in_on_its_own_inertia(self) -> None:
         # Same springs, same engine, same drag per unit mass: the SCUD-B box
         # has nine times the yaw inertia, and one second into a full-lock

@@ -819,6 +819,13 @@ i.e. the familiar `1 + 24·min(uw/r, 1)`, with the 25.0 now read out of the
 binary. `first-person-soldier.md` §7's entry can be closed; the soldier's own
 bounding radius stays inferred.
 
+**A land vehicle in the sea (ledger PHY-16, 2026-10-06).** `checkVsTerrain`
+writes the depth on the part's own node, and a vehicle's root part is the root
+object, so the root node holds `water − lowest col0 vertex`. Water pushes
+nothing: a hull with no `FloatingBundle` sinks until its springs find the bed,
+and drives there under the box drag above, whose `DY` is the same geometry box
+as its inertia (ledger COL-13). `submarineData` reads the same depth (PHY-3).
+
 ---
 
 ## Still open

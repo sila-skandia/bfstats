@@ -34,11 +34,68 @@ export function onBodyDamage(world, owner, result, at, other) {
  * has faded out are skipped through the `isWrecked` predicate.
  */
 export function damageTick(world, dt) {
+  const waterLevel = world.collider?.waterLevel;
+  const crews = [];
   const changes = world.vehicleDamage.update(dt, {
     inWaterOwners: inWaterOwners(world),
     ticks: world.report.timedDamage,
+    // `submarineData` reads the hull's `underWater` (PHY-3): the body
+    // world's own vertices, the rule `checkVsTerrain` writes it by.
+    depthOf: owner => submersionDepth(world.bodyWorld?.get(owner), waterLevel),
+    crews,
   });
   for (const change of changes) world.report.damage.push(change);
+  for (const crew of crews) suffocateCrew(world, crew);
+}
+
+/**
+ * `underWater` for a hull in the body world: how far its root part's lowest
+ * tested col0 vertex is below the sea, 0 above it. `checkVsTerrain`
+ * (`0x0825a960`) takes the lowest of the vertices it drops on the terrain
+ * (one when the layer has three or fewer) and hands `water - minY` to the
+ * part's node (`0x0825ac60`), and the root part's node is the root's. The
+ * root part's collision mesh is found by the same search as its inertia
+ * geometry (`findLodCollisionMesh`, COL-13), which `hull-bodies.js` tags on
+ * the spec as `waterPart` (`ship-spec.js` `rootCollisionPart`), not the part
+ * `describeVehicleParts` marks `isRoot`. 0 for a hull with no such part.
+ */
+export function submersionDepth(entry, waterLevel) {
+  if (!entry?.parts?.length || !Number.isFinite(waterLevel)) return 0;
+  if (entry._waterPart === undefined) {
+    const node = entry.spec?.waterPart?.node;
+    entry._waterPart = node ? entry.parts.find(p => p.node === node && p.kind !== 'spring') ?? null : null;
+  }
+  const part = entry._waterPart;
+  const layer = part?.shape?.layers?.[0];
+  if (!layer?.vertices?.length || typeof part.worldVertex !== 'function') return 0;
+  const count = layer.vertices.length / 3;
+  const n = count <= 3 ? 1 : count;
+  let low = Infinity;
+  for (let i = 0; i < n; i++) {
+    part.worldVertex(0, i, _vertex);
+    if (_vertex[1] < low) low = _vertex[1];
+  }
+  return Number.isFinite(low) ? Math.max(0, waterLevel - low) : 0;
+}
+
+const _vertex = [0, 0, 0];
+
+/**
+ * `damageAllAttachedSoldiers` (`0x08318c70`): every soldier seated in a hull
+ * whose air has run out takes `amount`. No vanilla or Desert Combat land
+ * vehicle authors a non-zero 3rd `submarineData` float, so on land this never
+ * fires; the two submarines (`Gato`, `Sub7C`, 1.0) are ships. The world takes
+ * the HP off each Armor and reports it (`report.suffocation`, when the report
+ * carries one); a seated soldier who dies of it reaches no death path here,
+ * which is open.
+ */
+function suffocateCrew(world, { vehicle, owner, amount }) {
+  for (const [playerId, player] of world.players) {
+    if (!player.armor || player.armor.destroyed) continue;
+    if (world.occupiedDamageable(playerId) !== vehicle) continue;
+    const lost = player.armor.damage(amount);
+    world.report.suffocation?.push({ playerId, owner, lost, killed: !!player.armor.destroyed });
+  }
 }
 
 export function inWaterOwners(world) {
