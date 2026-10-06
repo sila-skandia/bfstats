@@ -148,7 +148,7 @@ export function createVehicleWrecks(page) {
   /**
    * Start a tier's bundles on the object, each where the engine puts it: a
    * child of the object at its authored offset, turned with it and with no
-   * turn of its own (ledger ARM-8, `Armor::playEffect` lnxded 0x08172960).
+   * turn of its own (ledger ARM-11, `Armor::playEffect` lnxded 0x08172960).
    * An anchor per entry, so two entries of one bundle at two offsets
    * (Clacton's two `e_ScrapAABase` in its death tier) are two effects at two
    * places rather than one anchor moved twice. `key` keeps one tier's anchors

@@ -265,7 +265,7 @@ export class EffectPlayer {
     // there, which is how a `lighting true` decal is lit in the game.
     this.onMesh = onMesh;
     // Called with `(object, spec)` for every object a spawn effect stands up
-    // (ledger EMT-9: `isSpawnEffect`, a real object, not a particle), once it
+    // (ledger EMT-10: `isSpawnEffect`, a real object, not a particle), once it
     // is in the scene: the page lights it, hides its collision hulls and
     // starts its own armour tier. Desert Combat's ruined objectives arrive
     // this way.
@@ -383,7 +383,7 @@ export class EffectPlayer {
     const seen = view ?? (this.firstPerson ? 'first' : 'third');
     for (const emitter of bundle.emitters) {
       const spec = emitter.spec;
-      // A spawn effect is the server's (EMT-9): lnxded's `Emitter::handleUpdate`
+      // A spawn effect is the server's (EMT-10): lnxded's `Emitter::handleUpdate`
       // runs only those and asks for no camera, and the object it makes goes
       // to every client. Where this one looks from cannot stop it, so neither
       // the view nor `lodDistance` (375 m on Desert Combat's ruins) does.
@@ -670,7 +670,7 @@ export class EffectPlayer {
 
   /**
    * A spawn effect's one "particle": its template as an object of the world
-   * (ledger EMT-9). `Emitter::handleUpdate` (lnxded 0x081e3200) hands the
+   * (ledger EMT-10). `Emitter::handleUpdate` (lnxded 0x081e3200) hands the
    * template, the spawn point and `getRotation` of the spawn matrix to
    * `GameServer::spawnObject` (0x08132440), which creates it on every
    * client. So the object stands where a particle of this emitter would have
