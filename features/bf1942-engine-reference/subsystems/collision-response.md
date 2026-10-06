@@ -352,7 +352,9 @@ when any of these holds:
 
 A collidable part (`shouldCheckCollision` `0x082584e0`, and
 `StaticResponsePhysics`'s copy `0x0825ed50`) has object flag `0x200`, a
-geometry, a non-empty vertex set and a face collider. Only such parts are put
+geometry, a non-empty vertex set and a face collider, asked for at collision
+LOD 1, which a mesh with one layer answers with its col0 (COL-19): a wheel's
+or a rocket pod's single layer qualifies. Only such parts are put
 in a root's chain (`getNextToCheck` `0x0825ee70` → `addToTmpResponseList`
 `0x0825ede0`, walked with `LodObject::m_forceHighestLod` set, so a LodObject
 contributes its first alternative). The candidate root itself is tested
