@@ -108,6 +108,17 @@ class CtfPageTests(unittest.TestCase):
         self.assertEqual(["Smith [Coalition]: stole the flag"], [line["text"] for line in room["lines"]])
         self.assertIsNone(room["ignored"])
 
+    def test_a_client_joining_mid_round_catches_up(self) -> None:
+        # The room's HELLO snapshot, then the rows that came while the level
+        # loaded, in that order: the carried flag follows its carrier, the
+        # dropped one lies where the server's row put it.
+        late = self.results["lateJoin"]
+        self.assertFalse(late["beforeSetup"])
+        self.assertEqual([
+            {"home": False, "carrier": None, "position": [854.59, 101.46, -375.59]},
+            {"home": False, "carrier": 7, "position": [978.27, 103.66, -1716.22]},
+        ], late["flags"])
+
     def test_a_conquest_level_tears_it_down(self) -> None:
         t = self.results["teardown"]
         self.assertEqual((False, False, {}, 0), (t["active"], t["group"], t["hud"], t["marks"]))

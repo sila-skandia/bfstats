@@ -63,7 +63,8 @@ export function playsCtf(extras) {
 
 /**
  * Built once by the page. `page` hands in, as getters or functions:
- * `extras`, `world`, `round`, `groundHeight(x, z)`, `collider` (its
+ * `roomCtf()` (a room's HELLO `ctf` snapshot), `extras`, `world`, `round`,
+ * `groundHeight(x, z)`, `collider` (its
  * `heightfield` tilts a dropped flag), `loader`, `scene`,
  * `MODELS_BASE`, `bust`, `MAPS_BASE`, `bindDynamicShading(root)`,
  * `bots` (the referee's), `LOCAL_PLAYER`, `localName`, `localTeam()`,
@@ -77,6 +78,10 @@ export function createCtfPage(page) {
   let soundsLoad = null;
   /** The level the state belongs to: a new one starts it again. */
   let builtFor = null;
+  /** In a room: the HELLO snapshot already applied, and the server's rows
+   *  that arrived before the level's world was ready to take them. */
+  let restoredFrom = null;
+  let pendingRows = [];
 
   // --- the level -------------------------------------------------------------
 
@@ -113,6 +118,25 @@ export function createCtfPage(page) {
     ctfPage.log = [];
     ctfPage.voices = [];
     ctfPage.models = {};
+    // The new copy starts from the HELLO again; rows kept while the level
+    // loaded stay for it (a room changes level by reloading the page).
+    restoredFrom = null;
+  }
+
+  /** A room's flags when this client joined (HELLO's `ctf`, the server's
+   *  `ctf.js` `snapshot`), once per join, then the rows that came after it. */
+  function catchUp() {
+    const ctf = ctfPage.ctf;
+    if (!ctf) return;
+    const rows = page.roomCtf?.() ?? null;
+    if (rows && rows !== restoredFrom) {
+      restoredFrom = rows;
+      ctf.restore(rows);
+    }
+    if (!pendingRows.length) return;
+    const queued = pendingRows;
+    pendingRows = [];
+    for (const row of queued) ctfPage.onRow(row);
   }
 
   /** The `restartMap` half of CTF: every flag back on its pole. */
@@ -286,6 +310,7 @@ export function createCtfPage(page) {
     if (page.roomJoined) {
       // The server's law moves the flags; between its rows a carried one
       // follows its carrier as this client draws him.
+      catchUp();
       if (page.roomPositionOf) ctf.follow(page.roomPositionOf);
       present();
       return [];
@@ -300,7 +325,13 @@ export function createCtfPage(page) {
   /** A room's `ctf` row: the authority's event, applied to this copy. */
   ctfPage.onRow = row => {
     const ctf = ctfPage.ctf;
-    if (!ctf || row?.type !== 'ctf') return;
+    if (row?.type !== 'ctf') return;
+    if (!ctf) {
+      // The level is still loading: keep the row for `catchUp`.
+      if (page.roomJoined && pendingRows.length < 256) pendingRows.push(row);
+      return;
+    }
+    if (page.roomJoined) catchUp();
     if (!ctf.applyEvent(row)) return;
     announce(row);
     present();

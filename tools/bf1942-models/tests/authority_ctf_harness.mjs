@@ -46,13 +46,30 @@ const results = {};
   const DT = 1 / 30;
   let seen = 0;
   let mismatches = 0;
+  // A client that joins mid-round: the HELLO's snapshot, then the rows after it.
+  let late = null;
+  let lateSeen = 0;
+  let lateMismatches = 0;
+  const positionOf = slot => { const s = r.players.get(slot)?.soldier; return s ? [s.x, s.y, s.z] : null; };
+  const stateOf = copy => JSON.stringify(copy.flags.map(f => [f.home, f.carrier, f.position.map(v => Math.round(v * 10))]));
   const tick = () => {
     r.authority.afterStep({ damage: [], crashes: [] }, DT);
     for (; seen < r.rows.length; seen++) if (r.rows[seen].type === 'ctf') client.applyEvent(r.rows[seen]);
-    client.follow(slot => { const s = r.players.get(slot)?.soldier; return s ? [s.x, s.y, s.z] : null; });
-    const a = JSON.stringify(r.authority.ctf.flags.map(f => [f.home, f.carrier, f.position.map(v => Math.round(v * 10))]));
-    const b = JSON.stringify(client.flags.map(f => [f.home, f.carrier, f.position.map(v => Math.round(v * 10))]));
-    if (a !== b) mismatches += 1;
+    client.follow(positionOf);
+    const a = stateOf(r.authority.ctf);
+    if (a !== stateOf(client)) mismatches += 1;
+    if (late) {
+      for (; lateSeen < r.rows.length; lateSeen++) if (r.rows[lateSeen].type === 'ctf') late.applyEvent(r.rows[lateSeen]);
+      late.follow(positionOf);
+      if (a !== stateOf(late)) lateMismatches += 1;
+    }
+  };
+  const joinLate = () => {
+    late = createCtf({ bases: flagBases });
+    lateSeen = r.rows.length;
+    const fresh = stateOf(late);
+    late.restore(JSON.parse(JSON.stringify(r.authority.ctf.snapshot())));
+    return { fresh, restored: stateOf(late), server: stateOf(r.authority.ctf) };
   };
   r.join(1, 2, [0, 0, 60]);     // a US player
   r.join(2, 1, [0, 0, -60]);    // a Japanese player
@@ -67,11 +84,14 @@ const results = {};
   // The Japanese player takes the US flag and dies in the open: it falls.
   r.move(2, [0, 0, 101]);
   tick();
+  // A third client joins now, with the US flag in Japanese hands.
+  const lateJoin = joinLate();
   r.move(2, [30, 0, 30]);
   tick();
   r.players.get(2).armor.applyDamage(1000);
   r.authority.afterStep({ damage: [], crashes: [] }, DT);   // the death decree
   for (; seen < r.rows.length; seen++) if (r.rows[seen].type === 'ctf') client.applyEvent(r.rows[seen]);
+  for (; lateSeen < r.rows.length; lateSeen++) if (r.rows[lateSeen].type === 'ctf') late.applyEvent(r.rows[lateSeen]);
   // The US player walks over it: returned.
   r.move(1, [30, 0, 31]);
   tick();
@@ -81,6 +101,7 @@ const results = {};
     dropAt: r.rows.find(x => x.type === 'ctf' && x.kind === 'dropped')?.position ?? null,
     killed: r.rows.filter(x => x.type === 'killed').map(x => x.slot),
     mismatches,
+    lateJoin, lateMismatches,
     captures: { 1: r.authority.round.teams[1].captures, 2: r.authority.round.teams[2].captures },
     mode: r.authority.round.gamePlayMode,
     bleeds: r.authority.round.bleeding,

@@ -2035,6 +2035,8 @@ const ctfPage = createCtfPage(bag(
   from(() => soldierKit, `teamVoice`),
   {
     get roomSlot() { return room.roomClient?.slot ?? null; },
+    // The room's flags when this client joined (HELLO's `ctf`).
+    roomCtf: () => room.roomClient?.hello?.ctf ?? null,
     // A room slot where this client draws him: himself, or the snapshots.
     roomPositionOf: slot => {
       const client = room.roomClient;

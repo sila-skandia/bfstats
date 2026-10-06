@@ -334,6 +334,30 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
     return flag;
   }
 
+  /** Every flag as it stands, for a client joining a room mid-round (the
+   *  room's HELLO): `[{ flag, home, carrier, carrierTeam, position,
+   *  respawnIn }]`. */
+  function snapshot() {
+    return flags.map(f => ({ flag: f.index, home: f.home, carrier: f.carrier,
+                             carrierTeam: f.carrierTeam, position: f.position.slice(),
+                             respawnIn: f.respawnIn }));
+  }
+
+  /** A `snapshot` applied to this copy: the flags where the room's law has
+   *  them when this client joined. A row for no flag of this copy is skipped. */
+  function restore(rows) {
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const flag = flags.find(f => f.index === row?.flag);
+      if (!flag) continue;
+      if (row.home) { sendHome(flag); continue; }
+      flag.home = false;
+      flag.carrier = row.carrier ?? null;
+      flag.carrierTeam = flag.carrier != null ? (row.carrierTeam ?? 0) : 0;
+      if (Array.isArray(row.position)) flag.position = row.position.map(Number);
+      flag.respawnIn = Number.isFinite(row.respawnIn) ? row.respawnIn : flag.base.flag.timeToRespawn;
+    }
+  }
+
   /** A carried flag follows its carrier between law ticks (a room's client
    *  has no law tick at all): `positionOf(id)` answers `[x, y, z]` or null. */
   function follow(positionOf) {
@@ -349,6 +373,7 @@ export function createCtf({ bases = [], round = null, groundHeight = null } = {}
     return flags.find(f => f.team === team) ?? null;
   }
 
-  Object.assign(ctf, { tick, reset, carriedBy, flagOf, homePosition, applyEvent, follow });
+  Object.assign(ctf, { tick, reset, carriedBy, flagOf, homePosition, applyEvent, follow,
+                       snapshot, restore });
   return ctf;
 }
