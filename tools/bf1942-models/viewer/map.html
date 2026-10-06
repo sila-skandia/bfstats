@@ -552,7 +552,7 @@ const level = createLevel(bag(
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
   from(() => vehicleEntry, `forgetEntryPoints`),
-  from(() => wrecks, `damageVisuals loadFailures registerDamageables templateNameOf wreckState`),
+  from(() => wrecks, `damageVisuals loadFailures modelUrls registerDamageables templateNameOf wreckState`),
   {
     get activeMod() { return activeMod; }, get bust() { return bust; },
     get camera() { return camera; }, get cubeLoader() { return cubeLoader; },
@@ -909,7 +909,7 @@ const wrecks = createVehicleWrecks(bag(
   from(() => freeCamera, `placeCamera`),
   from(() => hullBodies, `respawnVehicleBody retireVehicleBody`),
   from(() => level, `bindDynamicShading collider extras freezeVehicle groundHeight isCollision
-    vehicleDamage world`),
+    vehicleDamage vehiclePads world`),
   from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
     soldierDead standUp useLens`),
   from(() => seatPose, `detachSeatCorpse`),
@@ -922,6 +922,8 @@ const wrecks = createVehicleWrecks(bag(
     get fireStates() { return fireStates; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
+    // The server a pad's delay is drawn for (`calcSpawnDelay`, SPAWN-10).
+    get maxPlayers() { return ROUND_MAX_PLAYERS; },
     // The human died in his hull: whoever killed it killed him (the message
     // log reads it when the death latches, `commsWatchLocalDeath`).
     noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), null, id),
@@ -2586,7 +2588,7 @@ const testHooks = installTestHooks(bag(
   from(() => hullBodies, `bodyScene bodyWorld floatHosts recordCrashes shipFlagInactive
     stepVehicleBodies`),
   from(() => level, `collider combatArea currentDir extras frozenCount groundHeight modeNote
-    spawnersRoot surfaceFriction vehicleDamage vehicleSpawnActive warmups world`),
+    spawnersRoot surfaceFriction vehicleDamage vehiclePads vehicleSpawnActive warmups world`),
   from(() => localLook, `lookDelta mouseInput snapPresentation`),
   from(() => localPlayer, `applyDamageToPlayer frameInputLast holdDeploy parachuteLog soldier soldierArmor
     soldierDead supplyTarget switchSeat`),

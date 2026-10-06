@@ -704,10 +704,20 @@ export function createHullBodies(page) {
    */
   function settlePlacedVehicles(ownerRoots, heightfield) {
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
+    // A pad's other-side vehicle stands on the same slab as the one its pad
+    // has out (`level-statics.js` `loadPadVariants`); settled together, the
+    // two would be pushed apart. Each settles in a world of its own kind.
+    const live = node => page.vehicleSpawnActive?.(node) ?? true;
+    settleSome(ownerRoots, heightfield, node => live(node));
+    settleSome(ownerRoots, heightfield, node => !live(node));
+  }
+
+  function settleSome(ownerRoots, heightfield, wanted) {
     const world = new BodyWorld({
       tables: page.damageTables, terrain: bodyTerrain(heightfield, page.extras?.waterLevel) });
     const settling = [];
     ownerRoots.forEach((node, index) => {
+      if (!node || !wanted(node)) return;
       // A deck aircraft is held at its spawner's pose, not dropped onto the
       // heightfield under its ship (`holdSpawnedCraft`).
       if (spawnHoldOf(node)) return;
@@ -717,6 +727,7 @@ export function createHullBodies(page) {
       world.addParked(index, parked, spec);
       settling.push({ node, body: parked.body });
     });
+    if (!settling.length) return;
     for (let tick = 0; tick < SETTLE_TICKS; tick++) {
       world.tick();
       if (tick > 30 && settling.every(s => s.body.sleeping)) break;
@@ -833,6 +844,7 @@ export function createHullBodies(page) {
   /** Rebuild the body world for the level `buildCollider` just indexed. */
   function setupVehicleBodies() {
     hookHoldIntoTick(page.world);
+    spawnShown.clear();
     bodyScene.clear();
     hullBodies.bodyWorld = null;
     const heightfield = page.collider?.heightfield;
@@ -863,7 +875,7 @@ export function createHullBodies(page) {
       if (!spec) continue;
       visual.node.updateWorldMatrix(true, false);
       bodyScene.set(owner, {
-        node: visual.node, spec, sea, moved: false, spawnActive: true,
+        node: visual.node, spec, sea, moved: false,
         spawnInverse: visual.node.matrixWorld.clone().invert(),
       });
       if (sea) continue;
@@ -879,24 +891,33 @@ export function createHullBodies(page) {
     syncVehicleSpawnOwnership();
   }
 
-  /** Neutral capture zones have no live parked hulls until their flag changes. */
+  /**
+   * A placed hull is in the world only while its pad has it there
+   * (`vehicleSpawnActive`, the pad records of `level-statics.js`): a pad at a
+   * neutral flag has spawned nothing, and of a pad's two sides' vehicles only
+   * the one it spawned stands (ledger SPAWN-12). The others are hidden, out of
+   * the collision index and out of the body world, every kind of hull alike.
+   */
+  const spawnShown = new Map();
   function syncVehicleSpawnOwnership() {
     for (const [owner, visual] of page.damageVisuals) {
       const scene = bodyScene.get(owner);
-      if (!scene || scene.sea) continue;
-      const active = page.vehicleSpawnActive(scene.node);
-      if (scene.spawnActive === active) continue;
-      scene.spawnActive = active;
+      const active = page.vehicleSpawnActive(visual.node);
+      if ((spawnShown.get(owner) ?? true) === active) continue;
+      spawnShown.set(owner, active);
       page.dropEntryPoints();
+      const parked = scene && !scene.sea;
       if (active) {
         page.collider.statics?.enableOwner?.(owner);
-        page.collider.statics?.setBodyOwner?.(owner, true);
-        page.world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
+        if (parked) {
+          page.collider.statics?.setBodyOwner?.(owner, true);
+          page.world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
+        }
       } else {
-        page.world?.removeBody(owner);
+        if (parked) page.world?.removeBody(owner);
         page.collider.statics?.disableOwner?.(owner);
-        page.collider.statics?.setBodyOwner?.(owner, false);
-        scene.node.visible = false;
+        if (parked) page.collider.statics?.setBodyOwner?.(owner, false);
+        visual.node.visible = false;
       }
     }
   }
