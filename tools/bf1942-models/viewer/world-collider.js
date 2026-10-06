@@ -418,6 +418,18 @@ export class WorldCollider {
     return improved;
   }
 
+  /**
+   * An object the game made after the level loaded, made solid: its hulls
+   * join the index under an owner id of their own (`CollisionIndex.addOwner`),
+   * which rounds, boots and the hull sweeps then meet like any placed
+   * object's. Its pose now is its baked pose; a body that moves it reports
+   * where through `setMovedOwner`, as a shoved hull does. -1 when the level
+   * has no hull index or the object no hulls.
+   */
+  addOwner(node) {
+    return this.statics?.addOwner?.(node) ?? -1;
+  }
+
   /** The owner is back where it was baked (a respawn), or gone (a wreck). */
   clearMovedOwner(owner, { enable = true } = {}) {
     if (!this.moved.delete(owner)) return;

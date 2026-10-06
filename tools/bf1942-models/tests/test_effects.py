@@ -16,6 +16,7 @@ import math
 import shutil
 import subprocess
 import sys
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -1589,9 +1590,11 @@ ObjectTemplate.template Raft_Chunk
 ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
 
 ObjectTemplate.create PlayerControlObject Elco80Raft
+ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.addTemplate Elco80RaftHull
 ObjectTemplate.hasArmor 1
 ObjectTemplate.hitpoints 200
+ObjectTemplate.timetoliveafterdeath 0
 
 ObjectTemplate.create SimpleObject Elco80RaftHull
 ObjectTemplate.geometry Raft_m1
@@ -1615,7 +1618,8 @@ class SpawnEffectTests(unittest.TestCase):
     def test_a_spawn_effect_is_an_object_and_a_plain_emitter_still_debris(self) -> None:
         lib = self.spawn_library()
         [(_ref, _em, _payload, raft)] = effects.bundle_tree(lib, "e_PTBoatWreck").emitters
-        self.assertEqual({"kind": "object", "template": "Elco80Raft"}, raft["particle"])
+        self.assertEqual({"kind": "object", "template": "Elco80Raft", "hasMobilePhysics": True},
+                         raft["particle"])
         self.assertTrue(raft["isSpawnEffect"])
         self.assertEqual(375.0, raft["lodDistance"])
         # Before, the PCO payload had no particle at all and the raft emitter
@@ -1625,6 +1629,30 @@ class SpawnEffectTests(unittest.TestCase):
         [(_ref, _em, _payload, chunk)] = effects.bundle_tree(lib, "e_ChunkFall").emitters
         self.assertEqual("mesh", chunk["particle"]["kind"])
         self.assertTrue(chunk["particle"]["debris"])
+
+    def test_the_spawned_template_says_whether_its_body_moves(self) -> None:
+        # PHY-17: the bit decides the physics node, and a template that never
+        # writes it is static like one that writes 0 (Desert Combat's ruins).
+        lib = self.spawn_library()
+        lib.add_con("Objects/Ruins/Effects.con", """
+ObjectTemplate.create EffectBundle e_RuinWRECKPCO
+ObjectTemplate.addTemplate Em_RuinWRECKPCO
+ObjectTemplate.create Emitter Em_RuinWRECKPCO
+ObjectTemplate.template Ruin_wreck
+ObjectTemplate.IsSpawnEffect 1
+ObjectTemplate.create EffectBundle e_ShedWRECKPCO
+ObjectTemplate.addTemplate Em_ShedWRECKPCO
+ObjectTemplate.create Emitter Em_ShedWRECKPCO
+ObjectTemplate.template Shed_wreck
+ObjectTemplate.IsSpawnEffect 1
+ObjectTemplate.create PlayerControlObject Ruin_wreck
+ObjectTemplate.hasMobilePhysics 0
+ObjectTemplate.create PlayerControlObject Shed_wreck
+""")
+        for bundle, mobile in (("e_PTBoatWreck", True), ("e_RuinWRECKPCO", False),
+                               ("e_ShedWRECKPCO", False)):
+            [(_ref, _em, _payload, spec)] = effects.bundle_tree(lib, bundle).emitters
+            self.assertIs(mobile, spec["particle"]["hasMobilePhysics"], bundle)
 
     def test_the_bake_hangs_the_whole_object_under_its_emitter(self) -> None:
         lib = self.spawn_library()
@@ -1653,6 +1681,8 @@ class SpawnEffectTests(unittest.TestCase):
         self.assertEqual("Elco80Raft", raft["name"])
         self.assertEqual("PlayerControlObject", raft["extras"]["templateKind"])
         self.assertEqual(200, raft["extras"]["armor"]["hitpoints"])
+        # HP-19: how long it stays once destroyed rides with its Armor.
+        self.assertEqual(0, raft["extras"]["armor"]["timeToLiveAfterDeath"])
         hull = nodes[raft["children"][0]]
         self.assertIn("mesh", hull)
 
@@ -1713,6 +1743,59 @@ ObjectTemplate.addArmorEffect 20 e_ModWide 0/1/0
             extract_effects.write_level_effects(tree, row, b"new glb", {"bundles": {}})
             self.assertEqual(b"new glb", (level / "effects.glb").read_bytes())
             self.assertFalse((level / "effects.glb.gz").exists())
+
+    def test_the_row_names_the_levels_sounds_and_loses_them_with_the_file(self) -> None:
+        import extract_effects
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "kasserine_pass").mkdir()
+            row = {"name": "Kasserine_Pass", "glb": "kasserine_pass/scene.glb"}
+            extract_effects.write_level_sounds(
+                tree, row, {"bundles": {"e_fire": {"name": "e_Fire"}}, "scripts": {}})
+            self.assertEqual("kasserine_pass/effects.sounds.json", row["effectSounds"])
+            self.assertTrue((tree / "kasserine_pass" / "effects.sounds.json").is_file())
+            # Nothing sounding: the file and the key go.
+            extract_effects.write_level_sounds(tree, row, {"bundles": {}, "silent": {"e_x": ""}})
+            self.assertNotIn("effectSounds", row)
+            self.assertEqual([], list((tree / "kasserine_pass").iterdir()))
+
+
+GAME_DIR = Path(os.path.expanduser("~/.wine/drive_c/EA Games/Battlefield 1942"))
+
+
+@unittest.skipUnless((GAME_DIR / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+class LevelEffectSoundsTests(unittest.TestCase):
+    """A level's own bundles' sounds, from the install: Battle of Britain's
+    factory chimneys and Kasserine Pass's own fire, which `_shared` cannot
+    hold. Samples copied as wav into a scratch tree (no ffmpeg needed)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import extract_effects
+        import scene_layers
+        cls.manifests = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            for level in ("Battle_of_Britain", "Kasserine_Pass"):
+                ctx = scene_layers.LevelContext(GAME_DIR, "bf1942", level, out=tree)
+                cls.manifests[level] = extract_effects.level_sound_manifest(ctx, tree, "wav")
+            cls.samples = sorted(p.name for p in (tree / "_shared" / "sounds").iterdir())
+
+    def test_the_chimneys_sound_the_explosion_they_bundle(self) -> None:
+        # `e_BritainFactory_SmokeStacks` adds `e_scrapmetal` and `e_ExplGas`.
+        bob = self.manifests["Battle_of_Britain"]
+        entry = bob["bundles"]["e_britainfactory_smokestacks"]
+        self.assertEqual("e_ExplGas", entry["soundOwner"])
+        self.assertIn("sounds/explgas.wav",
+                      [layer["file"] for layer in bob["scripts"][entry["script"]]["layers"]])
+
+    def test_kasserines_fire_is_its_own(self) -> None:
+        kasserine = self.manifests["Kasserine_Pass"]
+        entry = kasserine["bundles"]["e_fire"]
+        self.assertTrue(entry["script"].startswith("bf1942/levels/kasserine_pass/"))
+        self.assertEqual(["sounds/vefr1.wav", "sounds/vefr2.wav", "sounds/vefr3.wav"],
+                         sorted({layer["file"] for layer in kasserine["scripts"][entry["script"]]["layers"]}))
+        self.assertIn("vefr1.wav", self.samples)
 
 
 if __name__ == "__main__":

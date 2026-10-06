@@ -74,6 +74,16 @@ class VehiclePadTests(unittest.TestCase):
         # The wreck still burning on the pad goes first.
         self.assertEqual(["destroy M1A1", "spawn T72"], respawn["log"])
 
+    def test_a_wreck_away_from_its_pad_does_not_hold_the_next_hull_back(self) -> None:
+        # A wreck now stands its `timeToLiveAfterDeath` (HP-19; 60 s for DC's
+        # armour), longer than most pads' delay. Retail's next hull comes at
+        # the delay with the wreck still there (lab-ground-truth.md: an M2A3,
+        # 60 s wreck, back 40.0 s after its death); the page has one node per
+        # template, so the wreck goes when the hull comes.
+        away = self.results["awayWreck"]
+        self.assertAlmostEqual(15, away["at"], delta=0.1)
+        self.assertEqual(["destroy Zodiac", "spawn Zodiac"], away["log"])
+
     def test_a_neutral_pad_taken_spawns_the_taker_at_once(self) -> None:
         self.assertEqual(["UAZ"], self.results["roadAfter"])
 
