@@ -109,7 +109,7 @@ export class FireState {
   /**
    * The trigger, as the caller holds it this frame or world tick, reported
    * before `step`. A held trigger is a pull every tick (GUN-13), and the heat's
-   * tick loop runs the one that matters here: a pull the heat refuses (GUN-17).
+   * tick loop runs the one that matters here: a pull the heat refuses (GUN-18).
    * `handleMessage` passes a pull to `Fire` only once the reload, the lockout
    * and the last round's timer have all run out, and `Fire` refuses it at heat
    * 1 or more and starts the lockout again. So the lockout starts on that
@@ -150,7 +150,7 @@ export class FireState {
    * heat off between rounds at the guns' 10 a second, and neither hand MG nor
    * a pintle Browning ever overheated. A cold, idle barrel stops counting.
    *
-   * Each tick closes with the trigger's pull (GUN-17): one the heat refuses
+   * Each tick closes with the trigger's pull (GUN-18): one the heat refuses
    * starts the lockout. The rounds themselves are fired by `gunfire.js` after
    * the step and billed in `registerShot`, so a tick here is the timers and
    * the drain, then the pull, refused here or fired there: the engine's pull
@@ -184,7 +184,7 @@ export class FireState {
     }
   }
 
-  /** A held trigger's pull, one tick's (GUN-17): past the reload, the lockout
+  /** A held trigger's pull, one tick's (GUN-18): past the reload, the lockout
    *  and the round's timer, refused at heat 1 or more, and then it starts the
    *  lockout. A pull the heat lets through is the round's, which `gunfire.js`
    *  fires. */
@@ -220,7 +220,7 @@ export class FireState {
     // The heat (GUN-14): added once a pull, with no clamp, and the round sets
     // the fire timer the drain waits on. The round that crosses 1 starts no
     // lockout; the next pull does, the one the heat refuses (`trigger`,
-    // GUN-17). A caller that never reports its trigger (`replay-hud.js`
+    // GUN-18). A caller that never reports its trigger (`replay-hud.js`
     // `gunStateAt`, which has only the recorded rounds) has no pulls to
     // refuse, so for it the crossing round stands in for a trigger still held
     // and starts the lockout itself.
