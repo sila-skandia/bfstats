@@ -178,9 +178,10 @@ ObjectTemplate.setSkeletonCollisionBone Bip01_Head 0.03 2 40
         self.assertEqual(2, len(manifest["soldierBody"]["collisionBones"]))
 
     def test_each_soldiers_own_numbers_ride_out_by_template(self) -> None:
-        # S7 / S8: the blast's push (KNOCK-7), off each soldier template.
-        # Desert Combat's `CommonSoldierData.inc` against vanilla's: 150 not
-        # 75, the ceiling 600 in both.
+        # S7 / S8: the blast's push (KNOCK-7) and the medic bag's and the
+        # wrench's words, off each soldier template. Desert Combat's
+        # `CommonSoldierData.inc` against vanilla's: 150 not 75, and a wrench
+        # at 0.20 not 0.15; the other words are vanilla's.
         from bf42 import con as con_mod
         library = con_mod.ObjectLibrary()
         library.add_con("objects/soldiers/test/objects.con", self.CON + """
@@ -213,9 +214,14 @@ objectTemplate.repairFactor 0.20
         self.assertEqual("TestSoldier", body["template"])
         self.assertEqual(75.0, body["explosionForceMod"])
         self.assertEqual(600.0, body["explosionForceMax"])
+        self.assertEqual(0.15, body["repairFactor"])
+        self.assertEqual(0.25, body["healFactor"])
+        self.assertEqual(0.15, body["selfHealFactor"])
+        self.assertEqual(10.0, body["healDistance"])
+        self.assertEqual(2.0, body["repairDistance"])
         dc = body["templates"]["DcSoldier"]
         self.assertEqual({"timeToLiveAfterDeath": 20.0, "explosionForceMod": 150.0,
-                          "explosionForceMax": 600.0}, dc)
+                          "explosionForceMax": 600.0, "repairFactor": 0.2}, dc)
         self.assertEqual(75.0, body["templates"]["TestSoldier"]["explosionForceMod"])
 
 
