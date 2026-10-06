@@ -9,7 +9,7 @@ import { createAuthority } from './authority.mjs';
 import {
   MAX_PLAYERS,
   MSG_ACTION, MSG_EVENT, MSG_INPUT, MSG_LEAVE, MSG_PING, MSG_PONG,
-  decodeInputFrame,
+  INPUT_BYTES_MIN, decodeInputFrame,
 } from '../viewer/netcode.js';
 import {
   DROP_SWEEP_MS, FIRE_EVENT_COOLDOWN_S, FRAME_MS, HEARTBEAT_TIMEOUT_MS, NAME_OK,
@@ -179,7 +179,9 @@ export class Room {
         return;
       }
       case MSG_INPUT: {
-        if (body.length < 4 + 14) return;   // malformed; ignore, keep alive
+        // Malformed: ignore, keep alive. A 14-byte record from a page that
+        // predates the analogue throttle and rudder still reads (netcode.js).
+        if (body.length < 4 + INPUT_BYTES_MIN) return;
         // The P3 death decree: the dead send nothing (the page's own loop
         // stops at `soldierDead`; the world idles the body either way).
         if (!this.authority.mayInput(connection.slot)) return;
