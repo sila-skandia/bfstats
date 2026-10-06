@@ -399,6 +399,10 @@ export class Ship extends Aircraft {
     return this.revs;
   }
 
+  /** A ship's Engines read the running byte: the world stops them on
+   *  critical damage (`world-vehicle-tick.js`, PHY-14). */
+  get shipDrive() { return true; }
+
   /**
    * `Engine::handleUpdate` (`0x0823e120`) — the whole gearbox, once a tick.
    *
@@ -413,7 +417,12 @@ export class Ship extends Aircraft {
    */
   advanceEngines(dt) {
     const t1 = clamp(this.state.throttle, this.spec.throttleMin ?? -1, 1);
-    this.revs = revAdvance(this.revs, t1, this.load, dt * SIMULATION_FPS);
+    // An engine that is off stores its revs as 0.0 (`0x0823e2e6`-`0x0823e2ec`,
+    // TANK-12, whatever the type): with the helm empty (TemplateMessage 5)
+    // or the hull critical (0x14, PHY-14), the screws make no thrust and
+    // `e*|e|` drags her down on her own way.
+    this.revs = this.engineRunning === false
+      ? 0 : revAdvance(this.revs, t1, this.load, dt * SIMULATION_FPS);
     this.load = 0;
     this.loadCount = 0;
   }

@@ -4,9 +4,12 @@ Written by wave-2 stream D (`w2d-drive`) alongside items 15–17 of the
 2026-09-19 parity round. Sections 1 to 5 are the plan. W6-C built it on
 2026-09-22, and [the Built section](#built--2026-09-22-w6-c) below says what
 and where. The 2026-10-06 section is the land drives' own chassis, the sea
-and the upside-down clock; the newest, "Terrain contact, 2026-10-07", is a
-driven hull against the terrain, the ground under an undrawn patch, a room's
-land drive and a landed helicopter, with what is still open. The title used to call this a plan, not a build, and this line used
+and the upside-down clock. Two 2026-10-07 sections follow:
+[Handling against the lab's LOD 0 rounds](#handling-against-the-labs-lod-0-rounds-2026-10-07)
+checks the drives against retail on retail's own inputs and records what that
+changed, and "Terrain contact, 2026-10-07" is a driven hull against the
+terrain, the ground under an undrawn patch, a room's land drive and a landed
+helicopter, with what is still open. The title used to call this a plan, not a build, and this line used
 to say nothing here is implemented. The plan was written so that
 whoever picks the work up starts from what `viewer/ground.js` already has
 rather than from `collision-response.md` cold.
@@ -467,6 +470,11 @@ Technical 50 degrees, BRDM-2 30, Humvee TOW 35) matches the lab's. So the
 origin lever is the viewer's mechanism and something it feeds differs from the
 engine; G5 is open again.
 
+**Closed (2026-10-07, below).** Every retail full-lock episode at speed has
+the throttle released, and on those inputs the viewer's DPV turns and slips as
+retail's does and does not spin. The 99 deg/s spin is a held-throttle input
+that no recording covers.
+
 ## Open
 
 - ~~**A land hull on the bed is lifted onto the sea where a terrain patch is
@@ -486,8 +494,8 @@ engine; G5 is open again.
 - **A submerged spring's friction** takes water's 0.1 (`level-terrain.js`) while
   a ship on the bed takes the bed's own material (`hull-bodies.js`
   `seabedFriction`); which the engine hands `impulseOn` is unread.
-- **`TrackedVehicle`'s inertia** is still its wheel footprint over a guessed
-  1.1 m hull, not COL-14's box.
+- ~~**`TrackedVehicle`'s inertia** is still its wheel footprint over a guessed
+  1.1 m hull, not COL-14's box.~~ Done 2026-10-07 (below).
 
 ## Review, 2026-10-07
 
@@ -516,6 +524,177 @@ Willy, and why:
 The KettenKrad does not move on either (0.1 and 0.3 km/h). The pre-existing
 motorbike and KettenKrad faults belong to another package.
 
+
+## Handling against the lab's LOD 0 rounds, 2026-10-07
+
+The DC lab recorded bots at AI LOD 0 (`aiSettings.lodEnable 0`), so the
+physics drives them ([lab-ground-truth.md](../desert-combat-parity/lab-ground-truth.md),
+four DC rounds). Two of its findings looked like drive faults: the DPV and
+BRDM-2 turning too fast and spinning at full lock, and the T-72 being 24%
+slower than the M1A1 on the same engine. Both came from the inputs, not from
+physics. Where the drive was wrong, the cause and the fix are below.
+
+**Full lock is replayed, not re-enacted.** All 266 recorded full-lock
+episodes at speed have the bot's throttle released. The car slows from 13 to
+2 m/s in about 1.3 s, and its yaw rate rises as the speed falls. The quoted
+"99 deg/s and a spin" held full throttle through a 3-4 s lock, an input no
+recording covers. The comparison that means something gives the viewer's car
+retail's own inputs. The fixture `tests/fixtures/dc_lock_episodes.json.gz`
+holds twenty episodes, four per car, the longest locks entered at 8 m/s or
+more. Each row has the recorded throttle servo and steered-wheel angle on
+every server tick. The car starts at the recorded speed 0.3 s before the lock
+and is replayed tick by tick. Both sides go through `lab/dc_truth.py`'s
+estimator: velocity over 0.25 s against the heading at the window's start.
+That estimator puts about `yaw x 0.125 s` of turn into "slip" on both sides,
+which an instantaneous slip on the viewer's side does not, and that was the
+whole of an apparent "half retail's slip".
+
+Median over the lock (`tests/test_ground_handling.py`, sand under the tyres):
+
+| car | yaw, viewer / retail (deg/s) | slip, viewer / retail (deg) | fastest yaw, viewer / retail |
+|---|---|---|---|
+| DPV | 41.5 / 37.8 | 8.2 / 8.9 | 47.7 / 58.9 |
+| Humvee | 20.4 / 21.9 | 33.9 / 36.2 | 24.6 / 33.9 |
+| Humvee_TOW | 21.1 / 20.2 | 15.1 / 25.9 | 24.9 / 32.5 |
+| BRDM-2 | 17.3 / 23.7 | 17.0 / 18.5 | 25.3 / 37.4 |
+| Technical_Recoilless | 29.6 / 39.9 | 9.0 / 11.5 | 35.5 / 49.7 |
+
+Across all 266 episodes by speed bin, the DPV runs 35-44 deg/s against
+retail's 29-44. The Humvee and Humvee_TOW land within 10% in every bin. The
+BRDM-2 and the Technical run 15-25% low. The tyre law is unchanged.
+
+Open:
+- The BRDM-2 and the Technical, low by about a quarter in the 2 m/s crawl a
+  bot holds once a lock has bled the speed off. A BRDM-2 there turns 11 deg/s
+  against retail's 16.
+- The Humvee_TOW's crawl slip: retail's is 26 degrees, which is its kinematic
+  value (the pivot is the rear axle, 2.5 m behind the origin), and the
+  viewer's is 15.
+- Whether retail's DPV spins on a held throttle. The owner's real-play list
+  carries the protocol, all on flat DC El Alamein: DPV at 12-15 m/s, full
+  throttle and full lock for 4 s, three times each way; BRDM-2 the same at
+  15-18 m/s; DPV the same from a standstill.
+- The car's `angularDamping 0.8` is still a free constant on all three axes.
+  At 0, the BRDM-2 and the Technical match retail and the DPV and the Humvee
+  turn 15-45% fast, so the data does not decide it either way.
+
+**A tank's "top speed" in the lab is the AI holding its maxSpeed.** AI-45's
+law caps the wanted speed at `aiTemplatePlugIn.maxSpeed`: T-72 12, M1A1 15,
+BMP-2 17, M2A3 20, and in vanilla the Tiger 10 and the Priest and M10 12. The
+recorded engines show a regulated throttle (0.4-1.0 tick to tick), not a
+load. A T-72 holds 11.2 m/s in fifth at revs 0.755, or in fourth at 0.875,
+the same speed in either gear. The drivetrain's ceiling is 14.89 m/s for all
+four DC tanks. The T-72's extra `c_PGFEngineDummyGrip` springs cost nothing:
+`addFriction` tests the authored grip for 0x20 and 0x4 together
+(`0x0825b750`-`0x0825b75b`, `0x0825c666`-`0x0825c671`) and returns before any
+friction, resistance or sample in the mean. TANK-13's ledger text had the
+tank load's min and max the wrong way round; it is the frame max for
+revs >= 0 (objdump, corrected in place). `EngineState.sample` already had it
+right.
+
+Driven by the AI's own law (`tankControl`) at those maxSpeeds, the viewer's
+tanks cruise as retail's:
+
+| tank | viewer | lab |
+|---|---|---|
+| T-72 | 11.30 m/s, g5, revs 0.758 | 11.2, revs 0.755 |
+| M1A1 | 14.19, revs 0.953 | 14.1, revs 0.947 |
+| BMP-2, M2A3 | 14.90, 14.89 | 14.88, 14.86 |
+| Tiger | 9.34, g4, revs 0.84 | 9.1, revs 0.80 |
+| Priest | 11.2 | 11.0 |
+
+They did not cruise like that before. `TrackedVehicle` took its inertia from
+the road-wheel footprint, half the engine's box: a Sherman's yaw inertia was
+7.0 m^2 against the box's 13.1 (COL-15, `inertiaGeometryBox`). It also damped
+yaw with a fitted 2.0/s. On the small inertia the AI law's unit-gain steering
+loop went period-2: the steer flipped sign every tick, the max-of-wheels load
+held the revs near 0.75, and a bot Sherman crawled at 8 m/s. On the fitted
+damper every tank turned on the spot at a third to three fifths of retail's
+rate.
+The lab's 0.5-2 m/s yaw envelope (p99 / max, deg/s) is Sherman 62 / 64,
+Panzer IV 60 / 70, Tiger 76 / 77, T-72 78 / 84, M1A1 80 / 84, BMP-2 86 / 95,
+M2A3 83 / 85, M163 112 / 120. A `PhysicsNode`'s only rotational loss is the
+box drag's arm, about 1e-4/s on a 25 t hull, so `TANK.yawDamping` is now 0.
+On full throttle and full lock from rest the tanks now turn at Sherman 63,
+Tiger 85, T-72 93, M1A1 81, BMP-2 99, M2A3 98 and M163 155 deg/s. Before:
+Sherman 22, Tiger 45, T-72 34, M1A1 33, BMP-2 39 and M2A3 37. Top speed, reverse and roll are unchanged across the
+vanilla, XPack1, XPack2 and DC fleets.
+
+**The wheels a `.con` hides.** `createInvisible 1` stops an object being
+drawn, not being built (PHY-24: it withholds the object's drawable flag and
+nothing else), and the exporter dropped every invisible template. It
+now keeps an invisible `Spring` as an undrawn node, with its physics, its
+geometry's name and its collision probes (`bf42/assemble.py` `build_node`),
+and leaves out anything else hidden. Six vehicles are affected (a census of
+every `createInvisible` template in the three packs' object libraries):
+- The KettenKrad stands on two hidden RollGrip wheels behind its tracks.
+- The R75 and the HD_XA42 each stand on their sidecar's front wheel.
+- The LVT4 drives through two hidden EngineGrip wheels and is now a tank with
+  its water kit.
+- The Elco80 and the Type38 carry their beach wheels (`PT_FrontWheel`,
+  `PT_BackWheel`), which a `Ship` does not drive on.
+
+An undrawn spring has no mesh to measure its radius off, only its col0
+probe, and `measureWheelRadius` took the probe's own extent for one: 0.002 m
+on the bikes' sidecar wheel. It now takes the probe's depth under the axle,
+the contact `hull-bodies.js` `wheelContactDepths` already hands the page
+(0.317 m on the R75, 0.352 on the KettenKrad's and the PT boats', 0.240 on
+the LVT4's). Before that, off the page the bikes leant 9 degrees onto the
+sidecar wheel and crept off at 1.3-2.1 m/s with the throttle closed (review,
+2026-10-07).
+
+Without them, the KettenKrad stood on its fork and fell onto its back. The
+bikes tipped onto their sides and slid off at 30 m/s with the throttle
+closed, which is the reported "reverse drives forward". `GroundVehicle` now
+skips `c_PGFEngineDummyGrip` rollers as `TrackedVehicle` always has, because
+the KettenKrad's twelve track rollers were twelve samples in its mean.
+Re-extracted into scratch:
+
+| vehicle | top speed (m/s) | reverse (m/s) |
+|---|---|---|
+| KettenKrad | 0.08 -> 29.6 | 0.1 -> -7.0 |
+| R75 | 30.8 -> 30.9 | +25.4 -> -7.0 |
+| HD_XA42 | 30.7 -> 30.1 | -28.2 -> -7.0 |
+| LVT4 | 14.9 on land | 6.3 afloat |
+
+All three rest level and still at zero throttle (25 s full throttle, 10 s
+reverse, flat analytic ground, with the probe-depth radius).
+
+The Elco80 gains its own two hidden wheels and floats and beaches exactly as
+before. The rule also moves the cars that carry dummy rollers, at full lock
+at speed: Katyusha and BM-21 12.8 -> 20.1 deg/s, Greyhound 11.4 -> 18.0,
+Krupp 16.6 -> 22.1. The vanilla lab round on Kursk (`20261007-013855`)
+drove a Katyusha through four full-lock episodes at 5-9 m/s with the throttle
+released; replayed on its own throttle servo and wheel angle, through
+`dc_truth.py`'s estimator on both sides, retail's yaw is 30.5 / 35.5 deg/s
+(p50 / p95) at 2-5 m/s and 36.5 / 41.4 at 5-10 with slip 23.8 / 25.7 and
+16.3 / 20.3; skipping the rollers gives 27.9 / 33.3 and 26.8 / 32.4, slip
+23.7 / 25.1 and 15.0 / 18.9, where counting them gave 20.0 / 21.0 and
+17.6 / 19.9, slip 12.5 / 18.4 and 7.8 / 9.8. The live trees need the affected models and level bakes
+re-extracted before the page sees the hidden wheels. Hidden `LandingGear`
+templates (XPack2's Goblin, Jetpack and Natter) are still dropped; they
+belong to the aircraft.
+
+**Critical damage stops a land drivetrain** (PHY-14). `vehicleTick` sets the
+engine's running byte for a land drive as it does for a vectored airframe. A
+critical Humvee or T-72 stops dead, does not restart on re-boarding, and
+drives again once repaired. A ship's Engines hear the same message (HP-15):
+`Ship.advanceEngines` stores its revs as 0 while the byte is clear, so a
+critical Elco80 at full ahead loses her screws and coasts (11.1 to 4.2 m/s in
+5 s). Open: a crewed critical ship does not start sinking, because
+`hull-bodies.js` `stepSinkingHulls` arms the sink only for a hull nobody is
+in.
+
+**Drag is the box law** (PHY-4, `ground-contact.js` `addBoxDrag`) over the
+same box, in place of the sphere law. XPack2's Krupp (`drag 15` on 2,500 kg)
+now tops out at 19.6 m/s, about 70 km/h, where it reached 30.0. Hulls with
+the usual drag 1.5-2 move by under 0.2 m/s.
+
+Checked with `tests/test_ground_handling.py` (real DC glbs: lock replay,
+cruise, pivot, critical, Krupp), `tests/test_ground.py` (the synthetic
+KettenKrad, the box law), `tests/test_assemble.py` (hidden springs) and a
+before/after drive of every land vehicle in vanilla, XPack1, XPack2 and DC
+(`~/.cache/dc-sweep/ground-handling/fleet/`).
 
 ## Terrain contact, 2026-10-07
 

@@ -2977,7 +2977,19 @@ class Assembler:
 
         # Physics-only parts (Elco's Willy wheels, some KettenKrad springs).
         # The engine still steers them; it just does not draw the mesh.
-        if template.invisible:
+        #
+        # A `Spring` among them is a wheel the drive stands on, and it is kept:
+        # a node with its transform, its `physics` and its geometry's name and
+        # collision probes, and nothing drawn. `createInvisible` only stops the
+        # object being drawn; its PhysicsSpring and ResponsePhysics are built as
+        # any other's, and `checkVsTerrain` probes the same col0 vertices. The
+        # KettenKrad stands on two of them behind its tracks (`KettenKradBack
+        # SpringL/R`), the R75 and HD_XA42 on the sidecar's front wheel, the
+        # LVT4 drives through its `S_Wheel_L3/R3`, and dropping them left the
+        # KettenKrad on one wheel, lying on its back, and the two bikes on
+        # three, tipped onto their sides and sliding off at 30 m/s.
+        undrawn = template.invisible and template.kind.lower() == "spring"
+        if template.invisible and not undrawn:
             return None
 
         # EffectBundles never reach the ordinary walk usefully: their Emitter
@@ -3011,7 +3023,13 @@ class Assembler:
                              or first_person_branch)
         mesh_index, triangles = (None, 0)
         collision_meshes: list[tuple[int, int, str]] = []
-        if template.geometry and node_first_person == self.first_person:
+        if template.geometry and node_first_person == self.first_person and undrawn:
+            # The undrawn wheel above: its probes, never its mesh.
+            if self._object_emits_geometry_collision(
+                    template, collision_scope, root=collision_root):
+                collision_meshes = self._collision_for_geometry(
+                    builder, template.geometry, report)
+        elif template.geometry and node_first_person == self.first_person:
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
             # `_collision_only_node`. StandardMesh still attaches freely.

@@ -8898,6 +8898,15 @@
    "note": "lnxded. The 'found template's own vtable+0x1c' SupplyDepot's ctor calls to resolve an addVehicleType name to a numeric id."
   },
   {
+   "address": "0x0816af70",
+   "name": "ObjectTemplate::getFlags",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. Returns template +0x14; bit 2 is createInvisible (makeScript 0x081d4b75) (PHY-24)"
+  },
+  {
    "address": "0x08172280",
    "name": "Armor::Armor (ctor)",
    "kind": "function",
@@ -9402,6 +9411,15 @@
    "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
   },
   {
+   "address": "0x08195770",
+   "name": "BObject<ICompositeObject>::init",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. getFlags()&4 (createInvisible) clear -> updateFlags(0x2,0), the drawable flag; template bits 2 and 8 clear -> object flags 0x800, 0x40 (PHY-24)"
+  },
+  {
    "address": "0x0819bd20",
    "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
    "kind": "function",
@@ -9463,6 +9481,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded. Never called from any SupplyDepot method that was read -- depots stack (SUP-6)."
+  },
+  {
+   "address": "0x081a5280",
+   "name": "QuadTreeCuller::getFrustumVisibleObjects",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. Draws only objects with object flag 0x2, which BObject::init withholds from a createInvisible template (PHY-24)"
   },
   {
    "address": "0x081a74b0",

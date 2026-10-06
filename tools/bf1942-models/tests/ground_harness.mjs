@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { GroundVehicle } from './wheeled-vehicle.js';
-import { TrackedVehicle } from './tracked-vehicle.js';
+import { TrackedVehicle, measureWheelRadius } from './tracked-vehicle.js';
 import { WILLYS, TANK } from './ground-specs.js';
 import {
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
@@ -28,6 +28,7 @@ import {
 } from './ground-engine.js';
 import { GRAVITY } from './physics.js';
 import { HullWater } from './amphibious.js';
+import { addBoxDrag } from './ground-contact.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 import { probeAlongAxis } from './suspension.js';
 
@@ -2593,6 +2594,109 @@ function amphibianNode() {
   results.probeFace = cases;
 }
 
+// --- the KettenKrad, on its hidden wheels ------------------------------------
+//
+// `Objects/Vehicles/Land/KettenKrad/*.con`, transcribed (z mirrored, as the
+// glb carries it). The engine drives it through ONE tyre, the fork's
+// `KettenKradFrontSpring` (`c_PGFEngineGrip`, steered +-40 degrees), and it
+// stands on two `KettenKradBackSpringL/R` (`c_PGFRollGrip`) that the `.con`
+// authors `createInvisible 1`: physical, undrawn, which the exporter now
+// keeps (`bf42/assemble.py` `build_node`). Its two tracks carry twelve
+// `c_PGFEngineDummyGrip` rollers at strength 0, which `addFriction` skips
+// before the friction solve (0x0825b75b, 0x0825c671) and so take no share of
+// the mean. Until 2026-10-07 the extract had no rear wheels, so the hull
+// stood on its fork and fell onto its back, and the drive counted the
+// rollers as contacts, so it could not push the hull along.
+function kettenKradNode({ rearWheels = true } = {}) {
+  const root = new THREE.Object3D();
+  root.name = 'KettenKrad';
+  root.userData = {
+    control: 'KettenKrad', templateKind: 'PlayerControlObject',
+    physics: { mass: 2500, drag: 3.5, vehicleCategory: 'VCLand' },
+  };
+  const engine = new THREE.Object3D();
+  engine.name = 'KettenKradEngine';
+  engine.position.set(0, 0.82, 0);
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETCar', torque: 15.5, differential: 7, numberOfGears: 5, gearUp: 0.95, gearDown: 0.4,
+      maxRotation: [0, 0, 5000], maxSpeed: [0, 0, 55000], acceleration: [0, 0, 55000],
+    },
+  };
+  root.add(engine);
+  const fork = new THREE.Object3D();
+  fork.name = 'KettenKradFrontWheel';
+  fork.position.set(0, -0.245, -1.09);
+  fork.userData = {
+    templateKind: 'RotationalBundle',
+    rig: { control: 'KettenKrad', automaticReset: true, axes: { yaw: {
+      input: 'c_PIYaw', min: -40, max: 40, free: false, driver: 'position', maxSpeed: 320, direction: 1,
+      acceleration: 160 } } },
+  };
+  engine.add(fork);
+  spring('KettenKradFrontSpring', fork, [0, -0.799, -0.302], 'c_PGFEngineGrip', 25, 5);
+  if (rearWheels) {
+    for (const side of [-1, 1]) {
+      spring(side < 0 ? 'KettenKradBackSpringL' : 'KettenKradBackSpringR', engine,
+        [side * 1.0, -0.953, 0.998], 'c_PGFRollGrip', 25, 5);
+    }
+  }
+  for (const [side, x] of [[-1, -0.099], [1, 0.1]]) {
+    const track = new THREE.Object3D();
+    track.name = side < 0 ? 'KettenKrad_TrackL' : 'KettenKrad_TrackR';
+    track.position.set(x, -1.148, 0);
+    track.userData = { templateKind: 'AnimatedBundle' };
+    engine.add(track);
+    for (const [i, [rx, ry, rz]] of [[-0.438, 0.44, -0.884], [-0.439, 0.229, -0.315], [-0.533, 0.229, 0.063],
+      [-0.439, 0.229, 0.426], [-0.533, 0.229, 0.803], [-0.439, 0.389, 1.048]].entries()) {
+      spring(`KettenKrad_Roller${side < 0 ? 'L' : 'R'}${i}`, track, [side < 0 ? rx : -rx, ry, rz],
+        'c_PGFEngineDummyGrip', 0, 0);
+    }
+  }
+  return root;
+}
+{
+  const kettenKrad = (opts = {}) => {
+    const truck = new GroundVehicle(kettenKradNode(opts), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 0.6, 0);
+    drive(truck, 3, holding({ c_PIThrottle: 0 }));
+    return truck;
+  };
+  const forward = kettenKrad();
+  drive(forward, 10, holding({ c_PIThrottle: 1 }));
+  const back = kettenKrad();
+  drive(back, 6, holding({ c_PIThrottle: -1 }));
+  const fallen = kettenKrad({ rearWheels: false });
+  results.kettenKrad = {
+    dummies: forward.wheels.filter(w => w.dummy).length,
+    wheels: forward.wheels.length,
+    forward: round(alongOf(forward), 2), forwardPitch: round(pitchDeg(forward), 1),
+    reverse: round(alongOf(back), 2),
+    noRearPitch: round(Math.abs(pitchDeg(fallen)), 1),
+  };
+}
+
+// --- the box drag law (PHY-4) ------------------------------------------------
+// XPack2's Krupp: `drag 15` on 2,500 kg over a 2.27 x 1.81 x 5.42 m box, at
+// rest in orientation, driven straight ahead (-Z) and then sideways (+X).
+{
+  const box = [2.27, 1.81, 5.42];
+  const pull = (v, w = [0, 0, 0]) => {
+    const s = { velocity: new THREE.Vector3(...v), angularVelocity: new THREE.Vector3(...w) };
+    const q = new THREE.Quaternion();
+    const accel = new THREE.Vector3(), torque = new THREE.Vector3();
+    const took = addBoxDrag(box, 15, 2500, s, q, q.clone().invert(), accel, torque);
+    return { took, accel: accel.toArray().map(x => round(x, 4)), torque: torque.toArray().map(x => round(x, 6)) };
+  };
+  results.boxDrag = {
+    ahead10: pull([0, 0, -10]), ahead20: pull([0, 0, -20]), side10: pull([10, 0, 0]),
+    yaw: pull([0, 0, 0], [0, 1, 0]),
+    noBox: addBoxDrag(null, 15, 2500, { velocity: new THREE.Vector3(0, 0, -10), angularVelocity: new THREE.Vector3() },
+      new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Vector3(), null),
+  };
+}
+
 // --- the Forklift's forks: a step on the axis, the part's own servo -------
 //
 // The world feeds a land drive's `c_PIPitch` as a step (MLK-10; no spring of
@@ -2636,6 +2740,40 @@ function amphibianNode() {
     firstStep: round(held[1], 5),
     afterOneSecond: round(held.at(-1), 4),
     rate: FORK_RIG.axes.pitch.maxSpeed / 160,
+  };
+}
+
+// --- an undrawn wheel's radius: its probe, not the probe's extent ----------
+//
+// XPack2's R75 sidecar wheel (`R75FrontSpringR`, `createInvisible 1`) comes
+// out of the exporter as a Spring with no drawn mesh and one child, its col0
+// probe: three vertices 0.317 m under the axle. Measured like a wheel mesh,
+// that triangle is 0.002 m, and the bike leant onto it at rest and crept
+// off. A drawn wheel whose collision child happens to come first keeps its
+// own mesh's radius.
+{
+  const probe = (name) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(
+      [-0.0056, -0.317, -0.0047, 0.0026, -0.317, 0.0047, 0.0026, -0.317, -0.0047], 3));
+    const m = new THREE.Mesh(g);
+    m.name = `${name} collision 0`;
+    m.userData = { collision: true, collisionLayer: 0 };
+    return m;
+  };
+  const undrawn = new THREE.Object3D();
+  undrawn.name = 'R75FrontSpringR';
+  undrawn.userData = { templateKind: 'Spring', physics: { grip: 'c_PGFRollGrip', strength: 25, damping: 5 } };
+  undrawn.add(probe(undrawn.name));
+  const drawn = new THREE.Object3D();
+  drawn.name = 'R75FrontSpringL';
+  drawn.userData = { templateKind: 'Spring', physics: { grip: 'c_PGFRollGrip', strength: 25, damping: 5 } };
+  drawn.add(probe(drawn.name));
+  drawn.add(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.628, 0.628)));
+  results.undrawnWheel = {
+    undrawn: round(measureWheelRadius(undrawn), 3),
+    drawn: round(measureWheelRadius(drawn), 3),
+    bare: measureWheelRadius(new THREE.Object3D()),
   };
 }
 

@@ -509,3 +509,54 @@ export function intoContactPlane(axis, normal) {
   axis.multiplyScalar(1 / len);
   return true;
 }
+
+// --- the hull's own drag ------------------------------------------------------
+
+/** `pi / 4`: each face of the drag box is the ellipse inscribed in it. */
+const BOX_AREA = Math.PI / 4;
+const _boxV = new THREE.Vector3();
+
+/**
+ * A land hull's dry drag, the "Advanced" box law every live `PhysicsNode`
+ * takes (PHY-4; physics.md section 3, lnxded `0x08252f50` / `0x08253280`):
+ *
+ *   accel  += -drag |v| / mass * (Ax proj0(v) + Ay proj1(v) + Az proj2(v))
+ *   torque += -drag |w| / mass * ((Ay+Az) proj0(w) + (Ax+Az) proj1(w) + (Ax+Ay) proj2(w))
+ *   Ax = (pi/4) DY DZ,  Ay = (pi/4) DX DZ,  Az = (pi/4) DX DY
+ *
+ * with `[DX, DY, DZ]` the box the engine's inertia is read off too
+ * (`inertiaGeometryBox`, COL-14/COL-15) and each `projN` the projection on
+ * the hull's own axis N. It is quadratic in speed, and it sees the hull's
+ * frontal face. XPack2's Krupp (`drag 15` on 2,500 kg, a 2.27 x 1.81 x 5.42 m
+ * box) loses 0.0194 v^2 to it, 17 m/s^2 at 30 m/s and 7 at 19, so it tops
+ * out at 19.6 m/s (70 km/h). The sphere law the drives ran before
+ * (`pi r^2 drag / mass * v`, `r` the box's half-diagonal, which is not the
+ * engine's law for any `PhysicsNode`) took a linear 5.3 at 30 m/s and let it
+ * reach 30.0. A hull with an ordinary `drag 1.5-2` moves by under 0.2 m/s.
+ * Under water the same law runs at `scale^2` and `HullWater` adds that excess.
+ *
+ * `accel` is world frame and per unit mass; `torque` is the body frame
+ * accumulator the drive divides by its inertia, which is where the engine's
+ * rotational arm goes too (collision-response.md section 4.2). Returns false
+ * and adds nothing without a box, so a test double keeps its own law.
+ */
+export function addBoxDrag(box, drag, mass, s, q, qInv, accel, torque) {
+  if (!box || !(drag > 0) || !(mass > 0)) return false;
+  const [dx, dy, dz] = box;
+  const ax = BOX_AREA * dy * dz, ay = BOX_AREA * dx * dz, az = BOX_AREA * dx * dy;
+  const speed = s.velocity.length();
+  if (speed > 1e-9) {
+    const v = _boxV.copy(s.velocity).applyQuaternion(qInv);
+    v.set(v.x * ax, v.y * ay, v.z * az).applyQuaternion(q);
+    accel.addScaledVector(v, -drag * speed / mass);
+  }
+  const w = s.angularVelocity;
+  const rate = w.length();
+  if (torque && rate > 1e-9) {
+    const k = -drag * rate / mass;
+    torque.x += k * (ay + az) * w.x;
+    torque.y += k * (ax + az) * w.y;
+    torque.z += k * (ax + ay) * w.z;
+  }
+  return true;
+}
