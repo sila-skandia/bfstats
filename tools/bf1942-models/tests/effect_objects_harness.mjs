@@ -176,7 +176,96 @@ const out = {};
 }
 
 // --- No Fly Zone's control tower, from the install -------------------------
-const [glbPath, towerPath] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const flag = name => args.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const [glbPath, towerPath] = args.filter(a => !a.startsWith('--'));
+
+// --- a spawned object's body -----------------------------------------------
+// A raft shaped like `Elco80Raft`: a 5000 kg PCO hanging four
+// `PTRaft_Floater`s (hullHeight 0.2, lift 6) at the corners of a 3.4 x 9 m
+// hull. Water at 0, the sea bed 20 m down. The float law's rest for it is
+// root y = +0.068 (`equilibriumRootY`); it is stood up 0.47 m under, where an
+// `Elco80` afloat puts it. The same raft without the bit stays where it was
+// stood; on dry land it falls to the ground.
+const { equilibriumRootY, floatNodesOf } = await imp('body-float.js');
+
+function syntheticRaft({ mobile = true } = {}) {
+  const raft = new THREE.Group();
+  raft.name = 'Elco80Raft';
+  raft.userData = { templateKind: 'PlayerControlObject',
+                    physics: { mass: 5000, drag: 0.999, vehicleCategory: 'VCSea' } };
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 9), new THREE.MeshBasicMaterial());
+  hull.position.y = 0.1;
+  raft.add(hull);
+  for (const [x, z] of [[1.7, 4.499], [-1.699, 4.499], [1.7, -4.5], [-1.699, -4.5]]) {
+    const float = new THREE.Object3D();
+    float.userData = { templateKind: 'FloatingBundle',
+                       physics: { hullHeight: 0.2, floatMaxLift: 6, floatMinLift: 6, sinkingSpeedMod: 0 } };
+    float.position.set(x, 0.05, z);
+    raft.add(float);
+  }
+  const emitter = new THREE.Object3D();
+  emitter.userData = { effectEmitter: {
+    template: 'Em_PTBoatSpawnRaft', timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'object', template: 'Elco80Raft', hasMobilePhysics: mobile },
+  } };
+  emitter.add(raft);
+  const bundle = new THREE.Group();
+  bundle.userData = { effectBundle: { name: 'e_PTBoatWreck' } };
+  bundle.add(emitter);
+  const root = new THREE.Group();
+  root.add(bundle);
+  return new EffectLibrary(root);
+}
+
+/** Play `name` at `at`, then tick the bodies `ticks` times; the object's y
+ *  at a few moments, and where it ends. */
+function settle(library, at, { water = 0, ground = -20, ticks = 150 } = {}) {
+  const scene = new THREE.Scene();
+  let effects = null;
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: () => false,
+    bindDynamicShading() {},
+    collider: { waterLevel: water, heightfield: { height: () => ground } },
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  effects.play('e_PTBoatWreck', { position: at, normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const [record] = objects.held;
+  if (!record) return { held: 0 };
+  const trace = [];
+  for (let t = 1; t <= ticks; t++) {
+    objects.step({ ticks: 1 });
+    if ([1, 5, 10, 15, 30, 60, ticks].includes(t)) trace.push([t, round(record.object.position.y)]);
+  }
+  const floats = floatNodesOf(record.object);
+  return {
+    held: objects.held.length, kind: record.kind,
+    start: at[1], trace, end: round(record.object.position.y),
+    rest: Number.isFinite(water) ? round(equilibriumRootY(floats, water)) : null,
+    level: round(new THREE.Vector3(0, 1, 0).applyQuaternion(record.object.quaternion).y),
+  };
+}
+
+out.raft = {
+  float: settle(syntheticRaft(), [40, -0.47, -60]),
+  dropped: settle(syntheticRaft(), [40, 4.4, -60]),
+  immobile: settle(syntheticRaft({ mobile: false }), [40, -0.47, -60]),
+  dryLand: settle(syntheticRaft(), [40, 12, -60], { ground: 3 }),
+  noWater: settle(syntheticRaft(), [40, 12, -60], { water: null, ground: 3 }),
+};
+
+// The raft the bake made (`--raft=<effects.glb>`: `test_effect_objects.py`
+// bakes vanilla's `e_PTBoatWreck` from the install).
+const raftGlb = flag('raft');
+if (raftGlb) {
+  const gltf = await new Promise((resolve, reject) =>
+    new GLTFLoader().parse(withoutTextures(raftGlb), '', resolve, reject));
+  out.bakedRaft = settle(new EffectLibrary(gltf.scene), [40, -0.47, -60]);
+}
+
 if (glbPath && towerPath) {
   const gltf = await new Promise((resolve, reject) =>
     new GLTFLoader().parse(withoutTextures(glbPath), '', resolve, reject));

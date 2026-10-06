@@ -1568,6 +1568,7 @@ ObjectTemplate.template Raft_Chunk
 ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
 
 ObjectTemplate.create PlayerControlObject Elco80Raft
+ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.addTemplate Elco80RaftHull
 ObjectTemplate.hasArmor 1
 ObjectTemplate.hitpoints 200
@@ -1594,7 +1595,8 @@ class SpawnEffectTests(unittest.TestCase):
     def test_a_spawn_effect_is_an_object_and_a_plain_emitter_still_debris(self) -> None:
         lib = self.spawn_library()
         [(_ref, _em, _payload, raft)] = effects.bundle_tree(lib, "e_PTBoatWreck").emitters
-        self.assertEqual({"kind": "object", "template": "Elco80Raft"}, raft["particle"])
+        self.assertEqual({"kind": "object", "template": "Elco80Raft", "hasMobilePhysics": True},
+                         raft["particle"])
         self.assertTrue(raft["isSpawnEffect"])
         self.assertEqual(375.0, raft["lodDistance"])
         # Before, the PCO payload had no particle at all and the raft emitter
@@ -1604,6 +1606,30 @@ class SpawnEffectTests(unittest.TestCase):
         [(_ref, _em, _payload, chunk)] = effects.bundle_tree(lib, "e_ChunkFall").emitters
         self.assertEqual("mesh", chunk["particle"]["kind"])
         self.assertTrue(chunk["particle"]["debris"])
+
+    def test_the_spawned_template_says_whether_its_body_moves(self) -> None:
+        # PHY-17: the bit decides the physics node, and a template that never
+        # writes it is static like one that writes 0 (Desert Combat's ruins).
+        lib = self.spawn_library()
+        lib.add_con("Objects/Ruins/Effects.con", """
+ObjectTemplate.create EffectBundle e_RuinWRECKPCO
+ObjectTemplate.addTemplate Em_RuinWRECKPCO
+ObjectTemplate.create Emitter Em_RuinWRECKPCO
+ObjectTemplate.template Ruin_wreck
+ObjectTemplate.IsSpawnEffect 1
+ObjectTemplate.create EffectBundle e_ShedWRECKPCO
+ObjectTemplate.addTemplate Em_ShedWRECKPCO
+ObjectTemplate.create Emitter Em_ShedWRECKPCO
+ObjectTemplate.template Shed_wreck
+ObjectTemplate.IsSpawnEffect 1
+ObjectTemplate.create PlayerControlObject Ruin_wreck
+ObjectTemplate.hasMobilePhysics 0
+ObjectTemplate.create PlayerControlObject Shed_wreck
+""")
+        for bundle, mobile in (("e_PTBoatWreck", True), ("e_RuinWRECKPCO", False),
+                               ("e_ShedWRECKPCO", False)):
+            [(_ref, _em, _payload, spec)] = effects.bundle_tree(lib, bundle).emitters
+            self.assertIs(mobile, spec["particle"]["hasMobilePhysics"], bundle)
 
     def test_the_bake_hangs_the_whole_object_under_its_emitter(self) -> None:
         lib = self.spawn_library()
