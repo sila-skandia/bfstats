@@ -23,12 +23,13 @@ import * as THREE from 'three';
 import {
   MOUSE_LOOK_TRIGGER, MOUSE_LOOK_CHANNEL, HELD_THRESHOLD, RECENTRE_PER_TICK,
   TICK_HZ, LOOK_REST, seatNeedsMouseLookKey, recentreFactor, recentreLook,
-  routeFlightInput, routeLookPair,
+  routeFlightInput, routeLookPair, describeSeat, seatProfile, seatLookSigns,
 } from './viewer/mouse-look-key.js';
+import { surveyVehicle } from './viewer/seat-survey.js';
 import { RATE_FACTOR, axisScale, quantiseAxis } from './viewer/mouse-input.js';
 import { createControls } from './viewer/controls.js';
 import { createLocalLook } from './viewer/local-look.js';
-import { VehicleCamera } from './viewer/vehicle-camera.js';
+import { VehicleCamera, cameraLookLimits } from './viewer/vehicle-camera.js';
 
 const results = {};
 const round = (n, places = 9) => Math.round(n * 10 ** places) / 10 ** places;
@@ -496,6 +497,298 @@ function offForward(view) {
   s.gunner = { context: gunner.context(), roll: gunner.axis('c_PIRoll', { x: 3, y: -3 }),
                pitch: gunner.axis('c_PIPitch', { x: 3, y: -3 }) };
   results.stick = s;
+}
+
+// --- the seats that are not the pilot's (ledger MLK-14) ------------------------
+//
+// The seat trees below are the extracted Desert Combat glbs' own extras, cut to
+// the nodes `surveyVehicle` reads (`viewer/models/mods/desertcombat/MH-6.glb`,
+// `MH-53.glb`): every seat is its own PCO node with `physics.vehicleCategory`,
+// and its Camera carries `cameraView` (and, where the Camera had children of
+// its own, a `rig`). `word` adds what a glb baked with `toggleMouseLook` and
+// the camera's look rig carries (`cameraView.toggleMouseLook`,
+// `cameraView.look`), as the con-reader package exports them.
+
+function node(name, extras = {}, children = []) {
+  const n = new THREE.Object3D();
+  n.name = name;
+  n.userData = extras;
+  for (const child of children) n.add(child);
+  return n;
+}
+const pco = (name, category, children) => node(name,
+  { templateKind: 'PlayerControlObject', control: name, physics: { vehicleCategory: category } }, children);
+const camera = (name, control, view = {}, rig = null) => node(name,
+  { templateKind: 'Camera', control, cameraView: { control, ...view }, ...(rig ? { rig } : {}) });
+const entry = control => node(`${control}Entry`, { templateKind: 'EntryPoint', control, seat: { control } });
+const lookRig = (control, direction) => ({
+  axes: {
+    yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1,
+           acceleration: 5000 },
+    pitch: { input: 'c_PIMouseLookY', min: -60, max: 45, free: false, maxSpeed: 90, direction,
+             acceleration: 5000 },
+  },
+  automaticReset: false, control,
+});
+
+/** DC 0.7's MH-6: pilot, co-pilot (`H6CoPilotCamera`, no word, its own rig)
+ *  and a bench passenger (`MH6PassengerCamera`, the word in DC's data). */
+function mh6({ word = false } = {}) {
+  const passengerView = word
+    ? { toggleMouseLook: true, look: lookRig('MH6Passenger_PCO3', -1) } : {};
+  const coPilotView = word ? { toggleMouseLook: false, look: lookRig('H6CoPilot', -1) } : {};
+  const pilotView = word ? { toggleMouseLook: true, look: lookRig('MH-6', -1) } : {};
+  return pco('MH-6', 'VCAir', [
+    camera('H6PilotCamera', 'MH-6', pilotView),
+    entry('MH-6'),
+    pco('H6CoPilot', 'VCAir', [
+      entry('H6CoPilot'),
+      camera('H6CoPilotCamera', 'H6CoPilot', coPilotView, lookRig('H6CoPilot', -1)),
+    ]),
+    pco('MH6Passenger_PCO3', 'VCAir', [
+      entry('MH6Passenger_PCO3'),
+      camera('MH6PassengerCamera', 'MH6Passenger_PCO3', passengerView),
+    ]),
+  ]);
+}
+
+/** DC 0.7's MH-53: the co-pilot sits behind the pilot's own Camera template;
+ *  the door gunner is a VCLand PCO with a turret on the mouse. */
+function mh53() {
+  return pco('MH-53', 'VCAir', [
+    camera('MH53PilotCamera', 'MH-53'),
+    entry('MH-53'),
+    pco('MH53CoPilot', 'VCAir', [entry('MH53CoPilot'), camera('MH53PilotCamera', 'MH53CoPilot')]),
+    pco('MH53_50Cal', 'VCLand', [
+      entry('MH53_50Cal'),
+      node('MH53_50Cal_Base', {
+        templateKind: 'RotationalBundle', control: 'MH53_50Cal',
+        rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: -60, max: 60, free: false, maxSpeed: 60, direction: 1 } } },
+      }, [camera('MH-53_Gunner_Camera', 'MH53_50Cal')]),
+    ]),
+  ]);
+}
+
+/** DC Final's MH-6 bench: no word, and a +100000 pitch acceleration. */
+function mh6Final() {
+  return pco('MH-6', 'VCAir', [
+    camera('H6PilotCamera', 'MH-6', { toggleMouseLook: true, look: lookRig('MH-6', -1) }),
+    entry('MH-6'),
+    pco('MH6Passenger_PCO3', 'VCAir', [
+      entry('MH6Passenger_PCO3'),
+      camera('MH6PassengerCamera', 'MH6Passenger_PCO3',
+             { toggleMouseLook: false, look: lookRig('MH6Passenger_PCO3', 1) }),
+    ]),
+  ]);
+}
+
+/** What the page's occupancy (`SeatHandle`) answers, over the real survey. */
+function seatOf(root, seatId, rootKind = 'air') {
+  const survey = surveyVehicle(root);
+  return {
+    rootKind,
+    rootId: survey.rootId,
+    activeSeatId: seatId,
+    isActiveRoot: () => seatId === survey.rootId,
+    seatInfo: id => survey.seats.get(id),
+    turret: null,
+  };
+}
+
+const seatRules = occupancy => {
+  const seat = describeSeat(occupancy);
+  const profile = seatProfile(seat);
+  const signs = seatLookSigns(seat, profile);
+  return { profile, needsKey: seatNeedsMouseLookKey(seat), pitchSign: signs.pitch, yawSign: signs.yaw,
+           category: seat.vehicleCategory ?? null };
+};
+
+{
+  const n = {};
+  n.oldTree = {
+    pilot: seatRules(seatOf(mh6(), 'MH-6')),
+    coPilot: seatRules(seatOf(mh6(), 'H6CoPilot')),
+    passenger: seatRules(seatOf(mh6(), 'MH6Passenger_PCO3')),
+    mh53CoPilot: seatRules(seatOf(mh53(), 'MH53CoPilot')),
+    mh53Gunner: seatRules(seatOf(mh53(), 'MH53_50Cal')),
+  };
+  n.wordTree = {
+    pilot: seatRules(seatOf(mh6({ word: true }), 'MH-6')),
+    coPilot: seatRules(seatOf(mh6({ word: true }), 'H6CoPilot')),
+    passenger: seatRules(seatOf(mh6({ word: true }), 'MH6Passenger_PCO3')),
+    finalPassenger: seatRules(seatOf(mh6Final(), 'MH6Passenger_PCO3')),
+  };
+  // The same descriptor object for the same seat: the page asks per event.
+  const cached = seatOf(mh6(), 'H6CoPilot');
+  n.cached = describeSeat(cached) === describeSeat(cached);
+
+  // The control map follows the seat: Left Shift is the look key on the
+  // co-pilot's and the passenger's Air map, and nothing on the gunner's.
+  const shift = new Set(['ShiftLeft']);
+  const contextOf = occupancy => {
+    const page = makeControlsPage({ keys: shift, occupancy });
+    const controls = createControls(page);
+    return { context: controls.context(), shiftIsLook: controls.held(MOUSE_LOOK_TRIGGER) };
+  };
+  n.maps = {
+    coPilot: contextOf(seatOf(mh6(), 'H6CoPilot')),
+    passenger: contextOf(seatOf(mh6(), 'MH6Passenger_PCO3')),
+    mh53Gunner: contextOf(seatOf(mh53(), 'MH53_50Cal')),
+  };
+
+  // The page path: `createLocalLook` over the real survey, the real control
+  // map for the key, and the seat's own view (`buildSeatView` gives every
+  // seat one, a driverless hull included -- `aircraft` is null here).
+  const lookAt = (root, seatId, { word } = {}) => {
+    const keys = new Set();
+    const occupancy = seatOf(root, seatId);
+    const controls = createControls(makeControlsPage({ keys, occupancy }));
+    const { page, view } = makeLookPage({ aircraft: false });
+    page.occupancy = occupancy;
+    page.held = trigger => controls.held(trigger);
+    const look = createLocalLook(page);
+    look.pumpLook(1);
+    const out = { profile: look.lookProfile(), needsKey: look.lookNeedsKey() };
+    look.lookDelta(200, 20);
+    out.knock = lookOf(view);
+    out.knockPending = { ...look.mouseInput.pendingPixels };
+    keys.add('ShiftLeft');
+    look.lookDelta(200, 20);
+    out.held = lookOf(view);
+    keys.delete('ShiftLeft');
+    look.stepMouseLookKey(1 / 30);
+    out.releasedOneTick = lookOf(view);
+    look.mouseInput.setInvert('air', 0);
+    for (let i = 0; i < 120; i += 1) look.stepMouseLookKey(1 / 60);
+    keys.add('ShiftLeft');
+    const before = view.look.pitch;
+    look.lookDelta(0, 20);
+    out.heldPitchBoxOff = deg(view.look.pitch - before);
+    return out;
+  };
+  n.page = {
+    passengerWithTheWord: lookAt(mh6({ word: true }), 'MH6Passenger_PCO3'),
+    coPilot: lookAt(mh6(), 'H6CoPilot'),
+    finalPassenger: lookAt(mh6Final(), 'MH6Passenger_PCO3'),
+  };
+  results.otherSeats = n;
+}
+
+// --- the same rules over a re-baked export ---------------------------------------
+//
+// `fixtures/air-seats.json` is the con-reader package's export of DC 0.7's
+// MH-6, SA-342G, MH-53, Mi8 and F-14B, DC Final's MH-6, XPack2's C47 and
+// vanilla's Corsair, BF109 and B17, cut to the seat tree: every Camera carries
+// `cameraView.toggleMouseLook` and `cameraView.look`.
+
+{
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/air-seats.json', import.meta.url), 'utf8'));
+  const build = spec => node(spec.name, spec.extras, (spec.children || []).map(build));
+  const x = {};
+  for (const [key, spec] of Object.entries(fixture)) {
+    if (key.startsWith('_')) continue;
+    const root = build(spec);
+    const survey = surveyVehicle(root);
+    x[key] = {};
+    for (const id of survey.order) {
+      const rules = seatRules(seatOf(root, id));
+      const camera = survey.seats.get(id)?.camera;
+      rules.camera = camera?.name ?? null;
+      const limits = cameraLookLimits(camera?.userData);
+      rules.lookUp = limits?.pitchUp != null ? round(limits.pitchUp * 180 / Math.PI, 6) : null;
+      rules.lookDown = limits?.pitchDown != null ? round(limits.pitchDown * 180 / Math.PI, 6) : null;
+      x[key][id] = rules;
+    }
+  }
+  // The page path on the re-baked MH-6 bench and the C47's pilot.
+  const lookOver = (key, seatId) => {
+    const keys = new Set(['ShiftLeft']);
+    const occupancy = seatOf(build(fixture[key]), seatId);
+    const controls = createControls(makeControlsPage({ keys, occupancy }));
+    const { page, view } = makeLookPage({ aircraft: false });
+    page.occupancy = occupancy;
+    page.held = trigger => controls.held(trigger);
+    const look = createLocalLook(page);
+    look.lookDelta(100, 20);
+    return lookOf(view);
+  };
+  x.page = {
+    mh6Bench: lookOver('DesertCombat/MH-6', 'MH6Passenger_PCO3'),
+    c47Pilot: lookOver('XPack2/C47', 'C47'),
+    f14Rio: lookOver('DesertCombat/F-14B', 'F14BRIO'),
+    bf109Pilot: lookOver('bf1942/BF109', 'BF109'),
+    corsairPilot: lookOver('bf1942/Corsair', 'Corsair'),
+    b17Pilot: lookOver('bf1942/B17', 'B17'),
+  };
+  // The gain's sign is the acceleration's times the signed `maxSpeed`
+  // (GUN-2, `calculateAndClipAngle` lnxded 0x081d7866): each pairing on the
+  // Air profile, and a zero or absent `maxSpeed`.
+  const gainOf = (direction, maxSpeed) => {
+    const pitch = { input: 'c_PIMouseLookY', direction, acceleration: 5000 };
+    if (maxSpeed !== undefined) pitch.maxSpeed = maxSpeed;
+    return seatLookSigns({ cameraView: { look: { axes: { pitch } } } }, 'air').pitch;
+  };
+  results.lookGain = {
+    spitfire: gainOf(-1, 90), bf109: gainOf(1, -90), both: gainOf(-1, -90), plain: gainOf(1, 90),
+    zeroSpeed: gainOf(1, 0), noSpeed: gainOf(-1, undefined),
+  };
+  results.rebaked = x;
+}
+
+// --- the neck: how far a held look turns (ledger MLK-17) ------------------------
+//
+// The engine's pitch is the `setRotation` pitch, positive nose-down, so
+// `CorsairCamera`'s `-70/-40/0 .. 70/5/0` is 40 degrees up and 5 down.
+
+{
+  const k = {};
+  const extremes = view => {
+    const out = {};
+    view.look.yaw = 0; view.look.pitch = 0;
+    view.turn(0, 10);
+    out.up = deg(view.look.pitch);
+    view.turn(0, -20);
+    out.down = deg(view.look.pitch);
+    view.look.pitch = 0;
+    view.turn(10, 0);
+    out.left = deg(view.look.yaw);
+    view.turn(-20, 0);
+    out.right = deg(view.look.yaw);
+    view.look.yaw = 0; view.look.pitch = 0;
+    return out;
+  };
+  const corsairLook = { axes: {
+    yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1 },
+    pitch: { input: 'c_PIMouseLookY', min: -40, max: 5, free: false, maxSpeed: 90, direction: -1 },
+  } };
+  k.defaults = extremes(new VehicleCamera(makeSubject(), { modes: ['cockpit', 'nose', 'chase'] }));
+  k.corsairLimits = cameraLookLimits({ cameraView: { look: corsairLook } });
+  k.coPilotLimits = cameraLookLimits({ rig: lookRig('H6CoPilot', -1) });
+  k.freeYaw = cameraLookLimits({ cameraView: { look: { axes: {
+    yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true },
+  } } } });
+  k.freeYawUnlimited = k.freeYaw?.yaw === Infinity;
+  k.notTheLook = cameraLookLimits({ rig: { axes: {
+    pitch: { input: 'c_PIPitch', min: -10, max: 10, free: false },
+  } } });
+  k.none = cameraLookLimits({ cameraView: {} });
+  const coPilotView = new VehicleCamera(makeSubject(), {
+    modes: ['cockpit', 'chase'], lookLimits: k.coPilotLimits,
+  });
+  k.coPilot = extremes(coPilotView);
+  coPilotView.setMode('chase');
+  k.coPilotChase = extremes(coPilotView);
+
+  // The page path: the pilot holds Left Shift and pushes the mouse away from
+  // him, then pulls it toward him, on the shipped Air box.
+  const { page, view, state } = makeLookPage();
+  const look = createLocalLook(page);
+  state.held = true;
+  look.lookDelta(0, -600);
+  k.pilotPushedAway = lookOf(view);
+  look.lookDelta(0, 1200);
+  k.pilotPulledBack = lookOf(view);
+  results.neck = k;
 }
 
 process.stdout.write(JSON.stringify(results));

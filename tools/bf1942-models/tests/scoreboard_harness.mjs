@@ -125,6 +125,10 @@ results.varsRoom = boardVars(layoutVars, {
   rows: results.rows, visibleRows: 20,
 });
 results.varsLone = boardVars(layoutVars, { rows: results.lone, visibleRows: 0 });
+// The end of a round: the board stands without its buttons and counts the
+// rounds each side has won (ROUND-1, ROUND-5).
+results.varsEnd = boardVars(layoutVars, { rows: results.lone, visibleRows: 0,
+                                          endGame: true, roundsWon: { 1: 2, 2: 1 } });
 results.layoutVarsUntouched = layoutVars['Scoreboard/AxisScoreTotal'];
 
 // --- the list geometry -------------------------------------------------------

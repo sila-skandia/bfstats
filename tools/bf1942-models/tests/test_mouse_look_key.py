@@ -41,6 +41,8 @@ MODULES = {
     f"viewer/{name}": VIEWER / name
     for name in ("mouse-look-key.js", "mouse-input.js", "local-look.js", "vehicle-camera.js", "camera-pivot.js",
                  "controls.js", "controls-defaults.js", "console.js", "console-view.js",
+                 # The seats that are not the pilot's run over the real survey.
+                 "seat-survey.js",
                  # local-look.js draws the hulls' belts (`track-scroll.js`,
                  # which reads the engine law out of ground-engine.js).
                  "track-scroll.js", "ground-engine.js", "ground-contact.js")
@@ -48,6 +50,9 @@ MODULES = {
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 for name in ("Common.con", "Infantry.con", "Air.con", "Land.con"):
     MODULES[f"fixtures/controls-profile-skandia/{name}"] = FIXTURES / name
+# The seat trees of a re-baked export (`cameraView.toggleMouseLook` and
+# `.look` on every Camera), cut down from the con-reader package's glbs.
+MODULES["fixtures/air-seats.json"] = TESTS / "fixtures" / "air-seats.json"
 THREE_PACKAGE = json.dumps({
     "name": "three", "version": "0.0.0", "type": "module",
     "main": "three.module.js", "exports": "./three.module.js",
@@ -409,6 +414,221 @@ class StickTests(_Harness):
         self.assertEqual("land", g["context"])
         self.assertEqual(0, g["roll"])
         self.assertEqual(0, g["pitch"])
+
+
+class OtherSeatTests(_Harness):
+    """Ledger MLK-14: a seat flies on its own PCO's category, and looks by its
+    own Camera's word. The seat trees are the extracted DC MH-6 and MH-53
+    glbs' extras, run through the real `surveyVehicle`."""
+
+    def test_dcs_air_co_pilots_and_passengers_are_on_the_air_profile(self) -> None:
+        old = self.results["otherSeats"]["oldTree"]
+        for seat in ("pilot", "coPilot", "passenger", "mh53CoPilot"):
+            with self.subTest(seat=seat):
+                self.assertEqual("air", old[seat]["profile"])
+                self.assertEqual("VCAir", old[seat]["category"])
+        # The door gunner's own PCO is VCLand: LandSea, as every gunner's.
+        self.assertEqual("landSea", old["mh53Gunner"]["profile"])
+        self.assertEqual("VCLand", old["mh53Gunner"]["category"])
+
+    def test_their_control_map_is_the_air_one_left_shift_and_all(self) -> None:
+        maps = self.results["otherSeats"]["maps"]
+        self.assertEqual({"context": "air", "shiftIsLook": True}, maps["coPilot"])
+        self.assertEqual({"context": "air", "shiftIsLook": True}, maps["passenger"])
+        self.assertEqual({"context": "land", "shiftIsLook": False}, maps["mh53Gunner"])
+
+    def test_a_tree_without_the_word_needs_the_key_where_it_can_prove_it(self) -> None:
+        # The pilot by the shipped rule; the MH-53 co-pilot because his Camera
+        # IS the pilot's template; the MH-6 bench cannot be told from the
+        # co-pilot until the glb carries the word.
+        old = self.results["otherSeats"]["oldTree"]
+        self.assertTrue(old["pilot"]["needsKey"])
+        self.assertTrue(old["mh53CoPilot"]["needsKey"])
+        self.assertFalse(old["coPilot"]["needsKey"])
+        self.assertFalse(old["passenger"]["needsKey"])
+        self.assertFalse(old["mh53Gunner"]["needsKey"])
+
+    def test_with_the_word_each_camera_answers_for_itself(self) -> None:
+        word = self.results["otherSeats"]["wordTree"]
+        self.assertTrue(word["pilot"]["needsKey"])
+        self.assertTrue(word["passenger"]["needsKey"])
+        self.assertFalse(word["coPilot"]["needsKey"])
+        # DC Final's bench carries no word.
+        self.assertFalse(word["finalPassenger"]["needsKey"])
+
+    def test_the_pitch_sign_is_the_cameras_where_the_glb_has_it(self) -> None:
+        # `H6CoPilotCamera` carries its own rig even in an old tree (it has a
+        # child); DC Final's bench is +100000; unread, Air's majority, -1.
+        n = self.results["otherSeats"]
+        self.assertEqual(-1, n["oldTree"]["coPilot"]["pitchSign"])
+        self.assertEqual(-1, n["oldTree"]["passenger"]["pitchSign"])
+        self.assertEqual(1, n["oldTree"]["mh53Gunner"]["pitchSign"])
+        self.assertEqual(1, n["wordTree"]["finalPassenger"]["pitchSign"])
+        self.assertTrue(n["cached"])
+
+    def test_a_bench_with_the_word_looks_only_with_the_key(self) -> None:
+        p = self.results["otherSeats"]["page"]["passengerWithTheWord"]
+        self.assertEqual("air", p["profile"])
+        self.assertTrue(p["needsKey"])
+        # Key up: the view stays and the counts go to the stage, which his
+        # own PCO binds to nothing.
+        self.assertEqual({"yaw": 0, "pitch": 0}, p["knock"])
+        self.assertEqual({"x": 200, "y": 20}, p["knockPending"])
+        # Held: the head turns, the vertical in the plain sense on the shipped
+        # box (a negative camera); released, 0.75 a tick.
+        self.assertAlmostEqual(-200 * HEAD_SENS_DEG, p["held"]["yaw"], places=4)
+        self.assertAlmostEqual(-20 * HEAD_SENS_DEG, p["held"]["pitch"], places=4)
+        self.assertAlmostEqual(0.75 * p["held"]["yaw"], p["releasedOneTick"]["yaw"], places=4)
+        # The box off inverts it.
+        self.assertAlmostEqual(20 * HEAD_SENS_DEG, p["heldPitchBoxOff"], places=4)
+
+    def test_a_co_pilot_without_the_word_looks_freely_on_the_air_box(self) -> None:
+        p = self.results["otherSeats"]["page"]["coPilot"]
+        self.assertEqual("air", p["profile"])
+        self.assertFalse(p["needsKey"])
+        self.assertAlmostEqual(-200 * HEAD_SENS_DEG, p["knock"]["yaw"], places=4)
+        self.assertAlmostEqual(-20 * HEAD_SENS_DEG, p["knock"]["pitch"], places=4)
+        self.assertEqual({"x": 0, "y": 0}, p["knockPending"])
+        # No word, no recentre.
+        self.assertEqual(p["held"], p["releasedOneTick"])
+        self.assertAlmostEqual(20 * HEAD_SENS_DEG, p["heldPitchBoxOff"], places=4)
+
+    def test_dc_finals_positive_bench_is_inverted_on_the_shipped_box(self) -> None:
+        p = self.results["otherSeats"]["page"]["finalPassenger"]
+        self.assertFalse(p["needsKey"])
+        self.assertAlmostEqual(20 * HEAD_SENS_DEG, p["knock"]["pitch"], places=4)
+        self.assertAlmostEqual(-20 * HEAD_SENS_DEG, p["heldPitchBoxOff"], places=4)
+
+
+class RebakedExportTests(_Harness):
+    """The same rules over the con-reader export (`fixtures/air-seats.json`),
+    where every Camera carries its word and its look rig."""
+
+    def rules(self, model: str, seat: str) -> dict:
+        return self.results["rebaked"][model][seat]
+
+    def test_the_keyed_seats_are_the_ones_dcs_data_keys(self) -> None:
+        keyed = {
+            ("DesertCombat/MH-6", "MH-6"), ("DesertCombat/MH-6", "MH6Passenger_PCO3"),
+            ("DesertCombat/MH-6", "MH6Passenger_PCO6"), ("DesertCombat/SA-342G", "SA-342G"),
+            ("DesertCombat/SA-342G", "SA342Passenger3"), ("DesertCombat/SA-342G", "SA342Passenger4"),
+            ("DesertCombat/MH-53", "MH-53"), ("DesertCombat/MH-53", "MH53CoPilot"),
+            ("DesertCombat/Mi8", "Mi8"), ("DesertCombat/Mi8", "Mi8_CoPilot"),
+            ("DesertCombat/F-14B", "F-14B"), ("DC_Final/MH-6", "MH-6"),
+            ("XPack2/C47", "C47"), ("bf1942/Corsair", "Corsair"), ("bf1942/BF109", "BF109"),
+            ("bf1942/B17", "B17"),
+        }
+        for model, seats in self.results["rebaked"].items():
+            if model == "page":
+                continue
+            for seat, rules in seats.items():
+                with self.subTest(model=model, seat=seat):
+                    want = (model, seat) in keyed or (
+                        model == "DesertCombat/MH-6" and seat.startswith("MH6Passenger"))
+                    self.assertEqual(want, rules["needsKey"])
+
+    def test_the_co_pilots_whose_word_dc_remmed_look_freely(self) -> None:
+        # `rem ObjectTemplate.toggleMouseLook 1` ("Tan mod remmed to give
+        # freelook") on H6CoPilotCamera and SA342CoPilotCamera.
+        for model, seat in (("DesertCombat/MH-6", "H6CoPilot"), ("DesertCombat/SA-342G", "SA342CoPilot")):
+            with self.subTest(seat=seat):
+                r = self.rules(model, seat)
+                self.assertEqual("air", r["profile"])
+                self.assertFalse(r["needsKey"])
+
+    def test_the_seat_categories(self) -> None:
+        self.assertEqual("air", self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["profile"])
+        self.assertEqual("air", self.rules("DesertCombat/F-14B", "F14BRIO")["profile"])
+        self.assertEqual("landSea", self.rules("DesertCombat/MH-53", "MH53_Passenger3_PCO")["profile"])
+        self.assertEqual("landSea", self.rules("DesertCombat/Mi8", "Mi8_CoPilot")["profile"])
+        self.assertEqual("landSea", self.rules("bf1942/B17", "B17_PCO1")["profile"])
+
+    def test_the_signs_are_each_cameras(self) -> None:
+        self.assertEqual(-1, self.rules("bf1942/Corsair", "Corsair")["pitchSign"])
+        # The BF109 and B17 declare `setAcceleration 5000/5000/0` with
+        # `setMaxSpeed 90/-90/0`: the same gain as the Corsair's `-5000` with
+        # `90` (GUN-2, maxSpeed signed; lnxded 0x081d7866).
+        self.assertEqual(-1, self.rules("bf1942/BF109", "BF109")["pitchSign"])
+        self.assertEqual(-1, self.rules("bf1942/B17", "B17")["pitchSign"])
+        self.assertEqual(1, self.rules("DC_Final/MH-6", "MH6Passenger_PCO3")["pitchSign"])
+        self.assertEqual(1, self.rules("DC_Final/MH-6", "MH-6")["pitchSign"])
+        # setAcceleration 5000/0/0 and 0/5000/0: an axis that cannot turn.
+        self.assertEqual(0, self.rules("XPack2/C47", "C47")["pitchSign"])
+        self.assertEqual(0, self.rules("DesertCombat/F-14B", "F14BRIO")["yawSign"])
+
+    def test_the_neck_is_each_cameras(self) -> None:
+        self.assertEqual((40, -5), (self.rules("bf1942/Corsair", "Corsair")["lookUp"],
+                                    self.rules("bf1942/Corsair", "Corsair")["lookDown"]))
+        self.assertEqual((40, 0), (self.rules("bf1942/B17", "B17")["lookUp"],
+                                   self.rules("bf1942/B17", "B17")["lookDown"]))
+        self.assertEqual((60, -45), (self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["lookUp"],
+                                     self.rules("DesertCombat/MH-6", "MH6Passenger_PCO3")["lookDown"]))
+
+    def test_the_page_turns_each_seat_by_its_camera(self) -> None:
+        p = self.results["rebaked"]["page"]
+        yaw, pitch = -100 * HEAD_SENS_DEG, -20 * HEAD_SENS_DEG
+        self.assertAlmostEqual(yaw, p["mh6Bench"]["yaw"], places=4)
+        self.assertAlmostEqual(pitch, p["mh6Bench"]["pitch"], places=4)
+        self.assertAlmostEqual(yaw, p["c47Pilot"]["yaw"], places=4)
+        self.assertEqual(0, p["c47Pilot"]["pitch"])
+        self.assertEqual(0, p["f14Rio"]["yaw"])
+        # The RIO's camera is positive: inverted on the shipped Air box.
+        self.assertAlmostEqual(-pitch, p["f14Rio"]["pitch"], places=4)
+        # The BF109's and B17's are negative once the signed maxSpeed is
+        # read, as the Corsair's is: the plain sense on the shipped box.
+        self.assertAlmostEqual(pitch, p["bf109Pilot"]["pitch"], places=4)
+        self.assertAlmostEqual(pitch, p["b17Pilot"]["pitch"], places=4)
+        self.assertAlmostEqual(pitch, p["corsairPilot"]["pitch"], places=4)
+
+    def test_the_gain_is_the_acceleration_times_the_signed_max_speed(self) -> None:
+        g = self.results["lookGain"]
+        self.assertEqual(-1, g["spitfire"])
+        self.assertEqual(-1, g["bf109"])
+        self.assertEqual(1, g["both"])
+        self.assertEqual(1, g["plain"])
+        # A zero maxSpeed commands no speed: the axis is still.
+        self.assertEqual(0, g["zeroSpeed"])
+        # No maxSpeed at all is the template's own positive 1.0 (0x081d9130).
+        self.assertEqual(-1, g["noSpeed"])
+
+
+class NeckTests(_Harness):
+    """How far the cockpit look turns. The engine's pitch is the `setRotation`
+    pitch, positive nose-down (ledger MLK-17): `CorsairCamera`'s
+    `setMinRotation -70/-40/0`, `setMaxRotation 70/5/0` is 40 degrees up and
+    5 down. The page's look counts up as positive."""
+
+    def test_the_default_neck_is_the_corsairs_the_right_way_up(self) -> None:
+        d = self.results["neck"]["defaults"]
+        self.assertAlmostEqual(40, d["up"], places=6)
+        self.assertAlmostEqual(-5, d["down"], places=6)
+        self.assertAlmostEqual(70, d["left"], places=6)
+        self.assertAlmostEqual(-70, d["right"], places=6)
+
+    def test_a_cameras_own_rig_is_mirrored_into_the_look(self) -> None:
+        k = self.results["neck"]
+        rad = math.pi / 180
+        self.assertAlmostEqual(-5 * rad, k["corsairLimits"]["pitchDown"], places=12)
+        self.assertAlmostEqual(40 * rad, k["corsairLimits"]["pitchUp"], places=12)
+        self.assertAlmostEqual(-70 * rad, k["corsairLimits"]["yawMin"], places=12)
+        self.assertAlmostEqual(70 * rad, k["corsairLimits"]["yawMax"], places=12)
+        # DC's H6CoPilotCamera, -70/-60 .. 70/45: 60 up, 45 down.
+        self.assertAlmostEqual(60, k["coPilot"]["up"], places=6)
+        self.assertAlmostEqual(-45, k["coPilot"]["down"], places=6)
+        # Outside the cockpit the orbit keeps its own clamps.
+        self.assertAlmostEqual(1.2 / rad, k["coPilotChase"]["up"], places=6)
+
+    def test_a_free_yaw_is_unlimited_and_other_inputs_are_not_the_neck(self) -> None:
+        k = self.results["neck"]
+        self.assertTrue(k["freeYawUnlimited"])
+        self.assertIsNone(k["freeYaw"].get("yawMin"))
+        self.assertEqual(None, k["notTheLook"])
+        self.assertEqual(None, k["none"])
+
+    def test_a_pilot_pushing_the_mouse_away_looks_up_forty_degrees(self) -> None:
+        k = self.results["neck"]
+        self.assertAlmostEqual(40, k["pilotPushedAway"]["pitch"], places=6)
+        self.assertAlmostEqual(-5, k["pilotPulledBack"]["pitch"], places=6)
 
 
 if __name__ == "__main__":
