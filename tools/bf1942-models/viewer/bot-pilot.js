@@ -78,12 +78,12 @@ export function execPlaneMoveTo(bot, target, action, clearance = PLANE.cruiseCle
 /**
  * The throttle channel the plane law's `throttle` asks for. The engine writes
  * it into `PlayerInput[driveThrottleControl]` as it is (`towardsDirection`
- * 0x08629fa0, +0x50), which is what a vectored airframe's held axis takes
- * (`world-vehicle-tick.js`); the viewer's fixed-wing throttle is a latch the
- * bot ramps toward it a key at a time.
+ * 0x08629fa0, +0x50), which is what every aircraft's held axis takes
+ * (`world-vehicle-tick.js`, `Aircraft.engineLaw`). A drive still on the old
+ * latch (none in a level) is ramped toward it a key at a time.
  */
 function planePower(drive, throttle) {
-  if (drive?.vectored) return clamp1(throttle);
+  if (drive?.engineLaw || drive?.vectored) return clamp1(throttle);
   const cur = drive?.input?.('c_PIThrottle') ?? 1;
   return throttle > cur + 0.01 ? 1 : (throttle < cur - 0.01 ? -1 : 0);
 }
