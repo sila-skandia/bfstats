@@ -334,6 +334,7 @@ def start(scenario_path: Path, wait: float) -> None:
         print("the last run's server exited on its own; collecting it first")
         finish(json.loads(STATE.read_text()))
     sc = load_scenario(scenario_path)
+    preload = preload_value(sc["preload"]) if sc.get("preload") else None
     write_settings(sc)
     started = time.time()
     run_id = dt.datetime.fromtimestamp(started).strftime("%Y%m%d-%H%M%S") + "-" + sc["name"]
@@ -342,8 +343,8 @@ def start(scenario_path: Path, wait: float) -> None:
     shutil.copy2(scenario_path, run / "scenario.json")
     shutil.copytree(SETTINGS, run / "settings")
     env = dict(os.environ, LD_LIBRARY_PATH=f"{INSTALL / 'lib'}:/usr/lib32")
-    if sc.get("preload"):
-        env["LD_PRELOAD"] = str(Path(sc["preload"]).expanduser().resolve())
+    if preload:
+        env["LD_PRELOAD"] = preload
     with (run / "server.out").open("wb") as out:
         proc = subprocess.Popen(SERVER_ARGS, cwd=INSTALL, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
@@ -355,6 +356,20 @@ def start(scenario_path: Path, wait: float) -> None:
     print(f"join: {join_command()}")
     if wait > 0:
         wait_for_round(proc, started, wait)
+
+
+def preload_value(preload) -> str:
+    """A scenario's `preload`, one path or a list (the recorder, then e.g.
+    `lab/realfire`'s realfire.so), as LD_PRELOAD's colon-separated list.
+    A missing file stops the start rather than running without it."""
+    paths = [preload] if isinstance(preload, str) else list(preload)
+    out = []
+    for p in paths:
+        path = Path(p).expanduser().resolve()
+        if not path.is_file():
+            sys.exit(f"preload {path} does not exist")
+        out.append(str(path))
+    return ":".join(out)
 
 
 def wait_for_round(proc: subprocess.Popen, started: float, timeout: float) -> None:
