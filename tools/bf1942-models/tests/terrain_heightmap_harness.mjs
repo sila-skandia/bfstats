@@ -21,11 +21,21 @@ const { decodePng } = await import(path.join(ROOT, 'server', 'glb-scene.mjs'));
 const dir = process.argv[2];
 const spec = JSON.parse(readFileSync(path.join(dir, 'tiles.json'), 'utf8'));
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-const meshes = spec.tiles.map(positions => {
-  const array = Float32Array.from(positions);
-  return { geometry: { attributes: { position: { array, count: array.length / 3 } } },
-           matrixWorld: { elements: identity } };
-});
+// `spec.glb`: a published level's scene, whose terrain tiles the room server
+// snaps its lattice from (`server/level-load.mjs`); else the tiles inline.
+let meshes;
+if (spec.glb) {
+  const { readGlb } = await import(path.join(ROOT, 'server', 'glb-tree.mjs'));
+  const { buildSceneTree } = await import(path.join(ROOT, 'server', 'glb-scene.mjs'));
+  const { json, bin } = readGlb(spec.glb);
+  meshes = buildSceneTree(json, bin).terrainTiles;
+} else {
+  meshes = spec.tiles.map(positions => {
+    const array = Float32Array.from(positions);
+    return { geometry: { attributes: { position: { array, count: array.length / 3 } } },
+             matrixWorld: { elements: identity } };
+  });
+}
 const tiles = buildHeightfield(meshes, { worldSize: spec.worldSize, dim: spec.dim });
 const png = decodePng(readFileSync(path.join(dir, 'heightmap.png')), 'heightmap.png');
 const raw = heightfieldFromSamples(png.data, { ...spec.heightmap, channels: png.channels });
@@ -38,7 +48,7 @@ for (let i = 0; i < raw.heights.length; i++) {
   if (tiles.heights[i] === raw.heights[i]) same++;
 }
 // Heights asked between samples, over a drawn and an undrawn patch.
-const probes = spec.probes.map(([x, z]) => ({ x, z, raw: raw.height(x, z), tiles: tiles.height(x, z) }));
+const probes = (spec.probes ?? []).map(([x, z]) => ({ x, z, raw: raw.height(x, z), tiles: tiles.height(x, z) }));
 console.log(JSON.stringify({
   png: { width: png.width, height: png.height, channels: png.channels },
   dim: raw.dim, spacing: raw.spacing, samples: raw.heights.length,
