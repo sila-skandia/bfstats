@@ -47,6 +47,7 @@ import {
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
 import { AmphibiousKit, bedGroundHeight } from './amphibious.js';
+import { measureWheelRadius } from './tracked-vehicle.js';
 
 // Same body frame the flight model measured off the extracted scenes: -Z
 // forward, +Y up, +X starboard. The Willy agrees — its front wheels sit at
@@ -54,6 +55,108 @@ import { AmphibiousKit, bedGroundHeight } from './amphibious.js';
 const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
+
+/** A node's meshes that are part of ITS geometry: its own, plus every untagged
+ *  mesh child (the assembler splits one StandardMesh into a sub-mesh per
+ *  material). A child with a `templateKind` is an object of its own. */
+function ownMeshes(node) {
+  const isCollision = n => Boolean(n.userData?.collision || n.geometry?.userData?.collision
+    || /collision/i.test(n.name || ''));
+  const found = [];
+  if (node.isMesh && node.geometry && !isCollision(node)) found.push(node);
+  for (const child of node.children) {
+    if (child.isMesh && child.geometry && !isCollision(child) && !child.userData?.templateKind) {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+/**
+ * The object whose geometry `PhysicsNode::updateRotationalPhysics`
+ * (`0x082539e0`) takes a vehicle's inertia box from, found the way the engine
+ * finds it (COL-8, COL-13):
+ *
+ *   1. the root's own `IGeometry` (`queryComponent(0x492fe0fe)` is the
+ *      object's `+0x5c`), which no vanilla or DC land root authors;
+ *   2. else `findLodGeometry` (`0x0818d860`): if the root's FIRST child is a
+ *      `LodObject`, its highest alternative's geometry (`m_forceHighestLod`,
+ *      `LodObject::getChild` `0x08216ce0` returns entry 0) — a tank's
+ *      `ShermanComplex`;
+ *   3. else the first `LodObject` depth first, child before sibling, whose
+ *      selector is a `DistCompareLodSelector` (`internalFindChildOfLodSelectorCID`
+ *      `0x0818db50`, CID `0x94b1`), and again its highest alternative's — a
+ *      car's cockpit LOD, `WillyCockpitExternal`'s `Willy_Hull_M1`. A
+ *      `PlayerControlObject` ends the search of its own sibling chain there.
+ *
+ * The glb does not carry a selector's class, so step 3 takes the first
+ * `LodObject` whose kept alternative has geometry of its own. Across the
+ * vanilla and DC land vehicles that is the cockpit LOD every time: the root's
+ * own LOD (`DistCompareSelector2`, CID `0x94b2`) holds a geometry-less
+ * `Bundle` and the steering-wheel LODs sit after the cockpit.
+ *
+ * @returns {THREE.Object3D|null}
+ */
+export function inertiaGeometryNode(root) {
+  const parts = node => node.children.filter(child => child.userData?.templateKind);
+  const hasGeometry = node => Boolean(node?.userData?.geometry) && ownMeshes(node).length > 0;
+  if (hasGeometry(root)) return root;
+  const first = parts(root)[0];
+  if (first?.userData?.templateKind === 'LodObject') {
+    const alternative = parts(first)[0];
+    if (hasGeometry(alternative)) return alternative;
+  }
+  const visit = list => {
+    for (const node of list) {
+      const kind = node.userData?.templateKind;
+      if (kind === 'PlayerControlObject') return null;
+      if (kind === 'LodObject') {
+        const alternative = parts(node)[0];
+        if (hasGeometry(alternative)) return alternative;
+      }
+      const found = visit(parts(node));
+      if (found) return found;
+    }
+    return null;
+  };
+  return visit(parts(root));
+}
+
+/**
+ * `[DX, DY, DZ]` of the box `getGeometryInertia` (`0x08253930`) reads: the
+ * found geometry's own `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`,
+ * which its constructor copies from the template's `+0x40`, which
+ * `loadHeader` `0x083a6200` reads straight out of the `.sm` header). The glb
+ * mesh's own vertex box is that header box to the millimetre on every vanilla
+ * hull checked against `collision-meshes.json`. In the root's frame, never the
+ * world's. Null when the tree carries no such geometry (a test double).
+ *
+ * @returns {number[]|null}
+ */
+export function inertiaGeometryBox(root) {
+  root.updateWorldMatrix(true, true);
+  const node = inertiaGeometryNode(root);
+  if (!node) return null;
+  const inverse = root.matrixWorld.clone().invert();
+  const local = new THREE.Matrix4();
+  const union = new THREE.Box3();
+  const box = new THREE.Box3();
+  for (const mesh of ownMeshes(node)) {
+    mesh.geometry.computeBoundingBox();
+    box.copy(mesh.geometry.boundingBox).applyMatrix4(local.multiplyMatrices(inverse, mesh.matrixWorld));
+    union.union(box);
+  }
+  if (union.isEmpty()) return null;
+  const size = union.getSize(new THREE.Vector3());
+  return size.x > 0 && size.y > 0 && size.z > 0 ? [size.x, size.y, size.z] : null;
+}
+
+/** `getGeometryInertia`'s per-mass inertia off a box, as `(pitch, yaw, roll)`
+ *  about the body's x, y and z: `Ix = (DY^2+DZ^2)/3`, `Iy = (DZ^2+DX^2)/3`,
+ *  `Iz = (DX^2+DY^2)/3` (collision-response.md section 4.2). */
+export function geometryInertia([dx, dy, dz], out = new THREE.Vector3()) {
+  return out.set((dy * dy + dz * dz) / 3, (dz * dz + dx * dx) / 3, (dx * dx + dy * dy) / 3);
+}
 
 /** A land vehicle: a `Vehicle` plus the drive model that moves it. */
 export class GroundVehicle extends Vehicle {
@@ -66,6 +169,18 @@ export class GroundVehicle extends Vehicle {
   constructor(node, parent, options = {}) {
     super(node, parent, options);
     this.spec = options.spec || WILLYS;
+
+    // The root's own `ObjectTemplate.mass` / `drag`, off the node the way
+    // `TrackedVehicle` reads them. Until 2026-10-06 every wheeled vehicle ran
+    // on the Willys' 2500 / 1.5 here, a ten-tonne SCUD-B and a Pickup that
+    // authors `drag 5.5` alike; `spec` is only what a tree with no
+    // `extras.physics` falls back to.
+    const rootPhysics = node.userData?.physics || {};
+    this.mass = typeof rootPhysics.mass === 'number' ? rootPhysics.mass : this.spec.mass;
+    this.drag = typeof rootPhysics.drag === 'number' ? rootPhysics.drag : this.spec.drag;
+    /** `[DX, DY, DZ]` of the geometry the engine's inertia is built on
+     *  (`inertiaGeometryBox`), or null for a tree that carries none. */
+    this.geometryBox = inertiaGeometryBox(node);
     /**
      * Where the ground is, injected the same way `Aircraft.groundHeight` is:
      * this module must run under node with an analytic floor, so it never
@@ -103,12 +218,22 @@ export class GroundVehicle extends Vehicle {
     });
     this.collectChassis();
 
+    // The radius the drag equation and the fallback hull sweep share: the
+    // sphere round the geometry box above, where the table's 1.8 m was the
+    // jeep's rough envelope for every vehicle. The engine's own is the
+    // composite object's bounding sphere, which is unread, and the sphere drag
+    // law it feeds is itself not the engine's (PHY-4: a `PhysicsNode` takes
+    // the box law), so this stays the viewer's estimate; at least it is now
+    // the vehicle's size and not a jeep's.
+    this._boundingRadius = this.geometryBox
+      ? Math.hypot(...this.geometryBox) / 2 : this.spec.boundingRadius;
+
     // Hull collision against static objects (buildings, walls, other vehicles).
-    // `k.boundingRadius` is the same value the drag equation uses — large enough
-    // to keep the body off a wall without catching on every kerb. The owner id
+    // The same radius the drag equation uses — large enough to keep the body
+    // off a wall without catching on every kerb. The owner id
     // is the collision index's slot for this vehicle's own hull, which must be
     // skipped in the sweep or the vehicle collides with itself.
-    this._hullRadius = this.spec.boundingRadius;
+    this._hullRadius = this._boundingRadius;
     this._collisionOwner = this.collider?.statics?.ownerOf(node) ?? -1;
 
     /**
@@ -141,16 +266,22 @@ export class GroundVehicle extends Vehicle {
      * or null. See `TrackedVehicle`'s own field. */
     this.amphibious = AmphibiousKit.of(node, {
       waterLevel: options.waterLevel ?? this.collider?.waterLevel,
-      mass: this.spec.mass, drag: this.spec.drag,
+      mass: this.mass, drag: this.drag,
     });
     if (this.amphibious) {
       this.groundHeight = bedGroundHeight(this.collider, this.amphibious.waterLevel, this.groundHeight);
     }
     this._inputOf = name => this.input(name);
 
-    // Body-frame inertia, diagonal. A box is symmetric enough for a jeep.
-    this._inertia = new THREE.Vector3(
-      this.spec.inertiaPitch, this.spec.inertiaYaw, this.spec.inertiaRoll);
+    // Body-frame inertia, diagonal, per unit mass: `getGeometryInertia` over
+    // the vehicle's own geometry box (COL-8, COL-13), the law `WILLYS`
+    // already used over a guessed 1.6 x 1.5 x 3.6 m jeep. The Willy's own box
+    // is 1.734 x 1.523 x 3.636, a SCUD-B's 3.42 x 2.16 x 11.57, which is
+    // nine times the yaw inertia. `inertiaModifier` is not applied: no
+    // vanilla or DC land vehicle authors it (collision-response.md section 3).
+    this._inertia = this.geometryBox
+      ? geometryInertia(this.geometryBox)
+      : new THREE.Vector3(this.spec.inertiaPitch, this.spec.inertiaYaw, this.spec.inertiaRoll);
 
     // Scratch, so a tick allocates nothing.
     this._q = new THREE.Quaternion();
@@ -241,6 +372,13 @@ export class GroundVehicle extends Vehicle {
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
       wheel.steerMax = steerMax;
+      // Each wheel's own rolling radius off its own mesh, as `TrackedVehicle`
+      // measures it: a BM-21's front tyres are 0.53 m and its rears 0.59, a
+      // Kubelwagen's 0.34 against the Willy's 0.364 every car used to share.
+      // The page may also hand it `contactDepth`, the wheel's collision probe
+      // under the axle (`hull-bodies.js` `wheelContactDepths`), which is where
+      // the parked body meets the ground; the drawn radius still turns it.
+      wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
       this.wheels.push(wheel);
     });
     // Nothing marked driven — a trailer, or an extract from before the
@@ -311,10 +449,9 @@ export class GroundVehicle extends Vehicle {
     this._qInv.copy(s.orientation).invert();
     this._vBody.copy(s.velocity).applyQuaternion(this._qInv);
     const forward = -this._vBody.z;
-    const radius = this.spec.wheelRadius || 0.4;
     for (const wheel of this.wheels) {
       wheel.compression = 0;
-      wheel.angle += (forward / radius) * dt;
+      wheel.angle += (forward / (wheel.radius || this.spec.wheelRadius || 0.4)) * dt;
     }
     super.presentKinematic(dt, throttle, running);
     this.#applyWheels();
@@ -427,7 +564,7 @@ export class GroundVehicle extends Vehicle {
       // drive round to, and a deck it is under stays over its head.
       const fromY = attach.y + DECK_STEP_UP;
       const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
-      const raw = Number.isFinite(reach) ? k.wheelRadius - reach : -Infinity;
+      const raw = Number.isFinite(reach) ? (wheel.contactDepth ?? wheel.radius) - reach : -Infinity;
       if (raw <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
@@ -440,7 +577,7 @@ export class GroundVehicle extends Vehicle {
         // load, so the rev filter climbs to the ceiling on its own and the
         // target comes out at the redline without anything saying so here.
         if (wheel.driven) {
-          wheel.angle += (engine.target(0) / k.wheelRadius) * h;
+          wheel.angle += (engine.target(0) / wheel.radius) * h;
         }
         continue;
       }
@@ -631,11 +768,11 @@ export class GroundVehicle extends Vehicle {
       // `part.pos + avgContactRelPos` and `part.pos` is the wheel body's
       // live position.
       this._arm.set(wheel.rest.x,
-        wheel.rest.y - k.wheelRadius + travel, wheel.rest.z);
+        wheel.rest.y - wheel.radius + travel, wheel.rest.z);
       tanTorque.add(this._arm.cross(fTyre));
 
       // The visual roll, from the road passing under the contact patch.
-      wheel.angle += (uLong / k.wheelRadius) * h;
+      wheel.angle += (uLong / wheel.radius) * h;
     }
 
     // The hull's own contacts go into the same mean the tyres feed — a
@@ -671,7 +808,7 @@ export class GroundVehicle extends Vehicle {
     // The exe's drag equation, coefficients from `Objects.con`: see
     // `PointBody.applyDrag` for the disassembly. Wind is zero in every
     // vanilla level.
-    const kDrag = Math.PI * k.boundingRadius * k.boundingRadius * k.drag / k.mass;
+    const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
     accel.addScaledVector(s.velocity, -kDrag);
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);

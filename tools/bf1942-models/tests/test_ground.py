@@ -1343,6 +1343,51 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertEqual(0.5, gate["flatFloorCos"])
         self.assertEqual(0.5, gate["padFloorCos"])
 
+    # --- a wheeled hull reads its own chassis -----------------------------
+
+    def test_a_wheeled_hull_takes_its_inertia_from_its_cockpit_hull_mesh(self) -> None:
+        # The engine's search (COL-13): the root has no geometry, its own LOD
+        # holds a geometry-less Bundle, so the box is the cockpit LOD's
+        # exterior, `Willy_Hull_M1`, under `getGeometryInertia`'s /3 law.
+        willy = self.results["ownChassis"]["willy"]
+        dx, dy, dz = 1.734, 1.523, 3.636
+        for got, want in zip(willy["box"], (dx, dy, dz)):
+            self.assertAlmostEqual(want, got, places=3)
+        self.assertAlmostEqual((dy * dy + dz * dz) / 3, willy["inertia"][0], places=3)
+        self.assertAlmostEqual((dz * dz + dx * dx) / 3, willy["inertia"][1], places=3)
+        self.assertAlmostEqual((dx * dx + dy * dy) / 3, willy["inertia"][2], places=3)
+        # Not the guessed 1.6 x 1.5 x 3.6 box the table carries.
+        self.assertNotAlmostEqual(self.results["ownChassis"]["willyTable"][1],
+                                  willy["inertia"][1], places=2)
+
+    def test_a_passenger_seat_ahead_of_the_cockpit_ends_the_search(self) -> None:
+        # `internalFindChildOfLodSelectorCID` returns at a PlayerControlObject
+        # without visiting its later siblings, so a tree that puts one first
+        # finds no geometry, and the drive keeps the table.
+        chassis = self.results["ownChassis"]
+        self.assertIsNone(chassis["passengerFirst"]["box"])
+        self.assertEqual(chassis["willyTable"], chassis["passengerFirst"]["inertia"])
+        self.assertEqual(1.8, chassis["passengerFirst"]["boundingRadius"])
+
+    def test_a_wheeled_hull_reads_its_own_mass_drag_and_wheels(self) -> None:
+        chassis = self.results["ownChassis"]
+        self.assertEqual(10000, chassis["scud"]["mass"])
+        self.assertEqual(6, chassis["scud"]["drag"])
+        # Each wheel off its own mesh: the Kubelwagen's 0.34, not the Willy's.
+        self.assertEqual([0.34] * 4, chassis["kubel"]["wheelRadius"])
+        self.assertEqual([0.364] * 4, chassis["willy"]["wheelRadius"])
+        # The drag radius is the box's, so a long truck's is a long truck's.
+        self.assertGreater(chassis["scud"]["boundingRadius"], 3 * chassis["willy"]["boundingRadius"] / 2)
+
+    def test_a_long_truck_turns_in_on_its_own_inertia(self) -> None:
+        # Same springs, same engine, same drag per unit mass: the SCUD-B box
+        # has nine times the yaw inertia, and one second into a full-lock
+        # turn from 10 m/s it is yawing at well under half the jeep's rate.
+        chassis = self.results["ownChassis"]
+        self.assertGreater(chassis["scud"]["inertia"][1] / chassis["willy"]["inertia"][1], 8.5)
+        self.assertLess(chassis["turnIn"]["scud"], chassis["turnIn"]["willy"] / 2)
+        self.assertGreater(chassis["turnIn"]["scud"], 3)
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):

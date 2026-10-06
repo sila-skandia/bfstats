@@ -1,6 +1,13 @@
 // The fallback tables a driven land vehicle reads only where its node tree
 // says nothing: `WILLYS` for `GroundVehicle` (and every `Wheel`'s spring
 // defaults), `TANK` for `TrackedVehicle`. Plain data; imports nothing.
+//
+// Since 2026-10-06 `GroundVehicle` reads its own mass, drag, inertia box,
+// drag radius and wheel radii off the node (`wheeled-vehicle.js`
+// `inertiaGeometryBox`, COL-13), as `TrackedVehicle` already read its mass and
+// drag. Before that every wheeled vehicle in every mod drove on the numbers
+// below; now only a tree that carries no `extras.physics` or no hull mesh
+// does (a test double, an old extract).
 
 /**
  * Willys jeep numbers. Every one is either read from the shipped data (and the
@@ -17,7 +24,9 @@ export const WILLYS = {
   // Enters the retail drag equation as pi r^2 / mass (`physics.js`,
   // `applyDrag`, 0x00578990). Not declared for vehicles anywhere we can read;
   // 1.8 m is the jeep's rough envelope. At these numbers aero drag is
-  // 0.11 m/s^2 at top speed — present, and nearly decorative. [free]
+  // 0.11 m/s^2 at top speed — present, and nearly decorative. [free;
+  // fallback only: a vehicle with a hull mesh takes the sphere round its own
+  // geometry box, 2.15 m for the Willy]
   boundingRadius: 1.8,
 
   // --- drivetrain, `Physics.con` --------------------------------------------
@@ -160,6 +169,11 @@ export const WILLYS = {
   // its ORIGIN rather than its centre of mass. These used to be the /12
   // values (0.40 / 1.27 / 1.29). The Willys declares no `inertiaModifier` the
   // way every aircraft does, so the modifier is 1 here.
+  //
+  // Fallback only. The box was a guess; the engine's is the cockpit hull
+  // mesh's `.sm` header box, 1.734 x 1.523 x 3.636 for the Willy, which gives
+  // 5.18 / 5.41 / 1.78 (`inertiaGeometryBox`, COL-13), and that is what a
+  // Willy with its glb drives on.
   inertiaRoll: 1.60,
   inertiaPitch: 5.07,
   inertiaYaw: 5.17,
