@@ -202,6 +202,65 @@ assert.deepEqual(Object.keys(PART_RULES).sort(),
 }
 
 {
+  // DC's right-hand tracks as they ship: `M1A1TrackR.ssc`'s `moderntreads`
+  // is a `trigger Volume` loop that fades in on `Time` after the creation
+  // trigger (0.15..0.25 s), then on Speed. It waits on that gate and starts
+  // once, then runs on: a tank that stops and goes again does not stack a
+  // second copy (the orphan would comb against the first for good). It used
+  // to never start at all, on all five of DC's tracked IFVs and tanks.
+  const TRACK_R = {
+    template: 'T72', engine: null, layers: [], weapons: [],
+    parts: [{ node: 'T72TrackR', kind: 'AnimatedBundle', script: 'T72TrackR.ssc', attachToListener: false,
+              patches: [[loop('moderntreads.mp3', [ramp('time', [0.15, 0.25, 0, 1]),
+                                                   ramp('default', [0, 1, 0.8, 0.1], 'pitch'),
+                                                   ramp('speed', [0, 10, 0, 1])],
+                              { trigger: 'volume' })]] }],
+  };
+  const { ctx, tick, drive } = await rig(TRACK_R, ['T72TrackR']);
+  const sources = () => ctx.started.filter(s => s.buffer.file === 'moderntreads.mp3');
+  for (let i = 0; i < 15; i++) tick();
+  assert.equal(sources().length, 0, 'at rest the gate stays shut: nothing starts');
+  drive.state.velocity = { x: 5, y: 0, z: 0 };
+  tick();
+  assert.equal(sources().length, 1, 'moving, the right track starts');
+  assert.equal(sources()[0].loop, true, 'as the loop it is');
+  drive.state.velocity = { x: 0, y: 0, z: 0 };
+  for (let i = 0; i < 10; i++) tick();
+  drive.state.velocity = { x: 5, y: 0, z: 0 };
+  for (let i = 0; i < 10; i++) tick();
+  assert.equal(sources().length, 1, 'stopping and going again starts no second copy');
+}
+
+{
+  // And beside its twin: the M1A1's left track runs `moderntreads` at the
+  // same rate from the claim. The frame the right one's latch fires it must
+  // already contest (`resolveAcross` runs before `apply` starts it), or that
+  // frame sounds both copies.
+  const M1A1_SHIPPED = {
+    ...M1A1,
+    parts: [M1A1.parts[1], {
+      ...M1A1.parts[2],
+      patches: [[loop('moderntreads.mp3', [ramp('time', [0.15, 0.25, 0, 1]),
+                                           ramp('default', [0, 1, 0.8, 0.1], 'pitch'),
+                                           ramp('speed', [0, 10, 0, 1])],
+                      { trigger: 'volume', relativePosition: [1, 0, 0] })]],
+    }],
+  };
+  const { tick, drive, part } = await rig(M1A1_SHIPPED, ['M1A1TrackL', 'M1A1TrackR']);
+  const sounding = () => ['M1A1TrackL', 'M1A1TrackR']
+    .flatMap(name => part(name).patches[0].layers)
+    .filter(l => l.nodeRate !== null && l.output > 0);
+  for (let i = 0; i < 15; i++) tick();
+  let most = 0;
+  for (const speed of [5, 5, 5, 0, 0, 5, 5, 8, 8, 8]) {
+    drive.state.velocity = { x: speed, y: 0, z: 0 };
+    tick();
+    most = Math.max(most, sounding().length);
+  }
+  assert.equal(most, 1, 'two tracks of one sample at one rate: never two voices, not even for a frame');
+}
+
+{
   // The A-10's gear: up and travelling plays patch 0 and lets patch 1 go;
   // stopped up, patch 0 lets go: its loop fades on TimeRelease and its
   // `trigger Release` clunk plays once. Coming down plays patch 1.
