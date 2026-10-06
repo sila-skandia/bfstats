@@ -49,6 +49,12 @@ const lcvpPad = onPad(fletcher, [7.2, 0.3, -43.699]);
 const lcvp = hull('Lcvp', { heldSpawner: { spawner: 'FletcherLcvpSpawner', vehicle: 'Lcvp' } },
                   lcvpPad, { count: 4, hullHeight: 2.8, lift: 6, relY: 3.1, scale: 0.05 });
 root.add(lcvp);
+// DC's static carrier: floats like any ship but stamped `hasMobilePhysics`
+// false (PHY-17), so she stays at her authored pose.
+const carrier = hull('Nimitz_Static_Heli', {}, [PAD[0] + 400, 25, PAD[2]],
+                     { count: 8, hullHeight: 20, lift: 2, relY: 7.5, scale: 1 });
+carrier.userData.physics.hasMobilePhysics = false;
+root.add(carrier);
 root.updateMatrixWorld(true);
 
 const spawn = (name, local, vehicle = 'fletcher') =>
@@ -66,12 +72,14 @@ const hb = createHullBodies(page);
 const before = spawns.map(s => s.position.slice());
 fletcher.updateMatrixWorld(true);
 const fletcherBefore = fletcher.position.y, lcvpBefore = lcvp.position.y;
-hb.floatPlacedVehicles([fletcher, lcvp], WATER);
+const carrierBefore = carrier.position.y;
+hb.floatPlacedVehicles([fletcher, lcvp, carrier], WATER);
 hb.rebaseDeckSpawns();
 
 const out = {
   fletcherDrop: fletcher.position.y - fletcherBefore,
   lcvpDrop: lcvp.position.y - lcvpBefore,
+  staticCarrierDrop: carrier.position.y - carrierBefore,
   spawnDrop: Object.fromEntries(spawns.map((s, i) => [s.name, s.position[1] - before[i][1]])),
   spawnSlide: Object.fromEntries(spawns.map((s, i) => [s.name,
     Math.hypot(s.position[0] - before[i][0], s.position[2] - before[i][2])])),
