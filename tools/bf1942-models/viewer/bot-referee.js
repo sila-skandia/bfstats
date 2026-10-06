@@ -539,12 +539,19 @@ export function createBotReferee(env) {
     if (!armor?.destroyed) return false;
     bot._respawnIn = (bot._respawnIn ?? BOT_RESPAWN_DELAY) - dt;
     if (bot._respawnIn > 0) return true;
-    // A captured capture-only flag is the side's, and still nowhere to spawn.
-    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly);
+    // A captured capture-only flag is the side's, and still nowhere to spawn;
+    // nor is one whose every carrier is down (Weapon Bunkers' bunkers,
+    // SPAWNGRP-10).
+    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && !f.inactive);
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);
-    w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team });
+    // Nowhere to stand up: still down, and asking again next tick, as the
+    // engine's bot keeps choosing a group `spawnPlayer` refuses.
+    if (!w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team })) {
+      bot._respawnIn = 0;
+      return true;
+    }
     const record = w.player(bot.playerId);
     w.setPlayerArmor(bot.playerId, env.armorFor(bot, record?.flag ?? flag));
     if (record?.soldier) bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
