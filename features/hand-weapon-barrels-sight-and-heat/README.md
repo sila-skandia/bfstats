@@ -1,4 +1,4 @@
-# Hand weapons: barrels, a scope with no picture, and heat
+# Hand weapons: barrels, a scope with no picture, heat and the turn spread
 
 Status: built 2026-10-06 (Desert Combat fix round, package `hand-weapons`):
 the shotgun barrels (section 1), the Stinger's sight, read and confirmed
@@ -221,3 +221,47 @@ overheat. The lead's commands are in the package report.
   `velocity`, and the bar beside a grenade stays empty.
 - A server-lab recording of a held stationary MG42 would confirm the 38 rounds
   against the real game.
+
+## 4. The turn spread: Desert Combat's rifles widen when the view swings
+
+**What was wrong.** Every Desert Combat rifle, LMG, sniper and AT weapon
+declares `setTurnDev` (the M16 `2 0.1 0.2 0.1`, the PKM `3 0.15 0.3 0.1`);
+vanilla's are all zero. `deviation.js` took the look as a view slew in rad/s
+and divided it by 30 per tick, so the per-tick raise never beat the 0.1 decay
+and the M16's turn channel stayed at 0 up to 15 rad/s (the adversarial sweep's
+CW3, `~/.cache/dc-sweep/reports/adv-conwords.md`).
+
+**What the engine does (DEV-10).** `updateDeviation` reads the soldier's
+stored PlayerInput (`getPlayerInput`, `this + 0x40c`): a verbatim copy of the
+tick's input, taken before `handlePlayerInput` applies the zoom factor and the
+recoil to its own copy. So the look terms are in the input's own unit, GUN-2b's
+device rate `0.001 x counts/s x (5 x sensitivity + 0.1)`: 1.35 at the infantry
+default, the same law the air-input package read for the Air profile's 3.85
+(MLK-7). The soldier turns 3 times that value in degrees a tick, so 1.0 is a
+90 deg/s swing. Each term sits behind the same 0.01 deadzone as the speed gates.
+
+**What was built.** `deviation.js` takes `lookX`/`lookY` as that input, with the
+deadzone. `hand-fire.js` hands it `local-look.js`'s held mouse axis (`map.html`
+passes `mouseInput` into the hand weapon's bag); the old per-tick accumulator of
+applied view radians, which carried the zoom and the recoil, is gone. The bots
+already passed their own `lookX`/`lookY`, which are this unit, so their DC
+weapons now open on a swing too.
+
+**How it was checked.** `tests/test_deviation.py` (`deviation_harness.mjs`):
+
+- The M16 at 90 deg/s nets +0.1 a tick and stands at its 2 deg cap after 20
+  ticks. At 45 deg/s the raise only matches the decay.
+- Crouched (devMod 0.75) it needs 180 deg/s: the raise is M squared against a
+  decay of d / M.
+- The PKM climbs at 45 deg/s to its 4.5 deg cap.
+- A look under 0.01 raises nothing.
+- A vanilla Thompson swung at 90 deg/s in both axes adds nothing.
+
+In the page (`~/.cache/dc-sweep/hand-weapons/turn_page.cjs`), DC's Lost Village
+with `?weapon=M16` and `__lookDelta(25, 0)` a frame at 30 fps (750 counts a
+second, input 1.01): the cone went from 0.4 to 2.37 degrees in a second.
+
+**Open.** At the shipped infantry sensitivity, 1.0 of input is 740 counts a
+second. How a browser `movementX` pixel maps to a DirectInput count is
+`mouse-input.js`'s one unproven unit, so how hard a viewer player must swing to
+open the M16 depends on it.
