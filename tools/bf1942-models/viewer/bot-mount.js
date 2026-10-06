@@ -8,7 +8,7 @@
 import { isWalkable, traceValidPoint } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
+import { unitUrgency, inclinationSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
 import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
@@ -75,24 +75,64 @@ export function dismount(bot, now = bot._now ?? 0) {
 }
 
 /**
- * `BBChange::isBailAllowed` 0x0855fd70's map test (AI-46, AI-147): a seated
- * bot may get out where the soldier's map holds the unit's position, and from
- * a `setUseNoPathfindingToGetToObject` unit (its Unit plug-in's +0x15, the
+ * `BBChange::isBailAllowed` 0x0855fd70 (AI-46, AI-147, AI-152): a seated bot
+ * may get out where the soldier's map holds the unit's position, and from a
+ * `setUseNoPathfindingToGetToObject` unit (its Unit plug-in's +0x15, the
  * fixed guns) wherever it stands: a blocked cell refuses the bail only when
- * that flag is clear (`cmpb $0, 0x15` at 0x0855ff88). Not read into the
- * viewer: the engine's last veto, an object of one type on the bot's
- * spotted list (`+7 & 8`, 0x0855ff38), and an immobile unit's own
- * vt+0x6c answer (0x0855ffaf).
+ * that flag is clear (`cmpb $0, 0x15` at 0x0855ff88), and then for a mobile
+ * unit or a seat (the unit's AI object's vt+0x6c is
+ * `AIObjectPrimaryReal::isPrimary`, false for a secondary object). Past the
+ * map test an immobile primary unit (a fixed gun: no Mobile plug-in, its own
+ * root) may always get out; any other is refused while one of the immobile
+ * objects within its bounding radius (`BotMain::getObjectsPotentiallyBelowBot`
+ * 0x0852e400, vt+0x174: the grids' objects with no Mobile plug-in,
+ * `BelowObjPredicate` 0x085334d0) carries the type bit 27, `ITScaleRender`:
+ * the bridges. The viewer has no AI types on the level's statics, so that
+ * veto is not applied (a hull on a bridge may get out here).
  */
 export function bailAllowedAt(nav, pos, unit) {
-  return !nav || isWalkable(nav, pos[0], pos[2]) || !!unit?.noPathfinding;
+  if (!nav || isWalkable(nav, pos[0], pos[2]) || unit?.noPathfinding) return true;
+  // An immobile primary: a fixed gun's own root (0x0855ffa2..0x0855ffaf).
+  return unit?.kind === 'gun' && unit?.isRoot !== false;
+}
+
+/** `updateBotVehicle` 0x0852c800's two factors on `Information+0x14`. */
+export const UNIT_VALUE_SCALE = { left: Math.fround(0.75), taken: Math.fround(4 / 3) };
+
+/**
+ * A unit's own term in `calculateVehicleUrgency` (`Information+0x14`, its
+ * `aiTemplate.basicTemp`, AI-92) as the bots have left it: when a bot's
+ * controlled object changes, `BotMain::updateBotVehicle` 0x0852c800 scales
+ * the unit it left by 0.75 (0x0852c9c4) and the one it took by 4/3
+ * (0x0852c9db), both stored as floats (AI-150). On foot the unit is the
+ * bot's own soldier (`soldierValueScale`); a seat's scale is shared by every
+ * bot (`unitValueScale`, keyed by the candidate's id, forgotten when the hull
+ * is gone). A bot that dies aboard changes nothing, so the seat keeps its
+ * 4/3.
+ */
+export function unitValue(bot, c) {
+  const base = c?.value ?? 0;
+  const k = c ? bot.unitValueScale?.get(c.id) : undefined;
+  return k === undefined ? base : Math.fround(base * k);
+}
+
+/** Scale one unit's term, the soldier's (`c` null) or a seat's. */
+export function scaleUnitValue(bot, c, factor) {
+  if (!c) {
+    bot.soldierValueScale = Math.fround((bot.soldierValueScale ?? 1) * factor);
+    return;
+  }
+  const store = bot.unitValueScale;
+  if (!store || !c.id) return;
+  store.set(c.id, Math.fround((store.get(c.id) ?? 1) * factor));
 }
 
 /**
- * `BBChange::calculateUrgency` (bot-vehicle.js): on foot, the enterable
- * land vehicles the page lists against staying on foot; mounted, no
- * voluntary bail (INVENTION: `isBailAllowed` is not read; the page
- * unseats a bot whose vehicle is destroyed).
+ * `BBChange::calculateUrgency` 0x0855e0c0 (bot-vehicle.js): on foot, the
+ * enterable land vehicles the page lists against staying on foot; seated,
+ * the seat against the foot (a bail, under `isBailAllowed`), the other
+ * units around and the hull's other seats (`BBChangeTeleport`). Every unit
+ * is weighed with the bot's inclinations (AI-148).
  */
 export function urgencyChange(bot, mod, now) {
   // A garrison post (doctrine-garrison.js, INVENTION) does not Change: the
@@ -104,13 +144,17 @@ export function urgencyChange(bot, mod, now) {
   }
   const cands = bot.vehicleCandidates;
   const world = bot.world;
-  const split = orderSplit(bot.waypoints?.attack ?? 0, bot.waypoints?.defence ?? 0);
+  // The weights `calculateVehicleUrgency` gives fire and move: the bot's
+  // own inclinations (AI-148), not its order.
+  const inc = bot.inclination;
+  const split = inclinationSplit(inc?.move ?? 0, inc?.fire ?? 0);
   const me = world?.armorOf?.(bot.playerId);
   const myHealth = me?.maxHitPoints > 0 ? me.hitPoints / me.maxHitPoints : 1;
   // The soldier's own table is `setBattleStrength` (the kit's weapons do
-  // not rewrite it: `AITemplateUnit` +0x14 is set by the con).
+  // not rewrite it: `AITemplateUnit` +0x14 is set by the con). His
+  // `basicTemp` 1 stands at x0.75 while he sits in a unit (AI-150).
   const foot = unitUrgency({ health: myHealth, fire: bot._fireStrengthOf({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry' }),
-                             maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: split });
+                             maxSpeed: TANK.soldierMaxSpeed, value: Math.fround(1 * (bot.soldierValueScale ?? 1)), split });
   const ramp = Math.min(1, Math.max(0, (now - bot._lastChangeAt) / CHANGE.rampSeconds));
   const areaFactor = bot._insideOrderedArea() ? 1 : CHANGE.outsideAreaFactor;
   if (bot.vehicle) {
@@ -131,14 +175,20 @@ export function urgencyChange(bot, mod, now) {
     // A seat has no mobile plug-in of its own: it is a fixed weapon
     // unless its hull is occupied (`calculateFireStrength` takes the
     // parent's), and a fixed weapon needs a known enemy it can point at.
+    // A fixed gun's own root is a primary with no Mobile plug-in
+    // (0x08584628: `iStack_1e4` its own +0x2c, null): fixed, though it is
+    // occupied, by the bot weighing it. Read as a seat of an occupied hull
+    // it scored the full `mt - threat` whatever it could aim at, and no
+    // gunner ever got out.
     const rootOccupied = !!(mine?.seats ?? m.seats ?? []).find(s => s.isRoot)?.occupied;
+    const gunRoot = m.kind === 'gun' && (mine?.isRoot ?? true);
     const seatFire = bot._fireStrengthOf({
       table: bot._seatStrengths(), others: bot._otherSeats(mine), air: m.kind === 'air', isSeat: !m.drives,
-      myType: bot._myType(), fixed: !m.drives && !rootOccupied, aimable: bot._fixedAimable(),
+      myType: bot._myType(), fixed: gunRoot || (!m.drives && !rootOccupied), aimable: bot._fixedAimable(mine),
     });
     const selfU = unitUrgency({ health, fire: seatFire,
                                 maxSpeed: seatSpeed, occupiedByBot: !m.drives && !!driver,
-                                value: mine?.value ?? 0, orderSplit: split });
+                                value: unitValue(bot, mine), split });
     let staying = selfU * CHANGE.stayFactor;
     if (mine && mine.upright === false) staying = 0;
     const nav = bot.navGrid;
@@ -214,7 +264,7 @@ export function urgencyChange(bot, mod, now) {
       if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
       // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency.
       const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
-                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split }) * (c.seatFactor ?? 1);
+                              maxSpeed: c.maxSpeed ?? 0, value: unitValue(bot, c), split }) * (c.seatFactor ?? 1);
       const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
       const v = u * (f + 0.5);
       if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }
@@ -261,7 +311,7 @@ export function urgencyChange(bot, mod, now) {
     // (0x0855e0c0: `calculateVehicleUrgency(seat) x radio x (f + 0.5) x
     // modifyForDriver(root)`).
     const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
-                            maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
+                            maxSpeed: c.maxSpeed ?? 0, value: unitValue(bot, c), split,
                             occupiedByBot: !!c.movedByBot,
                             spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
     list.push({ id: c.id, u, dist: d, cand: c });
@@ -356,30 +406,88 @@ export function otherSeats(bot, mine) {
   return (mine?.seats ?? bot.vehicle?.seats ?? []).filter(s => s.seatId !== bot.vehicle?.seatId);
 }
 
+/** A full circle in `AITemplateControlInfo`'s clamp (0x085de770 /
+ *  0x085de870 hold each limit to +-pi): the window is not tested. */
+const FULL_TURN = Math.fround(Math.PI);
+
+/**
+ * `AIObjectControlInfo::validateCameraDirection` 0x085d4170 for a unit's
+ * ControlInfo (AI-151): `dir` (unit length) against the camera's base, here
+ * the unit upright on its own heading `baseYaw`. The pitch window is
+ * `setCameraRelativeMin/MaxRotationDeg` y (template +0x6c / +0x78, the
+ * engine's pitch negative up): `min <= -elevation <= max`; the yaw window x
+ * (+0x68 / +0x74), the yaw off the base's forward. A window that is the full
+ * circle (exactly +-pi after the clamp) is not tested. Without a ControlInfo
+ * the gun rig's traverse stands in for the yaw window (`yawLimits`). The
+ * engine's yaw is `asin` of the right component, folded behind; a direction
+ * dead astern reads 0 there (not built: it is a single direction).
+ */
+export function cameraValidates(ctl, yawLimits, baseYaw, dir) {
+  const rad = (d) => Math.max(-FULL_TURN, Math.min(FULL_TURN, Math.fround(d * Math.PI / 180)));
+  const min = ctl?.cameraMinDeg, max = ctl?.cameraMaxDeg;
+  const hasCtl = Array.isArray(min) && Array.isArray(max);
+  if (hasCtl) {
+    const lo = rad(min[1] ?? 0), hi = rad(max[1] ?? 0);
+    if (!(lo <= -FULL_TURN && hi >= FULL_TURN)) {
+      const elev = Math.asin(Math.max(-1, Math.min(1, dir[1])));
+      if (!(lo <= -elev && -elev <= hi)) return false;
+    }
+  }
+  const yaw = hasCtl ? [rad(min[0] ?? 0), rad(max[0] ?? 0)] : yawLimits;
+  if (!yaw || (yaw[0] <= -FULL_TURN && yaw[1] >= FULL_TURN)) return true;
+  const want = wrapAngle(Math.atan2(dir[0], dir[2]) - baseYaw);
+  return want >= yaw[0] && want <= yaw[1];
+}
+
+/**
+ * The fixed weapon's strategic directions (AI-151): `calculateFireStrength`
+ * 0x08584580 at 0x085851fc..0x085853a1 takes the SAI of the bot's side
+ * (`IAIMain` vt+0x30, `AIMain::getSAI`), the bot's ordered strategic object
+ * (`SAI::getBotOrderedPos` 0x086364c0, the bot record's +4; -1, a freed bot,
+ * gives none: `getBotCurrentPos` is asked only to let a -1 through to
+ * `getStrategicObject`, which refuses it), and from that object's position
+ * for the side (`getPosition(side)`, vt+0xc) one direction to each of its
+ * neighbours (`AIStrategicArea` +0x118, `addNeighbour` 0x0863e520) whose
+ * status for the side (+0x70 + 4 x side, `hasNeighbourWithStatus`
+ * 0x0863e5d0) is not 0, Owned: Hostile or Neutral. Flat (`vec2ToVec3XZ`),
+ * normalised; a zero one is skipped. The bot's own position plays no part.
+ */
+export function strategicDirections(bot) {
+  const layer = bot.strategicLayer ?? null;
+  const area = bot.saiPos ? bot.saiPos.ordered : (bot.waypoints?.area ?? null);
+  if (!layer || !area?.centre) return [];
+  const out = [];
+  for (const n of layer.neighboursOf(area)) {
+    if (layer.ownerOf(n) === bot.team) continue;
+    const dx = n.centre[0] - area.centre[0], dz = n.centre[1] - area.centre[1];
+    const d = Math.hypot(dx, dz);
+    if (!(d > 1e-6)) continue;
+    out.push([dx / d, 0, dz / d]);
+  }
+  return out;
+}
+
 /** A fixed weapon's `validateCameraDirection` (`calculateFireStrength`
- *  0x08584580): with enemies spotted, 'enemy' when the traverse reaches
- *  one of them, else false (the score is 0); with none spotted, 'enemy'
- *  when any enemy object is within the guns' range (`getEnemyObjects`;
- *  that branch tests no direction before the normal score), else
- *  'strategic' when the gun can face the strategic direction (a flat
- *  5.0), else false. The strategic direction is the engine's strategic
- *  object's links flagged for the side; here the nearest enemy flag's
- *  bearing stands in for them (INVENTION). `c` is a candidate seat
- *  (its own traverse limits on its hull's heading); none means the seat
- *  the bot holds. */
+ *  0x08584580): with enemies spotted, 'enemy' when the camera window
+ *  (`cameraValidates`) takes the direction to one of them, else false (the
+ *  score is 0); with none spotted, 'enemy' when any enemy object is within
+ *  the guns' range (`getEnemyObjects`; that branch tests no direction before
+ *  the normal score), else 'strategic' when the window takes one of the
+ *  strategic directions (`strategicDirections`, a flat 5.0), else false.
+ *  `c` is a candidate seat (its ControlInfo on its hull's heading, from its
+ *  own position); none means the seat the bot holds, read off its mount. */
 export function fixedAimable(bot, c = null) {
+  const ctl = c ? c.controlInfo : bot.vehicle?.controlInfo;
   const limits = c ? c.yawLimits : bot.vehicle?.occupancy?.turret?.yawLimitsRadians?.();
   const hullYaw = c ? (c.hullYaw ?? 0) : bot.yaw;
-  const canPoint = (dir) => {
-    if (!limits) return true;
-    const want = wrapAngle(Math.atan2(dir[0], dir[2]) - hullYaw);
-    return want >= limits[0] && want <= limits[1];
-  };
+  const canPoint = (dir) => cameraValidates(ctl, limits, hullYaw, dir);
   const from = c?.pos ?? bot.position;
+  // From the unit's position to the object's (both `Information::getPosition`,
+  // 3D, 0x08584cd2), unit length.
   const dirTo = (pos) => {
-    const dx = pos[0] - from[0], dz = pos[2] - from[2];
-    const d = Math.hypot(dx, dz) || 1;
-    return [dx / d, 0, dz / d];
+    const dx = pos[0] - from[0], dy = (pos[1] ?? from[1]) - from[1], dz = pos[2] - from[2];
+    const d = Math.hypot(dx, dy, dz) || 1;
+    return [dx / d, dy / d, dz / d];
   };
   const spotted = bot.senses.spottedEnemies();
   let range = 0;
@@ -394,14 +502,20 @@ export function fixedAimable(bot, c = null) {
       ? 'enemy' : false;
   }
   if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos))) ? 'enemy' : false;
+  // `BFEnvironment::getEnemyObjects` 0x085e4eb0: the side's information
+  // grid and the neutral one (`getObjectsWithinRadius` 0x085e39b0,
+  // `getInformationGrid`), the occupied units of another side
+  // (`InfoEnemyPredicate` 0x085e6b90): only an enemy the side knows of
+  // (AI-75: made the first time one stands in any of its bots' frustums).
+  const known = bot.senses?.knowledge ?? null;
   for (const [id, p] of bot.world?.players ?? []) {
     if (id === bot.playerId || p.team === bot.team || bot.world.armorOf?.(id)?.destroyed) continue;
+    if (known && !known.t0?.has(id)) continue;
     const pos = playerPosition(p);
     if (!pos) continue;
     if (Math.hypot(pos[0] - from[0], pos[2] - from[2]) <= range) return 'enemy';
   }
-  const flag = bot._nearestEnemyFlag();
-  return flag?.position && canPoint(dirTo(flag.position)) ? 'strategic' : false;
+  return strategicDirections(bot).some(canPoint) ? 'strategic' : false;
 }
 
 /**
@@ -431,7 +545,7 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   const others_ = driver === bot.playerId ? null : driver;
   const uOf = (c) => unitUrgency({ health, fire: bot._candidateFire(c),
                                    maxSpeed: c.drives ? (c.maxSpeed ?? 0) : (others_ ? (m.hullMaxSpeed ?? 0) : 0),
-                                   occupiedByBot: !c.drives && !!others_, value: c.value ?? 0, orderSplit: split });
+                                   occupiedByBot: !c.drives && !!others_, value: unitValue(bot, c), split });
   const rootU = rootCand && !rootOccupied && where !== 'root' ? uOf(rootCand) : 0;
   const others = [];
   for (const c of cands) {

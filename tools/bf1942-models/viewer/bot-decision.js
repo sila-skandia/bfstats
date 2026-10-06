@@ -33,6 +33,7 @@ import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
 import { isArtilleryDriver } from './bot-perception.js';
+import { stepInclination, addInclination } from './bot-vehicle.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -109,9 +110,38 @@ const FALLBACK_WAYPOINT_RADIUS = 5.0;
  *  cannot see, measured per order. */
 const NO_PROGRESS_RESPAWN = 12.0;
 
+/**
+ * The units whose `MoveTo` row is `BBMoveToFixed` (`Game/AIbehaviours.con`):
+ * the seat's `aiTemplatePlugIn.equipmentType` 4 Fixed, 8 Passenger, 9
+ * BoatFixed, 10 LandingCraftPassenger, 11 LandingCraftFixed, 12 UnarmedBoat,
+ * 13 FixedLargeBore and 17 FixedGuidedMissileLauncher. None of them
+ * registers Avoid or TakeCover; Fixed, FixedLargeBore and
+ * FixedGuidedMissileLauncher run their Change under `UnitWeights`, not
+ * `ChangeInhibit`, so MoveTo keeps being weighed while it runs. A gun seat of
+ * a hull (the Sherman's top MG, equipmentType 4) is one of them.
+ */
+const MOVE_TO_FIXED_TYPES = new Set([4, 8, 9, 10, 11, 12, 13, 17]);
+const FIXED_CHANGE_UNIT_WEIGHTS = new Set([4, 13, 17]);
+/** The Fixed rows: Idle, Fire, Scout, MoveTo (`BBMoveToFixed`), Change. */
+const REGISTERED_FIXED = ['MoveTo', 'Idle', 'Fire', 'Scout', 'Change'];
+
+/** Whether the bot's unit runs `BBMoveToFixed` (a seat that does not drive
+ *  and whose row says so). */
+export function movesToFixed(bot) {
+  const m = bot.vehicle;
+  return !!m && MOVE_TO_FIXED_TYPES.has(m.equipmentType);
+}
+
 /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
 export function registered(bot) {
-  return bot.vehicle ? REGISTERED_VEHICLE : REGISTERED;
+  if (!bot.vehicle) return REGISTERED;
+  return movesToFixed(bot) ? REGISTERED_FIXED : REGISTERED_VEHICLE;
+}
+
+/** The modifier column the active behaviour applies (its row's inhibitor). */
+function inhibitorOf(bot, active) {
+  if (active === BEHAVIOUR.Change && FIXED_CHANGE_UNIT_WEIGHTS.has(bot.vehicle?.equipmentType)) return UNIT_WEIGHTS;
+  return INHIBITOR[active] ?? UNIT_WEIGHTS;
 }
 
 /** The page reads `objective`, `objectiveGoal`, `goalReached`. */
@@ -172,6 +202,12 @@ export function hasPlan(bot) {
 }
 
 export function decisionMaking(bot, now, dt) {
+  // `stepMoveInclination` / `stepFireInclination` (0x08520660 / 0x0852066a),
+  // before anything is weighed: last decision's adds are folded in (AI-148).
+  // The viewer decides every 30 Hz tick; the engine's bot manager decides
+  // each bot as its time budget allows (`actionDecisionMaking` 0x0849aeb0, a
+  // priority heap not read), so here the smoothing runs at least as fast.
+  if (bot.inclination) stepInclination(bot.inclination);
   const hasPlan = bot._hasPlan();
   const active = hasPlan ? bot.currentBehaviour : null;
   const activeFor = active ? now - bot.behaviourChosenAt : 0;
@@ -180,7 +216,7 @@ export function decisionMaking(bot, now, dt) {
     let mod = bot._currentMod(name);
     if (active) {
       const curve = name === active ? curveOf(bot, active)(activeFor) : 1.0;
-      mod *= curve * ((INHIBITOR[active] ?? UNIT_WEIGHTS)[name] ?? 1.0);
+      mod *= curve * (inhibitorOf(bot, active)[name] ?? 1.0);
     }
     if (mod > 0) bot.urgency[name] = bot._generate(name, mod, now, dt, true);
     // else: not evaluated, the old urgency stands.
@@ -236,8 +272,25 @@ export function quotientChanged(bot, name) {
 export function generate(bot, name, mod, now, dt, planned) {
   switch (name) {
     case BEHAVIOUR.Idle: return mod;
-    case BEHAVIOUR.MoveTo: return bot._urgencyMoveTo(mod);
-    case BEHAVIOUR.Fire: return bot._urgencyFire(mod, now);
+    case BEHAVIOUR.MoveTo: {
+      // `BBMoveToFixed` 0x08575680 publishes its own product and returns 0;
+      // `BBMoveTo` 0x08574f80 adds the urgency it returns (0x08574fdb). Both
+      // feed the move inclination (AI-148, AI-149).
+      if (movesToFixed(bot)) return urgencyMoveToFixed(bot, mod);
+      const u = bot._urgencyMoveTo(mod);
+      addInclination(bot.inclination, 'move', u);
+      return u;
+    }
+    case BEHAVIOUR.Fire: {
+      // Every `BBFire*` adds the urgency it returns to the fire inclination
+      // (`BBFire::calculateUrgency` 0x08563570: `call *0x164` at 0x08563623,
+      // 0x0856545f, 0x08565614).
+      // `BBFireUnarmed`'s threat score (the Passenger and Car rows) is not
+      // read: those rows add nothing here.
+      const u = bot._urgencyFire(mod, now);
+      addInclination(bot.inclination, 'fire', u);
+      return u;
+    }
     case BEHAVIOUR.Scout: return bot._urgencyScout(mod, now, dt);
     case BEHAVIOUR.TakeCover: return bot._urgencyTakeCover(mod, now);
     case BEHAVIOUR.Special: return bot._urgencySpecial(mod, now);
@@ -267,6 +320,38 @@ export function urgencyMoveTo(bot, mod) {
   bot._orderUrgency = u > 0 ? u * mod : 0;
   if (bot.vehicle && !bot.vehicle.drives) return 0;
   return u > 0 ? u * mod : 0;
+}
+
+/**
+ * `BBMoveToFixed::calculateUrgency` 0x08575680, the MoveTo of a unit that
+ * cannot move (AI-149). The behaviour keeps one float per bot (+0x28). When
+ * the SAI's ordered area for the bot differs from the area it stands in
+ * (`SAI::getBotOrderedPos` vt+0x7c against `getBotCurrentPos` vt+0x78,
+ * 0x085757e5), the slot is read again off the bot's order list at the unit's
+ * position (`WaypointList` vt+8 over `getWaypoints` vt+0x40, 0x0857580e);
+ * either way it is then multiplied by `(1 + r31)(1 - r2c)(1 - r24)` and the
+ * pass's modifier and stored (0x08575862..0x08575871), so in the area it was
+ * ordered to it compounds. Above 0 it goes to the move inclination
+ * (`addToMoveInclination`, vt+0x160); the urgency returned is 0. The radio
+ * terms are 1 (no radio in the viewer); `isOrderedBehaviour`'s memory
+ * factor (a human's order) is not modelled. A freed bot keeps its list
+ * (`BotInfo::free` 0x08637910 writes only the SAI's record), so a gunner the
+ * SAI let go still reads the order that brought him.
+ */
+export function urgencyMoveToFixed(bot, mod) {
+  const pos = bot.saiPos ?? null;
+  if ((pos?.ordered ?? null) !== (pos?.current ?? null)) {
+    const list = bot.orderList ?? bot.waypoints ?? null;
+    const u = list?.urgency ? list.urgency(bot.position[0], bot.position[2], bot._pathRadius(), bot.position[1]) : 0;
+    bot.moveToFixed = Math.fround(u);
+  }
+  bot.moveToFixed = Math.fround(mod * bot.moveToFixed);
+  // `fucompp` with 0 then `test $1,%ah` (0x08575892): a NaN passes too.
+  if (!(bot.moveToFixed <= 0) && bot.inclination) {
+    bot.inclination.moveAcc = Math.fround(bot.inclination.moveAcc + bot.moveToFixed);
+  }
+  bot._orderUrgency = bot.moveToFixed;
+  return 0;
 }
 
 /** `Bot::getMaxPathPosRemovalDistance` for the unit the bot controls. */

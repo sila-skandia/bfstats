@@ -529,9 +529,13 @@ export class StrategicAI {
       }
     }
     // Free bots hold where they are (`retainBot`: an empty route = this
-    // area), re-ordered every 20 s while idle.
+    // area), re-ordered every 20 s while idle. `retainBot` 0x08641ba0 orders
+    // only a unit with a Mobile plug-in (+0x10 bit 2) that is a unit (bit
+    // 3): a free bot in a fixed gun or a seat is left with the order it had
+    // (AI-149).
     for (const b of myBots) {
       if (!b.free) continue;
+      if (this.unitOf?.(b.id)?.mobile === false) continue;
       if (this.time - b.orderedAt < SAI.reorderIdle) continue;
       const p = alive.get(b.id);
       const area = b.area ?? this.layer.nearestArea(p[0], p[2]);
@@ -569,6 +573,10 @@ export class StrategicAI {
    */
   _order(bot, area, side) {
     const unit = this.unitOf?.(bot.id) ?? null;
+    // `orderBot` 0x08640760 tests the Mobile plug-in first (+0x10 bit 2): a
+    // unit without one, a fixed gun or a seat that does not drive, is
+    // ordered as a fixed unit, whatever it rides in.
+    if (unit?.mobile === false) return this._orderFixed(bot, area, side, unit);
     if (unit?.air) return this._orderAir(bot, area, side, unit);
     const type = unit?.type ?? INFANTRY_TYPE;
     if (type === LANDING.unitType && this.zones.size) {
@@ -585,6 +593,24 @@ export class StrategicAI {
       if (!valid || valid(cand[0], cand[1])) { point = cand; break; }
     }
     if (!point) point = this.layer.orderPosition(area, type, valid);
+    return this._moveTo(bot, area, side, point, R, type);
+  }
+
+  /**
+   * `AIStrategicArea::orderFixedBot` 0x08641700 (no route): one point,
+   * `randomizePos(side, 0.8)` with no validity test (25 m over the ground,
+   * which the 2D order drops), and the radius `0.25 x` the side's radius
+   * with no unit term (0x0864189c), at least 5 (`WPMoveTo` ctor). The unit
+   * never walks it: `BBMoveToFixed` reads its urgency at the unit (AI-149).
+   */
+  _orderFixed(bot, area, side, unit) {
+    const R = Math.max(SAI.waypointRadiusMin, this.layer.sideRadius(area, side) * SAI.waypointRadiusFraction);
+    const point = this.layer.randomizePos(area, SAI.randomizeFraction, this.random);
+    return this._moveTo(bot, area, side, point, R, unit?.type ?? INFANTRY_TYPE);
+  }
+
+  /** The `WPMoveTo` both orders build, set as the bot's. */
+  _moveTo(bot, area, side, point, R, type) {
     const layer = this.layer;
     bot.orderedAt = this.time;
     bot.waypoints = {

@@ -14,7 +14,7 @@ import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
-import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
+import { tankControl, unitUrgency, changeUrgency, inclinationSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
 import { groupBallistics, aimerDrag } from './bot-pilot.js';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
@@ -362,10 +362,10 @@ function tankLawScenario() {
  *  a jeep 95 m away barely does; a unit manned by the enemy is filtered
  *  before scoring (the caller's business) so only the numbers are pinned. */
 function changeScenario() {
-  const split = orderSplit(0, 0);
-  const foot = unitUrgency({ health: 1, strengths: { Infantry: 4 }, presence: { Infantry: 1 }, maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: split });
-  const sherman = unitUrgency({ health: 1, strengths: { Infantry: 10, LightArmour: 7, HeavyArmour: 2 }, presence: { Infantry: 1 }, maxSpeed: 16, value: 3, orderSplit: split });
-  const willy = unitUrgency({ health: 1, strengths: {}, presence: { Infantry: 1 }, maxSpeed: 25, value: 1, orderSplit: split });
+  const split = inclinationSplit(0, 0);
+  const foot = unitUrgency({ health: 1, strengths: { Infantry: 4 }, presence: { Infantry: 1 }, maxSpeed: TANK.soldierMaxSpeed, value: 1, split });
+  const sherman = unitUrgency({ health: 1, strengths: { Infantry: 10, LightArmour: 7, HeavyArmour: 2 }, presence: { Infantry: 1 }, maxSpeed: 16, value: 3, split });
+  const willy = unitUrgency({ health: 1, strengths: {}, presence: { Infantry: 1 }, maxSpeed: 25, value: 1, split });
   const near = changeUrgency({ staying: foot, candidates: [{ id: 's', u: sherman, dist: 10 }], mod: 1.9 });
   const far = changeUrgency({ staying: foot, candidates: [{ id: 'w', u: willy, dist: 95 }], mod: 1.9 });
   const none = changeUrgency({ staying: foot, candidates: [], mod: 1.9 });
@@ -484,8 +484,8 @@ function strengthScenario() {
   const rootFromGunner = fireStrength({ table: {}, others: [{ table: { Infantry: 15 }, occupied: false }], myType: 'LightArmour',
                                         enemyStrengths: tables.strengths, enemyTypes: tables.types });
   const foot = unitUrgency({ health: 1, fire: fireStrength({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry', enemyStrengths: tables.strengths, enemyTypes: tables.types }),
-                             maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: [0.5, 0.5] });
-  const tank = unitUrgency({ health: 1, fire: vsInfantry, maxSpeed: 16, value: 3, orderSplit: [0.5, 0.5] });
+                             maxSpeed: TANK.soldierMaxSpeed, value: 1, split: [0.5, 0.5] });
+  const tank = unitUrgency({ health: 1, fire: vsInfantry, maxSpeed: 16, value: 3, split: [0.5, 0.5] });
   return { sherman, types: tables.types, strengths: tables.strengths, vsInfantry, unknown, withGunner, fixedBlind, fixedStrategic, gunnerFromDriver, rootFromGunner, foot, tank,
            heat: [engineHeatInfluence(0.5), engineHeatInfluence(0.975)], radius: CHANGE.searchRadius };
 }
@@ -1339,7 +1339,10 @@ function stalemateScenario() {
     waypoints: guns ? { guns } : null,
     senses: { spottedEnemies: () => spotted.map(pos => ({ pos })) },
     world: { players: new Map([['foe', { team: 2, position: [0, 0, 200] }]]), armorOf: () => null },
-    _nearestEnemyFlag: () => ({ position: [0, 0, 500] }),
+    // The SAI's order: an area whose one neighbour, 500 m along +z, the
+    // enemy holds (the strategic direction, AI-151).
+    strategicLayer: { neighboursOf: () => [{ centre: [0, 500] }], ownerOf: () => 2 },
+    saiPos: { ordered: { centre: [0, 0] }, current: null },
   });
   const gunCand = { pos: [0, 0, 0], weapons: [{ maxRange: 300 }], yawLimits: null, hullYaw: 0 };
   const quietBot = (guns) => ({ ...gunBot(guns, []), world: { players: new Map(), armorOf: () => null } });
@@ -1434,6 +1437,113 @@ results.roundGravity = {
              groupBallistics(group, 600, null).speed, groupBallistics(group, 600, { exitVelocity: -5 }).speed],
     aimerOnly: [aimerOnlyHolds(gunBot({ useAimerOnly: true }), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), off),
                 aimerOnlyHolds(gunBot({}), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), { valid: false, dir: [0, 0, -1] })],
+  };
+}
+
+// A seated gunner's Change (features/bot-desert-combat section 12): the
+// inclinations (AI-148), `BBMoveToFixed` (AI-149), the unit terms the change
+// of controlled object scales (AI-150), the fixed gun's strategic directions
+// and camera window (AI-151), the immobile primary's bail (AI-152).
+{
+  const { stepInclination, newInclination, addInclination } = await import('./bot-vehicle.js');
+  const { urgencyMoveToFixed, movesToFixed, registered } = await import('./bot-decision.js');
+  const { strategicDirections, cameraValidates, unitValue, scaleUnitValue, UNIT_VALUE_SCALE } = await import('./bot-mount.js');
+  const split = [inclinationSplit(0, 0), inclinationSplit(0, 2), inclinationSplit(3, 0), inclinationSplit(3, 1),
+                 inclinationSplit(Infinity, 1), inclinationSplit(NaN, 1)];
+  // The step: a 5 added once is 1 after one step, then decays 0.8 a step and
+  // stops on the smallest denormal instead of reaching 0.
+  const inc = newInclination();
+  addInclination(inc, 'move', 5);
+  stepInclination(inc);
+  const afterOne = inc.move;
+  for (let i = 0; i < 2000; i++) stepInclination(inc);
+  const floor = inc.move;
+  // `BBMoveToFixed`: read off the order while the ordered area is not the one
+  // the unit stands in, else the stored value x the modifier.
+  const A = { name: 'A', centre: [0, 0] }, B = { name: 'B', centre: [100, 0] };
+  const fixedBot = { vehicle: { equipmentType: 4 }, position: [0, 0, 0], inclination: newInclination(),
+                     moveToFixed: 0, saiPos: { ordered: A, current: B },
+                     orderList: { urgency: () => 2 }, _pathRadius: () => 1 };
+  const reads = [];
+  reads.push(urgencyMoveToFixed(fixedBot, 1.5), fixedBot.moveToFixed);
+  fixedBot.saiPos = { ordered: A, current: A };
+  fixedBot.orderList = { urgency: () => 0 };
+  reads.push(urgencyMoveToFixed(fixedBot, 1.5), fixedBot.moveToFixed, fixedBot.inclination.moveAcc);
+  for (let i = 0; i < 300; i++) urgencyMoveToFixed(fixedBot, 1.5);
+  const compounded = fixedBot.moveToFixed;
+  // An order the unit stands inside of, owned: 0, nothing added.
+  const quietBot = { ...fixedBot, inclination: newInclination(), moveToFixed: 0, saiPos: { ordered: null, current: A } };
+  urgencyMoveToFixed(quietBot, 1.5);
+  // The rows: a fixed gun and a hull's MG seat run the Fixed rows, a driver
+  // and a soldier do not.
+  const rows = [registered({ vehicle: { equipmentType: 4 } }), registered({ vehicle: { equipmentType: 0, drives: true } }),
+                registered({ vehicle: null })];
+  const moves = [movesToFixed({ vehicle: { equipmentType: 4 } }), movesToFixed({ vehicle: { equipmentType: 8 } }),
+                 movesToFixed({ vehicle: { equipmentType: 0 } }), movesToFixed({ vehicle: null })];
+  // The strategic directions: from the ordered area to its neighbours the
+  // side does not hold. B (+x) is held, C (+z) the enemy's, D (-x) neutral.
+  const C = { name: 'C', centre: [0, 100] }, D = { name: 'D', centre: [-100, 0] };
+  const owner = new Map([[B, 1], [C, 2], [D, 0]]);
+  const layer = { neighboursOf: a => (a === A ? [B, C, D] : []), ownerOf: a => owner.get(a) ?? 0 };
+  const sBot = (ordered, extra = {}) => ({ team: 1, strategicLayer: layer, saiPos: { ordered, current: A }, ...extra });
+  const dirs = strategicDirections(sBot(A));
+  const mg = { cameraMinDeg: [-70, -70, 0], cameraMaxDeg: [70, 30, 0] };
+  const flak = { cameraMinDeg: [-180, -70, 0], cameraMaxDeg: [180, 0, 0] };
+  const quiet = (ordered, hullYaw) => fixedAimable({
+    playerId: 'me', team: 1, position: [0, 0, 0], weapons: [{ maxRange: 300 }], waypoints: null,
+    senses: { spottedEnemies: () => [] }, world: { players: new Map(), armorOf: () => null },
+    strategicLayer: layer, saiPos: { ordered, current: A },
+  }, { pos: [0, 0, 0], weapons: [{ maxRange: 300 }], controlInfo: mg, yawLimits: null, hullYaw });
+  const aimable = [quiet(A, 0), quiet(A, Math.PI / 2), quiet(null, 0)];
+  const below = [0, -Math.sin(0.05), Math.cos(0.05)], above = [0, Math.sin(0.3), Math.cos(0.3)];
+  const pitch = [cameraValidates(flak, null, 0, [0, 0, 1]), cameraValidates(flak, null, 0, below),
+                 cameraValidates(flak, null, 0, above), cameraValidates(mg, null, 0, below)];
+  // The unit terms: a seat taken x4/3, the soldier left x0.75; back again.
+  const vBot = { unitValueScale: new Map(), soldierValueScale: 1 };
+  const gunCand = { id: 'gun:AA', value: 9 };
+  scaleUnitValue(vBot, null, UNIT_VALUE_SCALE.left);
+  scaleUnitValue(vBot, gunCand, UNIT_VALUE_SCALE.taken);
+  const seated = [unitValue(vBot, gunCand), vBot.soldierValueScale];
+  scaleUnitValue(vBot, gunCand, UNIT_VALUE_SCALE.left);
+  scaleUnitValue(vBot, null, UNIT_VALUE_SCALE.taken);
+  const back = [unitValue(vBot, gunCand), vBot.soldierValueScale];
+
+  // A bot in a quiet AA gun whose side knows a strong enemy: what makes him
+  // get out is a move inclination with no fire one to answer it.
+  const world = makeWorld();
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags[0] });
+  const bot = new BotController({ playerId: 'bot_0', world, botSkill: 0.75 });
+  bot.navGrid = null;
+  const aa = { maxRange: 300, strength: { Infantry: 10, LightArmour: 3, HeavyArmour: 2, Air: 5 } };
+  const seats = [{ seatId: 'AA', isRoot: true, occupied: true, table: aa.strength, strType: 'LightArmour' }];
+  const gun = { id: 'v1:AA', vehicleId: 'v1', seatId: 'AA', kind: 'gun', isRoot: true, drives: false, value: 9,
+                pos: [100, 0, -150], seatPos: [100, 0, -150], health: 1, upright: true, noPathfinding: true,
+                controlInfo: { cameraMinDeg: [-180, -80, 0], cameraMaxDeg: [180, 2, 0] }, hullYaw: 0, yawLimits: null,
+                weapons: [aa], strengths: aa.strength, seats, occupiedBy: 'bot_0', strType: 'LightArmour',
+                template: 'AA_Allies', equipmentType: 4, seatFactor: 1 };
+  bot.vehicleCandidates = [gun];
+  bot.mount({ ...gun, weapons: [{ name: 'AA_BaseMainGun', ...aa }], occupancy: null }, 0);
+  bot.position = [100, 0, -150];
+  bot.enemyTables = { passes: 1, types: { Infantry: 1 }, strengths: { Infantry: 24 } };
+  bot.unitValueScale = new Map([[gun.id, UNIT_VALUE_SCALE.taken]]);
+  bot.soldierValueScale = UNIT_VALUE_SCALE.left;
+  bot.strategicLayer = layer;
+  bot.saiPos = { ordered: A, current: A };
+  bot._lastChangeAt = -100;
+  const change = (move, fire) => {
+    bot.inclination = { move, fire, moveAcc: 0, fireAcc: 0 };
+    bot._changeResult = null;
+    const u = bot._urgencyChange(1.9, 0);
+    return { urgency: u, best: bot._changeResult?.best?.id ?? null, bail: !!bot._changeResult?.bail };
+  };
+  results.gunners = {
+    split: split.map(w => w.map(String)), afterOne, floor, reads, compounded: String(compounded), quietValue: quietBot.moveToFixed, quietAcc: quietBot.inclination.moveAcc,
+    rows, moves, dirs, aimable, pitch, seated, back,
+    stays: [change(0, 0), change(0.2, 6), change(3, 1e-30)],
+    bailGun: [bailAllowedAt({ blocked: new Uint8Array(4).fill(CELL_OBJECT), width: 2, height: 2, cellSize: 1 }, [0.5, 0, -0.5],
+                            { kind: 'gun', isRoot: true }),
+              bailAllowedAt({ blocked: new Uint8Array(4).fill(CELL_OBJECT), width: 2, height: 2, cellSize: 1 }, [0.5, 0, -0.5],
+                            { kind: 'tank', isRoot: false })],
   };
 }
 

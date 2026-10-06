@@ -22,6 +22,7 @@ import { weaponAiOf, FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
 import { REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
 import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
+import { newInclination } from './bot-vehicle.js';
 import { PoseRequests, POSE_CONTROL, waterDepthAt } from './bot-pose.js';
 import * as aiming from './bot-aim.js';
 import * as perception from './bot-perception.js';
@@ -168,6 +169,27 @@ export class BotController {
     this.scout = new ScoutState();
     this.cover = new TakeCoverState();
     this.medic = new MedicState();
+    /** The move and fire inclinations the Change behaviour splits its
+     *  weights by (`BotMain` +0x1a0 / +0x1a4, bot-vehicle.js
+     *  `inclinationSplit`, AI-148): the bot's own, kept across its lives. */
+    this.inclination = newInclination();
+    /** `BBMoveToFixed`'s slot for this bot (AI-149): the urgency it last
+     *  read off the bot's order, scaled each pass. */
+    this.moveToFixed = 0;
+    /** The order list the bot holds (`BotMain` +0x7c): the last order the
+     *  strategic layer gave it, kept when the SAI frees it (AI-149). */
+    this.orderList = null;
+    /** `SAI::getBotOrderedPos` / `getBotCurrentPos` (the bot record's +4 and
+     *  +0xc): the area of its order, null when free, and the area it is
+     *  in. The referee writes them each tick. */
+    this.saiPos = null;
+    /** `Information+0x14` of the bot's own soldier as `updateBotVehicle`
+     *  0x0852c800 leaves it: x0.75 for each unit he takes, x4/3 back on
+     *  foot (AI-150); a new soldier each life starts at 1. */
+    this.soldierValueScale = 1;
+    /** The same scale for the hulls' and guns' seats, shared by every bot
+     *  (the referee's `unitValueScale`, keyed by candidate id). */
+    this.unitValueScale = null;
     /** The land vehicle the bot drives, from the page's `mount` (null on foot). */
     this.vehicle = null;
     /** The page's list of enterable driver seats (`botVehicleCandidates`). */
@@ -364,6 +386,9 @@ export class BotController {
     this._bestGoalDist = null; this._noProgress = 0;
     // A new body stands (INFERRED: the `BotMain` ctor's state, 0x0851d46e..).
     this.poseRequest.reset(); this.stanceInput = 'stand';
+    // A new soldier object, a new Information: its `+0x14` is the template's
+    // again (AI-150). The inclinations are the bot's and stay (AI-148).
+    this.soldierValueScale = 1;
   }
 
   // -----------------------------------------------------------------------

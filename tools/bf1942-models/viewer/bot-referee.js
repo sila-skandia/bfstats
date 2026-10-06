@@ -40,6 +40,7 @@ import { spawnBots } from './bot.js';
 import { EnemyStrengthTables } from './bot-strength.js';
 import { disembarkPath, DISEMBARK, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { playerPosition } from './bot-sense.js';
+import { scaleUnitValue, UNIT_VALUE_SCALE } from './bot-mount.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
@@ -456,6 +457,22 @@ export function createBotReferee(env) {
     return navMs;
   };
 
+  /** `Information+0x14` scales of the seats bots have left and taken
+   *  (bot-mount.js `unitValue`, AI-150), by candidate id. */
+  referee.unitValueScale = new Map();
+
+  /**
+   * The SAI's two positions for a bot (`SAI::getBotOrderedPos` 0x086364c0,
+   * `getBotCurrentPos` 0x08636490: the bot record's +4 and +0xc): the area
+   * it is assigned to, null while it is free (`BotInfo::free` 0x08637910
+   * writes -1), and the area it is in. Null without a strategic layer.
+   */
+  referee.saiPosOf = (id) => {
+    const rec = referee.strategy?.sai?.bots?.get(id) ?? null;
+    if (!rec) return null;
+    return { ordered: rec.free ? null : (rec.assignedTo ?? null), current: rec.area ?? null };
+  };
+
   /** Per frame (the page) or per tick (the runner), after the world step. */
   referee.tick = (dt) => {
     if (!referee.bots.length) return;
@@ -495,6 +512,13 @@ export function createBotReferee(env) {
     for (const bot of referee.bots) {
       if (referee.respawnTick(bot, dt)) continue;   // dead and waiting out its timer
       bot.waypoints = strategy?.waypointsOf(bot.playerId) ?? null;
+      // The order list the bot holds (`BotMain` +0x7c) survives the SAI
+      // freeing it (`BotInfo::free` 0x08637910 touches only the SAI's
+      // record); `BBMoveToFixed` reads it (AI-149).
+      if (bot.waypoints) bot.orderList = bot.waypoints;
+      bot.saiPos = referee.saiPosOf(bot.playerId);
+      bot.strategicLayer = strategy?.layer ?? null;
+      bot.unitValueScale = referee.unitValueScale;
       if (env.tickBot) env.tickBot(bot, dt, referee.clock);
       else bot.tick(dt, referee.clock);
       env.afterBotTick?.(bot, dt);
@@ -1075,8 +1099,14 @@ export function createBotReferee(env) {
       : m.kind === 'ship' ? (m.landingCraft ? 'LandingCraft' : 'Boat')
       : m.kind === 'air' ? 'Plane' : 'Infantery';
     const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? units()?.vehicleNav() ?? null : null);
+    // `mobile`: the unit's Information has a Mobile plug-in (+0x10 bit 2),
+    // which only a driven hull's root carries: a fixed gun and every seat
+    // that does not drive are ordered as fixed units (`orderBot` 0x08640760
+    // -> `orderFixedBot` 0x08641700) and never retained (`retainBot`
+    // 0x08641ba0), AI-149.
     return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true,
-             air: m.kind === 'air', root: !!m.isRoot, fixed: m.kind === 'gun', groundAt: (x, z) => bot._groundAt(x, z) };
+             air: m.kind === 'air', root: !!m.isRoot, fixed: m.kind === 'gun', mobile: !!m.drives && m.kind !== 'gun',
+             groundAt: (x, z) => bot._groundAt(x, z) };
   };
 
   // --- seating ------------------------------------------------------------------
@@ -1093,6 +1123,10 @@ export function createBotReferee(env) {
     // changed tells its SAI (`setBotHasChangedEquipment` -> `handleChangingBot`
     // 0x08631450), which drops its assignment and frees it for a fresh order.
     referee.strategy?.botChangedUnit(bot.playerId);
+    // `updateBotVehicle` 0x0852c800: the soldier he left x0.75, the seat he
+    // took x4/3 (AI-150).
+    scaleUnitValue(bot, null, UNIT_VALUE_SCALE.left);
+    scaleUnitValue(bot, cand, UNIT_VALUE_SCALE.taken);
     bot.mount(mount, referee.clock);
     u.invalidate?.();
     env.onMounted?.(bot, cand, mount);
@@ -1130,6 +1164,13 @@ export function createBotReferee(env) {
       soldier.spawn(x, yy, z, p.exit ? p.exit.yaw : Math.atan2(f[0], f[1]));
       bot.setPosition(soldier.x, soldier.y, soldier.z);
     }
+    // `updateBotVehicle`: alive, the seat he left x0.75 and his soldier x4/3
+    // (AI-150); a bot killed aboard has no controlled object to change to,
+    // and nothing is scaled.
+    if (!killed) {
+      scaleUnitValue(bot, m, UNIT_VALUE_SCALE.left);
+      scaleUnitValue(bot, null, UNIT_VALUE_SCALE.taken);
+    }
     bot.dismount(referee.clock);
     // Out of a landing craft's hold, over the bow before anything else
     // (doctrine-landing.js `disembarkPath`, bot-route.js `steerToward`).
@@ -1148,8 +1189,12 @@ export function createBotReferee(env) {
    *  changes. */
   referee.switchSeat = (bot, cand) => {
     const u = units();
+    const old = bot.vehicle;
     const mount = u?.switchSeat(bot, cand);
     if (!mount) return false;
+    // `updateBotVehicle`: the seat left x0.75, the seat taken x4/3 (AI-150).
+    scaleUnitValue(bot, old, UNIT_VALUE_SCALE.left);
+    scaleUnitValue(bot, cand, UNIT_VALUE_SCALE.taken);
     bot.dismount(referee.clock);
     const record = world().player(bot.playerId);
     if (record) record.vehicleStrType = cand.strType;
@@ -1167,6 +1212,13 @@ export function createBotReferee(env) {
     if (!u) return;
     u.tick?.();
     const cands = u.candidates();
+    // A hull no longer listed (a wreck, gone) takes its scales with it: the
+    // one that respawns is a new object with new Informations (AI-150).
+    if (referee.unitValueScale.size) {
+      const live = new Set();
+      for (const c of cands) { live.add(c.id); for (const d of c.doorless ?? []) live.add(d.id); }
+      for (const id of [...referee.unitValueScale.keys()]) if (!live.has(id)) referee.unitValueScale.delete(id);
+    }
     for (const bot of referee.bots) {
       bot.vehicleCandidates = cands;
       if (bot.vehicle) {
