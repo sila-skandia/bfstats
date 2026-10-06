@@ -57,6 +57,15 @@ class ControlPointLawTests(unittest.TestCase):
         # The old per-bot law traded it eleven times in the same two minutes.
         self.assertEqual(self.r["oldLawTrades"], 11)
 
+    def test_a_zero_capture_time_takes_the_point_at_once(self) -> None:
+        # `handleFrameUpdate` gets control only while the get timer is above
+        # 0 and takes it otherwise, the same frame (0x08283c65..0x08283c76).
+        self.assertEqual(self.r["instantSettings"]["timeToGet"], 0)
+        i = self.r["instant"]
+        self.assertEqual(i["team"], 2)
+        self.assertEqual(len(i["events"]), 1)
+        self.assertAlmostEqual(i["events"][0]["t"], 1 / 30, places=3)
+
     def test_the_other_settings(self) -> None:
         self.assertEqual(self.r["empty"], {"team": 1, "events": []})
         self.assertEqual(self.r["emptyLoses"]["team"], 0)
