@@ -322,6 +322,26 @@ export class SoldierBody {
   }
 
   /**
+   * A tick the climb took whole, so `step` did not run (`soldier.js`
+   * `#stepLadder`). The engine's climber is still a physics node, but
+   * `handlePlayerInput` stores the climb's own velocity into it every tick
+   * (`setPositionalSpeed`, LADDER-4) and each tick's integrate spends and
+   * zeroes the accumulator (`0x082562aa`, KNOCK-6): a blast's push lasts the
+   * tick it lands in and never the climb. So the banked speed is dropped here,
+   * not held for the first tick off the ladder (the one tick of drift it
+   * would have given is not modelled), and the explosion clocks run on at
+   * the climb's own speed, which throws nobody.
+   */
+  climbTick(dt, input = {}) {
+    this._blastDv.x = this._blastDv.y = this._blastDv.z = 0;
+    const v = this.body.velocity;
+    this.knockback?.update({
+      dt, dead: Boolean(input.dead), vx: v.x, vy: v.y, vz: v.z, yaw: this.yaw,
+      canopy: this.parachute, contact: null,
+    });
+  }
+
+  /**
    * Let the resolve pass through one hull's collision for `seconds`.
    *
    * For a man stepping out of a moving aircraft. The exit location puts him
