@@ -13,7 +13,9 @@
 //
 // What is the firer's own:
 //   - a bot's AI term (`FireArms::setAIDeviation` 0x0828e350, the sixth
-//     channel `+0x190`, bot.js `deviation.aiPending`), added to the total;
+//     channel `+0x190`, bot.js `deviation.aiPending`), added to the total,
+//     and the extra update his trigger statement runs every tick, which
+//     decays his bloom twice a tick (DEV-13, `FireState.holdAI`);
 //   - where in the square the round lands. A human's two draws come off the
 //     guns' own dice (`round-launch.js deviate`, as his hand weapon's do); a
 //     bot's are the one fixed point AI-145 reads, barrel by barrel
@@ -52,6 +54,10 @@ export function seatConeOf({ stateOf, firerOf, botOf = null }) {
     cone.total = state.total + (bot ? bot.deviation?.aiPending ?? 0 : 0);
     cone.dice = null;
     if (bot) {
+      // His trigger statement's own update, every tick to his next round
+      // (DEV-13): the gap a held burst leaves, and a tick over.
+      const rate = group.stats?.roundOfFire;
+      state.holdAI?.(Math.ceil(30 / (rate > 0 ? rate : 10)) + 1);
       const [up, right] = BOT_DEVIATION_POINTS[Math.max(0, barrel) % BOT_DEVIATION_POINTS.length];
       fixed.draws[0] = (up + 1) / 2;
       fixed.draws[1] = (right + 1) / 2;
