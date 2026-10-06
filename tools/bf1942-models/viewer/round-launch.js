@@ -200,8 +200,8 @@ function fireRound(guns, group, muzzle) {
  * a BF1942 rifle hits what the crosshair covers regardless of where the
  * viewmodel's barrel points — and for a vehicle's coaxial or pintle MG the
  * seat camera's, which is handed the barrel so its own offset rides along
- * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then wanders the direction
- * inside the deviation cone, on either path.
+ * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then pushes the round off
+ * that line by the deviation cone (`deviate`), on either path.
  */
 function muzzleVelocity(guns, muzzle, group, speed, out) {
   const ray = group.aimRay?.(muzzle);
@@ -215,41 +215,61 @@ function muzzleVelocity(guns, muzzle, group, speed, out) {
     out.set(0, 0, -1).applyQuaternion(_aim);
   }
   const spread = group.spreadDeg?.() || 0;
-  if (spread > 0) wander(guns, out, spread);
+  if (spread > 0) deviate(guns, out, spread, ray ? null : _aim);
   // On the ray path `_aim` still has to say which way the round points — a
   // bazooka's drawn rocket takes its first-frame orientation from it — and
-  // it is taken after the wander so the rocket points where it is going.
-  if (ray) _aim.setFromUnitVectors(_minusZ, out);
+  // it is taken after the deviation so the rocket points where it is going.
+  if (ray) _aim.setFromUnitVectors(_minusZ, _direction.copy(out).normalize());
   out.multiplyScalar(speed);
   const platform = group.platformVelocity?.();
   if (platform) out.add(platform);
   return out;
 }
 
+/** Below this total the engine draws no deviation at all (DEV-9). */
+export const DEVIATION_FLOOR = 0.01;
+
 /**
- * Rotate `dir` to a random direction inside a cone of `degrees` half-angle.
+ * Push the unit direction `dir` off its line by a deviation cone of `total`,
+ * the engine's way (ledger DEV-9, lnxded `FireArms::fireBarrel` `0x0828aba0`).
  *
- * The polar angle is `spread x sqrt(u)` — uniform over the cone's cross
- * section rather than over its rim or its axis, so a burst paints a disc the
- * way a target card looks, not a ring and not a hot centre. The azimuth is
- * free. Both draws come from `guns.rand`, the same authority the flash
- * roll already answers to — `Math.random` unless a check has seeded it.
+ * The engine does not turn the round. It adds a lateral velocity of
+ * `u * total * velocity / 100` along each of the launch frame's up and right
+ * axes, `u` drawn uniform in (-1, +1] for each, on top of the forward
+ * `velocity`. So `total` is in hundredths of a radian (0.573 degrees), not
+ * degrees, and the pattern is a square, not a disc: a cone of 1 reaches
+ * 0.573 degrees on each axis and 0.81 degrees in a corner, where the disc
+ * this replaced reached a whole degree in every direction (1.75 times the
+ * engine's reach on each axis). Below a total of 0.01 no draw is made.
+ *
+ * `dir` is left the length the engine leaves it, `sqrt(1 + u1^2 + u2^2)` in
+ * units of the forward speed, so a deviated round is fractionally faster, as
+ * it is in the game. `frame` is the launch frame (a muzzle's world
+ * quaternion, glTF +X right and +Y up); a camera-launched round has none, and
+ * its frame is built from the line and world up, which is the camera's for a
+ * camera that does not roll. Both draws come from `guns.rand`, the same
+ * authority the flash roll answers to; the engine seeds its own from the tick
+ * and the barrel, which is why two barrels of one pull differ.
  */
-function wander(guns, dir, degrees) {
-  const theta = degrees * (Math.PI / 180) * Math.sqrt(guns.rand());
-  const phi = guns.rand() * Math.PI * 2;
-  // An orthonormal frame around the direction of fire. The up reference
-  // flips to +X when the shot is near-vertical, where up and dir would be
-  // parallel and the cross product degenerate.
-  _spreadU.set(0, 1, 0);
-  if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
-  _spreadU.cross(dir).normalize();
-  _spreadV.crossVectors(dir, _spreadU);
-  const sin = Math.sin(theta);
-  dir.multiplyScalar(Math.cos(theta))
-    .addScaledVector(_spreadU, sin * Math.cos(phi))
-    .addScaledVector(_spreadV, sin * Math.sin(phi));
-  return dir;
+function deviate(guns, dir, total, frame) {
+  if (!(total > DEVIATION_FLOOR)) return dir;
+  if (frame) {
+    _spreadU.set(1, 0, 0).applyQuaternion(frame);
+    _spreadV.set(0, 1, 0).applyQuaternion(frame);
+  } else {
+    // Right and up around the line of fire. The up reference flips to +X when
+    // the shot is near-vertical, where up and dir would be parallel and the
+    // cross product degenerate.
+    _spreadU.set(0, 1, 0);
+    if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
+    _spreadU.cross(dir).normalize();
+    _spreadV.crossVectors(dir, _spreadU);
+  }
+  const reach = total / 100;
+  // The first draw goes on the frame's up row, the second on its right row.
+  const up = (2 * guns.rand() - 1) * reach;
+  const right = (2 * guns.rand() - 1) * reach;
+  return dir.addScaledVector(_spreadV, up).addScaledVector(_spreadU, right);
 }
 
 function displaySpeed(guns, group, velocity) {
