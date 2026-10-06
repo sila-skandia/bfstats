@@ -1178,7 +1178,7 @@ class FlightModelTests(unittest.TestCase):
             # Walking off was 2.6 m/s; the bound leaves room for the origin's
             # swing as a hull staged nose-high rocks onto its gear (the
             # harness's note on the UH-60) and for the creep a held contact
-            # keeps at the engine's one step a tick (0.14-0.34 m in 20 s).
+            # keeps at the engine's one step a tick (0.27-0.35 m in 20 s).
             self.assertLess(parked["moved"], 0.5, name)
             self.assertEqual(["c_PGFDummyGrip"], parked["grips"], name)
         for name, pilot in real["pilot"].items():
