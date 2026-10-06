@@ -672,19 +672,21 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual(0, after["magsLeft"])
         self.assertTrue(after["canFire"])
 
-    def test_heat_clamps_at_one_and_blocks_fire_there(self) -> None:
-        # GUN-12's corrected `getHasHeat()` reading (`template+0x300 >
-        # template+0x304`) is a different, template-level predicate, not this
-        # runtime gate -- see `FireState.canFire`'s own comment. Blocking at
-        # heat>=1 on this viewer's [0,1] scale follows the corrected report's
-        # Viewer Recipe ("clamp [0,1] ... block fire ... on reaching 1.0"),
-        # an approximation of the real trigger, not a confirmed comparison.
-        self.assertTrue(self.results["fireState"]["heatClampsAtOne"])
-
-    def test_overheat_blocks_fire_for_the_declared_delay_then_releases_it(self) -> None:
+    def test_heat_is_not_clamped_and_blocks_fire_from_one(self) -> None:
+        # `Fire` adds `heatAddWhenFire` with no clamp and refuses a pull made
+        # at heat 1 or more (ledger GUN-14, lnxded 0x0828a0d3).
         fs = self.results["fireState"]
+        self.assertAlmostEqual(1.2, fs["heatAfterShots"], places=3)
         self.assertFalse(fs["overheatedCanFire"])
+
+    def test_overheat_locks_for_the_declared_delay_then_the_barrel_drains(self) -> None:
+        # GUN-15: nothing drains while the lockout runs, so a gun that went
+        # past 1 is still hot when it ends and fires again only once the
+        # per-tick drain has taken it under 1.
+        fs = self.results["fireState"]
         self.assertAlmostEqual(2.0, fs["overheatRemainingAfterShots"], delta=0.2)
+        self.assertAlmostEqual(1.2, fs["heatInLockout"], places=3)
+        self.assertFalse(fs["canFireAfterLockout"])
         self.assertTrue(fs["canFireAfterCooldown"])
 
     def test_unlimited_ammo_sentinel_never_blocks_on_ammo(self) -> None:

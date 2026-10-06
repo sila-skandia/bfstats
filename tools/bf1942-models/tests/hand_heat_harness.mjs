@@ -9,6 +9,7 @@
 // this is the barrel alone.
 
 import { KitAmmo, itemHeat } from './kit-ammo.mjs';
+import { FireState } from './fire-state.js';
 import { writeSoldierAmmo } from './soldier-hud.js';
 
 // The weapons' blocks as `extract_viewmodel.py` writes them (`weaponStats`),
@@ -119,6 +120,41 @@ out.hold = {
   m249: hold(M249, 30),
   pkm: hold(PKM, 30),
   m249At30: hold(M249, 30, 30),
+};
+
+/**
+ * A seat's gun held for `seconds`: `world-vehicle-tick.js` steps its
+ * `FireState` once a world tick and gates the trigger on it, and the gun
+ * fires in that tick's `guns.advance`. Vanilla's own numbers (the glbs'
+ * FireArms extras): the stationary MG42, the pintle Browning, the coaxial
+ * Browning.
+ */
+function holdSeat(stats, seconds) {
+  const state = new FireState(stats);
+  const tick = Math.fround(1 / 30);
+  const period = Math.fround(1 / Math.fround(stats.roundOfFire));
+  let cooldown = 0;
+  let rounds = 0;
+  let firstRefused = null;
+  for (let i = 0; i * (1 / 30) < seconds; i++) {
+    state.step(1 / 30);
+    const firing = state.canFire;
+    if (!firing && firstRefused === null) firstRefused = { t: i / 30, rounds };
+    if (firing && cooldown <= 0) {
+      state.registerShot(1);
+      rounds += 1;
+      cooldown = period;
+    }
+    if (cooldown > 0) cooldown = Math.max(0, Math.fround(cooldown - tick));
+  }
+  return { rounds, firstRefused };
+}
+const heatOnly = (roundOfFire, heatAddWhenFire, coolDownPerSec) =>
+  ({ magSize: -1, roundOfFire, heatAddWhenFire, coolDownPerSec, timeDelayOnOverheat: 2 });
+out.seats = {
+  mg42: holdSeat(heatOnly(15, 0.04, 0.4), 20),
+  browning: holdSeat(heatOnly(10, 0.04, 0.4), 20),
+  coax: holdSeat(heatOnly(12, 0.05, 0.3), 20),
 };
 
 // --- cooling off --------------------------------------------------------------

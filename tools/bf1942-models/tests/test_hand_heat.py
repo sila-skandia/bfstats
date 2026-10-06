@@ -72,6 +72,46 @@ class HandHeatTests(unittest.TestCase):
         self.assertTrue(items["respawnedCold"])
         self.assertEqual(0, items["pickedUpCold"])
 
+    def test_a_held_m249_locks_at_about_its_sixtieth_round(self) -> None:
+        # 13.5 declared, 10 a second on whole ticks (GUN-13); +0.0265 a round
+        # and one tick's 0.01 drained between rounds (GUN-15): the 60th round
+        # takes it to 1 and the next pull is refused, 6 s into the burst.
+        # Under the old continuous drain it never overheated at all.
+        for case in ("m249", "m249At30"):
+            hold = self.results["hold"][case]
+            self.assertEqual(60, hold["firstRefused"]["rounds"], case)
+            self.assertAlmostEqual(5.93, hold["firstRefused"]["t"], delta=0.05)
+
+    def test_a_held_pkm_locks_at_its_fiftieth(self) -> None:
+        hold = self.results["hold"]["pkm"]
+        self.assertEqual(50, hold["firstRefused"]["rounds"])
+
+    def test_after_the_lockout_a_held_trigger_fires_one_round_a_lockout(self) -> None:
+        # Nothing drains through the 2 s lockout, so the barrel comes out of
+        # it still at 1 and over; a tick or two under 1 buys one round, which
+        # puts it back over (GUN-14, GUN-15).
+        for case in ("m249", "pkm"):
+            hold = self.results["hold"][case]
+            self.assertAlmostEqual(0.5, hold["lateRate"], delta=0.11, msg=case)
+            self.assertGreaterEqual(hold["peak"], 1.0)
+
+    def test_a_barrel_left_alone_drains_at_its_rate(self) -> None:
+        # Twenty rounds is 0.53; at 0.3 a second it is cold in 1.77 s, plus
+        # the round's own 0.07 s timer before the drain starts.
+        cool = self.results["cool"]
+        self.assertAlmostEqual(0.53, cool["after20"], places=6)
+        self.assertAlmostEqual(1.85, cool["secondsToCold"], delta=0.05)
+
+    def test_vanillas_seat_guns_run_the_same_law(self) -> None:
+        # The same `FireState`, stepped once a world tick: the stationary MG42
+        # (15 a second, 0.04 / 0.4) and the pintle Browning (10 a second) lock
+        # after 38 rounds, the coaxial Browning (12 declared, 0.05 / 0.3) after
+        # 25. Before GUN-15 they took 73, never and 49.
+        seats = self.results["seats"]
+        self.assertEqual(38, seats["mg42"]["firstRefused"]["rounds"])
+        self.assertEqual(38, seats["browning"]["firstRefused"]["rounds"])
+        self.assertEqual(25, seats["coax"]["firstRefused"]["rounds"])
+
     def test_the_hud_is_handed_the_raw_heat(self) -> None:
         hud = self.results["hud"]
         self.assertEqual(0.4, hud["hotHeat"])

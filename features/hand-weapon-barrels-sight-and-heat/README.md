@@ -1,8 +1,10 @@
 # Hand weapons: barrels, a scope with no picture, and heat
 
 Status: built 2026-10-06 (Desert Combat fix round, package `hand-weapons`):
-the shotgun barrels (section 1) and the Stinger's sight, read and confirmed
-(section 2). Section 3 follows.
+the shotgun barrels (section 1), the Stinger's sight, read and confirmed
+(section 2), and the hand MG's heat with the heat law every gun shares
+(section 3). The page sees the hand MG's heat once the Desert Combat and DC
+Final viewmodels are re-extracted (section 3, "Assets").
 
 Three gaps the Desert Combat census found in the hand weapons
 (`~/.cache/dc-sweep/reports/weapons.md`, items 3, 7 and 18). Each is engine
@@ -115,3 +117,95 @@ next reader does not take them for a guess.
 
 **Open.** Whether the square blackout is letterboxed on a wide screen is still
 SCOPE-4's open question, for every scope.
+
+## 3. A hand machine gun heats, and the heat law every gun shares
+
+**What was missing.** Desert Combat's M249 and PKM declare
+`heatAddWhenFire 0.0265` / `0.03`, `coolDownPerSec 0.3` and
+`timeDelayOnOverHeat 2`. The hand weapon had no heat at all.
+
+**What the engine does.** Read in lnxded for this round, and recorded:
+
+- GUN-14, a pull: `Fire` adds `heatAddWhenFire` once, after the barrels, with
+  no clamp. A pull made at heat 1 or more fires nothing and starts the
+  `timeDelayOnOverHeat` lockout. A `velocityDependentOnHeat` weapon (every
+  grenade, which also declares `heatAddWhenFire 0.03`) uses the field as the
+  throw's charge instead, and never overheats.
+- GUN-15, the drain: once a 30 Hz tick, `coolDownPerSec / 30`, but only while
+  both the fire timer and the lockout have run out. Nothing cools through the
+  lockout, and a held burst drains only the one tick a round's timer runs out.
+- GUN-16, the HUD and a holster: the soldier HUD writes the held weapon's raw
+  heat into `Overheat/OverHeat`, which the `ATIconAndStrengthBar` leaf draws as
+  the heat bar beside the rounds. A holstered item keeps its heat; that it is
+  not updated while away is inferred.
+- GUN-13 restored: a gun fires on whole ticks (`gun-cycle.js` already cited
+  the row, which the 2026-09-30 salvage had lost). The M249's
+  `roundOfFire 13.5` fires 10 a second.
+
+**What was built.**
+
+- `extract_viewmodel.py` `weapon_block` writes `weaponStats.heat`: the three
+  words and `velocityDependentOnHeat`, which `bf42/con.py` now parses. This is
+  the one exporter change.
+- `kit-ammo.js` `itemHeat` builds a `fire-state.js` `FireState` over those
+  words, one per kit item, so a hot gun swapped away comes back hot. A depot
+  does not cool it; a new life and a kit off the ground are cold. A weapon
+  with no words, or with `velocityDependentOnHeat`, gets none.
+- `hand-fire.js` steps it while the item is enabled, gates the trigger on its
+  `canFire`, and bills it once a pull. `soldier-hud.js` hands its heat to
+  `writeSoldierAmmo`, which writes `Overheat/OverHeat`.
+- `fire-state.js`'s heat now follows GUN-14 and GUN-15: no clamp, no drain
+  through the lockout, and a 30 Hz drain gated on the round's fire timer. The
+  old rule drained continuously. At the guns' real 10 rounds a second that
+  took a round's heat off between rounds, so with the old rule neither hand
+  MG, nor vanilla's pintle Browning, ever overheated. This changes every
+  vehicle MG, which is the engine's own code path for them too.
+
+**How it was checked.** `tests/test_hand_heat.py` drives
+`hand_heat_harness.mjs`: the item rule, the HUD feed, and a held trigger in the
+page's order (heat stepped per frame, rounds on 30 Hz ticks) for the hand MGs,
+and per world tick for the seat guns. Held-trigger numbers, before the law
+change and after it (`~/.cache/dc-sweep/hand-weapons/before/run_heat_before.py`):
+
+| Gun | Rounds before the first refused pull, before | After |
+|---|---|---|
+| DC M249 (10 a second) | never in 30 s | 60, at 5.9 s |
+| DC PKM (10 a second) | never | 50, at 4.9 s |
+| Vanilla stationary MG42 (15 a second) | 73, at 4.8 s | 38, at 2.5 s |
+| Vanilla pintle Browning (10 a second) | never | 38, at 3.7 s |
+| Vanilla coaxial Browning (10 a second) | 49, at 4.8 s | 25, at 2.4 s |
+
+After the lockout a held trigger fires one round per lockout, about one every
+2 s. `test_seats.py` and `test_replay_hud.py` carry the law's own numbers:
+heat 1.2 after three 0.4 pulls, still locked when the 2 s delay ends; a
+replayed coax at 0.46, not 0.3.
+
+A scratch extraction (`extract_viewmodel.py --mod DesertCombat --out
+~/.cache/dc-sweep/hand-weapons/extract-dc USSoldier M249 IraqSoldier PKM
+USSoldier GrenadeAllies USSoldier Remington`) changes only `weaponStats` in
+each glb: the M249 and PKM gain `heat`, the grenade
+`{heatAddWhenFire 0.03, velocityDependentOnHeat true}`, and the Remington
+nothing. The nodes are unchanged.
+
+**Assets.** The hand path reads `weaponStats.heat`, so the hand MGs heat only
+once their viewmodels are re-extracted. Only the trees whose hand weapons
+declare heat are affected: Desert Combat (M249, PKM), DC Final (M249, PKM,
+`Mortar_weap`), and the grenades everywhere, which only gain the flag that
+keeps them out. Vanilla and the expansions ship no hand weapon with an
+overheat. The lead's commands are in the package report.
+
+**Open.**
+
+- The lockout starts on the round that crosses 1, not on the refused pull
+  after it (GUN-14). A held trigger reaches that pull one round period later;
+  a trigger let go on exactly the crossing round is locked here and not in the
+  engine.
+- Whether a tick runs the soldier's fire message or the weapon's
+  `handleUpdate` first decides whether the drain lands before or after the
+  round. The round counts assume the trigger first, as `gun-cycle.js` does
+  (GUN-15).
+- A grenade's charge (hold to charge, release to throw at `velocity × heat`)
+  is read in the decompile (GUN-14) and not built: the page throws at the full
+  `velocity`, and the bar beside a grenade stays empty.
+- A server-lab recording of a held stationary MG42 would confirm the 38 rounds
+  against the real game.
