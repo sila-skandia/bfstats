@@ -43,6 +43,7 @@ import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
+import { barrelRays } from './bot-barrels.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
@@ -715,9 +716,9 @@ export function createBotReferee(env) {
    * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
    * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
    */
-  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null) => {
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null) => {
     const w = world();
-    const { origin, dir } = bot.aimRay();
+    const { origin, dir } = ray ?? bot.aimRay();
     let d = dir;
     if (aimAt) {
       const dx = aimAt[0] - origin[0], dy = aimAt[1] + BOT_BODY_HEIGHT - origin[1], dz = aimAt[2] - origin[2];
@@ -858,16 +859,24 @@ export function createBotReferee(env) {
       // launchers, `bot-rounds.js`) is resolved where it lands -- the direct
       // hit, the splash, a hull -- and billed from there, not here.
       if (env.launchRound?.(bot, stats)) continue;
-      const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                      (material, distance) => env.roundDamage(stats, material, distance));
-      if (!hit) continue;
-      bot.recordHit(hit.targetId);
-      env.onHit?.(bot, hit);
-      // A round that found a bot damages that bot; the caller bills anyone
-      // else (the page's human).
-      if (env.damageTarget?.(hit, bot, at)) continue;
-      referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                          { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+      // Every barrel fires its own round down its own turn of the eye's
+      // frame and draws its own deviation (`fireBarrel` 0x0828aba0, ledger
+      // XHIT-12, XHIT-16; bot-barrels.js): a shotgun's eight pellets, each
+      // with the round's full damage. A weapon with one plain barrel keeps
+      // the one ray down the eye.
+      const eye = bot.aimRay();
+      for (const ray of barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null]) {
+        const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
+                                        (material, distance) => env.roundDamage(stats, material, distance), ray);
+        if (!hit) continue;
+        bot.recordHit(hit.targetId);
+        env.onHit?.(bot, hit);
+        // A round that found a bot damages that bot; the caller bills anyone
+        // else (the page's human).
+        if (env.damageTarget?.(hit, bot, at)) continue;
+        referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
+                            { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+      }
     }
   };
 

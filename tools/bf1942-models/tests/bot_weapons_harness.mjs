@@ -37,7 +37,21 @@ const AI = {
               strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
   Mp40: { burst: 1, maxRange: 100, minRange: 0, weaponFire: 'PIFire',
           strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
+  Remington: { burst: 0, maxRange: 50, minRange: 0, weaponFire: 'PIFire',
+               strength: { Infantry: 4, LightArmour: 0, HeavyArmour: 0, NavalArmour: 0, Submarine: 0, Air: 0 } },
 };
+// DC's Remington: eight barrels at the FireArms' origin, each turned (the
+// glb's `Remington muzzle N` rotations, quaternions x, y, z, w).
+const REMINGTON_BARRELS = [
+  [0.006980844947881171, -0.01090782567168717, 7.615222607486751e-05, 0.9999161371553956],
+  [0.0061085562410720514, -0.004363227875173742, 2.6653773887783413e-05, 0.9999718231393999],
+  [-0.010908040613928303, 0.003054139725216969, 3.331681774275032e-05, 0.9999358408270469],
+  [-0.002268912257765743, -0.0034906424302308145, -7.920030035121748e-06, 0.9999913336573792],
+  [-0.008726519415937776, 0.0019197878953759835, 1.6753735149245275e-05, 0.999960080199521],
+  [-0.0030540597709430026, 0.013089534515572338, 3.99798324215911e-05, 0.9999096635230075],
+  [-0.0019197878953759835, -0.008726519415937776, -1.6753735149245275e-05, 0.999960080199521],
+  [0.010907791405663263, 0.007417139990439531, -8.091165547980405e-05, 0.9999129960023105],
+].map(rotation => ({ position: [0, 0, 0], rotation }));
 const DATA = {
   Bazooka: { roundOfFire: 1.0, velocity: 50, projectile: 'BazookaProjectile',
              magazine: { size: 1, magazines: 6, type: 0, reloadTime: 5.6, autoReload: true } },
@@ -47,6 +61,8 @@ const DATA = {
               magazine: { size: 30, magazines: 5, type: 0, reloadTime: 4.8 } },
   Mp40: { roundOfFire: 9.0, velocity: 1000, projectile: 'mp40Projectile',
           magazine: { size: 32, magazines: 5, type: 0, reloadTime: 4.3 } },
+  Remington: { roundOfFire: 1.0, velocity: 500, projectile: '9mm_Projectile',
+               magazine: { size: 8, magazines: 5, type: 0, reloadTime: 3.3 }, barrels: REMINGTON_BARRELS },
 };
 
 /**
@@ -71,7 +87,8 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null }) {
     ...(launch === null ? {} : { launchRound: () => { launched++; return launch; } }),
   });
   const resolve = referee.resolveShot;
-  referee.resolveShot = (...args) => { resolved++; return resolve(...args); };
+  const rays = [];
+  referee.resolveShot = (...args) => { resolved++; rays.push(args[4] ?? null); return resolve(...args); };
   referee.bots.push(bot);
   const dt = 1 / hz;
   let entriesBeforeData = null;
@@ -95,7 +112,7 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null }) {
   }
   const mag = bot._mags?.get(kit[0]) ?? null;
   return {
-    entriesBeforeData, rounds, launched, resolved, reloads,
+    entriesBeforeData, rounds, launched, resolved, reloads, rays,
     mag: mag && { rounds: mag.rounds, spare: mag.spare, size: mag.size, reloadTime: mag.reloadTime,
                   reloadLeft: mag.reloadLeft, autoReload: mag.autoReload },
     ammo: bot.weapons.map(w => [w.name, w.ammo, w.rounds ?? null]),
@@ -105,9 +122,46 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null }) {
 }
 
 const after = (r, t) => r.rounds.filter(([at]) => at >= t);
+
 const gaps = list => list.slice(1).map(([t], i) => +(t - list[i][0]).toFixed(4));
 
 const out = {};
+
+// --- a shotgun's barrels ----------------------------------------------------
+
+{
+  // Every barrel fires its own round down its own turn (ledger XHIT-12,
+  // XHIT-16): a pull of DC's Remington is eight rounds, each off the eye's
+  // axis by its barrel's turn; a Colt with no barrels is one ray down the eye.
+  const shot = hold({ kit: ['Remington'], seconds: 2.5, dataAt: 0 });
+  const pulls = shot.rounds.length;
+  const eye = shot.bot.aimRay();
+  const offAxis = shot.rays.filter(Boolean).slice(0, 8).map(r => {
+    const c = (r.dir[0] * eye.dir[0] + r.dir[1] * eye.dir[1] + r.dir[2] * eye.dir[2])
+      / (Math.hypot(...r.dir) * Math.hypot(...eye.dir));
+    return +(Math.acos(Math.min(1, c)) * 180 / Math.PI).toFixed(3);
+  });
+  const colt = hold({ kit: ['Colt'], seconds: 2, dataAt: 0 });
+  const { barrelRays, fireArmsBarrels } = await imp('bot-barrels.js');
+  // A FireArms node with a bundle under it holding two barrels: the turns
+  // compose down the path.
+  const half = Math.SQRT1_2;
+  const json = { nodes: [
+    { name: 'gun', extras: { fireArms: {} }, children: [1] },
+    { name: 'bundle', rotation: [0, half, 0, half], children: [2, 3] },
+    { name: 'm2', translation: [0, 0, -1], extras: { muzzle: { index: 1 } } },
+    { name: 'm1', extras: { muzzle: { index: 0 } } },
+  ] };
+  const parsed = fireArmsBarrels(json);
+  out.barrels = {
+    pulls, resolved: shot.resolved, offAxis,
+    distinct: new Set(shot.rays.filter(Boolean).slice(0, 8).map(r => r.dir.map(v => v.toFixed(5)).join())).size,
+    colt: { pulls: colt.rounds.length, resolved: colt.resolved, rays: colt.rays.filter(Boolean).length },
+    parsed: parsed.map(b => ({ position: b.position.map(v => +v.toFixed(6)), rotation: b.rotation.map(v => +v.toFixed(6)) })),
+    plain: barrelRays([0, 0, 0], [0, 0, 1], [{ position: [0, 0, 0], rotation: [0, 0, 0, 1] }]),
+    noBarrels: fireArmsBarrels({ nodes: [{ extras: { fireArms: {} } }] }).length,
+  };
+}
 
 // --- the magazine race ------------------------------------------------------
 

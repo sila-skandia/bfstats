@@ -138,5 +138,44 @@ class BotWeaponsTests(unittest.TestCase):
         self.assertFalse(p["loaded"])
 
 
+class BotBarrelsTests(unittest.TestCase):
+    """A bot's shotgun fires every barrel (ledger XHIT-12, XHIT-16).
+
+    The bots fired one ray down the eye per pull: a Remington's eight
+    pellets came out as one, with an eighth of the pull's damage. The server
+    runs one barrel loop for every player; `bot-barrels.js` hands the bot's
+    eye and the weapon's barrels to `gun-groups.js cameraLaunch`, the law the
+    human's hand weapon and the vehicle coax fire through.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.b = run_harness()["barrels"]
+
+    def test_a_pull_is_one_round_a_barrel(self) -> None:
+        self.assertGreaterEqual(self.b["pulls"], 2)
+        self.assertEqual(self.b["resolved"], 8 * self.b["pulls"])
+
+    def test_each_round_flies_its_own_barrels_turn(self) -> None:
+        # The glb's turns: up to 1.5 deg off the view axis, no two alike.
+        self.assertEqual(len(self.b["offAxis"]), 8)
+        self.assertTrue(all(0.2 < a < 1.6 for a in self.b["offAxis"]), self.b["offAxis"])
+        self.assertEqual(self.b["distinct"], 8)
+
+    def test_a_gun_without_barrels_fires_one_ray(self) -> None:
+        c = self.b["colt"]
+        self.assertEqual(c["resolved"], c["pulls"])
+        self.assertEqual(c["rays"], 0)
+        self.assertIsNone(self.b["plain"])
+        self.assertEqual(self.b["noBarrels"], 0)
+
+    def test_the_barrels_compose_down_the_path(self) -> None:
+        # In index order; the bundle's quarter turn about y carries the -1 m
+        # offset of the second barrel to -x.
+        p = self.b["parsed"]
+        self.assertEqual([b["position"] for b in p], [[0, 0, 0], [-1, 0, 0]])
+        self.assertAlmostEqual(p[0]["rotation"][1], 0.707107, places=5)
+
+
 if __name__ == "__main__":
     unittest.main()
