@@ -32,13 +32,21 @@
 // tip says to aim a tank gun a little left at close range. Its coaxial MG is
 // on it, so its rounds go where the crosshair is.
 //
-// A glb exported after 2026-09-25 carries the word itself, on the FireArms
-// node's `fireArms` extras (`bf42/assemble.py`); one baked before it does
-// not, and the table answers for it by template name.
+// WHERE THE ANSWER COMES FROM. The exporter writes the word, true or false,
+// on every FireArms node's `fireArms` extras (`bf42/assemble.py`
+// `_fire_arms`, since 2026-10-06), and that is the answer. A glb baked before
+// then carries no such key -- none did, in any tree, before that date -- and
+// only then does the table below answer, by template name. The table holds
+// vanilla's, XPack1's and XPack2's guns and nothing else, so on an old glb a
+// mod's own guns fire from the barrel: DC's NSVT, coax and TOWs among them,
+// until its trees are re-baked. Re-surveyed 2026-10-06 against the three
+// packs' libraries: the table and the exported word agree on every gun.
+// Build record: features/crosshair-hit-marks/README.md.
 
 /**
  * The non-hand FireArms templates that declare `fireInCameraDof 1`, lower
- * case. Where each comes from:
+ * case: the fallback for a glb that predates the exported word (above), and
+ * only for vanilla, XPack1 and XPack2. Where each comes from:
  *   bf1942 `Objects/Stationary_Weapons/*`: browning, browning_air,
  *     browning_unlimited, coaxial_browning, coaxial_mg42, mg42, mg42_air,
  *     mg42_unlimited; `Objects/Vehicles/Sea/Elco80|Type38/Weapons.con`:
@@ -68,7 +76,8 @@ export const CAMERA_DOF_FIREARMS = Object.freeze(new Set([
  * Does this gun fire from the player's camera?
  *
  * @param {object | null | undefined} stats the FireArms node's `fireArms`
- *   extras; its `fireInCameraDof`, when the exporter wrote one, is the answer
+ *   extras; its `fireInCameraDof`, when the exporter wrote one, is the answer,
+ *   and the name table is asked only when it did not
  * @param {string | null | undefined} name the FireArms node's name: the
  *   template's, possibly with the level bake's `_N` suffix
  */

@@ -2163,6 +2163,14 @@ class Assembler:
             # (`rotationalSpeed`, `8/0/0` on both grenades and nothing else).
             # Absent on every other weapon, so nothing else grows a key.
             "throw": throw or None,
+            # Where the round leaves from (XHIT-12): set, `FireArms::Fire`
+            # (lnxded 0x0828a1c1) launches from the firing player's camera,
+            # clear, from this FireArms. Written false as well as true, so a
+            # glb carries the answer for every gun and `viewer/camera-dof.js`'s
+            # name table only speaks for glbs baked before the word was
+            # exported. A mod's own guns need it: DC sets it on 18 vehicle
+            # FireArms no vanilla name covers (its NSVT, coax, TOWs, miniguns).
+            "fireInCameraDof": bool(template.fire_in_camera_dof),
             "input": template.input_fire or "c_PIFire",
             "control": control or "vehicle",
             "muzzles": len(muzzles),
