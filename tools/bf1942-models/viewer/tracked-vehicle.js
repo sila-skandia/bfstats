@@ -71,7 +71,9 @@ import {
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
-import { AmphibiousKit, HullWater, bedGroundHeight } from './amphibious.js';
+import {
+  AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
+} from './amphibious.js';
 
 // The body frame `wheeled-vehicle.js` documents (-Z forward, +Y up, +X starboard),
 // declared here rather than shared so no module hands another a live
@@ -187,7 +189,29 @@ export class TrackedVehicle extends Vehicle {
     // Divisor 3, not 12: this is the engine's `getGeometryInertia` (lnxded
     // `0x08253930`, collision-response.md §4.2), which is four times a solid
     // box's inertia per unit mass and is the only inertia the engine has.
-    this._inertia = new THREE.Vector3((l2 + h2) / 3, (w2 + l2) / 3, (w2 + h2) / 3);
+    //
+    // **Over the engine's own box, not the wheel footprint.** The box
+    // `getGeometryInertia` reads is the root LOD's first child's mesh (a
+    // tank's `ShermanComplex`, COL-15), the hull, which is longer, wider and
+    // taller than the span of its road wheels: a Sherman's footprint gives a
+    // yaw inertia of 7.0 m^2, its hull box 13.1. The footprint is kept only
+    // for a tree that carries no such geometry (a test double).
+    //
+    // It is not cosmetic. The AI's tank law steers on the yaw rate
+    // (`TankControl::controlTowardsDirection`, AI-45: `steer = angle -
+    // rate/(30|angle| + 1)`, a unit gain at a straight heading), and a hull
+    // that turns twice as far per tick of differential as the engine's
+    // closes that loop above one: the steer flips sign every tick, the
+    // differential's max-of-wheels load (TANK-13) holds the revs near 0.75,
+    // and a bot Sherman crawled at 8.0 m/s where the lab's LOD 0 rounds
+    // record 12-14.6 (features/desert-combat-parity/lab-ground-truth.md). On
+    // the box a bot T-72 under its `maxSpeed 12` cruises at 11.3 m/s in fifth
+    // at revs 0.76 and an M1A1 under 15 at 14.2, revs 0.95; the lab's are
+    // 11.2 at 0.755 and 14.1 at 0.947.
+    this.geometryBox = inertiaGeometryBox(node, options.collisionMeshes ?? null);
+    this._inertia = this.geometryBox
+      ? geometryInertia(this.geometryBox)
+      : new THREE.Vector3((l2 + h2) / 3, (w2 + l2) / 3, (w2 + h2) / 3);
 
     // Hull collision against static objects — same as `GroundVehicle`.
     this._hullRadius = this._boundingRadius;
@@ -728,11 +752,11 @@ export class TrackedVehicle extends Vehicle {
     s.position.addScaledVector(s.velocity, h);
 
     // Roll and pitch keep the heavy damper the rollover fit asked for; yaw
-    // gets its own, far lighter one, because differential steering IS the
-    // yaw torque and the rollover cases were never about heading — see
-    // `TANK.yawDamping`.
+    // has none, which is the engine's own answer (`TANK.yawDamping`: the
+    // lab's tanks turn on the spot at three to four times the rate the old
+    // fitted 2.0 allowed). The term stays so a spec can still name one.
     //
-    // Neither damper is the engine's, and a swimming amphibian has no track
+    // The roll damper is not the engine's either, and a swimming amphibian has no track
     // on anything: afloat, its turn is damped by its own rudders and its roll
     // and pitch by its floats (`amphibious.js`), as a ship's are.
     const swimming = this.amphibious?.afloat && loaded === 0;
