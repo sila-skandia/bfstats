@@ -2,8 +2,9 @@
 `vehicle_pads_harness.mjs`.
 
 A pad is the engine's ObjectSpawner (ledger SPAWN-2, SPAWN-9..SPAWN-12,
-SPAWN-17..SPAWN-19): the side holding its flag picks the template, a neutral
-flag's pad spawns nothing, a hull already out is never touched by the flag,
+SPAWN-17..SPAWN-19): the side holding its flag picks the template, a flag
+that opens neutral leaves its pads on their own `Object.setTeam` side (none:
+nothing), a hull already out is never touched by the flag,
 and the delay runs from the hull's destruction, drawn by `calcSpawnDelay`.
 Desert Combat's pads
 at flags that change hands name a different template per side (a T72 for
@@ -41,11 +42,14 @@ class VehiclePadTests(unittest.TestCase):
     def test_the_other_side_is_loaded_only_where_a_flag_can_change_hands(self) -> None:
         # The village and the road can; the base cannot, so its AA pad loads
         # nothing and its missing AA_allies model is never asked for.
-        self.assertEqual(["T72", "UAZ"], self.results["added"])
+        self.assertEqual(["Browning", "T72", "UAZ"], self.results["added"])
 
     def test_the_round_opens_with_the_holder_vehicle_and_nothing_at_a_neutral_flag(self) -> None:
-        self.assertEqual(["M1A1", "ZPU-4", "Zodiac"], self.results["atLoad"])
+        # The road's team-0 jeep pad spawns nothing; its gun pad, `Object.setTeam
+        # 1`, is left on by a point that opens neutral (`ControlPoint::init`).
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], self.results["atLoad"])
         self.assertFalse(self.results["roadBefore"])
+        self.assertEqual({"team": 1, "active": True}, self.results["gunAtStart"])
 
     def test_the_delay_is_drawn_for_the_server_not_at_random(self) -> None:
         # 8 players of 16 between 20 and 60 s: 20 + 40 x (1 - 0.5).
@@ -53,7 +57,7 @@ class VehiclePadTests(unittest.TestCase):
 
     def test_a_capture_leaves_the_parked_hull_and_retargets_the_pad(self) -> None:
         after = self.results["afterCapture"]
-        self.assertEqual(["M1A1", "ZPU-4", "Zodiac"], after["live"])
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], after["live"])
         self.assertEqual(1, after["tankTeam"])
         self.assertTrue(after["active"])
         # `setActive` draws a held delay anew.
@@ -66,12 +70,18 @@ class VehiclePadTests(unittest.TestCase):
         # 40 s from the M1A1's destruction at 5 s (SPAWN-11's `isDestroyed`),
         # not from its going critical or its wreck clearing.
         self.assertAlmostEqual(45, respawn["at"], delta=0.1)
-        self.assertEqual(["T72", "ZPU-4", "Zodiac"], respawn["live"])
+        self.assertEqual(["MG42", "T72", "ZPU-4", "Zodiac"], respawn["live"])
         # The wreck still burning on the pad goes first.
         self.assertEqual(["destroy M1A1", "spawn T72"], respawn["log"])
 
     def test_a_neutral_pad_taken_spawns_the_taker_at_once(self) -> None:
         self.assertEqual(["UAZ"], self.results["roadAfter"])
+
+    def test_an_own_side_pad_at_a_neutral_flag_keeps_its_gun_when_taken(self) -> None:
+        # Team 2 takes the road: the MG42 out since the start stays, the pad is
+        # team 2's and its delay drawn anew (30 s window), waiting for it.
+        self.assertEqual({"team": 2, "active": True, "delay": 30, "live": ["MG42"]},
+                         self.results["gunAfter"])
 
     def test_pads_off_any_flag_and_bases_ignore_the_flags(self) -> None:
         self.assertTrue(self.results["base"])
@@ -83,7 +93,7 @@ class VehiclePadTests(unittest.TestCase):
     def test_a_scene_written_before_osid_keeps_the_nearest_guess(self) -> None:
         legacy = self.results["legacy"]
         self.assertEqual("village", legacy["boatPoint"])
-        self.assertEqual(["M1A1", "ZPU-4", "Zodiac"], legacy["atLoad"])
+        self.assertEqual(["M1A1", "MG42", "ZPU-4", "Zodiac"], legacy["atLoad"])
         self.assertEqual(["Humvee"], legacy["roadAfter"])
 
     def test_spawn_delay_at_start_is_a_bool_word(self) -> None:

@@ -38,10 +38,14 @@ SPAWN-18 refutes that draw: the engine has no random in it.
 
 - **The join.** A pad belongs to a control point when the level's
   `Object.setOSId` on the pad matches the point's `objectSpawnerId`.
-- **Who it spawns for.** At round start, and at every capture and loss, the
-  point sets the pad's team to its own and switches the pad on for a side, off
-  for neutral (SPAWN-12, SPAWN-19). The pad spawns its `setObjectTemplate`
-  entry for that team (SPAWN-2). A team with no entry spawns nothing.
+- **Who it spawns for.** At round start a point held by a side sets its
+  pads' team to its own and switches them on. A point that opens neutral
+  leaves its pads alone: one with its own `Object.setTeam` spawns that side's
+  template from the first frame, and one with none has team 0 and spawns
+  nothing (SPAWN-19). At every capture the point sets its pads' team to the
+  taker's and switches them on; at every loss, team 0 and off (SPAWN-12). The
+  pad spawns its `setObjectTemplate` entry for its team (SPAWN-2). A team with
+  no entry spawns nothing.
 - **What a flag change leaves alone.** No path touches an object the pad has
   already spawned. A tank parked at a flag that falls stays there, and anyone
   can take it.
@@ -74,7 +78,8 @@ SPAWN-18 refutes that draw: the engine has no random in it.
     exporter's nearest-flag guess. Today that means the vanilla, XPack1 and
     XPack2 trees.
   - The bake stands for the round's first frame. The pad spawns into its node
-    set at once: the holder's template, or nothing at a neutral flag.
+    set at once: the holder's template; at a flag that opens neutral, its own
+    side's, or nothing when it has none.
   - A pad filed under no point, with no team of its own, keeps the baked
     vehicle. This is SPAWN-2's recorded divergence.
 - **`vehicleSpawnActive(node)`.** True when the node stands in the world as
@@ -131,6 +136,8 @@ Each trace is byte-identical up to the first of those three moments:
   - that the M1A1 burning for 5 s holds the pad, and its destruction brings
     the T72 40 s later, with the wreck on the pad removed first
   - that a neutral flag taken spawns the taker's vehicle at once
+  - that a pad with its own side at a neutral flag stands its vehicle from the
+    start and keeps it when the flag is taken (added by the review)
   - the bool reading of `spawnDelayAtStart`
 - Headless runner on DC Gazala
   (`~/.cache/dc-sweep/spawner-pads/padprobe.mjs`, no bots, the flag decreed):
@@ -296,6 +303,36 @@ How it was checked:
     A10_B to SU-25. The census's "both Talil spawn sets are live from round
     start" is gone.
 
+## Review correction: a flag that opens neutral (2026-10-07)
+
+The build switched every pad filed under a neutral point off at the round
+start, reading `ControlPoint::reset` as the round start. It is not.
+`ControlPoint::init` enables a point's pads only for a side, `reset` runs only
+in `GameServer::restartMap`, and `restartMap` then runs `ObjectSpawner::reset`
+on every spawner, which puts back its own active byte and team (SPAWN-19 as
+corrected, with the addresses). So a pad with its own `Object.setTeam` at a
+neutral flag stands that side's vehicle from the first frame, and one with
+none stands nothing. The lab's recordings show it:
+
+- DC El Alamein (four rounds over two server runs) and El Alamein Day 2 (two)
+  have the South outpost's `AAGunSpawner` ZPU-4 (`Object.setTeam 1`, the flag
+  neutral) at t = 0. The AA kits at the start number 9: the two bases' 4 and
+  1 plus the outpost's 4 `setTeam 1` pads. Switching the outpost off gives 5.
+- Vanilla El Alamein starts with 2 flak38s, the Axis base's and the
+  outpost's.
+
+`level-statics.js` `followPoint` now leaves such a pad on with its own side
+and switches off only a pad with no side of its own (whose baked vehicle
+would otherwise stand in for SPAWN-2's team-0 divergence). The kit pads'
+copy (`deployables-page.js` `tickPads`) already did this. Pads that change at
+the start, by tree (the live trees; the vanilla three by the nearest-flag
+guess until re-patched): DC 31 on 8 levels (Desert Shield 8, Midway 12, the
+El Alamein ZPU-4s), DC Final 30, vanilla 13 (El Alamein's Flak38, Omaha's 4,
+Truk's 3, Kasserine's 2 Willys), XPack1 17, XPack2 43 (Raid on Agheila 24).
+Every one of them was hidden at the start before this branch too. The
+vanilla runner traces above were taken before the correction, so El Alamein
+and Bocage now differ from the first frame, by those pads.
+
 ## Open
 
 - A wreck away from its pad delays its pad's next vehicle until it clears
@@ -306,9 +343,9 @@ How it was checked:
   players dead, Iraq should bleed out. Today it only stops spawning.
 - The AC-130's spawn point does not ride the aircraft. `rebaseDeckSpawns`
   moves only the points of floating hulls. Its point does die with it.
-- `deployables-page.js` (the kit pads) keeps its own copy of the join. That
-  copy does not switch a neutral flag's pad off at the start, as
-  `ControlPoint::reset` does.
+- `deployables-page.js` (the kit pads) keeps its own copy of the join. It
+  already leaves a neutral point's pads alone at the start, which is the
+  engine's law (SPAWN-19 as corrected); the two copies now agree.
 
 ## The Forklift parks as a car (2026-10-06)
 
