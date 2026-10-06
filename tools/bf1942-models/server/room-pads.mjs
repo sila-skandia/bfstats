@@ -45,7 +45,7 @@ import {
   preGameSetTeam,
 } from '../viewer/deployables.js';
 import { CHARACTER_HEIGHT } from '../viewer/soldier-pose.js';
-import { afterDeath } from '../viewer/vehicle-wrecks.js';
+import { afterDeath } from '../viewer/after-death.js';
 import { MAX_PLAYERS } from '../viewer/netcode.js';
 import { bodyPoseOf, bodySpecFor } from './level-bodies.mjs';
 import { placeholderEntry } from './vehicle-table.mjs';
