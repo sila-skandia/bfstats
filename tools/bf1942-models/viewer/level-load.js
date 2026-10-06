@@ -238,7 +238,24 @@ export function createLevel(page) {
       if (!data || obj.userData.templateKind !== 'SupplyDepot') return;
       obj.updateWorldMatrix(true, false);
       obj.getWorldPosition(pos);
-      depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name));
+      // The placed root the depot rides: the same owner the collider and
+      // the world key a hull by (a child of the level, or of its spawners).
+      let owner = obj;
+      while (owner.parent && owner.parent !== root && owner.parent !== statics.spawnersRoot) {
+        owner = owner.parent;
+      }
+      // A depot on a hull (a half-track's locker, a Humvee's, a carrier's
+      // pads) goes where the hull goes: the engine measures from the depot's
+      // own absolute position every cycle (`workOnSoldiers` 0x08323dc0,
+      // `workOnVehicles` 0x08323f10), so its node is read again each cycle.
+      const rides = owner !== obj && owner.userData?.templateKind === 'PlayerControlObject';
+      const at = new THREE.Vector3();
+      const locate = rides ? () => {
+        obj.updateWorldMatrix(true, false);
+        return obj.getWorldPosition(at);
+      } : null;
+      depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
+        { root: owner, locate }));
     });
     return depots;
   }

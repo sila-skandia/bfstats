@@ -281,6 +281,21 @@ class WorldTests(unittest.TestCase):
         # list, so a level with no wrecks in the air pays a length check.
         self.assertEqual(self.results["falling"]["afterClear"], 0)
 
+    # --- the depots: one pass a tick (ledger SUP-18, SUP-19) ----------------
+
+    def test_a_depot_cycle_serves_every_soldier_and_hull_in_reach(self) -> None:
+        """Two soldiers at one locker heal alike, on the same cycles, and an
+        empty F-14 on a carrier pad is repaired by its own row, 4 HP a
+        cycle, with nobody aboard. 60 ticks at 1/30 s give three cycles of
+        16 ticks (0.5333 s each, the first tick past 0.5 s)."""
+        d = self.results["depots"]
+        self.assertEqual(d["cycles"], 3)
+        self.assertAlmostEqual(d["h1Hp"], d["h2Hp"], places=6)
+        self.assertAlmostEqual(d["h1Hp"], 10 + 3 * (16 / 30) * 4, places=4)
+        self.assertEqual(d["hullHp"], 50 + 3 * 4)
+        self.assertTrue(d["hullIsPco"])
+        self.assertEqual(d["hullTemplate"], "F-14B")
+
 
 if __name__ == "__main__":
     unittest.main()

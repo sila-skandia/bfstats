@@ -106,16 +106,83 @@ class SupplyDepotTests(unittest.TestCase):
         self.assertAlmostEqual(20.0, r["hpAfter5Cycles"], places=5)
         self.assertEqual(30, r["clampsAtMax"])
 
-    def test_ammo_before_heal_priority_starves_m3a1s_heal(self) -> None:
-        # SUP-18/19: ammo firing this cycle takes priority over heal — a
-        # depot with both (Wake's M3A1SupplyDepot) never reaches the heal
-        # branch while its 15/s ammo type keeps firing every cycle. This is
-        # the engine's own dispatch order, not a bug.
-        r = self.results["m3a1Priority"]
-        self.assertEqual(20, r["ammoFiredCount"])
-        self.assertEqual(0, r["healFiredCount"])
-        self.assertTrue(r["hpUnchanged"])
-        self.assertEqual(20, r["refillCalls"])
+    def test_ammo_and_heal_both_run_in_one_cycle(self) -> None:
+        # Ledger SUP-18: `workOnSoldiers` calls `reloadAmmo` when an ammo
+        # type fired and then `healSoldier` (0x08323ec9..0x08323eff); the
+        # old reading, that ammo starves the heal, was wrong. Wake's
+        # M3A1SupplyDepot (15/s ammo, 4 HP/s) does both every cycle:
+        # 10 + 5 x 0.5 x 4 = 20.
+        r = self.results["m3a1BothRun"]
+        self.assertEqual(5, r["ammoFiredCount"])
+        self.assertEqual(5, r["healFiredCount"])
+        self.assertAlmostEqual(20.0, r["hpAfter5Cycles"], places=5)
+        self.assertEqual(5, r["refillCalls"])
+
+    def test_a_repair_pad_repairs_its_own_templates_per_cycle(self) -> None:
+        # Ledger SUP-19: `repairVehicle` matches the hull's root template
+        # against the `addVehicleType` rows and calls `Armor::heal(rate)`
+        # with the row's rate as it stands, once a cycle, crewed or not.
+        # DC's NimitzRepairpoint: 4 HP a cycle on an empty F-14.
+        r = self.results["carrierPad"]
+        self.assertTrue(r["repairEnabled"])
+        self.assertEqual(70, r["hpAfter5Cycles"])
+        self.assertTrue(r["healedEveryCycle"])
+        self.assertTrue(r["gaveAmmoEveryCycle"])
+        # A template the pad does not list is rearmed and not repaired.
+        self.assertEqual(50, r["unlistedHp"])
+        self.assertEqual(5, r["unlistedRefills"])
+        self.assertEqual(100, r["clampsAtMax"])
+        self.assertEqual(50, r["earlyHp"])
+
+    def test_set_health_never_reaches_a_hull(self) -> None:
+        # `workOnVehicles` never calls `healSoldier`: the carrier's ammo
+        # depot ships `setHealth -1 4 0` and no rows, and only rearms.
+        r = self.results["setHealthSkipsHulls"]
+        self.assertEqual(50, r["hp"])
+        self.assertFalse(r["healedAny"])
+        self.assertEqual(4, r["refills"])
+
+    def test_a_kill_depot_destroys_what_it_lists(self) -> None:
+        # Medina Ridge's `fk1`: `addVehicleType m1a1 -1 -1000 0` is a heal of
+        # -1000 a cycle, matched without regard to case (`getTemplate`), and
+        # `setHealth -1 -1000 0` does the same to a soldier. A hull it does
+        # not list and one outside its 2 m are untouched.
+        r = self.results["killDepot"]
+        self.assertTrue(r["tankDestroyed"])
+        self.assertEqual(0, r["tankHp"])
+        self.assertEqual(50, r["bmpHp"])
+        self.assertEqual(50, r["farHp"])
+        self.assertTrue(r["soldierDestroyed"])
+
+    def test_a_finite_reserve_pays_only_for_what_was_missing(self) -> None:
+        # SUP-19's finite branch: heal min(reserve, rate); the reserve pays
+        # the missing hit points at most; it regenerates by elapsed x regen
+        # up to its cap first.
+        r = self.results["finiteReserve"]
+        self.assertEqual({"hp": 100, "reserve": 9}, r["afterFirst"])
+        self.assertEqual({"hp": 54, "reserve": 6}, r["afterSecond"])
+        self.assertEqual({"hp": 53, "reserve": 0}, r["dry"])
+
+    def test_one_cycle_serves_every_target_in_reach(self) -> None:
+        # The world's pass (`SupplyField.update`): both soldiers at the
+        # locker heal on the same cycle, and the half-track's own depot
+        # (radius 1.3) reaches them too. A seated soldier is served only by
+        # a depot riding his own hull (SUP-20); a depot on a destroyed hull
+        # does nothing; a tick with no cycle due builds no target list.
+        r = self.results["fieldPass"]
+        self.assertEqual([14, 14], r["footHp"])
+        self.assertEqual(12, r["riderHp"])
+        self.assertEqual(10, r["strangerHp"])
+        self.assertEqual([True, True, True, False], [x["healed"] for x in r["results"]])
+        self.assertTrue(r["soldiersAskedOnce"])
+        self.assertEqual(10, r["onWreckHp"])
+        self.assertEqual(0, r["idleBuilt"])
+
+    def test_the_hull_repair_icon_needs_a_positive_row_of_its_template(self) -> None:
+        r = self.results["hullIcon"]
+        self.assertTrue(r["listed"])
+        self.assertFalse(r["unlisted"])
+        self.assertFalse(r["killDepot"])
 
     def test_sign_of_rate_selects_damage(self) -> None:
         # SUP-26: a negative rate (an FH-style trap; no Wake depot has one)
