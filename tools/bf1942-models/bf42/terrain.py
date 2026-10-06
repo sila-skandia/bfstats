@@ -1,7 +1,10 @@
 """Turn a BF1942 heightmap into textured terrain tiles.
 
-Each Tx tile covers a 256 m patch. Vertices sit on the 4 m heightmap grid
-(worldSize / dim), which is how Battlecraft and the Blender importer place them.
+Each Tx tile covers one PatchTerrain patch: 64 heightmap samples on a side,
+`worldSize / (dim / 64)` metres (`level.patch_grid`, ledger TERR-1). That is
+256 m on every vanilla level and 128 m on DC's Medina Ridge, whose 512-sample
+heightmap covers only 1024 m. Vertices sit on the heightmap grid (worldSize /
+dim: 4 m on vanilla), which is how Battlecraft and the Blender importer place them.
 Height is `sample / 65535 * 256 * yScale` — 16-bit samples with yScale 0.6 top
 out at 153.6 m, matching object `absolutePosition` Y on Tobruk to a few centimetres.
 
@@ -17,12 +20,18 @@ from __future__ import annotations
 import math
 
 from . import gltf, stdmesh
-from .level import PATCH_METERS, Heightmap, TerrainInfo, tile_world_origin
+from .level import (PATCH_METERS, Heightmap, TerrainInfo, tile_in_window,
+                    tile_world_origin)
 
-# One 256 m patch repeats the detail map this many times. Mid-grey (128) is identity.
+# One patch repeats the detail map this many times. Mid-grey (128) is identity.
+# Per patch, not per metre: the engine's detail UV is the heightmap sample index
+# times `detailTexScale` (TERR-3), and a patch is always 64 samples, so the
+# repeat count per patch is the same on every level whatever its patch size.
+# The engine's count is 64 * 0.5 = 32; this 16 predates that reading (TERR-3).
 DETAIL_REPEATS = 16.0
 # terrainDefault.dds is 64px; repeating it 4x per patch keeps its texel density
-# (1 m/texel) in the same family as a 1024px Tx tile (0.25 m/texel).
+# (1 m/texel on a 256 m patch) in the same family as a 1024px Tx tile
+# (0.25 m/texel). Also per patch, as a Tx tile's own UV is (TERR-3).
 DEFAULT_TILE_REPEATS = 4.0
 
 
@@ -76,10 +85,15 @@ def tile_mesh(heightmap: Heightmap, info: TerrainInfo, col: int, row: int,
 
 def default_patches(info: TerrainInfo, tiles: list[tuple[int, int]],
                     patch: float = PATCH_METERS) -> list[tuple[int, int]]:
-    """World patch indices with no shipped Tx tile, in world (col, row) terms."""
+    """World patch indices the engine paints with the default texture, in world
+    (col, row) terms: every patch no shipped Tx tile covers, a tile the engine
+    never draws (`tile_in_window`) covering nothing."""
     per_axis = max(1, int(round(info.world_size / patch)))
     covered: set[tuple[int, int]] = set()
     for col, row in tiles:
+        if not (tile_in_window(info.tex_offset_x, col, per_axis)
+                and tile_in_window(info.tex_offset_y, row, per_axis)):
+            continue
         x0, z0 = tile_world_origin(info.tex_offset_x, info.tex_offset_y, col, row, patch)
         covered.add((int(round(x0 / patch)), int(round(z0 / patch))))
     return [
