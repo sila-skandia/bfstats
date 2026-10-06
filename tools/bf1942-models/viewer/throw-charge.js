@@ -1,4 +1,4 @@
-// A grenade's charge: the alt-fire throw (ledger GUN-18, GUN-14).
+// A grenade's charge: the alt-fire throw (ledger GUN-19, GUN-14).
 //
 // Every grenade declares `velocityDependentOnHeat 1`, which turns its
 // `heatAddWhenFire 0.03` from an overheat into the strength of the throw. The

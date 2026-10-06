@@ -321,7 +321,7 @@ export function createHandFire(page) {
     hw.pulseShots = hw.group.shots;
     hw.pulseHeld = 0;
     // A grenade leaves at `velocity × heat` (`fireBarrel`, GUN-14): its charge
-    // from the alt-fire button, 1.0 from the fire button (GUN-18).
+    // from the alt-fire button, 1.0 from the fire button (GUN-19).
     if (hw.charge) launchStrength(hw, hw.charge.heat);
   }
 
@@ -564,7 +564,7 @@ export function createHandFire(page) {
     // The barrel cools (and an overheat runs out) on the item's own clock,
     // which, like the reload's below, is not running while he has no item.
     // The trigger goes in first: a held pull the heat refuses is what starts
-    // and restarts the lockout (GUN-17), and a pull mid-reload never reaches
+    // and restarts the lockout (GUN-18), and a pull mid-reload never reaches
     // the heat at all.
     if (!locked && hw.heat) {
       hw.heat.trigger(page.triggerHeld && (page.captured || page.params.has('shots'))
@@ -670,7 +670,7 @@ export function createHandFire(page) {
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
-        // The alt-fire throw (GUN-18): a grenade's charge climbs a tick at a
+        // The alt-fire throw (GUN-19): a grenade's charge climbs a tick at a
         // time while alt-fire is held, waiting while a throw is under way, and
         // the tick after it is let go throws, as a click does, at the charged
         // strength.
@@ -690,7 +690,7 @@ export function createHandFire(page) {
           page.dropClick();
         } else if ((page.clickQueued || released) && canFire && hw.cool <= 0 && !hw.pulse) {
           // The fire button throws at full strength: its message sets the
-          // heat to 1.0 (GUN-18). A released charge keeps its own.
+          // heat to 1.0 (GUN-19). A released charge keeps its own.
           if (page.clickQueued && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {

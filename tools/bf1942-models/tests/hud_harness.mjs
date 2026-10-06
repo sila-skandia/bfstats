@@ -714,7 +714,7 @@ results.scope = {
   // template's two defaults.
   bare: pick(footPage({ weapon: stinger, zoomed: true, scopes: {} })),
 };
-// A grenade's charge on the heat bar beside it (GUN-16, GUN-18): `hw.charge`,
+// A grenade's charge on the heat bar beside it (GUN-16, GUN-19): `hw.charge`,
 // where a machine gun's heat is `hw.heat`.
 const grenade = { name: 'GrenadeAllies', rounds: 3, mags: 0, charge: { heat: 0.45 },
   data: { hudAmmo: 'ATIconAndStrengthBar', magazine: { size: 4, magazines: 1 } } };
