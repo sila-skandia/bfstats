@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import {
   MOUSE_LOOK_TRIGGER, MOUSE_LOOK_CHANNEL, HELD_THRESHOLD, RECENTRE_PER_TICK,
   TICK_HZ, LOOK_REST, seatNeedsMouseLookKey, recentreFactor, recentreLook,
-  routeFlightInput, routeLookPair, describeSeat, seatProfile, seatLookPitchSign,
+  routeFlightInput, routeLookPair, describeSeat, seatProfile, seatLookSigns,
 } from './viewer/mouse-look-key.js';
 import { surveyVehicle } from './viewer/seat-survey.js';
 import { RATE_FACTOR, axisScale, quantiseAxis } from './viewer/mouse-input.js';
@@ -523,8 +523,10 @@ const camera = (name, control, view = {}, rig = null) => node(name,
 const entry = control => node(`${control}Entry`, { templateKind: 'EntryPoint', control, seat: { control } });
 const lookRig = (control, direction) => ({
   axes: {
-    yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1 },
-    pitch: { input: 'c_PIMouseLookY', min: -60, max: 45, free: false, maxSpeed: 90, direction },
+    yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1,
+           acceleration: 5000 },
+    pitch: { input: 'c_PIMouseLookY', min: -60, max: 45, free: false, maxSpeed: 90, direction,
+             acceleration: 5000 },
   },
   automaticReset: false, control,
 });
@@ -596,7 +598,8 @@ function seatOf(root, seatId, rootKind = 'air') {
 const seatRules = occupancy => {
   const seat = describeSeat(occupancy);
   const profile = seatProfile(seat);
-  return { profile, needsKey: seatNeedsMouseLookKey(seat), pitchSign: seatLookPitchSign(seat, profile),
+  const signs = seatLookSigns(seat, profile);
+  return { profile, needsKey: seatNeedsMouseLookKey(seat), pitchSign: signs.pitch, yawSign: signs.yaw,
            category: seat.vehicleCategory ?? null };
 };
 
@@ -669,6 +672,53 @@ const seatRules = occupancy => {
     finalPassenger: lookAt(mh6Final(), 'MH6Passenger_PCO3'),
   };
   results.otherSeats = n;
+}
+
+// --- the same rules over a re-baked export ---------------------------------------
+//
+// `fixtures/air-seats.json` is the con-reader package's export of DC 0.7's
+// MH-6, SA-342G, MH-53, Mi8 and F-14B, DC Final's MH-6, XPack2's C47 and
+// vanilla's Corsair, BF109 and B17, cut to the seat tree: every Camera carries
+// `cameraView.toggleMouseLook` and `cameraView.look`.
+
+{
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/air-seats.json', import.meta.url), 'utf8'));
+  const build = spec => node(spec.name, spec.extras, (spec.children || []).map(build));
+  const x = {};
+  for (const [key, spec] of Object.entries(fixture)) {
+    if (key.startsWith('_')) continue;
+    const root = build(spec);
+    const survey = surveyVehicle(root);
+    x[key] = {};
+    for (const id of survey.order) {
+      const rules = seatRules(seatOf(root, id));
+      const camera = survey.seats.get(id)?.camera;
+      rules.camera = camera?.name ?? null;
+      const limits = cameraLookLimits(camera?.userData);
+      rules.lookUp = limits?.pitchUp != null ? round(limits.pitchUp * 180 / Math.PI, 6) : null;
+      rules.lookDown = limits?.pitchDown != null ? round(limits.pitchDown * 180 / Math.PI, 6) : null;
+      x[key][id] = rules;
+    }
+  }
+  // The page path on the re-baked MH-6 bench and the C47's pilot.
+  const lookOver = (key, seatId) => {
+    const keys = new Set(['ShiftLeft']);
+    const occupancy = seatOf(build(fixture[key]), seatId);
+    const controls = createControls(makeControlsPage({ keys, occupancy }));
+    const { page, view } = makeLookPage({ aircraft: false });
+    page.occupancy = occupancy;
+    page.held = trigger => controls.held(trigger);
+    const look = createLocalLook(page);
+    look.lookDelta(100, 20);
+    return lookOf(view);
+  };
+  x.page = {
+    mh6Bench: lookOver('DesertCombat/MH-6', 'MH6Passenger_PCO3'),
+    c47Pilot: lookOver('XPack2/C47', 'C47'),
+    f14Rio: lookOver('DesertCombat/F-14B', 'F14BRIO'),
+    bf109Pilot: lookOver('bf1942/BF109', 'BF109'),
+  };
+  results.rebaked = x;
 }
 
 // --- the neck: how far a held look turns (ledger MLK-17) ------------------------

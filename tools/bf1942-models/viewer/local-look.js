@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MouseInput, profileFor } from './mouse-input.js';
 import {
-  MOUSE_LOOK_TRIGGER, describeSeat, recentreLook, seatLookPitchSign, seatNeedsMouseLookKey,
+  MOUSE_LOOK_TRIGGER, describeSeat, recentreLook, seatLookSigns, seatNeedsMouseLookKey,
   seatProfile,
 } from './mouse-look-key.js';
 import { presentBelts } from './track-scroll.js';
@@ -554,15 +554,18 @@ export function createLocalLook(page) {
       // keeps the plain sense, and turning the box off inverts it; a positive
       // one (BF109, Mustang, B17, the Aichi Vals, DC's AC-130, DC Final's
       // passengers) is inverted at the shipped box once its glb carries the
-      // sign (`seatLookPitchSign`). A LandSea seat's camera is positive with
-      // the box off: unchanged. A finger dragging the view on a touch screen
-      // is not the mouse and keeps its own sense.
+      // sign, and a camera that cannot turn one way (XPack2's C47 pilot has
+      // no vertical look) does not (`seatLookSigns`). A LandSea seat's camera
+      // is positive with the box off: unchanged. A finger dragging the view
+      // on a touch screen is not the mouse and keeps its own sense.
       const mouse = keyed ? !!page.held(MOUSE_LOOK_TRIGGER) && !source?.touch : !source?.touch;
       const seat = describeSeat(page.occupancy);
       const profile = seatProfile(seat);
-      const flip = mouse
-        ? seatLookPitchSign(seat, profile) * (mouseInput.invertFor(profile) ? -1 : 1) : 1;
-      page.view?.turn(-dx * HEAD_SENS, -dy * HEAD_SENS * flip);
+      const signs = seatLookSigns(seat, profile);
+      const yawFlip = mouse ? signs.yaw : Math.abs(signs.yaw);
+      const pitchFlip = mouse
+        ? signs.pitch * (mouseInput.invertFor(profile) ? -1 : 1) : Math.abs(signs.pitch);
+      page.view?.turn(-dx * HEAD_SENS * yawFlip, -dy * HEAD_SENS * pitchFlip);
       return;
     }
     if (page.optOnFoot.checked && page.soldier) {
