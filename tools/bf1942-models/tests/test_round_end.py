@@ -118,7 +118,9 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual((False, "playing", 1), (after["shown"], after["status"], after["restarts"]))
         self.assertEqual({"1": 0, "2": 1}, after["roundsWon"])
         self.assertEqual({"1": 3, "2": 3}, after["tickets"])
-        self.assertEqual(["pointer", "board:true", "music:win", "board:false", "music:stop", "restart"],
+        # The field is cleared once, on the end game's first tick, after the
+        # medals are read (ROUND-10).
+        self.assertEqual(["clear", "pointer", "board:true", "music:win", "board:false", "music:stop", "restart"],
                          flow["calls"])
 
     def test_a_new_level_closes_the_screen_without_a_restart(self) -> None:
@@ -126,7 +128,7 @@ class RoundEndTests(unittest.TestCase):
         self.assertTrue(second["again"])
         self.assertTrue(second["closedByNewLevel"])
         self.assertEqual(1, second["restarts"])
-        self.assertEqual(["pointer", "board:true", "music:win", "board:false", "music:stop"],
+        self.assertEqual(["clear", "pointer", "board:true", "music:win", "board:false", "music:stop"],
                          second["calls"])
 
     def test_a_draw_plays_no_cue_and_a_single_player_round_waits(self) -> None:

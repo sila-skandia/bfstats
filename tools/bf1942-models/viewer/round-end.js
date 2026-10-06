@@ -150,8 +150,9 @@ const STYLE = `
  * (the level's `scene.json`), `stage` (the element to draw over),
  * `spriteUrl(rel)` (a HUD-pack path to a URL), `localTeam()`, `nameOf(id)`,
  * `roster()` (`[{ id, team }]`, everyone on the page), `holdScoreboard(on)`,
- * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`, and
- * `restartRound()`, which runs the page's `restartMap`.
+ * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`,
+ * `clearWorld()`, the end game's first tick, and `restartRound()`, which runs
+ * the page's `restartMap`.
  */
 export function createRoundEnd(page) {
   const roundEnd = { shown: false, model: null, restarts: 0 };
@@ -196,6 +197,9 @@ export function createRoundEnd(page) {
     }));
     roundEnd.model = { result, words, medals, winner: round.winner, victoryType: round.victoryType,
                        reason: round.endReason, music: result?.music ?? null };
+    // The end game's first tick empties the field (`clearWorld`, ROUND-10),
+    // once the medals have been read off the players still standing.
+    page.clearWorld?.();
     roundEnd.shown = true;
     openedFor = round;
     build();

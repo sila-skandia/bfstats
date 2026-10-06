@@ -78,6 +78,7 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
     playRoundMusic: kind => calls.push(`music:${kind}`),
     stopRoundMusic: () => calls.push('music:stop'),
     releasePointer: () => calls.push('pointer'),
+    clearWorld: () => calls.push('clear'),
     restartRound: () => { calls.push('restart'); round.restart(); },
   };
   const screen = createRoundEnd(page);

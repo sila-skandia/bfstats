@@ -162,7 +162,56 @@ function abandoned({ at = 60, seconds = 60, soldier = false, occupied = false, w
   return hp;
 }
 
+/**
+ * The end of a round and the restart (ledger ROUND-10): `clearWorld` takes an
+ * intact hull, a burning one and a wreck off the field at once, with no wreck
+ * left; the pads see them gone (`padWorld.alive`); `respawnVehicle` brings
+ * each back fresh, and a node no pad names comes back through `restartHulls`.
+ */
+function clearAndRestart() {
+  const nodes = [hull(), hull(), hull()];
+  const vehicleDamage = new Map();
+  const disabled = new Set();
+  const retired = [];
+  const p = {
+    ...page(),
+    vehicleDamage,
+    collider: { statics: { disableOwner: o => disabled.add(o), enableOwner: o => disabled.delete(o) },
+                clearMovedOwner() {} },
+    retireVehicleBody: o => retired.push(o),
+    world: {
+      fireStates: new Map(), falling: new Set(), players: new Map(), armorOf: () => null,
+      addDamageable: (owner, node, extras) => {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    // Owner 2 is on no pad.
+    vehiclePads: { pads: null, padOf: node => (node === nodes[2].node ? null : {}), stepVehiclePads() {} },
+  };
+  for (const h of nodes) h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  const wrecks = createVehicleWrecks(p);
+  wrecks.registerDamageables(nodes.map(h => h.node));
+  vehicleDamage.get(1).damage(80);          // burning, not destroyed
+  wrecks.damageVisuals.get(2).wrecked = true;
+  wrecks.damageVisuals.get(2).hidden = [];
+  wrecks.clearWorld();
+  const after = [0, 1, 2].map(o => ({
+    removed: !!wrecks.damageVisuals.get(o).removed, alive: wrecks.padWorld.alive(nodes[o].node),
+    cleared: !!nodes[o].node.userData.cleared, collision: !disabled.has(o) }));
+  const spawned = [0, 1].map(o => wrecks.padWorld.spawn(nodes[o].node));
+  wrecks.restartHulls();
+  return {
+    after, retired, spawned,
+    back: [0, 1, 2].map(o => ({ removed: !!wrecks.damageVisuals.get(o).removed,
+                                cleared: !!nodes[o].node.userData.cleared, hp: vehicleDamage.get(o).hitPoints,
+                                collision: !disabled.has(o) })),
+  };
+}
+
 process.stdout.write(JSON.stringify({
+  restart: clearAndRestart(),
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
   abandoned: {
     far: abandoned(),

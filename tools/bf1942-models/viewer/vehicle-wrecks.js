@@ -713,6 +713,56 @@ export function createVehicleWrecks(page) {
     page.collider?.statics?.disableOwner?.(owner);
   }
 
+  /**
+   * The end of a round takes every hull off the field (`clearWorld`
+   * 0x081578f0, ledger ROUND-10): the server destroys each root
+   * PlayerControlObject outright, intact or burning, and leaves no wreck. The
+   * node stays, hidden and with no collision, for its pad to stand a fresh one
+   * up (`padWorld.alive` answers no, so the pad's slot is free; the pads keep
+   * running through EndGame as `ObjectSpawner::handleFrameUpdate`, which asks
+   * no game status, does). A node no pad names comes back at the restart
+   * (`restartHulls`). The crew must be out first: the page kills everyone on
+   * the same tick.
+   */
+  function clearWorld() {
+    for (const [owner, visual] of damageVisuals) {
+      if (visual.removed) continue;
+      if (visual.falling) {
+        visual.falling.fallingWreck = false;
+        page.world.falling.delete(visual.falling);
+        visual.falling = null;
+      }
+      delete visual.node.userData.fallingWreck;
+      if (visual.wrecked) {
+        clearWreck(owner, visual);
+        continue;
+      }
+      visual.cleared = true;
+      visual.removed = true;
+      visual.respawnIn = null;
+      for (const handle of visual.handles) handle.stop?.();
+      visual.handles.length = 0;
+      const vehicle = page.vehicleDamage.get(owner);
+      if (vehicle) showDamageTier(vehicle, null);
+      visual.node.visible = false;
+      // `vehicleSpawnActive` reads it, so the visibility pass keeps it hidden.
+      visual.node.userData.cleared = true;
+      page.retireVehicleBody(owner);
+      page.collider?.clearMovedOwner?.(owner, { enable: false });
+      page.collider?.statics?.disableOwner?.(owner);
+    }
+  }
+
+  /** The restart's own pass for the hulls no pad names: each comes back on
+   *  its spot at once (`restartMap` has reloaded the level's objects). The
+   *  pads' hulls are their pads' (`level-statics.js` `restartVehiclePads`). */
+  function restartHulls() {
+    for (const [owner, visual] of damageVisuals) {
+      if (page.vehiclePads?.padOf?.(visual.node)) continue;
+      if (visual.removed) respawnVehicle(owner);
+    }
+  }
+
   /** The server the next delay is drawn for: every player in the world, bots
    *  included, against the page's slot count (`calcSpawnDelay`, SPAWN-10). */
   function serverCounts() {
@@ -867,6 +917,13 @@ export function createVehicleWrecks(page) {
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    // A hull the end of a round took off the field (`clearWorld`) is shown
+    // again; the rest of the reset below is the same as a wreck's.
+    if (visual.cleared) {
+      visual.cleared = false;
+      delete visual.node.userData.cleared;
+      visual.node.visible = true;
+    }
     // A fresh hull: `spawnObject` arms its clock anew.
     abandonClocks.delete(visual.node);
     visual.removed = false;
@@ -982,8 +1039,10 @@ export function createVehicleWrecks(page) {
   }
 
   Object.assign(wrecks, {
+    clearWorld,
     damageOfNode,
     damageVisuals,
+    restartHulls,
     loadFailures,
     modelUrls,
     padWorld,

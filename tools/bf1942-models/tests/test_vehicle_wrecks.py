@@ -121,5 +121,30 @@ class AbandonedHullTests(unittest.TestCase):
         self.assertEqual([100] * 60, self.abandoned["oldScene"])
 
 
+
+class EndOfRoundTests(unittest.TestCase):
+    """`clearWorld` and the restart (ledger ROUND-10)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["restart"]
+
+    def test_the_end_of_a_round_takes_every_hull_off_the_field(self) -> None:
+        for hull in self.r["after"]:
+            self.assertTrue(hull["removed"])
+            self.assertFalse(hull["alive"])
+            self.assertFalse(hull["collision"])
+        # The intact and the burning hull are cleared (no wreck); the wreck
+        # just goes as a cleared wreck does.
+        self.assertEqual([True, True, False], [h["cleared"] for h in self.r["after"]])
+        self.assertEqual([0, 1], self.r["retired"])
+
+    def test_the_restart_brings_each_back_fresh(self) -> None:
+        self.assertEqual([True, True], self.r["spawned"])
+        for hull in self.r["back"]:
+            self.assertEqual((False, False, 100, True),
+                             (hull["removed"], hull["cleared"], hull["hp"], hull["collision"]))
+
+
 if __name__ == "__main__":
     unittest.main()

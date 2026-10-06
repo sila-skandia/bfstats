@@ -560,8 +560,35 @@ export function createLevelStatics(page) {
         },
       });
       for (const node of nodes.values()) padRecords.set(node, record);
+      // What `ObjectSpawner::reset` puts back at a restart (`+0x138`, the
+      // team the pre-game gave it; on or off as the round opened).
+      record.restart = { team: pad.team, active: pad.active, held: record.held };
       statics.pads.push(record);
     });
+  }
+
+  /**
+   * `restartMap`'s `ObjectSpawner::reset` (0x08314880) on every vehicle pad
+   * (ledger ROUND-10): the slots empty, the team the pre-game gave it, on as
+   * the round opened, and the delay -1 or, with `spawnDelayAtStart`, drawn
+   * again for the server as it stands (the status is EndGame, so no `setTeam`
+   * cancels it, SPAWN-21). The hulls are already off the field
+   * (`vehicle-wrecks.js` `clearWorld`); each pad stands a fresh one up on its
+   * own spot on its next frame. The page puts the points back first, as
+   * `restartMap` runs `ControlPoint::reset` before it.
+   */
+  function restartVehiclePads({ players = 0, maxPlayers = 0 } = {}) {
+    for (const record of statics.pads) {
+      const { pad } = record;
+      pad.reset({ players, maxPlayers });
+      const start = record.restart ?? {};
+      if (start.team != null) pad.team = start.team;
+      if (start.active != null) pad.active = start.active;
+      record.held = start.held ?? record.held;
+      record.switchedOff = false;
+      record.firstDraw = false;
+      record.live.clear();
+    }
   }
 
   /**
@@ -610,6 +637,9 @@ export function createLevelStatics(page) {
   }
 
   function vehicleSpawnActive(vehicle) {
+    // Off the field since the end of the round (`vehicle-wrecks.js`
+    // `clearWorld`) until it is stood up again.
+    if (vehicle?.userData?.cleared) return false;
     const record = padRecords.get(vehicle);
     if (record) return record.live.has(vehicle);
     // A node no pad entry names (a scene written before `objectSpawns`): the
@@ -823,6 +853,7 @@ export function createLevelStatics(page) {
     freezeVehicle,
     indexScene,
     padOf,
+    restartVehiclePads,
     stepVehiclePads,
     tagCull,
     thaw,

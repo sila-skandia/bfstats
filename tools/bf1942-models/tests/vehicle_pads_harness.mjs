@@ -221,5 +221,29 @@ const out = {};
   out.switched = { before, off, on: { team: tank.pad.team, active: tank.pad.active } };
 }
 
+// --- the restart (ROUND-10): the field cleared, every pad reset --------------
+// The village goes to team 1 and its M1A1 drives off; the round ends, the end
+// game takes every hull, and the restart resets the pads: each stands its own
+// fresh hull up on its next frame, the village's for its owner at the start.
+{
+  const env = await build({ osId: true });
+  const { st, spawners, flags, state } = env;
+  run(env, 1 / 30);
+  const tank = padBy(st, 'heavytankspawner');
+  const village = flags.find(f => f.controlPointName === 'village');
+  village.team = 0; run(env, 1); village.team = 1; run(env, 1);
+  const before = live(st, spawners);
+  // `clearWorld`: every hull off the field.
+  for (const record of st.pads) for (const node of record.live) state.set(node, 'removed');
+  run(env, 1 / 30);
+  const cleared = live(st, spawners);
+  // `ControlPoint::reset`, then `ObjectSpawner::reset`.
+  village.team = 2;
+  st.restartVehiclePads({ players: 8, maxPlayers: 16 });
+  const reset = { team: tank.pad.team, active: tank.pad.active, delay: tank.pad.delay };
+  run(env, 1 / 30);
+  out.restart = { before, cleared, reset, after: live(st, spawners), tankTeam: tank.pad.team };
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));
