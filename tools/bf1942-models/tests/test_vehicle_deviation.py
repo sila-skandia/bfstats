@@ -180,8 +180,10 @@ class VehicleDeviationTests(unittest.TestCase):
         self.assertEqual(held["outside"], 0)
 
     def test_a_bot_lands_every_round_on_one_point(self) -> None:
-        """AI-145: index 617's draws, (0.9517, 0.2325) of the total, and the AI
-        term rides on the FireArms' own total; barrel i of a pull takes point i."""
+        """AI-145: a seated bot's input index is 618, and a gun with no barrels
+        draws at the index less one, so a seat MG's rounds all take 617's
+        point, (0.9517, 0.2325) of the total; the AI term rides on the
+        FireArms' own total; barrel i of a two-barrel pull draws at 618 + i."""
         bot = self.results["bot"]
         self.assertGreater(bot["n"], 10)
         self.assertEqual(bot["first"], {"total": 0.8125, "uUp": 0.9517, "uRight": 0.2325})
