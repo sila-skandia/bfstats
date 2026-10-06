@@ -105,7 +105,8 @@ export class FireState {
    * itself rides on the cone's total in `seat-cone.js`. The viewer's bot plan
    * does not tell the guns when its statement runs, so each of the bot's
    * rounds holds the extra update for `ticks` more ticks, the gap to the
-   * next round of a held burst (a stand-in, not the engine's window).
+   * next round of a held burst (a stand-in, not the engine's window), and
+   * a trigger the world reports let go (`trigger`) ends it at once.
    */
   holdAI(ticks) {
     if (ticks > this.aiHold) this.aiHold = ticks;
@@ -176,10 +177,11 @@ export class FireState {
       const before = cone.fire;
       // Exactly one tick: `update` counts `dt x 30`, and (1/30) x 30 is 1.
       cone.update(HEAT_TICK);
-      // A bot's trigger statement's own update, the same tick (DEV-13).
+      // A bot's trigger statement's own update, the same tick (DEV-13), for
+      // as long as the trigger is down where the caller reports it.
       if (this.aiHold > 0) {
         this.aiHold -= 1;
-        cone.update(HEAT_TICK);
+        if (!this.triggerKnown || this.held) cone.update(HEAT_TICK);
       }
       this.total = cone.current();
       if (cone.fire === before) {
