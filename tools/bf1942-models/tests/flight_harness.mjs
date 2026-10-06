@@ -1808,10 +1808,14 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       fly(heli, 8);
       real.helicopters[name] = { vectored: heli.vectored, engines: heli.vectoredEngines.length,
                                  idleY: round(idleY), climbed: round(climbed), releasedVy: round(heli.state.velocity.y),
-                                 hovers: heli.hovers };
+                                 hovers: heli.hovers, inertiaPairing: heli.spec.inertiaPairing ?? null };
     }
     // Parked on their own wheels, pilot aboard, collective released, nose 6
     // degrees up: the reviewer's AH-64 walked off at 2.6 m/s after 10 s.
+    // A hull staged nose-high also rocks down onto its gear, and its origin,
+    // two metres above the wheels, swings forward over them: the UH-60, whose
+    // `.2` is its light pitch axis (COL-13), settles from 6 degrees to level
+    // in 22 s, moves 0.11 m by 20 s and 0.14 m in all, then stands still.
     real.parked = {};
     for (const name of ['AH64', 'UH-60', 'Mi24D', 'AH-6']) {
       const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false, surfaceFriction: () => 0.8 });
@@ -1856,40 +1860,51 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
         grips: [...new Set(craft.spec.wheels.map(w => w.grip))],
       };
     }
-    // The owner's Harrier flight, key by key through the page's own air-seat
-    // tick (`world-vehicle-tick.js` `vehicleTick`, which shapes W/S into the
-    // held `c_PIThrottle` and springs the arrows through `axisToward`): S for
-    // 3 s to lift on the jets, W for 4 s to transition, ArrowDown (Air.con's
-    // `c_PIPitch` -1) for 1 s to pull up, then 2 s more on W. With the RollGrip
-    // bug it left the pad already turning and was banked 41 degrees by the
-    // end of the W, and the pull dropped the nose.
-    if (existsSync(dc('AV-8B'))) {
-      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
-      harrier.groundHeight = () => 0;
-      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+    // A pilot keying an airframe through the page's own air-seat tick
+    // (`world-vehicle-tick.js` `vehicleTick`, which shapes W/S into the held
+    // `c_PIThrottle` and springs the pedals and arrows through `axisToward`),
+    // one 30 Hz world tick at a time. `keys` is the page's input word:
+    // `forward` W/S, `rudder` D/A, `pitch` ArrowUp/ArrowDown (Air.con's
+    // `c_PIPitch` +1/-1). `attitude` is the hull's in world terms; `tilt` is
+    // how far its up axis leans from vertical, which a yaw does not change.
+    const keyed = craft => {
       const seat = {
-        id: 'pilot', kind: 'air', vehicle: harrier,
+        id: 'pilot', kind: 'air', vehicle: craft,
         occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
         gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
         stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
       };
       const world = { occupiedDamageable: () => null, falling: null, fireStateFor: () => null, guns: null };
-      const integrators = new Map([[harrier, seat]]);
-      const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
-      let maxBank = 0;
+      const integrators = new Map([[craft, seat]]);
+      const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), body = new THREE.Vector3();
       const attitude = () => {
-        const q = harrier.state.orientation;
+        const q = craft.state.orientation;
         fwd.set(0, 0, -1).applyQuaternion(q); right.set(1, 0, 0).applyQuaternion(q); up.set(0, 1, 0).applyQuaternion(q);
+        body.copy(craft.state.angularVelocity).applyQuaternion(q.clone().invert());
         return { pitch: Math.asin(Math.max(-1, Math.min(1, fwd.y))) * DEG, bank: Math.atan2(-right.y, up.y) * DEG,
-                 heading: Math.atan2(-fwd.x, -fwd.z) * DEG, y: harrier.state.position.y };
+                 heading: Math.atan2(-fwd.x, -fwd.z) * DEG, tilt: Math.acos(Math.min(1, up.y)) * DEG,
+                 y: craft.state.position.y, pitchRate: body.x * DEG, yawRate: body.y * DEG, rollRate: body.z * DEG };
       };
-      const hold = (seconds, keys) => {
-        for (let i = 0; i < Math.round(seconds * 30); i++) {
-          bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: 0, roll: 0, pitch: keys.pitch ?? 0 });
-          vehicleTick(world, seat, 1 / 30, integrators);
-          maxBank = Math.max(maxBank, Math.abs(attitude().bank));
-        }
+      const tick = keys => {
+        bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: keys.rudder ?? 0, roll: 0, pitch: keys.pitch ?? 0 });
+        vehicleTick(world, seat, 1 / 30, integrators);
         return attitude();
+      };
+      return { tick, attitude };
+    };
+    // The owner's Harrier flight: S for 3 s to lift on the jets, W for 4 s to
+    // transition, ArrowDown for 1 s to pull up, then 2 s more on W. With the
+    // RollGrip bug it left the pad already turning and was banked 41 degrees
+    // by the end of the W, and the pull dropped the nose.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      harrier.groundHeight = () => 0;
+      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+      const pilot = keyed(harrier);
+      let maxBank = 0;
+      const hold = (seconds, keys) => {
+        for (let i = 0; i < Math.round(seconds * 30); i++) maxBank = Math.max(maxBank, Math.abs(pilot.tick(keys).bank));
+        return pilot.attitude();
       };
       hold(1, {});
       const lifted = hold(3, { forward: -1 });
@@ -1901,6 +1916,36 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
         pitchBeforePull: round(transitioned.pitch, 2), pitchAtRelease: round(pulled.pitch, 2),
         pitchAfter: round(after.pitch, 2), climbedAfter: round(after.y - transitioned.y, 1),
       };
+    }
+    // Pedal alone in a hover: 3 s holding height on W taps, 2 s of D, 2 s
+    // hands off, against the same hover flown without the pedal (the hover
+    // itself drifts a degree a second in pitch: nothing trims it). The
+    // engine has no gyroscopic term (COL-8); with one, the DC UH-60 rolled
+    // at 38 deg/s and leaned 22 degrees off the hover it would have flown.
+    real.yawOnly = {};
+    for (const name of ['UH-60', 'AH64', 'Mi24D']) {
+      const fly = async pedal => {
+        const heli = new Aircraft(await glb(dc(name)), null, { cockpit: false });
+        heli.groundHeight = () => 0;
+        heli.state.position.set(0, 100, 0);
+        const pilot = keyed(heli);
+        const height = () => (heli.state.velocity.y < 0 ? 1 : 0);
+        for (let i = 0; i < 3 * 30; i++) pilot.tick({ forward: height() });
+        const track = [];
+        for (let i = 0; i < 2 * 30; i++) track.push(pilot.tick({ forward: height(), rudder: pedal ? 1 : 0 }));
+        for (let i = 0; i < 2 * 30; i++) track.push(pilot.tick({ forward: height() }));
+        return track;
+      };
+      const control = await fly(false), pedal = await fly(true);
+      let lean = 0, pitchRate = 0, rollRate = 0, yawRate = 0;
+      pedal.forEach((p, i) => {
+        lean = Math.max(lean, Math.abs(p.tilt - control[i].tilt));
+        pitchRate = Math.max(pitchRate, Math.abs(p.pitchRate - control[i].pitchRate));
+        rollRate = Math.max(rollRate, Math.abs(p.rollRate - control[i].rollRate));
+        yawRate = Math.max(yawRate, Math.abs(p.yawRate));
+      });
+      real.yawOnly[name] = { yawRate: round(yawRate, 1), lean: round(lean, 2),
+                             pitchRate: round(pitchRate, 2), rollRate: round(rollRate, 2) };
     }
     // The bot's law flies each of them 700 m and puts it down on the point.
     real.pilot = {};
@@ -1941,7 +1986,8 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     for (const name of planes) {
       const plane = new Aircraft(await glb(dc(name)), null, { cockpit: false });
       real.planes[name] = { vectored: plane.vectored, inertiaLaw: plane.spec.inertiaLaw ?? null,
-                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)), hovers: plane.hovers };
+                            offNose: Math.max(...plane.spec.engines.map(e => e.offNose)), hovers: plane.hovers,
+                            inertiaPairing: plane.spec.inertiaPairing ?? null };
     }
     // The Harrier is vectored (its lift jets point down) but does not hover on
     // its collective: W opens the forward engine. Its bots keep the plane law.
