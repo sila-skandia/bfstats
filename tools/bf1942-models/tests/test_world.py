@@ -296,6 +296,20 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(d["hullIsPco"])
         self.assertEqual(d["hullTemplate"], "F-14B")
 
+    def test_a_seated_soldier_is_served_only_by_his_own_hulls_depot(self) -> None:
+        """SUP-20 through the world pass: a half-track's own locker heals
+        its rider, a ground locker on the same spot does not, a rider in
+        another hull there gets nothing, and a man on foot gets both. An
+        Axis-only pad repairs the Axis-crewed Sherman and neither the
+        Allied-crewed nor the empty one (team 0, SEAT-27). Three cycles of
+        16 ticks in 60."""
+        r = self.results["reach"]
+        one = 3 * (16 / 30) * 4
+        self.assertAlmostEqual(r["inA"], 10 + one, places=4)
+        self.assertEqual(r["inB"], 10)
+        self.assertAlmostEqual(r["onFoot"], 10 + 2 * one, places=4)
+        self.assertEqual(r["tanks"], [50 + 3 * 4, 50, 50])
+
 
 if __name__ == "__main__":
     unittest.main()
