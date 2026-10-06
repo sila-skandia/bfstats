@@ -172,15 +172,6 @@ spec:
                 secretKeyRef:
                   name: bf42-stats-secrets
                   key: refresh-token-secret
-            # Discord suspicious round alerts. Webhook in discord-secrets (optional). See deploy/app/DISCORD_SECRETS.md
-            - name: DiscordSuspicious__RoundWebhookUrl
-              valueFrom:
-                secretKeyRef:
-                  name: discord-secrets
-                  key: suspicious-round-webhook
-                  optional: true
-            - name: DiscordSuspicious__ScoreThreshold
-              value: "150"
             # Discord AI quality alerts. Webhook in discord-secrets (optional).
             - name: DiscordAIQuality__WebhookUrl
               valueFrom:
