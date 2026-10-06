@@ -43,6 +43,14 @@
 // rather than tipping it onto the slope. The emitter passes no velocity, so
 // every body starts at rest.
 //
+// **What removes it** is the server, and only two things make it (EMT-11). Its
+// Armor: destroyed, it stays its template's `timeToLiveAfterDeath` and goes
+// (HP-19; both rafts write 0, so a sunk raft is gone on the next tick), which
+// `vehicle-wrecks.js` runs for it as for any hull and then tells `remove`. And
+// the end of the round, which destroys every root PlayerControlObject (HP-20).
+// No ObjectSpawner made it, so the abandon clock a spawner arms never runs; a
+// ruin with 999999 hit points stands for the rest of the round.
+//
 // Imported by map.html, and by `tests/effect_objects_harness.mjs`.
 
 import * as THREE from 'three';
@@ -127,12 +135,14 @@ function writePose(object, body) {
  * `page` hands in, as getters or calls: `effects` (the `EffectPlayer`),
  * `isCollision(node)`, `bindDynamicShading(root)`, `collider` (the level's
  * `WorldCollider`: its `waterLevel` and `heightfield` decide a body, and its
- * hull index takes the object), `registerDamageable(owner, node, opts)` and
- * `world` (its `positions`).
+ * hull index takes the object), `registerDamageable(owner, node, opts)`,
+ * `unregisterDamageable(owner)`, `world` (its `positions`) and `roundOver`.
  */
 export function createEffectObjects(page) {
   let adopted = 0;
   let tiers = 0;
+  let removed = 0;
+  let roundWasOver = false;
   /** One per object a spawn effect stood up: `{ object, kind, hull, ... }`. */
   const held = [];
 
@@ -241,7 +251,36 @@ export function createEffectObjects(page) {
       }
     }
     record.radius = radius;
-    record.damageable = page.registerDamageable?.(record.owner, object, { spawned: true }) ?? null;
+    record.damageable = page.registerDamageable?.(record.owner, object, {
+      spawned: true, onRemoved: () => remove(record),
+    }) ?? null;
+  }
+
+  /**
+   * The server destroys it (`GameServer::destroyObject`): its time to live
+   * after death ran out (HP-19), or the round ended (HP-20). Nothing else
+   * does: no ObjectSpawner made it, so it has no abandon clock (EMT-11).
+   */
+  function remove(record) {
+    const at = held.indexOf(record);
+    if (at >= 0) held.splice(at, 1);
+    const { object, owner } = record;
+    if (owner >= 0) {
+      page.collider?.clearMovedOwner?.(owner, { enable: false });
+      page.collider?.statics?.disableOwner?.(owner);
+      page.unregisterDamageable?.(owner);
+    }
+    if (!page.effects?.removeObject?.(object)) object.removeFromParent();
+    removed++;
+  }
+
+  /** `GameServer::gameStatusFirstEndGame` -> `clearWorld` (HP-20): the end of
+   *  a round destroys every root PlayerControlObject, both rafts and every
+   *  Desert Combat ruin among them. */
+  function endOfRound() {
+    for (const record of [...held]) {
+      if (record.object.userData?.templateKind === 'PlayerControlObject') remove(record);
+    }
   }
 
   const _fwd = new THREE.Matrix4();
@@ -280,6 +319,9 @@ export function createEffectObjects(page) {
    * object `EffectPlayer.clear()` has taken away (a level change) is dropped.
    */
   function step(stepReport) {
+    const over = !!page.roundOver;
+    if (over && !roundWasOver) endOfRound();
+    roundWasOver = over;
     const ticks = stepReport?.ticks ?? 0;
     for (let i = held.length - 1; i >= 0; i--) {
       const record = held[i];
@@ -299,5 +341,6 @@ export function createEffectObjects(page) {
     held,
     get adopted() { return adopted; },
     get tiers() { return tiers; },
+    get removed() { return removed; },
   };
 }

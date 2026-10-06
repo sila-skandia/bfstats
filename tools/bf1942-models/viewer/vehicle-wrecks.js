@@ -88,10 +88,11 @@ export function createVehicleWrecks(page) {
   /**
    * One owner's Armor, if it has one. `spawned`: an object a spawn effect stood
    * up after the load (EMT-10), which no ObjectSpawner made and none will put
-   * back.
+   * back; `onRemoved(owner)` is told when its time to live has run out and
+   * the server would destroy it (HP-19).
    */
   const regPos = new THREE.Vector3();
-  function registerDamageable(owner, node, { spawned = false } = {}) {
+  function registerDamageable(owner, node, { spawned = false, onRemoved = null } = {}) {
     const armorExtras = node?.userData?.armor;
     const vehicle = page.world.addDamageable(owner, node, armorExtras, {
       name: node?.name || null,
@@ -108,9 +109,24 @@ export function createVehicleWrecks(page) {
         handles: [],
         spawnDelay: spawned ? null : spawnDelayForNode(node),
         spawned,
+        onRemoved,
       });
     }
     return vehicle;
+  }
+
+  /** An owner the server has destroyed outright: no wreck, no respawn, no
+   *  Armor left to hit (what a spawn effect stood up, HP-19, HP-20). */
+  function unregisterDamageable(owner) {
+    const visual = damageVisuals.get(owner);
+    if (visual) {
+      for (const handle of visual.handles) handle.stop?.();
+      for (const anchor of visual.anchors.values()) anchor.parent?.remove(anchor);
+      damageVisuals.delete(owner);
+      page.world?.nodeOwners?.delete(visual.node);
+    }
+    page.world?.positions?.delete(owner);
+    page.vehicleDamage?.byOwner?.delete(owner);
   }
 
   /**
@@ -723,6 +739,7 @@ export function createVehicleWrecks(page) {
       // `resetWhenRemoved` puts its hit points back where it stands; a spawned
       // object has no spawner to put it back.
       visual.respawnIn = clock.reset ? 0 : visual.spawned ? null : spawnDelayFor(visual);
+      if (visual.spawned && !clock.reset) visual.onRemoved?.(owner);
     }
   }
 
@@ -865,6 +882,7 @@ export function createVehicleWrecks(page) {
     wreckState,
     registerDamageable,
     registerDamageables,
+    unregisterDamageable,
     showDamageTier,
     killOccupantInSeat,
     stepWrecks,
