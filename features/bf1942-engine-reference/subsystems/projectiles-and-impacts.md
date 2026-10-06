@@ -106,6 +106,14 @@ body is `hasCollisionPhysics 1` physics, gravity × `gravityModifier`
 `explodeNearEnemyDistance` proximity fuse and scales the visible body; the
 fuse is section 5.
 
+**Where a round's sweep starts** (IMP-8, read 2026-10-07). The round is born
+at its launch frame: the eye plus `projectilePosition` for a `fireInCameraDof`
+weapon (XHIT-12). On the tick it is fired the physics nodes move it before the
+world's collision runs, and `PointResponsePhysics` sweeps `pos − v·dt → pos`.
+So the first segment starts at the spawn point; the stretch from the eye to it
+is never tested. The terrain takes only a segment that crosses its surface from
+above, so a round born under the ground runs on beneath it.
+
 ## 3. EffectBundle → Emitter → particle
 
 An impact effect is an `EffectBundle`; the material table names 73 in vanilla.
