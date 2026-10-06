@@ -129,10 +129,75 @@ nearest-flag join. Two things change, and both are engine-correct:
   BMP2 and ZPU-4 drawn after Iraq's decree, and the bots' candidates listing
   them.
 
+## The abandoned hull's clock
+
+Every one of Desert Combat's 1,529 spawner templates sets `TimeToLive` (1,415
+of them at 45 s) and `Distance`, and the viewer had no use for either word.
+In the engine, `spawnObject` arms each vehicle a pad places with its
+template's `TimeToLive` (SPAWN-11, SPAWN-13). The clock runs in 0.5 s steps:
+
+- It counts down while the hull stands farther than `Distance` from its
+  spawner, nobody sits in it, and no live soldier on foot is within its
+  bounding radius. Anything else resets it.
+- At zero it bills `damageWhenLost` a second until the hull's own critical
+  burn finishes it. Desert Combat's tanks set `TimeToLive 45`, `Distance 40`
+  and `damageWhenLost 10`.
+- The vanilla defaults, for a template that sets none, are 30 s, 100 m and
+  1 hit point a second (SPAWN-17).
+
+What changed:
+
+- **The exporter.** `extract_map.py` `_object_spawn_report` now writes
+  `timeToLive`, `distance` and `damageWhenLost` on every pad, with the ctor's
+  values where the template is silent. This is the `spawns` layer; no re-bake
+  is needed.
+- **The page.** `vehicle-wrecks.js` `stepAbandoned` runs `deployables.js`
+  `AbandonClock` for every hull a pad has out, and gives a far, empty,
+  unwatched hull its hit points through its own `DamageableVehicle`. From
+  there the critical burn, the wreck and the pad's delay are the ones above.
+  - It arms only where the scene carries `timeToLive`, so a tree that has not
+    been re-patched keeps hulls that never time out.
+  - The out-of-world bill in the same branch (SPAWN-20, a PCO template field
+    whose word was not found) is not modelled.
+- **`spawnDelayAtStart`.** It is a bool (SPAWN-17). The six Desert Combat lines
+  that write 15 or 60 (the SCUD and the AC-130) delay nothing in retail, and
+  now in the viewer too. `SpawnerPad` holds back a pad's first vehicle only for
+  a `1`.
+
+How it was checked:
+
+- `tests/test_vehicle_wrecks.py` `AbandonedHullTests`
+  (`vehicle_wrecks_harness.mjs`): an M1A1 with Desert Combat's words, 60 m
+  from its pad. It keeps 100 hit points for 45 s, then loses about
+  10 hit points a second. At 30 m, with a man in its seat, with a soldier
+  beside it, or in a scene without the words, it keeps all 100.
+- `tests/test_object_spawn_report.py`: the template's words, the ctor's
+  defaults, and Gazala's tank pads from the shipped archive (45 / 40 / 10).
+- Headless runner on DC Gazala with its `spawns` layer re-patched in a scratch
+  tree (`~/.cache/dc-sweep/spawner-pads/abandon.mjs`, no bots):
+  - The Allied village's M1A1 is moved 60 m off its pad and left. It goes
+    from 20 to 9 hit points (critical) between t = 53.3 and 54.4 s, and is
+    destroyed at 55.5 s.
+  - It stands on its pad again with 100 hit points at 165.5 s: the pad's
+    110 s `maxSpawnDelay` on an empty server, counted from the destruction.
+  - Moved 20 m instead, inside its 40 m `Distance`, it is untouched for 80 s.
+  - On the live, unpatched tree it is untouched too.
+
+The patch, proved on a scratch copy of five DC levels:
+
+```bash
+python3 tools/bf1942-models/patch_scene.py --tree <scratch>/desertcombat --mod DesertCombat --layer spawns --all
+```
+
+Each level's `objectSpawns` gains only the three words. Gazala's 49 pads come
+out at 45 s / 40 m / 10 hp/s (4 of them at 20 hp/s). Weapon Bunkers' three
+bunkers come out at 9999 s.
+
 ## Open
 
 - A wreck away from its pad delays its pad's next vehicle until it clears
   (see "One node per template").
+- The abandoned hull's out-of-world bill (SPAWN-20).
 - `deployables-page.js` (the kit pads) keeps its own copy of the join. That
   copy does not switch a neutral flag's pad off at the start, as
   `ControlPoint::reset` does.

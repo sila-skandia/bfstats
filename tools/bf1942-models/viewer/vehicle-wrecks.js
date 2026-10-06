@@ -12,7 +12,8 @@ import { AIRBORNE_MARGIN } from './airborne.js';
 import { restoreLift } from './world-vehicle-tick.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
-import { calcSpawnDelay } from './deployables.js';
+import { AbandonClock, calcSpawnDelay } from './deployables.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -130,6 +131,7 @@ export function createVehicleWrecks(page) {
     }
     damageVisuals.clear();
     ownerOfNode = new WeakMap();
+    abandonClocks = new WeakMap();
   }
 
   /**
@@ -746,8 +748,75 @@ export function createVehicleWrecks(page) {
 
   function stepPads(dt) {
     if (!page.vehiclePads?.stepVehiclePads) return;
+    stepAbandoned(dt);
     Object.assign(padWorld, serverCounts());
     page.vehiclePads.stepVehiclePads(dt, padWorld);
+  }
+
+  // node -> AbandonClock: the countdown `spawnObject` arms on every vehicle
+  // a pad stands up (ledger SPAWN-13), dropped with the hull it timed.
+  let abandonClocks = new WeakMap();
+
+  /** Every live soldier on foot, at his origin (feet plus a metre): the
+   *  clock's "near" test walks every alive player whose object is a soldier. */
+  function footOrigins() {
+    const out = [];
+    const world = page.world;
+    for (const [id, player] of world?.players ?? []) {
+      const s = player?.soldier;
+      if (!s || world.armorOf?.(id)?.destroyed || page.vehicles?.seatOf?.(id)) continue;
+      out.push([s.x, s.y + CHARACTER_HEIGHT, s.z]);
+    }
+    return out;
+  }
+
+  /**
+   * The abandoned hulls' clocks (`PlayerControlObject::handleFrameUpdate`,
+   * SPAWN-13): a pad's hull standing farther than its spawner's `Distance`
+   * from the pad, with nobody in it and no soldier on foot within its
+   * bounding radius, counts down `TimeToLive` and then loses `damageWhenLost`
+   * a second, into its own critical burn. Only a scene that carries the words
+   * (`objectSpawns[].timeToLive`, the exporter since 2026-10-06) arms them; an
+   * older one keeps hulls that never time out, as before. The out-of-world
+   * bill after it (SPAWN-20) is not modelled.
+   */
+  function stepAbandoned(dt) {
+    const pads = page.vehiclePads?.pads;
+    if (!pads?.length || !(dt > 0)) return;
+    let feet = null;
+    for (const record of pads) {
+      const spec = record.spawn;
+      if (!Number.isFinite(spec?.timeToLive)) continue;
+      for (const node of record.live) {
+        const owner = ownerOfNode.get(node);
+        const visual = owner == null ? null : damageVisuals.get(owner);
+        const vehicle = owner == null ? null : page.vehicleDamage.get(owner);
+        if (!visual || !vehicle || visual.wrecked || vehicle.destroyed) continue;
+        let clock = abandonClocks.get(node);
+        if (!clock) {
+          clock = new AbandonClock({
+            timeToLive: spec.timeToLive,
+            distance: Number.isFinite(spec.distance) ? spec.distance : 100,
+            damageWhenLost: Number.isFinite(spec.damageWhenLost) ? spec.damageWhenLost : 1,
+          });
+          abandonClocks.set(node, clock);
+        }
+        const at = padWorld.position(node);
+        const spawnerDistance = Math.hypot(at[0] - record.at[0], at[1] - record.at[1], at[2] - record.at[2]);
+        const inst = page.vehicles?.instanceOf?.(node);
+        const occupied = !!(inst && !inst.empty);
+        // Only a far, empty hull needs the soldiers looked for.
+        let soldierNear = false;
+        if (spawnerDistance > clock.distance && !occupied) {
+          feet ??= footOrigins();
+          const r = node.userData?.cullRadius ?? 0;
+          soldierNear = feet.some(o =>
+            (o[0] - at[0]) ** 2 + (o[1] - at[1]) ** 2 + (o[2] - at[2]) ** 2 < r * r);
+        }
+        const loss = clock.step(dt, { spawnerAlive: true, spawnerDistance, soldierNear, occupied });
+        if (loss > 0) vehicle.damage(loss, null);
+      }
+    }
   }
 
   /**
@@ -769,6 +838,8 @@ export function createVehicleWrecks(page) {
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    // A fresh hull: `spawnObject` arms its clock anew.
+    abandonClocks.delete(visual.node);
     visual.removed = false;
     visual.wreckAge = 0;
     // A pad that came back while its last hull was still falling: the fall is

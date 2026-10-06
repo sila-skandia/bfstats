@@ -2343,6 +2343,14 @@ def union_control_points(info: LevelInfo) -> list[tuple]:
     return order
 
 
+# `ObjectSpawnerTemplate::ObjectSpawnerTemplate` (lnxded 0x08314a70): the
+# abandoned clock's words where a template sets none (ledger SPAWN-9,
+# SPAWN-17).
+SPAWNER_TIME_TO_LIVE = 30.0
+SPAWNER_DISTANCE = 100.0
+SPAWNER_DAMAGE_WHEN_LOST = 1.0
+
+
 def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
     """Per-pad ObjectSpawner record: vehicle + respawn window + world pose.
 
@@ -2394,6 +2402,20 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
             entry["maxSpawnDelay"] = window[1]
         if spec and spec.spawn_delay_at_start is not None:
             entry["spawnDelayAtStart"] = spec.spawn_delay_at_start
+        # The abandoned hull's clock (ledger SPAWN-13): `spawnObject` arms
+        # every vehicle it places with the template's `TimeToLive`, which runs
+        # while the hull stands farther than `Distance` from its spawner with
+        # nobody in or beside it, and then bills `damageWhenLost` a second.
+        # Written for every pad, the ctor's 30 / 100 / 1.0 where the template
+        # sets none (SPAWN-9, SPAWN-17), so a scene that has them says the
+        # clock is the engine's and a scene that lacks them predates it.
+        if spec:
+            entry["timeToLive"] = (spec.time_to_live if spec.time_to_live is not None
+                                   else SPAWNER_TIME_TO_LIVE)
+            entry["distance"] = (spec.distance if spec.distance is not None
+                                 else SPAWNER_DISTANCE)
+            entry["damageWhenLost"] = (spec.damage_when_lost if spec.damage_when_lost is not None
+                                       else SPAWNER_DAMAGE_WHEN_LOST)
         # The engine's own join of a pad to its flag: `Object.setOSId` against
         # the control point's `objectSpawnerId`. `CPEnable` / `CPDisable`
         # (lnxded 0x082840e0 / 0x08284200) give the spawner the point's team
