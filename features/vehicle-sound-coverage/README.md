@@ -952,6 +952,38 @@ one pitch `Default` 0 gives, and a Sherman's two tracks both play
   parts), DC 1,229 and 5,384 (100 before). Inside a patch: no offence in
   either tree.
 
+### In the page
+
+`~/.cache/dc-sweep/sounds/part_probe.cjs` drives `map.html` headless (Vulkan
+flags, under the shared browser lock). It serves each level's scene.json and
+any new samples from the scratch-patched tree through `page.route`, so the
+shared maps tree is never written. It boards a hull and reads
+`__vehicleAudio().snapshot()`:
+
+* **Aberdeen, Sherman.** At rest the tower is silent and the tracks run at
+  gain 0 (speed 0). Traversed with the mouse at 16.8 deg/s, the three tower
+  loops (`VEFTRTYAW2`, `WWSXCGYAW`, `VEFTRTYAW`) play at 0.42, 0.16 and 0.43.
+  At 5.3 deg/s they fall to 0.13, 0.05 and 0.14. After 1.5 s still, all are
+  silent again.
+* **DC Medina Ridge, M1A1.** At 8.4 deg/s `m1turretservo` plays at 0.415,
+  pitch 0.584. The script's own ramps give (8.4 - 0.1) / 19.9 = 0.417 and
+  0.5 + 0.1 x 0.84 = 0.584. Stopped, it is silent.
+* **El Alamein, Spitfire, gear.** Placed at 300 m, the legs retract at
+  33.5 deg/s: patch 0 is pressed and its motor loops rise on their `Time`
+  ramps (`lghi` 0.2, `lcvphirpm` 0.9 at pitch 1.41). Placed at 3 m before the
+  legs were up, the gear reverses: patch 0 lets go with its `LG2` clunk and
+  patch 1 presses. The right leg's `lcvphirpm` is arbitrated against the
+  left's, as one buffer at one rate.
+* **Midway, Corsair on the carrier.** Boarding plays one `lg1` clunk. The
+  legs really move there, by 0.6 degrees out and back over three frames at
+  21, 2 and 11 deg/s. That is `aircraft.js` `autoGear`: it retracts on height
+  alone, and the carrier deck is 38.8 m above the sea. The engine also
+  requires the engine's differential rpm at or above `gearUpEngineInput`
+  (SND-21), which `con.py` extracts and the viewer never reads. That belongs
+  to the aircraft code, not here. A leg that is re-posed rather than
+  travelling (faster than twice its `setMaxSpeed`, a replay seek) plays
+  nothing (`GEAR_SNAP`).
+
 ## Not done here
 
 * `Speed` and `Acceleration` are the voice's own motion in the engine (patch
