@@ -1,7 +1,8 @@
 // The blast's push where it meets the soldier's other movers (`viewer/
 // knockback.js`, `walking-body.js` `SoldierBody.blast`, ledger KNOCK-4..
 // KNOCK-6): the ladder, which takes a tick whole without stepping the body,
-// and a second blast in the same tick. Written by the adversarial review of
+// a second blast in the same tick, and the item gate the explosion states
+// shut. Written by the adversarial review of
 // the soldier-blast package; run by `tests/test_knockback_seams.py`.
 //
 // The ladder is `ladder_harness.mjs`'s: a 20 m ladder whose plane is world
@@ -86,6 +87,38 @@ const out = {};
     horizontal: round(Math.hypot(v.x - v0.x, v.z - v0.z)),
     expectedHorizontal: round(2 * Math.hypot(one.x, one.z) / 30),
   };
+}
+
+// 3. The item gate. Every explosion state's lower half declares
+//    `c_AsmHideWeapon` (`AnimationStatesExplosionFly.con`), the same flag the
+//    swim's lock is (`swim.js` `itemsLocked`): a man a blast threw has nothing
+//    in his hands, so the page's trigger, reload and zoom, which all ask
+//    `Soldier.itemsLocked`, have nothing to work. A human's legs are his own
+//    the tick he lands (KNOCK-8), and so are his hands.
+{
+  const s = new Soldier({ collider: flatWorld() });
+  s.spawn(0, 0, 0, 0);
+  for (let i = 0; i < 30; i++) s.step(TICK, {});
+  s.body.knockback = new Knockback();
+  const before = s.itemsLocked;
+  const a = soldierBlastAcceleration({
+    force: 150, radius: 15, distance: 5, offset: [0, 0, 5], exposure: 1,
+    forceMod: 150, forceMax: 600,
+  });
+  s.body.blast(a.x, a.y, a.z, { ai: false });
+  let lockedInFlight = false;
+  let landedFamily;
+  let afterLanding = null;
+  for (let i = 0; i < 600; i++) {
+    s.step(TICK, {});
+    if (s.body.knockback.airborne) lockedInFlight ||= s.itemsLocked;
+    if (lockedInFlight && !s.body.knockback.active) {
+      landedFamily = s.body.knockback.family;
+      afterLanding = s.itemsLocked;
+      break;
+    }
+  }
+  out.itemGate = { before, lockedInFlight, landedFamily: landedFamily ?? null, afterLanding };
 }
 
 process.stdout.write(JSON.stringify(out));

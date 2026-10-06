@@ -49,6 +49,13 @@ class KnockbackSeamTests(unittest.TestCase):
         self.assertLess(r["fastest"], 8.0)
         self.assertIsNone(r["family"])
 
+    def test_a_thrown_man_has_nothing_in_his_hands_until_he_lands(self) -> None:
+        r = self.results["itemGate"]
+        self.assertFalse(r["before"])
+        self.assertTrue(r["lockedInFlight"])
+        self.assertIsNone(r["landedFamily"])
+        self.assertFalse(r["afterLanding"])
+
     def test_two_blasts_in_one_tick_add(self) -> None:
         r = self.results["twoBlasts"]
         self.assertAlmostEqual(r["each"], 20.0, places=2)
