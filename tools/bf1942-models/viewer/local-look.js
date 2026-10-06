@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { MouseInput, profileFor } from './mouse-input.js';
-import { MOUSE_LOOK_TRIGGER, seatNeedsMouseLookKey, recentreLook } from './mouse-look-key.js';
+import {
+  MOUSE_LOOK_TRIGGER, describeSeat, recentreLook, seatLookPitchSign, seatNeedsMouseLookKey,
+  seatProfile,
+} from './mouse-look-key.js';
 import { presentBelts } from './track-scroll.js';
 
 /**
@@ -47,13 +50,14 @@ export function createLocalLook(page) {
   /** Which sensitivity profile the player is on right now.
    *
    *  The engine reads it off the entered PCO's `getVehicleCategory()` (see
-   *  `mouse-input.js`'s `profileFor`), and in vanilla every stationary weapon
-   *  and every gunner position -- an aircraft's rear gun included -- declares
-   *  `VCLand`, so only an aircraft's own pilot seat is on the Air profile. That
-   *  is exactly `flying` here. */
+   *  `mouse-input.js`'s `profileFor`), and the entered PCO is the seat's own
+   *  (MLK-14). In vanilla every stationary weapon and every gunner position --
+   *  an aircraft's rear gun included -- declares `VCLand`, so only an
+   *  aircraft's pilot is on the Air profile; Desert Combat's `VCAir` co-pilots
+   *  and passengers are on it too (`mouse-look-key.js` `seatProfile`). */
   function lookProfile() {
     if (page.optPilot.checked && page.occupancy) {
-      return profileFor(page.aircraft && page.occupancy.isActiveRoot() ? 'air' : 'land');
+      return seatProfile(describeSeat(page.occupancy));
     }
     return profileFor(null);
   }
@@ -512,47 +516,53 @@ export function createLocalLook(page) {
       // turn, and falling through would hand the mouse to the driver's camera.
       return;
     }
-    if (page.optPilot.checked && (page.aircraft || page.car)) {
-      // A car's driver and a helmsman: the mouse turns the view. What it does
-      // depends on the view — a head inside the cockpit, an orbit outside it,
-      // and nothing at all in fly-by, which is a camera standing in the world.
-      // `VehicleCamera` owns that distinction and the per-mode clamps that go
-      // with it.
+    if (page.optPilot.checked && (page.aircraft || page.car || page.view)) {
+      // A car's driver, a helmsman, a pilot and a passenger: the mouse turns
+      // the seat's view. What it does depends on the view — a head inside the
+      // cockpit, an orbit outside it, and nothing at all in fly-by, which is a
+      // camera standing in the world. `VehicleCamera` owns that distinction
+      // and the per-mode clamps that go with it. A passenger has a view of his
+      // own whether or not anyone is driving (`seat-camera.js`
+      // `buildSeatView`), so the seat's view is enough to reach it.
       //
-      // A pilot's head turns only while the mouse-look key is held: his
-      // Camera's `toggleMouseLook` makes the engine drop the look axes for
-      // every tick the key is up, in every view (`mouse-look-key.js`), and
-      // the released view eases back (`stepMouseLookKey`).
+      // A seat whose Camera sets `toggleMouseLook` (every pilot's, and DC's
+      // MH-6 and SA-342 passengers', MLK-14) turns its head only while the
+      // mouse-look key is held: the engine drops the look axes for every tick
+      // the key is up, in every view (`mouse-look-key.js`), and the released
+      // view eases back (`stepMouseLookKey`).
       //
       // Up, the same counts fly the aircraft: they go into the look stage,
-      // which the frame pumps on the Air profile, and the pilot's input word
-      // reads the pumped pair as his stick (`local-player.js` `sampleInput`
-      // through the Air map's `c_PIRoll`/`c_PIPitch` mouse lines). The view
-      // does not move. A finger on the touch look zone is not the mouse and
-      // never reached the stick: it does nothing here, as it always did.
-      if (lookNeedsKey()) {
-        if (!lookKeyHeld()) {
-          if (!source?.touch) mouseInput.accumulate(dx, dy);
-          return;
-        }
-        // Held by the key, the head is the Camera's own RotationalBundle on
-        // `c_PIMouseLookY` (MLK-3): its speed follows `sign(acceleration) x
-        // input` (GUN-2), and the input is the device's Y, which the Air box
-        // turns round (MLK-8). What the hand does to the view is therefore the
-        // camera's pitch-acceleration sign times the box (MLK-13). The glbs
-        // carry neither the sign nor the word, and nearly every shipped pilot
-        // camera is negative (`CorsairCamera` `setAcceleration 5000/-5000/0`):
-        // its minus undoes the shipped box, so with the box on the held look
-        // keeps its plain sense, and turning the box off inverts it. The
-        // positive cameras (BF109, Mustang, B17, the Aichi Vals, DC's AC-130,
-        // several DC Final helicopters) are inverted in retail and not here.
-        // A finger dragging the view on a touch screen is not the mouse and
-        // keeps its own sense.
-        const flip = page.held(MOUSE_LOOK_TRIGGER) && !mouseInput.invertFor('air') ? -1 : 1;
-        page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS * flip);
+      // which the frame pumps on the seat's profile, and the input word reads
+      // the pumped pair as the stick (`local-player.js` `sampleInput` through
+      // the Air map's `c_PIRoll`/`c_PIPitch` mouse lines), which only the
+      // pilot's hull takes. The view does not move. A finger on the touch look
+      // zone is not the mouse and never reached the stick: it does nothing
+      // here, as it always did.
+      const keyed = lookNeedsKey();
+      if (keyed && !lookKeyHeld()) {
+        if (!source?.touch) mouseInput.accumulate(dx, dy);
         return;
       }
-      page.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
+      // The head is the Camera's own RotationalBundle on `c_PIMouseLookY`
+      // (MLK-3): its speed follows `sign(acceleration) x input` (GUN-2), and
+      // the input is the device's Y, which the profile's INVERT MOUSE box
+      // turns round (MLK-8). What the hand does to the view is therefore the
+      // camera's pitch-acceleration sign times the box (MLK-13), against the
+      // plain sense of a positive camera with the box off. Nearly every pilot
+      // and DC 0.7 passenger camera is negative (`CorsairCamera`
+      // `setAcceleration 5000/-5000/0`), so on the shipped Air box their look
+      // keeps the plain sense, and turning the box off inverts it; a positive
+      // one (BF109, Mustang, B17, the Aichi Vals, DC's AC-130, DC Final's
+      // passengers) is inverted at the shipped box once its glb carries the
+      // sign (`seatLookPitchSign`). A LandSea seat's camera is positive with
+      // the box off: unchanged. A finger dragging the view on a touch screen
+      // is not the mouse and keeps its own sense.
+      const mouse = keyed ? !!page.held(MOUSE_LOOK_TRIGGER) && !source?.touch : !source?.touch;
+      const seat = describeSeat(page.occupancy);
+      const profile = seatProfile(seat);
+      const flip = mouse
+        ? seatLookPitchSign(seat, profile) * (mouseInput.invertFor(profile) ? -1 : 1) : 1;
+      page.view?.turn(-dx * HEAD_SENS, -dy * HEAD_SENS * flip);
       return;
     }
     if (page.optOnFoot.checked && page.soldier) {
@@ -576,13 +586,14 @@ export function createLocalLook(page) {
   // calls it once a frame, before it is posed), and the router on the input
   // word (`local-player.js` `sampleInput`).
 
-  /** Does the seat the player holds need the key to look around? Only a
-   *  pilot's does: his Camera's `toggleMouseLook`. A gunner's (the B17's
-   *  turrets, a Stuka's rear gun) and every seat of a hull that is not an
-   *  aircraft look freely, as they always did. */
+  /** Does the seat the player holds need the key to look around? Its Camera's
+   *  `toggleMouseLook` says: every pilot's, DC's MH-6 and SA-342 passengers'
+   *  and the MH-53 co-pilot's (MLK-14). A gunner's (the B17's turrets, a
+   *  Stuka's rear gun) and every seat of a hull that is not an aircraft look
+   *  freely, as they always did. */
   function lookNeedsKey() {
     const seat = page.optPilot.checked ? page.occupancy : null;
-    return !!seat && seatNeedsMouseLookKey({ rootKind: seat.rootKind, root: seat.isActiveRoot() });
+    return !!seat && seatNeedsMouseLookKey(describeSeat(seat));
   }
 
   /** Is the look held: the key the profile binds to `c_PIMouseLook` (Left
