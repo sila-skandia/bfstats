@@ -220,6 +220,16 @@ Each level's `objectSpawns` gains only the three words. Gazala's 49 pads come
 out at 45 s / 40 m / 10 hp/s (4 of them at 20 hp/s). Weapon Bunkers' three
 bunkers come out at 9999 s.
 
+The same patch on a scratch copy of vanilla Gazala gives its 44 pads more
+than the words: 40 gain `osId` and 43 gain `templates`, every one of them
+naming a different vehicle per side, and all carry 45 s / 40 m / 10 hp/s (one
+at 20). Run through the runner, the pads join their points by id and load 14
+other-side vehicles. Dabir stands PanzerIVs, a Kubelwagen, a Wespe and a
+Flak38, and Capuzzo Shermans, a Willy, a Priest and an AA gun. The neutral
+Gabr_Saleh stands nothing until it is taken, and then Sherman or PanzerIV by
+its taker. So once the lead re-patches the vanilla, XPack1 and XPack2 trees,
+they leave the nearest-flag fallback and play the engine's pads.
+
 ## A dead carrier stops being a spawn
 
 Some spawn points ride an object. Iraq's only spawns on Weapon Bunkers are 35
