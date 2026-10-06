@@ -59,6 +59,7 @@ VIEWER_MAPS = HERE.parent / "viewer" / "maps"
 
 SPEED_WINDOW = 0.25     # s between the two samples a velocity is taken over
 HANDS_OFF = 2.0         # deg: every engine rack this close to square is a centred stick
+LOD2 = "\x00lod2"       # the key suffix for a template's moments under an AI LOD 1/2 driver
 MAX_GAP = 0.6           # a longer step between samples is missing data, not motion
 GROUND_BINS = [0, 2, 5, 10, 15, 20, 25, 30, 40, 1e9]
 AIR_BINS = [0, 20, 40, 60, 80, 100, 130, 1e9]
@@ -123,6 +124,7 @@ class Recording:
         self.player_team: dict[int, int] = {}
         self.skipped = 0
         self.left_map: set[int] = set()            # id(life) of lives that ever had a `d`
+        self.lods: dict[int, list[tuple[float, int]]] = {}   # bot pid -> [(t, AI LOD)] (AI-136)
         self.round_end: float | None = None
         self._seat_now: dict[int, tuple[Life, int, int, float]] = {}
 
@@ -226,6 +228,9 @@ def read_recording(path: Path, keep_soldiers: float = 1.0) -> Recording:
                     if r.get(key) is not None:
                         cp[key] = r[key]
                 cp["changes"].append((t, r.get("team")))
+            elif k == "lod":
+                for pid, lod in r["o"]:
+                    rec.lods.setdefault(pid, []).append((t, lod))
             elif k == "tk":
                 rec.tickets.append((t, *r["v"]))
             elif k == "e":
@@ -631,9 +636,26 @@ class Agg(collections.defaultdict):
         super().__init__(list)
 
 
-def ground_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg) -> None:
-    """A driven ground or sea hull's observations, added to its template's."""
-    driven = [s for s in sts if driven_at(life, s.t)]
+def driver_lod(rec: Recording, life: Life, t: float) -> int | None:
+    """The AI LOD of whoever sits in the driver's seat at `t` (AI-136): 0
+    with a human near, 2 far from every one; None for no driver or a file
+    that never says (a human driver has no LOD and reads 0)."""
+    if life.seats is NO_SEATS:
+        return None
+    for s in life.seats:
+        if s[1] == 0 and s[3] <= t < s[4]:
+            rows = rec.lods.get(s[0])
+            if not rows:
+                return 0 if s[0] not in rec.bots else None
+            row = latest(rows, t)
+            return row[1] if row else None
+    return None
+
+
+def ground_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, keep=None) -> None:
+    """A driven ground or sea hull's observations, added to its template's.
+    `keep(state)` picks the moments counted (the driver's AI LOD, below)."""
+    driven = [s for s in sts if driven_at(life, s.t) and (keep is None or keep(s))]
     if not driven:
         return
     agg["driven_s"].append(sum(min(b.t - a.t, MAX_GAP) for a, b in zip(driven, driven[1:])))
@@ -1266,12 +1288,19 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
         for life in vehicles:
             sts = states(life)
             kind = classify(life, sts, ter)
-            agg = Agg()
             if kind in ("ground", "sea"):
-                ground_life(life, sts, ter, agg)
+                # A bot far from every human drives at AI LOD 2, where its hull
+                # is moved by the AI, not the physics (AI-136): straight lines
+                # at 0.6 of its AI maxSpeed. Its numbers are kept apart.
+                agg, mover = Agg(), Agg()
+                ground_life(life, sts, ter, agg, keep=lambda s: driver_lod(rec, life, s.t) == 0)
+                ground_life(life, sts, ter, mover, keep=lambda s: (driver_lod(rec, life, s.t) or 0) > 0)
+                life_aggs[life.tmpl].append((kind, agg))
+                life_aggs[life.tmpl + LOD2].append((kind, mover))
             else:
+                agg = Agg()
                 air_life(life, sts, ter, agg, kind)
-            life_aggs[life.tmpl].append((kind, agg))
+                life_aggs[life.tmpl].append((kind, agg))
         for tmpl, row in _flights(rec).items():
             flights[tmpl].extend(row)
         status = [(r1(t, 1), s) for t, s in rec.status]
@@ -1283,7 +1312,7 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
             "crews": crew_stats(rec, vehicles), "pads": pad_stats(rec, vehicles, spawners),
             "bots_moving": bot_mobility(rec),
         })
-    out = {"files": files, "ground": {}, "sea": {}, "air": {}}
+    out = {"files": files, "ground": {}, "sea": {}, "ground_lod2": {}, "sea_lod2": {}, "air": {}}
     for tmpl, rows in sorted(life_aggs.items()):
         kinds = collections.Counter(k for k, _ in rows)
         kind = next((k for k in ("heli", "harrier", "air") if kinds[k]), None) or kinds.most_common(1)[0][0]
@@ -1293,8 +1322,10 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
                 for key, vals in agg.items():
                     merged[key].extend(vals)
         if kind in ("ground", "sea"):
-            if merged["driven_s"]:
-                out["sea" if kind == "sea" else "ground"][tmpl] = summarise_ground(merged)
+            if merged["driven_s"] and sum(merged["driven_s"]) > 0:
+                lod2 = tmpl.endswith(LOD2)
+                table = ("sea" if kind == "sea" else "ground") + ("_lod2" if lod2 else "")
+                out[table][tmpl.removesuffix(LOD2)] = summarise_ground(merged)
         elif merged["air_s"]:
             out["air"][tmpl] = {"kind": kind, **summarise_air(merged)}
     out["rounds"] = _summarise_flights(flights)
@@ -1357,10 +1388,14 @@ def markdown(res: dict) -> str:
             row[3] += c["other_seats_s"] or 0; row[4] += c["players"]
     md += _table(["template", "lives", "entered", "driver s", "other seats s", "players"],
                  [[t, *v] for t, v in sorted(crews.items(), key=lambda kv: -kv[1][2]) if v[1]])
-    for kind in ("ground", "sea"):
-        if not res[kind]:
+    titles = {"ground": "Ground, driven by a human or a bot at AI LOD 0 (physics)",
+              "sea": "Sea, driven by a human or a bot at AI LOD 0 (physics)",
+              "ground_lod2": "Ground, driven by a bot at AI LOD 1-2 (the AI moves the hull, AI-136)",
+              "sea_lod2": "Sea, driven by a bot at AI LOD 1-2 (the AI moves the hull, AI-136)"}
+    for kind in ("ground", "sea", "ground_lod2", "sea_lod2"):
+        if not res.get(kind):
             continue
-        md += ["", f"## {kind.title()}: speed (m/s), acceleration (s), yaw rate (deg/s, p95) by forward speed", ""]
+        md += ["", f"## {titles[kind]}: speed (m/s), acceleration (s), yaw rate (deg/s, p95) by forward speed", ""]
         bins = ["5-10", "10-15", "15-20", "20-25", "25-30", "30-40", "40+"]
         md += _table(["template", "driven s", "top", "max fwd", "reverse", "t to 5", "t to 10", "t to 15",
                       *[f"yaw {b}" for b in bins], "slip>45 at 10+"],
@@ -1471,7 +1506,7 @@ def compact(res: dict) -> dict:
     per template, and per run its length, crews and pad laws."""
     def pick(d, keys):
         return {k: d[k] for k in keys if d.get(k) is not None}
-    out = {"runs": [], "ground": {}, "sea": {}, "air": {}, "rounds": {}}
+    out = {"runs": [], "ground": {}, "sea": {}, "ground_lod2": {}, "sea_lod2": {}, "air": {}, "rounds": {}}
     for f in res["files"]:
         pads = f["pads"]
         out["runs"].append({
@@ -1484,7 +1519,8 @@ def compact(res: dict) -> dict:
             "abandon_drains": {t: [[x["idle"], x["rate"]] for x in v] for t, v in pads["abandoned"].items()},
             "team_switch": pads["team_switch"],
         })
-    for kind, keys in (("ground", COMPACT_GROUND), ("sea", COMPACT_GROUND)):
+    for kind in ("ground", "sea", "ground_lod2", "sea_lod2"):
+        keys = COMPACT_GROUND
         for t, g in res[kind].items():
             row = pick(g, keys)
             row["yaw_p95_by_speed"] = {b: v["p95"] for b, v in g["yaw_rate_by_speed"].items()}

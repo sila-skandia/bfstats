@@ -62,10 +62,13 @@ def main(src: Path) -> None:
                     or (k in ("jn", "a") and o[0] in WINDOWS and t <= WINDOWS[o[0]][1])]
             if rows:
                 out.append({**r, key: rows})
-        elif k == "p":
-            rows = [o for o in r["p"] if o[0] in PIDS]
+        elif k in ("p", "lod"):
+            key = "p" if k == "p" else "o"
+            rows = [o for o in r[key] if o[0] in PIDS]
             if rows:
-                out.append({**r, "p": rows})
+                out.append({**r, key: rows})
+        elif k == "e" and r.get("e") == "createPlayer" and r.get("pid") in PIDS:
+            out.append(r)
         elif k == "pn":
             for key_, tmpl in r["o"]:
                 if tmpl in taken and taken[tmpl] < ROUNDS_WANTED[tmpl]:
