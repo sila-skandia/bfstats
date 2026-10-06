@@ -1,0 +1,23 @@
+{
+  "name": "dc-el_alamein-coop-rec",
+  "description": "Desert Combat El Alamein co-op with the server-side recorder preloaded, bots only. DC's overlay of the vanilla level (vanilla's AI data, DC's SinglePlayer layer): helicopters (Mi-24, Mi-8, AH-64, UH-60L), jets (MiG-29, Su-25, Mirage, F-14B, F-15C, A-10C), T-72/M1A1, BMP-2/M2A3, BRDM-2, Humvee, Lada, DPV, artillery (BM-21, M-1974, MLRS, M-109, Scud) and open bases whose pads change sides. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed: the server records itself. Let the round run to its end (or 20 min), then `lab.py stop`."
+}

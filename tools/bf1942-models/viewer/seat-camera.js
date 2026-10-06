@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VehicleCamera, FixedSubject } from './vehicle-camera.js';
+import { VehicleCamera, FixedSubject, cameraLookLimits } from './vehicle-camera.js';
 import { seatViewModes, noseCamOffset } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
@@ -107,6 +107,8 @@ export function createSeatCamera(page) {
     });
     seatCamera.view = new VehicleCamera(subject, {
       groundHeight: page.groundHeight, eyeNode, modes, nose, mode: seatCamera.view?.mode,
+      // The seat Camera's own neck where its glb carries the look rig.
+      lookLimits: cameraLookLimits(info?.camera?.userData),
     });
     seatCamera.viewFor = { seat, seatId: seat.seatId, drive: seat.drive };
     // The constructor sets the mode without the swap; the interior follows the
@@ -300,6 +302,9 @@ export function createSeatCamera(page) {
 
   function passenger(dt) {
     if (!seatCamera.view) return;
+    // A passenger whose Camera sets `toggleMouseLook` (DC's MH-6 and SA-342
+    // benches, MLK-14) eases back like a pilot when the key is let go.
+    page.stepMouseLookKey(dt);
     const pose = seatCamera.view.update(dt);
     page.camera.position.copy(pose.position);
     page.camera.quaternion.copy(pose.quaternion);

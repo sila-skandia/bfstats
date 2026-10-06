@@ -175,8 +175,13 @@ export function createScoreboardScreen(page) {
     const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : [],
                            inRoom ? null : page.round?.counts ?? null);
     const s = scoreboardScale();
+    // The page's own round, ended (`round-state.js`): the board's EndGame
+    // state and the rounds won. A room's round is its server's.
+    const round = inRoom ? null : page.round;
+    const endGame = round?.status === 'endGame';
+    const roundsWon = round?.roundsWon ?? null;
     const key = JSON.stringify([rows, s.W, s.H, scoreboard.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
-                                page.currentDir, page.hudPack.sprites.size]);
+                                page.currentDir, page.hudPack.sprites.size, endGame, roundsWon]);
     if (!force && key === scoreboard.scorePaintKey) return;
     scoreboard.scorePaintKey = key;
 
@@ -207,6 +212,8 @@ export function createScoreboardScreen(page) {
       alliedFlag: page.ticketFlagTexture(2),
       rows,
       visibleRows,
+      endGame,
+      roundsWon,
     });
     paintLeaves(ctx, data, data.elements, vars, scoreRes, {
       'Scoreboard/AxisScoreboardList': rows[1],
@@ -239,6 +246,9 @@ export function createScoreboardScreen(page) {
    *  over the live game (the button reads LOCK, which this page does not act
    *  on — there is nothing to lock a pointer for). */
   function setScoreboard(on, fromSpawn = false) {
+    // The end of a round holds the board up (`holdOpen`): a Tab released or
+    // a lost focus must not take it down under the debriefing.
+    if (!on && scoreboard.held) return;
     if (on === scoreboardOpen()) return;
     scoreboard.scoreFromSpawn = on && fromSpawn;
     scoreboard.scoreHoverDone = false;
@@ -261,7 +271,27 @@ export function createScoreboardScreen(page) {
   addEventListener('blur', () => { if (scoreboardOpen() && !scoreboard.scoreFromSpawn) setScoreboard(false); });
   new ResizeObserver(() => paintScoreboard(true)).observe(scoreBox);
 
+  /** The end of a round (`round-end.js`): the board up and held there, as
+   *  the game shows it while its status is EndGame, or let go and closed.
+   *  A board the player had open from the spawn screen is taken over. */
+  scoreboard.held = false;
+  function holdOpen(on) {
+    if (on) {
+      if (scoreboardOpen() && scoreboard.scoreFromSpawn) {
+        scoreboard.held = false;
+        setScoreboard(false);
+      }
+      setScoreboard(true, false);
+      scoreboard.held = true;
+      paintScoreboard(true);
+    } else if (scoreboard.held) {
+      scoreboard.held = false;
+      setScoreboard(false);
+    }
+  }
+
   Object.assign(scoreboard, {
+    holdOpen,
     paintScoreboard,
     scoreLayout,
     scoreboardOpen,

@@ -31,6 +31,7 @@ folder answers.
 | [bf1942-in-the-browser](bf1942-in-the-browser/README.md) | build | How were the play site's Instant Battle screen, console and Escape menu built? |
 | [bf1942-3d-models](bf1942-3d-models/README.md) | research | The first per-topic studies: HUD, kits, seats, game modes, spawns, sounds, formats |
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
+| [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
@@ -161,7 +162,8 @@ folder answers.
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
 | [hud-text-baseline-and-minimap-size](hud-text-baseline-and-minimap-size/README.md) | fix | Why was the minimap too wide and HUD text drawn too high? |
 | [scoreboard-row-colour-and-alignment](scoreboard-row-colour-and-alignment/README.md) | fix | What colours and vertical alignment do retail scoreboard rows use, and why? |
-| [round-end-winner-screen](round-end-winner-screen/README.md) | research | What does retail do when tickets hit zero: winner, delay, reset? |
+| [round-end-winner-screen](round-end-winner-screen/README.md) | build | What does retail do when a round ends: winner, debriefing, medals, cue, delay, reset? |
+| [ctf-mode](ctf-mode/README.md) | build | How does retail Capture the Flag play, and how does the page draw, score and replicate it? |
 | [viewer-demokit-icon](viewer-demokit-icon/README.md) | fix | Why did the ExpPack and Detonator show the medkit icon? |
 | [viewer-map-focus-and-hint-line](viewer-map-focus-and-hint-line/README.md) | fix | Why were controls dead after closing the map, and where did the hint line go? |
 | [multiplay-front-end](multiplay-front-end/README.md) | build | How is the MULTIPLAY server browser drawn from the game's own menu files? |

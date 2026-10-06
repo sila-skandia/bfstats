@@ -104,4 +104,41 @@ results.notes = {
   none: variantNotes({ template: 'US_Medic', items: [] }),
 };
 
+// The medic bag's and the wrench's words (`healingPack`), off the holder's
+// soldier template in `gaits.json`'s `soldierBody` (S8): a manifest that
+// predates them keeps vanilla's, vanilla's own are the same numbers, Desert
+// Combat's wrench is 0.20.
+async function packsWith(soldierBody) {
+  const packFile = {
+    ...file,
+    aiWeapons: {
+      MedPack: { healing: true, strength: { Infantry: 2 } },
+      RepairPack: { healing: true, strength: { Infantry: 0, Tank: 2 } },
+    },
+  };
+  globalThis.fetch = async url => ({
+    ok: String(url).includes('loadouts.json'), json: async () => packFile,
+  });
+  const held = { name: null };
+  const kit = createKitLoadout({ ...page, currentDir: 'dc_lostvillage', soldierBody,
+                                 get handWeapon() { return held; } });
+  await kit.loadoutsLoad;
+  held.name = 'MedPack';
+  const medic = kit.healingPack();
+  held.name = 'RepairPack';
+  const repair = kit.healingPack();
+  return { medic, repair };
+}
+results.packs = {
+  oldTree: await packsWith(null),
+  vanilla: await packsWith({ template: 'BritishSoldier', healDistance: 10, healFactor: 0.25,
+                             selfHealFactor: 0.15, repairDistance: 2, repairFactor: 0.15 }),
+  dc: await packsWith({ template: 'BritishSoldier', healDistance: 10, healFactor: 0.25,
+                        selfHealFactor: 0.15, repairDistance: 2, repairFactor: 0.2,
+                        templates: { USSoldier: { repairFactor: 0.2 } } }),
+  // A template of its own beats the tree's first soldier.
+  ownTemplate: await packsWith({ template: 'BritishSoldier', repairFactor: 0.15,
+                                 templates: { ussoldier: { repairFactor: 0.3 } } }),
+};
+
 console.log(JSON.stringify(results));

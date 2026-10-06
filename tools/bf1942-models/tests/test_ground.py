@@ -1394,6 +1394,17 @@ class TrackedVehicleTests(unittest.TestCase):
         # The drag radius is the box's, so a long truck's is a long truck's.
         self.assertGreater(chassis["scud"]["boundingRadius"], 3 * chassis["willy"]["boundingRadius"] / 2)
 
+    def test_the_forks_move_at_their_own_rate(self) -> None:
+        # DC's Forklift: the world hands c_PIPitch over as a step (MLK-10),
+        # and the part's own `setMaxSpeed 0/60/0` over its -160..20 range is
+        # what moves the forks, 0.375 of full deflection a second. They do not
+        # snap to the key.
+        fork = self.results["forkServo"]
+        self.assertTrue(fork["bound"])
+        self.assertAlmostEqual(fork["rate"], 0.375)
+        self.assertAlmostEqual(fork["firstStep"], fork["rate"] * fork["dt"], places=4)
+        self.assertAlmostEqual(fork["afterOneSecond"], fork["rate"], places=3)
+
     def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
         # The Forklift's rear bundles declare direction -1: each wheel turns as
         # its own bundle does, so right stick is a right turn for both trucks

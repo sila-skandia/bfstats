@@ -447,6 +447,18 @@ export function createDeployablesPage(page) {
     tickPads(dt);
   };
 
+  /** `restartMap` (`ObjectSpawner::reset`, ledger ROUND-9): the placed objects
+   *  and the rounds in the air go, and every pad is built again from the
+   *  level's spawns, its first kit on its `spawnDelayAtStart` as at the level's
+   *  start (`buildPads` puts the bake's inert copies back before it looks for
+   *  them). The kit drops clear their own records (`kitDrops.reset`). */
+  deployables.restartRound = () => {
+    for (const record of [...placed]) removeObject(record, { effects: false });
+    placed.length = 0;
+    bombs.length = 0;
+    padsFor = null;
+  };
+
   /** A level change: every bomb, object and pad is the old level's. The kit
    *  drops clear their own records (`kitDrops.reset`). */
   deployables.reset = () => {
