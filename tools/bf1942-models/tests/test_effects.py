@@ -1544,5 +1544,155 @@ class SpawnParticleIntoTests(unittest.TestCase):
         self.assertTrue(self.results["sameRecord"])
 
 
+# Vanilla's PT boat (`Objects/Vehicles/Sea/Elco80/Effects.con`, cut down): its
+# death tier leaves the raft through a spawn effect. Desert Combat's ruined
+# objectives (`e_*WRECKPCO`) are this emitter copied word for word.
+SPAWN_CON = """
+ObjectTemplate.create EffectBundle e_PTBoatWreck
+ObjectTemplate.addTemplate Em_PTBoatSpawnRaft
+ObjectTemplate.setPosition 0/0/0
+ObjectTemplate.timeToLive CRD_NONE/1.8/0/0
+
+ObjectTemplate.create Emitter Em_PTBoatSpawnRaft
+ObjectTemplate.template Elco80Raft
+ObjectTemplate.lodDistance 375
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.intensity CRD_NONE/1/0/0
+ObjectTemplate.IsSpawnEffect 1
+
+ObjectTemplate.create EffectBundle e_ChunkFall
+ObjectTemplate.addTemplate Em_ChunkFall
+
+ObjectTemplate.create Emitter Em_ChunkFall
+ObjectTemplate.template Raft_Chunk
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+
+ObjectTemplate.create PlayerControlObject Elco80Raft
+ObjectTemplate.addTemplate Elco80RaftHull
+ObjectTemplate.hasArmor 1
+ObjectTemplate.hitpoints 200
+
+ObjectTemplate.create SimpleObject Elco80RaftHull
+ObjectTemplate.geometry Raft_m1
+
+ObjectTemplate.create SimpleObject Raft_Chunk
+ObjectTemplate.geometry Raft_m1
+
+GeometryTemplate.create StandardMesh Raft_m1
+"""
+
+
+class SpawnEffectTests(unittest.TestCase):
+    """EMT-10: `isSpawnEffect 1` makes the game create its template as an
+    object (`GameServer::spawnObject`), not a particle."""
+
+    def spawn_library(self) -> con_mod.ObjectLibrary:
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Vehicles/Sea/Elco80/Effects.con", SPAWN_CON)
+        return lib
+
+    def test_a_spawn_effect_is_an_object_and_a_plain_emitter_still_debris(self) -> None:
+        lib = self.spawn_library()
+        [(_ref, _em, _payload, raft)] = effects.bundle_tree(lib, "e_PTBoatWreck").emitters
+        self.assertEqual({"kind": "object", "template": "Elco80Raft"}, raft["particle"])
+        self.assertTrue(raft["isSpawnEffect"])
+        self.assertEqual(375.0, raft["lodDistance"])
+        # Before, the PCO payload had no particle at all and the raft emitter
+        # was dropped: `e_PTBoatWreck` baked as missing.
+        self.assertIsNone(effects.particle_spec(lib.object("Elco80Raft")))
+        # The same mesh thrown by an emitter without the word is still debris.
+        [(_ref, _em, _payload, chunk)] = effects.bundle_tree(lib, "e_ChunkFall").emitters
+        self.assertEqual("mesh", chunk["particle"]["kind"])
+        self.assertTrue(chunk["particle"]["debris"])
+
+    def test_the_bake_hangs_the_whole_object_under_its_emitter(self) -> None:
+        lib = self.spawn_library()
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib, include_collision=False)
+        assembler.apply_material_diffuse = True
+        builder = gltf.GlbBuilder()
+        triangle = gltf.Primitive(positions=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+                                  indices=[0, 1, 2])
+        assembler._geom_mesh["raft_m1"] = (builder.add_mesh("Raft_m1", [triangle]), 1)
+        assembler._geom_collisions["raft_m1"] = []
+        report = Report(root="effects", configuration="complex", lod=0)
+        roots, index = assembler.bake_effect_library(builder, ["e_PTBoatWreck"], report)
+        self.assertEqual({"e_PTBoatWreck": {"emitters": 1}}, index["bundles"])
+        self.assertEqual([], index["missing"])
+        # The bake's own setting is back for the next particle.
+        self.assertTrue(assembler.apply_material_diffuse)
+        glb = builder.build(roots, extras={"effects": index})
+        import struct
+        doc = json.loads(glb[20:20 + struct.unpack_from("<I", glb, 12)[0]])
+        nodes = doc["nodes"]
+        [emitter] = [n for n in nodes if (n.get("extras") or {}).get("effectEmitter")]
+        self.assertEqual("object", emitter["extras"]["effectEmitter"]["particle"]["kind"])
+        self.assertNotIn("mesh", emitter)
+        [raft] = [nodes[i] for i in emitter["children"]]
+        self.assertEqual("Elco80Raft", raft["name"])
+        self.assertEqual("PlayerControlObject", raft["extras"]["templateKind"])
+        self.assertEqual(200, raft["extras"]["armor"]["hitpoints"])
+        hull = nodes[raft["children"][0]]
+        self.assertIn("mesh", hull)
+
+
+class LevelEffectsTests(unittest.TestCase):
+    """`extract_effects.py --levels`: what a level's own `effects.glb` holds,
+    and the `maps.json` row that names it."""
+
+    def test_only_what_the_levels_scripts_declare(self) -> None:
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Effects/Common/Effects.con", """
+ObjectTemplate.create EffectBundle e_ModWide
+ObjectTemplate.addTemplate em_ModWide
+ObjectTemplate.create Emitter em_ModWide
+""")
+        lib.add_con("bf1942/levels/DC_No_Fly_Zone/objects/air_control_tower_m1/Effects.con", """
+ObjectTemplate.create EffectBundle e_air_control_tower_desWRECKPCO
+ObjectTemplate.addTemplate Em_air_control_tower_desWRECKPCO
+ObjectTemplate.create Emitter Em_air_control_tower_desWRECKPCO
+ObjectTemplate.create Emitter em_LevelSmoke
+""")
+        lib.add_con("bf1942/levels/DC_No_Fly_Zone/objects/air_control_tower_m1/objects.con", """
+ObjectTemplate.create PlayerControlObject air_control_tower_des
+ObjectTemplate.addArmorEffect 50 em_LevelSmoke 0/1/0
+ObjectTemplate.addArmorEffect 20 e_ModWide 0/1/0
+""")
+        self.assertEqual({"e_air_control_tower_desWRECKPCO", "em_LevelSmoke"},
+                         extract_effects.level_bundle_names(lib))
+
+    def test_the_row_names_the_glb_and_loses_it_with_the_files(self) -> None:
+        import extract_effects
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "dc_no_fly_zone").mkdir()
+            row = {"name": "DC_No_Fly_Zone", "glb": "dc_no_fly_zone/scene.glb"}
+            written = extract_effects.write_level_effects(
+                tree, row, b"glTF", {"bundles": {"e_x": {"emitters": 1}}})
+            self.assertEqual([tree / "dc_no_fly_zone" / "effects.glb"], written)
+            self.assertEqual("dc_no_fly_zone/effects.glb", row["effects"])
+            self.assertTrue((tree / "dc_no_fly_zone" / "effects.report.json").is_file())
+            (tree / "dc_no_fly_zone" / "effects.glb.gz").write_bytes(b"")
+            self.assertEqual([], extract_effects.write_level_effects(tree, row, None, {}))
+            self.assertNotIn("effects", row)
+            self.assertEqual([], sorted(p.name for p in (tree / "dc_no_fly_zone").iterdir()))
+
+    def test_a_rebake_never_leaves_the_old_gzip_beside_a_new_glb(self) -> None:
+        # With `--no-optimise` nothing rewrites the `.gz`, and a stale one is
+        # what the publisher refuses (or, served, what a client would get).
+        import extract_effects
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            level = tree / "battle_of_britain"
+            level.mkdir()
+            row = {"name": "Battle_of_Britain", "glb": "battle_of_britain/scene.glb"}
+            (level / "effects.glb").write_bytes(b"old glb")
+            (level / "effects.glb.gz").write_bytes(b"gzip of the old glb")
+            extract_effects.write_level_effects(tree, row, b"new glb", {"bundles": {}})
+            self.assertEqual(b"new glb", (level / "effects.glb").read_bytes())
+            self.assertFalse((level / "effects.glb.gz").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

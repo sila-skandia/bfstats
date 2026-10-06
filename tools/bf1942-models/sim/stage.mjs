@@ -240,6 +240,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
       groundHeight: terrain.groundHeight, surfaceFriction: terrain.surfaceFriction, deckNormal: terrain.deckNormal,
       collider: hullBodies.bodyAwareCollider(),
       waterLevel: terrain.collider?.waterLevel ?? extras?.waterLevel,
+      collisionMeshes: hullBodies.collisionMeshes,
       cockpit: false,
     });
     if (!drive) return null;
