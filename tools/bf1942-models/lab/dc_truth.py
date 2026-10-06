@@ -1249,6 +1249,7 @@ def pad_stats(rec: Recording, vehicles: list[Life], spawners: list[dict] | None 
             wrecks[lf.tmpl].append(lf.ended - dead)
     sides = []
     respawns = []
+    captures = []
     for pad in pads:
         near = min(cps, key=lambda cp: math.hypot(cp["pos"][0] - pad["pos"][0], cp["pos"][2] - pad["pos"][2]),
                    default=None)
@@ -1259,19 +1260,41 @@ def pad_stats(rec: Recording, vehicles: list[Life], spawners: list[dict] | None 
             authored = None
         lives = pad["lives"]
         seen = collections.defaultdict(set)
+        # A flag changing hands: what the pad does next.
+        if near is not None:
+            start = next((t for t, st in rec.status if st == 1), 0.0)
+            gap = math.hypot(near["pos"][0] - pad["pos"][0], near["pos"][2] - pad["pos"][2])
+            for tc, team in near["changes"][1:]:
+                if tc < start:
+                    continue
+                # A hull the capture itself spawns comes in the same tick, a
+                # few hundredths of a second either side of the flag's record.
+                standing = next((lf for lf in lives if lf.born < tc - 0.1 and tc < lf.ended), None)
+                nxt = next((lf for lf in lives if lf.born >= tc - 0.1), None)
+                captures.append({
+                    "cp": near["name"], "t": r1(tc, 1), "team": team, "pad": [r1(c, 0) for c in pad["pos"]],
+                    "cp_m": r1(gap, 0), "standing": standing.tmpl if standing else None,
+                    "standing_ended": r1(standing.ended - tc, 1) if standing else None,
+                    "next": nxt.tmpl if nxt else None, "next_after_s": r1(nxt.born - tc, 2) if nxt else None,
+                    "spawner": authored["spawner"] if authored else None,
+                    "window": [authored["min"], authored["max"]] if authored else None,
+                    "templates": authored["templates"] if authored else None,
+                })
         for a, b in zip(lives, lives[1:]):
+            # The next hull can spawn while the last one's wreck still stands
+            # (a 60 s wreck, a 35-40 s window): the delay runs from the death.
+            dead = death_time(a)
             if a.end_kind == "destroyed" and b.born >= a.ended - 0.05:
                 from_end[b.tmpl].append(b.born - a.ended)
-                dead = death_time(a)
-                if dead is not None:
-                    from_death[b.tmpl].append(b.born - dead)
-                    row = {"tmpl": b.tmpl, "after": a.tmpl, "dead": r1(dead, 1), "delay": r1(b.born - dead, 2),
-                           "wreck": r1(a.ended - dead, 1), "prev_born": r1(a.born, 1)}
-                    if authored and authored["min"] is not None:
-                        lo, hi = authored["min"], authored["max"]
-                        row.update(spawner=authored["spawner"], window=[lo, hi],
-                                   fill=r1((hi - (b.born - dead)) / (hi - lo), 3) if hi > lo else None)
-                    respawns.append(row)
+            if a.end_kind == "destroyed" and dead is not None and b.born > dead:
+                from_death[b.tmpl].append(b.born - dead)
+                row = {"tmpl": b.tmpl, "after": a.tmpl, "dead": r1(dead, 1), "delay": r1(b.born - dead, 2),
+                       "wreck": r1(a.ended - dead, 1), "prev_born": r1(a.born, 1)}
+                if authored and authored["min"] is not None:
+                    lo, hi = authored["min"], authored["max"]
+                    row.update(spawner=authored["spawner"], window=[lo, hi],
+                               fill=r1((hi - (b.born - dead)) / (hi - lo), 3) if hi > lo else None)
+                respawns.append(row)
         for lf in lives:
             if near is not None and lf.born > 0:
                 seen[cp_team_at(near, lf.born)].add(lf.tmpl)
@@ -1294,6 +1317,7 @@ def pad_stats(rec: Recording, vehicles: list[Life], spawners: list[dict] | None 
         "respawn_from_death": {t: spread(v) for t, v in sorted(from_death.items())},
         "respawn_from_wreck_end": {t: spread(v) for t, v in sorted(from_end.items())},
         "respawns": sorted(respawns, key=lambda r: r["dead"]),
+        "captures": sorted(captures, key=lambda c: (c["t"], c["pad"])),
         "team_switch": sides,
         "abandoned": {t: v for t, v in sorted(abandoned.items())},
         "wreck_life": {t: {"n": len(v), "min": r1(min(v), 2), "max": r1(max(v), 2)} for t, v in sorted(wrecks.items())},
@@ -1572,6 +1596,17 @@ def markdown(res: dict) -> str:
                           "previous hull spawned at s"],
                          [[r["tmpl"], r["after"], r["spawner"], f"{r['window'][0]:g}-{r['window'][1]:g}", r["dead"],
                            r["delay"], r.get("fill"), r["prev_born"]] for r in rs])
+            md += [""]
+        caps = pads.get("captures", [])
+        if caps:
+            md += ["Flags changing hands, and each pad filed nearest that flag: the hull standing on it then,"
+                   " and the next hull the pad spawned (s after the change)", ""]
+            md += _table(["flag", "t", "to team", "pad", "flag m", "spawner (window)", "standing (ends in s)",
+                          "next", "after s"],
+                         [[c["cp"], c["t"], c["team"], c["pad"], c["cp_m"],
+                           f"{c['spawner']} ({c['window'][0]:g}-{c['window'][1]:g})" if c.get("window") and c["window"][0] is not None else c.get("spawner"),
+                           f"{c['standing']} ({c['standing_ended']})" if c["standing"] else "", c["next"], c["next_after_s"]]
+                          for c in caps if c["cp_m"] is not None and c["cp_m"] < 250])
             md += [""]
         for sw in pads["team_switch"]:
             md += [f"- pad at {sw['pad']} by `{sw['cp']}`: " +
