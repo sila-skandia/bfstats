@@ -1433,6 +1433,38 @@ game.setAxisObjectives BRIEFING_AXIS_OBJECTIVES_WAKE
         self.assertEqual("MULTIPLAYER_BRIEFING_WAKE", info.objectives)
         self.assertEqual("MULTIPLAYER_MAP_TYPE_ASSAULT_MAP", info.map_type)
         self.assertEqual("BF1942", info.map_id)
+        # The debriefing line goes to its own field, never to the trio.
+        self.assertEqual({"allied": {"majorVictory": "DEBRIEFING_ALLIED_MAJOR_VICTORY_WAKE"}},
+                         info.debriefing)
+
+    def test_the_eight_debriefing_lines_resolve_by_side_and_result(self) -> None:
+        # Desert Shield's Menu/Init.con names the mod-wide keys; a quoted line
+        # is its own text, and an unknown key stays the key (ROUND-8).
+        text = """
+game.setAlliedDebriefingMajorVictory DEBRIEFING_ALLIED_MAJOR_VICTORY
+game.setAlliedDebriefingMinorVictory DEBRIEFING_ALLIED_MINOR_VICTORY
+game.setAlliedDebriefingMajorDefeat DEBRIEFING_ALLIED_MAJOR_DEFEAT
+game.setAlliedDebriefingMinorDefeat "Held, but only just."
+game.setAxisDebriefingMajorVictory DEBRIEFING_AXIS_MAJOR_VICTORY
+game.setAxisDebriefingMinorVictory DEBRIEFING_AXIS_MINOR_VICTORY
+game.setAxisDebriefingMajorDefeat DEBRIEFING_AXIS_MAJOR_DEFEAT
+game.setAxisDebriefingMinorDefeat NOT_IN_THE_LEXICON
+"""
+        info = parse_briefing(text)
+        self.assertEqual(["majorDefeat", "majorVictory", "minorDefeat", "minorVictory"],
+                         sorted(info.debriefing["allied"]))
+        self.assertEqual(4, len(info.debriefing["axis"]))
+        resolved = resolve_briefing(info, {
+            "DEBRIEFING_ALLIED_MAJOR_VICTORY": "Coalition forces eventually won.",
+            "DEBRIEFING_AXIS_MAJOR_DEFEAT": "The opposition fell.",
+        })
+        self.assertEqual("Coalition forces eventually won.",
+                         resolved.debriefing["allied"]["majorVictory"])
+        self.assertEqual("Held, but only just.", resolved.debriefing["allied"]["minorDefeat"])
+        self.assertEqual("The opposition fell.", resolved.debriefing["axis"]["majorDefeat"])
+        self.assertEqual("NOT_IN_THE_LEXICON", resolved.debriefing["axis"]["minorDefeat"])
+        # The parsed copy is not written over.
+        self.assertEqual("DEBRIEFING_ALLIED_MAJOR_VICTORY", info.debriefing["allied"]["majorVictory"])
 
     def test_an_unresolved_key_stays_a_key(self) -> None:
         # A key the lexicon does not answer keeps its name so the gap is
@@ -1483,6 +1515,12 @@ game.setAxisObjectives BRIEFING_AXIS_OBJECTIVES_WAKE
         self.assertTrue(briefing.objectives.startswith("This is a Conquest"))
         self.assertEqual("ASSAULT MAP", briefing.map_type)
         self.assertEqual("BF1942", briefing.map_id)
+        # And Wake's own eight debriefing lines, resolved (ROUND-8).
+        self.assertEqual(4, len(briefing.debriefing["allied"]))
+        self.assertEqual(4, len(briefing.debriefing["axis"]))
+        self.assertTrue(briefing.debriefing["allied"]["majorVictory"]
+                        .startswith("Though vastly outnumbered"))
+        self.assertTrue(briefing.debriefing["axis"]["minorDefeat"].startswith("After such"))
 
 
 if __name__ == "__main__":
