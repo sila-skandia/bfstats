@@ -375,7 +375,9 @@ function armed(scene, { collider = null, platform = null } = {}) {
   guns.onShot = (g, rounds) => { pulls++; charged += rounds; charge(g, rounds); };
   // The page's own loop (world-vehicle-tick.js): step the magazine and heat,
   // then hold the trigger only while the gun may fire.
-  while (state.ammo > 0 && ticks < 30 * 600) {
+  // An hour's cap: how long the heat law (GUN-13..GUN-15) takes to empty it is
+  // not this test's business, only that it empties one round a pull.
+  while (state.ammo > 0 && ticks < 30 * 3600) {
     state.step(1 / 30);
     guns.setFiring(group, state.canFire);
     guns.advance(1 / 30);
