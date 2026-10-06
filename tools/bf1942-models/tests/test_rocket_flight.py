@@ -276,6 +276,14 @@ class RocketFlightTests(unittest.TestCase):
         self.assertEqual({"absent": 200, "zero": 0, "declared": 45},
                          self.results["velocityDefault"])
 
+    def test_the_damage_table_carries_a_tracers_gravity_to_an_old_glb(self) -> None:
+        # The damage layer alone (no model re-bake) gives DC's 50 cal tracer
+        # its `gravityModifier 1`, and vanilla's its 0.0.
+        g1 = self.results["bullets"]["expectedDropAtG1"]
+        self.assertAlmostEqual(g1, self.drops("tableTracer")[1], delta=0.01)
+        self.assertEqual(0, self.drops("tableTracer")[0])
+        self.assertEqual([0, 0], self.drops("tableVanillaTracer"))
+
     def test_vanillas_tracer_flies_flat_fresh_or_stale(self) -> None:
         # `Tracer_Projectile` declares 0.0; a glb baked before the tracer
         # carried its gravity keeps the straight streak.

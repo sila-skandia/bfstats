@@ -460,6 +460,21 @@ class ProjectileMaterialTests(unittest.TestCase):
         self.assertIs(False, table["shilkaprojectile"]["hasOnTimeEffect"])
         self.assertIs(False, table["sabotprojectile"]["hasOnTimeEffect"])
 
+    def test_a_declared_gravity_modifier_rides_in_the_row(self) -> None:
+        # A tracer is a round of its own that a weapon glb names but never
+        # bakes the words of; its `gravityModifier` reaches the viewer here
+        # (IMP-7: a fresh row without it is 1.0).
+        library = self.library(
+            "ObjectTemplate.create Projectile 50cal_Tracer_Projectile\n"
+            "ObjectTemplate.gravityModifier 1\n"
+            "ObjectTemplate.create Projectile Tracer_Projectile\n"
+            "ObjectTemplate.gravityModifier 0.0\n"
+            "ObjectTemplate.create Projectile Undeclared\n")
+        table = projectile_materials(library)
+        self.assertEqual(1.0, table["50cal_tracer_projectile"]["gravity"])
+        self.assertEqual(0.0, table["tracer_projectile"]["gravity"])
+        self.assertNotIn("gravity", table["undeclared"])
+
     def test_no_library_is_an_empty_table_not_a_crash(self) -> None:
         self.assertEqual({}, projectile_materials(None))
 
