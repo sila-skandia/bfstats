@@ -118,5 +118,18 @@ class VehiclePadTests(unittest.TestCase):
         self.assertEqual(2, r["tankTeam"])
 
 
+    def test_a_pre_game_set_team_cancels_spawn_delay_at_start(self) -> None:
+        a = self.results["atStart"]
+        # The MLRS's own team and owned point: no delay, so it stands at load
+        # (and the pad has drawn its next window, the full 60 s at 0 of 0).
+        self.assertEqual({"delay": 60, "live": 1}, a["first"]["mlrs"])
+        # No team, no point: the word holds, the full window with no players.
+        self.assertEqual({"delay": 60, "live": 0}, a["first"]["scud"])
+        # After a restart the delay holds: 20 + 40 x (1 - 8/16) = 40 s, one
+        # frame of it run.
+        self.assertEqual(0, a["restart"]["mlrs"]["live"])
+        self.assertAlmostEqual(40 - 1 / 30, a["restart"]["mlrs"]["delay"], places=1)
+
+
 if __name__ == "__main__":
     unittest.main()
