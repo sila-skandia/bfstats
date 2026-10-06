@@ -1286,7 +1286,7 @@ const HOVER_THROTTLE = {
   input: 'c_PIThrottle', min: 1500, max: 5000, free: false, driver: 'rate', maxSpeed: 9500, direction: 1, acceleration: 15000,
 };
 
-function ah64Node() {
+function ah64Node({ pods = false } = {}) {
   const root = new THREE.Object3D();
   root.name = 'AH64';
   root.userData = { control: 'AH64', templateKind: 'PlayerControlObject',
@@ -1303,6 +1303,20 @@ function ah64Node() {
   fuselage.name = 'AH64CockpitExternal';
   fuselage.userData = { templateKind: 'Bundle' };
   complex.add(cockpitLod); cockpitLod.add(fuselage);
+  if (pods) {
+    // `AH64HydraBundle`, a Bundle beside the cockpit LOD that names its own
+    // geometry (`AH64_Hydras`, DC writes the bare `geometry` word) and says
+    // `hasCollisionPhysics 1`: the extract carries its mesh and its col0.
+    const hydras = new THREE.Mesh(new THREE.BoxGeometry(5.08, 0.48, 1.653));
+    hydras.name = 'AH64HydraBundle';
+    hydras.position.set(0, 0, -2.6);
+    hydras.userData = { templateKind: 'Bundle', geometry: 'AH64_Hydras' };
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(5.08, 0.48, 1.653));
+    hull.name = 'AH64HydraBundle collision 0';
+    hull.userData = { collision: true, collisionLayer: 0, sourceGeometry: 'AH64_Hydras' };
+    hydras.add(hull);
+    complex.add(hydras);
+  }
   for (const [name, x, y, z] of [['AH64WheelLeftSpring', -0.961, -1.63, -3.763],
                                   ['AH64WheelRightSpring', 0.961, -1.63, -3.763],
                                   ['AH64WheelBackSpring', 0, -0.961, 6.986]]) {
@@ -1707,6 +1721,31 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     };
     helicopter.landedNoseUp = landed(10);
     helicopter.landedNoseDown = landed(-10);
+  }
+
+  // A part beside the cockpit LOD that carries a mesh of its own (the rocket
+  // pods) is an object of its own: the box is still the fuselage's (COL-14),
+  // so the airframe climbs and turns as it does without the pods. Taking the
+  // pods for the box once made a 5.1 x 0.48 x 1.65 m AH-64 that climbed
+  // 0.5 m on full collective and leaned 95 degrees on the pedal.
+  {
+    const flown = pods => {
+      const heli = new Aircraft(ah64Node({ pods }), null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, heli.spec.groundClearance, 0);
+      heli.setInput('c_PIThrottle', 1);
+      fly(heli, 6);
+      const climbed = heli.state.position.y - heli.spec.groundClearance;
+      heli.setInput('c_PIYaw', 1);
+      let tilt = 0;
+      for (let i = 0; i < 60; i++) {
+        heli.integrate(DT);
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(heli.state.orientation);
+        tilt = Math.max(tilt, Math.acos(Math.min(1, up.y)) * DEG);
+      }
+      return { size: heli.spec.size.map(v => round(v)), climbed: round(climbed), tilt: round(tilt, 2) };
+    };
+    helicopter.withPods = { pods: flown(true), bare: flown(false) };
   }
 
   results.helicopter = helicopter;

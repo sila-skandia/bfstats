@@ -165,6 +165,29 @@ const out = {};
   out.craftGeometry = { size: g.size.map(n => +n.toFixed(3)), keel: +g.keel.toFixed(3) };
 }
 
+// --- (a4) a part beside the cockpit LOD is not the hull ----------------------
+// The vanilla LCVP: `LcvpComplex` holds its cockpit LOD, whose exterior is a
+// `SimpleObject`, and `Lcvp_Door`, a Bundle with a mesh of its own. The door
+// is an object of its own and never the box; it measured the craft as
+// 0.655 x 1.203 x 0.154 m with its keel 2.05 m over the origin.
+{
+  const craft = new THREE.Object3D();
+  craft.userData = { templateKind: 'PlayerControlObject', physics: { mass: 30000, vehicleCategory: 'VCSea' } };
+  const lod = new THREE.Object3D(); lod.userData = { templateKind: 'LodObject' };
+  const complex = new THREE.Object3D(); complex.userData = { templateKind: 'Bundle' };
+  const cockpit = new THREE.Object3D(); cockpit.userData = { templateKind: 'LodObject' };
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.005, 11.063));
+  hull.userData = { templateKind: 'SimpleObject' };
+  hull.position.set(0, 1.9705, 0);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.655, 1.203, 0.154));
+  door.userData = { templateKind: 'Bundle' };
+  door.position.set(-0.86, 2.65, -3.25);
+  cockpit.add(hull); complex.add(cockpit); complex.add(door); lod.add(complex); craft.add(lod);
+  craft.updateMatrixWorld(true);
+  const g = hullGeometry(craft);
+  out.doorGeometry = { size: g.size.map(n => +n.toFixed(3)), keel: +g.keel.toFixed(3) };
+}
+
 // --- (b) the water gate -------------------------------------------------------
 {
   const { hull, scene } = buildFletcher();
