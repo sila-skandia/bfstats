@@ -23,7 +23,7 @@ const { firePlanDone, PLAN_ACTION, heatHolds } = await imp('bot-plans.js');
 const { FireState } = await imp('fire-state.js');
 const { firePeriod } = await imp('gun-cycle.js');
 const { fireArmsHeat } = await imp('bot-barrels.js');
-const { botDeviate, BOT_DEVIATION_POINTS, BOT_INPUT_INDEX } = await imp('bot-deviation.js');
+const { botDeviate, deviationPoint, deviationIndex, footInputIndex, botInputIndex, SEAT_INPUT_INDEX } = await imp('bot-deviation.js');
 const { launchesDrawnRound } = await imp('bot-rounds.js');
 const { createVehicleHits } = await imp('vehicle-hits.js');
 seedMathRandom(3);
@@ -346,13 +346,16 @@ function lawReaches(words, level = Math.fround(0.8)) {
   const r = hold({ kit: ['Bazooka'], seconds: 40, launch: true });
   const { bot, referee, world } = r;
   const dry = { rounds: bot._mags.get('Bazooka').rounds, spare: bot._mags.get('Bazooka').spare };
+  const index = [bot.lives, bot.inputIndex];
   world.armorOf('bot_0').damage(1e6);
   bot._respawnIn = 0.01;
   referee.respawnTick(bot, 0.02);
+  index.push(bot.lives, bot.inputIndex);
   bot.isFiring = false;
   referee.fireTick(1 / 30);
   const mag = bot._mags.get('Bazooka');
-  out.respawn = { dry, refilled: mag ? { rounds: mag.rounds, spare: mag.spare } : null };
+  out.respawn = { dry, refilled: mag ? { rounds: mag.rounds, spare: mag.spare }  : null, index,
+                  expected: [footInputIndex(bot.playerId, 0), footInputIndex(bot.playerId, 1)] };
 }
 
 // --- the plan's empty-magazine end ------------------------------------------
@@ -421,21 +424,30 @@ out.flown = {
 
 // --- the bots' deviation point (bot-deviation.js, ledger AI-145) -------------
 {
-  const off = (d, total, barrel) => {
-    const v = botDeviate(d, total, barrel);
+  const off = (d, total, k) => {
+    const v = botDeviate(d, total, k);
     return v.map(x => +x.toFixed(7));
   };
+  const seatK = deviationIndex(SEAT_INPUT_INDEX, 0, 0);
+  // A bot on foot: one index a life (the referee's spawn and respawn), the
+  // seat's once seated, the seat's for a bot the referee never gave one.
+  const lives = Array.from({ length: 42 }, (_, life) => footInputIndex('bot_7', life));
+  const onFoot = botInputIndex({ inputIndex: lives[0] });
+  const seated = botInputIndex({ inputIndex: lives[0], vehicle: { vehicleId: 'x' } });
+  const unset = botInputIndex({});
   out.devPoint = {
-    index: BOT_INPUT_INDEX,
-    points: BOT_DEVIATION_POINTS.length,
+    seatIndex: SEAT_INPUT_INDEX, seatK,
+    shotgunK: [0, 1, 7].map(i => deviationIndex(476, 8, i)),
+    rifleK: deviationIndex(476, 0, 0), launcherK: deviationIndex(476, 1, 0),
+    lives, onFoot, seated, unset, again: footInputIndex('bot_7', 0),
     // Looking down -z: right is +x, up is +y, each u x total / 100.
-    north: off([0, 0, -1], 1.0, 0),
-    north2: off([0, 0, -1], 2.0, 0),
-    floor: off([0, 0, -1], 0.01, 0),
-    barrel1: off([0, 0, -1], 1.0, 1),
+    north: off([0, 0, -1], 1.0, seatK),
+    north2: off([0, 0, -1], 2.0, seatK),
+    floor: off([0, 0, -1], 0.01, seatK),
+    barrel1: off([0, 0, -1], 1.0, seatK + 1),
     // Looking east (+x): the right is +z in the viewer's frame.
-    east: off([1, 0, 0], 1.0, 0),
-    table: BOT_DEVIATION_POINTS,
+    east: off([1, 0, 0], 1.0, seatK),
+    table: Array.from({ length: 1024 }, (_, k) => deviationPoint(k)),
   };
 }
 

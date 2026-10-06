@@ -405,7 +405,7 @@ over 31 periods of four ticks (4.13 s), an M249's rounds are 0.1 s apart, a
 Thompson still fires 10 a second, and a bot's M249 holds at its 48th round,
 where the heat law first reaches 0.8.
 
-## 10. A bot's round lands on one point of its cone
+## 10. A bot's round lands on its input index's point of the cone
 
 **What was wrong.** `bot-referee.js rollCone` rolled each round into a fresh
 disc of the total in degrees. The engine's cone is DEV-9's square in
@@ -414,32 +414,55 @@ server recordings every round of a bot's burst lands on the same point of the
 square, scaled by the total.
 
 **What the engine does** (ledger AI-145). `fireBarrel`'s two draws are a pure
-function of the current input index plus the barrel, over a static table.
-`simulatePlayerUpdate` takes the index from the player's action buffer. A
-human's actions are numbered as they arrive. A bot's are queued with an index
-nobody writes, so it keeps one value. The recordings settle that value. All
-3,394 bot MG rounds, vanilla and Desert Combat, lie along one direction of
-the square. The low edge of their sizes is (minDev + 0.3125) x 0.980 for
-three guns with different minDevs. Only index 617 fits both, so a bot's
-barrel 0 lands at (up 0.9517, right 0.2325) times the total.
+function of the current input index plus the barrel, over a static table
+(the C runtime's `rand()` from seed 1). The barrel is `Fire`'s: 0..n-1 for a
+gun with barrels, -1 for one with none (BOMB-2). `simulatePlayerUpdate` takes
+the index from the player's action buffer. A human's actions are numbered as
+they arrive. A bot's are queued with an index nobody writes: a stack slot's
+leftover, so it keeps one value. What value depends on where the bot is:
 
-**What changed.** `bot-deviation.js` holds index 617's draws for barrels 0 to
-15, taken from the binary's own table and generator, and `botDeviate` hands
-them to `round-launch.js deviate`, the human's square, on a frame whose +X is
-the shooter's right. `resolveShot` and the flown rockets (`bot-rounds.js`)
-call it with the bot's total in the cone's own unit. They used to multiply it
-into degrees. `rollCone` is gone. A shotgun's barrel `i` takes point `i`.
+- **Seated**, one index for every bot, map and mod. All 3,394 bot rounds of
+  the seat MGs (Browning, MG42, the coaxials, none with barrels), vanilla and
+  Desert Combat, lie along one direction of the square, and the low edge of
+  their sizes is (minDev + 0.3125) x 0.980 for three guns with different
+  minDevs. Only draw index 617 fits both: the seat's input index is 618.
+- **On foot**, the bot's own index, held through a life (weapon changes
+  included) and new at the next, always a multiple of 4: the low bits of an
+  aligned address. The shotguns' eight barrels draw at index + 0..7, and each
+  of 22 recorded pulls (DC's Saiga12k and Remington, 10 bots) fits one index
+  to the recorder's rounding, 76, 132, 180, 468, 476, 532, 540, 708, 772 or
+  876 (one per bot; a bot's later pulls keep it), with the next best index 10
+  to 2,500 times worse and 617 or 618 at least 25 times worse. The six still bots with four or more rifle rounds in a
+  life keep one direction through it (`~/.cache/dc-sweep/review-bots/`
+  `pellet_fit2.py`, `lives.py`; review 2026-10-07).
 
-**Checked.** `tests/test_bot_weapons.py BotDeviationPointTests`: facing -z
-at a total of 1 the round is 0.0095 up and 0.0023 right, it scales with the
-total, nothing is drawn at 0.01, each barrel has its own point, the right
-axis turns with the line, and the table matches the binary's generator.
+**What changed.** `bot-deviation.js` builds the binary's table and generator
+(`deviationPoint`, every index), and `botDeviate` hands an index's point to
+`round-launch.js deviate`, the human's square, on a frame whose +X is the
+shooter's right. A bot on foot takes `footInputIndex` at each spawn, one of
+the 256 multiples of 4 hashed from its id and the life (INFERRED: the
+address is not a draw, and nothing the viewer has predicts its low bits); a
+seated bot fires at 618. `deviationIndex` adds the barrel, or -1 for a
+barrel-less gun. `resolveShot`, the shotgun's barrels and the flown rockets
+(`bot-rounds.js`, DC's RPG-7 and SA-7 with one barrel each) pass it, with the
+bot's total in the cone's own unit. They used to multiply it into degrees.
+`rollCone` is gone.
 
-**Open.** The index is measured, not traced: the stack slot `AIPlayer::
-addInput` leaves unwritten was not followed back to its writer. A server tick
-that finds no queued action uses the index + 1 (618). A few percent of the
-recorded rounds sit below the floor, which may be those ticks. The viewer
-does not model them.
+**Checked.** `tests/test_bot_weapons.py BotDeviationPointTests`: a seated
+bot's barrel-less gun at a total of 1 facing -z is 0.0095 up and 0.0023
+right, it scales with the total, nothing is drawn at 0.01, the barrel moves
+the index, the right axis turns with the line, a bot on foot takes a
+multiple of 4 each life, three recorded pulls each fit their own index and
+not 617, and the table matches the binary's `random_seeds` and generator at
+every index.
+
+**Open.** Neither index is traced: the stack slot `AIPlayer::addInput`
+leaves unwritten was not followed back to its writers, so which object's
+address a bot on foot carries (its soldier is the likeliest: the index
+survives a weapon change) and why a seat's is 618 are measured, not read. A
+server tick that finds no queued action uses the index + 1. A few percent of
+the recorded seat rounds sit below the floor, which may be those ticks. The
+viewer does not model them.
 
 ## 11. A bot leads a dragged round with its drag
 
