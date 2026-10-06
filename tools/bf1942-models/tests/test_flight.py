@@ -1037,6 +1037,22 @@ class FlightModelTests(unittest.TestCase):
         self.assertLess(bot["maxBank"], 30.0)
         self.assertLess(bot["swerve"], 2.0)
 
+    def test_a_critically_damaged_helicopter_loses_its_engines(self) -> None:
+        # Armor::status's 0x14 stops every Engine and latches it; full
+        # collective cannot bring it back until 0x13 (PHY-14, HP-13).
+        real = self.results.get("realGlbs")
+        if real is None or "criticalStops" not in real:
+            self.skipTest("no extracted Desert Combat models on this machine")
+        c = real["criticalStops"]
+        self.assertTrue(c["climb"]["running"])
+        self.assertGreater(c["climb"]["revs"], 0.25)
+        self.assertFalse(c["critical"]["running"])
+        self.assertEqual(0, c["critical"]["revs"])
+        self.assertLess(c["critical"]["vy"], -10.0)
+        self.assertTrue(c["recovered"]["running"])
+        self.assertGreater(c["recovered"]["revs"], 0.3)
+        self.assertGreater(c["recovered"]["vy"], c["critical"]["vy"])
+
     def test_pedal_alone_turns_a_helicopter_and_nothing_else(self) -> None:
         # Two seconds of D in a hover, measured against the same hover flown
         # without it. No gyroscopic term (COL-8): the yaw stays a yaw.
