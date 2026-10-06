@@ -278,10 +278,19 @@ the node the engine's walk picks (`inertiaGeometryNode`):
 | DC, DC Final `Nimitz` family (8 each) | its elevators, 70.9 x 14.0 x 151.9 | 72.6 x 2.94 x 325.0 | `NimitzComplex`, the same |
 | vanilla `Lcvp`, XPack1 `ItLcvp` | `Lcvp_Door`, 0.66 x 1.2 x 0.15, keel 2.05 m over the origin | every mesh, 3.4 x 3.37 x 11.55, keel 0.47 | `LcvpCockpitExternal`, 3.4 x 3.0 x 11.06, col0 bottom 0.39 |
 
-Nothing else moved: no land vehicle, no other ship, no fixed-wing aircraft.
-No hull set changes and no model or level needs re-extracting for it: the fix
-is the viewer's, and it reads the glbs and baked levels already on disk (the
-DC collision sidecars are stale for another reason, below).
+Nothing else moved in those five trees: no land vehicle, no other ship, no
+fixed-wing aircraft. The other mods' trees do move (review census, both
+`models/` and every `scene.glb`): FHSW's LCVPs as vanilla's; FHSW's
+`Bf109-G` family from a 0.8 m part to every mesh; the keels of FHSW's
+destroyers and carriers (`Hamakaze`, `Shokaku`, `Junyo`, `Dithmarschen`: from
+10 to 15 m over the origin to the box bottom); EoD's `LCT-Mk6` and Loaches to
+every mesh. FHSW's `Zuiho_1944` goes the wrong way, from an AA battery
+(8.6 x 2.6 x 46 m) to one 25 mm mount (1.5 x 0.29 x 1.5 m), because the
+chain walk still descends into a mesh-carrying `Bundle` it meets first
+(below, Open). No hull set changes and no model or level needs re-extracting
+for it: the fix is the viewer's, and it reads the glbs and baked levels
+already on disk (the DC collision sidecars are stale for another reason,
+below).
 
 **Checked.**
 
@@ -317,10 +326,31 @@ DC collision sidecars are stale for another reason, below).
   rising 1 in 12.5 along her heading; `page_lcvp.cjs` in the scratch dir).
   On the door's box she reached 25.7 m/s, swung round off her heading with
   the rudder centred (100 m along at 10 s, 35 m behind her start at 20 s)
-  and grounded after 36 s. On her hull's box she holds her heading at
+  and grounded after 36 s. On the every-mesh box she holds her heading at
   15.6 m/s and grounds 130 m up the beach after 16 s, the bed 2.4 m over her
-  start and her keel 0.47 m under her origin (the engine's col0 bottom is
-  0.39 m, `LcvpCockpitExternal`).
+  start and her keel 0.47 m over her origin (the engine's col0 bottom is
+  0.39 m over it, `LcvpCockpitExternal`).
+- Review, real landings in the headless runner (bots under the SAI's own
+  beach order, seed 7, a scratch copy of `tests/sim_vehicles_harness.mjs`'s
+  `beach` recipe pointed at an LCVP,
+  `~/.cache/dc-sweep/review-vehicle-part-collision/lcvp_recipe.mjs`; every
+  craft of the side on Iwo Jima, 4, and Midway, 8). Main beaches all 12 in
+  their zones. This branch beaches 10 of 12, and 8
+  of those 10 sooner (Midway's median bail 115 s against 178 s). The other
+  two (Iwo pick 0 at 13 s, Midway pick 5 at 36 s) hit the `Enterprise`'s
+  side, roll past the 46 degrees at which bots bail (`upsideDownCos` 0.6914)
+  and leave the craft at sea. The engine walk's own box (3.4 x 3.0 x 11.06,
+  keel 0.39) does the same on Iwo pick 0, so the cause is the hull-vs-hull
+  contact, not this box. Retail LCVPs are tipped by contacts too: on the
+  lab's first Midway round two climbed each other to 82 degrees at the beach.
+- Review, the LCVP's speed against retail (`~/bf1942-lab/runs/*midway*`, the
+  server recorder, 45 bot-driven craft in two rounds): 13.1 m/s at best over
+  any 5 s (13.10 to 13.17 for every craft), and 20.8 deg/s at 10.8 m/s in a
+  full turn. The viewer's `Ship` in deep water, full ahead: 18.6 m/s on this
+  box, 37 deg/s at 18.2 m/s on full rudder; 17.9 m/s on the engine's header
+  box. On the door's box she was unstable: 18 to 37 m/s, and a full-rudder
+  turn spun her at 26 rad/s with 80 degrees of list. The gap left is not the
+  box (Open). In the runner both trees' craft make 13 to 14.6 m/s over 5 s.
 
 - With ground-handling's `72cf9934` merged in (the exporter keeps invisible
   `Spring`s as undrawn wheels): the KettenKrad, R75, HD_XA42 and LVT4
@@ -401,3 +431,18 @@ Added 2026-10-07 (vehicle-part-collision):
   takes the biggest collision bbox for the inertia, which on the Mi-24D is its
   main rotor's static alternative (16.1 x 15.5 x 0.56 m), a part COL-17 does
   not even test. The engine's is the root's geometry (COL-14).
+- **The chain walk still takes a mesh-carrying `Bundle` it meets first.**
+  `hullGeometry` no longer counts a tagged child as a node's own geometry,
+  but when a node has none it still descends into its first `Bundle` or
+  `LodObject` child, and a `Bundle` with a mesh there becomes the box. COL-14's
+  walk only ever answers a LodObject's alternative. DC's AH-64 is right only
+  because `lodAH64Cockpit` is listed before `AH64HydraBundle`; built the
+  other way round, the pods are the box again. FHSW's `Zuiho_1944` hits it
+  today. Skipping a mesh-carrying tagged child except as a LodObject's
+  alternative fixes both and moves 75 other roots (radar towers, the
+  Flakturm battery, two wrecks), none of them a vanilla ship or aircraft;
+  not done here.
+- **The LCVP is faster and turns harder than retail** (18.6 m/s and 37 deg/s
+  in deep water against 13.1 m/s and 20.8 deg/s), on the engine's box too.
+- **A driven landing craft that hits a carrier's side can be thrown past the
+  bots' bail angle**, on this box and the engine's (2 of 12 runner landings).
