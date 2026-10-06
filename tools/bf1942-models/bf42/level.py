@@ -2413,8 +2413,9 @@ def patch_grid(world_size: float, heightmap_dim: int) -> tuple[int, float]:
     `PatchTerrain::init` (lnxded 0x083d5460; the client's twin 0x006819a0,
     `sar eax,6` at 0x00681a38) takes `dim >> 6` patches per axis, stores
     `dim >> log2(P)` = 64 samples per patch, and sizes a patch
-    `round(getSizeX() / P)` metres, `getSizeX` being `worldSize` (0x083d5f80
-    returns `+0xb4`). Nothing in `Terrain.con` names the patch size: it follows
+    `getSizeX() / P` metres truncated (`fistp` under a chop control word),
+    `getSizeX` being `worldSize` truncated the same way (0x083d5f80 returns
+    `+0xb4`). Nothing in `Terrain.con` names the patch size: it follows
     from the heightmap's resolution alone. The 512-sample heightmaps on 2048 m
     vanilla levels and the 256-sample ones on 1024 m levels both make 256 m;
     Medina Ridge's 512 samples over 1024 m make 128 m, FHSW's Dover Strait's
@@ -2436,10 +2437,14 @@ def tile_in_window(tex_offset: int, index: int, per_axis: int) -> bool:
     far side only, and a shipped file outside that window is never drawn:
     XPack2's Kbely_Airfield ships a ninth row and column (Tx08xNN) on its
     8-patch world, FHSW's Operation_Hailstone four rows past its window.
+    The patch is compared with that limit unsigned (`jae` at 0x00681fbe and
+    0x00681fc4), so a limit below zero bounds nothing: an offset under `-P`
+    draws every file `0..P-1`. No installed level has `|texOffset| >= P`.
     Ledger TERR-2.
     """
     world = index + max(tex_offset, 0)
-    return index >= 0 and world < per_axis - abs(tex_offset)
+    limit = per_axis - abs(tex_offset)
+    return index >= 0 and world < per_axis and (limit < 0 or world < limit)
 
 
 # Like con.py's _COMMAND but the command part may itself be dotted:
