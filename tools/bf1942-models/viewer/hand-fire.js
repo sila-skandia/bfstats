@@ -169,7 +169,7 @@ export function createHandFire(page) {
   // Every round the soldier's own gun fires: the report plays, the magazine
   // empties, the cone blooms, and the view kicks. `onShot` fires for vehicle
   // guns too, so the group is checked first.
-  page.guns.onShot = group => {
+  page.guns.onShot = (group, rounds = 1) => {
     const hw = page.handWeapon;
     if (!hw || group !== hw.group) return;
     // A report that never arrived — a manifest or an mp3 that failed while the
@@ -190,7 +190,11 @@ export function createHandFire(page) {
       hw.hideFire = hide;
       hw.weaponNode.visible = false;
     }
-    if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+    // What the pull cost, as `salvo()` charged it (`gunfire.js` hands it in):
+    // one round per barrel for a multi-barrel weapon with no
+    // `setAsynchronyFire` (BOMB-1), one for a `blastAmmoCount` salvo, whose
+    // pellets are one shell (BOMB-13), and none for an unlimited one.
+    if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - handCharge(group, rounds));
     // The barrel's heat, once a pull however many barrels it fired: one add
     // in `FireArms::Fire`, after the barrel loop (ledger GUN-14).
     hw.heat?.registerShot(1);
@@ -386,10 +390,29 @@ export function createHandFire(page) {
   // two it did not have, handing out a free bomb at the bottom of every magazine.
   // Unlimited when this page never built a `FireState` for the group, which is
   // the honest answer for one.
+  // The hand weapon's magazine is `hw.rounds`, not a `FireState`: handed over
+  // too, so a multi-barrel hand weapon fires only the barrels its magazine can
+  // pay for (BOMB-5) and is charged at all. Unanswered, it read as unlimited
+  // and `salvo()` charged it nothing.
   page.guns.roundsLeft = group => {
+    const hw = page.handWeapon;
+    if (hw && group === hw.group) return Number.isFinite(hw.rounds) ? hw.rounds : Infinity;
     const state = page.fireStates.get(group.node);
     return state && !state.unlimited ? state.ammo : Infinity;
   };
+
+  /**
+   * A hand weapon's pull, charged. `rounds` is `salvo()`'s answer. A
+   * `blastAmmoCount` weapon (the template's `+0x348` byte, the FireArms
+   * extras' `blastAmmoCount`; absent means not set) pays one round for the
+   * whole salvo (BOMB-13), and that is enforced here as well as in `salvo()`,
+   * so a `salvo()` that has not been told of the flag cannot bill a shotgun's
+   * eight pellets as eight shells.
+   */
+  function handCharge(group, rounds) {
+    const charge = Math.max(0, Number.isFinite(rounds) ? rounds : 1);
+    return group?.stats?.blastAmmoCount ? Math.min(1, charge) : charge;
+  }
   // And the report. A gun `.ssc` is a one-shot event patch — the muzzle blast,
   // the casing, the crew reloading, the breech — so the round is what plays it,
   // exactly as a hand weapon's own `playHandFire` works two screens up. Chained
