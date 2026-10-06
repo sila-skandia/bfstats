@@ -50,6 +50,88 @@ _EFFECT_BUNDLE_SCOPED = frozenset({
 })
 _COMMAND = re.compile(r"^(\w+)\.(\w+)(?:[ \t]+(.*?))?[ \t]*$")
 
+# How the console finds a word (CON-15). `<Object>.<word>` is looked up
+# case-blind as object + word; when that misses and the word starts with `get`
+# or `set`, it is looked up once more without those three letters, and that
+# second answer only counts if it is a property (`ConsoleObjects::
+# getConsoleObject`, lnxded 0x08359b10, client 0x005ac750). So a property
+# answers to its bare name and to `set<name>`: Desert Combat writes
+# `ObjectTemplate.setGeometry` on 23 templates, vanilla writes the bare
+# `hasCollisionPhysics` 1,923 times beside 867 `setHasCollisionPhysics`. A
+# method (`setPosition`, `addTemplate`) is registered under its whole name and
+# answers to nothing else.
+#
+# The branches below read each property under one spelling. These are the
+# words they read that the console registers as a property of that object, in
+# the spelling read, each checked against lnxded's own registrations
+# (features/con-reader-spellings). Three are left out on purpose: `lodDistance`
+# and `setLodDistance` are two different ObjectTemplate words, and so are
+# `objectTemplate` and `setObjectTemplate`, and `type` is registered once per
+# template class. A word missing here is still read under its own spelling.
+_OBJECT_TEMPLATE_PROPERTIES = frozenset({
+    "aitemplate", "altfireonce", "anglemod", "autoreload", "center1phands",
+    "colorrgbaovertime", "cooldownpersec", "createinvisible", "criticaldamage",
+    "cvmchase", "cvmexterntrace", "cvmflyby", "cvmfrontchase", "cvminside",
+    "cvmtrace", "damagefromwater", "damagetype", "damagewhenlost",
+    "destblendmode", "detonateonwatercollision", "dieaftercoll", "distance",
+    "disttomindamage", "disttostartlosedamage", "drag", "endeffecttemplate",
+    "exitspeedmod", "explodenearenemydistance", "firedelay", "fireincameradof",
+    "fireonce", "geometry", "gravitymodifier", "grip", "hasarmor",
+    "hascollisioneffect", "hasmobilephysics", "hasrestrictedexit",
+    "healdistance", "healfactor", "heataddwhenfire", "hideduringfiretime",
+    "hitpoints", "holdobject", "hplostwhilecriticaldamage",
+    "hplostwhiledamagefromwater", "hplostwhileupsidedown", "inertiamodifier",
+    "invisible", "itemindex", "magsize", "magtype", "mass", "material",
+    "material2", "maxdistanceunderwatersurface", "maxhitpoints",
+    "maxnrofobjectspawned", "mindamage", "mindistanceunderwatersurface",
+    "numofmag", "outsidehudoffset", "positionalspeedindof",
+    "projectileposition", "projectiletemplate", "proximityfuseprimer", "radius",
+    "recoilsize", "recoilspeed", "relativepositionindof", "reloadtime",
+    "rememberexcessinput", "repairdistance", "repairfactor", "rotationalspeed",
+    "roundoffire", "saveinseparatefile", "seatanimationlowerbody",
+    "seatanimationupperbody", "seatflags", "selfhealfactor", "setacceleration",
+    "setammobar", "setammobarfill", "setammobarposx", "setammobarposy",
+    "setammobarsize", "setammobartextposx", "setammobartextposy",
+    "setammoicon", "setasynchronyfire", "setattachtolistener",
+    "setautomaticreset", "setbonename", "setcontinousrotationspeed",
+    "setdamping", "setdifferential", "setenginetype", "setgearchangetime",
+    "setgeardown", "setgeardownengineinput", "setgeardownheight", "setgearup",
+    "setgearupengineinput", "setgearupheight", "sethascollisionphysics",
+    "sethaspointphysics", "sethasturreticon", "sethealthbarfullicon",
+    "sethealthbaricon", "setinputfire", "setinputtopitch", "setinputtoroll",
+    "setinputtoyaw", "setkitteam", "setmaxrotation", "setmaxspeed",
+    "setminrotation", "setnopropellereffectatspeed", "setnumberofgears",
+    "setnumberofweaponicons", "setpivotposition", "setprimaryammoicon",
+    "setscopeicon", "setsecondaryammoicon", "setsighticon", "setsnipersight",
+    "setstrength", "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
+    "settorque", "setvehicleicon", "setvehicleiconpos", "showinfirstperson",
+    "showinthirdperson", "size", "sizeovertime", "soldiercameraposition",
+    "soldierzoomfov", "soldierzoomposition", "spawnoffset", "speedmod",
+    "starteffecttemplate", "stopatendeffect", "team", "template", "texture",
+    "timedelayonoverheat", "timetolive", "timetoliveafterdeath",
+    "togglemouselook", "tracerscaler", "unzoombetweenfiretime", "usescope",
+    "velocity", "visiblebarreltemplate", "visibledummyprojectiletemplate",
+    "workonsoldiers", "workonvehicles", "ymodonexplosion", "zoomfov",
+})
+# `GeometryTemplate.lodDistance` is a terrain property, not `setLodDistance`.
+_GEOMETRY_TEMPLATE_PROPERTIES = frozenset({"file", "scale"})
+
+
+def _set_twin(word: str) -> str:
+    return word[3:] if word.startswith("set") else "set" + word
+
+
+# The other spelling of each property, onto the one the branch reads.
+_CONSOLE_SPELLINGS: dict[str, dict[str, str]] = {
+    "objecttemplate": {_set_twin(w): w for w in _OBJECT_TEMPLATE_PROPERTIES},
+    "geometrytemplate": {_set_twin(w): w for w in _GEOMETRY_TEMPLATE_PROPERTIES},
+}
+
+
+def console_word(namespace: str, command: str) -> str:
+    """The spelling `add_con` reads for `<namespace>.<command>`, both lower case."""
+    return _CONSOLE_SPELLINGS.get(namespace, {}).get(command, command)
+
 
 def strip_comments(text: str) -> str:
     text = _REM_BLOCK.sub("", text)
@@ -148,6 +230,42 @@ def vec3_lenient(token: str) -> tuple[float, float, float]:
     """
     parts = (token.replace(",", "/").split("/") + ["0", "0", "0"])[:3]
     return tuple(float(p) if p.strip() else 0.0 for p in parts)
+
+
+_STREAM_FLOAT = re.compile(r"\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
+
+
+def stream_vec3(token: str) -> tuple[float, float, float] | None:
+    """A Vec3 the way the console's `operator>>(istream&, Vec3&)` reads it.
+
+    lnxded 0x080b7130 reads a float, one separator character, a float, one
+    character, a float, and stores each component from the same local. A read
+    that fails leaves that local alone, and so does every read after it, so a
+    component the token does not spell repeats the last one it did:
+    `GeometryTemplate.scale 1.25` is 1.25/1.25/1.25 and `0.3/1/1` is itself
+    (CON-16). None when not even the first float reads, where the engine
+    would store an uninitialised local.
+    """
+    values: list[float] = []
+    pos, failed, last = 0, False, None
+    for index in range(3):
+        match = None if failed else _STREAM_FLOAT.match(token, pos)
+        if match:
+            last, pos = float(match.group(1)), match.end()
+        else:
+            failed = True
+        if last is None:
+            return None
+        values.append(last)
+        if index < 2:
+            # `operator>>(char&)` skips whitespace and takes any one character.
+            while not failed and pos < len(token) and token[pos].isspace():
+                pos += 1
+            if failed or pos >= len(token):
+                failed = True
+            else:
+                pos += 1
+    return values[0], values[1], values[2]
 
 
 def crd(token: str) -> float | None:
@@ -1354,6 +1472,10 @@ class ObjectTemplate:
     # Declared on every aircraft camera and nothing else (viewer/seat-view.js
     # carries the survey); None when the template never wrote it.
     outside_hud_offset: tuple[float, float, float] | None = None
+    # `toggleMouseLook` on a Camera template: the seat looks around only while
+    # `c_PIMouseLook` is held. The constructor seeds it 0 (lnxded 0x081acc20),
+    # so None (never written) reads as False.
+    toggle_mouse_look: bool | None = None
     # Emitter motion: where particles spawn along the direction of fire
     # (`relativePositionInDof`) and how fast they drift along it
     # (`positionalSpeedInDof`, negative = receding behind the muzzle).
@@ -1866,6 +1988,10 @@ class GeometryTemplate:
     # vehicle-part LodSelector thresholds (`LodSelector.addLodDistance`), which
     # are a separate mechanism recorded on `LodSelector.distances`.
     lod_distances: list[float | None] = field(default_factory=list)
+    # `GeometryTemplate.scale x/y/z` in the mesh's own axes, None when never
+    # written. The engine scales the drawn mesh and the face side of its
+    # collision by it, not its bounding box (CON-16, SM-12).
+    scale: tuple[float, float, float] | None = None
 
     @property
     def mesh_file(self) -> str:
@@ -1905,6 +2031,7 @@ class ObjectLibrary:
             if not match:
                 continue
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
+            cmd = console_word(ns, cmd)
 
             if ns == "objecttemplate":
                 if (cmd != "create" and obj is not None
@@ -2765,6 +2892,13 @@ class ObjectLibrary:
                     if obj.camera_view_modes is None:
                         obj.camera_view_modes = {}
                     obj.camera_view_modes[cmd.upper()] = value
+                elif cmd == "togglemouselook":
+                    # A byte on the Camera template (MLK rows,
+                    # `viewer/mouse-look-key.js`): the seat needs the
+                    # mouse-look key to look around. Last write wins.
+                    value = truthy(args)
+                    if value is not None:
+                        obj.toggle_mouse_look = value
                 elif child is None:
                     continue
                 elif cmd == "setisfirstpersonpart":
@@ -2822,6 +2956,11 @@ class ObjectLibrary:
                     geom.file = args.split()[0] if args else None
                 elif geom is not None and cmd == "setskin":
                     geom.skin = args.split()[0] if args else None
+                elif geom is not None and cmd == "scale":
+                    # One argument, so the first token, the way `getArgs`
+                    # splits it. A bare line with no value is a read.
+                    if args.split():
+                        geom.scale = stream_vec3(args.split()[0]) or geom.scale
                 elif geom is not None and cmd == "setloddistance":
                     # `setLodDistance <index> <metres>`; indexed so the table
                     # lands in lod order whatever the file's line order.
