@@ -49,13 +49,19 @@ export function buildVehicleTable(instance, data) {
       (Number.isFinite(spawn.minSpawnDelay) || Number.isFinite(spawn.maxSpawnDelay))
         ? { minSpawnDelay: spawn.minSpawnDelay, maxSpawnDelay: spawn.maxSpawnDelay }
         : null);
-    const pad = pads.indexOf(spawn);
+    // A pad is a pad where the page makes it one: its baked hull stands in
+    // the spawners group (`bakedPadNode`). A row whose hull the bake placed
+    // elsewhere (a stationary gun stood among the statics) is level
+    // furniture on the page, and here: its node wherever it stands, no pad.
+    // A row with no node anywhere (a descriptor, an extract older than the
+    // pad) keeps its pad on a template clone, as before.
+    let pad = pads.indexOf(spawn);
     let best = pad >= 0 && spawnersRoot ? bakedPadNode(spawnersRoot, spawn, 3, claimed) : null;
     if (!best) {
       const want = template.toLowerCase();
       const pos = spawn.position || [];
       let bestDist = Infinity;
-      for (const node of spawners) {
+      for (const node of [...spawners, ...ownerRoots]) {
         if (claimed.has(node)) continue;
         const name = templateNameOf(node).toLowerCase();
         if (name !== want && !name.startsWith(want)) continue;
@@ -65,6 +71,7 @@ export function buildVehicleTable(instance, data) {
           ? Math.hypot(p.x - pos[0], p.y - pos[1], p.z - pos[2]) : 0;
         if (dist < bestDist) { bestDist = dist; best = node; }
       }
+      if (best) pad = -1;
     }
     if (best) claimed.add(best);
     const entry = best
