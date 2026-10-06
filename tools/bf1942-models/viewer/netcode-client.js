@@ -352,6 +352,8 @@ function lerped(slot, at) {
       crouch: pb.crouch,
       prone: pb.prone,
       swim: pb.swim ?? null,
+      // A blast's flight (`netcode.js` `FLIGHT_WIRE`), the newest word.
+      flight: pb.flight ?? null,
       inVehicle: pb.inVehicle,
       x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y), z: lerp(pa.z, pb.z),
       yaw: lerp(pa.yaw, pb.yaw), pitch: lerp(pa.pitch, pb.pitch),

@@ -139,6 +139,9 @@ class NetcodeClientTests(unittest.TestCase):
              "position": [0, 7.6, 0], "text": ""},
         ])
 
+    def test_a_blasts_flight_rides_the_swim_bits_spare_codes(self):
+        self.assertEqual({"flight": "flyBackward", "swim": None}, self.results["flight"])
+
     def test_a_rows_own_keys_ride_through(self):
         # The page reads a round's result off the row (`map.html`
         # `roomRoundEnd`) and the restart's flags and tickets, so every key a

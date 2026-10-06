@@ -102,6 +102,17 @@ out.lerpX = lerpedA.x;
 out.lerpProne = lerpedA.prone;
 out.lerpYaw = lerpedA.yaw;
 
+// A blast's flight in the swim bits' spare codes (`netcode.js` `FLIGHT_WIRE`):
+// A thrown backwards, which a reader sees as a flight and not as a swim.
+clock = 200;
+client.handleMessage(frame(MSG_SNAPSHOT, snap(120, [
+  { slot: 1, alive: true, seated: false, crouch: false, prone: false, flight: 'flyBackward',
+    inVehicle: false, team: 1, x: 12, y: 2, z: 0, yaw: 90, pitch: 0,
+    hp: 22, vehicleId: 0, seatIndex: null },
+])));
+const flying = client.remotePlayer(1);
+out.flight = { flight: flying.flight, swim: flying.swim };
+
 // Before any snapshot: NaN-safe.
 const none = client.remotePlayer(7);
 out.noSnapshot = none === null;
