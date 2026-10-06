@@ -31,7 +31,13 @@ What this file pins is the P2 contract of
 * the bleed on the engine's rule (ledger TKT-4), played on the page's own
   round (`round-state.js`): a whole ticket every `60 / (rate * maxPlayers /
   16)` s while the enemy's summed `areaValue` is over 99, a point with no
-  flag counting, and the countdown refilled whole while the gate is shut.
+  flag counting, and the countdown refilled whole while the gate is shut;
+* the round's end in a room (ROUND-2, ROUND-9, ROUND-11, HP-20): the result
+  sent, the world cleared with nothing spent, no human spawn until the
+  restart, and the restart ten seconds on with the tickets made again and the
+  flags back on their level teams;
+* a room's layer: the one its creating join named (`?mode=`), else the
+  level's default, and the HELLO saying which.
 """
 
 from __future__ import annotations
@@ -90,12 +96,18 @@ _VIEWER_MODULES = [
     "round-state",
     # authority.mjs runs a CTF layer's flags.
     "ctf",
+    # room-pads.mjs runs the page's pad law (deployables.js) and the table
+    # finds a pad's node the page's way (level-statics.js).
+    "deployables", "level-statics",
+    # room-hits.mjs prices a reported landing by the page's own law.
+    "friendly-fire", "knockback", "soldier-exposure", "soldier-death", "skeleton-hit",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
     # flight.js imports the loader and the loader its utils; both are pure JS.
     "viewer/vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "viewer/vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
+    "viewer/vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     # The server feature's own files, in their own dir, so their relative
     # imports (`./glb-tree.mjs`, `../viewer/world.js`) resolve unmodified.
     "server/glb-tree.mjs": SERVER / "glb-tree.mjs",
@@ -117,6 +129,8 @@ MODULES.update({
     "server/room-rules.mjs": SERVER / "room-rules.mjs",
     "server/room-wire.mjs": SERVER / "room-wire.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
+    "server/room-pads.mjs": SERVER / "room-pads.mjs",
+    "server/room-hits.mjs": SERVER / "room-hits.mjs",
     # The real published templates the fake level's table is built from.
     "viewer/models/Willy.glb": VIEWER / "models" / "Willy.glb",
     "viewer/models/Zero.glb": VIEWER / "models" / "Zero.glb",
@@ -287,6 +301,22 @@ class RoomTests(unittest.TestCase):
         assert "Willy:ground" in i["table"], i["table"]
         self.assertTrue(i["mountOk"])
         self.assertTrue(i["unmountOk"])
+
+    def test_a_rooms_land_drive_gets_the_pages_inputs_and_drives(self) -> None:
+        # map.html's buildHullDrive hands a land drive the collider and the
+        # sea (PHY-16's sea bed), and its wheels a radius off their own mesh.
+        # A room's drive had neither: every wheel measured -Infinity off an
+        # undecoded mesh, no wheel touched the ground, and the hull sat still
+        # on its failsafe at full throttle.
+        land = self.results["i"]["land"]
+        self.assertIsNotNone(land)
+        self.assertTrue(land["collider"])
+        self.assertTrue(land["waterLevel"])
+        self.assertTrue(land["radiiFinite"])
+        self.assertEqual(land["wheels"], land["probeDepths"])
+        self.assertTrue(land["waterPart"])
+        self.assertTrue(land["grounded"])
+        self.assertGreater(land["moved"], 1.0, land)
 
     # --- (j) the glb-tree contract -------------------------------------------------------
 
@@ -533,6 +563,171 @@ class RoomTests(unittest.TestCase):
         self.assertEqual((False, 4, 2, [1, 0, -100]),
                          (w["ctf"][1]["home"], w["ctf"][1]["carrier"], w["ctf"][1]["carrierTeam"],
                           w["ctf"][1]["position"]))
+
+    # --- (x) the round's end and the restart -------------------------------------
+
+    def test_a_side_out_of_tickets_ends_the_rooms_round(self) -> None:
+        # ROUND-2: Conquest ends when a side is under one ticket; the other
+        # side wins, and the result goes to everyone with the restart's 10 s.
+        x = self.results["x"]
+        self.assertIsNotNone(x["end"], x)
+        self.assertEqual(2, x["end"]["winner"])
+        self.assertEqual("tickets", x["end"]["reason"])
+        self.assertEqual(10, x["end"]["restartIn"])
+        self.assertEqual(1, x["end"]["roundsWon"]["2"])
+        self.assertEqual(0, x["ticketsAtEnd"]["team1"])
+
+    def test_the_end_clears_the_world_without_spending(self) -> None:
+        # HP-20's `clearWorld`: the living are killed, and the round having
+        # ended, nothing is spent for it (ROUND-7).
+        x = self.results["x"]
+        self.assertEqual([2], x["cleared"])
+        self.assertFalse(x["bAliveAfterEnd"])
+        self.assertEqual(100, x["ticketsAtEnd"]["team2"])
+
+    def test_a_human_cannot_spawn_while_the_round_is_over(self) -> None:
+        # ROUND-11: `spawnPlayer` takes a human only at status 1.
+        x = self.results["x"]
+        self.assertTrue(x["refused"])
+        self.assertTrue(x["aDeadDuringEnd"])
+        self.assertEqual({"status": "endGame", "winner": 2}, x["helloDuringEnd"])
+
+    def test_the_room_restarts_ten_seconds_after_the_end(self) -> None:
+        # ROUND-9: `+0x21c` counts 10 s down, then `restartMap`: the tickets
+        # made again, the rounds won kept, each flag back on its level team.
+        x = self.results["x"]
+        self.assertFalse(x["restartedEarly"])
+        self.assertIsNotNone(x["restart"])
+        self.assertEqual({"team1": 2, "team2": 100}, x["restart"]["tickets"])
+        self.assertEqual([1, 2], [f["team"] for f in x["restart"]["flags"]])
+        self.assertEqual([1, 2], x["flagsAfter"])
+        self.assertEqual({"1": 0, "2": 1}, x["restart"]["roundsWon"])
+        self.assertEqual("playing", x["roundAfter"]["status"])
+        self.assertEqual({"team1": 2, "team2": 100}, x["ticketsAfter"])
+        self.assertTrue(x["respawned"])
+
+    # --- (y) a room's layer ---------------------------------------------------------
+
+    def test_a_room_plays_the_layer_it_was_made_on(self) -> None:
+        y = self.results["y"]
+        self.assertEqual("Ctf", y["ctf"]["mode"])
+        self.assertFalse(y["ctf"]["modeDefault"])
+        self.assertEqual(["AxisBase", "AlliedBase"], y["ctf"]["flags"])
+        self.assertIsNone(y["ctf"]["tickets"])
+        self.assertTrue(y["ctf"]["ctf"])
+        self.assertTrue(y["ctf"]["law"])
+        self.assertEqual("Ctf", y["ctf"]["list"])
+
+    def test_a_room_made_with_no_mode_plays_the_default_layer(self) -> None:
+        y = self.results["y"]
+        self.assertEqual("Conquest", y["def"]["mode"])
+        self.assertTrue(y["def"]["modeDefault"])
+        self.assertEqual(["North", "South"], y["def"]["flags"])
+        self.assertEqual(100, y["def"]["tickets"])
+        self.assertIsNone(y["def"]["ctf"])
+
+    # --- (z2) a magazine change relayed ---------------------------------------------
+
+    def test_a_magazine_change_reaches_the_others_once(self) -> None:
+        z2 = self.results["z2"]
+        self.assertEqual([{"slot": z2["slotA"], "weapon": "Thompson"}], z2["heard"])
+        self.assertEqual(0, z2["echoed"])
+        self.assertEqual(0, z2["badNames"])
+        self.assertEqual(0, z2["fromTheDead"])
+
+    # --- (z3), (z4) a reported landing, priced by the room ----------------------------
+
+    def test_a_direct_hit_costs_the_hull_and_tells_everyone(self) -> None:
+        z3 = self.results["z3"]
+        self.assertTrue(z3["tables"])
+        self.assertEqual({"vehicle": z3["willyId"], "hp": z3["hpBefore"] - 10}, z3["hullRow"])
+
+    def test_a_blast_prices_and_throws_a_soldier_on_foot(self) -> None:
+        # HP-9/HP-10: material 200 against the soldier's 40 at 3 m of 10; the
+        # push is KNOCK-4's `75 * 150 / 10 * exposure`, its rise KNOCK-5's,
+        # which leaves him at 8 m/s or more and in the flight (KNOCK-1), on the
+        # server and on the wire.
+        z3 = self.results["z3"]
+        self.assertGreater(z3["lost"], 0)
+        self.assertLess(z3["lost"], 25 * 0.7 + 1e-6)
+        self.assertEqual(2, z3["blastRow"]["slot"])
+        self.assertGreater(z3["blastRow"]["push"][1], 0)
+        self.assertGreaterEqual(z3["speedAfter"], 8)
+        self.assertIn(z3["flightOnServer"], ("flyForward", "flyBackward"))
+        self.assertEqual(z3["flightOnServer"], z3["wireFlight"])
+
+    def test_a_landing_off_the_shape_or_from_the_dead_is_dropped(self) -> None:
+        self.assertEqual(0, self.results["z3"]["droppedLoss"])
+
+    def test_a_statics_hit_points_go_out_by_its_scene_node(self) -> None:
+        z4 = self.results.get("z4")
+        if z4 is None:
+            self.skipTest("no real viewer tree")
+        self.assertIsNotNone(z4["factory"])
+        self.assertEqual({"node": z4["factory"]["node"], "hp": z4["max"] - 250, "destroyed": False},
+                         z4["objectRow"])
+
+    # --- (z5) an abandoned hull's clock ----------------------------------------------
+
+    def test_an_abandoned_hull_runs_down_its_clock_then_loses_hit_points(self) -> None:
+        # SPAWN-13: on its pad it keeps every point; 100 m off it, empty, the
+        # 2 s countdown runs in 0.5 s steps and each later step bills
+        # `damageWhenLost` (4) a second, about 8 points in 4 s.
+        z5 = self.results["z5"]
+        self.assertEqual(z5["max"], z5["atPad"])
+        self.assertLess(z5["away"], z5["max"] - 6)
+        self.assertGreater(z5["away"], z5["max"] - 12)
+
+    # --- (z) the room's vehicle pads -----------------------------------------------
+
+    def test_the_hello_lists_both_of_a_pads_hulls(self) -> None:
+        # The pad's other-side hull is in the table from the start, out of
+        # the world, so a seat row and the page can name it (SPAWN-2).
+        z = self.results["z"]
+        self.assertEqual([{"template": "Willy", "pad": 0, "live": True},
+                          {"template": "Zero", "pad": 0, "live": False}], z["hello"])
+
+    def test_a_hulls_death_takes_its_crew(self) -> None:
+        z = self.results["z"]
+        self.assertTrue(z["seated"])
+        self.assertTrue(z["killedInHull"])
+        self.assertTrue(z["unseated"])
+        self.assertEqual({"hp": 0, "destroyed": True}, z["hullRow"])
+
+    def test_the_pads_delay_runs_from_the_death(self) -> None:
+        # SPAWN-18: min + (max - min) * (1 - players / slots), one player of 16,
+        # counted down from the death; the wreck on the pad goes as the fresh
+        # hull comes (SPAWN-11), at full hit points.
+        z = self.results["z"]
+        self.assertAlmostEqual(5 + 5 * (1 - 1 / 16) - 1 / 30, z["delay"], places=6)
+        self.assertEqual([], z["before"])
+        self.assertEqual([["vehicleGone", z["willyId"], None], ["padSpawn", z["willyId"], "Willy"]],
+                         z["replaced"])
+        self.assertEqual(z["maxHp"], z["freshHp"])
+
+    def test_a_capture_changes_the_pads_template_not_its_hull(self) -> None:
+        # SPAWN-19: the hull standing is never touched by the flag; the next
+        # one is the new holder's (SPAWN-12).
+        z = self.results["z"]
+        self.assertTrue(z["stillWilly"])
+        self.assertEqual(["Zero"], z["afterCapture"])
+
+    def test_the_round_clears_the_hulls_and_the_restart_stands_them(self) -> None:
+        # HP-20's clearWorld takes every hull; restartMap's ObjectSpawner::reset
+        # gives the pad back to the level's side, whose hull stands at once.
+        z = self.results["z"]
+        self.assertTrue(z["roundEnded"])
+        self.assertEqual([z["zeroId"]], z["goneAtEnd"])
+        self.assertTrue(z["restarted"])
+        self.assertEqual("Willy", z["restartSpawns"][-1])
+        self.assertEqual(["Willy"], z["liveAfter"])
+
+    def test_the_pre_games_set_team_cancels_spawn_delay_at_start(self) -> None:
+        # SPAWN-21: the room loads in the pre-game, so the pad with its own
+        # side stands its hull at once and the one with none waits.
+        self.assertEqual([{"template": "Willy", "live": 1, "waiting": False},
+                          {"template": "Zero", "live": 0, "waiting": True}],
+                         self.results["z2"])
 
 
 if __name__ == "__main__":

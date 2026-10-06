@@ -191,6 +191,30 @@ const out = {};
   out.boatPoint = padBy(st, 'boatspawner').point;
 }
 
+// --- a wreck away from its pad -----------------------------------------------------
+// The boat is driven 200 m off its pad and destroyed there. Its wreck is the
+// pad's own node and outside the pad's radius, so the pad does not clear it;
+// the next hull still comes at the delay, from the death, and the wreck goes
+// to make room (the engine leaves it standing beside the new one, which the
+// page's one node per template cannot).
+{
+  const env = await build({ osId: true });
+  const { st, state, log } = env;
+  run(env, 1 / 30);
+  const boat = padBy(st, 'boatspawner');
+  const zodiac = [...boat.live][0];
+  zodiac.position.x += 200;
+  zodiac.updateMatrixWorld(true);
+  state.set(zodiac, 'wrecked');
+  log.length = 0;
+  let at = null;
+  for (let t = 0; t < 40 && at == null; t += 1 / 30) {
+    st.stepVehiclePads(1 / 30, env.world);
+    if (state.get(zodiac) === 'whole') at = Math.round(t * 10) / 10;
+  }
+  out.awayWreck = { at, log: [...log] };
+}
+
 // --- the same level written before `osId` -----------------------------------------
 {
   const env = await build({ osId: false });

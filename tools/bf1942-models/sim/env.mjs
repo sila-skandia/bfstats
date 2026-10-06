@@ -66,13 +66,14 @@ export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
   const [world, bot, nav, strategic, strength, armor, heightfield, staticIndex, drivable, collider,
-    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames] = await Promise.all([
+    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames, barrels] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
     imp('armor.js'), imp('heightfield.js'), imp('static-index.js'), imp('drivable-mask.js'),
     imp('world-collider.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
     imp('vendor/three.module.js'), imp('bot-referee.js'), imp('projectile-damage.js'), imp('round-state.js'),
     // Absent from a viewer older than the file (a `--viewer` before/after run).
     imp('bot-names.js').catch(() => null),
+    imp('bot-barrels.js').catch(() => null),
   ]);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
@@ -102,6 +103,9 @@ export async function loadViewerModules(viewer) {
     // A bot's name as the server picks it, from the tree's
     // `_shared/bot-names.json` (bot-names.js, ledger AI-134, AI-135).
     levelNameLists: botNames?.levelNameLists ?? (() => null), createBotNamer: botNames?.createBotNamer ?? null,
+    // A hand weapon's barrels out of its glb (bot-barrels.js, ledger XHIT-16).
+    fireArmsBarrels: barrels?.fireArmsBarrels ?? (() => []),
+    fireArmsHeat: barrels?.fireArmsHeat ?? (() => null),
     THREE: three,
     mulberry32,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,
@@ -109,12 +113,15 @@ export async function loadViewerModules(viewer) {
     stage: null,
     loadStage: async function loadStage() {
       if (this.stage) return this.stage;
-      const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats] =
+      const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats,
+        seatCone] =
         await Promise.all([
           imp('vehicle-instance.js'), imp('bot-units.js'), imp('hull-bodies.js'), imp('vehicle-hits.js'),
           imp('vehicle-wrecks.js'), imp('level-statics.js'), imp('level-terrain.js'), imp('vehicle-entry.js'),
           imp('gunfire.js'), imp('aircraft.js'), imp('wheeled-vehicle.js'), imp('tracked-vehicle.js'), imp('ship.js'),
           imp('game-modes.js'), imp('seats.js'),
+          // Absent from a viewer older than the file (a `--viewer` before/after run).
+          imp('seat-cone.js').catch(() => null),
         ]);
       this.stage = {
         VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
@@ -128,6 +135,8 @@ export async function loadViewerModules(viewer) {
         Ship: ship.Ship, selectGameMode: modes.selectGameMode, pruneToMode: modes.pruneToMode,
         detachSpawnedCraft: seats.detachSpawnedCraft, chainOnShot: seats.chainOnShot,
         findAllVehicleRoots: seats.findAllVehicleRoots,
+        // A seat gun's deviation cone (seat-cone.js, ledger DEV-11).
+        seatConeOf: seatCone?.seatConeOf ?? null,
       };
       return this.stage;
     },

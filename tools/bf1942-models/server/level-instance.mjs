@@ -20,6 +20,7 @@ import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
 import { Aircraft } from '../viewer/aircraft.js';
 import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
 import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
+import { wheelContactDepths } from '../viewer/vehicle-bodies.js';
 import { bodySpecFor, quaternionToAxes } from './level-bodies.mjs';
 import { buildVehicleTable } from './vehicle-table.mjs';
 
@@ -40,8 +41,13 @@ const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
  * predates the pad).
  */
 export class LevelInstance {
-  constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt }) {
+  constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt,
+                      extras = null, spawnables = null }) {
     this.data = data;
+    // The layer this room plays (`LevelData.instantiate(mode)`): its report
+    // and the spawn rows its vehicle table is built from.
+    this.extras = extras ?? data.extras;
+    this.spawnables = spawnables ?? data.spawnables;
     this.root = root;
     this.spawnersRoot = spawnersRoot;
     this.ownerRoots = ownerRoots;
@@ -100,16 +106,33 @@ export class LevelInstance {
       && ['air', 'ground', 'tank'].includes(kind)
       && !this.#driveHeldByOther(playerId, entry);
     if (driveGranted) {
+      // The page's own inputs (`map.html` `buildHullDrive`): the collider,
+      // which is how a land drive finds the sea BED rather than the sea
+      // (`amphibious.js` `bedGroundHeight`, ledger PHY-16) and an amphibian
+      // its floats' water; the flat sea; the `.sm` header boxes its inertia
+      // and box drag read (COL-15); the drivable decks' normals.
+      const collider = bodyAwareCollider(this.collider, world);
       vehicle = occ.ensureDrive(this.root, {
         cockpit: false,                        // no fetch of a cockpit glb
         groundHeight: (x, z) => this.groundHeightAt(x, z),
         surfaceFriction: this.surfaceFrictionAt,
+        deckNormal: (x, z, fromY, out) => (this.collider?.deckNormal
+          ? this.collider.deckNormal(x, z, fromY, out) : false),
+        collider,
+        waterLevel: this.collider?.waterLevel ?? this.data.extras?.waterLevel,
+        collisionMeshes: this.data.collisionMeshes,
       });
       if (vehicle) {
         if (kind === 'air') vehicle.state.position.y += 0.2;  // map.html's lift
         vehicle.autoFirstPerson = false;
         const spec = entry.owner >= 0 ? bodySpecFor(entry.root, this.data) : null;
-        if (spec) world.adoptDriven(entry.owner, vehicle, spec);
+        if (spec) {
+          // `hull-bodies.js` `adoptDrivenBody`'s land half: each wheel's
+          // col0 probe depth, and the root part the sea depth is taken on.
+          wheelContactDepths(vehicle, spec);
+          vehicle.water?.useCollisionPart?.(spec.waterPart);
+          world.adoptDriven(entry.owner, vehicle, spec);
+        }
         entry.driver = playerId;
       }
     }
@@ -227,6 +250,27 @@ export class LevelInstance {
     world.setPlayerPosition(playerId, this.positionOf(occ));
     return { occ, seatId, changed: true };
   }
+}
+
+/**
+ * The collider a driven hull sweeps against (`hull-bodies.js`
+ * `bodyAwareCollider`): everything the room's holds, except that a sweep
+ * always skips the simulated bodies, which the contact solver owns. The
+ * collider itself without a body world; none for a fake descriptor's mock,
+ * which answers heights and nothing a drive sweeps.
+ */
+function bodyAwareCollider(collider, world) {
+  if (typeof collider?.sweepSphere !== 'function') return null;
+  if (!world?.bodyWorld) return collider;
+  return Object.create(collider, {
+    sweepSphere: {
+      value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1,
+              _skipBodies = true, deckStepTop = -Infinity, deckFloorCos = 2,
+              passObstacles = false) =>
+        collider.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner,
+                             true, deckStepTop, deckFloorCos, passObstacles),
+    },
+  });
 }
 
 /**

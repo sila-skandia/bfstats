@@ -17,9 +17,10 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { createVehicleWrecks }, { DamageableVehicle }] = await Promise.all([
+const [THREE, { createVehicleWrecks, afterDeath }, { DamageableVehicle }] = await Promise.all([
   import('three'), imp('vehicle-wrecks.js'), imp('vehicle-damage.js'),
 ]);
+const round = v => Math.round(v * 1000) / 1000;
 
 function hull() {
   const node = new THREE.Group();
@@ -55,7 +56,7 @@ function respawn(wreck) {
   wrecks.damageVisuals.set('pad', visual);
   let faded = null;
   if (!wreck) {
-    Object.assign(visual, { removed: false, respawnIn: null, wreckAge: 1e3 });
+    Object.assign(visual, { removed: false, respawnIn: null, wreckAge: 1e3, latched: true });
     wrecks.stepWrecks(1 / 60);      // past linger and fade: opacity 0
     faded = { body: state(h.body.material), smoke: state(h.smoke) };
     visual.hidden = [h.body];
@@ -112,6 +113,63 @@ async function wreckLookups() {
   };
   out.catalogueFetches = asked.filter(url => url.startsWith('models/mods/dc_final/')).length;
   return out;
+}
+
+/**
+ * A wreck's after-death clock (ledger HP-19) from its `armor` extras, ticked
+ * at 30 Hz from the death on the no-wreck path: when the fade starts, when the
+ * object is gone, and what the pad does next (its spawner's 30 s, 0 for
+ * `resetWhenRemoved`).
+ */
+function afterDeathRun(armor, { seconds = 100 } = {}) {
+  const h = hull();
+  h.node.userData = { armor };
+  const wrecks = createVehicleWrecks(page());
+  const visual = { node: h.node, hidden: [], handles: [], wrecked: true, removed: false,
+                   respawnIn: null, wreckAge: 0, spawnDelay: { min: 30, max: 30 } };
+  wrecks.damageVisuals.set('pad', visual);
+  let fadeStart = null;
+  let removedAt = null;
+  for (let t = 1; t <= seconds * 30 && removedAt === null; t++) {
+    wrecks.stepWrecks(1 / 30);
+    if (fadeStart === null && h.body.material.opacity < 1) fadeStart = round(visual.wreckAge);
+    if (visual.removed) removedAt = round(visual.wreckAge);
+  }
+  return { fadeStart, removedAt, shown: h.body.visible, respawnIn: visual.respawnIn,
+           clock: afterDeath(armor) };
+}
+
+/** A `timeToLiveAfterDeath 0` building whose wreck glb is still loading when
+ *  its time runs out: the glb must not stand up a wreck after it is gone. */
+async function lateWreck() {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const wreckScene = new THREE.Group();
+  wreckScene.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()));
+  globalThis.fetch = async () => ({ ok: true, json: async () => [
+    { name: 'Tower', variants: [{ glb: 'Tower.glb', configuration: 'complex' },
+                                { glb: 'Tower.wreck.glb', configuration: 'wreck', level: null }] },
+  ] });
+  const wrecks = createVehicleWrecks({
+    ...page(), MODELS_BASE: 'models', extras: { level: 'Late' },
+    effects: { play: () => null }, isCollision: () => false, bindDynamicShading() {},
+    retireVehicleBody() {},
+    loader: { loadAsync: async () => { await gate; return { scene: wreckScene }; } },
+  });
+  const h = hull();
+  h.node.name = 'Tower';
+  h.node.userData = { armor: { timeToLiveAfterDeath: 0 } };
+  const visual = { node: h.node, anchors: new Map(), handles: [], spawnDelay: null };
+  wrecks.damageVisuals.set(3, visual);
+  const dying = wrecks.wreckVehicle({ owner: 3, effects: [], killedBy: null });
+  // The death's latch tick (HP-19), then the clock: 0 s is gone on the second.
+  wrecks.stepWrecks(1 / 30);
+  const latched = { removed: !!visual.removed };
+  wrecks.stepWrecks(1 / 30);
+  const gone = { latchTick: latched, removed: !!visual.removed, drawn: h.body.visible };
+  release();
+  await dying;
+  return { ...gone, wreckAfterLoad: !!visual.wreck, drawnAfterLoad: h.node.children.some(c => c.visible) };
 }
 
 /**
@@ -201,15 +259,8 @@ function clearAndRestart() {
   const keep = [hull(), hull()];
   keep[0].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'SimpleObject' };
   keep[1].node.userData = { armor: { hitpoints: 100, maxHitpoints: 100 }, templateKind: 'PlayerControlObject' };
-  wrecks.registerDamageable?.(3, keep[0].node);
-  wrecks.registerDamageable?.(4, keep[1].node, { spawned: true });
-  if (!wrecks.registerDamageable) {
-    // This branch predates `registerDamageable`; the visuals are what count.
-    for (const [o, h] of [[3, keep[0]], [4, keep[1]]]) {
-      wrecks.damageVisuals.set(o, { node: h.node, anchors: new Map(), handles: [], spawnDelay: null });
-    }
-  }
-  wrecks.damageVisuals.get(4).spawned = true;
+  wrecks.registerDamageable(3, keep[0].node);
+  wrecks.registerDamageable(4, keep[1].node, { spawned: true });
   wrecks.clearWorld();
   const kept = keep.map(h => ({ visible: h.node.visible, cleared: !!h.node.userData.cleared }));
   const after = [0, 1, 2].map(o => ({
@@ -217,17 +268,39 @@ function clearAndRestart() {
     cleared: !!nodes[o].node.userData.cleared, collision: !disabled.has(o) }));
   const spawned = [0, 1].map(o => wrecks.padWorld.spawn(nodes[o].node));
   wrecks.restartHulls();
-  return {
+  const result = {
     after, retired, spawned, kept,
     back: [0, 1, 2].map(o => ({ removed: !!wrecks.damageVisuals.get(o).removed,
                                 cleared: !!nodes[o].node.userData.cleared, hp: vehicleDamage.get(o).hitPoints,
                                 collision: !disabled.has(o) })),
   };
+  // In a room the server clears and restarts the field (ROUND-11): the
+  // page's own pass stands down and its rows do the work.
+  const roomNodes = [hull(), hull()];
+  for (const h of roomNodes) h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  const roomWrecks = createVehicleWrecks({ ...p, vehicleDamage: new Map(),
+    world: { ...p.world, addDamageable: (owner, node, extras) => new DamageableVehicle(extras, { owner }) },
+    vehiclePads: { ...p.vehiclePads, remotePads: true } });
+  roomWrecks.registerDamageables(roomNodes.map(h => h.node));
+  roomWrecks.clearWorld();
+  roomWrecks.restartHulls();
+  const room = roomNodes.map(h => ({ visible: h.node.visible, cleared: !!h.node.userData.cleared }));
+  return { ...result, room };
 }
 
 process.stdout.write(JSON.stringify({
   restart: clearAndRestart(),
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
+  afterDeath: {
+    unwritten: afterDeathRun({}),
+    noFade: afterDeathRun({ timeToLiveAfterDeath: 85, fadeAtTimeToLiveAfterDeath: false }),
+    zero: afterDeathRun({ timeToLiveAfterDeath: 0 }),
+    crater: afterDeathRun({ timeToLiveAfterDeath: 60, timeToStartFadeAfterDeath: 55,
+                            fadeAtTimeToLiveAfterDeath: true }),
+    reset: afterDeathRun({ resetWhenRemoved: true }),
+    stay: afterDeathRun({ stayAsDestroyed: true }),
+  },
+  lateWreck: await lateWreck(),
   abandoned: {
     far: abandoned(),
     near: abandoned({ at: 30 }),

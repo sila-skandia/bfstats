@@ -210,6 +210,13 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     const state = world?.fireStates.get(group.node);
     return state && !state.unlimited ? state.ammo : Infinity;
   };
+  // A seat gun's rounds leave in its own cone, a bot's on his fixed point
+  // (map.html's `guns.coneOf`, seat-cone.js). Absent from an older viewer.
+  guns.coneOf = S.seatConeOf?.({
+    stateOf: node => world?.fireStates.get(node),
+    firerOf: group => registry.firerOf(group),
+    botOf: id => stage.referee?.bots.find(b => b.playerId === id) ?? null,
+  }) ?? null;
 
   world = new M.World({
     extras, guns, groundHeight: terrain.groundHeight, fireStates: new WeakMap(),
@@ -233,7 +240,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   S.detachSpawnedCraft(root);
   statics.indexScene(root);
   terrain.collectTerrain(root);
-  terrain.setTables(data.terrainMaterials, data.damageTables);
+  terrain.setTables(data.terrainMaterials, data.damageTables, data.heightmap ?? null);
   terrain.buildCollider(root);
   hullBodies.setupVehicleBodies();
   stage.collider = terrain.collider;

@@ -169,8 +169,11 @@ of them change what section 1 says:
 | The medals and the plate (`mp_debriefing_512x512`) | `extract_hud_pack.py` |
 
 The page's own round is a host's: it restarts 10 s after its end (`?restartDelay=`
-changes it), as a multiplayer server does. A room's round is its server's; the
-page shows nothing at a room's end yet.
+changes it), as a multiplayer server does. A room's round is its server's: since
+2026-10-07 its `roundEnd` row ends the page's copy, the debriefing shows the
+server's medals and waits for the server's `restart` row
+(`features/netcode-play-multiplayer/README.md`, "The round, the pads, the
+landings and the reloads").
 
 Choices the game was not read for:
 
@@ -255,7 +258,8 @@ restarts the round, with the English titles, no level line and a plain plate.
 - What sets `GameServer+0xd0`, which a multiplayer server needs to give
   medals at all (ROUND-9).
 - `menu/LoadMenu`'s own layout, for the exact placement.
-- A room's end of round on the page.
+- ~~A room's end of round on the page.~~ Built 2026-10-07 (the netcode
+  README's round section).
 
 ## 6. ObjectiveMode, the end game and the restart (2026-10-07)
 
@@ -345,4 +349,9 @@ pads in `modes.ObjectiveMode.objectSpawns`). The models trees have no
   limit set, the defender's share reads 0.
 - The engine's before-spawn camera at the end game, and the pre-game between
   a restart and play, are not modelled.
-- A room's round still has no end game or restart.
+- In a room the server clears and restarts its own field (ROUND-11,
+  `server/room-pads.mjs`), and the page's end game stands down: `clearWorld`,
+  the pad resets and `restartHulls` do nothing there, and the page follows
+  the server's rows. The spawn refusal is one check for both. The room's
+  capture law writes no `spawnsEnabled`, so SPAWN-22 does not reach a room's
+  pads yet; SPAWN-21 does (`resetPads({ preGame })`).

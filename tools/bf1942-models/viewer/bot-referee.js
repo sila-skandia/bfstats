@@ -43,6 +43,10 @@ import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
+import { barrelRays } from './bot-barrels.js';
+import { botDeviate, botInputIndex, declaredBarrels, deviationIndex, footInputIndex } from './bot-deviation.js';
+import { FireState } from './fire-state.js';
+import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
@@ -78,7 +82,6 @@ export const BOT_SOLDIER_TABLE = { Infantry: 4.0, LightArmour: 2.0, HeavyArmour:
 /** How far to the side of a hull a bot's body stands up (`botLeaveVehicle`). */
 export const BOT_EXIT_OFFSET = 3.5;
 
-const DEG_TO_RAD = Math.PI / 180;
 
 // --- the capture law ---------------------------------------------------------
 
@@ -87,10 +90,19 @@ export function captureRadius(flag) {
   return Number.isFinite(flag?.radius) && flag.radius > 0 ? flag.radius : 8;
 }
 
-/** Seconds on a flag to take it: its `timeToGetControl`, else the fallback. */
+/**
+ * Seconds on a flag to take it: its `timeToGetControl`, else the fallback.
+ * `ControlPoint::handleFrameUpdate` 0x08283b00 runs `gettingControl`
+ * 0x08283f20 (the get timer +0x16c less the frame) only while the timer is
+ * above 0 (`fldz; flds 0x16c; fxch; fucompp; test $0x1,%ah; jne` at
+ * 0x08283c65..0x08283c76) and calls `gotControl` 0x08283f70 otherwise, the
+ * same frame; `faildGettingControl` 0x08283ef0 and `control` reload the timer
+ * from the template's +0x1f4 (AI-142). So a 0 is taken on the first frame one
+ * side alone holds the point (DC Medina Ridge's `oasis_town`, `outpost_pass`
+ * and `opposition_base`), and a negative value likewise.
+ */
 export function captureDuration(flag) {
-  return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0
-    ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
+  return Number.isFinite(flag?.timeToGetControl) ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
 }
 
 /**
@@ -326,29 +338,6 @@ export function lineOfSight(collider, from, to) {
 }
 
 /**
- * Roll a direction into a deviation cone of half-angle `spreadRad`, exactly as
- * `round-launch.js` `wander` does: theta = spread * sqrt(u), azimuth free, about
- * the frame u = normalize(ref x r), v = r x u. `r` must be unit length.
- */
-export function rollCone(r, spreadRad) {
-  const [rx, ry, rz] = r;
-  if (!(spreadRad > 0)) return [rx, ry, rz];
-  const theta = spreadRad * Math.sqrt(Math.random());
-  const phi = Math.random() * Math.PI * 2;
-  let ux, uy, uz;
-  if (Math.abs(ry) > 0.99) { ux = 0; uy = -rz; uz = ry; } else { ux = rz; uy = 0; uz = -rx; }
-  const ul = Math.hypot(ux, uy, uz) || 1;
-  ux /= ul; uy /= ul; uz /= ul;
-  const vx = ry * uz - rz * uy, vy = rz * ux - rx * uz, vz = rx * uy - ry * ux;
-  const c = Math.cos(theta), s = Math.sin(theta);
-  return [
-    rx * c + ux * s * Math.cos(phi) + vx * s * Math.sin(phi),
-    ry * c + uy * s * Math.cos(phi) + vy * s * Math.sin(phi),
-    rz * c + uz * s * Math.cos(phi) + vz * s * Math.sin(phi),
-  ];
-}
-
-/**
  * Build the referee.
  *
  * `env`:
@@ -447,6 +436,12 @@ export function createBotReferee(env) {
     referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds });
     const navMs = performance.now() - navStarted;
     referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, nameFor, viewDistance });
+    // Each bot on foot fires at an input index of its own, one a life
+    // (bot-deviation.js, ledger AI-145); `respawn` takes the next.
+    for (const bot of referee.bots) {
+      bot.lives = 0;
+      bot.inputIndex = footInputIndex(bot.playerId, 0);
+    }
     // The strategic interface (doctrine.js) is the one order source: it runs
     // the engine's SAI and asks each side's doctrine (`env.doctrine`, default
     // the SAI itself) for the orders.
@@ -585,8 +580,11 @@ export function createBotReferee(env) {
     // A new soldier is a new kit, full (the human's own rule, `kit-ammo.js`):
     // the magazines are made again from the data on the next frame.
     bot._mags?.clear();
+    bot._heat?.clear();
     bot._respawnIn = 0;
     bot.onRespawn();
+    bot.lives = (bot.lives ?? 0) + 1;
+    bot.inputIndex = footInputIndex(bot.playerId, bot.lives);
     env.onRespawned?.(bot, record?.flag ?? flag);
     return false;
   };
@@ -597,6 +595,27 @@ export function createBotReferee(env) {
   referee.weaponDataOf = bot => {
     const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
     return name ? bot.weaponData?.[name] ?? null : null;
+  };
+
+  /**
+   * The heat of a bot's hand weapon `name`: a `FireState` over its FireArms'
+   * heat words (`fireArms.heat`, the page's own law, GUN-14, GUN-15), made
+   * from the data as the magazine is, or null for a weapon with none. A
+   * thrown weapon's heat is its throw's charge (`velocityDependentOnHeat`,
+   * every grenade, GUN-14), not a barrel's: none here. Each item keeps its
+   * own heat through a switch, and a new soldier's kit is cold.
+   */
+  referee.heatOf = (bot, name) => {
+    if (!name) return null;
+    if (!bot._heat) bot._heat = new Map();
+    if (bot._heat.has(name)) return bot._heat.get(name);
+    const data = bot.weaponData?.[name];
+    if (!data) return null;
+    const words = data.heat;
+    const state = words && words.heatAddWhenFire != null && !data.throw && !words.velocityDependentOnHeat
+      ? new FireState({ ...words, roundOfFire: data.roundOfFire ?? words.roundOfFire }) : null;
+    bot._heat.set(name, state);
+    return state;
   };
 
   /**
@@ -733,9 +752,9 @@ export function createBotReferee(env) {
    * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
    * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
    */
-  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null) => {
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, seedIndex = null) => {
     const w = world();
-    const { origin, dir } = bot.aimRay();
+    const { origin, dir } = ray ?? bot.aimRay();
     let d = dir;
     if (aimAt) {
       const dx = aimAt[0] - origin[0], dy = aimAt[1] + BOT_BODY_HEIGHT - origin[1], dz = aimAt[2] - origin[2];
@@ -745,7 +764,12 @@ export function createBotReferee(env) {
       d = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
     }
     const len = Math.hypot(d[0], d[1], d[2]) || 1;
-    const [cx, cy, cz] = rollCone([d[0] / len, d[1] / len, d[2] / len], (bot.aimDeviation ?? 0) * DEG_TO_RAD);
+    // The cone's total in its own unit, hundredths of a radian, and the
+    // point of its square the bot's input index and the barrel draw
+    // (bot-deviation.js, ledger AI-145); a caller that names none fires a
+    // barrel-less gun.
+    const k = seedIndex ?? deviationIndex(botInputIndex(bot), 0, 0);
+    const [cx, cy, cz] = botDeviate([d[0] / len, d[1] / len, d[2] / len], bot.aimDeviation ?? 0, k);
     const me = w.player(bot.playerId);
     let best = null, bestT = Infinity;
     for (const [id, player] of w.players) {
@@ -839,24 +863,29 @@ export function createBotReferee(env) {
         env.mountedFire?.(bot, dt);
         continue;
       }
-      // The rate-of-fire timer runs down whether or not the trigger is held
-      // and keeps its fraction across a held burst, as the human's gun does
-      // (gun-cycle.js `advanceGroups`): an idle gun owes nothing (floored
-      // at 0), a held one fires at its own `roundOfFire` whatever the frame
-      // rate. Restarted from a full period each round, a 9 rps Mp40 fired
-      // 8.57 rounds a second at 60 fps (7 frames a round) and 7.5 at 30.
-      // It is the engine's `timeToFireFinished`, and it runs down before the
-      // magazine's tick, whose reload waits for it, as `FireArms::
-      // handleUpdate` 0x08288890 counts it down before it asks for one.
-      bot._fireCooldown = (bot._fireCooldown ?? 0) - dt;
+      // The rate-of-fire timer is the engine's `timeToFireFinished`: a round
+      // sets it to `1 / roundOfFire`, it is not added to, and it runs down a
+      // tick at a time, so a gun fires on whole ticks (GUN-13) as the human's
+      // does (gun-cycle.js `advanceGroups`): a 9 rps Mp40 fires 7.5 a second
+      // and the M249's 13.5 fires 10. Carrying the fraction from round to
+      // round fired them at 9 and 13.5. The referee runs on the world's
+      // ticks. The timer runs down before the magazine's tick, whose reload
+      // waits for it, as `FireArms::handleUpdate` 0x08288890 counts it down
+      // before it asks for one; an idle gun owes nothing (floored at 0).
+      bot._fireCooldown = Math.max(0, Math.fround((bot._fireCooldown ?? 0) - Math.fround(dt)));
       const mag = referee.magazineTick(bot, dt);
-      if (!bot.isFiring || !mag.canFire) bot._fireCooldown = Math.max(0, bot._fireCooldown);
-      if (!bot.isFiring || bot._fireCooldown > 0 || !mag.canFire) continue;
+      // The held item's heat runs its own ticks, and a pull at heat 1 or
+      // more, or in the lockout, fires nothing (`FireArms::Fire`, GUN-14).
+      const heat = referee.heatOf(bot, bot.weaponAi?.name ?? bot.kitPrimary ?? null);
+      heat?.step(dt);
+      const ready = mag.canFire && (!heat || heat.canFire);
+      if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
       const stats = referee.weaponDataOf(bot);
       const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
-      bot._fireCooldown = Math.max(-1 / rof, bot._fireCooldown) + 1 / rof;
+      bot._fireCooldown = firePeriod(rof);
       referee.magazineShot(bot, mag);
+      heat?.registerShot(1);
       bot.deviation.onShot();
       bot.onShot(referee.clock);
       // Every round is a sound (`event_soundEmitter`): each bot hears it
@@ -876,16 +905,27 @@ export function createBotReferee(env) {
       // launchers, `bot-rounds.js`) is resolved where it lands -- the direct
       // hit, the splash, a hull -- and billed from there, not here.
       if (env.launchRound?.(bot, stats)) continue;
-      const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                      (material, distance) => env.roundDamage(stats, material, distance));
-      if (!hit) continue;
-      bot.recordHit(hit.targetId);
-      env.onHit?.(bot, hit);
-      // A round that found a bot damages that bot; the caller bills anyone
-      // else (the page's human).
-      if (env.damageTarget?.(hit, bot, at)) continue;
-      referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                          { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+      // Every barrel fires its own round down its own turn of the eye's
+      // frame and draws its own deviation (`fireBarrel` 0x0828aba0, ledger
+      // XHIT-12, XHIT-16; bot-barrels.js): a shotgun's eight pellets, each
+      // with the round's full damage. A weapon with one plain barrel keeps
+      // the one ray down the eye.
+      const eye = bot.aimRay();
+      const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
+      const barrels = declaredBarrels(stats?.barrels);
+      for (const [barrel, ray] of rays.entries()) {
+        const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
+                                        (material, distance) => env.roundDamage(stats, material, distance), ray,
+                                        deviationIndex(botInputIndex(bot), barrels, barrel));
+        if (!hit) continue;
+        bot.recordHit(hit.targetId);
+        env.onHit?.(bot, hit);
+        // A round that found a bot damages that bot; the caller bills anyone
+        // else (the page's human).
+        if (env.damageTarget?.(hit, bot, at)) continue;
+        referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
+                            { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
+      }
     }
   };
 
@@ -1017,7 +1057,8 @@ export function createBotReferee(env) {
       const side = p.team;
       const seat = u?.seatOf(id) ?? null;
       if (seat) {
-        const c = cands.find(x => x.vehicleId === seat.vehicleId && x.seatId === seat.seatId)
+        const c = (u.seatCandidate?.(seat.vehicleId, seat.seatId)
+          ?? cands.find(x => x.vehicleId === seat.vehicleId && x.seatId === seat.seatId))
           ?? cands.find(x => x.vehicleId === seat.vehicleId && x.isRoot) ?? null;
         out.push({ id, side, table: c?.strengths ?? {}, type: c?.strType ?? seat.strType ?? p.vehicleStrType ?? 'LightArmour',
                    template: c?.template ?? null });
@@ -1169,7 +1210,10 @@ export function createBotReferee(env) {
         } else if (bot.switchRequest) {
           const req = bot.switchRequest;
           bot.switchRequest = null;
-          const cand = cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
+          // A door-less seat too (the artillery driver's, bot-units.js
+          // `doorless`): the swap is `enterVehicle`, which tests no door.
+          const cand = u.seatCandidate?.(req.vehicleId, req.seatId)
+            ?? cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
           if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId && referee.switchSeat(bot, cand)) {
             if (env.debug) console.log(`[bots] ${bot.playerId} switches to seat ${cand.seatId} of the ${cand.template}`);
           }

@@ -40,11 +40,13 @@ const _aimBack = new THREE.Vector3();
 // (features/mesh-viewer-performance, rule 5).
 const _direction = new THREE.Vector3();
 
-/** One projectile, out of one barrel. */
-export function fireBarrel(guns, group, muzzle) {
+/** One projectile, out of one barrel. `barrel` is `FireArms::Fire`'s barrel
+ *  index, which seeds the engine's deviation draw (DEV-9): the salvo loop's
+ *  counter, or the round-robin barrel of an asynchronous one. */
+export function fireBarrel(guns, group, muzzle, barrel = Math.max(0, group.muzzles?.indexOf(muzzle) ?? 0)) {
   group.shots += 1;
   lightMuzzle(guns, group, muzzle);
-  fireRound(guns, group, muzzle);
+  fireRound(guns, group, muzzle, barrel);
 }
 
 /**
@@ -148,7 +150,7 @@ function inScene(node, scene) {
 }
 
 /** The round half of `fireBarrel`: the barrel's kick and what leaves it. */
-function fireRound(guns, group, muzzle) {
+function fireRound(guns, group, muzzle, barrel) {
   // The kick's countdown, `3.14 / recoilSpeed` (`FireArms::Fire` `0x0828a209`,
   // ledger GUN-12); `gun-cycle.js` `poseRecoil` walks it down.
   if (group.recoil != null) group.recoil = recoilSpan(group.stats.recoil);
@@ -160,14 +162,14 @@ function fireRound(guns, group, muzzle) {
   const spec = projectile && typeof projectile === 'object' ? projectile : null;
   if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
       && group.projectileMesh) {
-    spawnProjectile(guns, muzzle, group, spec);
+    spawnProjectile(guns, muzzle, group, spec, barrel);
   } else if (spec && spec.kind === 'bullet') {
     // GUN-12 (V-R2's GUN-10): rifle projectiles are `invisible 1` — retail draws no
     // body. Tracer rounds still get the bright TLight streak. Every other
     // round still needs a ballistic in `tracers` so `sweep` / `impact`
     // run: hand weapons declare no tracer interval, so dropping the dim
     // stand-in without a hidden hit-test round killed every surface FX.
-    spawnTracer(guns, muzzle, group, !!tracerRound);
+    spawnTracer(guns, muzzle, group, !!tracerRound, barrel);
     if (!tracerRound) {
       const tracer = guns.tracers[guns.tracers.length - 1];
       if (tracer) tracer.mesh.visible = false;
@@ -175,7 +177,7 @@ function fireRound(guns, group, muzzle) {
   } else if (group.stats.velocity > 0) {
     // Stale GLB (`projectile` is a bare template name, or the drawn body
     // failed to bake): the old streak per round.
-    spawnTracer(guns, muzzle, group, tracerRound);
+    spawnTracer(guns, muzzle, group, tracerRound, barrel);
   }
 }
 
@@ -200,10 +202,15 @@ function fireRound(guns, group, muzzle) {
  * a BF1942 rifle hits what the crosshair covers regardless of where the
  * viewmodel's barrel points — and for a vehicle's coaxial or pintle MG the
  * seat camera's, which is handed the barrel so its own offset rides along
- * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then pushes the round off
- * that line by the deviation cone (`deviate`), on either path.
+ * (`gun-groups.js` `cameraLaunch`). The deviation cone (`deviate`) then
+ * pushes the round off that line, on either path: a hand weapon's own
+ * (`spreadDeg`), else a seat gun's, which `guns.coneOf` answers per barrel
+ * (`seat-cone.js`: the FireArms' stored total, DEV-11 and DEV-12, and a
+ * bot's fixed point of it, AI-145). A ray that carries its `frame` (the
+ * seat camera turned by the barrel) is drawn on that frame's own up and
+ * right, so a hull's roll turns the square with it.
  */
-function muzzleVelocity(guns, muzzle, group, speed, out) {
+function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
   const ray = group.aimRay?.(muzzle);
   if (ray) {
     _origin.set(ray.origin.x, ray.origin.y, ray.origin.z);
@@ -214,8 +221,14 @@ function muzzleVelocity(guns, muzzle, group, speed, out) {
     muzzle.getWorldQuaternion(_aim);
     out.set(0, 0, -1).applyQuaternion(_aim);
   }
-  const spread = group.spreadDeg?.() || 0;
-  if (spread > 0) deviate(guns, out, spread, ray ? null : _aim);
+  const frame = ray ? (ray.frame ?? null) : _aim;
+  if (group.spreadDeg) {
+    const spread = group.spreadDeg() || 0;
+    if (spread > 0) deviate(guns, out, spread, frame);
+  } else {
+    const cone = guns.coneOf?.(group, barrel);
+    if (cone?.total > 0) deviate(cone.dice ?? guns, out, cone.total, frame);
+  }
   // On the ray path `_aim` still has to say which way the round points — a
   // bazooka's drawn rocket takes its first-frame orientation from it — and
   // it is taken after the deviation so the rocket points where it is going.
@@ -249,9 +262,10 @@ export const DEVIATION_FLOOR = 0.01;
  * its frame is built from the line and world up, which is the camera's for a
  * camera that does not roll. Both draws come from `guns.rand`, the same
  * authority the flash roll answers to; the engine seeds its own from the tick
- * and the barrel, which is why two barrels of one pull differ.
+ * and the barrel, which is why two barrels of one pull differ. Exported for
+ * the bots' rounds (bot-deviation.js), whose draws are a fixed point.
  */
-function deviate(guns, dir, total, frame) {
+export function deviate(guns, dir, total, frame) {
   if (!(total > DEVIATION_FLOOR)) return dir;
   if (frame) {
     _spreadU.set(1, 0, 0).applyQuaternion(frame);
@@ -307,14 +321,14 @@ function tracerGravity(guns, group, bright) {
   return spec && typeof spec === 'object' ? (spec.gravity ?? 1) : 0;
 }
 
-function spawnTracer(guns, muzzle, group, bright) {
+function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
   // The engine's own default when the gun declares no `velocity` (FA-3).
   const authored = releaseSpeed(group.stats);
   const speed = displaySpeed(guns, group, authored);
   // The velocity is the round's own for as long as it flies, so it is a
   // real allocation per shot; the unit direction is only needed to point
   // the streak and lives in scratch.
-  const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3());
+  const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3(), barrel);
   const direction = _direction.copy(velocity).normalize();
   // `setTracerTemplate` points at `Tracer_Projectile`, whose `tracerScaler
   // 50` scales `TLight_m1` (a 0.0061 m spike trailing 1 m behind the round)
@@ -504,7 +518,7 @@ function bodyBox(group) {
   return box;
 }
 
-function spawnProjectile(guns, muzzle, group, spec) {
+function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // `releaseSpeed` is `velocity ?? 200`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
   // authored value meaning "the round leaves at no speed of its own"; `||`
@@ -514,7 +528,7 @@ function spawnProjectile(guns, muzzle, group, spec) {
   // own motion, which is the whole of a bomb release.
   const authored = releaseSpeed(group.stats);
   const speed = displaySpeed(guns, group, authored);
-  const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3());
+  const velocity = muzzleVelocity(guns, muzzle, group, speed, new THREE.Vector3(), barrel);
   let mesh = group.projectilePool.pop();
   if (!mesh) {
     if (group.projectileMesh.quaternion &&

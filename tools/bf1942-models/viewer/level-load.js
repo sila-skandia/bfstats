@@ -31,6 +31,7 @@ import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
 import { detachSpawnedCraft } from './seats.js';
 import { bindTreeFoliage } from './tree-foliage.js';
+import { stampLevelNodes } from './level-nodes.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -361,6 +362,16 @@ export function createLevel(page) {
       settleLevelWarmup(null);
       throw error;
     }
+    // Each placed node's index in `scene.glb`, the one name a room's server
+    // and this page agree on for a hull or a static (`server/glb-scene.mjs`
+    // stamps the same), whatever else either adds to the scene beside it.
+    // Not off `parser.associations`: a mesh used by more than one node is
+    // cloned per use and every clone shares its original's mapping object,
+    // whose `nodes` the last use overwrites (every Stationary_mg42 on
+    // Aberdeen read one index). The loader builds the tree in the file's own
+    // order instead: the scene's nodes in order, and under each node its
+    // glTF children last, in order, after any primitive meshes of its own.
+    stampLevelNodes(gltf);
     // `?mode=` picks one of the level's gameplay layers; with no parameter this
     // resolves to the default layer, whose arrays are the top-level ones, so the
     // page is unchanged. A report from before `modes` existed passes straight
@@ -586,15 +597,17 @@ export function createLevel(page) {
     // not before the first frame.
     // The level's baked search maps too (`pathfinding/`, under a megabyte a
     // level), which the bots' nav maps are taken from (`nav-baked.js`).
-    const [terrainMaterials, damageTables, , searchMaps] = await Promise.all([
+    // And the whole heightmap (`terrain/heightmap.png`, tens to hundreds of KB),
+    // which the collider stands on where the bake drew no tile.
+    const [terrainMaterials, damageTables, , searchMaps, heightmap] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
-      terrain.loadSearchMaps(dir),
+      terrain.loadSearchMaps(dir), terrain.loadHeightmap(dir),
     ]);
     if (level.extras) {
       Object.defineProperty(level.extras, 'bakedSearchMaps',
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
-    terrain.setTables(terrainMaterials, damageTables);
+    terrain.setTables(terrainMaterials, damageTables, heightmap);
     const collision = terrain.buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();
@@ -760,6 +773,11 @@ export function createLevel(page) {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
       get pads() { return statics.pads; },
+      // A room's server runs the pads (`net-room.js`): the page's stand down
+      // and stand what its rows say.
+      setRemoteLive: statics.setRemoteLive, vehicleSpawnActive: statics.vehicleSpawnActive,
+      get remotePads() { return !!statics.remotePads; },
+      set remotePads(on) { statics.remotePads = !!on; },
     },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,

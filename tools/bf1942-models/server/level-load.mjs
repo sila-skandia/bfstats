@@ -13,13 +13,18 @@
 // stays in `collision.js`; the cost is one accessor decode per level
 // (~270 k vertices) against the alternative bake script, which would need a
 // publish step and a second source of truth to drift against.
+//
+// Revised 2026-10-07: the drawn tiles are not the whole terrain (an undrawn
+// patch is a hole, and 29 levels leave sea floor undrawn), so a tree that
+// ships `terrain/heightmap.png` (the `heightmap` bake layer) is read instead.
+// It equals the tile snap to the bit wherever a tile was drawn.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { buildHeightfield } from '../viewer/heightfield.js';
+import { buildHeightfield, heightfieldFromSamples } from '../viewer/heightfield.js';
 import { loadVehicleTree, readGlb } from './glb-tree.mjs';
-import { buildSceneTree, decodeMaterialIds } from './glb-scene.mjs';
+import { buildSceneTree, decodeMaterialIds, decodePng } from './glb-scene.mjs';
 import { LevelData } from './level-data.mjs';
 
 /**
@@ -43,9 +48,19 @@ export function loadRealLevel({ viewerDir, name }) {
   const { json, bin } = readGlb(join(levelDir, 'scene.glb'));
   const { root, terrainTiles } = buildSceneTree(json, bin);
 
-  // The heightfield, recovered from the terrain tiles by the page's own snap
-  // law (see the header comment), shared read-only by every room.
-  const heightfield = buildHeightfield(terrainTiles, {
+  // The heightfield, shared read-only by every room: the level's whole
+  // heightmap where the tree ships it (`terrain/heightmap.png`, the page's
+  // `heightfieldFromSamples`), so an undrawn patch still has ground; else
+  // recovered from the terrain tiles by the page's own snap law (see the
+  // header comment), holes and all.
+  const hm = extras?.heightmap;
+  const hmPath = hm?.image ? join(levelDir, hm.image) : null;
+  let heightfield = null;
+  if (hmPath && existsSync(hmPath)) {
+    const png = decodePng(readFileSync(hmPath), hm.image);
+    heightfield = heightfieldFromSamples(png.data, { ...hm, channels: png.channels });
+  }
+  heightfield ??= buildHeightfield(terrainTiles, {
     worldSize: extras?.worldSize || 0,
     dim: extras?.terrain?.materials?.dim || 0,
   });
@@ -66,21 +81,39 @@ export function loadRealLevel({ viewerDir, name }) {
   const damageTables = readShared(sharedDir, levelDir, extras.damage?.path, 'damage.json');
   const collisionMeshes = readShared(sharedDir, levelDir, null, 'collision-meshes.json');
   const loadouts = readShared(sharedDir, levelDir, null, 'loadouts.json');
+  // The soldier templates' body words (`explosionForceMod`/`Max`, KNOCK-7),
+  // which the tree's gait manifest carries (`extract_pose.py`); the page reads
+  // the same file (`foot-body.js`). Null for a tree without it.
+  const gaitsPath = join(modelsDirOf(viewerDir), 'poses', 'gaits', 'gaits.json');
+  let soldierBody = null;
+  if (existsSync(gaitsPath)) {
+    try { soldierBody = JSON.parse(readFileSync(gaitsPath, 'utf8'))?.soldierBody ?? null; } catch { /* none */ }
+  }
 
-  // The published template trees, cached per template name.
+  // The published template trees, cached per template name: every layer's
+  // (a room may play any of them, `LevelData.instantiate(mode)`), and every
+  // template a pad can hand out (`objectSpawns[].templates`, SPAWN-2), which
+  // is the other side's vehicle on a pad whose flag changes hands.
   const templates = new Map();
-  for (const spawn of [...(extras.objectSpawns || []),
-    ...(extras.vehicleSoldierSpawns || [])]) {
-    const template = String(spawn.vehicle || '').toLowerCase();
+  const layers = [extras, ...Object.values(extras.modes || {})];
+  const names = new Set();
+  for (const layer of layers) {
+    for (const spawn of [...(layer?.objectSpawns || []), ...(layer?.vehicleSoldierSpawns || [])]) {
+      if (spawn?.vehicle) names.add(String(spawn.vehicle));
+      for (const name of Object.values(spawn?.templates || {})) if (name) names.add(String(name));
+    }
+  }
+  for (const name of names) {
+    const template = name.toLowerCase();
     if (templates.has(template)) continue;
-    const path = resolveTemplatePath(modelsDirOf(viewerDir), String(spawn.vehicle || ''));
+    const path = resolveTemplatePath(modelsDirOf(viewerDir), name);
     if (!existsSync(path)) continue;
     templates.set(template, loadVehicleTree(path));
   }
 
   return new LevelData({
     name, extras, sceneRoot: root, heightfield, damageTables,
-    collisionMeshes, templates, colliderMock: null, loadouts,
+    collisionMeshes, templates, colliderMock: null, loadouts, soldierBody,
   });
 }
 

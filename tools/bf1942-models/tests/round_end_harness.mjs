@@ -132,4 +132,31 @@ results.countdown = { full: countdownText(10), part: countdownText(3.2), done: c
   results.draw = { state: screen.state(), calls, status: round.status };
 }
 
+{
+  // A room: the server's `roundEnd` row ends the page's copy of the round
+  // (`map.html` `roomRoundEnd`), its medals are the row's, the countdown runs
+  // out without a restart of the page's own, and the server's `restart` row
+  // (which turns the round back to Playing) closes the screen.
+  const calls = [];
+  const round = createRoundState({ mode: 'Conquest', tickets: { team1: 3, team2: 3 } });
+  const screen = createRoundEnd({
+    get round() { return round; }, extras: { briefing }, localTeam: () => 2, roster: () => [],
+    roomJoined: true,
+    medals: () => [{ playerId: 3, team: 2, medal: 'gold', score: 12, name: 'Remote' }],
+    nameOf: () => 'wrong', holdScoreboard: on => calls.push(`board:${on}`),
+    playRoundMusic: k => calls.push(`music:${k}`), stopRoundMusic: () => calls.push('music:stop'),
+    restartRound: () => calls.push('restart'),
+  });
+  round.endRound(2, null, 'tickets');
+  round.restartIn = 10;
+  screen.tick();
+  const opened = screen.state();
+  for (let i = 0; i < 12; i++) { round.tick(1, null); screen.tick(); }
+  const waiting = { shown: screen.shown, countdown: screen.state().countdown, restarts: screen.restarts };
+  round.restart();
+  screen.tick();
+  results.room = { medals: opened.medals.map(m => [m.playerId, m.medal, m.name]), waiting,
+                   after: { shown: screen.shown, restarts: screen.restarts }, calls };
+}
+
 console.log(JSON.stringify(results));
