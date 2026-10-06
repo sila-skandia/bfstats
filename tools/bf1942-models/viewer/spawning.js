@@ -72,10 +72,12 @@ export function createSpawning(page) {
     // not the patch of ocean she started in.
     page.rebaseDeckSpawns();
     const flag = page.flags[Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1)];
-    // `BFSpawnPoint::getActive`'s Armor gate: a critically damaged ship offers
-    // nothing. The engine answers this per spawn point every time the screen is
-    // drawn; the viewer answers it at the moment of the spawn, which is the one
-    // that matters.
+    // `BFSpawnPoint::getActive`'s Armor gate: a flag whose carriers are all
+    // critically damaged, gone or not stood up (a sinking ship, Weapon Bunkers'
+    // bunkers) offers nothing (SPAWN-5, SPAWNGRP-10). The engine answers this
+    // per spawn point every time the screen is drawn; the viewer answers it at
+    // the moment of the spawn, which is the one that matters, and `pickSpawn`
+    // leaves out the dead carriers' points of a flag that still has others.
     if (page.shipFlagInactive(flag)) return false;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
       flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });

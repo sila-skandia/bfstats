@@ -77,4 +77,43 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
   };
 }
 
+// Dead carriers (SPAWN-5, SPAWNGRP-10): Weapon Bunkers' Iraqi group 99 rides
+// three bunkers. Each point's `inactive` is its carrier's state, as
+// `hull-bodies.js` `bindCarriers` answers it in the page. A dead bunker's
+// points leave the ring and the pick; with all three dead the flag is
+// inactive, `pickSpawn` refuses, and the world's `spawnPlayer` spawns nobody
+// there and never picks it.
+{
+  const { pickSpawn } = await import(path.join(viewer, 'spawn-flags.js'));
+  const { spawnPlayer } = await import(path.join(viewer, 'world-players.js'));
+  const down = { left: false, middle: false, right: false };
+  const pt = (bunker, x) => {
+    const p = { vehicle: `mil_wpbunker${bunker}_des`, spawner: `wpbunker${bunker}spawner`, pad: bunker,
+                group: 99, team: 1, name: 'wb_soldierspawn', position: [x, 74, -813], rotation: [180, 0, 0] };
+    Object.defineProperty(p, 'inactive', { get: () => down[bunker] });
+    return p;
+  };
+  const extras = {
+    controlPoints: [], soldierSpawns: [{ group: 2, team: 2, position: [0, 70, 0], name: 'us' }],
+    vehicleSoldierSpawns: [pt('left', 400), pt('left', 402), pt('middle', 476), pt('middle', 478),
+                           pt('right', 555), pt('right', 557)],
+  };
+  const flags = spawnFlags(extras);
+  const bunkers = flags.find(f => f.vehicle);
+  const state = () => ({
+    inactive: bunkers.inactive,
+    ring: round(bunkers.groups[0].position),
+    picks: [0, 1, 2, 3, 4, 5].map(i => pickSpawn(bunkers, i)?.position?.[0] ?? null),
+  });
+  const world = { flags, players: new Map([['bot_0', { team: 1 }]]), groundHeight: () => 70, collider: null, extras: {} };
+  const placed = () => spawnPlayer(world, 'bot_0', { flag: bunkers })?.spawn?.position?.[0] ?? null;
+  out.deadCarriers = { allUp: state(), spawnAllUp: placed() };
+  down.middle = true;
+  out.deadCarriers.middleDown = state();
+  down.left = true;
+  down.right = true;
+  out.deadCarriers.allDown = { ...state(), spawn: placed(),
+                               defaultPick: spawnPlayer(world, 'bot_0', {})?.flag?.name ?? null };
+}
+
 process.stdout.write(JSON.stringify(out));

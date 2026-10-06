@@ -13,9 +13,17 @@ import { boardRows } from './scoreboard.js';
  * `localMapTeam`, `mapGate`, `mapVehicleMarks`, `MINIMAP_TEAM_TINT`, `modeNote`,
  * `paintScoreboard`, `params`, `roomClient`, `roomJoined`, `scoreboardOpen`,
  * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `setMapGate`,
- * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`, `vehicleDamage`.
+ * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`, `vehicleDamage`,
+ * `vehiclePads`.
  */
 export function installWorldHooks(page) {
+  // The vehicle pads (`level-statics.js`): each pad's point, the side it
+  // spawns for, whether it is on, its delay and what stands on it.
+  window.__pads = () => (page.vehiclePads?.pads ?? []).map(r => ({
+    spawner: r.spawn.spawner, point: r.point, held: r.held, team: r.pad.team, active: r.pad.active,
+    delay: +r.pad.delay.toFixed(2), can: [...r.nodes.keys()],
+    live: [...r.live].map(n => n.userData?.control ?? n.name),
+  }));
   // microseconds-per-query number the feature doc quotes.
   window.__collision = () => page.collider && ({
     heightfield: page.collider.heightfield && {

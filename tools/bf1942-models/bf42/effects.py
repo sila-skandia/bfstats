@@ -98,7 +98,10 @@ _PARTICLE_CURVE = {
 }
 _PARTICLE_BOOL = {
     "turnsinmovingdirection": "turnsInMovingDirection",
-    "hascollisionphysics": "hasCollisionPhysics",
+    # The spelling `con.console_word` files both console spellings under
+    # (CON-15): a particle's bare `hasCollisionPhysics` and its
+    # `setHasCollisionPhysics` both land here.
+    "sethascollisionphysics": "hasCollisionPhysics",
     "usemipmaps": "useMipMaps",
 }
 

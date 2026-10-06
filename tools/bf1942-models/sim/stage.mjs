@@ -59,7 +59,8 @@
 export const STAGE_KINDS = ['ground', 'tank', 'gun', 'air', 'ship'];
 
 /** Build the stage. `data` is `realLevel`'s: the scene root and the tables. */
-export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, seed = 1, wreckLoader = null } = {}) {
+export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, seed = 1, wreckLoader = null,
+                                         maxPlayers = 0 } = {}) {
   const S = M.stage;
   const { THREE } = M;
   const data = level.stage;
@@ -135,6 +136,9 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     soldier: null, soldierDead: true, standUp: noop, updateHud: noop, useLens: noop,
     get vehicleDamage() { return world?.vehicleDamage; }, get vehicles() { return registry; },
     get world() { return world; },
+    // The pads (`level-statics.js` `stepVehiclePads`), and the server their
+    // delays are drawn for: the match's slot count (`calcSpawnDelay`).
+    get vehiclePads() { return statics; }, maxPlayers,
   });
   stage.wrecks = wrecks;
   const entry = S.createVehicleEntry({
@@ -198,7 +202,8 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   S.chainOnShot(guns, (group, rounds) => {
     const state = world?.fireStates.get(group.node);
     const barrels = group.stats?.asynchronyFire ? 1 : Math.max(1, group.muzzles?.length ?? 1);
-    const shots = !state || state.unlimited ? barrels : rounds;
+    // A `blastAmmoCount` salvo fires every barrel for its one round (BOMB-13).
+    const shots = !state || state.unlimited || group.stats?.blastAmmoCount ? barrels : rounds;
     stage.hooks.onRounds?.(group, shots, registry.firerOf(group));
   });
   guns.roundsLeft = group => {
@@ -240,6 +245,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
       groundHeight: terrain.groundHeight, surfaceFriction: terrain.surfaceFriction, deckNormal: terrain.deckNormal,
       collider: hullBodies.bodyAwareCollider(),
       waterLevel: terrain.collider?.waterLevel ?? extras?.waterLevel,
+      collisionMeshes: hullBodies.collisionMeshes,
       cockpit: false,
     });
     if (!drive) return null;
