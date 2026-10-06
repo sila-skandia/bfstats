@@ -5,7 +5,7 @@
 // functions of the `BotController` (bot.js), which delegates its methods
 // here.
 
-import { isWalkable } from './nav-grid.js';
+import { isWalkable, traceValidPoint } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
@@ -13,9 +13,13 @@ import { decleiningSlope } from './bot-behaviours.js';
 import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
-import { PLAN_ACTION } from './bot-plans.js';
+import { PLAN_ACTION, approachGoal } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
 import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landing.js';
+
+/** The Change walk's arrival: `getMaxPathPosRemovalDistance` 0x0852b780,
+ *  `0.99 x max(0.5, radius - |sphere offset|)`, a soldier's 1.0 radius. */
+const CHANGE_ARRIVE = 0.99;
 
 /** `BBChangeLandingCraft::calculateUrgency` 0x085608ea: the bail's urgency. */
 const LANDING_BAIL_URGENCY = 4.0;
@@ -415,50 +419,51 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   return { urgency: r.urgency, best: { id: cand.id, u: r.best.u, dist: 0, cand }, bail: false, teleport: true };
 }
 
-/**
- * Where a soldier walks to reach a door (INVENTION, 2026-09-24).
- * `BBPChange::createPlan` 0x0858b5c0 walks to the vehicle itself
- * (`BAPAMoveToObjectFinding`, goal radius 6.25) and holds Use while within
- * 12.375 m of it (`BAPConObjectDistance`, 0x41460000); the page seats a
- * soldier only inside the door's own radius, and a hull's door stands on its
- * centreline, where the hull's body stops a soldier who comes at it from the
- * front or the back (Bocage seed 1: two Axis soldiers pressed against a
- * Tiger's tail at 4.4 m from its 3.5 m door for 170 s). So the walk ends
- * beside the hull: `offset` along the hull's right axis from the door, on
- * the soldier's side, first stepping out to that line when he is ahead of
- * or behind the door. Null (walk to the door) without a node or with a door
- * too small to stand off from; only a land hull's door is walked to this way
- * (a fixed gun has no body around its door).
- */
-export const DOOR_APPROACH = { margin: 0.75, maxOffset: 3.0, minOffset: 1.0, arrive: 0.75 };
+/** Where `BBPChange`'s distances run from: the seat's own object. */
+function seatPoint(c) {
+  return c.seatPos ?? c.pos;
+}
 
-export function doorApproach(entry, radius, node, from) {
-  const e = node?.matrixWorld?.elements;
-  if (!e) return null;
-  const len = Math.hypot(e[0], e[2]);
-  if (len < 1e-6) return null;
-  const rx = e[0] / len, rz = e[2] / len;
-  const s = Math.min(DOOR_APPROACH.maxOffset, radius - DOOR_APPROACH.margin);
-  if (s < DOOR_APPROACH.minOffset) return null;
-  const dx = from[0] - entry[0], dz = from[2] - entry[1];
-  const lat = dx * rx + dz * rz;
-  const sign = lat >= 0 ? 1 : -1;
-  const fx = -rz, fz = rx;
-  const lon = dx * fx + dz * fz;
-  const goal = [entry[0] + rx * sign * s, entry[1] + rz * sign * s];
-  const pre = Math.abs(lat) < s && Math.abs(lon) > s ? [goal[0] + fx * lon, goal[1] + fz * lon] : null;
-  return { goal, pre };
+/** `BAPConObjectBehind::evaluate` 0x0854f720: the bot lies behind the unit
+ *  when the unit's forward (its matrix row 2, x/z) dotted with the unit-to-
+ *  bot direction is at most `cos` (-0.8). The viewer's forward is the
+ *  hull's (`hullYaw`, its -z column, as `unitReachable` walks it). */
+export function behindUnit(c, from, cos = CHANGE.behindCos) {
+  const p = seatPoint(c);
+  const dx = from[0] - p[0], dz = from[2] - p[2];
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6) return false;
+  const yaw = c.hullYaw ?? 0;
+  return (dx * Math.sin(yaw) + dz * Math.cos(yaw)) / d <= cos;
 }
 
 /**
- * `BBPChange::createPlan` 0x0858b5c0: walk to the unit's door (12.5 m ->
- * 6.25 m by the finding move; beside the door here, `doorApproach`), then
- * the Use trigger until the seat is taken (`EnterVehicle` asks the page to
- * seat the bot). There is no pose statement: the moves' own poses decide
- * (bot-pose.js `movePose`). The stand statement this plan opened with stood
- * a prone bot up for the one tick Change wins in a fight (the Fire urge
- * curve hands the contest over every few seconds), the flicker of
- * features/bot-stance-variety.
+ * `BBPChange::createPlan` 0x0858b5c0 (AI-44; the foot branch read again
+ * 2026-10-06, AI-138). On foot the plan is `IWChange(Parallel{
+ * ChangeVehicle(target), Serial{ Parallel{ walk?, Use }, UpdateVehicle }})`:
+ *
+ *  * the walk only beyond 12.5 m (3D, the two units' positions): a
+ *    `BAPAMoveToObjectFinding` with finding radius 6.25 (`approachGoal`,
+ *    AI-126), broken when the unit is occupied or enemy-occupied; a
+ *    `setUseNoPathfindingToGetToObject` unit at any range is walked to from
+ *    behind, the first valid point on the 12 m line behind it
+ *    (`traceValidPoint`, vt+0x54). Inside 12.5 m there is no walk;
+ *  * in parallel, the Use key while the seat lies within 12.375 m (and,
+ *    for the no-pathfinding unit, the bot behind it), until it is taken.
+ *    `toggleEntryPoint` 0x0814ee70 seats a bot through `validateBFEntryPoint`
+ *    0x0831d590: the seat's own object within 15 m, free, not a wreck, with
+ *    a door of its own -- not the door's radius, which only the human's
+ *    finder reads.
+ *
+ * So a bot standing 2 m from a Lada, or 8 m from a sandbagged MG, gets in
+ * without walking. The viewer walked every bot to the door and seated it
+ * inside the door's radius, which a soldier pressed against the hull or the
+ * sandbags never reached: the bots that stood in Change all round on DC
+ * Basrah's Edge, vanilla Battleaxe and Kharkov (features/bot-desert-combat).
+ * Where the finding has no goal the engine falls back to
+ * `getNearStrategicPosition` (vt+0x9c, not ported): the walk goes to the
+ * door, or the unit, as before (INVENTION). There is no pose statement: the
+ * moves' own poses decide (bot-pose.js `movePose`).
  */
 export function planChange(bot, now) {
   const r = bot._changeResult;
@@ -481,17 +486,26 @@ export function planChange(bot, now) {
   if (!best) return bot._planIdle();
   const cur = bot.currentPlan;
   if (bot.planBehaviour === BEHAVIOUR.Change && cur.length && cur.vehicleId === best.id && !best.occupiedBy) return cur;
-  const entry = best.entry ?? [best.pos[0], best.pos[2]];
-  const radius = Math.max(best.entryRadius ?? 4, 2.0);
-  const side = best.kind === 'tank' || best.kind === 'ground' ? doorApproach(entry, radius, best.node, bot.position) : null;
-  const walk = side
-    ? [...(side.pre ? [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [side.pre[0], bot.position[1], side.pre[1]],
-                         arrive: DOOR_APPROACH.arrive }] : []),
-       { type: PLAN_ACTION.InfantryMoveTo, waypoint: [side.goal[0], bot.position[1], side.goal[1]], arrive: DOOR_APPROACH.arrive }]
-    : [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], bot.position[1], entry[1]], arrive: radius }];
+  const at = seatPoint(best);
+  const d2 = (at[0] - bot.position[0]) ** 2 + (at[1] - bot.position[1]) ** 2 + (at[2] - bot.position[2]) ** 2;
+  const nav = bot.navGrid ?? null;
+  let goal;
+  if (best.noPathfinding) {
+    const yaw = best.hullYaw ?? 0;
+    const bx = at[0] - Math.sin(yaw) * CHANGE.behindDistance, bz = at[2] - Math.cos(yaw) * CHANGE.behindDistance;
+    const p = nav ? traceValidPoint(nav, at[0], at[2], bx, bz) : [bx, bz];
+    goal = p ? [p[0], bot.position[1], p[1]] : null;
+  } else if (d2 > CHANGE.approachFrom ** 2) {
+    goal = approachGoal(nav, at, bot.position, CHANGE.approachTo);
+  }
+  if (goal === null) {
+    const e = best.entry ?? [best.pos[0], best.pos[2]];
+    goal = [e[0], bot.position[1], e[1]];
+  }
   const plan = [
-    ...walk,
-    { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, entry, radius, afterMove: true },
+    ...(goal ? [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: CHANGE_ARRIVE }] : []),
+    { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, seatPos: [...at],
+      behind: best.noPathfinding ? CHANGE.behindCos : null },
   ];
   plan.vehicleId = best.id;
   plan.startedAt = now;
@@ -513,11 +527,23 @@ export function execSwitchSeat(bot, action) {
   return false;
 }
 
-/** `EnterVehicle`: inside the door's radius, ask the page for the seat. */
+/**
+ * `EnterVehicle`: the plan's Use key (`BAPATrigger` channel 10, started by
+ * `BAPConObjectDistance(target, 12.375)` and stopped by `ObjectOccupied`),
+ * pressed while the seat's own object lies within 12.375 m of the bot (3D)
+ * and, for a no-pathfinding unit, the bot behind it. Each press asks the
+ * page for the seat; `validateBFEntryPoint`'s own 15 m reaches farther than
+ * the press starts, and the entry rule (`mayEnterHull`) is the page's. The
+ * seat's position is the candidate's live one.
+ */
 export function execEnterVehicle(bot, action) {
   if (bot.vehicle) return true;
-  const d = Math.hypot(action.entry[0] - bot.position[0], action.entry[1] - bot.position[2]);
-  if (d > action.radius + 0.5) return false;
+  const c = (bot.vehicleCandidates ?? []).find(x => x.id === action.vehicleId) ?? null;
+  const at = c ? seatPoint(c) : action.seatPos;
+  if (!at) return false;
+  const d = Math.hypot(at[0] - bot.position[0], at[1] - bot.position[1], at[2] - bot.position[2]);
+  if (d > CHANGE.useWithin) return false;
+  if (action.behind != null && !behindUnit(c ?? { seatPos: at, hullYaw: 0 }, bot.position, action.behind)) return false;
   bot.enterRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
   return false;
 }

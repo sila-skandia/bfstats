@@ -43,7 +43,7 @@ export function createBotUnits(env) {
   };
   const kinds = new Map();
   const seatSurveys = new WeakMap();
-  const _entryWorld = new THREE.Vector3();
+  const _entryWorld = new THREE.Vector3(), _seatWorld = new THREE.Vector3();
   const _exitPos = new THREE.Vector3(), _exitLocal = new THREE.Vector3(), _exitFwd = new THREE.Vector3();
   const _exitQuat = new THREE.Quaternion();
   const _up = new THREE.Vector3();
@@ -84,10 +84,13 @@ export function createBotUnits(env) {
    * The AI record of a vehicle root node, or null when the game ships none.
    * The engine links an object to its AI by the object template's own
    * `ObjectTemplate.aiTemplate` line (`SimpleObject::SimpleObject` 0x081da0d0
-   * reads the template's name at +0x10c and asks `AITemplateManager::
-   * getTemplate` 0x0848a470 at 0x081da28f), never by the folder the record
-   * was extracted from: the node `flak38` is the PCO `flak38` of the record
-   * `Flak_38`, whose AI template is `Flak38`. The name is tried as it
+   * reads the template's name at +0x40 and asks `AITemplateManager::
+   * getTemplate` 0x0848a470 at 0x081da28f, AI-137), never by the folder the
+   * record was extracted from: the node `flak38` is the PCO `flak38` of the
+   * record `Flak_38`, whose AI template is `Flak38`. A hull that borrows
+   * another's template (DC's `A10_B`) or shares a folder with other hulls
+   * (DC Final's `OH-6`) has a record under its own name, which wins over
+   * any record listing it as a seat. The name is tried as it
    * stands before an instance suffix is cut: DC Final's `Howitzer_155` is a
    * template whose own name ends in digits.
    */
@@ -273,12 +276,16 @@ export function createBotUnits(env) {
     return box;
   };
 
-  /** Each hull's seat survey, for a seat's traverse limits (static per node). */
-  units.seatYawLimits = (node, seatId) => {
+  /** Each hull's seat survey (static per node): its seats, their nodes and doors. */
+  function surveyOf(node) {
     let survey = seatSurveys.get(node);
     if (!survey) { survey = surveyVehicle(node); seatSurveys.set(node, survey); }
-    return seatYawLimits(survey.seats.get(seatId));
-  };
+    return survey;
+  }
+
+  /** A seat's traverse limits. */
+  units.seatYawLimits = (node, seatId) => seatYawLimits(surveyOf(node).seats.get(seatId));
+
 
   /**
    * The gun seat of a self-propelled gun's hull (AI type 14, `ArtilleryDriver`:
@@ -391,11 +398,12 @@ export function createBotUnits(env) {
         const seats = [];
         const entries = [];
         const gunSeat = artilleryGunSeat(node, ai);
-        for (const door of doors) {
-          if (seen.has(door.seatId)) continue;
-          seen.add(door.seatId);
-          const isRoot = door.seatId === rootId;
-          const seatAi = ai.seatsAi?.[door.seatId] ?? (isRoot ? ai.seatsAi?.[ai.name] : null) ?? null;
+        const survey = surveyOf(node);
+        const addSeat = (seatId, door) => {
+          if (seen.has(seatId)) return;
+          seen.add(seatId);
+          const isRoot = seatId === rootId;
+          const seatAi = ai.seatsAi?.[seatId] ?? (isRoot ? ai.seatsAi?.[ai.name] : null) ?? null;
           const weapons = Object.entries(seatAi?.aiWeapons ?? (isRoot ? ai.aiWeapons : {}) ?? {})
             .map(([name, w]) => ({ ...w, name }));
           const strengths = {};
@@ -407,19 +415,28 @@ export function createBotUnits(env) {
           // 1 while the root is occupied; else a naval root's seats 1, a
           // ground root's 0.77, an air root's 0.5. It scales the seat's whole
           // `calculateVehicleUrgency` (0x0855e0c0 multiplies the result).
-          const holder = units.seatHolder(node, door.seatId);
+          const holder = units.seatHolder(node, seatId);
           const rootTypes = ai.types ?? [];
           const seatFactor = isRoot || driver ? 1
             : rootTypes.includes('ITNaval') ? 1
             : rootTypes.includes('ITGround') ? 0.77
             : rootTypes.includes('ITAir') ? 0.5
             : (kind === 'air' ? 0.5 : kind === 'ship' ? 1 : 0.77);
-          door.node.getWorldPosition(_entryWorld);
-          seats.push({ seatId: door.seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot });
+          // The seat's own object, where `BBPChange`'s distances and
+          // `validateBFEntryPoint` measure from (its PCO's absolute
+          // position; the hull's for the root).
+          ((isRoot ? node : survey.seats.get(seatId)?.node) ?? node).getWorldPosition(_seatWorld);
+          let entry = null;
+          if (door) {
+            door.node.getWorldPosition(_entryWorld);
+            entry = [_entryWorld.x, _entryWorld.z];
+          }
+          seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door });
           entries.push({
-            id: `${node.uuid}:${door.seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
-            seatId: door.seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
-            pos, entry: [_entryWorld.x, _entryWorld.z], entryRadius: door.radius,
+            id: `${node.uuid}:${seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
+            seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
+            pos, entry, entryRadius: door ? door.radius : 0, door: !!door,
+            seatPos: [_seatWorld.x, _seatWorld.y, _seatWorld.z],
             health, upright, onOwnMap, touchingLand, tipped,
             // `calculateVehicleMoveUrgency`: a driver moves the hull; a passenger
             // moves only when someone drives it (x2.5 of the bot driver's when
@@ -454,13 +471,14 @@ export function createBotUnits(env) {
             strType: ai.strType ?? 'LightArmour',
             driver, hullTeam,
             // `validateCameraDirection` for this seat: its own traverse.
-            hullYaw, yawLimits: units.seatYawLimits(node, door.seatId),
+            hullYaw, yawLimits: units.seatYawLimits(node, seatId),
             // The hull's AI type words (`aiTemplate.addType`), its local box
             // and physics mass: the runway and collision tests read them.
             types: seatAi?.types ?? (isRoot ? ai.types : null) ?? [], hullTypes: ai.types ?? [],
             localBox: units.localBox(node), mass: node.userData?.physics?.mass ?? null,
           });
-        }
+        };
+        for (const door of doors) addSeat(door.seatId, door);
         for (const e of entries) list.push(e);
       }
     }
