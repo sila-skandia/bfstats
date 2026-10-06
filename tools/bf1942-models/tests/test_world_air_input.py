@@ -10,7 +10,7 @@ What this file pins:
   `ControlMap::buttonsToAxis` (lnxded 0x083f2080) climbs by `dt / riseTime`
   with the 0.001 s the `ControlMap` ctor seeds (0x083f0540) and no shipped
   `.con` changes, so the viewer's own 2.4/s spring that used to sit in front of
-  an aircraft's channels is gone. The ship keeps it (`test_world_ship_pitch`);
+  an aircraft's channels is gone, as it is from a ship's (`test_world_ship_pitch`);
 * a mouse rate past 1 reaches a vectored airframe whole (its racks clip at
   their `maxRotation`, GUN-2) and a fixed-wing one at +-1 (its surfaces are a
   position servo with no clip of their own);

@@ -11,13 +11,15 @@ their trim.
 What this file pins, driven headless by `world_ship_pitch_harness.mjs` with
 mocked drivetrains on the same module set as `test_world.py`:
 
-* a ship holding ArrowUp ramps `c_PIPitch` to full deflection at the
-  viewer's stick rate (`STICK_RATE`), while its throttle never moves;
+* a ship holding ArrowUp has `c_PIPitch` at full deflection from the first
+  tick, a key pair's step (`ControlMap::buttonsToAxis`, ledger MLK-10), while
+  its throttle never moves;
 * W/S reaches only `c_PIThrottle` (the raw `forwardKeys` pair alone moves
   neither the throttle nor the pitch -- a ship reads `forward`, pad folded
   in, as the ground branch always did);
-* the mobile pad bypasses the spring (full deflection on the first tick);
-* release springs back to rest at `STICK_RETURN`;
+* the mobile pad's deflection lands on the first tick;
+* released, the channel is at rest on the first tick after (the ramp's own
+  servo carries the part back, `vehicle-base.js` `advanceSurfaces`);
 * ground/tank hulls never see `c_PIPitch` (no vanilla ground/tank hull binds
   it), while their own throttle keeps working;
 * the air branch takes the key as a step (`ControlMap::buttonsToAxis`'s
@@ -57,12 +59,12 @@ class ShipPitchTests(unittest.TestCase):
 
     # --- a ship's ramp/dive channel -------------------------------------------
 
-    def test_a_held_pitch_word_ramps_c_pipitch_to_full(self) -> None:
+    def test_a_held_pitch_word_is_full_c_pipitch_from_the_first_tick(self) -> None:
+        # No spring of the viewer's: the arrows are a key pair on the LandSea
+        # map, a step in one 0.001 s rise, as the air branch takes them.
         ship = self.results["ship"]
         self.assertEqual(ship["ticks"], 30)
-        # The aircraft path's own stick rate: 2.4/s at 1/30 s ticks is 0.08 a
-        # tick, so full deflection takes thirteen ticks.
-        self.assertAlmostEqual(ship["pitchFirst"], 1 * ship["stickRate"] * ship["tickDt"])
+        self.assertAlmostEqual(ship["pitchFirst"], 1.0)
         self.assertAlmostEqual(ship["pitchLast"], 1.0)
         for pitch in ship["pitches"]:
             self.assertGreaterEqual(pitch, 0.0)
@@ -88,16 +90,17 @@ class ShipPitchTests(unittest.TestCase):
         self.assertEqual(decouple["keysThrottles"], [0] * 5)
         self.assertEqual(decouple["keysPitches"], [0] * 5)
 
-    # --- the mobile pad bypasses the spring ------------------------------------
+    # --- the mobile pad --------------------------------------------------------
 
     def test_the_pad_lands_full_deflection_on_the_first_tick(self) -> None:
         self.assertAlmostEqual(self.results["pad"]["pitchFirst"], 0.7)
 
     # --- release returns to rest --------------------------------------------------
 
-    def test_release_springs_back_to_rest(self) -> None:
+    def test_release_is_rest_on_the_first_tick(self) -> None:
         release = self.results["release"]
         self.assertEqual(release["ticks"], 40)
+        self.assertAlmostEqual(release["pitchFirstReleased"], 0.0)
         self.assertAlmostEqual(release["pitchLast"], 0.0)
 
     # --- ground/tank hulls bind no c_PIPitch --------------------------------------
@@ -116,8 +119,7 @@ class ShipPitchTests(unittest.TestCase):
 
     def test_the_air_branch_takes_a_key_at_full_deflection_at_once(self) -> None:
         # No spring in front of an aircraft's channels: the key pair's own
-        # 0.001 s rise carries it to 1 within the first tick. The ship keeps
-        # its spring (above).
+        # 0.001 s rise carries it to 1 within the first tick, as the ship's.
         air = self.results["air"]
         self.assertAlmostEqual(air["pitchFirst"], 1.0)
         self.assertAlmostEqual(air["pitchLast"], 1.0)
