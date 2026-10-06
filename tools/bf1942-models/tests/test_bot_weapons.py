@@ -179,3 +179,62 @@ class BotBarrelsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BotHeatHoldTests(unittest.TestCase):
+    """`createFirePlan`'s `If(Or(empty, Not(BAPConWeaponHeat(0.8, 0.5))), hold,
+    fire)` (ledger AI-144, bot-plans.js `heatHolds`): the trigger is let go
+    the tick the heat reaches 0.8 and pressed again at 0.5, inside one plan;
+    a new plan's condition starts unlatched."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.h = run_harness()["heat"]
+
+    def test_a_stationary_mg42_burst_ends_at_30_rounds(self) -> None:
+        # The lab's longest bot bursts: 30 rounds on the MG42 (GUN-15).
+        self.assertEqual(self.h["mg42"]["bursts"][0], 30)
+        self.assertEqual(self.h["lawReaches"]["MG42"], 30)
+        self.assertGreaterEqual(self.h["mg42"]["lastHeat"][0], 0.8)
+
+    def test_the_browning_ends_at_30_and_the_coax_at_20(self) -> None:
+        self.assertEqual(self.h["browning"]["bursts"][0], 30)
+        self.assertEqual(self.h["coax"]["bursts"][0], 20)
+
+    def test_it_fires_again_at_half_heat_and_never_locks(self) -> None:
+        mg = self.h["mg42"]
+        self.assertGreater(len(mg["bursts"]), 1)
+        for heat in mg["resumeHeat"]:
+            self.assertLessEqual(heat, 0.5)
+            self.assertGreater(heat, 0.45)
+        self.assertLess(mg["maxHeat"], 0.85)
+        self.assertFalse(mg["locked"])
+
+    def test_a_new_plan_fires_under_08(self) -> None:
+        # Replanned during the hold, the new plan's condition is unlatched.
+        r = self.h["mg42Replan"]
+        self.assertEqual(r["bursts"][0], 30)
+        self.assertAlmostEqual(r["resumeAt"][0], 2.3, places=1)
+        self.assertGreater(r["resumeHeat"][0], 0.5)
+        self.assertLess(r["resumeHeat"][0], 0.8)
+
+    def test_a_gun_with_no_heat_never_holds(self) -> None:
+        self.assertEqual(len(self.h["noHeat"]["bursts"]), 1)
+        self.assertIsNone(self.h["noWords"])
+        self.assertIsNone(self.h["colt"])
+        # A grenade's `heatAddWhenFire` is its throw's charge (GUN-14).
+        self.assertIsNone(self.h["grenade"])
+
+    def test_the_fire_data_carries_the_heat_words(self) -> None:
+        self.assertEqual(self.h["words"], {"heatAddWhenFire": 0.04, "coolDownPerSec": 0.4,
+                                           "timeDelayOnOverheat": 2.0, "roundOfFire": 15.0})
+
+    def test_a_hand_m249_holds_where_the_law_reaches_08(self) -> None:
+        hand = self.h["hand"]
+        self.assertGreater(hand["reaches"], 20)
+        self.assertEqual(hand["bursts"][0], hand["reaches"])
+        self.assertGreater(len(hand["bursts"]), 1)
+        self.assertLess(hand["heat"], 0.85)
+        # Without the hold the same trigger runs on into the lockout.
+        self.assertTrue(hand["freeLocked"])
+

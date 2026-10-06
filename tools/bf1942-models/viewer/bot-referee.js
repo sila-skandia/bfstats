@@ -44,6 +44,7 @@ import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
+import { FireState } from './fire-state.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
@@ -568,6 +569,7 @@ export function createBotReferee(env) {
     // A new soldier is a new kit, full (the human's own rule, `kit-ammo.js`):
     // the magazines are made again from the data on the next frame.
     bot._mags?.clear();
+    bot._heat?.clear();
     bot._respawnIn = 0;
     bot.onRespawn();
     env.onRespawned?.(bot, record?.flag ?? flag);
@@ -580,6 +582,27 @@ export function createBotReferee(env) {
   referee.weaponDataOf = bot => {
     const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
     return name ? bot.weaponData?.[name] ?? null : null;
+  };
+
+  /**
+   * The heat of a bot's hand weapon `name`: a `FireState` over its FireArms'
+   * heat words (`fireArms.heat`, the page's own law, GUN-14, GUN-15), made
+   * from the data as the magazine is, or null for a weapon with none. A
+   * thrown weapon's heat is its throw's charge (`velocityDependentOnHeat`,
+   * every grenade, GUN-14), not a barrel's: none here. Each item keeps its
+   * own heat through a switch, and a new soldier's kit is cold.
+   */
+  referee.heatOf = (bot, name) => {
+    if (!name) return null;
+    if (!bot._heat) bot._heat = new Map();
+    if (bot._heat.has(name)) return bot._heat.get(name);
+    const data = bot.weaponData?.[name];
+    if (!data) return null;
+    const words = data.heat;
+    const state = words && words.heatAddWhenFire != null && !data.throw && !words.velocityDependentOnHeat
+      ? new FireState({ ...words, roundOfFire: data.roundOfFire ?? words.roundOfFire }) : null;
+    bot._heat.set(name, state);
+    return state;
   };
 
   /**
@@ -833,13 +856,19 @@ export function createBotReferee(env) {
       // handleUpdate` 0x08288890 counts it down before it asks for one.
       bot._fireCooldown = (bot._fireCooldown ?? 0) - dt;
       const mag = referee.magazineTick(bot, dt);
-      if (!bot.isFiring || !mag.canFire) bot._fireCooldown = Math.max(0, bot._fireCooldown);
-      if (!bot.isFiring || bot._fireCooldown > 0 || !mag.canFire) continue;
+      // The held item's heat runs its own ticks, and a pull at heat 1 or
+      // more, or in the lockout, fires nothing (`FireArms::Fire`, GUN-14).
+      const heat = referee.heatOf(bot, bot.weaponAi?.name ?? bot.kitPrimary ?? null);
+      heat?.step(dt);
+      const ready = mag.canFire && (!heat || heat.canFire);
+      if (!bot.isFiring || !ready) bot._fireCooldown = Math.max(0, bot._fireCooldown);
+      if (!bot.isFiring || bot._fireCooldown > 0 || !ready) continue;
       // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
       const stats = referee.weaponDataOf(bot);
       const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
       bot._fireCooldown = Math.max(-1 / rof, bot._fireCooldown) + 1 / rof;
       referee.magazineShot(bot, mag);
+      heat?.registerShot(1);
       bot.deviation.onShot();
       bot.onShot(referee.clock);
       // Every round is a sound (`event_soundEmitter`): each bot hears it

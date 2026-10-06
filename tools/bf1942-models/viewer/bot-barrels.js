@@ -107,3 +107,15 @@ export function barrelRays(origin, dir, barrels) {
     return { origin: ray.origin.toArray(), dir: ray.dir.toArray() };
   });
 }
+
+/** A FireArms block's heat words (`heatAddWhenFire`, `coolDownPerSec`,
+ *  `timeDelayOnOverheat`, `velocityDependentOnHeat`, `roundOfFire`), the
+ *  ones `fire-state.js` runs its law on; null for a gun with no heat. */
+export function fireArmsHeat(fireArms) {
+  if (!fireArms || fireArms.heatAddWhenFire == null) return null;
+  const out = {};
+  for (const k of ['heatAddWhenFire', 'coolDownPerSec', 'timeDelayOnOverheat', 'velocityDependentOnHeat', 'roundOfFire']) {
+    if (fireArms[k] != null) out[k] = fireArms[k];
+  }
+  return out;
+}
