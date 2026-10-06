@@ -1,0 +1,1947 @@
+{
+ "air": {
+  "B17": {
+   "air_s": 63.0,
+   "bank_p95": 34.3,
+   "climb_max": 6.8,
+   "climb_p95": 5.9,
+   "kind": "air",
+   "level_held_3s": 0.0,
+   "liftoff_speed_p50": 25.4,
+   "pitch_rate_held_0.5s": 13.6,
+   "pitch_rate_p95": 11.4,
+   "roll_rate_held_0.5s": 26.5,
+   "roll_rate_p95": 19.4,
+   "sink_p05": -19.0,
+   "speed_max": 40.1,
+   "speed_p05": 25.1,
+   "speed_p50": 29.6,
+   "speed_p95": 32.6,
+   "yaw_rate_p95": 15.6
+  },
+  "BF109": {
+   "air_s": 527.0,
+   "bank_p95": 65.6,
+   "climb_max": 32.4,
+   "climb_p95": 15.9,
+   "kind": "aloft",
+   "level_held_3s": 55.8,
+   "level_speed_p95": 58.7,
+   "liftoff_speed_p50": 27.7,
+   "lives_aloft": 4,
+   "lives_surface": 2,
+   "pitch_rate_held_0.5s": 63.3,
+   "pitch_rate_p95": 42.6,
+   "roll_rate_held_0.5s": 107.4,
+   "roll_rate_p95": 61.2,
+   "sink_p05": -24.3,
+   "speed_max": 78.5,
+   "speed_p05": 29.0,
+   "speed_p50": 50.2,
+   "speed_p95": 67.7,
+   "yaw_rate_p95": 20.1
+  },
+  "Spitfire": {
+   "air_s": 617.0,
+   "bank_p95": 67.4,
+   "climb_max": 19.2,
+   "climb_p95": 9.9,
+   "kind": "aloft",
+   "level_held_3s": 55.3,
+   "level_speed_p95": 50.9,
+   "liftoff_speed_p50": 27.7,
+   "lives_aloft": 4,
+   "lives_surface": 2,
+   "pitch_rate_held_0.5s": 51.6,
+   "pitch_rate_p95": 44.3,
+   "roll_rate_held_0.5s": 100.8,
+   "roll_rate_p95": 49.9,
+   "sink_p05": -9.9,
+   "speed_max": 61.2,
+   "speed_p05": 28.3,
+   "speed_p50": 40.3,
+   "speed_p95": 49.5,
+   "yaw_rate_p95": 22.5
+  }
+ },
+ "ground": {
+  "Hanomag": {
+   "driven_s": 176.0,
+   "level_p99": 4.5,
+   "max_fwd": 4.55,
+   "slip_over45_by_speed": {
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "top_full_throttle": 4.44,
+   "top_speed": 4.46,
+   "yaw_p95_by_speed": {
+    "0-2": 35.6,
+    "2-5": 17.7
+   }
+  },
+  "Katyusha": {
+   "driven_s": 134.0,
+   "level_p99": 11.67,
+   "max_fwd": 12.36,
+   "reverse_full_throttle": 2.06,
+   "reverse_speed": 1.89,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "t_to_10": 4.27,
+   "t_to_5": 1.8,
+   "top_full_throttle": 11.71,
+   "top_speed": 9.7,
+   "yaw_p95_by_speed": {
+    "0-2": 15.7,
+    "10-15": 27.3,
+    "2-5": 30.7,
+    "5-10": 28.3
+   }
+  },
+  "Kubelwagen": {
+   "driven_s": 2562.0,
+   "full_lock_by_speed": {
+    "0-2": {
+     "n": 1461,
+     "over45": 0.007,
+     "slip_p50": 18.7,
+     "slip_p95": 29.0,
+     "yaw_max": 54.0,
+     "yaw_p50": 21.9
+    },
+    "10-15": {
+     "n": 121,
+     "over45": 0.0,
+     "slip_p50": 7.0,
+     "slip_p95": 9.7,
+     "yaw_max": 44.7,
+     "yaw_p50": 30.2
+    },
+    "15-20": {
+     "n": 13,
+     "over45": 0.0,
+     "slip_p50": 3.2,
+     "slip_p95": 5.1,
+     "yaw_max": 28.9,
+     "yaw_p50": 17.7
+    },
+    "2-5": {
+     "n": 3104,
+     "over45": 0.001,
+     "slip_p50": 18.8,
+     "slip_p95": 27.6,
+     "yaw_max": 75.2,
+     "yaw_p50": 24.0
+    },
+    "5-10": {
+     "n": 1313,
+     "over45": 0.0,
+     "slip_p50": 11.6,
+     "slip_p95": 26.7,
+     "yaw_max": 74.1,
+     "yaw_p50": 35.2
+    }
+   },
+   "level_p99": 16.99,
+   "max_fwd": 19.79,
+   "max_steer_deg": 30.0,
+   "reverse_full_throttle": 2.16,
+   "reverse_speed": 5.31,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "15-20": 0.0,
+    "2-5": 0.002,
+    "5-10": 0.001
+   },
+   "t_to_10": 2.7,
+   "t_to_15": 6.13,
+   "t_to_5": 1.17,
+   "top_full_throttle": 17.27,
+   "top_speed": 16.02,
+   "yaw_p95_by_speed": {
+    "0-2": 28.2,
+    "10-15": 20.2,
+    "15-20": 9.1,
+    "2-5": 43.1,
+    "5-10": 37.0
+   }
+  },
+  "M3A1": {
+   "driven_s": 89.0,
+   "level_p99": 10.87,
+   "max_fwd": 11.1,
+   "reverse_full_throttle": 3.06,
+   "reverse_speed": 2.76,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "t_to_5": 3.63,
+   "top_full_throttle": 10.91,
+   "top_speed": 5.66,
+   "yaw_p95_by_speed": {
+    "0-2": 29.5,
+    "10-15": 13.4,
+    "2-5": 29.8,
+    "5-10": 17.3
+   }
+  },
+  "PanzerIV": {
+   "driven_s": 3045.0,
+   "level_p99": 14.4,
+   "max_fwd": 14.81,
+   "reverse_full_throttle": 1.39,
+   "reverse_speed": 0.82,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.001,
+    "5-10": 0.0
+   },
+   "t_to_10": 5.43,
+   "t_to_5": 2.2,
+   "top_full_throttle": 14.51,
+   "top_speed": 14.37,
+   "yaw_p95_by_speed": {
+    "0-2": 48.5,
+    "10-15": 10.2,
+    "2-5": 29.8,
+    "5-10": 18.8
+   }
+  },
+  "Priest": {
+   "driven_s": 377.0,
+   "level_p99": 11.03,
+   "max_fwd": 11.24,
+   "reverse_full_throttle": 1.71,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "t_to_5": 1.23,
+   "top_full_throttle": 11.03,
+   "top_speed": 10.98,
+   "yaw_p95_by_speed": {
+    "0-2": 46.3,
+    "10-15": 5.8,
+    "2-5": 39.6,
+    "5-10": 13.7
+   }
+  },
+  "Sherman": {
+   "driven_s": 1233.0,
+   "level_p99": 14.15,
+   "max_fwd": 14.63,
+   "reverse_full_throttle": 0.41,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "t_to_10": 4.13,
+   "t_to_5": 2.77,
+   "top_full_throttle": 14.21,
+   "top_speed": 13.68,
+   "yaw_p95_by_speed": {
+    "0-2": 52.3,
+    "10-15": 8.4,
+    "2-5": 28.3,
+    "5-10": 14.5
+   }
+  },
+  "T34": {
+   "driven_s": 408.0,
+   "level_p99": 9.89,
+   "max_fwd": 10.9,
+   "reverse_full_throttle": 0.98,
+   "reverse_speed": 0.68,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.0,
+    "5-10": 0.0
+   },
+   "t_to_10": 5.8,
+   "t_to_5": 6.63,
+   "top_full_throttle": 10.0,
+   "top_speed": 5.72,
+   "yaw_p95_by_speed": {
+    "0-2": 42.7,
+    "10-15": 10.7,
+    "2-5": 22.7,
+    "5-10": 22.2
+   }
+  },
+  "T34-85": {
+   "driven_s": 482.0,
+   "level_p99": 8.63,
+   "max_fwd": 11.11,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "2-5": 0.002,
+    "5-10": 0.001
+   },
+   "t_to_5": 2.27,
+   "top_full_throttle": 9.33,
+   "top_speed": 8.15,
+   "yaw_p95_by_speed": {
+    "0-2": 39.8,
+    "10-15": 4.3,
+    "2-5": 24.5,
+    "5-10": 19.4
+   }
+  },
+  "Tiger": {
+   "driven_s": 657.0,
+   "level_p99": 9.15,
+   "max_fwd": 9.44,
+   "reverse_full_throttle": 0.62,
+   "slip_over45_by_speed": {
+    "2-5": 0.003,
+    "5-10": 0.0
+   },
+   "t_to_5": 3.47,
+   "top_full_throttle": 9.12,
+   "top_speed": 9.03,
+   "yaw_p95_by_speed": {
+    "0-2": 63.3,
+    "2-5": 48.5,
+    "5-10": 25.2
+   }
+  },
+  "Willy": {
+   "driven_s": 1138.0,
+   "full_lock_by_speed": {
+    "0-2": {
+     "n": 654,
+     "over45": 0.0,
+     "slip_p50": 22.1,
+     "slip_p95": 32.0,
+     "yaw_max": 34.4,
+     "yaw_p50": 22.7
+    },
+    "10-15": {
+     "n": 109,
+     "over45": 0.0,
+     "slip_p50": 7.9,
+     "slip_p95": 10.4,
+     "yaw_max": 42.6,
+     "yaw_p50": 29.8
+    },
+    "15-20": {
+     "n": 4,
+     "over45": 0.0,
+     "slip_p50": 5.0,
+     "slip_p95": 5.3,
+     "yaw_max": 22.0,
+     "yaw_p50": 20.6
+    },
+    "2-5": {
+     "n": 666,
+     "over45": 0.0,
+     "slip_p50": 21.7,
+     "slip_p95": 27.5,
+     "yaw_max": 52.3,
+     "yaw_p50": 23.2
+    },
+    "5-10": {
+     "n": 314,
+     "over45": 0.0,
+     "slip_p50": 13.0,
+     "slip_p95": 31.3,
+     "yaw_max": 72.9,
+     "yaw_p50": 35.5
+    }
+   },
+   "level_p99": 18.3,
+   "max_fwd": 18.73,
+   "max_steer_deg": 30.0,
+   "reverse_full_throttle": -0.3,
+   "reverse_speed": 1.91,
+   "slip_over45_by_speed": {
+    "10-15": 0.0,
+    "15-20": 0.0,
+    "2-5": 0.004,
+    "5-10": 0.0
+   },
+   "t_to_10": 3.4,
+   "t_to_15": 8.63,
+   "t_to_5": 2.37,
+   "top_full_throttle": 18.34,
+   "top_speed": 18.26,
+   "yaw_p95_by_speed": {
+    "0-2": 23.6,
+    "10-15": 26.4,
+    "15-20": 15.3,
+    "2-5": 33.0,
+    "5-10": 33.6
+   }
+  }
+ },
+ "ground_lod2": {},
+ "rounds": {
+  "AA_Allies_Projectile": {
+   "a_side_p50": 0.02,
+   "a_side_p95": 0.04,
+   "a_tan_p50": -0.01,
+   "dur_max": 0.83,
+   "dur_p50": 0.57,
+   "elev_p50": 13.84,
+   "flights": 5,
+   "g_eff_p50": -0.01,
+   "life_p50": 0.6,
+   "range_max": 243.0,
+   "rise_max": 59.9,
+   "speed_0.5s": 300.2,
+   "turn_p50": 0.01,
+   "turn_p95": 0.01,
+   "v0_max": 301.0,
+   "v0_p50": 300.3,
+   "weapons": {
+    "AA_Allies_GunBarrel": 5
+   }
+  },
+  "BF109Projectile": {
+   "a_side_p50": 0.02,
+   "a_side_p95": 0.16,
+   "a_tan_p50": 0.0,
+   "dur_max": 1.47,
+   "dur_p50": 0.43,
+   "elev_p50": -14.48,
+   "flights": 110,
+   "g_eff_p50": -0.0,
+   "life_p50": 0.87,
+   "range_max": 692.0,
+   "rise_max": 150.5,
+   "speed_0.5s": 471.5,
+   "speed_1s": 473.4,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 474.5,
+   "v0_p50": 469.1,
+   "weapons": {
+    "BF109Guns": 110
+   }
+  },
+  "BazookaProjectile": {
+   "a_side_p50": 0.22,
+   "a_side_p95": 0.56,
+   "a_tan_p50": -0.21,
+   "dur_max": 8.37,
+   "dur_p50": 1.8,
+   "elev_p50": 4.15,
+   "flights": 185,
+   "g_eff_p50": 2.95,
+   "life_p50": 1.92,
+   "range_max": 405.0,
+   "rise_max": 29.2,
+   "speed_0.5s": 49.9,
+   "speed_1s": 49.9,
+   "speed_2s": 49.9,
+   "speed_3s": 50.0,
+   "speed_5s": 51.0,
+   "turn_p50": 0.02,
+   "turn_p95": 0.11,
+   "v0_max": 59.8,
+   "v0_p50": 50.0,
+   "weapons": {
+    "Bazooka": 132,
+    "K98": 1,
+    "Panzershreck": 52
+   }
+  },
+  "Browning_Projectile": {
+   "a_side_p50": 0.0,
+   "a_side_p95": 0.01,
+   "a_tan_p50": -0.0,
+   "dur_max": 2.97,
+   "dur_p50": 0.2,
+   "elev_p50": 24.53,
+   "flights": 194,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.26,
+   "range_max": 2978.0,
+   "rise_max": 2138.2,
+   "speed_0.5s": 1005.6,
+   "speed_1s": 1004.5,
+   "speed_2s": 1004.5,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1013.6,
+   "v0_p50": 1000.1,
+   "weapons": {
+    "Browning": 131,
+    "Coaxial_browning": 55,
+    "MG42": 2,
+    "Thompson": 3
+   }
+  },
+  "ColtProjectile": {
+   "a_side_p50": 0.03,
+   "a_side_p95": 0.03,
+   "a_tan_p50": -0.01,
+   "dur_max": 0.97,
+   "dur_p50": 0.97,
+   "elev_p50": 15.23,
+   "flights": 1,
+   "g_eff_p50": -0.0,
+   "life_p50": 1.0,
+   "range_max": 373.0,
+   "rise_max": 101.6,
+   "speed_0.5s": 400.1,
+   "turn_p50": 0.0,
+   "turn_p95": 0.0,
+   "v0_max": 400.1,
+   "v0_p50": 400.1,
+   "weapons": {
+    "Colt": 1
+   }
+  },
+  "DPProjectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.21,
+   "a_tan_p50": 0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.1,
+   "elev_p50": 6.41,
+   "flights": 191,
+   "g_eff_p50": 0.01,
+   "life_p50": 0.14,
+   "range_max": 965.0,
+   "rise_max": 213.0,
+   "speed_0.5s": 1000.0,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1000.3,
+   "v0_p50": 1000.1,
+   "weapons": {
+    "DP": 181,
+    "MG42": 2,
+    "No4": 2,
+    "Sg44": 2
+   }
+  },
+  "FighterBomb": {
+   "a_side_p50": 0.19,
+   "a_side_p95": 0.28,
+   "a_tan_p50": -0.1,
+   "dur_max": 3.4,
+   "dur_p50": 3.23,
+   "elev_p50": -0.76,
+   "flights": 3,
+   "g_eff_p50": 14.72,
+   "life_p50": 3.43,
+   "range_max": 150.0,
+   "rise_max": 0.0,
+   "speed_0.5s": 45.0,
+   "speed_1s": 46.8,
+   "speed_2s": 53.2,
+   "speed_3s": 62.3,
+   "turn_p50": 0.04,
+   "turn_p95": 0.15,
+   "v0_max": 44.5,
+   "v0_p50": 44.4,
+   "weapons": {
+    "BF109BombRack": 1,
+    "SpitfireBombDummy": 2
+   }
+  },
+  "GrenadeAlliesProjectile": {
+   "a_side_p50": 3.0,
+   "a_side_p95": 5.85,
+   "a_tan_p50": -3.2,
+   "dur_max": 3.2,
+   "dur_p50": 0.63,
+   "elev_p50": 11.53,
+   "flights": 25,
+   "g_eff_p50": 14.69,
+   "life_p50": 3.23,
+   "range_max": 32.0,
+   "rise_max": 4.1,
+   "speed_0.5s": 24.3,
+   "speed_1s": 23.2,
+   "turn_p50": 0.06,
+   "turn_p95": 3.32,
+   "v0_max": 25.0,
+   "v0_p50": 24.9,
+   "weapons": {
+    "GrenadeAllies": 25
+   }
+  },
+  "GrenadeAxisProjectile": {
+   "a_side_p50": 3.04,
+   "a_side_p95": 4.71,
+   "a_tan_p50": -3.54,
+   "dur_max": 1.03,
+   "dur_p50": 0.57,
+   "elev_p50": 12.17,
+   "flights": 6,
+   "g_eff_p50": 14.7,
+   "life_p50": 3.24,
+   "range_max": 25.0,
+   "rise_max": 2.5,
+   "speed_0.5s": 24.5,
+   "turn_p50": 0.0,
+   "turn_p95": 0.15,
+   "v0_max": 24.9,
+   "v0_p50": 24.8,
+   "weapons": {
+    "GrenadeAxis": 6
+   }
+  },
+  "Mp40Projectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.16,
+   "a_tan_p50": 0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.23,
+   "elev_p50": 2.55,
+   "flights": 175,
+   "g_eff_p50": -0.0,
+   "life_p50": 0.28,
+   "range_max": 967.0,
+   "rise_max": 162.8,
+   "speed_0.5s": 1000.0,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1000.3,
+   "v0_p50": 1000.0,
+   "weapons": {
+    "DP": 6,
+    "Mp18": 83,
+    "Mp40": 79,
+    "No4Sniper": 3
+   }
+  },
+  "P38Projectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.02,
+   "a_tan_p50": 0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.17,
+   "elev_p50": 3.1,
+   "flights": 19,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.2,
+   "range_max": 387.0,
+   "rise_max": 91.0,
+   "speed_0.5s": 400.0,
+   "turn_p50": 0.0,
+   "turn_p95": 0.02,
+   "v0_max": 400.1,
+   "v0_p50": 400.0,
+   "weapons": {
+    "WalterP38": 19
+   }
+  },
+  "PanzerIVProjectile": {
+   "a_side_p50": 0.78,
+   "a_side_p95": 1.25,
+   "a_tan_p50": -0.74,
+   "dur_max": 3.93,
+   "dur_p50": 1.67,
+   "elev_p50": 5.8,
+   "flights": 75,
+   "g_eff_p50": 7.37,
+   "life_p50": 1.77,
+   "range_max": 391.0,
+   "rise_max": 18.8,
+   "speed_0.5s": 99.8,
+   "speed_1s": 99.6,
+   "speed_2s": 99.6,
+   "speed_3s": 100.1,
+   "turn_p50": 0.0,
+   "turn_p95": 0.06,
+   "v0_max": 106.0,
+   "v0_p50": 100.1,
+   "weapons": {
+    "MG42": 1,
+    "PanzerIVGunBarrel": 74
+   }
+  },
+  "PriestProjectile": {
+   "a_side_p50": 2.68,
+   "a_side_p95": 4.24,
+   "a_tan_p50": -2.72,
+   "dur_max": 3.77,
+   "dur_p50": 2.37,
+   "elev_p50": 10.65,
+   "flights": 22,
+   "g_eff_p50": 14.73,
+   "life_p50": 3.26,
+   "range_max": 360.0,
+   "rise_max": 36.5,
+   "speed_0.5s": 99.2,
+   "speed_1s": 98.8,
+   "speed_2s": 98.6,
+   "speed_3s": 102.5,
+   "turn_p50": 0.01,
+   "turn_p95": 0.06,
+   "v0_max": 101.0,
+   "v0_p50": 100.1,
+   "weapons": {
+    "PriestCannon": 22
+   }
+  },
+  "ShermanProjectile": {
+   "a_side_p50": 1.92,
+   "a_side_p95": 3.19,
+   "a_tan_p50": -1.68,
+   "dur_max": 2.33,
+   "dur_p50": 1.1,
+   "elev_p50": 6.72,
+   "flights": 30,
+   "g_eff_p50": 14.73,
+   "life_p50": 1.97,
+   "range_max": 229.0,
+   "rise_max": 20.1,
+   "speed_0.5s": 99.6,
+   "speed_1s": 99.7,
+   "speed_2s": 101.0,
+   "turn_p50": 0.01,
+   "turn_p95": 0.06,
+   "v0_max": 102.3,
+   "v0_p50": 100.1,
+   "weapons": {
+    "(unmatched)": 1,
+    "Browning": 1,
+    "ShermanGunBarrel": 28
+   }
+  },
+  "SpitfireProjectile": {
+   "a_side_p50": 0.08,
+   "a_side_p95": 0.12,
+   "a_tan_p50": -0.05,
+   "dur_max": 0.47,
+   "dur_p50": 0.43,
+   "elev_p50": -9.62,
+   "flights": 8,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.48,
+   "range_max": 205.0,
+   "rise_max": 0.0,
+   "turn_p50": 0.01,
+   "turn_p95": 0.02,
+   "v0_max": 444.2,
+   "v0_p50": 443.9,
+   "weapons": {
+    "SpitfireGuns": 8
+   }
+  },
+  "T34-85Projectile": {
+   "a_side_p50": 0.37,
+   "a_side_p95": 0.75,
+   "a_tan_p50": -0.34,
+   "dur_max": 1.63,
+   "dur_p50": 0.57,
+   "elev_p50": 1.39,
+   "flights": 14,
+   "g_eff_p50": 14.73,
+   "life_p50": 0.61,
+   "range_max": 163.0,
+   "rise_max": 1.7,
+   "speed_0.5s": 100.4,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 102.2,
+   "v0_p50": 100.0,
+   "weapons": {
+    "T34-85GunBarrel": 14
+   }
+  },
+  "T34Projectile": {
+   "a_side_p50": 1.08,
+   "a_side_p95": 1.29,
+   "a_tan_p50": -1.09,
+   "dur_max": 1.73,
+   "dur_p50": 1.67,
+   "elev_p50": 4.21,
+   "flights": 6,
+   "g_eff_p50": 14.73,
+   "life_p50": 1.7,
+   "range_max": 173.0,
+   "rise_max": 2.6,
+   "speed_0.5s": 99.8,
+   "speed_1s": 100.0,
+   "turn_p50": 0.04,
+   "turn_p95": 0.06,
+   "v0_max": 100.4,
+   "v0_p50": 100.1,
+   "weapons": {
+    "T34GunBarrel": 6
+   }
+  },
+  "ThomsonProjectile": {
+   "a_side_p50": 0.02,
+   "a_side_p95": 0.05,
+   "a_tan_p50": 0.02,
+   "dur_max": 0.97,
+   "dur_p50": 0.13,
+   "elev_p50": 1.07,
+   "flights": 32,
+   "g_eff_p50": 0.02,
+   "life_p50": 0.16,
+   "range_max": 967.0,
+   "rise_max": 61.9,
+   "speed_0.5s": 1000.0,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1000.1,
+   "v0_p50": 1000.0,
+   "weapons": {
+    "Sg44": 1,
+    "Thompson": 31
+   }
+  },
+  "TigerProjectile": {
+   "a_side_p50": 2.44,
+   "a_side_p95": 3.33,
+   "a_tan_p50": -2.49,
+   "dur_max": 2.6,
+   "dur_p50": 1.63,
+   "elev_p50": 9.67,
+   "flights": 32,
+   "g_eff_p50": 14.73,
+   "life_p50": 1.67,
+   "range_max": 256.0,
+   "rise_max": 18.9,
+   "speed_0.5s": 99.1,
+   "speed_1s": 98.4,
+   "speed_2s": 100.5,
+   "turn_p50": 0.0,
+   "turn_p95": 0.05,
+   "v0_max": 103.4,
+   "v0_p50": 100.1,
+   "weapons": {
+    "TigerGunBarrel": 32
+   }
+  },
+  "Tracer_Projectile": {
+   "a_side_p50": 0.0,
+   "a_side_p95": 0.13,
+   "a_tan_p50": 0.0,
+   "dur_max": 2.97,
+   "dur_p50": 0.27,
+   "elev_p50": 15.63,
+   "flights": 688,
+   "g_eff_p50": -0.0,
+   "life_p50": 0.36,
+   "range_max": 2983.0,
+   "rise_max": 2166.3,
+   "speed_0.5s": 1000.6,
+   "speed_1s": 1000.7,
+   "speed_2s": 1000.8,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1013.8,
+   "v0_p50": 1000.2,
+   "weapons": {
+    "BF109Guns": 50,
+    "Browning": 65,
+    "Coaxial_MG42": 142,
+    "MG42": 392
+   }
+  },
+  "barProjectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.06,
+   "a_tan_p50": -0.01,
+   "dur_max": 0.97,
+   "dur_p50": 0.23,
+   "elev_p50": 0.51,
+   "flights": 29,
+   "g_eff_p50": -0.0,
+   "life_p50": 0.31,
+   "range_max": 967.0,
+   "rise_max": 352.6,
+   "speed_0.5s": 1000.2,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1000.3,
+   "v0_p50": 1000.1,
+   "weapons": {
+    "Bar1918": 29
+   }
+  },
+  "k98Projectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.02,
+   "a_tan_p50": -0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.1,
+   "elev_p50": 4.21,
+   "flights": 118,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.14,
+   "range_max": 1931.0,
+   "rise_max": 179.8,
+   "speed_0.5s": 1000.1,
+   "turn_p50": 0.0,
+   "turn_p95": 0.0,
+   "v0_max": 2000.1,
+   "v0_p50": 1000.1,
+   "weapons": {
+    "K98": 78,
+    "K98Sniper": 28,
+    "MG42": 6,
+    "Sg44": 2
+   }
+  },
+  "mg42_Projectile": {
+   "a_side_p50": 0.0,
+   "a_side_p95": 0.12,
+   "a_tan_p50": 0.0,
+   "dur_max": 2.97,
+   "dur_p50": 0.23,
+   "elev_p50": 19.92,
+   "flights": 1120,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.31,
+   "range_max": 2984.0,
+   "rise_max": 2123.2,
+   "speed_0.5s": 1000.7,
+   "speed_1s": 1000.7,
+   "speed_2s": 1000.7,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1010.8,
+   "v0_p50": 1000.3,
+   "weapons": {
+    "Coaxial_MG42": 303,
+    "DP": 3,
+    "MG42": 802,
+    "Mp40": 4
+   }
+  },
+  "no4Projectile": {
+   "a_side_p50": 0.1,
+   "a_side_p95": 0.38,
+   "a_tan_p50": 0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.1,
+   "elev_p50": 0.01,
+   "flights": 143,
+   "g_eff_p50": -0.02,
+   "life_p50": 0.13,
+   "range_max": 1933.0,
+   "rise_max": 18.2,
+   "speed_0.5s": 2000.0,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 2000.1,
+   "v0_p50": 1000.0,
+   "weapons": {
+    "Bazooka": 2,
+    "DP": 3,
+    "No4": 118,
+    "No4Sniper": 17
+   }
+  },
+  "sg44Projectile": {
+   "a_side_p50": 0.01,
+   "a_side_p95": 0.2,
+   "a_tan_p50": -0.0,
+   "dur_max": 0.97,
+   "dur_p50": 0.1,
+   "elev_p50": 1.7,
+   "flights": 177,
+   "g_eff_p50": 0.0,
+   "life_p50": 0.12,
+   "range_max": 967.0,
+   "rise_max": 320.4,
+   "speed_0.5s": 1000.2,
+   "turn_p50": 0.0,
+   "turn_p95": 0.01,
+   "v0_max": 1000.6,
+   "v0_p50": 1000.1,
+   "weapons": {
+    "(unmatched)": 1,
+    "DP": 1,
+    "K98Sniper": 2,
+    "Sg44": 172
+   }
+  }
+ },
+ "runs": [
+  {
+   "abandon_drains": {
+    "Kubelwagen": [
+     [
+      45.9,
+      9.85
+     ],
+     [
+      45.7,
+      9.71
+     ],
+     [
+      38.9,
+      2.44
+     ],
+     [
+      46.6,
+      8.37
+     ],
+     [
+      46.1,
+      9.33
+     ]
+    ],
+    "Priest": [
+     [
+      47.0,
+      6.33
+     ]
+    ],
+    "Willy": [
+     [
+      0.3,
+      1.5
+     ]
+    ]
+   },
+   "bots": 30,
+   "bots_moving": {
+    "never_20m": 1,
+    "reach_p50": 288.0,
+    "soldier_lives_30s": 86
+   },
+   "crews": {
+    "B17": [
+     1,
+     75.0,
+     0
+    ],
+    "BF109": [
+     2,
+     329.0,
+     0
+    ],
+    "Kubelwagen": [
+     9,
+     2713.0,
+     603.0
+    ],
+    "PanzerIV": [
+     9,
+     2511.0,
+     1256.0
+    ],
+    "Priest": [
+     3,
+     431.0,
+     474.0
+    ],
+    "Sherman": [
+     4,
+     1512.0,
+     953.0
+    ],
+    "Spitfire": [
+     4,
+     655.0,
+     0
+    ],
+    "Tiger": [
+     1,
+     204.0,
+     0
+    ],
+    "Willy": [
+     3,
+     1015.0,
+     215.0
+    ]
+   },
+   "file": "replay_1791300125.ndjson",
+   "level": "el_alamein",
+   "respawns": [
+    {
+     "delay": 80.06,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "FighterSpawner",
+     "tmpl": "BF109",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 30.05,
+     "fill": -0.003,
+     "prev_born": 0.0,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Willy",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 199.86,
+     "fill": 0.004,
+     "prev_born": 0.0,
+     "spawner": "HeavyBomberSpawner",
+     "tmpl": "B17",
+     "window": [
+      160.0,
+      200.0
+     ]
+    },
+    {
+     "delay": 30.05,
+     "fill": -0.003,
+     "prev_born": 0.0,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 87.04,
+     "fill": -0.176,
+     "prev_born": 0.0,
+     "spawner": "FighterSpawner",
+     "tmpl": "Spitfire",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.06,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "Sherman",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.29,
+     "fill": 0.935,
+     "prev_born": 143.3,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 110.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "heavytankspawner",
+     "tmpl": "Tiger",
+     "window": [
+      70.0,
+      110.0
+     ]
+    },
+    {
+     "delay": 80.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "FighterSpawner",
+     "tmpl": "Spitfire",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "FighterSpawner",
+     "tmpl": "BF109",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 38.84,
+     "fill": 1.029,
+     "prev_born": 103.2,
+     "spawner": "lighttankspawner",
+     "tmpl": "Sherman",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 79.6,
+     "fill": 0.01,
+     "prev_born": 103.2,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Priest",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.06,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.31,
+     "fill": 0.935,
+     "prev_born": 224.3,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 30.08,
+     "fill": -0.004,
+     "prev_born": 0.0,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 42.64,
+     "fill": 0.934,
+     "prev_born": 315.3,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.69,
+     "fill": 0.933,
+     "prev_born": 143.3,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 172.23,
+     "fill": -2.306,
+     "prev_born": 212.4,
+     "spawner": "lighttankspawner",
+     "tmpl": "Sherman",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 339.3,
+     "spawner": "FighterSpawner",
+     "tmpl": "Spitfire",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.06,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "Sherman",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.07,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.31,
+     "fill": 0.935,
+     "prev_born": 250.1,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 81.03,
+     "fill": -2.552,
+     "prev_born": 212.4,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Willy",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 30.04,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Willy",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 42.57,
+     "fill": 0.936,
+     "prev_born": 399.4,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.52,
+     "fill": 0.937,
+     "prev_born": 397.4,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Priest",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.54,
+     "fill": 0.936,
+     "prev_born": 293.2,
+     "spawner": "FighterSpawner",
+     "tmpl": "Spitfire",
+     "window": [
+      40.0,
+      80.0
+     ]
+    }
+   ],
+   "seconds": 1002.0,
+   "team_switch": [
+    {
+     "by_team": {
+      "1": [
+       "PanzerIV"
+      ],
+      "2": [
+       "Sherman"
+      ]
+     },
+     "cp": "North_outpost",
+     "pad": [
+      886.0,
+      53.0,
+      1822.0
+     ]
+    },
+    {
+     "by_team": {
+      "1": [
+       "Kubelwagen"
+      ],
+      "2": [
+       "Willy"
+      ]
+     },
+     "cp": "North_outpost",
+     "pad": [
+      872.0,
+      52.0,
+      1807.0
+     ]
+    }
+   ],
+   "tickets": [
+    [
+     200,
+     200
+    ],
+    [
+     0,
+     10
+    ]
+   ],
+   "wreck_life": {
+    "B17": {
+     "max": 9.79,
+     "min": 9.79,
+     "n": 1
+    },
+    "BF109": {
+     "max": 10.7,
+     "min": 9.99,
+     "n": 2
+    },
+    "Kubelwagen": {
+     "max": 11.51,
+     "min": 9.98,
+     "n": 6
+    },
+    "PanzerIV": {
+     "max": 10.31,
+     "min": 9.96,
+     "n": 8
+    },
+    "Priest": {
+     "max": 10.04,
+     "min": 9.87,
+     "n": 2
+    },
+    "Sherman": {
+     "max": 22.36,
+     "min": 9.96,
+     "n": 3
+    },
+    "Spitfire": {
+     "max": 10.61,
+     "min": 10.0,
+     "n": 4
+    },
+    "Tiger": {
+     "max": 10.03,
+     "min": 10.03,
+     "n": 1
+    },
+    "Willy": {
+     "max": 10.03,
+     "min": 10.0,
+     "n": 2
+    }
+   }
+  },
+  {
+   "abandon_drains": {
+    "Hanomag": [
+     [
+      45.5,
+      9.73
+     ]
+    ],
+    "Kubelwagen": [
+     [
+      47.4,
+      9.82
+     ]
+    ],
+    "M3A1": [
+     [
+      51.6,
+      10.2
+     ]
+    ],
+    "PanzerIV": [
+     [
+      0.4,
+      1.62
+     ]
+    ]
+   },
+   "bots": 30,
+   "bots_moving": {
+    "never_20m": 7,
+    "reach_p50": 78.0,
+    "soldier_lives_30s": 175
+   },
+   "crews": {
+    "BF109": [
+     2,
+     237.0,
+     0
+    ],
+    "Hanomag": [
+     2,
+     212.0,
+     318.0
+    ],
+    "Katyusha": [
+     9,
+     136.0,
+     288.0
+    ],
+    "Kubelwagen": [
+     5,
+     409.0,
+     17.0
+    ],
+    "M3A1": [
+     1,
+     89.0,
+     375.0
+    ],
+    "PanzerIV": [
+     7,
+     1033.0,
+     581.0
+    ],
+    "T34": [
+     2,
+     502.0,
+     0
+    ],
+    "T34-85": [
+     4,
+     534.0,
+     277.0
+    ],
+    "Tiger": [
+     2,
+     549.0,
+     0
+    ],
+    "Willy": [
+     1,
+     754.0,
+     0
+    ]
+   },
+   "file": "replay_1791301144.ndjson",
+   "level": "kursk",
+   "respawns": [
+    {
+     "delay": 80.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "FighterSpawner",
+     "tmpl": "BF109",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.03,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.07,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "T34-85",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 80.04,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 73.9,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 30.04,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 185.4,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 110.08,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "heavytankspawner",
+     "tmpl": "T34",
+     "window": [
+      70.0,
+      110.0
+     ]
+    },
+    {
+     "delay": 80.06,
+     "fill": -0.001,
+     "prev_born": 0.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "T34-85",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 55.07,
+     "fill": -0.003,
+     "prev_born": 0.0,
+     "spawner": "APCSpawner",
+     "tmpl": "M3A1",
+     "window": [
+      35.0,
+      55.0
+     ]
+    },
+    {
+     "delay": 42.57,
+     "fill": 0.936,
+     "prev_born": 285.6,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 55.04,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "APCSpawner",
+     "tmpl": "Hanomag",
+     "window": [
+      35.0,
+      55.0
+     ]
+    },
+    {
+     "delay": 110.06,
+     "fill": -0.002,
+     "prev_born": 0.0,
+     "spawner": "heavytankspawner",
+     "tmpl": "Tiger",
+     "window": [
+      70.0,
+      110.0
+     ]
+    },
+    {
+     "delay": 42.54,
+     "fill": 0.937,
+     "prev_born": 73.9,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 337.2,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.27,
+     "fill": 0.936,
+     "prev_born": 200.3,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 377.3,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 458.2,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.57,
+     "fill": 0.936,
+     "prev_born": 198.6,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 422.2,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 211.8,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.3,
+     "fill": 0.935,
+     "prev_born": 406.6,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 544.1,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 332.0,
+     "spawner": "lighttankspawner",
+     "tmpl": "T34-85",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 42.57,
+     "fill": 0.936,
+     "prev_born": 567.2,
+     "spawner": "ArtillerySpawner",
+     "tmpl": "Katyusha",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.29,
+     "fill": 0.935,
+     "prev_born": 563.9,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    },
+    {
+     "delay": 72.56,
+     "fill": 0.936,
+     "prev_born": 355.0,
+     "spawner": "heavytankspawner",
+     "tmpl": "T34",
+     "window": [
+      70.0,
+      110.0
+     ]
+    },
+    {
+     "delay": 36.3,
+     "fill": 0.935,
+     "prev_born": 369.0,
+     "spawner": "APCSpawner",
+     "tmpl": "Hanomag",
+     "window": [
+      35.0,
+      55.0
+     ]
+    },
+    {
+     "delay": 42.56,
+     "fill": 0.936,
+     "prev_born": 578.2,
+     "spawner": "lighttankspawner",
+     "tmpl": "PanzerIV",
+     "window": [
+      40.0,
+      80.0
+     ]
+    },
+    {
+     "delay": 11.29,
+     "fill": 0.936,
+     "prev_born": 649.7,
+     "spawner": "ScoutCarSpawner",
+     "tmpl": "Kubelwagen",
+     "window": [
+      10.0,
+      30.0
+     ]
+    }
+   ],
+   "seconds": 1017.0,
+   "team_switch": [],
+   "tickets": [
+    [
+     200,
+     200
+    ],
+    [
+     0,
+     112
+    ]
+   ],
+   "wreck_life": {
+    "BF109": {
+     "max": 10.01,
+     "min": 10.01,
+     "n": 1
+    },
+    "Hanomag": {
+     "max": 10.03,
+     "min": 10.0,
+     "n": 2
+    },
+    "Katyusha": {
+     "max": 12.1,
+     "min": 10.0,
+     "n": 10
+    },
+    "Kubelwagen": {
+     "max": 10.03,
+     "min": 10.0,
+     "n": 5
+    },
+    "M3A1": {
+     "max": 10.0,
+     "min": 10.0,
+     "n": 1
+    },
+    "PanzerIV": {
+     "max": 10.03,
+     "min": 9.96,
+     "n": 5
+    },
+    "T34": {
+     "max": 10.03,
+     "min": 9.96,
+     "n": 2
+    },
+    "T34-85": {
+     "max": 10.04,
+     "min": 9.95,
+     "n": 3
+    },
+    "Tiger": {
+     "max": 10.04,
+     "min": 10.02,
+     "n": 2
+    }
+   }
+  }
+ ],
+ "sea": {},
+ "sea_lod2": {}
+}

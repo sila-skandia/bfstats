@@ -125,6 +125,19 @@ class NetcodeClientTests(unittest.TestCase):
         self.assertEqual(self.results["diedText"], "X died")
         self.assertEqual(self.results["ticketText"], "Axis tickets: 95")
         self.assertEqual(self.results["capturedText"], "Axis captured West_outpost")
+        self.assertEqual(self.results["ticketCount"], 95)
+
+    def test_ctf_rows_reach_the_page_whole(self):
+        # `ctf-page.js` `onRow` places the flag from the event's kind, actor
+        # and position; a row stripped to the feed's common keys arrived
+        # with none of them and every room client ignored it. The message
+        # log prints nothing for them (the page writes the CTF line itself).
+        self.assertEqual(self.results["ctfRows"], [
+            {"type": "ctf", "kind": "dropped", "flag": 1, "player": 2, "team": 2,
+             "position": [10, 41.5, -20], "text": ""},
+            {"type": "ctf", "kind": "home", "flag": 1, "player": None, "team": 0,
+             "position": [0, 7.6, 0], "text": ""},
+        ])
 
     def test_explicit_leave(self):
         self.assertTrue(self.results["pingFrame"])
@@ -135,6 +148,69 @@ class NetcodeClientTests(unittest.TestCase):
     def test_server_close_surface(self):
         self.assertEqual(self.results["c2State"], "closed")
         self.assertEqual(self.results["c2Code"], "room_full")
+
+
+def wire(value: float) -> float:
+    """`floatToFixed(v, 12, 16)` (W-2) then `PlayerAction::get`'s decode and
+    0.01 snap (W-3), as mouse-input.js has them."""
+    import math
+    x = max(-1.0, min(1.0, value / 16.0))
+    n = math.trunc((x + 1) * 0.5 * 4095)
+    v = ((2 * n) / 4095 - 1) * 16
+    return round(v * 100) / 100
+
+
+class RecordThrottleAndRudderTests(unittest.TestCase):
+    """The aircraft's throttle and rudder are the engine's c_PIThrottle and
+    c_PIYaw, which retail carries as analogue 12-bit channels like the stick
+    (ledger W-1, W-2): the record carries them so, past its 13 engine
+    bytes."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls):
+        cls.results = run_harness()["codec"]
+
+    def test_the_record_grows_by_the_two_channels(self):
+        c = self.results
+        self.assertEqual(17, c["bytes"])
+        self.assertEqual(14, c["minBytes"])
+        self.assertEqual(4 + 17, c["frameBytes"])
+
+    def test_keys_cross_as_full_steps(self):
+        self.assertEqual(1, self.results["keys"]["forwardKeys"])
+        self.assertEqual(-1, self.results["keys"]["rudder"])
+
+    def test_a_joysticks_lever_and_rudder_cross_analogue(self):
+        j = self.results["joystick"]
+        self.assertEqual(wire(0.6), j["forwardKeys"])
+        self.assertEqual(wire(0.37), j["rudder"])
+        self.assertNotIn(j["rudder"], (1, -1))
+
+    def test_a_mouse_rudder_crosses_at_its_rate_and_clips_at_sixteen(self):
+        self.assertEqual(wire(-3.46), self.results["mouseRudder"]["rudder"])
+        self.assertEqual(16, self.results["pastTheWire"]["rudder"])
+        self.assertEqual(0, self.results["rest"]["rudder"])
+        self.assertEqual(0, self.results["rest"]["forwardKeys"])
+
+    def test_the_engine_channels_are_untouched(self):
+        j = self.results["joystick"]
+        self.assertEqual(7, j["seq"])
+        self.assertEqual(wire(0.5), j["strafe"])
+        self.assertEqual(wire(0.25), j["forward"])
+        self.assertEqual(wire(-1.3), j["roll"])
+        self.assertEqual(wire(2.4), j["pitch"])
+
+    def test_a_fourteen_byte_record_still_reads_its_signs(self):
+        old = self.results["legacy"]
+        self.assertEqual(18, old["length"])
+        self.assertEqual(1, old["forwardKeys"])
+        self.assertEqual(-1, old["rudder"])
+        self.assertEqual(wire(0.5), old["strafe"])
+        # Byte 13 keeps the signs for a reader of that record: throttle up
+        # (bit 0), rudder left (bit 3).
+        self.assertEqual(0b1001, self.results["signByte"])
 
 
 if __name__ == "__main__":

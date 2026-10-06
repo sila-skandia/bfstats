@@ -631,8 +631,12 @@ export function createBotVisuals(page) {
     if (rig.weaponNode) rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
     vis.group.visible = true;
     rig.scene.visible = true;   // a body culled out of the last frame's view falls in view
+    // A man the blast that killed him has thrown is still flying: his body is
+    // stepped until he respawns, and its `Knockback` takes the corpse through
+    // the dead flight to the landing it holds (`knockback.js`, KNOCK-1/2).
+    const thrown = { body: soldier?.body ?? null, family: null, flying: !!soldier?.body?.knockback };
     corpses.push({ name: bot.playerId, family: played, scene: group, mixer: rig.mixer,
-                   step: dt => rig.step({}, dt),
+                   step: dt => { followThrow(thrown, group, rig); rig.step({}, dt); },
                    ttl: corpseSeconds(page.soldierBody), anchor: null,
                    dispose: () => {
                      rig.mixer.stopAllAction();
@@ -644,6 +648,42 @@ export function createBotVisuals(page) {
     ensureBotVisual(bot);
     return played;
   };
+
+  /** The still rig's family for an explosion state: its own key, but the two
+   *  dead landings are corpses (`CORPSE_CLIPS`, `EXPLOSION_DEATHS`). */
+  const STILL_EXPLOSION_FAMILY = Object.freeze({
+    landFront: 'explosionLandFront', landBack: 'explosionLandBack',
+  });
+
+  /**
+   * A corpse a blast has thrown, every frame until his body is put back on a
+   * flag: drawn where the body is (it is stepped dead until the respawn, and
+   * the push is still in it), in whichever explosion state its `Knockback`
+   * holds -- the dead flight, a bounce off a wall, then the landing a corpse
+   * holds for the rest of its time (KNOCK-1, KNOCK-2). A push too weak to
+   * throw him moves him in his death clip, as the engine's corpse is moved.
+   * A respawn resets the machine (`SoldierBody.place`), and the corpse stays
+   * where it last lay.
+   */
+  function followThrow(thrown, group, rig) {
+    if (!thrown.flying) return;
+    const body = thrown.body;
+    const kb = body?.knockback;
+    if (!kb?.stamped) { thrown.flying = false; return; }
+    const family = kb.family;
+    if (family && family !== thrown.family) {
+      thrown.family = family;
+      const pair = EXPLOSION_CLIPS[family];
+      if (rig.anim) rig.anim.die(pair.lower, pair.upper);
+      else {
+        const still = STILL_EXPLOSION_FAMILY[family] ?? family;
+        if (rig.families[still]) playFamily(rig, still);
+      }
+    }
+    const p = body.position, q = body.previous;
+    const a = Number.isFinite(page.presentAlpha) ? page.presentAlpha : 1;
+    group.position.set(q.x + (p.x - q.x) * a, q.y + (p.y - q.y) * a, q.z + (p.z - q.z) * a);
+  }
 
   // --- the canopy ---------------------------------------------------------
 
@@ -899,10 +939,14 @@ export function createBotVisuals(page) {
   }
 
   /** The whole-body pair a blast or the parachute holds `bot`'s soldier in
-   *  this tick, `{ lower, upper }` by the engine's state names, or null. */
+   *  this tick, `{ lower, upper }` by the engine's state names, or null: a
+   *  replayed man's recorded states, else the page's own -- his body's
+   *  `Knockback` (`knockback.js`, the flight a blast threw him into, the
+   *  survive landing and the get-up), then his `Parachute`. */
   function heldPairOf(bot) {
     const soldier = page.world?.player(bot.playerId)?.soldier;
-    return soldier?.explosionClips?.(false) ?? soldier?.chute?.clips?.(false) ?? null;
+    return soldier?.explosionClips?.(false) ?? soldier?.body?.knockback?.clips?.()
+      ?? soldier?.chute?.clips?.(false) ?? null;
   }
 
   /** What the rig plays for a held pair, when it can: the lower state's own
