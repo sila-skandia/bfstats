@@ -385,6 +385,9 @@ export class TrackedVehicle extends Vehicle {
   get engineRunning() { return this.engine.running; }
   set engineRunning(on) { this.engine.running = !!on; }
 
+  /** A land drivetrain: see `GroundVehicle.landDrive`. */
+  get landDrive() { return true; }
+
   /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
    * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
    * hands it.

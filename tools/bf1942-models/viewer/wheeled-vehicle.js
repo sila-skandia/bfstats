@@ -326,6 +326,10 @@ export class GroundVehicle extends Vehicle {
    */
   advancePropeller() {}
 
+  /** A land drivetrain, whose Engine's running byte the world stops on
+   *  critical damage (`world-vehicle-tick.js`, PHY-14). */
+  get landDrive() { return true; }
+
   /** `Engine+0x142`: see `TrackedVehicle.engineRunning`. */
   get engineRunning() { return this.engine.running; }
   set engineRunning(on) { this.engine.running = !!on; }
