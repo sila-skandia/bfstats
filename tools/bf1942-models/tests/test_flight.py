@@ -729,6 +729,36 @@ class FlightModelTests(unittest.TestCase):
         # surface: `calculateLift` gives out at 45 degrees.
         self.assertLess(held["worstAlpha"], 20.0)
 
+    # --- the landing gear (LandingGear::handleUpdate, lnxded 0x08241470) ---
+
+    def test_the_gear_follows_height_and_the_engines_revs(self) -> None:
+        # Down under `setGearDownHeight` 25 m with the revs at or under
+        # `setGearDownEngineInput` 0.4; up over `setGearUpHeight` 23 m with
+        # them at or over `setGearUpEngineInput` 0.7 (template +0x1b0 / +0x1b8
+        # / +0x1b4 / +0x1bc, named by `makeScript` 0x08241ba0). Height alone,
+        # the old 25 / 23 m law, raised a parked Corsair's gear on a carrier
+        # deck and dropped it on a low pass.
+        g = self.results["gear"]
+        self.assertEqual(0, g["strip"])
+        # Parked at idle 20 m over the sea (a carrier's deck is no terrain to
+        # the gear): down, every tick.
+        self.assertEqual([0], g["deck"])
+        # The take-off: up as the gear passes 23 m, revs well over 0.7.
+        self.assertIsNotNone(g["upAt"])
+        self.assertGreater(g["upAt"], 22.0)
+        self.assertLess(g["upAt"], 25.0)
+        self.assertGreater(g["upRevs"], 0.7)
+        # Throttle shut at 200 m: up until it comes under 25 m.
+        self.assertEqual(1, g["upHigh"])
+        self.assertIsNotNone(g["downAt"])
+        self.assertLess(g["downAt"], 26.0)
+        self.assertGreater(g["downAt"], 23.0)
+        # At full power it stays up below both heights.
+        self.assertLess(g["dive"]["lowest"], 23.0)
+        self.assertTrue(g["dive"]["stayedUp"])
+        # A replay's recorded revs drive it the same way.
+        self.assertEqual([1, 0], g["replay"])
+
     # --- frame rate --------------------------------------------------------
 
     def test_the_model_runs_whole_engine_ticks_whatever_the_frame(self) -> None:
