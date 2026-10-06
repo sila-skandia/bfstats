@@ -138,9 +138,19 @@ export function vehicleTick(world, player, dt, integrators) {
   // (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920); the gate
   // is forced false rather than returning, so the hull still integrates and
   // coasts, exactly as the page's comment on its own copy of this line says.
-  inputGate(world.occupiedDamageable(player.id), player.gate);
+  const hull = world.occupiedDamageable(player.id);
+  inputGate(hull, player.gate);
   if (occ.turret) occ.turret.inputScale = player.gate.rotationalScale;
   const activeRoot = occ.isActiveRoot();
+  // `Engine+0x142` past the seat (`vehicle-instance.js` `#syncEngine` has
+  // the seat half): `Armor::status` sends 0x14 on the crossing into critical
+  // and 0x15 on destruction, with no player, so `PlayerControlObject::
+  // handleMessage` hands them to every child, and `Engine::handleMessage`
+  // (lnxded 0x0823e730) stops the engine and latches it against a restart
+  // (`+0x143`); 0x13, the recovery, clears the latch and restarts it while
+  // the PCO is occupied (ledger PHY-14, HP-13). Vectored airframes only:
+  // theirs is the drive that reads the byte.
+  if (vehicle?.vectored && activeRoot) vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   const inControl = activeRoot && !player.gate.blocked;
   // Exactly one entry for this tick: the buffer's oldest, else the page's
   // pending freshest, else the engine's zeroed idle word.
