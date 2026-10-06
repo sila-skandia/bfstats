@@ -36,7 +36,7 @@ rows and in `symbols.json`.
 
 - `viewer/fire-state.js` `FireState` keeps the stored total (`total`, read as
   `spread`) a 1/30 s tick at a time (`stepCone`), and runs a bot's extra update
-  while `holdAI` is armed. The world steps it while the seat is held
+  while `holdAI` is armed and the trigger the world reports is down. The world steps it while the seat is held
   (`world-vehicle-tick.js`, unchanged), and `registerShot` raises the bloom
   without touching the total.
 - `viewer/seat-cone.js` builds the `GunFire.coneOf(group, barrel)` hook. It
@@ -188,7 +188,8 @@ None to re-extract. The model and level bakes already carry each FireArms'
   This belongs to the bots package.
 - **Bots, DEV-13's window.** The viewer's bot plan does not tell the guns when
   its trigger statement runs. `holdAI` stands in, holding the extra update
-  from each of a bot's rounds to the gap before his next, plus a tick.
+  from each of a bot's rounds to the gap before his next, plus a tick, and
+  ending it the tick the world reports the trigger released.
 - **A human's draw index.** The engine seeds a human's draw from his input
   index (AI-145's path), so a server and its client agree on every round. The
   viewer draws from `guns.rand`, which is the same distribution but not the
