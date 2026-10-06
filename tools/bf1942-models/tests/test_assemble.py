@@ -1413,6 +1413,109 @@ GeometryTemplate.create StandardMesh Lada_1P
         self.assertEqual("LadaCockpitInternal", swap["selected"])
         self.assertEqual(["LadaCockpitExternal1"], swap["replaces"])
 
+    LADA_PAINTS_CON = """
+ObjectTemplate.create PlayerControlObject Lada
+ObjectTemplate.addTemplate lodLadaCockpit
+
+ObjectTemplate.create LodObject lodLadaCockpit
+ObjectTemplate.addTemplate LadaCockpitExternal
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate LadaCockpitInternal
+ObjectTemplate.lodSelector LadaCockpitSelector
+
+ObjectTemplate.create SimpleObject LadaCockpitExternal1
+ObjectTemplate.geometry Lada_Hull1_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal2
+ObjectTemplate.geometry Lada_Hull2_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal3
+ObjectTemplate.geometry Lada_Hull3_M1
+
+ObjectTemplate.create SimpleObject LadaCockpitInternal
+ObjectTemplate.geometry Lada_1P
+
+LodSelectorTemplate.create DistCompareSelector LadaCockpitSelector
+LodSelectorTemplate.addLodDistance 3.05
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Lada_Hull1_M1
+GeometryTemplate.create StandardMesh Lada_Hull2_M1
+GeometryTemplate.create StandardMesh Lada_Hull3_M1
+GeometryTemplate.create StandardMesh Lada_1P
+"""
+
+    def _lada_hulls(self, assembler: Assembler, library: ObjectLibrary, placements: int) -> list:
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        roots = [assembler.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0)) for _ in range(placements)]
+        document = glb_document(builder.build(roots, extras={}))
+        hulls = []
+        for root in roots:
+            names = []
+            stack = [root]
+            while stack:
+                index = stack.pop()
+                node = document["nodes"][index]
+                if node["name"].startswith("LadaCockpitExternal"):
+                    names.append(node["name"])
+                stack.extend(node.get("children", []))
+            hulls.append(names)
+        return hulls
+
+    def test_a_level_bake_rolls_each_placements_paint(self) -> None:
+        # KIT-1/KIT-2: `addBundleChilds` bumps one round-robin counter (it
+        # starts at 1) for every `setRandomGeometries` child and builds
+        # `<name><counter>`, so the first object rolls 2. A level bake sets the
+        # counter and its four Ladas come green, beige, blue, green in
+        # placement order; a model export keeps variant 1 (blue).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual(
+            [["LadaCockpitExternal2"], ["LadaCockpitExternal3"],
+             ["LadaCockpitExternal1"], ["LadaCockpitExternal2"]],
+            self._lada_hulls(level, library, 4))
+        model = Assembler(pool, pool, pool, library, include_collision=False)
+        self.assertEqual([["LadaCockpitExternal1"], ["LadaCockpitExternal1"]],
+                         self._lada_hulls(model, library, 2))
+
+    def test_a_roll_onto_an_undeclared_paint_builds_no_hull(self) -> None:
+        # KIT-3: a variant the data never declared is a template not found,
+        # and the engine adds no child at all.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con",
+                        self.LADA_PAINTS_CON.replace(
+                            "ObjectTemplate.create SimpleObject LadaCockpitExternal2\n"
+                            "ObjectTemplate.geometry Lada_Hull2_M1\n", ""))
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual([[], ["LadaCockpitExternal3"]],
+                         self._lada_hulls(level, library, 2))
+
+    def test_the_cockpit_swap_names_every_paint(self) -> None:
+        # The cockpit glb is one export, the hull it grafts onto any of three:
+        # the swap lists every declared variant, and the viewer hides the one
+        # it finds (`vehicle-base.js` `graftCockpit` drops the rest).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        cockpit = Assembler(pool, pool, pool, library, first_person=True,
+                            include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(cockpit, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        root = cockpit.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0, first_person=True))
+        swap = next(node["extras"]["lodAlternative"] for node in
+                    glb_document(builder.build([root], extras={}))["nodes"]
+                    if node["name"] == "lodLadaCockpit")
+        self.assertEqual(["LadaCockpitExternal1", "LadaCockpitExternal2",
+                          "LadaCockpitExternal3"], swap["replaces"])
+
     def test_a_first_person_name_keeps_deciding_where_there_is_one(self) -> None:
         # Vanilla's M3A1 names both alternatives `1P_M3A1_Driver_M1`; the
         # name rule takes the first, and its cockpit glb stays as it was.
