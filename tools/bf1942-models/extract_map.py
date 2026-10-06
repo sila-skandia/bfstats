@@ -2468,19 +2468,26 @@ class LevelFirst:
     rule before LOAD-2 was read). Without it every level script goes first.
     The library and the `TemplateIndex` read the pool in this order; the
     pool's paths keep their own rule (`ArchivePool.add_level_objects`).
+
+    `ai_level` is `Game::getIsAiLevel`: the `objects/` half keeps its `/ai/`
+    scripts (weapon AI, cover values) only on an AI level, which the
+    viewer's game with bots is (LOAD-8, `extract_models.load_order`).
     """
 
     # `build_library` takes `names()` as they are, not re-sorted.
     in_load_order = True
 
-    def __init__(self, pool, run_order: list[str] | None = None) -> None:
+    def __init__(self, pool, run_order: list[str] | None = None,
+                 ai_level: bool = True) -> None:
         self._pool = pool
         self._run_order = run_order
+        self._ai_level = ai_level
 
     def names(self) -> list[str]:
         names = self._pool.names()
         own = [n for n in names if n.lower().startswith("bf1942/levels/")]
-        rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")])
+        rest = load_order([n for n in names if not n.lower().startswith("bf1942/levels/")],
+                          ai_level=self._ai_level)
         # The run order the caller computed, or the one the pool recorded
         # when it took the level's scripts (`add_level_objects(runs=)`).
         run_order = self._run_order
