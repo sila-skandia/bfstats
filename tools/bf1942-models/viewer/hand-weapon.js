@@ -38,7 +38,7 @@ import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
  * `clickQueued`, `currentDir`, `damageVisuals`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
- * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`,
+ * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
  * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierDead`, `spawnLayout`, `sun`,
@@ -548,15 +548,9 @@ export function createHandWeapon(page) {
     get soldier() { return page.soldier; }, get triggerHeld() { return page.triggerHeld; },
     get updateViewmodelAnimation() { return updateViewmodelAnimation; },
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
-    get world() { return page.world; },
+    get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
   });
   const { footFire, isZoomed, startReload } = fire;
-  // Summed from the page's look (`addFootLook`), drained by `footFire`.
-  Object.defineProperties(soldierKit, {
-    footLookX: { get: () => fire.footLookX, enumerable: true },
-    footLookY: { get: () => fire.footLookY, enumerable: true },
-  });
-  soldierKit.addFootLook = fire.addFootLook;
 
   /** The trigger lets go without the viewmodel being packed away.
    *

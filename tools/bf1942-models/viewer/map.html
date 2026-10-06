@@ -1565,6 +1565,7 @@ const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
   from(() => footBodies, `ensureFootBody`),
   from(() => level, `currentDir isCollision vehicleDamage warmSubtree warmups world`),
+  from(() => localLook, `mouseInput`),
   from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive vehicleAudio`),
@@ -2349,14 +2350,12 @@ function simulate(dt, input, look) {
   room.sendTickInputs(step.ticks, input, look, dt);
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
-  // spend, the combat-area frame for the warning group and the `?data` hook,
-  // and the on-foot look this tick actually applied, for the deviation
-  // model's |MouseLookX/Y| drain (footFire reads the accumulated pair).
+  // spend, and the combat-area frame for the warning group and the `?data`
+  // hook.
   const local = step.players[LOCAL_PLAYER] ?? null;
   vehicleHits.readGate(local?.gate);
   combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
-  if (local?.look) soldierKit.addFootLook(local.look);
   if (!replayController?.active()) announceGameplay();
   return step;
 }
