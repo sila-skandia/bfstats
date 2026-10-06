@@ -158,6 +158,9 @@ SPRITES: list[str] = [
       for side in ("allied", "axis") for metal in ("gold", "silver", "bronze")
       for size, px in (("", "8x8"), ("xl_", "32x32"))],
     "Texture/Debriefing/medals/empty_8x8",
+    # Each side's soldier `setMinimapIcon` (`flag_<nation>.tga`): the mark
+    # the map draws a CTF flag with, and its carrier (ledger CTF-10).
+    *[f"Texture/flag_{n}" for n in NATIONS],
     "Texture/icon_ticketbar",
     *[f"Texture/flag_ticket_{n}" for n in NATIONS],
     # The text-message plates. The 3-line one is the combat-area warning's

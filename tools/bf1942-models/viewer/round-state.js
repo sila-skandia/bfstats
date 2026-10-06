@@ -522,15 +522,16 @@ export function createRoundState({
    */
   function flagScore({ player = null, team = 0, msg = SCORE_MSG.flagCapture } = {}) {
     if (player == null || !playing()) return;
+    // `pay` counts a key the side's TeamScore shares (`attacks`, `defences`)
+    // on the side as well; the flag captures are the side's `captures`
+    // (`TeamScore+8`, CTF-6) under the player's own `flags`.
     if (msg === SCORE_MSG.flagCapture) {
       pay(player, 'flags', 'capture', 1, team);
       if (round.teams[team]) round.teams[team].captures += 1;
     } else if (msg === SCORE_MSG.attack) {
       pay(player, 'attacks', 'attack', 1, team);
-      if (round.teams[team]) round.teams[team].attacks += 1;
     } else if (msg === SCORE_MSG.defence) {
       pay(player, 'defences', 'defence', 1, team);
-      if (round.teams[team]) round.teams[team].defences += 1;
     }
     checkScoreLimit();
   }

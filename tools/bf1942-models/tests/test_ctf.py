@@ -140,6 +140,8 @@ class CtfTests(unittest.TestCase):
         self.assertEqual({"1": 0, "2": 1}, e["roundsWon"])
         self.assertEqual({"1": 1, "2": 3}, e["captures"])
         self.assertEqual((3, 1), (e["smith"], e["hans"]))
+        # One Attack on the side per theft, counted once (CTF-3, CTF-6).
+        self.assertEqual({"1": 1, "2": 3}, e["attacks"])
         self.assertEqual(["stole:1:11", "captured:1:11", "stole:0:12", "captured:0:12",
                           "stole:1:11", "captured:1:11", "stole:1:11", "captured:1:11",
                           "stole:1:11"], r["timeline"])
