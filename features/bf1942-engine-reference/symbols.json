@@ -2238,6 +2238,15 @@
    "note": "bf42plus section: Game Functions"
   },
   {
+   "address": "0x00508de0",
+   "name": "Object__getRoot",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Walks +0x50 (parent) up to the object whose +0x04 flags carry 0x2000000, caching the answer at +0xec. The patch's velocity sampler (0x008026d0) takes its owner's root through it. Ledger SND-18."
+  },
+  {
    "address": "0x00509470",
    "name": "ParticleCurve_seed",
    "kind": "function",
@@ -2319,6 +2328,15 @@
    "note": "client. [R5] reached via '\"...ResponsePhysicsManager.Basic\"' string 0x008f628c"
   },
   {
+   "address": "0x00536e10",
+   "name": "SimpleObject__initSound",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client object sound setup: builds the sound (0x0057b940), adds each script (vt+0x04), owner (+0x20), then +0x10 triggers every patch: every object's patches start once at creation. lnxded SimpleObject::initSound 0x081db810 is empty. Ledger SND-19."
+  },
+  {
    "address": "0x005384d0",
    "name": "ParticleTemplate::makeScript",
    "kind": "function",
@@ -2371,6 +2389,15 @@
    "confidence": "verified",
    "source": "research-2026-10-06-crosshair-gap",
    "note": "fld [ecx+0x1a8]; ret: the total deviation, degrees. Called directly (devirtualised) from the soldier HUD feed 0x006e978d/0x006e97a8, the vehicle one 0x006d71be/0x006d71d9 and 0x00464790. lnxded getMenuCrossHairRadius/Size 0x0828d470/0x0828d480 both return the same +0x188 field. Ledger XHIT-15."
+  },
+  {
+   "address": "0x00539c80",
+   "name": "FireArms::Reload",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded FireArms::Reload 0x08289d80 (one caller, 0x0053efd5): magSize +0x394 non-zero, magType +0x39c not 1, byte +0x545 clear or magazine empty; sets timeToReloadFinished (0x00539950) to reloadtime +0x3a8; sound(+0x110)->list(0)->trigger(1) at 0x00539cdf, the Reload slot. Ledger SND-17."
   },
   {
    "address": "0x00539fb0",
@@ -2985,6 +3012,15 @@
    "note": "Thrust. Found via the PhysicsEngine vtable at 0x008fdf50. rho = 1 - clamp(pos.y/getAirDensityZeroAtHeight(), 0, 1); e = throttle - rho*(vel . fwd)/EngineTemplate.setNoPropellerEffectAtSpeed; K = 0.1*|throttle| + e*|e| (a SIGNED SQUARE, not the linear fade flight-model.md 6 assumes); force = fwd * K * getCurrentRatio(), applied at the ENGINE NODE'S OWN POSITION (not the CoM) via rootNode vtable+0x68. setTorque is absent from this expression. Medium gate: an engine runs only when its EngineTemplate flag bit 3 matches the medium (submerged vs air), which is what separates c_ETShip from c_ETPlane. Tail is prop visuals: spin rate = throttle*400 below |throttle|<0.08, else throttle*20. Linux twin: 0x0824cbb0."
   },
   {
+   "address": "0x0057cc40",
+   "name": "dice::ref2::world::RotationalBundle::updateSound",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded 0x081d8630, called from RotationalBundle::handleUpdate's slot +0xd8 at 0x0057d455. Skips a LandingGear (class vs ds:0x8dcd70); rate = max over axes |+0x128..| + |tmpl+0x23c..|, 0 while +0x159; >0: sound +0x10 trigger all, +0x18(0, rate) Default, +0x24 attach; else +0x14 release all. Ledger SND-20."
+  },
+  {
    "address": "0x0057d470",
    "name": "RotationalBundle::setState() (client)",
    "kind": "function",
@@ -3028,6 +3064,24 @@
    "confidence": "verified",
    "source": "ghidra-session",
    "note": "calculateNeutralLift(const Vec3& refFlow, float minusPitchOffset, float coeff). Builds identity Mat4, rotates it by the passed angle (= -WingTemplate.setPitchOffset), composes with the wing's parent transform, extracts row 1, and calls calculateLift with it. So it is the lift the surface WOULD make undeflected at its authored incidence; setWingToRegulatorRatio weights it into the regulator error. This is the only place setPitchOffset is read in the update path - whether it also biases the surface's rest orientation at setup is NOT established. Linux twin: 0x08250690."
+  },
+  {
+   "address": "0x005803d0",
+   "name": "dice::ref2::world::Wing::handleUpdate",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "working",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Beside Wing::calculateNeutralLift (0x00580280), the handleUpdate of vtable 0x008feb78; it never calls slot +0xd8 (updateSound) nor chains to RotationalBundle::handleUpdate 0x0057d010, as lnxded Wing::handleUpdate 0x08250950 does not. Ledger SND-22."
+  },
+  {
+   "address": "0x00580680",
+   "name": "dice::ref2::world::LandingGear::handleUpdate",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Client twin of lnxded 0x08241470. Sound block 0x005807b3..0x00580843: patch 0 (up) / 1 (down) via list +0x34; up and moving (0x004404f0 angles changed) trigger 0 release 1, up still release 0, down moving trigger 1 release 0, down still release 1. State byte +0x15c. Ledger SND-21."
   },
   {
    "address": "0x00580eb0",
@@ -6108,6 +6162,15 @@
    "note": "Builds the `.ssc` command table: 23 keywords assigned indices 0..22 in order — load, stream, stereo, loop, volume, pan, minDistance, priority, trigger, randomStartPitch, beginEffect, endEffect, controlSource, controlDestination, envelope, param, paramController, newPatch, randomPlay, relativePosition, dopplerOff, stop, addGroup. `#templateLevel`, `#include`, `#beginMap`, `#map`, `beginSkip` and the comment markers are not in it — they are handled by the pipeline filters ahead of it."
   },
   {
+   "address": "0x007ff740",
+   "name": "SoundScript__registerControlSources",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "Numbers the controlSource words: Default 0, Extern 1, Speed 2, Acceleration 3, Distance 4, Altitude 5, Time 6, TimeRelease 7 (stored at +0x28 of each map entry). Ledger SND-18."
+  },
+  {
    "address": "0x007ffd00",
    "name": "SoundPatchDesc__setRandomPlay",
    "kind": "function",
@@ -6189,6 +6252,15 @@
    "note": "Patch vtable slot +0x0c. Stops looping samples unless stop FinishSample; one-shots play out. Ledger SND-14."
   },
   {
+   "address": "0x008026d0",
+   "name": "SoundPatch__sampleOwnerMotion",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-07-dc-sounds-review",
+   "note": "Called first by every update of a patch that still sounds (0x00802f70, the call at 0x00802fad). Owner +0xbc (set by patch +0x28 0x00802110): queryInterface 0xc378, its root (0x00508de0), that root's physics node +0x60 vt+0x38 velocity into +0xb0 (Speed); +0xa0 (Acceleration) is the change over dt. No owner: both zero. Ledger SND-18."
+  },
+  {
    "address": "0x00802a40",
    "name": "SoundPatch__updateSample",
    "kind": "function",
@@ -6223,6 +6295,15 @@
    "confidence": "verified",
    "source": "ghidra-headless-2026-09-30-dc-sound",
    "note": "Patch vtable 0x00947bb8 slot +0x08. Ignored while latched (+0x59); else +0x58 = 1, clears per-sample started/played flags, latches when any sample loops (0x008024c0); randomPlay (+0x5c) pushes rand() % loads onto +0x78. Ledger SND-14, SND-15."
+  },
+  {
+   "address": "0x00803870",
+   "name": "SoundPatch__controlValue",
+   "kind": "function",
+   "subsystem": "sound",
+   "confidence": "verified",
+   "source": "research-2026-10-06-dc-sounds",
+   "note": "A control source's value (jump table 0x008038e8): 0 the object's control slot 0, 1 slot k, 2 |velocity|, 3 |acceleration|, 4 distance, 5 altitude, 6 Time, 7 TimeRelease; an empty control array reads 0.0. Filled per update by 0x00802950. Ledger SND-18."
   },
   {
    "address": "0x00804af0",
