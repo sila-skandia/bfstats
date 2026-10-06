@@ -1,0 +1,24 @@
+{
+  "name": "dc-el_alamein_day2-coop-lod0-rec",
+  "description": "dc-el_alamein_day2-coop-rec (helicopters on both sides, BM-21 and MLRS, open bases) with the bots' level of detail switched off: `aiSettings.lodEnable 0` (AIDefault.con turns it on; with it off, `AILODManager::updateBots` 0x08475f00 sets each bot to LOD 0 in turn instead of from its distance to a human). With no human every bot is otherwise at AI LOD 2, where the AI moves a land hull and fires fake (AI-136, AI-134). This is the bots-only round whose land hulls are driven by the physics. Needs `lab.py setup --mods-from-client DesertCombat`.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "el_alamein_day2",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30",
+    "aiSettings.lodEnable 0"
+  ],
+  "human": "No client needed: the server records itself. Check the recorder's `lod` records read 0 after the round starts; then let it play and `lab.py stop`."
+}

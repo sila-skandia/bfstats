@@ -118,8 +118,19 @@ export function installWorldHooks(page) {
       lossPerDeath: round.lossPerDeath,
       table: { ...round.table },
       counts: [...round.counts].map(([id, row]) => ({ id, ...row })),
+      status: round.status, winner: round.winner, victoryType: round.victoryType,
+      endReason: round.endReason, restartIn: round.restartIn, roundsWon: { ...round.roundsWon },
+      teams: { 1: { ...round.teams[1] }, 2: { ...round.teams[2] } }, restarts: round.restarts,
+      scoreLimit: round.scoreLimit,
     };
   };
+  // A CTF layer's flags (`ctf-page.js`) and the end of a round
+  // (`round-end.js`): what each holds and shows.
+  window.__ctf = () => page.ctfPage?.state() ?? null;
+  window.__roundEnd = () => page.roundEnd?.state() ?? null;
+  // The world, for a check that must stand a bot somewhere exact
+  // (`world.player(id).soldier.spawn`).
+  window.__world = () => page.world ?? null;
   // The score board: open/close it, and read back what it lists.
   window.__scoreboard = {
     open: (fromSpawn = false) => page.setScoreboard(true, fromSpawn),
@@ -233,15 +244,17 @@ export function installWorldHooks(page) {
   // of the MaterialManager tables (DMG-1). Only the geometry is passed in.
   // Defaults are a hand grenade's — material2 205, radius 10,
   // `YModOnExplosion` 1.0.
+  // `force` is the round's `forceOnExplosion`, the push (`knockback.js`);
+  // omitted, the engine's 150.
   window.__blast = (point, {
-    radius = 10, material2 = 205, yMod = 1, firer = -1,
+    radius = 10, material2 = 205, yMod = 1, firer = -1, force = null,
   } = {}) => {
     if (!Array.isArray(point) || point.length !== 3) return null;
     const before = page.splashTargets().filter(t => t.soldier)
       .map(t => t.armor.hitPoints);
     page.applyVehicleHit({
       splashPoint: point, splashRadius: radius,
-      splashMaterial2: material2, splashYMod: yMod, firer,
+      splashMaterial2: material2, splashYMod: yMod, splashForce: force, firer,
     });
     const after = window.__soldiers(point);
     return after.map((row, i) => ({ ...row, lost: before[i] - row.hp }));

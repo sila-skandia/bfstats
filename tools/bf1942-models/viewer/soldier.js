@@ -782,6 +782,9 @@ export class Soldier {
         }
         // Bounded like `parachuteEvents`: a caller that never drains it.
         if (this.obstacleTouches.length > 64) this.obstacleTouches.splice(0, this.obstacleTouches.length - 64);
+      } else {
+        // The climb's tick: a blast's push does not outlive it (KNOCK-6).
+        this.body.climbTick?.(this.clock.dt, this._tickInput);
       }
       // `Armor::update`'s water-damage timer, on the same tick the body just
       // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
@@ -1091,8 +1094,13 @@ export class Soldier {
    * (`0x08273af4`) and `enableItem` refuses (`0x082784b2`). So the page must not
    * special-case the trigger — it must take the weapon out of his hands, which
    * is what the owner means by "locked down".
+   *
+   * The gate is the lower state's flag, not the swim's: every explosion state
+   * declares it too (`knockback.js` `HELD_HIDES_WEAPON`,
+   * `AnimationStatesExplosionFly.con`), so a man a blast threw has nothing in
+   * his hands from the throw until his legs are his own again.
    */
-  get itemsLocked() { return this.swim.itemsLocked; }
+  get itemsLocked() { return this.swim.itemsLocked || !!this.body.knockback?.hidesWeapon; }
 
   /**
    * View bob, and the footstep clock beside it. Two independent clocks that

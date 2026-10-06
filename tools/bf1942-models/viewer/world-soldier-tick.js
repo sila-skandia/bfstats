@@ -38,7 +38,11 @@ export function soldierTick(world, player, dt) {
     player.lookApplied.yaw += yaw;
     player.lookApplied.pitch += pitch;
   }
-  const input = entry.input;
+  // A dead man's body is stepped until he is put back on a flag, and it knows
+  // it is dead (`+0x245`): a bot's input never says so, his Armor does. The
+  // blast that kills him throws him by the dead arm (`knockback.js`, KNOCK-1).
+  const input = player.armor?.destroyed && !entry.input?.dead
+    ? { ...entry.input, dead: true } : entry.input;
   soldier.collider = world.collider;
   soldier.step(dt, input);
   // Fall damage -- HP-14, the whole formula in fall-damage.js -- applied
