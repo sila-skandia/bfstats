@@ -218,6 +218,23 @@ from a dispenser pitched 20 degrees down.
   DC's bake gains exactly that one bundle (216 -> 217, nothing else moves),
   DC Final's likewise (248 -> 249), vanilla's is identical.
 
+## Assets
+
+Nothing in §1, §3 and §4 needs a re-extract: the rockets' `parts`, `mass`,
+`drag` and `hasPointPhysics` were already baked. The rest:
+
+- **The damage layer, every tree** (`hasOnTimeEffect` for §5, a tracer's
+  `gravityModifier` for §2): `patch_scene.py --layer damage --mod <M> --all`
+  for `bf1942`, `XPack1`, `XPack2`, `DesertCombat` and `DC_Final` (checked on
+  a scratch copy of DC's El Alamein), then `publish-mesh-delta.py maps --hash`.
+- **The effects library, DC and DC Final** (§6):
+  `extract_effects.py --mod DesertCombat --out viewer/maps/mods/desertcombat/_shared`
+  and the same for `DC_Final` into `viewer/maps/mods/dc_final/_shared`, then
+  publish.
+- Optional: the glb words (`fireArms.tracer.gravity`, the damage block's
+  `hasOnTimeEffect`) ride the next model and level bakes; the damage table
+  already carries both.
+
 ## How it is checked
 
 `tools/bf1942-models/tests/test_rocket_flight.py` runs
