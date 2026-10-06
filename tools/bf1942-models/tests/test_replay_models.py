@@ -408,18 +408,53 @@ class ReplayUxTests(unittest.TestCase):
         self.assertEqual(spawns["marks"], [{"glyph": "spawn", "cls": "spawn mine"},
                                            {"glyph": "spawn", "cls": "spawn"}])
         self.assertEqual(spawns["nextOwn"], "spawn")
-        # While he waits the orbit is over where he will appear, framed as it
-        # will frame him there, so the spawn itself moves nothing; his body
-        # while it lies; then his next spawn's place.
+        # While he waits for his first spawn the orbit is over where he will
+        # appear, framed as it will frame him there, so the spawn itself
+        # moves nothing. Dead, it is the death cam over his body, and still
+        # there once the body is taken away, until he is back (2026-10-06:
+        # his next spawn's place was "a random spot").
         cam = spawns["camera"]
         self.assertEqual(cam["waiting"], {"kind": "spawn", "nid": 600, "point": [120, 1.2, -90]})
         self.assertEqual(cam["spawned"], {"kind": "soldier", "nid": 600, "point": [120, 1.2, -90]})
-        self.assertEqual(cam["body"]["kind"], "body")
-        self.assertEqual(cam["gone"], {"kind": "spawn", "nid": 610, "point": [1500, 1.2, -1500]})
+        self.assertEqual(cam["body"], {"kind": "death", "nid": 600, "point": [120, 0.4, -90]})
+        self.assertEqual(cam["gone"], {"kind": "death", "nid": 600, "point": [120, 0.4, -90]})
         # First person on a spectator camera the game has not placed (the
         # world's origin) is the orbit over his spawn; placed, it is his view.
         self.assertEqual(cam["povUnplaced"], {"hides": None, "fromSpawn": 6})
         self.assertEqual(cam["povPlaced"], [100, 60, -100])
+
+    def test_the_death_cam_and_the_killer(self) -> None:
+        # The 2026-10-06 request: a followed player's death snapped the
+        # camera to a random spot; go to his killer, and where there is none
+        # put the death cam over where he died, as solo play does. Wheeled in
+        # all the way on him, the orbit goes through his eyes.
+        d = self.results["deathCam"]
+        self.assertEqual(d["death"], {"t": 20, "killer": 1})
+        self.assertEqual(d["alive"], [None, None, None])
+        # Over his body as it lies and once it is gone; him again once back.
+        self.assertEqual(d["aim"]["lying"], {"kind": "death", "nid": 600, "point": [100, 0.4, -100]})
+        self.assertEqual(d["aim"]["gone"], d["aim"]["lying"])
+        self.assertEqual(d["aim"]["back"], {"kind": "soldier", "nid": 610, "point": [1500, 1.2, -1500]})
+        # The page's foot death cam: 4.2 m back and 1.8 m over the body, on
+        # the far side from his killer (who stood at -140), whatever the orbit
+        # was before; first person while he is dead is the same shot.
+        self.assertEqual(d["shot"], [100, 2.2, -95.8])
+        self.assertEqual(d["framed"], {"yaw": 0, "pitch": 0.405, "zoom": 1})
+        self.assertEqual(d["deadPov"], {"hides": None, "at": [100, 2.2, -95.8]})
+        # Back on his feet: the orbit's own tilt and zoom, behind him.
+        self.assertEqual(d["back"], {"orbit": [1500, 6.95, -1489.47], "pitch": 0.5, "zoom": 2})
+        # His killer once the beat has played through, in one frame or a long
+        # one; never a frame later, on a step back, on a seek, or for a death
+        # with no killer.
+        self.assertEqual(d["killer"], [1, 1, None, None, None, None])
+        # Killed in a hull: straight down on it from 30 m.
+        self.assertEqual(d["wreck"], {"at": [300, 31.56, -298.48], "base": 30, "pitch": 1.52, "kind": "death"})
+        # The wheel: in to the closest the orbit goes, then through his eyes,
+        # and out again; on a death there are no eyes to go through.
+        self.assertEqual(d["closest"], ["orbit", 0.25])
+        self.assertEqual(d["wheeled"], {"mode": "pov", "hides": 0})
+        self.assertEqual(d["wheeledOut"], "orbit")
+        self.assertEqual(d["wheelDead"], "orbit")
 
     def test_the_page_message_log_follows_the_recording(self) -> None:
         feed = self.results["uxFeed"]

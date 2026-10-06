@@ -813,6 +813,113 @@ const read = scene => {
   };
 }
 
+// --- the death cam and the killer ---------------------------------------------
+//
+// The 2026-10-06 request: following a player who dies snapped the camera to
+// "a random spot" (his next soldier's first sample, once his body was taken
+// away); jump to his killer instead, and where there is none put the death
+// cam over where he died, as the page's own death cam does in solo play. The
+// recording player (pid 0) stands at (100, 100), BF1942's frame, and is
+// killed at 20 by pid 1 standing 40 m along +Z (the view's -Z); his body is
+// taken away at 26 and he is back at 40, far off. Pid 2 dies by his own hand
+// in a Sherman at 30 and is back at 45. Wheeled in all the way, the orbit
+// goes through his eyes.
+{
+  const { ReplayCamera, deathAt, killerToFollow } = await imp('replay-camera.js');
+  const line = o => JSON.stringify(o);
+  const soldier = (t, id, team, [x, z]) => [
+    line({ k: 'o', t, id, gid: id, tmpl: team === 1 ? 'JapSoldier' : 'USMarineSoldier', tid: 100 + team, team }),
+    line({ k: 's', t, o: [[id, x, 1, z, 0, 0, 0, 1]] }),
+  ];
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'roster', t: 0, p: [[0, 2, 0, 'rec', 1], [1, 1, 1, 'killer', 0], [2, 1, 1, 'lone', 0]] }),
+    line({ k: 'o', t: 0, id: 18, gid: 18, tmpl: 'MultiPlayerFreeCamera', tid: 102, team: 0 }),
+    line({ k: 's', t: 0, o: [[18, 0, 0, 0, 0, 0, 0, 1]] }),
+    ...soldier(1, 600, 2, [100, 100]),
+    ...soldier(1, 700, 1, [100, 140]),
+    line({ k: 'o', t: 1, id: 900, gid: 900, tmpl: 'Sherman', tid: 200, team: 1 }),
+    line({ k: 's', t: 1, o: [[900, 300, 1, 300, 0, 0, 0, 1]] }),
+    line({ k: 'p', t: 1, p: [[0, 2, 600, -1, 0], [1, 1, 700, -1, 0], [2, 1, 900, 900, 0]] }),
+    line({ k: 's', t: 19, o: [[600, 100, 1, 100, 0, 0, 0, 1], [700, 100, 1, 140, 0, 0, 0, 1], [900, 300, 1, 300, 0, 0, 0, 1]] }),
+    line({ k: 'e', t: 20, e: 'score', kind: 3, pid: 1, victim: 0, weaponName: 'Type99' }),
+    line({ k: 'e', t: 20, e: 'score', kind: 5, pid: 0 }),
+    line({ k: 'p', t: 20.2, p: [[0, 2, 18, -1, 0]] }),
+    line({ k: 'e', t: 26, e: 'destroyObject', netId: 600 }),
+    line({ k: 'e', t: 30, e: 'score', kind: 4, pid: 2 }),
+    ...soldier(40, 610, 2, [1500, 1500]),
+    line({ k: 'p', t: 40, p: [[0, 2, 610, -1, 0]] }),
+    ...soldier(45, 620, 1, [400, 400]),
+    line({ k: 'p', t: 45, p: [[2, 1, 620, -1, 0]] }),
+    line({ k: 'end', t: 60 }),
+  ].join('\n'));
+  const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
+  const watcher = { rec, followPid: 0, time: 15, hulls: new Map(), ctx: { camera: cam, groundHeight: () => 0, waterLevel: () => -100 } };
+  const camera = new ReplayCamera(watcher);
+  watcher.camera = camera;
+  const r2 = v => v.toArray().map(x => +x.toFixed(2) + 0);
+  const settle = t => {
+    for (let i = 0; i < 240; i++) camera.update(1 / 60, t);
+    return r2(cam.position);
+  };
+  const aim = t => {
+    const g = camera.targetAt(t);
+    return g && { kind: g.kind, nid: g.life.nid, point: r2(g.point) };
+  };
+  // The orbit as he left it, to come back to after the death.
+  camera.zoom = 2;
+  camera.pitch = 0.5;
+  settle(15);
+  const death = deathAt(rec, 0, 21);
+  const aims = { lying: aim(21), gone: aim(30), back: aim(41) };
+  const shot = settle(21);
+  const framed = { yaw: +camera.yaw.toFixed(3), pitch: +camera.pitch.toFixed(3), zoom: camera.zoom };
+  // First person while he is dead is the death cam too.
+  camera.setMode('pov');
+  camera.update(1 / 60, 21);
+  const deadPov = { hides: camera.hidePid, at: r2(cam.position) };
+  camera.setMode('orbit');
+  // At the closest the orbit goes, the wheel has no eyes to go through.
+  camera.zoom = 0.25;
+  camera.update(1 / 60, 21);
+  camera.wheel(-1);
+  const wheelDead = camera.mode;
+  camera.zoom = 1;
+  const back = { orbit: settle(41), pitch: camera.pitch, zoom: camera.zoom };
+  // Wheeled in on him alive: the closest the orbit goes, then his eyes.
+  camera.wheel(-100);
+  camera.update(1 / 60, 41);
+  const closest = [camera.mode, camera.zoom];
+  camera.wheel(-1);
+  camera.update(1 / 60, 41);
+  const wheeled = { mode: camera.mode, hides: camera.hidePid };
+  camera.wheel(1);
+  const wheeledOut = camera.mode;
+
+  watcher.followPid = 2;
+  const wreck = settle(31);
+  const wreckAim = camera.targetAt(31);
+  results.deathCam = {
+    death: death && { t: death.t, killer: death.killer },
+    alive: [deathAt(rec, 0, 19), deathAt(rec, 0, 41), deathAt(rec, 2, 46)],
+    aim: aims,
+    shot,
+    framed,
+    deadPov,
+    wheelDead,
+    back,
+    closest,
+    wheeled,
+    wheeledOut,
+    // The beat played through, in a frame or in a long one: his killer. A
+    // frame later, a step back, a seek (it leaves the frame no step): nobody;
+    // a death with no killer: nobody.
+    killer: [[22.7, 22.9], [10, 30], [22.9, 23], [23, 22.7], [22.8, 22.8], [32.7, 32.9]]
+      .map(([a, b]) => killerToFollow(rec, a < 32 ? 0 : 2, a, b)),
+    wreck: { at: wreck, base: wreckAim.base, pitch: wreckAim.pitch, kind: wreckAim.kind },
+  };
+}
+
 // --- the camera looks where a soldier looks ---------------------------------
 //
 // The 2026-09-27 report: first person on foot looked out of the back of his

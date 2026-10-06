@@ -1,8 +1,11 @@
 // The replay's camera: which object the followed player controls at a time
 // (`focusLife`), and the three ways of watching him (features/round-replay-ux):
 //
-//   orbit  locked on him, or the hull he rides, or his body once he dies;
+//   orbit  locked on him, or the hull he rides, or once he dies the death
+//          cam over where he fell (`deathAt`) until he is back or the
+//          camera goes on to his killer (replay.js `followKiller`);
 //          dragged, wheeled and keyed around him, never away from him.
+//          Wheeled in all the way, it goes through his eyes.
 //   pov    through his eyes: on foot his recorded body turned by his torso
 //          twist and raised by his aim pitch (lying down, on the slope he
 //          lies on), on the axis each of his rounds left along; in a seat
@@ -18,11 +21,14 @@
 
 import * as THREE from 'three';
 import {
-  AIM_PITCH_SCALE, AIM_TWIST_SCALE, aimAt, controlledAt, eyeLiftAt, rootOf, sampleAt, settledTime,
+  AIM_PITCH_SCALE, AIM_TWIST_SCALE, aimAt, controlledAt, eyeLiftAt, lifeAt, rootOf, sampleAt, settledTime,
+  soldierLivesOf,
 } from './replay-recording.js';
 import { NETWORKED_ROUNDS, weaponOfProjectile } from './replay-props.js';
 import { toViewPosition, toViewQuaternion } from './replay-actors.js';
-import { nextSpawn } from './replay-chapters.js';
+import { nextSpawn, playerStatusAt } from './replay-chapters.js';
+import { whereIs } from './replay-battles.js';
+import { DEATH_HOLD } from './replay-director.js';
 import { finite, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { noseCamOffset } from './seat-view.js';
@@ -37,6 +43,19 @@ const BODY = { base: 6, lift: 0.4 };
 const SPECTATOR = { base: 60, lift: 0, minPitch: 0.6 };
 const HULL_BASE = 2.4;           // x the hull's bounding radius
 const HULL_LIFT = 0.15;          // x the radius, above its root
+
+// The death cam, framed as the page's own (local-player.js `DEATH_CAM`,
+// soldier-view.js `corpseCam`): killed on foot, 4.2 m back from the body and
+// 1.8 m over it, on the far side from his killer so the killer stands beyond
+// it in the frame; killed in a hull, straight down on it from 30 m, or from
+// far enough to take a bigger hull in at the same size. The pitch is the
+// orbit's steepest.
+const DEATH_FOOT = { dist: Math.hypot(4.2, 1.8), pitch: Math.atan2(1.8, 4.2) };
+const DEATH_WRECK = { dist: 30, perRadius: 7.5 };
+/** Seconds apart within which a kill line and a death line are one death. */
+const SAME_DEATH = 0.25;
+/** Metres from his recorded place within which a drawn body is his. */
+const CORPSE_NEAR = 6;
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 25;
@@ -127,6 +146,107 @@ export function focusLife(player, t, preferBody = false) {
     return body ?? life;
   }
   return life;
+}
+
+const deathLists = new WeakMap();
+
+/** `pid`'s deaths in time order, `[{ t, pid, killer }]`: the score stream's,
+ *  and any a soldier's handover to his free camera alone marks
+ *  (replay-recording.js `diedAt`). A kill line and the death line of the
+ *  same instant are one death, the killer's. */
+function deathsOf(rec, pid) {
+  let byPid = deathLists.get(rec);
+  if (!byPid) deathLists.set(rec, (byPid = new Map()));
+  let list = byPid.get(pid);
+  if (list) return list;
+  const raw = [
+    ...(rec.deaths ?? []).filter(d => d.pid === pid).map(d => ({ t: d.t, killer: d.killer ?? null })),
+    ...soldierLivesOf(rec, pid).filter(l => l.diedAt !== undefined).map(l => ({ t: l.diedAt, killer: l.killer ?? null })),
+  ].filter(d => Number.isFinite(d.t)).sort((a, b) => a.t - b.t);
+  list = [];
+  for (const d of raw) {
+    const last = list.at(-1);
+    if (last && d.t - last.t < SAME_DEATH) {
+      last.killer ??= d.killer;
+      continue;
+    }
+    list.push({ t: d.t, pid, killer: d.killer });
+  }
+  byPid.set(pid, list);
+  return list;
+}
+
+/** The last of time-ordered `list` at or before `t`, or undefined. */
+function lastAtOrBefore(list, t) {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].t <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return list[lo - 1];
+}
+
+/**
+ * The death `pid` is in at `t`, `{ t, pid, killer }` (`killer` null for his
+ * own hand, a fall, the world), from the moment he dies until he is back;
+ * null while he is alive. The same object every frame of one death.
+ *
+ * He is back on a living soldier, or on anything the recording knows that
+ * he took after the death but his free camera. His status alone does not
+ * say: a man who died in a seat is still named in it; one whose new seat
+ * the status cannot yet place reads dead (pid 28 at 147.4 s of
+ * replay_20260928-133433, which put the camera back over his last death for
+ * a tenth of a second); and one the recording only ever saw in a seat reads
+ * `spawning` once he dies in it, his free camera an id it never made (pid 19
+ * at 7 s of replay_20260928-214112).
+ */
+export function deathAt(rec, pid, t, kills = rec.kills) {
+  if (pid === null || pid === undefined || !Number.isFinite(t)) return null;
+  const death = lastAtOrBefore(deathsOf(rec, pid), t);
+  if (!death) return null;
+  if (playerStatusAt(rec, pid, t, kills).state === 'foot') return null;
+  const took = lastAtOrBefore(rec.playerNids?.get(pid) ?? [], t);
+  const held = took && took.t > death.t ? lifeAt(rec, took.nid, t) : null;
+  return held && !held.camera ? null : death;
+}
+
+/** What `death` happened in: his soldier, whose body then lies, or the hull
+ *  he rode. Worked out once a death. */
+function diedIn(rec, death) {
+  if (death.life !== undefined) return death.life;
+  const before = death.t - 0.05;
+  const nid = controlledAt(rec, death.pid, before);
+  let life = rootOf(rec, nid, before, death.pid)?.life ?? null;
+  if (life && (life.camera || life.kit || life.projectile || life.controlPoint)) life = null;
+  if (!life || life.soldier) {
+    life = soldierLivesOf(rec, death.pid).find(l => l.diedAt !== undefined
+      && Math.abs(l.diedAt - death.t) < SAME_DEATH) ?? life;
+  }
+  death.life = life;
+  return life;
+}
+
+/**
+ * Whom the camera goes on to as the clock plays from `prevT` to `t`,
+ * following `pid`: his killer, at the moment the death cam has held his
+ * death DEATH_HOLD seconds (the Auto camera's own beat), if the killer is
+ * in the round to be watched then; else null. A frame that does not play
+ * forward through that moment hands nothing on: a step back, or a seek,
+ * which leaves the frame no step (replay.js `seek`).
+ */
+export function killerToFollow(rec, pid, prevT, t, kills = rec.kills) {
+  if (!(t > prevT)) return null;
+  const death = deathAt(rec, pid, t, kills);
+  if (!death) return null;
+  const at = death.t + DEATH_HOLD;
+  if (!(prevT < at && at <= t)) return null;
+  const killer = death.killer;
+  if (killer === null || killer === undefined || killer === pid) return null;
+  const state = playerStatusAt(rec, killer, t, kills).state;
+  if (state !== 'foot' && state !== 'vehicle') return null;
+  return deathAt(rec, killer, t, kills) ? null : killer;
 }
 
 /** Each hull's cockpit graft, asked for once (`setFirstPersonHull`). */
@@ -220,6 +340,10 @@ export class ReplayCamera {
     this.zoom = 1;
     this.eased = { yaw: this.yaw, pitch: this.pitch, zoom: this.zoom };
     this.aimed = false;          // the orbit has been put behind a first target
+    // The death the orbit is framed on (`deathAt`), and the tilt and zoom it
+    // had before, put back once he is out of it.
+    this.death = null;
+    this.beforeDeath = null;
     // The glide: what is left of the last view, easing out.
     this.carryPos = new THREE.Vector3();
     this.carryLook = new THREE.Vector3();
@@ -360,6 +484,13 @@ export class ReplayCamera {
     if (!finite(steps)) return;
     if (this.rig?.wheel?.(steps)) return;
     if (this.mode === 'orbit') {
+      // Wheeled in on a man or his seat once the orbit is as close as it
+      // goes: into his eyes, the way wheeling out of them comes back here.
+      const eyes = this.target?.kind === 'soldier' || this.target?.kind === 'hull';
+      if (steps < 0 && eyes && this.zoom <= ZOOM_MIN * 1.001) {
+        this.setMode('pov');
+        return;
+      }
       this.zoom = clamp(this.zoom * Math.exp(steps * 0.15), ZOOM_MIN, ZOOM_MAX);
     } else if (this.mode === 'free') {
       _fwd.set(0, 0, -1).applyEuler(_e.set(this.free.pitch, this.free.yaw, 0, 'YXZ'));
@@ -399,10 +530,22 @@ export class ReplayCamera {
   // --- the target ---------------------------------------------------------------
 
   /** What the orbit circles at `t`: `{ life, kind, point, base, minPitch,
-   *  heading }`, or null when the followed player has nothing to look at. */
+   *  heading }`, or null when the followed player has nothing to look at.
+   *  A death's is `{ kind: 'death', key, pitch }` as well: `key` what the
+   *  glide tells it apart by, `pitch` and `heading` its shot. */
   targetAt(t) {
     const { player } = this;
     if (player.followPid === null) return null;
+    // Dead: over where he fell until he is back, never over the spawn he
+    // has not chosen yet. That was read off his next soldier's first
+    // sample, which after a vehicle can lie anywhere: 1.2 km from the
+    // fight at 120 s of replay_20260928-133433 (the 2026-10-06 report, "it
+    // snaps you to a random spot").
+    const death = deathAt(player.rec, player.followPid, t, player.kills);
+    if (death) {
+      const target = this.deathTarget(death, t);
+      if (target) return target;
+    }
     const life = focusLife(player, t, true);
     // Waiting to spawn with no body of his to watch: over where he will
     // appear, framed as he will be there. His spectator camera sits wherever
@@ -449,6 +592,69 @@ export class ReplayCamera {
     const point = toViewPosition(key.p, new THREE.Vector3());
     point.y += SOLDIER.lift;
     return { life, kind: 'spawn', point, base: SOLDIER.base, minPitch: PITCH_MIN, heading: headingOf(toViewQuaternion(key.q, _q)) };
+  }
+
+  /** The death cam on `death` at `t`: his body as it lies, or the hull he
+   *  died in as it is drawn (a burning plane still falling), held where it
+   *  last was once the server takes it away. Null when the recording has
+   *  no place for either. */
+  deathTarget(death, t) {
+    const { player } = this;
+    const life = diedIn(player.rec, death);
+    if (!life) return null;
+    const point = new THREE.Vector3();
+    const hull = life.soldier ? null : player.hulls?.get(life) ?? null;
+    if (hull?.group.visible) {
+      hull.root.getWorldPosition(point);
+      hull.root.getWorldQuaternion(_q);
+    } else {
+      const at = Math.max(life.created, Math.min(t, life.destroyed - 0.01));
+      const s = sampleAt(life, life.soldier ? settledTime(life, at) : at);
+      if (!s) return null;
+      toViewPosition(s.a.p, point);
+      if (s.b) point.lerp(toViewPosition(s.b.p, _v), s.k);
+      toViewQuaternion(s.a.q, _q);
+      if (s.b) _q.slerp(toViewQuaternion(s.b.q, _q2), s.k);
+    }
+    if (!finiteVector(point)) return null;
+    if (life.soldier) {
+      // His body as drawn, falling and then lying, and where it came to rest
+      // once the corpse is cleared away; his recorded place where none is.
+      const heading = headingOf(_q);
+      const drawn = player.soldiers?.pelvisOf?.(death.pid, _v);
+      if (drawn && finiteVector(drawn) && drawn.distanceTo(point) < CORPSE_NEAR) {
+        death.rest = (death.rest ?? new THREE.Vector3()).copy(drawn);
+      }
+      if (death.rest) point.copy(death.rest);
+      else point.y += BODY.lift;
+      death.shotYaw ??= this.corpseShotYaw(death, point, heading);
+      return { life, key: death, death, kind: 'death', point, base: DEATH_FOOT.dist, pitch: DEATH_FOOT.pitch,
+               minPitch: PITCH_MIN, heading: death.shotYaw };
+    }
+    const radius = hull ? hullRadius(hull) : 4;
+    point.y += radius * HULL_LIFT;
+    // Straight down, the hull's nose to the top of the frame.
+    death.shotYaw ??= headingOf(_q);
+    return { life, key: death, death, kind: 'death', hull, point,
+             base: clamp(Math.max(DEATH_WRECK.dist, radius * DEATH_WRECK.perRadius), DIST_MIN, DIST_MAX),
+             pitch: PITCH_MAX, minPitch: PITCH_MIN, heading: death.shotYaw };
+  }
+
+  /** The way the death cam looks at a body at `point`: from beyond it,
+   *  away from where his killer stood as he died; with no killer to place,
+   *  behind him along `heading`, the way he fell (soldier-view.js
+   *  `corpseShotYaw`). */
+  corpseShotYaw(death, point, heading) {
+    const { player } = this;
+    if (death.killer !== null && death.killer !== death.pid) {
+      const from = whereIs(player.rec, death.killer, death.t, player.kills ?? player.rec.kills).pos;
+      if (from) {
+        const dx = point.x - from[0];
+        const dz = point.z - from[2];
+        if (Math.hypot(dx, dz) > 1) return Math.atan2(dx, dz);
+      }
+    }
+    return heading;
   }
 
   // --- per frame -----------------------------------------------------------------
@@ -618,6 +824,7 @@ export class ReplayCamera {
     const target = this.targetAt(t);
     this.target = target;
     if (!target) return;
+    this.frameDeath(target.kind === 'death' ? target : null);
     if (!this.aimed) {
       // The first sight of anyone: behind him, the way the game's own
       // third-person view starts.
@@ -645,9 +852,10 @@ export class ReplayCamera {
       Math.cos(this.eased.yaw) * Math.cos(pitch),
     ).multiplyScalar(dist).add(target.point);
 
-    // A new target (another player, his seat, his body) or a new mode: carry
-    // the last view and let it ease out, unless the new one is far.
-    if (target.life !== this.lastLife) {
+    // A new target (another player, his seat, his death) or a new mode:
+    // carry the last view and let it ease out, unless the new one is far.
+    const key = target.key ?? target.life;
+    if (key !== this.lastLife) {
       if (this.valid && this.lastLook.distanceTo(target.point) < CUT) {
         this.carryPos.copy(this.lastPos).sub(desired);
         this.carryLook.copy(this.lastLook).sub(target.point);
@@ -655,7 +863,7 @@ export class ReplayCamera {
         this.carryPos.set(0, 0, 0);
         this.carryLook.set(0, 0, 0);
       }
-      this.lastLife = target.life;
+      this.lastLife = key;
     }
     const fade = Math.exp(-dt / GLIDE);
     this.carryPos.multiplyScalar(fade);
@@ -667,6 +875,33 @@ export class ReplayCamera {
     cam.lookAt(this.lastLook);
     this.lastPos.copy(cam.position);
     this.valid = true;
+  }
+
+  /**
+   * Into a death (`target`, a `deathTarget`) or out of one (null): the
+   * death cam's shot is put on once, the orbit's tilt and zoom kept for
+   * after, and a drag or the wheel still moves it. Out of it, they come back
+   * and the orbit goes behind whoever it is on now, his killer or himself
+   * respawned. Each change glides (`updateOrbit`).
+   */
+  frameDeath(target) {
+    const death = target?.death ?? null;
+    if (death === this.death) return;
+    if (death) {
+      this.beforeDeath ??= { pitch: this.pitch, zoom: this.zoom };
+      this.yaw = target.heading;
+      this.pitch = target.pitch;
+      this.zoom = 1;
+      this.eased = { yaw: this.yaw, pitch: this.pitch, zoom: this.zoom };
+      this.aimed = true;
+    } else if (this.beforeDeath) {
+      this.pitch = this.beforeDeath.pitch;
+      this.zoom = this.beforeDeath.zoom;
+      this.eased = { yaw: this.yaw, pitch: this.pitch, zoom: this.zoom };
+      this.beforeDeath = null;
+      this.aimed = false;
+    }
+    this.death = death;
   }
 
   /** Above the ground and the water, where the level has them. */
@@ -709,12 +944,15 @@ export class ReplayCamera {
   }
 
   /** First person; false when there are no eyes to look through (dead, not
-   *  yet spawned, a bot's camera), and the orbit's death cam stands in. */
+   *  yet spawned, a bot's camera), and the orbit's death cam stands in. A
+   *  recording player's own camera while he is dead is not his view either:
+   *  after his death it flies to wherever the spawn screen shows. */
   updatePov(dt, t) {
     const { player } = this;
     const cam = player.ctx.camera;
-    const life = focusLife(player, t);
     this.povHull = null;
+    if (deathAt(player.rec, player.followPid, t, player.kills)) return false;
+    const life = focusLife(player, t);
     if (!life) return false;
     let lens = null;
     if (life.soldier) {
@@ -791,6 +1029,7 @@ export class ReplayCamera {
       cam.updateProjectionMatrix();
     }
     this.startGlide(cam.position, _v2.set(0, 0, -6).applyQuaternion(cam.quaternion).add(cam.position));
+    this.frameDeath(null);
     return true;
   }
 
