@@ -8,7 +8,7 @@ import * as THREE from 'three';
 
 import { BodyWorld } from '../viewer/body-world.js';
 import {
-  buildParkedVehicle, describeVehicleParts,
+  buildParkedVehicle, describeVehicleParts, standsOverTheSea,
 } from '../viewer/vehicle-bodies.js';
 import { rootCollisionPart } from '../viewer/ship-spec.js';
 // The body world's ground and a node's pose as `position` + row `axes`: the
@@ -69,7 +69,10 @@ export function settle(root, ownerRoots, heightfield, waterLevel, data) {
   ownerRoots.forEach((node, index) => {
     const spec = node?.userData?.armor ? bodySpecFor(node, data) : null;
     if (!spec) return;
-    const parked = buildParkedVehicle(spec, { ...bodyPoseOf(node), asleep: false });
+    const pose = bodyPoseOf(node);
+    // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
+    if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), waterLevel)) return;
+    const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
     world.addParked(index, parked, spec);
     settling.push({ node, body: parked.body });
   });
