@@ -9021,7 +9021,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag gates only the first try (the first child's alternative 0); without it, or when that has no geometry, findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. COL-14"
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag (byte +7 bit 0) gates BOTH tries: clear, it returns 0 at 0x0818d874. Set, it tries the first child's alternative 0, and when that has no geometry findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. The flag is the has-a-child bit: BCompositeObject::addChild sets it with the first child (0x0816597d, 0x081949dd; LodObject::addChild 0x08216df3), so every vehicle root has it. COL-14"
   },
   {
    "address": "0x0818d910",
