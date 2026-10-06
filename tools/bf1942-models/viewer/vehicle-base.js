@@ -39,12 +39,20 @@ const GEAR_INPUT = 'c_PILandingGear';
 // An axis with no declared range traverses freely; show it over a full circle.
 const FREE_RANGE = 180;
 
+// `rememberExcessInput`'s backlog limit, in input units: lnxded `0x86c866c`
+// = +40 and `0x86c8670` = -40 (GUN-2, MLK-16).
+const EXCESS_BACKLOG = 40;
+// The engine's tick, which the backlog is spent once in (`g_simulationFps`,
+// LOOP-1), and how near a sub-step sum must come to it to count as one.
+const SERVO_TICK = 1 / 30;
+const SERVO_PHASE_EPSILON = 1e-6;
+
 // A player input belongs to a seat, not to a vehicle: a bomber's rear gunner
 // has his own `c_PIMouseLookY`. Keying on the bare input name welds them.
 export const keyOf = (control, input) => `${control}/${input}`;
 
-// The propeller's own two numbers — the file's own constants, like world.js's
-// STICK_RATE, not restated data: the engine carries no idle-RPM or spool
+// The propeller's own two numbers — the file's own constants, not restated
+// data: the engine carries no idle-RPM or spool
 // constant in any vanilla template (complete Camera/Engine vocabulary
 // surveyed in flyable-vehicles/input-and-cockpit.md). Degrees per second.
 //
@@ -119,6 +127,12 @@ class RiggedPart {
     this.base = node.quaternion.clone();
     this.axes = rig.axes;
     this.control = rig.control || 'vehicle';
+    // `ObjectTemplate.rememberExcessInput` (ledger MLK-16): the part spends an
+    // input past full deflection over later ticks. The exporter carries it in
+    // a Wing's `physics`, which is where every shipped declaration but
+    // XPack2's visible rudders sits; those share their Wing's servo.
+    this.remembersExcess = !!(node.userData?.physics?.rememberExcessInput
+      || rig.rememberExcessInput);
     // An Engine's spin is declared on the Engine and NEVER happens there.
     //
     // This is a fact about the class hierarchy, not a heuristic.
@@ -377,6 +391,11 @@ export class VehicleState {
     this.inputs = new Map();
     /** Actual surface deflection, -1..1, rate-limited toward `inputs`. */
     this.surfaces = new Map();
+    /** A `rememberExcessInput` servo's backlog, in input units (GUN-2's
+     *  `RotationalBundle+0x128`), and the input it spends this tick, both by
+     *  servo key (`advanceSurfaces`). */
+    this.excessInputs = new Map();
+    this.spentInputs = new Map();
     /** Propeller revolutions accumulated, degrees. */
     this.propellerAngle = 0;
     /** Propeller angular speed, degrees/s; chases the idled-engine target
@@ -689,25 +708,71 @@ export class Vehicle {
   servoAxes() {
     if (this._servos) return this._servos;
     const servos = new Map(this.extraServos || []);
+    // The servos whose part remembers excess input (MLK-16): a key any of its
+    // parts declares it on, whichever spec the key is servoed on (an
+    // aircraft's own surface table wins the spec, the Wing node the flag).
+    const remembering = new Set();
     for (const part of this.parts) {
       for (const [axis, spec] of Object.entries(part.axes)) {
         if (spec.driver === 'rate') continue;
         const key = `${keyOf(part.control, spec.input)}/${axis}`;
         if (!servos.has(key)) servos.set(key, spec);
+        if (part.remembersExcess) remembering.add(key);
       }
     }
     this._servos = servos;
+    this._remembering = remembering;
     return servos;
   }
 
+  /**
+   * GUN-2's input stage for a `rememberExcessInput` servo, once a tick
+   * (`calculateAndClipAngle` lnxded 0x081d7490, run once per
+   * `Wing::handleUpdate` 0x08250950; ledger MLK-16): the tick's input joins
+   * the backlog, which is held to +-40, the tick spends `clamp(backlog, +-1)`
+   * and carries the rest; an input against the backlog's sign is taken whole
+   * and clears it. Returns the input the servo moves toward this tick. An
+   * input inside +-1 leaves the backlog at zero and comes back unchanged.
+   */
+  spendExcessInput(key, input) {
+    const { excessInputs, spentInputs } = this.state;
+    const backlog = excessInputs.get(key) ?? 0;
+    let spent;
+    if (backlog * input < 0) {
+      spent = input;
+      excessInputs.delete(key);
+    } else {
+      const total = Math.max(-EXCESS_BACKLOG, Math.min(EXCESS_BACKLOG, backlog + input));
+      spent = Math.max(-1, Math.min(1, total));
+      if (total - spent) excessInputs.set(key, total - spent);
+      else excessInputs.delete(key);
+    }
+    spentInputs.set(key, spent);
+    return spent;
+  }
+
   advanceSurfaces(dt) {
-    const { surfaces } = this.state;
-    for (const [key, spec] of this.servoAxes()) {
+    const { surfaces, spentInputs } = this.state;
+    const servos = this.servoAxes();
+    // The input stage is the engine's tick's, the servo the caller's step: a
+    // drive that sub-steps its tick (an aircraft's 1/240 s) calls this
+    // several times a tick, and the backlog is spent on the first of them.
+    const tickStart = !(this._servoPhase > SERVO_PHASE_EPSILON);
+    this._servoPhase = (this._servoPhase ?? 0) + dt;
+    if (this._servoPhase >= SERVO_TICK - SERVO_PHASE_EPSILON) this._servoPhase = 0;
+    for (const [key, spec] of servos) {
+      let raw = this.input(spec.input);
+      if (this._remembering.has(key)) {
+        // A servo the drive's reset put back at rest (`state.surfaces`
+        // cleared) carries nothing over.
+        if (tickStart && !surfaces.has(key)) this.state.excessInputs.delete(key);
+        raw = tickStart ? this.spendExcessInput(key, raw) : (spentInputs.get(key) ?? raw);
+      }
       // A part's angle stops at its declared bounds (GUN-2's clip), which is
       // +-1 here: a pilot's mouse is a rate up to the wire's +-16 (MLK-7), and
       // a Harrier's Wings or a helicopter's tail flap must not servo past
-      // full deflection on it. A free axis has no bound.
-      const raw = this.input(spec.input);
+      // full deflection on it. A free axis has no bound. The world hands
+      // every airframe its channels whole and this is their one clip.
       const target = spec.free ? raw : Math.max(-1, Math.min(1, raw));
       const current = surfaces.get(key) ?? 0;
       if (current === target) continue;

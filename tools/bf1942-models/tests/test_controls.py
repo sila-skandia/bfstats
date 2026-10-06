@@ -138,10 +138,13 @@ class DefaultsTests(_Harness):
         self.assertEqual(["Backquote"],
                          self.results["defaults"]["consoleToggle"])
 
-    def test_keyboard_axes_sum_and_cancel(self) -> None:
+    def test_a_key_pair_is_a_step_and_its_first_key_wins(self) -> None:
+        # `ControlMap::buttonsToAxis` lnxded 0x083f2080 tests the first key
+        # before the second (ledger MLK-10, MLK-15): W and S together walk
+        # forward, they do not cancel.
         d = self.results["defaults"]
         self.assertEqual(1.0, d["throttleW"])
-        self.assertEqual(0.0, d["throttleWS"])
+        self.assertEqual(1.0, d["throttleWS"])
         self.assertEqual(1.0, d["yawD"])
 
     def test_no_channel_moves_while_the_page_is_not_captured(self) -> None:
@@ -245,6 +248,38 @@ class ProfileImportTests(_Harness):
         # The profile binds the throttle lever with the invert flag, so a
         # pushed lever is negative until the live viewer says otherwise.
         self.assertAlmostEqual(-0.75 / 0.85, p["axisThrottle"], places=12)
+
+    def test_the_keys_and_the_stick_never_add(self) -> None:
+        # One channel, two slots, the larger magnitude (MLK-9, MLK-15): with
+        # the stick at yaw 0.18 and roll 0.41, A and the left arrow read a
+        # full -1 (the sum was -0.82 and -0.59).
+        p = self.results["profile"]
+        self.assertEqual(-1.0, p["slotYawKeyAgainstStick"])
+        self.assertEqual(-1.0, p["slotRollKeyAgainstStick"])
+        # W against the lever pushed to -0.88: the key's full step.
+        self.assertEqual(1.0, p["slotThrottleKeyAgainstLever"])
+        # A stick 0.06 right and the left arrow: -1, not -0.94.
+        self.assertEqual(-1.0, p["slotRollSmallStickAndArrow"])
+
+
+class SlotFillTests(_Harness):
+    """`addAxisMapping` fills the slot a line names (lnxded 0x083f0a50,
+    0x083f1430; ledger MLK-15)."""
+
+    def test_a_secondary_line_with_no_primary_is_refused(self) -> None:
+        f = self.results["fill"]
+        self.assertEqual(0, f["refusedSecondary"])
+        self.assertEqual(1, f["primaryAfterIt"])
+
+    def test_a_later_line_replaces_the_slot(self) -> None:
+        f = self.results["fill"]
+        self.assertEqual(0, f["replacedPrimary"])
+        self.assertEqual(1, f["replacingPrimary"])
+
+    def test_a_secondary_after_its_primary_is_kept_and_a_tie_is_the_primarys(self) -> None:
+        f = self.results["fill"]
+        self.assertEqual(1, f["keptSecondary"])
+        self.assertEqual(-1, f["tie"])
 
     def test_a_pad_button_is_a_level_without_any_dom_event(self) -> None:
         p = self.results["profile"]
