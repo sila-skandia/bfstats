@@ -48,6 +48,9 @@ MODULES = {
     "round-impact.js": VIEWER / "round-impact.js",
     "projectile-flight.js": VIEWER / "projectile-flight.js",
     "round-launch.js": VIEWER / "round-launch.js",
+    # round-launch.js builds a rocket's motor (features/rocket-flight).
+    "rocket-motor.js": VIEWER / "rocket-motor.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
     "camera-dof.js": VIEWER / "camera-dof.js",
@@ -204,6 +207,52 @@ class BombReleaseTests(unittest.TestCase):
         self.assertEqual({"barrels": [0], "rounds": 1}, partial["async2of8"])
         self.assertEqual({"barrels": [1], "rounds": 1}, partial["async2of8Next"])
 
+    # --- BOMB-13: blastAmmoCount -------------------------------------------
+
+    def test_a_shotgun_shell_is_eight_pellets_for_one_round(self) -> None:
+        # Desert Combat's Remington: eight `addFireArmsPosition` pellets and
+        # `setBlastAmmoCount 1`, an eight-round tube.
+        shotgun = self.results["blast"]["shotgun"]
+        self.assertEqual(8, shotgun["pulls"])
+        self.assertEqual([8] * 8, [p["fired"] for p in shotgun["perPull"]])
+        self.assertEqual(list(range(7, -1, -1)), [p["left"] for p in shotgun["perPull"]])
+
+    def test_without_the_word_the_same_barrels_cost_one_round_each(self) -> None:
+        # BOMB-1: the eight pellets empty the eight-round tube in one pull.
+        without = self.results["blast"]["without"]
+        self.assertEqual(1, without["pulls"])
+        self.assertEqual({"fired": 8, "left": 0}, without["perPull"][0])
+
+    def test_blast_ammo_count_fires_every_barrel_on_the_last_round(self) -> None:
+        arithmetic = self.results["blast"]["arithmetic"]
+        every = list(range(8))
+        self.assertEqual({"barrels": every, "rounds": 1}, arithmetic["full"])
+        # BOMB-5's partial salvo is skipped: still eight, still one round.
+        self.assertEqual({"barrels": every, "rounds": 1}, arithmetic["last"])
+        self.assertEqual({"barrels": [0, 1, 2], "rounds": 3},
+                         arithmetic["partialWithout"])
+        self.assertEqual({"barrels": every, "rounds": 0}, arithmetic["unlimited"])
+
+    def test_blast_ammo_count_changes_nothing_off_a_salvo(self) -> None:
+        # The SA-342's rocket pods (`setAsynchronyFire 1`) and a one-barrel gun
+        # take their own branches before the flag is ever consulted.
+        arithmetic = self.results["blast"]["arithmetic"]
+        self.assertEqual({"barrels": [1], "rounds": 1}, arithmetic["asyncPods"])
+        self.assertEqual({"barrels": [0], "rounds": 1}, arithmetic["oneBarrel"])
+
+    def test_the_a10_spends_one_round_a_pull(self) -> None:
+        # `setBlastAmmoCount 5` neither multiplies the rounds a pull uses nor
+        # the projectiles it fires: 1,350 rounds are 1,350 pulls of one round,
+        # not 270 pulls of five.
+        a10 = self.results["a10"]
+        self.assertEqual(1350, a10["pulls"])
+        self.assertEqual(1350, a10["charged"])
+        self.assertEqual(0, a10["ammo"])
+        # The heat law paces the pulls, and its own tests pin how (GUN-13..
+        # GUN-15); it overheats the gun at least once on the way down, and
+        # the count of pulls does not depend on how often.
+        self.assertIsNotNone(a10["firstOverheat"])
+
     # --- G-6 ---------------------------------------------------------------
 
     def test_the_b17_lays_a_stick_of_eight(self) -> None:
@@ -237,8 +286,11 @@ class BombReleaseTests(unittest.TestCase):
         # The pair, both of them.
         self.assertEqual(2, fall["impacts"])
         self.assertEqual("terrain", fall["kind"])
-        # Released at 150 m/s: 8.217 s x 150 m of throw, measured 1228.9 m.
-        self.assertAlmostEqual(1228.9, fall["throwMetres"], delta=5)
+        # Released at 150 m/s: 8.217 s x 150 m of throw less the drag, measured
+        # 1211.2 m. The bomb declares `setHasPointPhysics 0`, so it is a full
+        # `PhysicsNode` and drags by the box law (PHY-4, features/rocket-flight
+        # section 3): 1228.9 m under the point body's sphere law it used to get.
+        self.assertAlmostEqual(1211.2, fall["throwMetres"], delta=5)
 
     def test_the_bomb_gets_the_impact_explosion_not_the_fuse_one(self) -> None:
         # `damageType 1` AND `hasCollisionEffect` is the impact path (HP-9d);
@@ -260,14 +312,14 @@ class BombReleaseTests(unittest.TestCase):
 
     def test_drag_shortens_the_throw_slightly(self) -> None:
         # The measurement, not an assertion of importance: 250 kg at drag 0.08
-        # over a ~1 m bounding radius is a correction of a few metres in 1,200,
-        # which is why gravity alone looked right for so long.
+        # over the 0.4 x 0.4 m face of the box law is a correction of tens of
+        # metres in 1,200, which is why gravity alone looked right for so long.
         with_drag = self.results["fall"]["throwMetres"]
         without = self.results["fallNoDrag"]["throwMetres"]
         self.assertLess(with_drag, without)
-        # 1228.9 m against 1231.9 m: three metres in twelve hundred, a quarter
-        # of one per cent.
-        self.assertAlmostEqual(3.0, without - with_drag, delta=1.0)
+        # 1211.2 m against 1231.9 m: twenty metres in twelve hundred, under two
+        # per cent (three metres under the sphere law the bomb used to get).
+        self.assertAlmostEqual(20.7, without - with_drag, delta=1.5)
 
     # --- G-3 ---------------------------------------------------------------
 

@@ -47,8 +47,11 @@ function controlValue(source, c) {
     // of `Extern #map<Engine::Rpm>` — a survey of Objects.rfa puts 257 land
     // pitch effects on Default vs 206 air pitch effects on Engine::Rpm. The
     // one-shot idiom `Linear p1 0` is still a constant under either reading,
-    // so feeding the same normalised rpm channel serves both.
-    case 'default': return c.rpm;
+    // so feeding the same normalised rpm channel serves both. It is one value
+    // in the engine too: `Default` is the object's control slot 0, which an
+    // Engine fills with its revs (ledger SND-18). Another object fills it with
+    // its own number, `c.default`: a turret's turning rate, a track's nothing.
+    case 'default': return c.default ?? c.rpm;
     default: return null;
   }
 }

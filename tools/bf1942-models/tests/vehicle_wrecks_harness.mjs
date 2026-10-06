@@ -17,8 +17,8 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { createVehicleWrecks }] = await Promise.all([
-  import('three'), imp('vehicle-wrecks.js'),
+const [THREE, { createVehicleWrecks }, { DamageableVehicle }] = await Promise.all([
+  import('three'), imp('vehicle-wrecks.js'), imp('vehicle-damage.js'),
 ]);
 
 function hull() {
@@ -114,6 +114,61 @@ async function wreckLookups() {
   return out;
 }
 
+/**
+ * A pad's abandoned hull (`stepAbandoned`, ledger SPAWN-13): an M1A1 with
+ * Desert Combat's words (`TimeToLive 45`, `Distance 40`, `damageWhenLost
+ * 10`) left `at` metres from its pad. Returns its hit points each whole
+ * second for `seconds`. `soldier` puts a live man on foot beside it,
+ * `occupied` a man in its seat, `words: false` a scene from before the
+ * exporter wrote the words.
+ */
+function abandoned({ at = 60, seconds = 60, soldier = false, occupied = false, words = true } = {}) {
+  const h = hull();
+  h.node.position.set(at, 0, 0);
+  h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  h.node.userData.cullRadius = 6;
+  const vehicleDamage = new Map();
+  const inst = { empty: !occupied };
+  const record = {
+    spawn: words ? { timeToLive: 45, distance: 40, damageWhenLost: 10 } : {},
+    live: new Set([h.node]),
+    at: [0, 0, 0],
+  };
+  const players = new Map();
+  if (soldier) players.set('bot_1', { soldier: { x: at + 2, y: -1, z: 0 } });
+  const p = {
+    ...page(),
+    vehicleDamage,
+    vehicles: { instanceOf: node => (node === h.node && occupied ? inst : null), lastFlightOf: () => null,
+                seatOf: () => null },
+    world: {
+      fireStates: new Map(), falling: new Set(), players, armorOf: () => null,
+      addDamageable: (owner, node, extras) => {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    vehiclePads: { pads: [record], padOf: () => record, stepVehiclePads() {} },
+  };
+  const wrecks = createVehicleWrecks(p);
+  wrecks.registerDamageables([h.node]);
+  const v = vehicleDamage.get(0);
+  const hp = [];
+  for (let frame = 1; frame <= seconds * 30; frame++) {
+    wrecks.stepWrecks(1 / 30);
+    if (frame % 30 === 0) hp.push(Math.round(v.hitPoints * 10) / 10);
+  }
+  return hp;
+}
+
 process.stdout.write(JSON.stringify({
   wreck: respawn(true), noWreck: respawn(false), lookups: await wreckLookups(),
+  abandoned: {
+    far: abandoned(),
+    near: abandoned({ at: 30 }),
+    soldier: abandoned({ soldier: true }),
+    occupied: abandoned({ occupied: true }),
+    oldScene: abandoned({ words: false }),
+  },
 }));
