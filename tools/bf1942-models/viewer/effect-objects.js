@@ -146,8 +146,9 @@ export function createEffectObjects(page) {
   /** One per object a spawn effect stood up: `{ object, kind, hull, ... }`. */
   const held = [];
 
-  /** The objects' living tiers, started under each armoured node. */
-  function startTiers(object) {
+  /** The objects' living tiers, started under each armoured node. Each
+   *  run's handle goes on `handles`, for `remove` to stop. */
+  function startTiers(object, handles = null) {
     const armoured = [];
     object.traverse(node => {
       if (node.userData?.armor?.effects?.length) armoured.push(node);
@@ -165,7 +166,9 @@ export function createEffectObjects(page) {
         anchor.position.set(o?.[0] || 0, o?.[1] || 0, o?.[2] || 0);
         node.add(anchor);
         anchor.updateMatrixWorld(true);
-        if (page.effects?.play(entry.effect, { attach: { object: anchor } })?.run) started++;
+        const handle = page.effects?.play(entry.effect, { attach: { object: anchor } });
+        if (handle) handles?.push(handle);
+        if (handle?.run) started++;
       }
     }
     return started;
@@ -181,7 +184,7 @@ export function createEffectObjects(page) {
     const waterLevel = page.collider?.waterLevel ?? null;
     const kind = bodyKindOf(object, spec, { waterLevel, terrainAt });
     const record = { object, kind, hull: null, box: localBox(object), vy: 0, resting: false,
-                     owner: -1, damageable: null, bakedInverse: null, radius: 0 };
+                     owner: -1, damageable: null, bakedInverse: null, radius: 0, handles: [] };
     if (kind === 'float') {
       object.updateWorldMatrix(true, false);
       const e = object.matrixWorld.elements;
@@ -265,6 +268,9 @@ export function createEffectObjects(page) {
     const at = held.indexOf(record);
     if (at >= 0) held.splice(at, 1);
     const { object, owner } = record;
+    // The tiers `adopt` started itself (an object with no owner id, so no
+    // damageable): a burning loop would otherwise outlive the object.
+    for (const handle of record.handles.splice(0)) handle.stop?.();
     if (owner >= 0) {
       page.collider?.clearMovedOwner?.(owner, { enable: false });
       page.collider?.statics?.disableOwner?.(owner);
@@ -310,7 +316,7 @@ export function createEffectObjects(page) {
     adopted++;
     const record = hold(object, spec);
     register(record);
-    if (!record.damageable) tiers += startTiers(object);
+    if (!record.damageable) tiers += startTiers(object, record.handles);
     return object;
   }
 

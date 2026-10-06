@@ -413,6 +413,49 @@ function syntheticRuin() {
   out.removal = removal;
 }
 
+// --- a hull-less object's own tier goes with it ------------------------------
+// The ruin above without its collision box: no owner id, so no damageable,
+// and `adopt` starts its burning tier itself. The round's end removes the
+// object; the tier's run must stop with it, not burn on where it stood.
+{
+  const scene = new THREE.Scene();
+  const bundle = syntheticRuin();
+  const ruin = bundle.children[0].children[0];
+  ruin.remove(ruin.children.find(c => c.userData?.collision));
+  const fire = syntheticLibrary(['e_PanzFire']);
+  fire.root.add(bundle);
+  const library = new EffectLibrary(fire.root);
+  const roundState = { over: false };
+  let effects = null;
+  const stopped = [];
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: node => !!node.userData?.collision,
+    bindDynamicShading() {},
+    collider: { waterLevel: 0, heightfield: { height: () => 0 }, addOwner: () => -1 },
+    registerDamageable: () => null,
+    get roundOver() { return roundState.over; },
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  const play = effects.play.bind(effects);
+  effects.play = (name, opts) => {
+    const handle = play(name, opts);
+    if (handle && name === 'e_PanzFire') {
+      const stop = handle.stop;
+      handle.stop = () => { stopped.push(name); stop?.(); };
+    }
+    return handle;
+  };
+  effects.play('e_air_control_tower_desWRECKPCO', { position: [0, 0, 0], normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const [record] = objects.held;
+  const before = { owner: record?.owner ?? null, tiers: objects.tiers, stopped: stopped.length };
+  roundState.over = true;
+  objects.step({ ticks: 1 });
+  out.hullless = { before, removed: objects.removed, held: objects.held.length, stopped };
+}
+
 // --- a PT boat killed by a round dies in the water ---------------------------
 // `vehicle-hits.js` re-picks the tier on the round that lands. Afloat, an
 // `Elco80`'s root is 1.87 m under the water, so its death is the `-1` tier

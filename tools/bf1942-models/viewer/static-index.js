@@ -222,8 +222,10 @@ export class CollisionIndex {
    * in no cell: an object stood up off the edge of the level's statics.
    *
    * Returns the owner id, or -1 for an object with no collision mesh. Linear
-   * in the level's triangle count (the counting sort again): a once-per-spawn
-   * price, a few milliseconds on the largest level.
+   * in the level's triangles and cells (the counting sort again), whatever
+   * the object's size: a once-per-spawn price, measured at 10 to 25 ms a
+   * call on Desert Combat's No Fly Zone (48,639 triangles, 202,948 cells),
+   * so six ruins in one frame hitch it by about 100 ms.
    */
   addOwner(node) {
     node.updateWorldMatrix(true, true);
