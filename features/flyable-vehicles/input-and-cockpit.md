@@ -283,6 +283,14 @@ camera, Numpad4/6/8/2 nudge the free camera (`c_PICameraX/Y`).
 > both binaries, `BFPlayer::handleInput` (lnxded `0x08052530`, client `0x00407ec0`):
 > with the key held it zeroes `c_PIYaw`, `c_PIPitch` and `c_PIRoll` from every
 > device, keyboard and stick included, and with it up it zeroes the look axes.
+>
+> **Settled 2026-10-06, same folder (MLK-7..MLK-11).** The trailing `1` is the
+> secondary slot (MLK-9), and a channel's two slots fold by magnitude, never
+> adding. The mouse stick is the look's rate law at scale 3.85 (MLK-7). The
+> invert box turns the device's Y (MLK-8). A key pair rises in 0.001 s
+> (MLK-10). `game.setAirKeyboardSensitivity` is stored and saved, and
+> nothing reads it for play (MLK-11). `rememberExcessInput` is GUN-2's input
+> backlog, not built in the viewer's fixed-wing surfaces.
 
 ---
 
