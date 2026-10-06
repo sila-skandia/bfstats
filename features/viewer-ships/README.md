@@ -1297,3 +1297,53 @@ manned gun and the viewer already handles it as one (FA-4). No shipped data
 in vanilla, the two packs, DC or DC Final sets the word to 1. What 1 would
 do, a gun that fires on its own every time it is ready, is recorded in FA-4
 and is not built.
+
+## 26. A hull ashore keeps no spin (2026-10-06)
+
+The DC census ran Midway's OSA-2 into the beach at 35 m/s. She came out of
+the water, climbed, and ended 11 m above the sand, flagged aground. The
+climb and the jump off the crest are what an inelastic contact does to a
+35 m/s hull meeting a slope. The engine removes only the normal speed, and
+friction takes at most 13 m/s² of the rest. What was wrong was the ending.
+She arrived turning (the surf had rolled her 18 degrees and pitched her 13),
+and on dry land nothing ever stopped it. She pivoted on her own footprint for
+good, reaching -41 degrees of pitch and 42 of roll, and the push-out lifted her
+origin 13 m above the sand as she stood on end.
+
+The cause is in `Ship.pushOutOfBed`. It measured a contact's closing speed at
+the hull's centre and cancelled it there, so a contact never touched the
+spin. The engine measures the speed at the contact point,
+`getTangentSpeed(C) = v + omega x r` (collision-response §7), and applies
+the correction at the averaged contact point (`solveImpulse`'s
+`addAccelerationAtAbsolutePosition`, §6.4), so the ground stops the turn as
+well as the fall.
+
+`Ship.stopAtContact` now does both halves:
+
+- The centre's own closing speed along the deepest point's normal is
+  cancelled outright, as before.
+- The spin's closing speed at the mean contact point, `(omega x r) . n`, is
+  taken off the spin alone, along `w = I_m^-1 (r x n)`.
+
+`deepestContact` keeps the engine's running means over every sample under
+the bed (`impulseOn`, §6.3): the mean contact point and the mean unit normal.
+
+This is a divergence. The engine applies one acceleration at the averaged
+point, which moves and turns the hull together. A single averaged point
+would then rock a hull whose support is not under her centre: an impulse
+solve injected 0.3 mm/s into the shoal test's resting Fletcher. Split this
+way, a hull at rest stays at rest, and only spin into the bed is removed.
+
+Measured:
+
+- `ground_sim.mjs beach midway OSA-2`: she now comes to rest at 1.0 m (origin
+  over the sand under it) with 3 degrees of pitch and 7 of roll, and no spin
+  left. Before, she was 6 m up at 56 s and still tumbling at 8 degrees a
+  second. The jump off the crest is unchanged.
+- `ship_harness.mjs` (f), `test_a_hull_ashore_with_a_spin_is_stopped_by_the_ground`:
+  a Fletcher set down on dry land with 0.15 rad/s of pitch. Before, her origin
+  rose 62 m as she went end over end, and she ended 6 m up and off the ground.
+  Now it rises 0.05 m and she is aground with no spin.
+- The shoal test's resting Fletcher used to creep upward the same way, 0.17 m
+  in 30 s as her trim pivoted her. She now creeps 0.008 m. Every other ship
+  test is unchanged. Top speeds were not touched (§7).
