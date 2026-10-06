@@ -279,8 +279,9 @@ the node the engine's walk picks (`inertiaGeometryNode`):
 | vanilla `Lcvp`, XPack1 `ItLcvp` | `Lcvp_Door`, 0.66 x 1.2 x 0.15, keel 2.05 m over the origin | every mesh, 3.4 x 3.37 x 11.55, keel 0.47 | `LcvpCockpitExternal`, 3.4 x 3.0 x 11.06, col0 bottom 0.39 |
 
 Nothing else moved: no land vehicle, no other ship, no fixed-wing aircraft.
-No hull set changes and no asset needs re-extracting: the fix is the viewer's,
-and it reads the glbs and baked levels already on disk.
+No hull set changes and no model or level needs re-extracting for it: the fix
+is the viewer's, and it reads the glbs and baked levels already on disk (the
+DC collision sidecars are stale for another reason, below).
 
 **Checked.**
 
@@ -319,6 +320,19 @@ and it reads the glbs and baked levels already on disk.
   top speed, lock, reverse, pivot, AI cruise) identically with and without
   this fix (KettenKrad 28.1 m/s top, R75 30.9 m/s and -6.9 m/s reverse, as that
   commit reports). The two branches touch no file in common.
+- The DC and DC Final collision sidecars (`_shared/collision-meshes.json`,
+  written 2026-09-30) predate con-reader. They have no entry for the nine new
+  part meshes (`ah64_hydras`, `mi24d_rearstand`, `mi24d_rcktpod`,
+  `mi24d_rckttray` and the H6 family's five `*_parts`) and no `scales` map
+  (SM-13: 25 DC geometries, 31 DC Final). The body world skips a collision
+  node it cannot resolve, so the page's parked and driven bodies leave those
+  parts out. Re-extracted into scratch with this branch's code, vanilla's is
+  unchanged entry for entry; DC's and DC Final's gain those nine meshes and
+  the scales and change no existing entry. The fresh helicopters' parked
+  bodies (`describeVehicleParts` + `buildParkedVehicle`, 10 s on flat ground)
+  settle the same with and without the new parts: AH-64 at 1.479 m and
+  -3.26 degrees of pitch, Mi-24D 1.926 and -2.70, AH-6 1.868 and -0.74,
+  UH-60 1.775 and -2.72, in both trees. No new part reaches the ground.
 
 **COL-17 on vehicles (COL-19) — read, not built.** The report suspected the
 new parts' hulls. The engine tests them: every part con-reader brought in says
@@ -374,3 +388,7 @@ Added 2026-10-07 (vehicle-part-collision):
   walk is `inertiaGeometryNode`, which on the H6 family answers
   `H6ControlStick_High` because the glb carries no selector class (COL-14).
   That move is the fixed-wing package's.
+- **A parked body's box is its largest hull part's.** `describeVehicleParts`
+  takes the biggest collision bbox for the inertia, which on the Mi-24D is its
+  main rotor's static alternative (16.1 x 15.5 x 0.56 m), a part COL-17 does
+  not even test. The engine's is the root's geometry (COL-14).
