@@ -302,9 +302,9 @@ Measured (`rocket_flight_harness.mjs`, 4,000 rounds of a level 1,000 m/s gun):
 
 Every gun in every mod is 1.75 times tighter on each axis than it was, and
 square. A round that deviates is fractionally faster (1000.9 m/s in a cone-3
-corner), as in the game. The bots roll their own cone in degrees
-(`bot-referee.js` `rollCone`, `bot-rounds.js`); that copy is the bots
-package's. The HUD cross's size is read from the same total and was not
+corner), as in the game. The bots' rounds go through the same `deviate`
+since the bots package (2026-10-07), on the point their input index draws
+(`bot-deviation.js`, ledger AI-145). The HUD cross's size is read from the same total and was not
 touched.
 
 **Checked against the real game (review, 2026-10-07).** The lab server's
@@ -409,10 +409,10 @@ the live trees' reports (§6).
    shot, scaled by the total. `fireBarrel` seeds its draw from
    `Game::getCurrentInputIndex` (`Game+0x68`) plus the barrel, and
    `GameServer::simulatePlayerUpdate` (`0x0815bd72`, `0x0815bef9`) sets that
-   from the player's action buffer, which for a bot looks never to advance
-   (inferred: the writer of a bot's buffer was not read). The viewer's bots
-   roll a fresh disc per shot (`bot-referee.js` `rollCone`), the bots
-   package's.
+   from the player's action buffer, which for a bot never advances: its
+   queued actions carry an index nothing writes (ledger AI-145: one index for
+   every seated bot, one a life on foot). The bots package built it
+   (`bot-deviation.js`).
 10. **An Engine's own `setRotation` is not honoured.** `pushMotors` pushes
     along the round's nose (a full body's flight path, a point body's launch
     axis), and every `c_ETRocket` in vanilla, DC, DC Final and EoD sits on the

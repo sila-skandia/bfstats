@@ -44,7 +44,7 @@ import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
-import { botDeviate } from './bot-deviation.js';
+import { botDeviate, botInputIndex, deviationIndex, footInputIndex } from './bot-deviation.js';
 import { FireState } from './fire-state.js';
 import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
@@ -409,6 +409,12 @@ export function createBotReferee(env) {
     referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds });
     const navMs = performance.now() - navStarted;
     referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, nameFor, viewDistance });
+    // Each bot on foot fires at an input index of its own, one a life
+    // (bot-deviation.js, ledger AI-145); `respawn` takes the next.
+    for (const bot of referee.bots) {
+      bot.lives = 0;
+      bot.inputIndex = footInputIndex(bot.playerId, 0);
+    }
     // The strategic interface (doctrine.js) is the one order source: it runs
     // the engine's SAI and asks each side's doctrine (`env.doctrine`, default
     // the SAI itself) for the orders.
@@ -550,6 +556,8 @@ export function createBotReferee(env) {
     bot._heat?.clear();
     bot._respawnIn = 0;
     bot.onRespawn();
+    bot.lives = (bot.lives ?? 0) + 1;
+    bot.inputIndex = footInputIndex(bot.playerId, bot.lives);
     env.onRespawned?.(bot, record?.flag ?? flag);
     return false;
   };
@@ -717,7 +725,7 @@ export function createBotReferee(env) {
    * group; the stand-in's is `BOT_BODY_MATERIAL` -- at the distance it flew,
    * which `Projectile::getDamage` falls off over (ledger DMG-3, IMP-6).
    */
-  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, barrel = 0) => {
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null, ray = null, seedIndex = null) => {
     const w = world();
     const { origin, dir } = ray ?? bot.aimRay();
     let d = dir;
@@ -730,8 +738,11 @@ export function createBotReferee(env) {
     }
     const len = Math.hypot(d[0], d[1], d[2]) || 1;
     // The cone's total in its own unit, hundredths of a radian, and the
-    // bots' one point of its square (bot-deviation.js, ledger AI-145).
-    const [cx, cy, cz] = botDeviate([d[0] / len, d[1] / len, d[2] / len], bot.aimDeviation ?? 0, barrel);
+    // point of its square the bot's input index and the barrel draw
+    // (bot-deviation.js, ledger AI-145); a caller that names none fires a
+    // barrel-less gun.
+    const k = seedIndex ?? deviationIndex(botInputIndex(bot), 0, 0);
+    const [cx, cy, cz] = botDeviate([d[0] / len, d[1] / len, d[2] / len], bot.aimDeviation ?? 0, k);
     const me = w.player(bot.playerId);
     let best = null, bestT = Infinity;
     for (const [id, player] of w.players) {
@@ -874,9 +885,11 @@ export function createBotReferee(env) {
       // the one ray down the eye.
       const eye = bot.aimRay();
       const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
+      const barrels = Array.isArray(stats?.barrels) ? stats.barrels.length : 0;
       for (const [barrel, ray] of rays.entries()) {
         const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
-                                        (material, distance) => env.roundDamage(stats, material, distance), ray, barrel);
+                                        (material, distance) => env.roundDamage(stats, material, distance), ray,
+                                        deviationIndex(botInputIndex(bot), barrels, barrel));
         if (!hit) continue;
         bot.recordHit(hit.targetId);
         env.onHit?.(bot, hit);
