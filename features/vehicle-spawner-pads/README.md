@@ -107,7 +107,8 @@ Vanilla before and after: the live vanilla trees have no `osId` and no
 `templates`, so no other-side vehicle loads. Their pads keep the
 nearest-flag join, and the level's own vehicles settle exactly as before (the
 loaded ones settle in a world of their own). Three things change, and all
-three are engine-correct:
+three are engine-correct (a fourth, a pad with its own side at a flag that
+opens neutral, is the review's correction below):
 
 - A neutral flag taken stands its pads' vehicles up through the spawn path,
   with a full reset and a `vehicle_respawn` event. Before, they were simply
