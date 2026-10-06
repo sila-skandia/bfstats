@@ -587,8 +587,17 @@ export function createLevelStatics(page) {
         spawn: template => {
           const node = padNode(record, template);
           // One node per template: an earlier one of the same template still
-          // standing (its wreck away from the pad, which the engine would
-          // leave where it is) has to clear first. The pad tries every frame.
+          // standing has to clear first. The engine's next hull does not wait
+          // for the last one's wreck, wherever it lies (an M2A3 with a 60 s
+          // `timeToLiveAfterDeath` came back 40.0 s after its death with its
+          // wreck still there, features/desert-combat-parity/lab-ground-truth.md),
+          // so a wreck away from the pad goes now; the page cannot stand both.
+          // One still falling, or a hull still alive, keeps the pad waiting,
+          // and the pad tries every frame.
+          if (record.live.has(node) && world.destroyed(node)) {
+            world.destroy(node);
+            if (!world.alive(node)) record.live.delete(node);
+          }
           if (record.live.has(node) || !world.spawn(node)) return null;
           record.live.add(node);
           return node;
