@@ -233,7 +233,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   S.detachSpawnedCraft(root);
   statics.indexScene(root);
   terrain.collectTerrain(root);
-  terrain.setTables(data.terrainMaterials, data.damageTables);
+  terrain.setTables(data.terrainMaterials, data.damageTables, data.heightmap ?? null);
   terrain.buildCollider(root);
   hullBodies.setupVehicleBodies();
   stage.collider = terrain.collider;

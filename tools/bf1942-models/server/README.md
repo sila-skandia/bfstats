@@ -114,6 +114,18 @@ level process, not per room. Materials travel the same route: the red
 channel of `terrain/materials.png` (8-bit RGB(A), no interlace — the only
 form the exporter emits), inflated with node's own zlib.
 
+*Revised 2026-10-07.* The drawn tiles are not the whole terrain: a patch the
+bake leaves undrawn (the sea floor of 29 levels) had no lattice and so no
+ground, and a hull on the bed that reached one was lifted onto the sea. A
+tree that ships the `heightmap` bake layer (`terrain/heightmap.png`, the whole
+`Heightmap.raw`) is now read instead, through the page's own
+`heightfieldFromSamples`; it equals the tile snap to the bit wherever a tile
+is drawn, and the snap stays the fall-back for a tree baked before. The same
+change gives a room's land drive the page's inputs (the collider, the sea, the
+collision meshes, each wheel's radius off a now-decoded Spring mesh): see
+`features/viewer-ground-hull-collision/README.md`, "Terrain contact,
+2026-10-07".
+
 **Choke cap: 1044 × 16 × 20.** R-1 is the engine's capacity law —
 `Σ(rate × 1044) ≤ cap`, offenders lose 5, never below 10 — but P0 never
 recovered the engine's own cap value (netcode.md §5). This server documents
