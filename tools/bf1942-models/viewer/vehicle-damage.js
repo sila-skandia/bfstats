@@ -141,7 +141,8 @@ export class DamageableVehicle {
     this.criticalAccumulator = 0;
     /** Seconds accumulated toward the next water-damage tick. */
     this.waterAccumulator = 0;
-    /** Seconds accumulated toward the next upside-down tick. */
+    /** `Armor+0xe8`, the one-second bank the upside-down test is billed
+     *  from (HP-17). */
     this.upsideDownAccumulator = 0;
     /**
      * `PlayerControlObjectTemplate::submarineData`'s seven floats (PHY-3,
@@ -322,17 +323,22 @@ export class DamageableVehicle {
       this.waterAccumulator = 0;
     }
 
-    // Upside-down damage: same accumulator cadence, independent clock.
-    if (!this.armor.destroyed && upsideDown
-        && this.hpLostWhileUpSideDown !== null) {
+    // Upside-down damage (HP-17, HP-18): `Armor::update`'s one-second bank
+    // `+0xe8` runs from spawn whether the hull is upside down or not; once it
+    // holds a second the hull is tested THEN (`upsideDown`, which the caller
+    // answers by `world-damage.js` `upsideDownOwners`), billed the whole bank
+    // times `hpLostWhileUpSideDown` (`0x081734a6`), and the bank emptied either
+    // way. A hull rolled over is billed 0 to 1 s later, never before.
+    if (!this.armor.destroyed) {
       this.upsideDownAccumulator += dt;
-      while (this.upsideDownAccumulator >= 1 && !this.armor.destroyed) {
-        this.upsideDownAccumulator -= 1;
-        this.armor.damage(this.hpLostWhileUpSideDown);
-        tick = this.hpLostWhileUpSideDown;
+      if (this.upsideDownAccumulator >= 1) {
+        if (upsideDown && this.hpLostWhileUpSideDown > 0.01) {
+          const amount = this.upsideDownAccumulator * this.hpLostWhileUpSideDown;
+          this.armor.damage(amount);
+          tick = amount;
+        }
+        this.upsideDownAccumulator = 0;
       }
-    } else if (!upsideDown) {
-      this.upsideDownAccumulator = 0;
     }
 
     // `submarineData`'s crush and the crew's air, on its own 0.5 s bank.
@@ -576,15 +582,19 @@ export class VehicleDamageSet {
    *  `ticks`, when given, collects `{ vehicle, owner, amount }` for every
    *  vehicle whose own damage clocks took HP this step (`update`'s `tick`);
    *  `crews` collects `{ vehicle, owner, amount }` for a crew owed HP for
-   *  want of air. `depthOf(owner)` is a hull's `underWater`, 0 when absent. */
-  update(dt, { inWaterOwners = null, ticks = null, depthOf = null, crews = null } = {}) {
+   *  want of air. `depthOf(owner)` is a hull's `underWater`, 0 when absent;
+   *  `upsideDownOwners` the hulls `Armor::update`'s tilt test passes for. */
+  update(dt, {
+    inWaterOwners = null, upsideDownOwners = null, ticks = null, depthOf = null, crews = null,
+  } = {}) {
     const changes = [];
     for (const [owner, vehicle] of this.byOwner) {
       // A destroyed vehicle with nothing left to announce costs one branch.
       if (vehicle.destroyed && vehicle.deathAnnounced) continue;
       const inWater = inWaterOwners?.has(owner) ?? false;
+      const upsideDown = upsideDownOwners?.has(owner) ?? false;
       const depth = vehicle.submarine && depthOf ? depthOf(owner) : 0;
-      const result = vehicle.update(dt, { inWater, depth });
+      const result = vehicle.update(dt, { inWater, upsideDown, depth });
       if (result.changed || result.died) changes.push({ vehicle, ...result });
       if (result.tick > 0) ticks?.push({ vehicle, owner, amount: result.tick });
       if (result.crew > 0) crews?.push({ vehicle, owner, amount: result.crew });

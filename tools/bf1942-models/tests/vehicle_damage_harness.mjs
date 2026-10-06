@@ -579,6 +579,33 @@ const AC130 = {
   };
 }
 
+// Upside down (HP-17, HP-18): the one-second bank runs from spawn whatever
+// the hull is doing; when it holds a second the hull is tested and, upside
+// down, billed the whole bank times `hpLostWhileUpSideDown` (10 on a Sherman).
+{
+  const run = (steps) => {
+    const v = new DamageableVehicle(SHERMAN);
+    const bills = [];
+    let t = 0;
+    for (const [dt, upsideDown] of steps) {
+      t += dt;
+      const r = v.update(dt, { upsideDown });
+      if (r.tick > 0) bills.push({ at: +t.toFixed(3), amount: +r.tick.toFixed(3) });
+    }
+    return { hp: +v.hitPoints.toFixed(3), bills, bank: +v.upsideDownAccumulator.toFixed(3) };
+  };
+  const at30 = (seconds, flipAt = 0) => Array.from({ length: Math.round(seconds * 30) },
+    (_, i) => [1 / 30, (i + 1) / 30 > flipAt]);
+  out.upsideDown = {
+    fromSpawn: run(at30(3.1)),
+    // Upright for 0.6 s: the first bill comes 0.4 s after the roll, on the
+    // whole bank.
+    rolledLate: run(at30(1.5, 0.6)),
+    upright: run(at30(3, Infinity)),
+    longFrame: run([[2, true]]),
+  };
+}
+
 // `submarineData` (PHY-3, `PlayerControlObject::handleFrameUpdate`): Desert
 // Combat's M1A1 authors 0/0/0/100/110/1.5/5, a crush depth of 1.5 m at 5 HP a
 // second and no suffocation; the Stryker drains its crew's air below 12.5 m
