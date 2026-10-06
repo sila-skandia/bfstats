@@ -147,6 +147,11 @@ export class World {
      *  table here is what lets that land without a page change. */
     this.tickets = extras?.tickets ?? null;
 
+    /** Set by a page in a room (`net-room.js`): the server bills the objects'
+     *  damage and sends their hit points, so this world's damage pass only
+     *  draws them (`world-damage.js`). */
+    this.remoteDamage = false;
+
     this.combatArea = new CombatArea(extras);
     this.supplyField = new SupplyField();
     this.vehicleDamage = new VehicleDamageSet();

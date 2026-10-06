@@ -22,7 +22,8 @@ import { Knockback } from './knockback.js';
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`,
- * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`.
+ * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`, `world`,
+ * `currentRoot`, `collider`.
  */
 export function createNetRoom(page) {
   const room = {};
@@ -94,29 +95,35 @@ export function createNetRoom(page) {
   // template. Built once the level's hulls are registered.
   let hullNames = null;
   function hullIndex() {
-    if (hullNames && hullNames.byNode.size === page.damageVisuals.size) return hullNames;
-    hullNames = { byLevel: new Map(), byNode: new Map() };
-    for (const [owner, visual] of page.damageVisuals) {
-      const node = visual?.node;
-      if (!node) continue;
-      hullNames.byNode.set(node, owner);
-      if (node.levelNode != null) hullNames.byLevel.set(node.levelNode, { node, owner });
-    }
+    const root = page.currentRoot;
+    if (hullNames && hullNames.root === root) return hullNames;
+    hullNames = { root, byLevel: new Map() };
+    root?.traverse(node => {
+      if (node.levelNode != null && !hullNames.byLevel.has(node.levelNode)) {
+        hullNames.byLevel.set(node.levelNode, node);
+      }
+    });
     return hullNames;
+  }
+
+  /** The owner id the level's collision index gave a placed node (`-1`, null
+   *  here, for none): the key of its hit points and its wreck, when it has
+   *  an Armor; a stationary gun has none and is only stood or not. */
+  function ownerOfNode(node) {
+    const owner = page.collider?.statics?.ownerOf?.(node);
+    return Number.isInteger(owner) && owner >= 0 ? owner : null;
   }
 
   /** The page's own copy of a room vehicle, `{ node, owner }`, or null. */
   function pageHullOf(v) {
     if (!v) return null;
-    const names = hullIndex();
-    if (v.node != null) return names.byLevel.get(v.node) ?? null;
-    if (v.pad != null) {
+    let node = null;
+    if (v.node != null) node = hullIndex().byLevel.get(v.node) ?? null;
+    else if (v.pad != null) {
       const record = page.vehiclePads?.pads?.find(r => r.index === v.pad);
-      const node = record?.nodes?.get(String(v.template).toLowerCase()) ?? null;
-      const owner = node ? names.byNode.get(node) : null;
-      return owner == null ? null : { node, owner };
+      node = record?.nodes?.get(String(v.template).toLowerCase()) ?? null;
     }
-    return null;
+    return node ? { node, owner: ownerOfNode(node) } : null;
   }
 
   /** The room table id for a LOCAL vehicle node: by name first (its
@@ -233,7 +240,7 @@ export function createNetRoom(page) {
     const v = room.roomClient?.vehicles.get(id);
     const hull = pageHullOf(v);
     const pose = room.roomClient?.remoteVehicle(id);
-    if (!hull || !pose || v.live === false) return false;
+    if (!hull || hull.owner == null || !pose || v.live === false) return false;
     if (page.occupancy?.root === hull.node) return false;
     hull.node.updateWorldMatrix(true, false);
     const e = hull.node.matrixWorld.elements;
@@ -263,7 +270,8 @@ export function createNetRoom(page) {
   function applyObject(node) {
     const want = objectHp.get(node);
     const copy = hullIndex().byLevel.get(node);
-    const local = copy ? page.vehicleDamage?.get(copy.owner) : null;
+    const owner = copy ? ownerOfNode(copy) : null;
+    const local = owner != null ? page.vehicleDamage?.get(owner) : null;
     if (!want || !local) return;
     if (want.destroyed) {
       if (!local.destroyed) local.damage(local.hitPoints + 1);
@@ -350,14 +358,14 @@ export function createNetRoom(page) {
     if (!hull) return;
     page.vehiclePads.setRemoteLive?.(hull.node, !!v.live);
     if (!v.live) {
-      page.remoteGone?.(hull.owner);
+      if (hull.owner != null) page.remoteGone?.(hull.owner);
       return;
     }
     if (v.fresh) {
       v.fresh = false;
-      page.remoteStand?.(hull.owner);
+      if (hull.owner != null) page.remoteStand?.(hull.owner);
     }
-    const local = page.vehicleDamage?.get(hull.owner);
+    const local = hull.owner != null ? page.vehicleDamage?.get(hull.owner) : null;
     if (!local || v.hp == null) return;
     if (v.destroyed) {
       if (!local.destroyed) local.damage(local.hitPoints + 1);
@@ -382,6 +390,8 @@ export function createNetRoom(page) {
     if (!hullsSynced) {
       hullsSynced = true;
       page.vehiclePads.remotePads = true;
+      // And the objects' damage: the server bills it, the page draws it.
+      if (page.world) page.world.remoteDamage = true;
       // HELLO's word: each hull's state and the hit points of what is not at
       // its full count.
       const damage = room.roomClient.hello?.damage;
@@ -415,8 +425,9 @@ export function createNetRoom(page) {
     netTickPoses.length = 0;
     room.netLastCorrection = null;
     parkedHullCache.clear();
-    // Solo again: the page's own pads run its level from here on.
+    // Solo again: the page's own pads and damage run its level from here on.
     if (page.vehiclePads) page.vehiclePads.remotePads = false;
+    if (page.world) page.world.remoteDamage = false;
     hullsSynced = false;
     posesSynced = false;
     hullDirty.clear();

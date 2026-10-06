@@ -2036,7 +2036,8 @@ const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `placeParkedHull syncVehicleSpawnOwnership`),
-  from(() => level, `applyVisibility bindDynamicShading extras vehicleDamage vehiclePads`),
+  from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras vehicleDamage
+    vehiclePads world`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
   from(() => pageConsole, `logToConsole`),
   from(() => pageAudio, `playWorldReload`),
