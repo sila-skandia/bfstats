@@ -748,7 +748,8 @@ class ObjectTemplate:
     # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
-    # Clear (the template constructor's default, or an explicit 0) is a
+    # Clear (the template constructor's default for every class but a
+    # projectile's, or an explicit 0) is a
     # `StaticPhysicsNode`, and on a placed root that holds the whole object
     # still (PHY-17): `Assembler` stamps it on such a root as
     # `extras.physics.hasMobilePhysics = false`. `mobile_physics_declared`
