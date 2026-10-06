@@ -30,6 +30,7 @@ import { createDemolitions } from './demolitions.js';
 import { createHandFire } from './hand-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
+import { ThrowCharge } from './throw-charge.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -392,6 +393,11 @@ export function createHandWeapon(page) {
     // (`kit-ammo.js` `itemHeat`): `hand-fire.js` steps it, gates the trigger
     // on it and bills each pull to it, and the HUD's heat bar reads it.
     hw.heat = itemHeat(hw.ammo, data);
+    // A grenade's `heatAddWhenFire` is its throw's charge instead
+    // (`velocityDependentOnHeat`, GUN-14/GUN-18): the rig's own, so raising
+    // the weapon starts it at 0, as `HandFireArms::enable` does.
+    hw.charge = data?.heat?.velocityDependentOnHeat && data.heat.heatAddWhenFire > 0
+      ? new ThrowCharge(data.heat.heatAddWhenFire) : null;
     if (data) {
       const found = page.guns.collect(rig, {
         replace: false,          // the flown aircraft's guns must survive this
