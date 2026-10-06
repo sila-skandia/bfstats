@@ -171,17 +171,32 @@ export function vehicleTick(world, player, dt, integrators) {
           vehicle.setInput('c_PIThrottle', Math.max(0, Math.min(1,
             vehicle.input('c_PIThrottle') + power * dt)));
         }
-        // A/D rudder, pad X for roll, pad Y for pitch -- the same stick
-        // spring the page applied at its own frame rate; the pad bypasses
-        // it, which is the page's mobile arrangement.
-        vehicle.setInput('c_PIYaw', axisToward(
-          vehicle.input('c_PIYaw'), input.rudder, dt));
-        player.stick.roll = input.pad
-          ? input.roll : axisToward(player.stick.roll, input.roll, dt);
-        player.stick.pitch = input.pad
-          ? input.pitch : axisToward(player.stick.pitch, input.pitch, dt);
-        vehicle.setInput('c_PIRoll', player.stick.roll);
-        vehicle.setInput('c_PIPitch', player.stick.pitch);
+        // The rudder and the stick are the control map's own channels, this
+        // tick's value straight onto the hull: a key is a step
+        // (`ControlMap::buttonsToAxis`, 0.001 s rise and fall; world-input.js
+        // has the read), the mouse a rate (mouse-input.js), the touch pad a
+        // deflection. The part's own servo shapes the motion -- a rack's
+        // `setAcceleration` ramp, a surface's `maxSpeed` -- and no spring of
+        // the viewer's sits in front of it any more (it took a key 0.4 s to
+        // reach full deflection, on top of the servo).
+        //
+        // The engine laws clip at the part: an `automaticReset` bundle ramps
+        // to `input * maxRotation` and stops at its bounds (GUN-2), so a
+        // vectored airframe takes the value as it is, up to the wire's +-16.
+        // A fixed-wing surface here is a position servo on a -1..1
+        // deflection with no clip of its own (`vehicle-base.js`
+        // `advanceSurfaces`), so it gets the clip as +-1: for an
+        // `automaticReset` wing the same motion exactly, since an input past 1
+        // drives the angle to its bound at the same rate. Not modelled:
+        // `rememberExcessInput`'s backlog (GUN-2), which on vanilla's elevator
+        // and rudder Wings spends a mouse flick's excess over later ticks.
+        const surface = vehicle.vectored
+          ? v => v : v => Math.max(-1, Math.min(1, v));
+        player.stick.roll = input.roll;
+        player.stick.pitch = input.pitch;
+        vehicle.setInput('c_PIYaw', surface(input.rudder));
+        vehicle.setInput('c_PIRoll', surface(input.roll));
+        vehicle.setInput('c_PIPitch', surface(input.pitch));
         vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
         vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
       }

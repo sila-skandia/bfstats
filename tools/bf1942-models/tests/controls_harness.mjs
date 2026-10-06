@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseCon, classifyCon, keyIdToCode, describeBinding, createControls,
-  DEFAULT_CROSSHAIR_COLOR, parseCrossHairColor,
+  DEFAULT_CROSSHAIR_COLOR, parseCrossHairColor, resolveAxisSlots,
 } from '../viewer/controls.js';
 import { GameConsole } from '../viewer/console.js';
 import { CONTROLS_DEFAULTS } from '../viewer/controls-defaults.js';
@@ -75,6 +75,9 @@ results.parse.sample = {
   maps: parsed.maps,
   pitchInvert: parsed.bindings.find(b => b.trigger === 'c_PIPitch')?.invert,
   yawInvert: parsed.bindings.find(b => b.trigger === 'c_PIYaw')?.invert,
+  pitchSecondary: parsed.bindings.find(b => b.trigger === 'c_PIPitch')?.secondary,
+  yawSecondary: parsed.bindings.find(b => b.trigger === 'c_PIYaw')?.secondary,
+  throttleKeysSecondary: parsed.bindings.find(b => b.trigger === 'c_PIThrottle')?.secondary,
   mapCode: parsed.bindings.find(b => b.trigger === 'c_PIMap')?.code,
   fireButton: parsed.bindings.find(b => b.trigger === 'c_PIFire')?.button,
 };
@@ -151,6 +154,35 @@ results.parse.describeKeyboard = describeBinding(
   page.keys.add('ArrowLeft');
   d.rollArrow = controls.axis('c_PIRoll');
   page.keys.delete('ArrowLeft');
+
+  // the shipped Air map's mouse lines: the pumped pair handed in reaches the
+  // stick (mouse primary, arrows secondary), unclamped, by the slot rule
+  d.mouseLines = parseCon(CONTROLS_DEFAULTS.files.air).bindings
+    .filter(b => b.device === 'mouse' && b.kind === 'axis')
+    .map(b => ({ trigger: b.trigger, axis: b.axis, invert: b.invert, secondary: b.secondary }));
+  d.arrowsSecondary = parseCon(CONTROLS_DEFAULTS.files.air).bindings
+    .find(b => b.trigger === 'c_PIPitch' && b.device === 'keyboard')?.secondary;
+  d.mouseRoll = controls.axis('c_PIRoll', { x: 2.5, y: -0.5 });
+  d.mousePitch = controls.axis('c_PIPitch', { x: 2.5, y: -0.5 });
+  d.mouseYaw = controls.axis('c_PIYaw', { x: 2.5, y: -0.5 });
+  page.keys.add('ArrowRight');
+  d.mouseRollAgainstKey = controls.axis('c_PIRoll', { x: -0.5, y: 0 });
+  d.mouseRollPastKey = controls.axis('c_PIRoll', { x: -1.5, y: 0 });
+  page.keys.delete('ArrowRight');
+  d.slots = {
+    primaryLarger: resolveAxisSlots(-2, 1),
+    secondaryLarger: resolveAxisSlots(0.3, -1),
+    tie: resolveAxisSlots(1, -1),
+    bothRest: resolveAxisSlots(0, 0),
+  };
+  page.optPilot.checked = false;
+  page.occupancy = null;
+  page.optOnFoot.checked = true;
+  // On foot the Infantry map binds the mouse to the look alone.
+  d.footThrottleWithMouse = controls.axis('c_PIThrottle', { x: 3, y: 3 });
+  page.optOnFoot.checked = false;
+  page.optPilot.checked = true;
+  page.occupancy = { rootKind: 'air' };
 
   // context selection
   d.contextOnFoot = (() => {

@@ -144,8 +144,9 @@ const tank = {
   throttles: tankHeld.vehicle.seen.map(s => s.throttle),
 };
 
-// The air branch is untouched: arrows still spring c_PIPitch to full, and the
-// latching throttle still ignores a zero power word.
+// The air branch takes the key as the control map does, a step on the first
+// tick (`ControlMap::buttonsToAxis`, world-input.js), and its latching
+// throttle still ignores a zero power word.
 const airHeld = drive('air', rep(30, { pitch: 1 }));
 const air = {
   pitchFirst: airHeld.vehicle.seen[0].pitch,

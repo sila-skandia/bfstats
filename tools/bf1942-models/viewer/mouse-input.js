@@ -50,6 +50,18 @@
  *     `0x083f1f57`/`0x083f1f69`; `PlayerInput::fromControlMap` `0x00610f80`
  *     stores `getAxisValue(id)` straight through `PlayerInput::set`
  *     `0x00407dc0` for ids 0..0x36, with no arithmetic in between.
+ *   * **Every mapping of a mouse axis reads that one register**, so the law
+ *     is not the look's alone. The Air map binds the mouse to the stick
+ *     (`c_PIRoll IDFMouse IDAxis_0`, `c_PIPitch IDFMouse IDAxis_1`) as well as
+ *     to the look, and both go through the same `axisToAxis` arm: a pilot's
+ *     `c_PIRoll` is `0.001 x counts/s x 3.85`, held for the frame's ticks,
+ *     quantised on the wire like any channel. A still mouse is a centred
+ *     stick. Which of the two a tick keeps is `BFPlayer::handleInput`'s
+ *     choice (MLK-2, mouse-look-key.js). The client's
+ *     `PlayerInput::fromControlMap` also copies `isAxisValueAnalogue` (map vt
+ *     `+0x60`) into a third mask at `+0xe8` (0x0061107c), which
+ *     `PlayerAction::set` never packs: the authority cannot tell a mouse from
+ *     a key.
  *   * One pump per frame carries the whole consumed time:
  *     `InputManager::update` `0x0049ce70` pumps the device manager once with
  *     `nTicks x tickDt` (`0x0049cff7 fild nTicks; fmul tickDt; call [eax+0x20]`)
@@ -102,6 +114,21 @@ export const DEFAULT_SENSITIVITY = Object.freeze({
   infantry: 0.25,
   landSea: 0.25,
   air: 0.75,
+});
+
+/**
+ * The shipped INVERT MOUSE boxes, read out of the same four files:
+ * `Infantry.con` `game.setInfMouseInvert 0`, `Land.con`
+ * `game.setLandSeaMouseInvert 0`, `Air.con` **`game.setAirMouseInvert 1`**.
+ * The Common profile has no box. The page runs the profile's own lines over
+ * these (`page-console.js` `applyControlProfile`); a page without a console
+ * (the node harnesses) starts where a fresh install does.
+ */
+export const DEFAULT_INVERT = Object.freeze({
+  common: false,
+  infantry: false,
+  landSea: false,
+  air: true,
 });
 
 export const PROFILES = Object.freeze(['common', 'infantry', 'landSea', 'air']);
@@ -290,9 +317,16 @@ export class MouseInput {
     this.invertX = !!invertX;
     this.invertY = !!invertY;
     /** `game.set{Inf,LandSea,Air}MouseInvert`: the options screen's INVERT
-     *  MOUSE box, one per profile, turning the look axis's up and down round
-     *  on that profile only. Off in every shipped profile. */
-    this.invertProfile = { common: false, infantry: false, landSea: false, air: false };
+     *  MOUSE box, one per profile. It turns the DEVICE's Y round, not one
+     *  mapping's: `applyMouseSensitivity` 0x006c55f0 hands the byte to the
+     *  mouse's `setInvertAxis(1, invert)` (`0x006c5615`-`0x006c561c`, device
+     *  vt `+0x30`), and `getAxisValue` negates on it for every reader. On the
+     *  Air map that is the stick's `c_PIPitch` and the held look's
+     *  `c_PIMouseLookY` together. The client applies the Air pair for a VCAir
+     *  PCO and the LandSea pair for VCLand/VCSea (`0x006ae4d6`-`0x006ae639`).
+     *  Shipped: Infantry and LandSea 0, **Air 1** (`Air.con`'s
+     *  `game.setAirMouseInvert 1`): pull the mouse back and the nose comes up. */
+    this.invertProfile = { ...DEFAULT_INVERT };
     this._pixelsX = 0;
     this._pixelsY = 0;
     this._x = 0;
