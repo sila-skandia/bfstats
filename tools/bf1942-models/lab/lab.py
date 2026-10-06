@@ -84,16 +84,80 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def setup(force: bool = False) -> None:
+# A mod server1 lacks can come from the Wine client's install. The 1.6 Linux
+# server lower-cases every path before it opens a file ("The file case
+# confusion problem solved", server1's readmes/readme-linux.txt), so the mod
+# becomes a lower-case tree of links to the client's files: nothing is copied
+# and the client install is never written. Only what a server reads is linked:
+# scripts, the lexicon and the archives, not the movies, music or readmes.
+CLIENT_MOD_SUFFIXES = {".con", ".dat", ".rfa"}
+CLIENT_MOD_SKIP_DIRS = {"movies", "music"}
+CLIENT_MOD_MARK = ".client-mod.json"
+
+
+def client_mod_source(name: str, game_dir: Path) -> Path:
+    """The client's mod folder for `name`, whatever its case on disk."""
+    mods = game_dir / "Mods"
+    for p in mods.iterdir() if mods.is_dir() else ():
+        if p.is_dir() and p.name.lower() == name.lower():
+            return p
+    raise SystemExit(f"no mod {name!r} under {mods}")
+
+
+def link_client_mod(name: str, mods_dir: Path, game_dir: Path = GAME_DIR) -> Path:
+    """Build `mods_dir/<name lower-cased>` from the client's install, as links.
+    A tree this built before is rebuilt; anything else there is refused, so a
+    server1-derived mod is never replaced."""
+    src = client_mod_source(name, game_dir)
+    dest = mods_dir / src.name.lower()
+    if dest.exists() or dest.is_symlink():
+        if not (dest / CLIENT_MOD_MARK).is_file():
+            raise SystemExit(f"{dest} exists and was not linked from a client mod; leaving it")
+        shutil.rmtree(dest)
+    links: dict[Path, Path] = {}
+    for path in sorted(src.rglob("*")):
+        rel = path.relative_to(src)
+        if path.is_dir() or path.suffix.lower() not in CLIENT_MOD_SUFFIXES:
+            continue
+        if len(rel.parts) > 1 and rel.parts[0].lower() in CLIENT_MOD_SKIP_DIRS:
+            continue
+        low = Path(*(part.lower() for part in rel.parts))
+        if low in links:
+            raise SystemExit(f"{links[low]} and {path} are one file to a lower-casing server")
+        links[low] = path
+    for low, path in links.items():
+        (dest / low).parent.mkdir(parents=True, exist_ok=True)
+        (dest / low).symlink_to(path)
+    (dest / CLIENT_MOD_MARK).write_text(json.dumps({
+        "from": str(src), "files": len(links),
+        "built": dt.datetime.now().isoformat(timespec="seconds"),
+    }, indent=2) + "\n")
+    return dest
+
+
+def setup(force: bool = False, client_mods: list[str] | None = None) -> None:
     """Build the lab install: the server binary and its small files copied,
     the mod archives linked (read-only, 127 MB), and a snapshot of server1's
-    settings as the template every run is rendered from."""
+    settings as the template every run is rendered from. `client_mods` adds
+    mods from the Wine client's install (to an existing install too), and a
+    rebuild keeps the ones it had."""
+    client_mods = list(client_mods or [])
     if INSTALL.exists():
         if not force:
+            if client_mods:
+                if running_state():
+                    sys.exit("a lab server is running; stop it first")
+                add_client_mods(client_mods)
+                return
             print(f"{INSTALL} exists; `setup --force` rebuilds it")
             return
         if running_state():
             sys.exit("a lab server is running; stop it first")
+        try:
+            had = json.loads((INSTALL / "SOURCE.json").read_text()).get("clientMods", [])
+        except (OSError, ValueError):
+            had = []
+        client_mods = sorted(set(had) | set(client_mods), key=str.lower)
         shutil.rmtree(INSTALL)
     binary = SERVER_SRC / "bf1942_lnxded.static"
     if not binary.is_file():
@@ -125,6 +189,21 @@ def setup(force: bool = False) -> None:
         "built": dt.datetime.now().isoformat(timespec="seconds"),
     }, indent=2) + "\n")
     print(f"lab install at {INSTALL} (settings template from {src_settings})")
+    if client_mods:
+        add_client_mods(client_mods)
+
+
+def add_client_mods(names: list[str]) -> None:
+    """Link each client mod into the install and record it in SOURCE.json."""
+    source = json.loads((INSTALL / "SOURCE.json").read_text())
+    have = {m.lower(): m for m in source.get("clientMods", [])}
+    for name in names:
+        dest = link_client_mod(name, INSTALL / "mods")
+        files = json.loads((dest / CLIENT_MOD_MARK).read_text())["files"]
+        print(f"linked {dest} from the client's {client_mod_source(name, GAME_DIR)} ({files} files)")
+        have[dest.name] = client_mod_source(name, GAME_DIR).name
+    source["clientMods"] = sorted(have.values(), key=str.lower)
+    (INSTALL / "SOURCE.json").write_text(json.dumps(source, indent=2) + "\n")
 
 
 # --- rendering a scenario --------------------------------------------------------
@@ -240,7 +319,10 @@ def join_command() -> str:
 
 
 def new_logs(since: float) -> list[Path]:
-    return sorted(p for p in LOGS.glob(f"ev_{LAB_SETTINGS['serverPort']}-*.xml") if p.stat().st_mtime >= since - 1)
+    # Each mod's own logs/ too: a level of a mod other than bf1942 may log there.
+    found = [p for d in [LOGS, *sorted((INSTALL / "mods").glob("*/logs"))]
+             for p in d.glob(f"ev_{LAB_SETTINGS['serverPort']}-*.xml")]
+    return sorted({p for p in found if p.stat().st_mtime >= since - 1}, key=lambda p: p.name)
 
 
 def start(scenario_path: Path, wait: float) -> None:
@@ -252,6 +334,7 @@ def start(scenario_path: Path, wait: float) -> None:
         print("the last run's server exited on its own; collecting it first")
         finish(json.loads(STATE.read_text()))
     sc = load_scenario(scenario_path)
+    preload = preload_value(sc["preload"]) if sc.get("preload") else None
     write_settings(sc)
     started = time.time()
     run_id = dt.datetime.fromtimestamp(started).strftime("%Y%m%d-%H%M%S") + "-" + sc["name"]
@@ -260,8 +343,8 @@ def start(scenario_path: Path, wait: float) -> None:
     shutil.copy2(scenario_path, run / "scenario.json")
     shutil.copytree(SETTINGS, run / "settings")
     env = dict(os.environ, LD_LIBRARY_PATH=f"{INSTALL / 'lib'}:/usr/lib32")
-    if sc.get("preload"):
-        env["LD_PRELOAD"] = str(Path(sc["preload"]).expanduser().resolve())
+    if preload:
+        env["LD_PRELOAD"] = preload
     with (run / "server.out").open("wb") as out:
         proc = subprocess.Popen(SERVER_ARGS, cwd=INSTALL, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
@@ -273,6 +356,20 @@ def start(scenario_path: Path, wait: float) -> None:
     print(f"join: {join_command()}")
     if wait > 0:
         wait_for_round(proc, started, wait)
+
+
+def preload_value(preload) -> str:
+    """A scenario's `preload`, one path or a list (the recorder, then e.g.
+    `lab/realfire`'s realfire.so), as LD_PRELOAD's colon-separated list.
+    A missing file stops the start rather than running without it."""
+    paths = [preload] if isinstance(preload, str) else list(preload)
+    out = []
+    for p in paths:
+        path = Path(p).expanduser().resolve()
+        if not path.is_file():
+            sys.exit(f"preload {path} does not exist")
+        out.append(str(path))
+    return ":".join(out)
 
 
 def wait_for_round(proc: subprocess.Popen, started: float, timeout: float) -> None:
@@ -447,11 +544,14 @@ def viewer_urls(st: dict, collected: dict[str, list[str]]) -> list[str]:
     base = os.environ.get("BF42_VIEWER_URL", "http://localhost:5273")
     lv = st["levels"][0]
     mode = VIEWER_MODE.get(lv.get("mode", "GPM_COOP").upper(), "")
+    # The viewer's mod choice is sticky (mods.js keeps it in localStorage), so
+    # every run names its mod, vanilla too.
+    mod_arg = f"&mod={lv.get('mod', 'bf1942').lower()}"
     urls = []
     for rec in collected["client"] + collected.get("server", []):
         log = log_for(rec, collected["serverlog"])
         overlay = f"&serverlog=replays/{st['run']}/{Path(log).name}" if log else ""
-        urls.append(f"{base}/map.html?replay=replays/{st['run']}/{Path(rec).name}{overlay}&mode={mode}")
+        urls.append(f"{base}/map.html?replay=replays/{st['run']}/{Path(rec).name}{overlay}&mode={mode}{mod_arg}")
     return urls
 
 
@@ -572,6 +672,8 @@ def main(argv: list[str]) -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("setup", help="build the lab install from server1")
     p.add_argument("--force", action="store_true", help="rebuild an existing install")
+    p.add_argument("--mods-from-client", nargs="+", default=[], metavar="MOD",
+                   help="also link these mods (e.g. DesertCombat) from the Wine client's install")
     p = sub.add_parser("start", help="render a scenario and start the lab server")
     p.add_argument("scenario", type=Path)
     p.add_argument("--wait", type=float, default=180, help="seconds to wait for the round (0: return at once)")
@@ -582,7 +684,7 @@ def main(argv: list[str]) -> None:
     p.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     if a.cmd == "setup":
-        setup(a.force)
+        setup(a.force, a.mods_from_client)
     elif a.cmd == "start":
         start(a.scenario, a.wait)
     elif a.cmd == "status":
