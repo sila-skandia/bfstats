@@ -23,7 +23,7 @@ const { firePlanDone, PLAN_ACTION, heatHolds } = await imp('bot-plans.js');
 const { FireState } = await imp('fire-state.js');
 const { firePeriod } = await imp('gun-cycle.js');
 const { fireArmsHeat } = await imp('bot-barrels.js');
-const { botDeviate, deviationPoint, deviationIndex, footInputIndex, botInputIndex, SEAT_INPUT_INDEX } = await imp('bot-deviation.js');
+const { botDeviate, deviationPoint, deviationIndex, declaredBarrels, footInputIndex, botInputIndex, SEAT_INPUT_INDEX } = await imp('bot-deviation.js');
 const { launchesDrawnRound } = await imp('bot-rounds.js');
 const { createVehicleHits } = await imp('vehicle-hits.js');
 seedMathRandom(3);
@@ -439,6 +439,8 @@ out.flown = {
     seatIndex: SEAT_INPUT_INDEX, seatK,
     shotgunK: [0, 1, 7].map(i => deviationIndex(476, 8, i)),
     rifleK: deviationIndex(476, 0, 0), launcherK: deviationIndex(476, 1, 0),
+    // A glb muzzle list: none, the one a barrel-less gun is given, eight.
+    declared: [declaredBarrels([]), declaredBarrels([{}]), declaredBarrels(new Array(8).fill({})), declaredBarrels(null)],
     lives, onFoot, seated, unset, again: footInputIndex('bot_7', 0),
     // Looking down -z: right is +x, up is +y, each u x total / 100.
     north: off([0, 0, -1], 1.0, seatK),

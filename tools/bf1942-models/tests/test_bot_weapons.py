@@ -273,6 +273,8 @@ class BotDeviationPointTests(unittest.TestCase):
         self.assertEqual(self.d["rifleK"], 475)
         self.assertEqual(self.d["launcherK"], 476)
         self.assertEqual(self.d["shotgunK"], [476, 477, 483])
+        # The exporter gives a barrel-less gun one muzzle: one reads as none.
+        self.assertEqual(self.d["declared"], [0, 0, 8, 0])
 
     def test_a_bot_on_foot_takes_a_multiple_of_4_each_life(self) -> None:
         lives = self.d["lives"]
