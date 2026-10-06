@@ -28,6 +28,7 @@ import {
 } from './ground-engine.js';
 import { GRAVITY } from './physics.js';
 import { HullWater } from './amphibious.js';
+import { addBoxDrag } from './ground-contact.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 
 const DEG = 180 / Math.PI;
@@ -2636,6 +2637,26 @@ function kettenKradNode({ rearWheels = true } = {}) {
     forward: round(alongOf(forward), 2), forwardPitch: round(pitchDeg(forward), 1),
     reverse: round(alongOf(back), 2),
     noRearPitch: round(Math.abs(pitchDeg(fallen)), 1),
+  };
+}
+
+// --- the box drag law (PHY-4) ------------------------------------------------
+// XPack2's Krupp: `drag 15` on 2,500 kg over a 2.27 x 1.81 x 5.42 m box, at
+// rest in orientation, driven straight ahead (-Z) and then sideways (+X).
+{
+  const box = [2.27, 1.81, 5.42];
+  const pull = (v, w = [0, 0, 0]) => {
+    const s = { velocity: new THREE.Vector3(...v), angularVelocity: new THREE.Vector3(...w) };
+    const q = new THREE.Quaternion();
+    const accel = new THREE.Vector3(), torque = new THREE.Vector3();
+    const took = addBoxDrag(box, 15, 2500, s, q, q.clone().invert(), accel, torque);
+    return { took, accel: accel.toArray().map(x => round(x, 4)), torque: torque.toArray().map(x => round(x, 6)) };
+  };
+  results.boxDrag = {
+    ahead10: pull([0, 0, -10]), ahead20: pull([0, 0, -20]), side10: pull([10, 0, 0]),
+    yaw: pull([0, 0, 0], [0, 1, 0]),
+    noBox: addBoxDrag(null, 15, 2500, { velocity: new THREE.Vector3(0, 0, -10), angularVelocity: new THREE.Vector3() },
+      new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Vector3(), null),
   };
 }
 
