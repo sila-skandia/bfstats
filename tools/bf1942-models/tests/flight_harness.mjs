@@ -1867,14 +1867,15 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     // `forward` W/S, `rudder` D/A, `pitch` ArrowUp/ArrowDown (Air.con's
     // `c_PIPitch` +1/-1). `attitude` is the hull's in world terms; `tilt` is
     // how far its up axis leans from vertical, which a yaw does not change.
-    const keyed = craft => {
+    // `hull` stands in for the seat's damageable (`World.occupiedDamageable`).
+    const keyed = (craft, hull = null) => {
       const seat = {
         id: 'pilot', kind: 'air', vehicle: craft,
         occupancy: { turret: null, isActiveRoot: () => true, applyTurrets() {}, activeFireArmsNodes: () => [] },
         gate: { blocked: false, rotationalScale: 1 }, buffer: [], pending: null, held: null,
         stick: { roll: 0, pitch: 0 }, groups: [], manned: [],
       };
-      const world = { occupiedDamageable: () => null, falling: null, fireStateFor: () => null, guns: null };
+      const world = { occupiedDamageable: () => hull, falling: null, fireStateFor: () => null, guns: null };
       const integrators = new Map([[craft, seat]]);
       const fwd = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3(), body = new THREE.Vector3();
       const attitude = () => {
@@ -1923,6 +1924,27 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     // itself drifts a degree a second in pitch: nothing trims it). The
     // engine has no gyroscopic term (COL-8); with one, the DC UH-60 rolled
     // at 38 deg/s and leaned 22 degrees off the hover it would have flown.
+    // A helicopter that goes critical in a climb: its engines stop and stay
+    // stopped while the pilot holds full collective, and start again once it
+    // is out of critical (PHY-14, HP-13: 0x14 stops and latches, 0x13 restarts
+    // an occupied one).
+    {
+      const heli = new Aircraft(await glb(dc('AH64')), null, { cockpit: false });
+      heli.groundHeight = () => 0;
+      heli.state.position.set(0, 200, 0);
+      const hull = { critical: false, destroyed: false };
+      const pilot = keyed(heli, hull);
+      const phase = (seconds, keys) => {
+        for (let i = 0; i < Math.round(seconds * 30); i++) pilot.tick(keys);
+        return { running: heli.engineRunning, revs: round(heli.rotorEngine.revs, 3), vy: round(heli.state.velocity.y, 2) };
+      };
+      const climb = phase(3, { forward: 1 });
+      hull.critical = true;
+      const critical = phase(3, { forward: 1 });
+      hull.critical = false;
+      const recovered = phase(3, { forward: 1 });
+      real.criticalStops = { climb, critical, recovered };
+    }
     real.yawOnly = {};
     for (const name of ['UH-60', 'AH64', 'Mi24D']) {
       const fly = async pedal => {
