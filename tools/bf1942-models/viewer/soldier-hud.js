@@ -492,7 +492,8 @@ export function createSoldierHud(page) {
         vars['CrossHair/SightIcon'] = optic?.sightIcon || zoom?.sightIcon || SIGHT_ICON_DEFAULT;
       }
     }
-    writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags, hw.heat?.heat ?? null);
+    // The heat bar: a machine gun's heat, or a grenade's charge (GUN-16, GUN-19).
+    writeSoldierAmmo(vars, hw.data, hw.rounds, hw.mags, hw.heat?.heat ?? hw.charge?.heat ?? null);
   }
 
   Object.assign(soldierHud, {

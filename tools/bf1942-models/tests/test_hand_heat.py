@@ -68,35 +68,67 @@ class HandHeatTests(unittest.TestCase):
         self.assertTrue(items["sameAcrossRaise"])
         # A depot gives rounds, not a cold barrel.
         self.assertAlmostEqual(0.0265, items["afterRefill"], places=6)
-        # A new life and a kit off the ground come up cold.
+        # A new life comes up cold; a kit off the ground brings the heat its
+        # last owner left (KITDROP-9).
         self.assertTrue(items["respawnedCold"])
-        self.assertEqual(0, items["pickedUpCold"])
+        self.assertAlmostEqual(0.0265, items["pickedUp"], places=6)
 
-    def test_a_held_m249_locks_at_about_its_sixtieth_round(self) -> None:
+    def test_a_kit_off_the_ground_brings_its_heat_and_lockout(self) -> None:
+        # `dropKit` disables the gun, which keeps the heat and a running
+        # lockout, and a disabled item is not updated while the kit lies
+        # there; `pickupKit` enables it as it was (KITDROP-9, GUN-16).
+        pickup = self.results["pickup"]
+        self.assertAlmostEqual(1.0165, pickup["rowHeat"]["heat"], places=5)
+        self.assertEqual(1.25, pickup["rowHeat"]["overheat"])
+        self.assertNotIn("heat", pickup["rifleRow"])
+        self.assertEqual(pickup["rowHeat"], pickup["carriedAgain"])
+        # The 1.25 s lockout left, then 1.0165 at 0.01 a tick: about 4.6 s.
+        self.assertAlmostEqual(1.25 + 102 / 30, pickup["secondsToCold"], delta=0.1)
+        self.assertEqual(0, pickup["freshLife"])
+
+    def test_a_held_m249_locks_after_its_sixty_first_round(self) -> None:
         # 13.5 declared, 10 a second on whole ticks (GUN-13); +0.0265 a round
-        # and one tick's 0.01 drained between rounds (GUN-15): the 60th round
-        # takes it to 1 and the next pull is refused, 6 s into the burst.
-        # Under the old continuous drain it never overheated at all.
+        # and one tick's 0.01 drained between rounds (GUN-15). In float32 the
+        # 60th round leaves the heat a few ulps under 1, the 61st crosses it,
+        # and the pull after it is the first one refused (GUN-18), 6.1 s into
+        # the burst: the binary's own count. Under the old continuous drain it
+        # never overheated; locking at the crossing round, in doubles, it
+        # locked after 60.
+        engine = self.results["hold"]["m249Engine"]
+        self.assertEqual(61, engine["firstRefused"])
         for case in ("m249", "m249At30"):
             hold = self.results["hold"][case]
-            self.assertEqual(60, hold["firstRefused"]["rounds"], case)
-            self.assertAlmostEqual(5.93, hold["firstRefused"]["t"], delta=0.05)
+            self.assertEqual(61, hold["firstRefused"]["rounds"], case)
+            self.assertAlmostEqual(6.1, hold["firstRefused"]["t"], delta=0.05)
 
-    def test_a_held_pkm_locks_at_its_fiftieth(self) -> None:
-        hold = self.results["hold"]["pkm"]
-        self.assertEqual(50, hold["firstRefused"]["rounds"])
+    def test_a_held_pkm_locks_after_its_fifty_first(self) -> None:
+        # The 50th round crosses, at 1.0099996, and its drain tick takes it
+        # back under 1, so a 51st is fired before the first refusal.
+        self.assertEqual(51, self.results["hold"]["pkmEngine"]["firstRefused"])
+        self.assertEqual(51, self.results["hold"]["pkm"]["firstRefused"]["rounds"])
 
-    def test_after_the_lockout_a_held_trigger_fires_one_round_a_lockout(self) -> None:
-        # Nothing drains through the 2 s lockout (GUN-15), so the barrel comes
-        # out of it still at 1 and over. Here a tick or two under 1 buys one
-        # round, which puts it back over: FireState's own rate, not the
-        # engine's. The engine restarts the lockout on every pull refused at
-        # 1 or more (GUN-14), so a held trigger gets one tick of cooling a
-        # lockout and fires about half this often (the feature README, "Open").
+    def test_after_the_lockout_a_held_trigger_fires_at_the_engines_rate(self) -> None:
+        # Nothing drains through the 2 s lockout (GUN-15), and a held pull the
+        # heat still refuses when it runs out starts it again (GUN-18), so a
+        # held trigger gets one tick of cooling a lockout: 0.2 to 0.3 rounds a
+        # second, against FireState's 0.4 to 0.5 when it locked only once.
+        # The page's order (heat per frame, rounds on world ticks) fires the
+        # binary's own total over 30 s.
         for case in ("m249", "pkm"):
             hold = self.results["hold"][case]
-            self.assertAlmostEqual(0.5, hold["lateRate"], delta=0.11, msg=case)
+            engine = self.results["hold"][f"{case}Engine"]
+            self.assertEqual(engine["rounds"], hold["rounds"], case)
+            self.assertAlmostEqual(engine["lateRate"], hold["lateRate"], delta=0.11, msg=case)
+            self.assertLessEqual(hold["lateRate"], 0.3, case)
             self.assertGreaterEqual(hold["peak"], 1.0)
+
+    def test_a_trigger_let_go_on_the_crossing_round_starts_no_lockout(self) -> None:
+        # The round that crosses 1 starts nothing (GUN-18): only a pull does.
+        # Let go there, the M249 drains from its next tick and is cold again.
+        released = self.results["hold"]["m249Released"]
+        self.assertIsNone(released["firstRefused"])
+        self.assertGreaterEqual(released["peak"], 1.0)
+        self.assertEqual(0, released["heatAtEnd"])
 
     def test_a_barrel_left_alone_drains_at_its_rate(self) -> None:
         # Twenty rounds is 0.53; at 0.3 a second it is cold in 1.77 s, plus
@@ -111,9 +143,19 @@ class HandHeatTests(unittest.TestCase):
         # after 38 rounds, the coaxial Browning (12 declared, 0.05 / 0.3) after
         # 25. Before GUN-15 they took 73, never and 49.
         seats = self.results["seats"]
-        self.assertEqual(38, seats["mg42"]["firstRefused"]["rounds"])
-        self.assertEqual(38, seats["browning"]["firstRefused"]["rounds"])
-        self.assertEqual(25, seats["coax"]["firstRefused"]["rounds"])
+        self.assertEqual(38, seats["mg42"]["firstRefused"])
+        self.assertEqual(38, seats["browning"]["firstRefused"])
+        self.assertEqual(25, seats["coax"]["firstRefused"])
+        # And after it, held for 30 s, every round on the binary's own tick:
+        # the lockout restarted by each refused pull (GUN-18).
+        for gun in ("mg42", "browning", "coax"):
+            self.assertTrue(seats[gun]["sameTicks"], gun)
+            self.assertEqual(seats[f"{gun}Engine"]["rounds"], seats[gun]["rounds"], gun)
+
+    def test_a_caller_that_never_reports_its_trigger_locks_at_the_crossing(self) -> None:
+        # `replay-hud.js` `gunStateAt` has only the recorded rounds, so for it
+        # the crossing round stands in for a trigger still held.
+        self.assertTrue(self.results["seats"]["unreported"]["locked"])
 
     def test_the_hud_is_handed_the_raw_heat(self) -> None:
         hud = self.results["hud"]

@@ -2623,8 +2623,12 @@ function presentWorld(step, dt) {
 /** The draw phase: the 3D frame, the viewmodel over it, and the 2D surfaces
  *  drawn beside the HUD (the deploy screen, the scoreboard, the maps). */
 function draw(dt) {
+  // The weapon's camera shake, on the drawn view alone (hand-weapon.js
+  // `shakeView`, ledger CS-11): put back once the arms are drawn.
+  const unshake = soldierKit.shakeView();
   renderer.render(scene, camera);
   soldierKit.renderViewmodel();
+  unshake?.();
   // A replay's first person: the followed player's arms and weapon.
   replayController?.renderViewmodel();
   // In the task that drew it, while the drawing buffer is whole: a replay's

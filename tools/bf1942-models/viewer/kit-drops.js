@@ -126,6 +126,12 @@ export function pickupAllowed({ onFoot, ready = true, now, lastPickupAt = -Infin
   return !!onFoot && !!ready && now - lastPickupAt > PICKUP_COOLDOWN;
 }
 
+/** One item's row, its heat (KITDROP-9) copied with it rather than shared
+ *  with the soldier's snapshot it came from. */
+function copyRow(row) {
+  return row.heat ? { ...row, heat: { ...row.heat } } : { ...row };
+}
+
 /** A dropped kit's rows of carried ammunition, from a bot's magazines
  *  (`bot-referee.js` `magazineOf`: `{ rounds, spare, size }` per weapon it has
  *  used) and its fire data for the spares a full load holds. A weapon the bot
@@ -176,7 +182,7 @@ export class KitDrops {
       x: place.x, y: place.y, z: place.z, yaw: place.yaw ?? 0,
       normal: place.normal ?? [0, 1, 0],
       spin: 0, bornAt: this.clock, ttl, yawSpeed, radius,
-      ammo: ammo.map(row => ({ ...row })), by, team, objectId,
+      ammo: ammo.map(copyRow), by, team, objectId,
     };
     this.drops.push(record);
     return record;
@@ -247,7 +253,7 @@ export class KitDrops {
       yaw: +d.yaw.toFixed(3), spin: +d.spin.toFixed(2),
       age: +(this.clock - d.bornAt).toFixed(3),
       left: Number.isFinite(d.ttl) ? +this.timeLeft(d).toFixed(3) : null,
-      radius: +(d.radius ?? 0).toFixed(3), ammo: d.ammo.map(r => ({ ...r })),
+      radius: +(d.radius ?? 0).toFixed(3), ammo: d.ammo.map(copyRow),
       objectId: d.objectId ?? null,
     }));
   }
