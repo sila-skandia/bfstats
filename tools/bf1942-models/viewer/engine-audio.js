@@ -209,9 +209,16 @@ export class EngineAudio {
    *   patch is: its layers are the report of one round, not a machine that
    *   runs while the vehicle exists. An engine patch leaves this false, so its
    *   starter cough still fires the moment the engine does.
+   * @param {boolean} [relatch] - the patch is pressed and let go over and
+   *   over, the engine's own patch runtime (ledger SND-23): `trigger()` is
+   *   ignored while the patch is latched, `release()` lets it go without
+   *   ending it, and a patch that has stopped sounding can be triggered again.
+   *   A vehicle part is played this way (`vehicle-audio.js` `PART_RULES`): a
+   *   turret's servo starts as it turns and stops as it stops, every time.
+   *   Its loops run from `start()` muted, gated by that state.
    */
   constructor(spec, layers, buffers, listener, headroom = BUS_HEADROOM,
-              oneShotsOnTrigger = false, rand = Math.random) {
+              oneShotsOnTrigger = false, rand = Math.random, relatch = false) {
     this.spec = spec;
     this.headroom = headroom;
     this.listener = listener;
@@ -220,6 +227,9 @@ export class EngineAudio {
     this.disposed = false;
     this.started = false;
     this.released = false;
+    this.relatch = !!relatch;
+    // A relatched patch's press: triggered and latched, not yet let go.
+    this.active = false;
     this.master = 0;
     // Every source this patch has running, orphans included. A voice slot
     // holds only its *newest* source (`trigger()` deliberately leaves the
@@ -526,7 +536,36 @@ export class EngineAudio {
    * @returns {number} how many layers actually started.
    */
   trigger() {
+    if (this.relatch) return this.#press();
     if (!this.started || this.disposed || this.released) return 0;
+    return this.#fire();
+  }
+
+  /**
+   * A relatched patch's trigger (BF1942.exe `0x008030a0`, ledger SND-23):
+   * ignored while the patch is latched -- pressed, or let go and still
+   * sounding -- and otherwise its clock starts again from nothing and its
+   * one-shots play. It latches when it has a loop, so a turret's servo starts
+   * once a turn however many frames the turn lasts; one without a loop plays
+   * its one-shots again on every trigger, each on a new instance (SND-14).
+   */
+  #press() {
+    if (!this.started || this.disposed) return 0;
+    if (this.active || (this.released && this.#sounding())) return 0;
+    this.active = this.hasLoops;
+    this.released = false;
+    this.sinceRelease = 0;
+    return this.#fire();
+  }
+
+  /** Is anything of this patch still to be heard: a one-shot ringing, or a
+   *  loop its release has not yet faded out? */
+  #sounding() {
+    for (const source of this.live) if (!source.loop) return true;
+    return this.voices.some(voice => voice.layer.loop && voice.targetGain > 0);
+  }
+
+  #fire() {
     const now = this.ctx.currentTime;
     this.elapsed = 0;
     // A fresh alternate and a fresh pitch offset per round: `randomStartPitch`
@@ -541,7 +580,18 @@ export class EngineAudio {
     }
     let played = 0;
     for (const voice of this.voices) {
-      if (voice.layer.loop) continue;
+      if (voice.layer.loop) {
+        // A relatched patch's `trigger Volume` loop waits on its own gate
+        // like a one-shot does, once: DC's right-hand tracks (`M1A1TrackR`,
+        // `T72TrackR`, `BMP2TrackR`, ...) fade in on `Time` after the
+        // creation trigger and never sounded. Started, it runs on, muted
+        // between presses (`#loopOpen`), so a later press arms nothing and
+        // never stacks a second copy of it.
+        if (this.relatch && voice.layer.trigger === 'volume' && !voice.source) {
+          voice.volumeArmed = this.chosen.has(voice);
+        }
+        continue;
+      }
       if (voice.layer.trigger === 'volume') {
         // Armed only if this round picked it — and explicitly *dis*armed
         // otherwise, or an alternate armed by an earlier round would still be
@@ -558,6 +608,16 @@ export class EngineAudio {
       else voice.source = previous;
     }
     return played;
+  }
+
+  /** A relatched patch's loop may sound: pressed, or let go and fading on a
+   *  `TimeRelease` modulator. Release stops every other loop outright
+   *  (BF1942.exe `0x00802580`, its test for source 7 on each sample). */
+  #loopOpen(voice) {
+    if (this.active) return true;
+    if (!this.released) return false;
+    voice.fadesOnRelease ??= (voice.layer.modulators || []).some(m => m.source === 'timerelease');
+    return voice.fadesOnRelease;
   }
 
   /** Does this patch run on loops, or is it a one-shot event? A gun with no
@@ -743,6 +803,10 @@ export class EngineAudio {
 
     const base = {
       rpm: clamp01(control.rpm ?? 0),
+      // The object's control slot 0, when it writes one that is not the
+      // engine's revs: a RotationalBundle's turning rate in deg/s, or 0 for a
+      // part that writes none (ledger SND-18). Unset, `Default` reads `rpm`.
+      default: Number.isFinite(control.default) ? control.default : null,
       speed: control.speed ?? 0,
       acceleration: control.acceleration ?? 0,
       diveAngle: clamp01(control.diveAngle ?? 0),
@@ -782,6 +846,9 @@ export class EngineAudio {
       // Clamped on the *modulated* result rather than on `layer.volume`, so a
       // ramp that itself overshoots cannot get round it either.
       voice.targetGain = Math.min(1, Math.max(0, volume));
+      // A relatched patch's loops run from `start()`, and sound only while it
+      // is pressed, or let go with a `TimeRelease` modulator to fade on.
+      if (this.relatch && voice.layer.loop && !this.#loopOpen(voice)) voice.targetGain = 0;
       voice.targetRate = Math.max(0.05, rate);
       voice.suppressed = false;
       // DirectSound's own fall-off. A `stereo` layer is a 2D buffer and an
@@ -789,6 +856,10 @@ export class EngineAudio {
       voice.rolloff = voice.layer.stereo || this.attached ? 1
         : distanceRolloff(voice.group.distance, voice.layer.minDistance, this.rolloffFactor);
     }
+
+    // Let go and silent now: idle, `TimeRelease` back to -1, and the latch
+    // free for the next press (0x00802f70).
+    if (this.relatch && this.released && !this.#sounding()) this.released = false;
 
     // Both halves read `targetGain`, and the arbitration has to land between
     // them: a layer that loses its twin contest must never reach the trigger
@@ -904,12 +975,36 @@ export class EngineAudio {
    * is start the shut-down one-shots that were waiting for it.
    */
   release() {
+    if (this.relatch) {
+      this.#lift();
+      return;
+    }
     if (this.released || this.disposed || !this.started) return;
     this.released = true;
     this.sinceRelease = 0;
     const now = this.ctx.currentTime;
     for (const voice of this.voices) {
       if (voice.layer.trigger === 'release') this.#play(voice, now);
+    }
+  }
+
+  /**
+   * A relatched patch let go (BF1942.exe `0x00802580`, ledger SND-23): once,
+   * while it is pressed or a one-shot of it rings. Its `TimeRelease` clock
+   * starts, its loops with no `TimeRelease` modulator stop (`evaluate` holds
+   * them at nothing), the ones with one fade on it, and its `trigger Release`
+   * layers play: a landing gear's end clunk. Once nothing of it sounds it is
+   * idle, and the next `trigger()` starts it over.
+   */
+  #lift() {
+    if (this.disposed || !this.started || this.released) return;
+    if (!this.active && !this.#sounding()) return;
+    this.active = false;
+    this.released = true;
+    this.sinceRelease = 0;
+    const now = this.ctx.currentTime;
+    for (const voice of this.voices) {
+      if (voice.layer.trigger === 'release' && this.chosen.has(voice)) this.#play(voice, now);
     }
   }
 
@@ -950,6 +1045,8 @@ export class EngineAudio {
       level: this.spec.level,
       started: this.started,
       released: this.released,
+      // A relatched patch's press (`relatch`): pressed and not let go.
+      active: this.active,
       elapsed: this.elapsed,
       master: this.master,
       busGain: this.bus.gain.value,
@@ -997,7 +1094,8 @@ export class EngineAudio {
 export async function loadEngineAudio(spec, { listener, getBuffer,
                                               headroom = BUS_HEADROOM,
                                               oneShotsOnTrigger = false,
-                                              rand = Math.random }) {
+                                              rand = Math.random,
+                                              relatch = false }) {
   if (!spec || !spec.layers || !spec.layers.length || !listener) return null;
   const buffers = new Map();
   for (const layer of spec.layers) {
@@ -1007,5 +1105,5 @@ export async function loadEngineAudio(spec, { listener, getBuffer,
   const layers = spec.layers.filter(l => buffers.get(l.file));
   if (!layers.length) return null;
   return new EngineAudio(spec, layers, buffers, listener, headroom,
-                         oneShotsOnTrigger, rand);
+                         oneShotsOnTrigger, rand, relatch);
 }

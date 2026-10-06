@@ -145,6 +145,13 @@ export function advanceGroups(guns, dt) {
         guns.fireShot(group);
         group.cooldown = firePeriod(group.stats.roundOfFire);
       }
+    } else if (group.sounding) {
+      // A replayed gun has no trigger, only its rounds: its burst is the
+      // window `replay-hulls.js` `holdSound` keeps open past each round, the
+      // same one that gates its Fire Loop. The player behind it held his
+      // trigger between those rounds, so it releases when the window shuts,
+      // not 50 ms after every round.
+      group.soundHeld = true;
     }
     if (group.cooldown > 0) {
       // Runs with the trigger released too -- see `setFiring` for why -- and

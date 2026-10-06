@@ -120,6 +120,7 @@ export async function loadViewerModules(viewer) {
         VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
         createHullBodies: hulls.createHullBodies, createVehicleHits: hits.createVehicleHits,
         createVehicleWrecks: wrecks.createVehicleWrecks, createLevelStatics: statics.createLevelStatics,
+        loadPadVariants: statics.loadPadVariants,
         isCollision: statics.isCollision, createLevelTerrain: terrain.createLevelTerrain,
         createVehicleEntry: entry.createVehicleEntry, GunFire: gunfire.GunFire,
         // The drive classes map.html hands the registry, from their own modules.

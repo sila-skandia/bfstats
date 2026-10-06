@@ -14,6 +14,7 @@ import { GRAVITY } from './physics.js';
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
 import { releaseSpeed } from './bomb-release.js';
+import { rocketMotorsOf } from './rocket-motor.js';
 import { adopt, shellMaterial, tracerGeometry, tracerMaterial } from './round-visuals.js';
 import { recoilSpan } from './gun-cycle.js';
 
@@ -199,8 +200,8 @@ function fireRound(guns, group, muzzle) {
  * a BF1942 rifle hits what the crosshair covers regardless of where the
  * viewmodel's barrel points — and for a vehicle's coaxial or pintle MG the
  * seat camera's, which is handed the barrel so its own offset rides along
- * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then wanders the direction
- * inside the deviation cone, on either path.
+ * (`gun-groups.js` `cameraLaunch`). `spreadDeg` then pushes the round off
+ * that line by the deviation cone (`deviate`), on either path.
  */
 function muzzleVelocity(guns, muzzle, group, speed, out) {
   const ray = group.aimRay?.(muzzle);
@@ -214,49 +215,102 @@ function muzzleVelocity(guns, muzzle, group, speed, out) {
     out.set(0, 0, -1).applyQuaternion(_aim);
   }
   const spread = group.spreadDeg?.() || 0;
-  if (spread > 0) wander(guns, out, spread);
+  if (spread > 0) deviate(guns, out, spread, ray ? null : _aim);
   // On the ray path `_aim` still has to say which way the round points — a
   // bazooka's drawn rocket takes its first-frame orientation from it — and
-  // it is taken after the wander so the rocket points where it is going.
-  if (ray) _aim.setFromUnitVectors(_minusZ, out);
+  // it is taken after the deviation so the rocket points where it is going.
+  if (ray) _aim.setFromUnitVectors(_minusZ, _direction.copy(out).normalize());
   out.multiplyScalar(speed);
   const platform = group.platformVelocity?.();
   if (platform) out.add(platform);
   return out;
 }
 
+/** Below this total the engine draws no deviation at all (DEV-9). */
+export const DEVIATION_FLOOR = 0.01;
+
 /**
- * Rotate `dir` to a random direction inside a cone of `degrees` half-angle.
+ * Push the unit direction `dir` off its line by a deviation cone of `total`,
+ * the engine's way (ledger DEV-9, lnxded `FireArms::fireBarrel` `0x0828aba0`).
  *
- * The polar angle is `spread x sqrt(u)` — uniform over the cone's cross
- * section rather than over its rim or its axis, so a burst paints a disc the
- * way a target card looks, not a ring and not a hot centre. The azimuth is
- * free. Both draws come from `guns.rand`, the same authority the flash
- * roll already answers to — `Math.random` unless a check has seeded it.
+ * The engine does not turn the round. It adds a lateral velocity of
+ * `u * total * velocity / 100` along each of the launch frame's up and right
+ * axes, `u` drawn uniform in (-1, +1] for each, on top of the forward
+ * `velocity`. So `total` is in hundredths of a radian (0.573 degrees), not
+ * degrees, and the pattern is a square, not a disc: a cone of 1 reaches
+ * 0.573 degrees on each axis and 0.81 degrees in a corner, where the disc
+ * this replaced reached a whole degree in every direction (1.75 times the
+ * engine's reach on each axis). Below a total of 0.01 no draw is made.
+ *
+ * `dir` is left the length the engine leaves it, `sqrt(1 + u1^2 + u2^2)` in
+ * units of the forward speed, so a deviated round is fractionally faster, as
+ * it is in the game. `frame` is the launch frame (a muzzle's world
+ * quaternion, glTF +X right and +Y up); a camera-launched round has none, and
+ * its frame is built from the line and world up, which is the camera's for a
+ * camera that does not roll. Both draws come from `guns.rand`, the same
+ * authority the flash roll answers to; the engine seeds its own from the tick
+ * and the barrel, which is why two barrels of one pull differ.
  */
-function wander(guns, dir, degrees) {
-  const theta = degrees * (Math.PI / 180) * Math.sqrt(guns.rand());
-  const phi = guns.rand() * Math.PI * 2;
-  // An orthonormal frame around the direction of fire. The up reference
-  // flips to +X when the shot is near-vertical, where up and dir would be
-  // parallel and the cross product degenerate.
-  _spreadU.set(0, 1, 0);
-  if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
-  _spreadU.cross(dir).normalize();
-  _spreadV.crossVectors(dir, _spreadU);
-  const sin = Math.sin(theta);
-  dir.multiplyScalar(Math.cos(theta))
-    .addScaledVector(_spreadU, sin * Math.cos(phi))
-    .addScaledVector(_spreadV, sin * Math.sin(phi));
-  return dir;
+function deviate(guns, dir, total, frame) {
+  if (!(total > DEVIATION_FLOOR)) return dir;
+  if (frame) {
+    _spreadU.set(1, 0, 0).applyQuaternion(frame);
+    _spreadV.set(0, 1, 0).applyQuaternion(frame);
+  } else {
+    // Right and up around the line of fire. The up reference flips to +X when
+    // the shot is near-vertical, where up and dir would be parallel and the
+    // cross product degenerate.
+    _spreadU.set(0, 1, 0);
+    if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
+    _spreadU.cross(dir).normalize();
+    _spreadV.crossVectors(dir, _spreadU);
+  }
+  const reach = total / 100;
+  // The first draw goes on the frame's up row, the second on its right row.
+  const up = (2 * guns.rand() - 1) * reach;
+  const right = (2 * guns.rand() - 1) * reach;
+  return dir.addScaledVector(_spreadV, up).addScaledVector(_spreadU, right);
 }
 
 function displaySpeed(guns, group, velocity) {
   return velocity > PROJECTILE_SCALE_CUTOFF ? velocity * group.speedScale : velocity;
 }
 
+/**
+ * The `gravityModifier` of what a tracer-path round really is.
+ *
+ * A bright round is the tracer template in flight, so it falls by the
+ * tracer's own word: the glb's `fireArms.tracer.gravity` (written resolved,
+ * IMP-7's 1.0 when undeclared), else the tracer's row in the damage table,
+ * whose `gravity` is the declared word and whose absence in a fresh row
+ * (one that carries `hasOnTimeEffect`) is 1.0. Assets too old for either keep
+ * the straight streak they always had, which is right for retail's
+ * `Tracer_Projectile` (`gravityModifier 0.0`).
+ *
+ * Every other round is the gun's own projectile: a
+ * bullet "kind" is only the exporter's word for an invisible round, and an
+ * invisible round falls like any other — Desert Combat's 25 mm at 0.2, the
+ * CBU-87's submunitions and Secret Weapons' thrown knives (neither declares a
+ * modifier) at 1.0. Retail's rifle and machine-gun rounds all declare 0 and
+ * stay flat. A stale glb whose projectile is a bare template name has no
+ * data at all and flies flat as before.
+ */
+function tracerGravity(guns, group, bright) {
+  if (bright) {
+    const tracer = group.stats.tracer;
+    if (typeof tracer?.gravity === 'number') return tracer.gravity;
+    const row = tracer?.template ? guns.projectileEntry?.(tracer) : null;
+    if (typeof row?.hasOnTimeEffect === 'boolean') return row.gravity ?? 1;
+    return 0;
+  }
+  const spec = group.stats.projectile;
+  return spec && typeof spec === 'object' ? (spec.gravity ?? 1) : 0;
+}
+
 function spawnTracer(guns, muzzle, group, bright) {
-  const speed = displaySpeed(guns, group, group.stats.velocity || 100);
+  // The engine's own default when the gun declares no `velocity` (FA-3).
+  const authored = releaseSpeed(group.stats);
+  const speed = displaySpeed(guns, group, authored);
   // The velocity is the round's own for as long as it flies, so it is a
   // real allocation per shot; the unit direction is only needed to point
   // the streak and lives in scratch.
@@ -318,6 +372,11 @@ function spawnTracer(guns, muzzle, group, bright) {
     width: group.tracerWidth,
     bright,
     velocity,
+    gravity: tracerGravity(guns, group, bright),
+    // The square of the display scale, for the same reason a shell's g is
+    // scaled (see `spawnProjectile`): a round slowed for legibility must bend
+    // by the same shape. 1 on the map page.
+    gravityScale: authored > 0 ? (speed / authored) ** 2 : 1,
     // Distance from the drawn mesh's origin to the round it stands for. The
     // baked streak's head *is* its origin; the stand-in cylinder is drawn
     // centred, so its round is half a length ahead of `mesh.position`.
@@ -376,6 +435,28 @@ function tracerClone(template) {
  * exactly 0.8 s, 240 m out, the "same distance every time" of the report.
  * With it the AA gun's `CRD_UNIFORM/0.8/1.4/0` spreads them over 240-420 m.
  */
+/**
+ * What this round does when its `timeToLive` runs out: true to burst, false
+ * to vanish, null when the assets are too old to say.
+ *
+ * `Projectile::handleMessage` (lnxded `0x0831e8f0`) answers the expiry message
+ * with `detonate` (the end-of-life burst, HP-9d) only when the template sets
+ * `hasOnTimeEffect` (`+0x1a5`, 0 from the constructor at `0x0831f9ec`), and
+ * with a silent `resetProjectile` otherwise (ledger PROX-7). Retail sets it on
+ * the grenades, the pack, the landmine and the flak shells; Desert Combat
+ * writes 0 on the Shilka's shell, whose proximity fuse it took out. The tank
+ * shells and every other round that hits things never set it.
+ *
+ * The damage table's row carries the word for every round
+ * (`extract_map.py` `projectile_materials`), and a fresh glb's damage block
+ * carries it when declared. With neither, the round keeps the old rule.
+ */
+function onTimeEffectOf(spec, entry) {
+  const baked = spec?.damage?.hasOnTimeEffect;
+  if (typeof baked === 'boolean') return baked;
+  return typeof entry?.hasOnTimeEffect === 'boolean' ? entry.hasOnTimeEffect : null;
+}
+
 function launchTimeToLive(guns, spec, entry) {
   if (Array.isArray(entry?.timeToLive)) {
     const drawn = sampleCrd(entry.timeToLive, guns.rand);
@@ -384,8 +465,47 @@ function launchTimeToLive(guns, spec, entry) {
   return spec.timeToLive;
 }
 
+const _boxPart = new THREE.Box3();
+const _boxAll = new THREE.Box3();
+const _boxRest = new THREE.Matrix4();
+
+/**
+ * The drawn body's geometry box, `[DX, DY, DZ]` in the round's own frame (the
+ * frame whose -Z is the nose), measured once per group and cached on it.
+ *
+ * The baked `<gun> projectile` node's own rotation is part of that frame — a
+ * rotated body flies inside an identity container (`spawnProjectile`) — and its
+ * translation is not, so the box is taken through the node's rotation alone.
+ * Null when there is no body to measure.
+ */
+function bodyBox(group) {
+  if (group.dragBox !== undefined) return group.dragBox;
+  const root = group.projectileMesh;
+  let box = null;
+  if (root) {
+    root.updateMatrixWorld(true);
+    // World -> the node's own frame, then the node's own rotation back on.
+    _boxRest.copy(root.matrixWorld).invert()
+      .premultiply(new THREE.Matrix4().makeRotationFromQuaternion(root.quaternion));
+    _boxAll.makeEmpty();
+    root.traverse(part => {
+      if (!part.isMesh || !part.geometry) return;
+      if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+      _boxPart.copy(part.geometry.boundingBox)
+        .applyMatrix4(part.matrixWorld).applyMatrix4(_boxRest);
+      _boxAll.union(_boxPart);
+    });
+    if (!_boxAll.isEmpty()) {
+      box = [_boxAll.max.x - _boxAll.min.x, _boxAll.max.y - _boxAll.min.y,
+             _boxAll.max.z - _boxAll.min.z];
+    }
+  }
+  group.dragBox = box;
+  return box;
+}
+
 function spawnProjectile(guns, muzzle, group, spec) {
-  // `releaseSpeed` is `velocity ?? 100`, not `velocity || 100`. Every one of
+  // `releaseSpeed` is `velocity ?? 200`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
   // authored value meaning "the round leaves at no speed of its own"; `||`
   // read it as absent and launched a released bomb forward at 100 m/s
@@ -435,9 +555,16 @@ function spawnProjectile(guns, muzzle, group, spec) {
     group,
     velocity,
     kind: spec.kind,
-    // Shells fall (`gravityModifier` defaults to 1); rockets are carried by
-    // their motor and fly flat here.
-    gravity: spec.kind === 'shell' ? (spec.gravity ?? 1) : 0,
+    // Every round falls by its own `gravityModifier`, and a round that
+    // declares none falls at 1.0: the `ProjectileTemplate` constructor writes
+    // 1.0 and the physics body, not the round, integrates it (ledger IMP-7).
+    // The kind is the exporter's guess at what to draw and says nothing about
+    // physics. Reading "rocket" as "flies flat" left the four artillery rockets
+    // that declare no modifier (vanilla's Katyusha, Desert Combat's MLRS,
+    // BM-21 and SCUD-B) climbing for their whole `timeToLive`; the rockets
+    // that do fly flat (Hydra, Hellfire, the AIM-9 and the rest) say so with
+    // `gravityModifier 0`, and still do.
+    gravity: spec.gravity ?? 1,
     // `speedScale` slows a fast round for legibility, and a round slowed in
     // speed alone is not slowed in *time*: it spends 1/scale as long over
     // every metre, so a full-strength g bends its path by 1/scale^2 more than
@@ -451,10 +578,32 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // the round leaves at no speed of its own, and `0 / 0` is NaN — which
     // would have silently deleted gravity from every bomb in the game.
     gravityScale: authored > 0 ? (speed / authored) ** 2 : 1,
+    // The same scale unsquared: the motor reads the round's real speed.
+    timeScale: authored > 0 ? speed / authored : 1,
     // The engine's own drag law needs the body's frontal area over its mass,
     // and the radius is `getBoundingRadius` — nothing exports it, so it is
     // measured off the drawn body's geometry once per group (`collect`).
     boundingRadius: group.boundingRadius,
+    // A round that declares `setHasPointPhysics 0` is a full `PhysicsNode`
+    // (`SimpleObjectTemplate::setPhysicsNodeComponent` `0x081dd490`), and
+    // every live `PhysicsNode` drags by the box law (PHY-4), not the point
+    // body's sphere: its geometry box. That is the round's own `.sm` header
+    // box, which the exporter writes as `spec.box` (`assemble.py`
+    // `_geometry_box`, ledger COL-14), not the drawn body's extent; a glb baked
+    // before it carried the word falls back to the drawn body, measured here
+    // once per group. A round that declares nothing is a point body (the
+    // `ProjectileTemplate` constructor sets the flag, collision-response.md
+    // section 10).
+    dragBox: spec.hasPointPhysics === false
+      ? (Array.isArray(spec.box) && spec.box.length === 3 ? spec.box : bodyBox(group))
+      : null,
+    // The round's own motor, when it carries a `c_ETRocket` Engine
+    // (`rocket-motor.js`): the rockets, and nothing else in the game.
+    motors: rocketMotorsOf(spec),
+    // A point body never turns, so its motor pushes along the muzzle's
+    // forward for good; a full body's follows its flight path
+    // (`projectile-flight.js` `pushMotors`).
+    thrustAxis: null,
     // Set on the first water contact a `detonateOnWaterCollision 0` round is
     // allowed to survive; from then on `TorpedoRun` replaces the ballistic
     // step. Null for everything else, which in vanilla is everything but the
@@ -467,6 +616,8 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
     // splash on the player twenty seconds after he puts the charge down.
     ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage),
+    // Burst or vanish when that runs out (`onTimeEffectOf`, PROX-7).
+    onTimeEffect: onTimeEffectOf(spec, entry),
     trail: group.trailQuad ? spec.trail : null,
     // The proximity fuse (`proximity-fuse.js`), or null: the flak shells'
     // `explodeNearEnemyDistance 10` is what bursts them on the aircraft they
@@ -523,6 +674,9 @@ function spawnProjectile(guns, muzzle, group, spec) {
       attach: { object: mesh, velocity: () => shot.velocity },
     });
     if (shot.run) shot.trail = null;
+  }
+  if (shot.motors && !shot.dragBox) {
+    shot.thrustAxis = new THREE.Vector3(0, 0, -1).applyQuaternion(_aim);
   }
   guns.projectiles.push(shot);
 }
