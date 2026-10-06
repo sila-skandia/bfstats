@@ -1414,6 +1414,109 @@ GeometryTemplate.create StandardMesh Lada_1P
         self.assertEqual("LadaCockpitInternal", swap["selected"])
         self.assertEqual(["LadaCockpitExternal1"], swap["replaces"])
 
+    LADA_PAINTS_CON = """
+ObjectTemplate.create PlayerControlObject Lada
+ObjectTemplate.addTemplate lodLadaCockpit
+
+ObjectTemplate.create LodObject lodLadaCockpit
+ObjectTemplate.addTemplate LadaCockpitExternal
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate LadaCockpitInternal
+ObjectTemplate.lodSelector LadaCockpitSelector
+
+ObjectTemplate.create SimpleObject LadaCockpitExternal1
+ObjectTemplate.geometry Lada_Hull1_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal2
+ObjectTemplate.geometry Lada_Hull2_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal3
+ObjectTemplate.geometry Lada_Hull3_M1
+
+ObjectTemplate.create SimpleObject LadaCockpitInternal
+ObjectTemplate.geometry Lada_1P
+
+LodSelectorTemplate.create DistCompareSelector LadaCockpitSelector
+LodSelectorTemplate.addLodDistance 3.05
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Lada_Hull1_M1
+GeometryTemplate.create StandardMesh Lada_Hull2_M1
+GeometryTemplate.create StandardMesh Lada_Hull3_M1
+GeometryTemplate.create StandardMesh Lada_1P
+"""
+
+    def _lada_hulls(self, assembler: Assembler, library: ObjectLibrary, placements: int) -> list:
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        roots = [assembler.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0)) for _ in range(placements)]
+        document = glb_document(builder.build(roots, extras={}))
+        hulls = []
+        for root in roots:
+            names = []
+            stack = [root]
+            while stack:
+                index = stack.pop()
+                node = document["nodes"][index]
+                if node["name"].startswith("LadaCockpitExternal"):
+                    names.append(node["name"])
+                stack.extend(node.get("children", []))
+            hulls.append(names)
+        return hulls
+
+    def test_a_level_bake_rolls_each_placements_paint(self) -> None:
+        # KIT-1/KIT-2: `addBundleChilds` bumps one round-robin counter (it
+        # starts at 1) for every `setRandomGeometries` child and builds
+        # `<name><counter>`, so the first object rolls 2. A level bake sets the
+        # counter and its four Ladas come green, beige, blue, green in
+        # placement order; a model export keeps variant 1 (blue).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual(
+            [["LadaCockpitExternal2"], ["LadaCockpitExternal3"],
+             ["LadaCockpitExternal1"], ["LadaCockpitExternal2"]],
+            self._lada_hulls(level, library, 4))
+        model = Assembler(pool, pool, pool, library, include_collision=False)
+        self.assertEqual([["LadaCockpitExternal1"], ["LadaCockpitExternal1"]],
+                         self._lada_hulls(model, library, 2))
+
+    def test_a_roll_onto_an_undeclared_paint_builds_no_hull(self) -> None:
+        # KIT-3: a variant the data never declared is a template not found,
+        # and the engine adds no child at all.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con",
+                        self.LADA_PAINTS_CON.replace(
+                            "ObjectTemplate.create SimpleObject LadaCockpitExternal2\n"
+                            "ObjectTemplate.geometry Lada_Hull2_M1\n", ""))
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual([[], ["LadaCockpitExternal3"]],
+                         self._lada_hulls(level, library, 2))
+
+    def test_the_cockpit_swap_names_every_paint(self) -> None:
+        # The cockpit glb is one export, the hull it grafts onto any of three:
+        # the swap lists every declared variant, and the viewer hides the one
+        # it finds (`vehicle-base.js` `graftCockpit` drops the rest).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        cockpit = Assembler(pool, pool, pool, library, first_person=True,
+                            include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(cockpit, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        root = cockpit.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0, first_person=True))
+        swap = next(node["extras"]["lodAlternative"] for node in
+                    glb_document(builder.build([root], extras={}))["nodes"]
+                    if node["name"] == "lodLadaCockpit")
+        self.assertEqual(["LadaCockpitExternal1", "LadaCockpitExternal2",
+                          "LadaCockpitExternal3"], swap["replaces"])
+
     def test_a_first_person_name_keeps_deciding_where_there_is_one(self) -> None:
         # Vanilla's M3A1 names both alternatives `1P_M3A1_Driver_M1`; the
         # name rule takes the first, and its cockpit glb stays as it was.
@@ -1477,6 +1580,7 @@ class PhysicsExportTests(unittest.TestCase):
 
     SHIP_CON = """
 ObjectTemplate.create PlayerControlObject Fletcher
+ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.mass 2500000
 ObjectTemplate.drag 3
 ObjectTemplate.setVehicleCategory VCSea
@@ -1603,6 +1707,101 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
         self.assertEqual(
             {"hullHeight": 20.0, "floatMaxLift": 2.0, "floatMinLift": 2.0},
             nodes["Fletcher_Floater"]["extras"]["physics"])
+
+    def test_a_root_without_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-17: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
+        root that carries a `c_ETShip`. The bit clear is a
+        `StaticPhysicsNode`, which nothing moves, so the root says so; the
+        word is stamped nowhere else -- not on a root that writes 1, not on
+        a gun with no Engine (its bit is clear too), not on a nested seat."""
+        static_con = self.SHIP_CON.replace(
+            "ObjectTemplate.hasMobilePhysics 1", "ObjectTemplate.hasMobilePhysics 0")
+        document, _ = self._assemble(
+            static_con, "Fletcher", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(False, nodes["Fletcher"]["extras"]["physics"]["hasMobilePhysics"])
+        self.assertNotIn("hasMobilePhysics", nodes["Fletcher_Engine"]["extras"]["physics"])
+
+        mobile, _ = self.ship()
+        self.assertNotIn("hasMobilePhysics", mobile["Fletcher"]["extras"]["physics"])
+
+        # The same static hull nested under a mobile root is that root's
+        # body: its own bit moves nothing, and it is not stamped.
+        nested_con = static_con + """
+ObjectTemplate.create PlayerControlObject Mothership
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.addTemplate Fletcher
+"""
+        nested, _ = self._assemble(
+            nested_con, "Mothership", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        inner = next(node for node in nested["nodes"] if node["name"] == "Fletcher")
+        self.assertNotIn("hasMobilePhysics", inner["extras"]["physics"])
+
+        gun_con = """
+ObjectTemplate.create PlayerControlObject AA_Gun
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate AA_GunBase
+ObjectTemplate.create SimpleObject AA_GunBase
+ObjectTemplate.geometry AA_Gun_Base
+GeometryTemplate.create StandardMesh AA_Gun_Base
+"""
+        gun, _ = self._assemble(gun_con, "AA_Gun", "Objects/Vehicles/Land/AA_Gun/Objects.con",
+                                geometry="AA_Gun_Base")
+        root = next(node for node in gun["nodes"] if node["name"] == "AA_Gun")
+        self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
+
+    def test_a_root_that_declares_no_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-17 holds for every placed root, not only a hull with an Engine:
+        DC No Fly Zone's objective control tower is a PlayerControlObject with
+        armor, no Engine and `hasMobilePhysics 0`; a destructible static can be
+        a plain Bundle. Both are stamped. An EffectBundle that writes the word
+        (DC's `e_BBuster`) is not a placed object and is left alone."""
+        con = """
+ObjectTemplate.create PlayerControlObject air_control_tower_des
+ObjectTemplate.hasMobilePhysics 0
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create Bundle Landslide
+ObjectTemplate.setHasMobilePhysics 0
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create SimpleObject TowerBody
+ObjectTemplate.geometry Tower_M1
+GeometryTemplate.create StandardMesh Tower_M1
+"""
+        tower, _ = self._assemble(con, "air_control_tower_des",
+                                  "bf1942/levels/DC_No_Fly_Zone_Day2/objects/x.con",
+                                  geometry="Tower_M1")
+        root = next(n for n in tower["nodes"] if n["name"] == "air_control_tower_des")
+        self.assertEqual({"vehicleCategory": "VCLand", "hasMobilePhysics": False},
+                         root["extras"]["physics"])
+        bundle, _ = self._assemble(con, "Landslide",
+                                   "bf1942/levels/DC_Medina_Ridge/objects/x.con",
+                                   geometry="Tower_M1")
+        root = next(n for n in bundle["nodes"] if n["name"] == "Landslide")
+        self.assertEqual({"hasMobilePhysics": False}, root["extras"]["physics"])
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_BBuster/Objects.con", """
+ObjectTemplate.create EffectBundle e_BBuster
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertIsNone(library.object("e_BBuster").physics())
+
+    def test_both_spellings_of_mobile_physics_are_read(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/x.con", """
+ObjectTemplate.create Projectile A
+ObjectTemplate.setHasMobilePhysics 1
+ObjectTemplate.create Projectile B
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.create PlayerControlObject C
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertTrue(library.object("A").has_mobile_physics)
+        self.assertTrue(library.object("B").has_mobile_physics)
+        self.assertFalse(library.object("C").has_mobile_physics)
 
     def test_bow_and_stern_surfaces_deflect_opposite_ways(self) -> None:
         """`setAcceleration` -10 against +10 is what makes the hull carve.

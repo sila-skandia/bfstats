@@ -88,14 +88,25 @@ export function createHullBodies(page) {
    * — see `setupVehicleBodies`, which describes her hull anyway so `adoptDriven`
    * has a spec to hand it. Runtime buoyancy for an unoccupied hull — ram a moored
    * Fletcher and watch her rock — is the piece this still leaves open.
+   *
+   * A root the exporter stamped static (`hasMobilePhysics` clear, PHY-17) is
+   * never a body at all: its physics node is a `StaticPhysicsNode`, which
+   * nothing moves, so it stays scenery in the static index wherever the level
+   * put it. DC's objective buildings are the case that showed it: settled and
+   * parked as hulls, No Fly Zone's control tower stood up on its side.
    */
   function bodySpecFor(node) {
-    if (isSeaHull(node)) return null;
+    if (isSeaHull(node) || isStaticRoot(node)) return null;
     const spec = describeVehicleParts(node, hullBodies.collisionMeshes);
     // The engine's root part, whose col0 `checkVsTerrain` takes a hull's
     // depth under the sea from (`ship-spec.js` `rootCollisionPart`).
     if (spec) spec.waterPart = rootCollisionPart(spec.parts, node);
     return spec;
+  }
+
+  /** `extras.physics.hasMobilePhysics === false`: never moved (PHY-17). */
+  function isStaticRoot(node) {
+    return node?.userData?.physics?.hasMobilePhysics === false;
   }
 
   /** A floating hull: the one vehicle category that stays out of the parked body
@@ -255,6 +266,8 @@ export function createHullBodies(page) {
     if (!Number.isFinite(waterLevel)) { pinHeldCraft(); return; }
     for (const node of ownerRoots) {
       if (!isSeaHull(node)) continue;
+      // A static hull (DC's `Nimitz_Static*`) stays at its authored pose.
+      if (isStaticRoot(node)) continue;
       const floats = floatNodesOf(node);
       if (!floats.length) continue;
       node.updateWorldMatrix(true, false);
@@ -940,6 +953,8 @@ export function createHullBodies(page) {
       // unwired for want of buoyancy. Moored, she stays what `bodySpecFor` says
       // she is — scenery — because the parked path is gravity plus wheel springs
       // and would sink her.
+      // A static root is scenery, never driven and never parked (PHY-17).
+      if (isStaticRoot(visual.node)) continue;
       const sea = isSeaHull(visual.node);
       const spec = sea ? describeVehicleParts(visual.node, hullBodies.collisionMeshes)
                        : bodySpecFor(visual.node);

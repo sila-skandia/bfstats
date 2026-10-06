@@ -152,6 +152,11 @@ Which node class an object gets is decided by template flag byte `+0x70`
 | `hasMobilePhysics 1` | 0 | `PhysicsNode` | `ResponsePhysics` (CID `0xc42d`) |
 | `hasPointPhysics 1` | 3 | `PointPhysicsNode` | `PointResponsePhysics` (`0xc42e`) — §10 |
 
+A vehicle root that lands in the first row, with the bit clear, never moves.
+Its Engines, Wings and floats push on the root's static node, and every
+adder there is a bare `ret` (PHY-17). DC's `Nimitz_Static*` carriers are
+built this way.
+
 Authored data and engine defaults (template constructor `0x081dbc70`, printed
 back by `makeScript` `0x081dc190`):
 
