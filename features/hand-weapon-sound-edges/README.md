@@ -61,6 +61,8 @@ reach 5 m are the only ones a neighbour can hear.
   sounds (SND-23), and whether a disabled item's sound is still updated was
   not traced. The page lets them play out.
 * Replayed soldiers' reloads (`replay-*.js`, another session's files) do not
-  call `playWorldReload`.
+  call `playWorldReload`, and nor does a remote player's in a room: no
+  reload goes over the wire (`netcode*.js`). Only DC's ten loads that reach
+  5 m would be heard.
 * The template byte at FireArms +0x349 that restricts a reload to an empty
   magazine: its console word was not traced.
