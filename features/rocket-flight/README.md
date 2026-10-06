@@ -3,8 +3,12 @@
 Status: built 2026-10-06 (Desert Combat parity round, package `rounds`).
 Every round, drawn or invisible, falls by its own `gravityModifier` (§1, §2),
 and a rocket flies on its own `Engine` and the box drag law, both read from
-the server binary (§3, ledger PHY-18..PHY-22). Not checked against the real
-game: see Open.
+the server binary (§3, ledger PHY-18..PHY-22). Checked against the real game
+on 2026-10-07 (review): with the drag box taken from the round's own `.sm`
+header and the engine's 1000 m/s² lid on a body's summed push (both added in
+review), the lab's recorded Desert Combat MLRS, AIM-9 and AA-10 flights are
+flown within 1% (§3a); the square deviation cone is what a human's rounds
+show on the lab server (§7).
 
 ## 1. Every round falls by its own data
 
@@ -154,6 +158,65 @@ the motor. The placeholder slowed them too, under the point body's sphere law.
 The TOW is a point body of 500 kg at `drag 0.1`, so only the thrust law
 limits it, at about 1.5 km/s.
 
+### 3a. Checked against the lab's recordings (review, 2026-10-07)
+
+The lab's Desert Combat rounds (`~/bf1942-lab/runs/*dc-*`,
+`features/desert-combat-parity/lab-ground-truth.md`) caught three
+motor-carried rounds in flight: 25 MLRS rockets on Bocage, 53 AIM-9s and 7
+AA-10s. The server recorder writes each round's position every tick, so its
+speed is a tick's displacement times 30. Flown in the harness as they were
+launched, the section 3 laws missed in two places, both now fixed:
+
+- **The drag box is the round's `.sm` header box**, not the drawn body's
+  extent (PHY-22: `getBoundingBox` returns what `loadHeader` read from the
+  file). The two differ on five of Desert Combat's eight full-body rockets,
+  most on the AT-2 (drawn 1.44 m across, header 0.25 m), the Hydra (0.24 m
+  square, header 0.11 m) and the AIM-9 (0.45 m tall, header 0.64 m), because
+  the drawn body is often a `visibleDummyProjectileTemplate`. `assemble.py`
+  `_geometry_box` writes the header box as the projectile's `box`, and
+  `round-launch.js` uses it; a glb baked before falls back to the drawn
+  body. The AIM-9 had come out 18% fast at its top speed on the drawn box.
+- **A full body's summed push is held to 1000 m/s²** (ledger COL-8, already
+  read for vehicles in collision-response.md §4.2; the rounds had not
+  honoured it). An AA-10 leaving a MiG-29 at 520 m/s loses exactly 33.3 m/s
+  a tick for five ticks before its drag falls under the lid. Without it the
+  AT-2's box law at 30 Hz reversed the round and ran it away to 4e11 m/s.
+
+With both, the viewer against the recordings (m/s, `test_rocket_flight.py`
+`RECORDED`, the recorded speed taken a tick past each mark so the two
+launches line up):
+
+| Round | Launch | 0.5 s | 1 s | 2 s | 3 s | 5 s | 10 s |
+|---|---|---|---|---|---|---|---|
+| `MLRSRocket`, recorded | 100 m/s, 13.6 deg up | 88.5 | 91.3 | 101.3 | 108.9 | | |
+| viewer | | 88.5 | 90.7 | 100.8 | 108.6 | | |
+| `Aim9`, recorded | 512 m/s off an F-15C | 219.2 | 153.0 | 109.8 | 95.4 | 87.9 | 86.2 |
+| viewer | | 218.0 | 151.6 | 109.2 | 95.4 | 87.8 | 86.3 |
+| `AA-10`, recorded | 520 m/s off a MiG-29 | 179.6 | 118.1 | 84.3 | 75.0 | 70.9 | |
+| viewer | | 178.8 | 117.1 | 84.1 | 75.0 | 71.0 | |
+
+The MLRS's dip to 88 m/s and climb to 109 is the motor spooling up against
+the drag, which no fixed ramp gives: on `main`'s placeholder (25 m/s², no
+gravity) the same launch is at 108 m/s by 0.5 s and 142 by 3 s, and still
+climbing, 937 m up, at 20 s. So the motor law (PHY-20) is the engine's.
+
+What the motor-carried rounds of section 3's table fly once their glbs carry
+the header box (level, 60 m up; m/s at 1, 5 and 10 s): Hydra 174, 280, 281;
+Hellfire 82, 83, 83; AIM-9 137, 87, 86; AA-10 118, 71, 70; Magic II 229, 267,
+268; Maverick 162, 179; AT-2 107, 105, 105. The Hellfire's 83 m/s is not a
+bad read: its header box is its drawn box, and `drag 2` over `mass 5` is 16
+times the AIM-9's drag per kilogram, which the recordings show the law is
+right about. No Hellfire, Hydra, AT-2, Stinger or Katyusha was fired in a
+recorded round.
+
+The lab's TOW and AT-5 (`TOW_Projectile`, `BMP2_AT4_Projectile`, straight at
+100 m/s) carry no Engine in Desert Combat 0.7, and this package does not
+touch them. DC Final's `DefenderTOW`, which does, is a point body and was not
+recorded. The lab page's Spandrel "191.3, not 200": both recorded Spandrels
+leave at 200.4 and 201.1 m/s relative to the BRDM-2 that fired them, which
+was reversing at 9 m/s in the 191.3 case (`addRootSpeed`, default 1, adds
+the firer's velocity in `FireArms::fireBarrel`); FA-3's 200 stands.
+
 ## 4. A gun that declares no velocity
 
 `bomb-release.js` `releaseSpeed` and `round-launch.js` `spawnTracer` launched a
@@ -243,6 +306,21 @@ corner), as in the game. The bots roll their own cone in degrees
 package's. The HUD cross's size is read from the same total and was not
 touched.
 
+**Checked against the real game (review, 2026-10-07).** The lab server's
+recordings carry every `fireBarrel` call's matrix (`f`, its row 2 before any
+deviation) and the round's position each tick, so a round's flight direction
+against `d` is its deviation, plus the firer's velocity (`addRootSpeed`),
+which the soldier's own samples give. The owner's 38 StG44 rounds in
+`20261005-070852-parity-elalamein-rec`, fired running (6 m/s, so a saturated
+speed channel) in bursts, against the total DEV-1's channels predict for
+each shot (`setMinDev 0.75`, `setSpeedDev 2.25`, the fire channel's bloom):
+all 76 per-axis values lie inside the square of `total` hundredths of a
+radian (the largest 0.98 of it), with a mean square of 0.25 `total`²
+against the square's 0.33. A disc of `total` degrees would have put about a
+third of them outside. Bots are different: within a bot's burst the rounds
+differ from the one before by a median 0.05 to 0.07 hundredths of a radian
+(the recorder's rounding), whatever the cone; see Open item 9.
+
 ## Assets
 
 Nothing in §1, §3 and §4 needs a re-extract: the rockets' `parts`, `mass`,
@@ -256,6 +334,12 @@ Nothing in §1, §3 and §4 needs a re-extract: the rockets' `parts`, `mass`,
   `extract_effects.py --mod DesertCombat --out viewer/maps/mods/desertcombat/_shared`
   and the same for `DC_Final` into `viewer/maps/mods/dc_final/_shared`, then
   publish.
+- **The models and levels that carry a full-body round, every tree** (§3a,
+  the projectile's `box`): Desert Combat's and DC Final's rocket and bomb
+  carriers move (the AT-2, Hydra, AIM-9, MLRS and Maverick boxes change);
+  vanilla's Katyusha, bombs and torpedoes, and XPack2's, carry the word but
+  their header boxes are their drawn ones. Until then the viewer flies the
+  drawn box, as before.
 - Optional: the glb words (`fireArms.tracer.gravity`, the damage block's
   `hasOnTimeEffect`) ride the next model and level bakes; the damage table
   already carries both.
@@ -291,12 +375,11 @@ the live trees' reports (§6).
    A real round in a gravity turn will trail its nose above the path, carry a
    little incidence, and so a little lift and a little side-face drag. Reading
    the round's inertia and the wing's moment would settle how much.
-3. **Nothing here is checked against the game.** The laws are read; what they
-   add up to on Desert Combat's data (a Hellfire at 82 m/s, an AT-2 at
-   16 m/s, a TOW past 800 m/s) has not been watched in DC. Vanilla's Katyusha
-   (481 m at 45 degrees, 229 m at 30) can be: a lab recording of a Katyusha
-   salvo on a known launcher pitch (skill `bf1942-server-lab`) would check the
-   gravity, the motor and the drag at once.
+3. Checked against the game for the MLRS, the AIM-9 and the AA-10 (§3a).
+   The Hellfire, Hydra, AT-2, Stinger, SA-3, Maverick, Magic II, DC Final's
+   `DefenderTOW` (a point body, 817 m/s at 10 s) and vanilla's Katyusha were
+   not fired in a recorded round; a lab round with bots in AH-64s or Mi-24s at
+   AI LOD 0 would give the first three.
 4. The torpedo's water run (`viewer/torpedo-run.js`, plane-bombs-and-torpedoes)
    thrusts with its throttle at 1.0. PHY-19 says the revs are pinned to 1.0
    only when a `c_ETTorpedo` is out of the water; under it, as for the rocket,
@@ -317,3 +400,15 @@ the live trees' reports (§6).
 8. Desert Combat's `e_ExplAni01_m_dirt` and `_sand` still lose their
    `Em_dirtgibb*_m` emitters in the effects bake; not the inline-geometry gap
    (the census finds the form only on the CBU in DC), not looked at further.
+9. **A bot's rounds on the server do not scatter.** Within a burst each of a
+   bot's rounds differs from the one before by a median 0.05 to 0.07
+   hundredths of a radian in every recorded round (2,000-odd pairs, vanilla
+   and DC; the human's StG44 scatters over the whole square):
+   the deviation is there, but it is the same point of the square shot after
+   shot, scaled by the total. `fireBarrel` seeds its draw from
+   `Game::getCurrentInputIndex` (`Game+0x68`) plus the barrel, and
+   `GameServer::simulatePlayerUpdate` (`0x0815bd72`, `0x0815bef9`) sets that
+   from the player's action buffer, which for a bot looks never to advance
+   (inferred: the writer of a bot's buffer was not read). The viewer's bots
+   roll a fresh disc per shot (`bot-referee.js` `rollCone`), the bots
+   package's.

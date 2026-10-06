@@ -177,8 +177,19 @@ read, not inferred (ledger PHY-22, 2026-10-06): `updatePhysics` (lnxded
 second on row 1 and its third on row 0. The engine's π here is `3.14f`
 (`ds:0x86d1384`). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
-`BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
+`BStandardMesh::queryInterface` answers with itself — and it is the `.sm`
+header's box: `getBoundingBox` (`0x083b4e40`) returns the mesh's `+0x28`, copied
+by the `BStandardMesh` constructor (`0x083b4410`) from the template's `+0x40`,
+which `loadHeader` (`0x083a6200`) reads from the file (ledger PHY-22). It is not
+the extent of the drawn LOD. `dragOffset` is read by
 neither law, and nothing calls its setter.
+
+`PhysicsNode::updatePositionalPhysics` (`0x08253570`) then integrates the
+accumulator, and first scales it back to 1000 m/s² when it is longer (ledger
+COL-8, collision-response.md §4.2): drag, the children's pushes and the gravity
+seeded the tick before together never change a full body's speed by more than
+33.3 m/s a tick. A round obeys it as a vehicle does; the lab's Desert Combat
+AA-10s, leaving a jet at 520 m/s, lose exactly that for their first five ticks.
 
 **The selector bit is never set (ledger PHY-4, settled 2026-09-17).** Object
 ctors write default flags `0x2090400` at `+0x4` (lnxded `0x08191811` /
