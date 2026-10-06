@@ -7,6 +7,34 @@ by the server recorder (`features/server-replay-recorder`), read back by
 `tools/bf1942-models/lab/dc_truth.py` into per-template numbers. The numbers
 are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page.
 
+## The census questions, by verdict
+
+| census item or question | retail | verdict for the viewer |
+|---|---|---|
+| air Q1: does anything damp a helicopter's rotation? | no: a UH-60's roll and yaw rates hold to a few percent for up to 20 s with the racks square | the viewer holding a rate is right |
+| air item 6: jet speeds | DC jets cruise 66-89 m/s (median), level 76-116, reach 95-165 | AI maxSpeed 60 does not cap them |
+| air item 10: AC-130 | 27 m/s lift-off, 35-45 m/s level, holds height | contradicts 12.9 and 21 m/s |
+| air item 25: bots never board A10_B/A10_C | they board the A-10C (6 of 9 lives) | viewer gap confirmed |
+| air item 26: Harrier bots | flown as a plane: 4.5 s roll to 47 m/s, no hover; still on the pad | hover unmeasured |
+| ground Q1: DPV spin-out at full lock | none at 10-15 m/s (slip 6-9 degrees) | contradicts the viewer's 190 degrees in 2.25 s; 15-30 m/s unmeasured |
+| ground: tank top speed | M1A1 14.1, T-72 11.3, BMP-2 14.9, M2A3 14.8 m/s, flat whatever the slope | the T-72 is 24% too fast at 14.9 |
+| ground Q4: door-less artillery driver seats | bots drive the MLRS from its gun seat by a seat switch; never the M-109, M-1974, BM-21 | partly confirmed |
+| ground Q5: ship and boat top speeds | bots took no boat or ship | unmeasured |
+| ground root cause 2: land hulls in water | could not be made to happen (see below) | unmeasured |
+| ground: upside-down damage | 5 hp a second, in whole seconds | |
+| weapons item 19: 25 mm gravity 0.2 | 2.94 m/s^2 = 0.2 x 14.73 | the viewer flies it flat: wrong |
+| weapons item 22: MLRS rockets arc | yes, under 14.7+ m/s^2 | the viewer's gravity 0: wrong |
+| weapons item 24: CBU-87 | submunitions fall at 14.45 | the viewer flies them level: wrong |
+| weapons Q1: rocket motor law | MLRS: +20 m/s over 3 s; TOW and AT-5 constant 100 m/s, no gravity; no other rocket fired | the fixed 25 m/s^2 matches none |
+| weapons Q1, helicopter and shoulder rockets | bots fired no Hydra, Hellfire, S-5, AT-2, Stinger or SA-7 in 2.8 h of helicopter flight; the BM-21 only fake | unmeasured |
+| DEV-9: rifle spread square or disc | no per-shot draw reaches a still bot's rounds (0.03-0.05 degrees rms); a shotgun's pellets lean square, not decisively | unsettled |
+| weapons Q4: FireArms velocity default | the Spandrel (no `velocity`) leaves at 200.5 m/s plus its launcher's speed (12 flights) | not the viewer's 100 |
+| levels item 23: respawn delay | `calcSpawnDelay` with the bots counted, drawn at the last spawn, from the death | the viewer draws it uniformly from the wreck's removal |
+| levels item 24: pads change sides | the capturer's template, in the same tick, on every empty pad | viewer gap confirmed |
+| levels item 25: abandoned vehicles | hit points drain at 10/s from 46-56 s after the last crewman left | viewer gap confirmed |
+| wrecks | `timeToLiveAfterDeath`: 60 s for DC's tanks, IFVs and BRDM-2s, 10 s otherwise | the viewer's fixed 10 s is wrong for those |
+| levels item 22: Weapon Bunkers spawns | no co-op layer, so no bot round | unmeasured |
+
 ## What the real game says
 
 Census reports are in `~/.cache/dc-sweep/reports/`; the ledger rows cited are
@@ -95,16 +123,20 @@ m/s, on the ground:
 
   | hull | max steer | 2-5 m/s | 5-10 | 10-15 | 15-20 |
   |---|---|---|---|---|---|
-  | DPV | 50 | 27.5/47.1, 18.0/23.0 | 35.9/51.4, 8.7/13.3 | 24.9/36.6, 4.3/7.0 | |
-  | Humvee | 50 | 24.5/29.4, 26.6/35.7 | 20.7/27.4, 11.4/16.4 | 21.9/24.1, 8.0/10.0 | |
-  | Humvee_TOW | 35 | 12.9/48.2, 19.4/30.0 | 27.7/50.7, 16.6/33.5 | 22.0/34.4, 8.2/12.6 | 19.1/22.1, 6.0/7.2 |
-  | Technical | 50 | 27.1/48.8, 20.7/26.2 | 26.7/49.7, 10.8/20.7 | 35.8/44.1, 9.1/11.4 | |
-  | BRDM-2 | 30 | 17.5/37.4, 18.4/21.9 | 27.8/74.3, 11.9/20.6 | 20.3/42.2, 6.0/11.8 | 8.8/17.0, 2.7/4.5 |
+  | DPV | 50 | 27.5/56.9, 17.9/23.0 (775) | 41.6/59.0, 9.1/13.3 (87) | 36.6/51.2, 6.4/8.9 (27) | |
+  | Humvee | 50 | 23.9/46.5, 28.7/44.7 (1,099) | 22.5/42.4, 12.4/25.3 (731) | 20.9/28.9, 8.2/11.3 (184) | 14.9/16.1, 4.9/5.1 (2) |
+  | Humvee_TOW | 35 | 16.1/48.2, 24.5/32.4 (1,186) | 26.6/50.7, 15.2/27.1 (418) | 21.8/34.4, 8.1/11.2 (160) | 17.5/22.1, 5.4/7.2 (39) |
+  | Technical | 50 | 27.2/48.8, 21.3/25.7 (555) | 30.7/49.7, 9.5/18.6 (178) | 33.0/44.1, 7.5/10.7 (78) | |
+  | BRDM-2 | 30 | 18.4/42.1, 18.3/22.2 (2,019) | 28.3/74.3, 11.9/19.2 (862) | 19.8/42.2, 5.9/9.5 (165) | 8.8/17.0, 2.7/4.5 (18) |
 
-  **The DPV does not spin out at full lock at 10-15 m/s** (slip 4.3 degrees,
-  p95 7.0; the census's viewer spins it 190 degrees in 2.25 s at 15 m/s). No
-  bot full-locked it faster than 15 m/s, so 15-30 m/s is unmeasured; at
-  LOD 2 the spins seen at 30-40 m/s were the AI mover slewing the heading.
+  (samples in brackets; three LOD 0 rounds: two DC El Alamein, one
+  Guadalcanal.) The slip at 2-5 m/s is mostly where the origin sits on the
+  hull: a car pivots about its rear axle, and the DPV's origin is 0.94 m
+  ahead of it. **The DPV does not spin out at full lock at 10-15 m/s** (slip
+  6.4 degrees, p95 8.9, 27 samples; the census's viewer spins it 190 degrees
+  in 2.25 s at 15 m/s). No bot full-locked it faster than 15 m/s, so 15-30 m/s
+  is unmeasured; at LOD 2 the spins seen at 30-40 m/s were the AI mover
+  slewing the heading.
 - **Upside down costs 5 hit points a second, in whole seconds.** An unmanned
   Humvee_TOW on its roof for 2.8 s went 100, 95, 90, 85, 80 at 109.0, 110.0,
   111.0, 112.0 s, then righted and kept the rest.
@@ -300,31 +332,47 @@ M-109, M-1974 or BM-21 (their gunners, yes).
 
 ### Rounds in flight (weapons census items 19-24, questions 1 and 4)
 
-From the LOD 0 round (every shot real) and, for the MLRS, a bots-only DC
-Bocage round (artillery fires real at LOD 2). `v0` is the speed over the
-first two ticks; "a along" is the acceleration along the launch direction and
-"g across" the gravity across it, from a quadratic fit over the first 3 s of
-free flight (to the first bounce or hit); speeds are at 0.5-5 s.
+From every DC file: in the LOD 0 rounds every shot is real; at LOD 2
+aircraft, anti-aircraft guns, the MLRS and a few others fire real. `v0` is the
+speed over the first two ticks (p50 over the flights); "a along" is the
+acceleration along the launch direction and "g across" the gravity across it,
+from a quadratic fit over the first 3 s of free flight (to the first bounce or
+hit), p50; speeds are at 0.5-5 s.
 
 | round | fired by | flights | v0 | 0.5 s | 1 s | 2 s | 3 s | 5 s | a along | g across | what it says |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Sabot_Projectile | M1A1 | 12 | 250.1 | 249.4 | 250.5 | | | | -1.7 | 14.74 | gravity 1.0 (IMP-7's 14.73) |
-| T72Projectile | T-72 | 1 | 248.7 | 252.4 | | | | | -0.2 | 14.61 | gravity 1.0 |
-| 25mmChaingunProjectileBMP2 | BMP-2 | 33 | 585.1 | 585.0 | 585.5 | | | | 0.0 | **2.94** | `gravityModifier 0.2` honoured (the viewer flies bullet-kind rounds flat) |
-| SMAWProjectile | SMAW | 44 | 100.0 | 100.0 | 99.9 | 100.3 | | | -0.2 | **5.89** | 0.4 x 14.73 |
-| RPGProjectile | RPG-7 | 14 | 100.0 | 100.0 | 99.7 | 99.7 | 100.1 | | -0.3 | **5.89** | 0.4 |
-| M203projectile, AK47GP30Projectile | M203, GP-30 | 5 | 60.1 | 60.2 | 60.7 | | | | 0.2 | **7.36** | 0.5 |
+| Sabot_Projectile | M1A1 | 39 | 250.1 | 249.9 | 250.2 | 247.9 | 248.1 | | -0.6 | 14.73 | gravity 1.0 (IMP-7's 14.73) |
+| T72Projectile | T-72 | 17 | 250.1 | 250.7 | 251.5 | | | | -0.3 | 14.73 | gravity 1.0 |
+| M-109Projectile, M-1974Projectile | M-109, M-1974 | 3, 1 | 250.1, 250.0 | 250.1 | 250.0 | | | | -0.8 | 14.73 | gravity 1.0 |
+| 25mmChaingunProjectileBMP2 | BMP-2 | 49 | 585.1 | 585.0 | 585.5 | | | | 0.0 | **2.94** | `gravityModifier 0.2` honoured (the viewer flies bullet-kind rounds flat) |
+| 25mmChaingunProjectileM2A3 | M2A3 | 45 | 500.1 | 500.0 | | | | | 0.0 | **2.96** | 0.2 |
+| 25mmChaingunProjectile | AH-64 M230 | 25 | 1,008.8 | 991.3 | 990.5 | 988.7 | 987.1 | | -1.7 | **2.94** | 0.2 |
+| SMAWProjectile | SMAW | 102 | 100.0 | 100.0 | 99.9 | 99.8 | 99.3 | | -0.2 | **5.89** | 0.4 x 14.73 |
+| RPGProjectile | RPG-7 | 104 | 100.0 | 99.9 | 99.9 | 99.6 | 99.8 | | -0.3 | **5.89** | 0.4 |
+| M203projectile, AK47GP30Projectile | M203, GP-30 | 8 | 60.1 | 60.2 | 60.7 | | | | 0.2 | **7.36** | 0.5 |
 | 40mm_Grenade | Humvee Mk19 | 6 | 107.7 | 106.3 | 105.4 | 105.0 | | | -3.5 | 14.73 | 1.0 |
-| TOW_Projectile | M2A3, Humvee TOW | 10 | 100.6 | 106.2 | 107.4 | 100.7 | | | 0.0 | **0.0** | straight, constant speed, turns under 0.1 degrees: no guidance, no gravity |
-| BMP2_AT4_Projectile | BMP-2 AT-5 | 17 | 100.0 | 100.0 | 100.0 | 100.0 | 100.2 | 100.3 | 0.0 | **0.0** | the same |
-| Spandrel_Projectile | BRDM-2 Spandrel | 2 | **191.3** | 191.3 | 191.2 | | | | 0.0 | 0.0 | question 4: the launcher declares no velocity and the round leaves at 191.3, not the viewer's `velocity ?? 100` |
-| AS-7 | Su-25 rack | 32 | 80.1 | 88.4 | 92.1 | 98.3 | 103.3 | | +4.4 | 14.48 | a winged bomb (no Engine in its template: mass 250, drag 0.08, `setWingLift 2`) gaining speed in the dive it is dropped in (12 degrees down: 3.1 m/s^2 of gravity along it), falling at full gravity |
-| MLRSRocket | MLRS ("Blast") | 11 | 97.8 | 88.5 | 91.3 | 101.4 | 109.0 | | +4.0 | **16.8** | **arcs under gravity** (item 22: the viewer sets gravity 0 for every rocket) and speeds up under its `c_ETRocket` motor (torque 50, differential 30, maxRotation 5000; mass 20, drag 1) |
-| Blank_Projectile | MLRS ("Blast") | 11 | 100.1 | 98.6 | 97.8 | 97.6 | 99.4 | 108.8 | -3.5 | 14.73 | a second round per MLRS shot, ballistic, lives 10 s |
-| CBU87Prj | A-10C | 28 | 69.9 | 70.0 | 71.1 | 75.8 | 82.3 | | 0.2 | **14.45** | item 24: the submunitions fall (the viewer flies them level as bullet-kind) |
-| Aim9 | F-15C | 11 | 503.7 | 224.4 | 154.3 | | | | | | slows to a third in 1 s (drag), turns under 0.1 degrees |
-| 30mm / Avenger / .50 / 7.62 / 5.56 | guns | 1,000+ | 973-1,092 | | | | | | 0 | **0** | non-tracer bullets: no gravity |
-| tracers (20 mm, .50, 7.62, Avenger) | guns | 200+ | 973-1,091 | | | | | | | **14.7** | every tracer falls at full gravity |
+| RecoillessProjectile | Technical | 1 | 179.8 | | | | | | | 14.78 | 1.0 |
+| GrenadeAlliesProjectile | hand grenade | 151 | 25.0 | 24.4 | 24.1 | | | | -3.9 | 14.66 | thrown at 25 m/s |
+| TOW_Projectile | M2A3, Humvee TOW | 51 | 100.2 | 100.2 | 100.2 | 100.0 | 100.0 | 100.0 | 0.0 | **0.0** | straight, constant speed, turns under 0.1 degrees: no guidance, no gravity |
+| BMP2_AT4_Projectile | BMP-2 AT-5 | 47 | 100.0 | 100.0 | 100.0 | 100.1 | 100.2 | 100.2 | 0.0 | **0.0** | the same |
+| Spandrel_Projectile | BRDM-2 Spandrel | 13 | **201.2** | 201.2 | 201.1 | 201.1 | 201.2 | | 0.0 | 0.0 | question 4: the launcher declares no velocity and the round leaves at 200.5 m/s plus the launcher's own speed, not the viewer's `velocity ?? 100` |
+| AS-7 | Su-25 rack | 81 | 82.6 | 87.9 | 92.5 | 97.3 | 103.8 | | +4.9 | 14.53 | a winged bomb (no Engine in its template: mass 250, drag 0.08, `setWingLift 2`) gaining speed in the dive it is dropped in (27 degrees down), falling at full gravity |
+| MLRSRocket | MLRS ("Blast") | 25 | 97.8 | 88.5 | 91.2 | 101.2 | 108.6 | | +3.9 | **16.8** | **arcs under gravity** (item 22: the viewer sets gravity 0 for every rocket) and speeds up under its `c_ETRocket` motor (torque 50, differential 30, maxRotation 5000; mass 20, drag 1) |
+| Blank_Projectile | MLRS ("Blast") | 25 | 100.1 | 98.6 | 97.7 | 97.2 | 99.1 | 108.3 | -3.6 | 14.73 | a second round per MLRS shot, ballistic, lives 10 s |
+| CBU87Prj | A-10C | 56 | 71.5 | 73.1 | 73.4 | 77.7 | 84.7 | | -0.1 | **14.45** | item 24: the submunitions fall (the viewer flies them level as bullet-kind) |
+| Aim9 | F-15C, F-16 | 60 | 498.8 | 222.9 | 153.9 | 109.5 | 95.3 | 87.4 | | | a third of its speed in 1 s (drag), turns under 0.13 degrees: unguided |
+| AA-10 | MiG-29 | 23 | 508.0 | 183.8 | 119.3 | 83.8 | | | | | the same law |
+| ShilkaProjectile, M163_Projectile | Shilka, M163, AC-130 Vulcan | 98, 82 | 1,000.5 | 1,000.5 | | | | | 0.0 | **0.0** | no gravity |
+| 30mm / Avenger / .50 / 7.62 / 5.56 / 9 mm | guns | 2,500+ | 500-1,091 | | | | | | 0 | **0** | non-tracer bullets: no gravity |
+| tracers (20 mm, .50, 7.62, Avenger) | guns | 900+ | 979-1,087 | | | | | | | **14.73** | these tracers fall at full gravity; the NSVT's `Tracer_Projectile` (64) does not |
+
+- **A round leaves at its own speed plus its launcher's** (the launcher's
+  velocity along the shot, from its poses 0.2 s either side): the Spandrel
+  `v0 = 200.5 + 1.015 x` that speed over 12 flights (the 191.3 m/s one left a
+  BRDM-2 moving away from its shot at 9 m/s), the M2A3's TOW `99.97 + 1.037 x` (11). Over
+  10 sabot shots the launchers barely moved (1.4 m/s at most), so it is not
+  separable there. This is what `round-launch.js` already does (the
+  platform's velocity on top of the muzzle velocity).
 
 - **Rocket motors (question 1):** the MLRS rocket, the one recorded round
   with a `c_ETRocket` Engine, gains about 20 m/s over 3 s (88.5 at 0.5 s to
@@ -332,8 +380,53 @@ free flight (to the first bounce or hit); speeds are at 0.5-5 s.
   across its path; the Wing's 0.1 lift and the motor's line both feed that
   number); the TOW and AT-5 neither accelerate nor fall; the Aim-9 loses two
   thirds of its speed in a second. None of them steers. The viewer's fixed
-  25 m/s^2 with gravity 0 matches none of these. Hellfire, Hydra, Stinger and
-  the Katyusha were not fired in any recorded round.
+  25 m/s^2 with gravity 0 matches none of these.
+- **Not fired in any run, so not measured: Hydra, Hellfire, S-5, AT-2,
+  Stinger, SA-7 and the BM-21's rockets.** Over every DC file (LOD 0 and 2),
+  bots flew the Mi-8 3,467 s, the UH-60 2,300 s, the Mi-24D 2,263 s, the AH-64
+  1,862 s and the SA-342G 360 s, and the only helicopter weapon that fired was
+  the AH-64's M230 cannon (31 shots); no rocket pod or missile rack on any of
+  them fired once. No soldier fired a Stinger or an SA-7. The BM-21 fired 125
+  times, all fake (LOD 2, El Alamein Day 2 and Bocage), and not at all in the
+  Day 2 LOD 0 round. The rockets that did fly are the table's: the MLRS, AS-7,
+  TOW, AT-5, Spandrel, Aim-9 (and the AA-10 from the MiG-29's rack, 26 shots,
+  too few matched flights for a row).
+
+### Hand-weapon spread, square or disc (DEV-9): not settled by bots
+
+The viewer rolls a disc (`round-launch.js` `wander`: polar angle `spread x
+sqrt(u)`). What the four LOD 0 rounds say, matching each real `f` record to
+its round's `pn` and first two `pj` positions (the direction it flew, to 0.02
+degrees over a tick's 30 m), offsets in degrees across (dx) and up (dy) from
+the `f` direction (`~/.cache/dc-sweep/dc-lab/probe_dev.py`, `dev_burst.py`,
+`dev_pellets.py`):
+
+- **The `f` direction is the aim before any spread.** The 3-8 pellets of one
+  Saiga-12K pull carry one `f` direction, the same to the last digit, and fly
+  up to 1.9 degrees apart.
+- **A still bot's rifle shows no per-shot draw.** Its rounds leave the `f`
+  direction by an offset held for the burst and often far longer (one bot's
+  M16: (-0.43, -0.28) at 260 s and (-0.40, -0.29) again at 494-508 s, 250 m
+  away), varying 0.03-0.05 degrees rms shot to shot when the muzzle stays
+  within 0.3 m (M16 71 shots in 15 bursts, PKM 35 in 9), which is the
+  recorder's own resolution (`d` is written to 3 decimals, 0.06 degrees). The
+  held offsets differ bot to bot and stance to stance (rms over bursts: M16
+  0.50, AK47 0.38, PKM 0.76, M249 0.88), which fits the barrel's line differing
+  from the eye's (`fireInCameraDof`; not checked). The `f` direction itself moves smoothly shot
+  to shot (a bot tracking at 2.6 degrees a second). DC's M16 says `setMinDev
+  0.4` and the AK47 0.5, so the deviation a human's rifle would roll does not
+  reach a bot's rounds, and there is no draw to tell a square from a disc.
+- **The shotgun is the one per-shot spread in the data.** Around each pull's
+  centre the Saiga-12K's pellets spread 0.96 degrees rms across by 0.76 up
+  (68 pellets in 12 pulls, the farthest 1.89 out). Scaled per pull by its
+  largest |dx| or |dy|, 0.265 of them lie outside the unit circle and 0.559
+  within 22.5 degrees of a diagonal; square draws of the same pull sizes give
+  0.265 and 0.559 (median), disc draws 0.250 and 0.500, and each lies inside
+  the other's 95% range. It leans square; it does not decide.
+
+DEV-9 needs a shooter whose deviation is rolled: a human on the lab server
+(a connected client, 30 or more shots standing still at a wall), or the read
+of where `fireBarrel` (0x0828aba0) perturbs the matrix it was given.
 
 ### A land hull in deep water (ground census root cause 2): not measured
 
@@ -352,6 +445,31 @@ written the way the game writes them (LZO segments and its checksum).
 lab's link tree was restored after each try.)
 
 <!-- ROUNDS -->
+
+## Runs
+
+All under `~/bf1942-lab/runs/`, each with `server/replay_<unix>.ndjson` (one
+file a round), the event log in `serverlog/`, `scenario.json`, `settings/` and
+`run.json`. 30 bots on 32 slots, no human, DC 0.7 from the Wine client.
+
+| run | level | AI LOD | rounds (files) | s | used for |
+|---|---|---|---|---|---|
+| `20261006-212343-dc-el_alamein-coop-rec` | El Alamein | 2 | 2 full + a start (3) | 1,680 | pads, aircraft, LOD 2 mover |
+| `20261006-215149-dc-guadalcanal-coop-rec` | Guadalcanal | 2 | most of 1 (1) | 757 | crews (no boats used) |
+| `20261006-220426-dc-bocage_day2-coop-rec` | Bocage Day 2 | 2 | part (1) | 469 | helicopters |
+| `20261006-221215-dc-bocage-coop-rec` | Bocage | 2 | 1 full + part (2) | 992 | the Harrier, MLRS rockets |
+| `20261006-222848-dc-el_alamein_day2-coop-rec` | El Alamein Day 2 | 2 | 7 full + 2 short (9) | 6,821 | helicopters hands-off |
+| `20261007-002229-dc-gazala-coop-rec` | Gazala | 2 | 1 full + a start (2) | 517 | the AC-130 |
+| `20261007-003106-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 593 | ground physics, rounds, pads |
+| `20261007-004059-dc-guadalcanal-coop-lod0-rec` | Guadalcanal | **0** | 1 full + part (2) | 742 | water (none), ground |
+| `20261007-010104-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 584 | ground physics, full lock |
+| `20261007-005321` ... `010013-dc-guadalcanal-coop-lod0-water-rec` | Guadalcanal | 0 | starts only (6) | 40-117 | the failed water placements |
+
+Vanilla files read for comparison: `20261004-180859-parity-elalamein-rec`
+(the bots-only El Alamein soak, 7 rounds), `20261005-082947-` and
+`20261005-191346-projpool-elalamein-rec`, `20261005-082144-projpool-wake-rec`,
+`20261003-200822-` and `20261003-215615-midway-coop-rec`, and the owner's
+`20261005-070852-` and `20261006-200339-parity-elalamein-rec`.
 
 ## How it was recorded
 
@@ -379,17 +497,18 @@ lab's link tree was restored after each try.)
 - **What it does not hold: anybody's input.** Bots drive and fly; their
   stick is not recorded. A helicopter's engine racks are (they are the cyclic
   as the hull got it), and so is an aircraft's throttle servo. A land hull's
-  recorded engine is not its drive: a Humvee's reads 0 throttle and 0 revs at
-  22 m/s. So a ground speed here is what a bot got out of a hull, not what
-  the hull can do (see "Bots drive at 0.6 of their AI maxSpeed").
+  recorded engine is not its drive at AI LOD 2: a Humvee's reads 0 throttle
+  and 0 revs at 22 m/s, and the AI mover carries it. At LOD 0 the engine
+  servo is the bot's throttle (-1 to 1) and the front wheels its steering.
 - **Fake fire.** A bot shooting a bot that no human is near fires fake (ledger
   AI-134): the shot is counted (`f` with `"fake":1`) but no projectile is
   made. In the first El Alamein round 155 of 156 T-72 shots were fake. What
   flies in a bots-only round is air-to-ground and anti-air fire and a few
   others. For the projectile laws, `lab/realfire/realfire.so` (a lab-only
   preload: `FireArms::setFakeFire` always stores 0) makes every shot real;
-  the `*-realfire-rec` scenario loads it beside the recorder. Those rounds are
-  ground truth for how rounds fly, not for how a bot round goes.
+  the `*-realfire-rec` scenario loads it beside the recorder (never run:
+  `aiSettings.lodEnable 0` makes every shot real without patching anything,
+  and is what the `*-lod0-rec` scenarios use).
 - **Frames.** BF1942's: left-handed, +Y up, a body's nose its rotated +Z. A
   moving hull's velocity lies along it (cosine 0.999 or better for every DC
   ground hull and fixed-wing aircraft recorded). Speeds come from samples a

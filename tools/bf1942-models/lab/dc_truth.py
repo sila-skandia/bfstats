@@ -1152,7 +1152,7 @@ def _summarise_flights(by_tmpl: dict[str, list]) -> dict:
     before its first place, within 20 m of it (`_flights`)."""
     out = {}
     for tmpl, fls in sorted(by_tmpl.items()):
-        row = {"flights": len(fls), "weapons": dict(collections.Counter(f["weapon"] for f in fls).most_common(4)),
+        row = {"flights": len(fls), "weapons": dict(collections.Counter(f["weapon"] or "(unmatched)" for f in fls).most_common(4)),
                "v0_p50": r1(pct([f["v0"] for f in fls], 0.5)), "v0_max": r1(max(f["v0"] for f in fls)),
                "dur_p50": r1(pct([f["dur"] for f in fls], 0.5), 2), "dur_max": r1(max(f["dur"] for f in fls), 2),
                "life_p50": r1(pct([f["life"] for f in fls], 0.5), 2),
@@ -1431,29 +1431,52 @@ def analyse(paths: list[Path], mod: str = "desertcombat", game_dir: Path | None 
         files.append({
             "file": path.name, "level": rec.level, "mode": rec.mode, "seconds": r1(rec.duration, 0),
             "header": rec.header.get("plus"), "skipped": rec.skipped, "bots": len(rec.bots),
-            "status": status, "tickets": [rec.tickets[0][1:], rec.tickets[-1][1:]] if rec.tickets else None,
+            "status": status, "tickets": _tickets(rec),
             "heightmap": ter.hm is not None, "water": ter.water,
             "crews": crew_stats(rec, vehicles), "pads": pad_stats(rec, vehicles, spawners),
             "bots_moving": bot_mobility(rec),
         })
     out = {"files": files, "ground": {}, "sea": {}, "ground_lod2": {}, "sea_lod2": {}, "air": {}}
     for tmpl, rows in sorted(life_aggs.items()):
+        # A template's surface lives and its airborne ones are summed apart:
+        # a tank the AI mover carries 15 m over the heightmap for 10 s is
+        # classed air for that life, and must not take the template's ground
+        # lives with it. Aircraft are air by their parts, every life.
         kinds = collections.Counter(k for k, _ in rows)
-        kind = next((k for k in ("heli", "harrier", "air") if kinds[k]), None) or kinds.most_common(1)[0][0]
-        merged = Agg()
-        for k, agg in rows:
-            if k == kind or (kind in ("ground", "sea") and k in ("ground", "sea")):
-                for key, vals in agg.items():
-                    merged[key].extend(vals)
-        if kind in ("ground", "sea"):
+        surface = [k for k in ("ground", "sea") if kinds[k]]
+        aloft = next((k for k in ("heli", "harrier", "air") if kinds[k]), None)
+        if surface:
+            kind = max(surface, key=lambda k: kinds[k])
+            merged = Agg()
+            for k, agg in rows:
+                if k in ("ground", "sea"):
+                    for key, vals in agg.items():
+                        merged[key].extend(vals)
             if merged["driven_s"] and sum(merged["driven_s"]) > 0:
                 lod2 = tmpl.endswith(LOD2)
                 table = ("sea" if kind == "sea" else "ground") + ("_lod2" if lod2 else "")
                 out[table][tmpl.removesuffix(LOD2)] = summarise_ground(merged)
-        elif merged["air_s"]:
-            out["air"][tmpl] = {"kind": kind, **summarise_air(merged)}
+        if aloft:
+            merged = Agg()
+            for k, agg in rows:
+                if k == aloft:
+                    for key, vals in agg.items():
+                        merged[key].extend(vals)
+            if merged["air_s"]:
+                entry = {"kind": aloft, **summarise_air(merged)}
+                if surface:
+                    entry["lives_aloft"] = kinds[aloft]
+                    entry["lives_surface"] = sum(kinds[k] for k in surface)
+                out["air"][tmpl] = entry
     out["rounds"] = _summarise_flights(flights)
     return out
+
+
+def _tickets(rec: Recording) -> list | None:
+    """The tickets at the round's start and at its end; the next round's
+    reset, written after the end, is not the end."""
+    tk = [x for x in rec.tickets if rec.round_end is None or x[0] <= rec.round_end + 1e-3]
+    return [tk[0][1:], tk[-1][1:]] if tk else None
 
 
 def _flights(rec: Recording) -> dict[str, list]:
