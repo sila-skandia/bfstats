@@ -150,21 +150,53 @@ hulls ship. `CollisionHarnessTests` hands the exporter's answer for three walls
 to `collision_harness.mjs`: a round and a soldier-sized sphere pass the wall
 that says 0 and the one that says nothing, and stop at the one that says 1.
 
-**Blast radius**, measured per level with each level's own library, both
-spellings read (`~/.cache/dc-sweep/engine-reads/hcp_level_census.py`; tables
-in section 4):
+**A real bake agrees.** El Alamein baked into scratch with both spellings read
+(a wrapper that stands in for con-reader) has 1,377 collision nodes against the
+published `scene.glb`'s 1,381, and the four it lacks are the hospital's and the
+supply hut's roof lamps, nothing else. The same bake with `con.py` as it is
+here has 1,321: 22 ammo boxes, 9 medic lockers, 6 crates, 4 lockers, 4 mess
+tables, 2 aircraft engines, the interiors of two supply huts and two hangars,
+and all five flag bases, every one of which says 1 the bare way (the merge
+guard below). Basrah's Edge, baked the same way, goes from 902 collision nodes
+to 828: the 55 fenceposts and 4 treepots that say 0, and the 15 weapons and
+helmets in its armory racks, exactly what the census predicts.
+
+**Blast radius**, measured per level with each level's own library (level
+scripts first, as a bake reads them), both spellings read, over every placed
+static and mode static, by walking each one the way the old build and the new
+one do (`~/.cache/dc-sweep/engine-reads/hcp_level_census.py`). A hull that
+"stops colliding" is one the old build shipped and the engine never tests:
 
 | Tree | Levels changed | Roots | Placements | What stops colliding |
 |---|---|---|---|---|
 | vanilla | 12 of 23 | 2 | 43 | `landrep1_supply`'s `rooflamp1_m1` (x31); `hospital_m1`'s `rooflamp1_m1` (x12) |
 | XPack1 | 2 of 6 | 1 | 6 | `landrep1_supply_it`'s `rooflamp1_m1` (x6) |
 | XPack2 | 6 of 9 | 3 | 14 | `landrep1_supply`'s `rooflamp1_m1` (x9); `hospital_m1`'s `rooflamp1_m1` (x4); `Mimo_Railroad_M1` (says 0, x1) |
-| Desert Combat | 24 of 35 | 11 | 146 | `DC_slums_fencepost1_m1` (says 0, x55, Basrah's Edge); `rooflamp1_m1` on `landrep1_supply` (x43) and `hospital_m1` (x22); `mil_barracks_m1`'s `mil_barracksExterior` (x10: the far mesh, whose hull the old export shipped beside the near one's); `DC_sidewalk_treepot1_m1` (says 0, x4); `mil_scud_cart_m1`'s `mil_scud_cart_missile` (x4); the weapons and helmets displayed in the `Armory_*` kit racks (x7); `Mi24DWreck` (says nothing, x1, Operation Bragg) |
+| Desert Combat | 24 of 35 | 11 | 146 | `DC_slums_fencepost1_m1` (says 0, x55, Basrah's Edge); `rooflamp1_m1` on `landrep1_supply` (x43) and `hospital_m1` (x22); `mil_barracks_m1`'s `mil_barracksExterior` (x10: the far mesh's hull, which the old export shipped beside the near one's; the barracks still collide, with the near mesh); `DC_sidewalk_treepot1_m1` (says 0, x4); `mil_scud_cart_m1`'s `mil_scud_cart_missile` (x4); the weapons and helmets displayed in the `Armory_*` kit racks (x7); `Mi24DWreck` (says nothing, x1, Operation Bragg) |
 | DC Final | 37 of 48 | 13 | 194 | the same kinds: `DC_slums_fencepost1_m1` (x55), `rooflamp1_m1` on four supply and hospital buildings (x81), `mil_barracks_m1`'s far mesh (x15), the `Armory_*` racks' weapons (x34), the treepots (x4), the Scud cart's missile (x4), `Mi24DWreck` (x1) |
-| the other installs | census running | | | |
 
 Nothing a player stands on or hides behind in vanilla moves: a roof lamp. The
 houses, bunkers and hangars all keep the hull they had, through COL-17.
+
+The other installs, out of extraction scope, were measured with a faster
+whole-mod census (one library per mod, every level's `Object.create`; a
+level's override of a global template is not seen;
+`~/.cache/dc-sweep/engine-reads/hcp_mod_census.py`). Their authors use the word
+on purpose: FHSW comments out `setHasCollisionPhysics 1` on the church fence's
+fence part, and FHSW and bg42 ship meshes named `Bridge_Small_M1nocol`.
+
+| Install | Levels changed | Roots | Placements | Largest |
+|---|---|---|---|---|
+| FH | 67 of 73 | 219 | 1,572 | debris that says nothing (`lessplank` x291, `concretecrap` x283), `Landscapesmoke1` x209, roof lamps |
+| FHSW | 232 of 260 | 511 | 7,677 | the church fence's fence part x2,034, `F_Fern05_M1` x490, smoke, debris, `nocol_Eu_Strtlight_M1` x205, `Bridge_Small_M1nocol` x179 |
+| EoD | 198 of 237 | 128 | 7,341 | `F_Fern05_M1` x4,439, the railroad's rail mesh x360, grenade and pack pickups |
+| GCMOD | 14 of 30 | 14 | 121 | `tan_grid01` x48 |
+| bf1918 | 77 of 133 | 87 | 413 | `BG_Clothesline_m1` x47, `signalpanel_m1` x30, roof lamps |
+| Pirates | 4 of 33 | 1 | 60 | `volcanoSmoke01` x60 |
+| Interstate | 5 of 13 | 13 | 25 | `pylon` x7 |
+| FinnWars | 28 of 70 | 21 | 105 | `signalpanel_m1` x23, `kartta_o` x14 |
+| bg42 | 156 of 200 | 74 | 1,062 | `signalpanel_m1` x243, roof lamps x281, `BG_Clothesline_m1` x140, `Bridge_Small_M1nocol` x51 |
+| FHSWEurope | 5 of 6 | 12 | 28 | roof lamps, `me262spawnrotator` x6 |
 
 **Depends on the `con-reader` package.** `con.py` parses only the
 `setHasCollisionPhysics` spelling; Desert Combat writes the bare
@@ -244,5 +276,5 @@ can wait for the next bake that has another reason to run; Desert Combat's
 fenceposts, treepots and barracks are the ones a player meets.
 
 No model tree needs a re-extract for this: vehicles, guns and projectiles keep
-their hulls, and the hand weapons ship none. `collision-meshes.json`
+their hulls, and the hand weapon and kit models ship none. `collision-meshes.json`
 (`extract_collision_meshes.py`, vehicles only) is unchanged.
