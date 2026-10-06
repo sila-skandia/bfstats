@@ -113,9 +113,21 @@ export const CHANGE = {
   upsideDownCos: 0.6914,
   /** `BFEnvironment::getHardware` 0x085e2fa0: the 50 m candidate radius. */
   searchRadius: 50.0,
+  /** `BBPChange::createPlan` 0x0858b5c0 on foot (AI-44, AI-138): beyond
+   *  12.5 m (156.25 = 12.5^2, 3D) the walk (`BAPAMoveToObjectFinding`, its
+   *  finding radius 6.25); the Use key held within 12.375 m
+   *  (`BAPConObjectDistance`, 0x41460000, 3D) until the seat is taken;
+   *  `validateBFEntryPoint` 0x0831d590 seats a bot within 15 m of the
+   *  seat's own object (0x41700000 from `toggleEntryPoint` 0x0814ee70). A
+   *  `setUseNoPathfindingToGetToObject` unit is walked to from behind (the
+   *  first valid point on the 12 m line behind it) and Use waits for the
+   *  bot to be behind it (`BAPConObjectBehind` -0.8). */
   approachFrom: 12.5,
   approachTo: 6.25,
   useWithin: 12.375,
+  enterWithin: 15.0,
+  behindDistance: 12.0,
+  behindCos: -0.8,
   rampSeconds: 10.0,
   unitRampSeconds: 15.0,
   urgencyScale: 4.0,

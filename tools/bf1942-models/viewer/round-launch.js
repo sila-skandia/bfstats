@@ -249,9 +249,10 @@ export const DEVIATION_FLOOR = 0.01;
  * its frame is built from the line and world up, which is the camera's for a
  * camera that does not roll. Both draws come from `guns.rand`, the same
  * authority the flash roll answers to; the engine seeds its own from the tick
- * and the barrel, which is why two barrels of one pull differ.
+ * and the barrel, which is why two barrels of one pull differ. Exported for
+ * the bots' rounds (bot-deviation.js), whose draws are a fixed point.
  */
-function deviate(guns, dir, total, frame) {
+export function deviate(guns, dir, total, frame) {
   if (!(total > DEVIATION_FLOOR)) return dir;
   if (frame) {
     _spreadU.set(1, 0, 0).applyQuaternion(frame);

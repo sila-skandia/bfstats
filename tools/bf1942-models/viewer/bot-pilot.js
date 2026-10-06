@@ -270,14 +270,21 @@ export function weaponGroup(bot) {
  *  A bomb's `velocity 0` is kept (the plane's own speed is added by
  *  `planeAimFor`), and the gravity is the engine's 14.73, not 9.81. */
 export function gunBallistics(bot) {
-  return groupBallistics(weaponGroup(bot), bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600);
+  const weapon = bot.weapons?.[bot.weaponIndex] ?? bot.weapons?.[0] ?? null;
+  return groupBallistics(weaponGroup(bot), bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600, weapon);
 }
 
 /** One gun group's exit velocity and gravity (`gunBallistics`), `speed`
- *  standing in until its stats load. */
-export function groupBallistics(g, speed = 600) {
+ *  standing in until its stats load. The speed is the AI weapon's own
+ *  `weaponTemplate.exitVelocity` where it sets one: `Weapon::getExitVelocity`
+ *  0x085ecb50 reads WeaponTemplate +0x28, which `WeaponTemplate::init`
+ *  0x085efd40 fills from the FireArms' velocity only while it is 0 (AI-143).
+ *  DC's MLRS, BM-21 and SCUD lead at 72, its TOW, Hellfire, AT-5 and
+ *  Spandrel at 300, its Hydra at 150, the CBU and Snakeye at -5. */
+export function groupBallistics(g, speed = 600, weapon = null) {
   const st = g?.stats ?? {};
-  const v = st.velocity ?? st.projectile?.velocity;
+  const own = weapon?.exitVelocity;
+  const v = Number.isFinite(own) && own !== 0 ? own : (st.velocity ?? st.projectile?.velocity);
   // `gravityModifier` as the extractor names it (`projectile.gravity`).
   // `WeaponFireArm::init` (0x085ee220) hands the Aimer the projectile
   // template's own `+0x164`, which the `ProjectileTemplate` constructor sets
@@ -287,7 +294,27 @@ export function groupBallistics(g, speed = 600) {
   // glb too old to carry the round as an object flies it flat.
   const p = st.projectile;
   const gm = Number.isFinite(p?.gravity) ? p.gravity : (p && typeof p === 'object' ? 1 : 0);
-  return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, node: g?.node ?? null };
+  return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, drag: aimerDrag(g), node: g?.node ?? null };
+}
+
+/**
+ * The Aimer's drag (+0, `Aimer::getFiringDirection`'s `(1 - drag)` terms,
+ * bot-aim.js `firingDirection`; ledger AI-146): `WeaponFireArm::init`
+ * 0x085ee220 hands `WeaponTemplate::init` the round's `pi r^2 drag / mass`
+ * (0x085ee327..0x085ee347: `r` its `getBoundingRadius` vt+0x48, `drag` its
+ * template's +0x44, which the `ProjectileTemplate` ctor sets to 0, `mass`
+ * its physics component's vt+0xa0, 1.0 without one at 0x085ee3c1), in float. The radius is the drawn round's,
+ * as the flight's drag law takes it (`gun-groups.js boundingRadius`,
+ * `bomb-release.js dragAcceleration`); a round that declares a drag and no
+ * mass takes 1.0 (INVENTION: the physics node's own default was not read).
+ * 0 for every round without a `drag` word, which is every bullet and shell
+ * in vanilla.
+ */
+export function aimerDrag(g) {
+  const p = g?.stats?.projectile;
+  const r = g?.boundingRadius;
+  if (!(p?.drag > 0) || !(r > 0)) return 0;
+  return Math.fround(Math.PI * r * r * p.drag / (p.mass > 0 ? p.mass : 1));
 }
 
 /**
