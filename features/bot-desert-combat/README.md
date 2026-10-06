@@ -450,15 +450,20 @@ leftover, so it keeps one value. What value depends on where the bot is:
   Desert Combat, lie along one direction of the square, and the low edge of
   their sizes is (minDev + 0.3125) x 0.980 for three guns with different
   minDevs. Only draw index 617 fits both: the seat's input index is 618.
+  Per bot and gun (236 groups of 8 rounds or more), 218 lie within 12
+  degrees of 617's direction; the other 18, at 47 to 106 degrees, are not
+  explained (a tilted gun frame, or a second index).
 - **On foot**, the bot's own index, held through a life (weapon changes
   included) and new at the next, always a multiple of 4: the low bits of an
   aligned address. The shotguns' eight barrels draw at index + 0..7, and each
-  of 22 recorded pulls (DC's Saiga12k and Remington, 10 bots) fits one index
-  to the recorder's rounding, 76, 132, 180, 468, 476, 532, 540, 708, 772 or
-  876 (one per bot; a bot's later pulls keep it), with the next best index 10
-  to 2,500 times worse and 617 or 618 at least 25 times worse. The six still bots with four or more rifle rounds in a
-  life keep one direction through it (`~/.cache/dc-sweep/review-bots/`
-  `pellet_fit2.py`, `lives.py`; review 2026-10-07).
+  of 22 recorded pulls (DC's Saiga12k and Remington, 10 bot lives) fits one
+  index to the recorder's rounding, 76, 132, 180, 468, 476, 532, 540, 708,
+  772 or 876 (one a life; a life's later pulls keep it, and one bot's two
+  lives have two), with the next best index 10 to 2,500 times worse and 617
+  or 618 at least 25 times worse. The six still bots with four or more rifle
+  rounds in a life keep one direction through it
+  (`~/.cache/dc-sweep/review-bots/pellet_fit2.py`, `lives.py`; review
+  2026-10-07).
 
 **What changed.** `bot-deviation.js` builds the binary's table and generator
 (`deviationPoint`, every index), and `botDeviate` hands an index's point to
