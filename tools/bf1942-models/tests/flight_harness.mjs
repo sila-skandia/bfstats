@@ -31,7 +31,7 @@ import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
 import { aimAtDirection, helicopterControl, towardsPoint } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
-import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
+import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
 import { vehicleTick } from './world-vehicle-tick.js';
 import { bufferInput } from './world-input.js';
@@ -1340,6 +1340,42 @@ function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
   };
 }
 
+
+// --- the engine law against the real game's recorded revs -------------------
+//
+// `tests/fixtures/engine_revs_recorded.json`: thirty seconds each of a bot's
+// Spitfire (vanilla El Alamein) and F-16 (DC Gazala) in flight, cut from the
+// lab's server recordings, every 30 Hz tick's throttle input (`Engine+0x124`),
+// speed along the nose, height and recorded revs (`PhysicsEngine+0xa0`). The
+// engine's own roll axis and gearbox (`VectoredEngine`), fed the recorded
+// input, speed and height, must give back the recorded revs; the pedal the
+// fixed-wing model used to feed the thrust law is the input itself.
+{
+  const dir = process.env.FLIGHT_FIXTURES;
+  const file = dir && `${dir}/engine_revs_recorded.json`;
+  results.recordedRevs = null;
+  if (file && existsSync(file)) {
+    const fixture = JSON.parse(readFileSync(file, 'utf8'));
+    results.recordedRevs = {};
+    const pct = (xs, q) => { const v = [...xs].sort((a, b) => a - b); return v[Math.min(v.length - 1, Math.round(q * (v.length - 1)))]; };
+    for (const [name, { engine: spec, rows }] of Object.entries(fixture)) {
+      const engine = new VectoredEngine({ ...spec, chain: [], local: { offset: [0, 0, 0], quaternion: [0, 0, 0, 1] } });
+      const [, , , input0, revs0] = rows[0];
+      engine.revs = revs0;
+      engine.roll.angle = Math.max(spec.throttle.min, Math.min(spec.throttle.max, input0 * spec.throttle.max));
+      const law = [], pedal = [];
+      for (let i = 1; i < rows.length; i++) {
+        const [t, along, y, input, revs] = rows[i];
+        engine.advance(t - rows[i - 1][0], input, true);
+        engine.thrust(along, 1 - Math.max(0, Math.min(1, y / 1000)));
+        law.push(Math.abs(engine.revs - revs));
+        pedal.push(Math.abs(Math.max(0, Math.min(1, input)) - revs));
+      }
+      results.recordedRevs[name] = { ticks: law.length, median: round(pct(law, 0.5), 4), p90: round(pct(law, 0.9), 4),
+                                     pedalMedian: round(pct(pedal, 0.5), 4) };
+    }
+  }
+}
 
 // --- the box the engine finds, by the selector's class ----------------------
 //
