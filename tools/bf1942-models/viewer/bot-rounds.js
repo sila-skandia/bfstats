@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { botDeviate } from './bot-deviation.js';
+import { botDeviate, botInputIndex, deviationIndex } from './bot-deviation.js';
 import { isFuseRound } from './effects-core.js';
 import { modelFileStem } from './model-file.js';
 
@@ -162,7 +162,7 @@ export function createBotRounds(page) {
    * true when it is a rocket launcher whose round is now in flight, false to
    * leave the round to the referee.
    */
-  botRounds.launch = bot => {
+  botRounds.launch = (bot, stats = null) => {
     const name = bot.weaponAi?.name ?? null;
     const entry = name ? templates.get(name) : null;
     if (!entry?.scene || !entry.launches || !page.guns) return false;
@@ -170,7 +170,11 @@ export function createBotRounds(page) {
     if (!h) return false;
     const { origin, dir } = bot.aimRay();
     const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    const [x, y, z] = botDeviate([dir[0] / len, dir[1] / len, dir[2] / len], bot.aimDeviation ?? 0);
+    // Its one round at the bot's input index: barrel 0 of a launcher that
+    // declares one (DC's RPG-7 and SA-7), else -1 (AI-145).
+    const barrels = Array.isArray(stats?.barrels) ? stats.barrels.length : 0;
+    const [x, y, z] = botDeviate([dir[0] / len, dir[1] / len, dir[2] / len], bot.aimDeviation ?? 0,
+                                 deviationIndex(botInputIndex(bot), barrels, 0));
     h.ray.origin.set(origin[0], origin[1], origin[2]);
     h.ray.dir.set(x, y, z);
     place(h, bot);

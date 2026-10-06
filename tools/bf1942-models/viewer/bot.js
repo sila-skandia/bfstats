@@ -215,7 +215,8 @@ export class BotController {
     this._bestGoalDist = null;
     this._noProgress = 0;
 
-    /** The current full deviation cone half-angle in degrees. */
+    /** The deviation cone's total now, in its own unit (hundredths of a
+     *  radian, DEV-9; `DeviationModel` calls them degrees). */
     this.aimDeviation = 0;
     this._urgencies = this.urgency;
   }
