@@ -3603,6 +3603,21 @@ GeometryTemplate.file Shared_m1
         # The unscaled original is untouched.
         self.assertEqual((0.0, 1.0, 2.0), self.mesh().lods[0].materials[0].positions()[2])
 
+    def test_the_ladder_measure_reads_the_file(self) -> None:
+        # LADDER-3: the climb reads the instance's bounding box, which stays
+        # the file's whatever the scale (SM-13). The file spans y 0..1 and z
+        # 0..2, so the ladder is 2 m long though it is drawn 1 m.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Shared_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read", return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse", side_effect=lambda *a, **k: self.mesh()):
+            spec = assembler._ladder_spec_for("Hull_m1")
+        self.assertEqual(2.0, spec["length"])
+
     def test_only_a_standard_mesh_other_than_one_is_scaled(self) -> None:
         from bf42.assemble import geometry_scale
         from bf42.con import GeometryTemplate
