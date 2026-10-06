@@ -428,6 +428,44 @@ Combat: `soldierBody` gains `explosionForceMod` 75 / 150 and
 the corpse time and the template name are unchanged, and `die.gait.glb` comes
 out byte-identical to the published one.
 
+In the page (`?mod=desertcombat&map=dc_lostvillage&shots&botCount=2`, the DC
+`gaits.json` served with the scratch `soldierBody`, blasts set off with
+`__blast` at points the exposure sampler sees, radius 15, the default force):
+the human, half seen 6 m from a weak blast (material 671, 3 HP), drew
+`blast.flyForward` and was on `stand` the frame he landed, about 23 m on; a
+bot the same way drew `Lb_ExplosionLandFrontSurvive`, then
+`...SurviveStandUp` with his weapon stowed, then his own legs; a bot killed by
+a material-205 blast 2 m off left a corpse that followed his body about 9.5 m
+up and came to rest about 17 m away, and the human killed the same way drew `blast.flyForward`
+then held `blast.landFront`. No page errors.
+
+### Open (section 4)
+
+* **Remote players are not thrown.** The room server has no projectile or
+  splash path at all (`server/authority.mjs`, P3's second slice), and the wire
+  carries no explosion state (`netcode.js` has `SWIM_WIRE` for the swim, nothing
+  like it for these). Both bodies would throw through the same `Soldier` once
+  a server-side splash calls `throwSoldier`'s law.
+* **Nothing but a soldier is pushed.** KNOCK-5's non-soldier arm (no rise
+  replacement, no cut, applied at a point on the bounding sphere, so a
+  `PhysicsNode` hull also turns) is read, not built.
+* **A corpse a later blast reaches is not thrown.** `applySplash` skips a
+  destroyed Armor, where the engine still prices and pushes the body until its
+  `timeToLiveAfterDeath`; and the dead arm runs only on a body a blast reached
+  in this life, where the engine's throws any corpse moving 8 m/s.
+* **The hand weapon is not put away in the air.** Every explosion state's legs
+  declare `c_AsmHideWeapon`, which `BFSoldier::enableItem` obeys; the third-
+  person body stows it, but the human can still fire from the first-person
+  view while flying (`hand-weapon.js`, the weapons package's).
+* **A prone man thrown lands with his prone toggle still on.** The explosion
+  states carry no lie flag and hand over to `Lb_Stand`; the page's `prone`
+  toggle is the input's, so he drops back to prone after the landing.
+* **`c_AsmLockFreeLook`** on every lower state is not modelled in the human's
+  first-person camera.
+* **One contact a tick.** The landing reads the tick's most upward contact
+  normal; the engine calls `handleCollision` per contact, so a wall and a floor
+  met in one tick are taken in its order, not the floor first.
+
 ### The soldier template's other words (census item S8)
 
 The same `soldierBody` carries the medic bag's and the wrench's words
