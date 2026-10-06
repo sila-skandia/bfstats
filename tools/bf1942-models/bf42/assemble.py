@@ -589,6 +589,114 @@ def ladder_spec_from_positions(
     }
 
 
+# --- which hulls the engine tests (ledger COL-15..COL-17) ----------------------
+#
+# `hasCollisionPhysics` becomes object flag 0x200 in the object's constructor
+# and nowhere else, and it defaults off (COL-15). The broadphase keeps a ROOT
+# only when it carries 0x200, so a root that never says 1 is passed through by
+# everything that moves, rounds included, and nothing under it collides. A part
+# joins its root's test only when it carries 0x200 itself (COL-16). The root is
+# tested with its own mesh or, lacking one, the LOD-0 mesh it borrows (COL-17):
+# that is how a house collides, a geometry-less `Bundle` saying 1 over a
+# LodObject whose detailed alternative declares nothing.
+
+# Not passed: the node is an engine root, and its scope is worked out there.
+_UNSCOPED = object()
+
+
+@dataclass(frozen=True)
+class CollisionScope:
+    """One engine root's collision rule. `lent` is the lower-case name of the
+    template whose geometry a geometry-less root borrows (COL-17)."""
+    collides: bool
+    lent: str | None = None
+
+
+# A LodObject alternative the engine never tests: nothing under it collides.
+_NEVER_TESTED = CollisionScope(collides=False)
+
+
+def _child_template(library: con_mod.ObjectLibrary, ref: con_mod.ChildRef):
+    """The object an `addTemplate` makes, hidden or not: the engine creates
+    every child, whatever the exporter later chooses to draw."""
+    found = library.object(ref.template)
+    if found is None and ref.random_geometries:
+        found = library.object(f"{ref.template}1")
+    return found
+
+
+def lent_lod_template(library: con_mod.ObjectLibrary,
+                      root: con_mod.ObjectTemplate):
+    """The template whose geometry a root with none borrows, or None.
+
+    `findLodGeometry` (lnxded 0x0818d860): when the first child is a LodObject,
+    its highest LOD, which is its first alternative (`LodObject::getChild`
+    0x08216ce0 under `m_forceHighestLod`). Failing that, the first LodObject
+    with a `DistCompareSelector` found depth-first under the root, first child
+    before next sibling, where a PlayerControlObject ends the search along its
+    sibling chain (`internalFindChildOfLodSelectorCID` 0x0818db50). Either way
+    only an alternative that names a geometry lends one.
+    """
+    def first_alternative(lod):
+        alternative = (_child_template(library, lod.children[0])
+                       if lod.children else None)
+        return alternative if alternative is not None and alternative.geometry else None
+
+    first = _child_template(library, root.children[0]) if root.children else None
+    if first is not None and first.is_lod_selector:
+        lent = first_alternative(first)
+        if lent is not None:
+            return lent
+
+    def children_of(node):
+        # A LodObject's child, to this walk, is the alternative it holds; the
+        # first stands for it, as in the chain build.
+        refs = node.children[:1] if node.is_lod_selector else node.children
+        return [_child_template(library, ref) for ref in refs]
+
+    def search(nodes, depth: int):
+        for node in nodes:
+            if node is None or depth > 32:
+                continue
+            if node.kind.lower() == "playercontrolobject":
+                return None
+            selector = library.selector(node.lod_selector) if node.is_lod_selector else None
+            if selector is not None and selector.flips_in_inside_view:
+                return node
+            found = search(children_of(node), depth + 1)
+            if found is not None:
+                return found
+        return None
+
+    lod = search(children_of(root), 0)
+    return first_alternative(lod) if lod is not None else None
+
+
+def keeps_old_collision_rule(template: con_mod.ObjectTemplate) -> bool:
+    """A vehicle or gun, or a projectile: the subtree keeps every hull.
+
+    A PlayerControlObject's collision has not been moved over to the engine's
+    rule yet (features/dc-engine-reads §3). A projectile's template constructor
+    sets `hasCollisionPhysics` itself (`ProjectileTemplate()` ORs 0x0f into
+    +0x70, lnxded 0x0831faa9), and `con.py` cannot tell that default from an
+    unset word on another class.
+    """
+    return template.kind.lower() in ("playercontrolobject", "projectile")
+
+
+def collision_scope_for(library: con_mod.ObjectLibrary,
+                        root: con_mod.ObjectTemplate) -> CollisionScope | None:
+    """The collision rule for everything under the engine root `root`, or
+    None where the old rule stands (`keeps_old_collision_rule`)."""
+    if keeps_old_collision_rule(root):
+        return None
+    lent = None
+    if root.has_collision_physics and not root.geometry:
+        borrowed = lent_lod_template(library, root)
+        lent = borrowed.name.lower() if borrowed is not None else None
+    return CollisionScope(collides=root.has_collision_physics, lent=lent)
+
+
 class Assembler:
     def __init__(self, meshes: ArchivePool, textures: ArchivePool,
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -986,7 +1094,8 @@ class Assembler:
         layers where `afr_house1_ste_m1` has 224 verts / 359 faces over five
         materials. The engine keeps both alternatives loaded and hangs the
         physics body off the Bundle root (`setHasCollisionPhysics 1`), so the
-        hull is the object's, not the near-LOD's.
+        hull is the object's, not the near-LOD's: a geometry-less root borrows
+        its first alternative's mesh (COL-17, `lent_lod_template`).
 
         This is the entry point for the alternative nobody draws: it parses the
         `.sm` for its collision block only and never touches materials,
@@ -1082,31 +1191,46 @@ class Assembler:
         return count
 
     def _object_emits_geometry_collision(
-            self, template: con_mod.ObjectTemplate) -> bool:
+            self, template: con_mod.ObjectTemplate,
+            scope: CollisionScope | None = None, *, root: bool = False) -> bool:
         """Whether this object template's geometry hull should be attached.
 
-        StandardMesh buildings hang the hull off the Bundle regardless of a
-        per-object HCP bit in practice. TreeMesh is different (TM-5): emit
-        only when `setHasCollisionPhysics 1` **and** the `.tm` has an SCM —
-        the SCM half is resolved when the mesh is built; this gate is HCP.
+        Under an engine root's `scope` (COL-15..COL-17): nothing when the root
+        does not say `hasCollisionPhysics 1`; the root's own mesh, and the
+        LOD-0 mesh a geometry-less root borrows, whatever their template says;
+        any other part only when it says 1 itself. A TreeMesh's SCM half
+        (TM-5) is resolved when the mesh is built.
+
+        Without a scope -- a vehicle, a gun, a projectile, anything inside
+        one (`keeps_old_collision_rule`) -- the rule this exporter always had:
+        every StandardMesh hull, and a tree's only when it says 1.
         """
         if not template.geometry:
             return False
-        geom = self.library.geometry(template.geometry)
-        if geom is not None and geom.kind.lower() == "treemesh":
-            return template.has_collision_physics
-        return True
+        if scope is None:
+            geom = self.library.geometry(template.geometry)
+            if geom is not None and geom.kind.lower() == "treemesh":
+                return template.has_collision_physics
+            return True
+        if not scope.collides:
+            return False
+        if root or template.name.lower() == scope.lent:
+            return True
+        return template.has_collision_physics
 
     def _collision_only_node(self, builder: gltf.GlbBuilder, template_name: str,
                              report: Report, *, position, rotation,
                              depth: int = 0,
-                             stack: frozenset[str] = frozenset()) -> int | None:
+                             stack: frozenset[str] = frozenset(),
+                             scope: CollisionScope | None = None) -> int | None:
         """A transform-faithful skeleton of a subtree carrying only its hulls.
 
         The undrawn LOD alternative is walked for its collision and nothing
         else: no render meshes, no materials, no FireArms, no cameras. Child
         placements are kept because they are what puts a barrack's beds and a
-        hangar's crates where the player will shoot them.
+        hangar's crates where the player will shoot them. `scope` is the
+        engine root's collision rule (`collision_scope_for`); this walk never
+        starts at a root.
         """
         template = self.library.object(template_name)
         if template is None or depth > 16 or template.invisible:
@@ -1115,10 +1239,12 @@ class Assembler:
         if key in stack:
             return None
         stack = stack | {key}
+        if keeps_old_collision_rule(template):
+            scope = None
 
         children: list[int] = []
         if (template.geometry
-                and self._object_emits_geometry_collision(template)):
+                and self._object_emits_geometry_collision(template, scope)):
             for mesh_index, layer, role in (
                     self._collision_for_geometry(
                         builder, template.geometry, report)):
@@ -1135,7 +1261,9 @@ class Assembler:
                 )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
-            child_refs = [self._collision_alternative(child_refs, template)]
+            # Under a root's scope, the alternative the engine tests (COL-16).
+            child_refs = ([child_refs[0]] if scope is not None
+                          else [self._collision_alternative(child_refs, template)])
         for ref in child_refs:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
@@ -1143,7 +1271,7 @@ class Assembler:
             child = self._collision_only_node(
                 builder, child_name, report,
                 position=ref.position, rotation=ref.rotation,
-                depth=depth + 1, stack=stack)
+                depth=depth + 1, stack=stack, scope=scope)
             if child is not None:
                 children.append(child)
         if not children:
@@ -2560,6 +2688,7 @@ class Assembler:
                    skeleton_scope: tuple[ske.Skeleton | None, int | None, str | None]
                    = (None, None, None),
                    first_person_branch: bool = False,
+                   collision_scope: CollisionScope | None | object = _UNSCOPED,
                    ) -> int | None:
         if depth > 24:
             return None
@@ -2573,6 +2702,14 @@ class Assembler:
         if key in stack:
             return None  # a template that contains itself; the engine LODs out of it
         stack = stack | {key}
+        # A placement, a model export or a spawner's held object is an engine
+        # root, and its `hasCollisionPhysics` rules everything under it
+        # (COL-16). A gun or vehicle inside it keeps the old rule.
+        collision_root = collision_scope is _UNSCOPED
+        if collision_root:
+            collision_scope = collision_scope_for(self.library, template)
+        elif keeps_old_collision_rule(template):
+            collision_scope = None
 
         # Physics-only parts (Elco's Willy wheels, some KettenKrad springs).
         # The engine still steers them; it just does not draw the mesh.
@@ -2614,7 +2751,8 @@ class Assembler:
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
             # `_collision_only_node`. StandardMesh still attaches freely.
-            if self._object_emits_geometry_collision(template):
+            if self._object_emits_geometry_collision(
+                    template, collision_scope, root=collision_root):
                 collision_meshes = self._geom_collisions.get(
                     template.geometry.lower(), [])
 
@@ -2648,15 +2786,22 @@ class Assembler:
                     selected_refs, self.library.selector(template.lod_selector)):
                 propeller_blur = self._propeller_blur(template, selected_refs)
             if self.include_collision and not self.first_person:
-                donor = self._collision_alternative(children_refs, template)
-                drawn = self._collision_triangles(
-                    con_mod.instance_template_name(
-                        selected_refs[0], self.library.object) or "")
-                if (donor is not selected_refs[0]
-                        and self._collision_triangles(
-                            con_mod.instance_template_name(
-                                donor, self.library.object) or "") > drawn):
-                    collision_makeup = donor
+                if collision_scope is not None:
+                    # The engine tests a LodObject at its highest LOD, the
+                    # first alternative, whichever one is drawn (COL-16), so
+                    # that one's hulls are the object's and no other's are.
+                    if not any(ref is children_refs[0] for ref in selected_refs):
+                        collision_makeup = children_refs[0]
+                else:
+                    donor = self._collision_alternative(children_refs, template)
+                    drawn = self._collision_triangles(
+                        con_mod.instance_template_name(
+                            selected_refs[0], self.library.object) or "")
+                    if (donor is not selected_refs[0]
+                            and self._collision_triangles(
+                                con_mod.instance_template_name(
+                                    donor, self.library.object) or "") > drawn):
+                        collision_makeup = donor
             children_refs = selected_refs
 
         # The near rung of a short `DistanceSelector` is first person by where
@@ -2726,6 +2871,14 @@ class Assembler:
                     ref, child_name, skeleton_scope[0], skeleton_scope[1], report),
                 skeleton_scope=skeleton_scope,
                 first_person_branch=child_first_person_branch,
+                # What a spawner holds is a root of its own in the engine; an
+                # alternative the engine does not test carries no hull.
+                collision_scope=(_UNSCOPED if held_record is not None
+                                 else _NEVER_TESTED
+                                 if (collision_scope is not None
+                                     and template.is_lod_selector
+                                     and ref is not template.children[0])
+                                 else collision_scope),
             )
             if child is not None:
                 if held_record is not None:
@@ -2832,7 +2985,7 @@ class Assembler:
                     builder, donor_name or "", report,
                     position=collision_makeup.position,
                     rotation=collision_makeup.rotation,
-                    depth=depth + 1, stack=stack)
+                    depth=depth + 1, stack=stack, scope=collision_scope)
                 if hull is not None:
                     child_indices.append(hull)
                     report.collision_makeup.append(

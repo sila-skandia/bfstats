@@ -22,9 +22,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import gltf  # noqa: E402
-from bf42.assemble import Assembler, Report  # noqa: E402
+from bf42.assemble import (Assembler, CollisionScope, Report,  # noqa: E402
+                           collision_scope_for)
 from bf42.con import ObjectLibrary, engine_bool  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 
@@ -164,6 +166,246 @@ class StabilizationTests(unittest.TestCase):
         blob = json.dumps(nodes).lower()
         self.assertNotIn("stabiliz", blob)
         self.assertIn("rig", nodes["Humvee_GunBase"]["extras"])
+
+
+# --- COL-15..COL-17 ------------------------------------------------------------
+
+# Placed statics shaped like the ones the census turned up: a wall each way
+# round, a house shaped like vanilla's `afr_house1_ste` (a geometry-less Bundle
+# saying 1 over a LodObject whose detailed alternative says nothing), a
+# kit-rack bundle, a bundle that says 0 over a part that says 1, and a
+# vehicle, which keeps the old rule.
+STATICS_CON = """
+ObjectTemplate.create SimpleObject SolidWall
+ObjectTemplate.geometry Wall_M1
+ObjectTemplate.setHasCollisionPhysics 1
+
+ObjectTemplate.create SimpleObject GhostWall
+ObjectTemplate.geometry Wall_M1
+ObjectTemplate.hasCollisionPhysics 0
+
+ObjectTemplate.create SimpleObject SilentWall
+ObjectTemplate.geometry Wall_M1
+
+LodSelectorTemplate.create DistanceSelector HouseSelector
+LodSelectorTemplate.addLodDistance 70
+
+ObjectTemplate.create Bundle House_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate lodHouse
+
+ObjectTemplate.create LodObject lodHouse
+ObjectTemplate.lodSelector HouseSelector
+ObjectTemplate.addTemplate HouseInterior
+ObjectTemplate.addTemplate HouseExterior
+
+ObjectTemplate.create Bundle HouseInterior
+ObjectTemplate.geometry House_m1
+ObjectTemplate.addTemplate Table_m1
+ObjectTemplate.setPosition 1/0/0
+ObjectTemplate.addTemplate Crate_m1
+ObjectTemplate.setPosition -1/0/0
+
+ObjectTemplate.create SimpleObject HouseExterior
+ObjectTemplate.geometry House_m2
+
+ObjectTemplate.create SimpleObject Table_m1
+ObjectTemplate.geometry Table_m1
+
+ObjectTemplate.create SimpleObject Crate_m1
+ObjectTemplate.geometry Crate_m1
+ObjectTemplate.setHasCollisionPhysics 1
+
+ObjectTemplate.create Bundle GhostShed
+ObjectTemplate.setHasCollisionPhysics 0
+ObjectTemplate.geometry Shed_m1
+ObjectTemplate.addTemplate Crate_m1
+
+ObjectTemplate.create Bundle Armory
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.geometry Rack_m1
+ObjectTemplate.addTemplate RackedRifle
+
+ObjectTemplate.create SimpleObject RackedRifle
+ObjectTemplate.geometry Rifle_m1
+
+ObjectTemplate.create Bundle Barracks_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate lodBarracks
+
+ObjectTemplate.create LodObject lodBarracks
+ObjectTemplate.lodSelector HouseSelector
+ObjectTemplate.addTemplate BarracksInterior
+ObjectTemplate.addTemplate BarracksExterior
+
+ObjectTemplate.create Bundle BarracksInterior
+ObjectTemplate.geometry Barracks_m1
+
+ObjectTemplate.create SimpleObject BarracksExterior
+ObjectTemplate.geometry Barracks_m2
+
+ObjectTemplate.create Bundle MineCrate
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.geometry Crate_m1
+ObjectTemplate.addTemplate CrateMine
+
+ObjectTemplate.create Projectile CrateMine
+ObjectTemplate.geometry Mine_m1
+
+ObjectTemplate.create PlayerControlObject Jeep
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate JeepHull
+ObjectTemplate.addTemplate JeepCockpit
+
+ObjectTemplate.create SimpleObject JeepHull
+ObjectTemplate.geometry Hull_m1
+ObjectTemplate.setHasCollisionPhysics 1
+
+ObjectTemplate.create SimpleObject JeepCockpit
+ObjectTemplate.geometry Cockpit_m1
+"""
+
+# Every geometry carries one collision layer except the far house mesh, which,
+# like `afr_house1_ste_m2`, ships none.
+STATIC_MESHES = {name: [(1, "both")] for name in (
+    "Wall_M1", "House_m1", "Table_m1", "Crate_m1", "Shed_m1", "Rack_m1",
+    "Rifle_m1", "Hull_m1", "Cockpit_m1", "Mine_m1")}
+STATIC_MESHES["House_m2"] = []
+# Desert Combat's `mil_barracks_m2` carries more collision than its `_m1`.
+STATIC_MESHES["Barracks_m1"] = [(1, "both")]
+STATIC_MESHES["Barracks_m2"] = [(0, "both"), (1, "both")]
+
+
+def hulls(root: str) -> list[str]:
+    """The templates a placed `root` ships collision nodes for."""
+    nodes = assemble(STATICS_CON, root, STATIC_MESHES)
+    return sorted(n["extras"]["sourceTemplate"] for n in nodes.values()
+                  if (n.get("extras") or {}).get("collision"))
+
+
+class CollisionGateTests(unittest.TestCase):
+
+    def test_a_root_that_says_one_keeps_its_hull(self) -> None:
+        self.assertEqual(["SolidWall"], hulls("SolidWall"))
+
+    def test_a_root_that_says_zero_ships_no_hull(self) -> None:
+        # Bare spelling: the same word (CON-15).
+        self.assertEqual([], hulls("GhostWall"))
+
+    def test_a_root_that_says_nothing_ships_no_hull(self) -> None:
+        # The template default is off (COL-15).
+        self.assertEqual([], hulls("SilentWall"))
+
+    def test_a_house_collides_with_the_mesh_its_root_borrows(self) -> None:
+        # COL-17: `HouseInterior` declares nothing but lends the root its
+        # LOD-0 mesh; the table under it says nothing and does not collide;
+        # the crate says 1 and does.
+        self.assertEqual(["Crate_m1", "HouseInterior"], hulls("House_m1"))
+
+    def test_the_engine_tests_the_first_alternative_not_the_richest(self) -> None:
+        # Desert Combat's `mil_barracks_m1`: the far mesh has the bigger hull,
+        # and the old export shipped it beside the near one. The engine tests a
+        # LodObject at its highest LOD, the first alternative, and only that.
+        self.assertEqual(["BarracksInterior"], hulls("Barracks_m1"))
+
+    def test_nothing_under_a_root_that_says_zero_collides(self) -> None:
+        # COL-16: the broadphase never finds the root, so not even the crate
+        # that says 1 is tested.
+        self.assertEqual([], hulls("GhostShed"))
+
+    def test_a_racks_weapons_do_not_collide(self) -> None:
+        # Desert Combat's `Armory_*` kit racks: the rack says 1, the weapons
+        # displayed in it say nothing.
+        self.assertEqual(["Armory"], hulls("Armory"))
+
+    def test_a_projectile_keeps_its_hull(self) -> None:
+        # `ProjectileTemplate()` sets the bit itself, which an unset word on
+        # the template cannot show: the old rule stands for it.
+        self.assertEqual(["CrateMine", "MineCrate"], hulls("MineCrate"))
+
+    def test_a_vehicle_keeps_every_hull(self) -> None:
+        # Not moved over yet: the old rule for a PlayerControlObject root.
+        self.assertEqual(["JeepCockpit", "JeepHull"], hulls("Jeep"))
+
+    def test_the_lent_mesh_is_the_first_alternative(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", STATICS_CON)
+        scope = collision_scope_for(library, library.object("House_m1"))
+        self.assertEqual(CollisionScope(collides=True, lent="houseinterior"), scope)
+        self.assertIsNone(collision_scope_for(library, library.object("Jeep")))
+        self.assertEqual(CollisionScope(collides=False),
+                         collision_scope_for(library, library.object("GhostShed")))
+
+    def test_a_dist_compare_lod_lends_from_deeper_down(self) -> None:
+        # `internalFindChildOfLodSelectorCID`: the first child is not a
+        # LodObject, so the search goes depth-first for a DistCompareSelector
+        # one, and stops at a PlayerControlObject.
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", """
+LodSelectorTemplate.create DistCompareSelector CabSelector
+ObjectTemplate.create Bundle Cab
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate CabFrame
+ObjectTemplate.create Bundle CabFrame
+ObjectTemplate.addTemplate lodCab
+ObjectTemplate.create LodObject lodCab
+ObjectTemplate.lodSelector CabSelector
+ObjectTemplate.addTemplate CabInside
+ObjectTemplate.addTemplate CabOutside
+ObjectTemplate.create SimpleObject CabInside
+ObjectTemplate.geometry CabInside_m1
+ObjectTemplate.create SimpleObject CabOutside
+ObjectTemplate.geometry CabOutside_m1
+
+ObjectTemplate.create Bundle Gunpit
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate PitGun
+ObjectTemplate.addTemplate CabFrame
+ObjectTemplate.create PlayerControlObject PitGun
+""")
+        self.assertEqual("cabinside",
+                         collision_scope_for(library, library.object("Cab")).lent)
+        # The gun comes first and ends the search along its siblings.
+        self.assertIsNone(collision_scope_for(library, library.object("Gunpit")).lent)
+
+
+class CollisionHarnessTests(unittest.TestCase):
+    """The exporter's decision, through the real collider.
+
+    Three walls stand 4 m apart down +x: the one nearest says
+    `hasCollisionPhysics 0`, the next says nothing, the last says 1. Whether each
+    is solid is whatever the exporter shipped a collision node for, and a round
+    and a soldier-sized sphere fired down +x through `collision_harness.mjs`
+    must both stop at the last one.
+    """
+
+    def test_a_zero_wall_does_not_block(self) -> None:
+        import shutil
+        import subprocess
+        import tempfile
+        from test_collision import HARNESS, PARTS
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        walls = [
+            {"x": 8, "material": 92, "collision": bool(hulls("GhostWall"))},
+            {"x": 12, "material": 85, "collision": bool(hulls("SilentWall"))},
+            {"x": 16, "material": 80, "collision": bool(hulls("SolidWall"))},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            (work / "package.json").write_text('{"type": "module"}')
+            for part in PARTS:
+                shutil.copyfile(part, work / part.name)
+            shutil.copyfile(HARNESS, work / "harness.mjs")
+            (work / "hcp_walls.json").write_text(json.dumps(walls))
+            proc = subprocess.run(["node", str(work / "harness.mjs")],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        result = json.loads(proc.stdout)["hasCollisionPhysics"]
+        # One wall in the index, two triangles.
+        self.assertEqual(2, result["triangles"])
+        self.assertEqual({"x": 16, "material": 80}, result["round"])
+        self.assertEqual({"material": 80}, result["body"])
 
 
 if __name__ == "__main__":

@@ -66,6 +66,12 @@ row is added, so check git before repeating one.
 - **The soldier as a body**: the crash-damage soldier branch (§9) is built and
   unused, because being run over is still the old code (PHY-6 for how a soldier
   moves under contact).
+- **Which hulls a vehicle ships.** `hasCollisionPhysics` decides which parts
+  the engine tests (COL-15..COL-17, read 2026-10-06), and the exporter applies
+  it to everything but vehicles, guns and projectiles
+  ([`../dc-engine-reads`](../dc-engine-reads/README.md) §3). A vehicle's wheels,
+  barrels, MGs and cockpit externals mostly say nothing, so moving vehicles over
+  drops their hulls from `vehicle-bodies.js` and the bullet path.
 
 ---
 
