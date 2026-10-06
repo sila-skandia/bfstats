@@ -20,6 +20,7 @@ against whatever trees are extracted on this machine.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import struct
 import subprocess
@@ -212,6 +213,44 @@ class RocketFlightTests(unittest.TestCase):
         self.assertAlmostEqual(38.5, cbu["across"], delta=2)
         self.assertAlmostEqual(73.9, cbu["along"], delta=3)
         self.assertAlmostEqual(472.8, cbu["throw"], delta=10)
+
+    # --- the deviation cone (DEV-9) -------------------------------------------
+
+    def test_a_cone_reaches_hundredths_of_a_radian_on_each_axis(self) -> None:
+        # `FireArms::fireBarrel` 0x0828aba0 adds `u * total * velocity / 100`
+        # on each of up and right: a cone of 1 reaches atan(0.01) = 0.573
+        # degrees on each axis (the disc this replaced reached 1.0).
+        for key, total in (("one", 1), ("three", 3), ("threeCamera", 3)):
+            with self.subTest(case=key):
+                spread = self.results["spread"][key]
+                reach = math.degrees(math.atan(total / 100))
+                self.assertAlmostEqual(reach, spread["reachYaw"], delta=0.01 * total)
+                self.assertAlmostEqual(reach, spread["reachPitch"], delta=0.01 * total)
+                # Uniform on each axis: the rms is the reach over sqrt(3).
+                self.assertAlmostEqual(reach / math.sqrt(3), spread["rmsYaw"],
+                                       delta=0.03 * reach)
+                self.assertAlmostEqual(reach / math.sqrt(3), spread["rmsPitch"],
+                                       delta=0.03 * reach)
+
+    def test_the_pattern_is_a_square_not_a_disc(self) -> None:
+        # Both axes past 80% of their reach at once: 0.2 x 0.2 of a square's
+        # rounds, none of a disc's; and the corners reach sqrt(2) further.
+        for key in ("one", "three"):
+            spread = self.results["spread"][key]
+            self.assertAlmostEqual(0.04, spread["cornerShare"], delta=0.01)
+            self.assertAlmostEqual(math.sqrt(2) * spread["reachYaw"],
+                                   spread["reachRadial"], delta=0.02 * spread["reachRadial"])
+
+    def test_a_deviated_round_is_fractionally_faster(self) -> None:
+        # The lateral velocity is added to the forward 1000 m/s, not turned
+        # into it: at a cone of 3 a corner round leaves at 1000.9 m/s.
+        self.assertGreater(self.results["spread"]["three"]["maxSpeed"], 1000.5)
+        self.assertLess(self.results["spread"]["three"]["maxSpeed"], 1000.91)
+
+    def test_no_draw_at_or_under_a_hundredth(self) -> None:
+        floor = self.results["spread"]["floor"]
+        self.assertEqual(0, floor["reachYaw"])
+        self.assertEqual(0, floor["reachPitch"])
 
     # --- expiry: hasOnTimeEffect (PROX-7) -------------------------------------
 
