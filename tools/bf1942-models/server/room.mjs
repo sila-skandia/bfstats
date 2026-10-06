@@ -144,6 +144,10 @@ export class Room {
       flags: this.flagsForWire(),
       vehicles: this.vehiclesForWire(),
       tickets: this.world.tickets,
+      // A CTF layer's flags as the law has them now (`ctf.js` `snapshot`),
+      // so a client joining mid-round draws a carried or dropped flag where
+      // it is rather than on its pole; null on any other layer.
+      ctf: this.authority.ctf?.snapshot() ?? null,
     };
   }
 

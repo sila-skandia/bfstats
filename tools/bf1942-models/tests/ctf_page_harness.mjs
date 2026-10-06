@@ -146,6 +146,32 @@ results.room = { tick: roomTick, carrying: roomCarrying, follow: ctfPage.state()
                  drawnY: ctfPage.state().flags[1].drawn[1], lines: lines.slice(results.play.lines.length),
                  ignored: ctfPage.onRow({ type: 'captured', flag: 0 }) ?? null };
 
+// Joining a room mid-round: HELLO's snapshot has the Opposition flag in slot
+// 7's hands, and a row (the Coalition flag dropped by slot 8) lands while the
+// level still loads. Once the world is up the page holds both.
+{
+  const joined = { ...page, roomJoined: true, roomSlot: 9, scene: new THREE.Scene(),
+                   comms: { info: () => {}, lexicon: () => null } };
+  const hello = [
+    { flag: 0, home: true, carrier: null, carrierTeam: 0, position: at(flagBases[0], 0, 7.6), respawnIn: 30 },
+    { flag: 1, home: false, carrier: 7, carrierTeam: 2, position: at(flagBases[1], 3), respawnIn: 30 },
+  ];
+  joined.roomCtf = () => hello;
+  joined.roomPositionOf = id => (id === 7 ? at(flagBases[1], 40) : null);
+  const late = createCtfPage(joined);
+  late.onRow({ type: 'ctf', kind: 'stole', flag: 0, player: 8, team: 1, name: 'Fritz', position: at(flagBases[0]) });
+  late.onRow({ type: 'ctf', kind: 'dropped', flag: 0, player: 8, team: 1, name: 'Fritz',
+               position: at(flagBases[0], 50, 21.5) });
+  const beforeSetup = late.state().active;
+  late.setup();
+  late.tick(1 / 30);
+  results.lateJoin = {
+    beforeSetup,
+    flags: late.state().flags.map(f => ({ home: f.home, carrier: f.carrier,
+                                         position: f.position.map(v => Math.round(v * 100) / 100) })),
+  };
+}
+
 // A Conquest level tears CTF down.
 page.extras = { gameplayMode: 'Conquest' };
 ctfPage.setup();

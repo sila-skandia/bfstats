@@ -40,6 +40,15 @@ class AuthorityCtfTests(unittest.TestCase):
     def test_a_client_on_the_rows_alone_agrees_every_tick(self) -> None:
         self.assertEqual(0, self.results["ctf"]["mismatches"])
 
+    def test_a_client_joining_mid_round_starts_from_the_hello(self) -> None:
+        # The room's HELLO carries the law's snapshot: a client that joins
+        # while the US flag is carried draws it on its carrier, not on its
+        # pole, and the rows after keep it with the server's.
+        late = self.results["ctf"]["lateJoin"]
+        self.assertNotEqual(late["fresh"], late["server"])
+        self.assertEqual(late["server"], late["restored"])
+        self.assertEqual(0, self.results["ctf"]["lateMismatches"])
+
     def test_the_rooms_round_plays_the_layers_mode(self) -> None:
         self.assertEqual(1, self.results["ctf"]["mode"])
         self.assertEqual({"1": False, "2": False}, self.results["ctf"]["bleeds"])
