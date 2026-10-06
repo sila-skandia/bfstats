@@ -16,8 +16,9 @@ const LOOKAHEAD = 7;
 const MIN_DWELL = 6;
 const MAX_DWELL = 24;
 /** A dead pick's body is watched this long before the director moves on,
- *  to his killer when it can. */
-const DEATH_HOLD = 2.8;
+ *  to his killer when it can. A player followed by hand gets the same beat
+ *  (replay.js `followKiller`). */
+export const DEATH_HOLD = 2.8;
 /** How often the director thinks, seconds of the recording. */
 const THINK = 0.25;
 /** Below this, nobody is doing anything worth a cut. */

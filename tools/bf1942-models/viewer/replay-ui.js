@@ -826,7 +826,7 @@ export class ReplayUi {
       ['Camera', [
         [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
         [k(['C']), 'Next camera (in a plane, the nose cam after the cockpit)'],
-        ['Drag, wheel', 'Orbit and zoom'],
+        ['Drag, wheel', 'Orbit and zoom (all the way in: first person)'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
         [k(['A', 'D']), 'Orbit (free: strafe)'],
         [k(['Q', 'E']), 'Tilt (free: down / up)'],
@@ -1232,8 +1232,11 @@ export class ReplayUi {
       e.preventDefault();
       this.activity();
       const scale = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+      const was = camera().mode;
       camera().wheel((e.deltaY * scale) / 100);
-      // Wheeling out of first person leaves it for the orbit.
+      // Wheeling out of first person leaves it for the orbit, and all the
+      // way in on him goes through his eyes.
+      if (camera().mode !== was) this.flash(camera().mode === 'pov' ? 'First person' : 'Orbit');
       this.syncMode();
     }, { passive: false });
     // Any mouse move over the view brings the chrome back, and the pointer

@@ -23,7 +23,7 @@ the end has the files, the decisions made on the way and what is still open.
 
 | Pattern | Taken from | Here |
 |---|---|---|
-| Orbit camera locked on a player, drag to orbit, wheel to zoom | Fortnite replay's third-person and drone-follow cameras, Rocket League's player camera, Overwatch's third-person spectating | The default camera. Always centred on the followed player, or on the hull he rides, or on his body after he dies (`focusLife`, kept). W/S zoom, A/D orbit, Q/E tilt, so the keyboard alone can roam around him. |
+| Orbit camera locked on a player, drag to orbit, wheel to zoom | Fortnite replay's third-person and drone-follow cameras, Rocket League's player camera, Overwatch's third-person spectating | The default camera. Always centred on the followed player, or on the hull he rides; once he dies, the death cam over where he fell, then his killer ("Deaths" below). W/S zoom, A/D orbit, Q/E tilt, so the keyboard alone can roam around him. Wheeled in all the way, it goes through his eyes. |
 | Camera modes on number keys and one cycle key | CS2 spectating (jump cycles first person, third person, free roam), Fortnite's camera picker | 1 orbit, 2 first person, 3 free. C cycles: the game's own camera key. |
 | First person through the player's eyes | CS2 / Valorant POV spectating | On foot: his recorded eye height by stance, heading, torso twist and aim pitch (`st`), laid on each round's own axis (features/round-replay-hud). In a seat: the seat's own Camera node, the same eye the page's cockpit view uses. His own body is hidden so the camera is not inside his head. His HUD is the game's: the cross at the centre, his health, his ammunition, his vehicle's. |
 | Free camera, mouse look only while the right button is held | Unreal-style fly cameras, Fortnite's drone-free, Rocket League's fly cam | WASD, Q/E down/up, Shift fast. The pointer is locked only while the right button is down. |
@@ -49,7 +49,7 @@ timeline or any button.
 | Seek | click or drag the timeline | Home / End |
 | Speed (0.25x to 8x) | speed button | `-` / `=` |
 | Orbit around the player | drag with either button | A / D, Q / E tilt |
-| Zoom in / out | wheel | W / S |
+| Zoom in / out; all the way in goes through his eyes | wheel | W / S |
 | Reset the orbit | | R |
 | Camera: orbit, first person, free | mode buttons | 1, 2, 3; C cycles. In an aircraft, C (or 2 again) goes from the cockpit to the nose cam before the next camera ([round-replay-hud](../round-replay-hud/README.md), "The nose cam") |
 | First person: look around, back to the orbit | drag (springs back), wheel out | 1 |
@@ -131,7 +131,7 @@ red, Allies blue).
 
 | File | What it is |
 |---|---|
-| `viewer/replay-camera.js` | `ReplayCamera`: the orbit, first person and free camera, and `focusLife` (kept, with a `preferBody` flag the orbit's death cam uses). |
+| `viewer/replay-camera.js` | `ReplayCamera`: the orbit, first person and free camera, `focusLife`, and the death cam (`deathAt`, `killerToFollow`). |
 | `viewer/replay-chapters.js` | Pure: the chapters, the kill lines (a v3 file's missing weapons filled from the server log), each player's state and tally at a time, the roster, the message-log events, next and previous chapter. |
 | `viewer/replay-feed.js` | `ReplayFeed`: writes the recording into the page's message log as playback crosses it, rebuilds it after a seek, and raises the hit wash. |
 | `viewer/replay-timeline.js` | `ReplayTimeline`: the scrubber, the marks, the tooltip, the grabbed frames. |
@@ -412,6 +412,72 @@ their words and marks; the camera through the wait). In headless Chromium on
 Midway: the card reads `spawns in 0:07` at load, over the Airfield spot where
 he appears at 0:00; ten green marks; `killed by Kerem [Panzerschreck]` then
 `respawns in 0:07` at 90 s.
+
+## Deaths: the death cam and the killer (2026-10-06)
+
+The report: following a player who dies "snaps you to a random spot". Once his
+body was cleared (about 10 s), or straight away after a death in a vehicle,
+the orbit went to his next spawn, read off that soldier's first sample. After
+a vehicle that sample can be anywhere: 1.2 km from the fight at 120 s of
+Bocage's `replay_20260928-133433`. The request: go to his killer, and where
+there is none, put a death cam over where he died, as solo play does.
+
+- **The death cam** (`deathAt`, `deathTarget`) holds from his death until he
+  is back on foot or in a seat he took since. It is framed as the page's own
+  (`local-player.js` `DEATH_CAM`, `soldier-view.js` `corpseCam`). On foot, the
+  camera is 4.2 m back and 1.8 m over his drawn pelvis, on the far side from
+  where his killer stood, so the killer is beyond the body in the frame. With
+  no killer it is behind the way he fell. A drawn body falls up to 3 m from
+  his recorded place, so the camera follows the corpse, then holds where it
+  came to rest once the corpse is cleared. Killed in a hull, the camera looks
+  straight down on the hull from 30 m (7.5 x its radius for a bigger one),
+  nose to the top of the frame. A drag or the wheel still moves the shot. The
+  orbit's own tilt and zoom come back after it, behind whoever it is on. First
+  person shows the death cam too: the recording player's own camera flies to
+  wherever his spawn screen points once he dies.
+- **The killer** (`killerToFollow`, replay.js `followKiller`): once the death
+  cam has held 2.8 s, the Auto camera's own beat (`DEATH_HOLD`), the camera
+  follows his killer and flashes `Killer: <name>`, in whatever mode it was:
+  the orbit, or first person. It only happens while the round plays through
+  that moment, never on a seek past it. It never overrides the Auto camera
+  (which already does this), a highlight's reel, a creator's rig or the free
+  camera. With no killer (his own hand, a fall), or a killer who is dead or
+  gone by then, the death cam holds until he is back. The rule follows
+  whoever is followed, so it carries on down the chain.
+- **The wheel**: in the orbit on a man or his seat, one more step in once the
+  zoom is at its closest (1.5 m off a soldier) goes through his eyes, and
+  `First person` flashes. Wheeling out comes back, as before. On a death
+  there are no eyes, so the zoom only stops.
+
+On the four staged rounds no death goes to a spawn any more. 71 to 81% of
+deaths hand on to the killer; the rest have no killer or a dead one.
+Two readings of a player's state needed care. A man whose new seat the
+recording cannot place yet reads dead for a tenth of a second (pid 28 at
+147.4 s, Bocage). One the recording only ever saw in a seat reads `spawning`
+once he dies, his free camera an id it never made (pid 19 at 7 s of
+`replay_20260928-214112`). So `deathAt` ends a death only when he holds a
+living soldier, or something known that he took after it and that is not a
+camera.
+
+| File | What changed |
+|---|---|
+| `viewer/replay-camera.js` | `deathAt`, `killerToFollow`, the death target and its framing; the wheel into first person. |
+| `viewer/replay.js` | `followKiller`, each frame before the camera. |
+| `viewer/replay-bodies.js`, `viewer/bot-visuals.js` | `pelvisOf`, `corpseOf`: the drawn body the death cam centres on. |
+| `viewer/replay-director.js` | `DEATH_HOLD` exported. |
+| `viewer/replay-ui.js` | The wheel's flash and the shortcut's words. |
+
+Verified: `tests/test_replay_models.py` (`test_the_death_cam_and_the_killer`
+covers the framing, the hold past the corpse, the respawn, the hand-off and
+when it does not happen, the wreck shot, and the wheel both ways;
+`test_when_he_spawns` now expects the death cam where the spawn's place was).
+In headless Chromium on Bocage: skandia shot at 224.2 s gets the death cam
+over his body with SoldierHEad's windmill beyond it, then `Killer:
+SoldierHEad` at 227.0. pid 5's killer-less death at 210 holds until his spawn
+at 221. pid 26's Kubelwagen death is straight down from 30 m. In first person
+through skandia's death at 319, the view is the death cam, then his killer's
+eyes. Wheeling in on a man in the orbit goes to first person on the step
+after the closest zoom.
 
 ## Phones (2026-09-28)
 
