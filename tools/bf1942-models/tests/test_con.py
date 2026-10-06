@@ -2326,5 +2326,55 @@ ObjectTemplate.geometry ladder_10m_m1
         self.assertTrue(library.object(children[0].template).is_ladder)
 
 
+
+class AfterDeathWordTests(unittest.TestCase):
+    """The after-death clock's words (ledger HP-19), read as the server's
+    console sets them."""
+
+    def template(self, text: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con",
+                        "ObjectTemplate.create PlayerControlObject Thing\n" + text)
+        return library.object("Thing")
+
+    def test_each_word_lands_on_its_field(self) -> None:
+        # Desert Combat's `BBCraterDirt_m1`, and vanilla's `Window_m1` and
+        # `BuildingDust` words, on one template.
+        thing = self.template("""
+ObjectTemplate.timeToLiveAfterDeath 60
+ObjectTemplate.fadeAtTimeToLiveAfterDeath 1
+ObjectTemplate.timeToStartFadeAfterDeath 55
+ObjectTemplate.resetWhenRemoved 1
+ObjectTemplate.stayAsDestroyed 0
+""")
+        self.assertEqual(60.0, thing.time_to_live_after_death)
+        self.assertIs(True, thing.fade_at_time_to_live_after_death)
+        self.assertEqual(55.0, thing.time_to_start_fade_after_death)
+        self.assertIs(True, thing.reset_when_removed)
+        self.assertIs(False, thing.stay_as_destroyed)
+
+    def test_unwritten_words_stay_unset(self) -> None:
+        thing = self.template("ObjectTemplate.hitpoints 100\n")
+        self.assertIsNone(thing.time_to_live_after_death)
+        self.assertIsNone(thing.fade_at_time_to_live_after_death)
+
+    def test_sink_in_to_land_writes_the_defaults_back(self) -> None:
+        # The server's setter (0x081ddfb0) keeps no speed and writes 10, 8 and
+        # the fade back: DC Final's `camel1` writes 8 and then the sink speed.
+        after = self.template("""
+ObjectTemplate.timeToLiveAfterDeath 8
+ObjectTemplate.fadeAtTimeToLiveAfterDeath 0
+ObjectTemplate.sinkInToLandAfterDeathSpeed 1.5
+""")
+        self.assertEqual(10.0, after.time_to_live_after_death)
+        self.assertEqual(8.0, after.time_to_start_fade_after_death)
+        self.assertIs(True, after.fade_at_time_to_live_after_death)
+        before = self.template("""
+ObjectTemplate.sinkInToLandAfterDeathSpeed 1.5
+ObjectTemplate.timeToLiveAfterDeath 8
+""")
+        self.assertEqual(8.0, before.time_to_live_after_death)
+
+
 if __name__ == "__main__":
     unittest.main()
