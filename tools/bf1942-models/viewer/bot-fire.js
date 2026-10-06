@@ -135,7 +135,29 @@ export const FIRE = {
   shotsMax: 10,
   vehicleExtra: 30.0,
   vehicleOccupiedExtra: 10.0,
+  /** `createFirePlan` 0x085ac240's `BAPConWeaponHeat(0.8, 0.5)` (0x085aedb8:
+   *  `push 0x3f000000; push 0x3f4ccccd`), a float 0.8 and 0.5. */
+  heatStop: Math.fround(0.8),
+  heatResume: 0.5,
 };
+
+/**
+ * `BAPConWeaponHeat::evaluate` 0x08555510 over the weapon's heat (`Weapon`
+ * vt+0x70): unlatched, true while the heat is below `hi` and, at or above
+ * it, latched and false; latched, false while the heat is above `lo` and,
+ * at or below it, released and true. `cond` is the condition's own state
+ * (`{ latched }`, +0x14), one per fire plan as `createFirePlan` builds one.
+ */
+export function weaponHeatHolds(cond, heat, hi = FIRE.heatStop, lo = FIRE.heatResume) {
+  if (cond.latched) {
+    if (lo < heat) return false;
+    cond.latched = false;
+    return true;
+  }
+  if (heat < hi) return true;
+  cond.latched = true;
+  return false;
+}
 
 /** The mobile object's size term (`IPIMobile` +0x14 -> +8): 5.0 for a
  *  soldier, INFERRED from `updatePotentialObstacles`' `size * 5 + 0.5` being

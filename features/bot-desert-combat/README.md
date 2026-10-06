@@ -287,3 +287,50 @@ view axis and no two alike; a Colt's is one, down the eye; barrel transforms
 compose down the node path. The runner's own fire data on DC El Alamein
 (`~/.cache/dc-sweep/bots/probe_barrels.mjs`): Remington and Saiga12k 8
 barrels, 0.48 to 1.54 degrees off axis; M16A2, AK47, M249 one plain barrel.
+
+## 8. A bot's MG burst stops at heat 0.8
+
+**What was wrong.** Bots held an MG's trigger until the heat law locked the
+gun (GUN-14): a stationary MG42 or a pintle Browning ran 38 rounds into the
+2 s lockout and then fired about a round every 2 s. Retail bots never reach
+the lockout. `createFirePlan` puts a hold around the loop's body,
+`If(Or(empty, Not(BAPConWeaponHeat(0.8, 0.5))), hold, fire)`, re-read every
+tick (ledger AI-144). The hold lets go of the fire channel and keeps looking
+at the target. The plan goes on. The condition latches at 0.8 and releases at
+0.5, and it is built with the plan, so a new plan fires while the heat is
+under 0.8.
+
+**What changed.** `bot-fire.js weaponHeatHolds` is `BAPConWeaponHeat::
+evaluate`. `bot-plans.js heatHolds` runs it on the trigger action's own
+condition, and `execTrigger` presses nothing while it is false. The heat is
+the one that gates the gun: a seat's gun group's `FireState`
+(`world.fireStateFor`, found through `weaponGroup`), or the hand weapon's
+(`bot-referee.js heatOf`, a `FireState` over the fire data's heat words, one
+per kit item for the life of the soldier, stepped while the item is held,
+and its trigger refused at heat 1 or in the lockout). The fire data carries
+the words: `map.html botWeaponData` and `sim/level.mjs weaponFire` take the
+weapon block's `heat`, else the FireArms node's (`bot-barrels.js
+fireArmsHeat`). A grenade's `heatAddWhenFire` is its throw's charge, so a
+weapon with a `throw` gets none.
+
+**Checked.** `tests/test_bot_weapons.py BotHeatHoldTests`, through the real
+`FireState` and the world's order and cadence: a stationary MG42's first
+burst is 30 rounds, a Browning's 30 and a Sherman coax's 20, where the lab's
+bot bursts stop (GUN-15). The gun fires again on the tick after the heat is
+under 0.5 (0.48 at the next round, the lab's peak) and never locks. A plan
+made during the hold fires at once at 0.68. A hand M249 stops on the round
+its own heat reaches 0.8, and without the hold the same trigger locks.
+
+The lab's recordings say the same about the resume. Replaying their MG
+rounds through GUN-14/15, the bursts after a stop start in a sharp peak just
+under 0.5 and spread from 0.56 to 0.78, with none at 0.8 or above
+(`~/.cache/dc-sweep/bots/heat_resume.py`, AI-144).
+
+**Open.** The empty magazine is the `Or`'s other half: the engine holds the
+plan, presses reload and keeps aiming, while `firePlanDone` ends the plan
+on it (AI-130's reading). A bot's hand weapon keeps its rate's fraction from
+round to round, where the engine fires on whole ticks (GUN-13), so a bot's
+M249 runs at 13.5 rounds a second and its first hold comes at round 33, not
+48. The planes' attack plan reads its own heat limits (`PLANE_FIRE
+weaponHeatSmall`, `weaponHeatVehicle`), which nothing applies yet.
+

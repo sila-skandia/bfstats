@@ -7,7 +7,7 @@
 import { isWalkable, traceClear } from './nav-grid.js';
 import { playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
-import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH } from './bot-fire.js';
+import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH, weaponHeatHolds } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
@@ -17,7 +17,7 @@ import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisi
 import { tankTurnTowards } from './bot-vehicle.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { BEHAVIOUR } from './bot-decision.js';
-import { planAirAvoid, execPlaneAvoid } from './bot-pilot.js';
+import { planAirAvoid, execPlaneAvoid, weaponGroup } from './bot-pilot.js';
 
 /**
  * Plan action types for infantry (§4.2), the interpreter entries the viewer
@@ -1073,6 +1073,8 @@ export function execTrigger(bot, action, now) {
   const p = action.targetId ? bot.world?.players?.get(action.targetId) : null;
   const pos = playerPosition(p) ?? action.targetPos;
   if (!pos) return true;
+  // A hot gun holds its fire and the plan goes on (`heatHolds`).
+  if (heatHolds(bot, action)) return false;
   // A mounted gunner's aim condition is `BAPCConPrecision` 0x0854b570: the
   // lead's miss at the impact time within the plan's precision (bot-aim.js).
   const aim = bot._turretAim;
@@ -1111,6 +1113,47 @@ export function execTrigger(bot, action, now) {
     bot.isFiring = true;
   }
   return false;
+}
+
+/**
+ * The heat of the weapon the bot holds, or null for one with no heat: a
+ * seat's gun group's `FireState` (the world's, the one that gates the
+ * trigger), or the hand weapon's own (`bot._heat`, bot-referee.js
+ * `heatOf`). `createFirePlan` adds the heat condition only when the weapon
+ * `hasHeat` (`Weapon` vt+0x74).
+ */
+export function weaponHeatOf(bot) {
+  let state = null;
+  if (bot.vehicle) {
+    const group = weaponGroup(bot);
+    state = group?.node && bot.world?.fireStateFor ? bot.world.fireStateFor(group.node) : null;
+  } else {
+    state = bot._heat?.get(bot.weaponAi?.name ?? bot.kitPrimary ?? null) ?? null;
+  }
+  return state?.hasHeat ? state.heat : null;
+}
+
+/**
+ * True while a hot gun holds its fire. `createFirePlan` 0x085ac240 wraps the
+ * loop's body in `If(Or(empty, Not(BAPConWeaponHeat(0.8, 0.5))), hold, fire)`,
+ * a `BAPFlowCIf` re-read every tick (0x085acf54; the `Or` 0x085ac4ac, the
+ * heat condition 0x085aedc4; ledger AI-144). The hold (0x085ac50e) lets go of
+ * the fire channel (`BAPAResetControls` 0x085ac560, template +0x44) and keeps
+ * looking at the target (`BAPALookAtObject` 0x085ac619, its end condition a
+ * `BAPConFalse`); the plan goes on. So the trigger stops the tick the heat
+ * reaches 0.8 and starts again once it is down to 0.5, inside one plan. The
+ * condition is the plan's own (`action`'s): a new plan's starts unlatched,
+ * and fires while the heat is under 0.8. Under the heat law (GUN-14, GUN-15)
+ * a held MG42 or Browning reaches 0.8 on its 30th round, which is where the
+ * lab's bot bursts stop. The `Or`'s other half, the empty magazine, takes
+ * the same hold with a reload press; `firePlanDone` ends the plan on it
+ * instead (open, AI-144).
+ */
+export function heatHolds(bot, action) {
+  const heat = weaponHeatOf(bot);
+  if (heat === null) return false;
+  action.heatCond ??= { latched: false };
+  return !weaponHeatHolds(action.heatCond, heat);
 }
 
 /** `InfanteryResetControls`: clear every movement/aim input. Not the pose:
