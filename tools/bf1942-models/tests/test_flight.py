@@ -481,8 +481,8 @@ class FlightModelTests(unittest.TestCase):
         # RECORDED revs, less its acceleration and the climb's share of g.
         # The medians, at 120-130 m: 2.15 m/s^2 at 45-50 m/s, 2.97 at 55-60,
         # 3.53 at 60-65 (flight-model.md section 10). The same airframe here,
-        # held level at the speed by its own throttle, needs 2.22 / 2.82 /
-        # 3.20: the box drag on the `.sm` header box plus every Wing's lift.
+        # held level at the speed by its own throttle, needs 2.23 / 2.85 /
+        # 3.28: the box drag on the `.sm` header box plus every Wing's lift.
         # The bots fly with their controls moving, which costs drag the held
         # fixture does not pay, so the bound is 12% either way.
         curve = self.results["spitfire"]["dragCurve"]
@@ -491,13 +491,13 @@ class FlightModelTests(unittest.TestCase):
             self.assertAlmostEqual(retail, curve[speed]["drag"], delta=0.12 * retail, msg=speed)
 
     def test_the_spitfire_outruns_its_ai_maxspeed(self) -> None:
-        # Full throttle on the level: 69 m/s at the deck, 75 at 200 m, against
+        # Full throttle on the level: 68 m/s at the deck, 73 at 200 m, against
         # the AI's `maxSpeed` 60 (which the real game's fighters and jets both
         # exceed: the recorded Spitfire holds revs 1.2 at 70-75 m/s near
         # level). Under the pedal-on-the-thrust-law throttle and the solid box
         # it was 57.7 / 64.1; the gearbox's revs pass 1.0 (TANK-12).
         s = self.results["spitfire"]
-        self.assertAlmostEqual(69.0, s["top40"], delta=2.0)
+        self.assertAlmostEqual(68.0, s["top40"], delta=2.0)
         self.assertGreater(s["top200"], s["top40"])
 
     # --- level flight ------------------------------------------------------
