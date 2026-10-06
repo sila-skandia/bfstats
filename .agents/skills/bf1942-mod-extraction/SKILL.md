@@ -505,6 +505,14 @@ per press; one without restarts every sample per trigger on a new instance
 counts `silence.wav` loads. An `#include` under another `#templateLevel` is
 never opened. `features/vehicle-sound-coverage/README.md` D9 has the fixes.
 
+A magazine change triggers slot 1 (Reload) once, as it starts (SND-17). Parts
+play by their class (SND-18..SND-23, D11). A RotationalBundle is pressed while
+it turns, with `Default` = its rate in deg/s. A LandingGear plays patch 0 going
+up and patch 1 coming down. A Wing, an AnimatedBundle (tracks) and a
+PlayerControlObject play from creation for good, with `Default` 0. Those part
+loops are twins like any other (an M1A1's two tracks, a Corsair's two legs),
+and `resolveAcross` arbitrates them.
+
 A `loadSoundScript` path is relative to the file its line is in, so one an
 `.inc` supplies names a script beside the `.inc` (ledger CON-14);
 `_inline_includes` rebases it onto the includer. A `load` whose wav no archive

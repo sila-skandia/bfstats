@@ -563,6 +563,49 @@ def find_weapon_scripts(library, objects: ArchivePool,
     return found
 
 
+# The part classes whose own `.ssc` a vehicle carries besides its Engine and
+# its FireArms, which the viewer plays by the class's own rule (`vehicle-
+# audio.js` `PART_RULES`): a RotationalBundle while it turns (ledger SND-20),
+# a LandingGear's two patches while it travels up or down (SND-21), and the
+# classes that never touch their sound after it is built, which play from
+# creation for good (SND-19, SND-22): a Wing (an aircraft's flap creak), an
+# AnimatedBundle (DC's tank tracks) and a PlayerControlObject (the M-109's
+# gunner seat carries its tracks).
+PART_SOUND_KINDS = ("rotationalbundle", "landinggear", "wing",
+                    "animatedbundle", "playercontrolobject")
+
+
+def find_part_scripts(library, template: str) -> list[tuple[str, str, str]]:
+    """`(part name, its class, script path)` for every part under a vehicle
+    whose class is one of `PART_SOUND_KINDS` and that binds a script.
+
+    The walk `find_weapon_scripts` makes. A part template met twice (a
+    destroyer's identical mounts) is listed once, and the viewer sounds the
+    first node of its name. The script is the template's own
+    `loadSoundScript`, resolved against the file that declared it (CON-14).
+    """
+    root = library.objects.get(template.lower())
+    if root is None:
+        return []
+    seen: set[str] = set()
+    queue = [root]
+    found: list[tuple[str, str, str]] = []
+    while queue:
+        node = queue.pop(0)
+        key = node.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if node.kind.lower() in PART_SOUND_KINDS and node.sound_script and node.source:
+            found.append((node.name, node.kind,
+                          resolve_ssc_path(node.source, node.sound_script)))
+        for ref in node.children:
+            child = library.objects.get(ref.template.lower())
+            if child is not None:
+                queue.append(child)
+    return found
+
+
 def _weapon_script(objects: ArchivePool, node) -> tuple[str, str] | None:
     """`(archive path, resolved .ssc path)` for `node`'s own `loadSoundScript`."""
     if not node.source:
@@ -603,6 +646,10 @@ FIRE_LOOP_SLOT = 5
 # `SoundSetup` default 0x14), so a single shot's release lands that far behind it.
 RELEASE_SLOTS = (2, 3, 4)
 RELEASE_AFTER = 1 / 20
+# And the slot a magazine change triggers, once, as it starts: `FireArms::
+# Reload` (lnxded 0x08289d80, client 0x00539c80, the call at 0x00539cdf;
+# ledger SND-17), which every reload goes through (AI-133).
+RELOAD_SLOT = 1
 
 
 def _firing_patch(patches, release=False):
@@ -1153,8 +1200,45 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                                             level_files, arms_patches))}
             if release_layers:
                 weapon["release"] = release_layers
+            # The magazine change's own patch (SND-17): DC's TOW and Spandrel
+            # launchers carry one, no vanilla gun does. Not when the rounds
+            # already play it (`_firing_patch`'s last resort), and not off a
+            # projectile's script, whose slot 1 is something else.
+            reload_samples = (_non_silence(arms_patches[RELOAD_SLOT].samples)
+                              if len(arms_patches) > RELOAD_SLOT and not from_round
+                              else [])
+            if reload_samples and not any(s is chosen[0] for s in reload_samples):
+                reload_layers = _sound_layers(reload_samples, sounds, write,
+                                              level_files, arms_patches)
+                if reload_layers:
+                    weapon["reload"] = reload_layers
             weapons.append(weapon)
-        if entry is None and weapons:
+        # The parts that sound by their own class's rule (`PART_SOUND_KINDS`):
+        # turrets, gun elevation and ramps, landing gear, flaps, tracks. Every
+        # patch ships, in script order and silent ones as `[]`, because a
+        # LandingGear tells its two apart by index (SND-21).
+        parts: list[dict] = []
+        for part_name, kind, part_script in find_part_scripts(library, template):
+            part_text = read_script(part_script)
+            if part_text is None:
+                continue
+            part_patches = parse_ssc(part_text, level=VEHICLE_SOUND_LEVEL,
+                                     include=read_script, source=part_script)
+            patch_layers = [_sound_layers(_non_silence(p.samples), sounds, write,
+                                          level_files, part_patches)
+                            for p in part_patches]
+            if not any(patch_layers):
+                continue
+            part_tmpl = library.objects.get(part_name.lower())
+            parts.append({
+                "node": part_name,
+                "kind": kind,
+                "script": part_script,
+                "patches": patch_layers,
+                "attachToListener": bool(
+                    part_tmpl and part_tmpl.attach_to_listener),
+            })
+        if entry is None and (weapons or parts):
             entry = {
                 "template": template,
                 "engine": None,
@@ -1166,6 +1250,8 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
             continue
         if weapons:
             entry["weapons"] = weapons
+        if parts:
+            entry["parts"] = parts
         out.append(entry)
     return out
 

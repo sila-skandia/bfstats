@@ -683,6 +683,7 @@ const pageAudio = createPageAudio(bag(
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
+    get fireStates() { return fireStates; },
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
     get optPilot() { return optPilot; }, get optSound() { return optSound; },
     get optSoundVol() { return optSoundVol; }, get scene() { return scene; },
@@ -1288,6 +1289,11 @@ const referee = createBotReferee({
     pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
     botBodies.botFired(bot);          // the torso's fire (`soldier-actions.js`)
     botRounds.flash(bot);             // the muzzle's (`bot-rounds.js`)
+  },
+  // ...and his magazine change, its Reload slot (ledger SND-17).
+  onReload: (bot, weapon) => {
+    const at = bot.getPosition();
+    pageAudio.playWorldReload(weapon ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]);
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
