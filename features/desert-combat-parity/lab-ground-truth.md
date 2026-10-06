@@ -43,36 +43,153 @@ decide what a bots-only round can settle:
   ground truth.
 - **Fake fire** (AI-134): see "How it was recorded". Only aircraft weapons,
   anti-aircraft fire, artillery and a few others make real rounds in a
-  bots-only round; the `realfire` round fills in the rest.
+  bots-only round.
+
+**The way round it: `aiSettings.lodEnable 0`.** `game.rfa`'s
+`Bf1942/Game/AIdefault.con` runs `aiSettings.createLODManager 200 2` and
+`aiSettings.lodEnable 1`. `AILODManager::updateBots` (0x08475f00) tests the
+manager's flag at +0x28, which only `lodEnable(bool)` (0x08476290) writes;
+with it clear it skips `updateBot`'s distance test (0x08475fe0) and calls each
+bot's `setLodLevel(0)` in turn, one a tick. Put in a scenario's autoexec
+(`*-lod0-rec`), it holds for the round: every bot's recorded LOD stays 0, no
+shot is fake (219 shots, 165 flights in the first minutes), land hulls leave
+the AI mover's straight lines (1-5% of samples, from over half) and its 0.6
+of maxSpeed, the engine servo carries the throttle (-1 to 1) and a car's front
+wheels record the steering. That is a bots-only round driven by the physics,
+and the ground and rounds tables below come from it. What it cannot give: a
+bot's drive law asks for at most 20 m/s (AI-45), so a car whose physics can
+go faster cruises at 18-19 m/s and its top speed stays unmeasured; and bots
+full-lock only below 15-20 m/s.
+
+### Ground hulls driven by the physics (bots at LOD 0)
+
+DC El Alamein, `20261007-003106-dc-el_alamein-coop-lod0-rec` (549 s, 30 bots
+at LOD 0). Speeds on the level at full throttle are samples with the engine
+servo at 0.95 or more, |pitch| under 2 degrees and |vertical speed| under 1
+m/s, on the ground:
+
+| hull | level, full throttle: p95 / p99 / max (m/s) | samples | km/h | t to 5 / 10 m/s (s) |
+|---|---|---|---|---|
+| M1A1 | 13.56 / 14.10 / 14.15 | 1,853 | 50.8 | 2.4 / 2.9 |
+| T-72 | 11.19 / 11.24 / 11.29 | 7,107 | 40.5 | 2.1 / 2.6 |
+| BMP-2 | 14.63 / 14.88 / 14.88 | 3,857 | 53.6 | 1.7 / 2.8 |
+| M2A3 | 14.79 / 14.84 / 14.86 | 2,557 | 53.4 | 1.3 / 2.3 |
+| Shilka | 11.97 / 12.82 / 13.09 | 2,607 | 46 | 2.8 / 4.6 |
+| Humvee, DPV, Humvee_TOW, Technical, BRDM-2 | 17.2-18.9 / 18.0-19.1 / 18.4-19.2 | 738-4,028 | | held by the bot law at 20 m/s |
+
+- **Slope barely matters to a tank at full throttle.** By pitch bin (the
+  slope along its track) the T-72's p95 is 11.06 at -8 to -4 degrees, 11.22
+  at -1 to 0, 11.14 at 0 to 1, 10.99 at +2 to +4 and 11.12 at +4 to +8; the
+  M1A1's 14.14 downhill (-8 to -4), 14.08 at -1 to 0, 13.72 at 0 to 1, then
+  11.1-11.8 above +1. A tank tops out at a speed, uphill or down; it is not
+  pulled faster downhill. So the viewer's closed form (53.6 km/h, 14.9 m/s,
+  for both) matches the BMP-2 and M2A3 and is close for the M1A1 (14.1-14.2),
+  and **the T-72 is 24% slower in retail: 11.3 m/s.** DC gives the T-72 and
+  the M1A1 the same engine (`setTorque 10`, `setDifferential 4`, 5 gears,
+  `setMaxSpeed 4/0/20`), mass (25,000) and drag (2); their running gear
+  differs (the T-72 has two more dummy wheel springs a side), which is
+  where to look.
+- **Full lock** (the steered wheels within 90% of the most they turned).
+  Yaw rate p50 / max (deg/s) and slip angle at the hull's origin p50 / p95
+  (degrees), by forward speed:
+
+  | hull | max steer | 2-5 m/s | 5-10 | 10-15 | 15-20 |
+  |---|---|---|---|---|---|
+  | DPV | 50 | 27.5/47.1, 18.0/23.0 | 35.9/51.4, 8.7/13.3 | 24.9/36.6, 4.3/7.0 | |
+  | Humvee | 50 | 24.5/29.4, 26.6/35.7 | 20.7/27.4, 11.4/16.4 | 21.9/24.1, 8.0/10.0 | |
+  | Humvee_TOW | 35 | 12.9/48.2, 19.4/30.0 | 27.7/50.7, 16.6/33.5 | 22.0/34.4, 8.2/12.6 | 19.1/22.1, 6.0/7.2 |
+  | Technical | 50 | 27.1/48.8, 20.7/26.2 | 26.7/49.7, 10.8/20.7 | 35.8/44.1, 9.1/11.4 | |
+  | BRDM-2 | 30 | 17.5/37.4, 18.4/21.9 | 27.8/74.3, 11.9/20.6 | 20.3/42.2, 6.0/11.8 | 8.8/17.0, 2.7/4.5 |
+
+  **The DPV does not spin out at full lock at 10-15 m/s** (slip 4.3 degrees,
+  p95 7.0; the census's viewer spins it 190 degrees in 2.25 s at 15 m/s). No
+  bot full-locked it faster than 15 m/s, so 15-30 m/s is unmeasured; at
+  LOD 2 the spins seen at 30-40 m/s were the AI mover slewing the heading.
+- **Upside down costs 5 hit points a second, in whole seconds.** An unmanned
+  Humvee_TOW on its roof for 2.8 s went 100, 95, 90, 85, 80 at 109.0, 110.0,
+  111.0, 112.0 s, then righted and kept the rest.
+- **No launches at LOD 0.** No land hull went over 25 m/s or 8 m/s upward on
+  the ground in the LOD 0 round. The one land hull seen far above the ground
+  was at LOD 2: a T-72 driven by the AI mover went from 90.4 m to 401.5 m in
+  one tick (El Alamein, 261.72 s), then came down at a steady 121 m/s (no
+  acceleration) without a scratch: the mover, not the physics.
 
 ### Helicopters do not damp their rotation (air census open question 1)
 
-With every engine rack square (the cyclic centred, the racks' recorded
-rotation within 2 degrees of identity; a rack at rest reads (+-0.0017, 0, 0, 1)),
-a helicopter's turn rate holds:
+With every engine rack square (the cyclic centred: each rack's recorded
+rotation within 2 degrees of identity; a rack at rest reads (+-0.0017, 0, 0,
+1) against its hull), a helicopter's turn rate holds. Aircraft are flown by
+the physics at AI LOD 2, so these are the engine's laws.
 
-- A Mi-24 pitching over at 25.4 deg/s with its racks within 2 degrees held
-  24.4-26.7 deg/s for 1.4 s (El Alamein round 2, 310.4-311.8 s), nose -43 to -79.
-- A Mi-24 with its racks exactly square (within 0.25 degrees) held 1.4-1.8
-  deg/s of pitch for 6 s (round 2, 204.4 s): no decay at all.
-- Fitted over every hands-off stretch, angular acceleration against rate on
-  the pitch axis has slope -0.004/s (Mi-24, 36.8 s, 1,054 samples) and
-  -0.17/s (AH-64, 41.6 s): no damping term of any size. What there is, in a
-  full-collective climb, is a steady nose-down moment of about 1.1-1.4
-  deg/s^2 that builds the pitch rate from 0 to 15 deg/s over 7.5 s
-  (three Mi-24 climbs alike, 24 m/s up).
-- A real decay seen once (Mi-24, 6.1 to 1.8 deg/s in 2.3 s) happened while the
-  racks sat 0.4-1.6 degrees off square; with them at 0.0 the 1.8 deg/s then
-  held for 1.5 s. A degree of rack is enough to brake a few degrees a second.
+| hull | hands-off stretches, s | axis | rate at 0 s | 0.5 s | 1 s | 1.5 s | 2 s | stretch |
+|---|---|---|---|---|---|---|---|---|
+| UH-60 | 39, 485 | roll | -24.3 | -24.5 | -23.9 | -24.2 | -24.1 | 6.1 s |
+| UH-60 | | roll | -19.7 | -20.0 | -19.5 | -19.6 | -19.9 | 8.0 s |
+| UH-60 | | yaw | 21.2 | 21.4 | 21.4 | 21.1 | 21.2 | 8.0 s |
+| UH-60 | | yaw | -12.1 | -12.2 | -11.8 | -12.3 | -12.3 | 19.6 s |
+| UH-60 | | pitch | 8.7 | 8.9 | 8.6 | 8.9 | 8.9 | 19.6 s |
+| AH-64 | 10, 177 | yaw | -14.3 | -13.2 | -12.1 | -12.1 | -10.7 | 37.0 s |
+| Mi-24 | 24, 111 | pitch | 17.7 | 18.0 | 17.9 | 17.6 | 16.6 | 2.4 s |
+| Mi-24 | | pitch | 6.2 | 5.6 | 4.3 | 3.0 | 2.2 | 9.0 s |
+| Mi-8 | 48, 308 | yaw | 40.3 | 14.9 | 5.4 | -3.1 | -13.8 | 2.5 s |
+| Mi-8 | | roll | 18.0 | 18.1 | 18.1 | 18.0 | 17.9 | 9.7 s |
 
-So the viewer holding a rate forever is retail. Bots almost never roll or yaw
-with the racks square (rate p95 0.3 deg/s on those axes in every hands-off
-stretch), so roll and yaw damping are not measured; the pitch axis says the
-engine adds none, which is what the laws read so far say (COL-8).
+(deg/s, body axes; DC El Alamein Day 2, `20261006-222848-dc-el_alamein_day2-coop-rec`,
+seven rounds, and El Alamein. `dc_truth.py`'s hands-off fit and
+`~/.cache/dc-sweep/dc-lab/probe_decay.py`.)
 
-<!-- HARRIER -->
+- **The UH-60, the census's case, holds roll, yaw and pitch rates to within
+  a few percent for as long as the racks stay square** (up to 20 s). Fitted
+  over all its hands-off samples, angular acceleration against rate has slope
+  +0.04/s (pitch), +0.006/s (roll), +0.014/s (yaw): zero. AH-64 -0.05/s
+  (pitch), Mi-24 -0.10/s. So the viewer's UH-60 holding 20 deg/s of roll
+  after a 1 s input is retail. No damping term needs adding.
+- **What does change a rate is a moment, not damping.** A Mi-24 in a
+  full-collective climb (24 m/s up) pitches nose-down at a steady 1.1-1.4
+  deg/s^2 whatever its rate: from 0 it builds to 15 deg/s in 7.5 s (three
+  climbs alike), from 6 deg/s it falls in a straight line to 2-3 in 2 s, and
+  from 17.7 it barely moves. The Mi-8's yaw falls fast at speed (40 to 5
+  deg/s in 1 s, five stretches alike) while its roll holds: a tail surface
+  turning it into the airflow (a Wing's lift, PHY-12..14), not a damping of
+  rotation. Neither appears on the UH-60.
+- A degree of rack is enough to move a few degrees a second: a Mi-24 decaying
+  from 6.1 to 1.8 deg/s had its racks 0.4-1.6 degrees off square; once at
+  0.0 the 1.8 deg/s held. A threshold tighter than 2 degrees finds few
+  stretches.
 
-<!-- AC130 -->
+<!-- VANILLA-AIR -->
+
+### The Harrier: bots fly it as a plane (no hover measured)
+
+The one bot AV-8B flight (DC Bocage, `20261006-221215-dc-bocage-coop-rec`,
+215-352 s) never hovered. On the pad with the bot aboard it sat still (pitch
+3.7-3.8 degrees on its gear, rates 0, for the 0.26 s before throttle; the
+air census's viewer slid 12.7 m/s in that state). Then the bot put all four
+engine servos to 1.0 and swung its three lift-jet racks 18-20 degrees, and
+the Harrier rolled: 0 to 43 m/s in 4.5 s on the ground (about 10 m/s^2),
+off at 47 m/s, and flew as a jet from there (speed p50 71 m/s, level p95 83,
+max 119, climb up to 40 m/s, roll held 118 deg/s for half a second, bank p95
+72). Its rotation follows its racks: lift-jet racks square, the rates sit
+under 2 deg/s. Hover attitude and the transition (the lead's COL-13
+question: the viewer pitches up 5.6 deg/s in a hover) need a human at the
+stick; no bot round can give them. Bocage Day 2 and Day 3 spawn no Harrier
+(see "What the bots use").
+
+### The AC-130 (air census item 10)
+
+One bot flight on DC Gazala (`20261007-002229-dc-gazala-coop-rec`, 21-172 s,
+pilot and two gunners):
+
+- Take-off: 0 to 25 m/s in about 5.3 s on the runway, off the ground at 27
+  m/s, climbing 5-6 m/s at 29-30 m/s (up to 11 m/s), throttle servos at 1.0.
+- Cruise: held 36.7 m/s on the level for 3 s, level-flight p95 44.8 m/s,
+  speed p50 35.1, max 53.7 in dives. The bot flies the gunship orbit: a
+  steady 30-33 degree bank, yaw rate 7-11 deg/s, with a long phugoid (nose
+  +20 to -34 degrees, 28-53 m/s, 100-300 m over the ground). It holds its
+  height on average and does not fall out of the sky.
+- The viewer's engine-correct drag gives 21 m/s (the lead's figure) and the
+  census found it "never leaves 12.9 m/s": retail is 35-45 m/s level, with
+  `aiTemplate` maxSpeed 50.
 
 ### Spawner pads (levels census items 23-25)
 
