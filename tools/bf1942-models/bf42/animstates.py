@@ -46,6 +46,28 @@ from typing import Callable
 
 _COMMAND = re.compile(r"^(\w+)\.(\w+)(?:[ \t]+(.*?))?[ \t]*$")
 
+# A state's camera shake block as `AnimationState`'s constructor leaves it
+# (lnxded 0x08328b90 zeroes both blocks): no fade in (the factor snaps to 1),
+# no fade out (it holds there), no floor and no time limit (CS-8). `active`
+# is the block's own byte, set by every setter but `setCameraShakeTimeToShake`.
+SHAKE_DEFAULTS: dict = {
+    "active": False, "timeToShake": 0.0,
+    "pitch": [0.0, 0.0], "yaw": [0.0, 0.0], "roll": [0.0, 0.0],
+    "upDown": [0.0, 0.0], "leftRight": [0.0, 0.0], "inOut": [0.0, 0.0],
+    "fadeIn": 0.0, "fadeOut": 0.0, "minFactor": 0.0,
+}
+# `setCameraShake<Channel> <slot> <amplitude> <rate>`: degrees for the three
+# turns, metres for the three moves, the rate in radians a second (CS-1, CS-4).
+_SHAKE_CHANNELS = {
+    "setcamerashakepitch": "pitch", "setcamerashakeyaw": "yaw",
+    "setcamerashakeroll": "roll", "setcamerashakeupdown": "upDown",
+    "setcamerashakeleftright": "leftRight", "setcamerashakeinout": "inOut",
+}
+_SHAKE_SCALARS = {
+    "setcamerashakefadein": "fadeIn", "setcamerashakefadeout": "fadeOut",
+    "setcamerashakeminfactor": "minFactor", "setcamerashaketimetoshake": "timeToShake",
+}
+
 
 @dataclass
 class ClipRef:
@@ -108,6 +130,41 @@ class State:
     # lie flags and nothing else, so a transition's flags are the pose the
     # soldier is in while it plays: `Lb_LieToStand` still lies.
     flags: list[str] = field(default_factory=list)
+    # `setCameraShake* <slot> ...` — the state's camera shake, one block per
+    # slot (`SHAKE_DEFAULTS` above), or None while the state declares none. A
+    # clone does not inherit it: `copyStateData` (lnxded 0x08327780) copies
+    # neither of the two 0x44-byte shake blocks at +0x38 (CS-10), which is why
+    # `AnimationStatesCameraShakes.con` names every weapon's state itself.
+    camera_shake: list[dict | None] | None = None
+
+    def shake_slot(self, slot: int) -> dict | None:
+        """The slot's block, created on first write; None past the setters'
+        `slot < 3` clamp (`AnimationState::setCameraShakePitch` 0x08329d30).
+        The constructor builds two blocks; no pack writes a third."""
+        if not 0 <= slot < 3:
+            return None
+        if self.camera_shake is None:
+            self.camera_shake = [None, None]
+        while len(self.camera_shake) <= slot:
+            self.camera_shake.append(None)
+        if self.camera_shake[slot] is None:
+            self.camera_shake[slot] = dict(SHAKE_DEFAULTS)
+        return self.camera_shake[slot]
+
+    def camera_shake_extras(self) -> list[dict | None] | None:
+        """The shake as the viewer reads it: the slots in order, a slot whose
+        block byte was never set as None (the engine stops there, CS-8), and
+        nothing after the last live one. None when no slot is live."""
+        if not self.camera_shake:
+            return None
+        slots = [dict(block) if block and block.get("active") else None
+                 for block in self.camera_shake]
+        while slots and slots[-1] is None:
+            slots.pop()
+        for block in slots:
+            if block is not None:
+                block.pop("active", None)
+        return slots or None
 
     def clip_3p(self) -> ClipRef | None:
         for clip in self.clips:
@@ -219,6 +276,10 @@ def parse(read: Callable[[str], str | None],
     (case-insensitively) or None — the same contract as the damage loader."""
     machine = StateMachine()
     latest: State | None = None
+    # The state the camera-shake setters write: `latest`, except after a
+    # `setActiveState` that names no state, where a shake has no owner rather
+    # than landing on whichever state came before it.
+    shake_target: State | None = None
 
     def folder_of(path: str) -> str:
         path = path.replace("\\", "/")
@@ -237,7 +298,7 @@ def parse(read: Callable[[str], str | None],
         return None
 
     def replay(path: str, text: str, arg: str | None, depth: int = 0) -> None:
-        nonlocal latest
+        nonlocal latest, shake_target
         if depth > 16:
             return
         base = folder_of(path)
@@ -277,6 +338,7 @@ def parse(read: Callable[[str], str | None],
             args = (match.group(3) or "").split()
             if command == "createstate" and args:
                 latest = State(args[0])
+                shake_target = latest
                 machine.states[args[0].lower()] = latest
             elif command == "addanimation" and latest is not None and args:
                 try:
@@ -325,6 +387,28 @@ def parse(read: Callable[[str], str | None],
                 latest.random_start = True
             elif command == "setflag" and latest is not None and args:
                 latest.flags.append(args[0])
+            elif (command in _SHAKE_CHANNELS or command in _SHAKE_SCALARS) \
+                    and shake_target is not None and len(args) >= 2:
+                # `AnimationState::setCameraShake*` (lnxded 0x08329d30..
+                # 0x08329ed0) on the state `createState`/`setActiveState` last
+                # named. A bad number leaves the block as it was.
+                try:
+                    slot = int(float(args[0]))
+                    values = [float(a) for a in args[1:3]]
+                except ValueError:
+                    continue
+                block = shake_target.shake_slot(slot)
+                if block is None:
+                    continue
+                if command in _SHAKE_CHANNELS:
+                    if len(values) < 2:
+                        continue
+                    block[_SHAKE_CHANNELS[command]] = values
+                    block["active"] = True
+                else:
+                    block[_SHAKE_SCALARS[command]] = values[0]
+                    if command != "setcamerashaketimetoshake":
+                        block["active"] = True
             elif command == "copystate2" and len(args) >= 2:
                 machine._copy_latest(latest, args[0], args[1])
             elif command == "copystate" and len(args) >= 2:
@@ -338,6 +422,7 @@ def parse(read: Callable[[str], str | None],
                 # "latest", and vanilla never copies after setActiveState,
                 # but keep the pointer honest.
                 latest = machine.states.get(args[0].lower(), latest)
+                shake_target = machine.states.get(args[0].lower())
 
     entry = resolve("", root)
     if entry is None:
