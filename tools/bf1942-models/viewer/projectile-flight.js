@@ -365,9 +365,20 @@ export function advanceTracers(guns, dt) {
   for (let i = guns.tracers.length - 1; i >= 0; i--) {
     const tracer = guns.tracers[i];
     tracer.age += dt;
+    // A round that declares a `gravityModifier` falls by it (IMP-7), on the
+    // tracer path as on the shell path; `tracerGravity` in round-launch.js
+    // says which word applies. Zero for every retail rifle and MG round.
+    if (tracer.gravity) {
+      tracer.velocity.y += GRAVITY * tracer.gravity * tracer.gravityScale * dt;
+    }
     const step = tracer.velocity.length() * dt;
     tracer.travelled += step;
     tracer.mesh.position.addScaledVector(tracer.velocity, dt);
+    // The streak was pointed down its velocity at launch (`spawnTracer`'s
+    // `lookAt(position + direction)`); a falling one turns with its path.
+    if (tracer.gravity) {
+      tracer.mesh.lookAt(_aimBack.copy(tracer.mesh.position).add(tracer.velocity));
+    }
     const struck = sweep(guns, tracer.group, tracer.mesh.position,
                                tracer.velocity, step, tracer.lead);
     if (struck) {

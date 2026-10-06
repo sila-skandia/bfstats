@@ -2082,6 +2082,15 @@ class Assembler:
                     tracer["timeToLive"] = projectile.time_to_live
                 if projectile.tracer_scaler is not None:
                     tracer["scaler"] = projectile.tracer_scaler
+                # The tracer is a round of its own in flight, so it falls by
+                # its own `gravityModifier`, 1.0 when it declares none (IMP-7).
+                # Written resolved, so a viewer can tell "falls at 1.0" from a
+                # glb baked before the tracer carried it. Vanilla's
+                # `Tracer_Projectile` declares 0.0; Desert Combat's `20mm_`,
+                # `50cal_Tracer_Projectile` and `Minigun_Tracer` declare 1.
+                tracer["gravity"] = (projectile.gravity_modifier
+                                     if projectile.gravity_modifier is not None
+                                     else 1.0)
                 # The tracer is the only part of a bullet the game ever draws,
                 # so unlike the projectile body it is never optional: bake its
                 # mesh the same way, as a hidden tagged node, and the streak

@@ -255,6 +255,27 @@ function displaySpeed(guns, group, velocity) {
   return velocity > PROJECTILE_SCALE_CUTOFF ? velocity * group.speedScale : velocity;
 }
 
+/**
+ * The `gravityModifier` of what a tracer-path round really is.
+ *
+ * A bright round is the tracer template in flight, so it falls by the
+ * tracer's own word, which the exporter writes resolved (IMP-7's 1.0 when
+ * undeclared). A glb baked before it did carries none, and keeps the straight
+ * streak it always had, which is right for retail's `Tracer_Projectile`
+ * (`gravityModifier 0.0`). Every other round is the gun's own projectile: a
+ * bullet "kind" is only the exporter's word for an invisible round, and an
+ * invisible round falls like any other — Desert Combat's 25 mm at 0.2, the
+ * CBU-87's submunitions and Secret Weapons' thrown knives (neither declares a
+ * modifier) at 1.0. Retail's rifle and machine-gun rounds all declare 0 and
+ * stay flat. A stale glb whose projectile is a bare template name has no
+ * data at all and flies flat as before.
+ */
+function tracerGravity(group, bright) {
+  if (bright) return group.stats.tracer?.gravity ?? 0;
+  const spec = group.stats.projectile;
+  return spec && typeof spec === 'object' ? (spec.gravity ?? 1) : 0;
+}
+
 function spawnTracer(guns, muzzle, group, bright) {
   const speed = displaySpeed(guns, group, group.stats.velocity || 100);
   // The velocity is the round's own for as long as it flies, so it is a
@@ -318,6 +339,11 @@ function spawnTracer(guns, muzzle, group, bright) {
     width: group.tracerWidth,
     bright,
     velocity,
+    gravity: tracerGravity(group, bright),
+    // The square of the display scale, for the same reason a shell's g is
+    // scaled (see `spawnProjectile`): a round slowed for legibility must bend
+    // by the same shape. 1 on the map page.
+    gravityScale: (speed / (group.stats.velocity || 100)) ** 2,
     // Distance from the drawn mesh's origin to the round it stands for. The
     // baked streak's head *is* its origin; the stand-in cylinder is drawn
     // centred, so its round is half a length ahead of `mesh.position`.
