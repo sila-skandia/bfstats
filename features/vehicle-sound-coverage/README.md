@@ -919,6 +919,27 @@ play `LandingGear.ssc`, an M1A1's two tracks both run `moderntreads` at the
 one pitch `Default` 0 gives, and a Sherman's two tracks both play
 `VEALTTRACK`. `resolveAcross` keeps the louder copy as heard.
 
+## Found in review (2026-10-07)
+
+* **DC's right-hand tracks never started.** `M1A1TrackR`, `T72TrackR`,
+  `BMP2TrackR`, `M2A3TrackR` and `ShilkaTrackR` (DC and DC Final) load their
+  loop as `trigger Volume` with a `Volume <- Time` fade-in. A relatched patch
+  never armed a looping `trigger Volume` layer (`#fire` skipped every loop),
+  so on the IFVs the authored detune pair (`VEALTTRACK` at 0.65 + 0.02 s
+  against 0.55 + 0.025 s) lost its right half. `#fire` now arms such a loop
+  once, while it has no source; started, it runs on muted between presses,
+  so stopping and going again never stacks a second copy. `resolveAcross`
+  counts an armed loop as a contender on the frame it is due to start, or
+  that frame sounds it beside its twin (measured: one frame of two
+  `moderntreads` on an M1A1 before).
+* **A replayed gun played a release tail after every round.** A replayed
+  group has no trigger (`group.firing` stays false), so `releaseTick` saw an
+  unheld gun 50 ms after each recorded round: 9 Release tails a second at 10
+  rounds a second. The engine's remote players hold +0x225 every tick their
+  fire message passes (SND-12). `advanceGroups` now holds a replayed gun's
+  trigger while `replay-hulls.js` `holdSound` keeps its window open, the
+  window its Fire Loop is gated on, so it releases once, when that shuts.
+
 ## Verified / tests
 
 * `tests/test_vehicle_parts.mjs` (run by `test_vehicle_parts.py`), on DC's own
@@ -935,13 +956,17 @@ one pitch `Default` 0 gives, and a Sherman's two tracks both play
     presses patch 1.
   - The flap's creak runs from the claim on the hull's acceleration and speed,
     and its creation one-shot is not built.
+  - A right-hand track as DC ships it (`trigger Volume`, `Time` fade-in) starts
+    once the hull moves, once, and beside the left track the two are never
+    two voices, not even on the frame it starts.
 * `tests/test_vehicle_part_sounds.py`: `find_part_scripts` by class, a
   parts-only hull still gets an entry, a SimpleObject's script is not a part,
   the gear keeps its two patches in order with an empty one, and the flap
   ships its creak.
 * `tests/test_gun_burst_edges.mjs` (run by `test_gun_burst_edges.py`): gun-cycle
   and the rack wired as `map.html` wires them, plus a sweep of every edge of
-  every level. Vanilla: 230 guns. DC live: 0, since its scenes predate the
+  every level. A replayed burst (no trigger, `group.sounding` held) releases
+  once, at 10 and 5.7 rounds a second. Vanilla: 230 guns. DC live: 0, since its scenes predate the
   edges. DC patched into scratch: 565 guns and 581 edge samples.
 * The coherence sweeps take a tree from the environment
   (`VEHICLE_AUDIO_MAPS`, `ENGINE_AUDIO_MAPS`). With the parts in, every turret
@@ -987,9 +1012,11 @@ shared maps tree is never written. It boards a hull and reads
 ## Not done here
 
 * `Speed` and `Acceleration` are the voice's own motion in the engine (patch
-  +0xb0, +0xa0). What writes them was not traced. A part gets its hull's speed
-  and the rack's smoothed hull acceleration, which is 0 on a hull built
-  without an engine patch.
+  +0xb0, +0xa0), sampled each update from the patch owner's root object's
+  physics velocity (SND-18, traced in review). That is the hull's, which is
+  what a part gets. The viewer's acceleration is the rack's smoothed hull
+  acceleration, which is 0 on a hull built without an engine patch, and its
+  speed is `airspeed` where the drive keeps one, not the velocity.
 * A part's turn is read off its node's local rotation. At a stop, the engine's
   speed register can stay non-zero while the angle is clipped, so the servo
   would keep running under a hand that pushes against the stop. The node does
