@@ -5,7 +5,7 @@
 // tables and builds the collider once per level.
 
 import * as THREE from 'three';
-import { buildHeightfield } from './heightfield.js';
+import { buildHeightfield, heightfieldFromSamples } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { buildDrivableMask } from './drivable-mask.js';
 import { WorldCollider } from './world-collider.js';
@@ -179,6 +179,8 @@ export function createLevelTerrain(page) {
   // `Materialmap.raw`) and `_shared/damage.json`'s `effects` matrix.
   terrain.terrainMaterials = null;
   terrain.damageTables = null;
+  /** `loadHeightmap`'s answer for this level, or null. */
+  terrain.heightmap = null;
 
   /** The level's baked search maps (`nav-baked.js`), or null: `show()`
    *  fetches them beside the tables and keeps them on the level's extras
@@ -228,13 +230,45 @@ export function createLevelTerrain(page) {
     } catch { return null; }
   }
 
+  /**
+   * `terrain/heightmap.png` back into its bytes: the level's whole
+   * `Heightmap.raw`, high byte in red and low byte in green (`scene.json`
+   * `heightmap`, the `heightmap` bake layer). Null for a tree baked before it
+   * existed, and `buildCollider` then snaps the lattice off the drawn tiles as
+   * it always has. No colour conversion: the bytes are numbers, not colours.
+   */
+  async function loadHeightmap(dir) {
+    const spec = page.extras?.heightmap;
+    if (!spec?.image) return null;
+    try {
+      const blob = await fetch(`${page.MAPS_BASE}/${dir}/${spec.image}${page.bust()}`)
+        .then(r => r.ok ? r.blob() : null);
+      if (!blob) return null;
+      const bitmap = await createImageBitmap(blob,
+        { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(bitmap, 0, 0);
+      const rgba = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      return { rgba, channels: 4, dim: spec.dim, spacing: spec.spacing,
+               heightUnits: spec.heightUnits };
+    } catch { return null; }
+  }
+
   /** Rebuild the collider for the level now in `currentRoot`. */
   function buildCollider(root) {
     const worldSize = page.extras?.worldSize || 0;
-    const heightfield = buildHeightfield(terrain.terrainMeshes, {
-      worldSize,
-      dim: page.extras?.terrain?.materials?.dim || 0,
-    });
+    // The whole heightmap where the level ships it, so an undrawn patch (the
+    // sea floor of 29 levels) still has ground under it; else the lattice off
+    // the drawn tiles, holes and all.
+    const raw = terrain.heightmap;
+    const heightfield = (raw && heightfieldFromSamples(raw.rgba, raw))
+      || buildHeightfield(terrain.terrainMeshes, {
+        worldSize,
+        dim: page.extras?.terrain?.materials?.dim || 0,
+      });
     if (heightfield && terrain.terrainMaterials) {
       heightfield.setMaterials(terrain.terrainMaterials.ids, terrain.terrainMaterials.dim,
                                terrain.terrainMaterials.spacing || heightfield.spacing);
@@ -289,11 +323,13 @@ export function createLevelTerrain(page) {
     return { heightfield, statics };
   }
 
-  /** The two tables show() fetched for this level, and the friction lookup
-   *  `surfaceFriction` walks, built off them once. */
-  function setTables(terrainMaterials, damageTables) {
+  /** The tables show() fetched for this level (the raw heightmap among them,
+   *  or null), and the friction lookup `surfaceFriction` walks, built off
+   *  them once. */
+  function setTables(terrainMaterials, damageTables, heightmap = null) {
     terrain.terrainMaterials = terrainMaterials;
     terrain.damageTables = damageTables;
+    terrain.heightmap = heightmap;
     terrain.materialFrictionById = buildMaterialFrictionTable(terrain.damageTables);
   }
 
@@ -305,6 +341,7 @@ export function createLevelTerrain(page) {
     getFloorAltitude,
     groundHeight,
     loadDamageTables,
+    loadHeightmap,
     loadSearchMaps,
     loadTerrainMaterials,
     setTables,

@@ -27,6 +27,13 @@ Addresses are in [symbols.json](../symbols.json) (`./xref.py list collision`).
 wheel spring), `crash-damage.js` (§9), driven by `body-world.js` in the order of
 §2. What the port does differently, and why, is in
 [`features/vehicle-collision-physics/README.md`](../../vehicle-collision-physics/README.md).
+Since 2026-10-07 a driven land hull's own parts take §7 as a parked hull's
+do (`body-world.js` `#drivenTerrain`); before, it met the terrain through its
+drive's springs alone and a steep face launched it
+([`viewer-ground-hull-collision`](../../viewer-ground-hull-collision/README.md),
+"Terrain contact, 2026-10-07"). The viewer's heightfield is the level's whole
+heightmap where the tree ships the `heightmap` bake layer, so §7 meets ground
+under an undrawn patch too.
 
 Notation: `dt` = 1/30 s, the fixed tick ([physics.md](physics.md) §3). `g` =
 −14.73. Matrices are row-vector: rows 0, 1, 2 of an absolute transformation are

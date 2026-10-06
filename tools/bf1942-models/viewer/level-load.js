@@ -586,15 +586,17 @@ export function createLevel(page) {
     // not before the first frame.
     // The level's baked search maps too (`pathfinding/`, under a megabyte a
     // level), which the bots' nav maps are taken from (`nav-baked.js`).
-    const [terrainMaterials, damageTables, , searchMaps] = await Promise.all([
+    // And the whole heightmap (`terrain/heightmap.png`, tens to hundreds of KB),
+    // which the collider stands on where the bake drew no tile.
+    const [terrainMaterials, damageTables, , searchMaps, heightmap] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
-      terrain.loadSearchMaps(dir),
+      terrain.loadSearchMaps(dir), terrain.loadHeightmap(dir),
     ]);
     if (level.extras) {
       Object.defineProperty(level.extras, 'bakedSearchMaps',
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
-    terrain.setTables(terrainMaterials, damageTables);
+    terrain.setTables(terrainMaterials, damageTables, heightmap);
     const collision = terrain.buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
     page.setupVehicleBodies();

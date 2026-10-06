@@ -21,6 +21,7 @@
 
 import { TICK } from './rigid-body.js';
 import { collideBodies } from './body-contact.js';
+import { terrainContact } from './body-ground.js';
 import { collideWithStatics } from './body-statics.js';
 import { CrashDamage, contactMaterialValues } from './crash-damage.js';
 import { wheelFrictionOpts } from './vehicle-bodies.js';
@@ -50,6 +51,14 @@ export class BodyWorld {
     /** `(owner, obstacle, pos)`: a driven hull touched barbed wire. */
     this.onObstacle = onObstacle;
     this.crash = new CrashDamage(tables);
+    /** The ground a driven hull's own vertices meet: `terrain` without the
+     *  vertex height a deck lookup takes (`#drivenTerrain`). */
+    this._groundOnly = {
+      height: (x, z) => terrain.height(x, z),
+      normal: (x, z, out) => terrain.normal(x, z, out),
+      material: (x, z) => terrain.material(x, z),
+      get waterLevel() { return terrain.waterLevel; },
+    };
     /** owner -> entry. */
     this.entries = new Map();
     this._parts = [];
@@ -153,6 +162,29 @@ export class BodyWorld {
   }
 
   /**
+   * `checkVsTerrain` `0x0825a960` for a driven LAND hull's own parts: every
+   * col0 vertex dropped on the heightfield, the damage call above the 0.1
+   * squared-speed floor and `impulseOn` always (`body-ground.js`
+   * `terrainContact`), so the resolve pass pushes the hull out of the ground
+   * along its normal and takes half the closing speed off it, exactly as it
+   * does a parked hull (collision-response.md section 7). The drive model's
+   * springs are its wheels' contact; this is the hull's, which until now
+   * nothing answered, so a jeep or a tank driven into a steep face met it with
+   * its suspension alone. The heightfield only, no deck: a driven hull meets a
+   * deck as a static (`collideWithStatics`), and its wheels ride it.
+   *
+   * An aircraft (no `hullContacts`: its drive keeps its own ground contact)
+   * gets the damage half alone, as before.
+   */
+  #drivenTerrain(entry) {
+    if (!Array.isArray(entry.driven.vehicle?.hullContacts)) {
+      this.#drivenTerrainDamage(entry);
+      return;
+    }
+    for (const part of entry.parts) terrainContact(part, this._groundOnly, this.handlers);
+  }
+
+  /**
    * `checkVsTerrain`'s damage half for a vehicle whose response is someone
    * else's: each hull part's layer-0 vertices against the heightfield (one
    * vertex when the layer has three or fewer), `handleCollision` with the
@@ -217,11 +249,11 @@ export class BodyWorld {
       if (entry.parked) entry.parked.detectGround(terrain, handlers);
     }
 
-    // The driven vehicle's drive model owns its contact with the ground, so
-    // there is no impulse to find here - but hitting the ground still costs
-    // hit points (spec 9.5), and that is this module's to say.
+    // The driven vehicle's drive model owns its wheels' contact with the
+    // ground; its hull's is this module's, as is what hitting the ground costs
+    // (spec 9.5).
     for (const entry of this.entries.values()) {
-      if (entry.driven) this.#drivenTerrainDamage(entry);
+      if (entry.driven) this.#drivenTerrain(entry);
     }
 
     // Resolve (pass 2): no sleeping test, by design.

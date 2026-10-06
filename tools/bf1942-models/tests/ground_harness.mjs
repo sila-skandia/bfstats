@@ -29,6 +29,7 @@ import {
 import { GRAVITY } from './physics.js';
 import { HullWater } from './amphibious.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
+import { probeAlongAxis } from './suspension.js';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -2554,6 +2555,42 @@ function amphibianNode() {
     // The same jeep with no sea handed to it keeps the page's floor.
     jeepNoSea: sinker('jeep', false),
   };
+}
+
+// --- the spring probe on a steep face ----------------------------------------
+//
+// `probeAlongAxis` took one Newton step that treats the ground at the vertical
+// estimate as level. Leaning into a steep rise that step overshoots the face
+// and reads the ground above the axle (a buried wheel, the bump stop at full
+// load). Each case: a face rising along -z (the hull's forward) at `deg`, the
+// axle `gap` m over the ground straight below it, the hull pitched `pitch`
+// degrees nose-up; the answer against the exact crossing of the axis with the
+// face, found by bisection here.
+{
+  const cases = [];
+  for (const deg of [20, 45, 55, 70]) {
+    const k = Math.tan(deg * Math.PI / 180);
+    const ground = (x, z) => (z < 0 ? -z * k : 0);
+    for (const pitch of [0, 30, 50]) {
+      for (const gap of [0.3, 1.0]) {
+        const p = pitch * Math.PI / 180;
+        // The hull's up, pitched nose-up: it leans back (+z), so down the
+        // axis leans forward (-z), into the face.
+        const axis = new THREE.Vector3(0, Math.cos(p), Math.sin(p));
+        const attach = new THREE.Vector3(0, 0, -2);
+        attach.y = ground(attach.x, attach.z) + gap;
+        const reach = probeAlongAxis(ground, attach, axis, attach.y + 0.5);
+        const gapAt = s => attach.y - axis.y * s - ground(attach.x - axis.x * s, attach.z - axis.z * s);
+        let lo = 0, hi = gap / axis.y;
+        for (let i = 0; i < 200; i++) {
+          const mid = (lo + hi) / 2;
+          if (gapAt(mid) > 0) lo = mid; else hi = mid;
+        }
+        cases.push({ deg, pitch, gap, reach, exact: (lo + hi) / 2 });
+      }
+    }
+  }
+  results.probeFace = cases;
 }
 
 // --- the Forklift's forks: a step on the axis, the part's own servo -------

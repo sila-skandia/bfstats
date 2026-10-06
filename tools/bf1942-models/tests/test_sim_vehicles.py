@@ -55,6 +55,52 @@ def recipe(name: str) -> dict:
 @unittest.skipIf(shutil.which("node") is None, "node is not installed")
 @unittest.skipIf(ASSETS is None, "no extracted viewer/maps tree (set BF42_VIEWER_ASSETS)")
 class SimVehicleTests(unittest.TestCase):
+    def _assert_no_launch(self, recipe_name: str, top_speed: float) -> None:
+        # Driven into a 45, 55 and 70 degree face (the lattice's nearest),
+        # the hull stops, slides back or climbs on what it brought: it never
+        # gains more than its own top speed and is never thrown up. Before the
+        # driven hull met the terrain and the spring probe solved its
+        # crossing, a Willy left Gazala's 45-degree face at 94 m/s, 68 m/s
+        # upward and 174 m over the ground; a Humvee Medina Ridge's at 86; an
+        # M1A1 its 64-degree face at 40 m/s and 59 m up.
+        runs = recipe(recipe_name)["runs"]
+        self.assertEqual(3, len(runs))
+        for run in runs:
+            with self.subTest(deg=run["deg"]):
+                self.assertIsNotNone(run["face"], "the level has a face near this angle")
+                self.assertLess(abs(run["face"] - run["deg"]), 7)
+                self.assertLess(run["vmax"], top_speed)
+                self.assertLess(run["vyMax"], 12)
+                self.assertLess(run["maxAbove"], 6)
+
+    def test_a_willy_driven_into_gazalas_steep_faces_is_not_launched(self) -> None:
+        self._assert_no_launch("faceWilly", 20)
+
+    def test_an_m1a1_driven_into_medina_ridges_steep_faces_is_not_launched(self) -> None:
+        if not (ASSETS / "maps" / "mods" / "desertcombat" / "dc_medina_ridge" / "scene.glb").exists():
+            self.skipTest("no Desert Combat tree")
+        self._assert_no_launch("faceM1A1", 20)
+
+    def test_a_humvee_driven_into_medina_ridges_steep_faces_is_not_launched(self) -> None:
+        if not (ASSETS / "maps" / "mods" / "desertcombat" / "dc_medina_ridge" / "scene.glb").exists():
+            self.skipTest("no Desert Combat tree")
+        # The Humvee's own top speed is 31 m/s, which it reaches on the flat
+        # top of the 51-degree face it climbs.
+        self._assert_no_launch("faceHumvee", 33)
+
+    def test_a_land_hull_at_rest_on_level_ground_meets_it_with_its_springs_alone(self) -> None:
+        # The driven hull's col0 meets the terrain now; at rest on its wheels
+        # on level ground none of it may be in the ground, or the push-out
+        # would hold every hull off its springs. All ten of El Alamein's land
+        # hulls, the Sherman's turret vertex 4 cm clear the closest.
+        r = recipe("idleHulls")
+        self.assertLess(r["relief"], 0.1)
+        self.assertGreaterEqual(len(r["hulls"]), 8)
+        for hull in r["hulls"]:
+            with self.subTest(template=hull["template"]):
+                self.assertEqual(0, hull["contacts"])
+                self.assertLess(hull["speed"], 0.05)
+
     def test_a_bot_drives_a_tank_on_its_real_drive(self) -> None:
         r = recipe("drive")
         self.assertEqual(r["driveClass"], "TrackedVehicle")
