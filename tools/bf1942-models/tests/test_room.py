@@ -495,6 +495,18 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"a": 100, "b": 100, "level": 100}, t["before"])
         self.assertEqual({"a": 93, "b": 100, "level": 100}, t["after"])
 
+    def test_a_ctf_rooms_hello_carries_its_flags(self) -> None:
+        # A client joining mid-round starts from where the room's law has each
+        # flag (`ctf.js` `snapshot`): here the Japanese flag in slot 4's hands.
+        u = self.results["u"]
+        self.assertIsNone(u["conquest"])
+        self.assertEqual([0, 1], [row["flag"] for row in u["ctf"]])
+        self.assertEqual({"flag": 0, "home": True, "carrier": None, "carrierTeam": 0,
+                          "position": [0, 7.6, 100], "respawnIn": 30}, u["ctf"][0])
+        self.assertEqual((False, 4, 2, [1, 0, -100]),
+                         (u["ctf"][1]["home"], u["ctf"][1]["carrier"], u["ctf"][1]["carrierTeam"],
+                          u["ctf"][1]["position"]))
+
 
 if __name__ == "__main__":
     unittest.main()
