@@ -19,7 +19,7 @@
 //     `loadPadVariants` stands it;
 //   * a hull's death: everyone in it dies with it (the page's
 //     `killOccupantInWreck`), its body stops simulating (`retireBody`), and its
-//     wreck goes after the page's wreck life (`WRECK_SECONDS`), whatever pad
+//     wreck goes after its Armor's time to live (`afterDeath`), whatever pad
 //     it came from;
 //   * the abandoned hull's clock (SPAWN-13, `AbandonClock`): a pad's hull far
 //     from its pad, empty and with no soldier near, counts down `timeToLive`
@@ -44,15 +44,16 @@ import {
   AbandonClock, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides,
 } from '../viewer/deployables.js';
 import { CHARACTER_HEIGHT } from '../viewer/soldier-pose.js';
+import { afterDeath } from '../viewer/vehicle-wrecks.js';
 import { MAX_PLAYERS } from '../viewer/netcode.js';
 import { bodyPoseOf, bodySpecFor } from './level-bodies.mjs';
 import { placeholderEntry } from './vehicle-table.mjs';
 
-/** Seconds a wreck stands before the room clears it: the page's own wreck
- *  life (`vehicle-wrecks.js` `WRECK_LINGER` 10 s, the measured wreck lifetime
- *  of a live round capture, plus its 2.5 s `WRECK_FADE`, a house rule), so a
- *  room's wreck goes as its clients' fades out. */
-export const WRECK_SECONDS = 10 + 2.5;
+/** Seconds a wreck stands before the room clears it, where its Armor says
+ *  nothing: the engine's default `timeToLiveAfterDeath` (HP-19). A hull's
+ *  own clock is the page's (`vehicle-wrecks.js` `afterDeath`), so a room's
+ *  wreck goes as its clients' fades out, and a `stayAsDestroyed` one stays. */
+export const WRECK_SECONDS = afterDeath(null).ttl;
 
 const _home = new THREE.Matrix4();
 const _parentInv = new THREE.Matrix4();
@@ -298,7 +299,9 @@ export function createRoomPads({ room, onRow, unmount }) {
     for (const entry of instance.table) {
       if (entry.wreckAge == null || !entry.live) continue;
       entry.wreckAge += dt;
-      if (entry.wreckAge >= WRECK_SECONDS) {
+      const clock = entry.wreckClock ??= afterDeath(entry.root?.userData?.armor);
+      if (!clock.stay && entry.wreckAge >= clock.ttl) {
+        entry.wreckClock = null;
         for (const record of records) record.live.delete(entry);
         retire(entry);
       }
