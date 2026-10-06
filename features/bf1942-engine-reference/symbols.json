@@ -9012,7 +9012,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-10-06-rocket-flight",
-   "note": "lnxded (weak). Sets/clears object flags at +0x4 and tells the ObjectManager (mObjectManagerImpl): newly set 0x1000 -> vt+0xec addObjectToUpdate, cleared 0x1000 -> vt+0xf0 removeObjectFromUpdate; 0x800 -> vt+0xf4/+0x104; bit 1 with 0x2000000 set and 0x8 clear -> vt+0x68. Ledger PHY-16."
+   "note": "lnxded (weak). Sets/clears object flags at +0x4 and tells the ObjectManager (mObjectManagerImpl): newly set 0x1000 -> vt+0xec addObjectToUpdate, cleared 0x1000 -> vt+0xf0 removeObjectFromUpdate; 0x800 -> vt+0xf4/+0x104; bit 1 with 0x2000000 set and 0x8 clear -> vt+0x68. Ledger PHY-18."
   },
   {
    "address": "0x081935c0",
@@ -9030,7 +9030,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-10-06-rocket-flight",
-   "note": "lnxded. Inserts the object into the update map at ObjectManager+0x3c (keyed by object +0x48), which updateObjects 0x0819be10 walks calling handleUpdate (vt+0x54). Reached through BObject::updateFlags 0x08193390 when flag 0x1000 is newly set; RotationalBundle's ctor 0x081d73d0 sets it, so every Engine (a projectile's included) is updated every tick. Ledger PHY-16."
+   "note": "lnxded. Inserts the object into the update map at ObjectManager+0x3c (keyed by object +0x48), which updateObjects 0x0819be10 walks calling handleUpdate (vt+0x54). Reached through BObject::updateFlags 0x08193390 when flag 0x1000 is newly set; RotationalBundle's ctor 0x081d73d0 sets it, so every Engine (a projectile's included) is updated every tick. Ledger PHY-18."
   },
   {
    "address": "0x0819be10",
@@ -9291,7 +9291,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-10-06-rocket-flight",
-   "note": "lnxded. Bundle ctor, then zeroes the axis registers +0x104..+0x138, +0x13c = 1.0, byte +0x140 = 1, +0x141 = 0, and updateFlags(0x1000) then updateFlags(8): every RotationalBundle and Engine joins the ObjectManager update map. Ledger PHY-16."
+   "note": "lnxded. Bundle ctor, then zeroes the axis registers +0x104..+0x138, +0x13c = 1.0, byte +0x140 = 1, +0x141 = 0, and updateFlags(0x1000) then updateFlags(8): every RotationalBundle and Engine joins the ObjectManager update map. Ledger PHY-18."
   },
   {
    "address": "0x081d7490",
@@ -10344,7 +10344,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-10-06-rocket-flight",
-   "note": "lnxded. Adds the vector to the accumulator +0x1c..+0x24 and ignores the position: a point body takes no torque from its children (a point-physics rocket's nose stays where it was launched). Ledger PHY-19."
+   "note": "lnxded. Adds the vector to the accumulator +0x1c..+0x24 and ignores the position: a point body takes no torque from its children (a point-physics rocket's nose stays where it was launched). Ledger PHY-21."
   },
   {
    "address": "0x08256650",
