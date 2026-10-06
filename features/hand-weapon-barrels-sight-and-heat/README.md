@@ -60,6 +60,11 @@ only one the rounds can follow.
   Thompson still fires down the view axis. The glb cases skip when the trees
   are not extracted.
 
+In the page (`~/.cache/dc-sweep/hand-weapons/hand_page.cjs`, Desert Combat's
+Lost Village with `?weapon=Remington`): one pull launched eight rounds, and in
+the eye's frame at the launch each left within 0.22 degrees of its authored
+turn.
+
 Before and after on the baked Remington, one pull with the cone on
 (`~/.cache/dc-sweep/hand-weapons/before/run_before.py`): the pellets spanned
 0.42 by 0.24 degrees before and span 2.42 by 2.35 degrees now. With no cone the
@@ -176,7 +181,14 @@ change and after it (`~/.cache/dc-sweep/hand-weapons/before/run_heat_before.py`)
 | Vanilla coaxial Browning (10 a second) | 49, at 4.8 s | 25, at 2.4 s |
 
 After the lockout a held trigger fires one round per lockout, about one every
-2 s. `test_seats.py` and `test_replay_hud.py` carry the law's own numbers:
+2 s.
+
+In the page, with the scratch-extracted M249 served in place of the live one
+(`hand_page.cjs`): a held trigger fired 61 to 62 rounds before the lockout
+(sampled every ten frames, with the page's own animation frames running
+between them), then one round per lockout, and `Overheat/OverHeat` followed
+the heat from 0.09 at the first sample to 1.01 at the lockout, under
+`Ammo/AmmoType 3`. `test_seats.py` and `test_replay_hud.py` carry the law's own numbers:
 heat 1.2 after three 0.4 pulls, still locked when the 2 s delay ends; a
 replayed coax at 0.46, not 0.3.
 
