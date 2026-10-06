@@ -287,6 +287,16 @@ fix report and its review left. Each item is its own commit.
   `WaterWaterExplosion`. A Spitfire over the sea and a Sherman on a bridge
   get their land tier, and a destroyer with no `-1` gets its `0`. On main
   only the crash got the water tier.
+- **A spawned object keeps its hulls when a particle shares its mesh.** The
+  effects bake turns hulls on for the object only, and a mesh that a
+  particle built first was cached with no hull. Vanilla's raft, with a
+  debris of its own `PTRaft_Hull_M1` sorted before it, had 1 hull node
+  instead of 2. `build_node` now resolves the hull while hulls are on
+  (`test_effect_objects.py` `SharedMeshHullTests`). No shipped particle
+  shares a payload's mesh, and model and scene bakes are byte-identical.
+- **The page check reproduces on the merge.** An Elco80 killed on Invasion
+  of the Philippines died on `-1`, and its raft floated at water + 0.068
+  from 1 s on, upright, as a 35 HP damageable that a cast meets.
 - **`addOwner` costs 10 to 25 ms a call on No Fly Zone** (48,639 triangles,
   202,948 cells), whatever the object's size, because it re-packs the whole
   grid. Six ruins in one frame hitch it by about 100 ms. The ids handed out
