@@ -278,7 +278,9 @@ function tracerGravity(group, bright) {
 }
 
 function spawnTracer(guns, muzzle, group, bright) {
-  const speed = displaySpeed(guns, group, group.stats.velocity || 100);
+  // The engine's own default when the gun declares no `velocity` (FA-3).
+  const authored = releaseSpeed(group.stats);
+  const speed = displaySpeed(guns, group, authored);
   // The velocity is the round's own for as long as it flies, so it is a
   // real allocation per shot; the unit direction is only needed to point
   // the streak and lives in scratch.
@@ -344,7 +346,7 @@ function spawnTracer(guns, muzzle, group, bright) {
     // The square of the display scale, for the same reason a shell's g is
     // scaled (see `spawnProjectile`): a round slowed for legibility must bend
     // by the same shape. 1 on the map page.
-    gravityScale: (speed / (group.stats.velocity || 100)) ** 2,
+    gravityScale: authored > 0 ? (speed / authored) ** 2 : 1,
     // Distance from the drawn mesh's origin to the round it stands for. The
     // baked streak's head *is* its origin; the stand-in cylinder is drawn
     // centred, so its round is half a length ahead of `mesh.position`.
@@ -451,7 +453,7 @@ function bodyBox(group) {
 }
 
 function spawnProjectile(guns, muzzle, group, spec) {
-  // `releaseSpeed` is `velocity ?? 100`, not `velocity || 100`. Every one of
+  // `releaseSpeed` is `velocity ?? 200`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
   // authored value meaning "the round leaves at no speed of its own"; `||`
   // read it as absent and launched a released bomb forward at 100 m/s

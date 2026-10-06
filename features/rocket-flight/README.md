@@ -150,6 +150,14 @@ the motor. The placeholder slowed them too, under the point body's sphere law.
 The TOW is a point body of 500 kg at `drag 0.1`, so only the thrust law
 limits it, at about 1.5 km/s.
 
+## 4. A gun that declares no velocity
+
+`bomb-release.js` `releaseSpeed` and `round-launch.js` `spawnTracer` launched a
+`FireArms` that declares no `velocity` at an invented 100 m/s. Both
+`FireArmsTemplate` constructors write 200.0 (ledger FA-3), so that is the
+default now; an authored 0 (every aircraft rack, BOMB-8) is still 0. It moves
+every `Binoculars` round and Desert Combat's BRDM-2 Spandrel.
+
 ## How it is checked
 
 `tools/bf1942-models/tests/test_rocket_flight.py` runs

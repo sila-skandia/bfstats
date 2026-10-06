@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
 import { fireBarrel } from './round-launch.js';
 import { RocketMotor, isAirMotor, rocketMotorsOf } from './rocket-motor.js';
+import { releaseSpeed } from './bomb-release.js';
 import { GRAVITY } from './physics.js';
 import { WorldCollider } from './world-collider.js';
 import { buildHeightfield } from './heightfield.js';
@@ -432,6 +433,12 @@ function drop(name, seconds = 0.5, frame = 1 / 60) {
 
 out.bullets = {};
 for (const name of Object.keys(BULLETS)) out.bullets[name] = drop(name);
+// A FireArms that declares no `velocity` (DC's BRDM2 Spandrel, every
+// Binoculars) launches at the constructor's 200 m/s (FA-3); 0 stays 0.
+out.velocityDefault = {
+  absent: releaseSpeed({}), zero: releaseSpeed({ velocity: 0 }),
+  declared: releaseSpeed({ velocity: 45 }),
+};
 // Semi-implicit Euler at 60 Hz, as the loop runs it: v += g dt, x += v dt.
 out.bullets.expectedDropAtG1 = round3(
   -GRAVITY * (1 / 60) ** 2 * (30 * 31) / 2);
