@@ -89,12 +89,27 @@ export function gamePlayModeOf(mode) {
   return GAME_PLAY_MODE.conquest;
 }
 
-/** Whether a mode runs the control-point bleed and ends on tickets: the
- *  `mode == 2 || 4 || 5` block of `gameStatusPlaying` (0x08151bb5). */
+/** Whether a mode runs the control-point bleed and weighs its time limit and
+ *  victory type in ticket shares: the `mode == 2 || 4 || 5` block of
+ *  `gameStatusPlaying` (0x08151bb5). */
 export function ticketsDecide(gpm) {
   return gpm === GAME_PLAY_MODE.conquest || gpm === GAME_PLAY_MODE.coop
     || gpm === GAME_PLAY_MODE.objective;
 }
+
+/** Whether a side out of tickets ends the round: Conquest and Co-op only
+ *  (`cmp eax,2` / `cmp eax,4` at 0x08151549..0x08151558, ledger ROUND-2).
+ *  ObjectiveMode bleeds but ends when an objective's `TeamWinsAward` names a
+ *  winner, which the viewer does not model. */
+export function ticketsEnd(gpm) {
+  return gpm === GAME_PLAY_MODE.conquest || gpm === GAME_PLAY_MODE.coop;
+}
+
+/** The medals `GameServer::giveMedal` (0x081533f0, ledger ROUND-9) hands out
+ *  at the end of a round, in the order of `getPlayersSortedByScore`: the
+ *  first player one gold (`BFPlayer+0xe8`), the second one silver (`+0xec`),
+ *  the third one bronze (`+0xf0`). */
+export const MEDALS = Object.freeze(['gold', 'silver', 'bronze']);
 
 /** `ScoreManager::setVictoryType`'s values. `none` is what `reset` writes
  *  (0x08161bf0) and what the debriefing refuses to build on. */
@@ -507,15 +522,16 @@ export function createRoundState({
    */
   function flagScore({ player = null, team = 0, msg = SCORE_MSG.flagCapture } = {}) {
     if (player == null || !playing()) return;
+    // `pay` counts a key the side's TeamScore shares (`attacks`, `defences`)
+    // on the side as well; the flag captures are the side's `captures`
+    // (`TeamScore+8`, CTF-6) under the player's own `flags`.
     if (msg === SCORE_MSG.flagCapture) {
       pay(player, 'flags', 'capture', 1, team);
       if (round.teams[team]) round.teams[team].captures += 1;
     } else if (msg === SCORE_MSG.attack) {
       pay(player, 'attacks', 'attack', 1, team);
-      if (round.teams[team]) round.teams[team].attacks += 1;
     } else if (msg === SCORE_MSG.defence) {
       pay(player, 'defences', 'defence', 1, team);
-      if (round.teams[team]) round.teams[team].defences += 1;
     }
     checkScoreLimit();
   }
@@ -542,11 +558,12 @@ export function createRoundState({
     };
   }
 
-  /** The ticket law of `gameStatusPlaying` (0x08151458..0x0815155e), for the
-   *  modes that end on tickets: a side under one ticket loses, both at once
-   *  is a draw. */
+  /** The ticket law of `gameStatusPlaying` (0x08151549..0x0815155e,
+   *  0x08151b24), for the modes that end on tickets (`ticketsEnd`: Conquest
+   *  and Co-op, ROUND-2): a side under one ticket loses, both at once is a
+   *  draw. */
   function decideOnTickets() {
-    if (!playing() || !ticketsDecide(round.gamePlayMode)) return;
+    if (!playing() || !ticketsEnd(round.gamePlayMode)) return;
     const out1 = round.tickets[1] < 1;
     const out2 = round.tickets[2] < 1;
     if (!out1 && !out2) return;
@@ -653,6 +670,32 @@ export function createRoundState({
     return lost;
   }
 
+  /**
+   * `giveMedal`'s three (ROUND-9): every player sorted by score, best first,
+   * and the first three given gold, silver and bronze. `roster` names the
+   * players the page knows, `{ id, team }`, so one who never scored (and so
+   * has no tally) still stands in the list; it is optional. How the engine's
+   * `getPlayersSortedByScore` orders a tie is not read: here the earlier
+   * tally keeps its place. Read before `restart`, which wipes the tallies.
+   * Returns `[{ playerId, team, medal, score }]`, at most three.
+   */
+  function medals(roster = []) {
+    const rows = new Map();
+    for (const row of round.counts.values()) rows.set(row.playerId, row);
+    for (const entry of roster ?? []) {
+      if (entry?.id == null) continue;
+      const row = rows.get(entry.id);
+      if (!row) rows.set(entry.id, { playerId: entry.id, team: entry.team ?? 0, score: 0 });
+      else if (!(row.team === 1 || row.team === 2) && (entry.team === 1 || entry.team === 2)) {
+        rows.set(entry.id, { ...row, team: entry.team });
+      }
+    }
+    return [...rows.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MEDALS.length)
+      .map((row, i) => ({ playerId: row.playerId, team: row.team, medal: MEDALS[i], score: row.score }));
+  }
+
   /** Whether a multiplayer server's restart timer has run out. */
   function restartDue() {
     return round.status === 'endGame' && round.restartIn <= 0;
@@ -687,7 +730,7 @@ export function createRoundState({
 
   Object.assign(round, {
     tally, kill, suicide, capture, flagScore, tick, spend, endRound, restart,
-    restartDue, shares,
+    restartDue, shares, medals,
   });
   return round;
 }

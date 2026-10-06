@@ -256,6 +256,27 @@ results.parse.describeKeyboard = describeBinding(
   p.axisPitch = controls.axis('c_PIPitch');
   p.axisYaw = controls.axis('c_PIYaw');
   p.axisThrottle = controls.axis('c_PIThrottle');
+  // The keys against the stick on one channel: two slots, the larger wins,
+  // never the sum (MLK-9, MLK-15). Yaw: keys primary, stick secondary; roll:
+  // stick primary, arrows secondary.
+  page.keys.add('KeyA');
+  page.keys.add('ArrowLeft');
+  p.slotYawKeyAgainstStick = controls.axis('c_PIYaw');
+  p.slotRollKeyAgainstStick = controls.axis('c_PIRoll');
+  page.keys.delete('KeyA');
+  page.keys.delete('ArrowLeft');
+  // Throttle: W/S primary, the lever secondary at 0.9 (inverted): the lever
+  // is larger than a released pair and smaller than nothing a key gives.
+  page.keys.add('KeyW');
+  p.slotThrottleKeyAgainstLever = controls.axis('c_PIThrottle');
+  page.keys.delete('KeyW');
+  setPad({ connected: true, buttons: [], axes: [0.2, 0, 0, 0] });
+  controls.pollGamepad();
+  page.keys.add('ArrowLeft');
+  // A stick held a little right and the left arrow: the arrow's full step,
+  // not the 0.06 the stick would have taken off it.
+  p.slotRollSmallStickAndArrow = controls.axis('c_PIRoll');
+  page.keys.delete('ArrowLeft');
 
   // a pad button feeds `held` without any DOM event
   setPad({ connected: true, buttons: [{ pressed: true }, { pressed: false },
@@ -288,6 +309,45 @@ results.parse.describeKeyboard = describeBinding(
   controls.resetDefaults();
   p.afterResetMap = controls.codeTriggers('KeyM');
   p.afterResetSource = controls.describe().source;
+}
+
+// --- the map's own fill: a slot replaced, a secondary refused (MLK-15) --------
+
+{
+  const page = makePage({ captured: true, optPilot: { checked: true },
+    occupancy: { rootKind: 'air', isActiveRoot: () => true } });
+  const controls = createControls(page);
+  await controls.importFiles([{
+    name: 'Air.con',
+    text: [
+      'ControlMap.create AirPlayerInputControlMap',
+      // A secondary line before any primary for the channel: refused.
+      'ControlMap.addKeysToAxisMapping c_PIYaw IDFKeyboard IDKey_D IDKey_A 1',
+      'ControlMap.addKeysToAxisMapping c_PIYaw IDFKeyboard IDKey_E IDKey_Q',
+      // Two primary lines: the second replaces the first.
+      'ControlMap.addKeysToAxisMapping c_PIRoll IDFKeyboard IDKey_L IDKey_J',
+      'ControlMap.addKeysToAxisMapping c_PIRoll IDFKeyboard IDKey_ArrowRight IDKey_ArrowLeft',
+      // A secondary after its primary is kept.
+      'ControlMap.addKeysToAxisMapping c_PIPitch IDFKeyboard IDKey_ArrowUp IDKey_ArrowDown',
+      'ControlMap.addKeysToAxisMapping c_PIPitch IDFKeyboard IDKey_Numpad8 IDKey_Numpad2 1',
+    ].join('\n') + '\n',
+  }]);
+  const read = (trigger, codes) => {
+    page.keys.clear();
+    for (const code of codes) page.keys.add(code);
+    const v = controls.axis(trigger);
+    page.keys.clear();
+    return v;
+  };
+  results.fill = {
+    refusedSecondary: read('c_PIYaw', ['KeyD']),
+    primaryAfterIt: read('c_PIYaw', ['KeyE']),
+    replacedPrimary: read('c_PIRoll', ['KeyL']),
+    replacingPrimary: read('c_PIRoll', ['ArrowRight']),
+    keptSecondary: read('c_PIPitch', ['Numpad8']),
+    // Both slots held opposite ways at full: a tie, the primary's.
+    tie: read('c_PIPitch', ['ArrowDown', 'Numpad8']),
+  };
 }
 
 // --- the crosshair colour (GeneralOptions.con's `game.setCrossHairColor`) ----

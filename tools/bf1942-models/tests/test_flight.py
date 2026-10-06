@@ -958,6 +958,52 @@ class FlightModelTests(unittest.TestCase):
         for key, value in over.items():
             self.assertEqual(1.0, abs(value), key)
 
+    def test_a_flick_past_full_deflection_is_spent_over_the_ticks_after(self) -> None:
+        # `rememberExcessInput` on the Corsair's elevators (MLK-16, GUN-2):
+        # a mouse rate of 3.46 for one tick is three full ticks and 0.46.
+        e = self.results["excessInput"]
+        self.assertEqual(["Corsair/c_PIPitch/pitch"], e["remembering"])
+        self.assertEqual([-1, -1, -1, -0.46, 0, 0], e["flickSpent"])
+        # The servo goes on moving toward full deflection while the backlog
+        # lasts (3 a second over the 20 degree half-range, 0.1 a tick).
+        self.assertEqual([-0.1, -0.2, -0.3, -0.4, -0.3, -0.2], e["flickSurface"])
+        # Without the flag the excess is clipped and gone.
+        self.assertEqual([None] * 6, e["plainSpent"])
+        self.assertEqual([-0.1, 0.0, 0.0, 0.0, 0.0, 0.0], e["plainSurface"])
+
+    def test_an_input_against_the_backlog_is_taken_whole(self) -> None:
+        e = self.results["excessInput"]
+        self.assertEqual([-1, 0.5, 0, 0], e["flipSpent"])
+        self.assertEqual(0, e["flipBacklog"])
+
+    def test_the_backlog_is_held_to_forty(self) -> None:
+        # Three seconds of a 3.47 hand: the backlog stops at -40 a tick before
+        # its spend, so 39 ticks of full deflection follow the release.
+        e = self.results["excessInput"]
+        self.assertEqual(39, e["heldFullAfterRelease"])
+        self.assertEqual([0, 0, 0], e["heldThen"])
+
+    def test_an_input_inside_full_deflection_passes_unchanged(self) -> None:
+        e = self.results["excessInput"]
+        self.assertEqual([-0.6] * 5, e["gentleSpent"])
+        self.assertEqual(0, e["gentleBacklog"])
+        # The ailerons declare nothing: clipped, nothing carried.
+        self.assertEqual([0.133333, 0.0, 0.0, 0.0], e["aileronFlick"])
+
+    def test_a_reset_carries_nothing_over(self) -> None:
+        self.assertEqual([-1, 0, 0], self.results["excessInput"]["resetSpent"])
+
+    def test_the_backlog_is_spent_once_a_tick_whatever_the_frame_rate(self) -> None:
+        # Two 1/60 s frames a tick, the hand on the first tick only.
+        self.assertEqual([-1, -1, -1, -1, -1, -1, -0.46, -0.46],
+                         self.results["excessInput"]["halfSteps"])
+
+    def test_a_ships_ramp_servo_carries_a_keys_step(self) -> None:
+        # Lcvp_Ramp: 45 deg/s over 90 degrees is half its travel a second;
+        # the step holds it at its bound and the release brings it back at
+        # the same rate.
+        self.assertEqual([0.5, 1.0, 1.0, 0.5], self.results["rampServo"])
+
     def test_the_extracted_desert_combat_helicopters_fly(self) -> None:
         real = self.results.get("realGlbs")
         if real is None:

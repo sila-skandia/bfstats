@@ -41,7 +41,7 @@ import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
  * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `mouseInput`,
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
- * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierDead`, `spawnLayout`, `sun`,
+ * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierBody`, `soldierDead`, `spawnLayout`, `sun`,
  * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`, `vehicleDamage`,
  * `warmSubtree`, `warmups`, `world`.
  */
@@ -57,6 +57,9 @@ export function createHandWeapon(page) {
     get handWeapon() { return soldierKit.handWeapon; }, get KITS() { return page.KITS; },
     get MAPS_BASE() { return page.MAPS_BASE; }, get params() { return page.params; },
     get SOLDIER_MAX_HP_FALLBACK() { return page.SOLDIER_MAX_HP_FALLBACK; },
+    // The soldier templates' own numbers (`gaits.json`): the medic bag's and
+    // the wrench's words (`healingPack`).
+    get soldierBody() { return page.soldierBody; },
     get spawnLayout() { return page.spawnLayout; },
     get teamNation() { return page.teamNation; },
   });

@@ -620,8 +620,9 @@ export function createLocalPlayer(page) {
     let look = null;
     // The control map folds the devices into the engine's channels: the
     // keyboard's key pairs and the joystick's axes are bindings of the same
-    // triggers (`c_PIThrottle`, `c_PIRoll`, ...), and `controls.axis` sums
-    // them. The touch pad stays the page's own override, exactly as before.
+    // triggers (`c_PIThrottle`, `c_PIRoll`, ...) in a channel's two slots,
+    // and `controls.axis` keeps the larger, never the sum (ledger MLK-9,
+    // MLK-15). The touch pad stays the page's own override, exactly as before.
     const axis = t => page.axis(t);
     const heldTrigger = t => page.held(t);
     if (seated) {
@@ -641,10 +642,13 @@ export function createLocalPlayer(page) {
       // keys) and the look pair is the router's zero; held, the stick is let
       // go below and the counts never reached the stage (`lookDelta` turned
       // the head with them). A profile that binds no mouse axis to the stick
-      // -- the owner's flies on a joystick -- gets nothing from it here.
-      const pilotNeedsKey = page.lookNeedsKey();
-      const lookHeld = pilotNeedsKey && page.lookKeyHeld();
-      const mouse = pilotNeedsKey && !lookHeld
+      // -- the owner's flies on a joystick -- gets nothing from it here. A
+      // keyed passenger (DC's MH-6 bench, MLK-14) routes the same way; his own
+      // PCO binds no part to the stick, and only the pilot's word reaches
+      // the hull (`world-vehicle-tick.js`, the root seat's input).
+      const needsKey = page.lookNeedsKey();
+      const lookHeld = needsKey && page.lookKeyHeld();
+      const mouse = needsKey && !lookHeld
         ? { x: page.mouseInput.x, y: page.mouseInput.y } : null;
       const stick = t => page.axis(t, mouse);
       // The engine's PlayerInput, named by action. `forwardKeys` and
@@ -673,7 +677,7 @@ export function createLocalPlayer(page) {
       // axes instead.
       routeFlightInput(input, lookHeld);
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
-      if (pilotNeedsKey) routeLookPair(look, lookHeld);
+      if (needsKey) routeLookPair(look, lookHeld);
     } else if (onFoot) {
       page.feedMobileLook(dt);
       page.pumpLook(lookTicks);
@@ -687,9 +691,10 @@ export function createLocalPlayer(page) {
       // water spends it.
       if (localPlayer.soldier?.swim?.swimming) localPlayer.prone = false;
       // The touch drag forwards like a held W (`touchFlying`), but only into
-      // neutral: a held S still brakes, and two held keys cancel as they
-      // always did. `axis` carries the W-S pair; the touch term adds only
-      // when the pair is not already speaking.
+      // neutral: a held S still brakes. `axis` carries the W-S pair, whose
+      // first key wins when both are down (`buttonsToAxis`, MLK-10), so W and
+      // S together walk forward; the touch term adds only when the pair is not
+      // already speaking.
       const throttle = axis('c_PIThrottle');
       input = {
         forward: page.clampMobileInput(
