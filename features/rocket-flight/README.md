@@ -1,8 +1,10 @@
 # Rocket flight: gravity, the motor, and where a round lands
 
-Status: gravity built 2026-10-06 (Desert Combat parity round, package
-`rounds`). Every round, drawn or invisible, falls by its own
-`gravityModifier`.
+Status: built 2026-10-06 (Desert Combat parity round, package `rounds`).
+Every round, drawn or invisible, falls by its own `gravityModifier` (§1, §2),
+and a rocket flies on its own `Engine` and the box drag law, both read from
+the server binary (§3, ledger PHY-16..PHY-20). Not checked against the real
+game: see Open.
 
 ## 1. Every round falls by its own data
 
@@ -36,7 +38,8 @@ ground, 2 m launch height). With the motor still the 25 m/s² placeholder (§3):
 | `BM21_Rocket` | still climbing at 20 s, 1.85 km up | lands 1.10 km out | 731 m |
 | `SCUD-BRocket` | still climbing at 20 s, 4.50 km up | lands 3.83 km out | 1.60 km |
 
-These ranges are only as good as the motor (§3).
+These were the ranges with gravity alone fixed; §3 has them on the real
+motor.
 
 ## 2. Invisible rounds and tracers fall too
 
@@ -72,11 +75,91 @@ tracer, fresh or stale, drop 0 before and after; the 25 mm drops 0.381 m
 (0 before); `CBU87Prj` 1.903 m (0 before) with the streak pitched 26 degrees
 down its path; DC's 50 cal round 0 and its tracer 1.903 m.
 
+## 3. A rocket flies on its own engine
+
+`projectile-flight.js` gave every `kind: 'rocket'` round a flat 25 m/s²
+(parity-audit P-2), with no top speed, and never read the baked `parts`.
+Read on lnxded on 2026-10-06 (ledger PHY-16..PHY-20, physics.md section 5,
+"A rocket is a round with an engine"):
+
+- A projectile's `Engine` is stepped like a vehicle's: `Engine::handleUpdate`
+  from the object update, `PhysicsEngine::updatePhysics` from the physics
+  node manager after it, and the push lands on the round's own physics node
+  (PHY-16).
+- `c_ETRocket` (0x11) starts itself and pins its throttle input to 1.0. Its
+  revs follow the gearbox on the servo's `T1` against the load its own push
+  feeds back, and it pushes with the aircraft's law,
+  `fwd * (0.1|revs| + e|e|) * 3.5 * differential / 0.94` with
+  `e = revs - rho (v.fwd) / noPropellerEffectAtSpeed`. Below the water level it
+  stops (PHY-17, PHY-18).
+- A full body (`setHasPointPhysics 0`) also takes its children's torque and
+  drags by the box law on its own geometry's box; a point body takes the
+  linear push only and never turns (PHY-19, PHY-20).
+
+Built:
+
+- `viewer/rocket-motor.js` is the motor: `isAirMotor` picks the Engine parts
+  that push a round through the air (bit 0 and bit 4 set, bit 3 clear: in the
+  shipped data exactly `c_ETRocket`), and `RocketMotor.tick` runs the servo,
+  the gearbox and the thrust on the engine's own 30 Hz tick, holding the push
+  between ticks, so the spool-up is the engine's at any frame rate.
+- `round-launch.js` gives a round its motors, its drag box (measured off the
+  drawn body once per group) when it is a full body, and, for a point body,
+  the launch axis it will push along for good.
+- `projectile-flight.js` `pushMotors` and `boxDrag`. The nose of a full body is
+  held on its flight path, which is the tail `Wing`'s work in the engine (see
+  Open, item 2), so the push is along the velocity and the box law reduces to
+  its frontal ellipse. Projected onto the drawn mesh, a frame behind the path,
+  the law put a sliver of the flow on the long side faces and moved a 45
+  degree MLRS landing by 5% between 30 and 144 Hz.
+
+The box law now also flies the bombs and the aircraft torpedo in the air,
+which declare `setHasPointPhysics 0` too. A Stuka bomb dropped at 150 m/s from
+500 m lands 1211 m out instead of 1229 m (`test_bomb_release.py`).
+
+Measured (`rocket_flight_harness.mjs`, 2 m launch height, flat ground):
+
+| Round | 30 deg | 45 deg | top speed at 45 deg | placeholder, 45 deg |
+|---|---|---|---|---|
+| `KatyushaRocket` (vanilla) | 229 m | 481 m | 112 m/s | 469 m |
+| `MLRSRocket` | 807 m | 1313 m | 141 m/s | 2043 m |
+| `BM21_Rocket` | 595 m | 952 m | 120 m/s | 1102 m |
+| `SCUD-BRocket` | 1519 m | 4057 m | 372 m/s | 3830 m |
+
+The landing moves by 0.3% between 30, 60 and 144 Hz.
+
+The motor-carried rounds that declare `gravityModifier 0`, flown level 60 m
+up for their life (the viewer caps a round at 20 s):
+
+| Round | Launch | 1 s | 5 s | 10 s | Body | Placeholder at 10 s |
+|---|---|---|---|---|---|---|
+| `HydraRocket` | 150 | 112 | 137 | 137 | full | 92 |
+| `HellfireRocket` | 350 | 80 | 82 | 82 | full | 29 |
+| `Aim9` | 350 | 167 | 104 | 101 | full | 177 |
+| `AA-10` | 500 | 114 | 70 | 70 | full | 99 |
+| `Rocket_MagicII` | 300 | 228 | 265 | 266 | full | 319 |
+| `AT2Rocket` | 350 | 16 | 16 | 16 | full | 23 |
+| `StingerMissile` (1.3 s) | 300 | 286 | | | point | 305 |
+| `SA-3Rocket` (1.3 s) | 250 | 237 | | | point | 274 |
+| `DefenderTOW` (DC Final) | 150 | 189 | 515 | 817 | point | 400 |
+
+Speeds in m/s. Every full body finds a top speed. The Hellfire (`drag 2`,
+`mass 5`), the AA-10 and the AT-2 (whose `Rocket_AT2` box is 1.44 x 1.46 m
+across) find a slow one: their authored drag over their geometry outweighs
+the motor. The placeholder slowed them too, under the point body's sphere law.
+The TOW is a point body of 500 kg at `drag 0.1`, so only the thrust law
+limits it, at about 1.5 km/s.
+
 ## How it is checked
 
-`tests/test_rocket_flight.py` runs the harness. `RoundsMatchTheTrees` checks the
-harness's copies of the rounds against the shipped glbs, when they are
-extracted on the machine.
+`tools/bf1942-models/tests/test_rocket_flight.py` runs
+`rocket_flight_harness.mjs` through the real `gunfire.js` under node: the four
+artillery rockets at 30 and 45 degrees, the landing at 30, 60 and 144 Hz, the
+motor alone tick by tick, every motor-carried round of Desert Combat level
+for its life, and the invisible rounds and tracers. `RoundsMatchTheTrees`
+checks the harness's copies of the rounds against the shipped glbs when they
+are extracted on the machine. `test_assemble.py` pins the tracer's gravity in
+the exporter, `test_bomb_release.py` the bomb under the box law.
 
 ## Open
 
@@ -86,3 +169,29 @@ extracted on the machine.
    it can meet the ground in front of the launcher. `con.py` parses only the
    `setHasCollisionPhysics` spelling, not the projectile's
    `hasCollisionPhysics`, so the exporter never carries it.
+2. **The tail wing is inferred, not read.** A full body's nose is held on its
+   flight path, as if its `Wing` weathervaned it at once, and the wing's lift
+   is taken as zero at zero incidence. The engine flies the round as a rigid
+   body: `PhysicsWing` (client `0x0057fbf0`) pushes at the wing's own position
+   behind the centre of mass, with the inertia `PhysicsNode` gives the round.
+   A real round in a gravity turn will trail its nose above the path, carry a
+   little incidence, and so a little lift and a little side-face drag. Reading
+   the round's inertia and the wing's moment would settle how much.
+3. **Nothing here is checked against the game.** The laws are read; what they
+   add up to on Desert Combat's data (a Hellfire at 82 m/s, an AT-2 at
+   16 m/s, a TOW past 800 m/s) has not been watched in DC. Vanilla's Katyusha
+   (481 m at 45 degrees, 229 m at 30) can be: a lab recording of a Katyusha
+   salvo on a known launcher pitch (skill `bf1942-server-lab`) would check the
+   gravity, the motor and the drag at once.
+4. The torpedo's water run (`viewer/torpedo-run.js`, plane-bombs-and-torpedoes)
+   thrusts with its throttle at 1.0. PHY-17 says the revs are pinned to 1.0
+   only when a `c_ETTorpedo` is out of the water; under it, as for the rocket,
+   they follow the gearbox against the load (PHY-18). That would bring its
+   158 m/s terminal speed down. PHY-16 also answers the file's open "whether a
+   Projectile's child Engine is stepped at all": it is.
+5. LOOP-1: the gearbox's 0.05 is per tick and the motor runs at the client's
+   30 Hz. If the server ticks at 60 Hz, a server-side rocket spools twice as
+   fast.
+6. Desert Combat's `Silkworm` has a `c_ETRocket` and a `c_ETTorpedo`, two wings
+   and four floaters. The rocket flies it in the air; nothing here makes it
+   skim the sea.

@@ -37,10 +37,10 @@ import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 // widening (`advanceTracers`), so past convergence the pair fades to the faint
 // specks retail shows instead of running on as two bright lines.
 export const TRACER_MIN_SCREEN_PX = 2.5;
-// c_ETRocket motors light after launch; a gentle ramp reads as the Katyusha's
-// kick without turning the rocket into a bullet.
-const ROCKET_ACCEL = 25;         // m/s^2
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
+/** The ellipse inscribed in each face of the drag box (physics.md section 3), with
+ *  the engine's own `3.14f` for pi (`ds:0x86d1384`, read at `0x082545b8`). */
+const BOX_AREA = 3.14 * 0.25;
 // Per-frame lid on collision queries. `features/flyable-vehicles/collision-and-crash.md`
 // budgets the swept narrowphase at 0.1-0.3 ms worst case for one body; a held
 // burst from a twelve-round-a-second gun keeps tens of rounds in the air, and
@@ -64,6 +64,77 @@ const _restN = new THREE.Vector3();
 const _restF = new THREE.Vector3();
 const _restR = new THREE.Vector3();
 const _restM = new THREE.Matrix4();
+// Scratch for the motor and the box drag law.
+const _nose = new THREE.Vector3();
+const _engineAt = new THREE.Vector3();
+
+/**
+ * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-16..19).
+ *
+ * The push is along the engine's own forward axis, which for every shipped
+ * rocket is the round's nose (each Engine sits on the axis with `setRotation
+ * 0/0/0`), at the engine's own height for the air density and the water test.
+ * Where the nose points is the body's business:
+ *
+ *  - a full physics body (`setHasPointPhysics 0`, `shot.dragBox` set) has its
+ *    tail `Wing` weathervane it into the flow: `PhysicsWing` pushes along
+ *    `-surfaceUp` at the wing's own position, behind the centre of mass. The
+ *    viewer has no inertia for a round, so the weathervaning is taken as
+ *    complete, the nose as the flight path and the wing's lift, at zero
+ *    incidence, as zero (inferred, not read; `features/rocket-flight` open
+ *    item 2);
+ *  - a point body never turns (`PointPhysicsNode` has no torque and keeps
+ *    only `addAccelerationAtAbsolutePosition`'s linear part, `0x08256620`), so
+ *    its nose is where the muzzle pointed (`shot.thrustAxis`). Every shipped
+ *    point-body rocket also declares `gravityModifier 0`.
+ *
+ * `timeScale` is 1 on the map page; the model browser slows fast rounds, and
+ * the motor then reads the real speed and its push is scaled by the square,
+ * as `gravityScale` is.
+ */
+function pushMotors(guns, shot, dt) {
+  const scale = shot.timeScale || 1;
+  const q = shot.mesh.quaternion;
+  if (shot.thrustAxis) _nose.copy(shot.thrustAxis);
+  else if (shot.velocity.lengthSq() > 1e-12) _nose.copy(shot.velocity).normalize();
+  else _nose.set(0, 0, -1).applyQuaternion(q);
+  const along = shot.velocity.dot(_nose) / scale;
+  const water = guns.collider?.waterLevel;
+  for (const motor of shot.motors) {
+    const p = motor.position;
+    _engineAt.set(p[0], p[1], p[2]).applyQuaternion(q).add(shot.mesh.position);
+    const underWater = Number.isFinite(water) && _engineAt.y < water;
+    const accel = motor.tick(dt * scale, along, _engineAt.y, underWater);
+    if (accel) shot.velocity.addScaledVector(_nose, accel * scale * scale * dt);
+  }
+}
+
+/**
+ * The box drag law of a full physics body (PHY-4; `PhysicsNode::
+ * updatePositionalDragAdvanced` lnxded `0x08252f50`), into `out`:
+ *
+ *   accel = -drag*|v|/mass * (Ax proj0(v) + Ay proj1(v) + Az proj2(v))
+ *
+ * with `Ax = (pi/4) DY DZ` and the rest, the ellipses in the geometry box's
+ * faces, and `projN` the flow along the body's own axis N. A round's nose is
+ * held on its flight path here (its fins' work, see `pushMotors`), so the flow
+ * is all along its own Z and the law is `-drag*|v|/mass * Az * v`: the
+ * frontal ellipse alone. Projecting onto the drawn mesh instead, whose
+ * orientation is a frame old, put a sliver of the flow on the long side faces
+ * (6.6 times the frontal area on an MLRS round) and flew a lift whose size
+ * depended on the frame rate. Quadratic in speed, so a slowed round needs no
+ * correction. The submersion scale is left at 1: a round that runs in water
+ * is `torpedo-run.js`'s, and every other one bursts on it. The full form is
+ * `aircraft.js` `applyBoxDrag`.
+ */
+function boxDrag(spec, velocity, box, out) {
+  out.set(0, 0, 0);
+  const mass = spec?.mass, drag = spec?.drag;
+  const speed = velocity.length();
+  if (!(mass > 0) || !(drag > 0) || !(speed > 0)) return out;
+  const frontal = BOX_AREA * box[0] * box[1];
+  return out.copy(velocity).multiplyScalar(-drag * speed * frontal / mass);
+}
 
 /**
  * Lay a fuse round on the surface it is touching, instead of pointing it down
@@ -468,10 +539,10 @@ export function advanceProjectiles(guns, dt) {
         continue;
       }
     } else if (!shot.resting) {
-      if (shot.kind === 'rocket') {
-        const speed = shot.velocity.length();
-        shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
-      }
+      // The motor, from the round's own baked Engine (`pushMotors`). It used
+      // to be a flat 25 m/s^2 for every `kind: 'rocket'` round (parity-audit
+      // P-2), with no top speed.
+      if (shot.motors) pushMotors(guns, shot, dt);
       // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
       // it per projectile (IMP-7): 0.5 on the Panzer IV's and the Chi-ha's
       // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
@@ -485,8 +556,13 @@ export function advanceProjectiles(guns, dt) {
       // extractor change, because no projectile carried `mass` or `drag`; for
       // a 250 kg bomb at `drag 0.08` it is about 0.12 m/s^2 at 150 m/s, so it
       // is a correction and not a change of shape. `speedScale` is 1 wherever
-      // this matters, so the term is applied on real time.
-      if (shot.boundingRadius) {
+      // this matters, so the term is applied on real time. A full physics
+      // body (`setHasPointPhysics 0`: the rockets, the bombs, the torpedo in
+      // the air) takes the box law instead, which is the engine's for it.
+      if (shot.dragBox) {
+        boxDrag(shot.group.stats.projectile, shot.velocity, shot.dragBox, _drag);
+        shot.velocity.addScaledVector(_drag, dt);
+      } else if (shot.boundingRadius) {
         dragAcceleration(shot.group.stats.projectile, shot.velocity,
                          shot.boundingRadius, 0, _drag);
         shot.velocity.addScaledVector(_drag, dt);
