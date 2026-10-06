@@ -329,7 +329,9 @@ def scale_standard_mesh(mesh: stdmesh.StandardMesh,
     hands the scale to `SimpleCollisionMesh::getDistanceToGeometry`
     (0x083c9f70), which divides the query into the file's frame and multiplies
     the hit back out (SM-13). So both the drawn levels and the collision
-    layers carry it; normals take the inverse scale, renormalised.
+    layers carry it; normals take the inverse scale, renormalised. The
+    instance's bounding box does not, so a ladder's climb measure reads the
+    file (`_ladder_spec_for`).
     """
     if scale is None:
         return mesh
@@ -1332,8 +1334,11 @@ class Assembler:
         if not entry:
             return None
         try:
-            mesh = scale_standard_mesh(stdmesh.parse(self.meshes.read(entry), entry),
-                                       geometry_scale(template))
+            # Unscaled on purpose: the climb reads the ladder's bounding box
+            # (LADDER-3), and a mesh instance's box is the file's whatever its
+            # `GeometryTemplate.scale` (SM-13). DC's Pantsyr ladder is drawn at
+            # 0.65 and climbed at its full length.
+            mesh = stdmesh.parse(self.meshes.read(entry), entry)
         except stdmesh.MeshError:
             return None
         if not mesh.lods:
