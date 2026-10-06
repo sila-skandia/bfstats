@@ -738,7 +738,9 @@ class StalemateTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.s = run_harness()["stalemate"]
+        results = run_harness()
+        cls.s = results["stalemate"]
+        cls.e = results["exitVelocity"]
 
     def test_a_settled_single_shot_aim_fires(self) -> None:
         # 1.0 -> 0.999 closes by 1 mm: the closest approach, 1.0 m inside 2 m.
@@ -753,6 +755,15 @@ class StalemateTests(unittest.TestCase):
         self.assertTrue(self.s["noseDown10Down12"])
         self.assertTrue(self.s["flatUp11"])
         self.assertFalse(self.s["flatUp25"])
+
+    def test_the_lead_uses_the_weapon_templates_exit_velocity(self) -> None:
+        # `Weapon::getExitVelocity` 0x085ecb50 reads WeaponTemplate +0x28,
+        # filled from the FireArms only while it is 0 (AI-143): DC's MLRS 72
+        # over its rocket's FireArms speed, a -5 bomb kept.
+        e = self.e
+        self.assertEqual(e["speeds"], [72, 100, 100, -5])
+        # `useAimerOnly` holds at once only with the barrel on the solution.
+        self.assertEqual(e["aimerOnly"], [True, False, False, False])
 
     def test_the_change_plan_is_the_engines(self) -> None:
         # `BBPChange::createPlan` 0x0858b5c0 (AI-138): inside 12.5 m no walk,

@@ -705,7 +705,7 @@ function gunSeatGun(bot) {
     const e = node.matrixWorld.elements;
     origin = [e[12], e[13], e[14]];
   }
-  return { weapon, group, origin, ballistics: groupBallistics(group, 600) };
+  return { weapon, group, origin, ballistics: groupBallistics(group, 600, weapon) };
 }
 
 // --- The fire correction: `FireCorrectionData`, BotMain +0x138 --------------
@@ -961,6 +961,24 @@ export function turretMiss(bot, aim = bot._turretAim) {
   const t = aim.time, v = aim.speed, g = aim.gravity;
   const ix = frame.f[0] * v * t, iy = frame.f[1] * v * t + 0.5 * g * t * t, iz = frame.f[2] * v * t;
   return Math.hypot(aim.predicted[0] - ix, aim.predicted[1] - iy, aim.predicted[2] - iz);
+}
+
+/**
+ * `weaponTemplate.useAimerOnly` (WeaponTemplate +0x5, AI-143):
+ * `BAPCConPrecision::evaluate` 0x0854b570 holds at once, before the miss
+ * test, when the weapon sets it and the barrel's forward (`getAimerTransform`
+ * row 2) dotted with the Aimer's firing direction (`getLastAimVec`, +0x138)
+ * is at least 1.0 (0x0854b684..0x0854b68b): the barrel lies along the
+ * solution to the float precision of the two stored vectors (their
+ * components are single floats; the dot is summed wider and compared with
+ * 1.0). Otherwise the miss test runs as for any weapon.
+ */
+export function aimerOnlyHolds(bot, aim = bot._turretAim, weapon = bot.weapons?.[bot.weaponIndex]) {
+  if (!weapon?.useAimerOnly || !aim?.valid || !aim.dir) return false;
+  const frame = barrelFrame(bot);
+  if (!frame) return false;
+  const f = Math.fround;
+  return f(frame.f[0]) * f(aim.dir[0]) + f(frame.f[1]) * f(aim.dir[1]) + f(frame.f[2]) * f(aim.dir[2]) >= 1.0;
 }
 
 /**

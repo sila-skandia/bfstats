@@ -19,7 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extract_vehicle_ai import GAME, basic_temp, control_info, extract, is_anti_aircraft, parse_objects_con  # noqa: E402
+from extract_vehicle_ai import GAME, basic_temp, control_info, extract, is_anti_aircraft, parse_objects_con, parse_weapons_con  # noqa: E402
 
 AA_ALLIES = """
 rem *** Plugins ***
@@ -271,6 +271,26 @@ class ChainExtractTests(unittest.TestCase):
         self.assertIn("Carrier_Siege", v["Carrier@Siege"]["seats"])
 
 
+class WeaponTemplateWordsTests(unittest.TestCase):
+    """`weaponTemplate.exitVelocity` (WeaponTemplate +0x28, the speed the
+    Aimer leads with) and `useAimerOnly` (+0x5, `BAPCConPrecision`'s aligned
+    hold), ledger AI-143. DC spells the second `useAimeronly` on half its
+    launchers; the console matches names in any case."""
+
+    def test_the_two_words(self):
+        w = parse_weapons_con(
+            "weaponTemplate.create MLRSMainGun\nweaponTemplate.exitVelocity 72\nweaponTemplate.useAimerOnly 1\n"
+            "weaponTemplate.create TOW_Launcher\nweaponTemplate.exitVelocity 300\nweaponTemplate.useAimeronly 1\n"
+            "weaponTemplate.create A10Snakes\nweaponTemplate.exitVelocity -5\n"
+            "weaponTemplate.create Browning\nweaponTemplate.maxRange 300\n")
+        self.assertEqual(72.0, w["mlrsmaingun"]["exitVelocity"])
+        self.assertTrue(w["mlrsmaingun"]["useAimerOnly"])
+        self.assertTrue(w["tow_launcher"]["useAimerOnly"])
+        self.assertEqual(-5.0, w["a10snakes"]["exitVelocity"])
+        self.assertNotIn("useAimerOnly", w["a10snakes"])
+        self.assertNotIn("exitVelocity", w["browning"])
+
+
 class ObjectAiTemplateTests(unittest.TestCase):
     """A record per object, by the object's own `ObjectTemplate.aiTemplate`.
 
@@ -389,6 +409,10 @@ class DesertCombatExtractTests(unittest.TestCase):
         # Their folders' records name no seat, so no node finds them.
         self.assertEqual({}, v["H-6"]["seats"])
         self.assertEqual({}, v["UH-60L"]["seats"])
+        # The launchers' own lead speeds reach the seats (AI-143).
+        gun = v["MLRS"]["seatsAi"]["MLRSRockets"]["aiWeapons"]["MLRSMainGun"]
+        self.assertEqual(72.0, gun["exitVelocity"])
+        self.assertTrue(gun["useAimerOnly"])
 
     def test_dc_final_gives_each_little_bird_its_own(self):
         v = extract("DC_Final", levels=False)["vehicles"]

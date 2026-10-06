@@ -1374,4 +1374,23 @@ results.roundGravity = {
   stale: groupBallistics({ stats: { velocity: 1000, projectile: 'barProjectile' } }).gravity,
 };
 
+// `weaponTemplate.exitVelocity` / `useAimerOnly` (ledger AI-143).
+{
+  const { aimerOnlyHolds } = await import('./bot-aim.js');
+  const group = { stats: { velocity: 100, projectile: { gravity: 1, kind: 'shell' } } };
+  const node = new THREE.Object3D();                 // the barrel looks down -z
+  node.updateMatrixWorld(true);
+  const gunBot = weapon => ({ weapons: [weapon], weaponIndex: 0,
+    vehicle: { kind: 'tank', groups: [{ ...group, node, muzzles: [node] }] } });
+  const along = { valid: true, dir: [0, 0, -1] };
+  const off = { valid: true, dir: [0, Math.sin(0.01), -Math.cos(0.01)] };
+  results.exitVelocity = {
+    // The template's own speed where it sets one, else the FireArms'.
+    speeds: [groupBallistics(group, 600, { exitVelocity: 72 }).speed, groupBallistics(group, 600, { exitVelocity: 0 }).speed,
+             groupBallistics(group, 600, null).speed, groupBallistics(group, 600, { exitVelocity: -5 }).speed],
+    aimerOnly: [aimerOnlyHolds(gunBot({ useAimerOnly: true }), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), off),
+                aimerOnlyHolds(gunBot({}), along), aimerOnlyHolds(gunBot({ useAimerOnly: true }), { valid: false, dir: [0, 0, -1] })],
+  };
+}
+
 process.stdout.write(JSON.stringify(results));
