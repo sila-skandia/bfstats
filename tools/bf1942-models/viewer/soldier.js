@@ -782,6 +782,9 @@ export class Soldier {
         }
         // Bounded like `parachuteEvents`: a caller that never drains it.
         if (this.obstacleTouches.length > 64) this.obstacleTouches.splice(0, this.obstacleTouches.length - 64);
+      } else {
+        // The climb's tick: a blast's push does not outlive it (KNOCK-6).
+        this.body.climbTick?.(this.clock.dt, this._tickInput);
       }
       // `Armor::update`'s water-damage timer, on the same tick the body just
       // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
