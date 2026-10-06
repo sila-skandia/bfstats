@@ -311,11 +311,15 @@ export function ownGeometryMeshes(node) {
  *      car's cockpit LOD, `WillyCockpitExternal`'s `Willy_Hull_M1`. A
  *      `PlayerControlObject` ends the search of its own sibling chain there.
  *
- * The glb does not carry a selector's class, so step 3 takes the first
- * `LodObject` whose kept alternative has geometry of its own. Across the
- * vanilla and DC land vehicles that is the cockpit LOD every time: the root's
- * own LOD (`DistCompareSelector2`, CID `0x94b2`) holds a geometry-less
- * `Bundle` and the steering-wheel LODs sit after the cockpit.
+ * A tree the exporter has stamped with each LodObject's `selectorKind` gets
+ * step 3 exactly: only a `DistCompareSelector` matches. An older tree does not
+ * carry the class, so step 3 takes the first `LodObject` whose kept
+ * alternative has geometry of its own. Across the vanilla and DC land
+ * vehicles and every fixed-wing aircraft in vanilla, XPack1, XPack2, DC and
+ * DC Final that is the cockpit LOD every time: the root's own LOD
+ * (`DistCompareSelector2`, CID `0x94b2`) holds a geometry-less `Bundle` and
+ * the steering-wheel LODs sit after the cockpit. Not on DC's AH-6 family,
+ * whose `H6Common` puts the control stick's `DistanceSelector` LOD first.
  *
  * @returns {THREE.Object3D|null}
  */
@@ -332,7 +336,8 @@ export function inertiaGeometryNode(root) {
     for (const node of list) {
       const kind = node.userData?.templateKind;
       if (kind === 'PlayerControlObject') return null;
-      if (kind === 'LodObject') {
+      const selector = node.userData?.selectorKind;
+      if (kind === 'LodObject' && (selector === undefined || String(selector).toLowerCase() === 'distcompareselector')) {
         const alternative = parts(node)[0];
         if (hasGeometry(alternative)) return alternative;
       }
