@@ -1,0 +1,23 @@
+{
+  "name": "dc-el_alamein-coop-realfire-rec",
+  "description": "dc-el_alamein-coop-rec with lab/realfire's realfire.so beside the recorder: every bot shot is a real projectile (a bots-only round otherwise fires fake, AI-134), so tank shells, SMAW/RPG-7, TOW and AT-5 missiles, cannon and MG rounds and the artillery fly where the recorder can measure them. The projectile laws are the engine's; the round itself is not a normal bot round (hits land by flight, not by the AI's dice). Build the preload first: `lab/realfire/build.sh`.",
+  "preload": ["~/bf1942-lab/server/recorder.so", "~/bf1942-lab/server/realfire.so"],
+  "levels": [
+    {
+      "map": "el_alamein",
+      "mode": "GPM_COOP",
+      "mod": "desertcombat"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 25,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 30"
+  ],
+  "human": "No client needed. One round is enough for the flights; then `lab.py stop`."
+}
