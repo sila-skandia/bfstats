@@ -82,9 +82,12 @@ class Statistics(unittest.TestCase):
         self.assertAlmostEqual(as7["g_eff_p50"], 14.5, delta=0.8)
 
     def test_a_humvee_off_its_pad(self):
-        hv = self.res["ground"]["Humvee"]
+        # Its bot drove at AI LOD 2 (no human near: AI-136), where the AI moves
+        # the hull, so it is kept out of the physics table.
+        self.assertNotIn("Humvee", self.res["ground"])
+        hv = self.res["ground_lod2"]["Humvee"]
         self.assertAlmostEqual(hv["t_to_5"], 0.76, delta=0.1)
-        self.assertAlmostEqual(hv["top_speed"], 14.25, delta=0.3)
+        self.assertAlmostEqual(hv["top_speed"], 14.25, delta=0.3)   # held 3 s; the Humvee's AI maxSpeed is 25
 
     def test_the_pad_table(self):
         pads = self.res["files"][0]["pads"]
