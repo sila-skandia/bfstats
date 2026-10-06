@@ -22,7 +22,7 @@ import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { handAimRay } from './hand-aim.js';
-import { KitAmmo } from './kit-ammo.js';
+import { KitAmmo, itemHeat } from './kit-ammo.js';
 import { createKitLoadout } from './kit-loadout.js';
 import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
@@ -387,6 +387,10 @@ export function createHandWeapon(page) {
       pos: { ...viewHip },   // the eased rig offset, chasing hip or zoom
       model: new DeviationModel({ deviation: data?.deviation }),
     };
+    // The barrel's heat, on the kit's entry for the item like its rounds
+    // (`kit-ammo.js` `itemHeat`): `hand-fire.js` steps it, gates the trigger
+    // on it and bills each pull to it, and the HUD's heat bar reads it.
+    hw.heat = itemHeat(hw.ammo, data);
     if (data) {
       const found = page.guns.collect(rig, {
         replace: false,          // the flown aircraft's guns must survive this

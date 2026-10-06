@@ -192,6 +192,9 @@ export function createHandFire(page) {
       hw.weaponNode.visible = false;
     }
     if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+    // The barrel's heat, once a pull however many barrels it fired: one add
+    // in `FireArms::Fire`, after the barrel loop (ledger GUN-14).
+    hw.heat?.registerShot(1);
     // A bullet round is resolved against the bots here only on a page whose
     // rounds cannot meet a soldier in flight. Where `guns.bodyCast` is installed
     // (`vehicle-hits.js`) the round itself meets the man's capsules, and a
@@ -502,6 +505,10 @@ export function createHandFire(page) {
       jumping: !page.soldier.grounded,
     });
 
+    // The barrel cools (and an overheat runs out) on the item's own clock,
+    // which, like the reload's below, is not running while he has no item.
+    if (!locked && hw.heat) hw.heat.step(dt);
+
     const magazine = hw.data?.magazine;
     if (locked) {
       // The reload clock is `FireArms::handleUpdate`'s, and that is not running on
@@ -563,8 +570,10 @@ export function createHandFire(page) {
       // `__setTrigger` stands in for the mouse under ?shots, where headless
       // Chromium never grants pointer lock — the capture gate would otherwise
       // dead-trigger every harness shot.
+      // A gun in its overheat delay, or still at full heat, fires nothing
+      // (GUN-14): `FireState.canFire`, the vehicle guns' own gate.
       const canFire = (page.captured || page.params.has('shots'))
-        && hw.reload <= 0 && hw.rounds > 0;
+        && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire);
       if (hw.data?.fireOnce) {
         // Semi-auto: one queued click becomes exactly one frame of trigger,
         // which `advance` turns into exactly one round; `cool` holds the
