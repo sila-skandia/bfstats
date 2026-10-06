@@ -802,6 +802,17 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(camera["chaseBehind"], 15.0)
         self.assertLess(camera["chaseBehind"], 20.0)
 
+    def test_the_box_is_the_engines_by_its_selector_class(self) -> None:
+        # `findLodGeometry` (COL-14) takes the first LodObject depth first
+        # whose selector is a `DistCompareSelector`. On a tree the exporter has
+        # stamped with each LodObject's `selectorKind`, DC's AH-6 gets its
+        # cockpit's exterior (H6_Fus_M1, 2.41 x 3.86 x 8.48 m), not the
+        # control stick whose `DistanceSelector` LOD the walk meets first
+        # (0.09 x 0.71 x 0.29 m, which an older tree still gives).
+        search = self.results["boxSearch"]
+        self.assertEqual("H6CockpitExternal", search["stamped"])
+        self.assertEqual("H6ControlStick_High", search["unstamped"])
+
     # --- helicopters: engines off the nose (ledger PHY-12..PHY-14) ----------
 
     def test_a_fixed_wing_airframe_flies_the_engine_laws(self) -> None:
