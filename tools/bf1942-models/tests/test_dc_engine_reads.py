@@ -285,6 +285,21 @@ def hulls(root: str) -> list[str]:
 
 class CollisionGateTests(unittest.TestCase):
 
+    def test_the_bare_spelling_reaches_the_word(self) -> None:
+        # MERGE GUARD. The gate above trusts `has_collision_physics`, and
+        # Desert Combat writes the bare `hasCollisionPhysics` on 1,473 lines
+        # (CON-15: the same word). Until `con.py` reads that spelling (the
+        # con-reader package), DC's ammo boxes (x489 placements), medic lockers
+        # (x207), supply huts, warehouses and hangars would lose their hulls in
+        # the next bake. This fails until then, on purpose: merge con-reader's
+        # change first, and bake only when this passes.
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", """
+ObjectTemplate.create Bundle Ammobox
+ObjectTemplate.hasCollisionPhysics 1
+""")
+        self.assertIs(True, library.object("Ammobox").has_collision_physics)
+
     def test_a_root_that_says_one_keeps_its_hull(self) -> None:
         self.assertEqual(["SolidWall"], hulls("SolidWall"))
 

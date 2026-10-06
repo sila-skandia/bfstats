@@ -160,7 +160,8 @@ in section 4):
 | XPack1 | 2 of 6 | 1 | 6 | `landrep1_supply_it`'s `rooflamp1_m1` (x6) |
 | XPack2 | 6 of 9 | 3 | 14 | `landrep1_supply`'s `rooflamp1_m1` (x9); `hospital_m1`'s `rooflamp1_m1` (x4); `Mimo_Railroad_M1` (says 0, x1) |
 | Desert Combat | 24 of 35 | 11 | 146 | `DC_slums_fencepost1_m1` (says 0, x55, Basrah's Edge); `rooflamp1_m1` on `landrep1_supply` (x43) and `hospital_m1` (x22); `mil_barracks_m1`'s `mil_barracksExterior` (x10: the far mesh, whose hull the old export shipped beside the near one's); `DC_sidewalk_treepot1_m1` (says 0, x4); `mil_scud_cart_m1`'s `mil_scud_cart_missile` (x4); the weapons and helmets displayed in the `Armory_*` kit racks (x7); `Mi24DWreck` (says nothing, x1, Operation Bragg) |
-| DC Final and the other installs | census running | | | |
+| DC Final | 37 of 48 | 13 | 194 | the same kinds: `DC_slums_fencepost1_m1` (x55), `rooflamp1_m1` on four supply and hospital buildings (x81), `mil_barracks_m1`'s far mesh (x15), the `Armory_*` racks' weapons (x34), the treepots (x4), the Scud cart's missile (x4), `Mi24DWreck` (x1) |
+| the other installs | census running | | | |
 
 Nothing a player stands on or hides behind in vanilla moves: a roof lamp. The
 houses, bunkers and hangars all keep the hull they had, through COL-17.
@@ -169,10 +170,13 @@ houses, bunkers and hangars all keep the hull they had, through COL-17.
 `setHasCollisionPhysics` spelling; Desert Combat writes the bare
 `hasCollisionPhysics` on 1,473 lines, and the console treats both as one word
 (CON-15). With this gate and without that spelling, DC objects that say 1 the
-bare way would lose their hulls (on Basrah's Edge and Sea Rigs alone, the
-`Ammobox` bundles, x26, and the `mediclocker`s, x14). This commit must be merged after
-con-reader's spelling normalisation, or together with it, and before any
-re-bake.
+bare way would lose their hulls: measured with the `set` spelling only, the
+DC tree would lose 18 roots over 899 placements, the `Ammobox` bundles (x489)
+and `mediclocker`s (x207) whole, and `landrep1_supply` (x43), the Russian
+warehouse `r_ruswh_m1` (x22), both hangars (x13) and two buildings' ladders.
+This commit must be merged after con-reader's spelling normalisation, or
+together with it, and before any re-bake. `tests/test_dc_engine_reads.py`
+`test_the_bare_spelling_reaches_the_word` fails until then, on purpose.
 
 **Open:**
 
@@ -221,6 +225,16 @@ python3 extract_maps_all.py --mod DesertCombat --out viewer/maps/mods/desertcomb
   DC_No_Fly_Zone_Day2 DC_Oil_Fields DC_Operation_Bragg DC_Sea_Rigs \
   DC_Urban_Siege DC_Weapon_Bunkers El_Alamein El_Alamein_Day2 \
   El_Alamein_Day3 Gazala GuadalCanal Inshallah_Valley Iwo_Jima Midway Tobruk
+# DC Final
+python3 extract_maps_all.py --mod DC_Final --out viewer/maps/mods/dc_final --levels \
+  Aberdeen Battle_of_Britain Battle_of_the_Bulge Berlin Bocage Bocage_Day2 \
+  Bocage_Day3 DC_Al_Nas DC_Al_Nas_Day2 DC_Basrah_Nights DC_Basrahs_Edge \
+  DC_Battle_of_73_Easting DC_Coastal_Hammer DC_Cornered DC_DesertShield \
+  DC_DustBowl DC_First_Light DC_LostVillage DC_LostVillage_nopara \
+  DC_Medina_Ridge DC_No_Fly_Zone DC_No_Fly_Zone_Day2 DC_Oil_Fields \
+  DC_Operation_Bragg DC_Sea_Rigs DC_Twin_Rivers DC_Urban_Siege \
+  DC_Weapon_Bunkers El_Alamein El_Alamein_Day2 El_Alamein_Day3 Gazala \
+  GuadalCanal Iwo_Jima Liberation_of_Caen Midway Tobruk
 # then, once per tree
 python3 ../../scripts/publish-mesh-delta.py maps
 ```
