@@ -5,7 +5,9 @@ engine. This page is the other half: the real game, recorded. Bots-only DC
 co-op rounds on the lab server (`tools/bf1942-models/lab`), each written whole
 by the server recorder (`features/server-replay-recorder`), read back by
 `tools/bf1942-models/lab/dc_truth.py` into per-template numbers. The numbers
-are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page.
+are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page, and
+the two vanilla LOD 0 rounds' in
+[`lab-ground-truth-vanilla.json`](lab-ground-truth-vanilla.json).
 
 ## The census questions, by verdict
 
@@ -28,7 +30,7 @@ are in [`lab-ground-truth.json`](lab-ground-truth.json) beside this page.
 | weapons Q1: rocket motor law | MLRS: +20 m/s over 3 s; TOW and AT-5 constant 100 m/s, no gravity; no other rocket fired | the fixed 25 m/s^2 matches none |
 | weapons Q1, helicopter and shoulder rockets | bots fired no Hydra, Hellfire, S-5, AT-2, Stinger or SA-7 in 2.8 h of helicopter flight; the BM-21 only fake | unmeasured |
 | DEV-9: rifle spread square or disc | no per-shot draw reaches a still bot's rounds (0.03-0.05 degrees rms); a shotgun's pellets lean square, not decisively | unsettled |
-| weapons Q4: FireArms velocity default | the Spandrel (no `velocity`) leaves at 200.5 m/s plus its launcher's speed (12 flights) | not the viewer's 100 |
+| weapons Q4: FireArms velocity default | the Spandrel (no `velocity`) leaves at 200.5 m/s relative to its launcher (12 flights): FA-3's 200 default | not the viewer's 100 |
 | levels item 23: respawn delay | `calcSpawnDelay` with the bots counted, drawn at the last spawn, from the death | the viewer draws it uniformly from the wreck's removal |
 | levels item 24: pads change sides | the capturer's template, in the same tick, on every empty pad | viewer gap confirmed |
 | levels item 25: abandoned vehicles | hit points drain at 10/s from 46-56 s after the last crewman left | viewer gap confirmed |
@@ -146,6 +148,74 @@ m/s, on the ground:
   one tick (El Alamein, 261.72 s), then came down at a steady 121 m/s (no
   acceleration) without a scratch: the mover, not the physics.
 
+### Vanilla ground hulls at LOD 0
+
+The same measures on vanilla, for the hulls the viewer's ground model was
+built on: El Alamein (`20261007-012156-elalamein-coop-lod0-rec`, one round,
+990 s) and Kursk (`20261007-013855-kursk-coop-lod0-rec`, one round, 779 s), 30 bots at LOD 0, `--mod bf1942`.
+
+| hull | level, full throttle: p95 / p99 / max (m/s) | samples | km/h (p99) | t to 5 / 10 m/s (s) |
+|---|---|---|---|---|
+| Sherman | 13.50 / 14.21 / 14.63 | 10,323 | 51.2 | 2.8 / 4.1 |
+| Panzer IV | 14.03 / 14.59 / 14.72 | 15,517 | 52.5 | 2.1 / 5.4 |
+| Tiger | 9.07 / 9.11 / 9.19 | 1,033 | 32.8 | 2.0 / |
+| Priest | 10.99 / 11.03 / 11.24 | 3,291 | 39.7 | 1.2 / |
+| T-34 (Kursk) | 7.53 / 10.00 / 10.90 | 3,234 | 36.0 | |
+| T-34-85 (Kursk) | 7.84 / 9.33 / 11.11 | 4,574 | 33.6 | 2.3 / |
+| Panzer IV on Kursk | 10.05 / 11.71 / 13.01 | 7,025 | 42.2 | |
+| Tiger on Kursk | 9.08 / 9.15 / 9.20 | 2,031 | 32.9 | |
+| M3A1 (Kursk) | 8.29 / 10.91 / 11.10 | 1,118 | 39.3 | 3.6 / |
+| Katyusha (Kursk) | 11.10 / 11.71 / 12.07 | 1,269 | 42.2 | 1.8 / 4.3 |
+| Willy, Kubelwagen | 17.66 / 18.36 / 18.73, 16.12 / 17.44 / 18.90 | 4,516, 9,594 | | held by the bot law at 20 m/s |
+
+- **Kursk holds a tank back, or its runs are too short.** The same Panzer IV
+  tops out at 13.0 m/s on Kursk against 14.7 on El Alamein, in every pitch
+  bin; the Tiger reaches its 9.2 on both. So the T-34's 10.9 and the
+  T-34-85's 11.1 are lower bounds, not top speeds; a T-34 on El Alamein (or
+  a flat co-op level that places one) would settle it. The Hanomag never
+  went over 4.5 m/s in 176 s driven (not looked into).
+- The Sherman's p99 and max (14.21, 14.63) agree with the 14.57 m/s held
+  that the owner's own El Alamein rounds gave. The census's closed form,
+  53.6 km/h (14.9 m/s), is 2-5% above it.
+- **Slope does not move a tank's top speed.** By pitch bin from -8 to +8
+  degrees the maxima stay at the cap: Panzer IV 14.27-14.72, Tiger
+  9.16-9.44, Priest 11.03-11.24, Sherman 13.32-14.63 (its two lowest on the
+  steepest bins, downhill and up). Only the p95
+  falls on the steeper bins (the Sherman 10.6-10.8 at -8 to -4 and +4 to +8,
+  12.6-13.9 between -2 and +4): fewer full-speed runs there, not a lower cap.
+- **Tanks turn fastest near a standstill.** A tank records no steering, so
+  this is the envelope: yaw rate p95, and the most held for 1 s, by forward
+  speed (deg/s), ground contact, LOD 0:
+
+  | hull | reversing | -1 to 1 m/s | 1-3 | 3-6 | 6-9 | 9-12 | 12-16 |
+  |---|---|---|---|---|---|---|---|
+  | Sherman | 5.1 | 40.6, held 43.3 | 48.8, 59.7 | 19.4, 26.5 | 14.4, 32.6 | 11.2, 8.3 | 5.8, 2.5 |
+  | Panzer IV | 29.3 | 46.5, 53.6 | 43.8, 56.1 | 23.2, 29.2 | 12.5, 17.8 | 12.9, 11.4 | 6.1, 2.2 |
+  | Tiger | | 31.3 | 59.2, 53.9 | 25.6, 8.7 | 13.8, 5.7 | 3.0 | |
+  | Priest | 8.9 | 37.1, 47.1 | 45.8, 45.6 | 26.0, 13.5 | 15.5, 16.2 | 7.6, 5.7 | |
+  | T-34 (Kursk) | | 35.0, 35.1 | 41.5, 47.3 | 23.0, 18.9 | 17.5, 6.9 | 16.8, 0.4 | |
+  | T-34-85 (Kursk) | | 37.0, 38.8 | 39.1, 40.0 | 22.6, 19.8 | 19.0, 5.1 | 12.5, 1.3 | |
+  | DC T-72 | 36.6 | 55.7, 73.0 | 59.6, 68.5 | 38.8, 21.6 | 26.5, 24.7 | 18.9, 28.2 | |
+  | DC M1A1 | 13.1 | 52.5, 65.6 | 52.7, 50.5 | 46.8, 15.7 | 30.3, 30.0 | 20.0, 21.0 | 6.2, 3.0 |
+  | DC BMP-2 | 38.8 | 61.5, 66.4 | 61.9, 79.9 | 51.5, 26.2 | 29.2, 24.2 | 19.7, 17.1 | 11.0, 6.2 |
+
+  (`~/.cache/dc-sweep/dc-lab/probe_tankturn.py`.) A vanilla tank pivots at
+  40-60 degrees a second and turns at 8-33 a second at 6-12 m/s; DC's
+  armour pivots a little faster (52-62) and turns about twice as fast at
+  6-12 m/s (p95 19-30 against vanilla's 11-15).
+- **Cars at full lock** (`max steer` is the most the front wheels turned):
+  yaw rate p50 / max (deg/s), slip p50 / p95 (degrees), samples:
+
+  | car | max steer | 2-5 m/s | 5-10 | 10-15 | 15-20 |
+  |---|---|---|---|---|---|
+  | Willy | 30 | 23.2/52.3, 21.7/27.5 (666) | 35.5/72.9, 13.0/31.3 (314) | 29.8/42.6, 7.9/10.4 (109) | 20.6/22.0, 5.0/5.3 (4) |
+  | Kubelwagen | 30 | 24.0/75.2, 18.8/27.6 (3,104) | 35.2/74.1, 11.6/26.7 (1,313) | 30.2/44.7, 7.0/9.7 (121) | 17.7/28.9, 3.2/5.1 (13) |
+
+  (Both rounds.)
+  Bots did not full-lock a car above 20 m/s, and their drive law holds a car
+  at 18-19 m/s, so the Willys' top speed (the owner's rounds: 26.7 m/s at
+  most) and its turn above 20 m/s stay unmeasured here.
+
 ### Helicopters do not damp their rotation (air census open question 1)
 
 With every engine rack square (the cyclic centred: each rack's recorded
@@ -258,13 +328,16 @@ pilot and two gunners):
 ### Spawner pads (levels census items 23-25)
 
 - **A captured pad spawns the capturer's hull, at once** (item 24, the
-  census's "Broken"). Over three El Alamein rounds (one at LOD 0), every
+  census's "Broken"). Over three El Alamein rounds (one at LOD 0) and one of
+  El Alamein Day 2 at LOD 0, every
   capture of a flag whose pads were empty spawned the capturer's template on
   each of them in the same tick (0.00-0.05 s after the flag's record): East
   outpost to team 2, an MLRS and an M1A1; to team 1, a BM-21 and a T-72; South
   outpost to team 1, a T-72 and a BRDM2_Spandrel; to team 2, an M1A1 and a
   Humvee_TOW; North outpost a BRDM-2 and a BMP-2, or a Humvee and an M2A3
-  (SPAWN-2's team pick, `CPEnable`). A hull still standing on a pad when its
+  (SPAWN-2's team pick, `CPEnable`); on Day 2, East to team 2 an MLRS and an
+  M1A1, South to team 1 a T-72 and a BRDM-2, North to team 2 a Humvee and an
+  M2A3 (0.00-0.04 s). A hull still standing on a pad when its
   flag changes hands, either side's, is left alone and the pad spawns
   nothing until it dies. A flag going neutral spawns nothing and removes
   nothing. A delay already running when the flag changes is drawn again from
@@ -278,8 +351,9 @@ pilot and two gunners):
   window (the level's `SinglePlayer/ObjectSpawnTemplates`), a hull that was
   placed at the level's load (0 players) respawned at its maximum: every
   such case in three rounds (36), fill (max - delay) / (max - min) between
-  -0.015 and 0. One spawned during play (30 bots of 32) respawned at fill
-  0.924-0.937 (39 of 41), which is 30/32 = 0.9375:
+  -0.015 and 0, and 13 more on Day 2 at LOD 0 (-0.003 to -0.001). One
+  spawned during play (30 bots of 32) respawned at fill 0.924-0.937 (39 of
+  41; Day 2 at LOD 0, 0.934-0.936, 8 of 8), which is 30/32 = 0.9375:
   `min + (max - min)(1 - 30/32)`. The odd ones out are a helicopter pad with
   `maxNrOfObjectSpawned 2` (two hulls on one pad) and a pad whose flag
   changed hands in the wait (fill 0.43, above). The next hull does not wait
@@ -299,7 +373,9 @@ pilot and two gunners):
   points a second (DC's `damageWhenLost 10`, billed per step) to 0, then it
   is a wreck. The longer idles (64-150 s) had a soldier within 5-50 m of the
   hull part of the time. Nothing in the viewer runs this clock for a vehicle.
-  The LOD 0 round agrees (48.2-48.8 s idle, 9.2-10.0 hp/s, five cases).
+  The LOD 0 rounds agree: El Alamein 48.2-48.8 s idle and 9.2-10.0 hp/s
+  (five cases), Day 2 47.1-50.6 s and 9.2-10.1 hp/s (four), with two longer
+  idles there (71 and 101.5 s).
 - **DC Weapon Bunkers (levels census item 22) cannot be run with bots**: its
   archive ships no `SinglePlayer/` layer and no AI data, and bots exist only
   in `GPM_COOP`, which plays that layer. Whether the Iraqi spawns vanish with
@@ -355,7 +431,7 @@ hit), p50; speeds are at 0.5-5 s.
 | GrenadeAlliesProjectile | hand grenade | 151 | 25.0 | 24.4 | 24.1 | | | | -3.9 | 14.66 | thrown at 25 m/s |
 | TOW_Projectile | M2A3, Humvee TOW | 51 | 100.2 | 100.2 | 100.2 | 100.0 | 100.0 | 100.0 | 0.0 | **0.0** | straight, constant speed, turns under 0.1 degrees: no guidance, no gravity |
 | BMP2_AT4_Projectile | BMP-2 AT-5 | 47 | 100.0 | 100.0 | 100.0 | 100.1 | 100.2 | 100.2 | 0.0 | **0.0** | the same |
-| Spandrel_Projectile | BRDM-2 Spandrel | 13 | **201.2** | 201.2 | 201.1 | 201.1 | 201.2 | | 0.0 | 0.0 | question 4: the launcher declares no velocity and the round leaves at 200.5 m/s plus the launcher's own speed, not the viewer's `velocity ?? 100` |
+| Spandrel_Projectile | BRDM-2 Spandrel | 13 | **201.2** | 201.2 | 201.1 | 201.1 | 201.2 | | 0.0 | 0.0 | question 4: the launcher declares no velocity and the round leaves at 200.5 m/s relative to the BRDM-2 (12 flights, 199.8-201.0), plus the BRDM-2's own speed: the 200 m/s FireArms default (FA-3), not the viewer's `velocity ?? 100` |
 | AS-7 | Su-25 rack | 81 | 82.6 | 87.9 | 92.5 | 97.3 | 103.8 | | +4.9 | 14.53 | a winged bomb (no Engine in its template: mass 250, drag 0.08, `setWingLift 2`) gaining speed in the dive it is dropped in (27 degrees down), falling at full gravity |
 | MLRSRocket | MLRS ("Blast") | 25 | 97.8 | 88.5 | 91.2 | 101.2 | 108.6 | | +3.9 | **16.8** | **arcs under gravity** (item 22: the viewer sets gravity 0 for every rocket) and speeds up under its `c_ETRocket` motor (torque 50, differential 30, maxRotation 5000; mass 20, drag 1) |
 | Blank_Projectile | MLRS ("Blast") | 25 | 100.1 | 98.6 | 97.7 | 97.2 | 99.1 | 108.3 | -3.6 | 14.73 | a second round per MLRS shot, ballistic, lives 10 s |
@@ -463,7 +539,15 @@ file a round), the event log in `serverlog/`, `scenario.json`, `settings/` and
 | `20261007-003106-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 593 | ground physics, rounds, pads |
 | `20261007-004059-dc-guadalcanal-coop-lod0-rec` | Guadalcanal | **0** | 1 full + part (2) | 742 | water (none), ground |
 | `20261007-010104-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 584 | ground physics, full lock |
+| `20261007-011049-dc-el_alamein_day2-coop-lod0-rec` | El Alamein Day 2 | **0** | 1 full + a start (2) | 573 | pads and captures, rockets (none fired) |
 | `20261007-005321` ... `010013-dc-guadalcanal-coop-lod0-water-rec` | Guadalcanal | 0 | starts only (6) | 40-117 | the failed water placements |
+
+Vanilla rounds recorded for this page (`--mod bf1942`), 30 bots of 32:
+
+| run | level | AI LOD | rounds (files) | s | used for |
+|---|---|---|---|---|---|
+| `20261007-012156-elalamein-coop-lod0-rec` | El Alamein | **0** | 1 full (1) | 990 | vanilla ground physics |
+| `20261007-013855-kursk-coop-lod0-rec` | Kursk | **0** | 1 full + part of the next (1) | 779 | vanilla ground physics (T-34, T-34-85, M3A1, Katyusha) |
 
 Vanilla files read for comparison: `20261004-180859-parity-elalamein-rec`
 (the bots-only El Alamein soak, 7 rounds), `20261005-082947-` and
@@ -524,7 +608,11 @@ python3 lab/lab.py setup --mods-from-client DesertCombat
 python3 lab/lab.py start lab/scenarios/dc-el_alamein-coop-rec.json --wait 0
 python3 lab/lab.py stop                                   # after a round or two
 python3 lab/dc_truth.py ~/bf1942-lab/runs/<run> --md out.md --compact out.json
+python3 lab/dc_truth.py --mod bf1942 ~/bf1942-lab/runs/<vanilla run> ...  # a vanilla level
 ```
+
+The `*-lod0-rec` scenarios add `aiSettings.lodEnable 0` to the autoexec;
+the rest are the bots-only LOD 2 rounds.
 
 `dc_truth.py` reads the level's heightmap from the game install (through the
 mod's `addModPath` chain, as the exporter does) for heights over ground, and
