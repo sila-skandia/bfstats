@@ -5,6 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { EngineAudio } from '../viewer/engine-audio.js';
 
 function stubCtx() {
@@ -739,8 +741,13 @@ const COAX_FAR = twin('brownmlp.mp3', { priority: 8, band: [1, 1, 0, 1] });
 // extracted tree rather than a tracked one, so this skips when it is absent
 // (CI, a fresh worktree) and runs for anyone who has extracted a level.
 
+// `ENGINE_AUDIO_MAPS` points it at another tree (a mod's, or a scratch tree a
+// sounds-layer patch was written to).
+
 {
-  const mapsDir = new URL('../viewer/maps/', import.meta.url);
+  const mapsDir = process.env.ENGINE_AUDIO_MAPS
+    ? pathToFileURL(`${path.resolve(process.env.ENGINE_AUDIO_MAPS)}/`)
+    : new URL('../viewer/maps/', import.meta.url);
   let levels = [];
   try {
     levels = fs.readdirSync(mapsDir).filter(
@@ -765,6 +772,12 @@ const COAX_FAR = twin('brownmlp.mp3', { priority: 8, band: [1, 1, 0, 1] });
         if (weapon.layers?.length) {
           patches.push({ name: weapon.fireArms, layers: weapon.layers, oneShots: true });
         }
+      }
+      // A part's patches (`vehicle-audio.js` `PART_RULES`), every loop up.
+      for (const part of vehicle.parts ?? []) {
+        part.patches.forEach((layers, i) => {
+          if (layers?.length) patches.push({ name: `${part.node}#${i}`, layers, oneShots: false });
+        });
       }
       for (const patch of patches) {
         for (const distance of DISTANCES) {
