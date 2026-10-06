@@ -10,6 +10,8 @@ against whatever trees are extracted on this machine.
            kind the exporter baked it as (ledger IMP-7).
   range    vanilla's Katyusha and Desert Combat's MLRS, BM-21 and SCUD-B land,
            at 30 and 45 degrees, inside their `timeToLive`.
+  bullets  an invisible round (baked `kind: 'bullet'`) and a tracer fall by
+           their own `gravityModifier`; a retail rifle round still flies flat.
 """
 
 from __future__ import annotations
@@ -104,6 +106,54 @@ class RocketFlightTests(unittest.TestCase):
                     self.assertTrue(flight["landed"], flight)
                     self.assertLess(flight["endHeight"], 1.0)
 
+    # --- bullets -----------------------------------------------------------
+
+    def drops(self, name: str) -> list[float]:
+        return [r["drop"] for r in self.results["bullets"][name]]
+
+    def test_a_retail_rifle_round_still_flies_flat(self) -> None:
+        # Every vanilla, XPack1 and XPack2 rifle and MG round declares
+        # `gravityModifier 0` (census in the feature README).
+        self.assertEqual([0, 0], self.drops("barProjectile"))
+
+    def test_the_25mm_falls_at_its_authored_fifth(self) -> None:
+        g1 = self.results["bullets"]["expectedDropAtG1"]
+        for drop in self.drops("25mmChaingunProjectile"):
+            self.assertAlmostEqual(0.2 * g1, drop, delta=0.01)
+
+    def test_a_cluster_submunition_falls_at_one(self) -> None:
+        # `CBU87Prj` is invisible, so baked `kind: 'bullet'`, and declares no
+        # `gravityModifier`: it falls like a bomb, not level beside the jet.
+        g1 = self.results["bullets"]["expectedDropAtG1"]
+        for flight in self.results["bullets"]["CBU87Prj"]:
+            self.assertAlmostEqual(g1, flight["drop"], delta=0.01)
+            # And the streak turns down its path: 15 m/s and 7.4 m/s down.
+            self.assertAlmostEqual(26.2, flight["pitchDown"], delta=0.5)
+
+    def test_a_tracer_falls_by_its_own_word_not_the_rounds(self) -> None:
+        # Desert Combat's `50cal_Projectile` flies flat; its tracer, every
+        # second round, declares `gravityModifier 1`.
+        g1 = self.results["bullets"]["expectedDropAtG1"]
+        rounds = self.results["bullets"]["50cal_Projectile"]
+        self.assertEqual([False, True], [r["bright"] for r in rounds])
+        self.assertEqual(0, rounds[0]["drop"])
+        self.assertAlmostEqual(g1, rounds[1]["drop"], delta=0.01)
+
+    def test_vanillas_tracer_flies_flat_fresh_or_stale(self) -> None:
+        # `Tracer_Projectile` declares 0.0; a glb baked before the tracer
+        # carried its gravity keeps the straight streak.
+        self.assertEqual([0, 0], self.drops("vanillaTracer"))
+        self.assertEqual([0, 0], self.drops("staleTracer"))
+
+
+# Where each bullet's glb lives, and the gun's node name.
+BULLET_SOURCES = {
+    "barProjectile": "models/viewmodels/BritishSoldier__Bar1918.fp.glb",
+    "25mmChaingunProjectile": "models/mods/desertcombat/AH64.glb",
+    "CBU87Prj": "models/mods/desertcombat/A10_C.glb",
+    "50cal_Projectile": "models/mods/desertcombat/Browning.glb",
+}
+
 
 class RoundsMatchTheTrees(unittest.TestCase):
     """The harness's copies are the shipped glbs' blocks, where those exist."""
@@ -123,14 +173,16 @@ class RoundsMatchTheTrees(unittest.TestCase):
         text = HARNESS.read_text()
         start = text.index("const ROCKET_ENGINE")
         end = text.index("// --- a world")
-        body = text[start:end].replace("export const ROUNDS", "const ROUNDS")
+        body = text[start:end].replace("export const", "const")
         proc = subprocess.run(
             ["node", "--input-type=module", "-e",
-             body + "\nconsole.log(JSON.stringify(ROUNDS));"],
+             body + "\nconsole.log(JSON.stringify({ ROUNDS, BULLETS }));"],
             capture_output=True, text=True, timeout=60)
         if proc.returncode != 0:
             raise AssertionError(proc.stderr)
-        cls.rounds = json.loads(proc.stdout)
+        tables = json.loads(proc.stdout)
+        cls.rounds = tables["ROUNDS"]
+        cls.bullets = tables["BULLETS"]
 
     def test_each_copy_matches_its_glb(self) -> None:
         checked = 0
@@ -161,6 +213,41 @@ class RoundsMatchTheTrees(unittest.TestCase):
             checked += 1
         if not checked:
             self.skipTest("no rocket glb is extracted on this machine")
+
+    def test_each_bullet_copy_matches_its_glb(self) -> None:
+        checked = 0
+        for name, rel in BULLET_SOURCES.items():
+            path = VIEWER / rel
+            if not path.exists():
+                continue
+            found = find_fire_arms(path, name)
+            self.assertIsNotNone(found, f"{name} not in {rel}")
+            mine = self.bullets[name]
+            with self.subTest(round=name):
+                self.assertEqual(found["velocity"], mine["velocity"])
+                for field in ("template", "kind", "gravity", "timeToLive"):
+                    self.assertEqual(found["projectile"].get(field),
+                                     mine["projectile"].get(field), field)
+                tracer = found.get("tracer")
+                if mine.get("tracer"):
+                    self.assertEqual(mine["tracer"]["template"], tracer["template"])
+                    self.assertEqual(mine["tracer"]["interval"], tracer["interval"])
+                    # A tree baked before the tracer carried its gravity has
+                    # none; a fresh one must agree.
+                    if "gravity" in tracer:
+                        self.assertEqual(mine["tracer"]["gravity"], tracer["gravity"])
+            checked += 1
+        if not checked:
+            self.skipTest("no bullet glb is extracted on this machine")
+
+
+def find_fire_arms(path: Path, template: str) -> dict | None:
+    for node in glb_json(path).get("nodes", []):
+        fire = (node.get("extras") or {}).get("fireArms") or {}
+        projectile = fire.get("projectile")
+        if isinstance(projectile, dict) and projectile.get("template") == template:
+            return fire
+    return None
 
 
 if __name__ == "__main__":
