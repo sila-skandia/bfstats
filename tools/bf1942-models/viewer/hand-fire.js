@@ -199,12 +199,12 @@ export function createHandFire(page) {
     if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - handCharge(group, rounds));
     // The barrel's heat, once a pull however many barrels it fired: one add
     // in `FireArms::Fire`, after the barrel loop (ledger GUN-14). A grenade's
-    // charge goes back to 0 instead, and its round's stats to the weapon's.
+    // charge goes back to 0 instead. Its round's stats stay scaled until the
+    // pulse that asked for them ends (`footFire`): `gunfire.js` `fireShot`
+    // calls this before `fireBarrel` launches the round, so putting them back
+    // here sent every charged throw at the full `velocity`.
     hw.heat?.registerShot(1);
-    if (hw.charge) {
-      hw.charge.spend();
-      restoreLaunch(hw);
-    }
+    hw.charge?.spend();
     // A bullet round is resolved against the bots here only on a page whose
     // rounds cannot meet a soldier in flight. Where `guns.bodyCast` is installed
     // (`vehicle-hits.js`) the round itself meets the man's capsules, and a
@@ -332,7 +332,10 @@ export function createHandFire(page) {
    *  (`restoreLaunch`). Nothing at full strength. */
   function launchStrength(hw, strength) {
     const group = hw.group;
-    if (!group || hw.launchBase || !(strength < 1)) return;
+    // A pulse that never ended (the weapon swapped mid-throw) leaves its
+    // scaled stats behind; put them back before this pull's.
+    restoreLaunch(hw);
+    if (!group || !(strength < 1)) return;
     const base = group.stats;
     hw.launchBase = base;
     group.stats = Object.create(base, {

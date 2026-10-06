@@ -4,8 +4,10 @@
 // HUD's bar is handed (`soldier-hud.js` reads `hw.charge.heat`).
 //
 // The page is a stub: 60 fps frames, `footFire` each frame, and the gun's own
-// round fired on the next 30 Hz tick after `setFiring` turns it on, its launch
-// speed read off `group.stats.velocity` as `round-launch.js` reads it.
+// round fired on the next 30 Hz tick after `setFiring` turns it on, `onShot`
+// first and then its launch speed read off `group.stats.velocity`, in
+// `gunfire.js` `fireShot`'s order and as `round-launch.js` reads it. The pulse
+// that asked for the round lets go of the trigger on the next frame.
 
 import { createHandFire } from './hand-fire.js';
 import { ThrowCharge } from './throw-charge.js';
@@ -61,10 +63,11 @@ function run(script) {
     // The world's ticks in this frame: the round of a gun the trigger holds.
     for (clock += dt; clock >= 1 / 30 - 1e-9; clock -= 1 / 30) {
       if (hw.group.firing) {
+        // `gunfire.js` `fireShot`'s order: `onShot` first, then `fireBarrel`
+        // launches the round off `group.stats.velocity` and counts it.
+        page.guns.onShot(hw.group, 1);
         out.throws.push({ t: +t.toFixed(4), velocity: +hw.group.stats.velocity.toFixed(4) });
         hw.group.shots += 1;
-        page.guns.onShot(hw.group, 1);
-        page.guns.setFiring(hw.group, false);
       }
     }
   }
