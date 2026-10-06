@@ -272,10 +272,12 @@ export function vehicleTick(world, player, dt, integrators) {
   // call) is what turns it off the same tick the seat stops being active.
   for (const group of player.groups) {
     const state = world.fireStateFor(group.node);
+    const pulled = !!(inControl && vehicle && vehicle.input(group.stats.input || 'c_PIFire') > 0);
+    // The trigger before the step: a held pull the heat refuses restarts the
+    // lockout (fire-state.js `trigger`, GUN-18).
+    state.trigger(pulled);
     if (inControl) state.step(dt);
-    world.guns?.setFiring(group, inControl
-      && vehicle && vehicle.input(group.stats.input || 'c_PIFire') > 0
-      && state.canFire);
+    world.guns?.setFiring(group, pulled && state.canFire);
   }
   // The active seat's own FireArms: per weapon, one trigger per declared
   // input (c_PIFire / c_PIAltFire), gated on the same HP-15 byte.
@@ -289,11 +291,12 @@ export function vehicleTick(world, player, dt, integrators) {
   for (const node of occ.activeFireArmsNodes()) {
     if (driven.has(node)) continue;
     const state = world.fireStateFor(node);
-    state.step(dt);
     const group = player.manned.find(g => g.node === node);
-    if (!group) continue;
     const trigger = node.userData?.fireArms?.input === 'c_PIAltFire'
       ? (input.altFire && !player.gate.blocked) : fire;
+    state.trigger(!!group && trigger);
+    state.step(dt);
+    if (!group) continue;
     world.guns?.setFiring(group, trigger && state.canFire);
   }
 }
