@@ -376,6 +376,27 @@ ObjectTemplate.timeToLive CRD_NONE/1/0/0
         self.assertEqual((5, 6), (spec["srcBlendMode"], spec["destBlendMode"]))
         self.assertEqual("alpha", spec["blend"])
 
+    def test_particle_collision_reads_under_either_console_spelling(self) -> None:
+        # CON-15: the console takes `hasCollisionPhysics` and
+        # `setHasCollisionPhysics` as one property, and `con.py` files both
+        # under the set spelling, so the particle reader must look there.
+        lib = library()
+        lib.add_con("Objects/Effects/Common/effects.con", """
+ObjectTemplate.create SpriteParticle Fx_BareCollision
+ObjectTemplate.texture e_richogitt_I
+ObjectTemplate.hasCollisionPhysics 1
+
+ObjectTemplate.create SpriteParticle Fx_SetCollision
+ObjectTemplate.texture e_richogitt_I
+ObjectTemplate.setHasCollisionPhysics 1
+
+ObjectTemplate.create SpriteParticle Fx_NoCollisionWord
+ObjectTemplate.texture e_richogitt_I
+""")
+        for name in ("Fx_BareCollision", "Fx_SetCollision"):
+            self.assertIs(True, effects.particle_spec(lib.object(name)).get("hasCollisionPhysics"), name)
+        self.assertNotIn("hasCollisionPhysics", effects.particle_spec(lib.object("Fx_NoCollisionWord")))
+
     def test_sprite_blend_ordinals_distinguish_what_the_label_could_not(self) -> None:
         # A template overriding srcBlendMode to BMOne alongside destBlendMode
         # BMOne: the old two-case label calls this "add", identically to

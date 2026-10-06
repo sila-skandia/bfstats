@@ -50,6 +50,92 @@ _EFFECT_BUNDLE_SCOPED = frozenset({
 })
 _COMMAND = re.compile(r"^(\w+)\.(\w+)(?:[ \t]+(.*?))?[ \t]*$")
 
+# How the console finds a word (CON-15). `<Object>.<word>` is looked up
+# case-blind as object + word; when that misses and the word starts with `get`
+# or `set`, it is looked up once more without those three letters, and that
+# second answer only counts if it is a property (`ConsoleObjects::
+# getConsoleObject`, lnxded 0x08359b10, client 0x005ac750). So a property
+# answers to its bare name and to `set<name>`: Desert Combat writes
+# `ObjectTemplate.setGeometry` on 23 templates, vanilla writes the bare
+# `hasCollisionPhysics` 1,923 times beside 867 `setHasCollisionPhysics`. A
+# method (`setPosition`, `addTemplate`) is registered under its whole name and
+# answers to nothing else.
+#
+# The branches below read each property under one spelling. These are the
+# words they read that the console registers as a property of that object, in
+# the spelling read, each checked against lnxded's own registrations
+# (features/con-reader-spellings). Three are left out on purpose: `lodDistance`
+# and `setLodDistance` are two different ObjectTemplate words, and so are
+# `objectTemplate` and `setObjectTemplate`, and `type` is registered once per
+# template class. A word missing here is still read under its own spelling.
+_OBJECT_TEMPLATE_PROPERTIES = frozenset({
+    # The after-death clock's words (HP-19; lnxded ConsoleClass111..114, 126,
+    # 134 of Engine_WorldObjTemplBase, each a get/set property).
+    "fadeattimetoliveafterdeath", "resetwhenremoved", "sinkintolandafterdeathspeed",
+    "stayasdestroyed", "timetostartfadeafterdeath",
+    "aitemplate", "altfireonce", "anglemod", "autoreload", "center1phands",
+    "colorrgbaovertime", "cooldownpersec", "createinvisible", "criticaldamage",
+    "cvmchase", "cvmexterntrace", "cvmflyby", "cvmfrontchase", "cvminside",
+    "cvmtrace", "damagefromwater", "damagetype", "damagewhenlost",
+    "destblendmode", "detonateonwatercollision", "dieaftercoll", "distance",
+    "disttomindamage", "disttostartlosedamage", "drag", "endeffecttemplate",
+    "exitspeedmod", "explodenearenemydistance", "firedelay", "fireincameradof",
+    "fireonce", "geometry", "gravitymodifier", "grip", "hasarmor",
+    "hascollisioneffect", "hasmobilephysics", "hasrestrictedexit",
+    "healdistance", "healfactor", "heataddwhenfire", "hideduringfiretime",
+    "hitpoints", "holdobject", "hplostwhilecriticaldamage",
+    "hplostwhiledamagefromwater", "hplostwhileupsidedown", "inertiamodifier",
+    "invisible", "itemindex", "magsize", "magtype", "mass", "material",
+    "material2", "maxdistanceunderwatersurface", "maxhitpoints",
+    "maxnrofobjectspawned", "mindamage", "mindistanceunderwatersurface",
+    "numofmag", "outsidehudoffset", "positionalspeedindof",
+    "projectileposition", "projectiletemplate", "proximityfuseprimer", "radius",
+    "recoilsize", "recoilspeed", "relativepositionindof", "reloadtime",
+    "rememberexcessinput", "repairdistance", "repairfactor", "rotationalspeed",
+    "roundoffire", "saveinseparatefile", "seatanimationlowerbody",
+    "seatanimationupperbody", "seatflags", "selfhealfactor", "setacceleration",
+    "setammobar", "setammobarfill", "setammobarposx", "setammobarposy",
+    "setammobarsize", "setammobartextposx", "setammobartextposy",
+    "setammoicon", "setasynchronyfire", "setattachtolistener",
+    "setautomaticreset", "setbonename", "setcontinousrotationspeed",
+    "setdamping", "setdifferential", "setenginetype", "setgearchangetime",
+    "setgeardown", "setgeardownengineinput", "setgeardownheight", "setgearup",
+    "setgearupengineinput", "setgearupheight", "sethascollisionphysics",
+    "sethaspointphysics", "sethasturreticon", "sethealthbarfullicon",
+    "sethealthbaricon", "setinputfire", "setinputtopitch", "setinputtoroll",
+    "setinputtoyaw", "setkitteam", "setmaxrotation", "setmaxspeed",
+    "setminrotation", "setnopropellereffectatspeed", "setnumberofgears",
+    "setnumberofweaponicons", "setpivotposition", "setprimaryammoicon",
+    "setscopeicon", "setsecondaryammoicon", "setsighticon", "setsnipersight",
+    "setstrength", "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
+    "settorque", "setvehicleicon", "setvehicleiconpos", "showinfirstperson",
+    "showinthirdperson", "size", "sizeovertime", "soldiercameraposition",
+    "soldierzoomfov", "soldierzoomposition", "spawnoffset", "speedmod",
+    "starteffecttemplate", "stopatendeffect", "team", "template", "texture",
+    "timedelayonoverheat", "timetolive", "timetoliveafterdeath",
+    "togglemouselook", "tracerscaler", "unzoombetweenfiretime", "usescope",
+    "velocity", "visiblebarreltemplate", "visibledummyprojectiletemplate",
+    "workonsoldiers", "workonvehicles", "ymodonexplosion", "zoomfov",
+})
+# `GeometryTemplate.lodDistance` is a terrain property, not `setLodDistance`.
+_GEOMETRY_TEMPLATE_PROPERTIES = frozenset({"file", "scale"})
+
+
+def _set_twin(word: str) -> str:
+    return word[3:] if word.startswith("set") else "set" + word
+
+
+# The other spelling of each property, onto the one the branch reads.
+_CONSOLE_SPELLINGS: dict[str, dict[str, str]] = {
+    "objecttemplate": {_set_twin(w): w for w in _OBJECT_TEMPLATE_PROPERTIES},
+    "geometrytemplate": {_set_twin(w): w for w in _GEOMETRY_TEMPLATE_PROPERTIES},
+}
+
+
+def console_word(namespace: str, command: str) -> str:
+    """The spelling `add_con` reads for `<namespace>.<command>`, both lower case."""
+    return _CONSOLE_SPELLINGS.get(namespace, {}).get(command, command)
+
 
 def strip_comments(text: str) -> str:
     text = _REM_BLOCK.sub("", text)
@@ -150,6 +236,42 @@ def vec3_lenient(token: str) -> tuple[float, float, float]:
     return tuple(float(p) if p.strip() else 0.0 for p in parts)
 
 
+_STREAM_FLOAT = re.compile(r"\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
+
+
+def stream_vec3(token: str) -> tuple[float, float, float] | None:
+    """A Vec3 the way the console's `operator>>(istream&, Vec3&)` reads it.
+
+    lnxded 0x080b7130 reads a float, one separator character, a float, one
+    character, a float, and stores each component from the same local. A read
+    that fails leaves that local alone, and so does every read after it, so a
+    component the token does not spell repeats the last one it did:
+    `GeometryTemplate.scale 1.25` is 1.25/1.25/1.25 and `0.3/1/1` is itself
+    (CON-16). None when not even the first float reads, where the engine
+    would store an uninitialised local.
+    """
+    values: list[float] = []
+    pos, failed, last = 0, False, None
+    for index in range(3):
+        match = None if failed else _STREAM_FLOAT.match(token, pos)
+        if match:
+            last, pos = float(match.group(1)), match.end()
+        else:
+            failed = True
+        if last is None:
+            return None
+        values.append(last)
+        if index < 2:
+            # `operator>>(char&)` skips whitespace and takes any one character.
+            while not failed and pos < len(token) and token[pos].isspace():
+                pos += 1
+            if failed or pos >= len(token):
+                failed = True
+            else:
+                pos += 1
+    return values[0], values[1], values[2]
+
+
 def crd(token: str) -> float | None:
     """The deterministic value of a CRD random-variable token.
 
@@ -244,6 +366,27 @@ def truthy(text: str) -> bool | None:
         return float(token) != 0.0
     except ValueError:
         return None
+
+
+def engine_bool(text: str) -> bool | None:
+    """A `bool` console argument as the engine reads it, or None when it fails.
+
+    Every bool word parses its argument with `istream >> bool` (CON-17): the
+    server's libstdc++ (`num_get::do_get(bool&)` lnxded 0x08679888) reads an
+    integer and stores it only when it is 0 or 1, so `5` sets the stream's
+    failbit and stores nothing. The setter then writes whatever the word's own
+    static argument still holds from its last good read, which no single file
+    can know. None stands for that: "unknowable here, the template default
+    wins". A digit run that a non-digit ends (`1.2`) is read as its digits,
+    which is why Bar1918's `setHasRecoilForce 1.2` is true.
+    """
+    match = re.match(r"\s*([+-]?)(\d+)", text)
+    if match is None:
+        return None
+    value = int(match.group(2))
+    if match.group(1) == "-" and value:
+        return None
+    return {0: False, 1: True}.get(value)
 
 
 # An `...OverTime` point is read off a stream, not split: an integer index, one
@@ -748,7 +891,14 @@ class ObjectTemplate:
     # Parts flagged `hasMobilePhysics 1` are separate physics bodies: an
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
+    # Clear (the template constructor's default for every class but a
+    # projectile's, or an explicit 0) is a
+    # `StaticPhysicsNode`, and on a placed root that holds the whole object
+    # still (PHY-17): `Assembler` stamps it on such a root as
+    # `extras.physics.hasMobilePhysics = false`. `mobile_physics_declared`
+    # says the `.con` wrote the word at all, either value.
     has_mobile_physics: bool = False
+    mobile_physics_declared: bool = False
     # `setAttachToListener 1`: a bool at SimpleSoundTemplate +4 (lnxded
     # 0x081de9c0/0x081de9d0, ledger SND-1). Its sound is placed at the listener
     # while he sits Inside the PlayerControlObject this part belongs to: every
@@ -1028,6 +1178,14 @@ class ObjectTemplate:
     # grenades, the explosives pack and the landmine, all four of which write
     # `dieAfterColl 0`.
     die_after_coll: bool | None = None
+    # `hasOnTimeEffect` is `ProjectileTemplate+0x1a5`, 0 from the constructor
+    # (lnxded 0x0831f9ec), and it decides what `timeToLive` running out does:
+    # `Projectile::handleMessage` (0x0831e8f0) answers the expiry message 0x16
+    # with `detonate` when it is set and `resetProjectile` (no effect, no
+    # splash) when it is not (ledger PROX-7). Vanilla sets it on the grenades,
+    # the pack, the landmine and the flak shells; Desert Combat writes 0 on
+    # the Shilka's shell after taking its proximity fuse out.
+    has_on_time_effect: bool | None = None
     # `setHasPointPhysics 0` puts a round on the `ResponsePhysics` path rather
     # than the point-mass one, i.e. a full rigid body with its `Wing` fins and
     # `FloatingBundle` floaters acting on it. Both grenades, the explosives
@@ -1051,6 +1209,14 @@ class ObjectTemplate:
     # stick of eight rather than salvo a pair, and vanilla declares it on
     # exactly seven templates.
     asynchrony_fire: bool | None = None
+    # `blastAmmoCount 1` (`FireArmsTemplate+0x348`, a bool: BOMB-4/BOMB-13) —
+    # a salvo (more than one barrel, no `asynchronyFire`) costs ONE round and
+    # always fires every barrel. The shotguns' pellets and FHSW's canister
+    # and shrapnel shells declare it. Desert Combat's `5` and `2` (A-10,
+    # SU-25, Minigun, SA-342 rockets) fail the bool read and are None; every
+    # one of them sits on a gun that fires no salvo, so nothing depends on
+    # which way they fall.
+    blast_ammo_count: bool | None = None
     # `YModOnExplosion` scales the Y term — and only the Y term — of the
     # distance an explosion measures to a victim's transform origin (HP-9,
     # lnxded 0x08156613). Engine default 1.0. 642 declarations across the
@@ -1372,6 +1538,10 @@ class ObjectTemplate:
     # Declared on every aircraft camera and nothing else (viewer/seat-view.js
     # carries the survey); None when the template never wrote it.
     outside_hud_offset: tuple[float, float, float] | None = None
+    # `toggleMouseLook` on a Camera template: the seat looks around only while
+    # `c_PIMouseLook` is held. The constructor seeds it 0 (lnxded 0x081acc20),
+    # so None (never written) reads as False.
+    toggle_mouse_look: bool | None = None
     # Emitter motion: where particles spawn along the direction of fire
     # (`relativePositionInDof`) and how fast they drift along it
     # (`positionalSpeedInDof`, negative = receding behind the muzzle).
@@ -1884,6 +2054,10 @@ class GeometryTemplate:
     # vehicle-part LodSelector thresholds (`LodSelector.addLodDistance`), which
     # are a separate mechanism recorded on `LodSelector.distances`.
     lod_distances: list[float | None] = field(default_factory=list)
+    # `GeometryTemplate.scale x/y/z` in the mesh's own axes, None when never
+    # written. The engine scales the drawn mesh and the face side of its
+    # collision by it, not its bounding box (CON-16, SM-13).
+    scale: tuple[float, float, float] | None = None
 
     @property
     def mesh_file(self) -> str:
@@ -1923,6 +2097,7 @@ class ObjectLibrary:
             if not match:
                 continue
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
+            cmd = console_word(ns, cmd)
 
             if ns == "objecttemplate":
                 if (cmd != "create" and obj is not None
@@ -2129,7 +2304,11 @@ class ObjectLibrary:
                     # is ever visible).
                     obj.invisible = args.strip().startswith("1")
                 elif cmd == "hasmobilephysics":
+                    # `console_word` brings DC's and DC Final's
+                    # `setHasMobilePhysics` (their projectiles and deployables)
+                    # here too (CON-15).
                     obj.has_mobile_physics = args.strip().startswith("1")
+                    obj.mobile_physics_declared = True
                 elif cmd == "setattachtolistener":
                     try:
                         obj.attach_to_listener = int(args.split()[0]) != 0
@@ -2578,7 +2757,7 @@ class ObjectLibrary:
                 elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
                              "radius", "material2", "damagetype",
                              "hascollisioneffect", "dieaftercoll",
-                             "ymodonexplosion"):
+                             "hasontimeeffect", "ymodonexplosion"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -2597,6 +2776,9 @@ class ObjectLibrary:
                         # (lnxded 0x0831ef4b). A bool on the wire; every one of
                         # the declarations surveyed writes a bare 0 or 1.
                         obj.die_after_coll = value != 0
+                    elif cmd == "hasontimeeffect":
+                        # Burst, or vanish, when `timeToLive` runs out (PROX-7).
+                        obj.has_on_time_effect = value != 0
                     elif cmd == "radius":
                         # `ProjectileTemplate.radius` is a console **int**
                         # (HP-9): the parser is `istream >> int` at lnxded
@@ -2702,6 +2884,12 @@ class ObjectLibrary:
                 elif cmd == "velocitydependentonheat":
                     if (value := truthy(args)) is not None:
                         obj.velocity_dependent_on_heat = value
+                elif cmd in ("setblastammocount", "blastammocount"):
+                    # Both spellings reach the word: the console strips a
+                    # `set` prefix (CON-15). A value the bool read refuses
+                    # leaves the field as it was.
+                    if (value := engine_bool(args)) is not None:
+                        obj.blast_ammo_count = value
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
                     if (values := floats(args)) is not None:
@@ -2809,6 +2997,13 @@ class ObjectLibrary:
                     if obj.camera_view_modes is None:
                         obj.camera_view_modes = {}
                     obj.camera_view_modes[cmd.upper()] = value
+                elif cmd == "togglemouselook":
+                    # A byte on the Camera template (MLK rows,
+                    # `viewer/mouse-look-key.js`): the seat needs the
+                    # mouse-look key to look around. Last write wins.
+                    value = truthy(args)
+                    if value is not None:
+                        obj.toggle_mouse_look = value
                 elif child is None:
                     continue
                 elif cmd == "setisfirstpersonpart":
@@ -2866,6 +3061,11 @@ class ObjectLibrary:
                     geom.file = args.split()[0] if args else None
                 elif geom is not None and cmd == "setskin":
                     geom.skin = args.split()[0] if args else None
+                elif geom is not None and cmd == "scale":
+                    # One argument, so the first token, the way `getArgs`
+                    # splits it. A bare line with no value is a read.
+                    if args.split():
+                        geom.scale = stream_vec3(args.split()[0]) or geom.scale
                 elif geom is not None and cmd == "setloddistance":
                     # `setLodDistance <index> <metres>`; indexed so the table
                     # lands in lod order whatever the file's line order.
@@ -3054,6 +3254,17 @@ class ObjectLibrary:
     def geometry(self, name: str) -> GeometryTemplate | None:
         kind, bare = split_geometry_qualifier(name)
         template = self.geometries.get(bare.lower())
+        if template is None and kind is not None and bare:
+            # `GeometryTemplateManager::getTemplate` (lnxded 0x0838b1e0): a
+            # name that is no template and holds a ':' is split at it, and a
+            # template of the type before it is created on the spot with the
+            # FILE after it (`createTemplate(type, name)`, then the file through
+            # interface 0x9c48). So Desert Combat's CBU-87 bomblets,
+            # `geometry StandardMesh:DesertCombat/Bomb_CBU87/CBU87bomb_m1`,
+            # name a mesh path, not a template, and a reader that looked the
+            # path up as a template name lost `e_CBU87Emission2` entirely.
+            return GeometryTemplate(name=name, kind=kind, file=bare,
+                                    source="inline")
         if template is None or kind is None:
             return template
         # A qualifier that disagrees with the declaration is not this template:

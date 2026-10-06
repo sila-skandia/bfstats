@@ -53,6 +53,19 @@ with `"` opening a run that may contain spaces. Lookup folds case, which is why
 the game's own `AliasedCommands.con` can alias `game.listplayers` to a method
 the binary spells `listPlayers`.
 
+**A property also answers to `set<name>` and `get<name>` (CON-15).**
+`ConsoleObjects::getConsoleObject` (`0x08359b10`, client `0x005ac750`) looks up
+object + word in a multimap ordered by `strcasecmp`; on a miss it strips a
+leading `get` and tries again, keeping the answer only if it is readable (type
+1 or 3), then a leading `set`, keeping it only if it is writable (type 1 or 2).
+Type 0 is a method, registered under its whole name (`setPosition`,
+`addTemplate`), which answers to nothing else, and no `set` is ever added. So
+`ObjectTemplate.setGeometry` is `geometry` and `ObjectTemplate.hasCollisionPhysics`
+and `setHasCollisionPhysics` are one word, while `ObjectTemplate.position` is
+not `setPosition`. A Vec3 argument is read float, one character, float, one
+character, float, and a short one repeats its last component (CON-16):
+`GeometryTemplate.scale 1.25` is uniform.
+
 **There is no `=` between a method and its arguments.** `handleCommand`
 contains no `cmp …,0x3d` at all; the whole binary compares a token against the
 `"="` literal `0x086e6da4` in exactly **three** places, all `std::string::compare`

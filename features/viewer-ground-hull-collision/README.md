@@ -3,7 +3,8 @@
 Written by wave-2 stream D (`w2d-drive`) alongside items 15–17 of the
 2026-09-19 parity round. Sections 1 to 5 are the plan. W6-C built it on
 2026-09-22, and [the Built section](#built--2026-09-22-w6-c) below says what
-and where. The title used to call this a plan, not a build, and this line used
+and where. The newest section (2026-10-06) is the land drives' own chassis,
+the sea and the upside-down clock, with what is still open. The title used to call this a plan, not a build, and this line used
 to say nothing here is implemented. The plan was written so that
 whoever picks the work up starts from what `viewer/ground.js` already has
 rather than from `collision-response.md` cold.
@@ -333,3 +334,197 @@ the lateral friction law cannot be affected by it. Nothing in
   a bounding-sphere radius or a deck gate tuned per vehicle class, so a ship's
   hull would meet a pier through the same `collideWithStatics` as everything
   else. The reason not to is still buoyancy, not collision.
+
+---
+
+# Own chassis, the sea and the clocks — 2026-10-06 (DC parity round, `ground-chassis`)
+
+Found by the Desert Combat census (`~/.cache/dc-sweep/reports/ground.md`) and an
+adversarial sweep after it; built and checked in one package. What each item
+was, what changed and how it was checked. Engine claims are ledger rows.
+
+## G1. A wheeled hull drives on its own chassis
+
+**Was:** `GroundVehicle` took mass, drag, drag radius, inertia and wheel radius
+from the `WILLYS` table for every wheeled vehicle in every mod. A ten-tonne
+SCUD-B turned on a jeep's 5.17 m² of yaw inertia and full lock from top speed
+turned it at 35.6 deg/s.
+
+**Now:** the root's own `physics.mass`/`drag` (as `TrackedVehicle` read them),
+each wheel's radius off its own mesh (`measureWheelRadius`, plus the page's
+`contactDepth` as the tracked drive takes it), and the inertia from
+`getGeometryInertia` over the box the engine itself picks. Which box was the
+open question, and it is now ledger **COL-14** (air-flight's reading of the
+same walk, the same day) with **COL-15** for what a land hull takes from it
+(2026-10-07: this round's own reading was COL-13 until the two met): the root has no geometry, so
+`findLodGeometry` takes the highest alternative of the root's first child when
+that is a `LodObject` (a tank's `ShermanComplex`), else of the first
+`LodObject` under a `DistCompareLodSelector` met depth first (a car's cockpit
+exterior, `Willy_Hull_M1`). The box is that mesh's `.sm` header bounds. The
+glb mesh's vertex box matches it on every vanilla, XPack1 and XPack2 land hull
+and not on 17 of Desert Combat's 41, so the page and the runner hand the drive
+the level's collision sidecar, whose `bbox` is the header box
+(`headerGeometryBox`, added in review). The search is `ship-spec.js`
+`inertiaGeometryNode`; the drag radius is the sphere round that box (the sphere
+drag law it feeds is itself not the engine's, PHY-4, and is kept as it was).
+
+**Checked:** flat-ground drives of every DC wheeled hull and the vanilla cars
+(`~/.cache/dc-sweep/ground-chassis/ground_drive.mjs`). SCUD-B full lock from
+top speed 35.6 to 15.6 deg/s; BM-21 16.6 to 12.8; Willy 111.3 to 111.2 km/h,
+turn 14.1 unchanged; Kubelwagen 111.2, 16.8 to 16.9. The Willy is not
+byte-identical on its real glb: its guessed box was 1.6 x 1.5 x 3.6 and its
+own is 1.734 x 1.523 x 3.636. The ground harness's Willy and Kubelwagen, which
+carry no meshes and so keep the table, are byte-identical. Tests:
+`test_ground.py` `test_a_wheeled_hull_takes_its_inertia_from_its_cockpit_hull_mesh`
+and the three after it.
+
+## G2. A land hull in the sea sinks, drags, drowns and is crushed
+
+**Was:** every land vehicle that cannot float stood on `max(terrain, water)`.
+A Humvee driven into Operation Bragg's sea rode 6.6 m of water at 31 m/s with
+full HP; an M1A1 sat on 27 m of it unharmed.
+
+**Now (PHY-16):** every land drive stands on the bed (`bedGroundHeight`), and
+`HullWater` (`amphibious.js`) measures the root part's depth under the sea and
+adds the box drag's submerged excess on COL-14's box. When the hull is boarded
+`hull-bodies.js` hands it the root part's own col0 (the body-world part the
+geometry search finds, `spec.waterPart`; not `part.isRoot`, which is the first
+part the tree walk met and on a placed BMP-2 is its gun barrel). The water's
+HP-5 tick then reaches the hull because it is in the water. `submarineData`
+(PHY-3, corrected) runs in `vehicle-damage.js` `stepSubmarine` on the depth
+`world-damage.js` `submersionDepth` reads off the body world.
+
+**Checked** in the headless runner (`ground_sim.mjs wadetrace`, flat deep
+spots): Humvee sinks to the bed in 2 s, crawls there at 4.6 m/s and loses 5 HP
+a second; M1A1 sinks, drives at 6.8 m/s and is crushed at 5 HP a second below
+1.5 m; BMP-2 on Urban Siege still swims, at 5.6 m/s on its own col0 depth (it
+did 3.3 on the glb's last collision layer, which is not col0; 5.4 on its
+header box's `DY` of 1.156, after review). XPack2's Schwimmwagen swims at
+22 km/h instead of 15 in the harness and at 27.6 in the runner, where the drive
+has its col0 (Peenemunde); the BRDM-2 goes from 7.1 to 9.3 m/s.
+Tests: `test_ground.py` `test_a_land_hull_sinks_to_the_bed` and the two after
+it, `test_vehicle_damage.py` `SubmarineDataTests`, `test_world_damage.py`.
+
+## CW2. An upside-down hull loses `hpLostWhileUpSideDown`
+
+**Was:** the tick existed and nothing ever said a hull was upside down.
+
+**Now (HP-18):** `world-damage.js` `upsideDownOwners` runs `Armor::update`'s
+own test and `vehicle-damage.js` bills the whole one-second bank (HP-17).
+**Checked:** a Humvee rolled onto its roof on Bragg is billed 5.17 HP a second
+once it has lain still 3.3 s and is wrecked at 23 s; an AH-64 held on its back
+is billed 103 HP at 4.1 s and wrecked at 5.2 s (`ground_sim.mjs flip`).
+
+**Corrected in review (2026-10-07), against retail.** The DC lab's unmanned
+Humvee_TOW on its roof lost 5 HP at each whole second for the 2.8 s it lay
+there, without sleeping. The engine's contact handlers run before the resolve,
+when a resting body still carries gravity's one tick (0.49 m/s, over
+`sqrt 0.1`), so it is touching every tick it is awake; the viewer had read the
+speed after the resolve. And `Armor+0xe8` is a float, which 30 ticks of 1/30 s
+fill, where a double needs 31 (hence the 5.17 every 1.03 s). Now the body
+world records its own contacts per step (`BodyWorld.touched`), a driven hull
+with its roof in the ground counts as touching, and the bank accumulates as a
+float: the runner's unmanned Humvee_TOW goes 100, 95, 90, 85 at 1.0, 2.0,
+3.0 s, and the dropped Bragg Humvee loses 5 at each whole second from 1.0 s.
+`submarineData`'s 0.5 s bank (`+0x19c`) is a float too and now fills in 15
+ticks.
+
+## CW10, G7. Steering direction and `c_PIPitch`
+
+Each steered wheel now turns as its own bundle does (`axisAngle` on its own yaw
+axis): the Forklift's rear axle declares `direction -1`, and right stick turned
+it left. `world-vehicle-tick.js` feeds `c_PIPitch` to a land drive whose own rig
+binds it: the Forklift's lift and forks, the Ural5323's ramp.
+
+## G5. The Desert Patrol Vehicle's spin is the engine's law on DC's data
+
+After G1 the DPV still spins: 186 degrees in 3 s from 15 m/s at full lock,
+against the Humvee's 51, both on a 50 degree lock and four driven wheels. The
+cause is where its origin sits. The body turns about its origin and every
+friction sample's moment is taken from it (collision-response §4.1, §4.2,
+COL-8, emulated), and the DPV's origin is 2.57 m behind its front axle and
+0.94 m ahead of its rear one: the steered tyres turn it on a long lever and the
+rear ones hold it on a short one. Moving its origin to mid-wheelbase stops the
+spin (86 degrees in 3 s, accelerating); moving the Humvee's to the DPV's place
+starts one (151 degrees, speed collapsing). Half and third lock still spin it.
+The only stabiliser in the viewer that the engine lacks is `angularDamping`
+0.8, a free constant: at 0 the DPV spins harder (345 degrees), at 3 it would
+stop, and raising it to make the DPV look right is exactly the tuning not to
+do. So nothing changed; `test_an_origin_near_the_rear_axle_spins_a_full_lock_turn`
+pins the cause. Whether the real game spins it is a recorded drive away
+(skill `bf1942-server-lab`).
+
+**Contradicted by retail (review, 2026-10-07).** The DC lab, with
+`aiSettings.lodEnable 0` so bots drive with physics, measured the DPV at full
+lock from 10 to 15 m/s: yaw 25 deg/s median (37 at most), slip 4.3 degrees
+median, no spin-out. The branch's DPV on the same input turns at 90 to
+97 deg/s median with 12 to 20 degrees of slip and slows to 5 to 7 m/s (the
+base's was 125 deg/s). The Humvee (24 to 29 deg/s) and BRDM-2 (25 to 29) are
+near the DPV's retail figure, and every steered lock (DPV, Humvee and
+Technical 50 degrees, BRDM-2 30, Humvee TOW 35) matches the lab's. So the
+origin lever is the viewer's mechanism and something it feeds differs from the
+engine; G5 is open again.
+
+## Open
+
+- **A land hull on the bed is lifted onto the sea where a terrain patch is
+  undrawn** (review). The heightfield has no samples there, so
+  `bedGroundHeight` falls back to the sea surface: a Sherman driven off a
+  Guadalcanal beach sinks to 8 m, meets the undrawn patch 40 m out, rises
+  11.8 m in a tick and drives on across 800 m of sea at 14.9 m/s. A Willy off
+  Midway or Guadalcanal drowns before it gets there. 29 live levels have
+  undrawn patches. The fix is the level's raw heightmap in the viewer.
+- **The multiplayer authority has none of G2.** `server/level-instance.mjs`
+  builds a drive with neither `collider` nor `waterLevel`, and its
+  `bodySpecFor` tags no `waterPart`, so in a room every land hull still drives
+  on the sea and no amphibian swims (the second predates this round).
+- **The rotational box drag's submerged scale** (PHY-16: once, not squared) is
+  not applied; `HullWater` adds the positional excess only.
+- **A land hull driven into a steep face is launched.** Any wheeled or tracked
+  hull driven at full throttle into a dry terrain wall of 45 degrees or more
+  leaves at hundreds of m/s (M1A1 749 m/s at 45 degrees, 874 at 55; Willy 84
+  at 55; the tracked numbers identical on the branch's base): the drive meets
+  terrain only through its springs, so the bump stop is the only barrier, and
+  the engine's hull col0 against the heightfield (`checkVsTerrain`, a push-out
+  along the normal) is not in the drive. Underwater banks are often that steep,
+  so since G2 a hull crawling along the bed reaches one more often.
+- **The critical bleed** still bills HP-5's flat whole-second ticks, not HP-17's
+  bank, and resets its bank on recovery.
+- **The water collision** (`handleCollision` with material 1 every tick a hull
+  is wet, COL-4's `c²` arm) is still a no-op in the body world.
+- **A suffocated crew** (`damageAllAttachedSoldiers`) is billed and reported
+  (`report.suffocation`) but reaches no death path; no vanilla or DC land hull
+  authors a non-zero 3rd `submarineData` float.
+- **A submerged spring's friction** takes water's 0.1 (`level-terrain.js`) while
+  a ship on the bed takes the bed's own material (`hull-bodies.js`
+  `seabedFriction`); which the engine hands `impulseOn` is unread.
+- **`TrackedVehicle`'s inertia** is still its wheel footprint over a guessed
+  1.1 m hull, not COL-14's box.
+
+## Review, 2026-10-07
+
+Re-read from the binary: COL-14/COL-15's walk and header box, PHY-16's
+water arm of `checkVsTerrain` (no impulse; the depth on the part's own node),
+PHY-3's corrected gate, and HP-18's three comparisons in `objdump`.
+`test_world_damage.py` `test_an_upright_hull_on_a_steep_slope_is_not_billed`
+pins the last: an upright hull flush with a slope is billed only past
+72.5 degrees of slope, as the engine bills it.
+
+The engine's walk run over the `.con` trees picks the same node as
+`inertiaGeometryNode` on every land root of vanilla, XPack1, XPack2, DC and DC
+Final. Flat-ground drives of every vanilla, XPack1 and XPack2 land vehicle,
+the branch's base against the branch (`~/.cache/dc-sweep/review-ground-chassis/drive_probe.mjs`):
+every tracked hull is identical. The wheeled ones that move more than the
+Willy, and why:
+
+| Vehicle | Moves | Cause |
+|---|---|---|
+| Katyusha | full lock at speed 16.6 to 12.8 deg/s | its 3.04 x 2.19 x 7.06 box: 3.8 times the table's yaw inertia |
+| Greyhound (XPack2) | 13.3 to 11.4 deg/s | its 2.95 x 1.43 x 5.43 box |
+| Krupp (XPack2) | top speed 111 to 95 km/h | its own `drag 15` in the sphere law (PHY-4: the law is not the engine's, the coefficient is) |
+| Schwimmwagen (XPack2) | 15.8 to 21.7 deg/s, in a near-rollover turn on both | its drawn wheel radius, 0.34 against 0.364 |
+| R75, HD_XA42 (XPack2) | top speed 128 and 169 to 111 km/h | already broken on the base, where full reverse drives them forward at 138 to 163 km/h; the R75 still does, at 92 |
+
+The KettenKrad does not move on either (0.1 and 0.3 km/h). The pre-existing
+motorbike and KettenKrad faults belong to another package.
+

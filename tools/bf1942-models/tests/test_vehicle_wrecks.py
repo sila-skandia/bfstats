@@ -145,5 +145,33 @@ class WreckLookupTests(unittest.TestCase):
         self.assertEqual(2, self.lookups["catalogueFetches"])
 
 
+class AbandonedHullTests(unittest.TestCase):
+    """A pad's hull left alone (`stepAbandoned`, ledger SPAWN-13), with Desert
+    Combat's words: `TimeToLive 45`, `Distance 40`, `damageWhenLost 10`."""
+
+    abandoned: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.abandoned = run_harness()["abandoned"]
+
+    def test_a_hull_far_from_its_pad_times_out_after_its_grace(self) -> None:
+        far = self.abandoned["far"]
+        # Whole through the 45 s grace (the clock runs in 0.5 s steps) ...
+        self.assertEqual([100] * 45, far[:45])
+        # ... then `damageWhenLost` a second: 100 HP gone in ten seconds more.
+        self.assertLess(far[45], 100)
+        self.assertAlmostEqual(10, (far[45] - far[54]) / 9, delta=1.2)
+        self.assertEqual(0, far[-1])
+
+    def test_nothing_times_out_near_its_pad_manned_or_watched(self) -> None:
+        # Within `Distance`, a man in the seat, a man on foot beside it.
+        for case in ("near", "occupied", "soldier"):
+            self.assertEqual([100] * 60, self.abandoned[case], case)
+
+    def test_a_scene_without_the_words_keeps_its_hulls(self) -> None:
+        self.assertEqual([100] * 60, self.abandoned["oldScene"])
+
+
 if __name__ == "__main__":
     unittest.main()
