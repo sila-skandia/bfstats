@@ -146,6 +146,18 @@ class LoadingAssetsSurviveARebakeTests(unittest.TestCase):
     def test_a_first_bake_has_nothing_to_keep(self) -> None:
         self.assertEqual(kept_files(None, [{"name": "Wake"}]), {})
 
+    def test_a_levels_own_effects_survive_with_their_gzip(self) -> None:
+        # `extract_effects.py --levels` names `<level>/effects.glb` in the row;
+        # the publisher refuses that glb without the `.gz` beside it.
+        previous = self.out / "a_shau"
+        (previous / "effects.glb").write_bytes(b"bundles")
+        (previous / "effects.glb.gz").write_bytes(b"gzip")
+        self.listing["a_shau"]["effects"] = "a_shau/effects.glb"
+        land(self.bake({"name": "A_Shau", "objects": 165}), self.out, self.listing)
+        self.assertEqual((previous / "effects.glb").read_bytes(), b"bundles")
+        self.assertEqual((previous / "effects.glb.gz").read_bytes(), b"gzip")
+        self.assertEqual("a_shau/effects.glb", self.listing["a_shau"]["effects"])
+
 
 class IndexRoundTripTests(unittest.TestCase):
     def test_the_published_index_is_sorted_by_lowercase_name(self) -> None:
