@@ -484,6 +484,9 @@ export function createHandWeapon(page) {
       // the new kit's full entry, and a magazine change in progress is dropped.
       soldierKit.handWeapon.ammo = kitAmmo.entry(name, soldierKit.handWeapon.data?.magazine || null);
       soldierKit.handWeapon.reload = 0;
+      // The heat is the entry's too (`itemHeat`): the new life's barrel is
+      // cold, not the last one's carried over through the kept rig.
+      soldierKit.handWeapon.heat = itemHeat(soldierKit.handWeapon.ammo, soldierKit.handWeapon.data);
       page.ensureFootBody(who, name).catch(err => console.warn('3P body:', err));
       playViewmodelClip(soldierKit.handWeapon, stanceDeployName(soldierKit.handWeapon), { restart: true });
       return;

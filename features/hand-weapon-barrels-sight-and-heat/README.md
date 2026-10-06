@@ -155,7 +155,13 @@ SCOPE-4's open question, for every scope.
 - `kit-ammo.js` `itemHeat` builds a `fire-state.js` `FireState` over those
   words, one per kit item, so a hot gun swapped away comes back hot. A depot
   does not cool it; a new life and a kit off the ground are cold. A weapon
-  with no words, or with `velocityDependentOnHeat`, gets none.
+  with no words, or with `velocityDependentOnHeat`, gets none. A new life
+  with the same weapon keeps the rig (`ensureHandWeapon`), so it re-points
+  the heat with the rounds. Without that, a redeploy with a hot M249 spawned
+  at 0.86 (review, `respawn_heat.cjs` in the page). Whether a kit off the
+  ground should be cold is not read. KITDROP-7 has the kit's own weapons
+  arrive with their rounds, and GUN-16 infers that a disabled item keeps its
+  heat, which together point to the dead man's heat coming with them.
 - `hand-fire.js` steps it while the item is enabled, gates the trigger on its
   `canFire`, and bills it once a pull. `soldier-hud.js` hands its heat to
   `writeSoldierAmmo`, which writes `Overheat/OverHeat`.
