@@ -1233,12 +1233,19 @@ def write_die_assets(machine: animstates.StateMachine, meshes: ArchivePool,
 
 
 #: The soldier template's own scalars the viewer reads, console word ->
-#: `ObjectTemplate` field: the corpse time (`soldier-death.js`) and the
-#: blast's push on his Armor (`knockback.js`, ledger KNOCK-4/KNOCK-7).
+#: `ObjectTemplate` field: the corpse time (`soldier-death.js`), the blast's
+#: push on his Armor (`knockback.js`, ledger KNOCK-4/KNOCK-7) and the medic
+#: bag's and the wrench's parameters (`kit-loadout.js` `healingPack`,
+#: `BFSoldier::useMedPack` / `useRepairPack`, supply-depots.md section 6).
 SOLDIER_TEMPLATE_VALUES = {
     "timeToLiveAfterDeath": "time_to_live_after_death",
     "explosionForceMod": "explosion_force_mod",
     "explosionForceMax": "explosion_force_max",
+    "healDistance": "heal_distance",
+    "healFactor": "heal_factor",
+    "selfHealFactor": "self_heal_factor",
+    "repairDistance": "repair_distance",
+    "repairFactor": "repair_factor",
 }
 
 

@@ -428,6 +428,20 @@ Combat: `soldierBody` gains `explosionForceMod` 75 / 150 and
 the corpse time and the template name are unchanged, and `die.gait.glb` comes
 out byte-identical to the published one.
 
+### The soldier template's other words (census item S8)
+
+The same `soldierBody` carries the medic bag's and the wrench's words
+(`healDistance`, `healFactor`, `selfHealFactor`, `repairDistance`,
+`repairFactor`; supply-depots.md section 6). `kit-loadout.js` `healingPack`
+used to hard-code vanilla's 10 / 0.25 / 0.15 and 2 / 0.15; it now reads the
+holder's soldier template, keeping those numbers only where the manifest
+predates the words. Every soldier of the four trees surveyed shares its mod's
+`CommonSoldierData.inc`, so vanilla, XPack1 and XPack2 read exactly what was
+hard-coded and Desert Combat's wrench heals 0.20 a round (2.0 HP/s at 10
+rounds/s) instead of 0.15. Checked by `tests/test_kit_level_js.py` (an old
+manifest, vanilla's, Desert Combat's, a template's own row) and
+`tests/test_die_assets.py`.
+
 ---
 
 ## Where the code lives

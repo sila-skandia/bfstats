@@ -1566,7 +1566,7 @@ function spawnBotsForLevel() {
 }
 const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
-  from(() => footBodies, `ensureFootBody`),
+  from(() => footBodies, `ensureFootBody soldierBody`),
   from(() => level, `currentDir isCollision vehicleDamage warmSubtree warmups world`),
   from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
   from(() => mapSurfaces, `teamNation`),
