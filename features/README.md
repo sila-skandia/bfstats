@@ -171,6 +171,7 @@ folder answers.
 | Folder | Kind | The question it answers |
 |---|---|---|
 | [vehicle-sound-coverage](vehicle-sound-coverage/README.md) | fix | Why do tank machine guns honk or vehicles go silent, and what guards it? |
+| [hand-weapon-sound-edges](hand-weapon-sound-edges/README.md) | build | What does a hand gun play when a burst stops and when its magazine is changed? |
 | [world-vehicle-audio](world-vehicle-audio/README.md) | build | How do bot-driven hulls, others' gunfire and footsteps make positional sound? |
 | [ambient-sound-parity](ambient-sound-parity/README.md) | fix | Why was Wake's surf audible everywhere, and how does retail attenuate level ambience? |
 | [sound-listener-parity](sound-listener-parity/README.md) | build | Where is the retail sound listener, and which vehicle sounds ride on it? |
