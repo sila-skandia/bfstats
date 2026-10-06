@@ -312,6 +312,15 @@ DC collision sidecars are stale for another reason, below).
   left; `test_flight.py` measures the pedal's share against a no-pedal
   control (under 1 degree for both, after). Parked for 10 s in the body world
   before boarding, neither moved, before or after.
+- The vanilla LCVP, the one vanilla root the fix moves, on Iwo Jima's page:
+  boarded, then full ahead up a synthetic beach (the bed 8 m under her start,
+  rising 1 in 12.5 along her heading; `page_lcvp.cjs` in the scratch dir).
+  On the door's box she reached 25.7 m/s, swung round off her heading with
+  the rudder centred (100 m along at 10 s, 35 m behind her start at 20 s)
+  and grounded after 36 s. On her hull's box she holds her heading at
+  15.6 m/s and grounds 130 m up the beach after 16 s, the bed 2.4 m over her
+  start and her keel 0.47 m under her origin (the engine's col0 bottom is
+  0.39 m, `LcvpCockpitExternal`).
 
 - With ground-handling's `72cf9934` merged in (the exporter keeps invisible
   `Spring`s as undrawn wheels): the KettenKrad, R75, HD_XA42 and LVT4
