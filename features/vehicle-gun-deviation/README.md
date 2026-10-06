@@ -89,6 +89,15 @@ The replay HUD's seat-cross tests moved by DEV-12. The first round now shows
 0.75, not 1.01, and one tick on it shows 0.96. The long burst's last round
 shows 2.55, not 2.65.
 
+**Page.** `~/.cache/dc-sweep/vehicle-deviation/page_seat_gun.cjs` (one
+headless Chromium under the shared lock) loads vanilla El Alamein, spawns,
+takes a Sherman's hull gunner seat and holds the trigger for 3 s, catching
+each round as the page's own `GunFire` launches it.
+- The 30 rounds left at totals 0.5, 0.656, 0.812, 0.968, then 1.056 steady,
+  the harness's numbers through `map.html`'s wiring.
+- None fell outside its square, the first round was inside the floor's, and
+  the mean |u| was 0.516.
+
 **Runner.** Headless El Alamein, `~/.cache/dc-sweep/vehicle-deviation/
 sim_cones.mjs`, 240 s, four bots seated in tanks (seed 2). The rounds came
 from the stationary MG42s, which other bots mounted on their own.
