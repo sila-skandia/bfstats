@@ -592,12 +592,15 @@ def _game_dir() -> Path | None:
 
 
 def _retail_manifest(mod: str) -> dict:
-    """`extract_loadouts.py --mod <mod>`'s manifest, without the lexicon."""
-    from extract_loadouts import read_chain_levels
+    """`extract_loadouts.py --mod <mod>`'s manifest, without the lexicon:
+    the levels' pads included, as `main` reads them."""
+    from extract_loadouts import discover_levels, kit_mod, read_chain_levels
     from extract_models import mod_chain
-    census, loadouts, level_loads = read_chain_levels(mod_chain(_game_dir(), mod))
+    chain = mod_chain(_game_dir(), mod)
+    pads = kit_mod.level_pads(discover_levels(chain), chain)
+    census, loadouts, level_loads = read_chain_levels(chain, pads=pads)
     return build_manifest(census.library, collect(census.library), loadouts, mod,
-                          level_loads=level_loads, read=census.read)
+                          level_loads=level_loads, read=census.read, pads=pads)
 
 
 @unittest.skipIf(_game_dir() is None, "no Desert Combat install")
@@ -623,8 +626,8 @@ class RetailAiWeaponTests(unittest.TestCase):
                           "soundSphereRadius": 120.0, "healing": False},
                          self.dc["AK47"])
         self.assertEqual("StingerRPG", self.dc["Stinger"]["aiTemplate"])
-        # The tree's file, made 09-30 before `/ai/` was dropped, when present:
-        # every entry it has comes back the same.
+        # The tree's file, when present: every entry it has comes back the
+        # same (the pad kits' M82Sniper and SA-7 included).
         tree = (Path(__file__).resolve().parents[1] / "viewer" / "maps" / "mods"
                 / "desertcombat" / "_shared" / "loadouts.json")
         if tree.is_file():
