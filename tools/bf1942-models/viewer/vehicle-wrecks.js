@@ -45,6 +45,7 @@ export function createVehicleWrecks(page) {
   function registerDamageables(ownerRoots) {
     clearDamageVisuals();
     page.vehicleDamage.clear();
+    padsRegistered = page.vehiclePads?.pads ?? null;
     // The world registers its side of every Armored owner (its own
     // `vehicleDamage` set IS this array — same object, see show()) and takes
     // the node + a world position for the water pass, so that pass needs no
@@ -76,6 +77,8 @@ export function createVehicleWrecks(page) {
 
   /** Placed node -> its Armor's owner id, for the pads (`stepPads`). */
   let ownerOfNode = new WeakMap();
+  /** The pad list `registerDamageables` last answered for. */
+  let padsRegistered = null;
 
   /**
    * Match a placed spawner node to its ObjectSpawner respawn window.
@@ -748,6 +751,11 @@ export function createVehicleWrecks(page) {
 
   function stepPads(dt) {
     if (!page.vehiclePads?.stepVehiclePads) return;
+    // The pads are the level's from its `indexScene`, and this side's answers
+    // are the level's from `registerDamageables`, which runs after it: a frame
+    // between the two (a level loading) would draw the first delays for a
+    // world nobody has joined yet.
+    if (page.vehiclePads.pads && page.vehiclePads.pads !== padsRegistered) return;
     stepAbandoned(dt);
     Object.assign(padWorld, serverCounts());
     page.vehiclePads.stepVehiclePads(dt, padWorld);
