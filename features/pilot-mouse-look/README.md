@@ -9,6 +9,13 @@ Since 2026-10-06 the other half is built too: with the key up the mouse flies
 the aircraft, and the keys reach the stick in one tick (MLK-7..MLK-12,
 "The mouse flies the aircraft" below).
 
+Since 2026-10-07 every seat goes by its own PCO and Camera: DC's air
+co-pilots and passengers fly the Air map and profile, a channel's devices
+sit in two slots and never add, the cockpit look turns 40 up and 5 down, the
+wire carries an analogue rudder and throttle, a ship's pitch has no spring,
+and a flick's excess on an elevator is spent over later ticks (MLK-14..MLK-18,
+"Every seat, the slots and the excess" below).
+
 ## What the engine does
 
 - **The camera word.** `ObjectTemplate.toggleMouseLook` is a byte on the
@@ -227,41 +234,159 @@ Vanilla Corsair at 300 m, 80 m/s, full throttle:
 The Corsair's 240 deg/s roll is the fixed-wing model's, not the input's
 (census item 6).
 
+
+## Every seat, the slots and the excess (2026-10-07)
+
+Package `air-input-2`: the gaps the air-input fix and its review left
+(`~/.cache/dc-sweep/reports/fix-air-input.md`, `review-air-input.md`).
+
+### What the engine does
+
+- **A seat flies on its own PCO's category (MLK-14).** Every seat is its own
+  PlayerControlObject, and `PlayerControlObject::enter` makes itself the
+  player's vehicle. The control map and the mouse profile (MLK-8) follow that
+  seat's `setVehicleCategory`, not the hull's.
+  - DC 0.7's `VCAir` co-pilots and passengers fly the Air map and profile:
+    `H6CoPilot`, `MH6Passenger_PCO3..6`, `SA342CoPilot`, `SA342Passenger3/4`,
+    `MH53CoPilot`, `F14BRIO`. DC Final has the same seats. Vanilla and XPack1
+    have none.
+  - Whether a seat needs the key is its own Camera's word (MLK-1). In DC 0.7
+    the MH-6 and SA-342 benches carry it, and so does the MH-53 co-pilot, who
+    sits behind the pilot's own `MH53PilotCamera`. The H-6 and SA-342
+    co-pilots do not: DC commented the line out ("remmed to give freelook").
+    No DC Final seat but the pilots carries it.
+  - DC 0.7's `Mi8_CoPilot` is `VCLand` behind the pilot's `Mi8Camera`. The
+    LandSea map binds no `c_PIMouseLook`, so that seat never looks.
+- **Two slots, never a sum (MLK-9, MLK-15).** A `.con` line fills the slot it
+  names, and a later line for that slot replaces it. A secondary line for a
+  channel with no primary yet is refused. The larger magnitude wins, the
+  primary on a tie. A key pair reads its first key when both are down.
+- **The pitch sign (MLK-17).** A Camera's or RotationalBundle's pitch is the
+  `setRotation` pitch, positive nose-down. `CorsairCamera`'s `-40..5` is 40
+  degrees up and 5 down, and `ShermanGunBase`'s `-20..5` is 20 of elevation.
+- **A still axis (MLK-18).** A look axis with no look input or no acceleration
+  does not turn: the template default is 0.1 deg/s^2. XPack2's C47 pilot has
+  no vertical look, DC's F-14B RIO none sideways.
+- **The excess (MLK-16, GUN-2).** Under `rememberExcessInput` the tick's input
+  joins a backlog held to +-40, the tick spends `clamp(backlog, +-1)`, and an
+  input against the backlog is taken whole and clears it. It is spent once a
+  tick (`Wing::handleUpdate`). Every shipped declaration is an
+  `automaticReset` elevator on `c_PIPitch` (vanilla 24, XPack1 4, XPack2 51,
+  DC 23, DC Final 6).
+- **The wire (W-1, W-2).** Retail carries `c_PIYaw` and `c_PIThrottle` as
+  12-bit channels in +-16, like the stick.
+
+### What changed
+
+- `viewer/mouse-look-key.js`:
+  - `seatProfile` reads the seat PCO node's `physics.vehicleCategory`, with
+    `operator>>`'s spellings. A seat that names none keeps the old rule.
+  - `seatNeedsMouseLookKey` reads `cameraView.toggleMouseLook` when the glb
+    carries it (the con-reader export). On older trees it proves what it
+    can: the pilot, and a seat whose camera is the pilot's own template.
+  - `seatLookSigns` gives the camera's own yaw and pitch direction, or 0 for
+    a still axis on the Air profile. With no look rig it falls back to the
+    profile's majority.
+  - `describeSeat` builds the descriptor, cached per surveyed seat.
+- `viewer/local-look.js`:
+  - the profile, the key and the look's signs come off the seat;
+  - any seat with a view of its own looks. A passenger of a driverless hull
+    used to fall through to the free camera.
+- `viewer/controls.js`:
+  - `context()` is the seat's profile;
+  - `axisIn` fills the two slots in line order and reads each off its own
+    device.
+- `viewer/vehicle-camera.js`: the cockpit and nose defaults are the right way
+  up (40 up, 5 down). `cameraLookLimits` maps the camera's own rig
+  (`cameraView.look`, else the node's `rig`) as `[-max, -min]`.
+- `viewer/seat-camera.js`: hands those limits to the seat's view, and a
+  passenger's view eases back as a pilot's does.
+- `viewer/netcode.js` and `server/room.mjs`: the record is 17 bytes, and
+  bytes 14..16 carry the rudder and throttle analogue. Byte 13 keeps their
+  signs, and a 14-byte record from an older page still reads.
+- `viewer/world-vehicle-tick.js`, `world-input.js` and `world.js`:
+  - a ship's `c_PIPitch` is the tick's value, and the spring is gone;
+  - every airframe takes its channels whole, with no fixed-wing +-1 in front
+    of the hull.
+- `viewer/vehicle-base.js` `advanceSurfaces`: spends a remembering servo's
+  backlog on the first call of each 30 Hz tick, then clips the target at +-1.
+  A drive reset drops it.
+
+Behaviour the owner will notice:
+
+- In a DC helicopter's back, the mouse uses the Air sensitivity and the Air
+  invert box.
+- W and S held together walk forward, and A and D strafe right, as retail
+  does. They used to cancel.
+- A joystick held against a key on the same channel reads the key's full
+  step, not the difference.
+- Holding Left Shift in a cockpit and pushing the mouse away looks up 40
+  degrees. The old limits allowed only 5.
+- An LCVP's ramp follows ArrowUp at once, with only its own servo's rate.
+- A mouse flick on a vanilla elevator holds full deflection for as many ticks
+  as it was past 1.
+
+### Verification
+
+- `test_mouse_look_key.py` (56 tests):
+  - the seat rules over the real `surveyVehicle`, on DC 0.7 MH-6 and MH-53
+    trees and on `tests/fixtures/air-seats.json`. That fixture is the
+    con-reader export of DC 0.7's MH-6, SA-342G, MH-53, Mi8 and F-14B, DC
+    Final's MH-6, XPack2's C47 and vanilla's Corsair, BF109 and B17, cut to
+    the seat tree;
+  - the page path through `createLocalLook`: a keyed bench looks only with
+    Left Shift and eases back; a co-pilot looks freely in the plain sense; DC
+    Final's bench and the BF109 are inverted on the shipped box; the C47 has
+    no vertical look and the RIO none sideways;
+  - the neck: the defaults, the camera's own rig, and a pilot pushing the
+    mouse away (40 up, 5 down).
+- `test_controls.py` (37 tests): the slot fill (a refused secondary, a
+  replaced primary, a tie) and the owner's joystick against a key (A with the
+  yaw stick at 0.18 reads -1, where it was -0.82).
+- `test_netcode_client.py`, `test_room.py`: the codec round trip (0.6 and
+  0.37 arrive analogue, -3.46 at its rate, 16 the ceiling), a 14-byte record
+  read by its signs, and a remote pilot's -0.37 rudder and 0.6 lever reaching
+  the world.
+- `test_flight.py`:
+  - a flick of 3.46 for one tick spends `[-1, -1, -1, -0.46, 0]`;
+  - a sign flip is taken whole; the cap leaves 39 full ticks after a held
+    hand; an input inside +-1 is unchanged;
+  - a reset carries nothing, and the backlog is spent once a tick at 1/60;
+  - an LCVP-shaped ramp servo reaches 0.5 in 1 s and 1 in 2 s.
+- `test_world_ship_pitch.py`, `test_world_air_input.py`: the ship's step, and
+  the world handing every airframe the rate whole.
+- In the page (`dc_lostvillage`, `~/.cache/dc-sweep/air-input-2/page_seats.cjs`),
+  with no page errors:
+  - the MH-6 bench, co-pilot and pilot are all on the Air profile;
+  - the pilot's knock turns nothing, his held look turns, and it eases back
+    to 0 within the second;
+  - the co-pilot's neck is his own camera's (60 up, 45 down);
+  - on today's trees the bench looks freely, since his glb has no word yet.
+
 ## Open
 
-- `rememberExcessInput` is not modelled. Vanilla's elevator Wings declare it
-  (the Corsair's tail flaps do), and in retail a mouse flick past
-  full deflection spends its excess over later ticks (GUN-2's backlog, up to
-  +-40 input units). The fixed-wing surfaces here clip at +-1 instead. The
-  fix belongs in the surface servo (`vehicle-base.js` `advanceSurfaces`, with
-  the flag in the surface spec), not in the input stage.
-- `advanceSurfaces` clips its target at +-1 now, so the fixed-wing +-1 in
-  `world-vehicle-tick.js` is redundant and can go.
+- **The re-bake.** The MH-6 and SA-342 benches need the key once their glbs
+  carry `cameraView.toggleMouseLook`. That is the con-reader package's
+  export, then a re-bake of every aircraft model and every level that places
+  one. The positive cameras (BF109, Mustang, B17, the Aichi Vals, DC's
+  AC-130, DC Final's passengers) and each camera's own neck arrive with the
+  same bake.
+- **Non-`automaticReset` parts latch in retail.** GUN-2's velocity law moves
+  a part while its input is held and leaves it where it stopped. The LCVP and
+  Daihatsu ramps, the subs' float trim, DC's Forklift lift and Ural ramp, the
+  AC-130 ramps and XPack2's M3 GMC steering wheel are all such parts.
+  `advanceSurfaces` is a position servo for all of them, so a ramp closes when
+  the key is let go. The law exists (`vectored-engines.js` `clipAngleStep`).
+  Moving these parts onto it touches the wheeled drive's steering read and
+  needs its own drive checks.
+- **Trigger slots replace too (MLK-15).** Shipped `Common.con` binds
+  `c_GIToggleConsole` to Grave and then Caps Lock, both primary. The binary
+  keeps only the second, but the viewer ORs every binding and keeps Grave.
+  Not changed: retail's console key needs checking against the game first.
+- A LandSea seat's look keeps the page's free look where its camera's rig says
+  the axis is still. MLK-18 holds for those cameras too; they were left alone
+  in this package.
 - `countsPerPixel` (one browser pixel is one count) is still the one unproven
-  unit (`bf1942-mouse-input`). It now scales the pilot's stick too.
-- `toggleMouseLook` is not extracted. Mods get the shipped rule, not their own
-  data (641 uses across 14 installs; only vanilla, XPack1 and XPack2 were
-  read). The fix:
-  - parse the word in `bf42/con.py`;
-  - emit it as `cameraView.toggleMouseLook` from `bf42/assemble.py`;
-  - have `seatNeedsMouseLookKey` prefer it;
-  - re-bake every aircraft model and every level that places an aircraft.
-- The look law while the key is held is still the viewer's. The engine uses
-  the camera's own `setMaxSpeed`, and each aircraft has its own clamps: BF109
-  `-65/-40..65/5`, B17 `-75/-40..75/0`, Spitfire `..70/1`. Five cameras use
-  `90/-90`, which flips the vertical look. The vertical's sign is the
-  camera's pitch acceleration times the Air box (MLK-13). The glbs carry
-  neither, so the page assumes the negative majority: right for the Corsair,
-  Spitfire, Stuka, Yak-9, Zero, SBDs, Il-2, every XPack1 and XPack2 pilot and
-  23 of DC's 24 cameras; wrong (not inverted) for the BF109, Mustang, B17,
-  Aichi Vals, DC's AC-130 and nine DC Final cameras. The fix is the same as
-  for `toggleMouseLook`: emit the camera's pitch acceleration sign in
-  `cameraView` and multiply by it.
-- The cockpit view's pitch limits (`vehicle-camera.js` `LOOK_LIMITS.cockpit`,
-  40 degrees down and 5 up) look mirrored: the engine's negative pitch is up
-  (`turret-rig.js` `RIG_SIGN.pitch`), so the Corsair camera's `-40..5` is 40
-  up and 5 down. Not checked against a recording.
-- The page never clears held keys on window blur (predates this change).
+  unit (`bf1942-mouse-input`).
+- The page never clears held keys on window blur (predates this work).
 - A mouse-button binding of `c_PIMouseLook` is not read by `controls.held`.
-- The live B17 gunner and Sherman readouts were not captured before the budget
-  stop. The unit tests cover both paths.
