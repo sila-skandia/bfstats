@@ -13,12 +13,15 @@ from bf42.kit import (  # noqa: E402
     BONE_SLOTS,
     PRIMARY_ITEM_INDEX,
     Kit,
+    TeamLoadout,
+    bind_pads,
     browsable,
     carried_templates,
     classify,
     collect,
     kit_parts,
     level_loadouts,
+    level_pads,
     overrides_air_movement,
     parse_level_kits,
     pose_candidate_sets,
@@ -821,6 +824,152 @@ class RealCoastalHammerTests(unittest.TestCase):
         self.assertEqual("USSoldier", teams[2].soldier)
         self.assertEqual(list(range(6)), sorted(teams[1].slots))
         self.assertEqual(list(range(6)), sorted(teams[2].slots))
+
+
+class LevelPadTests(unittest.TestCase):
+    """`level_pads`: what a level's placed ObjectSpawners name, every layer.
+
+    Desert Combat 0.7 hands out its M82 and Stinger kits only from pads, so a
+    kit sweep that read `game.setKit` alone never saw them (kit-pickups).
+    """
+
+    LEVEL = "bf1942/levels/DC_Test/"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.levels_dir = Path(self._tmp.name)
+        (self.levels_dir / "DC_Test.rfa").touch()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def pads(self, files: dict[str, bytes]) -> dict:
+        content = {"DC_Test.rfa": {self.LEVEL + name: body for name, body in files.items()}}
+        with mock.patch("bf42.level.RfaArchive", _fake_archives(content)):
+            return level_pads([("DC_Test", self.levels_dir / "DC_Test.rfa")])
+
+    def test_placed_spawners_in_every_layer_name_their_templates(self) -> None:
+        pads = self.pads({
+            "Init.con": b"game.setTeamSkin 1 IraqSoldier\ngame.setTeamSkin 2 USSoldier\n",
+            "Conquest/ObjectSpawnTemplates.con": b"""
+ObjectTemplate.create ObjectSpawner m82sniperspawner
+ObjectTemplate.setObjectTemplate 1 US_Sniper_Hvy
+ObjectTemplate.setObjectTemplate 2 US_Sniper_Hvy
+ObjectTemplate.create ObjectSpawner unplacedspawner
+ObjectTemplate.setObjectTemplate 2 US_Unplaced
+""",
+            "Conquest/ObjectSpawns.con": b"""
+Object.create m82sniperspawner
+Object.absolutePosition 10/20/30
+Object.setTeam 2
+""",
+            "Ctf/ObjectSpawnTemplates.con": b"""
+ObjectTemplate.create ObjectSpawner aaspawner
+ObjectTemplate.setObjectTemplate 1 Iraq_AA
+ObjectTemplate.setObjectTemplate 2 us_aa
+""",
+            "Ctf/ObjectSpawns.con": b"Object.create aaspawner\nObject.absolutePosition 1/2/3\n",
+        })
+        # A spawner no `ObjectSpawns.con` places spawns nothing; both sides'
+        # entries of a placed one count.
+        self.assertEqual({"us_sniper_hvy": "US_Sniper_Hvy", "iraq_aa": "Iraq_AA",
+                          "us_aa": "us_aa"}, pads["DC_Test"])
+
+    def test_a_malformed_layer_does_not_lose_the_others(self) -> None:
+        # FHSW's telemark-1943 carries `Object.absolutePosition` with no argument.
+        pads = self.pads({
+            "Conquest/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create ObjectSpawner s\nObjectTemplate.setObjectTemplate 2 US_AA\n",
+            "Conquest/ObjectSpawns.con": b"Object.create s\nObject.absolutePosition 1/2/3\n",
+            "Tdm/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create ObjectSpawner t\nObjectTemplate.setObjectTemplate 2 M1A1\n",
+            "Tdm/ObjectSpawns.con": b"Object.create t\nObject.absolutePosition\n",
+        })
+        self.assertEqual({"us_aa": "US_AA"}, pads["DC_Test"])
+
+    def test_a_level_whose_archive_wont_open_is_skipped(self) -> None:
+        with mock.patch("bf42.level.RfaArchive",
+                        _fake_archives({}, broken=frozenset({"DC_Test.rfa"}))):
+            self.assertEqual({}, level_pads([("DC_Test", self.levels_dir / "DC_Test.rfa")]))
+
+
+class BindPadsTests(unittest.TestCase):
+    """`bind_pads`: a kit on a pad is live there, and anyone can take it."""
+
+    def setUp(self) -> None:
+        self.kits = {
+            "us_sniper_hvy": Kit("US_Sniper_hvy", "x", "US", "Scout", team=2),
+            "us_sniper": Kit("US_Sniper", "x", "US", "Scout", team=2,
+                             levels=["L"], soldiers=["USSoldier"], slots=[0]),
+            "teamless": Kit("Teamless", "x", None, "Base"),
+        }
+        self.loadouts = {"L": {1: TeamLoadout("IraqSoldier"),
+                               2: TeamLoadout("USSoldier", {0: "US_Sniper"})}}
+        self.pads = {"L": {"us_sniper_hvy": "US_Sniper_Hvy", "us_sniper": "US_Sniper",
+                           "teamless": "Teamless", "ust": "UST", "m1a1": "M1A1"}}
+
+    def test_a_pad_only_kit_is_live_and_drawn_on_its_own_side(self) -> None:
+        self.assertEqual(3, bind_pads(self.kits, self.loadouts, self.pads))
+        m82 = self.kits["us_sniper_hvy"]
+        self.assertTrue(m82.live)
+        self.assertEqual(["L"], m82.levels)
+        self.assertEqual(["L"], m82.pads)
+        self.assertEqual([], m82.slots)
+        self.assertEqual(["USSoldier"], m82.soldiers)            # setKitTeam 2
+        self.assertEqual(["IraqSoldier", "USSoldier"], m82.pickup_soldiers)
+
+    def test_a_bound_kit_keeps_its_wearers(self) -> None:
+        bind_pads(self.kits, self.loadouts, self.pads)
+        sniper = self.kits["us_sniper"]
+        self.assertEqual(["USSoldier"], sniper.soldiers)
+        self.assertEqual([0], sniper.slots)
+        self.assertEqual(["L"], sniper.pads)
+        self.assertEqual(["IraqSoldier", "USSoldier"], sniper.pickup_soldiers)
+
+    def test_a_kit_with_no_team_is_drawn_on_every_side(self) -> None:
+        bind_pads(self.kits, self.loadouts, self.pads)
+        self.assertEqual(["IraqSoldier", "USSoldier"], self.kits["teamless"].soldiers)
+
+    def test_only_the_levels_asked_for(self) -> None:
+        self.assertEqual(0, bind_pads(self.kits, self.loadouts, self.pads, {"Other"}))
+        self.assertFalse(self.kits["us_sniper_hvy"].live)
+
+
+DC_LEVELS = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+             "/DesertCombat/Archives/bf1942/Levels")
+BRAGG_RFA = DC_LEVELS / "DC_Operation_Bragg.rfa"
+
+
+@unittest.skipUnless(BRAGG_RFA.exists(), "needs the Desert Combat install")
+class RealDesertCombatPadTests(unittest.TestCase):
+    """DC 0.7's pads, read from the archives: the M82 and Stinger kits on
+    Desert Shield and Bragg, and Bragg's Talil spawn carriers, which a pad
+    names but which are no kits."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.pads = level_pads([("DC_DesertShield", DC_LEVELS / "DC_DesertShield.rfa"),
+                               ("DC_Operation_Bragg", BRAGG_RFA)])
+
+    def test_desert_shield_lays_the_m82_kit(self) -> None:
+        self.assertEqual("US_Sniper_hvy", self.pads["DC_DesertShield"]["us_sniper_hvy"])
+
+    def test_bragg_lays_both_kits(self) -> None:
+        self.assertIn("us_sniper_hvy", self.pads["DC_Operation_Bragg"])
+        self.assertIn("us_aa", self.pads["DC_Operation_Bragg"])
+
+    def test_braggs_talil_objects_are_spawn_carriers_not_kits(self) -> None:
+        bragg = self.pads["DC_Operation_Bragg"]
+        for name in ("ust", "ist", "usk", "isk"):
+            self.assertIn(name, bragg)
+        from bf42.rfa import RfaArchive
+        archive = RfaArchive(BRAGG_RFA)
+        script = next(name for name in archive.entries
+                      if name.lower().endswith("talilspawns/objects.con"))
+        library = ObjectLibrary()
+        library.add_con(script, archive.read(script).decode("latin-1"))
+        for name in ("UST", "IST", "USK", "ISK"):
+            self.assertEqual("playercontrolobject", library.object(name).kind.lower())
 
 
 class LevelInitConTests(unittest.TestCase):

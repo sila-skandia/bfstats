@@ -610,6 +610,15 @@ class TestModRigSelection(unittest.TestCase):
             ("FrenchSoldier", "RandomGBTankcommander3"),
             ("FrenchSoldier", "KnifeAllies")])
 
+    def test_a_pad_kit_is_held_in_every_side_s_sleeves(self):
+        # DC 0.7's M82 kit lies on pads anyone can take (`pickupSoldiers`,
+        # extract_kits.py); its wearer is the US soldier.
+        kits = {"kits": [{"soldiers": ["USSoldier"], "levels": ["Basra"],
+                          "pickupSoldiers": ["IraqSoldier", "USSoldier"],
+                          "items": [{"template": "M82Sniper"}]}]}
+        self.assertEqual(extract_viewmodel.kit_pairs(kits), [
+            ("USSoldier", "M82Sniper"), ("IraqSoldier", "M82Sniper")])
+
     def test_index_lists_every_rig_in_the_tree(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
