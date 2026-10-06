@@ -168,7 +168,7 @@ what made Brief P's five fields a 2.17 GB publish. That is gone.
 
 The viewer's colliders (the page's `level-terrain.js`, the headless runner,
 the room server) built their height lattice off the drawn terrain tiles, so a
-patch the bake does not draw had no ground: 29 live levels' sea floor
+patch the bake does not draw had no ground: the sea floor of 41 of the five in-scope trees' 167 levels
 (Midway 240 of 256 patches, Guadalcanal 192, Tobruk 182), and a hull on the
 bed that reached one was lifted onto the sea. The engine collides against the
 whole heightmap. The `heightmap` layer writes it whole:
