@@ -2,7 +2,9 @@
 // (`hullGeometry`) and the `Aircraft`-shaped physics table (`shipSpec`) every
 // number of which comes out of the glb. Split out of `ship.js`, which
 // re-exports both; its header carries the engine reading, including why the
-// box is the root's own hull mesh and not everything drawn under it.
+// box is the root's own hull mesh and not everything drawn under it. Its tail
+// is the engine's own geometry search (`inertiaGeometryNode`, COL-14, COL-15), which
+// the land drives read their inertia, box drag and sea depth through.
 
 import * as THREE from 'three';
 
@@ -265,4 +267,155 @@ export function shipSpec(root) {
     engines,
     surfaces,
   };
+}
+
+// --- the engine's own geometry search (COL-14, COL-15) ----------------------
+//
+// `hullGeometry` above walks the LOD chain the way a ship's tree is built. The
+// engine's search for the geometry a body's inertia and box drag read, and for
+// its root part's collision mesh, is `findLodGeometry`'s, and on a land
+// vehicle the two part company: a car's hull mesh sits under its cockpit LOD,
+// which the chain walk never reaches. These are the land drives' (`amphibious.js`
+// re-exports them).
+
+/** A node's meshes that are part of ITS geometry: its own, plus every untagged
+ *  mesh child (the assembler splits one StandardMesh into a sub-mesh per
+ *  material). A child with a `templateKind` is an object of its own. */
+export function ownGeometryMeshes(node) {
+  const isCollision = n => Boolean(n.userData?.collision || n.geometry?.userData?.collision
+    || /collision/i.test(n.name || ''));
+  const found = [];
+  if (node.isMesh && node.geometry && !isCollision(node)) found.push(node);
+  for (const child of node.children) {
+    if (child.isMesh && child.geometry && !isCollision(child) && !child.userData?.templateKind) {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+/**
+ * The object whose geometry `PhysicsNode::updateRotationalPhysics`
+ * (`0x082539e0`) takes a vehicle's inertia box from, found the way the engine
+ * finds it (COL-8, COL-14, COL-15):
+ *
+ *   1. the root's own `IGeometry` (`queryComponent(0x492fe0fe)` is the
+ *      object's `+0x5c`), which no vanilla or DC land root authors;
+ *   2. else `findLodGeometry` (`0x0818d860`): if the root's FIRST child is a
+ *      `LodObject`, its highest alternative's geometry (`m_forceHighestLod`,
+ *      `LodObject::getChild` `0x08216ce0` returns entry 0) — a tank's
+ *      `ShermanComplex`;
+ *   3. else the first `LodObject` depth first, child before sibling, whose
+ *      selector is a `DistCompareLodSelector` (`internalFindChildOfLodSelectorCID`
+ *      `0x0818db50`, CID `0x94b1`), and again its highest alternative's — a
+ *      car's cockpit LOD, `WillyCockpitExternal`'s `Willy_Hull_M1`. A
+ *      `PlayerControlObject` ends the search of its own sibling chain there.
+ *
+ * The glb does not carry a selector's class, so step 3 takes the first
+ * `LodObject` whose kept alternative has geometry of its own. Across the
+ * vanilla and DC land vehicles that is the cockpit LOD every time: the root's
+ * own LOD (`DistCompareSelector2`, CID `0x94b2`) holds a geometry-less
+ * `Bundle` and the steering-wheel LODs sit after the cockpit.
+ *
+ * @returns {THREE.Object3D|null}
+ */
+export function inertiaGeometryNode(root) {
+  const parts = node => node.children.filter(child => child.userData?.templateKind);
+  const hasGeometry = node => Boolean(node?.userData?.geometry) && ownGeometryMeshes(node).length > 0;
+  if (hasGeometry(root)) return root;
+  const first = parts(root)[0];
+  if (first?.userData?.templateKind === 'LodObject') {
+    const alternative = parts(first)[0];
+    if (hasGeometry(alternative)) return alternative;
+  }
+  const visit = list => {
+    for (const node of list) {
+      const kind = node.userData?.templateKind;
+      if (kind === 'PlayerControlObject') return null;
+      if (kind === 'LodObject') {
+        const alternative = parts(node)[0];
+        if (hasGeometry(alternative)) return alternative;
+      }
+      const found = visit(parts(node));
+      if (found) return found;
+    }
+    return null;
+  };
+  return visit(parts(root));
+}
+
+/**
+ * The `.sm` header box of `node`'s own geometry, `[DX, DY, DZ]`, from the
+ * level's collision sidecar (`collision-meshes.json`, which the page and the
+ * runner load as `hullBodies.collisionMeshes`): its `geometries` maps the
+ * geometry template to the mesh file, and that file's `bbox` is the header's
+ * `boundsMin`/`boundsMax`, the box `getBoundingBox` (`0x083b4e40`) returns
+ * (COL-14). Null without the table or the mesh. A `GeometryTemplate.scale`
+ * would scale it (`setScale` `0x083b4640`); no land hull's geometry sets one.
+ *
+ * @returns {number[]|null}
+ */
+export function headerGeometryBox(node, collisionMeshes) {
+  const geometry = node?.userData?.geometry;
+  if (!collisionMeshes || !geometry) return null;
+  const key = String(geometry).toLowerCase();
+  const file = collisionMeshes.geometries?.[key] ?? key;
+  const box = collisionMeshes.meshes?.[file]?.bbox;
+  if (!box) return null;
+  const size = [box[1][0] - box[0][0], box[1][1] - box[0][1], box[1][2] - box[0][2]];
+  return size.every(v => v > 0) ? size : null;
+}
+
+/**
+ * `[DX, DY, DZ]` of the box `getGeometryInertia` (`0x08253930`) reads: the
+ * found geometry's own `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`,
+ * which its constructor copies from the template's `+0x40`, which
+ * `loadHeader` `0x083a6200` reads straight out of the `.sm` header). Given the
+ * level's collision sidecar, that header box itself (`headerGeometryBox`).
+ * Without it (a harness, the replay) the glb mesh's own vertex box, in the
+ * root's frame, which is the header box on every vanilla, XPack1 and XPack2
+ * land hull and is not on 17 of Desert Combat's 41 (a Humvee's header is
+ * 2.545 x 1.905 x 5.008, its vertices 2.33 x 1.905 x 4.945; COL-15). Null when
+ * the tree carries no such geometry (a test double).
+ *
+ * @returns {number[]|null}
+ */
+export function inertiaGeometryBox(root, collisionMeshes = null) {
+  root.updateWorldMatrix(true, true);
+  const node = inertiaGeometryNode(root);
+  if (!node) return null;
+  const header = headerGeometryBox(node, collisionMeshes);
+  if (header) return header;
+  const inverse = root.matrixWorld.clone().invert();
+  const local = new THREE.Matrix4();
+  const union = new THREE.Box3();
+  const box = new THREE.Box3();
+  for (const mesh of ownGeometryMeshes(node)) {
+    mesh.geometry.computeBoundingBox();
+    box.copy(mesh.geometry.boundingBox).applyMatrix4(local.multiplyMatrices(inverse, mesh.matrixWorld));
+    union.union(box);
+  }
+  if (union.isEmpty()) return null;
+  const size = union.getSize(new THREE.Vector3());
+  return size.x > 0 && size.y > 0 && size.z > 0 ? [size.x, size.y, size.z] : null;
+}
+
+/** `getGeometryInertia`'s per-mass inertia off a box, as `(pitch, yaw, roll)`
+ *  about the body's x, y and z: `Ix = (DY^2+DZ^2)/3`, `Iy = (DZ^2+DX^2)/3`,
+ *  `Iz = (DX^2+DY^2)/3` (collision-response.md section 4.2). */
+export function geometryInertia([dx, dy, dz], out = new THREE.Vector3()) {
+  return out.set((dy * dy + dz * dz) / 3, (dz * dz + dx * dx) / 3, (dx * dx + dy * dy) / 3);
+}
+
+/**
+ * The body world's part (`describeVehicleParts`) that is the engine's ROOT
+ * part: the one whose collision mesh `getVertexCollision` finds for the root
+ * object, by the search `inertiaGeometryNode` runs (COL-15). Not
+ * `part.isRoot`, which is merely the first hull part the tree walk met and on
+ * a placed BMP-2 is its gun barrel. Null when no part hangs off that node.
+ */
+export function rootCollisionPart(parts, root) {
+  if (!parts?.length || !root) return null;
+  const node = inertiaGeometryNode(root);
+  return node ? parts.find(part => part.node === node && part.kind !== 'spring') ?? null : null;
 }

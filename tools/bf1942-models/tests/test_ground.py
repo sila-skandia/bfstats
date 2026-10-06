@@ -1343,6 +1343,135 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertEqual(0.5, gate["flatFloorCos"])
         self.assertEqual(0.5, gate["padFloorCos"])
 
+    # --- a wheeled hull reads its own chassis -----------------------------
+
+    def test_a_wheeled_hull_takes_its_inertia_from_its_cockpit_hull_mesh(self) -> None:
+        # The engine's search (COL-14, COL-15): the root has no geometry, its own LOD
+        # holds a geometry-less Bundle, so the box is the cockpit LOD's
+        # exterior, `Willy_Hull_M1`, under `getGeometryInertia`'s /3 law.
+        willy = self.results["ownChassis"]["willy"]
+        dx, dy, dz = 1.734, 1.523, 3.636
+        for got, want in zip(willy["box"], (dx, dy, dz)):
+            self.assertAlmostEqual(want, got, places=3)
+        self.assertAlmostEqual((dy * dy + dz * dz) / 3, willy["inertia"][0], places=3)
+        self.assertAlmostEqual((dz * dz + dx * dx) / 3, willy["inertia"][1], places=3)
+        self.assertAlmostEqual((dx * dx + dy * dy) / 3, willy["inertia"][2], places=3)
+        # Not the guessed 1.6 x 1.5 x 3.6 box the table carries.
+        self.assertNotAlmostEqual(self.results["ownChassis"]["willyTable"][1],
+                                  willy["inertia"][1], places=2)
+
+    def test_given_the_collision_sidecar_the_box_is_the_sm_header_box(self) -> None:
+        # `getBoundingBox` returns the box the mesh's `.sm` header carries
+        # (COL-14), which `collision-meshes.json` keeps as `bbox`; on 17 of
+        # DC's land hulls it is not the glb's vertex box (COL-15). The page and
+        # the runner hand the sidecar to the drive, and the drive takes the
+        # header box for its inertia, its drag radius and the sea's `DY`.
+        chassis = self.results["ownChassis"]
+        dx, dy, dz = 2.4, 2.0, 5.0
+        for got, want in zip(chassis["header"]["box"], (dx, dy, dz)):
+            self.assertAlmostEqual(want, got, places=4)
+        self.assertAlmostEqual((dz * dz + dx * dx) / 3, chassis["header"]["inertia"][1], places=3)
+        self.assertEqual([dx, dy, dz], chassis["headerWater"])
+        # A sidecar that does not know the mesh keeps the vertex box.
+        self.assertEqual(chassis["willy"]["box"], chassis["headerUnknown"]["box"])
+
+    def test_a_passenger_seat_ahead_of_the_cockpit_ends_the_search(self) -> None:
+        # `internalFindChildOfLodSelectorCID` returns at a PlayerControlObject
+        # without visiting its later siblings, so a tree that puts one first
+        # finds no geometry, and the drive keeps the table.
+        chassis = self.results["ownChassis"]
+        self.assertIsNone(chassis["passengerFirst"]["box"])
+        self.assertEqual(chassis["willyTable"], chassis["passengerFirst"]["inertia"])
+        self.assertEqual(1.8, chassis["passengerFirst"]["boundingRadius"])
+
+    def test_a_wheeled_hull_reads_its_own_mass_drag_and_wheels(self) -> None:
+        chassis = self.results["ownChassis"]
+        self.assertEqual(10000, chassis["scud"]["mass"])
+        self.assertEqual(6, chassis["scud"]["drag"])
+        # Each wheel off its own mesh: the Kubelwagen's 0.34, not the Willy's.
+        self.assertEqual([0.34] * 4, chassis["kubel"]["wheelRadius"])
+        self.assertEqual([0.364] * 4, chassis["willy"]["wheelRadius"])
+        # The drag radius is the box's, so a long truck's is a long truck's.
+        self.assertGreater(chassis["scud"]["boundingRadius"], 3 * chassis["willy"]["boundingRadius"] / 2)
+
+    def test_the_forks_move_at_their_own_rate(self) -> None:
+        # DC's Forklift: the world hands c_PIPitch over as a step (MLK-10),
+        # and the part's own `setMaxSpeed 0/60/0` over its -160..20 range is
+        # what moves the forks, 0.375 of full deflection a second. They do not
+        # snap to the key.
+        fork = self.results["forkServo"]
+        self.assertTrue(fork["bound"])
+        self.assertAlmostEqual(fork["rate"], 0.375)
+        self.assertAlmostEqual(fork["firstStep"], fork["rate"] * fork["dt"], places=4)
+        self.assertAlmostEqual(fork["afterOneSecond"], fork["rate"], places=3)
+
+    def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
+        # The Forklift's rear bundles declare direction -1: each wheel turns as
+        # its own bundle does, so right stick is a right turn for both trucks
+        # (it was a left one for the rear-steered, every wheel taking the front
+        # axle's sense).
+        turn = self.results["steerDirection"]
+        self.assertGreater(turn["front"], 30)
+        self.assertGreater(turn["rear"], 30)
+
+    def test_an_origin_near_the_rear_axle_spins_a_full_lock_turn(self) -> None:
+        # The body turns about its origin and each tyre's moment is taken from
+        # it (collision-response sections 4.1, 4.2). The Humvee as authored
+        # holds a full-lock turn from 15 m/s; with its origin where DC's Desert
+        # Patrol Vehicle has its own, 0.94 m ahead of the rear axle, the same
+        # chassis spins and stalls. That placement, not a tyre constant, is
+        # the viewer's DPV spin. Retail does not spin it (review, 2026-10-07:
+        # the DC lab's physics-driven bots at full lock from 10-15 m/s turn it
+        # at 25 deg/s median, 37 at most, 4.3 degrees of slip), so this pins
+        # the viewer's mechanism, not the engine's; why they differ is open.
+        lever = self.results["originLever"]
+        self.assertLess(lever["asAuthored"]["turned"], 90)
+        self.assertGreater(lever["asAuthored"]["along"], 15)
+        self.assertGreater(lever["dpvPlace"]["turned"], 180)
+        self.assertLess(lever["dpvPlace"]["along"], 5)
+
+    # --- land hulls in the sea ---------------------------------------------
+
+    def test_a_land_hull_sinks_to_the_bed(self) -> None:
+        # Water makes no impulse (collision-response section 7): the springs
+        # find the bed 6 m down and the hull rests on them there.
+        for kind in ("jeep", "tank"):
+            hull = self.results["landHullsInTheSea"][kind]
+            self.assertTrue(hull["hasWater"], kind)
+            self.assertTrue(hull["grounded"], kind)
+            self.assertGreater(hull["belowSea"], 4, kind)
+            self.assertGreater(hull["depth"], 4, kind)
+            self.assertGreater(hull["aboveBed"], 0.2, kind)
+            self.assertLess(hull["aboveBed"], 1.2, kind)
+
+    def test_the_sea_holds_a_land_hull_to_a_crawl(self) -> None:
+        # Fully under, the box drag takes 25 x its relative speed, squared
+        # over the dry law: the jeep crawls on the bed at a tenth of its road
+        # speed, the tank at under half of its own.
+        sea = self.results["landHullsInTheSea"]
+        self.assertLess(sea["jeep"]["fastestDeep"], 5)
+        self.assertLess(sea["tank"]["fastestDeep"], 9)
+        # Handed no sea, the same jeep keeps the page's floor and drives on it.
+        self.assertFalse(sea["jeepNoSea"]["hasWater"])
+        self.assertGreater(sea["jeepNoSea"]["fastestDeep"], 25)
+
+    def test_an_amphibian_still_swims(self) -> None:
+        amphibian = self.results["amphibian"]
+        self.assertTrue(amphibian["sea"]["afloat"])
+        self.assertFalse(amphibian["sea"]["grounded"])
+        self.assertGreater(amphibian["sea"]["along"], 4)
+        self.assertGreater(abs(amphibian["turn"]["deg"]), 30)
+        self.assertIsNone(amphibian["shermanKit"])
+
+    def test_a_long_truck_turns_in_on_its_own_inertia(self) -> None:
+        # Same springs, same engine, same drag per unit mass: the SCUD-B box
+        # has nine times the yaw inertia, and one second into a full-lock
+        # turn from 10 m/s it is yawing at well under half the jeep's rate.
+        chassis = self.results["ownChassis"]
+        self.assertGreater(chassis["scud"]["inertia"][1] / chassis["willy"]["inertia"][1], 8.5)
+        self.assertLess(chassis["turnIn"]["scud"], chassis["turnIn"]["willy"] / 2)
+        self.assertGreater(chassis["turnIn"]["scud"], 3)
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):

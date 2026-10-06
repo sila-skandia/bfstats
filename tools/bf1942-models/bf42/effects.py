@@ -98,7 +98,10 @@ _PARTICLE_CURVE = {
 }
 _PARTICLE_BOOL = {
     "turnsinmovingdirection": "turnsInMovingDirection",
-    "hascollisionphysics": "hasCollisionPhysics",
+    # The spelling `con.console_word` files both console spellings under
+    # (CON-15): a particle's bare `hasCollisionPhysics` and its
+    # `setHasCollisionPhysics` both land here.
+    "sethascollisionphysics": "hasCollisionPhysics",
     "usemipmaps": "useMipMaps",
 }
 
@@ -267,11 +270,22 @@ def emitter_spec(emitter: con_mod.ObjectTemplate,
     (`dice::ref2::roll`, 0x08061df0), which is what scatters a smoke puff's
     launch direction. All offsets and speeds are in the emitter's frame:
     `dof` is its forward, `up` its up, `right` its right.
+
+    A spawn effect (`isSpawnEffect 1`, ledger EMT-10) makes no particle at
+    all: the game creates its template as a real object at the spawn point,
+    turned to the emitter's frame (`GameServer::spawnObject`). Its particle
+    block is then `{"kind": "object"}` and the bake hangs the object's whole
+    tree under the emitter. Desert Combat's objective buildings die this way
+    (`e_air_control_tower_desWRECKPCO` stands the ruined tower up), and so do
+    vanilla's PT boats, which leave a raft.
     """
-    particle = particle_spec(payload)
+    props = emitter.effect_props
+    if _truthy(props.get("isspawneffect", "0")):
+        particle = {"kind": "object", "template": payload.name}
+    else:
+        particle = particle_spec(payload)
     if particle is None:
         return None
-    props = emitter.effect_props
     spec: dict = {"template": emitter.name, "particle": particle}
     for cmd, key in _EMITTER_CRD.items():
         raw = props.get(cmd)

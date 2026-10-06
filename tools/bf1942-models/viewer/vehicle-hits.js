@@ -12,7 +12,10 @@ import { soldierExposure, worldBlocker } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_BODY_MATERIAL } from './bot-referee.js';
 import { damageFactor } from './projectile-damage.js';
-import { roundHit } from './soldier-death.js';
+import { roundHit, soldierTemplateValue } from './soldier-death.js';
+import {
+  BLAST_SEPARATION_MIN, Knockback, VANILLA_SOLDIER_FORCE, soldierBlastAcceleration,
+} from './knockback.js';
 import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
@@ -29,7 +32,8 @@ import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
  * `raiseHitIndication` (optional: a headless runner has no crosshair),
  * `showDamageTier`,
- * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`,
+ * `soldier`, `soldierArmor`, `soldierBody` (optional: `gaits.json`'s, for the
+ * blast's push), `soldierDead`, `soldierTemplateFor` (optional), `stepWrecks`,
  * `triggerHitIndicator` (optional: the HUD's damage wash, as on foot),
  * `vehicleDamage`, `vehicles`, `world`, `wreckVehicle`.
  */
@@ -296,6 +300,61 @@ export function createVehicleHits(page) {
                            target, target.pose ?? 0, blocked);
   }
 
+  /** Scratch for `throwSoldier`. */
+  const _push = { x: 0, y: 0, z: 0, force: 0 };
+  const _terrainNormal = { x: 0, y: 1, z: 0 };
+  const _normalOut = [0, 1, 0];
+
+  /**
+   * The push `handleExplosionOnObject` gives the soldier a splash just priced
+   * (KNOCK-4..KNOCK-7), into his body's accumulator, and the stamp the flight
+   * is judged against (`knockback.js`). Only a man the splash cost hit points
+   * reaches here, which is the engine's own gate (`calcDamage`'s answer above
+   * zero, `0x081566df`); the human and the bots on foot alike, and a bot's
+   * landing is the survive one (KNOCK-8).
+   *
+   * His own template's `explosionForceMod` / `explosionForceMax` are the
+   * Armor's (`gaits.json` `soldierBody`), the vanilla soldier's where the tree
+   * predates them; the round's `forceOnExplosion` rides the record
+   * (`splashForce`, `damage.json`'s projectile row), the engine's 150 where it
+   * does not. Returns the push, or null for nobody to push.
+   */
+  function throwSoldier(hit, record) {
+    const target = hit.target;
+    const soldier = target.armor === page.soldierArmor ? page.soldier
+      : target.botId != null ? page.world?.player(target.botId)?.soldier : null;
+    const body = soldier?.body;
+    if (!body?.blast) return null;
+    body.knockback ??= new Knockback();
+    const [bx, by, bz] = record.splashPoint ?? record.point;
+    const yMod = record.splashYMod > 0 ? record.splashYMod : 1;
+    const template = page.soldierTemplateFor?.({ team: teamOf(target.playerId) }) ?? null;
+    const force = soldierTemplateValue(page.soldierBody, template, 'explosionForceMod');
+    const ceiling = soldierTemplateValue(page.soldierBody, template, 'explosionForceMax');
+    if (hit.distance < BLAST_SEPARATION_MIN) {
+      // The terrain's normal under the blast (`terrainBase` vtable `+0x54`,
+      // `0x08156a64`); flat where the page has no heightfield.
+      _normalOut[0] = 0; _normalOut[1] = 1; _normalOut[2] = 0;
+      page.collider?.heightfield?.normal?.(bx, bz, _normalOut);
+      [_terrainNormal.x, _terrainNormal.y, _terrainNormal.z] = _normalOut;
+    }
+    soldierBlastAcceleration({
+      force: record.splashForce ?? undefined,
+      radius: record.splashRadius,
+      distance: hit.distance,
+      offset: [target.x - bx, (target.y - by) * yMod, target.z - bz],
+      yaw: soldier.yaw,
+      exposure: hit.exposure ?? 1,
+      damageRatio: hit.raw > 0 ? hit.amount / hit.raw : 0,
+      underWater: body.underWater,
+      forceMod: Number.isFinite(force) ? force : VANILLA_SOLDIER_FORCE.mod,
+      forceMax: Number.isFinite(ceiling) ? ceiling : VANILLA_SOLDIER_FORCE.max,
+      terrainNormal: _terrainNormal,
+    }, _push);
+    body.blast(_push.x, _push.y, _push.z, { ai: target.botId != null });
+    return _push;
+  }
+
   /**
    * Whether a round's landing raises the local player's hit marks
    * (`CrossHair/HitIndicationTime`, ledger XHIT-4 and XHIT-5).
@@ -360,6 +419,8 @@ export function createVehicleHits(page) {
       // has is a figure that should stop standing there. The player's own death
       // is already handled where every other cause of it is.
       if (hit.target?.soldier) {
+        // The blast that priced him pushes him too (`knockback.js`).
+        throwSoldier(hit, record);
         // Area damage names no weapon on the kill line: `[killed]`.
         if (hit.target.armor === page.soldierArmor) {
           page.noteLocalAttack?.(roundFirer(record?.firerGroup) ?? attacker, { splash: true });
@@ -652,6 +713,7 @@ export function createVehicleHits(page) {
     splashTargets,
     stepVehicleDamage,
     readGate,
+    throwSoldier,
     vehicleInput,
   });
   return vehicleHits;

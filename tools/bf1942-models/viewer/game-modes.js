@@ -35,6 +35,10 @@ export const MODE_KEYS = [
   'objectSpawns',
   'tickets',
   'combatArea',
+  // A CTF layer's two `FlagBase`s (`bf42/ctf.py`, played by `ctf.js`). Only
+  // the Ctf entry carries the key, so every other layer reads the top level's
+  // absence and has no flags to steal.
+  'flagBases',
 ];
 
 function modeMap(extras) {

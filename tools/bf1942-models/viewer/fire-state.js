@@ -200,7 +200,8 @@ export class FireState {
    *
    * **One round per projectile, not one per pull** — ledger BOMB-1,
    * `FireArms::fireFinished` (lnxded `0x08288470`): a multi-barrel weapon with
-   * no `setAsynchronyFire` charges `barrelCount`, everything else charges 1,
+   * no `setAsynchronyFire` and no `blastAmmoCount` (BOMB-13) charges
+   * `barrelCount`, everything else charges 1,
    * and the counter is floored at zero. A Stuka's `magSize 30` over two barrels
    * is therefore fifteen drops of a pair and one pull takes it from 30 to 28.
    * `gunfire.js`'s `salvo()` does that arithmetic and hands the answer down; the

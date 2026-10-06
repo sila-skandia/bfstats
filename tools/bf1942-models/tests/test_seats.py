@@ -58,6 +58,9 @@ MODULES = {
     "round-impact.js": VIEWER / "round-impact.js",
     "projectile-flight.js": VIEWER / "projectile-flight.js",
     "round-launch.js": VIEWER / "round-launch.js",
+    # round-launch.js builds a rocket's motor (features/rocket-flight).
+    "rocket-motor.js": VIEWER / "rocket-motor.js",
+    "engine-revs.js": VIEWER / "engine-revs.js",
     "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
     "camera-dof.js": VIEWER / "camera-dof.js",
@@ -181,6 +184,21 @@ class SeatsModuleTests(unittest.TestCase):
         # No driven spring in the tree: the land model has nothing to push.
         self.assertEqual("ship", kinds["lvt4"])
         self.assertEqual("ship", kinds["uncategorised"])
+
+    def test_a_root_without_mobile_physics_drives_nothing(self) -> None:
+        """PHY-17: `setPhysicsNodeComponent` (`0x081dd490`) gives a template
+        whose `+0x70` bit 0 is clear a `StaticPhysicsNode`, whose update and
+        every adder is a bare `ret`; an Engine pushes on the root's node, so
+        DC's `Nimitz_Static*` (`hasMobilePhysics 0`, a `c_ETShip` aboard)
+        never moves. The helm stays a seat, entry points and all, and
+        vanilla's Enterprise (no key stamped) is still a ship."""
+        static = self.results["staticRoot"]
+        self.assertEqual("seat", static["nimitzStatic"])
+        self.assertFalse(static["drivable"])
+        self.assertIsNone(static["drive"])
+        self.assertEqual(1, static["entries"])
+        self.assertEqual("ship", static["enterprise"])
+        self.assertEqual("ship", static["stampedMobile"])
 
     # --- seat order matches SEAT-24's own reading ---------------------------
 

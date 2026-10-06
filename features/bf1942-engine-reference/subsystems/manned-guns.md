@@ -211,6 +211,18 @@ weapon's: Desert Combat's M249 and PKM, and a grenade, whose
 The soldier HUD shows the held weapon's raw heat in the same
 `Overheat/OverHeat` a seat's heat bar reads (GUN-16).
 
+**What a pull costs** is the bomb rack's rule, because a gun is a `FireArms`
+like a rack (BOMB-1..BOMB-5, BOMB-13; [bombs-and-torpedoes.md](bombs-and-torpedoes.md)
+§1): one round per barrel that fires, every barrel of a salvo firing, one
+barrel round-robin under `asynchronyFire`. `blastAmmoCount` (a bool at
+`FireArmsTemplate+0x348`, read 2026-10-06) makes a salvo cost one round and
+fire in full even on the last one: a shotgun's pellets, an FHSW canister
+shell. A single-barrel gun is untouched by it, so Desert Combat's
+`setBlastAmmoCount 5` on the A-10's GAU-8 (a value the bool read refuses
+anyway, CON-17) leaves the gun at one round a pull: 1,350 pulls to empty.
+Built in `viewer/bomb-release.js` `salvo()` for every gun the page fires
+([`features/dc-engine-reads`](../../dc-engine-reads/README.md)).
+
 ## 6. Projectile flight — reused from the general case
 
 A gun's shell is an ordinary [projectile](projectiles-and-impacts.md): the
@@ -237,9 +249,16 @@ is what closes that gap.
   `FUN_006bba90` / `FUN_006bbd90`.
 - **GUN-5**: the two unidentified fire-gate flags at `+0x1fc`/`+0x20c` and
   the third at `+0x294`; what `getHasHeat`'s two compared fields represent.
-- `automaticYawStabilization`/`automaticPitchStabilization` (`+0x1a5`/
+- ~~`automaticYawStabilization`/`automaticPitchStabilization` (`+0x1a5`/
   `+0x1a6`) — offsets confirmed twice now, consuming code still not
-  located.
+  located.~~ **Closed 2026-10-06 (GUN-17): there is no consuming code.** Both
+  binaries store the two bytes (server setters `0x081d06b0`/`0x081d0ac0`,
+  client `0x0051a280`/`0x0051a430` at `+0x255`/`+0x256`) and the server prints
+  them back in `makeScript`; nothing in the servo, `setState`, input or
+  networking reads them. A "stabilized" gun turns with its hull like every
+  other, which is what the viewer's rig already does (a bundle's angle is
+  composed under its parent, `turret-rig.js`). Desert Combat's Humvee, DPV,
+  BRDM-2, EE-9, M1A1/M-109 MG and MH-53 gunners are unaffected.
 - The 337 `c_PIFire`-bound `RotationalBundle` axes — reproduced exactly as
   data, never traced into a specific weapon's firing behaviour.
 - No client (`BF1942.exe`) twin exists for `RotationalBundle::handleUpdate`/

@@ -2,12 +2,20 @@
 // which guns fire from the seat's camera (`fireInCameraDof`, lnxded
 // `FireArms::Fire` 0x0828a1c1) and which Camera node that is. The module
 // imports nothing, so plain node loads it from the viewer tree in place.
+//
+//   node camera_dof_harness.mjs [model.glb ...]
+//
+// Each glb named is read the way the page reads it (a node's extras are its
+// userData) and every FireArms node in it is answered twice: as exported,
+// and with the `fireInCameraDof` key taken out, which is how a glb baked
+// before the exporter wrote the word reads.
 
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const viewer = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../viewer');
-const { firesFromCamera, seatCameraOf } = await import(pathToFileURL(path.join(viewer, 'camera-dof.js')).href);
+const { firesFromCamera, seatCameraOf, CAMERA_DOF_FIREARMS } = await import(pathToFileURL(path.join(viewer, 'camera-dof.js')).href);
 
 /** A scene-graph node with just what `seatCameraOf` reads. */
 function node(name, userData = {}, children = []) {
@@ -30,7 +38,41 @@ const pco1 = node('T34_PCO1', { templateKind: 'PlayerControlObject', control: 'T
 node('T34', { templateKind: 'PlayerControlObject', control: 'T34' }, [gunBase, pco1]);
 const orphan = node('Browning', { templateKind: 'FireArms', control: 'vehicle' });
 
+/** A glb's node tree, from its JSON chunk: names, extras as userData. */
+function glbTree(file) {
+  const bytes = readFileSync(file);
+  const length = bytes.readUInt32LE(12);
+  const doc = JSON.parse(bytes.subarray(20, 20 + length).toString('utf8'));
+  const nodes = doc.nodes.map(n => node(n.name, n.extras ?? {}));
+  doc.nodes.forEach((n, i) => {
+    for (const c of n.children ?? []) {
+      nodes[i].children.push(nodes[c]);
+      nodes[c].parent = nodes[i];
+    }
+  });
+  return nodes;
+}
+
+/** Every FireArms node of one glb: as exported, and as an old bake reads. */
+function glbGuns(file) {
+  const guns = {};
+  for (const n of glbTree(file)) {
+    const stats = n.userData.fireArms;
+    if (!stats) continue;
+    const { fireInCameraDof, ...old } = stats;
+    guns[n.name] = {
+      exported: 'fireInCameraDof' in stats ? fireInCameraDof : null,
+      fires: firesFromCamera(stats, n.name),
+      firesBeforeExport: firesFromCamera(old, n.name),
+      camera: seatCameraOf(n)?.name ?? null,
+    };
+  }
+  return guns;
+}
+
 const out = {
+  table: [...CAMERA_DOF_FIREARMS].sort(),
+  glbs: Object.fromEntries(process.argv.slice(2).map(f => [path.basename(f), glbGuns(f)])),
   fires: {
     coaxBaked: firesFromCamera(null, 'Coaxial_MG42_1'),
     coaxModel: firesFromCamera({}, 'Coaxial_MG42'),

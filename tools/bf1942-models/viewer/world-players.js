@@ -97,9 +97,15 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
 export function spawnPlayer(world, playerId, { flag = null, advance = false, group = null } = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
-  const flags = world.flags.filter(f => !f.captureOnly);
+  // A flag whose every carrier is down (`spawn-flags.js` `inactive`) spawns
+  // nobody: asked for, the spawn is refused (SPAWNGRP-10); it is never picked.
+  if (flag?.inactive) return null;
+  const flags = world.flags.filter(f => !f.captureOnly && !f.inactive);
   if (flag?.captureOnly) flag = null;
   const side = player.team === 1 || player.team === 2;
+  // A side whose own flags are all down waits; it does not go to the enemy's.
+  if (!flag && side && !flags.some(f => f.team === player.team)
+      && world.flags.some(f => f.team === player.team && f.inactive)) return null;
   // A side with no flag of its own at the start (Omaha's Allies, whose deck
   // spawns ride a hull the level does not give us) goes to a neutral flag
   // before an enemy one.

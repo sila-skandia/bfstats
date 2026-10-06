@@ -111,7 +111,7 @@ function namesAt(effects, threshold) {
  * `hpLostWhileUpSideDown`, `damageFromWater`, `effects`.
  */
 export class DamageableVehicle {
-  constructor(extras, { name = null, owner = -1 } = {}) {
+  constructor(extras, { name = null, owner = -1, submarineData = null } = {}) {
     // The template's two words as `setArmorComponent` hands them over, a
     // word the `.con` never set being the template's own 10. `Armor` then
     // applies the 128 ceiling to the max and lets the starting value raise it
@@ -141,8 +141,25 @@ export class DamageableVehicle {
     this.criticalAccumulator = 0;
     /** Seconds accumulated toward the next water-damage tick. */
     this.waterAccumulator = 0;
-    /** Seconds accumulated toward the next upside-down tick. */
+    /** `Armor+0xe8`, the one-second bank the upside-down test is billed
+     *  from (HP-17). */
     this.upsideDownAccumulator = 0;
+    /**
+     * `PlayerControlObjectTemplate::submarineData`'s seven floats (PHY-3,
+     * template `+0x218..+0x230`), or null when the hull authors none or a
+     * crush depth (the 6th) of 0, which turns the whole system off
+     * (`0x08318da0`). Desert Combat writes it on fourteen land vehicles, every
+     * one with a 1st and 3rd that come to no suffocation, so on land it is the
+     * crush: an M1A1 deeper than 1.5 m loses 5 HP a second.
+     */
+    this.submarine = Array.isArray(submarineData) && submarineData.length >= 7
+      && submarineData[5] > 0 ? submarineData.slice(0, 7).map(Number) : null;
+    /** `PlayerControlObject+0x178`, the crew's oxygen: 1.0 from the
+     *  constructor (`0x08316733`), refilled at most to 1.0. */
+    this.oxygen = 1;
+    /** `PlayerControlObject+0x19c`, the seconds `handleFrameUpdate` banks
+     *  before it acts (0.5, `0x086b05e8`). */
+    this.submarineAccumulator = 0;
     /** Set once the caller has been handed the death tier, so it fires once. */
     this.deathAnnounced = false;
     /** Who last hit it: `Armor+0x14` (`lastHitPlayer`), which
@@ -204,9 +221,52 @@ export class DamageableVehicle {
     this.criticalAccumulator = 0;
     this.waterAccumulator = 0;
     this.upsideDownAccumulator = 0;
+    this.oxygen = 1;
+    this.submarineAccumulator = 0;
     this.deathAnnounced = false;
     this.lastHitPlayer = null;
     this.killedBy = null;
+  }
+
+  /**
+   * `submarineData`'s half of `PlayerControlObject::handleFrameUpdate`
+   * (`0x08318d20`, PHY-3), on `depth`, the root node's `getUnderWater`
+   * (`[this+0x60]` vtable `+0xc4`, `PhysicsNode::getUnderWater` `0x0824d450`).
+   * It banks the frame time and acts once 0.5 s is in the bank, on the whole
+   * of it, and every path through the function reaches it (`0x08318d80`,
+   * `0x08318d9a`, `0x08319190`): the `+0x17c` test PHY-3 read as its gate
+   * only decides whether the abandoned-vehicle block runs first.
+   *
+   *   deeper than the 6th     the hull takes `elapsed x 7th` (`0x08318e3e`)
+   *   no deeper than the 5th  oxygen += `elapsed x 2nd`, capped at 1.0
+   *   deeper                  oxygen -= `elapsed x 1st`; spent, it is held at 0
+   *                           and every attached soldier takes `elapsed x 3rd`
+   *                           (`damageAllAttachedSoldiers` `0x08318c70`)
+   *
+   * Returns `{ hull, crew }`: what the hull lost and what each of its crew is
+   * owed this step (0 and 0 when the clock did not fire).
+   */
+  stepSubmarine(dt, depth) {
+    const out = { hull: 0, crew: 0 };
+    const sub = this.submarine;
+    if (!sub || this.armor.destroyed) return out;
+    // A float, as `+0x19c` is: 15 ticks of 1/30 s reach 0.5 here, 16 in a double.
+    this.submarineAccumulator = Math.fround(this.submarineAccumulator + Math.fround(dt));
+    if (this.submarineAccumulator < 0.5) return out;
+    const elapsed = this.submarineAccumulator;
+    this.submarineAccumulator = 0;
+    const [drain, refill, suffocation, , breathDepth, crushDepth, crushRate] = sub;
+    if (depth > crushDepth) out.hull = this.armor.damage(elapsed * crushRate);
+    if (depth <= breathDepth) {
+      this.oxygen = Math.min(1, this.oxygen + refill * elapsed);
+    } else {
+      this.oxygen -= elapsed * drain;
+      if (this.oxygen < 0) {
+        this.oxygen = 0;
+        out.crew = elapsed * suffocation;
+      }
+    }
+    return out;
   }
 
   /**
@@ -215,16 +275,19 @@ export class DamageableVehicle {
    * second and is **not** scaled by `dt` (HP-5) — and reports what the caller
    * should now be drawing.
    *
-   * Returns `{ tier, changed, died }`: `tier` is what to draw (the death tier
-   * once it is dead), `changed` is true only on the step the answer moved, and
-   * `died` is true on the one step the caller is first told about death.
+   * Returns `{ tier, changed, died, tick, crew }`: `tier` is what to draw (the
+   * death tier once it is dead), `changed` is true only on the step the answer
+   * moved, `died` is true on the one step the caller is first told about
+   * death, `tick` the HP the hull's own clocks took and `crew` the HP each of
+   * its crew is owed for want of air (`stepSubmarine`). `depth` is the hull's
+   * `underWater`, metres.
    *
    * `died` deliberately means "newly dead *as far as the caller knows*", not
    * "died inside this call" — a round that kills the vehicle does so through
    * `damage()`, outside any `update`, so a flag scoped to this call would never
    * fire for the one case that matters and the explosion would never play.
    */
-  update(dt, { inWater = false, upsideDown = false } = {}) {
+  update(dt, { inWater = false, upsideDown = false, depth = 0 } = {}) {
     // Each tick below is its own `giveDamage` in the engine (`Armor::update`
     // hands it the Armor's own object and the world origin for `Pos3`), so
     // each washes the screen of whoever sits in this hull (ledger HFD-11,
@@ -261,18 +324,31 @@ export class DamageableVehicle {
       this.waterAccumulator = 0;
     }
 
-    // Upside-down damage: same accumulator cadence, independent clock.
-    if (!this.armor.destroyed && upsideDown
-        && this.hpLostWhileUpSideDown !== null) {
-      this.upsideDownAccumulator += dt;
-      while (this.upsideDownAccumulator >= 1 && !this.armor.destroyed) {
-        this.upsideDownAccumulator -= 1;
-        this.armor.damage(this.hpLostWhileUpSideDown);
-        tick = this.hpLostWhileUpSideDown;
+    // Upside-down damage (HP-17, HP-18): `Armor::update`'s one-second bank
+    // `+0xe8` runs from spawn whether the hull is upside down or not; once it
+    // holds a second the hull is tested THEN (`upsideDown`, which the caller
+    // answers by `world-damage.js` `upsideDownOwners`), billed the whole bank
+    // times `hpLostWhileUpSideDown` (`0x081734a6`), and the bank emptied either
+    // way. A hull rolled over is billed 0 to 1 s later, never before. The bank
+    // is a float (`fstp` to `+0xe8`): 30 ticks of 1/30 s fill it, where a
+    // double needs 31 and bills 5.17 HP every 1.03 s. Retail bills 5.0 at
+    // each whole second (DC lab, an unmanned Humvee_TOW on its roof).
+    if (!this.armor.destroyed) {
+      this.upsideDownAccumulator = Math.fround(this.upsideDownAccumulator + Math.fround(dt));
+      if (this.upsideDownAccumulator >= 1) {
+        if (upsideDown && this.hpLostWhileUpSideDown > 0.01) {
+          const amount = this.upsideDownAccumulator * this.hpLostWhileUpSideDown;
+          this.armor.damage(amount);
+          tick = amount;
+        }
+        this.upsideDownAccumulator = 0;
       }
-    } else if (!upsideDown) {
-      this.upsideDownAccumulator = 0;
     }
+
+    // `submarineData`'s crush and the crew's air, on its own 0.5 s bank.
+    const submarine = this.stepSubmarine(dt, depth);
+    if (submarine.hull > 0) tick = submarine.hull;
+    const crew = submarine.crew;
 
     const died = this.armor.destroyed && !this.deathAnnounced;
     const tier = this.armor.destroyed
@@ -283,13 +359,13 @@ export class DamageableVehicle {
     // the one thing the engine's `+0x128` latch actually buys, reproduced here
     // by not asking again rather than by keeping a latch.
     if (this.armor.destroyed && this.deathAnnounced) {
-      return { tier: this.shown, changed: false, died, tick };
+      return { tier: this.shown, changed: false, died, tick, crew };
     }
 
     const changed = tierKey(tier) !== tierKey(this.shown);
     if (changed) this.shown = tier;
     if (this.armor.destroyed) this.deathAnnounced = true;
-    return { tier, changed, died, tick };
+    return { tier, changed, died, tick, crew };
   }
 }
 
@@ -370,12 +446,12 @@ export class VehicleDamageSet {
    * `armor` block; anything without hit points is skipped, which is most of a
    * level — a palm and a sandbag have no Armor (ARM-3).
    */
-  add(owner, extras, { name = null } = {}) {
+  add(owner, extras, { name = null, submarineData = null } = {}) {
     if (!extras) return null;
     const max = Number.isFinite(extras.maxHitpoints) ? extras.maxHitpoints
       : extras.hitpoints;
     if (!Number.isFinite(max) || max <= 0) return null;
-    const vehicle = new DamageableVehicle(extras, { name, owner });
+    const vehicle = new DamageableVehicle(extras, { name, owner, submarineData });
     this.byOwner.set(owner, vehicle);
     return vehicle;
   }
@@ -500,7 +576,9 @@ export class VehicleDamageSet {
       // A soldier's own Armor takes no attacker; a hull records who hit it.
       const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);
       if (lost > 0) {
-        out.push({ vehicle: victim, target, lost, amount, distance, exposure: seen });
+        // `raw` is what `calcDamage` was asked; a soldier's push is scaled by
+        // its answer over it (`knockback.js`, KNOCK-4).
+        out.push({ vehicle: victim, target, lost, amount, raw, distance, exposure: seen });
       }
     }
     return out;
@@ -508,16 +586,24 @@ export class VehicleDamageSet {
 
   /** Step every vehicle. Returns only those whose drawing needs to change.
    *  `ticks`, when given, collects `{ vehicle, owner, amount }` for every
-   *  vehicle whose own damage clocks took HP this step (`update`'s `tick`). */
-  update(dt, { inWaterOwners = null, ticks = null } = {}) {
+   *  vehicle whose own damage clocks took HP this step (`update`'s `tick`);
+   *  `crews` collects `{ vehicle, owner, amount }` for a crew owed HP for
+   *  want of air. `depthOf(owner)` is a hull's `underWater`, 0 when absent;
+   *  `upsideDownOwners` the hulls `Armor::update`'s tilt test passes for. */
+  update(dt, {
+    inWaterOwners = null, upsideDownOwners = null, ticks = null, depthOf = null, crews = null,
+  } = {}) {
     const changes = [];
     for (const [owner, vehicle] of this.byOwner) {
       // A destroyed vehicle with nothing left to announce costs one branch.
       if (vehicle.destroyed && vehicle.deathAnnounced) continue;
       const inWater = inWaterOwners?.has(owner) ?? false;
-      const result = vehicle.update(dt, { inWater });
+      const upsideDown = upsideDownOwners?.has(owner) ?? false;
+      const depth = vehicle.submarine && depthOf ? depthOf(owner) : 0;
+      const result = vehicle.update(dt, { inWater, upsideDown, depth });
       if (result.changed || result.died) changes.push({ vehicle, ...result });
       if (result.tick > 0) ticks?.push({ vehicle, owner, amount: result.tick });
+      if (result.crew > 0) crews?.push({ vehicle, owner, amount: result.crew });
     }
     return changes;
   }

@@ -283,14 +283,17 @@ def summary_line(result: dict) -> str:
     vehicles = result["table"]["vehicles"]
     engines = sum(1 for v in vehicles if v.get("engine"))
     guns = sum(len(v.get("weapons") or []) for v in vehicles)
+    parts = sum(len(v.get("parts") or []) for v in vehicles)
     files = {layer["file"] for v in vehicles
              for layer in [*v["layers"], *(l for w in v.get("weapons") or []
-                                           for l in w["layers"])]}
+                                           for l in w["layers"]),
+                           *(l for p in v.get("parts") or []
+                             for patch in p["patches"] for l in patch)]}
     state = ("written" if result["written"]
              else "would change" if result["changed"] else "unchanged")
     added = result["new_samples"]
     return (f"{result['table']['mod']}: {len(vehicles)} of {len(result['asked'])} "
-            f"templates sound ({engines} engines, {guns} guns, {len(files)} samples, "
+            f"templates sound ({engines} engines, {guns} guns, {parts} parts, {len(files)} samples, "
             f"{len(added)} new / {sum(p.stat().st_size for p in added)} B) -> "
             f"{result['path']} ({state})")
 

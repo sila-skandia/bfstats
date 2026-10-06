@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import struct
 import sys
 import unittest
@@ -1413,6 +1414,109 @@ GeometryTemplate.create StandardMesh Lada_1P
         self.assertEqual("LadaCockpitInternal", swap["selected"])
         self.assertEqual(["LadaCockpitExternal1"], swap["replaces"])
 
+    LADA_PAINTS_CON = """
+ObjectTemplate.create PlayerControlObject Lada
+ObjectTemplate.addTemplate lodLadaCockpit
+
+ObjectTemplate.create LodObject lodLadaCockpit
+ObjectTemplate.addTemplate LadaCockpitExternal
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate LadaCockpitInternal
+ObjectTemplate.lodSelector LadaCockpitSelector
+
+ObjectTemplate.create SimpleObject LadaCockpitExternal1
+ObjectTemplate.geometry Lada_Hull1_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal2
+ObjectTemplate.geometry Lada_Hull2_M1
+ObjectTemplate.create SimpleObject LadaCockpitExternal3
+ObjectTemplate.geometry Lada_Hull3_M1
+
+ObjectTemplate.create SimpleObject LadaCockpitInternal
+ObjectTemplate.geometry Lada_1P
+
+LodSelectorTemplate.create DistCompareSelector LadaCockpitSelector
+LodSelectorTemplate.addLodDistance 3.05
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh Lada_Hull1_M1
+GeometryTemplate.create StandardMesh Lada_Hull2_M1
+GeometryTemplate.create StandardMesh Lada_Hull3_M1
+GeometryTemplate.create StandardMesh Lada_1P
+"""
+
+    def _lada_hulls(self, assembler: Assembler, library: ObjectLibrary, placements: int) -> list:
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        roots = [assembler.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0)) for _ in range(placements)]
+        document = glb_document(builder.build(roots, extras={}))
+        hulls = []
+        for root in roots:
+            names = []
+            stack = [root]
+            while stack:
+                index = stack.pop()
+                node = document["nodes"][index]
+                if node["name"].startswith("LadaCockpitExternal"):
+                    names.append(node["name"])
+                stack.extend(node.get("children", []))
+            hulls.append(names)
+        return hulls
+
+    def test_a_level_bake_rolls_each_placements_paint(self) -> None:
+        # KIT-1/KIT-2: `addBundleChilds` bumps one round-robin counter (it
+        # starts at 1) for every `setRandomGeometries` child and builds
+        # `<name><counter>`, so the first object rolls 2. A level bake sets the
+        # counter and its four Ladas come green, beige, blue, green in
+        # placement order; a model export keeps variant 1 (blue).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual(
+            [["LadaCockpitExternal2"], ["LadaCockpitExternal3"],
+             ["LadaCockpitExternal1"], ["LadaCockpitExternal2"]],
+            self._lada_hulls(level, library, 4))
+        model = Assembler(pool, pool, pool, library, include_collision=False)
+        self.assertEqual([["LadaCockpitExternal1"], ["LadaCockpitExternal1"]],
+                         self._lada_hulls(model, library, 2))
+
+    def test_a_roll_onto_an_undeclared_paint_builds_no_hull(self) -> None:
+        # KIT-3: a variant the data never declared is a template not found,
+        # and the engine adds no child at all.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con",
+                        self.LADA_PAINTS_CON.replace(
+                            "ObjectTemplate.create SimpleObject LadaCockpitExternal2\n"
+                            "ObjectTemplate.geometry Lada_Hull2_M1\n", ""))
+        pool = ArchivePool()
+        level = Assembler(pool, pool, pool, library, include_collision=False)
+        level.random_counter = 1
+        self.assertEqual([[], ["LadaCockpitExternal3"]],
+                         self._lada_hulls(level, library, 2))
+
+    def test_the_cockpit_swap_names_every_paint(self) -> None:
+        # The cockpit glb is one export, the hull it grafts onto any of three:
+        # the swap lists every declared variant, and the viewer hides the one
+        # it finds (`vehicle-base.js` `graftCockpit` drops the rest).
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Lada/Objects.con", self.LADA_PAINTS_CON)
+        pool = ArchivePool()
+        cockpit = Assembler(pool, pool, pool, library, first_person=True,
+                            include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(cockpit, builder, "Lada_Hull1_M1", "Lada_Hull2_M1",
+                    "Lada_Hull3_M1", "Lada_1P")
+        root = cockpit.build_node(builder, "Lada", Report(
+            root="Lada", configuration="complex", lod=0, first_person=True))
+        swap = next(node["extras"]["lodAlternative"] for node in
+                    glb_document(builder.build([root], extras={}))["nodes"]
+                    if node["name"] == "lodLadaCockpit")
+        self.assertEqual(["LadaCockpitExternal1", "LadaCockpitExternal2",
+                          "LadaCockpitExternal3"], swap["replaces"])
+
     def test_a_first_person_name_keeps_deciding_where_there_is_one(self) -> None:
         # Vanilla's M3A1 names both alternatives `1P_M3A1_Driver_M1`; the
         # name rule takes the first, and its cockpit glb stays as it was.
@@ -1476,6 +1580,7 @@ class PhysicsExportTests(unittest.TestCase):
 
     SHIP_CON = """
 ObjectTemplate.create PlayerControlObject Fletcher
+ObjectTemplate.hasMobilePhysics 1
 ObjectTemplate.mass 2500000
 ObjectTemplate.drag 3
 ObjectTemplate.setVehicleCategory VCSea
@@ -1602,6 +1707,101 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
         self.assertEqual(
             {"hullHeight": 20.0, "floatMaxLift": 2.0, "floatMinLift": 2.0},
             nodes["Fletcher_Floater"]["extras"]["physics"])
+
+    def test_a_root_without_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-17: DC's `Nimitz_Static*` write `hasMobilePhysics 0` on a
+        root that carries a `c_ETShip`. The bit clear is a
+        `StaticPhysicsNode`, which nothing moves, so the root says so; the
+        word is stamped nowhere else -- not on a root that writes 1, not on
+        a gun with no Engine (its bit is clear too), not on a nested seat."""
+        static_con = self.SHIP_CON.replace(
+            "ObjectTemplate.hasMobilePhysics 1", "ObjectTemplate.hasMobilePhysics 0")
+        document, _ = self._assemble(
+            static_con, "Fletcher", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(False, nodes["Fletcher"]["extras"]["physics"]["hasMobilePhysics"])
+        self.assertNotIn("hasMobilePhysics", nodes["Fletcher_Engine"]["extras"]["physics"])
+
+        mobile, _ = self.ship()
+        self.assertNotIn("hasMobilePhysics", mobile["Fletcher"]["extras"]["physics"])
+
+        # The same static hull nested under a mobile root is that root's
+        # body: its own bit moves nothing, and it is not stamped.
+        nested_con = static_con + """
+ObjectTemplate.create PlayerControlObject Mothership
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.addTemplate Fletcher
+"""
+        nested, _ = self._assemble(
+            nested_con, "Mothership", "Objects/Vehicles/Sea/fletcher/Objects.con",
+            geometry="Fletcher_Hull")
+        inner = next(node for node in nested["nodes"] if node["name"] == "Fletcher")
+        self.assertNotIn("hasMobilePhysics", inner["extras"]["physics"])
+
+        gun_con = """
+ObjectTemplate.create PlayerControlObject AA_Gun
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate AA_GunBase
+ObjectTemplate.create SimpleObject AA_GunBase
+ObjectTemplate.geometry AA_Gun_Base
+GeometryTemplate.create StandardMesh AA_Gun_Base
+"""
+        gun, _ = self._assemble(gun_con, "AA_Gun", "Objects/Vehicles/Land/AA_Gun/Objects.con",
+                                geometry="AA_Gun_Base")
+        root = next(node for node in gun["nodes"] if node["name"] == "AA_Gun")
+        self.assertEqual({"vehicleCategory": "VCLand"}, root["extras"]["physics"])
+
+    def test_a_root_that_declares_no_mobile_physics_is_stamped_static(self) -> None:
+        """PHY-17 holds for every placed root, not only a hull with an Engine:
+        DC No Fly Zone's objective control tower is a PlayerControlObject with
+        armor, no Engine and `hasMobilePhysics 0`; a destructible static can be
+        a plain Bundle. Both are stamped. An EffectBundle that writes the word
+        (DC's `e_BBuster`) is not a placed object and is left alone."""
+        con = """
+ObjectTemplate.create PlayerControlObject air_control_tower_des
+ObjectTemplate.hasMobilePhysics 0
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.setVehicleCategory VCLand
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create Bundle Landslide
+ObjectTemplate.setHasMobilePhysics 0
+ObjectTemplate.addTemplate TowerBody
+ObjectTemplate.create SimpleObject TowerBody
+ObjectTemplate.geometry Tower_M1
+GeometryTemplate.create StandardMesh Tower_M1
+"""
+        tower, _ = self._assemble(con, "air_control_tower_des",
+                                  "bf1942/levels/DC_No_Fly_Zone_Day2/objects/x.con",
+                                  geometry="Tower_M1")
+        root = next(n for n in tower["nodes"] if n["name"] == "air_control_tower_des")
+        self.assertEqual({"vehicleCategory": "VCLand", "hasMobilePhysics": False},
+                         root["extras"]["physics"])
+        bundle, _ = self._assemble(con, "Landslide",
+                                   "bf1942/levels/DC_Medina_Ridge/objects/x.con",
+                                   geometry="Tower_M1")
+        root = next(n for n in bundle["nodes"] if n["name"] == "Landslide")
+        self.assertEqual({"hasMobilePhysics": False}, root["extras"]["physics"])
+        library = ObjectLibrary()
+        library.add_con("Objects/Effects/e_BBuster/Objects.con", """
+ObjectTemplate.create EffectBundle e_BBuster
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertIsNone(library.object("e_BBuster").physics())
+
+    def test_both_spellings_of_mobile_physics_are_read(self) -> None:
+        library = ObjectLibrary()
+        library.add_con("Objects/x.con", """
+ObjectTemplate.create Projectile A
+ObjectTemplate.setHasMobilePhysics 1
+ObjectTemplate.create Projectile B
+ObjectTemplate.hasMobilePhysics 1
+ObjectTemplate.create PlayerControlObject C
+ObjectTemplate.hasMobilePhysics 0
+""")
+        self.assertTrue(library.object("A").has_mobile_physics)
+        self.assertTrue(library.object("B").has_mobile_physics)
+        self.assertFalse(library.object("C").has_mobile_physics)
 
     def test_bow_and_stern_surfaces_deflect_opposite_ways(self) -> None:
         """`setAcceleration` -10 against +10 is what makes the hull carve.
@@ -2231,9 +2431,11 @@ GeometryTemplate.create StandardMesh Muzz_m1
         self.assertEqual(900, fire["magSize"])
         self.assertEqual(400.0, fire["velocity"])
         self.assertEqual(2, fire["muzzles"])
+        # This `Tracer_Projectile` declares no `gravityModifier`, so it carries
+        # the engine's 1.0 (IMP-7); retail's own declares 0.0.
         self.assertEqual(
             {"template": "Tracer_Projectile", "interval": 3,
-             "timeToLive": 3.0, "scaler": 50.0},
+             "timeToLive": 3.0, "scaler": 50.0, "gravity": 1.0},
             fire["tracer"])
         # The gun bundle's own placement (0/0/1 -> glTF z=-1) survives.
         self.assertEqual([0.0, 0.0, -1.0], guns["translation"])
@@ -2357,6 +2559,33 @@ GeometryTemplate.create StandardMesh Plane_hull
                     if node["name"] == "PlaneRifle")["extras"]["fireArms"]
         self.assertNotIn("deviation", fire)
 
+    def test_every_gun_says_whether_it_fires_from_the_camera(self) -> None:
+        # XHIT-12: `fireInCameraDof 1` launches from the seat's camera. DC's
+        # T-72 NSVT shape against its main gun, which declares nothing. Both
+        # are written, false included, so the viewer's name table (the
+        # fallback for a glb without the key) never answers for a new bake.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate PlaneGuns
+ObjectTemplate.addTemplate PlaneCannon
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms PlaneGuns
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.fireInCameraDof 1
+
+ObjectTemplate.create FireArms PlaneCannon
+ObjectTemplate.projectileTemplate PlaneProjectile
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(True, nodes["PlaneGuns"]["extras"]["fireArms"]["fireInCameraDof"])
+        self.assertIs(False, nodes["PlaneCannon"]["extras"]["fireArms"]["fireInCameraDof"])
+
     def _assemble_root(self, root: str, con_text: str):
         library = ObjectLibrary()
         library.add_con("Objects/Weapons/Handheld/Test/Objects.con", con_text)
@@ -2447,6 +2676,19 @@ GeometryTemplate.create StandardMesh Rocket_m1
         node = assembler.build_node(builder, root, report)
         assert node is not None
         return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def test_the_damage_block_says_what_expiry_does(self) -> None:
+        # PROX-7: `hasOnTimeEffect` decides whether `timeToLive` running out
+        # bursts the round or recycles it, so it rides with the contact words.
+        self.ROCKET_CON = ProjectileBakeTests.ROCKET_CON.replace(
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n",
+            "ObjectTemplate.timeToLive CRD_NONE/20/0/0\n"
+            "ObjectTemplate.damageType 1\n"
+            "ObjectTemplate.hasOnTimeEffect 0\n")
+        document, _ = self._assemble("RocketRamp")
+        projectile = {node["name"]: node for node in document["nodes"]}[
+            "RocketRamp"]["extras"]["fireArms"]["projectile"]
+        self.assertIs(False, projectile["damage"]["hasOnTimeEffect"])
 
     def test_rocket_projectile_is_typed_and_baked_under_the_gun(self) -> None:
         document, report = self._assemble("RocketRamp")
@@ -2649,6 +2891,23 @@ GeometryTemplate.create StandardMesh TLight_m1
         self.assertIn("mesh", streak)
         self.assertIn(document["nodes"].index(streak),
                       nodes["WingGuns"]["children"])
+
+    def test_tracer_carries_its_own_gravity(self) -> None:
+        # Retail's `Tracer_Projectile` flies flat (`gravityModifier 0.0`);
+        # Desert Combat's heavy tracers declare 1 and drop away from rounds
+        # that do not. The tracer is its own round, so its own word rides.
+        for declared, expected in (("0.0", 0.0), ("1", 1.0), (None, 1.0)):
+            con = self.GUN_CON
+            if declared is not None:
+                con = con.replace(
+                    "ObjectTemplate.tracerScaler 50.0\n",
+                    "ObjectTemplate.tracerScaler 50.0\n"
+                    f"ObjectTemplate.gravityModifier {declared}\n")
+            with self.subTest(declared=declared):
+                document = self._assemble(con, "WingGuns")
+                tracer = {node["name"]: node for node in document["nodes"]}[
+                    "WingGuns"]["extras"]["fireArms"]["tracer"]
+                self.assertEqual(expected, tracer["gravity"])
 
     def test_tracer_without_geometry_bakes_no_node(self) -> None:
         con = self.GUN_CON.replace("ObjectTemplate.geometry TLight_m1\n", "")
@@ -3502,6 +3761,278 @@ GeometryTemplate.create StandardMesh plain_wall
                               include_collision=False)
         self.assertIsNone(assembler._ladder_spec_for("not_a_geometry"))
         self.assertIsNone(assembler._geom_ladder["not_a_geometry"])
+
+
+class GeometryScaleExportTests(unittest.TestCase):
+    """SM-13: `GeometryTemplate.scale` reaches the drawn mesh and its
+    collision, in the mesh's own axes, and nothing below the part."""
+
+    LIBRARY = """
+ObjectTemplate.create Bundle Hull
+ObjectTemplate.geometry Hull_m1
+ObjectTemplate.setHasCollisionPhysics 1
+ObjectTemplate.addTemplate Mount
+ObjectTemplate.setPosition 0/2/0
+
+ObjectTemplate.create SimpleObject Mount
+ObjectTemplate.geometry Plain_m1
+
+GeometryTemplate.create StandardMesh Hull_m1
+GeometryTemplate.file Shared_m1
+GeometryTemplate.scale 2/1/0.5
+
+GeometryTemplate.create StandardMesh Plain_m1
+GeometryTemplate.file Shared_m1
+"""
+
+    @staticmethod
+    def mesh() -> stdmesh.StandardMesh:
+        # One triangle, normals along (1, 1, 0); a one-face collision layer.
+        n = 2 ** -0.5
+        material = stdmesh.Material(
+            name="Shared_Material0", primitive=stdmesh.PRIM_TRIANGLE_LIST,
+            flags=stdmesh.VF_STANDARD, stride=32, vertex_count=3, index_count=3,
+            unknown=(0, 0, 0, 0),
+            vertices=[0.0, 0.0, 0.0, n, n, 0.0, 0.0, 0.0,
+                      1.0, 0.0, 0.0, n, n, 0.0, 1.0, 0.0,
+                      0.0, 1.0, 2.0, n, n, 0.0, 0.0, 1.0],
+            indices=[0, 1, 2])
+        layer = stdmesh.CollisionLayer(
+            unknown=(0, 5), vertices=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 2.0)],
+            vertex_unknown=[0.0] * 3, faces=[stdmesh.CollisionFace((0, 1, 2), 50, 0)])
+        return stdmesh.StandardMesh(
+            name="Shared_m1", version=10, bounds_min=(0.0, 0.0, 0.0),
+            bounds_max=(1.0, 1.0, 2.0), collision_layers=[layer],
+            lods=[stdmesh.Lod([material])])
+
+    def build(self) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Shared_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read", return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse", side_effect=lambda *a, **k: self.mesh()), \
+             unittest.mock.patch("bf42.rs.parse", return_value={}), \
+             unittest.mock.patch.object(assembler, "_texture_index", return_value=None):
+            report = Report(root="Hull", configuration="complex", lod=0)
+            node = assembler.build_node(builder, "Hull", report)
+        return glb_document(builder.build([node]))
+
+    @staticmethod
+    def positions_extent(document: dict, mesh_index: int) -> tuple[list, list]:
+        accessor = document["accessors"][
+            document["meshes"][mesh_index]["primitives"][0]["attributes"]["POSITION"]]
+        return accessor["min"], accessor["max"]
+
+    def test_the_part_draws_and_collides_scaled_and_says_so(self) -> None:
+        document = self.build()
+        by_name = {n["name"]: n for n in document["nodes"]}
+        hull = by_name["Hull"]
+        # glTF mirrors Z, so the file's z 0..2 at x0.5 is -1..0.
+        self.assertEqual(([0.0, 0.0, -1.0], [2.0, 1.0, 0.0]),
+                         self.positions_extent(document, hull["mesh"]))
+        self.assertEqual([2.0, 1.0, 0.5], hull["extras"]["geometryScale"])
+        collision = by_name["Hull collision 0"]
+        self.assertEqual(([0.0, 0.0, -1.0], [2.0, 1.0, 0.0]),
+                         self.positions_extent(document, collision["mesh"]))
+        self.assertEqual([2.0, 1.0, 0.5], collision["extras"]["geometryScale"])
+
+    def test_the_child_part_and_its_shared_file_stay_unscaled(self) -> None:
+        # The same `.sm` under an unscaled geometry draws at the file's size,
+        # and the child keeps its own placement: the scale is the mesh's.
+        document = self.build()
+        mount = {n["name"]: n for n in document["nodes"]}["Mount"]
+        self.assertEqual(([0.0, 0.0, -2.0], [1.0, 1.0, 0.0]),
+                         self.positions_extent(document, mount["mesh"]))
+        self.assertEqual([0.0, 2.0, 0.0], mount["translation"])
+        self.assertNotIn("geometryScale", mount.get("extras", {}))
+
+    def test_normals_take_the_inverse_scale(self) -> None:
+        from bf42.assemble import scale_standard_mesh
+
+        scaled = scale_standard_mesh(self.mesh(), (2.0, 1.0, 0.5))
+        nx, ny, nz = scaled.lods[0].materials[0].normals()[0]
+        self.assertAlmostEqual(0.5 / (1.25 ** 0.5), nx)
+        self.assertAlmostEqual(1.0 / (1.25 ** 0.5), ny)
+        self.assertAlmostEqual(0.0, nz)
+        self.assertEqual((2.0, 0.0, 0.0), scaled.collision_layers[0].vertices[1])
+        self.assertEqual((0.0, 1.0, 1.0), scaled.collision_layers[0].vertices[2])
+        # The unscaled original is untouched.
+        self.assertEqual((0.0, 1.0, 2.0), self.mesh().lods[0].materials[0].positions()[2])
+
+    def test_the_ladder_measure_reads_the_file(self) -> None:
+        # LADDER-3: the climb reads the instance's bounding box, which stays
+        # the file's whatever the scale (SM-13). The file spans y 0..1 and z
+        # 0..2, so the ladder is 2 m long though it is drawn 1 m.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Shared_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read", return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse", side_effect=lambda *a, **k: self.mesh()):
+            spec = assembler._ladder_spec_for("Hull_m1")
+        self.assertEqual(2.0, spec["length"])
+
+    def test_only_a_standard_mesh_other_than_one_is_scaled(self) -> None:
+        from bf42.assemble import geometry_scale
+        from bf42.con import GeometryTemplate
+
+        self.assertIsNone(geometry_scale(None))
+        self.assertIsNone(geometry_scale(
+            GeometryTemplate(name="A", kind="StandardMesh", scale=(1.0, 1.0, 1.0))))
+        self.assertIsNone(geometry_scale(
+            GeometryTemplate(name="T", kind="TreeMesh", scale=(2.0, 2.0, 2.0))))
+        self.assertEqual((1.25, 1.25, 1.25), geometry_scale(
+            GeometryTemplate(name="B", kind="StandardMesh", scale=(1.25, 1.25, 1.25))))
+
+
+class ScaledRoundExportTests(unittest.TestCase):
+    """A gun's drawn round and tracer are baked through the same scaled mesh
+    path as any part (DC's `projectile_40mm` at 0.6 on the OSA, the AC-130's
+    40 mm and the Mk19), so they say so too: the viewer measures a round's
+    drag radius off this mesh, and the engine's own radius is the file's
+    (SM-13)."""
+
+    LIBRARY = """
+ObjectTemplate.create FireArms Gun
+ObjectTemplate.projectileTemplate Round
+ObjectTemplate.setTracerTemplate Round
+ObjectTemplate.addFireArmsPosition 0/0/1 0/0/0
+
+ObjectTemplate.create Projectile Round
+ObjectTemplate.geometry Round_m1
+
+GeometryTemplate.create StandardMesh Round_m1
+GeometryTemplate.file Shared_m1
+GeometryTemplate.scale 0.5
+"""
+
+    def build(self) -> dict:
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Test/Objects.con", self.LIBRARY)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        with unittest.mock.patch.object(assembler.meshes, "resolve_ext",
+                                        return_value="Shared_m1.sm"), \
+             unittest.mock.patch.object(assembler.meshes, "read", return_value=b""), \
+             unittest.mock.patch.object(stdmesh, "parse",
+                                        side_effect=lambda *a, **k: GeometryScaleExportTests.mesh()), \
+             unittest.mock.patch("bf42.rs.parse", return_value={}), \
+             unittest.mock.patch.object(assembler, "_texture_index", return_value=None):
+            report = Report(root="Gun", configuration="complex", lod=0)
+            node = assembler.build_node(builder, "Gun", report)
+        return glb_document(builder.build([node]))
+
+    def test_the_round_and_its_tracer_draw_scaled_and_say_so(self) -> None:
+        document = self.build()
+        by_name = {n["name"]: n for n in document["nodes"]}
+        for name in ("Gun projectile", "Gun tracer"):
+            node = by_name[name]
+            self.assertEqual(([0.0, 0.0, -1.0], [0.5, 0.5, 0.0]),
+                             GeometryScaleExportTests.positions_extent(document, node["mesh"]),
+                             name)
+            self.assertEqual([0.5, 0.5, 0.5], node["extras"]["geometryScale"], name)
+
+
+class CameraToggleMouseLookExportTests(unittest.TestCase):
+    def test_every_camera_says_whether_it_needs_the_key(self) -> None:
+        # CW13: the word per Camera, false included, so the viewer reads it
+        # instead of guessing the root seat of an air hull.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Heli/Objects.con", """
+ObjectTemplate.create PlayerControlObject Heli
+ObjectTemplate.addTemplate HeliCamera
+ObjectTemplate.addTemplate HeliCoPilot
+
+ObjectTemplate.create Camera HeliCamera
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create PlayerControlObject HeliCoPilot
+ObjectTemplate.addTemplate HeliCoPilotCamera
+ObjectTemplate.addTemplate HeliRearCamera
+
+ObjectTemplate.create Camera HeliCoPilotCamera
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create Camera HeliRearCamera
+ObjectTemplate.setMaxRotation 70/5/0
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Heli", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Heli", report)
+        document = glb_document(builder.build([node]))
+        views = {n["name"]: n["extras"]["cameraView"] for n in document["nodes"]
+                 if "cameraView" in (n.get("extras") or {})}
+        self.assertEqual({"HeliCamera": True, "HeliCoPilotCamera": True,
+                          "HeliRearCamera": False},
+                         {name: view["toggleMouseLook"] for name, view in views.items()})
+
+    def test_the_look_carries_each_axis_sign_and_limits(self) -> None:
+        # The held look's sense is the camera's pitch gain times the invert
+        # box (MLK-13), and the servo's gain is sign(acceleration) x maxSpeed
+        # with maxSpeed signed (GUN-2, lnxded 0x081d7866). Vanilla's BF109
+        # and Spitfire write opposite accelerations and opposite maxSpeeds, so
+        # they look the same way: the export must keep maxSpeed's sign or a
+        # consumer reading `direction` alone inverts the BF109. These are the
+        # shipped numbers. A camera that binds no look axis has no `look`.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Test/Objects.con", """
+ObjectTemplate.create PlayerControlObject Plane
+ObjectTemplate.addTemplate BF109Camera
+ObjectTemplate.addTemplate SpitfireCamera
+ObjectTemplate.addTemplate FixedCamera
+
+ObjectTemplate.create Camera BF109Camera
+ObjectTemplate.setMinRotation -65/-40/0
+ObjectTemplate.setMaxRotation 65/5/0
+ObjectTemplate.setMaxSpeed 90/-90/0
+ObjectTemplate.setAcceleration 5000/5000/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create Camera SpitfireCamera
+ObjectTemplate.setMinRotation -70/-60/0
+ObjectTemplate.setMaxRotation 70/1/0
+ObjectTemplate.setMaxSpeed 90/90/0
+ObjectTemplate.setAcceleration 5000/-5000/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+ObjectTemplate.toggleMouseLook 1
+
+ObjectTemplate.create Camera FixedCamera
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Plane", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Plane", report)
+        document = glb_document(builder.build([node]))
+        views = {n["name"]: n["extras"]["cameraView"] for n in document["nodes"]
+                 if "cameraView" in (n.get("extras") or {})}
+        bf109 = views["BF109Camera"]["look"]["axes"]["pitch"]
+        self.assertEqual(("c_PIMouseLookY", -40.0, 5.0, 1.0, 5000.0, -90.0),
+                         (bf109["input"], bf109["min"], bf109["max"],
+                          bf109["direction"], bf109["acceleration"], bf109["maxSpeed"]))
+        spitfire = views["SpitfireCamera"]["look"]["axes"]
+        self.assertEqual((-1.0, 1.0), (spitfire["pitch"]["direction"],
+                                       spitfire["yaw"]["direction"]))
+
+        def gain(axis: dict) -> float:
+            return axis["direction"] * math.copysign(1.0, axis["maxSpeed"])
+
+        self.assertEqual((-1.0, -1.0), (gain(bf109), gain(spitfire["pitch"])))
+        self.assertNotIn("look", views["FixedCamera"])
+        self.assertTrue(all("rig" not in (n.get("extras") or {})
+                            for n in document["nodes"] if n["name"].endswith("Camera")))
 
 
 if __name__ == "__main__":
