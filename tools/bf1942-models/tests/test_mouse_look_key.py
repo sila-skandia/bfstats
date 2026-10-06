@@ -497,5 +497,44 @@ class OtherSeatTests(_Harness):
         self.assertAlmostEqual(-20 * HEAD_SENS_DEG, p["heldPitchBoxOff"], places=4)
 
 
+class NeckTests(_Harness):
+    """How far the cockpit look turns. The engine's pitch is the `setRotation`
+    pitch, positive nose-down (ledger MLK-17): `CorsairCamera`'s
+    `setMinRotation -70/-40/0`, `setMaxRotation 70/5/0` is 40 degrees up and
+    5 down. The page's look counts up as positive."""
+
+    def test_the_default_neck_is_the_corsairs_the_right_way_up(self) -> None:
+        d = self.results["neck"]["defaults"]
+        self.assertAlmostEqual(40, d["up"], places=6)
+        self.assertAlmostEqual(-5, d["down"], places=6)
+        self.assertAlmostEqual(70, d["left"], places=6)
+        self.assertAlmostEqual(-70, d["right"], places=6)
+
+    def test_a_cameras_own_rig_is_mirrored_into_the_look(self) -> None:
+        k = self.results["neck"]
+        rad = math.pi / 180
+        self.assertAlmostEqual(-5 * rad, k["corsairLimits"]["pitchDown"], places=12)
+        self.assertAlmostEqual(40 * rad, k["corsairLimits"]["pitchUp"], places=12)
+        self.assertAlmostEqual(-70 * rad, k["corsairLimits"]["yawMin"], places=12)
+        self.assertAlmostEqual(70 * rad, k["corsairLimits"]["yawMax"], places=12)
+        # DC's H6CoPilotCamera, -70/-60 .. 70/45: 60 up, 45 down.
+        self.assertAlmostEqual(60, k["coPilot"]["up"], places=6)
+        self.assertAlmostEqual(-45, k["coPilot"]["down"], places=6)
+        # Outside the cockpit the orbit keeps its own clamps.
+        self.assertAlmostEqual(1.2 / rad, k["coPilotChase"]["up"], places=6)
+
+    def test_a_free_yaw_is_unlimited_and_other_inputs_are_not_the_neck(self) -> None:
+        k = self.results["neck"]
+        self.assertTrue(k["freeYawUnlimited"])
+        self.assertIsNone(k["freeYaw"].get("yawMin"))
+        self.assertEqual(None, k["notTheLook"])
+        self.assertEqual(None, k["none"])
+
+    def test_a_pilot_pushing_the_mouse_away_looks_up_forty_degrees(self) -> None:
+        k = self.results["neck"]
+        self.assertAlmostEqual(40, k["pilotPushedAway"]["pitch"], places=6)
+        self.assertAlmostEqual(-5, k["pilotPulledBack"]["pitch"], places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

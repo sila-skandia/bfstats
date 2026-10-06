@@ -29,7 +29,7 @@ import { surveyVehicle } from './viewer/seat-survey.js';
 import { RATE_FACTOR, axisScale, quantiseAxis } from './viewer/mouse-input.js';
 import { createControls } from './viewer/controls.js';
 import { createLocalLook } from './viewer/local-look.js';
-import { VehicleCamera } from './viewer/vehicle-camera.js';
+import { VehicleCamera, cameraLookLimits } from './viewer/vehicle-camera.js';
 
 const results = {};
 const round = (n, places = 9) => Math.round(n * 10 ** places) / 10 ** places;
@@ -669,6 +669,62 @@ const seatRules = occupancy => {
     finalPassenger: lookAt(mh6Final(), 'MH6Passenger_PCO3'),
   };
   results.otherSeats = n;
+}
+
+// --- the neck: how far a held look turns (ledger MLK-17) ------------------------
+//
+// The engine's pitch is the `setRotation` pitch, positive nose-down, so
+// `CorsairCamera`'s `-70/-40/0 .. 70/5/0` is 40 degrees up and 5 down.
+
+{
+  const k = {};
+  const extremes = view => {
+    const out = {};
+    view.look.yaw = 0; view.look.pitch = 0;
+    view.turn(0, 10);
+    out.up = deg(view.look.pitch);
+    view.turn(0, -20);
+    out.down = deg(view.look.pitch);
+    view.look.pitch = 0;
+    view.turn(10, 0);
+    out.left = deg(view.look.yaw);
+    view.turn(-20, 0);
+    out.right = deg(view.look.yaw);
+    view.look.yaw = 0; view.look.pitch = 0;
+    return out;
+  };
+  const corsairLook = { axes: {
+    yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1 },
+    pitch: { input: 'c_PIMouseLookY', min: -40, max: 5, free: false, maxSpeed: 90, direction: -1 },
+  } };
+  k.defaults = extremes(new VehicleCamera(makeSubject(), { modes: ['cockpit', 'nose', 'chase'] }));
+  k.corsairLimits = cameraLookLimits({ cameraView: { look: corsairLook } });
+  k.coPilotLimits = cameraLookLimits({ rig: lookRig('H6CoPilot', -1) });
+  k.freeYaw = cameraLookLimits({ cameraView: { look: { axes: {
+    yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true },
+  } } } });
+  k.freeYawUnlimited = k.freeYaw?.yaw === Infinity;
+  k.notTheLook = cameraLookLimits({ rig: { axes: {
+    pitch: { input: 'c_PIPitch', min: -10, max: 10, free: false },
+  } } });
+  k.none = cameraLookLimits({ cameraView: {} });
+  const coPilotView = new VehicleCamera(makeSubject(), {
+    modes: ['cockpit', 'chase'], lookLimits: k.coPilotLimits,
+  });
+  k.coPilot = extremes(coPilotView);
+  coPilotView.setMode('chase');
+  k.coPilotChase = extremes(coPilotView);
+
+  // The page path: the pilot holds Left Shift and pushes the mouse away from
+  // him, then pulls it toward him, on the shipped Air box.
+  const { page, view, state } = makeLookPage();
+  const look = createLocalLook(page);
+  state.held = true;
+  look.lookDelta(0, -600);
+  k.pilotPushedAway = lookOf(view);
+  look.lookDelta(0, 1200);
+  k.pilotPulledBack = lookOf(view);
+  results.neck = k;
 }
 
 process.stdout.write(JSON.stringify(results));
