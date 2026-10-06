@@ -238,7 +238,13 @@ export function createCtfPage(page) {
   ctfPage.tick = dt => {
     const ctf = ctfPage.ctf;
     if (!ctf) return [];
-    if (page.roomJoined) { present(); return []; }
+    if (page.roomJoined) {
+      // The server's law moves the flags; between its rows a carried one
+      // follows its carrier as this client draws him.
+      if (page.roomPositionOf) ctf.follow(page.roomPositionOf);
+      present();
+      return [];
+    }
     if (!(dt > 0) || page.round?.status === 'endGame') { present(); return []; }
     const events = ctf.tick(dt, players());
     for (const event of events) announce(event);
