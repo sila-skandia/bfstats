@@ -247,6 +247,11 @@ export function createNetRoom(page) {
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
     } else if (row.type === 'captured' && Number.isInteger(row.flag) && page.flags[row.flag]) {
       comms.onCapture(page.flags[row.flag], row.team);
+    } else if (row.type === 'ctf') {
+      // A CTF flag event of the server's law (`server/authority.mjs`): the
+      // page's copy plays it, with the actor's name (`ctf-page.js` `onRow`).
+      // A flag that went home on its own timer names nobody.
+      page.ctfRow?.({ ...row, name: row.player != null ? who(row.player).name : '' });
     }
   }
 

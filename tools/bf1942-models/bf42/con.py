@@ -1077,6 +1077,20 @@ class ObjectTemplate:
     self_heal_factor: float | None = None
     repair_distance: float | None = None
     repair_factor: float | None = None
+    # The blast's push on the object's own Armor (ledger KNOCK-4, KNOCK-7):
+    # `explosionForceMod` is `SimpleObjectTemplate+0xec` (ConsoleClass124,
+    # lnxded 0x081c5fc0, any template; ctor default 1.0 at 0x081dc0ac) and
+    # `explosionForceMax` `+0xf0` (ConsoleClass125, 0x081c63d0; default 300),
+    # both handed to the Armor by `setArmorComponent` (0x081ddcf7,
+    # 0x081ddd09). Vanilla's soldiers 75 / 600, Desert Combat's 150 / 600.
+    explosion_force_mod: float | None = None
+    explosion_force_max: float | None = None
+    # `forceOnExplosion` is `ProjectileTemplate+0x1b0` (ConsoleClass398,
+    # 0x082e1530; default 150). Its console object answers only while the
+    # active template is a projectile (`getActiveTemplate(0x9495)`), so the
+    # word on a HandFireArms -- vanilla's two grenades, the bazooka and the
+    # panzerschreck write it there -- is refused, and is not stored.
+    force_on_explosion: float | None = None
     # `ObjectTemplate.aiTemplate <name>`: the AI template this object is bound
     # to. For a hand weapon it names the `weaponTemplate.create` block in its
     # `Ai/Weapons.con` (`Colt` -> `ColtAI`), which is how the bot's fire
@@ -2595,6 +2609,22 @@ class ObjectLibrary:
                         "repairdistance": "repair_distance",
                         "repairfactor": "repair_factor",
                     }[cmd], value)
+                # -- The blast's push (ledger KNOCK-4, KNOCK-7).
+                elif cmd in ("explosionforcemod", "explosionforcemax",
+                             "forceonexplosion"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if cmd == "forceonexplosion":
+                        # Refused unless the active template is a projectile
+                        # (`getActiveTemplate(0x9495)`, 0x082e1530).
+                        if obj.kind.lower() == "projectile":
+                            obj.force_on_explosion = value
+                    elif cmd == "explosionforcemod":
+                        obj.explosion_force_mod = value
+                    else:
+                        obj.explosion_force_max = value
                 # -- Physics. See the `physics()` field block: which of these
                 # a template may legally declare is decided by its kind, so
                 # they are read unconditionally and sorted out there.

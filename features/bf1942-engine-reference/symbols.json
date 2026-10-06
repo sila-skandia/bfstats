@@ -4650,6 +4650,15 @@
    "note": "bf42plus section: Kill/Score Messages"
   },
   {
+   "address": "0x006aad90",
+   "name": "BfMenu debriefing (winner title, level line, win/lose cue)",
+   "kind": "function",
+   "subsystem": "hud",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "client. DEBRIEFING_<TOTAL/MAJOR/MINOR>_<VICTORY/DEFEAT> / _DRAW by victory type; the level setAllied/AxisDebriefing* line (total->Major, else Minor); setMusic(3) win / (5) lose once. Ledger ROUND-8."
+  },
+  {
    "address": "0x006ac21b",
    "name": "ret__chatInput1",
    "kind": "address",
@@ -5037,6 +5046,15 @@
    "note": "The vehicle HUD's per-seat weapon feed (no Ghidra function object; read with objdump on the corpus exe). Arg: the controlled seat. Walks its FireArms range from [esp+0x24]..[esp+0x28] (loop head 0x006d70f2), ebp = 1..2 (0x006d70fc cmp ebp,3); skips a null entry, a template class other than [0x008dcd14] (0x006d7121) and a template name equal to the previous weapon's (0x006d714c call [0x008c3194] = std::operator==(const string&, const string&); the name is kept at 0x006d7201 via [0x008c3138] string::operator=). For each weapon taken: Hud_setHeatOrReloadBar 0x006d6af0 (0x006d71ad), then CrossHair/Radius and Deviation = FireArms::getMenuCrossHairRadius 0x00539680 x the CrossHair group's +0x3c/+0x40 into its +0x34/+0x38 (0x006d71be, 0x006d71d9; [edi+0xc] is the CrossHair group), then the ammo panel 0x006e9180 on [edi+0x8] with isPrimary = (ebp == 1) (0x006d71e5); inc ebp at 0x006d720b. The cross write is not gated on ebp, so the second weapon's total stands: a tank driver's cross is his coax's. Ledger XHIT-15, VHUD-10."
   },
   {
+   "address": "0x006d7780",
+   "name": "client: control-map pick on entering a PCO",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "inferred",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "BF1942.exe. Takes [arg+0x4c], queries the PCO interface 0x8de480 (0x006d77dd) and switches on its vt+0x78 getVehicleCategory (0x006d78a5): 0/1 LandSeaPlayerInputControlMap 0x00922500, 2 AirPlayerInputControlMap 0x00922520. What arg is was not traced. Ledger MLK-8, MLK-14."
+  },
+  {
    "address": "0x006d8060",
    "name": "SpawnScreen__func_6D8060",
    "kind": "function",
@@ -5263,12 +5281,12 @@
   },
   {
    "address": "0x006e4290",
-   "name": "Player__setAliveState",
+   "name": "BfMenu ctf flag event (line + CTF.ssc patch)",
    "kind": "function",
-   "subsystem": "unsorted",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Other Functions"
+   "subsystem": "hud",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "client. event 0..5 stole/captured/returned Axis-first plays CTF.ssc patch = event; 6/7 dropped (Allied/Axis), line only while player+0xa9 == 0, no voice. Ledger CTF-7. bf42plus labelled it Player__setAliveState (working); its STOLE/CAPTURED/RETURNED/DROPPED_THE_FLAG strings and eight-case switch say otherwise."
   },
   {
    "address": "0x006e8ca0",
@@ -7503,6 +7521,24 @@
    "note": "The `.ssc` skip flag, one byte. Set by `/*` or `beginSkip` and cleared by `*/` or `endSkip` in SoundScript__skipFilter 0x007f9a80; otherwise cleared only by SoundScript__resetParseState 0x007fb040 at the end of a whole top-level parse. It is therefore global across the `#include` stack, not per file: an unterminated `/*` inside an included script keeps skipping in the includer after the include returns."
   },
   {
+   "address": "0x08052310",
+   "name": "dice::bf::BFPlayer::setVehicle(IObject*, int)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. BFPlayer vtable 0x0870d520 slot +0x40; forwards to _setVehicle 0x080523d0 (call at 0x08052337). PlayerControlObject::enter 0x08316f00 calls it with its own this (0x08317035), so a player's vehicle is the seat's own PCO. Ledger MLK-14."
+  },
+  {
+   "address": "0x080523d0",
+   "name": "dice::bf::BFPlayer::_setVehicle(IObject*, int)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. Stores the object's interface at BFPlayer+0x4c (0x080524b4; getVehicle 0x080560c0 reads it) and the first camera of that PCO at +0x50 (AI-123). Ledger MLK-14."
+  },
+  {
    "address": "0x08052ac0",
    "name": "dice::bf::getBFPlayer(IPlayer*)",
    "kind": "function",
@@ -8268,6 +8304,15 @@
    "note": "The wire writer (W-1): 6x writeUnsigned(stream,12) of short[0..5] (bytes 0-11), then writeUnsigned(stream, dword at +0xc, 0x20) -- 104 bits, byte 16 never touched. See subsystems/netcode.md"
   },
   {
+   "address": "0x0814ac90",
+   "name": "dice::bf::GameServer::handleScore(dice::bf::BFPlayer*, dice::ref2::world::ScoreMsg, dice::bf::BFPlayer*, int, int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. scoreEvent, then the score limit: CTF on TeamScore+8 (unsigned), TDM on +0x20; team 1 first; setWinner, victory type 1, EndGame. Ledger CTF-6, ROUND-4."
+  },
+  {
    "address": "0x0814b2e0",
    "name": "dice::bf::GameServer::giveDamage(dice::ref2::world::IObject*, float, int, int, int, dice::ref2::Pos3, int, bool, bool)",
    "kind": "function",
@@ -8383,6 +8428,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-ai",
    "note": "lnxded. Contains the per-tick bot top-up loop at +0x9b: while (getMaxNBots() != getBotCount()) create a player and IAIMain::activateBot. Ledger AI-7. [2026-09-27] The bleed (team 1's countdown at +0x1d4, team 2's at +0x1e0). While both sides have spawn groups (getGroupsForTeam, counts in ebx/edi), a side's countdown falls by dt while the enemy's summed areaValue is > 99 and refills 60/(+0x1d8 or +0x1e4) per ticket (subTicket(trunc(-c/interval)+1)); at <= 99 it is reset to that interval (0x08152100, 0x0815218c). +0x1d8/+0x1e4 = rate * max players / 16 (setTicketLostPerMin). When a side has no spawn groups, flags [ebp-0x1e1..0x1e4] (nowhere to spawn: !canTeamGetAnySpawnGroup 0x08167ba0; no live player: a player pass at 0x081521a6 testing BFPlayer +0x79/+0x7c) switch that side to an unconditional dt bleed refilled at the at-end rate +0x1ec (0x08151ce6, 0x08151d65), and its enemy, with a live player, to a weight*dt/100 countdown (0x081520da, 0x08152169). Ledger TKT-4, TKT-5."
+  },
+  {
+   "address": "0x081533f0",
+   "name": "dice::bf::GameServer::giveMedal()",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Top three of getPlayersSortedByScore get BFPlayer+0xe8/+0xec/+0xf0 (gold/silver/bronze) when single-player or GameServer+0xd0. Ledger ROUND-9."
   },
   {
    "address": "0x08153790",
@@ -9591,6 +9645,15 @@
    "note": "lnxded. Console word maxHitPoints (string 0x086c5808). Set: ceil(v) stored as uint32 to getActiveTemplate(0x947e)+0x84. Template default 10 (0x081dbd42). setArmorComponent passes it to Armor::setMaxHitPoints, before setHitPoints. Ledger HP-17."
   },
   {
+   "address": "0x081ce090",
+   "name": "ConsoleClass194::executeObjectMethod (ObjectTemplate.maxSpeed)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "review-2026-10-07-air-input-2",
+   "note": "lnxded. Console word maxSpeed (string 0x086c54f2, object 0x8790e60, vtable 0x8721fa8). Set: copies the Vec3 as written into getActiveTemplate(0x947d)+0x174..+0x17c, the RotationalBundleTemplate maxSpeed that calculateAndClipAngle 0x081d7866 multiplies by with no fabs; get reads them back. So a negative maxSpeed reverses a servo's sense. Ledger MLK-13, GUN-2."
+  },
+  {
    "address": "0x081d4c90",
    "name": "dice::ref2::world::ObjectTemplate::updateFlags(unsigned int, unsigned int)",
    "kind": "function",
@@ -9724,6 +9787,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded, writes +0x1a7."
+  },
+  {
+   "address": "0x081d9ee0",
+   "name": "dice::ref2::world::RotationalBundleTemplate::getRememberExcessInput() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. Returns template+0x1a7, the byte calculateAndClipAngle 0x081d7490 tests at 0x081d74df. Ledger GUN-2, MLK-16."
   },
   {
    "address": "0x081da0d0",
@@ -11661,6 +11733,42 @@
    "note": "lnxded. call [vt+0x7c], then queryInterface(IID_IPlayerObject 0xc378 at 0x086c2a60), then walks [ebx+0x54] comparing [ebx+0x4c]->getClassID() against ds:0x86c2b8c and accumulating. This is the function that actually reads a bundle's ammo. See ledger VHUD-10."
   },
   {
+   "address": "0x08291a90",
+   "name": "dice::ref2::world::Flag::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Away and on the ground: TimeToReSpawn countdown, own-team return (Defence), enemy pickup. Ledger CTF-4."
+  },
+  {
+   "address": "0x08291d70",
+   "name": "dice::ref2::world::Flag::handlePickup(dice::ref2::world::IPlayer*, dice::ref2::world::IPlayerObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Alive only; clears base+0x108, sets BFPlayer+0x13c, handleScore(Attack). Ledger CTF-3."
+  },
+  {
+   "address": "0x08291df0",
+   "name": "dice::ref2::world::Flag::handleDrop(dice::ref2::world::IPlayer*, dice::ref2::world::IPlayerObject*)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Live carrier: FlagCapture + reSpawn; dead: terrain height + 1.5 on the normal. Ledger CTF-2, CTF-5."
+  },
+  {
+   "address": "0x08292b30",
+   "name": "dice::ref2::world::FlagBase::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-10-06-ctf-round",
+   "note": "lnxded. Raises the flag; while home, captures for a carrying soldier of the base team inside radius, then the nearest enemy soldier steals. Ledger CTF-1..CTF-3."
+  },
+  {
    "address": "0x08298280",
    "name": "dice::ref2::world::addConstantHelper(std::string const&, unsigned int)",
    "kind": "function",
@@ -13045,6 +13153,60 @@
    "confidence": "verified",
    "source": "ghidra-headless-2026-09-30-fhsw-sound",
    "note": "lnxded. With useRelativePaths (+0x178) a path not starting with / or backslash gets the working path (+0x17c) prefixed; the working path is saved (0x083ed42c), set to the included file's folder (rfind 0x083edc29, assign 0x083edc57) and restored after the lines run (0x083ed898). Ledger CON-14; the line counter is CON-8."
+  },
+  {
+   "address": "0x083f0a50",
+   "name": "dice::ref2::io::ControlMap::addAxisMapping(AxisToAxisOptions, int, InputDeviceFlags, InputDeviceAxes, bool invert, bool secondary)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. find(trigger) in the AxisRemap tree at +0x10; absent + secondary -> return 0 (refused); else new AxisRemap(0xa8) and the slot is OVERWRITTEN: primary +0x0 device, +0x4 type 1, +0x8 options, +0xc axis, +0x4c invert; secondary the same at +0x50/+0x9c. Ledger MLK-9, MLK-15."
+  },
+  {
+   "address": "0x083f1430",
+   "name": "dice::ref2::io::ControlMap::addAxisMapping(int, InputDeviceFlags, InputDeviceKeys pos, InputDeviceKeys neg, bool secondary)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. The key-pair form: same find/refuse/overwrite as 0x083f0a50, type 3, keys at +0x18/+0x1c, invert byte 0. Ledger MLK-15."
+  },
+  {
+   "address": "0x083f1590",
+   "name": "dice::ref2::io::ControlMap::addTriggerMapping(int, InputDeviceFlags, InputDeviceButtons, float, bool secondary)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. The button form of 0x083f16f0. Ledger MLK-15."
+  },
+  {
+   "address": "0x083f16f0",
+   "name": "dice::ref2::io::ControlMap::addTriggerMapping(int, InputDeviceFlags, InputDeviceKeys, float, bool secondary)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. TriggerRemap (0x54, two TriggerMappings at +0 and +0x28) in the tree at +0x1c; absent + secondary -> refused; else the slot is overwritten. Ledger MLK-15."
+  },
+  {
+   "address": "0x083f1d70",
+   "name": "dice::ref2::io::ControlMap::update(float)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. Per AxisRemap: resolve the primary (when its device word is non-zero) into +0xa4, then the secondary, replacing only when |primary| < |secondary|; +0xa0 = the winner is a device axis. Per TriggerRemap: held = OR of resolveTriggerMapping 0x083f2010 over both slots. Ledger MLK-9, MLK-12, MLK-15."
+  },
+  {
+   "address": "0x083f2080",
+   "name": "dice::ref2::io::ControlMap::buttonsToAxis(IInputDevice*, AxisMapping&, float dt)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "lnxded-headless-2026-10-07-air-input-2",
+   "note": "lnxded. First key held: +0x40 += dt/riseTime clamped 1; else second key: -= dt/riseTime clamped -1; else |v| -= dt/fallTime floored 0. Both held reads +1. Ledger MLK-10, MLK-15."
   },
   {
    "address": "0x083f7f40",

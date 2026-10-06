@@ -178,6 +178,13 @@ class ScoreboardTests(unittest.TestCase):
         # The layout's own table is not written through.
         self.assertEqual(100, self.results["layoutVarsUntouched"])
 
+    def test_the_end_of_a_round_drops_the_buttons_and_counts_the_rounds(self) -> None:
+        v = self.results["varsEnd"]
+        self.assertTrue(v["Scoreboard/GameStatusEndGame"])
+        self.assertEqual((2, 1), (v["Scoreboard/AxisRoundWon"], v["Scoreboard/AlliedRoundWon"]))
+        self.assertFalse(self.results["varsLone"]["Scoreboard/GameStatusEndGame"])
+        self.assertEqual(0, self.results["varsLone"]["Scoreboard/AlliedRoundWon"])
+
     def test_a_room_is_multiplayer_and_a_lone_page_is_single_player(self) -> None:
         self.assertFalse(self.results["varsRoom"]["Scoreboard/GameStatusSinglePlayer"])
         self.assertTrue(self.results["varsLone"]["Scoreboard/GameStatusSinglePlayer"])

@@ -12,7 +12,8 @@
 //   order  Yaw, Pitch, Roll, Throttle, MouseLookX, MouseLookY  (the channel
 //   order `PlayerAction::set` 0x081128a0 packs, and the c_PI* rodata at
 //   0x086c86a5 names), then a u32 button mask at bit 72 (byte 9). 104 bits
-//   total, byte 13 of the wire record is beyond the engine's (see below).
+//   total; bytes 13..16 of the wire record are beyond the engine's (see
+//   below).
 //
 //   Encode and decode are the engine's own, imported from the module that
 //   owns them (world.js's composition rule): `mouse-input.js`'s
@@ -35,13 +36,19 @@
 //   stick spring exactly as the page's `pad` field does. ch48 (Communication)
 //   follows W-4 and stays server-local, never on the wire.
 //
-//   The byte-13 extension is the second departure: the page's raw key pairs
-//   (`forwardKeys`, `rudder`) are the aircraft's throttle latch and rudder --
-//   the aircraft path reads the *keys alone*, while the ground path and the
-//   body read the pad-fused `forward`/`strafe` axes. The two raw pairs are
-//   exactly -1/0/+1 each, so two bits per pair carry them without loss of
-//   fidelity. The engine never shipped this (its channels were richer); the
-//   record shape stays the engine's, one byte is added.
+//   The extension past byte 12 is the second departure: the page's
+//   control-map channels (`forwardKeys`, `rudder`) are the aircraft's
+//   throttle and rudder -- the aircraft path reads the control map alone,
+//   while the ground path and the body read the pad-fused `forward`/`strafe`
+//   axes on channels 3 and 0. They are the engine's own `c_PIThrottle` and
+//   `c_PIYaw`, which retail carries as analogue 12-bit channels like the
+//   stick (W-1, W-2): a joystick rudder or throttle lever, and a mouse a
+//   profile binds to the rudder, are not -1/0/+1. Bytes 14..16 carry the two
+//   at that resolution, through the same `floatToFixed`. Byte 13 keeps their
+//   signs as the 14-byte record always carried them, for a reader of that
+//   record, and a decoder handed a 14-byte record reads the signs. The engine
+//   never shipped this (its page had no touch pad to fuse); the record shape
+//   stays the engine's.
 //
 // THE RECEIVE LAW (D-1..D-4) is the server's, in the World already: buffer,
 // trim to FOUR dropping the oldest, consume exactly one per tick, zeroed
@@ -67,7 +74,7 @@ export const ROOM_CODE_RE = /^[A-Za-z0-9_-]{3,24}$/;
 
 // Client -> server
 export const MSG_JOIN = 0x01;           // JSON payload: {room, name, team}
-export const MSG_INPUT = 0x02;          // binary: u32le seq + 14-byte action
+export const MSG_INPUT = 0x02;          // binary: u32le seq + 17-byte action
 export const MSG_PING = 0x03;           // binary: u32le client time
 export const MSG_LEAVE = 0x04;          // empty; the engine's explicit 0xd (J-3)
 export const MSG_ACTION = 0x05;         // JSON: the engine's action-message
@@ -97,14 +104,18 @@ export const MSG_PONG = 0x86;           // binary: u32le server time
 // P3 adds the kill feed's rows ('killed', 'captured', 'ticket') on the same
 // seam; replay.js's SCORE_TEXT already names them.
 
-// The page's raw key pairs (see the header).
-const RAWF = 0;                          // the seven reserved low bits
+// The page's control-map throttle and rudder (see the header): their signs in
+// byte 13, the 14-byte record's own, and the two analogue in bytes 14..16.
 const EXT_FORWARD_UP = 1 << 0;           // forwardKeys > 0
 const EXT_FORWARD_DOWN = 1 << 1;         // forwardKeys < 0
 const EXT_RUDDER_RIGHT = 1 << 2;         // rudder > 0
 const EXT_RUDDER_LEFT = 1 << 3;          // rudder < 0
+const EXT_ANALOGUE_BIT = 112;            // bytes 14..16: rudder, then forwardKeys
 
-export const INPUT_BYTES = 14;           // 104 engine bits + the 8-bit extension
+export const INPUT_BYTES = 17;           // 104 engine bits, the sign byte, two 12-bit channels
+/** The record a page before the analogue channels sends, and the least a
+ *  frame must carry to be read. */
+export const INPUT_BYTES_MIN = 14;
 
 // --- the input record ------------------------------------------------------
 
@@ -115,7 +126,25 @@ export const CH_THROTTLE = 3;            // the forward axis (W/S, pad Y on foot
 export const CH_LOOK_X = 4;              // c_PIMouseLookX, already per-tick pumped
 export const CH_LOOK_Y = 5;              // c_PIMouseLookY
 
-/** The page's input+look word as the 14-byte wire record (see the header). */
+/** One 12-bit channel, the engine's quantization (mouse-input.js, shared
+ *  with the local player's path), little-endian bit-packed at `bit`. */
+function packChannel(bytes, bit, value) {
+  let v = floatToFixed(value);
+  for (let i = 0; i < 12; i++) {
+    if (v & 1) bytes[(bit + i) >> 3] |= 1 << ((bit + i) & 7);
+    v >>= 1;
+  }
+}
+
+function unpackChannel(bytes, bit) {
+  let v = 0;
+  for (let i = 0; i < 12; i++) {
+    if (bytes[(bit + i) >> 3] & (1 << ((bit + i) & 7))) v |= 1 << i;
+  }
+  return fixedToFloat(v);
+}
+
+/** The page's input+look word as the 17-byte wire record (see the header). */
 export function encodeInput(input, look) {
   const bytes = new Uint8Array(INPUT_BYTES);
   const channels = [
@@ -126,16 +155,8 @@ export function encodeInput(input, look) {
     look?.x ?? 0,
     look?.y ?? 0,
   ];
-  // Six 12-bit channels, little-endian bit-packed from bit 0. The engine's
-  // own quantization (mouse-input.js), shared with the local player's path.
-  for (let ch = 0; ch < 6; ch++) {
-    let v = floatToFixed(channels[ch]);
-    const bit = ch * 12;
-    for (let i = 0; i < 12; i++) {
-      if (v & 1) bytes[(bit + i) >> 3] |= 1 << ((bit + i) & 7);
-      v >>= 1;
-    }
-  }
+  // Six 12-bit channels, little-endian bit-packed from bit 0.
+  for (let ch = 0; ch < 6; ch++) packChannel(bytes, ch * 12, channels[ch]);
   // The u32 button mask at bit 72.
   let mask = 0;
   if (input?.fire) mask |= 1 << 0;
@@ -146,28 +167,30 @@ export function encodeInput(input, look) {
   if (input?.jump) mask |= 1 << 22;       // departure, see the header
   if (input?.pad) mask |= 1 << 23;        // departure, see the header
   for (let i = 0; i < 4; i++) bytes[9 + i] = (mask >> (8 * i)) & 0xff;
-  // The extension byte: the aircraft's raw key pairs.
-  if (input?.forwardKeys > 0) bytes[13] |= EXT_FORWARD_UP;
-  if (input?.forwardKeys < 0) bytes[13] |= EXT_FORWARD_DOWN;
-  if (input?.rudder > 0) bytes[13] |= EXT_RUDDER_RIGHT;
-  if (input?.rudder < 0) bytes[13] |= EXT_RUDDER_LEFT;
+  // The extension: the aircraft's control-map throttle and rudder, their
+  // signs in byte 13 for a reader of the 14-byte record, and the two at the
+  // engine's channel resolution in bytes 14..16.
+  const forwardKeys = Number.isFinite(input?.forwardKeys) ? input.forwardKeys : 0;
+  const rudder = Number.isFinite(input?.rudder) ? input.rudder : 0;
+  if (forwardKeys > 0) bytes[13] |= EXT_FORWARD_UP;
+  if (forwardKeys < 0) bytes[13] |= EXT_FORWARD_DOWN;
+  if (rudder > 0) bytes[13] |= EXT_RUDDER_RIGHT;
+  if (rudder < 0) bytes[13] |= EXT_RUDDER_LEFT;
+  packChannel(bytes, EXT_ANALOGUE_BIT, rudder);
+  packChannel(bytes, EXT_ANALOGUE_BIT + 12, forwardKeys);
   return bytes;
 }
 
-/** The wire record back to the page's input+look word (the server's read). */
+/** The wire record back to the page's input+look word (the server's read).
+ *  A 14-byte record (a page from before the analogue channels) gives its
+ *  throttle and rudder as the signs it carried. */
 export function decodeInput(bytes) {
   const ch = [0, 0, 0, 0, 0, 0];
-  for (let c = 0; c < 6; c++) {
-    let v = 0;
-    const bit = c * 12;
-    for (let i = 0; i < 12; i++) {
-      if (bytes[(bit + i) >> 3] & (1 << ((bit + i) & 7))) v |= 1 << i;
-    }
-    ch[c] = fixedToFloat(v);
-  }
+  for (let c = 0; c < 6; c++) ch[c] = unpackChannel(bytes, c * 12);
   let mask = 0;
   for (let i = 0; i < 4; i++) mask |= bytes[9 + i] << (8 * i);
   const ext = bytes[13] ?? 0;
+  const analogue = bytes.length >= INPUT_BYTES;
   const key = (up, down) => (up ? 1 : 0) - (down ? 1 : 0);
   return {
     input: {
@@ -182,8 +205,10 @@ export function decodeInput(bytes) {
       crouch: (mask & (1 << 21)) !== 0,
       jump: (mask & (1 << 22)) !== 0,
       pad: (mask & (1 << 23)) !== 0,
-      forwardKeys: key(ext & EXT_FORWARD_UP, ext & EXT_FORWARD_DOWN),
-      rudder: key(ext & EXT_RUDDER_RIGHT, ext & EXT_RUDDER_LEFT),
+      forwardKeys: analogue ? unpackChannel(bytes, EXT_ANALOGUE_BIT + 12)
+        : key(ext & EXT_FORWARD_UP, ext & EXT_FORWARD_DOWN),
+      rudder: analogue ? unpackChannel(bytes, EXT_ANALOGUE_BIT)
+        : key(ext & EXT_RUDDER_RIGHT, ext & EXT_RUDDER_LEFT),
     },
     look: { x: ch[CH_LOOK_X], y: ch[CH_LOOK_Y] },
   };

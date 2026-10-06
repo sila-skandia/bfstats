@@ -9,7 +9,7 @@ import { createAuthority } from './authority.mjs';
 import {
   MAX_PLAYERS,
   MSG_ACTION, MSG_EVENT, MSG_INPUT, MSG_LEAVE, MSG_PING, MSG_PONG,
-  decodeInputFrame,
+  INPUT_BYTES_MIN, decodeInputFrame,
 } from '../viewer/netcode.js';
 import {
   DROP_SWEEP_MS, FIRE_EVENT_COOLDOWN_S, FRAME_MS, HEARTBEAT_TIMEOUT_MS, NAME_OK,
@@ -144,6 +144,10 @@ export class Room {
       flags: this.flagsForWire(),
       vehicles: this.vehiclesForWire(),
       tickets: this.world.tickets,
+      // A CTF layer's flags as the law has them now (`ctf.js` `snapshot`),
+      // so a client joining mid-round draws a carried or dropped flag where
+      // it is rather than on its pole; null on any other layer.
+      ctf: this.authority.ctf?.snapshot() ?? null,
     };
   }
 
@@ -179,7 +183,9 @@ export class Room {
         return;
       }
       case MSG_INPUT: {
-        if (body.length < 4 + 14) return;   // malformed; ignore, keep alive
+        // Malformed: ignore, keep alive. A 14-byte record from a page that
+        // predates the analogue throttle and rudder still reads (netcode.js).
+        if (body.length < 4 + INPUT_BYTES_MIN) return;
         // The P3 death decree: the dead send nothing (the page's own loop
         // stops at `soldierDead`; the world idles the body either way).
         if (!this.authority.mayInput(connection.slot)) return;

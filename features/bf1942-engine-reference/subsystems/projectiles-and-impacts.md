@@ -273,3 +273,29 @@ other. The AA gun's `CRD_UNIFORM/0.8/1.4/0` spreads its bursts from 240 to
 420 m at 300 m/s. A viewer that keeps only the CRD's first number bursts
 every shell at 240 m, which is the "same distance every time" the owner saw.
 
+
+## 6. The blast's push, and the soldier it throws
+
+Read 2026-10-06 (ledger KNOCK-4..KNOCK-9; the build is
+[`features/bf1942-blast-and-bounce/`](../../bf1942-blast-and-bounce/README.md)).
+`handleExplosionOnObject` (0x08156500) pushes every victim it prices above
+zero, through the victim's own physics node, and stamps a soldier for the
+explosion states (KNOCK-1, KNOCK-2):
+
+- **Size.** `explosionForceMod` (the victim's Armor; a soldier template's 75
+  in vanilla, 150 in Desert Combat, default 1.0) times the round's
+  `forceOnExplosion` (default 150, and a projectile's word only) over the
+  radius, times the soldier's exposure (HP-10), a tenth in water, times
+  friendly fire's cut, held under `explosionForceMax` (600 for a soldier,
+  default 300). No falloff with distance.
+- **Direction.** The separation plus the victim's nearest axis; a soldier's
+  rise is `(1 - d/r) * 5`, and past half the radius he is not pushed at all.
+- **Speed.** One 1/30 s tick in the accumulator: `F / 30` m/s. A vanilla
+  grenade leaves a crouched man at 20 m/s (the ceiling) and a standing one at
+  12.5; a Desert Combat soldier at 20 either way. He is thrown when that is
+  8 m/s or more (KNOCK-1).
+- **Landing.** A bot plays the survive landing and the get-up (3 s on the
+  ground); a human is back on `Lb_Stand` the moment he touches down (KNOCK-8);
+  a dead man holds `LandFront` / `LandBack`. The landing is billed as a fall
+  (HP-14): on the page's flat-ground measure a 12.3 m/s landing costs
+  nothing and the 19.4 m/s one a 20 m/s throw comes down at costs 1.3 HP.

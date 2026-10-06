@@ -352,6 +352,8 @@ def soldier_languages(pool: ArchivePool, written: set[str]) -> dict[str, str]:
 CHAT_STRING_KEYS = ("DEFAULT_KILL_TEXT", "TEAM_KILL", "DEATH", "AXIS_CAPTURED",
                     "ALLIES_CAPTURED", "AXIS_HOLD_ALL_CONTROLPOINTS",
                     "ALLIES_HOLD_ALL_CONTROLPOINTS", "CAPTURED_THE_FLAG",
+                    # The rest of a CTF flag's lines (0x006e4290, ledger CTF-7).
+                    "STOLE_THE_FLAG", "RETURNED_THE_FLAG", "DROPPED_THE_FLAG",
                     "TEAM_CHAT_AXIS", "TEAM_CHAT_ALLIES", "RADIO_ATTACK", "RADIO_DEFEND")
 MENU_CON = "Bf1942/Game/Init/Menu.con"
 PROFILE_OPTIONS = Path("Settings/Profiles/Default/GeneralOptions.con")
