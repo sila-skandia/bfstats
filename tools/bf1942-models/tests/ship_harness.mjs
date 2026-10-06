@@ -436,4 +436,37 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
   };
 }
 
+// --- (f) a hull ashore with a spin ------------------------------------------
+// The OSA-2 on Midway's beach: a hull that reaches dry land still turning --
+// the pitch and roll the surf gave her -- has to be stopped by the ground, not
+// pivot on her own footprint for good while the push-out lifts her. Here the
+// Fletcher is set down on a flat bed 10 m above the sea with 0.15 rad/s of
+// pitch and 0.1 of roll, engines off, and left for twenty seconds.
+{
+  const { hull, scene } = buildFletcher();
+  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+  ship.autoFirstPerson = false;
+  const BED = WATER + 10;
+  ship.groundHeight = () => BED;
+  const restY = BED - ship.keel;
+  ship.state.position.y = restY;
+  ship.state.velocity.set(0, 0, 0);
+  ship.state.angularVelocity.set(0.15, 0, 0.1);
+  const fwd = new THREE.Vector3();
+  let highest = -Infinity;
+  for (let i = 0; i < 600; i++) {
+    ship.integrate(1 / 30);
+    highest = Math.max(highest, ship.state.position.y - restY);
+  }
+  fwd.set(0, 0, -1).applyQuaternion(ship.state.orientation);
+  out.ashoreSpinning = {
+    // How far her origin ever rose above where she rests on her keel.
+    highestAboveRest: +highest.toFixed(3),
+    finalAboveRest: +(ship.state.position.y - restY).toFixed(3),
+    spin: +ship.state.angularVelocity.length().toFixed(4),
+    pitch: +(Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI).toFixed(2),
+    aground: ship.aground,
+  };
+}
+
 console.log(JSON.stringify(out));

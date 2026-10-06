@@ -281,6 +281,35 @@ class WorldTests(unittest.TestCase):
         # list, so a level with no wrecks in the air pays a length check.
         self.assertEqual(self.results["falling"]["afterClear"], 0)
 
+    # --- the depots: one pass a tick (ledger SUP-18, SUP-19) ----------------
+
+    def test_a_depot_cycle_serves_every_soldier_and_hull_in_reach(self) -> None:
+        """Two soldiers at one locker heal alike, on the same cycles, and an
+        empty F-14 on a carrier pad is repaired by its own row, 4 HP a
+        cycle, with nobody aboard. 60 ticks at 1/30 s give three cycles of
+        16 ticks (0.5333 s each, the first tick past 0.5 s)."""
+        d = self.results["depots"]
+        self.assertEqual(d["cycles"], 3)
+        self.assertAlmostEqual(d["h1Hp"], d["h2Hp"], places=6)
+        self.assertAlmostEqual(d["h1Hp"], 10 + 3 * (16 / 30) * 4, places=4)
+        self.assertEqual(d["hullHp"], 50 + 3 * 4)
+        self.assertTrue(d["hullIsPco"])
+        self.assertEqual(d["hullTemplate"], "F-14B")
+
+    def test_a_seated_soldier_is_served_only_by_his_own_hulls_depot(self) -> None:
+        """SUP-20 through the world pass: a half-track's own locker heals
+        its rider, a ground locker on the same spot does not, a rider in
+        another hull there gets nothing, and a man on foot gets both. An
+        Axis-only pad repairs the Axis-crewed Sherman and neither the
+        Allied-crewed nor the empty one (team 0, SEAT-27). Three cycles of
+        16 ticks in 60."""
+        r = self.results["reach"]
+        one = 3 * (16 / 30) * 4
+        self.assertAlmostEqual(r["inA"], 10 + one, places=4)
+        self.assertEqual(r["inB"], 10)
+        self.assertAlmostEqual(r["onFoot"], 10 + 2 * one, places=4)
+        self.assertEqual(r["tanks"], [50 + 3 * 4, 50, 50])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,12 +55,18 @@ export function launchesADrawnBody(stats, projectileMesh) {
  * bomb forward at 100 m/s (ledger BOMB-8). `0` is a real, authored value on
  * every one of the thirteen vanilla aircraft racks and means precisely what it
  * says: the round leaves at no speed of its own and inherits the platform's.
- * `?? ` instead of `||` is the whole fix; the 100 stays as the fallback for a
- * template that declares no `velocity` at all.
+ * `?? ` instead of `||` is the whole fix. A template that declares no
+ * `velocity` at all gets the engine's own default, 200 m/s (ledger FA-3; the
+ * 100 that stood here was a guess): every `Binoculars` and Desert Combat's
+ * `BRDM2_Spandrel` launcher rely on it.
  */
 export function releaseSpeed(stats) {
-  return stats?.velocity ?? 100;
+  return stats?.velocity ?? FIREARMS_DEFAULT_VELOCITY;
 }
+
+/** `FireArmsTemplate`'s constructor writes 200.0 to `velocity` (`+0x2e8`,
+ *  lnxded `0x0828d808`; ledger FA-3). */
+export const FIREARMS_DEFAULT_VELOCITY = 200;
 
 /**
  * Which barrels fire on one pull, and how many rounds that costs.
@@ -99,17 +105,21 @@ export function releaseSpeed(stats) {
  * `nextBarrel` is the round-robin counter -- `gunfire.js` passes `group.shots`,
  * which is what it already used for the same purpose.
  *
- * The third flag in the engine's expression, `FireArmsTemplate+0x348`, read as
- * `fireAllAtOnce` (BOMB-4, `inferred`), would force the single-round charge
- * and suppress the partial salvo. It is not modelled: the survey finds **zero**
- * declarations of it across all 14 installs, so nothing shipped depends on
- * which way it falls, and modelling an unproven offset would be worse than
- * leaving the case out.
+ * The third flag in the engine's expression, `FireArmsTemplate+0x348`, is
+ * `blastAmmoCount` (BOMB-4, BOMB-13: its setter writes that byte). Set, it
+ * makes the whole salvo cost ONE round and skips the partial-salvo rule above
+ * the loop, so every barrel fires even on the last round. It is what a
+ * shotgun is: the Remington's eight `addFireArmsPosition` pellets are one
+ * shell, and so are an FHSW canister shell's 57. It changes nothing on a
+ * weapon with one barrel or with `asynchronyFire`, which is where every one of
+ * Desert Combat's `setBlastAmmoCount 5` and `2` sits -- and those values fail
+ * the engine's bool read anyway (CON-17).
  *
  * @returns {{barrels: number[], rounds: number}}
  */
 export function salvo(barrelCount, {
   asynchronyFire = false,
+  blastAmmoCount = false,
   roundsLeft = Infinity,
   nextBarrel = 0,
 } = {}) {
@@ -126,6 +136,11 @@ export function salvo(barrelCount, {
   }
   if (unlimited) {
     return { barrels: range(barrels), rounds: 0 };
+  }
+  if (blastAmmoCount) {
+    // `Fire`'s gate is `mags < barrelCount && !tmpl[0x348]`, and
+    // `fireFinished` charges `barrelCount` only when `tmpl[0x348]` is clear.
+    return { barrels: range(barrels), rounds: 1 };
   }
   const firing = Math.min(barrels, Math.max(0, Math.floor(roundsLeft)));
   return { barrels: range(firing), rounds: firing };

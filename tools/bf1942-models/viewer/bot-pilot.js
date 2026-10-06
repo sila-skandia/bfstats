@@ -278,9 +278,15 @@ export function gunBallistics(bot) {
 export function groupBallistics(g, speed = 600) {
   const st = g?.stats ?? {};
   const v = st.velocity ?? st.projectile?.velocity;
-  // `gravityModifier` as the extractor names it (`projectile.gravity`); a
-  // tracer round's is 0, a shell's defaults to 1 (gunfire.js).
-  const gm = Number.isFinite(st.projectile?.gravity) ? st.projectile.gravity : (st.projectile?.kind === 'shell' ? 1 : 0);
+  // `gravityModifier` as the extractor names it (`projectile.gravity`).
+  // `WeaponFireArm::init` (0x085ee220) hands the Aimer the projectile
+  // template's own `+0x164`, which the `ProjectileTemplate` constructor sets
+  // to 1.0 (ledger IMP-7) whatever the round's kind, and the flight
+  // (`round-launch.js`) falls by the same `gravity ?? 1`: an artillery rocket
+  // or a cluster bomblet that declares none falls, and a bot aims for it. A
+  // glb too old to carry the round as an object flies it flat.
+  const p = st.projectile;
+  const gm = Number.isFinite(p?.gravity) ? p.gravity : (p && typeof p === 'object' ? 1 : 0);
   return { speed: Number.isFinite(v) ? v : speed, gravity: GRAVITY * gm, node: g?.node ?? null };
 }
 
