@@ -34,6 +34,7 @@
 
 import { GameConsole } from './console.js';
 import { CONTROLS_DEFAULTS } from './controls-defaults.js';
+import { describeSeat, seatProfile } from './mouse-look-key.js';
 
 const STORAGE_KEY = 'viewer.controls.profile';
 
@@ -397,9 +398,10 @@ export function createControls(page) {
 
   /** The active context map, the engine's overlay: game + common + the one
    *  context the player is in. The same rule mouse-input.js's `profileFor`
-   *  already applies to the sensitivity: VCLand/VCSea are the LandSea map,
-   *  VCAir the Air one, only a pilot flies on Air, and the soldier keeps
-   *  Infantry. */
+   *  already applies to the sensitivity, off the seat's own PCO (ledger
+   *  MLK-14, `mouse-look-key.js` `seatProfile`): VCLand/VCSea are the LandSea
+   *  map, VCAir the Air one -- a pilot, and DC's co-pilots and passengers --
+   *  and the soldier keeps Infantry. */
   controls.context = () => {
     // The seat first: a soldier who climbed in keeps his on-foot flag (he is
     // suspended in the seat, rifle slung), and a pilot read as infantry flew
@@ -407,8 +409,11 @@ export function createControls(page) {
     // but a profile's stick and its joystick fire, bound only on Air, did
     // nothing. Local-look's `lookProfile` has always asked in this order.
     if (page.optPilot?.checked && page.occupancy) {
-      const pilot = page.occupancy.isActiveRoot?.() ?? true;
-      return page.occupancy.rootKind === 'air' && pilot ? 'air' : 'land';
+      const seat = describeSeat(page.occupancy);
+      // An occupancy that cannot say which seat it holds is the root's.
+      if (seat.root === undefined) seat.root = true;
+      const profile = seatProfile(seat);
+      return profile === 'air' ? 'air' : profile === 'infantry' ? 'infantry' : 'land';
     }
     if (page.optOnFoot?.checked && page.soldier) return 'infantry';
     return null;    // free camera: the game map and common still answer

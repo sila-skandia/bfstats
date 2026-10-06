@@ -641,10 +641,13 @@ export function createLocalPlayer(page) {
       // keys) and the look pair is the router's zero; held, the stick is let
       // go below and the counts never reached the stage (`lookDelta` turned
       // the head with them). A profile that binds no mouse axis to the stick
-      // -- the owner's flies on a joystick -- gets nothing from it here.
-      const pilotNeedsKey = page.lookNeedsKey();
-      const lookHeld = pilotNeedsKey && page.lookKeyHeld();
-      const mouse = pilotNeedsKey && !lookHeld
+      // -- the owner's flies on a joystick -- gets nothing from it here. A
+      // keyed passenger (DC's MH-6 bench, MLK-14) routes the same way; his own
+      // PCO binds no part to the stick, and only the pilot's word reaches
+      // the hull (`world-vehicle-tick.js`, the root seat's input).
+      const needsKey = page.lookNeedsKey();
+      const lookHeld = needsKey && page.lookKeyHeld();
+      const mouse = needsKey && !lookHeld
         ? { x: page.mouseInput.x, y: page.mouseInput.y } : null;
       const stick = t => page.axis(t, mouse);
       // The engine's PlayerInput, named by action. `forwardKeys` and
@@ -673,7 +676,7 @@ export function createLocalPlayer(page) {
       // axes instead.
       routeFlightInput(input, lookHeld);
       look = { x: page.mouseInput.x, y: page.mouseInput.y };
-      if (pilotNeedsKey) routeLookPair(look, lookHeld);
+      if (needsKey) routeLookPair(look, lookHeld);
     } else if (onFoot) {
       page.feedMobileLook(dt);
       page.pumpLook(lookTicks);

@@ -300,6 +300,9 @@ export function createSeatCamera(page) {
 
   function passenger(dt) {
     if (!seatCamera.view) return;
+    // A passenger whose Camera sets `toggleMouseLook` (DC's MH-6 and SA-342
+    // benches, MLK-14) eases back like a pilot when the key is let go.
+    page.stepMouseLookKey(dt);
     const pose = seatCamera.view.update(dt);
     page.camera.position.copy(pose.position);
     page.camera.quaternion.copy(pose.quaternion);
