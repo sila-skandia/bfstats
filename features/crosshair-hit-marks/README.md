@@ -171,7 +171,10 @@ points: [round-replay-hud](../round-replay-hud/README.md), "The hit marks".
   positions measured live in the scene, not on screen. The rig is
   `measure_b.cjs` / `repro_a.cjs` in the xhair scratch dir, and the
   `__aimSeat` hook added to `test-hooks-vehicles.js`.
-- Vehicle guns still have no deviation cone (`spreadDeg` null on seats).
+- ~~Vehicle guns still have no deviation cone (`spreadDeg` null on seats).~~
+  Built 2026-10-07 in [vehicle-gun-deviation](../vehicle-gun-deviation/README.md)
+  (DEV-11..DEV-13): a seat gun's rounds leave in the same stored total its
+  cross opens by.
 - **XHIT-9:** whether the HUD batch alpha-tests, which would cut the marks off
   before `t` reaches 0.
 - **XHIT-11:** the crosshair gap law. `BfCrosshairNode`'s draw (`0x007db970`)

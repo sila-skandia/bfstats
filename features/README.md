@@ -93,8 +93,9 @@ folder answers.
 | [rocket-flight](rocket-flight/README.md) | build | How does a rocket fly: its gravity, its motor, and where does it land? |
 | [dc-engine-reads](dc-engine-reads/README.md) | build | What do Desert Combat's `blastAmmoCount`, gun stabilization and `hasCollisionPhysics 0` really do? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
-| [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, and what opens the cone on a swing? |
+| [hand-weapon-barrels-sight-and-heat](hand-weapon-barrels-sight-and-heat/README.md) | build | Why did a shotgun fire a slug, what does a scope with no picture draw, how does a hand MG overheat, what opens the cone on a swing, and how does a shot shake the view? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
+| [vehicle-gun-deviation](vehicle-gun-deviation/README.md) | fix | Why did every vehicle and stationary gun fire with no deviation, and what cone does a seat gun run? |
 | [viewer-collision-damage](viewer-collision-damage/README.md) | research | What does retail do when vehicles collide, burn and are destroyed? |
 | [viewer-demolitions-and-spawn-safety](viewer-demolitions-and-spawn-safety/README.md) | fix | How do ExpPack and detonator work, and why did soldiers spawn inside buildings? |
 | [viewer-healing-packs](viewer-healing-packs/README.md) | fix | How do the medic pack and wrench heal and repair, and how fast? |
@@ -143,6 +144,7 @@ folder answers.
 | [bot-body-animation](bot-body-animation/README.md) | build | Why did bots snap prone, and how do their bodies show stance, fire, reload? |
 | [bot-friendly-fire](bot-friendly-fire/README.md) | build | Do retail rounds hit teammates, and how is friendly damage priced? |
 | [bot-stalemates](bot-stalemates/README.md) | fix | Why did bot tanks and soldiers stop fighting at Bocage's bridges? |
+| [bot-desert-combat](bot-desert-combat/README.md) | fix | Why could bots not board DC's A-10 variants or stood frozen in Change, and which DC hulls have no AI? |
 | [instant-battle-bot-settings](instant-battle-bot-settings/README.md) | build | How do the Instant Battle bot controls map onto botCount and botSkill? |
 
 ### Game modes, spawns, HUD and menus

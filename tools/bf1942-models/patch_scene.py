@@ -19,6 +19,8 @@ each kind of change to one):
                     the mod's _shared/vehicle-sounds.json, once per run,
                     when the tree has one
     ai              the `ai` key and the level's pathfinding/ folder
+    heightmap       the `heightmap` key and terrain/heightmap.png, the whole
+                    heightmap the viewer's colliders stand on
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its

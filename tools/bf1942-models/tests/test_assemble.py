@@ -226,38 +226,79 @@ class DestroyedLodCollisionTests(unittest.TestCase):
 
 
 class InvisiblePartTests(unittest.TestCase):
-    def test_create_invisible_parts_are_omitted_without_loading_geometry(self) -> None:
-        library = ObjectLibrary()
-        library.add_con(
-            "Objects/Vehicles/Sea/Test/Objects.con",
-            """
+    """`createInvisible 1` stops an object being drawn, not being built.
+
+    A Spring so hidden is still a PhysicsSpring with a ResponsePhysics whose
+    col0 vertices `checkVsTerrain` probes, and the vehicles that author one
+    stand on it: the KettenKrad's two wheels behind its tracks, the R75's and
+    HD_XA42's sidecar wheel, the LVT4's two driven wheels. It is kept as a node
+    with its physics and its geometry's name and probes, and nothing drawn.
+    Anything else hidden is still left out.
+    """
+
+    CON = """
 ObjectTemplate.create Bundle Boat
 ObjectTemplate.addTemplate Hull
 ObjectTemplate.addTemplate LandEngine
+ObjectTemplate.addTemplate HiddenPanel
 
 ObjectTemplate.create SimpleObject Hull
 ObjectTemplate.geometry TestHull
 
 ObjectTemplate.create Engine LandEngine
 ObjectTemplate.addTemplate HiddenWheel
+ObjectTemplate.setPosition 0/-0.6/1.2
 
 ObjectTemplate.create Spring HiddenWheel
 ObjectTemplate.geometry Willy_WheelR_M1
+ObjectTemplate.Grip c_PGFRollGrip
+ObjectTemplate.setStrength 25
+ObjectTemplate.setDamping 5
+ObjectTemplate.createInvisible 1
+
+ObjectTemplate.create SimpleObject HiddenPanel
+ObjectTemplate.geometry TestPanel
 ObjectTemplate.createInvisible 1
 
 GeometryTemplate.create StandardMesh TestHull
 GeometryTemplate.create StandardMesh Willy_WheelR_M1
-""",
-        )
+GeometryTemplate.create StandardMesh TestPanel
+"""
+
+    def _build(self, name: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Sea/Test/Objects.con", self.CON)
         pool = ArchivePool()
         assembler = Assembler(pool, pool, pool, library)
         builder = gltf.GlbBuilder()
         report = Report(root="Boat", configuration="complex", lod=0)
+        return builder, report, assembler.build_node(builder, name, report)
 
-        self.assertIsNone(assembler.build_node(builder, "HiddenWheel", report))
-        self.assertIsNone(assembler.build_node(builder, "LandEngine", report))
+    def test_a_hidden_spring_is_kept_undrawn(self) -> None:
+        builder, report, index = self._build("HiddenWheel")
+        self.assertIsNotNone(index)
+        node = builder.node(index)
+        self.assertIsNone(node.mesh)
+        self.assertEqual("Spring", node.extras["templateKind"])
+        self.assertEqual("Willy_WheelR_M1", node.extras["geometry"])
+        self.assertEqual("c_PGFRollGrip", node.extras["physics"]["grip"])
+        self.assertEqual(25, node.extras["physics"]["strength"])
+        # Nothing drawn was asked for: no render mesh, no part counted.
+        self.assertEqual(0, report.parts)
+        self.assertEqual(0, report.triangles)
+
+    def test_its_engine_keeps_it_where_the_con_places_it(self) -> None:
+        builder, _, index = self._build("LandEngine")
+        engine = builder.node(index)
+        wheel = next(builder.node(i) for i in engine.children
+                     if builder.node(i).extras.get("templateKind") == "Spring")
+        self.assertAlmostEqual(-0.6, wheel.translation[1])
+
+    def test_anything_else_hidden_is_still_left_out(self) -> None:
+        _, report, index = self._build("HiddenPanel")
+        self.assertIsNone(index)
         self.assertEqual([], report.missing_meshes)
-        self.assertNotIn("Willy_WheelR_M1", report.missing_geometry_templates)
+        self.assertNotIn("TestPanel", report.missing_geometry_templates)
 
 
 class FirstPersonLodTests(unittest.TestCase):
@@ -1915,12 +1956,17 @@ GeometryTemplate.create StandardMesh Sherman_whe3L_M1
         self.assertEqual(0x24, dummy["gripFlags"])
         self.assertEqual(4.0, nodes["ShermanEngine"]["extras"]["physics"]["torque"])
 
-    def test_a_drivetrain_of_only_hidden_wheels_still_contributes_nothing(self) -> None:
-        """The meshless-physics escape must not resurrect an empty Engine.
+    def test_a_drivetrain_of_only_hidden_wheels_is_kept_undrawn(self) -> None:
+        """A drivetrain whose wheels are all `createInvisible 1` is built.
 
-        A boat's land drivetrain is `createInvisible 1` wheels under an Engine
-        that declares no physics of its own; before this change it was
-        dropped, and it still is.
+        This test said the opposite until 2026-10-07: a boat's land drivetrain
+        is hidden wheels under an Engine that declares no physics of its own,
+        and it was dropped. The engine still builds those wheels. `createInvisible`
+        stops an object being drawn, and its PhysicsSpring and ResponsePhysics
+        stand on the ground as any other's. So the Engine comes out with its
+        wheel, which carries its physics and nothing drawn. The Elco80's own
+        `PT_FrontWheel`/`PT_BackWheel` are this case. Its ship drive reads no
+        Spring, and it floats and beaches as before.
         """
         library = ObjectLibrary()
         library.add_con("Objects/Vehicles/Sea/Test/Objects.con", """
@@ -1938,10 +1984,15 @@ GeometryTemplate.create StandardMesh Willy_WheelR_M1
         pool = ArchivePool()
         assembler = Assembler(pool, pool, pool, library)
         report = Report(root="LandEngine", configuration="complex", lod=0)
+        builder = gltf.GlbBuilder()
 
-        self.assertIsNone(
-            assembler.build_node(gltf.GlbBuilder(), "LandEngine", report))
-        self.assertEqual([], report.physics_parts)
+        index = assembler.build_node(builder, "LandEngine", report)
+        self.assertIsNotNone(index)
+        wheels = [builder.node(i) for i in builder.node(index).children]
+        self.assertEqual(["HiddenWheel"], [w.name for w in wheels])
+        self.assertIsNone(wheels[0].mesh)
+        self.assertEqual(0x04, wheels[0].extras["physics"]["gripFlags"])
+        self.assertEqual(0, report.parts)
 
 
 class SupplyDepotBakeTests(unittest.TestCase):

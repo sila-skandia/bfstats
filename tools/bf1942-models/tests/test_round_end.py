@@ -138,6 +138,16 @@ class RoundEndTests(unittest.TestCase):
                                              draw["state"]["restarts"]))
         self.assertEqual(["board:true"], draw["calls"])
 
+    def test_a_rooms_screen_waits_for_the_servers_restart(self) -> None:
+        # In a room the restart is the server's row: the page's countdown runs
+        # out and the screen stays up (no `restartRound` of its own) until the
+        # row turns the round back to Playing. The medals are the server's.
+        room = self.results["room"]
+        self.assertEqual([[3, "gold", "Remote"]], room["medals"])
+        self.assertEqual({"shown": True, "countdown": "0", "restarts": 0}, room["waiting"])
+        self.assertEqual({"shown": False, "restarts": 1}, room["after"])
+        self.assertNotIn("restart", room["calls"])
+
 
 if __name__ == "__main__":
     unittest.main()

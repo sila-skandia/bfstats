@@ -19,7 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extract_vehicle_ai import GAME, basic_temp, control_info, extract, is_anti_aircraft, parse_objects_con  # noqa: E402
+from extract_vehicle_ai import GAME, basic_temp, control_info, extract, is_anti_aircraft, parse_objects_con, parse_weapons_con  # noqa: E402
 
 AA_ALLIES = """
 rem *** Plugins ***
@@ -271,6 +271,108 @@ class ChainExtractTests(unittest.TestCase):
         self.assertIn("Carrier_Siege", v["Carrier@Siege"]["seats"])
 
 
+class WeaponTemplateWordsTests(unittest.TestCase):
+    """`weaponTemplate.exitVelocity` (WeaponTemplate +0x28, the speed the
+    Aimer leads with) and `useAimerOnly` (+0x5, `BAPCConPrecision`'s aligned
+    hold), ledger AI-143. DC spells the second `useAimeronly` on half its
+    launchers; the console matches names in any case."""
+
+    def test_the_two_words(self):
+        w = parse_weapons_con(
+            "weaponTemplate.create MLRSMainGun\nweaponTemplate.exitVelocity 72\nweaponTemplate.useAimerOnly 1\n"
+            "weaponTemplate.create TOW_Launcher\nweaponTemplate.exitVelocity 300\nweaponTemplate.useAimeronly 1\n"
+            "weaponTemplate.create A10Snakes\nweaponTemplate.exitVelocity -5\n"
+            "weaponTemplate.create Browning\nweaponTemplate.maxRange 300\n")
+        self.assertEqual(72.0, w["mlrsmaingun"]["exitVelocity"])
+        self.assertTrue(w["mlrsmaingun"]["useAimerOnly"])
+        self.assertTrue(w["tow_launcher"]["useAimerOnly"])
+        self.assertEqual(-5.0, w["a10snakes"]["exitVelocity"])
+        self.assertNotIn("useAimerOnly", w["a10snakes"])
+        self.assertNotIn("exitVelocity", w["browning"])
+
+
+class ObjectAiTemplateTests(unittest.TestCase):
+    """A record per object, by the object's own `ObjectTemplate.aiTemplate`.
+
+    `SimpleObject::SimpleObject` (lnxded 0x081da0d0) gives an object the AI
+    template its own template names, wherever that template is declared, and
+    none when the name is empty or names no template. Records were keyed by
+    folder: a variant whose folder ships no `AI/Objects.con` (DC's `A10_B`,
+    `aiTemplate A10`) had none, and of several hulls in one folder (DC
+    Final's `H-6`: AH-6, OH-6, ...) every one read the first one's hull.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp:
+            game = Path(tmp)
+            mod = game / "Mods" / "Mod"
+            (mod / "Archives").mkdir(parents=True)
+            (mod / "init.con").write_text("game.addModPath Mods/Mod/\n")
+            (mod / "Archives" / "Objects.rfa").touch()
+            air = "Objects/Vehicles/Air"
+            jet_ai = ("aiTemplatePlugIn.create Mobile JetMobile\naiTemplatePlugIn.maxSpeed 60\n"
+                      "aiTemplate.create Jet\naiTemplate.addType ITAir\naiTemplate.addPlugIn JetMobile\n")
+            heli_ai = "".join(
+                f"aiTemplatePlugIn.create Mobile {n}Mobile\naiTemplatePlugIn.maxSpeed {s}\n"
+                f"aiTemplate.create {n}\naiTemplate.addPlugIn {n}Mobile\n"
+                for n, s in (("Heli", 90), ("Scout", 70)))
+            heli_ai += "aiTemplate.create HeliPassenger\naiTemplate.secondary 1\n"
+            content = {"Objects.rfa": {
+                f"{air}/Jet/Objects.con": (b"ObjectTemplate.create PlayerControlObject Jet\n"
+                                           b"ObjectTemplate.aiTemplate Jet\n"),
+                f"{air}/Jet/AI/Objects.con": jet_ai.encode(),
+                # A variant with no AI folder of its own, and its bomb's AI.
+                f"{air}/Jet_B/Objects.con": (b"ObjectTemplate.create PlayerControlObject Jet_B\n"
+                                             b"ObjectTemplate.aiTemplate Jet\n"
+                                             b"ObjectTemplate.addTemplate Jet_BBombs\n"
+                                             b"ObjectTemplate.create FireArms Jet_BBombs\n"
+                                             b"ObjectTemplate.aiTemplate JetBombs\n"),
+                f"{air}/Jet_B/AI/Weapons.con": b"weaponTemplate.create JetBombs\nweaponTemplate.maxRange 50\n",
+                # Two hulls in one folder; a passenger template no hull adds.
+                f"{air}/Helis/Objects.con": (b"ObjectTemplate.create PlayerControlObject Heli\n"
+                                             b"ObjectTemplate.aiTemplate Heli\n"
+                                             b"ObjectTemplate.create PlayerControlObject Scout\n"
+                                             b"ObjectTemplate.aiTemplate Scout\n"
+                                             b"ObjectTemplate.create PlayerControlObject Heli_Passenger\n"
+                                             b"ObjectTemplate.aiTemplate HeliPassenger\n"),
+                f"{air}/Helis/AI/Objects.con": heli_ai.encode(),
+                # A hull whose line is commented out, and one naming no template.
+                f"{air}/Drone/Objects.con": (b"ObjectTemplate.create PlayerControlObject Drone\n"
+                                             b"rem ObjectTemplate.aiTemplate Jet\n"),
+                f"{air}/Glider/Objects.con": (b"ObjectTemplate.create PlayerControlObject Glider\n"
+                                              b"ObjectTemplate.aiTemplate Glider\n"),
+            }}
+            with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
+                cls.vehicles = extract("Mod", game_dir=game, levels=False)["vehicles"]
+
+    def test_a_variant_without_an_ai_folder_is_its_templates_unit(self):
+        rec = self.vehicles["Jet_B"]
+        self.assertEqual("Jet", rec["aiTemplate"])
+        self.assertEqual(60.0, rec["maxSpeed"])
+        self.assertEqual(["ITAir"], rec["types"])
+        self.assertEqual({"Jet_B": "Jet"}, rec["seats"])
+        self.assertEqual(50.0, rec["seatsAi"]["Jet_B"]["aiWeapons"]["JetBombs"]["maxRange"])
+        self.assertEqual("Air", rec["class"])
+
+    def test_each_hull_of_a_folder_has_its_own(self):
+        self.assertEqual("Heli", self.vehicles["Helis"]["aiTemplate"])
+        self.assertEqual("Scout", self.vehicles["Scout"]["aiTemplate"])
+        self.assertEqual(70.0, self.vehicles["Scout"]["maxSpeed"])
+
+    def test_a_passenger_template_no_hull_adds_keeps_its_folder_record(self):
+        self.assertNotIn("Heli_Passenger", self.vehicles)
+        self.assertIn("Heli_Passenger", self.vehicles["Helis"]["seatsAi"])
+
+    def test_no_line_or_an_unknown_template_is_no_unit(self):
+        self.assertNotIn("Drone", self.vehicles)
+        self.assertNotIn("Glider", self.vehicles)
+
+    def test_the_folder_records_are_unchanged(self):
+        self.assertEqual({"Jet": "Jet"}, self.vehicles["Jet"]["seats"])
+        self.assertEqual({"Heli", "Scout", "Heli_Passenger"}, set(self.vehicles["Helis"]["seats"]))
+
+
 DC = GAME / "DesertCombat"
 
 
@@ -289,6 +391,54 @@ class DesertCombatExtractTests(unittest.TestCase):
         for name in ("Humvee", "Patriot", "M1A1", "T72", "Sherman"):
             self.assertIn(name, v)
         self.assertEqual("DC_Al_Nas", v["nx_M-923"]["level"])
+
+    def test_every_dc_hull_reaches_its_own_ai_template(self):
+        v = extract("DesertCombat", levels=False)["vehicles"]
+        # 15 spawns on 8 levels: the A-10's unit, its own bomb rack's AI.
+        for name in ("A10_B", "A10_C"):
+            self.assertEqual("A10", v[name]["aiTemplate"])
+            self.assertIn(name, v[name]["seatsAi"])
+        self.assertIn("A10Snakes", v["A10_B"]["seatsAi"]["A10_B"]["aiWeapons"])
+        # One folder, one hull template each.
+        self.assertEqual("SA342G", v["SA-342G"]["aiTemplate"])
+        self.assertEqual("AV8H", v["AV-8H"]["aiTemplate"])
+        # DC 0.7 comments out the H-6 family's and the UH-60L's lines, and
+        # no AI file declares the Mirage's template: no units, as in retail.
+        for name in ("AH-6", "MH-6", "OH-6", "MH-500", "Mirage"):
+            self.assertNotIn(name, set(v))
+        # Their folders' records name no seat, so no node finds them.
+        self.assertEqual({}, v["H-6"]["seats"])
+        self.assertEqual({}, v["UH-60L"]["seats"])
+        # The launchers' own lead speeds reach the seats (AI-143).
+        gun = v["MLRS"]["seatsAi"]["MLRSRockets"]["aiWeapons"]["MLRSMainGun"]
+        self.assertEqual(72.0, gun["exitVelocity"])
+        self.assertTrue(gun["useAimerOnly"])
+
+    def test_dc_final_gives_each_little_bird_its_own(self):
+        v = extract("DC_Final", levels=False)["vehicles"]
+        self.assertEqual("AH6", v["H-6"]["aiTemplate"])
+        for name, ai in (("OH-6", "OH6"), ("MH-6", "MH6"), ("MH-500", "MH500")):
+            self.assertEqual(ai, v[name]["aiTemplate"])
+            self.assertIn("H6CoPilot", v[name]["seatsAi"])
+        self.assertIn("MH6Passenger_PCO3", v["MH-6"]["seats"])
+        self.assertEqual("M2A3", v["M6-Linebacker"]["aiTemplate"])
+
+
+@unittest.skipUnless((GAME / "bf1942" / "Archives" / "Objects.rfa").exists(), "no BF1942 install")
+class VanillaObjectAiTests(unittest.TestCase):
+    """Vanilla's two objects whose own template no folder record carried:
+    the Ho-Ha (`aiTemplate Hanomag`, 5 Pacific levels) and the static
+    Fletcher (`FletcherStaticAI`, no Mobile plug-in; Omaha, Midway,
+    Guadalcanal), which read the sailing Fletcher's hull. Every folder
+    record stays as it was."""
+
+    def test_the_ho_ha_and_the_static_fletcher(self):
+        v = extract("bf1942", levels=False)["vehicles"]
+        self.assertEqual("Hanomag", v["Ho-Ha"]["aiTemplate"])
+        self.assertEqual("HanomagTopMG", v["Ho-Ha"]["seatsAi"]["HoHa_MG42_PCO1"]["aiTemplate"])
+        self.assertEqual("FletcherStaticAI", v["Fletcher2"]["aiTemplate"])
+        self.assertIsNone(v["Fletcher2"]["maxSpeed"])
+        self.assertEqual(15.0, v["fletcher"]["maxSpeed"])
 
 
 @unittest.skipUnless((GAME / "bf1942" / "Archives" / "Objects.rfa").exists(), "no BF1942 install")

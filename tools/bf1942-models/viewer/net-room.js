@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { createRoomClient } from './netcode-client.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createReconciler } from './netcode-reconcile.js';
+import { Knockback } from './knockback.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -20,7 +21,9 @@ import { createReconciler } from './netcode-reconcile.js';
  * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
- * `templateNameOf`.
+ * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`,
+ * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`, `world`,
+ * `currentRoot`, `collider`.
  */
 export function createNetRoom(page) {
   const room = {};
@@ -82,12 +85,61 @@ export function createNetRoom(page) {
   room.forgetOccupiedVehicle = () => { room.netOccupiedVehicleId = null; };
   const netScratchV = new THREE.Vector3();
 
-  /** The room table id for a LOCAL vehicle node: template name (the scene
-   *  node's `userData.control`), closest to the server pose among the same
-   *  template's entries — the `spawnDelayForNode` matching law, over the wire
+  // --- the room's hulls, by name (server/room-pads.mjs) -----------------------
+  //
+  // A room vehicle names its hull two ways the page can answer exactly: its
+  // node's index in `scene.glb` (`node`; `level-load.js` stamps `levelNode` on
+  // the page's copy from GLTFLoader's own associations), or, for a pad's
+  // other-side vehicle that no scene node stands for, its pad (`pad`, the
+  // layer's `objectSpawns` row, `level-statics.js` record `index`) and
+  // template. Built once the level's hulls are registered.
+  let hullNames = null;
+  function hullIndex() {
+    const root = page.currentRoot;
+    if (hullNames && hullNames.root === root) return hullNames;
+    hullNames = { root, byLevel: new Map() };
+    root?.traverse(node => {
+      if (node.levelNode != null && !hullNames.byLevel.has(node.levelNode)) {
+        hullNames.byLevel.set(node.levelNode, node);
+      }
+    });
+    return hullNames;
+  }
+
+  /** The owner id the level's collision index gave a placed node (`-1`, null
+   *  here, for none): the key of its hit points and its wreck, when it has
+   *  an Armor; a stationary gun has none and is only stood or not. */
+  function ownerOfNode(node) {
+    const owner = page.collider?.statics?.ownerOf?.(node);
+    return Number.isInteger(owner) && owner >= 0 ? owner : null;
+  }
+
+  /** The page's own copy of a room vehicle, `{ node, owner }`, or null. */
+  function pageHullOf(v) {
+    if (!v) return null;
+    let node = null;
+    if (v.node != null) node = hullIndex().byLevel.get(v.node) ?? null;
+    else if (v.pad != null) {
+      const record = page.vehiclePads?.pads?.find(r => r.index === v.pad);
+      node = record?.nodes?.get(String(v.template).toLowerCase()) ?? null;
+    }
+    return node ? { node, owner: ownerOfNode(node) } : null;
+  }
+
+  /** The room table id for a LOCAL vehicle node: by name first (its
+   *  `scene.glb` node, else its pad and template), then — for a server whose
+   *  table carries neither — the template name (the scene node's
+   *  `userData.control`), closest to the server pose among the same
+   *  template's entries, the `spawnDelayForNode` matching law over the wire
    *  table instead of the local scene. */
   function netVehicleIdFor(node) {
     if (!room.roomJoined || !node) return null;
+    const record = node.levelNode == null ? page.vehiclePads?.padOf?.(node) : null;
+    for (const [id, v] of room.roomClient.vehicles) {
+      if (node.levelNode != null && v.node === node.levelNode) return id;
+      if (record && v.pad === record.index
+          && v.template.toLowerCase() === page.templateNameOf(node).toLowerCase()) return id;
+    }
     const name = page.templateNameOf(node).toLowerCase();
     netScratchV.setFromMatrixPosition(node.matrixWorld);
     let best = null;
@@ -154,8 +206,8 @@ export function createNetRoom(page) {
   function parkedHullFor(vehicleId) {
     if (parkedHullCache.has(vehicleId)) return parkedHullCache.get(vehicleId);
     const v = room.roomClient?.vehicles.get(vehicleId);
-    let found = null;
-    if (v) {
+    let found = pageHullOf(v)?.node ?? null;
+    if (v && !found) {
       const want = v.template.toLowerCase();
       const pose = room.roomClient.remoteVehicle(vehicleId);
       let bestD = Infinity;
@@ -176,7 +228,197 @@ export function createNetRoom(page) {
   function hideParkedHull(roomId, occupied) {
     const node = parkedHullFor(roomId);
     if (node) node.visible = !occupied;
+    // Left by another player: the page's hull stands where the server's does,
+    // not where this page last saw it (its pad).
+    if (!occupied) placeAtServerPose(roomId);
   }
+
+  /** The page's parked copy of room vehicle `id` put where the server's
+   *  snapshot has it, when the two are more than `PARKED_DRIFT` apart. */
+  const PARKED_DRIFT = 1.5;
+  function placeAtServerPose(id) {
+    const v = room.roomClient?.vehicles.get(id);
+    const hull = pageHullOf(v);
+    const pose = room.roomClient?.remoteVehicle(id);
+    if (!hull || hull.owner == null || !pose || v.live === false) return false;
+    if (page.occupancy?.root === hull.node) return false;
+    hull.node.updateWorldMatrix(true, false);
+    const e = hull.node.matrixWorld.elements;
+    if (Math.hypot(e[12] - pose.x, e[13] - pose.y, e[14] - pose.z) <= PARKED_DRIFT) return false;
+    return !!page.placeParkedHull?.(hull.owner, pose, pose.q);
+  }
+
+  /** Room vehicles whose page copy must be brought to the server's word,
+   *  and whether the page has taken the server's pads over yet. */
+  const hullDirty = new Set();
+  let hullsSynced = false;
+  let posesSynced = false;
+
+  /** A static's hit points by its `scene.glb` node (`object` rows and HELLO's
+   *  `damage.objects`), waiting for the page's copy to exist. */
+  const objectHp = new Map();
+  const objectDirty = new Set();
+
+  /** A static's row: the server's hit points for the node. */
+  function noteObject(node, hp, destroyed) {
+    objectHp.set(node, { hp, destroyed: !!destroyed });
+    objectDirty.add(node);
+  }
+
+  /** The page's copy of a static brought to the server's hit points; its own
+   *  damage pass draws the tiers and the death tier from there. */
+  function applyObject(node) {
+    const want = objectHp.get(node);
+    const copy = hullIndex().byLevel.get(node);
+    const owner = copy ? ownerOfNode(copy) : null;
+    const local = owner != null ? page.vehicleDamage?.get(owner) : null;
+    if (!want || !local) return;
+    if (want.destroyed) {
+      if (!local.destroyed) local.damage(local.hitPoints + 1);
+      return;
+    }
+    const diff = local.hitPoints - want.hp;
+    if (diff > 0.05) local.damage(diff);
+    else if (diff < -0.05 && !local.destroyed) local.heal(-diff);
+  }
+
+  /**
+   * One landing of the page's own round, to the room (`server/room-hits.mjs`
+   * prices it): where it met what, the direct hit's damage as its round
+   * computed it, and its blast's own fields. The object is named the way the
+   * room names it, a room vehicle by its table id, a placed static by its
+   * `scene.glb` node. A round that met nothing with hit points and carries no
+   * blast is not sent: there is nothing to price.
+   */
+  room.reportImpact = record => {
+    if (!room.roomJoined || !record) return;
+    const splash = record.splashRadius > 0 && Number.isFinite(record.splashMaterial2)
+      ? { radius: record.splashRadius, material2: record.splashMaterial2,
+          yMod: record.splashYMod ?? null, force: record.splashForce ?? null }
+      : null;
+    let hit = null;
+    let struck = null;
+    if (record.owner != null && record.owner >= 0 && record.damage > 0) {
+      struck = page.damageVisuals.get(record.owner)?.node ?? null;
+      const id = struck ? netVehicleIdFor(struck) : null;
+      if (id != null) hit = { vehicle: id };
+      else if (struck?.levelNode != null) hit = { node: struck.levelNode };
+    }
+    if (!hit && !splash) return;
+    // A fuse's end-of-life blast stands on the round (`point`); a hand-built
+    // one (`__blast`) may name only its centre, and a hand-built direct hit
+    // (`__roundHit`) nothing but the object, whose origin then stands for it.
+    let point = record.point ?? record.splashPoint;
+    if (!Array.isArray(point) && struck) {
+      struck.updateWorldMatrix(true, false);
+      const e = struck.matrixWorld.elements;
+      point = [e[12], e[13], e[14]];
+    }
+    if (!Array.isArray(point) || point.length !== 3) return;
+    netSendAction({
+      type: 'impact', point: point.map(Number),
+      splashPoint: Array.isArray(record.splashPoint) ? record.splashPoint.map(Number) : null,
+      hit, damage: hit ? record.damage : 0, splash,
+    });
+  };
+
+  /** A blast the room priced pushed this soldier (`room-hits.mjs`): the same
+   *  push into the page's own body, its flight run by the page's own
+   *  `Knockback` (the human's landing, KNOCK-8). The ledger's poses describe
+   *  a soldier no blast had reached, so the prediction starts again from
+   *  here, as after a seat change. */
+  function takeBlast(row) {
+    const body = page.soldier?.body;
+    if (!body?.blast || page.soldierDead || !Array.isArray(row.push)) return;
+    if (page.optPilot.checked || !page.optOnFoot.checked) return;
+    const [ax, ay, az] = row.push.map(Number);
+    if (![ax, ay, az].every(Number.isFinite)) return;
+    body.knockback ??= new Knockback();
+    body.blast(ax, ay, az, { ai: false });
+    room.netReconciler?.reset();
+    netTickPoses.length = 0;
+  }
+
+  /** A pad or hull row (`server/room-pads.mjs`), on the table's own record. */
+  function noteHull(row) {
+    const v = room.roomClient?.vehicles.get(row.vehicle);
+    if (!v) return;
+    if (row.type === 'padSpawn') {
+      v.live = true; v.fresh = true; v.hp = null; v.destroyed = false;
+    } else if (row.type === 'vehicleGone') {
+      v.live = false;
+    } else if (row.type === 'hull') {
+      v.hp = row.hp; v.destroyed = !!row.destroyed;
+    }
+    hullDirty.add(row.vehicle);
+  }
+
+  /** The page's copy of one room vehicle brought to the server's word: on the
+   *  field or off it (the pads' live set, `level-statics.js`
+   *  `setRemoteLive`), stood up fresh on a `padSpawn` (`vehicle-wrecks.js`
+   *  `remoteStand`), its wreck cleared on a `vehicleGone`, and its hit points
+   *  the server's, which the page's own damage pass then draws (its tiers,
+   *  its wreck, the crew it kills). */
+  function applyHull(id) {
+    const v = room.roomClient.vehicles.get(id);
+    const hull = pageHullOf(v);
+    if (!hull) return;
+    page.vehiclePads.setRemoteLive?.(hull.node, !!v.live);
+    if (!v.live) {
+      if (hull.owner != null) page.remoteGone?.(hull.owner);
+      return;
+    }
+    if (v.fresh) {
+      v.fresh = false;
+      if (hull.owner != null) page.remoteStand?.(hull.owner);
+    }
+    const local = hull.owner != null ? page.vehicleDamage?.get(hull.owner) : null;
+    if (!local || v.hp == null) return;
+    if (v.destroyed) {
+      if (!local.destroyed) local.damage(local.hitPoints + 1);
+      return;
+    }
+    const diff = local.hitPoints - v.hp;
+    if (diff > 0.05) local.damage(diff);
+    else if (diff < -0.05 && !local.destroyed) local.heal(-diff);
+  }
+
+  /** Once a frame: once the level's pads and hulls exist, the server runs
+   *  them (`remotePads`) and every room vehicle the rows have touched is
+   *  brought to its word; the first time, all of them (HELLO's states). */
+  room.syncHulls = () => {
+    if (!room.roomJoined || !page.vehiclePads?.pads || !page.damageVisuals?.size) return;
+    // Once the first snapshot is in: a hull another player moved before this
+    // page joined stands where he left it.
+    if (!posesSynced && room.roomClient.snapCount() > 0) {
+      posesSynced = true;
+      for (const id of room.roomClient.vehicles.keys()) placeAtServerPose(id);
+    }
+    if (!hullsSynced) {
+      hullsSynced = true;
+      page.vehiclePads.remotePads = true;
+      // And the objects' damage: the server bills it, the page draws it.
+      if (page.world) page.world.remoteDamage = true;
+      // HELLO's word: each hull's state and the hit points of what is not at
+      // its full count.
+      const damage = room.roomClient.hello?.damage;
+      for (const [id, hp] of damage?.hulls ?? []) {
+        const v = room.roomClient.vehicles.get(id);
+        if (v) { v.hp = hp; v.destroyed = hp <= 0; }
+      }
+      for (const [node, hp] of damage?.objects ?? []) noteObject(node, hp, hp <= 0);
+      for (const id of room.roomClient.vehicles.keys()) hullDirty.add(id);
+    }
+    for (const node of objectDirty) applyObject(node);
+    objectDirty.clear();
+    if (!hullDirty.size) return;
+    for (const id of hullDirty) applyHull(id);
+    hullDirty.clear();
+    parkedHullCache.clear();
+    page.applyVisibility();
+    page.syncVehicleSpawnOwnership();
+    page.dropEntryPoints?.();
+  };
 
   function netTeardownRoom() {
     room.roomTornDown = true;
@@ -190,6 +432,14 @@ export function createNetRoom(page) {
     netTickPoses.length = 0;
     room.netLastCorrection = null;
     parkedHullCache.clear();
+    // Solo again: the page's own pads and damage run its level from here on.
+    if (page.vehiclePads) page.vehiclePads.remotePads = false;
+    if (page.world) page.world.remoteDamage = false;
+    hullsSynced = false;
+    posesSynced = false;
+    hullDirty.clear();
+    objectHp.clear();
+    objectDirty.clear();
   }
 
   // --- the room's trouble modal -------------------------------------------------
@@ -243,7 +493,8 @@ export function createNetRoom(page) {
     if (row.type === 'radio' && Number.isInteger(row.msg) && row.slot != null) {
       const at = Array.isArray(row.at) ? { x: row.at[0], y: row.at[1], z: row.at[2] } : null;
       comms.receive(row.msg, { ...who(row.slot), position: at });
-    } else if (row.type === 'killed' && row.slot != null) {
+    } else if (row.type === 'killed' && row.slot != null && !row.cleared) {
+      // A round's end kills everyone (`clearWorld`) with no line of its own.
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
     } else if (row.type === 'captured' && Number.isInteger(row.flag) && page.flags[row.flag]) {
       comms.onCapture(page.flags[row.flag], row.team);
@@ -289,6 +540,32 @@ export function createNetRoom(page) {
         if (row.type === 'killed' && row.slot === room.roomClient.slot
             && page.soldierArmor && !page.soldierDead) {
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
+        }
+        // The server would not spawn this body (ROUND-11: the round is not
+        // playing, or the side is out of tickets): the page's own spawn was
+        // only a prediction, so it dies back to the spawn screen.
+        if (row.type === 'spawnRefused' && page.soldierArmor && !page.soldierDead) {
+          page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
+        }
+        // The round's end and the restart are the server's (ROUND-9): the
+        // page's round takes the result and its debriefing shows it; the
+        // restart row puts the field back the way the server has it.
+        if (row.type === 'roundEnd') page.roundEndRow?.(row);
+        if (row.type === 'restart') page.restartRow?.(row);
+        // The pads and the hulls are the server's (`server/room-pads.mjs`).
+        if (row.type === 'padSpawn' || row.type === 'vehicleGone' || row.type === 'hull') noteHull(row);
+        if (row.type === 'object' && Number.isInteger(row.node)) noteObject(row.node, row.hp, row.destroyed);
+        // A blast the room priced (`server/room-hits.mjs`): this soldier's own
+        // push; another's flight is in the snapshot (`netcode.js` `FLIGHT_WIRE`).
+        if (row.type === 'blast' && row.slot === room.roomClient.slot) takeBlast(row);
+        // Another soldier's magazine change, where he stands: his weapon's
+        // Reload slot, as a bot's plays (SND-17). Its own `Volume <- Distance`
+        // ramps are why almost nobody hears it past a metre.
+        if (row.type === 'reload' && row.slot != null && row.slot !== room.roomClient.slot) {
+          const at = room.roomClient.remotePlayer(row.slot);
+          if (at && !at.seated && Number.isFinite(at.x)) {
+            page.playWorldReload?.(row.weapon, at.x, at.y + 1.4, at.z);
+          }
         }
         // Flags move by decree too: the deploy screen's list and the map's
         // markers read `flags[]` live, so a team write is the whole repaint.
@@ -375,12 +652,24 @@ export function createNetRoom(page) {
         // reload re-joins the same room from the URL and loads once.
         const want = (room.roomClient.hello.level || '').toLowerCase();
         const asked = (page.params.get('map') || '').toLowerCase();
-        if (want && asked !== want && page.manifest.some(e => e.name.toLowerCase() === want)) {
+        // The layer too: a room plays one (`?mode=`, the level's default when
+        // its creator named none), and a page on another has other flags,
+        // pads and vehicles. A page with no `?mode=` already has the default.
+        const wantMode = room.roomClient.hello.mode || '';
+        const askedMode = page.params.get('mode') || '';
+        const otherMode = wantMode
+          && (askedMode ? askedMode.toLowerCase() !== wantMode.toLowerCase()
+            : room.roomClient.hello.modeDefault === false);
+        const otherLevel = want && asked !== want && page.manifest.some(e => e.name.toLowerCase() === want);
+        if (otherLevel || otherMode) {
           const q = new URLSearchParams(location.search);
-          q.set('map', want);
+          if (otherLevel) q.set('map', want);
+          if (otherMode) q.set('mode', wantMode);
           location.replace(`${location.pathname}?${q}`);
           return;
         }
+        // Joined mid-way through a round's end: its debriefing and countdown.
+        if (room.roomClient.hello.round?.status === 'endGame') page.roundEndRow?.(room.roomClient.hello.round);
         page.logToConsole(`room ${room.roomClient.hello.room} · ${room.roomClient.hello.level} · slot ${room.roomClient.slot}`);
         page.logToConsole(`you are on team ${room.roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
         // The room names the team; the deploy screen rides it.
@@ -431,9 +720,10 @@ export function createNetRoom(page) {
         room: roomCode,
         name: roomName,
         team: 0,
-        // Create-on-join names the level the room was made on (rooms.mjs);
-        // joining an existing room ignores it.
+        // Create-on-join names the level the room was made on (rooms.mjs),
+        // and the layer (`?mode=`); joining an existing room ignores both.
         level: page.params.get('map') || undefined,
+        mode: page.params.get('mode') || undefined,
       });
       // Heartbeat from the handshake on: the page's own level load starves
       // its main thread for seconds at a time (GLB parses), and the server's
@@ -472,6 +762,22 @@ export function createNetRoom(page) {
         corrections: room.netCorrectionCount,
         hardCorrections: room.netHardCorrectionCount,
         pending: room.netReconciler?.pending() ?? 0,
+        // The room's hulls against the page's copies: the server's word
+        // (`live`, its hit points) and whether the page stands the hull
+        // (`level-statics.js` `vehicleSpawnActive`); null where the page
+        // finds no copy of it.
+        hulls: room.roomJoined ? [...room.roomClient.vehicles.values()].map(v => {
+          const hull = pageHullOf(v);
+          // Where the page looked for a copy it did not find: the node
+          // index, and the pad's own record (its templates), if it has one.
+          const record = v.pad != null ? page.vehiclePads?.pads?.find(r => r.index === v.pad) : null;
+          const why = hull ? null : { node: v.node ?? null, record: record ? [...record.nodes.keys()] : null,
+                                      levelNodes: hullIndex().byLevel.size };
+          return { id: v.id, template: v.template, pad: v.pad ?? null, live: !!v.live, why,
+                   hp: v.hp ?? null, owner: hull?.owner ?? null,
+                   page: hull ? page.vehiclePads.vehicleSpawnActive(hull.node) : null,
+                   pageHp: hull ? page.vehicleDamage?.get(hull.owner)?.hitPoints ?? null : null };
+        }) : [],
         ack: room.netReconciler?.lastAck() ?? 0,
         sentSeq: room.roomJoined ? room.roomClient.sentSeq() : 0,
         close: netTeardownRoom,
@@ -497,6 +803,24 @@ export function createNetRoom(page) {
 
   if (roomCode) joinRoom();
 
+
+  /** The hand weapon whose magazine change the room was last told of. */
+  let reloadTold = null;
+
+  /** The local soldier's magazine change, to the room once as it starts
+   *  (`hand-fire.js` `startReload` sets the weapon's `reload` clock, by key or
+   *  on a dry magazine), named by its weapon so the others can play its Reload
+   *  slot at him (`server/room-control.mjs` `onReload`). */
+  function tellReload() {
+    const hw = page.handWeapon;
+    const changing = !!hw && hw.reload > 0 && !page.soldierDead;
+    if (changing && reloadTold !== hw) {
+      reloadTold = hw;
+      if (hw.name) netSendAction({ type: 'reload', weapon: hw.name });
+    } else if (!changing && reloadTold === hw) {
+      reloadTold = null;
+    }
+  }
 
   /** The room's wire, right on the sim core's edge, once a frame after the
    *  world has stepped: `ticks` input words owed, then the remotes drawn. */
@@ -528,6 +852,8 @@ export function createNetRoom(page) {
     // The ledger is per frame: whatever this frame's ticks produced has either
     // been recorded against a seq or belongs to a frame that sent nothing.
     if (room.netTickPoses.length) room.netTickPoses.length = 0;
+    room.syncHulls();
+    if (room.roomJoined) tellReload();
     if (room.roomJoined && room.roomRenderer) {
       room.roomRenderer.update(dt, room.roomClient, performance.now());
     }

@@ -16,6 +16,38 @@ import { AbandonClock, calcSpawnDelay } from './deployables.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /**
+ * A destroyed object's after-death clock, from its `armor` extras (ledger
+ * HP-19). `SimpleObject::handleUpdate` (lnxded 0x081db2e0) counts a dead
+ * object's `timeToLiveAfterDeath` down (its template's +0xc4, 10 s where
+ * never written) and, at 0, has the server destroy it (`GameServer::
+ * destroyObject`); with `resetWhenRemoved` it gives it its hit points back
+ * instead, and with `stayAsDestroyed` it never counts at all. With
+ * `fadeAtTimeToLiveAfterDeath` (on by default) the object fades out from
+ * `timeToStartFadeAfterDeath` (8 s by default) to the end, which a time to
+ * live under that start never reaches.
+ */
+export function afterDeath(armor) {
+  const ttl = Number.isFinite(armor?.timeToLiveAfterDeath) ? armor.timeToLiveAfterDeath : 10;
+  const fadeFrom = Number.isFinite(armor?.timeToStartFadeAfterDeath)
+    ? armor.timeToStartFadeAfterDeath : 8;
+  return {
+    ttl,
+    fadeFrom,
+    fade: armor?.fadeAtTimeToLiveAfterDeath !== false && ttl > fadeFrom,
+    reset: !!armor?.resetWhenRemoved,
+    stay: !!armor?.stayAsDestroyed,
+  };
+}
+
+/** How opaque the object is `age` seconds after its death: 1 until the fade
+ *  starts, then its time left over the fade's span (`alpha = timer /
+ *  (ttl - fadeFrom)`, the same branch of `handleUpdate`). */
+export function afterDeathOpacity(clock, age) {
+  if (!clock.fade || age <= clock.fadeFrom) return 1;
+  return Math.max(0, Math.min(1, (clock.ttl - age) / (clock.ttl - clock.fadeFrom)));
+}
+
+/**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
@@ -51,27 +83,8 @@ export function createVehicleWrecks(page) {
     // the node + a world position for the water pass, so that pass needs no
     // scene graph. A static root never moves, so its registration pose is
     // enough; a hull's position is refreshed from the body world every tick.
-    const regPos = new THREE.Vector3();
     for (let owner = 0; owner < ownerRoots.length; owner++) {
-      const node = ownerRoots[owner];
-      const armorExtras = node?.userData?.armor;
-      const vehicle = page.world.addDamageable(owner, node, armorExtras, {
-        name: node?.name || null,
-        position: node ? (() => {
-          node.updateWorldMatrix(true, false);
-          node.getWorldPosition(regPos);
-          return [regPos.x, regPos.y, regPos.z];
-        })() : null,
-      });
-      if (vehicle) {
-        damageVisuals.set(owner, {
-          node,
-          anchors: new Map(),
-          handles: [],
-          spawnDelay: spawnDelayForNode(node),
-        });
-        ownerOfNode.set(node, owner);
-      }
+      registerDamageable(owner, ownerRoots[owner]);
     }
   }
 
@@ -79,6 +92,51 @@ export function createVehicleWrecks(page) {
   let ownerOfNode = new WeakMap();
   /** The pad list `registerDamageables` last answered for. */
   let padsRegistered = null;
+
+  /**
+   * One owner's Armor, if it has one. `spawned`: an object a spawn effect stood
+   * up after the load (EMT-10), which no ObjectSpawner made and none will put
+   * back; `onRemoved(owner)` is told when its time to live has run out and
+   * the server would destroy it (HP-19).
+   */
+  const regPos = new THREE.Vector3();
+  function registerDamageable(owner, node, { spawned = false, onRemoved = null } = {}) {
+    const armorExtras = node?.userData?.armor;
+    const vehicle = page.world.addDamageable(owner, node, armorExtras, {
+      name: node?.name || null,
+      position: node ? (() => {
+        node.updateWorldMatrix(true, false);
+        node.getWorldPosition(regPos);
+        return [regPos.x, regPos.y, regPos.z];
+      })() : null,
+    });
+    if (vehicle) {
+      damageVisuals.set(owner, {
+        node,
+        anchors: new Map(),
+        handles: [],
+        spawnDelay: spawned ? null : spawnDelayForNode(node),
+        spawned,
+        onRemoved,
+      });
+      ownerOfNode.set(node, owner);
+    }
+    return vehicle;
+  }
+
+  /** An owner the server has destroyed outright: no wreck, no respawn, no
+   *  Armor left to hit (what a spawn effect stood up, HP-19, HP-20). */
+  function unregisterDamageable(owner) {
+    const visual = damageVisuals.get(owner);
+    if (visual) {
+      for (const handle of visual.handles) handle.stop?.();
+      for (const anchor of visual.anchors.values()) anchor.parent?.remove(anchor);
+      damageVisuals.delete(owner);
+      page.world?.nodeOwners?.delete(visual.node);
+    }
+    page.world?.positions?.delete(owner);
+    page.vehicleDamage?.byOwner?.delete(owner);
+  }
 
   /**
    * Match a placed spawner node to its ObjectSpawner respawn window.
@@ -201,17 +259,10 @@ export function createVehicleWrecks(page) {
     visual.handles.push(...playTier(visual, vehicle, tier, 'tier'));
   }
 
-  // How long a wreck lies there before it fades, and how long the fade takes.
-  //
-  // **Not engine numbers.** What removes a wreck in Refractor, and when, is one of
-  // the corpus's own open items — `subsystems/hitpoints-and-damage.md` lists the
-  // wreck lifetime as untraced, and a vanilla level's respawn timing lives in the
-  // spawner rather than the vehicle. These two are chosen to read right and are
-  // labelled so nobody mistakes them for findings.
-  // Linger matches the measured ~10 s wreck lifetime from a live round capture
-  // (features/round-replay-capture/README.md); fade is still a house rule.
-  const WRECK_LINGER = 10;  // seconds of wreck before the fade starts
-  const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
+  // How long a wreck lies there, and how it goes, is its template's own
+  // after-death clock (ledger HP-19, `afterDeath` below): 10 s with a fade
+  // from 8 s where the template writes nothing, which is the ~10 s a live
+  // round capture measured (features/round-replay-capture/README.md).
 
   // How far off its own ride height a plane has to be before its death is a
   // fall rather than a wreck in place, and how close back to it the fall has to
@@ -339,6 +390,7 @@ export function createVehicleWrecks(page) {
     // moment `killOccupantInWreck` has run, and the fall needs the drive.
     const drive = fallingDriveFor(visual.node);
     visual.wrecked = true;
+    visual.latched = false;
     visual.wreckAge = 0;
     visual.landingQuiet = 0;
     visual.hidden = [];
@@ -503,7 +555,8 @@ export function createVehicleWrecks(page) {
       const scene = await wreckModels.get(cacheKey);
       // The vehicle may have been cleared (level change) while the glb was in
       // flight, and `damageVisuals` is rebuilt per level — so re-check.
-      // Or the pad cleared the wreck and stood a fresh hull up meanwhile.
+      // Or the pad cleared the wreck and stood a fresh hull up meanwhile, or
+      // its time to live ran out while the glb was in flight.
       if (!scene || damageVisuals.get(vehicle?.owner) !== visual || !visual.wrecked || visual.removed) return;
       const wreck = scene.clone(true);
       wreck.name = `wreck:${template}`;
@@ -662,13 +715,21 @@ export function createVehicleWrecks(page) {
    * (ObjectSpawner Min/MaxSpawnDelay) starts so a fresh vehicle returns later.
    */
   function stepWrecks(dt) {
+    // A room's server clears its wrecks and stands its hulls (`server/
+    // room-pads.mjs`); here the wreck only lingers and fades until its row.
+    const remote = !!page.vehiclePads?.remotePads;
     for (const [owner, visual] of damageVisuals) {
-      if (visual.respawnIn != null) {
+      if (visual.respawnIn != null && !remote) {
         visual.respawnIn -= dt;
         if (visual.respawnIn <= 0) respawnVehicle(owner);
         continue;
       }
       if (!visual.wrecked || visual.removed) continue;
+      // `handleUpdate` latches the death for one tick (`+0x100`) before its
+      // clock runs (HP-19), so what the death tier started gets an update
+      // first: a spawn effect stands its object up before a time to live of 0
+      // takes the dead one away.
+      if (!visual.latched) { visual.latched = true; continue; }
       visual.wreckAge += dt;
       // A plane that died in the air is still flying: its crash waits for the
       // ground, and nothing on this clock runs until it gets there — no linger,
@@ -677,23 +738,30 @@ export function createVehicleWrecks(page) {
       // wreck its own full linger at the crash site.
       if (visual.falling && !hasLanded(visual, dt)) continue;
       if (visual.falling) { landWreck(owner, visual); continue; }
-      const into = visual.wreckAge - WRECK_LINGER;
-      if (into <= 0) continue;
-      const opacity = Math.max(0, 1 - into / WRECK_FADE);
-      if (visual.wreck) fadeNode(visual.wreck, opacity);
-      else {
-        // No wreck GLB: fade the intact mesh that stayed visible instead.
-        for (const child of visual.node.children) {
-          if (child.name?.startsWith('damage:')) continue;
-          fadeNode(child, opacity);
+      const clock = visual.clock ??= afterDeath(visual.node?.userData?.armor);
+      // `stayAsDestroyed`: nothing removes it.
+      if (clock.stay) continue;
+      const opacity = afterDeathOpacity(clock, visual.wreckAge);
+      if (opacity < 1) {
+        if (visual.wreck) fadeNode(visual.wreck, opacity);
+        else {
+          // No wreck GLB: fade the intact mesh that stayed visible instead.
+          for (const child of visual.node.children) {
+            if (child.name?.startsWith('damage:')) continue;
+            fadeNode(child, opacity);
+          }
         }
       }
-      if (opacity > 0) continue;
+      if (visual.wreckAge < clock.ttl || remote) continue;
       // Gone: drop the wreck and open the pad for walking. A pad's own hull is
       // its pad's to bring back (`stepPads`, whose delay has been running since
       // the hull went critical); a node no pad names keeps its own clock.
+      // `resetWhenRemoved` puts its hit points back where it stands, and what a
+      // spawn effect stood up has no spawner and leaves the world (HP-19).
       clearWreck(owner, visual);
-      if (!page.vehiclePads?.padOf?.(visual.node)) visual.respawnIn = spawnDelayFor(visual);
+      if (clock.reset) visual.respawnIn = 0;
+      else if (visual.spawned) visual.onRemoved?.(owner);
+      else if (!page.vehiclePads?.padOf?.(visual.node)) visual.respawnIn = spawnDelayFor(visual);
     }
     stepPads(dt);
   }
@@ -704,6 +772,13 @@ export function createVehicleWrecks(page) {
     visual.removed = true;
     if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
     for (const child of visual.hidden) child.visible = false;
+    // Whatever of it still draws goes with it: a time to live of 0 removes
+    // the object before any fade, and before its wreck model has loaded.
+    for (const child of visual.node.children) {
+      if (child.name?.startsWith('damage:') || !child.visible) continue;
+      child.visible = false;
+      visual.hidden.push(child);
+    }
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
     // A hull the body world had moved is answered through the moved-owner
@@ -727,6 +802,9 @@ export function createVehicleWrecks(page) {
    * own module's to remove (HP-20).
    */
   function clearWorld() {
+    // A room's server clears its own field (ROUND-11): its `vehicleGone` rows
+    // take each hull here (`remoteGone`).
+    if (page.vehiclePads?.remotePads) return;
     for (const [owner, visual] of damageVisuals) {
       if (!clearsAtRoundEnd(visual)) continue;
       if (visual.removed) continue;
@@ -760,6 +838,7 @@ export function createVehicleWrecks(page) {
    *  its spot at once (`restartMap` has reloaded the level's objects). The
    *  pads' hulls are their pads' (`level-statics.js` `restartVehiclePads`). */
   function restartHulls() {
+    if (page.vehiclePads?.remotePads) return;
     for (const [owner, visual] of damageVisuals) {
       if (!clearsAtRoundEnd(visual) || page.vehiclePads?.padOf?.(visual.node)) continue;
       if (visual.removed) respawnVehicle(owner);
@@ -926,6 +1005,7 @@ export function createVehicleWrecks(page) {
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    visual.latched = false;
     // A fresh hull: `spawnObject` arms its clock anew.
     abandonClocks.delete(visual.node);
     visual.removed = false;
@@ -1047,16 +1127,42 @@ export function createVehicleWrecks(page) {
     return owner == null ? null : page.vehicleDamage.get(owner) ?? null;
   }
 
+  /** A room's server stood this hull up fresh on its pad (`padSpawn`): the
+   *  page's own respawn, the wreck of the last one cleared first. */
+  function remoteStand(owner) {
+    const visual = damageVisuals.get(owner);
+    if (!visual) return false;
+    if (visual.wrecked && !visual.removed) clearWreck(owner, visual);
+    return respawnVehicle(owner);
+  }
+
+  /** A room's server took this hull out of the world (`vehicleGone`): its
+   *  wreck, if it has one, goes now; an intact one is held off the field by
+   *  the pads' live set (`level-statics.js` `setRemoteLive`). */
+  function remoteGone(owner) {
+    const visual = damageVisuals.get(owner);
+    if (!visual) return;
+    if (visual.wrecked && !visual.removed) clearWreck(owner, visual);
+    else {
+      page.collider?.clearMovedOwner?.(owner, { enable: false });
+      page.collider?.statics?.disableOwner?.(owner);
+    }
+  }
+
   Object.assign(wrecks, {
     clearWorld,
     damageOfNode,
+    remoteStand,
+    remoteGone,
     damageVisuals,
     restartHulls,
     loadFailures,
     modelUrls,
     padWorld,
     wreckState,
+    registerDamageable,
     registerDamageables,
+    unregisterDamageable,
     showDamageTier,
     killOccupantInSeat,
     stepWrecks,

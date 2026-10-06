@@ -1472,6 +1472,54 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(chassis["turnIn"]["scud"], chassis["turnIn"]["willy"] / 2)
         self.assertGreater(chassis["turnIn"]["scud"], 3)
 
+    def test_a_hull_drags_by_the_box_law(self) -> None:
+        # PHY-4: every live PhysicsNode takes the box law,
+        # -drag |v| / mass * A_face * v along each of its own axes, with the
+        # faces' ellipses (pi/4) DY DZ, (pi/4) DX DZ, (pi/4) DX DY. The rotation
+        # takes -drag |w| / mass * (A_other + A_other) * w. On the Krupp's box:
+        # straight ahead Az = 3.227, sideways Ax = 7.705.
+        d = self.results["boxDrag"]
+        az = math.pi / 4 * 2.27 * 1.81
+        ax = math.pi / 4 * 1.81 * 5.42
+        self.assertTrue(d["ahead10"]["took"])
+        self.assertAlmostEqual(15 * 10 / 2500 * az * 10, d["ahead10"]["accel"][2], places=3)
+        # Quadratic, not the sphere law's linear: twice the speed, four times
+        # the drag.
+        self.assertAlmostEqual(4 * d["ahead10"]["accel"][2], d["ahead20"]["accel"][2], places=3)
+        self.assertAlmostEqual(-15 * 10 / 2500 * ax * 10, d["side10"]["accel"][0], places=3)
+        self.assertAlmostEqual(-15 * 1 / 2500 * (ax + az), d["yaw"]["torque"][1], places=5)
+        self.assertAlmostEqual(0.0, d["yaw"]["torque"][0], places=6)
+        # No box, nothing added: the caller keeps its own law.
+        self.assertFalse(d["noBox"])
+
+    def test_a_kettenkrad_drives_on_its_hidden_wheels(self) -> None:
+        # The KettenKrad's drive is one EngineGrip tyre on the fork. It stands
+        # on two RollGrip wheels that its .con authors `createInvisible 1`
+        # (physical, undrawn), and its tracks carry twelve EngineDummyGrip
+        # rollers that addFriction skips before the solve (0x0825b75b,
+        # 0x0825c671). The rollers take no share of the mean, so the one
+        # tyre's push is a third of it and not a fifteenth. Without the
+        # hidden wheels it stands on its fork and goes over onto its back.
+        k = self.results["kettenKrad"]
+        self.assertEqual(15, k["wheels"])
+        self.assertEqual(12, k["dummies"])
+        self.assertGreater(k["forward"], 20.0)
+        self.assertLess(abs(k["forwardPitch"]), 15.0)
+        self.assertLess(k["reverse"], -3.0)
+        self.assertGreater(k["noRearPitch"], 45.0)
+
+    def test_an_undrawn_wheel_stands_on_its_probe(self) -> None:
+        # A `createInvisible` Spring is kept with its col0 probe and no mesh
+        # (`bf42/assemble.py` `build_node`). Its radius is the probe's depth
+        # under the axle, the contact `checkVsTerrain` makes and the depth
+        # `hull-bodies.js` `wheelContactDepths` hands the page; the probe's
+        # own extent (0.002 m on the R75's sidecar wheel) is not a radius. A
+        # drawn wheel is measured off its mesh even past a collision child.
+        w = self.results["undrawnWheel"]
+        self.assertAlmostEqual(0.317, w["undrawn"], places=3)
+        self.assertAlmostEqual(0.314, w["drawn"], places=3)
+        self.assertIsNone(w["bare"])
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):
@@ -1797,6 +1845,30 @@ class DrivetrainConstantTests(unittest.TestCase):
         self.assertAlmostEqual(7.0, fleet["willy"]["reverse"], places=3)
         self.assertAlmostEqual(4.0, fleet["sherman"]["reverse"], places=3)
         self.assertAlmostEqual(5.512, fleet["m3a1"]["reverse"], places=3)
+
+    # --- the spring probe on a steep face --------------------------------------
+
+    def test_the_probe_finds_a_steep_face_where_the_axis_meets_it(self) -> None:
+        # The whole pitched-into-a-face set, 20 to 70 degrees: the answer is
+        # the axis's own crossing, never a buried axle. One Newton step (the
+        # old probe) read a 70-degree face from a hull pitched 50 degrees
+        # several metres BEHIND the axle, and the bump stop answered with its
+        # full load: the Willy that left Gazala's escarpment at 94 m/s. Where
+        # the step lands within the probe's 2 cm of the ground it stands, so
+        # a gentle face is answered to about a centimetre.
+        old_wrong = 0
+        for case in self.results["probeFace"]:
+            with self.subTest(**{k: case[k] for k in ("deg", "pitch", "gap")}):
+                self.assertGreater(case["reach"], 0)
+                self.assertAlmostEqual(case["exact"], case["reach"], delta=0.02)
+            k = math.tan(math.radians(case["deg"]))
+            p = math.radians(case["pitch"])
+            t = case["gap"] / math.cos(p)
+            # the Newton step: the ground at the vertical estimate taken as level
+            newton = t - (t * math.sin(p) * k) / math.cos(p)
+            if abs(newton - case["exact"]) > 0.05:
+                old_wrong += 1
+        self.assertGreater(old_wrong, 6)
 
 
 if __name__ == "__main__":

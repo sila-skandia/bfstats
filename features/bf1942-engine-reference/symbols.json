@@ -8610,6 +8610,15 @@
    "note": "lnxded. GameServer vtable +0x278; sets game status 3 (PreGame) through vt+0x78. restartMap calls it (0x08158050) after the control-point and spawner resets."
   },
   {
+   "address": "0x081578f0",
+   "name": "dice::bf::GameServer::clearWorld()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. Ledger HP-20: kills every living player, destroys every parentless PCO in objectManager->getPcoMap() (vt+0x8c), then every registered object whose template is a Kit (0x9496) or answers template vt+0x20 with bit 7 set, each via GameServer::destroyObject (vt+0x54). Called by gameStatusFirstEndGame 0x08152a60 and restartMap 0x08157cb0."
+  },
+  {
    "address": "0x08157cb0",
    "name": "dice::bf::GameServer::restartMap()",
    "kind": "function",
@@ -8887,6 +8896,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded. The 'found template's own vtable+0x1c' SupplyDepot's ctor calls to resolve an addVehicleType name to a numeric id."
+  },
+  {
+   "address": "0x0816af70",
+   "name": "ObjectTemplate::getFlags",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. Returns template +0x14; bit 2 is createInvisible (makeScript 0x081d4b75) (PHY-24)"
   },
   {
    "address": "0x08172280",
@@ -9393,6 +9411,15 @@
    "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
   },
   {
+   "address": "0x08195770",
+   "name": "BObject<ICompositeObject>::init",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. getFlags()&4 (createInvisible) clear -> updateFlags(0x2,0), the drawable flag; template bits 2 and 8 clear -> object flags 0x800, 0x40 (PHY-24)"
+  },
+  {
    "address": "0x0819bd20",
    "name": "dice::ref2::world::ObjectManager::addObjectToUpdate(dice::ref2::world::IObject*)",
    "kind": "function",
@@ -9454,6 +9481,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded. Never called from any SupplyDepot method that was read -- depots stack (SUP-6)."
+  },
+  {
+   "address": "0x081a5280",
+   "name": "QuadTreeCuller::getFrustumVisibleObjects",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "review-ground-handling-2026-10-07",
+   "note": "lnxded. Draws only objects with object flag 0x2, which BObject::init withholds from a createInvisible template (PHY-24)"
   },
   {
    "address": "0x081a74b0",
@@ -9821,8 +9857,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-19-damage",
-   "note": "lnxded. THE WRECK-RESPAWN TIMER, not a per-frame flag clear: the writes of 0 to +0xed/+0xee at 0x081db3f1/0x081db3f8 sit behind six conditions - +0xed != 0 (0x081db33e), template+0x107 == 0, +0x100 already latched by a previous update, a countdown [this+0xfc] -= dt falling below zero (0x081db39f-0x081db3b1), template+0xd0 != 0, and an Armor present - and are followed by Armor::setHitPoints(Armor::getMaxHitPoints()) (vtable +0x18/+0x14) and a reload of the timer from template+0xc4. So +0xed/+0xee are PERSISTENT state for the whole wrecked lifetime, which is what makes ledger HP-15 retire ARM-6."
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. The after-death clock (ledger HP-19): once +0xed (dead) is set and template+0x107 (stayAsDestroyed) is clear, a one-tick latch (+0x100), server only for a networked object, then [this+0xfc] -= dt. At !(timer > 0): template+0xd0 (resetWhenRemoved) clear -> game vt+0x54 GameServer::destroyObject(this) at 0x081db533; set -> HP back to max, +0xed/+0xee cleared, timer reloaded from template+0xc4 (the clears HP-15 found). Fade when template+0xc8: timer < (template+0xc4 - template+0xcc) -> LOD alpha timer/span*255. PlayerControlObject vt+0x54 is this function."
   },
   {
    "address": "0x081db820",
@@ -9931,6 +9967,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
    "note": "lnxded, 89 lines. Appends to three parallel per-template vectors -- +0x98 vector<string> (effect name), +0xa4 vector<Vec3> (attach offset), +0xb0 vector<int> (HP threshold) -- confirmed by the mangled _M_insert_aux callees. Separate from setArmorComponent's 23 fixed setters (HP-3). See ledger ARM-1."
+  },
+  {
+   "address": "0x081ddfb0",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setSinkInToLandAfterDeathSpeed(float)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. Keeps no speed: writes +0xc4 = 10.0 (timeToLiveAfterDeath), +0xcc = 8.0 (timeToStartFadeAfterDeath), +0xc8 = 1 (fadeAtTimeToLiveAfterDeath). Ledger HP-19."
   },
   {
    "address": "0x081e1460",
@@ -11634,6 +11679,15 @@
    "note": "lnxded FireArms vt+0x108: the player's camera matrix when fireInCameraDof (template +0x264), else the FireArms'."
   },
   {
+   "address": "0x0828d410",
+   "name": "dice::ref2::world::FireArms::updateDeviation(bool)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. FireArms vtable slot +0x128 (HandFireArms overrides, 0x08293e80). fire(+0x18c) -= tmpl+0x2f4, floored 0; total(+0x188) = fire + tmpl+0x2fc (minDev) + +0x190 (AI term); +0x190 = 0. No input read. Ledger DEV-11, DEV-12."
+  },
+  {
    "address": "0x0828d490",
    "name": "FireArms::getHasHeat()",
    "kind": "function",
@@ -11668,6 +11722,15 @@
    "confidence": "verified",
    "source": "server-replay-recorder-2026-10-03",
    "note": "lnxded. Writes FireArms+0x295 (fakeFire). AI-134."
+  },
+  {
+   "address": "0x0828e350",
+   "name": "dice::ref2::world::FireArms::setAIDeviation(float)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. +0x190 = v; slot +0x128 (one update: decay, total with v); +0x190 = v again. Ledger DEV-13."
   },
   {
    "address": "0x0828e3b0",
@@ -11983,6 +12046,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded, reads current-camera index, walks list at +0x12c."
+  },
+  {
+   "address": "0x08318900",
+   "name": "dice::ref2::world::PlayerControlObject::handlePlayerInput(IPlayer*, PlayerInput const&, float)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. +0x128 (the entered player object, PCO::enter) handlePlayerInput first; unless SimpleObject+0xed (destroyed, message 0x15) calls slot +0x128 updateDeviation(false) on every weapon of the +0x154 vector, then handlePlayerInput on each +0x14c input object. Ledger DEV-11."
   },
   {
    "address": "0x08318920",
@@ -13576,6 +13648,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. IAIEnvironment vt+0x58. SPOT-16: the weapon lead with indirect forced on, the arc top (Aimer::getVerticalExtreme), true when neither leg (muzzle-top, top-target) hits in collideLineWithWorld."
+  },
+  {
+   "address": "0x085ed050",
+   "name": "dice::bf::ai::WeaponBundle::setBotSkill(float,float,float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "vehicle-deviation-2026-10-07",
+   "note": "lnxded. The AI term (AI-68) into FireArms::setAIDeviation on each FireArms child (CID 0x9494), so one more deviation update each. Ledger DEV-13."
   },
   {
    "address": "0x085ee580",

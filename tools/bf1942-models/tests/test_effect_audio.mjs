@@ -620,4 +620,47 @@ function fireManifest() {
   assert.ok(slot.distance > 4, 'and its distance was recomputed from there');
 }
 
+// --- a level's own bundles' sounds -----------------------------------------
+
+{
+  // `<level>/effects.sounds.json` (`extract_effects.py --levels`): Kasserine
+  // Pass's own `e_Fire`, its own copy of `e_ExplGas` (a script of its own at
+  // the level's path), and a bundle it declares with no sound that the mod's
+  // set sounds (its copy wins: silent). The level's go with the level.
+  const { ctx, audio } = await build({ rand: sequence([0]) });
+  const levelManifest = {
+    scripts: {
+      'bf1942/levels/kasserine_pass/fire.ssc': { script: 'fire.ssc', patches: 1,
+                                                 layers: richoLayers(3) },
+      'expl': { script: 'level ExplGas.ssc', patches: 1, layers: [EXPL_LAYERS[0]] },
+    },
+    bundles: {
+      'e_fire': { name: 'e_Fire', script: 'bf1942/levels/kasserine_pass/fire.ssc',
+                  scripts: ['bf1942/levels/kasserine_pass/fire.ssc'] },
+      'e_explgas': { name: 'e_ExplGas', script: 'expl', scripts: ['expl'] },
+    },
+    silent: { RichoStoneDecal: 'no loadSoundScript in the bundle tree' },
+  };
+  assert.equal(audio.has('e_Fire'), false, 'the mod set has no e_Fire');
+  audio.setLevel(levelManifest);
+  assert.equal(audio.has('e_Fire'), true, 'the level\'s own bundle sounds');
+  assert.equal(audio.has('RichoStoneDecal'), false, 'the level\'s silent copy wins');
+  await audio.prime('e_Fire');
+  await audio.prime('e_ExplGas');
+  assert.equal(audio.play('e_Fire', [0, 0, 4]), 1, 'e_Fire plays from the level\'s script');
+  assert.equal(audio.play('RichoStoneDecal', [0, 0, 4]), 0, 'and the shadowed bundle is mute');
+  audio.play('e_ExplGas', [0, 0, 4]);
+  assert.ok(audio.scripts.get('level:expl').slots.length > 0,
+            'the level\'s e_ExplGas plays its own script, keyed apart from the mod\'s');
+  assert.equal(audio.scripts.get('expl').slots[0].plays, 0, 'not the mod\'s');
+  // The mod's manifest landing after the level's keeps the level's.
+  audio.setManifest(manifest());
+  assert.equal(audio.has('e_Fire'), true, 'a late mod manifest keeps the level set');
+  audio.setLevel(null);
+  assert.equal(audio.has('e_Fire'), false, 'the level gone, its bundles go');
+  assert.equal(audio.has('RichoStoneDecal'), true, 'and the mod\'s sounds again');
+  assert.equal(audio.scripts.has('level:expl'), false, 'its scripts are dropped');
+  assert.ok(ctx.started.length >= 2);
+}
+
 console.log('effect-audio: all assertions passed');

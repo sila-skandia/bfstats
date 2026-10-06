@@ -524,8 +524,8 @@ export function aimAlong(bot, dir, frame = barrelFrame(bot)) {
  * (`Weapon::getExitVelocity` 0x085ecb50, template +0x28), `gravity` the
  * world's times its modifier (`BFEnvironment::getGravity` 0x085e5500 is the
  * physics system's; template +0x2c), negative. `drag` is the Aimer's +0, the
- * projectile's `pi r^2 drag / mass` (`WeaponFireArm::init` 0x085ee220); the
- * viewer passes 0. `precision` is the 0.5 `EntryMouseTurretAimAt` hands it.
+ * projectile's `pi r^2 drag / mass` (`WeaponFireArm::init` 0x085ee220,
+ * bot-pilot.js `aimerDrag`, ledger AI-146). `precision` is the 0.5 `EntryMouseTurretAimAt` hands it.
  *
  * A search over the elevation: start on the line to the target now (half
  * way to 86.4 deg for an `indirect` weapon), step `pi / (60 precision + 5)`,
@@ -611,7 +611,7 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
   const relVel = [targetVel[0] - own[0], targetVel[1] - own[1], targetVel[2] - own[2]];
   const gun = gunBallistics(bot);
   const weapon = bot.weapons?.[bot.weaponIndex];
-  const lead = firingDirection({ rel, relVel, speed: gun.speed, gravity: gun.gravity,
+  const lead = firingDirection({ rel, relVel, speed: gun.speed, gravity: gun.gravity, drag: gun.drag,
                                  indirect: !!weapon?.indirect });
   const dir = lead?.dir ?? unit3(rel) ?? frame.f;
   aimAlong(bot, dir, frame);
@@ -659,7 +659,8 @@ export function gunSeatAim(bot, targetPoint, targetVel = [0, 0, 0]) {
   const rel = [targetPoint[0] - origin[0], targetPoint[1] - origin[1], targetPoint[2] - origin[2]];
   const own = unitVelocity(bot);
   const relVel = [targetVel[0] - own[0], targetVel[1] - own[1], targetVel[2] - own[2]];
-  const lead = firingDirection({ rel, relVel, speed: b.speed, gravity: b.gravity, indirect: !!weapon?.indirect });
+  const lead = firingDirection({ rel, relVel, speed: b.speed, gravity: b.gravity, drag: b.drag,
+                                 indirect: !!weapon?.indirect });
   return { valid: !!lead, dir: lead?.dir ?? unit3(rel) ?? [0, 0, 1], origin };
 }
 
@@ -678,7 +679,7 @@ export function gunSeatIndirectLine(bot, targetPoint, lineClear) {
   if (!g || !lineClear) return false;
   const { origin, ballistics: b } = g;
   const rel = [targetPoint[0] - origin[0], targetPoint[1] - origin[1], targetPoint[2] - origin[2]];
-  const lead = firingDirection({ rel, speed: b.speed, gravity: b.gravity, indirect: true });
+  const lead = firingDirection({ rel, speed: b.speed, gravity: b.gravity, drag: b.drag, indirect: true });
   if (!lead) return false;
   const t = b.gravity < 0 ? Math.max(0, (lead.dir[1] * b.speed) / -b.gravity) : 0;
   const top = [origin[0] + lead.dir[0] * b.speed * t, origin[1] + lead.dir[1] * b.speed * t + 0.5 * b.gravity * t * t,
@@ -705,7 +706,7 @@ function gunSeatGun(bot) {
     const e = node.matrixWorld.elements;
     origin = [e[12], e[13], e[14]];
   }
-  return { weapon, group, origin, ballistics: groupBallistics(group, 600) };
+  return { weapon, group, origin, ballistics: groupBallistics(group, 600, weapon) };
 }
 
 // --- The fire correction: `FireCorrectionData`, BotMain +0x138 --------------
@@ -961,6 +962,24 @@ export function turretMiss(bot, aim = bot._turretAim) {
   const t = aim.time, v = aim.speed, g = aim.gravity;
   const ix = frame.f[0] * v * t, iy = frame.f[1] * v * t + 0.5 * g * t * t, iz = frame.f[2] * v * t;
   return Math.hypot(aim.predicted[0] - ix, aim.predicted[1] - iy, aim.predicted[2] - iz);
+}
+
+/**
+ * `weaponTemplate.useAimerOnly` (WeaponTemplate +0x5, AI-143):
+ * `BAPCConPrecision::evaluate` 0x0854b570 holds at once, before the miss
+ * test, when the weapon sets it and the barrel's forward (`getAimerTransform`
+ * row 2) dotted with the Aimer's firing direction (`getLastAimVec`, +0x138)
+ * is at least 1.0 (0x0854b684..0x0854b68b): the barrel lies along the
+ * solution to the float precision of the two stored vectors (their
+ * components are single floats; the dot is summed wider and compared with
+ * 1.0). Otherwise the miss test runs as for any weapon.
+ */
+export function aimerOnlyHolds(bot, aim = bot._turretAim, weapon = bot.weapons?.[bot.weaponIndex]) {
+  if (!weapon?.useAimerOnly || !aim?.valid || !aim.dir) return false;
+  const frame = barrelFrame(bot);
+  if (!frame) return false;
+  const f = Math.fround;
+  return f(frame.f[0]) * f(aim.dir[0]) + f(frame.f[1]) * f(aim.dir[1]) + f(frame.f[2]) * f(aim.dir[2]) >= 1.0;
 }
 
 /**

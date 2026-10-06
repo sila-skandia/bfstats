@@ -35,6 +35,10 @@ function firePeriod(roundOfFire) {
 export class FireState {
   constructor(stats) {
     this.stats = stats;
+    // Whether a caller reports its trigger (`trigger`, below). One that does
+    // gets the engine's refused pull; one that only has the rounds keeps the
+    // lockout at the crossing round.
+    this.triggerKnown = false;
     this.reset();
   }
 
@@ -71,23 +75,49 @@ export class FireState {
     // copy that paces the rounds.
     this.fireRemaining = 0;
     this.heatClock = 0;   // seconds owed to the heat's next tick
+    this.held = false;    // the trigger, as `trigger` last reported it
     // The gun's cone, `stats.deviation` = `{ min, fire }` off a plain
     // FireArms (the exporter's `_fire_arms`), null on one that ships no
-    // words, a tank's main gun. `FireArms::updateDeviation` (client
-    // 0x00539620) is the hand weapon's rule without a soldier: no stance
-    // multiplier, no speed, turn or misc channel, so `minDev + fire`, the
-    // bloom raised per pull and decayed a 1/30 s tick (handweapon-view-and-
-    // deviation §2). The vehicle HUD feed hands the cross that total (XHIT-15).
-    const fire = stats.deviation?.fire;
+    // words, a tank's main gun. `FireArms::updateDeviation` (lnxded
+    // 0x0828d410) is the whole of a seat gun's law: no stance multiplier, no
+    // speed, turn or misc channel, so `minDev + fire`, the bloom raised per
+    // pull and decayed by `fireDev.c` a tick, undivided (DEV-11). The hull's
+    // own motion and the turret's turn feed nothing.
     this.cone = stats.deviation ? new DeviationModel({ deviation: stats.deviation }) : null;
-    // Seconds the bloom takes from its cap to nothing, and a tick over.
-    this.coneSettle = fire?.[2] > 0 ? ((fire[0] ?? 0) / fire[2] + 1) / TICK_HZ : 1 / TICK_HZ;
+    // The engine's stored total (`FireArms+0x188`, DEV-12): written by that
+    // update once a tick and read, unchanged in between, by the round
+    // (`fireBarrel`) and the cross (`getMenuCrossHairRadius`). A pull's bloom
+    // reaches it at the next tick, so the first round of a burst flies at
+    // the floor. A fresh gun stands at the floor, as one tick leaves it.
+    this.total = this.cone ? this.cone.current() : 0;
+    this.coneClock = 0;   // seconds owed to the cone's next tick
+    // Ticks a bot's trigger statement still runs its own update (DEV-13,
+    // `holdAI`).
+    this.aiHold = 0;
   }
 
-  /** The cone's total right now, degrees, floor included: what the cross
-   *  opens by (vehicle-hud.js `updateCrosshair`). 0 with no words. */
+  /**
+   * A bot is firing this gun: its trigger statement runs `WeaponFireArm::
+   * setBotSkill` (lnxded 0x085ee580; a hull's bundle `WeaponBundle::
+   * setBotSkill` 0x085ed050) every tick it executes, which stores the AI term
+   * and calls this FireArms' update once more (slot +0x128), so the bloom
+   * decays twice a tick while a bot holds the trigger (DEV-13). The AI term
+   * itself rides on the cone's total in `seat-cone.js`. The viewer's bot plan
+   * does not tell the guns when its statement runs, so each of the bot's
+   * rounds holds the extra update for `ticks` more ticks, the gap to the
+   * next round of a held burst (a stand-in, not the engine's window), and
+   * a trigger the world reports let go (`trigger`) ends it at once.
+   */
+  holdAI(ticks) {
+    if (ticks > this.aiHold) this.aiHold = ticks;
+  }
+
+  /** The stored total (DEV-12), floor included, in the cone's own unit,
+   *  hundredths of a radian (DEV-9): what the cross opens by (vehicle-hud.js
+   *  `crosshairAim`, XHIT-15) and what the gun's rounds are drawn in
+   *  (`seat-cone.js`). 0 with no words. */
   get spread() {
-    return this.cone ? this.cone.current() : 0;
+    return this.total;
   }
 
   get canFire() {
@@ -101,6 +131,24 @@ export class FireState {
     return true;
   }
 
+  /**
+   * The trigger, as the caller holds it this frame or world tick, reported
+   * before `step`. A held trigger is a pull every tick (GUN-13), and the heat's
+   * tick loop runs the one that matters here: a pull the heat refuses (GUN-18).
+   * `handleMessage` passes a pull to `Fire` only once the reload, the lockout
+   * and the last round's timer have all run out, and `Fire` refuses it at heat
+   * 1 or more and starts the lockout again. So the lockout starts on that
+   * pull, not on the round that crossed 1, and a held trigger restarts it
+   * every time it runs out with the barrel still hot.
+   *
+   * Not a `canFire` getter: the HUD and the hooks read that every frame, and
+   * reading must not start a lockout.
+   */
+  trigger(held) {
+    this.triggerKnown = true;
+    this.held = !!held;
+  }
+
   step(dt) {
     if (this.reloadRemaining > 0) {
       this.reloadRemaining = Math.max(0, this.reloadRemaining - dt);
@@ -110,10 +158,38 @@ export class FireState {
       }
     }
     if (this.hasHeat) this.stepHeat(dt);
-    // The bloom's ticks. Nothing to run once it is back on the floor, and no
-    // more than it takes to get there, so a replay's long step between two
-    // rounds (replay-hud.js `gunStateAt`) costs a few dozen ticks at most.
-    if (this.cone?.fire > 0) this.cone.update(Math.min(dt, this.coneSettle));
+    if (this.cone) this.stepCone(dt);
+  }
+
+  /**
+   * The cone's own ticks (DEV-11): each 1/30 s the bloom decays and the total
+   * is stored again (DEV-12). The engine runs this from the seat's
+   * `PlayerControlObject::handlePlayerInput` (lnxded 0x08318900), once a tick
+   * for every weapon of the seat while anyone holds it, which is when the
+   * world steps this state. Nothing to run once a tick changes nothing (the
+   * bloom back on the floor, or a template that never decays), so a replay's
+   * long step between two rounds (replay-hud.js `gunStateAt`) costs a few
+   * dozen ticks at most.
+   */
+  stepCone(dt) {
+    const cone = this.cone;
+    for (this.coneClock += dt; this.coneClock >= HEAT_TICK - 1e-9; this.coneClock -= HEAT_TICK) {
+      const before = cone.fire;
+      // Exactly one tick: `update` counts `dt x 30`, and (1/30) x 30 is 1.
+      cone.update(HEAT_TICK);
+      // A bot's trigger statement's own update, the same tick (DEV-13), for
+      // as long as the trigger is down where the caller reports it.
+      if (this.aiHold > 0) {
+        this.aiHold -= 1;
+        if (!this.triggerKnown || this.held) cone.update(HEAT_TICK);
+      }
+      this.total = cone.current();
+      if (cone.fire === before) {
+        this.aiHold = 0;
+        this.coneClock = Math.max(0, (this.coneClock - HEAT_TICK) % HEAT_TICK);
+        break;
+      }
+    }
   }
 
   /**
@@ -126,23 +202,49 @@ export class FireState {
    * second of a burst instead (this class's earlier rule) took a whole round's
    * heat off between rounds at the guns' 10 a second, and neither hand MG nor
    * a pintle Browning ever overheated. A cold, idle barrel stops counting.
+   *
+   * Each tick closes with the trigger's pull (GUN-18): one the heat refuses
+   * starts the lockout. The rounds themselves are fired by `gunfire.js` after
+   * the step and billed in `registerShot`, so a tick here is the timers and
+   * the drain, then the pull, refused here or fired there: the engine's pull
+   * then `handleUpdate` (the order GUN-15's round counts assume), half a tick
+   * on. A refusal at the head of the tick lands a tick after the round it
+   * stands beside, and a held MG42 then cycles its lockout in 61 ticks, not 60.
+   *
+   * The arithmetic is float32, as the engine stores the heat (`fadds` and
+   * `fsubrs` into `+0x238`) and the drain (`coolDownPerSec / 30` at template
+   * `+0x304`). The M249's and the PKM's crossings sit within a few ulps of 1
+   * after their drain tick, and in doubles the PKM locked a round early.
    */
   stepHeat(dt) {
-    const drain = Math.fround((this.stats.coolDownPerSec || 0) / TICK_HZ);
+    const drain = Math.fround(Math.fround(this.stats.coolDownPerSec || 0) / TICK_HZ);
     for (this.heatClock += dt; this.heatClock >= HEAT_TICK - 1e-9; this.heatClock -= HEAT_TICK) {
       if (this.fireRemaining > 0) this.fireRemaining = Math.max(0, Math.fround(this.fireRemaining - HEAT_TICK_F32));
       if (this.overheatRemaining > 0) {
         this.overheatRemaining = Math.max(0, Math.fround(this.overheatRemaining - HEAT_TICK_F32));
       }
-      if (this.fireRemaining > 0 || this.overheatRemaining > 0) continue;
-      if (!(this.heat > 0)) {
-        // This tick is spent and the rest would do nothing: keep only the
-        // part of a tick still owed.
-        this.heatClock = Math.max(0, (this.heatClock - HEAT_TICK) % HEAT_TICK);
-        break;
+      if (!(this.fireRemaining > 0) && !(this.overheatRemaining > 0)) {
+        if (!(this.heat > 0)) {
+          // This tick is spent and the rest would do nothing, a refused pull
+          // included: keep only the part of a tick still owed.
+          this.heatClock = Math.max(0, (this.heatClock - HEAT_TICK) % HEAT_TICK);
+          break;
+        }
+        const cooled = Math.fround(this.heat - drain);
+        this.heat = cooled > 0 ? cooled : 0;
       }
-      this.heat = Math.max(0, this.heat - drain);
+      if (this.held) this.#refusedPull();
     }
+  }
+
+  /** A held trigger's pull, one tick's (GUN-18): past the reload, the lockout
+   *  and the round's timer, refused at heat 1 or more, and then it starts the
+   *  lockout. A pull the heat lets through is the round's, which `gunfire.js`
+   *  fires. */
+  #refusedPull() {
+    if (this.reloadRemaining > 0 || this.overheatRemaining > 0 || this.fireRemaining > 0) return;
+    if (!(this.heat >= 1)) return;
+    this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
   }
 
   /**
@@ -167,21 +269,21 @@ export class FireState {
    */
   registerShot(rounds = 1) {
     // The bloom, once a pull like the heat: `fire = min(fire + b, a)` in
-    // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3.
+    // `FireArms::Fire` (lnxded 0x0828a2aa), ahead of the heat at 0x0828a2f3
+    // and of the barrel loop. The stored total waits for the next tick
+    // (DEV-12), so this pull's own rounds do not see it.
     this.cone?.onShot();
     // The heat (GUN-14): added once a pull, with no clamp, and the round sets
-    // the fire timer the drain waits on. The engine starts the lockout at the
-    // next pull, the one the heat refuses; this starts it on the round that
-    // crosses 1, which a held trigger reaches one round period later, and
-    // never restarts it. The engine restarts it on every pull refused at 1 or
-    // more, so a held trigger cools one tick a lockout there and fires about
-    // half as often after the first; a crossing within one tick's drain of 1
-    // (the M249's, the PKM's) also locks a round early here. Open: see
-    // features/hand-weapon-barrels-sight-and-heat, section 3.
+    // the fire timer the drain waits on. The round that crosses 1 starts no
+    // lockout; the next pull does, the one the heat refuses (`trigger`,
+    // GUN-18). A caller that never reports its trigger (`replay-hud.js`
+    // `gunStateAt`, which has only the recorded rounds) has no pulls to
+    // refuse, so for it the crossing round stands in for a trigger still held
+    // and starts the lockout itself.
     if (this.hasHeat) {
-      this.heat += this.stats.heatAddWhenFire;
+      this.heat = Math.fround(this.heat + Math.fround(this.stats.heatAddWhenFire));
       this.fireRemaining = firePeriod(this.stats.roundOfFire);
-      if (this.heat >= 1 && !(this.overheatRemaining > 0)) {
+      if (!this.triggerKnown && this.heat >= 1 && !(this.overheatRemaining > 0)) {
         this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
       }
     }

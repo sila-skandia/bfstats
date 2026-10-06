@@ -171,7 +171,66 @@ export function probeAlongAxis(groundHeight, attach, axisWorld, fromY) {
   const pz = attach.z - axisWorld.z * t;
   const under = groundHeight(px, pz, fromY);
   if (!Number.isFinite(under)) return t;
-  return t + (attach.y - axisWorld.y * t - under) / axisWorld.y;
+  const newton = t + (attach.y - axisWorld.y * t - under) / axisWorld.y;
+  // The Newton step treats the ground at the vertical estimate as level. On
+  // a steep face along the probe that is wrong by the whole face: a probe
+  // leaning into a 45-degree rise read the ground metres ABOVE its own start
+  // and a buried axle (`newton` < 0), the bump stop answered with 100 m/s^2
+  // a wheel, and a Willy left Gazala's escarpment at 94 m/s. Where the step
+  // lands within PROBE_TOLERANCE of the ground its answer stands; where it
+  // does not, the crossing is bracketed and solved. That is not only steep
+  // faces: with the axis leaning about 18 degrees or more (a side slope, a
+  // hull rolling in a turn) the step misses by 2 to 9 cm, and the solve moves
+  // ordinary driving by that much (review, 2026-10-07). [free, numerics]
+  const miss = probeGap(groundHeight, attach, axisWorld, fromY, newton);
+  if (!(Math.abs(miss) > PROBE_TOLERANCE)) return newton;
+  return solveProbe(groundHeight, attach, axisWorld, fromY, drop, newton);
+}
+
+/** Metres the Newton probe may miss the ground by and still stand. */
+const PROBE_TOLERANCE = 0.02;
+
+/** The probe point `s` down the axis, minus the ground under it: > 0 above. */
+function probeGap(groundHeight, attach, axisWorld, fromY, s) {
+  return attach.y - axisWorld.y * s
+    - groundHeight(attach.x - axisWorld.x * s, attach.z - axisWorld.z * s, fromY);
+}
+
+/**
+ * The crossing nearest the axle, by regula falsi (the Illinois variant) on a
+ * bracket grown from the axle's own gap: `gap(0) = drop`, and the probe walks
+ * the way that closes it, a step of `|drop| / axis.y` at a time, until the
+ * sign turns. A probe that finds no crossing within its reach (a hole, or
+ * ground falling away as fast as the probe does) reads no contact.
+ */
+function solveProbe(groundHeight, attach, axisWorld, fromY, drop, guess) {
+  if (drop === 0) return 0;
+  const dir = drop > 0 ? 1 : -1;
+  const step = Math.max(Math.abs(drop) / axisWorld.y, 0.05);
+  let a = 0, fa = drop;
+  let b, fb;
+  // Start from the Newton guess when it already lies past the crossing.
+  const fg = probeGap(groundHeight, attach, axisWorld, fromY, guess);
+  if (guess * dir > 0 && fg * dir < 0) {
+    b = guess; fb = fg;
+  } else {
+    for (let k = 1; ; k++) {
+      b = dir * step * k;
+      fb = probeGap(groundHeight, attach, axisWorld, fromY, b);
+      if (!Number.isFinite(fb)) return Infinity;
+      if (fb * dir <= 0) break;
+      if (k === 8) return Infinity;
+      a = b; fa = fb;
+    }
+  }
+  for (let i = 0; i < 30; i++) {
+    const s = (a * fb - b * fa) / (fb - fa);
+    const fs = probeGap(groundHeight, attach, axisWorld, fromY, s);
+    if (!Number.isFinite(fs) || Math.abs(fs) <= 1e-4) return s;
+    if (fs * fb < 0) { a = b; fa = fb; } else fa *= 0.5;
+    b = s; fb = fs;
+  }
+  return (a * fb - b * fa) / (fb - fa);
 }
 
 /**

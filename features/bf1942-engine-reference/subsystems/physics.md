@@ -191,7 +191,8 @@ switch (`setPhysicsNodeComponent` `0x081dd490` builds a `PointPhysicsNode` and
 sets object flag `0x8`). So every live `PhysicsNode` takes the box branch; the
 sphere-`r = 0.1` arm is dead. Vehicles in the viewer therefore need the box law,
 not `−drag·v` (`flight.js`) and not the PointPhysics sphere form (`ground.js` /
-`physics.js`).
+`physics.js`). Ships have run it since 2026-09 (`ship.js`), both land drives since
+2026-10-07 (`ground-contact.js` `addBoxDrag`).
 
 **A round is a full body like any other (2026-10-07).** A projectile that
 declares `setHasPointPhysics 0` drags by this law on its own `.sm` header box

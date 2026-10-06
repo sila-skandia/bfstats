@@ -38,7 +38,7 @@ import { WILLYS } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane,
+  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
@@ -57,6 +57,9 @@ import { measureWheelRadius } from './tracked-vehicle.js';
 const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
+
+/** `c_PGFEngineDummyGrip`: a roller drawn turning, outside the friction solve. */
+const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
 
 // The hull geometry readers live beside the water law that also needs them.
 export { inertiaGeometryNode, inertiaGeometryBox, geometryInertia } from './amphibious.js';
@@ -280,6 +283,16 @@ export class GroundVehicle extends Vehicle {
         }
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
+      // A `c_PGFEngineDummyGrip` roller (0x24) takes no part in the friction
+      // solve: `addFriction` tests the authored grip for DummyGrip and
+      // EngineGrip together (`0x0825b750`-`0x0825b75b`, `0x0825c666`-
+      // `0x0825c671`), spins the wheel visually and returns, before any
+      // friction, any resistance or any sample in the mean. `TrackedVehicle`
+      // has always skipped them; a car carries them too. The KettenKrad's
+      // twelve track rollers counted here as twelve lateral-only contacts in
+      // a mean of fifteen, and its one driven tyre, a fifth of the answer,
+      // could not hold the hull against its own springs' lean.
+      wheel.dummy = data.physics.grip === GRIP_DUMMY;
       wheel.steerMax = steerMax;
       // The bundle's own yaw axis: its direction and its two locks. A
       // forklift steers its REAR axle, whose bundles declare `direction -1`
@@ -325,6 +338,10 @@ export class GroundVehicle extends Vehicle {
    * own contact speeds, which is what the accumulator is standing in for.
    */
   advancePropeller() {}
+
+  /** A land drivetrain, whose Engine's running byte the world stops on
+   *  critical damage (`world-vehicle-tick.js`, PHY-14). */
+  get landDrive() { return true; }
 
   /** `Engine+0x142`: see `TrackedVehicle.engineRunning`. */
   get engineRunning() { return this.engine.running; }
@@ -624,7 +641,8 @@ export class GroundVehicle extends Vehicle {
       // lateral coefficient: what limits it is the same isotropic Coulomb
       // clamp the longitudinal demand is measured against, which is why a
       // wheel that spends its budget driving has none left to corner with.
-      let aLat = axleOk ? -uLat * ENGINE_TICK_HZ : 0;
+      // A dummy roller asks for nothing at all (see `collectChassis`).
+      let aLat = axleOk && !wheel.dummy ? -uLat * ENGINE_TICK_HZ : 0;
 
       // Longitudinal: the EngineGrip contact-speed target and nothing else.
       // `dV = T - Vt` (collision-response.md section 8), asked for at the
@@ -654,8 +672,11 @@ export class GroundVehicle extends Vehicle {
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
       if (!grip.latched) allLatched = false;
-      staticBudget += caps.breakaway;
-      tanCount += 1;
+      // Not a sample in the mean either, nor a budget for the static hold.
+      if (!wheel.dummy) {
+        staticBudget += caps.breakaway;
+        tanCount += 1;
+      }
       if (grip.scale !== 1) {
         aLong *= grip.scale;
         aLat *= grip.scale;
@@ -733,8 +754,13 @@ export class GroundVehicle extends Vehicle {
     // The exe's drag equation, coefficients from `Objects.con`: see
     // `PointBody.applyDrag` for the disassembly. Wind is zero in every
     // vanilla level.
-    const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
-    accel.addScaledVector(s.velocity, -kDrag);
+    // The engine's box law over the hull's own box (`addBoxDrag`, PHY-4). A
+    // tree with no geometry to measure (a test double) keeps the sphere law
+    // it always ran.
+    if (!addBoxDrag(this.geometryBox, this.drag, this.mass, s, q, qInv, accel, torque)) {
+      const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
+      accel.addScaledVector(s.velocity, -kDrag);
+    }
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);

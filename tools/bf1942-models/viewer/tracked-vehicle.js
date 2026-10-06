@@ -63,7 +63,7 @@ import { TANK } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane,
+  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
@@ -71,7 +71,9 @@ import {
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
-import { AmphibiousKit, HullWater, bedGroundHeight } from './amphibious.js';
+import {
+  AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
+} from './amphibious.js';
 
 // The body frame `wheeled-vehicle.js` documents (-Z forward, +Y up, +X starboard),
 // declared here rather than shared so no module hands another a live
@@ -98,20 +100,45 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
  * rather than needing a per-vehicle number — the same thing `WillyRadius`
  * already established no `.con` file ever declares.
  *
+ * A collision probe is never the wheel's mesh. A spring the `.con` authors
+ * `createInvisible` (`bf42/assemble.py` `build_node`: the KettenKrad's rear
+ * wheels, the R75's and HD_XA42's sidecar wheel, the LVT4's driven pair, a
+ * PT boat's beach wheels) carries no drawn mesh, only its col0 probe, and
+ * the half-extent of that probe (a 3-vertex triangle under the axle on the
+ * R75, 0.002 m) put its contact at the axle. It takes the probe's depth
+ * under its origin instead, where `checkVsTerrain` meets the ground and the
+ * depth `hull-bodies.js` `wheelContactDepths` hands the page's drive.
+ *
  * @returns {number|null} metres, or null if the node (and nothing under it)
  *   carries geometry to measure
  */
 export function measureWheelRadius(node) {
-  let target = node.geometry ? node : null;
+  const drawn = obj => obj.geometry && !obj.userData?.collision;
+  let target = drawn(node) ? node : null;
   if (!target) {
-    node.traverse(child => { if (!target && child.geometry) target = child; });
+    node.traverse(child => { if (!target && drawn(child)) target = child; });
   }
-  if (!target) return null;
+  if (!target) return probeDepth(node);
   const geometry = target.geometry;
   if (!geometry.boundingBox) geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   if (!box) return null;
   return ((box.max.y - box.min.y) + (box.max.z - box.min.z)) / 4;
+}
+
+/** An undrawn wheel's contact depth: the lowest vertex of the collision
+ *  probes hung directly under it, in its own frame. Null with none. */
+function probeDepth(node) {
+  let low = Infinity;
+  const box = new THREE.Box3();
+  for (const child of node.children) {
+    if (!child.geometry || !child.userData?.collision) continue;
+    child.updateMatrix();
+    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+    box.copy(child.geometry.boundingBox).applyMatrix4(child.matrix);
+    low = Math.min(low, box.min.y);
+  }
+  return low < 0 ? -low : null;
 }
 
 /** Sub-steps per second `TrackedVehicle.integrate` clamps to — the engine's
@@ -187,7 +214,29 @@ export class TrackedVehicle extends Vehicle {
     // Divisor 3, not 12: this is the engine's `getGeometryInertia` (lnxded
     // `0x08253930`, collision-response.md §4.2), which is four times a solid
     // box's inertia per unit mass and is the only inertia the engine has.
-    this._inertia = new THREE.Vector3((l2 + h2) / 3, (w2 + l2) / 3, (w2 + h2) / 3);
+    //
+    // **Over the engine's own box, not the wheel footprint.** The box
+    // `getGeometryInertia` reads is the root LOD's first child's mesh (a
+    // tank's `ShermanComplex`, COL-15), the hull, which is longer, wider and
+    // taller than the span of its road wheels: a Sherman's footprint gives a
+    // yaw inertia of 7.0 m^2, its hull box 13.1. The footprint is kept only
+    // for a tree that carries no such geometry (a test double).
+    //
+    // It is not cosmetic. The AI's tank law steers on the yaw rate
+    // (`TankControl::controlTowardsDirection`, AI-45: `steer = angle -
+    // rate/(30|angle| + 1)`, a unit gain at a straight heading), and a hull
+    // that turns twice as far per tick of differential as the engine's
+    // closes that loop above one: the steer flips sign every tick, the
+    // differential's max-of-wheels load (TANK-13) holds the revs near 0.75,
+    // and a bot Sherman crawled at 8.0 m/s where the lab's LOD 0 rounds
+    // record 12-14.6 (features/desert-combat-parity/lab-ground-truth.md). On
+    // the box a bot T-72 under its `maxSpeed 12` cruises at 11.3 m/s in fifth
+    // at revs 0.76 and an M1A1 under 15 at 14.2, revs 0.95; the lab's are
+    // 11.2 at 0.755 and 14.1 at 0.947.
+    this.geometryBox = inertiaGeometryBox(node, options.collisionMeshes ?? null);
+    this._inertia = this.geometryBox
+      ? geometryInertia(this.geometryBox)
+      : new THREE.Vector3((l2 + h2) / 3, (w2 + l2) / 3, (w2 + h2) / 3);
 
     // Hull collision against static objects — same as `GroundVehicle`.
     this._hullRadius = this._boundingRadius;
@@ -360,6 +409,9 @@ export class TrackedVehicle extends Vehicle {
    * inputs are zeroed and the revs held at 0. */
   get engineRunning() { return this.engine.running; }
   set engineRunning(on) { this.engine.running = !!on; }
+
+  /** A land drivetrain: see `GroundVehicle.landDrive`. */
+  get landDrive() { return true; }
 
   /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
    * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
@@ -721,18 +773,23 @@ export class TrackedVehicle extends Vehicle {
     accel.y += GRAVITY;
     staticHold(this, s, accel, h, Math.abs(throttle) < 0.01 ? 0 : 1, 0,
       loaded, staticBudget, allLatched, springRate);
-    const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
-    accel.addScaledVector(s.velocity, -kDrag);
+    // The engine's box law over the hull's own box (`addBoxDrag`, PHY-4). A
+    // tree with no geometry to measure (a test double) keeps the sphere law
+    // it always ran.
+    if (!addBoxDrag(this.geometryBox, this.drag, this.mass, s, q, qInv, accel, torque)) {
+      const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
+      accel.addScaledVector(s.velocity, -kDrag);
+    }
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);
 
     // Roll and pitch keep the heavy damper the rollover fit asked for; yaw
-    // gets its own, far lighter one, because differential steering IS the
-    // yaw torque and the rollover cases were never about heading — see
-    // `TANK.yawDamping`.
+    // has none, which is the engine's own answer (`TANK.yawDamping`: the
+    // lab's tanks turn on the spot at three to four times the rate the old
+    // fitted 2.0 allowed). The term stays so a spec can still name one.
     //
-    // Neither damper is the engine's, and a swimming amphibian has no track
+    // The roll damper is not the engine's either, and a swimming amphibian has no track
     // on anything: afloat, its turn is damped by its own rudders and its roll
     // and pitch by its floats (`amphibious.js`), as a ship's are.
     const swimming = this.amphibious?.afloat && loaded === 0;

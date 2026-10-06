@@ -14,8 +14,10 @@
 // stays untouched.
 //
 // What is NOT here, and why: remote turret traverse and aim rigs (P4 feel),
-// remote shot sound (P4), wreck/replace states (P3 authority), name labels
-// (P4), and any correction of the local player (P4).
+// remote shot sound (P4), name labels (P4), and any correction of the local
+// player (P4). A hull's damage, wreck and respawn are drawn on the page's own
+// copy of it, from the room's rows (`net-room.js`, `server/room-pads.mjs`),
+// not on a replica, which stands only while a remote drives.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -26,6 +28,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
+import { EXPLOSION_CLIPS } from './knockback.js';
 import { weaponNodeOf } from './soldier-dress.js';
 import { byName, modelFileStem } from './model-file.js';
 import { motionBetween, scrollBeltsByMotion } from './track-scroll.js';
@@ -43,6 +46,9 @@ const PLACEHOLDER_WEAPON = 'Colt';
 export const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 
 const rad = d => (d * Math.PI) / 180;
+
+/** The flights a snapshot can name (`netcode.js` `FLIGHT_WIRE`). */
+const FLIGHT_FAMILIES = ['flyForward', 'flyBackward'];
 
 /**
  * ctx is the context map.html hands replay.js (scene, camera, loader, bust,
@@ -122,7 +128,9 @@ export function createRemoteRenderer(ctx) {
     // The swim states and the swim death, weapon-independent
     // (`gaits/swim.gait.glb`, every clip under `animations/3P_NoWeapon/`).
     const swim = manifest.swim ? await gaitBundle(manifest.swim) : [];
-    return [...lower, ...upper, ...die, ...swim];
+    // A blast's flights (`gaits/explosion.gait.glb`, `knockback.js`).
+    const explosion = manifest.explosion ? await gaitBundle(manifest.explosion) : [];
+    return [...lower, ...upper, ...die, ...swim, ...explosion];
   }
 
   function posePair(soldier, weapon) {
@@ -233,6 +241,15 @@ export function createRemoteRenderer(ctx) {
       const once = family === 'swimStart' || family === 'swimEnd' || family === 'swimDie';
       const lower = action(spec.lower, gaitClips, once);
       const upper = action(spec.upper, gaitClips, once);
+      if (lower && upper) families[family] = [lower, upper];
+    }
+    // A blast's two flights (`knockback.js` `EXPLOSION_CLIPS`), which the
+    // snapshot names (`netcode.js` `FLIGHT_WIRE`): each plays once and holds,
+    // as a bot's does (`bot-visuals.js`), until the landing.
+    for (const family of FLIGHT_FAMILIES) {
+      const spec = EXPLOSION_CLIPS[family];
+      const lower = action(spec.lower, gaitClips, true);
+      const upper = action(spec.upper, gaitClips, true);
       if (lower && upper) families[family] = [lower, upper];
     }
     s.rig.mixer = mixer;
@@ -509,16 +526,18 @@ export function createRemoteRenderer(ctx) {
     // bands (the engine's own speed tables) and the fallback chain.
     // In the water the snapshot's swim state wins (`netcode.js` `SWIM_WIRE`):
     // the authority's `SwimState` already chose the stroke off his throttle.
-    const want = remoteClipFamily(s.lastSpeed, state,
-                                  family => !!rig.families[family],
-                                  state.swim ?? null);
+    // A blast's flight (`netcode.js` `FLIGHT_WIRE`) holds his legs over both.
+    const want = state.flight && rig.families[state.flight] ? state.flight
+      : remoteClipFamily(s.lastSpeed, state,
+                         family => !!rig.families[family],
+                         state.swim ?? null);
     if (want !== s.want) {
       const was = s.want;
       s.want = want;
       switchFamily(rig.families, was, want);
     }
-    // `c_AsmHideWeapon`, which every lower swim state declares.
-    if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want];
+    // `c_AsmHideWeapon`, which every lower swim and explosion state declares.
+    if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want] && !FLIGHT_FAMILIES.includes(want);
     rig.mixer.update(dt);
   }
 

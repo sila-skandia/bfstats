@@ -35,6 +35,38 @@
       "loop": true,
       "morphFactor": 4.0,
       "returnTo": "_POSE_",
+      "cameraShake": [
+        {
+          "timeToShake": 0.0,
+          "pitch": [
+            0.05,
+            900.0
+          ],
+          "yaw": [
+            0.05,
+            700.0
+          ],
+          "roll": [
+            0.25,
+            800.0
+          ],
+          "upDown": [
+            0.0,
+            0.0
+          ],
+          "leftRight": [
+            0.01,
+            2000.0
+          ],
+          "inOut": [
+            0.01,
+            2000.0
+          ],
+          "fadeIn": 0.0,
+          "fadeOut": 0.0,
+          "minFactor": 0.0
+        }
+      ],
       "frames": 7,
       "duration": 0.4219
     },
@@ -100,6 +132,38 @@
       "loop": true,
       "morphFactor": 4.0,
       "returnTo": "_POSE_",
+      "cameraShake": [
+        {
+          "timeToShake": 0.0,
+          "pitch": [
+            0.05,
+            900.0
+          ],
+          "yaw": [
+            0.05,
+            700.0
+          ],
+          "roll": [
+            0.25,
+            800.0
+          ],
+          "upDown": [
+            0.0,
+            0.0
+          ],
+          "leftRight": [
+            0.01,
+            2000.0
+          ],
+          "inOut": [
+            0.01,
+            2000.0
+          ],
+          "fadeIn": 0.0,
+          "fadeOut": 0.0,
+          "minFactor": 0.0
+        }
+      ],
       "frames": 7,
       "duration": 0.4219
     },

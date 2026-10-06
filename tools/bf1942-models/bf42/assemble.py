@@ -1910,12 +1910,24 @@ class Assembler:
             # A spawn effect's payload is a whole object (EMT-10), baked the
             # way a model or level export bakes it: no `materialDiffuse` and
             # no additive alpha cut, which only effect particles take.
-            saved = self.apply_material_diffuse, self.additive_alpha_test
+            # It is solid, as a placed object is: its collision hulls are baked
+            # with it whatever the bake's own setting. A geometry an effect
+            # particle cached as hull-less while hulls were off is looked at
+            # again.
+            saved = (self.apply_material_diffuse, self.additive_alpha_test,
+                     self.include_collision)
             self.apply_material_diffuse = self.additive_alpha_test = False
+            if not self.include_collision:
+                self.include_collision = True
+                self._geom_collisions = {k: v for k, v in self._geom_collisions.items() if v}
             try:
-                return self.build_node(builder, name, report, depth=1)
+                # Depth 0: the object is a root of the world, as a placed one
+                # is, so whatever a bake stamps on a placed root (PHY-17's
+                # `hasMobilePhysics false`) it stamps on this one too.
+                return self.build_node(builder, name, report, depth=0)
             finally:
-                self.apply_material_diffuse, self.additive_alpha_test = saved
+                (self.apply_material_diffuse, self.additive_alpha_test,
+                 self.include_collision) = saved
 
         def build(node: effects_mod.BundleNode, depth: int) -> int | None:
             children: list[int] = []
@@ -2458,7 +2470,10 @@ class Assembler:
             "asynchronyFire": template.asynchrony_fire,
             # A salvo that costs one round and never fires short (BOMB-13):
             # the shotguns' pellets, FHSW's canister and shrapnel shells.
-            "blastAmmoCount": template.blast_ammo_count,
+            # Always written, `false` when the template says nothing, so the
+            # page can tell this export from one made before the word was
+            # read (which carries no key, and keeps one round a pull).
+            "blastAmmoCount": bool(template.blast_ammo_count),
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win
@@ -2962,7 +2977,19 @@ class Assembler:
 
         # Physics-only parts (Elco's Willy wheels, some KettenKrad springs).
         # The engine still steers them; it just does not draw the mesh.
-        if template.invisible:
+        #
+        # A `Spring` among them is a wheel the drive stands on, and it is kept:
+        # a node with its transform, its `physics` and its geometry's name and
+        # collision probes, and nothing drawn. `createInvisible` only stops the
+        # object being drawn; its PhysicsSpring and ResponsePhysics are built as
+        # any other's, and `checkVsTerrain` probes the same col0 vertices. The
+        # KettenKrad stands on two of them behind its tracks (`KettenKradBack
+        # SpringL/R`), the R75 and HD_XA42 on the sidecar's front wheel, the
+        # LVT4 drives through its `S_Wheel_L3/R3`, and dropping them left the
+        # KettenKrad on one wheel, lying on its back, and the two bikes on
+        # three, tipped onto their sides and sliding off at 30 m/s.
+        undrawn = template.invisible and template.kind.lower() == "spring"
+        if template.invisible and not undrawn:
             return None
 
         # EffectBundles never reach the ordinary walk usefully: their Emitter
@@ -2996,14 +3023,29 @@ class Assembler:
                              or first_person_branch)
         mesh_index, triangles = (None, 0)
         collision_meshes: list[tuple[int, int, str]] = []
-        if template.geometry and node_first_person == self.first_person:
+        if template.geometry and node_first_person == self.first_person and undrawn:
+            # The undrawn wheel above: its probes, never its mesh.
+            if self._object_emits_geometry_collision(
+                    template, collision_scope, root=collision_root):
+                collision_meshes = self._collision_for_geometry(
+                    builder, template.geometry, report)
+        elif template.geometry and node_first_person == self.first_person:
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
             # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
             # `_collision_only_node`. StandardMesh still attaches freely.
             if self._object_emits_geometry_collision(
                     template, collision_scope, root=collision_root):
-                collision_meshes = self._geom_collisions.get(
-                    template.geometry.lower(), [])
+                # Through the hull lookup rather than the cache alone, and
+                # only while hulls are on. The effects bake turns them on for
+                # a spawned object and off again: a mesh a particle built
+                # while they were off is cached with no hull, and
+                # `_mesh_index` hands it back from its own cache without
+                # looking again, so a spawned object sharing it came out
+                # hollow; and a particle built after one took its hulls,
+                # which a mesh particle's clone would draw.
+                collision_meshes = (self._collision_for_geometry(
+                    builder, template.geometry, report)
+                    if self.include_collision else [])
 
         children_refs = template.children
         lod_swap: dict | None = None
@@ -3523,6 +3565,18 @@ class Assembler:
                 "damageFromWater": template.damage_from_water,
                 "splashMaterial": template.material,
             }.items() if value is not None}
+            if armor or template.has_armor:
+                # How long the object stays once destroyed, and how it goes
+                # (HP-19). An absent word is the template default, 10 s with a
+                # fade from 8 s. Only beside an Armor's own words: a block
+                # with nothing else in it would make a placed PCO look armoured.
+                armor.update({key: value for key, value in {
+                    "timeToLiveAfterDeath": template.time_to_live_after_death,
+                    "fadeAtTimeToLiveAfterDeath": template.fade_at_time_to_live_after_death,
+                    "timeToStartFadeAfterDeath": template.time_to_start_fade_after_death,
+                    "resetWhenRemoved": template.reset_when_removed,
+                    "stayAsDestroyed": template.stay_as_destroyed,
+                }.items() if value is not None})
             if template.armor_effects:
                 armor["effects"] = [
                     {"hp": threshold, "effect": name,

@@ -13,6 +13,7 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
+import { CameraShake } from './fire-shake.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -149,6 +150,13 @@ export function createHandFire(page) {
     // This also covers the automatic change `footFire` starts on a dry magazine.
     if (page.itemsLocked()) return false;
     if (hw.rounds >= magazine.size) return false;
+    // Not while the last round's fire cycle runs (`hw.cool`, the round's
+    // `1 / roundOfFire`): the reload message is refused while
+    // `timeToFireFinished` is positive (`handleMessage` 0x082899c8), and the
+    // automatic change waits for it the same way (BODY-7). So a Bazooka's
+    // one round plays its fire state out, and its camera shake with it,
+    // before the arms go to the reload.
+    if (hw.cool > 0) return false;
     hw.reload = magazine.reloadTime ?? 2;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
     // `FireArms::Reload` triggers the script's Reload slot as it starts (SND-17).
@@ -163,7 +171,7 @@ export function createHandFire(page) {
   // Every round the soldier's own gun fires: the report plays, the magazine
   // empties, the cone blooms, and the view kicks. `onShot` fires for vehicle
   // guns too, so the group is checked first.
-  page.guns.onShot = group => {
+  page.guns.onShot = (group, rounds = 1) => {
     const hw = page.handWeapon;
     if (!hw || group !== hw.group) return;
     // A report that never arrived — a manifest or an mp3 that failed while the
@@ -184,10 +192,19 @@ export function createHandFire(page) {
       hw.hideFire = hide;
       hw.weaponNode.visible = false;
     }
-    if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+    // What the pull cost, as `salvo()` charged it (`gunfire.js` hands it in):
+    // one round per barrel for a multi-barrel weapon with no
+    // `setAsynchronyFire` (BOMB-1), one for a `blastAmmoCount` salvo, whose
+    // pellets are one shell (BOMB-13), and none for an unlimited one.
+    if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - handCharge(group, rounds));
     // The barrel's heat, once a pull however many barrels it fired: one add
-    // in `FireArms::Fire`, after the barrel loop (ledger GUN-14).
+    // in `FireArms::Fire`, after the barrel loop (ledger GUN-14). A grenade's
+    // charge goes back to 0 instead. Its round's stats stay scaled until the
+    // pulse that asked for them ends (`footFire`): `gunfire.js` `fireShot`
+    // calls this before `fireBarrel` launches the round, so putting them back
+    // here sent every charged throw at the full `velocity`.
     hw.heat?.registerShot(1);
+    hw.charge?.spend();
     // A bullet round is resolved against the bots here only on a page whose
     // rounds cannot meet a soldier in flight. Where `guns.bodyCast` is installed
     // (`vehicle-hits.js`) the round itself meets the man's capsules, and a
@@ -305,6 +322,33 @@ export function createHandFire(page) {
     hw.pulse = true;
     hw.pulseShots = hw.group.shots;
     hw.pulseHeld = 0;
+    // A grenade leaves at `velocity × heat` (`fireBarrel`, GUN-14): its charge
+    // from the alt-fire button, 1.0 from the fire button (GUN-19).
+    if (hw.charge) launchStrength(hw, hw.charge.heat);
+  }
+
+  /** This pull's round at `strength` of the weapon's `velocity`: the group's
+   *  stats seen through one with the scaled velocity, until the round is out
+   *  (`restoreLaunch`). Nothing at full strength. */
+  function launchStrength(hw, strength) {
+    const group = hw.group;
+    // A pulse that never ended (the weapon swapped mid-throw) leaves its
+    // scaled stats behind; put them back before this pull's.
+    restoreLaunch(hw);
+    if (!group || !(strength < 1)) return;
+    const base = group.stats;
+    hw.launchBase = base;
+    group.stats = Object.create(base, {
+      velocity: { value: (base.velocity ?? 0) * strength, enumerable: true },
+    });
+  }
+
+  /** The group's own stats back once the round has left, or the pulse that
+   *  asked for it has given up. */
+  function restoreLaunch(hw) {
+    if (!hw?.launchBase) return;
+    hw.group.stats = hw.launchBase;
+    hw.launchBase = null;
   }
 
   /** The trigger's half of a shot: the report and the arms' fire clip. For every
@@ -332,6 +376,11 @@ export function createHandFire(page) {
       const pick = variants.length
         ? variants[Math.floor(Math.random() * variants.length)]
         : fireName;
+      // A one-shot fire state entered anew restarts its camera shake (CS-9):
+      // from the aim state, or once the last one has run out. A pull while it
+      // still runs is the state's own `c_PIFire` transition, which restarts
+      // the clip and not the shake. `stepViewShake` enters the state.
+      if (!(hw.active === pick && hw.actions[pick]?.isRunning())) hw.shake?.enter(null, null);
       page.playViewmodelClip(hw, pick, { restart: true });
     }
   }
@@ -375,10 +424,35 @@ export function createHandFire(page) {
   // two it did not have, handing out a free bomb at the bottom of every magazine.
   // Unlimited when this page never built a `FireState` for the group, which is
   // the honest answer for one.
+  // The hand weapon's magazine is `hw.rounds`, not a `FireState`: handed over
+  // too, so a multi-barrel hand weapon fires only the barrels its magazine can
+  // pay for (BOMB-5) and is charged at all. Unanswered, it read as unlimited
+  // and `salvo()` charged it nothing.
   page.guns.roundsLeft = group => {
+    const hw = page.handWeapon;
+    if (hw && group === hw.group) return Number.isFinite(hw.rounds) ? hw.rounds : Infinity;
     const state = page.fireStates.get(group.node);
     return state && !state.unlimited ? state.ammo : Infinity;
   };
+
+  /**
+   * A hand weapon's pull, charged. `rounds` is `salvo()`'s answer. A
+   * `blastAmmoCount` weapon (the template's `+0x348` byte, the FireArms
+   * extras' `blastAmmoCount`; absent means not set) pays one round for the
+   * whole salvo (BOMB-13), and that is enforced here as well as in `salvo()`,
+   * so a `salvo()` that has not been told of the flag cannot bill a shotgun's
+   * eight pellets as eight shells.
+   */
+  function handCharge(group, rounds) {
+    const stats = group?.stats;
+    // An export from before BOMB-13 carries no `blastAmmoCount` key at all
+    // (a tree not re-extracted since: FHSW's and EoD's). Its pull keeps the
+    // one round it always cost, instead of billing every pellet of a
+    // shotgun whose flag the export never wrote.
+    if (!stats || !('blastAmmoCount' in stats)) return 1;
+    const charge = Math.max(0, Number.isFinite(rounds) ? rounds : 1);
+    return stats.blastAmmoCount ? Math.min(1, charge) : charge;
+  }
   // And the report. A gun `.ssc` is a one-shot event patch — the muzzle blast,
   // the casing, the crew reloading, the breech — so the round is what plays it,
   // exactly as a hand weapon's own `playHandFire` works two screens up. Chained
@@ -500,7 +574,14 @@ export function createHandFire(page) {
 
     // The barrel cools (and an overheat runs out) on the item's own clock,
     // which, like the reload's below, is not running while he has no item.
-    if (!locked && hw.heat) hw.heat.step(dt);
+    // The trigger goes in first: a held pull the heat refuses is what starts
+    // and restarts the lockout (GUN-18), and a pull mid-reload never reaches
+    // the heat at all.
+    if (!locked && hw.heat) {
+      hw.heat.trigger(page.triggerHeld && (page.captured || page.params.has('shots'))
+        && hw.reload <= 0);
+      hw.heat.step(dt);
+    }
 
     const magazine = hw.data?.magazine;
     if (locked) {
@@ -583,6 +664,7 @@ export function createHandFire(page) {
           if (hw.group.shots !== hw.pulseShots || hw.pulseHeld > PULSE_CEILING) {
             page.guns.setFiring(hw.group, false);
             hw.pulse = false;
+            restoreLaunch(hw);
           }
         }
         // A throw winds up first. `fireDelay` (the grenades' 1.0 s) is the time
@@ -599,6 +681,13 @@ export function createHandFire(page) {
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
+        // The alt-fire throw (GUN-19): a grenade's charge climbs a tick at a
+        // time while alt-fire is held, waiting while a throw is under way, and
+        // the tick after it is let go throws, as a click does, at the charged
+        // strength.
+        const released = hw.charge?.step(dt,
+          !!page.aimHeld && (page.captured || page.params.has('shots')) && hw.rounds > 0,
+          !(hw.throwWind > 0) && !(hw.cool > 0) && !(hw.reload > 0) && !hw.pulse);
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
           if (hw.throwWind <= 0) {
@@ -610,7 +699,10 @@ export function createHandFire(page) {
           // it was honoured the moment an ammo box refilled the weapon — spam
           // the trigger on an empty grenade pouch and the resupply threw one.
           page.dropClick();
-        } else if (page.clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
+        } else if ((page.clickQueued || released) && canFire && hw.cool <= 0 && !hw.pulse) {
+          // The fire button throws at full strength: its message sets the
+          // heat to 1.0 (GUN-19). A released charge keeps its own.
+          if (page.clickQueued && !released) hw.charge?.full();
           page.dropClick();
           if (windUp > 0) {
             hw.throwWind = windUp;
@@ -659,6 +751,25 @@ export function createHandFire(page) {
     // must not run itself out behind the water — the engine's upper machine is in
     // `Ub_Floating`, which declares no 1P clip at all.
     if (!locked) page.updateViewmodelAnimation(hw, dt);
+    stepViewShake(hw, dt, locked);
+  }
+
+  /**
+   * The upper machine's camera shake for this frame (`fire-shake.js`, ledger
+   * CS-8..CS-11): the state the arms are in, entered when it changes, and one
+   * frame of its shake, which the page puts on the drawn view
+   * (`soldierKit.shakeView`). The family the rig plays is the upper state
+   * (`Ub_Fire<W>`, `Ub_LieFire<W>`, `Ub_StandAim<W>` ...), and its shake rides
+   * in the viewmodel's clip extras. With no item (swimming) the machine is in
+   * a state that declares none.
+   */
+  function stepViewShake(hw, dt, locked) {
+    hw.shake ??= new CameraShake();
+    const family = locked ? null : hw.active;
+    const key = family ? `${hw.name}:${family}` : null;
+    if (key !== hw.shake.key) hw.shake.enter(key, family ? hw.clips?.[family]?.cameraShake : null);
+    hw.shake.update(dt, hw.viewShake ??= {});
+    hw.viewShakeFresh = true;
   }
 
   Object.assign(fire, {

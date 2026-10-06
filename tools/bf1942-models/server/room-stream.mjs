@@ -8,6 +8,13 @@ import { MSG_SNAPSHOT, encodeSnapshot } from '../viewer/netcode.js';
 import { CHOKE_CAP, RATE_BYTES, SNAPSHOT_RATE_MIN } from './room-rules.mjs';
 import { frame } from './room-wire.mjs';
 
+/** The flight a knockback family is in, for the wire (`FLIGHT_WIRE`). */
+function flightOf(family) {
+  if (family === 'flyForward' || family === 'bounceFront') return 'flyForward';
+  if (family === 'flyBackward' || family === 'bounceBack') return 'flyBackward';
+  return null;
+}
+
 /** Radians (the World's facing) to the degrees the snapshot record carries.
  *  NaN travels as NaN -- a seated player's facing is the hull's. */
 function degreesOf(radians) {
@@ -56,10 +63,10 @@ export function snapshotRecord(room) {
     const row = rows.get(slot);
     if (!row) continue;
     let { x, y, z } = row;
+    const wp = world.player(slot);
     // A seated player whose seat has no drivetrain: the world's own
     // snapshot falls back to the soldier's (stale) pose; the room's live
     // root-matrix feed is the truth here.
-    const wp = world.player(slot);
     if (row.seated && wp && !wp.vehicle && wp.position) {
       x = wp.position[0]; y = wp.position[1]; z = wp.position[2];
     }
@@ -69,6 +76,9 @@ export function snapshotRecord(room) {
       slot,
       alive: row.alive, seated: row.seated,
       crouch: row.crouch, prone: row.prone, swim: row.swim ?? null,
+      // A blast's flight (`room-hits.mjs` throws him; `knockback.js` flies
+      // him): a bounce rides the flight it hands back to.
+      flight: flightOf(wp?.soldier?.body?.knockback?.family),
       inVehicle: row.inVehicle,
       team: row.team, x, y, z,
       // DEGREES on the wire, which is what the record says it carries
@@ -89,6 +99,9 @@ export function snapshotRecord(room) {
   }
   const vehicles = [];
   for (const entry of room.instance.table) {
+    // A hull out of the world (a pad's other side, a cleared wreck) has no
+    // pose to send (`room-pads.mjs`).
+    if (entry.live === false) continue;
     const pose = world.vehiclePose(entry.owner);
     if (!pose) continue;
     vehicles.push({

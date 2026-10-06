@@ -38,6 +38,11 @@ class AiOfTests(unittest.TestCase):
     def test_a_seat_finds_its_hulls_record(self) -> None:
         self.assertEqual("Sherman", self.results["shermanSeat"])
 
+    def test_a_hull_keyed_by_its_own_template_beats_a_seat_listing(self) -> None:
+        self.assertEqual("OH-6", self.results["ownRecord"])
+        self.assertEqual("H-6", self.results["folderHull"])
+        self.assertEqual("A10_B", self.results["variant"])
+
     def test_no_record_is_null(self) -> None:
         self.assertIsNone(self.results["unknown"])
 

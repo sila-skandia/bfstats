@@ -139,6 +139,23 @@ class NetcodeClientTests(unittest.TestCase):
              "position": [0, 7.6, 0], "text": ""},
         ])
 
+    def test_a_blasts_flight_rides_the_swim_bits_spare_codes(self):
+        self.assertEqual({"flight": "flyBackward", "swim": None}, self.results["flight"])
+
+    def test_a_rows_own_keys_ride_through(self):
+        # The page reads a round's result off the row (`map.html`
+        # `roomRoundEnd`) and the restart's flags and tickets, so every key a
+        # row carries reaches it; neither row, nor a round end's cleared
+        # deaths, prints a feed line (the debriefing and the restart do).
+        rows = self.results["roundRows"]
+        self.assertEqual(["roundEnd", "restart", "killed"], [r["type"] for r in rows])
+        self.assertEqual((2, 10, [{"slot": 2, "team": 2, "medal": "gold", "score": 4}]),
+                         (rows[0]["winner"], rows[0]["restartIn"], rows[0]["medals"]))
+        self.assertEqual(([{"team": 1}, {"team": 2}], {"team1": 100, "team2": 100}),
+                         (rows[1]["flags"], rows[1]["tickets"]))
+        self.assertTrue(rows[2]["cleared"])
+        self.assertEqual(["", "", ""], [r["text"] for r in rows])
+
     def test_explicit_leave(self):
         self.assertTrue(self.results["pingFrame"])
         self.assertTrue(self.results["leaveSent"])

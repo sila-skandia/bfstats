@@ -48,6 +48,7 @@ import {
   RoomServerCore, frame,
 } from './server/rooms.mjs';
 import { buildLevelFromDescriptor, loadRealLevel } from './server/level.mjs';
+import { bodySpecFor } from './server/level-bodies.mjs';
 import { loadVehicleTree } from './server/glb-tree.mjs';
 import {
   MSG_JOIN, MSG_ACTION, MSG_INPUT, MSG_LEAVE, MSG_SNAPSHOT, MSG_EVENT,
@@ -418,7 +419,38 @@ let nextTag = 1;
       mountOk = Boolean(m?.vehicle) && drivable.driver === 1;
       unmountOk = Boolean(m && inst.unmountFromSeat(w, 1, drivable));
     }
+    // A land hull's drive gets the page's inputs (`map.html`
+    // `buildHullDrive`): the collider and the sea, so it finds the sea BED
+    // (PHY-16); each wheel a radius off its own mesh, which the room's scene
+    // used to leave undecoded (-Infinity: no wheel ever touched the ground);
+    // its col0 probe depth and the root part the sea depth is taken on.
+    const landEntry = inst.table.find(v => ['ground', 'tank'].includes(v.kind));
+    let land = null;
+    if (landEntry) {
+      w.addPlayer(2, { team: landEntry.team ?? 1 });
+      const lm = inst.mountIntoSeat(w, 2, landEntry, 0);
+      const drive = lm?.vehicle;
+      if (drive) {
+        const p0 = drive.state.position.clone();
+        for (let t = 0; t < 60; t++) {
+          w.player(2).pending = { input: { forward: 1, strafe: 0 }, lookX: 0, lookY: 0 };
+          w.step(1 / 30);
+        }
+        land = {
+          template: landEntry.template,
+          collider: Boolean(drive.collider?.heightfield),
+          waterLevel: Number.isFinite(drive.water?.waterLevel ?? drive.amphibious?.waterLevel ?? w.collider?.waterLevel),
+          radiiFinite: drive.wheels.every(wh => Number.isFinite(wh.radius) && wh.radius > 0),
+          probeDepths: drive.wheels.filter(wh => Number.isFinite(wh.contactDepth)).length,
+          wheels: drive.wheels.length,
+          moved: drive.state.position.distanceTo(p0),
+          grounded: drive.state.grounded,
+          waterPart: Boolean(bodySpecFor(landEntry.root, data)?.waterPart),
+        };
+      }
+    }
     results.i = {
+      land,
       loaded: true,
       dim: hf.dim,
       spacing: hf.spacing,
@@ -1060,6 +1092,422 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   const hello = room.helloRow({ slot: 5, team: 1, name: 'Late' });
   const conquest = bleedRoom('CNQ', {}).room.helloRow({ slot: 1, team: 1, name: 'X' });
   results.w = { ctf: JSON.parse(JSON.stringify(hello.ctf)), conquest: conquest.ctf };
+}
+
+// --- (x) the round's end and the restart (ROUND-9, ROUND-11, HP-20) ---------------
+// The flat test level with two tickets for the Axis and no bleed: two deaths
+// end the round on tickets (ROUND-2). The room sends the result, clears the
+// world (`clearWorld`: the living killed, nothing spent), refuses a human's
+// spawn while the round is over (`spawnPlayer`'s `[+0x58] == 1`), and ten
+// seconds later restarts: the tickets made again, the rounds won kept, every
+// flag back on its level team, and the spawn taken again.
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'round-end',
+    extras: { ...base.extras, tickets: { team1: 2, team2: 100, lossPerMin: { team1: 0, team2: 0 } } },
+    vehicles: [],
+  };
+  core.levels.set('round-end', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  sendJson(pA, MSG_JOIN, { room: 'END', name: 'Axe', team: 1, level: 'round-end' });
+  sendJson(pB, MSG_JOIN, { room: 'END', name: 'Ally', team: 2, level: 'round-end' });
+  const room = core.room('END');
+  const w = room.world;
+  const rowsOf = peer => peer.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow);
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 1, kit: 'assault' });
+  step(2);
+  for (let death = 0; death < 2; death++) {
+    w.armorOf(1).applyDamage(999);
+    step(2);
+    if (death === 0) {
+      sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+      step(1);
+      // The Allies take the Axis flag before the end (after A stands on it:
+      // a spawn on a flag of the other side's moves him to it): the restart
+      // must hand it back.
+      w.flags[0].team = 2;
+    }
+  }
+  step(2);
+  const endRows = rowsOf(pB);
+  const end = endRows.find(r => r.type === 'roundEnd');
+  const cleared = endRows.filter(r => r.type === 'killed' && r.cleared).map(r => r.slot);
+  const ticketsAtEnd = { ...w.tickets };
+  const bAliveAfterEnd = !w.armorOf(2)?.destroyed;
+  const helloDuringEnd = room.helloRow({ slot: 9, team: 1, name: 'Late' }).round;
+  // A spawn while the round is over is refused, to that player alone.
+  pA.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(1);
+  const refused = rowsOf(pA).some(r => r.type === 'spawnRefused');
+  const aDeadDuringEnd = room.authority.dead.has(1);
+  // The countdown: nothing at 9 s, the restart by 10 s and a tick or two.
+  pB.sent.length = 0;
+  step(Math.round(9 * 30));
+  const restartedEarly = rowsOf(pB).some(r => r.type === 'restart');
+  step(Math.round(1.2 * 30));
+  const restart = rowsOf(pB).find(r => r.type === 'restart');
+  const roundAfter = { status: room.authority.round.status, tickets: { ...room.authority.round.tickets },
+                       roundsWon: { ...room.authority.round.roundsWon } };
+  // And the spawn screen works again.
+  pB.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(1);
+  const respawned = rowsOf(pB).some(r => r.type === 'spawn' && r.slot === 1)
+    && !room.authority.dead.has(1);
+  results.x = {
+    end: end ? { winner: end.winner, victoryType: end.victoryType, reason: end.reason,
+                 restartIn: end.restartIn, roundsWon: end.roundsWon,
+                 medals: end.medals?.length ?? null } : null,
+    cleared, ticketsAtEnd: { team1: ticketsAtEnd.team1, team2: ticketsAtEnd.team2 },
+    bAliveAfterEnd, helloDuringEnd: helloDuringEnd && { status: helloDuringEnd.status,
+                                                        winner: helloDuringEnd.winner },
+    refused, aDeadDuringEnd, restartedEarly,
+    restart: restart ? { tickets: restart.tickets, flags: restart.flags, roundsWon: restart.roundsWon } : null,
+    roundAfter, flagsAfter: w.flags.map(f => f.team), respawned,
+    ticketsAfter: { team1: w.tickets.team1, team2: w.tickets.team2 },
+  };
+}
+
+// --- (y) a room plays the layer it was made on -------------------------------------
+// The page's `?mode=` law on the server (`selectGameMode`): a room created
+// with a mode plays that layer's flags, tickets and CTF bases; one created
+// with none plays the level's default, and the HELLO says which.
+{
+  const point = (name, team, at) => ({ name, team, areaValue: 50, spawnGroupId: team, position: at });
+  const spawn = (name, group, team, at) => ({ name, group, team, position: at, rotation: [180, 0, 0] });
+  const conquest = {
+    controlPoints: [point('North', 1, [10, 0, 10]), point('South', 2, [-10, 0, -10])],
+    tickets: { team1: 100, team2: 100, lossPerMin: { team1: 30, team2: 30 } },
+  };
+  const ctfLayer = {
+    controlPoints: [point('AxisBase', 1, [0, 0, -100]), point('AlliedBase', 2, [0, 0, 100])],
+    soldierSpawns: [spawn('A1', 1, 1, [0, 0, -100]), spawn('B1', 2, 2, [0, 0, 100])],
+    tickets: null,
+    flagBases: [
+      { name: 'AlliedFlag', position: [0, 0, 100], team: 2, radius: 5, flagLocation: [0, 7.6, 0],
+        flag: { radius: 5, timeToRespawn: 30 } },
+      { name: 'AxisFlag', position: [0, 0, -100], team: 1, radius: 5, flagLocation: [0, 7.6, 0],
+        flag: { radius: 5, timeToRespawn: 30 } },
+    ],
+  };
+  const descriptor = {
+    name: 'layers',
+    extras: {
+      worldSize: 600, gameplayMode: 'Conquest', ...conquest,
+      soldierSpawns: [spawn('N1', 1, 1, [10, 0, 10]), spawn('S1', 2, 2, [-10, 0, -10])],
+      modes: { Conquest: { ...conquest }, Ctf: ctfLayer },
+    },
+    collider: { waterLevel: null, heightfield: null, statics: null, surfaceHeight() { return 0; } },
+    vehicles: [],
+  };
+  core.levels.set('layers', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pC = attachPeer(core, String(nextTag++));
+  sendJson(pC, MSG_JOIN, { room: 'LAYCTF', name: 'C', team: 0, level: 'layers', mode: 'ctf' });
+  const helloCtf = jsonRow(pC.sent.find(b => b[0] === MSG_HELLO));
+  const pD = attachPeer(core, String(nextTag++));
+  sendJson(pD, MSG_JOIN, { room: 'LAYDEF', name: 'D', team: 0, level: 'layers' });
+  const helloDef = jsonRow(pD.sent.find(b => b[0] === MSG_HELLO));
+  const ctfRoom = core.room('LAYCTF');
+  results.y = {
+    ctf: { mode: helloCtf.mode, modeDefault: helloCtf.modeDefault,
+           flags: helloCtf.flags.map(f => f.name), tickets: helloCtf.tickets,
+           ctf: Array.isArray(helloCtf.ctf), law: !!ctfRoom.authority.ctf,
+           list: core.roomList().find(r => r.code === 'LAYCTF')?.mode },
+    def: { mode: helloDef.mode, modeDefault: helloDef.modeDefault,
+           flags: helloDef.flags.map(f => f.name), tickets: helloDef.tickets?.team1 ?? null,
+           ctf: helloDef.ctf },
+  };
+}
+
+// --- (z2) a magazine change heard by the others ------------------------------------
+// The page names the change its weapon started; the room relays it to
+// everyone else (`room-control.mjs` `onReload`), and drops one from the dead,
+// a name no template has the shape of, and a repeat on the first's heels.
+{
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  joinPeer(core, pA, 'RLD', 'Loader', 1);
+  joinPeer(core, pB, 'RLD', 'Ear', 2);
+  const room = core.room('RLD');
+  const slotA = [...room.players.entries()].find(([, c]) => c.peer === pA)[0];
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 1, kit: 'assault' });
+  room.frame(FRAME_MS); clock.ms += FRAME_MS;
+  pA.sent.length = 0; pB.sent.length = 0;
+  const reloads = peer => peer.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow)
+    .filter(r => r.type === 'reload');
+  sendJson(pA, MSG_ACTION, { type: 'reload', weapon: 'Thompson' });
+  sendJson(pA, MSG_ACTION, { type: 'reload', weapon: 'Thompson' });
+  const heard = reloads(pB);
+  const echoed = reloads(pA).length;
+  clock.ms += 200;
+  sendJson(pA, MSG_ACTION, { type: 'reload', weapon: '<script>' });
+  sendJson(pA, MSG_ACTION, { type: 'reload' });
+  const badNames = reloads(pB).length - heard.length;
+  room.world.armorOf(slotA).applyDamage(999);
+  room.frame(FRAME_MS); clock.ms += 400;
+  sendJson(pA, MSG_ACTION, { type: 'reload', weapon: 'Thompson' });
+  const fromTheDead = reloads(pB).length - heard.length - badNames;
+  results.z2 = { heard: heard.map(r => ({ slot: r.slot, weapon: r.weapon })), slotA, echoed,
+                 badNames, fromTheDead };
+}
+
+// --- (z3) a reported landing, priced by the room (HP-9, HP-10, KNOCK-4..9) ---------
+// The shooter's page reports where its round met what (`room-hits.mjs`): a
+// direct hit costs the hull its hit points (a `hull` row), a blast three
+// metres from a soldier on foot costs him its priced damage and throws him
+// (a `blast` row with the push, his body flying on the server, the snapshot
+// naming the flight), and a report from the dead or off the shape is dropped.
+{
+  const real = process.env.REAL_VIEWER;
+  const { readFileSync } = await import('node:fs');
+  const tables = real ? JSON.parse(readFileSync(join(real, 'maps', '_shared', 'damage.json'), 'utf8')) : null;
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'hits', vehicles: undefined,
+    extras: {
+      ...base.extras,
+      objectSpawns: [{ vehicle: 'Willy', team: 1, position: [40, 0, 40], rotation: [0, 0, 0],
+                       minSpawnDelay: 5, maxSpawnDelay: 10, controlPointName: 'North' }],
+    },
+  };
+  const level = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor });
+  level.damageTables = tables;
+  core.levels.set('hits', level);
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  sendJson(pA, MSG_JOIN, { room: 'HITS', name: 'Shooter', team: 1, level: 'hits' });
+  sendJson(pB, MSG_JOIN, { room: 'HITS', name: 'Target', team: 2, level: 'hits' });
+  const room = core.room('HITS');
+  const w = room.world;
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 1, kit: 'assault' });
+  step(10);
+  const willy = room.instance.table.find(e => e.template === 'Willy');
+  const hullHp = () => w.vehicleDamage.get(willy.owner).hitPoints;
+  const hpBefore = hullHp();
+  pB.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'impact', point: [40, 1, 40], hit: { vehicle: willy.id },
+                             damage: 10, splash: null });
+  step(1);
+  const hullRow = pB.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow).find(r => r.type === 'hull');
+  // The blast: material 200 (`damage.json`: 10 damage, a mod of 2.5 against
+  // the soldier's 40, so it cannot kill a 30-point soldier), radius 10, three
+  // metres from him: inside half the radius, where it pushes.
+  const sb = w.player(2).soldier;
+  const target = { x: sb.x, y: sb.y, z: sb.z };
+  const hpTargetBefore = w.armorOf(2).hitPoints;
+  pA.sent.length = 0; pB.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'impact', point: [target.x + 3, target.y + 0.5, target.z], hit: null,
+                             damage: 0, splash: { radius: 10, material2: 200, yMod: 1, force: 150 } });
+  const blastRow = pA.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow).find(r => r.type === 'blast');
+  const lost = hpTargetBefore - w.armorOf(2).hitPoints;
+  step(1);
+  const v = sb.body.velocity;
+  const speedAfter = Math.hypot(v.x, v.y, v.z);
+  const flightOnServer = sb.body.knockback?.family ?? null;
+  step(4);
+  const snap = ofType(pA, MSG_SNAPSHOT).at(-1);
+  const wireFlight = snap ? decodeSnapshot(snap.subarray(1)).players.find(p => p.slot === 2)?.flight : null;
+  // The shapes the room drops.
+  const hpBeforeBad = hullHp();
+  sendJson(pA, MSG_ACTION, { type: 'impact', point: [40, 1], hit: { vehicle: willy.id }, damage: 10 });
+  sendJson(pA, MSG_ACTION, { type: 'impact', point: [40, 1, 40], hit: { vehicle: 99 }, damage: 10 });
+  w.armorOf(1).applyDamage(999);
+  step(1);
+  sendJson(pA, MSG_ACTION, { type: 'impact', point: [40, 1, 40], hit: { vehicle: willy.id }, damage: 10 });
+  step(1);
+  results.z3 = {
+    tables: !!tables, hpBefore, hullRow: hullRow ? { vehicle: hullRow.vehicle, hp: hullRow.hp } : null,
+    willyId: willy.id,
+    blastRow: blastRow ? { slot: blastRow.slot, push: blastRow.push.map(n => Math.round(n)) } : null,
+    lost, speedAfter, flightOnServer, wireFlight, droppedLoss: hpBeforeBad - hullHp(),
+  };
+}
+
+// --- (z4) a static's hit points go to every client (Battle of Britain's factory) -
+// A placed object with an Armor and no seat is named by its `scene.glb` node:
+// a direct hit on it is priced like a hull's and its hit points go out as an
+// `object` row, the name the page finds its own copy by.
+{
+  const real = process.env.REAL_VIEWER;
+  if (real) {
+    core.levels.set('battle_of_britain', loadRealLevel({ viewerDir: real, name: 'battle_of_britain' }));
+    const pA = attachPeer(core, String(nextTag++));
+    sendJson(pA, MSG_JOIN, { room: 'BOB-REAL', name: 'Bomber', team: 1, level: 'battle_of_britain' });
+    const room = core.room('BOB-REAL');
+    const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+    sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+    step(2);
+    const table = new Set(room.instance.table.map(e => e.owner));
+    let factory = null;
+    for (const [owner] of room.world.vehicleDamage.byOwner) {
+      const node = room.instance.ownerRoots[owner];
+      if (!table.has(owner) && node?.levelNode != null) { factory = { owner, node: node.levelNode, name: node.name }; break; }
+    }
+    pA.sent.length = 0;
+    if (factory) {
+      sendJson(pA, MSG_ACTION, { type: 'impact', point: [0, 0, 0], hit: { node: factory.node },
+                                 damage: 250, splash: null });
+      step(1);
+    }
+    const objectRow = pA.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow).find(r => r.type === 'object');
+    results.z4 = {
+      factory, objectRow: objectRow ? { node: objectRow.node, hp: objectRow.hp, destroyed: objectRow.destroyed } : null,
+      hp: factory ? room.world.vehicleDamage.get(factory.owner).hitPoints : null,
+      max: factory ? room.world.vehicleDamage.get(factory.owner).maxHitPoints : null,
+    };
+  }
+}
+
+// --- (z5) an abandoned hull's clock (SPAWN-13) -----------------------------------
+// A pad's hull left farther from its pad than its spawner's `Distance`, with
+// nobody in it and no soldier near, counts `timeToLive` down in 0.5 s steps and
+// then loses `damageWhenLost` a second; one near its pad keeps its clock full.
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'abandon', vehicles: undefined,
+    extras: {
+      ...base.extras,
+      objectSpawns: [{ vehicle: 'Willy', team: 1, position: [40, 0, 40], rotation: [0, 0, 0],
+                       minSpawnDelay: 5, maxSpawnDelay: 10, controlPointName: 'North',
+                       timeToLive: 2, distance: 5, damageWhenLost: 4 }],
+    },
+  };
+  core.levels.set('abandon', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pA = attachPeer(core, String(nextTag++));
+  sendJson(pA, MSG_JOIN, { room: 'ABANDON', name: 'Walker', team: 1, level: 'abandon' });
+  const room = core.room('ABANDON');
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  const willy = room.instance.table.find(e => e.template === 'Willy');
+  const hp = () => room.world.vehicleDamage.get(willy.owner).hitPoints;
+  step(Math.round(4 * 30));
+  const atPad = hp();
+  // Off its pad: the room's own pose answers through `vehiclePose`, and a
+  // descriptor hull with no body answers from its registration pose.
+  room.world.positions.set(willy.owner, [140, 0, 140]);
+  step(Math.round(4 * 30));
+  const away = hp();
+  results.z5 = { max: room.world.vehicleDamage.get(willy.owner).maxHitPoints, atPad, away };
+}
+
+// --- (z) the room's vehicle pads (SPAWN-2, SPAWN-10..SPAWN-19, HP-20) ------------
+// One pad under North, which changes hands: the Axis's Willy, the Allies'
+// Zero. The room stands the holder's template on it, a hull's death takes
+// its crew and runs the pad's delay from the death (`calcSpawnDelay` over the
+// room's players), the wreck on the pad goes when the next hull comes, a
+// capture changes what the pad hands out but never the hull already
+// standing, and the round's end clears the hulls while the restart stands
+// the level's own again.
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const descriptor = {
+    ...base, name: 'pads', vehicles: undefined,
+    extras: {
+      ...base.extras,
+      tickets: { team1: 2, team2: 100, lossPerMin: { team1: 0, team2: 0 } },
+      objectSpawns: [{
+        vehicle: 'Willy', team: 1, position: [40, 0, 40], rotation: [0, 0, 0],
+        minSpawnDelay: 5, maxSpawnDelay: 10, spawnDelayAtStart: 0, controlPointName: 'North',
+        templates: { 1: 'Willy', 2: 'Zero' },
+      }],
+    },
+  };
+  core.levels.set('pads', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pP = attachPeer(core, String(nextTag++));
+  sendJson(pP, MSG_JOIN, { room: 'PADS', name: 'Pilot', team: 1, level: 'pads' });
+  const hello = jsonRow(pP.sent.find(b => b[0] === MSG_HELLO));
+  const room = core.room('PADS');
+  const w = room.world;
+  const rows = () => pP.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow);
+  const step = n => { for (let i = 0; i < n; i++) { clock.ms += FRAME_MS; room.frame(FRAME_MS); } };
+  const willy = room.instance.table.find(e => e.template === 'Willy');
+  const zero = room.instance.table.find(e => e.template === 'Zero');
+  const kill = entry => w.vehicleDamage.get(entry.owner).damage(1e6, null);
+  sendJson(pP, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(2);
+  // The Pilot takes the Willy; its death kills him and leaves a wreck.
+  sendJson(pP, MSG_ACTION, { type: 'seat', vehicle: willy.id, seat: 0, action: 'enter' });
+  step(1);
+  const seated = !!w.player(1).occupancy;
+  pP.sent.length = 0;
+  kill(willy);
+  step(2);
+  const death = rows();
+  const killedInHull = death.some(r => r.type === 'killed' && r.slot === 1);
+  const hullRow = death.find(r => r.type === 'hull' && r.vehicle === willy.id);
+  const unseated = !w.player(1).occupancy;
+  // The delay runs from the death: 5 + 5 * (1 - 1/16) with one player in.
+  const delay = room.pads.records[0].pad.delay;
+  pP.sent.length = 0;
+  step(Math.round(9 * 30));
+  const before = rows().filter(r => r.type === 'padSpawn' || r.type === 'vehicleGone');
+  step(Math.round(1.5 * 30));
+  const replaced = rows().filter(r => r.type === 'padSpawn' || r.type === 'vehicleGone')
+    .map(r => [r.type, r.vehicle, r.template ?? null]);
+  const freshHp = w.vehicleDamage.get(willy.owner).hitPoints;
+  // The Allies take North: the Willy standing stays; its next death brings a Zero.
+  w.flags[0].team = 2;
+  step(2);
+  const stillWilly = willy.live && !zero.live;
+  pP.sent.length = 0;
+  kill(willy);
+  step(Math.round(10.5 * 30));
+  const afterCapture = rows().filter(r => r.type === 'padSpawn').map(r => r.template);
+  // The round's end (two Axis tickets, one spent above and one now) clears
+  // the hulls; the restart stands the level's Willy on North again. North
+  // goes back to the Axis first, or the Pilot would deploy on the Allies'.
+  w.flags[0].team = 1;
+  sendJson(pP, MSG_ACTION, { type: 'spawn', flag: 0, kit: 'assault' });
+  step(1);
+  pP.sent.length = 0;
+  w.armorOf(1).applyDamage(999);
+  step(3);
+  const ended = rows();
+  const goneAtEnd = ended.filter(r => r.type === 'vehicleGone').map(r => r.vehicle);
+  pP.sent.length = 0;
+  step(Math.round(10.5 * 30));
+  const restarted = rows();
+  results.z = {
+    hello: hello.vehicles.map(v => ({ template: v.template, pad: v.pad, live: v.live })),
+    seated, killedInHull, unseated,
+    hullRow: hullRow ? { hp: hullRow.hp, destroyed: hullRow.destroyed } : null,
+    delay, before, replaced, freshHp, maxHp: w.vehicleDamage.get(willy.owner).maxHitPoints,
+    willyId: willy.id, zeroId: zero.id, stillWilly, afterCapture,
+    roundEnded: ended.some(r => r.type === 'roundEnd'), goneAtEnd,
+    restartSpawns: restarted.filter(r => r.type === 'padSpawn').map(r => r.template),
+    restarted: restarted.some(r => r.type === 'restart'),
+    liveAfter: room.instance.table.filter(e => e.live).map(e => e.template),
+  };
+}
+
+// --- (z2) the pre-game's setTeam (SPAWN-21) -----------------------------------
+// The room loads its pads in the pre-game, so a `spawnDelayAtStart` pad with
+// its own `Object.setTeam` stands its hull at once; one with no side of its
+// own keeps the delay (`deployables.js` `preGameSetTeam`, the page's law).
+{
+  const base = buildLevelFromDescriptor({ viewerDir: VIEWER_DIR }).descriptor;
+  const pad = (vehicle, team, x) => ({
+    vehicle, team, position: [x, 0, 40], rotation: [0, 0, 0],
+    minSpawnDelay: 30, maxSpawnDelay: 30, spawnDelayAtStart: 1, controlPointName: 'North',
+  });
+  const descriptor = {
+    ...base, name: 'pregame', vehicles: undefined,
+    extras: { ...base.extras, objectSpawns: [pad('Willy', 1, 40), pad('Zero', 0, 80)] },
+  };
+  core.levels.set('pregame', buildLevelFromDescriptor({ viewerDir: VIEWER_DIR, descriptor }));
+  const pQ = attachPeer(core, String(nextTag++));
+  sendJson(pQ, MSG_JOIN, { room: 'PREGAME', name: 'Early', team: 1, level: 'pregame' });
+  const room = core.room('PREGAME');
+  results.z2 = room.pads.records.map(r => ({
+    template: r.spawn.vehicle, live: r.live.size, waiting: r.pad.delay > 0 }));
 }
 
 console.log(JSON.stringify(results));

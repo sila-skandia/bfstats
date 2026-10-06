@@ -176,7 +176,334 @@ const out = {};
 }
 
 // --- No Fly Zone's control tower, from the install -------------------------
-const [glbPath, towerPath] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const flag = name => args.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const [glbPath, towerPath] = args.filter(a => !a.startsWith('--'));
+
+// --- a spawned object's body -----------------------------------------------
+// A raft shaped like `Elco80Raft`: a 5000 kg PCO hanging four
+// `PTRaft_Floater`s (hullHeight 0.2, lift 6) at the corners of a 3.4 x 9 m
+// hull. Water at 0, the sea bed 20 m down. The float law's rest for it is
+// root y = +0.068 (`equilibriumRootY`); it is stood up 0.47 m under, where an
+// `Elco80` afloat puts it. The same raft without the bit stays where it was
+// stood; on dry land it falls to the ground.
+const { equilibriumRootY, floatNodesOf } = await imp('body-float.js');
+
+function syntheticRaft({ mobile = true } = {}) {
+  const raft = new THREE.Group();
+  raft.name = 'Elco80Raft';
+  raft.userData = { templateKind: 'PlayerControlObject',
+                    physics: { mass: 5000, drag: 0.999, vehicleCategory: 'VCSea' },
+                    armor: { hitpoints: 35, maxHitpoints: 35, criticalDamage: 10, hasArmor: true,
+                             damageFromWater: true, hpLostWhileDamageFromWater: 0.5 } };
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 9), new THREE.MeshBasicMaterial());
+  hull.position.y = 0.1;
+  raft.add(hull);
+  raft.add(collisionBox(3.4, 0.8, 9, 0.1, 45));
+  for (const [x, z] of [[1.7, 4.499], [-1.699, 4.499], [1.7, -4.5], [-1.699, -4.5]]) {
+    const float = new THREE.Object3D();
+    float.userData = { templateKind: 'FloatingBundle',
+                       physics: { hullHeight: 0.2, floatMaxLift: 6, floatMinLift: 6, sinkingSpeedMod: 0 } };
+    float.position.set(x, 0.05, z);
+    raft.add(float);
+  }
+  const emitter = new THREE.Object3D();
+  emitter.userData = { effectEmitter: {
+    template: 'Em_PTBoatSpawnRaft', timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'object', template: 'Elco80Raft', hasMobilePhysics: mobile },
+  } };
+  emitter.add(raft);
+  const bundle = new THREE.Group();
+  bundle.userData = { effectBundle: { name: 'e_PTBoatWreck' } };
+  bundle.add(emitter);
+  const root = new THREE.Group();
+  root.add(bundle);
+  return new EffectLibrary(root);
+}
+
+/** Play `name` at `at`, then tick the bodies `ticks` times; the object's y
+ *  at a few moments, and where it ends. */
+function settle(library, at, { water = 0, ground = -20, ticks = 150 } = {}) {
+  const scene = new THREE.Scene();
+  let effects = null;
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: () => false,
+    bindDynamicShading() {},
+    collider: { waterLevel: water, heightfield: { height: () => ground } },
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  effects.play('e_PTBoatWreck', { position: at, normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const [record] = objects.held;
+  if (!record) return { held: 0 };
+  const trace = [];
+  for (let t = 1; t <= ticks; t++) {
+    objects.step({ ticks: 1 });
+    if ([1, 5, 10, 15, 30, 60, ticks].includes(t)) trace.push([t, round(record.object.position.y)]);
+  }
+  const floats = floatNodesOf(record.object);
+  let hulls = 0;
+  record.object.traverse(node => { if (node.isMesh && node.userData?.collision) hulls++; });
+  return {
+    held: objects.held.length, kind: record.kind, hulls, floats: floats.length,
+    start: at[1], trace, end: round(record.object.position.y),
+    rest: Number.isFinite(water) ? round(equilibriumRootY(floats, water)) : null,
+    level: round(new THREE.Vector3(0, 1, 0).applyQuaternion(record.object.quaternion).y),
+  };
+}
+
+out.raft = {
+  float: settle(syntheticRaft(), [40, -0.47, -60]),
+  dropped: settle(syntheticRaft(), [40, 4.4, -60]),
+  immobile: settle(syntheticRaft({ mobile: false }), [40, -0.47, -60]),
+  dryLand: settle(syntheticRaft(), [40, 12, -60], { ground: 3 }),
+  noWater: settle(syntheticRaft(), [40, 12, -60], { water: null, ground: 3 }),
+};
+
+// --- the spawned object is part of the world -------------------------------
+// A level of one static (a 200 m ground slab, owner 0) and the real collider,
+// damage set and wreck module. A ruin shaped like `air_control_tower_des_wreck`
+// (999999 hit points, burning at 1000000, a 10 x 20 x 10 m hull, static) is
+// stood up at (30, 0, -30), and the raft above at (-30, -0.47, 30) over water
+// at 0. Then: a boot coming down, a round fired along the ground and one
+// fired down onto where the raft floats now, and a hit's hit points.
+const { WorldCollider } = await imp('world-collider.js');
+const { buildCollisionIndex } = await imp('static-index.js');
+const { VehicleDamageSet } = await imp('vehicle-damage.js');
+
+function collisionBox(sx, sy, sz, y, material) {
+  const geometry = new THREE.BoxGeometry(sx, sy, sz);
+  geometry.userData = { collision: true, defenseMaterial: material };
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.position.y = y;
+  mesh.userData = { collision: true };
+  return mesh;
+}
+
+function syntheticRuin() {
+  const ruin = new THREE.Group();
+  ruin.name = 'air_control_tower_des_wreck';
+  ruin.userData = { templateKind: 'PlayerControlObject', armor: {
+    hitpoints: 999999, maxHitpoints: 999999, hasArmor: true, splashMaterial: 51,
+    effects: [{ hp: 1000000, effect: 'e_PanzFire', offset: [-18.498, 3.3, -9.998] }],
+  } };
+  ruin.add(collisionBox(10, 20, 10, 10, 51));
+  const emitter = new THREE.Object3D();
+  emitter.userData = { effectEmitter: {
+    template: 'Em_air_control_tower_desWRECKPCO', timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'object', template: 'air_control_tower_des_wreck', hasMobilePhysics: false },
+  } };
+  emitter.add(ruin);
+  const bundle = new THREE.Group();
+  bundle.userData = { effectBundle: { name: 'e_air_control_tower_desWRECKPCO' } };
+  bundle.add(emitter);
+  return bundle;
+}
+
+{
+  const scene = new THREE.Scene();
+  const ground = new THREE.Group();
+  ground.name = 'ground_slab';
+  ground.add(collisionBox(200, 1, 200, -1.5, 30));
+  scene.add(ground);
+  scene.updateMatrixWorld(true);
+  const statics = buildCollisionIndex(scene, { ownerRoots: [ground] });
+  const collider = new WorldCollider({ statics, waterLevel: 0 });
+  const damage = new VehicleDamageSet();
+  const world = {
+    fireStates: new Map(), falling: new Set(), positions: new Map(), nodeOwners: new Map(),
+    addDamageable(owner, node, armor, { name = null, position = null } = {}) {
+      this.nodeOwners.set(node, owner);
+      const vehicle = damage.add(owner, armor, { name });
+      if (vehicle && position) this.positions.set(owner, position);
+      return vehicle;
+    },
+  };
+  const library = syntheticRaft();
+  library.root.add(syntheticRuin());
+  const both = new EffectLibrary(library.root);
+  let effects = null;
+  const wrecks = createVehicleWrecks({ ...wrecksPage(null), get effects() { return effects; },
+                                       world, vehicleDamage: damage, collider });
+  const roundState = { over: false };
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: node => !!node.userData?.collision,
+    bindDynamicShading() {},
+    collider, world,
+    registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
+    unregisterDamageable: owner => wrecks.unregisterDamageable(owner),
+    get roundOver() { return roundState.over; },
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library: both,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  const trisBefore = statics.count;
+  effects.play('e_air_control_tower_desWRECKPCO', { position: [30, 0, -30], normal: [0, 1, 0] });
+  effects.play('e_PTBoatWreck', { position: [-30, -0.47, 30], normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const ruinRecord = objects.held.find(r => r.object.name === 'air_control_tower_des_wreck');
+  const raftRecord = objects.held.find(r => r.object.name === 'Elco80Raft');
+  for (let t = 0; t < 90; t++) objects.step({ ticks: 1 });
+  const boot = collider.sweepSphere(30, 30, -30, 0, -1, 0, 40, 0.4);
+  const rifle = collider.cast(-20, 10, -30, 1, 0, 0, 100);
+  const rifleHit = rifle ? { owner: rifle.owner, x: round(rifle.x), material: rifle.material } : null;
+  const raftTop = collider.cast(-30, 10, 30, 0, -1, 0, 20);
+  const shot = damage.applyHit({ owner: ruinRecord.owner, damage: 50, point: [25, 10, -30] });
+  // The damage system's first pass shows the ruin's own tier.
+  const changes = damage.update(1 / 30, {});
+  const plays = [];
+  const play = effects.play.bind(effects);
+  effects.play = (name, opts) => { plays.push(name); return play(name, opts); };
+  for (const change of changes) if (change.changed) wrecks.showDamageTier(change.vehicle, change.tier);
+  effects.play = play;
+  out.world = {
+    owners: { ruin: ruinRecord.owner, raft: raftRecord.owner },
+    kinds: { ruin: ruinRecord.kind, raft: raftRecord.kind },
+    trisAdded: statics.count - trisBefore,
+    ownerNodes: statics.ownerNodes.map(n => n.name),
+    boot: boot ? { owner: boot.owner, y: round(boot.y) } : null,
+    round: rifleHit,
+    raftTop: raftTop ? { owner: raftTop.owner, y: round(raftTop.y) } : null,
+    raftY: round(raftRecord.object.position.y),
+    raftPosition: world.positions.get(raftRecord.owner)?.map(round) ?? null,
+    hit: shot ? { lost: shot.lost, hp: shot.vehicle.hitPoints } : null,
+    damageables: [...damage.byOwner.keys()].sort(),
+    tierPlays: plays,
+    startedByAdopt: objects.tiers,
+    visuals: [...wrecks.damageVisuals.entries()].map(([owner, v]) => ({ owner, spawned: v.spawned,
+                                                                         spawnDelay: v.spawnDelay })),
+  };
+
+  // --- what removes them ---------------------------------------------------
+  // The raft sinks: a killing hit, then the damage pass and the wreck clock
+  // as `vehicle-hits.js` runs them, for ten seconds. Its template's
+  // `timeToLiveAfterDeath 0` takes it on the next tick. The ruin, which
+  // writes none and is not hurt, is still standing after ten minutes; the
+  // round's end takes it.
+  globalThis.fetch = async () => ({ ok: false, json: async () => null });
+  raftRecord.object.userData.armor.timeToLiveAfterDeath = 0;
+  damage.applyHit({ owner: raftRecord.owner, damage: 100 });
+  const removal = {};
+  for (let t = 0; t < 300; t++) {
+    for (const change of damage.update(1 / 30, {})) {
+      if (change.changed) wrecks.showDamageTier(change.vehicle, change.tier);
+      if (change.died) await wrecks.wreckVehicle(change.vehicle);
+    }
+    wrecks.stepWrecks(1 / 30);
+    objects.step({ ticks: 1 });
+  }
+  const sunk = collider.cast(-30, 10, 30, 0, -1, 0, 20);
+  removal.raftHeld = objects.held.includes(raftRecord);
+  removal.raftInScene = !!raftRecord.object.parent;
+  removal.raftHit = sunk ? sunk.kind : null;
+  removal.raftDamageable = damage.byOwner.has(raftRecord.owner);
+  removal.objectsAfterRaft = effects.objects.map(o => o.name);
+  for (let t = 0; t < 30 * 600; t++) objects.step({ ticks: 1 });
+  removal.ruinAfterTenMinutes = !!ruinRecord.object.parent;
+  roundState.over = true;
+  objects.step({ ticks: 1 });
+  removal.afterRoundEnd = {
+    held: objects.held.length, objects: effects.objects.length,
+    ruinInScene: !!ruinRecord.object.parent, removed: objects.removed,
+    ruinSolid: collider.cast(-20, 10, -30, 1, 0, 0, 100)?.owner ?? null,
+    damageables: [...damage.byOwner.keys()],
+  };
+  out.removal = removal;
+}
+
+// --- a hull-less object's own tier goes with it ------------------------------
+// The ruin above without its collision box: no owner id, so no damageable,
+// and `adopt` starts its burning tier itself. The round's end removes the
+// object; the tier's run must stop with it, not burn on where it stood.
+{
+  const scene = new THREE.Scene();
+  const bundle = syntheticRuin();
+  const ruin = bundle.children[0].children[0];
+  ruin.remove(ruin.children.find(c => c.userData?.collision));
+  const fire = syntheticLibrary(['e_PanzFire']);
+  fire.root.add(bundle);
+  const library = new EffectLibrary(fire.root);
+  const roundState = { over: false };
+  let effects = null;
+  const stopped = [];
+  const objects = createEffectObjects({
+    get effects() { return effects; },
+    isCollision: node => !!node.userData?.collision,
+    bindDynamicShading() {},
+    collider: { waterLevel: 0, heightfield: { height: () => 0 }, addOwner: () => -1 },
+    registerDamageable: () => null,
+    get roundOver() { return roundState.over; },
+  });
+  effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library,
+                               onObject: (object, spec) => objects.adopt(object, spec) });
+  const play = effects.play.bind(effects);
+  effects.play = (name, opts) => {
+    const handle = play(name, opts);
+    if (handle && name === 'e_PanzFire') {
+      const stop = handle.stop;
+      handle.stop = () => { stopped.push(name); stop?.(); };
+    }
+    return handle;
+  };
+  effects.play('e_air_control_tower_desWRECKPCO', { position: [0, 0, 0], normal: [0, 1, 0] });
+  effects.advance(1 / 30);
+  const [record] = objects.held;
+  const before = { owner: record?.owner ?? null, tiers: objects.tiers, stopped: stopped.length };
+  roundState.over = true;
+  objects.step({ ticks: 1 });
+  out.hullless = { before, removed: objects.removed, held: objects.held.length, stopped };
+}
+
+// --- a PT boat killed by a round dies in the water ---------------------------
+// `vehicle-hits.js` re-picks the tier on the round that lands. Afloat, an
+// `Elco80`'s root is 1.87 m under the water, so its death is the `-1` tier
+// (ARM-11), `e_PTBoatWreck`, which leaves the raft; on land it is the `0`.
+{
+  const { createVehicleHits } = await imp('vehicle-hits.js');
+  const { VehicleDamageSet } = await imp('vehicle-damage.js');
+  const deaths = {};
+  for (const [label, y] of [['afloat', -1.87], ['beached', 2]]) {
+    const damage = new VehicleDamageSet();
+    damage.add(5, { hitpoints: 500, maxHitpoints: 500, effects: [
+      { hp: 0, effect: 'e_scrapmetal_Willy', offset: [0, 1.4, -0.5] },
+      { hp: -1, effect: 'e_PTBoatWreck', offset: [0, 1.4, 12.4] },
+    ] }, { name: 'Elco80' });
+    const hull = new THREE.Group();
+    const shown = [];
+    const page = {
+      LOCAL_PLAYER: 'local',
+      vehicles: { firerOf: () => null, instanceOf: () => null },
+      damageVisuals: new Map([[5, { node: hull }]]),
+      vehicleDamage: damage,
+      world: {
+        players: new Map(), player: () => null, armorOf: () => null,
+        collider: { waterLevel: 0, surfaceHeight: () => 0 },
+        positions: new Map([[5, [10, y, 10]]]), isWrecked: () => false, bodyWorld: null,
+      },
+      bots: [], soldier: null, soldierArmor: null, soldierDead: false,
+      optOnFoot: { checked: false }, optPilot: { checked: false },
+      guns: { materials: null, modifiers: null },
+      camera: { position: { toArray: () => [0, 0, 0] } },
+      showDamageTier: (vehicle, tier) => shown.push(tier?.threshold ?? null),
+      wreckVehicle: () => {},
+    };
+    createVehicleHits(page).applyVehicleHit({ kind: 'object', owner: 5, damage: 600, firerGroup: {} });
+    deaths[label] = shown;
+  }
+  out.boatDeath = deaths;
+}
+
+// The raft the bake made (`--raft=<effects.glb>`: `test_effect_objects.py`
+// bakes vanilla's `e_PTBoatWreck` from the install).
+const raftGlb = flag('raft');
+if (raftGlb) {
+  const gltf = await new Promise((resolve, reject) =>
+    new GLTFLoader().parse(withoutTextures(raftGlb), '', resolve, reject));
+  out.bakedRaft = settle(new EffectLibrary(gltf.scene), [40, -0.47, -60]);
+}
+
 if (glbPath && towerPath) {
   const gltf = await new Promise((resolve, reject) =>
     new GLTFLoader().parse(withoutTextures(glbPath), '', resolve, reject));
