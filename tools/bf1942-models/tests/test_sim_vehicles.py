@@ -88,6 +88,19 @@ class SimVehicleTests(unittest.TestCase):
         # top of the 51-degree face it climbs.
         self._assert_no_launch("faceHumvee", 33)
 
+    def test_a_land_hull_at_rest_on_level_ground_meets_it_with_its_springs_alone(self) -> None:
+        # The driven hull's col0 meets the terrain now; at rest on its wheels
+        # on level ground none of it may be in the ground, or the push-out
+        # would hold every hull off its springs. All ten of El Alamein's land
+        # hulls, the Sherman's turret vertex 4 cm clear the closest.
+        r = recipe("idleHulls")
+        self.assertLess(r["relief"], 0.1)
+        self.assertGreaterEqual(len(r["hulls"]), 8)
+        for hull in r["hulls"]:
+            with self.subTest(template=hull["template"]):
+                self.assertEqual(0, hull["contacts"])
+                self.assertLess(hull["speed"], 0.05)
+
     def test_a_bot_drives_a_tank_on_its_real_drive(self) -> None:
         r = recipe("drive")
         self.assertEqual(r["driveClass"], "TrackedVehicle")
