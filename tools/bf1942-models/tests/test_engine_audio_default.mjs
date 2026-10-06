@@ -129,6 +129,26 @@ const WILLY_HI = layer('hi.wav', [
   full.dispose();
 }
 
+// --- an aircraft's revs past 1.0 reach its patch -----------------------------
+//
+// DC's F-16 `EngineHigh.ssc`: the `C_F16_High` afterburner layer's volume
+// ramps in over `Engine::Rpm` 1.0..1.2, the gearbox's ceiling. The patch's
+// control 0 is `|revs|` unclamped (`Engine::updateSound` 0x0823e930), so at
+// full throttle and speed the layer sounds; clamped to 1 it never did.
+{
+  const AFTERBURNER = layer('C_F16_High.wav', [
+    { dest: 'volume', source: 'engine::rpm', envelope: 'ramp', params: [1, 1.2, 0, 1] },
+  ]);
+  const at1 = run([AFTERBURNER], 1.0);
+  assert.ok(at1.snapshot().layers[0].gain < 0.05,
+    `the afterburner layer must be silent at Rpm 1.0, got ${at1.snapshot().layers[0].gain}`);
+  at1.dispose();
+  const at12 = run([AFTERBURNER], 1.2);
+  assert.ok(at12.snapshot().layers[0].gain > 0.9,
+    `the afterburner layer must be up at Rpm 1.2, got ${at12.snapshot().layers[0].gain}`);
+  at12.dispose();
+}
+
 // --- a gun patch is a one-shot event, not a loop to un-mute -----------------
 //
 // Every layer of every vehicle weapon on Aberdeen is `loop: false` (the

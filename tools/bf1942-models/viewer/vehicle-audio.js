@@ -961,12 +961,12 @@ export class VehicleAudioRack {
     }
     return {
       dt,
-      // The already-spooled engine value, NOT the stick. Aircraft chase the
-      // pedal at Physics.con's slew rate; cars write gearbox revs; tanks
-      // write the feedbackLoop load reading. Land `.ssc` scripts read the
-      // same value as controlSource Default. A helicopter answers for the
-      // Engine its script is loaded on: that engine's own revs
-      // (`Aircraft.engineRpm`, `Engine::updateSound` `0x0823e930`).
+      // The already-spooled engine value, NOT the stick. Cars write gearbox
+      // revs; tanks write the feedbackLoop load reading. Land `.ssc` scripts
+      // read the same value as controlSource Default. An aircraft answers
+      // for the Engine its script is loaded on: that engine's own revs, up
+      // to the gearbox's 1.2 (`Aircraft.engineRpm`, `Engine::updateSound`
+      // `0x0823e930`), which is what brings in a jet's afterburner layer.
       rpm: entry.drive?.engineRpm?.(entry.engineSpec?.engine) ?? (state ? state.throttle : 0),
       speed,
       acceleration: entry.accel,
