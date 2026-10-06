@@ -548,11 +548,29 @@ headless runner (`body-world.js` and the drive classes unmodified):
   (`noteContact`). The heightfield only: a deck meets a driven hull as a
   static. An aircraft keeps the damage half alone.
 - `suspension.js` `probeAlongAxis`: the Newton answer stands where it lands
-  within 2 cm of the ground (everything a wheel normally meets, so ordinary
-  driving does not move); where it misses, the crossing is bracketed from the
-  axle and solved (Illinois regula falsi). A probe that finds no crossing in
-  reach reads no contact. This is the probe's numerics, not the spring law
-  (ground-handling's), and the hunk is that function alone.
+  within 2 cm of the ground; where it misses, the crossing is bracketed from
+  the axle and solved (Illinois regula falsi). A probe that finds no crossing
+  in reach reads no contact. This is the probe's numerics, not the spring law
+  (ground-handling's), and the hunk is that function alone. It does move
+  ordinary driving (review, 2026-10-07): with the axis leaning about 18
+  degrees or more the Newton step misses by 2 to 9 cm, and 13 to 56 % of a
+  drive's probes took the solve on the review's vanilla runs.
+
+**Vanilla before and after (review, 2026-10-07).** Willy, Sherman and
+Kubelwagen on seven vanilla levels (El Alamein, Gazala, Bocage, Kursk,
+Battle of the Bulge, Guadalcanal, Market Garden), each driven from its pad
+(idle, throttle, both turns, reverse; 15 s) and into the lattice face nearest
+6, 12, 18, 24 and 30 degrees, every tick's state compared bit for bit with
+main: 25 of 92 traces are identical, 47 differ on the probe alone and 64 on
+the hull contact alone. None gains a launch (over 6 m above the ground or
+12 m/s upward), a flip or 3 m/s of top speed that main did not have, and 28
+that main launched or flipped no longer do: main's Willy left Guadalcanal's
+pad drive at 76 m/s, 136 m up, and Market Garden's at 72 m/s, 111 m up, in
+ordinary turns. At rest on level ground no vanilla land hull's col0 is in the
+ground (`test_sim_vehicles.py`
+`test_a_land_hull_at_rest_on_level_ground_meets_it_with_its_springs_alone`;
+the Sherman's turret vertex is 4 cm clear). Driven at full throttle on level
+ground the Tiger's `TigerWheelR2_1` body part touches it on 3 to 5 ticks.
 
 **Measured** (`tests/sim_vehicles_harness.mjs` `faceWilly`, `faceM1A1`,
 `faceHumvee`; the lattice face nearest each angle, two cells, a flat run-up,
@@ -620,11 +638,32 @@ aircraft (held already), Sea Rigs' Forklifts, DC Final Al Nas's Stryker (12 m
 over the water, which the settle used to drop it into) and Medina Ridge's
 inherited hulls off the edge of its 1024 m grid (which used to free-fall).
 
+**Review (2026-10-07): `standsOverTheSea` is not the engine's.** A spawned
+hull is awake from its construction (COL-10's addendum: both `PhysicsNode`
+ctors end in `setIsAwake`, and `ObjectSpawner::spawnObject` puts nothing to
+sleep), so in the engine every placed hull falls onto whatever holds it,
+terrain or a static. The rule is a stand-in for that object contact, and it
+is not stable across a level's twins: it holds DC Final Al Nas's Stryker
+12 m over the water, while Al Nas Day 2's Stryker, on the same structure
+2 m away, has one vertex over ground above the water and is still dropped
+17 m into it (the settle census over the five trees: only those three hulls
+change, Sea Rigs' two Forklifts and Al Nas's Stryker). The engine's answer is
+the load settle meeting the statics (or at least the drivable decks, which it
+does not see either), this README's own next step; Sea Rigs'
+`rig_topside_platform1_m1` is not in the drivable set.
+
 Sea Rigs' bots change with the heightfield: its search maps are painted from
 the collider (the level ships no AI), and with a sea floor instead of a flat
 water surface a 60 s match's route failures drop from 6,283 to 3,888 and the
 bots no longer take the two LCVPs they took before (every seed alike). The
-bots package should look at it.
+bots package should look at it. The cause (review, 2026-10-07): with no
+heightfield the painter's `terrainSampler` fell back to `surfaceHeight`,
+the water plane, so every sea cell read 0 m deep and walkable; with the sea
+floor every cell off the rigs is deeper than the infantry map's 1.5 m
+(`CELL_WATER`). The infantry map's free cells drop from 10,623 to 1,840 (the
+rig decks), and the cells around the LCVPs at the waterline go from free to
+unreachable, so no foot route ends at a boat. The level ships no search map
+for its boats either (`waterNav` returns null without one).
 
 A Sherman driven off Guadalcanal's beach (the review's spot, 2528, -1060)
 used to meet the undrawn patch 40 m out, rise 11.8 m in a tick and drive
@@ -660,6 +699,20 @@ wheel's), the Mi-24 at 5.3, the AH-6 and Mi-8 level; nose-down stays the dig
 rule's. A taildragger's ground pitch is now capped at its three-point angle
 (Spitfire 15.5 degrees); the Spitfire's, B-17's and Zero's takeoffs lift off at
 the same time, speed and pitch as before.
+
+**Review (2026-10-07): those stops are not the airframes' ground attitudes.**
+The contacts' floor is lowered by `groundClearance + lowest contact` (the
+parked springs' sag, 0.34 m on the AH-64, 0.22 m on the Mi-24, 0.37 m on
+the Spitfire) and the turn is about the origin, not the main gear. On the
+real glbs (DC El Alamein, vanilla El Alamein) the engine-law parked settle
+stands the AH-64 at 3.3 degrees, the Mi-24 at 2.7 and the Spitfire at 11.9
+(the drawn wheels' three-point geometry: 3.6, 2.9 and 13.0); the stops are
+5.5, 5.3 and 15.5, with the aft wheel 0.2 to 0.4 m under the real ground.
+After the stop the AH-64 levels to 0 degrees over 4 s with its tail wheel
+0.33 m in the air, as it does on main from rest; the Mi-24 holds about 4.6
+with its rear wheels 0.16 m in the ground. Main stood both on their tails
+(53 and 43 degrees), so this is far better, but it is not yet the attitude
+the springs give.
 
 ### Still open
 
