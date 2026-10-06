@@ -19,6 +19,7 @@ import {
 import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
+import { inWaterOwners } from './world-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -198,7 +199,10 @@ export function createVehicleHits(page) {
     // Straight to `update(0)` rather than waiting for the next frame: a killing
     // shot should explode on the frame it lands, not one frame later. A zero dt
     // cannot advance the burn accumulator, so this only re-picks the tier.
-    const result = vehicle.update(0);
+    // In the water a death is the `-1` tier (ARM-11: `Armor+0x10`), which is
+    // what leaves a PT boat's raft; the world's own water test decides it.
+    const inWater = !!(page.world && inWaterOwners(page.world)?.has(vehicle.owner));
+    const result = vehicle.update(0, { inWater });
     if (result.changed) page.showDamageTier(vehicle, result.tier);
     if (result.died) page.wreckVehicle(vehicle);
   }

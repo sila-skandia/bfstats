@@ -54,6 +54,58 @@ class RespawnMaterialTests(unittest.TestCase):
         self.assertEqual(SMOKE, run["smoke"])
 
 
+class AfterDeathClockTests(unittest.TestCase):
+    """How long a destroyed object stays, and how it goes (ledger HP-19):
+    `SimpleObject::handleUpdate` (lnxded 0x081db2e0) counts the template's
+    `timeToLiveAfterDeath` down and has the server destroy it at 0, fading it
+    out from `timeToStartFadeAfterDeath` when `fadeAtTimeToLiveAfterDeath` is
+    on. Ticked at 30 Hz from the death."""
+
+    runs: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.runs = run_harness()["afterDeath"]
+
+    def test_a_template_that_writes_nothing_stays_10_s_and_fades_from_8(self) -> None:
+        # Vanilla's Sherman, Humvee, every hull without the words: the
+        # template constructor's 10 and 8 (0x081dbdc6, 0x081dbdd7).
+        run = self.runs["unwritten"]
+        self.assertAlmostEqual(8.033, run["fadeStart"], delta=0.001)
+        self.assertAlmostEqual(10.033, run["removedAt"], delta=0.001)
+        self.assertFalse(run["shown"])
+        self.assertEqual(30, run["respawnIn"])
+
+    def test_no_fade_stays_whole_to_the_end(self) -> None:
+        # Vanilla's Defgun: 85 s, `fadeAtTimeToLiveAfterDeath 0`.
+        run = self.runs["noFade"]
+        self.assertIsNone(run["fadeStart"])
+        self.assertAlmostEqual(85.033, run["removedAt"], delta=0.001)
+
+    def test_zero_removes_it_on_the_next_tick(self) -> None:
+        # No Fly Zone's control tower, its own ruin left standing in its place.
+        run = self.runs["zero"]
+        self.assertIsNone(run["fadeStart"])
+        self.assertAlmostEqual(0.033, run["removedAt"], delta=0.001)
+        self.assertFalse(run["shown"])
+
+    def test_a_late_fade_start_is_read(self) -> None:
+        # Desert Combat's bomb craters: 60 s, fading from 55.
+        run = self.runs["crater"]
+        self.assertAlmostEqual(55.033, run["fadeStart"], delta=0.001)
+        self.assertAlmostEqual(60.033, run["removedAt"], delta=0.001)
+
+    def test_reset_when_removed_and_stay_as_destroyed(self) -> None:
+        self.assertEqual(0, self.runs["reset"]["respawnIn"])
+        self.assertIsNone(self.runs["stay"]["removedAt"])
+        self.assertTrue(self.runs["stay"]["shown"])
+
+    def test_a_wreck_glb_that_arrives_after_the_end_stands_nothing_up(self) -> None:
+        late = run_harness()["lateWreck"]
+        self.assertEqual({"latchTick": {"removed": False}, "removed": True, "drawn": False,
+                          "wreckAfterLoad": False, "drawnAfterLoad": False}, late)
+
+
 class WreckLookupTests(unittest.TestCase):
     """Where a wreck is fetched from (`wreckUrls`).
 

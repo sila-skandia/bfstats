@@ -281,7 +281,14 @@ def emitter_spec(emitter: con_mod.ObjectTemplate,
     """
     props = emitter.effect_props
     if _truthy(props.get("isspawneffect", "0")):
-        particle = {"kind": "object", "template": payload.name}
+        # `hasMobilePhysics` decides the spawned object's body as it decides
+        # any object's (PHY-17): clear, the template default and what Desert
+        # Combat's ruins write, is a static node that never moves; set, as on
+        # both PT boat rafts, is a mobile node its floats act on. The viewer
+        # reads it here, so a bake carries it whatever the object's own
+        # extras say.
+        particle = {"kind": "object", "template": payload.name,
+                    "hasMobilePhysics": bool(payload.has_mobile_physics)}
     else:
         particle = particle_spec(payload)
     if particle is None:

@@ -8610,6 +8610,15 @@
    "note": "lnxded. GameServer vtable +0x278; sets game status 3 (PreGame) through vt+0x78. restartMap calls it (0x08158050) after the control-point and spawner resets."
   },
   {
+   "address": "0x081578f0",
+   "name": "dice::bf::GameServer::clearWorld()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. Ledger HP-20: kills every living player, destroys every parentless PCO in objectManager->getPcoMap() (vt+0x8c), then every registered object whose template is a Kit (0x9496) or answers template vt+0x20 with bit 7 set, each via GameServer::destroyObject (vt+0x54). Called by gameStatusFirstEndGame 0x08152a60 and restartMap 0x08157cb0."
+  },
+  {
    "address": "0x08157cb0",
    "name": "dice::bf::GameServer::restartMap()",
    "kind": "function",
@@ -9821,8 +9830,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-19-damage",
-   "note": "lnxded. THE WRECK-RESPAWN TIMER, not a per-frame flag clear: the writes of 0 to +0xed/+0xee at 0x081db3f1/0x081db3f8 sit behind six conditions - +0xed != 0 (0x081db33e), template+0x107 == 0, +0x100 already latched by a previous update, a countdown [this+0xfc] -= dt falling below zero (0x081db39f-0x081db3b1), template+0xd0 != 0, and an Armor present - and are followed by Armor::setHitPoints(Armor::getMaxHitPoints()) (vtable +0x18/+0x14) and a reload of the timer from template+0xc4. So +0xed/+0xee are PERSISTENT state for the whole wrecked lifetime, which is what makes ledger HP-15 retire ARM-6."
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. The after-death clock (ledger HP-19): once +0xed (dead) is set and template+0x107 (stayAsDestroyed) is clear, a one-tick latch (+0x100), server only for a networked object, then [this+0xfc] -= dt. At !(timer > 0): template+0xd0 (resetWhenRemoved) clear -> game vt+0x54 GameServer::destroyObject(this) at 0x081db533; set -> HP back to max, +0xed/+0xee cleared, timer reloaded from template+0xc4 (the clears HP-15 found). Fade when template+0xc8: timer < (template+0xc4 - template+0xcc) -> LOD alpha timer/span*255. PlayerControlObject vt+0x54 is this function."
   },
   {
    "address": "0x081db820",
@@ -9931,6 +9940,15 @@
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
    "note": "lnxded, 89 lines. Appends to three parallel per-template vectors -- +0x98 vector<string> (effect name), +0xa4 vector<Vec3> (attach offset), +0xb0 vector<int> (HP threshold) -- confirmed by the mangled _M_insert_aux callees. Separate from setArmorComponent's 23 fixed setters (HP-3). See ledger ARM-1."
+  },
+  {
+   "address": "0x081ddfb0",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setSinkInToLandAfterDeathSpeed(float)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "spawned-objects-2026-10-07",
+   "note": "lnxded. Keeps no speed: writes +0xc4 = 10.0 (timeToLiveAfterDeath), +0xcc = 8.0 (timeToStartFadeAfterDeath), +0xc8 = 1 (fadeAtTimeToLiveAfterDeath). Ledger HP-19."
   },
   {
    "address": "0x081e1460",

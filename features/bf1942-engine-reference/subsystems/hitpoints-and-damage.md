@@ -577,6 +577,18 @@ reloads the timer from `template+0xc4`. So the state lasts the whole wrecked
 lifetime. `EngineNetworkable::updateStateMask` reads `+0xee`, so it is
 replicated.
 
+**Correction (2026-10-07, HP-19).** That timer is the object's
+`timeToLiveAfterDeath` (`+0xc4`, 10 s unless written), and the clears are the
+`resetWhenRemoved` (`+0xd0`) branch, which no vanilla, expansion or Desert
+Combat PlayerControlObject sets. With the word clear the same branch calls
+`GameServer::destroyObject` instead: a destroyed hull, gun or objective is
+removed from the world `timeToLiveAfterDeath` after it dies, fading over the
+last `timeToLiveAfterDeath - timeToStartFadeAfterDeath` seconds (8 s by
+default) when `fadeAtTimeToLiveAfterDeath` is on, and never when
+`stayAsDestroyed` is set. The end of a round removes every root
+PlayerControlObject whatever its clock (HP-20). What a spawn effect stands up
+goes the same two ways and no other (EMT-11).
+
 What a client HUD does on receipt of the three ids is still unread.
 
 ### Client: local-player death opens the deploy screen synchronously (2026-09-18)
