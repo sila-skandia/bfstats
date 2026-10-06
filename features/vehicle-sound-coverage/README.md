@@ -1031,3 +1031,12 @@ shared maps tree is never written. It boards a hull and reads
 * FloatingBundle and Camera inherit the RotationalBundle rule if their
   `handleUpdate` chains to it (not checked). No surveyed tree binds a script
   to either.
+* A turret re-posed in one frame (a replay's seek) reads as a turn at
+  thousands of deg/s and opens its servo for that frame; only the gear has
+  the `GEAR_SNAP` guard. A blip, not a drone.
+* `resolveAcross` spans the rack only. A ship's or a PT boat's flag
+  (`flag.ssc`, `flag.mp3` at rate 1, faded out by 15 m) and the area pool's
+  control-point flags loop one sample at one rate in two systems, so standing
+  within 15 m of both would comb. No case was met. DC and DC Final also
+  place `VEFTRTYAW2` as an area sound on a few levels (not checked against a
+  turret's rate).
