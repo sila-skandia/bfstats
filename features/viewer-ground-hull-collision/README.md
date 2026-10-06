@@ -633,7 +633,8 @@ Sherman 22, Tiger 45, T-72 34, M1A1 33, BMP-2 39 and M2A3 37. Top speed, reverse
 vanilla, XPack1, XPack2 and DC fleets.
 
 **The wheels a `.con` hides.** `createInvisible 1` stops an object being
-drawn, not being built, and the exporter dropped every invisible template. It
+drawn, not being built (PHY-24: it withholds the object's drawable flag and
+nothing else), and the exporter dropped every invisible template. It
 now keeps an invisible `Spring` as an undrawn node, with its physics, its
 geometry's name and its collision probes (`bf42/assemble.py` `build_node`),
 and leaves out anything else hidden. Six vehicles are affected (a census of
