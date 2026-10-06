@@ -1062,7 +1062,7 @@ export class Aircraft extends Vehicle {
       s.position.y = floor + k.groundClearance;
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
-      this.settle(h);
+      this.settle(h, floor);
       if (this.vectored) this.groundFriction(h);
     } else {
       s.grounded = false;
@@ -1332,12 +1332,20 @@ export class Aircraft extends Vehicle {
    * load-bearing for a takeoff and are stood in for here: the wheels hold the
    * wings level, and they stop the nose digging into the strip.
    *
-   * Pitch-*up* is left entirely alone, and deliberately: rotation is the
-   * aircraft turning about its main wheels under elevator authority, and a
-   * ground constraint that damped it would mean an aircraft that can never
-   * leave the ground.
+   * Pitch-*up* is not damped, and deliberately: rotation is the aircraft
+   * turning about its main wheels under elevator authority, and a ground
+   * constraint that damped it would mean an aircraft that can never leave the
+   * ground. What does stop it is the wheel it turns ONTO: `checkVsTerrain`
+   * (`0x0825a960`) drops each spring's col0 vertex on the ground, `impulseOn`
+   * pushes it out and `solveImpulse` posts half its closing speed back at the
+   * contact every tick (collision-response.md sections 6.3, 6.4 and 7). With
+   * the origin held on its clamp (the main gear's stand-in), that answer at an
+   * aft contact is a nose-down turn about the origin, so a hull turning nose-up
+   * stops on its tail wheel or rear skids: the Spitfire at 15.5 degrees, the
+   * AH-64 at 5.75, the AH-6 at once. Before, nothing stopped it, and a
+   * helicopter set down with a pitch rate stood itself on its tail.
    */
-  settle(h) {
+  settle(h, floor = NaN) {
     const s = this.state;
     _g1.copy(FORWARD).applyQuaternion(s.orientation);
     const digging = _g1.y < 0;
@@ -1357,6 +1365,41 @@ export class Aircraft extends Vehicle {
     _omega.z *= Math.exp(-h / GROUND_LEVEL_TAU);
     if (digging && _omega.x < 0) _omega.x = 0;
     s.angularVelocity.copy(_omega).applyQuaternion(s.orientation);
+
+    // The wheels a nose-up turn drives into the ground (the doc comment).
+    // Each contact's push is a turn about the body's X axis; only the
+    // nose-down half is taken, since a nose-down turn into the ground is the
+    // dig rule's above. The engine's half per 30 Hz tick, per sub-step.
+    const wheels = this.spec.wheels;
+    if (!wheels?.length || !Number.isFinite(floor)) return;
+    // The contacts' floor is the clamp's: a wheel with no mesh of its own
+    // (the AH-6's skids) has its contact at the spring node, deeper than the
+    // clearance the clamp holds the origin at, and it must not read that as
+    // being in the ground at rest.
+    let low = 0;
+    for (const wheel of wheels) low = Math.min(low, wheel.contact[1]);
+    const ground = floor + Math.min(0, this.spec.groundClearance + low);
+    const keep = 1 - Math.pow(0.5, h * 30);
+    _g2.set(1, 0, 0).applyQuaternion(s.orientation);     // the pitch axis, world
+    let push = 0;
+    let rate = 0;
+    for (const wheel of wheels) {
+      _r.set(wheel.contact[0], wheel.contact[1], wheel.contact[2]).applyQuaternion(s.orientation);
+      const depth = s.position.y + _r.y - ground;
+      if (!(depth < 0)) continue;
+      // How fast a unit (nose-up) pitch rate moves this contact up:
+      // (axis x r).y. An aft contact's is negative, and only a nose-down
+      // turn lifts it.
+      const lever = _g2.z * _r.x - _g2.x * _r.z;
+      if (!(lever < -0.05)) continue;
+      push = Math.min(push, -depth / lever);
+      const closing = s.velocity.y + (s.angularVelocity.z * _r.x - s.angularVelocity.x * _r.z);
+      if (closing < 0) rate = Math.min(rate, -keep * closing / lever);
+    }
+    if (rate < 0) s.angularVelocity.addScaledVector(_g2, rate);
+    if (push < 0) {
+      s.orientation.premultiply(_spin.setFromAxisAngle(_g2, push)).normalize();
+    }
   }
 
   /** Park the aircraft on the strip at its spawn, nose level, and step out. */
