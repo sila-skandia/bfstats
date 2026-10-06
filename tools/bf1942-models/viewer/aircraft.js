@@ -657,6 +657,14 @@ export function aircraftSpec(root, options = {}) {
   });
   if (!engines.length) return null;
   const vectored = engines.some(engine => engine.offNose > LIFT_ENGINE_ANGLE);
+  // The engine's box (COL-14). The search without the selector classes finds
+  // the cockpit LOD of every fixed-wing aircraft in vanilla, XPack1, XPack2,
+  // DC and DC Final, and the control stick of DC's AH-6 family, so a
+  // helicopter takes it only from a tree the exporter has stamped with each
+  // LodObject's `selectorKind`; an older tree keeps the whole-tree box.
+  let stamped = false;
+  root.traverse(node => { if (node.userData?.selectorKind !== undefined) stamped = true; });
+  const box = !vectored || stamped ? inertiaGeometryBox(root, options.collisionMeshes ?? null) : null;
   return {
     mass: physics.mass,
     drag: physics.drag ?? CORSAIR.drag,
@@ -667,7 +675,7 @@ export function aircraftSpec(root, options = {}) {
     ...(vectored ? { vectored: true } : {}),
     gravity: GRAVITY,
     inertiaModifier: physics.inertiaModifier || [1, 1, 1],
-    size: inertiaGeometryBox(root, options.collisionMeshes ?? null) ?? hullGeometry(root).size,
+    size: box ?? hullGeometry(root).size,
     groundClearance: Number.isFinite(wheelBottom) && wheelBottom < 0 ? -wheelBottom : CORSAIR.groundClearance,
     throttleRate,
     gear,
@@ -934,53 +942,63 @@ export class Aircraft extends Vehicle {
   }
 
   /**
-   * One step. Order matters: the regulator reads where the surfaces are, the
-   * surfaces then move toward their commands, and only then does the model read
-   * them — so a slammed stick still takes the config's declared time to become
-   * a control moment.
+   * One tick, or as many as `dt` holds.
+   *
+   * An aircraft (`engineLaw`) runs the engine's tick whole, once per
+   * `1/ENGINE_TICK` of `dt`, so `integrate(0.1)` is exactly three
+   * `integrate(1/30)`: each Engine's `handleUpdate` first (its throttle axis
+   * and gearbox, on the load the previous tick's thrust left), then the root's
+   * one integration step (`step`), then the gear (`LandingGear::handleUpdate`).
+   * A table flown on the pedal (a ship's) keeps its spool, its own gearbox
+   * (`advanceEngines`) and its sub-steps.
    */
   integrate(dt) {
     const s = this.state;
     const k = this.spec;
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
 
-    // A table flown on the pedal (a ship's) spools it: `throttleMin` -1 for a
-    // ship, whose Engine declares `setMinRotation 0/0/-4000` and whose
-    // `K = 0.1*|throttle| + e*|e|` is signed, so a negative throttle is
-    // astern; then the ship's gearbox in `Engine::handleUpdate`'s slot, once
-    // per engine tick on the load the previous tick left (`ship.js`,
-    // `engine-revs.js`, ledger TANK-12/TANK-13).
-    if (!this.engineLaw) {
+    if (this.engineLaw) {
+      const ticks = Math.max(1, Math.round(dt * ENGINE_TICK));
+      const h = dt / ticks;
+      for (let i = 0; i < ticks; i++) {
+        // Each Engine's own roll axis takes `c_PIThrottle`
+        // (`calculateAndClipAngle`, GUN-2: under `setAutomaticReset 1` it
+        // ramps to `input * maxRotation` at `|acceleration|` and back to rest
+        // when the key is let go, clipped into `[minRotation, maxRotation]`),
+        // `T1` is that angle over `maxRotation.z`, and the revs chase
+        // `2*(T1 - L)` (TANK-12). A Corsair's W takes five seconds to open
+        // fully and S closes it to `T1 = -0.6`, reverse thrust.
+        for (const engine of this.lawEngines) {
+          engine.advance(h, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+        }
+        this.step(h);
+        this.autoGear();
+      }
+      // What the propeller or rotor turns at and the note reads is the rev
+      // state, not the key: `Engine::updateSound` (lnxded `0x0823e930`) hands
+      // the patch `|PhysicsEngine+0xa0|` as its control 0, `Engine::Rpm`, and
+      // stops the patch while `Engine+0x142` is clear; the spin is the same
+      // revs (`PhysicsEngine::updatePhysics`'s tail, `0x0824cc9c`).
+      if (this.rotorEngine) s.throttle = clamp(Math.abs(this.rotorEngine.revs), 0, 1);
+      this.advancePropeller(dt, this.engineRunning);
+    } else {
+      // A ship's pedal spools: `throttleMin` -1, whose Engine declares
+      // `setMinRotation 0/0/-4000` and whose `K = 0.1*|throttle| + e*|e|` is
+      // signed, so a negative throttle is astern; then its gearbox in
+      // `Engine::handleUpdate`'s slot, once per engine tick on the load the
+      // previous tick left (`ship.js`, `engine-revs.js`, TANK-12/TANK-13).
       const wanted = clamp(this.input('c_PIThrottle'), k.throttleMin ?? 0, 1);
       const gap = wanted - s.throttle;
       const spool = k.throttleRate * dt;
       s.throttle = Math.abs(gap) <= spool ? wanted : s.throttle + Math.sign(gap) * spool;
+      this.advanceEngines(dt);
+      this.advancePropeller(dt, true);
+      const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
+      const h = dt / steps;
+      for (let i = 0; i < steps; i++) this.step(h);
+      this.autoGear();
     }
-    this.advanceEngines(dt);
-    // An aircraft's gearboxes, one per engine, in the same slot: each
-    // Engine's own roll axis takes `c_PIThrottle` (`calculateAndClipAngle`,
-    // GUN-2: under `setAutomaticReset 1` it ramps to `input * maxRotation` at
-    // `|acceleration|` and back to rest when the key is let go, clipped into
-    // `[minRotation, maxRotation]`), `T1` is that angle over `maxRotation.z`,
-    // and the revs chase `2*(T1 - L)` (TANK-12). A Corsair's W takes five
-    // seconds to open fully and S closes it to `T1 = -0.6`, reverse thrust.
-    for (const engine of this.lawEngines) {
-      engine.advance(dt, engine.input ? this.input(engine.input) : 0, this.engineRunning);
-    }
-    // What the propeller or rotor turns at and the note reads is the rev
-    // state, not the key: `Engine::updateSound` (lnxded `0x0823e930`) hands
-    // the patch `|PhysicsEngine+0xa0|` as its control 0, `Engine::Rpm`, and
-    // stops the patch while `Engine+0x142` is clear; the spin is the same
-    // revs (`PhysicsEngine::updatePhysics`'s tail, `0x0824cc9c`).
-    if (this.rotorEngine) s.throttle = clamp(Math.abs(this.rotorEngine.revs), 0, 1);
-    this.advancePropeller(dt, this.engineLaw ? this.engineRunning : true);
-
-    const steps = this.engineLaw ? Math.max(1, Math.round(dt * ENGINE_TICK))
-      : Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
-    const h = dt / steps;
-    for (let i = 0; i < steps; i++) this.step(h);
     s.airspeed = s.velocity.length();
-    this.autoGear();
 
     this.applyTransform();
     this.applyRig();

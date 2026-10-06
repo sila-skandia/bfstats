@@ -249,12 +249,13 @@ class FlightModelTests(unittest.TestCase):
         # a frame and it travelled at 120 deg/s against `setMaxSpeed 60`.
         #
         # Elevator: 60 deg/s over a 20 degree half-range is 3 of normalised
-        # travel a second, so 1/12 s is 0.25. Reading 0.5 is the defect back.
+        # travel a second, so three 30 Hz ticks are 0.3. Reading 0.6 is the
+        # defect back.
         rig = self.results["rig"]
-        self.assertAlmostEqual(-0.25, rig["elevator"], places=3)
+        self.assertAlmostEqual(-0.3, rig["elevator"], places=3)
         # The ailerons are a mirrored pair too, but they are keyed together and
-        # were always right: 120 deg/s over 30 is 4, so 1/12 s is a third.
-        self.assertAlmostEqual(1 / 3, rig["aileron"], places=3)
+        # were always right: 120 deg/s over 30 is 4, so 0.1 s is 0.4.
+        self.assertAlmostEqual(0.4, rig["aileron"], places=3)
         # And a second later everything is at the stop.
         self.assertAlmostEqual(-1.0, rig["stops"]["c_PIPitch"], places=6)
         self.assertAlmostEqual(1.0, rig["stops"]["c_PIRoll"], places=6)
@@ -334,16 +335,19 @@ class FlightModelTests(unittest.TestCase):
         # The kind narrows; it does not disarm the real swap.
         self.assertEqual(1, blur["compareSelectorIsStillAPair"])
 
-    def test_the_inertia_is_the_box_estimate_times_the_authored_modifier(self) -> None:
-        # `inertiaModifier 1.05/0.850/0.94` is yaw/pitch/roll [data]; the
-        # solid-box base it multiplies is the last free number in the model.
+    def test_the_inertia_is_the_engines_geometry_inertia(self) -> None:
+        # `getGeometryInertia` (lnxded 0x08253930, COL-8): (DY^2+DZ^2)/3 and
+        # its two siblings off `Corsair_Hull_M1`'s `.sm` header box, 11.04 x
+        # 2.85 x 8.05 m (COL-14), times `inertiaModifier 1.05/0.850/0.94` read
+        # as x/y/z, so 1.05 is the PITCH axis (COL-13). Times the mass, which
+        # cancels out of the rotation. There is no free number left in it; the
+        # solid box (/12) and the yaw/pitch/roll reading it replaces gave
+        # 20126 / 56938 / 32481.
         inertia = self.results["inertia"]
-        self.assertAlmostEqual(20126, inertia["pitch"], delta=2)
-        self.assertAlmostEqual(56938, inertia["yaw"], delta=2)
-        self.assertAlmostEqual(32481, inertia["roll"], delta=2)
-        # A Corsair is nearly three times as stiff in yaw as in pitch, which is
-        # why one weathervane gain for both axes was always wrong.
-        self.assertGreater(inertia["yaw"], 2.5 * inertia["pitch"])
+        self.assertAlmostEqual(63859, inertia["pitch"], delta=2)
+        self.assertAlmostEqual(132333, inertia["yaw"], delta=2)
+        self.assertAlmostEqual(101893, inertia["roll"], delta=2)
+        self.assertGreater(inertia["yaw"], 2 * inertia["pitch"])
 
     # --- thrust, read at 0x0057bfb0 ----------------------------------------
 
@@ -398,13 +402,15 @@ class FlightModelTests(unittest.TestCase):
         # `HullWing` steers at all.
         self.assertAlmostEqual(10.0, self.results["submergedMedium"], places=4)
 
-    def test_the_service_ceiling_is_the_air_density_height(self) -> None:
-        # Flown, not computed: a best-effort full-throttle climb has to stall
-        # out just short of 1000 m, because that is where a Refractor wing
-        # stops making lift entirely.
+    def test_the_service_ceiling_is_under_the_air_density_height(self) -> None:
+        # Flown, not computed: a full-throttle climb on a 10 degree path stalls
+        # out short of 1000 m, where a Refractor wing stops making lift
+        # entirely. Under the box drag and the gearbox's revs it gets to 784 m
+        # (770 at best on any fixed path angle); the pedal-on-the-thrust-law
+        # model on the fitted `-drag v` reached 989.
         ceiling = self.results["serviceCeiling"]
         self.assertLess(ceiling["best"], CEILING)
-        self.assertGreater(ceiling["best"], 900.0)
+        self.assertGreater(ceiling["best"], 700.0)
 
     # --- the Spitfire on its own data (ledger AI-75) -----------------------
 
@@ -428,8 +434,10 @@ class FlightModelTests(unittest.TestCase):
 
     def test_the_spitfire_pitch_rate_per_full_stick(self) -> None:
         # Measured, not fitted: a second after a full stick, from a second of
-        # hands-off flight at the speed. The Spitfire pitches slower than the
-        # Corsair table it used to borrow (its tail is longer, so it damps more).
+        # hands-off flight at the speed (28 / 48 deg/s up at 40 / 60 m/s).
+        # The Corsair pitches slower at 40: its pitch axis is the heavy one
+        # under the engine's x/y/z reading (1.05 against the Spitfire's 0.85,
+        # COL-13).
         s = self.results["spitfire"]
         self.assertGreater(s["pitchUp40"], 20.0)
         self.assertLess(s["pitchUp40"], 40.0)
@@ -437,7 +445,7 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(s["pitchUp60"], 30.0)
         self.assertLess(s["pitchUp60"], 60.0)
         self.assertLess(s["pitchDown60"], -20.0)
-        self.assertLess(s["pitchUp40"], s["corsairUp40"])
+        self.assertLess(s["corsairUp40"], s["pitchUp40"])
 
     def test_the_engine_plane_law_closes_on_the_spitfire(self) -> None:
         # `aimAtDirection` -> `towardsDirection` on the Spitfire's own
@@ -451,62 +459,89 @@ class FlightModelTests(unittest.TestCase):
             self.assertLess(case["settledAt"], limit)
             self.assertLess(case["overshoot"], 2.0)
 
-    def test_the_box_drag_law_brackets_the_ai_maxspeed(self) -> None:
-        # Under `PhysicsNode`'s box law (physics.md s3) the Spitfire's level
-        # top speed brackets its AI `maxSpeed` of 60, as the Corsair's does its
-        # 55 under the fitted `-drag v`; under `-drag v` it topped out near 47.
+    def test_the_drag_matches_the_real_games(self) -> None:
+        # The real game, recorded: in the lab's bots-only El Alamein rounds
+        # (`20261004-180859-parity-elalamein-rec`, both `projpool` runs; about
+        # 210,000 airborne Spitfire samples) the drag a Spitfire feels in
+        # near-level, unbanked flight is the engine law's thrust on its own
+        # RECORDED revs, less its acceleration and the climb's share of g.
+        # The medians, at 120-130 m: 2.15 m/s^2 at 45-50 m/s, 2.97 at 55-60,
+        # 3.53 at 60-65 (flight-model.md section 10). The same airframe here,
+        # held level at the speed by its own throttle, needs 2.22 / 2.82 /
+        # 3.20: the box drag on the `.sm` header box plus every Wing's lift.
+        # The bots fly with their controls moving, which costs drag the held
+        # fixture does not pay, so the bound is 12% either way.
+        curve = self.results["spitfire"]["dragCurve"]
+        for speed, retail in (("47.5", 2.15), ("57.5", 2.97), ("62.5", 3.53)):
+            self.assertLess(curve[speed]["held"], 0.5, speed)
+            self.assertAlmostEqual(retail, curve[speed]["drag"], delta=0.12 * retail, msg=speed)
+
+    def test_the_spitfire_outruns_its_ai_maxspeed(self) -> None:
+        # Full throttle on the level: 69 m/s at the deck, 75 at 200 m, against
+        # the AI's `maxSpeed` 60 (which the real game's fighters and jets both
+        # exceed: the recorded Spitfire holds revs 1.2 at 70-75 m/s near
+        # level). Under the pedal-on-the-thrust-law throttle and the solid box
+        # it was 57.7 / 64.1; the gearbox's revs pass 1.0 (TANK-12).
         s = self.results["spitfire"]
-        self.assertLess(s["top40"], 62.0)
-        self.assertGreater(s["top40"], 54.0)
+        self.assertAlmostEqual(69.0, s["top40"], delta=2.0)
         self.assertGreater(s["top200"], s["top40"])
-        self.assertGreater(s["top200"], 60.0)
 
     # --- level flight ------------------------------------------------------
 
-    def test_level_top_speed_brackets_the_ai_maxspeed(self) -> None:
-        # `aiTemplatePlugIn.maxSpeed` for the Corsair is 55.0 (Ai/Objects.con).
-        # Nothing here was tuned to it: top speed is thrust against linear drag
-        # and the fade is scaled by an air density that thins with height, so
-        # the aircraft is slower at the deck and faster upstairs, and 55.0 is
-        # between them.
+    def test_level_top_speed_is_the_gearboxs_not_the_ai_maxspeed(self) -> None:
+        # Full throttle, held level: 68.8 m/s at 40 m and 76.1 at 200 m, the
+        # engine's thrust on its gearbox's revs (1.2 at the top, TANK-12)
+        # against the box drag. The AI's `maxSpeed` 55 is not a top speed: the
+        # lab's recorded Corsairs hold revs 1.2 at 70-80 m/s near level (Wake
+        # and Midway). The pedal-on-the-thrust-law model topped out at 49.4 /
+        # 55.8 on the fitted `-drag v`.
         speeds = {row["altitude"]: row["speed"] for row in self.results["topSpeed"]}
-        self.assertLess(speeds[40], 55.0)
-        self.assertGreater(speeds[200], 55.0)
-        self.assertAlmostEqual(49.4, speeds[40], delta=2.0)
-        self.assertAlmostEqual(57.0, speeds[200], delta=3.0)
+        self.assertAlmostEqual(68.8, speeds[40], delta=2.0)
+        self.assertGreater(speeds[200], speeds[40])
 
-    def test_the_hands_off_trim_is_a_real_equilibrium(self) -> None:
-        # It converges and then holds: ninety more seconds move the sink rate
-        # by less than a centimetre a second. What it converges *to* is a
-        # shallow powered descent rather than level flight, because thrust is
-        # applied at the propeller hub 0.446 m above the centre of mass and
-        # that nose-down moment costs about a quarter degree of trimmed alpha.
+    def test_the_hands_off_trim_is_near_level_flight(self) -> None:
+        # Hands off at full throttle from 49.4 m/s at 40 m: four minutes on it
+        # is at 74 m/s climbing well under a degree (+0.7 m/s), and the last
+        # ninety seconds move the climb by under half a metre a second. Under
+        # the pedal-on-the-thrust-law throttle it settled into a 6.6 degree
+        # powered descent at 57.7; the gearbox's revs at the top (1.2) are
+        # the difference. flight-model.md's sections 4c and 5 expected a
+        # Corsair to hold altitude hands-off, and the retail game was filmed
+        # doing it.
         trim = self.results["trim"]
-        self.assertLess(trim["settled"], 0.05)
-        self.assertLess(trim["vy"], 0.0)
-        self.assertGreater(trim["vy"], -12.0)
+        self.assertLess(trim["settled"], 0.5)
+        self.assertLess(abs(trim["vy"]), 1.5)
+        self.assertLess(abs(trim["path"]), 2.0)
         # The nose stays on the flight path through all of it.
         self.assertLess(abs(trim["alpha"]), 1.0)
-        # And the regulator is servoing rather than parked on a stop.
-        self.assertLess(abs(trim["regulator"]), 2.0)
+        # And the regulator's servo is inside its +-2 degrees.
+        self.assertLessEqual(abs(trim["regulator"]), 2.0)
 
-    def test_a_little_back_stick_holds_height(self) -> None:
-        # The descent is shallow enough to fly out of with a fraction of the
-        # elevator: hands off it sinks, a twentieth of the stick is level, a
-        # tenth climbs.
+    def test_a_little_back_stick_climbs_where_hands_off_sinks(self) -> None:
+        # At 400 m, where the air gives the wings 0.6 of their lift, hands off
+        # sinks (166 m in 30 s); a twentieth of the elevator climbs (50 m) and
+        # a tenth climbs more (185 m).
         stick = {row["stick"]: row for row in self.results["levelStick"]}
         self.assertGreater(stick[0]["drop"], 50.0)
-        self.assertLess(abs(stick[-0.05]["vy"]), 2.0)
-        self.assertGreater(stick[-0.1]["vy"], 2.0)
+        self.assertLess(stick[-0.05]["drop"], 0.0)
+        self.assertLess(stick[-0.1]["drop"], stick[-0.05]["drop"])
 
-    def test_terminal_dive_is_capped_by_the_propeller_not_by_drag(self) -> None:
-        # g/drag is 226 m/s and the old model reached it. It is not reachable
-        # now: past the fade speed the signed square turns the propeller into
-        # a brake worth several g, and a held vertical dive settles near 54.
+    def test_a_closed_throttle_dive_windmills_the_engine(self) -> None:
+        # Held vertical at idle from 900 m, the dive settles at 113 m/s. Past
+        # the fade speed `K` goes negative, and its load (`feedbackLoop`,
+        # TANK-13) is negative too, so the gearbox's `2*(T1 - L)` drives the
+        # revs UP with the throttle shut: the propeller windmills at 0.99 and
+        # brakes at -0.28 x ratio, not at the -(v/70)^2 x ratio of a stopped
+        # one (the pedal-on-the-thrust-law model's dive settled at 54). The
+        # lab's recorded AC-130s show the windmill: with the throttle at 0 in
+        # flight at 20-40 m/s their engines read revs 0.055-0.07, the fixed
+        # point of this law for their fade-120 engines (0.06). The box drag
+        # and the brake together hold it well under `g/drag`.
         dive = {row["throttle"]: row for row in self.results["terminalDive"]}
         self.assertLess(dive[0]["peak"], 150.0)
-        self.assertLess(dive[0]["end"]["speed"], G / 0.0652 / 2)
-        self.assertGreater(dive[0]["end"]["speed"], 30.0)
+        self.assertGreater(dive[0]["end"]["speed"], 90.0)
+        self.assertLess(dive[0]["end"]["speed"], 130.0)
+        self.assertGreater(dive[0]["revs"], 0.5)
 
     def test_a_hands_off_dive_pulls_itself_out(self) -> None:
         recovery = self.results["diveRecovery"]
@@ -585,18 +620,24 @@ class FlightModelTests(unittest.TestCase):
         # restoring moment allows.
         for sample in self.results["sustainedPull"]:
             self.assertLess(abs(sample["lead"]), 12.0)
-        # And the pull is a real one: the flight path comes round.
-        self.assertGreater(self.results["sustainedPull"][0]["pathRate"], 15.0)
+        # And the pull is a real one: the flight path comes round at 26 deg/s
+        # a second in and 37 by the second second (the engine's pitch inertia
+        # takes longer to wind it up than the solid box did).
+        self.assertGreater(max(x["pathRate"] for x in self.results["sustainedPull"]), 30.0)
 
-    def test_full_stick_roll_is_in_the_surveyed_band(self) -> None:
-        # 180-220 deg/s at cruise, and symmetric. Nothing commands this — it is
-        # the ailerons' own lift on their own levers against their own damping,
+    def test_full_stick_roll_can_do_what_the_real_game_does(self) -> None:
+        # 152 deg/s at 49.4 m/s after 1.5 s of full stick, and symmetric.
+        # Nothing commands this: it is the ailerons' own lift on their own
+        # levers against their own damping, on the engine's `/3` roll inertia,
         # and the mirroring is authored config (`sign(setAcceleration)`), so a
-        # broken sign shows up as one direction rolling and the other not.
+        # broken sign shows up as one direction rolling and the other not. The
+        # lab's recorded Corsairs (Wake, Midway: 14,899 airborne samples) roll
+        # at 128 deg/s at the most, so full stick must reach that. On the solid
+        # box the rate was 212.
         for direction in ("left", "right"):
             rate = self.results["roll"][direction]
-            self.assertGreater(rate, 180.0)
-            self.assertLess(rate, 220.0)
+            self.assertGreater(rate, 128.0)
+            self.assertLess(rate, 200.0)
         self.assertAlmostEqual(self.results["roll"]["left"],
                                self.results["roll"]["right"], delta=2.0)
 
@@ -606,7 +647,9 @@ class FlightModelTests(unittest.TestCase):
         for case in self.results["noseTracking"]:
             label = f"{case['axis']} {case['start']} deg at {case['speed']} m/s"
             self.assertIsNotNone(case["halfLife"], f"{label} never closed")
-            self.assertLess(case["halfLife"], 6.0, label)
+            # The stall case takes 6.4 s on the engine's inertia (4.3 on the
+            # solid box); cruise closes in under half a second.
+            self.assertLess(case["halfLife"], 8.0, label)
             self.assertLess(abs(case["settled"]), 2.0, label)
 
     def test_it_is_the_nose_that_moves_and_not_only_the_flight_path(self) -> None:
@@ -654,16 +697,25 @@ class FlightModelTests(unittest.TestCase):
         self.assertLess(tail["turnedAt"], 5.0)
         self.assertGreater(tail["end"]["along"], 0.0)
 
-    def test_a_tail_slide_from_rest_turns_around_and_stays_round(self) -> None:
+    def test_a_tail_slide_from_rest_turns_around(self) -> None:
         # Nose vertical, no airspeed at all, dropped. This is the case an
         # `asin` angle of attack reads as zero and therefore cannot restore
-        # from; the harness and the model both read it with `atan2`. A tumble
-        # on the way is allowed; ending up in one is not.
-        slide = self.results["tailSlide"]
-        self.assertIsNotNone(slide["turnedAt"], "never turned around")
-        self.assertLess(slide["turnedAt"], 10.0)
-        self.assertGreater(slide["settledForward"], 0.95)
-        self.assertGreater(slide["end"]["along"], 0.0)
+        # from; the harness and the model both read it with `atan2`. Under
+        # power it comes out flying forward. At idle, on the engine's inertia
+        # (four times the solid box's, COL-8), the tail damps a pitch rotation
+        # four times more slowly and the Corsair goes over into a pitch tumble
+        # (68 deg/s, nose over tail; the Stuka does the same, the Spitfire,
+        # BF109, B17 and F-16 come out of it): the tumble is not checked
+        # against the real game, but it is no backward glide.
+        full = self.results["tailSlideFull"]
+        self.assertIsNotNone(full["turnedAt"], "never turned around")
+        self.assertLess(full["turnedAt"], 10.0)
+        self.assertGreater(full["settledForward"], 0.95)
+        self.assertGreater(full["end"]["along"], 0.0)
+        idle = self.results["tailSlide"]
+        self.assertIsNotNone(idle["turnedAt"], "never turned around")
+        self.assertGreater(idle["settledForward"], 0.25)
+        self.assertGreater(idle["pitchRate"], 20.0)
 
     def test_holding_the_stick_back_cannot_produce_backward_flight(self) -> None:
         # Two minutes of full back stick, which is how a player gets there:
@@ -678,20 +730,18 @@ class FlightModelTests(unittest.TestCase):
 
     # --- frame rate --------------------------------------------------------
 
-    def test_the_model_is_identical_at_every_step_the_page_can_hand_it(self) -> None:
-        # `map.html` drives this from `THREE.Clock` clamped at 0.1 s. The
-        # sub-step count scales with the frame and the servos run inside it,
-        # which is the only reason the trim is the same number at all three:
-        # the lift regulator is a proportional loop closed through a
-        # rate-limited servo, and a whole 0.1 s frame lets that servo cross its
-        # entire +-2 degree range in one step and go bang-bang.
+    def test_the_model_runs_whole_engine_ticks_whatever_the_frame(self) -> None:
+        # The world steps the drive at its 30 Hz tick, and `integrate` turns
+        # any longer `dt` into whole engine ticks (the gearbox, one
+        # integration step, the gear), so 1/15 s and 0.1 s are two and three
+        # 1/30 s calls, to the float.
         cases = self.results["frameRate"]
         reference = cases[0]
         for case in cases[1:]:
             label = f"dt={case['dt']}"
-            self.assertAlmostEqual(reference["trimSpeed"], case["trimSpeed"], places=1, msg=label)
-            self.assertAlmostEqual(reference["trimSink"], case["trimSink"], places=1, msg=label)
-            self.assertAlmostEqual(reference["trimAlpha"], case["trimAlpha"], places=1, msg=label)
+            self.assertAlmostEqual(reference["trimSpeed"], case["trimSpeed"], places=2, msg=label)
+            self.assertAlmostEqual(reference["trimSink"], case["trimSink"], places=2, msg=label)
+            self.assertAlmostEqual(reference["trimAlpha"], case["trimAlpha"], places=2, msg=label)
         for case in cases:
             self.assertLess(case["turnedAt"], 5.0, f"dt={case['dt']}")
             self.assertGreater(case["tailFirstEnd"]["along"], 0.0, f"dt={case['dt']}")
@@ -754,15 +804,22 @@ class FlightModelTests(unittest.TestCase):
 
     # --- helicopters: engines off the nose (ledger PHY-12..PHY-14) ----------
 
-    def test_a_fixed_wing_airframe_stays_on_the_nose_thrust_path(self) -> None:
-        # Every engine of a fixed-wing aircraft points at its nose, so the
-        # engine law in `vectored-engines.js` never runs for one and the
-        # numbers every test above pins cannot move.
+    def test_a_fixed_wing_airframe_flies_the_engine_laws(self) -> None:
+        # The Spitfire's engine points at its nose, so it is no vectored
+        # airframe (it does not hover, its bots fly the plane law), but it
+        # flies the engine's own laws like every aircraft: its Engine's roll
+        # axis is the throttle (`setAutomaticReset 1`, -3000..5000 at 1000
+        # deg/s), its thrust runs through that Engine's gearbox, and it turns
+        # on the `/3` geometry inertia read x/y/z (COL-8, COL-13).
         s = self.results["spitfire"]
         self.assertFalse(s["vectored"])
-        self.assertEqual(0, s["vectoredEngines"])
+        self.assertTrue(s["engineLaw"])
+        self.assertEqual(1, s["lawEngines"])
         self.assertFalse(s["specVectored"])
-        self.assertIsNone(s["specInertiaLaw"])
+        self.assertEqual("geometry", s["specInertiaLaw"])
+        self.assertEqual("xyz", s["specPairing"])
+        self.assertEqual({"min": -3000, "max": 5000, "acceleration": 1000, "automaticReset": True},
+                         s["throttleAxis"])
         self.assertAlmostEqual(0.0, s["engineOffNose"], places=2)
 
     def test_an_ah64_is_read_as_a_vectored_airframe(self) -> None:
@@ -807,11 +864,11 @@ class FlightModelTests(unittest.TestCase):
         # `setMinRotation .../1500` over `setMaxRotation .../5000`: the clipped
         # throttle angle never goes below 1500, so T1 is 0.3 with the
         # collective down and still 0.3 with it reversed. It ramps at the
-        # engine's own 15000 deg/s: six ticks from the floor is 0.6.
+        # engine's own 15000 deg/s: six 30 Hz ticks from the floor is 0.9.
         idle = self.results["helicopter"]["idle"]
         self.assertAlmostEqual(0.3, idle["t1"], places=4)
         self.assertAlmostEqual(0.3, idle["t1Reversed"], places=4)
-        self.assertAlmostEqual(0.6, idle["t1After6Ticks"], places=4)
+        self.assertAlmostEqual(0.9, idle["t1After6Ticks"], places=4)
         self.assertAlmostEqual(1.0, idle["t1Full"], places=4)
         # The floor keeps the revs up, and on its own does not lift it.
         self.assertGreater(idle["revs"], 0.25)
@@ -875,7 +932,13 @@ class FlightModelTests(unittest.TestCase):
         # friction (`addFriction`'s plain-contact arm, which a bare
         # `c_PGFDummyGrip` takes; physics.md 6) holds it. Before, nothing did.
         parked = self.results["helicopter"]["parked"]
-        self.assertLess(parked["running"]["moved"], 0.1)
+        # A held contact still yields `a*dt^2` a tick: the engine integrates
+        # the tick's push into the position before the contact's friction,
+        # which reaches the velocity a tick late (collision-response.md §2,
+        # §4.2), so the idle thrust leaning off the vertical creeps it a
+        # couple of centimetres a second (0.27 m in 20 s; at the old 240 Hz
+        # sub-steps an eighth of that).
+        self.assertLess(parked["running"]["moved"], 0.5)
         self.assertLess(parked["running"]["speed"], 0.02)
         self.assertGreater(parked["running"]["revs"], 0.25)
         self.assertTrue(parked["running"]["grounded"])
@@ -910,7 +973,9 @@ class FlightModelTests(unittest.TestCase):
         self.assertAlmostEqual(rpm["hoverRevs"], rpm["hover"], places=4)
         self.assertEqual("AH64DummyEngine", rpm["rotor"])
         self.assertAlmostEqual(rpm["dummyRevs"], rpm["throttle"], places=4)
-        self.assertIsNone(rpm["fixedWing"])
+        # A fixed wing's note reads its own engine's revs too, unclamped (the
+        # patch's control 0 is `|revs|`, up to the gearbox's 1.2).
+        self.assertAlmostEqual(rpm["fixedWingRevs"], rpm["fixedWing"], places=6)
 
     def test_a_helicopter_hovers_on_its_collective_and_says_how_it_steers(self) -> None:
         h = self.results["helicopter"]
@@ -1015,10 +1080,10 @@ class FlightModelTests(unittest.TestCase):
             self.assertLessEqual(heli["releasedVy"], 0.0, name)
         for name, plane in real["planes"].items():
             self.assertFalse(plane["vectored"], name)
-            self.assertIsNone(plane["inertiaLaw"], name)
-            # The fixed-wing aircraft keep the yaw/pitch/roll reading they
-            # are calibrated on (AI-80); the engine's is x/y/z (COL-13).
-            self.assertIsNone(plane["inertiaPairing"], name)
+            # Every aircraft turns on the engine's rotation: the `/3`
+            # geometry inertia read x/y/z (COL-8, COL-13).
+            self.assertEqual("geometry", plane["inertiaLaw"], name)
+            self.assertEqual("xyz", plane["inertiaPairing"], name)
             self.assertFalse(plane["hovers"], name)
         for name, heli in real["helicopters"].items():
             self.assertTrue(heli["hovers"], name)
@@ -1029,8 +1094,9 @@ class FlightModelTests(unittest.TestCase):
         for name, parked in real["parked"].items():
             # Walking off was 2.6 m/s; the bound leaves room for the origin's
             # swing as a hull staged nose-high rocks onto its gear (the
-            # harness's note on the UH-60).
-            self.assertLess(parked["moved"], 0.2, name)
+            # harness's note on the UH-60) and for the creep a held contact
+            # keeps at the engine's one step a tick (0.14-0.34 m in 20 s).
+            self.assertLess(parked["moved"], 0.5, name)
             self.assertEqual(["c_PGFDummyGrip"], parked["grips"], name)
         for name, pilot in real["pilot"].items():
             self.assertIsNotNone(pilot["arrived"], name)
