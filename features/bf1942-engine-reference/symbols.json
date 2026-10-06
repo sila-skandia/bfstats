@@ -8976,7 +8976,7 @@
    "subsystem": "collision",
    "confidence": "working",
    "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. COL-13: internalFind from obj->getChild(), answers the hit queryInterface(ILodObject 0xc4e0)"
+   "note": "lnxded. COL-14 (land: COL-15): internalFind from obj->getChild(), answers the hit queryInterface(ILodObject 0xc4e0)"
   },
   {
    "address": "0x0818db50",
@@ -8985,7 +8985,7 @@
    "subsystem": "collision",
    "confidence": "working",
    "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. COL-13: depth first, child before sibling; a node of template CID param4 (PCO 0xc4c2) returns 0 without its later siblings; a param2 (LodObjectTemplate 0x94a7) node whose selector class is param3 (0x94b1) is the hit"
+   "note": "lnxded. COL-14 (land: COL-15): depth first, child before sibling; a node of template CID param4 (PCO 0xc4c2) returns 0 without its later siblings; a param2 (LodObjectTemplate 0x94a7) node whose selector class is param3 (0x94b1) is the hit"
   },
   {
    "address": "0x0818dc60",
@@ -9624,7 +9624,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-13)"
+   "note": "lnxded. returns [0x86c2bf4] = 0x94b1; DistCompareLodSelector2 0x08214490 returns [0x86c2bf8] = 0x94b2 (COL-14)"
   },
   {
    "address": "0x08215aa0",
@@ -9651,7 +9651,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. m_forceHighestLod set: entry 0 of +0x10c; else the selector (+0x118 vt+0xc) picks the index (COL-13)"
+   "note": "lnxded. m_forceHighestLod set: entry 0 of +0x10c; else the selector (+0x118 vt+0xc) picks the index (COL-14; entry 0 on the physics path, COL-15)"
   },
   {
    "address": "0x08216d30",
@@ -12342,7 +12342,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "dc-ground-chassis-2026-10-06",
-   "note": "lnxded. returns this+0x28; the ctor 0x083b4410 copies template +0x40..+0x54, which loadHeader 0x083a6200 reads from the .sm header: getGeometryInertia box is the header bounds (COL-13)"
+   "note": "lnxded. returns this+0x28; the ctor 0x083b4410 copies template +0x40..+0x54, which loadHeader 0x083a6200 reads from the .sm header: getGeometryInertia box is the header bounds (COL-14)"
   },
   {
    "address": "0x083b4fd0",

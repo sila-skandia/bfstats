@@ -148,7 +148,7 @@ function touchesSomething(entry, body, field) {
  * (one when the layer has three or fewer) and hands `water - minY` to the
  * part's node (`0x0825ac60`), and the root part's node is the root's. The
  * root part's collision mesh is found by the same search as its inertia
- * geometry (`findLodCollisionMesh`, COL-13), which `hull-bodies.js` tags on
+ * geometry (`findLodCollisionMesh`, COL-15), which `hull-bodies.js` tags on
  * the spec as `waterPart` (`ship-spec.js` `rootCollisionPart`), not the part
  * `describeVehicleParts` marks `isRoot`. 0 for a hull with no such part.
  */

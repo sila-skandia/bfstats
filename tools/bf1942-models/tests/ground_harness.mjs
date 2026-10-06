@@ -2234,7 +2234,7 @@ for (const [name, build, radius] of [
 // (`Willy_Hull_M1`, 1.734 x 1.523 x 3.636 off its `.sm` header), under the
 // cockpit `LodObject`, under the root's own `lodWilly` and `WillyComplex`, with
 // the passenger's `PlayerControlObject` after it. That is where the engine's
-// inertia geometry search lands (`inertiaGeometryNode`, COL-13), and the same
+// inertia geometry search lands (`inertiaGeometryNode`, COL-14, COL-15), and the same
 // tree scaled to a SCUD-B's box stands in for a heavy truck. The springs carry
 // a wheel mesh, so each wheel's radius is measured rather than the table's.
 function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,

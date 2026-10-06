@@ -4,7 +4,7 @@
 //
 // Since 2026-10-06 `GroundVehicle` reads its own mass, drag, inertia box,
 // drag radius and wheel radii off the node (`wheeled-vehicle.js`
-// `inertiaGeometryBox`, COL-13), as `TrackedVehicle` already read its mass and
+// `inertiaGeometryBox`, COL-14), as `TrackedVehicle` already read its mass and
 // drag. Before that every wheeled vehicle in every mod drove on the numbers
 // below; now only a tree that carries no `extras.physics` or no hull mesh
 // does (a test double, an old extract).
@@ -172,7 +172,7 @@ export const WILLYS = {
   //
   // Fallback only. The box was a guess; the engine's is the cockpit hull
   // mesh's `.sm` header box, 1.734 x 1.523 x 3.636 for the Willy, which gives
-  // 5.18 / 5.41 / 1.78 (`inertiaGeometryBox`, COL-13), and that is what a
+  // 5.18 / 5.41 / 1.78 (`inertiaGeometryBox`, COL-14), and that is what a
   // Willy with its glb drives on.
   inertiaRoll: 1.60,
   inertiaPitch: 5.07,

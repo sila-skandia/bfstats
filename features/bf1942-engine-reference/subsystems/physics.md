@@ -824,7 +824,7 @@ writes the depth on the part's own node, and a vehicle's root part is the root
 object, so the root node holds `water − lowest col0 vertex`. Water pushes
 nothing: a hull with no `FloatingBundle` sinks until its springs find the bed,
 and drives there under the box drag above, whose `DY` is the same geometry box
-as its inertia (ledger COL-13). `submarineData` reads the same depth (PHY-3).
+as its inertia (ledger COL-14, COL-15). `submarineData` reads the same depth (PHY-3).
 
 ---
 

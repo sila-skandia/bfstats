@@ -49,7 +49,7 @@
 //
 // The hull's geometry box, which the inertia, the box drag and that
 // multiplier's `DY` all read, is the one the engine finds (`inertiaGeometryNode`,
-// COL-13): `updatePhysics` asks `queryComponent(IGeometry)` and falls back to
+// COL-14, COL-15): `updatePhysics` asks `queryComponent(IGeometry)` and falls back to
 // `findLodGeometry` (`0x08254527`, `0x08254694`) for the drag exactly as
 // `updateRotationalPhysics` does for the inertia.
 //
