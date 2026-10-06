@@ -28,7 +28,7 @@ the two vanilla LOD 0 rounds' in
 | weapons item 22: MLRS rockets arc | yes, under 14.7+ m/s^2 | the viewer's gravity 0: wrong |
 | weapons item 24: CBU-87 | submunitions fall at 14.45 | the viewer flies them level: wrong |
 | weapons Q1: rocket motor law | MLRS: +20 m/s over 3 s; TOW and AT-5 constant 100 m/s, no gravity; no other rocket fired | the fixed 25 m/s^2 matches none |
-| weapons Q1, helicopter and shoulder rockets | bots fired no Hydra, Hellfire, S-5, AT-2, Stinger or SA-7 in 2.8 h of helicopter flight; the BM-21 only fake | unmeasured |
+| weapons Q1, helicopter and shoulder rockets | bots fired no Hydra, Hellfire, S-5, AT-2, Stinger or SA-7 in 3.7 h of helicopter flight (0.8 h of it at LOD 0); the BM-21 only fake; DC's Mi-24 S-5 rack names a missing AI template (`Mi25DS5`) | unmeasured |
 | DEV-9: rifle spread square or disc | no per-shot draw reaches a still bot's rounds (0.03-0.05 degrees rms); a shotgun's pellets lean square, not decisively | unsettled |
 | weapons Q4: FireArms velocity default | the Spandrel (no `velocity`) leaves at 200.5 m/s relative to its launcher (12 flights): FA-3's 200 default | not the viewer's 100 |
 | levels item 23: respawn delay | `calcSpawnDelay` with the bots counted, drawn at the last spawn, from the death | the viewer draws it uniformly from the wreck's removal |
@@ -444,8 +444,10 @@ hit), p50; speeds are at 0.5-5 s.
 
 - **A round leaves at its own speed plus its launcher's** (the launcher's
   velocity along the shot, from its poses 0.2 s either side): the Spandrel
-  `v0 = 200.5 + 1.015 x` that speed over 12 flights (the 191.3 m/s one left a
-  BRDM-2 moving away from its shot at 9 m/s), the M2A3's TOW `99.97 + 1.037 x` (11). Over
+  `v0 = 200.5 + 1.015 x` that speed over 12 flights, 199.8-201.0 m/s
+  relative to the BRDM-2 (the 191.3 m/s an earlier draft of this page gave as
+  the default was one fired by a BRDM-2 backing away at 8.9 m/s along its line
+  of fire: 200.2 relative), the M2A3's TOW `99.97 + 1.037 x` (11). Over
   10 sabot shots the launchers barely moved (1.4 m/s at most), so it is not
   separable there. This is what `round-launch.js` already does (the
   platform's velocity on top of the muzzle velocity).
@@ -458,15 +460,24 @@ hit), p50; speeds are at 0.5-5 s.
   thirds of its speed in a second. None of them steers. The viewer's fixed
   25 m/s^2 with gravity 0 matches none of these.
 - **Not fired in any run, so not measured: Hydra, Hellfire, S-5, AT-2,
-  Stinger, SA-7 and the BM-21's rockets.** Over every DC file (LOD 0 and 2),
-  bots flew the Mi-8 3,467 s, the UH-60 2,300 s, the Mi-24D 2,263 s, the AH-64
-  1,862 s and the SA-342G 360 s, and the only helicopter weapon that fired was
-  the AH-64's M230 cannon (31 shots); no rocket pod or missile rack on any of
-  them fired once. No soldier fired a Stinger or an SA-7. The BM-21 fired 125
-  times, all fake (LOD 2, El Alamein Day 2 and Bocage), and not at all in the
-  Day 2 LOD 0 round. The rockets that did fly are the table's: the MLRS, AS-7,
-  TOW, AT-5, Spandrel, Aim-9 (and the AA-10 from the MiG-29's rack, 26 shots,
-  too few matched flights for a row).
+  Stinger, SA-7 and the BM-21's rockets.** Over the LOD 2 DC files bots flew
+  the Mi-8 3,467 s, the UH-60 2,300 s, the Mi-24D 2,263 s, the AH-64 1,862 s
+  and the SA-342G 360 s; then a Gazala LOD 0 run for exactly this
+  (`dc-gazala-coop-lod0-rec`, 18 rounds, 12,199 s, every shot real) added the
+  AH-64 972 s at the stick, the Mi-24D 606 s and the Mi-8 1,352 s. The only
+  helicopter weapon that fired in either was the AH-64's M230 cannon (132
+  shots at LOD 0). No rocket pod or missile rack on any helicopter fired once,
+  and no soldier fired a Stinger or an SA-7. The AI data does give the racks
+  to the bots: the AH-64's `AH64HydraRack` and `AH64HellfireRack` carry
+  `aiTemplate AH64Hydra` and `AH64Hellfire`, weapon templates with ranges
+  10-450 and 20-350 m (`useAimerOnly 1`), and the Mi-24D's `Mi24D_AT2Arms`
+  carries `Mi24DAT2` (30-200 m); but `Mi24D_S5Arms` names `aiTemplate
+  Mi25DS5`, while the weapon template is `Mi24DS5`, a typo in DC 0.7 that
+  leaves bots no S-5. Why the others never fire was not read. So the motor
+  law's Hellfire figure (83 m/s) cannot be checked from bots. The BM-21 fired
+  125 times, all fake (LOD 2, El Alamein Day 2 and Bocage), and not at all in
+  the Day 2 LOD 0 round. The rockets that did fly are the table's: the MLRS,
+  AS-7, TOW, AT-5, Spandrel, Aim-9 and AA-10.
 
 ### Hand-weapon spread, square or disc (DEV-9): not settled by bots
 
@@ -540,6 +551,8 @@ file a round), the event log in `serverlog/`, `scenario.json`, `settings/` and
 | `20261007-004059-dc-guadalcanal-coop-lod0-rec` | Guadalcanal | **0** | 1 full + part (2) | 742 | water (none), ground |
 | `20261007-010104-dc-el_alamein-coop-lod0-rec` | El Alamein | **0** | 1 full + a start (2) | 584 | ground physics, full lock |
 | `20261007-011049-dc-el_alamein_day2-coop-lod0-rec` | El Alamein Day 2 | **0** | 1 full + a start (2) | 573 | pads and captures, rockets (none fired) |
+| `20261007-015645-dc-gazala-coop-lod0-rec` | Gazala | **0** | 16 full + 2 starts (18) | 12,199 | helicopter rockets (none fired), the M230 |
+| `20261007-052417-dc-basrahs_edge-coop-lod0-rec` | Basrah's Edge | **0** | 1 (1) | BASRAH_S | static wrecks |
 | `20261007-005321` ... `010013-dc-guadalcanal-coop-lod0-water-rec` | Guadalcanal | 0 | starts only (6) | 40-117 | the failed water placements |
 
 Vanilla rounds recorded for this page (`--mod bf1942`), 30 bots of 32:
