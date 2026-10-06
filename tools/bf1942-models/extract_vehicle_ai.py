@@ -10,6 +10,13 @@ drives on), the `Physical` plug-in's `setStrType`, the `Unit` plug-in's
 vehicle's own `Objects.con` maps each `FireArms` child to its `aiTemplate`, which
 is how a gun node in the viewer finds its AI weapon.
 
+Records are keyed by folder, and a root object the folder records miss gets
+one of its own under its template's name (`object_record`): the engine links
+an object to its AI by the object's own `ObjectTemplate.aiTemplate` (AI-137),
+so DC's `A10_B` (`aiTemplate A10`, no AI folder of its own), DC Final's five
+hulls in `H-6`, vanilla's `Ho-Ha` (`aiTemplate Hanomag`) and the static
+`Fletcher2` are each their own template's unit.
+
 The mod's whole chain is read, nearest mod first (`game.addModPath`), so a
 mod keeps the units it inherits, and each level's own archive adds the units
 it declares for itself (DC's Urban Siege `Nimitz`). One file per maps tree:
@@ -398,47 +405,65 @@ def vehicle_record(folder: str, files: dict[str, str], read, all_weapons: dict[s
     }
     # Every seat (PlayerControlObject) of the vehicle: its aiTemplate's
     # Unit plug-in strengths and the AI weapons of the guns it reaches.
-    seats_ai: dict[str, dict] = {}
-    for pco, ai_name in pcos.items():
-        t = parsed["templates"].get(ai_name.lower())
-        seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
-                      "strategicStrength": None, "aiWeapons": {},
-                      "basicTemp": basic_temp(t), "types": list((t or {}).get("types", []))}
-        for pname in (t["plugIns"] if t else []):
-            p = parsed["plugIns"].get(pname.lower())
-            if p and p.get("kind") == "Unit":
-                seat["strategicStrength"] = p.get("strategicStrength")
-                # `aiTemplatePlugIn.equipmentType`: the unit's row of
-                # `AIbehaviours.con`'s `setVehicle` list (0 Tank, 4 Fixed,
-                # 13 FixedLargeBore, ...), which picks its behaviours: a
-                # Tank's and a Fixed gun's Fire is `BBFireInfantery`.
-                if p.get("equipmenttype") is not None:
-                    seat["equipmentType"] = int(p["equipmenttype"])
-                # `setUseNoPathfindingToGetToObject` (ConsoleClass557
-                # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
-                # 0x0855e0c0 then takes the unit when a valid point lies
-                # on the line 12 m behind it, not on its own cell.
-                if p.get("setusenopathfindingtogettoobject"):
-                    seat["useNoPathfinding"] = True
-        if is_anti_aircraft(t, parsed["plugIns"]):
-            seat["isAntiAircraft"] = True
-        ctrl = control_info(t, parsed["plugIns"])
-        if ctrl:
-            seat["controlInfo"] = ctrl
-        for fa in fire_arms_under(pco.lower(), graph, kinds):
-            w_ai = ai_of.get(fa) or fire_arms.get(fa)
-            w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
-            if w:
-                seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
-        seats_ai[pco] = seat
-    info["seatsAi"] = seats_ai
-    if is_anti_aircraft(root, parsed["plugIns"]):
+    def weapon_of(fa: str) -> dict | None:
+        w_ai = ai_of.get(fa) or fire_arms.get(fa)
+        return all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
+
+    info["seatsAi"] = {
+        pco: seat_record(ai_name, parsed["templates"].get(ai_name.lower()), parsed["plugIns"],
+                         fire_arms_under(pco.lower(), graph, kinds), weapon_of)
+        for pco, ai_name in pcos.items()}
+    apply_root(info, root, parsed["plugIns"])
+    return info
+
+
+def seat_record(ai_name: str, t: dict | None, plugins: dict[str, dict], fire_arms: list[str],
+                weapon_of) -> dict:
+    """One seat's AI numbers: its aiTemplate's Unit plug-in strengths, the
+    words the Change and Fire scoring read, and the AI weapons of the guns it
+    reaches (`fire_arms`, each looked up by `weapon_of`)."""
+    seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
+                  "strategicStrength": None, "aiWeapons": {},
+                  "basicTemp": basic_temp(t), "types": list((t or {}).get("types", []))}
+    for pname in (t["plugIns"] if t else []):
+        p = plugins.get(pname.lower())
+        if p and p.get("kind") == "Unit":
+            seat["strategicStrength"] = p.get("strategicStrength")
+            # `aiTemplatePlugIn.equipmentType`: the unit's row of
+            # `AIbehaviours.con`'s `setVehicle` list (0 Tank, 4 Fixed,
+            # 13 FixedLargeBore, ...), which picks its behaviours: a
+            # Tank's and a Fixed gun's Fire is `BBFireInfantery`.
+            if p.get("equipmenttype") is not None:
+                seat["equipmentType"] = int(p["equipmenttype"])
+            # `setUseNoPathfindingToGetToObject` (ConsoleClass557
+            # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
+            # 0x0855e0c0 then takes the unit when a valid point lies
+            # on the line 12 m behind it, not on its own cell.
+            if p.get("setusenopathfindingtogettoobject"):
+                seat["useNoPathfinding"] = True
+    if is_anti_aircraft(t, plugins):
+        seat["isAntiAircraft"] = True
+    ctrl = control_info(t, plugins)
+    if ctrl:
+        seat["controlInfo"] = ctrl
+    for fa in fire_arms:
+        w = weapon_of(fa)
+        if w:
+            seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
+    return seat
+
+
+def apply_root(info: dict, root: dict | None, plugins: dict[str, dict]) -> None:
+    """The hull's own words, from its root aiTemplate's plug-ins: the Mobile
+    plug-in's speed, turn radius and search type, the Physical plug-in's
+    strength type, the Unit plug-in's, the Cover plug-in's value."""
+    if is_anti_aircraft(root, plugins):
         info["isAntiAircraft"] = True
-    root_ctrl = control_info(root, parsed["plugIns"])
+    root_ctrl = control_info(root, plugins)
     if root_ctrl:
         info["controlInfo"] = root_ctrl
     for pname in (root["plugIns"] if root else []):
-        p = parsed["plugIns"].get(pname.lower())
+        p = plugins.get(pname.lower())
         if not p:
             continue
         kind = p.get("kind")
@@ -457,7 +482,164 @@ def vehicle_record(folder: str, files: dict[str, str], read, all_weapons: dict[s
                 info["useNoPathfinding"] = True
         elif kind == "Cover":
             info["coverValue"] = p.get("covervalue")
+
+
+def ai_template_table(names: list[str], read) -> dict[str, tuple[dict, dict[str, dict]]]:
+    """Every `aiTemplate.create` along the chain, lower-cased: the template
+    and the plug-ins of the file that declares it. `names` come nearest
+    archive first (`ArchivePool.names`), and the nearest declaration of a
+    name is kept, as `scan_objects` keeps the nearest object template."""
+    table: dict[str, tuple[dict, dict[str, dict]]] = {}
+    for n in names:
+        if not n.lower().endswith("/ai/objects.con"):
+            continue
+        text = read(n)
+        if text is None:
+            continue
+        parsed = parse_objects_con(text)
+        for key, t in parsed["templates"].items():
+            table.setdefault(key, (t, parsed["plugIns"]))
+    return table
+
+
+def template_sites(names: list[str], read) -> dict[str, tuple[str, str]]:
+    """Every object template's name as its `create` line spells it and the
+    file that declares it, lower-cased, nearest archive first."""
+    sites: dict[str, tuple[str, str]] = {}
+    for n in names:
+        low = n.lower()
+        if not low.endswith(".con") or not low.startswith("objects/") or "/ai/" in low:
+            continue
+        text = read(n)
+        if text is None:
+            continue
+        for raw in text.splitlines():
+            m = CREATE_RE.match(raw)
+            if m:
+                sites.setdefault(m.group(2).lower(), (m.group(2), n))
+    return sites
+
+
+def object_tree(root: str, graph: dict[str, list[str]], kinds: dict[str, str]) -> tuple[list[str], list[str]]:
+    """The PlayerControlObjects (the root first) and the FireArms one object
+    builds, in `addTemplate` order: every seat it carries, however deep."""
+    pcos: list[str] = []
+    guns: list[str] = []
+    seen: set[str] = set()
+
+    def walk(t: str) -> None:
+        if t in seen:
+            return
+        seen.add(t)
+        kind = kinds.get(t, "")
+        if kind == "PlayerControlObject":
+            pcos.append(t)
+        elif kind == "FireArms":
+            guns.append(t)
+        for child in graph.get(t, []):
+            walk(child)
+
+    walk(root)
+    return pcos, guns
+
+
+def object_record(root: str, sites: dict[str, tuple[str, str]], graph: dict[str, list[str]],
+                  kinds: dict[str, str], ai_of: dict[str, str],
+                  ai_table: dict[str, tuple[dict, dict[str, dict]]],
+                  all_weapons: dict[str, dict]) -> dict | None:
+    """One root object's record from its own `ObjectTemplate.aiTemplate`,
+    wherever that template is declared, or None when the object has no AI.
+
+    The engine gives an object its AI in `SimpleObject::SimpleObject`
+    (lnxded 0x081da0d0): an empty `aiTemplate` name (the string at template
+    +0x40, length tested at 0x081da21f) makes none, and a name
+    `AITemplateManager::getTemplate` 0x0848a470 does not know (the null test
+    at 0x081da2bc) is tried only as a weapon template. So DC's `A10_B` and
+    `A10_C` (`aiTemplate A10`) are the A-10's unit, vanilla's `Ho-Ha` is the
+    Hanomag's, and DC 0.7's `AH-6`, whose line is `rem`med, and its `Mirage`,
+    whose `Mirage` no `aiTemplate.create` declares, are not units at all.
+    The fields are `vehicle_record`'s; the hull's `aiWeapons` are the ones
+    its root seat reaches.
+    """
+    ai_name = ai_of.get(root)
+    entry = ai_table.get((ai_name or "").lower())
+    if entry is None:
+        return None
+    root_t, root_plugins = entry
+    pcos, guns = object_tree(root, graph, kinds)
+    spell = {name: spelled for name, (spelled, _path) in sites.items()}
+    folder = sites.get(root, ("", ""))[1].rsplit("/", 1)[0]
+    low = folder.lower()
+
+    def weapon_of(fa: str) -> dict | None:
+        return all_weapons.get((ai_of.get(fa) or "").lower())
+
+    seats_ai: dict[str, dict] = {}
+    for pco in pcos:
+        if pco not in ai_of:
+            continue
+        t, plugins = ai_table.get(ai_of[pco].lower(), (None, {}))
+        seats_ai[spell.get(pco, pco)] = seat_record(ai_of[pco], t, plugins,
+                                                    fire_arms_under(pco, graph, kinds), weapon_of)
+    name = spell.get(root, root)
+    info: dict = {
+        "class": (folder.split("/")[2] if low.startswith("objects/vehicles/")
+                  else "Stationary" if low.startswith("objects/stationary_weapons/") else None),
+        "aiTemplate": root_t["name"],
+        "basicTemp": basic_temp(root_t), "types": list(root_t.get("types", [])),
+        "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
+        "strategicStrength": None, "coverValue": None, "isTurnable": None,
+        "fireArms": {spell.get(fa, fa): ai_of[fa] for fa in guns if fa in ai_of},
+        "seats": {spell.get(p, p): ai_of[p] for p in pcos if p in ai_of},
+        "aiWeapons": dict(seats_ai[name]["aiWeapons"]),
+        "seatsAi": seats_ai,
+    }
+    apply_root(info, root_t, root_plugins)
     return info
+
+
+def unanswered_roots(vehicles: dict[str, dict], graph: dict[str, list[str]], kinds: dict[str, str],
+                     ai_of: dict[str, str], ai_table: dict) -> list[str]:
+    """The root objects whose own AI template the folder records miss.
+
+    A root is a PlayerControlObject no template adds (a placed hull, not a
+    seat). The page finds a node's record by the node's template name, a
+    record's key first and then any record's seat (`bot-units.js aiOf`, the
+    records in the file's order); a root it would find no record for, or a
+    record whose hull template is not the root's own, is answered here: DC's
+    `A10_B`, whose folder ships no `AI/Objects.con`, and DC Final's `OH-6`,
+    one of five hulls in the `H-6` folder whose record is the `AH-6`'s.
+    A root that a record already lists as a seat and whose own template is
+    a seat's (`aiTemplate.secondary`, the objects `getFirstSecondaryObject`
+    walks) keeps that record: it is a passenger template no hull adds any
+    more (DC's `UH-60_Passenger`), its seat numbers are already there, and
+    a hull's words mean nothing for it.
+    """
+    index: dict[str, str] = {key.lower(): key for key in vehicles}
+    for key in sorted(vehicles):
+        for pco in vehicles[key]["seats"]:
+            index.setdefault(pco.lower(), key)
+    children = {c for kids in graph.values() for c in kids}
+    out: list[str] = []
+    for t in sorted(kinds):
+        if kinds[t] != "PlayerControlObject" or t in children:
+            continue
+        ai = (ai_of.get(t) or "").lower()
+        if not ai or ai not in ai_table:
+            continue
+        key = index.get(t)
+        if key is not None and (vehicles[key].get("aiTemplate") or "").lower() == ai:
+            continue
+        if key is not None and key.lower() != t and ai_table[ai][0].get("secondary"):
+            continue
+        if key is not None and key.lower() == t:
+            # A folder record keyed by this very name answers for another
+            # template; a second record cannot take the key.
+            print(f"warning: {t}: record {key} carries {vehicles[key].get('aiTemplate')}, "
+                  f"the object {ai_of[t]}", file=sys.stderr)
+            continue
+        out.append(t)
+    return out
 
 
 ENTRY_POINT_RE = re.compile(r"^\s*ObjectTemplate\.create\s+EntryPoint\s", re.I | re.M)
@@ -510,6 +692,15 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
         info = vehicle_record(folder, files, read, all_weapons, graph, kinds, ai_of)
         if info is not None:
             vehicles[folder.split("/")[-1]] = info
+    # The engine links an object to its AI by the object's own `aiTemplate`,
+    # never by the folder (`object_record`): each root object the folder
+    # records miss gets a record of its own, keyed by its template's name.
+    ai_table = ai_template_table(names, read)
+    sites = template_sites(names, read)
+    for root in unanswered_roots(vehicles, graph, kinds, ai_of, ai_table):
+        info = object_record(root, sites, graph, kinds, ai_of, ai_table, all_weapons)
+        if info is not None:
+            vehicles[sites.get(root, (root, ""))[0]] = info
     if not levels:
         return {"mod": mod, "vehicles": vehicles}
 
