@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
 import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
-import { LIFT_ENGINE_ANGLE, VectoredEngine, engineGeometry } from './vectored-engines.js';
+import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
   GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
@@ -320,7 +320,21 @@ export class Surface {
       maxSpeed: spec.maxSpeed ?? 0,
       direction: spec.direction ?? 1,
       driver: 'position',
+      acceleration: spec.acceleration ?? 0,
+      automaticReset: !!spec.automaticReset,
     };
+    /**
+     * A lift regulator's own servo, run on `calculateAndClipAngle`'s law
+     * (GUN-2, `clipAngleStep`) rather than the rig's position servo:
+     * `Wing::handleUpdate` steps the Wing's RotationalBundle on the command
+     * `PhysicsWing::updatePhysics` wrote into its input slot, and with no
+     * `setAutomaticReset` that law is a velocity servo, so the regulator
+     * INTEGRATES its command (speed toward `command * setMaxSpeed` at
+     * `setAcceleration`, angle clipped into its +-2 degrees) until the lift
+     * it was asked for is made. `reg` is that angle and speed.
+     */
+    this.servoLaw = !!spec.servoLaw;
+    this.reg = { angle: 0, speed: 0 };
     /** Filled in by the `Aircraft`, which is what knows the control name. */
     this.key = '';
   }
@@ -479,14 +493,17 @@ export const CORSAIR = {
     // `setRegulateToLift` — which is 4.91 in all 27 vanilla uses and is also
     // `WingTemplate`'s own constructor default (Linux `0x082514c0`, +0x1cc =
     // 0x409d1eb8). g/3, and a fighter carries two of the three.
+    // `setMinRotation 0/-2/0`, `setMaxRotation 0/2/0`, `setMaxSpeed 0/30/0`,
+    // `setAcceleration 0/120/0`, no input and no `setAutomaticReset`: the
+    // regulator's own velocity servo (`Surface.servoLaw`).
     { id: 'regL', node: 'CorsairFlapLeftMiddle',
       attach: [-2.563, -0.134, 0.895], offset: [2.564, 0.135, -0.895], mount: [9, 0, -5.999],
-      min: -2, max: 2, maxSpeed: 30, direction: 1,
+      min: -2, max: 2, maxSpeed: 30, direction: 1, acceleration: 120, servoLaw: true,
       wingLift: 0, flapLift: 4, pitchOffset: 0.5,
       regulateToLift: 4.91, wingToRegulatorRatio: 1 },
     { id: 'regR', node: 'CorsairFlapRightMiddle',
       attach: [2.52, -0.144, 0.895], offset: [-2.52, 0.145, -0.895], mount: [-8.999, 0, 6],
-      min: -2, max: 2, maxSpeed: 30, direction: 1,
+      min: -2, max: 2, maxSpeed: 30, direction: 1, acceleration: 120, servoLaw: true,
       wingLift: 0, flapLift: 4, pitchOffset: 0.5,
       regulateToLift: 4.91, wingToRegulatorRatio: 1 },
     // Meshless, input-less, 0.1 m behind the CoM, mounted on its side: the
@@ -611,7 +628,19 @@ export function aircraftSpec(root, options = {}) {
       const speed = Math.abs(part.maxSpeed?.[2] ?? 0);
       if (span > 0 && speed > 0) throttleRate = speed / span;
     } else if (data.templateKind === 'Wing') {
-      const axis = data.rig?.axes?.pitch;
+      let axis = data.rig?.axes?.pitch;
+      // A lift regulator binds no input, so its servo numbers ride in its
+      // `physics` (`con.py`), the pitch component, with the
+      // `RotationalBundleTemplate` defaults (`0x081d90c0`: maxSpeed 1.0,
+      // acceleration 0.1) for an undeclared word. A tree exported before
+      // they did keeps the regulator at its rest incidence.
+      const servoLaw = !axis && part?.regulateToLift && Array.isArray(part.maxRotation ?? part.minRotation);
+      if (servoLaw) {
+        const accel = part.acceleration?.[1] ?? 0.1;
+        axis = { input: undefined, min: part.minRotation?.[1] ?? 0, max: part.maxRotation?.[1] ?? 0,
+                 maxSpeed: part.maxSpeed?.[1] ?? 1, direction: accel < 0 ? -1 : 1,
+                 acceleration: Math.abs(accel), automaticReset: !!part.automaticReset };
+      }
       const f = frame(node);
       surfaces.push({
         id: node.name,
@@ -623,6 +652,9 @@ export function aircraftSpec(root, options = {}) {
         max: axis?.max ?? 0,
         maxSpeed: axis?.maxSpeed ?? 0,
         direction: axis?.direction ?? 1,
+        acceleration: axis?.acceleration ?? 0,
+        automaticReset: !!axis?.automaticReset,
+        servoLaw: !!servoLaw,
         input: axis?.input,
         wingLift: part?.wingLift ?? 0,
         flapLift: part?.flapLift ?? 0,
@@ -699,7 +731,8 @@ export class Aircraft extends Vehicle {
     for (const surface of this.surfaces) {
       surface.key = `${keyOf(this.control, surface.axis.input)}/pitch`;
     }
-    this.extraServos = this.surfaces.map(surface => [surface.key, surface.axis]);
+    this.extraServos = this.surfaces.filter(surface => !surface.servoLaw)
+      .map(surface => [surface.key, surface.axis]);
     this._servos = null;
     this.engines = this.spec.engines.map(engine => ({
       id: engine.id,
@@ -782,6 +815,7 @@ export class Aircraft extends Vehicle {
 
   /** Where a surface's hinge has actually got to, degrees. */
   deflection(surface) {
+    if (surface.servoLaw) return surface.reg.angle;
     return axisAngle(surface.axis, this.state.surfaces.get(surface.key) ?? 0);
   }
 
@@ -1084,6 +1118,9 @@ export class Aircraft extends Vehicle {
     // always had: the command first, then the servo.
     if (!this.engineLaw) this.regulate();
     this.advanceSurfaces(h);
+    for (const surface of this.surfaces) {
+      if (surface.servoLaw) clipAngleStep(surface.reg, surface.axis, this.input(surface.axis.input), h);
+    }
 
     _accel.set(0, 0, 0);
     _moment.set(0, 0, 0);
@@ -1491,6 +1528,7 @@ export class Aircraft extends Vehicle {
     s.surfaces.clear();
     s.inputs.clear();
     s.inputs.set('c_PILandingGear', 0);
+    for (const surface of this.surfaces) { surface.reg.angle = 0; surface.reg.speed = 0; }
     for (const engine of this.lawEngines) engine.reset();
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
