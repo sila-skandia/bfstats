@@ -361,6 +361,13 @@ export function createLevel(page) {
       settleLevelWarmup(null);
       throw error;
     }
+    // Each placed node's index in `scene.glb`, the one name a room's server
+    // and this page agree on for a hull or a static (`server/glb-scene.mjs`
+    // stamps the same), whatever else either adds to the scene beside it.
+    gltf.scene.traverse(node => {
+      const index = gltf.parser?.associations?.get(node)?.nodes;
+      if (Number.isInteger(index)) node.levelNode = index;
+    });
     // `?mode=` picks one of the level's gameplay layers; with no parameter this
     // resolves to the default layer, whose arrays are the top-level ones, so the
     // page is unchanged. A report from before `modes` existed passes straight

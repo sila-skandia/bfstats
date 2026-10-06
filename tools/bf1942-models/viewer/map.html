@@ -962,6 +962,8 @@ const vehicleHits = createVehicleHits(bag(
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
     // Who last hit the human and with what, so his death names them.
     noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how, id),
+    // In a room the server prices the landing (`server/room-hits.mjs`).
+    get reportImpact() { return room.roomJoined ? room.reportImpact : null; },
   },
 ));
 
@@ -2034,13 +2036,15 @@ const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
   from(() => hullBodies, `syncVehicleSpawnOwnership`),
-  from(() => level, `applyVisibility bindDynamicShading extras`),
+  from(() => level, `applyVisibility bindDynamicShading extras vehicleDamage vehiclePads`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead`),
   from(() => pageConsole, `logToConsole`),
+  from(() => pageAudio, `playWorldReload`),
   from(() => pageInput, `captured lockHeld`),
+  from(() => soldierKit, `handWeapon`),
   from(() => spawning, `openDeploy setDeployTeam`),
-  from(() => vehicleEntry, `enterVehicle exitSeat nearEntry`),
-  from(() => wrecks, `damageVisuals templateNameOf`),
+  from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
+  from(() => wrecks, `damageVisuals remoteGone remoteStand templateNameOf`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
     get manifest() { return manifest; }, get MODELS_BASE() { return MODELS_BASE; },
