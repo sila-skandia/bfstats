@@ -11,6 +11,7 @@
 
 import { drawBitmapText, inRect, measureText, paintElement, rgb } from './menu-screen.js';
 import { MAX_PLAYERS, ROOM_CODE_RE } from '../netcode.js';
+import { gameTypes } from '../game-modes.js';
 import {
   ALERT, CREATE_ARROWS, SIDE_PANEL_X, listCapacity, listRowArea,
 } from './multiplay-layout.js';
@@ -67,10 +68,35 @@ export function createGameDialog(view) {
   function openCreate() {
     if (!view.online()) return false;
     state.create = { index: 0, scroll: 0, level: view.levels[0] || null,
-                     code: newCode(), editing: false };
+                     code: newCode(), editing: false, types: [], typeIndex: 0 };
+    loadTypes(state.create);
     startCaret();
     view.paintSoon();
     return true;
+  }
+
+  /** GAME TYPE's rows: the game types the level's own report offers
+   *  (`scene.json` `gameTypes`, `game-modes.js`), its default first. The
+   *  engine fills `Host/Create/GameTypeList` at run time from the level's
+   *  `GameTypes`; a room plays the one picked (`?mode=`, the room server's
+   *  `LevelData.instantiate(mode)`). A report that names none leaves the
+   *  list empty and the room on the level's default layer. */
+  const reports = new Map();
+  function loadTypes(create) {
+    const level = create?.level;
+    if (!level || !view.report) return;
+    if (!reports.has(level)) reports.set(level, view.report(level));
+    reports.get(level).then(report => {
+      if (state.create !== create || create.level !== level) return;
+      const types = gameTypes(report);
+      const first = report?.gameplayMode
+        ? types.findIndex(t => String(t.mode).toLowerCase() === String(report.gameplayMode).toLowerCase())
+        : -1;
+      if (first > 0) types.unshift(...types.splice(first, 1));
+      create.types = types;
+      create.typeIndex = 0;
+      view.paintSoon();
+    });
   }
 
   function closeCreate() {
@@ -118,6 +144,9 @@ export function createGameDialog(view) {
     if (!create || !levels.length) return;
     create.index = Math.min(levels.length - 1, Math.max(0, index));
     create.level = levels[create.index];
+    create.types = [];
+    create.typeIndex = 0;
+    loadTypes(create);
     const rows = listCapacity(createBox('Host/Create/LevelsList'));
     if (create.index < create.scroll) create.scroll = create.index;
     else if (create.index >= create.scroll + rows) create.scroll = create.index - rows + 1;
@@ -129,14 +158,16 @@ export function createGameDialog(view) {
 
   /** START INTERNET: the room is made by the first client to name a code
    *  the server has no room for, so this is a navigation like every other.
-   *  No `mode=`: the room server reads the game type off the level
-   *  (`Room.mode()` in `server/room.mjs`), which is the default this
-   *  dialog leaves alone. */
+   *  GAME TYPE's pick rides as `mode=`; the level's default needs none. */
   function createRoom() {
     const create = state.create;
     if (!create?.level || !view.online() || !codeOk()) return;
     const args = new URLSearchParams({ room: create.code, name: state.name,
                                        map: levelKey(create.level) });
+    // The game type picked, when it is not the level's default: the room is
+    // made on that layer (`server/room-registry.mjs` `createRoom`).
+    const type = create.types?.[create.typeIndex];
+    if (type && create.typeIndex > 0) args.set('mode', type.name);
     view.onStart(`${view.root}map.html?${args}`);
   }
 
@@ -190,8 +221,17 @@ export function createGameDialog(view) {
     const box = createBox('Host/Create/LevelsList');
     const font = pack.env.font(box.font);
     if (font) paintList(box, font, view.levels.map(l => l.title), create.index, create.scroll);
+    const types = typesBox();
+    const typeFont = types ? pack.env.font(types.font) : null;
+    if (typeFont) {
+      paintList(types, typeFont, (create.types ?? []).map(t => String(t.name).toUpperCase()),
+                create.typeIndex, 0);
+    }
     ctx.globalAlpha = 1;
   }
+
+  /** GAME TYPE's list box (`Host/Create/GameTypeList`). */
+  const typesBox = () => createBox('Host/Create/GameTypeList');
 
   /** The page's own face, for the leaves this file draws itself. */
   const font0 = () => pack.env.font(createBox('Host/Create/LevelsList').font);
@@ -305,6 +345,11 @@ export function createGameDialog(view) {
       const index = state.create.scroll + Math.floor((y - area[1]) / box.rowHeight);
       return index < view.levels.length ? { kind: 'create-level', index } : null;
     }
+    const types = typesBox();
+    if (types && inRect(listRowArea(types), x, y)) {
+      const index = Math.floor((y - listRowArea(types)[1]) / types.rowHeight);
+      return index < (state.create.types?.length ?? 0) ? { kind: 'create-type', index } : { kind: 'modal' };
+    }
     for (const el of view.page('createGame')) {
       if (el.kind !== 'button' || !el.texture?.includes('scrollpil')) continue;
       if (el.rect[0] > box.rect[0] + box.rect[2] || !inRect(el.rect, x, y)) continue;
@@ -329,6 +374,10 @@ export function createGameDialog(view) {
       state.create.editing = true;
       view.paintSoon();
     } else if (hit.kind === 'create-level') pickCreateLevel(hit.index);
+    else if (hit.kind === 'create-type') {
+      state.create.typeIndex = hit.index;
+      view.paintSoon();
+    }
     else if (hit.action === 'create-scroll') {
       const max = Math.max(0, view.levels.length - listCapacity(levelsBox()));
       state.create.scroll = Math.min(max, Math.max(0, state.create.scroll + hit.by));

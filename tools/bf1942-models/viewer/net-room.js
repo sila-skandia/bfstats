@@ -22,7 +22,7 @@ import { Knockback } from './knockback.js';
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`,
- * `dropEntryPoints`, `handWeapon`, `playWorldReload`.
+ * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`.
  */
 export function createNetRoom(page) {
   const room = {};
@@ -221,12 +221,31 @@ export function createNetRoom(page) {
   function hideParkedHull(roomId, occupied) {
     const node = parkedHullFor(roomId);
     if (node) node.visible = !occupied;
+    // Left by another player: the page's hull stands where the server's does,
+    // not where this page last saw it (its pad).
+    if (!occupied) placeAtServerPose(roomId);
+  }
+
+  /** The page's parked copy of room vehicle `id` put where the server's
+   *  snapshot has it, when the two are more than `PARKED_DRIFT` apart. */
+  const PARKED_DRIFT = 1.5;
+  function placeAtServerPose(id) {
+    const v = room.roomClient?.vehicles.get(id);
+    const hull = pageHullOf(v);
+    const pose = room.roomClient?.remoteVehicle(id);
+    if (!hull || !pose || v.live === false) return false;
+    if (page.occupancy?.root === hull.node) return false;
+    hull.node.updateWorldMatrix(true, false);
+    const e = hull.node.matrixWorld.elements;
+    if (Math.hypot(e[12] - pose.x, e[13] - pose.y, e[14] - pose.z) <= PARKED_DRIFT) return false;
+    return !!page.placeParkedHull?.(hull.owner, pose, pose.q);
   }
 
   /** Room vehicles whose page copy must be brought to the server's word,
    *  and whether the page has taken the server's pads over yet. */
   const hullDirty = new Set();
   let hullsSynced = false;
+  let posesSynced = false;
 
   /** A static's hit points by its `scene.glb` node (`object` rows and HELLO's
    *  `damage.objects`), waiting for the page's copy to exist. */
@@ -352,6 +371,12 @@ export function createNetRoom(page) {
    *  brought to its word; the first time, all of them (HELLO's states). */
   room.syncHulls = () => {
     if (!room.roomJoined || !page.vehiclePads?.pads || !page.damageVisuals?.size) return;
+    // Once the first snapshot is in: a hull another player moved before this
+    // page joined stands where he left it.
+    if (!posesSynced && room.roomClient.snapCount() > 0) {
+      posesSynced = true;
+      for (const id of room.roomClient.vehicles.keys()) placeAtServerPose(id);
+    }
     if (!hullsSynced) {
       hullsSynced = true;
       page.vehiclePads.remotePads = true;
@@ -391,6 +416,7 @@ export function createNetRoom(page) {
     // Solo again: the page's own pads run its level from here on.
     if (page.vehiclePads) page.vehiclePads.remotePads = false;
     hullsSynced = false;
+    posesSynced = false;
     hullDirty.clear();
     objectHp.clear();
     objectDirty.clear();

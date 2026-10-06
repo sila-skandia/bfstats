@@ -167,8 +167,11 @@ of them change what section 1 says:
 | The medals and the plate (`mp_debriefing_512x512`) | `extract_hud_pack.py` |
 
 The page's own round is a host's: it restarts 10 s after its end (`?restartDelay=`
-changes it), as a multiplayer server does. A room's round is its server's; the
-page shows nothing at a room's end yet.
+changes it), as a multiplayer server does. A room's round is its server's: since
+2026-10-07 its `roundEnd` row ends the page's copy, the debriefing shows the
+server's medals and waits for the server's `restart` row
+(`features/netcode-play-multiplayer/README.md`, "The round, the pads, the
+landings and the reloads").
 
 Choices the game was not read for:
 
@@ -265,4 +268,5 @@ restarts the round, with the English titles, no level line and a plain plate.
 - What sets `GameServer+0xd0`, which a multiplayer server needs to give
   medals at all (ROUND-9).
 - `menu/LoadMenu`'s own layout, for the exact placement.
-- A room's end of round on the page.
+- ~~A room's end of round on the page.~~ Built 2026-10-07 (the netcode
+  README's round section).
