@@ -275,7 +275,10 @@ export function createRoomPads({ room, onRow, unmount }) {
         let soldierNear = false;
         if (spawnerDistance > clock.distance && !occupied) {
           feet ??= footOrigins();
-          const r = entry.root.userData?.cullRadius ?? 0;
+          // His bounding radius: the page's is the drawn sphere
+          // (`cullRadius`); the room draws nothing, so its collision parts'.
+          entry.radius ??= bodySpecFor(entry.root, room.levelData)?.boundingRadius ?? 0;
+          const r = entry.radius;
           soldierNear = feet.some(o =>
             (o[0] - at[0]) ** 2 + (o[1] - at[1]) ** 2 + (o[2] - at[2]) ** 2 < r * r);
         }

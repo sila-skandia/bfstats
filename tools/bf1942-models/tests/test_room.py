@@ -667,6 +667,17 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"node": z4["factory"]["node"], "hp": z4["max"] - 250, "destroyed": False},
                          z4["objectRow"])
 
+    # --- (z5) an abandoned hull's clock ----------------------------------------------
+
+    def test_an_abandoned_hull_runs_down_its_clock_then_loses_hit_points(self) -> None:
+        # SPAWN-13: on its pad it keeps every point; 100 m off it, empty, the
+        # 2 s countdown runs in 0.5 s steps and each later step bills
+        # `damageWhenLost` (4) a second, about 8 points in 4 s.
+        z5 = self.results["z5"]
+        self.assertEqual(z5["max"], z5["atPad"])
+        self.assertLess(z5["away"], z5["max"] - 6)
+        self.assertGreater(z5["away"], z5["max"] - 12)
+
     # --- (z) the room's vehicle pads -----------------------------------------------
 
     def test_the_hello_lists_both_of_a_pads_hulls(self) -> None:
