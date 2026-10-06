@@ -715,8 +715,11 @@ export function createVehicleWrecks(page) {
    * (ObjectSpawner Min/MaxSpawnDelay) starts so a fresh vehicle returns later.
    */
   function stepWrecks(dt) {
+    // A room's server clears its wrecks and stands its hulls (`server/
+    // room-pads.mjs`); here the wreck only lingers and fades until its row.
+    const remote = !!page.vehiclePads?.remotePads;
     for (const [owner, visual] of damageVisuals) {
-      if (visual.respawnIn != null) {
+      if (visual.respawnIn != null && !remote) {
         visual.respawnIn -= dt;
         if (visual.respawnIn <= 0) respawnVehicle(owner);
         continue;
@@ -749,7 +752,7 @@ export function createVehicleWrecks(page) {
           }
         }
       }
-      if (visual.wreckAge < clock.ttl) continue;
+      if (visual.wreckAge < clock.ttl || remote) continue;
       // Gone: drop the wreck and open the pad for walking. A pad's own hull is
       // its pad's to bring back (`stepPads`, whose delay has been running since
       // the hull went critical); a node no pad names keeps its own clock.
@@ -1047,7 +1050,31 @@ export function createVehicleWrecks(page) {
     return out;
   }
 
+  /** A room's server stood this hull up fresh on its pad (`padSpawn`): the
+   *  page's own respawn, the wreck of the last one cleared first. */
+  function remoteStand(owner) {
+    const visual = damageVisuals.get(owner);
+    if (!visual) return false;
+    if (visual.wrecked && !visual.removed) clearWreck(owner, visual);
+    return respawnVehicle(owner);
+  }
+
+  /** A room's server took this hull out of the world (`vehicleGone`): its
+   *  wreck, if it has one, goes now; an intact one is held off the field by
+   *  the pads' live set (`level-statics.js` `setRemoteLive`). */
+  function remoteGone(owner) {
+    const visual = damageVisuals.get(owner);
+    if (!visual) return;
+    if (visual.wrecked && !visual.removed) clearWreck(owner, visual);
+    else {
+      page.collider?.clearMovedOwner?.(owner, { enable: false });
+      page.collider?.statics?.disableOwner?.(owner);
+    }
+  }
+
   Object.assign(wrecks, {
+    remoteStand,
+    remoteGone,
     damageVisuals,
     loadFailures,
     modelUrls,

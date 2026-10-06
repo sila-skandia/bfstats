@@ -36,15 +36,16 @@ export class RoomServerCore {
     return [...this.rooms.values()].map(r => r.listRow());
   }
 
-  /** CREATE-or-join: a code with no room makes one on the default level. */
-  createRoom(code, { level = null } = {}) {
+  /** CREATE-or-join: a code with no room makes one on the default level,
+   *  on the layer `mode` names (the level's default for none). */
+  createRoom(code, { level = null, mode = null } = {}) {
     if (typeof code !== 'string' || !ROOM_CODE_RE.test(code)) return null;
     const existing = this.rooms.get(code);
     if (existing) return existing;
     const levelName = level || this.defaultLevel;
     const levelData = this.levels.get(levelName);
     if (!levelData) return null;
-    const room = new Room({ code, level: levelData, now: this.now });
+    const room = new Room({ code, level: levelData, mode, now: this.now });
     this.rooms.set(code, room);
     return room;
   }
@@ -116,7 +117,10 @@ export class RoomServerCore {
       connection.peer.close(4000, code);
     };
     if (!row || typeof row.room !== 'string') return bad('bad_join');
-    const room = this.createRoom(row.room, { level: row.level ?? null });
+    const room = this.createRoom(row.room, {
+      level: row.level ?? null,
+      mode: typeof row.mode === 'string' ? row.mode : null,
+    });
     if (!room) return bad('bad_room');
     const joined = room.join(connection, {
       name: row.name ?? '',
