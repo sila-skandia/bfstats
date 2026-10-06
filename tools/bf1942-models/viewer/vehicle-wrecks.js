@@ -145,6 +145,38 @@ export function createVehicleWrecks(page) {
     return anchor;
   }
 
+  /**
+   * The death tier, played where the engine plays it: each bundle a child of
+   * the dying object at its authored offset, turned with it and with no turn
+   * of its own (ledger ARM-8, `Armor::playEffect` lnxded 0x08172960), as
+   * every living tier already is (`showDamageTier`). An anchor per entry, so
+   * two entries of one bundle at two offsets (Clacton's two `e_ScrapAABase`)
+   * stay two, and none of them moves a living tier's anchor. The frame is
+   * what a spawn effect stands its object up in: Desert Combat's ruined
+   * control tower takes the tower's heading from here. Without a death tier
+   * the stand-in `e_ExplGas` is stood up at `at` on the ground's normal.
+   */
+  function playDeathTier(visual, vehicle, death, at) {
+    if (!death?.names?.length) {
+      page.effects.play('e_ExplGas', { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+      return;
+    }
+    const entries = (vehicle?.effects ?? []).filter(e => e.hp === death.threshold);
+    visual.deathAnchors ??= [];
+    entries.forEach((entry, i) => {
+      let anchor = visual.deathAnchors[i];
+      if (!anchor) {
+        anchor = visual.deathAnchors[i] = new THREE.Object3D();
+        visual.node.add(anchor);
+      }
+      // `damage:` keeps it out of `placeWreck`'s hide pass, like the tiers'.
+      anchor.name = `damage:death:${entry.effect}`;
+      anchor.position.set(entry.offset?.[0] || 0, entry.offset?.[1] || 0, entry.offset?.[2] || 0);
+      anchor.updateMatrixWorld(true);
+      page.effects.play(entry.effect, { attach: { object: anchor } });
+    });
+  }
+
   /** Start the tier's bundles on this vehicle, having stopped whatever ran before. */
   function showDamageTier(vehicle, tier) {
     const visual = damageVisuals.get(vehicle.owner);
@@ -295,14 +327,7 @@ export function createVehicleWrecks(page) {
 
     visual.node.updateWorldMatrix(true, false);
     visual.node.getWorldPosition(wreckDeathPos);
-    const death = deathTier(vehicle.effects, { inWater: false });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
-      page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-    }
+    playDeathTier(visual, vehicle, deathTier(vehicle.effects, { inWater: false }), wreckDeathPos);
 
     // Whoever was in it dies with it, and that has to happen HERE — before the
     // seat is torn down below — because this is the one place a vehicle dies,
@@ -417,14 +442,7 @@ export function createVehicleWrecks(page) {
     const inWater = Number.isFinite(page.collider?.waterLevel)
       && wreckDeathPos.y <= page.collider.waterLevel + 0.5;
     const vehicle = page.vehicleDamage.get(owner);
-    const death = deathTier(vehicle?.effects, { inWater });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
-      page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-    }
+    playDeathTier(visual, vehicle, deathTier(vehicle?.effects, { inWater }), wreckDeathPos);
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.
     restoreLift(drive);

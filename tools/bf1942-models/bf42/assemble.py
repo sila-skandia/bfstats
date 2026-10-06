@@ -1677,11 +1677,35 @@ class Assembler:
         index: dict = {}
         missing: list[str] = []
 
+        def spawned_object(name: str) -> int | None:
+            # A spawn effect's payload is a whole object (EMT-9), baked the
+            # way a model or level export bakes it: no `materialDiffuse` and
+            # no additive alpha cut, which only effect particles take.
+            saved = self.apply_material_diffuse, self.additive_alpha_test
+            self.apply_material_diffuse = self.additive_alpha_test = False
+            try:
+                return self.build_node(builder, name, report, depth=1)
+            finally:
+                self.apply_material_diffuse, self.additive_alpha_test = saved
+
         def build(node: effects_mod.BundleNode, depth: int) -> int | None:
             children: list[int] = []
             for ref, emitter, payload, spec in node.emitters:
                 particle = spec["particle"]
                 mesh_index: int | None
+                if particle["kind"] == "object":
+                    root = spawned_object(payload.name)
+                    if root is None:
+                        missing.append(f"{node.template.name}/{emitter.name}")
+                        continue
+                    children.append(builder.add_node(gltf.Node(
+                        name=ref.template,
+                        translation=ref.position,
+                        rotation=gltf.quat_from_ypr(*ref.rotation),
+                        children=[root],
+                        extras={"templateKind": emitter.kind, "effectEmitter": spec},
+                    )))
+                    continue
                 if particle["kind"] == "sprite":
                     mesh_index = self._sprite_quad_mesh(
                         builder, particle["texture"], report,
