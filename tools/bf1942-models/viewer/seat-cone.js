@@ -52,6 +52,13 @@ export function seatConeOf({ stateOf, firerOf, botOf = null }) {
     const state = stateOf(group.node);
     if (!state) return null;
     const bot = botOf?.(firer) ?? null;
+    // OPEN: a bot pilot's own guns. In the lab the jets' (one barrel, no
+    // turn) land about the AI term off their line, but at a direction of
+    // their plane's, 40 degrees for the A-10 and MiG-29 and -90 for the F-16
+    // and F-14, which no single draw index gives, where the seat MGs (and the
+    // B-17's gunners, within 8 degrees) sit on 617. Until that is read they
+    // fly their line, as before (features/vehicle-gun-deviation, "Open").
+    if (bot?.vehicle?.kind === 'air' && bot.vehicle.drives) return null;
     cone.total = state.total + (bot ? bot.deviation?.aiPending ?? 0 : 0);
     cone.dice = null;
     if (bot) {

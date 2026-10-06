@@ -96,8 +96,9 @@ from the stationary MG42s, which other bots mounted on their own.
 - The MG42 totals ran from 1.012 (0.7 + 0.3125) up to 2.40, with a mean of
   1.72 and 1.91 on the two guns. The lab's bot MG42 rounds have a median of
   1.71.
-- An unseated 240 s match: the Spitfire's and the Bf 109's guns (no words)
-  left at the AI term alone, 0.313 to 0.813.
+- An unseated 240 s match, before the pilots' guns were left out (below):
+  the Spitfire's and the Bf 109's guns (no words) left at the AI term alone,
+  0.313 to 0.813.
 
 **Real game.** `~/.cache/dc-sweep/vehicle-deviation/seat_dev_fit.py` fits
 every seat-gun round of the lab's server recordings: the 19 vanilla and 36
@@ -163,12 +164,45 @@ aircraft's guns, `AA_Allies_GunBarrel`, `flak38_gun_fire`, the artillery and
 rocket racks, and DC's `M2A3_GunBarrel` (the Bradley's 25 mm), `BMP2_GunBarrel`,
 `ShilkaGunBarrel`, `ZPU-4GunBarrel` and `CIWS_GunBarrel`. A bot's rounds from
 any of them now carry his AI term, as the lab shows, where before they flew
-straight. Three effect FireArms inside rounds (`Aim54Fuel`, `SA3RocketGun`,
+straight, except a bot pilot's own guns (below). Three effect FireArms inside rounds (`Aim54Fuel`, `SA3RocketGun`,
 XPack2's `WasserFallGuns`) declare `setMinDev 15`. The viewer never fires
 them as seat guns.
 
 The survey is `~/.cache/dc-sweep/vehicle-deviation/firearms_survey.py`, and
 the table is `spread_table.py`. Both read the installed archives.
+
+## Jet guns: measured, not built
+
+A bot pilot's own guns are left out: `seat-cone.js` gives them no cone, so
+they fly their line as before. The bots review flagged them, and the lab
+agrees. These numbers come from the bots review's root-frame fit
+(`~/.cache/dc-sweep/review-bots/devframe.json`), regrouped by
+`jet_groups.py` and `jet_frames.py` in this package's scratch directory.
+
+| Gun | Rounds | Direction in the plane's frame | Concentration R | Size, median |
+|---|---|---|---|---|
+| `A10Guns` | 780 | 40.0° (8 bot groups, 35° to 51°, one at 7°) | 0.90 | 0.31 to 1.24 per group |
+| `Mig29Guns` | 1,019 | 27° to 37° (17 groups, −10° to 50°) | 0.71 | 0.40 to 2.16 per group |
+| `F16Guns` | 75 | −90.3° | 0.92 | 1.0 to 1.4 per group |
+| `F14BGun` | 18 | −87.5° | 0.78 | 1.57 |
+
+- **The size fits the AI term.** These guns ship no deviation words, so a
+  bot's total is his AI term alone, 0.31 to 1.56 at skill 0.75. The sizes
+  fall in that range.
+- **The direction fits no index.** Each gun declares one
+  `addFireArmsPosition` at `0/0/0`, so `Fire` hands `fireBarrel` barrel 0,
+  and a seated bot would draw at 618. Its point sits at 50.7°.
+- **It is not the plane's roll.** No jet mounts its gun with a rotation.
+  The bots fire level (median bank 0°). The MiG-29's banked shots move with
+  the bank in both the plane's frame and a level one, so the fit's estimate
+  of the platform's velocity in a turn may be part of what is measured.
+- **The gunner seats do fit.** Vanilla's B-17 gunners (`B17_MG1_FB` 848
+  rounds, `B17_MG2_FB` 52) sit at 84° and 79° in a level frame, near 617's
+  76.3°, like the ground seat MGs.
+
+So the pilot's guns are open: which index (or which frame) a bot pilot's
+draw takes is unread. Hand-flown guns are unaffected either way: no
+fighter's or jet's gun ships deviation words.
 
 ## Assets
 
@@ -178,6 +212,8 @@ None to re-extract. The model and level bakes already carry each FireArms'
 
 ## Open
 
+- **A bot pilot's own guns** (above). They are left without a cone until the
+  plane AI's input index, or the frame its draw is taken in, is read.
 - **Hand weapons, DEV-12.** `hand-fire.js` raises `hw.model` in `onShot`,
   before the round, and `hand-weapon.js` reads `current()` at launch. A hand
   weapon's round therefore still carries its own pull's bloom, one shot early.
