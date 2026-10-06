@@ -810,10 +810,11 @@ code:
   `barrelCount`. The B17's stick is 8 bombs from `magSize 8`, one barrel at a
   time off a counter at `FireArms+0x296`.
 
-The third flag in that expression, `tmpl+0x348`, is read as `fireAllAtOnce` at
-`inferred` only (BOMB-4) — the descriptor carries no offset in its vtable and
-`makeScript` never emits the word. `surveys/firearms_multibarrel_words.py` finds
-**0** declarations across all 14 installs, so nothing shipped depends on it.
+The third flag in that expression, `tmpl+0x348`, was read as `fireAllAtOnce` at
+`inferred` only (BOMB-4). **Overturned 2026-10-06 (BOMB-13):** its setter is
+`blastAmmoCount`'s, a bool that charges a salvo one round and skips the partial
+salvo. No rack declares it, but the shotguns and FHSW's canister shells do;
+built in `salvo()` by [`dc-engine-reads`](../dc-engine-reads/README.md).
 
 **O-2. What does `ObjectTemplate.AmmoType` on a rack bind to?** Bomb racks use
 7 or 9, torpedoes 7 or 9, guns 8 or 10. `ledger.md` SUP-2 records that

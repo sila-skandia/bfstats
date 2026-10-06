@@ -365,9 +365,24 @@ def layer_spawns(ctx: LevelContext):
     return top, modes
 
 
-def _briefing_report(briefing) -> dict | None:
+#: The debriefing's own words (`0x006aad90`, ledger ROUND-8): the title by
+#: the local side's result and the victory type, and the heading over the
+#: best players. Resolved per level through the mod chain's lexicon, so a
+#: mod's own wording (Desert Combat's) rides beside its level lines.
+DEBRIEFING_TITLE_KEYS = (
+    "DEBRIEFING_TOTAL_VICTORY", "DEBRIEFING_MAJOR_VICTORY", "DEBRIEFING_MINOR_VICTORY",
+    "DEBRIEFING_TOTAL_DEFEAT", "DEBRIEFING_MAJOR_DEFEAT", "DEBRIEFING_MINOR_DEFEAT",
+    "DEBRIEFING_DRAW", "DEBRIEFING_HEADING",
+)
+
+
+def _briefing_report(briefing, lexicon: dict[str, str] | None = None) -> dict | None:
     """A resolved `BriefingInfo` as scene.json carries it, or None when the
-    level ships none. A field the level does not declare is left out."""
+    level ships none. A field the level does not declare is left out.
+
+    `debriefing` holds the level's eight lines by side (`allied`, `axis`) and
+    the debriefing's titles from `lexicon` (`titles`), when the level declares
+    any line."""
     if briefing is None:
         return None
     out: dict = {}
@@ -377,6 +392,14 @@ def _briefing_report(briefing) -> dict | None:
         out["mapType"] = briefing.map_type
     if briefing.map_id is not None:
         out["mapId"] = briefing.map_id
+    if briefing.debriefing:
+        debriefing = {side: dict(sorted(lines.items()))
+                      for side, lines in sorted(briefing.debriefing.items())}
+        titles = {key: lexicon[key] for key in DEBRIEFING_TITLE_KEYS
+                  if lexicon and key in lexicon}
+        if titles:
+            debriefing["titles"] = titles
+        out["debriefing"] = debriefing
     return out or None
 
 
@@ -393,7 +416,7 @@ def layer_game(ctx: LevelContext):
         # `Menu/Init.con` (a file the rest of the pipeline never opens), with
         # its lexicon keys resolved through the chain's merged lexiconAll.dat.
         # One string per level, no mode scoping anywhere in the data.
-        "briefing": _briefing_report(load_briefing(files, ctx.lexicon)),
+        "briefing": _briefing_report(load_briefing(files, ctx.lexicon), ctx.lexicon),
     }
     modes = {name: {
         # Which of the menu's game types load this layer. Empty for a layer

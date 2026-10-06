@@ -344,7 +344,8 @@ export function rollCone(r, spreadRad) {
  *  - hooks, all optional: `beforeBots()`, `tickBot(bot, dt, now)` (replaces
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
  *    `onRespawned(bot, flag)`, `onShot(bot, at)` (once per round, a flown
- *    one included), `launchRound(bot, stats)` (true: the caller put this
+ *    one included), `onReload(bot, weapon)` (a magazine change has begun),
+ *    `launchRound(bot, stats)` (true: the caller put this
  *    round in flight and bills its landing, so it is not resolved here; the
  *    page's rocket launchers, the runner has none), `onHit(bot, hit)`,
  *    `damageTarget(hit, bot, at)` (true: the caller billed a non-bot target),
@@ -538,12 +539,19 @@ export function createBotReferee(env) {
     if (!armor?.destroyed) return false;
     bot._respawnIn = (bot._respawnIn ?? BOT_RESPAWN_DELAY) - dt;
     if (bot._respawnIn > 0) return true;
-    // A captured capture-only flag is the side's, and still nowhere to spawn.
-    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly);
+    // A captured capture-only flag is the side's, and still nowhere to spawn;
+    // nor is one whose every carrier is down (Weapon Bunkers' bunkers,
+    // SPAWNGRP-10).
+    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && !f.inactive);
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);
-    w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team });
+    // Nowhere to stand up: still down, and asking again next tick, as the
+    // engine's bot keeps choosing a group `spawnPlayer` refuses.
+    if (!w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team })) {
+      bot._respawnIn = 0;
+      return true;
+    }
     const record = w.player(bot.playerId);
     w.setPlayerArmor(bot.playerId, env.armorFor(bot, record?.flag ?? flag));
     if (record?.soldier) bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
@@ -642,6 +650,8 @@ export function createBotReferee(env) {
       // A Bazooka's reload starts a second after its round, so it fires one
       // every 6.6 s, and the round's fire clip plays out before the reload's.
       mag.reloadLeft = mag.reloadTime > 0 ? mag.reloadTime : 1e-6;
+      // `Reload` triggers the weapon's Reload sound slot as it starts (SND-17).
+      env.onReload?.(bot, bot.weaponAi?.name ?? null);
     }
     const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
     bot.magazineEmpty = mag.rounds <= 0;

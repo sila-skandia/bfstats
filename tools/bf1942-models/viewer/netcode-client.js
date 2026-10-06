@@ -167,6 +167,13 @@ export function createRoomClient({ ws, now = null }) {
       msg: row.msg ?? null,
       broadcast: row.broadcast ?? null,
       at: row.at ?? null,
+      // A ticket row's count (`net-room.js` writes it into the level's
+      // tickets) and a CTF row's event (`server/authority.mjs`: what
+      // happened, who did it, where the flag now is; `ctf-page.js` `onRow`).
+      count: row.count ?? null,
+      kind: row.kind ?? null,
+      player: row.player ?? null,
+      position: row.position ?? null,
       text: feedText(row),
     };
     out.feed.push(feedRow);
@@ -200,8 +207,10 @@ export function createRoomClient({ ws, now = null }) {
       case 'captureContested': return `${row.name ?? 'A flag'} is contested`;
       case 'captureCancelled': return `Capture of ${row.name ?? 'a flag'} was stopped`;
       case 'closed': return row.text ?? 'the room closed';
-      // The message log prints radio lines itself (comms.js).
+      // The message log prints radio lines itself (comms.js), and the CTF
+      // lines (`ctf-page.js`, in the mod's words).
       case 'radio': return '';
+      case 'ctf': return '';
       default: return row.text ?? row.type;
     }
   }

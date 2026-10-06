@@ -88,6 +88,8 @@ _VIEWER_MODULES = [
     "bomb-release", "torpedo-run",
     # level-data.mjs gives each room its own tickets, scaled for its slots.
     "round-state",
+    # authority.mjs runs a CTF layer's flags.
+    "ctf",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -492,6 +494,45 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(t["separate"])
         self.assertEqual({"a": 100, "b": 100, "level": 100}, t["before"])
         self.assertEqual({"a": 93, "b": 100, "level": 100}, t["after"])
+
+    def test_a_remote_pilots_rudder_and_lever_arrive_analogue(self) -> None:
+        # c_PIYaw and c_PIThrottle cross as retail's 12-bit channels (W-1,
+        # W-2): -0.37 and 0.6 arrive as -0.37 and 0.6 (the 12-bit step and
+        # the 0.01 snap), not as -1 and 1.
+        u = self.results["u"]
+        self.assertEqual(2, u["buffered"])
+        self.assertEqual(-0.37, u["rudder"])
+        self.assertEqual(0.6, u["forwardKeys"])
+        self.assertEqual(0.5, u["roll"])
+        # An older page's 14-byte record still flies: its signs.
+        self.assertEqual(-1, u["legacyRudder"])
+        self.assertEqual(1, u["legacyForwardKeys"])
+
+    def test_an_older_page_and_a_newer_one_share_a_room(self) -> None:
+        # A 14-byte record (a cached page from before the analogue channels)
+        # and a 17-byte one in one room: both walk, each sees the other, and
+        # each word reaches the world at its own record's resolution.
+        v = self.results["v"]
+        self.assertEqual([18, 21], v["frameSizes"])
+        self.assertEqual([None, None], v["closed"])
+        self.assertGreater(v["oldTravelled"], 3)
+        self.assertGreater(v["newTravelled"], 3)
+        self.assertGreater(v["oldSeenByNew"], 3)
+        self.assertGreater(v["newSeenByOld"], 3)
+        self.assertEqual({"rudder": -1, "forwardKeys": 1}, v["oldWord"])
+        self.assertEqual({"rudder": -0.37, "forwardKeys": 0.6}, v["newWord"])
+
+    def test_a_ctf_rooms_hello_carries_its_flags(self) -> None:
+        # A client joining mid-round starts from where the room's law has each
+        # flag (`ctf.js` `snapshot`): here the Japanese flag in slot 4's hands.
+        w = self.results["w"]
+        self.assertIsNone(w["conquest"])
+        self.assertEqual([0, 1], [row["flag"] for row in w["ctf"]])
+        self.assertEqual({"flag": 0, "home": True, "carrier": None, "carrierTeam": 0,
+                          "position": [0, 7.6, 100], "respawnIn": 30}, w["ctf"][0])
+        self.assertEqual((False, 4, 2, [1, 0, -100]),
+                         (w["ctf"][1]["home"], w["ctf"][1]["carrier"], w["ctf"][1]["carrierTeam"],
+                          w["ctf"][1]["position"]))
 
 
 if __name__ == "__main__":

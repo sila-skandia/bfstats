@@ -33,6 +33,12 @@
 // "bots fire one bullet at a time" of features/bot-weapons. Held for a cycle,
 // one bot's burst plays every round out of one slot, and the pool grows to
 // `PER_WEAPON` for that many shooters of the weapon at once.
+//
+// A magazine change is the script's Reload slot, triggered once as it starts
+// (ledger SND-17): `playReload`, pooled beside the weapon's rounds and held
+// until its last `Time`-gated load has played. Its `Volume <- Distance` ramps
+// are the game's own reason nobody hears another soldier reload: every one of
+// vanilla's 239 reload loads stops at a metre, and 563 of Desert Combat's 573.
 
 import { loadEngineAudio, WEAPON_HEADROOM } from './engine-audio.js';
 
@@ -59,6 +65,22 @@ const ONE_SHOT_HOLD = 1.0;
 /** Past this, `play` drops the shot rather than steal. A firefight of ten
  *  bots must not stack thirty patches through the page's limiter. */
 const MAX_LIVE_SHOTS = 12;
+
+/** A weapon's Reload slot is pooled under its name plus this. */
+const RELOAD_KEY = '#reload';
+
+/** Seconds after the trigger a layer's step `Volume <- Time` gate opens: the
+ *  ramp's first parameter when it starts from nothing, else 0. */
+function timeGate(layer) {
+  let at = 0;
+  for (const m of layer.modulators || []) {
+    if (m.dest === 'volume' && m.source === 'time' && m.envelope === 'ramp'
+        && (m.params?.[2] ?? 0) <= 0) {
+      at = Math.max(at, m.params?.[0] ?? 0);
+    }
+  }
+  return at;
+}
 
 class Slot {
   constructor(audio) {
@@ -137,7 +159,29 @@ export class WorldFire {
         slots: [],
         pending: null,
       });
+      // The Reload slot (ledger SND-17), its own pooled entry: one trigger
+      // as the change starts, every load waiting on its own `Time` gate, so
+      // a slot is held until the last of them has played out. Its
+      // `Volume <- Distance` ramps stop nearly every load at a metre.
+      if (spec?.reload?.layers?.length) {
+        this.weapons.set(`${name.toLowerCase()}${RELOAD_KEY}`, {
+          name: `${name}${RELOAD_KEY}`,
+          layers: spec.reload.layers.map(layer => ({ ...layer, loop: false })),
+          fallback: false,
+          delay: 0,
+          loopPatch: false,
+          sequence: true,
+          hold: null,
+          slots: [],
+          pending: null,
+        });
+      }
     }
+  }
+
+  /** A magazine change by `name` at `position`: its Reload slot, once. */
+  playReload(name, position) {
+    return !!name && this.play(`${name}${RELOAD_KEY}`, position);
   }
 
   has(name) {
@@ -191,12 +235,15 @@ export class WorldFire {
     // (`randomStartPitch` down), plus the patch's delay.
     if (entry.hold === null) {
       let cycle = 0;
+      let tail = 0;
       for (const layer of layers) {
         const down = layer.randomStartPitch?.[1] ?? 0;
         const duration = buffers.get(layer.file)?.duration ?? 0;
         cycle = Math.max(cycle, duration / Math.max(0.5, 1 - down));
+        tail = Math.max(tail, timeGate(layer) + duration / Math.max(0.5, 1 - down));
       }
-      entry.hold = (entry.loopPatch && cycle > 0 ? cycle : ONE_SHOT_HOLD) + (entry.delay || 0);
+      entry.hold = entry.sequence ? Math.max(tail, ONE_SHOT_HOLD)
+        : (entry.loopPatch && cycle > 0 ? cycle : ONE_SHOT_HOLD) + (entry.delay || 0);
     }
     audio.setMaster(0);   // silent until a round asks for it
     // `start` is what primes the one-shot pool without playing anything: with
@@ -255,7 +302,8 @@ export class WorldFire {
     // cycle, so the shooter's next round takes the same slot; anything else
     // for a second, enough to keep a report's tail from being stolen.
     slot.busyUntil = now + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
-    return started > 0;
+    // A reload's loads all wait on their own gates, so none starts here.
+    return started > 0 || !!entry.sequence;
   }
 
   liveShots() {
@@ -288,8 +336,15 @@ export class WorldFire {
     }
     const ear = this.#ear(this.getListener?.());
     const master = this.getMaster();
+    const now = this.now();
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) {
+        // A reload's hold covers its last gate, so a load still armed past it
+        // was never heard (the listener stood beyond its metre) and must not
+        // go off when he later walks up to the spot.
+        if (entry.sequence && slot.busyUntil > 0 && slot.busyUntil <= now) {
+          slot.audio.disarmPending();
+        }
         slot.audio.setMaster(slot.busyUntil > 0 ? master : 0);
         slot.audio.update({
           dt,

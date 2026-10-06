@@ -62,9 +62,7 @@
 //
 // Composition, not physics: every constant and formula used here is imported
 // from the module that owns it. No constant or formula is restated, scaled or
-// "improved"; the only numbers peculiar to this file are the tick rate above
-// and the axis smoothing spring (`STICK_RATE`/`STICK_RETURN`), both moved
-// verbatim from map.html where the aircraft path already owned them.
+// "improved"; the only number peculiar to this file is the tick rate above.
 
 import {
   FixedStep, ENGINE_TICK_RATE, MAX_CATCH_UP_TICKS,
@@ -80,7 +78,7 @@ import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
 import { soldierTick } from './world-soldier-tick.js';
 import { assignIntegrators, stepFallingWrecks, vehicleTick } from './world-vehicle-tick.js';
-import { combatTick, supplyTick, supplyTarget } from './world-fields.js';
+import { combatTick, supplyFieldTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
 
 // The world is split one subsystem to a module, each a set of plain
@@ -94,8 +92,6 @@ import { damageTick } from './world-damage.js';
 //   world-vehicle-tick.js  a seated player's tick and the one-drive-one-integration rule
 //   world-fields.js        the combat area and the supply depots
 //   world-damage.js        crash damage and the water and tier pass
-
-export { STICK_RATE, STICK_RETURN } from './world-input.js';
 
 /** The world's tick: the engine's own 30 Hz (physics.js, LOOP-1). */
 export const WORLD_TICK_RATE = ENGINE_TICK_RATE;
@@ -183,8 +179,15 @@ export class World {
    */
   addDamageable(owner, node = null, armorExtras = null, { name = null, position = null } = {}) {
     if (node) this.nodeOwners.set(node, owner);
-    const vehicle = this.vehicleDamage.add(owner, armorExtras, { name });
+    const vehicle = this.vehicleDamage.add(owner, armorExtras, {
+      name, submarineData: node?.userData?.physics?.submarineData ?? null });
     if (vehicle && position) this.positions.set(owner, position);
+    // What a repair depot matches (SUP-19): only a root PlayerControlObject
+    // is worked on, by its root template's `addVehicleType` row.
+    if (vehicle && node) {
+      vehicle.isPco = node.userData?.templateKind === 'PlayerControlObject';
+      vehicle.template = node.userData?.control ?? null;
+    }
     return vehicle;
   }
 
@@ -447,7 +450,6 @@ export class World {
       if (player.occupancy) vehicleTick(this, player, dt, this.#integrators);
       else soldierTick(this, player, dt);
       if (combatTick(this, player, dt)) combatStepped = true;
-      supplyTick(this, player, dt);
       this.report.players[player.id] = {
         gate: { ...player.gate },
         look: { yaw: player.lookApplied.yaw - before.yaw,
@@ -456,6 +458,10 @@ export class World {
         supply: player.supplyResult,
       };
     }
+    // The depots, once for the whole world: every soldier and hull a due
+    // cycle reaches (`world-fields.js`). It fills the `supplyResult` each
+    // player's report entry above holds.
+    supplyFieldTick(this, dt);
     // Free fly is the one state with no engine counterpart — no player object
     // to accrue against — so the accumulator is reset rather than frozen, and
     // no player gets a combat frame, which culls the warning group. With

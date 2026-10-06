@@ -12,6 +12,8 @@ import { AIRBORNE_MARGIN } from './airborne.js';
 import { restoreLift } from './world-vehicle-tick.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
+import { AbandonClock, calcSpawnDelay } from './deployables.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -20,10 +22,10 @@ import { loadFirst, poseBases } from './pose-bases.js';
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
  * `cutVehicleAudio`, `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `freezeVehicle`, `groundHeight`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
- * `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
+ * `maxPlayers`, `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
  * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `useLens`,
- * `vehicleDamage`, `vehicles`, `world`.
+ * `vehicleDamage`, `vehiclePads`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
   const wrecks = {};
@@ -43,6 +45,7 @@ export function createVehicleWrecks(page) {
   function registerDamageables(ownerRoots) {
     clearDamageVisuals();
     page.vehicleDamage.clear();
+    padsRegistered = page.vehiclePads?.pads ?? null;
     // The world registers its side of every Armored owner (its own
     // `vehicleDamage` set IS this array — same object, see show()) and takes
     // the node + a world position for the water pass, so that pass needs no
@@ -67,9 +70,15 @@ export function createVehicleWrecks(page) {
           handles: [],
           spawnDelay: spawnDelayForNode(node),
         });
+        ownerOfNode.set(node, owner);
       }
     }
   }
+
+  /** Placed node -> its Armor's owner id, for the pads (`stepPads`). */
+  let ownerOfNode = new WeakMap();
+  /** The pad list `registerDamageables` last answered for. */
+  let padsRegistered = null;
 
   /**
    * Match a placed spawner node to its ObjectSpawner respawn window.
@@ -124,6 +133,8 @@ export function createVehicleWrecks(page) {
       visual.anchors.clear();
     }
     damageVisuals.clear();
+    ownerOfNode = new WeakMap();
+    abandonClocks = new WeakMap();
   }
 
   /**
@@ -145,25 +156,49 @@ export function createVehicleWrecks(page) {
     return anchor;
   }
 
-  /** Start the tier's bundles on this vehicle, having stopped whatever ran before. */
+  /**
+   * Start a tier's bundles on the object, each where the engine puts it: a
+   * child of the object at its authored offset, turned with it and with no
+   * turn of its own (ledger ARM-11, `Armor::playEffect` lnxded 0x08172960).
+   * An anchor per entry, so two entries of one bundle at two offsets
+   * (Clacton's two `e_ScrapAABase` in its death tier) are two effects at two
+   * places rather than one anchor moved twice. `key` keeps one tier's anchors
+   * apart from another's. Returns the handles.
+   *
+   * Case is not a concern here even though it looks like one: a Sherman
+   * authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
+   * `EffectLibrary` keys on the lowercased name and `get` lowercases its
+   * argument — the same case-insensitivity the console language itself has
+   * (ledger HP-4, RFA-1).
+   */
+  function playTier(visual, vehicle, tier, key) {
+    const handles = [];
+    const entries = (vehicle?.effects ?? []).filter(e => e.hp === tier.threshold);
+    entries.forEach((entry, i) => {
+      const anchor = damageAnchor(visual, `${key}#${i}`, entry.offset);
+      // `damage:` keeps it out of `placeWreck`'s hide pass.
+      anchor.name = `damage:${entry.effect}`;
+      const handle = page.effects.play(entry.effect, { attach: { object: anchor } });
+      if (handle) handles.push(handle);
+    });
+    return handles;
+  }
+
+  /**
+   * Start the tier's bundles on this vehicle, having stopped whatever ran
+   * before. The death tier comes through here too: `VehicleDamage.update`
+   * hands it over as the tier change that comes with the death, as
+   * `playEffect` swaps the living tier for `getEffect(0)` (or `-1` in water).
+   * Its frame is what a spawn effect stands its object up in: Desert Combat's
+   * ruined control tower takes the tower's heading from here.
+   */
   function showDamageTier(vehicle, tier) {
     const visual = damageVisuals.get(vehicle.owner);
     if (!visual) return;
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
     if (!tier) return;
-    for (const name of tier.names) {
-      // Case is not a concern here even though it looks like one: a Sherman
-      // authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
-      // `EffectLibrary` keys on the lowercased name and `get` lowercases its
-      // argument — the same case-insensitivity the console language itself has
-      // (ledger HP-4, RFA-1).
-      const entry = vehicle.effects.find(
-        e => e.effect === name && e.hp === tier.threshold);
-      const anchor = damageAnchor(visual, name, entry?.offset);
-      const handle = page.effects.play(name, { attach: { object: anchor } });
-      if (handle) visual.handles.push(handle);
-    }
+    visual.handles.push(...playTier(visual, vehicle, tier, 'tier'));
   }
 
   // How long a wreck lies there before it fades, and how long the fade takes.
@@ -231,6 +266,18 @@ export function createVehicleWrecks(page) {
    * asked two trees for a wreck that exists in neither.
    */
   async function wreckUrls(template, { drawn = true } = {}) {
+    return variantUrls(template, 'wreck', { drawn });
+  }
+
+  /**
+   * Where `template`'s intact model is, the same way: what a pad loads for
+   * the side its level did not bake (`level-statics.js` `loadPadVariants`).
+   */
+  async function modelUrls(template) {
+    return variantUrls(template, 'complex');
+  }
+
+  async function variantUrls(template, configuration, { drawn = true } = {}) {
     const key = String(template || '').toLowerCase();
     if (!key) return [];
     const level = String(page.extras?.level ?? '').toLowerCase();
@@ -239,15 +286,18 @@ export function createVehicleWrecks(page) {
     for (const base of bases) {
       const entry = (await catalogue(base)).get(key);
       if (!entry) continue;
-      const wrecks = (entry.variants || []).filter(variant =>
-        variant?.glb && variant.configuration === 'wreck' && !variant.firstPerson);
-      const pick = wrecks.find(variant => String(variant.level ?? '').toLowerCase() === level)
-        ?? wrecks.find(variant => !variant.level)
-        ?? wrecks[0];
-      return pick ? [`${base}/${pick.glb}${bust}`] : [];
+      const found = (entry.variants || []).filter(variant =>
+        variant?.glb && variant.configuration === configuration && !variant.firstPerson);
+      const pick = found.find(variant => String(variant.level ?? '').toLowerCase() === level)
+        ?? found.find(variant => !variant.level)
+        ?? found[0];
+      if (pick) return [`${base}/${pick.glb}${bust}`];
+      if (configuration === 'complex' && entry.glb) return [`${base}/${entry.glb}${bust}`];
+      return [];
     }
     if (!drawn) return [];
-    return bases.map(base => `${base}/${modelFileStem(template)}.wreck.glb${bust}`);
+    const suffix = configuration === 'complex' ? '' : `.${configuration}`;
+    return bases.map(base => `${base}/${modelFileStem(template)}${suffix}.glb${bust}`);
   }
 
   /** Whether a placed node draws anything a wreck could stand in for. */
@@ -295,12 +345,12 @@ export function createVehicleWrecks(page) {
 
     visual.node.updateWorldMatrix(true, false);
     visual.node.getWorldPosition(wreckDeathPos);
-    const death = deathTier(vehicle.effects, { inWater: false });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
+    // The death tier is already burning: every caller has just handed it to
+    // `showDamageTier` as the tier change the death came with. Playing it
+    // again here doubled every death explosion, and stood a spawn effect's
+    // object (a ruined objective, a raft) up twice. A hull with no death tier
+    // gets the stand-in, on the ground's normal.
+    if (!deathTier(vehicle.effects, { inWater: false })) {
       page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     }
 
@@ -417,14 +467,11 @@ export function createVehicleWrecks(page) {
     const inWater = Number.isFinite(page.collider?.waterLevel)
       && wreckDeathPos.y <= page.collider.waterLevel + 0.5;
     const vehicle = page.vehicleDamage.get(owner);
+    // The crash's explosion is the death tier again, on its own anchors (the
+    // kill's runs may still be burning on theirs), in the hull's frame.
     const death = deathTier(vehicle?.effects, { inWater });
-    if (death?.names?.length) {
-      for (const name of death.names) {
-        page.effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-      }
-    } else {
-      page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-    }
+    if (death) playTier(visual, vehicle, death, 'crash');
+    else page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.
     restoreLift(drive);
@@ -456,7 +503,8 @@ export function createVehicleWrecks(page) {
       const scene = await wreckModels.get(cacheKey);
       // The vehicle may have been cleared (level change) while the glb was in
       // flight, and `damageVisuals` is rebuilt per level — so re-check.
-      if (!scene || damageVisuals.get(vehicle?.owner) !== visual) return;
+      // Or the pad cleared the wreck and stood a fresh hull up meanwhile.
+      if (!scene || damageVisuals.get(vehicle?.owner) !== visual || !visual.wrecked || visual.removed) return;
       const wreck = scene.clone(true);
       wreck.name = `wreck:${template}`;
       // Wreck GLBs ship the same armour-region collision hulls as the live
@@ -641,50 +689,186 @@ export function createVehicleWrecks(page) {
         }
       }
       if (opacity > 0) continue;
-      // Gone: drop the wreck, open the pad for walking, start the respawn clock.
-      visual.removed = true;
-      if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
-      for (const child of visual.hidden) child.visible = false;
-      for (const handle of visual.handles) handle.stop?.();
-      visual.handles.length = 0;
-      // A hull the body world had moved is answered through the moved-owner
-      // path, which ignores the disabled flag; drop that too or the faded wreck
-      // stays solid.
-      page.collider?.clearMovedOwner?.(owner, { enable: false });
-      page.collider?.statics?.disableOwner?.(owner);
-      visual.respawnIn = spawnDelayFor(visual);
+      // Gone: drop the wreck and open the pad for walking. A pad's own hull is
+      // its pad's to bring back (`stepPads`, whose delay has been running since
+      // the hull went critical); a node no pad names keeps its own clock.
+      clearWreck(owner, visual);
+      if (!page.vehiclePads?.padOf?.(visual.node)) visual.respawnIn = spawnDelayFor(visual);
     }
+    stepPads(dt);
   }
 
-  /** Seconds until a fresh vehicle replaces this pad, from ObjectSpawner data. */
+  /** The wreck goes from the world: its model, its effects and its
+   *  collision. The node stays, hidden, for its pad to stand up again. */
+  function clearWreck(owner, visual) {
+    visual.removed = true;
+    if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
+    for (const child of visual.hidden) child.visible = false;
+    for (const handle of visual.handles) handle.stop?.();
+    visual.handles.length = 0;
+    // A hull the body world had moved is answered through the moved-owner
+    // path, which ignores the disabled flag; drop that too or the faded wreck
+    // stays solid.
+    page.collider?.clearMovedOwner?.(owner, { enable: false });
+    page.collider?.statics?.disableOwner?.(owner);
+  }
+
+  /** The server the next delay is drawn for: every player in the world, bots
+   *  included, against the page's slot count (`calcSpawnDelay`, SPAWN-10). */
+  function serverCounts() {
+    return { players: page.world?.players?.size ?? 0, maxPlayers: page.maxPlayers ?? 0 };
+  }
+
+  /** Seconds until a fresh vehicle replaces a node no pad entry names: its
+   *  stamped window, drawn as the engine draws a pad's (SPAWN-10). */
   function spawnDelayFor(visual) {
     const d = visual.spawnDelay;
     if (d) {
       const min = Number.isFinite(d.min) ? d.min : 30;
       const max = Number.isFinite(d.max) ? d.max : min;
-      return min + Math.random() * Math.max(0, max - min);
+      const { players, maxPlayers } = serverCounts();
+      return calcSpawnDelay(min, max, players, maxPlayers);
     }
     // Maps extracted before objectSpawns landed: a mid-range house rule.
     return 40;
   }
 
+  // What the pads (`level-statics.js` `stepVehiclePads`) ask of the hulls on
+  // them. A node with no Armor never dies.
+  const padWorld = {
+    players: 0,
+    maxPlayers: 0,
+    alive(node) {
+      const owner = ownerOfNode.get(node);
+      return owner == null || !damageVisuals.get(owner)?.removed;
+    },
+    // `isDestroyed`, not the critical burn before it: a burning hull still
+    // holds its pad (SPAWN-11).
+    destroyed(node) {
+      const owner = ownerOfNode.get(node);
+      if (owner == null) return false;
+      return !!(damageVisuals.get(owner)?.wrecked || page.vehicleDamage.get(owner)?.destroyed);
+    },
+    position(node) {
+      node.updateWorldMatrix(true, false);
+      const e = node.matrixWorld.elements;
+      return [e[12], e[13], e[14]];
+    },
+    destroy(node) {
+      const owner = ownerOfNode.get(node);
+      const visual = owner == null ? null : damageVisuals.get(owner);
+      // A wreck still burning on the pad is replaced, not waited out
+      // (`ObjectSpawner::handleFrameUpdate`, SPAWN-11). One still in the air
+      // has not come down on the pad.
+      if (!visual?.wrecked || visual.removed || visual.falling) return;
+      clearWreck(owner, visual);
+    },
+    spawn(node) {
+      const owner = ownerOfNode.get(node);
+      if (owner == null) return true;
+      return respawnVehicle(owner);
+    },
+  };
+
+  function stepPads(dt) {
+    if (!page.vehiclePads?.stepVehiclePads) return;
+    // The pads are the level's from its `indexScene`, and this side's answers
+    // are the level's from `registerDamageables`, which runs after it: a frame
+    // between the two (a level loading) would draw the first delays for a
+    // world nobody has joined yet.
+    if (page.vehiclePads.pads && page.vehiclePads.pads !== padsRegistered) return;
+    stepAbandoned(dt);
+    Object.assign(padWorld, serverCounts());
+    page.vehiclePads.stepVehiclePads(dt, padWorld);
+  }
+
+  // node -> AbandonClock: the countdown `spawnObject` arms on every vehicle
+  // a pad stands up (ledger SPAWN-13), dropped with the hull it timed.
+  let abandonClocks = new WeakMap();
+
+  /** Every live soldier on foot, at his origin (feet plus a metre): the
+   *  clock's "near" test walks every alive player whose object is a soldier. */
+  function footOrigins() {
+    const out = [];
+    const world = page.world;
+    for (const [id, player] of world?.players ?? []) {
+      const s = player?.soldier;
+      if (!s || world.armorOf?.(id)?.destroyed || page.vehicles?.seatOf?.(id)) continue;
+      out.push([s.x, s.y + CHARACTER_HEIGHT, s.z]);
+    }
+    return out;
+  }
+
   /**
-   * Restore a pad after its respawn timer: full HP, live mesh, collision back on.
-   * The vehicle sits at its original spawn pose — the engine replaces the object
-   * at the ObjectSpawner, it does not drag a wreck home.
+   * The abandoned hulls' clocks (`PlayerControlObject::handleFrameUpdate`,
+   * SPAWN-13): a pad's hull standing farther than its spawner's `Distance`
+   * from the pad, with nobody in it and no soldier on foot within its
+   * bounding radius, counts down `TimeToLive` and then loses `damageWhenLost`
+   * a second, into its own critical burn. Only a scene that carries the words
+   * (`objectSpawns[].timeToLive`, the exporter since 2026-10-06) arms them; an
+   * older one keeps hulls that never time out, as before. The out-of-world
+   * bill after it (SPAWN-20) is not modelled.
+   */
+  function stepAbandoned(dt) {
+    const pads = page.vehiclePads?.pads;
+    if (!pads?.length || !(dt > 0)) return;
+    let feet = null;
+    for (const record of pads) {
+      const spec = record.spawn;
+      if (!Number.isFinite(spec?.timeToLive)) continue;
+      for (const node of record.live) {
+        const owner = ownerOfNode.get(node);
+        const visual = owner == null ? null : damageVisuals.get(owner);
+        const vehicle = owner == null ? null : page.vehicleDamage.get(owner);
+        if (!visual || !vehicle || visual.wrecked || vehicle.destroyed) continue;
+        let clock = abandonClocks.get(node);
+        if (!clock) {
+          clock = new AbandonClock({
+            timeToLive: spec.timeToLive,
+            distance: Number.isFinite(spec.distance) ? spec.distance : 100,
+            damageWhenLost: Number.isFinite(spec.damageWhenLost) ? spec.damageWhenLost : 1,
+          });
+          abandonClocks.set(node, clock);
+        }
+        const at = padWorld.position(node);
+        const spawnerDistance = Math.hypot(at[0] - record.at[0], at[1] - record.at[1], at[2] - record.at[2]);
+        const inst = page.vehicles?.instanceOf?.(node);
+        const occupied = !!(inst && !inst.empty);
+        // Only a far, empty hull needs the soldiers looked for.
+        let soldierNear = false;
+        if (spawnerDistance > clock.distance && !occupied) {
+          feet ??= footOrigins();
+          const r = node.userData?.cullRadius ?? 0;
+          soldierNear = feet.some(o =>
+            (o[0] - at[0]) ** 2 + (o[1] - at[1]) ** 2 + (o[2] - at[2]) ** 2 < r * r);
+        }
+        const loss = clock.step(dt, { spawnerAlive: true, spawnerDistance, soldierNear, occupied });
+        if (loss > 0) vehicle.damage(loss, null);
+      }
+    }
+  }
+
+  /**
+   * Restore a pad: full HP, live mesh, collision back on. The vehicle sits at
+   * its original spawn pose — the engine replaces the object at the
+   * ObjectSpawner, it does not drag a wreck home. Returns whether it stands.
    */
   function respawnVehicle(owner) {
     const visual = damageVisuals.get(owner);
     const vehicle = page.vehicleDamage.get(owner);
-    if (!visual) return;
+    if (!visual) return false;
+    // A wreck still lying where it came down is the same node: it clears first.
+    if (visual.wrecked && !visual.removed) return false;
     // Someone is still sitting in the empty pad — wait a beat rather than
     // materialising a hull around them.
     if (page.vehicles.instanceOf(visual.node)) {
-      visual.respawnIn = 1;
-      return;
+      if (!page.vehiclePads?.padOf?.(visual.node)) visual.respawnIn = 1;
+      return false;
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    // A fresh hull: `spawnObject` arms its clock anew.
+    abandonClocks.delete(visual.node);
     visual.removed = false;
     visual.wreckAge = 0;
     // A pad that came back while its last hull was still falling: the fall is
@@ -699,7 +883,7 @@ export function createVehicleWrecks(page) {
       visual.node.remove(visual.wreck);
       visual.wreck = null;
     }
-    for (const child of visual.hidden) {
+    for (const child of visual.hidden ?? []) {
       child.visible = true;
       // No-wreck fallthrough fades these in place; undo that, and only that.
       // Keying the undo on `opacity < 1` also caught every material that is
@@ -737,6 +921,7 @@ export function createVehicleWrecks(page) {
     page.collider?.statics?.enableOwner?.(owner);
     visual.node.updateMatrixWorld(true);
     page.respawnVehicleBody(owner);
+    return true;
   }
 
   /** Fade a subtree. Its materials are this wreck's own — see `wreckVehicle`. */
@@ -792,6 +977,8 @@ export function createVehicleWrecks(page) {
   Object.assign(wrecks, {
     damageVisuals,
     loadFailures,
+    modelUrls,
+    padWorld,
     wreckState,
     registerDamageables,
     showDamageTier,

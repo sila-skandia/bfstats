@@ -81,13 +81,16 @@ time rather than a pair — which requires `tmpl+0x338` to be the set flag and n
 other boolean word is present to be it.
 
 `tmpl+0x348` forces the same single-round charge *and* suppresses the partial
-salvo, i.e. "the whole salvo is one shot". The only unclaimed FireArms boolean
-whose name fits is `fireAllAtOnce` (string `0x086d5185`, descriptor
-`0x087a4840`), so that is the reading — **`inferred`, not verified**: the
-property descriptor does not carry its target offset in the vtable and the
-serializer never emits the word. It does not matter for anything shipped:
-`surveys/firearms_multibarrel_words.py` finds **zero** `fireAllAtOnce`
-declarations across all 14 installs.
+salvo, i.e. "the whole salvo is one shot". It is **`blastAmmoCount`**, a bool
+(BOMB-13, read 2026-10-06): its setter, `ConsoleClass352::executeObjectMethod`
+`0x082d8380`, writes that byte. The earlier reading, `fireAllAtOnce`, was a
+name guess and is refuted (BOMB-4): that word writes `+0x164` of another
+template class. And it is not moot. No bomb rack declares it, but the shotguns
+do (XPack2's `Shotgun`, Desert Combat's `Remington` and `Saiga12k`: five or
+eight pellets for one shell), and so do 111 of FHSW's canister and shrapnel
+shells, 20 to 155 barrels each. Desert Combat's `setBlastAmmoCount 5` on the
+A-10 and SU-25 guns and the Minigun fails the bool read (CON-17) and sits on
+guns with one barrel or none, where the flag changes nothing either way.
 
 ---
 
