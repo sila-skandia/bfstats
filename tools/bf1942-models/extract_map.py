@@ -1510,6 +1510,11 @@ def projectile_materials(library) -> dict[str, dict]:
             # assumes when this is absent.
             if template.mass is not None:
                 entry["mass"] = template.mass
+        # The push its blast gives a soldier (`viewer/knockback.js`, ledger
+        # KNOCK-4, KNOCK-7): only a declared one, the constructor's 150 being
+        # what the viewer assumes when this is absent.
+        if template.force_on_explosion is not None:
+            entry["forceOnExplosion"] = template.force_on_explosion
         if entry:
             out[name] = entry
     return out

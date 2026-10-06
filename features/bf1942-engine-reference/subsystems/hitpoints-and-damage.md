@@ -202,12 +202,20 @@ entry and nothing on the non-soldier path touches it. And a soldier gets
 (`fmulp` at `0x081566b4`), with an exposure of exactly 0.0 short-circuiting to
 no damage. HP-10's "not distance falloff" is true of the exposure term alone.
 
-**The force path is separate, and reads the victim's Armor.**
-`getExplosionForceMod` (vtable `+0xb4`, `0x081742c0`) is read at `0x081569cb`
-and clamped to `getExplosionForceMax` (vtable `+0xbc`, `0x081742f0`). Below a
-separation of 0.001 the impulse direction is the **terrain normal** at the
-explosion point rather than the separation vector, and a soldier's impulse is
-additionally scaled by `0.1` and by `finalDamage/rawDamage`.
+**The force path is separate, and reads the victim's Armor** (ledger
+KNOCK-4..KNOCK-9, read in full 2026-10-06). It runs only once the priced
+damage is above zero, for a victim with no parent and a physics node:
+`F = explosionForceMod (Armor, vtable +0xb4, 0x081742c0) * forceOnExplosion *
+(1/radius) * exposure`, clamped to `getExplosionForceMax` (vtable `+0xbc`,
+`0x081742f0`). There is no distance falloff in it. A soldier's is scaled by
+`finalDamage/rawDamage` always and by `0.1` **only while his physics node
+reports water** (`getUnderWater() != 0`; an earlier line here had the 0.1
+unconditional). The direction is the separation plus the victim's own nearest
+axis, and for a soldier the separation's rise is replaced by `(1 - d/r) * 5`,
+with no push at all past half the radius; below a separation of 0.001 it is
+the **terrain normal** at the explosion point. The acceleration sits in the
+physics node's accumulator for one tick, so a soldier leaves at `F / 30` m/s
+(KNOCK-6). `viewer/knockback.js` is the law.
 
 `handleExplosionOnObject` does not apply the damage: it appends
 `{objectId, damage, …, Pos3}` to six parallel double-buffered vectors on the

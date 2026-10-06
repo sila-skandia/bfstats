@@ -126,8 +126,13 @@ export const IMPACT_BLAST_OFFSET = 0.1;
  * shells are `damageType 4` *with* the flag set, and the flag is not dead on
  * them: it kills them on contact, with no explosion of either kind.
  *
- * Returns `{ material2, radius, damageType, hasCollisionEffect, yMod, impact,
- * endOfLife }`. `material2 -1` is the authored "no splash" (fighter MGs).
+ * Returns `{ material2, radius, damageType, hasCollisionEffect, yMod, force,
+ * impact, endOfLife }`. `material2 -1` is the authored "no splash" (fighter
+ * MGs). `force` is the block's own `forceOnExplosion` (`ProjectileTemplate
+ * +0x1b0`), or null where it carries none; the projectile table's row
+ * (`damage.json`) is asked first by the caller, and an undeclared one is the
+ * constructor's 150 (`knockback.js`, KNOCK-7). It is the push the blast
+ * gives a soldier, and nothing else reads it.
  *
  * **One radius, and it is the integer** — this is the easy thing to get wrong.
  * The ledger says the end-of-life path passes an *untruncated* radius
@@ -166,7 +171,8 @@ export function splashSpec(damage) {
   const impact = damageType === 1 && !!hasCollisionEffect;
   const endOfLife = damageType === 1 || damageType === 4;
   if (!impact && !endOfLife) return null;
-  return { material2, radius, damageType, hasCollisionEffect, yMod, impact, endOfLife };
+  const force = Number.isFinite(damage.forceOnExplosion) ? damage.forceOnExplosion : null;
+  return { material2, radius, damageType, hasCollisionEffect, yMod, force, impact, endOfLife };
 }
 
 /**
