@@ -99,6 +99,8 @@ _VIEWER_MODULES = [
     # room-pads.mjs runs the page's pad law (deployables.js) and the table
     # finds a pad's node the page's way (level-statics.js).
     "deployables", "level-statics",
+    # room-pads.mjs clears a wreck on its Armor's own clock, as the page does.
+    "after-death",
     # room-hits.mjs prices a reported landing by the page's own law.
     "friendly-fire", "knockback", "soldier-exposure", "soldier-death", "skeleton-hit",
 ]
