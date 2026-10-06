@@ -435,9 +435,16 @@ function spawnProjectile(guns, muzzle, group, spec) {
     group,
     velocity,
     kind: spec.kind,
-    // Shells fall (`gravityModifier` defaults to 1); rockets are carried by
-    // their motor and fly flat here.
-    gravity: spec.kind === 'shell' ? (spec.gravity ?? 1) : 0,
+    // Every round falls by its own `gravityModifier`, and a round that
+    // declares none falls at 1.0: the `ProjectileTemplate` constructor writes
+    // 1.0 and the physics body, not the round, integrates it (ledger IMP-7).
+    // The kind is the exporter's guess at what to draw and says nothing about
+    // physics. Reading "rocket" as "flies flat" left the four artillery rockets
+    // that declare no modifier (vanilla's Katyusha, Desert Combat's MLRS,
+    // BM-21 and SCUD-B) climbing for their whole `timeToLive`; the rockets
+    // that do fly flat (Hydra, Hellfire, the AIM-9 and the rest) say so with
+    // `gravityModifier 0`, and still do.
+    gravity: spec.gravity ?? 1,
     // `speedScale` slows a fast round for legibility, and a round slowed in
     // speed alone is not slowed in *time*: it spends 1/scale as long over
     // every metre, so a full-strength g bends its path by 1/scale^2 more than

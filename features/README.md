@@ -85,6 +85,7 @@ folder answers.
 | [flak-proximity-fuse](flak-proximity-fuse/README.md) | fix | Why did AA shells pass through planes, and how does the proximity fuse work? |
 | [bf1942-blast-and-bounce](bf1942-blast-and-bounce/README.md) | build | How much does a blast hurt a soldier, and why do fused rounds bounce? |
 | [plane-bombs-and-torpedoes](plane-bombs-and-torpedoes/README.md) | design | How do retail plane bombs and torpedoes behave, and how were they built? |
+| [rocket-flight](rocket-flight/README.md) | build | How does a rocket fly: its gravity, its motor, and where does it land? |
 | [damage-parity](damage-parity/README.md) | build | Does a hand-weapon hit cost what retail charges, by body part and range? |
 | [vehicle-rounds-hit-soldiers](vehicle-rounds-hit-soldiers/README.md) | fix | Why could AA and vehicle rounds not hit soldiers directly? |
 | [viewer-collision-damage](viewer-collision-damage/README.md) | research | What does retail do when vehicles collide, burn and are destroyed? |
