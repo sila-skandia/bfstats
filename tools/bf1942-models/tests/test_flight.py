@@ -434,6 +434,18 @@ class FlightModelTests(unittest.TestCase):
         self.assertEqual(s["size"], [11.3, 2.28, 9.14])
         self.assertTrue(s["fallback"])
 
+    def test_a_regulator_runs_its_own_servo_from_its_data(self) -> None:
+        # `setMinRotation 0/-2/0`, `setMaxRotation 0/2/0`, `setMaxSpeed
+        # 0/30/0`, `setAcceleration 0/120/0` and no input: read off the Wing's
+        # physics into a velocity servo (GUN-2) that integrates the
+        # regulator's command, so in level flight it moves off its rest
+        # incidence (a tree with no such data froze it there).
+        s = self.results["spitfire"]
+        self.assertEqual({"servoLaw": True, "min": -2, "max": 2, "maxSpeed": 30, "acceleration": 120},
+                         s["regulator"])
+        self.assertGreater(abs(s["regulatorTrim"]), 0.2)
+        self.assertLessEqual(abs(s["regulatorTrim"]), 2.0)
+
     def test_the_spitfire_pitch_rate_per_full_stick(self) -> None:
         # Measured, not fitted: a second after a full stick, from a second of
         # hands-off flight at the speed (28 / 48 deg/s up at 40 / 60 m/s).
