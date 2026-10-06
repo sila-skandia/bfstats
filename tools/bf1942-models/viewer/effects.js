@@ -275,7 +275,8 @@ export class EffectPlayer {
     this.particles = [];
     this.decals = [];
     // What spawn effects stood up. They are objects of the world, not of the
-    // run that made them: nothing ends them but `clear()`.
+    // run that made them: the server destroys them (`removeObject`), or the
+    // level goes (`clear()`).
     this.objects = [];
     this.objectRecord = null;
     this.spritePool = new Map();   // material uuid -> Mesh[]
@@ -425,6 +426,16 @@ export class EffectPlayer {
         stopSound();
       },
     };
+  }
+
+  /** Take one object a spawn effect stood up out of the world: the server
+   *  destroyed it (HP-19, HP-20). */
+  removeObject(object) {
+    const at = this.objects.indexOf(object);
+    if (at < 0) return false;
+    this.objects.splice(at, 1);
+    object.removeFromParent();
+    return true;
   }
 
   /** Put every run and particle away. Call on a level change. */
@@ -677,7 +688,9 @@ export class EffectPlayer {
    * been born, in the same rolled frame (`spawnParticleInto`: EMT-3, EMT-4),
    * and takes no speed — the call has no velocity to give it. The bake hangs
    * the object's tree under the emitter node; each spawn is a clone of it,
-   * sharing its geometry and materials, and it stays until `clear()`.
+   * sharing its geometry and materials, and it stays until the server
+   * destroys it (`removeObject`: its time to live after death, the round's
+   * end; HP-19, HP-20, EMT-11) or the level goes (`clear()`).
    */
   #spawnObject(run, emitter, emitterVelocity) {
     const source = emitter.template.node.children[0];
