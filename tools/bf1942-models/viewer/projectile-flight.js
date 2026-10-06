@@ -91,9 +91,12 @@ const _turn = new THREE.Vector3();
 /**
  * One frame of a round's own motors (`rocket-motor.js`, ledger PHY-18..21).
  *
- * The push is along the engine's own forward axis, which for every shipped
- * rocket is the round's nose (each Engine sits on the axis with `setRotation
- * 0/0/0`), at the engine's own height for the air density and the water test.
+ * The push is along the engine's own forward axis, which for every rocket in
+ * vanilla, Desert Combat, DC Final and EoD is the round's nose (each Engine
+ * sits on the axis with `setRotation 0/0/0`), at the engine's own height for
+ * the air density and the water test. FHSW's Norden bombs (`0/30/0`) and
+ * lantern (`0/90/0`) turn theirs, and the turn is not honoured here
+ * (`features/rocket-flight` Open item 10).
  * Where the nose points is the body's business:
  *
  *  - a full physics body (`setHasPointPhysics 0`, `shot.dragBox` set) has its
