@@ -172,7 +172,11 @@ export class FireState {
     // the fire timer the drain waits on. The engine starts the lockout at the
     // next pull, the one the heat refuses; this starts it on the round that
     // crosses 1, which a held trigger reaches one round period later, and
-    // which differs only for a trigger let go on exactly that round.
+    // never restarts it. The engine restarts it on every pull refused at 1 or
+    // more, so a held trigger cools one tick a lockout there and fires about
+    // half as often after the first; a crossing within one tick's drain of 1
+    // (the M249's, the PKM's) also locks a round early here. Open: see
+    // features/hand-weapon-barrels-sight-and-heat, section 3.
     if (this.hasHeat) {
       this.heat += this.stats.heatAddWhenFire;
       this.fireRemaining = firePeriod(this.stats.roundOfFire);

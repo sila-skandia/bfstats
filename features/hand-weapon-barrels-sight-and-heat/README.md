@@ -180,8 +180,26 @@ change and after it (`~/.cache/dc-sweep/hand-weapons/before/run_heat_before.py`)
 | Vanilla pintle Browning (10 a second) | never | 38, at 3.7 s |
 | Vanilla coaxial Browning (10 a second) | 49, at 4.8 s | 25, at 2.4 s |
 
-After the lockout a held trigger fires one round per lockout, about one every
-2 s.
+After the lockout a held trigger fires one round per lockout here, about one
+every 2 s. The engine is slower; see "Open".
+
+**Checked against the real game (review, 2026-10-07).** The lab's vanilla
+server recordings (35 files under `~/bf1942-lab/runs/2026100[3-6]-*`, every
+round in them an `f` record, fake rounds included) hold 50,577 rounds from 483
+stationary, pintle and coaxial MGs. Bots stop a burst at heat 0.8 and resume at
+0.5 (AI-130's `BAPConWeaponHeat(0.8, 0.5)`, lnxded `evaluate` `0x08555510`,
+reading FireArms+0x238). The longest uninterrupted bursts are 30 rounds for the
+MG42 and the Browning, and 20 for the coaxial Browning. That is where GUN-14 and
+GUN-15 first reach 0.8: 0.04 − 0.4/30 a round is 0.813 at round 30, and
+0.05 − 0.3/30 is 0.81 at round 20. The old continuous drain would reach 0.8 at
+the MG42's 60th round and the coax's 40th, and never on the Browning. Replayed
+through GUN-14/15, no recorded burst ends above heat 0.827, 575 of 1,046 MG42
+bursts end at 0.8 or more, and none of the old rule's ends at 0.8 (its maximum
+is 0.43). `FireState`, fed the same 46,714 recorded pulls at the seat's tick
+order, matches a float32 emulation of the binary to 8e-6 and refuses none of
+them. The scripts are `bursts.py`, `lawcheck.py`, `aicheck.py` and `fsnode/cmp.mjs`
+in `~/.cache/dc-sweep/review-hand-weapons/`. The bots never reach the lockout,
+so the 38 rounds to the first refused pull rest on GUN-14 alone.
 
 In the page, with the scratch-extracted M249 served in place of the live one
 (`hand_page.cjs`): a held trigger fired 61 to 62 rounds before the lockout
@@ -209,9 +227,20 @@ overheat. The lead's commands are in the package report.
 **Open.**
 
 - The lockout starts on the round that crosses 1, not on the refused pull
-  after it (GUN-14). A held trigger reaches that pull one round period later;
-  a trigger let go on exactly the crossing round is locked here and not in the
-  engine.
+  after it (GUN-14), and `FireState` never restarts it. In the engine every
+  pull refused at heat 1 or more starts the lockout again once the last has run
+  out (`Fire` `0x0828ab30`..`0x0828ab6c`), so a held trigger gets exactly one
+  tick of cooling per lockout. Emulating the binary in float32 (review,
+  `fsnode/hold.mjs`), a held trigger after the first lockout fires 0.2 to 0.3
+  rounds a second; `FireState` fires 0.4 to 0.5. The MG42 needs two lockouts a
+  round and the coax four. The first refused pull agrees for the MG42, Browning
+  and coax (38, 38, 25). The M249 and PKM lock one round early here (60 and 50,
+  against 61 and 51): their crossing round lands within one tick's drain of 1,
+  and the engine drains that tick before it tests. A trigger let go on the
+  crossing round is locked here and not in the engine. The fix is a refused-pull
+  call on `FireState`, made by `hand-fire.js` and `world-vehicle-tick.js`
+  while the trigger is held and `canFire` is false. A getter cannot do it,
+  because the HUD and the hooks read `canFire` every frame.
 - Whether a tick runs the soldier's fire message or the weapon's
   `handleUpdate` first decides whether the drain lands before or after the
   round. The round counts assume the trigger first, as `gun-cycle.js` does
@@ -219,8 +248,12 @@ overheat. The lead's commands are in the package report.
 - A grenade's charge (hold to charge, release to throw at `velocity × heat`)
   is read in the decompile (GUN-14) and not built: the page throws at the full
   `velocity`, and the bar beside a grenade stays empty.
-- A server-lab recording of a held stationary MG42 would confirm the 38 rounds
-  against the real game.
+- The page's bots do not stop at heat 0.8 (`bot-fire.js` names the break
+  but nothing implements it). Retail bots never reach a lockout. Under this law
+  a page bot that holds a vehicle MG's trigger reaches it after 38 rounds, then
+  fires about one round every 2 s. Under the old law it reached it after 73
+  rounds, or never on a Browning. Porting `BAPConWeaponHeat(0.8, 0.5)` is the `bots` package's
+  work.
 
 ## 4. The turn spread: Desert Combat's rifles widen when the view swings
 
