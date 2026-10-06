@@ -18,7 +18,8 @@ import * as THREE from 'three';
 import { createLevelSky } from './level-sky.js';
 import { createLevelFlare } from './level-flare.js';
 import { createLevelShading } from './level-shading.js';
-import { createLevelStatics, isCollision } from './level-statics.js';
+import { createLevelStatics, isCollision, loadPadVariants } from './level-statics.js';
+import { loadFirst } from './pose-bases.js';
 import { createLevelTerrain } from './level-terrain.js';
 import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
@@ -40,7 +41,7 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * `ensureBotRoot`, `fireStates`, `floatPlacedVehicles`, `forgetEntryPoints`,
  * `forgetFlagChoice`, `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`,
  * `fullmapName`, `guns`, `hemi`, `leaveOnFoot`, `loadCollisionMeshes`,
- * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`,
+ * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`, `modelUrls`,
  * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optPilot`,
  * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
@@ -365,6 +366,15 @@ export function createLevel(page) {
           + `showing ${level.extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`)
       : null;
     if (level.modeNote) console.warn(level.modeNote);
+    // The other side's vehicle for each pad that changes hands, from the
+    // models tree (`level-statics.js` `loadPadVariants`), while the old level
+    // still runs: nothing below has torn it down yet.
+    await loadPadVariants(gltf.scene, level.extras, {
+      load: async template => {
+        const urls = await page.modelUrls(template);
+        return urls.length ? loadFirst(page.loader, urls).catch(() => null) : null;
+      },
+    });
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
     // referee -- against the new World once it is built.
@@ -724,6 +734,10 @@ export function createLevel(page) {
     unlitCockpit: shading.unlitCockpit,
     updateSky: sky.updateSky,
     updateTextureFade: shading.updateTextureFade,
+    vehiclePads: {
+      padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
+      get pads() { return statics.pads; },
+    },
     vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree: warm.warmSubtree,
     warmups,

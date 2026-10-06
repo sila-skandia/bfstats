@@ -153,6 +153,7 @@ folder answers.
 | [viewer-score-and-bleed](viewer-score-and-bleed/README.md) | build | How are scores awarded and tickets lost and bled in a retail round? |
 | [authentic-spawn-map](authentic-spawn-map/README.md) | build | How are the spawn screen and minimap built from the game's own menu data? |
 | [deploy-screen-spawn-points](deploy-screen-spawn-points/README.md) | build | Why were spawn rings missing, and where do ship deck spawns come from? |
+| [vehicle-spawner-pads](vehicle-spawner-pads/README.md) | build | Which side's vehicle does a pad spawn, when does it come back, and when does a carried spawn die? |
 | [briefing-screen](briefing-screen/README.md) | build | How is the briefing screen drawn from game assets and gated before spawning? |
 | [mobile-four-finger-controls](mobile-four-finger-controls/README.md) | research | What should each of the four fingers control on the map page's touch layout? |
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |

@@ -377,7 +377,10 @@ Two other things fell out of it and are tested:
 `+0xcc`) is `map.html:shipFlagInactive`: a critically damaged ship's flag
 reports `inactive` and `spawnAtFlag` refuses it. Same threshold that arms the
 sink, so a burning destroyer stops offering her decks at the moment she starts
-going down.
+going down. Since 2026-10-06 the gate is per point and for every carrier, not
+only a ship: `hull-bodies.js` `bindCarriers` gives each carried point its
+carrier's state, and the bots' respawn and the world's spawn pick read it too
+([vehicle-spawner-pads](../vehicle-spawner-pads/README.md), SPAWNGRP-10).
 
 ### On the page
 
