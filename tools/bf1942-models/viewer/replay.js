@@ -47,7 +47,7 @@ import { ReplayUi, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
-import { ReplayCamera, hullRadius } from './replay-camera.js';
+import { ReplayCamera, hullRadius, killerToFollow } from './replay-camera.js';
 import { buildChapters, killsOf, recordingPlayers } from './replay-chapters.js';
 import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
@@ -239,6 +239,20 @@ class ReplayPlayer {
     if (pid === this.followPid || pid === null || pid === undefined || Number.isNaN(pid)) return;
     this.followPid = pid;
     this.camera.followChanged();
+  }
+
+  /** The followed player's death cam has held its beat: the camera goes on
+   *  to the man who killed him (`killerToFollow`), as the Auto camera does
+   *  (the 2026-10-06 request). Only while the round plays through that
+   *  moment, and never under the Auto camera, which does it itself, a
+   *  highlight's reel, a creator's rig or the free camera. */
+  followKiller(prevT, t) {
+    if (!this.playing || this.ui.scrubbing || this.followPid === null) return;
+    if (this.camera.mode === 'free' || this.camera.rig || this.highlights?.auto || this.highlights?.reel) return;
+    const killer = killerToFollow(this.rec, this.followPid, prevT, t, this.kills);
+    if (killer === null) return;
+    this.ui.follow(killer);
+    this.ui.flash(`Killer: ${nameAt(this.rec, killer, t)}`, 1600);
   }
 
   /** How fast the game's message log runs against the page's clock: the
@@ -704,6 +718,7 @@ class ReplayPlayer {
     // camera was aimed at before the replay ran, and the followed player
     // vanished at some angles of the orbit. The Auto camera's director and
     // the highlight reel choose whom it is on first.
+    guard.run('following the killer', () => this.followKiller(prevT, t));
     this.withHighlights(h => h.lead(t, dt));
     this.withCreator(c => c.lead(t, dt));
     guard.run('the camera', () => this.camera.update(dt, t), () => {

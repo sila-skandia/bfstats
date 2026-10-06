@@ -144,6 +144,24 @@ export class ReplaySoldiers {
 
   get available() { return Boolean(this.bodies); }
 
+  /**
+   * `pid`'s drawn pelvis, into `out`: his corpse while it lies, else his
+   * living body (the death cam's first frame runs before this frame's death
+   * is drawn, and the corpse is the same group); null when neither is drawn.
+   * The page's own death cam looks at the drawn pelvis too (soldier-view.js
+   * `corpseCentre`): a body falling back lies up to 3 m from his recorded
+   * place.
+   */
+  pelvisOf(pid, out) {
+    const id = `replay:${pid}`;
+    const actor = this.actors.get(pid);
+    const scene = this.bodies?.corpseOf?.(id)
+      ?? (actor && !actor.state.dead ? this.bodies?.botVisuals?.get(id)?.group : null);
+    if (!scene?.visible) return null;
+    const pelvis = scene.getObjectByName('Bip01_Pelvis') ?? scene.getObjectByName('Bip01 Pelvis');
+    return pelvis ? pelvis.getWorldPosition(out) : null;
+  }
+
   /** The actor for `pid`, made on first sight at recording time `t`. */
   actorFor(pid, t) {
     let actor = this.actors.get(pid);

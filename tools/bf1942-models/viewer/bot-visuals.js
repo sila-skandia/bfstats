@@ -574,6 +574,12 @@ export function createBotVisuals(page) {
    *  `addCorpse`, so one clock runs every body down. */
   const corpses = [];
   botBodies.addCorpse = corpse => { corpses.push(corpse); };
+  /** The scene of the latest body `playerId` left that still lies, or null
+   *  (a replay's death cam frames it, replay-bodies.js `pelvisOf`). */
+  botBodies.corpseOf = playerId => {
+    for (let i = corpses.length - 1; i >= 0; i--) if (corpses[i].name === playerId) return corpses[i].scene;
+    return null;
+  };
 
   /**
    * The bot has just died: pick the engine's death and leave the body playing
