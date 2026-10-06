@@ -1288,3 +1288,12 @@ Open:
 2. FH's and FHSW's `FletcherStatic`, `Lexington` and `Saratoga` roots never
    write the word, so the engine holds them still as well. Their trees pick
    the key up at their next bake.
+
+### 25.1 The CIWS's `autoFire` asks for nothing (2026-10-06)
+
+The census listed the Nimitz's `CIWS_Phalanx` `autoFire` as unread. It reads
+`autoFire 0`, which is the engine default, so the Phalanx is an ordinary
+manned gun and the viewer already handles it as one (FA-4). No shipped data
+in vanilla, the two packs, DC or DC Final sets the word to 1. What 1 would
+do, a gun that fires on its own every time it is ready, is recorded in FA-4
+and is not built.
