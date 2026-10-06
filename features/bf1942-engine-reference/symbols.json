@@ -13430,8 +13430,8 @@
    "kind": "string",
    "subsystem": "weapons",
    "confidence": "inferred",
-   "source": "research-2026-09-22-bombs",
-   "note": "lnxded .rodata. Descriptor object 0x087a4840, vtable 0x08738aa8, ctor 0x082db580, registered at 0x082ab5f8. The leading candidate for the second single-round flag at FireArmsTemplate+0x348 (ledger BOMB-4) -- NOT proven: the descriptor does not carry its target offset in the vtable and makeScript never emits the word. 0 declarations across all 14 installs, so it is moot for shipped data."
+   "source": "research-2026-09-22-bombs; engine-reads-2026-10-06",
+   "note": "lnxded .rodata. Descriptor object 0x087a4840, vtable 0x08738aa8, ctor 0x082db580, registered at 0x082ab5f8. The leading candidate for the second single-round flag at FireArmsTemplate+0x348 (ledger BOMB-4) -- NOT proven: the descriptor does not carry its target offset in the vtable and makeScript never emits the word. 0 declarations across all 14 installs, so it is moot for shipped data. | REFUTED 2026-10-06 (BOMB-4, BOMB-13): this word's setter ConsoleClass370::executeObjectMethod 0x082db8e0 writes +0x164 of another template class (CID 0x86c2ba0), not FireArmsTemplate+0x348; +0x348 is blastAmmoCount (setter 0x082d8380)."
   },
   {
    "address": "0x086d51c9",
