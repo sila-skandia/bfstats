@@ -29,7 +29,7 @@ import { Vehicle } from './vehicle-base.js';
 import { Aircraft, CORSAIR, GRAVITY, calculateLift, aircraftSpec } from './aircraft.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
-import { aimAtDirection, helicopterControl } from './bot-vehicle-air.js';
+import { aimAtDirection, helicopterControl, towardsPoint } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { LIFT_ENGINE_ANGLE, clipAngleStep } from './vectored-engines.js';
 import { currentRatio, currentTorque } from './engine-revs.js';
@@ -1886,7 +1886,8 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
                  y: craft.state.position.y, pitchRate: body.x * DEG, yawRate: body.y * DEG, rollRate: body.z * DEG };
       };
       const tick = keys => {
-        bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: keys.rudder ?? 0, roll: 0, pitch: keys.pitch ?? 0 });
+        bufferInput(seat, { forwardKeys: keys.forward ?? 0, rudder: keys.rudder ?? 0, roll: keys.roll ?? 0,
+                            pitch: keys.pitch ?? 0, pad: !!keys.pad });
         vehicleTick(world, seat, 1 / 30, integrators);
         return attitude();
       };
@@ -1946,6 +1947,45 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       });
       real.yawOnly[name] = { yawRate: round(yawRate, 1), lean: round(lean, 2),
                              pitchRate: round(pitchRate, 2), rollRate: round(rollRate, 2) };
+    }
+    // A bot in the Harrier flies the plane law (AI-60), which is what DC's
+    // data gives it: its `AV8BCtrl` is a jet's `ControlInfo3d` (maxSpeed 60,
+    // turnRadius 25, maxClimbAngle 0.305), and the engine has no other law.
+    // The helicopters' hover law cannot fly it: its collective raises the
+    // lift by going positive, and the Harrier's positive `c_PIThrottle`
+    // opens the forward engine and closes the lift jets (`hovers` false), so
+    // it drove down the strip at 80 m/s and never left it. The plane law
+    // takes off on the forward engine, as the bot did in retail, and goes
+    // 3 km to its point; there it orbits, which is that law's arrival. With
+    // the RollGrip bug it swerved 17 degrees and banked 10 on its roll.
+    if (existsSync(dc('AV-8B'))) {
+      const harrier = new Aircraft(await glb(dc('AV-8B')), null, { cockpit: false, surfaceFriction: () => 0.8 });
+      harrier.groundHeight = () => 0;
+      harrier.state.position.set(0, harrier.spec.groundClearance, 0);
+      const pilot = keyed(harrier);
+      const target = [0, 80, -3000];
+      let airborne = false, arrived = null, liftedAt = null, maxBank = 0, minY = Infinity, swerve = 0;
+      for (let i = 0; i < 60 * 30 && arrived === null; i++) {
+        const s = harrier.state, w = s.angularVelocity;
+        const r = towardsPoint({
+          orientation: s.orientation, position: [s.position.x, s.position.y, s.position.z],
+          velocity: [s.velocity.x, s.velocity.y, s.velocity.z], angularVelocity: [w.x, w.y, w.z], target,
+          clearance: 50, groundAt: () => 0, altitudeAlong: () => s.position.y, altitude: s.position.y,
+          airborne, maxSpeed: 60, radius: 25,
+        });
+        airborne = r.airborne;
+        // `bot-pilot.js` `planePower`: a vectored airframe's throttle is the
+        // held axis, as the law asks; the stick is the pad's.
+        const a = pilot.tick({ forward: Math.max(-1, Math.min(1, r.throttle)), rudder: r.rudder,
+                               roll: r.roll, pitch: r.pitch, pad: true });
+        if (liftedAt === null && s.position.y > 10) liftedAt = round((i + 1) / 30, 1);
+        if (airborne) minY = Math.min(minY, s.position.y);
+        else swerve = Math.max(swerve, Math.abs(a.heading));
+        maxBank = Math.max(maxBank, Math.abs(a.bank));
+        if (r.arrived) arrived = round((i + 1) / 30, 1);
+      }
+      real.harrierBot = { hovers: harrier.hovers, liftedAt, arrived, minY: round(minY, 1), maxBank: round(maxBank, 1),
+                          swerve: round(swerve, 2) };
     }
     // The bot's law flies each of them 700 m and puts it down on the point.
     real.pilot = {};

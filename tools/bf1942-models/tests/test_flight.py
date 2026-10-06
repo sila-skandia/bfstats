@@ -1021,6 +1021,22 @@ class FlightModelTests(unittest.TestCase):
         self.assertGreater(h["pitchAfter"], h["pitchBeforePull"] + 3.0)
         self.assertGreater(h["climbedAfter"], 10.0)
 
+    def test_a_bot_flies_the_harrier_on_the_plane_law(self) -> None:
+        # DC's AV-8 AI is a jet's ControlInfo3d, and its positive throttle is
+        # the forward engine, so it is no hover airframe: the plane law takes
+        # it off the strip on the forward engine and out to its point.
+        real = self.results.get("realGlbs")
+        if real is None or "harrierBot" not in real:
+            self.skipTest("no extracted Desert Combat AV-8B on this machine")
+        bot = real["harrierBot"]
+        self.assertFalse(bot["hovers"])
+        self.assertIsNotNone(bot["liftedAt"])
+        self.assertLess(bot["liftedAt"], 15.0)
+        self.assertIsNotNone(bot["arrived"])
+        self.assertGreater(bot["minY"], 20.0)
+        self.assertLess(bot["maxBank"], 30.0)
+        self.assertLess(bot["swerve"], 2.0)
+
     def test_pedal_alone_turns_a_helicopter_and_nothing_else(self) -> None:
         # Two seconds of D in a hover, measured against the same hover flown
         # without it. No gyroscopic term (COL-8): the yaw stays a yaw.
