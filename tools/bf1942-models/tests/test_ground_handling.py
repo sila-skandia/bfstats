@@ -170,6 +170,18 @@ class GroundHandlingTests(unittest.TestCase):
                 self.assertTrue(row["recovered"]["running"])
                 self.assertGreater(row["recovered"]["speed"], 10.0)
 
+    def test_the_krupp_tops_out_on_its_own_drag(self) -> None:
+        # XPack2's Krupp authors `drag 15` on 2,500 kg. Under the engine's box
+        # law (PHY-4) that drag is quadratic over its 3.23 m^2 frontal ellipse:
+        # on sand it settles at 19.0 m/s, about 68 km/h, below the gearbox's
+        # 31.3 m/s ceiling. The sphere law it ran before let it reach 30.0.
+        k = self.results["krupp"]
+        if k is None:
+            self.skipTest("no XPack2 tree")
+        self.assertEqual(15, k["drag"])
+        self.assertAlmostEqual(19.0, k["top"], delta=0.6)
+        self.assertGreater(k["ceiling"], 30.0)
+
     def test_a_tank_turns_on_the_spot_at_retails_rate(self) -> None:
         # Lab, LOD 0, 0.5-2 m/s, yaw rate p90 / p99 / max (deg/s):
         # T-72 56.8 / 78.1 / 83.6, M1A1 54.9 / 79.6 / 84.0,
