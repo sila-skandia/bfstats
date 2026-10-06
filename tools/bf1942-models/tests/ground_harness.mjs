@@ -2556,4 +2556,50 @@ function amphibianNode() {
   };
 }
 
+// --- the Forklift's forks: a step on the axis, the part's own servo -------
+//
+// The world feeds a land drive's `c_PIPitch` as a step (MLK-10; no spring of
+// the viewer's in front of it), so the rate the forks move at is the parts'
+// own: `Forklift_Fork` and `Forklift_Lift1` are `setMaxSpeed 0/60/0` over
+// -160..20 and `Forklift_Lift2` `0/120/0` over -40..320 (DC
+// `Objects/Vehicles/Land/Forklift/Objects.con`, carried as the glb's rig
+// extras). The three share one servo key, the first part's spec; both specs
+// give 0.375 of full deflection a second. Hung on the Willy's chassis.
+{
+  const FORK_RIG = {
+    control: 'Willy', automaticReset: false,
+    axes: {
+      pitch: {
+        input: 'c_PIPitch', min: -160, max: 20, free: false,
+        driver: 'position', maxSpeed: 60, direction: 1, acceleration: 1000,
+      },
+    },
+  };
+  const node = willyNode();
+  const fork = new THREE.Object3D();
+  fork.name = 'Forklift_Fork';
+  fork.position.set(0, 0.5, -1.5);
+  fork.userData = { templateKind: 'RotationalBundle', rig: FORK_RIG };
+  node.add(fork);
+  const truck = new GroundVehicle(node, null, { cockpit: false, groundHeight: () => 0 });
+  truck.state.position.set(0, 0.6, 0);
+  drive(truck, 1);
+  const forkKey = () => [...truck.state.surfaces.keys()].find(k => k.includes('c_PIPitch'));
+  const held = [];
+  drive(truck, 1, t => {
+    t.setInput('c_PIPitch', 1);
+    held.push(t.state.surfaces.get(forkKey()) ?? 0);
+  });
+  // `drive` records before each integrate: the value after tick n is the
+  // next entry, and the last tick's is read here.
+  held.push(truck.state.surfaces.get(forkKey()) ?? 0);
+  results.forkServo = {
+    bound: !!forkKey(),
+    dt: DT,
+    firstStep: round(held[1], 5),
+    afterOneSecond: round(held.at(-1), 4),
+    rate: FORK_RIG.axes.pitch.maxSpeed / 160,
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

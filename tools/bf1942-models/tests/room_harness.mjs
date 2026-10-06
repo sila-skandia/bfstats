@@ -964,7 +964,86 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   a.team1 += 7;
 }
 
-// --- (u) a CTF room's HELLO carries its flags ---------------------------------------
+// --- (u) the record's analogue throttle and rudder reach the world -------------
+// A remote pilot's joystick rudder and lever (and a 14-byte record from an
+// older page, which carries their signs alone) through the room's own feed
+// into the world's buffered word.
+{
+  const peer = attachPeer(core, String(nextTag++));
+  const hello = joinPeer(core, peer, 'UUU', 'Pilot');
+  const room = core.room('UUU');
+  const player = room.world.player(hello.slot);
+  player.buffer.length = 0;
+  player.lastSeen = -1;
+  const pilot = walkInput({ forward: 0, forwardKeys: 0.6, rudder: -0.37, roll: 0.5, pitch: -0.25 });
+  sendInput(peer, 1, pilot);
+  const fresh = player.buffer[player.buffer.length - 1]?.input ?? null;
+  const legacy = encodeInputFrame(2, pilot, { x: 0, y: 0 }).slice(0, 4 + 14);
+  send(peer, MSG_INPUT, legacy);
+  const old = player.buffer[player.buffer.length - 1]?.input ?? null;
+  results.u = {
+    rudder: fresh?.rudder ?? null,
+    forwardKeys: fresh?.forwardKeys ?? null,
+    roll: fresh?.roll ?? null,
+    legacyRudder: old?.rudder ?? null,
+    legacyForwardKeys: old?.forwardKeys ?? null,
+    buffered: player.buffer.length,
+  };
+  player.buffer.length = 0;
+}
+
+// --- (v) an older page and a newer one in one room ----------------------------
+// A page from before the analogue channels sends 14-byte records; a current
+// one sends 17. One room takes both on the same clock: each walks on its own
+// record and each sees the other move in its snapshots.
+{
+  const pOld = attachPeer(core, String(nextTag++));
+  const pNew = attachPeer(core, String(nextTag++));
+  const helloOld = joinPeer(core, pOld, 'VVV', 'Old', 0);
+  const helloNew = joinPeer(core, pNew, 'VVV', 'New', 0);
+  const room = core.room('VVV');
+  const w = room.world;
+  sendJson(pOld, MSG_ACTION, { type: 'spawn', flag: 0 });
+  sendJson(pNew, MSG_ACTION, { type: 'spawn', flag: 1 });
+  const at = slot => ({ x: w.player(slot).soldier.x, z: w.player(slot).soldier.z });
+  const startOld = at(helloOld.slot);
+  const startNew = at(helloNew.slot);
+  pOld.sent.length = 0;
+  pNew.sent.length = 0;
+  const sizes = new Set();
+  for (let i = 1; i <= 30; i++) {
+    const legacy = encodeInputFrame(i, walkInput({ forwardKeys: 1, rudder: -1 }), { x: 0, y: 0 })
+      .slice(0, 4 + 14);
+    sizes.add(legacy.length);
+    send(pOld, MSG_INPUT, legacy);
+    const fresh = encodeInputFrame(i, walkInput({ forwardKeys: 0.6, rudder: -0.37 }), { x: 0, y: 0 });
+    sizes.add(fresh.length);
+    send(pNew, MSG_INPUT, fresh);
+    clock.ms += FRAME_MS;
+    room.frame(FRAME_MS);
+  }
+  const travelled = (slot, from) => Math.hypot(at(slot).x - from.x, at(slot).z - from.z);
+  const seenBy = (peer, slot, from) => {
+    const snaps = ofType(peer, MSG_SNAPSHOT);
+    if (!snaps.length) return -1;
+    const row = decodeSnapshot(snaps.at(-1).subarray(1)).players.find(p => p.slot === slot);
+    return row ? Math.hypot(row.x - from.x, row.z - from.z) : -1;
+  };
+  results.v = {
+    frameSizes: [...sizes].sort(),
+    oldTravelled: travelled(helloOld.slot, startOld),
+    newTravelled: travelled(helloNew.slot, startNew),
+    oldSeenByNew: seenBy(pNew, helloOld.slot, startOld),
+    newSeenByOld: seenBy(pOld, helloNew.slot, startNew),
+    oldWord: { rudder: w.player(helloOld.slot).last?.input?.rudder ?? null,
+               forwardKeys: w.player(helloOld.slot).last?.input?.forwardKeys ?? null },
+    newWord: { rudder: w.player(helloNew.slot).last?.input?.rudder ?? null,
+               forwardKeys: w.player(helloNew.slot).last?.input?.forwardKeys ?? null },
+    closed: [pOld.closed, pNew.closed],
+  };
+}
+
+// --- (w) a CTF room's HELLO carries its flags ---------------------------------------
 // The authority runs the CTF law on a CTF layer (`server/authority.mjs`); a
 // client joining mid-round reads where each flag is off its HELLO
 // (`ctf.js` `snapshot`), and a Conquest room sends none.
@@ -980,7 +1059,7 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   ctf.tick(1 / 30, [{ id: 4, team: 2, alive: true, onFoot: true, position: [1, 0, -100] }]);
   const hello = room.helloRow({ slot: 5, team: 1, name: 'Late' });
   const conquest = bleedRoom('CNQ', {}).room.helloRow({ slot: 1, team: 1, name: 'X' });
-  results.u = { ctf: JSON.parse(JSON.stringify(hello.ctf)), conquest: conquest.ctf };
+  results.w = { ctf: JSON.parse(JSON.stringify(hello.ctf)), conquest: conquest.ctf };
 }
 
 console.log(JSON.stringify(results));

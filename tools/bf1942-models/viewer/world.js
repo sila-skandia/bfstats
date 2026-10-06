@@ -62,9 +62,7 @@
 //
 // Composition, not physics: every constant and formula used here is imported
 // from the module that owns it. No constant or formula is restated, scaled or
-// "improved"; the only numbers peculiar to this file are the tick rate above
-// and the axis smoothing spring (`STICK_RATE`/`STICK_RETURN`), both moved
-// verbatim from map.html where the aircraft path already owned them.
+// "improved"; the only number peculiar to this file is the tick rate above.
 
 import {
   FixedStep, ENGINE_TICK_RATE, MAX_CATCH_UP_TICKS,
@@ -94,8 +92,6 @@ import { damageTick } from './world-damage.js';
 //   world-vehicle-tick.js  a seated player's tick and the one-drive-one-integration rule
 //   world-fields.js        the combat area and the supply depots
 //   world-damage.js        crash damage and the water and tier pass
-
-export { STICK_RATE, STICK_RETURN } from './world-input.js';
 
 /** The world's tick: the engine's own 30 Hz (physics.js, LOOP-1). */
 export const WORLD_TICK_RATE = ENGINE_TICK_RATE;

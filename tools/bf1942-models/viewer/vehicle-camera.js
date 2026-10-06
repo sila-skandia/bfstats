@@ -132,13 +132,18 @@ const FLYBY = {
   clearance: 4,
 };
 
-/** Mouse-look limits per mode, radians. Cockpit's pair is the only one in data. */
+/** Mouse-look limits per mode, radians, in this file's sense: `look.yaw`
+ *  positive turns left and `look.pitch` positive looks up. Cockpit's pair is
+ *  the only one in data. */
 const LOOK_LIMITS = {
   // `CorsairCamera`: setMinRotation -70/-40/0, setMaxRotation 70/5/0. [data]
-  cockpit: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 40 / 180, pitchUp: Math.PI * 5 / 180 },
+  // The engine's pitch is the `setRotation` pitch, positive nose-down (ledger
+  // MLK-17), so that camera looks 40 degrees up and 5 down; the look here
+  // counts the other way round (`cameraLookLimits`).
+  cockpit: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 5 / 180, pitchUp: Math.PI * 40 / 180 },
   // The nose cam is the same Camera object with its eye displaced, so it keeps
   // the same neck.
-  nose: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 40 / 180, pitchUp: Math.PI * 5 / 180 },
+  nose: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 5 / 180, pitchUp: Math.PI * 40 / 180 },
   // An external camera orbits rather than swivels a neck, so it gets the full
   // circle and a pitch stopping short of the poles where the frame would flip.
   chase: { yaw: Infinity, pitchDown: -1.2, pitchUp: 1.2 },
@@ -146,6 +151,41 @@ const LOOK_LIMITS = {
   // Fly-by is a camera on a tripod in the world. It has no operator's head.
   flyby: null,
 };
+
+/**
+ * A seat Camera's own neck, from its look rig, or null to keep the defaults.
+ *
+ * A glb baked with the camera word carries the rig as `cameraView.look`; an
+ * older one only where the Camera had children of its own (`rig`, DC's
+ * `H6CoPilotCamera`). The axes are the engine's `setMin/MaxRotation` yaw and
+ * pitch in degrees, clipped as GUN-2 clips them; both turn the other way from
+ * this file's look (the exporter maps them as `Ry(-yaw) Rx(-pitch)`, ledger
+ * MLK-17), so `[min, max]` becomes `[-max, -min]`. A free axis (both bounds
+ * zero) has no clip of its own: its yaw is unlimited and its pitch keeps the
+ * default, short of the poles.
+ */
+export function cameraLookLimits(cameraUserData) {
+  const axes = cameraUserData?.cameraView?.look?.axes ?? cameraUserData?.rig?.axes;
+  if (!axes) return null;
+  const rad = Math.PI / 180;
+  const bounded = spec => spec && !spec.free
+    && Number.isFinite(spec.min) && Number.isFinite(spec.max);
+  const out = {};
+  // Only the look's own axes: a Camera bundle bound to anything else is not
+  // the neck the mouse turns.
+  const yaw = axes.yaw?.input === 'c_PIMouseLookX' ? axes.yaw : null;
+  const pitch = axes.pitch?.input === 'c_PIMouseLookY' ? axes.pitch : null;
+  if (yaw?.free) out.yaw = Infinity;
+  else if (bounded(yaw)) {
+    out.yawMin = -yaw.max * rad;
+    out.yawMax = -yaw.min * rad;
+  }
+  if (bounded(pitch)) {
+    out.pitchDown = -pitch.max * rad;
+    out.pitchUp = -pitch.min * rad;
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 /**
  * A seat root with no drivetrain -- a Defgun, an AA gun, a Browning on its
@@ -242,6 +282,13 @@ export class VehicleCamera {
     this.setModes(options.modes, false);
     this.mode = this.modes.includes(options.mode) ? options.mode : this.modes[0];
     this.groundHeight = options.groundHeight || (() => -Infinity);
+    /** The seat Camera's own neck (`cameraLookLimits`), over the cockpit's
+     *  and the nose cam's defaults; null keeps the defaults. */
+    this.cameraLimits = options.lookLimits || null;
+    this._insideLimits = this.cameraLimits ? {
+      cockpit: { ...LOOK_LIMITS.cockpit, ...this.cameraLimits },
+      nose: { ...LOOK_LIMITS.nose, ...this.cameraLimits },
+    } : null;
     /** Mouse-look offset, radians, clamped per mode by `look()`. */
     this.look = { yaw: 0, pitch: 0 };
     /**
@@ -371,13 +418,21 @@ export class VehicleCamera {
     return out;
   }
 
+  /** The clamps the current mode turns inside: the mode's own, with the seat
+   *  Camera's neck over them inside it (`cameraLookLimits`). */
+  lookLimits() {
+    return this._insideLimits?.[this.mode] ?? LOOK_LIMITS[this.mode];
+  }
+
   /** Feed mouse motion in, already scaled to radians. Clamped per mode. */
   turn(dyaw, dpitch) {
-    const limit = LOOK_LIMITS[this.mode];
+    const limit = this.lookLimits();
     if (!limit) return;
-    this.look.yaw = limit.yaw === Infinity
+    const yawMin = limit.yawMin ?? -limit.yaw;
+    const yawMax = limit.yawMax ?? limit.yaw;
+    this.look.yaw = limit.yaw === Infinity && limit.yawMin === undefined
       ? this.look.yaw + dyaw
-      : Math.max(-limit.yaw, Math.min(limit.yaw, this.look.yaw + dyaw));
+      : Math.max(yawMin, Math.min(yawMax, this.look.yaw + dyaw));
     this.look.pitch = Math.max(limit.pitchDown,
       Math.min(limit.pitchUp, this.look.pitch + dpitch));
   }
