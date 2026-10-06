@@ -3,8 +3,8 @@
 Status (2026-10-06): both are built in the viewer. The mortar deploys on the map
 page; kit pads lay down and hand out every kit the tree's `loadouts.json`
 knows. DC 0.7's own two pad kits (the M82 and the Stinger) reach that file
-once the lead re-extracts its tree, after the `ai-scripts` fix lands
-(commands below). DC 0.7's mortar not clearing its thrower is open.
+once the lead re-extracts its tree (commands below). DC 0.7's mortar not
+clearing its thrower is open.
 
 The engine's ObjectSpawner, as a soldier on foot meets it, in two forms:
 
@@ -186,10 +186,11 @@ its poses are unchanged.
 
 ## Re-extracting a tree
 
-Run these only after the `ai-scripts` fix to `extract_models.load_order`
-lands. Today's code drops every `/ai/` script, so a DC `loadouts.json`
-written now carries 7 `aiWeapons` against the live file's 44 (the same with
-this work's code and without it), and the bots stop using their rifles.
+Run these from a checkout that also has `9fc672db` (an AI level runs the
+`/ai/` scripts). Without it a DC `loadouts.json` carries 7 `aiWeapons`
+against the live file's 44, and the bots stop using their rifles. With both,
+DC's file has 47: the live 44 unchanged, `JohnsonLMG` (that commit's) and the
+pad kits' `M82Sniper` and `SA-7` (checked on a scratch merge, 2026-10-07).
 
 From `tools/bf1942-models`:
 
@@ -216,7 +217,6 @@ they move as well (`features/service-record/README.md`, "The mod trees"):
 pads add rows, `pads` and `pickupSoldiers`, and the worn parts of the kits
 only pads place, in FH, bf1918, GCMOD, Interstate and FHSW. Pirates has no
 pad kit. `extract_pose.py --kit-poses` reads no pads, so the poses stay.
-These do not wait on the `ai-scripts` fix.
 
 ```bash
 python3 extract_kits.py --mod FH --no-pickups --out viewer/models/mods/fh
