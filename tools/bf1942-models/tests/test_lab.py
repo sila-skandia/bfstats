@@ -180,6 +180,21 @@ class EventLog(unittest.TestCase):
         self.assertIn("&mod=bf1942", url)
 
 
+class Preload(unittest.TestCase):
+    def test_one_path_or_a_list_becomes_ld_preload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / "recorder.so", Path(tmp) / "realfire.so"
+            a.write_text("")
+            b.write_text("")
+            self.assertEqual(lab.preload_value(str(a)), str(a.resolve()))
+            self.assertEqual(lab.preload_value([str(a), str(b)]), f"{a.resolve()}:{b.resolve()}")
+
+    def test_a_missing_preload_stops_the_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                lab.preload_value([str(Path(tmp) / "nope.so")])
+
+
 class ClientMod(unittest.TestCase):
     """`setup --mods-from-client`: a client mod becomes a lower-case tree of
     links, because the 1.6 Linux server lower-cases every path it opens."""

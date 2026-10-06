@@ -539,7 +539,10 @@ def load_spawners(mod: str, level: str, mode: str = "SinglePlayer", game_dir: Pa
 
 # --- what a life is ---------------------------------------------------------------
 
-HELI_PART = re.compile(r"enginerack|hoverengine", re.I)
+# A helicopter's engine racks (Mi24DEngineRack1..3) and the Harrier's lift-jet
+# racks (AV8Front/Middle/RearVTOLRack): the cyclic as the hull took it. The
+# Harrier's exhaust racks are left out.
+HELI_PART = re.compile(r"enginerack|hoverengine|vtolrack", re.I)
 HARRIER = re.compile(r"^av-?8", re.I)
 PLANE_PART = re.compile(r"flap|rudder|elevator|aileron|gearrot|wheel_back|airbrake|propeller", re.I)
 
@@ -813,6 +816,13 @@ def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str
         agg["speed|" + bin_of(s.speed, AIR_BINS)].append(1)
     if kind not in ("heli", "harrier"):
         return
+    # A hover: off the ground, under 5 m/s across it and 3 m/s up or down.
+    for s in air:
+        if math.hypot(s.v[0], s.v[2]) < 5 and abs(s.v[1]) < 3:
+            agg["hover_pitch"].append(s.pitch)
+            agg["hover_bank"].append(s.roll)
+            agg["hover_pitch_rate"].append(s.rates[0])
+            agg["hover_rate"].append(math.sqrt(sum(r * r for r in s.rates)))
     # Hands off: every rack within HANDS_OFF degrees of square for a second
     # or more. What the turn rate does then is the damping question: it
     # decays if something damps it, holds if nothing does, grows under a
@@ -820,7 +830,10 @@ def air_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, kind: str
     rest = rack_rest(life)
     if not rest:
         return
-    calm = held_runs(air, lambda s: (rack_deflection(life, rest, s.t) or 99) < HANDS_OFF)
+    def centred(s):
+        d = rack_deflection(life, rest, s.t)
+        return d is not None and d < HANDS_OFF
+    calm = held_runs(air, centred)
     for run in calm:
         if run[-1].t - run[0].t < 1.0:
             continue
@@ -869,6 +882,12 @@ def summarise_air(agg: Agg) -> dict:
         })
     if agg["liftoff_speed"]:
         out["liftoff_speed_p50"] = r1(pct(agg["liftoff_speed"], 0.5))
+    if agg["hover_pitch"]:
+        out["hover_s"] = r1(len(agg["hover_pitch"]) / 30, 1)
+        out["hover_pitch_p05_p50_p95"] = [r1(pct(agg["hover_pitch"], q)) for q in (0.05, 0.5, 0.95)]
+        out["hover_bank_p05_p50_p95"] = [r1(pct(agg["hover_bank"], q)) for q in (0.05, 0.5, 0.95)]
+        out["hover_pitch_rate_p05_p50_p95"] = [r1(pct(agg["hover_pitch_rate"], q)) for q in (0.05, 0.5, 0.95)]
+        out["hover_rate_p95"] = r1(pct(agg["hover_rate"], 0.95))
     ho = agg["handsoff"]
     if ho:
         # From a real turn (5 deg/s or more): the rate a second on over the rate then.
@@ -1437,12 +1456,54 @@ def _lo(k: str) -> float:
         return 0.0
 
 
+COMPACT_GROUND = ("driven_s", "top_speed", "level_p99", "max_fwd", "reverse_speed", "t_to_5", "t_to_10",
+                  "t_to_15", "under_water_s", "under_water_max_depth", "below_ground_s", "fall_speed_p50")
+COMPACT_AIR = ("kind", "air_s", "speed_p05", "speed_p50", "speed_p95", "speed_max", "level_speed_p95",
+               "level_held_3s", "climb_p95", "climb_max", "sink_p05", "pitch_rate_p95", "roll_rate_p95",
+               "yaw_rate_p95", "roll_rate_held_0.5s", "pitch_rate_held_0.5s", "bank_p95", "liftoff_speed_p50",
+               "handsoff_runs", "handsoff_s", "handsoff_fit", "handsoff_decay_runs", "handsoff_w1_over_w0_p50",
+               "hover_s", "hover_pitch_p05_p50_p95", "hover_bank_p05_p50_p95", "hover_pitch_rate_p05_p50_p95",
+               "hover_rate_p95")
+
+
+def compact(res: dict) -> dict:
+    """The numbers a port is checked against, without the per-sample lists:
+    per template, and per run its length, crews and pad laws."""
+    def pick(d, keys):
+        return {k: d[k] for k in keys if d.get(k) is not None}
+    out = {"runs": [], "ground": {}, "sea": {}, "air": {}, "rounds": {}}
+    for f in res["files"]:
+        pads = f["pads"]
+        out["runs"].append({
+            "file": f["file"], "level": f["level"], "seconds": f["seconds"], "bots": f["bots"],
+            "tickets": f["tickets"], "bots_moving": f["bots_moving"],
+            "crews": {t: [c["entered"], c["driver_s"], c["other_seats_s"]] for t, c in f["crews"].items() if c["entered"]},
+            "wreck_life": pads["wreck_life"],
+            "respawns": [{k: r[k] for k in ("tmpl", "spawner", "window", "delay", "fill", "prev_born") if k in r}
+                         for r in pads.get("respawns", [])],
+            "abandon_drains": {t: [[x["idle"], x["rate"]] for x in v] for t, v in pads["abandoned"].items()},
+            "team_switch": pads["team_switch"],
+        })
+    for kind, keys in (("ground", COMPACT_GROUND), ("sea", COMPACT_GROUND)):
+        for t, g in res[kind].items():
+            row = pick(g, keys)
+            row["yaw_p95_by_speed"] = {b: v["p95"] for b, v in g["yaw_rate_by_speed"].items()}
+            row["slip_over45_by_speed"] = {b: v["over45"] for b, v in g["slip_by_speed"].items()}
+            out[kind][t] = row
+    for t, a in res["air"].items():
+        out["air"][t] = pick(a, COMPACT_AIR)
+    for t, r in res["rounds"].items():
+        out["rounds"][t] = {k: v for k, v in r.items()}
+    return out
+
+
 def main(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("targets", nargs="+", type=Path, help="run directories or server recordings")
     ap.add_argument("--mod", default="desertcombat", help="the mod whose level archives hold the heightmap")
     ap.add_argument("--game-dir", type=Path, default=None)
     ap.add_argument("--json", type=Path, help="write the statistics as JSON here")
+    ap.add_argument("--compact", type=Path, help="write the compact JSON (no per-sample lists) here")
     ap.add_argument("--md", type=Path, help="write the markdown tables here")
     a = ap.parse_args(argv)
     paths = [p for t in a.targets for p in recordings_in(t)]
@@ -1451,10 +1512,12 @@ def main(argv: list[str]) -> None:
     res = analyse(paths, a.mod, a.game_dir)
     if a.json:
         a.json.write_text(json.dumps(res, indent=1) + "\n")
+    if a.compact:
+        a.compact.write_text(json.dumps(compact(res), indent=1, sort_keys=True) + "\n")
     text = markdown(res)
     if a.md:
         a.md.write_text(text)
-    if not a.json and not a.md:
+    if not (a.json or a.md or a.compact):
         print(text)
 
 
