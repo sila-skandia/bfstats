@@ -4,7 +4,7 @@
 // and a "vehicle" anything with a `state` of the `VehicleState` shape.
 import {
   axesFromQuaternion, quaternionFromAxes, describeVehicleParts, DrivenBody,
-  buildParkedVehicle, collisionPartsFor, meshEntryFor,
+  buildParkedVehicle, collisionPartsFor, meshEntryFor, groundUnder, standsOverTheSea,
 } from './vehicle-bodies.mjs';
 import { BodyWorld } from './body-world.mjs';
 
@@ -250,6 +250,27 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
   const k55 = Math.tan(55 * Math.PI / 180);
   out.drivenGroundFace = run(true, { slope: 55, y: k55 * 1 + 0.5 - 0.15, vx: 10, vy: 0 });
   out.drivenGroundFaceStart = { y: k55 * 1 + 0.5 - 0.15, vx: 10 };
+}
+
+// --- a hull the level stands on a structure over the sea ---------------------
+{
+  const spec = describeVehicleParts(jeepAt(0, 0, 0), collisionMeshes);
+  const at = y => ({ position: [0, y, 0], axes: IDENTITY });
+  const flat = () => 0;
+  // The jeep's lowest col0 vertex is its wheels' vertex 0, 0.7 m under the root.
+  out.standsOverTheSea = {
+    lowest: groundUnder(spec, at(10), flat),
+    // 10 m up over a bed 5 m under the sea: on a pier, a span, a rig.
+    pier: standsOverTheSea(spec, at(10), flat, 5),
+    // 2.5 m up over dry ground: a spawner set it high, and it drops.
+    highOverLand: standsOverTheSea(spec, at(3.2), flat, -10),
+    // On the ground, by the sea.
+    onTheBeach: standsOverTheSea(spec, at(0.75), flat, 5),
+    // Its wheels in the water: it is in the sea, not over it.
+    wading: standsOverTheSea(spec, at(5), flat, 5),
+    // No sea at all.
+    noSea: standsOverTheSea(spec, at(10), flat, null),
+  };
 }
 
 // --- the world loop ---------------------------------------------------------
