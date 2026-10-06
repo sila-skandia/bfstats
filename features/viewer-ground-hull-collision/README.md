@@ -360,8 +360,11 @@ same walk, the same day) with **COL-15** for what a land hull takes from it
 `findLodGeometry` takes the highest alternative of the root's first child when
 that is a `LodObject` (a tank's `ShermanComplex`), else of the first
 `LodObject` under a `DistCompareLodSelector` met depth first (a car's cockpit
-exterior, `Willy_Hull_M1`). The box is that mesh's `.sm` header bounds, which
-the glb mesh matches to the millimetre. The search is `ship-spec.js`
+exterior, `Willy_Hull_M1`). The box is that mesh's `.sm` header bounds. The
+glb mesh's vertex box matches it on every vanilla, XPack1 and XPack2 land hull
+and not on 17 of Desert Combat's 41, so the page and the runner hand the drive
+the level's collision sidecar, whose `bbox` is the header box
+(`headerGeometryBox`, added in review). The search is `ship-spec.js`
 `inertiaGeometryNode`; the drag radius is the sphere round that box (the sphere
 drag law it feeds is itself not the engine's, PHY-4, and is kept as it was).
 
@@ -395,8 +398,10 @@ HP-5 tick then reaches the hull because it is in the water. `submarineData`
 spots): Humvee sinks to the bed in 2 s, crawls there at 4.6 m/s and loses 5 HP
 a second; M1A1 sinks, drives at 6.8 m/s and is crushed at 5 HP a second below
 1.5 m; BMP-2 on Urban Siege still swims, at 5.6 m/s on its own col0 depth (it
-did 3.3 on the glb's last collision layer, which is not col0). XPack2's
-Schwimmwagen swims at 22 km/h instead of 15 on the engine's box and keel.
+did 3.3 on the glb's last collision layer, which is not col0; 5.4 on its
+header box's `DY` of 1.156, after review). XPack2's Schwimmwagen swims at
+22 km/h instead of 15 in the harness and at 27.6 in the runner, where the drive
+has its col0 (Peenemunde); the BRDM-2 goes from 7.1 to 9.3 m/s.
 Tests: `test_ground.py` `test_a_land_hull_sinks_to_the_bed` and the two after
 it, `test_vehicle_damage.py` `SubmarineDataTests`, `test_world_damage.py`.
 
@@ -437,9 +442,23 @@ pins the cause. Whether the real game spins it is a recorded drive away
 
 ## Open
 
+- **A land hull on the bed is lifted onto the sea where a terrain patch is
+  undrawn** (review). The heightfield has no samples there, so
+  `bedGroundHeight` falls back to the sea surface: a Sherman driven off a
+  Guadalcanal beach sinks to 8 m, meets the undrawn patch 40 m out, rises
+  11.8 m in a tick and drives on across 800 m of sea at 14.9 m/s. A Willy off
+  Midway or Guadalcanal drowns before it gets there. 29 live levels have
+  undrawn patches. The fix is the level's raw heightmap in the viewer.
+- **The multiplayer authority has none of G2.** `server/level-instance.mjs`
+  builds a drive with neither `collider` nor `waterLevel`, and its
+  `bodySpecFor` tags no `waterPart`, so in a room every land hull still drives
+  on the sea and no amphibian swims (the second predates this round).
+- **The rotational box drag's submerged scale** (PHY-16: once, not squared) is
+  not applied; `HullWater` adds the positional excess only.
 - **A land hull driven into a steep face is launched.** Any wheeled or tracked
-  hull driven at full throttle into a dry 55 degree terrain wall leaves at
-  hundreds of m/s (M1A1 716 m/s, Willy 84, the same on `main`): the drive meets
+  hull driven at full throttle into a dry terrain wall of 45 degrees or more
+  leaves at hundreds of m/s (M1A1 749 m/s at 45 degrees, 874 at 55; Willy 84
+  at 55; the tracked numbers identical on the branch's base): the drive meets
   terrain only through its springs, so the bump stop is the only barrier, and
   the engine's hull col0 against the heightfield (`checkVsTerrain`, a push-out
   along the normal) is not in the drive. Underwater banks are often that steep,
@@ -456,3 +475,31 @@ pins the cause. Whether the real game spins it is a recorded drive away
   `seabedFriction`); which the engine hands `impulseOn` is unread.
 - **`TrackedVehicle`'s inertia** is still its wheel footprint over a guessed
   1.1 m hull, not COL-14's box.
+
+## Review, 2026-10-07
+
+Re-read from the binary: COL-14/COL-15's walk and header box, PHY-16's
+water arm of `checkVsTerrain` (no impulse; the depth on the part's own node),
+PHY-3's corrected gate, and HP-18's three comparisons in `objdump`.
+`test_world_damage.py` `test_an_upright_hull_on_a_steep_slope_is_not_billed`
+pins the last: an upright hull flush with a slope is billed only past
+72.5 degrees of slope, as the engine bills it.
+
+The engine's walk run over the `.con` trees picks the same node as
+`inertiaGeometryNode` on every land root of vanilla, XPack1, XPack2, DC and DC
+Final. Flat-ground drives of every vanilla, XPack1 and XPack2 land vehicle,
+the branch's base against the branch (`~/.cache/dc-sweep/review-ground-chassis/drive_probe.mjs`):
+every tracked hull is identical. The wheeled ones that move more than the
+Willy, and why:
+
+| Vehicle | Moves | Cause |
+|---|---|---|
+| Katyusha | full lock at speed 16.6 to 12.8 deg/s | its 3.04 x 2.19 x 7.06 box: 3.8 times the table's yaw inertia |
+| Greyhound (XPack2) | 13.3 to 11.4 deg/s | its 2.95 x 1.43 x 5.43 box |
+| Krupp (XPack2) | top speed 111 to 95 km/h | its own `drag 15` in the sphere law (PHY-4: the law is not the engine's, the coefficient is) |
+| Schwimmwagen (XPack2) | 15.8 to 21.7 deg/s, in a near-rollover turn on both | its drawn wheel radius, 0.34 against 0.364 |
+| R75, HD_XA42 (XPack2) | top speed 128 and 169 to 111 km/h | already broken on the base, where full reverse drives them forward at 138 to 163 km/h; the R75 still does, at 92 |
+
+The KettenKrad does not move on either (0.1 and 0.3 km/h). The pre-existing
+motorbike and KettenKrad faults belong to another package.
+

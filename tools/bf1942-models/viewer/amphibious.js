@@ -67,13 +67,13 @@ import { Surface, calculateLift } from './aircraft.js';
 import { VectoredEngine, engineGeometry } from './vectored-engines.js';
 import { floatNodesOf, floatAcceleration } from './body-float.js';
 import {
-  hullGeometry, ownGeometryMeshes as ownMeshes, inertiaGeometryNode,
+  hullGeometry, ownGeometryMeshes as ownMeshes, inertiaGeometryNode, headerGeometryBox,
 } from './ship-spec.js';
 
 // The engine's own hull-geometry search lives beside `hullGeometry`; the land
 // drives import it from here.
 export {
-  inertiaGeometryNode, inertiaGeometryBox, geometryInertia, rootCollisionPart,
+  inertiaGeometryNode, inertiaGeometryBox, headerGeometryBox, geometryInertia, rootCollisionPart,
 } from './ship-spec.js';
 import { axisAngle, keyOf } from './vehicle-base.js';
 
@@ -149,9 +149,12 @@ function collisionMeshes(node) {
  * +0.075, Humvee +0.045 against -0.02, BMP-2 -1.005 against -0.486, M1A1
  * -0.317 against +0.217. A tree in which the search finds nothing (a test
  * double, a hull mesh straight under the chain) keeps `hullGeometry`'s
- * reading, which is what the amphibians ran on before.
+ * reading, which is what the amphibians ran on before. Given the level's
+ * collision sidecar the box's size is the mesh's `.sm` header box
+ * (`headerGeometryBox`, COL-14), which on a BMP-2 is 1.156 m tall against its
+ * vertices' 1.36.
  */
-export function hullWaterShape(root) {
+export function hullWaterShape(root, sidecar = null) {
   root.updateWorldMatrix(true, true);
   const node = inertiaGeometryNode(root);
   const inverse = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -186,7 +189,8 @@ export function hullWaterShape(root) {
       for (const z of [depthBox.min.z, depthBox.max.z]) corners.push(new THREE.Vector3(x, y, z));
     }
   }
-  return { size: [size.x, size.y, size.z], keel: depthBox.min.y, corners };
+  const header = node ? headerGeometryBox(node, sidecar) : null;
+  return { size: header ?? [size.x, size.y, size.z], keel: depthBox.min.y, corners };
 }
 
 /**
@@ -210,13 +214,13 @@ export class HullWater {
     return new HullWater(root, options);
   }
 
-  constructor(root, { waterLevel = -Infinity, mass, drag } = {}) {
+  constructor(root, { waterLevel = -Infinity, mass, drag, collisionMeshes = null } = {}) {
     const physics = root.userData?.physics || {};
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : -Infinity;
     /** The hull's own `ObjectTemplate.mass` / `drag`. */
     this.mass = physics.mass > 0 ? physics.mass : (mass ?? 1);
     this.drag = Number.isFinite(physics.drag) ? physics.drag : (drag ?? 0);
-    const shape = hullWaterShape(root);
+    const shape = hullWaterShape(root, collisionMeshes);
     /** `[DX, DY, DZ]`. */
     this.size = shape.size;
     /** The depth box's bottom in the root's frame: an upright hull's depth is
@@ -424,7 +428,9 @@ export class AmphibiousKit {
 
     /** The hull's depth and its submerged drag, which every land hull has
      *  (`HullWater`); the kit adds the screw, the floats and the rudders. */
-    this.water = new HullWater(root, { waterLevel: this.waterLevel, mass: this.mass, drag: this.drag });
+    this.water = new HullWater(root, {
+      waterLevel: this.waterLevel, mass: this.mass, drag: this.drag, collisionMeshes: options.collisionMeshes,
+    });
     const [dx, dy, dz] = this.water.size;
     this.size = [dx, dy, dz];
     /** `DX*DZ`, the footprint the float damping scales with. */

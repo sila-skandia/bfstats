@@ -119,6 +119,20 @@ out.rateOff = has(world([parked({ pos: [0, 1, 0], axes: rollAxes(180), sleeping:
   out.onSlopeHigh = has(world([high], { slope }));
 }
 
+// Upright on a steep slope, flush with it and asleep (review, 2026-10-07): the
+// hull's up is the slope's normal. Its origin a metre up takes the world-up
+// branch, so it is billed only past acos 0.3 = 72.5 degrees of slope, as the
+// engine bills it; within 0.1 m of the ground the tilt is against the normal,
+// which an upright hull meets exactly.
+{
+  const flush = (deg, y) => {
+    const slope = Math.tan(deg * Math.PI / 180);
+    return has(world([parked({ pos: [0, y, 0], axes: rollAxes(deg), sleeping: true })], { slope }));
+  };
+  out.uprightOnSlope = { at45: flush(45, 1), at60: flush(60, 1), at70: flush(70, 1), at75: flush(75, 1),
+    at60Low: flush(60, 0.05), at80Low: flush(80, 0.05) };
+}
+
 // The depth: the root part's lowest tested vertex under the sea, found by the
 // spec's `waterPart`, and 0 above it or for a hull with none.
 {

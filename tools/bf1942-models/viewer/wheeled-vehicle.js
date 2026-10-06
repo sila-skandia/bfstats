@@ -82,8 +82,10 @@ export class GroundVehicle extends Vehicle {
     this.mass = typeof rootPhysics.mass === 'number' ? rootPhysics.mass : this.spec.mass;
     this.drag = typeof rootPhysics.drag === 'number' ? rootPhysics.drag : this.spec.drag;
     /** `[DX, DY, DZ]` of the geometry the engine's inertia is built on
-     *  (`inertiaGeometryBox`), or null for a tree that carries none. */
-    this.geometryBox = inertiaGeometryBox(node);
+     *  (`inertiaGeometryBox`): the mesh's `.sm` header box when the page hands
+     *  over the level's collision sidecar (`options.collisionMeshes`), else
+     *  its glb vertex box; null for a tree that carries none. */
+    this.geometryBox = inertiaGeometryBox(node, options.collisionMeshes ?? null);
     /**
      * Where the ground is, injected the same way `Aircraft.groundHeight` is:
      * this module must run under node with an analytic floor, so it never
@@ -168,10 +170,13 @@ export class GroundVehicle extends Vehicle {
     /** An amphibian's water engine, floats and rudders (`amphibious.js`),
      * or null. See `TrackedVehicle`'s own field. */
     const waterLevel = options.waterLevel ?? this.collider?.waterLevel;
-    this.amphibious = AmphibiousKit.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    // The level's collision sidecar, whose `bbox` is a mesh's `.sm` header box
+    // (`headerGeometryBox`, COL-14); null in a harness.
+    const collisionMeshes = options.collisionMeshes ?? null;
+    this.amphibious = AmphibiousKit.of(node, { waterLevel, mass: this.mass, drag: this.drag, collisionMeshes });
     /** The hull's depth under the sea and its submerged drag (`HullWater`),
      * or null on a level with no sea. See `TrackedVehicle`'s own field. */
-    this.water = this.amphibious?.water ?? HullWater.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    this.water = this.amphibious?.water ?? HullWater.of(node, { waterLevel, mass: this.mass, drag: this.drag, collisionMeshes });
     this.groundHeight = bedGroundHeight(this.collider, waterLevel, this.groundHeight);
     this._inputOf = name => this.input(name);
 

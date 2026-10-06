@@ -27,6 +27,7 @@ import {
   EngineState, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
 } from './ground-engine.js';
 import { GRAVITY } from './physics.js';
+import { HullWater } from './amphibious.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 
 const DEG = 180 / Math.PI;
@@ -2309,6 +2310,20 @@ function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,
     willyTable: [WILLYS.inertiaPitch, WILLYS.inertiaYaw, WILLYS.inertiaRoll],
     turnIn: { willy: turnIn(build()), scud: turnIn(build(scud)) },
   };
+  // Given the level's collision sidecar the box is the mesh's `.sm` header box
+  // (its `bbox`, `headerGeometryBox`, COL-14), not the glb's vertex box: a DC
+  // Humvee's header is 2.545 x 1.905 x 5.008 against vertices of 2.33 x 1.905
+  // x 4.945. A sidecar that does not know the mesh leaves the vertex box.
+  const sidecar = {
+    geometries: { willy_hull_m1: 'willy_hul_m1' },
+    meshes: { willy_hul_m1: { bbox: [[-1.2, -0.3, -2.4], [1.2, 1.7, 2.6]] } },
+  };
+  const withSidecar = collisionMeshes => new GroundVehicle(nestedWilly(), null,
+    { cockpit: false, groundHeight: () => 0, collisionMeshes });
+  results.ownChassis.header = describe(withSidecar(sidecar));
+  results.ownChassis.headerUnknown = describe(withSidecar({ geometries: {}, meshes: {} }));
+  results.ownChassis.headerWater = HullWater.of(nestedWilly(), { waterLevel: 0, collisionMeshes: sidecar })
+    .size.map(v => round(v, 4));
 }
 
 

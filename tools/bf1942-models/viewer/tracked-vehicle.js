@@ -203,14 +203,17 @@ export class TrackedVehicle extends Vehicle {
     /** An amphibian's water engine, floats and rudders (`amphibious.js`),
      * or null for a hull with none. */
     const waterLevel = options.waterLevel ?? this.collider?.waterLevel;
-    this.amphibious = AmphibiousKit.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    // The level's collision sidecar, whose `bbox` is a mesh's `.sm` header box
+    // (`headerGeometryBox`, COL-14); null in a harness.
+    const collisionMeshes = options.collisionMeshes ?? null;
+    this.amphibious = AmphibiousKit.of(node, { waterLevel, mass: this.mass, drag: this.drag, collisionMeshes });
     /** How deep the hull is under the sea and what that costs it in drag
      * (`HullWater`): the amphibian kit's own, or one of its own, or null on a
      * level with no sea. Every land hull stands on the sea BED, not only one
      * that floats: `checkVsTerrain` meets the heightfield and water produces
      * no impulse (collision-response.md section 7), so a tank driven into the
      * sea sinks until its springs find the bottom. */
-    this.water = this.amphibious?.water ?? HullWater.of(node, { waterLevel, mass: this.mass, drag: this.drag });
+    this.water = this.amphibious?.water ?? HullWater.of(node, { waterLevel, mass: this.mass, drag: this.drag, collisionMeshes });
     this.groundHeight = bedGroundHeight(this.collider, waterLevel, this.groundHeight);
     this._inputOf = name => this.input(name);
 

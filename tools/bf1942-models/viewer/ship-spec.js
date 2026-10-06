@@ -345,20 +345,47 @@ export function inertiaGeometryNode(root) {
 }
 
 /**
- * `[DX, DY, DZ]` of the box `getGeometryInertia` (`0x08253930`) reads: the
- * found geometry's own `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`,
- * which its constructor copies from the template's `+0x40`, which
- * `loadHeader` `0x083a6200` reads straight out of the `.sm` header). The glb
- * mesh's own vertex box is that header box to the millimetre on every vanilla
- * hull checked against `collision-meshes.json`. In the root's frame, never the
- * world's. Null when the tree carries no such geometry (a test double).
+ * The `.sm` header box of `node`'s own geometry, `[DX, DY, DZ]`, from the
+ * level's collision sidecar (`collision-meshes.json`, which the page and the
+ * runner load as `hullBodies.collisionMeshes`): its `geometries` maps the
+ * geometry template to the mesh file, and that file's `bbox` is the header's
+ * `boundsMin`/`boundsMax`, the box `getBoundingBox` (`0x083b4e40`) returns
+ * (COL-14). Null without the table or the mesh. A `GeometryTemplate.scale`
+ * would scale it (`setScale` `0x083b4640`); no land hull's geometry sets one.
  *
  * @returns {number[]|null}
  */
-export function inertiaGeometryBox(root) {
+export function headerGeometryBox(node, collisionMeshes) {
+  const geometry = node?.userData?.geometry;
+  if (!collisionMeshes || !geometry) return null;
+  const key = String(geometry).toLowerCase();
+  const file = collisionMeshes.geometries?.[key] ?? key;
+  const box = collisionMeshes.meshes?.[file]?.bbox;
+  if (!box) return null;
+  const size = [box[1][0] - box[0][0], box[1][1] - box[0][1], box[1][2] - box[0][2]];
+  return size.every(v => v > 0) ? size : null;
+}
+
+/**
+ * `[DX, DY, DZ]` of the box `getGeometryInertia` (`0x08253930`) reads: the
+ * found geometry's own `getBoundingBox` (`0x083b4e40`, the mesh's `+0x28`,
+ * which its constructor copies from the template's `+0x40`, which
+ * `loadHeader` `0x083a6200` reads straight out of the `.sm` header). Given the
+ * level's collision sidecar, that header box itself (`headerGeometryBox`).
+ * Without it (a harness, the replay) the glb mesh's own vertex box, in the
+ * root's frame, which is the header box on every vanilla, XPack1 and XPack2
+ * land hull and is not on 17 of Desert Combat's 41 (a Humvee's header is
+ * 2.545 x 1.905 x 5.008, its vertices 2.33 x 1.905 x 4.945; COL-15). Null when
+ * the tree carries no such geometry (a test double).
+ *
+ * @returns {number[]|null}
+ */
+export function inertiaGeometryBox(root, collisionMeshes = null) {
   root.updateWorldMatrix(true, true);
   const node = inertiaGeometryNode(root);
   if (!node) return null;
+  const header = headerGeometryBox(node, collisionMeshes);
+  if (header) return header;
   const inverse = root.matrixWorld.clone().invert();
   const local = new THREE.Matrix4();
   const union = new THREE.Box3();

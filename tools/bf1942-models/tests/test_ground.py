@@ -1360,6 +1360,21 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertNotAlmostEqual(self.results["ownChassis"]["willyTable"][1],
                                   willy["inertia"][1], places=2)
 
+    def test_given_the_collision_sidecar_the_box_is_the_sm_header_box(self) -> None:
+        # `getBoundingBox` returns the box the mesh's `.sm` header carries
+        # (COL-14), which `collision-meshes.json` keeps as `bbox`; on 17 of
+        # DC's land hulls it is not the glb's vertex box (COL-15). The page and
+        # the runner hand the sidecar to the drive, and the drive takes the
+        # header box for its inertia, its drag radius and the sea's `DY`.
+        chassis = self.results["ownChassis"]
+        dx, dy, dz = 2.4, 2.0, 5.0
+        for got, want in zip(chassis["header"]["box"], (dx, dy, dz)):
+            self.assertAlmostEqual(want, got, places=4)
+        self.assertAlmostEqual((dz * dz + dx * dx) / 3, chassis["header"]["inertia"][1], places=3)
+        self.assertEqual([dx, dy, dz], chassis["headerWater"])
+        # A sidecar that does not know the mesh keeps the vertex box.
+        self.assertEqual(chassis["willy"]["box"], chassis["headerUnknown"]["box"])
+
     def test_a_passenger_seat_ahead_of_the_cockpit_ends_the_search(self) -> None:
         # `internalFindChildOfLodSelectorCID` returns at a PlayerControlObject
         # without visiting its later siblings, so a tree that puts one first
