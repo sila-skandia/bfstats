@@ -644,5 +644,64 @@ class RetailAiWeaponTests(unittest.TestCase):
         self.assertEqual("K98AI", ai["K98"]["aiTemplate"])
 
 
+class PadKitLevelLoadTests(unittest.TestCase):
+    """`read_chain_levels(pads=)`: a level that runs its own copy of a kit
+    its pads place hands that copy out; a vehicle its pads place opens no
+    load of its own (DC 0.7's Bragg declares its `UST` carriers, and each
+    such load is a library build that changes no row)."""
+
+    def run_levels(self, levels: dict[str, dict[str, bytes]], pads: dict) -> tuple:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = Path(tmp) / "Mods" / "M"
+            level_dir = mod / "Archives" / "bf1942" / "levels"
+            level_dir.mkdir(parents=True)
+            (mod / "Archives" / "objects.rfa").touch()
+            content = {"objects.rfa": {
+                "Objects/Items/USKit/AntiArmor3/Objects.con": LevelLoadTests.MOD_KIT,
+                "Objects/HandWeapons/SMAW/Objects.con":
+                    b"ObjectTemplate.create HandFireArms SMAW\n"
+                    b"ObjectTemplate.itemIndex 3\n",
+                "Objects/HandWeapons/Landmine/Objects.con":
+                    b"ObjectTemplate.create HandFireArms Landmine\n"
+                    b"ObjectTemplate.itemIndex 5\n",
+            }}
+            for name, files in levels.items():
+                (level_dir / f"{name}.rfa").touch()
+                content[f"{name}.rfa"] = {f"bf1942/levels/{name}/{path}": data
+                                          for path, data in files.items()}
+            with _archives(content):
+                census, loadouts, own = read_chain_levels([mod], pads=pads)
+                manifest = build_manifest(census.library, collect(census.library), loadouts,
+                                          "M", level_loads=own, read=census.read, pads=pads)
+            return set(own), manifest
+
+    def test_a_pad_kit_the_level_declares_is_its_own_copy(self) -> None:
+        own, manifest = self.run_levels({
+            "PadOwn": {
+                "Init.con": b"game.setTeamSkin 2 USSoldier\nrun Objects/Objects\n",
+                "Objects/Objects.con": b"run AntiArmor3/Objects\n",
+                "Objects/AntiArmor3/Objects.con": LevelLoadTests.OWN_KIT[
+                    :LevelLoadTests.OWN_KIT.index(b"ObjectTemplate.addTemplate nochute")],
+            },
+        }, pads={"PadOwn": {"us_at3": "us_at3"}})
+        self.assertEqual({"PadOwn"}, own)
+        self.assertEqual(["SMAW"], manifest["kits"]["US_AT3"]["items"])
+        self.assertEqual(["SMAW", "Landmine"],
+                         manifest["levelKits"]["padown"]["US_AT3"]["items"])
+
+    def test_a_vehicle_on_a_pad_opens_no_load_of_its_own(self) -> None:
+        own, manifest = self.run_levels({
+            "Carrier": {
+                "Init.con": b"game.setTeamSkin 2 USSoldier\ngame.setKit 2 2 US_AT3\n"
+                            b"run Objects/Objects\n",
+                "Objects/Objects.con":
+                    b"ObjectTemplate.create PlayerControlObject UST\n",
+            },
+        }, pads={"Carrier": {"ust": "UST", "us_at3": "US_AT3"}})
+        self.assertEqual(set(), own)
+        self.assertNotIn("levelKits", manifest)
+        self.assertNotIn("UST", manifest["kits"])
+
+
 if __name__ == "__main__":
     unittest.main()
