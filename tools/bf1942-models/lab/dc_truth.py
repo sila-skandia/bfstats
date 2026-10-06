@@ -740,14 +740,17 @@ def ground_life(life: Life, sts: list[State], terrain: Terrain, agg: Agg, keep=N
         agg["top_held"].append(held_extreme(run, 3.0, lambda s: s.fwd))
         agg["reverse_held"].append(held_extreme(run, 1.5, lambda s: -s.fwd))
     # Where the engine is driven by the physics (LOD 0), its throttle servo is
-    # the input: held full on the level for 3 s is the hull's top speed.
-    full = held_runs(driven, lambda s: (throttle_at(life, s.t) or 0) >= 0.95 and abs(s.pitch) < 3
-                     and abs(s.v[1]) < 3 and (terrain.agl(s.p) is None or terrain.agl(s.p) < 1.5))
-    for run in full:
-        agg["top_full_throttle"].append(held_extreme(run, 3.0, lambda s: s.fwd))
-    back = held_runs(driven, lambda s: (throttle_at(life, s.t) or 0) <= -0.95 and abs(s.pitch) < 3)
-    for run in back:
-        agg["reverse_full_throttle"].append(held_extreme(run, 1.5, lambda s: -s.fwd))
+    # the input: the speeds on the level with it full are the hull's top end
+    # (a bot's drive law asks for at most 20 m/s, AI-45, so a car faster than
+    # that is held there; a tank is not).
+    for s in driven:
+        if abs(s.pitch) > 2 or abs(s.v[1]) > 1 or (terrain.agl(s.p) or 0) > 1.5:
+            continue
+        th = throttle_at(life, s.t)
+        if th is not None and th >= 0.95:
+            agg["level_full"].append(s.fwd)
+        elif th is not None and th <= -0.95:
+            agg["level_full_back"].append(-s.fwd)
     # The steered wheels against the turn: yaw rate and slip by speed, kept
     # with the angle so the summary can pick full lock.
     if any(STEER_PART.search(n) for n in life.parts.values()):
@@ -798,8 +801,8 @@ def held_extreme(run: list[State], hold: float, value) -> float | None:
 
 
 def summarise_ground(agg: Agg) -> dict:
-    full = [x for x in agg["top_full_throttle"] if x is not None]
-    full_back = [x for x in agg["reverse_full_throttle"] if x is not None and x > 0.3]
+    full = agg["level_full"] if len(agg["level_full"]) >= 30 else []
+    full_back = agg["level_full_back"] if len(agg["level_full_back"]) >= 30 else []
     lock = {}
     if agg["steer"]:
         max_steer = max(abs(st) for _, st, _, _ in agg["steer"])
@@ -823,8 +826,10 @@ def summarise_ground(agg: Agg) -> dict:
         "level_p99": r1(pct(agg["level_fwd"], 0.99), 2),
         "max_fwd": r1(max(agg["fwd"]) if agg["fwd"] else None, 2),
         "reverse_speed": r1(max(back), 2) if back else None,
-        "top_full_throttle": r1(max(full), 2) if full else None,
-        "reverse_full_throttle": r1(max(full_back), 2) if full_back else None,
+        # the level at full throttle: the 99th percentile forward, the 95th back
+        "top_full_throttle": r1(pct(full, 0.99), 2) if full else None,
+        "top_full_throttle_n": len(agg["level_full"]),
+        "reverse_full_throttle": r1(pct(full_back, 0.95), 2) if full_back else None,
         "accel_runs": len(agg["accel_runs"]),
         **lock,
     }
@@ -1483,8 +1488,8 @@ def markdown(res: dict) -> str:
             continue
         md += ["", f"## {titles[kind]}: speed (m/s), acceleration (s), yaw rate (deg/s, p95) by forward speed", ""]
         bins = ["5-10", "10-15", "15-20", "20-25", "25-30", "30-40", "40+"]
-        md += _table(["template", "driven s", "top held 3 s", "top at full throttle", "max fwd", "reverse",
-                      "reverse at full", "t to 5", "t to 10", "t to 15",
+        md += _table(["template", "driven s", "top held 3 s", "level, full throttle p99", "max fwd", "reverse",
+                      "level, full reverse p95", "t to 5", "t to 10", "t to 15",
                       *[f"yaw {b}" for b in bins], "slip>45 at 10+"],
                      [[t, g["driven_s"], g["top_speed"], g.get("top_full_throttle"), g["max_fwd"], g["reverse_speed"],
                        g.get("reverse_full_throttle"), g.get("t_to_5"), g.get("t_to_10"), g.get("t_to_15"),
