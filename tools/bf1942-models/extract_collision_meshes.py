@@ -17,7 +17,10 @@ The file is `{"meshes": {<lowercase mesh file>: {bbox, layers}}, "geometries":
 {<lowercase GeometryTemplate name>: <lowercase mesh file>}}`. The second map is
 there because a glb collision node names its source by geometry *template*
 (`sourceGeometry: "Willy_Hull_M1"`) while the mesh *file* it loads is
-`Willy_Hul_M1.sm`; aliases collapse onto one mesh entry.
+`Willy_Hul_M1.sm`; aliases collapse onto one mesh entry. A third map,
+`"scales": {<lowercase GeometryTemplate name>: [x, y, z]}`, is written when any
+geometry declares a `GeometryTemplate.scale` (Desert Combat's AC-130, Pickup and
+wheels; see `collect_geometry_scales` for why the meshes stay unscaled).
 
 Coordinates match the glb bit for bit: Z negated and triangle winding flipped
 the way `bf42/gltf.py::add_mesh` converts Refractor's left-handed space to
@@ -44,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod  # noqa: E402
 from bf42 import stdmesh  # noqa: E402
+from bf42.assemble import geometry_scale  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 from extract_models import (  # noqa: E402
     DEFAULT_GAME_DIR,
@@ -96,6 +100,27 @@ def collect_geometry_aliases(library: con_mod.ObjectLibrary) -> dict[str, str]:
     """
     _mesh_files, aliases = _walk_geometry(library)
     return aliases
+
+
+def collect_geometry_scales(library: con_mod.ObjectLibrary,
+                            aliases: dict[str, str]) -> dict[str, list[float]]:
+    """Lowercase `GeometryTemplate` name -> its `GeometryTemplate.scale`, for
+    the aliased geometries that declare one other than 1/1/1.
+
+    The meshes stay as the file has them, because two geometries can share one
+    file at two scales (DC's `AC-130_prp2` is `B17_prp1_M2` at 1.4) and because
+    that is what the engine's vertex side reads: `BStandardMesh::getVertices`
+    (lnxded 0x083b52f0) returns the template's arrays, and the instance's
+    bounding box is the file's (SM-12). A body probing one of these meshes as
+    the face side meets it scaled, `diag(scale)` in the mesh's own axes, which
+    the Z mirror leaves as it is.
+    """
+    scales: dict[str, list[float]] = {}
+    for name in aliases:
+        scale = geometry_scale(library.geometry(name))
+        if scale is not None:
+            scales[name] = list(scale)
+    return scales
 
 
 def _walk_geometry(library: con_mod.ObjectLibrary
@@ -289,11 +314,13 @@ def main() -> int:
     collision_meshes, stats = build_collision_meshes(meshes, mesh_files)
     aliases = {name: mesh for name, mesh in collect_geometry_aliases(library).items()
                if mesh in collision_meshes}
+    document = {"meshes": collision_meshes, "geometries": aliases}
+    if scales := collect_geometry_scales(library, aliases):
+        document["scales"] = scales
 
     args.out.mkdir(parents=True, exist_ok=True)
     out_path = args.out / "collision-meshes.json"
-    text = json.dumps({"meshes": collision_meshes, "geometries": aliases},
-                      separators=(",", ":"))
+    text = json.dumps(document, separators=(",", ":"))
     out_path.write_text(text)
 
     print(f"{len(collision_meshes)} geometries, {stats['layers']} layers, "
