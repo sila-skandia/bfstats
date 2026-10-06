@@ -1550,6 +1550,29 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     }
 
 
+def write_terrain_heightmap(heightmap, out_dir: Path) -> dict:
+    """The whole `Heightmap.raw` as `terrain/heightmap.png` (`heightmap_png`):
+    the ground every collider meets, drawn patch or not. A metre is
+    `sample / 65535 * heightUnits`, the expression `Heightmap.height_at` and
+    so every drawn tile vertex uses, and the viewer rounds it to float32 as
+    the glb's positions are, so the two agree to the bit where a tile exists.
+    The `heightmap` layer (`scene_layers.py`); seconds a level."""
+    from bf42.level import HEIGHT_UNITS
+    from bf42.terrain import heightmap_png
+    dest = out_dir / "terrain"
+    dest.mkdir(parents=True, exist_ok=True)
+    data = heightmap_png(heightmap)
+    target = dest / "heightmap.png"
+    if not target.is_file() or target.read_bytes() != data:
+        target.write_bytes(data)
+    return {
+        "image": "terrain/heightmap.png",
+        "dim": heightmap.dim,
+        "spacing": heightmap.spacing,
+        "heightUnits": HEIGHT_UNITS * heightmap.y_scale,
+    }
+
+
 def write_terrain_materials(files, info: LevelInfo, out_dir: Path,
                             damage_tables=None) -> dict | None:
     """`Materialmap.raw` as a lossless image, so a ground hit knows its surface.

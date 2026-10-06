@@ -378,6 +378,17 @@ export async function realLevel(M, { maps, models, map }) {
     const { decodeMaterialIds } = await import('../server/glb-scene.mjs');
     terrainMaterials = { ids: decodeMaterialIds(readFileSync(matFile)), dim: matSpec.dim, spacing: matSpec.spacing || 0 };
   }
+  // The whole heightmap (`level-terrain.js loadHeightmap`), which the
+  // collider stands on where no tile was drawn; null for an older bake.
+  const hmSpec = extras.heightmap;
+  const hmFile = hmSpec?.image ? path.join(dir, hmSpec.image) : null;
+  let heightmap = null;
+  if (hmFile && existsSync(hmFile)) {
+    const { decodePng } = await import('../server/glb-scene.mjs');
+    const png = decodePng(readFileSync(hmFile), hmSpec.image);
+    heightmap = { rgba: png.data, channels: png.channels, dim: hmSpec.dim,
+                  spacing: hmSpec.spacing, heightUnits: hmSpec.heightUnits };
+  }
 
   // Kits: `loadouts.levels[map][team].slots` -> `kits[name].items` ->
   // `aiWeapons[item]` (the page's `botKitFor`).
@@ -471,7 +482,8 @@ export async function realLevel(M, { maps, models, map }) {
     extras,
     // Built by the stage, after the World (`stage.mjs`).
     collider: null,
-    stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, vehicleAi: vehicleJson?.vehicles ?? {} },
+    stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, heightmap,
+             vehicleAi: vehicleJson?.vehicles ?? {} },
     kits: { kitFor, maxHp },
     botNames,
     weaponFire,
@@ -485,6 +497,7 @@ export async function realLevel(M, { maps, models, map }) {
       damage: !!damage,
       collisionMeshes: !!collisionMeshes,
       terrainMaterials: !!terrainMaterials,
+      heightmap: !!heightmap,
     },
   };
 }

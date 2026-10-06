@@ -18,6 +18,8 @@ repeats instead of stretching.
 from __future__ import annotations
 
 import math
+import struct
+import zlib
 
 from . import gltf, stdmesh
 from .level import (PATCH_METERS, Heightmap, TerrainInfo, tile_in_window,
@@ -159,6 +161,47 @@ def depth_map(heightmap: Heightmap, water_level: float,
         rgba[j] = rgba[j + 1] = rgba[j + 2] = v
         rgba[j + 3] = 255
     return dim, bytes(rgba), max_depth
+
+
+def heightmap_png(heightmap: Heightmap) -> bytes:
+    """`Heightmap.raw` as a lossless RGB PNG: every u16 sample, high byte in
+    red, low byte in green, blue zero, row 0 at z = 0 (the materials map's
+    orientation).
+
+    The viewer's collider used to rebuild the lattice from the drawn tiles,
+    which left no ground at all under a patch the bake does not draw (the sea
+    floor of 29 levels; Midway 240 of 256 patches). `PatchTerrain` collides
+    against the whole heightmap, drawn or not (collision-response.md section
+    7), so the whole grid is shipped. Eight bits a channel is what a browser
+    canvas hands back exactly, which a 16-bit greyscale PNG would not be.
+
+    Each scan line is PNG filter 2 (Up): neighbouring rows of a heightmap
+    differ by little, so the difference compresses to a fraction of the
+    samples' 2 bytes. Exact to the sample, never resampled.
+    """
+    dim = heightmap.dim
+    stride = dim * 3
+    raw = bytearray(stride * dim)
+    for i, value in enumerate(heightmap.samples):
+        j = i * 3
+        raw[j] = value >> 8
+        raw[j + 1] = value & 0xFF
+    scanlines = bytearray()
+    previous = bytes(stride)
+    for y in range(dim):
+        row = raw[y * stride:(y + 1) * stride]
+        scanlines.append(2)
+        scanlines.extend((a - b) & 0xFF for a, b in zip(row, previous))
+        previous = row
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + tag + payload
+                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", dim, dim, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(scanlines), 9))
+            + chunk(b"IEND", b""))
 
 
 def sky_primitives(mesh: "stdmesh.StandardMesh", rot_angle: float = 0.0,
