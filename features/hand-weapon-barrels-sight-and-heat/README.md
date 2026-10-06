@@ -240,10 +240,9 @@ overheat. The lead's commands are in the package report.
 
 - ~~The lockout starts on the round that crosses 1 and is never restarted.~~
   Built in section 5.
-- Whether a tick runs the soldier's fire message or the weapon's
-  `handleUpdate` first decides whether the drain lands before or after the
-  round. The round counts assume the trigger first, as `gun-cycle.js` does
-  (GUN-15).
+- ~~Whether a tick runs the soldier's fire message or the weapon's
+  `handleUpdate` first~~: the trigger first (IMP-8's `simulateFrame` order),
+  as the round counts assume.
 - ~~A grenade's charge is read and not built.~~ Built in section 8.
 - The page's bots do not stop at heat 0.8 (`bot-fire.js` names the break
   but nothing implements it). Retail bots never reach a lockout. Under this law
@@ -351,13 +350,33 @@ After the first lockout a held trigger fires 0.2 to 0.3 rounds a second, as the
 engine does; before, it fired 0.4 to 0.5. An M249 let go on its crossing round
 gets no lockout and is cold again within 10 s.
 
+**Checked against the real game (review, 2026-10-07).** One lab recording
+holds a lockout: a bot's coaxial Browning on El Alamein
+(`20261007-012156-elalamein-coop-lod0-rec`, pid 233, object 1081) fired 25
+rounds from cold, to heat 1.0100003 and 1.0000004 after its drain, and its
+next round came 2.133 s (64 ticks) later. `FireState` held from cold gives 64
+ticks with the trigger reported, and 62 under the old lockout-at-the-crossing
+rule: the refused pull starts the lockout three ticks after the round, and in
+float32 the 2 s lockout takes 61 ticks. Over every lab recording, vanilla and
+Desert Combat (65,431 rounds from ten MGs, the M249 and the PKM among them),
+`FireState` matches the float32 law to the bit and refuses no recorded round,
+and the bursts end where the law reaches the bots' 0.8: within a round on the
+vanilla guns; 68 rounds on Desert Combat's Iraqi coaxial MG, where the law
+reaches 0.8 at its 69th and the old continuous drain at its 119th; and one
+51-round bot M249 burst from cold, which the law takes to 0.802 at its 48th,
+then a 44-tick pause, the drain from 0.85 to the bots' resume at 0.5 plus the
+same lag. Scripts: `bursts.py`, `dump_ticks.py`, `fsnode/cmp.mjs` and
+`fsnode/coax.mjs` in `~/.cache/dc-sweep/review-hand-weapons-2/lab/`.
+
 **Open.**
 
 - `replay-hud.js` (not this package's file) could report the trigger as held
   between a crossing round and the next recorded round. It would then show
   the engine's lockout, restarts included. Today it keeps the single lockout.
-- GUN-15's tick-order question stands. Both orders give the same count per
-  cycle; they differ only in which half of the tick the drain lands on.
+- ~~GUN-15's tick-order question stands.~~ Settled by IMP-8's reading:
+  `GameServer::simulateFrame` runs the players' update, where the trigger's
+  message fires, before the objects' `handleUpdate`. The trigger first, as
+  `gun-cycle.js` and the round counts assume.
 
 ## 6. The weapon's camera shake: the fire kick and the sniper's sway
 
@@ -549,8 +568,10 @@ page threw every grenade at full strength, and the bar beside it stayed empty.
   nothing else) charges it, and its release starts the throw as a click does.
   The fire button fills it to 1. `pullHandTrigger` launches the round at
   `velocity × heat`: the group's stats are seen through a copy with the
-  scaled velocity until the round is out. `onShot` then sets the heat back
-  to 0.
+  scaled velocity until the pulse that asked for the round ends. `onShot`
+  sets the heat back to 0. It does not put the stats back: `gunfire.js`
+  `fireShot` calls `onShot` before `fireBarrel` launches the round, and a
+  restore there (the first build) sent every charged throw at full speed.
 - `soldier-hud.js` hands the charge to the heat bar (one line, outside this
   package's list, because that is where the bar is fed).
 
@@ -568,6 +589,15 @@ fired on the tick after its pulse, a 25 m/s grenade):
 After each throw the heat is 0 and the group's stats are its own again.
 `tests/test_hud.py` `GrenadeChargeBarTests` puts a 0.45 charge on
 `Overheat/OverHeat` under `Ammo/AmmoType 3`.
+
+The harness first read the velocity before calling `onShot`, the reverse of
+`fireShot`'s order, and passed while the page threw every charge at 25 m/s.
+The review found it in the page (vanilla El Alamein, a scratch-extracted
+`GrenadeAllies`, the rounds tracked in the scene,
+`~/.cache/dc-sweep/review-hand-weapons-2/shake_review.cjs grenade`): the fire
+button's throw and a full charge leave at 25.1 m/s, half a second of charge
+now at 11.5 (25.1 before the fix). The harness now calls `onShot` first, and
+fails on the first build.
 
 **Assets.** The hand weapon reads `weaponStats.heat`, which the grenades' viewmodels
 carry only once re-extracted (section 3). The re-extract of every tree for
