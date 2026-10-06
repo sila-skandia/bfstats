@@ -69,6 +69,15 @@ class UpsideDownTests(unittest.TestCase):
         # A driven root still for 100 ticks is the engine's asleep.
         self.assertEqual(100, self.results["drivenQuietFirstTick"])
 
+    def test_a_hull_resting_on_its_roof_is_touching(self) -> None:
+        # Retail (DC lab, 2026-10-07): an unmanned Humvee_TOW on its roof lost
+        # 5 HP at each whole second for the 2.8 s it lay there, before any
+        # sleep. The body world's handlers run before the resolve, so a
+        # resting body's gravity tick (0.49 m/s) is a contact every tick; a
+        # driven hull with its roof in the ground counts the same.
+        self.assertTrue(self.results["roofTouched"])
+        self.assertTrue(self.results["drivenRoofInGround"])
+
     def test_a_hull_flipped_in_the_air_is_not(self) -> None:
         self.assertFalse(self.results["flippedHigh"])
 

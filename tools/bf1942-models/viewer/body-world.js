@@ -58,10 +58,21 @@ export class BodyWorld {
     this.ticks = 0;
     /** Static-world contacts the last tick found, for a trace to read. */
     this.staticContacts = 0;
+    /**
+     * Owners whose hull met something during the last `step`: the handlers
+     * below are `SimpleObject::handleCollision`'s stand-ins, which is where
+     * `Armor::collision` (`0x08174470`) sets the Armor's touched flag
+     * (`+0x129`) that `Armor::update`'s upside-down test reads (HP-18). They
+     * run before the resolve, as the engine's do, so a body resting on the
+     * ground is in here every tick it is awake: gravity's one tick, 14.73 / 30
+     * = 0.49 m/s, is over the 0.1 squared-speed floor.
+     */
+    this.touched = new Set();
 
     const world = this;
     this.handlers = {
       onCollision(self, other, vRel, normal, pos, matSelf, matOther) {
+        world.touched.add(self.owner);
         const result = world.crash.onObjectContact(
           self.owner, other.owner, vRel, normal, matSelf, matOther);
         if (result && (result.damage > 0 || result.kill)) {
@@ -70,6 +81,7 @@ export class BodyWorld {
         return true;
       },
       onTerrain(part, speed, normal, pos, matSelf, matTerrain) {
+        world.touched.add(part.owner);
         const result = world.crash.onTerrainContact(
           part.owner, speed, normal, matSelf, matTerrain);
         if (result && (result.damage > 0 || result.kill)) {
@@ -135,6 +147,7 @@ export class BodyWorld {
     // A tab that slept for a minute owes 1,800 ticks; the engine drops a
     // backlog rather than replaying it, and so does this.
     if (n > MAX_BACKLOG_TICKS) { n = 1; this._debt = 0; }
+    this.touched.clear();
     for (let i = 0; i < n; i++) this.tick();
     return n;
   }

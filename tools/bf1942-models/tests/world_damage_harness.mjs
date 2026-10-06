@@ -50,7 +50,7 @@ function part(b, node = 'hull') {
   };
 }
 
-function world(entries, { ground = 0, slope = null, rate = 10 } = {}) {
+function world(entries, { ground = 0, slope = null, rate = 10, touched = [] } = {}) {
   const map = new Map(entries.map((e, i) => [i + 1, e]));
   return {
     collider: {
@@ -65,7 +65,7 @@ function world(entries, { ground = 0, slope = null, rate = 10 } = {}) {
         },
       },
     },
-    bodyWorld: { entries: map, get: owner => map.get(owner) ?? null },
+    bodyWorld: { entries: map, get: owner => map.get(owner) ?? null, touched: new Set(touched) },
     vehicleDamage: { get: () => ({ destroyed: false, hpLostWhileUpSideDown: rate }) },
   };
 }
@@ -99,9 +99,17 @@ out.roofSliding = has(world([parked({ pos: [0, 0.9, 0], axes: rollAxes(180), v: 
 out.flippedHigh = has(world([parked({ pos: [0, 10, 0], axes: rollAxes(180), sleeping: true })]));
 // A hull rate of 0.01 is the engine's own off switch.
 out.rateOff = has(world([parked({ pos: [0, 1, 0], axes: rollAxes(180), sleeping: true })], { rate: 0.01 }));
-// Driven: still for 100 ticks is the sleep the engine's root would reach.
+// The body world's own contact record this step (`BodyWorld.touched`, its
+// handlers run before the resolve): a parked hull lying still on its roof is
+// touching, as retail's Humvee_TOW was billed each whole second on its roof.
+out.roofTouched = has(world([parked({ pos: [0, 1, 0], axes: rollAxes(180) })], { touched: [1] }));
+// Driven, its roof in the ground: the drive clamps its velocity there, but an
+// awake engine body meets the ground at gravity's tick, so it is touching.
+out.drivenRoofInGround = has(world([driven({ pos: [0, 1, 0], axes: rollAxes(180) })]));
+// Driven, held upside down half a metre off the ground: still for 100 ticks is
+// the sleep the engine's root would reach.
 {
-  const entry = driven({ pos: [0, 1, 0], axes: rollAxes(180) });
+  const entry = driven({ pos: [0, 1.5, 0], axes: rollAxes(180) });
   const w = world([entry]);
   let first = null;
   for (let tick = 1; tick <= 120 && first === null; tick++) if (has(w)) first = tick;
