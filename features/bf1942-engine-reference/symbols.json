@@ -9021,7 +9021,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000"
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | [air-flight 2026-10-06] the 0x1000000 flag gates only the first try (the first child's alternative 0); without it, or when that has no geometry, findChildOfLodSelectorCID finds the first DistCompareLodSelector LodObject (an aircraft's cockpit LOD) and its alternative 0's geometry (+0x5c) is returned. COL-14"
   },
   {
    "address": "0x0818d910",
@@ -9031,6 +9031,24 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R3] geometry -> ICollisionMesh, LodObject fallback"
+  },
+  {
+   "address": "0x0818daf0",
+   "name": "dice::ref2::world::findChildOfLodSelectorCID(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. internalFindChildOfLodSelectorCID on obj->getChild(), then queryInterface ILodObject 0xc4e0. COL-14"
+  },
+  {
+   "address": "0x0818db50",
+   "name": "dice::ref2::world::internalFindChildOfLodSelectorCID(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Depth-first from the first child (ICompositeObject vt+0x7c getChild, sibling at +0x54); a node whose template CID equals arg4 (0xc4c2 PCO) ends the branch and its later siblings; returns the first LodObject (template CID arg2 0x94a7) whose selector getClassID (vt+0x18) equals arg3 (0x94b1 DistCompareLodSelector). COL-14"
   },
   {
    "address": "0x0818dc60",
@@ -9663,6 +9681,15 @@
    "note": "lnxded. LOD-2: one comparison of exactly 0.5 -> 1 if compare value (+0x2c) >= 0.5 else 0, distance never read"
   },
   {
+   "address": "0x08214340",
+   "name": "dice::ref2::world::DistCompareLodSelector2::getLodLevelRelative(dice::ref2::world::ICompositeObject const*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "working",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Returns level 0 while the static m_comparisonLodSelectorValue (0x087296c4) is 0; else the destroyed level when +0x20 == 0x101, else lower_bound of distance^2 * m_distanceLodFactor * fov^2 over the squared distances. COL-14"
+  },
+  {
    "address": "0x08215aa0",
    "name": "dice::ref2::world::DistLodSelector::init(DistLodSelectorTemplate*)",
    "kind": "function",
@@ -9904,6 +9931,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R4] weak ('W') symbols, read via 'nm', confirmed against the vtable dump"
+  },
+  {
+   "address": "0x0824d320",
+   "name": "dice::ref2::world::PhysicsNode::setInertiaModifier(dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-10-06-air-flight",
+   "note": "lnxded. Copies the Vec3 straight to +0x7c/+0x80/+0x84 (x scales Ix, the pitch axis). COL-13"
   },
   {
    "address": "0x0824d3a0",
