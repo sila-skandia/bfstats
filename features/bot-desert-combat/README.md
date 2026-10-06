@@ -451,8 +451,9 @@ leftover, so it keeps one value. What value depends on where the bot is:
   their sizes is (minDev + 0.3125) x 0.980 for three guns with different
   minDevs. Only draw index 617 fits both: the seat's input index is 618.
   Per bot and gun (236 groups of 8 rounds or more), 218 lie within 12
-  degrees of 617's direction; the other 18, at 47 to 106 degrees, are not
-  explained (a tilted gun frame, or a second index).
+  degrees of 617's direction; the other 18, at 47 to 106 degrees, gather on
+  a few gun objects (El Alamein's MG42s 556 and 558 for several bots and
+  rounds), which points at those guns' own frames rather than a second index.
 - **On foot**, the bot's own index, held through a life (weapon changes
   included) and new at the next, always a multiple of 4: the low bits of an
   aligned address. The shotguns' eight barrels draw at index + 0..7, and each
