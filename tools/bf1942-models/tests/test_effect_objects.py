@@ -163,6 +163,32 @@ class SpawnedWorldTests(unittest.TestCase):
                          self.world["visuals"])
 
 
+class SpawnedRemovalTests(unittest.TestCase):
+    """What removes a spawned object (EMT-11): its Armor's death and then its
+    template's `timeToLiveAfterDeath` (HP-19), or the round's end (HP-20).
+    No spawner made it, so nothing else does."""
+
+    removal: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.removal = run_harness()["removal"]
+
+    def test_a_sunk_raft_is_gone_with_its_hull_and_armor(self) -> None:
+        # Both rafts write `timeToLiveAfterDeath 0`.
+        self.assertFalse(self.removal["raftHeld"])
+        self.assertFalse(self.removal["raftInScene"])
+        self.assertEqual("water", self.removal["raftHit"])
+        self.assertFalse(self.removal["raftDamageable"])
+        self.assertEqual(["air_control_tower_des_wreck"], self.removal["objectsAfterRaft"])
+
+    def test_an_unhurt_ruin_stands_until_the_round_ends(self) -> None:
+        self.assertTrue(self.removal["ruinAfterTenMinutes"])
+        self.assertEqual({"held": 0, "objects": 0, "ruinInScene": False, "removed": 2,
+                          "ruinSolid": None, "damageables": []},
+                         self.removal["afterRoundEnd"])
+
+
 @unittest.skipUnless((GAME / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
 class BakedRaftTests(unittest.TestCase):
     """Vanilla's `e_PTBoatWreck` as `extract_effects.py` bakes it: the raft

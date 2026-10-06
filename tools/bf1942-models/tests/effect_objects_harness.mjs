@@ -327,12 +327,15 @@ function syntheticRuin() {
   let effects = null;
   const wrecks = createVehicleWrecks({ ...wrecksPage(null), get effects() { return effects; },
                                        world, vehicleDamage: damage, collider });
+  const roundState = { over: false };
   const objects = createEffectObjects({
     get effects() { return effects; },
     isCollision: node => !!node.userData?.collision,
     bindDynamicShading() {},
     collider, world,
     registerDamageable: (owner, node, opts) => wrecks.registerDamageable(owner, node, opts),
+    unregisterDamageable: owner => wrecks.unregisterDamageable(owner),
+    get roundOver() { return roundState.over; },
   });
   effects = new EffectPlayer({ scene, camera: new THREE.PerspectiveCamera(), library: both,
                                onObject: (object, spec) => objects.adopt(object, spec) });
@@ -372,6 +375,42 @@ function syntheticRuin() {
     visuals: [...wrecks.damageVisuals.entries()].map(([owner, v]) => ({ owner, spawned: v.spawned,
                                                                          spawnDelay: v.spawnDelay })),
   };
+
+  // --- what removes them ---------------------------------------------------
+  // The raft sinks: a killing hit, then the damage pass and the wreck clock
+  // as `vehicle-hits.js` runs them, for ten seconds. Its template's
+  // `timeToLiveAfterDeath 0` takes it on the next tick. The ruin, which
+  // writes none and is not hurt, is still standing after ten minutes; the
+  // round's end takes it.
+  globalThis.fetch = async () => ({ ok: false, json: async () => null });
+  raftRecord.object.userData.armor.timeToLiveAfterDeath = 0;
+  damage.applyHit({ owner: raftRecord.owner, damage: 100 });
+  const removal = {};
+  for (let t = 0; t < 300; t++) {
+    for (const change of damage.update(1 / 30, {})) {
+      if (change.changed) wrecks.showDamageTier(change.vehicle, change.tier);
+      if (change.died) await wrecks.wreckVehicle(change.vehicle);
+    }
+    wrecks.stepWrecks(1 / 30);
+    objects.step({ ticks: 1 });
+  }
+  const sunk = collider.cast(-30, 10, 30, 0, -1, 0, 20);
+  removal.raftHeld = objects.held.includes(raftRecord);
+  removal.raftInScene = !!raftRecord.object.parent;
+  removal.raftHit = sunk ? sunk.kind : null;
+  removal.raftDamageable = damage.byOwner.has(raftRecord.owner);
+  removal.objectsAfterRaft = effects.objects.map(o => o.name);
+  for (let t = 0; t < 30 * 600; t++) objects.step({ ticks: 1 });
+  removal.ruinAfterTenMinutes = !!ruinRecord.object.parent;
+  roundState.over = true;
+  objects.step({ ticks: 1 });
+  removal.afterRoundEnd = {
+    held: objects.held.length, objects: effects.objects.length,
+    ruinInScene: !!ruinRecord.object.parent, removed: objects.removed,
+    ruinSolid: collider.cast(-20, 10, -30, 1, 0, 0, 100)?.owner ?? null,
+    damageables: [...damage.byOwner.keys()],
+  };
+  out.removal = removal;
 }
 
 // The raft the bake made (`--raft=<effects.glb>`: `test_effect_objects.py`
