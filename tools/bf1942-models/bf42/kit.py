@@ -22,7 +22,10 @@ Nothing else. That closed vocabulary is why this module is short.
 Which kit a soldier wears is not in the object tree either. The level says it,
 pairing `game.setTeamSkin <team> <soldier>` with `game.setKit <team> <slot>
 <kit>`, so `sweep_levels` is also the liveness test: a kit no level names is
-declared-but-dead, and the install is full of them.
+declared-but-dead, and the install is full of them. A level can also put a kit
+on the ground: an `ObjectSpawner` whose `setObjectTemplate` names a Kit lays it
+on a pad for anyone to take (Desert Combat's M82 and Stinger kits,
+`level_pads`). Such a kit is live too, though no spawn-screen row hands it out.
 
 See `features/bf1942-3d-models/kits.md` for the evidence behind each rule.
 """
@@ -34,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import con as con_mod
+from . import level as level_mod
 from . import roster as roster_mod
 
 # `Objects/Items/<Nation>Kit[<Theatre>]/[<Unit>/]<Class>/Objects.con`.
@@ -168,10 +172,16 @@ class Kit:
     # Every child the kit rolls per spawn, in roll order (`RandomItem`). A
     # carried item named here is a bundle, never a weapon: `variants_of`.
     random: list[RandomItem] = field(default_factory=list)
-    # Filled by `sweep_levels`.
+    # Filled by `sweep_levels`. `levels` holds every level the kit is in play
+    # on, the ones whose pads place it (`pads`) included.
     levels: list[str] = field(default_factory=list)
     soldiers: list[str] = field(default_factory=list)
     slots: list[int] = field(default_factory=list)
+    # The levels whose placed ObjectSpawners lay this kit on a pad, and every
+    # soldier those levels field: the pickup has no team test (KITDROP rows,
+    # `features/kit-drops`), so either side's man can end up holding it.
+    pads: list[str] = field(default_factory=list)
+    pickup_soldiers: list[str] = field(default_factory=list)
 
     @property
     def live(self) -> bool:
@@ -558,15 +568,132 @@ def spell_soldiers(loadouts: dict[str, dict[int, "TeamLoadout"]],
                 team.soldier = template.name
 
 
+def spawner_templates(files: level_mod.LevelFiles) -> dict[str, str]:
+    """Every template a placed `ObjectSpawner` of the level names, in any
+    gameplay layer it ships: lowercased name -> the spelling the spawner wrote.
+
+    The layers are the ones a bake writes `objectSpawns` for
+    (`extract_map.load_level`): the default mode, every other mode directory
+    the archive holds (`find_gameplay_modes`), and a layer of its own for each
+    game type whose `run` lines straddle two directories
+    (`compose_game_type_layers`). The page builds its pads from the active
+    layer's. A spawner template no `ObjectSpawns.con` places spawns nothing,
+    so only placed ones count, and both sides' entries count: a pad filed
+    under a control point hands out the holder's (`CPEnable`, SPAWN-2).
+
+    A layer that will not parse is left out and the others still count:
+    FHSW's `telemark-1943/ObjectiveMode/ObjectSpawns.con` carries ten
+    `Object.absolutePosition` lines with no argument, which
+    `parse_static_objects` raises on.
+    """
+    default = level_mod.find_gameplay_mode(files) or "Conquest"
+    modes = level_mod.find_gameplay_modes(files)
+    if default not in modes:
+        modes.insert(0, default)
+    layers: dict[str, level_mod.GameplayObjects] = {}
+    for mode in modes:
+        try:
+            layers[mode] = level_mod.load_gameplay_objects(files, mode)
+        except Exception:  # noqa: BLE001 - one malformed layer
+            continue
+    try:
+        level_mod.compose_game_type_layers(files, level_mod.load_game_types(files), layers)
+    except Exception:  # noqa: BLE001 - the directory layers still stand
+        pass
+    named: dict[str, str] = {}
+    for layer in layers.values():
+        for inst in layer.object_spawns:
+            spec = layer.object_spawn_templates.get(inst.template.lower())
+            if spec is None:
+                continue
+            for name in spec.vehicles.values():
+                named.setdefault(name.lower(), name)
+    return named
+
+
+def level_pads(level_paths: list[tuple[str, Path]],
+               chain: list[Path] | None = None) -> dict[str, dict[str, str]]:
+    """Per level, what its placed ObjectSpawners name (`spawner_templates`).
+
+    With `chain` (the mod's, nearest first) a level is read the way a bake
+    reads it, through every copy of it down the chain (`find_level_archives`),
+    so the names are the ones its `scene.json` pads carry. Without, through its
+    own archive and numbered patches. Most of what comes back is vehicles;
+    `bind_pads` keeps the kits. A level whose archives will not open is
+    skipped, as `level_loadouts` skips it.
+    """
+    game_dir = chain[0].parent.parent if chain else None
+    out: dict[str, dict[str, str]] = {}
+    for level_name, path in level_paths:
+        try:
+            if chain:
+                paths = level_mod.find_level_archives(
+                    game_dir, chain[0].name, level_name, chain=chain)
+            else:
+                paths = [path, *reversed(roster_mod.level_patches(path))]
+            if not paths:
+                continue
+            files = level_mod.load_level_files(paths, level_name)
+        except Exception:
+            continue
+        out[level_name] = spawner_templates(files)
+    return out
+
+
+def bind_pads(kits: dict[str, Kit], loadouts: dict[str, dict[int, TeamLoadout]],
+              pads: dict[str, dict[str, str]],
+              levels: set[str] | None = None) -> int:
+    """Bind the kits a level's pads place (`level_pads`) to it. Returns the
+    number of (level, kit) pairs bound.
+
+    A kit on a pad is in play on that level, so the level joins its `levels`
+    and its `pads`. Whoever takes it holds its weapons in his own sleeves, and
+    the pickup has no team test, so every soldier the level fields joins its
+    `pickup_soldiers`. A kit no `game.setKit` slot hands out anywhere (Desert
+    Combat 0.7's `US_Sniper_hvy` and `US_AA`) is drawn, in a browser, on the
+    soldier the level dresses its own team in (`setKitTeam`), or on every
+    soldier the level fields when the kit names no team. `levels`, when
+    given, limits the binding to those level names.
+    """
+    bound = 0
+    for level_name, named in sorted(pads.items()):
+        if levels is not None and level_name not in levels:
+            continue
+        teams = loadouts.get(level_name, {})
+        fielded = [team.soldier for _, team in sorted(teams.items()) if team.soldier]
+        for key in sorted(named):
+            kit = kits.get(key)
+            if kit is None:
+                continue
+            bound += 1
+            if level_name not in kit.levels:
+                kit.levels.append(level_name)
+            if level_name not in kit.pads:
+                kit.pads.append(level_name)
+            for soldier in fielded:
+                if soldier not in kit.pickup_soldiers:
+                    kit.pickup_soldiers.append(soldier)
+            if kit.slots:
+                continue
+            own = teams.get(kit.team) if kit.team is not None else None
+            for soldier in ([own.soldier] if own and own.soldier else fielded):
+                if soldier not in kit.soldiers:
+                    kit.soldiers.append(soldier)
+    return bound
+
+
 def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]],
-                 library: con_mod.ObjectLibrary | None = None) -> int:
+                 library: con_mod.ObjectLibrary | None = None,
+                 pads: dict[str, dict[str, str]] | None = None) -> int:
     """Bind kits to the levels and soldiers that field them.
 
     This is also the liveness test. `game.setKit` is the only thing in the game
-    that says a kit is in play, and the install is full of kits that nothing
-    names: vanilla's five `BaseKit` entries, all five Canadian kits, XPack2's
-    seven, 46 of EoD's. Filtering on it costs nothing — the sweep has to happen
-    anyway for the map list.
+    that hands a kit to a spawning soldier, and the install is full of kits
+    that nothing names: vanilla's five `BaseKit` entries, all five Canadian
+    kits, XPack2's seven, 46 of EoD's. Filtering on it costs nothing — the
+    sweep has to happen anyway for the map list. With `pads` (`level_pads`
+    over the same levels), a kit a level's ObjectSpawners place is bound too
+    (`bind_pads`), after every slot.
 
     With `library`, a soldier is recorded as his own `create` line spells him.
     The engine finds a template by name case-blind (`getTemplate`,
@@ -589,6 +716,8 @@ def sweep_levels(kits: dict[str, Kit], level_paths: list[tuple[str, Path]],
                     kit.slots.append(slot)
                 if team.soldier and team.soldier not in kit.soldiers:
                     kit.soldiers.append(team.soldier)
+    if pads:
+        bind_pads(kits, loadouts, pads, {name for name, _path in level_paths})
     return len(loadouts)
 
 
