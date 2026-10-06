@@ -1995,6 +1995,15 @@
    "note": "client. Plain r/w of template+0x530."
   },
   {
+   "address": "0x004d74b0",
+   "name": "ConsoleClass::executeObjectMethod [blastAmmoCount] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. Client copy of the blastAmmoCount setter: BYTE [FireArmsTemplate+0x544]; vtable 0x008e2ed8, name 0x008e2f3c, arg type 'bool' 0x008c58e8; setArgFromString 0x004d7450 reads into static 0x0097ffd0 through MSVCP70 operator>>(bool&). Readers: fireFinished analog 0x0053b100, Fire analog 0x0053dc40, the server's law (BOMB-13)."
+  },
+  {
    "address": "0x004da850",
    "name": "console:ProjectileTemplate.distToStartLoseDamage registrar",
    "kind": "function",
@@ -2281,6 +2290,15 @@
    "confidence": "verified",
    "source": "ghidra",
    "note": "HandFireArms vtable 0x008f9750 slot +0xf8 (read at 0x008f9848); twin of lnxded FireArms::isZoomed() 0x08290160. Called as the gate at the zoom camera-mode switch 0x004fc887 and the zoomed mouse-scale site 0x0050094e."
+  },
+  {
+   "address": "0x0051a280",
+   "name": "ConsoleClass::executeObjectMethod [automaticYawStabilization] (client)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "BF1942.exe. RotationalBundleTemplate+0x255 (vtable 0x008ef3e8, name 0x008ef44c); the pitch word is 0x0051a430 writing +0x256 (vtable 0x008ef468, name 0x008ef4cc). No other byte access to +0x255/+0x256 on a RotationalBundle template in the client; the client's calculateAndClipAngle region (0x0057c885 rememberExcessInput, 0x0057c96a automaticReset) reads neither (GUN-17)."
   },
   {
    "address": "0x005241c0",
@@ -8957,8 +8975,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000"
+   "source": "research-2026-09-19-collision-response; engine-reads-2026-10-06",
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000 | lnxded. A root's collision geometry when it has none of its own (StaticResponsePhysics::getFaceCollision 0x0825ef80): its first child, when that is a LodObject, at the highest LOD (children[0], LodObject::getChild 0x08216ce0 under m_forceHighestLod); else findChildOfLodSelectorCID 0x0818daf0 -> internalFindChildOfLodSelectorCID 0x0818db50, a depth-first search not entering a PlayerControlObject (CID 0xc4c2) for a LodObject (0x94a7) whose selector is a DistCompareLodSelector (0x94b1). Returns that alternative's geometry (+0x5c) (COL-17)."
   },
   {
    "address": "0x0818d910",
@@ -8975,8 +8993,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash",
-   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11."
+   "source": "research-2026-09-19-collision-response; research-2026-09-24-hull-wash; engine-reads-2026-10-06",
+   "note": "lnxded. [R3] (flags & mask) == mask [2026-09-24] handleExplosion's ObjectFlagPredicator(0x2000000) therefore keeps objects that HAVE bit 0x2000000, which setParent 0x08166050 sets only for a null parent: the blast query returns roots. Ledger HFD-11. | lnxded. (object.flags & mask) == mask: every bit of the mask is required. getCollisionObjects' 0x2000200 therefore needs both 0x200 (hasCollisionPhysics) and 0x2000000 (set by setParent(null): a root) (COL-16)."
   },
   {
    "address": "0x0818df50",
@@ -9222,6 +9240,15 @@
    "note": "lnxded. Unconditionally returns 1."
   },
   {
+   "address": "0x081bcd20",
+   "name": "dice::ref2::world::(anon)::ConsoleClass83::executeObjectMethod() [hasCollisionPhysics]",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. ObjectTemplate.hasCollisionPhysics on SimpleObjectTemplate (CID 0x947e): bit 1 of BYTE +0x70 (and edx,~2; or edx,(arg&1)*2). Name 0x086c58dc, object 0x0878db60 registered at 0x081b8898. Two more classes register the same name for particle templates (ConsoleClass147 0x081fc890 -> +0x1d, ConsoleClass103 0x081f8910 -> +0x34) (COL-15)."
+  },
+  {
    "address": "0x081c0fd0",
    "name": "ConsoleClass101::executeObjectMethod (ObjectTemplate.hasArmor)",
    "kind": "function",
@@ -9247,6 +9274,24 @@
    "confidence": "verified",
    "source": "research-2026-09-30-armor-spawn",
    "note": "lnxded. Console word maxHitPoints (string 0x086c5808). Set: ceil(v) stored as uint32 to getActiveTemplate(0x947e)+0x84. Template default 10 (0x081dbd42). setArmorComponent passes it to Armor::setMaxHitPoints, before setHitPoints. Ledger HP-17."
+  },
+  {
+   "address": "0x081d06b0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass209::executeObjectMethod() [automaticYawStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [getActiveTemplate(CID_RotationalBundleTemplate)+0x1a5]; name 0x086c545c, object 0x08791520. The only other readers of +0x1a5 in the image are this getter branch and RotationalBundleTemplate::makeScript 0x081d9a69: nothing in the simulation reads it (GUN-17)."
+  },
+  {
+   "address": "0x081d0ac0",
+   "name": "dice::ref2::world::(anon)::ConsoleClass210::executeObjectMethod() [automaticPitchStabilization]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Writes BYTE [RotationalBundleTemplate+0x1a6]; name 0x086c5440, object 0x087915e0. Read only by this getter branch and makeScript 0x081d9a77 (GUN-17)."
   },
   {
    "address": "0x081d4c90",
@@ -9380,8 +9425,8 @@
    "kind": "function",
    "subsystem": "geom",
    "confidence": "verified",
-   "source": "research-2026-09-30-lod-selection",
-   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result"
+   "source": "research-2026-09-30-lod-selection; engine-reads-2026-10-06",
+   "note": "lnxded. LOD-4: calls world::setGeometry when the template names one and ignores the result | lnxded. 0x081da190..0x081da19a: tests template +0x70 bit 1 (hasCollisionPhysics) and, when set, calls updateFlags(0x200, 0) at 0x081da420..0x081da429. The only place a SimpleObject (and so every Bundle, LodObject, PCO, FireArms) gets object flag 0x200; the client does the same at 0x005370c2 with template +0xf8 (COL-15)."
   },
   {
    "address": "0x081dab40",
@@ -9425,8 +9470,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults"
+   "source": "research-2026-09-19-collision-response; engine-reads-2026-10-06",
+   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults | lnxded. 0x081dbd04..0x081dbd19: +0x70 = (old | 0x10) & 0x90, so hasCollisionPhysics (bit 1), hasMobilePhysics (bit 0) and hasPointPhysics (bit 3) default clear. ProjectileTemplate's ctor ORs 0x0f (0x0831faa9) (COL-15)."
   },
   {
    "address": "0x081dbf00",
@@ -10752,6 +10797,33 @@
    "note": "lnxded. A pure no-op (push ebp; mov ebp,esp; pop ebp; ret) whose getter returns fldz: a static body never submerges."
   },
   {
+   "address": "0x0825ed50",
+   "name": "dice::ref2::world::StaticResponsePhysics::shouldCheckCollision()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Same test as ResponsePhysics::shouldCheckCollision: object flag 0x200, a geometry at object+0x5c, vertex and face collision at LOD 1. Gates which parts addToTmpResponseList 0x0825ede0 chains under a static root (COL-16)."
+  },
+  {
+   "address": "0x0825ede0",
+   "name": "dice::ref2::world::StaticResponsePhysics::addToTmpResponseList(IObject const*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Recursive walk (first child vt+0x7c, next sibling +0x54) adding a part's response only when its shouldCheckCollision (vt+0x50) holds; getNextToCheck 0x0825ee70 builds the chain with LodObject::m_forceHighestLod = 1 (COL-16)."
+  },
+  {
+   "address": "0x0825ef80",
+   "name": "dice::ref2::world::StaticResponsePhysics::getFaceCollision(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. The object's own geometry component (0x492fe0fe) or, without one, findLodGeometry(object): how a geometry-less Bundle root (a house) collides with its LOD-0 mesh. getVertexCollision 0x0825f020 does the same through findLodCollisionMesh (COL-17)."
+  },
+  {
    "address": "0x0825f120",
    "name": "dice::ref2::world::StaticResponsePhysics::impulseOn(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, int, int)",
    "kind": "function",
@@ -11263,6 +11335,24 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-spotting",
    "note": "lnxded. Writes FireArms template +0x230."
+  },
+  {
+   "address": "0x082d8280",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::setArgFromString(int, std::string const&) [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Parses the argument with std::istream::operator>>(bool&) into the function-local static arg 0x087de970 and checks no failbit, so a value other than 0/1 leaves the previous good read in place (CON-16)."
+  },
+  {
+   "address": "0x082d8380",
+   "name": "dice::ref2::world::(anon)::ConsoleClass352::executeObjectMethod() [blastAmmoCount]",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Setter of ObjectTemplate.blastAmmoCount (descriptor object 0x087a3e80, name 0x086d5237, registered at 0x082ac0b5, arg type 'bool'): writes BYTE [getActiveTemplate(CID_FireArmsTemplate 0x9494)+0x348] from its one bool argument (BOMB-13)."
   },
   {
    "address": "0x082dc1e0",
@@ -12120,6 +12210,15 @@
    "note": "lnxded. Only RECORDS an IkHandle at bone+0xe0; the solve happens in Skeleton::transform. Sole caller AnimatedBundle::updateIk 0x08265880. Ledger IK-3."
   },
   {
+   "address": "0x08359b10",
+   "name": "dice::ref2::ConsoleObjects::getConsoleObject(std::string const&, std::string const&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded. Looks object+'.'+method up in a case-insensitive multimap; failing that strips a leading 'get' (strncasecmp vs 0x086c543c) keeping the hit only for getType() 1 or 3, then a leading 'set' (0x086be2d9) keeping type 1 or 2. ObjectTemplate properties are type 1, so setX and X are one word (CON-15)."
+  },
+  {
    "address": "0x08374880",
    "name": "dice::ref2::geom::checkFaceAndEdgeCollision(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, float&, float&, bool)",
    "kind": "function",
@@ -12964,6 +13063,15 @@
    "confidence": "verified",
    "source": "research-2026-09-30-artillery-driver",
    "note": "lnxded. SPOT-16: point = centre + rot(dir, angle) x R; returns AIPathfinding::trace (vt+0x4c) from the third argument to it."
+  },
+  {
+   "address": "0x08679888",
+   "name": "std::num_get<char>::do_get(..., bool&) const",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "engine-reads-2026-10-06",
+   "note": "lnxded, GCC 3.2.3 libstdc++. Non-boolalpha branch: _M_extract_int then __convert_to_v<unsigned long>; stores only with no failbit and value <= 1 (cmp [ebp-0x3c],1 / ja at 0x0867997c), else sets failbit and stores nothing (CON-16)."
   },
   {
    "address": "0x086b01ac",
