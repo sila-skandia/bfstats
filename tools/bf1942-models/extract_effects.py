@@ -159,6 +159,10 @@ def write_level_effects(tree: Path, row: dict, glb: bytes | None, manifest: dict
             path.unlink(missing_ok=True)
         row.pop("effects", None)
         return []
+    # The previous bake's `.gz` is of another copy: `optimise_mesh` writes a
+    # fresh one, and with `--no-optimise` none is better than a stale one
+    # (the publisher refuses a glb whose `.gz` disagrees with it).
+    target.with_name("effects.glb.gz").unlink(missing_ok=True)
     target.write_bytes(glb)
     (level_dir / "effects.report.json").write_text(json.dumps(manifest, indent=1))
     row["effects"] = f"{Path(row['glb']).parent.as_posix()}/effects.glb"

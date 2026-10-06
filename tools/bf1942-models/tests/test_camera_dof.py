@@ -111,10 +111,13 @@ class ExportedWordTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         from bf42.assemble import Assembler
         meshes, textures, objects, library = _library(_chain("DesertCombat"))
-        assembler = Assembler(meshes, textures, objects, library, max_texture=16)
         with tempfile.TemporaryDirectory() as tmp:
             paths = []
             for name in ("T72", "M2A3"):
+                # One Assembler per glb, as `extract_models` runs it: its mesh
+                # cache holds indices into the builder that made them, so a
+                # second export through it points at meshes it never wrote.
+                assembler = Assembler(meshes, textures, objects, library, max_texture=16)
                 glb, _report = assembler.export(name)
                 paths.append(Path(tmp) / f"{name}.glb")
                 paths[-1].write_bytes(glb)
