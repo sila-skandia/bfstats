@@ -44,7 +44,7 @@ import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
-import { botDeviate, botInputIndex, deviationIndex, footInputIndex } from './bot-deviation.js';
+import { botDeviate, botInputIndex, declaredBarrels, deviationIndex, footInputIndex } from './bot-deviation.js';
 import { FireState } from './fire-state.js';
 import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
@@ -885,7 +885,7 @@ export function createBotReferee(env) {
       // the one ray down the eye.
       const eye = bot.aimRay();
       const rays = barrelRays(eye.origin, eye.dir, stats?.barrels) ?? [null];
-      const barrels = Array.isArray(stats?.barrels) ? stats.barrels.length : 0;
+      const barrels = declaredBarrels(stats?.barrels);
       for (const [barrel, ray] of rays.entries()) {
         const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
                                         (material, distance) => env.roundDamage(stats, material, distance), ray,
