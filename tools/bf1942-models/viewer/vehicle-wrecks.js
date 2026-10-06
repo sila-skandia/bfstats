@@ -722,10 +722,13 @@ export function createVehicleWrecks(page) {
    * running through EndGame as `ObjectSpawner::handleFrameUpdate`, which asks
    * no game status, does). A node no pad names comes back at the restart
    * (`restartHulls`). The crew must be out first: the page kills everyone on
-   * the same tick.
+   * the same tick. Only a PlayerControlObject goes (every armoured root the
+   * trees place is one), and what a spawn effect stood up (`spawned`) is its
+   * own module's to remove (HP-20).
    */
   function clearWorld() {
     for (const [owner, visual] of damageVisuals) {
+      if (!clearsAtRoundEnd(visual)) continue;
       if (visual.removed) continue;
       if (visual.falling) {
         visual.falling.fallingWreck = false;
@@ -758,9 +761,15 @@ export function createVehicleWrecks(page) {
    *  pads' hulls are their pads' (`level-statics.js` `restartVehiclePads`). */
   function restartHulls() {
     for (const [owner, visual] of damageVisuals) {
-      if (page.vehiclePads?.padOf?.(visual.node)) continue;
+      if (!clearsAtRoundEnd(visual) || page.vehiclePads?.padOf?.(visual.node)) continue;
       if (visual.removed) respawnVehicle(owner);
     }
+  }
+
+  function clearsAtRoundEnd(visual) {
+    if (visual.spawned) return false;
+    const kind = visual.node?.userData?.templateKind;
+    return !kind || kind === 'PlayerControlObject';
   }
 
   /** The server the next delay is drawn for: every player in the world, bots
@@ -917,6 +926,10 @@ export function createVehicleWrecks(page) {
     }
     visual.respawnIn = null;
     visual.wrecked = false;
+    // A fresh hull: `spawnObject` arms its clock anew.
+    abandonClocks.delete(visual.node);
+    visual.removed = false;
+    visual.wreckAge = 0;
     // A hull the end of a round took off the field (`clearWorld`) is shown
     // again; the rest of the reset below is the same as a wreck's.
     if (visual.cleared) {
@@ -924,10 +937,6 @@ export function createVehicleWrecks(page) {
       delete visual.node.userData.cleared;
       visual.node.visible = true;
     }
-    // A fresh hull: `spawnObject` arms its clock anew.
-    abandonClocks.delete(visual.node);
-    visual.removed = false;
-    visual.wreckAge = 0;
     // A pad that came back while its last hull was still falling: the fall is
     // over, and the fresh hull on it is a parked vehicle again.
     if (visual.falling) {

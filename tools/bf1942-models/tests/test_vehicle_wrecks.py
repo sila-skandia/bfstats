@@ -139,6 +139,11 @@ class EndOfRoundTests(unittest.TestCase):
         self.assertEqual([True, True, False], [h["cleared"] for h in self.r["after"]])
         self.assertEqual([0, 1], self.r["retired"])
 
+    def test_only_a_player_control_object_of_the_level_goes(self) -> None:
+        # An armoured SimpleObject stays; so does what a spawn effect stood
+        # up, which its own module removes.
+        self.assertEqual([{"visible": True, "cleared": False}] * 2, self.r["kept"])
+
     def test_the_restart_brings_each_back_fresh(self) -> None:
         self.assertEqual([True, True], self.r["spawned"])
         for hull in self.r["back"]:
