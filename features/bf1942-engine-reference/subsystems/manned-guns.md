@@ -202,7 +202,7 @@ Browning (10 a second) nets 0.027 a round and locks after about 38, and a
 coaxial MG (0.05 / 0.3, 10 a second) after about 25. The lockout starts on
 the pull after the crossing round, not on the round itself, and a held
 trigger's pull restarts it every time it runs out with the barrel still at 1
-or more (GUN-17, read 2026-10-07): the fire message reaches `Fire` only past
+or more (GUN-18, read 2026-10-07): the fire message reaches `Fire` only past
 the reload, the lockout and the fire timer, so each lockout buys exactly one
 tick of cooling, and a trigger let go on the crossing round is never locked
 out at all. The same code is the hand

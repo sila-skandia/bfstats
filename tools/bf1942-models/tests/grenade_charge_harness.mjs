@@ -1,5 +1,5 @@
 // Drives a grenade's two throws through `hand-fire.js` `footFire` outside a
-// browser and prints one JSON blob (ledger GUN-18): the alt-fire button held
+// browser and prints one JSON blob (ledger GUN-19): the alt-fire button held
 // for a while and let go, a tap of it, the fire button, and the charge the
 // HUD's bar is handed (`soldier-hud.js` reads `hw.charge.heat`).
 //

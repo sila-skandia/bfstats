@@ -6,7 +6,7 @@
 //
 // The held trigger is the page's order (`hold`, below), each pull billed once
 // (`registerShot(1)`, the hand weapon's `onShot`) and the trigger reported
-// ahead of the step (`trigger`, GUN-17). The magazine is left out: this is the
+// ahead of the step (`trigger`, GUN-18). The magazine is left out: this is the
 // barrel alone. `engineHold` is the binary's own law, in float32, to hold the
 // page against.
 
@@ -124,7 +124,7 @@ function hold(data, seconds, fps = 60, releaseAtCross = false) {
   let clock = 0;
   let cooldown = 0;
   let rounds = 0;
-  // The first pull the heat refused: the lockout's start (GUN-17).
+  // The first pull the heat refused: the lockout's start (GUN-18).
   let firstRefused = null;
   let peak = 0;
   const shots = [];
@@ -154,7 +154,7 @@ function hold(data, seconds, fps = 60, releaseAtCross = false) {
 /**
  * The binary's law for a held trigger, float32, the trigger's pull first in
  * each tick (GUN-15's assumed order): `handleMessage` passes the pull to `Fire`
- * once the lockout and the round's timer have run out (GUN-17); `Fire` fires
+ * once the lockout and the round's timer have run out (GUN-18); `Fire` fires
  * below heat 1 (the heat added, the timer set, GUN-13/14) and otherwise starts
  * the lockout; then `handleUpdate` counts both timers down and drains once
  * both are out (GUN-15). `shots` are tick numbers.

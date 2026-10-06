@@ -90,7 +90,7 @@ class HandHeatTests(unittest.TestCase):
         # 13.5 declared, 10 a second on whole ticks (GUN-13); +0.0265 a round
         # and one tick's 0.01 drained between rounds (GUN-15). In float32 the
         # 60th round leaves the heat a few ulps under 1, the 61st crosses it,
-        # and the pull after it is the first one refused (GUN-17), 6.1 s into
+        # and the pull after it is the first one refused (GUN-18), 6.1 s into
         # the burst: the binary's own count. Under the old continuous drain it
         # never overheated; locking at the crossing round, in doubles, it
         # locked after 60.
@@ -109,7 +109,7 @@ class HandHeatTests(unittest.TestCase):
 
     def test_after_the_lockout_a_held_trigger_fires_at_the_engines_rate(self) -> None:
         # Nothing drains through the 2 s lockout (GUN-15), and a held pull the
-        # heat still refuses when it runs out starts it again (GUN-17), so a
+        # heat still refuses when it runs out starts it again (GUN-18), so a
         # held trigger gets one tick of cooling a lockout: 0.2 to 0.3 rounds a
         # second, against FireState's 0.4 to 0.5 when it locked only once.
         # The page's order (heat per frame, rounds on world ticks) fires the
@@ -123,7 +123,7 @@ class HandHeatTests(unittest.TestCase):
             self.assertGreaterEqual(hold["peak"], 1.0)
 
     def test_a_trigger_let_go_on_the_crossing_round_starts_no_lockout(self) -> None:
-        # The round that crosses 1 starts nothing (GUN-17): only a pull does.
+        # The round that crosses 1 starts nothing (GUN-18): only a pull does.
         # Let go there, the M249 drains from its next tick and is cold again.
         released = self.results["hold"]["m249Released"]
         self.assertIsNone(released["firstRefused"])
@@ -147,7 +147,7 @@ class HandHeatTests(unittest.TestCase):
         self.assertEqual(38, seats["browning"]["firstRefused"])
         self.assertEqual(25, seats["coax"]["firstRefused"])
         # And after it, held for 30 s, every round on the binary's own tick:
-        # the lockout restarted by each refused pull (GUN-17).
+        # the lockout restarted by each refused pull (GUN-18).
         for gun in ("mg42", "browning", "coax"):
             self.assertTrue(seats[gun]["sameTicks"], gun)
             self.assertEqual(seats[f"{gun}Engine"]["rounds"], seats[gun]["rounds"], gun)

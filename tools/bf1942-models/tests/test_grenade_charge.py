@@ -4,7 +4,7 @@ Every grenade declares `velocityDependentOnHeat 1`, so its `heatAddWhenFire`
 is the strength of the throw (ledger GUN-14). The fire button sets it to 1.0
 and throws at the full `velocity`; the alt-fire button adds 0.03 a tick while
 it is held, capped at 1, and the tick after it is let go throws at
-`velocity × heat` (GUN-18). The page threw every grenade at full strength and
+`velocity × heat` (GUN-19). The page threw every grenade at full strength and
 left the bar beside it empty.
 
 `grenade_charge_harness.mjs` drives `hand-fire.js` `footFire` with a stub page

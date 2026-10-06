@@ -465,7 +465,7 @@ class SoldierArtTests(unittest.TestCase):
 
 
 class GrenadeChargeBarTests(unittest.TestCase):
-    """The bar beside a grenade is its throw's charge (GUN-16, GUN-18)."""
+    """The bar beside a grenade is its throw's charge (GUN-16, GUN-19)."""
 
     def test_the_soldier_hud_hands_the_charge_to_the_heat_bar(self) -> None:
         bar = run_harness()["grenadeBar"]

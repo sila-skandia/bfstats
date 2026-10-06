@@ -307,7 +307,7 @@ lockout here and fired about twice the engine's rate after the first one. The
 M249 and PKM also locked one round early, and a trigger let go on the crossing
 round locked here when it does not in the engine.
 
-**What the engine does (GUN-17).** `handleMessage`'s fire message reaches
+**What the engine does (GUN-18).** `handleMessage`'s fire message reaches
 `Fire` only past the reload timer, the lockout and the round's fire timer, in
 that order. `Fire` refuses the pull at heat 1 or more and starts the lockout
 (GUN-14's restart at `0x0828ab30`). The crossing round starts nothing. With the
@@ -525,7 +525,7 @@ Built 2026-10-07 (package `hand-weapons-2`).
 turns its `heatAddWhenFire 0.03` into the strength of the throw (GUN-14). The
 page threw every grenade at full strength, and the bar beside it stayed empty.
 
-**What the engine does (GUN-18).**
+**What the engine does (GUN-19).**
 
 - The fire button: its message sets the heat to 1.0 and pulls. The throw
   leaves at the full `velocity`.
@@ -575,7 +575,7 @@ section 6 covers it.
 
 - ~~A FireArms' first throw leaves at once in the engine.~~ It does not for a
   hand weapon: `HandFireArms::enable` sets the `fireDelay` timer as the
-  weapon is raised (GUN-18), so every throw winds up, as the page does.
+  weapon is raised (GUN-19), so every throw winds up, as the page does.
 - Bots throw at full strength, which is the fire button's throw.
 
 ## 9. A kit picked up off the ground brings its weapons' heat

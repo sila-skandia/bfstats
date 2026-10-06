@@ -281,7 +281,7 @@ export function vehicleTick(world, player, dt, integrators) {
     const state = world.fireStateFor(group.node);
     const pulled = !!(inControl && vehicle && vehicle.input(group.stats.input || 'c_PIFire') > 0);
     // The trigger before the step: a held pull the heat refuses restarts the
-    // lockout (fire-state.js `trigger`, GUN-17).
+    // lockout (fire-state.js `trigger`, GUN-18).
     state.trigger(pulled);
     if (inControl) state.step(dt);
     world.guns?.setFiring(group, pulled && state.canFire);
